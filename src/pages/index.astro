@@ -39,20 +39,19 @@
 
     <main id="chat">
       <section class="intro">
-        <p>
-          ブラウザの中の Python（Pyodide）だけで言語モデルを動かす実験です。Python が層を順に呼び、計算は
-          ctypes で読み込んだ数 KB の WASM SIMD カーネルが行います。試験が目的なので、モデルは小さく、出力はそれなりです。
-          いま動くのはいちばん軽いモデルで、もっと自然な日本語は
-          <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M（171 MB）</button>
-          が書きます。一覧の最後のグループは Hugging Face から取得して、この場で変換します。
+        <!-- one of the two, by the language of the browser (the script decides; without it both show) -->
+        <p class="ja">
+          ブラウザの中の Python（Pyodide）だけで言語モデルを動かす実験です。処理は Python で書き、時間のかかる計算だけを、
+          ctypes で読み込んだ小さな WASM SIMD カーネルに任せています。実験なので、モデルは小さく、出力はそれなりです。
+          最初に動くのは、いちばん軽いモデルです。もっと自然な日本語を見たいときは、<button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M（171 MB）</button>
+          に切り替えてください。一覧の最後のグループは、Hugging Face から取得して、このブラウザの中で変換します。
           くわしくは <a href="https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901">Pyodide LLM の概要</a> へ。
         </p>
         <p class="en">
-          An experiment in how far Python on WebAssembly can go: Python runs the layers, tiny SIMD kernels loaded with
-          ctypes do the math. A test bed, not a product.
-          <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M (171 MB)</button>
-          writes better Japanese than the light default, and the last group of the list comes from Hugging Face and is
-          converted right here.
+          An experiment in how far Python on WebAssembly can go: the model is plain Python, and only the heavy math
+          runs in tiny SIMD kernels loaded with ctypes. It starts with the lightest model; switch to
+          <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M (171 MB)</button> for far more
+          natural Japanese. The last group of the list is fetched from Hugging Face and converted right here.
         </p>
         <details>
           <summary>このプロジェクトについて / About, models and licenses</summary>
@@ -183,6 +182,8 @@
   .intro p { margin: 0 0 6px; }
   #kept button { font: inherit; font-size: 0.75rem; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; cursor: pointer; }
   .intro .en { font-size: 0.8rem; }
+  .intro[data-language="ja"] .en, .intro[data-language="en"] .ja { display: none; }
+  .intro[data-language="en"] .en { font-size: inherit; }
   /* a model named in the text is a way to choose it */
   .intro .choose { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
   /* the whitespace around an inline button is collapsed away */
@@ -298,6 +299,10 @@
     }
   }
   const loadedHow = (data: any) => ((model as any).hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : (model as any).file ? "read" : "download");
+
+  // The intro is written twice; a phone has no room for both. Japanese for a browser set to Japanese, English for
+  // everyone else.
+  document.querySelector<HTMLElement>(".intro")!.dataset.language = navigator.language.startsWith("ja") ? "ja" : "en";
 
   // three groups: what the site was built with, the unquantized originals, and what comes from Hugging Face
   for (const [group, label] of Object.entries(GROUPS)) {
