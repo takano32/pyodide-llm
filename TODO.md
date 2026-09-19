@@ -31,6 +31,22 @@
 - 完了条件: `tests/e2e.mjs`（または同等のスクリプト）で Playwright の `setInputFiles` に `stories260K.bin` と `tok512.bin` を渡し、greedy の出力が AGENTS.md の期待どおりに始まる。int8（`tiny-lm.bin` + `tiny-lm.tokenizer.bin` + 設定の JSON）でも動く。壊れたファイルで分かりやすいエラーが出て、その後に配布モデルへ戻れる。ネットワークに何も送っていないこと（ファイルの読み込み中にモデルの取得リクエストが出ない）。390px でページがスクロールしない。
 - やらないこと（別タスクの候補）: Hugging Face 形式（safetensors + `tokenizer.json`）をブラウザの中で変換する。`convert_hf.py` は NumPy だけなので Pyodide で動くはずだが、メモリの使い方が重い。
 
+### T39 URL で指定した llama2.c 形式のモデルを使う — 状態: 未着手（T38 の後）
+- 目的: サイトに置いていないモデル（例: Hugging Face の `karpathy/tinyllamas` にある `stories110M.bin`）を URL で指定して動かす。「このリンクを開けばこのモデルが動く」と共有できる。
+- 決めたこと: **UI は足さない。クエリパラメータだけ**（`?checkpoint=<URL>&tokenizer=<URL>`、任意で `&config=<設定の JSON の URL>`。いまの `?model=`・`?kernel=off`・`?pyodide=` と同じ流儀）。T38（ローカル、ネットワークに何も出さない）とは論点が違うので分けた。承認が必要な（gated な）モデルには対応しない（トークンを入力させる UI は作らない）。
+- 手順:
+  1. T38 の部品（`dtype` の自動判定、設定の JSON、読み込み元の差し替え、T37 の中止）の上に、読み込み元として URL を足す。コンボボックスには T38 と同じく一時的な項目（ファイル名 + `(URL)`）を出す。
+  2. サイズは `HEAD`（または `Range: bytes=0-0` の `Content-Range`）で先に調べる。Hugging Face は CORS を許可し、Range に正しく応える（GitHub Pages と違って gzip の断片にならない）ので、8 MiB の Range を 8 並列で取れる。Range に応えないサーバーは 1 本のストリームで取る。実際に HF の URL で CORS と Range を確かめてから設計を固めること（未確認）。
+  3. Cache API に入れるかは、サイズと `navigator.storage.estimate()` を見て決める（入れるならキーに URL とサイズ）。1GB を超えるものは T38 と同じ警告。
+  4. 失敗（CORS で拒否、404、形式が違う）は分かりやすいエラーにして、コンボボックスから配布モデルへ戻れること。
+- 完了条件: `stories110M.bin` か、それが重すぎるなら `stories42M.bin` を HF の URL から読んで、greedy の出力が llama2.c と同じに始まる。URL が壊れているときにエラーが出て復帰できる。読み込み中にモデルを選び直すと中止される。
+
+### T40 Hugging Face 形式をブラウザの中で変換する — 状態: 未着手（T38 の後。難しいので Fable 向き）
+- 目的: safetensors + `tokenizer.json` + `config.json` を、ローカルのファイル（T38 の入口）または HF のリポジトリ（T39 の入口）から読み、ブラウザの中で変換して動かす。`convert_hf.py` は NumPy だけで書いてあるので Pyodide で動くはず。「変換も WASM Python でやる」という実験。
+- いちばんの壁はメモリ: 素朴にやると safetensors の原本、float32 への展開、量子化した結果が同時にヒープに載る（llm-jp-3-150m で 300MB + 600MB + 170MB。WebAssembly のメモリは 32 ビットで縮まない）。テンソルを 1 つずつ読み（safetensors はヘッダにオフセットがあるので `File.slice()` や Range で部分的に読める）、その場で int8（グループ 32）にして最終的なバッファへ書き、原本は手放す、というストリーム処理に書き直す必要がある。`convert_hf.py` と `quantize.py` のコードは共有し、ビルド時の変換結果とバイト単位で一致させる。
+- ほかに要るもの: `config.json` の検証（Llama 系だけ受け付ける。`rope_theta`、GQA、語彙の大きさ、`tie_word_embeddings`）、トークナイザの種類の判定（unigram / BPE、NFKC）、対応外のモデルへの分かりやすいエラー、進捗の表示。
+- 完了条件: `sbintuitions/tiny-lm` をブラウザの中で変換したものが、`make models` の `tiny-lm.bin` とバイト単位で一致する。変換中のヒープの最大値を測って記録する。llm-jp-3-150m はこの開発機のメモリでは試せない可能性が高いので、試せなければ「未確認」と書く。
+
 ## 完了したタスク
 
 古い順。括弧内は対応するコミット。
