@@ -10,6 +10,7 @@ This project leverages [Pyodide](https://pyodide.org/) to run a Python implement
 - **Python in WebAssembly:** Python sequences the transformer layers, and small WASM SIMD kernels, loaded with `ctypes` and working in place on NumPy memory, do the math: 75 tokens/s for the 150M parameter model and 300 to 950 for the small ones, about a thousand times faster than the original pure Python loops (NumPy alone reaches 50). See [Measurements](#measurements).
 - **Streaming Output:** Pyodide runs in a Web Worker and every token is shown as soon as it is generated, so the page never freezes. While a text is being written, the send button stops it.
 - **Settings You Can See:** every answer says which temperature and seed wrote it and how fast; the button left of the prompt changes them, and the seed under an answer is a button that fixes it, so that two models can be compared on the same seed.
+- **Models Straight from Hugging Face:** the last group of the model list is not hosted here. The page fetches `model.safetensors` from huggingface.co, converts it to int8 in your browser with the same Python code that builds the site's models, and keeps the result for the next visit ([how](#models-from-hugging-face)).
 - **Your Own Model:** a llama2.c checkpoint from your disk runs without being uploaded ([how](#your-own-model)).
 - **Several Models:** Japanese / English models (llm-jp-3 with 150M parameters by default, tiny-lm with 29M), and TinyStories models from 260K to 42M parameters. `?model=<id>` selects one directly.
 
@@ -48,6 +49,30 @@ You can try the live demo on GitHub Pages (if configured):
    docker run -p 8080:8080 pyodide-llama-py
    ```
 2. Open `http://localhost:8080/pyodide-llama-py/` in your browser.
+
+## Models from Hugging Face
+
+The models of the group "From Hugging Face, converted in this browser" live on huggingface.co, not on this site.
+When you choose one, the worker fetches `model.safetensors` in parts of 8 MiB over six connections, hands them to
+`public/llama2_convert.py` in the order of the file, and that converts every tensor as it arrives and writes it as
+int8 to its place in a buffer of the final size: the download is never held as a whole, and the peak is the
+converted model plus a few dozen megabytes. The result goes into a cache of the browser, so the next visit fetches
+and converts nothing; About lists what is kept and deletes it. A download of more than 500 MB asks first.
+
+What can be on that list is narrow: a plain Llama architecture, one safetensors file, and a tokenizer the engine
+reads (a Unigram `tokenizer.json` or a sentencepiece model). The instruction-tuned models get what you type inside
+their chat template, for one turn; this page keeps no conversation. Measured in Chromium on the development
+machine: llm-jp-3-150m-instruct3, 305 MB fetched and converted in 38 s, then ready in 8 s from the cache, 81
+tok/s; llm-jp-3-440m-instruct3, 0.9 GB in 97 s, 686 MB of heap, 29 tok/s. The models of a billion parameters
+are checked in CI, which has the memory and a fast line (Chromium on a Linux runner): llm-jp-3-980m-instruct3 is
+ready 53 s after the click (2.0 GB fetched and converted) and writes 15 tok/s, TinyLlama 1.1B Chat is ready in
+38 s and writes 12 tok/s.
+
+A model that is in no list can be named in the URL: `?hf=<owner>/<repository>` (optionally `&revision=`,
+`&template=` with `{prompt}` in it) converts a Hugging Face repository, and refuses in words what it cannot run;
+`?checkpoint=<url>&tokenizer=<url>` reads files in llama2.c's format from any server that answers cross-origin
+range requests, for example
+`?checkpoint=https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin&tokenizer=https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.bin`.
 
 ## Your Own Model
 

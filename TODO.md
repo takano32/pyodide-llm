@@ -4,20 +4,9 @@
 
 - 着手したら状態を `進行中` にする。終えたら「完了したタスク」の末尾に `- [x]` で移し、結果の要点（実測値・理由）とコミットを 1〜2 行で書く。詳しい知見は AGENTS.md に足す。**作業と同じコミットで更新する。**
 - タスク番号は通し番号で、再利用しない。分割や取りやめで使わなくなった番号も欠番のまま残す（T40 は T41 と T42 に、T61「Llama 以外のモデルにも対応する」は T63・T64・T65 に分けたので欠番）。
-- 未着手のタスクは、依存のあるものを除いて単独で着手できる。勧める順番: 計測の道具立ては T52（スイッチ）→ T45（ベンチ。T43 を吸収）。動くモデルを広げるのは T63（トークナイザ）→ T60（HF の一覧。T39 を吸収）→ T64（Qwen）→ T62（改名）→ T65（GPT-2 系。着手前に歯止めを確認）。T48（記事）はいつでも。性能は T54 で一区切り（int8 の行列積は V8 の命令の速さの 9 割に達した）。T47 は保留。
+- 未着手のタスクは、依存のあるものを除いて単独で着手できる。勧める順番: 動くモデルを広げるのは T63（トークナイザ → SmolLM2。T60 の一覧に 1 行足すだけで入る）→ T64（Qwen）→ T62（改名）→ T65（GPT-2 系。着手前に歯止めを確認）。計測の道具立ては T52（スイッチ）→ T45（ベンチ。T43 を吸収）。T48（記事）はいつでも。性能は T54 で一区切り。T47 は保留。
 
 ## これからのタスク
-
-### T39 URL で指定した llama2.c 形式のモデルを使う — 状態: 未着手
-- 目的: サイトに置いていないモデル（例: Hugging Face の `karpathy/tinyllamas` にある `stories110M.bin`）を URL で指定して動かす。「このリンクを開けばこのモデルが動く」と共有できる。
-- 決めたこと: **UI は足さない。クエリパラメータだけ**（`?checkpoint=<URL>&tokenizer=<URL>`、任意で `&config=<設定の JSON の URL>`。いまの `?model=`・`?kernel=off`・`?pyodide=` と同じ流儀）。T38（ローカル、ネットワークに何も出さない）とは論点が違うので分けた。承認が必要な（gated な）モデルには対応しない（トークンを入力させる UI は作らない）。
-- 手順:
-  1. T38 の部品（`dtype` の自動判定、設定の JSON、読み込み元の差し替え、T37 の中止）の上に、読み込み元として URL を足す。コンボボックスには T38 と同じく一時的な項目（ファイル名 + `(URL)`）を出す。
-  2. サイズは `HEAD`（または `Range: bytes=0-0` の `Content-Range`）で先に調べる。Hugging Face は CORS を許可し、Range に正しく応える（GitHub Pages と違って gzip の断片にならない）ので、8 MiB の Range を 8 並列で取れる。Range に応えないサーバーは 1 本のストリームで取る。実際に HF の URL で CORS と Range を確かめてから設計を固めること（未確認）。
-  3. Cache API に入れるかは、サイズと `navigator.storage.estimate()` を見て決める（入れるならキーに URL とサイズ）。1GB を超えるものは T38 と同じ警告。
-  4. 失敗（CORS で拒否、404、形式が違う）は分かりやすいエラーにして、コンボボックスから配布モデルへ戻れること。
-- 完了条件: `stories110M.bin` か、それが重すぎるなら `stories42M.bin` を HF の URL から読んで、greedy の出力が llama2.c と同じに始まる。URL が壊れているときにエラーが出て復帰できる。読み込み中にモデルを選び直すと中止される。
-- T42 が入ったので、同じ仕組みで HF のリポジトリ（safetensors + `config.json` + `tokenizer.json`）の URL も変換して動かせる: `llama2_convert.py` の `Safetensors` は `read(offset, length)` しか要らないので、Range 要求の読み手を渡せばよい（Worker の中なら同期の `XMLHttpRequest` が使える。未確認）。このタスクに含めるか分けるかは着手時に決める。
 
 ### T43 生成設定をクエリパラメータで指定する — 状態: 未着手（T45 を採用するなら、そちらで一緒に作る）
 - 目的: `?temperature=0.7&seed=1234&steps=128`（`topp`・`repetition_penalty` も）で、再現できるリンクを人に渡せるようにする。いまの `?model=`・`?kernel=off`・`?pyodide=` と同じ流儀で、UI は増えない。
@@ -45,60 +34,6 @@
 - 目的: 「emcc なしで、AssemblyScript の出力に `dylink.0` セクションを付けて Pyodide に ctypes で読み込ませ、NumPy のメモリを直接計算する」は、このプロジェクトでいちばん新規性のある発見だが、`kernels/README.md` の中に埋もれている。
 - 手順: 30 行程度の最小の再現例（AssemblyScript の関数 1 つ、`build.py` の要点、Pyodide から呼んで NumPy の配列を書き換える）と、なぜ動くか・制約（静的データ不可、`.so` の先読み、relaxed SIMD の分離）・実測を 1 本の文章にする。置き場所は gist（既存の調査レポートの続編）か `kernels/README.md` の冒頭。公開（gist の作成）は持ち主に確認してから。
 - 完了条件: 最小の再現例がこのリポジトリの外（素の Pyodide + Node）で動くことを確かめてある。
-
-### T60 Hugging Face から検証済みのモデルを取得して、変換して動かす — 状態: 進行中（担当: Fable。2026-09-20 着手）
-- 進み具合（2026-09-20）: **1 つめの区切りまで完了・push 済み。** HF から取得 → ブラウザの中で変換 → Cache API に保存 → 2 回目はキャッシュから、が `llm-jp-3-150m-instruct3` で通った（Chromium、この開発機）: 取得と変換 37〜38 秒（305MB、日本から）、ヒープ 353MB、指示に応答して自分で止まる、81 tok/s。2 回目の訪問は準備完了まで 8.3 秒（キャッシュから 0.63 秒）、huggingface.co への要求 0 件、同じシードで同じ答え。About の一覧から削除できる。設計で変えた点: **変換器は「出力の順に読む」のをやめ、「ファイルの順に届いたテンソルから変換して、出力の正しい位置へ書く」（`llama2_convert.Stream`）にした。** Worker から HF への Range 要求は Chromium でも Firefox でも通るが、ここからだと 1 回 1〜3 秒かかり、出力の順に読むと数百回の要求になるため。8 MiB の部品を 6 並列で取り、順番どおりに変換器へ渡す。ローカルのファイル（T42）も同じ経路になった。残り: 440M を手元で、1B 級を CI で確認、TinyLlama Chat（テンプレートの中の `</s>` を特殊トークンとして扱う必要がある）、`?hf=` と T39 の吸収、`browsers.yml` に HF のモデルを 1 つ、文書。
-- 発案: どこかに「Hugging Face を使う」スイッチを置き、オンのときはコンボボックスから HF の代表的なモデルを選べるようにする。T39 の派生。
-- 前提は揃っている: T41 の変換器は `read(offset, length)` しか要らず、T42 でブラウザの中の変換は実証済み（llm-jp-3-150m を 7 秒、ヒープは変換後のモデルと同じ）。**2026-09-19 に確認: HF のファイル取得は CORS を許可し（`access-control-allow-origin`）、Range 要求に 206 と `content-range` で応える**（`https://huggingface.co/<repo>/resolve/main/model.safetensors`、CDN へのリダイレクト越し）。
-- いちばんの注意: **「代表的なモデル」の大半は動かない。** エンジンが動かせるのは、素の Llama 構造（bias なし、RoPE scaling なし、silu）で、safetensors が 1 ファイルで、トークナイザが Unigram の `tokenizer.json` か sentencepiece のモデルのもの。Llama 3 系（tiktoken の BPE、RoPE scaling、承認制）、Qwen、Gemma、Phi、SmolLM2（構造は Llama だがトークナイザが byte-level BPE）は動かない。だから一覧は「代表的」ではなく「**動くことを確かめたもの**」にする。HF の API で確認した候補（すべて Apache-2.0、承認不要）:
-  - `llm-jp/llm-jp-3-150m-instruct3`（T46 の指示モデル。サイトの容量の問題が消える）
-  - `llm-jp/llm-jp-3-440m` と `-instruct3`（4.5 億パラメータ。int8 で約 470MB、見積もり 20〜25 tok/s）
-  - `llm-jp/llm-jp-3-980m-instruct3`（9.9 億。int8 で約 1GB、見積もり約 10 tok/s、PC 向け）
-  - `TinyLlama/TinyLlama-1.1B-Chat-v1.0`（11 億。sentencepiece の `tokenizer.model` あり。いちばん名の知れた「動く」モデル。int8 で約 1.1GB、PC 向け）
-  - 動かないと確認したもの: `HuggingFaceTB/SmolLM2-135M-Instruct`（トークナイザ）、`sbintuitions/tiny-lm-chat`（safetensors が無く pickle だけ）。
-  - 速度の見積もりは、int8 の行列積が毎秒約 115 億回の積和（T54）という実測を、パラメータ数で割ったもの（未計測）。ヒープは int8 の重み + KV キャッシュで、1B 級は 1.2〜1.3GB。Pyodide の wasm メモリの上限（2GB のはず。未確認）に近いので、着手時に確かめる。
-- **デザイン案（2026-09-19、未決定。持ち主が決める点は末尾）**
-  - **選ぶ場所: コンボボックスを `<optgroup>` で 3 つに分ける。** スイッチは足さない（常に見える要素はフォルダ・設定・送信の 3 つのまま。選択肢が見えているほうが見つけてもらえる）。
-    ```
-    ▾ llm-jp-3 150M — 日本語 / English · int8 · 171 MB
-      ── このサイトのモデル ──
-        llm-jp-3 150M / tiny-lm 29M / TinyStories 15M / 3.5M / 260K / 42M
-      ── 量子化前の原本 ──
-        llm-jp-3 150M (original) / tiny-lm (original) / TinyStories 15M・42M (original)
-      ── Hugging Face から取得して、このブラウザで変換 ──
-        llm-jp-3 150M instruct3 — 指示に応える · 305 MB を取得 → int8 171 MB
-        llm-jp-3 440M — 日本語 · 0.9 GB を取得 → int8 470 MB
-        llm-jp-3 440M instruct3 — 指示に応える · 0.9 GB → 470 MB
-        llm-jp-3 980M instruct3 — 1.9 GB → 1.0 GB · PC 向け
-        TinyLlama 1.1B Chat — English · 2.2 GB → 1.1 GB · PC 向け
-      （ローカルのモデルを開いたときは、いまどおり一時的な項目が末尾に出る）
-    ```
-    変換結果がキャッシュにあるモデルは、項目名の末尾を「· 保存済み」に変える（取得と変換が要らないことが選ぶ前に分かる）。
-  - **選んだ後: 既存のステータス行と進捗バーだけで見せる。新しい画面は作らない。**
-    ```
-    llm-jp-3 440M: Hugging Face から取得して変換中 42 %（380 / 900 MB）   ← 進捗バーも動く
-    llm-jp-3 440M: 変換したモデルを保存中…
-    llm-jp-3 440M · SIMD kernels, int8, relaxed SIMD · Pyodide 314.0.7 ▸
-        Pyodide 3.1 s · 取得と変換 58 s（次回はキャッシュから）| Llama() 0.9 s
-    ```
-    2 回目以降は「llm-jp-3 440M: キャッシュから読み込み中 …」で、サイトのモデルと同じ速さ。途中でモデルを選び直せば中止（T37）。失敗（HF が落ちている、404、形式が合わない）はエラーの吹き出し 1 つで、コンボボックスから別のモデルへ戻れる（T38・T42 と同じ）。
-  - **大きなダウンロードの前の確認:** キャッシュに無く、取得が 500MB を超えるときだけ `confirm()`（「Hugging Face から 0.9 GB を取得し、このブラウザで変換します。保存に 470 MB 使います。」）。T38 の 1GB の確認と同じ流儀。`navigator.deviceMemory` が小さい端末で「PC 向け」を選んだら、同じ確認の中で警告する。
-  - **保存したモデルの管理:** 数百 MB〜1GB を勝手に溜めるので、消す手段が要る。About の折りたたみの中に「保存したモデル: llm-jp-3 440M（470 MB）［削除］」の一覧を出す（常に見える要素は増えない）。
-  - **指示モデル（T46 の残り半分）:** `src/models.js` の項目に `template` を持たせ、テンプレートのあるモデルでは入力をそこへ入れて渡す（1 ターンだけ。状態は持たない）。利用者の吹き出しには打った文をそのまま出す。既定のプロンプトとプレースホルダーは指示の形（例:「これからの流行りを 3 つ挙げてください」）。
-  - **一覧に無いリポジトリ（T39 の吸収）:** UI は作らず、クエリパラメータ `?hf=<owner>/<repo>`（任意で `&revision=`）。`check_config()` が動かないモデルを文で断る。llama2.c 形式の URL（T39 の元の内容）は `?checkpoint=&tokenizer=` のまま同じ読み込み経路に乗せる。
-  - **データの形:** `{ id: "hf-llm-jp-3-440m", name, note, group: "hf", hf: { repo, revision（コミットのハッシュで固定）, weights: "model.safetensors", tokenizer: "tokenizer.json" }, conversion: { dtype: "int8", max_seq_len: 4096 }, options, generation, prompt, placeholder, template }`
-  - **スイッチにする場合の形（代案）:** 設定のパネル（T35）の中に「Hugging Face のモデルを一覧に出す」のトグルを置き、オンのときだけ 3 つめのグループを出す（`localStorage` に覚える）。利点は「第三者のサーバーへ取りにいく」ことの明示。欠点は、機能が見つからないことと、設定のパネルが「生成の設定」以外のものを持つこと。
-  - **決まったこと（2026-09-19、持ち主）:** (1) コンボボックスのグループ分けにする（スイッチにしない。上の代案は不採用）。(2) 1B 級のモデル（llm-jp-3-980m、TinyLlama 1.1B）も一覧に入れ、この開発機で試せないぶんは CI（`browsers.yml` のランナー）で確認する。(3) 確認ダイアログの閾値は 500MB。
-  - (4) **指示モデルを入れる**（2026-09-19、持ち主）。指示モデル（instruct / chat モデル）は、同じ構造・同じ大きさのモデルを「指示 → 応答」の例で追加学習したもの。決まった書式（llm-jp の instruct3 は `### 指示:` / `### 応答:`、TinyLlama Chat は `<|user|>` / `<|assistant|>`）で入力を渡すと、続きを書く代わりに答えを書いて自分で止まる。`src/models.js` の項目に `template` を持たせ、入力をその書式にはめて渡す（1 ターンだけ、状態なし。会話の継続は T46 で却下済み）。書式は各モデルの `tokenizer_config.json` の `chat_template` から写し、system の文があるものはそれも入れる。項目名に「指示に応える」と書き、イントロに「小さいモデルなので答えの質は低い」と 1 行入れる。
-  - 一覧（確定）: `llm-jp/llm-jp-3-150m-instruct3`、`llm-jp/llm-jp-3-440m`、`llm-jp/llm-jp-3-440m-instruct3`、`llm-jp/llm-jp-3-980m-instruct3`、`TinyLlama/TinyLlama-1.1B-Chat-v1.0`。すべて HF の API で確認済み（Apache-2.0、承認不要、Llama 構造、safetensors 1 ファイル、`tokenizer.json`）。変換して動かすところは未確認（着手時に 1 つずつ確かめ、動かないものは外して理由を書く）。TinyLlama の base（`TinyLlama/TinyLlama_v1.1`）は safetensors を置いていないので使えない。
-- 設計の要点:
-  1. 読み手: Worker の中なら同期の `XMLHttpRequest`（`responseType = "arraybuffer"`）で Range を取れるので、変換器の同期の `read()` にそのまま渡せる。断片を大きめ（16〜32MB）にして往復の回数を減らす。中止（T37）は断片の合間に効く。
-  2. **変換結果を Cache API に入れる**（8 MiB の部品に分けて。キーは repo・リビジョン・dtype・コンテキスト）。原本は int8 の約 2 倍あり、毎回ダウンロードと変換をやり直すのは現実的でない。`navigator.storage.estimate()` で空きを見て、入らなければ入れない。
-  3. 一覧は `src/models.js` に `hf: { repo, revision, files }` の形で持ち、リビジョン（コミットのハッシュ）を固定する（上流の差し替えで壊れないように）。ライセンスとモデルのページへのリンクを About に出す。
-  4. 指示モデルのチャットテンプレート（1 ターンだけ）は、このタスクの中で実装する（T46 の会話の継続は却下した）。
-  5. 大きいモデルは項目名に「PC 向け」と書き、スマホでは選べても警告する（T38 の 1GB の確認と同じ）。
-- T39（llama2.c 形式の URL をクエリパラメータで指定）は、この仕組みの小さな部分集合になる。T60 を採用するなら、T39 は「読み込み元に URL を足す」部分として T60 に吸収してよい。
-- 完了条件（案）: 一覧のモデルがすべて実ブラウザで変換・生成できる（1B 級はこの開発機のメモリで試せない可能性があり、その場合は CI か「未確認」と明記）。2 回目の訪問ではダウンロードも変換もしない。`browsers.yml` に HF の小さいモデルを 1 つ足して、上流の変更で壊れたら気づけるようにする。
 
 ### T63 byte-level BPE のトークナイザ（→ SmolLM2 が動く）— 状態: 未着手（2026-09-20 採用。T61 を分割した 1 つめ。規模 小〜中、Fable 向き。参照の確認はこの開発機でできる）
 - 背景（T61 の検討から）: Llama 以外に対応するときの最初の壁は、アーキテクチャではなくトークナイザだった。いまのエンジンは sentencepiece 系（スコア付きの BPE と Unigram）しか読めない。GPT-2 系の byte-level BPE（`vocab.json` + `merges.txt`、または `tokenizer.json` の `model.type == "BPE"`）が読めれば、構造が**素の Llama のまま**のモデルがそのまま動く。エンジンの forward にもカーネルにも手を入れない。
@@ -206,6 +141,8 @@
 - [x] **T56 既定でモデルを最大限に活用する。**（Fable）(1) 生成の長さの既定を 256 からコンテキストいっぱいに（`src/models.js` とローカルのモデルの既定を `steps: 0`。エンジンは 0 を `seq_len` として扱う）。設定のパネルは既定でスライダーが右端・数値表示（llm-jp は 4096、tiny-lm は 2048）、右端に戻せば「既定値と違う」の点は消える。(2) llm-jp-3-150m のコンテキストを 512 → 本来の 4096 に（持ち主が計測値を見て決定。原本の float16 も同じ長さ）。ブラウザの中での変換（T42）の既定も 4096。(3) その代償の KV キャッシュ（4096 で 200MB）は、256 位置ぶんで始めて届いたら倍にする方式にした（層ごとに伸ばすので、伸ばすときに全体の複製が要らない。NumPy の経路も同じ）。短い文章のヒープは 302MB のまま。ブラウザで停止トークンを切って最後まで書かせた実測: 4096 トークンを 90 秒、全体で 45 tok/s、ヒープ 302 → 362（位置 1024）→ 522MB（位置 2048 以降）、文章は最後まで破綻しない。位置ごとの速度（Node）は 8: 約 85、1000: 65、2000: 50、4070: 35 tok/s。普段は数百トークンで自分で止まる（確認した 2 回は 247 と 392 トークン）。int8 のファイルはサイズが変わらないので `MODEL_CACHE` を `models-v2` に上げた。`tests/e2e.mjs` は設定で 256 トークンに絞って測る（文書の数値と条件を揃えるため）。検証: pytest（伸びるキャッシュで logit が 1 ビットも変わらない）、`smoke.mjs`（キャッシュを 3 回伸ばしながらカーネルと NumPy が同じ文）、e2e 5 種。ほかに既定値での手加減は見つからなかった。
 - [x] **T58 できるだけ多くの OS とブラウザで CI テストする。**（Fable）`.github/workflows/browsers.yml`（T44 の `webkit.yml` を広げた）: OS 5 種（Linux x86-64 / Linux ARM64 / Windows x86-64 / Windows ARM64 / macOS Apple M1）× ブラウザ 5 種（Playwright の Chromium・Firefox・WebKit、ランナーに入っている本物の Chrome・Edge。`tests/e2e.mjs` は `msedge`・`chrome` を受ける）= 23 通り（Linux ARM には Chrome と Edge が無い）。最初は 1 ブラウザ 1 ジョブの 23 ジョブにしたが、細かすぎるという持ち主の指摘で **OS ごとに 1 ジョブ（5 ジョブ）**にまとめ、ジョブの中でブラウザを順に回す形にした。手動（`gh workflow run browsers.yml`）か週 1 回、公開リポジトリなので無料。**結果: 23 通りすべてで 4 モデルが動いた。** 表は `kernels/README.md`。分かったこと: (1) WebKit はどの OS でも relaxed SIMD なしで `matmul_q8`。(2) **Firefox はどの OS・どちらのアーキテクチャでも Chromium 系の 8〜15 分の 1**（同じランナーで llm-jp 13 対 107 tok/s、準備完了まで 20 秒対 3〜5 秒）→ 候補 T59。(3) Windows ARM では Playwright の Chromium と WebKit が x86-64 のエミュレーションで、隣のネイティブの Chrome / Edge の 3 分の 1。(4) 1 回目の実行で本物の Edge が `favicon.ico` の 404 をエラーとして報告し、テストが失敗と判定した（モデルは動いていた）→ ページに data URI のアイコンを付けた。ランナーは共有の仮想マシンで CPU もまちまちなので、OS をまたいだ速度の比較には使えない。Safari そのものと iPhone の実機は未確認のまま（T45 で集める）。
 - [x] **T59 Firefox が約 8〜15 倍遅い理由を調べる。**（Fable）**結論: 遅いのは Firefox ではなく、Playwright の動かし方だった。** (1) 手元の切り分け: Pyodide と無関係な素の wasm（SIMD の積和ループだけ、474 バイト）でも Playwright の Firefox は Chromium の 13 分の 1（0.43 対 5.7 G 積和/秒、スカラーは 0.07 対 1.2）。ベースラインコンパイラだけを指定しても同じ速度で、最適化コンパイラだけを指定すると「no WebAssembly compiler available」で落ちる。Playwright はデバッガ経由でページを動かし（スタックトレースに `debugger eval code`）、SpiderMonkey はデバッグ対象の wasm をベースラインだけでコンパイルする。`tests/profile.mjs firefox` の内訳も整合: カーネルの中が 13〜15 倍遅く、ctypes の呼び出し（1 回 24µs）は全体の 4%。(2) CI: `tests/stock-firefox.mjs`（Selenium + geckodriver。持ち主の希望どおり、ランナーに入っている Firefox を使う。5 つの OS すべてに Firefox 155 が入っていた）を `browsers.yml` の各 OS のジョブに足した。**同じランナーで llm-jp-3-150m が Playwright の Firefox 13 tok/s、インストール済みの Firefox 106 tok/s（Chromium 107）。** ほかの OS でも 65〜132 tok/s、準備完了まで 4〜6 秒。文書の「Firefox は遅い」という記述をすべて直した。以前の「開発機で 5〜7 倍遅い」も同じ原因。未確認: 人が普通に開いた Firefox が Selenium で開いた Firefox と同じ速さか（Marionette はデバッガを使わないので同じはず）。
+- [x] **T60 Hugging Face から検証済みのモデルを取得して、変換して動かす（T39 を吸収）。**（Fable、持ち主の発案）コンボボックスを 3 つのグループ（このサイトのモデル / 量子化前の原本 / Hugging Face から取得してこのブラウザで変換）に分けた。3 つめを選ぶと、Worker が huggingface.co から `model.safetensors` を 8 MiB × 6 並列の Range 要求で取り、**ファイルの順に**変換器へ渡す。変換器は届いたテンソルから int8 にして、最終サイズのバッファの正しい位置へ書く（`llama2_convert.Stream`。T41 の「出力の順に読む」方式は、ここから 1 回 1〜3 秒かかる要求が数百回になるのでやめた。ローカルのファイルも同じ経路）。変換結果は専用のキャッシュ（`converted-v1`）に入り、2 回目は取得も変換もしない。項目名に「kept in this browser」が付き、About の一覧から削除できる。500MB を超える取得は先に `confirm()`。指示モデルは入力を `template` にはめて渡し（1 ターンだけ）、答えにプロンプトを含めない（`generate(echo=False)`）。テンプレートの中の特殊トークン（TinyLlama の `</s>`）はエンジンの `specials` で 1 つのトークンとして読む（`transformers` と 6 / 6 で一致）。一覧に無いものは URL で: `?hf=<owner>/<repo>`（変換器が動かないものを文で断る）、`?checkpoint=<url>&tokenizer=<url>`（llama2.c 形式。T39 の内容）。**実測: この開発機の Chromium で llm-jp-3-150m-instruct3 は取得と変換 38 秒・ヒープ 353MB・81 tok/s、2 回目は 8 秒で準備完了（huggingface.co への要求 0 件、同じシードで同じ答え）。440M instruct3 は 0.9GB を 97 秒・ヒープ 686MB・29 tok/s で、答えの質は 150M よりはっきり良い。CI（`browsers.yml` の `huggingface` ジョブ、Linux の Chromium）で 6 つとも成功: 980M instruct3 は選んでから 53 秒で準備完了・15 tok/s、TinyLlama 1.1B Chat は 38 秒・12 tok/s。** 見積もり（980M 約 10、TinyLlama 約 10、440M 20〜25 tok/s）は、ランナーの CPU が速いぶん上に外れた。分かったこと: 150M の指示モデルは質問を断りがち（「お答えできません」）。ヘッドレスの Chromium は Cache API の割り当てが小さく、503MB の保存が `Quota exceeded` になった（保存をあきらめて理由を表示し、モデルは動く）。未確認: 普通のブラウザでの保存の上限、Firefox / WebKit での HF の経路、スマホ。
+- [x] **T39 URL で指定した llama2.c 形式のモデルを使う。** T60 に吸収して実装した（`?checkpoint=<url>&tokenizer=<url>`。Range 要求を並列に出して順番どおりに書く。`dtype` の判定とトークナイザの検査は T38 のまま）。`node tests/e2e.mjs url` が huggingface.co の `karpathy/tinyllamas` の stories260K を読んで、期待どおりの出力になることを確かめる。
 - [x] **T41 ストリーム変換器。**（Fable）`public/llama2_convert.py`: safetensors を `read(offset, length)` 越しに 100 万値（float32 で 4MB）ずつ読み、最初から最終サイズで確保した出力バッファの正しい位置へ float32 / float16 / int8 で直接書く（int8 は「全層の値 → 全層のスケール」という並びなので、順に追記するのではなく位置を計算して書く）。q・k の並べ替えだけは行列 1 個を丸ごと読む。`config.json` の検証（Llama 以外、RoPE scaling、bias、silu 以外、ヘッドの割り切れなさをトレースバックなしの文で断る）、`tokenizer.json`（Unigram）と sentencepiece のモデルから `tokenizer.bin` と `tokenizer_kind`・`nfkc` を求める関数も同じファイルにある。`convert_hf.py` と `quantize.py` はこのモジュールを使う形に書き直した（PyTorch の pickle を読む部分だけが `convert_hf.py` に残る）。検証: 新しいコードで llm-jp-3-150m と tiny-lm を float32・float16・int8 に変換した 6 個とトークナイザ 2 個が、書き換え前の `make models` の出力と **すべてバイト単位で一致**。メモリのピークは llm-jp-3-150m で「出力 + 13MB」（int8 なら 171 + 13MB、1.7 秒。断片を 4 倍にすると + 52MB で速度は同じ）。Makefile は HF の 2 モデルを int8 へ直接変換するようにした（609MB と 117MB の float32 の中間ファイルが要らなくなった。`make models` をやり直して全出力のチェックサムが一致）。pytest に合成 safetensors での一致（float32 は元のチェックポイントと、int8 は `quantize.py` の出力と一致。F32 / F16 / BF16）、断片読みの確認、対応外の断り方を追加（117 件）。テストが見つけたバグ: 最後のテンソルが RoPE の表のとき進捗が 100% にならなかった。
 - [x] **T42 ブラウザの中で Hugging Face 形式を変換して動かす。**（Fable）フォルダのボタン / ドロップで `.safetensors` 1 個 + `config.json` + トークナイザ（`tokenizer.json` か、sentencepiece の `tokenizer.model`・`spiece.model`）を選ぶと、Worker が T41 の変換器（`llama2_convert.py`。初めて要るときに取得）を Pyodide で動かす。読み手は `FileReaderSync` + `File.slice()`（Worker なら同期で読める）で、ファイル全体は読まない。変換は Python のジェネレータで、Worker が断片の合間に進捗（`converting, 42 %`）を出し、50ms ごとにイベントループへ返して、モデルの選び直しによる中止（T37）を受け付ける。既定は int8・コンテキスト 512（KV キャッシュを抑える）。任意の設定 JSON で `conversion: {dtype, max_seq_len}`・`options`・`generation` を変えられる。`tokenizer_kind`・`nfkc`・`rope_theta`・BOS / 停止トークンは `tokenizer.json` / sentencepiece のモデルと `config.json` から求める。**実測（Chromium、この開発機）: llm-jp-3-150m（bfloat16 の safetensors 305MB）を 6.9 秒で int8 に変換、ヒープ 294MB（配布版を普通に読んだときの約 283MB と同水準）、その後 70 tok/s。同じシードで、サイトがビルド時に変換した llm-jp-3-150m と一字一句同じ文を書いた。** 配布版へ切り替えてもヒープは 294MB のまま（リークなし。PyProxy を 1 つでも壊し忘れるとチェックポイントが残るので、すべて `destroy()` している）。断り方も実ブラウザで確認: Llama 以外（`it is a gpt2`）、トークナイザなし / シャード分割、語彙の 9 割に満たないトークナイザ（別モデルのもの。変換は通ってしまい、でたらめを書くので断る）、safetensors でないファイル。変換の 20% でモデルを選び直すと中止され、エラーは出ず、tiny-lm が動く（ヒープ 245MB）。`node tests/e2e.mjs hf` は `tests/make_hf_fixture.py` が stories260K から作る HF 形式のファイル（safetensors + sentencepiece の protobuf）を開き、変換後の出力が元のモデルと同じ書き出しになることを確かめる。未確認: Firefox、1GB 級のモデル、BPE の `tokenizer.json`（非対応と表示する。Llama 3 系の byte-level BPE はエンジンが未対応）。
 
