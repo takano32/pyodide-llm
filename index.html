@@ -156,11 +156,11 @@
         progressText.textContent = `${(data.received / 1e6).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
       } else if (data.type === "ready") {
         ready = true;
-        addToOutput(`Ready! (Pyodide ${data.pyodide})\n`);
+        addToOutput(`Ready! (Pyodide ${data.pyodide})\n\n`);
       } else if (data.type === "token") {
         addToOutput(data.text);
       } else if (data.type === "done") {
-        addToOutput(`\nachieved tok/s: ${data.tokens_per_second.toFixed(1)}\n`);
+        addToOutput(`\n---- achieved tok/s: ${data.tokens_per_second.toFixed(1)}\n\n`);
       } else if (data.type === "error") {
         addToOutput(`\n${data.message}\n`);
       }
@@ -183,6 +183,7 @@
       code.placeholder = model.placeholder;
       ready = false;
       run.disabled = select.disabled = true;
+      addToOutput("----\n");
       worker.postMessage({ type: "load", model });
     };
 
@@ -192,7 +193,7 @@
         return;
       }
       run.disabled = select.disabled = true;
-      addToOutput("Prompt: " + code.value + "\n");
+      addToOutput(`---- ${model.label}\n---- Prompt: ${code.value}\n`);
       worker.postMessage({ type: "generate", prompt: code.value, ...model.generation });
     }
   </script>
