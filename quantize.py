@@ -7,29 +7,13 @@
 #   python3 quantize.py <in: float32 checkpoint> <out: int8 checkpoint>
 import struct
 import sys
+from pathlib import Path
 
 import numpy as np
 
-
-def group_size(row_length):
-    size = 32
-    while row_length % size:
-        size //= 2
-    return size
-
-
-def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len):
-    """(shape, is a matrix) of every tensor, in file order. llama2_numpy.py reads the same order."""
-    head_size = dim // n_heads
-    kv_dim = n_kv_heads * head_size
-    tensors = [((abs(vocab_size), dim), True), ((n_layers, dim), False),
-               ((n_layers, dim, dim), True), ((n_layers, kv_dim, dim), True), ((n_layers, kv_dim, dim), True),
-               ((n_layers, dim, dim), True), ((n_layers, dim), False),
-               ((n_layers, hidden_dim, dim), True), ((n_layers, dim, hidden_dim), True), ((n_layers, hidden_dim, dim), True),
-               ((dim,), False), ((seq_len, head_size // 2), None), ((seq_len, head_size // 2), None)]
-    if vocab_size < 0:
-        tensors.append(((abs(vocab_size), dim), True))
-    return tensors
+# the format and the arithmetic are shared with the converter, which also writes int8 directly
+sys.path.insert(0, str(Path(__file__).resolve().parent / "public"))
+from llama2_convert import group_size, layout, quantize  # noqa: E402, F401
 
 
 if __name__ == "__main__":
@@ -46,9 +30,7 @@ if __name__ == "__main__":
             if not is_matrix:
                 f.write(tensor.tobytes())
                 continue
-            groups = tensor.reshape(-1, group_size(shape[-1]))
-            scales = (np.abs(groups).max(axis=1) / 127.0).astype(np.float32)
-            inverse = np.divide(1.0, scales, out=np.zeros_like(scales), where=scales > 0)
-            f.write(np.rint(groups * inverse[:, None]).astype(np.int8).tobytes())
+            values, scales = quantize(tensor.reshape(-1, shape[-1]))
+            f.write(values.tobytes())
             f.write(scales.tobytes())
     assert offset == len(data), "not a float32 legacy checkpoint"

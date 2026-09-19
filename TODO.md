@@ -23,18 +23,7 @@
 - 手順: ページの読み込み時にパラメータを読んで T35 の設定の状態に入れる（既定値から変わっているので、アイコンに点が付く）。数値として読めないもの・範囲外のものは無視する。モデルを切り替えたときの扱いは T35 と同じ（シードだけ持ち越す）。余裕があれば、回答の下の行からその回答の設定つきのリンクをコピーできるようにする（要素は増やさず、内訳の中に置く）。
 - 完了条件: `?model=tiny-lm&seed=1&temperature=0.7` を 2 回開いて同じプロンプトを送ると同じ文になる。おかしな値（`?temperature=abc`、`?steps=-5`）で壊れない。
 
-### T41 ストリーム変換器（Hugging Face 形式 → このプロジェクトの形式）— 状態: 進行中（担当: Fable。T39 とは独立）
-- 目的: safetensors のモデルを、テンソルを 1 つずつ読んで変換し、最終的なバッファへ直接書く変換器を作る。T42（ブラウザの中での変換）の本体で、UI を含まない。Python + NumPy だけで、ブラウザなしで開発・検証できる。
-- なぜ要るか: 素朴にやると safetensors の原本、float32 への展開、量子化した結果が同時にメモリに載る（llm-jp-3-150m で 300MB + 600MB + 170MB）。WebAssembly のメモリは 32 ビットで縮まないので、ブラウザでは破綻する。
-- 設計:
-  - 読み込み元に依存させない: 変換器は「オフセットと長さを渡すとバイト列を返す読み手」（`read(offset, length)`）を受け取る。ネイティブではファイル、ブラウザではローカルの `File.slice()`、T39 が入れば Range 要求を同じ形で渡せる。
-  - safetensors はヘッダ（JSON）に各テンソルのオフセットがあるので、出力の順（`quantize.py` の `layout()` の順）に 1 つずつ読む → bfloat16 / float16 の展開 → q・k の並べ替え（`permute_reverse`）→ 出力の `dtype` に応じて float32 / float16 / int8（グループ 32）にして書く → 原本を手放す。int8 へは float32 の全体を経由せずに直接変換する。
-  - ビルド時の `convert_hf.py`・`quantize.py` とコードを共有する（ブラウザ専用の別実装を作らない）。`make models` のメモリも減るはず。
-  - v1 は safetensors + `tokenizer.json` + `config.json` に限る。PyTorch の pickle（`pytorch_model.bin`）と sentencepiece の `spiece.model` は、ビルド時の経路としては残すが、ストリーム変換の対象にはしない（tiny-lm は HF に pickle しか置いていないので、この変換器の検証には使えない）。
-  - `config.json` の検証: Llama 系だけ受け付ける（`model_type`、`rope_theta`、GQA、語彙の大きさ、`tie_word_embeddings`、`max_position_embeddings` と切り詰め）。対応外はトレースバックなしの文で断る。
-- 完了条件: llm-jp-3-150m（safetensors）をこの変換器で float32・float16・int8 に変換した結果が、いまの `make models` の出力（`convert_hf.py` → `quantize.py`）とバイト単位で一致する。変換中のメモリのピークを実測して記録する（目標: 出力の大きさ + 最大のテンソル 1 個ぶん程度）。pytest に、小さな合成 safetensors での一致と、対応外の `config.json` を断るテストを足す。
-
-### T42 ブラウザの中で Hugging Face 形式を変換して動かす — 状態: 未着手（T41 の後）
+### T42 ブラウザの中で Hugging Face 形式を変換して動かす — 状態: 進行中（担当: Fable）
 - 目的: フォルダのボタン（T38）で `.safetensors` + `config.json` + `tokenizer.json` を選ぶと、ブラウザの中で変換してそのまま動く。「変換も WASM Python でやる」という実験。
 - 手順: ページは選ばれたファイルの種類を見分けて（`.safetensors` があれば HF 形式）Worker に渡す。Worker は T41 の変換器を Pyodide で呼び、読み手には `File.slice()` を渡す（同期の読み手が要るなら Worker では `FileReaderSync` が使える）。進捗はテンソル単位で `progress` に出す。出力の `dtype` は int8 を既定にする（ヒープを小さく保つため）。T37 の中止と番号の仕組みをそのまま使う。
 - 完了条件: 小さい safetensors のモデル（既存のモデルから作るか、HF で探す）を実ブラウザで変換して動かし、出力がビルド時に変換した同じモデルと一致する。変換中の WASM ヒープの最大値を測って記録する。llm-jp-3-150m をブラウザで変換できるかは、測ったうえで判断する（この開発機では試せない可能性があり、試せなければ「未確認」と書く）。対応外のモデルで分かりやすいエラーが出て、配布モデルへ戻れる。
@@ -82,6 +71,7 @@
 - [x] **T38 ローカルのモデルファイルを使う。**（Fable）モデル選択の右のフォルダのボタン（隠した `<input type="file" multiple>` の `<label>`）か、ページへのドラッグ & ドロップで、チェックポイント + `tokenizer.bin`（+ 任意で設定の `.json`。`src/models.js` の 1 項目と同じ形）を選ぶ。`.json` 以外の大きいほうがチェックポイント。ファイルは `File` のまま Worker に渡し、`file.stream()` でダウンロードと同じ Python バッファへ読む（アップロードなし、Cache API にも入れない）。`dtype` はエンジンの `checkpoint_dtype()` がヘッダとファイルの大きさから判定し、`check_tokenizer()` が語彙の大きさの合わない `tokenizer.bin` を断る（エンジンは大きい語彙の先頭だけを黙って読んでしまうため）。どちらも大きなファイルを読む前に走り、トレースバックなしの文で出る。読んだモデルはコンボボックスに `名前 — local · 33 MB` の一時的な項目として出て、配布モデルとの行き来はダイアログなしでできる。1GB を超えるファイルは `confirm()` で確認する。実ブラウザで確認（Chromium。`node tests/e2e.mjs local` は Firefox でも）: float32（stories260K、期待どおりの出力）、int8 + 設定の JSON（tiny-lm、unigram・NFKC・サンプリング）、ドロップした int8（stories15M）、読み込み中にモデルの取得リクエストが 0 件、トークナイザ 2 つ / 語彙の合わない組 / 1 ファイルだけ、のそれぞれでエラーが出て配布モデルへ戻れる、390px でスクロールしない。手元の全モデル（float32 / float16 / int8 の 12 ファイル）で判定が正しく、トークナイザ 5 つは「チェックポイントではない」と断られる。未確認: 1GB 超のファイル（この機械では試せない）、読み込み中の切り替えによる中止（経路は T37 と同じだが、ローカルの読み込みは一瞬で終わるので試せていない）、スマホ実機のファイル選択。
 - [x] **T35 生成設定の変更。**（Fable）入力欄の左端のスライダーのアイコンから、PC ではポップオーバー、640px 以下では下から出るシートで Temperature（0 は greedy）・Max tokens（上限はそのモデルの `seq_len`。Worker が `ready` で知らせる）・Seed（空欄は毎回ランダム、× で空欄に戻す）を変える。top-p と繰り返しペナルティは「More」の中。OK ボタンはなく次の生成から効き、既定値と違う間はアイコンに点が付く。「Reset to defaults」で `model.generation` に戻る。回答の下のシードはボタンになり、押すとそのシードを固定する（行は開かない）。モデルを切り替えると既定値に戻るが、**シードだけは持ち越す**。決めたこと: ハンバーガーメニューにしない、入力欄の上の `<details>` にしない、リロードをまたいで保存しない、パネルはフォームの外に置く（フォームの中だと、シードの欄で Enter を押したときにプロンプトが送信される）。Popover API を使い、ライブラリなし。実ブラウザで確認（Chromium）: 同じシードで 2 回 → 同じ文、ランダムなシードをタップ → tiny-lm（int8）から原本に切り替え → そのシードで生成、リセット、temperature 0 で `greedy` 表示・シードのボタンなし、Esc と外側のクリックで閉じる、シードの欄の Enter で送信されない、390px でシートを開いてもページはスクロールしない。速度は変わらず（tiny-lm 280、stories260K 892〜953 tok/s）。未確認: Firefox と Safari での見た目、スマホ実機でのキーボードとの兼ね合い。
 - [x] **入力欄を 2 行に。**（Fable、T36 の続き）1 行だと複数行を書ける欄だと気づけないので、`rows="2"` にした（5 行まで伸びるのはそのまま）。
+- [x] **T41 ストリーム変換器。**（Fable）`public/llama2_convert.py`: safetensors を `read(offset, length)` 越しに 100 万値（float32 で 4MB）ずつ読み、最初から最終サイズで確保した出力バッファの正しい位置へ float32 / float16 / int8 で直接書く（int8 は「全層の値 → 全層のスケール」という並びなので、順に追記するのではなく位置を計算して書く）。q・k の並べ替えだけは行列 1 個を丸ごと読む。`config.json` の検証（Llama 以外、RoPE scaling、bias、silu 以外、ヘッドの割り切れなさをトレースバックなしの文で断る）、`tokenizer.json`（Unigram）と sentencepiece のモデルから `tokenizer.bin` と `tokenizer_kind`・`nfkc` を求める関数も同じファイルにある。`convert_hf.py` と `quantize.py` はこのモジュールを使う形に書き直した（PyTorch の pickle を読む部分だけが `convert_hf.py` に残る）。検証: 新しいコードで llm-jp-3-150m と tiny-lm を float32・float16・int8 に変換した 6 個とトークナイザ 2 個が、書き換え前の `make models` の出力と **すべてバイト単位で一致**。メモリのピークは llm-jp-3-150m で「出力 + 13MB」（int8 なら 171 + 13MB、1.7 秒。断片を 4 倍にすると + 52MB で速度は同じ）。Makefile は HF の 2 モデルを int8 へ直接変換するようにした（609MB と 117MB の float32 の中間ファイルが要らなくなった。`make models` をやり直して全出力のチェックサムが一致）。pytest に合成 safetensors での一致（float32 は元のチェックポイントと、int8 は `quantize.py` の出力と一致。F32 / F16 / BF16）、断片読みの確認、対応外の断り方を追加（117 件）。テストが見つけたバグ: 最後のテンソルが RoPE の表のとき進捗が 100% にならなかった。
 
 ## やらないと決めたこと
 

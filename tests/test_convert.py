@@ -1,0 +1,177 @@
+"""llama2_convert.py: a Hugging Face checkpoint, read piece by piece, becomes exactly the checkpoint of the build."""
+import json
+import struct
+import subprocess
+import sys
+
+import numpy as np
+import pytest
+from conftest import ROOT, pack_checkpoint, synthetic_weights
+import llama2_convert
+from llama2_convert import (Arrays, Safetensors, check_config, checkpoint_header, checkpoint_size, convert_weights,
+                            tokenizer_bin, tokenizer_json_options, tokenizer_json_pieces)
+from llama2_numpy import Llama, Tokenizer, check_tokenizer, checkpoint_dtype
+
+
+def hugging_face(config, weights, shared):
+    """The tensors and the config.json Hugging Face would publish for these llama2.c weights."""
+    dim, n_heads, n_kv_heads = config["dim"], config["n_heads"], config["n_kv_heads"]
+    head_size = dim // n_heads
+
+    def permute(w, heads):  # llama2.c's adjacent pairs -> [first halves, second halves]: what convert undoes
+        return w.reshape(heads, head_size // 2, 2, w.shape[1]).transpose(0, 2, 1, 3).reshape(w.shape)
+
+    tensors = {"model.embed_tokens.weight": weights["token_embedding_table"], "model.norm.weight": weights["rms_final_weight"]}
+    names = dict(rms_att_weight="input_layernorm", wq="self_attn.q_proj", wk="self_attn.k_proj", wv="self_attn.v_proj",
+                 wo="self_attn.o_proj", rms_ffn_weight="post_attention_layernorm", w1="mlp.gate_proj", w2="mlp.down_proj",
+                 w3="mlp.up_proj")
+    for ours, theirs in names.items():
+        for layer in range(config["n_layers"]):
+            tensor = weights[ours][layer]
+            if ours in ("wq", "wk"):
+                tensor = permute(tensor, n_heads if ours == "wq" else n_kv_heads)
+            tensors[f"model.layers.{layer}.{theirs}.weight"] = np.ascontiguousarray(tensor)
+    if not shared:
+        tensors["lm_head.weight"] = weights["wcls"]
+    published = dict(model_type="llama", hidden_size=dim, intermediate_size=config["hidden_dim"],
+                     num_hidden_layers=config["n_layers"], num_attention_heads=n_heads, num_key_value_heads=n_kv_heads,
+                     vocab_size=config["vocab_size"], max_position_embeddings=config["seq_len"], rope_theta=10000.0,
+                     tie_word_embeddings=shared)
+    return tensors, published
+
+
+def safetensors_file(tensors, stored="F32"):
+    header, data = {"__metadata__": {"format": "pt"}}, b""
+    for name, tensor in tensors.items():
+        if stored == "BF16":  # the upper half of the float32: what bfloat16 is
+            raw = (np.ascontiguousarray(tensor, dtype=np.float32).view(np.uint32) >> 16).astype(np.uint16).tobytes()
+        else:
+            raw = np.ascontiguousarray(tensor, dtype={"F32": np.float32, "F16": np.float16}[stored]).tobytes()
+        header[name] = {"dtype": stored, "shape": list(tensor.shape), "data_offsets": [len(data), len(data) + len(raw)]}
+        data += raw
+    encoded = json.dumps(header).encode()
+    return struct.pack("<Q", len(encoded)) + encoded + data
+
+
+def reader(file, log=None):
+    def read(offset, length):
+        if log is not None:
+            log.append(length)
+        return file[offset:offset + length]
+    return read
+
+
+def converted(source, published, dtype, max_seq_len=1 << 20):
+    out = bytearray(checkpoint_size(checkpoint_header(published, source, max_seq_len), dtype))
+    convert_weights(source, published, dtype, max_seq_len, out)
+    return bytes(out)
+
+
+CONFIGS = [dict(n_kv_heads=4), dict(n_kv_heads=2), dict(n_kv_heads=1, shared=False), dict(n_kv_heads=4, hidden_dim=48)]
+
+
+@pytest.mark.parametrize("config", CONFIGS)
+def test_float32_is_the_checkpoint_the_weights_came_from(config, monkeypatch):
+    monkeypatch.setattr(llama2_convert, "PIECE", 700)  # several pieces per tensor, and not a multiple of a row
+    shared = config.get("shared", True)
+    config, weights = synthetic_weights(**config)
+    tensors, published = hugging_face(config, weights, shared)
+    expected = pack_checkpoint(config, weights)
+    assert converted(Safetensors(reader(safetensors_file(tensors))), published, "float32") == expected
+    assert converted(Arrays(tensors), published, "float32") == expected
+
+
+@pytest.mark.parametrize("config", CONFIGS)
+def test_int8_is_what_quantize_makes_of_float32(tmp_path, config, monkeypatch):
+    monkeypatch.setattr(llama2_convert, "PIECE", 700)
+    shared = config.get("shared", True)
+    config, weights = synthetic_weights(**config)
+    tensors, published = hugging_face(config, weights, shared)
+    source, target = tmp_path / "model.f32", tmp_path / "model.bin"
+    source.write_bytes(pack_checkpoint(config, weights))
+    subprocess.run([sys.executable, str(ROOT / "quantize.py"), str(source), str(target)], check=True)
+    int8 = converted(Safetensors(reader(safetensors_file(tensors))), published, "int8")
+    assert int8 == target.read_bytes()
+    assert checkpoint_dtype(struct.unpack_from("<7i", int8, 0), len(int8)) == "int8"
+
+
+def test_half_precision_sources_and_targets():
+    config, weights = synthetic_weights(n_kv_heads=2)
+    tensors, published = hugging_face(config, weights, True)
+    # bfloat16 keeps the upper half of each float32: truncate the weights the same way, and the result is exact
+    truncated = {name: (np.ascontiguousarray(tensor).view(np.uint32) >> 16 << 16).view(np.float32) for name, tensor in tensors.items()}
+    from_bfloat16 = converted(Safetensors(reader(safetensors_file(tensors, "BF16"))), published, "float32")
+    assert from_bfloat16 == converted(Arrays(truncated), published, "float32")
+    float16 = converted(Safetensors(reader(safetensors_file(tensors, "F16"))), published, "float16")
+    assert checkpoint_dtype(struct.unpack_from("<7i", float16, 0), len(float16)) == "float16"
+    reference = np.frombuffer(pack_checkpoint(config, weights), dtype=np.float32, offset=28).astype(np.float16)
+    assert np.array_equal(np.frombuffer(float16, dtype=np.float16, offset=28), reference)
+
+
+def test_it_reads_pieces_and_never_the_whole_file(monkeypatch):
+    monkeypatch.setattr(llama2_convert, "PIECE", 2048)
+    config, weights = synthetic_weights(vocab_size=1000)
+    tensors, published = hugging_face(config, weights, True)
+    file, log, progress = safetensors_file(tensors), [], []
+    source = Safetensors(reader(file, log))
+    out = bytearray(checkpoint_size(checkpoint_header(published, source, 1 << 20), "int8"))
+    convert_weights(source, published, "int8", 1 << 20, out, progress=lambda done, total: progress.append(done / total))
+    header_bytes = log[1]
+    assert max(length for length in log if length != header_bytes) <= 2048 * 4
+    assert progress == sorted(progress) and progress[-1] == 1.0 and len(progress) > 20
+
+
+def test_the_context_can_be_cut_and_the_engine_runs_the_result():
+    config, weights = synthetic_weights()
+    tensors, published = hugging_face(config, weights, True)
+    checkpoint = converted(Arrays(tensors), published, "float32", max_seq_len=16)
+    assert struct.unpack_from("<7i", checkpoint, 0)[6] == 16
+    vocabulary = tokenizer_bin([("<unk>", 0.0, False)] + [(f"▁w{i}", -float(i), True) for i in range(40)], config["vocab_size"])
+    check_tokenizer(vocabulary, struct.unpack_from("<7i", checkpoint, 0))
+    llama = Llama(checkpoint, vocabulary, tokenizer_kind="unigram")
+    assert len(list(llama.generate(" w1 w2", steps=12))) > 0
+
+
+@pytest.mark.parametrize("change, reason", [
+    (dict(model_type="gpt2"), "only Llama models"), (dict(rope_scaling={"type": "linear"}), "RoPE scaling"),
+    (dict(hidden_act="gelu"), "gelu"), (dict(attention_bias=True), "biases"), (dict(num_attention_heads=5), "heads"),
+    (dict(vocab_size=None), "vocab_size"), (dict(head_dim=3), "heads")])
+def test_a_model_the_engine_cannot_run_is_refused(change, reason):
+    config, weights = synthetic_weights()
+    _, published = hugging_face(config, weights, True)
+    with pytest.raises(ValueError, match=reason):
+        check_config({**published, **change})
+
+
+def test_missing_and_misshapen_tensors_are_refused():
+    config, weights = synthetic_weights()
+    tensors, published = hugging_face(config, weights, True)
+    missing = {name: tensor for name, tensor in tensors.items() if "layers.1.mlp.up_proj" not in name}
+    with pytest.raises(ValueError, match="up_proj.weight is missing"):
+        converted(Arrays(missing), published, "float32")
+    with pytest.raises(ValueError, match="embed_tokens.weight is"):
+        converted(Arrays(tensors), {**published, "vocab_size": 999}, "float32")
+    for broken in (b"\x00" * 64, struct.pack("<Q", 20) + b"this is not json....", b"\xff" * 64):
+        with pytest.raises(ValueError, match="not a safetensors file"):
+            Safetensors(reader(broken))
+    wrong = safetensors_file(tensors).replace(b'"F32"', b'"I64"')
+    with pytest.raises(ValueError, match="stored as I64"):
+        converted(Safetensors(reader(wrong)), published, "float32")
+
+
+def test_tokenizer_json():
+    tokenizer = {"added_tokens": [{"content": "<s>", "special": True}],
+                 "normalizer": {"type": "Sequence", "normalizers": [{"type": "NFKC"}]},
+                 "model": {"type": "Unigram", "unk_id": 0,
+                           "vocab": [["<unk>", 0.0], ["<s>", 0.0], ["<0x41>", 0.0], ["▁hello", -1.5], ["猫", -2.0]]}}
+    pieces = list(tokenizer_json_pieces(tokenizer))
+    assert [matchable for _, _, matchable in pieces] == [False, False, False, True, True]
+    data = tokenizer_bin(pieces, 8)  # three embedding rows more than pieces
+    vocabulary = Tokenizer(data, 8, kind="unigram")
+    assert vocabulary.vocab[3] == b" hello" and vocabulary.vocab[7] == b"" and vocabulary.scores[1] < Tokenizer.UNMATCHABLE
+    assert tokenizer_json_options(tokenizer) == {"tokenizer_kind": "unigram", "nfkc": True}
+    assert tokenizer_json_options({**tokenizer, "normalizer": None})["nfkc"] is False
+    with pytest.raises(ValueError, match="vocabulary of 4"):
+        tokenizer_bin(pieces, 4)
+    with pytest.raises(ValueError, match="only Unigram"):
+        list(tokenizer_json_pieces({**tokenizer, "model": {"type": "BPE"}}))
