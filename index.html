@@ -9,6 +9,7 @@
        and the prompt stays at the bottom, like in a chat. */
     html, body { height: 100%; margin: 0; }
     h1 { margin: 0 0 4px; font-size: 1.4em; }
+    #purpose { margin: 0 0 4px; font-size: 0.85em; }
     body { display: flex; flex-direction: column; box-sizing: border-box; padding: 8px; height: 100dvh; }
     #output { flex: 1; min-height: 6em; resize: none; box-sizing: border-box; }
     #prompt-form { display: flex; gap: 4px; margin-top: 8px; }
@@ -18,6 +19,12 @@
 
 <body>
   <h1>Pyodide Llama2</h1>
+  <p id="purpose">
+    An experiment in how far Python on WebAssembly can go: a language model that runs entirely in your browser,
+    written in Python with NumPy on Pyodide. It is a test bed, not a product, so expect small models and odd answers.<br />
+    ブラウザ上の WebAssembly 版 Python (Pyodide + NumPy) だけで言語モデルを動かす実験プロジェクトです。
+    実用ではなく試験が目的のため、モデルは小さく、出力はそれなりです。
+  </p>
   <details>
   <summary>About</summary>
   <p>
@@ -31,7 +38,8 @@
     <li><a href="https://github.com/takano32/pyodide-llama2-py">https://github.com/takano32/pyodide-llama2-py</a></li>
     <li><a href="https://github.com/pyodide/pyodide">https://github.com/pyodide/pyodide</a></li>
     <li><a href="https://github.com/tairov/llama2.py">https://github.com/tairov/llama2.py</a></li>
-    <li><a href="https://huggingface.co/sbintuitions/tiny-lm">https://huggingface.co/sbintuitions/tiny-lm</a> (<a href="tiny-lm.LICENSE.txt">MIT License</a>)</li>
+    <li><a href="https://huggingface.co/llm-jp/llm-jp-3-150m">https://huggingface.co/llm-jp/llm-jp-3-150m</a> (Apache License 2.0)</li>
+    <li><a href="https://huggingface.co/sbintuitions/tiny-lm">https://huggingface.co/sbintuitions/tiny-lm</a> (<a href="models/tiny-lm.LICENSE.txt">MIT License</a>)</li>
     <li><a href="https://huggingface.co/karpathy/tinyllamas">https://huggingface.co/karpathy/tinyllamas</a></li>
   </ul>
   </details>
@@ -59,19 +67,26 @@
     let ready = false;
 
     // bytes is the checkpoint size: the progress bar needs it, because GitHub Pages compresses the download.
-    // The first model is the default; ?model=<id> picks another one. Every file is fetched when the site is
-    // deployed (see the Makefile): tiny-lm is converted from its Hugging Face checkpoint by convert_hf.py,
-    // and the larger models are quantized to int8 by quantize.py.
+    // The first model is the default (tiny-lm on phones); ?model=<id> picks another one. Every file is fetched when the site is
+    // deployed (see the Makefile): llm-jp-3 and tiny-lm are converted from their Hugging Face checkpoints by
+    // convert_hf.py, and the larger models are quantized to int8 by quantize.py.
     const STORY_PLACEHOLDER = "Type the beginning of a story (e.g. Lily and Tom went to the park.)";
+    const JAPANESE_PLACEHOLDER = "文章の書き出しを入力してください（例: 富士山は、）";
     const MODELS = [
+      {
+        id: "llm-jp-3-150m", label: "llm-jp-3 150M, 日本語 / English, int8, desktop only (171 MB)",
+        checkpoint: "llm-jp-3-150m.bin", bytes: 171395100, tokenizer: "llm-jp-3-150m.tokenizer.bin",
+        options: { dtype: "int8", tokenizer_kind: "unigram", stop_tokens: [1, 2, 7] },
+        generation: { steps: 256, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 },
+        prompt: "昔々、", placeholder: JAPANESE_PLACEHOLDER,
+      },
       {
         id: "tiny-lm", label: "tiny-lm 29M, 日本語 / English, int8 (33 MB)",
         checkpoint: "tiny-lm.bin", bytes: 32891932, tokenizer: "tiny-lm.tokenizer.bin",
         options: { dtype: "int8", tokenizer_kind: "unigram", nfkc: true, stop_tokens: [1, 2] },
         // greedy decoding makes such a small model loop, so sample, and penalize repetition
         generation: { steps: 256, temperature: 0.7, topp: 0.9, repetition_penalty: 1.3 },
-        // trained on Wikipedia: it continues an encyclopedia-like opening best
-        prompt: "昔々、", placeholder: "文章の書き出しを入力してください（例: 富士山は、）",
+        prompt: "昔々、", placeholder: JAPANESE_PLACEHOLDER,
       },
       {
         id: "stories15M", label: "TinyStories 15M, English, int8 (17 MB)",
@@ -99,7 +114,7 @@
         checkpoint: "tiny-lm.f16", bytes: 58724892, tokenizer: "tiny-lm.tokenizer.bin",
         options: { dtype: "float16", tokenizer_kind: "unigram", nfkc: true, stop_tokens: [1, 2] },
         generation: { steps: 256, temperature: 0.7, topp: 0.9, repetition_penalty: 1.3 },
-        prompt: "昔々、", placeholder: "文章の書き出しを入力してください（例: 富士山は、）",
+        prompt: "昔々、", placeholder: JAPANESE_PLACEHOLDER,
       },
       {
         id: "stories15M-f32", label: "TinyStories 15M, English, original float32 (61 MB)",
@@ -116,7 +131,9 @@
       select.add(new Option(label, id));
     }
     const requested = new URLSearchParams(location.search).get("model");
-    let model = MODELS.find(({ id }) => id === requested) ?? MODELS[0];
+    // llm-jp-3 needs about 500 MB of memory, which a phone's browser tab may not get: phones start with tiny-lm
+    const fallback = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? "tiny-lm" : MODELS[0].id;
+    let model = MODELS.find(({ id }) => id === (requested ?? fallback)) ?? MODELS[0];
     select.value = model.id;
     code.value = model.prompt;
     code.placeholder = model.placeholder;

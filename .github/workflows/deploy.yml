@@ -39,8 +39,7 @@ jobs:
         run: |
           mkdir public
           cp index.html worker.js llama2_numpy.py public/
-          rm tiny-lm.f32  # only an intermediate: the original precision of tiny-lm is tiny-lm.f16
-          mv *.bin *.f32 *.f16 tiny-lm.LICENSE.txt public/
+          mv models public/
 
       - name: Setup Pages
         uses: actions/configure-pages@v6

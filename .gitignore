@@ -3,6 +3,8 @@
 *.f32
 *.f16
 tiny-lm/
+llm-jp-3-150m/
+models/
 tiny-lm.LICENSE.txt
 *.wasm
 *.so

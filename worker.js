@@ -19,6 +19,55 @@ async function resolvePyodideVersion(search) {
   return version;
 }
 
+// Checkpoints are deployed in parts of 8 MiB (see the Makefile). Several parts download at once, which is
+// about twice as fast as one stream, and the download runs while Pyodide is still loading: until the Python
+// buffer exists the chunks wait in a queue, after that every chunk is written straight into it.
+const PART_BYTES = 8 * 1024 * 1024;
+const CONNECTIONS = 4;
+
+function download(model) {
+  const parts = Math.ceil(model.bytes / PART_BYTES);
+  const queue = [];
+  let sink, next = 0, received = 0, reported = -1;
+  const connection = async () => {
+    while (next < parts) {
+      const part = next++;
+      const res = await fetch(new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, import.meta.url));
+      if (!res.ok) {
+        throw new Error(`Could not fetch part ${part} of ${model.checkpoint}: ${res.status}`);
+      }
+      const reader = res.body.getReader();
+      for (let offset = part * PART_BYTES; ;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        sink ? sink(offset, value) : queue.push([offset, value]);
+        offset += value.length;
+        received += value.length;
+        // one message per percent is plenty
+        const percent = Math.floor((received / model.bytes) * 100);
+        if (percent !== reported) {
+          reported = percent;
+          postMessage({ type: "progress", received, total: model.bytes });
+        }
+      }
+    }
+  };
+  const finished = Promise.all(Array.from({ length: Math.min(CONNECTIONS, parts) }, connection));
+  return {
+    // write(offset, chunk) receives everything queued so far, and every later chunk
+    async into(write) {
+      sink = write;
+      queue.splice(0).forEach(([offset, chunk]) => write(offset, chunk));
+      await finished;
+      if (received !== model.bytes) {
+        throw new Error(`${model.checkpoint}: got ${received} bytes instead of ${model.bytes}`);
+      }
+    },
+  };
+}
+
 let pyodide, llama2_numpy, llama;
 
 async function init(search) {
@@ -36,25 +85,40 @@ async function init(search) {
   llama2_numpy = pyodide.pyimport("llama2_numpy");
 }
 
-async function load(model) {
+// a Python bytearray that JavaScript fills in place
+function pythonBuffer(size) {
+  const buffer = pyodide.globals.get("bytearray")(size);
+  const write = (offset, chunk) => {
+    // the view is taken anew every time: it dies when the WebAssembly memory grows
+    const view = buffer.getBuffer("u8");
+    view.data.set(chunk, offset);
+    view.release();
+  };
+  return { buffer, write };
+}
+
+async function load(model, ready = Promise.resolve()) {
   // let go of the previous model first, so that two never have to fit in memory
   llama?.destroy();
   llama = undefined;
   postMessage({ type: "status", text: `Downloading ${model.label}...` });
-  let reported = -1;
-  const progress = (received, total) => {
-    // one message per percent is plenty
-    const percent = Math.floor((received / total) * 100);
-    if (percent !== reported) {
-      reported = percent;
-      postMessage({ type: "progress", received, total });
+  const checkpoint = download(model);
+  const tokenizerBytes = fetch(new URL(`models/${model.tokenizer}`, import.meta.url)).then((res) => {
+    if (!res.ok) {
+      throw new Error(`Could not fetch ${model.tokenizer}: ${res.status}`);
     }
-  };
-  llama = await llama2_numpy.load.callKwargs(
-    new URL(model.checkpoint, import.meta.url).href,
-    new URL(model.tokenizer, import.meta.url).href,
-    { progress, size: model.bytes, ...model.options },
-  );
+    return res.arrayBuffer();
+  });
+  await ready;
+
+  const weights = pythonBuffer(model.bytes);
+  await checkpoint.into(weights.write);
+  const vocabulary = new Uint8Array(await tokenizerBytes);
+  const tokenizer = pythonBuffer(vocabulary.length);
+  tokenizer.write(0, vocabulary);
+  llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, model.options);
+  weights.buffer.destroy();
+  tokenizer.buffer.destroy();
   postMessage({ type: "ready", pyodide: pyodide.version });
 }
 
@@ -74,8 +138,8 @@ function generate({ type, prompt, ...options }) {
 self.onmessage = async ({ data }) => {
   try {
     if (data.type === "init") {
-      await init(data.search);
-      await load(data.model);
+      // the model downloads while Pyodide loads
+      await load(data.model, init(data.search));
     } else if (data.type === "load") {
       await load(data.model);
     } else if (data.type === "generate") {
