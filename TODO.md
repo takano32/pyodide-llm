@@ -46,7 +46,8 @@
 - 手順: 30 行程度の最小の再現例（AssemblyScript の関数 1 つ、`build.py` の要点、Pyodide から呼んで NumPy の配列を書き換える）と、なぜ動くか・制約（静的データ不可、`.so` の先読み、relaxed SIMD の分離）・実測を 1 本の文章にする。置き場所は gist（既存の調査レポートの続編）か `kernels/README.md` の冒頭。公開（gist の作成）は持ち主に確認してから。
 - 完了条件: 最小の再現例がこのリポジトリの外（素の Pyodide + Node）で動くことを確かめてある。
 
-### T60 Hugging Face から検証済みのモデルを取得して、変換して動かす — 状態: 未着手（持ち主の発案。2026-09-19 にデザインの 4 点が決まった。規模 中〜大、Fable 向き）
+### T60 Hugging Face から検証済みのモデルを取得して、変換して動かす — 状態: 進行中（担当: Fable。2026-09-20 着手）
+- 進み具合（2026-09-20）: **1 つめの区切りまで完了・push 済み。** HF から取得 → ブラウザの中で変換 → Cache API に保存 → 2 回目はキャッシュから、が `llm-jp-3-150m-instruct3` で通った（Chromium、この開発機）: 取得と変換 37〜38 秒（305MB、日本から）、ヒープ 353MB、指示に応答して自分で止まる、81 tok/s。2 回目の訪問は準備完了まで 8.3 秒（キャッシュから 0.63 秒）、huggingface.co への要求 0 件、同じシードで同じ答え。About の一覧から削除できる。設計で変えた点: **変換器は「出力の順に読む」のをやめ、「ファイルの順に届いたテンソルから変換して、出力の正しい位置へ書く」（`llama2_convert.Stream`）にした。** Worker から HF への Range 要求は Chromium でも Firefox でも通るが、ここからだと 1 回 1〜3 秒かかり、出力の順に読むと数百回の要求になるため。8 MiB の部品を 6 並列で取り、順番どおりに変換器へ渡す。ローカルのファイル（T42）も同じ経路になった。残り: 440M を手元で、1B 級を CI で確認、TinyLlama Chat（テンプレートの中の `</s>` を特殊トークンとして扱う必要がある）、`?hf=` と T39 の吸収、`browsers.yml` に HF のモデルを 1 つ、文書。
 - 発案: どこかに「Hugging Face を使う」スイッチを置き、オンのときはコンボボックスから HF の代表的なモデルを選べるようにする。T39 の派生。
 - 前提は揃っている: T41 の変換器は `read(offset, length)` しか要らず、T42 でブラウザの中の変換は実証済み（llm-jp-3-150m を 7 秒、ヒープは変換後のモデルと同じ）。**2026-09-19 に確認: HF のファイル取得は CORS を許可し（`access-control-allow-origin`）、Range 要求に 206 と `content-range` で応える**（`https://huggingface.co/<repo>/resolve/main/model.safetensors`、CDN へのリダイレクト越し）。
 - いちばんの注意: **「代表的なモデル」の大半は動かない。** エンジンが動かせるのは、素の Llama 構造（bias なし、RoPE scaling なし、silu）で、safetensors が 1 ファイルで、トークナイザが Unigram の `tokenizer.json` か sentencepiece のモデルのもの。Llama 3 系（tiktoken の BPE、RoPE scaling、承認制）、Qwen、Gemma、Phi、SmolLM2（構造は Llama だがトークナイザが byte-level BPE）は動かない。だから一覧は「代表的」ではなく「**動くことを確かめたもの**」にする。HF の API で確認した候補（すべて Apache-2.0、承認不要）:

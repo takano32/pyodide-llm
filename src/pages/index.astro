@@ -56,7 +56,13 @@
             <li><a href="https://huggingface.co/llm-jp/llm-jp-3-150m">llm-jp-3-150m</a> (Apache License 2.0)</li>
             <li><a href="https://huggingface.co/sbintuitions/tiny-lm">tiny-lm</a> (<a href="models/tiny-lm.LICENSE.txt">MIT License</a>)</li>
             <li><a href="https://huggingface.co/karpathy/tinyllamas">karpathy/tinyllamas</a> and <a href="https://huggingface.co/ellishg/tinyllamas">ellishg/tinyllamas</a> (MIT License)</li>
+            <li>The models of the last group are fetched from <a href="https://huggingface.co/llm-jp">huggingface.co/llm-jp</a> (Apache License 2.0) when you choose one, and converted to int8 in this browser. They are small, and so are their answers.</li>
           </ul>
+          <!-- what the conversions left in this browser, with a way to get the space back -->
+          <div id="kept" hidden>
+            <p>Converted models kept in this browser:</p>
+            <ul id="kept-list"></ul>
+          </div>
         </details>
       </section>
     </main>
@@ -167,6 +173,7 @@
   #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
   .intro { color: var(--muted); font-size: 0.85rem; }
   .intro p { margin: 0 0 6px; }
+  #kept button { font: inherit; font-size: 0.75rem; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; cursor: pointer; }
   .intro .en { font-size: 0.8rem; }
   summary { cursor: pointer; color: var(--accent); }
   .intro ul { margin: 6px 0 0; padding-left: 1.2em; }
@@ -228,7 +235,7 @@
 </style>
 
 <script>
-  import { MODELS } from "../models.js";
+  import { GROUPS, MODELS } from "../models.js";
 
   declare const __BUILD__: string;
   const $ = (id: string) => document.getElementById(id)!;
@@ -238,9 +245,54 @@
   // the ribbon or the corner, whichever the dice say
   document.querySelector(Math.random() < 0.5 ? ".ribbon" : ".github-corner")!.removeAttribute("hidden");
 
-  for (const { id, name, note } of MODELS) {
-    select.add(new Option(`${name} — ${note}`, id));
+  // What the worker kept of its conversions (public/worker.js, CONVERTED_CACHE): the select says which models need
+  // no download any more, and About lists them with a way to delete them.
+  async function showKept() {
+    const cache = await globalThis.caches?.open("converted-v1").catch(() => undefined);
+    const manifests = [];
+    for (const request of (await cache?.keys()) ?? []) {
+      if (request.url.endsWith("/manifest.json")) {
+        manifests.push({ folder: request.url.slice(0, -"manifest.json".length), ...(await (await cache!.match(request))!.json()) });
+      }
+    }
+    for (const option of select.querySelectorAll("option")) {
+      const entry = MODELS.find(({ id }) => id === option.value) as any;
+      if (entry?.hf) {
+        const kept = manifests.some((manifest) => manifest.repo === entry.hf.repo && manifest.revision === entry.hf.revision);
+        option.textContent = `${entry.name} — ${entry.note}${kept ? " · kept in this browser" : ""}`;
+      }
+    }
+    $("kept").hidden = manifests.length === 0;
+    $("kept-list").textContent = "";
+    for (const manifest of manifests) {
+      const item = document.createElement("li");
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "delete";
+      remove.onclick = async () => {
+        for (const request of await cache!.keys()) {
+          if (request.url.startsWith(manifest.folder)) {
+            await cache!.delete(request);
+          }
+        }
+        showKept();
+      };
+      item.append(`${manifest.name} (${(manifest.bytes / 1e6).toFixed(0)} MB) `, remove);
+      $("kept-list").append(item);
+    }
   }
+  const loadedHow = (data: any) => ((model as any).hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : (model as any).file ? "read" : "download");
+
+  // three groups: what the site was built with, the unquantized originals, and what comes from Hugging Face
+  for (const [group, label] of Object.entries(GROUPS)) {
+    const options = document.createElement("optgroup");
+    options.label = label;
+    for (const { id, name, note } of MODELS.filter((entry) => ((entry as any).group ?? "site") === group)) {
+      options.append(new Option(`${name} — ${note}`, id));
+    }
+    select.append(options);
+  }
+  showKept();
   const requested = new URLSearchParams(location.search).get("model");
   let model = MODELS.find(({ id }) => id === requested) ?? MODELS[0];
   let ready = false;
@@ -409,10 +461,12 @@
       const load = $("load-stats");
       load.textContent = "";
       rows(load, [
-        `Pyodide ${seconds(data.seconds.pyodide)} · ${(model as any).hf ? "conversion" : (model as any).file ? "read" : "download"} ${seconds(data.seconds.download)}${(model as any).hf ? "" : " (at the same time)"}`,
+        `Pyodide ${seconds(data.seconds.pyodide)} · ${loadedHow(data)} ${seconds(data.seconds.download)}${(model as any).hf ? "" : " (at the same time)"}`,
+        ...(data.notKept ? [`not kept for the next visit: ${data.notKept}`] : []),
         `Llama() ${seconds(data.seconds.construct)}`,
       ]);
       $("load").classList.add("measured");
+      showKept();
     } else if (data.type === "token") {
       // stick to the bottom only while the reader is there
       const pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
@@ -533,7 +587,14 @@
   };
 
   select.onchange = () => {
-    model = select.value === "local" ? local! : MODELS.find(({ id }) => id === select.value)!;
+    const chosen = select.value === "local" ? local! : MODELS.find(({ id }) => id === select.value)!;
+    // a large download is asked for first: what is fetched, from whom, and that the conversion happens here
+    const download = select.selectedOptions[0]?.textContent?.includes("kept in this browser") ? 0 : ((chosen as any).download ?? 0);
+    if (download > 500e6 && !confirm(`${chosen.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser. Go on?`)) {
+      select.value = model.id;
+      return;
+    }
+    model = chosen;
     show(model);
     ready = false;
     run.disabled = true;
@@ -585,6 +646,8 @@
     } else {
       delete used.seed;
     }
-    worker.postMessage({ type: "generate", prompt: prompt.value, ...used });
+    // an instruction-tuned model gets what was typed inside the form it was trained on; the bubble shows what was typed
+    const template = (model as any).template as string | undefined;
+    worker.postMessage({ type: "generate", prompt: template ? template.replace("{prompt}", prompt.value) : prompt.value, echo: !template, ...used });
   };
 </script>

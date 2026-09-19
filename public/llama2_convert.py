@@ -184,6 +184,38 @@ def checkpoint_header(config, source, max_seq_len):
             vocab_size if shared_classifier else -vocab_size, min(config["max_position_embeddings"], max_seq_len))
 
 
+def permute_heads(w, heads, head_size):
+    # Hugging Face stores each head of wq/wk as [first halves, second halves] (rotate_half);
+    # llama2.c rotates adjacent pairs, so interleave the two halves again
+    return w.reshape(heads, 2, head_size // 2, w.shape[1]).transpose(0, 2, 1, 3).reshape(w.shape)
+
+
+def conversion_plan(header):
+    """For every tensor of layout(): the tensors of the Hugging Face checkpoint it is made of, in order, as
+    (name, heads to permute or None); None stands for a RoPE table. And the shapes of layout()."""
+    dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
+
+    def layers(name, heads=None):
+        return [(f"model.layers.{layer}.{name}.weight", heads) for layer in range(n_layers)]
+
+    plan = [[("model.embed_tokens.weight", None)], layers("input_layernorm"),
+            layers("self_attn.q_proj", n_heads), layers("self_attn.k_proj", n_kv_heads), layers("self_attn.v_proj"),
+            layers("self_attn.o_proj"), layers("post_attention_layernorm"),
+            layers("mlp.gate_proj"), layers("mlp.down_proj"), layers("mlp.up_proj"), [("model.norm.weight", None)],
+            None, None]
+    if vocab_size < 0:
+        plan.append([("lm_head.weight", None)])
+    return plan, [shape for shape, _ in layout(*header)]
+
+
+def rope_table(config, header, which):
+    """The cos (which = 0) or sin (1) table of the legacy format, for float32 and float16 checkpoints."""
+    head_size, seq_len = header[0] // header[3], header[6]
+    positions = np.arange(seq_len, dtype=np.float64)[:, None]
+    frequencies = 1.0 / config.get("rope_theta", 10000.0) ** (np.arange(0, head_size, 2, dtype=np.float64) / head_size)
+    return (np.cos if which == 0 else np.sin)(positions * frequencies)
+
+
 def convert_weights(source, config, dtype, max_seq_len, out, progress=None):
     """Fill out, a writable buffer of checkpoint_size() bytes, from source (Safetensors or Arrays).
 
@@ -204,32 +236,14 @@ def convert_pieces(source, config, dtype, max_seq_len, out):
     head_size = dim // n_heads
     writer = Writer(out, header, dtype)
 
-    def permute_reverse(w, heads):
-        # Hugging Face stores each head of wq/wk as [first halves, second halves] (rotate_half);
-        # llama2.c rotates adjacent pairs, so interleave the two halves again
-        return w.reshape(heads, 2, head_size // 2, w.shape[1]).transpose(0, 2, 1, 3).reshape(w.shape)
-
-    def layers(name, heads=None):
-        return [(f"model.layers.{layer}.{name}.weight", heads) for layer in range(n_layers)]
-
-    # one entry per tensor of layout(): the tensors of the source it is made of, in order
-    plan = [[("model.embed_tokens.weight", None)], layers("input_layernorm"),
-            layers("self_attn.q_proj", n_heads), layers("self_attn.k_proj", n_kv_heads), layers("self_attn.v_proj"),
-            layers("self_attn.o_proj"), layers("post_attention_layernorm"),
-            layers("mlp.gate_proj"), layers("mlp.down_proj"), layers("mlp.up_proj"), [("model.norm.weight", None)],
-            None, None]
-    if vocab_size < 0:
-        plan.append([("lm_head.weight", None)])
-    shapes = [shape for shape, _ in layout(*header)]
+    plan, shapes = conversion_plan(header)
     total, done = sum(int(np.prod(shape)) for shape in shapes), 0
+    permute_reverse = lambda w, heads: permute_heads(w, heads, head_size)
 
     for index, (parts, shape) in enumerate(zip(plan, shapes)):
         if parts is None:
             # the RoPE tables (left out of an int8 checkpoint): cos, then sin
-            positions = np.arange(seq_len, dtype=np.float64)[:, None]
-            frequencies = 1.0 / config.get("rope_theta", 10000.0) ** (np.arange(0, head_size, 2, dtype=np.float64) / head_size)
-            table = np.cos if plan[:index].count(None) == 0 else np.sin
-            writer.write(index, 0, table(positions * frequencies))
+            writer.write(index, 0, rope_table(config, header, plan[:index].count(None)))
             done += int(np.prod(shape))
             yield done, total
             continue
@@ -253,6 +267,98 @@ def convert_pieces(source, config, dtype, max_seq_len, out):
                 done += values.size
                 yield done, total
         assert first == int(np.prod(shape)), name
+
+
+class Stream:
+    """The same conversion in the order of the file: feed() takes the bytes of a .safetensors file from its beginning
+    to its end, in chunks of any size, and every tensor goes to its place in the checkpoint as soon as its rows are
+    there. For a download: reading in the order of the output would mean hundreds of range requests, a second each.
+
+    header: the JSON of the file (its first 8 bytes say how long it is), base: where the tensors begin, start: the
+    position in the file of the first byte that feed() will get. out: a buffer of checkpoint_size() bytes, or None
+    to have one made (self.out).
+    """
+
+    def __init__(self, header, base, config, dtype, max_seq_len, out=None, start=0):
+        check_config(config)
+        self.tensors = {name: info for name, info in header.items() if name != "__metadata__"}
+        self.header = checkpoint_header(config, self, max_seq_len)
+        self.head_size = self.header[0] // self.header[3]
+        self.out = bytearray(checkpoint_size(self.header, dtype)) if out is None else out
+        self.writer = Writer(self.out, self.header, dtype)
+        plan, shapes = conversion_plan(self.header)
+        self.total, self.done = sum(int(np.prod(shape)) for shape in shapes), 0
+        wanted = {}
+        for index, (parts, shape) in enumerate(zip(plan, shapes)):
+            if parts is None:
+                self.writer.write(index, 0, rope_table(config, self.header, plan[:index].count(None)))
+                self.done += int(np.prod(shape))
+                continue
+            first = 0
+            for name, heads in parts:
+                found = tuple(self.tensors[name]["shape"]) if name in self.tensors else None
+                expected = tuple(shape[1:] if len(parts) > 1 else shape)
+                if found != expected:
+                    raise ValueError(f"This model cannot be converted: {name} is {found or 'missing'}, not {expected}.")
+                if self.tensors[name]["dtype"] not in READERS:
+                    raise ValueError(f"{name} is stored as {self.tensors[name]['dtype']}: only float32, float16 and bfloat16 are supported.")
+                wanted[name] = (index, first, heads)
+                first += int(np.prod(found))
+        # what to do with each stretch of the file, in the order of the file
+        self.steps = []
+        for name, info in sorted(self.tensors.items(), key=lambda item: item[1]["data_offsets"][0]):
+            begin, end = info["data_offsets"]
+            self.steps.append((base + begin, base + end, name, wanted.get(name)))
+        self.position, self.step, self.pending, self.first = start, 0, bytearray(), 0
+        self.size = max((end for _, end, _, _ in self.steps), default=base)
+
+    def __contains__(self, name):  # what checkpoint_header() asks
+        return name in self.tensors
+
+    def feed(self, data):
+        """data: the next bytes of the file. Returns (values done, values in all)."""
+        data = memoryview(data.to_py() if hasattr(data, "to_py") else data).cast("B")
+        offset = 0
+        while offset < len(data) and self.step < len(self.steps):
+            begin, end, name, target = self.steps[self.step]
+            here = self.position + offset
+            if here < begin:  # the JSON header, padding, or a tensor nobody needs
+                offset += min(begin - here, len(data) - offset)
+                continue
+            take = min(end - here, len(data) - offset)
+            if target is not None:
+                self.pending += data[offset:offset + take]
+                self.convert(name, target, last=here + take == end)
+            offset += take
+            if here + take == end:
+                self.step, self.pending, self.first = self.step + 1, bytearray(), 0
+        self.position += len(data)
+        return self.done, self.total
+
+    def convert(self, name, target, last):
+        index, first, heads = target
+        info = self.tensors[name]
+        itemsize, reader = READERS[info["dtype"]]
+        shape = tuple(info["shape"])
+        row = (int(np.prod(shape[1:])) if len(shape) > 1 else int(shape[0])) * itemsize
+        # the head permutation needs its whole matrix (a small one); everything else goes row by row, as it comes
+        rows = len(self.pending) // row if not heads or last else 0
+        if heads and last:
+            rows = shape[0]
+        if rows == 0 or (len(self.pending) < PIECE and not last):
+            return
+        values = reader(bytes(self.pending[:rows * row])).reshape(rows, *shape[1:]) if len(shape) > 1 else reader(bytes(self.pending[:rows * row]))
+        del self.pending[:rows * row]
+        if heads:
+            values = permute_heads(values, heads, self.head_size)
+        self.writer.write(index, first + self.first, values)
+        self.first += values.size
+        self.done += values.size
+
+    def finish(self):
+        if self.step < len(self.steps) or self.done != self.total:
+            raise ValueError("The file ended before all of its tensors were read.")
+        return self.header
 
 
 # ---------------------------------------------------------------------------------------- the tokenizer
@@ -352,18 +458,14 @@ def sentencepiece_options(model):
 
 # ------------------------------------------------------------------------------------------ in the browser
 class Conversion:
-    """A Hugging Face model of the visitor's own disk, converted inside the page.
+    """A Hugging Face model converted inside the page, from the visitor's disk or from huggingface.co.
 
-    read(offset, length) reads model.safetensors (a JavaScript function that returns a Uint8Array is fine),
-    config is the text of config.json, tokenizer the bytes of tokenizer.json or of a sentencepiece model.
-    Drive pieces() to the end; then checkpoint, tokenizer and options are what Llama() takes.
+    header: the JSON at the beginning of model.safetensors (text), base: where its tensors begin, config: the text of
+    config.json, tokenizer: the bytes of tokenizer.json or of a sentencepiece model. Then feed() the bytes of the
+    file in order, beginning at start, and finish(). checkpoint, tokenizer and options are what Llama() takes.
     """
 
-    def __init__(self, read, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=4096):
-        def python_read(offset, length):
-            data = read(offset, length)
-            return data.to_py() if hasattr(data, "to_py") else data
-
+    def __init__(self, header, base, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=4096, start=0):
         try:
             self.config = json.loads(config)
         except ValueError:
@@ -373,8 +475,10 @@ class Conversion:
         check_config(self.config)
         if np.dtype(dtype) not in (np.float32, np.float16, np.int8):
             raise ValueError(f"dtype must be float32, float16 or int8, not {dtype}.")
-        self.dtype, self.max_seq_len = np.dtype(dtype), int(max_seq_len)
-        self.source = Safetensors(python_read)
+        try:
+            header = json.loads(header)
+        except ValueError:
+            raise ValueError("This is not a safetensors file.") from None
         vocab_size = self.config["vocab_size"]
         tokenizer = bytes(tokenizer.to_py() if hasattr(tokenizer, "to_py") else tokenizer)
         if tokenizer_name.lower().endswith(".json"):
@@ -388,11 +492,15 @@ class Conversion:
         bos = self.config.get("bos_token_id", 1)
         eos = self.config.get("eos_token_id", 2)
         stop = [token for token in [bos, *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
-        self.options = {**options, "dtype": self.dtype.name, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
+        self.options = {**options, "dtype": np.dtype(dtype).name, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop}
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
-        header = checkpoint_header(self.config, self.source, self.max_seq_len)
-        self.checkpoint = bytearray(checkpoint_size(header, self.dtype))
+        self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start))
+        self.checkpoint = self.stream.out
 
-    def pieces(self):
-        return convert_pieces(self.source, self.config, self.dtype, self.max_seq_len, self.checkpoint)
+    def feed(self, data):
+        done, total = self.stream.feed(data)
+        return done / total
+
+    def finish(self):
+        self.stream.finish()

@@ -538,8 +538,9 @@ class Llama:
         chosen = np.searchsorted(cumulative, rng.random() * cumulative[-1], side="right")
         return int(candidates[min(chosen, cumulative.size - 1)])
 
-    def generate(self, prompt="", steps=256, temperature=0.0, topp=0.9, repetition_penalty=1.0, seed=None):
-        """Yield the text piece by piece, as it is generated."""
+    def generate(self, prompt="", steps=256, temperature=0.0, topp=0.9, repetition_penalty=1.0, seed=None, echo=True):
+        """Yield the text piece by piece, as it is generated. echo=False leaves the prompt out of it (an instruction
+        wrapped in a template, which nobody wants to read back)."""
         prompt_tokens = self.tokenizer.encode(prompt) if prompt else []
         # Right now we cannot run for more than seq_len steps
         if steps <= 0 or steps > self.seq_len:
@@ -579,7 +580,7 @@ class Llama:
                 token = next_token
                 history.append(token)
                 count += 1
-                if text:
+                if text and (echo or pos >= len(prompt_tokens)):
                     yield text
             text = utf8.decode(b"", final=True)
             if text:

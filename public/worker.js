@@ -1,7 +1,8 @@
 // Pyodide lives in this worker, so the page stays responsive while the model is loading and generating.
 // model is an entry of src/models.js, or one with {file, tokenizerFile}: two files of the visitor's own disk,
 // which are read where they are and go nowhere. Or one with {hf: {weights, config, tokenizer}}: a Hugging Face
-// model of that disk, which public/llama2_convert.py converts in here, piece by piece.
+// model, of that disk (Files) or of huggingface.co ({repo, revision} and file names), which
+// public/llama2_convert.py converts in here as it arrives.
 // The page sends   {type: "init", search, model, load},  {type: "load", model, load},
 //                  {type: "generate", prompt, ...options}  and  {type: "stop"}
 // and receives     {type: "status" | "progress" | "ready" | "token" | "done" | "error", ...}
@@ -211,10 +212,151 @@ function pythonBuffer(size) {
 
 // Every await in here may end with the AbortError of signal: a newer load has taken over, and this one must
 // leave nothing behind, least of all a Python buffer as large as its model.
-// A Hugging Face model of the visitor's disk: model.safetensors is read a few megabytes at a time, converted by
-// the same Python code that builds the models of this site, and written into a buffer of the final size. The
-// conversion is a Python generator, so that between its pieces the progress gets out and a change of mind gets in.
+// A Hugging Face model, from the visitor's disk ({weights, config, tokenizer} are Files) or from huggingface.co
+// ({repo, revision, weights, config, tokenizer} are names): model.safetensors arrives in the order of the file, a few
+// megabytes at a time, and the Python code that builds the models of this site converts every tensor as it comes and
+// writes it to its place in a buffer of the final size. Reading in the order of the output instead would mean
+// hundreds of range requests, and each one takes a second.
+const HF_PART_BYTES = 8 * 1024 * 1024;
+const HF_CONNECTIONS = 6;
+const HF_HEADER_BYTES = 512 * 1024;  // the JSON header of a safetensors file is a few dozen kilobytes
+
+async function fetchRange(url, begin, end, signal) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(url, { headers: { Range: `bytes=${begin}-${end - 1}` }, signal });
+      if (res.status !== 206 && res.status !== 200) {
+        throw new Error(`Could not fetch ${url}: ${res.status}`);
+      }
+      return { bytes: new Uint8Array(await res.arrayBuffer()), total: Number((res.headers.get("Content-Range") ?? "").split("/")[1]) };
+    } catch (error) {
+      if (signal.aborted || attempt === 2) {
+        throw error;
+      }
+    }
+  }
+}
+
+// feed(bytes) gets the file from position start to its end, in order, although the parts arrive as they like
+async function inOrder(url, start, size, feed, signal) {
+  const parts = Math.ceil((size - start) / HF_PART_BYTES);
+  const arrived = new Map();
+  let next = 0, fed = 0, waiting = [];
+  const connection = async () => {
+    while (next < parts) {
+      // no more than two parts per connection wait in memory for an earlier one
+      while (next - fed >= 2 * HF_CONNECTIONS) {
+        await new Promise((resolve) => waiting.push(resolve));
+      }
+      if (next >= parts) {
+        return;
+      }
+      const part = next++;
+      const begin = start + part * HF_PART_BYTES;
+      arrived.set(part, (await fetchRange(url, begin, Math.min(begin + HF_PART_BYTES, size), signal)).bytes);
+      while (arrived.has(fed)) {
+        signal.throwIfAborted();
+        feed(arrived.get(fed));
+        arrived.delete(fed++);
+        // the conversion of a part takes a moment: let messages in
+        await breathe();
+      }
+      waiting.splice(0).forEach((resolve) => resolve());
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(HF_CONNECTIONS, parts) }, connection));
+}
+
+// What a conversion made is kept in the Cache API, in parts like the models of the site: the original is twice as
+// large, and fetching and converting it again on every visit would be no way to use a model. One cache of its own,
+// so that the page can list what is kept and delete it. The manifest is written last: parts without one are rubbish.
+const CONVERTED_CACHE = "converted-v1";
+const convertedKey = (model, name) => {
+  const { dtype = "int8", max_seq_len = 4096 } = model.conversion ?? {};
+  return `${self.location.origin}/converted/${encodeURIComponent(`${model.hf.repo}@${model.hf.revision}:${dtype}:${max_seq_len}`)}/${name}`;
+};
+
+async function loadConverted(model, signal, id) {
+  const cache = await globalThis.caches?.open(CONVERTED_CACHE).catch(() => undefined);
+  const manifest = await (await cache?.match(convertedKey(model, "manifest.json")))?.json();
+  if (!manifest) {
+    return false;
+  }
+  const started = performance.now();
+  const weights = pythonBuffer(manifest.bytes);
+  let tokenizer;
+  try {
+    for (let part = 0, offset = 0; part < manifest.parts; part++) {
+      const stored = await cache.match(convertedKey(model, `part-${String(part).padStart(3, "0")}`));
+      if (!stored) {
+        return false;  // the browser has evicted a part: convert again
+      }
+      const bytes = new Uint8Array(await stored.arrayBuffer());
+      signal.throwIfAborted();
+      weights.write(offset, bytes);
+      offset += bytes.length;
+      postMessage({ type: "progress", load: id, received: offset, total: manifest.bytes });
+    }
+    const vocabulary = new Uint8Array(await (await cache.match(convertedKey(model, "tokenizer.bin"))).arrayBuffer());
+    loadSeconds.download = since(started);
+    const constructStarted = performance.now();
+    tokenizer = pythonBuffer(vocabulary.length);
+    tokenizer.write(0, vocabulary);
+    llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, ...manifest.options, ...model.options });
+    loadSeconds.construct = since(constructStarted);
+    return true;
+  } finally {
+    weights.buffer.destroy();
+    tokenizer?.buffer.destroy();
+  }
+}
+
+// checkpoint and tokenizer: PyProxies of the converted buffers. Returns why nothing was kept, or undefined.
+async function keepConverted(model, checkpoint, tokenizer, options, signal) {
+  const cache = await globalThis.caches?.open(CONVERTED_CACHE).catch(() => undefined);
+  if (!cache) {
+    return "this browser has no Cache API here";
+  }
+  const bytes = checkpoint.length;
+  const { quota = 0, usage = 0 } = (await navigator.storage?.estimate?.().catch(() => ({}))) ?? {};
+  if (quota && quota - usage < bytes * 1.1) {
+    return `the browser leaves ${((quota - usage) / 1e6).toFixed(0)} MB, and the model needs ${(bytes / 1e6).toFixed(0)} MB`;
+  }
+  const parts = Math.ceil(bytes / PART_BYTES);
+  try {
+    for (let part = 0; part < parts; part++) {
+      // the view is taken anew for every part: it dies when the WebAssembly memory grows, and an await may let it
+      const view = checkpoint.getBuffer("u8");
+      const copy = view.data.slice(part * PART_BYTES, Math.min((part + 1) * PART_BYTES, bytes));
+      view.release();
+      await cache.put(convertedKey(model, `part-${String(part).padStart(3, "0")}`), new Response(copy));
+      signal.throwIfAborted();
+    }
+    const view = tokenizer.getBuffer("u8");
+    const vocabulary = view.data.slice();
+    view.release();
+    await cache.put(convertedKey(model, "tokenizer.bin"), new Response(vocabulary));
+    const manifest = { id: model.id, name: model.name, repo: model.hf.repo, revision: model.hf.revision, bytes, parts, options, saved: Date.now() };
+    await cache.put(convertedKey(model, "manifest.json"), new Response(JSON.stringify(manifest), { headers: { "Content-Type": "application/json" } }));
+  } catch (error) {
+    // a full disk, or a change of mind: leave nothing half written
+    for (const request of await cache.keys()) {
+      if (request.url.startsWith(convertedKey(model, ""))) {
+        await cache.delete(request);
+      }
+    }
+    if (signal.aborted) {
+      throw error;
+    }
+    return String(error.message ?? error);
+  }
+}
+
 async function convert(model, signal, id) {
+  const remote = typeof model.hf.repo === "string";
+  if (remote && await loadConverted(model, signal, id)) {
+    return { fromCache: true };
+  }
   if (!llama2_convert) {
     // fetched when it is first needed: most visitors never convert anything
     const res = await fetch(new URL(`llama2_convert.py${self.location.search}`, import.meta.url), { signal });
@@ -224,50 +366,83 @@ async function convert(model, signal, id) {
     pyodide.FS.writeFile("llama2_convert.py", await res.text());
     llama2_convert = pyodide.pyimport("llama2_convert");
   }
-  const { weights, config, tokenizer } = model.hf;
-  // a worker may read a file synchronously, which is what Python's read(offset, length) needs
-  const reader = new FileReaderSync();
-  const read = (offset, length) => new Uint8Array(reader.readAsArrayBuffer(weights.slice(offset, offset + length)));
   const started = performance.now();
-  const conversion = llama2_convert.Conversion.callKwargs(
-    read, await config.text(), new Uint8Array(await tokenizer.arrayBuffer()), tokenizer.name, model.conversion);
+  const at = (name) => `https://huggingface.co/${model.hf.repo}/resolve/${model.hf.revision}/${name}`;
+  const text = async (url) => {
+    const res = await fetch(url, { signal });
+    if (!res.ok) {
+      throw new Error(`Could not fetch ${url}: ${res.status}`);
+    }
+    return res;
+  };
+  // the beginning of the file: 8 bytes that say how long the JSON header is, then the header
+  let first, size;
+  if (remote) {
+    ({ bytes: first, total: size } = await fetchRange(at(model.hf.weights), 0, HF_HEADER_BYTES, signal));
+  } else {
+    first = new Uint8Array(await model.hf.weights.slice(0, HF_HEADER_BYTES).arrayBuffer());
+    size = model.hf.weights.size;
+  }
+  const headerBytes = first.length >= 8 ? Number(new DataView(first.buffer).getBigUint64(0, true)) : -1;
+  if (!(headerBytes >= 2 && headerBytes <= 100e6)) {
+    throw new Error("This is not a safetensors file.");
+  }
+  const base = 8 + headerBytes;
+  if (base > first.length) {
+    first = remote ? (await fetchRange(at(model.hf.weights), 0, base, signal)).bytes
+      : new Uint8Array(await model.hf.weights.slice(0, base).arrayBuffer());
+  }
+  const header = new TextDecoder().decode(first.subarray(8, base));
+  const config = remote ? await (await text(at(model.hf.config))).text() : await model.hf.config.text();
+  const tokenizerName = remote ? model.hf.tokenizer : model.hf.tokenizer.name;
+  const tokenizer = new Uint8Array(remote ? await (await text(at(model.hf.tokenizer))).arrayBuffer() : await model.hf.tokenizer.arrayBuffer());
+  signal.throwIfAborted();
+
+  const conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName, { start: base, ...model.conversion });
   try {
-    const pieces = conversion.pieces();
-    try {
-      let breathed = performance.now(), reported = -1;
+    let reported = -1;
+    const feed = (bytes) => {
+      const percent = Math.floor(conversion.feed(bytes) * 100);
+      if (percent !== reported) {
+        reported = percent;
+        postMessage({ type: "progress", load: id, received: Math.round((percent / 100) * size), total: size, converting: true });
+      }
+    };
+    if (remote) {
+      await inOrder(at(model.hf.weights), base, size, feed, signal);
+    } else {
+      const reader = model.hf.weights.slice(base).stream().getReader();
       for (;;) {
-        const { done, value } = pieces.next();
+        const { done, value } = await reader.read();
         if (done) {
           break;
         }
-        const [converted, total] = value.toJs();
-        value.destroy();
-        const percent = Math.floor((converted / total) * 100);
-        if (percent !== reported) {
-          reported = percent;
-          postMessage({ type: "progress", load: id, received: converted, total, converting: true });
-        }
-        if (performance.now() - breathed > 50) {
-          await breathe();
-          breathed = performance.now();
+        if (signal.aborted) {
+          reader.cancel();
           signal.throwIfAborted();
         }
+        feed(value);
       }
-    } finally {
-      pieces.destroy();
     }
+    conversion.finish();
     loadSeconds.download = since(started);
 
     const constructStarted = performance.now();
     // every one of these proxies keeps its Python object alive, the checkpoint too: none may be left behind
     const proxies = [conversion.options, conversion.checkpoint, conversion.tokenizer];
+    let kept;
     try {
       const options = proxies[0].toJs({ dict_converter: Object.fromEntries });
       llama = llama2_numpy.Llama.callKwargs(proxies[1], proxies[2], { kernels, ...options, ...model.options });
+      loadSeconds.construct = since(constructStarted);
+      if (remote) {
+        postMessage({ type: "status", load: id, text: `${model.name}: keeping the converted model...` });
+        kept = await keepConverted(model, proxies[1], proxies[2], options, signal);
+      }
     } finally {
       proxies.forEach((proxy) => proxy.destroy());
     }
-    loadSeconds.construct = since(constructStarted);
+    return { fromCache: false, notKept: kept };
   } finally {
     // the engine keeps what it needs of the checkpoint alive, the rest goes with this
     conversion.destroy();
@@ -284,13 +459,13 @@ async function load(model, signal, id) {
     pyodide.runPython("import gc; gc.collect()");
   }
   if (model.hf) {
-    postMessage({ type: "status", load: id, text: `Converting ${model.name}...` });
+    postMessage({ type: "status", load: id, text: `${model.name}: ${model.hf.repo ? "fetching from Hugging Face and converting" : "converting"}...` });
     await initialized;
     signal.throwIfAborted();
-    await convert(model, signal, id);
+    const converted = await convert(model, signal, id);
     postMessage({
       type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seq_len: llama.seq_len,
-      seconds: { ...loadSeconds },
+      seconds: { ...loadSeconds }, ...converted,
     });
     return;
   }
@@ -425,7 +600,8 @@ self.onmessage = async ({ data }) => {
     // a cancelled load has nothing to report: the one that replaced it speaks for itself
     if (!signal?.aborted) {
       // a ValueError of the engine is a message for the reader (wrong file, prompt too long): no traceback
-      const message = err.type === "ValueError" ? err.message.trim().split("\n").pop().replace(/^ValueError: /, "") : String(err);
+      const message = err.type === "ValueError" ? err.message.trim().split("\n").pop().replace(/^ValueError: /, "")
+        : err?.name === "Error" ? err.message : String(err);
       postMessage({ type: "error", load: data.load, message });
     }
   }

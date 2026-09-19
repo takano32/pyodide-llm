@@ -148,3 +148,13 @@ def test_stories260K_writes_the_reference_story():
 def test_stories260K_vocabulary_matches_its_tokenizer():
     llama = Llama(model_file("stories260K.bin").read_bytes(), model_file("tok512.bin").read_bytes())
     assert llama.vocab_size == checkpoint_vocab_size("stories260K.bin") == len(llama.tokenizer.vocab)
+
+
+def test_the_prompt_can_be_left_out_of_the_text():
+    llama = build()
+    forces(llama, [100])
+    with_prompt = "".join(llama.generate("hello world", steps=20))
+    forces(llama, [100])
+    without = "".join(llama.generate("hello world", steps=20, echo=False))
+    assert with_prompt.startswith("hello world") and with_prompt == "hello world" + without
+    assert llama.stats["tokens"] == 20  # the count is about tokens, shown or not

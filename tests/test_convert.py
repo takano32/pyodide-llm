@@ -178,3 +178,51 @@ def test_tokenizer_json():
         tokenizer_bin(pieces, 4)
     with pytest.raises(ValueError, match="only Unigram"):
         list(tokenizer_json_pieces({**tokenizer, "model": {"type": "BPE"}}))
+
+
+def streamed(file, published, dtype, chunk, max_seq_len=1 << 20):
+    """The file fed to Stream from its beginning to its end, chunk bytes at a time."""
+    (size,) = struct.unpack("<Q", file[:8])
+    header = json.loads(file[8:8 + size])
+    stream = llama2_convert.Stream(header, 8 + size, published, dtype, max_seq_len)
+    out = stream.out
+    # the first stretch of the file may be skipped, as the page does once it has read the header
+    skip = 8 + size if chunk > 100 else 0
+    if skip:
+        stream = llama2_convert.Stream(header, 8 + size, published, dtype, max_seq_len, start=skip)
+        out = stream.out
+    progress = [stream.feed(file[start:start + chunk]) for start in range(skip, len(file), chunk)]
+    stream.finish()
+    return bytes(out), progress
+
+
+@pytest.mark.parametrize("config", CONFIGS)
+@pytest.mark.parametrize("dtype, stored, chunk", [("float32", "F32", 1000), ("int8", "BF16", 4096), ("float16", "F16", 7), ("int8", "F32", 1 << 20)])
+def test_the_file_in_its_own_order_gives_the_same_checkpoint(config, dtype, stored, chunk, monkeypatch):
+    monkeypatch.setattr(llama2_convert, "PIECE", 700)
+    shared = config.get("shared", True)
+    config, weights = synthetic_weights(**config)
+    tensors, published = hugging_face(config, weights, shared)
+    # Hugging Face writes the tensors sorted by name, and a file may hold tensors nobody asks for
+    tensors = dict(sorted({**tensors, "model.layers.0.self_attn.rotary_emb.inv_freq": np.arange(8, dtype=np.float32)}.items()))
+    file = safetensors_file(tensors, stored)
+    expected = converted(Safetensors(reader(file)), published, dtype)
+    result, progress = streamed(file, published, dtype, chunk)
+    assert result == expected
+    assert progress[-1][0] == progress[-1][1] and [done for done, _ in progress] == sorted(done for done, _ in progress)
+
+
+def test_a_stream_that_ends_early_or_lacks_a_tensor_is_refused():
+    config, weights = synthetic_weights()
+    tensors, published = hugging_face(config, weights, True)
+    file = safetensors_file(tensors)
+    (size,) = struct.unpack("<Q", file[:8])
+    header = json.loads(file[8:8 + size])
+    out = bytearray(checkpoint_size(checkpoint_header(published, Safetensors(reader(file)), 1 << 20), "int8"))
+    stream = llama2_convert.Stream(header, 8 + size, published, "int8", 1 << 20, out)
+    stream.feed(file[:len(file) // 2])
+    with pytest.raises(ValueError, match="ended before"):
+        stream.finish()
+    missing = {name: info for name, info in header.items() if "layers.1.mlp.up_proj" not in name}
+    with pytest.raises(ValueError, match="up_proj.weight is missing"):
+        llama2_convert.Stream(missing, 8 + size, published, "int8", 1 << 20, out)
