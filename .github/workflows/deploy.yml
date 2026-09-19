@@ -25,17 +25,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Download model and tokenizer
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Download and convert the models
         run: |
-          wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
-          wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
+          pip install numpy
+          make models
 
       - name: Prepare deployment directory
         run: |
           mkdir public
           cp index.html public/
-          mv stories15M.bin public/
-          mv tokenizer.bin public/
+          mv *.bin tiny-lm.LICENSE.txt public/
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
