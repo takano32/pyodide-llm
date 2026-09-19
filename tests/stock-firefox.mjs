@@ -7,7 +7,7 @@
 import { Builder, Key } from "selenium-webdriver";
 import firefox from "selenium-webdriver/firefox.js";
 
-const [model = "stories260K", site = "https://takano32.github.io/pyodide-llama-py/"] = process.argv.slice(2);
+const [model = "stories260K", site = "https://takano32.github.io/pyodide-llm/"] = process.argv.slice(2);
 const expected = { stories260K: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park." };
 
 const driver = await new Builder().forBrowser("firefox").setFirefoxOptions(new firefox.Options().addArguments("-headless")).build();

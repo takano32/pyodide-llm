@@ -22,7 +22,7 @@ for (const source of titles) {
     continue;
   }
   const url = `https://ja.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exsectionformat=plain&format=json&titles=${encodeURIComponent(source)}`;
-  const pages = (await (await fetch(url, { headers: { "User-Agent": "pyodide-llama-py perplexity measurement" } })).json()).query.pages;
+  const pages = (await (await fetch(url, { headers: { "User-Agent": "pyodide-llm perplexity measurement" } })).json()).query.pages;
   // the beginning of each article: prose, before the lists and tables of the later sections
   text += Object.values(pages)[0].extract.slice(0, 6000) + "\n";
 }

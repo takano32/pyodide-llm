@@ -1,8 +1,8 @@
-# Pyodide Llama
+# Pyodide LLM
 
-Run Llama 2 in your browser using Python and WebAssembly!
+Run language models in your browser using Python and WebAssembly! (Until September 2026 this project was called pyodide-llama-py.)
 
-This project leverages [Pyodide](https://pyodide.org/) to run a Python implementation of Llama 2 (`llama2_numpy.py`, a NumPy port of `llama2.py`) directly in the web browser. It is an experiment in how far Python on WebAssembly can go, not a product. The default model is [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m), which writes Japanese and English; the much smaller [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm) is four times as fast but far less coherent; the TinyStories models from the [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project can be selected as well.
+This project leverages [Pyodide](https://pyodide.org/) to run a Python implementation of the Llama architecture (`llama2_numpy.py`, a NumPy port of `llama2.py`) directly in the web browser. It is an experiment in how far Python on WebAssembly can go, not a product. The default model is [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m), which writes Japanese and English; the much smaller [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm) is four times as fast but far less coherent; the TinyStories models from the [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project can be selected as well.
 
 ## Features
 
@@ -17,7 +17,7 @@ This project leverages [Pyodide](https://pyodide.org/) to run a Python implement
 ## Live Demo
 
 You can try the live demo on GitHub Pages (if configured):
-[https://takano32.github.io/pyodide-llama-py/](https://takano32.github.io/pyodide-llama-py/)
+[https://takano32.github.io/pyodide-llm/](https://takano32.github.io/pyodide-llm/)
 
 ## Getting Started
 
@@ -31,24 +31,24 @@ You can try the live demo on GitHub Pages (if configured):
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/takano32/pyodide-llama-py.git
-   cd pyodide-llama-py
+   git clone https://github.com/takano32/pyodide-llm.git
+   cd pyodide-llm
    ```
 
 2. Run the application:
    ```bash
    make run
    ```
-   This will download the model files (about 1 GB) and convert tiny-lm, install dependencies, and start the Astro dev server at `http://localhost:8080/pyodide-llama-py/`.
+   This will download the model files (about 1 GB) and convert tiny-lm, install dependencies, and start the Astro dev server at `http://localhost:8080/pyodide-llm/`.
 
 ### Running Locally with Docker
 
 1. Build and run the Docker container:
    ```bash
-   docker build -t pyodide-llama-py .
-   docker run -p 8080:8080 pyodide-llama-py
+   docker build -t pyodide-llm .
+   docker run -p 8080:8080 pyodide-llm
    ```
-2. Open `http://localhost:8080/pyodide-llama-py/` in your browser.
+2. Open `http://localhost:8080/pyodide-llm/` in your browser.
 
 ## Models from Hugging Face
 

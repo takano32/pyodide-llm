@@ -13,7 +13,7 @@ on:
     inputs:
       url:
         description: The site to test
-        default: https://takano32.github.io/pyodide-llama-py/
+        default: https://takano32.github.io/pyodide-llm/
   schedule:
     - cron: '17 3 * * 1'
 
@@ -64,7 +64,7 @@ jobs:
       - name: Run the models in every browser
         shell: bash  # also on Windows, and with pipefail, so that a failed test is not hidden by tee
         env:
-          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llama-py/' }}
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
         run: |
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${os.arch()}, ${os.platform()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
           failed=0
@@ -112,7 +112,7 @@ jobs:
       - name: Fetch, convert and run
         shell: bash
         env:
-          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llama-py/' }}
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
         run: |
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
           failed=0

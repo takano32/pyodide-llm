@@ -21,7 +21,7 @@ import { execFileSync } from "node:child_process";
 import * as playwright from "playwright-core";
 
 const [model = "stories260K", engine = "chromium", deployed] = process.argv.slice(2);
-const base = "/pyodide-llama-py/";
+const base = "/pyodide-llm/";
 const root = new URL("../dist/", import.meta.url).pathname;
 const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".py": "text/plain" };
 // expected beginning of the greedy text, where the model is deterministic

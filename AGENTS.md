@@ -46,7 +46,7 @@
 | `.github/workflows/deploy.yml` | `make models` → `npm run build` → GitHub Pages |
 | `.github/workflows/browsers.yml` | 本番サイトをほかのブラウザで動かす: macOS の WebKit、Linux（x86-64）の Chromium と Firefox、Windows の Edge（Playwright）。手動（`gh workflow run browsers.yml`）か週 1 回。結果は各ジョブの Summary に出る |
 
-公開先: https://takano32.github.io/pyodide-llama-py/ （リポジトリの旧名は pyodide-llama2-py。Pages の旧 URL は転送されない）
+公開先: https://takano32.github.io/pyodide-llm/ （リポジトリの旧名は pyodide-llama2-py、その次が pyodide-llama-py。GitHub Pages は改名しても旧 URL を転送しないので、旧名 2 つには新しい URL へ飛ばすだけの小さなリポジトリを置いてある。2026-09-20 に改名、T62）
 
 ## これまでに分かったこと（決定・実測・理由）
 
@@ -103,4 +103,4 @@
 
 1. エンジン・`quantize.py` を変えたら、まず `python3 -m pytest tests -q` と `node tests/smoke.mjs`（どちらもデプロイでも走る）。加えてネイティブの Python で回帰確認する: stories15M（float32）で `Once upon a time` の greedy 出力が `Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine.` で始まること。stories260K なら `...She loved to play outside in the park.`。余裕があれば llama2.c の `run.c` を `gcc -O2` でビルドして全文一致を見る。
 2. ページや Worker を変えたら、**実ブラウザで通しで確認する**: `npm run build && node tests/e2e.mjs [モデル ID] [chromium|firefox]`。準備（`playwright-core` とブラウザの入れ方）はスクリプト冒頭のコメントにある。「Run が有効になる → Enter → 回答の下に tok/s が出る」まで待ち、スマホ幅でページ自体がスクロールしないことと、決定的なモデルでは出力の冒頭も確かめる。
-3. push 後は `gh run watch` でデプロイを待ち、本番に対して同じ確認をする: `node tests/e2e.mjs stories260K chromium https://takano32.github.io/pyodide-llama-py/`。
+3. push 後は `gh run watch` でデプロイを待ち、本番に対して同じ確認をする: `node tests/e2e.mjs stories260K chromium https://takano32.github.io/pyodide-llm/`。
