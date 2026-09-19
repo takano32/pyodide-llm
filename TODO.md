@@ -10,39 +10,61 @@
 
 ### T24 停止ボタン — 状態: 未着手
 - 目的: 生成を途中で止められるようにする（llm-jp は 256 トークンに 30 秒かかる）。
-- 方針: `public/worker.js` の `generate()` は同期ループなので停止メッセージを受け取れない。数トークンごとに `await` でイベントループへ戻し（`setTimeout` は 4ms の下限があるので `MessageChannel` を使う）、`{type: "stop"}` を受けたらジェネレータを `destroy()` して `done` を送る。ページ側は生成中だけ送信ボタンを停止ボタンに変える。
-- 完了条件: 生成中に停止でき、直後に次の生成ができる。tok/s が目に見えて落ちていない（tiny-lm で 5% 以内）。
+- 触るファイル: `public/worker.js`（`generate()` と `onmessage`）、`src/pages/index.astro`（送信ボタン、`onsubmit`）。
+- 手順:
+  1. `worker.js` の `generate()` を `async` にする。ジェネレータを `for...of` で回す代わりに `pieces.next()` を呼び、8 トークンごとにイベントループへ制御を返す。`setTimeout` は 4ms の下限で遅くなるので使わない。`MessageChannel` で返す: `await new Promise((r) => { const c = new MessageChannel(); c.port1.onmessage = r; c.port2.postMessage(0); })`。
+  2. `onmessage` で `{type: "stop"}` を受けたら停止フラグを立てる。`generate()` はフラグを見てループを抜け、`finally` で `pieces.destroy()`、その後いつもどおり `done` を送る（`llama.stats` は途中終了でも入る）。
+  3. ページ側は生成中だけ送信ボタンを停止ボタン（■）にして、押したら `worker.postMessage({type: "stop"})`。生成中も Enter で二重送信されないこと。
+- 完了条件: 生成中に止められ、直後に次の生成ができる。tiny-lm の tok/s が変更前の 95% 以上。`node tests/e2e.mjs` が通る。
 
 ### T25 モデルのブラウザ内キャッシュ — 状態: 未着手
-- 目的: 再訪時に 33〜171MB を取り直さない。
-- 方針: `worker.js` の部品取得で Cache API を先に見る。キャッシュ名にモデルのファイル名と `bytes` を含め、サイズが変われば取り直す。成功後に `navigator.storage.persist()` を要求する。古いキャッシュ名は起動時に消す。
-- 完了条件: 2 回目の読み込みでモデル部品へのネットワーク要求が 0 件。`bytes` を変えたモデルは取り直される。
+- 目的: 再訪時に 33〜171MB を取り直さない（GitHub Pages の HTTP キャッシュは 10 分で切れる）。
+- 触るファイル: `public/worker.js` の `download()`。
+- 手順:
+  1. 部品を取る前に `caches.open("models-v1")` を見て、あればそこから読む。なければ `fetch` し、`response.clone()` を `cache.put()` する（ストリームは一度しか読めないので clone が要る）。
+  2. キャッシュのキーは部品の URL に `?bytes=<model.bytes>` を付けたものにする。モデルを作り直してサイズが変われば自然に取り直される。
+  3. 読み込み成功後に `navigator.storage.persist?.()` を呼ぶ（失敗しても無視）。
+  4. Cache API が使えない環境（`caches` が未定義）では今までどおり動くこと。
+- 完了条件: 2 回目の読み込みで `models/` へのネットワーク要求が 0 件（Playwright の `page.on("request")` で数える）。`src/models.js` の `bytes` を変えると取り直す。
 
-### T26 CI のスモークテスト — 状態: 未着手
-- 目的: 壊れたままデプロイしない。常に最新の Pyodide を使う方針の安全装置でもある。
-- 方針: `deploy.yml` のビルド前に、Node + `pyodide`（npm、`latest`）で `public/llama2_numpy.py` を読み、stories260K で検証手順 1 の文字列一致を確認する。tiny-lm（int8）が読めて 10 トークン生成できることも見る。
-- 完了条件: エンジンをわざと壊すとデプロイが失敗する。所要 1 分以内。
+### T26 CI のスモークテスト — 状態: 未着手（担当: Fable）
+- 目的: 壊れたままデプロイしない。常に最新の Pyodide を使う方針の安全装置。
+- 触るファイル: 新規 `tests/smoke.mjs`、`.github/workflows/deploy.yml`、`package.json`（`pyodide` を devDependencies に `latest` で）。
+- 手順:
+  1. `tests/smoke.mjs`: Node で `pyodide` を読み込み、`public/llama2_numpy.py` と `stories260K.bin` / `tok512.bin` を FS に書いて、`Once upon a time` の greedy 出力が `Once upon a time, there was a little girl named Lily. She loved to play outside in the park.` で始まることを確認。続けて `tiny-lm.bin`（int8）を `dtype="int8", tokenizer_kind="unigram", nfkc=True, stop_tokens=(1, 2)` で読み、10 トークン生成できることを確認。失敗したら `process.exit(1)`。Pyodide 内の書き方は検証済みの例がある: AGENTS.md の「検証手順」と `experiments/simd-kernel/README.md`。
+  2. `deploy.yml` の `make models` の後、`npm run build` の前に `node tests/smoke.mjs` を足す。
+- 注意: Node の Pyodide は実行時に CDN から NumPy を取る。tiny-lm の読み込みは約 300MB 使う。
+- 完了条件: `llama2_numpy.py` の `rmsnorm` をわざと壊すとテストが失敗する。CI での所要 1 分以内。
 
 ### T27 生成設定の UI — 状態: 未着手
-- 目的: temperature・最大トークン数・シードを画面から変えられるようにする。シード固定で int8 と原本を公平に比べられる。
-- 方針: 入力欄の上に折りたたみの設定を置く。値は `model.generation` の上書きとして `generate` メッセージに載せる（エンジンは `seed` 対応済み）。
-- 完了条件: 同じシード・同じモデルで 2 回生成すると同じ文になる。
+- 目的: temperature・最大トークン数・シードを画面から変える。シードを固定すれば int8 と原本を公平に比べられる。
+- 触るファイル: `src/pages/index.astro`。エンジンは `generate(prompt, steps, temperature, topp, repetition_penalty, seed)` に対応済みで、Worker は受け取ったオプションをそのまま渡す。
+- 手順: 入力欄の上に `<details>` で設定を置く。初期値は `model.generation`。モデルを切り替えたら初期値に戻す。シードは空欄なら毎回ランダム。
+- 完了条件: 同じモデル・同じシードで 2 回生成すると同じ文になる。設定を開かなければ今と同じ動作。
 
 ### T28 計測パネル — 状態: 未着手
-- 目的: 実験としての数値を見せる。起動時間の内訳（Pyodide / ダウンロード / モデル構築）、最初のトークンまでの時間、プロンプト処理と生成の tok/s。
-- 完了条件: 各値が回答の下か折りたたみに出る。計測のための処理で tok/s が落ちない。
+- 目的: 実験としての数値を見せる。
+- 内容: 起動時間の内訳（Pyodide のロード / モデルのダウンロード / `Llama()` の構築）、最初のトークンまでの時間、プロンプト処理と生成それぞれの tok/s。`worker.js` で `performance.now()` を取り、`ready` と `done` のメッセージに載せる。エンジンの `stats` にプロンプト処理の時間を足す。
+- 完了条件: 各値が回答の下か折りたたみに出る。tok/s が計測のせいで落ちない。
 
 ### T29 エンジンの単体テスト — 状態: 未着手
-- 目的: 手元でやった検証を資産にする。
-- 内容: BPE と unigram のエンコード・デコード往復（日本語、絵文字、語彙外文字）、`quantize.py` の往復誤差、`convert_hf.py` を小さな合成チェックポイントで。モデルのダウンロードが要るテストは分ける。
+- 目的: 手元でやった検証を資産にする。`tests/` に pytest（ネイティブの Python + NumPy で動く。Pyodide は不要）。
+- 内容: (1) BPE と unigram のエンコード → デコード往復（日本語、絵文字、語彙外文字、空白・タブ・改行）。(2) `quantize.py` → `dtype="int8"` で読んだ重みと元の重みの誤差がグループの最大値の 1/127 以内。(3) 小さな合成チェックポイント（dim 32、2 層、GQA あり / なし）で `forward` の logits を、素朴なループ実装と相対誤差 1e-4 以内で比較。(4) `generate` は同じシードで再現し、BOS で止まり、長すぎるプロンプトは `ValueError`。
+- モデルのダウンロードが要るテストは `make models` 済みのときだけ走るように分ける。
 
-### T30 SIMD カーネルの導入（本丸） — 状態: 未着手、T26 の後に
-- 目的: 「WASM Python の限界」を本番に入れる。実証値は 181〜348 tok/s。
-- 方針: カーネルのソースをリポジトリに置き、ビルド時に生成する（バイナリは入れない）。ABI に依存しない ctypes 方式（`py3-none-any` 相当）にする。常に最新の Pyodide を使う方針と両立させるため、読み込みに失敗したら NumPy にフォールバックする。int8 のまま計算できるのでメモリも減る（llm-jp で効く）。
-- 完了条件: 対応ブラウザで有効になり、非対応（Safari の relaxed SIMD など）では NumPy で動く。出力が NumPy 版と一致または同等。iOS Safari での確認は未実施なので、できなければ「未確認」と明記する。
+### T30 SIMD カーネルの導入（本丸） — 状態: 未着手、T26 の後に（担当: Fable）
+- 目的: 「WASM Python の限界」を本番に入れる。実証値は 181（float32）/ 282（int8）/ 348（relaxed SIMD int8）tok/s で NumPy の 4〜7 倍。int8 のまま計算するので llm-jp のメモリも減る。
+- 出発点: `experiments/simd-kernel/`（動作確認済みのカーネル、ビルドスクリプト、Python からの呼び方、守るべき制約）。**先にその README を読むこと。**
+- 手順の骨子:
+  1. カーネルのビルドを `make models` の流れに入れる（`assemblyscript` を devDependencies に。生成物 `public/simdkernel.so` などはコミットしない）。
+  2. `llama2_numpy.py` にカーネル用の forward を足す。`ctypes.CDLL` の読み込みに失敗したら NumPy の forward のまま動く（Safari や将来の Emscripten 変更への備え。方針 2 と両立させる）。
+  3. `attention` を GQA と `[kv_heads][seq][head_size]` のキャッシュ配置に対応させるか、カーネル使用時だけキャッシュ配置を変える。GQA のモデル（stories260K、3.5M）と行長が 32 の倍数でないモデルは NumPy のままでもよい。
+  4. int8 のモデルは重みを float32 に戻さず、`quantize.py` の形式のまま `matmul_q8` に渡す。relaxed SIMD 版は `try/except` で選ぶ。
+  5. `worker.js` がカーネルのファイルを Pyodide の FS に書く（`?v=` を付けること。AGENTS.md の落とし穴を参照）。
+- 完了条件: float32 のモデルで NumPy 版と同じ greedy 出力。int8 は破綻しない出力。Chromium で tiny-lm と stories15M が NumPy 版の 3 倍以上。カーネルの読み込みをわざと失敗させても NumPy で動く。T26 のスモークテストと `tests/e2e.mjs` が通る。iOS Safari は確認手段がなければ「未確認」と AGENTS.md に書く。
 
 ### T31 README に計測結果を載せる — 状態: 未着手
-- gist の要点（実装別 tok/s の表、int8 の品質、ブラウザ別の速度）を README に入れる。
+- gist の要点（実装別 tok/s の表、int8 の品質、ブラウザ別の速度）を README に入れる。数値は AGENTS.md と `TODO.md` の完了タスクにあるものだけを使い、新しく推測しない。
 
 ## 完了したタスク
 
