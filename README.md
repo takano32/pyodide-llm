@@ -113,8 +113,8 @@ No binary is committed to this repository: `make models` downloads the model fil
 ## Measurements
 
 All numbers below were measured on 2026-09-19 on one phone-class ARM CPU (Cortex-A78 x4 + A55 x4), a single
-thread, no swap. The long version, including the survey of the other browser ports, is in this
-[gist](https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901).
+thread, no swap. An overview of the whole project in Japanese, and the survey of the other browser ports that it
+started from, are in this [gist](https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901).
 
 Tokens per second, stories15M, greedy:
 
