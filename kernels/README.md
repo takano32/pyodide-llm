@@ -31,7 +31,7 @@ taken once), one small NumPy call 1.5-2.5 us; a token takes about 100 kernel cal
 
 ## WebKit (2026-09-19, T44)
 
-`.github/workflows/webkit.yml` runs `tests/e2e.mjs` in Playwright's WebKit 26.4 on a macOS runner (Apple M1,
+`.github/workflows/browsers.yml` (then `webkit.yml`) runs `tests/e2e.mjs` in Playwright's WebKit 26.4 on a macOS runner (Apple M1,
 virtual) against the deployed site, by hand or once a week. It is Safari's engine, not Safari itself. All four
 models ran on the first try. WebKit has no relaxed SIMD, so the int8 models report `SIMD kernels, int8` and run
 on `matmul_q8`: the fallback had never met a real browser before.

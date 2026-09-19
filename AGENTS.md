@@ -43,7 +43,7 @@
 | `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路、`hf` を渡すと HF 形式のファイル（`tests/make_hf_fixture.py` が作る）をブラウザの中で変換する経路を試す |
 | `kernels/` | WASM SIMD カーネル（AssemblyScript）とビルドスクリプト。`make kernels` が `public/simdkernel.so` などを生成。制約と実測は `kernels/README.md` |
 | `.github/workflows/deploy.yml` | `make models` → `npm run build` → GitHub Pages |
-| `.github/workflows/webkit.yml` | 本番サイトを macOS ランナーの WebKit（Playwright）で動かす。手動（`gh workflow run webkit.yml`）か週 1 回。結果は実行の Summary に出る |
+| `.github/workflows/browsers.yml` | 本番サイトをほかのブラウザで動かす: macOS の WebKit、Linux（x86-64）の Chromium と Firefox、Windows の Edge（Playwright）。手動（`gh workflow run browsers.yml`）か週 1 回。結果は各ジョブの Summary に出る |
 
 公開先: https://takano32.github.io/pyodide-llama-py/ （リポジトリの旧名は pyodide-llama2-py。Pages の旧 URL は転送されない）
 

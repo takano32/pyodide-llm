@@ -1,7 +1,9 @@
 // End-to-end check in a real browser: serves dist/ under the GitHub Pages base path, waits until the model is
 // ready, runs the default prompt, and checks that text streams in and that the page itself never scrolls.
 //
-//   npm run build && node tests/e2e.mjs [model id] [chromium|firefox|webkit] [url of a deployed site]
+//   npm run build && node tests/e2e.mjs [model id] [chromium|firefox|webkit|msedge|chrome] [url of a deployed site]
+//
+// msedge and chrome are the browsers installed on the machine (Playwright calls them channels of chromium).
 //
 // The model id "local" opens stories260K.bin and tok512.bin of this directory through the folder button instead,
 // as a visitor would open a model of their own disk. "hf" does the same with the files Hugging Face would publish
@@ -45,7 +47,8 @@ if (!url) {
   url = `http://localhost:${server.address().port}${base}`;
 }
 
-const browser = await playwright[engine].launch({ headless: true });
+const channel = ["msedge", "chrome"].includes(engine) ? engine : undefined;
+const browser = await playwright[channel ? "chromium" : engine].launch({ headless: true, channel });
 const browserVersion = browser.version();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors = [];

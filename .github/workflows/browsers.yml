@@ -1,0 +1,66 @@
+name: Browsers
+
+# The development machine is one ARM box with Chromium and Firefox. This is where the deployed site meets the other
+# browsers: Safari's engine on macOS, Chromium and Firefox on x86-64 Linux, and the real Edge on Windows. By hand
+# (gh workflow run browsers.yml) or once a week. Each job writes what it saw into the summary of the run: which
+# kernels the browser got (WebKit has no relaxed SIMD, so int8 falls back to matmul_q8) and how fast they were.
+# Playwright's WebKit is close to Safari, not Safari itself; Edge is Edge (channel "msedge"). The runners are shared
+# virtual machines: good for "does it run, and on which kernels", not for comparing speeds.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: The site to test
+        default: https://takano32.github.io/pyodide-llama-py/
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    name: ${{ matrix.browser }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, browser: webkit, install: webkit }
+          - { os: ubuntu-latest, browser: chromium, install: --with-deps chromium }
+          - { os: ubuntu-latest, browser: firefox, install: --with-deps firefox }
+          # the Edge that the runner has installed, not a download of Playwright
+          - { os: windows-latest, browser: msedge, install: '' }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install the test tools
+        run: npm ci
+
+      - name: Install the browser
+        if: matrix.install != ''
+        run: npx playwright-core install ${{ matrix.install }}
+
+      - name: Run the models
+        shell: bash  # also on Windows, and with pipefail, so that a failed test is not hidden by tee
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llama-py/' }}
+        run: |
+          node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${os.arch()}, ${os.platform()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
+          failed=0
+          # float32, int8 with a small and with the largest vocabulary
+          for model in stories260K stories15M tiny-lm llm-jp-3-150m; do
+            echo "### $model" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            node tests/e2e.mjs "$model" "${{ matrix.browser }}" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $failed
