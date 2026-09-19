@@ -2,20 +2,22 @@
 # compile with AssemblyScript, then prepend the custom section "dylink.0" that Emscripten's loader looks for
 # (WASM_DYLINK_MEM_INFO with memory size, memory alignment, table size and table alignment all zero).
 #
-#   npm install --no-save assemblyscript && python3 build.py      ->  simdkernel.so, simdkernel_relaxed.wasmlib
+#   python3 kernels/build.py <output directory>      ->  simdkernel.so, simdkernel_relaxed.wasmlib
 #
 # The relaxed module is NOT named *.so on purpose: Pyodide's package installer pre-loads every .so of a wheel,
 # and a browser without relaxed SIMD fails to compile it.
 import subprocess
+import sys
 from pathlib import Path
 
 ASC = ["npx", "asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1"]
 
 
 def side_module(source, out, features):
-    subprocess.run(ASC + [source, "-o", "tmp.wasm", "--enable", features], check=True)
-    wasm = Path("tmp.wasm").read_bytes()
-    Path("tmp.wasm").unlink()
+    temporary = Path(out).with_suffix(".tmp.wasm")
+    subprocess.run(ASC + [str(source), "-o", str(temporary), "--enable", features], check=True)
+    wasm = temporary.read_bytes()
+    temporary.unlink()
     # No data section (id 11) may exist: nothing would relocate it, and it would overwrite Pyodide's own memory
     position, section_ids = 8, []
     while position < len(wasm):
@@ -38,5 +40,6 @@ def side_module(source, out, features):
 
 
 if __name__ == "__main__":
-    side_module("kernel.ts", "simdkernel.so", "simd")
-    side_module("kernel_relaxed.ts", "simdkernel_relaxed.wasmlib", "simd,relaxed-simd")
+    here, out = Path(__file__).parent, Path(sys.argv[1])
+    side_module(here / "kernel.ts", out / "simdkernel.so", "simd")
+    side_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed.wasmlib", "simd,relaxed-simd")

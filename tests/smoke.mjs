@@ -2,16 +2,16 @@
 // models that `make models` has just produced. A broken engine, a broken conversion or an incompatible Pyodide
 // release fails here instead of on the site.
 //
-//   make models && node tests/smoke.mjs
+//   make models kernels && node tests/smoke.mjs
 import fs from "node:fs";
 import { loadPyodide, version } from "pyodide";
 
 const root = new URL("../", import.meta.url).pathname;
 const pyodide = await loadPyodide();
 await pyodide.loadPackage("numpy", { messageCallback: () => {} });
-for (const [file, name] of [["public/llama2_numpy.py", "llama2_numpy.py"], ["stories260K.bin", "stories260K.bin"],
-                            ["tok512.bin", "tok512.bin"], ["tiny-lm.bin", "tiny-lm.bin"], ["tiny-lm.tokenizer.bin", "tiny-lm.tokenizer.bin"]]) {
-  pyodide.FS.writeFile(name, fs.readFileSync(root + file));
+for (const file of ["public/llama2_numpy.py", "public/simdkernel.so", "public/simdkernel_relaxed.wasmlib", "stories260K.bin", "tok512.bin",
+                    "stories15M.f32", "tokenizer.bin", "tiny-lm.bin", "tiny-lm.tokenizer.bin"]) {
+  pyodide.FS.writeFile(file.split("/").pop(), fs.readFileSync(root + file));
 }
 
 const started = Date.now();
@@ -37,7 +37,23 @@ japanese = "".join(tiny.generate("昔々、", steps=12, temperature=0.7, repetit
 assert japanese.startswith("昔々、") and len(japanese) > len("昔々、"), f"tiny-lm wrote: {japanese!r}"
 assert japanese == "".join(tiny.generate("昔々、", steps=12, temperature=0.7, repetition_penalty=1.3, seed=1)), "a seed must reproduce"
 
-f"Python {sys.version.split()[0]}: stories260K {stories.stats['tokens_per_second']:.0f} tok/s, tiny-lm {tiny.stats['tokens_per_second']:.0f} tok/s, {japanese!r}"
+# the SIMD kernels: float32 must write exactly what NumPy writes, int8 computes on the int8 weights
+story = "Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine."
+numpy15 = llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"))
+simd15 = llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"), kernels="simdkernel.so")
+assert simd15.backend.startswith("SIMD"), f"the kernels did not load: {simd15.backend}"
+reference = "".join(numpy15.generate("Once upon a time", steps=60))
+assert reference.startswith(story), f"stories15M wrote: {reference!r}"
+assert "".join(simd15.generate("Once upon a time", steps=60)) == reference, "the kernels and NumPy disagree"
+fast = llama2_numpy.Llama(read("tiny-lm.bin"), read("tiny-lm.tokenizer.bin"), dtype="int8", kernels="simdkernel.so",
+                          tokenizer_kind="unigram", nfkc=True, stop_tokens=(1, 2))
+assert "int8" in fast.backend and len("".join(fast.generate("昔々、", steps=12, temperature=0.7, seed=1))) > 3
+# grouped-query attention is not covered by the kernels: NumPy takes over
+assert llama2_numpy.Llama(read("stories260K.bin"), read("tok512.bin"), kernels="simdkernel.so").backend == "NumPy"
+# and so it does when the kernels cannot be loaded
+assert llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"), kernels="missing.so").backend == "NumPy"
+
+f"Python {sys.version.split()[0]}: kernels {simd15.stats['tokens_per_second']:.0f} against NumPy {numpy15.stats['tokens_per_second']:.0f} tok/s, {fast.backend} {fast.stats['tokens_per_second']:.0f} tok/s, stories260K {stories.stats['tokens_per_second']:.0f} tok/s, tiny-lm {tiny.stats['tokens_per_second']:.0f} tok/s, {japanese!r}"
 `);
 console.log(`Pyodide ${version}, ${report} (${((Date.now() - started) / 1000).toFixed(1)}s)`);
 console.log("ok");

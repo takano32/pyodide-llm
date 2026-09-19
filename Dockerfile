@@ -5,7 +5,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends python3-numpy && rm -rf /var/lib/apt/lists/*
 COPY . .
 RUN npm ci
-RUN make models
+RUN make models kernels
 RUN npm run build
 
 EXPOSE 8080

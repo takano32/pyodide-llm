@@ -1,6 +1,6 @@
 
 
-.PHONY: run models clean
+.PHONY: run models kernels clean
 .SECONDARY:
 
 TINYLLAMAS = https://huggingface.co/karpathy/tinyllamas/resolve/main
@@ -14,7 +14,7 @@ CHECKPOINTS = llm-jp-3-150m.bin tiny-lm.bin stories15M.bin stories42M.bin storie
 TOKENIZERS = llm-jp-3-150m.tokenizer.bin tiny-lm.tokenizer.bin tokenizer.bin tok4096.bin tok512.bin
 
 # http://localhost:8080/pyodide-llama-py/
-run:	models node_modules
+run:	models kernels node_modules
 	npm run dev
 
 # public/models/ is what the page fetches: the checkpoints are cut into parts of 8 MiB, which worker.js downloads
@@ -26,6 +26,12 @@ public/models/.done:	$(CHECKPOINTS) $(TOKENIZERS)
 	for f in $(CHECKPOINTS); do split -b 8388608 -d -a 3 $$f public/models/$$f. || exit 1; done
 	cp $(TOKENIZERS) tiny-lm.LICENSE.txt public/models/
 	touch $@
+
+# The WASM SIMD kernels that llama2_numpy.py loads with ctypes, compiled by AssemblyScript (no binary is committed)
+kernels:	public/simdkernel.so
+
+public/simdkernel.so:	kernels/kernel.ts kernels/kernel_relaxed.ts kernels/build.py node_modules
+	python3 kernels/build.py public
 
 # int8, 3.5x smaller than float32 (quantize.py)
 %.bin:	%.f32 quantize.py
@@ -78,5 +84,5 @@ node_modules:	package-lock.json
 
 clean:
 	rm -f *.bin *.f32 *.f16 tiny-lm.LICENSE.txt
-	rm -rf public/models dist .astro tiny-lm llm-jp-3-150m node_modules
+	rm -rf public/models public/simdkernel* dist .astro tiny-lm llm-jp-3-150m node_modules
 

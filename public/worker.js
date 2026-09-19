@@ -99,7 +99,7 @@ function download(model) {
   };
 }
 
-let pyodide, llama2_numpy, llama;
+let pyodide, llama2_numpy, llama, kernels;
 
 async function init(search) {
   const version = await resolvePyodideVersion(search);
@@ -115,6 +115,18 @@ async function init(search) {
   }
   pyodide.FS.writeFile("llama2_numpy.py", await res.text());
   llama2_numpy = pyodide.pyimport("llama2_numpy");
+
+  // The WASM SIMD kernels (kernels/*.ts), which llama2_numpy.py loads with ctypes. They are optional: without
+  // them, or with ?kernel=off, NumPy does the math, several times slower.
+  if (new URLSearchParams(search).get("kernel") !== "off") {
+    for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
+      const kernel = await fetch(new URL(`${name}${self.location.search}`, import.meta.url)).catch(() => undefined);
+      if (kernel?.ok) {
+        pyodide.FS.writeFile(`/home/pyodide/${name}`, new Uint8Array(await kernel.arrayBuffer()));
+        kernels = "/home/pyodide/simdkernel.so";
+      }
+    }
+  }
 }
 
 // a Python bytearray that JavaScript fills in place
@@ -148,10 +160,10 @@ async function load(model, ready = Promise.resolve()) {
   const vocabulary = new Uint8Array(await tokenizerBytes);
   const tokenizer = pythonBuffer(vocabulary.length);
   tokenizer.write(0, vocabulary);
-  llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, model.options);
+  llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, ...model.options });
   weights.buffer.destroy();
   tokenizer.buffer.destroy();
-  postMessage({ type: "ready", pyodide: pyodide.version });
+  postMessage({ type: "ready", pyodide: pyodide.version, backend: llama.backend });
   dropStaleParts(model);
 }
 

@@ -7,7 +7,7 @@ This project leverages [Pyodide](https://pyodide.org/) to run a Python implement
 ## Features
 
 - **Pure Browser-based Inference:** No backend server required for inference.
-- **Python in WebAssembly:** Python sequences the transformer layers and NumPy does the math, about 200x faster than the original pure Python loops.
+- **Python in WebAssembly:** Python sequences the transformer layers, and small WASM SIMD kernels, loaded with `ctypes` and working in place on NumPy memory, do the math: 150 to 300 tokens/s, about a thousand times faster than the original pure Python loops (NumPy alone reaches 50).
 - **Streaming Output:** Pyodide runs in a Web Worker and every token is shown as soon as it is generated, so the page never freezes.
 - **Several Models:** Japanese / English models (tiny-lm with 29M parameters by default, llm-jp-3 with 150M), and TinyStories models from 260K to 42M parameters. `?model=<id>` selects one directly.
 
@@ -50,7 +50,7 @@ You can try the live demo on GitHub Pages (if configured):
 ## How it Works
 
 1. **Pyodide Initialization:** The browser resolves the latest Pyodide release at page load and loads that runtime from the CDN, so there is no version to bump by hand. Append `?pyodide=<version>` to the URL to force a specific version.
-2. **Environment Setup:** A Web Worker (`public/worker.js`) loads Pyodide, NumPy and `public/llama2_numpy.py`. The chat-like page itself is `src/pages/index.astro`, and the model list is `src/models.js`.
+2. **Environment Setup:** A Web Worker (`public/worker.js`) loads Pyodide, NumPy, `public/llama2_numpy.py` and the SIMD kernels (`kernels/`, compiled by `make kernels`; `?kernel=off` runs on NumPy alone). The chat-like page itself is `src/pages/index.astro`, and the model list is `src/models.js`.
 3. **Model Loading:** The selected model checkpoint and its tokenizer are downloaded while Pyodide is still loading, in parts of 8 MiB over several connections at once (about twice as fast as one stream), straight into one preallocated buffer while a progress bar shows the download. The larger models are distributed as int8 (3.5x smaller; measured perplexity cost on stories15M: +0.04%) and widened to float32 once, and their unquantized originals can be selected for comparison; float32 weights of the small models are NumPy views into the buffer, nothing is copied.
 4. **Inference:** When you click "Run", the prompt is sent to the worker, where a Python generator yields the text token by token; each piece is posted back and appended to the output.
 

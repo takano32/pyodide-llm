@@ -116,13 +116,45 @@ def rope(x, cos, sin):
     return out.reshape(-1, 2 * cos.size)
 
 
+def load_kernels(path):
+    """The WASM SIMD kernels of kernels/*.ts, as ctypes functions, or None when they cannot be used.
+
+    They are Emscripten side modules: ctypes.CDLL links them into Pyodide's own memory, so they work in place
+    on NumPy arrays. Anything may go wrong here (no file, not Pyodide, a future Emscripten that loads side
+    modules differently), and then NumPy does the work as before.
+    """
+    try:
+        import ctypes
+
+        lib = ctypes.CDLL(path)
+        i32, p = ctypes.c_int32, ctypes.c_void_p
+        signatures = dict(matmul_f32=[p, p, p, i32, i32, i32], quantize_x=[p, p, p, i32, i32],
+                          matmul_q8=[p, p, p, p, p, i32, i32, i32], rmsnorm=[p, p, p, i32], rope=[p, p, p, i32, i32],
+                          attention=[p, p, p, p, p, i32, i32, i32], swiglu=[p, p, p, i32], add_inplace=[p, p, i32])
+        kernels = {}
+        for name, argtypes in signatures.items():
+            kernels[name] = getattr(lib, name)
+            kernels[name].argtypes, kernels[name].restype = argtypes, None
+    except Exception:
+        return None
+    try:
+        # a browser without relaxed SIMD (shipping Safari) refuses to compile this one: then int8 uses matmul_q8
+        relaxed = ctypes.CDLL(path.replace(".so", "_relaxed.wasmlib")).matmul_q8r
+        relaxed.argtypes, relaxed.restype = [p, p, p, p, p, p, i32, i32, i32], None
+        kernels["matmul_q8r"] = relaxed
+    except Exception:
+        pass
+    return kernels
+
+
 class Llama:
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
-                 tokenizer_kind="bpe", nfkc=False, bos=BOS, stop_tokens=(BOS,)):
+                 tokenizer_kind="bpe", nfkc=False, bos=BOS, stop_tokens=(BOS,), kernels=None):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py).
         bos starts every sequence; generation ends when the model emits one of stop_tokens.
+        kernels is the path of simdkernel.so; without it, or when it cannot be loaded, NumPy does the math.
         """
         (self.dim, self.hidden_dim, self.n_layers, self.n_heads,
          self.n_kv_heads, vocab_size, self.seq_len) = struct.unpack_from("<7i", checkpoint, 0)
@@ -135,6 +167,12 @@ class Llama:
 
         dtype = np.dtype(dtype)
         offset = 28
+        # The kernels cover plain multi-head attention, and int8 in groups of 32 only
+        suitable = self.n_kv_heads == self.n_heads and self.head_size % 4 == 0 and (
+            dtype != np.int8 or (dim % 32 == 0 and hidden_dim % 32 == 0))
+        kernels = load_kernels(kernels) if kernels and suitable else None
+        # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
+        keep_int8 = kernels is not None and dtype == np.int8
 
         def take(*shape, matrix=True, widen=True):
             nonlocal offset
@@ -148,44 +186,150 @@ class Llama:
                 scales = np.frombuffer(checkpoint, dtype=np.float32, count=count // group, offset=offset + count)
                 offset += count + scales.nbytes
                 if not widen:
-                    # copies, so that the checkpoint buffer can be freed
-                    return values.reshape(*shape[:-1], -1, group).copy(), scales.reshape(*shape[:-1], -1, 1).copy()
+                    values, scales = values.reshape(*shape[:-1], -1, group), scales.reshape(*shape[:-1], -1, 1)
+                    # With the kernels every tensor stays a view into the checkpoint buffer. Otherwise this is the
+                    # embedding table next to widened copies: copy it, so that the buffer can be freed.
+                    return (values, scales) if keep_int8 else (values.copy(), scales.copy())
                 return (values.reshape(-1, group).astype(np.float32) * scales[:, None]).reshape(shape)
             # float32 weights are views into the checkpoint buffer: nothing is copied. float16 is widened.
             array = np.frombuffer(checkpoint, dtype=np.float32 if dtype == np.int8 else dtype, count=count, offset=offset)
             offset += array.nbytes
             if dtype == np.float16 and not widen:
                 return array.reshape(shape).copy()
-            return array.astype(np.float32, copy=dtype == np.int8).reshape(shape)
+            return array.astype(np.float32, copy=dtype == np.int8 and not keep_int8).reshape(shape)
 
         # With a separate classifier the embedding table is only ever read one row at a time, so an int8 or
         # float16 table stays as it is (a quarter or half of the memory) and forward() widens the row it needs.
-        self.token_embedding_table = take(self.vocab_size, dim, widen=shared_weights)
+        self.token_embedding_table = take(self.vocab_size, dim, widen=shared_weights and not keep_int8)
         self.rms_att_weight = take(n_layers, dim, matrix=False)
-        self.wq = take(n_layers, dim, dim)
-        self.wk = take(n_layers, kv_dim, dim)
-        self.wv = take(n_layers, kv_dim, dim)
-        self.wo = take(n_layers, dim, dim)
+        self.wq = take(n_layers, dim, dim, widen=not keep_int8)
+        self.wk = take(n_layers, kv_dim, dim, widen=not keep_int8)
+        self.wv = take(n_layers, kv_dim, dim, widen=not keep_int8)
+        self.wo = take(n_layers, dim, dim, widen=not keep_int8)
         self.rms_ffn_weight = take(n_layers, dim, matrix=False)
-        self.w1 = take(n_layers, hidden_dim, dim)
-        self.w2 = take(n_layers, dim, hidden_dim)
-        self.w3 = take(n_layers, hidden_dim, dim)
+        self.w1 = take(n_layers, hidden_dim, dim, widen=not keep_int8)
+        self.w2 = take(n_layers, dim, hidden_dim, widen=not keep_int8)
+        self.w3 = take(n_layers, hidden_dim, dim, widen=not keep_int8)
         self.rms_final_weight = take(dim, matrix=False)
         if dtype != np.int8:
             self.freq_cis_real = take(self.seq_len, self.head_size // 2, matrix=False)
             self.freq_cis_imag = take(self.seq_len, self.head_size // 2, matrix=False)
-        self.wcls = self.token_embedding_table if shared_weights else take(self.vocab_size, dim)
+        self.wcls = self.token_embedding_table if shared_weights else take(self.vocab_size, dim, widen=not keep_int8)
         if dtype != np.float32:
             # half precision is too coarse for the rotation angles, and int8 files leave the RoPE tables out
             angles = np.arange(self.seq_len)[:, None] / rope_theta ** (np.arange(0, self.head_size, 2) / self.head_size)
             self.freq_cis_real, self.freq_cis_imag = np.cos(angles).astype(np.float32), np.sin(angles).astype(np.float32)
 
-        self.key_cache = np.zeros((n_layers, self.n_kv_heads, self.seq_len, self.head_size), dtype=np.float32)
-        self.value_cache = np.zeros_like(self.key_cache)
+        self.backend = "NumPy"
+        if kernels:
+            self.forward = self.kernel_forward(kernels, keep_int8)
+        else:
+            self.key_cache = np.zeros((n_layers, self.n_kv_heads, self.seq_len, self.head_size), dtype=np.float32)
+            self.value_cache = np.zeros_like(self.key_cache)
         self.tokenizer = Tokenizer(tokenizer, self.vocab_size, kind=tokenizer_kind, nfkc=nfkc)
         self.bos, self.stop_tokens = bos, {int(token) for token in stop_tokens}
         self.stats = {}
         self._run = 0
+
+    def embedding(self, token):
+        if isinstance(self.token_embedding_table, tuple):
+            values, scales = self.token_embedding_table
+            return (values[token] * scales[token]).reshape(self.dim)
+        return self.token_embedding_table[token].astype(np.float32)
+
+    def kernel_forward(self, kernels, int8):
+        """forward() on the SIMD kernels: Python still sequences the layers, every operation is one kernel call.
+
+        NumPy owns all the memory. The kernels get addresses, taken once here because array.ctypes.data costs
+        microseconds, and work in place: nothing is copied. About 100 calls per token, 3 to 12 us each.
+        """
+        dim, hidden_dim, n_layers, n_heads, head_size = self.dim, self.hidden_dim, self.n_layers, self.n_heads, self.head_size
+        x, xb, xb2, q = (np.zeros(dim, dtype=np.float32) for _ in range(4))
+        hb, hb2 = np.zeros(hidden_dim, dtype=np.float32), np.zeros(hidden_dim, dtype=np.float32)
+        att, logits = np.zeros(self.seq_len, dtype=np.float32), np.zeros(self.vocab_size, dtype=np.float32)
+        # [layers][seq][dim], unlike the NumPy forward: k and v of a position are written straight into their rows
+        key_cache = np.zeros((n_layers, self.seq_len, dim), dtype=np.float32)
+        value_cache = np.zeros_like(key_cache)
+        xq, xs = np.zeros(max(dim, hidden_dim), dtype=np.int8), np.zeros(max(dim, hidden_dim) // 32, dtype=np.float32)
+        address = lambda array: array.ctypes.data
+        x_p, xb_p, xb2_p, q_p, hb_p, hb2_p, att_p, logits_p, xq_p, xs_p = map(address, (x, xb, xb2, q, hb, hb2, att, logits, xq, xs))
+        key_p, value_p, cos_p, sin_p = map(address, (key_cache, value_cache, self.freq_cis_real, self.freq_cis_imag))
+        att_w, ffn_w, final_w = map(address, (self.rms_att_weight, self.rms_ffn_weight, self.rms_final_weight))
+        rmsnorm, rope, attention = kernels["rmsnorm"], kernels["rope"], kernels["attention"]
+        swiglu, add_inplace, quantize_x = kernels["swiglu"], kernels["add_inplace"], kernels["quantize_x"]
+        self._kernel_buffers = (x, xb, xb2, q, hb, hb2, att, logits, key_cache, value_cache, xq, xs)  # keep them alive
+
+        if int8:
+            relaxed = kernels.get("matmul_q8r")
+            self.backend = "SIMD kernels, int8" + (", relaxed SIMD" if relaxed else "")
+            # relaxed SIMD multiplies int8 by 7-bit unsigned: activations get a bias of 64, which
+            # corrections = scale * sum(group) takes out again, as dot(w, q - 64) = dot(w, q) - 64 * sum(w)
+            bias = 64 if relaxed else 0
+            self._corrections = []
+
+            def pointers(tensor):
+                values, scales = tensor
+                corrections = (scales[..., 0] * values.sum(axis=-1, dtype=np.int32)).astype(np.float32) if relaxed else scales
+                self._corrections.append(corrections)
+                return values, scales, corrections
+
+            def matmul_for(tensor, n, d):
+                values, scales, corrections = pointers(tensor)
+                layers = [(address(values[l]), address(scales[l]), address(corrections[l])) for l in range(len(values))] \
+                    if values.ndim == 4 else [(address(values), address(scales), address(corrections))]
+
+                def matmul(out_p, in_p, l, same_input=False):
+                    values_p, scales_p, corrections_p = layers[l]
+                    if not same_input:  # q, k, v (and w1, w3) share their input: quantize it once
+                        quantize_x(xq_p, xs_p, in_p, n, bias)
+                    if relaxed:
+                        relaxed(out_p, xq_p, xs_p, values_p, scales_p, corrections_p, n, 0, d)
+                    else:
+                        kernels["matmul_q8"](out_p, xq_p, xs_p, values_p, scales_p, n, 0, d)
+                return matmul
+        else:
+            self.backend = "SIMD kernels, float32"
+
+            def matmul_for(tensor, n, d):
+                layers = [address(tensor[l]) for l in range(len(tensor))] if tensor.ndim == 3 else [address(tensor)]
+
+                def matmul(out_p, in_p, l, same_input=False):
+                    kernels["matmul_f32"](out_p, in_p, layers[l], n, 0, d)
+                return matmul
+
+        wq, wk, wv, wo = (matmul_for(w, dim, dim) for w in (self.wq, self.wk, self.wv, self.wo))
+        w1, w3 = matmul_for(self.w1, dim, hidden_dim), matmul_for(self.w3, dim, hidden_dim)
+        w2, wcls = matmul_for(self.w2, hidden_dim, dim), matmul_for(self.wcls, dim, self.vocab_size)
+        layer_bytes, row_bytes, half_bytes = self.seq_len * dim * 4, dim * 4, head_size // 2 * 4
+
+        def forward(token, pos, need_logits=True):
+            x[:] = self.embedding(token)
+            cos, sin = cos_p + pos * half_bytes, sin_p + pos * half_bytes
+            for l in range(n_layers):
+                keys, values = key_p + l * layer_bytes, value_p + l * layer_bytes
+                k_p, v_p = keys + pos * row_bytes, values + pos * row_bytes
+                rmsnorm(xb_p, x_p, att_w + l * row_bytes, dim)
+                wq(q_p, xb_p, l)
+                wk(k_p, xb_p, l, True)
+                wv(v_p, xb_p, l, True)
+                rope(q_p, cos, sin, n_heads, head_size)
+                rope(k_p, cos, sin, n_heads, head_size)
+                attention(xb_p, q_p, keys, values, att_p, pos, n_heads, head_size)
+                wo(xb2_p, xb_p, l)
+                add_inplace(x_p, xb2_p, dim)
+                rmsnorm(xb_p, x_p, ffn_w + l * row_bytes, dim)
+                w1(hb_p, xb_p, l)
+                w3(hb2_p, xb_p, l, True)
+                swiglu(hb_p, hb_p, hb2_p, hidden_dim)
+                w2(xb2_p, hb_p, l)
+                add_inplace(x_p, xb2_p, dim)
+            if not need_logits:
+                return None
+            rmsnorm(xb_p, x_p, final_w, dim)
+            wcls(logits_p, xb_p, 0)
+            return logits
+
+        return forward
 
     def forward(self, token, pos, need_logits=True):
         n_kv_heads, head_size = self.n_kv_heads, self.head_size
@@ -194,11 +338,7 @@ class Llama:
         cos, sin = self.freq_cis_real[pos], self.freq_cis_imag[pos]
 
         # Copy the token embedding into x
-        if isinstance(self.token_embedding_table, tuple):
-            values, scales = self.token_embedding_table
-            x = (values[token] * scales[token]).reshape(self.dim)
-        else:
-            x = self.token_embedding_table[token].astype(np.float32)
+        x = self.embedding(token)
 
         # Forward all the layers
         for l in range(self.n_layers):

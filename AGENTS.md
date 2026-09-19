@@ -29,7 +29,7 @@
 
 | ファイル | 役割 |
 |---|---|
-| `public/llama2_numpy.py` | NumPy 版の推論エンジン。llama2.c の legacy 形式（7 個の int ヘッダ + テンソル）を読む。float32 / float16 / int8。トークナイザは BPE（llama2.c 方式）と unigram（Viterbi）。`generate()` はテキスト片を返すジェネレータ |
+| `public/llama2_numpy.py` | 推論エンジン。数値演算は SIMD カーネル（`load_kernels` / `kernel_forward`）、使えなければ NumPy。llama2.c の legacy 形式（7 個の int ヘッダ + テンソル）を読む。float32 / float16 / int8。トークナイザは BPE（llama2.c 方式）と unigram（Viterbi）。`generate()` はテキスト片を返すジェネレータ |
 | `public/worker.js` | Web Worker。最新 Pyodide の解決、モデル部品の並列ダウンロード（8 MiB × 4 並列、Pyodide のロードと同時進行）、Python バッファへの直接書き込み、トークンの逐次送信 |
 | `src/pages/index.astro` | チャット風のページ。Worker の報告を描画するだけ |
 | `src/models.js` | モデル一覧（ファイル名、バイト数、エンジンのオプション、生成設定、既定プロンプト） |
@@ -38,7 +38,7 @@
 | `Makefile` | `make models` が全モデルを取得・変換・量子化し、`public/models/` に 8 MiB の部品として置く。`make run` は開発サーバー |
 | `tests/smoke.mjs` | デプロイ前のスモークテスト。Node 上の最新 Pyodide でエンジンとモデルを確かめる（`make models` の後に `node tests/smoke.mjs`、約 8 秒） |
 | `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright） |
-| `experiments/simd-kernel/` | SIMD カーネルの試作一式（未導入。TODO の T30 の出発点） |
+| `kernels/` | WASM SIMD カーネル（AssemblyScript）とビルドスクリプト。`make kernels` が `public/simdkernel.so` などを生成。制約と実測は `kernels/README.md` |
 | `.github/workflows/deploy.yml` | `make models` → `npm run build` → GitHub Pages |
 
 公開先: https://takano32.github.io/pyodide-llama-py/ （リポジトリの旧名は pyodide-llama2-py。Pages の旧 URL は転送されない）
@@ -53,9 +53,9 @@
 - **プロンプトの先頭に空白を付ける**（sentencepiece のダミープレフィックス）。付けないとパープレキシティが 8.5% 悪化する。
 - **int8 の品質は原本と区別できない。** stories15M で +0.04%、tiny-lm 91.3 → 91.1、llm-jp-3-150m 22.76 → 22.69、最尤トークン一致率 約 98%。int4 は +16.8% で不可。greedy の出力は途中から原本と分岐するが破綻はしない。
 - **モデル。** tiny-lm（29M、MIT、日英 Wikipedia、質は低い：パープレキシティ 91）、llm-jp-3-150m（Apache-2.0、質は段違い：22.8、ただし約 8 tok/s・メモリ約 500MB）、TinyStories 260K / 3.5M / 15M / 42M。小さいモデルは greedy だと反復するので、日本語モデルは temperature 0.7 / top-p 0.9 / 繰り返しペナルティ付き。
-- **ブラウザでの速度（Chromium）。** tiny-lm 約 40、stories15M 約 45〜50、3.5M 約 107、260K 約 300、llm-jp-3-150m 約 8.5 tok/s。
+- **ブラウザでの速度（Chromium、カーネルあり）。** tiny-lm 約 150、stories15M 約 300（int8）/ 186（float32）、llm-jp-3-150m 約 47 tok/s。カーネルなし（`?kernel=off`、および GQA の 3.5M 約 107・260K 約 300）では tiny-lm 約 40、stories15M 約 50、llm-jp 約 8.5 tok/s。
 - **分割並列ダウンロードは約 1.8 倍速い**（本番 CDN で 167MB が 20.4 秒 → 11.2 秒）。
-- **Pyodide + ctypes の SIMD カーネル（未導入・実証済み）。** カーネルを Emscripten のサイドモジュールとして `ctypes.CDLL` で読み込み、NumPy のメモリを直接計算すると、Python が制御したまま 181（float32）/ 282（int8）/ 348（relaxed SIMD int8）tok/s。emcc なしでも、AssemblyScript の出力に `dylink.0` セクションを付ければ読み込める（Pyodide 0.29.4 と 314.0.7 で確認、Chromium と Firefox で動作）。
+- **SIMD カーネル（導入済み）。** カーネルを Emscripten のサイドモジュールとして `ctypes.CDLL` で読み込み、NumPy のメモリを直接計算する。Python が層を順に呼ぶ設計のまま、NumPy 比で 4〜9 倍速い。int8 は重みを int8 のまま計算するのでメモリも減る（llm-jp-3-150m: ヒープ 897MB → 283MB、9.3 → 81 tok/s）。emcc は不要で、AssemblyScript の出力に `dylink.0` セクションを付ければ読み込める。詳細と実測は `kernels/README.md`。語彙の大きいモデルでは NumPy でのサンプリングが次のボトルネック（TODO の T32）。
 
 ## 落とし穴（実際に踏んだもの）
 
@@ -64,7 +64,7 @@
 - **`loadPyodide()` は wasm の取得に失敗してもエラーにならず固まる。** 例外を前提にしたフォールバックは機能しない。
 - **ページに `<meta charset>` がないと日本語が化けてモデルに渡る。**
 - **Pyodide の NumPy は BLAS も SIMD も無効**でビルドされている（スカラー WASM 相当）。SciPy の OpenBLAS に差し替えても 1.15 倍で、wheel が 16MB 増えるだけ。
-- **AssemblyScript のサイドモジュールには静的データを置けない**（再配置されない）。標準の数学関数は使わず、テーブルなしの実装を書くこと。relaxed SIMD を使うカーネルは別ファイルにして `try/except` で読む（Safari は未対応。インストーラが `*.so` を全部先読みするので拡張子も変える）。
+- **`kernels/*.ts` には静的データを置けない**（再配置されない）。標準の数学関数は使わず、テーブルなしの実装を書くこと。relaxed SIMD を使うカーネルは別ファイルにして `try/except` で読む（Safari は未対応。インストーラが `*.so` を全部先読みするので拡張子も変える）。
 - **開発機はメモリが少ない。** 空き 600MB でヘッドレスブラウザを動かしてマシンごと落ちたことがある。ブラウザのテスト前に `free -m` で空きが 1GB 以上あることを確認する。llm-jp-3-150m の float16 原本（ブラウザで約 800MB）はこの機械では試さない。
 - **止められたシェルコマンドが途中まで実行されていることがある。** 止められたら `git status` で状態を確かめる。
 - **モデルの部品は Cache API に残る。** モデルの中身を変えてもサイズが同じだと古いキャッシュが使われ続ける。その場合は `public/worker.js` の `MODEL_CACHE` の名前を上げる（`models-v2`）。

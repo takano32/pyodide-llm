@@ -33,16 +33,14 @@
 - 内容: (1) BPE と unigram のエンコード → デコード往復（日本語、絵文字、語彙外文字、空白・タブ・改行）。(2) `quantize.py` → `dtype="int8"` で読んだ重みと元の重みの誤差がグループの最大値の 1/127 以内。(3) 小さな合成チェックポイント（dim 32、2 層、GQA あり / なし）で `forward` の logits を、素朴なループ実装と相対誤差 1e-4 以内で比較。(4) `generate` は同じシードで再現し、BOS で止まり、長すぎるプロンプトは `ValueError`。
 - モデルのダウンロードが要るテストは `make models` 済みのときだけ走るように分ける。
 
-### T30 SIMD カーネルの導入（本丸） — 状態: 未着手（担当: Fable）
-- 目的: 「WASM Python の限界」を本番に入れる。実証値は 181（float32）/ 282（int8）/ 348（relaxed SIMD int8）tok/s で NumPy の 4〜7 倍。int8 のまま計算するので llm-jp のメモリも減る。
-- 出発点: `experiments/simd-kernel/`（動作確認済みのカーネル、ビルドスクリプト、Python からの呼び方、守るべき制約）。**先にその README を読むこと。**
-- 手順の骨子:
-  1. カーネルのビルドを `make models` の流れに入れる（`assemblyscript` を devDependencies に。生成物 `public/simdkernel.so` などはコミットしない）。
-  2. `llama2_numpy.py` にカーネル用の forward を足す。`ctypes.CDLL` の読み込みに失敗したら NumPy の forward のまま動く（Safari や将来の Emscripten 変更への備え。方針 2 と両立させる）。
-  3. `attention` を GQA と `[kv_heads][seq][head_size]` のキャッシュ配置に対応させるか、カーネル使用時だけキャッシュ配置を変える。GQA のモデル（stories260K、3.5M）と行長が 32 の倍数でないモデルは NumPy のままでもよい。
-  4. int8 のモデルは重みを float32 に戻さず、`quantize.py` の形式のまま `matmul_q8` に渡す。relaxed SIMD 版は `try/except` で選ぶ。
-  5. `worker.js` がカーネルのファイルを Pyodide の FS に書く（`?v=` を付けること。AGENTS.md の落とし穴を参照）。
-- 完了条件: float32 のモデルで NumPy 版と同じ greedy 出力。int8 は破綻しない出力。Chromium で tiny-lm と stories15M が NumPy 版の 3 倍以上。カーネルの読み込みをわざと失敗させても NumPy で動く。T26 のスモークテストと `tests/e2e.mjs` が通る。iOS Safari は確認手段がなければ「未確認」と AGENTS.md に書く。
+### T32 サンプリングの高速化 — 状態: 未着手
+- 目的: カーネル導入後、語彙の大きいモデル（tiny-lm 51200、llm-jp 99584）では NumPy でのサンプリング（softmax、top-p、繰り返しペナルティ）が 1 トークンの時間の半分以上を占める（tiny-lm: greedy 422 tok/s に対しサンプリングあり 149 tok/s）。
+- 方針: `Llama.sample()` を見直す。top-p の前に `np.argpartition` で上位 k 個（例 256）に絞る、softmax を候補だけで計算する、など。カーネル側に top-k を足す案もある。
+- 完了条件: Chromium で tiny-lm（既定設定）が 250 tok/s 以上。同じシードでの再現性は保つ。
+
+### T33 カーネルの GQA 対応 — 状態: 未着手
+- 目的: stories260K と stories3_5M（grouped-query attention）もカーネルで動かす。`kernels/kernel.ts` の `attention` と `kernel_forward` の KV キャッシュ（`[seq][kv_dim]`）を n_kv_heads に対応させる。行長が 32 の倍数でなくても float32 なら問題ない。
+- 完了条件: 2 モデルで NumPy 版と同じ greedy 出力、`tests/smoke.mjs` に追加。
 
 ### T31 README に計測結果を載せる — 状態: 未着手
 - gist の要点（実装別 tok/s の表、int8 の品質、ブラウザ別の速度）を README に入れる。数値は AGENTS.md と `TODO.md` の完了タスクにあるものだけを使い、新しく推測しない。
@@ -76,6 +74,7 @@
 - [x] **T23 引き継ぎ書と台帳を作る。** `AGENTS.md`、`TODO.md`。（268a141）
 - [x] **T26 CI のスモークテスト。** `tests/smoke.mjs`: Node 上の最新 Pyodide で、stories260K（float32・GQA）の greedy 出力が参照どおりであることと、tiny-lm（変換 + int8 + unigram）が生成できシードで再現することを確認。約 8 秒、メモリ約 450MB。エンジンを壊すと失敗することを確認済み。デプロイでは `pyodide@latest` を入れ直してから走らせる（ページが実行時に最新版を使うため）。
 - [x] **T25 モデルのブラウザ内キャッシュ。** 部品を Cache API（`models-v1`）に保存し、キーに展開後のバイト数を含める。2 回目の読み込みはモデル部品のネットワーク要求が 0 件、準備完了が 11.3 秒 → 7.1 秒（tiny-lm、ローカル）。サイズが変わった古い部品は読み込み後に削除。`navigator.storage.persist()` はページ側から要求（Worker からは呼べない。ヘッドレス Chromium では許可されず false のまま）。
+- [x] **T30 SIMD カーネルの導入。** `kernels/*.ts` を `make kernels` でビルドし、`llama2_numpy.py` が ctypes で読み込む（失敗時・GQA・32 の倍数でない int8 は NumPy にフォールバック、`?kernel=off` で NumPy を強制）。float32 は NumPy と同じ出力で 53 → 200 tok/s、int8 は重みを int8 のまま計算して stories15M 351、tiny-lm 422 tok/s（Node 上の Pyodide、greedy）。llm-jp-3-150m は 9.3 → 81 tok/s、WASM ヒープ 897MB → 283MB。Chromium では tiny-lm 43 → 149、llm-jp 8.5 → 47、stories15M 50 → 296 tok/s。Firefox でも動作、Safari は未確認。スモークテストが両経路を確認する。
 
 ## やらないと決めたこと
 
