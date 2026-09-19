@@ -46,7 +46,7 @@
 - 手順: 30 行程度の最小の再現例（AssemblyScript の関数 1 つ、`build.py` の要点、Pyodide から呼んで NumPy の配列を書き換える）と、なぜ動くか・制約（静的データ不可、`.so` の先読み、relaxed SIMD の分離）・実測を 1 本の文章にする。置き場所は gist（既存の調査レポートの続編）か `kernels/README.md` の冒頭。公開（gist の作成）は持ち主に確認してから。
 - 完了条件: 最小の再現例がこのリポジトリの外（素の Pyodide + Node）で動くことを確かめてある。
 
-### T60 Hugging Face から検証済みのモデルを取得して、変換して動かす — 状態: 未着手（持ち主の発案。2026-09-19 にデザインの 3 点が決まった。規模 中〜大、Fable 向き）
+### T60 Hugging Face から検証済みのモデルを取得して、変換して動かす — 状態: 未着手（持ち主の発案。2026-09-19 にデザインの 4 点が決まった。規模 中〜大、Fable 向き）
 - 発案: どこかに「Hugging Face を使う」スイッチを置き、オンのときはコンボボックスから HF の代表的なモデルを選べるようにする。T39 の派生。
 - 前提は揃っている: T41 の変換器は `read(offset, length)` しか要らず、T42 でブラウザの中の変換は実証済み（llm-jp-3-150m を 7 秒、ヒープは変換後のモデルと同じ）。**2026-09-19 に確認: HF のファイル取得は CORS を許可し（`access-control-allow-origin`）、Range 要求に 206 と `content-range` で応える**（`https://huggingface.co/<repo>/resolve/main/model.safetensors`、CDN へのリダイレクト越し）。
 - いちばんの注意: **「代表的なモデル」の大半は動かない。** エンジンが動かせるのは、素の Llama 構造（bias なし、RoPE scaling なし、silu）で、safetensors が 1 ファイルで、トークナイザが Unigram の `tokenizer.json` か sentencepiece のモデルのもの。Llama 3 系（tiktoken の BPE、RoPE scaling、承認制）、Qwen、Gemma、Phi、SmolLM2（構造は Llama だがトークナイザが byte-level BPE）は動かない。だから一覧は「代表的」ではなく「**動くことを確かめたもの**」にする。HF の API で確認した候補（すべて Apache-2.0、承認不要）:
@@ -88,7 +88,8 @@
   - **データの形:** `{ id: "hf-llm-jp-3-440m", name, note, group: "hf", hf: { repo, revision（コミットのハッシュで固定）, weights: "model.safetensors", tokenizer: "tokenizer.json" }, conversion: { dtype: "int8", max_seq_len: 4096 }, options, generation, prompt, placeholder, template }`
   - **スイッチにする場合の形（代案）:** 設定のパネル（T35）の中に「Hugging Face のモデルを一覧に出す」のトグルを置き、オンのときだけ 3 つめのグループを出す（`localStorage` に覚える）。利点は「第三者のサーバーへ取りにいく」ことの明示。欠点は、機能が見つからないことと、設定のパネルが「生成の設定」以外のものを持つこと。
   - **決まったこと（2026-09-19、持ち主）:** (1) コンボボックスのグループ分けにする（スイッチにしない。上の代案は不採用）。(2) 1B 級のモデル（llm-jp-3-980m、TinyLlama 1.1B）も一覧に入れ、この開発機で試せないぶんは CI（`browsers.yml` のランナー）で確認する。(3) 確認ダイアログの閾値は 500MB。
-  - **まだ決まっていないこと:** (4) 指示モデルを入れるか。指示モデル（instruct / chat モデル）は、同じ構造・同じ大きさのモデルを「指示 → 応答」の例で追加学習したもの。決まった書式（llm-jp は `### 指示:` / `### 応答:`、TinyLlama Chat は `<|user|>` / `<|assistant|>`）で入力を渡すと、続きを書く代わりに答えを書いて自分で止まる。入れるなら、その書式に入力をはめる `template`（1 ターンだけ、状態なし）を実装する。入れないなら、一覧は続きを書く base モデルだけにする: `llm-jp/llm-jp-3-440m`、`llm-jp/llm-jp-3-980m`（HF の API で確認済み: Apache-2.0、承認不要、Llama 構造、safetensors 1 ファイル、`tokenizer.json` あり）。TinyLlama の base（`TinyLlama/TinyLlama_v1.1`）は safetensors を置いていないので使えず、TinyLlama を入れるなら Chat 版（= 指示モデル）しかない。上のコンボボックスの案に書いた instruct3 と TinyLlama Chat は、その場合は外す。
+  - (4) **指示モデルを入れる**（2026-09-19、持ち主）。指示モデル（instruct / chat モデル）は、同じ構造・同じ大きさのモデルを「指示 → 応答」の例で追加学習したもの。決まった書式（llm-jp の instruct3 は `### 指示:` / `### 応答:`、TinyLlama Chat は `<|user|>` / `<|assistant|>`）で入力を渡すと、続きを書く代わりに答えを書いて自分で止まる。`src/models.js` の項目に `template` を持たせ、入力をその書式にはめて渡す（1 ターンだけ、状態なし。会話の継続は T46 で却下済み）。書式は各モデルの `tokenizer_config.json` の `chat_template` から写し、system の文があるものはそれも入れる。項目名に「指示に応える」と書き、イントロに「小さいモデルなので答えの質は低い」と 1 行入れる。
+  - 一覧（確定）: `llm-jp/llm-jp-3-150m-instruct3`、`llm-jp/llm-jp-3-440m`、`llm-jp/llm-jp-3-440m-instruct3`、`llm-jp/llm-jp-3-980m-instruct3`、`TinyLlama/TinyLlama-1.1B-Chat-v1.0`。すべて HF の API で確認済み（Apache-2.0、承認不要、Llama 構造、safetensors 1 ファイル、`tokenizer.json`）。変換して動かすところは未確認（着手時に 1 つずつ確かめ、動かないものは外して理由を書く）。TinyLlama の base（`TinyLlama/TinyLlama_v1.1`）は safetensors を置いていないので使えない。
 - 設計の要点:
   1. 読み手: Worker の中なら同期の `XMLHttpRequest`（`responseType = "arraybuffer"`）で Range を取れるので、変換器の同期の `read()` にそのまま渡せる。断片を大きめ（16〜32MB）にして往復の回数を減らす。中止（T37）は断片の合間に効く。
   2. **変換結果を Cache API に入れる**（8 MiB の部品に分けて。キーは repo・リビジョン・dtype・コンテキスト）。原本は int8 の約 2 倍あり、毎回ダウンロードと変換をやり直すのは現実的でない。`navigator.storage.estimate()` で空きを見て、入らなければ入れない。
