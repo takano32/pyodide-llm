@@ -1,11 +1,14 @@
 name: Browsers
 
-# The development machine is one ARM box with Chromium and Firefox. This is where the deployed site meets the other
-# browsers: Safari's engine on macOS, Chromium and Firefox on x86-64 Linux, and the real Edge on Windows. By hand
-# (gh workflow run browsers.yml) or once a week. Each job writes what it saw into the summary of the run: which
+# The development machine is one ARM box with Chromium and Firefox. This is where the deployed site meets everything
+# else that GitHub's runners offer: five systems (Linux and Windows on x86-64 and on ARM, macOS on Apple silicon)
+# and, on each, every browser Playwright can start there: its own Chromium, Firefox and WebKit builds, and the
+# Chrome and Edge that the runner has installed (the real browsers, as channels of chromium). By hand
+# (gh workflow run browsers.yml) or once a week. Each job writes what it saw into the summary of its run: which
 # kernels the browser got (WebKit has no relaxed SIMD, so int8 falls back to matmul_q8) and how fast they were.
-# Playwright's WebKit is close to Safari, not Safari itself; Edge is Edge (channel "msedge"). The runners are shared
-# virtual machines: good for "does it run, and on which kernels", not for comparing speeds.
+# Playwright's WebKit is close to Safari, not Safari itself. The runners are shared virtual machines: good for "does
+# it run, and on which kernels", not for comparing speeds. A combination that cannot even start its browser fails
+# and says so; that is a result too (see AGENTS.md for which ones do).
 on:
   workflow_dispatch:
     inputs:
@@ -22,16 +25,16 @@ jobs:
   browser:
     name: ${{ matrix.browser }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: macos-latest, browser: webkit, install: webkit }
-          - { os: ubuntu-latest, browser: chromium, install: --with-deps chromium }
-          - { os: ubuntu-latest, browser: firefox, install: --with-deps firefox }
-          # the Edge that the runner has installed, not a download of Playwright
-          - { os: windows-latest, browser: msedge, install: '' }
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, windows-11-arm, macos-latest]
+        browser: [chromium, firefox, webkit, chrome, msedge]
+        exclude:
+          # Google and Microsoft publish neither Chrome nor Edge for Linux on ARM
+          - { os: ubuntu-24.04-arm, browser: chrome }
+          - { os: ubuntu-24.04-arm, browser: msedge }
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -45,9 +48,14 @@ jobs:
       - name: Install the test tools
         run: npm ci
 
+      # chrome and msedge are what the runner has installed; when it has not, Playwright installs them
       - name: Install the browser
-        if: matrix.install != ''
-        run: npx playwright-core install ${{ matrix.install }}
+        shell: bash
+        run: |
+          case "${{ matrix.browser }}" in
+            chrome|msedge) node -e 'require("playwright-core").chromium.launch({ channel: process.argv[1] }).then((b) => b.close())' "${{ matrix.browser }}" || npx playwright-core install "${{ matrix.browser }}" ;;
+            *) npx playwright-core install --with-deps "${{ matrix.browser }}" ;;
+          esac
 
       - name: Run the models
         shell: bash  # also on Windows, and with pipefail, so that a failed test is not hidden by tee
