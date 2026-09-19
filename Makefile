@@ -13,7 +13,7 @@ CHECKPOINTS = llm-jp-3-150m.bin tiny-lm.bin stories15M.bin stories42M.bin storie
               llm-jp-3-150m.f16 tiny-lm.f16 stories15M.f32 stories42M.f32
 TOKENIZERS = llm-jp-3-150m.tokenizer.bin tiny-lm.tokenizer.bin tokenizer.bin tok4096.bin tok512.bin
 
-# http://localhost:8080/pyodide-llama2-py/
+# http://localhost:8080/pyodide-llama-py/
 run:	models node_modules
 	npm run dev
 

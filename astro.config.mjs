@@ -1,9 +1,9 @@
 import { defineConfig } from "astro/config";
 
-// GitHub Pages serves the site under /pyodide-llama2-py/
+// GitHub Pages serves the site under /pyodide-llama-py/
 export default defineConfig({
   site: "https://takano32.github.io",
-  base: "/pyodide-llama2-py/",
+  base: "/pyodide-llama-py/",
   vite: {
     define: {
       // The commit of the deployment. GitHub Pages lets browsers cache every file for ten minutes, and a new page

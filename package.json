@@ -1,5 +1,5 @@
 {
-  "name": "pyodide-llama2-py",
+  "name": "pyodide-llama-py",
   "private": true,
   "type": "module",
   "scripts": {

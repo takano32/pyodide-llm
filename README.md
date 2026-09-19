@@ -1,4 +1,4 @@
-# Pyodide Llama2
+# Pyodide Llama
 
 Run Llama 2 in your browser using Python and WebAssembly!
 
@@ -14,7 +14,7 @@ This project leverages [Pyodide](https://pyodide.org/) to run a Python implement
 ## Live Demo
 
 You can try the live demo on GitHub Pages (if configured):
-[https://takano32.github.io/pyodide-llama2-py/](https://takano32.github.io/pyodide-llama2-py/)
+[https://takano32.github.io/pyodide-llama-py/](https://takano32.github.io/pyodide-llama-py/)
 
 ## Getting Started
 
@@ -28,24 +28,24 @@ You can try the live demo on GitHub Pages (if configured):
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/takano32/pyodide-llama2-py.git
-   cd pyodide-llama2-py
+   git clone https://github.com/takano32/pyodide-llama-py.git
+   cd pyodide-llama-py
    ```
 
 2. Run the application:
    ```bash
    make run
    ```
-   This will download the model files (about 1 GB) and convert tiny-lm, install dependencies, and start the Astro dev server at `http://localhost:8080/pyodide-llama2-py/`.
+   This will download the model files (about 1 GB) and convert tiny-lm, install dependencies, and start the Astro dev server at `http://localhost:8080/pyodide-llama-py/`.
 
 ### Running Locally with Docker
 
 1. Build and run the Docker container:
    ```bash
-   docker build -t pyodide-llama2-py .
-   docker run -p 8080:8080 pyodide-llama2-py
+   docker build -t pyodide-llama-py .
+   docker run -p 8080:8080 pyodide-llama-py
    ```
-2. Open `http://localhost:8080/pyodide-llama2-py/` in your browser.
+2. Open `http://localhost:8080/pyodide-llama-py/` in your browser.
 
 ## How it Works
 
