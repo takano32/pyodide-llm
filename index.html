@@ -94,12 +94,12 @@
         generation: { steps: 256, temperature: 0.0 }, prompt: "Once upon a time", placeholder: STORY_PLACEHOLDER,
       },
       {
-        id: "stories3_5M", label: "TinyStories 3.5M, English, fast (15 MB)",
+        id: "stories3_5M", label: "TinyStories 3.5M, English, original float32, fast (15 MB)",
         checkpoint: "stories3_5M-v4k.bin", bytes: 14887004, tokenizer: "tok4096.bin", options: {},
         generation: { steps: 256, temperature: 0.0 }, prompt: "Once upon a time", placeholder: STORY_PLACEHOLDER,
       },
       {
-        id: "stories260K", label: "TinyStories 260K, English, tiny (1 MB)",
+        id: "stories260K", label: "TinyStories 260K, English, original float32, tiny (1 MB)",
         checkpoint: "stories260K.bin", bytes: 1056540, tokenizer: "tok512.bin", options: {},
         generation: { steps: 256, temperature: 0.0 }, prompt: "Once upon a time", placeholder: STORY_PLACEHOLDER,
       },
@@ -108,7 +108,14 @@
         checkpoint: "stories42M.bin", bytes: 46925852, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
         generation: { steps: 256, temperature: 0.0 }, prompt: "Once upon a time", placeholder: STORY_PLACEHOLDER,
       },
-      // the unquantized originals, to compare with int8
+      // the unquantized originals, to compare with int8 (the two smallest TinyStories models above are originals)
+      {
+        id: "llm-jp-3-150m-f16", label: "llm-jp-3 150M, 日本語 / English, original float16, desktop only (305 MB)",
+        checkpoint: "llm-jp-3-150m.f16", bytes: 304702492, tokenizer: "llm-jp-3-150m.tokenizer.bin",
+        options: { dtype: "float16", tokenizer_kind: "unigram", stop_tokens: [1, 2, 7] },
+        generation: { steps: 256, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 },
+        prompt: "昔々、", placeholder: JAPANESE_PLACEHOLDER,
+      },
       {
         id: "tiny-lm-f16", label: "tiny-lm 29M, 日本語 / English, original float16 (59 MB)",
         checkpoint: "tiny-lm.f16", bytes: 58724892, tokenizer: "tiny-lm.tokenizer.bin",

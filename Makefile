@@ -10,7 +10,7 @@ LLM_JP = https://huggingface.co/llm-jp/llm-jp-3-150m/resolve/main
 # No binary is committed: every model is downloaded, converted and quantized here, also when the site is deployed.
 # The larger models are distributed as int8; the unquantized originals (*.f32, *.f16) can be selected as well.
 CHECKPOINTS = llm-jp-3-150m.bin tiny-lm.bin stories15M.bin stories42M.bin stories3_5M-v4k.bin stories260K.bin \
-              tiny-lm.f16 stories15M.f32 stories42M.f32
+              llm-jp-3-150m.f16 tiny-lm.f16 stories15M.f32 stories42M.f32
 TOKENIZERS = llm-jp-3-150m.tokenizer.bin tiny-lm.tokenizer.bin tokenizer.bin tok4096.bin tok512.bin
 
 run:	models node_modules/.bin/http-server
@@ -39,6 +39,12 @@ llm-jp-3-150m.f32 llm-jp-3-150m.tokenizer.bin &:	llm-jp-3-150m/model.safetensors
 	python3 convert_hf.py llm-jp-3-150m llm-jp-3-150m float32 512
 	mv llm-jp-3-150m.bin llm-jp-3-150m.f32
 
+# both Hugging Face models are published as bfloat16, so float16 is their original precision
+llm-jp-3-150m.f16:	llm-jp-3-150m/model.safetensors convert_hf.py
+	python3 convert_hf.py llm-jp-3-150m llm-jp-3-150m-f16 float16 512
+	mv llm-jp-3-150m-f16.bin llm-jp-3-150m.f16
+	rm llm-jp-3-150m-f16.tokenizer.bin
+
 tiny-lm/pytorch_model.bin:
 	mkdir -p tiny-lm
 	for f in config.json spiece.model LICENSE pytorch_model.bin; do wget -q -O tiny-lm/$$f $(TINY_LM)/$$f || exit 1; done
@@ -48,7 +54,6 @@ tiny-lm.f32 tiny-lm.tokenizer.bin tiny-lm.LICENSE.txt &:	tiny-lm/pytorch_model.b
 	mv tiny-lm.bin tiny-lm.f32
 	cp tiny-lm/LICENSE tiny-lm.LICENSE.txt
 
-# its weights are published as bfloat16, so float16 is the original precision
 tiny-lm.f16:	tiny-lm/pytorch_model.bin convert_hf.py
 	python3 convert_hf.py tiny-lm tiny-lm-f16 float16
 	mv tiny-lm-f16.bin tiny-lm.f16

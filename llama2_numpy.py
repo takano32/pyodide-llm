@@ -154,10 +154,12 @@ class Llama:
             # float32 weights are views into the checkpoint buffer: nothing is copied. float16 is widened.
             array = np.frombuffer(checkpoint, dtype=np.float32 if dtype == np.int8 else dtype, count=count, offset=offset)
             offset += array.nbytes
+            if dtype == np.float16 and not widen:
+                return array.reshape(shape).copy()
             return array.astype(np.float32, copy=dtype == np.int8).reshape(shape)
 
-        # With a separate classifier the embedding table is only ever read one row at a time, so an int8
-        # table stays int8 (a quarter of the memory) and forward() widens the row it needs.
+        # With a separate classifier the embedding table is only ever read one row at a time, so an int8 or
+        # float16 table stays as it is (a quarter or half of the memory) and forward() widens the row it needs.
         self.token_embedding_table = take(self.vocab_size, dim, widen=shared_weights)
         self.rms_att_weight = take(n_layers, dim, matrix=False)
         self.wq = take(n_layers, dim, dim)
@@ -196,7 +198,7 @@ class Llama:
             values, scales = self.token_embedding_table
             x = (values[token] * scales[token]).reshape(self.dim)
         else:
-            x = self.token_embedding_table[token].copy()
+            x = self.token_embedding_table[token].astype(np.float32)
 
         # Forward all the layers
         for l in range(self.n_layers):
