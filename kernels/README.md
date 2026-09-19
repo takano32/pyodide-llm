@@ -32,8 +32,9 @@ taken once), one small NumPy call 1.5-2.5 us; a token takes about 100 kernel cal
 ## Every browser the runners offer (2026-09-19, T44 and T58)
 
 `.github/workflows/browsers.yml` runs `tests/e2e.mjs` against the deployed site on five systems, in Playwright's
-own Chromium, Firefox and WebKit and in the Chrome and Edge that the runner has installed: 23 jobs, by hand
-(`gh workflow run browsers.yml`) or once a week. **All 23 ran all four models.** tok/s over 256 tokens
+own Chromium, Firefox and WebKit and in the Chrome and Edge that the runner has installed: one job per system,
+its browsers one after the other, by hand (`gh workflow run browsers.yml`) or once a week. **All 23 combinations
+ran all four models.** tok/s over 256 tokens
 (`*`: the model stopped by itself before 190 tokens, so the number is less steady). The runners are shared virtual
 machines with different CPUs, some of them much faster than the machine of the other tables: read the table for
 "does it run, and on which kernel", and across browsers on the same system, not across systems.

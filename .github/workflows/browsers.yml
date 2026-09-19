@@ -1,14 +1,13 @@
 name: Browsers
 
 # The development machine is one ARM box with Chromium and Firefox. This is where the deployed site meets everything
-# else that GitHub's runners offer: five systems (Linux and Windows on x86-64 and on ARM, macOS on Apple silicon)
-# and, on each, every browser Playwright can start there: its own Chromium, Firefox and WebKit builds, and the
-# Chrome and Edge that the runner has installed (the real browsers, as channels of chromium). By hand
-# (gh workflow run browsers.yml) or once a week. Each job writes what it saw into the summary of its run: which
-# kernels the browser got (WebKit has no relaxed SIMD, so int8 falls back to matmul_q8) and how fast they were.
-# Playwright's WebKit is close to Safari, not Safari itself. The runners are shared virtual machines: good for "does
-# it run, and on which kernels", not for comparing speeds. A combination that cannot even start its browser fails
-# and says so; that is a result too (see AGENTS.md for which ones do).
+# else that GitHub's runners offer: five systems (Linux and Windows on x86-64 and on ARM, macOS on Apple silicon),
+# one job each, and in every job all the browsers Playwright can start there, one after the other: its own
+# Chromium, Firefox and WebKit builds, and the Chrome and Edge that the runner has installed (the real browsers, as
+# channels of chromium). By hand (gh workflow run browsers.yml) or once a week. Each job writes what it saw into
+# its summary: which kernels a browser got (WebKit has no relaxed SIMD, so int8 falls back to matmul_q8) and how
+# fast they were. Playwright's WebKit is close to Safari, not Safari itself. The runners are shared virtual
+# machines: good for "does it run, and on which kernels", not for comparing speeds across systems.
 on:
   workflow_dispatch:
     inputs:
@@ -22,19 +21,22 @@ permissions:
   contents: read
 
 jobs:
-  browser:
-    name: ${{ matrix.browser }} on ${{ matrix.os }}
+  system:
+    name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 90
     strategy:
       fail-fast: false
+      # one job per system, its browsers one after the other: 23 jobs of a few minutes each were more to look at
+      # than they were worth
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest, windows-11-arm, macos-latest]
-        browser: [chromium, firefox, webkit, chrome, msedge]
-        exclude:
+        include:
+          - { os: ubuntu-latest, browsers: chromium firefox webkit chrome msedge }
           # Google and Microsoft publish neither Chrome nor Edge for Linux on ARM
-          - { os: ubuntu-24.04-arm, browser: chrome }
-          - { os: ubuntu-24.04-arm, browser: msedge }
+          - { os: ubuntu-24.04-arm, browsers: chromium firefox webkit }
+          - { os: windows-latest, browsers: chromium firefox webkit chrome msedge }
+          - { os: windows-11-arm, browsers: chromium firefox webkit chrome msedge }
+          - { os: macos-latest, browsers: chromium firefox webkit chrome msedge }
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -49,26 +51,30 @@ jobs:
         run: npm ci
 
       # chrome and msedge are what the runner has installed; when it has not, Playwright installs them
-      - name: Install the browser
+      - name: Install the browsers
         shell: bash
         run: |
-          case "${{ matrix.browser }}" in
-            chrome|msedge) node -e 'require("playwright-core").chromium.launch({ channel: process.argv[1] }).then((b) => b.close())' "${{ matrix.browser }}" || npx playwright-core install "${{ matrix.browser }}" ;;
-            *) npx playwright-core install --with-deps "${{ matrix.browser }}" ;;
-          esac
+          for browser in ${{ matrix.browsers }}; do
+            case "$browser" in
+              chrome|msedge) node -e 'require("playwright-core").chromium.launch({ channel: process.argv[1] }).then((b) => b.close())' "$browser" || npx playwright-core install "$browser" ;;
+              *) npx playwright-core install --with-deps "$browser" ;;
+            esac
+          done
 
-      - name: Run the models
+      - name: Run the models in every browser
         shell: bash  # also on Windows, and with pipefail, so that a failed test is not hidden by tee
         env:
           SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llama-py/' }}
         run: |
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${os.arch()}, ${os.platform()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
           failed=0
-          # float32, int8 with a small and with the largest vocabulary
-          for model in stories260K stories15M tiny-lm llm-jp-3-150m; do
-            echo "### $model" >> "$GITHUB_STEP_SUMMARY"
+          for browser in ${{ matrix.browsers }}; do
+            echo "## $browser" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            node tests/e2e.mjs "$model" "${{ matrix.browser }}" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            # float32, int8 with a small and with the largest vocabulary
+            for model in stories260K stories15M tiny-lm llm-jp-3-150m; do
+              node tests/e2e.mjs "$model" "$browser" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            done
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
           exit $failed
