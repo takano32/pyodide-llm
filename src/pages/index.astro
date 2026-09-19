@@ -62,9 +62,10 @@
         <progress id="progress" hidden></progress>
       </div>
       <form id="composer">
-        <input id="prompt" autocomplete="off" />
+        <!-- Enter breaks the line, as it must while Japanese text is being converted; Ctrl or Cmd + Enter sends -->
+        <textarea id="prompt" rows="1" autocomplete="off" enterkeyhint="enter"></textarea>
         <!-- the same button stops the run that is going on; the script swaps the arrow for a square -->
-        <button id="run" disabled aria-label="Run">
+        <button id="run" disabled aria-label="Run" title="Ctrl + Enter">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z" fill="currentColor" /></svg>
         </button>
       </form>
@@ -153,9 +154,10 @@
   footer { padding: 8px 16px 14px; }
   #status { display: flex; align-items: center; gap: 10px; min-height: 1.4em; font-size: 0.75rem; color: var(--muted); padding: 0 6px 6px; }
   progress { flex: 1; height: 6px; accent-color: var(--accent); }
-  #composer { display: flex; gap: 8px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 6px 6px 16px; }
+  #composer { display: flex; gap: 8px; align-items: flex-end; background: var(--panel); border: 1px solid var(--line); border-radius: 24px; padding: 6px 6px 6px 16px; }
   #composer:focus-within { border-color: var(--accent); }
-  #prompt { flex: 1; min-width: 0; font: inherit; color: var(--text); background: transparent; border: 0; outline: 0; }
+  /* grows with its lines (the script sets the height) up to five of them, then scrolls: the page never does */
+  #prompt { flex: 1; min-width: 0; font: inherit; line-height: 1.5; color: var(--text); background: transparent; border: 0; outline: 0; resize: none; padding: 6px 0; max-height: calc(7.5em + 12px); overflow-y: auto; }
   #run { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-text); cursor: pointer; }
   #run:disabled { opacity: 0.35; cursor: default; }
 </style>
@@ -165,7 +167,7 @@
 
   declare const __BUILD__: string;
   const $ = (id: string) => document.getElementById(id)!;
-  const chat = $("chat"), select = $("model") as HTMLSelectElement, prompt = $("prompt") as HTMLInputElement;
+  const chat = $("chat"), select = $("model") as HTMLSelectElement, prompt = $("prompt") as HTMLTextAreaElement;
   const run = $("run") as HTMLButtonElement, statusText = $("status-text"), progress = $("progress") as HTMLProgressElement;
 
   // the ribbon or the corner, whichever the dice say
@@ -189,9 +191,16 @@
     run.setAttribute("aria-label", current ? "Stop" : "Run");
   }
 
+  // the text field is as tall as its text
+  function fit() {
+    prompt.style.height = "auto";
+    prompt.style.height = `${prompt.scrollHeight}px`;
+  }
+
   function show(current: typeof model) {
     select.value = current.id;
     prompt.value = current.prompt;
+    fit();
     prompt.placeholder = current.placeholder;
   }
   show(model);
@@ -291,11 +300,20 @@
     worker.postMessage({ type: "load", model });
   };
 
+  // Enter breaks the line and Shift + Enter does too; Ctrl + Enter or Cmd + Enter sends. A phone has neither key
+  // and sends with the button.
+  prompt.onkeydown = (event) => {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.isComposing) {
+      event.preventDefault();
+      ($("composer") as HTMLFormElement).requestSubmit();
+    }
+  };
+  prompt.oninput = fit;
+
   run.onclick = (event) => {
-    // While generating the button stops the run instead of submitting the form. Enter in the text field clicks
-    // it too (that is how a form is submitted implicitly), so only a real press counts: a click of the pointer
-    // (detail 1 and more) or a key on the focused button (detail 0, but then it has the focus).
-    if (generating && (event.detail > 0 || document.activeElement === run)) {
+    // While generating the button stops the run instead of submitting the form. A textarea never submits a form
+    // implicitly, so nothing but a press of the button itself arrives here.
+    if (generating) {
       event.preventDefault();
       worker.postMessage({ type: "stop" });
     }
@@ -303,7 +321,7 @@
 
   $("composer").onsubmit = (event) => {
     event.preventDefault();
-    // Enter submits the form even while the button is disabled or a run is going on
+    // Ctrl + Enter asks for this even while the button is disabled or a run is going on
     if (run.disabled || generating) {
       return;
     }

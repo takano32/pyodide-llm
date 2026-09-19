@@ -47,7 +47,8 @@ const started = Date.now();
 await page.goto(`${url}?model=${model}`);
 await page.waitForFunction(() => !document.getElementById("run").disabled || document.querySelector(".error"), null, { timeout: 600000 });
 const readySeconds = (Date.now() - started) / 1000;
-await page.press("#prompt", "Enter");
+// Enter alone breaks the line
+await page.press("#prompt", "Control+Enter");
 await page.waitForFunction(() => document.querySelector(".model .meta") || document.querySelector(".error"), null, { timeout: 600000 });
 const result = await page.evaluate(() => ({
   text: document.querySelector(".model .bubble")?.textContent ?? "",
