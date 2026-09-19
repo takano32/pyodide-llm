@@ -63,7 +63,7 @@ together:
 
 ```json
 { "name": "tiny-lm", "options": { "tokenizer_kind": "unigram", "nfkc": true, "stop_tokens": [1, 2] },
-  "generation": { "steps": 256, "temperature": 0.7, "topp": 0.9, "repetition_penalty": 1.3 }, "prompt": "昔々、" }
+  "generation": { "steps": 256, "temperature": 0.7, "topp": 0.9, "repetition_penalty": 1.3 }, "prompt": "これからの流行りは" }
 ```
 
 WebAssembly addresses 32 bits and a phone gives a tab far less, so a checkpoint of more than 1 GB asks first.

@@ -8,7 +8,7 @@ from llama2_numpy import Tokenizer
 
 TEXTS = [
     "hello world",
-    "昔々、猫がいました",   # Japanese
+    "これからの流行りは、猫です",   # Japanese
     "sushi \U0001f363 and \U0001f363\U0001f363",                 # emoji, outside the vocabulary
     "\U00030EDE ಠ_ಠ",                                  # rare characters, byte fallback only
     "tabs\tand\nnewlines  and   spaces",
@@ -45,8 +45,8 @@ def test_byte_fallback_spells_out_unknown_characters():
 
 def test_unigram_prefers_the_longest_well_scored_piece():
     tokenizer = tiny_tokenizer(kind="unigram")
-    # " 昔々" scores better than " " + "昔" + "々"
-    assert [tokenizer.vocab[token] for token in tokenizer.encode("昔々")] == [" 昔々".encode("utf-8")]
+    # " 流行り" scores better than " " + "流" + "行" + "り"
+    assert [tokenizer.vocab[token] for token in tokenizer.encode("流行り")] == [" 流行り".encode("utf-8")]
 
 
 def test_scores_below_the_unmatchable_threshold_are_never_used():

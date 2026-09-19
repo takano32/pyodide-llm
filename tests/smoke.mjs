@@ -33,9 +33,9 @@ assert text.startswith(expected), f"stories260K wrote: {text!r}"
 tiny = llama2_numpy.Llama(read("tiny-lm.bin"), read("tiny-lm.tokenizer.bin"), dtype="int8",
                           tokenizer_kind="unigram", nfkc=True, stop_tokens=(1, 2))
 assert tiny.tokenizer.encode("ＡＢＣ") == tiny.tokenizer.encode("ABC"), "NFKC normalization is off"
-japanese = "".join(tiny.generate("昔々、", steps=12, temperature=0.7, repetition_penalty=1.3, seed=1))
-assert japanese.startswith("昔々、") and len(japanese) > len("昔々、"), f"tiny-lm wrote: {japanese!r}"
-assert japanese == "".join(tiny.generate("昔々、", steps=12, temperature=0.7, repetition_penalty=1.3, seed=1)), "a seed must reproduce"
+japanese = "".join(tiny.generate("これからの流行りは", steps=12, temperature=0.7, repetition_penalty=1.3, seed=1))
+assert japanese.startswith("これからの流行りは") and len(japanese) > len("これからの流行りは"), f"tiny-lm wrote: {japanese!r}"
+assert japanese == "".join(tiny.generate("これからの流行りは", steps=12, temperature=0.7, repetition_penalty=1.3, seed=1)), "a seed must reproduce"
 
 # the SIMD kernels: float32 must write exactly what NumPy writes, int8 computes on the int8 weights
 story = "Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine."
@@ -47,7 +47,7 @@ assert reference.startswith(story), f"stories15M wrote: {reference!r}"
 assert "".join(simd15.generate("Once upon a time", steps=60)) == reference, "the kernels and NumPy disagree"
 fast = llama2_numpy.Llama(read("tiny-lm.bin"), read("tiny-lm.tokenizer.bin"), dtype="int8", kernels="simdkernel.so",
                           tokenizer_kind="unigram", nfkc=True, stop_tokens=(1, 2))
-assert "int8" in fast.backend and len("".join(fast.generate("昔々、", steps=12, temperature=0.7, seed=1))) > 3
+assert "int8" in fast.backend and len("".join(fast.generate("これからの流行りは", steps=12, temperature=0.7, seed=1))) > 3
 # sampling on the kernels: the token NumPy picks for the same random number, the same penalty, a seed reproduces
 import numpy as np
 generator = np.random.default_rng(0)
@@ -70,7 +70,7 @@ fast.penalize(ours, history, 1.3)
 llama2_numpy.Llama.penalize(fast, theirs, history, 1.3)
 assert np.allclose(ours, theirs, rtol=1e-6) and not np.array_equal(ours, logits), "the penalty of the kernels is off"
 settings = dict(steps=40, temperature=0.7, repetition_penalty=1.3, seed=1)
-assert "".join(fast.generate("昔々、", **settings)) == "".join(fast.generate("昔々、", **settings)), "a seed must reproduce on the kernels"
+assert "".join(fast.generate("これからの流行りは", **settings)) == "".join(fast.generate("これからの流行りは", **settings)), "a seed must reproduce on the kernels"
 # grouped-query attention, and a head size that is no multiple of 4 (stories3_5M: 26)
 # ... and a KV cache that has to grow three times on the way (it starts small and doubles), in both engines
 llama2_numpy.KV_START = 8

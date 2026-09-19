@@ -94,8 +94,8 @@ def tiny_vocab(vocab_size=320):
     pieces = [(-1e9, b"<unk>"), (-1e9, b"<s>"), (-1e9, b"</s>")]
     pieces += [(-1e9, b"<0x%02X>" % byte) for byte in range(256)]
     words = [" ", " the", " cat", " s", "a", "t", "o", "n", "e", "h", "c", " a", " o",
-             "昔", "々", "、", " 昔々", "Ａ", "!", "?", " \n", "\n", " hello", " world",
-             " he", "l", "w", "r", "d", " t", "i", "g", "猫", " 猫"]
+             "流", "行", "、", " 流行り", "Ａ", "!", "?", " \n", "\n", " hello", " world",
+             " he", "l", "w", "r", "d", " t", "i", "g", "猫", " 猫", "り"]
     for i, word in enumerate(words):
         pieces.append((-float(i) * 0.5, word.encode("utf-8")))
     assert len(pieces) <= vocab_size, "the vocabulary does not fit"
