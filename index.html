@@ -10,6 +10,7 @@
     html, body { height: 100%; margin: 0; }
     h1 { margin: 0 0 4px; font-size: 1.4em; }
     #purpose { margin: 0 0 4px; font-size: 0.85em; }
+    summary { cursor: pointer; color: #06c; text-decoration: underline; font-size: 0.85em; margin-bottom: 4px; }
     body { display: flex; flex-direction: column; box-sizing: border-box; padding: 8px; height: 100dvh; }
     #output { flex: 1; min-height: 6em; resize: none; box-sizing: border-box; }
     #prompt-form { display: flex; gap: 4px; margin-top: 8px; }
@@ -26,7 +27,7 @@
     実用ではなく試験が目的のため、モデルは小さく、出力はそれなりです。
   </p>
   <details>
-  <summary>About</summary>
+  <summary>About this project, its models and licenses (click to open)</summary>
   <p>
     <a href="https://pyodide.org/">Pyodide</a> is a Python distribution for the browser and Node.js based on WebAssembly.
     It allows you to run Python code and use many scientific Python packages directly in your web browser.
@@ -67,25 +68,26 @@
     let ready = false;
 
     // bytes is the checkpoint size: the progress bar needs it, because GitHub Pages compresses the download.
-    // The first model is the default (tiny-lm on phones); ?model=<id> picks another one. Every file is fetched when the site is
+    // The first model is the default: the lightest Japanese one, because a demo should be quick.
+    // ?model=<id> picks another one. Every file is fetched when the site is
     // deployed (see the Makefile): llm-jp-3 and tiny-lm are converted from their Hugging Face checkpoints by
     // convert_hf.py, and the larger models are quantized to int8 by quantize.py.
     const STORY_PLACEHOLDER = "Type the beginning of a story (e.g. Lily and Tom went to the park.)";
     const JAPANESE_PLACEHOLDER = "文章の書き出しを入力してください（例: 富士山は、）";
     const MODELS = [
       {
-        id: "llm-jp-3-150m", label: "llm-jp-3 150M, 日本語 / English, int8, desktop only (171 MB)",
-        checkpoint: "llm-jp-3-150m.bin", bytes: 171395100, tokenizer: "llm-jp-3-150m.tokenizer.bin",
-        options: { dtype: "int8", tokenizer_kind: "unigram", stop_tokens: [1, 2, 7] },
-        generation: { steps: 256, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 },
-        prompt: "昔々、", placeholder: JAPANESE_PLACEHOLDER,
-      },
-      {
         id: "tiny-lm", label: "tiny-lm 29M, 日本語 / English, int8 (33 MB)",
         checkpoint: "tiny-lm.bin", bytes: 32891932, tokenizer: "tiny-lm.tokenizer.bin",
         options: { dtype: "int8", tokenizer_kind: "unigram", nfkc: true, stop_tokens: [1, 2] },
         // greedy decoding makes such a small model loop, so sample, and penalize repetition
         generation: { steps: 256, temperature: 0.7, topp: 0.9, repetition_penalty: 1.3 },
+        prompt: "昔々、", placeholder: JAPANESE_PLACEHOLDER,
+      },
+      {
+        id: "llm-jp-3-150m", label: "llm-jp-3 150M, 日本語 / English, int8, desktop only (171 MB)",
+        checkpoint: "llm-jp-3-150m.bin", bytes: 171395100, tokenizer: "llm-jp-3-150m.tokenizer.bin",
+        options: { dtype: "int8", tokenizer_kind: "unigram", stop_tokens: [1, 2, 7] },
+        generation: { steps: 256, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 },
         prompt: "昔々、", placeholder: JAPANESE_PLACEHOLDER,
       },
       {
@@ -138,9 +140,7 @@
       select.add(new Option(label, id));
     }
     const requested = new URLSearchParams(location.search).get("model");
-    // llm-jp-3 needs about 500 MB of memory, which a phone's browser tab may not get: phones start with tiny-lm
-    const fallback = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? "tiny-lm" : MODELS[0].id;
-    let model = MODELS.find(({ id }) => id === (requested ?? fallback)) ?? MODELS[0];
+    let model = MODELS.find(({ id }) => id === requested) ?? MODELS[0];
     select.value = model.id;
     code.value = model.prompt;
     code.placeholder = model.placeholder;

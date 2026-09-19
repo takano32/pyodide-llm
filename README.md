@@ -2,14 +2,14 @@
 
 Run Llama 2 in your browser using Python and WebAssembly!
 
-This project leverages [Pyodide](https://pyodide.org/) to run a Python implementation of Llama 2 (`llama2_numpy.py`, a NumPy port of `llama2.py`) directly in the web browser. It is an experiment in how far Python on WebAssembly can go, not a product. The default model is [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m), which writes Japanese and English (phones start with the much smaller [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm)); the TinyStories models from the [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project can be selected as well.
+This project leverages [Pyodide](https://pyodide.org/) to run a Python implementation of Llama 2 (`llama2_numpy.py`, a NumPy port of `llama2.py`) directly in the web browser. It is an experiment in how far Python on WebAssembly can go, not a product. The default model is [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm), the lightest one that writes Japanese; [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m) writes far better Japanese at a fifth of the speed; the TinyStories models from the [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project can be selected as well.
 
 ## Features
 
 - **Pure Browser-based Inference:** No backend server required for inference.
 - **Python in WebAssembly:** Python sequences the transformer layers and NumPy does the math, about 200x faster than the original pure Python loops.
 - **Streaming Output:** Pyodide runs in a Web Worker and every token is shown as soon as it is generated, so the page never freezes.
-- **Several Models:** Japanese / English models (llm-jp-3 with 150M parameters by default, tiny-lm with 29M), and TinyStories models from 260K to 42M parameters. `?model=<id>` selects one directly.
+- **Several Models:** Japanese / English models (tiny-lm with 29M parameters by default, llm-jp-3 with 150M), and TinyStories models from 260K to 42M parameters. `?model=<id>` selects one directly.
 
 ## Live Demo
 
@@ -60,7 +60,7 @@ No binary is committed to this repository: `make models` downloads the model fil
 
 - [Pyodide](https://pyodide.org/) for the Python WebAssembly runtime.
 - [llama2.py](https://github.com/tairov/llama2.py) by tairov for the pure Python Llama 2 implementation.
-- [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m) by LLM-jp (Apache License 2.0) for the default Japanese / English model.
+- [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m) by LLM-jp (Apache License 2.0) for the larger Japanese / English model.
 - [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm) by SB Intuitions (MIT License) for the Japanese / English model; its license is deployed next to the converted file.
 - [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) by Andrej Karpathy and [ellishg/tinyllamas](https://huggingface.co/ellishg/tinyllamas) for the compact TinyStories checkpoints.
 - [llama2.c](https://github.com/karpathy/llama2.c) for the inspiration and model format.
