@@ -121,7 +121,7 @@ class Llama:
                  tokenizer_kind="bpe", nfkc=False, bos=BOS, stop_tokens=(BOS,)):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
-        dtype="float16" is this project's half-size variant of that format (convert_hf.py writes it).
+        dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py).
         bos starts every sequence; generation ends when the model emits one of stop_tokens.
         """
         (self.dim, self.hidden_dim, self.n_layers, self.n_heads,
@@ -133,33 +133,43 @@ class Llama:
         dim, hidden_dim, n_layers = self.dim, self.hidden_dim, self.n_layers
         kv_dim = self.n_kv_heads * self.head_size
 
-        # float32 weights are views into the checkpoint buffer: nothing is copied. float16 is widened once.
-        weights = np.frombuffer(checkpoint, dtype=dtype, offset=28).astype(np.float32, copy=False)
-        offset = 0
+        dtype = np.dtype(dtype)
+        offset = 28
 
-        def take(*shape):
+        def take(*shape, matrix=True):
             nonlocal offset
             count = math.prod(shape)
-            array = weights[offset:offset + count].reshape(shape)
-            offset += count
-            return array
+            if dtype == np.int8 and matrix:
+                # quantize.py: int8 values, then one float32 scale per group
+                group = 32
+                while shape[-1] % group:
+                    group //= 2
+                values = np.frombuffer(checkpoint, dtype=np.int8, count=count, offset=offset)
+                scales = np.frombuffer(checkpoint, dtype=np.float32, count=count // group, offset=offset + count)
+                offset += count + scales.nbytes
+                return (values.reshape(-1, group).astype(np.float32) * scales[:, None]).reshape(shape)
+            # float32 weights are views into the checkpoint buffer: nothing is copied. float16 is widened.
+            array = np.frombuffer(checkpoint, dtype=np.float32 if dtype == np.int8 else dtype, count=count, offset=offset)
+            offset += array.nbytes
+            return array.astype(np.float32, copy=False).reshape(shape)
 
         self.token_embedding_table = take(self.vocab_size, dim)
-        self.rms_att_weight = take(n_layers, dim)
+        self.rms_att_weight = take(n_layers, dim, matrix=False)
         self.wq = take(n_layers, dim, dim)
         self.wk = take(n_layers, kv_dim, dim)
         self.wv = take(n_layers, kv_dim, dim)
         self.wo = take(n_layers, dim, dim)
-        self.rms_ffn_weight = take(n_layers, dim)
+        self.rms_ffn_weight = take(n_layers, dim, matrix=False)
         self.w1 = take(n_layers, hidden_dim, dim)
         self.w2 = take(n_layers, dim, hidden_dim)
         self.w3 = take(n_layers, hidden_dim, dim)
-        self.rms_final_weight = take(dim)
-        self.freq_cis_real = take(self.seq_len, self.head_size // 2)
-        self.freq_cis_imag = take(self.seq_len, self.head_size // 2)
+        self.rms_final_weight = take(dim, matrix=False)
+        if dtype != np.int8:
+            self.freq_cis_real = take(self.seq_len, self.head_size // 2, matrix=False)
+            self.freq_cis_imag = take(self.seq_len, self.head_size // 2, matrix=False)
         self.wcls = self.token_embedding_table if shared_weights else take(self.vocab_size, dim)
-        if np.dtype(dtype) != np.float32:
-            # half precision is too coarse for the rotation angles: compute the RoPE tables again
+        if dtype != np.float32:
+            # half precision is too coarse for the rotation angles, and int8 files leave the RoPE tables out
             angles = np.arange(self.seq_len)[:, None] / rope_theta ** (np.arange(0, self.head_size, 2) / self.head_size)
             self.freq_cis_real, self.freq_cis_imag = np.cos(angles).astype(np.float32), np.sin(angles).astype(np.float32)
 

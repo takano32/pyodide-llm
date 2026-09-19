@@ -60,21 +60,22 @@
 
     // bytes is the checkpoint size: the progress bar needs it, because GitHub Pages compresses the download.
     // The first model is the default; ?model=<id> picks another one. Every file is fetched when the site is
-    // deployed (see the Makefile), tiny-lm is converted from its Hugging Face checkpoint by convert_hf.py.
+    // deployed (see the Makefile): tiny-lm is converted from its Hugging Face checkpoint by convert_hf.py,
+    // and the larger models are quantized to int8 by quantize.py.
     const STORY_PLACEHOLDER = "Type the beginning of a story (e.g. Lily and Tom went to the park.)";
     const MODELS = [
       {
-        id: "tiny-lm", label: "tiny-lm 29M, 日本語 / English (59 MB)",
-        checkpoint: "tiny-lm.bin", bytes: 58724892, tokenizer: "tiny-lm.tokenizer.bin",
-        options: { dtype: "float16", tokenizer_kind: "unigram", nfkc: true, stop_tokens: [1, 2] },
+        id: "tiny-lm", label: "tiny-lm 29M, 日本語 / English (33 MB)",
+        checkpoint: "tiny-lm.bin", bytes: 32891932, tokenizer: "tiny-lm.tokenizer.bin",
+        options: { dtype: "int8", tokenizer_kind: "unigram", nfkc: true, stop_tokens: [1, 2] },
         // greedy decoding makes such a small model loop, so sample, and penalize repetition
         generation: { steps: 256, temperature: 0.7, topp: 0.9, repetition_penalty: 1.3 },
         // trained on Wikipedia: it continues an encyclopedia-like opening best
         prompt: "東京は、", placeholder: "文章の書き出しを入力してください（例: 富士山は、）",
       },
       {
-        id: "stories15M", label: "TinyStories 15M, English (58 MB)",
-        checkpoint: "stories15M.bin", bytes: 60816028, tokenizer: "tokenizer.bin", options: {},
+        id: "stories15M", label: "TinyStories 15M, English (17 MB)",
+        checkpoint: "stories15M.bin", bytes: 17101468, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
         generation: { steps: 256, temperature: 0.0 }, prompt: "Once upon a time", placeholder: STORY_PLACEHOLDER,
       },
       {
@@ -88,8 +89,8 @@
         generation: { steps: 256, temperature: 0.0 }, prompt: "Once upon a time", placeholder: STORY_PLACEHOLDER,
       },
       {
-        id: "stories42M", label: "TinyStories 42M, English, desktop only (167 MB)",
-        checkpoint: "stories42M.bin", bytes: 167020572, tokenizer: "tokenizer.bin", options: {},
+        id: "stories42M", label: "TinyStories 42M, English, desktop only (47 MB)",
+        checkpoint: "stories42M.bin", bytes: 46925852, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
         generation: { steps: 256, temperature: 0.0 }, prompt: "Once upon a time", placeholder: STORY_PLACEHOLDER,
       },
     ];

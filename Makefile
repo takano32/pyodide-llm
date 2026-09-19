@@ -1,6 +1,7 @@
 
 
 .PHONY: run models clean
+.SECONDARY:
 
 TINYLLAMAS = https://huggingface.co/karpathy/tinyllamas/resolve/main
 TINY_LM = https://huggingface.co/sbintuitions/tiny-lm/resolve/main
@@ -13,15 +14,20 @@ run:	models node_modules/.bin/http-server
 
 models:	$(MODELS)
 
+# The larger models are distributed as int8, 3.5x smaller than float32 (quantize.py); *.f32 files are not deployed
+%.bin:	%.f32 quantize.py
+	python3 quantize.py $< $@
+
 # Japanese / English model in Hugging Face format: convert_hf.py writes tiny-lm.bin and tiny-lm.tokenizer.bin
-tiny-lm.bin:	convert_hf.py
+tiny-lm.f32:	convert_hf.py
 	mkdir -p tiny-lm
 	for f in config.json pytorch_model.bin spiece.model LICENSE; do wget -q -O tiny-lm/$$f $(TINY_LM)/$$f || exit 1; done
-	python3 convert_hf.py tiny-lm tiny-lm float16
+	python3 convert_hf.py tiny-lm tiny-lm
+	mv tiny-lm.bin tiny-lm.f32
 	cp tiny-lm/LICENSE tiny-lm.LICENSE.txt
 
-stories15M.bin stories42M.bin:
-	wget -q $(TINYLLAMAS)/$@
+stories15M.f32 stories42M.f32:
+	wget -q -O $@ $(TINYLLAMAS)/$(basename $@).bin
 
 stories260K.bin tok512.bin:
 	wget -q $(TINYLLAMAS)/stories260K/$@
@@ -36,6 +42,6 @@ node_modules/.bin/http-server:
 	yarn
 
 clean:
-	rm -f *.bin tiny-lm.LICENSE.txt
+	rm -f *.bin *.f32 tiny-lm.LICENSE.txt
 	rm -rf tiny-lm node_modules
 
