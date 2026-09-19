@@ -65,7 +65,7 @@
     const STORY_PLACEHOLDER = "Type the beginning of a story (e.g. Lily and Tom went to the park.)";
     const MODELS = [
       {
-        id: "tiny-lm", label: "tiny-lm 29M, 日本語 / English (33 MB)",
+        id: "tiny-lm", label: "tiny-lm 29M, 日本語 / English, int8 (33 MB)",
         checkpoint: "tiny-lm.bin", bytes: 32891932, tokenizer: "tiny-lm.tokenizer.bin",
         options: { dtype: "int8", tokenizer_kind: "unigram", nfkc: true, stop_tokens: [1, 2] },
         // greedy decoding makes such a small model loop, so sample, and penalize repetition
@@ -74,7 +74,7 @@
         prompt: "昔々、", placeholder: "文章の書き出しを入力してください（例: 富士山は、）",
       },
       {
-        id: "stories15M", label: "TinyStories 15M, English (17 MB)",
+        id: "stories15M", label: "TinyStories 15M, English, int8 (17 MB)",
         checkpoint: "stories15M.bin", bytes: 17101468, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
         generation: { steps: 256, temperature: 0.0 }, prompt: "Once upon a time", placeholder: STORY_PLACEHOLDER,
       },
@@ -89,8 +89,26 @@
         generation: { steps: 256, temperature: 0.0 }, prompt: "Once upon a time", placeholder: STORY_PLACEHOLDER,
       },
       {
-        id: "stories42M", label: "TinyStories 42M, English, desktop only (47 MB)",
+        id: "stories42M", label: "TinyStories 42M, English, int8, desktop only (47 MB)",
         checkpoint: "stories42M.bin", bytes: 46925852, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
+        generation: { steps: 256, temperature: 0.0 }, prompt: "Once upon a time", placeholder: STORY_PLACEHOLDER,
+      },
+      // the unquantized originals, to compare with int8
+      {
+        id: "tiny-lm-f16", label: "tiny-lm 29M, 日本語 / English, original float16 (59 MB)",
+        checkpoint: "tiny-lm.f16", bytes: 58724892, tokenizer: "tiny-lm.tokenizer.bin",
+        options: { dtype: "float16", tokenizer_kind: "unigram", nfkc: true, stop_tokens: [1, 2] },
+        generation: { steps: 256, temperature: 0.7, topp: 0.9, repetition_penalty: 1.3 },
+        prompt: "昔々、", placeholder: "文章の書き出しを入力してください（例: 富士山は、）",
+      },
+      {
+        id: "stories15M-f32", label: "TinyStories 15M, English, original float32 (61 MB)",
+        checkpoint: "stories15M.f32", bytes: 60816028, tokenizer: "tokenizer.bin", options: {},
+        generation: { steps: 256, temperature: 0.0 }, prompt: "Once upon a time", placeholder: STORY_PLACEHOLDER,
+      },
+      {
+        id: "stories42M-f32", label: "TinyStories 42M, English, original float32, desktop only (167 MB)",
+        checkpoint: "stories42M.f32", bytes: 167020572, tokenizer: "tokenizer.bin", options: {},
         generation: { steps: 256, temperature: 0.0 }, prompt: "Once upon a time", placeholder: STORY_PLACEHOLDER,
       },
     ];

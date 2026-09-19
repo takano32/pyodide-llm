@@ -1,6 +1,7 @@
 # downloaded or generated at build/deploy time, never committed
 *.bin
 *.f32
+*.f16
 tiny-lm/
 tiny-lm.LICENSE.txt
 *.wasm
