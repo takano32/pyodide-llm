@@ -20,8 +20,8 @@ that makes a module an Emscripten side module. Verified to load in Pyodide 0.29.
 | tiny-lm int8, greedy, Pyodide in Node | 56 | 422 |
 | llm-jp-3-150m int8, Pyodide in Node | 9.3 tok/s, 897 MB of WASM heap | 81 tok/s, 283 MB |
 | Chromium: stories15M float32 / int8 | 50 | 186 / 296 |
-| Chromium: tiny-lm int8, sampled with a repetition penalty | 43 | 252-274 (171 while NumPy still did the sampling) |
-| Chromium: llm-jp-3-150m int8, sampled | 8.5 | 61-66 (47 while NumPy still did the sampling) |
+| Chromium: tiny-lm int8, sampled with a repetition penalty | 43 | 271-296 (171 while NumPy still did the sampling, 252-274 before T54) |
+| Chromium: llm-jp-3-150m int8, sampled, 256 tokens | 8.5 | 75-79 (47 while NumPy still did the sampling, 61-66 before T54) |
 | Chromium: stories3_5M / stories260K float32 (grouped-query attention) | 141 / 268 | 402 / 951 |
 
 For comparison: native llama2.c with `gcc -Ofast` runs stories15M at 214 tok/s on the same machine. Firefox 150
@@ -88,8 +88,36 @@ What this says:
   model, and a faster inner loop would show: up to about 1.5x before bandwidth becomes the limit.
 - **Attention is slow for what it does.** A token of llm-jp-3-150m takes 12.6 ms at position 8 and 16.3 ms at
   position 248 (Node): 3.7 ms for some 3 million multiply-adds and 24000 exponentials, several times the cost
-  per multiply-add of the matrix products. This is why a run of 256 tokens reaches 70 tok/s in Node and 61-66 in
-  the page, not the 82 of the table above.
+  per multiply-add of the matrix products. This is why a run of 256 tokens reached 70 tok/s in Node and 61-66 in
+  the page, not the 82 of the table above. (T54 has since rewritten attention, see below.)
+
+## What T54 made of that (2026-09-19)
+
+The tables above are from before these changes. Old and new kernels were compared in one process, taking turns
+(a run of its own is noisier than the differences): a token of llm-jp-3-150m went from 13.3 to 12.1 ms at position
+8, from 15.2 to 12.4 at position 120 and from 17.9 to 12.8 at position 240 (1.09x, 1.23x, 1.39x); tiny-lm 1.08x to
+1.20x. In the page, 256 tokens of llm-jp-3-150m: 61-66 -> 75-79 tok/s.
+
+- **Attention walks the cache row by row, all heads of a position at once** (the scratch is now `nh * (pos + 1)`
+  floats). A head at a time meant `nh` strided passes over a cache that does not fit the CPU's caches, 12 layers of
+  it. With four accumulators for the scores, four exponentials at a time, and the values of four positions added
+  per load and store of the output, one call at position 248 went from 109 to 67 us on a cache that fits, and the
+  3.7 ms that position 248 added to a token became 0.7 ms.
+- **`matmul_q8r`: four groups at a time** (their scales multiplied as one vector, two accumulators taking turns, the
+  bias correction as a dot product of its own): 9.8-11.0 -> 11.2-12.5 G multiply-adds per second. That is where it
+  ends: a loop of nothing but `i32x4.relaxed_dot_i8x16_i7x16_add_s` with four accumulators reaches 13.0 (9.7 with
+  one), so the kernel is within a tenth of what the instruction gives under V8 on this CPU. (Whether V8 turns it
+  into one SDOT was not looked up; the speed suggests it does not.)
+- Tried and taken back: two rows at a time, sharing the loads of the activations, was slower (10.4 / 8.8 / 11.1
+  against 11.2 / 12.1 / 12.5: too many live vectors). The same unrolling in `matmul_q8`, the path without relaxed
+  SIMD, changed nothing (7.6-8.3 before and after: its widening multiplies are the cost).
+- **The text of an int8 model changed, and that is no error.** Both versions of `matmul_q8r` agree with exact
+  integer arithmetic to 1e-6 on the real weights, but a different order of float additions moves a last bit, the
+  next layer rounds an activation to the neighbouring 7-bit step, and twelve layers later a logit of
+  llm-jp-3-150m differs by up to 1.0. The kernels have always been that far from the NumPy path, which does not
+  quantize activations (old kernels 1.7, new ones 1.6, largest difference over 99584 logits). tiny-lm did not
+  flip anywhere in the same test (7.6e-6), and the float32 models still write NumPy's text letter for letter.
+  What the 7-bit activations cost in perplexity was never measured: T55.
 
 ## int8
 
@@ -113,6 +141,7 @@ feature off in Firefox), and int8 then runs on `matmul_q8`.
 - `sample` sorts only as far as the nucleus reaches and gets its random number from Python, so a seed gives the
   same text again. With the same random number it picks the token that `Llama.sample` (NumPy) picks.
 - The relaxed module must not be named `*.so` if it ever ships inside a wheel: Pyodide pre-loads every `.so`.
+- `attention` needs a scratch of `heads * (pos + 1)` floats (the engine allocates `heads * seq_len`), since T54.
 - `attention` expects the KV cache as `[seq][kv_heads * head_size]` per layer (the NumPy forward uses another
   layout) and handles grouped-query attention and any head size. int8 models whose row lengths are not
   multiples of 32 run on NumPy.

@@ -7,7 +7,7 @@ This project leverages [Pyodide](https://pyodide.org/) to run a Python implement
 ## Features
 
 - **Pure Browser-based Inference:** No backend server required for inference.
-- **Python in WebAssembly:** Python sequences the transformer layers, and small WASM SIMD kernels, loaded with `ctypes` and working in place on NumPy memory, do the math: 60 tokens/s for the 150M parameter model and 300 to 950 for the small ones, about a thousand times faster than the original pure Python loops (NumPy alone reaches 50). See [Measurements](#measurements).
+- **Python in WebAssembly:** Python sequences the transformer layers, and small WASM SIMD kernels, loaded with `ctypes` and working in place on NumPy memory, do the math: 75 tokens/s for the 150M parameter model and 300 to 950 for the small ones, about a thousand times faster than the original pure Python loops (NumPy alone reaches 50). See [Measurements](#measurements).
 - **Streaming Output:** Pyodide runs in a Web Worker and every token is shown as soon as it is generated, so the page never freezes. While a text is being written, the send button stops it.
 - **Settings You Can See:** every answer says which temperature and seed wrote it and how fast; the button left of the prompt changes them, and the seed under an answer is a button that fixes it, so that two models can be compared on the same seed.
 - **Your Own Model:** a llama2.c checkpoint from your disk runs without being uploaded ([how](#your-own-model)).
@@ -112,11 +112,11 @@ In Chromium, per model (`?kernel=off` gives the NumPy column):
 | stories260K float32 | 268 | 951 |
 | stories3_5M float32 | 141 | 402 |
 | stories15M float32 / int8 | 50 | 186 / 296 |
-| tiny-lm int8, sampled with a repetition penalty | 43 | 252-274 |
-| llm-jp-3-150m int8, sampled | 8.5 | 61-66 |
+| tiny-lm int8, sampled with a repetition penalty | 43 | 271-296 |
+| llm-jp-3-150m int8, sampled, 256 tokens | 8.5 | 75-79 |
 
-The tiny-lm and llm-jp rows are the current defaults, with the sampling in the kernels too; while NumPy still did
-the sampling the same runs gave 171 and 47 tok/s. Firefox 150 loads the kernels as well, but all of its
+The tiny-lm and llm-jp rows are the current defaults. They were 171 and 47 tok/s while NumPy still did the
+sampling, and 252-274 and 61-66 before attention learned to walk its cache row by row (T54). Firefox 150 loads the kernels as well, but all of its
 WebAssembly was 5-7x slower on this machine, NumPy included. Safari was not measured (WebKit could not be
 launched on the test machine).
 

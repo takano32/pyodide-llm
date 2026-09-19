@@ -309,7 +309,8 @@ class Llama:
         n_kv_heads, kv_dim = self.n_kv_heads, self.n_kv_heads * self.head_size
         x, xb, xb2, q = (np.zeros(dim, dtype=np.float32) for _ in range(4))
         hb, hb2 = np.zeros(hidden_dim, dtype=np.float32), np.zeros(hidden_dim, dtype=np.float32)
-        att, logits = np.zeros(self.seq_len, dtype=np.float32), np.zeros(self.vocab_size, dtype=np.float32)
+        # the attention kernel keeps the scores of all heads: it walks the cache once, not once per head
+        att, logits = np.zeros(self.seq_len * n_heads, dtype=np.float32), np.zeros(self.vocab_size, dtype=np.float32)
         # [layers][seq][kv_dim], unlike the NumPy forward: k and v of a position are written straight into their rows
         key_cache = np.zeros((n_layers, self.seq_len, kv_dim), dtype=np.float32)
         value_cache = np.zeros_like(key_cache)

@@ -120,40 +120,97 @@ export function rope(v: usize, fcr: usize, fci: usize, nh: i32, hs: i32): void {
 }
 
 // kc / vc: this layer's cache laid out [seq][nkv * hs] (NOT the NumPy forward's [kv heads][seq][hs]);
-// att: scratch of at least pos + 1 floats. Grouped-query attention: nh / nkv query heads share one kv head.
+// att: scratch of at least nh * (pos + 1) floats. Grouped-query attention: nh / nkv query heads share one kv head.
+// The cache is walked position by position, all heads of a row at once: a head at a time meant nh strided passes
+// over a cache that does not fit the caches of the CPU (12 layers of it), which cost more than the arithmetic.
 export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32): void {
   const kvDim = nkv * hs;
   const kvMul = nh / nkv;
-  const hs4 = hs & ~3;
+  const hs16 = hs & ~15, hs4 = hs & ~3;
+  const count = pos + 1;
   const isq: f32 = <f32>1.0 / sqrt<f32>(<f32>hs);
-  for (let h = 0; h < nh; h++) {
-    const qh = q + (<usize>(h * hs) << 2);
-    const head = (h / kvMul) * hs;
-    let mx: f32 = -f32.MAX_VALUE;
-    for (let t = 0; t <= pos; t++) {
-      const kt = kc + (<usize>(t * kvDim + head) << 2);
-      let acc = f32x4.splat(0);
+  // 1. the scores of every head against every position
+  for (let t = 0; t < count; t++) {
+    const row = kc + (<usize>(t * kvDim) << 2);
+    for (let h = 0; h < nh; h++) {
+      const qh = q + (<usize>(h * hs) << 2);
+      const kt = row + (<usize>((h / kvMul) * hs) << 2);
+      let a0 = f32x4.splat(0), a1 = f32x4.splat(0), a2 = f32x4.splat(0), a3 = f32x4.splat(0);
       let j = 0;
-      for (; j < hs4; j += 4) acc = f32x4.add(acc, f32x4.mul(v128.load(qh + (<usize>j << 2)), v128.load(kt + (<usize>j << 2))));
-      let sc: f32 = hsum(acc);
+      for (; j < hs16; j += 16) {
+        const o = <usize>j << 2;
+        a0 = f32x4.add(a0, f32x4.mul(v128.load(qh + o), v128.load(kt + o)));
+        a1 = f32x4.add(a1, f32x4.mul(v128.load(qh + o + 16), v128.load(kt + o + 16)));
+        a2 = f32x4.add(a2, f32x4.mul(v128.load(qh + o + 32), v128.load(kt + o + 32)));
+        a3 = f32x4.add(a3, f32x4.mul(v128.load(qh + o + 48), v128.load(kt + o + 48)));
+      }
+      for (; j < hs4; j += 4) a0 = f32x4.add(a0, f32x4.mul(v128.load(qh + (<usize>j << 2)), v128.load(kt + (<usize>j << 2))));
+      let sc: f32 = hsum(f32x4.add(f32x4.add(a0, a1), f32x4.add(a2, a3)));
       for (; j < hs; j++) sc += load<f32>(qh + (<usize>j << 2)) * load<f32>(kt + (<usize>j << 2));
-      sc *= isq;
-      store<f32>(att + (<usize>t << 2), sc);
-      if (sc > mx) mx = sc;
+      store<f32>(att + (<usize>(h * count + t) << 2), sc * isq);
     }
-    let sum: f32 = 0;
-    for (let t = 0; t <= pos; t++) {
-      const e = fexp(load<f32>(att + (<usize>t << 2)) - mx);
-      store<f32>(att + (<usize>t << 2), e);
+  }
+  // 2. softmax, head by head, four exponentials at a time
+  const count4 = count & ~3;
+  for (let h = 0; h < nh; h++) {
+    const scores = att + (<usize>(h * count) << 2);
+    let mx: f32 = -f32.MAX_VALUE;
+    for (let t = 0; t < count; t++) mx = max<f32>(mx, load<f32>(scores + (<usize>t << 2)));
+    const mxs = f32x4.splat(mx);
+    let sums = f32x4.splat(0);
+    let t = 0;
+    for (; t < count4; t += 4) {
+      const e = vexp(f32x4.sub(v128.load(scores + (<usize>t << 2)), mxs));
+      v128.store(scores + (<usize>t << 2), e);
+      sums = f32x4.add(sums, e);
+    }
+    let sum: f32 = hsum(sums);
+    for (; t < count; t++) {
+      const e = fexp(load<f32>(scores + (<usize>t << 2)) - mx);
+      store<f32>(scores + (<usize>t << 2), e);
       sum += e;
     }
     const inv: f32 = <f32>1.0 / sum;
-    const oh = out + (<usize>(h * hs) << 2);
-    for (let j = 0; j < hs; j++) store<f32>(oh + (<usize>j << 2), 0);
-    for (let t = 0; t <= pos; t++) {
-      const weight: f32 = load<f32>(att + (<usize>t << 2)) * inv;
+    const invs = f32x4.splat(inv);
+    for (t = 0; t < count4; t += 4) v128.store(scores + (<usize>t << 2), f32x4.mul(v128.load(scores + (<usize>t << 2)), invs));
+    for (; t < count; t++) store<f32>(scores + (<usize>t << 2), load<f32>(scores + (<usize>t << 2)) * inv);
+  }
+  // 3. the weighted sum of the values, again row by row, four positions at a time: out is loaded and stored once
+  // for the four of them
+  const size = nh * hs;
+  for (let j = 0; j < size; j++) store<f32>(out + (<usize>j << 2), 0);
+  const stride = <usize>kvDim << 2;
+  let t = 0;
+  for (; t < count4; t += 4) {
+    const row = vc + (<usize>(t * kvDim) << 2);
+    for (let h = 0; h < nh; h++) {
+      const weights = att + (<usize>(h * count + t) << 2);
+      const w0 = f32x4.splat(load<f32>(weights)), w1 = f32x4.splat(load<f32>(weights + 4));
+      const w2 = f32x4.splat(load<f32>(weights + 8)), w3 = f32x4.splat(load<f32>(weights + 12));
+      const oh = out + (<usize>(h * hs) << 2);
+      const v0 = row + (<usize>((h / kvMul) * hs) << 2);
+      const v1 = v0 + stride, v2 = v1 + stride, v3 = v2 + stride;
+      let j = 0;
+      for (; j < hs4; j += 4) {
+        const o = <usize>j << 2;
+        const pair0 = f32x4.add(f32x4.mul(w0, v128.load(v0 + o)), f32x4.mul(w1, v128.load(v1 + o)));
+        const pair1 = f32x4.add(f32x4.mul(w2, v128.load(v2 + o)), f32x4.mul(w3, v128.load(v3 + o)));
+        v128.store(oh + o, f32x4.add(v128.load(oh + o), f32x4.add(pair0, pair1)));
+      }
+      for (; j < hs; j++) {
+        const o = <usize>j << 2;
+        store<f32>(oh + o, load<f32>(oh + o) + load<f32>(weights) * load<f32>(v0 + o) + load<f32>(weights + 4) * load<f32>(v1 + o)
+          + load<f32>(weights + 8) * load<f32>(v2 + o) + load<f32>(weights + 12) * load<f32>(v3 + o));
+      }
+    }
+  }
+  for (; t < count; t++) {
+    const row = vc + (<usize>(t * kvDim) << 2);
+    for (let h = 0; h < nh; h++) {
+      const weight: f32 = load<f32>(att + (<usize>(h * count + t) << 2));
       const a = f32x4.splat(weight);
-      const vt = vc + (<usize>(t * kvDim + head) << 2);
+      const oh = out + (<usize>(h * hs) << 2);
+      const vt = row + (<usize>((h / kvMul) * hs) << 2);
       let j = 0;
       for (; j < hs4; j += 4) {
         const o = <usize>j << 2;
