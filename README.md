@@ -120,6 +120,12 @@ the sampling the same runs gave 171 and 47 tok/s. Firefox 150 loads the kernels 
 WebAssembly was 5-7x slower on this machine, NumPy included. Safari was not measured (WebKit could not be
 launched on the test machine).
 
+Where a token of the default model goes (`node tests/profile.mjs`, the same in Node and in Chromium): the matrix
+products of the layers 52%, the classifier over 99584 tokens 38%, the ctypes calls 6%, sampling 3%, Python and
+NumPy around the calls 1%. The interpreter is no longer what limits it. Nor is memory bandwidth: the int8 product
+is as fast on a matrix of 75 MB as on one that fits the cache, so its arithmetic is the limit
+(details in [kernels/README.md](kernels/README.md)).
+
 Memory, llm-jp-3-150m int8: the kernels multiply the int8 weights as they are instead of widening them to
 float32, which takes the WASM heap from 897 MB to 283 MB.
 
