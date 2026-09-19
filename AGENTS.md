@@ -20,7 +20,7 @@
 1. **バイナリをリポジトリに入れない。** モデルのダウンロード・変換・量子化・分割はすべてビルド時（`make models`）に行う。
 2. **Pyodide は常に最新版**を実行時に解決して読み込む（`public/worker.js`）。手で上げるバージョン定数は置かない。CDN が落ちていたら動かなくてよい（信頼性のための仕組みは足さない）。
 3. **Node は 24 LTS**（`.nvmrc`）。ページは Astro、チャット風 UI。
-4. **既定モデルは llm-jp-3-150m（int8）。** 日本語の質がいちばん良く、SIMD カーネルの導入で十分速くなった（約 50 tok/s、ヒープ約 280MB）。軽い tiny-lm は選択式。
+4. **既定モデルは llm-jp-3-150m（int8）。** 日本語の質がいちばん良く、SIMD カーネルの導入で十分速くなった（約 60 tok/s、ヒープ約 280MB）。軽い tiny-lm は選択式。
 5. 大きいモデルは **int8 で配布**し、量子化前の原本も選べるようにする。
 6. GitHub Pages（静的ホスティング、HTTP ヘッダ変更不可）で動くこと。スレッド（SharedArrayBuffer）には頼らない。
 7. コミットは関心ごとに分け、英語の命令形の件名。master に push するとデプロイされる。
@@ -37,6 +37,7 @@
 | `quantize.py` | float32 → int8（グループ 32、グループごとに float32 のスケール） |
 | `Makefile` | `make models` が全モデルを取得・変換・量子化し、`public/models/` に 8 MiB の部品として置く。`make run` は開発サーバー |
 | `tests/smoke.mjs` | デプロイ前のスモークテスト。Node 上の最新 Pyodide でエンジンとモデルを確かめる（`make models` の後に `node tests/smoke.mjs`、約 8 秒） |
+| `tests/test_*.py` | エンジンの単体テスト（pytest、ネイティブの Python + NumPy、約 8 秒）。合成した小さなチェックポイントと語彙で常に走り、`make models` のファイルが要るものは無ければスキップ。`forward` は Python のループで書いた参照実装（`conftest.py` の `naive_logits`）と比べる。カーネルの経路は Pyodide が要るので `smoke.mjs` の担当 |
 | `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright） |
 | `kernels/` | WASM SIMD カーネル（AssemblyScript）とビルドスクリプト。`make kernels` が `public/simdkernel.so` などを生成。制約と実測は `kernels/README.md` |
 | `.github/workflows/deploy.yml` | `make models` → `npm run build` → GitHub Pages |
@@ -53,9 +54,9 @@
 - **プロンプトの先頭に空白を付ける**（sentencepiece のダミープレフィックス）。付けないとパープレキシティが 8.5% 悪化する。
 - **int8 の品質は原本と区別できない。** stories15M で +0.04%、tiny-lm 91.3 → 91.1、llm-jp-3-150m 22.76 → 22.69、最尤トークン一致率 約 98%。int4 は +16.8% で不可。greedy の出力は途中から原本と分岐するが破綻はしない。
 - **モデル。** tiny-lm（29M、MIT、日英 Wikipedia、質は低い：パープレキシティ 91）、llm-jp-3-150m（Apache-2.0、質は段違い：22.8、ただし約 8 tok/s・メモリ約 500MB）、TinyStories 260K / 3.5M / 15M / 42M。小さいモデルは greedy だと反復するので、日本語モデルは temperature 0.7 / top-p 0.9 / 繰り返しペナルティ付き。
-- **ブラウザでの速度（Chromium、カーネルあり）。** tiny-lm 約 150、stories15M 約 300（int8）/ 186（float32）、llm-jp-3-150m 約 47 tok/s。stories3_5M 約 400、stories260K 約 950 tok/s。カーネルなし（`?kernel=off`）では tiny-lm 約 40、stories15M 約 50、llm-jp 約 8.5 tok/s。
+- **ブラウザでの速度（Chromium、カーネルあり）。** tiny-lm 約 250〜270（既定の生成設定。サンプリングが NumPy だった頃は 150〜170）、stories15M 約 300（int8）/ 186（float32）、llm-jp-3-150m 61〜66 tok/s（256 トークンを 4 回。サンプリングが NumPy だった頃は約 47）。stories3_5M 約 400、stories260K 約 950 tok/s。カーネルなし（`?kernel=off`）では tiny-lm 約 40、stories15M 約 50、llm-jp 約 8.5 tok/s。
 - **分割並列ダウンロードは約 1.8 倍速い**（本番 CDN で 167MB が 20.4 秒 → 11.2 秒）。
-- **SIMD カーネル（導入済み）。** カーネルを Emscripten のサイドモジュールとして `ctypes.CDLL` で読み込み、NumPy のメモリを直接計算する。Python が層を順に呼ぶ設計のまま、NumPy 比で 4〜9 倍速い。int8 は重みを int8 のまま計算するのでメモリも減る（llm-jp-3-150m: ヒープ 897MB → 283MB、9.3 → 81 tok/s）。emcc は不要で、AssemblyScript の出力に `dylink.0` セクションを付ければ読み込める。詳細と実測は `kernels/README.md`。語彙の大きいモデルでは NumPy でのサンプリングが次のボトルネック（T32 で半減、残りは TODO の T34）。 サンプリング（繰り返しペナルティ、softmax、top-p）もカーネルにあり、Chromium の tiny-lm は既定の設定で 250 tok/s 強。カーネルにアドレスを渡す配列は Python 側で必ず保持する（解放されると稀に `memory access out of bounds`）。
+- **SIMD カーネル（導入済み）。** カーネルを Emscripten のサイドモジュールとして `ctypes.CDLL` で読み込み、NumPy のメモリを直接計算する。Python が層を順に呼ぶ設計のまま、NumPy 比で 4〜9 倍速い。int8 は重みを int8 のまま計算するのでメモリも減る（llm-jp-3-150m: ヒープ 897MB → 283MB、9.3 → 81 tok/s）。emcc は不要で、AssemblyScript の出力に `dylink.0` セクションを付ければ読み込める。詳細と実測は `kernels/README.md`。語彙の大きいモデルでは NumPy でのサンプリングが次のボトルネックだった（T32 で半減、T34 でカーネルへ）。サンプリング（繰り返しペナルティ、softmax、top-p）もカーネルにあり、Chromium の tiny-lm は既定の設定で 250 tok/s 強。カーネルにアドレスを渡す配列は Python 側で必ず保持する（解放されると稀に `memory access out of bounds`）。
 
 ## 落とし穴（実際に踏んだもの）
 
@@ -63,6 +64,9 @@
 - **GitHub Pages は `.bin` も gzip で送り、Range 要求には gzip ストリームの断片を返す。** だから Content-Length は展開後のサイズではなく、ブラウザ側での範囲分割はできない。進捗とバッファ確保には `src/models.js` の `bytes`（展開後の正確なサイズ）を使う。**モデルのサイズが変わったら `bytes` も直す**（合わないと Worker がエラーで止まる）。
 - **`loadPyodide()` は wasm の取得に失敗してもエラーにならず固まる。** 例外を前提にしたフォールバックは機能しない。
 - **ページに `<meta charset>` がないと日本語が化けてモデルに渡る。**
+- **入力欄で Enter を押すと、ブラウザは送信ボタンの click を発火する**（フォームの暗黙の送信）。送信ボタンを生成中だけ停止ボタンにしたら、Enter で生成が止まった。停止は本物の押下（`event.detail > 0`、またはボタンにフォーカスがあるときのキー）だけで行う。
+- **Worker は生成中にメッセージを受け取れない**（Python のジェネレータを回している間、イベントループに戻らない）。だから `generate()` は 50ms ごとに `MessageChannel` で 1 回イベントループに返す。`setTimeout` は 4ms の下限があり、トークン数で数えると速いモデル（900 tok/s）だけ約 5% 遅くなった。
+- **トークナイザの確かめていない前提。** `<0xNN>` の語彙片が無いときバイトは ID `byte + 3` とみなす。`<0x` で始まり `>` で終わる 6 バイトの語彙片は生のバイトとして復号する。いまある語彙ではどちらも問題ないが、新しい語彙を足すときは確かめる。
 - **Pyodide の NumPy は BLAS も SIMD も無効**でビルドされている（スカラー WASM 相当）。SciPy の OpenBLAS に差し替えても 1.15 倍で、wheel が 16MB 増えるだけ。
 - **`kernels/*.ts` には静的データを置けない**（再配置されない）。標準の数学関数は使わず、テーブルなしの実装を書くこと。relaxed SIMD を使うカーネルは別ファイルにして `try/except` で読む（Safari は未対応。インストーラが `*.so` を全部先読みするので拡張子も変える）。
 - **開発機はメモリが少ない。** 空き 600MB でヘッドレスブラウザを動かしてマシンごと落ちたことがある。ブラウザのテスト前に `free -m` で空きが 1GB 以上あることを確認する。llm-jp-3-150m の float16 原本（ブラウザで約 800MB）はこの機械では試さない。
@@ -72,6 +76,6 @@
 
 ## 検証手順
 
-1. エンジンを変えたら、まず `node tests/smoke.mjs`（デプロイでも走る）。加えてネイティブの Python で回帰確認する: stories15M（float32）で `Once upon a time` の greedy 出力が `Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine.` で始まること。stories260K なら `...She loved to play outside in the park.`。余裕があれば llama2.c の `run.c` を `gcc -O2` でビルドして全文一致を見る。
+1. エンジン・`quantize.py` を変えたら、まず `python3 -m pytest tests -q` と `node tests/smoke.mjs`（どちらもデプロイでも走る）。加えてネイティブの Python で回帰確認する: stories15M（float32）で `Once upon a time` の greedy 出力が `Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine.` で始まること。stories260K なら `...She loved to play outside in the park.`。余裕があれば llama2.c の `run.c` を `gcc -O2` でビルドして全文一致を見る。
 2. ページや Worker を変えたら、**実ブラウザで通しで確認する**: `npm run build && node tests/e2e.mjs [モデル ID] [chromium|firefox]`。準備（`playwright-core` とブラウザの入れ方）はスクリプト冒頭のコメントにある。「Run が有効になる → Enter → 回答の下に tok/s が出る」まで待ち、スマホ幅でページ自体がスクロールしないことと、決定的なモデルでは出力の冒頭も確かめる。
 3. push 後は `gh run watch` でデプロイを待ち、本番に対して同じ確認をする: `node tests/e2e.mjs stories260K chromium https://takano32.github.io/pyodide-llama-py/`。
