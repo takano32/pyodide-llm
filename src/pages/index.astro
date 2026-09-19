@@ -10,6 +10,7 @@
     <title>Pyodide Llama2</title>
   </head>
   <body>
+    <div class="ribbon"><a href="https://github.com/takano32/pyodide-llama2-py"><span class="long">Fork me on </span>GitHub</a></div>
     <header>
       <div class="brand">
         <h1>Pyodide Llama2</h1>
@@ -73,6 +74,18 @@
   #chat > * { width: 100%; max-width: 760px; margin-inline: auto; }
   /* their padding is inside the box: 760px of content, like the conversation */
   header, footer { width: 100%; max-width: 792px; margin-inline: auto; }
+
+  /* the corner ribbon to the repository */
+  .ribbon { position: fixed; top: 0; right: 0; width: 130px; height: 130px; overflow: hidden; pointer-events: none; z-index: 10; }
+  .ribbon a { position: absolute; top: 28px; right: -46px; width: 190px; transform: rotate(45deg); pointer-events: auto;
+    background: var(--text); color: var(--bg); text-align: center; text-decoration: none; font-size: 0.72rem; font-weight: 600;
+    line-height: 2; box-shadow: 0 1px 4px rgb(0 0 0 / 0.3); }
+  @media (max-width: 900px) {
+    /* keep clear of the header on narrow screens */
+    .ribbon { width: 60px; height: 60px; }
+    .ribbon a { top: 8px; right: -70px; font-size: 0.6rem; line-height: 1.7; }
+    .ribbon .long { display: none; }
+  }
 
   header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .brand { display: flex; align-items: center; gap: 8px; }
