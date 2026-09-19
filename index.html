@@ -195,7 +195,7 @@
         return;
       }
       run.disabled = select.disabled = true;
-      addToOutput(`---- ${model.label}\n---- Prompt: ${code.value}\n`);
+      addToOutput(`---- ${model.label}\nPrompt: ${code.value}\n`);
       worker.postMessage({ type: "generate", prompt: code.value, ...model.generation });
     }
   </script>
