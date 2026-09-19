@@ -142,10 +142,29 @@ function readFile(model, signal, load) {
   };
 }
 
+// A llama2.c checkpoint at a URL (?checkpoint=&tokenizer=): range requests in parallel, written where they belong
+function readUrl(model, signal, load) {
+  return {
+    async into(write) {
+      let offset = 0, reported = -1;
+      await inOrder(model.url.checkpoint, 0, model.bytes, (bytes) => {
+        write(offset, bytes);
+        offset += bytes.length;
+        const percent = Math.floor((offset / model.bytes) * 100);
+        if (percent !== reported) {
+          reported = percent;
+          postMessage({ type: "progress", load, received: offset, total: model.bytes });
+        }
+      }, signal);
+    },
+  };
+}
+
 // The legacy format carries no metadata, but its header fixes the size of a float32, a float16 and an int8 file.
 // A file that is none of them is refused before it is read, and so is a tokenizer.bin of another vocabulary.
 async function localOptions(model, vocabulary) {
-  const header = pyodide.toPy([...new Int32Array(await model.file.slice(0, 28).arrayBuffer())]);
+  const first = model.file ? await model.file.slice(0, 28).arrayBuffer() : (await fetchRange(model.url.checkpoint, 0, 28, new AbortController().signal)).bytes.buffer;
+  const header = pyodide.toPy([...new Int32Array(first)]);
   const pieces = pyodide.toPy(vocabulary);
   try {
     const dtype = llama2_numpy.checkpoint_dtype(header, model.bytes);
@@ -394,11 +413,25 @@ async function convert(model, signal, id) {
   }
   const header = new TextDecoder().decode(first.subarray(8, base));
   const config = remote ? await (await text(at(model.hf.config))).text() : await model.hf.config.text();
-  const tokenizerName = remote ? model.hf.tokenizer : model.hf.tokenizer.name;
-  const tokenizer = new Uint8Array(remote ? await (await text(at(model.hf.tokenizer))).arrayBuffer() : await model.hf.tokenizer.arrayBuffer());
-  signal.throwIfAborted();
-
-  const conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName, { start: base, ...model.conversion });
+  // For a repository nobody has looked at (?hf=), the tokenizer is whichever of these it has and the converter can read
+  let conversion, refusal;
+  for (const candidate of [].concat(model.hf.tokenizer)) {
+    try {
+      const tokenizerName = remote ? candidate : candidate.name;
+      const tokenizer = new Uint8Array(remote ? await (await text(at(candidate))).arrayBuffer() : await candidate.arrayBuffer());
+      signal.throwIfAborted();
+      conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName, { start: base, ...model.conversion });
+      break;
+    } catch (error) {
+      if (signal.aborted) {
+        throw error;
+      }
+      refusal ??= error;
+    }
+  }
+  if (!conversion) {
+    throw refusal;
+  }
   try {
     let reported = -1;
     const feed = (bytes) => {
@@ -471,18 +504,25 @@ async function load(model, signal, id) {
   }
   postMessage({ type: "status", load: id, text: `${model.file ? "Reading" : "Downloading"} ${model.name}...` });
   const downloadStarted = performance.now();
-  const checkpoint = model.file ? readFile(model, signal, id) : download(model, signal, id);
+  if (model.url) {
+    // the size of a file somewhere else is what its server says
+    model.bytes = (await fetchRange(model.url.checkpoint, 0, 28, signal)).total;
+    if (!(model.bytes > 28)) {
+      throw new Error(`${model.url.checkpoint} does not answer range requests, so its size is unknown.`);
+    }
+  }
+  const checkpoint = model.file ? readFile(model, signal, id) : model.url ? readUrl(model, signal, id) : download(model, signal, id);
   const tokenizerBytes = model.file ? model.tokenizerFile.arrayBuffer()
-    : fetch(new URL(`models/${model.tokenizer}`, import.meta.url), { signal }).then((res) => {
+    : fetch(model.url ? model.url.tokenizer : new URL(`models/${model.tokenizer}`, import.meta.url), { signal }).then((res) => {
       if (!res.ok) {
-        throw new Error(`Could not fetch ${model.tokenizer}: ${res.status}`);
+        throw new Error(`Could not fetch ${model.url?.tokenizer ?? model.tokenizer}: ${res.status}`);
       }
       return res.arrayBuffer();
     });
   tokenizerBytes.catch(() => {});
   await initialized;
   signal.throwIfAborted();
-  const options = model.file ? await localOptions(model, new Uint8Array(await tokenizerBytes)) : model.options;
+  const options = model.file || model.url ? await localOptions(model, new Uint8Array(await tokenizerBytes)) : model.options;
   signal.throwIfAborted();
 
   const weights = pythonBuffer(model.bytes);
@@ -516,7 +556,7 @@ async function load(model, signal, id) {
     type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seq_len: llama.seq_len,
     seconds: { ...loadSeconds },
   });
-  if (!model.file) {
+  if (!model.file && !model.url) {
     dropStaleParts(model);
   }
 }

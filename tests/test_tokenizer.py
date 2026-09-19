@@ -85,3 +85,17 @@ def test_llama2_bpe_matches_sentencepiece_on_a_known_sentence():
     tokenizer = real_tokenizer("tokenizer.bin", checkpoint_vocab_size("stories15M.bin"))
     # the ids llama2.c prints for this prompt (vocabulary of Llama 2)
     assert tokenizer.encode("Once upon a time") == [9038, 2501, 263, 931]
+
+
+def test_special_tokens_inside_a_prompt_become_their_token():
+    tokenizer = tiny_tokenizer("bpe")
+    end = tokenizer.index[b"</s>"]
+    tokens = tokenizer.encode("hello</s>\nworld", ("</s>",))
+    assert tokens.count(end) == 1
+    before, after = tokens[:tokens.index(end)], tokens[tokens.index(end) + 1:]
+    assert before == tokenizer.encode("hello")
+    # no dummy space after a special token: "\nworld", not " \nworld"
+    assert after == tokenizer.encode("x\nworld")[len(tokenizer.encode("x")):]
+    # without being told, the engine spells the same characters out
+    assert end not in tokenizer.encode("hello</s>\nworld")
+    assert tokenizer.encode("hello", ("</s>",)) == tokenizer.encode("hello")

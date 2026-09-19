@@ -293,8 +293,29 @@
     select.append(options);
   }
   showKept();
-  const requested = new URLSearchParams(location.search).get("model");
-  let model = MODELS.find(({ id }) => id === requested) ?? MODELS[0];
+  // A model that is in no list, named in the URL: ?hf=<owner>/<repository>[&revision=] is a Hugging Face model that
+  // the page converts (whatever the converter refuses, it refuses in words), ?checkpoint=<url>&tokenizer=<url> are
+  // files in llama2.c's format somewhere that allows cross-origin range requests. &template= wraps the prompt.
+  const parameters = new URLSearchParams(location.search);
+  const requested = parameters.get("model");
+  function named(): typeof MODELS[number] | undefined {
+    const repository = parameters.get("hf"), checkpoint = parameters.get("checkpoint"), tokenizer = parameters.get("tokenizer");
+    const common = { id: "local", options: {}, prompt: parameters.get("prompt") ?? "", placeholder: "", template: parameters.get("template") ?? undefined };
+    if (repository && /^[\w.-]+\/[\w.-]+$/.test(repository)) {
+      return { ...common, name: repository, note: "Hugging Face",
+        hf: { repo: repository, revision: parameters.get("revision") ?? "main", weights: "model.safetensors", config: "config.json", tokenizer: ["tokenizer.json", "tokenizer.model"] },
+        conversion: {}, generation: { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 } } as any;
+    }
+    if (checkpoint && tokenizer && [checkpoint, tokenizer].every((url) => /^https:\/\//.test(url))) {
+      return { ...common, name: new URL(checkpoint).pathname.split("/").pop(), note: new URL(checkpoint).hostname,
+        url: { checkpoint, tokenizer }, generation: { steps: 0, temperature: 0.0 }, prompt: parameters.get("prompt") ?? "Once upon a time" } as any;
+    }
+  }
+  const fromUrl = named();
+  if (fromUrl) {
+    select.add(new Option(`${fromUrl.name} — ${fromUrl.note}`, "local"));
+  }
+  let model = fromUrl ?? MODELS.find(({ id }) => id === requested) ?? MODELS[0];
   let ready = false;
   let answer: HTMLElement | null = null; // the bubble that is being written
   let used: Record<string, any> = {}; // the generation settings of that run, for the line under it
@@ -506,7 +527,7 @@
   // nothing about itself, so whatever differs from llama2.c's conventions comes as a third file: .json, shaped
   // like an entry of src/models.js ({options, generation, prompt, placeholder}).
   const files = $("files") as HTMLInputElement;
-  let local: typeof model | undefined;
+  let local: typeof model | undefined = fromUrl;
   // The files Hugging Face publishes: model.safetensors, config.json and a tokenizer (tokenizer.json, or a
   // sentencepiece tokenizer.model / spiece.model). The worker converts them in the browser, to int8 and with a
   // context of 512 tokens unless the settings say otherwise ({"conversion": {"dtype": ..., "max_seq_len": ...}}).

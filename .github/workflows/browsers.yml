@@ -86,3 +86,40 @@ jobs:
           done
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           exit $failed
+
+  # The models that the page fetches from huggingface.co and converts itself, the two of more than a billion
+  # parameters among them: the development machine has not the memory for those. Chromium on Linux is enough; how
+  # the browsers differ is what the jobs above are for.
+  huggingface:
+    name: models from Hugging Face
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install the test tools and Chromium
+        run: |
+          npm ci
+          npx playwright-core install --with-deps chromium
+
+      - name: Fetch, convert and run
+        shell: bash
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llama-py/' }}
+        run: |
+          node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
+          failed=0
+          for model in url hf-llm-jp-3-150m-instruct3 hf-llm-jp-3-440m hf-llm-jp-3-440m-instruct3 hf-llm-jp-3-980m-instruct3 hf-tinyllama-1.1b-chat; do
+            echo "### $model" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            node tests/e2e.mjs "$model" chromium "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $failed

@@ -7,7 +7,9 @@
 //
 // The model id "local" opens stories260K.bin and tok512.bin of this directory through the folder button instead,
 // as a visitor would open a model of their own disk. "hf" does the same with the files Hugging Face would publish
-// for that model (tests/make_hf_fixture.py writes them), which the page converts in the browser.
+// for that model (tests/make_hf_fixture.py writes them), which the page converts in the browser. "url" reads the same
+// model from huggingface.co by ?checkpoint=&tokenizer=, and an id that begins with hf- is fetched from there and
+// converted (hundreds of megabytes, or gigabytes).
 //
 // Needs a browser for playwright-core (a devDependency): `npx playwright-core install chromium` once.
 // Mind the memory: a browser with Pyodide and a model takes 400 MB and more; keep `free -m` above 1 GB available.
@@ -27,6 +29,7 @@ const expected = {
   stories260K: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
   local: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
   hf: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
+  url: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
   "stories15M-f32": "Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine.",
 };
 
@@ -57,8 +60,13 @@ page.on("console", (message) => message.type() === "error" && errors.push(messag
 
 const started = Date.now();
 const opens = model === "local" || model === "hf";
-await page.goto(`${url}?model=${opens ? "stories3_5M" : model}`);
-const idle = () => page.waitForFunction(() => !document.getElementById("run").disabled || document.querySelector(".error"), null, { timeout: 600000 });
+// the page asks before it fetches more than 500 MB
+page.on("dialog", (dialog) => dialog.accept());
+const tinyllamas = "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories260K";
+const query = model === "url" ? `checkpoint=${encodeURIComponent(`${tinyllamas}/stories260K.bin`)}&tokenizer=${encodeURIComponent(`${tinyllamas}/tok512.bin`)}`
+  : `model=${opens ? "stories3_5M" : model}`;
+await page.goto(`${url}?${query}`);
+const idle = () => page.waitForFunction(() => !document.getElementById("run").disabled || document.querySelector(".error"), null, { timeout: 1800000 });
 await idle();
 if (opens) {
   const repository = new URL("../", import.meta.url).pathname;

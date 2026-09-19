@@ -3,6 +3,7 @@
 # every loop over vector elements became a NumPy call, so the interpreter only sequences the layers.
 import codecs
 import math
+import re
 import struct
 import time
 import unicodedata
@@ -40,12 +41,22 @@ class Tokenizer:
         self.max_piece_chars = max(len(piece.decode("utf-8", "ignore")) for piece in self.vocab)
         self.unknown_score = min(score for score in self.scores if score > self.UNMATCHABLE) - 10.0
 
-    def encode(self, text):
-        if self.nfkc:
-            text = unicodedata.normalize("NFKC", text)
-        # sentencepiece's dummy prefix: the model saw every text start with a space
-        text = " " + text
-        return self.encode_unigram(text) if self.kind == "unigram" else self.encode_bpe(text)
+    def encode(self, text, specials=()):
+        """specials: pieces such as "</s>" that stand for their token wherever they are written (a chat template
+        puts them between the turns). As plain text they would be spelled out letter by letter."""
+        tokens, first = [], True
+        for part in re.split("(" + "|".join(re.escape(special) for special in specials) + ")", text) if specials else [text]:
+            if part in specials:
+                tokens.append(self.index[part.encode("utf-8")])
+            elif part:
+                if self.nfkc:
+                    part = unicodedata.normalize("NFKC", part)
+                # sentencepiece's dummy prefix: the model saw every text start with a space (but not the text
+                # after a special token)
+                part = " " + part if first else part
+                tokens += self.encode_unigram(part) if self.kind == "unigram" else self.encode_bpe(part)
+            first = False
+        return tokens
 
     def encode_bpe(self, text):
         # First encode every individual character; a character the vocabulary lacks becomes its UTF-8 bytes
@@ -215,7 +226,7 @@ def check_tokenizer(tokenizer, header):
 
 class Llama:
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
-                 tokenizer_kind="bpe", nfkc=False, bos=BOS, stop_tokens=(BOS,), kernels=None):
+                 tokenizer_kind="bpe", nfkc=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=()):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py).
@@ -294,6 +305,7 @@ class Llama:
             self.value_cache = np.zeros_like(self.key_cache)
         self.tokenizer = Tokenizer(tokenizer, self.vocab_size, kind=tokenizer_kind, nfkc=nfkc)
         self.bos, self.stop_tokens = bos, {int(token) for token in stop_tokens}
+        self.specials = tuple(str(special) for special in specials)  # see Tokenizer.encode()
         self.stats = {}
         self._run = 0
 
@@ -541,7 +553,7 @@ class Llama:
     def generate(self, prompt="", steps=256, temperature=0.0, topp=0.9, repetition_penalty=1.0, seed=None, echo=True):
         """Yield the text piece by piece, as it is generated. echo=False leaves the prompt out of it (an instruction
         wrapped in a template, which nobody wants to read back)."""
-        prompt_tokens = self.tokenizer.encode(prompt) if prompt else []
+        prompt_tokens = self.tokenizer.encode(prompt, self.specials) if prompt else []
         # Right now we cannot run for more than seq_len steps
         if steps <= 0 or steps > self.seq_len:
             steps = self.seq_len
