@@ -35,7 +35,7 @@
 - 任意の項目（スイッチを入れた後で採否を決める）: **SIMD を使わないスカラー版のカーネル。** いまの「カーネルなし」は NumPy（スカラーの WASM）に戻る意味で、「SIMD の効果」と「Python / NumPy を出た効果」が混ざっている。各カーネルには端数用のスカラーのループがあるので、AssemblyScript のコンパイル時定数でベクトル部分を外した 3 つめのバイナリを作れる可能性がある（int8 の行列積にスカラーの経路があるかは未確認）。取れれば「Python を出た効果 × SIMD の効果」が分かれて実験としていちばん面白い数値になるが、バイナリとテストの対象が増える。
 - 完了条件: 各スイッチが効いていることを backend の表示と tok/s の差で確かめる。スイッチを何も付けなければ今と同じ動作・同じ速度。分解した数値（この開発機の Chromium、llm-jp-3-150m と tiny-lm）を `kernels/README.md` に載せる。
 
-### T44 Safari 系（WebKit）を CI でテストする — 状態: 未着手（2026-09-19 採用。規模 小、Opus で可。ほかと独立）
+### T44 Safari 系（WebKit）を CI でテストする — 状態: 進行中（担当: Fable）
 - 目的: このプロジェクトは Safari で一度も動かしていない（開発機では WebKit を起動できない）。relaxed SIMD が無いときのフォールバック（`matmul_q8`）は、実ブラウザで走ったことがない。
 - 手順: GitHub Actions の macOS ランナーで `npx playwright-core install webkit` → `node tests/e2e.mjs stories260K webkit <本番の URL>` と `tiny-lm`（int8 で `matmul_q8` を通る）。`tests/e2e.mjs` はエンジン名を引数で受けるので、足すのはワークフローだけのはず。デプロイのワークフローの後に走らせるか、手動起動（`workflow_dispatch`）にする。ステータス行の backend（`relaxed SIMD` が付かないこと）と tok/s をログに残す。
 - 注意: Playwright の WebKit は Safari そのものではない（近いが、同じとは書かない）。macOS ランナーは課金の倍率が高いので、毎 push ではなく手動か週 1 回でよい。

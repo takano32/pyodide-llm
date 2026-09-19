@@ -1,0 +1,52 @@
+name: WebKit on macOS
+
+# The development machine cannot start WebKit, and nobody here owns a Mac: this is the only place where the site
+# meets Safari's engine. It runs against the deployed site, by hand or once a week, and writes what it saw into
+# the summary of the run: which kernels the browser got (WebKit has no relaxed SIMD, so int8 falls back to
+# matmul_q8) and how fast they were. Playwright's WebKit is close to Safari, not Safari itself.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: The site to test
+        default: https://takano32.github.io/pyodide-llama-py/
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  webkit:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install the test tools and WebKit
+        run: |
+          npm ci
+          npx playwright-core install webkit
+
+      - name: Run the models in WebKit
+        shell: bash  # with pipefail, so that a failed test is not hidden by tee
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llama-py/' }}
+        run: |
+          sysctl -n machdep.cpu.brand_string | tee -a "$GITHUB_STEP_SUMMARY"
+          failed=0
+          # float32, int8 with a small and with the largest vocabulary
+          for model in stories260K stories15M tiny-lm llm-jp-3-150m; do
+            echo "### $model" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            node tests/e2e.mjs "$model" webkit "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $failed

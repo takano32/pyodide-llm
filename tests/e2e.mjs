@@ -1,7 +1,7 @@
 // End-to-end check in a real browser: serves dist/ under the GitHub Pages base path, waits until the model is
 // ready, runs the default prompt, and checks that text streams in and that the page itself never scrolls.
 //
-//   npm run build && node tests/e2e.mjs [model id] [chromium|firefox] [url of a deployed site]
+//   npm run build && node tests/e2e.mjs [model id] [chromium|firefox|webkit] [url of a deployed site]
 //
 // The model id "local" opens stories260K.bin and tok512.bin of this directory through the folder button instead,
 // as a visitor would open a model of their own disk. "hf" does the same with the files Hugging Face would publish
@@ -46,6 +46,7 @@ if (!url) {
 }
 
 const browser = await playwright[engine].launch({ headless: true });
+const browserVersion = browser.version();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors = [];
 page.on("pageerror", (error) => errors.push(String(error)));
@@ -77,6 +78,8 @@ const result = await page.evaluate(() => ({
   // the closed line; the breakdown below it is in the same element
   meta: document.querySelector(".model .meta summary")?.textContent ?? "",
   error: document.querySelector(".error .bubble")?.textContent ?? "",
+  // which kernels this browser got: "SIMD kernels, int8, relaxed SIMD", or less
+  status: document.getElementById("status-text")?.textContent ?? "",
   pageScrolls: document.documentElement.scrollHeight > innerHeight,
 }));
 await browser.close();
@@ -88,7 +91,8 @@ if (errors.length) failures.push(`console errors: ${errors.join(" | ")}`);
 if (!/tok\/s/.test(result.meta)) failures.push("no speed line under the answer");
 if (result.pageScrolls) failures.push("the page itself scrolls");
 if (expected[model] && !result.text.startsWith(expected[model])) failures.push(`unexpected text: ${result.text.slice(0, 120)}`);
-console.log(`${engine}, ${model}: ready in ${readySeconds.toFixed(1)}s, ${result.meta}`);
+console.log(`${engine} ${browserVersion}, ${model}: ready in ${readySeconds.toFixed(1)}s, ${result.meta}`);
+console.log(`status: ${result.status}`);
 console.log(result.text.slice(0, 160).replace(/\n/g, " / "));
 if (failures.length) {
   console.error("FAILED\n- " + failures.join("\n- "));
