@@ -25,23 +25,54 @@ that makes a module an Emscripten side module. Verified to load in Pyodide 0.29.
 | Chromium: stories3_5M / stories260K float32 (grouped-query attention) | 141 / 268 | 402 / 951 |
 
 For comparison: native llama2.c with `gcc -Ofast` runs stories15M at 214 tok/s on the same machine. Firefox 150
-loads the kernels too (all of its WebAssembly was 5-7x slower on the test machine, NumPy included). WebKit is
-tested on a macOS runner of GitHub Actions (below). Overheads inside Pyodide: one ctypes call 3-12 us, `array.ctypes.data` about 4 us (addresses are
+loads the kernels too (all of its WebAssembly was 5-7x slower on the test machine, NumPy included). Every other
+browser is tested on the runners of GitHub Actions (below). Overheads inside Pyodide: one ctypes call 3-12 us, `array.ctypes.data` about 4 us (addresses are
 taken once), one small NumPy call 1.5-2.5 us; a token takes about 100 kernel calls.
 
-## WebKit (2026-09-19, T44)
+## Every browser the runners offer (2026-09-19, T44 and T58)
 
-`.github/workflows/browsers.yml` (then `webkit.yml`) runs `tests/e2e.mjs` in Playwright's WebKit 26.4 on a macOS runner (Apple M1,
-virtual) against the deployed site, by hand or once a week. It is Safari's engine, not Safari itself. All four
-models ran on the first try. WebKit has no relaxed SIMD, so the int8 models report `SIMD kernels, int8` and run
-on `matmul_q8`: the fallback had never met a real browser before.
+`.github/workflows/browsers.yml` runs `tests/e2e.mjs` against the deployed site on five systems, in Playwright's
+own Chromium, Firefox and WebKit and in the Chrome and Edge that the runner has installed: 23 jobs, by hand
+(`gh workflow run browsers.yml`) or once a week. **All 23 ran all four models.** tok/s over 256 tokens
+(`*`: the model stopped by itself before 190 tokens, so the number is less steady). The runners are shared virtual
+machines with different CPUs, some of them much faster than the machine of the other tables: read the table for
+"does it run, and on which kernel", and across browsers on the same system, not across systems.
 
-| model | backend | tok/s (another, much faster CPU than in the other tables) |
-|---|---|---:|
-| stories260K float32 | SIMD kernels, float32 | 4271 |
-| stories15M int8 | SIMD kernels, int8 | 739 |
-| tiny-lm int8 | SIMD kernels, int8 | 515 (a run of 20 tokens) |
-| llm-jp-3-150m int8, 256 tokens | SIMD kernels, int8 | 146 |
+| system | browser | CPU of the runner | int8 runs on | llm-jp-3-150m | tiny-lm | stories15M | stories260K |
+|---|---|---|---|---:|---:|---:|---:|
+| Linux, x86-64 | chrome 152.0.7977.82 | AMD EPYC 7763 | `matmul_q8r` | 88 | 413* | 502 | 2409 |
+| Linux, x86-64 | chromium 148.0.7778.96 | AMD EPYC 7763 | `matmul_q8r` | 107 | 418 | 518 | 2044 |
+| Linux, x86-64 | firefox 150.0.2 | AMD EPYC 7763 | `matmul_q8r` | 13 | 63* | 57 | 295 |
+| Linux, x86-64 | msedge 152.0.4191.66 | Intel Xeon 6973P-C | `matmul_q8r` | 80* | 552* | 826 | 2809 |
+| Linux, x86-64 | webkit 26.4 | AMD EPYC 7763 | `matmul_q8` | 52 | 261* | 288 | 1636 |
+| Linux, ARM64 | chromium 148.0.7778.0 | unknown | `matmul_q8r` | 105 | 490* | 571 | 2295 |
+| Linux, ARM64 | firefox 150.0.2 | unknown | `matmul_q8r` | 8 | 42* | 40 | 320 |
+| Linux, ARM64 | webkit 26.4 | unknown | `matmul_q8` | 72 | 420* | 441 | 2495 |
+| Windows, x86-64 | chrome 152.0.7977.83 | Intel Xeon Platinum 8573C | `matmul_q8r` | 117 | 574* | 672 | 2344 |
+| Windows, x86-64 | chromium 148.0.7778.96 | AMD EPYC 7763 | `matmul_q8r` | 95 | 448 | 416 | 2186 |
+| Windows, x86-64 | firefox 150.0.2 | AMD EPYC 7763 | `matmul_q8r` | 13 | 58* | 52 | 275 |
+| Windows, x86-64 | msedge 152.0.4191.66 | AMD EPYC 7763 | `matmul_q8r` | 95 | 397* | 478 | 2209 |
+| Windows, x86-64 | webkit 26.4 | AMD EPYC 9V45 | `matmul_q8` | 82 | 310* | 403 | 2191 |
+| Windows, ARM64 | chrome 153.0.8010.37 | Cobalt 100 | `matmul_q8r` | 100 | 505* | 523 | 2102 |
+| Windows, ARM64 | chromium 148.0.7778.96 | Cobalt 100 | `matmul_q8r` | 35 | 148 | 160 | 638 |
+| Windows, ARM64 | firefox 150.0.2 | Cobalt 100 | `matmul_q8r` | 9 | 42* | 39 | 230 |
+| Windows, ARM64 | msedge 153.0.4234.32 | Cobalt 100 | `matmul_q8r` | 100 | 514 | 512 | 2072 |
+| Windows, ARM64 | webkit 26.4 | Cobalt 100 | `matmul_q8` | 25 | 103* | 111 | 443 |
+| macOS, Apple M1 | chrome 152.0.7977.83 | Apple M1 (Virtual) | `matmul_q8r` | 157 | 363* | 838 | 2883 |
+| macOS, Apple M1 | chromium 148.0.7778.96 | Apple M1 (Virtual) | `matmul_q8r` | 156 | 579* | 745 | 2822 |
+| macOS, Apple M1 | firefox 150.0.2 | Apple M1 (Virtual) | `matmul_q8r` | 10 | 56* | 56 | 392 |
+| macOS, Apple M1 | msedge 152.0.4191.66 | Apple M1 (Virtual) | `matmul_q8r` | 155 | 477* | 640 | 1738 |
+| macOS, Apple M1 | webkit 26.4 | Apple M1 (Virtual) | `matmul_q8` | 137 | 664 | 660 | 3938 |
+
+- **WebKit has no relaxed SIMD**, on any system: the int8 models fall back to `matmul_q8`, which had never met a
+  real browser before T44. It is Playwright's WebKit, close to Safari, not Safari itself.
+- **Firefox is 8 to 15 times slower than the Chromium family, on every system and both architectures**, with the
+  same kernels loaded, and takes 20 s to get ready instead of 3 to 5. So this is Firefox, not the ARM machine
+  where it was first seen (5-7x there). Where the time goes is not known yet: T59.
+- On Windows for ARM, Playwright's Chromium and WebKit are x86-64 builds that Windows emulates, a third as fast
+  as the native Chrome and Edge next to them.
+- The first run found a bug of the page, not of a browser: the real Edge reports the 404 of `/favicon.ico` as a
+  console error, which the test counts as a failure. The page now carries its icon as a data URI.
 
 ## Where the time of one token goes (2026-09-19, T53)
 

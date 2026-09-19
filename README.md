@@ -117,9 +117,11 @@ In Chromium, per model (`?kernel=off` gives the NumPy column):
 
 The tiny-lm and llm-jp rows are the current defaults. They were 171 and 47 tok/s while NumPy still did the
 sampling, and 252-274 and 61-66 before attention learned to walk its cache row by row (T54). Firefox 150 loads the kernels as well, but all of its
-WebAssembly was 5-7x slower on this machine, NumPy included. Safari's engine is tested on a macOS runner of GitHub Actions
-(Playwright's WebKit 26.4 on an Apple M1, a much faster CPU): it has no relaxed SIMD, so int8 runs on the plain
-SIMD kernel, and llm-jp-3-150m reaches 146 tok/s there. Safari itself, and a real iPhone, were not measured.
+WebAssembly was 5-7x slower on this machine, NumPy included. A weekly workflow runs the deployed site on Linux, Windows (both on x86-64 and ARM) and macOS, in Playwright's
+Chromium, Firefox and WebKit and in the installed Chrome and Edge: all 23 combinations run all four models
+([table](kernels/README.md#every-browser-the-runners-offer-2026-09-19-t44-and-t58)). WebKit, Safari's engine, has no
+relaxed SIMD, so int8 runs on the plain SIMD kernel there. Firefox is 8 to 15 times slower than the Chromium
+family on every system. Safari itself, and a real iPhone, were not measured.
 
 Where a token of the default model goes (`node tests/profile.mjs`, the same in Node and in Chromium): the matrix
 products of the layers 52%, the classifier over 99584 tokens 38%, the ctypes calls 6%, sampling 3%, Python and
