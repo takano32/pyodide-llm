@@ -53,7 +53,7 @@
 計測環境: ARM big.LITTLE（Cortex-A78×4 + A55×4、スマホ級）、メモリ約 6.6GB・スワップなし、Node 24（V8）、stories15M、greedy。
 
 - **ボトルネックの特定。** 元の純 Python 版は 0.26 tok/s。原因は行列積の内側ループをインタプリタが回していること。NumPy 化で約 50 tok/s（約 200 倍）。WASM SIMD カーネルなら 170〜190、int8 で 288〜334 tok/s。スレッド化はこの規模では効かない（ネイティブ OpenMP でも同じ）。GPU も 15M 級では固定費負けする。詳細は gist: https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901
-- **NumPy エンジンの正しさ。** llama2.c の C 実装と 5 プロンプト × 256 トークンでバイト単位一致。GQA は相対誤差 1e-6 以内。unigram トークナイザは本物の sentencepiece と 16 例すべて一致。
+- **NumPy エンジンの正しさ。** llama2.c の C 実装と 5 プロンプト × 256 トークンでバイト単位一致。GQA は相対誤差 1e-6 以内。unigram トークナイザは本物の sentencepiece と 16 例すべて一致。Hugging Face の `tokenizers` 0.23.1 とも、llm-jp-3-150m の語彙で 10 種類の文（日本語、英語、空白とタブ、絵文字と外字、コード、全角英数と半角カナなど）が 10 / 10 で同じ ID の列（2026-09-20。この開発機には AUR の `python-transformers-git` が入っていて、`tokenizers` と `regex` が使える。PyTorch は無い）。
 - **tokenizer.bin は llama2.c 本家のもの**を使う。llama2.py 付属の古いファイルは語彙が 204 個重複しており、句読点や大文字が学習されていない ID になっていた。
 - **プロンプトの先頭に空白を付ける**（sentencepiece のダミープレフィックス）。付けないとパープレキシティが 8.5% 悪化する。
 - **カーネルの経路（活性値も量子化）の品質も測った（T55、`node tests/perplexity.mjs`）。** 日本語 Wikipedia の 3 記事の冒頭 1499 トークンで、llm-jp-3-150m は float16 の原本 29.976、int8 の重み + NumPy 29.907、+ 8 ビットの活性値（`matmul_q8`）29.965、+ 7 ビットの活性値（`matmul_q8r`）30.094（原本比 +0.39%）。tiny-lm は NumPy 88.327 → 8 ビット +0.01% → 7 ビット +0.34%。7 ビット目の代償は約 0.5% で、速度は 3 割増し。対処は不要。
