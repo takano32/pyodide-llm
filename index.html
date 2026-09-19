@@ -3,10 +3,23 @@
 
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    /* The page never scrolls: the output takes the height that is left and scrolls inside,
+       and the prompt stays at the bottom, like in a chat. */
+    html, body { height: 100%; margin: 0; }
+    h1 { margin: 0 0 4px; font-size: 1.4em; }
+    body { display: flex; flex-direction: column; box-sizing: border-box; padding: 8px; height: 100dvh; }
+    #output { flex: 1; min-height: 6em; resize: none; box-sizing: border-box; }
+    #prompt-form { display: flex; gap: 4px; margin-top: 8px; }
+    #code { flex: 1; min-width: 0; }
+  </style>
 </head>
 
 <body>
   <h1>Pyodide Llama2</h1>
+  <details>
+  <summary>About</summary>
   <p>
     <a href="https://pyodide.org/">Pyodide</a> is a Python distribution for the browser and Node.js based on WebAssembly.
     It allows you to run Python code and use many scientific Python packages directly in your web browser.
@@ -21,20 +34,19 @@
     <li><a href="https://huggingface.co/sbintuitions/tiny-lm">https://huggingface.co/sbintuitions/tiny-lm</a> (<a href="tiny-lm.LICENSE.txt">MIT License</a>)</li>
     <li><a href="https://huggingface.co/karpathy/tinyllamas">https://huggingface.co/karpathy/tinyllamas</a></li>
   </ul>
+  </details>
   <select id="model" style="width: 100%;"></select>
-  <br />
-  <br />
-  <input id="code" style="width: 100%;" />
-  <button id="run" onclick="evaluatePython()" disabled>Run</button>
-  <br />
   <br />
   <div id="download" hidden>
     <progress id="progress" style="width: 100%;"></progress>
     <div id="progress-text"></div>
-    <br />
   </div>
   <div>Output:</div>
-  <textarea id="output" style="width: 100%;" rows="23" disabled></textarea>
+  <textarea id="output" style="width: 100%;" disabled></textarea>
+  <form id="prompt-form" onsubmit="evaluatePython(); return false;">
+    <input id="code" />
+    <button id="run" disabled>Run</button>
+  </form>
 
   <script>
     const output = document.getElementById("output");
@@ -139,6 +151,10 @@
     };
 
     function evaluatePython() {
+      // Enter submits the form even while the button is disabled
+      if (run.disabled) {
+        return;
+      }
       run.disabled = select.disabled = true;
       addToOutput("Prompt: " + code.value + "\n");
       worker.postMessage({ type: "generate", prompt: code.value, ...model.generation });
