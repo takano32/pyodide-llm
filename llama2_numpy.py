@@ -136,7 +136,7 @@ class Llama:
         dtype = np.dtype(dtype)
         offset = 28
 
-        def take(*shape, matrix=True):
+        def take(*shape, matrix=True, widen=True):
             nonlocal offset
             count = math.prod(shape)
             if dtype == np.int8 and matrix:
@@ -147,13 +147,18 @@ class Llama:
                 values = np.frombuffer(checkpoint, dtype=np.int8, count=count, offset=offset)
                 scales = np.frombuffer(checkpoint, dtype=np.float32, count=count // group, offset=offset + count)
                 offset += count + scales.nbytes
+                if not widen:
+                    # copies, so that the checkpoint buffer can be freed
+                    return values.reshape(*shape[:-1], -1, group).copy(), scales.reshape(*shape[:-1], -1, 1).copy()
                 return (values.reshape(-1, group).astype(np.float32) * scales[:, None]).reshape(shape)
             # float32 weights are views into the checkpoint buffer: nothing is copied. float16 is widened.
             array = np.frombuffer(checkpoint, dtype=np.float32 if dtype == np.int8 else dtype, count=count, offset=offset)
             offset += array.nbytes
-            return array.astype(np.float32, copy=False).reshape(shape)
+            return array.astype(np.float32, copy=dtype == np.int8).reshape(shape)
 
-        self.token_embedding_table = take(self.vocab_size, dim)
+        # With a separate classifier the embedding table is only ever read one row at a time, so an int8
+        # table stays int8 (a quarter of the memory) and forward() widens the row it needs.
+        self.token_embedding_table = take(self.vocab_size, dim, widen=shared_weights)
         self.rms_att_weight = take(n_layers, dim, matrix=False)
         self.wq = take(n_layers, dim, dim)
         self.wk = take(n_layers, kv_dim, dim)
@@ -187,7 +192,11 @@ class Llama:
         cos, sin = self.freq_cis_real[pos], self.freq_cis_imag[pos]
 
         # Copy the token embedding into x
-        x = self.token_embedding_table[token].copy()
+        if isinstance(self.token_embedding_table, tuple):
+            values, scales = self.token_embedding_table
+            x = (values[token] * scales[token]).reshape(self.dim)
+        else:
+            x = self.token_embedding_table[token].copy()
 
         # Forward all the layers
         for l in range(self.n_layers):
@@ -288,40 +297,3 @@ class Llama:
                     # the prompt is not counted: its tokens skip the classifier, so they are much cheaper
                     "tokens_per_second": sampled / (now - sampling_start) if now > sampling_start else 0.0,
                 }
-
-
-async def fetch(url, progress=None, size=0):
-    """Download into one preallocated buffer, reporting progress(received, total) along the way.
-
-    size is the expected number of bytes; it is needed when the server compresses the response, because
-    Content-Length then counts the compressed bytes. A wrong size only costs a reallocation.
-    """
-    from pyodide.http import pyfetch
-
-    response = await pyfetch(url)
-    response.raise_for_status()
-    headers = response.js_response.headers
-    total = size if size or headers.get("content-encoding") else int(headers.get("content-length") or 0)
-    if progress is None or not total:
-        return await response.bytes()
-    # chunks go straight into the buffer, so the body never exists twice in memory
-    data = bytearray(total)
-    received = 0
-    reader = response.js_response.body.getReader()
-    while True:
-        result = await reader.read()
-        if result.done:
-            break
-        chunk = result.value
-        if received + chunk.length > len(data):
-            data.extend(bytes(received + chunk.length - len(data)))
-        chunk.assign_to(memoryview(data)[received:received + chunk.length])
-        received += chunk.length
-        progress(received, max(total, received))
-    del data[received:]
-    return data
-
-
-async def load(checkpoint_url, tokenizer_url, progress=None, size=0, **options):
-    """Fetch the model straight into memory (Pyodide only). options are passed on to Llama()."""
-    return Llama(await fetch(checkpoint_url, progress, size), await fetch(tokenizer_url), **options)
