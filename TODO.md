@@ -27,11 +27,22 @@
   4. 失敗（CORS で拒否、404、形式が違う）は分かりやすいエラーにして、コンボボックスから配布モデルへ戻れること。
 - 完了条件: `stories110M.bin` か、それが重すぎるなら `stories42M.bin` を HF の URL から読んで、greedy の出力が llama2.c と同じに始まる。URL が壊れているときにエラーが出て復帰できる。読み込み中にモデルを選び直すと中止される。
 
-### T40 Hugging Face 形式をブラウザの中で変換する — 状態: 未着手（難しいので Fable 向き）
-- 目的: safetensors + `tokenizer.json` + `config.json` を、ローカルのファイル（T38 の入口）または HF のリポジトリ（T39 の入口）から読み、ブラウザの中で変換して動かす。`convert_hf.py` は NumPy だけで書いてあるので Pyodide で動くはず。「変換も WASM Python でやる」という実験。
-- いちばんの壁はメモリ: 素朴にやると safetensors の原本、float32 への展開、量子化した結果が同時にヒープに載る（llm-jp-3-150m で 300MB + 600MB + 170MB。WebAssembly のメモリは 32 ビットで縮まない）。テンソルを 1 つずつ読み（safetensors はヘッダにオフセットがあるので `File.slice()` や Range で部分的に読める）、その場で int8（グループ 32）にして最終的なバッファへ書き、原本は手放す、というストリーム処理に書き直す必要がある。`convert_hf.py` と `quantize.py` のコードは共有し、ビルド時の変換結果とバイト単位で一致させる。
-- ほかに要るもの: `config.json` の検証（Llama 系だけ受け付ける。`rope_theta`、GQA、語彙の大きさ、`tie_word_embeddings`）、トークナイザの種類の判定（unigram / BPE、NFKC）、対応外のモデルへの分かりやすいエラー、進捗の表示。
-- 完了条件: `sbintuitions/tiny-lm` をブラウザの中で変換したものが、`make models` の `tiny-lm.bin` とバイト単位で一致する。変換中のヒープの最大値を測って記録する。llm-jp-3-150m はこの開発機のメモリでは試せない可能性が高いので、試せなければ「未確認」と書く。
+### T40a ストリーム変換器（Hugging Face 形式 → このプロジェクトの形式）— 状態: 未着手（難しいので Fable 向き。T39 とは独立）
+- 目的: safetensors のモデルを、テンソルを 1 つずつ読んで変換し、最終的なバッファへ直接書く変換器を作る。T40b（ブラウザの中での変換）の本体で、UI を含まない。Python + NumPy だけで、ブラウザなしで開発・検証できる。
+- なぜ要るか: 素朴にやると safetensors の原本、float32 への展開、量子化した結果が同時にメモリに載る（llm-jp-3-150m で 300MB + 600MB + 170MB）。WebAssembly のメモリは 32 ビットで縮まないので、ブラウザでは破綻する。
+- 設計:
+  - 読み込み元に依存させない: 変換器は「オフセットと長さを渡すとバイト列を返す読み手」（`read(offset, length)`）を受け取る。ネイティブではファイル、ブラウザではローカルの `File.slice()`、T39 が入れば Range 要求を同じ形で渡せる。
+  - safetensors はヘッダ（JSON）に各テンソルのオフセットがあるので、出力の順（`quantize.py` の `layout()` の順）に 1 つずつ読む → bfloat16 / float16 の展開 → q・k の並べ替え（`permute_reverse`）→ 出力の `dtype` に応じて float32 / float16 / int8（グループ 32）にして書く → 原本を手放す。int8 へは float32 の全体を経由せずに直接変換する。
+  - ビルド時の `convert_hf.py`・`quantize.py` とコードを共有する（ブラウザ専用の別実装を作らない）。`make models` のメモリも減るはず。
+  - v1 は safetensors + `tokenizer.json` + `config.json` に限る。PyTorch の pickle（`pytorch_model.bin`）と sentencepiece の `spiece.model` は、ビルド時の経路としては残すが、ストリーム変換の対象にはしない（tiny-lm は HF に pickle しか置いていないので、この変換器の検証には使えない）。
+  - `config.json` の検証: Llama 系だけ受け付ける（`model_type`、`rope_theta`、GQA、語彙の大きさ、`tie_word_embeddings`、`max_position_embeddings` と切り詰め）。対応外はトレースバックなしの文で断る。
+- 完了条件: llm-jp-3-150m（safetensors）をこの変換器で float32・float16・int8 に変換した結果が、いまの `make models` の出力（`convert_hf.py` → `quantize.py`）とバイト単位で一致する。変換中のメモリのピークを実測して記録する（目標: 出力の大きさ + 最大のテンソル 1 個ぶん程度）。pytest に、小さな合成 safetensors での一致と、対応外の `config.json` を断るテストを足す。
+
+### T40b ブラウザの中で Hugging Face 形式を変換して動かす — 状態: 未着手（T40a の後）
+- 目的: フォルダのボタン（T38）で `.safetensors` + `config.json` + `tokenizer.json` を選ぶと、ブラウザの中で変換してそのまま動く。「変換も WASM Python でやる」という実験。
+- 手順: ページは選ばれたファイルの種類を見分けて（`.safetensors` があれば HF 形式）Worker に渡す。Worker は T40a の変換器を Pyodide で呼び、読み手には `File.slice()` を渡す（同期の読み手が要るなら Worker では `FileReaderSync` が使える）。進捗はテンソル単位で `progress` に出す。出力の `dtype` は int8 を既定にする（ヒープを小さく保つため）。T37 の中止と番号の仕組みをそのまま使う。
+- 完了条件: 小さい safetensors のモデル（既存のモデルから作るか、HF で探す）を実ブラウザで変換して動かし、出力がビルド時に変換した同じモデルと一致する。変換中の WASM ヒープの最大値を測って記録する。llm-jp-3-150m をブラウザで変換できるかは、測ったうえで判断する（この開発機では試せない可能性があり、試せなければ「未確認」と書く）。対応外のモデルで分かりやすいエラーが出て、配布モデルへ戻れる。
+- T39 が入っていれば、同じ変換器に Range の読み手を渡して HF のリポジトリの URL からも変換できる（その場合はクエリパラメータで指定する。ここでは必須にしない）。
 
 ## 完了したタスク
 
