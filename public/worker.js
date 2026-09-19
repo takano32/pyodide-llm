@@ -34,7 +34,11 @@ const CONNECTIONS = 8;
 // GitHub Pages lets the browser keep a file for ten minutes only, so the parts also go into the Cache API: the
 // next visit starts without downloading the model again. The size is part of the key, so a rebuilt model of
 // another size is fetched anew. Without the Cache API (some private modes) this is a plain fetch.
-const MODEL_CACHE = "models-v1";
+// v2: llm-jp-3-150m got its whole context of 4096 tokens, which changed its header and not its size
+const MODEL_CACHE = "models-v2";
+
+// what an earlier version of this page stored
+globalThis.caches?.delete("models-v1").catch(() => {});
 
 async function fetchPart(url, model, signal) {
   const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);

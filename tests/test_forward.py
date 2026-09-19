@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from conftest import naive_logits, pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
+import llama2_numpy
 from llama2_numpy import Llama
 
 TOKENS = [1, 5, 7, 5, 2, 9, 9, 3]
@@ -65,3 +66,15 @@ def test_float16_checkpoint_is_close_to_float32():
     llama = Llama(data[:28] + half, tokenizer, dtype="float16")
     for pos, token in enumerate(TOKENS):
         assert relative_error(llama.forward(token, pos), reference.forward(token, pos)) < 1e-2
+
+
+def test_the_cache_grows_without_changing_a_logit(monkeypatch):
+    config, weights = synthetic_weights(n_kv_heads=2, seq_len=24)
+    checkpoint, tokenizer = pack_checkpoint(config, weights), pack_tokenizer(tiny_vocab(config["vocab_size"]))
+    roomy = Llama(checkpoint, tokenizer)
+    monkeypatch.setattr(llama2_numpy, "KV_START", 3)
+    tight = Llama(checkpoint, tokenizer)
+    assert tight.key_cache.shape[2] == 3
+    for pos in range(config["seq_len"]):
+        assert np.array_equal(roomy.forward(5 + pos, pos), tight.forward(5 + pos, pos)), pos
+    assert tight.key_cache.shape[2] == config["seq_len"]  # 3 -> 6 -> 12 -> 24, never more than the context

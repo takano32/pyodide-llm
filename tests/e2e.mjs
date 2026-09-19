@@ -70,6 +70,13 @@ if (opens) {
   await idle();
 }
 const readySeconds = (Date.now() - started) / 1000;
+// By default a model writes until its context is full (4096 tokens for llm-jp-3-150m). The test, and every tok/s in
+// the documents, is about 256 tokens: set that in the settings, as a visitor would.
+await page.evaluate(() => {
+  const steps = document.getElementById("steps");
+  steps.value = "256";
+  steps.dispatchEvent(new Event("input"));
+});
 // Enter alone breaks the line
 await page.press("#prompt", "Control+Enter");
 await page.waitForFunction(() => document.querySelector(".model .meta") || document.querySelector(".error"), null, { timeout: 600000 });

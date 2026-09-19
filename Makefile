@@ -42,16 +42,17 @@ llm-jp-3-150m/model.safetensors:
 	mkdir -p llm-jp-3-150m
 	for f in config.json tokenizer.json model.safetensors; do wget -q -O llm-jp-3-150m/$$f $(LLM_JP)/$$f || exit 1; done
 
-# its context of 4096 tokens is cut to 512: the KV cache of the full length alone would take 200 MB.
+# llm-jp-3-150m keeps its whole context of 4096 tokens: the engine lets the KV cache (200 MB at that length) grow
+# with the text instead of reserving it.
 # convert_hf.py writes int8 directly (the same bytes as float32 followed by quantize.py, without the 600 MB between)
 CONVERTER = convert_hf.py public/llama2_convert.py
 
 llm-jp-3-150m.bin llm-jp-3-150m.tokenizer.bin &:	llm-jp-3-150m/model.safetensors $(CONVERTER)
-	python3 convert_hf.py llm-jp-3-150m llm-jp-3-150m int8 512
+	python3 convert_hf.py llm-jp-3-150m llm-jp-3-150m int8 4096
 
 # both Hugging Face models are published as bfloat16, so float16 is their original precision
 llm-jp-3-150m.f16:	llm-jp-3-150m/model.safetensors $(CONVERTER)
-	python3 convert_hf.py llm-jp-3-150m llm-jp-3-150m-f16 float16 512
+	python3 convert_hf.py llm-jp-3-150m llm-jp-3-150m-f16 float16 4096
 	mv llm-jp-3-150m-f16.bin llm-jp-3-150m.f16
 	rm llm-jp-3-150m-f16.tokenizer.bin
 

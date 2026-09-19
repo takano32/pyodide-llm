@@ -359,7 +359,7 @@ class Conversion:
     Drive pieces() to the end; then checkpoint, tokenizer and options are what Llama() takes.
     """
 
-    def __init__(self, read, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=512):
+    def __init__(self, read, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=4096):
         def python_read(offset, length):
             data = read(offset, length)
             return data.to_py() if hasattr(data, "to_py") else data
@@ -390,7 +390,7 @@ class Conversion:
         stop = [token for token in [bos, *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
         self.options = {**options, "dtype": self.dtype.name, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop}
-        # The context is cut to max_seq_len: the KV cache grows with it (llm-jp-3-150m: 200 MB at its full 4096)
+        # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         header = checkpoint_header(self.config, self.source, self.max_seq_len)
         self.checkpoint = bytearray(checkpoint_size(header, self.dtype))
 

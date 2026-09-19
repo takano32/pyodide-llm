@@ -133,6 +133,25 @@ The tables above are from before these changes. Old and new kernels were compare
   flip anywhere in the same test (7.6e-6), and the float32 models still write NumPy's text letter for letter.
   What the 7-bit activations cost in perplexity: +0.4%, see the int8 section (T55).
 
+## The whole context (2026-09-19, T56)
+
+llm-jp-3-150m used to be cut from 4096 to 512 tokens when the site was built, for the sake of the KV cache
+(12 layers x positions x 512 x 4 bytes x 2: 200 MB at 4096). Now it keeps its context, and the cache starts with
+room for 256 positions and doubles when the text gets there, one layer at a time, so that growing never needs a
+second copy of all of it. Pyodide in Node, a token with its logits:
+
+| context | heap with the model | position 8 | 248 | 500 | 1000 | 2000 | 3000 | 4070 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 512, reserved at once (before) | 302 MB | 90 tok/s | 84 | | | | | |
+| 1024, reserved at once | 302 MB | 90 | 84 | 75 | 63 | | | |
+| 2048, reserved at once | 362 MB | 86 | 81 | 74 | 64 | 49 | | |
+| 4096, reserved at once | 499 MB | 82 | 83 | 77 | 67 | 51 | 41 | 35 |
+
+In the page (Chromium), with the growing cache and the stop tokens switched off: 4096 tokens in 90 s, 45 tok/s
+over all of it, the heap 302 MB until position 1024, then 362 MB, and 522 MB from position 2048 to the end (20 MB
+more than reserving everything at once: what the smaller arrays left behind). A text of a few hundred tokens,
+which is what the model usually writes before it stops by itself, costs what it cost before.
+
 ## int8
 
 Weights as `quantize.py` writes them: int8 values in groups of 32 with one float32 scale per group; they stay

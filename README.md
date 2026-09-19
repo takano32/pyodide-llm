@@ -74,7 +74,7 @@ in the browser, with the same Python code that builds the models of this site (`
 reads the weights a few megabytes at a time and writes int8 directly, so llm-jp-3-150m (305 MB of bfloat16)
 takes 7 seconds and no more memory than the converted model itself, and then writes, seed for seed, what the
 site's own copy writes. A `.json` next to them may say `{"conversion": {"dtype": "float16", "max_seq_len": 1024}}`
-(the defaults are int8 and a context of 512 tokens). Only plain Llama models are accepted.
+(the defaults are int8 and a context of at most 4096 tokens). Only plain Llama models are accepted.
 
 ## How it Works
 
@@ -126,6 +126,11 @@ products of the layers 52%, the classifier over 99584 tokens 38%, the ctypes cal
 NumPy around the calls 1%. The interpreter is no longer what limits it. Nor is memory bandwidth: the int8 product
 is as fast on a matrix of 75 MB as on one that fits the cache, so its arithmetic is the limit
 (details in [kernels/README.md](kernels/README.md)).
+
+By default a model writes until it stops by itself or its context is full, and llm-jp-3-150m has its whole
+context of 4096 tokens: the KV cache grows with the text (302 MB of heap for a short text, 522 MB at the very
+end), and the speed falls with the position, from 80 tok/s to 35 at position 4070, 45 tok/s over all 4096 tokens.
+The numbers in the tables are about 256 tokens.
 
 Memory, llm-jp-3-150m int8: the kernels multiply the int8 weights as they are instead of widening them to
 float32, which takes the WASM heap from 897 MB to 283 MB.

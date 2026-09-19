@@ -6,8 +6,9 @@ const JAPANESE = "文章の書き出しを入力（例: 富士山は、）";
 const STORY = "Type the beginning of a story (e.g. Lily and Tom went to the park.)";
 const unigram = { tokenizer_kind: "unigram" };
 // greedy decoding makes small models loop, so the Japanese ones sample, and penalize repetition
-const sampled = (repetition_penalty) => ({ steps: 256, temperature: 0.7, topp: 0.9, repetition_penalty });
-const greedy = { steps: 256, temperature: 0.0 };
+// steps: 0 is as many tokens as the context of the model holds. Nothing here holds a model back by default.
+const sampled = (repetition_penalty) => ({ steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty });
+const greedy = { steps: 0, temperature: 0.0 };
 
 export const MODELS = [
   { id: "llm-jp-3-150m", name: "llm-jp-3 150M", note: "日本語 / English · int8 · 171 MB",
@@ -32,7 +33,7 @@ export const MODELS = [
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
   // the unquantized originals, to compare with int8
   { id: "llm-jp-3-150m-f16", name: "llm-jp-3 150M (original)", note: "日本語 / English · float16 · 305 MB · desktop only",
-    checkpoint: "llm-jp-3-150m.f16", bytes: 304702492, tokenizer: "llm-jp-3-150m.tokenizer.bin",
+    checkpoint: "llm-jp-3-150m.f16", bytes: 305161244, tokenizer: "llm-jp-3-150m.tokenizer.bin",
     options: { dtype: "float16", ...unigram, stop_tokens: [1, 2, 7] },
     generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   { id: "tiny-lm-f16", name: "tiny-lm 29M (original)", note: "日本語 / English · float16 · 59 MB",

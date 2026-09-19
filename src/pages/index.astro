@@ -262,6 +262,7 @@
 
   // The generation settings. They start as the model's own and go back to them with every change of model, except
   // the seed: "tap the seed of an answer, change the model, send" is how int8 is compared with the original.
+  // steps: 0 stands for as many tokens as the model's context holds, which is the default of every model
   type Settings = { steps: number; temperature: number; topp: number; repetition_penalty: number; seed?: number };
   const defaults = (current: typeof model): Settings => ({ topp: 0.9, repetition_penalty: 1.0, ...(current.generation as any) });
   let settings = defaults(model);
@@ -270,18 +271,22 @@
   function showSettings() {
     field("steps").max = String(longest);
     field("temperature").value = String(settings.temperature);
-    field("steps").value = String(Math.min(settings.steps, longest));
+    const steps = settings.steps > 0 ? Math.min(settings.steps, longest) : longest;
+    field("steps").value = String(steps);
     field("topp").value = String(settings.topp);
     field("penalty").value = String(settings.repetition_penalty);
     if (document.activeElement !== field("seed")) {
       field("seed").value = settings.seed === undefined ? "" : String(settings.seed);
     }
     $("temperature-value").textContent = settings.temperature ? settings.temperature.toFixed(2) : "greedy";
-    $("steps-value").textContent = String(Math.min(settings.steps, longest));
+    $("steps-value").textContent = String(steps);
     $("topp-value").textContent = settings.topp.toFixed(2);
     $("penalty-value").textContent = settings.repetition_penalty.toFixed(2);
     const usual = defaults(model);
-    const changed = (Object.keys({ ...usual, ...settings }) as (keyof Settings)[]).some((key) => settings[key] !== usual[key]);
+    // "all of the context" is the same setting whether it is written as 0 or as the length of the context
+    const whole = (count: number) => (count <= 0 || count >= longest ? 0 : count);
+    const changed = (Object.keys({ ...usual, ...settings }) as (keyof Settings)[])
+      .some((key) => (key === "steps" ? whole(settings.steps) !== whole(usual.steps) : settings[key] !== usual[key]));
     $("settings-open").classList.toggle("changed", changed);
   }
   function fixSeed(seed: number) {
@@ -290,7 +295,8 @@
   }
   for (const [id, key] of [["temperature", "temperature"], ["steps", "steps"], ["topp", "topp"], ["penalty", "repetition_penalty"]] as const) {
     field(id).oninput = () => {
-      settings[key] = Number(field(id).value);
+      const value = Number(field(id).value);
+      settings[key] = key === "steps" && value >= longest ? 0 : value;
       showSettings();
     };
   }
@@ -462,7 +468,7 @@
       id: "local", name: given.name ?? weights[0].name, note: `local · Hugging Face · ${(weights[0].size / 1e6).toFixed(0)} MB`,
       hf: { weights: weights[0], config, tokenizer }, conversion: given.conversion ?? {}, options: given.options ?? {},
       // a model nobody has tuned this page for: sample, as such models loop when they decode greedily
-      generation: given.generation ?? { steps: 256, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 },
+      generation: given.generation ?? { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 },
       prompt: given.prompt ?? "", placeholder: given.placeholder ?? "",
     };
   }
@@ -492,7 +498,7 @@
       local = {
         id: "local", name: given.name ?? checkpoint.name, note: `local · ${(checkpoint.size / 1e6).toFixed(0)} MB`,
         file: checkpoint, tokenizerFile: tokenizer, bytes: checkpoint.size, options: given.options ?? {},
-        generation: given.generation ?? { steps: 256, temperature: 0.0 },
+        generation: given.generation ?? { steps: 0, temperature: 0.0 },
         prompt: given.prompt ?? "Once upon a time", placeholder: given.placeholder ?? "",
       } as any;
     } catch (error) {
@@ -571,7 +577,7 @@
     answer = message("model");
     // A run that samples draws its seed here rather than in the engine, so that the answer can say which seed
     // wrote it. Greedy models ignore it, and showing one would suggest it mattered.
-    used = { ...settings, steps: Math.min(settings.steps, longest) };
+    used = { ...settings, steps: settings.steps > 0 ? Math.min(settings.steps, longest) : 0 };
     if (used.temperature) {
       used.seed ??= crypto.getRandomValues(new Uint32Array(1))[0];
     } else {

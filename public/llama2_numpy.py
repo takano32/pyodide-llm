@@ -117,6 +117,10 @@ def rope(x, cos, sin):
 
 
 REPETITION_WINDOW = 64  # the repetition penalty looks at this many of the latest tokens
+# The KV cache starts with room for this many positions and doubles when a run gets there: a context of 4096
+# tokens is 200 MB of cache for llm-jp-3-150m, which a short text should not have to pay for (and WebAssembly
+# never gives memory back)
+KV_START = 256
 
 
 def load_kernels(path):
@@ -286,7 +290,7 @@ class Llama:
             self.forward = self.kernel_forward(kernels, keep_int8)
             self.penalize, self.sample = self.kernel_sampler(kernels)
         else:
-            self.key_cache = np.zeros((n_layers, self.n_kv_heads, self.seq_len, self.head_size), dtype=np.float32)
+            self.key_cache = np.zeros((n_layers, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
             self.value_cache = np.zeros_like(self.key_cache)
         self.tokenizer = Tokenizer(tokenizer, self.vocab_size, kind=tokenizer_kind, nfkc=nfkc)
         self.bos, self.stop_tokens = bos, {int(token) for token in stop_tokens}
@@ -311,13 +315,16 @@ class Llama:
         hb, hb2 = np.zeros(hidden_dim, dtype=np.float32), np.zeros(hidden_dim, dtype=np.float32)
         # the attention kernel keeps the scores of all heads: it walks the cache once, not once per head
         att, logits = np.zeros(self.seq_len * n_heads, dtype=np.float32), np.zeros(self.vocab_size, dtype=np.float32)
-        # [layers][seq][kv_dim], unlike the NumPy forward: k and v of a position are written straight into their rows
-        key_cache = np.zeros((n_layers, self.seq_len, kv_dim), dtype=np.float32)
-        value_cache = np.zeros_like(key_cache)
+        # per layer [positions][kv_dim], unlike the NumPy forward: k and v of a position are written straight into
+        # their rows. One array per layer, so that growing (see KV_START) never needs a second copy of all of it.
+        capacity = min(KV_START, self.seq_len)
+        key_cache = [np.zeros((capacity, kv_dim), dtype=np.float32) for _ in range(n_layers)]
+        value_cache = [np.zeros((capacity, kv_dim), dtype=np.float32) for _ in range(n_layers)]
         xq, xs = np.zeros(max(dim, hidden_dim), dtype=np.int8), np.zeros(max(dim, hidden_dim) // 32, dtype=np.float32)
         address = lambda array: array.ctypes.data
         x_p, xb_p, xb2_p, q_p, hb_p, hb2_p, att_p, logits_p, xq_p, xs_p = map(address, (x, xb, xb2, q, hb, hb2, att, logits, xq, xs))
-        key_p, value_p, cos_p, sin_p = map(address, (key_cache, value_cache, self.freq_cis_real, self.freq_cis_imag))
+        key_p, value_p = [address(layer) for layer in key_cache], [address(layer) for layer in value_cache]
+        cos_p, sin_p = address(self.freq_cis_real), address(self.freq_cis_imag)
         att_w, ffn_w, final_w = map(address, (self.rms_att_weight, self.rms_ffn_weight, self.rms_final_weight))
         rmsnorm, rope, attention = kernels["rmsnorm"], kernels["rope"], kernels["attention"]
         swiglu, add_inplace, quantize_x = kernels["swiglu"], kernels["add_inplace"], kernels["quantize_x"]
@@ -365,13 +372,24 @@ class Llama:
         wk, wv = matmul_for(self.wk, dim, kv_dim), matmul_for(self.wv, dim, kv_dim)
         w1, w3 = matmul_for(self.w1, dim, hidden_dim), matmul_for(self.w3, dim, hidden_dim)
         w2, wcls = matmul_for(self.w2, hidden_dim, dim), matmul_for(self.wcls, dim, self.vocab_size)
-        layer_bytes, row_bytes, kv_row_bytes, half_bytes = self.seq_len * kv_dim * 4, dim * 4, kv_dim * 4, head_size // 2 * 4
+        row_bytes, kv_row_bytes, half_bytes = dim * 4, kv_dim * 4, head_size // 2 * 4
+
+        def grow(pos):
+            nonlocal capacity
+            capacity = min(max(2 * capacity, pos + 1), self.seq_len)
+            for cache, addresses in ((key_cache, key_p), (value_cache, value_p)):
+                for l in range(n_layers):
+                    larger = np.zeros((capacity, kv_dim), dtype=np.float32)
+                    larger[:len(cache[l])] = cache[l]
+                    cache[l], addresses[l] = larger, address(larger)  # the smaller one is freed here, layer by layer
 
         def forward(token, pos, need_logits=True):
+            if pos >= capacity:
+                grow(pos)
             x[:] = self.embedding(token)
             cos, sin = cos_p + pos * half_bytes, sin_p + pos * half_bytes
             for l in range(n_layers):
-                keys, values = key_p + l * layer_bytes, value_p + l * layer_bytes
+                keys, values = key_p[l], value_p[l]
                 k_p, v_p = keys + pos * kv_row_bytes, values + pos * kv_row_bytes
                 rmsnorm(xb_p, x_p, att_w + l * row_bytes, dim)
                 wq(q_p, xb_p, l)
@@ -399,6 +417,14 @@ class Llama:
     def forward(self, token, pos, need_logits=True):
         n_kv_heads, head_size = self.n_kv_heads, self.head_size
         kv_mul = self.n_heads // n_kv_heads  # >1 with grouped-query attention
+        if pos >= self.key_cache.shape[2]:
+            # room for twice as many positions (see KV_START)
+            positions = min(max(2 * self.key_cache.shape[2], pos + 1), self.seq_len)
+            for name in ("key_cache", "value_cache"):
+                cache = getattr(self, name)
+                larger = np.zeros((*cache.shape[:2], positions, head_size), dtype=np.float32)
+                larger[:, :, :cache.shape[2]] = cache
+                setattr(self, name, larger)
         scale = np.float32(1.0 / math.sqrt(head_size))
         cos, sin = self.freq_cis_real[pos], self.freq_cis_imag[pos]
 
