@@ -39,6 +39,7 @@ jobs:
         run: |
           mkdir public
           cp index.html worker.js llama2_numpy.py public/
+          sed -i "s/?v=BUILD/?v=${GITHUB_SHA::7}/" public/index.html
           mv models public/
 
       - name: Setup Pages

@@ -145,7 +145,9 @@
 
     output.value = "Initializing...\n";
     // Pyodide runs in a worker and streams every token back, so the page never freezes
-    const worker = new Worker("worker.js", { type: "module" });
+    // BUILD becomes the commit hash when the site is deployed: GitHub Pages lets browsers cache every file for
+    // ten minutes, and a new page must never run with the worker or the Python code of the previous deployment
+    const worker = new Worker("worker.js?v=BUILD", { type: "module" });
     worker.onmessage = ({ data }) => {
       if (data.type === "status") {
         addToOutput(data.text + "\n");

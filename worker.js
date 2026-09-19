@@ -77,7 +77,8 @@ async function init(search) {
   pyodide = await loadPyodide();
   await pyodide.loadPackage("numpy");
 
-  const res = await fetch(new URL("llama2_numpy.py", import.meta.url));
+  // with the ?v=<build> of this worker, so that both always come from the same deployment
+  const res = await fetch(new URL(`llama2_numpy.py${self.location.search}`, import.meta.url));
   if (!res.ok) {
     throw new Error(`Could not fetch llama2_numpy.py: ${res.status}`);
   }
