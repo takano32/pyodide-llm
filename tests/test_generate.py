@@ -85,6 +85,45 @@ def test_stats_are_filled_in():
     assert llama.stats["seconds"] > 0.0 and llama.stats["tokens_per_second"] > 0.0
 
 
+def test_stats_separate_the_prompt_from_the_generated_text():
+    llama = build()
+    forces(llama, [100])
+    prompt_tokens = len(llama.tokenizer.encode("hello world"))
+    list(llama.generate("hello world", steps=20))
+    stats = llama.stats
+    assert stats["prompt_tokens"] == prompt_tokens
+    assert stats["sampled"] == stats["tokens"] - prompt_tokens == 20 - prompt_tokens
+    assert 0.0 < stats["prompt_seconds"] < stats["seconds"]
+    assert stats["prompt_tokens_per_second"] > 0.0
+
+
+def test_the_prompt_is_counted_when_a_stop_token_ends_the_run():
+    llama = build()
+    prompt_tokens = len(llama.tokenizer.encode("hello world"))
+    forces(llama, [100] * prompt_tokens + [101, BOS])
+    list(llama.generate("hello world", steps=20))
+    # the stop token is sampled but never shown, so it counts as a sampling step and not as a token
+    assert llama.stats["prompt_tokens"] == prompt_tokens
+    assert llama.stats["tokens"] == prompt_tokens + 1 and llama.stats["sampled"] == 2
+
+
+def test_time_to_first_token_covers_the_prompt():
+    llama = build()
+    forces(llama, [100])
+    list(llama.generate("hello world", steps=20))
+    stats = llama.stats
+    assert stats["prompt_seconds"] < stats["first_token_seconds"] < stats["seconds"]
+
+
+def test_stats_of_a_run_without_a_prompt_have_no_prompt_time():
+    llama = build()
+    forces(llama, [100])
+    list(llama.generate(steps=4))
+    assert llama.stats["prompt_tokens"] == 0 and llama.stats["prompt_seconds"] == 0.0
+    assert llama.stats["prompt_tokens_per_second"] == 0.0
+    assert llama.stats["sampled"] == 4
+
+
 def test_an_abandoned_generator_does_not_overwrite_newer_stats():
     llama = build()
     forces(llama, [100])

@@ -102,7 +102,13 @@ function download(model) {
 
 let pyodide, llama2_numpy, llama, kernels;
 
+// how long the load took, in seconds: Pyodide once per session, the other two per model. The download runs while
+// Pyodide loads, so the two overlap and the page says so instead of adding them up.
+const loadSeconds = {};
+const since = (started) => (performance.now() - started) / 1000;
+
 async function init(search) {
+  const started = performance.now();
   const version = await resolvePyodideVersion(search);
   postMessage({ type: "status", text: `Loading Pyodide ${version}...` });
   const { loadPyodide } = await import(`https://cdn.jsdelivr.net/pyodide/v${version}/full/pyodide.mjs`);
@@ -128,6 +134,7 @@ async function init(search) {
       }
     }
   }
+  loadSeconds.pyodide = since(started);
 }
 
 // a Python bytearray that JavaScript fills in place
@@ -147,6 +154,7 @@ async function load(model, ready = Promise.resolve()) {
   llama?.destroy();
   llama = undefined;
   postMessage({ type: "status", text: `Downloading ${model.name}...` });
+  const downloadStarted = performance.now();
   const checkpoint = download(model);
   const tokenizerBytes = fetch(new URL(`models/${model.tokenizer}`, import.meta.url)).then((res) => {
     if (!res.ok) {
@@ -159,12 +167,16 @@ async function load(model, ready = Promise.resolve()) {
   const weights = pythonBuffer(model.bytes);
   await checkpoint.into(weights.write);
   const vocabulary = new Uint8Array(await tokenizerBytes);
+  loadSeconds.download = since(downloadStarted);
+
+  const constructStarted = performance.now();
   const tokenizer = pythonBuffer(vocabulary.length);
   tokenizer.write(0, vocabulary);
   llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, ...model.options });
   weights.buffer.destroy();
   tokenizer.buffer.destroy();
-  postMessage({ type: "ready", pyodide: pyodide.version, backend: llama.backend });
+  loadSeconds.construct = since(constructStarted);
+  postMessage({ type: "ready", pyodide: pyodide.version, backend: llama.backend, load: { ...loadSeconds } });
   dropStaleParts(model);
 }
 

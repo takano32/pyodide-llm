@@ -468,15 +468,17 @@ class Llama:
 
         self._run += 1
         run = self._run
-        token, count, sampled = self.bos, 0, 0
+        token, count, sampled, forced = self.bos, 0, 0, 0
         history = [self.bos]
         start = sampling_start = time.perf_counter()
+        first_token = None
         try:
             for pos in range(steps):
                 if pos < len(prompt_tokens):
                     # Still processing the prompt: force the next token, and the logits are not needed
                     self.forward(token, pos, need_logits=False)
                     next_token = prompt_tokens[pos]
+                    forced += 1
                     sampling_start = time.perf_counter()
                 else:
                     logits = self.forward(token, pos)
@@ -484,6 +486,8 @@ class Llama:
                         self.penalize(logits, history, repetition_penalty)
                     next_token = self.sample(logits, temperature, topp, rng)
                     sampled += 1
+                    if first_token is None:
+                        first_token = time.perf_counter()
                     # The BOS token delimits sequences: the story is over
                     if next_token in self.stop_tokens:
                         break
@@ -505,4 +509,11 @@ class Llama:
                     "seconds": now - start,
                     # the prompt is not counted: its tokens skip the classifier, so they are much cheaper
                     "tokens_per_second": sampled / (now - sampling_start) if now > sampling_start else 0.0,
+                    # The prompt costs a forward pass per token too, and it is what the reader waits for first.
+                    # sampled counts the sampling steps, one more than "tokens" shows when a stop token ended it.
+                    "sampled": sampled,
+                    "prompt_tokens": forced,
+                    "prompt_seconds": sampling_start - start,
+                    "prompt_tokens_per_second": forced / (sampling_start - start) if sampling_start > start else 0.0,
+                    "first_token_seconds": first_token - start if first_token is not None else 0.0,
                 }

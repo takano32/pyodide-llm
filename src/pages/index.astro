@@ -54,7 +54,11 @@
 
     <footer>
       <div id="status" role="status">
-        <span id="status-text">Initializing...</span>
+        <!-- the same line as before; once the model is ready it opens into how long each part of the load took -->
+        <details id="load">
+          <summary id="status-text">Initializing...</summary>
+          <div id="load-stats"></div>
+        </details>
         <progress id="progress" hidden></progress>
       </div>
       <form id="composer">
@@ -134,6 +138,17 @@
   .model .bubble:empty::before { content: "…"; color: var(--muted); }
   .meta { font-size: 0.72rem; color: var(--muted); padding-inline: 6px; }
   .error .bubble { color: #dc2626; }
+  /* The meta line and the status line open into their numbers. Closed they must look exactly as they did before,
+     so the disclosure triangle goes away and the summary keeps the colour of the line. */
+  .meta > summary, #load > summary { color: inherit; list-style: none; }
+  .meta > summary::-webkit-details-marker, #load > summary::-webkit-details-marker { display: none; }
+  .meta > summary, #load.measured > summary { cursor: pointer; }
+  .meta > summary::after, #load.measured > summary::after { content: " ▸"; }
+  .meta[open] > summary::after, #load.measured[open] > summary::after { content: " ▾"; }
+  .meta > div, #load-stats > div { padding-left: 1.1em; }
+  /* nothing to open until the numbers are in */
+  #load { min-width: 0; }
+  #load:not(.measured) > summary { cursor: default; pointer-events: none; }
 
   footer { padding: 8px 16px 14px; }
   #status { display: flex; align-items: center; gap: 10px; min-height: 1.4em; font-size: 0.75rem; color: var(--muted); padding: 0 6px 6px; }
@@ -163,6 +178,7 @@
   let model = MODELS.find(({ id }) => id === requested) ?? MODELS[0];
   let ready = false;
   let answer: HTMLElement | null = null; // the bubble that is being written
+  let used: Record<string, any> = {}; // the generation settings of that run, for the line under it
 
   // The round button is the only control: an arrow that sends, a square that stops the run that is going on.
   const RUN_ICON = "M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z", STOP_ICON = "M7 7h10v10H7z";
@@ -191,13 +207,26 @@
     chat.scrollTop = chat.scrollHeight;
     return element;
   }
-  function meta(element: Element, text: string) {
-    const line = document.createElement("div");
+  // The numbers are the point of this experiment, so they stay on the page: a short line under the answer that
+  // opens into the breakdown. Tapping the summary is the only interaction, and closed it reads as one line.
+  function rows(element: Element, lines: string[]) {
+    for (const text of lines) {
+      const row = document.createElement("div");
+      row.textContent = text;
+      element.append(row);
+    }
+  }
+  function meta(element: Element, text: string, breakdown: string[]) {
+    const line = document.createElement("details");
     line.className = "meta";
-    line.textContent = text;
+    const head = document.createElement("summary");
+    head.textContent = text;
+    line.append(head);
+    rows(line, breakdown);
     element.append(line);
     chat.scrollTop = chat.scrollHeight;
   }
+  const seconds = (value: number) => `${value.toFixed(value < 10 ? 2 : 1)} s`;
 
   // ?v=<commit>: a new page must never run with the cached worker or Python code of the previous deployment
   const worker = new Worker(`${import.meta.env.BASE_URL}worker.js?v=${__BUILD__}`, { type: "module" });
@@ -214,6 +243,13 @@
       // the model is in the Cache API now: ask the browser not to evict it (only a page may ask, not a worker)
       navigator.storage?.persist?.();
       statusText.textContent = `${model.name} · ${data.backend} · Pyodide ${data.pyodide}`;
+      const load = $("load-stats");
+      load.textContent = "";
+      rows(load, [
+        `Pyodide ${seconds(data.load.pyodide)} · download ${seconds(data.load.download)} (at the same time)`,
+        `Llama() ${seconds(data.load.construct)}`,
+      ]);
+      $("load").classList.add("measured");
     } else if (data.type === "token") {
       // stick to the bottom only while the reader is there
       const pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
@@ -222,7 +258,13 @@
         chat.scrollTop = chat.scrollHeight;
       }
     } else if (data.type === "done") {
-      meta(answer!, `${model.name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s`);
+      // the settings this very answer was written with: with the seed the same text can be asked for again
+      const settings = used.temperature ? `temp ${used.temperature} · seed ${used.seed}` : "greedy";
+      meta(answer!, `${model.name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s · ${settings}`, [
+        `first token ${seconds(data.first_token_seconds)}`,
+        `prompt ${data.prompt_tokens} tokens · ${data.prompt_tokens_per_second.toFixed(1)} tok/s`,
+        `generated ${data.tokens - data.prompt_tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s · ${seconds(data.seconds)} in all`,
+      ]);
     } else if (data.type === "error") {
       message("model error", data.message);
       statusText.textContent = ready ? `${model.name}` : "Failed to initialize";
@@ -269,6 +311,12 @@
     select.disabled = true;
     message("user", prompt.value);
     answer = message("model");
-    worker.postMessage({ type: "generate", prompt: prompt.value, ...model.generation });
+    // A run that samples draws its seed here rather than in the engine, so that the answer can say which seed
+    // wrote it. Greedy models ignore it, and showing one would suggest it mattered.
+    used = { ...model.generation };
+    if (used.temperature) {
+      used.seed ??= crypto.getRandomValues(new Uint32Array(1))[0];
+    }
+    worker.postMessage({ type: "generate", prompt: prompt.value, ...used });
   };
 </script>

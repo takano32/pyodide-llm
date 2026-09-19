@@ -51,7 +51,8 @@ await page.press("#prompt", "Enter");
 await page.waitForFunction(() => document.querySelector(".model .meta") || document.querySelector(".error"), null, { timeout: 600000 });
 const result = await page.evaluate(() => ({
   text: document.querySelector(".model .bubble")?.textContent ?? "",
-  meta: document.querySelector(".model .meta")?.textContent ?? "",
+  // the closed line; the breakdown below it is in the same element
+  meta: document.querySelector(".model .meta summary")?.textContent ?? "",
   error: document.querySelector(".error .bubble")?.textContent ?? "",
   pageScrolls: document.documentElement.scrollHeight > innerHeight,
 }));
