@@ -1,7 +1,9 @@
-// The first model is the default: llm-jp-3 writes the best Japanese, and the SIMD kernels made it quick enough.
-// ?model=<id> picks another one. Every file is fetched when the site is built (see the Makefile): llm-jp-3 and
-// tiny-lm are converted from their Hugging Face checkpoints by convert_hf.py, and the larger models are quantized
-// to int8 by quantize.py. bytes is the checkpoint size: it sizes the download buffer and the progress bar.
+// The first model is the default: tiny-lm, the lightest one that writes Japanese. A public page should not make a
+// phone fetch 171 MB unasked, and it is ready soonest; llm-jp-3 writes far better Japanese and is one choice away.
+// Within each group the order is Japanese from light to heavy, then English from light to heavy.
+// ?model=<id> picks another one. Every file of the first two groups is fetched when the site is built (see the
+// Makefile): llm-jp-3 and tiny-lm are converted from their Hugging Face checkpoints by convert_hf.py, and the larger
+// models are quantized to int8. bytes is the checkpoint size: it sizes the download buffer and the progress bar.
 const JAPANESE = "文章の書き出しを入力（例: 富士山は、）";
 const STORY = "Type the beginning of a story (e.g. Lily and Tom went to the park.)";
 const unigram = { tokenizer_kind: "unigram" };
@@ -24,41 +26,42 @@ const llmJp = { stop_tokens: [1, 2, 7] };
 export const GROUPS = { site: "Models of this site", original: "Unquantized originals", hf: "From Hugging Face, converted in this browser" };
 
 export const MODELS = [
-  { id: "llm-jp-3-150m", name: "llm-jp-3 150M", note: "日本語 / English · int8 · 171 MB",
-    checkpoint: "llm-jp-3-150m.bin", bytes: 171395100, tokenizer: "llm-jp-3-150m.tokenizer.bin",
-    options: { dtype: "int8", ...unigram, stop_tokens: [1, 2, 7] },
-    generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   { id: "tiny-lm", name: "tiny-lm 29M", note: "日本語 / English · int8 · 33 MB",
     checkpoint: "tiny-lm.bin", bytes: 32891932, tokenizer: "tiny-lm.tokenizer.bin",
     options: { dtype: "int8", ...unigram, nfkc: true, stop_tokens: [1, 2] },
     generation: sampled(1.3), prompt: "これからの流行りは", placeholder: JAPANESE },
-  { id: "stories15M", name: "TinyStories 15M", note: "English · int8 · 17 MB",
-    checkpoint: "stories15M.bin", bytes: 17101468, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
+  { id: "llm-jp-3-150m", name: "llm-jp-3 150M", note: "日本語 / English · int8 · 171 MB",
+    checkpoint: "llm-jp-3-150m.bin", bytes: 171395100, tokenizer: "llm-jp-3-150m.tokenizer.bin",
+    options: { dtype: "int8", ...unigram, stop_tokens: [1, 2, 7] },
+    generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  { id: "stories260K", name: "TinyStories 260K", note: "English · float32 · 1 MB · tiny",
+    checkpoint: "stories260K.bin", bytes: 1056540, tokenizer: "tok512.bin", options: {},
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
   { id: "stories3_5M", name: "TinyStories 3.5M", note: "English · float32 · 15 MB · fast",
     checkpoint: "stories3_5M-v4k.bin", bytes: 14887004, tokenizer: "tok4096.bin", options: {},
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
-  { id: "stories260K", name: "TinyStories 260K", note: "English · float32 · 1 MB · tiny",
-    checkpoint: "stories260K.bin", bytes: 1056540, tokenizer: "tok512.bin", options: {},
+  { id: "stories15M", name: "TinyStories 15M", note: "English · int8 · 17 MB",
+    checkpoint: "stories15M.bin", bytes: 17101468, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
   { id: "stories42M", name: "TinyStories 42M", note: "English · int8 · 47 MB · desktop only",
     checkpoint: "stories42M.bin", bytes: 46925852, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
   // the unquantized originals, to compare with int8
-  { group: "original", id: "llm-jp-3-150m-f16", name: "llm-jp-3 150M (original)", note: "日本語 / English · float16 · 305 MB · desktop only",
-    checkpoint: "llm-jp-3-150m.f16", bytes: 305161244, tokenizer: "llm-jp-3-150m.tokenizer.bin",
-    options: { dtype: "float16", ...unigram, stop_tokens: [1, 2, 7] },
-    generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   { group: "original", id: "tiny-lm-f16", name: "tiny-lm 29M (original)", note: "日本語 / English · float16 · 59 MB",
     checkpoint: "tiny-lm.f16", bytes: 58724892, tokenizer: "tiny-lm.tokenizer.bin",
     options: { dtype: "float16", ...unigram, nfkc: true, stop_tokens: [1, 2] },
     generation: sampled(1.3), prompt: "これからの流行りは", placeholder: JAPANESE },
+  { group: "original", id: "llm-jp-3-150m-f16", name: "llm-jp-3 150M (original)", note: "日本語 / English · float16 · 305 MB · desktop only",
+    checkpoint: "llm-jp-3-150m.f16", bytes: 305161244, tokenizer: "llm-jp-3-150m.tokenizer.bin",
+    options: { dtype: "float16", ...unigram, stop_tokens: [1, 2, 7] },
+    generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   { group: "original", id: "stories15M-f32", name: "TinyStories 15M (original)", note: "English · float32 · 61 MB",
     checkpoint: "stories15M.f32", bytes: 60816028, tokenizer: "tokenizer.bin", options: {},
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
   { group: "original", id: "stories42M-f32", name: "TinyStories 42M (original)", note: "English · float32 · 167 MB · desktop only",
     checkpoint: "stories42M.f32", bytes: 167020572, tokenizer: "tokenizer.bin", options: {},
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
+  // fetched from huggingface.co and converted in the page
   { group: "hf", id: "hf-llm-jp-3-150m-instruct3", name: "llm-jp-3 150M instruct3", note: "answers instructions · 日本語 · fetches 305 MB → int8 171 MB",
     hf: hf("llm-jp/llm-jp-3-150m-instruct3", "5be263e1a3613cd5c163f41ad828c8de6a2aa6ec"), download: 304649360, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },

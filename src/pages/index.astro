@@ -40,12 +40,19 @@
     <main id="chat">
       <section class="intro">
         <p>
-          ブラウザ上の WebAssembly 版 Python（Pyodide + NumPy）だけで言語モデルを動かす実験です。
-          実用ではなく試験が目的なので、モデルは小さく、出力はそれなりです。
+          ブラウザの中の Python（Pyodide）だけで言語モデルを動かす実験です。Python が層を順に呼び、計算は
+          ctypes で読み込んだ数 KB の WASM SIMD カーネルが行います。試験が目的なので、モデルは小さく、出力はそれなりです。
+          いま動くのはいちばん軽いモデルで、もっと自然な日本語は
+          <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M（171 MB）</button>
+          が書きます。一覧の最後のグループは Hugging Face から取得して、この場で変換します。
+          くわしくは <a href="https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901">Pyodide LLM の概要</a> へ。
         </p>
         <p class="en">
-          An experiment in how far Python on WebAssembly can go: a language model that runs entirely in your
-          browser, written in Python with NumPy on Pyodide. A test bed, not a product.
+          An experiment in how far Python on WebAssembly can go: Python runs the layers, tiny SIMD kernels loaded with
+          ctypes do the math. A test bed, not a product.
+          <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M (171 MB)</button>
+          writes better Japanese than the light default, and the last group of the list comes from Hugging Face and is
+          converted right here.
         </p>
         <details>
           <summary>このプロジェクトについて / About, models and licenses</summary>
@@ -176,6 +183,11 @@
   .intro p { margin: 0 0 6px; }
   #kept button { font: inherit; font-size: 0.75rem; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; cursor: pointer; }
   .intro .en { font-size: 0.8rem; }
+  /* a model named in the text is a way to choose it */
+  .intro .choose { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+  /* the whitespace around an inline button is collapsed away */
+  .intro .en .choose { margin: 0 0.3em; }
+  .intro .choose:disabled { color: inherit; cursor: default; text-decoration: none; }
   summary { cursor: pointer; color: var(--accent); }
   .intro ul { margin: 6px 0 0; padding-left: 1.2em; }
   a { color: var(--accent); }
@@ -276,6 +288,9 @@
             await cache!.delete(request);
           }
         }
+        if (model.id === manifest.id) {
+          remember(model, false);
+        }
         showKept();
       };
       item.append(`${manifest.name} (${(manifest.bytes / 1e6).toFixed(0)} MB) `, remove);
@@ -316,7 +331,24 @@
   if (fromUrl) {
     select.add(new Option(`${fromUrl.name} — ${fromUrl.note}`, "local"));
   }
-  let model = fromUrl ?? MODELS.find(({ id }) => id === requested) ?? MODELS[0];
+  // Whoever has chosen a model before starts with it again; a first visit starts with the first of the list. What
+  // the URL names comes first. A model that would be fetched from Hugging Face anew (more than 500 MB, and not kept
+  // in this browser when it was last used) is not started unasked.
+  function remembered(): typeof MODELS[number] | undefined {
+    try {
+      const { id, kept } = JSON.parse(localStorage.getItem("model") ?? "{}");
+      const entry = MODELS.find((candidate) => candidate.id === id) as any;
+      return entry && ((entry.download ?? 0) <= 500e6 || kept) ? entry : undefined;
+    } catch {
+      return undefined;  // no storage (some private modes), or something else wrote there
+    }
+  }
+  function remember(entry: typeof MODELS[number] | undefined, kept = false) {
+    try {
+      entry && entry.id !== "local" ? localStorage.setItem("model", JSON.stringify({ id: entry.id, kept })) : localStorage.removeItem("model");
+    } catch {}
+  }
+  let model = fromUrl ?? MODELS.find(({ id }) => id === requested) ?? remembered() ?? MODELS[0];
   let ready = false;
   let answer: HTMLElement | null = null; // the bubble that is being written
   let used: Record<string, any> = {}; // the generation settings of that run, for the line under it
@@ -489,6 +521,7 @@
       ]);
       $("load").classList.add("measured");
       showKept();
+      remember(model, (model as any).hf && !data.notKept);
     } else if (data.type === "token") {
       // stick to the bottom only while the reader is there
       const pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
@@ -607,6 +640,15 @@
       open([...event.dataTransfer.files]);
     }
   };
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>(".intro .choose")) {
+    button.onclick = () => {
+      if (!select.disabled && select.value !== button.dataset.model) {
+        select.value = button.dataset.model!;
+        select.onchange!(new Event("change"));
+      }
+    };
+  }
 
   select.onchange = () => {
     const chosen = select.value === "local" ? local! : MODELS.find(({ id }) => id === select.value)!;

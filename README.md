@@ -2,7 +2,7 @@
 
 Run language models in your browser using Python and WebAssembly! (Until September 2026 this project was called pyodide-llama-py.)
 
-This project leverages [Pyodide](https://pyodide.org/) to run a Python implementation of the Llama architecture (`llama2_numpy.py`, a NumPy port of `llama2.py`) directly in the web browser. It is an experiment in how far Python on WebAssembly can go, not a product. The default model is [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m), which writes Japanese and English; the much smaller [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm) is four times as fast but far less coherent; the TinyStories models from the [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project can be selected as well.
+This project leverages [Pyodide](https://pyodide.org/) to run a Python implementation of the Llama architecture (`llama2_numpy.py`, a NumPy port of `llama2.py`) directly in the web browser. It is an experiment in how far Python on WebAssembly can go, not a product. The default model is [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm), the lightest one that writes Japanese (33 MB); [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m) writes far more coherent Japanese and English at a quarter of the speed and five times the download, and is one click away; the TinyStories models from the [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project can be selected as well.
 
 ## Features
 
@@ -12,7 +12,7 @@ This project leverages [Pyodide](https://pyodide.org/) to run a Python implement
 - **Settings You Can See:** every answer says which temperature and seed wrote it and how fast; the button left of the prompt changes them, and the seed under an answer is a button that fixes it, so that two models can be compared on the same seed.
 - **Models Straight from Hugging Face:** the last group of the model list is not hosted here. The page fetches `model.safetensors` from huggingface.co, converts it to int8 in your browser with the same Python code that builds the site's models, and keeps the result for the next visit ([how](#models-from-hugging-face)).
 - **Your Own Model:** a llama2.c checkpoint from your disk runs without being uploaded ([how](#your-own-model)).
-- **Several Models:** Japanese / English models (llm-jp-3 with 150M parameters by default, tiny-lm with 29M), and TinyStories models from 260K to 42M parameters. `?model=<id>` selects one directly.
+- **Several Models:** Japanese / English models (tiny-lm with 29M parameters by default, because a public page should not make a phone fetch 171 MB unasked; llm-jp-3 with 150M writes far better Japanese and is one click away, and the page remembers what you chose), and TinyStories models from 260K to 42M parameters. `?model=<id>` selects one directly.
 
 ## Live Demo
 
@@ -150,7 +150,7 @@ Firefox that Playwright drives looks 8 to 15 times slower, because Playwright dr
 a debugged page gets its WebAssembly from the baseline compiler only: those numbers say nothing about Firefox.
 Safari itself, and a real iPhone, were not measured.
 
-Where a token of the default model goes (`node tests/profile.mjs`, the same in Node and in Chromium): the matrix
+Where a token of llm-jp-3-150m goes (`node tests/profile.mjs`, the same in Node and in Chromium): the matrix
 products of the layers 52%, the classifier over 99584 tokens 38%, the ctypes calls 6%, sampling 3%, Python and
 NumPy around the calls 1%. The interpreter is no longer what limits it. Nor is memory bandwidth: the int8 product
 is as fast on a matrix of 75 MB as on one that fits the cache, so its arithmetic is the limit
