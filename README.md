@@ -116,12 +116,14 @@ In Chromium, per model (`?kernel=off` gives the NumPy column):
 | llm-jp-3-150m int8, sampled, 256 tokens | 8.5 | 75-79 |
 
 The tiny-lm and llm-jp rows are the current defaults. They were 171 and 47 tok/s while NumPy still did the
-sampling, and 252-274 and 61-66 before attention learned to walk its cache row by row (T54). Firefox 150 loads the kernels as well, but all of its
-WebAssembly was 5-7x slower on this machine, NumPy included. A weekly workflow runs the deployed site on Linux, Windows (both on x86-64 and ARM) and macOS, in Playwright's
+sampling, and 252-274 and 61-66 before attention learned to walk its cache row by row (T54). A weekly workflow runs the deployed site on Linux, Windows (both on x86-64 and ARM) and macOS, in Playwright's
 Chromium, Firefox and WebKit and in the installed Chrome and Edge: all 23 combinations run all four models
 ([table](kernels/README.md#every-browser-the-runners-offer-2026-09-19-t44-and-t58)). WebKit, Safari's engine, has no
-relaxed SIMD, so int8 runs on the plain SIMD kernel there. Firefox is 8 to 15 times slower than the Chromium
-family on every system. Safari itself, and a real iPhone, were not measured.
+relaxed SIMD, so int8 runs on the plain SIMD kernel there. Firefox is as fast as the Chromium family (llm-jp-3-150m: 106 against 107
+tok/s on the same Linux runner), measured in the Firefox that the runners have installed, through Selenium. The
+Firefox that Playwright drives looks 8 to 15 times slower, because Playwright drives it through the debugger, and
+a debugged page gets its WebAssembly from the baseline compiler only: those numbers say nothing about Firefox.
+Safari itself, and a real iPhone, were not measured.
 
 Where a token of the default model goes (`node tests/profile.mjs`, the same in Node and in Chromium): the matrix
 products of the layers 52%, the classifier over 99584 tokens 38%, the ctypes calls 6%, sampling 3%, Python and

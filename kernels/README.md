@@ -24,9 +24,9 @@ that makes a module an Emscripten side module. Verified to load in Pyodide 0.29.
 | Chromium: llm-jp-3-150m int8, sampled, 256 tokens | 8.5 | 75-79 (47 while NumPy still did the sampling, 61-66 before T54) |
 | Chromium: stories3_5M / stories260K float32 (grouped-query attention) | 141 / 268 | 402 / 951 |
 
-For comparison: native llama2.c with `gcc -Ofast` runs stories15M at 214 tok/s on the same machine. Firefox 150
-loads the kernels too (all of its WebAssembly was 5-7x slower on the test machine, NumPy included). Every other
-browser is tested on the runners of GitHub Actions (below). Overheads inside Pyodide: one ctypes call 3-12 us, `array.ctypes.data` about 4 us (addresses are
+For comparison: native llama2.c with `gcc -Ofast` runs stories15M at 214 tok/s on the same machine. Firefox loads the
+kernels too (what looked like a Firefox 5-7x slower on the test machine was Playwright's debugger, see below). Every
+other browser is tested on the runners of GitHub Actions (below). Overheads inside Pyodide: one ctypes call 3-12 us, `array.ctypes.data` about 4 us (addresses are
 taken once), one small NumPy call 1.5-2.5 us; a token takes about 100 kernel calls.
 
 ## Every browser the runners offer (2026-09-19, T44 and T58)
@@ -67,9 +67,25 @@ machines with different CPUs, some of them much faster than the machine of the o
 
 - **WebKit has no relaxed SIMD**, on any system: the int8 models fall back to `matmul_q8`, which had never met a
   real browser before T44. It is Playwright's WebKit, close to Safari, not Safari itself.
-- **Firefox is 8 to 15 times slower than the Chromium family, on every system and both architectures**, with the
-  same kernels loaded, and takes 20 s to get ready instead of 3 to 5. So this is Firefox, not the ARM machine
-  where it was first seen (5-7x there). Where the time goes is not known yet: T59.
+- **The Firefox rows of this table are not Firefox's speed** (T59). Playwright drives its patched Firefox through the
+  debugger, and SpiderMonkey compiles the WebAssembly of a debugged page with the baseline compiler only. A bare
+  SIMD loop with nothing of Pyodide runs at 0.43 G multiply-adds per second there against 5.7 in Chromium (scalar
+  code 0.07 against 1.2); forcing the baseline compiler changes nothing, and with the optimizing compiler alone
+  that Firefox says "no WebAssembly compiler available". Inside the kernels it is 13 to 15 times slower, while a
+  ctypes call costs 24 us and is 4% of a token. **The Firefox that the runners have installed, driven by Selenium
+  and geckodriver (`tests/stock-firefox.mjs`), is as fast as the Chromium family on every system:**
+
+  | system | Playwright's Firefox 150, llm-jp-3-150m | installed Firefox 155 | Chromium family on that system |
+  |---|---:|---:|---:|
+  | Linux, x86-64 | 13 tok/s, ready in 24 s | 106 tok/s, ready in 5 s | 80-107 |
+  | Linux, ARM64 | 8 | 68 | 105 |
+  | Windows, x86-64 | 13 | 85 | 95-117 |
+  | Windows, ARM64 | 9 | 65 | 100 |
+  | macOS, Apple M1 | 13 | 132 | 155-157 |
+
+  So never read a speed off Playwright's Firefox, here or on the development machine; it is good for "does it
+  run". Whether a Firefox that a person opens is as fast as the one Selenium opens was not checked, but nothing in
+  Marionette suggests otherwise.
 - On Windows for ARM, Playwright's Chromium and WebKit are x86-64 builds that Windows emulates, a third as fast
   as the native Chrome and Edge next to them.
 - The first run found a bug of the page, not of a browser: the real Edge reports the 404 of `/favicon.ico` as a
