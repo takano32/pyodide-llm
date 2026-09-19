@@ -21,7 +21,7 @@ that makes a module an Emscripten side module. Verified to load in Pyodide 0.29.
 | llm-jp-3-150m int8, Pyodide in Node | 9.3 tok/s, 897 MB of WASM heap | 81 tok/s, 283 MB |
 | Chromium: stories15M float32 / int8 | 50 | 186 / 296 |
 | Chromium: tiny-lm int8, sampled with a repetition penalty | 43 | 252-274 (171 while NumPy still did the sampling) |
-| Chromium: llm-jp-3-150m int8, sampled | 8.5 | 47 |
+| Chromium: llm-jp-3-150m int8, sampled | 8.5 | 61-66 (47 while NumPy still did the sampling) |
 | Chromium: stories3_5M / stories260K float32 (grouped-query attention) | 141 / 268 | 402 / 951 |
 
 For comparison: native llama2.c with `gcc -Ofast` runs stories15M at 214 tok/s on the same machine. Firefox 150

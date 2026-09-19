@@ -2,13 +2,13 @@
 
 Run Llama 2 in your browser using Python and WebAssembly!
 
-This project leverages [Pyodide](https://pyodide.org/) to run a Python implementation of Llama 2 (`llama2_numpy.py`, a NumPy port of `llama2.py`) directly in the web browser. It is an experiment in how far Python on WebAssembly can go, not a product. The default model is [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m), which writes Japanese and English; the much smaller [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm) is three times as fast but far less coherent; the TinyStories models from the [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project can be selected as well.
+This project leverages [Pyodide](https://pyodide.org/) to run a Python implementation of Llama 2 (`llama2_numpy.py`, a NumPy port of `llama2.py`) directly in the web browser. It is an experiment in how far Python on WebAssembly can go, not a product. The default model is [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m), which writes Japanese and English; the much smaller [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm) is four times as fast but far less coherent; the TinyStories models from the [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project can be selected as well.
 
 ## Features
 
 - **Pure Browser-based Inference:** No backend server required for inference.
-- **Python in WebAssembly:** Python sequences the transformer layers, and small WASM SIMD kernels, loaded with `ctypes` and working in place on NumPy memory, do the math: 50 tokens/s for the 150M parameter model and 300 to 900 for the small ones, about a thousand times faster than the original pure Python loops (NumPy alone reaches 50).
-- **Streaming Output:** Pyodide runs in a Web Worker and every token is shown as soon as it is generated, so the page never freezes.
+- **Python in WebAssembly:** Python sequences the transformer layers, and small WASM SIMD kernels, loaded with `ctypes` and working in place on NumPy memory, do the math: 60 tokens/s for the 150M parameter model and 300 to 950 for the small ones, about a thousand times faster than the original pure Python loops (NumPy alone reaches 50). See [Measurements](#measurements).
+- **Streaming Output:** Pyodide runs in a Web Worker and every token is shown as soon as it is generated, so the page never freezes. While a text is being written, the send button stops it.
 - **Several Models:** Japanese / English models (llm-jp-3 with 150M parameters by default, tiny-lm with 29M), and TinyStories models from 260K to 42M parameters. `?model=<id>` selects one directly.
 
 ## Live Demo
@@ -51,10 +51,63 @@ You can try the live demo on GitHub Pages (if configured):
 
 1. **Pyodide Initialization:** The browser resolves the latest Pyodide release at page load and loads that runtime from the CDN, so there is no version to bump by hand. Append `?pyodide=<version>` to the URL to force a specific version.
 2. **Environment Setup:** A Web Worker (`public/worker.js`) loads Pyodide, NumPy, `public/llama2_numpy.py` and the SIMD kernels (`kernels/`, compiled by `make kernels`; `?kernel=off` runs on NumPy alone). The chat-like page itself is `src/pages/index.astro`, and the model list is `src/models.js`.
-3. **Model Loading:** The selected model checkpoint and its tokenizer are downloaded while Pyodide is still loading, in parts of 8 MiB over several connections at once (about twice as fast as one stream), straight into one preallocated buffer while a progress bar shows the download. The larger models are distributed as int8 (3.5x smaller; measured perplexity cost on stories15M: +0.04%) and widened to float32 once, and their unquantized originals can be selected for comparison; float32 weights of the small models are NumPy views into the buffer, nothing is copied.
+3. **Model Loading:** The selected model checkpoint and its tokenizer are downloaded while Pyodide is still loading, in parts of 8 MiB over several connections at once (about 1.8x as fast as one stream), straight into one preallocated buffer while a progress bar shows the download. The larger models are distributed as int8 (3.5x smaller; measured perplexity cost on stories15M: +0.04%) and widened to float32 once, and their unquantized originals can be selected for comparison; float32 weights of the small models are NumPy views into the buffer, nothing is copied.
 4. **Inference:** When you click "Run", the prompt is sent to the worker, where a Python generator yields the text token by token; each piece is posted back and appended to the output.
 
 No binary is committed to this repository: `make models` downloads the model files when the site is deployed (or for `make run`). llm-jp-3 and tiny-lm are published in Hugging Face format, so `convert_hf.py` converts them, with nothing but NumPy, into the llama2.c checkpoint and tokenizer formats that `llama2_numpy.py` reads, and `quantize.py` turns the larger checkpoints into int8. Their tokenizers are sentencepiece unigram models, which `llama2_numpy.py` encodes with a Viterbi search (the Llama 2 vocabulary of the TinyStories models uses llama2.c's pair merging).
+
+## Measurements
+
+All numbers below were measured on 2026-09-19 on one phone-class ARM CPU (Cortex-A78 x4 + A55 x4), a single
+thread, no swap. The long version, including the survey of the other browser ports, is in this
+[gist](https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901).
+
+Tokens per second, stories15M, greedy:
+
+| implementation | tok/s |
+|---|---:|
+| pure Python (`llama2.py`) | 0.26 |
+| NumPy in Pyodide (Node), float32 | 53 |
+| NumPy in Pyodide (Node), int8 | 55 |
+| SIMD kernels in Pyodide (Node), float32 | 200 |
+| SIMD kernels in Pyodide (Node), int8 | 351 |
+| native llama2.c, `gcc -Ofast`, for reference | 214 |
+
+Plain JavaScript reached 38 tok/s and a standalone WASM SIMD build 170-190 on the same machine. Threads did not
+help at this model size, not even with native OpenMP, so the site does not use them.
+
+In Chromium, per model (`?kernel=off` gives the NumPy column):
+
+| model | NumPy | kernels |
+|---|---:|---:|
+| stories260K float32 | 268 | 951 |
+| stories3_5M float32 | 141 | 402 |
+| stories15M float32 / int8 | 50 | 186 / 296 |
+| tiny-lm int8, sampled with a repetition penalty | 43 | 252-274 |
+| llm-jp-3-150m int8, sampled | 8.5 | 61-66 |
+
+The tiny-lm and llm-jp rows are the current defaults, with the sampling in the kernels too; while NumPy still did
+the sampling the same runs gave 171 and 47 tok/s. Firefox 150 loads the kernels as well, but all of its
+WebAssembly was 5-7x slower on this machine, NumPy included. Safari was not measured (WebKit could not be
+launched on the test machine).
+
+Memory, llm-jp-3-150m int8: the kernels multiply the int8 weights as they are instead of widening them to
+float32, which takes the WASM heap from 897 MB to 283 MB.
+
+Quantization to int8 (groups of 32, one float32 scale per group) is not distinguishable from the original in
+perplexity, while int4 is:
+
+| model | original | int8 |
+|---|---:|---:|
+| stories15M | - | +0.04% |
+| tiny-lm | 91.3 | 91.1 |
+| llm-jp-3-150m | 22.76 | 22.69 |
+
+The most likely token agrees about 98% of the time; greedy output diverges from the original part way through
+but stays coherent. int4 cost +16.8% perplexity and was rejected.
+
+Downloading the model in parts of 8 MiB over several connections at once is about 1.8x faster than one stream:
+167 MB took 20.4 s in one stream and 11.2 s split, against the production CDN.
 
 ## Acknowledgments
 
