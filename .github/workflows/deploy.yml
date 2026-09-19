@@ -38,7 +38,7 @@ jobs:
       - name: Prepare deployment directory
         run: |
           mkdir public
-          cp index.html public/
+          cp index.html worker.js llama2_numpy.py public/
           mv *.bin tiny-lm.LICENSE.txt public/
 
       - name: Setup Pages
