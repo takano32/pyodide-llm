@@ -53,7 +53,7 @@ async function load(model) {
   llama = await llama2_numpy.load.callKwargs(
     new URL(model.checkpoint, import.meta.url).href,
     new URL(model.tokenizer, import.meta.url).href,
-    { progress, ...model.options },
+    { progress, size: model.bytes, ...model.options },
   );
   postMessage({ type: "ready", pyodide: pyodide.version });
 }

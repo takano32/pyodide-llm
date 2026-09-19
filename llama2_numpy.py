@@ -280,32 +280,38 @@ class Llama:
                 }
 
 
-async def fetch(url, progress=None):
-    """Download into one preallocated buffer, reporting progress(received, total) along the way."""
+async def fetch(url, progress=None, size=0):
+    """Download into one preallocated buffer, reporting progress(received, total) along the way.
+
+    size is the expected number of bytes; it is needed when the server compresses the response, because
+    Content-Length then counts the compressed bytes. A wrong size only costs a reallocation.
+    """
     from pyodide.http import pyfetch
 
     response = await pyfetch(url)
     response.raise_for_status()
     headers = response.js_response.headers
-    total = int(headers.get("content-length") or 0)
-    if progress is None or not total or headers.get("content-encoding"):
-        # the size of the body is unknown (or is the size before decompression): no progress to report
+    total = size if size or headers.get("content-encoding") else int(headers.get("content-length") or 0)
+    if progress is None or not total:
         return await response.bytes()
     # chunks go straight into the buffer, so the body never exists twice in memory
     data = bytearray(total)
-    view, received = memoryview(data), 0
+    received = 0
     reader = response.js_response.body.getReader()
     while True:
         result = await reader.read()
         if result.done:
             break
         chunk = result.value
-        chunk.assign_to(view[received:received + chunk.length])
+        if received + chunk.length > len(data):
+            data.extend(bytes(received + chunk.length - len(data)))
+        chunk.assign_to(memoryview(data)[received:received + chunk.length])
         received += chunk.length
-        progress(received, total)
+        progress(received, max(total, received))
+    del data[received:]
     return data
 
 
-async def load(checkpoint_url, tokenizer_url, progress=None, **options):
+async def load(checkpoint_url, tokenizer_url, progress=None, size=0, **options):
     """Fetch the model straight into memory (Pyodide only). options are passed on to Llama()."""
-    return Llama(await fetch(checkpoint_url, progress), await fetch(tokenizer_url), **options)
+    return Llama(await fetch(checkpoint_url, progress, size), await fetch(tokenizer_url), **options)
