@@ -51,7 +51,7 @@ You can try the live demo on GitHub Pages (if configured):
 
 1. **Pyodide Initialization:** The browser resolves the latest Pyodide release at page load and loads that runtime from the CDN, so there is no version to bump by hand. Append `?pyodide=<version>` to the URL to force a specific version.
 2. **Environment Setup:** A Web Worker (`worker.js`) loads Pyodide, NumPy and `llama2_numpy.py`.
-3. **Model Loading:** The selected model checkpoint and its tokenizer are fetched straight into memory. float32 weights are NumPy views into that buffer, nothing is copied; tiny-lm is stored as float16 to halve the download and widened once.
+3. **Model Loading:** The selected model checkpoint and its tokenizer are streamed straight into one preallocated buffer while a progress bar shows the download. float32 weights are NumPy views into that buffer, nothing is copied; tiny-lm is stored as float16 to halve the download and widened once.
 4. **Inference:** When you click "Run", the prompt is sent to the worker, where a Python generator yields the text token by token; each piece is posted back and appended to the output.
 
 No binary is committed to this repository: `make models` downloads the model files when the site is deployed (or for `make run`). tiny-lm is published in Hugging Face format, so `convert_hf.py` converts it, with nothing but NumPy, into the llama2.c checkpoint and tokenizer formats that `llama2_numpy.py` reads. Its tokenizer is a sentencepiece unigram model, which `llama2_numpy.py` encodes with a Viterbi search (the Llama 2 vocabulary of the TinyStories models uses llama2.c's pair merging).

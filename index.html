@@ -28,6 +28,11 @@
   <button id="run" onclick="evaluatePython()" disabled>Run</button>
   <br />
   <br />
+  <div id="download" hidden>
+    <progress id="progress" style="width: 100%;"></progress>
+    <div id="progress-text"></div>
+    <br />
+  </div>
   <div>Output:</div>
   <textarea id="output" style="width: 100%;" rows="23" disabled></textarea>
 
@@ -36,6 +41,9 @@
     const code = document.getElementById("code");
     const run = document.getElementById("run");
     const select = document.getElementById("model");
+    const download = document.getElementById("download");
+    const progress = document.getElementById("progress");
+    const progressText = document.getElementById("progress-text");
     let ready = false;
 
     // The first model is the default; ?model=<id> picks another one. Every file is fetched when the site is
@@ -92,6 +100,11 @@
     worker.onmessage = ({ data }) => {
       if (data.type === "status") {
         addToOutput(data.text + "\n");
+      } else if (data.type === "progress") {
+        download.hidden = false;
+        progress.max = data.total;
+        progress.value = data.received;
+        progressText.textContent = `${(data.received / 1e6).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
       } else if (data.type === "ready") {
         ready = true;
         addToOutput(`Ready! (Pyodide ${data.pyodide})\n`);
@@ -103,7 +116,8 @@
         addToOutput(`\n${data.message}\n`);
       }
       // anything but a progress report means the worker is idle again
-      if (data.type !== "status" && data.type !== "token") {
+      if (data.type !== "status" && data.type !== "progress" && data.type !== "token") {
+        download.hidden = true;
         run.disabled = !ready;
         select.disabled = false;
       }

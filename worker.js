@@ -1,6 +1,6 @@
 // Pyodide lives in this worker, so the page stays responsive while the model is loading and generating.
 // The page sends   {type: "init", search, model},  {type: "load", model}  and  {type: "generate", prompt, ...options}
-// and receives     {type: "status" | "ready" | "token" | "done" | "error", ...}
+// and receives     {type: "status" | "progress" | "ready" | "token" | "done" | "error", ...}
 
 // the version becomes part of a CDN URL, so accept nothing but a plain version number
 const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
@@ -41,10 +41,19 @@ async function load(model) {
   llama?.destroy();
   llama = undefined;
   postMessage({ type: "status", text: `Downloading ${model.label}...` });
+  let reported = -1;
+  const progress = (received, total) => {
+    // one message per percent is plenty
+    const percent = Math.floor((received / total) * 100);
+    if (percent !== reported) {
+      reported = percent;
+      postMessage({ type: "progress", received, total });
+    }
+  };
   llama = await llama2_numpy.load.callKwargs(
     new URL(model.checkpoint, import.meta.url).href,
     new URL(model.tokenizer, import.meta.url).href,
-    model.options,
+    { progress, ...model.options },
   );
   postMessage({ type: "ready", pyodide: pyodide.version });
 }

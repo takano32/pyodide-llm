@@ -280,13 +280,32 @@ class Llama:
                 }
 
 
-async def load(checkpoint_url, tokenizer_url, **options):
-    """Fetch the model straight into memory (Pyodide only). options are passed on to Llama()."""
+async def fetch(url, progress=None):
+    """Download into one preallocated buffer, reporting progress(received, total) along the way."""
     from pyodide.http import pyfetch
 
-    async def fetch(url):
-        response = await pyfetch(url)
-        response.raise_for_status()
+    response = await pyfetch(url)
+    response.raise_for_status()
+    headers = response.js_response.headers
+    total = int(headers.get("content-length") or 0)
+    if progress is None or not total or headers.get("content-encoding"):
+        # the size of the body is unknown (or is the size before decompression): no progress to report
         return await response.bytes()
+    # chunks go straight into the buffer, so the body never exists twice in memory
+    data = bytearray(total)
+    view, received = memoryview(data), 0
+    reader = response.js_response.body.getReader()
+    while True:
+        result = await reader.read()
+        if result.done:
+            break
+        chunk = result.value
+        chunk.assign_to(view[received:received + chunk.length])
+        received += chunk.length
+        progress(received, total)
+    return data
 
-    return Llama(await fetch(checkpoint_url), await fetch(tokenizer_url), **options)
+
+async def load(checkpoint_url, tokenizer_url, progress=None, **options):
+    """Fetch the model straight into memory (Pyodide only). options are passed on to Llama()."""
+    return Llama(await fetch(checkpoint_url, progress), await fetch(tokenizer_url), **options)
