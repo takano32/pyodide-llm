@@ -36,6 +36,7 @@
 | `convert_hf.py` | Hugging Face の Llama チェックポイント → legacy 形式 + tokenizer.bin。PyTorch 不要（NumPy のみ）。bfloat16、safetensors、`tokenizer.json`（unigram）対応 |
 | `quantize.py` | float32 → int8（グループ 32、グループごとに float32 のスケール） |
 | `Makefile` | `make models` が全モデルを取得・変換・量子化し、`public/models/` に 8 MiB の部品として置く。`make run` は開発サーバー |
+| `tests/smoke.mjs` | デプロイ前のスモークテスト。Node 上の最新 Pyodide でエンジンとモデルを確かめる（`make models` の後に `node tests/smoke.mjs`、約 8 秒） |
 | `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright） |
 | `experiments/simd-kernel/` | SIMD カーネルの試作一式（未導入。TODO の T30 の出発点） |
 | `.github/workflows/deploy.yml` | `make models` → `npm run build` → GitHub Pages |
@@ -70,6 +71,6 @@
 
 ## 検証手順
 
-1. エンジンを変えたら、ネイティブの Python で回帰確認する: stories15M（float32）で `Once upon a time` の greedy 出力が `Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine.` で始まること。stories260K なら `...She loved to play outside in the park.`。余裕があれば llama2.c の `run.c` を `gcc -O2` でビルドして全文一致を見る。
+1. エンジンを変えたら、まず `node tests/smoke.mjs`（デプロイでも走る）。加えてネイティブの Python で回帰確認する: stories15M（float32）で `Once upon a time` の greedy 出力が `Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine.` で始まること。stories260K なら `...She loved to play outside in the park.`。余裕があれば llama2.c の `run.c` を `gcc -O2` でビルドして全文一致を見る。
 2. ページや Worker を変えたら、**実ブラウザで通しで確認する**: `npm run build && node tests/e2e.mjs [モデル ID] [chromium|firefox]`。準備（`playwright-core` とブラウザの入れ方）はスクリプト冒頭のコメントにある。「Run が有効になる → Enter → 回答の下に tok/s が出る」まで待ち、スマホ幅でページ自体がスクロールしないことと、決定的なモデルでは出力の冒頭も確かめる。
 3. push 後は `gh run watch` でデプロイを待ち、本番に対して同じ確認をする: `node tests/e2e.mjs stories260K chromium https://takano32.github.io/pyodide-llama-py/`。

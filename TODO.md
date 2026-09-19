@@ -27,15 +27,6 @@
   4. Cache API が使えない環境（`caches` が未定義）では今までどおり動くこと。
 - 完了条件: 2 回目の読み込みで `models/` へのネットワーク要求が 0 件（Playwright の `page.on("request")` で数える）。`src/models.js` の `bytes` を変えると取り直す。
 
-### T26 CI のスモークテスト — 状態: 未着手（担当: Fable）
-- 目的: 壊れたままデプロイしない。常に最新の Pyodide を使う方針の安全装置。
-- 触るファイル: 新規 `tests/smoke.mjs`、`.github/workflows/deploy.yml`、`package.json`（`pyodide` を devDependencies に `latest` で）。
-- 手順:
-  1. `tests/smoke.mjs`: Node で `pyodide` を読み込み、`public/llama2_numpy.py` と `stories260K.bin` / `tok512.bin` を FS に書いて、`Once upon a time` の greedy 出力が `Once upon a time, there was a little girl named Lily. She loved to play outside in the park.` で始まることを確認。続けて `tiny-lm.bin`（int8）を `dtype="int8", tokenizer_kind="unigram", nfkc=True, stop_tokens=(1, 2)` で読み、10 トークン生成できることを確認。失敗したら `process.exit(1)`。Pyodide 内の書き方は検証済みの例がある: AGENTS.md の「検証手順」と `experiments/simd-kernel/README.md`。
-  2. `deploy.yml` の `make models` の後、`npm run build` の前に `node tests/smoke.mjs` を足す。
-- 注意: Node の Pyodide は実行時に CDN から NumPy を取る。tiny-lm の読み込みは約 300MB 使う。
-- 完了条件: `llama2_numpy.py` の `rmsnorm` をわざと壊すとテストが失敗する。CI での所要 1 分以内。
-
 ### T27 生成設定の UI — 状態: 未着手
 - 目的: temperature・最大トークン数・シードを画面から変える。シードを固定すれば int8 と原本を公平に比べられる。
 - 触るファイル: `src/pages/index.astro`。エンジンは `generate(prompt, steps, temperature, topp, repetition_penalty, seed)` に対応済みで、Worker は受け取ったオプションをそのまま渡す。
@@ -52,7 +43,7 @@
 - 内容: (1) BPE と unigram のエンコード → デコード往復（日本語、絵文字、語彙外文字、空白・タブ・改行）。(2) `quantize.py` → `dtype="int8"` で読んだ重みと元の重みの誤差がグループの最大値の 1/127 以内。(3) 小さな合成チェックポイント（dim 32、2 層、GQA あり / なし）で `forward` の logits を、素朴なループ実装と相対誤差 1e-4 以内で比較。(4) `generate` は同じシードで再現し、BOS で止まり、長すぎるプロンプトは `ValueError`。
 - モデルのダウンロードが要るテストは `make models` 済みのときだけ走るように分ける。
 
-### T30 SIMD カーネルの導入（本丸） — 状態: 未着手、T26 の後に（担当: Fable）
+### T30 SIMD カーネルの導入（本丸） — 状態: 未着手（担当: Fable）
 - 目的: 「WASM Python の限界」を本番に入れる。実証値は 181（float32）/ 282（int8）/ 348（relaxed SIMD int8）tok/s で NumPy の 4〜7 倍。int8 のまま計算するので llm-jp のメモリも減る。
 - 出発点: `experiments/simd-kernel/`（動作確認済みのカーネル、ビルドスクリプト、Python からの呼び方、守るべき制約）。**先にその README を読むこと。**
 - 手順の骨子:
@@ -93,6 +84,7 @@
 - [x] **T21 ページを Astro でチャット風に作り直す。** Node 24 LTS、ライト / ダーク自動、GitHub へのリボンとコーナーをランダム表示。（9d09e80〜2f20fec）
 - [x] **T22 プロジェクトを pyodide-llama-py に改名する。** Pages の旧 URL は転送されない。（adbd2c1）
 - [x] **T23 引き継ぎ書と台帳を作る。** `AGENTS.md`、`TODO.md`。（268a141）
+- [x] **T26 CI のスモークテスト。** `tests/smoke.mjs`: Node 上の最新 Pyodide で、stories260K（float32・GQA）の greedy 出力が参照どおりであることと、tiny-lm（変換 + int8 + unigram）が生成できシードで再現することを確認。約 8 秒、メモリ約 450MB。エンジンを壊すと失敗することを確認済み。デプロイでは `pyodide@latest` を入れ直してから走らせる（ページが実行時に最新版を使うため）。
 
 ## やらないと決めたこと
 

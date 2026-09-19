@@ -41,10 +41,15 @@ jobs:
           pip install numpy
           make models
 
-      - name: Build the site
+      - name: Smoke test with the latest Pyodide
         run: |
           npm ci
-          npm run build
+          # the page resolves the latest Pyodide release when it is opened, so test against that one
+          npm install --no-save pyodide@latest
+          node tests/smoke.mjs
+
+      - name: Build the site
+        run: npm run build
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
