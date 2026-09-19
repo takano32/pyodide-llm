@@ -68,6 +68,14 @@ together:
 
 WebAssembly addresses 32 bits and a phone gives a tab far less, so a checkpoint of more than 1 GB asks first.
 
+The files Hugging Face publishes work as well: choose `model.safetensors`, `config.json` and the tokenizer
+(`tokenizer.json` of the Unigram kind, or a sentencepiece `tokenizer.model`) together, and the page converts them
+in the browser, with the same Python code that builds the models of this site (`public/llama2_convert.py`). It
+reads the weights a few megabytes at a time and writes int8 directly, so llm-jp-3-150m (305 MB of bfloat16)
+takes 7 seconds and no more memory than the converted model itself, and then writes, seed for seed, what the
+site's own copy writes. A `.json` next to them may say `{"conversion": {"dtype": "float16", "max_seq_len": 1024}}`
+(the defaults are int8 and a context of 512 tokens). Only plain Llama models are accepted.
+
 ## How it Works
 
 1. **Pyodide Initialization:** The browser resolves the latest Pyodide release at page load and loads that runtime from the CDN, so there is no version to bump by hand. Append `?pyodide=<version>` to the URL to force a specific version.

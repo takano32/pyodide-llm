@@ -4,13 +4,16 @@
 //   npm run build && node tests/e2e.mjs [model id] [chromium|firefox] [url of a deployed site]
 //
 // The model id "local" opens stories260K.bin and tok512.bin of this directory through the folder button instead,
-// as a visitor would open a model of their own disk.
+// as a visitor would open a model of their own disk. "hf" does the same with the files Hugging Face would publish
+// for that model (tests/make_hf_fixture.py writes them), which the page converts in the browser.
 //
 // Needs a browser for playwright-core (a devDependency): `npx playwright-core install chromium` once.
 // Mind the memory: a browser with Pyodide and a model takes 400 MB and more; keep `free -m` above 1 GB available.
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import { execFileSync } from "node:child_process";
 import * as playwright from "playwright-core";
 
 const [model = "stories260K", engine = "chromium", deployed] = process.argv.slice(2);
@@ -21,6 +24,7 @@ const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", "
 const expected = {
   stories260K: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
   local: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
+  hf: "Once upon a time, there was a little girl named Lily. She loved to play outside in the park.",
   "stories15M-f32": "Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine.",
 };
 
@@ -48,13 +52,20 @@ page.on("pageerror", (error) => errors.push(String(error)));
 page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
 
 const started = Date.now();
-await page.goto(`${url}?model=${model === "local" ? "stories3_5M" : model}`);
+const opens = model === "local" || model === "hf";
+await page.goto(`${url}?model=${opens ? "stories3_5M" : model}`);
 const idle = () => page.waitForFunction(() => !document.getElementById("run").disabled || document.querySelector(".error"), null, { timeout: 600000 });
 await idle();
-if (model === "local") {
+if (opens) {
   const repository = new URL("../", import.meta.url).pathname;
-  await page.setInputFiles("#files", [`${repository}stories260K.bin`, `${repository}tok512.bin`]);
-  await page.waitForFunction(() => /^stories260K\.bin ·|^Could not/.test(document.getElementById("status-text").textContent), null, { timeout: 600000 });
+  let chosen = [`${repository}stories260K.bin`, `${repository}tok512.bin`];
+  if (model === "hf") {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "hf-fixture-"));
+    execFileSync("python3", [`${repository}tests/make_hf_fixture.py`, directory]);
+    chosen = fs.readdirSync(directory).map((name) => path.join(directory, name));
+  }
+  await page.setInputFiles("#files", chosen);
+  await page.waitForFunction(() => /^stories260K(\.bin| from Hugging Face files) ·|^Could not/.test(document.getElementById("status-text").textContent), null, { timeout: 600000 });
   await idle();
 }
 const readySeconds = (Date.now() - started) / 1000;

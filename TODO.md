@@ -17,17 +17,12 @@
   3. Cache API に入れるかは、サイズと `navigator.storage.estimate()` を見て決める（入れるならキーに URL とサイズ）。1GB を超えるものは T38 と同じ警告。
   4. 失敗（CORS で拒否、404、形式が違う）は分かりやすいエラーにして、コンボボックスから配布モデルへ戻れること。
 - 完了条件: `stories110M.bin` か、それが重すぎるなら `stories42M.bin` を HF の URL から読んで、greedy の出力が llama2.c と同じに始まる。URL が壊れているときにエラーが出て復帰できる。読み込み中にモデルを選び直すと中止される。
+- T42 が入ったので、同じ仕組みで HF のリポジトリ（safetensors + `config.json` + `tokenizer.json`）の URL も変換して動かせる: `llama2_convert.py` の `Safetensors` は `read(offset, length)` しか要らないので、Range 要求の読み手を渡せばよい（Worker の中なら同期の `XMLHttpRequest` が使える。未確認）。このタスクに含めるか分けるかは着手時に決める。
 
 ### T43 生成設定をクエリパラメータで指定する — 状態: 未着手
 - 目的: `?temperature=0.7&seed=1234&steps=128`（`topp`・`repetition_penalty` も）で、再現できるリンクを人に渡せるようにする。いまの `?model=`・`?kernel=off`・`?pyodide=` と同じ流儀で、UI は増えない。
 - 手順: ページの読み込み時にパラメータを読んで T35 の設定の状態に入れる（既定値から変わっているので、アイコンに点が付く）。数値として読めないもの・範囲外のものは無視する。モデルを切り替えたときの扱いは T35 と同じ（シードだけ持ち越す）。余裕があれば、回答の下の行からその回答の設定つきのリンクをコピーできるようにする（要素は増やさず、内訳の中に置く）。
 - 完了条件: `?model=tiny-lm&seed=1&temperature=0.7` を 2 回開いて同じプロンプトを送ると同じ文になる。おかしな値（`?temperature=abc`、`?steps=-5`）で壊れない。
-
-### T42 ブラウザの中で Hugging Face 形式を変換して動かす — 状態: 進行中（担当: Fable）
-- 目的: フォルダのボタン（T38）で `.safetensors` + `config.json` + `tokenizer.json` を選ぶと、ブラウザの中で変換してそのまま動く。「変換も WASM Python でやる」という実験。
-- 手順: ページは選ばれたファイルの種類を見分けて（`.safetensors` があれば HF 形式）Worker に渡す。Worker は T41 の変換器を Pyodide で呼び、読み手には `File.slice()` を渡す（同期の読み手が要るなら Worker では `FileReaderSync` が使える）。進捗はテンソル単位で `progress` に出す。出力の `dtype` は int8 を既定にする（ヒープを小さく保つため）。T37 の中止と番号の仕組みをそのまま使う。
-- 完了条件: 小さい safetensors のモデル（既存のモデルから作るか、HF で探す）を実ブラウザで変換して動かし、出力がビルド時に変換した同じモデルと一致する。変換中の WASM ヒープの最大値を測って記録する。llm-jp-3-150m をブラウザで変換できるかは、測ったうえで判断する（この開発機では試せない可能性があり、試せなければ「未確認」と書く）。対応外のモデルで分かりやすいエラーが出て、配布モデルへ戻れる。
-- T39 が入っていれば、同じ変換器に Range の読み手を渡して HF のリポジトリの URL からも変換できる（その場合はクエリパラメータで指定する。ここでは必須にしない）。
 
 ## 完了したタスク
 
@@ -72,6 +67,7 @@
 - [x] **T35 生成設定の変更。**（Fable）入力欄の左端のスライダーのアイコンから、PC ではポップオーバー、640px 以下では下から出るシートで Temperature（0 は greedy）・Max tokens（上限はそのモデルの `seq_len`。Worker が `ready` で知らせる）・Seed（空欄は毎回ランダム、× で空欄に戻す）を変える。top-p と繰り返しペナルティは「More」の中。OK ボタンはなく次の生成から効き、既定値と違う間はアイコンに点が付く。「Reset to defaults」で `model.generation` に戻る。回答の下のシードはボタンになり、押すとそのシードを固定する（行は開かない）。モデルを切り替えると既定値に戻るが、**シードだけは持ち越す**。決めたこと: ハンバーガーメニューにしない、入力欄の上の `<details>` にしない、リロードをまたいで保存しない、パネルはフォームの外に置く（フォームの中だと、シードの欄で Enter を押したときにプロンプトが送信される）。Popover API を使い、ライブラリなし。実ブラウザで確認（Chromium）: 同じシードで 2 回 → 同じ文、ランダムなシードをタップ → tiny-lm（int8）から原本に切り替え → そのシードで生成、リセット、temperature 0 で `greedy` 表示・シードのボタンなし、Esc と外側のクリックで閉じる、シードの欄の Enter で送信されない、390px でシートを開いてもページはスクロールしない。速度は変わらず（tiny-lm 280、stories260K 892〜953 tok/s）。未確認: Firefox と Safari での見た目、スマホ実機でのキーボードとの兼ね合い。
 - [x] **入力欄を 2 行に。**（Fable、T36 の続き）1 行だと複数行を書ける欄だと気づけないので、`rows="2"` にした（5 行まで伸びるのはそのまま）。
 - [x] **T41 ストリーム変換器。**（Fable）`public/llama2_convert.py`: safetensors を `read(offset, length)` 越しに 100 万値（float32 で 4MB）ずつ読み、最初から最終サイズで確保した出力バッファの正しい位置へ float32 / float16 / int8 で直接書く（int8 は「全層の値 → 全層のスケール」という並びなので、順に追記するのではなく位置を計算して書く）。q・k の並べ替えだけは行列 1 個を丸ごと読む。`config.json` の検証（Llama 以外、RoPE scaling、bias、silu 以外、ヘッドの割り切れなさをトレースバックなしの文で断る）、`tokenizer.json`（Unigram）と sentencepiece のモデルから `tokenizer.bin` と `tokenizer_kind`・`nfkc` を求める関数も同じファイルにある。`convert_hf.py` と `quantize.py` はこのモジュールを使う形に書き直した（PyTorch の pickle を読む部分だけが `convert_hf.py` に残る）。検証: 新しいコードで llm-jp-3-150m と tiny-lm を float32・float16・int8 に変換した 6 個とトークナイザ 2 個が、書き換え前の `make models` の出力と **すべてバイト単位で一致**。メモリのピークは llm-jp-3-150m で「出力 + 13MB」（int8 なら 171 + 13MB、1.7 秒。断片を 4 倍にすると + 52MB で速度は同じ）。Makefile は HF の 2 モデルを int8 へ直接変換するようにした（609MB と 117MB の float32 の中間ファイルが要らなくなった。`make models` をやり直して全出力のチェックサムが一致）。pytest に合成 safetensors での一致（float32 は元のチェックポイントと、int8 は `quantize.py` の出力と一致。F32 / F16 / BF16）、断片読みの確認、対応外の断り方を追加（117 件）。テストが見つけたバグ: 最後のテンソルが RoPE の表のとき進捗が 100% にならなかった。
+- [x] **T42 ブラウザの中で Hugging Face 形式を変換して動かす。**（Fable）フォルダのボタン / ドロップで `.safetensors` 1 個 + `config.json` + トークナイザ（`tokenizer.json` か、sentencepiece の `tokenizer.model`・`spiece.model`）を選ぶと、Worker が T41 の変換器（`llama2_convert.py`。初めて要るときに取得）を Pyodide で動かす。読み手は `FileReaderSync` + `File.slice()`（Worker なら同期で読める）で、ファイル全体は読まない。変換は Python のジェネレータで、Worker が断片の合間に進捗（`converting, 42 %`）を出し、50ms ごとにイベントループへ返して、モデルの選び直しによる中止（T37）を受け付ける。既定は int8・コンテキスト 512（KV キャッシュを抑える）。任意の設定 JSON で `conversion: {dtype, max_seq_len}`・`options`・`generation` を変えられる。`tokenizer_kind`・`nfkc`・`rope_theta`・BOS / 停止トークンは `tokenizer.json` / sentencepiece のモデルと `config.json` から求める。**実測（Chromium、この開発機）: llm-jp-3-150m（bfloat16 の safetensors 305MB）を 6.9 秒で int8 に変換、ヒープ 294MB（配布版を普通に読んだときの約 283MB と同水準）、その後 70 tok/s。同じシードで、サイトがビルド時に変換した llm-jp-3-150m と一字一句同じ文を書いた。** 配布版へ切り替えてもヒープは 294MB のまま（リークなし。PyProxy を 1 つでも壊し忘れるとチェックポイントが残るので、すべて `destroy()` している）。断り方も実ブラウザで確認: Llama 以外（`it is a gpt2`）、トークナイザなし / シャード分割、語彙の 9 割に満たないトークナイザ（別モデルのもの。変換は通ってしまい、でたらめを書くので断る）、safetensors でないファイル。変換の 20% でモデルを選び直すと中止され、エラーは出ず、tiny-lm が動く（ヒープ 245MB）。`node tests/e2e.mjs hf` は `tests/make_hf_fixture.py` が stories260K から作る HF 形式のファイル（safetensors + sentencepiece の protobuf）を開き、変換後の出力が元のモデルと同じ書き出しになることを確かめる。未確認: Firefox、1GB 級のモデル、BPE の `tokenizer.json`（非対応と表示する。Llama 3 系の byte-level BPE はエンジンが未対応）。
 
 ## やらないと決めたこと
 

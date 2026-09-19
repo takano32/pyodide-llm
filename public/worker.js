@@ -1,6 +1,7 @@
 // Pyodide lives in this worker, so the page stays responsive while the model is loading and generating.
 // model is an entry of src/models.js, or one with {file, tokenizerFile}: two files of the visitor's own disk,
-// which are read where they are and go nowhere.
+// which are read where they are and go nowhere. Or one with {hf: {weights, config, tokenizer}}: a Hugging Face
+// model of that disk, which public/llama2_convert.py converts in here, piece by piece.
 // The page sends   {type: "init", search, model, load},  {type: "load", model, load},
 //                  {type: "generate", prompt, ...options}  and  {type: "stop"}
 // and receives     {type: "status" | "progress" | "ready" | "token" | "done" | "error", ...}
@@ -151,7 +152,7 @@ async function localOptions(model, vocabulary) {
   }
 }
 
-let pyodide, llama2_numpy, llama, kernels;
+let pyodide, llama2_numpy, llama2_convert, llama, kernels;
 // init() as a promise: every load waits for it, also the one that replaces the first
 let initialized;
 // the AbortController of the load that is going on, and a promise that settles once it has cleaned up
@@ -206,6 +207,69 @@ function pythonBuffer(size) {
 
 // Every await in here may end with the AbortError of signal: a newer load has taken over, and this one must
 // leave nothing behind, least of all a Python buffer as large as its model.
+// A Hugging Face model of the visitor's disk: model.safetensors is read a few megabytes at a time, converted by
+// the same Python code that builds the models of this site, and written into a buffer of the final size. The
+// conversion is a Python generator, so that between its pieces the progress gets out and a change of mind gets in.
+async function convert(model, signal, id) {
+  if (!llama2_convert) {
+    // fetched when it is first needed: most visitors never convert anything
+    const res = await fetch(new URL(`llama2_convert.py${self.location.search}`, import.meta.url), { signal });
+    if (!res.ok) {
+      throw new Error(`Could not fetch llama2_convert.py: ${res.status}`);
+    }
+    pyodide.FS.writeFile("llama2_convert.py", await res.text());
+    llama2_convert = pyodide.pyimport("llama2_convert");
+  }
+  const { weights, config, tokenizer } = model.hf;
+  // a worker may read a file synchronously, which is what Python's read(offset, length) needs
+  const reader = new FileReaderSync();
+  const read = (offset, length) => new Uint8Array(reader.readAsArrayBuffer(weights.slice(offset, offset + length)));
+  const started = performance.now();
+  const conversion = llama2_convert.Conversion.callKwargs(
+    read, await config.text(), new Uint8Array(await tokenizer.arrayBuffer()), tokenizer.name, model.conversion);
+  try {
+    const pieces = conversion.pieces();
+    try {
+      let breathed = performance.now(), reported = -1;
+      for (;;) {
+        const { done, value } = pieces.next();
+        if (done) {
+          break;
+        }
+        const [converted, total] = value.toJs();
+        value.destroy();
+        const percent = Math.floor((converted / total) * 100);
+        if (percent !== reported) {
+          reported = percent;
+          postMessage({ type: "progress", load: id, received: converted, total, converting: true });
+        }
+        if (performance.now() - breathed > 50) {
+          await breathe();
+          breathed = performance.now();
+          signal.throwIfAborted();
+        }
+      }
+    } finally {
+      pieces.destroy();
+    }
+    loadSeconds.download = since(started);
+
+    const constructStarted = performance.now();
+    // every one of these proxies keeps its Python object alive, the checkpoint too: none may be left behind
+    const proxies = [conversion.options, conversion.checkpoint, conversion.tokenizer];
+    try {
+      const options = proxies[0].toJs({ dict_converter: Object.fromEntries });
+      llama = llama2_numpy.Llama.callKwargs(proxies[1], proxies[2], { kernels, ...options, ...model.options });
+    } finally {
+      proxies.forEach((proxy) => proxy.destroy());
+    }
+    loadSeconds.construct = since(constructStarted);
+  } finally {
+    // the engine keeps what it needs of the checkpoint alive, the rest goes with this
+    conversion.destroy();
+  }
+}
+
 async function load(model, signal, id) {
   signal.throwIfAborted();
   // let go of the previous model first, so that two never have to fit in memory
@@ -214,6 +278,17 @@ async function load(model, signal, id) {
     llama = undefined;
     // the engine's closures and the model refer to each other, so only the cycle collector frees the weights
     pyodide.runPython("import gc; gc.collect()");
+  }
+  if (model.hf) {
+    postMessage({ type: "status", load: id, text: `Converting ${model.name}...` });
+    await initialized;
+    signal.throwIfAborted();
+    await convert(model, signal, id);
+    postMessage({
+      type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seq_len: llama.seq_len,
+      seconds: { ...loadSeconds },
+    });
+    return;
   }
   postMessage({ type: "status", load: id, text: `${model.file ? "Reading" : "Downloading"} ${model.name}...` });
   const downloadStarted = performance.now();

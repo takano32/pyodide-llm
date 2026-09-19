@@ -126,7 +126,7 @@ def test_the_context_can_be_cut_and_the_engine_runs_the_result():
     tensors, published = hugging_face(config, weights, True)
     checkpoint = converted(Arrays(tensors), published, "float32", max_seq_len=16)
     assert struct.unpack_from("<7i", checkpoint, 0)[6] == 16
-    vocabulary = tokenizer_bin([("<unk>", 0.0, False)] + [(f"▁w{i}", -float(i), True) for i in range(40)], config["vocab_size"])
+    vocabulary = tokenizer_bin([("<unk>", 0.0, False)] + [(f"▁w{i}", -float(i), True) for i in range(300)], config["vocab_size"])
     check_tokenizer(vocabulary, struct.unpack_from("<7i", checkpoint, 0))
     llama = Llama(checkpoint, vocabulary, tokenizer_kind="unigram")
     assert len(list(llama.generate(" w1 w2", steps=12))) > 0
@@ -163,12 +163,15 @@ def test_tokenizer_json():
     tokenizer = {"added_tokens": [{"content": "<s>", "special": True}],
                  "normalizer": {"type": "Sequence", "normalizers": [{"type": "NFKC"}]},
                  "model": {"type": "Unigram", "unk_id": 0,
-                           "vocab": [["<unk>", 0.0], ["<s>", 0.0], ["<0x41>", 0.0], ["▁hello", -1.5], ["猫", -2.0]]}}
+                           "vocab": [["<unk>", 0.0], ["<s>", 0.0], ["<0x41>", 0.0], ["▁hello", -1.5], ["猫", -2.0]]
+                                    + [[f"w{i}", -3.0] for i in range(45)]}}
     pieces = list(tokenizer_json_pieces(tokenizer))
-    assert [matchable for _, _, matchable in pieces] == [False, False, False, True, True]
-    data = tokenizer_bin(pieces, 8)  # three embedding rows more than pieces
-    vocabulary = Tokenizer(data, 8, kind="unigram")
-    assert vocabulary.vocab[3] == b" hello" and vocabulary.vocab[7] == b"" and vocabulary.scores[1] < Tokenizer.UNMATCHABLE
+    assert [matchable for _, _, matchable in pieces[:5]] == [False, False, False, True, True]
+    data = tokenizer_bin(pieces, 53)  # three embedding rows more than pieces: padding
+    vocabulary = Tokenizer(data, 53, kind="unigram")
+    assert vocabulary.vocab[3] == b" hello" and vocabulary.vocab[52] == b"" and vocabulary.scores[1] < Tokenizer.UNMATCHABLE
+    with pytest.raises(ValueError, match="do not belong together"):
+        tokenizer_bin(pieces, 100)  # the tokenizer of a model with half the vocabulary
     assert tokenizer_json_options(tokenizer) == {"tokenizer_kind": "unigram", "nfkc": True}
     assert tokenizer_json_options({**tokenizer, "normalizer": None})["nfkc"] is False
     with pytest.raises(ValueError, match="vocabulary of 4"):

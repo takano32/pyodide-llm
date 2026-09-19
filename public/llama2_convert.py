@@ -264,7 +264,11 @@ def tokenizer_bin(pieces, vocab_size):
     rows = [(score if matchable else UNMATCHABLE, text.replace("▁", " ").encode("utf-8")) for text, score, matchable in pieces]
     if len(rows) > vocab_size:
         raise ValueError(f"The tokenizer has {len(rows)} pieces, but the model has a vocabulary of {vocab_size}.")
-    # a model can have more embedding rows than the tokenizer has pieces
+    # A model can have a few more embedding rows than the tokenizer has pieces (padding to a round number). Many
+    # more means the tokenizer of another model, which would convert fine and then write nonsense.
+    if len(rows) < 0.9 * vocab_size:
+        raise ValueError(f"The tokenizer has {len(rows)} pieces, but the model has a vocabulary of {vocab_size}: "
+                         f"they do not belong together.")
     rows += [(UNMATCHABLE, b"")] * (vocab_size - len(rows))
     out = [struct.pack("<i", max(len(text) for _, text in rows))]
     out += [struct.pack("<fi", score, len(text)) + text for score, text in rows]
@@ -345,3 +349,50 @@ def sentencepiece_options(model):
         raise ValueError("This sentencepiece model is neither unigram nor BPE.")
     return {"tokenizer_kind": "unigram" if kind == UNIGRAM else "bpe", "nfkc": "nfkc" in normalizer}
 
+
+# ------------------------------------------------------------------------------------------ in the browser
+class Conversion:
+    """A Hugging Face model of the visitor's own disk, converted inside the page.
+
+    read(offset, length) reads model.safetensors (a JavaScript function that returns a Uint8Array is fine),
+    config is the text of config.json, tokenizer the bytes of tokenizer.json or of a sentencepiece model.
+    Drive pieces() to the end; then checkpoint, tokenizer and options are what Llama() takes.
+    """
+
+    def __init__(self, read, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=512):
+        def python_read(offset, length):
+            data = read(offset, length)
+            return data.to_py() if hasattr(data, "to_py") else data
+
+        try:
+            self.config = json.loads(config)
+        except ValueError:
+            raise ValueError("config.json is not JSON.") from None
+        if not isinstance(self.config, dict):
+            raise ValueError("config.json is not the configuration of a model.")
+        check_config(self.config)
+        if np.dtype(dtype) not in (np.float32, np.float16, np.int8):
+            raise ValueError(f"dtype must be float32, float16 or int8, not {dtype}.")
+        self.dtype, self.max_seq_len = np.dtype(dtype), int(max_seq_len)
+        self.source = Safetensors(python_read)
+        vocab_size = self.config["vocab_size"]
+        tokenizer = bytes(tokenizer.to_py() if hasattr(tokenizer, "to_py") else tokenizer)
+        if tokenizer_name.lower().endswith(".json"):
+            try:
+                parsed = json.loads(tokenizer)
+            except ValueError:
+                raise ValueError("tokenizer.json is not JSON.") from None
+            self.tokenizer, options = tokenizer_bin(tokenizer_json_pieces(parsed), vocab_size), tokenizer_json_options(parsed)
+        else:
+            self.tokenizer, options = tokenizer_bin(sentencepiece_pieces(tokenizer), vocab_size), sentencepiece_options(tokenizer)
+        bos = self.config.get("bos_token_id", 1)
+        eos = self.config.get("eos_token_id", 2)
+        stop = [token for token in [bos, *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
+        self.options = {**options, "dtype": self.dtype.name, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
+                        "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop}
+        # The context is cut to max_seq_len: the KV cache grows with it (llm-jp-3-150m: 200 MB at its full 4096)
+        header = checkpoint_header(self.config, self.source, self.max_seq_len)
+        self.checkpoint = bytearray(checkpoint_size(header, self.dtype))
+
+    def pieces(self):
+        return convert_pieces(self.source, self.config, self.dtype, self.max_seq_len, self.checkpoint)

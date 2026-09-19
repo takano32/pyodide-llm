@@ -39,7 +39,7 @@
 | `Makefile` | `make models` が全モデルを取得・変換・量子化し、`public/models/` に 8 MiB の部品として置く。`make run` は開発サーバー |
 | `tests/smoke.mjs` | デプロイ前のスモークテスト。Node 上の最新 Pyodide でエンジンとモデルを確かめる（`make models` の後に `node tests/smoke.mjs`、約 8 秒） |
 | `tests/test_*.py` | エンジンの単体テスト（pytest、ネイティブの Python + NumPy、約 8 秒）。合成した小さなチェックポイントと語彙で常に走り、`make models` のファイルが要るものは無ければスキップ。`forward` は Python のループで書いた参照実装（`conftest.py` の `naive_logits`）と比べる。カーネルの経路は Pyodide が要るので `smoke.mjs` の担当 |
-| `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路を試す |
+| `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路、`hf` を渡すと HF 形式のファイル（`tests/make_hf_fixture.py` が作る）をブラウザの中で変換する経路を試す |
 | `kernels/` | WASM SIMD カーネル（AssemblyScript）とビルドスクリプト。`make kernels` が `public/simdkernel.so` などを生成。制約と実測は `kernels/README.md` |
 | `.github/workflows/deploy.yml` | `make models` → `npm run build` → GitHub Pages |
 
@@ -71,6 +71,8 @@
 - **エンジンの `Llama` は循環参照を持つ**（カーネル用のクロージャと本体）。`destroy()` だけでは重みが解放されず、循環 GC が走るまで残る。モデルを手放すときは `gc.collect()` を呼ぶ（呼ばないと切り替え後の llm-jp でヒープ 390MB、呼ぶと 266MB）。
 - **止まったテストの出力をパイプ越しに待たない。** `node test.mjs | cut ...` は、テストが待ち続けている間 `cut` が出力をバッファに溜めるので、何も表示されないまま 10 分待つことになった（原因はテスト側の待ち条件の間違いだった）。ファイルに書いてから読むか、`timeout` を短くする。
 - **legacy 形式のチェックポイントはメタデータを持たない。** `dtype` はヘッダから計算した大きさとファイルの大きさの一致で判定している（`checkpoint_dtype()`）。テンソルの並びは `Llama.__init__`・`checkpoint_dtype()`（エンジン）・`llama2_convert.py` の `layout()` の 3 か所にあるので、形式を変えるときは 3 つとも直す（pytest が一致を見ている）。トークナイザの種類・NFKC・停止トークンはファイルから分からないので、ローカルのモデルでは設定の JSON で渡す。
+- **Pyodide の PyProxy は、壊すまで Python のオブジェクトを生かし続ける。** `conversion.checkpoint` のように属性を読むたびに新しい PyProxy ができる。変換した 171MB のチェックポイントで 1 つでも `destroy()` を忘れると、モデルを切り替えてもメモリが戻らない。ジェネレータが返す値（タプル）も同じ。
+- **Worker では `FileReaderSync` でファイルを同期に読める。** Python から呼ぶ `read(offset, length)` を JavaScript の関数で渡せるのはこのおかげ（メインスレッドにはない）。返した `Uint8Array` は Python 側で `to_py()` すると memoryview になる。
 - **`stats` の `prompt_tokens` は `tokens - sampled` では求まらない。** 停止トークンはサンプリングされるが `tokens` には数えないので 1 ずれる。プロンプトは専用のカウンタで数えている。
 - **フォームの中に `<input>` を足さない。** 入力欄のフォーム（`#composer`）の中に置いた `<input>` で Enter を押すと、プロンプトが送信される（暗黙の送信）。生成設定のパネルはフォームの外に置いてあり、フォームの中のボタンは `type="button"` にしてある。
 - **Worker は生成中にメッセージを受け取れない**（Python のジェネレータを回している間、イベントループに戻らない）。だから `generate()` は 50ms ごとに `MessageChannel` で 1 回イベントループに返す。`setTimeout` は 4ms の下限があり、トークン数で数えると速いモデル（900 tok/s）だけ約 5% 遅くなった。

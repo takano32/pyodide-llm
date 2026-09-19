@@ -28,7 +28,7 @@
       <div class="models">
         <select id="model" aria-label="Model"></select>
         <!-- a model of the visitor's own disk: read where it is, nothing is uploaded -->
-        <label class="open" title="Open a model from this device: a llama2.c checkpoint and its tokenizer.bin, and optionally settings as .json. Nothing is uploaded.">
+        <label class="open" title="Open a model from this device: a llama2.c checkpoint and its tokenizer.bin, or the files of a Hugging Face Llama model (.safetensors, config.json, tokenizer.json), and optionally settings as .json. Nothing is uploaded.">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3 6a2 2 0 0 1 2-2h4.2a2 2 0 0 1 1.4.6L12 6h7a2 2 0 0 1 2 2v1H3zm0 5h18v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="currentColor" /></svg>
           <input id="files" type="file" multiple hidden aria-label="Open a model from this device" />
         </label>
@@ -385,7 +385,8 @@
       progress.hidden = false;
       progress.max = data.total;
       progress.value = data.received;
-      statusText.textContent = `${model.name}: ${(data.received / 1e6).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
+      statusText.textContent = data.converting ? `${model.name}: converting, ${Math.floor((data.received / data.total) * 100)} %`
+        : `${model.name}: ${(data.received / 1e6).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
     } else if (data.type === "ready") {
       ready = true;
       longest = data.seq_len;
@@ -396,7 +397,7 @@
       const load = $("load-stats");
       load.textContent = "";
       rows(load, [
-        `Pyodide ${seconds(data.seconds.pyodide)} · ${(model as any).file ? "read" : "download"} ${seconds(data.seconds.download)} (at the same time)`,
+        `Pyodide ${seconds(data.seconds.pyodide)} · ${(model as any).hf ? "conversion" : (model as any).file ? "read" : "download"} ${seconds(data.seconds.download)}${(model as any).hf ? "" : " (at the same time)"}`,
         `Llama() ${seconds(data.seconds.construct)}`,
       ]);
       $("load").classList.add("measured");
@@ -440,7 +441,38 @@
   // like an entry of src/models.js ({options, generation, prompt, placeholder}).
   const files = $("files") as HTMLInputElement;
   let local: typeof model | undefined;
+  // The files Hugging Face publishes: model.safetensors, config.json and a tokenizer (tokenizer.json, or a
+  // sentencepiece tokenizer.model / spiece.model). The worker converts them in the browser, to int8 and with a
+  // context of 512 tokens unless the settings say otherwise ({"conversion": {"dtype": ..., "max_seq_len": ...}}).
+  const HF_IGNORED = ["tokenizer_config.json", "generation_config.json", "special_tokens_map.json", "model.safetensors.index.json"];
+  async function openHuggingFace(chosen: File[]) {
+    const named = (...names: string[]) => chosen.find(({ name }) => names.includes(name.toLowerCase()));
+    const weights = chosen.filter(({ name }) => name.toLowerCase().endsWith(".safetensors"));
+    const config = named("config.json"), tokenizer = named("tokenizer.json") ?? named("tokenizer.model", "spiece.model");
+    const settings = chosen.find(({ name }) => name.toLowerCase().endsWith(".json") && name !== config?.name && name !== tokenizer?.name && !HF_IGNORED.includes(name.toLowerCase()));
+    if (weights.length !== 1 || !config || !tokenizer) {
+      throw new Error("A Hugging Face model needs three files together: one .safetensors file (a model in several shards is not supported), config.json, and tokenizer.json or tokenizer.model.");
+    }
+    const given = settings ? JSON.parse(await settings.text()) : {};
+    return {
+      id: "local", name: given.name ?? weights[0].name, note: `local · Hugging Face · ${(weights[0].size / 1e6).toFixed(0)} MB`,
+      hf: { weights: weights[0], config, tokenizer }, conversion: given.conversion ?? {}, options: given.options ?? {},
+      // a model nobody has tuned this page for: sample, as such models loop when they decode greedily
+      generation: given.generation ?? { steps: 256, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 },
+      prompt: given.prompt ?? "", placeholder: given.placeholder ?? "",
+    };
+  }
+
   async function open(chosen: File[]) {
+    if (chosen.some(({ name }) => name.toLowerCase().endsWith(".safetensors"))) {
+      try {
+        local = (await openHuggingFace(chosen)) as any;
+      } catch (error) {
+        message("model error", String((error as Error).message ?? error));
+        return;
+      }
+      return showLocal();
+    }
     const settings = chosen.find(({ name }) => name.toLowerCase().endsWith(".json"));
     // the larger of the other two is the checkpoint
     const [checkpoint, tokenizer, ...more] = chosen.filter((file) => file !== settings).sort((a, b) => b.size - a.size);
@@ -463,6 +495,9 @@
       message("model error", String((error as Error).message ?? error));
       return;
     }
+    showLocal();
+  }
+  function showLocal() {
     // the select shows what is running: one entry for the local model, replaced by the next one
     select.querySelector('option[value="local"]')?.remove();
     select.add(new Option(`${local!.name} — ${local!.note}`, "local"));
