@@ -1,0 +1,10 @@
+# downloaded or generated at build/deploy time, never committed
+*.bin
+tiny-lm/
+tiny-lm.LICENSE.txt
+*.wasm
+*.so
+*.whl
+node_modules/
+public/
+__pycache__/
