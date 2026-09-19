@@ -1,7 +1,9 @@
 // Pyodide lives in this worker, so the page stays responsive while the model is loading and generating.
-// The page sends   {type: "init", search, model},  {type: "load", model},  {type: "generate", prompt, ...options}
-//                  and {type: "stop"}
+// The page sends   {type: "init", search, model, load},  {type: "load", model, load},
+//                  {type: "generate", prompt, ...options}  and  {type: "stop"}
 // and receives     {type: "status" | "progress" | "ready" | "token" | "done" | "error", ...}
+// load is a number the page counts up: a newer load cancels the one that is going on, and whatever this worker
+// reports about a load carries its number, so that the page can tell a late report of a cancelled one.
 
 // the version becomes part of a CDN URL, so accept nothing but a plain version number
 const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
@@ -31,16 +33,17 @@ const CONNECTIONS = 8;
 // another size is fetched anew. Without the Cache API (some private modes) this is a plain fetch.
 const MODEL_CACHE = "models-v1";
 
-async function fetchPart(url, model) {
+async function fetchPart(url, model, signal) {
   const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
   const key = `${url}?bytes=${model.bytes}`;
   const cached = await cache?.match(key);
   if (cached) {
     return cached;
   }
-  const res = await fetch(url);
+  const res = await fetch(url, { signal });
   if (res.ok && cache) {
-    // stored while the other copy streams into Python; a full disk must not stop the download
+    // stored while the other copy streams into Python; a full disk must not stop the download. A part that is
+    // cancelled half way is not stored at all, the finished ones stay for the next time.
     cache.put(key, res.clone()).catch(() => {});
   }
   return res;
@@ -57,14 +60,14 @@ async function dropStaleParts(model) {
   }
 }
 
-function download(model) {
+function download(model, signal, load) {
   const parts = Math.ceil(model.bytes / PART_BYTES);
   const queue = [];
   let sink, next = 0, received = 0, reported = -1;
   const connection = async () => {
     while (next < parts) {
       const part = next++;
-      const res = await fetchPart(new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, import.meta.url).href, model);
+      const res = await fetchPart(new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, import.meta.url).href, model, signal);
       if (!res.ok) {
         throw new Error(`Could not fetch part ${part} of ${model.checkpoint}: ${res.status}`);
       }
@@ -74,6 +77,8 @@ function download(model) {
         if (done) {
           break;
         }
+        // a chunk that was already on its way when the load was cancelled: its buffer is gone
+        signal.throwIfAborted();
         sink ? sink(offset, value) : queue.push([offset, value]);
         offset += value.length;
         received += value.length;
@@ -81,12 +86,14 @@ function download(model) {
         const percent = Math.floor((received / model.bytes) * 100);
         if (percent !== reported) {
           reported = percent;
-          postMessage({ type: "progress", received, total: model.bytes });
+          postMessage({ type: "progress", load, received, total: model.bytes });
         }
       }
     }
   };
   const finished = Promise.all(Array.from({ length: Math.min(CONNECTIONS, parts) }, connection));
+  // a load that is cancelled while Pyodide still loads never gets to into(): that is no unhandled rejection
+  finished.catch(() => {});
   return {
     // write(offset, chunk) receives everything queued so far, and every later chunk
     async into(write) {
@@ -101,6 +108,10 @@ function download(model) {
 }
 
 let pyodide, llama2_numpy, llama, kernels;
+// init() as a promise: every load waits for it, also the one that replaces the first
+let initialized;
+// the AbortController of the load that is going on, and a promise that settles once it has cleaned up
+let loading, unloaded = Promise.resolve();
 
 // how long the load took, in seconds: Pyodide once per session, the other two per model. The download runs while
 // Pyodide loads, so the two overlap and the page says so instead of adding them up.
@@ -149,34 +160,49 @@ function pythonBuffer(size) {
   return { buffer, write };
 }
 
-async function load(model, ready = Promise.resolve()) {
+// Every await in here may end with the AbortError of signal: a newer load has taken over, and this one must
+// leave nothing behind, least of all a Python buffer as large as its model.
+async function load(model, signal, id) {
+  signal.throwIfAborted();
   // let go of the previous model first, so that two never have to fit in memory
-  llama?.destroy();
-  llama = undefined;
-  postMessage({ type: "status", text: `Downloading ${model.name}...` });
+  if (llama) {
+    llama.destroy();
+    llama = undefined;
+    // the engine's closures and the model refer to each other, so only the cycle collector frees the weights
+    pyodide.runPython("import gc; gc.collect()");
+  }
+  postMessage({ type: "status", load: id, text: `Downloading ${model.name}...` });
   const downloadStarted = performance.now();
-  const checkpoint = download(model);
-  const tokenizerBytes = fetch(new URL(`models/${model.tokenizer}`, import.meta.url)).then((res) => {
+  const checkpoint = download(model, signal, id);
+  const tokenizerBytes = fetch(new URL(`models/${model.tokenizer}`, import.meta.url), { signal }).then((res) => {
     if (!res.ok) {
       throw new Error(`Could not fetch ${model.tokenizer}: ${res.status}`);
     }
     return res.arrayBuffer();
   });
-  await ready;
+  tokenizerBytes.catch(() => {});
+  await initialized;
+  signal.throwIfAborted();
 
   const weights = pythonBuffer(model.bytes);
-  await checkpoint.into(weights.write);
-  const vocabulary = new Uint8Array(await tokenizerBytes);
-  loadSeconds.download = since(downloadStarted);
+  let tokenizer;
+  try {
+    await checkpoint.into(weights.write);
+    const vocabulary = new Uint8Array(await tokenizerBytes);
+    signal.throwIfAborted();
+    loadSeconds.download = since(downloadStarted);
 
-  const constructStarted = performance.now();
-  const tokenizer = pythonBuffer(vocabulary.length);
-  tokenizer.write(0, vocabulary);
-  llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, ...model.options });
-  weights.buffer.destroy();
-  tokenizer.buffer.destroy();
-  loadSeconds.construct = since(constructStarted);
-  postMessage({ type: "ready", pyodide: pyodide.version, backend: llama.backend, load: { ...loadSeconds } });
+    // from here to the end nothing waits, so no other message gets in between
+    const constructStarted = performance.now();
+    tokenizer = pythonBuffer(vocabulary.length);
+    tokenizer.write(0, vocabulary);
+    llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, ...model.options });
+    loadSeconds.construct = since(constructStarted);
+  } finally {
+    weights.buffer.destroy();
+    tokenizer?.buffer.destroy();
+  }
+  postMessage({ type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seconds: { ...loadSeconds } });
   dropStaleParts(model);
 }
 
@@ -220,16 +246,29 @@ async function generate({ type, prompt, ...options }) {
 }
 
 self.onmessage = async ({ data }) => {
+  let signal;
   try {
-    if (data.type === "init") {
+    if (data.type === "init" || data.type === "load") {
+      // The latest choice wins: the download that is going on stops, and its parts that are complete stay in
+      // the cache. Pyodide is loaded once, whatever happens to the model that was asked for first.
+      loading?.abort();
+      loading = new AbortController();
+      signal = loading.signal;
       // the model downloads while Pyodide loads
-      await load(data.model, init(data.search));
-    } else if (data.type === "load") {
+      initialized ??= init(data.search);
       // never take the model away from a run that is going on
       stopped = generating !== undefined;
-      await generating?.catch(() => {});
-      await load(data.model);
+      // The cancelled load frees its buffer a few turns of the event loop after the abort. Without waiting for
+      // that the next buffer is allocated first, and the WebAssembly memory, which never shrinks, grows by a
+      // whole model with every change of mind (587 MB after four of them).
+      const previous = unloaded;
+      const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+      unloaded = current.catch(() => {});
+      await current;
     } else if (data.type === "generate") {
+      if (!llama) {
+        throw new Error("The model is not ready.");
+      }
       // messages keep arriving while this runs, hence the promise the other branches look at
       stopped = false;
       generating = generate(data);
@@ -243,6 +282,9 @@ self.onmessage = async ({ data }) => {
       stopped = generating !== undefined;
     }
   } catch (err) {
-    postMessage({ type: "error", message: String(err) });
+    // a cancelled load has nothing to report: the one that replaced it speaks for itself
+    if (!signal?.aborted) {
+      postMessage({ type: "error", load: data.load, message: String(err) });
+    }
   }
 };

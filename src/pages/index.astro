@@ -240,6 +240,10 @@
   // ?v=<commit>: a new page must never run with the cached worker or Python code of the previous deployment
   const worker = new Worker(`${import.meta.env.BASE_URL}worker.js?v=${__BUILD__}`, { type: "module" });
   worker.onmessage = ({ data }) => {
+    // a late report about a load that another choice of model has cancelled
+    if (data.load !== undefined && data.load !== loads) {
+      return;
+    }
     if (data.type === "status") {
       statusText.textContent = data.text;
     } else if (data.type === "progress") {
@@ -255,8 +259,8 @@
       const load = $("load-stats");
       load.textContent = "";
       rows(load, [
-        `Pyodide ${seconds(data.load.pyodide)} · download ${seconds(data.load.download)} (at the same time)`,
-        `Llama() ${seconds(data.load.construct)}`,
+        `Pyodide ${seconds(data.seconds.pyodide)} · download ${seconds(data.seconds.download)} (at the same time)`,
+        `Llama() ${seconds(data.seconds.construct)}`,
       ]);
       $("load").classList.add("measured");
     } else if (data.type === "token") {
@@ -289,15 +293,21 @@
   worker.onerror = (event) => {
     message("model error", `Failed to start the worker: ${event.message}`);
   };
-  select.disabled = true;
-  worker.postMessage({ type: "init", search: location.search, model });
+  // The model can be changed while one is loading: the worker cancels that download and starts the new one.
+  // loads numbers them, and the worker's reports carry the number.
+  let loads = 1;
+  worker.postMessage({ type: "init", search: location.search, model, load: loads });
 
   select.onchange = () => {
     model = MODELS.find(({ id }) => id === select.value)!;
     show(model);
     ready = false;
-    run.disabled = select.disabled = true;
-    worker.postMessage({ type: "load", model });
+    run.disabled = true;
+    progress.hidden = true;
+    // the timings of the previous load
+    $("load").classList.remove("measured");
+    ($("load") as HTMLDetailsElement).open = false;
+    worker.postMessage({ type: "load", model, load: ++loads });
   };
 
   // Enter breaks the line and Shift + Enter does too; Ctrl + Enter or Cmd + Enter sends. A phone has neither key

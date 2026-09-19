@@ -30,7 +30,7 @@
 | ファイル | 役割 |
 |---|---|
 | `public/llama2_numpy.py` | 推論エンジン。数値演算は SIMD カーネル（`load_kernels` / `kernel_forward`）、使えなければ NumPy。llama2.c の legacy 形式（7 個の int ヘッダ + テンソル）を読む。float32 / float16 / int8。トークナイザは BPE（llama2.c 方式）と unigram（Viterbi）。`generate()` はテキスト片を返すジェネレータ |
-| `public/worker.js` | Web Worker。最新 Pyodide の解決、モデル部品の並列ダウンロード（8 MiB × 8 並列、Pyodide のロードと同時進行）、Python バッファへの直接書き込み、トークンの逐次送信 |
+| `public/worker.js` | Web Worker。最新 Pyodide の解決、モデル部品の並列ダウンロード（8 MiB × 8 並列、Pyodide のロードと同時進行、モデルを選び直せば中止して切り替え）、Python バッファへの直接書き込み、トークンの逐次送信 |
 | `src/pages/index.astro` | チャット風のページ。Worker の報告を描画するだけ |
 | `src/models.js` | モデル一覧（ファイル名、バイト数、エンジンのオプション、生成設定、既定プロンプト） |
 | `convert_hf.py` | Hugging Face の Llama チェックポイント → legacy 形式 + tokenizer.bin。PyTorch 不要（NumPy のみ）。bfloat16、safetensors、`tokenizer.json`（unigram）対応 |
@@ -66,6 +66,8 @@
 - **ページに `<meta charset>` がないと日本語が化けてモデルに渡る。**
 - **`<input>` で Enter を押すと、ブラウザは送信ボタンの click を発火する**（フォームの暗黙の送信）。送信ボタンを生成中だけ停止ボタンにしたら、Enter で生成が止まった。いまの入力欄は `<textarea>`（Enter は改行、Ctrl / Cmd + Enter で `requestSubmit()`）なので起きないが、`<input>` に戻すなら停止は本物の押下（`event.detail > 0`）だけで行うこと。
 - **本番サイトを `tests/e2e.mjs` で確かめるときは、デプロイ済みのページと同じ版のスクリプトを使う。** 送信のキーを変えた直後、新しいスクリプトで古い本番を叩いて、送信されないまま 10 分待ち続けた。push の前に本番を見るなら `git show HEAD:tests/e2e.mjs` を使う。
+- **ロードを中止しても、その後始末は数ターン後に走る。** `abort()` の直後に次のモデルのバッファを確保すると、古いバッファ（モデルと同じ大きさ）がまだ生きていて、縮まない WebAssembly のメモリがモデル 1 個ぶん膨らむ。Worker は前のロードの完了（`unloaded`）を待ってから次を始める。中止で reject される Promise（部品の取得、tokenizer の取得）には `catch` を付けておかないと unhandled rejection になる。
+- **エンジンの `Llama` は循環参照を持つ**（カーネル用のクロージャと本体）。`destroy()` だけでは重みが解放されず、循環 GC が走るまで残る。モデルを手放すときは `gc.collect()` を呼ぶ（呼ばないと切り替え後の llm-jp でヒープ 390MB、呼ぶと 266MB）。
 - **`stats` の `prompt_tokens` は `tokens - sampled` では求まらない。** 停止トークンはサンプリングされるが `tokens` には数えないので 1 ずれる。プロンプトは専用のカウンタで数えている。
 - **Worker は生成中にメッセージを受け取れない**（Python のジェネレータを回している間、イベントループに戻らない）。だから `generate()` は 50ms ごとに `MessageChannel` で 1 回イベントループに返す。`setTimeout` は 4ms の下限があり、トークン数で数えると速いモデル（900 tok/s）だけ約 5% 遅くなった。
 - **トークナイザの確かめていない前提。** `<0xNN>` の語彙片が無いときバイトは ID `byte + 3` とみなす。`<0x` で始まり `>` で終わる 6 バイトの語彙片は生のバイトとして復号する。いまある語彙ではどちらも問題ないが、新しい語彙を足すときは確かめる。
