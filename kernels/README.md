@@ -131,7 +131,7 @@ The tables above are from before these changes. Old and new kernels were compare
   llm-jp-3-150m differs by up to 1.0. The kernels have always been that far from the NumPy path, which does not
   quantize activations (old kernels 1.7, new ones 1.6, largest difference over 99584 logits). tiny-lm did not
   flip anywhere in the same test (7.6e-6), and the float32 models still write NumPy's text letter for letter.
-  What the 7-bit activations cost in perplexity was never measured: T55.
+  What the 7-bit activations cost in perplexity: +0.4%, see the int8 section (T55).
 
 ## int8
 
@@ -142,6 +142,20 @@ multiplies int8 by 7-bit unsigned values: activations get a bias of 64, and `cor
 group` takes it out again. The relaxed module is loaded in `try/except`: a browser without relaxed SIMD
 (shipping Safari) refuses to compile it, which arrives in Python as `OSError` (verified by switching the
 feature off in Firefox), and int8 then runs on `matmul_q8`.
+
+What quantizing the activations costs (2026-09-19, T55; `node tests/perplexity.mjs [model]`, 1499 tokens from the
+beginnings of three Japanese Wikipedia articles, contexts of 512 tokens, Pyodide in Node):
+
+| computation | llm-jp-3-150m | tiny-lm |
+|---|---:|---:|
+| float16 original, no quantization at all | 29.976 | not measured |
+| int8 weights, NumPy, activations not quantized | 29.907 (-0.23%) | 88.327 |
+| int8 weights, kernels, 8-bit activations (`matmul_q8`) | 29.965 (-0.04%) | 88.339 (+0.01% against NumPy) |
+| int8 weights, kernels, 7-bit activations (`matmul_q8r`) | 30.094 (+0.39%) | 88.628 (+0.34% against NumPy) |
+
+The percentages of llm-jp-3-150m are against its original. So the seventh bit costs about half a percent of
+perplexity and buys a third more speed (11.2-12.5 against 7.6-8.3 G multiply-adds per second); the largest
+difference between two logits, 1.6 as noted above, sounds worse than it is. Nothing to fix.
 
 ## Rules that are easy to break
 

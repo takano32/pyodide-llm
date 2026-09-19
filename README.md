@@ -139,6 +139,10 @@ perplexity, while int4 is:
 | tiny-lm | 91.3 | 91.1 |
 | llm-jp-3-150m | 22.76 | 22.69 |
 
+That table is about the weights alone. The kernels also quantize the activations, to 8 bits, or to 7 where
+the browser has relaxed SIMD: on another text, llm-jp-3-150m has a perplexity of 29.98 as the float16 original,
+29.91 with int8 weights, 29.97 with 8-bit activations and 30.09 (+0.4%) with 7-bit ones (`node tests/perplexity.mjs`).
+
 The most likely token agrees about 98% of the time; greedy output diverges from the original part way through
 but stays coherent. int4 cost +16.8% perplexity and was rejected.
 
