@@ -25,9 +25,23 @@ that makes a module an Emscripten side module. Verified to load in Pyodide 0.29.
 | Chromium: stories3_5M / stories260K float32 (grouped-query attention) | 141 / 268 | 402 / 951 |
 
 For comparison: native llama2.c with `gcc -Ofast` runs stories15M at 214 tok/s on the same machine. Firefox 150
-loads the kernels too (all of its WebAssembly was 5-7x slower on the test machine, NumPy included). Safari was
-never tested. Overheads inside Pyodide: one ctypes call 3-12 us, `array.ctypes.data` about 4 us (addresses are
+loads the kernels too (all of its WebAssembly was 5-7x slower on the test machine, NumPy included). WebKit is
+tested on a macOS runner of GitHub Actions (below). Overheads inside Pyodide: one ctypes call 3-12 us, `array.ctypes.data` about 4 us (addresses are
 taken once), one small NumPy call 1.5-2.5 us; a token takes about 100 kernel calls.
+
+## WebKit (2026-09-19, T44)
+
+`.github/workflows/webkit.yml` runs `tests/e2e.mjs` in Playwright's WebKit 26.4 on a macOS runner (Apple M1,
+virtual) against the deployed site, by hand or once a week. It is Safari's engine, not Safari itself. All four
+models ran on the first try. WebKit has no relaxed SIMD, so the int8 models report `SIMD kernels, int8` and run
+on `matmul_q8`: the fallback had never met a real browser before.
+
+| model | backend | tok/s (another, much faster CPU than in the other tables) |
+|---|---|---:|
+| stories260K float32 | SIMD kernels, float32 | 4271 |
+| stories15M int8 | SIMD kernels, int8 | 739 |
+| tiny-lm int8 | SIMD kernels, int8 | 515 (a run of 20 tokens) |
+| llm-jp-3-150m int8, 256 tokens | SIMD kernels, int8 | 146 |
 
 ## Where the time of one token goes (2026-09-19, T53)
 

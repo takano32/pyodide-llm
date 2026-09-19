@@ -42,6 +42,7 @@
 | `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路、`hf` を渡すと HF 形式のファイル（`tests/make_hf_fixture.py` が作る）をブラウザの中で変換する経路を試す |
 | `kernels/` | WASM SIMD カーネル（AssemblyScript）とビルドスクリプト。`make kernels` が `public/simdkernel.so` などを生成。制約と実測は `kernels/README.md` |
 | `.github/workflows/deploy.yml` | `make models` → `npm run build` → GitHub Pages |
+| `.github/workflows/webkit.yml` | 本番サイトを macOS ランナーの WebKit（Playwright）で動かす。手動（`gh workflow run webkit.yml`）か週 1 回。結果は実行の Summary に出る |
 
 公開先: https://takano32.github.io/pyodide-llama-py/ （リポジトリの旧名は pyodide-llama2-py。Pages の旧 URL は転送されない）
 
@@ -57,6 +58,7 @@
 - **モデル。** tiny-lm（29M、MIT、日英 Wikipedia、質は低い：パープレキシティ 91）、llm-jp-3-150m（Apache-2.0、質は段違い：22.8、ただし約 8 tok/s・メモリ約 500MB）、TinyStories 260K / 3.5M / 15M / 42M。小さいモデルは greedy だと反復するので、日本語モデルは temperature 0.7 / top-p 0.9 / 繰り返しペナルティ付き。
 - **ブラウザでの速度（Chromium、カーネルあり）。** tiny-lm 約 270〜295（既定の生成設定、256 トークン。T54 の前は 250〜270、サンプリングが NumPy だった頃は 150〜170）、stories15M 約 300（int8）/ 186（float32）、llm-jp-3-150m 75〜79 tok/s（256 トークンを 4 回。T54 の前は 61〜66、サンプリングが NumPy だった頃は約 47）。stories3_5M 約 400、stories260K 約 950 tok/s。カーネルなし（`?kernel=off`）では tiny-lm 約 40、stories15M 約 50、llm-jp 約 8.5 tok/s。
 - **1 トークンの時間の内訳（T53、`node tests/profile.mjs`、Node と Chromium でほぼ同じ）。** llm-jp-3-150m（dim 512、12 層、語彙 99584）: 層の行列積 52%、分類器 38%、ctypes の呼び出し 6%（231 回 × 約 3µs）、サンプリング 3%、Python と NumPy 1%。tiny-lm は分類器が 54%。**int8 の行列積はメモリ帯域律速ではない**（キャッシュに載る 0.4MB でも載らない 75MB でも 10.7〜12.0 G 積和/秒。float32 のカーネルは同じメモリで 20GB/s を流すが、int8 は 13GB/s）。律速は `matmul_q8r` の演算。attention は位置とともに重くなり、llm-jp で位置 8 の 12.6ms が位置 248 で 16.3ms（積和あたりのコストが行列積の数倍）。256 トークンの実行が 82 ではなく 61〜70 tok/s になるのはこのため。Worker の中でもメインスレッドでも速度は同じ。
+- **WebKit（Safari のエンジン）で動く（T44）。** GitHub Actions の macOS ランナー（Apple M1 の仮想マシン）、Playwright の WebKit 26.4 で 4 モデルとも一発で動いた。relaxed SIMD が無いので int8 は `SIMD kernels, int8`（`matmul_q8`）で動く。llm-jp-3-150m 146、stories15M 739、stories260K 4271 tok/s（開発機よりずっと速い CPU なので、ほかの数値とは比べられない）。Safari そのものと iPhone の実機は未確認。
 - **分割並列ダウンロードは約 1.8 倍速い**（本番 CDN で 167MB が 20.4 秒 → 11.2 秒）。
 - **SIMD カーネル（導入済み）。** カーネルを Emscripten のサイドモジュールとして `ctypes.CDLL` で読み込み、NumPy のメモリを直接計算する。Python が層を順に呼ぶ設計のまま、NumPy 比で 4〜9 倍速い。int8 は重みを int8 のまま計算するのでメモリも減る（llm-jp-3-150m: ヒープ 897MB → 283MB、9.3 → 81 tok/s）。emcc は不要で、AssemblyScript の出力に `dylink.0` セクションを付ければ読み込める。詳細と実測は `kernels/README.md`。語彙の大きいモデルでは NumPy でのサンプリングが次のボトルネックだった（T32 で半減、T34 でカーネルへ）。サンプリング（繰り返しペナルティ、softmax、top-p）もカーネルにあり、Chromium の tiny-lm は既定の設定で 250 tok/s 強。カーネルにアドレスを渡す配列は Python 側で必ず保持する（解放されると稀に `memory access out of bounds`）。
 
