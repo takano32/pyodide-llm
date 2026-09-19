@@ -33,11 +33,11 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len):
 
 
 if __name__ == "__main__":
-    data = open(sys.argv[1], "rb").read()
-    header = struct.unpack_from("<7i", data, 0)
+    data = np.memmap(sys.argv[1], dtype=np.uint8, mode="r")  # one tensor in memory at a time
+    header = struct.unpack_from("<7i", data[:28].tobytes(), 0)
     offset = 28
     with open(sys.argv[2], "wb") as f:
-        f.write(data[:28])
+        f.write(data[:28].tobytes())
         for shape, is_matrix in layout(*header):
             tensor = np.frombuffer(data, dtype=np.float32, count=int(np.prod(shape)), offset=offset)
             offset += tensor.nbytes
