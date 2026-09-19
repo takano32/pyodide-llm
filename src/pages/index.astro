@@ -68,9 +68,34 @@
         </details>
         <progress id="progress" hidden></progress>
       </div>
+      <!-- The generation settings: a popover above its button, a sheet from the bottom on a narrow screen. It is
+           no part of the form, or Enter in one of its fields would send the prompt. -->
+      <div id="settings" popover>
+        <label>Temperature <output id="temperature-value"></output>
+          <input id="temperature" type="range" min="0" max="1.5" step="0.05" /></label>
+        <label>Max tokens <output id="steps-value"></output>
+          <input id="steps" type="range" min="16" max="256" step="8" /></label>
+        <label>Seed
+          <span class="seed-field">
+            <input id="seed" type="text" inputmode="numeric" autocomplete="off" placeholder="random" />
+            <button id="seed-clear" type="button" aria-label="Random seed" title="Random seed">×</button>
+          </span></label>
+        <details>
+          <summary>More</summary>
+          <label>Top-p <output id="topp-value"></output>
+            <input id="topp" type="range" min="0.05" max="1" step="0.05" /></label>
+          <label>Repetition penalty <output id="penalty-value"></output>
+            <input id="penalty" type="range" min="1" max="2" step="0.05" /></label>
+        </details>
+        <button id="settings-reset" type="button">Reset to defaults</button>
+      </div>
       <form id="composer">
-        <!-- Enter breaks the line, as it must while Japanese text is being converted; Ctrl or Cmd + Enter sends -->
-        <textarea id="prompt" rows="1" autocomplete="off" enterkeyhint="enter"></textarea>
+        <button id="settings-open" type="button" popovertarget="settings" aria-label="Generation settings" title="Generation settings">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9M15 4.5v5M9 14.5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+        </button>
+        <!-- Two rows, so that it reads as a field of several lines. Enter breaks the line, as it must while Japanese
+             text is being converted; Ctrl or Cmd + Enter sends -->
+        <textarea id="prompt" rows="2" autocomplete="off" enterkeyhint="enter"></textarea>
         <!-- the same button stops the run that is going on; the script swaps the arrow for a square -->
         <button id="run" disabled aria-label="Run" title="Ctrl + Enter">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z" fill="currentColor" /></svg>
@@ -166,7 +191,29 @@
   footer { padding: 8px 16px 14px; }
   #status { display: flex; align-items: center; gap: 10px; min-height: 1.4em; font-size: 0.75rem; color: var(--muted); padding: 0 6px 6px; }
   progress { flex: 1; height: 6px; accent-color: var(--accent); }
-  #composer { display: flex; gap: 8px; align-items: flex-end; background: var(--panel); border: 1px solid var(--line); border-radius: 24px; padding: 6px 6px 6px 16px; }
+  #composer { display: flex; gap: 6px; align-items: flex-end; background: var(--panel); border: 1px solid var(--line); border-radius: 24px; padding: 6px; }
+  #settings-open { position: relative; display: grid; place-items: center; width: 36px; height: 36px; flex: none; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; }
+  #settings-open:hover { color: var(--text); }
+  /* a dot while something differs from the model's defaults */
+  #settings-open.changed::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  /* In the top layer, so it never moves the page. The script puts it above its button; on a narrow screen it is
+     a sheet over the composer instead, where a thumb reaches it. */
+  #settings { position: fixed; inset: auto; margin: 0; width: min(320px, calc(100vw - 32px)); box-sizing: border-box; padding: 14px 16px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 30px rgb(0 0 0 / 0.25); font-size: 0.85rem; }
+  #settings::backdrop { background: transparent; }
+  #settings label { display: block; margin-bottom: 10px; color: var(--muted); }
+  #settings output { float: right; color: var(--text); font-variant-numeric: tabular-nums; }
+  #settings input[type="range"] { display: block; width: 100%; margin: 6px 0 0; accent-color: var(--accent); }
+  #settings summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
+  .seed-field { display: flex; gap: 6px; margin-top: 6px; }
+  .seed-field input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+  #settings button { font: inherit; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+  #settings button:hover { color: var(--text); }
+  @media (max-width: 640px) {
+    #settings { left: 0 !important; right: 0; bottom: 0 !important; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0; padding: 18px 20px calc(18px + env(safe-area-inset-bottom)); }
+    #settings::backdrop { background: rgb(0 0 0 / 0.3); }
+  }
+  /* the seed under an answer is a button: it fixes that seed for the next run */
+  .meta .seed { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
   #composer:focus-within { border-color: var(--accent); }
   /* grows with its lines (the script sets the height) up to five of them, then scrolls: the page never does */
   #prompt { flex: 1; min-width: 0; font: inherit; line-height: 1.5; color: var(--text); background: transparent; border: 0; outline: 0; resize: none; padding: 6px 0; max-height: calc(7.5em + 12px); overflow-y: auto; }
@@ -209,7 +256,70 @@
     prompt.style.height = `${prompt.scrollHeight}px`;
   }
 
+  // The generation settings. They start as the model's own and go back to them with every change of model, except
+  // the seed: "tap the seed of an answer, change the model, send" is how int8 is compared with the original.
+  type Settings = { steps: number; temperature: number; topp: number; repetition_penalty: number; seed?: number };
+  const defaults = (current: typeof model): Settings => ({ topp: 0.9, repetition_penalty: 1.0, ...(current.generation as any) });
+  let settings = defaults(model);
+  let longest = 256; // the context of the model, known once it is ready
+  const field = (id: string) => $(id) as HTMLInputElement;
+  function showSettings() {
+    field("steps").max = String(longest);
+    field("temperature").value = String(settings.temperature);
+    field("steps").value = String(Math.min(settings.steps, longest));
+    field("topp").value = String(settings.topp);
+    field("penalty").value = String(settings.repetition_penalty);
+    if (document.activeElement !== field("seed")) {
+      field("seed").value = settings.seed === undefined ? "" : String(settings.seed);
+    }
+    $("temperature-value").textContent = settings.temperature ? settings.temperature.toFixed(2) : "greedy";
+    $("steps-value").textContent = String(Math.min(settings.steps, longest));
+    $("topp-value").textContent = settings.topp.toFixed(2);
+    $("penalty-value").textContent = settings.repetition_penalty.toFixed(2);
+    const usual = defaults(model);
+    const changed = (Object.keys({ ...usual, ...settings }) as (keyof Settings)[]).some((key) => settings[key] !== usual[key]);
+    $("settings-open").classList.toggle("changed", changed);
+  }
+  function fixSeed(seed: number) {
+    settings.seed = seed;
+    showSettings();
+  }
+  for (const [id, key] of [["temperature", "temperature"], ["steps", "steps"], ["topp", "topp"], ["penalty", "repetition_penalty"]] as const) {
+    field(id).oninput = () => {
+      settings[key] = Number(field(id).value);
+      showSettings();
+    };
+  }
+  field("seed").oninput = () => {
+    // what the engine's generator takes: a whole number of 32 bits. Anything else means a random one.
+    const text = field("seed").value.trim();
+    settings.seed = /^\d{1,10}$/.test(text) && Number(text) <= 0xffffffff ? Number(text) : undefined;
+    showSettings();
+  };
+  field("seed").onblur = showSettings;
+  $("seed-clear").onclick = () => {
+    settings.seed = undefined;
+    showSettings();
+  };
+  $("settings-reset").onclick = () => {
+    settings = defaults(model);
+    showSettings();
+  };
+  const panel = $("settings");
+  panel.addEventListener("beforetoggle", (event) => {
+    if ((event as ToggleEvent).newState !== "open") {
+      return;
+    }
+    // a phone would keep its keyboard up, over the sheet
+    prompt.blur();
+    const button = $("settings-open").getBoundingClientRect();
+    panel.style.left = `${button.left}px`;
+    panel.style.bottom = `${innerHeight - button.top + 10}px`;
+  });
+
   function show(current: typeof model) {
+    settings = { ...defaults(current), ...(settings.seed === undefined ? {} : { seed: settings.seed }) };
+    showSettings();
     select.value = current.id;
     prompt.value = current.prompt;
     fit();
@@ -237,11 +347,24 @@
       element.append(row);
     }
   }
-  function meta(element: Element, text: string, breakdown: string[]) {
+  function meta(element: Element, text: string, breakdown: string[], seed?: number) {
     const line = document.createElement("details");
     line.className = "meta";
     const head = document.createElement("summary");
     head.textContent = text;
+    if (seed !== undefined) {
+      // the seed is a button: the next run, of this model or another, uses it again
+      const again = document.createElement("button");
+      again.className = "seed";
+      again.type = "button";
+      again.title = "Use this seed for the next run";
+      again.textContent = `seed ${seed}`;
+      again.onclick = (event) => {
+        event.preventDefault(); // or the line would open
+        fixSeed(seed);
+      };
+      head.append(" · ", again);
+    }
     line.append(head);
     rows(line, breakdown);
     element.append(line);
@@ -265,6 +388,8 @@
       statusText.textContent = `${model.name}: ${(data.received / 1e6).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
     } else if (data.type === "ready") {
       ready = true;
+      longest = data.seq_len;
+      showSettings();
       // the model is in the Cache API now: ask the browser not to evict it (only a page may ask, not a worker)
       navigator.storage?.persist?.();
       statusText.textContent = `${model.name} · ${data.backend} · Pyodide ${data.pyodide}`;
@@ -284,12 +409,12 @@
       }
     } else if (data.type === "done") {
       // the settings this very answer was written with: with the seed the same text can be asked for again
-      const settings = used.temperature ? `temp ${used.temperature} · seed ${used.seed}` : "greedy";
-      meta(answer!, `${model.name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s · ${settings}`, [
+      const how = used.temperature ? `temp ${used.temperature}` : "greedy";
+      meta(answer!, `${model.name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s · ${how}`, [
         `first token ${seconds(data.first_token_seconds)}`,
         `prompt ${data.prompt_tokens} tokens · ${data.prompt_tokens_per_second.toFixed(1)} tok/s`,
         `generated ${data.tokens - data.prompt_tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s · ${seconds(data.seconds)} in all`,
-      ]);
+      ], used.temperature ? used.seed : undefined);
     } else if (data.type === "error") {
       message("model error", data.message);
       statusText.textContent = ready ? `${model.name}` : `Could not load ${model.name}`;
@@ -403,9 +528,11 @@
     answer = message("model");
     // A run that samples draws its seed here rather than in the engine, so that the answer can say which seed
     // wrote it. Greedy models ignore it, and showing one would suggest it mattered.
-    used = { ...model.generation };
+    used = { ...settings, steps: Math.min(settings.steps, longest) };
     if (used.temperature) {
       used.seed ??= crypto.getRandomValues(new Uint32Array(1))[0];
+    } else {
+      delete used.seed;
     }
     worker.postMessage({ type: "generate", prompt: prompt.value, ...used });
   };

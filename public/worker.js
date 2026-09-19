@@ -258,7 +258,10 @@ async function load(model, signal, id) {
     weights.buffer.destroy();
     tokenizer?.buffer.destroy();
   }
-  postMessage({ type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seconds: { ...loadSeconds } });
+  postMessage({
+    type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seq_len: llama.seq_len,
+    seconds: { ...loadSeconds },
+  });
   if (!model.file) {
     dropStaleParts(model);
   }

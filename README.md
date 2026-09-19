@@ -9,6 +9,7 @@ This project leverages [Pyodide](https://pyodide.org/) to run a Python implement
 - **Pure Browser-based Inference:** No backend server required for inference.
 - **Python in WebAssembly:** Python sequences the transformer layers, and small WASM SIMD kernels, loaded with `ctypes` and working in place on NumPy memory, do the math: 60 tokens/s for the 150M parameter model and 300 to 950 for the small ones, about a thousand times faster than the original pure Python loops (NumPy alone reaches 50). See [Measurements](#measurements).
 - **Streaming Output:** Pyodide runs in a Web Worker and every token is shown as soon as it is generated, so the page never freezes. While a text is being written, the send button stops it.
+- **Settings You Can See:** every answer says which temperature and seed wrote it and how fast; the button left of the prompt changes them, and the seed under an answer is a button that fixes it, so that two models can be compared on the same seed.
 - **Your Own Model:** a llama2.c checkpoint from your disk runs without being uploaded ([how](#your-own-model)).
 - **Several Models:** Japanese / English models (llm-jp-3 with 150M parameters by default, tiny-lm with 29M), and TinyStories models from 260K to 42M parameters. `?model=<id>` selects one directly.
 
