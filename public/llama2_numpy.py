@@ -372,17 +372,31 @@ class Llama:
         if temperature == 0.0:
             # Greedy argmax sampling: take the token with the highest probability
             return int(np.argmax(logits))
-        probabilities = np.exp((logits - logits.max()) / temperature)
+        nucleus = 0.0 < topp < 1.0
+        if nucleus:
+            # exp() over a vocabulary of 50000 or 100000 tokens costs as much as half a forward pass, and nearly all
+            # of it goes to tokens that cannot be drawn: leave out, while still cheap, whatever is less than a ten
+            # millionth as probable as the best token (together far below one percent of the probability mass)
+            best = logits.max()
+            candidates = np.flatnonzero(logits >= best + temperature * math.log(1e-7))
+            probabilities = np.exp((logits[candidates] - best) / temperature).astype(np.float64)
+        else:
+            candidates = np.arange(logits.size)
+            probabilities = np.exp((logits - logits.max()) / temperature).astype(np.float64)
         probabilities /= probabilities.sum()
-        candidates = np.arange(probabilities.size)
-        if 0.0 < topp < 1.0:
+        if nucleus:
             # Top-p (nucleus) sampling: only the most probable tokens whose probabilities add up to topp.
-            # Tokens below (1 - topp) / (n - 1) cannot be part of that set, so they need not be sorted.
-            candidates = np.flatnonzero(probabilities >= (1.0 - topp) / (probabilities.size - 1))
-            candidates = candidates[np.argsort(-probabilities[candidates])]
-            candidates = candidates[:np.searchsorted(np.cumsum(probabilities[candidates]), topp) + 1]
-        chosen = probabilities[candidates].astype(np.float64)
-        return int(rng.choice(candidates, p=chosen / chosen.sum()))
+            # Tokens below (1 - topp) / (n - 1) cannot be part of that set (llama2.c), so they need not be sorted.
+            likely = np.flatnonzero(probabilities >= (1.0 - topp) / max(probabilities.size - 1, 1))
+            likely = likely[np.argsort(-probabilities[likely])]
+            candidates, probabilities = candidates[likely], probabilities[likely]
+            cumulative = np.cumsum(probabilities)
+            cumulative = cumulative[:np.searchsorted(cumulative, topp) + 1]
+        else:
+            cumulative = np.cumsum(probabilities)
+        # one random number on the cumulative distribution; Generator.choice() would cost a third of a millisecond
+        chosen = np.searchsorted(cumulative, rng.random() * cumulative[-1], side="right")
+        return int(candidates[min(chosen, cumulative.size - 1)])
 
     def generate(self, prompt="", steps=256, temperature=0.0, topp=0.9, repetition_penalty=1.0, seed=None):
         """Yield the text piece by piece, as it is generated."""

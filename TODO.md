@@ -33,12 +33,12 @@
 - 内容: (1) BPE と unigram のエンコード → デコード往復（日本語、絵文字、語彙外文字、空白・タブ・改行）。(2) `quantize.py` → `dtype="int8"` で読んだ重みと元の重みの誤差がグループの最大値の 1/127 以内。(3) 小さな合成チェックポイント（dim 32、2 層、GQA あり / なし）で `forward` の logits を、素朴なループ実装と相対誤差 1e-4 以内で比較。(4) `generate` は同じシードで再現し、BOS で止まり、長すぎるプロンプトは `ValueError`。
 - モデルのダウンロードが要るテストは `make models` 済みのときだけ走るように分ける。
 
-### T32 サンプリングの高速化 — 状態: 未着手
-- 目的: カーネル導入後、語彙の大きいモデル（tiny-lm 51200、llm-jp 99584）では NumPy でのサンプリング（softmax、top-p、繰り返しペナルティ）が 1 トークンの時間の半分以上を占める（tiny-lm: greedy 422 tok/s に対しサンプリングあり 149 tok/s）。
-- 方針: `Llama.sample()` を見直す。top-p の前に `np.argpartition` で上位 k 個（例 256）に絞る、softmax を候補だけで計算する、など。カーネル側に top-k を足す案もある。
-- 完了条件: Chromium で tiny-lm（既定設定）が 250 tok/s 以上。同じシードでの再現性は保つ。
+### T34 サンプリングをカーネルに移す — 状態: 未着手
+- 目的: 繰り返しペナルティ付きのサンプリングは分布が平坦になり、NumPy での候補の並べ替えが 1 トークンの 3〜4 割を占める（Chromium の tiny-lm: greedy 318、サンプリング 263、ペナルティ付き 171 tok/s）。softmax・足切り・top-p の選択を `kernels/kernel.ts` に移す。
+- 注意: カーネルには静的データを置けないので、ソートは自前で書く（`kernels/README.md`）。乱数は Python 側で 1 個引いて渡せば、同じシードでの再現性を保てる。NumPy 版の `Llama.sample()` はフォールバックとして残す。
+- 完了条件: Chromium で tiny-lm（既定の生成設定）が 250 tok/s 以上。`sample()` の検証（nucleus が厳密、頻度が確率どおり、同じシードで同じ結果）をカーネル版でも通す。
 
-### T33 カーネルの GQA 対応 — 状態: 未着手
+### T33 カーネルの GQA 対応 — 状態: 進行中（担当: Fable）
 - 目的: stories260K と stories3_5M（grouped-query attention）もカーネルで動かす。`kernels/kernel.ts` の `attention` と `kernel_forward` の KV キャッシュ（`[seq][kv_dim]`）を n_kv_heads に対応させる。行長が 32 の倍数でなくても float32 なら問題ない。
 - 完了条件: 2 モデルで NumPy 版と同じ greedy 出力、`tests/smoke.mjs` に追加。
 
@@ -75,6 +75,7 @@
 - [x] **T26 CI のスモークテスト。** `tests/smoke.mjs`: Node 上の最新 Pyodide で、stories260K（float32・GQA）の greedy 出力が参照どおりであることと、tiny-lm（変換 + int8 + unigram）が生成できシードで再現することを確認。約 8 秒、メモリ約 450MB。エンジンを壊すと失敗することを確認済み。デプロイでは `pyodide@latest` を入れ直してから走らせる（ページが実行時に最新版を使うため）。
 - [x] **T25 モデルのブラウザ内キャッシュ。** 部品を Cache API（`models-v1`）に保存し、キーに展開後のバイト数を含める。2 回目の読み込みはモデル部品のネットワーク要求が 0 件、準備完了が 11.3 秒 → 7.1 秒（tiny-lm、ローカル）。サイズが変わった古い部品は読み込み後に削除。`navigator.storage.persist()` はページ側から要求（Worker からは呼べない。ヘッドレス Chromium では許可されず false のまま）。
 - [x] **T30 SIMD カーネルの導入。** `kernels/*.ts` を `make kernels` でビルドし、`llama2_numpy.py` が ctypes で読み込む（失敗時・GQA・32 の倍数でない int8 は NumPy にフォールバック、`?kernel=off` で NumPy を強制）。float32 は NumPy と同じ出力で 53 → 200 tok/s、int8 は重みを int8 のまま計算して stories15M 351、tiny-lm 422 tok/s（Node 上の Pyodide、greedy）。llm-jp-3-150m は 9.3 → 81 tok/s、WASM ヒープ 897MB → 283MB。Chromium では tiny-lm 43 → 149、llm-jp 8.5 → 47、stories15M 50 → 296 tok/s。Firefox でも動作、Safari は未確認。スモークテストが両経路を確認する。
+- [x] **T32 サンプリングの高速化。** `exp` の前に、最有力の 1000 万分の 1 未満のトークンを落とし、llama2.c と同じ厳密な足切り（(1 − top-p)/(n − 1) 未満は nucleus に入らない）で並べ替えの対象を絞り、抽選は累積和と乱数 1 個にした。`sample()` は 2.2 → 0.84 ms（tiny-lm、語彙 51200）。Chromium の tiny-lm: サンプリングあり 263 tok/s（greedy は 318）、繰り返しペナルティ付きは 171 tok/s で目標の 250 には未達 → T34。nucleus の厳密さ・頻度・シードの再現性は検証済み。
 
 ## やらないと決めたこと
 
