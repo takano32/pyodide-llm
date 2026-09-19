@@ -77,4 +77,12 @@ jobs:
             done
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
+          # The Firefox of the runner itself, driven by Selenium. Playwright drives its Firefox through the debugger,
+          # which makes it compile WebAssembly for debugging, many times slower: this one tells how fast Firefox is.
+          echo "## stock firefox (Selenium)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          for model in stories260K stories15M tiny-lm llm-jp-3-150m; do
+            node tests/stock-firefox.mjs "$model" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+          done
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
           exit $failed
