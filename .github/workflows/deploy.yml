@@ -38,9 +38,12 @@ jobs:
 
       - name: Download and convert the models, compile the kernels
         run: |
-          pip install numpy
+          pip install numpy pytest
           npm ci
           make models kernels
+
+      - name: Unit tests of the engine
+        run: python -m pytest tests -q
 
       - name: Smoke test with the latest Pyodide
         run: |
