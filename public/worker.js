@@ -102,7 +102,7 @@ async function load(model, ready = Promise.resolve()) {
   // let go of the previous model first, so that two never have to fit in memory
   llama?.destroy();
   llama = undefined;
-  postMessage({ type: "status", text: `Downloading ${model.label}...` });
+  postMessage({ type: "status", text: `Downloading ${model.name}...` });
   const checkpoint = download(model);
   const tokenizerBytes = fetch(new URL(`models/${model.tokenizer}`, import.meta.url)).then((res) => {
     if (!res.ok) {

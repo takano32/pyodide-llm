@@ -4,11 +4,12 @@
 *.f16
 tiny-lm/
 llm-jp-3-150m/
-models/
+public/models/
 tiny-lm.LICENSE.txt
 *.wasm
 *.so
 *.whl
 node_modules/
-public/
+dist/
+.astro/
 __pycache__/

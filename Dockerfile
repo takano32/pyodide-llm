@@ -1,11 +1,12 @@
-FROM node:21
+FROM node:24
 
 WORKDIR /app
-# convert_hf.py needs NumPy to convert the Hugging Face checkpoint
+# convert_hf.py and quantize.py need NumPy to convert the checkpoints
 RUN apt-get update && apt-get install -y --no-install-recommends python3-numpy && rm -rf /var/lib/apt/lists/*
 COPY . .
+RUN npm ci
 RUN make models
-RUN yarn
+RUN npm run build
 
 EXPOSE 8080
-CMD ["npx", "http-server", "-a", "0.0.0.0", "-p", "8080", "--cors"]
+CMD ["npm", "run", "preview"]

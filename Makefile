@@ -13,16 +13,18 @@ CHECKPOINTS = llm-jp-3-150m.bin tiny-lm.bin stories15M.bin stories42M.bin storie
               llm-jp-3-150m.f16 tiny-lm.f16 stories15M.f32 stories42M.f32
 TOKENIZERS = llm-jp-3-150m.tokenizer.bin tiny-lm.tokenizer.bin tokenizer.bin tok4096.bin tok512.bin
 
-run:	models node_modules/.bin/http-server
-	npx http-server -a 0.0.0.0 -p 8080 --cors
+# http://localhost:8080/pyodide-llama2-py/
+run:	models node_modules
+	npm run dev
 
-# models/ is what the page fetches: the checkpoints are cut into parts of 8 MiB, which worker.js downloads in parallel
-models:	models/.done
+# public/models/ is what the page fetches: the checkpoints are cut into parts of 8 MiB, which worker.js downloads
+# in parallel
+models:	public/models/.done
 
-models/.done:	$(CHECKPOINTS) $(TOKENIZERS)
-	rm -rf models && mkdir models
-	for f in $(CHECKPOINTS); do split -b 8388608 -d -a 3 $$f models/$$f. || exit 1; done
-	cp $(TOKENIZERS) tiny-lm.LICENSE.txt models/
+public/models/.done:	$(CHECKPOINTS) $(TOKENIZERS)
+	rm -rf public/models && mkdir -p public/models
+	for f in $(CHECKPOINTS); do split -b 8388608 -d -a 3 $$f public/models/$$f. || exit 1; done
+	cp $(TOKENIZERS) tiny-lm.LICENSE.txt public/models/
 	touch $@
 
 # int8, 3.5x smaller than float32 (quantize.py)
@@ -71,10 +73,10 @@ stories3_5M-v4k.bin tok4096.bin:
 tokenizer.bin:
 	wget -q https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
 
-node_modules/.bin/http-server:
-	yarn
+node_modules:	package-lock.json
+	npm ci
 
 clean:
 	rm -f *.bin *.f32 *.f16 tiny-lm.LICENSE.txt
-	rm -rf models tiny-lm llm-jp-3-150m node_modules
+	rm -rf public/models dist .astro tiny-lm llm-jp-3-150m node_modules
 

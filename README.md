@@ -20,7 +20,7 @@ You can try the live demo on GitHub Pages (if configured):
 
 ### Prerequisites
 
-- Node.js and Yarn (for local development)
+- Node.js 24 LTS (the page is built with [Astro](https://astro.build/))
 - Python 3 with NumPy (`make` converts the tiny-lm checkpoint with `convert_hf.py` and quantizes with `quantize.py`)
 - Docker (optional)
 
@@ -36,7 +36,7 @@ You can try the live demo on GitHub Pages (if configured):
    ```bash
    make run
    ```
-   This will download the model files (about 1 GB) and convert tiny-lm, install dependencies, and start a local server at `http://localhost:8080`.
+   This will download the model files (about 1 GB) and convert tiny-lm, install dependencies, and start the Astro dev server at `http://localhost:8080/pyodide-llama2-py/`.
 
 ### Running Locally with Docker
 
@@ -45,12 +45,12 @@ You can try the live demo on GitHub Pages (if configured):
    docker build -t pyodide-llama2-py .
    docker run -p 8080:8080 pyodide-llama2-py
    ```
-2. Open `http://localhost:8080` in your browser.
+2. Open `http://localhost:8080/pyodide-llama2-py/` in your browser.
 
 ## How it Works
 
 1. **Pyodide Initialization:** The browser resolves the latest Pyodide release at page load and loads that runtime from the CDN, so there is no version to bump by hand. Append `?pyodide=<version>` to the URL to force a specific version.
-2. **Environment Setup:** A Web Worker (`worker.js`) loads Pyodide, NumPy and `llama2_numpy.py`.
+2. **Environment Setup:** A Web Worker (`public/worker.js`) loads Pyodide, NumPy and `public/llama2_numpy.py`. The chat-like page itself is `src/pages/index.astro`, and the model list is `src/models.js`.
 3. **Model Loading:** The selected model checkpoint and its tokenizer are downloaded while Pyodide is still loading, in parts of 8 MiB over several connections at once (about twice as fast as one stream), straight into one preallocated buffer while a progress bar shows the download. The larger models are distributed as int8 (3.5x smaller; measured perplexity cost on stories15M: +0.04%) and widened to float32 once, and their unquantized originals can be selected for comparison; float32 weights of the small models are NumPy views into the buffer, nothing is copied.
 4. **Inference:** When you click "Run", the prompt is sent to the worker, where a Python generator yields the text token by token; each piece is posted back and appended to the output.
 

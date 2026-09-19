@@ -30,17 +30,21 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
       - name: Download and convert the models
         run: |
           pip install numpy
           make models
 
-      - name: Prepare deployment directory
+      - name: Build the site
         run: |
-          mkdir public
-          cp index.html worker.js llama2_numpy.py public/
-          sed -i "s/?v=BUILD/?v=${GITHUB_SHA::7}/" public/index.html
-          mv models public/
+          npm ci
+          npm run build
 
       - name: Setup Pages
         uses: actions/configure-pages@v6
@@ -48,7 +52,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: 'public'
+          path: 'dist'
 
       - name: Deploy to GitHub Pages
         id: deployment
