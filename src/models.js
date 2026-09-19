@@ -1,4 +1,4 @@
-// The first model is the default: the lightest Japanese one, because a demo should be quick.
+// The first model is the default: llm-jp-3 writes the best Japanese, and the SIMD kernels made it quick enough.
 // ?model=<id> picks another one. Every file is fetched when the site is built (see the Makefile): llm-jp-3 and
 // tiny-lm are converted from their Hugging Face checkpoints by convert_hf.py, and the larger models are quantized
 // to int8 by quantize.py. bytes is the checkpoint size: it sizes the download buffer and the progress bar.
@@ -10,14 +10,14 @@ const sampled = (repetition_penalty) => ({ steps: 256, temperature: 0.7, topp: 0
 const greedy = { steps: 256, temperature: 0.0 };
 
 export const MODELS = [
+  { id: "llm-jp-3-150m", name: "llm-jp-3 150M", note: "日本語 / English · int8 · 171 MB",
+    checkpoint: "llm-jp-3-150m.bin", bytes: 171395100, tokenizer: "llm-jp-3-150m.tokenizer.bin",
+    options: { dtype: "int8", ...unigram, stop_tokens: [1, 2, 7] },
+    generation: sampled(1.1), prompt: "昔々、", placeholder: JAPANESE },
   { id: "tiny-lm", name: "tiny-lm 29M", note: "日本語 / English · int8 · 33 MB",
     checkpoint: "tiny-lm.bin", bytes: 32891932, tokenizer: "tiny-lm.tokenizer.bin",
     options: { dtype: "int8", ...unigram, nfkc: true, stop_tokens: [1, 2] },
     generation: sampled(1.3), prompt: "昔々、", placeholder: JAPANESE },
-  { id: "llm-jp-3-150m", name: "llm-jp-3 150M", note: "日本語 / English · int8 · 171 MB · desktop only",
-    checkpoint: "llm-jp-3-150m.bin", bytes: 171395100, tokenizer: "llm-jp-3-150m.tokenizer.bin",
-    options: { dtype: "int8", ...unigram, stop_tokens: [1, 2, 7] },
-    generation: sampled(1.1), prompt: "昔々、", placeholder: JAPANESE },
   { id: "stories15M", name: "TinyStories 15M", note: "English · int8 · 17 MB",
     checkpoint: "stories15M.bin", bytes: 17101468, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },

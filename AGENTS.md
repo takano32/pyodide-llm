@@ -20,7 +20,7 @@
 1. **バイナリをリポジトリに入れない。** モデルのダウンロード・変換・量子化・分割はすべてビルド時（`make models`）に行う。
 2. **Pyodide は常に最新版**を実行時に解決して読み込む（`public/worker.js`）。手で上げるバージョン定数は置かない。CDN が落ちていたら動かなくてよい（信頼性のための仕組みは足さない）。
 3. **Node は 24 LTS**（`.nvmrc`）。ページは Astro、チャット風 UI。
-4. **既定モデルは日本語でいちばん軽い tiny-lm（int8）。** デモは速さ優先。質の高い llm-jp-3-150m は選択式。
+4. **既定モデルは llm-jp-3-150m（int8）。** 日本語の質がいちばん良く、SIMD カーネルの導入で十分速くなった（約 50 tok/s、ヒープ約 280MB）。軽い tiny-lm は選択式。
 5. 大きいモデルは **int8 で配布**し、量子化前の原本も選べるようにする。
 6. GitHub Pages（静的ホスティング、HTTP ヘッダ変更不可）で動くこと。スレッド（SharedArrayBuffer）には頼らない。
 7. コミットは関心ごとに分け、英語の命令形の件名。master に push するとデプロイされる。
@@ -30,7 +30,7 @@
 | ファイル | 役割 |
 |---|---|
 | `public/llama2_numpy.py` | 推論エンジン。数値演算は SIMD カーネル（`load_kernels` / `kernel_forward`）、使えなければ NumPy。llama2.c の legacy 形式（7 個の int ヘッダ + テンソル）を読む。float32 / float16 / int8。トークナイザは BPE（llama2.c 方式）と unigram（Viterbi）。`generate()` はテキスト片を返すジェネレータ |
-| `public/worker.js` | Web Worker。最新 Pyodide の解決、モデル部品の並列ダウンロード（8 MiB × 4 並列、Pyodide のロードと同時進行）、Python バッファへの直接書き込み、トークンの逐次送信 |
+| `public/worker.js` | Web Worker。最新 Pyodide の解決、モデル部品の並列ダウンロード（8 MiB × 8 並列、Pyodide のロードと同時進行）、Python バッファへの直接書き込み、トークンの逐次送信 |
 | `src/pages/index.astro` | チャット風のページ。Worker の報告を描画するだけ |
 | `src/models.js` | モデル一覧（ファイル名、バイト数、エンジンのオプション、生成設定、既定プロンプト） |
 | `convert_hf.py` | Hugging Face の Llama チェックポイント → legacy 形式 + tokenizer.bin。PyTorch 不要（NumPy のみ）。bfloat16、safetensors、`tokenizer.json`（unigram）対応 |

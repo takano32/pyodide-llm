@@ -23,7 +23,7 @@ async function resolvePyodideVersion(search) {
 // about twice as fast as one stream, and the download runs while Pyodide is still loading: until the Python
 // buffer exists the chunks wait in a queue, after that every chunk is written straight into it.
 const PART_BYTES = 8 * 1024 * 1024;
-const CONNECTIONS = 4;
+const CONNECTIONS = 8;
 
 // GitHub Pages lets the browser keep a file for ten minutes only, so the parts also go into the Cache API: the
 // next visit starts without downloading the model again. The size is part of the key, so a rebuilt model of
