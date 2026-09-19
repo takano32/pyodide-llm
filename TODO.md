@@ -50,11 +50,16 @@
 
 2026-09-19 に Fable が提案したもの。持ち主が 1 つずつ採用か却下かを決める。採用したら「これからのタスク」へ移し、却下したら理由を添えて「やらないと決めたこと」へ移す。番号はどちらの場合もそのまま。並びは提案時の費用対効果の順。
 
-### T59 Firefox が約 8 倍遅い理由を調べる — 状態: 候補（提案: 採用。規模 小〜中、Fable 向き。T58 で見つけた）
+### T59 Firefox が約 8〜15 倍遅い理由を調べる — 状態: 候補（提案: 採用。規模 小〜中、Fable 向き。T58 で見つけた。CI で決着がつく見込み）
 - 事実: 同じ x86-64 のランナーで llm-jp-3-150m が Chromium 106.9、Firefox 13.3 tok/s。stories15M は 504 対 58、stories260K は 1943 対 297。開発機（ARM）でも 5〜7 倍遅く、NumPy だけの経路も同じくらい遅かった（`kernels/README.md`）。ロードも 20 秒対 3 秒。
 - 最初の計測（2026-09-19、`node tests/profile.mjs firefox`、開発機）: **遅いのはカーネルの中。** llm-jp-3-150m の 1 トークンは 149ms（Chromium 11.3ms）で、層のカーネル 76ms（13 倍）、分類器 64ms（15 倍）、ctypes の呼び出し 5.6ms（1 回 24µs で 8 倍だが、全体の 4%）、Python と NumPy 0.7ms。行列積のスループットは `matmul_q8r` 0.83、`matmul_q8` 0.46、**素の SIMD だけの `matmul_f32` でも 0.42 G 積和/秒（Chromium は 12 / 8.7 / 5.0）**。relaxed SIMD の命令に限らず、f32x4 の加算と乗算だけのループが 12 倍遅いので、SIMD のコード生成の巧拙ではなく、最適化コンパイラ（Ion）が使われていない疑いが強い。
 - 仮説（未確認）: (a) Playwright の Firefox は Juggler のパッチ入りビルドで、デバッガが有効だと SpiderMonkey は wasm をベースラインコンパイラだけで動かす。**そうなら遅いのはテスト環境だけで、普通の Firefox の利用者は遅くない。** (b) `ctypes.CDLL` が読み込むサイドモジュール（とても小さい）や Pyodide 本体に、Firefox の階層コンパイルが効いていない。NumPy だけの経路も同じくらい遅いので、本体も含めて遅い。
-- 調べること: まず Playwright を通さない普通の Firefox で同じページの tok/s を見る（手元に画面が無いので、持ち主に開いてもらうか、T45 のベンチマークモードで数値をもらう）。それで速ければ (a) で、文書に「Playwright の Firefox の数値は実際の Firefox を表さない」と書いて終わり。遅ければ `about:config` の `javascript.options.wasm_*` を変えて切り分ける。
+- 調べ方（2026-09-19 に検討。CI でほぼ決着がつく見込み。未着手）:
+  1. **手元で数分の切り分け（CI の前に）。** Playwright は起動時に Firefox の設定を渡せる（`firefoxUserPrefs`）。`javascript.options.wasm_optimizingjit` / `wasm_baselinejit` を変えて `tests/profile.mjs firefox` を取り直し、`matmul_f32` が 0.42 から数 G 積和/秒に跳ねるかを見る。あわせて、Pyodide と無関係な素の wasm（SIMD の積和ループだけの小さなモジュール）を同じ Firefox で測る。素の wasm も遅ければ原因はこのビルド / 起動のしかたで、Pyodide やサイドモジュールの読み込み方ではない。
+  2. **CI で「普通の Firefox」を測る。** Playwright はパッチ入りの Firefox しか動かせないので、別の運転手が要る。候補は 2 つ: (a) Selenium + geckodriver で、ランナーに最初から入っている Firefox を動かす（ダウンロードなし。x86-64 の Linux・Windows と macOS のイメージには Firefox と geckodriver が入っているはずだが、ARM のランナーは未確認）。(b) Puppeteer の WebDriver BiDi で、Mozilla が配布している安定版の Firefox をダウンロードして動かす（`@puppeteer/browsers install firefox@stable`。ARM 版の有無は未確認）。どちらも `tests/e2e.mjs`（Playwright の API）は使えないので、同じ手順（準備完了を待つ → 256 トークンに絞る → Ctrl + Enter → 回答の下の行を読む）の 40 行ほどのスクリプトを別に書く。`browsers.yml` の各 OS のジョブに「stock firefox」として足し、**同じランナーで Playwright の Firefox と普通の Firefox の tok/s が並ぶ**ようにする。
+  3. 結果の読み方: 普通の Firefox が Chromium 並みなら、原因は Playwright のビルド（仮説 a）。文書の Firefox の数値に「Playwright のビルドでの値で、実際の Firefox を表さない」と注記し、`browsers.yml` の表には普通の Firefox の数値を載せて終わり。普通の Firefox も遅ければ本物の問題なので、2 の運転手から設定を変えて（Ion だけ / ベースラインだけ）CI で切り分け、素の wasm の再現例を作って Bugzilla に報告できる形にする。
+  4. CI で分からないこと: WebDriver で動かした headless の Firefox が、人が普通に開いた Firefox と同じ速さかどうか（同じはずだが、保証はない）。最終確認は、持ち主か T45 のベンチマークモードの報告で、実際の Firefox の数値を 1 つもらうこと。
+- 費用: 1 は 30 分。2 は devDependency が 1 つ増える（`selenium-webdriver` か `puppeteer-core`）のと、スクリプト 1 本、ワークフローに数行。
 - 完了条件: どこが遅いかを数値で示して `kernels/README.md` に載せる。こちらで直せるものなら新しいタスクにする。直せないなら、README に「Firefox では約 8 分の 1」と書くだけにする。
 
 ### T46 指示に応える日本語モデル + 会話の継続 — 状態: 候補（提案: 採用。規模 中、Fable 向き）
