@@ -9,7 +9,7 @@ import { loadPyodide, version } from "pyodide";
 const root = new URL("../", import.meta.url).pathname;
 const pyodide = await loadPyodide();
 await pyodide.loadPackage("numpy", { messageCallback: () => {} });
-for (const file of ["public/llama2_numpy.py", "public/simdkernel.so", "public/simdkernel_relaxed.wasmlib", "stories260K.bin", "tok512.bin",
+for (const file of ["public/llama2_numpy.py", "public/simdkernel.so", "public/simdkernel_relaxed.wasmlib", "stories260K.bin", "tok512.bin", "stories3_5M-v4k.bin", "tok4096.bin",
                     "stories15M.f32", "tokenizer.bin", "tiny-lm.bin", "tiny-lm.tokenizer.bin"]) {
   pyodide.FS.writeFile(file.split("/").pop(), fs.readFileSync(root + file));
 }
@@ -48,9 +48,13 @@ assert "".join(simd15.generate("Once upon a time", steps=60)) == reference, "the
 fast = llama2_numpy.Llama(read("tiny-lm.bin"), read("tiny-lm.tokenizer.bin"), dtype="int8", kernels="simdkernel.so",
                           tokenizer_kind="unigram", nfkc=True, stop_tokens=(1, 2))
 assert "int8" in fast.backend and len("".join(fast.generate("昔々、", steps=12, temperature=0.7, seed=1))) > 3
-# grouped-query attention is not covered by the kernels: NumPy takes over
-assert llama2_numpy.Llama(read("stories260K.bin"), read("tok512.bin"), kernels="simdkernel.so").backend == "NumPy"
-# and so it does when the kernels cannot be loaded
+# grouped-query attention, and a head size that is no multiple of 4 (stories3_5M: 26)
+for checkpoint, vocabulary in [("stories260K.bin", "tok512.bin"), ("stories3_5M-v4k.bin", "tok4096.bin")]:
+    plain = llama2_numpy.Llama(read(checkpoint), read(vocabulary))
+    grouped = llama2_numpy.Llama(read(checkpoint), read(vocabulary), kernels="simdkernel.so")
+    assert grouped.backend.startswith("SIMD") and grouped.n_kv_heads < grouped.n_heads
+    assert "".join(grouped.generate("Once upon a time", steps=60)) == "".join(plain.generate("Once upon a time", steps=60)), checkpoint
+# NumPy takes over when the kernels cannot be loaded
 assert llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"), kernels="missing.so").backend == "NumPy"
 
 f"Python {sys.version.split()[0]}: kernels {simd15.stats['tokens_per_second']:.0f} against NumPy {numpy15.stats['tokens_per_second']:.0f} tok/s, {fast.backend} {fast.stats['tokens_per_second']:.0f} tok/s, stories260K {stories.stats['tokens_per_second']:.0f} tok/s, tiny-lm {tiny.stats['tokens_per_second']:.0f} tok/s, {japanese!r}"

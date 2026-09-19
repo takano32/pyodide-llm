@@ -7,7 +7,7 @@ This project leverages [Pyodide](https://pyodide.org/) to run a Python implement
 ## Features
 
 - **Pure Browser-based Inference:** No backend server required for inference.
-- **Python in WebAssembly:** Python sequences the transformer layers, and small WASM SIMD kernels, loaded with `ctypes` and working in place on NumPy memory, do the math: 150 to 300 tokens/s, about a thousand times faster than the original pure Python loops (NumPy alone reaches 50).
+- **Python in WebAssembly:** Python sequences the transformer layers, and small WASM SIMD kernels, loaded with `ctypes` and working in place on NumPy memory, do the math: 50 tokens/s for the 150M parameter model and 300 to 900 for the small ones, about a thousand times faster than the original pure Python loops (NumPy alone reaches 50).
 - **Streaming Output:** Pyodide runs in a Web Worker and every token is shown as soon as it is generated, so the page never freezes.
 - **Several Models:** Japanese / English models (llm-jp-3 with 150M parameters by default, tiny-lm with 29M), and TinyStories models from 260K to 42M parameters. `?model=<id>` selects one directly.
 

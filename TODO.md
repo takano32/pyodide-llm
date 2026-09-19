@@ -38,10 +38,6 @@
 - 注意: カーネルには静的データを置けないので、ソートは自前で書く（`kernels/README.md`）。乱数は Python 側で 1 個引いて渡せば、同じシードでの再現性を保てる。NumPy 版の `Llama.sample()` はフォールバックとして残す。
 - 完了条件: Chromium で tiny-lm（既定の生成設定）が 250 tok/s 以上。`sample()` の検証（nucleus が厳密、頻度が確率どおり、同じシードで同じ結果）をカーネル版でも通す。
 
-### T33 カーネルの GQA 対応 — 状態: 進行中（担当: Fable）
-- 目的: stories260K と stories3_5M（grouped-query attention）もカーネルで動かす。`kernels/kernel.ts` の `attention` と `kernel_forward` の KV キャッシュ（`[seq][kv_dim]`）を n_kv_heads に対応させる。行長が 32 の倍数でなくても float32 なら問題ない。
-- 完了条件: 2 モデルで NumPy 版と同じ greedy 出力、`tests/smoke.mjs` に追加。
-
 ### T31 README に計測結果を載せる — 状態: 未着手
 - gist の要点（実装別 tok/s の表、int8 の品質、ブラウザ別の速度）を README に入れる。数値は AGENTS.md と `TODO.md` の完了タスクにあるものだけを使い、新しく推測しない。
 
@@ -76,6 +72,7 @@
 - [x] **T25 モデルのブラウザ内キャッシュ。** 部品を Cache API（`models-v1`）に保存し、キーに展開後のバイト数を含める。2 回目の読み込みはモデル部品のネットワーク要求が 0 件、準備完了が 11.3 秒 → 7.1 秒（tiny-lm、ローカル）。サイズが変わった古い部品は読み込み後に削除。`navigator.storage.persist()` はページ側から要求（Worker からは呼べない。ヘッドレス Chromium では許可されず false のまま）。
 - [x] **T30 SIMD カーネルの導入。** `kernels/*.ts` を `make kernels` でビルドし、`llama2_numpy.py` が ctypes で読み込む（失敗時・GQA・32 の倍数でない int8 は NumPy にフォールバック、`?kernel=off` で NumPy を強制）。float32 は NumPy と同じ出力で 53 → 200 tok/s、int8 は重みを int8 のまま計算して stories15M 351、tiny-lm 422 tok/s（Node 上の Pyodide、greedy）。llm-jp-3-150m は 9.3 → 81 tok/s、WASM ヒープ 897MB → 283MB。Chromium では tiny-lm 43 → 149、llm-jp 8.5 → 47、stories15M 50 → 296 tok/s。Firefox でも動作、Safari は未確認。スモークテストが両経路を確認する。
 - [x] **T32 サンプリングの高速化。** `exp` の前に、最有力の 1000 万分の 1 未満のトークンを落とし、llama2.c と同じ厳密な足切り（(1 − top-p)/(n − 1) 未満は nucleus に入らない）で並べ替えの対象を絞り、抽選は累積和と乱数 1 個にした。`sample()` は 2.2 → 0.84 ms（tiny-lm、語彙 51200）。Chromium の tiny-lm: サンプリングあり 263 tok/s（greedy は 318）、繰り返しペナルティ付きは 171 tok/s で目標の 250 には未達 → T34。nucleus の厳密さ・頻度・シードの再現性は検証済み。
+- [x] **T33 カーネルの GQA 対応。** `attention` が n_kv_heads と 4 の倍数でないヘッド長（stories3_5M は 26）に対応し、KV キャッシュは `[seq][kv_dim]`。これで全モデルがカーネルで動く。NumPy 版と同じ greedy 出力をスモークテストで確認。Chromium で stories3_5M 141 → 402 tok/s、stories260K 268 → 951 tok/s。
 
 ## やらないと決めたこと
 

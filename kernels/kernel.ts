@@ -119,19 +119,25 @@ export function rope(v: usize, fcr: usize, fci: usize, nh: i32, hs: i32): void {
   }
 }
 
-// kc / vc: this layer's cache laid out [seq][nh*hs] (NOT llama2_numpy.py's [heads][seq][hs]); att: scratch of
-// at least pos+1 floats; hs % 4 == 0; n_kv_heads == n_heads (no grouped-query attention yet)
-export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, hs: i32): void {
-  const dim = nh * hs;
+// kc / vc: this layer's cache laid out [seq][nkv * hs] (NOT the NumPy forward's [kv heads][seq][hs]);
+// att: scratch of at least pos + 1 floats. Grouped-query attention: nh / nkv query heads share one kv head.
+export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32): void {
+  const kvDim = nkv * hs;
+  const kvMul = nh / nkv;
+  const hs4 = hs & ~3;
   const isq: f32 = <f32>1.0 / sqrt<f32>(<f32>hs);
   for (let h = 0; h < nh; h++) {
     const qh = q + (<usize>(h * hs) << 2);
+    const head = (h / kvMul) * hs;
     let mx: f32 = -f32.MAX_VALUE;
     for (let t = 0; t <= pos; t++) {
-      const kt = kc + (<usize>(t * dim + h * hs) << 2);
+      const kt = kc + (<usize>(t * kvDim + head) << 2);
       let acc = f32x4.splat(0);
-      for (let j = 0; j < hs; j += 4) acc = f32x4.add(acc, f32x4.mul(v128.load(qh + (<usize>j << 2)), v128.load(kt + (<usize>j << 2))));
-      const sc = hsum(acc) * isq;
+      let j = 0;
+      for (; j < hs4; j += 4) acc = f32x4.add(acc, f32x4.mul(v128.load(qh + (<usize>j << 2)), v128.load(kt + (<usize>j << 2))));
+      let sc: f32 = hsum(acc);
+      for (; j < hs; j++) sc += load<f32>(qh + (<usize>j << 2)) * load<f32>(kt + (<usize>j << 2));
+      sc *= isq;
       store<f32>(att + (<usize>t << 2), sc);
       if (sc > mx) mx = sc;
     }
@@ -143,13 +149,19 @@ export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize
     }
     const inv: f32 = <f32>1.0 / sum;
     const oh = out + (<usize>(h * hs) << 2);
-    for (let j = 0; j < hs; j += 4) v128.store(oh + (<usize>j << 2), f32x4.splat(0));
+    for (let j = 0; j < hs; j++) store<f32>(oh + (<usize>j << 2), 0);
     for (let t = 0; t <= pos; t++) {
-      const a = f32x4.splat(load<f32>(att + (<usize>t << 2)) * inv);
-      const vt = vc + (<usize>(t * dim + h * hs) << 2);
-      for (let j = 0; j < hs; j += 4) {
+      const weight: f32 = load<f32>(att + (<usize>t << 2)) * inv;
+      const a = f32x4.splat(weight);
+      const vt = vc + (<usize>(t * kvDim + head) << 2);
+      let j = 0;
+      for (; j < hs4; j += 4) {
         const o = <usize>j << 2;
         v128.store(oh + o, f32x4.add(v128.load(oh + o), f32x4.mul(a, v128.load(vt + o))));
+      }
+      for (; j < hs; j++) {
+        const o = <usize>j << 2;
+        store<f32>(oh + o, load<f32>(oh + o) + weight * load<f32>(vt + o));
       }
     }
   }

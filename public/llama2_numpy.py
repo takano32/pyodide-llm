@@ -130,7 +130,7 @@ def load_kernels(path):
         i32, p = ctypes.c_int32, ctypes.c_void_p
         signatures = dict(matmul_f32=[p, p, p, i32, i32, i32], quantize_x=[p, p, p, i32, i32],
                           matmul_q8=[p, p, p, p, p, i32, i32, i32], rmsnorm=[p, p, p, i32], rope=[p, p, p, i32, i32],
-                          attention=[p, p, p, p, p, i32, i32, i32], swiglu=[p, p, p, i32], add_inplace=[p, p, i32])
+                          attention=[p, p, p, p, p, i32, i32, i32, i32], swiglu=[p, p, p, i32], add_inplace=[p, p, i32])
         kernels = {}
         for name, argtypes in signatures.items():
             kernels[name] = getattr(lib, name)
@@ -167,9 +167,8 @@ class Llama:
 
         dtype = np.dtype(dtype)
         offset = 28
-        # The kernels cover plain multi-head attention, and int8 in groups of 32 only
-        suitable = self.n_kv_heads == self.n_heads and self.head_size % 4 == 0 and (
-            dtype != np.int8 or (dim % 32 == 0 and hidden_dim % 32 == 0))
+        # The int8 kernels work on groups of 32 only
+        suitable = dtype != np.int8 or (dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0)
         kernels = load_kernels(kernels) if kernels and suitable else None
         # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
         keep_int8 = kernels is not None and dtype == np.int8
@@ -244,11 +243,12 @@ class Llama:
         microseconds, and work in place: nothing is copied. About 100 calls per token, 3 to 12 us each.
         """
         dim, hidden_dim, n_layers, n_heads, head_size = self.dim, self.hidden_dim, self.n_layers, self.n_heads, self.head_size
+        n_kv_heads, kv_dim = self.n_kv_heads, self.n_kv_heads * self.head_size
         x, xb, xb2, q = (np.zeros(dim, dtype=np.float32) for _ in range(4))
         hb, hb2 = np.zeros(hidden_dim, dtype=np.float32), np.zeros(hidden_dim, dtype=np.float32)
         att, logits = np.zeros(self.seq_len, dtype=np.float32), np.zeros(self.vocab_size, dtype=np.float32)
-        # [layers][seq][dim], unlike the NumPy forward: k and v of a position are written straight into their rows
-        key_cache = np.zeros((n_layers, self.seq_len, dim), dtype=np.float32)
+        # [layers][seq][kv_dim], unlike the NumPy forward: k and v of a position are written straight into their rows
+        key_cache = np.zeros((n_layers, self.seq_len, kv_dim), dtype=np.float32)
         value_cache = np.zeros_like(key_cache)
         xq, xs = np.zeros(max(dim, hidden_dim), dtype=np.int8), np.zeros(max(dim, hidden_dim) // 32, dtype=np.float32)
         address = lambda array: array.ctypes.data
@@ -297,24 +297,25 @@ class Llama:
                     kernels["matmul_f32"](out_p, in_p, layers[l], n, 0, d)
                 return matmul
 
-        wq, wk, wv, wo = (matmul_for(w, dim, dim) for w in (self.wq, self.wk, self.wv, self.wo))
+        wq, wo = matmul_for(self.wq, dim, dim), matmul_for(self.wo, dim, dim)
+        wk, wv = matmul_for(self.wk, dim, kv_dim), matmul_for(self.wv, dim, kv_dim)
         w1, w3 = matmul_for(self.w1, dim, hidden_dim), matmul_for(self.w3, dim, hidden_dim)
         w2, wcls = matmul_for(self.w2, hidden_dim, dim), matmul_for(self.wcls, dim, self.vocab_size)
-        layer_bytes, row_bytes, half_bytes = self.seq_len * dim * 4, dim * 4, head_size // 2 * 4
+        layer_bytes, row_bytes, kv_row_bytes, half_bytes = self.seq_len * kv_dim * 4, dim * 4, kv_dim * 4, head_size // 2 * 4
 
         def forward(token, pos, need_logits=True):
             x[:] = self.embedding(token)
             cos, sin = cos_p + pos * half_bytes, sin_p + pos * half_bytes
             for l in range(n_layers):
                 keys, values = key_p + l * layer_bytes, value_p + l * layer_bytes
-                k_p, v_p = keys + pos * row_bytes, values + pos * row_bytes
+                k_p, v_p = keys + pos * kv_row_bytes, values + pos * kv_row_bytes
                 rmsnorm(xb_p, x_p, att_w + l * row_bytes, dim)
                 wq(q_p, xb_p, l)
                 wk(k_p, xb_p, l, True)
                 wv(v_p, xb_p, l, True)
                 rope(q_p, cos, sin, n_heads, head_size)
-                rope(k_p, cos, sin, n_heads, head_size)
-                attention(xb_p, q_p, keys, values, att_p, pos, n_heads, head_size)
+                rope(k_p, cos, sin, n_kv_heads, head_size)
+                attention(xb_p, q_p, keys, values, att_p, pos, n_heads, n_kv_heads, head_size)
                 wo(xb2_p, xb_p, l)
                 add_inplace(x_p, xb2_p, dim)
                 rmsnorm(xb_p, x_p, ffn_w + l * row_bytes, dim)

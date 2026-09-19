@@ -53,7 +53,7 @@
 - **プロンプトの先頭に空白を付ける**（sentencepiece のダミープレフィックス）。付けないとパープレキシティが 8.5% 悪化する。
 - **int8 の品質は原本と区別できない。** stories15M で +0.04%、tiny-lm 91.3 → 91.1、llm-jp-3-150m 22.76 → 22.69、最尤トークン一致率 約 98%。int4 は +16.8% で不可。greedy の出力は途中から原本と分岐するが破綻はしない。
 - **モデル。** tiny-lm（29M、MIT、日英 Wikipedia、質は低い：パープレキシティ 91）、llm-jp-3-150m（Apache-2.0、質は段違い：22.8、ただし約 8 tok/s・メモリ約 500MB）、TinyStories 260K / 3.5M / 15M / 42M。小さいモデルは greedy だと反復するので、日本語モデルは temperature 0.7 / top-p 0.9 / 繰り返しペナルティ付き。
-- **ブラウザでの速度（Chromium、カーネルあり）。** tiny-lm 約 150、stories15M 約 300（int8）/ 186（float32）、llm-jp-3-150m 約 47 tok/s。カーネルなし（`?kernel=off`、および GQA の 3.5M 約 107・260K 約 300）では tiny-lm 約 40、stories15M 約 50、llm-jp 約 8.5 tok/s。
+- **ブラウザでの速度（Chromium、カーネルあり）。** tiny-lm 約 150、stories15M 約 300（int8）/ 186（float32）、llm-jp-3-150m 約 47 tok/s。stories3_5M 約 400、stories260K 約 950 tok/s。カーネルなし（`?kernel=off`）では tiny-lm 約 40、stories15M 約 50、llm-jp 約 8.5 tok/s。
 - **分割並列ダウンロードは約 1.8 倍速い**（本番 CDN で 167MB が 20.4 秒 → 11.2 秒）。
 - **SIMD カーネル（導入済み）。** カーネルを Emscripten のサイドモジュールとして `ctypes.CDLL` で読み込み、NumPy のメモリを直接計算する。Python が層を順に呼ぶ設計のまま、NumPy 比で 4〜9 倍速い。int8 は重みを int8 のまま計算するのでメモリも減る（llm-jp-3-150m: ヒープ 897MB → 283MB、9.3 → 81 tok/s）。emcc は不要で、AssemblyScript の出力に `dylink.0` セクションを付ければ読み込める。詳細と実測は `kernels/README.md`。語彙の大きいモデルでは NumPy でのサンプリングが次のボトルネック（T32 で半減、残りは TODO の T34）。
 
