@@ -1,5 +1,6 @@
 // Pyodide lives in this worker, so the page stays responsive while the model is loading and generating.
-// The page sends   {type: "init", search, model},  {type: "load", model}  and  {type: "generate", prompt, ...options}
+// The page sends   {type: "init", search, model},  {type: "load", model},  {type: "generate", prompt, ...options}
+//                  and {type: "stop"}
 // and receives     {type: "status" | "progress" | "ready" | "token" | "done" | "error", ...}
 
 // the version becomes part of a CDN URL, so accept nothing but a plain version number
@@ -167,13 +168,39 @@ async function load(model, ready = Promise.resolve()) {
   dropStaleParts(model);
 }
 
-function generate({ type, prompt, ...options }) {
+// the run that is going on, and whether the page asked it to stop
+let generating, stopped = false;
+
+// Hand the event loop a turn, so that a message sent meanwhile is delivered. setTimeout would cost 4ms per
+// call (the browsers clamp it), a MessageChannel comes back in the same millisecond.
+function breathe() {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => resolve();
+    channel.port2.postMessage(0);
+  });
+}
+
+async function generate({ type, prompt, ...options }) {
   // a Python generator: every step of the iteration runs one forward pass and hands over one piece of text
   const pieces = llama.generate.callKwargs(prompt, options);
   try {
-    for (const text of pieces) {
-      postMessage({ type: "token", text });
+    let breathed = performance.now();
+    while (!stopped) {
+      const { done, value } = pieces.next();
+      if (done) {
+        break;
+      }
+      postMessage({ type: "token", text: value });
+      // by the clock and not by the token: often enough for the button to feel immediate with a model that
+      // writes 50 tokens a second, rarely enough not to cost one that writes 900 a measurable tok/s
+      if (performance.now() - breathed > 50) {
+        await breathe();
+        breathed = performance.now();
+      }
     }
+    // close the generator here, so that the engine has written its stats before the "done" below
+    pieces.return();
   } finally {
     pieces.destroy();
   }
@@ -186,9 +213,22 @@ self.onmessage = async ({ data }) => {
       // the model downloads while Pyodide loads
       await load(data.model, init(data.search));
     } else if (data.type === "load") {
+      // never take the model away from a run that is going on
+      stopped = generating !== undefined;
+      await generating?.catch(() => {});
       await load(data.model);
     } else if (data.type === "generate") {
-      generate(data);
+      // messages keep arriving while this runs, hence the promise the other branches look at
+      stopped = false;
+      generating = generate(data);
+      try {
+        await generating;
+      } finally {
+        generating = undefined;
+      }
+    } else if (data.type === "stop") {
+      // a stop that arrives before a run starts, or after it ended, must not cut the next one short
+      stopped = generating !== undefined;
     }
   } catch (err) {
     postMessage({ type: "error", message: String(err) });

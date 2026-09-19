@@ -59,6 +59,7 @@
       </div>
       <form id="composer">
         <input id="prompt" autocomplete="off" />
+        <!-- the same button stops the run that is going on; the script swaps the arrow for a square -->
         <button id="run" disabled aria-label="Run">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z" fill="currentColor" /></svg>
         </button>
@@ -163,6 +164,15 @@
   let ready = false;
   let answer: HTMLElement | null = null; // the bubble that is being written
 
+  // The round button is the only control: an arrow that sends, a square that stops the run that is going on.
+  const RUN_ICON = "M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z", STOP_ICON = "M7 7h10v10H7z";
+  let generating = false;
+  function setGenerating(current: boolean) {
+    generating = current;
+    run.querySelector("path")!.setAttribute("d", current ? STOP_ICON : RUN_ICON);
+    run.setAttribute("aria-label", current ? "Stop" : "Run");
+  }
+
   function show(current: typeof model) {
     select.value = current.id;
     prompt.value = current.prompt;
@@ -220,6 +230,7 @@
     // anything but a progress report means the worker is idle again
     if (!["status", "progress", "token"].includes(data.type)) {
       progress.hidden = true;
+      setGenerating(false);
       run.disabled = !ready;
       select.disabled = false;
     }
@@ -238,13 +249,24 @@
     worker.postMessage({ type: "load", model });
   };
 
+  run.onclick = (event) => {
+    // While generating the button stops the run instead of submitting the form. Enter in the text field clicks
+    // it too (that is how a form is submitted implicitly), so only a real press counts: a click of the pointer
+    // (detail 1 and more) or a key on the focused button (detail 0, but then it has the focus).
+    if (generating && (event.detail > 0 || document.activeElement === run)) {
+      event.preventDefault();
+      worker.postMessage({ type: "stop" });
+    }
+  };
+
   $("composer").onsubmit = (event) => {
     event.preventDefault();
-    // Enter submits the form even while the button is disabled
-    if (run.disabled) {
+    // Enter submits the form even while the button is disabled or a run is going on
+    if (run.disabled || generating) {
       return;
     }
-    run.disabled = select.disabled = true;
+    setGenerating(true);
+    select.disabled = true;
     message("user", prompt.value);
     answer = message("model");
     worker.postMessage({ type: "generate", prompt: prompt.value, ...model.generation });
