@@ -116,6 +116,9 @@ def rope(x, cos, sin):
     return out.reshape(-1, 2 * cos.size)
 
 
+REPETITION_WINDOW = 64  # the repetition penalty looks at this many of the latest tokens
+
+
 def load_kernels(path):
     """The WASM SIMD kernels of kernels/*.ts, as ctypes functions, or None when they cannot be used.
 
@@ -130,11 +133,13 @@ def load_kernels(path):
         i32, p = ctypes.c_int32, ctypes.c_void_p
         signatures = dict(matmul_f32=[p, p, p, i32, i32, i32], quantize_x=[p, p, p, i32, i32],
                           matmul_q8=[p, p, p, p, p, i32, i32, i32], rmsnorm=[p, p, p, i32], rope=[p, p, p, i32, i32],
-                          attention=[p, p, p, p, p, i32, i32, i32, i32], swiglu=[p, p, p, i32], add_inplace=[p, p, i32])
+                          attention=[p, p, p, p, p, i32, i32, i32, i32], swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
+                          penalize=[p, p, i32, ctypes.c_float],
+                          sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p])
         kernels = {}
         for name, argtypes in signatures.items():
             kernels[name] = getattr(lib, name)
-            kernels[name].argtypes, kernels[name].restype = argtypes, None
+            kernels[name].argtypes, kernels[name].restype = argtypes, i32 if name == "sample" else None
     except Exception:
         return None
     try:
@@ -222,6 +227,7 @@ class Llama:
         self.backend = "NumPy"
         if kernels:
             self.forward = self.kernel_forward(kernels, keep_int8)
+            self.penalize, self.sample = self.kernel_sampler(kernels)
         else:
             self.key_cache = np.zeros((n_layers, self.n_kv_heads, self.seq_len, self.head_size), dtype=np.float32)
             self.value_cache = np.zeros_like(self.key_cache)
@@ -369,6 +375,55 @@ class Llama:
         # Final rmsnorm, then the classifier into logits (60% of all the multiply-adds of stories15M)
         return self.wcls @ rmsnorm(x, self.rms_final_weight)
 
+    def kernel_sampler(self, kernels):
+        """penalize() and sample() on the kernels: the same as the methods below, which stay for NumPy alone.
+
+        Sorting the candidates of the nucleus was most of the time of a step for a small model with a large
+        vocabulary, and a repetition penalty, which flattens the distribution, made it worse.
+        """
+        probabilities, order = np.empty(self.vocab_size, dtype=np.float32), np.empty(self.vocab_size, dtype=np.int32)
+        recent = np.empty(REPETITION_WINDOW, dtype=np.int32)
+        probabilities_p, order_p, recent_p = probabilities.ctypes.data, order.ctypes.data, recent.ctypes.data
+        self._sampler_buffers = (probabilities, order, recent)  # keep them alive: the kernels only know addresses
+        kernel_penalize, kernel_sample = kernels["penalize"], kernels["sample"]
+        known = {}  # id(logits) -> (logits, address): forward() returns the same array every time
+
+        def address(logits):
+            entry = known.get(id(logits))
+            if entry is None or entry[0] is not logits:
+                if logits.dtype != np.float32 or not logits.flags.c_contiguous:
+                    raise TypeError("the kernels need contiguous float32 logits")
+                known.clear()
+                entry = known[id(logits)] = (logits, logits.ctypes.data)
+            return entry[1]
+
+        seen = [None, 0]  # the list that recent[] mirrors, and its length then
+
+        def penalize(logits, history, penalty):
+            # recent[] is a ring of the latest tokens. generate() appends one token per step, and then one number
+            # is written here: copying 64 of them from a list costs more than the kernel takes
+            size = len(history)
+            if seen[0] is history and size == seen[1] + 1:
+                recent[(size - 1) % REPETITION_WINDOW] = history[-1]
+            else:
+                for position in range(max(size - REPETITION_WINDOW, 0), size):
+                    recent[position % REPETITION_WINDOW] = history[position]
+            seen[0], seen[1] = history, size
+            kernel_penalize(address(logits), recent_p, min(size, REPETITION_WINDOW), penalty)
+
+        def sample(logits, temperature, topp, rng):
+            if temperature == 0.0:
+                return int(np.argmax(logits))
+            # the random number is drawn here, so that a seed gives the same text again
+            return kernel_sample(address(logits), logits.size, temperature, topp, rng.random(), probabilities_p, order_p)
+
+        return penalize, sample
+
+    def penalize(self, logits, history, penalty):
+        """Make the tokens of the last steps less likely: tiny models love to loop."""
+        recent = np.unique(history[-REPETITION_WINDOW:])
+        logits[recent] = np.where(logits[recent] > 0, logits[recent] / penalty, logits[recent] * penalty)
+
     def sample(self, logits, temperature, topp, rng):
         if temperature == 0.0:
             # Greedy argmax sampling: take the token with the highest probability
@@ -426,10 +481,7 @@ class Llama:
                 else:
                     logits = self.forward(token, pos)
                     if repetition_penalty != 1.0:
-                        # make the tokens of the last 64 steps less likely: tiny models love to loop
-                        recent = np.unique(history[-64:])
-                        logits[recent] = np.where(logits[recent] > 0, logits[recent] / repetition_penalty,
-                                                  logits[recent] * repetition_penalty)
+                        self.penalize(logits, history, repetition_penalty)
                     next_token = self.sample(logits, temperature, topp, rng)
                     sampled += 1
                     # The BOS token delimits sequences: the story is over

@@ -48,6 +48,29 @@ assert "".join(simd15.generate("Once upon a time", steps=60)) == reference, "the
 fast = llama2_numpy.Llama(read("tiny-lm.bin"), read("tiny-lm.tokenizer.bin"), dtype="int8", kernels="simdkernel.so",
                           tokenizer_kind="unigram", nfkc=True, stop_tokens=(1, 2))
 assert "int8" in fast.backend and len("".join(fast.generate("昔々、", steps=12, temperature=0.7, seed=1))) > 3
+# sampling on the kernels: the token NumPy picks for the same random number, the same penalty, a seed reproduces
+import numpy as np
+generator = np.random.default_rng(0)
+class Fixed:
+    def __init__(self, value): self.value = value
+    def random(self): return self.value
+for spread in (0.5, 2.0, 6.0, 12.0):
+    for topp in (0.9, 0.5, 1.0):
+        logits = (generator.standard_normal(fast.vocab_size) * spread).astype(np.float32)
+        for value in (0.0, generator.random(), 1.0 - 1e-12):
+            ours, theirs = fast.sample(logits, 0.7, topp, Fixed(value)), llama2_numpy.Llama.sample(fast, logits, 0.7, topp, Fixed(value))
+            # rounding may move the border of the nucleus to a neighbour that is just as probable
+            assert ours == theirs or abs(logits[ours] - logits[theirs]) < 1e-3, (spread, topp, value, ours, theirs)
+lonely = np.full(fast.vocab_size, -100.0, dtype=np.float32)
+lonely[123] = 50.0
+assert fast.sample(lonely, 0.7, 0.9, generator) == 123 and 0 <= fast.sample(np.zeros_like(lonely), 0.7, 0.9, generator) < lonely.size
+history = [int(token) for token in generator.integers(0, fast.vocab_size, 100)] + [5, 5, 5]
+ours, theirs = logits.copy(), logits.copy()
+fast.penalize(ours, history, 1.3)
+llama2_numpy.Llama.penalize(fast, theirs, history, 1.3)
+assert np.allclose(ours, theirs, rtol=1e-6) and not np.array_equal(ours, logits), "the penalty of the kernels is off"
+settings = dict(steps=40, temperature=0.7, repetition_penalty=1.3, seed=1)
+assert "".join(fast.generate("昔々、", **settings)) == "".join(fast.generate("昔々、", **settings)), "a seed must reproduce on the kernels"
 # grouped-query attention, and a head size that is no multiple of 4 (stories3_5M: 26)
 for checkpoint, vocabulary in [("stories260K.bin", "tok512.bin"), ("stories3_5M-v4k.bin", "tok4096.bin")]:
     plain = llama2_numpy.Llama(read(checkpoint), read(vocabulary))

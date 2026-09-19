@@ -184,3 +184,160 @@ export function argmax(x: usize, n: i32): i32 {
   for (let j = 1; j < n; j++) { const v = load<f32>(x + (<usize>j << 2)); if (v > mv) { mv = v; mi = j; } }
   return mi;
 }
+
+// ---------------------------------------------------------------------------------------------- sampling
+// What Llama.sample() does in NumPy, without walking a vocabulary of 50000 or 100000 tokens several times.
+
+// tokens: the recently generated ones; each is made less likely once, however often it occurs
+export function penalize(logits: usize, tokens: usize, count: i32, penalty: f32): void {
+  for (let i = 0; i < count; i++) {
+    const token = load<i32>(tokens + (<usize>i << 2));
+    let seen = false;
+    for (let j = 0; j < i; j++) {
+      if (load<i32>(tokens + (<usize>j << 2)) == token) { seen = true; break; }
+    }
+    if (seen) continue;
+    const address = logits + (<usize>token << 2);
+    const value = load<f32>(address);
+    store<f32>(address, value > 0 ? value / penalty : value * penalty);
+  }
+}
+
+// fexp() on four numbers at a time, for x <= 0
+// @ts-ignore: decorator
+@inline function vexp(x: v128): v128 {
+  x = f32x4.max(x, f32x4.splat(-87.0));
+  const k = f32x4.nearest(f32x4.mul(x, f32x4.splat(1.44269504088896341)));
+  const r = f32x4.sub(f32x4.sub(x, f32x4.mul(k, f32x4.splat(0.693359375))), f32x4.mul(k, f32x4.splat(-2.12194440e-4)));
+  let p = f32x4.splat(1.9875691500e-4);
+  p = f32x4.add(f32x4.mul(p, r), f32x4.splat(1.3981999507e-3));
+  p = f32x4.add(f32x4.mul(p, r), f32x4.splat(8.3334519073e-3));
+  p = f32x4.add(f32x4.mul(p, r), f32x4.splat(4.1665795894e-2));
+  p = f32x4.add(f32x4.mul(p, r), f32x4.splat(1.6666665459e-1));
+  p = f32x4.add(f32x4.mul(p, r), f32x4.splat(5.0000001201e-1));
+  const e = f32x4.add(f32x4.add(f32x4.mul(p, f32x4.mul(r, r)), r), f32x4.splat(1.0));
+  const scale = i32x4.shl(i32x4.add(i32x4.trunc_sat_f32x4_s(k), i32x4.splat(127)), 23);
+  return f32x4.mul(e, scale);
+}
+
+// The state of sortNucleus(): globals are no static data
+let nucleusMass: f64 = 0;
+let nucleusLimit: f64 = 0;
+let nucleusLast: i32 = -1;
+
+// adds probs[lo..hi], already in their final order, to the nucleus: true when it is complete
+// @ts-ignore: decorator
+@inline function intoNucleus(probs: usize, lo: i32, hi: i32): bool {
+  for (let k = lo; k <= hi; k++) {
+    nucleusMass += load<f32>(probs + (<usize>k << 2));
+    if (nucleusMass >= nucleusLimit) { nucleusLast = k; return true; }
+  }
+  return false;
+}
+
+// Sorts probs[lo..hi] in descending order, and index[] along with it, from the left and only as far as the nucleus
+// reaches: usually a few dozen tokens out of thousands. Quicksort (median of three), insertion sort for short ranges.
+function sortNucleus(probs: usize, index: usize, lo: i32, hi: i32): void {
+  while (hi - lo > 12) {
+    const mid = lo + ((hi - lo) >> 1);
+    let a = load<f32>(probs + (<usize>lo << 2)), b = load<f32>(probs + (<usize>mid << 2));
+    const c = load<f32>(probs + (<usize>hi << 2));
+    if (a < b) { const t = a; a = b; b = t; }
+    if (b < c) { b = c; if (a < b) b = a; }
+    const pivot = b;
+    let i = lo, j = hi;
+    while (i <= j) {
+      while (load<f32>(probs + (<usize>i << 2)) > pivot) i++;
+      while (load<f32>(probs + (<usize>j << 2)) < pivot) j--;
+      if (i <= j) {
+        const pi = probs + (<usize>i << 2), pj = probs + (<usize>j << 2), xi = index + (<usize>i << 2), xj = index + (<usize>j << 2);
+        const p = load<f32>(pi); store<f32>(pi, load<f32>(pj)); store<f32>(pj, p);
+        const x = load<i32>(xi); store<i32>(xi, load<i32>(xj)); store<i32>(xj, x);
+        i++; j--;
+      }
+    }
+    sortNucleus(probs, index, lo, j);
+    if (nucleusLast >= 0) return;
+    if (intoNucleus(probs, j + 1, i - 1)) return; // equal to the pivot
+    lo = i;
+  }
+  for (let i = lo + 1; i <= hi; i++) {
+    const p = load<f32>(probs + (<usize>i << 2));
+    const x = load<i32>(index + (<usize>i << 2));
+    let j = i - 1;
+    while (j >= lo && load<f32>(probs + (<usize>j << 2)) < p) {
+      store<f32>(probs + (<usize>(j + 1) << 2), load<f32>(probs + (<usize>j << 2)));
+      store<i32>(index + (<usize>(j + 1) << 2), load<i32>(index + (<usize>j << 2)));
+      j--;
+    }
+    store<f32>(probs + (<usize>(j + 1) << 2), p);
+    store<i32>(index + (<usize>(j + 1) << 2), x);
+  }
+  intoNucleus(probs, lo, hi);
+}
+
+// Draws a token from softmax(logits / temperature), restricted to the nucleus when 0 < topp < 1.
+// random: one number in [0, 1) from Python's generator, so that a seed reproduces. probs and index: scratch of n each.
+export function sample(logits: usize, n: i32, temperature: f32, topp: f32, random: f64, probs: usize, index: usize): i32 {
+  let best = load<f32>(logits);
+  let i = 0;
+  if (n >= 4) {
+    let bests = v128.load(logits);
+    for (i = 4; i + 4 <= n; i += 4) bests = f32x4.max(bests, v128.load(logits + (<usize>i << 2)));
+    best = max(max(f32x4.extract_lane(bests, 0), f32x4.extract_lane(bests, 1)), max(f32x4.extract_lane(bests, 2), f32x4.extract_lane(bests, 3)));
+  }
+  for (; i < n; i++) best = max(best, load<f32>(logits + (<usize>i << 2)));
+  const nucleus = topp > 0 && topp < 1;
+  // With a nucleus, tokens less than a ten millionth as probable as the best one cannot matter (ln 1e-7 = -16.118):
+  // they are left out before exp(), which is the expensive part
+  const floor: f32 = nucleus ? best - temperature * <f32>16.118095 : -f32.MAX_VALUE;
+  let count = 0;
+  for (i = 0; i < n; i++) {
+    const v = load<f32>(logits + (<usize>i << 2));
+    if (v >= floor) {
+      store<f32>(probs + (<usize>count << 2), v - best);
+      store<i32>(index + (<usize>count << 2), i);
+      count++;
+    }
+  }
+  const inverse = f32x4.splat(<f32>1.0 / temperature);
+  for (i = 0; i + 4 <= count; i += 4) {
+    const address = probs + (<usize>i << 2);
+    v128.store(address, vexp(f32x4.mul(v128.load(address), inverse)));
+  }
+  for (; i < count; i++) {
+    const address = probs + (<usize>i << 2);
+    store<f32>(address, fexp(load<f32>(address) / temperature));
+  }
+  let total: f64 = 0;
+  for (i = 0; i < count; i++) total += load<f32>(probs + (<usize>i << 2));
+  let last = count - 1;
+  let mass = total;
+  if (nucleus) {
+    // Tokens below (1 - topp) / (n - 1) cannot be part of the nucleus (llama2.c), so they need not be sorted
+    const cutoff: f64 = (1.0 - <f64>topp) / <f64>(count > 1 ? count - 1 : 1) * total;
+    let likely = 0;
+    for (let k = 0; k < count; k++) {
+      const p = load<f32>(probs + (<usize>k << 2));
+      if (<f64>p >= cutoff) {
+        store<f32>(probs + (<usize>likely << 2), p);
+        store<i32>(index + (<usize>likely << 2), load<i32>(index + (<usize>k << 2)));
+        likely++;
+      }
+    }
+    // the most probable tokens whose probabilities add up to topp
+    nucleusMass = 0;
+    nucleusLimit = <f64>topp * total;
+    nucleusLast = -1;
+    sortNucleus(probs, index, 0, likely - 1);
+    last = nucleusLast >= 0 ? nucleusLast : likely - 1;
+    mass = nucleusMass;
+  }
+  const target: f64 = random * mass;
+  let cumulative: f64 = 0;
+  for (let k = 0; k <= last; k++) {
+    cumulative += load<f32>(probs + (<usize>k << 2));
+    if (cumulative > target) return load<i32>(index + (<usize>k << 2));
+  }
+  return load<i32>(index + (<usize>last << 2));
+}

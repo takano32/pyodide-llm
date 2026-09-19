@@ -33,11 +33,6 @@
 - 内容: (1) BPE と unigram のエンコード → デコード往復（日本語、絵文字、語彙外文字、空白・タブ・改行）。(2) `quantize.py` → `dtype="int8"` で読んだ重みと元の重みの誤差がグループの最大値の 1/127 以内。(3) 小さな合成チェックポイント（dim 32、2 層、GQA あり / なし）で `forward` の logits を、素朴なループ実装と相対誤差 1e-4 以内で比較。(4) `generate` は同じシードで再現し、BOS で止まり、長すぎるプロンプトは `ValueError`。
 - モデルのダウンロードが要るテストは `make models` 済みのときだけ走るように分ける。
 
-### T34 サンプリングをカーネルに移す — 状態: 未着手
-- 目的: 繰り返しペナルティ付きのサンプリングは分布が平坦になり、NumPy での候補の並べ替えが 1 トークンの 3〜4 割を占める（Chromium の tiny-lm: greedy 318、サンプリング 263、ペナルティ付き 171 tok/s）。softmax・足切り・top-p の選択を `kernels/kernel.ts` に移す。
-- 注意: カーネルには静的データを置けないので、ソートは自前で書く（`kernels/README.md`）。乱数は Python 側で 1 個引いて渡せば、同じシードでの再現性を保てる。NumPy 版の `Llama.sample()` はフォールバックとして残す。
-- 完了条件: Chromium で tiny-lm（既定の生成設定）が 250 tok/s 以上。`sample()` の検証（nucleus が厳密、頻度が確率どおり、同じシードで同じ結果）をカーネル版でも通す。
-
 ### T31 README に計測結果を載せる — 状態: 未着手
 - gist の要点（実装別 tok/s の表、int8 の品質、ブラウザ別の速度）を README に入れる。数値は AGENTS.md と `TODO.md` の完了タスクにあるものだけを使い、新しく推測しない。
 
@@ -73,6 +68,7 @@
 - [x] **T30 SIMD カーネルの導入。** `kernels/*.ts` を `make kernels` でビルドし、`llama2_numpy.py` が ctypes で読み込む（失敗時・GQA・32 の倍数でない int8 は NumPy にフォールバック、`?kernel=off` で NumPy を強制）。float32 は NumPy と同じ出力で 53 → 200 tok/s、int8 は重みを int8 のまま計算して stories15M 351、tiny-lm 422 tok/s（Node 上の Pyodide、greedy）。llm-jp-3-150m は 9.3 → 81 tok/s、WASM ヒープ 897MB → 283MB。Chromium では tiny-lm 43 → 149、llm-jp 8.5 → 47、stories15M 50 → 296 tok/s。Firefox でも動作、Safari は未確認。スモークテストが両経路を確認する。
 - [x] **T32 サンプリングの高速化。** `exp` の前に、最有力の 1000 万分の 1 未満のトークンを落とし、llama2.c と同じ厳密な足切り（(1 − top-p)/(n − 1) 未満は nucleus に入らない）で並べ替えの対象を絞り、抽選は累積和と乱数 1 個にした。`sample()` は 2.2 → 0.84 ms（tiny-lm、語彙 51200）。Chromium の tiny-lm: サンプリングあり 263 tok/s（greedy は 318）、繰り返しペナルティ付きは 171 tok/s で目標の 250 には未達 → T34。nucleus の厳密さ・頻度・シードの再現性は検証済み。
 - [x] **T33 カーネルの GQA 対応。** `attention` が n_kv_heads と 4 の倍数でないヘッド長（stories3_5M は 26）に対応し、KV キャッシュは `[seq][kv_dim]`。これで全モデルがカーネルで動く。NumPy 版と同じ greedy 出力をスモークテストで確認。Chromium で stories3_5M 141 → 402 tok/s、stories260K 268 → 951 tok/s。
+- [x] **T34 サンプリングをカーネルに移す。** 繰り返しペナルティ（`penalize`）と、softmax・足切り・top-p の選択・抽選（`sample`）を `kernels/kernel.ts` に移した。`exp` は SIMD で 4 個ずつ、並べ替えは自前のクイックソートで **nucleus が埋まるところまでしか進めない**（候補は平均 2000・最大 8000 個あるが、必要なのはたいてい数十個）。乱数は Python の `rng.random()` を 1 個渡すので、シードの再現性はそのまま。直近 64 トークンは NumPy 配列をリングとして持ち、1 ステップに 1 個だけ書く。NumPy 版の `Llama.penalize()` / `Llama.sample()` はフォールバックとして残した。ペナルティ + 抽選は 0.92 → 0.29 ms（tiny-lm、Node 上の Pyodide）。Chromium の tiny-lm（既定の生成設定）: 171 → 252〜274 tok/s（3 回計測）、llm-jp-3-150m は 67 tok/s。検証: 40 種の分布で nucleus が厳密、20 万回の抽選の頻度が 5σ 以内、同じ乱数で NumPy 版と 300/300 で同じトークン、ペナルティは NumPy 版と一致、同じシードで同じ文章。要点は `tests/smoke.mjs` に入れた。はまった点: カーネルに渡すだけの作業用配列は Python から参照が消えて解放され、たまに `memory access out of bounds` で落ちた → `self._sampler_buffers` で保持。
 
 ## やらないと決めたこと
 

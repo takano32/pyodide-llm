@@ -1,7 +1,8 @@
 # SIMD kernels
 
 `kernel.ts` and `kernel_relaxed.ts` (AssemblyScript) are the numeric core of the site: float32 and int8 matmul,
-activation quantization, rmsnorm, RoPE, attention, SwiGLU and the residual add. `public/llama2_numpy.py` loads
+activation quantization, rmsnorm, RoPE, attention, SwiGLU, the residual add, and sampling (repetition penalty, softmax,
+top-p). `public/llama2_numpy.py` loads
 them with `ctypes.CDLL` (`load_kernels`) and drives them from Python (`Llama.kernel_forward`): Python keeps
 sequencing the layers, NumPy keeps owning the memory, the kernels get addresses and work in place. Nothing is
 copied and there is no JavaScript glue. When they cannot be loaded, NumPy does the math as before.
@@ -19,7 +20,7 @@ that makes a module an Emscripten side module. Verified to load in Pyodide 0.29.
 | tiny-lm int8, greedy, Pyodide in Node | 56 | 422 |
 | llm-jp-3-150m int8, Pyodide in Node | 9.3 tok/s, 897 MB of WASM heap | 81 tok/s, 283 MB |
 | Chromium: stories15M float32 / int8 | 50 | 186 / 296 |
-| Chromium: tiny-lm int8, sampled | 43 | 149 (sampling over 51200 tokens in NumPy is now the larger part) |
+| Chromium: tiny-lm int8, sampled with a repetition penalty | 43 | 252-274 (171 while NumPy still did the sampling) |
 | Chromium: llm-jp-3-150m int8, sampled | 8.5 | 47 |
 | Chromium: stories3_5M / stories260K float32 (grouped-query attention) | 141 / 268 | 402 / 951 |
 
@@ -43,6 +44,12 @@ feature off in Firefox), and int8 then runs on `matmul_q8`.
 - **No static data.** The side module has no relocations, so a data segment would be written over Pyodide's own
   memory. That rules out AssemblyScript's std math (`Mathf.exp` uses tables), strings and asserts; `build.py`
   refuses a module with a data section. `fexp` in `kernel.ts` is the table-free replacement.
+- **Keep every array alive whose address a kernel gets.** The kernels only know numbers: a scratch array that
+  no Python object refers to any more is freed, and the kernel then writes into whatever lives there next. It
+  shows up as a rare `memory access out of bounds` (`_kernel_buffers`, `_sampler_buffers` in the engine).
+- Mutable globals are fine (they are no data segment): `sample` keeps the state of its partial sort in three.
+- `sample` sorts only as far as the nucleus reaches and gets its random number from Python, so a seed gives the
+  same text again. With the same random number it picks the token that `Llama.sample` (NumPy) picks.
 - The relaxed module must not be named `*.so` if it ever ships inside a wheel: Pyodide pre-loads every `.so`.
 - `attention` expects the KV cache as `[seq][kv_heads * head_size]` per layer (the NumPy forward uses another
   layout) and handles grouped-query attention and any head size. int8 models whose row lengths are not

@@ -55,7 +55,7 @@
 - **モデル。** tiny-lm（29M、MIT、日英 Wikipedia、質は低い：パープレキシティ 91）、llm-jp-3-150m（Apache-2.0、質は段違い：22.8、ただし約 8 tok/s・メモリ約 500MB）、TinyStories 260K / 3.5M / 15M / 42M。小さいモデルは greedy だと反復するので、日本語モデルは temperature 0.7 / top-p 0.9 / 繰り返しペナルティ付き。
 - **ブラウザでの速度（Chromium、カーネルあり）。** tiny-lm 約 150、stories15M 約 300（int8）/ 186（float32）、llm-jp-3-150m 約 47 tok/s。stories3_5M 約 400、stories260K 約 950 tok/s。カーネルなし（`?kernel=off`）では tiny-lm 約 40、stories15M 約 50、llm-jp 約 8.5 tok/s。
 - **分割並列ダウンロードは約 1.8 倍速い**（本番 CDN で 167MB が 20.4 秒 → 11.2 秒）。
-- **SIMD カーネル（導入済み）。** カーネルを Emscripten のサイドモジュールとして `ctypes.CDLL` で読み込み、NumPy のメモリを直接計算する。Python が層を順に呼ぶ設計のまま、NumPy 比で 4〜9 倍速い。int8 は重みを int8 のまま計算するのでメモリも減る（llm-jp-3-150m: ヒープ 897MB → 283MB、9.3 → 81 tok/s）。emcc は不要で、AssemblyScript の出力に `dylink.0` セクションを付ければ読み込める。詳細と実測は `kernels/README.md`。語彙の大きいモデルでは NumPy でのサンプリングが次のボトルネック（T32 で半減、残りは TODO の T34）。
+- **SIMD カーネル（導入済み）。** カーネルを Emscripten のサイドモジュールとして `ctypes.CDLL` で読み込み、NumPy のメモリを直接計算する。Python が層を順に呼ぶ設計のまま、NumPy 比で 4〜9 倍速い。int8 は重みを int8 のまま計算するのでメモリも減る（llm-jp-3-150m: ヒープ 897MB → 283MB、9.3 → 81 tok/s）。emcc は不要で、AssemblyScript の出力に `dylink.0` セクションを付ければ読み込める。詳細と実測は `kernels/README.md`。語彙の大きいモデルでは NumPy でのサンプリングが次のボトルネック（T32 で半減、残りは TODO の T34）。 サンプリング（繰り返しペナルティ、softmax、top-p）もカーネルにあり、Chromium の tiny-lm は既定の設定で 250 tok/s 強。カーネルにアドレスを渡す配列は Python 側で必ず保持する（解放されると稀に `memory access out of bounds`）。
 
 ## 落とし穴（実際に踏んだもの）
 
