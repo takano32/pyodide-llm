@@ -1,4 +1,6 @@
 // Pyodide lives in this worker, so the page stays responsive while the model is loading and generating.
+// model is an entry of src/models.js, or one with {file, tokenizerFile}: two files of the visitor's own disk,
+// which are read where they are and go nowhere.
 // The page sends   {type: "init", search, model, load},  {type: "load", model, load},
 //                  {type: "generate", prompt, ...options}  and  {type: "stop"}
 // and receives     {type: "status" | "progress" | "ready" | "token" | "done" | "error", ...}
@@ -107,6 +109,48 @@ function download(model, signal, load) {
   };
 }
 
+// The same for a file of the visitor's own disk: read in chunks straight into the Python buffer, never as a whole.
+function readFile(model, signal, load) {
+  return {
+    async into(write) {
+      const reader = model.file.stream().getReader();
+      let reported = -1;
+      for (let offset = 0; ;) {
+        const { done, value } = await reader.read();
+        if (done) {
+          break;
+        }
+        if (signal.aborted) {
+          reader.cancel();
+          signal.throwIfAborted();
+        }
+        write(offset, value);
+        offset += value.length;
+        const percent = Math.floor((offset / model.bytes) * 100);
+        if (percent !== reported) {
+          reported = percent;
+          postMessage({ type: "progress", load, received: offset, total: model.bytes });
+        }
+      }
+    },
+  };
+}
+
+// The legacy format carries no metadata, but its header fixes the size of a float32, a float16 and an int8 file.
+// A file that is none of them is refused before it is read, and so is a tokenizer.bin of another vocabulary.
+async function localOptions(model, vocabulary) {
+  const header = pyodide.toPy([...new Int32Array(await model.file.slice(0, 28).arrayBuffer())]);
+  const pieces = pyodide.toPy(vocabulary);
+  try {
+    const dtype = llama2_numpy.checkpoint_dtype(header, model.bytes);
+    llama2_numpy.check_tokenizer(pieces, header);
+    return { ...model.options, dtype };
+  } finally {
+    header.destroy();
+    pieces.destroy();
+  }
+}
+
 let pyodide, llama2_numpy, llama, kernels;
 // init() as a promise: every load waits for it, also the one that replaces the first
 let initialized;
@@ -171,17 +215,20 @@ async function load(model, signal, id) {
     // the engine's closures and the model refer to each other, so only the cycle collector frees the weights
     pyodide.runPython("import gc; gc.collect()");
   }
-  postMessage({ type: "status", load: id, text: `Downloading ${model.name}...` });
+  postMessage({ type: "status", load: id, text: `${model.file ? "Reading" : "Downloading"} ${model.name}...` });
   const downloadStarted = performance.now();
-  const checkpoint = download(model, signal, id);
-  const tokenizerBytes = fetch(new URL(`models/${model.tokenizer}`, import.meta.url), { signal }).then((res) => {
-    if (!res.ok) {
-      throw new Error(`Could not fetch ${model.tokenizer}: ${res.status}`);
-    }
-    return res.arrayBuffer();
-  });
+  const checkpoint = model.file ? readFile(model, signal, id) : download(model, signal, id);
+  const tokenizerBytes = model.file ? model.tokenizerFile.arrayBuffer()
+    : fetch(new URL(`models/${model.tokenizer}`, import.meta.url), { signal }).then((res) => {
+      if (!res.ok) {
+        throw new Error(`Could not fetch ${model.tokenizer}: ${res.status}`);
+      }
+      return res.arrayBuffer();
+    });
   tokenizerBytes.catch(() => {});
   await initialized;
+  signal.throwIfAborted();
+  const options = model.file ? await localOptions(model, new Uint8Array(await tokenizerBytes)) : model.options;
   signal.throwIfAborted();
 
   const weights = pythonBuffer(model.bytes);
@@ -196,14 +243,25 @@ async function load(model, signal, id) {
     const constructStarted = performance.now();
     tokenizer = pythonBuffer(vocabulary.length);
     tokenizer.write(0, vocabulary);
-    llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, ...model.options });
+    try {
+      llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, ...options });
+    } catch (err) {
+      if (!model.file) {
+        throw err;
+      }
+      // the checkpoint has passed its check, so it is the second file or the settings
+      const reason = String(err.message ?? err).trim().split("\n").pop();
+      throw new Error(`${model.tokenizerFile.name} does not work as the tokenizer.bin of ${model.file.name} (${reason})`);
+    }
     loadSeconds.construct = since(constructStarted);
   } finally {
     weights.buffer.destroy();
     tokenizer?.buffer.destroy();
   }
   postMessage({ type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seconds: { ...loadSeconds } });
-  dropStaleParts(model);
+  if (!model.file) {
+    dropStaleParts(model);
+  }
 }
 
 // the run that is going on, and whether the page asked it to stop
@@ -284,7 +342,9 @@ self.onmessage = async ({ data }) => {
   } catch (err) {
     // a cancelled load has nothing to report: the one that replaced it speaks for itself
     if (!signal?.aborted) {
-      postMessage({ type: "error", load: data.load, message: String(err) });
+      // a ValueError of the engine is a message for the reader (wrong file, prompt too long): no traceback
+      const message = err.type === "ValueError" ? err.message.trim().split("\n").pop().replace(/^ValueError: /, "") : String(err);
+      postMessage({ type: "error", load: data.load, message });
     }
   }
 };

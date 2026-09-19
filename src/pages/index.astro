@@ -25,7 +25,14 @@
         <h1>Pyodide Llama</h1>
         <span class="badge">experiment</span>
       </div>
-      <select id="model" aria-label="Model"></select>
+      <div class="models">
+        <select id="model" aria-label="Model"></select>
+        <!-- a model of the visitor's own disk: read where it is, nothing is uploaded -->
+        <label class="open" title="Open a model from this device: a llama2.c checkpoint and its tokenizer.bin, and optionally settings as .json. Nothing is uploaded.">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3 6a2 2 0 0 1 2-2h4.2a2 2 0 0 1 1.4.6L12 6h7a2 2 0 0 1 2 2v1H3zm0 5h18v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="currentColor" /></svg>
+          <input id="files" type="file" multiple hidden aria-label="Open a model from this device" />
+        </label>
+      </div>
     </header>
 
     <main id="chat">
@@ -121,6 +128,11 @@
   .brand { display: flex; align-items: center; gap: 8px; }
   h1 { font-size: 1.05rem; margin: 0; letter-spacing: 0.01em; }
   .badge { font-size: 0.7rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+  .models { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
+  .models select { min-width: 0; flex: 1; }
+  .open { display: grid; place-items: center; width: 34px; height: 34px; flex: none; color: var(--muted); border: 1px solid var(--line); border-radius: 10px; background: var(--panel); cursor: pointer; }
+  .open:hover { color: var(--text); }
+  .open:has(input:disabled) { opacity: 0.45; pointer-events: none; }
   select { font: inherit; font-size: 0.85rem; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; max-width: 100%; }
 
   #chat { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
@@ -259,7 +271,7 @@
       const load = $("load-stats");
       load.textContent = "";
       rows(load, [
-        `Pyodide ${seconds(data.seconds.pyodide)} · download ${seconds(data.seconds.download)} (at the same time)`,
+        `Pyodide ${seconds(data.seconds.pyodide)} · ${(model as any).file ? "read" : "download"} ${seconds(data.seconds.download)} (at the same time)`,
         `Llama() ${seconds(data.seconds.construct)}`,
       ]);
       $("load").classList.add("measured");
@@ -280,14 +292,14 @@
       ]);
     } else if (data.type === "error") {
       message("model error", data.message);
-      statusText.textContent = ready ? `${model.name}` : "Failed to initialize";
+      statusText.textContent = ready ? `${model.name}` : `Could not load ${model.name}`;
     }
     // anything but a progress report means the worker is idle again
     if (!["status", "progress", "token"].includes(data.type)) {
       progress.hidden = true;
       setGenerating(false);
       run.disabled = !ready;
-      select.disabled = false;
+      select.disabled = files.disabled = false;
     }
   };
   worker.onerror = (event) => {
@@ -298,8 +310,58 @@
   let loads = 1;
   worker.postMessage({ type: "init", search: location.search, model, load: loads });
 
+  // A model of the visitor's own disk, from the folder button or dropped on the page. The legacy format knows
+  // nothing about itself, so whatever differs from llama2.c's conventions comes as a third file: .json, shaped
+  // like an entry of src/models.js ({options, generation, prompt, placeholder}).
+  const files = $("files") as HTMLInputElement;
+  let local: typeof model | undefined;
+  async function open(chosen: File[]) {
+    const settings = chosen.find(({ name }) => name.toLowerCase().endsWith(".json"));
+    // the larger of the other two is the checkpoint
+    const [checkpoint, tokenizer, ...more] = chosen.filter((file) => file !== settings).sort((a, b) => b.size - a.size);
+    try {
+      if (!tokenizer || more.length) {
+        throw new Error("Choose two files together: the checkpoint and its tokenizer.bin (and, optionally, settings as .json).");
+      }
+      const given = settings ? JSON.parse(await settings.text()) : {};
+      // WebAssembly addresses 32 bits, and a phone gives a tab far less than that
+      if (checkpoint.size > 1e9 && !confirm(`${checkpoint.name} has ${(checkpoint.size / 1e9).toFixed(1)} GB. That may be more than this browser can hold. Read it anyway?`)) {
+        return;
+      }
+      local = {
+        id: "local", name: given.name ?? checkpoint.name, note: `local · ${(checkpoint.size / 1e6).toFixed(0)} MB`,
+        file: checkpoint, tokenizerFile: tokenizer, bytes: checkpoint.size, options: given.options ?? {},
+        generation: given.generation ?? { steps: 256, temperature: 0.0 },
+        prompt: given.prompt ?? "Once upon a time", placeholder: given.placeholder ?? "",
+      } as any;
+    } catch (error) {
+      message("model error", String((error as Error).message ?? error));
+      return;
+    }
+    // the select shows what is running: one entry for the local model, replaced by the next one
+    select.querySelector('option[value="local"]')?.remove();
+    select.add(new Option(`${local!.name} — ${local!.note}`, "local"));
+    select.value = "local";
+    select.onchange!(new Event("change"));
+  }
+  files.onchange = () => {
+    const chosen = [...(files.files ?? [])];
+    // so that the same files can be chosen again
+    files.value = "";
+    if (chosen.length) {
+      open(chosen);
+    }
+  };
+  document.ondragover = (event) => event.preventDefault();
+  document.ondrop = (event) => {
+    event.preventDefault();
+    if (!files.disabled && event.dataTransfer?.files.length) {
+      open([...event.dataTransfer.files]);
+    }
+  };
+
   select.onchange = () => {
-    model = MODELS.find(({ id }) => id === select.value)!;
+    model = select.value === "local" ? local! : MODELS.find(({ id }) => id === select.value)!;
     show(model);
     ready = false;
     run.disabled = true;
@@ -336,7 +398,7 @@
       return;
     }
     setGenerating(true);
-    select.disabled = true;
+    select.disabled = files.disabled = true;
     message("user", prompt.value);
     answer = message("model");
     // A run that samples draws its seed here rather than in the engine, so that the answer can say which seed

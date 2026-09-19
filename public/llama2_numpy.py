@@ -152,6 +152,63 @@ def load_kernels(path):
     return kernels
 
 
+def checkpoint_dtype(header, size):
+    """"float32", "float16" or "int8": what a checkpoint file of size bytes with this header (7 ints) holds.
+
+    The legacy format does not say, but the header fixes the size of each variant. Anything else is no checkpoint
+    this engine can read, and the ValueError says so before hundreds of megabytes are read for nothing.
+    """
+    dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = (int(value) for value in header)
+    limit = 1 << 24
+    if not (0 < dim < limit and 0 < hidden_dim < limit and 0 < n_layers < 4096 and 0 < n_kv_heads <= n_heads <= dim
+            and 0 < abs(vocab_size) < limit and 0 < seq_len < limit and dim % n_heads == 0 and n_heads % n_kv_heads == 0):
+        raise ValueError("This is not a llama2.c checkpoint: the header makes no sense.")
+    kv_dim = n_kv_heads * (dim // n_heads)
+    # the same tensors in the same order as Llama.__init__ and quantize.py: (rows, row length) of the matrices
+    matrices = [(abs(vocab_size), dim), (n_layers * dim, dim), (n_layers * kv_dim, dim), (n_layers * kv_dim, dim),
+                (n_layers * dim, dim), (n_layers * hidden_dim, dim), (n_layers * dim, hidden_dim),
+                (n_layers * hidden_dim, dim)]
+    if vocab_size < 0:
+        matrices.append((abs(vocab_size), dim))
+    vectors = 2 * n_layers * dim + dim
+    rope = 2 * seq_len * (dim // n_heads // 2)
+    floats = sum(rows * length for rows, length in matrices) + vectors + rope
+
+    def group(length):
+        size = 32
+        while length % size:
+            size //= 2
+        return size
+
+    # quantize.py: int8 values and a float32 scale per group; the vectors stay float32, the RoPE tables are left out
+    int8 = sum(rows * length + 4 * (rows * length // group(length)) for rows, length in matrices) + 4 * vectors
+    sizes = {28 + 4 * floats: "float32", 28 + 2 * floats: "float16", 28 + int8: "int8"}
+    if size not in sizes:
+        raise ValueError(f"This is not a llama2.c checkpoint: its header asks for {28 + 4 * floats} bytes as float32, "
+                         f"{28 + 2 * floats} as float16 or {28 + int8} as int8, and the file has {size}.")
+    return sizes[size]
+
+
+def check_tokenizer(tokenizer, header):
+    """ValueError unless tokenizer (a tokenizer.bin) holds exactly the vocabulary of the checkpoint with this header.
+
+    The engine would read the first pieces of a larger vocabulary without complaint, and write nonsense.
+    """
+    vocab_size = abs(int(list(header)[5]))
+    offset, pieces = 4, 0
+    while offset + 8 <= len(tokenizer):
+        _, length = struct.unpack_from("<fi", tokenizer, offset)
+        if length < 0 or offset + 8 + length > len(tokenizer):
+            raise ValueError("The smaller file is not a llama2.c tokenizer.bin.")
+        offset += 8 + length
+        pieces += 1
+    if offset != len(tokenizer) or pieces == 0:
+        raise ValueError("The smaller file is not a llama2.c tokenizer.bin.")
+    if pieces != vocab_size:
+        raise ValueError(f"This tokenizer.bin holds {pieces} pieces, but the checkpoint has a vocabulary of "
+                         f"{vocab_size}: they do not belong together.")
+
+
 class Llama:
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
                  tokenizer_kind="bpe", nfkc=False, bos=BOS, stop_tokens=(BOS,), kernels=None):

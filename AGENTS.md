@@ -38,7 +38,7 @@
 | `Makefile` | `make models` が全モデルを取得・変換・量子化し、`public/models/` に 8 MiB の部品として置く。`make run` は開発サーバー |
 | `tests/smoke.mjs` | デプロイ前のスモークテスト。Node 上の最新 Pyodide でエンジンとモデルを確かめる（`make models` の後に `node tests/smoke.mjs`、約 8 秒） |
 | `tests/test_*.py` | エンジンの単体テスト（pytest、ネイティブの Python + NumPy、約 8 秒）。合成した小さなチェックポイントと語彙で常に走り、`make models` のファイルが要るものは無ければスキップ。`forward` は Python のループで書いた参照実装（`conftest.py` の `naive_logits`）と比べる。カーネルの経路は Pyodide が要るので `smoke.mjs` の担当 |
-| `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright） |
+| `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路を試す |
 | `kernels/` | WASM SIMD カーネル（AssemblyScript）とビルドスクリプト。`make kernels` が `public/simdkernel.so` などを生成。制約と実測は `kernels/README.md` |
 | `.github/workflows/deploy.yml` | `make models` → `npm run build` → GitHub Pages |
 
@@ -68,6 +68,8 @@
 - **本番サイトを `tests/e2e.mjs` で確かめるときは、デプロイ済みのページと同じ版のスクリプトを使う。** 送信のキーを変えた直後、新しいスクリプトで古い本番を叩いて、送信されないまま 10 分待ち続けた。push の前に本番を見るなら `git show HEAD:tests/e2e.mjs` を使う。
 - **ロードを中止しても、その後始末は数ターン後に走る。** `abort()` の直後に次のモデルのバッファを確保すると、古いバッファ（モデルと同じ大きさ）がまだ生きていて、縮まない WebAssembly のメモリがモデル 1 個ぶん膨らむ。Worker は前のロードの完了（`unloaded`）を待ってから次を始める。中止で reject される Promise（部品の取得、tokenizer の取得）には `catch` を付けておかないと unhandled rejection になる。
 - **エンジンの `Llama` は循環参照を持つ**（カーネル用のクロージャと本体）。`destroy()` だけでは重みが解放されず、循環 GC が走るまで残る。モデルを手放すときは `gc.collect()` を呼ぶ（呼ばないと切り替え後の llm-jp でヒープ 390MB、呼ぶと 266MB）。
+- **止まったテストの出力をパイプ越しに待たない。** `node test.mjs | cut ...` は、テストが待ち続けている間 `cut` が出力をバッファに溜めるので、何も表示されないまま 10 分待つことになった（原因はテスト側の待ち条件の間違いだった）。ファイルに書いてから読むか、`timeout` を短くする。
+- **legacy 形式のチェックポイントはメタデータを持たない。** `dtype` はヘッダから計算した大きさとファイルの大きさの一致で判定している（`checkpoint_dtype()`）。テンソルの並びは `Llama.__init__`・`quantize.py` の `layout()`・`checkpoint_dtype()` の 3 か所にあるので、形式を変えるときは 3 つとも直す（pytest が `layout()` との一致を見ている）。トークナイザの種類・NFKC・停止トークンはファイルから分からないので、ローカルのモデルでは設定の JSON で渡す。
 - **`stats` の `prompt_tokens` は `tokens - sampled` では求まらない。** 停止トークンはサンプリングされるが `tokens` には数えないので 1 ずれる。プロンプトは専用のカウンタで数えている。
 - **Worker は生成中にメッセージを受け取れない**（Python のジェネレータを回している間、イベントループに戻らない）。だから `generate()` は 50ms ごとに `MessageChannel` で 1 回イベントループに返す。`setTimeout` は 4ms の下限があり、トークン数で数えると速いモデル（900 tok/s）だけ約 5% 遅くなった。
 - **トークナイザの確かめていない前提。** `<0xNN>` の語彙片が無いときバイトは ID `byte + 3` とみなす。`<0x` で始まり `>` で終わる 6 バイトの語彙片は生のバイトとして復号する。いまある語彙ではどちらも問題ないが、新しい語彙を足すときは確かめる。

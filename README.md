@@ -9,6 +9,7 @@ This project leverages [Pyodide](https://pyodide.org/) to run a Python implement
 - **Pure Browser-based Inference:** No backend server required for inference.
 - **Python in WebAssembly:** Python sequences the transformer layers, and small WASM SIMD kernels, loaded with `ctypes` and working in place on NumPy memory, do the math: 60 tokens/s for the 150M parameter model and 300 to 950 for the small ones, about a thousand times faster than the original pure Python loops (NumPy alone reaches 50). See [Measurements](#measurements).
 - **Streaming Output:** Pyodide runs in a Web Worker and every token is shown as soon as it is generated, so the page never freezes. While a text is being written, the send button stops it.
+- **Your Own Model:** a llama2.c checkpoint from your disk runs without being uploaded ([how](#your-own-model)).
 - **Several Models:** Japanese / English models (llm-jp-3 with 150M parameters by default, tiny-lm with 29M), and TinyStories models from 260K to 42M parameters. `?model=<id>` selects one directly.
 
 ## Live Demo
@@ -46,6 +47,25 @@ You can try the live demo on GitHub Pages (if configured):
    docker run -p 8080:8080 pyodide-llama-py
    ```
 2. Open `http://localhost:8080/pyodide-llama-py/` in your browser.
+
+## Your Own Model
+
+The folder button next to the model list (or dropping the files on the page) opens a model from your own disk.
+The files are read where they are: nothing is uploaded, and nothing is requested from the network. Choose them
+together:
+
+- a checkpoint in llama2.c's legacy format, for example `stories110M.bin` of the
+  [TinyLlamas](https://huggingface.co/karpathy/tinyllamas), or what `convert_hf.py` and `quantize.py` write.
+  float32, float16 and int8 are told apart by the header and the file size;
+- its `tokenizer.bin` (llama2.c's format; it must hold exactly the vocabulary of the checkpoint);
+- optionally a `.json` with whatever differs from llama2.c's conventions, shaped like an entry of `src/models.js`:
+
+```json
+{ "name": "tiny-lm", "options": { "tokenizer_kind": "unigram", "nfkc": true, "stop_tokens": [1, 2] },
+  "generation": { "steps": 256, "temperature": 0.7, "topp": 0.9, "repetition_penalty": 1.3 }, "prompt": "昔々、" }
+```
+
+WebAssembly addresses 32 bits and a phone gives a tab far less, so a checkpoint of more than 1 GB asks first.
 
 ## How it Works
 
