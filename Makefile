@@ -9,7 +9,7 @@ stories15M.bin:
 	wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
 
 tokenizer.bin:
-	wget https://github.com/tairov/llama2.py/raw/master/tokenizer.bin
+	wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
 
 node_modules/.bin/http-server:
 	yarn

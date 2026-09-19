@@ -3,7 +3,7 @@ FROM node:21
 WORKDIR /app
 COPY . .
 RUN wget https://huggingface.co/karpathy/tinyllamas/resolve/main/stories15M.bin
-RUN wget https://github.com/tairov/llama2.py/raw/master/tokenizer.bin
+RUN wget https://github.com/karpathy/llama2.c/raw/master/tokenizer.bin
 RUN yarn
 
 EXPOSE 8080
