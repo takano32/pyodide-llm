@@ -120,6 +120,14 @@
 - 名前: リポジトリは `pyodide-llama-py`、エンジンは `llama2_numpy.py`。1 と 2 までなら「Llama 系」で通るので変えない。3 をやるなら考える。
 - T60 との関係: 1 が入ると T60 の一覧に SmolLM2 を、2 が入ると Qwen2.5-0.5B を足せる。T60 の一覧の「代表的なモデルの大半は動かない」という弱点が、トークナイザ 1 つでかなり解ける。
 
+### T62 プロジェクト名を `pyodide-llm-py` に変える — 状態: 候補（持ち主の発案。Fable の意見: 名前は妥当。ただし変える時期は「Llama 以外が実際に動いたとき」がよい）
+- 前提: Llama は LLM（大規模言語モデル）の一系統（Meta のモデルの名前で、多くのモデルが真似る構造の名前にもなった）。このプロジェクトの目的は AGENTS.md のとおり「WASM Python で言語モデルを動かす実験」で、Llama に限ると決めたことは無い。
+- 変える利点: 目的と名前が合う。T60・T61 が入ると動くのは llm-jp、TinyLlama、SmolLM2、Qwen で、「llama」は実態より狭い。Llama は Meta の商標でもあり、中立な名前のほうが無難。GitHub で `pyodide-llm` を名前に含むリポジトリは 1 つ（`thomasrosen/pyodide-llm`、スター 0）だけで、`pyodide-llm-py` は空いている（2026-09-19 確認）。
+- 時期についての意見: **いま動くのは Llama 構造のモデルだけ**なので、先に名前だけ広げると実態より大きな看板になる。T61 の段階 2（`model_type` が llama でないモデル、たとえば Qwen2 が動く）が入った時点で変えるのがいちばん筋が通る。改名は 2 回目（`pyodide-llama2-py` → `pyodide-llama-py`）なので、3 回目は 1 回で済ませたい。T61 を採用しないなら、改名もしない。
+- 改名の費用（前回の経験から）: GitHub のリポジトリ名の変更は git と Web の URL を転送してくれるが、**GitHub Pages の URL は転送されない**（`/pyodide-llama-py/` → `/pyodide-llm-py/`。貼られたリンクが切れる）。今回は、改名後に旧名で空のリポジトリを作り、新しい URL へ飛ばすだけの `index.html` を Pages で公開すれば、古いリンクを生かせる（前回はやらなかった。`pyodide-llama2-py` にも同じことができる）。Cache API のキーにはパスが入るので、利用者のモデルのキャッシュは無効になり、再ダウンロードになる。
+- 直す場所: `astro.config.mjs` の base、`package.json`・`package-lock.json` の name、`tests/e2e.mjs`・`tests/stock-firefox.mjs`・`tests/perplexity.mjs` の URL や User-Agent、`.github/workflows/browsers.yml` の既定の URL、`Makefile` のコメント、README・AGENTS.md・この TODO、`src/pages/index.astro` のリポジトリへのリンク（リボン）、gist の報告書にあるリンク、ローカルのディレクトリ名と Claude のプロジェクトディレクトリ（メモリの場所が変わる）。エンジンのファイル名 `llama2_numpy.py` は、Llama 構造のエンジンである間はそのままでよい（T61 の段階 3 まで行くなら考える）。
+- 完了条件（案）: 新しい URL で e2e と `browsers.yml` が通る。旧 URL（`/pyodide-llama-py/`）を開くと新しい URL へ移る。
+
 ## 保留
 
 採用したが、いまはやらないと決めたもの。条件が変わったら「これからのタスク」へ戻す。
