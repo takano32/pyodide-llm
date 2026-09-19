@@ -25,6 +25,37 @@ async function resolvePyodideVersion(search) {
 const PART_BYTES = 8 * 1024 * 1024;
 const CONNECTIONS = 4;
 
+// GitHub Pages lets the browser keep a file for ten minutes only, so the parts also go into the Cache API: the
+// next visit starts without downloading the model again. The size is part of the key, so a rebuilt model of
+// another size is fetched anew. Without the Cache API (some private modes) this is a plain fetch.
+const MODEL_CACHE = "models-v1";
+
+async function fetchPart(url, model) {
+  const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
+  const key = `${url}?bytes=${model.bytes}`;
+  const cached = await cache?.match(key);
+  if (cached) {
+    return cached;
+  }
+  const res = await fetch(url);
+  if (res.ok && cache) {
+    // stored while the other copy streams into Python; a full disk must not stop the download
+    cache.put(key, res.clone()).catch(() => {});
+  }
+  return res;
+}
+
+// parts of this checkpoint that were cached for another size are of no use any more
+async function dropStaleParts(model) {
+  const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
+  for (const request of (await cache?.keys()) ?? []) {
+    const url = new URL(request.url);
+    if (url.pathname.includes(`/models/${model.checkpoint}.`) && url.searchParams.get("bytes") !== String(model.bytes)) {
+      cache.delete(request);
+    }
+  }
+}
+
 function download(model) {
   const parts = Math.ceil(model.bytes / PART_BYTES);
   const queue = [];
@@ -32,7 +63,7 @@ function download(model) {
   const connection = async () => {
     while (next < parts) {
       const part = next++;
-      const res = await fetch(new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, import.meta.url));
+      const res = await fetchPart(new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, import.meta.url).href, model);
       if (!res.ok) {
         throw new Error(`Could not fetch part ${part} of ${model.checkpoint}: ${res.status}`);
       }
@@ -121,6 +152,7 @@ async function load(model, ready = Promise.resolve()) {
   weights.buffer.destroy();
   tokenizer.buffer.destroy();
   postMessage({ type: "ready", pyodide: pyodide.version });
+  dropStaleParts(model);
 }
 
 function generate({ type, prompt, ...options }) {

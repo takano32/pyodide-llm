@@ -17,16 +17,6 @@
   3. ページ側は生成中だけ送信ボタンを停止ボタン（■）にして、押したら `worker.postMessage({type: "stop"})`。生成中も Enter で二重送信されないこと。
 - 完了条件: 生成中に止められ、直後に次の生成ができる。tiny-lm の tok/s が変更前の 95% 以上。`node tests/e2e.mjs` が通る。
 
-### T25 モデルのブラウザ内キャッシュ — 状態: 未着手
-- 目的: 再訪時に 33〜171MB を取り直さない（GitHub Pages の HTTP キャッシュは 10 分で切れる）。
-- 触るファイル: `public/worker.js` の `download()`。
-- 手順:
-  1. 部品を取る前に `caches.open("models-v1")` を見て、あればそこから読む。なければ `fetch` し、`response.clone()` を `cache.put()` する（ストリームは一度しか読めないので clone が要る）。
-  2. キャッシュのキーは部品の URL に `?bytes=<model.bytes>` を付けたものにする。モデルを作り直してサイズが変われば自然に取り直される。
-  3. 読み込み成功後に `navigator.storage.persist?.()` を呼ぶ（失敗しても無視）。
-  4. Cache API が使えない環境（`caches` が未定義）では今までどおり動くこと。
-- 完了条件: 2 回目の読み込みで `models/` へのネットワーク要求が 0 件（Playwright の `page.on("request")` で数える）。`src/models.js` の `bytes` を変えると取り直す。
-
 ### T27 生成設定の UI — 状態: 未着手
 - 目的: temperature・最大トークン数・シードを画面から変える。シードを固定すれば int8 と原本を公平に比べられる。
 - 触るファイル: `src/pages/index.astro`。エンジンは `generate(prompt, steps, temperature, topp, repetition_penalty, seed)` に対応済みで、Worker は受け取ったオプションをそのまま渡す。
@@ -85,6 +75,7 @@
 - [x] **T22 プロジェクトを pyodide-llama-py に改名する。** Pages の旧 URL は転送されない。（adbd2c1）
 - [x] **T23 引き継ぎ書と台帳を作る。** `AGENTS.md`、`TODO.md`。（268a141）
 - [x] **T26 CI のスモークテスト。** `tests/smoke.mjs`: Node 上の最新 Pyodide で、stories260K（float32・GQA）の greedy 出力が参照どおりであることと、tiny-lm（変換 + int8 + unigram）が生成できシードで再現することを確認。約 8 秒、メモリ約 450MB。エンジンを壊すと失敗することを確認済み。デプロイでは `pyodide@latest` を入れ直してから走らせる（ページが実行時に最新版を使うため）。
+- [x] **T25 モデルのブラウザ内キャッシュ。** 部品を Cache API（`models-v1`）に保存し、キーに展開後のバイト数を含める。2 回目の読み込みはモデル部品のネットワーク要求が 0 件、準備完了が 11.3 秒 → 7.1 秒（tiny-lm、ローカル）。サイズが変わった古い部品は読み込み後に削除。`navigator.storage.persist()` はページ側から要求（Worker からは呼べない。ヘッドレス Chromium では許可されず false のまま）。
 
 ## やらないと決めたこと
 

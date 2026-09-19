@@ -201,6 +201,8 @@
       statusText.textContent = `${model.name}: ${(data.received / 1e6).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
     } else if (data.type === "ready") {
       ready = true;
+      // the model is in the Cache API now: ask the browser not to evict it (only a page may ask, not a worker)
+      navigator.storage?.persist?.();
       statusText.textContent = `${model.name} · Pyodide ${data.pyodide}`;
     } else if (data.type === "token") {
       // stick to the bottom only while the reader is there
