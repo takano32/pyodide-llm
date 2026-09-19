@@ -52,7 +52,7 @@
 
 計測環境: ARM big.LITTLE（Cortex-A78×4 + A55×4、スマホ級）、メモリ約 6.6GB・スワップなし、Node 24（V8）、stories15M、greedy。
 
-- **ボトルネックの特定。** 元の純 Python 版は 0.26 tok/s。原因は行列積の内側ループをインタプリタが回していること。NumPy 化で約 50 tok/s（約 200 倍）。WASM SIMD カーネルなら 170〜190、int8 で 288〜334 tok/s。スレッド化はこの規模では効かない（ネイティブ OpenMP でも同じ）。GPU も 15M 級では固定費負けする。詳細は gist: https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901 （題は「Pyodide LLM の概要」。1 つめのファイル `pyodide-llm-overview.md` がプロジェクト全体の概要で、大きな成果が出たら更新する。2 つめの `survey-2026-09-browser-llm-inference.md` が着手時の調査レポートで、数値は当時のまま）
+- **ボトルネックの特定。** 元の純 Python 版は 0.26 tok/s。原因は行列積の内側ループをインタプリタが回していること。NumPy 化で約 50 tok/s（約 200 倍）。WASM SIMD カーネルなら 170〜190、int8 で 288〜334 tok/s。スレッド化はこの規模では効かない（ネイティブ OpenMP でも同じ）。GPU も 15M 級では固定費負けする。詳細は gist: https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901 （題は「Pyodide LLM の概要」。ファイルは名前の順に並ぶので番号を付けてある: `00-pyodide-llm.md` が要約と目次、`10-overview.md` がプロジェクト全体の概要、`90-survey-2026-09.md` が着手時の調査レポートで数値は当時のまま。大きな成果が出たら `10-` を更新し、ファイルを足したら `00-` の目次も直す。しくみの詳しい解説は `20-`、計測の表は `30-` の予定。ファイルへのリンクは gist が自動で付ける `#file-<ファイル名の . を - にしたもの>`、見出しへは `#見出し` で飛べるので、`<a name>` は要らない）
 - **NumPy エンジンの正しさ。** llama2.c の C 実装と 5 プロンプト × 256 トークンでバイト単位一致。GQA は相対誤差 1e-6 以内。unigram トークナイザは本物の sentencepiece と 16 例すべて一致。Hugging Face の `tokenizers` 0.23.1 とも、llm-jp-3-150m の語彙で 10 種類の文（日本語、英語、空白とタブ、絵文字と外字、コード、全角英数と半角カナなど）が 10 / 10 で同じ ID の列（2026-09-20。この開発機には AUR の `python-transformers-git` が入っていて、`tokenizers` と `regex` が使える。PyTorch は無い）。
 - **tokenizer.bin は llama2.c 本家のもの**を使う。llama2.py 付属の古いファイルは語彙が 204 個重複しており、句読点や大文字が学習されていない ID になっていた。
 - **プロンプトの先頭に空白を付ける**（sentencepiece のダミープレフィックス）。付けないとパープレキシティが 8.5% 悪化する。
