@@ -41,17 +41,17 @@
       <section class="intro">
         <!-- one of the two, by the language of the browser (the script decides; without it both show) -->
         <p class="ja">
-          ブラウザの中の Python（Pyodide）だけで言語モデルを動かす実験です。処理は Python で書き、時間のかかる計算だけを、
-          ctypes で読み込んだ小さな WASM SIMD カーネルに任せています。実験なので、モデルは小さく、出力はそれなりです。
-          最初に動くのは、いちばん軽いモデルです。もっと自然な日本語を見たいときは、<button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M（171 MB）</button>
-          に切り替えてください。一覧の最後のグループは、Hugging Face から取得して、このブラウザの中で変換します。
+          ブラウザの中の Python（Pyodide）だけで言語モデルを動かす実験です。処理は Python で書かれており、時間のかかる計算だけを、
+          ctypes で読み込んだ WASM SIMD カーネルに任せています。実験なので、モデルは小さく、出力はそれなりです。
+          既定のモデルはいちばん軽いモデルです。もっと自然な日本語は <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M（171 MB）</button>
+          で生成できます。一覧の最後のグループは、Hugging Face から取得して、このブラウザの中で変換します。
           くわしくは <a href="https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901">Pyodide LLM の概要</a> へ。
         </p>
         <p class="en">
           An experiment in how far Python on WebAssembly can go: the model is plain Python, and only the heavy math
-          runs in tiny SIMD kernels loaded with ctypes. It starts with the lightest model; switch to
-          <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M (171 MB)</button> for far more
-          natural Japanese. The last group of the list is fetched from Hugging Face and converted right here.
+          runs in SIMD kernels loaded with ctypes. The default is the lightest model;
+          <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M (171 MB)</button> generates far
+          more natural Japanese. The last group of the list is fetched from Hugging Face and converted right here.
         </p>
         <details>
           <summary>このプロジェクトについて / About, models and licenses</summary>
