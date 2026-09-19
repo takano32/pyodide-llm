@@ -93,9 +93,11 @@
         <button id="settings-open" type="button" popovertarget="settings" aria-label="Generation settings" title="Generation settings">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 7h9m4 0h3M4 17h3m4 0h9M15 4.5v5M9 14.5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
         </button>
-        <!-- Two rows, so that it reads as a field of several lines. Enter breaks the line, as it must while Japanese
-             text is being converted; Ctrl or Cmd + Enter sends -->
-        <textarea id="prompt" rows="2" autocomplete="off" enterkeyhint="enter"></textarea>
+        <!-- Enter breaks the line, as it must while Japanese text is being converted; Ctrl or Cmd + Enter sends.
+             One row looks like a field of one line, so the keys that send are written next to the button: whoever
+             reads them knows what Enter alone does. A touch screen has no such keys, and no hint. -->
+        <textarea id="prompt" rows="1" autocomplete="off" enterkeyhint="enter"></textarea>
+        <kbd id="send-hint" aria-hidden="true">Ctrl ⏎</kbd>
         <!-- the same button stops the run that is going on; the script swaps the arrow for a square -->
         <button id="run" disabled aria-label="Run" title="Ctrl + Enter">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z" fill="currentColor" /></svg>
@@ -217,6 +219,8 @@
   #composer:focus-within { border-color: var(--accent); }
   /* grows with its lines (the script sets the height) up to five of them, then scrolls: the page never does */
   #prompt { flex: 1; min-width: 0; font: inherit; line-height: 1.5; color: var(--text); background: transparent; border: 0; outline: 0; resize: none; padding: 6px 0; max-height: calc(7.5em + 12px); overflow-y: auto; }
+  #send-hint { flex: none; align-self: flex-end; margin: 0 2px 9px; font: inherit; font-size: 0.68rem; line-height: 1.5; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; white-space: nowrap; user-select: none; }
+  @media (hover: none), (pointer: coarse), (max-width: 480px) { #send-hint { display: none; } }
   #run { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-text); cursor: pointer; }
   #run:disabled { opacity: 0.35; cursor: default; }
 </style>
@@ -541,6 +545,10 @@
     }
   };
   prompt.oninput = fit;
+  if (/Mac|iPhone|iPad/.test(navigator.platform)) {
+    $("send-hint").textContent = "⌘ ⏎";
+    run.title = "⌘ + Enter";
+  }
 
   run.onclick = (event) => {
     // While generating the button stops the run instead of submitting the form. A textarea never submits a form
