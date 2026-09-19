@@ -3,7 +3,7 @@
 このプロジェクトの作業台帳。背景・方針・落とし穴・検証手順は [AGENTS.md](AGENTS.md) にあるので、先にそちらを読むこと。
 
 - 着手したら状態を `進行中` にする。終えたら「完了したタスク」の末尾に `- [x]` で移し、結果の要点（実測値・理由）とコミットを 1〜2 行で書く。詳しい知見は AGENTS.md に足す。**作業と同じコミットで更新する。**
-- タスク番号は通し番号で、再利用しない。分割や取りやめで使わなくなった番号も欠番のまま残す（T40 は T41 と T42 に分けたので欠番）。
+- タスク番号は通し番号で、再利用しない。分割や取りやめで使わなくなった番号も欠番のまま残す（T40 は T41 と T42 に、T61「Llama 以外のモデルにも対応する」は T63・T64・T65 に分けたので欠番）。
 - 未着手のタスクは、依存のあるものを除いて単独で着手できる。勧める順番: 計測の道具立ては T52（スイッチ）→ T45（ベンチ。T43 を吸収）。T48（記事）はいつでも。性能は T54 で一区切り（int8 の行列積は V8 の命令の速さの 9 割に達した）。T47 は保留。T39 は後回しでよい。
 
 ## これからのタスク
@@ -103,30 +103,37 @@
 
 2026-09-19 に Fable が提案したもの。持ち主が 1 つずつ採用か却下かを決める。採用したら「これからのタスク」へ移し、却下したら理由を添えて「やらないと決めたこと」へ移す。番号はどちらの場合もそのまま。並びは提案時の費用対効果の順。
 
-### T61 Llama 以外のモデルにも対応する — 状態: 候補（持ち主の発案。Fable の意見: 段階を区切ればやる価値が大きい。実験の核心に合う）
-- 発案: Python が動くのだから、Llama 以外のアーキテクチャにも対応できるのではないか。
-- なぜ実験の範囲に入るか: 事前にコンパイルしたカーネルをアーキテクチャごとに持つ方式（WebLLM など）と違い、ここでは層の並べ方が Python で書いてある。新しいアーキテクチャは「同じカーネルを違う順に呼ぶ数十行の Python」で済むはずで、それが本当かどうか、速度が落ちないかどうかは、**WASM Python だからこそ測れる主張**になる（「アーキテクチャ 1 つあたり Python 何行、新しいカーネル何個、tok/s はいくつ」）。
-- いちばんの発見: **最初の壁はアーキテクチャではなくトークナイザ。** いまのエンジンは sentencepiece 系（スコア付きの BPE と Unigram）しか読めない。GPT-2 系の byte-level BPE（`vocab.json` + `merges.txt`、正規表現での前分割、バイト → 文字の対応表）が読めれば、構造は**素の Llama のまま**の SmolLM2 がそのまま動く。HF の API で確認（2026-09-19）:
-  - `HuggingFaceTB/SmolLM2-135M-Instruct` / `-360M-Instruct`: `model_type: llama`、bias なし、RoPE scaling なし、tied、`rope_theta` 100000、dim 576 / hidden 1536 / 30 層 / ヘッド 9・KV 3（どれも 32 の倍数でカーネルの条件を満たす）、Apache-2.0、承認不要、safetensors 1 ファイル。**足りないのはトークナイザだけ。** 1.35 億パラメータで、英語の指示モデルとしては llm-jp-3-150m と同じ速度帯（見積もり 80 tok/s 前後）。
-  - `Qwen/Qwen2.5-0.5B-Instruct`: `qwen2`。Llama との差は q・k・v の bias（既存の `add_inplace` で足せるので新しいカーネルは不要）、`rope_theta` 1e6、tied、語彙 151936。dim 896 / hidden 4864 / 24 層 / ヘッド 14・KV 2（32 の倍数）。日本語も書ける。Apache-2.0、承認不要。トークナイザは同じ byte-level BPE。int8 で約 500MB、見積もり 20 tok/s 台（語彙が大きく分類器が重い）。
-  - `rinna/japanese-gpt2-small`: `gpt2`。LayerNorm（bias あり）、GELU、学習済みの位置埋め込み、全結合に bias、QKV が 1 つの行列。トークナイザは sentencepiece（読める）。MIT。新しいカーネルが 2 つ（layernorm、gelu）と、Python の forward がもう 1 本要る。
-  - `google/gemma-3-270m-it`: 承認制（gated）なので HF からは取れない。差分も多い（GeGLU、(1 + w) の RMSNorm、埋め込みの √dim 倍、前後 2 つのノルム、QK ノルム、局所 / 大域の attention の交互、語彙 26 万）。見送り。
-  - RWKV・Mamba など attention を使わないもの: カーネルが別物になるので範囲の外。
-- 段階（1 つ終わるごとに、続けるかを決める）:
-  1. **byte-level BPE のトークナイザ**（規模 小〜中）。エンコードとデコードを Python で 100 行ほど。前分割の正規表現は `\p{L}` などの Unicode プロパティを使うが、標準の `re` には無く、`regex` モジュールはこの開発機に入っていない（Pyodide のパッケージにあるかは未確認）→ `unicodedata` で文字種を見て手で分割するのが依存なしで確実。変換器（T41）は `tokenizer.json` の `model.type == "BPE"` を読めるようにし、エンジン用の表現（`tokenizer.bin` を拡張するか、別ファイルにするか）を決める。これだけで SmolLM2 が動き、T60 の一覧に「英語の、名の知れた指示モデル」が入る。
-  2. **設定で切り替わる小さな差分**（規模 中）: q・k・v の bias、`rope_theta`、tied の埋め込み（対応済み）→ Qwen2.5-0.5B。legacy 形式のヘッダ（int 7 個）には bias の有無を書く場所が無いので、チェックポイントの形式を広げる必要がある（llama2.c の新しい形式は 256 バイトのヘッダを持つので、それに寄せて空きにフラグを置くのが候補）。
-  3. **別系統の forward**（規模 中〜大）: GPT-2 系（layernorm と gelu のカーネル、学習済みの位置埋め込み）。ここまで来ると「Llama のエンジン」ではなくなるので、やる前に立ち止まる。
-- 歯止め（範囲が広がりすぎないように）: 足してよいアーキテクチャの条件を決めておく。(a) 既存のカーネルの使い回しが主で、新しいカーネルは小さいもの 1〜2 個まで。(b) Python の追加が 1 アーキテクチャあたり 50 行程度まで。(c) **参照実装との一致を CI で確かめられること。** この開発機には PyTorch が無いので、GitHub Actions の Linux ランナーで `transformers` を入れて小さいモデルの logit を出し、エンジンの出力と比べるジョブを作る（Llama のときは llama2.c の C 実装が参照だったが、ほかのアーキテクチャには無い）。条件を満たさないものは「やらないと決めたこと」へ。
-- 名前: リポジトリは `pyodide-llama-py`、エンジンは `llama2_numpy.py`。1 と 2 までなら「Llama 系」で通るので変えない。3 をやるなら考える。
-- T60 との関係: 1 が入ると T60 の一覧に SmolLM2 を、2 が入ると Qwen2.5-0.5B を足せる。T60 の一覧の「代表的なモデルの大半は動かない」という弱点が、トークナイザ 1 つでかなり解ける。
+### T63 byte-level BPE のトークナイザ（→ SmolLM2 が動く）— 状態: 候補（T61 を分割した 1 つめ。Fable の提案: 採用。規模 小〜中）
+- 背景（T61 の検討から）: Llama 以外に対応するときの最初の壁は、アーキテクチャではなくトークナイザだった。いまのエンジンは sentencepiece 系（スコア付きの BPE と Unigram）しか読めない。GPT-2 系の byte-level BPE（`vocab.json` + `merges.txt`、または `tokenizer.json` の `model.type == "BPE"`）が読めれば、構造が**素の Llama のまま**のモデルがそのまま動く。エンジンの forward にもカーネルにも手を入れない。
+- 動くようになるモデル（HF の API で確認、2026-09-19）: `HuggingFaceTB/SmolLM2-135M-Instruct` / `-360M-Instruct`。`model_type: llama`、bias なし、RoPE scaling なし、tied、`rope_theta` 100000、dim 576 / hidden 1536 / 30 層 / ヘッド 9・KV 3（どれも 32 の倍数でカーネルの条件を満たす）、Apache-2.0、承認不要、safetensors 1 ファイル。1.35 億パラメータで、llm-jp-3-150m と同じ速度帯の見積もり（80 tok/s 前後、未計測）。英語の、名の知れた指示モデルが T60 の一覧に入る。
+- 手順:
+  1. エンコード: 正規表現での前分割 → バイト列を GPT-2 の「バイト → 文字」の表で文字列に → merges の順位で対を結合。デコードは逆。Python で 100 行ほど。前分割の正規表現は `\p{L}`・`\p{N}` などの Unicode プロパティを使うが、標準の `re` には無く、`regex` モジュールはこの開発機に入っていない（Pyodide のパッケージにあるかは未確認）→ `unicodedata` で文字種を見て手で分割するのが、依存を増やさず確実。前分割のパターンはモデルごとに少し違う（GPT-2、Llama 3、Qwen）ので、`tokenizer.json` の `pre_tokenizer` を読んで対応しているものだけ受け付ける。
+  2. エンジン用の表現を決める: いまの `tokenizer.bin`（llama2.c 形式: スコア + 語片）には merges の順位を入れる場所が無い。スコアに「−順位」を入れて既存の `kind="bpe"` に乗せられるか（llama2.c の BPE は「結合後の語片のスコアが最大の対」を選ぶので、順位の負数をスコアにすれば同じ結果になるはず。ただし同じ語片を作る結合が複数あると食い違う）をまず確かめ、だめなら形式を足す。特殊トークン（`<|im_start|>` など）はテキストから直接マッチさせる必要がある（指示モデルのテンプレートに出てくる）。
+  3. 変換器（T41 の `tokenizer_json_pieces`）が `BPE` を断らずに読むようにする。
+  4. **参照との一致を CI で確かめる**: GitHub Actions で `pip install tokenizers`（軽い）を入れ、日本語・絵文字・空白の並び・コードを含む文を本物のトークナイザとこちらの実装でエンコードして、ID の列が一致することを見る。この開発機には `tokenizers` が無いので、手元では往復（エンコード → デコードで元に戻る）までしか確かめられない。
+- 完了条件: CI で本物の `tokenizers` と ID の列が一致する。SmolLM2-135M-Instruct をローカルのファイル（T42 の経路）で変換して動かし、英語の指示にまともな文で答える。速度を記録する。T60 が入っていれば一覧に足す。
+
+### T64 設定で切り替わる小さな差分（bias など → Qwen2.5 が動く）— 状態: 候補（T61 を分割した 2 つめ。T63 の後。Fable の提案: T63 の結果を見て判断。規模 中）
+- 内容: Llama との差が小さいアーキテクチャを、エンジンの分岐ではなく設定で吸収する。最初の対象は `Qwen/Qwen2.5-0.5B-Instruct`（`qwen2`。HF の API で確認: 差は q・k・v の bias、`rope_theta` 1e6、tied、語彙 151936。dim 896 / hidden 4864 / 24 層 / ヘッド 14・KV 2 で 32 の倍数。日本語も書ける。Apache-2.0、承認不要。int8 で約 500MB、見積もり 20 tok/s 台で、語彙が大きく分類器が重い）。bias は既存の `add_inplace` のカーネルで足せるので、**新しいカーネルは要らない**。トークナイザは T63。
+- 手順:
+  1. チェックポイントの形式を広げる: legacy 形式のヘッダ（int 7 個）には bias の有無を書く場所が無い。llama2.c の新しい形式は 256 バイトのヘッダを持つので、それに寄せて空きにフラグ（bias、RoPE の流儀など）を置くのが候補。`checkpoint_dtype()`・`layout()`・`Llama.__init__` の 3 か所のテンソルの並びを同時に直す（AGENTS.md の落とし穴）。古い形式のファイルはそのまま読めること。
+  2. 変換器（`check_config`・`convert_pieces`）が `qwen2` を受け付け、bias を書く。エンジンの forward は bias があるときだけ `add_inplace` を呼ぶ（NumPy の経路も）。
+  3. **参照との一致を CI で確かめる**: Linux のランナーに CPU 版の PyTorch と `transformers` を入れ、小さい入力の logit を出して、こちらのエンジン（float32 の NumPy の経路）と相対誤差で比べるジョブを作る。Llama のときは llama2.c の C 実装が参照だったが、ほかのアーキテクチャには無い。この仕組みは T65 以降でも使う。
+- 歯止め（ここで足してよいアーキテクチャの条件）: (a) 既存のカーネルの使い回しが主で、新しいカーネルは小さいもの 1〜2 個まで。(b) Python の追加が 1 アーキテクチャあたり 50 行程度まで。(c) 3 の CI で参照と一致すること。満たさないものは「やらないと決めたこと」へ。
+- 完了条件: Qwen2.5-0.5B-Instruct が CI の参照と一致し、実ブラウザで変換して動く（約 500MB。この開発機で試せるかは着手時に確認）。足した Python の行数・新しいカーネルの数・tok/s を `kernels/README.md` に載せる（「Python だとアーキテクチャの追加がこれだけ安い」がこのタスクの成果）。**ここまで来たら T62（`pyodide-llm` への改名）の時期。**
+
+### T65 別系統の forward（GPT-2 系）— 状態: 候補（T61 を分割した 3 つめ。Fable の提案: T64 が終わってから考える。いまは決めない）
+- 内容: `rinna/japanese-gpt2-small`（`gpt2`、MIT、safetensors 1 ファイル、トークナイザは sentencepiece でいまでも読める）のような GPT-2 系。LayerNorm（bias あり）、GELU、学習済みの位置埋め込み、全結合に bias、QKV が 1 つの行列。新しいカーネルが 2 つ（layernorm、gelu）と、Python の forward がもう 1 本要る。
+- 立ち止まる理由: ここまで来ると「Llama 系のエンジン」ではなくなる。T64 の歯止め (a)(b) をぎりぎり満たすかどうかで、満たさなければ却下する。
+- 見送りが決まっているもの: `google/gemma-3-270m-it`（承認制で HF から取れない。差分も多い: GeGLU、(1 + w) の RMSNorm、埋め込みの √dim 倍、前後 2 つのノルム、QK ノルム、局所 / 大域の attention の交互、語彙 26 万）。RWKV・Mamba など attention を使わないもの（カーネルが別物）。
 
 ### T62 プロジェクト名を `pyodide-llm` に変える — 状態: 候補（持ち主の発案。名前は `pyodide-llm` に決定。変える時期は未決定で、Fable の意見は「Llama 以外が実際に動いたとき」）
 - 前提: Llama は LLM（大規模言語モデル）の一系統（Meta のモデルの名前で、多くのモデルが真似る構造の名前にもなった）。このプロジェクトの目的は AGENTS.md のとおり「WASM Python で言語モデルを動かす実験」で、Llama に限ると決めたことは無い。
 - 変える利点: 目的と名前が合う。T60・T61 が入ると動くのは llm-jp、TinyLlama、SmolLM2、Qwen で、「llama」は実態より狭い。Llama は Meta の商標でもあり、中立な名前のほうが無難。GitHub で `pyodide-llm` を名前に含むリポジトリは 1 つ（`thomasrosen/pyodide-llm`、スター 0）だけで、`pyodide-llm-py` は空いている（2026-09-19 確認）。
 - 名前の候補として `pyodide-llm`（`-py` なし）も持ち主が考えている。既存の `thomasrosen/pyodide-llm` を調べた（2026-09-19）: 説明なし、README は題名だけ、ライセンスなし、2025-01 に 2 日で作られ 2025-02 から更新なし。中身は **Next.js のチャットアプリで、LLM は OpenAI の API（サーバー側）。Pyodide は LLM が書いた Python のコード（計算問題など）をサーバーの Node の子プロセスで実行する道具**として使われている。つまり「LLM が Pyodide を使う」もので、「Pyodide の中で LLM を動かす」このプロジェクトとは向きが逆。ブラウザの中では何も推論しない。GitHub のリポジトリ名は持ち主ごとなので `takano32/pyodide-llm` は作れるし、npm と PyPI にも `pyodide-llm` というパッケージは無い。検索で並ぶ相手が実質いないので、名前の衝突としての実害は小さい。**名前は `pyodide-llm` に決定（2026-09-19、持ち主: 短いほうが好み。`-py` は llama2.c → llama2.py という出発点の名残で、もう理由が無い）。**
-- 時期についての意見: **いま動くのは Llama 構造のモデルだけ**なので、先に名前だけ広げると実態より大きな看板になる。T61 の段階 2（`model_type` が llama でないモデル、たとえば Qwen2 が動く）が入った時点で変えるのがいちばん筋が通る。改名は 2 回目（`pyodide-llama2-py` → `pyodide-llama-py`）なので、3 回目は 1 回で済ませたい。T61 を採用しないなら、改名もしない。
+- 時期についての意見: **いま動くのは Llama 構造のモデルだけ**なので、先に名前だけ広げると実態より大きな看板になる。T64（`model_type` が llama でないモデル、たとえば Qwen2 が動く）が終わった時点で変えるのがいちばん筋が通る。改名は 2 回目（`pyodide-llama2-py` → `pyodide-llama-py`）なので、3 回目は 1 回で済ませたい。T64 をやらないなら、改名もしない。
 - 改名の費用（前回の経験から）: GitHub のリポジトリ名の変更は git と Web の URL を転送してくれるが、**GitHub Pages の URL は転送されない**（`/pyodide-llama-py/` → `/pyodide-llm/`。貼られたリンクが切れる）。今回は、改名後に旧名で空のリポジトリを作り、新しい URL へ飛ばすだけの `index.html` を Pages で公開すれば、古いリンクを生かせる（前回はやらなかった。`pyodide-llama2-py` にも同じことができる）。Cache API のキーにはパスが入るので、利用者のモデルのキャッシュは無効になり、再ダウンロードになる。
-- 直す場所: `astro.config.mjs` の base、`package.json`・`package-lock.json` の name、`tests/e2e.mjs`・`tests/stock-firefox.mjs`・`tests/perplexity.mjs` の URL や User-Agent、`.github/workflows/browsers.yml` の既定の URL、`Makefile` のコメント、README・AGENTS.md・この TODO、`src/pages/index.astro` のリポジトリへのリンク（リボン）、gist の報告書にあるリンク、ローカルのディレクトリ名と Claude のプロジェクトディレクトリ（メモリの場所が変わる）。エンジンのファイル名 `llama2_numpy.py` は、Llama 構造のエンジンである間はそのままでよい（T61 の段階 3 まで行くなら考える）。
+- 直す場所: `astro.config.mjs` の base、`package.json`・`package-lock.json` の name、`tests/e2e.mjs`・`tests/stock-firefox.mjs`・`tests/perplexity.mjs` の URL や User-Agent、`.github/workflows/browsers.yml` の既定の URL、`Makefile` のコメント、README・AGENTS.md・この TODO、`src/pages/index.astro` のリポジトリへのリンク（リボン）、gist の報告書にあるリンク、ローカルのディレクトリ名と Claude のプロジェクトディレクトリ（メモリの場所が変わる）。エンジンのファイル名 `llama2_numpy.py` は、Llama 構造のエンジンである間はそのままでよい（T65 まで行くなら考える）。
 - 完了条件（案）: 新しい URL で e2e と `browsers.yml` が通る。旧 URL（`/pyodide-llama-py/`）を開くと新しい URL へ移る。
 
 ## 保留
