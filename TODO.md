@@ -36,11 +36,14 @@
 - 手順: 30 行程度の最小の再現例（AssemblyScript の関数 1 つ、`build.py` の要点、Pyodide から呼んで NumPy の配列を書き換える）と、なぜ動くか・制約（静的データ不可、`.so` の先読み、relaxed SIMD の分離）・実測を 1 本の文章にする。置き場所は gist（「Pyodide LLM の概要」の `20-how-it-works.md` として足し、`00-pyodide-llm.md` の目次に入れる）か `kernels/README.md` の冒頭。公開（gist の作成）は持ち主に確認してから。
 - 完了条件: 最小の再現例がこのリポジトリの外（素の Pyodide + Node）で動くことを確かめてある。
 
-### T73 [追加] `chat_template` を読んで指示モデルの書式を自動で決める — 状態: 未着手（2026-09-21 採用。勧める順の 2 つめ。規模 小）
+### T73 [追加] `chat_template` を読んで指示モデルの書式を自動で決める — 状態: 着手（2026-09-21、Opus。判定は済み）
 - 目的: いまは指示モデルの書式を `src/models.js` に手で書いている（`LLM_JP_INSTRUCT`、`CHATML`、TinyLlama の形）。`tokenizer_config.json` の `chat_template` を読めば、**一覧に無いモデルを `?hf=` で開いた訪問者にも書式が効く**。新しいアーキテクチャは増えないが、モデルを 1 つ増やす費用が下がる。
 - 手順: Jinja の全機能は要らない。よくある形（`messages` を回して role ごとに固定文字列を挟む、`add_generation_prompt`、`bos_token` / `eos_token` の差し込み）だけ解釈し、読めないテンプレートは黙って諦めていまの `template` に任せる。特殊トークンは T63 の `specials` に渡す。
 - 着手前の調査（2026-09-21、Opus。実物を 3 つ読んだ）: llm-jp-3-150m-instruct3 と SmolLM2-135M-Instruct は単純な for と if で**すぐ読める**。Qwen2.5-0.5B-Instruct は長く、tools の分岐・入れ子の if・`{%- -%}` の空白制御が入る。**道が 2 つあり、ここは持ち主の判断**: (1) Jinja の一部を自分で書く（150〜250 行。知らない構文が出たら諦めて手書きの `template` に任せる。依存は増えない。Qwen のような長いものは諦める側に回る見込み）、(2) Pyodide に `micropip` で `jinja2` を入れる（純 Python なので入る。全部読めるが **PyPI という外部依存が増える**）。Opus の勧めは (1)。
-- 完了条件: いま手で書いてある 3 つの書式が、テンプレートから組み立てたものと一致する。読めないテンプレートでページが壊れない。
+- **判定（2026-09-21、Opus。着手前の 1 点確認）**: 人気のある小さいモデルのテンプレートを 26 件集めて、何が要るかを数えた。素朴に扱えるのは 13 / 26 だが、**難しくしている要素の中身を見ると話が変わる**: `{%- for`（12 件）はただの空白制御、`tools`（11 件）と `is defined`（11 件）は **if を真面目に実装すれば「偽として飛ばす」だけ**。本当に無理なのは `strftime` / `date_string`（3 件）と `selectattr` / `map`（2 件）くらい。→ **小さなインタプリタを書く価値がある**（for / if / elif / else / set、比較と and・or・not、`is defined` と `is not none`、文字列の結合、`loop.first` / `loop.last`、`bos_token` / `eos_token`、`add_generation_prompt`、空白制御、`trim`）。知らない構文が出たら諦めて手書きの `template` に任せる。
+- やり方（2026-09-21 に決めた）: **1 ターンぶんだけ描画して `{prompt}` の形に戻す**。`messages=[{role: "user", content: <目印>}]`・`add_generation_prompt=True` で描画し、目印を `{prompt}` に置き換えて `options.template` として返す。**ページ側は変えなくてよい**（`src/models.js` に `template` があるモデルはそれを優先）。Worker は `tokenizer_config.json`（小さい）を取る手間が 1 つ増える。
+- 参照: この開発機には `transformers` が入っていて、PyTorch なしでも `apply_chat_template` が動く。**本物が組み立てた文字列と突き合わせる**（T63 で `tokenizers` と ID 列を比べたのと同じやり方）。CI には `transformers` を入れないので、そこは `importorskip` で飛ばす。
+- 完了条件: いま手で書いてある 3 つの書式が、テンプレートから組み立てたものと一致する。集めた 26 件のうち読めるものについて `transformers` と一致する。読めないテンプレートでページが壊れない。
 
 ### T75 [描画] 最適化のスイッチを画面から切り替えられるようにする — 状態: 未着手（2026-09-21 採用。持ち主の希望。**T52 の後。来週 Fable がやる**。規模 小〜中）
 - 目的: T52 がクエリパラメータで作るスイッチを、訪問者が画面からも切り替えられるようにする。URL を知らない人にも「どれがどれだけ効いているか」を触って確かめてもらう。
