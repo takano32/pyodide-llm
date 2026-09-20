@@ -92,6 +92,15 @@ export const MODELS = [
   { group: "hf", id: "hf-gpt2", name: "GPT-2 124M", note: "English · fetches 548 MB → int8 157 MB",
     hf: hf("openai-community/gpt2", "607a30d783dfa663caf39e06633721c8d4cfcd7e"), download: 548105171,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  // sarashina2.2 (T79): a Japanese 0.5B. The instruct one is published as a single shard with an index (T78)
+  { group: "hf", id: "hf-sarashina2.2-0.5b-instruct", name: "sarashina2.2 0.5B Instruct", note: "answers instructions · 日本語 · fetches 1.6 GB → int8 0.6 GB · desktop only",
+    hf: hf("sbintuitions/sarashina2.2-0.5b-instruct-v0.1", "e4b9aacc3f644893d0179847946ef6c58d868f29", "tokenizer.model"),
+    download: 1586121792, conversion: {}, options: {}, generation: sampled(1.1), template: CHATML,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-sarashina2.2-0.5b", name: "sarashina2.2 0.5B", note: "日本語 · fetches 1.6 GB → int8 0.6 GB · desktop only",
+    hf: hf("sbintuitions/sarashina2.2-0.5b", "5fb086c49f49824cfc93f09cc4ed5cd5917bef3d", "tokenizer.model"),
+    download: 1586121792, conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "これからの流行りは", placeholder: JAPANESE },
   // GPT-NeoX (T72): GPT-2 with RoPE over part of every head. Pythia is the same design at many sizes
   { group: "hf", id: "hf-japanese-gpt-neox-small", name: "japanese-gpt-neox small", note: "日本語 · fetches 663 MB → int8 193 MB",
     hf: hf("rinna/japanese-gpt-neox-small", "84d18c0fa8c9940a61cfc4e25bd9a5686898bac1", "spiece.model"), download: 663470088,
