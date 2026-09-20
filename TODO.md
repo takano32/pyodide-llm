@@ -44,6 +44,22 @@
 - **計画（2026-09-21）**: (1) `free -m` で空きを確かめる（1GB 未満なら CI に回す）。(2) `src/models.js` に素の `sarashina2.2-0.5b` を足す（`note` に「fetches 1.6 GB → int8 約 0.6 GB · desktop only」）。(3) `node tests/e2e.mjs` で実ブラウザ。(4) 通れば T78 の後なので指示版も足す。(5) 落ちたら `browsers.yml` の `huggingface` ジョブに移して、この機械では試さないと AGENTS.md に書く。**コミットは T79 だけで 1 つ。**
 - 完了条件: 実ブラウザで日本語を書く。準備完了までの秒数と tok/s を測って記録する。
 
+### T80 [追加] いまの実装でそのまま足せるモデルを一覧に入れる — 状態: 未着手（2026-09-21 採用。持ち主の指示で調査済み。規模 小、ほぼ待ち時間）
+- 調査（2026-09-21、Opus。HF の API。llama / qwen2 / gpt2 / gpt_neox、承認不要、20M〜2B、safetensors 1 ファイルか **1 つだけの分割**（T78）、読めるトークナイザ、dim・hidden・kv_dim が 32 の倍数、`rope_scaling` と sliding window と mlp_bias 無し）: **条件を満たすものが 299 件**。全部を足す意味はないので、下の候補に絞る。
+- 候補（ダウンロード数と性格で選んだ）:
+
+  | モデル | 大きさ | なぜ |
+  |---|---|---|
+  | `EleutherAI/pythia-70m-deduped` / `pythia-410m` / `pythia-1b` / `pythia-1.4b` | 96M / 506M / 1.08B / 1.52B | **160M と合わせて梯子になる**（同じ設計で大きさだけ違う）。T45 の「大きさと速さ」の表がそのまま作れる |
+  | `Qwen/Qwen2.5-1.5B-Instruct` | 1.54B | 小さい指示モデルでいちばんダウンロードが多い（740 万）。int8 で約 1.6GB なので desktop only |
+  | `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | 1.78B | 考えてから答える型。ブラウザで動くと面白い |
+  | `HuggingFaceTB/SmolLM2-360M-Instruct` | 362M | いま 135M だけ入れている。360M は質が一段上 |
+  | `Qwen/Qwen2.5-Coder-0.5B-Instruct` | 494M | コードを書く型。0.5B なので現実的 |
+
+- **注意（調査で見落としていた点）**: 量子化済みの再配布（`...-AWQ`、`...w4a16`、`...w8a8` など）は条件の数え上げには入っているが、**重みが F32 / F16 / BF16 ではないので変換器が読めない**。足す前に safetensors のヘッダの dtype を見ること。
+- 手順: (1) 各モデルのリビジョン（コミットのハッシュ）とファイルの大きさを取る。(2) `src/models.js` に足す（日本語の軽い → 重い、英語の軽い → 重いの順を守る。1GB を超えるものは `note` に「desktop only」）。(3) `browsers.yml` の `huggingface` ジョブの一覧にも足す。**確認は CI で行う**（この開発機のメモリでは足りない）。
+- 完了条件: CI の `huggingface` ジョブが全部を通し、Summary に tok/s が出る。落ちたものは一覧から外し、理由を書く。
+
 ### T81 [追加] 足せるモデルをもう一度調べ直す（いつか、Fable） — 状態: 未着手（2026-09-21 採用。持ち主の指示。**T80 とは別件**で、時期は未定）
 - 目的: モデルの世界は動くので、**時間が経ってから調べ直す**。T80（2026-09-21 の調査でそのまま足せるもの）とは別に、「いまの実装では足りないが、少し足せば入るもの」まで広げて見る。
 - **調べる条件は「そのときの実装」で決めること。** この項目に書いてある条件をそのまま使わない。着手時に AGENTS.md の「現在の構成」と `public/llama2_convert.py` の `check_config()`・`architecture()`・`layout()` を読み、**そのとき動くアーキテクチャ・トークナイザ・ファイルの形を洗い出してから数える**（2026-09-21 の時点では llama / qwen2 / gpt2 / gpt_neox、sentencepiece と Unigram と byte-level BPE、safetensors 1 ファイルか 1 つだけの分割、`rope_scaling` と sliding window と mlp_bias は不可、カーネルは dim・kv_dim・hidden が 32 の倍数。**これは当時の条件であって、そのときの条件ではない**）。条件が広がっていれば候補も変わる。
