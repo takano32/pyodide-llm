@@ -87,6 +87,17 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           exit $failed
 
+      # T45: the benchmark a visitor can run and paste into an issue. Once is enough; it is the same code path
+      # for every model, and the numbers of this runner mean nothing on their own.
+      - name: The benchmark of ?bench=1
+        if: matrix.size == 'small'
+        shell: bash
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+        run: |
+          echo "### ?bench=1" >> "$GITHUB_STEP_SUMMARY"
+          node tests/bench-browser.mjs tiny-lm "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+
   # The models that the page fetches from huggingface.co and converts itself, the two of more than a billion
   # parameters among them: the development machine has not the memory for those (and from 2026-09-21 the owner
   # would rather this job checked all of them, the 1.6 GB ones included). Chromium on Linux is enough; how
@@ -141,3 +152,16 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
           exit $failed
+
+      # T45: the benchmark a visitor can run and paste into an issue. Once is enough: it is the same code path
+      # for every model, and this runner's numbers mean nothing on their own.
+      - name: The benchmark of ?bench=1
+        if: matrix.size == 'small'
+        shell: bash
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+        run: |
+          echo "### ?bench=1" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          node tests/bench-browser.mjs tiny-lm "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

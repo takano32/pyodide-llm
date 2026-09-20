@@ -718,6 +718,42 @@ self.onmessage = async ({ data }) => {
       const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
       unloaded = current.catch(() => {});
       await current;
+    } else if (data.type === "bench") {
+      // T45: the same model, measured again for every combination of switches the page asked for. The model is
+      // built once per round from the checkpoint that is already in the Cache API, so only the engine changes.
+      const rows = [];
+      for (const round of data.rounds) {
+        // every round is a load of its own, and it cancels whatever went before, exactly like a change of model
+        loading?.abort();
+        loading = new AbortController();
+        signal = loading.signal;
+        disabled = round.without;
+        const started = performance.now();
+        const previous = unloaded;
+        const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+        unloaded = current.catch(() => {});
+        await current;
+        const ready = since(started);
+        // a warm-up, then the measured run: the same prompt, greedy, the same number of tokens
+        const settings = { prompt: data.prompt, steps: data.steps, temperature: 0, echo: false };
+        llama.generate.callKwargs(settings.prompt, { steps: 8, temperature: 0 }).return();
+        const begin = performance.now();
+        const pieces = llama.generate.callKwargs(settings.prompt, { steps: settings.steps, temperature: 0, echo: false });
+        let tokens = 0;
+        for (;;) {
+          const { done } = pieces.next();
+          if (done) {
+            break;
+          }
+          tokens += 1;
+        }
+        pieces.destroy();
+        const seconds = (performance.now() - begin) / 1000;
+        rows.push({ name: round.name, without: round.without, tokens, speed: tokens / seconds,
+                    backend: llama.backend, seconds: ready });
+      }
+      disabled = switchesOf(self.location.search);
+      postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version });
     } else if (data.type === "generate") {
       if (!llama) {
         throw new Error("The model is not ready.");

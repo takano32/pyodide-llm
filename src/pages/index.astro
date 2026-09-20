@@ -250,6 +250,7 @@
 
 <script>
   import { GROUPS, MODELS } from "../models.js";
+  import { FULL_ROUNDS, ROUNDS, benchMarkdown, environmentOf } from "../bench.js";
 
   declare const __BUILD__: string;
   const $ = (id: string) => document.getElementById(id)!;
@@ -321,6 +322,8 @@
   // files in llama2.c's format somewhere that allows cross-origin range requests. &template= wraps the prompt.
   const parameters = new URLSearchParams(location.search);
   const requested = parameters.get("model");
+  // ?bench=1 measures this model with and without the kernels, ?bench=full every step of T52 (T45)
+  const benchmark = parameters.get("bench");
   function named(): typeof MODELS[number] | undefined {
     const repository = parameters.get("hf"), checkpoint = parameters.get("checkpoint"), tokenizer = parameters.get("tokenizer");
     const common = { id: "local", options: {}, prompt: parameters.get("prompt") ?? "", placeholder: "", template: parameters.get("template") ?? undefined };
@@ -526,9 +529,23 @@
       progress.value = data.received;
       statusText.textContent = data.converting ? `${model.name}: converting, ${Math.floor((data.received / data.total) * 100)} %`
         : `${model.name}: ${(data.received / 1e6).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
+    } else if (data.type === "bench") {
+      // T45: the numbers are here; T76 will put them on the screen. Until then the console and window.__bench.
+      const environment = environmentOf(navigator, { model: model.name, pyodide: data.pyodide, site: location.origin + location.pathname });
+      const markdown = benchMarkdown(data.rows, environment);
+      (window as any).__bench = { rows: data.rows, environment, markdown };
+      console.log(markdown);
+      statusText.textContent = `${model.name} · benchmark done, see the console`;
+      run.disabled = false;
     } else if (data.type === "ready") {
       ready = true;
       fromTemplate = typeof data.template === "string" ? data.template : undefined;
+      if (benchmark && !(window as any).__bench) {
+        statusText.textContent = `${model.name} · benchmarking...`;
+        run.disabled = true;
+        worker.postMessage({ type: "bench", model, load: loads,
+          rounds: benchmark === "full" ? FULL_ROUNDS : ROUNDS, prompt: model.prompt || "Once upon a time", steps: 64 });
+      }
       longest = data.seq_len;
       showSettings();
       // the model is in the Cache API now: ask the browser not to evict it (only a page may ask, not a worker)

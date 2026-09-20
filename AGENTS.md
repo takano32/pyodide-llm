@@ -41,6 +41,9 @@
 | `tests/smoke.mjs` | デプロイ前のスモークテスト。Node 上の最新 Pyodide でエンジンとモデルを確かめる（`make models` の後に `node tests/smoke.mjs`、約 8 秒） |
 | `tests/test_*.py` | エンジンの単体テスト（pytest、ネイティブの Python + NumPy、約 8 秒）。合成した小さなチェックポイントと語彙で常に走り、`make models` のファイルが要るものは無ければスキップ。`forward` は Python のループで書いた参照実装（`conftest.py` の `naive_logits`）と比べる。カーネルの経路は Pyodide が要るので `smoke.mjs` の担当 |
 | `tests/stock-firefox.mjs` | `e2e.mjs` と同じ確認を、インストール済みの Firefox で（Selenium + geckodriver）。Firefox の本当の速度はこれで測る |
+| `src/bench.js` | ベンチマーク（T45）の組み立て。素の ES モジュールなので Node からも import できる（`tests/bench.mjs` が単体テストする）。測る組み合わせ（`ROUNDS` と `FULL_ROUNDS`）と Markdown の表を持つ |
+| `tests/bench.mjs` | `src/bench.js` の単体テスト。Node だけで走る（`node tests/bench.mjs`） |
+| `tests/bench-browser.mjs` | `?bench=1` を実ブラウザで走らせる確認。**CI 用**（この開発機ではブラウザを動かさない） |
 | `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路、`hf` を渡すと HF 形式のファイル（`tests/make_hf_fixture.py` が作る）をブラウザの中で変換する経路を試す |
 | `kernels/` | WASM SIMD カーネル（AssemblyScript）とビルドスクリプト。`make kernels` が `public/simdkernel.so` などを生成。制約と実測は `kernels/README.md` |
 | `.github/workflows/deploy.yml` | `make models` → `npm run build` → GitHub Pages |
@@ -104,6 +107,7 @@
 - **`kernels/*.ts` には静的データを置けない**（再配置されない）。標準の数学関数は使わず、テーブルなしの実装を書くこと。relaxed SIMD を使うカーネルは別ファイルにして `try/except` で読む（Safari は未対応。インストーラが `*.so` を全部先読みするので拡張子も変える）。
 - **この開発機の `/tmp` は tmpfs（メモリ）。** 新旧を比べるために `dist` を 2 つ `/tmp` にコピーしたら、839MB × 2 がメモリに載って空きが 466MB になり、持ち主のマシンが落ちた。大きいものを置く先に `/tmp` を使わない。ビルドを 2 つ比べるときは、コピーせず `dist/worker.js` だけを差し替えて交互に走らせる。
 - **Playwright で huggingface.co の応答を差し替えても、範囲取得の経路はテストできない。** `page.route()` で 206 を返すと、**Worker からの要求では `Content-Range` が消える**（ページからの要求では残る）。Worker はそのヘッダでファイル全体の大きさを知るので、`size` が NaN になり「ファイルが途中で終わった」という無関係なエラーになる。HF から取る経路は実物のモデルで確かめること。
+- **この開発機ではもうブラウザを動かさない（2026-09-21、持ち主の指示）。** メモリが足りず、ヘッドレスの Chromium を起動するとマシンごと落ちる。実ブラウザの確認はすべて CI（`browsers.yml`）で行う。手元でできるのは pytest と `node tests/smoke.mjs` と `node tests/bench.mjs`（どれも Node と Python だけ）。
 - **開発機はメモリが少ない。** 空き 600MB でヘッドレスブラウザを動かしてマシンごと落ちたことがある。ブラウザのテスト前に `free -m` で空きが 1GB 以上あることを確認する。llm-jp-3-150m の float16 原本（ブラウザで約 800MB）はこの機械では試さない。
 - **止められたシェルコマンドが途中まで実行されていることがある。** 止められたら `git status` で状態を確かめる。
 - **int8 のファイルはコンテキストを変えてもサイズが変わらない**（RoPE の表を持たないので、変わるのはヘッダの 4 バイトだけ）。T56 で 512 → 4096 にしたとき、Cache API のキー（URL + サイズ）が同じままになるので `MODEL_CACHE` を `models-v2` に上げた（古い `models-v1` は Worker が消す）。float16 の原本は RoPE の表のぶん大きくなるので `src/models.js` の `bytes` を直した。
