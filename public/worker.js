@@ -46,6 +46,20 @@ async function prefetchNumpy(base) {
   }
 }
 
+// Some models are published under the name of a shard even when there is only one of them
+// (model-00001-of-00001.safetensors, with a model.safetensors.index.json beside it). The index says which file
+// every tensor is in; with one file this is just another name for it. Several files would mean reading them in
+// order, each with its own base, which the converter does not do (T78).
+function singleShard(index) {
+  try {
+    const map = (typeof index === "string" ? JSON.parse(index) : index)?.weight_map;
+    const files = [...new Set(Object.values(map ?? {}))];
+    return files.length === 1 ? files[0] : null;
+  } catch {
+    return null;
+  }
+}
+
 // Checkpoints are deployed in parts of 8 MiB (see the Makefile). Several parts download at once, which is
 // about twice as fast as one stream, and the download runs while Pyodide is still loading: until the Python
 // buffer exists the chunks wait in a queue, after that every chunk is written straight into it.
@@ -455,7 +469,22 @@ async function convert(model, signal, id) {
   // the beginning of the file: 8 bytes that say how long the JSON header is, then the header
   let first, size;
   if (remote) {
-    ({ bytes: first, total: size } = await fetchRange(at(model.hf.weights), 0, HF_HEADER_BYTES, signal));
+    // A model published as one shard (model-00001-of-00001.safetensors) has no model.safetensors: its
+    // index.json says the real name. Several shards would have to be read one after another, each with its own
+    // base, which the converter does not do (T78).
+    try {
+      ({ bytes: first, total: size } = await fetchRange(at(model.hf.weights), 0, HF_HEADER_BYTES, signal));
+    } catch (error) {
+      signal.throwIfAborted();
+      const index = await text(at(`${model.hf.weights}.index.json`)).then((res) => res.text())
+        .catch(() => { throw error; });
+      const only = singleShard(index);
+      if (!only) {
+        throw new Error("This model is split over several files, which this page cannot read yet.");
+      }
+      model = { ...model, hf: { ...model.hf, weights: only } };
+      ({ bytes: first, total: size } = await fetchRange(at(only), 0, HF_HEADER_BYTES, signal));
+    }
   } else {
     first = new Uint8Array(await model.hf.weights.slice(0, HF_HEADER_BYTES).arrayBuffer());
     size = model.hf.weights.size;
