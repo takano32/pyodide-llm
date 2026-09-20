@@ -36,6 +36,12 @@
 - 手順: 30 行程度の最小の再現例（AssemblyScript の関数 1 つ、`build.py` の要点、Pyodide から呼んで NumPy の配列を書き換える）と、なぜ動くか・制約（静的データ不可、`.so` の先読み、relaxed SIMD の分離）・実測を 1 本の文章にする。置き場所は gist（「Pyodide LLM の概要」の `20-how-it-works.md` として足し、`00-pyodide-llm.md` の目次に入れる）か `kernels/README.md` の冒頭。公開（gist の作成）は持ち主に確認してから。
 - 完了条件: 最小の再現例がこのリポジトリの外（素の Pyodide + Node）で動くことを確かめてある。
 
+### T70 [運用] windows-latest の WebKit が tiny-lm で止まる — 状態: 未着手（2026-09-21、Opus。2 回とも再現）
+- 症状: `browsers.yml` の `windows-latest` だけが、WebKit で tiny-lm を動かすところから先に進まず、ジョブの `timeout-minutes: 90` で打ち切られる。**2 回とも同じところ**（run 35461537794、1 回目 18:32:50Z→20:03:02Z、再実行 14:24:14Z→15:54:27Z）。ほかの 5 ジョブは 4〜11 分で成功する。
+- 分かっていること: 同じジョブで chromium 148 と firefox 150 は 4 モデルすべて通る（chromium は stories260K 1652.5・stories15M 431.3・tiny-lm 419.5・llm-jp-3-150m 97.1 tok/s）。webkit 26.4 は stories260K（694.2）と stories15M（182.5）まで通り、次の tiny-lm で止まる。**T67 より前のページでは同じ組み合わせが 5.2 秒で準備完了していた**（run 35455487317、commit 8f8319b）。T67 で変わったのは既定モデルと `localStorage` の記憶なので、tiny-lm を選ぶ操作と自動で始まるロードが競合している可能性がある（未確認）。ほかの OS の WebKit では起きない。
+- 手順の案: (1) `tests/e2e.mjs` の待ち時間（いまは 30 分と 10 分）をモデル 1 個ぶんに縮めて、止まったときに何が出るか（ステータス行、コンソール、`.error`）を Summary に残す。(2) その情報で、選択の競合なら `?model=` で開く形に変える。(3) 直らなければ windows-latest の WebKit だけ外し、理由を `kernels/README.md` の表に書く。
+- 完了条件: `browsers.yml` が 90 分で打ち切られずに終わる。原因と対処を AGENTS.md に書く。
+
 ## 候補（採否未定）
 
 2026-09-19 に Fable が提案したもの。持ち主が 1 つずつ採用か却下かを決める。採用したら「これからのタスク」へ移し、却下したら理由を添えて「やらないと決めたこと」へ移す。番号はどちらの場合もそのまま。並びは提案時の費用対効果の順。
