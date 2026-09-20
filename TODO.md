@@ -36,10 +36,25 @@
 - 手順: 30 行程度の最小の再現例（AssemblyScript の関数 1 つ、`build.py` の要点、Pyodide から呼んで NumPy の配列を書き換える）と、なぜ動くか・制約（静的データ不可、`.so` の先読み、relaxed SIMD の分離）・実測を 1 本の文章にする。置き場所は gist（「Pyodide LLM の概要」の `20-how-it-works.md` として足し、`00-pyodide-llm.md` の目次に入れる）か `kernels/README.md` の冒頭。公開（gist の作成）は持ち主に確認してから。
 - 完了条件: 最小の再現例がこのリポジトリの外（素の Pyodide + Node）で動くことを確かめてある。
 
-### T65 [追加] 別系統の forward（GPT-2 系）— 状態: 未着手（2026-09-20 採用。T61 を分割した 3 つめ。T64 の後。着手の前に T64 の歯止めの条件を満たすか確かめ、満たさなければ持ち主に相談する）
-- 内容: `rinna/japanese-gpt2-small`（`gpt2`、MIT、safetensors 1 ファイル、トークナイザは sentencepiece でいまでも読める）のような GPT-2 系。LayerNorm（bias あり）、GELU、学習済みの位置埋め込み、全結合に bias、QKV が 1 つの行列。新しいカーネルが 2 つ（layernorm、gelu）と、Python の forward がもう 1 本要る。
-- 立ち止まる理由: ここまで来ると「Llama 系のエンジン」ではなくなる。T64 の歯止め (a)(b) をぎりぎり満たすかどうかで、満たさなければ却下する。
+### T65 [追加] 別系統の forward（GPT-2 系）— 状態: 着手（2026-09-21、Opus。持ち主の判断で歯止め (b) を「パラメータ化なら可」と読み替えた）
+- 内容: `rinna/japanese-gpt2-small`（`gpt2`、MIT、safetensors 1 ファイル、トークナイザは sentencepiece でいまでも読める）のような GPT-2 系。LayerNorm（bias あり）、GELU、学習済みの位置埋め込み、全結合に bias、QKV が 1 つの行列。
+- 見返り: HF のダウンロード上位 500 件のうち、承認不要・1.5B 以下・safetensors 1 ファイルの `gpt2` は **413 件**（byte-level BPE 161、sentencepiece 6、判定できず 246）。3 つのタスクの中でいちばん多い。
+- 着手前の調査（2026-09-21、Opus。`kernels/kernel.ts` と engine を読んだ結果）:
+
+  | 要るもの | 中身 | 費用 |
+  |---|---|---|
+  | LayerNorm | 平均と分散、weight と bias | 新しいカーネル 1 つ（25 行ほど）と NumPy 版 |
+  | GELU | tanh 近似 | 新しいカーネル 1 つ。`fexp` がカーネル内にあるのでテーブル無しで書ける（`tanh(x) = 1 − 2/(exp(2x)+1)`） |
+  | 学習済みの位置埋め込み | 埋め込みに 1 行足す | カーネル不要 |
+  | RoPE なし | 呼ばない | — |
+  | bias が 5 か所（qkv・o・fc・proj） | T64 の仕組みを 3 本から 5 本へ伸ばす | 変換器と engine の表を足すだけ |
+  | QKV が 1 つの行列（`c_attn`） | 3 つに割る | 変換器だけ |
+  | Conv1D の並び | 重みが転置されている | 変換器だけ |
+
+- 歯止めの判定: (a) 新しいカーネルは小さいもの 2 つ → 満たす（上限ぎりぎり）。(c) CI で参照と一致 → 満たせる（この開発機に PyTorch は無いので参照は Python のループ実装。トークナイザは T63 で済み）。(b) Python 50 行程度 → **素直に書くと 120〜200 行で満たさない**。forward は NumPy 版とカーネル版の 2 本あり、どちらも正規化・活性化・位置の付け方・bias の場所が違うため。
+- **方針（持ち主の判断）: forward を 2 本に増やさず、オプションで切り替える**（`norm="rms"|"layer"`、`act="silu"|"gelu"`、`positions="rope"|"learned"`）。60〜80 行に収まり、経路も 1 本のまま。ただし 1 トークンあたり数千回通る場所に分岐が入るので、**既存モデルの速度が落ちていないことを新旧交互に測って確かめる**（AGENTS.md の落とし穴）。
 - 見送りが決まっているもの: `google/gemma-3-270m-it`（承認制で HF から取れない。差分も多い: GeGLU、(1 + w) の RMSNorm、埋め込みの √dim 倍、前後 2 つのノルム、QK ノルム、局所 / 大域の attention の交互、語彙 26 万）。RWKV・Mamba など attention を使わないもの（カーネルが別物）。
+- 完了条件: GPT-2 系のモデルが CI の参照と一致し、実ブラウザで動く。既存モデルの tok/s が落ちていないことを測って記録する。足した Python の行数と新しいカーネルの数を `kernels/README.md` に載せる。
 
 ## 候補（採否未定）
 
