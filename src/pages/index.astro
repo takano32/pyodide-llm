@@ -298,6 +298,8 @@
       $("kept-list").append(item);
     }
   }
+  // the format of one turn the conversion read from the model's own chat_template, when there was one
+  let fromTemplate: string | undefined;
   const loadedHow = (data: any) => ((model as any).hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : (model as any).file ? "read" : "download");
 
   // The intro is written twice; a phone has no room for both. Japanese for a browser set to Japanese, English for
@@ -512,6 +514,7 @@
         : `${model.name}: ${(data.received / 1e6).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
     } else if (data.type === "ready") {
       ready = true;
+      fromTemplate = typeof data.template === "string" ? data.template : undefined;
       longest = data.seq_len;
       showSettings();
       // the model is in the Cache API now: ask the browser not to evict it (only a page may ask, not a worker)
@@ -716,7 +719,8 @@
       delete used.seed;
     }
     // an instruction-tuned model gets what was typed inside the form it was trained on; the bubble shows what was typed
-    const template = (model as any).template as string | undefined;
+    // what src/models.js says for this model, or what its own chat_template gave (T73)
+    const template = ((model as any).template ?? fromTemplate) as string | undefined;
     worker.postMessage({ type: "generate", prompt: template ? template.replace("{prompt}", prompt.value) : prompt.value, echo: !template, ...used });
   };
 </script>

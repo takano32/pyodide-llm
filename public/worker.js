@@ -362,9 +362,12 @@ async function loadConverted(model, signal, id) {
     const constructStarted = performance.now();
     tokenizer = pythonBuffer(vocabulary.length);
     tokenizer.write(0, vocabulary);
-    llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, ...manifest.options, ...model.options });
+    // template is for the page, not for the engine (see convert())
+    const engineOptions = { ...manifest.options };
+    delete engineOptions.template;
+    llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, ...engineOptions, ...model.options });
     loadSeconds.construct = since(constructStarted);
-    return true;
+    return { template: manifest.options.template };
   } finally {
     weights.buffer.destroy();
     tokenizer?.buffer.destroy();
@@ -414,8 +417,9 @@ async function keepConverted(model, checkpoint, tokenizer, options, signal) {
 
 async function convert(model, signal, id) {
   const remote = typeof model.hf.repo === "string";
-  if (remote && await loadConverted(model, signal, id)) {
-    return { fromCache: true };
+  const kept = remote && await loadConverted(model, signal, id);
+  if (kept) {
+    return { fromCache: true, template: kept.template };
   }
   if (!llama2_convert) {
     // fetched when it is first needed: most visitors never convert anything
@@ -454,6 +458,10 @@ async function convert(model, signal, id) {
   }
   const header = new TextDecoder().decode(first.subarray(8, base));
   const config = remote ? await (await text(at(model.hf.config))).text() : await model.hf.config.text();
+  // The format of one turn, when the model publishes a chat_template (T73). It is small, and a model without
+  // one (or with one the converter cannot read) simply keeps the format src/models.js has for it.
+  const tokenizerConfig = await (remote ? text(at("tokenizer_config.json")).then((r) => r.text())
+    : model.hf.tokenizerConfig?.text() ?? Promise.resolve("")).catch(() => "");
   // For a repository nobody has looked at (?hf=), the tokenizer is whichever of these it has and the converter can read
   let conversion, refusal;
   for (const candidate of [].concat(model.hf.tokenizer)) {
@@ -461,7 +469,8 @@ async function convert(model, signal, id) {
       const tokenizerName = remote ? candidate : candidate.name;
       const tokenizer = new Uint8Array(remote ? await (await text(at(candidate))).arrayBuffer() : await candidate.arrayBuffer());
       signal.throwIfAborted();
-      conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName, { start: base, ...model.conversion });
+      conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName,
+        { start: base, tokenizer_config: tokenizerConfig, ...model.conversion });
       break;
     } catch (error) {
       if (signal.aborted) {
@@ -473,6 +482,7 @@ async function convert(model, signal, id) {
   if (!conversion) {
     throw refusal;
   }
+  let template;
   try {
     let reported = -1;
     const feed = (bytes) => {
@@ -507,7 +517,11 @@ async function convert(model, signal, id) {
     let kept;
     try {
       const options = proxies[0].toJs({ dict_converter: Object.fromEntries });
-      llama = llama2_numpy.Llama.callKwargs(proxies[1], proxies[2], { kernels, ...options, ...model.options });
+      // template is for the page (the format of one turn), not for the engine
+      ({ template } = options);
+      const engineOptions = { ...options };
+      delete engineOptions.template;
+      llama = llama2_numpy.Llama.callKwargs(proxies[1], proxies[2], { kernels, ...engineOptions, ...model.options });
       loadSeconds.construct = since(constructStarted);
       if (remote) {
         postMessage({ type: "status", load: id, text: `${model.name}: keeping the converted model...` });
@@ -516,7 +530,7 @@ async function convert(model, signal, id) {
     } finally {
       proxies.forEach((proxy) => proxy.destroy());
     }
-    return { fromCache: false, notKept: kept };
+    return { fromCache: false, notKept: kept, template };
   } finally {
     // the engine keeps what it needs of the checkpoint alive, the rest goes with this
     conversion.destroy();

@@ -6,6 +6,7 @@
 # WebAssembly memory has 32 bits and never shrinks.
 import json
 import struct
+import time
 
 import numpy as np
 
@@ -113,6 +114,362 @@ class Writer:
             self.put(offset + int(np.prod(shape)) + 4 * (first // group_size(shape[-1])), scales)
         elif is_matrix is False:
             self.put(offset + 4 * first, np.asarray(values, dtype=np.float32))
+
+
+# ---------------------------------------------------------------------------------- the chat template
+# A chat_template is Jinja. This reads the part of Jinja those templates actually use: a loop over the
+# messages, if / elif / else with the usual comparisons, set, string concatenation, the trim filter, and the
+# whitespace control of {%- -%}. Anything else raises Unsupported, and then the caller keeps whatever format
+# src/models.js has for that model. Chosen over a real Jinja (jinja2 through micropip) to add no dependency.
+
+class Unsupported(Exception):
+    """This template uses something this reader does not know."""
+
+
+def tokenize_template(text):
+    """The template as a list of ("text", str) | ("say", expression) | ("do", statement)."""
+    if text.endswith("\n"):
+        text = text[:-1]   # Jinja drops one trailing newline of the source (keep_trailing_newline=False)
+    out, i = [], 0
+    while i < len(text):
+        start = min([p for p in (text.find("{{", i), text.find("{%", i), text.find("{#", i)) if p != -1], default=-1)
+        if start == -1:
+            out.append(("text", text[i:]))
+            break
+        if start > i:
+            out.append(("text", text[i:start]))
+        opening, closing = {"{{": ("{{", "}}"), "{%": ("{%", "%}"), "{#": ("{#", "#}")}[text[start:start + 2]]
+        end = find_outside_quotes(text, closing, start + 2)
+        if end == -1:
+            raise Unsupported(f"a {opening} that never closes")
+        inner = text[start + len(opening):end]
+        # {%- and -%} strip the whitespace next to them
+        if inner.startswith("-"):
+            inner = inner[1:]
+            if out and out[-1][0] == "text":
+                out[-1] = ("text", out[-1][1].rstrip())
+        strip_after = inner.endswith("-")
+        if strip_after:
+            inner = inner[:-1]
+        if opening != "{#":  # a comment says nothing
+            out.append(("say" if opening == "{{" else "do", inner.strip()))
+        i = end + len(closing)
+        if strip_after:
+            while i < len(text) and text[i] in " \t\r\n":
+                i += 1
+    return out
+
+
+# expressions: 'text', "text", name, name['key'], name.attribute, a + b, comparisons, and / or / not,
+# "is defined", "is not none", the trim filter, and calls of none of the functions (there are none)
+def evaluate(expression, scope):
+    expression = expression.strip()
+    while expression.startswith("(") and expression.endswith(")") and balanced(expression[1:-1]):
+        expression = expression[1:-1].strip()
+    for joiner, combine in ((" or ", lambda a, b: truthy(a) or truthy(b)), (" and ", lambda a, b: truthy(a) and truthy(b))):
+        parts = split_outside_quotes(expression, joiner)
+        if len(parts) > 1:
+            value = evaluate(parts[0], scope)
+            for part in parts[1:]:
+                value = combine(value, evaluate(part, scope))
+            return value
+    if expression.startswith("not "):
+        return not truthy(evaluate(expression[4:], scope))
+    if expression.endswith(" is defined") or expression.endswith(" is not none"):
+        name = expression.rsplit(" is ", 1)[0].strip()
+        try:
+            value = evaluate(name, scope)
+        except Unsupported:
+            raise
+        except KeyError:
+            return False
+        return value is not None and value is not MISSING
+    if expression.endswith(" is none") or expression.endswith(" is not defined"):
+        return not evaluate(expression.rsplit(" is ", 1)[0] + (" is defined" if expression.endswith(" is not defined")
+                                                               else " is not none"), scope)
+    parts = split_outside_quotes(expression, " in ")
+    if len(parts) == 2:
+        needle, haystack = (evaluate(part, scope) for part in parts)
+        return needle in haystack if isinstance(haystack, (str, list, tuple, dict)) else False
+    for operator in ("==", "!="):
+        parts = split_outside_quotes(expression, operator)
+        if len(parts) == 2:
+            left, right = (evaluate(part, scope) for part in parts)
+            return (left == right) if operator == "==" else (left != right)
+    parts = split_outside_quotes(expression, "+")
+    if len(parts) > 1:
+        return "".join(as_text(evaluate(part, scope)) for part in parts)
+    parts = split_outside_quotes(expression, "|")   # a | inside quotes, as in '<|im_start|>', is not a filter
+    if len(parts) > 1:
+        value, *filters = parts
+        result = evaluate(value, scope)
+        for name in filters:
+            if name.strip() != "trim":
+                raise Unsupported(f"the filter {name.strip()}")
+            result = as_text(result).strip()
+        return result
+    return value_of(expression, scope)
+
+
+STRFTIME = object()   # so that "strftime_now is defined" is true, as it is in transformers
+MISSING = object()  # a name the template asks for and nothing set: Jinja calls it undefined, and it is false
+
+
+def truthy(value):
+    return bool(value) and value is not MISSING
+
+
+def as_text(value):
+    if value is MISSING or value is None:
+        return ""
+    return value if isinstance(value, str) else str(value)
+
+
+def balanced(text):
+    """Whether the brackets of text are balanced, so that its outer pair can be dropped."""
+    depth, quote = 0, ""
+    for char in text:
+        if quote:
+            quote = "" if char == quote else quote
+        elif char in "'\"":
+            quote = char
+        elif char in "([":
+            depth += 1
+        elif char in ")]":
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
+
+
+def find_outside_quotes(text, needle, start):
+    """Where needle is, skipping what is inside quotes: a template may write }} or %} inside a string."""
+    quote, i = "", start
+    while i < len(text):
+        char = text[i]
+        if quote:
+            quote = "" if char == quote else quote
+        elif char in "'\"":
+            quote = char
+        elif text.startswith(needle, i):
+            return i
+        i += 1
+    return -1
+
+
+def split_outside_quotes(text, separator):
+    """text.split(separator), but not inside quotes or brackets."""
+    parts, depth, quote, start, i = [], 0, "", 0, 0
+    while i < len(text):
+        char = text[i]
+        if quote:
+            quote = "" if char == quote else quote
+        elif char in "'\"":
+            quote = char
+        elif char in "([":
+            depth += 1
+        elif char in ")]":
+            depth -= 1
+        elif depth == 0 and text.startswith(separator, i):
+            parts.append(text[start:i])
+            i += len(separator)
+            start = i
+            continue
+        i += 1
+    parts.append(text[start:])
+    return [part for part in parts]
+
+
+def value_of(expression, scope):
+    """One value: a literal, a name, or a name with ['key'] and .attribute after it."""
+    expression = expression.strip()
+    if not expression:
+        raise Unsupported("an empty expression")
+    if expression[0] in "'\"" and expression[-1] == expression[0]:
+        return unescape(expression[1:-1])
+    if expression.isdigit():
+        return int(expression)
+    if expression in ("true", "True"):
+        return True
+    if expression in ("false", "False"):
+        return False
+    if expression in ("none", "None"):
+        return None
+    if expression.startswith("strftime_now(") and expression.endswith(")"):
+        # the one function these templates call: the date of today, for a system prompt
+        return time.strftime(unescape(expression[len("strftime_now("):-1].strip()[1:-1]))
+    name, rest = expression, ""
+    for cut in ("[", "."):
+        at = expression.find(cut)
+        if at != -1 and at < len(name):
+            name, rest = expression[:at], expression[at:]
+    if not name.replace("_", "").isalnum():
+        raise Unsupported(f"the expression {expression!r}")
+    value = scope.get(name, MISSING)
+    while rest:
+        if rest.startswith("["):
+            end = rest.index("]")
+            key = value_of(rest[1:end], scope)
+            rest = rest[end + 1:]
+        elif rest.startswith("."):
+            piece = rest[1:].split(".", 1)[0].split("[", 1)[0]
+            key, rest = piece, rest[1 + len(piece):]
+            if key.endswith("()"):  # a method, of the few the templates call
+                name = key[:-2]
+                if name not in ("capitalize", "strip", "lower", "upper", "title"):
+                    raise Unsupported(f"the method {name}()")
+                value = getattr(as_text(value), name)() if value is not MISSING else MISSING
+                continue
+        else:
+            raise Unsupported(f"the expression {expression!r}")
+        if value is MISSING:
+            continue
+        if isinstance(value, dict):
+            value = value.get(key, MISSING)
+        elif isinstance(value, (list, tuple)) and isinstance(key, int):
+            value = value[key]
+        else:
+            value = getattr(value, str(key), MISSING)
+    return value
+
+
+def unescape(text):
+    return text.replace("\\n", "\n").replace("\\t", "\t").replace("\\'", "'").replace('\\"', '"').replace("\\\\", "\\")
+
+
+class Loop:
+    """What {% for %} puts in scope as loop."""
+
+    def __init__(self, index, total):
+        self.index0, self.index = index, index + 1
+        self.first, self.last = index == 0, index == total - 1
+        self.length = total
+
+
+def render(template, scope):
+    """The template, with the names of scope. Raises Unsupported for anything this reader does not know."""
+    pieces = tokenize_template(template)
+    out = []
+    run(pieces, 0, len(pieces), scope, out)
+    return "".join(out)
+
+
+def run(pieces, start, stop, scope, out):
+    i = start
+    while i < stop:
+        kind, body = pieces[i]
+        if kind == "text":
+            out.append(body)
+            i += 1
+        elif kind == "say":
+            out.append(as_text(evaluate(body, scope)))
+            i += 1
+        elif body.startswith("for "):
+            end = matching(pieces, i, stop, "for ", "endfor")
+            name, _, source = body[4:].partition(" in ")
+            if "," in name:
+                raise Unsupported("a for over pairs")
+            values = evaluate(source, scope)
+            if not isinstance(values, (list, tuple)):
+                raise Unsupported(f"a for over {source.strip()!r}")
+            for index, value in enumerate(values):
+                run(pieces, i + 1, end, {**scope, name.strip(): value, "loop": Loop(index, len(values))}, out)
+            i = end + 1
+        elif body.startswith("if "):
+            end = matching(pieces, i, stop, "if ", "endif")
+            branches, at = [], i
+            while at < end:  # if / elif / elif / else, as (condition or None, where the body begins)
+                statement = pieces[at][1]
+                if statement.startswith(("if ", "elif ")):
+                    branches.append((statement.split(" ", 1)[1], at + 1))
+                elif statement == "else":
+                    branches.append((None, at + 1))
+                at = next_branch(pieces, at, end)
+            ends = [begin - 1 for _, begin in branches[1:]] + [end]
+            for (condition, begin), finish in zip(branches, ends):
+                if condition is None or truthy(evaluate(condition, scope)):
+                    run(pieces, begin, finish, scope, out)
+                    break
+            i = end + 1
+        elif body.startswith("set "):
+            name, _, expression = body[4:].partition("=")
+            scope[name.strip()] = evaluate(expression, scope)
+            i += 1
+        elif body in ("endfor", "endif", "else") or body.startswith("elif "):
+            raise Unsupported(f"{body!r} without its opening")
+        else:
+            raise Unsupported(f"{{% {body} %}}")
+
+
+def matching(pieces, start, stop, opening, closing):
+    """Where the {% endfor %} or {% endif %} of the statement at start is."""
+    depth = 0
+    for i in range(start, stop):
+        kind, body = pieces[i]
+        if kind != "do":
+            continue
+        if body.startswith(opening):
+            depth += 1
+        elif body == closing:
+            depth -= 1
+            if depth == 0:
+                return i
+    raise Unsupported(f"a {opening.strip()} without its {closing}: {pieces[start][1][:40]!r} at {start}, looking to {stop}")
+
+
+def next_branch(pieces, start, end):
+    """The elif / else / endif that follows the branch beginning at start, at the same level."""
+    depth = 0
+    for i in range(start + 1, end + 1):
+        kind, body = pieces[i]
+        if kind != "do":
+            continue
+        if body.startswith(("if ", "for ")):
+            depth += 1
+        elif body in ("endif", "endfor"):
+            if depth == 0:
+                return i
+            depth -= 1
+        elif depth == 0 and (body == "else" or body.startswith("elif ")):
+            return i
+    return end
+
+
+def one_turn_template(tokenizer_config):
+    """The template of one user turn from a tokenizer_config.json, or None when there is none this can read."""
+    try:
+        config = json.loads(tokenizer_config) if isinstance(tokenizer_config, (str, bytes)) else tokenizer_config
+    except ValueError:
+        return None
+    if not isinstance(config, dict):
+        return None
+    template = config.get("chat_template")
+    if isinstance(template, list):  # some models publish several; the first is the chat one
+        template = template[0].get("template") if template and isinstance(template[0], dict) else None
+    if not isinstance(template, str) or not template.strip():
+        return None
+    token = lambda name: config.get(name) if isinstance(config.get(name), str) else (config.get(name) or {}).get("content", "")
+    return one_turn(template, {"bos_token": token("bos_token") or "", "eos_token": token("eos_token") or ""})
+
+
+def one_turn(template, specials, mark="\x00prompt\x00"):
+    """The template of one user turn, as src/models.js writes it: the text around a {prompt}.
+
+    specials: the tokenizer's special tokens, for bos_token and eos_token. Returns None when the template uses
+    something this reader does not know, and then the caller keeps the format it has.
+    """
+    scope = {"messages": [{"role": "user", "content": mark}], "add_generation_prompt": True,
+             "bos_token": specials.get("bos_token", ""), "eos_token": specials.get("eos_token", ""),
+             "tools": None, "tools_json": None, "documents": None, "strftime_now": STRFTIME}
+    try:
+        text = render(template, scope)
+    except Unsupported:
+        return None
+    except Exception:
+        return None
+    if text.count(mark) != 1:
+        return None
+    return text.replace(mark, "{prompt}")
 
 
 # ------------------------------------------------------------------------------------------ the weights
@@ -723,7 +1080,8 @@ class Conversion:
     file in order, beginning at start, and finish(). checkpoint, tokenizer and options are what Llama() takes.
     """
 
-    def __init__(self, header, base, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=4096, start=0):
+    def __init__(self, header, base, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=4096, start=0,
+                 tokenizer_config=None):
         try:
             self.config = json.loads(config)
         except ValueError:
@@ -757,6 +1115,10 @@ class Conversion:
         self.options = {**options, "dtype": np.dtype(dtype).name, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop, "bias": self.stream.bias,
                         "arch": self.stream.arch}
+        # the format of one turn, from the model's own chat_template (T73). src/models.js wins when it has one
+        template = one_turn_template(tokenizer_config)
+        if template:
+            self.options["template"] = template
         if self.stream.arch == "neox":
             # GPT-NeoX turns part of every head, and may run its two branches in parallel: the file says neither
             self.options["rotary"] = rotary_dim(self.config)
