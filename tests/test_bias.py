@@ -5,7 +5,7 @@ import struct
 import numpy as np
 import pytest
 from conftest import naive_logits, pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
-from test_convert import converted, hugging_face, reader, safetensors_file
+from test_convert import converted, hugging_face, reader, safetensors_file, streamed
 
 from llama2_convert import Safetensors, checkpoint_header, checkpoint_size, has_bias, layout
 from llama2_numpy import Llama, checkpoint_dtype
@@ -52,6 +52,16 @@ def test_a_qwen2_converts_and_runs_like_the_reference(config):
     for pos, token in enumerate(tokens):
         got = llama.forward(token, pos)
         assert np.allclose(got, want[pos], rtol=1e-4, atol=1e-4)
+
+
+def test_the_file_in_its_own_order_gives_the_same_checkpoint():
+    """The biases are permuted like wq and wk, and a vector needs its whole self before it can be permuted."""
+    settings, weights = synthetic_weights()
+    tensors, published = qwen2(settings, weights, True)
+    file = safetensors_file(tensors)
+    expected = converted(Safetensors(reader(file)), published, "float32")
+    got, progress = streamed(file, published, "float32", 4096)
+    assert got == expected and progress[-1][0] == progress[-1][1]
 
 
 def test_without_the_flag_the_engine_reads_the_file_it_always_read():

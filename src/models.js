@@ -85,6 +85,13 @@ export const MODELS = [
     hf: hf("Qwen/Qwen2.5-0.5B-Instruct", "7ae557604adf67be50417f59c2c2f167def9a775"), download: 988097824,
     conversion: {}, options: { ...chatml, stop_tokens: [151643, 151645] }, generation: sampled(1.1), template: CHATML,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // GPT-2 (T65): LayerNorm, GELU, learned positions. rinna's is Japanese with a sentencepiece tokenizer
+  { group: "hf", id: "hf-japanese-gpt2-small", name: "japanese-gpt2 small", note: "日本語 · fetches 454 MB → int8 130 MB",
+    hf: hf("rinna/japanese-gpt2-small", "f7fdefe2941d9629a7b2894564435e0e035df6a6", "spiece.model"), download: 454274094,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  { group: "hf", id: "hf-gpt2", name: "GPT-2 124M", note: "English · fetches 548 MB → int8 157 MB",
+    hf: hf("openai-community/gpt2", "607a30d783dfa663caf39e06633721c8d4cfcd7e"), download: 548105171,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
   // TinyLlama's template has </s> between the turns: specials makes the tokenizer read it as the token, not as text
   { group: "hf", id: "hf-tinyllama-1.1b-chat", name: "TinyLlama 1.1B Chat", note: "answers instructions · English · fetches 2.2 GB → int8 1.2 GB · desktop only",
     hf: hf("TinyLlama/TinyLlama-1.1B-Chat-v1.0", "fe8a4ea1ffedaf415f4da2f062534de366a451e6", "tokenizer.model"), download: 2200119864,

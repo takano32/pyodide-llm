@@ -22,7 +22,7 @@ def group_size(row_length):
     return size
 
 
-def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, bias=False):
+def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, bias=False, arch="llama"):
     """(shape, is a matrix) of every tensor, in file order. llama2_numpy.py reads the same order.
 
     is a matrix: True for what int8 quantizes, False for the norm weights, None for the RoPE tables.
@@ -31,6 +31,22 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, 
     """
     head_size = dim // n_heads
     kv_dim = n_kv_heads * head_size
+    if arch == "gpt2":
+        # GPT-2: LayerNorm (a weight and a bias), a bias after every projection, learned positions instead of
+        # RoPE, and an FFN of two matrices instead of three (no gate). Same attention.
+        vector = lambda n=dim: ((n_layers, n), False)
+        tensors = [((abs(vocab_size), dim), True), ((seq_len, dim), True),
+                   vector(), vector(),
+                   ((n_layers, dim, dim), True), ((n_layers, dim, dim), True), ((n_layers, dim, dim), True),
+                   vector(), vector(), vector(),
+                   ((n_layers, dim, dim), True), vector(),
+                   vector(), vector(),
+                   ((n_layers, hidden_dim, dim), True), vector(hidden_dim),
+                   ((n_layers, dim, hidden_dim), True), vector(),
+                   ((dim,), False), ((dim,), False)]
+        if vocab_size < 0:
+            tensors.append(((abs(vocab_size), dim), True))
+        return tensors
     tensors = [((abs(vocab_size), dim), True), ((n_layers, dim), False),
                ((n_layers, dim, dim), True), ((n_layers, kv_dim, dim), True), ((n_layers, kv_dim, dim), True),
                ((n_layers, dim, dim), True), ((n_layers, dim), False),
@@ -54,8 +70,8 @@ def tensor_bytes(shape, is_matrix, dtype):
     return count + 4 * (count // group_size(shape[-1])) if is_matrix else 4 * count
 
 
-def checkpoint_size(header, dtype, bias=False):
-    return 28 + sum(tensor_bytes(shape, is_matrix, dtype) for shape, is_matrix in layout(*header, bias=bias))
+def checkpoint_size(header, dtype, bias=False, arch="llama"):
+    return 28 + sum(tensor_bytes(shape, is_matrix, dtype) for shape, is_matrix in layout(*header, bias=bias, arch=arch))
 
 
 def quantize(values):
@@ -69,12 +85,12 @@ def quantize(values):
 class Writer:
     """Puts pieces of the tensors of layout(), in any order, where they belong in the checkpoint buffer."""
 
-    def __init__(self, out, header, dtype, bias=False):
+    def __init__(self, out, header, dtype, bias=False, arch="llama"):
         self.out, self.dtype = np.frombuffer(out, dtype=np.uint8), np.dtype(dtype)
-        assert self.out.size == checkpoint_size(header, dtype, bias), "the buffer has not the size of the checkpoint"
+        assert self.out.size == checkpoint_size(header, dtype, bias, arch), "the buffer has not the size of the checkpoint"
         self.out[:28] = np.frombuffer(struct.pack("<7i", *header), dtype=np.uint8)
         self.tensors, offset = [], 28
-        for shape, is_matrix in layout(*header, bias=bias):
+        for shape, is_matrix in layout(*header, bias=bias, arch=arch):
             self.tensors.append((offset, shape, is_matrix))
             offset += tensor_bytes(shape, is_matrix, dtype)
 
@@ -155,6 +171,21 @@ class Arrays:
         return self.tensors[name][start:stop]
 
 
+def architecture(config):
+    return "gpt2" if config.get("model_type") == "gpt2" else "llama"
+
+
+def normalize(config):
+    """GPT-2 spells its config.json differently: give it the names the rest of this file uses."""
+    if config.get("model_type") != "gpt2":
+        return config
+    dim = config.get("n_embd")
+    return {**config, "hidden_size": dim, "intermediate_size": config.get("n_inner") or (4 * dim if dim else None),
+            "num_hidden_layers": config.get("n_layer"), "num_attention_heads": config.get("n_head"),
+            "max_position_embeddings": config.get("n_positions") or config.get("n_ctx"),
+            "hidden_act": "gelu", "tie_word_embeddings": config.get("tie_word_embeddings", True)}
+
+
 def check_config(config):
     """ValueError, in words for the visitor, unless this config.json describes a model the engine can run."""
     def refuse(reason):
@@ -162,9 +193,9 @@ def check_config(config):
 
     # qwen2 is a Llama with a bias on q, k and v: the converter writes those three vectors per layer, the engine
     # adds them after the projections (T64). Everything else about it is the same.
-    if config.get("model_type") not in ("llama", "qwen2"):
-        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama and Qwen2 models are "
-               f"supported")
+    if config.get("model_type") not in ("llama", "qwen2", "gpt2"):
+        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Qwen2 and GPT-2 "
+               f"models are supported")
     for key in ("hidden_size", "intermediate_size", "num_hidden_layers", "num_attention_heads", "vocab_size",
                 "max_position_embeddings"):
         if not isinstance(config.get(key), int) or config[key] <= 0:
@@ -175,6 +206,13 @@ def check_config(config):
         refuse("its attention heads do not divide the hidden size the way llama2.c expects")
     if config.get("rope_scaling"):
         refuse("it uses RoPE scaling")
+    if architecture(config) == "gpt2":
+        # GPT-2 has one kind of everything; only the activation could be something the GELU kernel is not
+        if config.get("activation_function", "gelu_new") not in ("gelu_new", "gelu", "gelu_pytorch_tanh"):
+            refuse(f"its activation is {config['activation_function']}, and only GELU is supported")
+        if config.get("num_key_value_heads", config["num_attention_heads"]) != config["num_attention_heads"]:
+            refuse("it has grouped-query attention, which GPT-2 models do not")
+        return
     if config.get("hidden_act", "silu") != "silu":
         refuse(f"its activation is {config['hidden_act']}, not silu")
     if config.get("mlp_bias") or (config.get("attention_bias") and config.get("model_type") != "qwen2"):
@@ -185,12 +223,48 @@ def check_config(config):
 
 def checkpoint_header(config, source, max_seq_len):
     """The 7 ints of the legacy header. A negative vocabulary size signals a classifier of its own (llama2.c)."""
+    config = normalize(config)
     shared_classifier = config.get("tie_word_embeddings", False) or "lm_head.weight" not in source
+    if architecture(config) == "gpt2":
+        # the learned positions are a table of exactly n_positions rows: the context cannot be cut short
+        max_seq_len = config["max_position_embeddings"]
     vocab_size = config["vocab_size"]
     # the KV cache grows with seq_len, so a long context can be cut down for the browser
     return (config["hidden_size"], config["intermediate_size"], config["num_hidden_layers"],
             config["num_attention_heads"], config.get("num_key_value_heads", config["num_attention_heads"]),
             vocab_size if shared_classifier else -vocab_size, min(config["max_position_embeddings"], max_seq_len))
+
+
+def transformed(values, transform, head_size):
+    """What a tensor of the Hugging Face checkpoint becomes in the checkpoint this engine reads.
+
+    None: nothing (the rows go straight through, as they arrive). ("permute", heads): the head interleaving of
+    wq and wk. ("transpose",): GPT-2 stores its matrices the other way round (Conv1D). ("part", i, n): one of
+    the n stacked matrices of GPT-2's c_attn, transposed with it; ("row", i, n) the same for its bias.
+    """
+    if transform is None:
+        return values
+    if transform[0] == "permute":
+        return permute_heads(values, transform[1], head_size)
+    if transform[0] == "transpose":
+        return values.T
+    index, parts = transform[1], transform[2]
+    if transform[0] == "part":
+        width = values.shape[1] // parts
+        return values[:, index * width:(index + 1) * width].T
+    length = values.shape[0] // parts
+    return values[index * length:(index + 1) * length]
+
+
+def source_shape(shape, transform):
+    """The shape the Hugging Face tensor must have to become a tensor of this shape."""
+    if transform is None or transform[0] == "permute":
+        return tuple(shape)
+    if transform[0] == "transpose":
+        return tuple(reversed(shape))
+    if transform[0] == "part":
+        return (shape[1], shape[0] * transform[2])
+    return (shape[0] * transform[2],)
 
 
 def permute_heads(w, heads, head_size):
@@ -200,29 +274,54 @@ def permute_heads(w, heads, head_size):
     return w.reshape(heads, 2, head_size // 2, -1).transpose(0, 2, 1, 3).reshape(w.shape)
 
 
+def gpt2_prefix(source):
+    """openai-community/gpt2 publishes its tensors as wte.weight and h.0...., other GPT-2 models put
+    transformer. in front of them. Both are the same model."""
+    return "" if "wte.weight" in source else "transformer."
+
+
 def has_bias(source):
     """Whether this checkpoint has the q, k and v biases of Qwen2 (o and the FFN never have one)."""
     return "model.layers.0.self_attn.q_proj.bias" in source
 
 
-def conversion_plan(header, bias=False):
+def conversion_plan(header, bias=False, arch="llama", prefix="transformer."):
     """For every tensor of layout(): the tensors of the Hugging Face checkpoint it is made of, in order, as
-    (name, heads to permute or None); None stands for a RoPE table. And the shapes of layout()."""
+    (name, transform); None instead of a list stands for a RoPE table. And the shapes of layout()."""
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
 
-    def layers(name, heads=None, what="weight"):
-        return [(f"model.layers.{layer}.{name}.{what}", heads) for layer in range(n_layers)]
+    if arch == "gpt2":
+        def h(name, transform=None):
+            return [(f"{prefix}h.{layer}.{name}", transform) for layer in range(n_layers)]
+
+        third = lambda i: ("part", i, 3)
+        plan = [[(prefix + "wte.weight", None)], [(prefix + "wpe.weight", None)],
+                h("ln_1.weight"), h("ln_1.bias"),
+                h("attn.c_attn.weight", third(0)), h("attn.c_attn.weight", third(1)), h("attn.c_attn.weight", third(2)),
+                h("attn.c_attn.bias", ("row", 0, 3)), h("attn.c_attn.bias", ("row", 1, 3)), h("attn.c_attn.bias", ("row", 2, 3)),
+                h("attn.c_proj.weight", ("transpose",)), h("attn.c_proj.bias"),
+                h("ln_2.weight"), h("ln_2.bias"),
+                h("mlp.c_fc.weight", ("transpose",)), h("mlp.c_fc.bias"),
+                h("mlp.c_proj.weight", ("transpose",)), h("mlp.c_proj.bias"),
+                [(prefix + "ln_f.weight", None)], [(prefix + "ln_f.bias", None)]]
+        if vocab_size < 0:
+            plan.append([("lm_head.weight", None)])
+        return plan, [shape for shape, _ in layout(*header, arch=arch)]
+
+    def layers(name, transform=None, what="weight"):
+        return [(f"model.layers.{layer}.{name}.{what}", transform) for layer in range(n_layers)]
 
     plan = [[("model.embed_tokens.weight", None)], layers("input_layernorm"),
-            layers("self_attn.q_proj", n_heads), layers("self_attn.k_proj", n_kv_heads), layers("self_attn.v_proj"),
+            layers("self_attn.q_proj", ("permute", n_heads)), layers("self_attn.k_proj", ("permute", n_kv_heads)),
+            layers("self_attn.v_proj"),
             layers("self_attn.o_proj"), layers("post_attention_layernorm"),
             layers("mlp.gate_proj"), layers("mlp.down_proj"), layers("mlp.up_proj"), [("model.norm.weight", None)],
             None, None]
     if vocab_size < 0:
         plan.append([("lm_head.weight", None)])
     if bias:
-        plan += [layers("self_attn.q_proj", n_heads, "bias"), layers("self_attn.k_proj", n_kv_heads, "bias"),
-                 layers("self_attn.v_proj", None, "bias")]
+        plan += [layers("self_attn.q_proj", ("permute", n_heads), "bias"),
+                 layers("self_attn.k_proj", ("permute", n_kv_heads), "bias"), layers("self_attn.v_proj", None, "bias")]
     return plan, [shape for shape, _ in layout(*header, bias=bias)]
 
 
@@ -248,16 +347,17 @@ def convert_weights(source, config, dtype, max_seq_len, out, progress=None):
 def convert_pieces(source, config, dtype, max_seq_len, out):
     """convert_weights() as a generator that yields (values done, values in all) after every piece: whoever drives
     it can show the progress, let other work in between, and stop half way (the worker of the page does all three)."""
+    config = normalize(config)
     check_config(config)
     header = checkpoint_header(config, source, max_seq_len)
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
     head_size = dim // n_heads
+    arch = architecture(config)
     bias = has_bias(source)
-    writer = Writer(out, header, dtype, bias)
+    writer = Writer(out, header, dtype, bias, arch)
 
-    plan, shapes = conversion_plan(header, bias)
+    plan, shapes = conversion_plan(header, bias, arch, gpt2_prefix(source))
     total, done = sum(int(np.prod(shape)) for shape in shapes), 0
-    permute_reverse = lambda w, heads: permute_heads(w, heads, head_size)
 
     for index, (parts, shape) in enumerate(zip(plan, shapes)):
         if parts is None:
@@ -267,20 +367,19 @@ def convert_pieces(source, config, dtype, max_seq_len, out):
             yield done, total
             continue
         first = 0
-        for name, heads in parts:
+        for name, transform in parts:
             found = source.shape(name) if name in source else None
-            expected = shape[1:] if len(parts) > 1 else shape
-            if found != tuple(expected):
-                raise ValueError(f"This model cannot be converted: {name} is {found or 'missing'}, not {tuple(expected)}.")
+            expected = source_shape(shape[1:] if len(parts) > 1 else shape, transform)
+            if found != expected:
+                raise ValueError(f"This model cannot be converted: {name} is {found or 'missing'}, not {expected}.")
             rows = found[0] if len(found) > 1 else 1
             row = int(np.prod(found)) // rows
-            # the head permutation needs its whole matrix (a small one); everything else goes piece by piece
-            step = rows if heads or len(found) == 1 else max(1, PIECE // row)
+            # a transform needs the whole tensor (a small one); everything else goes piece by piece
+            step = rows if transform or len(found) == 1 else max(1, PIECE // row)
             for start in range(0, rows, step):
                 stop = min(start + step, rows)
                 values = source.rows(name, 0, found[0]) if len(found) == 1 else source.rows(name, start, stop)
-                if heads:
-                    values = permute_reverse(values, heads)
+                values = transformed(values, transform, head_size)
                 writer.write(index, first, values)
                 first += values.size
                 done += values.size
@@ -299,14 +398,16 @@ class Stream:
     """
 
     def __init__(self, header, base, config, dtype, max_seq_len, out=None, start=0):
+        config = normalize(config)
         check_config(config)
         self.tensors = {name: info for name, info in header.items() if name != "__metadata__"}
         self.header = checkpoint_header(config, self, max_seq_len)
         self.head_size = self.header[0] // self.header[3]
+        self.arch = architecture(config)
         self.bias = has_bias(self)
-        self.out = bytearray(checkpoint_size(self.header, dtype, self.bias)) if out is None else out
-        self.writer = Writer(self.out, self.header, dtype, self.bias)
-        plan, shapes = conversion_plan(self.header, self.bias)
+        self.out = bytearray(checkpoint_size(self.header, dtype, self.bias, self.arch)) if out is None else out
+        self.writer = Writer(self.out, self.header, dtype, self.bias, self.arch)
+        plan, shapes = conversion_plan(self.header, self.bias, self.arch, gpt2_prefix(self))
         self.total, self.done = sum(int(np.prod(shape)) for shape in shapes), 0
         wanted = {}
         for index, (parts, shape) in enumerate(zip(plan, shapes)):
@@ -315,15 +416,16 @@ class Stream:
                 self.done += int(np.prod(shape))
                 continue
             first = 0
-            for name, heads in parts:
+            for name, transform in parts:
                 found = tuple(self.tensors[name]["shape"]) if name in self.tensors else None
-                expected = tuple(shape[1:] if len(parts) > 1 else shape)
+                expected = source_shape(shape[1:] if len(parts) > 1 else shape, transform)
                 if found != expected:
                     raise ValueError(f"This model cannot be converted: {name} is {found or 'missing'}, not {expected}.")
                 if self.tensors[name]["dtype"] not in READERS:
                     raise ValueError(f"{name} is stored as {self.tensors[name]['dtype']}: only float32, float16 and bfloat16 are supported.")
-                wanted[name] = (index, first, heads)
-                first += int(np.prod(found))
+                # GPT-2's c_attn holds q, k and v in one matrix, so one tensor of the file can feed several
+                wanted.setdefault(name, []).append((index, first, transform))
+                first += int(np.prod(shape[1:] if len(parts) > 1 else shape))
         # what to do with each stretch of the file, in the order of the file
         self.steps = []
         for name, info in sorted(self.tensors.items(), key=lambda item: item[1]["data_offsets"][0]):
@@ -355,25 +457,25 @@ class Stream:
         self.position += len(data)
         return self.done, self.total
 
-    def convert(self, name, target, last):
-        index, first, heads = target
+    def convert(self, name, targets, last):
         info = self.tensors[name]
         itemsize, reader = READERS[info["dtype"]]
         shape = tuple(info["shape"])
         row = (int(np.prod(shape[1:])) if len(shape) > 1 else int(shape[0])) * itemsize
         # the head permutation needs its whole matrix (a small one); everything else goes row by row, as it comes
-        rows = len(self.pending) // row if not heads or last else 0
-        if heads and last:
-            rows = shape[0]
+        whole = any(transform for _, _, transform in targets) or len(targets) > 1
+        rows = len(self.pending) // row if not whole or last else 0
+        if whole and last:
+            rows = shape[0] if len(shape) > 1 else 1  # a vector is one row of its own length
         if rows == 0 or (len(self.pending) < PIECE and not last):
             return
         values = reader(bytes(self.pending[:rows * row])).reshape(rows, *shape[1:]) if len(shape) > 1 else reader(bytes(self.pending[:rows * row]))
         del self.pending[:rows * row]
-        if heads:
-            values = permute_heads(values, heads, self.head_size)
-        self.writer.write(index, first + self.first, values)
-        self.first += values.size
-        self.done += values.size
+        for index, first, transform in targets:
+            out = transformed(values, transform, self.head_size)
+            self.writer.write(index, first + self.first, out)
+            self.done += out.size
+        self.first += 0 if whole else values.size
 
     def finish(self):
         if self.step < len(self.steps) or self.done != self.total:
@@ -401,8 +503,17 @@ def tokenizer_bin(pieces, vocab_size):
     return b"".join(out)
 
 
+def tokenizer_kind_of(tokenizer):
+    """What kind of model this tokenizer.json holds. The oldest ones (GPT-2's own, version 1.0) have no "type",
+    and are told apart by what they carry: merges for a BPE, a list of (piece, score) for a Unigram."""
+    model = tokenizer["model"]
+    if "type" in model:
+        return model["type"]
+    return "BPE" if "merges" in model else "Unigram"
+
+
 def tokenizer_json_pieces(tokenizer):
-    kind = tokenizer["model"]["type"]
+    kind = tokenizer_kind_of(tokenizer)
     if kind == "BPE":
         yield from tokenizer_json_bpe_pieces(tokenizer)
         return
@@ -441,7 +552,7 @@ def tokenizer_json_options(tokenizer):
     normalizers = json.dumps(tokenizer.get("normalizer") or {})
     # "Precompiled" is sentencepiece's character map, nmt_nfkc in practice
     nfkc = '"NFKC"' in normalizers or '"Precompiled"' in normalizers
-    if tokenizer["model"]["type"] != "BPE":
+    if tokenizer_kind_of(tokenizer) != "BPE":
         return {"tokenizer_kind": "unigram", "nfkc": nfkc}
     return {"tokenizer_kind": "bytebpe", "nfkc": nfkc, "nfc": '"NFC"' in normalizers,
             "pretokenizer": pretokenizer_name(tokenizer.get("pre_tokenizer"))}
@@ -548,6 +659,8 @@ class Conversion:
             raise ValueError("config.json is not JSON.") from None
         if not isinstance(self.config, dict):
             raise ValueError("config.json is not the configuration of a model.")
+        # GPT-2 spells its config differently: from here on it has the names the rest of the file uses
+        self.config = normalize(self.config)
         check_config(self.config)
         if np.dtype(dtype) not in (np.float32, np.float16, np.int8):
             raise ValueError(f"dtype must be float32, float16 or int8, not {dtype}.")
@@ -571,7 +684,8 @@ class Conversion:
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start))
         self.options = {**options, "dtype": np.dtype(dtype).name, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
-                        "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop, "bias": self.stream.bias}
+                        "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop, "bias": self.stream.bias,
+                        "arch": self.stream.arch}
         self.checkpoint = self.stream.out
 
     def feed(self, data):

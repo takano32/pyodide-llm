@@ -8,7 +8,8 @@ import numpy as np
 import pytest
 from conftest import ROOT, pack_checkpoint, synthetic_weights
 import llama2_convert
-from llama2_convert import (Arrays, Safetensors, check_config, checkpoint_header, checkpoint_size, convert_weights, has_bias,
+from llama2_convert import (Arrays, Safetensors, architecture, check_config, checkpoint_header, checkpoint_size,
+                            convert_weights, has_bias, normalize,
                             tokenizer_bin, tokenizer_json_options, tokenizer_json_pieces)
 from llama2_numpy import Llama, Tokenizer, check_tokenizer, checkpoint_dtype
 
@@ -62,7 +63,8 @@ def reader(file, log=None):
 
 
 def converted(source, published, dtype, max_seq_len=1 << 20):
-    out = bytearray(checkpoint_size(checkpoint_header(published, source, max_seq_len), dtype, has_bias(source)))
+    arch = architecture(normalize(published))
+    out = bytearray(checkpoint_size(checkpoint_header(published, source, max_seq_len), dtype, has_bias(source), arch))
     convert_weights(source, published, dtype, max_seq_len, out)
     return bytes(out)
 
@@ -133,7 +135,7 @@ def test_the_context_can_be_cut_and_the_engine_runs_the_result():
 
 
 @pytest.mark.parametrize("change, reason", [
-    (dict(model_type="gpt2"), "only Llama and Qwen2 models"), (dict(rope_scaling={"type": "linear"}), "RoPE scaling"),
+    (dict(model_type="rwkv"), "only Llama, Qwen2 and GPT-2"), (dict(rope_scaling={"type": "linear"}), "RoPE scaling"),
     (dict(hidden_act="gelu"), "gelu"), (dict(attention_bias=True), "biases"), (dict(num_attention_heads=5), "heads"),
     (dict(vocab_size=None), "vocab_size"), (dict(head_dim=3), "heads")])
 def test_a_model_the_engine_cannot_run_is_refused(change, reason):

@@ -265,6 +265,18 @@ def rmsnorm(x, weight):
     return weight * (x / np.sqrt(x.dot(x) / x.size + 1e-5))
 
 
+def layernorm(x, weight, bias):
+    """GPT-2 normalizes by the mean and the variance, and adds a bias."""
+    centred = x - x.mean()
+    return weight * (centred / np.sqrt(centred.dot(centred) / x.size + 1e-5)) + bias
+
+
+def gelu(x):
+    """GPT-2's gelu_new: the tanh approximation, written with exp so that the kernel can do the same."""
+    inner = 0.7978845608028654 * (x + 0.044715 * x * x * x)
+    return x * (1.0 / (1.0 + np.exp(-2.0 * inner)))
+
+
 def rope(x, cos, sin):
     # Rotate each pair (x[2i], x[2i+1]) of every head by the angle for this position
     pairs = x.reshape(-1, cos.size, 2)
@@ -297,6 +309,7 @@ def load_kernels(path):
         signatures = dict(matmul_f32=[p, p, p, i32, i32, i32], quantize_x=[p, p, p, i32, i32],
                           matmul_q8=[p, p, p, p, p, i32, i32, i32], rmsnorm=[p, p, p, i32], rope=[p, p, p, i32, i32],
                           attention=[p, p, p, p, p, i32, i32, i32, i32], swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
+                          layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32],
                           penalize=[p, p, i32, ctypes.c_float],
                           sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p])
         kernels = {}
@@ -374,11 +387,14 @@ def check_tokenizer(tokenizer, header):
 
 class Llama:
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
-                 tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, bos=BOS,
-                 stop_tokens=(BOS,), kernels=None, specials=()):
+                 tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
+                 bos=BOS, stop_tokens=(BOS,), kernels=None, specials=()):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py).
+        arch="gpt2": LayerNorm instead of RMSNorm, GELU instead of SwiGLU (and no gate matrix), a learned table
+        of positions instead of RoPE, and a bias after every projection. The tensors of the file differ with it,
+        so it is llama2_convert.layout(arch=) that says what is there.
         bias=True: the checkpoint ends with a bias for q, k and v of every layer, which is added after those
         projections (Qwen2). The legacy header cannot say so, so the caller does, like the tokenizer settings.
         bos starts every sequence; generation ends when the model emits one of stop_tokens.
@@ -425,6 +441,31 @@ class Llama:
                 return array.reshape(shape).copy()
             return array.astype(np.float32, copy=dtype == np.int8 and not keep_int8).reshape(shape)
 
+        self.arch = arch
+        self.positions = None
+        self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
+        self.bo = self.b1 = self.b2 = None
+        if arch == "gpt2":
+            self.gpt2_tensors(take, shared_weights, keep_int8, kv_dim)
+        else:
+            self.llama_tensors(take, shared_weights, keep_int8, kv_dim, bias, dtype, rope_theta)
+        self.backend = "NumPy"
+        if kernels:
+            self.forward = self.kernel_forward(kernels, keep_int8)
+            self.penalize, self.sample = self.kernel_sampler(kernels)
+        else:
+            self.key_cache = np.zeros((n_layers, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
+            self.value_cache = np.zeros_like(self.key_cache)
+        self.tokenizer = Tokenizer(tokenizer, self.vocab_size, kind=tokenizer_kind, nfkc=nfkc, nfc=nfc,
+                                   pretokenizer=pretokenizer)
+        self.bos, self.stop_tokens = bos, {int(token) for token in stop_tokens}
+        self.specials = tuple(str(special) for special in specials)  # see Tokenizer.encode()
+        self.stats = {}
+        self._run = 0
+
+    def llama_tensors(self, take, shared_weights, keep_int8, kv_dim, bias, dtype, rope_theta):
+        """The tensors of a Llama (and of a Qwen2, which adds the q, k and v biases at the end), in file order."""
+        dim, hidden_dim, n_layers = self.dim, self.hidden_dim, self.n_layers
         # With a separate classifier the embedding table is only ever read one row at a time, so an int8 or
         # float16 table stays as it is (a quarter or half of the memory) and forward() widens the row it needs.
         self.token_embedding_table = take(self.vocab_size, dim, widen=shared_weights and not keep_int8)
@@ -451,19 +492,30 @@ class Llama:
             angles = np.arange(self.seq_len)[:, None] / rope_theta ** (np.arange(0, self.head_size, 2) / self.head_size)
             self.freq_cis_real, self.freq_cis_imag = np.cos(angles).astype(np.float32), np.sin(angles).astype(np.float32)
 
-        self.backend = "NumPy"
-        if kernels:
-            self.forward = self.kernel_forward(kernels, keep_int8)
-            self.penalize, self.sample = self.kernel_sampler(kernels)
-        else:
-            self.key_cache = np.zeros((n_layers, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
-            self.value_cache = np.zeros_like(self.key_cache)
-        self.tokenizer = Tokenizer(tokenizer, self.vocab_size, kind=tokenizer_kind, nfkc=nfkc, nfc=nfc,
-                                   pretokenizer=pretokenizer)
-        self.bos, self.stop_tokens = bos, {int(token) for token in stop_tokens}
-        self.specials = tuple(str(special) for special in specials)  # see Tokenizer.encode()
-        self.stats = {}
-        self._run = 0
+    def gpt2_tensors(self, take, shared_weights, keep_int8, kv_dim):
+        """The tensors of a GPT-2, in the order llama2_convert.layout(arch="gpt2") writes them."""
+        dim, hidden_dim, n_layers = self.dim, self.hidden_dim, self.n_layers
+        vector = lambda n=dim: take(n_layers, n, matrix=False)
+        self.token_embedding_table = take(self.vocab_size, dim, widen=shared_weights and not keep_int8)
+        self.positions = take(self.seq_len, dim, widen=True)
+        self.rms_att_weight, self.ln_att_bias = vector(), vector()
+        self.wq = take(n_layers, dim, dim, widen=not keep_int8)
+        self.wk = take(n_layers, kv_dim, dim, widen=not keep_int8)
+        self.wv = take(n_layers, kv_dim, dim, widen=not keep_int8)
+        self.bq, self.bk, self.bv = vector(), vector(kv_dim), vector(kv_dim)
+        self.wo = take(n_layers, dim, dim, widen=not keep_int8)
+        self.bo = vector()
+        self.rms_ffn_weight, self.ln_ffn_bias = vector(), vector()
+        self.w1 = take(n_layers, hidden_dim, dim, widen=not keep_int8)
+        self.b1 = vector(hidden_dim)
+        self.w2 = take(n_layers, dim, hidden_dim, widen=not keep_int8)
+        self.b2 = vector()
+        self.rms_final_weight = take(dim, matrix=False)
+        self.ln_final_bias = take(dim, matrix=False)
+        self.wcls = self.token_embedding_table if shared_weights else take(self.vocab_size, dim, widen=not keep_int8)
+        self.w3 = None
+        # no rotation: the position is a row of a learned table, added to the embedding
+        self.freq_cis_real = self.freq_cis_imag = np.zeros((self.seq_len, self.head_size // 2), dtype=np.float32)
 
     def embedding(self, token):
         if isinstance(self.token_embedding_table, tuple):
@@ -496,6 +548,14 @@ class Llama:
         att_w, ffn_w, final_w = map(address, (self.rms_att_weight, self.rms_ffn_weight, self.rms_final_weight))
         rmsnorm, rope, attention = kernels["rmsnorm"], kernels["rope"], kernels["attention"]
         swiglu, add_inplace, quantize_x = kernels["swiglu"], kernels["add_inplace"], kernels["quantize_x"]
+        gpt2 = self.arch == "gpt2"
+        # GPT-2: LayerNorm instead of RMSNorm (a bias comes with each), GELU instead of the gated SwiGLU, and
+        # the position is a row of a learned table rather than a rotation
+        if gpt2:
+            layer_norm, gelu_kernel = kernels["layernorm"], kernels["gelu"]
+            att_b, ffn_b, final_b = map(address, (self.ln_att_bias, self.ln_ffn_bias, self.ln_final_bias))
+            bo_p, b1_p, b2_p = map(address, (self.bo, self.b1, self.b2))
+            positions_p = address(self.positions)  # an attribute of the model, so it stays alive by itself
         self._kernel_buffers = (x, xb, xb2, q, hb, hb2, att, logits, key_cache, value_cache, xq, xs)  # keep them alive
 
         if int8:
@@ -538,9 +598,11 @@ class Llama:
 
         wq, wo = matmul_for(self.wq, dim, dim), matmul_for(self.wo, dim, dim)
         wk, wv = matmul_for(self.wk, dim, kv_dim), matmul_for(self.wv, dim, kv_dim)
-        w1, w3 = matmul_for(self.w1, dim, hidden_dim), matmul_for(self.w3, dim, hidden_dim)
+        w1 = matmul_for(self.w1, dim, hidden_dim)
+        w3 = matmul_for(self.w3, dim, hidden_dim) if self.w3 is not None else None
         w2, wcls = matmul_for(self.w2, hidden_dim, dim), matmul_for(self.wcls, dim, self.vocab_size)
         row_bytes, kv_row_bytes, half_bytes = dim * 4, kv_dim * 4, head_size // 2 * 4
+        hidden_row_bytes = hidden_dim * 4
         # Qwen2's bias on q, k and v: one add_inplace each, on the float32 vectors the matmul just wrote
         bq_p, bk_p, bv_p = (address(tensor) if tensor is not None else 0 for tensor in (self.bq, self.bk, self.bv))
 
@@ -557,11 +619,16 @@ class Llama:
             if pos >= capacity:
                 grow(pos)
             x[:] = self.embedding(token)
+            if gpt2:
+                add_inplace(x_p, positions_p + pos * row_bytes, dim)
             cos, sin = cos_p + pos * half_bytes, sin_p + pos * half_bytes
             for l in range(n_layers):
                 keys, values = key_p[l], value_p[l]
                 k_p, v_p = keys + pos * kv_row_bytes, values + pos * kv_row_bytes
-                rmsnorm(xb_p, x_p, att_w + l * row_bytes, dim)
+                if gpt2:
+                    layer_norm(xb_p, x_p, att_w + l * row_bytes, att_b + l * row_bytes, dim)
+                else:
+                    rmsnorm(xb_p, x_p, att_w + l * row_bytes, dim)
                 wq(q_p, xb_p, l)
                 wk(k_p, xb_p, l, True)
                 wv(v_p, xb_p, l, True)
@@ -569,11 +636,21 @@ class Llama:
                     add_inplace(q_p, bq_p + l * row_bytes, dim)
                     add_inplace(k_p, bk_p + l * kv_row_bytes, kv_dim)
                     add_inplace(v_p, bv_p + l * kv_row_bytes, kv_dim)
-                rope(q_p, cos, sin, n_heads, head_size)
-                rope(k_p, cos, sin, n_kv_heads, head_size)
+                if not gpt2:
+                    rope(q_p, cos, sin, n_heads, head_size)
+                    rope(k_p, cos, sin, n_kv_heads, head_size)
                 attention(xb_p, q_p, keys, values, att_p, pos, n_heads, n_kv_heads, head_size)
                 wo(xb2_p, xb_p, l)
                 add_inplace(x_p, xb2_p, dim)
+                if gpt2:
+                    add_inplace(x_p, bo_p + l * row_bytes, dim)
+                    layer_norm(xb_p, x_p, ffn_w + l * row_bytes, ffn_b + l * row_bytes, dim)
+                    w1(hb_p, xb_p, l)
+                    gelu_kernel(hb_p, hb_p, b1_p + l * hidden_row_bytes, hidden_dim)
+                    w2(xb2_p, hb_p, l)
+                    add_inplace(x_p, xb2_p, dim)
+                    add_inplace(x_p, b2_p + l * row_bytes, dim)
+                    continue
                 rmsnorm(xb_p, x_p, ffn_w + l * row_bytes, dim)
                 w1(hb_p, xb_p, l)
                 w3(hb2_p, xb_p, l, True)
@@ -582,7 +659,10 @@ class Llama:
                 add_inplace(x_p, xb2_p, dim)
             if not need_logits:
                 return None
-            rmsnorm(xb_p, x_p, final_w, dim)
+            if gpt2:
+                layer_norm(xb_p, x_p, final_w, final_b, dim)
+            else:
+                rmsnorm(xb_p, x_p, final_w, dim)
             wcls(logits_p, xb_p, 0)
             return logits
 
@@ -601,19 +681,25 @@ class Llama:
                 setattr(self, name, larger)
         scale = np.float32(1.0 / math.sqrt(head_size))
         cos, sin = self.freq_cis_real[pos], self.freq_cis_imag[pos]
+        gpt2 = self.arch == "gpt2"
+        # GPT-2 normalizes by the mean as well, and has a bias on every projection
+        norm = (lambda v, w, b: layernorm(v, w, b)) if gpt2 else (lambda v, w, b: rmsnorm(v, w))
+        turn = (lambda v, c, s: v.reshape(-1, head_size)) if gpt2 else rope
 
-        # Copy the token embedding into x
+        # Copy the token embedding into x, and (GPT-2) the row of this position
         x = self.embedding(token)
+        if gpt2:
+            x = x + self.positions[pos]
 
         # Forward all the layers
         for l in range(self.n_layers):
             # QKV matmuls for this position, RoPE on q and k, k and v go to the kv cache
-            xb = rmsnorm(x, self.rms_att_weight[l])
+            xb = norm(x, self.rms_att_weight[l], self.ln_att_bias[l] if gpt2 else None)
             qv, kv, vv = self.wq[l] @ xb, self.wk[l] @ xb, self.wv[l] @ xb
-            if self.bq is not None:  # Qwen2 adds a bias to q, k and v
+            if self.bq is not None:  # Qwen2 and GPT-2 add a bias to q, k and v
                 qv, kv, vv = qv + self.bq[l], kv + self.bk[l], vv + self.bv[l]
-            q = rope(qv, cos, sin).reshape(n_kv_heads, kv_mul, head_size)
-            self.key_cache[l, :, pos] = rope(kv, cos, sin)
+            q = turn(qv, cos, sin).reshape(n_kv_heads, kv_mul, head_size)
+            self.key_cache[l, :, pos] = turn(kv, cos, sin)
             self.value_cache[l, :, pos] = vv.reshape(n_kv_heads, head_size)
 
             # Multihead attention over all timesteps so far, all heads at once
@@ -623,18 +709,23 @@ class Llama:
             att = np.exp(att - att.max(axis=-1, keepdims=True))
             att /= att.sum(axis=-1, keepdims=True)
             # Output projection and residual connection
-            x += self.wo[l] @ (att @ values).reshape(self.dim)
+            x = x + self.wo[l] @ (att @ values).reshape(self.dim)
+            if gpt2:
+                x = x + self.bo[l]
 
-            # FFN: w2(silu(w1(x)) * w3(x)), and residual connection
-            xb = rmsnorm(x, self.rms_ffn_weight[l])
+            # FFN: w2(silu(w1(x)) * w3(x)), or GPT-2's w2(gelu(w1(x))), and residual connection
+            xb = norm(x, self.rms_ffn_weight[l], self.ln_ffn_bias[l] if gpt2 else None)
             hb = self.w1[l] @ xb
-            hb = hb / (1.0 + np.exp(-hb)) * (self.w3[l] @ xb)
-            x += self.w2[l] @ hb
+            if gpt2:
+                x = x + self.w2[l] @ gelu(hb + self.b1[l]) + self.b2[l]
+            else:
+                hb = hb / (1.0 + np.exp(-hb)) * (self.w3[l] @ xb)
+                x = x + self.w2[l] @ hb
 
         if not need_logits:
             return None
-        # Final rmsnorm, then the classifier into logits (60% of all the multiply-adds of stories15M)
-        return self.wcls @ rmsnorm(x, self.rms_final_weight)
+        # Final norm, then the classifier into logits (60% of all the multiply-adds of stories15M)
+        return self.wcls @ norm(x, self.rms_final_weight, self.ln_final_bias)
 
     def kernel_sampler(self, kernels):
         """penalize() and sample() on the kernels: the same as the methods below, which stay for NumPy alone.

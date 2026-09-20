@@ -224,6 +224,41 @@ export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize
   }
 }
 
+export function layernorm(out: usize, x: usize, w: usize, b: usize, n: i32): void {
+  // GPT-2 normalizes by the mean and the variance, and adds a bias after the scale
+  let sum = f32x4.splat(0);
+  let j = 0;
+  const n4 = n & ~3;
+  for (; j < n4; j += 4) { sum = f32x4.add(sum, v128.load(x + (<usize>j << 2))); }
+  let total: f32 = hsum(sum);
+  for (; j < n; j++) { total += load<f32>(x + (<usize>j << 2)); }
+  const mean: f32 = total / <f32>n;
+  let acc = f32x4.splat(0);
+  const meanv = f32x4.splat(mean);
+  for (j = 0; j < n4; j += 4) {
+    const d = f32x4.sub(v128.load(x + (<usize>j << 2)), meanv);
+    acc = f32x4.add(acc, f32x4.mul(d, d));
+  }
+  let ss: f32 = hsum(acc);
+  for (; j < n; j++) { const d = load<f32>(x + (<usize>j << 2)) - mean; ss += d * d; }
+  const s: f32 = <f32>1.0 / sqrt<f32>(ss / <f32>n + <f32>1e-5);
+  for (j = 0; j < n; j++) {
+    const o = <usize>j << 2;
+    store<f32>(out + o, load<f32>(w + o) * (s * (load<f32>(x + o) - mean)) + load<f32>(b + o));
+  }
+}
+
+export function gelu(out: usize, x: usize, b: usize, n: i32): void {
+  // GPT-2's gelu_new, with the bias of the projection added first. 0.5 * (1 + tanh(z)) is 1 / (1 + exp(-2z)),
+  // so the same table-free exp as swiglu does it.
+  for (let j = 0; j < n; j++) {
+    const o = <usize>j << 2;
+    const v = load<f32>(x + o) + load<f32>(b + o);
+    const inner = <f32>0.7978845608028654 * (v + <f32>0.044715 * v * v * v);
+    store<f32>(out + o, v / (<f32>1.0 + fexp(<f32>-2.0 * inner)));
+  }
+}
+
 export function swiglu(out: usize, h1: usize, h3: usize, n: i32): void {
   for (let j = 0; j < n; j++) {
     const o = <usize>j << 2;

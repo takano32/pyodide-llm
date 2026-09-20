@@ -9,7 +9,7 @@ import { loadPyodide, version } from "pyodide";
 const root = new URL("../", import.meta.url).pathname;
 const pyodide = await loadPyodide();
 await pyodide.loadPackage("numpy", { messageCallback: () => {} });
-for (const file of ["public/llama2_numpy.py", "public/simdkernel.so", "public/simdkernel_relaxed.wasmlib", "stories260K.bin", "tok512.bin", "stories3_5M-v4k.bin", "tok4096.bin",
+for (const file of ["public/llama2_numpy.py", "public/llama2_convert.py", "public/simdkernel.so", "public/simdkernel_relaxed.wasmlib", "stories260K.bin", "tok512.bin", "stories3_5M-v4k.bin", "tok4096.bin",
                     "stories15M.f32", "tokenizer.bin", "tiny-lm.bin", "tiny-lm.tokenizer.bin"]) {
   pyodide.FS.writeFile(file.split("/").pop(), fs.readFileSync(root + file));
 }
@@ -48,6 +48,38 @@ assert "".join(simd15.generate("Once upon a time", steps=60)) == reference, "the
 fast = llama2_numpy.Llama(read("tiny-lm.bin"), read("tiny-lm.tokenizer.bin"), dtype="int8", kernels="simdkernel.so",
                           tokenizer_kind="unigram", nfkc=True, stop_tokens=(1, 2))
 assert "int8" in fast.backend and len("".join(fast.generate("これからの流行りは", steps=12, temperature=0.7, seed=1))) > 3
+# GPT-2 on the kernels (T65): LayerNorm, GELU and the learned positions must write what NumPy writes
+import numpy as np
+import llama2_convert
+dim, hidden, layers, heads, vocab, positions = 32, 64, 2, 4, 320, 16
+rng = np.random.default_rng(3)
+normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
+tensors = {"transformer.wte.weight": normal(vocab, dim), "transformer.wpe.weight": normal(positions, dim),
+           "transformer.ln_f.weight": (1.0 + normal(dim) * 0.1).astype(np.float32), "transformer.ln_f.bias": normal(dim)}
+for layer in range(layers):
+    prefix = f"transformer.h.{layer}."
+    for norm in ("ln_1", "ln_2"):
+        tensors[prefix + norm + ".weight"] = (1.0 + normal(dim) * 0.1).astype(np.float32)
+        tensors[prefix + norm + ".bias"] = normal(dim)
+    tensors[prefix + "attn.c_attn.weight"], tensors[prefix + "attn.c_attn.bias"] = normal(dim, 3 * dim), normal(3 * dim)
+    tensors[prefix + "attn.c_proj.weight"], tensors[prefix + "attn.c_proj.bias"] = normal(dim, dim), normal(dim)
+    tensors[prefix + "mlp.c_fc.weight"], tensors[prefix + "mlp.c_fc.bias"] = normal(dim, hidden), normal(hidden)
+    tensors[prefix + "mlp.c_proj.weight"], tensors[prefix + "mlp.c_proj.bias"] = normal(hidden, dim), normal(dim)
+gpt2_config = dict(model_type="gpt2", n_embd=dim, n_head=heads, n_layer=layers, n_inner=hidden,
+                   n_positions=positions, vocab_size=vocab, activation_function="gelu_new")
+source = llama2_convert.Arrays(tensors)
+normalized = llama2_convert.normalize(gpt2_config)
+header = llama2_convert.checkpoint_header(normalized, source, positions)
+gpt2_file = bytearray(llama2_convert.checkpoint_size(header, "float32", False, "gpt2"))
+llama2_convert.convert_weights(source, gpt2_config, "float32", positions, gpt2_file)
+gpt2_vocabulary = llama2_convert.tokenizer_bin([("<unk>", 0.0, False)] + [(f"w{i}", -float(i), True) for i in range(vocab - 1)], vocab)
+plain = llama2_numpy.Llama(bytes(gpt2_file), gpt2_vocabulary, arch="gpt2")
+quick = llama2_numpy.Llama(bytes(gpt2_file), gpt2_vocabulary, arch="gpt2", kernels="simdkernel.so")
+assert quick.backend.startswith("SIMD"), f"the kernels did not load for GPT-2: {quick.backend}"
+for pos, token in enumerate([1, 5, 9, 13]):
+    wanted, got = plain.forward(token, pos), quick.forward(token, pos)
+    assert np.allclose(wanted, got, rtol=1e-4, atol=1e-4), f"GPT-2 kernels differ at {pos}: {np.abs(wanted - got).max()}"
+
 # sampling on the kernels: the token NumPy picks for the same random number, the same penalty, a seed reproduces
 import numpy as np
 generator = np.random.default_rng(0)
