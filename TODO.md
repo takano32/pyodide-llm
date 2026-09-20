@@ -43,17 +43,20 @@
   1. **部分 RoPE**: head の先頭 `rotary_pct` ぶんだけ回す（`pythia-160m` は 0.25、`rinna/japanese-gpt-neox-small` は 1.0）。`rope` カーネルに「回す本数」の引数を足す。
   2. **並列残差**（`use_parallel_residual`）: attention と FFN が**同じ x** を見て、結果を両方足す（Pythia は真、rinna は偽）。**両方の形が実在するので両対応が要る**。forward の順序だけで、カーネルは要らない。
 - 細かい差: fused の `query_key_value` は head ごとに q・k・v が交互に並ぶ（T65 の `c_attn` の割り方とは並びが違う）。`tie_word_embeddings` は偽なので分類器は別（対応済み）。
+- 着手前の調査（2026-09-21、Opus。実物を見て確認）: **3 つの中でいちばん軽い。** `rope` カーネルは 12 行で、`for (i = 0; i < hs; i += 2)` の上限を引数にするだけ（NumPy 版は先頭だけ切って回し、残りは繋ぐ）。並列残差は forward の足し方だけでカーネルは要らない。テンソル名は `gpt_neox.layers.0.attention.query_key_value.{weight,bias}`・`attention.dense`・`mlp.dense_h_to_4h` / `dense_4h_to_h`・`input_layernorm`・`post_attention_layernorm`・`embed_in`・`embed_out`。`masked_bias` と `rotary_emb.inv_freq` という要らないテンソルも入っているが、**いまの Stream は要らない名前を読み飛ばす**。fused の `query_key_value` は head ごとに q・k・v が交互（T65 の `c_attn` とは並びが違うので、並べ替えの関数を 1 つ足す）。重みは F16 で対応済み。見積もりは engine +40 行・変換器 +60 行・カーネル +5 行で、**T65 より軽い**。
 - 完了条件: CI で参照（Python のループ実装）と一致し、実ブラウザで Pythia と rinna が動く。Pythia の各サイズの tok/s を測って `kernels/README.md` に梯子として載せる。
 
 ### T73 [追加] `chat_template` を読んで指示モデルの書式を自動で決める — 状態: 未着手（2026-09-21 採用。勧める順の 2 つめ。規模 小）
 - 目的: いまは指示モデルの書式を `src/models.js` に手で書いている（`LLM_JP_INSTRUCT`、`CHATML`、TinyLlama の形）。`tokenizer_config.json` の `chat_template` を読めば、**一覧に無いモデルを `?hf=` で開いた訪問者にも書式が効く**。新しいアーキテクチャは増えないが、モデルを 1 つ増やす費用が下がる。
 - 手順: Jinja の全機能は要らない。よくある形（`messages` を回して role ごとに固定文字列を挟む、`add_generation_prompt`、`bos_token` / `eos_token` の差し込み）だけ解釈し、読めないテンプレートは黙って諦めていまの `template` に任せる。特殊トークンは T63 の `specials` に渡す。
+- 着手前の調査（2026-09-21、Opus。実物を 3 つ読んだ）: llm-jp-3-150m-instruct3 と SmolLM2-135M-Instruct は単純な for と if で**すぐ読める**。Qwen2.5-0.5B-Instruct は長く、tools の分岐・入れ子の if・`{%- -%}` の空白制御が入る。**道が 2 つあり、ここは持ち主の判断**: (1) Jinja の一部を自分で書く（150〜250 行。知らない構文が出たら諦めて手書きの `template` に任せる。依存は増えない。Qwen のような長いものは諦める側に回る見込み）、(2) Pyodide に `micropip` で `jinja2` を入れる（純 Python なので入る。全部読めるが **PyPI という外部依存が増える**）。Opus の勧めは (1)。
 - 完了条件: いま手で書いてある 3 つの書式が、テンプレートから組み立てたものと一致する。読めないテンプレートでページが壊れない。
 
 ### T74 [追加] GGUF を取り込み元にする（取得が半分になる）— 状態: 未着手（2026-09-21 採用。勧める順の 3 つめ。規模 中）
 - 目的: いまは bf16 や float32 の原本を取ってからブラウザで int8 にしている（Qwen2.5 0.5B は 0.9GB 取って 545MB にする）。**GGUF の Q8_0 は 32 個ごとに fp16 のスケールで、うちの int8（グループ 32、float32 のスケール）とほぼ同じ形**なので、そのまま読めれば取得が半分で済む。
 - 範囲: **Q8_0 と F16 だけ**。K 量子化（Q4_K など）には手を出さない。GGUF はヘッダにアーキテクチャと諸元を持つので `config.json` は要らないが、テンソル名が別（`blk.0.attn_q.weight` など）なので対応表が要る。
 - 注意: 小さいモデルの GGUF は、llama.cpp 向けの大物ほど揃っていない。**着手前に「1.5B 以下で Q8_0 か F16 の GGUF を持つモデル」を数える**こと（未計測）。数が少なければ取りやめる。
+- 着手前の調査（2026-09-21、Opus。HF を検索して確認）: **見返りが偏っている。** Q8_0 の GGUF があるのは Qwen2.5-0.5B-Instruct（Qwen 公式）・SmolLM2-135M-Instruct・GPT-2・Pythia の派生。**llm-jp-3-150m と rinna/japanese-gpt2-small には見つからなかった**ので、このサイトが前に出している日本語モデルには効かない。実装自体は素直で、GGUF はヘッダに諸元と語彙を持つので `config.json` も `tokenizer.json` も要らず、Q8_0 は 32 個ごとに fp16 のスケールでうちの int8 とほぼ同じ形。テンソルは連番で並ぶのでいまのファイル順の変換に乗る。ただし KV の型が多く、パーサは 3 つの中でいちばん大きい。**着手前に日本語のモデルにも効くか見直し、効かないままなら順位を下げるか取りやめる。**
 - 完了条件: GGUF から取った int8 と、原本から変換した int8 が同じ出力を出す（同じモデルで比べる）。取得のバイト数が半分になることを実測で示す。
 
 ### T71 [性能] 重みを行で分けて複数の Worker で計算する — 状態: 未着手（2026-09-21 採用。持ち主の発案。**来週、Fable が調べ直してから実装する**。着手の前に「往復の費用」を測って判定する）
