@@ -92,6 +92,13 @@ export const MODELS = [
   { group: "hf", id: "hf-gpt2", name: "GPT-2 124M", note: "English · fetches 548 MB → int8 157 MB",
     hf: hf("openai-community/gpt2", "607a30d783dfa663caf39e06633721c8d4cfcd7e"), download: 548105171,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  // GPT-NeoX (T72): GPT-2 with RoPE over part of every head. Pythia is the same design at many sizes
+  { group: "hf", id: "hf-japanese-gpt-neox-small", name: "japanese-gpt-neox small", note: "日本語 · fetches 663 MB → int8 193 MB",
+    hf: hf("rinna/japanese-gpt-neox-small", "84d18c0fa8c9940a61cfc4e25bd9a5686898bac1", "spiece.model"), download: 663470088,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  { group: "hf", id: "hf-pythia-160m", name: "Pythia 160M", note: "English · fetches 375 MB → int8 213 MB",
+    hf: hf("EleutherAI/pythia-160m", "50f5173d932e8e61f858120bcb800b97af589f46"), download: 374998696,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
   // TinyLlama's template has </s> between the turns: specials makes the tokenizer read it as the token, not as text
   { group: "hf", id: "hf-tinyllama-1.1b-chat", name: "TinyLlama 1.1B Chat", note: "answers instructions · English · fetches 2.2 GB → int8 1.2 GB · desktop only",
     hf: hf("TinyLlama/TinyLlama-1.1B-Chat-v1.0", "fe8a4ea1ffedaf415f4da2f062534de366a451e6", "tokenizer.model"), download: 2200119864,

@@ -80,6 +80,39 @@ for pos, token in enumerate([1, 5, 9, 13]):
     wanted, got = plain.forward(token, pos), quick.forward(token, pos)
     assert np.allclose(wanted, got, rtol=1e-4, atol=1e-4), f"GPT-2 kernels differ at {pos}: {np.abs(wanted - got).max()}"
 
+# GPT-NeoX on the kernels (T72): part of every head rotates, and both branches may read the same x
+neox_tensors = {"gpt_neox.embed_in.weight": normal(vocab, dim), "embed_out.weight": normal(vocab, dim),
+                "gpt_neox.final_layer_norm.weight": (1.0 + normal(dim) * 0.1).astype(np.float32),
+                "gpt_neox.final_layer_norm.bias": normal(dim)}
+for layer in range(layers):
+    prefix = f"gpt_neox.layers.{layer}."
+    for norm in ("input_layernorm", "post_attention_layernorm"):
+        neox_tensors[prefix + norm + ".weight"] = (1.0 + normal(dim) * 0.1).astype(np.float32)
+        neox_tensors[prefix + norm + ".bias"] = normal(dim)
+    neox_tensors[prefix + "attention.query_key_value.weight"] = normal(3 * dim, dim)
+    neox_tensors[prefix + "attention.query_key_value.bias"] = normal(3 * dim)
+    neox_tensors[prefix + "attention.dense.weight"], neox_tensors[prefix + "attention.dense.bias"] = normal(dim, dim), normal(dim)
+    neox_tensors[prefix + "mlp.dense_h_to_4h.weight"], neox_tensors[prefix + "mlp.dense_h_to_4h.bias"] = normal(hidden, dim), normal(hidden)
+    neox_tensors[prefix + "mlp.dense_4h_to_h.weight"], neox_tensors[prefix + "mlp.dense_4h_to_h.bias"] = normal(dim, hidden), normal(dim)
+for rotary_pct, parallel in ((0.25, True), (1.0, False)):
+    neox_config = dict(model_type="gpt_neox", hidden_size=dim, num_attention_heads=heads, num_hidden_layers=layers,
+                       intermediate_size=hidden, max_position_embeddings=positions, vocab_size=vocab,
+                       rotary_pct=rotary_pct, rotary_emb_base=10000.0, use_parallel_residual=parallel,
+                       hidden_act="gelu", tie_word_embeddings=False)
+    source = llama2_convert.Arrays(neox_tensors)
+    header = llama2_convert.checkpoint_header(llama2_convert.normalize(neox_config), source, positions)
+    neox_file = bytearray(llama2_convert.checkpoint_size(header, "float32", False, "neox"))
+    llama2_convert.convert_weights(source, neox_config, "float32", positions, neox_file)
+    rotary = llama2_convert.rotary_dim(llama2_convert.normalize(neox_config))
+    options = dict(arch="neox", rotary=rotary, parallel_residual=parallel)
+    plain = llama2_numpy.Llama(bytes(neox_file), gpt2_vocabulary, **options)
+    quick = llama2_numpy.Llama(bytes(neox_file), gpt2_vocabulary, kernels="simdkernel.so", **options)
+    assert quick.backend.startswith("SIMD"), f"the kernels did not load for GPT-NeoX: {quick.backend}"
+    for pos, token in enumerate([1, 5, 9, 13]):
+        wanted, got = plain.forward(token, pos), quick.forward(token, pos)
+        assert np.allclose(wanted, got, rtol=1e-4, atol=1e-4), \
+            f"GPT-NeoX kernels differ (rotary_pct {rotary_pct}, parallel {parallel}) at {pos}: {np.abs(wanted - got).max()}"
+
 # sampling on the kernels: the token NumPy picks for the same random number, the same penalty, a seed reproduces
 import numpy as np
 generator = np.random.default_rng(0)

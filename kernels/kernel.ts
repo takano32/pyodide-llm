@@ -106,10 +106,12 @@ export function rmsnorm(out: usize, x: usize, w: usize, n: i32): void {
   }
 }
 
-export function rope(v: usize, fcr: usize, fci: usize, nh: i32, hs: i32): void {
+export function rope(v: usize, fcr: usize, fci: usize, nh: i32, hs: i32, rot: i32): void {
+  // rot: how many values of each head to turn (GPT-NeoX turns only the first ones, everyone else all of them)
+  const turned = rot > 0 && rot < hs ? rot : hs;
   for (let h = 0; h < nh; h++) {
     const base = v + (<usize>(h * hs) << 2);
-    for (let i = 0; i < hs; i += 2) {
+    for (let i = 0; i < turned; i += 2) {
       const c = load<f32>(fcr + (<usize>(i >> 1) << 2)), s = load<f32>(fci + (<usize>(i >> 1) << 2));
       const p0 = base + (<usize>i << 2);
       const v0 = load<f32>(p0), v1 = load<f32>(p0 + 4);

@@ -31,11 +31,15 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, 
     """
     head_size = dim // n_heads
     kv_dim = n_kv_heads * head_size
-    if arch == "gpt2":
+    if arch in ("gpt2", "neox"):
         # GPT-2: LayerNorm (a weight and a bias), a bias after every projection, learned positions instead of
         # RoPE, and an FFN of two matrices instead of three (no gate). Same attention.
+        # GPT-NeoX is the same, except that it rotates part of each head (so it keeps the RoPE tables of the
+        # Llama layout in place of the table of positions).
         vector = lambda n=dim: ((n_layers, n), False)
-        tensors = [((abs(vocab_size), dim), True), ((seq_len, dim), True),
+        positions = [((seq_len, head_size // 2), None), ((seq_len, head_size // 2), None)] if arch == "neox" \
+            else [((seq_len, dim), True)]
+        tensors = [((abs(vocab_size), dim), True), *positions,
                    vector(), vector(),
                    ((n_layers, dim, dim), True), ((n_layers, dim, dim), True), ((n_layers, dim, dim), True),
                    vector(), vector(), vector(),
@@ -172,11 +176,23 @@ class Arrays:
 
 
 def architecture(config):
-    return "gpt2" if config.get("model_type") == "gpt2" else "llama"
+    """Which set of tensors and which forward: "llama" (Qwen2 is a Llama with biases), "gpt2", or "neox"
+    (GPT-NeoX: a GPT-2 with RoPE over part of each head, and optionally the two branches in parallel)."""
+    return {"gpt2": "gpt2", "gpt_neox": "neox"}.get(config.get("model_type"), "llama")
+
+
+def rotary_dim(config):
+    """How many of each head's values GPT-NeoX rotates (rotary_pct of them, an even number)."""
+    head_size = config["hidden_size"] // config["num_attention_heads"]
+    return int(head_size * float(config.get("rotary_pct", 1.0))) // 2 * 2
 
 
 def normalize(config):
     """GPT-2 spells its config.json differently: give it the names the rest of this file uses."""
+    if config.get("model_type") == "gpt_neox":
+        # GPT-NeoX has the Llama names already; only the angles are spelled differently
+        return {**config, "rope_theta": config.get("rotary_emb_base", 10000.0),
+                "tie_word_embeddings": config.get("tie_word_embeddings", False)}
     if config.get("model_type") != "gpt2":
         return config
     dim = config.get("n_embd")
@@ -193,9 +209,9 @@ def check_config(config):
 
     # qwen2 is a Llama with a bias on q, k and v: the converter writes those three vectors per layer, the engine
     # adds them after the projections (T64). Everything else about it is the same.
-    if config.get("model_type") not in ("llama", "qwen2", "gpt2"):
-        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Qwen2 and GPT-2 "
-               f"models are supported")
+    if config.get("model_type") not in ("llama", "qwen2", "gpt2", "gpt_neox"):
+        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Qwen2, GPT-2 and "
+               f"GPT-NeoX models are supported")
     for key in ("hidden_size", "intermediate_size", "num_hidden_layers", "num_attention_heads", "vocab_size",
                 "max_position_embeddings"):
         if not isinstance(config.get(key), int) or config[key] <= 0:
@@ -206,6 +222,14 @@ def check_config(config):
         refuse("its attention heads do not divide the hidden size the way llama2.c expects")
     if config.get("rope_scaling"):
         refuse("it uses RoPE scaling")
+    if architecture(config) == "neox":
+        if config.get("hidden_act", "gelu") not in ("gelu", "gelu_new", "gelu_fast", "gelu_pytorch_tanh"):
+            refuse(f"its activation is {config['hidden_act']}, and only GELU is supported")
+        if config.get("num_key_value_heads", config["num_attention_heads"]) != config["num_attention_heads"]:
+            refuse("it has grouped-query attention, which GPT-NeoX models do not")
+        if rotary_dim(config) < 2:
+            refuse("it rotates none of each head")
+        return
     if architecture(config) == "gpt2":
         # GPT-2 has one kind of everything; only the activation could be something the GELU kernel is not
         if config.get("activation_function", "gelu_new") not in ("gelu_new", "gelu", "gelu_pytorch_tanh"):
@@ -224,7 +248,9 @@ def check_config(config):
 def checkpoint_header(config, source, max_seq_len):
     """The 7 ints of the legacy header. A negative vocabulary size signals a classifier of its own (llama2.c)."""
     config = normalize(config)
-    shared_classifier = config.get("tie_word_embeddings", False) or "lm_head.weight" not in source
+    # GPT-NeoX calls its classifier embed_out, everyone else lm_head
+    classifier = "embed_out.weight" if architecture(config) == "neox" else "lm_head.weight"
+    shared_classifier = config.get("tie_word_embeddings", False) or classifier not in source
     if architecture(config) == "gpt2":
         # the learned positions are a table of exactly n_positions rows: the context cannot be cut short
         max_seq_len = config["max_position_embeddings"]
@@ -248,6 +274,15 @@ def transformed(values, transform, head_size):
         return permute_heads(values, transform[1], head_size)
     if transform[0] == "transpose":
         return values.T
+    if transform[0] == "neox":
+        # query_key_value holds (heads, 3, head_size, dim) or (heads, 3, head_size): take one of the three, and
+        # interleave the halves of the part that RoPE rotates (Hugging Face stores it as rotate_half does)
+        index, heads, rot = transform[1], transform[2], transform[3]
+        taken = values.reshape(heads, 3, values.shape[0] // heads // 3, -1)[:, index]
+        if rot:
+            rotated = taken[:, :rot].reshape(heads, 2, rot // 2, -1).transpose(0, 2, 1, 3).reshape(heads, rot, -1)
+            taken = np.concatenate([rotated, taken[:, rot:]], axis=1)
+        return taken.reshape(-1, values.shape[-1]) if values.ndim > 1 else taken.reshape(-1)
     index, parts = transform[1], transform[2]
     if transform[0] == "part":
         width = values.shape[1] // parts
@@ -260,6 +295,8 @@ def source_shape(shape, transform):
     """The shape the Hugging Face tensor must have to become a tensor of this shape."""
     if transform is None or transform[0] == "permute":
         return tuple(shape)
+    if transform[0] == "neox":  # one of the three stacked parts, and the rows of all three are one tensor
+        return (shape[0] * 3, shape[1]) if len(shape) > 1 else (shape[0] * 3,)
     if transform[0] == "transpose":
         return tuple(reversed(shape))
     if transform[0] == "part":
@@ -285,10 +322,33 @@ def has_bias(source):
     return "model.layers.0.self_attn.q_proj.bias" in source
 
 
-def conversion_plan(header, bias=False, arch="llama", prefix="transformer."):
+def conversion_plan(header, bias=False, arch="llama", prefix="transformer.", rotary=0):
     """For every tensor of layout(): the tensors of the Hugging Face checkpoint it is made of, in order, as
     (name, transform); None instead of a list stands for a RoPE table. And the shapes of layout()."""
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
+
+    if arch == "neox":
+        rot = rotary  # how many of each head RoPE turns, from the config
+        def h(name, transform=None):
+            return [(f"gpt_neox.layers.{layer}.{name}", transform) for layer in range(n_layers)]
+
+        # only q and k are rotated, so only they are interleaved; v is taken as it is
+        fused = lambda i: [(f"gpt_neox.layers.{layer}.attention.query_key_value.weight",
+                            ("neox", i, n_heads, rot if i < 2 else 0)) for layer in range(n_layers)]
+        fused_bias = lambda i: [(f"gpt_neox.layers.{layer}.attention.query_key_value.bias",
+                                 ("neox", i, n_heads, rot if i < 2 else 0)) for layer in range(n_layers)]
+        plan = [[("gpt_neox.embed_in.weight", None)], None, None,
+                h("input_layernorm.weight"), h("input_layernorm.bias"),
+                fused(0), fused(1), fused(2),
+                fused_bias(0), fused_bias(1), fused_bias(2),
+                h("attention.dense.weight"), h("attention.dense.bias"),
+                h("post_attention_layernorm.weight"), h("post_attention_layernorm.bias"),
+                h("mlp.dense_h_to_4h.weight"), h("mlp.dense_h_to_4h.bias"),
+                h("mlp.dense_4h_to_h.weight"), h("mlp.dense_4h_to_h.bias"),
+                [("gpt_neox.final_layer_norm.weight", None)], [("gpt_neox.final_layer_norm.bias", None)]]
+        if vocab_size < 0:
+            plan.append([("embed_out.weight", None)])
+        return plan, [shape for shape, _ in layout(*header, arch=arch)]
 
     if arch == "gpt2":
         def h(name, transform=None):
@@ -326,11 +386,21 @@ def conversion_plan(header, bias=False, arch="llama", prefix="transformer."):
 
 
 def rope_table(config, header, which):
-    """The cos (which = 0) or sin (1) table of the legacy format, for float32 and float16 checkpoints."""
+    """The cos (which = 0) or sin (1) table of the legacy format, for float32 and float16 checkpoints.
+
+    GPT-NeoX rotates only rotary_pct of each head, and the angles follow that width. The table keeps the shape
+    the layout gives it (head_size // 2 columns); the columns past the rotated part are never read.
+    """
     head_size, seq_len = header[0] // header[3], header[6]
+    width = rotary_dim(config) if architecture(config) == "neox" else head_size
     positions = np.arange(seq_len, dtype=np.float64)[:, None]
-    frequencies = 1.0 / config.get("rope_theta", 10000.0) ** (np.arange(0, head_size, 2, dtype=np.float64) / head_size)
-    return (np.cos if which == 0 else np.sin)(positions * frequencies)
+    frequencies = 1.0 / config.get("rope_theta", 10000.0) ** (np.arange(0, width, 2, dtype=np.float64) / width)
+    table = (np.cos if which == 0 else np.sin)(positions * frequencies)
+    if width == head_size:
+        return table
+    full = np.zeros((seq_len, head_size // 2), dtype=np.float64)
+    full[:, :width // 2] = table
+    return full
 
 
 def convert_weights(source, config, dtype, max_seq_len, out, progress=None):
@@ -356,7 +426,7 @@ def convert_pieces(source, config, dtype, max_seq_len, out):
     bias = has_bias(source)
     writer = Writer(out, header, dtype, bias, arch)
 
-    plan, shapes = conversion_plan(header, bias, arch, gpt2_prefix(source))
+    plan, shapes = conversion_plan(header, bias, arch, gpt2_prefix(source), rotary_dim(config) if arch == "neox" else 0)
     total, done = sum(int(np.prod(shape)) for shape in shapes), 0
 
     for index, (parts, shape) in enumerate(zip(plan, shapes)):
@@ -407,7 +477,8 @@ class Stream:
         self.bias = has_bias(self)
         self.out = bytearray(checkpoint_size(self.header, dtype, self.bias, self.arch)) if out is None else out
         self.writer = Writer(self.out, self.header, dtype, self.bias, self.arch)
-        plan, shapes = conversion_plan(self.header, self.bias, self.arch, gpt2_prefix(self))
+        plan, shapes = conversion_plan(self.header, self.bias, self.arch, gpt2_prefix(self),
+                                       rotary_dim(config) if self.arch == "neox" else 0)
         self.total, self.done = sum(int(np.prod(shape)) for shape in shapes), 0
         wanted = {}
         for index, (parts, shape) in enumerate(zip(plan, shapes)):
@@ -686,6 +757,10 @@ class Conversion:
         self.options = {**options, "dtype": np.dtype(dtype).name, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop, "bias": self.stream.bias,
                         "arch": self.stream.arch}
+        if self.stream.arch == "neox":
+            # GPT-NeoX turns part of every head, and may run its two branches in parallel: the file says neither
+            self.options["rotary"] = rotary_dim(self.config)
+            self.options["parallel_residual"] = bool(self.config.get("use_parallel_residual", True))
         self.checkpoint = self.stream.out
 
     def feed(self, data):
