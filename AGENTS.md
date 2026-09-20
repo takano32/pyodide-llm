@@ -44,7 +44,7 @@
 | `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路、`hf` を渡すと HF 形式のファイル（`tests/make_hf_fixture.py` が作る）をブラウザの中で変換する経路を試す |
 | `kernels/` | WASM SIMD カーネル（AssemblyScript）とビルドスクリプト。`make kernels` が `public/simdkernel.so` などを生成。制約と実測は `kernels/README.md` |
 | `.github/workflows/deploy.yml` | `make models` → `npm run build` → GitHub Pages |
-| `.github/workflows/browsers.yml` | 本番サイトをほかの環境で動かす。OS ごとに 1 ジョブ（Linux・Windows の x86-64 と ARM、macOS）で、その中で Playwright の Chromium・Firefox・WebKit、ランナーに入っている Chrome・Edge、Selenium で動かすインストール済みの Firefox（`tests/stock-firefox.mjs`）を順に回す。別に `huggingface` ジョブが、HF から取得して変換するモデル（1B 級を含む）を確かめる。手動（`gh workflow run browsers.yml`）か週 1 回。結果は各ジョブの Summary に出る |
+| `.github/workflows/browsers.yml` | 本番サイトをほかの環境で動かす。OS ごとに 1 ジョブ（Linux・Windows の x86-64 と ARM、macOS）で、その中で Playwright の Chromium・Firefox・WebKit、ランナーに入っている Chrome・Edge、Selenium で動かすインストール済みの Firefox（`tests/stock-firefox.mjs`）を順に回す。別に `huggingface` ジョブが、HF から取得して変換するモデルを確かめる（**大きさで 2 つに分かれる**: 1GB 未満の 13 個と、1GB 以上の 8 個。合わせて 20GB を超える取得になるので 1 ジョブには入らない）。手動（`gh workflow run browsers.yml`）か週 1 回。結果は各ジョブの Summary に出る |
 
 公開先: https://takano32.github.io/pyodide-llm/ （リポジトリの旧名は pyodide-llama2-py、その次が pyodide-llama-py。GitHub Pages は改名しても旧 URL を転送しないので、旧名 2 つには新しい URL へ飛ばすだけの小さなリポジトリを置いてある。2026-09-20 に改名、T62）
 

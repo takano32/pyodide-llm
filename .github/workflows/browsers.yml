@@ -92,9 +92,26 @@ jobs:
   # would rather this job checked all of them, the 1.6 GB ones included). Chromium on Linux is enough; how
   # the browsers differ is what the jobs above are for.
   huggingface:
-    name: models from Hugging Face
+    name: models from Hugging Face (${{ matrix.size }})
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # under a gigabyte each: everything the page offers without a warning
+          - size: small
+            models: >-
+              url hf-llm-jp-3-150m-instruct3 hf-japanese-gpt2-small hf-japanese-gpt-neox-small
+              hf-qwen2.5-0.5b-instruct hf-llm-jp-3-440m hf-llm-jp-3-440m-instruct3
+              hf-pythia-70m hf-smollm2-135m-instruct hf-pythia-160m hf-gpt2 hf-smollm2-360m-instruct
+              hf-pythia-410m hf-qwen2.5-coder-0.5b-instruct
+          # a gigabyte and more: these are the "desktop only" ones, and together they are 20 GB of downloads
+          - size: large
+            models: >-
+              hf-sarashina2.2-0.5b hf-sarashina2.2-0.5b-instruct hf-llm-jp-3-980m-instruct3
+              hf-pythia-1b hf-tinyllama-1.1b-chat hf-pythia-1.4b hf-qwen2.5-1.5b-instruct
+              hf-deepseek-r1-qwen-1.5b
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -117,7 +134,7 @@ jobs:
         run: |
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
           failed=0
-          for model in url hf-llm-jp-3-150m-instruct3 hf-llm-jp-3-440m hf-llm-jp-3-440m-instruct3 hf-llm-jp-3-980m-instruct3 hf-tinyllama-1.1b-chat hf-smollm2-135m-instruct hf-qwen2.5-0.5b-instruct hf-japanese-gpt2-small hf-gpt2 hf-japanese-gpt-neox-small hf-pythia-160m hf-sarashina2.2-0.5b-instruct hf-sarashina2.2-0.5b; do
+          for model in ${{ matrix.models }}; do
             echo "### $model" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             node tests/e2e.mjs "$model" chromium "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
