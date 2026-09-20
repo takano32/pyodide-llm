@@ -382,20 +382,76 @@ def tokenizer_bin(pieces, vocab_size):
 
 
 def tokenizer_json_pieces(tokenizer):
-    if tokenizer["model"]["type"] != "Unigram":
-        raise ValueError(f"This tokenizer.json is a {tokenizer['model']['type']} model: only Unigram ones are supported "
-                         f"(or a sentencepiece tokenizer.model).")
+    kind = tokenizer["model"]["type"]
+    if kind == "BPE":
+        yield from tokenizer_json_bpe_pieces(tokenizer)
+        return
+    if kind != "Unigram":
+        raise ValueError(f"This tokenizer.json is a {kind} model: only Unigram and byte-level BPE ones are "
+                         f"supported (or a sentencepiece tokenizer.model).")
     special = {token["content"] for token in tokenizer["added_tokens"] if token["special"]}
     for id, (text, score) in enumerate(tokenizer["model"]["vocab"]):
         is_byte = len(text) == 6 and text.startswith("<0x") and text.endswith(">")
         yield text, score, not (is_byte or text in special or id == tokenizer["model"].get("unk_id"))
 
 
+def tokenizer_json_bpe_pieces(tokenizer):
+    """Hugging Face's byte-level BPE (GPT-2, SmolLM2, Qwen). The pieces are written in the byte <-> character
+    table, and the score is minus the rank of the merge that makes the piece: the engine merges the best-scoring
+    pair, which is then the same as applying the merge with the lowest rank. A piece no merge makes (a single
+    character, an added token) never starts a merge, so it is not matchable."""
+    model = tokenizer["model"]
+    ranks = {}
+    for rank, merge in enumerate(model["merges"]):
+        left, right = merge if isinstance(merge, list) else merge.split(" ")
+        ranks.setdefault(left + right, -float(rank))
+    texts = {id: text for text, id in model["vocab"].items()}
+    for token in tokenizer["added_tokens"]:
+        texts.setdefault(token["id"], token["content"])
+    special = {token["content"] for token in tokenizer["added_tokens"] if token["special"]}
+    for id in range(max(texts) + 1):
+        text = texts.get(id)
+        if text is None:
+            raise ValueError(f"This tokenizer.json has no piece with id {id}.")
+        yield text, ranks.get(text, UNMATCHABLE), text in ranks and text not in special
+
+
 def tokenizer_json_options(tokenizer):
-    """What the engine has to know about this tokenizer: Llama(tokenizer_kind=, nfkc=)."""
+    """What the engine has to know about this tokenizer: Llama(tokenizer_kind=, nfkc=, nfc=, pretokenizer=)."""
     normalizers = json.dumps(tokenizer.get("normalizer") or {})
     # "Precompiled" is sentencepiece's character map, nmt_nfkc in practice
-    return {"tokenizer_kind": "unigram", "nfkc": '"NFKC"' in normalizers or '"Precompiled"' in normalizers}
+    nfkc = '"NFKC"' in normalizers or '"Precompiled"' in normalizers
+    if tokenizer["model"]["type"] != "BPE":
+        return {"tokenizer_kind": "unigram", "nfkc": nfkc}
+    return {"tokenizer_kind": "bytebpe", "nfkc": nfkc, "nfc": '"NFC"' in normalizers,
+            "pretokenizer": pretokenizer_name(tokenizer.get("pre_tokenizer"))}
+
+
+# The engine writes these out by hand (llama2_numpy.pretokenize), so only the patterns it knows are accepted.
+PRETOKENIZERS = {
+    r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+": "qwen",
+}
+
+
+def pretokenizer_name(spec):
+    steps = spec.get("pretokenizers", [spec]) if spec else []
+    kinds = [step["type"] for step in steps]
+    patterns = [step["pattern"]["Regex"] for step in steps if step["type"] == "Split"]
+    if patterns:
+        if len(patterns) > 1 or patterns[0] not in PRETOKENIZERS:
+            raise ValueError(f"This tokenizer.json splits text in a way the engine does not know: {patterns}")
+        return PRETOKENIZERS[patterns[0]]
+    if "ByteLevel" not in kinds or not all(kind in ("ByteLevel", "Digits") for kind in kinds):
+        raise ValueError(f"This tokenizer.json splits text in a way the engine does not know: {kinds}")
+    if not all(step.get("use_regex", True) for step in steps if step["type"] == "ByteLevel"):
+        raise ValueError("This tokenizer.json has a ByteLevel pre-tokenizer without its regex, which the engine "
+                         "does not know.")
+    if any(step["type"] == "ByteLevel" and step.get("add_prefix_space") for step in steps):
+        raise ValueError("This tokenizer.json adds a space in front of the text, which the engine does not do.")
+    digits = [step for step in steps if step["type"] == "Digits"]
+    if digits and not all(step.get("individual_digits") for step in digits):
+        raise ValueError("This tokenizer.json groups digits in a way the engine does not know.")
+    return "gpt2-digits" if digits else "gpt2"
 
 
 def protobuf_fields(data):

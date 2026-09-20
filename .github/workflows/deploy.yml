@@ -38,7 +38,7 @@ jobs:
 
       - name: Download and convert the models, compile the kernels
         run: |
-          pip install numpy pytest
+          pip install numpy pytest tokenizers regex
           npm ci
           make models kernels
 

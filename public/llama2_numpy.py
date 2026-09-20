@@ -13,17 +13,132 @@ import numpy as np
 BOS = 1  # beginning-of-sequence token, also what the model emits when a story is over
 
 
+def byte_chars():
+    """GPT-2's byte <-> character table: every byte becomes one printable character, so that a byte-level BPE
+    vocabulary is plain text. 0x20 is "\u0120", 0x0A is "\u010a"."""
+    printable = list(range(33, 127)) + list(range(161, 173)) + list(range(174, 256))
+    chars, extra = list(printable), 0
+    for byte in range(256):
+        if byte not in printable:
+            printable.append(byte)
+            chars.append(256 + extra)
+            extra += 1
+    return {byte: chr(char) for byte, char in zip(printable, chars)}
+
+
+BYTE_CHARS = byte_chars()
+CHAR_BYTES = {char: byte for byte, char in BYTE_CHARS.items()}
+
+CONTRACTIONS = ("'s", "'t", "'re", "'ve", "'m", "'ll", "'d")
+
+
+def letter(char):
+    return unicodedata.category(char)[0] == "L"
+
+
+def number(char):
+    return unicodedata.category(char)[0] == "N"
+
+
+def pretokenize(text, pattern):
+    r"""Split text the way the tokenizer.json's pre_tokenizer does, without a regex engine: those patterns need
+    \p{L} and \p{N}, which the standard re module has not.
+
+    "gpt2" is what ByteLevel(use_regex) applies:
+        's|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+
+    "gpt2-digits" is the same after Digits(individual_digits), which SmolLM2 puts in front of it.
+    "qwen" is the pattern Qwen2 spells out (the contractions match whatever the case, digits come one by one,
+    and a piece of anything-but-a-line-break may lead a word):
+        (?i:'s|…)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
+    All three are checked against the real patterns in tests/test_tokenizer.py.
+    """
+    if pattern == "gpt2-digits":
+        parts = []
+        for chunk in re.findall(r"\d|\D+", text):
+            parts += pretokenize(chunk, "gpt2")
+        return parts
+    qwen = pattern == "qwen"
+    parts, i, n = [], 0, len(text)
+    while i < n:
+        char = text[i]
+        # 's, 't, ... (Qwen matches them whatever the case)
+        if char == "'":
+            rest = text[i:i + 3].lower() if qwen else text[i:i + 3]
+            found = next((c for c in CONTRACTIONS if rest.startswith(c)), None)
+            if found:
+                parts.append(text[i:i + len(found)])
+                i += len(found)
+                continue
+        # letters, with one character in front of them: a space, or (Qwen) anything but a line break
+        start = i
+        lead = i + 1 if i + 1 < n and (char == " " or (qwen and not letter(char) and not number(char)
+                                                      and char not in "\r\n")) else i
+        if lead < n and letter(text[lead]):
+            i = lead
+            while i < n and letter(text[i]):
+                i += 1
+            parts.append(text[start:i])
+            continue
+        # digits: Qwen takes them one by one, GPT-2 takes a run and may put a space in front
+        if qwen and number(char):
+            parts.append(char)
+            i += 1
+            continue
+        if not qwen:
+            lead = i + 1 if char == " " and i + 1 < n and number(text[i + 1]) else i
+            if lead < n and number(text[lead]):
+                i = lead
+                while i < n and number(text[i]):
+                    i += 1
+                parts.append(text[start:i])
+                continue
+        # everything else that is not a space, with a space allowed in front of it
+        lead = i + 1 if char == " " and i + 1 < n and not text[i + 1].isspace() else i
+        if lead < n and not text[lead].isspace() and not letter(text[lead]) and not number(text[lead]):
+            i = lead
+            while i < n and not text[i].isspace() and not letter(text[i]) and not number(text[i]):
+                i += 1
+            if qwen:  # the line breaks that follow belong to the same piece
+                while i < n and text[i] in "\r\n":
+                    i += 1
+            parts.append(text[start:i])
+            continue
+        # whitespace. Qwen keeps a run that ends in line breaks whole; otherwise a run that is followed by a
+        # word leaves its last character to that word, and a run at the end of the text stays whole.
+        i = start
+        if qwen:
+            j = i
+            while j < n and text[j].isspace() and text[j] not in "\r\n":
+                j += 1
+            if j < n and text[j] in "\r\n":
+                while j < n and text[j] in "\r\n":
+                    j += 1
+                parts.append(text[i:j])
+                i = j
+                continue
+        j = i
+        while j < n and text[j].isspace():
+            j += 1
+        end = j if j == n or j - 1 == i else j - 1
+        parts.append(text[i:end])
+        i = end
+    return parts
+
+
 class Tokenizer:
     """llama2.c's tokenizer.bin: sentencepiece pieces with their scores.
 
     kind="bpe" merges the best-scoring adjacent pair, like llama2.c (Llama 2 vocabulary);
-    kind="unigram" picks the segmentation with the best total score (sentencepiece unigram models).
+    kind="unigram" picks the segmentation with the best total score (sentencepiece unigram models);
+    kind="bytebpe" is Hugging Face's byte-level BPE (GPT-2, SmolLM2, Qwen). It merges by the rank of the merge
+    that makes the piece, which is the same loop as "bpe" because the converter writes minus the rank as the
+    score. Its vocabulary is written in the byte <-> character table above, so the pieces are plain text.
     """
 
     UNMATCHABLE = -1e8  # convert_hf.py gives control and byte pieces a score below this
 
-    def __init__(self, data, vocab_size, kind="bpe", nfkc=False):
-        self.kind, self.nfkc = kind, nfkc
+    def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2"):
+        self.kind, self.nfkc, self.nfc, self.pretokenizer = kind, nfkc, nfc, pretokenizer
         self.vocab, self.scores = [], []
         offset = 4  # skip max_token_length
         for _ in range(vocab_size):
@@ -39,6 +154,11 @@ class Tokenizer:
         # raw byte tokens look like b"<0x0A>"; they spell out whatever the vocabulary lacks
         self.byte_tokens = [self.index.get(b"<0x%02X>" % byte, byte + 3) for byte in range(256)]
         self.max_piece_chars = max(len(piece.decode("utf-8", "ignore")) for piece in self.vocab)
+        # byte-level pieces are text, and the merging works on that text rather than on bytes
+        self.text_index = {}
+        if self.kind == "bytebpe":
+            for i, piece in enumerate(self.vocab):
+                self.text_index.setdefault(piece.decode("utf-8", "replace"), i)
         self.unknown_score = min(score for score in self.scores if score > self.UNMATCHABLE) - 10.0
 
     def encode(self, text, specials=()):
@@ -51,10 +171,16 @@ class Tokenizer:
             elif part:
                 if self.nfkc:
                     part = unicodedata.normalize("NFKC", part)
-                # sentencepiece's dummy prefix: the model saw every text start with a space (but not the text
-                # after a special token)
-                part = " " + part if first else part
-                tokens += self.encode_unigram(part) if self.kind == "unigram" else self.encode_bpe(part)
+                if self.nfc:
+                    part = unicodedata.normalize("NFC", part)
+                if self.kind == "bytebpe":
+                    # no dummy prefix: a byte-level vocabulary spells the space out as a character of its own
+                    tokens += self.encode_bytebpe(part)
+                else:
+                    # sentencepiece's dummy prefix: the model saw every text start with a space (but not the
+                    # text after a special token)
+                    part = " " + part if first else part
+                    tokens += self.encode_unigram(part) if self.kind == "unigram" else self.encode_bpe(part)
             first = False
         return tokens
 
@@ -78,6 +204,23 @@ class Tokenizer:
             if best_idx == -1:
                 return tokens
             tokens[best_idx:best_idx + 2] = [best_id]
+
+    def encode_bytebpe(self, text):
+        # The pre-tokenizer keeps merges inside a word: the pieces never cross from a word into the next.
+        tokens = []
+        for part in pretokenize(text, self.pretokenizer):
+            symbols = [BYTE_CHARS[byte] for byte in part.encode("utf-8")]
+            while len(symbols) > 1:
+                best_score, best_id, best_idx = self.UNMATCHABLE, -1, -1
+                for i in range(len(symbols) - 1):
+                    id = self.text_index.get(symbols[i] + symbols[i + 1])
+                    if id is not None and self.scores[id] > best_score:
+                        best_score, best_id, best_idx = self.scores[id], id, i
+                if best_idx == -1:
+                    break
+                symbols[best_idx:best_idx + 2] = [self.vocab[best_id].decode("utf-8", "replace")]
+            tokens += [self.text_index[symbol] for symbol in symbols]
+        return tokens
 
     def encode_unigram(self, text):
         # Viterbi: best[j] is the best total score of any segmentation of text[:j]
@@ -104,6 +247,11 @@ class Tokenizer:
 
     def decode(self, prev_token, token, bos=1):
         piece = self.vocab[token]
+        if self.kind == "bytebpe":
+            # back through the byte <-> character table; a piece that is not written in it (an added token such
+            # as <|im_end|>) is its own text
+            text = piece.decode("utf-8", "replace")
+            return bytes(CHAR_BYTES[char] for char in text) if all(char in CHAR_BYTES for char in text) else piece
         # Following the first token, sentencepiece decoder strips the leading whitespace (the dummy prefix)
         if prev_token == bos and piece.startswith(b" "):
             piece = piece[1:]
@@ -226,7 +374,8 @@ def check_tokenizer(tokenizer, header):
 
 class Llama:
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
-                 tokenizer_kind="bpe", nfkc=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=()):
+                 tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bos=BOS, stop_tokens=(BOS,),
+                 kernels=None, specials=()):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py).
@@ -303,7 +452,8 @@ class Llama:
         else:
             self.key_cache = np.zeros((n_layers, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
             self.value_cache = np.zeros_like(self.key_cache)
-        self.tokenizer = Tokenizer(tokenizer, self.vocab_size, kind=tokenizer_kind, nfkc=nfkc)
+        self.tokenizer = Tokenizer(tokenizer, self.vocab_size, kind=tokenizer_kind, nfkc=nfkc, nfc=nfc,
+                                   pretokenizer=pretokenizer)
         self.bos, self.stop_tokens = bos, {int(token) for token in stop_tokens}
         self.specials = tuple(str(special) for special in specials)  # see Tokenizer.encode()
         self.stats = {}

@@ -176,8 +176,8 @@ def test_tokenizer_json():
     assert tokenizer_json_options({**tokenizer, "normalizer": None})["nfkc"] is False
     with pytest.raises(ValueError, match="vocabulary of 4"):
         tokenizer_bin(pieces, 4)
-    with pytest.raises(ValueError, match="only Unigram"):
-        list(tokenizer_json_pieces({**tokenizer, "model": {"type": "BPE"}}))
+    with pytest.raises(ValueError, match="only Unigram and byte-level BPE"):
+        list(tokenizer_json_pieces({**tokenizer, "model": {"type": "WordPiece"}}))
 
 
 def streamed(file, published, dtype, chunk, max_seq_len=1 << 20):

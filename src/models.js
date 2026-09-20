@@ -16,6 +16,9 @@ const greedy = { steps: 0, temperature: 0.0 };
 // wraps what the visitor typed ({prompt}), for one turn and no more. The forms are the chat_template of each model.
 const LLM_JP_INSTRUCT = "以下は、タスクを説明する指示です。要求を適切に満たす応答を書きなさい。\n\n### 指示:\n{prompt}\n\n### 応答:\n";
 const ASK_JAPANESE = "質問や指示を入力（例: 日本の首都は？）";
+// ChatML. <|im_start|> and <|im_end|> are tokens of their own, so the engine is told to read them as such
+const CHATML = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
+const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [0, 2] };
 // Models that huggingface.co serves and this page converts itself (public/llama2_convert.py, the code that builds
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
 // model. revision pins the commit, so that nothing changes under the page. download is the size of model.safetensors.
@@ -74,6 +77,10 @@ export const MODELS = [
   { group: "hf", id: "hf-llm-jp-3-980m-instruct3", name: "llm-jp-3 980M instruct3", note: "answers instructions · 日本語 · fetches 2.0 GB → int8 1.1 GB · desktop only",
     hf: hf("llm-jp/llm-jp-3-980m-instruct3", "c079dbf3f88aa2ab702b9696231fc3336c46b1be"), download: 1980382824, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-smollm2-135m-instruct", name: "SmolLM2 135M Instruct", note: "answers instructions · English · fetches 269 MB → int8 145 MB",
+    hf: hf("HuggingFaceTB/SmolLM2-135M-Instruct", "12fd25f77366fa6b3b4b768ec3050bf629380bac"), download: 269060552,
+    conversion: {}, options: chatml, generation: sampled(1.1), template: CHATML,
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   // TinyLlama's template has </s> between the turns: specials makes the tokenizer read it as the token, not as text
   { group: "hf", id: "hf-tinyllama-1.1b-chat", name: "TinyLlama 1.1B Chat", note: "answers instructions · English · fetches 2.2 GB → int8 1.2 GB · desktop only",
     hf: hf("TinyLlama/TinyLlama-1.1B-Chat-v1.0", "fe8a4ea1ffedaf415f4da2f062534de366a451e6", "tokenizer.model"), download: 2200119864,
