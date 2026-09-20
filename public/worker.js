@@ -71,6 +71,7 @@ async function dropStaleParts(model) {
 function download(model, signal, load) {
   const parts = Math.ceil(model.bytes / PART_BYTES);
   const queue = [];
+  const started = performance.now();
   let sink, next = 0, received = 0, reported = -1;
   const connection = async () => {
     while (next < parts) {
@@ -99,26 +100,31 @@ function download(model, signal, load) {
       }
     }
   };
-  const finished = Promise.all(Array.from({ length: Math.min(CONNECTIONS, parts) }, connection));
+  // The download runs while Pyodide loads, so it usually ends long before into() can write anything into Python.
+  // Its own seconds are the time until the last byte arrived, not the time until the waiting was over as well.
+  const source = { overlapped: true };
+  const finished = Promise.all(Array.from({ length: Math.min(CONNECTIONS, parts) }, connection))
+    .then(() => { source.seconds = since(started); });
   // a load that is cancelled while Pyodide still loads never gets to into(): that is no unhandled rejection
   finished.catch(() => {});
-  return {
-    // write(offset, chunk) receives everything queued so far, and every later chunk
-    async into(write) {
-      sink = write;
-      queue.splice(0).forEach(([offset, chunk]) => write(offset, chunk));
-      await finished;
-      if (received !== model.bytes) {
-        throw new Error(`${model.checkpoint}: got ${received} bytes instead of ${model.bytes}`);
-      }
-    },
+  // write(offset, chunk) receives everything queued so far, and every later chunk
+  source.into = async (write) => {
+    sink = write;
+    queue.splice(0).forEach(([offset, chunk]) => write(offset, chunk));
+    await finished;
+    if (received !== model.bytes) {
+      throw new Error(`${model.checkpoint}: got ${received} bytes instead of ${model.bytes}`);
+    }
   };
+  return source;
 }
 
 // The same for a file of the visitor's own disk: read in chunks straight into the Python buffer, never as a whole.
 function readFile(model, signal, load) {
-  return {
+  // a file is read only once there is somewhere to put it, so these seconds begin here and not at the choice
+  const source = {
     async into(write) {
+      const started = performance.now();
       const reader = model.file.stream().getReader();
       let reported = -1;
       for (let offset = 0; ;) {
@@ -138,14 +144,17 @@ function readFile(model, signal, load) {
           postMessage({ type: "progress", load, received: offset, total: model.bytes });
         }
       }
+      source.seconds = since(started);
     },
   };
+  return source;
 }
 
 // A llama2.c checkpoint at a URL (?checkpoint=&tokenizer=): range requests in parallel, written where they belong
 function readUrl(model, signal, load) {
-  return {
+  const source = {
     async into(write) {
+      const started = performance.now();
       let offset = 0, reported = -1;
       await inOrder(model.url.checkpoint, 0, model.bytes, (bytes) => {
         write(offset, bytes);
@@ -156,8 +165,10 @@ function readUrl(model, signal, load) {
           postMessage({ type: "progress", load, received: offset, total: model.bytes });
         }
       }, signal);
+      source.seconds = since(started);
     },
   };
+  return source;
 }
 
 // The legacy format carries no metadata, but its header fixes the size of a float32, a float16 and an int8 file.
@@ -182,9 +193,13 @@ let initialized;
 // the AbortController of the load that is going on, and a promise that settles once it has cleaned up
 let loading, unloaded = Promise.resolve();
 
-// how long the load took, in seconds: Pyodide once per session, the other two per model. The download runs while
-// Pyodide loads, so the two overlap and the page says so instead of adding them up.
+// how long the load took, in seconds: Pyodide once per session, the other two per model. The download of a model
+// of this site runs while Pyodide loads and usually ends first, so its seconds are counted until the last byte
+// arrives (not until the bytes reach Python, which has to wait for Pyodide). The page says that the two overlap
+// instead of adding them up, but only for the model that was loaded while Pyodide was still coming.
 const loadSeconds = {};
+// when Pyodide became usable, to tell that first model from the ones chosen afterwards
+let pyodideAt = 0;
 const since = (started) => (performance.now() - started) / 1000;
 
 async function init(search) {
@@ -215,6 +230,7 @@ async function init(search) {
     }
   }
   loadSeconds.pyodide = since(started);
+  pyodideAt = performance.now();
 }
 
 // a Python bytearray that JavaScript fills in place
@@ -531,7 +547,8 @@ async function load(model, signal, id) {
     await checkpoint.into(weights.write);
     const vocabulary = new Uint8Array(await tokenizerBytes);
     signal.throwIfAborted();
-    loadSeconds.download = since(downloadStarted);
+    // what the source itself measured: the bytes, without the wait for Pyodide that into() may have spent
+    loadSeconds.download = checkpoint.seconds ?? since(downloadStarted);
 
     // from here to the end nothing waits, so no other message gets in between
     const constructStarted = performance.now();
@@ -554,7 +571,7 @@ async function load(model, signal, id) {
   }
   postMessage({
     type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seq_len: llama.seq_len,
-    seconds: { ...loadSeconds },
+    seconds: { ...loadSeconds }, overlapped: checkpoint.overlapped === true && pyodideAt > downloadStarted,
   });
   if (!model.file && !model.url) {
     dropStaleParts(model);

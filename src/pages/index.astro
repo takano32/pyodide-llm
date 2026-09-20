@@ -520,7 +520,7 @@
       const load = $("load-stats");
       load.textContent = "";
       rows(load, [
-        `Pyodide ${seconds(data.seconds.pyodide)} · ${loadedHow(data)} ${seconds(data.seconds.download)}${(model as any).hf ? "" : " (at the same time)"}`,
+        `Pyodide ${seconds(data.seconds.pyodide)} · ${loadedHow(data)} ${seconds(data.seconds.download)}${data.overlapped ? " (at the same time)" : ""}`,
         ...(data.notKept ? [`not kept for the next visit: ${data.notKept}`] : []),
         `Llama() ${seconds(data.seconds.construct)}`,
       ]);
