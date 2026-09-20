@@ -113,6 +113,19 @@ for rotary_pct, parallel in ((0.25, True), (1.0, False)):
         assert np.allclose(wanted, got, rtol=1e-4, atol=1e-4), \
             f"GPT-NeoX kernels differ (rotary_pct {rotary_pct}, parallel {parallel}) at {pos}: {np.abs(wanted - got).max()}"
 
+# the switches of T52: every one of them must leave a path that still works, and float32 must not change
+for disable in ((), ("relaxed",), ("sampler",), ("int8", "relaxed", "sampler"), ("kernels",)):
+    switched = llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"), kernels="simdkernel.so", disable=disable)
+    assert "".join(switched.generate("Once upon a time", steps=40)) == reference[:len("".join(switched.generate("Once upon a time", steps=40)))], \
+        f"float32 changed with disable={disable}"
+    assert ("without " + ", ".join(disable)) in switched.backend if disable else "without" not in switched.backend
+    del switched
+try:
+    llama2_numpy.Llama(read("stories260K.bin"), read("tok512.bin"), disable=("nonsense",))
+    raise AssertionError("a switch that does not exist must be refused")
+except ValueError:
+    pass
+
 # sampling on the kernels: the token NumPy picks for the same random number, the same penalty, a seed reproduces
 import numpy as np
 generator = np.random.default_rng(0)

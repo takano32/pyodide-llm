@@ -300,7 +300,11 @@ REPETITION_WINDOW = 64  # the repetition penalty looks at this many of the lates
 KV_START = 256
 
 
-def load_kernels(path):
+# what T52 can leave out, each of them something that already has a fallback
+SWITCHES = ("kernels", "int8", "relaxed", "sampler")
+
+
+def load_kernels(path, without_relaxed=False):
     """The WASM SIMD kernels of kernels/*.ts, as ctypes functions, or None when they cannot be used.
 
     They are Emscripten side modules: ctypes.CDLL links them into Pyodide's own memory, so they work in place
@@ -324,6 +328,8 @@ def load_kernels(path):
             kernels[name].argtypes, kernels[name].restype = argtypes, i32 if name == "sample" else None
     except Exception:
         return None
+    if without_relaxed:
+        return kernels
     try:
         # a browser without relaxed SIMD (shipping Safari) refuses to compile this one: then int8 uses matmul_q8
         relaxed = ctypes.CDLL(path.replace(".so", "_relaxed.wasmlib")).matmul_q8r
@@ -394,7 +400,8 @@ def check_tokenizer(tokenizer, header):
 class Llama:
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
                  tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
-                 rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=()):
+                 rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
+                 disable=()):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py).
@@ -408,6 +415,10 @@ class Llama:
         projections (Qwen2). The legacy header cannot say so, so the caller does, like the tokenizer settings.
         bos starts every sequence; generation ends when the model emits one of stop_tokens.
         kernels is the path of simdkernel.so; without it, or when it cannot be loaded, NumPy does the math.
+        disable: the optimizations to leave out, to measure what each one is worth (T52). Only what already has
+        a fallback: "kernels" (NumPy does everything), "int8" (the weights are widened to float32 and the
+        float32 kernel multiplies them), "relaxed" (matmul_q8 instead of matmul_q8r) and "sampler" (NumPy
+        samples). Anything else is refused, so that a typo never quietly measures the wrong thing.
         """
         (self.dim, self.hidden_dim, self.n_layers, self.n_heads,
          self.n_kv_heads, vocab_size, self.seq_len) = struct.unpack_from("<7i", checkpoint, 0)
@@ -418,13 +429,18 @@ class Llama:
         dim, hidden_dim, n_layers = self.dim, self.hidden_dim, self.n_layers
         kv_dim = self.n_kv_heads * self.head_size
 
+        disable = tuple(str(name) for name in disable)
+        unknown = [name for name in disable if name not in SWITCHES]
+        if unknown:
+            raise ValueError(f"There is no optimization called {unknown[0]!r}: {', '.join(SWITCHES)}.")
+        self.disabled = disable
         dtype = np.dtype(dtype)
         offset = 28
         # The int8 kernels work on groups of 32 only
         suitable = dtype != np.int8 or (dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0)
-        kernels = load_kernels(kernels) if kernels and suitable else None
+        kernels = load_kernels(kernels, "relaxed" in disable) if kernels and suitable and "kernels" not in disable else None
         # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
-        keep_int8 = kernels is not None and dtype == np.int8
+        keep_int8 = kernels is not None and dtype == np.int8 and "int8" not in disable
 
         def take(*shape, matrix=True, widen=True):
             nonlocal offset
@@ -463,10 +479,16 @@ class Llama:
         self.backend = "NumPy"
         if kernels:
             self.forward = self.kernel_forward(kernels, keep_int8)
-            self.penalize, self.sample = self.kernel_sampler(kernels)
+            if "sampler" not in disable:
+                self.penalize, self.sample = self.kernel_sampler(kernels)
         else:
             self.key_cache = np.zeros((n_layers, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
             self.value_cache = np.zeros_like(self.key_cache)
+        if kernels and "sampler" in disable:
+            self.backend += ", NumPy sampling"
+        if disable:
+            # the line has to say what the numbers are the numbers of
+            self.backend += " (without " + ", ".join(name for name in SWITCHES if name in disable) + ")"
         self.tokenizer = Tokenizer(tokenizer, self.vocab_size, kind=tokenizer_kind, nfkc=nfkc, nfc=nfc,
                                    pretokenizer=pretokenizer)
         self.bos, self.stop_tokens = bos, {int(token) for token in stop_tokens}

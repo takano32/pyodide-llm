@@ -208,6 +208,18 @@ async function localOptions(model, vocabulary) {
 }
 
 let pyodide, llama2_numpy, llama2_convert, llama, kernels;
+// the optimizations this session leaves out (T52): ?without=relaxed,sampler, and ?kernel=off as it always was
+let disabled = [];
+
+// Only what the engine has a fallback for. A name it does not know is refused there, and the page says so.
+function switchesOf(search) {
+  const parameters = new URLSearchParams(search);
+  const names = (parameters.get("without") ?? "").split(",").map((name) => name.trim()).filter(Boolean);
+  if (parameters.get("kernel") === "off" && !names.includes("kernels")) {
+    names.push("kernels");
+  }
+  return names;
+}
 // init() as a promise: every load waits for it, also the one that replaces the first
 let initialized;
 // the AbortController of the load that is going on, and a promise that settles once it has cleaned up
@@ -245,7 +257,8 @@ async function init(search) {
 
   // The WASM SIMD kernels (kernels/*.ts), which llama2_numpy.py loads with ctypes. They are optional: without
   // them, or with ?kernel=off, NumPy does the math, several times slower.
-  if (new URLSearchParams(search).get("kernel") !== "off") {
+  disabled = switchesOf(search);
+  if (!disabled.includes("kernels")) {
     for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
       const kernel = await fetch(new URL(`${name}${self.location.search}`, import.meta.url)).catch(() => undefined);
       if (kernel?.ok) {
@@ -365,7 +378,7 @@ async function loadConverted(model, signal, id) {
     // template is for the page, not for the engine (see convert())
     const engineOptions = { ...manifest.options };
     delete engineOptions.template;
-    llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, ...engineOptions, ...model.options });
+    llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, disable: disabled, ...engineOptions, ...model.options });
     loadSeconds.construct = since(constructStarted);
     return { template: manifest.options.template };
   } finally {
@@ -521,7 +534,7 @@ async function convert(model, signal, id) {
       ({ template } = options);
       const engineOptions = { ...options };
       delete engineOptions.template;
-      llama = llama2_numpy.Llama.callKwargs(proxies[1], proxies[2], { kernels, ...engineOptions, ...model.options });
+      llama = llama2_numpy.Llama.callKwargs(proxies[1], proxies[2], { kernels, disable: disabled, ...engineOptions, ...model.options });
       loadSeconds.construct = since(constructStarted);
       if (remote) {
         postMessage({ type: "status", load: id, text: `${model.name}: keeping the converted model...` });
@@ -594,7 +607,7 @@ async function load(model, signal, id) {
     tokenizer = pythonBuffer(vocabulary.length);
     tokenizer.write(0, vocabulary);
     try {
-      llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, ...options });
+      llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, disable: disabled, ...options });
     } catch (err) {
       if (!model.file) {
         throw err;

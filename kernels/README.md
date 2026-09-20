@@ -14,6 +14,25 @@ that makes a module an Emscripten side module. Verified to load in Pyodide 0.29.
 
 ## Measured (2026-09-19, phone-class ARM CPU, one thread)
 
+## What each optimization is worth (T52)
+
+`?without=kernels,int8,relaxed,sampler` leaves any of them out, one at a time, so that the contributions come
+apart. Measured on the development machine (Node on Pyodide, 64 tokens, int8 models, the same seed):
+
+| | tiny-lm | llm-jp-3-150m |
+|---|---|---|
+| NumPy only (`?without=kernels`) | 48.6 tok/s | 9.6 tok/s |
+| + the kernels, int8 widened to float32 | 187.1 | 37.9 |
+| + int8 kept as int8 | 248.1 | 65.4 |
+| + relaxed SIMD (7-bit activations) | 315.3 | 84.3 |
+| + sampling in the kernel | **415.6** | **92.8** |
+
+In Chromium on the same machine, tiny-lm goes 44.8 (`?without=kernels`) -> 82.5 -> 175.8 -> 193.0 -> 334.6 tok/s.
+
+So the kernels are worth 8.6x and 9.7x over NumPy, and none of the four steps is negligible. The status line
+says what ran, ending in "(without ...)" when something was left out: a number whose conditions are unclear is
+worth nothing.
+
 | model | NumPy | kernels |
 |---|---:|---:|
 | stories15M float32, Pyodide in Node | 53 tok/s | 200 tok/s, the same text |
