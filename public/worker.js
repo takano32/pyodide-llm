@@ -26,6 +26,26 @@ async function resolvePyodideVersion(search) {
   return version;
 }
 
+// Pyodide asks for the NumPy wheel only once it has started, several seconds after its own files: until then it
+// does not know the name. That name is in pyodide-lock.json, which Pyodide fetches anyway, so this reads the lock
+// as well and puts the wheel into the HTTP cache while Pyodide is still coming up. Nothing is written down here:
+// the version is the one resolved at run time, the file name comes from the lock. Anything unexpected (another
+// shape of the lock, a CDN that says no) only means no head start, so every error is dropped.
+async function prefetchNumpy(base) {
+  try {
+    const lock = await (await fetch(`${base}pyodide-lock.json`)).json();
+    const name = lock.packages?.numpy?.file_name;
+    if (typeof name !== "string" || !/^[A-Za-z0-9._+-]+\.whl$/.test(name)) {
+      return;
+    }
+    const wheel = await fetch(base + name);
+    // read it to the end so that the browser keeps it, and drop every chunk: this copy is never used
+    await (wheel.body ? wheel.body.pipeTo(new WritableStream()) : wheel.arrayBuffer());
+  } catch {
+    // no head start
+  }
+}
+
 // Checkpoints are deployed in parts of 8 MiB (see the Makefile). Several parts download at once, which is
 // about twice as fast as one stream, and the download runs while Pyodide is still loading: until the Python
 // buffer exists the chunks wait in a queue, after that every chunk is written straight into it.
@@ -206,8 +226,13 @@ async function init(search) {
   const started = performance.now();
   const version = await resolvePyodideVersion(search);
   postMessage({ type: "status", text: `Loading Pyodide ${version}...` });
-  const { loadPyodide } = await import(`https://cdn.jsdelivr.net/pyodide/v${version}/full/pyodide.mjs`);
+  const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
+  // while Pyodide starts, not after: loadPackage("numpy") below finds the wheel in the HTTP cache
+  const numpy = prefetchNumpy(base);
+  const { loadPyodide } = await import(`${base}pyodide.mjs`);
   pyodide = await loadPyodide();
+  // a prefetch that is still running would otherwise be raced by loadPackage, and the wheel fetched twice
+  await numpy;
   await pyodide.loadPackage("numpy");
 
   // with the ?v=<build> of this worker, so that both always come from the same deployment
