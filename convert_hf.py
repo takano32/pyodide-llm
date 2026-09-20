@@ -18,7 +18,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "public"))
 from llama2_convert import (Arrays, Safetensors, bfloat16, checkpoint_header, checkpoint_size, convert_weights,  # noqa: E402
-                            sentencepiece_pieces, tokenizer_bin, tokenizer_json_pieces)
+                            has_bias, sentencepiece_pieces, tokenizer_bin, tokenizer_json_pieces)
 
 
 # ------------------------------------------------------------------------------------------------ weights
@@ -60,7 +60,7 @@ def convert(directory, out_path, dtype, max_seq_len):
         source = Safetensors(lambda offset, length: data[offset:offset + length])
     else:
         source = Arrays(load_torch_pickle(directory / "pytorch_model.bin"))
-    size = checkpoint_size(checkpoint_header(config, source, max_seq_len), dtype)
+    size = checkpoint_size(checkpoint_header(config, source, max_seq_len), dtype, has_bias(source))
     out = np.memmap(out_path, dtype=np.uint8, mode="w+", shape=(size,))
     convert_weights(source, config, dtype, max_seq_len, out)
     out.flush()

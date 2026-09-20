@@ -315,7 +315,7 @@ def load_kernels(path):
     return kernels
 
 
-def checkpoint_dtype(header, size):
+def checkpoint_dtype(header, size, bias=False):
     """"float32", "float16" or "int8": what a checkpoint file of size bytes with this header (7 ints) holds.
 
     The legacy format does not say, but the header fixes the size of each variant. Anything else is no checkpoint
@@ -333,7 +333,7 @@ def checkpoint_dtype(header, size):
                 (n_layers * hidden_dim, dim)]
     if vocab_size < 0:
         matrices.append((abs(vocab_size), dim))
-    vectors = 2 * n_layers * dim + dim
+    vectors = 2 * n_layers * dim + dim + (n_layers * (dim + 2 * kv_dim) if bias else 0)
     rope = 2 * seq_len * (dim // n_heads // 2)
     floats = sum(rows * length for rows, length in matrices) + vectors + rope
 
@@ -374,11 +374,13 @@ def check_tokenizer(tokenizer, header):
 
 class Llama:
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
-                 tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bos=BOS, stop_tokens=(BOS,),
-                 kernels=None, specials=()):
+                 tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, bos=BOS,
+                 stop_tokens=(BOS,), kernels=None, specials=()):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py).
+        bias=True: the checkpoint ends with a bias for q, k and v of every layer, which is added after those
+        projections (Qwen2). The legacy header cannot say so, so the caller does, like the tokenizer settings.
         bos starts every sequence; generation ends when the model emits one of stop_tokens.
         kernels is the path of simdkernel.so; without it, or when it cannot be loaded, NumPy does the math.
         """
@@ -440,6 +442,10 @@ class Llama:
             self.freq_cis_real = take(self.seq_len, self.head_size // 2, matrix=False)
             self.freq_cis_imag = take(self.seq_len, self.head_size // 2, matrix=False)
         self.wcls = self.token_embedding_table if shared_weights else take(self.vocab_size, dim, widen=not keep_int8)
+        # the q, k and v biases go last, so that a checkpoint without them is the file it always was
+        self.bq = take(n_layers, dim, matrix=False) if bias else None
+        self.bk = take(n_layers, kv_dim, matrix=False) if bias else None
+        self.bv = take(n_layers, kv_dim, matrix=False) if bias else None
         if dtype != np.float32:
             # half precision is too coarse for the rotation angles, and int8 files leave the RoPE tables out
             angles = np.arange(self.seq_len)[:, None] / rope_theta ** (np.arange(0, self.head_size, 2) / self.head_size)
@@ -535,6 +541,8 @@ class Llama:
         w1, w3 = matmul_for(self.w1, dim, hidden_dim), matmul_for(self.w3, dim, hidden_dim)
         w2, wcls = matmul_for(self.w2, hidden_dim, dim), matmul_for(self.wcls, dim, self.vocab_size)
         row_bytes, kv_row_bytes, half_bytes = dim * 4, kv_dim * 4, head_size // 2 * 4
+        # Qwen2's bias on q, k and v: one add_inplace each, on the float32 vectors the matmul just wrote
+        bq_p, bk_p, bv_p = (address(tensor) if tensor is not None else 0 for tensor in (self.bq, self.bk, self.bv))
 
         def grow(pos):
             nonlocal capacity
@@ -557,6 +565,10 @@ class Llama:
                 wq(q_p, xb_p, l)
                 wk(k_p, xb_p, l, True)
                 wv(v_p, xb_p, l, True)
+                if bq_p:
+                    add_inplace(q_p, bq_p + l * row_bytes, dim)
+                    add_inplace(k_p, bk_p + l * kv_row_bytes, kv_dim)
+                    add_inplace(v_p, bv_p + l * kv_row_bytes, kv_dim)
                 rope(q_p, cos, sin, n_heads, head_size)
                 rope(k_p, cos, sin, n_kv_heads, head_size)
                 attention(xb_p, q_p, keys, values, att_p, pos, n_heads, n_kv_heads, head_size)
@@ -597,9 +609,12 @@ class Llama:
         for l in range(self.n_layers):
             # QKV matmuls for this position, RoPE on q and k, k and v go to the kv cache
             xb = rmsnorm(x, self.rms_att_weight[l])
-            q = rope(self.wq[l] @ xb, cos, sin).reshape(n_kv_heads, kv_mul, head_size)
-            self.key_cache[l, :, pos] = rope(self.wk[l] @ xb, cos, sin)
-            self.value_cache[l, :, pos] = (self.wv[l] @ xb).reshape(n_kv_heads, head_size)
+            qv, kv, vv = self.wq[l] @ xb, self.wk[l] @ xb, self.wv[l] @ xb
+            if self.bq is not None:  # Qwen2 adds a bias to q, k and v
+                qv, kv, vv = qv + self.bq[l], kv + self.bk[l], vv + self.bv[l]
+            q = rope(qv, cos, sin).reshape(n_kv_heads, kv_mul, head_size)
+            self.key_cache[l, :, pos] = rope(kv, cos, sin)
+            self.value_cache[l, :, pos] = vv.reshape(n_kv_heads, head_size)
 
             # Multihead attention over all timesteps so far, all heads at once
             keys = self.key_cache[l, :, :pos + 1]      # (n_kv_heads, pos + 1, head_size)

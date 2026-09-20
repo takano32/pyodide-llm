@@ -22,10 +22,12 @@ def group_size(row_length):
     return size
 
 
-def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len):
+def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, bias=False):
     """(shape, is a matrix) of every tensor, in file order. llama2_numpy.py reads the same order.
 
     is a matrix: True for what int8 quantizes, False for the norm weights, None for the RoPE tables.
+    bias: the model adds a bias after the q, k and v projections (Qwen2). Those three vectors per layer go last,
+    so that a checkpoint without them is byte for byte the file it always was.
     """
     head_size = dim // n_heads
     kv_dim = n_kv_heads * head_size
@@ -36,6 +38,8 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len):
                ((dim,), False), ((seq_len, head_size // 2), None), ((seq_len, head_size // 2), None)]
     if vocab_size < 0:
         tensors.append(((abs(vocab_size), dim), True))
+    if bias:
+        tensors += [((n_layers, dim), False), ((n_layers, kv_dim), False), ((n_layers, kv_dim), False)]
     return tensors
 
 
@@ -50,8 +54,8 @@ def tensor_bytes(shape, is_matrix, dtype):
     return count + 4 * (count // group_size(shape[-1])) if is_matrix else 4 * count
 
 
-def checkpoint_size(header, dtype):
-    return 28 + sum(tensor_bytes(shape, is_matrix, dtype) for shape, is_matrix in layout(*header))
+def checkpoint_size(header, dtype, bias=False):
+    return 28 + sum(tensor_bytes(shape, is_matrix, dtype) for shape, is_matrix in layout(*header, bias=bias))
 
 
 def quantize(values):
@@ -65,12 +69,12 @@ def quantize(values):
 class Writer:
     """Puts pieces of the tensors of layout(), in any order, where they belong in the checkpoint buffer."""
 
-    def __init__(self, out, header, dtype):
+    def __init__(self, out, header, dtype, bias=False):
         self.out, self.dtype = np.frombuffer(out, dtype=np.uint8), np.dtype(dtype)
-        assert self.out.size == checkpoint_size(header, dtype), "the buffer has not the size of the checkpoint"
+        assert self.out.size == checkpoint_size(header, dtype, bias), "the buffer has not the size of the checkpoint"
         self.out[:28] = np.frombuffer(struct.pack("<7i", *header), dtype=np.uint8)
         self.tensors, offset = [], 28
-        for shape, is_matrix in layout(*header):
+        for shape, is_matrix in layout(*header, bias=bias):
             self.tensors.append((offset, shape, is_matrix))
             offset += tensor_bytes(shape, is_matrix, dtype)
 
@@ -156,8 +160,11 @@ def check_config(config):
     def refuse(reason):
         raise ValueError(f"This model cannot be converted: {reason}.")
 
-    if config.get("model_type") != "llama":
-        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama models are supported")
+    # qwen2 is a Llama with a bias on q, k and v: the converter writes those three vectors per layer, the engine
+    # adds them after the projections (T64). Everything else about it is the same.
+    if config.get("model_type") not in ("llama", "qwen2"):
+        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama and Qwen2 models are "
+               f"supported")
     for key in ("hidden_size", "intermediate_size", "num_hidden_layers", "num_attention_heads", "vocab_size",
                 "max_position_embeddings"):
         if not isinstance(config.get(key), int) or config[key] <= 0:
@@ -170,8 +177,10 @@ def check_config(config):
         refuse("it uses RoPE scaling")
     if config.get("hidden_act", "silu") != "silu":
         refuse(f"its activation is {config['hidden_act']}, not silu")
-    if config.get("attention_bias") or config.get("mlp_bias"):
+    if config.get("mlp_bias") or (config.get("attention_bias") and config.get("model_type") != "qwen2"):
         refuse("its layers have biases")
+    if config.get("use_sliding_window"):
+        refuse("it uses a sliding window of attention")
 
 
 def checkpoint_header(config, source, max_seq_len):
@@ -186,17 +195,23 @@ def checkpoint_header(config, source, max_seq_len):
 
 def permute_heads(w, heads, head_size):
     # Hugging Face stores each head of wq/wk as [first halves, second halves] (rotate_half);
-    # llama2.c rotates adjacent pairs, so interleave the two halves again
-    return w.reshape(heads, 2, head_size // 2, w.shape[1]).transpose(0, 2, 1, 3).reshape(w.shape)
+    # llama2.c rotates adjacent pairs, so interleave the two halves again. A bias is a vector of the same rows,
+    # and -1 as the last dimension lets one line do both.
+    return w.reshape(heads, 2, head_size // 2, -1).transpose(0, 2, 1, 3).reshape(w.shape)
 
 
-def conversion_plan(header):
+def has_bias(source):
+    """Whether this checkpoint has the q, k and v biases of Qwen2 (o and the FFN never have one)."""
+    return "model.layers.0.self_attn.q_proj.bias" in source
+
+
+def conversion_plan(header, bias=False):
     """For every tensor of layout(): the tensors of the Hugging Face checkpoint it is made of, in order, as
     (name, heads to permute or None); None stands for a RoPE table. And the shapes of layout()."""
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
 
-    def layers(name, heads=None):
-        return [(f"model.layers.{layer}.{name}.weight", heads) for layer in range(n_layers)]
+    def layers(name, heads=None, what="weight"):
+        return [(f"model.layers.{layer}.{name}.{what}", heads) for layer in range(n_layers)]
 
     plan = [[("model.embed_tokens.weight", None)], layers("input_layernorm"),
             layers("self_attn.q_proj", n_heads), layers("self_attn.k_proj", n_kv_heads), layers("self_attn.v_proj"),
@@ -205,7 +220,10 @@ def conversion_plan(header):
             None, None]
     if vocab_size < 0:
         plan.append([("lm_head.weight", None)])
-    return plan, [shape for shape, _ in layout(*header)]
+    if bias:
+        plan += [layers("self_attn.q_proj", n_heads, "bias"), layers("self_attn.k_proj", n_kv_heads, "bias"),
+                 layers("self_attn.v_proj", None, "bias")]
+    return plan, [shape for shape, _ in layout(*header, bias=bias)]
 
 
 def rope_table(config, header, which):
@@ -234,9 +252,10 @@ def convert_pieces(source, config, dtype, max_seq_len, out):
     header = checkpoint_header(config, source, max_seq_len)
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
     head_size = dim // n_heads
-    writer = Writer(out, header, dtype)
+    bias = has_bias(source)
+    writer = Writer(out, header, dtype, bias)
 
-    plan, shapes = conversion_plan(header)
+    plan, shapes = conversion_plan(header, bias)
     total, done = sum(int(np.prod(shape)) for shape in shapes), 0
     permute_reverse = lambda w, heads: permute_heads(w, heads, head_size)
 
@@ -284,9 +303,10 @@ class Stream:
         self.tensors = {name: info for name, info in header.items() if name != "__metadata__"}
         self.header = checkpoint_header(config, self, max_seq_len)
         self.head_size = self.header[0] // self.header[3]
-        self.out = bytearray(checkpoint_size(self.header, dtype)) if out is None else out
-        self.writer = Writer(self.out, self.header, dtype)
-        plan, shapes = conversion_plan(self.header)
+        self.bias = has_bias(self)
+        self.out = bytearray(checkpoint_size(self.header, dtype, self.bias)) if out is None else out
+        self.writer = Writer(self.out, self.header, dtype, self.bias)
+        plan, shapes = conversion_plan(self.header, self.bias)
         self.total, self.done = sum(int(np.prod(shape)) for shape in shapes), 0
         wanted = {}
         for index, (parts, shape) in enumerate(zip(plan, shapes)):
@@ -548,10 +568,10 @@ class Conversion:
         bos = self.config.get("bos_token_id", 1)
         eos = self.config.get("eos_token_id", 2)
         stop = [token for token in [bos, *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
-        self.options = {**options, "dtype": np.dtype(dtype).name, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
-                        "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop}
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start))
+        self.options = {**options, "dtype": np.dtype(dtype).name, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
+                        "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop, "bias": self.stream.bias}
         self.checkpoint = self.stream.out
 
     def feed(self, data):

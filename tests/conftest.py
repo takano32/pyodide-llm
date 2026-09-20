@@ -144,9 +144,11 @@ def naive_logits(config, weights, tokens):
         queries, keys, values = [], [], []
         for pos in range(len(tokens)):
             xb = rmsnorm(x[pos], weights["rms_att_weight"][l])
-            queries.append(rope(weights["wq"][l] @ xb, pos, n_heads))
-            keys.append(rope(weights["wk"][l] @ xb, pos, n_kv_heads))
-            values.append(weights["wv"][l] @ xb)
+            # Qwen2 adds a bias to q, k and v before the rotation
+            bias = lambda name: weights[name][l] if name in weights else 0.0
+            queries.append(rope(weights["wq"][l] @ xb + bias("bq"), pos, n_heads))
+            keys.append(rope(weights["wk"][l] @ xb + bias("bk"), pos, n_kv_heads))
+            values.append(weights["wv"][l] @ xb + bias("bv"))
         for pos in range(len(tokens)):
             attended = np.zeros(dim, dtype=np.float64)
             for h in range(n_heads):
