@@ -380,7 +380,21 @@
   // steps: 0 stands for as many tokens as the model's context holds, which is the default of every model
   type Settings = { steps: number; temperature: number; topp: number; repetition_penalty: number; seed?: number };
   const defaults = (current: typeof model): Settings => ({ topp: 0.9, repetition_penalty: 1.0, ...(current.generation as any) });
-  let settings = defaults(model);
+  // The URL may set any of them (T43), so that a link reproduces an answer: ?temperature=0.7&seed=1234&steps=128
+  // (&topp= and &repetition_penalty= too). A value that is not a number, or outside what the field allows, is
+  // ignored. They survive a change of model, like the seed: the link said what to run with.
+  const LIMITS: Record<string, [number, number]> = { temperature: [0, 1.5], topp: [0.05, 1], steps: [0, 1 << 20],
+                                                     repetition_penalty: [1, 2], seed: [0, 0xffffffff] };
+  const fromLink: Partial<Settings> = {};
+  for (const [name, [low, high]] of Object.entries(LIMITS)) {
+    const given = parameters.get(name);
+    const value = given === null ? NaN : Number(given);
+    if (given !== null && Number.isFinite(value) && value >= low && value <= high) {
+      (fromLink as any)[name] = name === "steps" || name === "seed" ? Math.round(value) : value;
+    }
+  }
+  const defaultsWithLink = (current: typeof model): Settings => ({ ...defaults(current), ...fromLink });
+  let settings = defaultsWithLink(model);
   let longest = 256; // the context of the model, known once it is ready
   const field = (id: string) => $(id) as HTMLInputElement;
   function showSettings() {
@@ -443,7 +457,7 @@
   });
 
   function show(current: typeof model) {
-    settings = { ...defaults(current), ...(settings.seed === undefined ? {} : { seed: settings.seed }) };
+    settings = { ...defaultsWithLink(current), ...(settings.seed === undefined ? {} : { seed: settings.seed }) };
     showSettings();
     select.value = current.id;
     prompt.value = current.prompt;
