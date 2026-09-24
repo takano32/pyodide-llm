@@ -39,7 +39,9 @@ def main():
                 ("NumPy, activations not quantized", None, ())]
     tokens = None
     for label, kernels, disable in variants:
-        llama = Llama(checkpoint, vocabulary, kernels=kernels, disable=disable, **MODEL["options"])  # noqa: F821
+        # the kernels' rows run the forward pass of forward.js, as the page does (tests/engine.mjs, T93)
+        options = dict(MODEL["options"], disable=disable)  # noqa: F821
+        llama = kernel_llama(checkpoint, vocabulary, **options) if kernels else Llama(checkpoint, vocabulary, **options)  # noqa: F821
         if tokens is None:
             tokens = llama.tokenizer.encode(TEXT)[:TOKENS]  # noqa: F821
         started = time.perf_counter()

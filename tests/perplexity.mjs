@@ -10,7 +10,8 @@
 // this repository). The NumPy row takes minutes: it runs at a tenth of the speed.
 import fs from "node:fs";
 import path from "node:path";
-import { loadPyodide, version } from "pyodide";
+import { version } from "pyodide";
+import { pyodideWithEngine } from "./engine.mjs";
 import { MODELS } from "../src/models.js";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -34,9 +35,8 @@ for (const source of titles) {
   text += Object.values(pages)[0].extract.slice(0, 6000) + "\n";
 }
 
-const pyodide = await loadPyodide();
-await pyodide.loadPackage("numpy", { messageCallback: () => {} });
-for (const file of ["public/llama2_numpy.py", "public/simdkernel.so", "public/simdkernel_relaxed.wasmlib", model.checkpoint, model.tokenizer]) {
+const { pyodide } = await pyodideWithEngine();
+for (const file of [model.checkpoint, model.tokenizer]) {
   pyodide.FS.writeFile(path.basename(file), fs.readFileSync(local(file)));
 }
 const name = (file) => path.basename(file);

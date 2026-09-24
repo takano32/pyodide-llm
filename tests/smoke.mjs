@@ -4,12 +4,13 @@
 //
 //   make models kernels && node tests/smoke.mjs
 import fs from "node:fs";
-import { loadPyodide, version } from "pyodide";
+import { version } from "pyodide";
+import { pyodideWithEngine } from "./engine.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
-const pyodide = await loadPyodide();
-await pyodide.loadPackage("numpy", { messageCallback: () => {} });
-for (const file of ["public/llama2_numpy.py", "public/llama2_convert.py", "public/simdkernel.so", "public/simdkernel_relaxed.wasmlib", "stories260K.bin", "tok512.bin", "stories3_5M-v4k.bin", "tok4096.bin",
+// kernel_llama(): the engine with the forward pass of public/forward.js, as the page runs it (T93)
+const { pyodide } = await pyodideWithEngine();
+for (const file of ["stories260K.bin", "tok512.bin", "stories3_5M-v4k.bin", "tok4096.bin",
                     "stories15M.f32", "tokenizer.bin", "tiny-lm.bin", "tiny-lm.tokenizer.bin"]) {
   pyodide.FS.writeFile(file.split("/").pop(), fs.readFileSync(root + file));
 }
@@ -40,12 +41,12 @@ assert japanese == "".join(tiny.generate("これからの流行りは", steps=12
 # the SIMD kernels: float32 must write exactly what NumPy writes, int8 computes on the int8 weights
 story = "Once upon a time, there was a little girl named Lily. She loved to play outside in the sunshine."
 numpy15 = llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"))
-simd15 = llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"), kernels="simdkernel.so")
+simd15 = kernel_llama(read("stories15M.f32"), read("tokenizer.bin"))
 assert simd15.backend.startswith("SIMD"), f"the kernels did not load: {simd15.backend}"
 reference = "".join(numpy15.generate("Once upon a time", steps=60))
 assert reference.startswith(story), f"stories15M wrote: {reference!r}"
 assert "".join(simd15.generate("Once upon a time", steps=60)) == reference, "the kernels and NumPy disagree"
-fast = llama2_numpy.Llama(read("tiny-lm.bin"), read("tiny-lm.tokenizer.bin"), dtype="int8", kernels="simdkernel.so",
+fast = kernel_llama(read("tiny-lm.bin"), read("tiny-lm.tokenizer.bin"), dtype="int8",
                           tokenizer_kind="unigram", nfkc=True, stop_tokens=(1, 2))
 assert "int8" in fast.backend and len("".join(fast.generate("これからの流行りは", steps=12, temperature=0.7, seed=1))) > 3
 # GPT-2 on the kernels (T65): LayerNorm, GELU and the learned positions must write what NumPy writes
@@ -74,7 +75,7 @@ gpt2_file = bytearray(llama2_convert.checkpoint_size(header, "float32", False, "
 llama2_convert.convert_weights(source, gpt2_config, "float32", positions, gpt2_file)
 gpt2_vocabulary = llama2_convert.tokenizer_bin([("<unk>", 0.0, False)] + [(f"w{i}", -float(i), True) for i in range(vocab - 1)], vocab)
 plain = llama2_numpy.Llama(bytes(gpt2_file), gpt2_vocabulary, arch="gpt2")
-quick = llama2_numpy.Llama(bytes(gpt2_file), gpt2_vocabulary, arch="gpt2", kernels="simdkernel.so")
+quick = kernel_llama(bytes(gpt2_file), gpt2_vocabulary, arch="gpt2")
 assert quick.backend.startswith("SIMD"), f"the kernels did not load for GPT-2: {quick.backend}"
 for pos, token in enumerate([1, 5, 9, 13]):
     wanted, got = plain.forward(token, pos), quick.forward(token, pos)
@@ -106,7 +107,7 @@ for rotary_pct, parallel in ((0.25, True), (1.0, False)):
     rotary = llama2_convert.rotary_dim(llama2_convert.normalize(neox_config))
     options = dict(arch="neox", rotary=rotary, parallel_residual=parallel)
     plain = llama2_numpy.Llama(bytes(neox_file), gpt2_vocabulary, **options)
-    quick = llama2_numpy.Llama(bytes(neox_file), gpt2_vocabulary, kernels="simdkernel.so", **options)
+    quick = kernel_llama(bytes(neox_file), gpt2_vocabulary, **options)
     assert quick.backend.startswith("SIMD"), f"the kernels did not load for GPT-NeoX: {quick.backend}"
     for pos, token in enumerate([1, 5, 9, 13]):
         wanted, got = plain.forward(token, pos), quick.forward(token, pos)
@@ -115,7 +116,7 @@ for rotary_pct, parallel in ((0.25, True), (1.0, False)):
 
 # the switches of T52: every one of them must leave a path that still works, and float32 must not change
 for disable in ((), ("relaxed",), ("sampler",), ("int8", "relaxed", "sampler"), ("kernels",)):
-    switched = llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"), kernels="simdkernel.so", disable=disable)
+    switched = kernel_llama(read("stories15M.f32"), read("tokenizer.bin"), disable=disable)
     assert "".join(switched.generate("Once upon a time", steps=40)) == reference[:len("".join(switched.generate("Once upon a time", steps=40)))], \
         f"float32 changed with disable={disable}"
     assert ("without " + ", ".join(disable)) in switched.backend if disable else "without" not in switched.backend
@@ -154,7 +155,7 @@ assert "".join(fast.generate("これからの流行りは", **settings)) == "".j
 llama2_numpy.KV_START = 8
 for checkpoint, vocabulary in [("stories260K.bin", "tok512.bin"), ("stories3_5M-v4k.bin", "tok4096.bin")]:
     plain = llama2_numpy.Llama(read(checkpoint), read(vocabulary))
-    grouped = llama2_numpy.Llama(read(checkpoint), read(vocabulary), kernels="simdkernel.so")
+    grouped = kernel_llama(read(checkpoint), read(vocabulary))
     assert grouped.backend.startswith("SIMD") and grouped.n_kv_heads < grouped.n_heads
     assert "".join(grouped.generate("Once upon a time", steps=60)) == "".join(plain.generate("Once upon a time", steps=60)), checkpoint
 # NumPy takes over when the kernels cannot be loaded

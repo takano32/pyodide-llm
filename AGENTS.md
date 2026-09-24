@@ -56,6 +56,7 @@
 | `.github/workflows/threads.yml` | T93 の試作を CI のランナー（Linux の x86-64 と ARM、macOS）で走らせる手動のワークフロー。帯域の広い機械で何本まで伸びるかを見る |
 | `tests/threads-prototype/` | T93 の試作。エンジンの int8 の重みを共有メモリへ写し、カーネルの共有メモリ版（`kernels/build.py` の `simdkernel_shared.wasm` など、ページは読まない）で行列積を N スレッドに分けて、エンジンと交互に tok/s を比べる。出力トークンがエンジンと一致しなければ止まる |
 | `public/coi-test/` と `tests/coi-check.mjs`、`.github/workflows/coi.yml` | T93 の仕様 2。GitHub Pages のまま Service Worker で COOP/COEP を足し、ページが cross-origin isolated になるか、その下で Pyodide と HF が読めるかを確かめる別ページと、それを各ブラウザで開く確認（手動のワークフロー）。**Service Worker の効く範囲は `/coi-test/` だけで、モデルのページには効かない** |
+| `tests/engine.mjs` | Node の道具が使う「ページと同じエンジン」（T93）。Python に `kernel_llama(checkpoint, tokenizer, **options)` を渡す（JS の forward。`disable` に `kernels` があれば NumPy）。smoke・perplexity が使う |
 | `tests/forward-check.mjs` | `public/forward.js` とエンジンの forward を同じモデルで走らせ、logits がビット単位で同じことと、新旧交互の速さを見る（T93）。デプロイでも走る |
 | `tests/ladder.mjs` | Pythia の梯子（T84）の表を、huggingface ジョブの `results.jsonl`（小さい組と大きい組の 2 つ）から起こす。単体テストは `tests/ladder-check.mjs` |
 | `tests/summary.mjs` | CI の各ジョブの結果（`tests/e2e.mjs` が `E2E_RESULTS` に書く JSON 行）を 1 枚の表にする（T82）。単体テストは `tests/summary-check.mjs` |
