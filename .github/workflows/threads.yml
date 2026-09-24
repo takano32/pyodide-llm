@@ -41,7 +41,10 @@ jobs:
         shell: bash
         run: |
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
+          # T93 stage 2: the helper threads of forward.js itself (bit for bit against one thread, then the speeds)
+          echo "### forward.js with helper threads" >> "$GITHUB_STEP_SUMMARY"
+          node tests/threads-check.mjs tiny-lm llm-jp-3-150m --threads 1,2,4,8,16 --rounds 5 --positions 128 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           for model in tiny-lm llm-jp-3-150m; do
-            echo "### $model" >> "$GITHUB_STEP_SUMMARY"
+            echo "### the prototype: $model" >> "$GITHUB_STEP_SUMMARY"
             node tests/threads-prototype/run.mjs $model 1 2 4 8 16 --auto --rounds 3 --positions 128 --modes all 2>&1 | grep -E "^\| |search|Error" | tee -a "$GITHUB_STEP_SUMMARY"
           done

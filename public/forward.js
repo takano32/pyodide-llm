@@ -25,20 +25,43 @@ export function compileKernels(plain, relaxed) {
   return { plain: new WebAssembly.Module(plain), relaxed: relaxedModule };
 }
 
-/** A memory with room for a checkpoint of size bytes at base; the forward pass allocates after it. */
-export function weightsMemory(size, base = 64) {
-  const memory = new WebAssembly.Memory({ initial: Math.ceil((base + size) / PAGE) + 1 });
-  return { memory, base };
+/** A memory with room for a checkpoint of size bytes at base; the forward pass allocates after it. shared (stage 2):
+ * a SharedArrayBuffer for the helper threads, only where the page is cross-origin isolated; its first 4 KiB are the
+ * control area of the helpers. A shared memory needs a maximum: as much as the browser grants, less if it refuses. */
+export function weightsMemory(size, { shared = false } = {}) {
+  const base = shared ? CONTROL_BYTES : 64;
+  const initial = Math.ceil((base + size) / PAGE) + 1;
+  if (!shared) return { memory: new WebAssembly.Memory({ initial }), base };
+  for (const maximum of [65536, initial + 16384, initial + 4096]) {
+    try {
+      return { memory: new WebAssembly.Memory({ initial, maximum: Math.max(maximum, initial), shared: true }), base };
+    } catch {
+      // too much address space for this browser: ask for less
+    }
+  }
+  throw new Error("This browser gives no shared WebAssembly memory for this model.");
 }
+
+// ---- the helper threads (stage 2): the control area at the start of a shared memory, as helper.js reads it
+const CONTROL_BYTES = 4096;
+// WAKE + share: each helper's own word, so that a phase wakes exactly helpers 1..threads-1 (see helper.js)
+const GEN = 0, QUIT = 1, COUNTER = 2, FINISHED = 3, ACTIVE = 4, TOTAL = 5, WAKE = 256, JOBS = 512, JOB = 12;
+// how many chunks per thread the rows of a matmul are cut into: whoever is free takes the next one, so a slow core
+// (a little core of a big.LITTLE phone) simply takes fewer. 2 to 16 measured the same (T93); fewer does not steal.
+const CHUNKS_PER_THREAD = 4;
 
 /** What Llama(external=) takes: the size of the checkpoint, read() for the few bytes Python looks at itself, and
  * start(plan), which builds the forward pass. */
-export function external({ memory, base, size, kernels }) {
-  return {
+export function external({ memory, base, size, kernels, spawn }) {
+  const outside = {
     size,
     read: (offset, length) => new Uint8Array(memory.buffer, base + offset, length).slice(),
-    start: (plan) => createForward({ memory, base, size, kernels, plan: plan.toJs ? plan.toJs({ dict_converter: Object.fromEntries }) : plan }),
+    start: (plan) => {
+      outside.engine = createForward({ memory, base, size, kernels, spawn, plan: plan.toJs ? plan.toJs({ dict_converter: Object.fromEntries }) : plan });
+      return outside.engine;
+    },
   };
+  return outside;
 }
 
 // half to float, exactly (the same as NumPy's astype(float32))
@@ -49,7 +72,9 @@ function halfToFloat(h) {
   return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
 }
 
-export function createForward({ memory, base, size, kernels, plan }) {
+/** spawn (stage 2, a shared memory only): starts one helper thread with { memory, plain, relaxed } and resolves once
+ * it is ready; the result has terminate(). Without it, or on a memory that is not shared, everything runs here. */
+export function createForward({ memory, base, size, kernels, plan, spawn }) {
   const { dim, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: headSize, vocab_size: vocab,
     seq_len: seqLen, rotary, arch } = plan;
   const hidden = plan.hidden_dim, kvDim = kvHeads * headSize;
@@ -184,15 +209,69 @@ export function createForward({ memory, base, size, kernels, plan }) {
     capacity = larger;
   }
 
-  function matmul(m, out, input, l, sameInput = false) {
+  // ---- the matrix multiplications, in phases: the matmuls that read the same input (q, k and v; w1 and w3) go
+  // out together. The input is quantized here, once; the rows are computed here and, with helper threads, by
+  // whoever takes them. Every row is computed whole by one thread with the same kernel, so the numbers are the same
+  // with any number of threads.
+  const shared = typeof SharedArrayBuffer !== "undefined" && memory.buffer instanceof SharedArrayBuffer && spawn;
+  const ctl = shared ? new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4) : null;
+  const helpers = [];
+  let threads = 1, gen = 0;
+  const jobOf = (m, out, input, l) => {
     const [w, s, c] = m.layer(l);
-    if (!m.int8) {
-      k.matmul_f32(out, input, w, m.n, 0, m.rows);
+    if (!m.int8) return [2, out, input, 0, w, 0, 0, m.n, m.rows];
+    return relaxed ? [0, out, xq, xs, w, s, c, m.n, m.rows] : [1, out, xq, xs, w, s, 0, m.n, m.rows];
+  };
+  const runRows = (job, r0, r1) => {
+    const [kind, out, a, b, w, s, c, n] = job;
+    if (kind === 0) relaxed(out, a, b, w, s, c, n, r0, r1);
+    else if (kind === 1) k.matmul_q8(out, a, b, w, s, n, r0, r1);
+    else k.matmul_f32(out, a, w, n, r0, r1);
+  };
+  const waitUntil = (index, done) => {
+    for (let seen = Atomics.load(ctl, index); !done(seen); seen = Atomics.load(ctl, index)) Atomics.wait(ctl, index, seen);
+  };
+  function phase(jobs) {
+    if (threads <= 1) {
+      for (const job of jobs) runRows(job, 0, job[8]);
       return;
     }
-    if (!sameInput) k.quantize_x(xq, xs, input, m.n, bias);  // q, k, v (and w1, w3) share their input
-    if (relaxed) relaxed(out, xq, xs, w, s, c, m.n, 0, m.rows);
-    else k.matmul_q8(out, xq, xs, w, s, m.n, 0, m.rows);
+    // close the previous phase (odd), let every helper still awake leave it, then rewrite the jobs
+    Atomics.store(ctl, GEN, gen + 1);
+    waitUntil(ACTIVE, (seen) => seen === 0);
+    let total = 0;
+    ctl[JOBS] = jobs.length;
+    jobs.forEach((job, i) => {
+      const at = JOBS + 1 + i * JOB, rows = job[8];
+      const size = Math.max(1, Math.ceil(rows / (threads * CHUNKS_PER_THREAD)));
+      job.forEach((value, n) => { ctl[at + n] = value; });
+      ctl[at + 9] = size;
+      ctl[at + 10] = total;
+      total += Math.ceil(rows / size);
+    });
+    ctl[TOTAL] = total;
+    Atomics.store(ctl, COUNTER, 0);
+    Atomics.store(ctl, FINISHED, 0);
+    gen += 2;
+    Atomics.store(ctl, GEN, gen);
+    // wake helpers 1.. by name, no more than there are chunks for them and no more than this many threads
+    for (let h = 1, wake = Math.min(threads - 1, total - 1); h <= wake; h++) {
+      Atomics.store(ctl, WAKE + h, gen);
+      Atomics.notify(ctl, WAKE + h, 1);
+    }
+    for (let c = Atomics.add(ctl, COUNTER, 1); c < total; c = Atomics.add(ctl, COUNTER, 1)) {
+      let j = jobs.length - 1;
+      while (ctl[JOBS + 1 + j * JOB + 10] > c) j--;
+      const at = JOBS + 1 + j * JOB, size = ctl[at + 9], r0 = (c - ctl[at + 10]) * size;
+      runRows(jobs[j], r0, Math.min(r0 + size, jobs[j][8]));
+      Atomics.add(ctl, FINISHED, 1);
+    }
+    waitUntil(FINISHED, (seen) => seen === total);
+  }
+  // matmuls of one input: [matrix, output, layer] each
+  function matmuls(input, list) {
+    if (list[0][0].int8) k.quantize_x(xq, xs, input, list[0][0].n, bias);
+    phase(list.map(([m, out, l]) => jobOf(m, out, input, l)));
   }
 
   function forward(token, pos, needLogits) {
@@ -217,9 +296,7 @@ export function createForward({ memory, base, size, kernels, plan }) {
       if (layerNorm) k.layernorm(xb, x, attW + l * dim * 4, attB + l * dim * 4, dim);
       else k.rmsnorm(xb, x, attW + l * dim * 4, dim);
       if (parallel) F.copyWithin(before / 4, x / 4, x / 4 + dim);  // GPT-NeoX reads this layer's input twice
-      matmul(wq, q, xb, l);
-      matmul(wk, kp, xb, l, true);
-      matmul(wv, vp, xb, l, true);
+      matmuls(xb, [[wq, q, l], [wk, kp, l], [wv, vp, l]]);
       if (bq) {
         k.add_inplace(q, bq + l * dim * 4, dim);
         k.add_inplace(kp, bk + l * kvDim * 4, kvDim);
@@ -230,23 +307,22 @@ export function createForward({ memory, base, size, kernels, plan }) {
         k.rope(kp, cos, sin, kvHeads, headSize, rotary);
       }
       k.attention(xb, q, layerKeys, layerValues, att, pos, heads, kvHeads, headSize);
-      matmul(wo, xb2, xb, l);
+      matmuls(xb, [[wo, xb2, l]]);
       k.add_inplace(x, xb2, dim);
       if (layerNorm) {
         k.add_inplace(x, bo + l * dim * 4, dim);
         k.layernorm(xb, parallel ? before : x, ffnW + l * dim * 4, ffnB + l * dim * 4, dim);
-        matmul(w1, hb, xb, l);
+        matmuls(xb, [[w1, hb, l]]);
         k.gelu(hb, hb, b1 + l * hidden * 4, hidden);
-        matmul(w2, xb2, hb, l);
+        matmuls(hb, [[w2, xb2, l]]);
         k.add_inplace(x, xb2, dim);
         k.add_inplace(x, b2 + l * dim * 4, dim);
         continue;
       }
       k.rmsnorm(xb, x, ffnW + l * dim * 4, dim);
-      matmul(w1, hb, xb, l);
-      matmul(w3, hb2, xb, l, true);
+      matmuls(xb, [[w1, hb, l], [w3, hb2, l]]);
       k.swiglu(hb, hb, hb2, hidden);
-      matmul(w2, xb2, hb, l);
+      matmuls(hb, [[w2, xb2, l]]);
       k.add_inplace(x, xb2, dim);
     }
     if (!needLogits) return;
@@ -257,16 +333,43 @@ export function createForward({ memory, base, size, kernels, plan }) {
         F[picked / 4 + i] = F[xb / 4 + c];
         F[xb / 4 + c] = 0;
       });
-      matmul(wcls, logits, xb, 0);
+      matmuls(xb, [[wcls, logits, 0]]);
       k.add_columns(logits, columns, picked, channels.length, vocab);
     } else {
-      matmul(wcls, logits, xb, 0);
+      matmuls(xb, [[wcls, logits, 0]]);
     }
   }
 
   let bound = null;
+  const backend = plan.int8 ? `SIMD kernels, int8${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32";
   return {
-    backend: plan.int8 ? `SIMD kernels, int8${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32",
+    backend,
+    /** Use n threads from the next token on (stage 2): starts the helpers that are missing. 1 on a memory that is
+     * not shared. Resolves to the number in use. */
+    async setThreads(n) {
+      if (!shared) return (threads = 1);
+      while (helpers.length < n - 1) {
+        helpers.push(await spawn({ memory, plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null,
+          share: helpers.length + 1 }));
+      }
+      threads = Math.max(1, n);
+      return threads;
+    },
+    get threads() {
+      return threads;
+    },
+    /** the helper threads end; this engine runs on its own again */
+    stopThreads() {
+      if (!shared) return;
+      Atomics.store(ctl, QUIT, 1);
+      for (let h = 1; h <= helpers.length; h++) {
+        Atomics.add(ctl, WAKE + h, 2);
+        Atomics.notify(ctl, WAKE + h);
+      }
+      helpers.splice(0).forEach((helper) => helper.terminate?.());
+      Atomics.store(ctl, QUIT, 0);
+      threads = 1;
+    },
     /** the float32 array of Python's that forward() fills with the logits */
     bind(array) {
       bound = array.copy ? array.copy() : array;
@@ -278,10 +381,11 @@ export function createForward({ memory, base, size, kernels, plan }) {
       view.data.set(new Float32Array(memory.buffer, logits, vocab));
       view.release();
     },
-    /** Python's array goes back (Llama.release()) */
+    /** Python's array goes back (Llama.release()), and the helper threads end */
     release() {
       bound?.destroy?.();
       bound = null;
+      this.stopThreads();
     },
     /** the logits in this memory, for callers without Python (tests) */
     logits: () => new Float32Array(memory.buffer, logits, vocab),

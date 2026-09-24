@@ -56,6 +56,8 @@
 | `.github/workflows/threads.yml` | T93 の試作を CI のランナー（Linux の x86-64 と ARM、macOS）で走らせる手動のワークフロー。帯域の広い機械で何本まで伸びるかを見る |
 | `tests/threads-prototype/` | T93 の試作。エンジンの int8 の重みを共有メモリへ写し、カーネルの共有メモリ版（`kernels/build.py` の `simdkernel_shared.wasm` など、ページは読まない）で行列積を N スレッドに分けて、エンジンと交互に tok/s を比べる。出力トークンがエンジンと一致しなければ止まる |
 | `public/coi-test/` と `tests/coi-check.mjs`、`.github/workflows/coi.yml` | T93 の仕様 2。GitHub Pages のまま Service Worker で COOP/COEP を足し、ページが cross-origin isolated になるか、その下で Pyodide と HF が読めるかを確かめる別ページと、それを各ブラウザで開く確認（手動のワークフロー）。**Service Worker の効く範囲は `/coi-test/` だけで、モデルのページには効かない** |
+| `public/helper.js` | T93 段階 2 の助手のスレッド。共有メモリの上で、`forward.js` が配る行列積の行の塊を取り合う。自分専用の待ち番号（`WAKE + share`）で起こされる。ブラウザの Worker と Node の worker_threads の両方で動く |
+| `tests/threads-check.mjs` | 助手のスレッドの確認: 本数を変えても logits が 1 本とビット単位で同じことと、本数ごとの速さ。forward はページと同じく Worker の中で走らせる |
 | `tests/engine.mjs` | Node の道具が使う「ページと同じエンジン」（T93）。Python に `kernel_llama(checkpoint, tokenizer, **options)` を渡す（JS の forward。`disable` に `kernels` があれば NumPy）。smoke・perplexity が使う |
 | `tests/forward-check.mjs` | `public/forward.js` とエンジンの forward を同じモデルで走らせ、logits がビット単位で同じことと、新旧交互の速さを見る（T93）。デプロイでも走る |
 | `tests/ladder.mjs` | Pythia の梯子（T84）の表を、huggingface ジョブの `results.jsonl`（小さい組と大きい組の 2 つ）から起こす。単体テストは `tests/ladder-check.mjs` |
@@ -135,6 +137,7 @@
 - **int8 のモデルは、カーネルの浮動小数点の加算順を変えるだけで出力の文が変わる。** 活性値を 7 ビット（relaxed SIMD）に丸めているので、最後の 1 ビットの違いが次の層の丸めをまたぎ、llm-jp-3-150m では logit が最大 1.0 動く。バグではない（行列積は新旧とも整数の厳密計算と 1e-6 で一致）。int8 の回帰テストを「変更前と同じ文」にしてはいけない。float32 は NumPy と一字一句同じであることを確かめる。
 - **チャットテンプレートの中の特殊トークンは、文字として渡すと壊れる。** TinyLlama Chat の書式は `<|user|>\n…</s>\n<|assistant|>\n` で、`</s>` は 1 つのトークン（ID 2）。そのままエンコードすると `<`・`/`・`s`・`>` とばらばらになる。エンジンの `specials=("</s>",)` で「書かれていたらそのトークン」にし、特殊トークンの直後にはダミーの空白を付けない（`transformers` の結果と 6 / 6 で一致）。llm-jp の書式（`### 指示:`）には特殊トークンが無いので要らない。
 - **ヘッドレスの Chromium は Cache API の割り当てが小さい**（Playwright の一時プロファイル）。503MB の変換結果を保存しようとして `Quota exceeded` になった（`navigator.storage.estimate()` では足りると出ていた）。Worker は保存をあきらめて「保存できなかった理由」を準備完了の内訳に出し、モデルはそのまま動く。普通のブラウザでの上限は未確認。
+- **助手のスレッドを 1 つの番号で待たせない（T93 段階 2a）。** `Atomics.notify` は待っている順に起こすので、人数より多い助手が寝ていると、段ごとに違う冷えた助手が起こされ、速さが数倍揺れる。助手ごとに自分の番号で待たせ、使う本数ぶんを名指しで起こす。**取りまとめ役（forward を回すスレッド）を Pyodide の居るメインスレッドに置かない**: 待ち合わせが遅れて、4 本で 1 本より遅くなった。
 - **Python から JS の関数に渡した PyProxy は、呼び出しが終わると壊される。** `forward.js` の `bind(logits)` は受け取った配列を `copy()` して持ち、`Llama.release()` で返す。JS から Python の配列に書くときは、呼ぶたびに `getBuffer()` を取り直す（Pyodide のメモリが伸びると古い view は死ぬ）。**Pyodide は自分の `WebAssembly.Memory` を公開していない**ので、JS のカーネルを Pyodide のメモリの上では動かせない（T93 で重みを別のメモリに置いた理由）。
 - **`stats` の `prompt_tokens` は `tokens - sampled` では求まらない。** 停止トークンはサンプリングされるが `tokens` には数えないので 1 ずれる。プロンプトは専用のカウンタで数えている。
 - **フォームの中に `<input>` を足さない。** 入力欄のフォーム（`#composer`）の中に置いた `<input>` で Enter を押すと、プロンプトが送信される（暗黙の送信）。生成設定のパネルはフォームの外に置いてあり、フォームの中のボタンは `type="button"` にしてある。
