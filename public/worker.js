@@ -702,6 +702,11 @@ async function generate({ type, prompt, ...options }) {
   postMessage({ type: "done", ...llama.stats.toJs({ dict_converter: Object.fromEntries }) });
 }
 
+/** The size of Pyodide's WebAssembly memory, which only grows; undefined before Pyodide is there. */
+function heapBytes() {
+  return pyodide?._module?.HEAPU8?.length;
+}
+
 self.onmessage = async ({ data }) => {
   let signal;
   try {
@@ -780,7 +785,12 @@ self.onmessage = async ({ data }) => {
       // a ValueError of the engine is a message for the reader (wrong file, prompt too long): no traceback
       const message = err.type === "ValueError" ? err.message.trim().split("\n").pop().replace(/^ValueError: /, "")
         : err?.name === "Error" ? err.message : String(err);
-      postMessage({ type: "error", load: data.load, message });
+      // T90: the memory ran out, in Python (MemoryError: malloc could not grow the WebAssembly memory) or in
+      // JavaScript (RangeError: an ArrayBuffer or WebAssembly.Memory.grow was refused). The page says so in words
+      // a visitor understands, with how much memory the page had when it happened.
+      const memory = err?.type === "MemoryError" || err?.name === "RangeError";
+      postMessage({ type: "error", load: data.load, message: memory ? String(err?.message ?? err).trim().split("\n").pop() : message,
+                    ...(memory && { memory: true, heap: heapBytes() }) });
     }
   }
 };

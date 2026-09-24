@@ -173,3 +173,32 @@ export const MODELS = [
     generation: sampled(1.1), template: "<｜User｜>{prompt}<｜Assistant｜>",
     prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
 ];
+
+// T90: memory. A device that runs out of it kills the worker's WebAssembly memory, so the page warns before it
+// loads a model that probably does not fit, and says what happened when it did not.
+/** What the page takes besides the model: Pyodide, NumPy and the engine (the margin T90 asked for; the heap of
+ * llm-jp-3 150M measures 112 MB above its 171 MB of weights, and the tab needs its own). */
+export const PAGE_MEMORY = 300e6;
+const megabytes = (bytes) => `${Math.round(bytes / 1e6).toLocaleString("en")} MB`;
+/** The bytes of a model once loaded: `bytes` of a file of this site, or the "int8 N MB" its note gives for a
+ * conversion. undefined when neither says (a file of the visitor's). */
+export function modelBytes(entry) {
+  if (entry.bytes) return entry.bytes;
+  const found = /int8 ([\d.]+) (MB|GB)/.exec(entry.note ?? "");
+  return found ? Number(found[1]) * (found[2] === "GB" ? 1e9 : 1e6) : undefined;
+}
+/** A sentence for a device that says it has less memory than twice what the model needs, or "". deviceMemory is
+ * navigator.deviceMemory (GB; only Chromium tells, and at most 8): without it nothing is guessed. */
+export function memoryWarning(entry, deviceMemory) {
+  const bytes = modelBytes(entry);
+  if (!deviceMemory || !bytes || bytes + PAGE_MEMORY <= deviceMemory * 2 ** 30 / 2) return "";
+  return `${entry.name} needs about ${megabytes(bytes + PAGE_MEMORY)} of memory, and this device has ${deviceMemory} GB: it may run out of memory.`;
+}
+/** What the page says when the worker ran out of memory (heap: the size of its WebAssembly memory then). */
+export function memoryFailure(entry, heap, detail) {
+  const bytes = modelBytes(entry);
+  return `This device ran out of memory for ${entry.name}` +
+    (bytes ? ` (it needs about ${megabytes(bytes + PAGE_MEMORY)})` : "") +
+    (heap ? `; the page was using ${megabytes(heap)} when it happened` : "") +
+    `. A smaller model may fit, or closing other tabs may help.` + (detail ? ` (${detail})` : "");
+}

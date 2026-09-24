@@ -257,7 +257,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
 </style>
 
 <script>
-  import { GROUPS, MODELS } from "../models.js";
+  import { GROUPS, MODELS, memoryFailure, memoryWarning } from "../models.js";
   import { FULL_ROUNDS, ROUNDS, benchMarkdown, environmentOf } from "../bench.js";
 
   declare const __BUILD__: string;
@@ -585,7 +585,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
         `generated ${data.tokens - data.prompt_tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s · ${seconds(data.seconds)} in all`,
       ], used.temperature ? used.seed : undefined);
     } else if (data.type === "error") {
-      message("model error", data.message);
+      message("model error", data.memory ? memoryFailure(model, data.heap, data.message) : data.message);
       statusText.textContent = ready ? `${model.name}` : `Could not load ${model.name}`;
     }
     // anything but a progress report means the worker is idle again
@@ -701,7 +701,10 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     const chosen = select.value === "local" ? local! : MODELS.find(({ id }) => id === select.value)!;
     // a large download is asked for first: what is fetched, from whom, and that the conversion happens here
     const download = select.selectedOptions[0]?.textContent?.includes("kept in this browser") ? 0 : ((chosen as any).download ?? 0);
-    if (download > 500e6 && !confirm(`${chosen.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser. Go on?`)) {
+    // T90: and one that probably does not fit in a device that says how much memory it has (Chromium only)
+    const asks = [download > 500e6 && `${chosen.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser.`,
+                  memoryWarning(chosen, (navigator as any).deviceMemory)].filter(Boolean);
+    if (asks.length && !confirm(`${asks.join(" ")} Go on?`)) {
       select.value = model.id;
       return;
     }
