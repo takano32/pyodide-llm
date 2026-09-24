@@ -268,3 +268,24 @@ def test_a_sink_gets_the_very_checkpoint(dtype):
         stream.feed(file[start:start + 777])
     stream.finish()
     assert bytes(sink.data) == expected
+
+
+def test_a_quantizer_of_rows_is_used_for_whole_groups_of_32_only():
+    """T89: the converter hands int8 matrices to quantize_rows (the kernels' quantizer in the page) when their rows are
+    whole groups of 32, and keeps NumPy's quantize() for the rest; the bytes are the same either way."""
+    config, weights = synthetic_weights(dim=48, hidden_dim=64)  # rows of 48: groups of 16, not the kernel's
+    tensors, published = hugging_face(config, weights, True)
+    file = safetensors_file(tensors)
+    size = struct.unpack("<Q", file[:8])[0]
+    seen = []
+
+    def quantize_rows(values):
+        seen.append(values.shape[-1])
+        return llama2_convert.quantize(values)
+
+    stream = llama2_convert.Stream(json.loads(file[8:8 + size]), 8 + size, published, "int8", 1 << 20,
+                                   quantize_rows=quantize_rows)
+    stream.feed(file)
+    stream.finish()
+    assert bytes(stream.out) == converted(Safetensors(reader(file)), published, "int8")
+    assert seen and set(seen) == {64}, "only the rows of 64 (w2) go to it; the rows of 48 stay with NumPy"

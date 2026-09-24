@@ -557,6 +557,8 @@ async function convert(model, signal, id) {
       view.release();
     },
   };
+  // T89: quantize() on the SIMD kernels, the same bytes six times faster (none with ?without=kernels)
+  const quantizeRows = kernels && !disabled.includes("kernels") ? llama2_numpy.kernel_quantizer(kernels) : undefined;
   if (remote && model.hf.weights.endsWith(".gguf")) {
     // T74: a GGUF holds the configuration and the vocabulary in its header, before the tensors: no config.json and
     // no tokenizer to fetch. The header is a few megabytes (the vocabulary), so it is fetched in growing pieces
@@ -564,7 +566,7 @@ async function convert(model, signal, id) {
     for (let bytes = 4 * HF_HEADER_BYTES; ; bytes *= 4) {
       ({ bytes: first, total: size } = await fetchRange(at(model.hf.weights), 0, bytes, signal));
       try {
-        conversion = llama2_convert.Conversion.from_gguf.callKwargs(first, { ...model.conversion, sink });
+        conversion = llama2_convert.Conversion.from_gguf.callKwargs(first, { ...model.conversion, sink, quantize_rows: quantizeRows });
         break;
       } catch (error) {
         if (error.type !== "Incomplete" || bytes >= size) {
@@ -619,7 +621,7 @@ async function convert(model, signal, id) {
         const tokenizer = new Uint8Array(remote ? await (await text(at(candidate))).arrayBuffer() : await candidate.arrayBuffer());
         signal.throwIfAborted();
         conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName,
-          { start: base, tokenizer_config: tokenizerConfig, ...model.conversion, sink });
+          { start: base, tokenizer_config: tokenizerConfig, ...model.conversion, sink, quantize_rows: quantizeRows });
         break;
       } catch (error) {
         if (signal.aborted) {
@@ -690,6 +692,7 @@ async function convert(model, signal, id) {
   } finally {
     // the engine keeps what it needs of the checkpoint alive, the rest goes with this
     conversion.destroy();
+    quantizeRows?.destroy();
   }
 }
 

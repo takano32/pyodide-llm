@@ -351,6 +351,25 @@ def load_kernels(path, without_relaxed=False):
     return kernels
 
 
+def kernel_quantizer(path):
+    """llama2_convert.quantize() on the SIMD kernels (T89): int8 values in groups of 32 and one float32 scale per
+    group, the same bytes as NumPy's, six times faster (quantize_x with no bias: the activations' quantizer is the
+    same computation). For the converter's quantize_rows; None where the kernels cannot be loaded."""
+    kernels = load_kernels(path) if path else None
+    if not kernels:
+        return None
+    quantize_x = kernels["quantize_x"]
+
+    def quantize_rows(values):
+        values = np.ascontiguousarray(values, dtype=np.float32)
+        quantized = np.empty(values.size, dtype=np.int8)
+        scales = np.empty(values.size // 32, dtype=np.float32)
+        quantize_x(quantized.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size, 0)
+        return quantized.reshape(-1, 32), scales
+
+    return quantize_rows
+
+
 class Tensor:
     """Where a tensor of the checkpoint is, when the weights live outside Python (T93: the forward pass runs in
     public/forward.js on its own WebAssembly memory). kind: "int8" (values, then one float32 scale per group of

@@ -90,12 +90,14 @@ def quantize(values):
 class Writer:
     """Puts pieces of the tensors of layout(), in any order, where they belong in the checkpoint buffer."""
 
-    def __init__(self, out, header, dtype, bias=False, arch="llama", sink=None):
+    def __init__(self, out, header, dtype, bias=False, arch="llama", sink=None, quantize_rows=None):
         """out: a buffer of the checkpoint's size, or None with sink: an object with open(size) and
         write(offset, array of bytes), for a checkpoint that lives outside Python (T93: the WebAssembly memory of
         public/forward.js). Pyodide's own memory never shrinks, so a converted model that went through a Python
         buffer on its way there would keep taking its size twice."""
-        self.dtype, self.sink = np.dtype(dtype), sink
+        # quantize_rows: quantize() on the SIMD kernels (llama2_numpy.kernel_quantizer), the same bytes six times
+        # faster, for rows of whole groups of 32; NumPy's quantize() for anything else, and where there are no kernels
+        self.dtype, self.sink, self.quantize_rows = np.dtype(dtype), sink, quantize_rows
         size = checkpoint_size(header, dtype, bias, arch)
         if sink is not None:
             self.out = None
@@ -122,7 +124,8 @@ class Writer:
         if self.dtype != np.int8:
             self.put(offset + first * self.dtype.itemsize, np.asarray(values).astype(self.dtype, copy=False))
         elif is_matrix:
-            quantized, scales = quantize(np.asarray(values, dtype=np.float32).reshape(-1, shape[-1]))
+            fast = self.quantize_rows is not None and shape[-1] % 32 == 0
+            quantized, scales = (self.quantize_rows if fast else quantize)(np.asarray(values, dtype=np.float32).reshape(-1, shape[-1]))
             self.put(offset + first, quantized)
             self.put(offset + int(np.prod(shape)) + 4 * (first // group_size(shape[-1])), scales)
         elif is_matrix is False:
@@ -788,18 +791,18 @@ def rope_table(config, header, which):
     return full
 
 
-def convert_weights(source, config, dtype, max_seq_len, out, progress=None):
+def convert_weights(source, config, dtype, max_seq_len, out, progress=None, quantize_rows=None):
     """Fill out, a writable buffer of checkpoint_size() bytes, from source (Safetensors or Arrays).
 
-    progress(values done, values in all) is called after every piece.
+    progress(values done, values in all) is called after every piece. quantize_rows: see Writer.
     """
-    for done, total in convert_pieces(source, config, dtype, max_seq_len, out):
+    for done, total in convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows):
         if progress:
             progress(done, total)
     return checkpoint_header(config, source, max_seq_len)
 
 
-def convert_pieces(source, config, dtype, max_seq_len, out):
+def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
     """convert_weights() as a generator that yields (values done, values in all) after every piece: whoever drives
     it can show the progress, let other work in between, and stop half way (the worker of the page does all three)."""
     config = normalize(config)
@@ -809,7 +812,7 @@ def convert_pieces(source, config, dtype, max_seq_len, out):
     head_size = dim // n_heads
     arch = architecture(config)
     bias = has_bias(source)
-    writer = Writer(out, header, dtype, bias, arch)
+    writer = Writer(out, header, dtype, bias, arch, quantize_rows=quantize_rows)
 
     plan, shapes = conversion_plan(header, bias, arch, gpt2_prefix(source), rotary_dim(config) if arch == "neox" else 0)
     total, done = sum(int(np.prod(shape)) for shape in shapes), 0
@@ -852,7 +855,7 @@ class Stream:
     to have one made (self.out).
     """
 
-    def __init__(self, header, base, config, dtype, max_seq_len, out=None, start=0, sink=None):
+    def __init__(self, header, base, config, dtype, max_seq_len, out=None, start=0, sink=None, quantize_rows=None):
         config = normalize(config)
         check_config(config)
         self.tensors = {name: info for name, info in header.items() if name != "__metadata__"}
@@ -863,7 +866,7 @@ class Stream:
         if out is None and sink is None:
             out = bytearray(checkpoint_size(self.header, dtype, self.bias, self.arch))
         self.out = out  # None when the checkpoint goes to sink
-        self.writer = Writer(self.out, self.header, dtype, self.bias, self.arch, sink=sink)
+        self.writer = Writer(self.out, self.header, dtype, self.bias, self.arch, sink=sink, quantize_rows=quantize_rows)
         plan, shapes = conversion_plan(self.header, self.bias, self.arch, gpt2_prefix(self),
                                        rotary_dim(config) if self.arch == "neox" else 0)
         self.total, self.done = sum(int(np.prod(shape)) for shape in shapes), 0
@@ -1256,7 +1259,7 @@ class Conversion:
     """
 
     def __init__(self, header, base, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=4096, start=0,
-                 tokenizer_config=None, sink=None):
+                 tokenizer_config=None, sink=None, quantize_rows=None):
         try:
             self.config = json.loads(config)
         except ValueError:
@@ -1282,10 +1285,10 @@ class Conversion:
             self.tokenizer, options = tokenizer_bin(tokenizer_json_pieces(parsed), vocab_size), tokenizer_json_options(parsed)
         else:
             self.tokenizer, options = tokenizer_bin(sentencepiece_pieces(tokenizer), vocab_size), sentencepiece_options(tokenizer)
-        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink)
+        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink, quantize_rows)
 
     @classmethod
-    def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None):
+    def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None, quantize_rows=None):
         """The same from a GGUF file (T74): head is its beginning, as far as the tensors' data (Incomplete when it
         is not). Then feed() the file from self.base on. No config.json and no tokenizer: the GGUF has both."""
         metadata, tensors, base = gguf_read(head)
@@ -1297,16 +1300,17 @@ class Conversion:
             raise ValueError(f"dtype must be float32, float16 or int8, not {dtype}.")
         self.tokenizer, options, tokenizer_config = gguf_tokenizer(metadata, config["vocab_size"])
         self.base = base
-        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base, sink)
+        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base, sink, quantize_rows)
         return self
 
-    def start(self, header, base, options, tokenizer_config, dtype, max_seq_len, start, sink=None):
-        """sink: see Writer. checkpoint is then None: the bytes went to the sink."""
+    def start(self, header, base, options, tokenizer_config, dtype, max_seq_len, start, sink=None, quantize_rows=None):
+        """sink and quantize_rows: see Writer. checkpoint is None with a sink: the bytes went there."""
         bos = self.config.get("bos_token_id", 1)
         eos = self.config.get("eos_token_id", 2)
         stop = [token for token in [bos, *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
-        self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start), sink=sink)
+        self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start), sink=sink,
+                             quantize_rows=quantize_rows)
         self.options = {**options, "dtype": np.dtype(dtype).name, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop, "bias": self.stream.bias,
                         "arch": self.stream.arch}

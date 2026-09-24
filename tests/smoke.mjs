@@ -158,6 +158,19 @@ for checkpoint, vocabulary in [("stories260K.bin", "tok512.bin"), ("stories3_5M-
     grouped = kernel_llama(read(checkpoint), read(vocabulary))
     assert grouped.backend.startswith("SIMD") and grouped.n_kv_heads < grouped.n_heads
     assert "".join(grouped.generate("Once upon a time", steps=60)) == "".join(plain.generate("Once upon a time", steps=60)), checkpoint
+# T89: the converter's quantize() on the kernels gives the very bytes of NumPy's, for a whole conversion too
+quantize_rows = llama2_numpy.kernel_quantizer("simdkernel.so")
+values = (np.random.default_rng(7).standard_normal((96, 256)) * 0.1).astype(np.float32)
+values[0, :32] = 0.0
+values[3, 9] = 5.0
+ours, theirs = quantize_rows(values), llama2_convert.quantize(values)
+assert np.array_equal(ours[0].reshape(-1), theirs[0].reshape(-1)) and np.array_equal(ours[1], theirs[1]), "quantize_x is not quantize()"
+for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensors, neox_config, "neox")):
+    header = llama2_convert.checkpoint_header(llama2_convert.normalize(config_of), llama2_convert.Arrays(tensors_of), positions)
+    numpy_int8, kernel_int8 = (bytearray(llama2_convert.checkpoint_size(header, "int8", False, arch)) for _ in range(2))
+    llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int8", positions, numpy_int8)
+    llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int8", positions, kernel_int8, quantize_rows=quantize_rows)
+    assert numpy_int8 == kernel_int8, f"the kernels' quantizer changed the int8 {arch} checkpoint"
 # NumPy takes over when the kernels cannot be loaded
 assert llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"), kernels="missing.so").backend == "NumPy"
 

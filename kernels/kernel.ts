@@ -50,20 +50,36 @@ export function matmul_f32(xout: usize, x: usize, w: usize, n: i32, r0: i32, r1:
 
 // bias = 0: signed int8 in [-127,127];  bias = 64: 7-bit unsigned, real value = (q - 64) * scale (for kernel_relaxed.ts)
 export function quantize_x(xq: usize, xs: usize, x: usize, n: i32, bias: i32): void {
+  // SIMD, 32 values (one group) at a time. Every step is the scalar one lane by lane (abs, max, the division, the
+  // product, round half to even), so the int8 and the scales are the same to the bit as before, and as NumPy's
+  // llama2_convert.quantize(), which the converter now hands to this (T89)
   const qmax: f32 = bias == 0 ? 127.0 : 63.0;
+  const offset = i32x4.splat(bias);
   for (let g = 0; g < n; g += GS) {
-    let amax: f32 = 0;
-    for (let j = 0; j < GS; j++) {
-      const v = abs<f32>(load<f32>(x + (<usize>(g + j) << 2)));
-      if (v > amax) amax = v;
-    }
+    const p = x + (<usize>g << 2);
+    const v0 = v128.load(p), v1 = v128.load(p, 16), v2 = v128.load(p, 32), v3 = v128.load(p, 48);
+    const v4 = v128.load(p, 64), v5 = v128.load(p, 80), v6 = v128.load(p, 96), v7 = v128.load(p, 112);
+    const m = f32x4.max(f32x4.max(f32x4.max(f32x4.abs(v0), f32x4.abs(v1)), f32x4.max(f32x4.abs(v2), f32x4.abs(v3))),
+                        f32x4.max(f32x4.max(f32x4.abs(v4), f32x4.abs(v5)), f32x4.max(f32x4.abs(v6), f32x4.abs(v7))));
+    let amax = f32x4.extract_lane(m, 0);
+    const m1 = f32x4.extract_lane(m, 1), m2 = f32x4.extract_lane(m, 2), m3 = f32x4.extract_lane(m, 3);
+    if (m1 > amax) amax = m1;
+    if (m2 > amax) amax = m2;
+    if (m3 > amax) amax = m3;
     const scale: f32 = amax / qmax;
     store<f32>(xs + (<usize>(g / GS) << 2), scale);
-    const inv: f32 = scale > 0 ? <f32>1.0 / scale : 0;
-    for (let j = 0; j < GS; j++) {
-      const q = <i32>nearest<f32>(load<f32>(x + (<usize>(g + j) << 2)) * inv) + bias;
-      store<i8>(xq + <usize>(g + j), <i8>q);
-    }
+    const inv = f32x4.splat(scale > 0 ? <f32>1.0 / scale : 0);
+    const q0 = i32x4.add(i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v0, inv))), offset);
+    const q1 = i32x4.add(i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v1, inv))), offset);
+    const q2 = i32x4.add(i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v2, inv))), offset);
+    const q3 = i32x4.add(i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v3, inv))), offset);
+    const q4 = i32x4.add(i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v4, inv))), offset);
+    const q5 = i32x4.add(i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v5, inv))), offset);
+    const q6 = i32x4.add(i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v6, inv))), offset);
+    const q7 = i32x4.add(i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v7, inv))), offset);
+    const out = xq + <usize>g;
+    v128.store(out, i8x16.narrow_i16x8_s(i16x8.narrow_i32x4_s(q0, q1), i16x8.narrow_i32x4_s(q2, q3)));
+    v128.store(out, i8x16.narrow_i16x8_s(i16x8.narrow_i32x4_s(q4, q5), i16x8.narrow_i32x4_s(q6, q7)), 16);
   }
 }
 
