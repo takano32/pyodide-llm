@@ -6,6 +6,8 @@
 //   2. The speeds, the counts in turn, several rounds, the median.
 //   3. The search (stage 2b): which count it chooses from navigator.hardwareConcurrency, within a few generations,
 //      against the fastest of 2.
+//   4. T108: the same text as a prompt in blocks (forwardMany): the last logits the same to the bit with every
+//      count, and what a token of a prompt costs in blocks of 1, 2, 4, 8 and 16, with each count.
 //
 //   node tests/threads-check.mjs [model id ...] [--threads 1,2,4,8] [--rounds 5] [--positions 64] [--kv-start 16]
 //
@@ -75,6 +77,26 @@ if (isMainThread) {
     if (!reference) reference = seen;
     else if (!seen.every((row, i) => row.every((v, j) => Object.is(v, reference[i][j])))) differ.push(n);
   }
+  // T108: the greedy text fed back as a prompt, in blocks
+  const text = [plan.bos ?? 1, ...reference.slice(0, -1).map((logits) => logits.indexOf(Math.max(...logits)))];
+  const blocksDiffer = [];
+  for (const n of counts) {
+    await engine.setThreads(n);
+    for (let at = 0; at < positions - 1; at += 5) engine.forwardMany(text.slice(at, Math.min(at + 5, positions - 1)), at);
+    engine.forward(text[positions - 1], positions - 1, true);
+    if (!engine.logits().every((v, j) => Object.is(v, reference[positions - 1][j]))) blocksDiffer.push(n);
+  }
+  const blockSizes = [1, 2, 4, 8, 16], prompt = Object.fromEntries(counts.map((n) => [n, Object.fromEntries(blockSizes.map((k) => [k, []]))]));
+  for (let r = 0; r < rounds; r++) {
+    for (const n of counts) {
+      await engine.setThreads(n);
+      for (const k of blockSizes) {
+        const began = performance.now();
+        for (let at = 0; at < positions; at += k) engine.forwardMany(text.slice(at, Math.min(at + k, positions)).map((t) => t ?? 1), at);
+        prompt[n][k].push((positions * 1000) / (performance.now() - began));
+      }
+    }
+  }
   const times = Object.fromEntries(counts.map((n) => [n, []]));
   for (let r = 0; r < rounds; r++) {
     for (const n of counts) {
@@ -101,7 +123,10 @@ if (isMainThread) {
     `${best} [${times[best].map((t) => t.toFixed(2)).join(" ")}] vs ${candidate} [${times[candidate].map((t) => t.toFixed(2)).join(" ")}] ${faster ? "->" : "stay"}`).join("; ");
   const searchLine = `the search from ${hint} chose ${found || "nothing"} in ${generationsUsed} generation(s) (${comparisons}); the fastest measured was ${fastest}` +
     (found && times[found] ? ` (${found} runs at ${(median(times[found]) / median(times[fastest]) * 100).toFixed(0)}% of it)` : "");
+  const promptLine = "a prompt in blocks of " + blockSizes.join(", ") + ": " + counts.map((n) =>
+    `${n} thread(s) ${blockSizes.map((k) => median(prompt[n][k]).toFixed(0)).join(" / ")} tok/s (${(median(prompt[n][16]) / median(prompt[n][1])).toFixed(2)}×)`).join(", ");
   parentPort.postMessage(`${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
-    counts.map((n) => `${n}: ${median(times[n]).toFixed(1)} tok/s (${(median(times[n]) / one).toFixed(2)}×)`).join(", ") + `; ${searchLine}`);
+    `${blocksDiffer.length ? `the prompt in blocks DIFFERS with ${blocksDiffer.join(", ")} threads` : "the prompt in blocks the same to the bit"}; ` +
+    counts.map((n) => `${n}: ${median(times[n]).toFixed(1)} tok/s (${(median(times[n]) / one).toFixed(2)}×)`).join(", ") + `; ${promptLine}; ${searchLine}`);
   engine.stopThreads();
 }

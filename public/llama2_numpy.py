@@ -477,7 +477,14 @@ def check_tokenizer(tokenizer, header):
                          f"{vocab_size}: they do not belong together.")
 
 
+# T108: how many tokens of a prompt forward_many() takes at once (forward.js goes BATCH at a time within it). Larger
+# blocks leave the page's worker less often: 64 keeps a block under a second on the models of the list.
+PROMPT_BLOCK = 64
+
+
 class Llama:
+    forward_many = None  # T108: forward.js's forwardMany(tokens, pos) for a prompt, where there is one
+
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
                  tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
@@ -707,6 +714,10 @@ class Llama:
         engine.bind(logits)
         self._external = (engine, logits)  # keep both alive: JS writes into the array
         run = engine.forward
+        # T108: a prompt's tokens go through the layers several at a time, when forward.js offers that
+        many = getattr(engine, "forwardMany", None)
+        if many is not None:
+            self.forward_many = lambda tokens, pos: many(list(tokens), pos)
 
         def forward(token, pos, need_logits=True):
             run(token, pos, need_logits)
@@ -891,8 +902,27 @@ class Llama:
         history = [self.bos]
         start = sampling_start = time.perf_counter()
         first_token = None
+        first = 0
         try:
-            for pos in range(steps):
+            if self.forward_many is not None and len(prompt_tokens) > 1:
+                # T108: the tokens of the prompt that make no logits (all but the last) go through the layers
+                # PROMPT_BLOCK at a time; the text comes out as it would one by one, only a block at once
+                fed = [self.bos] + prompt_tokens[:-1]
+                for at in range(0, len(fed), PROMPT_BLOCK):
+                    block = fed[at:at + PROMPT_BLOCK]
+                    self.forward_many(block, at)
+                    for pos in range(at, at + len(block)):
+                        next_token = prompt_tokens[pos]
+                        text = utf8.decode(self.tokenizer.decode(token, next_token, self.bos))
+                        token = next_token
+                        history.append(token)
+                        count += 1
+                        forced += 1
+                        if text and echo:
+                            yield text
+                first = len(fed)
+                sampling_start = time.perf_counter()
+            for pos in range(first, steps):
                 if pos < len(prompt_tokens):
                     # Still processing the prompt: force the next token, and the logits are not needed
                     self.forward(token, pos, need_logits=False)

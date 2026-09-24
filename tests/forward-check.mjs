@@ -8,6 +8,8 @@
 //         +3.42% (fewer positions, more spread). The line: 85% or more and within 5%, at 128 positions (the
 //         default). A real fault (a wrong order, a wrong scale) lands far outside: the agreement near nothing and
 //         the perplexity a multiple.
+// T108: the same text read by forward.js one token at a time and in blocks (forward_many), from a KV cache that
+// starts small so that it grows within the blocks: the last logits must be the same to the bit.
 // Then the speeds, both in turn. Runs in the deployment.
 //
 //   node tests/forward-check.mjs [model id | <out> of tests/perplexity_prepare.py ...] [--rounds 3] [--positions 128]
@@ -52,13 +54,31 @@ for pos in range(${positions}):
     sequence.append(following)
 agreement, change = agree / ${positions}, math.exp((nll[0] - nll[1]) / ${positions}) - 1
 ok = (agreement >= 0.85 and abs(change) <= 0.05) if int8 else (agree == ${positions} and largest <= 1e-3)
+import llama2_numpy
+kv_start, llama2_numpy.KV_START = llama2_numpy.KV_START, 8
+one, many = kernel_llama(data, vocabulary, **OPTIONS), kernel_llama(data, vocabulary, **OPTIONS)
+llama2_numpy.KV_START = kv_start
+fed = sequence[:${positions}]
+for pos, token in enumerate(fed[:-1]):
+    one.forward(token, pos, need_logits=False)
+blocks = many.forward_many is not None
+if blocks:
+    for at in range(0, len(fed) - 1, 37):  # blocks that do not line up with forward.js's own BATCH
+        many.forward_many(fed[at:min(at + 37, len(fed) - 1)], at)
+else:
+    for pos, token in enumerate(fed[:-1]):
+        many.forward(token, pos, need_logits=False)
+same = np.array_equal(one.forward(fed[-1], len(fed) - 1), many.forward(fed[-1], len(fed) - 1))
+ok = ok and same
+one.release(); many.release(); del one, many
 def run(llama, positions):
     token, began = llama.bos, time.perf_counter()
     for pos in range(positions):
         token = int(np.argmax(llama.forward(token, pos)))
     return time.perf_counter() - began
 (ok, f"{page.backend}: " + (f"most likely token the same at {agreement * 100:.1f}%, perplexity {change * 100:+.2f}% against NumPy"
-     if int8 else f"most likely token the same at {agreement * 100:.1f}%, largest logit difference {largest:.2e} against NumPy"))
+     if int8 else f"most likely token the same at {agreement * 100:.1f}%, largest logit difference {largest:.2e} against NumPy")
+     + (f"; the prompt in blocks {'the same to the bit' if same else 'DIFFERENT'}" if blocks else "; no blocks (NumPy)"))
 `).toJs();
   const [ok, line] = verdict;
   const times = { numpy: [], page: [] };

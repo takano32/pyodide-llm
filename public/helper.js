@@ -12,19 +12,33 @@ const listen = (handler) => (node ? port.on("message", handler) : (self.onmessag
 // the layout of the control area: the same numbers as in forward.js. WAKE + share is this helper's own word: the
 // coordinator writes the generation there and wakes exactly the helpers it wants, always the same ones. (With one
 // word for all, Atomics.notify wakes whoever has slept longest, so a different, cold helper took every phase.)
-const GEN = 0, QUIT = 1, COUNTER = 2, FINISHED = 3, ACTIVE = 4, TOTAL = 5, WAKE = 256, JOBS = 512, JOB = 12;
+const GEN = 0, QUIT = 1, COUNTER = 2, FINISHED = 3, ACTIVE = 4, TOTAL = 5, WAKE = 256, JOBS = 512, JOB = 16;
+// T108: how many bytes of weights a block of rows holds when several tokens use it: the same as forward.js
+const BLOCK_BYTES = 16384;
 
 listen(({ memory, plain, relaxed, share }) => {
   const imports = { env: { memory } };
   const k = new WebAssembly.Instance(plain, imports).exports;
   const q8r = relaxed ? new WebAssembly.Instance(relaxed, imports).exports.matmul_q8r : null;
   const ctl = new Int32Array(memory.buffer, 0, 1024);
-  // one matmul over rows r0..r1 of job j; the kinds are forward.js's: 0 matmul_q8r, 1 matmul_q8, 2 matmul_f32
+  // one matmul over rows r0..r1 of job j; the kinds are forward.js's: 0 matmul_q8r, 1 matmul_q8, 2 matmul_f32.
+  // With a count of tokens (T108), the rows go in blocks and every token uses a block before the next: see runRows
+  // in forward.js, which this does the same way.
+  const call = (kind, out, a, b, w, s, c, n, r0, r1) => {
+    if (kind === 0) q8r(out, a, b, w, s, c, n, r0, r1);
+    else if (kind === 1) k.matmul_q8(out, a, b, w, s, n, r0, r1);
+    else k.matmul_f32(out, a, w, n, r0, r1);
+  };
   const run = (at, r0, r1) => {
-    const kind = ctl[at], n = ctl[at + 7];
-    if (kind === 0) q8r(ctl[at + 1], ctl[at + 2], ctl[at + 3], ctl[at + 4], ctl[at + 5], ctl[at + 6], n, r0, r1);
-    else if (kind === 1) k.matmul_q8(ctl[at + 1], ctl[at + 2], ctl[at + 3], ctl[at + 4], ctl[at + 5], n, r0, r1);
-    else k.matmul_f32(ctl[at + 1], ctl[at + 2], ctl[at + 4], n, r0, r1);
+    const kind = ctl[at], out = ctl[at + 1], a = ctl[at + 2], b = ctl[at + 3], w = ctl[at + 4], s = ctl[at + 5];
+    const c = ctl[at + 6], n = ctl[at + 7], count = ctl[at + 11];
+    if (count === 1) return call(kind, out, a, b, w, s, c, n, r0, r1);
+    const os = ctl[at + 12], as = ctl[at + 13], bs = ctl[at + 14];
+    const step = Math.max(1, Math.floor(BLOCK_BYTES / (kind === 2 ? 4 * n : n)));
+    for (let r = r0; r < r1; r += step) {
+      const end = Math.min(r + step, r1);
+      for (let t = 0; t < count; t++) call(kind, out + t * os, a + t * as, b + t * bs, w, s, c, n, r, end);
+    }
   };
   const steal = () => {
     const total = ctl[TOTAL], count = ctl[JOBS];

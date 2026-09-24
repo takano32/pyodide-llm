@@ -102,3 +102,40 @@ def test_a_file_of_the_wrong_size_is_refused():
     with pytest.raises(ValueError, match="in Python"):
         Llama(None, pack_tokenizer(tiny_vocab(config["vocab_size"])), dtype="int8", external=Outside(checkpoint),
               disable=("kernels",))
+
+
+def test_a_prompt_goes_through_forward_many_and_writes_the_same():
+    """T108: with forward_many, generate() hands the prompt's tokens over in blocks, each at its positions, and the
+    text, the counts and what follows are what they are one token at a time. forward_many here is the NumPy forward
+    token by token, so any difference is generate()'s bookkeeping."""
+    import llama2_numpy
+    config, weights = synthetic_weights()
+    tensors, published = hugging_face(config, weights, True)
+    checkpoint = converted(Safetensors(reader(safetensors_file(tensors))), published, "float32")
+    tokenizer = pack_tokenizer(tiny_vocab(config["vocab_size"]))
+    plain = Llama(checkpoint, tokenizer)
+    prompt = "abcabcabcabc"
+    expected = "".join(plain.generate(prompt, steps=40, temperature=0.0))
+    expected_stats = dict(plain.stats)
+    blocks = []
+    batched = Llama(checkpoint, tokenizer)
+
+    def many(tokens, pos):
+        blocks.append((list(tokens), pos))
+        for i, token in enumerate(tokens):
+            batched.forward(token, pos + i, need_logits=False)
+
+    batched.forward_many = many
+    old, llama2_numpy.PROMPT_BLOCK = llama2_numpy.PROMPT_BLOCK, 5
+    try:
+        assert "".join(batched.generate(prompt, steps=40, temperature=0.0)) == expected
+        assert "".join(batched.generate(prompt, steps=40, temperature=0.0, echo=False)) == \
+            "".join(plain.generate(prompt, steps=40, temperature=0.0, echo=False))
+    finally:
+        llama2_numpy.PROMPT_BLOCK = old
+    prompt_tokens = plain.tokenizer.encode(prompt, plain.specials)
+    fed = [plain.bos] + prompt_tokens[:-1]
+    assert [pos for _, pos in blocks[:len(blocks) // 2]] == list(range(0, len(fed), 5))
+    assert [t for block, _ in blocks[:len(blocks) // 2] for t in block] == fed
+    for key in ("tokens", "sampled", "prompt_tokens"):
+        assert batched.stats[key] == expected_stats[key], key

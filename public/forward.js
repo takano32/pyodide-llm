@@ -49,10 +49,15 @@ export function weightsMemory(size, { shared = false } = {}) {
 // ---- the helper threads (stage 2): the control area at the start of a shared memory, as helper.js reads it
 const CONTROL_BYTES = 4096;
 // WAKE + share: each helper's own word, so that a phase wakes exactly helpers 1..threads-1 (see helper.js)
-const GEN = 0, QUIT = 1, COUNTER = 2, FINISHED = 3, ACTIVE = 4, TOTAL = 5, WAKE = 256, JOBS = 512, JOB = 12;
+const GEN = 0, QUIT = 1, COUNTER = 2, FINISHED = 3, ACTIVE = 4, TOTAL = 5, WAKE = 256, JOBS = 512, JOB = 16;
 // how many chunks per thread the rows of a matmul are cut into: whoever is free takes the next one, so a slow core
 // (a little core of a big.LITTLE phone) simply takes fewer. 2 to 16 measured the same (T93); fewer does not steal.
 const CHUNKS_PER_THREAD = 4;
+// T108: the most tokens of a prompt that go through the layers together, and how many bytes of weights a block of
+// rows holds when several tokens use it (see runRows)
+export const BATCH = 16;
+const BLOCK_BYTES = 16384;
+export const blockRows = (kind, n) => Math.max(1, Math.floor(BLOCK_BYTES / (kind === 2 ? 4 * n : n)));
 
 /** What Llama(external=) takes: the size of the checkpoint, read() for the few bytes Python looks at itself, and
  * start(plan), which builds the forward pass. */
@@ -165,10 +170,18 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     return { rows, n, int8: false, layer: (l) => [w + l * rows * n * 4] };
   }
 
-  // ---- the activations
-  const x = alloc(dim * 4), xb = alloc(dim * 4), xb2 = alloc(dim * 4), q = alloc(dim * 4), before = alloc(dim * 4);
-  const hb = alloc(hidden * 4), hb2 = alloc(hidden * 4), att = alloc(seqLen * heads * 4), logits = alloc(vocab * 4);
-  const xq = alloc(Math.max(dim, hidden)), xs = alloc((Math.max(dim, hidden) / 32) * 4);
+  // ---- the activations: one frame per token, BATCH of them for a prompt (T108). A frame holds what one token needs,
+  // in the order it always had, and the next token's frame follows: every array of token t is t * S bytes after token
+  // 0's. (One block per array, BATCH tokens long, put token 0's arrays 32 KB apart for tiny-lm, and they fought for
+  // the same lines of the cache: 3% slower on one token at a time.)
+  const D = dim * 4, HD = hidden * 4, KV = kvDim * 4;
+  const XQ = Math.max(dim, hidden), XS = Math.ceil(XQ / 32) * 4;
+  const inFrame = [["x", D], ["xb", D], ["xb2", D], ["q", D], ["before", D], ["hb", HD], ["hb2", HD], ["xq", XQ], ["xs", XS]];
+  const S = inFrame.reduce((size, [, bytes]) => size + align(bytes), 0);
+  const frames = alloc(BATCH * S), at = {};
+  inFrame.reduce((offset, [name, bytes]) => { at[name] = frames + offset; return offset + align(bytes); }, 0);
+  const { x, xb, xb2, q, before, hb, hb2, xq, xs } = at;
+  const att = alloc(seqLen * heads * 4), logits = alloc(vocab * 4);
   const wq = matrix("wq"), wk = matrix("wk"), wv = matrix("wv"), wo = matrix("wo");
   const w1 = matrix("w1"), w2 = matrix("w2"), w3 = matrix("w3"), wcls = matrix("wcls");
   const attW = floats("rms_att_weight"), ffnW = floats("rms_ffn_weight"), finalW = floats("rms_final_weight");
@@ -197,10 +210,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // the KV cache: per layer [positions][kvDim], one block for the keys and one for the values, last in memory
   // so that growing it (KV_START, doubling) can take the space of the smaller one
   let capacity = Math.min(plan.kv_start, seqLen);
-  let keys = alloc(layers * capacity * kvDim * 4), values = alloc(layers * capacity * kvDim * 4);
+  let keys = alloc(layers * capacity * KV), values = alloc(layers * capacity * KV);
   function grow(pos) {
     const larger = Math.min(Math.max(2 * capacity, pos + 1), seqLen);
-    const oldLayer = capacity * kvDim * 4, newLayer = larger * kvDim * 4;
+    const oldLayer = capacity * KV, newLayer = larger * KV;
     const newKeys = alloc(layers * newLayer), newValues = alloc(layers * newLayer);
     for (let l = 0; l < layers; l++) {
       U.copyWithin(newKeys + l * newLayer, keys + l * oldLayer, keys + (l + 1) * oldLayer);
@@ -219,20 +232,33 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // out together. The input is quantized here, once; the rows are computed here and, with helper threads, by
   // whoever takes them. Every row is computed whole by one thread with the same kernel, so the numbers are the same
   // with any number of threads.
+  //
+  // A job: [kind, out, a, b, w, s, c, n, rows, count, out stride, a stride, b stride]. count > 1 (T108): the same rows
+  // for count tokens of a prompt, whose inputs and outputs are that many bytes apart. The rows go in blocks small
+  // enough to stay in the cache while every token uses them: each (row, token) is the one kernel call it is for a
+  // single token, so the numbers are the same as one token at a time.
   const shared = typeof SharedArrayBuffer !== "undefined" && memory.buffer instanceof SharedArrayBuffer && spawn;
   const ctl = shared ? new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4) : null;
   const helpers = [];
   let threads = 1, gen = 0;
-  const jobOf = (m, out, input, l) => {
+  const jobOf = (m, out, outStride, input, l, count) => {
     const [w, s, c] = m.layer(l);
-    if (!m.int8) return [2, out, input, 0, w, 0, 0, m.n, m.rows];
-    return relaxed ? [0, out, xq, xs, w, s, c, m.n, m.rows] : [1, out, xq, xs, w, s, 0, m.n, m.rows];
+    if (!m.int8) return [2, out, input, 0, w, 0, 0, m.n, m.rows, count, outStride, S, 0];
+    return [relaxed ? 0 : 1, out, xq, xs, w, s, relaxed ? c : 0, m.n, m.rows, count, outStride, S, S];
   };
-  const runRows = (job, r0, r1) => {
-    const [kind, out, a, b, w, s, c, n] = job;
+  const call = (kind, out, a, b, w, s, c, n, r0, r1) => {
     if (kind === 0) relaxed(out, a, b, w, s, c, n, r0, r1);
     else if (kind === 1) k.matmul_q8(out, a, b, w, s, n, r0, r1);
     else k.matmul_f32(out, a, w, n, r0, r1);
+  };
+  const runRows = (job, r0, r1) => {
+    const [kind, out, a, b, w, s, c, n, , count, os, as, bs] = job;
+    if (count === 1) return call(kind, out, a, b, w, s, c, n, r0, r1);
+    const step = blockRows(kind, n);
+    for (let r = r0; r < r1; r += step) {
+      const end = Math.min(r + step, r1);
+      for (let t = 0; t < count; t++) call(kind, out + t * os, a + t * as, b + t * bs, w, s, c, n, r, end);
+    }
   };
   const waitUntil = (index, done) => {
     for (let seen = Atomics.load(ctl, index); !done(seen); seen = Atomics.load(ctl, index)) Atomics.wait(ctl, index, seen);
@@ -250,9 +276,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     jobs.forEach((job, i) => {
       const at = JOBS + 1 + i * JOB, rows = job[8];
       const size = Math.max(1, Math.ceil(rows / (threads * CHUNKS_PER_THREAD)));
-      job.forEach((value, n) => { ctl[at + n] = value; });
+      for (let n = 0; n < 9; n++) ctl[at + n] = job[n];
       ctl[at + 9] = size;
       ctl[at + 10] = total;
+      for (let n = 9; n < 13; n++) ctl[at + 2 + n] = job[n];
       total += Math.ceil(rows / size);
     });
     ctl[TOTAL] = total;
@@ -274,77 +301,97 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     }
     waitUntil(FINISHED, (seen) => seen === total);
   }
-  // matmuls of one input: [matrix, output, layer] each
-  function matmuls(input, list) {
-    if (list[0][0].int8) k.quantize_x(xq, xs, input, list[0][0].n, bias);
-    phase(list.map(([m, out, l]) => jobOf(m, out, input, l)));
+  // matmuls of one input (count tokens of it, a frame apart): [matrix, output, output stride, layer] each
+  function matmuls(input, count, list) {
+    if (list[0][0].int8) {
+      for (let t = 0; t < count; t++) k.quantize_x(xq + t * S, xs + t * S, input + t * S, list[0][0].n, bias);
+    }
+    phase(list.map(([m, out, outStride, l]) => jobOf(m, out, outStride, input, l, count)));
   }
 
-  function forward(token, pos, needLogits) {
-    if (pos >= capacity) grow(pos);
+  // one token (count 1) or up to BATCH tokens of a prompt at positions pos0, pos0 + 1, ... (T108). Every token is
+  // computed as it would be alone: the same kernels on the same numbers, only the matmuls of a layer go out once for
+  // all of them. The logits, if asked for, are the last token's.
+  function run(tokens, pos0, needLogits) {
+    const count = tokens.length;
+    if (pos0 + count - 1 >= capacity) grow(pos0 + count - 1);
     views();
-    // the embedding row
-    const row = token * dim;
-    if (embedding.kind === "int8") {
-      const g = embedding.group;
-      for (let i = 0; i < dim; i++) {
-        F[x / 4 + i] = Math.fround(I[base + embedding.offset + row + i] * F[(base + embedding.scales) / 4 + (((row + i) / g) | 0)]);
+    // the embedding rows
+    for (let t = 0; t < count; t++) {
+      const row = tokens[t] * dim, to = (x + t * S) / 4;
+      if (embedding.kind === "int8") {
+        const g = embedding.group;
+        for (let i = 0; i < dim; i++) {
+          F[to + i] = Math.fround(I[base + embedding.offset + row + i] * F[(base + embedding.scales) / 4 + (((row + i) / g) | 0)]);
+        }
+      } else {
+        const from = embedding.kind === "f32" ? base + embedding.offset : embeddingRows;
+        F.copyWithin(to, from / 4 + row, from / 4 + row + dim);
       }
-    } else {
-      const from = embedding.kind === "f32" ? base + embedding.offset : embeddingRows;
-      F.copyWithin(x / 4, from / 4 + row, from / 4 + row + dim);
+      if (positions) k.add_inplace(x + t * S, positions + (pos0 + t) * D, dim);
     }
-    if (positions) k.add_inplace(x, positions + pos * dim * 4, dim);
-    const cos = cosTable + pos * (headSize / 2) * 4, sin = sinTable + pos * (headSize / 2) * 4;
     for (let l = 0; l < layers; l++) {
-      const layerKeys = keys + l * capacity * kvDim * 4, layerValues = values + l * capacity * kvDim * 4;
-      const kp = layerKeys + pos * kvDim * 4, vp = layerValues + pos * kvDim * 4;
-      if (layerNorm) k.layernorm(xb, x, attW + l * dim * 4, attB + l * dim * 4, dim);
-      else k.rmsnorm(xb, x, attW + l * dim * 4, dim);
-      if (parallel) F.copyWithin(before / 4, x / 4, x / 4 + dim);  // GPT-NeoX reads this layer's input twice
-      matmuls(xb, [[wq, q, l], [wk, kp, l], [wv, vp, l]]);
-      if (bq) {
-        k.add_inplace(q, bq + l * dim * 4, dim);
-        k.add_inplace(kp, bk + l * kvDim * 4, kvDim);
-        k.add_inplace(vp, bv + l * kvDim * 4, kvDim);
+      const layerKeys = keys + l * capacity * KV, layerValues = values + l * capacity * KV;
+      const kp = layerKeys + pos0 * KV, vp = layerValues + pos0 * KV;
+      for (let t = 0; t < count; t++) {
+        if (layerNorm) k.layernorm(xb + t * S, x + t * S, attW + l * D, attB + l * D, dim);
+        else k.rmsnorm(xb + t * S, x + t * S, attW + l * D, dim);
+        if (parallel) F.copyWithin((before + t * S) / 4, (x + t * S) / 4, (x + t * S) / 4 + dim);  // GPT-NeoX reads this layer's input twice
       }
-      if (!gpt2) {
-        k.rope(q, cos, sin, heads, headSize, rotary);
-        k.rope(kp, cos, sin, kvHeads, headSize, rotary);
+      matmuls(xb, count, [[wq, q, S, l], [wk, kp, KV, l], [wv, vp, KV, l]]);
+      for (let t = 0; t < count; t++) {
+        const qt = q + t * S, kt = kp + t * KV, vt = vp + t * KV, pos = pos0 + t;
+        if (bq) {
+          k.add_inplace(qt, bq + l * D, dim);
+          k.add_inplace(kt, bk + l * KV, kvDim);
+          k.add_inplace(vt, bv + l * KV, kvDim);
+        }
+        if (!gpt2) {
+          const cos = cosTable + pos * (headSize / 2) * 4, sin = sinTable + pos * (headSize / 2) * 4;
+          k.rope(qt, cos, sin, heads, headSize, rotary);
+          k.rope(kt, cos, sin, kvHeads, headSize, rotary);
+        }
+        // the keys and values of positions up to pos are all there: this token's and the ones before it
+        k.attention(xb + t * S, qt, layerKeys, layerValues, att, pos, heads, kvHeads, headSize);
       }
-      k.attention(xb, q, layerKeys, layerValues, att, pos, heads, kvHeads, headSize);
-      matmuls(xb, [[wo, xb2, l]]);
-      k.add_inplace(x, xb2, dim);
+      matmuls(xb, count, [[wo, xb2, S, l]]);
+      for (let t = 0; t < count; t++) k.add_inplace(x + t * S, xb2 + t * S, dim);
       if (layerNorm) {
-        k.add_inplace(x, bo + l * dim * 4, dim);
-        k.layernorm(xb, parallel ? before : x, ffnW + l * dim * 4, ffnB + l * dim * 4, dim);
-        matmuls(xb, [[w1, hb, l]]);
-        k.gelu(hb, hb, b1 + l * hidden * 4, hidden);
-        matmuls(hb, [[w2, xb2, l]]);
-        k.add_inplace(x, xb2, dim);
-        k.add_inplace(x, b2 + l * dim * 4, dim);
+        for (let t = 0; t < count; t++) {
+          k.add_inplace(x + t * S, bo + l * D, dim);
+          k.layernorm(xb + t * S, (parallel ? before : x) + t * S, ffnW + l * D, ffnB + l * D, dim);
+        }
+        matmuls(xb, count, [[w1, hb, S, l]]);
+        for (let t = 0; t < count; t++) k.gelu(hb + t * S, hb + t * S, b1 + l * HD, hidden);
+        matmuls(hb, count, [[w2, xb2, S, l]]);
+        for (let t = 0; t < count; t++) {
+          k.add_inplace(x + t * S, xb2 + t * S, dim);
+          k.add_inplace(x + t * S, b2 + l * D, dim);
+        }
         continue;
       }
-      k.rmsnorm(xb, x, ffnW + l * dim * 4, dim);
-      matmuls(xb, [[w1, hb, l], [w3, hb2, l]]);
-      k.swiglu(hb, hb, hb2, hidden);
-      matmuls(hb, [[w2, xb2, l]]);
-      k.add_inplace(x, xb2, dim);
+      for (let t = 0; t < count; t++) k.rmsnorm(xb + t * S, x + t * S, ffnW + l * D, dim);
+      matmuls(xb, count, [[w1, hb, S, l], [w3, hb2, S, l]]);
+      for (let t = 0; t < count; t++) k.swiglu(hb + t * S, hb + t * S, hb2 + t * S, hidden);
+      matmuls(hb, count, [[w2, xb2, S, l]]);
+      for (let t = 0; t < count; t++) k.add_inplace(x + t * S, xb2 + t * S, dim);
     }
     if (!needLogits) return;
-    if (layerNorm) k.layernorm(xb, x, finalW, finalB, dim);
-    else k.rmsnorm(xb, x, finalW, dim);
+    const last = x + (count - 1) * S;
+    if (layerNorm) k.layernorm(xb, last, finalW, finalB, dim);
+    else k.rmsnorm(xb, last, finalW, dim);
     if (channels.length) {
       channels.forEach((c, i) => {
         F[picked / 4 + i] = F[xb / 4 + c];
         F[xb / 4 + c] = 0;
       });
-      matmuls(xb, [[wcls, logits, 0]]);
+      matmuls(xb, 1, [[wcls, logits, 0, 0]]);
       k.add_columns(logits, columns, picked, channels.length, vocab);
     } else {
-      matmuls(xb, [[wcls, logits, 0]]);
+      matmuls(xb, 1, [[wcls, logits, 0, 0]]);
     }
   }
+  const forward = (token, pos, needLogits) => run([token], pos, needLogits);
 
   // ---- the number of threads (stage 2b): found by measuring, never written down. The search starts from a hint
   // (navigator.hardwareConcurrency, which counts the little cores of a big.LITTLE phone too) and compares the best
@@ -472,6 +519,12 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     /** the float32 array of Python's that forward() fills with the logits */
     bind(array) {
       bound = array.copy ? array.copy() : array;
+    },
+    /** T108: tokens (up to BATCH) of a prompt at positions pos, pos + 1, ...: the same as forward() for each of them
+     * in turn without logits, in one pass through the layers */
+    forwardMany(tokens, pos) {
+      const list = tokens.toJs ? tokens.toJs() : [...tokens];
+      for (let at = 0; at < list.length; at += BATCH) run(list.slice(at, at + BATCH), pos + at, false);
     },
     forward(token, pos, needLogits = true) {
       if (search && needLogits) {
