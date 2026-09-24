@@ -543,6 +543,53 @@ class Safetensors:
         return reader(self.read(begin, int((stop - start) * row * itemsize))).reshape(stop - start, *shape[1:])
 
 
+class Shards:
+    """The tensors of a model split over several .safetensors files (model-00001-of-00002.safetensors, ...), as one
+    source: the build's way in (convert_hf.py). Each shard is a Safetensors; a name is looked up in whichever has it."""
+
+    def __init__(self, shards):
+        self.owner = {}
+        for shard in shards:
+            for name in shard.tensors:
+                if name in self.owner:
+                    raise ValueError(f"{name} is in two shards of this model.")
+                self.owner[name] = shard
+        self.tensors = {name: shard.tensors[name] for name, shard in self.owner.items()}
+
+    def __contains__(self, name):
+        return name in self.owner
+
+    def shape(self, name):
+        return self.owner[name].shape(name)
+
+    def rows(self, name, start, stop):
+        return self.owner[name].rows(name, start, stop)
+
+
+def joined_shards(headers):
+    """The page's way in for a model split over several files (T105): the JSON headers of the shards, in the order
+    their data will be fed, as the header of one file made of their tensor data one after another (base 0). Returns
+    that header (text) and, for every shard, how many bytes of data it has: feed each shard from its own base (8 +
+    the length of its header) for that many bytes, and Stream sees one file. Nothing of Stream changes."""
+    joined, at, lengths = {}, 0, []
+    for text in headers:
+        try:
+            header = json.loads(bytes(text.to_py() if hasattr(text, "to_py") else text).decode()
+                                if not isinstance(text, str) else text)
+        except ValueError:
+            raise ValueError("A shard of this model is not a safetensors file.") from None
+        tensors = {name: info for name, info in header.items() if name != "__metadata__"}
+        length = max((info["data_offsets"][1] for info in tensors.values()), default=0)
+        for name, info in tensors.items():
+            if name in joined:
+                raise ValueError(f"{name} is in two shards of this model.")
+            begin, end = info["data_offsets"]
+            joined[name] = {**info, "data_offsets": [at + begin, at + end]}
+        lengths.append(length)
+        at += length
+    return json.dumps(joined), lengths
+
+
 class Arrays:
     """The same interface for tensors that are in memory already (a PyTorch checkpoint, a test)."""
 

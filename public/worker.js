@@ -46,17 +46,15 @@ async function prefetchNumpy(base) {
   }
 }
 
-// Some models are published under the name of a shard even when there is only one of them
-// (model-00001-of-00001.safetensors, with a model.safetensors.index.json beside it). The index says which file
-// every tensor is in; with one file this is just another name for it. Several files would mean reading them in
-// order, each with its own base, which the converter does not do (T78).
-function singleShard(index) {
+// A model without a model.safetensors is split over several files (model-00001-of-00002.safetensors, ...), or
+// published under the name of a shard even when there is only one (T78). model.safetensors.index.json says which
+// file every tensor is in: the files, in the order of their names, which is the order they are fed in (T105).
+function shardsOf(index) {
   try {
     const map = (typeof index === "string" ? JSON.parse(index) : index)?.weight_map;
-    const files = [...new Set(Object.values(map ?? {}))];
-    return files.length === 1 ? files[0] : null;
+    return [...new Set(Object.values(map ?? {}))].sort();
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -541,7 +539,7 @@ async function convert(model, signal, id) {
     }
     return res;
   };
-  let first, size, base, conversion;
+  let first, size, base, conversion, shards;
   // T93: the converter writes the checkpoint here, piece by piece, straight into where the engine will read it.
   // A Python buffer on the way would stay: Pyodide's memory never shrinks.
   let weights, weightsSize = 0;
@@ -576,38 +574,53 @@ async function convert(model, signal, id) {
     }
     base = conversion.base;
   } else {
-    // the beginning of the file: 8 bytes that say how long the JSON header is, then the header
-    if (remote) {
-      // A model published as one shard (model-00001-of-00001.safetensors) has no model.safetensors: its
-      // index.json says the real name. Several shards would have to be read one after another, each with its own
-      // base, which the converter does not do (T78).
-      try {
-        ({ bytes: first, total: size } = await fetchRange(at(model.hf.weights), 0, HF_HEADER_BYTES, signal));
-      } catch (error) {
-        signal.throwIfAborted();
-        const index = await text(at(`${model.hf.weights}.index.json`)).then((res) => res.text())
-          .catch(() => { throw error; });
-        const only = singleShard(index);
-        if (!only) {
-          throw new Error("This model is split over several files, which this page cannot read yet.");
-        }
-        model = { ...model, hf: { ...model.hf, weights: only } };
-        ({ bytes: first, total: size } = await fetchRange(at(only), 0, HF_HEADER_BYTES, signal));
+    // the beginning of a file: 8 bytes that say how long the JSON header is, then the header
+    const head = async (name) => {
+      let { bytes, total } = remote ? await fetchRange(at(name), 0, HF_HEADER_BYTES, signal)
+        : { bytes: new Uint8Array(await name.slice(0, HF_HEADER_BYTES).arrayBuffer()), total: name.size };
+      const headerBytes = bytes.length >= 8 ? Number(new DataView(bytes.buffer, bytes.byteOffset).getBigUint64(0, true)) : -1;
+      if (!(headerBytes >= 2 && headerBytes <= 100e6)) {
+        throw new Error("This is not a safetensors file.");
       }
-    } else {
-      first = new Uint8Array(await model.hf.weights.slice(0, HF_HEADER_BYTES).arrayBuffer());
-      size = model.hf.weights.size;
+      const start = 8 + headerBytes;
+      if (start > bytes.length) {
+        bytes = remote ? (await fetchRange(at(name), 0, start, signal)).bytes : new Uint8Array(await name.slice(0, start).arrayBuffer());
+      }
+      return { name, header: new TextDecoder().decode(bytes.subarray(8, start)), base: start, total };
+    };
+    let header;
+    try {
+      ({ header, base, total: size } = await head(model.hf.weights));
+    } catch (error) {
+      if (!remote) {
+        throw error;
+      }
+      signal.throwIfAborted();
+      const index = await text(at(`${model.hf.weights}.index.json`)).then((res) => res.text())
+        .catch(() => { throw error; });
+      const files = shardsOf(index);
+      if (!files.length) {
+        throw error;
+      }
+      if (files.length === 1) {
+        model = { ...model, hf: { ...model.hf, weights: files[0] } };
+        ({ header, base, total: size } = await head(files[0]));
+      } else {
+        // T105: the shards' headers joined into the header of one file made of their data one after another, which
+        // the converter reads as it reads any file. Each shard is then fed from its own base, the next after it.
+        shards = [];
+        for (const name of files) {
+          shards.push(await head(name));
+        }
+        const joined = llama2_convert.joined_shards(shards.map((shard) => shard.header));
+        let lengths;
+        [header, lengths] = joined.toJs();
+        joined.destroy();
+        shards.forEach((shard, i) => { shard.length = lengths[i]; });
+        base = 0;
+        size = shards.reduce((sum, shard) => sum + shard.length, 0);
+      }
     }
-    const headerBytes = first.length >= 8 ? Number(new DataView(first.buffer).getBigUint64(0, true)) : -1;
-    if (!(headerBytes >= 2 && headerBytes <= 100e6)) {
-      throw new Error("This is not a safetensors file.");
-    }
-    base = 8 + headerBytes;
-    if (base > first.length) {
-      first = remote ? (await fetchRange(at(model.hf.weights), 0, base, signal)).bytes
-        : new Uint8Array(await model.hf.weights.slice(0, base).arrayBuffer());
-    }
-    const header = new TextDecoder().decode(first.subarray(8, base));
     const config = remote ? await (await text(at(model.hf.config))).text() : await model.hf.config.text();
     // The format of one turn, when the model publishes a chat_template (T73). It is small, and a model without
     // one (or with one the converter cannot read) simply keeps the format src/models.js has for it.
@@ -647,7 +660,11 @@ async function convert(model, signal, id) {
         postMessage({ type: "progress", load: id, received: Math.round((percent / 100) * size), total: size, converting: true });
       }
     };
-    if (remote) {
+    if (shards) {
+      for (const shard of shards) {
+        await inOrder(at(shard.name), shard.base, shard.base + shard.length, feed, signal);
+      }
+    } else if (remote) {
       await inOrder(at(model.hf.weights), base, size, feed, signal);
     } else {
       const reader = model.hf.weights.slice(base).stream().getReader();

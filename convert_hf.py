@@ -6,7 +6,7 @@
 # is public/llama2_convert.py, which the page uses too: this file adds what only the build needs, the files of a
 # directory and PyTorch's pickle format.
 #
-#   python3 convert_hf.py <directory with config.json, pytorch_model.bin | model.safetensors,
+#   python3 convert_hf.py <directory with config.json, pytorch_model.bin | model.safetensors | shards with an index,
 #                          spiece.model | tokenizer.model | tokenizer.json> <out> [float32|float16|int8] [max seq_len]
 import json
 import pickle
@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "public"))
-from llama2_convert import (Arrays, Safetensors, architecture, bfloat16, checkpoint_header, checkpoint_size,  # noqa: E402
+from llama2_convert import (Arrays, Safetensors, Shards, architecture, bfloat16, checkpoint_header, checkpoint_size,  # noqa: E402
                             convert_weights, has_bias, normalize, sentencepiece_pieces, tokenizer_bin, tokenizer_json_pieces)
 
 
@@ -54,10 +54,16 @@ def load_torch_pickle(path):
 def convert(directory, out_path, dtype, max_seq_len):
     config = json.loads((directory / "config.json").read_text())
     safetensors = directory / "model.safetensors"
+    index = directory / "model.safetensors.index.json"
     if safetensors.exists():
         # read piece by piece, never as a whole
         data = np.memmap(safetensors, dtype=np.uint8, mode="r")
         source = Safetensors(lambda offset, length: data[offset:offset + length])
+    elif index.exists():
+        # split over several files (T105): the index says which; each is read like the one file above
+        files = sorted(set(json.loads(index.read_text())["weight_map"].values()))
+        maps = [np.memmap(directory / name, dtype=np.uint8, mode="r") for name in files]
+        source = Shards([Safetensors(lambda offset, length, data=data: data[offset:offset + length]) for data in maps])
     else:
         source = Arrays(load_torch_pickle(directory / "pytorch_model.bin"))
     # a GPT-2 or a GPT-NeoX has more tensors than a Llama of the same header: the size needs the architecture

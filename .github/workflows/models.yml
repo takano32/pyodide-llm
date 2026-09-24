@@ -1,0 +1,83 @@
+# The models named here, and only those, in one browser against the deployed site (T105): to try a model before it
+# goes into the list (hf:<owner>/<repository>[@<revision>] opens it by ?hf=), or to run one model of the list again
+# without the whole of browsers.yml. By hand only; the table of the runs goes to the summary, as in browsers.yml.
+#
+#   gh workflow run models.yml -f models="hf:Qwen/Qwen2.5-3B-Instruct@aa8e72537993ba99e69dfaafa59ed015b17504d1"
+name: Models by name
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: 'model ids of the list, or hf:<owner>/<repository>[@<revision>], separated by spaces'
+        required: true
+      browser:
+        description: 'chromium, firefox, webkit, chrome or msedge'
+        default: 'chromium'
+      os:
+        description: 'the runner'
+        default: 'ubuntu-latest'
+      timeout:
+        description: 'seconds one run may take'
+        default: '1800'
+      url:
+        description: 'the site to test (default: the deployed one)'
+        required: false
+
+jobs:
+  models:
+    name: ${{ inputs.browser }} on ${{ inputs.os }}
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install the test tools and the browser
+        shell: bash
+        run: |
+          npm ci
+          case "${{ inputs.browser }}" in
+            chrome|msedge) ;;
+            *) npx playwright-core install --with-deps "${{ inputs.browser }}" ;;
+          esac
+
+      - name: Run
+        shell: bash
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+          E2E_TIMEOUT: ${{ inputs.timeout }}
+          E2E_RESULTS: results.jsonl
+          E2E_ARTIFACTS: artifacts
+        run: |
+          node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
+          failed=0
+          for model in ${{ inputs.models }}; do
+            echo "### $model" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            node tests/e2e.mjs "$model" "${{ inputs.browser }}" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $failed
+
+      - name: One table of every run
+        if: always()
+        shell: bash
+        run: node tests/summary.mjs results.jsonl >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the results and what the failed runs left
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: models
+          path: |
+            results.jsonl
+            artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
