@@ -200,19 +200,20 @@ console.log(`status: ${result.status}${result.isolated ? "" : " (not cross-origi
 console.log(result.text.slice(0, 160).replace(/\n/g, " / "));
 let again = null;
 if (process.env.E2E_TWICE && !failures.length) {
-  // what the browser holds now, as the page lists it (public/kept.js)
-  const kept = await page.evaluate(async () => {
+  // what the browser holds, as the page lists it (public/kept.js)
+  const listKept = () => page.evaluate(async () => {
     const module = await import(new URL("kept.js", location.href).href);
     return (await module.keptModels()).map(({ where, manifest }) => `${manifest.name} in ${where}`);
   }).catch((error) => [`(could not list: ${error.message})`]);
+  const kept = await listKept();
   const reloaded = Date.now();
   await page.reload({ waitUntil: "load" });
   // the new page's own report of ready: the old page's must not count
   await acrossReload(() => page.waitForFunction(() => window.__ready || document.querySelector(".error"), null, { timeout: 0 }));
   const ready = await page.evaluate(() => window.__ready ?? null).catch(() => null);
   again = { readySeconds: (Date.now() - reloaded) / 1000, fromCache: Boolean(ready?.fromCache), keptIn: ready?.keptIn ?? null,
-    miss: ready?.keptMiss ?? null, kept };
-  console.log(`again: ready in ${again.readySeconds.toFixed(1)}s, ${again.fromCache ? `kept in ${again.keptIn}` : `not kept: ${again.miss}`} (kept before: ${kept.join(", ") || "nothing"})`);
+    miss: ready?.keptMiss ?? null, kept, keptAfter: await listKept() };
+  console.log(`again: ready in ${again.readySeconds.toFixed(1)}s, ${again.fromCache ? `kept in ${again.keptIn}` : `not kept: ${again.miss}`} (kept before: ${kept.join(", ") || "nothing"}; after: ${again.keptAfter.join(", ") || "nothing"})`);
   if (/^hf[-:]/.test(model) && !again.fromCache) failures.push(`not kept for the second visit: ${reported?.notKept ?? "no reason given"}`);
 }
 const speed = Number(result.meta.match(/([\d.]+) tok\/s/)?.[1]);
