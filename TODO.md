@@ -95,7 +95,7 @@
 - 進め方: **コミットの前に、スマホ幅と PC 幅の画面を撮って持ち主に見せる。** 訪問者に見える日本語は先に文面を出して確認する。
 - 完了条件: Chromium で表が出て、コピーした Markdown が GitHub でそのまま表になる。390px の幅でページ自体がスクロールしない。
 
-### T93 [性能] `SharedArrayBuffer` を使えるようにして、複数コアで計算する（COOP/COEP の付け方の再検討）— 状態: **仕様は確定（Fable、2026-09-25）。見出しと方針の文面は持ち主が承認（2026-09-25）。実装は Opus が段階 1 から**（2026-09-24 採用、持ち主の指示。**Fable が判定してから、実装は Opus**。規模 中〜大）
+### T93 [性能] `SharedArrayBuffer` を使えるようにして、複数コアで計算する（COOP/COEP の付け方の再検討）— 状態: **段階 1a は済（JS の forward、Node でエンジンとビット単位で一致）。次は段階 1b（Worker の読み込み）**（2026-09-24 採用、持ち主の指示。**Fable が判定してから、実装は Opus**。規模 中〜大）
 - 担当: 判定（どの経路で COOP/COEP を付けるか、何倍出るか）は **Fable**。方針 6 の変更は**持ち主の判断**。決まったら実装は Opus → Fable がレビュー。
 - 根拠: 2026-09-21 の測り直しで、int8 の行列積は複数コアで**約 2 倍**まで伸びる（頭打ちはメモリ帯域）。T71 の往復の実測（0.10〜0.16ms）では、`postMessage` で分けられるのは分類器だけで 1.3〜1.5 倍止まり。**`SharedArrayBuffer` があれば**、Worker 間の同期が `Atomics` の数マイクロ秒になり、重みを Worker ごとに複製しなくてよく、層の行列積まで分けられるので、上限の 2 倍に近づける。使えない理由は 1 つだけ: ブラウザが `SharedArrayBuffer` を出すのは cross-origin isolated なページ（応答ヘッダ `Cross-Origin-Opener-Policy: same-origin` と `Cross-Origin-Embedder-Policy: require-corp` か `credentialless`）だけで、GitHub Pages はヘッダを変えられない。
 - **COOP/COEP を付ける経路の候補**（判定で 1 つに絞る）:
@@ -222,6 +222,12 @@
     4. 確かめ方: 出力トークンが 1 本のときと一致（int8 の加算順は塊の切れ目で変わらない: 各行は 1 スレッドが丸ごと計算する）。速度は `browsers.yml` の OS ジョブで、ステータス行の本数と tok/s を JSON に残す。
   - **段階 3: Service Worker と見出し。** `public/coi.js`（`coi-test/sw.js` を元に、範囲はサイト全体、`require-corp`）。ページは起動時に登録し、`navigator.serviceWorker.controller` が無ければ 1 回だけ再読み込み（`sessionStorage` で回数を守る）。**Pyodide の CDN と HF 以外の外部の読み込みが無いことを確かめる**（フォントなど。あれば CORS を確かめる）。`?v=` を付ける。登録に失敗しても 1 本で動く。方針 2 と 6 の書き換え、`index.astro` の見出し（持ち主が決めた文面）、AGENTS.md の構成の表と gist の `10-` の更新。`browsers.yml` に「isolation が真になったか」と本数を記録。
   - 各段階の完了条件: 段階 1 は tiny-lm と llm-jp の tok/s が Python 版より上がっていること（新旧交互）。段階 2 は CI の Linux ARM で 4 本が段階 1 の 1.5 倍以上。段階 3 は本番で `crossOriginIsolated` が真になり、23 通りのブラウザで動くこと。
+- **段階 1a（2026-09-25、Opus 5.5）: JS の forward と、エンジンのテンソルの表。** 仕様からの変更: 段階 1 を 2 つのコミットに分けた（1a は forward と表と確認、1b は Worker の読み込みの経路と `kernel_forward` の退役。変更が大きく、Worker はこの開発機で試せないため）。Pyodide の `WebAssembly.Memory` を借りる案は、Pyodide がそれを公開していない（内部の名前に頼ることになり、最新版を使う方針と合わない）ので採らず、仕様どおり別のメモリに置く。
+  - `Llama(None, tokenizer, external=…)`: 重みを読まず、`take()` が位置と形だけを `Tensor` として記録する（**レイアウトの写しを JS に作らない**）。計算で作る小さな配列（int8 の RoPE の表、GPT-2 のゼロの表）と外れ値チャネル（T92）の選択は Python が作って渡す。ファイルの大きさがヘッダと合わなければ断る。`tests/test_external.py` が 4 アーキテクチャ × 3 dtype で、表の指す中身が NumPy の読み込みと同じことを見る。
+  - `public/forward.js`: エンジンの `kernel_forward` と同じ順に同じカーネルを呼ぶ。float16 と「int8 を外したとき」の int8 は読み込み時に float32 へ広げる（`Math.fround` で NumPy と同じ積）。relaxed の補正も同じ式。KV キャッシュは倍々に伸ばし、伸ばすたびに古い場所へ詰め直す（メモリを 2 倍にしない）。カーネルは `kernels/build.py` の素の版（`simdkernel_plain.wasm`、`simdkernel_relaxed_plain.wasm`）。
+  - **確かめたこと（`node tests/forward-check.mjs`、Node 上の Pyodide、64 位置の greedy）: logits がエンジンと 1 ビットも違わない**。サイトの 6 モデル（stories260K・stories15M・tiny-lm・llm-jp-3 150M の int8 と float32、tiny-lm と stories15M の原本の float16 / float32）、T85 で変換した GPT-2（外れ値チャネルあり）・Pythia 160M（NeoX）・rinna GPT-2・GGUF の SmolLM2、合成の Qwen2（bias あり、int8 と float32）、tiny-lm の `without relaxed` / `without int8` / `without sampler`。デプロイの試験にも入れた（サイトの 4 モデル）。
+  - **速さ（新旧交互、エンジン = Python の `kernel_forward`）**: tiny-lm 452 → 534（1.18×）、llm-jp 90 → 104（1.15×）、stories15M 414 → 523（1.26×）、stories260K 1869 → 3559（1.90×）、GPT-2 1.19×、Pythia 1.15×、rinna 1.19×、SmolLM2 1.24×。float32 の原本はほぼ同じ（0.99〜1.06×。帯域が律速で、Python の分が小さい）。**段階 1 の完了条件（tiny-lm と llm-jp が上がる）は Node で満たした**。ブラウザでの数字は 1b の後に CI で。
+  - 1b でやること: Worker の読み込みの経路（サイトの部品・キャッシュ・HF の変換・手元のファイル・`?checkpoint=`）を JS のメモリへ向け、`kernel_forward` を消し、`forward-check.mjs` の比べる相手を NumPy に変える（float32 は出力の文が一字一句、int8 は線の内側）。
 - 関係: **T71 はこの判定の後**（`SharedArrayBuffer` が取れるなら T71 の postMessage 方式は要らない。取れないなら T71 の分類器だけの分け方に戻る）。T47（層ごとに 1 回のカーネル呼び出し）は、共有メモリの設計と相性がよいので、そのとき一緒に見直す。
 - 完了条件: 経路が 1 つに決まり（持ち主の判断つき）、tok/s が 1 コアより有意に上がることを新旧交互に測って示す。上がらなければ理由を AGENTS.md に書いて取りやめる。方針 6 を変えたなら AGENTS.md の方針も直す。
 

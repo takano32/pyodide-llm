@@ -351,6 +351,27 @@ def load_kernels(path, without_relaxed=False):
     return kernels
 
 
+class Tensor:
+    """Where a tensor of the checkpoint is, when the weights live outside Python (T93: the forward pass runs in
+    public/forward.js on its own WebAssembly memory). kind: "int8" (values, then one float32 scale per group of
+    the last dimension at scales), "f32" or "f16". Offsets count from the start of the checkpoint file."""
+
+    __slots__ = ("kind", "offset", "shape", "group", "scales")
+
+    def __init__(self, kind, offset, shape, group=0, scales=0):
+        self.kind, self.offset, self.shape, self.group, self.scales = kind, offset, tuple(shape), group, scales
+
+    def plan(self):
+        return {"kind": self.kind, "offset": self.offset, "shape": list(self.shape), "group": self.group,
+                "scales": self.scales}
+
+
+# the attributes of Llama that are tensors of the file, in no particular order
+TENSOR_NAMES = ("token_embedding_table", "rms_att_weight", "wq", "wk", "wv", "wo", "rms_ffn_weight", "w1", "w2", "w3",
+                "rms_final_weight", "freq_cis_real", "freq_cis_imag", "wcls", "bq", "bk", "bv", "positions",
+                "ln_att_bias", "ln_ffn_bias", "ln_final_bias", "bo", "b1", "b2")
+
+
 def outlier_channels(weight, count=OUTLIER_CHANNELS, ratio=OUTLIER_RATIO):
     """The count channels with the largest final-norm weight, in order, or none when the weight has no outliers
     (its largest is less than ratio times its median)."""
@@ -441,7 +462,7 @@ class Llama:
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
                  tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
-                 disable=()):
+                 disable=(), external=None):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py).
@@ -459,7 +480,17 @@ class Llama:
         a fallback: "kernels" (NumPy does everything), "int8" (the weights are widened to float32 and the
         float32 kernel multiplies them), "relaxed" (matmul_q8 instead of matmul_q8r) and "sampler" (NumPy
         samples). Anything else is refused, so that a typo never quietly measures the wrong thing.
+        external (T93): the weights are not in Python but in a WebAssembly memory of public/forward.js, which also
+        runs the forward pass. checkpoint is then None, and external has size (of the file), read(offset, length)
+        (a few bytes: the header, the final norm) and start(plan), which gets where every tensor is and returns an
+        object with forward(token, pos, need_logits, logits) and backend. Python keeps the tokenizer, generate()
+        and the sampling. The NumPy forward cannot run on weights it does not have: disable "kernels" without it.
         """
+        if external is not None:
+            head = external.read(0, 28)
+            checkpoint = bytes(head.to_py() if hasattr(head, "to_py") else head)
+            if "kernels" in tuple(str(name) for name in disable):
+                raise ValueError("Without the kernels the weights have to be in Python: load them there instead.")
         (self.dim, self.hidden_dim, self.n_layers, self.n_heads,
          self.n_kv_heads, vocab_size, self.seq_len) = struct.unpack_from("<7i", checkpoint, 0)
         # negative vocab size is hacky way of signaling unshared weights. bit yikes.
@@ -478,13 +509,26 @@ class Llama:
         offset = 28
         # The int8 kernels work on groups of 32 only
         suitable = dtype != np.int8 or (dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0)
-        kernels = load_kernels(kernels, "relaxed" in disable) if kernels and suitable and "kernels" not in disable else None
+        kernels = load_kernels(kernels, "relaxed" in disable) if kernels and "kernels" not in disable and \
+            (suitable or external is not None) else None
         # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
-        keep_int8 = kernels is not None and dtype == np.int8 and "int8" not in disable
+        keep_int8 = (kernels is not None or external is not None) and suitable and dtype == np.int8 and "int8" not in disable
 
         def take(*shape, matrix=True, widen=True):
             nonlocal offset
             count = math.prod(shape)
+            if external is not None:
+                # only where it is: public/forward.js reads it (and widens what has to be widened) itself
+                if dtype == np.int8 and matrix:
+                    group = 32
+                    while shape[-1] % group:
+                        group //= 2
+                    tensor = Tensor("int8", offset, shape, group, offset + count)
+                    offset += count + 4 * (count // group)
+                    return tensor
+                tensor = Tensor("f16" if dtype == np.float16 else "f32", offset, shape)
+                offset += count * (2 if dtype == np.float16 else 4)
+                return tensor
             if dtype == np.int8 and matrix:
                 # quantize.py: int8 values, then one float32 scale per group
                 group = 32
@@ -517,14 +561,21 @@ class Llama:
         else:
             self.llama_tensors(take, shared_weights, keep_int8, kv_dim, bias, dtype, rope_theta)
         self.backend = "NumPy"
-        if kernels:
+        if external is not None:
+            if offset != int(external.size):
+                raise ValueError(f"The checkpoint has {int(external.size)} bytes, and its header asks for {offset} "
+                                 f"as {dtype.name}.")
+            self.forward = self.external_forward(external, keep_int8, disable)
+            if kernels and "sampler" not in disable:
+                self.penalize, self.sample = self.kernel_sampler(kernels)
+        elif kernels:
             self.forward = self.kernel_forward(kernels, keep_int8)
             if "sampler" not in disable:
                 self.penalize, self.sample = self.kernel_sampler(kernels)
         else:
             self.key_cache = np.zeros((n_layers, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
             self.value_cache = np.zeros_like(self.key_cache)
-        if kernels and "sampler" in disable:
+        if (kernels or external is not None) and "sampler" in disable:
             self.backend += ", NumPy sampling"
         if disable:
             # the line has to say what the numbers are the numbers of
@@ -610,6 +661,38 @@ class Llama:
             values, scales = self.token_embedding_table
             return (values[token] * scales[token]).reshape(self.dim)
         return self.token_embedding_table[token].astype(np.float32)
+
+    def external_forward(self, external, int8, disable):
+        """forward() in public/forward.js (T93): Python hands over where every tensor is, and the few small
+        arrays it computes itself (the RoPE tables of a checkpoint that leaves them out, the outlier channels of
+        T92), and gets the logits back into one array of its own, which the sampling kernels then read."""
+        tensors = {name: getattr(self, name).plan() for name in TENSOR_NAMES if isinstance(getattr(self, name, None), Tensor)}
+        derived = {name: np.ascontiguousarray(getattr(self, name), dtype=np.float32).tobytes()
+                   for name in ("freq_cis_real", "freq_cis_imag") if isinstance(getattr(self, name), np.ndarray)}
+        channels = []
+        if int8:
+            final = self.rms_final_weight
+            raw = external.read(final.offset, self.dim * 4)
+            weight = np.frombuffer(bytes(raw.to_py() if hasattr(raw, "to_py") else raw), dtype=np.float32)
+            channels = [int(c) for c in outlier_channels(weight, min(OUTLIER_CHANNELS, self.dim))]
+        plan = {"arch": self.arch, "dim": self.dim, "hidden_dim": self.hidden_dim, "n_layers": self.n_layers,
+                "n_heads": self.n_heads, "n_kv_heads": self.n_kv_heads, "head_size": self.head_size,
+                "vocab_size": self.vocab_size, "seq_len": self.seq_len, "rotary": self.rotary,
+                "parallel_residual": bool(self.parallel_residual), "kv_start": KV_START,
+                "shared_classifier": self.wcls is self.token_embedding_table, "int8": bool(int8),
+                "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels}
+        engine = external.start(plan)
+        self.backend = str(engine.backend)
+        logits = np.zeros(self.vocab_size, dtype=np.float32)
+        engine.bind(logits)
+        self._external = (engine, logits)  # keep both alive: JS writes into the array
+        run = engine.forward
+
+        def forward(token, pos, need_logits=True):
+            run(token, pos, need_logits)
+            return logits if need_logits else None
+
+        return forward
 
     def kernel_forward(self, kernels, int8):
         """forward() on the SIMD kernels: Python still sequences the layers, every operation is one kernel call.

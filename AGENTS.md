@@ -33,6 +33,7 @@
 |---|---|
 | `public/llama2_numpy.py` | 推論エンジン。数値演算は SIMD カーネル（`load_kernels` / `kernel_forward`）、使えなければ NumPy。llama2.c の legacy 形式（7 個の int ヘッダ + テンソル）を読む。float32 / float16 / int8。トークナイザは BPE（llama2.c 方式）と unigram（Viterbi）と byte-level BPE（GPT-2 方式、`pretokenize()` で前分割）。アーキテクチャは `arch="llama"`（Qwen2 は `bias=True`）・`arch="gpt2"`・`arch="neox"`（`rotary` と `parallel_residual` を伴う）。`generate()` はテキスト片を返すジェネレータ |
 | `public/worker.js` | Web Worker。HF のモデルの取得（8 MiB × 6 並列の Range 要求を順番どおりに変換器へ）、変換結果の Cache API への保存と読み出し（`converted-v1`）もここ。最新 Pyodide の解決、モデル部品の並列ダウンロード（8 MiB × 8 並列、Pyodide のロードと同時進行、モデルを選び直せば中止して切り替え）、Python バッファへの直接書き込み、トークンの逐次送信 |
+| `public/forward.js` | 1 トークンの forward を JavaScript で（T93）。重みを持つ自前の `WebAssembly.Memory` の上で、エンジンの `kernel_forward` と同じ順に同じカーネル（`simdkernel_plain.wasm`）を呼ぶ。テンソルの位置は Python（`Llama(external=)`）から受け取る。Python の層のループを外すぶん 1.15〜1.26 倍（int8） |
 | `src/pages/index.astro` | チャット風のページ。Worker の報告を描画するだけ |
 | `src/models.js` | モデル一覧（ファイル名、バイト数、エンジンのオプション、生成設定、既定プロンプト）。`group` でコンボボックスの 3 つのグループ（サイトのモデル / 原本 / HF から取得して変換）に分かれる。HF のモデルは `hf: {repo, revision, …}`（リビジョンはコミットのハッシュで固定）、指示モデルは `template` を持つ |
 | `public/llama2_convert.py` | Hugging Face の Llama チェックポイント → legacy 形式（float32 / float16 / int8）と tokenizer.bin。NumPy のみ。`read(offset, length)` 越しに断片ずつ読んで出力バッファへ直接書くので、メモリは「出力 + 13MB」（Llama の場合。**GPT-2 / NeoX は `c_attn` や `query_key_value` を丸ごと溜めてから割る**ので、その 1 テンソルぶん多い: pythia-1.4b の qkv で F16 の 25MB と float32 に広げた 50MB）。ビルドとブラウザの両方が使う |
@@ -55,6 +56,7 @@
 | `.github/workflows/threads.yml` | T93 の試作を CI のランナー（Linux の x86-64 と ARM、macOS）で走らせる手動のワークフロー。帯域の広い機械で何本まで伸びるかを見る |
 | `tests/threads-prototype/` | T93 の試作。エンジンの int8 の重みを共有メモリへ写し、カーネルの共有メモリ版（`kernels/build.py` の `simdkernel_shared.wasm` など、ページは読まない）で行列積を N スレッドに分けて、エンジンと交互に tok/s を比べる。出力トークンがエンジンと一致しなければ止まる |
 | `public/coi-test/` と `tests/coi-check.mjs`、`.github/workflows/coi.yml` | T93 の仕様 2。GitHub Pages のまま Service Worker で COOP/COEP を足し、ページが cross-origin isolated になるか、その下で Pyodide と HF が読めるかを確かめる別ページと、それを各ブラウザで開く確認（手動のワークフロー）。**Service Worker の効く範囲は `/coi-test/` だけで、モデルのページには効かない** |
+| `tests/forward-check.mjs` | `public/forward.js` とエンジンの forward を同じモデルで走らせ、logits がビット単位で同じことと、新旧交互の速さを見る（T93）。デプロイでも走る |
 | `tests/ladder.mjs` | Pythia の梯子（T84）の表を、huggingface ジョブの `results.jsonl`（小さい組と大きい組の 2 つ）から起こす。単体テストは `tests/ladder-check.mjs` |
 | `tests/summary.mjs` | CI の各ジョブの結果（`tests/e2e.mjs` が `E2E_RESULTS` に書く JSON 行）を 1 枚の表にする（T82）。単体テストは `tests/summary-check.mjs` |
 | `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。**CI 用に環境変数が 3 つ**（T82）: `E2E_TIMEOUT`（1 回の持ち時間、既定 900 秒。超えたら timed out と記録して終わるので、1 つが止まってもジョブ全体は道連れにならない）、`E2E_RESULTS`（結果を JSON で 1 行追記。T84 から Worker の内訳 `load`（pyodide・download・convert・construct の秒）と `heapMB` も）、`E2E_ARTIFACTS`（失敗したらスクリーンショット・DOM・コンソールの最後の 200 行をそこへ）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路、`hf` を渡すと HF 形式のファイル（`tests/make_hf_fixture.py` が作る）をブラウザの中で変換する経路を試す |

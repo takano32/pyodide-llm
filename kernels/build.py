@@ -39,13 +39,14 @@ def side_module(source, out, features):
     print(out, Path(out).stat().st_size, "bytes")
 
 
-def shared_module(source, out, features):
-    """T93: the same kernels as plain WebAssembly on a shared memory, for threads that share the weights
-    (tests/threads-prototype). No dylink.0: they are instantiated directly, not by Pyodide. The page does not
-    load them."""
+def plain_module(source, out, features, shared=False):
+    """T93: the same kernels as plain WebAssembly, instantiated by public/forward.js on the memory that holds the
+    weights (not Pyodide's). No dylink.0. shared: on a shared memory, for threads that share the weights (stage 2,
+    and tests/threads-prototype)."""
+    flags = ["--sharedMemory", "--maximumMemory", "65536"] if shared else []
     subprocess.run(["npx", "asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory",
-                    "--sharedMemory", "--initialMemory", "1", "--maximumMemory", "65536", str(source), "-o", str(out),
-                    "--enable", features + ",threads"], check=True)
+                    "--initialMemory", "1", *flags, str(source), "-o", str(out),
+                    "--enable", features + (",threads" if shared else "")], check=True)
     print(out, Path(out).stat().st_size, "bytes")
 
 
@@ -53,5 +54,7 @@ if __name__ == "__main__":
     here, out = Path(__file__).parent, Path(sys.argv[1])
     side_module(here / "kernel.ts", out / "simdkernel.so", "simd")
     side_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed.wasmlib", "simd,relaxed-simd")
-    shared_module(here / "kernel.ts", out / "simdkernel_shared.wasm", "simd,relaxed-simd")
-    shared_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed_shared.wasm", "simd,relaxed-simd")
+    plain_module(here / "kernel.ts", out / "simdkernel_plain.wasm", "simd")
+    plain_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed_plain.wasm", "simd,relaxed-simd")
+    plain_module(here / "kernel.ts", out / "simdkernel_shared.wasm", "simd,relaxed-simd", shared=True)
+    plain_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed_shared.wasm", "simd,relaxed-simd", shared=True)
