@@ -226,6 +226,8 @@ async function localOptions(model, vocabulary) {
 let pyodide, llama2_numpy, llama2_convert, llama, kernels;
 // the optimizations this session leaves out (T52): ?without=relaxed,sampler, and ?kernel=off as it always was
 let disabled = [];
+// what the page's own URL said, to come back to after a benchmark has tried other combinations (T77)
+let pageSwitches = [];
 
 // Only what the engine has a fallback for. A name it does not know is refused there, and the page says so.
 function switchesOf(search) {
@@ -273,7 +275,7 @@ async function init(search) {
 
   // The WASM SIMD kernels (kernels/*.ts), which llama2_numpy.py loads with ctypes. They are optional: without
   // them, or with ?kernel=off, NumPy does the math, several times slower.
-  disabled = switchesOf(search);
+  disabled = pageSwitches = switchesOf(search);
   if (!disabled.includes("kernels")) {
     for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
       const kernel = await fetch(new URL(`${name}${self.location.search}`, import.meta.url)).catch(() => undefined);
@@ -754,7 +756,7 @@ self.onmessage = async ({ data }) => {
         rows.push({ name: round.name, without: round.without, tokens, speed: tokens / seconds,
                     backend: llama.backend, seconds: ready });
       }
-      disabled = switchesOf(self.location.search);
+      disabled = pageSwitches;  // not self.location.search: that is the worker's own URL (?v=hash)
       postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version });
     } else if (data.type === "generate") {
       if (!llama) {
