@@ -25,6 +25,10 @@ assert.equal(memoryWarning(big, 8), "", "8 GB holds it");
 assert.match(memoryWarning(big, 2), /needs about 1,900 MB of memory, and this device has 2 GB/);
 assert.equal(memoryWarning(byId("tiny-lm"), 1), "", "the default fits a 1 GB device");
 assert.equal(PAGE_MEMORY, 300e6);
+// a float16 original is widened when loaded (Fable's review): three times its file, so a 1 GB device is warned
+assert.equal(modelBytes(byId("llm-jp-3-150m-f16")), 305161244 * 3);
+assert.match(memoryWarning(byId("llm-jp-3-150m-f16"), 2), /needs about 1,215 MB/);
+assert.equal(modelBytes(byId("stories15M-f32")), 60816028, "float32 is used as it is");
 assert.match(memoryFailure(big, 1234567890, "MemoryError"), /ran out of memory for Qwen2.5 1.5B Instruct \(it needs about 1,900 MB\); the page was using 1,235 MB when it happened\. .* \(MemoryError\)$/);
 assert.ok(!memoryFailure({ name: "mine.bin" }, undefined, "").includes("undefined"));
 console.log("ok");

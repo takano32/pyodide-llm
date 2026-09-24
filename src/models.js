@@ -183,7 +183,9 @@ const megabytes = (bytes) => `${Math.round(bytes / 1e6).toLocaleString("en")} MB
 /** The bytes of a model once loaded: `bytes` of a file of this site, or the "int8 N MB" its note gives for a
  * conversion. undefined when neither says (a file of the visitor's). */
 export function modelBytes(entry) {
-  if (entry.bytes) return entry.bytes;
+  // a float16 original is widened to float32 when loaded, next to the file it came from: llm-jp-3 150M's 305 MB
+  // file measures about 800 MB of heap (AGENTS.md), so three times the file is the honest estimate
+  if (entry.bytes) return entry.options?.dtype === "float16" ? entry.bytes * 3 : entry.bytes;
   const found = /int8 ([\d.]+) (MB|GB)/.exec(entry.note ?? "");
   return found ? Number(found[1]) * (found[2] === "GB" ? 1e9 : 1e6) : undefined;
 }

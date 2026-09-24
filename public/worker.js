@@ -788,7 +788,9 @@ self.onmessage = async ({ data }) => {
       // T90: the memory ran out, in Python (MemoryError: malloc could not grow the WebAssembly memory) or in
       // JavaScript (RangeError: an ArrayBuffer or WebAssembly.Memory.grow was refused). The page says so in words
       // a visitor understands, with how much memory the page had when it happened.
-      const memory = err?.type === "MemoryError" || err?.name === "RangeError";
+      // (V8 also raises RangeError for a stack overflow, which is not this; Firefox says InternalError: out of memory)
+      const memory = err?.type === "MemoryError" || err?.name === "InternalError" ||
+        (err?.name === "RangeError" && !/call stack/i.test(err.message ?? ""));
       postMessage({ type: "error", load: data.load, message: memory ? String(err?.message ?? err).trim().split("\n").pop() : message,
                     ...(memory && { memory: true, heap: heapBytes() }) });
     }
