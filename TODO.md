@@ -138,8 +138,20 @@
   括弧はエンジン比。**エンジン比の倍率は 2 つの効果の積**: (1) Python を通らないこと（試作 1 スレッドで tiny-lm 1.42×、llm-jp 1.16〜1.23×）と、(2) スレッド（試作 1 スレッド比で tiny-lm 1.22〜1.27×、llm-jp 1.16〜1.23×）。**スレッドだけの効きは 1.2〜1.3 倍**。
 - **スレッドが 1.3 倍で止まる理由（切り分け済み）**: llm-jp の分類器（99584 × 512 の int8）の行列積だけを同じ同期の仕組みで分けると、1 スレッド 4.35ms、2 スレッド 3.41ms、3 スレッド 3.22ms、4 スレッド 3.41ms（大コア固定）。**各スレッドの分担を同時に走らせると、半分の仕事に 3.0ms かかる**（同期の費用ではなく、同時に読むと遅くなる）。1 回に読むのは int8 の重み 51MB と、グループごとの float32 のスケールと補正 13MB の計 64MB で、1 スレッドで既に約 15GB/s、頭打ちは約 20GB/s（2026-09-21 に C で測った上限 21〜24GB/s と合う）。**2026-09-21 の「約 2 倍」は int8 の値だけを読む C の計測で、1 スレッドが 12GB/s だったから**。いまのカーネルはスケールと補正も読み、1 スレッドの時点で上限の 7 割に居るので、余地が 1.4 倍しかない。`--no-liftoff`（最初から最適化コンパイラ）でも数字は同じだったので、V8 の段階的なコンパイルは関係ない。
 - **仕様 1 の答え**: 「2 スレッドで 1.5 倍を超えるか」は、エンジン比なら tiny-lm は超える（1.68〜1.73×）、llm-jp は超えない（1.29〜1.49×）。スレッドだけなら両方とも超えない（1.2〜1.3×）。**この開発機はメモリ帯域が狭いスマホ級の ARM** で、帯域に余裕のあるデスクトップでは伸びしろが大きい見込み（未計測。CI の Linux ランナーで同じ試作を走らせれば分かる）。**別の発見**: Python の層のループを外すだけで 1.16〜1.42 倍（T47 の「層ごとに 1 回のカーネル呼び出し」に近い効き。T47 は保留中）。
-- 試作のメモリ: 共有メモリは tiny-lm 36MB、llm-jp 187MB（重み + 活性値 + 65 位置の KV）。Worker 1 つごとの増えぶんはカーネルの wasm（7KB）と V8 の固定費だけで、重みの複製はない。RSS は未計測。
+- 試作のメモリ: 共有メモリは tiny-lm 36MB、llm-jp 189MB（重み + 活性値 + 65 位置の KV）。Worker 1 つごとの増えぶんはカーネルの wasm（7KB）と V8 の固定費だけで、重みの複製はない。RSS は未計測。
 - 仕様からの変更: カーネルは 1 つの wasm にまとめず、`kernel.ts` と `kernel_relaxed.ts` を別々に共有メモリ版にした（`simdkernel_shared.wasm` と `simdkernel_relaxed_shared.wasm`。定数の名前が重なるため。同じ共有メモリを読むので計算は同じ）。取りまとめ役はメインスレッドではなく Worker の 1 つ（`Atomics.wait` が使え、ページのエンジンも Worker の中で動くので同じ形）。同期の回数は「全部の行列積」で 1 トークンに 4 × 層数 + 1 回（q・k・v、o、w1・w3、w2 のあとに 1 回ずつ）。
+- **仕様 3 の結果（2026-09-24、Opus 5.5。公式の文書から。勧めは書かない）。** いまのサイトは `dist` で 839MB・127 ファイル、いちばん大きいファイルは 8 MiB の部品。CI の `browsers.yml` は 1 回の全体走行でサイトから約 6GB を取る（OS のジョブ 5 つで 23 通りのブラウザ + インストール済みの Firefox 5 つ、それぞれ stories260K・stories15M・tiny-lm・llm-jp の約 222MB。見積もりで未計測）。週 1 回で月に約 27GB。HF から取る 20GB 超は HF の転送で、ここには乗らない。訪問者の転送量は未計測。
+
+  | | GitHub Pages（いま） | Cloudflare Pages | Netlify | Vercel |
+  |---|---|---|---|---|
+  | 応答ヘッダ（COOP/COEP） | 付けられない | `_headers` ファイル（ルール 100 個まで、1 行 2,000 文字）。静的ファイルに付く | `_headers` か `netlify.toml`。自前で配る静的ファイルに付く | `vercel.json` の `headers`（1 デプロイのルート 2048 個に数える） |
+  | ファイル 1 つの上限 | 未確認（100MB 超は警告と聞くが、文書では未確認） | 25 MiB | 未確認 | 未確認 |
+  | サイトの上限 | 1 GB | 無料で 20,000 ファイル（大きさの上限は未確認） | 未確認 | CLI で上げる元のファイルが Hobby で 100 MB（ビルド済みの出力を上げる場合に当たるかは未確認） |
+  | 転送量（無料） | 月 100 GB の目安（soft） | 静的なら無制限（「requests to static assets are free and unlimited」） | 月 300 クレジットの上限で、1GB が 20 クレジット、本番デプロイ 1 回が 15 クレジット（使い切ると翌月まで止まる） | 月 100 GB（Fast Data Transfer）。Hobby は非商用に限る |
+  | デプロイの回数 | 1 時間 10 回の目安（soft） | 無料で月 500 回（直接アップロードも数えるかは未確認） | 1 回 15 クレジット | 1 日 100 回 |
+  | GitHub Actions から | いまの `deploy.yml` | `cloudflare/wrangler-action` で `pages deploy <dir> --project-name=<name>`（`CLOUDFLARE_API_TOKEN` と `CLOUDFLARE_ACCOUNT_ID` が要る） | 未確認 | 未確認 |
+
+  **読み方の材料（勧めではない）**: Netlify の無料枠は、このリポジトリのデプロイの回数（1 日に十数回）だけでクレジットを使い切る。Vercel は元のファイル 100MB の上限がビルド済みの出力に当たるなら、839MB のサイトは載らない（未確認）。Cloudflare Pages はファイルの大きさ（8 MiB < 25 MiB）・ファイル数（127 < 20,000）・転送量のどれにも当たらない。どこへ移しても URL は変わる（独自ドメインを使わない限り）。出典: [GitHub Pages の上限](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits)、[Cloudflare Pages の上限](https://developers.cloudflare.com/pages/platform/limits/)、[Cloudflare Pages のヘッダ](https://developers.cloudflare.com/pages/configuration/headers/)、[Cloudflare Pages の CI からのデプロイ](https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/)、[Cloudflare の料金](https://www.cloudflare.com/plans/developer-platform/)、[Netlify のクレジット](https://docs.netlify.com/manage/accounts-and-billing/billing/billing-for-credit-based-plans/credit-based-pricing-plans/)、[Netlify のヘッダ](https://docs.netlify.com/manage/routing/headers/)、[Vercel の上限](https://vercel.com/docs/limits)、[Vercel の目安](https://vercel.com/docs/limits/fair-use-guidelines)（いずれも 2026-09-24 に参照）。
 - 関係: **T71 はこの判定の後**（`SharedArrayBuffer` が取れるなら T71 の postMessage 方式は要らない。取れないなら T71 の分類器だけの分け方に戻る）。T47（層ごとに 1 回のカーネル呼び出し）は、共有メモリの設計と相性がよいので、そのとき一緒に見直す。
 - 完了条件: 経路が 1 つに決まり（持ち主の判断つき）、tok/s が 1 コアより有意に上がることを新旧交互に測って示す。上がらなければ理由を AGENTS.md に書いて取りやめる。方針 6 を変えたなら AGENTS.md の方針も直す。
 
