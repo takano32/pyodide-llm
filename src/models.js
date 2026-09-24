@@ -39,18 +39,21 @@ export const LICENSES = {
   "EleutherAI/pythia-70m-deduped": APACHE, "EleutherAI/pythia-160m": APACHE, "EleutherAI/pythia-410m": APACHE,
   "EleutherAI/pythia-1b": APACHE, "EleutherAI/pythia-1.4b": APACHE,
   "HuggingFaceTB/SmolLM2-135M-Instruct": APACHE, "HuggingFaceTB/SmolLM2-360M-Instruct": APACHE,
+  "bartowski/SmolLM2-135M-Instruct-GGUF": APACHE,
   "openai-community/gpt2": MIT, "TinyLlama/TinyLlama-1.1B-Chat-v1.0": APACHE,
   "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B": MIT,
 };
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
-/** Every source once, in the order of the list, with its license and the names of the models taken from it. */
+/** Every source once, in the order of the list, with its license and the names of the models taken from it. A
+ * model fetched from a redistribution (a GGUF, T74) names both: where it comes from, and whose model it is. */
 export function sources(models = MODELS) {
   const bySource = new Map();
   for (const entry of models) {
-    const repo = sourceOf(entry);
-    if (!bySource.has(repo)) bySource.set(repo, { repo, license: LICENSES[repo], names: [] });
-    bySource.get(repo).names.push(entry.name);
+    for (const repo of [entry.original, sourceOf(entry)].filter(Boolean)) {
+      if (!bySource.has(repo)) bySource.set(repo, { repo, license: LICENSES[repo], names: [] });
+      bySource.get(repo).names.push(entry.original && repo === sourceOf(entry) ? `${entry.name} (GGUF)` : entry.name);
+    }
   }
   return [...bySource.values()];
 }
@@ -131,8 +134,13 @@ export const MODELS = [
   { group: "hf", id: "hf-pythia-70m", name: "Pythia 70M", note: "English · fetches 166 MB → int8 96 MB",
     hf: hf("EleutherAI/pythia-70m-deduped", "e93a9faa9c77e5d09219f6c868bfc7a1bd65593c"), download: 166029852,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
-  { group: "hf", id: "hf-smollm2-135m-instruct", name: "SmolLM2 135M Instruct", note: "answers instructions · English · fetches 269 MB → int8 145 MB",
-    hf: hf("HuggingFaceTB/SmolLM2-135M-Instruct", "12fd25f77366fa6b3b4b768ec3050bf629380bac"), download: 269060552,
+  // T74: from a GGUF (Q8_0): 145 MB instead of the 269 MB of model.safetensors, and the same int8 in the end (99.7%
+  // of the most likely tokens and 0.13% of perplexity, tests/gguf_check.py). The GGUF is a redistribution; the
+  // model and its license are HuggingFaceTB's (`original`)
+  { group: "hf", id: "hf-smollm2-135m-instruct", name: "SmolLM2 135M Instruct", note: "answers instructions · English · fetches 145 MB (GGUF) → int8 145 MB",
+    original: "HuggingFaceTB/SmolLM2-135M-Instruct",
+    hf: { repo: "bartowski/SmolLM2-135M-Instruct-GGUF", revision: "09816acd5d99df7be770d85ea30822623dab342c",
+          weights: "SmolLM2-135M-Instruct-Q8_0.gguf" }, download: 144811360,
     conversion: {}, options: chatml, generation: sampled(1.1), template: CHATML,
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   { group: "hf", id: "hf-pythia-160m", name: "Pythia 160M", note: "English · fetches 375 MB → int8 213 MB",

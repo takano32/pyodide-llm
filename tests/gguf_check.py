@@ -80,23 +80,29 @@ def read_gguf(path):
     return version, metadata, infos, data, base
 
 
-def tensor(info, data, base):
-    """float32 values, and for Q8_0 also the int8 values and the float16 scales as stored."""
-    count = math.prod(info["shape"])
-    start = base + info["offset"]
+def tensor(info, data, base, first=0, last=None):
+    """float32 values of rows first..last, and for Q8_0 also the int8 values and the float16 scales as stored."""
+    shape = info["shape"]
+    last = shape[0] if last is None else last
+    row = math.prod(shape[1:]) if len(shape) > 1 else shape[0]
+    if len(shape) > 1:
+        shape = (last - first, *shape[1:])
+    count = math.prod(shape)
+    size = {F32: 4, F16: 2, BF16: 2, Q8_0: 34 / 32}.get(info["type"], 0)
+    start = base + info["offset"] + int(first * row * size)
     if info["type"] == F32:
-        return np.frombuffer(data, np.float32, count, start).reshape(info["shape"]), None
+        return np.frombuffer(data, np.float32, count, start).reshape(shape), None
     if info["type"] == F16:
-        return np.frombuffer(data, np.float16, count, start).astype(np.float32).reshape(info["shape"]), None
+        return np.frombuffer(data, np.float16, count, start).astype(np.float32).reshape(shape), None
     if info["type"] == BF16:
         wide = np.frombuffer(data, np.uint16, count, start).astype(np.uint32) << 16
-        return wide.view(np.float32).reshape(info["shape"]), None
+        return wide.view(np.float32).reshape(shape), None
     if info["type"] == Q8_0:
         # blocks of 32: a float16 scale, then 32 int8
         blocks = np.frombuffer(data, np.uint8, count // 32 * 34, start).reshape(-1, 34)
         scales = blocks[:, :2].copy().view(np.float16).reshape(-1)
         values = blocks[:, 2:].copy().view(np.int8)
-        return (values * scales.astype(np.float32)[:, None]).reshape(info["shape"]), (values, scales)
+        return (values * scales.astype(np.float32)[:, None]).reshape(shape), (values, scales)
     raise ValueError(f"type {info['type']} is not one T74 takes (F32, F16, BF16, Q8_0)")
 
 
@@ -128,6 +134,26 @@ def relative(a, b):
 
 
 # ------------------------------------------------------------------------------------------- the two checks
+BLOCK = 8 << 20  # values; larger tensors are compared in blocks of rows
+
+
+def large(info, data, base, hf, target, shape, quantize):
+    """relative error and int8 equality of a large matrix, a block of rows at a time."""
+    rows = max(1, BLOCK // math.prod(shape[1:]))
+    difference = total = same = count = 0.0
+    for first in range(0, shape[0], rows):
+        last = min(first + rows, shape[0])
+        values, raw = tensor(info, data, base, first, last)
+        original = hf.rows(target, first, last).reshape(last - first, *shape[1:]).astype(np.float32)
+        difference += float(((values - original) ** 2).sum())
+        total += float((original ** 2).sum())
+        if raw is not None:
+            ours, _ = quantize(original.reshape(-1, original.shape[-1]))
+            same += float((ours.reshape(-1) == raw[0].reshape(-1)).sum())
+            count += ours.size
+    return math.sqrt(difference / max(total, 1e-30)), f"{same / count * 100:.2f}%" if count else ""
+
+
 def check_tensors(gguf_path, directory):
     from llama2_convert import Safetensors, quantize
 
@@ -168,13 +194,20 @@ def check_tensors(gguf_path, directory):
     print("\n| tensor | type | shape | relative error | order | int8 equal to quantize() |\n|---|---|---|---:|---|---:|")
     worst, orders = 0.0, set()
     for name, info in infos.items():
-        values, raw = tensor(info, data, base)
         target = hugging_face_name(name)
         if target not in hf:
             print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | | no {target} in safetensors | |")
             mismatched += 1
             continue
         shape = tuple(hf.shape(target))
+        if math.prod(shape) > BLOCK and len(shape) > 1 and tuple(info["shape"]) == shape:
+            # a large matrix (Qwen's embedding is 545 MB as float32) is compared a block of rows at a time: two
+            # whole copies side by side are what took this machine down
+            error, equal = large(info, data, base, hf, target, shape, quantize)
+            worst = max(worst, error)
+            print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | {error:.5f} | | {equal} |")
+            continue
+        values, raw = tensor(info, data, base)
         original = hf.rows(target, 0, shape[0]).reshape(shape).astype(np.float32)
         order = ""
         if name.endswith(("attn_q.weight", "attn_k.weight", "attn_q.bias", "attn_k.bias")):

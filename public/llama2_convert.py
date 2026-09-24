@@ -480,8 +480,19 @@ def bfloat16(raw):
     return wide.view(np.float32)
 
 
+def q8_0(raw):
+    """GGUF's Q8_0 (T74): blocks of 32 values, each a float16 scale and 32 int8. The same groups of 32 as this
+    project's int8, so quantize() gets the very same int8 back: the scale of a block is its largest value / 127."""
+    blocks = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 34)
+    scales = np.ascontiguousarray(blocks[:, :2]).view(np.float16).astype(np.float32)
+    values = np.ascontiguousarray(blocks[:, 2:]).view(np.int8)
+    return (values * scales).reshape(-1)
+
+
+# bytes per value (Q8_0: 34 bytes for 32 of them), and how to read them
 READERS = {"F32": (4, lambda raw: np.frombuffer(raw, dtype=np.float32)),
-           "F16": (2, lambda raw: np.frombuffer(raw, dtype=np.float16)), "BF16": (2, bfloat16)}
+           "F16": (2, lambda raw: np.frombuffer(raw, dtype=np.float16)), "BF16": (2, bfloat16),
+           "Q8_0": (34 / 32, q8_0)}
 
 
 class Safetensors:
@@ -512,8 +523,8 @@ class Safetensors:
         itemsize, reader = READERS[info["dtype"]]
         shape = self.shape(name)
         row = int(np.prod(shape[1:]))
-        begin = self.base + info["data_offsets"][0] + start * row * itemsize
-        return reader(self.read(begin, (stop - start) * row * itemsize)).reshape(stop - start, *shape[1:])
+        begin = self.base + info["data_offsets"][0] + int(start * row * itemsize)
+        return reader(self.read(begin, int((stop - start) * row * itemsize))).reshape(stop - start, *shape[1:])
 
 
 class Arrays:
@@ -893,7 +904,7 @@ class Stream:
         info = self.tensors[name]
         itemsize, reader = READERS[info["dtype"]]
         shape = tuple(info["shape"])
-        row = (int(np.prod(shape[1:])) if len(shape) > 1 else int(shape[0])) * itemsize
+        row = int((int(np.prod(shape[1:])) if len(shape) > 1 else int(shape[0])) * itemsize)
         # the head permutation needs its whole matrix (a small one); everything else goes row by row, as it comes
         whole = any(transform for _, _, transform in targets) or len(targets) > 1
         rows = len(self.pending) // row if not whole or last else 0
@@ -903,6 +914,10 @@ class Stream:
             return
         values = reader(bytes(self.pending[:rows * row])).reshape(rows, *shape[1:]) if len(shape) > 1 else reader(bytes(self.pending[:rows * row]))
         del self.pending[:rows * row]
+        if info.get("turned"):
+            # a GGUF of a Llama holds q and k turned already (llama.cpp's convert does what permute_heads does):
+            # back to Hugging Face's order, so that the plan below turns them once, like everything else
+            values = unturned(values, info["turned"])
         for index, first, transform in targets:
             out = transformed(values, transform, self.head_size)
             self.writer.write(index, first + self.first, out)
@@ -913,6 +928,147 @@ class Stream:
         if self.step < len(self.steps) or self.done != self.total:
             raise ValueError("The file ended before all of its tensors were read.")
         return self.header
+
+
+def unturned(w, heads):
+    """The inverse of permute_heads: adjacent pairs of each head back to [first halves, second halves]."""
+    rows = w.shape[0] // heads
+    return w.reshape(heads, rows // 2, 2, -1).transpose(0, 2, 1, 3).reshape(w.shape)
+
+
+# ------------------------------------------------------------------------------------------------- GGUF (T74)
+# A GGUF file holds what config.json, tokenizer.json and model.safetensors hold, in one. Only what a Q8_0 or F16
+# Llama or Qwen2 needs is read; tests/gguf_check.py is the separate reference this is held to.
+class Incomplete(Exception):
+    """The GGUF header goes on past the bytes given: fetch more and try again."""
+
+
+GGUF_VALUES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
+GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0"}  # ggml's types; the K-quants and the rest are refused
+# llama.cpp's names of the pre-tokenizers, as the engine knows them (llama2_numpy.pretokenize)
+GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen"}
+GGUF_LAYER = {"attn_norm": "input_layernorm", "ffn_norm": "post_attention_layernorm", "attn_q": "self_attn.q_proj",
+              "attn_k": "self_attn.k_proj", "attn_v": "self_attn.v_proj", "attn_output": "self_attn.o_proj",
+              "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj", "ffn_down": "mlp.down_proj"}
+GGUF_NAMES = {"token_embd.weight": "model.embed_tokens.weight", "output_norm.weight": "model.norm.weight",
+              "output.weight": "lm_head.weight"}
+
+
+def gguf_read(data):
+    """(metadata, tensors, base) from the first bytes of a GGUF file: tensors maps each name to its ggml type,
+    its shape (outermost first, as NumPy has it) and its offset from base, where the data begins."""
+    data = memoryview(data.to_py() if hasattr(data, "to_py") else data).cast("B")
+    at = 0
+
+    def take(fmt):
+        nonlocal at
+        size = struct.calcsize(fmt)
+        if at + size > len(data):
+            raise Incomplete()
+        (value,) = struct.unpack_from(fmt, data, at)
+        at += size
+        return value
+
+    def string():
+        nonlocal at
+        size = take("<Q")
+        if at + size > len(data):
+            raise Incomplete()
+        at += size
+        return bytes(data[at - size:at]).decode("utf-8", errors="replace")
+
+    def value(kind):
+        if kind == 8:
+            return string()
+        if kind == 9:
+            item, count = take("<I"), take("<Q")
+            return [value(item) for _ in range(count)]
+        if kind not in GGUF_VALUES:
+            raise ValueError(f"This GGUF file has a value of type {kind}, which is not in the format.")
+        return take(GGUF_VALUES[kind])
+
+    if len(data) >= 4 and bytes(data[:4]) != b"GGUF":
+        raise ValueError("This is not a GGUF file.")
+    take("<I")
+    version = take("<I")
+    if version not in (2, 3):
+        raise ValueError(f"This GGUF file is of version {version}; only 2 and 3 are supported.")
+    count, entries = take("<Q"), take("<Q")
+    metadata = {}
+    for _ in range(entries):
+        key = string()
+        metadata[key] = value(take("<I"))
+    tensors = {}
+    for _ in range(count):
+        name = string()
+        dims = [take("<Q") for _ in range(take("<I"))]
+        tensors[name] = {"type": take("<I"), "shape": list(reversed(dims)), "offset": take("<Q")}
+    alignment = metadata.get("general.alignment", 32)
+    return metadata, tensors, (at + alignment - 1) // alignment * alignment
+
+
+def gguf_model(metadata, tensors, base):
+    """The safetensors-like header (Hugging Face's names, offsets from base) and the config.json of a GGUF."""
+    arch = metadata.get("general.architecture")
+    if arch not in ("llama", "qwen2"):
+        raise ValueError(f"This GGUF holds a {arch}: only Llama and Qwen2 ones are supported.")
+    key = lambda name, default=None: metadata.get(f"{arch}.{name}", default)
+    config = {"model_type": arch, "hidden_size": key("embedding_length"), "intermediate_size": key("feed_forward_length"),
+              "num_hidden_layers": key("block_count"), "num_attention_heads": key("attention.head_count"),
+              "num_key_value_heads": key("attention.head_count_kv", key("attention.head_count")),
+              "max_position_embeddings": key("context_length"), "rope_theta": float(key("rope.freq_base", 10000.0)),
+              "vocab_size": tensors["token_embd.weight"]["shape"][0] if "token_embd.weight" in tensors else None,
+              "tie_word_embeddings": "output.weight" not in tensors, "hidden_act": "silu",
+              "bos_token_id": metadata.get("tokenizer.ggml.bos_token_id", 1),
+              "eos_token_id": metadata.get("tokenizer.ggml.eos_token_id", 2)}
+    if key("rope.scaling.type", "none") not in ("none", None):
+        config["rope_scaling"] = {"type": key("rope.scaling.type")}
+    heads = {"attn_q": config["num_attention_heads"], "attn_k": config["num_key_value_heads"]}
+    header = {}
+    for name, info in tensors.items():
+        if info["type"] not in GGUF_TENSORS:
+            raise ValueError(f"{name} is stored as ggml type {info['type']}: only F32, F16 and Q8_0 GGUF files are "
+                             f"supported (not the K-quants).")
+        if name in GGUF_NAMES:
+            target = GGUF_NAMES[name]
+        else:
+            parts = name.split(".")
+            if len(parts) != 4 or parts[0] != "blk" or parts[2] not in GGUF_LAYER:
+                continue  # rope_freqs and the like: nothing the engine reads
+            target = f"model.layers.{parts[1]}.{GGUF_LAYER[parts[2]]}.{parts[3]}"
+        dtype = GGUF_TENSORS[info["type"]]
+        size = int(int(np.prod(info["shape"])) * READERS[dtype][0])
+        entry = {"dtype": dtype, "shape": info["shape"], "data_offsets": [info["offset"], info["offset"] + size]}
+        # llama.cpp turns q and k of a Llama (and their biases) into llama2.c's order; a Qwen2 it leaves alone
+        # (it rotates the other way at run time). tests/gguf_check.py found SmolLM2's turned.
+        if arch == "llama" and len(name.split(".")) == 4 and name.split(".")[2] in heads:
+            entry["turned"] = heads[name.split(".")[2]]
+        header[target] = entry
+    return header, config
+
+
+def gguf_tokenizer(metadata, vocab_size):
+    """tokenizer.bin, the engine's options and the tokenizer_config of a GGUF's byte-level BPE vocabulary."""
+    if metadata.get("tokenizer.ggml.model") != "gpt2":
+        raise ValueError(f"This GGUF has a {metadata.get('tokenizer.ggml.model')} vocabulary: only byte-level BPE "
+                         f"ones (gpt2) are supported.")
+    pre = metadata.get("tokenizer.ggml.pre", "gpt-2")
+    if pre not in GGUF_PRETOKENIZERS:
+        raise ValueError(f"This GGUF splits text as {pre}, which the engine does not know.")
+    tokens, kinds = metadata["tokenizer.ggml.tokens"], metadata.get("tokenizer.ggml.token_type", [])
+    ranks = {}
+    for rank, merge in enumerate(metadata.get("tokenizer.ggml.merges", [])):
+        left, right = merge.split(" ")
+        ranks.setdefault(left + right, -float(rank))
+    # what tokenizer.json calls special: llama.cpp's control tokens (type 3)
+    pieces = [(text, ranks.get(text, UNMATCHABLE), text in ranks and (kinds[id] if id < len(kinds) else 1) != 3)
+              for id, text in enumerate(tokens)]
+    # Qwen's tokenizer.json normalizes to NFC, which a GGUF does not say: the page's safetensors path does it
+    options = {"tokenizer_kind": "bytebpe", "nfkc": False, "nfc": pre == "qwen2", "pretokenizer": GGUF_PRETOKENIZERS[pre]}
+    special = lambda key: tokens[metadata[key]] if isinstance(metadata.get(key), int) and metadata[key] < len(tokens) else ""
+    config = {"chat_template": metadata.get("tokenizer.chat_template"), "bos_token": special("tokenizer.ggml.bos_token_id"),
+              "eos_token": special("tokenizer.ggml.eos_token_id")}
+    return tokenizer_bin(pieces, vocab_size), options, config
 
 
 # ---------------------------------------------------------------------------------------- the tokenizer
@@ -1111,6 +1267,25 @@ class Conversion:
             self.tokenizer, options = tokenizer_bin(tokenizer_json_pieces(parsed), vocab_size), tokenizer_json_options(parsed)
         else:
             self.tokenizer, options = tokenizer_bin(sentencepiece_pieces(tokenizer), vocab_size), sentencepiece_options(tokenizer)
+        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start)
+
+    @classmethod
+    def from_gguf(cls, head, dtype="int8", max_seq_len=4096):
+        """The same from a GGUF file (T74): head is its beginning, as far as the tensors' data (Incomplete when it
+        is not). Then feed() the file from self.base on. No config.json and no tokenizer: the GGUF has both."""
+        metadata, tensors, base = gguf_read(head)
+        header, config = gguf_model(metadata, tensors, base)
+        self = cls.__new__(cls)
+        self.config = config
+        check_config(config)
+        if np.dtype(dtype) not in (np.float32, np.float16, np.int8):
+            raise ValueError(f"dtype must be float32, float16 or int8, not {dtype}.")
+        self.tokenizer, options, tokenizer_config = gguf_tokenizer(metadata, config["vocab_size"])
+        self.base = base
+        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base)
+        return self
+
+    def start(self, header, base, options, tokenizer_config, dtype, max_seq_len, start):
         bos = self.config.get("bos_token_id", 1)
         eos = self.config.get("eos_token_id", 2)
         stop = [token for token in [bos, *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]

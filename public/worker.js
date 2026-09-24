@@ -470,63 +470,81 @@ async function convert(model, signal, id) {
     }
     return res;
   };
-  // the beginning of the file: 8 bytes that say how long the JSON header is, then the header
-  let first, size;
-  if (remote) {
-    // A model published as one shard (model-00001-of-00001.safetensors) has no model.safetensors: its
-    // index.json says the real name. Several shards would have to be read one after another, each with its own
-    // base, which the converter does not do (T78).
-    try {
-      ({ bytes: first, total: size } = await fetchRange(at(model.hf.weights), 0, HF_HEADER_BYTES, signal));
-    } catch (error) {
-      signal.throwIfAborted();
-      const index = await text(at(`${model.hf.weights}.index.json`)).then((res) => res.text())
-        .catch(() => { throw error; });
-      const only = singleShard(index);
-      if (!only) {
-        throw new Error("This model is split over several files, which this page cannot read yet.");
+  let first, size, base, conversion;
+  if (remote && model.hf.weights.endsWith(".gguf")) {
+    // T74: a GGUF holds the configuration and the vocabulary in its header, before the tensors: no config.json and
+    // no tokenizer to fetch. The header is a few megabytes (the vocabulary), so it is fetched in growing pieces
+    // until the converter can read all of it.
+    for (let bytes = 4 * HF_HEADER_BYTES; ; bytes *= 4) {
+      ({ bytes: first, total: size } = await fetchRange(at(model.hf.weights), 0, bytes, signal));
+      try {
+        conversion = llama2_convert.Conversion.from_gguf.callKwargs(first, { ...model.conversion });
+        break;
+      } catch (error) {
+        if (error.type !== "Incomplete" || bytes >= size) {
+          throw error;
+        }
       }
-      model = { ...model, hf: { ...model.hf, weights: only } };
-      ({ bytes: first, total: size } = await fetchRange(at(only), 0, HF_HEADER_BYTES, signal));
     }
+    base = conversion.base;
   } else {
-    first = new Uint8Array(await model.hf.weights.slice(0, HF_HEADER_BYTES).arrayBuffer());
-    size = model.hf.weights.size;
-  }
-  const headerBytes = first.length >= 8 ? Number(new DataView(first.buffer).getBigUint64(0, true)) : -1;
-  if (!(headerBytes >= 2 && headerBytes <= 100e6)) {
-    throw new Error("This is not a safetensors file.");
-  }
-  const base = 8 + headerBytes;
-  if (base > first.length) {
-    first = remote ? (await fetchRange(at(model.hf.weights), 0, base, signal)).bytes
-      : new Uint8Array(await model.hf.weights.slice(0, base).arrayBuffer());
-  }
-  const header = new TextDecoder().decode(first.subarray(8, base));
-  const config = remote ? await (await text(at(model.hf.config))).text() : await model.hf.config.text();
-  // The format of one turn, when the model publishes a chat_template (T73). It is small, and a model without
-  // one (or with one the converter cannot read) simply keeps the format src/models.js has for it.
-  const tokenizerConfig = await (remote ? text(at("tokenizer_config.json")).then((r) => r.text())
-    : model.hf.tokenizerConfig?.text() ?? Promise.resolve("")).catch(() => "");
-  // For a repository nobody has looked at (?hf=), the tokenizer is whichever of these it has and the converter can read
-  let conversion, refusal;
-  for (const candidate of [].concat(model.hf.tokenizer)) {
-    try {
-      const tokenizerName = remote ? candidate : candidate.name;
-      const tokenizer = new Uint8Array(remote ? await (await text(at(candidate))).arrayBuffer() : await candidate.arrayBuffer());
-      signal.throwIfAborted();
-      conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName,
-        { start: base, tokenizer_config: tokenizerConfig, ...model.conversion });
-      break;
-    } catch (error) {
-      if (signal.aborted) {
-        throw error;
+    // the beginning of the file: 8 bytes that say how long the JSON header is, then the header
+    if (remote) {
+      // A model published as one shard (model-00001-of-00001.safetensors) has no model.safetensors: its
+      // index.json says the real name. Several shards would have to be read one after another, each with its own
+      // base, which the converter does not do (T78).
+      try {
+        ({ bytes: first, total: size } = await fetchRange(at(model.hf.weights), 0, HF_HEADER_BYTES, signal));
+      } catch (error) {
+        signal.throwIfAborted();
+        const index = await text(at(`${model.hf.weights}.index.json`)).then((res) => res.text())
+          .catch(() => { throw error; });
+        const only = singleShard(index);
+        if (!only) {
+          throw new Error("This model is split over several files, which this page cannot read yet.");
+        }
+        model = { ...model, hf: { ...model.hf, weights: only } };
+        ({ bytes: first, total: size } = await fetchRange(at(only), 0, HF_HEADER_BYTES, signal));
       }
-      refusal ??= error;
+    } else {
+      first = new Uint8Array(await model.hf.weights.slice(0, HF_HEADER_BYTES).arrayBuffer());
+      size = model.hf.weights.size;
     }
-  }
-  if (!conversion) {
-    throw refusal;
+    const headerBytes = first.length >= 8 ? Number(new DataView(first.buffer).getBigUint64(0, true)) : -1;
+    if (!(headerBytes >= 2 && headerBytes <= 100e6)) {
+      throw new Error("This is not a safetensors file.");
+    }
+    base = 8 + headerBytes;
+    if (base > first.length) {
+      first = remote ? (await fetchRange(at(model.hf.weights), 0, base, signal)).bytes
+        : new Uint8Array(await model.hf.weights.slice(0, base).arrayBuffer());
+    }
+    const header = new TextDecoder().decode(first.subarray(8, base));
+    const config = remote ? await (await text(at(model.hf.config))).text() : await model.hf.config.text();
+    // The format of one turn, when the model publishes a chat_template (T73). It is small, and a model without
+    // one (or with one the converter cannot read) simply keeps the format src/models.js has for it.
+    const tokenizerConfig = await (remote ? text(at("tokenizer_config.json")).then((r) => r.text())
+      : model.hf.tokenizerConfig?.text() ?? Promise.resolve("")).catch(() => "");
+    // For a repository nobody has looked at (?hf=), the tokenizer is whichever of these it has and the converter can read
+    let refusal;
+    for (const candidate of [].concat(model.hf.tokenizer)) {
+      try {
+        const tokenizerName = remote ? candidate : candidate.name;
+        const tokenizer = new Uint8Array(remote ? await (await text(at(candidate))).arrayBuffer() : await candidate.arrayBuffer());
+        signal.throwIfAborted();
+        conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName,
+          { start: base, tokenizer_config: tokenizerConfig, ...model.conversion });
+        break;
+      } catch (error) {
+        if (signal.aborted) {
+          throw error;
+        }
+        refusal ??= error;
+      }
+    }
+    if (!conversion) {
+      throw refusal;
+    }
   }
   let template;
   try {

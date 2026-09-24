@@ -9,11 +9,15 @@ for (const entry of MODELS) {
   assert.ok(repo, `${entry.id} has neither hf.repo nor source`);
   assert.ok(LICENSES[repo], `${entry.id}: no license for ${repo} in LICENSES`);
 }
-const used = new Set(MODELS.map(sourceOf));
+for (const entry of MODELS.filter((entry) => entry.original)) {
+  assert.ok(LICENSES[entry.original], `${entry.id}: no license for its original ${entry.original}`);
+}
+const used = new Set(MODELS.flatMap((entry) => [sourceOf(entry), entry.original].filter(Boolean)));
 for (const repo of Object.keys(LICENSES)) assert.ok(used.has(repo), `LICENSES names ${repo}, which no model uses`);
 const listed = sources();
 assert.equal(listed.length, used.size, "one line per source");
-assert.equal(listed.reduce((n, { names }) => n + names.length, 0), MODELS.length, "every model on some line");
+assert.equal(listed.reduce((n, { names }) => n + names.length, 0),
+  MODELS.length + MODELS.filter((entry) => entry.original).length, "every model on some line, a GGUF on two");
 
 // T90: every model knows how much memory it takes, so the warning never silently skips one
 for (const entry of MODELS) assert.ok(modelBytes(entry) > 0, `${entry.id}: no size (bytes, or "int8 N MB" in the note)`);
