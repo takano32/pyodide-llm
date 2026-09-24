@@ -254,6 +254,20 @@
 - 関係: **T71 はこの判定の後**（`SharedArrayBuffer` が取れるなら T71 の postMessage 方式は要らない。取れないなら T71 の分類器だけの分け方に戻る）。T47（層ごとに 1 回のカーネル呼び出し）は、共有メモリの設計と相性がよいので、そのとき一緒に見直す。
 - 完了条件: 経路が 1 つに決まり（持ち主の判断つき）、tok/s が 1 コアより有意に上がることを新旧交互に測って示す。上がらなければ理由を AGENTS.md に書いて取りやめる。方針 6 を変えたなら AGENTS.md の方針も直す。
 
+### T96 [運用] `?bench=1` が CI で失敗し続ける原因を調べる — 状態: 未着手（2026-09-25 採用、持ち主の指示。**調査から**。規模 小〜中）
+- 担当: Opus（調査）→ 直し方が設計に触るなら Fable の判断。
+- 事実（`browsers.yml` の huggingface の小さい組の「The benchmark of ?bench=1」のステップ、`tests/bench-browser.mjs tiny-lm`）: 2026-09-24 の実行 36003988306（T93 の前）と 36032774754（段階 1b-i の後）は **「TypeError: network error」**、36047994839（段階 3 の後）と 36049665597（共有メモリの最大を直した後）は **「This device ran out of memory for tiny-lm 29M (it needs about 333 MB); the page was using 78 MB when it happened」**。モデルの e2e（同じジョブの 14 モデル）はどれも通っている。
+- わかっていないこと: (1) どのラウンドで落ちるか（`ROUNDS` は「カーネルあり」と「なし」の 2 つ）。(2) メモリ不足の表示の元の例外。T90 の作りは `RangeError` を全部メモリ不足として表示するが、`RangeError` は範囲外の型付き配列（`new Uint8Array(buffer, offset, length)`）や上限を超えた `memory.grow()` でも出る。「78 MB を使っていた」はメモリ不足らしくない。(3) T93 の前の「network error」とつながっているか（ベンチはラウンドごとにモデルを読み直すので、中止した読み込みの後始末と次の取得が重なっている可能性。未確認）。
+- 手順: この開発機ではブラウザを動かさないので CI で。`bench-browser.mjs` にページのコンソールと Worker のエラーの `message` と `stack` を全部出させる（T82 の artifact に残る）。`public/worker.js` のエラー報告に、メモリ不足と判定したときも元の例外の名前と message を添える（画面に出す文は変えない）。ラウンドを 1 つずつ走らせて、どこで落ちるかを切り分ける。
+- 完了条件: 原因を 1 文で言え、直したなら `browsers.yml` でベンチのステップが通る。T90 の判定が広すぎたなら、判定を直して AGENTS.md の落とし穴に書く。
+
+### T97 [運用] Windows の Firefox の「Error in input stream」を調べる — 状態: 未着手（2026-09-25 採用、持ち主の指示。**調査から**。規模 小）
+- 担当: Opus（調査）。
+- 事実: `browsers.yml` の OS のジョブで、ページが「TypeError: Error in input stream」を報告して失敗することがある。2026-09-24 の実行 36003988306（T93 の前）は windows-latest の Playwright の Firefox の llm-jp-3 150M で 1 回。2026-09-25 の 36049665597（段階 3 の後）は windows-latest と windows-11-arm で 1 回ずつ。Linux と macOS では出ていない。Firefox が取得の本文のストリームを読み切れなかったときの例外（モデルの部品の取得か HF の範囲取得）と見ているが、どれかは未確認。
+- 疑い（未確認）: 段階 3 から、すべての取得が Service Worker（`public/coi.js`）を通り、本文を `new Response(response.body, …)` でそのまま流している。Firefox の Service Worker で大きな本文（8 MiB の部品）を流すときに途中で切れるなら、段階 3 から増えたことになる。ただし段階 3 の前にも 1 回出ている。
+- 手順: 走行ごとに、どのブラウザ・どのモデル・どの取得で出たかを数える（T82 の JSON とコンソールの記録）。`?coi=off`（Service Worker なし）と既定を、Windows の Firefox で同じ回数ずつ走らせて比べる。Service Worker が原因なら、`coi.js` で本文を流さずに COOP/COEP を付けずに済む取得（Worker からの部品の取得など）は `respondWith` しない、などの手当てを検討する（ヘッダが要るのは文書と Worker のスクリプトだけのはず。要確認）。
+- 完了条件: 出る条件（ブラウザ・取得・Service Worker の有無）が分かり、Service Worker が原因なら手当てを入れて、同じ回数の走行で出なくなる。
+
 ### T95 [計測] wllama と同じ GGUF で比べる — 状態: 未着手（2026-09-25 採用、持ち主の指示。**T93 の段階 2 の後**が望ましい。規模 小〜中）
 - 担当: Opus（計測の仕組みと実行）→ Fable がレビュー（数字の読み方と、公開する文面）。
 - 根拠: wllama は llama.cpp を WebAssembly にしたもので、ブラウザで動く言語モデルの代表。「WASM Python でどこまでできるか」を言うには、いちばん強い相手と**同じファイル・同じブラウザ・同じ機械**で比べるのが早い。T74 で GGUF を読めるようになったので、同じ Q8_0 のファイルをそのまま両方に渡せる。
