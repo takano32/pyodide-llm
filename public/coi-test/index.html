@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cross-origin isolation check</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">
+</head>
+<body>
+<p>T93: can this site be cross-origin isolated (SharedArrayBuffer) on GitHub Pages with a service worker? The model page does not use this.</p>
+<pre id="result">checking...</pre>
+<script type="module">
+// Register the service worker once, then reload so that it controls this page; a page it controls has the headers.
+const coep = new URLSearchParams(location.search).get("coep") === "require-corp" ? "require-corp" : "credentialless";
+const show = (result) => {
+  window.__coi = result;
+  document.getElementById("result").textContent = JSON.stringify(result, null, 2);
+};
+const reloads = Number(sessionStorage.getItem("coi-reloads") ?? 0);
+if (!navigator.serviceWorker) {
+  show({ coep, error: "no service worker in this browser" });
+} else if (!navigator.serviceWorker.controller) {
+  if (reloads >= 2) {
+    show({ coep, reloads, error: "the service worker never took control of the page" });
+  } else {
+    await navigator.serviceWorker.register(`sw.js?coep=${coep}`, { scope: "./" });
+    await navigator.serviceWorker.ready;
+    sessionStorage.setItem("coi-reloads", String(reloads + 1));
+    location.reload();
+  }
+} else {
+  const result = { coep, reloads, crossOriginIsolated: self.crossOriginIsolated, sharedArrayBuffer: typeof SharedArrayBuffer };
+  if (self.crossOriginIsolated) {
+    const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+    const worker = new Worker("worker.js", { type: "module" });
+    const report = await new Promise((resolve) => {
+      worker.onmessage = ({ data }) => resolve(data);
+      worker.onerror = (event) => resolve({ workerError: event.message ?? "error" });
+      worker.postMessage({ memory });
+    });
+    Object.assign(result, report, { sharedValue: new Int32Array(memory.buffer)[0] });
+  }
+  show(result);
+}
+</script>
+</body>
+</html>

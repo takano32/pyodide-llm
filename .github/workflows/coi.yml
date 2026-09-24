@@ -1,0 +1,46 @@
+# T93, part 2: can the site be cross-origin isolated on GitHub Pages with a service worker (public/coi-test/)?
+# Every browser the runners offer, with both kinds of COEP; the table goes to the summary. By hand only.
+name: Cross-origin isolation
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Site to check
+        required: false
+
+jobs:
+  isolation:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, browsers: chromium firefox webkit chrome msedge }
+          - { os: macos-latest, browsers: chromium firefox webkit chrome msedge }
+          - { os: windows-latest, browsers: chromium firefox webkit chrome msedge }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install the test tools and the browsers
+        shell: bash
+        run: |
+          npm ci
+          npx playwright-core install --with-deps chromium firefox webkit
+
+      - name: Check
+        shell: bash
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+        run: |
+          echo "### ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+          node tests/coi-check.mjs "$SITE" ${{ matrix.browsers }} | tee -a "$GITHUB_STEP_SUMMARY"

@@ -53,6 +53,7 @@
 | `tests/models-check.mjs` | 全モデルに出典とライセンスがあるかを見る（T87、Node だけ）。モデルを足したら `src/models.js` の `LICENSES` にも足す。ライセンス名は HF のモデルカードから写し、推測で書かない |
 | `tests/profile-convert.mjs` | ページの変換を Node 上の Pyodide で cProfile にかける（T89）。取得を含まない変換だけの時間 |
 | `tests/threads-prototype/` | T93 の試作。エンジンの int8 の重みを共有メモリへ写し、カーネルの共有メモリ版（`kernels/build.py` の `simdkernel_shared.wasm` など、ページは読まない）で行列積を N スレッドに分けて、エンジンと交互に tok/s を比べる。出力トークンがエンジンと一致しなければ止まる |
+| `public/coi-test/` と `tests/coi-check.mjs`、`.github/workflows/coi.yml` | T93 の仕様 2。GitHub Pages のまま Service Worker で COOP/COEP を足し、ページが cross-origin isolated になるか、その下で Pyodide と HF が読めるかを確かめる別ページと、それを各ブラウザで開く確認（手動のワークフロー）。**Service Worker の効く範囲は `/coi-test/` だけで、モデルのページには効かない** |
 | `tests/ladder.mjs` | Pythia の梯子（T84）の表を、huggingface ジョブの `results.jsonl`（小さい組と大きい組の 2 つ）から起こす。単体テストは `tests/ladder-check.mjs` |
 | `tests/summary.mjs` | CI の各ジョブの結果（`tests/e2e.mjs` が `E2E_RESULTS` に書く JSON 行）を 1 枚の表にする（T82）。単体テストは `tests/summary-check.mjs` |
 | `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。**CI 用に環境変数が 3 つ**（T82）: `E2E_TIMEOUT`（1 回の持ち時間、既定 900 秒。超えたら timed out と記録して終わるので、1 つが止まってもジョブ全体は道連れにならない）、`E2E_RESULTS`（結果を JSON で 1 行追記。T84 から Worker の内訳 `load`（pyodide・download・convert・construct の秒）と `heapMB` も）、`E2E_ARTIFACTS`（失敗したらスクリーンショット・DOM・コンソールの最後の 200 行をそこへ）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路、`hf` を渡すと HF 形式のファイル（`tests/make_hf_fixture.py` が作る）をブラウザの中で変換する経路を試す |
