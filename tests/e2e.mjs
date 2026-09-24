@@ -13,6 +13,14 @@
 //
 // Needs a browser for playwright-core (a devDependency): `npx playwright-core install chromium` once.
 // Mind the memory: a browser with Pyodide and a model takes 400 MB and more; keep `free -m` above 1 GB available.
+//
+// For CI (T82), three environment variables, all optional:
+//   E2E_TIMEOUT    seconds this one run may take (default 900). Past it the run is recorded as timed out and the
+//                  process ends, so that one stuck model never takes the rest of the job with it.
+//   E2E_RESULTS    a file to append one JSON line to: the browser and its version, the model, the seconds to ready,
+//                  tok/s, the backend line, and what failed. tests/summary.mjs turns those lines into one table.
+//   E2E_ARTIFACTS  a directory: when the run fails or times out, a screenshot, the DOM and the last lines of the
+//                  console go there, named after the browser and the model.
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -53,12 +61,65 @@ if (!url) {
 const channel = ["msedge", "chrome"].includes(engine) ? engine : undefined;
 const browser = await playwright[channel ? "chromium" : engine].launch({ headless: true, channel });
 const browserVersion = browser.version();
+const started = Date.now();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors = [];
-page.on("pageerror", (error) => errors.push(String(error)));
-page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
+// every line of the console, for the artifacts of a failed run: the last ones say where it stopped
+const consoleLines = [];
+const remember = (line) => {
+  consoleLines.push(`${((Date.now() - started) / 1000).toFixed(1)}s ${line}`);
+  if (consoleLines.length > 200) consoleLines.shift();
+};
+page.on("pageerror", (error) => {
+  errors.push(String(error));
+  remember(`[pageerror] ${error}`);
+});
+page.on("console", (message) => {
+  if (message.type() === "error") errors.push(message.text());
+  remember(`[${message.type()}] ${message.text()}`);
+});
 
-const started = Date.now();
+// What is left behind when a run fails: in CI nothing else of it remains (T82)
+async function keepArtifacts(reason) {
+  const directory = process.env.E2E_ARTIFACTS;
+  if (!directory) return;
+  fs.mkdirSync(directory, { recursive: true });
+  const name = path.join(directory, `${engine}-${model}`.replace(/[^\w.-]+/g, "_"));
+  // a page that hangs may not answer these either: none of them may keep the run from ending
+  const within = (promise) => Promise.race([promise, new Promise((resolve) => setTimeout(resolve, 15000))]).catch(() => {});
+  const status = await within(page.evaluate(() => document.getElementById("status-text")?.textContent ?? ""));
+  await within(page.screenshot({ path: `${name}.png`, fullPage: true }));
+  const html = await within(page.content());
+  if (html) fs.writeFileSync(`${name}.html`, html);
+  fs.writeFileSync(`${name}.log`, [`${engine} ${browserVersion}, ${model}: ${reason}`, `status: ${status ?? "(no answer)"}`, "",
+    ...consoleLines].join("\n") + "\n");
+}
+
+// One JSON line per run, for tests/summary.mjs
+function record(entry) {
+  const file = process.env.E2E_RESULTS;
+  if (!file) return;
+  fs.appendFileSync(file, JSON.stringify({ engine, browserVersion, model, os: `${os.platform()} ${os.arch()}`, ...entry }) + "\n");
+}
+
+// Anything that throws (a navigation that fails, a closed page) is a failed run too, and must be recorded as one
+process.on("uncaughtException", async (error) => {
+  console.error(`FAILED\n- ${error.message ?? error}`);
+  record({ ok: false, timedOut: false, failures: [String(error.message ?? error)] });
+  await keepArtifacts(String(error.message ?? error));
+  process.exit(1);
+});
+
+const limit = Number(process.env.E2E_TIMEOUT ?? 900) * 1000;
+const watchdog = setTimeout(async () => {
+  const seconds = limit / 1000;
+  console.log(`${engine} ${browserVersion}, ${model}: timed out after ${seconds}s`);
+  console.error(`FAILED\n- timed out after ${seconds}s`);
+  record({ ok: false, timedOut: true, failures: [`timed out after ${seconds}s`] });
+  await keepArtifacts(`timed out after ${seconds}s`);
+  process.exit(2);
+}, limit);
+
 const opens = model === "local" || model === "hf";
 // the page asks before it fetches more than 500 MB
 page.on("dialog", (dialog) => dialog.accept());
@@ -66,7 +127,7 @@ const tinyllamas = "https://huggingface.co/karpathy/tinyllamas/resolve/main/stor
 const query = model === "url" ? `checkpoint=${encodeURIComponent(`${tinyllamas}/stories260K.bin`)}&tokenizer=${encodeURIComponent(`${tinyllamas}/tok512.bin`)}`
   : `model=${opens ? "stories3_5M" : model}`;
 await page.goto(`${url}?${query}`);
-const idle = () => page.waitForFunction(() => !document.getElementById("run").disabled || document.querySelector(".error"), null, { timeout: 1800000 });
+const idle = () => page.waitForFunction(() => !document.getElementById("run").disabled || document.querySelector(".error"), null, { timeout: 0 });
 await idle();
 if (opens) {
   const repository = new URL("../", import.meta.url).pathname;
@@ -77,7 +138,7 @@ if (opens) {
     chosen = fs.readdirSync(directory).map((name) => path.join(directory, name));
   }
   await page.setInputFiles("#files", chosen);
-  await page.waitForFunction(() => /^stories260K(\.bin| from Hugging Face files) ·|^Could not/.test(document.getElementById("status-text").textContent), null, { timeout: 600000 });
+  await page.waitForFunction(() => /^stories260K(\.bin| from Hugging Face files) ·|^Could not/.test(document.getElementById("status-text").textContent), null, { timeout: 0 });
   await idle();
 }
 const readySeconds = (Date.now() - started) / 1000;
@@ -90,7 +151,7 @@ await page.evaluate(() => {
 });
 // Enter alone breaks the line
 await page.press("#prompt", "Control+Enter");
-await page.waitForFunction(() => document.querySelector(".model .meta") || document.querySelector(".error"), null, { timeout: 600000 });
+await page.waitForFunction(() => document.querySelector(".model .meta") || document.querySelector(".error"), null, { timeout: 0 });
 const result = await page.evaluate(() => ({
   text: document.querySelector(".model .bubble")?.textContent ?? "",
   // the closed line; the breakdown below it is in the same element
@@ -100,9 +161,6 @@ const result = await page.evaluate(() => ({
   status: document.getElementById("status-text")?.textContent ?? "",
   pageScrolls: document.documentElement.scrollHeight > innerHeight,
 }));
-await browser.close();
-server?.close();
-
 const failures = [];
 if (result.error) failures.push(`the page reported: ${result.error}`);
 if (errors.length) failures.push(`console errors: ${errors.join(" | ")}`);
@@ -112,6 +170,13 @@ if (expected[model] && !result.text.startsWith(expected[model])) failures.push(`
 console.log(`${engine} ${browserVersion}, ${model}: ready in ${readySeconds.toFixed(1)}s, ${result.meta}`);
 console.log(`status: ${result.status}`);
 console.log(result.text.slice(0, 160).replace(/\n/g, " / "));
+const speed = Number(result.meta.match(/([\d.]+) tok\/s/)?.[1]);
+record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Number.isFinite(speed) ? speed : null,
+         backend: result.status, meta: result.meta, failures });
+if (failures.length) await keepArtifacts(failures.join("; "));
+clearTimeout(watchdog);
+await browser.close();
+server?.close();
 if (failures.length) {
   console.error("FAILED\n- " + failures.join("\n- "));
   process.exit(1);

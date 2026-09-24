@@ -65,6 +65,11 @@ jobs:
         shell: bash  # also on Windows, and with pipefail, so that a failed test is not hidden by tee
         env:
           SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+          # T82: every run has its own limit, is recorded as one JSON line, and leaves its screenshot, DOM and
+          # console behind when it fails, so that one stuck browser costs ten minutes and not the whole job
+          E2E_TIMEOUT: 600
+          E2E_RESULTS: results.jsonl
+          E2E_ARTIFACTS: artifacts
         run: |
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${os.arch()}, ${os.platform()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
           failed=0
@@ -87,16 +92,23 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           exit $failed
 
-      # T45: the benchmark a visitor can run and paste into an issue. Once is enough; it is the same code path
-      # for every model, and the numbers of this runner mean nothing on their own.
-      - name: The benchmark of ?bench=1
-        if: matrix.size == 'small'
+      - name: One table of every run
+        if: always()
         shell: bash
-        env:
-          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
         run: |
-          echo "### ?bench=1" >> "$GITHUB_STEP_SUMMARY"
-          node tests/bench-browser.mjs tiny-lm "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "## Every run" >> "$GITHUB_STEP_SUMMARY"
+          node tests/summary.mjs results.jsonl >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the results and what the failed runs left
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: browsers-${{ matrix.os }}
+          path: |
+            results.jsonl
+            artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
 
   # The models that the page fetches from huggingface.co and converts itself, the two of more than a billion
   # parameters among them: the development machine has not the memory for those (and from 2026-09-21 the owner
@@ -112,6 +124,7 @@ jobs:
         include:
           # under a gigabyte each: everything the page offers without a warning
           - size: small
+            timeout: 900
             models: >-
               url hf-llm-jp-3-150m-instruct3 hf-japanese-gpt2-small hf-japanese-gpt-neox-small
               hf-qwen2.5-0.5b-instruct hf-llm-jp-3-440m hf-llm-jp-3-440m-instruct3
@@ -119,6 +132,7 @@ jobs:
               hf-pythia-410m hf-qwen2.5-coder-0.5b-instruct
           # a gigabyte and more: these are the "desktop only" ones, and together they are 20 GB of downloads
           - size: large
+            timeout: 1800
             models: >-
               hf-sarashina2.2-0.5b hf-sarashina2.2-0.5b-instruct hf-llm-jp-3-980m-instruct3
               hf-pythia-1b hf-tinyllama-1.1b-chat hf-pythia-1.4b hf-qwen2.5-1.5b-instruct
@@ -142,6 +156,9 @@ jobs:
         shell: bash
         env:
           SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+          E2E_TIMEOUT: ${{ matrix.timeout }}
+          E2E_RESULTS: results.jsonl
+          E2E_ARTIFACTS: artifacts
         run: |
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
           failed=0
@@ -165,3 +182,21 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           node tests/bench-browser.mjs tiny-lm "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: One table of every run
+        if: always()
+        shell: bash
+        run: |
+          echo "## Every run" >> "$GITHUB_STEP_SUMMARY"
+          node tests/summary.mjs results.jsonl >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the results and what the failed runs left
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: huggingface-${{ matrix.size }}
+          path: |
+            results.jsonl
+            artifacts/
+          if-no-files-found: ignore
+          retention-days: 14

@@ -45,10 +45,11 @@
 | `src/bench.js` | ベンチマーク（T45）の組み立て。素の ES モジュールなので Node からも import できる（`tests/bench.mjs` が単体テストする）。測る組み合わせ（`ROUNDS` と `FULL_ROUNDS`）と Markdown の表を持つ |
 | `tests/bench.mjs` | `src/bench.js` の単体テスト。Node だけで走る（`node tests/bench.mjs`） |
 | `tests/bench-browser.mjs` | `?bench=1` を実ブラウザで走らせる確認。**CI 用**（この開発機ではブラウザを動かさない） |
-| `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路、`hf` を渡すと HF 形式のファイル（`tests/make_hf_fixture.py` が作る）をブラウザの中で変換する経路を試す |
+| `tests/summary.mjs` | CI の各ジョブの結果（`tests/e2e.mjs` が `E2E_RESULTS` に書く JSON 行）を 1 枚の表にする（T82）。単体テストは `tests/summary-check.mjs` |
+| `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。**CI 用に環境変数が 3 つ**（T82）: `E2E_TIMEOUT`（1 回の持ち時間、既定 900 秒。超えたら timed out と記録して終わるので、1 つが止まってもジョブ全体は道連れにならない）、`E2E_RESULTS`（結果を JSON で 1 行追記）、`E2E_ARTIFACTS`（失敗したらスクリーンショット・DOM・コンソールの最後の 200 行をそこへ）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路、`hf` を渡すと HF 形式のファイル（`tests/make_hf_fixture.py` が作る）をブラウザの中で変換する経路を試す |
 | `kernels/` | WASM SIMD カーネル（AssemblyScript）とビルドスクリプト。`make kernels` が `public/simdkernel.so` などを生成。制約と実測は `kernels/README.md` |
 | `.github/workflows/deploy.yml` | `make models` → `npm run build` → GitHub Pages |
-| `.github/workflows/browsers.yml` | 本番サイトをほかの環境で動かす。OS ごとに 1 ジョブ（Linux・Windows の x86-64 と ARM、macOS）で、その中で Playwright の Chromium・Firefox・WebKit、ランナーに入っている Chrome・Edge、Selenium で動かすインストール済みの Firefox（`tests/stock-firefox.mjs`）を順に回す。別に `huggingface` ジョブが、HF から取得して変換するモデルを確かめる（**大きさで 2 つに分かれる**: 1GB 未満の 13 個と、1GB 以上の 8 個。合わせて 20GB を超える取得になるので 1 ジョブには入らない）。手動（`gh workflow run browsers.yml`）か週 1 回。結果は各ジョブの Summary に出る |
+| `.github/workflows/browsers.yml` | 本番サイトをほかの環境で動かす。OS ごとに 1 ジョブ（Linux・Windows の x86-64 と ARM、macOS）で、その中で Playwright の Chromium・Firefox・WebKit、ランナーに入っている Chrome・Edge、Selenium で動かすインストール済みの Firefox（`tests/stock-firefox.mjs`）を順に回す。別に `huggingface` ジョブが、HF から取得して変換するモデルを確かめる（**大きさで 2 つに分かれる**: 1GB 未満の 13 個と、1GB 以上の 8 個。合わせて 20GB を超える取得になるので 1 ジョブには入らない）。手動（`gh workflow run browsers.yml`）か週 1 回。結果は各ジョブの Summary に出る。**T82 から**: 各ジョブの最後に全実行の表（モデル / ブラウザと版 / 準備完了の秒数 / tok/s / backend / 結果 / 理由）が必ず出て（`if: always()`）、`results.jsonl` と失敗した実行の画面・DOM・コンソールが artifact に 14 日残る。1 回の持ち時間は OS のジョブで 600 秒、HF は 900 秒（1GB 以上は 1800 秒） |
 
 公開先: https://takano32.github.io/pyodide-llm/ （リポジトリの旧名は pyodide-llama2-py、その次が pyodide-llama-py。GitHub Pages は改名しても旧 URL を転送しないので、旧名 2 つには新しい URL へ飛ばすだけの小さなリポジトリを置いてある。2026-09-20 に改名、T62）
 
