@@ -36,6 +36,15 @@ listen(({ memory, plain, relaxed, share }) => {
       if (Atomics.add(ctl, FINISHED, 1) + 1 === total) Atomics.notify(ctl, FINISHED);
     }
   };
+  // Warm the kernels up before anyone waits for this thread: a new thread runs them unoptimized at first, and the
+  // search for the number of threads would take that for the speed of the count (T93). Tiny matmuls on scratch
+  // space at the end of the control area, many times; what they compute is thrown away.
+  const scratch = 3072, xq = scratch, xs = scratch + 64, w = scratch + 128, s = scratch + 192, c = scratch + 256, out = scratch + 320;
+  for (let i = 0; i < 4000; i++) {
+    k.matmul_q8(out, xq, xs, w, s, 32, 0, 1);
+    k.matmul_f32(out, out + 64, w, 8, 0, 1);
+    if (q8r) q8r(out, xq, xs, w, s, c, 32, 0, 1);
+  }
   port.postMessage("ready");
   let gen = Atomics.load(ctl, WAKE + share);
   for (;;) {

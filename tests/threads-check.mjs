@@ -4,6 +4,8 @@
 //   1. Every row is computed whole by one thread with the same kernel, so the logits of a greedy run must be the
 //      same to the bit with any number of threads.
 //   2. The speeds, the counts in turn, several rounds, the median.
+//   3. The search (stage 2b): which count it chooses from navigator.hardwareConcurrency, within a few generations,
+//      against the fastest of 2.
 //
 //   node tests/threads-check.mjs [model id ...] [--threads 1,2,4,8] [--rounds 5] [--positions 64]
 import fs from "node:fs";
@@ -82,7 +84,19 @@ if (isMainThread) {
   }
   const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
   const one = median(times[counts[0]]);
+  // the search, as the page runs it: from the hint, over generations of `positions` tokens
+  const hint = globalThis.navigator?.hardwareConcurrency ?? 4;
+  let found = 0, generationsUsed = 0;
+  await engine.findThreads({ from: hint, chose: (n) => { found = n; } });
+  for (; !found && generationsUsed < 8; generationsUsed++) {
+    engine.newGeneration();
+    for (let pos = 0; pos < positions; pos++) engine.forward(1, pos, true);
+    await new Promise((resolve) => setTimeout(resolve, 0));  // let a helper that is being started come up
+  }
+  const fastest = counts.reduce((a, b) => (median(times[b]) > median(times[a]) ? b : a));
+  const searchLine = `the search from ${hint} chose ${found || "nothing"} in ${generationsUsed} generation(s); the fastest measured was ${fastest}` +
+    (found && times[found] ? ` (${found} runs at ${(median(times[found]) / median(times[fastest]) * 100).toFixed(0)}% of it)` : "");
   parentPort.postMessage(`${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
-    counts.map((n) => `${n}: ${median(times[n]).toFixed(1)} tok/s (${(median(times[n]) / one).toFixed(2)}×)`).join(", "));
+    counts.map((n) => `${n}: ${median(times[n]).toFixed(1)} tok/s (${(median(times[n]) / one).toFixed(2)}×)`).join(", ") + `; ${searchLine}`);
   engine.stopThreads();
 }

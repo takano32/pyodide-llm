@@ -340,6 +340,71 @@ export function createForward({ memory, base, size, kernels, plan, spawn }) {
     }
   }
 
+  // ---- the number of threads (stage 2b): found by measuring, never written down. The search starts from a hint
+  // (navigator.hardwareConcurrency, which counts the little cores of a big.LITTLE phone too) and compares the best
+  // count so far with half of it and, if half is not faster, with twice as many; it goes on in that direction while
+  // the other is faster by more than the noise of a run, and stops at the first that is not. Only the tokens that
+  // make logits are timed (a prompt's tokens skip the classifier). One comparison runs the two counts in blocks,
+  // best-candidate-candidate-best, so that the growing cost of later positions falls on both alike, and drops the
+  // first token of every block (the switch). Helpers that a count needs are started in the background; until they
+  // are ready the tokens run on the best count and are not timed.
+  const BLOCK = 4, BETTER = 0.95;
+  let search = null, chosen = 0, generations = 0, recheckEvery = 0, onChosen = null;
+  const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
+  function beginSearch(from) {
+    search = { best: Math.max(1, from), direction: from > 1 ? "down" : "up", moved: false, candidate: 0, times: null, step: 0, waiting: false };
+    nextCandidate();
+  }
+  function nextCandidate() {
+    const { best, direction } = search;
+    const candidate = direction === "down" ? Math.floor(best / 2) : best * 2;
+    if (candidate < 1) return finish();
+    search.candidate = candidate;
+    search.times = { [best]: [], [candidate]: [] };
+    search.step = 0;
+    if (helpers.length < candidate - 1) {
+      search.waiting = true;
+      ensureHelpers(candidate).then(() => { if (search) search.waiting = false; }, () => finish());
+    }
+  }
+  function finish() {
+    chosen = search ? search.best : threads;
+    threads = chosen;
+    search = null;
+    onChosen?.(chosen);
+  }
+  // the count for the next token, and whether it is timed
+  function countForToken() {
+    if (!search || search.waiting) return [search ? search.best : threads, false];
+    const order = [search.best, search.candidate, search.candidate, search.best];
+    const block = Math.floor(search.step / (BLOCK + 1)), inBlock = search.step % (BLOCK + 1);
+    return [order[block], inBlock > 0];
+  }
+  function recordToken(count, milliseconds, timed) {
+    if (!search || search.waiting) return;
+    if (timed) search.times[count].push(milliseconds);
+    search.step += 1;
+    if (search.step < 4 * (BLOCK + 1)) return;
+    const { best, candidate } = search;
+    const faster = median(search.times[candidate]) < median(search.times[best]) * BETTER;
+    if (faster) {
+      search.best = candidate;
+      search.moved = true;
+      return nextCandidate();
+    }
+    if (search.direction === "down" && !search.moved) {
+      search.direction = "up";
+      return nextCandidate();
+    }
+    finish();
+  }
+  async function ensureHelpers(n) {
+    while (helpers.length < n - 1) {
+      helpers.push(await spawn({ memory, plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null,
+        share: helpers.length + 1 }));
+    }
+  }
+
   let bound = null;
   const backend = plan.int8 ? `SIMD kernels, int8${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32";
   return {
@@ -348,12 +413,36 @@ export function createForward({ memory, base, size, kernels, plan, spawn }) {
      * not shared. Resolves to the number in use. */
     async setThreads(n) {
       if (!shared) return (threads = 1);
-      while (helpers.length < n - 1) {
-        helpers.push(await spawn({ memory, plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null,
-          share: helpers.length + 1 }));
-      }
+      search = null;
+      await ensureHelpers(n);
       threads = Math.max(1, n);
       return threads;
+    },
+    /** Find the number of threads while generating (see above): from a hint, or from a count remembered from an
+     * earlier visit, which is then only checked against its neighbours now and then (every recheck generations).
+     * chose(count) is told the answer. The helpers of the starting count are started (and warmed) before this
+     * resolves, so the first tokens do not wait for them. */
+    async findThreads({ from, remembered = 0, recheck = 8, chose }) {
+      if (!shared) return 1;
+      onChosen = chose;
+      recheckEvery = recheck;
+      const start = Math.max(1, remembered || from);
+      await ensureHelpers(start);
+      threads = start;
+      if (remembered) {
+        chosen = remembered;
+      } else {
+        beginSearch(start);
+      }
+      return threads;
+    },
+    /** the page starts a generation: now and then the remembered count is checked against its neighbours again */
+    newGeneration() {
+      generations += 1;
+      if (!search && chosen && recheckEvery && generations % recheckEvery === 0) beginSearch(chosen);
+    },
+    get searching() {
+      return search !== null;
     },
     get threads() {
       return threads;
@@ -375,7 +464,16 @@ export function createForward({ memory, base, size, kernels, plan, spawn }) {
       bound = array.copy ? array.copy() : array;
     },
     forward(token, pos, needLogits = true) {
-      forward(token, pos, needLogits);
+      if (search && needLogits) {
+        const [count, timed] = countForToken();
+        threads = count;
+        const began = performance.now();
+        forward(token, pos, needLogits);
+        recordToken(count, performance.now() - began, timed);
+        if (search) threads = search.best;
+      } else {
+        forward(token, pos, needLogits);
+      }
       if (!needLogits || !bound) return;
       const view = bound.getBuffer ? bound.getBuffer("f32") : { data: bound, release() {} };
       view.data.set(new Float32Array(memory.buffer, logits, vocab));
