@@ -28,7 +28,7 @@ from llama2_numpy import Llama  # noqa: E402
 FIXTURES = HERE / "fixtures" / "fixed-outputs.json"
 NEW_TOKENS = 16
 CHUNK = 8 << 20
-# one per architecture and way in: GPT-NeoX, GPT-2, a Llama from a GGUF (T74), a Llama with a sentencepiece model
+# one per architecture and way in: GPT-NeoX, GPT-2, a Llama from a GGUF (T74), a Llama with a Unigram tokenizer.json
 MODELS = ["hf-pythia-70m", "hf-gpt2", "hf-smollm2-135m-instruct", "hf-llm-jp-3-150m-instruct3"]
 
 
@@ -46,9 +46,15 @@ def fetch(entry, name, directory):
         target.parent.mkdir(parents=True, exist_ok=True)
         url = f"https://huggingface.co/{hf['repo']}/resolve/{hf['revision']}/{name}"
         partial = target.with_suffix(target.suffix + ".part")
-        with urllib.request.urlopen(url) as response, open(partial, "wb") as out:
-            while block := response.read(CHUNK):
-                out.write(block)
+        for attempt in range(3):  # huggingface.co drops a connection now and then: three tries, a minute each
+            try:
+                with urllib.request.urlopen(url, timeout=60) as response, open(partial, "wb") as out:
+                    while block := response.read(CHUNK):
+                        out.write(block)
+                break
+            except OSError:
+                if attempt == 2:
+                    raise
         partial.rename(target)
     return target
 

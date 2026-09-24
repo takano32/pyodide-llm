@@ -49,7 +49,7 @@
 | `tests/bench-browser.mjs` | `?bench=1` を実ブラウザで走らせる確認。**CI 用**（この開発機ではブラウザを動かさない） |
 | `tests/perplexity_prepare.py` / `tests/perplexity_native.py` | T85 の計測用。HF のモデルをページと同じ `Conversion` で変換して options を JSON に書く / float32 の原本の perplexity をネイティブの NumPy で出す（Pyodide に載らない大きさのため） |
 | `tests/test_gguf.py` | GGUF の読み手の単体テスト。テストの中で llama.cpp と同じ形の GGUF（Q8_0、Llama の q・k は回す）を書き、safetensors の経路と 1 バイトも違わないことを見る。回す処理を外すと Llama の 4 件が落ちる |
-| `tests/fixed_outputs.py` | 実物のモデル 4 つ（GPT-NeoX・GPT-2・GGUF の Llama・sentencepiece の Llama）を、ページと同じ `Conversion` で float32 に変換して greedy で 16 トークン書かせ、`tests/fixtures/fixed-outputs.json` の文と比べる（T86）。取得元とプロンプトは `src/models.js` から Node で読む。`browsers.yml` の huggingface ジョブ（小さい組）で走る。`--write` で書き直すのは、文を人が読んでから |
+| `tests/fixed_outputs.py` | 実物のモデル 4 つ（GPT-NeoX・GPT-2・GGUF の Llama・Unigram の `tokenizer.json` の Llama）を、ページと同じ `Conversion` で float32 に変換して greedy で 16 トークン書かせ、`tests/fixtures/fixed-outputs.json` の文と比べる（T86）。取得元とプロンプトは `src/models.js` から Node で読む。`browsers.yml` の huggingface ジョブ（小さい組）で走る。`--write` で書き直すのは、文を人が読んでから |
 | `tests/gguf_check.py` | T74 の突き合わせ。GGUF を独立に読む参照で、テンソル・メタデータ・語彙を HF の原本と比べる（`tensors`）のと、変換済みの 2 つのチェックポイントの logits を比べる（`logits`）。ネイティブの Python と NumPy だけ |
 | `tests/models-check.mjs` | 全モデルに出典とライセンスがあるかを見る（T87、Node だけ）。モデルを足したら `src/models.js` の `LICENSES` にも足す。ライセンス名は HF のモデルカードから写し、推測で書かない |
 | `tests/profile.mjs` | 1 トークンの時間の内訳（T93 で書き直した）: `forward.js` のカーネルの呼び出しを包んで種類ごとに時間を足し上げる（行列積・入力の量子化・attention・norm・その他、呼び出しの間の JS）。Node だけ。T53 の頃の Python の forward の内訳（ctypes の費用込み）は下の「これまでに分かったこと」に残す |
