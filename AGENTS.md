@@ -45,6 +45,7 @@
 | `src/bench.js` | ベンチマーク（T45）の組み立て。素の ES モジュールなので Node からも import できる（`tests/bench.mjs` が単体テストする）。測る組み合わせ（`ROUNDS` と `FULL_ROUNDS`）と Markdown の表を持つ |
 | `tests/bench.mjs` | `src/bench.js` の単体テスト。Node だけで走る（`node tests/bench.mjs`） |
 | `tests/bench-browser.mjs` | `?bench=1` を実ブラウザで走らせる確認。**CI 用**（この開発機ではブラウザを動かさない） |
+| `tests/models-check.mjs` | 全モデルに出典とライセンスがあるかを見る（T87、Node だけ）。モデルを足したら `src/models.js` の `LICENSES` にも足す。ライセンス名は HF のモデルカードから写し、推測で書かない |
 | `tests/summary.mjs` | CI の各ジョブの結果（`tests/e2e.mjs` が `E2E_RESULTS` に書く JSON 行）を 1 枚の表にする（T82）。単体テストは `tests/summary-check.mjs` |
 | `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。**CI 用に環境変数が 3 つ**（T82）: `E2E_TIMEOUT`（1 回の持ち時間、既定 900 秒。超えたら timed out と記録して終わるので、1 つが止まってもジョブ全体は道連れにならない）、`E2E_RESULTS`（結果を JSON で 1 行追記）、`E2E_ARTIFACTS`（失敗したらスクリーンショット・DOM・コンソールの最後の 200 行をそこへ）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路、`hf` を渡すと HF 形式のファイル（`tests/make_hf_fixture.py` が作る）をブラウザの中で変換する経路を試す |
 | `kernels/` | WASM SIMD カーネル（AssemblyScript）とビルドスクリプト。`make kernels` が `public/simdkernel.so` などを生成。制約と実測は `kernels/README.md` |

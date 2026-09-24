@@ -25,44 +25,74 @@ const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [0, 2] }
 const hf = (repo, revision, tokenizer = "tokenizer.json") => ({ repo, revision, weights: "model.safetensors", config: "config.json", tokenizer });
 const llmJp = { stop_tokens: [1, 2, 7] };
 
+// Where each model comes from, and under which license (T87). A model of this site names its source with
+// `source`; one fetched from Hugging Face is its `hf.repo`. The page lists them from here, and
+// tests/models-check.mjs fails when a model has no license, so a new model cannot be added without one.
+const APACHE = "Apache License 2.0";
+const MIT = "MIT License";
+export const LICENSES = {
+  "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
+  "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
+  "llm-jp/llm-jp-3-980m-instruct3": APACHE, "rinna/japanese-gpt2-small": MIT, "rinna/japanese-gpt-neox-small": MIT,
+  "Qwen/Qwen2.5-0.5B-Instruct": APACHE, "Qwen/Qwen2.5-Coder-0.5B-Instruct": APACHE, "Qwen/Qwen2.5-1.5B-Instruct": APACHE,
+  "sbintuitions/sarashina2.2-0.5b": MIT, "sbintuitions/sarashina2.2-0.5b-instruct-v0.1": MIT,
+  "EleutherAI/pythia-70m-deduped": APACHE, "EleutherAI/pythia-160m": APACHE, "EleutherAI/pythia-410m": APACHE,
+  "EleutherAI/pythia-1b": APACHE, "EleutherAI/pythia-1.4b": APACHE,
+  "HuggingFaceTB/SmolLM2-135M-Instruct": APACHE, "HuggingFaceTB/SmolLM2-360M-Instruct": APACHE,
+  "openai-community/gpt2": MIT, "TinyLlama/TinyLlama-1.1B-Chat-v1.0": APACHE,
+  "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B": MIT,
+};
+/** The Hugging Face repository a model comes from. */
+export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
+/** Every source once, in the order of the list, with its license and the names of the models taken from it. */
+export function sources(models = MODELS) {
+  const bySource = new Map();
+  for (const entry of models) {
+    const repo = sourceOf(entry);
+    if (!bySource.has(repo)) bySource.set(repo, { repo, license: LICENSES[repo], names: [] });
+    bySource.get(repo).names.push(entry.name);
+  }
+  return [...bySource.values()];
+}
+
 // group: "site" (built with the site, the default), "original" or "hf"
 export const GROUPS = { site: "Models of this site", original: "Unquantized originals", hf: "From Hugging Face, converted in this browser" };
 
 export const MODELS = [
   { id: "tiny-lm", name: "tiny-lm 29M", note: "日本語 / English · int8 · 33 MB",
-    checkpoint: "tiny-lm.bin", bytes: 32891932, tokenizer: "tiny-lm.tokenizer.bin",
+    source: "sbintuitions/tiny-lm", checkpoint: "tiny-lm.bin", bytes: 32891932, tokenizer: "tiny-lm.tokenizer.bin",
     options: { dtype: "int8", ...unigram, nfkc: true, stop_tokens: [1, 2] },
     generation: sampled(1.3), prompt: "これからの流行りは", placeholder: JAPANESE },
   { id: "llm-jp-3-150m", name: "llm-jp-3 150M", note: "日本語 / English · int8 · 171 MB",
-    checkpoint: "llm-jp-3-150m.bin", bytes: 171395100, tokenizer: "llm-jp-3-150m.tokenizer.bin",
+    source: "llm-jp/llm-jp-3-150m", checkpoint: "llm-jp-3-150m.bin", bytes: 171395100, tokenizer: "llm-jp-3-150m.tokenizer.bin",
     options: { dtype: "int8", ...unigram, stop_tokens: [1, 2, 7] },
     generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   { id: "stories260K", name: "TinyStories 260K", note: "English · float32 · 1 MB · tiny",
-    checkpoint: "stories260K.bin", bytes: 1056540, tokenizer: "tok512.bin", options: {},
+    source: "karpathy/tinyllamas", checkpoint: "stories260K.bin", bytes: 1056540, tokenizer: "tok512.bin", options: {},
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
   { id: "stories3_5M", name: "TinyStories 3.5M", note: "English · float32 · 15 MB · fast",
-    checkpoint: "stories3_5M-v4k.bin", bytes: 14887004, tokenizer: "tok4096.bin", options: {},
+    source: "ellishg/tinyllamas", checkpoint: "stories3_5M-v4k.bin", bytes: 14887004, tokenizer: "tok4096.bin", options: {},
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
   { id: "stories15M", name: "TinyStories 15M", note: "English · int8 · 17 MB",
-    checkpoint: "stories15M.bin", bytes: 17101468, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
+    source: "karpathy/tinyllamas", checkpoint: "stories15M.bin", bytes: 17101468, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
   { id: "stories42M", name: "TinyStories 42M", note: "English · int8 · 47 MB · desktop only",
-    checkpoint: "stories42M.bin", bytes: 46925852, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
+    source: "karpathy/tinyllamas", checkpoint: "stories42M.bin", bytes: 46925852, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
   // the unquantized originals, to compare with int8
   { group: "original", id: "tiny-lm-f16", name: "tiny-lm 29M (original)", note: "日本語 / English · float16 · 59 MB",
-    checkpoint: "tiny-lm.f16", bytes: 58724892, tokenizer: "tiny-lm.tokenizer.bin",
+    source: "sbintuitions/tiny-lm", checkpoint: "tiny-lm.f16", bytes: 58724892, tokenizer: "tiny-lm.tokenizer.bin",
     options: { dtype: "float16", ...unigram, nfkc: true, stop_tokens: [1, 2] },
     generation: sampled(1.3), prompt: "これからの流行りは", placeholder: JAPANESE },
   { group: "original", id: "llm-jp-3-150m-f16", name: "llm-jp-3 150M (original)", note: "日本語 / English · float16 · 305 MB · desktop only",
-    checkpoint: "llm-jp-3-150m.f16", bytes: 305161244, tokenizer: "llm-jp-3-150m.tokenizer.bin",
+    source: "llm-jp/llm-jp-3-150m", checkpoint: "llm-jp-3-150m.f16", bytes: 305161244, tokenizer: "llm-jp-3-150m.tokenizer.bin",
     options: { dtype: "float16", ...unigram, stop_tokens: [1, 2, 7] },
     generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   { group: "original", id: "stories15M-f32", name: "TinyStories 15M (original)", note: "English · float32 · 61 MB",
-    checkpoint: "stories15M.f32", bytes: 60816028, tokenizer: "tokenizer.bin", options: {},
+    source: "karpathy/tinyllamas", checkpoint: "stories15M.f32", bytes: 60816028, tokenizer: "tokenizer.bin", options: {},
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
   { group: "original", id: "stories42M-f32", name: "TinyStories 42M (original)", note: "English · float32 · 167 MB · desktop only",
-    checkpoint: "stories42M.f32", bytes: 167020572, tokenizer: "tokenizer.bin", options: {},
+    source: "karpathy/tinyllamas", checkpoint: "stories42M.f32", bytes: 167020572, tokenizer: "tokenizer.bin", options: {},
     generation: greedy, prompt: "Once upon a time", placeholder: STORY },
   // Fetched from huggingface.co and converted in the page. Japanese from light to heavy, then English from light
   // to heavy, as everywhere else. What "fetches" says is the download; int8 is what it becomes here.

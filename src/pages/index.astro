@@ -1,5 +1,8 @@
 ---
 // One chat-like screen. Pyodide runs in public/worker.js; this page only draws what the worker reports.
+import { sources } from "../models.js";
+// the licenses of the models, one line per source, written at build time from src/models.js (T87)
+const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
 ---
 <!doctype html>
 <html lang="ja">
@@ -60,10 +63,15 @@
             <li><a href="https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901">Pyodide LLM の概要</a>: しくみと計測結果のまとめ / how it works and what was measured (in Japanese)</li>
             <li><a href="https://pyodide.org/">Pyodide</a>: Python for the browser, based on WebAssembly</li>
             <li><a href="https://github.com/tairov/llama2.py">llama2.py</a> and <a href="https://github.com/karpathy/llama2.c">llama2.c</a>, which the NumPy engine is a port of</li>
-            <li><a href="https://huggingface.co/llm-jp/llm-jp-3-150m">llm-jp-3-150m</a> (Apache License 2.0)</li>
-            <li><a href="https://huggingface.co/sbintuitions/tiny-lm">tiny-lm</a> (<a href="models/tiny-lm.LICENSE.txt">MIT License</a>)</li>
-            <li><a href="https://huggingface.co/karpathy/tinyllamas">karpathy/tinyllamas</a> and <a href="https://huggingface.co/ellishg/tinyllamas">ellishg/tinyllamas</a> (MIT License)</li>
-            <li>The models of the last group are fetched from <a href="https://huggingface.co/llm-jp">huggingface.co/llm-jp</a> (Apache License 2.0) when you choose one, and converted to int8 in this browser. They are small, and so are their answers.</li>
+          </ul>
+          <p>The models and their licenses. The models of the last group are fetched from Hugging Face when you choose one, and converted to int8 in this browser.</p>
+          <ul class="sources">
+            {sources().map(({ repo, license, names }) => (
+              <li>
+                <a href={`https://huggingface.co/${repo}`}>{repo}</a>{" "}
+                (<a href={LOCAL_LICENSE[repo] ?? `https://huggingface.co/${repo}`}>{license}</a>): {names.join(", ")}
+              </li>
+            ))}
           </ul>
           <!-- what the conversions left in this browser, with a way to get the space back -->
           <div id="kept" hidden>
