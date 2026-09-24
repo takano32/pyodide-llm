@@ -22,6 +22,8 @@
 //                  tok/s, the backend line, and what failed. tests/summary.mjs turns those lines into one table.
 //   E2E_ARTIFACTS  a directory: when the run fails or times out, a screenshot, the DOM and the last lines of the
 //                  console go there, named after the browser and the model.
+//   E2E_QUERY      more of the page's URL, such as hfParts=16&hfConnections=8 (T107), added to what the model needs
+//                  and kept in the JSON line.
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -113,7 +115,8 @@ async function keepArtifacts(reason) {
 function record(entry) {
   const file = process.env.E2E_RESULTS;
   if (!file) return;
-  fs.appendFileSync(file, JSON.stringify({ engine, browserVersion, model, os: `${os.platform()} ${os.arch()}`, ...entry }) + "\n");
+  const extra = process.env.E2E_QUERY ? { query: process.env.E2E_QUERY } : {};
+  fs.appendFileSync(file, JSON.stringify({ engine, browserVersion, model, os: `${os.platform()} ${os.arch()}`, ...extra, ...entry }) + "\n");
 }
 
 // Anything that throws (a navigation that fails, a closed page) is a failed run too, and must be recorded as one
@@ -132,7 +135,7 @@ const [repository, revision] = model.startsWith("hf:") ? model.slice(3).split("@
 const query = model === "url" ? `checkpoint=${encodeURIComponent(`${tinyllamas}/stories260K.bin`)}&tokenizer=${encodeURIComponent(`${tinyllamas}/tok512.bin`)}`
   : repository ? `hf=${encodeURIComponent(repository)}${revision ? `&revision=${encodeURIComponent(revision)}` : ""}`
   : `model=${opens ? "stories3_5M" : model}`;
-await page.goto(`${url}?${query}`);
+await page.goto(`${url}?${query}${process.env.E2E_QUERY ? `&${process.env.E2E_QUERY}` : ""}`);
 // T93: the first visit reloads once, under the service worker that makes the page cross-origin isolated (coi.js):
 // a wait that the reload interrupts starts again on the new page
 const acrossReload = async (wait) => {

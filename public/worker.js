@@ -257,6 +257,10 @@ const since = (started) => (performance.now() - started) / 1000;
 
 async function init(search) {
   const started = performance.now();
+  const asked = new URLSearchParams(search);
+  const parts = Number(asked.get("hfParts")), connections = Number(asked.get("hfConnections"));
+  if (parts >= 1 && parts <= 64) hfPartBytes = Math.round(parts * 1024 * 1024);
+  if (connections >= 1 && connections <= 32) hfConnections = Math.floor(connections);
   const version = await resolvePyodideVersion(search);
   postMessage({ type: "status", text: `Loading Pyodide ${version}...` });
   const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
@@ -382,6 +386,8 @@ function weightsBuffer(size) {
 const HF_PART_BYTES = 8 * 1024 * 1024;
 const HF_CONNECTIONS = 6;
 const HF_HEADER_BYTES = 512 * 1024;  // the JSON header of a safetensors file is a few dozen kilobytes
+// T107: ?hfParts=<MiB>&hfConnections=<N> change the two above, to measure; the page offers no way to them
+let hfPartBytes = HF_PART_BYTES, hfConnections = HF_CONNECTIONS;
 
 async function fetchRange(url, begin, end, signal) {
   for (let attempt = 0; ; attempt++) {
@@ -401,21 +407,21 @@ async function fetchRange(url, begin, end, signal) {
 
 // feed(bytes) gets the file from position start to its end, in order, although the parts arrive as they like
 async function inOrder(url, start, size, feed, signal) {
-  const parts = Math.ceil((size - start) / HF_PART_BYTES);
+  const parts = Math.ceil((size - start) / hfPartBytes);
   const arrived = new Map();
   let next = 0, fed = 0, waiting = [];
   const connection = async () => {
     while (next < parts) {
       // no more than two parts per connection wait in memory for an earlier one
-      while (next - fed >= 2 * HF_CONNECTIONS) {
+      while (next - fed >= 2 * hfConnections) {
         await new Promise((resolve) => waiting.push(resolve));
       }
       if (next >= parts) {
         return;
       }
       const part = next++;
-      const begin = start + part * HF_PART_BYTES;
-      arrived.set(part, (await fetchRange(url, begin, Math.min(begin + HF_PART_BYTES, size), signal)).bytes);
+      const begin = start + part * hfPartBytes;
+      arrived.set(part, (await fetchRange(url, begin, Math.min(begin + hfPartBytes, size), signal)).bytes);
       while (arrived.has(fed)) {
         signal.throwIfAborted();
         feed(arrived.get(fed));
@@ -426,7 +432,7 @@ async function inOrder(url, start, size, feed, signal) {
       waiting.splice(0).forEach((resolve) => resolve());
     }
   };
-  await Promise.all(Array.from({ length: Math.min(HF_CONNECTIONS, parts) }, connection));
+  await Promise.all(Array.from({ length: Math.min(hfConnections, parts) }, connection));
 }
 
 // What a conversion made is kept in the Cache API, in parts like the models of the site: the original is twice as

@@ -1,0 +1,79 @@
+# T107: how fast the page fetches a model from Hugging Face with parts of 4, 8 and 16 MiB over 4 to 12 connections
+# at once, against the deployed site. Every setting runs several times, the order turned around from one round to
+# the next, so that a slow minute of huggingface.co falls on all of them alike. By hand only; the table goes to the
+# summary.
+name: Fetch from Hugging Face
+
+on:
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: 'how many times each setting runs'
+        default: '3'
+      url:
+        description: 'the site to test (default: the deployed one)'
+        required: false
+
+jobs:
+  fetch:
+    name: ${{ matrix.model }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [hf-qwen2.5-0.5b-instruct, hf-qwen2.5-1.5b-instruct]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install the test tools and Chromium
+        run: |
+          npm ci
+          npx playwright-core install --with-deps chromium
+
+      - name: Fetch, convert and run, setting after setting
+        shell: bash
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+          E2E_TIMEOUT: '1200'
+          E2E_RESULTS: results.jsonl
+        run: |
+          settings=()
+          for connections in 4 6 8 12; do
+            for parts in 4 8 16; do
+              settings+=("hfParts=$parts&hfConnections=$connections")
+            done
+          done
+          for round in $(seq 1 ${{ inputs.rounds }}); do
+            if (( round % 2 == 0 )); then
+              order=$(printf '%s\n' "${settings[@]}" | tac)
+            else
+              order=$(printf '%s\n' "${settings[@]}")
+            fi
+            for setting in $order; do
+              echo "round $round, $setting"
+              # to a file first: a pipe that closes early would end e2e.mjs before it records the run
+              E2E_QUERY="$setting" node tests/e2e.mjs "${{ matrix.model }}" chromium "$SITE" > run.log 2>&1 || true
+              head -2 run.log
+            done
+          done
+
+      - name: The table
+        if: always()
+        run: node tests/fetch-table.mjs results.jsonl | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fetch-${{ matrix.model }}
+          path: results.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
