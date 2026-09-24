@@ -32,7 +32,7 @@
 | ファイル | 役割 |
 |---|---|
 | `public/llama2_numpy.py` | 推論エンジン。数値演算は SIMD カーネル（`load_kernels` / `kernel_forward`）、使えなければ NumPy。llama2.c の legacy 形式（7 個の int ヘッダ + テンソル）を読む。float32 / float16 / int8。トークナイザは BPE（llama2.c 方式）と unigram（Viterbi）と byte-level BPE（GPT-2 方式、`pretokenize()` で前分割）。アーキテクチャは `arch="llama"`（Qwen2 は `bias=True`）・`arch="gpt2"`・`arch="neox"`（`rotary` と `parallel_residual` を伴う）。`generate()` はテキスト片を返すジェネレータ |
-| `public/worker.js` | Web Worker。HF のモデルの取得（8 MiB × 6 並列の Range 要求を順番どおりに変換器へ）、変換結果の Cache API への保存と読み出し（`converted-v1`）もここ。最新 Pyodide の解決、モデル部品の並列ダウンロード（8 MiB × 8 並列、Pyodide のロードと同時進行、モデルを選び直せば中止して切り替え）、Python バッファへの直接書き込み、トークンの逐次送信 |
+| `public/worker.js` | Web Worker。**T93 から重みは `forward.js` の `WebAssembly.Memory` に置き、forward は JS**（`weightsBuffer()`。カーネルが無ければ Python の bytearray で NumPy）。HF の変換は変換器の `sink` で JS のメモリへ直接書く。HF のモデルの取得（8 MiB × 6 並列の Range 要求を順番どおりに変換器へ）、変換結果の Cache API への保存と読み出し（`converted-v1`）もここ。最新 Pyodide の解決、モデル部品の並列ダウンロード（8 MiB × 8 並列、Pyodide のロードと同時進行、モデルを選び直せば中止して切り替え）、Python バッファへの直接書き込み、トークンの逐次送信 |
 | `public/forward.js` | 1 トークンの forward を JavaScript で（T93）。重みを持つ自前の `WebAssembly.Memory` の上で、エンジンの `kernel_forward` と同じ順に同じカーネル（`simdkernel_plain.wasm`）を呼ぶ。テンソルの位置は Python（`Llama(external=)`）から受け取る。Python の層のループを外すぶん 1.15〜1.26 倍（int8） |
 | `src/pages/index.astro` | チャット風のページ。Worker の報告を描画するだけ |
 | `src/models.js` | モデル一覧（ファイル名、バイト数、エンジンのオプション、生成設定、既定プロンプト）。`group` でコンボボックスの 3 つのグループ（サイトのモデル / 原本 / HF から取得して変換）に分かれる。HF のモデルは `hf: {repo, revision, …}`（リビジョンはコミットのハッシュで固定）、指示モデルは `template` を持つ |
@@ -134,6 +134,7 @@
 - **int8 のモデルは、カーネルの浮動小数点の加算順を変えるだけで出力の文が変わる。** 活性値を 7 ビット（relaxed SIMD）に丸めているので、最後の 1 ビットの違いが次の層の丸めをまたぎ、llm-jp-3-150m では logit が最大 1.0 動く。バグではない（行列積は新旧とも整数の厳密計算と 1e-6 で一致）。int8 の回帰テストを「変更前と同じ文」にしてはいけない。float32 は NumPy と一字一句同じであることを確かめる。
 - **チャットテンプレートの中の特殊トークンは、文字として渡すと壊れる。** TinyLlama Chat の書式は `<|user|>\n…</s>\n<|assistant|>\n` で、`</s>` は 1 つのトークン（ID 2）。そのままエンコードすると `<`・`/`・`s`・`>` とばらばらになる。エンジンの `specials=("</s>",)` で「書かれていたらそのトークン」にし、特殊トークンの直後にはダミーの空白を付けない（`transformers` の結果と 6 / 6 で一致）。llm-jp の書式（`### 指示:`）には特殊トークンが無いので要らない。
 - **ヘッドレスの Chromium は Cache API の割り当てが小さい**（Playwright の一時プロファイル）。503MB の変換結果を保存しようとして `Quota exceeded` になった（`navigator.storage.estimate()` では足りると出ていた）。Worker は保存をあきらめて「保存できなかった理由」を準備完了の内訳に出し、モデルはそのまま動く。普通のブラウザでの上限は未確認。
+- **Python から JS の関数に渡した PyProxy は、呼び出しが終わると壊される。** `forward.js` の `bind(logits)` は受け取った配列を `copy()` して持ち、`Llama.release()` で返す。JS から Python の配列に書くときは、呼ぶたびに `getBuffer()` を取り直す（Pyodide のメモリが伸びると古い view は死ぬ）。**Pyodide は自分の `WebAssembly.Memory` を公開していない**ので、JS のカーネルを Pyodide のメモリの上では動かせない（T93 で重みを別のメモリに置いた理由）。
 - **`stats` の `prompt_tokens` は `tokens - sampled` では求まらない。** 停止トークンはサンプリングされるが `tokens` には数えないので 1 ずれる。プロンプトは専用のカウンタで数えている。
 - **フォームの中に `<input>` を足さない。** 入力欄のフォーム（`#composer`）の中に置いた `<input>` で Enter を押すと、プロンプトが送信される（暗黙の送信）。生成設定のパネルはフォームの外に置いてあり、フォームの中のボタンは `type="button"` にしてある。
 - **Worker は生成中にメッセージを受け取れない**（Python のジェネレータを回している間、イベントループに戻らない）。だから `generate()` は 50ms ごとに `MessageChannel` で 1 回イベントループに返す。`setTimeout` は 4ms の下限があり、トークン数で数えると速いモデル（900 tok/s）だけ約 5% 遅くなった。

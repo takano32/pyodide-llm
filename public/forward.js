@@ -278,6 +278,11 @@ export function createForward({ memory, base, size, kernels, plan }) {
       view.data.set(new Float32Array(memory.buffer, logits, vocab));
       view.release();
     },
+    /** Python's array goes back (Llama.release()) */
+    release() {
+      bound?.destroy?.();
+      bound = null;
+    },
     /** the logits in this memory, for callers without Python (tests) */
     logits: () => new Float32Array(memory.buffer, logits, vocab),
     memoryBytes: () => memory.buffer.byteLength,

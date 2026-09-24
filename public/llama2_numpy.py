@@ -694,6 +694,14 @@ class Llama:
 
         return forward
 
+    def release(self):
+        """Let go of what JavaScript holds for this engine (the forward pass of forward.js and the array it fills).
+        The worker calls it before it drops a model (T93)."""
+        external = getattr(self, "_external", None)
+        if external is not None:
+            external[0].release()
+            self._external = None
+
     def kernel_forward(self, kernels, int8):
         """forward() on the SIMD kernels: Python still sequences the layers, every operation is one kernel call.
 

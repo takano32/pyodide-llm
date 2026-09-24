@@ -224,6 +224,8 @@ async function localOptions(model, vocabulary) {
 }
 
 let pyodide, llama2_numpy, llama2_convert, llama, kernels;
+// T93: the forward pass in JavaScript (forward.js) and its kernels, compiled once; the memory of the model loaded now
+let forwardModule, jsKernels, weightsNow;
 // the optimizations this session leaves out (T52): ?without=relaxed,sampler, and ?kernel=off as it always was
 let disabled = [];
 // what the page's own URL said, to come back to after a benchmark has tried other combinations (T77)
@@ -285,6 +287,16 @@ async function init(search) {
       }
     }
   }
+  // T93: the forward pass runs in forward.js, on the plain build of the same kernels (simdkernel.so stays for the
+  // sampling, which works on Python's logits). Without them (no WebAssembly SIMD) the engine runs NumPy.
+  try {
+    forwardModule = await import(new URL(`forward.js${self.location.search}`, import.meta.url));
+    const [plain, relaxed] = await Promise.all(["simdkernel_plain.wasm", "simdkernel_relaxed_plain.wasm"].map((name) =>
+      fetch(new URL(`${name}${self.location.search}`, import.meta.url)).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
+    jsKernels = plain ? forwardModule.compileKernels(plain, relaxed) : null;
+  } catch {
+    jsKernels = null;
+  }
   loadSeconds.pyodide = since(started);
   pyodideAt = performance.now();
 }
@@ -299,6 +311,37 @@ function pythonBuffer(size) {
     view.release();
   };
   return { buffer, write };
+}
+
+// Where the weights of a model go (T93): the WebAssembly memory of forward.js, where the forward pass runs, or,
+// without the kernels (?without=kernels, or no WebAssembly SIMD), a Python bytearray for the NumPy engine.
+// write(offset, bytes) fills it, slice(begin, end) copies a stretch out (to keep a conversion), llama() makes the
+// engine on it, destroy() lets go of the Python buffer (a memory of forward.js goes with the engine).
+function weightsBuffer(size) {
+  if (jsKernels && !disabled.includes("kernels")) {
+    const { memory, base } = forwardModule.weightsMemory(size);
+    weightsNow = memory;
+    return {
+      write: (offset, chunk) => new Uint8Array(memory.buffer, base + offset, chunk.length).set(chunk),
+      slice: (begin, end) => new Uint8Array(memory.buffer, base + begin, end - begin).slice(),
+      llama: (tokenizer, options) => llama2_numpy.Llama.callKwargs(null, tokenizer,
+        { ...options, external: forwardModule.external({ memory, base, size, kernels: jsKernels }) }),
+      destroy() {},
+    };
+  }
+  weightsNow = undefined;
+  const { buffer, write } = pythonBuffer(size);
+  return {
+    write,
+    slice(begin, end) {
+      const view = buffer.getBuffer("u8");
+      const copy = view.data.slice(begin, end);
+      view.release();
+      return copy;
+    },
+    llama: (tokenizer, options) => llama2_numpy.Llama.callKwargs(buffer, tokenizer, options),
+    destroy: () => buffer.destroy(),
+  };
 }
 
 // Every await in here may end with the AbortError of signal: a newer load has taken over, and this one must
@@ -374,7 +417,7 @@ async function loadConverted(model, signal, id) {
     return false;
   }
   const started = performance.now();
-  const weights = pythonBuffer(manifest.bytes);
+  const weights = weightsBuffer(manifest.bytes);
   let tokenizer;
   try {
     for (let part = 0, offset = 0; part < manifest.parts; part++) {
@@ -396,22 +439,22 @@ async function loadConverted(model, signal, id) {
     // template is for the page, not for the engine (see convert())
     const engineOptions = { ...manifest.options };
     delete engineOptions.template;
-    llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, disable: disabled, ...engineOptions, ...model.options });
+    llama = weights.llama(tokenizer.buffer, { kernels, disable: disabled, ...engineOptions, ...model.options });
     loadSeconds.construct = since(constructStarted);
     return { template: manifest.options.template };
   } finally {
-    weights.buffer.destroy();
+    weights.destroy();
     tokenizer?.buffer.destroy();
   }
 }
 
-// checkpoint and tokenizer: PyProxies of the converted buffers. Returns why nothing was kept, or undefined.
-async function keepConverted(model, checkpoint, tokenizer, options, signal) {
+// checkpoint: the weights (weightsBuffer), bytes long; tokenizer: a PyProxy of the converted tokenizer. Returns why
+// nothing was kept, or undefined.
+async function keepConverted(model, checkpoint, bytes, tokenizer, options, signal) {
   const cache = await globalThis.caches?.open(CONVERTED_CACHE).catch(() => undefined);
   if (!cache) {
     return "this browser has no Cache API here";
   }
-  const bytes = checkpoint.length;
   const { quota = 0, usage = 0 } = (await navigator.storage?.estimate?.().catch(() => ({}))) ?? {};
   if (quota && quota - usage < bytes * 1.1) {
     return `the browser leaves ${((quota - usage) / 1e6).toFixed(0)} MB, and the model needs ${(bytes / 1e6).toFixed(0)} MB`;
@@ -419,10 +462,8 @@ async function keepConverted(model, checkpoint, tokenizer, options, signal) {
   const parts = Math.ceil(bytes / PART_BYTES);
   try {
     for (let part = 0; part < parts; part++) {
-      // the view is taken anew for every part: it dies when the WebAssembly memory grows, and an await may let it
-      const view = checkpoint.getBuffer("u8");
-      const copy = view.data.slice(part * PART_BYTES, Math.min((part + 1) * PART_BYTES, bytes));
-      view.release();
+      // a copy of every part: the memory it comes from may grow (and so move) while an await waits
+      const copy = checkpoint.slice(part * PART_BYTES, Math.min((part + 1) * PART_BYTES, bytes));
       await cache.put(convertedKey(model, `part-${String(part).padStart(3, "0")}`), new Response(copy));
       signal.throwIfAborted();
     }
@@ -471,6 +512,21 @@ async function convert(model, signal, id) {
     return res;
   };
   let first, size, base, conversion;
+  // T93: the converter writes the checkpoint here, piece by piece, straight into where the engine will read it.
+  // A Python buffer on the way would stay: Pyodide's memory never shrinks.
+  let weights, weightsSize = 0;
+  const sink = {
+    open(bytes) {
+      weights?.destroy();  // an earlier try (another tokenizer) that got this far
+      weights = weightsBuffer(bytes);
+      weightsSize = bytes;
+    },
+    write(offset, array) {
+      const view = array.getBuffer("u8");
+      weights.write(offset, view.data);
+      view.release();
+    },
+  };
   if (remote && model.hf.weights.endsWith(".gguf")) {
     // T74: a GGUF holds the configuration and the vocabulary in its header, before the tensors: no config.json and
     // no tokenizer to fetch. The header is a few megabytes (the vocabulary), so it is fetched in growing pieces
@@ -478,7 +534,7 @@ async function convert(model, signal, id) {
     for (let bytes = 4 * HF_HEADER_BYTES; ; bytes *= 4) {
       ({ bytes: first, total: size } = await fetchRange(at(model.hf.weights), 0, bytes, signal));
       try {
-        conversion = llama2_convert.Conversion.from_gguf.callKwargs(first, { ...model.conversion });
+        conversion = llama2_convert.Conversion.from_gguf.callKwargs(first, { ...model.conversion, sink });
         break;
       } catch (error) {
         if (error.type !== "Incomplete" || bytes >= size) {
@@ -533,7 +589,7 @@ async function convert(model, signal, id) {
         const tokenizer = new Uint8Array(remote ? await (await text(at(candidate))).arrayBuffer() : await candidate.arrayBuffer());
         signal.throwIfAborted();
         conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName,
-          { start: base, tokenizer_config: tokenizerConfig, ...model.conversion });
+          { start: base, tokenizer_config: tokenizerConfig, ...model.conversion, sink });
         break;
       } catch (error) {
         if (signal.aborted) {
@@ -580,8 +636,9 @@ async function convert(model, signal, id) {
     loadSeconds.convert = converting / 1000;
 
     const constructStarted = performance.now();
-    // every one of these proxies keeps its Python object alive, the checkpoint too: none may be left behind
-    const proxies = [conversion.options, conversion.checkpoint, conversion.tokenizer];
+    // every one of these proxies keeps its Python object alive: none may be left behind (the checkpoint went to
+    // weights, through the sink)
+    const proxies = [conversion.options, conversion.tokenizer];
     let kept;
     try {
       const options = proxies[0].toJs({ dict_converter: Object.fromEntries });
@@ -589,14 +646,15 @@ async function convert(model, signal, id) {
       ({ template } = options);
       const engineOptions = { ...options };
       delete engineOptions.template;
-      llama = llama2_numpy.Llama.callKwargs(proxies[1], proxies[2], { kernels, disable: disabled, ...engineOptions, ...model.options });
+      llama = weights.llama(proxies[1], { kernels, disable: disabled, ...engineOptions, ...model.options });
       loadSeconds.construct = since(constructStarted);
       if (remote) {
         postMessage({ type: "status", load: id, text: `${model.name}: keeping the converted model...` });
-        kept = await keepConverted(model, proxies[1], proxies[2], options, signal);
+        kept = await keepConverted(model, weights, weightsSize, proxies[1], options, signal);
       }
     } finally {
       proxies.forEach((proxy) => proxy.destroy());
+      weights?.destroy();
     }
     return { fromCache: false, notKept: kept, template };
   } finally {
@@ -609,8 +667,10 @@ async function load(model, signal, id) {
   signal.throwIfAborted();
   // let go of the previous model first, so that two never have to fit in memory
   if (llama) {
+    llama.release?.();  // what forward.js holds of Python's (T93)
     llama.destroy();
     llama = undefined;
+    weightsNow = undefined;
     // the engine's closures and the model refer to each other, so only the cycle collector frees the weights
     pyodide.runPython("import gc; gc.collect()");
   }
@@ -648,7 +708,7 @@ async function load(model, signal, id) {
   const options = model.file || model.url ? await localOptions(model, new Uint8Array(await tokenizerBytes)) : model.options;
   signal.throwIfAborted();
 
-  const weights = pythonBuffer(model.bytes);
+  const weights = weightsBuffer(model.bytes);
   let tokenizer;
   try {
     await checkpoint.into(weights.write);
@@ -662,7 +722,7 @@ async function load(model, signal, id) {
     tokenizer = pythonBuffer(vocabulary.length);
     tokenizer.write(0, vocabulary);
     try {
-      llama = llama2_numpy.Llama.callKwargs(weights.buffer, tokenizer.buffer, { kernels, disable: disabled, ...options });
+      llama = weights.llama(tokenizer.buffer, { kernels, disable: disabled, ...options });
     } catch (err) {
       if (!model.file) {
         throw err;
@@ -673,7 +733,7 @@ async function load(model, signal, id) {
     }
     loadSeconds.construct = since(constructStarted);
   } finally {
-    weights.buffer.destroy();
+    weights.destroy();
     tokenizer?.buffer.destroy();
   }
   postMessage({
@@ -726,7 +786,9 @@ async function generate({ type, prompt, ...options }) {
 
 /** The size of Pyodide's WebAssembly memory, which only grows; undefined before Pyodide is there. */
 function heapBytes() {
-  return pyodide?._module?.HEAPU8?.length;
+  const python = pyodide?._module?.HEAPU8?.length;
+  // T93: the weights and the forward pass have a memory of their own, outside Pyodide's
+  return python === undefined ? undefined : python + (weightsNow?.buffer.byteLength ?? 0);
 }
 
 self.onmessage = async ({ data }) => {

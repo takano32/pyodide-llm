@@ -90,10 +90,20 @@ def quantize(values):
 class Writer:
     """Puts pieces of the tensors of layout(), in any order, where they belong in the checkpoint buffer."""
 
-    def __init__(self, out, header, dtype, bias=False, arch="llama"):
-        self.out, self.dtype = np.frombuffer(out, dtype=np.uint8), np.dtype(dtype)
-        assert self.out.size == checkpoint_size(header, dtype, bias, arch), "the buffer has not the size of the checkpoint"
-        self.out[:28] = np.frombuffer(struct.pack("<7i", *header), dtype=np.uint8)
+    def __init__(self, out, header, dtype, bias=False, arch="llama", sink=None):
+        """out: a buffer of the checkpoint's size, or None with sink: an object with open(size) and
+        write(offset, array of bytes), for a checkpoint that lives outside Python (T93: the WebAssembly memory of
+        public/forward.js). Pyodide's own memory never shrinks, so a converted model that went through a Python
+        buffer on its way there would keep taking its size twice."""
+        self.dtype, self.sink = np.dtype(dtype), sink
+        size = checkpoint_size(header, dtype, bias, arch)
+        if sink is not None:
+            self.out = None
+            sink.open(size)
+        else:
+            self.out = np.frombuffer(out, dtype=np.uint8)
+            assert self.out.size == size, "the buffer has not the size of the checkpoint"
+        self.put(0, np.frombuffer(struct.pack("<7i", *header), dtype=np.uint8))
         self.tensors, offset = [], 28
         for shape, is_matrix in layout(*header, bias=bias, arch=arch):
             self.tensors.append((offset, shape, is_matrix))
@@ -101,7 +111,10 @@ class Writer:
 
     def put(self, offset, array):
         raw = np.ascontiguousarray(array).reshape(-1).view(np.uint8)
-        self.out[offset:offset + raw.size] = raw
+        if self.sink is not None:
+            self.sink.write(offset, raw)
+        else:
+            self.out[offset:offset + raw.size] = raw
 
     def write(self, index, first, values):
         """values: whole rows of tensor number index, beginning at its element number first."""
@@ -839,7 +852,7 @@ class Stream:
     to have one made (self.out).
     """
 
-    def __init__(self, header, base, config, dtype, max_seq_len, out=None, start=0):
+    def __init__(self, header, base, config, dtype, max_seq_len, out=None, start=0, sink=None):
         config = normalize(config)
         check_config(config)
         self.tensors = {name: info for name, info in header.items() if name != "__metadata__"}
@@ -847,8 +860,10 @@ class Stream:
         self.head_size = self.header[0] // self.header[3]
         self.arch = architecture(config)
         self.bias = has_bias(self)
-        self.out = bytearray(checkpoint_size(self.header, dtype, self.bias, self.arch)) if out is None else out
-        self.writer = Writer(self.out, self.header, dtype, self.bias, self.arch)
+        if out is None and sink is None:
+            out = bytearray(checkpoint_size(self.header, dtype, self.bias, self.arch))
+        self.out = out  # None when the checkpoint goes to sink
+        self.writer = Writer(self.out, self.header, dtype, self.bias, self.arch, sink=sink)
         plan, shapes = conversion_plan(self.header, self.bias, self.arch, gpt2_prefix(self),
                                        rotary_dim(config) if self.arch == "neox" else 0)
         self.total, self.done = sum(int(np.prod(shape)) for shape in shapes), 0
@@ -1241,7 +1256,7 @@ class Conversion:
     """
 
     def __init__(self, header, base, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=4096, start=0,
-                 tokenizer_config=None):
+                 tokenizer_config=None, sink=None):
         try:
             self.config = json.loads(config)
         except ValueError:
@@ -1267,10 +1282,10 @@ class Conversion:
             self.tokenizer, options = tokenizer_bin(tokenizer_json_pieces(parsed), vocab_size), tokenizer_json_options(parsed)
         else:
             self.tokenizer, options = tokenizer_bin(sentencepiece_pieces(tokenizer), vocab_size), sentencepiece_options(tokenizer)
-        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start)
+        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink)
 
     @classmethod
-    def from_gguf(cls, head, dtype="int8", max_seq_len=4096):
+    def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None):
         """The same from a GGUF file (T74): head is its beginning, as far as the tensors' data (Incomplete when it
         is not). Then feed() the file from self.base on. No config.json and no tokenizer: the GGUF has both."""
         metadata, tensors, base = gguf_read(head)
@@ -1282,15 +1297,16 @@ class Conversion:
             raise ValueError(f"dtype must be float32, float16 or int8, not {dtype}.")
         self.tokenizer, options, tokenizer_config = gguf_tokenizer(metadata, config["vocab_size"])
         self.base = base
-        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base)
+        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base, sink)
         return self
 
-    def start(self, header, base, options, tokenizer_config, dtype, max_seq_len, start):
+    def start(self, header, base, options, tokenizer_config, dtype, max_seq_len, start, sink=None):
+        """sink: see Writer. checkpoint is then None: the bytes went to the sink."""
         bos = self.config.get("bos_token_id", 1)
         eos = self.config.get("eos_token_id", 2)
         stop = [token for token in [bos, *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
-        self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start))
+        self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start), sink=sink)
         self.options = {**options, "dtype": np.dtype(dtype).name, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop, "bias": self.stream.bias,
                         "arch": self.stream.arch}

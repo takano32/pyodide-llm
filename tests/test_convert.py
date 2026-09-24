@@ -238,3 +238,33 @@ def test_a_stream_that_ends_early_or_lacks_a_tensor_is_refused():
     missing = {name: info for name, info in header.items() if "layers.1.mlp.up_proj" not in name}
     with pytest.raises(ValueError, match="up_proj.weight is missing"):
         llama2_convert.Stream(missing, 8 + size, published, "int8", 1 << 20, out)
+
+
+class Sink:
+    """What the worker passes for a checkpoint that goes straight into the WebAssembly memory of forward.js (T93)."""
+
+    def __init__(self):
+        self.data = None
+
+    def open(self, size):
+        self.data = bytearray(size)
+
+    def write(self, offset, array):
+        raw = bytes(np.asarray(array, dtype=np.uint8))
+        self.data[offset:offset + len(raw)] = raw
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float16", "int8"])
+def test_a_sink_gets_the_very_checkpoint(dtype):
+    config, weights = synthetic_weights()
+    tensors, published = hugging_face(config, weights, True)
+    file = safetensors_file(tensors)
+    expected = converted(Safetensors(reader(file)), published, dtype)
+    size = struct.unpack("<Q", file[:8])[0]
+    sink = Sink()
+    stream = llama2_convert.Stream(json.loads(file[8:8 + size]), 8 + size, published, dtype, 1 << 20, sink=sink)
+    assert stream.out is None
+    for start in range(0, len(file), 777):
+        stream.feed(file[start:start + 777])
+    stream.finish()
+    assert bytes(sink.data) == expected
