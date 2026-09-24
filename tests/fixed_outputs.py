@@ -1,0 +1,120 @@
+# fixed_outputs.py
+# Real models against the text they wrote when a person read it and found it sound (T86). Twice last week every
+# test passed while the page wrote broken text (T72: v permuted as well, rotary never passed on), because the
+# synthetic models of the unit tests cannot tell a sensible sentence from a wrong one. These can.
+#
+# One small model per architecture and source, converted the way the page converts it (llama2_convert.Conversion,
+# fed the file in order) to float32, then 16 greedy tokens from the model's own prompt and template. float32
+# because int8 changes its text with the order of additions (AGENTS.md); float32 with NumPy is the same, to the
+# character, as float32 with the kernels. Where each model comes from, its prompt and template are read from
+# src/models.js (with Node), so nothing here can drift from the list.
+#
+#   python3 tests/fixed_outputs.py <directory for the downloads> [--write]
+#
+# --write records what the models write now, into tests/fixtures/fixed-outputs.json: do that only after reading it.
+import json
+import subprocess
+import sys
+import urllib.request
+from pathlib import Path
+
+import numpy as np
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / "public"))
+from llama2_convert import Conversion, Incomplete  # noqa: E402
+from llama2_numpy import Llama  # noqa: E402
+
+FIXTURES = HERE / "fixtures" / "fixed-outputs.json"
+NEW_TOKENS = 16
+CHUNK = 8 << 20
+# one per architecture and way in: GPT-NeoX, GPT-2, a Llama from a GGUF (T74), a Llama with a sentencepiece model
+MODELS = ["hf-pythia-70m", "hf-gpt2", "hf-smollm2-135m-instruct", "hf-llm-jp-3-150m-instruct3"]
+
+
+def entries():
+    script = ("import('./src/models.js').then(({ MODELS }) => console.log(JSON.stringify("
+              f"MODELS.filter((m) => {json.dumps(MODELS)}.includes(m.id)))))")
+    found = {entry["id"]: entry for entry in json.loads(subprocess.check_output(["node", "-e", script], cwd=HERE.parent))}
+    return [found[id] for id in MODELS]
+
+
+def fetch(entry, name, directory):
+    hf = entry["hf"]
+    target = directory / hf["repo"].replace("/", "--") / hf["revision"] / name
+    if not target.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        url = f"https://huggingface.co/{hf['repo']}/resolve/{hf['revision']}/{name}"
+        partial = target.with_suffix(target.suffix + ".part")
+        with urllib.request.urlopen(url) as response, open(partial, "wb") as out:
+            while block := response.read(CHUNK):
+                out.write(block)
+        partial.rename(target)
+    return target
+
+
+def converted(entry, directory):
+    hf = entry["hf"]
+    weights = fetch(entry, hf["weights"], directory)
+    data = np.memmap(weights, dtype=np.uint8, mode="r")
+    if hf["weights"].endswith(".gguf"):
+        size = 1 << 20
+        while True:
+            try:
+                conversion = Conversion.from_gguf(bytes(data[:size]), dtype="float32")
+                break
+            except Incomplete:
+                size *= 4
+        first = conversion.base
+    else:
+        tokenizer = hf["tokenizer"] if isinstance(hf["tokenizer"], str) else hf["tokenizer"][0]
+        (header,) = np.frombuffer(bytes(data[:8]), dtype="<u8")
+        try:
+            tokenizer_config = fetch(entry, "tokenizer_config.json", directory).read_text()
+        except OSError:
+            tokenizer_config = ""
+        conversion = Conversion(bytes(data[8:8 + int(header)]).decode(), 8 + int(header),
+                                fetch(entry, hf["config"], directory).read_text(),
+                                fetch(entry, tokenizer, directory).read_bytes(), tokenizer, dtype="float32",
+                                tokenizer_config=tokenizer_config)
+        first = 0
+    for start in range(first, len(data), CHUNK):
+        conversion.feed(bytes(data[start:start + CHUNK]))
+    conversion.finish()
+    return conversion
+
+
+def written(entry, conversion):
+    """What the page would write with this model at temperature 0: the prompt in the model's template, the
+    options of the conversion with those of src/models.js on top (as the worker merges them)."""
+    options = {**conversion.options, **entry.get("options", {})}
+    template = entry.get("template") or options.pop("template", None)
+    options.pop("template", None)
+    prompt = template.replace("{prompt}", entry["prompt"]) if template else entry["prompt"]
+    llama = Llama(conversion.checkpoint, conversion.tokenizer, kernels=None, **options)
+    steps = len(llama.tokenizer.encode(prompt, llama.specials)) + NEW_TOKENS
+    return "".join(llama.generate(prompt, steps=steps, temperature=0.0, echo=False))
+
+
+def main():
+    directory, write = Path(sys.argv[1]), "--write" in sys.argv
+    expected = json.loads(FIXTURES.read_text()) if FIXTURES.exists() else {}
+    got, failures = {}, []
+    for entry in entries():
+        text = written(entry, converted(entry, directory))
+        got[entry["id"]] = {"prompt": entry["prompt"], "text": text}
+        same = expected.get(entry["id"], {}).get("text") == text
+        print(f"{'ok  ' if same else 'DIFF'} {entry['id']}: {json.dumps(text, ensure_ascii=False)}", flush=True)
+        if not same:
+            failures.append(entry["id"])
+    if write:
+        FIXTURES.parent.mkdir(exist_ok=True)
+        FIXTURES.write_text(json.dumps(got, ensure_ascii=False, indent=2) + "\n")
+        print(f"wrote {FIXTURES}")
+    elif failures:
+        print(f"FAILED: {', '.join(failures)} wrote something else than {FIXTURES.name} says")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

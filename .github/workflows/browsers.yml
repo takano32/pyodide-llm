@@ -183,6 +183,19 @@ jobs:
           node tests/bench-browser.mjs tiny-lm "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
+      # T86: four real models (GPT-NeoX, GPT-2, a Llama from a GGUF, a Llama with sentencepiece) against the text a
+      # person read and found sound. Not the site: the converter and engine of this checkout, in native Python, so
+      # "it runs but writes nonsense" (T72) fails here. Once is enough, so only in the small half.
+      - name: Real models write what they wrote before (T86)
+        if: always() && matrix.size == 'small'
+        shell: bash
+        run: |
+          python3 -m pip install --quiet numpy
+          echo "### Fixed outputs (T86)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          python3 tests/fixed_outputs.py "$RUNNER_TEMP/fixed" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
       - name: One table of every run
         if: always()
         shell: bash
