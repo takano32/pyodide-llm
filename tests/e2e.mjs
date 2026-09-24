@@ -59,10 +59,23 @@ if (!url) {
 }
 
 const channel = ["msedge", "chrome"].includes(engine) ? engine : undefined;
-const browser = await playwright[channel ? "chromium" : engine].launch({ headless: true, channel });
-const browserVersion = browser.version();
 const started = Date.now();
-const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+// The time limit is set before the browser starts: a run that hangs in launch() or newPage() (the Windows WebKit of
+// T70 looked like one) must end by it too, not by the job's own limit. Until the page exists there is nothing to
+// keep but the reason. (Fable's review of T82.)
+let browser, browserVersion = "", page;
+const limit = Number(process.env.E2E_TIMEOUT ?? 900) * 1000;
+const watchdog = setTimeout(async () => {
+  const seconds = limit / 1000;
+  record({ ok: false, timedOut: true, failures: [`timed out after ${seconds}s`] });
+  if (page) await keepArtifacts(`timed out after ${seconds}s`);
+  console.error(`FAILED\n- timed out after ${seconds}s`);
+  // stdout may be a pipe (| tee): let it drain before the process ends
+  process.stdout.write(`${engine} ${browserVersion}, ${model}: timed out after ${seconds}s\n`, () => process.exit(2));
+}, limit);
+browser = await playwright[channel ? "chromium" : engine].launch({ headless: true, channel });
+browserVersion = browser.version();
+page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors = [];
 // every line of the console, for the artifacts of a failed run: the last ones say where it stopped
 const consoleLines = [];
@@ -106,19 +119,9 @@ function record(entry) {
 process.on("uncaughtException", async (error) => {
   console.error(`FAILED\n- ${error.message ?? error}`);
   record({ ok: false, timedOut: false, failures: [String(error.message ?? error)] });
-  await keepArtifacts(String(error.message ?? error));
+  if (page) await keepArtifacts(String(error.message ?? error));
   process.exit(1);
 });
-
-const limit = Number(process.env.E2E_TIMEOUT ?? 900) * 1000;
-const watchdog = setTimeout(async () => {
-  const seconds = limit / 1000;
-  console.log(`${engine} ${browserVersion}, ${model}: timed out after ${seconds}s`);
-  console.error(`FAILED\n- timed out after ${seconds}s`);
-  record({ ok: false, timedOut: true, failures: [`timed out after ${seconds}s`] });
-  await keepArtifacts(`timed out after ${seconds}s`);
-  process.exit(2);
-}, limit);
 
 const opens = model === "local" || model === "hf";
 // the page asks before it fetches more than 500 MB

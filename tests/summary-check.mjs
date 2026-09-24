@@ -24,5 +24,6 @@ assert.ok(table.includes("**timed out**") && table.includes("timed out after 900
 assert.ok(table.includes("a \\| pipe"), "a | in a cell must not break the table");
 assert.ok(!table.includes("undefined") && !table.includes("NaN") && !table.includes("null"), table);
 assert.ok(table.includes("1 of 3 ran on linux x64. 2 failed or timed out"), table);
+assert.ok(table.includes("stock-firefox.mjs writes no line here"), "the table says what it does not count");
 assert.equal(summaryMarkdown([]), "No results were recorded.\n");
 console.log("ok");

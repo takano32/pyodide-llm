@@ -36,7 +36,8 @@ export function summaryMarkdown(results) {
     ...rows,
     "",
     `${results.length - failed} of ${results.length} ran${system ? ` on ${system}` : ""}.` +
-      (failed ? ` ${failed} failed or timed out: the artifacts of this job hold their screenshots, DOM and console.` : ""),
+      (failed ? ` ${failed} failed or timed out: the artifacts of this job hold their screenshots, DOM and console.` : "") +
+      " (The installed Firefox of tests/stock-firefox.mjs writes no line here; its result is in the log above.)",
     "",
   ].join("\n");
 }
