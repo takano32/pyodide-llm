@@ -52,7 +52,8 @@ export function matmul_f32(xout: usize, x: usize, w: usize, n: i32, r0: i32, r1:
 export function quantize_x(xq: usize, xs: usize, x: usize, n: i32, bias: i32): void {
   // SIMD, 32 values (one group) at a time. Every step is the scalar one lane by lane (abs, max, the division, the
   // product, round half to even), so the int8 and the scales are the same to the bit as before, and as NumPy's
-  // llama2_convert.quantize(), which the converter now hands to this (T89)
+  // llama2_convert.quantize(), which the converter now hands to this (T89). Only a NaN in the input tells them
+  // apart (SIMD max keeps it, the scalar compare skipped it), and a NaN in a checkpoint is broken on every path.
   const qmax: f32 = bias == 0 ? 127.0 : 63.0;
   const offset = i32x4.splat(bias);
   for (let g = 0; g < n; g += GS) {
