@@ -182,6 +182,16 @@ def test_tokenizer_json():
         list(tokenizer_json_pieces({**tokenizer, "model": {"type": "WordPiece"}}))
 
 
+def test_a_transform_nobody_wrote_is_refused():
+    """transformed() used to take any unknown name for a slice of rows (T77): a typo must fail loudly."""
+    import numpy as np
+    from llama2_convert import transformed
+    values = np.arange(12, dtype=np.float32).reshape(6, 2)
+    assert transformed(values, ("row", 1, 3), 2).tolist() == values[2:4].tolist()
+    with pytest.raises(ValueError, match="no transform called 'rows'"):
+        transformed(values, ("rows", 1, 3), 2)
+
+
 def streamed(file, published, dtype, chunk, max_seq_len=1 << 20):
     """The file fed to Stream from its beginning to its end, chunk bytes at a time."""
     (size,) = struct.unpack("<Q", file[:8])

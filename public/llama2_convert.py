@@ -640,12 +640,16 @@ def transformed(values, transform, head_size):
             rotated = taken[:, :rot].reshape(heads, 2, rot // 2, -1).transpose(0, 2, 1, 3).reshape(heads, rot, -1)
             taken = np.concatenate([rotated, taken[:, rot:]], axis=1)
         return taken.reshape(-1, values.shape[-1]) if values.ndim > 1 else taken.reshape(-1)
-    index, parts = transform[1], transform[2]
     if transform[0] == "part":
+        index, parts = transform[1], transform[2]
         width = values.shape[1] // parts
         return values[:, index * width:(index + 1) * width].T
-    length = values.shape[0] // parts
-    return values[index * length:(index + 1) * length]
+    if transform[0] == "row":
+        index, parts = transform[1], transform[2]
+        length = values.shape[0] // parts
+        return values[index * length:(index + 1) * length]
+    # a name nobody wrote must not quietly take a slice of rows (T77)
+    raise ValueError(f"there is no transform called {transform[0]!r}")
 
 
 def source_shape(shape, transform):
