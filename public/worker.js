@@ -383,7 +383,10 @@ function weightsBuffer(size) {
 // megabytes at a time, and the Python code that builds the models of this site converts every tensor as it comes and
 // writes it to its place in a buffer of the final size. Reading in the order of the output instead would mean
 // hundreds of range requests, and each one takes a second.
-const HF_PART_BYTES = 8 * 1024 * 1024;
+// 16 MiB over 6 connections (T107, measured in CI against huggingface.co): parts of 8 MiB took 1.36 times as long
+// for Qwen2.5 0.5B, of 4 MiB 2.8 times; more connections gained 6% at most. At most two parts per connection wait
+// for an earlier one: 192 MB in the worst case.
+const HF_PART_BYTES = 16 * 1024 * 1024;
 const HF_CONNECTIONS = 6;
 const HF_HEADER_BYTES = 512 * 1024;  // the JSON header of a safetensors file is a few dozen kilobytes
 // T107: ?hfParts=<MiB>&hfConnections=<N> change the two above, to measure; the page offers no way to them
