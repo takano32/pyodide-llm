@@ -13,7 +13,8 @@
 #   python3 tests/gguf_check.py logits <out A> <out B> <text file> [tokens = 300]
 #       Two converted checkpoints (the <out> of tests/perplexity_prepare.py) on the same text: the largest logit
 #       difference, how often the most likely token agrees, and the perplexity of each. The acceptance of T74 is
-#       this between the int8 made from the GGUF and the int8 made from safetensors.
+#       this between the int8 made from the GGUF and the int8 made from safetensors: top-1 agreement of 99% and
+#       perplexity within 0.2% (exit 1 otherwise).
 import json
 import math
 import struct
@@ -64,6 +65,7 @@ def read_gguf(path):
     assert bytes(data[:4]) == b"GGUF", "not a GGUF file"
     r.at = 4
     version, tensors, entries = r.take("<I"), r.take("<Q"), r.take("<Q")
+    assert version in (2, 3), f"GGUF version {version}: only 2 and 3 count tensors in 64 bits (1 used 32)"
     metadata = {}
     for _ in range(entries):
         key = r.string()
@@ -106,12 +108,11 @@ def hugging_face_name(name):
     if name in fixed:
         return fixed[name]
     _, layer, rest = name.split(".", 2)
-    parts = {"attn_norm.weight": "input_layernorm.weight", "ffn_norm.weight": "post_attention_layernorm.weight",
-             "attn_q.weight": "self_attn.q_proj.weight", "attn_k.weight": "self_attn.k_proj.weight",
-             "attn_v.weight": "self_attn.v_proj.weight", "attn_output.weight": "self_attn.o_proj.weight",
-             "ffn_gate.weight": "mlp.gate_proj.weight", "ffn_up.weight": "mlp.up_proj.weight",
-             "ffn_down.weight": "mlp.down_proj.weight"}
-    return f"model.layers.{layer}.{parts[rest]}"
+    parts = {"attn_norm": "input_layernorm", "ffn_norm": "post_attention_layernorm", "attn_q": "self_attn.q_proj",
+             "attn_k": "self_attn.k_proj", "attn_v": "self_attn.v_proj", "attn_output": "self_attn.o_proj",
+             "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj", "ffn_down": "mlp.down_proj"}
+    tensor, kind = rest.rsplit(".", 1)  # .weight, or .bias (Qwen2's q, k and v)
+    return f"model.layers.{layer}.{parts[tensor]}.{kind}"
 
 
 def turned(w, heads):
@@ -176,7 +177,7 @@ def check_tensors(gguf_path, directory):
         shape = tuple(hf.shape(target))
         original = hf.rows(target, 0, shape[0]).reshape(shape).astype(np.float32)
         order = ""
-        if name.endswith(("attn_q.weight", "attn_k.weight")):
+        if name.endswith(("attn_q.weight", "attn_k.weight", "attn_q.bias", "attn_k.bias")):
             n = heads if "attn_q" in name else kv_heads
             as_is, turn = relative(values, original), relative(values, turned(original, n))
             order = "turned (llama2.c order)" if turn < as_is else "as Hugging Face"
@@ -202,27 +203,47 @@ def check_logits(a, b, text_file, count):
         return Llama(np.memmap(f"{out}.bin", dtype=np.uint8, mode="r"), Path(f"{out}.tokenizer.bin").read_bytes(),
                      kernels=None, **json.loads(Path(f"{out}.json").read_text()))
 
-    first, second = load(a), load(b)
-    tokens = first.tokenizer.encode(Path(text_file).read_text())[:count]
-    assert tokens == second.tokenizer.encode(Path(text_file).read_text())[:count], "the two tokenize differently"
-    tokens = [first.bos] + tokens
+    # One model at a time: without the kernels an int8 model is widened to float32 (SmolLM2 135M: 540 MB each),
+    # and two of them side by side took this 6.6 GB machine down twice. The logits of the first are kept
+    # (count x vocab_size float32, 59 MB for SmolLM2) and the model is let go before the second is loaded.
+    import gc
+
+    def logits_of(out, tokens=None):
+        llama = load(out)
+        encoded = llama.tokenizer.encode(Path(text_file).read_text())[:count]
+        if tokens is not None:
+            assert encoded == tokens[1:], "the two tokenize differently"
+        tokens = [llama.bos] + encoded
+        rows = np.stack([np.asarray(llama.forward(tokens[pos], pos), dtype=np.float32) for pos in range(len(tokens) - 1)])
+        del llama
+        gc.collect()
+        return tokens, rows
+
+    tokens, first = logits_of(a)
+    _, second = logits_of(b, tokens)
     largest, agree, nll = 0.0, 0, [0.0, 0.0]
     for pos in range(len(tokens) - 1):
-        one = np.asarray(first.forward(tokens[pos], pos), dtype=np.float64)
-        two = np.asarray(second.forward(tokens[pos], pos), dtype=np.float64)
+        one, two = first[pos].astype(np.float64), second[pos].astype(np.float64)
         largest = max(largest, float(np.abs(one - two).max()))
         agree += int(one.argmax() == two.argmax())
         for i, logits in enumerate((one, two)):
             shifted = logits - logits.max()
             nll[i] -= shifted[tokens[pos + 1]] - math.log(np.exp(shifted).sum())
     n = len(tokens) - 1
+    first_ppl, second_ppl = math.exp(nll[0] / n), math.exp(nll[1] / n)
+    # The line T74 is held to (Fable, 2026-09-24): the two int8 differ only by the rounding of the scales
+    # (float16 in Q8_0, float32 here), so they must agree on the most likely token 99 times in 100 and be within
+    # 0.2% of perplexity. The float32 against int8 of the same model measures 96.3% and 0.6%: a mistake in the
+    # reader (a wrong order, a wrong scale) lands far outside this.
+    ok = agree / n >= 0.99 and abs(second_ppl / first_ppl - 1) <= 0.002
     print(json.dumps({"a": Path(a).name, "b": Path(b).name, "tokens": n, "largest logit difference": largest,
-                      "top-1 agreement": agree / n, "perplexity a": math.exp(nll[0] / n),
-                      "perplexity b": math.exp(nll[1] / n)}))
+                      "top-1 agreement": agree / n, "perplexity a": first_ppl, "perplexity b": second_ppl,
+                      "within the line": ok}))
+    return ok
 
 
 if __name__ == "__main__":
     if sys.argv[1] == "tensors":
         sys.exit(0 if check_tensors(sys.argv[2], Path(sys.argv[3])) else 1)
     elif sys.argv[1] == "logits":
-        check_logits(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]) if len(sys.argv) > 5 else 300)
+        sys.exit(0 if check_logits(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]) if len(sys.argv) > 5 else 300) else 1)
