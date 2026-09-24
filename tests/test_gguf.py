@@ -140,3 +140,13 @@ def test_a_short_head_asks_for_more_and_other_files_are_refused():
     k_quant[at:at + 4] = struct.pack("<I", 12)
     with pytest.raises(ValueError, match="K-quants"):
         Conversion.from_gguf(bytes(k_quant))
+
+
+def test_a_q8_0_tensor_whose_rows_are_not_groups_of_32_is_refused():
+    """Fable's review of T74: the Q8_0 reader counts 34 bytes per 32 values, so a row that is not a multiple of 32
+    would be read at the wrong offsets and write nonsense instead of failing."""
+    config, weights = synthetic_weights(dim=48, hidden_dim=64, n_heads=2, n_kv_heads=2)
+    tensors, published = hugging_face(config, weights, True)
+    file, _ = gguf_file(tensors, published, config["vocab_size"])
+    with pytest.raises(ValueError, match="multiple of 32"):
+        Conversion.from_gguf(file)

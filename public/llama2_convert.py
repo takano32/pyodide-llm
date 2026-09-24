@@ -1055,6 +1055,9 @@ def gguf_model(metadata, tensors, base):
                 continue  # rope_freqs and the like: nothing the engine reads
             target = f"model.layers.{parts[1]}.{GGUF_LAYER[parts[2]]}.{parts[3]}"
         dtype = GGUF_TENSORS[info["type"]]
+        if dtype == "Q8_0" and info["shape"][-1] % 32:
+            # ggml itself requires it; a file that breaks it would be read at the wrong offsets and write nonsense
+            raise ValueError(f"{name} is Q8_0 with rows of {info['shape'][-1]}, which is not a multiple of 32.")
         size = int(int(np.prod(info["shape"])) * READERS[dtype][0])
         entry = {"dtype": dtype, "shape": info["shape"], "data_offsets": [info["offset"], info["offset"] + size]}
         # llama.cpp turns q and k of a Llama (and their biases) into llama2.c's order; a Qwen2 it leaves alone
