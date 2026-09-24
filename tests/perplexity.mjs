@@ -12,6 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { version } from "pyodide";
 import { pyodideWithEngine } from "./engine.mjs";
+import { ARTICLES, wikipediaText } from "./wikipedia.mjs";
 import { MODELS } from "../src/models.js";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -21,18 +22,11 @@ const model = MODELS.find((entry) => entry.id === id) ?? (fs.existsSync(`${id}.j
     options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) });
 if (!model) throw new Error(`${id} is neither a model of src/models.js nor the <out> of tests/perplexity_prepare.py`);
 const local = (file) => (path.isAbsolute(file) ? file : root + file);
-const titles = sources.length ? sources : ["富士山", "夏目漱石", "新幹線"];
+const titles = sources.length ? sources : ARTICLES.ja;
 
 let text = "";
 for (const source of titles) {
-  if (fs.existsSync(source)) {
-    text += fs.readFileSync(source, "utf8");
-    continue;
-  }
-  const url = `https://ja.wikipedia.org/w/api.php?action=query&prop=extracts&explaintext=1&exsectionformat=plain&format=json&titles=${encodeURIComponent(source)}`;
-  const pages = (await (await fetch(url, { headers: { "User-Agent": "pyodide-llm perplexity measurement" } })).json()).query.pages;
-  // the beginning of each article: prose, before the lists and tables of the later sections
-  text += Object.values(pages)[0].extract.slice(0, 6000) + "\n";
+  text += fs.existsSync(source) ? fs.readFileSync(source, "utf8") : await wikipediaText("ja", [source]);
 }
 
 const { pyodide } = await pyodideWithEngine();

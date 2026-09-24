@@ -1,0 +1,54 @@
+# T100, stage 1: how often a small model's drafts would be accepted by a larger one of the same vocabulary
+# (tests/draft_check.mjs), on T85's texts. The development machine has not the memory for the pairs. By hand only;
+# the tables go to the summary.
+name: Drafts for speculative decoding
+
+on:
+  workflow_dispatch:
+
+jobs:
+  draft:
+    name: ${{ matrix.small }} for ${{ matrix.large }} (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { small: hf-llm-jp-3-150m-instruct3, large: hf-llm-jp-3-440m-instruct3, language: ja }
+          - { small: hf-llm-jp-3-150m-instruct3, large: hf-llm-jp-3-980m-instruct3, language: ja }
+          - { small: hf-qwen2.5-0.5b-instruct, large: hf-qwen2.5-1.5b-instruct, language: en }
+          - { small: hf-qwen2.5-0.5b-instruct, large: hf-qwen2.5-1.5b-instruct, language: ja }
+          - { small: hf-smollm2-135m-instruct, large: hf-smollm2-360m-instruct, language: en }
+          - { small: hf-pythia-70m, large: hf-pythia-410m, language: en }
+          - { small: hf-pythia-70m, large: hf-pythia-1b, language: en }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Build the kernels and fetch the two models
+        shell: bash
+        run: |
+          npm ci
+          python3 -m pip install --quiet numpy
+          make kernels
+          mkdir -p prepared
+          for id in ${{ matrix.small }} ${{ matrix.large }}; do
+            source=$(python3 tests/hf_fetch.py "$id" downloads)
+            python3 tests/perplexity_prepare.py "$source" "prepared/$id" int8
+          done
+          node tests/wikipedia.mjs ${{ matrix.language }} text.txt
+
+      - name: Measure
+        run: node tests/draft_check.mjs prepared/${{ matrix.small }} prepared/${{ matrix.large }} text.txt 1500 256 | tee -a "$GITHUB_STEP_SUMMARY"
