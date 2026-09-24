@@ -4,6 +4,7 @@
 # (matmul_q8r, relaxed SIMD). tests/perplexity.mjs runs this inside Pyodide.
 #
 # Input: the globals MODEL ({"checkpoint", "tokenizer", "options"}), TEXT, TOKENS and WINDOW. Output: a JSON string.
+# tests/perplexity_native.py imports perplexity() from here, for the float32 originals that Pyodide cannot hold.
 import gc
 import json
 import math
@@ -11,19 +12,8 @@ import time
 
 import numpy as np
 
-import llama2_numpy
 from llama2_numpy import Llama
 
-read = lambda name: open(name, "rb").read()
-checkpoint, vocabulary = read(MODEL["checkpoint"]), read(MODEL["tokenizer"])  # noqa: F821
-real_load_kernels = llama2_numpy.load_kernels
-
-
-def without_relaxed(path):
-    kernels = real_load_kernels(path)
-    if kernels:
-        kernels.pop("matmul_q8r", None)
-    return kernels
 
 
 def perplexity(llama, tokens, window):
@@ -39,21 +29,27 @@ def perplexity(llama, tokens, window):
     return math.exp(total / count), count
 
 
-results = []
-variants = [("kernels, 7-bit activations (matmul_q8r)", "simdkernel.so", real_load_kernels),
-            ("kernels, 8-bit activations (matmul_q8)", "simdkernel.so", without_relaxed),
-            ("NumPy, activations not quantized", None, real_load_kernels)]
-tokens = None
-for label, kernels, loader in variants:
-    llama2_numpy.load_kernels = loader
-    llama = Llama(checkpoint, vocabulary, kernels=kernels, **MODEL["options"])  # noqa: F821
-    if tokens is None:
-        tokens = llama.tokenizer.encode(TEXT)[:TOKENS]  # noqa: F821
-    started = time.perf_counter()
-    value, count = perplexity(llama, tokens, min(WINDOW, llama.seq_len))  # noqa: F821
-    results.append({"variant": label, "backend": llama.backend, "perplexity": value, "tokens": count,
-                    "seconds": time.perf_counter() - started})
-    del llama
-    gc.collect()
-llama2_numpy.load_kernels = real_load_kernels
-json.dumps(results)
+def main():
+    read = lambda name: open(name, "rb").read()
+    checkpoint, vocabulary = read(MODEL["checkpoint"]), read(MODEL["tokenizer"])  # noqa: F821
+    results = []
+    # the 8-bit row is the kernels without relaxed SIMD (T52's switch; it used to patch load_kernels)
+    variants = [("kernels, 7-bit activations (matmul_q8r)", "simdkernel.so", ()),
+                ("kernels, 8-bit activations (matmul_q8)", "simdkernel.so", ("relaxed",)),
+                ("NumPy, activations not quantized", None, ())]
+    tokens = None
+    for label, kernels, disable in variants:
+        llama = Llama(checkpoint, vocabulary, kernels=kernels, disable=disable, **MODEL["options"])  # noqa: F821
+        if tokens is None:
+            tokens = llama.tokenizer.encode(TEXT)[:TOKENS]  # noqa: F821
+        started = time.perf_counter()
+        value, count = perplexity(llama, tokens, min(WINDOW, llama.seq_len))  # noqa: F821
+        results.append({"variant": label, "backend": llama.backend, "perplexity": value, "tokens": count,
+                        "seconds": time.perf_counter() - started})
+        del llama
+        gc.collect()
+    return json.dumps(results)
+
+
+if "MODEL" in globals():
+    RESULT = main()

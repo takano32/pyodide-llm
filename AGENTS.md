@@ -45,6 +45,7 @@
 | `src/bench.js` | ベンチマーク（T45）の組み立て。素の ES モジュールなので Node からも import できる（`tests/bench.mjs` が単体テストする）。測る組み合わせ（`ROUNDS` と `FULL_ROUNDS`）と Markdown の表を持つ |
 | `tests/bench.mjs` | `src/bench.js` の単体テスト。Node だけで走る（`node tests/bench.mjs`） |
 | `tests/bench-browser.mjs` | `?bench=1` を実ブラウザで走らせる確認。**CI 用**（この開発機ではブラウザを動かさない） |
+| `tests/perplexity_prepare.py` / `tests/perplexity_native.py` | T85 の計測用。HF のモデルをページと同じ `Conversion` で変換して options を JSON に書く / float32 の原本の perplexity をネイティブの NumPy で出す（Pyodide に載らない大きさのため） |
 | `tests/models-check.mjs` | 全モデルに出典とライセンスがあるかを見る（T87、Node だけ）。モデルを足したら `src/models.js` の `LICENSES` にも足す。ライセンス名は HF のモデルカードから写し、推測で書かない |
 | `tests/summary.mjs` | CI の各ジョブの結果（`tests/e2e.mjs` が `E2E_RESULTS` に書く JSON 行）を 1 枚の表にする（T82）。単体テストは `tests/summary-check.mjs` |
 | `tests/e2e.mjs` | 実ブラウザでの通しテスト（Playwright）。**CI 用に環境変数が 3 つ**（T82）: `E2E_TIMEOUT`（1 回の持ち時間、既定 900 秒。超えたら timed out と記録して終わるので、1 つが止まってもジョブ全体は道連れにならない）、`E2E_RESULTS`（結果を JSON で 1 行追記）、`E2E_ARTIFACTS`（失敗したらスクリーンショット・DOM・コンソールの最後の 200 行をそこへ）。モデル ID に `local` を渡すと、フォルダのボタンから手元の `stories260K.bin` を開く経路、`hf` を渡すと HF 形式のファイル（`tests/make_hf_fixture.py` が作る）をブラウザの中で変換する経路を試す |
@@ -64,6 +65,15 @@
 - **tokenizer.bin は llama2.c 本家のもの**を使う。llama2.py 付属の古いファイルは語彙が 204 個重複しており、句読点や大文字が学習されていない ID になっていた。
 - **プロンプトの先頭に空白を付ける**（sentencepiece のダミープレフィックス）。付けないとパープレキシティが 8.5% 悪化する。
 - **カーネルの経路（活性値も量子化）の品質も測った（T55、`node tests/perplexity.mjs`）。** 日本語 Wikipedia の 3 記事の冒頭 1499 トークンで、llm-jp-3-150m は float16 の原本 29.976、int8 の重み + NumPy 29.907、+ 8 ビットの活性値（`matmul_q8`）29.965、+ 7 ビットの活性値（`matmul_q8r`）30.094（原本比 +0.39%）。tiny-lm は NumPy 88.327 → 8 ビット +0.01% → 7 ビット +0.34%。7 ビット目の代償は約 0.5% で、速度は 3 割増し。対処は不要。
+- **新しいアーキテクチャの int8 の品質（T85、2026-09-24）。** 英語は英語版 Wikipedia の 3 記事（Mount Fuji・Natsume Sōseki・Shinkansen）、日本語は T55 と同じ 3 記事の、冒頭 1500 トークン。原本は float32 をネイティブの NumPy で（`tests/perplexity_native.py`、ファイルはメモリマップで読む）、int8 の 3 行は Pyodide で（`node tests/perplexity.mjs <tests/perplexity_prepare.py の出力>`）。
+
+  | モデル | 原本 float32 | int8 + NumPy | + 8 ビット活性値 | + 7 ビット活性値 |
+  |---|---:|---:|---:|---:|
+  | rinna/japanese-gpt2-small（日本語） | 33.253 | 33.268（+0.05%） | 33.290（+0.11%） | 33.320（+0.20%） |
+  | EleutherAI/pythia-160m | 47.795 | 48.355（+1.17%） | 48.510（+1.50%） | 48.863（+2.23%） |
+  | openai-community/gpt2 | 35.340 | 36.068（+2.06%） | 37.010（+4.73%） | 41.431（**+17.2%**） |
+
+  **GPT-2 の学習済みの位置の表の量子化は効いていない**（float32 の表に差し替えても 36.074）。**int8 の差を作っているのは分類器**: 分類器だけ float32 に戻すと GPT-2 は 35.334（原本と同じ）、Pythia は 48.032（差の 6 割）、rinna は 33.266。**GPT-2 は 7 ビットの活性値で大きく崩れる**（活性値はグループ 32 ごとのスケールで、7 ビットは ±63）。Chromium と Firefox の既定の経路がこれなので、GPT-2 を選んだ訪問者は +17% の文章を読んでいる。原因の切り分け（どの層の入力か、外れ値の大きいチャネルか）と対処（GPT-2 だけ relaxed を使わない、分類器を float32 か 8 ビットで持つ）は**未着手で、判断待ち**。Qwen2.5 0.5B は float32 で約 2GB になり、この開発機のメモリでは測っていない（未計測）。
 - **int8 の品質は原本と区別できない。** stories15M で +0.04%、tiny-lm 91.3 → 91.1、llm-jp-3-150m 22.76 → 22.69、最尤トークン一致率 約 98%。int4 は +16.8% で不可。greedy の出力は途中から原本と分岐するが破綻はしない。
 - **モデル。** tiny-lm（29M、MIT、日英 Wikipedia、質は低い：パープレキシティ 91）、llm-jp-3-150m（Apache-2.0、質は段違い：22.8、ただし約 8 tok/s・メモリ約 500MB）、TinyStories 260K / 3.5M / 15M / 42M。小さいモデルは greedy だと反復するので、日本語モデルは temperature 0.7 / top-p 0.9 / 繰り返しペナルティ付き。
 - **ブラウザでの速度（Chromium、カーネルあり）。** tiny-lm 約 270〜295（既定の生成設定、256 トークン。T54 の前は 250〜270、サンプリングが NumPy だった頃は 150〜170）、stories15M 約 300（int8）/ 186（float32）、llm-jp-3-150m 75〜79 tok/s（256 トークンを 4 回。T54 の前は 61〜66、サンプリングが NumPy だった頃は約 47）。stories3_5M 約 400、stories260K 約 950 tok/s。カーネルなし（`?kernel=off`）では tiny-lm 約 40、stories15M 約 50、llm-jp 約 8.5 tok/s。
@@ -99,6 +109,7 @@
 - **Pyodide の PyProxy は、壊すまで Python のオブジェクトを生かし続ける。** `conversion.checkpoint` のように属性を読むたびに新しい PyProxy ができる。変換した 171MB のチェックポイントで 1 つでも `destroy()` を忘れると、モデルを切り替えてもメモリが戻らない。ジェネレータが返す値（タプル）も同じ。
 - **Worker では `FileReaderSync` でファイルを同期に読める。** Python から呼ぶ `read(offset, length)` を JavaScript の関数で渡せるのはこのおかげ（メインスレッドにはない）。返した `Uint8Array` は Python 側で `to_py()` すると memoryview になる。
 - **Playwright の Firefox で速度を測らない。** Playwright はパッチ入りの Firefox をデバッガ経由で動かす。デバッグ対象のページの wasm を SpiderMonkey はベースラインコンパイラだけでコンパイルするので、Pyodide と無関係な素の SIMD のループでも Chromium の 13 分の 1（0.43 対 5.7 G 積和/秒）になり、llm-jp-3-150m は 8〜13 tok/s にしか見えない（最適化コンパイラだけを指定すると「no WebAssembly compiler available」で落ちる）。この開発機の `tests/e2e.mjs ... firefox` や `tests/profile.mjs firefox` の数値も同じで、Firefox の速さではない。動くかどうかの確認には使える。Firefox の速度は `tests/stock-firefox.mjs`（Selenium + geckodriver、インストール済みの Firefox）で測る。この開発機には Firefox が入っていないので、CI（`browsers.yml`）で測る。
+- **`convert_hf.py` は GPT-2 と GPT-NeoX で出力の大きさを Llama として計算していた**（`checkpoint_size()` に `arch` を渡していなかった。T85 で見つけた）。ページの経路（`Conversion`）は正しかったので本番には影響なし。T77 の `checkpoint_dtype()` と同じ種類の漏れで、**`arch` を受け取る関数を足したら呼び出し側を全部探す**。`tests/test_convert_hf.py` が 2 つの経路の一致を見ている。
 - **性能の比較は、新旧を同じプロセスで交互に走らせる。** 実行ごとの揺れ（この機械で 5〜10%）が、測りたい差と同じ大きさ。T54 では別々に測って「効いていない」と見誤りかけた。`tests/profile.mjs` の数値も、変更の前後を比べるなら同じセッションで取る。
 - **int8 のモデルは、カーネルの浮動小数点の加算順を変えるだけで出力の文が変わる。** 活性値を 7 ビット（relaxed SIMD）に丸めているので、最後の 1 ビットの違いが次の層の丸めをまたぎ、llm-jp-3-150m では logit が最大 1.0 動く。バグではない（行列積は新旧とも整数の厳密計算と 1e-6 で一致）。int8 の回帰テストを「変更前と同じ文」にしてはいけない。float32 は NumPy と一字一句同じであることを確かめる。
 - **チャットテンプレートの中の特殊トークンは、文字として渡すと壊れる。** TinyLlama Chat の書式は `<|user|>\n…</s>\n<|assistant|>\n` で、`</s>` は 1 つのトークン（ID 2）。そのままエンコードすると `<`・`/`・`s`・`>` とばらばらになる。エンジンの `specials=("</s>",)` で「書かれていたらそのトークン」にし、特殊トークンの直後にはダミーの空白を付けない（`transformers` の結果と 6 / 6 で一致）。llm-jp の書式（`### 指示:`）には特殊トークンが無いので要らない。
