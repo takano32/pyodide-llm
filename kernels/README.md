@@ -244,6 +244,17 @@ The percentages of llm-jp-3-150m are against its original. So the seventh bit co
 perplexity and buys a third more speed (11.2-12.5 against 7.6-8.3 G multiply-adds per second); the largest
 difference between two logits, 1.6 as noted above, sounds worse than it is. Nothing to fix.
 
+Except for GPT-2 (2026-09-24, T92). openai-community/gpt2 lost 17% of perplexity to the seventh bit (41.4 against
+36.1 with NumPy, 1500 tokens of English Wikipedia), and all of it in the classifier's input: its final LayerNorm
+has a weight that blows a few channels up 12 to 17 times (316 against a median of 0.3). One such channel sets
+the scale of its group of 32, and the other 31 round to nothing. The fix is `add_columns`: the 8 channels with the
+largest norm weight are taken out of the vector before `quantize_x`, and their columns of the classifier, widened
+to float32 once at load, are multiplied separately in one SIMD pass over the logits (vocab_size × 8 multiply-adds
+next to vocab_size × dim). GPT-2 is back to 36.127 (+0.16% against NumPy); its speed did not measurably change
+(old and new in one process, 4 rounds: 57-69 against 61-70 tok/s). Only a norm whose largest weight is 4 times
+its median gets it (`OUTLIER_RATIO`; GPT-2 13.9, every other model of the list 1.1-1.9): tiny-lm gains nothing
+from it (+0.31% either way) and would pay about 3% of speed. `simdkernel.so` is 6307 → 6572 bytes.
+
 ## Rules that are easy to break
 
 - **No static data.** The side module has no relocations, so a data segment would be written over Pyodide's own

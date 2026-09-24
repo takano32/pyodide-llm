@@ -269,6 +269,28 @@ export function swiglu(out: usize, h1: usize, h3: usize, n: i32): void {
   }
 }
 
+// y[j] += sum over c of a[c] * rows[c][j]: the outlier channels of the classifier's input, multiplied by their own
+// columns of the classifier in float32 (OUTLIER_CHANNELS in llama2_numpy.py). rows is (count, n) row-major.
+export function add_columns(y: usize, rows: usize, a: usize, count: i32, n: i32): void {
+  const n4 = n & ~3;
+  let j = 0;
+  for (; j < n4; j += 4) {
+    const o = <usize>j << 2;
+    let acc = v128.load(y + o);
+    for (let c = 0; c < count; c++) {
+      const row = rows + ((<usize>c * <usize>n) << 2);
+      acc = f32x4.add(acc, f32x4.mul(f32x4.splat(load<f32>(a + (<usize>c << 2))), v128.load(row + o)));
+    }
+    v128.store(y + o, acc);
+  }
+  for (; j < n; j++) {
+    const o = <usize>j << 2;
+    let v = load<f32>(y + o);
+    for (let c = 0; c < count; c++) v += load<f32>(a + (<usize>c << 2)) * load<f32>(rows + ((<usize>c * <usize>n) << 2) + o);
+    store<f32>(y + o, v);
+  }
+}
+
 export function add_inplace(x: usize, y: usize, n: i32): void {
   for (let j = 0; j < n; j++) { const o = <usize>j << 2; store<f32>(x + o, load<f32>(x + o) + load<f32>(y + o)); }
 }

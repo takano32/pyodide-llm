@@ -298,6 +298,16 @@ REPETITION_WINDOW = 64  # the repetition penalty looks at this many of the lates
 # tokens is 200 MB of cache for llm-jp-3-150m, which a short text should not have to pay for (and WebAssembly
 # never gives memory back)
 KV_START = 256
+# The classifier's input has a few channels that the final norm's weight blows up (openai-community/gpt2: 12 to 17
+# times, 316 against a median of 0.3). With the int8 kernels the activations are quantized in groups of 32, so one
+# such channel sets the scale of its group and the other 31 round to nothing: GPT-2 lost 17% of perplexity to
+# that (T92). These many channels, the largest of the norm's weight, are taken out of the vector before it is
+# quantized and multiplied in float32 by their own columns of the classifier (vocab_size * 8 multiply-adds next to
+# vocab_size * dim). With them GPT-2 is back to +0.35%. Only a norm whose largest weight is OUTLIER_RATIO times
+# its median gets this (GPT-2: 13.9; tiny-lm 1.1, llm-jp-3 150M 1.3, Pythia 160M 1.3, rinna GPT-2 1.4, SmolLM2 135M
+# 1.9): the others gain nothing from it (tiny-lm stays at +0.31%) and would pay about 3% of speed.
+OUTLIER_CHANNELS = 8
+OUTLIER_RATIO = 4.0
 
 
 # what T52 can leave out, each of them something that already has a fallback
@@ -319,6 +329,7 @@ def load_kernels(path, without_relaxed=False):
         signatures = dict(matmul_f32=[p, p, p, i32, i32, i32], quantize_x=[p, p, p, i32, i32],
                           matmul_q8=[p, p, p, p, p, i32, i32, i32], rmsnorm=[p, p, p, i32], rope=[p, p, p, i32, i32, i32],
                           attention=[p, p, p, p, p, i32, i32, i32, i32], swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
+                          add_columns=[p, p, p, i32, i32],
                           layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32],
                           penalize=[p, p, i32, ctypes.c_float],
                           sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p])
@@ -338,6 +349,24 @@ def load_kernels(path, without_relaxed=False):
     except Exception:
         pass
     return kernels
+
+
+def outlier_channels(weight, count=OUTLIER_CHANNELS, ratio=OUTLIER_RATIO):
+    """The count channels with the largest final-norm weight, in order, or none when the weight has no outliers
+    (its largest is less than ratio times its median)."""
+    size = np.abs(np.asarray(weight, dtype=np.float32))
+    if size.max() < ratio * np.median(size):
+        return np.zeros(0, dtype=np.intp)
+    return np.sort(np.argsort(-size)[:count])
+
+
+def outlier_columns(classifier, channels):
+    """The columns of the int8 classifier for these channels, as float32, one column per row (len(channels),
+    vocab_size): what the add_columns kernel multiplies (see OUTLIER_CHANNELS)."""
+    values, scales = classifier  # (vocab_size, dim / group, group) int8 and (vocab_size, dim / group, 1) float32
+    group = values.shape[-1]
+    columns = np.stack([values[:, c // group, c % group].astype(np.float32) * scales[:, c // group, 0] for c in channels])
+    return np.ascontiguousarray(columns)
 
 
 def checkpoint_dtype(header, size, bias=False, arch="llama"):
@@ -664,6 +693,20 @@ class Llama:
         w1 = matmul_for(self.w1, dim, hidden_dim)
         w3 = matmul_for(self.w3, dim, hidden_dim) if self.w3 is not None else None
         w2, wcls = matmul_for(self.w2, hidden_dim, dim), matmul_for(self.wcls, dim, self.vocab_size)
+        channels = outlier_channels(self.rms_final_weight, min(OUTLIER_CHANNELS, dim)) if int8 else ()
+        if len(channels):
+            # the classifier reads xb: its outlier channels go through add_columns instead (see OUTLIER_CHANNELS)
+            columns = outlier_columns(self.wcls, channels)
+            picked = np.zeros(len(channels), dtype=np.float32)
+            self._outlier_buffers = (columns, picked)  # keep them alive
+            columns_p, picked_p, count = address(columns), address(picked), len(channels)
+            add_columns, classify, vocab_size = kernels["add_columns"], wcls, self.vocab_size
+
+            def wcls(out_p, in_p, l):
+                picked[:] = xb[channels]
+                xb[channels] = 0.0
+                classify(out_p, in_p, l)
+                add_columns(out_p, columns_p, picked_p, count, vocab_size)
         row_bytes, kv_row_bytes, half_bytes = dim * 4, kv_dim * 4, head_size // 2 * 4
         hidden_row_bytes = hidden_dim * 4
         # Qwen2's bias on q, k and v: one add_inplace each, on the float32 vectors the matmul just wrote
