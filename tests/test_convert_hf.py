@@ -4,7 +4,9 @@ import json
 
 import numpy as np
 import pytest
-from test_convert import converted, reader, safetensors_file
+from conftest import synthetic_weights
+from test_bias import qwen2
+from test_convert import converted, hugging_face, reader, safetensors_file
 from test_gpt2 import gpt2_model
 from test_neox import neox_model
 
@@ -12,7 +14,18 @@ import convert_hf
 from llama2_convert import Safetensors
 
 
-@pytest.mark.parametrize("model", [gpt2_model, neox_model], ids=["gpt2", "neox"])
+def llama_model():
+    config, weights = synthetic_weights()
+    return hugging_face(config, weights, True)
+
+
+def qwen2_model():
+    config, weights = synthetic_weights()
+    return qwen2(config, weights, True)
+
+
+# all four architectures (Fable's review: the Llama path was the one that worked, and a change to it should say so)
+@pytest.mark.parametrize("model", [llama_model, qwen2_model, gpt2_model, neox_model], ids=["llama", "qwen2", "gpt2", "neox"])
 @pytest.mark.parametrize("dtype", ["float32", "int8"])
 def test_convert_hf_writes_what_the_page_writes(tmp_path, model, dtype):
     tensors, config = model()
