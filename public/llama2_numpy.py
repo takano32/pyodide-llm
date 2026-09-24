@@ -328,7 +328,7 @@ def load_kernels(path, without_relaxed=False):
         i32, p = ctypes.c_int32, ctypes.c_void_p
         signatures = dict(matmul_f32=[p, p, p, i32, i32, i32], quantize_x=[p, p, p, i32, i32],
                           matmul_q8=[p, p, p, p, p, i32, i32, i32], rmsnorm=[p, p, p, i32], rope=[p, p, p, i32, i32, i32],
-                          attention=[p, p, p, p, p, i32, i32, i32, i32], swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
+                          attention=[p, p, p, p, p, i32, i32, i32, i32, i32, i32], swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
                           add_columns=[p, p, p, i32, i32],
                           layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32],
                           penalize=[p, p, i32, ctypes.c_float],

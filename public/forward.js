@@ -50,6 +50,8 @@ export function weightsMemory(size, { shared = false } = {}) {
 const CONTROL_BYTES = 4096;
 // WAKE + share: each helper's own word, so that a phase wakes exactly helpers 1..threads-1 (see helper.js)
 const GEN = 0, QUIT = 1, COUNTER = 2, FINISHED = 3, ACTIVE = 4, TOTAL = 5, WAKE = 256, JOBS = 512, JOB = 16;
+// within a job (see phase()): where its rows are, and the two numbers the coordinator adds to it
+const ROWS = 9, SIZE = 14, FIRST = 15;
 // how many chunks per thread the rows of a matmul are cut into: whoever is free takes the next one, so a slow core
 // (a little core of a big.LITTLE phone) simply takes fewer. 2 to 16 measured the same (T93); fewer does not steal.
 const CHUNKS_PER_THREAD = 4;
@@ -181,7 +183,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   const frames = alloc(BATCH * S), at = {};
   inFrame.reduce((offset, [name, bytes]) => { at[name] = frames + offset; return offset + align(bytes); }, 0);
   const { x, xb, xb2, q, before, hb, hb2, xq, xs } = at;
-  const att = alloc(seqLen * heads * 4), logits = alloc(BATCH * vocab * 4);
+  const A = seqLen * heads * 4;  // the scores of one token's attention
+  const att = alloc(BATCH * A), logits = alloc(BATCH * vocab * 4);
   const wq = matrix("wq"), wk = matrix("wk"), wv = matrix("wv"), wo = matrix("wo");
   const w1 = matrix("w1"), w2 = matrix("w2"), w3 = matrix("w3"), wcls = matrix("wcls");
   const attW = floats("rms_att_weight"), ffnW = floats("rms_ffn_weight"), finalW = floats("rms_final_weight");
@@ -233,31 +236,40 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // whoever takes them. Every row is computed whole by one thread with the same kernel, so the numbers are the same
   // with any number of threads.
   //
-  // A job: [kind, out, a, b, w, s, c, n, rows, count, out stride, a stride, b stride]. count > 1 (T108): the same rows
-  // for count tokens of a prompt, whose inputs and outputs are that many bytes apart. The rows go in blocks small
-  // enough to stay in the cache while every token uses them: each (row, token) is the one kernel call it is for a
-  // single token, so the numbers are the same as one token at a time.
+  // A job: [kind, eight arguments, rows, count, out stride, a stride, b stride], and the control area holds it as it
+  // is, then the size of its chunks and the number of its first chunk (see JOB). The kinds and their arguments:
+  //   0 matmul_q8r  out, xq, xs, w, scales, corrections, n        rows: the matrix's
+  //   1 matmul_q8   out, xq, xs, w, scales, -, n
+  //   2 matmul_f32  out, x, -, w, -, -, n
+  //   3 attention   out, q, keys, values, scores, pos, kv heads, head size   rows: the heads (T109)
+  // count > 1 (T108): the same rows for count tokens, whose out, a and b are that many bytes apart. The rows go in
+  // blocks small enough to stay in the cache while every token uses them: each (row, token) is the one kernel call it
+  // is for a single token, so the numbers are the same as one token at a time.
   const shared = typeof SharedArrayBuffer !== "undefined" && memory.buffer instanceof SharedArrayBuffer && spawn;
   const ctl = shared ? new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4) : null;
   const helpers = [];
   let threads = 1, gen = 0;
   const jobOf = (m, out, outStride, input, l, count) => {
     const [w, s, c] = m.layer(l);
-    if (!m.int8) return [2, out, input, 0, w, 0, 0, m.n, m.rows, count, outStride, S, 0];
-    return [relaxed ? 0 : 1, out, xq, xs, w, s, relaxed ? c : 0, m.n, m.rows, count, outStride, S, S];
+    if (!m.int8) return [2, out, input, 0, w, 0, 0, m.n, 0, m.rows, count, outStride, S, 0];
+    return [relaxed ? 0 : 1, out, xq, xs, w, s, relaxed ? c : 0, m.n, 0, m.rows, count, outStride, S, S];
   };
-  const call = (kind, out, a, b, w, s, c, n, r0, r1) => {
-    if (kind === 0) relaxed(out, a, b, w, s, c, n, r0, r1);
-    else if (kind === 1) k.matmul_q8(out, a, b, w, s, n, r0, r1);
-    else k.matmul_f32(out, a, w, n, r0, r1);
+  // the attention of token t of a run, at position pos (its scores have a place of their own: tokens run at once)
+  const attentionJob = (t, pos, layerKeys, layerValues) =>
+    [3, xb + t * S, q + t * S, layerKeys, layerValues, att + t * A, pos, kvHeads, headSize, heads, 1, 0, 0, 0];
+  const call = (kind, out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => {
+    if (kind === 0) relaxed(out, a, b, a4, a5, a6, a7, r0, r1);
+    else if (kind === 1) k.matmul_q8(out, a, b, a4, a5, a7, r0, r1);
+    else if (kind === 2) k.matmul_f32(out, a, a4, a7, r0, r1);
+    else k.attention(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
   };
   const runRows = (job, r0, r1) => {
-    const [kind, out, a, b, w, s, c, n, , count, os, as, bs] = job;
-    if (count === 1) return call(kind, out, a, b, w, s, c, n, r0, r1);
-    const step = blockRows(kind, n);
+    const [kind, out, a, b, a4, a5, a6, a7, a8, rows, count, os, as, bs] = job;
+    if (count === 1) return call(kind, out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
+    const step = blockRows(kind, a7);
     for (let r = r0; r < r1; r += step) {
       const end = Math.min(r + step, r1);
-      for (let t = 0; t < count; t++) call(kind, out + t * os, a + t * as, b + t * bs, w, s, c, n, r, end);
+      for (let t = 0; t < count; t++) call(kind, out + t * os, a + t * as, b + t * bs, a4, a5, a6, a7, a8, rows, r, end);
     }
   };
   const waitUntil = (index, done) => {
@@ -265,7 +277,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   };
   function phase(jobs) {
     if (threads <= 1) {
-      for (const job of jobs) runRows(job, 0, job[8]);
+      for (const job of jobs) runRows(job, 0, job[ROWS]);
       return;
     }
     // close the previous phase (odd), let every helper still awake leave it, then rewrite the jobs
@@ -274,12 +286,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     let total = 0;
     ctl[JOBS] = jobs.length;
     jobs.forEach((job, i) => {
-      const at = JOBS + 1 + i * JOB, rows = job[8];
+      const at = JOBS + 1 + i * JOB, rows = job[ROWS];
       const size = Math.max(1, Math.ceil(rows / (threads * CHUNKS_PER_THREAD)));
-      for (let n = 0; n < 9; n++) ctl[at + n] = job[n];
-      ctl[at + 9] = size;
-      ctl[at + 10] = total;
-      for (let n = 9; n < 13; n++) ctl[at + 2 + n] = job[n];
+      job.forEach((value, n) => { ctl[at + n] = value; });
+      ctl[at + SIZE] = size;
+      ctl[at + FIRST] = total;
       total += Math.ceil(rows / size);
     });
     ctl[TOTAL] = total;
@@ -294,9 +305,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     }
     for (let c = Atomics.add(ctl, COUNTER, 1); c < total; c = Atomics.add(ctl, COUNTER, 1)) {
       let j = jobs.length - 1;
-      while (ctl[JOBS + 1 + j * JOB + 10] > c) j--;
-      const at = JOBS + 1 + j * JOB, size = ctl[at + 9], r0 = (c - ctl[at + 10]) * size;
-      runRows(jobs[j], r0, Math.min(r0 + size, jobs[j][8]));
+      while (ctl[JOBS + 1 + j * JOB + FIRST] > c) j--;
+      const at = JOBS + 1 + j * JOB, size = ctl[at + SIZE], r0 = (c - ctl[at + FIRST]) * size;
+      runRows(jobs[j], r0, Math.min(r0 + size, jobs[j][ROWS]));
       Atomics.add(ctl, FINISHED, 1);
     }
     waitUntil(FINISHED, (seen) => seen === total);
@@ -352,9 +363,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
           k.rope(qt, cos, sin, heads, headSize, rotary);
           k.rope(kt, cos, sin, kvHeads, headSize, rotary);
         }
-        // the keys and values of positions up to pos are all there: this token's and the ones before it
-        k.attention(xb + t * S, qt, layerKeys, layerValues, att, pos, heads, kvHeads, headSize);
       }
+      // the keys and values of positions up to each token's are all there now: its own and the ones before it.
+      // The heads of every token go out as one phase (T109).
+      phase(tokens.map((_, t) => attentionJob(t, pos0 + t, layerKeys, layerValues)));
       matmuls(xb, count, [[wo, xb2, S, l]]);
       for (let t = 0; t < count; t++) k.add_inplace(x + t * S, xb2 + t * S, dim);
       if (layerNorm) {

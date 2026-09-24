@@ -6,7 +6,10 @@
 // numbers are in AGENTS.md and kernels/README.md. Replacing kernels by functions that do nothing, as it did then,
 // leaves NaN in the activations and slows what follows: that is why this one times the calls instead.)
 //
-//   node tests/profile.mjs [model id ...] [--positions 64]
+//   node tests/profile.mjs [model id ...] [--positions 64] [--from 16]
+//
+// --from: the position the timed tokens start at. The KV cache is filled up to it first (with forwardMany, T108), so
+// that the attention of a long context shows (T109).
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { MODELS } from "../src/models.js";
@@ -14,7 +17,8 @@ import { compileKernels, createForward, weightsMemory } from "../public/forward.
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
-const positions = args.includes("--positions") ? Number(args[args.indexOf("--positions") + 1]) : 64;
+const option = (name, value) => (args.includes(name) ? Number(args[args.indexOf(name) + 1]) : value);
+const positions = option("--positions", 64), from = option("--from", 16);
 const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
 const kernels = compileKernels(fs.readFileSync(`${root}public/simdkernel_plain.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_plain.wasm`));
 // the kinds of kernel calls, and the kernel names that go into each
@@ -44,13 +48,14 @@ for (const id of ids.length ? ids : ["llm-jp-3-150m", "tiny-lm", "stories15M"]) 
   py.globals.set("OUTSIDE", outside);
   py.globals.set("OPTIONS", py.toPy(entry.options));
   py.runPython(`from llama2_numpy import Llama\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, **OPTIONS)`);
-  // one engine per run, fresh; the KV cache of positions 0..15 warms up, 16.. is timed
+  // one engine per run, fresh; the KV cache of positions 0..from-1 warms up, from.. is timed
   const run = (wrap, needLogits = true, timedFromHere = () => {}) => {
     const engine = createForward({ memory, base, size: checkpoint.length, kernels, plan, wrap });
-    for (let pos = 0; pos < 16; pos++) engine.forward(1, pos, needLogits);
+    engine.forwardMany(new Array(from - 8).fill(1), 0);
+    for (let pos = from - 8; pos < from; pos++) engine.forward(1, pos, needLogits);
     timedFromHere();  // what the warm-up added to the sums goes
     const began = performance.now();
-    for (let pos = 16; pos < 16 + positions; pos++) engine.forward(1, pos, needLogits);
+    for (let pos = from; pos < from + positions; pos++) engine.forward(1, pos, needLogits);
     return (performance.now() - began) / positions;
   };
   const best = (f) => Math.min(f(), f(), f());

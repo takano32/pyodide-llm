@@ -142,7 +142,9 @@ export function rope(v: usize, fcr: usize, fci: usize, nh: i32, hs: i32, rot: i3
 // att: scratch of at least nh * (pos + 1) floats. Grouped-query attention: nh / nkv query heads share one kv head.
 // The cache is walked position by position, all heads of a row at once: a head at a time meant nh strided passes
 // over a cache that does not fit the caches of the CPU (12 layers of it), which cost more than the arithmetic.
-export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32): void {
+// heads h0..h1 of nh (T109: the software threads take heads as they take rows of a matmul). Every head is computed
+// alone, the same whatever the range, so the numbers do not depend on how the heads are shared out.
+export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32, h0: i32, h1: i32): void {
   const kvDim = nkv * hs;
   const kvMul = nh / nkv;
   const hs16 = hs & ~15, hs4 = hs & ~3;
@@ -151,7 +153,7 @@ export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize
   // 1. the scores of every head against every position
   for (let t = 0; t < count; t++) {
     const row = kc + (<usize>(t * kvDim) << 2);
-    for (let h = 0; h < nh; h++) {
+    for (let h = h0; h < h1; h++) {
       const qh = q + (<usize>(h * hs) << 2);
       const kt = row + (<usize>((h / kvMul) * hs) << 2);
       let a0 = f32x4.splat(0), a1 = f32x4.splat(0), a2 = f32x4.splat(0), a3 = f32x4.splat(0);
@@ -171,7 +173,7 @@ export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize
   }
   // 2. softmax, head by head, four exponentials at a time
   const count4 = count & ~3;
-  for (let h = 0; h < nh; h++) {
+  for (let h = h0; h < h1; h++) {
     const scores = att + (<usize>(h * count) << 2);
     let mx: f32 = -f32.MAX_VALUE;
     for (let t = 0; t < count; t++) mx = max<f32>(mx, load<f32>(scores + (<usize>t << 2)));
@@ -196,13 +198,12 @@ export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize
   }
   // 3. the weighted sum of the values, again row by row, four positions at a time: out is loaded and stored once
   // for the four of them
-  const size = nh * hs;
-  for (let j = 0; j < size; j++) store<f32>(out + (<usize>j << 2), 0);
+  for (let j = h0 * hs; j < h1 * hs; j++) store<f32>(out + (<usize>j << 2), 0);
   const stride = <usize>kvDim << 2;
   let t = 0;
   for (; t < count4; t += 4) {
     const row = vc + (<usize>(t * kvDim) << 2);
-    for (let h = 0; h < nh; h++) {
+    for (let h = h0; h < h1; h++) {
       const weights = att + (<usize>(h * count + t) << 2);
       const w0 = f32x4.splat(load<f32>(weights)), w1 = f32x4.splat(load<f32>(weights + 4));
       const w2 = f32x4.splat(load<f32>(weights + 8)), w3 = f32x4.splat(load<f32>(weights + 12));
@@ -225,7 +226,7 @@ export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize
   }
   for (; t < count; t++) {
     const row = vc + (<usize>(t * kvDim) << 2);
-    for (let h = 0; h < nh; h++) {
+    for (let h = h0; h < h1; h++) {
       const weight: f32 = load<f32>(att + (<usize>(h * count + t) << 2));
       const a = f32x4.splat(weight);
       const oh = out + (<usize>(h * hs) << 2);

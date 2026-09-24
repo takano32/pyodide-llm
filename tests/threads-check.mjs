@@ -12,6 +12,10 @@
 //      to the bit, and what one such pass costs against one token's, for k = 1, 2, 4, 8 and 16.
 //
 //   node tests/threads-check.mjs [model id ...] [--threads 1,2,4,8] [--rounds 5] [--positions 64] [--kv-start 16]
+//        [--from 0]
+//
+// --from: the speeds of step 2 are measured from this position on, the KV cache filled up to it first (T109: the
+// attention of a long context).
 //
 // --kv-start: the KV cache starts this small (the page's KV_START is 256), so that it has to grow, and move, under
 // the helper threads within the positions of a run (Fable's review of T93).
@@ -34,6 +38,7 @@ if (isMainThread) {
   const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
   const counts = option("--threads", "1,2,4,8").split(",").map(Number);
   const rounds = Number(option("--rounds", 5)), positions = Number(option("--positions", 64)), kvStart = Number(option("--kv-start", 16));
+  const from = Number(option("--from", 0));
   const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
   const { pyodide: py } = await pyodideWithEngine();
   let failed = false;
@@ -50,7 +55,7 @@ if (isMainThread) {
     py.globals.set("OUTSIDE", outside);
     py.globals.set("OPTIONS", py.toPy(entry.options));
     py.runPython(`import llama2_numpy\nfrom llama2_numpy import Llama\nllama2_numpy.KV_START = ${kvStart}\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, **OPTIONS)`);
-    const worker = new Worker(new URL(import.meta.url), { workerData: { memory, base, size: checkpoint.length, plan, counts, rounds, positions } });
+    const worker = new Worker(new URL(import.meta.url), { workerData: { memory, base, size: checkpoint.length, plan, counts, rounds, positions, from } });
     const result = await new Promise((resolve, reject) => { worker.once("message", resolve); worker.once("error", reject); });
     console.log(`${entry.name}: ${result}`);
     failed ||= result.includes("DIFFER");
@@ -58,7 +63,7 @@ if (isMainThread) {
   }
   process.exit(failed ? 1 : 0);
 } else {
-  const { memory, base, size, plan, counts, rounds, positions } = workerData;
+  const { memory, base, size, plan, counts, rounds, positions, from } = workerData;
   const kernels = compileKernels(fs.readFileSync(`${root}public/simdkernel_shared.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_shared.wasm`));
   const engine = createForward({ memory, base, size, kernels, plan, spawn });
   const greedy = () => {
@@ -128,9 +133,10 @@ if (isMainThread) {
   for (let r = 0; r < rounds; r++) {
     for (const n of counts) {
       await engine.setThreads(n);
-      for (let pos = 0; pos < 8; pos++) engine.forward(1, pos, true);  // the helpers wake up
+      if (from) engine.forwardMany(new Array(from).fill(1), 0);  // the KV cache up to where the timing starts
+      for (let pos = from; pos < from + 8; pos++) engine.forward(1, pos, true);  // the helpers wake up
       const began = performance.now();
-      for (let pos = 0; pos < positions; pos++) engine.forward(1, pos, true);
+      for (let pos = from; pos < from + positions; pos++) engine.forward(1, pos, true);
       times[n].push((positions * 1000) / (performance.now() - began));
     }
   }
