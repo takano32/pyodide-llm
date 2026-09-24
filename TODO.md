@@ -93,7 +93,7 @@
 - 進め方: **コミットの前に、スマホ幅と PC 幅の画面を撮って持ち主に見せる。** 訪問者に見える日本語は先に文面を出して確認する。
 - 完了条件: Chromium で表が出て、コピーした Markdown が GitHub でそのまま表になる。390px の幅でページ自体がスクロールしない。
 
-### T93 [性能] `SharedArrayBuffer` を使えるようにして、複数コアで計算する（COOP/COEP の付け方の再検討）— 状態: 未着手（2026-09-24 採用、持ち主の指示。**Fable が判定してから、実装は Opus**。規模 中〜大）
+### T93 [性能] `SharedArrayBuffer` を使えるようにして、複数コアで計算する（COOP/COEP の付け方の再検討）— 状態: **判定の材料は揃った（仕様 1〜3、2026-09-24、Opus 5.5）。Fable の判定と持ち主の判断待ち**（2026-09-24 採用、持ち主の指示。**Fable が判定してから、実装は Opus**。規模 中〜大）
 - 担当: 判定（どの経路で COOP/COEP を付けるか、何倍出るか）は **Fable**。方針 6 の変更は**持ち主の判断**。決まったら実装は Opus → Fable がレビュー。
 - 根拠: 2026-09-21 の測り直しで、int8 の行列積は複数コアで**約 2 倍**まで伸びる（頭打ちはメモリ帯域）。T71 の往復の実測（0.10〜0.16ms）では、`postMessage` で分けられるのは分類器だけで 1.3〜1.5 倍止まり。**`SharedArrayBuffer` があれば**、Worker 間の同期が `Atomics` の数マイクロ秒になり、重みを Worker ごとに複製しなくてよく、層の行列積まで分けられるので、上限の 2 倍に近づける。使えない理由は 1 つだけ: ブラウザが `SharedArrayBuffer` を出すのは cross-origin isolated なページ（応答ヘッダ `Cross-Origin-Opener-Policy: same-origin` と `Cross-Origin-Embedder-Policy: require-corp` か `credentialless`）だけで、GitHub Pages はヘッダを変えられない。
 - **COOP/COEP を付ける経路の候補**（判定で 1 つに絞る）:
@@ -152,6 +152,16 @@
   | GitHub Actions から | いまの `deploy.yml` | `cloudflare/wrangler-action` で `pages deploy <dir> --project-name=<name>`（`CLOUDFLARE_API_TOKEN` と `CLOUDFLARE_ACCOUNT_ID` が要る） | 未確認 | 未確認 |
 
   **読み方の材料（勧めではない）**: Netlify の無料枠は、このリポジトリのデプロイの回数（1 日に十数回）だけでクレジットを使い切る。Vercel は元のファイル 100MB の上限がビルド済みの出力に当たるなら、839MB のサイトは載らない（未確認）。Cloudflare Pages はファイルの大きさ（8 MiB < 25 MiB）・ファイル数（127 < 20,000）・転送量のどれにも当たらない。どこへ移しても URL は変わる（独自ドメインを使わない限り）。出典: [GitHub Pages の上限](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits)、[Cloudflare Pages の上限](https://developers.cloudflare.com/pages/platform/limits/)、[Cloudflare Pages のヘッダ](https://developers.cloudflare.com/pages/configuration/headers/)、[Cloudflare Pages の CI からのデプロイ](https://developers.cloudflare.com/pages/how-to/use-direct-upload-with-continuous-integration/)、[Cloudflare の料金](https://www.cloudflare.com/plans/developer-platform/)、[Netlify のクレジット](https://docs.netlify.com/manage/accounts-and-billing/billing/billing-for-credit-based-plans/credit-based-pricing-plans/)、[Netlify のヘッダ](https://docs.netlify.com/manage/routing/headers/)、[Vercel の上限](https://vercel.com/docs/limits)、[Vercel の目安](https://vercel.com/docs/limits/fair-use-guidelines)（いずれも 2026-09-24 に参照）。
+- **仕様 2 の結果（2026-09-24、Opus 5.5、`coi.yml` の実行 36008163233、本番の `https://takano32.github.io/pyodide-llm/coi-test/`）。** GitHub Pages のまま、`/coi-test/` にだけ効く Service Worker が COOP と COEP を足す。1 回の自動の再読み込みの後で:
+
+  | ブラウザ（Linux・macOS・Windows の 3 つとも同じ結果） | `require-corp` | `credentialless` |
+  |---|---|---|
+  | Chromium 148・Chrome 152〜153・Edge 152〜153 | 真 | 真 |
+  | Playwright の Firefox 150 | 真 | 真 |
+  | Playwright の WebKit 26.4 | **真** | **偽**（WebKit は `credentialless` を知らない） |
+
+  真になった組み合わせではすべて、**ページから Worker へ共有の `WebAssembly.Memory` を渡して `Atomics` で書けた**、**Worker の中で CDN から最新の Pyodide 314.0.7 と NumPy を読み込めた**、**Hugging Face の GGUF を Range 要求で読めた（206）**。再読み込みは 1 回。→ **`require-corp` なら、試したすべてのブラウザで GitHub Pages のまま `SharedArrayBuffer` が取れる。** ホスティングを移す（仕様 3 の (B)）必要は、ヘッダのためには無い。Safari そのものと iPhone は未確認（Playwright の WebKit まで）。インストール済みの Firefox（Selenium）も未確認。
+- **判定の材料のまとめ（Fable と持ち主へ。Opus は判断しない）**: (1) **取れるか**: 取れる（`require-corp` の Service Worker、再読み込み 1 回）。(2) **速くなるか**: この開発機（スマホ級の ARM）では、スレッドだけの効きは 1.2〜1.3 倍で、頭打ちはメモリ帯域。エンジン比では Python を通らない効果と合わせて tiny-lm 1.7〜1.8 倍、llm-jp 1.3〜1.5 倍。帯域の広い機械では未計測（試作を CI の Linux ランナーで走らせれば分かる）。(3) **代わりに払うもの**: 初回の再読み込み 1 回、Service Worker という仕組みが 1 つ増える（方針 2 との折り合い）、エンジンの int8 の重みを Pyodide の外の共有メモリに置き直す作り替え（T71 より大きい）。(4) **別の発見**: Python の層のループを外すだけで 1.16〜1.42 倍（スレッドなしで取れる。T47）。
 - 関係: **T71 はこの判定の後**（`SharedArrayBuffer` が取れるなら T71 の postMessage 方式は要らない。取れないなら T71 の分類器だけの分け方に戻る）。T47（層ごとに 1 回のカーネル呼び出し）は、共有メモリの設計と相性がよいので、そのとき一緒に見直す。
 - 完了条件: 経路が 1 つに決まり（持ち主の判断つき）、tok/s が 1 コアより有意に上がることを新旧交互に測って示す。上がらなければ理由を AGENTS.md に書いて取りやめる。方針 6 を変えたなら AGENTS.md の方針も直す。
 
