@@ -79,9 +79,18 @@ const watchdog = setTimeout(async () => {
   // stdout may be a pipe (| tee): let it drain before the process ends
   process.stdout.write(`${engine} ${browserVersion}, ${model}: timed out after ${seconds}s\n`, () => process.exit(2));
 }, limit);
-browser = await playwright[channel ? "chromium" : engine].launch({ headless: true, channel });
-browserVersion = browser.version();
-page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+const kind = playwright[channel ? "chromium" : engine], viewport = { width: 390, height: 844 };
+if (process.env.E2E_TWICE) {
+  // A profile on disk, as a visitor's browser has: Playwright's usual context is like private browsing, and WebKit
+  // kept nothing across a reload there (T99)
+  browser = await kind.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(), "e2e-profile-")), { headless: true, channel, viewport });
+  browserVersion = browser.browser()?.version() ?? "";
+  page = browser.pages()[0] ?? await browser.newPage();
+} else {
+  browser = await kind.launch({ headless: true, channel });
+  browserVersion = browser.version();
+  page = await browser.newPage({ viewport });
+}
 const errors = [];
 // every line of the console, for the artifacts of a failed run: the last ones say where it stopped
 const consoleLines = [];
