@@ -1,0 +1,58 @@
+# T98, stage 1: what 4-bit weights cost in quality, on models the development machine has not the memory for
+# (tests/int4_check.py: the page's int8 and several int4 formats of our own, and llama.cpp's Q4_0 and Q4_K_M where a
+# GGUF of the same model exists). By hand only; the tables go to the summary.
+name: int4 weights
+
+on:
+  workflow_dispatch:
+
+jobs:
+  int4:
+    name: ${{ matrix.model }} (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model: hf-smollm2-360m-instruct
+            language: en
+            ggufs: >-
+              Q4_0=https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/7be6f65f1db715fe5dc5a4634c0d459b4eed42ec/SmolLM2-360M-Instruct-Q4_0.gguf
+              Q4_K_M=https://huggingface.co/bartowski/SmolLM2-360M-Instruct-GGUF/resolve/7be6f65f1db715fe5dc5a4634c0d459b4eed42ec/SmolLM2-360M-Instruct-Q4_K_M.gguf
+          - { model: hf-qwen2.5-0.5b-instruct, language: en, ggufs: '' }
+          - { model: hf-llm-jp-3-440m-instruct3, language: ja, ggufs: '' }
+          - { model: hf-pythia-410m, language: en, ggufs: '' }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Fetch the model, its GGUFs and the text
+        shell: bash
+        run: |
+          python3 -m pip install --quiet numpy
+          source=$(python3 tests/hf_fetch.py ${{ matrix.model }} downloads)
+          echo "SOURCE=$source" >> "$GITHUB_ENV"
+          python3 tests/perplexity_prepare.py "$source" prepared int8
+          ggufs=""
+          for pair in ${{ matrix.ggufs }}; do
+            name=${pair%%=*}; url=${pair#*=}
+            curl -sfL -o "$name.gguf" "$url"
+            ggufs="$ggufs $name=$PWD/$name.gguf"
+          done
+          echo "GGUFS=$ggufs" >> "$GITHUB_ENV"
+          node tests/wikipedia.mjs ${{ matrix.language }} text.txt
+
+      - name: Measure
+        shell: bash
+        run: python3 tests/int4_check.py "$SOURCE" prepared text.txt 1500 $GGUFS | tee -a "$GITHUB_STEP_SUMMARY"

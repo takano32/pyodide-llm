@@ -33,7 +33,71 @@ sys.path.insert(0, str(HERE.parent / "public"))
 SCALARS = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
 STRING, ARRAY = 8, 9
 F32, F16, Q8_0, BF16 = 0, 1, 8, 30
-TYPE_NAMES = {F32: "F32", F16: "F16", Q8_0: "Q8_0", BF16: "BF16"}
+# T98: the 4- and 5-bit types of the GGUF files that are about int4, read only to measure them (widened to float32)
+Q4_0, Q4_1, Q5_0, Q4_K, Q6_K = 2, 3, 6, 12, 14
+TYPE_NAMES = {F32: "F32", F16: "F16", Q8_0: "Q8_0", BF16: "BF16", Q4_0: "Q4_0", Q4_1: "Q4_1", Q5_0: "Q5_0",
+              Q4_K: "Q4_K", Q6_K: "Q6_K"}
+# bytes per value: a block of 32 values (or a super-block of 256) and its scales
+BYTES = {F32: 4, F16: 2, BF16: 2, Q8_0: 34 / 32, Q4_0: 18 / 32, Q4_1: 20 / 32, Q5_0: 22 / 32, Q4_K: 144 / 256, Q6_K: 210 / 256}
+
+
+def half(raw):
+    return raw.copy().view(np.float16).astype(np.float32)
+
+
+def low_high(qs):
+    """16 bytes of 4-bit values per block: the low halves are values 0..15, the high halves 16..31 (ggml's order)."""
+    return np.concatenate([qs & 0x0F, qs >> 4], axis=1)
+
+
+def widen_q4_0(raw):  # a float16 scale, 16 bytes: (q - 8) * d
+    blocks = raw.reshape(-1, 18)
+    return (low_high(blocks[:, 2:]).astype(np.float32) - 8) * half(blocks[:, :2])
+
+
+def widen_q4_1(raw):  # a float16 scale and a float16 minimum, 16 bytes: q * d + m
+    blocks = raw.reshape(-1, 20)
+    return low_high(blocks[:, 4:]).astype(np.float32) * half(blocks[:, :2]) + half(blocks[:, 2:4])
+
+
+def widen_q5_0(raw):  # a float16 scale, 32 fifth bits (u32), 16 bytes: (q | fifth << 4) - 16, times d
+    blocks = raw.reshape(-1, 22)
+    fifth = blocks[:, 2:6].copy().view("<u4")
+    bits = (fifth >> np.arange(32, dtype=np.uint32)) & 1
+    return ((low_high(blocks[:, 6:]) | (bits << 4)).astype(np.float32) - 16) * half(blocks[:, :2])
+
+
+def widen_q4_k(raw):
+    """Super-blocks of 256: float16 d and dmin, 12 bytes of eight 6-bit scales and eight 6-bit minimums, 128 bytes
+    of 4-bit values. Sub-block j of 32: value * d * scale[j] - dmin * min[j]; the values go 64 at a time, the low
+    halves of 32 bytes first, then their high halves."""
+    blocks = raw.reshape(-1, 144)
+    d, dmin, packed, qs = half(blocks[:, 0:2]), half(blocks[:, 2:4]), blocks[:, 4:16].astype(np.int32), blocks[:, 16:]
+    scales, minimums = np.empty((len(blocks), 8), np.int32), np.empty((len(blocks), 8), np.int32)
+    scales[:, :4], minimums[:, :4] = packed[:, 0:4] & 63, packed[:, 4:8] & 63
+    scales[:, 4:] = (packed[:, 8:12] & 0x0F) | ((packed[:, 0:4] >> 6) << 4)
+    minimums[:, 4:] = (packed[:, 8:12] >> 4) | ((packed[:, 4:8] >> 6) << 4)
+    values = qs.reshape(-1, 4, 32)
+    values = np.stack([values & 0x0F, values >> 4], axis=2).reshape(-1, 8, 32).astype(np.float32)
+    return (values * (d * scales)[:, :, None] - (dmin * minimums)[:, :, None]).reshape(-1, 256)
+
+
+def widen_q6_k(raw):
+    """Super-blocks of 256: 128 bytes of low 4 bits, 64 bytes of high 2 bits, 16 int8 scales (one per 16 values),
+    a float16 d. Two halves of 128; in each, value l (0..31) of the four quarters is made of ql[l], ql[l + 32]
+    (low and high nibbles) and the four 2-bit fields of qh[l], minus 32."""
+    blocks = raw.reshape(-1, 210)
+    ql, qh = blocks[:, :128].reshape(-1, 2, 64), blocks[:, 128:192].reshape(-1, 2, 32)
+    scales, d = blocks[:, 192:208].copy().view(np.int8).astype(np.float32), half(blocks[:, 208:210])
+    quarters = [(ql[:, :, :32] & 0x0F) | (((qh >> 0) & 3) << 4), (ql[:, :, 32:] & 0x0F) | (((qh >> 2) & 3) << 4),
+                (ql[:, :, :32] >> 4) | (((qh >> 4) & 3) << 4), (ql[:, :, 32:] >> 4) | (((qh >> 6) & 3) << 4)]
+    values = np.stack(quarters, axis=2).astype(np.float32) - 32  # (blocks, half, quarter, 32)
+    scale = scales.reshape(-1, 2, 4, 2).repeat(16, axis=3)  # one per 16 values
+    return (values * scale * d[:, :, None, None]).reshape(-1, 256)
+
+
+WIDEN = {Q4_0: (32, 18, widen_q4_0), Q4_1: (32, 20, widen_q4_1), Q5_0: (32, 22, widen_q5_0),
+         Q4_K: (256, 144, widen_q4_k), Q6_K: (256, 210, widen_q6_k)}
 
 
 class Reader:
@@ -88,7 +152,7 @@ def tensor(info, data, base, first=0, last=None):
     if len(shape) > 1:
         shape = (last - first, *shape[1:])
     count = math.prod(shape)
-    size = {F32: 4, F16: 2, BF16: 2, Q8_0: 34 / 32}.get(info["type"], 0)
+    size = BYTES.get(info["type"], 0)
     start = base + info["offset"] + int(first * row * size)
     if info["type"] == F32:
         return np.frombuffer(data, np.float32, count, start).reshape(shape), None
@@ -103,7 +167,11 @@ def tensor(info, data, base, first=0, last=None):
         scales = blocks[:, :2].copy().view(np.float16).reshape(-1)
         values = blocks[:, 2:].copy().view(np.int8)
         return (values * scales.astype(np.float32)[:, None]).reshape(shape), (values, scales)
-    raise ValueError(f"type {info['type']} is not one T74 takes (F32, F16, BF16, Q8_0)")
+    if info["type"] in WIDEN:
+        values, block_bytes, widen = WIDEN[info["type"]]
+        raw = np.frombuffer(data, np.uint8, count // values * block_bytes, start)
+        return widen(raw).reshape(shape), None
+    raise ValueError(f"type {info['type']} is not one this reads ({', '.join(TYPE_NAMES.values())})")
 
 
 # ------------------------------------------------------------------------------------------- names and orders
