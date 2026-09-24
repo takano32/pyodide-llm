@@ -226,6 +226,9 @@ async function localOptions(model, vocabulary) {
 let pyodide, llama2_numpy, llama2_convert, llama, kernels;
 // T93: the forward pass in JavaScript (forward.js) and its kernels, compiled once; the memory of the model loaded now
 let forwardModule, jsKernels, weightsNow;
+// T93 stage 2: the kernels for a shared memory (only where the page is cross-origin isolated), what the page asked
+// about the number of threads ({ fixed, remembered, hint }), and the forward pass of the model loaded now
+let sharedKernels, threadsRequest, outsideNow;
 // the optimizations this session leaves out (T52): ?without=relaxed,sampler, and ?kernel=off as it always was
 let disabled = [];
 // what the page's own URL said, to come back to after a benchmark has tried other combinations (T77)
@@ -294,6 +297,11 @@ async function init(search) {
     const [plain, relaxed] = await Promise.all(["simdkernel_plain.wasm", "simdkernel_relaxed_plain.wasm"].map((name) =>
       fetch(new URL(`${name}${self.location.search}`, import.meta.url)).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
     jsKernels = plain ? forwardModule.compileKernels(plain, relaxed) : null;
+    if (jsKernels && self.crossOriginIsolated) {
+      const [sharedPlain, sharedRelaxed] = await Promise.all(["simdkernel_shared.wasm", "simdkernel_relaxed_shared.wasm"].map((name) =>
+        fetch(new URL(`${name}${self.location.search}`, import.meta.url)).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
+      sharedKernels = sharedPlain ? forwardModule.compileKernels(sharedPlain, sharedRelaxed) : null;
+    }
   } catch {
     jsKernels = null;
   }
@@ -317,19 +325,41 @@ function pythonBuffer(size) {
 // without the kernels (?without=kernels, or no WebAssembly SIMD), a Python bytearray for the NumPy engine.
 // write(offset, bytes) fills it, slice(begin, end) copies a stretch out (to keep a conversion), llama() makes the
 // engine on it, destroy() lets go of the Python buffer (a memory of forward.js goes with the engine).
+// a software thread of forward.js (stage 2): a module worker of its own, ready once its kernels are warm
+const spawnThread = (data) => new Promise((resolve, reject) => {
+  const worker = new Worker(new URL(`helper.js${self.location.search}`, import.meta.url), { type: "module" });
+  worker.onmessage = () => resolve({ terminate: () => worker.terminate() });
+  worker.onerror = (event) => reject(new Error(event.message ?? "a software thread did not start"));
+  worker.postMessage(data);
+});
+
 function weightsBuffer(size) {
   if (jsKernels && !disabled.includes("kernels")) {
-    const { memory, base } = forwardModule.weightsMemory(size);
+    // a shared memory where the page is cross-origin isolated (stage 3), unless ?threads=1; else one thread
+    let memory, base, kernels = jsKernels, spawn;
+    if (sharedKernels && self.crossOriginIsolated && threadsRequest?.fixed !== 1) {
+      try {
+        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true }));
+        kernels = sharedKernels;
+        spawn = spawnThread;
+      } catch {
+        memory = undefined;  // no shared memory this large here: one thread
+      }
+    }
+    if (!memory) ({ memory, base } = forwardModule.weightsMemory(size));
     weightsNow = memory;
     return {
       write: (offset, chunk) => new Uint8Array(memory.buffer, base + offset, chunk.length).set(chunk),
       slice: (begin, end) => new Uint8Array(memory.buffer, base + begin, end - begin).slice(),
-      llama: (tokenizer, options) => llama2_numpy.Llama.callKwargs(null, tokenizer,
-        { ...options, external: forwardModule.external({ memory, base, size, kernels: jsKernels }) }),
+      llama: (tokenizer, options) => {
+        outsideNow = forwardModule.external({ memory, base, size, kernels: kernels === sharedKernels ? sharedKernels : jsKernels, spawn });
+        return llama2_numpy.Llama.callKwargs(null, tokenizer, { ...options, external: outsideNow });
+      },
       destroy() {},
     };
   }
   weightsNow = undefined;
+  outsideNow = undefined;
   const { buffer, write } = pythonBuffer(size);
   return {
     write,
@@ -679,9 +709,10 @@ async function load(model, signal, id) {
     await initialized;
     signal.throwIfAborted();
     const converted = await convert(model, signal, id);
+    await startThreads(model);
     postMessage({
       type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seq_len: llama.seq_len,
-      seconds: { ...loadSeconds }, heap: heapBytes(), ...converted,
+      seconds: { ...loadSeconds }, heap: heapBytes(), threads: threadsNow(), ...converted,
     });
     return;
   }
@@ -736,14 +767,38 @@ async function load(model, signal, id) {
     weights.destroy();
     tokenizer?.buffer.destroy();
   }
+  await startThreads(model);
   postMessage({
     type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seq_len: llama.seq_len,
-    seconds: { ...loadSeconds }, heap: heapBytes(), overlapped: checkpoint.overlapped === true && pyodideAt > downloadStarted,
+    seconds: { ...loadSeconds }, heap: heapBytes(), threads: threadsNow(), overlapped: checkpoint.overlapped === true && pyodideAt > downloadStarted,
   });
   if (!model.file && !model.url) {
     dropStaleParts(model);
   }
 }
+
+// The number of threads of the model just loaded (stage 2): ?threads=N fixes it; a count the page remembers for
+// this device and model is used (and checked now and then); else forward.js finds it while generating, from the
+// number of logical cores, and the page is told the answer to remember. The software threads of the starting count
+// are started and warmed here, before the model is ready.
+async function startThreads(model) {
+  const engine = outsideNow?.engine;
+  if (!engine?.findThreads) {
+    return 1;
+  }
+  const { fixed = 0, remembered = 0, hint = 1 } = threadsRequest ?? {};
+  try {
+    if (fixed) {
+      return await engine.setThreads(fixed);
+    }
+    return await engine.findThreads({ from: hint, remembered,
+      chose: (count) => postMessage({ type: "threads", model: model.id, count }) });
+  } catch {
+    engine.stopThreads?.();
+    return 1;
+  }
+}
+const threadsNow = () => outsideNow?.engine?.threads ?? 1;
 
 // the run that is going on, and whether the page asked it to stop
 let generating, stopped = false;
@@ -759,6 +814,7 @@ function breathe() {
 }
 
 async function generate({ type, prompt, ...options }) {
+  outsideNow?.engine?.newGeneration?.();  // now and then the remembered number of threads is checked again
   // a Python generator: every step of the iteration runs one forward pass and hands over one piece of text
   const pieces = llama.generate.callKwargs(prompt, options);
   try {
@@ -781,7 +837,7 @@ async function generate({ type, prompt, ...options }) {
   } finally {
     pieces.destroy();
   }
-  postMessage({ type: "done", ...llama.stats.toJs({ dict_converter: Object.fromEntries }) });
+  postMessage({ type: "done", threads: threadsNow(), ...llama.stats.toJs({ dict_converter: Object.fromEntries }) });
 }
 
 /** The size of Pyodide's WebAssembly memory, which only grows; undefined before Pyodide is there. */
@@ -795,6 +851,7 @@ self.onmessage = async ({ data }) => {
   let signal;
   try {
     if (data.type === "init" || data.type === "load") {
+      threadsRequest = data.threads;
       // The latest choice wins: the download that is going on stops, and its parts that are complete stay in
       // the cache. Pyodide is loaded once, whatever happens to the model that was asked for first.
       loading?.abort();

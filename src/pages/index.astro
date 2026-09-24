@@ -332,6 +332,19 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   const requested = parameters.get("model");
   // ?bench=1 measures this model with and without the kernels, ?bench=full every step of T52 (T45)
   const benchmark = parameters.get("bench");
+  // T93: the number of threads. ?threads=N fixes it (for measuring); else the worker finds it for this device and
+  // model and this page remembers the answer, so that the next visit starts with it.
+  const fixedThreads = Math.max(0, Math.floor(Number(parameters.get("threads")) || 0));
+  const threadsKey = (id: string) => `threads:${id}:${navigator.hardwareConcurrency}:${(navigator as any).deviceMemory ?? ""}:${navigator.userAgent}`;
+  const threadsFor = (entry: { id: string }) => {
+    let remembered = 0;
+    try {
+      remembered = Number(localStorage.getItem(threadsKey(entry.id))) || 0;
+    } catch {
+      // no storage here: search again
+    }
+    return { fixed: fixedThreads, remembered, hint: navigator.hardwareConcurrency || 1 };
+  };
   function named(): typeof MODELS[number] | undefined {
     const repository = parameters.get("hf"), checkpoint = parameters.get("checkpoint"), tokenizer = parameters.get("tokenizer");
     const common = { id: "local", options: {}, prompt: parameters.get("prompt") ?? "", placeholder: "", template: parameters.get("template") ?? undefined };
@@ -560,7 +573,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       showSettings();
       // the model is in the Cache API now: ask the browser not to evict it (only a page may ask, not a worker)
       navigator.storage?.persist?.();
-      statusText.textContent = `${model.name} · ${data.backend} · Pyodide ${data.pyodide}`;
+      statusText.textContent = `${model.name} · ${data.backend}${data.threads > 1 ? `, ${data.threads} threads` : ""} · Pyodide ${data.pyodide}`;
       const load = $("load-stats");
       load.textContent = "";
       rows(load, [
@@ -571,6 +584,13 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       $("load").classList.add("measured");
       showKept();
       remember(model, (model as any).hf && !data.notKept);
+    } else if (data.type === "threads") {
+      // what the worker found for this device and model: the next visit starts with it
+      try {
+        localStorage.setItem(threadsKey(data.model), String(data.count));
+      } catch {
+        // no storage here: the next visit searches again
+      }
     } else if (data.type === "token") {
       // stick to the bottom only while the reader is there
       const pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
@@ -581,7 +601,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     } else if (data.type === "done") {
       // the settings this very answer was written with: with the seed the same text can be asked for again
       const how = used.temperature ? `temp ${used.temperature}` : "greedy";
-      meta(answer!, `${model.name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s · ${how}`, [
+      meta(answer!, `${model.name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s${data.threads > 1 ? ` · ${data.threads} threads` : ""} · ${how}`, [
         `first token ${seconds(data.first_token_seconds)}`,
         `prompt ${data.prompt_tokens} tokens · ${data.prompt_tokens_per_second.toFixed(1)} tok/s`,
         `generated ${data.tokens - data.prompt_tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s · ${seconds(data.seconds)} in all`,
@@ -604,7 +624,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   // The model can be changed while one is loading: the worker cancels that download and starts the new one.
   // loads numbers them, and the worker's reports carry the number.
   let loads = 1;
-  worker.postMessage({ type: "init", search: location.search, model, load: loads });
+  worker.postMessage({ type: "init", search: location.search, model, load: loads, threads: threadsFor(model) });
 
   // A model of the visitor's own disk, from the folder button or dropped on the page. The legacy format knows
   // nothing about itself, so whatever differs from llama2.c's conventions comes as a third file: .json, shaped
@@ -718,7 +738,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     // the timings of the previous load
     $("load").classList.remove("measured");
     ($("load") as HTMLDetailsElement).open = false;
-    worker.postMessage({ type: "load", model, load: ++loads });
+    worker.postMessage({ type: "load", model, load: ++loads, threads: threadsFor(model) });
   };
 
   // Enter breaks the line and Shift + Enter does too; Ctrl + Enter or Cmd + Enter sends. A phone has neither key
