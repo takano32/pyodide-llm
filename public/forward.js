@@ -1,8 +1,8 @@
 // forward.js (T93): one token's forward pass in JavaScript, on the SIMD kernels of kernels/*.ts, on a WebAssembly
 // memory of its own that holds the weights. Python (llama2_numpy.Llama with external=) still reads the header, says
-// where every tensor is, tokenizes, samples and runs the generation loop; this file does what kernel_forward() did,
-// in the same order with the same kernels, so the numbers are the same. What it saves is the Python between the
-// kernel calls (about 100 per token): 1.16 to 1.42 times the speed, measured with tests/threads-prototype.
+// where every tensor is, tokenizes, samples and runs the generation loop; this file does what the engine's kernel_forward()
+// did until T93 retired it, in the same order with the same kernels. What it saves is the Python between the
+// kernel calls (about 100 per token): 1.15 to 1.26 times the speed on int8 (T93, stage 1a).
 //
 // A plain ES module: the worker imports it, and so does Node (tests/smoke.mjs).
 //
@@ -78,14 +78,16 @@ function halfToFloat(h) {
 
 /** spawn (stage 2, a shared memory only): starts one helper thread with { memory, plain, relaxed } and resolves once
  * it is ready; the result has terminate(). Without it, or on a memory that is not shared, everything runs here. */
-export function createForward({ memory, base, size, kernels, plan, spawn }) {
+/** wrap (tests/profile.mjs only): gets the kernels' exports and returns what to call instead, to time the forward
+ * pass with some kernels replaced by functions that do nothing. */
+export function createForward({ memory, base, size, kernels, plan, spawn, wrap = (exports) => exports }) {
   const { dim, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: headSize, vocab_size: vocab,
     seq_len: seqLen, rotary, arch } = plan;
   const hidden = plan.hidden_dim, kvDim = kvHeads * headSize;
   const gpt2 = arch === "gpt2", layerNorm = arch === "gpt2" || arch === "neox", parallel = plan.parallel_residual;
   const imports = { env: { memory } };
-  const k = new WebAssembly.Instance(kernels.plain, imports).exports;
-  const relaxed = plan.int8 && plan.relaxed && kernels.relaxed ? new WebAssembly.Instance(kernels.relaxed, imports).exports.matmul_q8r : null;
+  const k = wrap(new WebAssembly.Instance(kernels.plain, imports).exports);
+  const relaxed = plan.int8 && plan.relaxed && kernels.relaxed ? wrap(new WebAssembly.Instance(kernels.relaxed, imports).exports).matmul_q8r : null;
   const bias = relaxed ? 64 : 0;
 
   // ---- memory: the checkpoint at base, everything else after it; views are made again after the memory grows
@@ -148,7 +150,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn }) {
       let corrections = scales;
       if (relaxed) {
         // relaxed SIMD multiplies by 7-bit unsigned activations with a bias of 64, which this takes out again:
-        // dot(w, q - 64) = dot(w, q) - 64 * sum(w). As kernel_forward(): scale * sum of the group, in float32
+        // dot(w, q - 64) = dot(w, q) - 64 * sum(w). scale * sum of the group, in float32
         corrections = alloc(groups * 4);
         for (let g = 0; g < groups; g++) {
           let sum = 0;
@@ -163,7 +165,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn }) {
     return { rows, n, int8: false, layer: (l) => [w + l * rows * n * 4] };
   }
 
-  // ---- the activations, as kernel_forward() has them
+  // ---- the activations
   const x = alloc(dim * 4), xb = alloc(dim * 4), xb2 = alloc(dim * 4), q = alloc(dim * 4), before = alloc(dim * 4);
   const hb = alloc(hidden * 4), hb2 = alloc(hidden * 4), att = alloc(seqLen * heads * 4), logits = alloc(vocab * 4);
   const xq = alloc(Math.max(dim, hidden)), xs = alloc((Math.max(dim, hidden) / 32) * 4);

@@ -494,7 +494,8 @@ class Llama:
         bias=True: the checkpoint ends with a bias for q, k and v of every layer, which is added after those
         projections (Qwen2). The legacy header cannot say so, so the caller does, like the tokenizer settings.
         bos starts every sequence; generation ends when the model emits one of stop_tokens.
-        kernels is the path of simdkernel.so; without it, or when it cannot be loaded, NumPy does the math.
+        kernels is the path of simdkernel.so: the sampling runs on it (penalize, sample). The forward pass on the
+        kernels is public/forward.js's (external, below); without external, NumPy computes the forward pass.
         disable: the optimizations to leave out, to measure what each one is worth (T52). Only what already has
         a fallback: "kernels" (NumPy does everything), "int8" (the weights are widened to float32 and the
         float32 kernel multiplies them), "relaxed" (matmul_q8 instead of matmul_q8r) and "sampler" (NumPy
@@ -531,7 +532,8 @@ class Llama:
         kernels = load_kernels(kernels, "relaxed" in disable) if kernels and "kernels" not in disable and \
             (suitable or external is not None) else None
         # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
-        keep_int8 = (kernels is not None or external is not None) and suitable and dtype == np.int8 and "int8" not in disable
+        # (only forward.js computes on them: the NumPy forward widens every matrix)
+        keep_int8 = external is not None and suitable and dtype == np.int8 and "int8" not in disable
 
         def take(*shape, matrix=True, widen=True):
             nonlocal offset
@@ -587,13 +589,12 @@ class Llama:
             self.forward = self.external_forward(external, keep_int8, disable)
             if kernels and "sampler" not in disable:
                 self.penalize, self.sample = self.kernel_sampler(kernels)
-        elif kernels:
-            self.forward = self.kernel_forward(kernels, keep_int8)
-            if "sampler" not in disable:
-                self.penalize, self.sample = self.kernel_sampler(kernels)
         else:
+            # NumPy's forward pass; the forward pass on the kernels is forward.js's (external), since T93
             self.key_cache = np.zeros((n_layers, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
             self.value_cache = np.zeros_like(self.key_cache)
+            if kernels and "sampler" not in disable:
+                self.penalize, self.sample = self.kernel_sampler(kernels)
         if (kernels or external is not None) and "sampler" in disable:
             self.backend += ", NumPy sampling"
         if disable:
@@ -720,172 +721,6 @@ class Llama:
         if external is not None:
             external[0].release()
             self._external = None
-
-    def kernel_forward(self, kernels, int8):
-        """forward() on the SIMD kernels: Python still sequences the layers, every operation is one kernel call.
-
-        NumPy owns all the memory. The kernels get addresses, taken once here because array.ctypes.data costs
-        microseconds, and work in place: nothing is copied. About 100 calls per token, 3 to 12 us each.
-        """
-        dim, hidden_dim, n_layers, n_heads, head_size = self.dim, self.hidden_dim, self.n_layers, self.n_heads, self.head_size
-        n_kv_heads, kv_dim = self.n_kv_heads, self.n_kv_heads * self.head_size
-        x, xb, xb2, q, before = (np.zeros(dim, dtype=np.float32) for _ in range(5))
-        hb, hb2 = np.zeros(hidden_dim, dtype=np.float32), np.zeros(hidden_dim, dtype=np.float32)
-        # the attention kernel keeps the scores of all heads: it walks the cache once, not once per head
-        att, logits = np.zeros(self.seq_len * n_heads, dtype=np.float32), np.zeros(self.vocab_size, dtype=np.float32)
-        # per layer [positions][kv_dim], unlike the NumPy forward: k and v of a position are written straight into
-        # their rows. One array per layer, so that growing (see KV_START) never needs a second copy of all of it.
-        capacity = min(KV_START, self.seq_len)
-        key_cache = [np.zeros((capacity, kv_dim), dtype=np.float32) for _ in range(n_layers)]
-        value_cache = [np.zeros((capacity, kv_dim), dtype=np.float32) for _ in range(n_layers)]
-        xq, xs = np.zeros(max(dim, hidden_dim), dtype=np.int8), np.zeros(max(dim, hidden_dim) // 32, dtype=np.float32)
-        address = lambda array: array.ctypes.data
-        x_p, xb_p, xb2_p, q_p, hb_p, hb2_p, att_p, logits_p, xq_p, xs_p = map(address, (x, xb, xb2, q, hb, hb2, att, logits, xq, xs))
-        before_p, parallel = address(before), self.parallel_residual
-        key_p, value_p = [address(layer) for layer in key_cache], [address(layer) for layer in value_cache]
-        cos_p, sin_p = address(self.freq_cis_real), address(self.freq_cis_imag)
-        att_w, ffn_w, final_w = map(address, (self.rms_att_weight, self.rms_ffn_weight, self.rms_final_weight))
-        rmsnorm, rope, attention = kernels["rmsnorm"], kernels["rope"], kernels["attention"]
-        swiglu, add_inplace, quantize_x = kernels["swiglu"], kernels["add_inplace"], kernels["quantize_x"]
-        neox, gpt2 = self.arch == "neox", self.arch == "gpt2"
-        layer_norm, rotary = neox or gpt2, self.rotary
-        # only a GPT-2 or a GPT-NeoX has these; a Llama never reads them
-        positions_p = att_b = ffn_b = final_b = bo_p = b1_p = b2_p = 0
-        # GPT-2 and GPT-NeoX: LayerNorm instead of RMSNorm (a bias comes with each), GELU instead of the gated
-        # SwiGLU, and either a learned table of positions (GPT-2) or a rotation of part of each head (NeoX)
-        if layer_norm:
-            layer_norm_kernel, gelu_kernel = kernels["layernorm"], kernels["gelu"]
-            att_b, ffn_b, final_b = map(address, (self.ln_att_bias, self.ln_ffn_bias, self.ln_final_bias))
-            bo_p, b1_p, b2_p = map(address, (self.bo, self.b1, self.b2))
-            positions_p = address(self.positions) if self.positions is not None else 0  # an attribute: it stays alive
-        self._kernel_buffers = (x, xb, xb2, q, hb, hb2, att, logits, key_cache, value_cache, xq, xs, before)  # keep them alive
-
-        if int8:
-            relaxed = kernels.get("matmul_q8r")
-            self.backend = "SIMD kernels, int8" + (", relaxed SIMD" if relaxed else "")
-            # relaxed SIMD multiplies int8 by 7-bit unsigned: activations get a bias of 64, which
-            # corrections = scale * sum(group) takes out again, as dot(w, q - 64) = dot(w, q) - 64 * sum(w)
-            bias = 64 if relaxed else 0
-            self._corrections = []
-
-            def pointers(tensor):
-                values, scales = tensor
-                corrections = (scales[..., 0] * values.sum(axis=-1, dtype=np.int32)).astype(np.float32) if relaxed else scales
-                self._corrections.append(corrections)
-                return values, scales, corrections
-
-            def matmul_for(tensor, n, d):
-                values, scales, corrections = pointers(tensor)
-                layers = [(address(values[l]), address(scales[l]), address(corrections[l])) for l in range(len(values))] \
-                    if values.ndim == 4 else [(address(values), address(scales), address(corrections))]
-
-                def matmul(out_p, in_p, l, same_input=False):
-                    values_p, scales_p, corrections_p = layers[l]
-                    if not same_input:  # q, k, v (and w1, w3) share their input: quantize it once
-                        quantize_x(xq_p, xs_p, in_p, n, bias)
-                    if relaxed:
-                        relaxed(out_p, xq_p, xs_p, values_p, scales_p, corrections_p, n, 0, d)
-                    else:
-                        kernels["matmul_q8"](out_p, xq_p, xs_p, values_p, scales_p, n, 0, d)
-                return matmul
-        else:
-            self.backend = "SIMD kernels, float32"
-
-            def matmul_for(tensor, n, d):
-                layers = [address(tensor[l]) for l in range(len(tensor))] if tensor.ndim == 3 else [address(tensor)]
-
-                def matmul(out_p, in_p, l, same_input=False):
-                    kernels["matmul_f32"](out_p, in_p, layers[l], n, 0, d)
-                return matmul
-
-        wq, wo = matmul_for(self.wq, dim, dim), matmul_for(self.wo, dim, dim)
-        wk, wv = matmul_for(self.wk, dim, kv_dim), matmul_for(self.wv, dim, kv_dim)
-        w1 = matmul_for(self.w1, dim, hidden_dim)
-        w3 = matmul_for(self.w3, dim, hidden_dim) if self.w3 is not None else None
-        w2, wcls = matmul_for(self.w2, hidden_dim, dim), matmul_for(self.wcls, dim, self.vocab_size)
-        channels = outlier_channels(self.rms_final_weight, min(OUTLIER_CHANNELS, dim)) if int8 else ()
-        if len(channels):
-            # the classifier reads xb: its outlier channels go through add_columns instead (see OUTLIER_CHANNELS)
-            columns = outlier_columns(self.wcls, channels)
-            picked = np.zeros(len(channels), dtype=np.float32)
-            self._outlier_buffers = (columns, picked)  # keep them alive
-            columns_p, picked_p, count = address(columns), address(picked), len(channels)
-            add_columns, classify, vocab_size = kernels["add_columns"], wcls, self.vocab_size
-
-            def wcls(out_p, in_p, l):
-                picked[:] = xb[channels]
-                xb[channels] = 0.0
-                classify(out_p, in_p, l)
-                add_columns(out_p, columns_p, picked_p, count, vocab_size)
-        row_bytes, kv_row_bytes, half_bytes = dim * 4, kv_dim * 4, head_size // 2 * 4
-        hidden_row_bytes = hidden_dim * 4
-        # Qwen2's bias on q, k and v: one add_inplace each, on the float32 vectors the matmul just wrote
-        bq_p, bk_p, bv_p = (address(tensor) if tensor is not None else 0 for tensor in (self.bq, self.bk, self.bv))
-
-        def grow(pos):
-            nonlocal capacity
-            capacity = min(max(2 * capacity, pos + 1), self.seq_len)
-            for cache, addresses in ((key_cache, key_p), (value_cache, value_p)):
-                for l in range(n_layers):
-                    larger = np.zeros((capacity, kv_dim), dtype=np.float32)
-                    larger[:len(cache[l])] = cache[l]
-                    cache[l], addresses[l] = larger, address(larger)  # the smaller one is freed here, layer by layer
-
-        def forward(token, pos, need_logits=True):
-            if pos >= capacity:
-                grow(pos)
-            x[:] = self.embedding(token)
-            if positions_p:
-                add_inplace(x_p, positions_p + pos * row_bytes, dim)
-            cos, sin = cos_p + pos * half_bytes, sin_p + pos * half_bytes
-            for l in range(n_layers):
-                keys, values = key_p[l], value_p[l]
-                k_p, v_p = keys + pos * kv_row_bytes, values + pos * kv_row_bytes
-                if layer_norm:
-                    layer_norm_kernel(xb_p, x_p, att_w + l * row_bytes, att_b + l * row_bytes, dim)
-                else:
-                    rmsnorm(xb_p, x_p, att_w + l * row_bytes, dim)
-                if parallel:
-                    before[:] = x  # GPT-NeoX reads this layer's input in both branches
-                wq(q_p, xb_p, l)
-                wk(k_p, xb_p, l, True)
-                wv(v_p, xb_p, l, True)
-                if bq_p:
-                    add_inplace(q_p, bq_p + l * row_bytes, dim)
-                    add_inplace(k_p, bk_p + l * kv_row_bytes, kv_dim)
-                    add_inplace(v_p, bv_p + l * kv_row_bytes, kv_dim)
-                if not gpt2:
-                    rope(q_p, cos, sin, n_heads, head_size, rotary)
-                    rope(k_p, cos, sin, n_kv_heads, head_size, rotary)
-                attention(xb_p, q_p, keys, values, att_p, pos, n_heads, n_kv_heads, head_size)
-                wo(xb2_p, xb_p, l)
-                add_inplace(x_p, xb2_p, dim)
-                if layer_norm:
-                    add_inplace(x_p, bo_p + l * row_bytes, dim)
-                    layer_norm_kernel(xb_p, before_p if parallel else x_p, ffn_w + l * row_bytes,
-                                      ffn_b + l * row_bytes, dim)
-                    w1(hb_p, xb_p, l)
-                    gelu_kernel(hb_p, hb_p, b1_p + l * hidden_row_bytes, hidden_dim)
-                    w2(xb2_p, hb_p, l)
-                    add_inplace(x_p, xb2_p, dim)
-                    add_inplace(x_p, b2_p + l * row_bytes, dim)
-                    continue
-                rmsnorm(xb_p, x_p, ffn_w + l * row_bytes, dim)
-                w1(hb_p, xb_p, l)
-                w3(hb2_p, xb_p, l, True)
-                swiglu(hb_p, hb_p, hb2_p, hidden_dim)
-                w2(xb2_p, hb_p, l)
-                add_inplace(x_p, xb2_p, dim)
-            if not need_logits:
-                return None
-            if layer_norm:
-                layer_norm_kernel(xb_p, x_p, final_w, final_b, dim)
-            else:
-                rmsnorm(xb_p, x_p, final_w, dim)
-            wcls(logits_p, xb_p, 0)
-            return logits
-
-        return forward
 
     def forward(self, token, pos, need_logits=True):
         n_kv_heads, head_size = self.n_kv_heads, self.head_size

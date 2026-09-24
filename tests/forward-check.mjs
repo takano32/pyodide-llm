@@ -1,70 +1,71 @@
-// T93 stage 1: the forward pass of public/forward.js against the engine's own, on the models of this directory
-// (make models kernels). The same kernels in the same order: the logits must be the same to the bit, for every
-// position of a greedy run. Then both, turn by turn, for speed.
+// The forward pass of public/forward.js (the page's) against the NumPy forward of llama2_numpy.py, on the models of
+// this directory (make models kernels) or converted ones. Since T93 there is no other forward to hold it to.
+//   float32: the kernels add in another order than NumPy, so the last bits differ; the most likely token must be the
+//            same at every position, and no logit may differ by more than 1e-3 (measured 2026-09-25: 1.7e-5 to 3.7e-5).
+//   int8: forward.js quantizes the activations too (7 bits with relaxed SIMD), NumPy does not, so the numbers
+//         differ by design. Measured 2026-09-25 on NumPy's greedy text: at 128 positions the most likely token the
+//         same at 93.8 to 100% and the perplexity -0.23 to +2.00% apart; at 64 positions llm-jp-3 150M was 87.5% and
+//         +3.42% (fewer positions, more spread). The line: 85% or more and within 5%, at 128 positions (the
+//         default). A real fault (a wrong order, a wrong scale) lands far outside: the agreement near nothing and
+//         the perplexity a multiple.
+// Then the speeds, both in turn. Runs in the deployment.
 //
-//   node tests/forward-check.mjs [model id | <out> of tests/perplexity_prepare.py ...] [--rounds 3] [--positions 64]
+//   node tests/forward-check.mjs [model id | <out> of tests/perplexity_prepare.py ...] [--rounds 3] [--positions 128]
 //        [--without relaxed,int8,sampler]
 import fs from "node:fs";
 import path from "node:path";
-import { loadPyodide } from "pyodide";
+import { pyodideWithEngine } from "./engine.mjs";
 import { MODELS } from "../src/models.js";
-import { compileKernels, external, weightsMemory } from "../public/forward.js";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
 const option = (name, value) => (args.includes(name) ? Number(args[args.indexOf(name) + 1]) : value);
-const rounds = option("--rounds", 3), positions = option("--positions", 64);
+const rounds = option("--rounds", 3), positions = option("--positions", 128);
 const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
 const without = args.includes("--without") ? args[args.indexOf("--without") + 1].split(",") : [];
-// a model of src/models.js, or a converted Hugging Face model (<out>.bin, <out>.tokenizer.bin, <out>.json)
 const modelOf = (id) => MODELS.find((m) => m.id === id) ?? { name: path.basename(id), checkpoint: path.resolve(`${id}.bin`),
   tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) };
 const file = (f) => (path.isAbsolute(f) ? f : root + f);
-const kernels = compileKernels(fs.readFileSync(`${root}public/simdkernel_plain.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_plain.wasm`));
 
-const py = await loadPyodide();
-await py.loadPackage("numpy", { messageCallback: () => {} });
-for (const f of ["llama2_numpy.py", "simdkernel.so", "simdkernel_relaxed.wasmlib"]) py.FS.writeFile(f, fs.readFileSync(`${root}public/${f}`));
-py.runPython("import time, gc, numpy as np\nfrom llama2_numpy import Llama");
+const { pyodide: py } = await pyodideWithEngine();
+py.runPython("import time, gc, math, numpy as np\nfrom llama2_numpy import Llama");
 let failed = false;
 for (const id of ids.length ? ids : ["stories260K", "stories15M", "tiny-lm", "llm-jp-3-150m"]) {
   const entry = modelOf(id);
-  const checkpoint = fs.readFileSync(file(entry.checkpoint));
-  const { memory, base } = weightsMemory(checkpoint.length);
-  new Uint8Array(memory.buffer).set(checkpoint, base);
-  py.FS.writeFile("model.bin", checkpoint);
+  py.FS.writeFile("model.bin", fs.readFileSync(file(entry.checkpoint)));
   py.FS.writeFile("tokenizer.bin", fs.readFileSync(file(entry.tokenizer)));
   py.globals.set("OPTIONS", py.toPy({ ...entry.options, disable: without }));
-  py.globals.set("OUTSIDE", external({ memory, base, size: checkpoint.length, kernels }));
-  py.runPython(`
-old = Llama(open("model.bin", "rb").read(), open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", **OPTIONS)
-new = Llama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, **OPTIONS)
-def run(llama, positions, keep=False):
-    token, seen, began = llama.bos, [], time.perf_counter()
+  const verdict = py.runPython(`
+data, vocabulary = open("model.bin", "rb").read(), open("tokenizer.bin", "rb").read()
+page = kernel_llama(data, vocabulary, **OPTIONS)
+numpy = Llama(data, vocabulary, **{k: v for k, v in OPTIONS.items() if k != "disable"})
+int8 = "int8" in page.backend
+sequence, agree, largest, nll = [page.bos], 0, 0.0, [0.0, 0.0]
+for pos in range(${positions}):
+    a, b = page.forward(sequence[pos], pos).astype(np.float64), numpy.forward(sequence[pos], pos).astype(np.float64)
+    largest = max(largest, float(np.abs(a - b).max()))
+    agree += int(a.argmax() == b.argmax())
+    following = int(b.argmax())  # NumPy's greedy text, which both read
+    for i, logits in enumerate((a, b)):
+        shifted = logits - logits.max()
+        nll[i] -= shifted[following] - math.log(np.exp(shifted).sum())
+    sequence.append(following)
+agreement, change = agree / ${positions}, math.exp((nll[0] - nll[1]) / ${positions}) - 1
+ok = (agreement >= 0.85 and abs(change) <= 0.05) if int8 else (agree == ${positions} and largest <= 1e-3)
+def run(llama, positions):
+    token, began = llama.bos, time.perf_counter()
     for pos in range(positions):
-        logits = llama.forward(token, pos)
-        token = int(np.argmax(logits))
-        if keep:
-            seen.append(logits.copy())
-    return seen, time.perf_counter() - began
-a, _ = run(old, ${positions}, True)
-b, _ = run(new, ${positions}, True)
-same = all(np.array_equal(x, y) for x, y in zip(a, b))
-largest = max(float(np.abs(x - y).max()) for x, y in zip(a, b))
-`);
-  const same = py.globals.get("same"), largest = py.globals.get("largest");
-  const backends = `${py.runPython("old.backend")} / ${py.runPython("new.backend")}`;
-  const times = { old: [], new: [] };
-  for (let r = 0; r < rounds; r++) {
-    for (const which of ["old", "new"]) times[which].push(positions / py.runPython(`run(${which}, ${positions})[1]`));
-  }
+        token = int(np.argmax(llama.forward(token, pos)))
+    return time.perf_counter() - began
+(ok, f"{page.backend}: " + (f"most likely token the same at {agreement * 100:.1f}%, perplexity {change * 100:+.2f}% against NumPy"
+     if int8 else f"most likely token the same at {agreement * 100:.1f}%, largest logit difference {largest:.2e} against NumPy"))
+`).toJs();
+  const [ok, line] = verdict;
+  const times = { numpy: [], page: [] };
+  for (let r = 0; r < rounds; r++) for (const which of ["numpy", "page"]) times[which].push(positions / py.runPython(`run(${which}, ${positions})`));
   const median = (xs) => [...xs].sort((p, q) => p - q)[xs.length >> 1];
-  console.log(`${entry.name}: ${backends}; logits ${same ? "the same to the bit" : `DIFFER (largest ${largest})`} over ${positions} positions; ` +
-    `Python ${median(times.old).toFixed(1)} (${times.old.map((v) => v.toFixed(0)).join(", ")}) against JS ${median(times.new).toFixed(1)} tok/s ` +
-    `(${times.new.map((v) => v.toFixed(0)).join(", ")}) = ${(median(times.new) / median(times.old)).toFixed(2)}×`);
-  failed ||= !same;
-  py.runPython("del old, new; gc.collect()");
-  py.globals.delete("OUTSIDE");
-  py.FS.unlink("model.bin");
+  console.log(`${entry.name}: ${line}${ok ? "" : " — FAILED"}; NumPy ${median(times.numpy).toFixed(1)} against forward.js ${median(times.page).toFixed(1)} tok/s`);
+  failed ||= !ok;
+  py.runPython("page.release(); del page, numpy; gc.collect()");
 }
 process.exit(failed ? 1 : 0);

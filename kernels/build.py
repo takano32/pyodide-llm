@@ -42,7 +42,7 @@ def side_module(source, out, features):
 def plain_module(source, out, features, shared=False):
     """T93: the same kernels as plain WebAssembly, instantiated by public/forward.js on the memory that holds the
     weights (not Pyodide's). No dylink.0. shared: on a shared memory, for threads that share the weights (stage 2,
-    and tests/threads-prototype)."""
+    and tests/threads-check.mjs)."""
     flags = ["--sharedMemory", "--maximumMemory", "65536"] if shared else []
     subprocess.run(["npx", "asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory",
                     "--initialMemory", "1", *flags, str(source), "-o", str(out),

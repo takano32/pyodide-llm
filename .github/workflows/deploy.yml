@@ -58,8 +58,8 @@ jobs:
           # the page resolves the latest Pyodide release when it is opened, so test against that one
           npm install --no-save pyodide@latest
           node tests/smoke.mjs
-          # T93: the forward pass of public/forward.js gives the engine's logits to the bit, on the site's models
-          node tests/forward-check.mjs --rounds 1 --positions 32
+          # T93: the forward pass of public/forward.js against NumPy's, on the site's models (the line is for 128 positions)
+          node tests/forward-check.mjs --rounds 1 --positions 128
 
       - name: Build the site
         run: npm run build
