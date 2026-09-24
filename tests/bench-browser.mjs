@@ -34,7 +34,15 @@ const browser = await playwright.chromium.launch();
 const page = await browser.newPage();
 page.on("pageerror", (error) => console.log("page error:", error.message));
 await page.goto(`${site}?model=${model}&bench=1`, { waitUntil: "commit" });
-await page.waitForFunction(() => window.__bench || document.querySelector(".error"), null, { timeout: 1800000 });
+// T93: the first visit reloads once under the service worker (coi.js); a wait the reload interrupts starts again
+for (;;) {
+  try {
+    await page.waitForFunction(() => window.__bench || document.querySelector(".error"), null, { timeout: 1800000 });
+    break;
+  } catch (error) {
+    if (!/destroyed|navigat|detached/i.test(String(error.message))) throw error;
+  }
+}
 const failure = await page.evaluate(() => document.querySelector(".error")?.textContent);
 assert.equal(failure, undefined, `the page reported: ${failure}`);
 const bench = await page.evaluate(() => window.__bench);

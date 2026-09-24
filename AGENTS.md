@@ -19,12 +19,12 @@
 決定済みの方針（変えるときは持ち主に確認する）:
 
 1. **バイナリをリポジトリに入れない。** モデルのダウンロード・変換・量子化・分割はすべてビルド時（`make models`）に行う。
-2. **Pyodide は常に最新版**を実行時に解決して読み込む（`public/worker.js`）。手で上げるバージョン定数は置かない。CDN が落ちていたら動かなくてよい（信頼性のための仕組みは足さない）。
+2. **Pyodide は常に最新版**を実行時に解決して読み込む（`public/worker.js`）。手で上げるバージョン定数は置かない。CDN が落ちていたら動かなくてよい（信頼性のための仕組みは足さない）。 Service Worker（`public/coi.js`）は COOP/COEP を足すためだけに置く。登録に失敗しても 1 コアで動く（T93、2026-09-25 に持ち主が承認）。
 3. **Node は 24 LTS**（`.nvmrc`）。ページは Astro、チャット風 UI。
 4. **既定モデルは tiny-lm（int8、33MB）。日本語が書けるいちばん軽いモデル**（2026-09-20、T67）。公開サイトなので、スマホで開いた人に無確認で 171MB を落とさせない。準備完了までがいちばん短く、約 280 tok/s という速さがこのプロジェクトの見出しでもある。質のいちばん良い llm-jp-3-150m（約 75 tok/s、ヒープ約 280MB）は、イントロの文中のボタンかコンボボックスから 1 回で選べ、選んだモデルは次回も覚えている（`localStorage`。`?model=` などの URL の指定が優先。HF から 500MB 超を取り直すことになるモデルは、無確認では始めない）。既定は llm-jp → tiny-lm → llm-jp → tiny-lm と変わってきた: 出力の質を取るか、軽さを取るかの判断で、いまは軽さ。`src/models.js` は先頭が既定で、各グループの中は「日本語の軽い → 重い、そのあと英語の軽い → 重い」の順。
 5. 大きいモデルは **int8 で配布**し、量子化前の原本も選べるようにする。
    **既定値でモデルを手加減しない**（T56）: 生成の長さの既定はコンテキストいっぱい（`steps: 0`）、llm-jp-3-150m のコンテキストは本来の 4096。
-6. GitHub Pages（静的ホスティング、HTTP ヘッダ変更不可）で動くこと。スレッド（SharedArrayBuffer）には頼らない。（**再検討中、T93**: `coi-serviceworker` かヘッダを付けられるホスティングで `SharedArrayBuffer` を取り、複数コアで約 2 倍を狙う案。変えるかどうかは持ち主の判断）
+6. GitHub Pages（静的ホスティング、HTTP ヘッダ変更不可）で動くこと。**スレッドは Service Worker で取れたときだけ使い、取れない端末でも同じ速さの 1 コア版で動く**（T93、2026-09-25 に持ち主が承認。それまでは「スレッド（SharedArrayBuffer）には頼らない」）。
 7. コミットは関心ごとに分け、英語の命令形の件名。master に push するとデプロイされる。
 
 ## 現在の構成
@@ -56,6 +56,7 @@
 | `.github/workflows/threads.yml` | T93 の試作を CI のランナー（Linux の x86-64 と ARM、macOS）で走らせる手動のワークフロー。帯域の広い機械で何本まで伸びるかを見る |
 | `tests/threads-prototype/` | T93 の試作。エンジンの int8 の重みを共有メモリへ写し、カーネルの共有メモリ版（`kernels/build.py` の `simdkernel_shared.wasm` など、ページは読まない）で行列積を N スレッドに分けて、エンジンと交互に tok/s を比べる。出力トークンがエンジンと一致しなければ止まる |
 | `public/coi-test/` と `tests/coi-check.mjs`、`.github/workflows/coi.yml` | T93 の仕様 2。GitHub Pages のまま Service Worker で COOP/COEP を足し、ページが cross-origin isolated になるか、その下で Pyodide と HF が読めるかを確かめる別ページと、それを各ブラウザで開く確認（手動のワークフロー）。**Service Worker の効く範囲は `/coi-test/` だけで、モデルのページには効かない** |
+| `public/coi.js` | サイト全体の Service Worker（T93 段階 3）。応答に `Cross-Origin-Opener-Policy: same-origin` と `Cross-Origin-Embedder-Policy: require-corp` を足すだけ。ページは初回に登録して 1 回だけ再読み込みする（`sessionStorage` で 1 回に抑える）。`?coi=off` で解除 |
 | `public/helper.js` | T93 段階 2 のソフトウェアスレッド。共有メモリの上で、`forward.js` が配る行列積の行の塊を取り合う。自分専用の待ち番号（`WAKE + share`）で起こされる。ブラウザの Worker と Node の worker_threads の両方で動く |
 | `tests/threads-check.mjs` | ソフトウェアスレッドの確認: 本数を変えても logits が 1 本とビット単位で同じことと、本数ごとの速さ。forward はページと同じく Worker の中で走らせる |
 | `tests/engine.mjs` | Node の道具が使う「ページと同じエンジン」（T93）。Python に `kernel_llama(checkpoint, tokenizer, **options)` を渡す（JS の forward。`disable` に `kernels` があれば NumPy）。smoke・perplexity が使う |
@@ -137,6 +138,7 @@
 - **int8 のモデルは、カーネルの浮動小数点の加算順を変えるだけで出力の文が変わる。** 活性値を 7 ビット（relaxed SIMD）に丸めているので、最後の 1 ビットの違いが次の層の丸めをまたぎ、llm-jp-3-150m では logit が最大 1.0 動く。バグではない（行列積は新旧とも整数の厳密計算と 1e-6 で一致）。int8 の回帰テストを「変更前と同じ文」にしてはいけない。float32 は NumPy と一字一句同じであることを確かめる。
 - **チャットテンプレートの中の特殊トークンは、文字として渡すと壊れる。** TinyLlama Chat の書式は `<|user|>\n…</s>\n<|assistant|>\n` で、`</s>` は 1 つのトークン（ID 2）。そのままエンコードすると `<`・`/`・`s`・`>` とばらばらになる。エンジンの `specials=("</s>",)` で「書かれていたらそのトークン」にし、特殊トークンの直後にはダミーの空白を付けない（`transformers` の結果と 6 / 6 で一致）。llm-jp の書式（`### 指示:`）には特殊トークンが無いので要らない。
 - **ヘッドレスの Chromium は Cache API の割り当てが小さい**（Playwright の一時プロファイル）。503MB の変換結果を保存しようとして `Quota exceeded` になった（`navigator.storage.estimate()` では足りると出ていた）。Worker は保存をあきらめて「保存できなかった理由」を準備完了の内訳に出し、モデルはそのまま動く。普通のブラウザでの上限は未確認。
+- **ページは初回の訪問で 1 回再読み込みされる（T93 段階 3）。** Service Worker は登録した次の読み込みから効くため。Playwright の待ちはこの再読み込みで「Execution context was destroyed」になるので、`tests/e2e.mjs` と `bench-browser.mjs` は待ちを張り直し、`stock-firefox.mjs` は途中の失敗を無視して問い直す。**Service Worker は訪問者のブラウザに残る**: 壊れた版を配ると、直した版に入れ替わるまでその人に効き続ける。`coi.js` は `?v=` 付きで登録するので、デプロイごとに新しい版に入れ替わる。
 - **ソフトウェアスレッドを 1 つの番号で待たせない（T93 段階 2a）。** `Atomics.notify` は待っている順に起こすので、人数より多いソフトウェアスレッドが寝ていると、段ごとに違う冷えたソフトウェアスレッドが起こされ、速さが数倍揺れる。ソフトウェアスレッドごとに自分の番号で待たせ、使う本数ぶんを名指しで起こす。**取りまとめ役（forward を回すスレッド）を Pyodide の居るメインスレッドに置かない**: 待ち合わせが遅れて、4 本で 1 本より遅くなった。
 - **Python から JS の関数に渡した PyProxy は、呼び出しが終わると壊される。** `forward.js` の `bind(logits)` は受け取った配列を `copy()` して持ち、`Llama.release()` で返す。JS から Python の配列に書くときは、呼ぶたびに `getBuffer()` を取り直す（Pyodide のメモリが伸びると古い view は死ぬ）。**Pyodide は自分の `WebAssembly.Memory` を公開していない**ので、JS のカーネルを Pyodide のメモリの上では動かせない（T93 で重みを別のメモリに置いた理由）。
 - **`stats` の `prompt_tokens` は `tokens - sampled` では求まらない。** 停止トークンはサンプリングされるが `tokens` には数えないので 1 ずれる。プロンプトは専用のカウンタで数えている。

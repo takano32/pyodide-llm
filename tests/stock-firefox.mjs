@@ -16,7 +16,8 @@ try {
   const capabilities = await driver.getCapabilities();
   const until = async (script, seconds) => {
     for (const end = Date.now() + seconds * 1000; Date.now() < end; await new Promise((r) => setTimeout(r, 250))) {
-      if (await driver.executeScript(script)) {
+      // T93: the first visit reloads once under the service worker (coi.js); a script the reload cuts off is tried again
+      if (await driver.executeScript(script).catch(() => false)) {
         return;
       }
     }

@@ -127,7 +127,18 @@ const tinyllamas = "https://huggingface.co/karpathy/tinyllamas/resolve/main/stor
 const query = model === "url" ? `checkpoint=${encodeURIComponent(`${tinyllamas}/stories260K.bin`)}&tokenizer=${encodeURIComponent(`${tinyllamas}/tok512.bin`)}`
   : `model=${opens ? "stories3_5M" : model}`;
 await page.goto(`${url}?${query}`);
-const idle = () => page.waitForFunction(() => !document.getElementById("run").disabled || document.querySelector(".error"), null, { timeout: 0 });
+// T93: the first visit reloads once, under the service worker that makes the page cross-origin isolated (coi.js):
+// a wait that the reload interrupts starts again on the new page
+const acrossReload = async (wait) => {
+  for (;;) {
+    try {
+      return await wait();
+    } catch (error) {
+      if (!/destroyed|navigat|detached/i.test(String(error.message))) throw error;
+    }
+  }
+};
+const idle = () => acrossReload(() => page.waitForFunction(() => !document.getElementById("run").disabled || document.querySelector(".error"), null, { timeout: 0 }));
 await idle();
 if (opens) {
   const repository = new URL("../", import.meta.url).pathname;
@@ -162,6 +173,8 @@ const result = await page.evaluate(() => ({
   // which kernels this browser got: "SIMD kernels, int8, relaxed SIMD", or less
   status: document.getElementById("status-text")?.textContent ?? "",
   pageScrolls: document.documentElement.scrollHeight > innerHeight,
+  // T93: whether the service worker made the page cross-origin isolated (the software threads need it)
+  isolated: self.crossOriginIsolated,
 }));
 const failures = [];
 if (result.error) failures.push(`the page reported: ${result.error}`);
@@ -170,11 +183,11 @@ if (!/tok\/s/.test(result.meta)) failures.push("no speed line under the answer")
 if (result.pageScrolls) failures.push("the page itself scrolls");
 if (expected[model] && !result.text.startsWith(expected[model])) failures.push(`unexpected text: ${result.text.slice(0, 120)}`);
 console.log(`${engine} ${browserVersion}, ${model}: ready in ${readySeconds.toFixed(1)}s, ${result.meta}`);
-console.log(`status: ${result.status}`);
+console.log(`status: ${result.status}${result.isolated ? "" : " (not cross-origin isolated)"}`);
 console.log(result.text.slice(0, 160).replace(/\n/g, " / "));
 const speed = Number(result.meta.match(/([\d.]+) tok\/s/)?.[1]);
 record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Number.isFinite(speed) ? speed : null,
-         backend: result.status, meta: result.meta, failures, load: reported?.seconds ?? null,
+         backend: result.status, meta: result.meta, failures, isolated: result.isolated, load: reported?.seconds ?? null,
          heapMB: reported?.heap ? Math.round(reported.heap / 1e6) : null });
 if (failures.length) await keepArtifacts(failures.join("; "));
 clearTimeout(watchdog);

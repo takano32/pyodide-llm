@@ -44,15 +44,16 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       <section class="intro">
         <!-- one of the two, by the language of the browser (the script decides; without it both show) -->
         <p class="ja">
-          ブラウザの中の Python（Pyodide）だけで言語モデルを動かす実験です。処理は Python で書かれており、時間のかかる計算だけを
-          ctypes で読み込んだ WASM SIMD カーネルに任せています。実験なのでモデルは小さく、出力はそれなりです。
+          ブラウザ上の WebAssembly 版 Python（Pyodide）で言語モデルを動かす実験です。読み込み・トークナイザ・サンプリング・生成のループは素の
+          Python で、1 トークンぶんの計算は WASM SIMD カーネルが、使える端末では複数のコアで行います。実験なのでモデルは小さく、出力はそれなりです。
           既定のモデルはいちばん軽いモデルです。もっと自然な日本語は <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M（171 MB）</button>
           で生成できます。一覧の最後のグループは Hugging Face から取得してこのブラウザの中で変換します。
           くわしくは <a href="https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901">Pyodide LLM の概要</a> へ。
         </p>
         <p class="en">
-          An experiment in how far Python on WebAssembly can go: the model is plain Python, and only the heavy math
-          runs in SIMD kernels loaded with ctypes. The default is the lightest model;
+          An experiment in running language models on Python on WebAssembly (Pyodide) in the browser: loading, the
+          tokenizer, the sampling and the generation loop are plain Python, and the computation of each token runs in
+          WASM SIMD kernels, on several cores where the device allows. The default is the lightest model;
           <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M (171 MB)</button> generates far
           more natural Japanese. The last group of the list is fetched from Hugging Face and converted right here.
         </p>
@@ -536,6 +537,40 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   const seconds = (value: number) => `${value.toFixed(value < 10 ? 2 : 1)} s`;
 
   // ?v=<commit>: a new page must never run with the cached worker or Python code of the previous deployment
+  // T93 stage 3: cross-origin isolation, for the software threads of forward.js. GitHub Pages cannot send the headers,
+  // so a service worker (coi.js) adds them; it controls the page from the next load on, so the first visit reloads
+  // once. Nothing else starts before that. If it cannot register, or the page is still not isolated after the
+  // reload, the model runs on one thread as before. ?coi=off unregisters it (and stays on one thread).
+  async function isolating(): Promise<boolean> {
+    if (!("serviceWorker" in navigator)) {
+      return false;
+    }
+    try {
+      if (parameters.get("coi") === "off") {
+        for (const registration of await navigator.serviceWorker.getRegistrations()) {
+          await registration.unregister();
+        }
+        return false;
+      }
+      if (self.crossOriginIsolated) {
+        return false;
+      }
+      await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}coi.js?v=${__BUILD__}`, { scope: import.meta.env.BASE_URL });
+      await navigator.serviceWorker.ready;
+      // once per tab: a browser that is not isolated even under the worker must not reload for ever
+      if (sessionStorage.getItem("coi-reloaded")) {
+        return false;
+      }
+      sessionStorage.setItem("coi-reloaded", "1");
+      location.reload();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  if (await isolating()) {
+    await new Promise(() => {});  // the page reloads: nothing else may start
+  }
   const worker = new Worker(`${import.meta.env.BASE_URL}worker.js?v=${__BUILD__}`, { type: "module" });
   worker.onmessage = ({ data }) => {
     // a late report about a load that another choice of model has cancelled
