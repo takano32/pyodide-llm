@@ -39,7 +39,19 @@ def side_module(source, out, features):
     print(out, Path(out).stat().st_size, "bytes")
 
 
+def shared_module(source, out, features):
+    """T93: the same kernels as plain WebAssembly on a shared memory, for threads that share the weights
+    (tests/threads-prototype). No dylink.0: they are instantiated directly, not by Pyodide. The page does not
+    load them."""
+    subprocess.run(["npx", "asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory",
+                    "--sharedMemory", "--initialMemory", "1", "--maximumMemory", "65536", str(source), "-o", str(out),
+                    "--enable", features + ",threads"], check=True)
+    print(out, Path(out).stat().st_size, "bytes")
+
+
 if __name__ == "__main__":
     here, out = Path(__file__).parent, Path(sys.argv[1])
     side_module(here / "kernel.ts", out / "simdkernel.so", "simd")
     side_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed.wasmlib", "simd,relaxed-simd")
+    shared_module(here / "kernel.ts", out / "simdkernel_shared.wasm", "simd,relaxed-simd")
+    shared_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed_shared.wasm", "simd,relaxed-simd")
