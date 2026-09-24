@@ -20,7 +20,8 @@
 - T74 の突き合わせの手順（`tests/gguf_check.py`）のレビューと、GGUF の読み手に進むかの判定。合格の線と取得元もここで決める。 — 済（2026-09-24。進める。線と取得元は T74 の項）
 
 **2 回目: 性能の判断**
-- T71 の着手前の判定（往復の費用を測る）。進めるなら実装まで。
+- T93 の判定: まず Node の `worker_threads` で共有メモリの試作を測る（2 Worker で 1.5 倍を超えるか）。出るなら (A) `coi-serviceworker` を CI で確かめ、方針 6 の変更を持ち主に諮る。
+- T71 は T93 の結果しだい（`SharedArrayBuffer` が取れなければ、分類器だけの分け方の試作へ）。往復の判定は済（2026-09-24）。
 
 **3 回目: 描画**
 - T75（最適化のスイッチを画面から）と T76（ベンチの結果を見せる）。どちらも T52・T45 の画面側なので、同じ回で見た目を揃える。
@@ -92,7 +93,22 @@
 - 進め方: **コミットの前に、スマホ幅と PC 幅の画面を撮って持ち主に見せる。** 訪問者に見える日本語は先に文面を出して確認する。
 - 完了条件: Chromium で表が出て、コピーした Markdown が GitHub でそのまま表になる。390px の幅でページ自体がスクロールしない。
 
-### T71 [性能] 重みを行で分けて複数の Worker で計算する — 状態: **着手前の判定は済（2026-09-24、Fable）。往復は線の内側で、次は試作で測る**（2026-09-21 採用。持ち主の発案）
+### T93 [性能] `SharedArrayBuffer` を使えるようにして、複数コアで計算する（COOP/COEP の付け方の再検討）— 状態: 未着手（2026-09-24 採用、持ち主の指示。**Fable が判定してから、実装は Opus**。規模 中〜大）
+- 担当: 判定（どの経路で COOP/COEP を付けるか、何倍出るか）は **Fable**。方針 6 の変更は**持ち主の判断**。決まったら実装は Opus → Fable がレビュー。
+- 根拠: 2026-09-21 の測り直しで、int8 の行列積は複数コアで**約 2 倍**まで伸びる（頭打ちはメモリ帯域）。T71 の往復の実測（0.10〜0.16ms）では、`postMessage` で分けられるのは分類器だけで 1.3〜1.5 倍止まり。**`SharedArrayBuffer` があれば**、Worker 間の同期が `Atomics` の数マイクロ秒になり、重みを Worker ごとに複製しなくてよく、層の行列積まで分けられるので、上限の 2 倍に近づける。使えない理由は 1 つだけ: ブラウザが `SharedArrayBuffer` を出すのは cross-origin isolated なページ（応答ヘッダ `Cross-Origin-Opener-Policy: same-origin` と `Cross-Origin-Embedder-Policy: require-corp` か `credentialless`）だけで、GitHub Pages はヘッダを変えられない。
+- **COOP/COEP を付ける経路の候補**（判定で 1 つに絞る）:
+  - **(A) GitHub Pages のまま `coi-serviceworker`**: Service Worker が応答にヘッダを足す（初回だけ自動で 1 回再読み込み）。サイトも URL も変えない。外部の資源は CORS が要る: Pyodide の CDN（jsdelivr）と Hugging Face は返すことを確認済み（`Access-Control-Allow-Origin: *`）。`credentialless` なら CORP のヘッダが無い資源も読める。**確かめること**: Service Worker の登録から `crossOriginIsolated` が真になるまでの流れが、Chromium・Firefox・Safari で通るか（Safari は `credentialless` 未対応の版がある）。方針 2 の「信頼性のための仕組みは足さない」との折り合い（Service Worker は 1 つの仕組みで、失敗しても Worker なしで動く形にする）。
+  - **(B) ヘッダを付けられる静的ホスティングへ移す**: Cloudflare Pages と Netlify は `_headers` ファイル 1 つで応答ヘッダを付けられる（どちらも無料枠あり。Cloudflare Pages はファイル 1 つ 25MB までなので 8 MiB の部品はそのまま置ける。サイト全体 840MB を置けるか、無料枠の転送量で足りるかは**未確認**）。Vercel も `vercel.json` で付けられる。**代償**: URL が変わる（GitHub Pages は旧 URL を転送しないので、旧 URL には飛ばすページを置く。T62 と同じ手）、`deploy.yml` の配置先が変わる、方針 6 の書き換え。**利点**: Service Worker の再読み込みも `credentialless` の心配も無く、Range 要求と gzip の落とし穴（AGENTS.md）も配置先次第で消える。
+  - **(C) 両方**: 本番は (B)、GitHub Pages は (A) 無しの単コア版として残す。2 か所の運用になるので、勧めない。
+- **判定の手順（Fable、着手時）**:
+  1. **速さの試作を先に、ヘッダより前に**: Node の `worker_threads` は `SharedArrayBuffer` を使えるので、この開発機で測れる。素の WASM カーネル（`kernels/kernel.ts` をそのまま。Pyodide は要らない）を N 個の Worker で共有メモリ上の重みに走らせ、分類器（語彙 × dim）と層の行列積を分けたときの 1 トークンの時間を、いまのエンジン（1 コア）と新旧交互に比べる。同期は `Atomics.wait` / `Atomics.notify`（メインスレッドは `Atomics.waitAsync` か、Worker の 1 つを取りまとめ役にする）。**2 Worker で 1.5 倍を超えなければ、ヘッダの話に進まず取りやめる**。
+  2. 出るなら (A) を CI の `browsers.yml` で確かめる（`crossOriginIsolated` が真になるか、Pyodide と HF の読み込みが COEP の下で通るか、Safari でどうか）。
+  3. (A) が通れば方針 6 の変更を持ち主に諮る（GitHub Pages のまま）。通らなければ (B) の候補を、サイズと転送量を確かめたうえで諮る。
+- 設計の注意: Pyodide はスレッドなしのビルドなので、Python 側はいまのまま 1 本。共有するのは重みと活性値のバッファで、Worker は Pyodide を持たない素の WASM（`dylink.0` を付けずに普通にインスタンス化し、`WebAssembly.Memory({shared: true})` を渡す）。Pyodide のメモリは共有できないので、**重みを Pyodide の外（共有メモリ）に置き、エンジンの int8 の経路がそこを読む**形に変える。これは T71 より大きい変更で、エンジンの `kernel_forward` に手が入る。大小のコアの問題（AGENTS.md: 均等に割ると遅い）はブラウザからは選べないので、Worker 数は `hardwareConcurrency` の半分から試す。
+- 関係: **T71 はこの判定の後**（`SharedArrayBuffer` が取れるなら T71 の postMessage 方式は要らない。取れないなら T71 の分類器だけの分け方に戻る）。T47（層ごとに 1 回のカーネル呼び出し）は、共有メモリの設計と相性がよいので、そのとき一緒に見直す。
+- 完了条件: 経路が 1 つに決まり（持ち主の判断つき）、tok/s が 1 コアより有意に上がることを新旧交互に測って示す。上がらなければ理由を AGENTS.md に書いて取りやめる。方針 6 を変えたなら AGENTS.md の方針も直す。
+
+### T71 [性能] 重みを行で分けて複数の Worker で計算する — 状態: **着手前の判定は済（2026-09-24、Fable）。ただし T93 の判定の後**（2026-09-21 採用。持ち主の発案。`SharedArrayBuffer` が取れるなら不要になる）
 - 担当: **着手前の判定（往復の費用）は Fable** → 見合うなら実装は Opus → Fable がレビュー（2026-09-24 に「Fable が調べ直してから実装」を役割で分けた）。
 - 背景（2026-09-21 の計測、AGENTS.md に詳しい）: バッチ 1 の int8 は 1 バイトあたり 1 積和なので、1 コアの演算（大コア 1 つで 11.9 G 積和/秒）とメモリの上限（21〜24GB/s）の比がそのまま上限になる。**この機械では約 2 倍まで伸びる**（大コア 2〜3 つ、または大コア 4 つにスレッド 8 本で 23 前後）。いまは 1 コアしか使っていないので、その 2 倍ぶんを取りにいく話。
 - ブラウザでの制約: `SharedArrayBuffer` は使えない（GitHub Pages が COOP/COEP を送れない。方針 6）。だから**メモリを共有せず、重みを行で分けて Worker ごとに持たせる**（合計メモリは増えない。ただし Worker ごとに Pyodide と NumPy がもう 1 つ要るので、その固定費が乗る。未計測）。やり取りは `postMessage` のコピーで、送るのは活性値（dim ぶん、数 KB）、返るのは部分結果。
@@ -254,7 +270,7 @@
 
 - JS + WASM 版のエンジン（別プロジェクト）。
 - WebGL / WebGPU（このモデル規模では CPU SIMD に勝てない。モデルを 0.5B 以上にするなら再検討）。
-- マルチスレッド（効果がなく、GitHub Pages では COOP/COEP が要る）。T51 として `coi-serviceworker` で COOP/COEP を付ける案も検討したが、2026-09-19 に却下: 計測済みでこの規模では効かず、Pyodide 自体がスレッドなしのビルドで、カーネルは共有メモリではない Pyodide のメモリの上で動く。方針 6 にも反する。
+- ~~マルチスレッド（効果がなく、GitHub Pages では COOP/COEP が要る）~~ **却下の理由の半分は古い（2026-09-24 に訂正）**: 「効かない」は 2026-09-19 の見立てで、2026-09-21 の測り直しでは約 2 倍まで伸びる（AGENTS.md）。残る理由は「GitHub Pages が COOP/COEP を送れないので `SharedArrayBuffer` が無い」ことと、Pyodide がスレッドなしのビルドであること。前者には回避策（`coi-serviceworker`、またはヘッダを付けられるホスティング）があり、後者は Worker 側を素の WASM カーネルにすれば避けられる。→ **T93 で再検討する**。T51（2026-09-19 却下）の番号は使わない。
 - Pyodide のバージョン固定やフォールバックの連鎖。
 - 「MobileLLM」への改名（Meta の既存モデル名と衝突）。
 - T49 プロンプトの一括処理（prefill のバッチ化）。2026-09-19 に却下: このデモのプロンプトは数トークン（「昔々、」は 4 トークン、最初のトークンまで 0.03〜0.05 秒）で、効果が見えない。会話の履歴が長くなったら（T46）再検討の価値はある。
