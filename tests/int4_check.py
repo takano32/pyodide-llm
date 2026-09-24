@@ -151,8 +151,10 @@ def main():
     tokenizer = Path(f"{prepared}.tokenizer.bin").read_bytes()
     data = np.memmap(directory / "model.safetensors", dtype=np.uint8, mode="r")
     original = Safetensors(lambda offset, length: data[offset:offset + length])
-    vocabulary = Tokenizer(tokenizer, config["vocab_size"], kind=options["tokenizer_kind"], nfkc=options["nfkc"],
-                           nfc=options["nfc"], pretokenizer=options["pretokenizer"])
+    # the options the converter wrote: a unigram vocabulary says nothing of NFC or of a pre-tokenizer
+    vocabulary = Tokenizer(tokenizer, config["vocab_size"], kind=options.get("tokenizer_kind", "bpe"),
+                           nfkc=options.get("nfkc", False), nfc=options.get("nfc", False),
+                           pretokenizer=options.get("pretokenizer", "gpt2"))
     tokens = vocabulary.encode(text)[:count]
     matrices = {name: math.prod(original.shape(name)) for name in original.tensors if len(original.shape(name)) == 2}
 
