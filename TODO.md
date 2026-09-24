@@ -19,7 +19,7 @@
 - T92 の切り分け（どの行列の入力で 7 ビットが崩れるか）を測り、対処を決める。実装が小さければこの回で入れる。— 済（2026-09-24、実装まで）
 - T74 の突き合わせの手順（`tests/gguf_check.py`）のレビューと、GGUF の読み手に進むかの判定。合格の線と取得元もここで決める。 — 済（2026-09-24。進める。線と取得元は T74 の項）
 
-**2 回目: 性能の判断**
+**2 回目: 性能の判断** — 済（2026-09-25。T93 は仕様まで、T94 は着手の順を決めた）
 - T93 の判定: まず Node の `worker_threads` で共有メモリの試作を測る（2 Worker で 1.5 倍を超えるか）。出るなら (A) `coi-serviceworker` を CI で確かめ、方針 6 の変更を持ち主に諮る。
 - T71 は T93 の結果しだい（`SharedArrayBuffer` が取れなければ、分類器だけの分け方の試作へ）。往復の判定は済（2026-09-24）。
 
@@ -95,7 +95,7 @@
 - 進め方: **コミットの前に、スマホ幅と PC 幅の画面を撮って持ち主に見せる。** 訪問者に見える日本語は先に文面を出して確認する。
 - 完了条件: Chromium で表が出て、コピーした Markdown が GitHub でそのまま表になる。390px の幅でページ自体がスクロールしない。
 
-### T93 [性能] `SharedArrayBuffer` を使えるようにして、複数コアで計算する（COOP/COEP の付け方の再検討）— 状態: **持ち主の判断は (a)（2026-09-25）。刻む形と検索の試作は済（Opus 5.5）。次は Fable が検索の手当てを決めて実装の仕様を書く**（2026-09-24 採用、持ち主の指示。**Fable が判定してから、実装は Opus**。規模 中〜大）
+### T93 [性能] `SharedArrayBuffer` を使えるようにして、複数コアで計算する（COOP/COEP の付け方の再検討）— 状態: **仕様は確定（Fable、2026-09-25）。見出しと方針の変更は持ち主の判断待ち。実装は Opus が段階 1 から**（2026-09-24 採用、持ち主の指示。**Fable が判定してから、実装は Opus**。規模 中〜大）
 - 担当: 判定（どの経路で COOP/COEP を付けるか、何倍出るか）は **Fable**。方針 6 の変更は**持ち主の判断**。決まったら実装は Opus → Fable がレビュー。
 - 根拠: 2026-09-21 の測り直しで、int8 の行列積は複数コアで**約 2 倍**まで伸びる（頭打ちはメモリ帯域）。T71 の往復の実測（0.10〜0.16ms）では、`postMessage` で分けられるのは分類器だけで 1.3〜1.5 倍止まり。**`SharedArrayBuffer` があれば**、Worker 間の同期が `Atomics` の数マイクロ秒になり、重みを Worker ごとに複製しなくてよく、層の行列積まで分けられるので、上限の 2 倍に近づける。使えない理由は 1 つだけ: ブラウザが `SharedArrayBuffer` を出すのは cross-origin isolated なページ（応答ヘッダ `Cross-Origin-Opener-Policy: same-origin` と `Cross-Origin-Embedder-Policy: require-corp` か `credentialless`）だけで、GitHub Pages はヘッダを変えられない。
 - **COOP/COEP を付ける経路の候補**（判定で 1 つに絞る）:
@@ -207,6 +207,21 @@
 
   **読み取れること**: (1) **刻む形はどこでも均等より速いか同じで、コア数を超えても崩れない**（16 本 / 4 vCPU で均等は 0.49〜0.85×、刻むと 0.96〜1.64×）。(2) 帯域の広い機械では**エンジン比 2 倍を超えた**（Linux ARM で tiny-lm 2.06×、llm-jp 2.16×）。スレッドだけの効き（試作 1 本比）は 1.6〜1.9 倍で、この開発機の 1.2〜1.3 倍より大きい。(3) 最適な数はランナーの vCPU 数（3〜4）の近くで、それを超えて伸びた機械はない（多数のコアの機械は未計測のまま）。(4) **検索は、揺れの小さい機械（Linux ARM）では正しく 4 本を選んだが、ほかでは最初の「1 本 対 2 本」で誤った**。x64 の llm-jp は固定の計測で 1 本 117・2 本 166 tok/s とはっきり差があるのに、検索の中では 2 本が遅く出た。**起こしたばかりの助手が最適化前のカーネルで走る時間が、候補の最初の塊に乗っている**と見ている（未確認）。手当ての候補: 助手は読み込みのうちに起こして、ダミーの行列積で温めておく（検索の中で起こさない）。どうするかは Fable の判断。
 - 未解決: llm-jp の検索（128 位置）は、試作に掛けた 800MB の上限（cgroup。このスコープのメモリだけを数えるので、同時に動いていた別の作業は数に入らない）で OOM になった（固定の 8 本・64 位置は上限の中で走る）。原因は未特定（Worker の数ではない。上の計測で軽い）。この開発機のメモリで追うのは危ないので止めた。
+- **Fable の判定と実装の仕様（2026-09-25）。** 判定: (1) **検索は残す**（`hardwareConcurrency` は big.LITTLE で外れる: この開発機は 8 と答えるが最速は 4 で、刻む形でも 8 本は 4 本の 6〜7 割。対称なランナー 3 台では vCPU 数が最速）。手当ては**助手を読み込みの間に起こしてダミーの行列積で温める**（検索の中では起こさない）。出発点は `hardwareConcurrency`、そこから半分と倍を比べて絞る（倍々の上限は無い。悪くなったら止める）。答えは端末ごとに `localStorage` に覚え、生成の何回かに 1 回だけ隣（半分と倍）を測り直す。共有メモリが無い（`crossOriginIsolated` が偽）なら助手は起こさず 1 本。(2) 見出しの言い直しと方針の変更は持ち主へ（下書きは会話で渡した）。
+- **Opus に渡す実装の仕様。3 段階で、段階ごとに 1 コミット。各段階で pytest・smoke・出力トークンの一致を通してから次へ。**
+  - **段階 1: forward を JS に移す（スレッドなし、共有メモリなし）。** 目的は「Python の層のループを外す」ぶんの 1.16〜1.42 倍を先に取り、JS 版 forward の正しさを固めること。
+    1. `public/forward.js`（素の ES モジュール。Worker からも Node からも import できる）: `createForward({ memory, kernels, layout, config }) → { forward(token, pos, needLogits), grow(), destroy() }`。試作の `thread.mjs` の forward を元に、**llama・gpt2・neox の 3 つと bias（Qwen2）・rotary・並列残差・GPT-2 の位置の表・LayerNorm・GELU・外れ値チャネル（`add_columns`、T92）**をエンジンの `kernel_forward` と同じ順で。KV キャッシュの倍々の拡張（`KV_START`）も同じに。
+    2. **重みの置き場は `WebAssembly.Memory`（この段階では共有しない）**。ダウンロード（`worker.js` の部品の書き込み）と変換（`Conversion.checkpoint`）の出力先を Pyodide のバッファからこのメモリへ変える。**テンソルの位置は Python から取る**（レイアウトの写しを JS に増やさない。落とし穴「3 か所」を 4 か所にしない）: `Llama` に `weights=None` の形を足し、`take()` がバイト列を読まずに offset と shape だけを記録して `Llama.tensors` として返す。JS はそれを読んで `layout` を組む。int8 の補正（`scales × 値の和`）は JS が読み込み時に共有メモリの中で計算して置く。
+    3. **Python 側**: `Llama` は tokenizer・`generate()`・サンプリング（`penalize` / `sample` のカーネルは Pyodide のメモリの logits に対して今のまま）・stats を持つ。`forward` は JS の関数（`pyodide.ffi` で渡す）を呼び、JS が logits を Pyodide のメモリの配列（アドレスを渡す）へ書く（語彙 × 4 バイトのコピー、1 トークン 1 回）。`kernel_forward` は消す。NumPy の forward（`kernels=None`、`?without=kernels`）は残す: その経路では重みは今までどおり Pyodide 側に読む（2 つの置き場が要るのは NumPy のときだけ）。
+    4. **確かめ方**: (a) `tests/smoke.mjs` に「JS 版と NumPy 版の greedy の出力トークンが、サイトの 4 モデルで一致する」を足す（float32 は一字一句、int8 は加算順の落とし穴があるので logits の最大差と一致率を出し、線は `gguf_check.py` と同じ 99% / 0.2%）。(b) `tests/fixed_outputs.py` の 4 つの固定値を JS 版でも出す Node のスクリプト（CI の huggingface ジョブに足す）。(c) 速度は `tests/compare-engines.mjs` を「Python の kernel_forward 対 JS 版」で新旧交互に（tiny-lm と llm-jp）。落ちていたら次に進まない。
+    5. `worker.js` の `bench` と `?without=` の切り替えは JS 版に合わせて直す（`int8` / `relaxed` / `sampler` の意味はそのまま）。
+  - **段階 2: 共有メモリと助手（刻む形と検索）。**
+    1. `crossOriginIsolated` が真なら `WebAssembly.Memory({ shared: true })`、偽なら段階 1 のまま。真のときだけ `public/helper.js`（Worker。試作の助手の部分: 世代を待ち、塊を取る）を **読み込みの間に** `hardwareConcurrency` 本まで起こし、ダミーの行列積で温める（起こす本数の上限は定数ではなく `deviceMemory` から: 1 本の費用は段階 2 で測って書く）。
+    2. 取りまとめ役は `forward.js` の中（今の試作の `phase()`）。**刻む形だけ**（均等は捨てる）。塊の大きさは行数 ÷（本数 × 2）以上。段の書き換えは奇数の世代で守る（試作どおり）。起こすのは塊の数まで。
+    3. 検索: 出発点 `hardwareConcurrency`、比べるのは「最良・候補・候補・最良」の塊で切り替え直後の 1 トークンは捨てる、5% 以上速いときだけ動く、半分と倍を試して止まる。答えは `localStorage`（鍵は `hardwareConcurrency`・`deviceMemory`・UA）に覚え、生成 8 回に 1 回だけ隣を測り直す（回数は測って決めてよい）。**ステータス行に本数を出す**（「SIMD kernels, int8, relaxed SIMD, 4 threads」）。`?threads=N` で固定できるようにする（計測用）。
+    4. 確かめ方: 出力トークンが 1 本のときと一致（int8 の加算順は塊の切れ目で変わらない: 各行は 1 スレッドが丸ごと計算する）。速度は `browsers.yml` の OS ジョブで、ステータス行の本数と tok/s を JSON に残す。
+  - **段階 3: Service Worker と見出し。** `public/coi.js`（`coi-test/sw.js` を元に、範囲はサイト全体、`require-corp`）。ページは起動時に登録し、`navigator.serviceWorker.controller` が無ければ 1 回だけ再読み込み（`sessionStorage` で回数を守る）。**Pyodide の CDN と HF 以外の外部の読み込みが無いことを確かめる**（フォントなど。あれば CORS を確かめる）。`?v=` を付ける。登録に失敗しても 1 本で動く。方針 2 と 6 の書き換え、`index.astro` の見出し（持ち主が決めた文面）、AGENTS.md の構成の表と gist の `10-` の更新。`browsers.yml` に「isolation が真になったか」と本数を記録。
+  - 各段階の完了条件: 段階 1 は tiny-lm と llm-jp の tok/s が Python 版より上がっていること（新旧交互）。段階 2 は CI の Linux ARM で 4 本が段階 1 の 1.5 倍以上。段階 3 は本番で `crossOriginIsolated` が真になり、23 通りのブラウザで動くこと。
 - 関係: **T71 はこの判定の後**（`SharedArrayBuffer` が取れるなら T71 の postMessage 方式は要らない。取れないなら T71 の分類器だけの分け方に戻る）。T47（層ごとに 1 回のカーネル呼び出し）は、共有メモリの設計と相性がよいので、そのとき一緒に見直す。
 - 完了条件: 経路が 1 つに決まり（持ち主の判断つき）、tok/s が 1 コアより有意に上がることを新旧交互に測って示す。上がらなければ理由を AGENTS.md に書いて取りやめる。方針 6 を変えたなら AGENTS.md の方針も直す。
 
