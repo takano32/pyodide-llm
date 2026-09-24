@@ -94,7 +94,9 @@ if (isMainThread) {
     await new Promise((resolve) => setTimeout(resolve, 0));  // let a helper that is being started come up
   }
   const fastest = counts.reduce((a, b) => (median(times[b]) > median(times[a]) ? b : a));
-  const searchLine = `the search from ${hint} chose ${found || "nothing"} in ${generationsUsed} generation(s); the fastest measured was ${fastest}` +
+  const comparisons = engine.searchLog.map(({ best, candidate, times, faster }) =>
+    `${best} [${times[best].map((t) => t.toFixed(2)).join(" ")}] vs ${candidate} [${times[candidate].map((t) => t.toFixed(2)).join(" ")}] ${faster ? "->" : "stay"}`).join("; ");
+  const searchLine = `the search from ${hint} chose ${found || "nothing"} in ${generationsUsed} generation(s) (${comparisons}); the fastest measured was ${fastest}` +
     (found && times[found] ? ` (${found} runs at ${(median(times[found]) / median(times[fastest]) * 100).toFixed(0)}% of it)` : "");
   parentPort.postMessage(`${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
     counts.map((n) => `${n}: ${median(times[n]).toFixed(1)} tok/s (${(median(times[n]) / one).toFixed(2)}×)`).join(", ") + `; ${searchLine}`);

@@ -350,6 +350,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn }) {
   // are ready the tokens run on the best count and are not timed.
   const BLOCK = 4, BETTER = 0.95;
   let search = null, chosen = 0, generations = 0, recheckEvery = 0, onChosen = null;
+  const searchLog = [];  // every comparison: the counts, their times in ms per token, and the verdict
   const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
   function beginSearch(from) {
     search = { best: Math.max(1, from), direction: from > 1 ? "down" : "up", moved: false, candidate: 0, times: null, step: 0, waiting: false };
@@ -387,6 +388,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn }) {
     if (search.step < 4 * (BLOCK + 1)) return;
     const { best, candidate } = search;
     const faster = median(search.times[candidate]) < median(search.times[best]) * BETTER;
+    searchLog.push({ best, candidate, times: search.times, faster });
     if (faster) {
       search.best = candidate;
       search.moved = true;
@@ -444,6 +446,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn }) {
     get searching() {
       return search !== null;
     },
+    searchLog,
     get threads() {
       return threads;
     },
