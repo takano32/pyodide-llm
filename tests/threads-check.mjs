@@ -7,7 +7,10 @@
 //   3. The search (stage 2b): which count it chooses from navigator.hardwareConcurrency, within a few generations,
 //      against the fastest of 2.
 //
-//   node tests/threads-check.mjs [model id ...] [--threads 1,2,4,8] [--rounds 5] [--positions 64]
+//   node tests/threads-check.mjs [model id ...] [--threads 1,2,4,8] [--rounds 5] [--positions 64] [--kv-start 16]
+//
+// --kv-start: the KV cache starts this small (the page's KV_START is 256), so that it has to grow, and move, under
+// the helper threads within the positions of a run (Fable's review of T93).
 import fs from "node:fs";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { compileKernels, createForward, weightsMemory } from "../public/forward.js";
@@ -26,7 +29,7 @@ if (isMainThread) {
   const args = process.argv.slice(2);
   const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
   const counts = option("--threads", "1,2,4,8").split(",").map(Number);
-  const rounds = Number(option("--rounds", 5)), positions = Number(option("--positions", 64));
+  const rounds = Number(option("--rounds", 5)), positions = Number(option("--positions", 64)), kvStart = Number(option("--kv-start", 16));
   const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
   const { pyodide: py } = await pyodideWithEngine();
   let failed = false;
@@ -42,7 +45,7 @@ if (isMainThread) {
       start: (p) => { plan = p.toJs({ dict_converter: Object.fromEntries }); return { backend: "", bind() {}, forward() {}, release() {} }; } };
     py.globals.set("OUTSIDE", outside);
     py.globals.set("OPTIONS", py.toPy(entry.options));
-    py.runPython(`from llama2_numpy import Llama\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, **OPTIONS)`);
+    py.runPython(`import llama2_numpy\nfrom llama2_numpy import Llama\nllama2_numpy.KV_START = ${kvStart}\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, **OPTIONS)`);
     const worker = new Worker(new URL(import.meta.url), { workerData: { memory, base, size: checkpoint.length, plan, counts, rounds, positions } });
     const result = await new Promise((resolve, reject) => { worker.once("message", resolve); worker.once("error", reject); });
     console.log(`${entry.name}: ${result}`);

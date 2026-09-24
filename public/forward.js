@@ -407,6 +407,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     finish();
   }
   async function ensureHelpers(n) {
+    if (helpers.length < n - 1 && helpers.length === 0) Atomics.store(ctl, QUIT, 0);  // after stopThreads(): a fresh start
     while (helpers.length < n - 1) {
       helpers.push(await spawn({ memory, plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null,
         share: helpers.length + 1 }));
@@ -464,8 +465,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
         Atomics.add(ctl, WAKE + h, 2);
         Atomics.notify(ctl, WAKE + h);
       }
+      // QUIT stays set until the next ensureHelpers(): a helper that wakes late must still see it
       helpers.splice(0).forEach((helper) => helper.terminate?.());
-      Atomics.store(ctl, QUIT, 0);
       threads = 1;
     },
     /** the float32 array of Python's that forward() fills with the logits */

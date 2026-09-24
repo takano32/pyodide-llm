@@ -352,7 +352,7 @@ function weightsBuffer(size) {
       write: (offset, chunk) => new Uint8Array(memory.buffer, base + offset, chunk.length).set(chunk),
       slice: (begin, end) => new Uint8Array(memory.buffer, base + begin, end - begin).slice(),
       llama: (tokenizer, options) => {
-        outsideNow = forwardModule.external({ memory, base, size, kernels: kernels === sharedKernels ? sharedKernels : jsKernels, spawn });
+        outsideNow = forwardModule.external({ memory, base, size, kernels, spawn });
         return llama2_numpy.Llama.callKwargs(null, tokenizer, { ...options, external: outsideNow });
       },
       destroy() {},
