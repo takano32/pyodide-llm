@@ -125,6 +125,12 @@ export async function keep(model, manifest, slice, tokenizer, signal) {
           }
           signal?.throwIfAborted();
         }
+        // read back what the browser says it holds now: a write that did not stay is not a kept model
+        const held = await (await folder.getFileHandle("model.bin")).getFile();
+        const written = await (await folder.getFileHandle("manifest.json")).getFile();
+        if (held.size !== manifest.bytes || !written.size) {
+          throw new Error(`the origin private file system holds ${held.size} of ${manifest.bytes} bytes after writing`);
+        }
         return undefined;
       } catch (error) {
         await directory.removeEntry(name, { recursive: true }).catch(() => {});
