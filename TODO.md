@@ -124,11 +124,20 @@
 - 進め方: **コミットの前に、スマホ幅と PC 幅の画面を撮って持ち主に見せる。** 訪問者に見える日本語は先に文面を出して確認する。
 - 完了条件: Chromium で表が出て、コピーした Markdown が GitHub でそのまま表になる。390px の幅でページ自体がスクロールしない。
 
-### T106 [追加] Llama 3 系に対応する（`rope_scaling` の llama3 方式と tiktoken 型の前分割） — 状態: 未着手（2026-09-25 採用、Fable の提案、持ち主の指示。**T81 の前**。規模 中）
+### T106 [追加] Llama 3 系に対応する（`rope_scaling` の llama3 方式と tiktoken 型の前分割） — 状態: **第 1 段済み、Fable の判定待ち**（Opus 5.5、2026-09-25）（2026-09-25 採用、Fable の提案、持ち主の指示。**T81 の前**。規模 中）
 - 担当（Fable の切り分け）: **判定は Fable（前分割のパターンの写し方と、RoPE の表の変え方の確認）、実装は Opus → Fable がレビュー。** まず Opus が Llama-3.2-1B-Instruct の `config.json` と `tokenizer.json` を読んで、断られる理由（`rope_scaling`、前分割のパターン）と、エンジンに足す量を書いて止まる。
 - 根拠: Llama-3.2-1B / 3B と、その日本語の派生（多数）は人気の小型モデルだが、いまは `rope_scaling` で断り、前分割のパターン（tiktoken 型。`(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+`）も知らない。
 - 手順: (1) `rope_scaling.type == "llama3"`（`factor`・`low_freq_factor`・`high_freq_factor`・`original_max_position_embeddings`）を RoPE の表を作るときに反映する（周波数ごとに波長で 3 つの帯に分けて縮める。int8 は表を持たないので、エンジンとページの `forward.js` が同じ式で作る）。(2) `pretokenize()` に `llama3` のパターンを足す（`\p{N}{1,3}` が qwen と違う）。`tokenizers` との突き合わせは T63 と同じやり方（この開発機の `transformers` で）。(3) 語彙 128256 の `tokenizer.bin`（byte-level BPE）。(4) 一覧に Llama-3.2-1B-Instruct（int8 約 1.3GB、desktop only）を足す。ライセンスは Llama 3.2 Community License なので `LICENSES` に正しく写す。
 - 完了条件: Llama-3.2-1B-Instruct が `browsers.yml` で動き、`tokenizer.json` との一致（10 種の文）と T86 の固定値（float32）が通る。
+- **第 1 段の報告（Opus、2026-09-25）。** 調べたのは unsloth/Llama-3.2-1B-Instruct（meta-llama の原本はゲート付きなので、同じ重みの写し。`config.json`・`tokenizer.json`・`tokenizer_config.json`・`generation_config.json` と safetensors の見出しだけを取った。重みは取っていない）。
+  - **いまの変換器が断る場所は 1 つだけ**: `check_config()` の「it uses RoPE scaling」。テンソルの名前と形は素の Llama と同じ（146 本、bias なし、`tie_word_embeddings` が真、`head_dim` 64 = 2048 / 32 で今の計算と同じ）。bf16 で 2.47GB、int8 で約 1.4GB。
+  - **足りないものは 4 つ。**
+    1. **RoPE の llama3 方式**: `rope_scaling = {rope_type: llama3, factor: 32, low_freq_factor: 1, high_freq_factor: 4, original_max_position_embeddings: 8192}`、`rope_theta` 500000。周波数ごとに波長で 3 つの帯に分ける（波長が `8192 / 4` より短ければそのまま、`8192 / 1` より長ければ `factor` で割る、間は線形に混ぜる）。表を作る場所は **Python の 2 か所だけ**: 変換器の `rope_table()`（float32 / float16 のファイルに入る表）と、エンジンの `llama_tensors()`（int8 のとき。`forward.js` は `plan.derived` で受け取るので **JS は変わらない**）。どちらも `rope_theta` と同じようにオプション（`rope_scaling`）で渡す。T72 の落とし穴どおり、変換器が `options` に載せる経路も試験する。
+    2. **前分割のパターン**: Qwen2 の `qwen` と違うのは数字だけ（`\p{N}` が `\p{N}{1,3}`、数字は 3 つずつ）。`pretokenize()` に `llama3` を足し、`PRETOKENIZERS` にこのパターンの文字列を登録する。
+    3. **BPE の `ignore_merges: true`**: 前分割した 1 片が語彙にそのままあれば、merge をかけずにその 1 語を取る。本物の `tokenizers` で真と偽を切り替えて比べると、**AGENTS.md・TODO.md・エンジンのソースの 2583 行では差が 0**。ただし語彙 128000 語のうち **588 語は merge を順に当てても 1 語に戻らない**（ベトナム語・アラビア語などが中心）。なのでエンジンの BPE に「1 片が語彙にあれば 1 語」を足す（`tokenizer.json` の `ignore_merges` を `options` で渡す。SmolLM2 と Qwen2.5 では偽）。
+    4. **BOS が 2 つになる**: `chat_template` は読めて（T73 の Jinja で、`strftime_now` も込み）、1 ターンの書式は `<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nCutting Knowledge Date: December 2023\nToday Date: 25 Sep 2026\n\n<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n`。エンジンの `generate()` は必ず `self.bos` から始めるので、先頭の `<|begin_of_text|>` と合わせて BOS が 2 つになる。書式の先頭が BOS の文字なら外す（変換器の `one_turn_template()` の側で）のが小さい。**ついでに分かったこと**: 書式の「Today Date」は変換した日で固定される（変換結果は Cache API に残るので、日付は古くなる）。
+  - **ほかに気づいたこと**: 停止トークンは `config.json` では `<|eot_id|>`（128009）1 つ、`generation_config.json` では 128001・128008・128009 の 3 つ。指示モデルが出すのは 128009 なので今の読み方で足りる。語彙は 128000 + 特殊 256 = 128256 で、今の `tokenizer_bin()` の範囲。日本語の派生は 3B（shisa-v2.1-llama3.2-3b）が多く、1B の日本語の派生はほとんど見当たらない。
+  - **Fable に判定してほしいこと**: (a) RoPE の llama3 方式をオプション `rope_scaling`（辞書のまま）で渡してよいか、(b) `ignore_merges` をエンジンの BPE に入れる形（1 片ごとに語彙を引く）、(c) 先頭の BOS を書式から外す場所（変換器か、エンジンか）、(d) 一覧に足すモデル（Llama-3.2-1B-Instruct はライセンスが Llama 3.2 Community License。原本はゲート付きなので、unsloth の写しから取るか）。
 
 ### T107 [性能] Hugging Face からの取得を速くする — 状態: 未着手（2026-09-25 採用、Fable の提案、持ち主の指示。規模 小〜中）
 - 担当（Fable の切り分け）: **Opus が最後まで**。
