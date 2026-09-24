@@ -64,6 +64,22 @@ def test_the_file_in_its_own_order_gives_the_same_checkpoint():
     assert got == expected and progress[-1][0] == progress[-1][1]
 
 
+def test_the_conversion_tells_the_engine_about_the_biases():
+    """The file cannot say it has biases: the options must (the lesson of T72, applied here in T77)."""
+    import json
+
+    import llama2_convert
+    settings, weights = synthetic_weights()
+    tensors, published = qwen2(settings, weights, True)
+    file = safetensors_file(tensors)
+    size = struct.unpack("<Q", file[:8])[0]
+    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
+                             "vocab": [[f"w{i}", -float(i)] for i in range(settings["vocab_size"])]}}).encode()
+    conversion = llama2_convert.Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(published), vocabulary,
+                                           "tokenizer.json", dtype="float32", max_seq_len=settings["seq_len"])
+    assert conversion.options["bias"] is True and conversion.options["arch"] == "llama"
+
+
 def test_without_the_flag_the_engine_reads_the_file_it_always_read():
     settings, weights = synthetic_weights()
     checkpoint = pack_checkpoint(settings, weights)

@@ -340,11 +340,12 @@ def load_kernels(path, without_relaxed=False):
     return kernels
 
 
-def checkpoint_dtype(header, size, bias=False):
+def checkpoint_dtype(header, size, bias=False, arch="llama"):
     """"float32", "float16" or "int8": what a checkpoint file of size bytes with this header (7 ints) holds.
 
     The legacy format does not say, but the header fixes the size of each variant. Anything else is no checkpoint
     this engine can read, and the ValueError says so before hundreds of megabytes are read for nothing.
+    bias and arch are what the file cannot say either (see Llama.__init__): the tensors differ with them.
     """
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = (int(value) for value in header)
     limit = 1 << 24
@@ -352,14 +353,24 @@ def checkpoint_dtype(header, size, bias=False):
             and 0 < abs(vocab_size) < limit and 0 < seq_len < limit and dim % n_heads == 0 and n_heads % n_kv_heads == 0):
         raise ValueError("This is not a llama2.c checkpoint: the header makes no sense.")
     kv_dim = n_kv_heads * (dim // n_heads)
-    # the same tensors in the same order as Llama.__init__ and quantize.py: (rows, row length) of the matrices
-    matrices = [(abs(vocab_size), dim), (n_layers * dim, dim), (n_layers * kv_dim, dim), (n_layers * kv_dim, dim),
-                (n_layers * dim, dim), (n_layers * hidden_dim, dim), (n_layers * dim, hidden_dim),
-                (n_layers * hidden_dim, dim)]
+    rope = 2 * seq_len * (dim // n_heads // 2)
+    if arch in ("gpt2", "neox"):
+        # the same tensors in the same order as gpt2_tensors() and llama2_convert.layout(arch=): q, k, v, o, the two
+        # FFN matrices (no gate), and for GPT-2 the table of positions in place of the RoPE tables
+        matrices = [(abs(vocab_size), dim)] + [(n_layers * dim, dim)] * 4 + [(n_layers * hidden_dim, dim), (n_layers * dim, hidden_dim)]
+        if arch == "gpt2":
+            matrices.append((seq_len, dim))
+            rope = 0
+        # LayerNorm weights and biases (two per layer, one at the end), the biases of q, k, v, o and the FFN
+        vectors = n_layers * (4 * dim + 3 * dim + dim + hidden_dim + dim) + 2 * dim
+    else:
+        # the same tensors in the same order as llama_tensors() and quantize.py: (rows, row length) of the matrices
+        matrices = [(abs(vocab_size), dim), (n_layers * dim, dim), (n_layers * kv_dim, dim), (n_layers * kv_dim, dim),
+                    (n_layers * dim, dim), (n_layers * hidden_dim, dim), (n_layers * dim, hidden_dim),
+                    (n_layers * hidden_dim, dim)]
+        vectors = 2 * n_layers * dim + dim + (n_layers * (dim + 2 * kv_dim) if bias else 0)
     if vocab_size < 0:
         matrices.append((abs(vocab_size), dim))
-    vectors = 2 * n_layers * dim + dim + (n_layers * (dim + 2 * kv_dim) if bias else 0)
-    rope = 2 * seq_len * (dim // n_heads // 2)
     floats = sum(rows * length for rows, length in matrices) + vectors + rope
 
     def group(length):

@@ -39,6 +39,18 @@ def test_the_sizes_follow_the_layout_of_quantize():
     assert checkpoint_dtype(list(header), 28 + 2 * floats) == "float16"
 
 
+@pytest.mark.parametrize("bias, arch", [(True, "llama"), (False, "gpt2"), (False, "neox")])
+@pytest.mark.parametrize("shared", [True, False])
+def test_the_sizes_follow_the_layout_of_every_architecture(bias, arch, shared):
+    """A local Qwen2, GPT-2 or GPT-NeoX file has other tensors than a Llama: the size check must know (T77)."""
+    from llama2_convert import checkpoint_size
+    header = (64, 172, 3, 8, 8, 300 if shared else -300, 128)
+    for dtype in ("float32", "float16", "int8"):
+        assert checkpoint_dtype(header, checkpoint_size(header, dtype, bias, arch), bias, arch) == dtype
+    # and told apart from the same header as a plain Llama
+    assert checkpoint_size(header, "float32", bias, arch) != checkpoint_size(header, "float32")
+
+
 @pytest.mark.parametrize("size", [0, 27, 1000, 123456789])
 def test_a_file_of_another_size_is_refused(tmp_path, size):
     float32, _ = build(tmp_path, n_kv_heads=4)

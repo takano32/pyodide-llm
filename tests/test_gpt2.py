@@ -88,6 +88,21 @@ def test_a_gpt2_converts_and_runs_like_transformers(shared):
         assert np.allclose(llama.forward(token, pos), want[pos], rtol=1e-4, atol=1e-4)
 
 
+def test_the_conversion_tells_the_engine_the_architecture():
+    """The file cannot say it is a GPT-2: the options must (the lesson of T72, applied here in T77)."""
+    import json
+
+    import llama2_convert
+    tensors, config = gpt2_model()
+    file = safetensors_file(tensors)
+    size = struct.unpack("<Q", file[:8])[0]
+    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
+                             "vocab": [[f"w{i}", -float(i)] for i in range(VOCAB)]}}).encode()
+    conversion = llama2_convert.Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(config), vocabulary,
+                                           "tokenizer.json", dtype="float32", max_seq_len=POSITIONS)
+    assert conversion.options["arch"] == "gpt2" and conversion.options["bias"] is False
+
+
 def test_the_file_in_its_own_order_gives_the_same_checkpoint():
     tensors, config = gpt2_model()
     file = safetensors_file(tensors)
