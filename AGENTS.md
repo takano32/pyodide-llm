@@ -52,6 +52,7 @@
 | `tests/gguf_check.py` | T74 の突き合わせ。GGUF を独立に読む参照で、テンソル・メタデータ・語彙を HF の原本と比べる（`tensors`）のと、変換済みの 2 つのチェックポイントの logits を比べる（`logits`）。ネイティブの Python と NumPy だけ |
 | `tests/models-check.mjs` | 全モデルに出典とライセンスがあるかを見る（T87、Node だけ）。モデルを足したら `src/models.js` の `LICENSES` にも足す。ライセンス名は HF のモデルカードから写し、推測で書かない |
 | `tests/profile-convert.mjs` | ページの変換を Node 上の Pyodide で cProfile にかける（T89）。取得を含まない変換だけの時間 |
+| `.github/workflows/threads.yml` | T93 の試作を CI のランナー（Linux の x86-64 と ARM、macOS）で走らせる手動のワークフロー。帯域の広い機械で何本まで伸びるかを見る |
 | `tests/threads-prototype/` | T93 の試作。エンジンの int8 の重みを共有メモリへ写し、カーネルの共有メモリ版（`kernels/build.py` の `simdkernel_shared.wasm` など、ページは読まない）で行列積を N スレッドに分けて、エンジンと交互に tok/s を比べる。出力トークンがエンジンと一致しなければ止まる |
 | `public/coi-test/` と `tests/coi-check.mjs`、`.github/workflows/coi.yml` | T93 の仕様 2。GitHub Pages のまま Service Worker で COOP/COEP を足し、ページが cross-origin isolated になるか、その下で Pyodide と HF が読めるかを確かめる別ページと、それを各ブラウザで開く確認（手動のワークフロー）。**Service Worker の効く範囲は `/coi-test/` だけで、モデルのページには効かない** |
 | `tests/ladder.mjs` | Pythia の梯子（T84）の表を、huggingface ジョブの `results.jsonl`（小さい組と大きい組の 2 つ）から起こす。単体テストは `tests/ladder-check.mjs` |

@@ -1,0 +1,47 @@
+# T93: the shared-memory prototype (tests/threads-prototype) on machines with more memory bandwidth than the
+# development machine (a phone-class ARM). Equal shares and work stealing, 1 to 16 threads, and the search.
+# By hand only; the tables go to the summary.
+name: Threads prototype
+
+on:
+  workflow_dispatch:
+
+jobs:
+  threads:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Build the two models and the kernels
+        shell: bash
+        run: |
+          npm ci
+          python3 -m pip install --quiet numpy
+          make tiny-lm.bin llm-jp-3-150m.bin kernels
+
+      - name: Measure
+        shell: bash
+        run: |
+          node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
+          for model in tiny-lm llm-jp-3-150m; do
+            echo "### $model" >> "$GITHUB_STEP_SUMMARY"
+            node tests/threads-prototype/run.mjs $model 1 2 4 8 16 --auto --rounds 3 --positions 128 --modes all 2>&1 | grep -E "^\| |search|Error" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
