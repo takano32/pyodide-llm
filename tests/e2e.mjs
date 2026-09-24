@@ -210,8 +210,9 @@ if (process.env.E2E_TWICE && !failures.length) {
   // the new page's own report of ready: the old page's must not count
   await acrossReload(() => page.waitForFunction(() => window.__ready || document.querySelector(".error"), null, { timeout: 0 }));
   const ready = await page.evaluate(() => window.__ready ?? null).catch(() => null);
-  again = { readySeconds: (Date.now() - reloaded) / 1000, fromCache: Boolean(ready?.fromCache), keptIn: ready?.keptIn ?? null, kept };
-  console.log(`again: ready in ${again.readySeconds.toFixed(1)}s, ${again.fromCache ? `kept in ${again.keptIn}` : "not kept"} (kept before: ${kept.join(", ") || "nothing"})`);
+  again = { readySeconds: (Date.now() - reloaded) / 1000, fromCache: Boolean(ready?.fromCache), keptIn: ready?.keptIn ?? null,
+    miss: ready?.keptMiss ?? null, kept };
+  console.log(`again: ready in ${again.readySeconds.toFixed(1)}s, ${again.fromCache ? `kept in ${again.keptIn}` : `not kept: ${again.miss}`} (kept before: ${kept.join(", ") || "nothing"})`);
   if (/^hf[-:]/.test(model) && !again.fromCache) failures.push(`not kept for the second visit: ${reported?.notKept ?? "no reason given"}`);
 }
 const speed = Number(result.meta.match(/([\d.]+) tok\/s/)?.[1]);

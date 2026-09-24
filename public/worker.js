@@ -443,10 +443,16 @@ async function inOrder(url, start, size, feed, signal) {
 // What a conversion made is kept for the next visit (kept.js): in the origin private file system where there is one
 // (T99), else in the Cache API. The original is twice as large, and fetching and converting it again on every visit
 // would be no way to use a model. The page lists what is kept and deletes it.
+// Returns what the page needs of it, or { miss } with why nothing kept could be used (for tests/e2e.mjs).
 async function loadConverted(model, signal, id) {
-  const kept = await keptModule.openKept(model).catch(() => undefined);
+  let kept;
+  try {
+    kept = await keptModule.openKept(model);
+  } catch (error) {
+    return { miss: `could not open what is kept: ${error.message ?? error}` };
+  }
   if (!kept) {
-    return false;
+    return { miss: "nothing kept for this model" };
   }
   const { manifest } = kept;
   const started = performance.now();
@@ -465,7 +471,7 @@ async function loadConverted(model, signal, id) {
       if (signal.aborted) {
         throw error;
       }
-      return false;  // the browser has evicted a part: convert again
+      return { miss: `could not read what is kept: ${error.message ?? error}` };  // evicted: convert again
     }
     const vocabulary = await kept.tokenizer();
     loadSeconds.download = since(started);
@@ -499,10 +505,11 @@ async function convert(model, signal, id) {
   const remote = typeof model.hf.repo === "string";
   // with the ?v=<build> of this worker, like every file it reads (AGENTS.md)
   keptModule ??= await import(new URL(`kept.js${self.location.search}`, import.meta.url));
-  const kept = remote && await loadConverted(model, signal, id);
-  if (kept) {
+  const kept = remote ? await loadConverted(model, signal, id) : undefined;
+  if (kept && !kept.miss) {
     return { fromCache: true, keptIn: kept.keptIn, template: kept.template };
   }
+  const keptMiss = kept?.miss;
   if (!llama2_convert) {
     // fetched when it is first needed: most visitors never convert anything
     const res = await fetch(new URL(`llama2_convert.py${self.location.search}`, import.meta.url), { signal });
@@ -687,7 +694,7 @@ async function convert(model, signal, id) {
       proxies.forEach((proxy) => proxy.destroy());
       weights?.destroy();
     }
-    return { fromCache: false, notKept: kept, template };
+    return { fromCache: false, notKept: kept, keptMiss, template };
   } finally {
     // the engine keeps what it needs of the checkpoint alive, the rest goes with this
     conversion.destroy();
