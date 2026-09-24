@@ -269,42 +269,34 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   // the ribbon or the corner, whichever the dice say
   document.querySelector(Math.random() < 0.5 ? ".ribbon" : ".github-corner")!.removeAttribute("hidden");
 
-  // What the worker kept of its conversions (public/worker.js, CONVERTED_CACHE): the select says which models need
-  // no download any more, and About lists them with a way to delete them.
+  // What the worker kept of its conversions (public/kept.js: the origin private file system, or the Cache API): the
+  // select says which models need no download any more, and About lists them with a way to delete them.
+  const keptModule = import(/* @vite-ignore */ `${import.meta.env.BASE_URL}kept.js?v=${__BUILD__}`).catch(() => undefined);
   async function showKept() {
-    const cache = await globalThis.caches?.open("converted-v1").catch(() => undefined);
-    const manifests = [];
-    for (const request of (await cache?.keys()) ?? []) {
-      if (request.url.endsWith("/manifest.json")) {
-        manifests.push({ folder: request.url.slice(0, -"manifest.json".length), ...(await (await cache!.match(request))!.json()) });
-      }
-    }
+    const kept = await keptModule;
+    const models = (await kept?.keptModels().catch(() => [])) ?? [];
     for (const option of select.querySelectorAll("option")) {
       const entry = MODELS.find(({ id }) => id === option.value) as any;
       if (entry?.hf) {
-        const kept = manifests.some((manifest) => manifest.repo === entry.hf.repo && manifest.revision === entry.hf.revision);
-        option.textContent = `${entry.name} — ${entry.note}${kept ? " · kept in this browser" : ""}`;
+        const found = models.some(({ manifest }: any) => manifest.repo === entry.hf.repo && manifest.revision === entry.hf.revision);
+        option.textContent = `${entry.name} — ${entry.note}${found ? " · kept in this browser" : ""}`;
       }
     }
-    $("kept").hidden = manifests.length === 0;
+    $("kept").hidden = models.length === 0;
     $("kept-list").textContent = "";
-    for (const manifest of manifests) {
+    for (const one of models) {
       const item = document.createElement("li");
       const remove = document.createElement("button");
       remove.type = "button";
       remove.textContent = "delete";
       remove.onclick = async () => {
-        for (const request of await cache!.keys()) {
-          if (request.url.startsWith(manifest.folder)) {
-            await cache!.delete(request);
-          }
-        }
-        if (model.id === manifest.id) {
+        await kept.forget(one);
+        if (model.id === one.manifest.id) {
           remember(model, false);
         }
         showKept();
       };
-      item.append(`${manifest.name} (${(manifest.bytes / 1e6).toFixed(0)} MB) `, remove);
+      item.append(`${one.manifest.name} (${(one.manifest.bytes / 1e6).toFixed(0)} MB) `, remove);
       $("kept-list").append(item);
     }
   }

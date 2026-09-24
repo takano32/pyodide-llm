@@ -22,6 +22,9 @@
 //                  tok/s, the backend line, and what failed. tests/summary.mjs turns those lines into one table.
 //   E2E_ARTIFACTS  a directory: when the run fails or times out, a screenshot, the DOM and the last lines of the
 //                  console go there, named after the browser and the model.
+//   E2E_TWICE      when set: after the answer, the page is loaded again in the same browser, and the seconds to
+//                  ready then go into the JSON line too (T99: a model converted from Hugging Face must come from what
+//                  this browser kept, the origin private file system or the Cache API).
 //   E2E_QUERY      more of the page's URL, such as hfParts=16&hfConnections=8 (T107), added to what the model needs
 //                  and kept in the JSON line.
 import http from "node:http";
@@ -195,10 +198,20 @@ if (expected[model] && !result.text.startsWith(expected[model])) failures.push(`
 console.log(`${engine} ${browserVersion}, ${model}: ready in ${readySeconds.toFixed(1)}s, ${result.meta}`);
 console.log(`status: ${result.status}${result.isolated ? "" : " (not cross-origin isolated)"}`);
 console.log(result.text.slice(0, 160).replace(/\n/g, " / "));
+let again = null;
+if (process.env.E2E_TWICE && !failures.length) {
+  const reloaded = Date.now();
+  await page.reload();
+  await idle();
+  const ready = await page.evaluate(() => window.__ready ?? null).catch(() => null);
+  again = { readySeconds: (Date.now() - reloaded) / 1000, fromCache: Boolean(ready?.fromCache), keptIn: ready?.keptIn ?? null };
+  console.log(`again: ready in ${again.readySeconds.toFixed(1)}s, ${again.fromCache ? `kept in ${again.keptIn}` : "not kept"}`);
+  if (/^hf[-:]/.test(model) && !again.fromCache) failures.push(`not kept for the second visit: ${reported?.notKept ?? "no reason given"}`);
+}
 const speed = Number(result.meta.match(/([\d.]+) tok\/s/)?.[1]);
 record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Number.isFinite(speed) ? speed : null,
          backend: result.status, meta: result.meta, failures, isolated: result.isolated, load: reported?.seconds ?? null,
-         heapMB: reported?.heap ? Math.round(reported.heap / 1e6) : null });
+         heapMB: reported?.heap ? Math.round(reported.heap / 1e6) : null, notKept: reported?.notKept ?? null, again });
 if (failures.length) await keepArtifacts(failures.join("; "));
 clearTimeout(watchdog);
 await browser.close();

@@ -222,6 +222,8 @@ async function localOptions(model, vocabulary) {
 }
 
 let pyodide, llama2_numpy, llama2_convert, llama, kernels;
+// the models kept from earlier conversions (kept.js, T99), imported when the first conversion comes
+let keptModule;
 // T93: the forward pass in JavaScript (forward.js) and its kernels, compiled once; the memory of the model loaded now
 let forwardModule, jsKernels, weightsNow;
 // T93 stage 2: the kernels for a shared memory (only where the page is cross-origin isolated), what the page asked
@@ -438,37 +440,34 @@ async function inOrder(url, start, size, feed, signal) {
   await Promise.all(Array.from({ length: Math.min(hfConnections, parts) }, connection));
 }
 
-// What a conversion made is kept in the Cache API, in parts like the models of the site: the original is twice as
-// large, and fetching and converting it again on every visit would be no way to use a model. One cache of its own,
-// so that the page can list what is kept and delete it. The manifest is written last: parts without one are rubbish.
-const CONVERTED_CACHE = "converted-v1";
-const convertedKey = (model, name) => {
-  const { dtype = "int8", max_seq_len = 4096 } = model.conversion ?? {};
-  return `${self.location.origin}/converted/${encodeURIComponent(`${model.hf.repo}@${model.hf.revision}:${dtype}:${max_seq_len}`)}/${name}`;
-};
-
+// What a conversion made is kept for the next visit (kept.js): in the origin private file system where there is one
+// (T99), else in the Cache API. The original is twice as large, and fetching and converting it again on every visit
+// would be no way to use a model. The page lists what is kept and deletes it.
 async function loadConverted(model, signal, id) {
-  const cache = await globalThis.caches?.open(CONVERTED_CACHE).catch(() => undefined);
-  const manifest = await (await cache?.match(convertedKey(model, "manifest.json")))?.json();
-  if (!manifest) {
+  const kept = await keptModule.openKept(model).catch(() => undefined);
+  if (!kept) {
     return false;
   }
+  const { manifest } = kept;
   const started = performance.now();
   const weights = weightsBuffer(manifest.bytes);
   let tokenizer;
   try {
-    for (let part = 0, offset = 0; part < manifest.parts; part++) {
-      const stored = await cache.match(convertedKey(model, `part-${String(part).padStart(3, "0")}`));
-      if (!stored) {
-        return false;  // the browser has evicted a part: convert again
+    let offset = 0;
+    try {
+      for await (const bytes of kept.parts()) {
+        signal.throwIfAborted();
+        weights.write(offset, bytes);
+        offset += bytes.length;
+        postMessage({ type: "progress", load: id, received: offset, total: manifest.bytes });
       }
-      const bytes = new Uint8Array(await stored.arrayBuffer());
-      signal.throwIfAborted();
-      weights.write(offset, bytes);
-      offset += bytes.length;
-      postMessage({ type: "progress", load: id, received: offset, total: manifest.bytes });
+    } catch (error) {
+      if (signal.aborted) {
+        throw error;
+      }
+      return false;  // the browser has evicted a part: convert again
     }
-    const vocabulary = new Uint8Array(await (await cache.match(convertedKey(model, "tokenizer.bin"))).arrayBuffer());
+    const vocabulary = await kept.tokenizer();
     loadSeconds.download = since(started);
     const constructStarted = performance.now();
     tokenizer = pythonBuffer(vocabulary.length);
@@ -478,7 +477,7 @@ async function loadConverted(model, signal, id) {
     delete engineOptions.template;
     llama = weights.llama(tokenizer.buffer, { kernels, disable: disabled, ...engineOptions, ...model.options });
     loadSeconds.construct = since(constructStarted);
-    return { template: manifest.options.template };
+    return { template: manifest.options.template, keptIn: kept.where };
   } finally {
     weights.destroy();
     tokenizer?.buffer.destroy();
@@ -488,47 +487,21 @@ async function loadConverted(model, signal, id) {
 // checkpoint: the weights (weightsBuffer), bytes long; tokenizer: a PyProxy of the converted tokenizer. Returns why
 // nothing was kept, or undefined.
 async function keepConverted(model, checkpoint, bytes, tokenizer, options, signal) {
-  const cache = await globalThis.caches?.open(CONVERTED_CACHE).catch(() => undefined);
-  if (!cache) {
-    return "this browser has no Cache API here";
-  }
-  const { quota = 0, usage = 0 } = (await navigator.storage?.estimate?.().catch(() => ({}))) ?? {};
-  if (quota && quota - usage < bytes * 1.1) {
-    return `the browser leaves ${((quota - usage) / 1e6).toFixed(0)} MB, and the model needs ${(bytes / 1e6).toFixed(0)} MB`;
-  }
-  const parts = Math.ceil(bytes / PART_BYTES);
-  try {
-    for (let part = 0; part < parts; part++) {
-      // a copy of every part: the memory it comes from may grow (and so move) while an await waits
-      const copy = checkpoint.slice(part * PART_BYTES, Math.min((part + 1) * PART_BYTES, bytes));
-      await cache.put(convertedKey(model, `part-${String(part).padStart(3, "0")}`), new Response(copy));
-      signal.throwIfAborted();
-    }
-    const view = tokenizer.getBuffer("u8");
-    const vocabulary = view.data.slice();
-    view.release();
-    await cache.put(convertedKey(model, "tokenizer.bin"), new Response(vocabulary));
-    const manifest = { id: model.id, name: model.name, repo: model.hf.repo, revision: model.hf.revision, bytes, parts, options, saved: Date.now() };
-    await cache.put(convertedKey(model, "manifest.json"), new Response(JSON.stringify(manifest), { headers: { "Content-Type": "application/json" } }));
-  } catch (error) {
-    // a full disk, or a change of mind: leave nothing half written
-    for (const request of await cache.keys()) {
-      if (request.url.startsWith(convertedKey(model, ""))) {
-        await cache.delete(request);
-      }
-    }
-    if (signal.aborted) {
-      throw error;
-    }
-    return String(error.message ?? error);
-  }
+  const view = tokenizer.getBuffer("u8");
+  const vocabulary = view.data.slice();
+  view.release();
+  const manifest = { id: model.id, name: model.name, repo: model.hf.repo, revision: model.hf.revision, bytes, options, saved: Date.now() };
+  // slice() copies: the memory it comes from may grow (and so move) while an await waits
+  return keptModule.keep(model, manifest, (begin, end) => checkpoint.slice(begin, end), vocabulary, signal);
 }
 
 async function convert(model, signal, id) {
   const remote = typeof model.hf.repo === "string";
+  // with the ?v=<build> of this worker, like every file it reads (AGENTS.md)
+  keptModule ??= await import(new URL(`kept.js${self.location.search}`, import.meta.url));
   const kept = remote && await loadConverted(model, signal, id);
   if (kept) {
-    return { fromCache: true, template: kept.template };
+    return { fromCache: true, keptIn: kept.keptIn, template: kept.template };
   }
   if (!llama2_convert) {
     // fetched when it is first needed: most visitors never convert anything

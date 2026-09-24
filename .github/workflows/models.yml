@@ -20,6 +20,10 @@ on:
       timeout:
         description: 'seconds one run may take'
         default: '1800'
+      twice:
+        description: 'load the page again after the answer (T99: the second visit reads what the browser kept)'
+        type: boolean
+        default: false
       url:
         description: 'the site to test (default: the deployed one)'
         required: false
@@ -55,6 +59,7 @@ jobs:
           E2E_TIMEOUT: ${{ inputs.timeout }}
           E2E_RESULTS: results.jsonl
           E2E_ARTIFACTS: artifacts
+          E2E_TWICE: ${{ inputs.twice && '1' || '' }}
         run: |
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
           failed=0

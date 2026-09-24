@@ -164,7 +164,7 @@
 - 調べること（Fable の判定の材料）: (1) GGUF の Q4_K（スーパーブロックとサブブロックの 2 段のスケール）や Q4_0・Q4_1 を読み込んで int8 に展開せず計算した場合の perplexity（T74 で GGUF は読める。`tests/perplexity.mjs` と `tests/gguf_check.py` で測れる）。(2) 自前で量子化するなら、グループを小さくする（16）・ゼロ点を持つ・外れ値を別に持つ（T92 の考え方）のどれで +1% 以内に入るか。(3) カーネル: int4 を int8 に広げながら掛ける SIMD（relaxed の積和はそのまま使える見込み）。(4) 形式: legacy 形式に int4 を足すと 3 か所（`layout()`・`checkpoint_dtype()`・エンジン）と Cache API のキーを直すことになる（落とし穴）。
 - 完了条件: 品質（原本比の perplexity）と速さ（新旧交互）の表を出し、採るか取りやめるかを決める。採るなら 1 モデルで実装し、CI で確かめる。
 
-### T99 [運用] 変換済みのモデルを OPFS に置く — 状態: 未着手（2026-09-25 採用、持ち主の指示。**調査から**。規模 小〜中）
+### T99 [運用] 変換済みのモデルを OPFS に置く — 状態: **進行中（実装済み、CI の実ブラウザ待ち）**（2026-09-25 採用、持ち主の指示。**調査から**。規模 小〜中）
 - 担当（Fable の切り分け、2026-09-25）: **Opus が最後まで**。**Fable の事前判断**: (1) OPFS があれば OPFS、無ければ今の Cache API（両方の読み書きを 1 つの口にまとめる。`converted-v1` の名前と鍵はそのまま使う）。(2) 移し替えはしない。読むときは OPFS → Cache API の順に探し、新しい変換は OPFS にだけ書く。Cache API に残っているものは、ページの「kept」の一覧と削除のボタンでこれまでどおり扱う（**訪問者が持っているものを黙って消さない**）。(3) OPFS には 1 モデル 1 ファイル + `manifest.json`（部品に分けない。Worker では `createSyncAccessHandle` で同期に読める）。(4) 容量の判定は `navigator.storage.estimate()` を信じず、書けなかったら「保存できなかった理由」を今までどおり準備完了の内訳に出す。確かめ方: CI の実ブラウザで、llm-jp-3 440M（503MB。ヘッドレスの Chromium の Cache API で Quota exceeded になった大きさ）を保存して 2 回目の準備完了を取り、Cache API のときと比べる。Safari（WebKit）で OPFS の同期の口が使えるかも記録する。
 - 根拠: いま HF から変換したモデルは Cache API に 8 MiB の部品で置いている（`converted-v1`）。ヘッドレスの Chromium では 503MB の保存が「Quota exceeded」になった（AGENTS.md の落とし穴。`navigator.storage.estimate()` では足りると出ていた）。OPFS（Origin Private File System）は容量の扱いが違い、Worker からは同期で読み書きできる（`createSyncAccessHandle`）ので、部品に分けずに 1 ファイルで置け、読み出しも速い見込み（未計測）。
 - 調べること: 各ブラウザでの OPFS の容量と、Cache API との差（CI の実ブラウザで同じモデルを保存して比べる）。読み出しの速さ（2 回目の準備完了: いまは llm-jp-3 150M instruct3 で 8 秒）。移し方（古い `converted-v1` をどうするか）。Safari の対応。
