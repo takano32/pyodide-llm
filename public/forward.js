@@ -32,7 +32,11 @@ export function weightsMemory(size, { shared = false } = {}) {
   const base = shared ? CONTROL_BYTES : 64;
   const initial = Math.ceil((base + size) / PAGE) + 1;
   if (!shared) return { memory: new WebAssembly.Memory({ initial }), base };
-  for (const maximum of [65536, initial + 16384, initial + 4096]) {
+  // A shared memory reserves its maximum up front, and a page that loads model after model (the benchmark does)
+  // ran out of address space with 4 GB each (T93). So: what this model can need at most, the checkpoint widened
+  // to float32 (four times an int8 file, with the int8 switch off) and a gigabyte for the KV cache and the rest.
+  const most = Math.min(65536, Math.ceil((base + 4 * size + 2 ** 30) / PAGE));
+  for (const maximum of [most, initial + 16384, initial + 4096]) {
     try {
       return { memory: new WebAssembly.Memory({ initial, maximum: Math.max(maximum, initial), shared: true }), base };
     } catch {

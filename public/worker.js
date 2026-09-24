@@ -697,10 +697,11 @@ async function load(model, signal, id) {
   signal.throwIfAborted();
   // let go of the previous model first, so that two never have to fit in memory
   if (llama) {
-    llama.release?.();  // what forward.js holds of Python's (T93)
+    llama.release?.();  // what forward.js holds of Python's, and its software threads (T93)
     llama.destroy();
     llama = undefined;
     weightsNow = undefined;
+    outsideNow = undefined;  // the last reference to the old memory: it can go before the next one is made
     // the engine's closures and the model refer to each other, so only the cycle collector frees the weights
     pyodide.runPython("import gc; gc.collect()");
   }

@@ -138,7 +138,8 @@ const acrossReload = async (wait) => {
     }
   }
 };
-const idle = () => acrossReload(() => page.waitForFunction(() => !document.getElementById("run").disabled || document.querySelector(".error"), null, { timeout: 0 }));
+// (during the reload the page may have no button yet: that is "not yet", not an error)
+const idle = () => acrossReload(() => page.waitForFunction(() => document.getElementById("run")?.disabled === false || document.querySelector(".error"), null, { timeout: 0 }));
 await idle();
 if (opens) {
   const repository = new URL("../", import.meta.url).pathname;
