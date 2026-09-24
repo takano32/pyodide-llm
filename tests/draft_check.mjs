@@ -25,7 +25,7 @@ const modelOf = (id) => {
 const small = modelOf(smallId), large = modelOf(largeId);
 const { pyodide: py } = await pyodideWithEngine();
 for (const [prefix, model] of [["small", small], ["large", large]]) {
-  py.FS.writeFile(`${prefix}.bin`, fs.readFileSync(model.checkpoint));
+  py.globals.set(`${prefix.toUpperCase()}_CHECKPOINT`, path.resolve(model.checkpoint));
   py.FS.writeFile(`${prefix}.tokenizer.bin`, fs.readFileSync(model.tokenizer));
   py.globals.set(`${prefix.toUpperCase()}_OPTIONS`, py.toPy(model.options));
 }
@@ -34,8 +34,9 @@ const result = py.runPython(`
 import json
 import numpy as np
 read = lambda name: open(name, "rb").read()
-small = kernel_llama(read("small.bin"), read("small.tokenizer.bin"), **SMALL_OPTIONS)
-large = kernel_llama(read("large.bin"), read("large.tokenizer.bin"), **LARGE_OPTIONS)
+# the checkpoints go straight into forward.js's memories: gigabytes do not fit Pyodide's heap
+small = kernel_llama_file(SMALL_CHECKPOINT, read("small.tokenizer.bin"), **SMALL_OPTIONS)
+large = kernel_llama_file(LARGE_CHECKPOINT, read("large.tokenizer.bin"), **LARGE_OPTIONS)
 tokens = large.tokenizer.encode(TEXT)[:${Number(tokensArg)}]
 assert small.tokenizer.encode(TEXT)[:len(tokens)] == tokens, "the two models do not share a vocabulary"
 WINDOW = 512

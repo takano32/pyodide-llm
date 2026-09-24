@@ -51,4 +51,5 @@ jobs:
           node tests/wikipedia.mjs ${{ matrix.language }} text.txt
 
       - name: Measure
+        shell: bash  # with pipefail: a failure must not hide behind tee
         run: node tests/draft_check.mjs prepared/${{ matrix.small }} prepared/${{ matrix.large }} text.txt 1500 256 | tee -a "$GITHUB_STEP_SUMMARY"

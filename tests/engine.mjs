@@ -5,7 +5,12 @@
 //   kernel_llama(checkpoint, tokenizer, **options)
 //
 // which is Llama(checkpoint, tokenizer, kernels="simdkernel.so", **options) as it used to be: the checkpoint (bytes)
-// is copied into the memory of forward.js. With "kernels" in disable it is the NumPy engine, as on the page.
+// is copied into the memory of forward.js. With "kernels" in disable it is the NumPy engine, as on the page. And
+//
+//   kernel_llama_file(path, tokenizer, **options)
+//
+// reads a checkpoint file of this machine straight into the memory of forward.js, never into Pyodide's: a model of
+// gigabytes does not fit Pyodide's heap as a file and as bytes besides (T100).
 import fs from "node:fs";
 import { loadPyodide } from "pyodide";
 import { compileKernels, external, weightsMemory } from "../public/forward.js";
@@ -28,6 +33,16 @@ export async function pyodideWithEngine() {
     view.release();
     return external({ memory, base, size, kernels });
   });
+  pyodide.globals.set("outside_file", (file) => {
+    const size = fs.statSync(file).size;
+    const { memory, base } = weightsMemory(size);
+    const fd = fs.openSync(file, "r");
+    for (let offset = 0; offset < size;) {
+      offset += fs.readSync(fd, new Uint8Array(memory.buffer, base + offset, Math.min(64 << 20, size - offset)), 0, Math.min(64 << 20, size - offset), offset);
+    }
+    fs.closeSync(fd);
+    return external({ memory, base, size, kernels });
+  });
   pyodide.runPython(`
 import llama2_numpy
 
@@ -36,6 +51,10 @@ def kernel_llama(checkpoint, tokenizer, **options):
     if "kernels" in tuple(options.get("disable", ())):
         return llama2_numpy.Llama(checkpoint, tokenizer, kernels="simdkernel.so", **options)
     return llama2_numpy.Llama(None, tokenizer, kernels="simdkernel.so", external=outside(checkpoint), **options)
+
+def kernel_llama_file(path, tokenizer, **options):
+    """The same with the checkpoint read from a file of this machine into the memory of forward.js directly."""
+    return llama2_numpy.Llama(None, tokenizer, kernels="simdkernel.so", external=outside_file(path), **options)
 `);
   return { pyodide, kernels };
 }
