@@ -2,6 +2,7 @@
 // weights (SharedArrayBuffer), against the engine as the page runs it (Pyodide + simdkernel.so, one thread)?
 //
 //   node tests/threads-prototype/run.mjs <model id> [threads ...] [--rounds 3] [--positions 64]
+//        [--modes classifier,all] [--schedule equal,steal] [--chunks 4]
 //
 // The weights are the engine's own arrays, copied into one shared WebAssembly memory, so the layout cannot
 // differ from llama2_numpy.py. The kernels are the same AssemblyScript, built with a shared memory
@@ -18,7 +19,9 @@ const args = process.argv.slice(2);
 const option = (name, value) => (args.includes(name) ? Number(args[args.indexOf(name) + 1]) : value);
 const [modelId] = args;
 const counts = args.slice(1).filter((a, i, all) => /^\d+$/.test(a) && !/^--/.test(all[i - 1] ?? "")).map(Number);
-const rounds = option("--rounds", 3), positions = option("--positions", 64);
+const rounds = option("--rounds", 3), positions = option("--positions", 64), chunksPerThread = option("--chunks", 4);
+const listed = (name, all) => (args.includes(name) ? args[args.indexOf(name) + 1].split(",") : all);
+const schedules = listed("--schedule", ["equal", "steal"]), modes = listed("--modes", ["classifier", "all"]);
 const entry = MODELS.find((m) => m.id === modelId);
 const kernelsDir = process.env.SHARED_KERNELS ?? path.join(root, "public");
 
@@ -96,18 +99,20 @@ Object.assign(L, { attNorm: plan.attNorm, ffnNorm: plan.ffnNorm, finalNorm: plan
 console.log(`${entry.name}: ${cfg.backend}; shared memory ${(memory.buffer.byteLength / 1e6).toFixed(0)} MB; prompt ${cfg.prompt} tokens, ${positions} positions`);
 
 // ---- the prototype with N threads and a way of splitting
-async function prototype(threads, mode) {
+async function prototype(threads, mode, schedule, remember = false) {
   new Int32Array(memory.buffer, 0, 1024).fill(0);
-  const make = (share) => new Worker(new URL("./thread.mjs", import.meta.url), { workerData: { memory, share, threads, kernelsDir, layout: L, mode } });
+  const auto = threads === "auto";
+  const make = (share) => new Worker(new URL("./thread.mjs", import.meta.url),
+    { workerData: { memory, share, threads: auto ? 1 : threads, kernelsDir, layout: L, mode, schedule, chunksPerThread, auto } });
   const coordinator = make(0);
-  const helpers = Array.from({ length: threads - 1 }, (_, i) => make(i + 1));
+  const helpers = auto ? [] : Array.from({ length: threads - 1 }, (_, i) => make(i + 1));
   await new Promise((resolve) => coordinator.once("message", resolve));
-  const run = () => new Promise((resolve) => { coordinator.once("message", resolve); coordinator.postMessage({ prompt, positions }); });
-  await run();  // warm up
-  const result = await run();
+  const run = (again) => new Promise((resolve) => { coordinator.once("message", resolve); coordinator.postMessage({ prompt, positions, remember: again }); });
+  await run(false);  // warm up (and, for auto, a first search)
+  const result = await run(remember);
   const ctl = new Int32Array(memory.buffer, 0, 1024);
   Atomics.store(ctl, 1, 1); Atomics.add(ctl, 0, 1); Atomics.notify(ctl, 0);
-  await Promise.all(helpers.map((h) => new Promise((resolve) => h.once("message", resolve))));
+  if (!auto) await Promise.all(helpers.map((h) => new Promise((resolve) => h.once("message", resolve))));
   await Promise.all([coordinator, ...helpers].map((w) => w.terminate()));
   return result;
 }
@@ -118,13 +123,23 @@ const note = (key, seconds) => (rows[key] ??= []).push(positions / seconds);
 for (let round = 0; round < rounds; round++) {
   const [, seconds] = py.runPython(`engine(${positions})`).toJs();
   note("engine (Pyodide, 1 thread)", seconds);
+  if (args.includes("--auto")) {
+    for (const remember of [false, true]) {
+      const { tokens, seconds: s, threads, log } = await prototype("auto", "all", "steal", remember);
+      if (tokens.join() !== expected.join()) throw new Error(`auto: tokens differ from the engine's`);
+      note(`prototype, threads found by search${remember ? " (remembered from the run before)" : " (searching in this run)"}, every matmul, stealing`, s);
+      if (round === 0) console.log(`  search ${remember ? "remembered" : "chose"} ${threads} threads${log.length ? `: ${log.join("; ")}` : ""}`);
+    }
+  }
   for (const threads of counts) {
-    for (const mode of threads === 1 ? ["classifier"] : ["classifier", "all"]) {
-      const { tokens, seconds: s } = await prototype(threads, mode);
-      if (tokens.join() !== expected.join()) {
-        throw new Error(`${threads} threads, ${mode}: tokens differ from the engine's\n${tokens.slice(0, 12)}\n${expected.slice(0, 12)}`);
+    for (const mode of threads === 1 ? ["classifier"] : modes) {
+      for (const schedule of threads === 1 ? ["equal"] : schedules) {
+        const { tokens, seconds: s } = await prototype(threads, mode, schedule);
+        if (tokens.join() !== expected.join()) {
+          throw new Error(`${threads} threads, ${mode}, ${schedule}: tokens differ from the engine's\n${tokens.slice(0, 12)}\n${expected.slice(0, 12)}`);
+        }
+        note(`prototype, ${threads} thread${threads > 1 ? "s" : ""}${threads > 1 ? `, ${mode === "all" ? "every matmul" : "classifier only"}, ${schedule === "steal" ? `stealing (${chunksPerThread} chunks a thread)` : "equal shares"}` : ""}`, s);
       }
-      note(`prototype, ${threads} thread${threads > 1 ? "s" : ""}${threads > 1 ? `, ${mode === "all" ? "every matmul" : "classifier only"}` : ""}`, s);
     }
   }
 }
