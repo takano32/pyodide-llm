@@ -548,9 +548,12 @@ async function convert(model, signal, id) {
   }
   let template;
   try {
-    let reported = -1;
+    let reported = -1, converting = 0;
     const feed = (bytes) => {
+      // T84: the time Python spends converting, apart from the time spent waiting for the download
+      const began = performance.now();
       const percent = Math.floor(conversion.feed(bytes) * 100);
+      converting += performance.now() - began;
       if (percent !== reported) {
         reported = percent;
         postMessage({ type: "progress", load: id, received: Math.round((percent / 100) * size), total: size, converting: true });
@@ -574,6 +577,7 @@ async function convert(model, signal, id) {
     }
     conversion.finish();
     loadSeconds.download = since(started);
+    loadSeconds.convert = converting / 1000;
 
     const constructStarted = performance.now();
     // every one of these proxies keeps its Python object alive, the checkpoint too: none may be left behind
@@ -617,7 +621,7 @@ async function load(model, signal, id) {
     const converted = await convert(model, signal, id);
     postMessage({
       type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seq_len: llama.seq_len,
-      seconds: { ...loadSeconds }, ...converted,
+      seconds: { ...loadSeconds }, heap: heapBytes(), ...converted,
     });
     return;
   }
@@ -674,7 +678,7 @@ async function load(model, signal, id) {
   }
   postMessage({
     type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seq_len: llama.seq_len,
-    seconds: { ...loadSeconds }, overlapped: checkpoint.overlapped === true && pyodideAt > downloadStarted,
+    seconds: { ...loadSeconds }, heap: heapBytes(), overlapped: checkpoint.overlapped === true && pyodideAt > downloadStarted,
   });
   if (!model.file && !model.url) {
     dropStaleParts(model);

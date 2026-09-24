@@ -51,6 +51,7 @@ jobs:
           node tests/bench.mjs
           node tests/summary-check.mjs
           node tests/models-check.mjs
+          node tests/ladder-check.mjs
 
       - name: Smoke test with the latest Pyodide
         run: |

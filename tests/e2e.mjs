@@ -142,6 +142,8 @@ if (opens) {
   await idle();
 }
 const readySeconds = (Date.now() - started) / 1000;
+// T84: the worker's own breakdown (Pyodide, download, the conversion's share of it, Llama()) and its memory
+const reported = await page.evaluate(() => window.__ready ?? null).catch(() => null);
 // By default a model writes until its context is full (4096 tokens for llm-jp-3-150m). The test, and every tok/s in
 // the documents, is about 256 tokens: set that in the settings, as a visitor would.
 await page.evaluate(() => {
@@ -172,7 +174,8 @@ console.log(`status: ${result.status}`);
 console.log(result.text.slice(0, 160).replace(/\n/g, " / "));
 const speed = Number(result.meta.match(/([\d.]+) tok\/s/)?.[1]);
 record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Number.isFinite(speed) ? speed : null,
-         backend: result.status, meta: result.meta, failures });
+         backend: result.status, meta: result.meta, failures, load: reported?.seconds ?? null,
+         heapMB: reported?.heap ? Math.round(reported.heap / 1e6) : null });
 if (failures.length) await keepArtifacts(failures.join("; "));
 clearTimeout(watchdog);
 await browser.close();
