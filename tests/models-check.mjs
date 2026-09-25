@@ -42,6 +42,7 @@ assert.equal(weightsFor(byId("tiny-lm"), "6", 2), undefined, "a model of the sit
 assert.equal(weightsFor(small, undefined, undefined), undefined, "nothing told: the worker chooses (T115)");
 assert.equal(weightsFor(small, "6", 8), "int6", "?bits=6");
 assert.equal(weightsFor(qwen, "8", 2), "int8", "?bits=8 even where it does not fit");
+assert.equal(weightsFor({ hf: {}, conversion: { dtype: "float16" }, note: "int8 4.2 GB" }, "6", 2), "float16", "the settings of a visitor's files win (T119)");
 assert.equal(weightsFor(qwen, undefined, 8), undefined, "1.6 GB fits in half of 8 GB: the worker chooses");
 assert.equal(weightsFor(qwen, undefined, 2), "int6", "not in half of 2 GB");
 assert.equal(weightsFor({ hf: {}, note: "int8 4.2 GB" }, undefined, undefined), undefined, "past a 32-bit memory: the worker, which knows the header, chooses");

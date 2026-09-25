@@ -547,6 +547,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       const names = [...switches.map((each) => each.dataset.switch!).filter((each) => without.has(each)),
                      ...[...without].filter((each) => !switches.some((box) => box.dataset.switch === each))];
       names.length ? url.searchParams.set("without", names.join(",")) : url.searchParams.delete("without");
+      url.searchParams.delete("bench");  // T119: the reload is to run with the switches, not to measure again
       if (model.id !== "local") {
         url.searchParams.set("model", model.id);
       }
@@ -560,6 +561,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     choice.onchange = () => {
       const url = new URL(location.href);
       choice.value ? url.searchParams.set("bits", choice.value) : url.searchParams.delete("bits");
+      url.searchParams.delete("bench");
       if (model.id !== "local") {
         url.searchParams.set("model", model.id);
       }

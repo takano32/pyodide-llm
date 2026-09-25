@@ -212,13 +212,16 @@ export function modelBytes(entry) {
 // group of 32 against 32 and a scale, 7/9 of the size, at +1 to +3.4% of perplexity (measured on eight models), and
 // slower on one thread (the groups are widened as they are read). So it is taken where int8 does not fit.
 export const SIX_OF_EIGHT = 28 / 36;
-/** The dtype a model of Hugging Face is converted to: asked is ?bits= (or a setting), "8", "6" or anything else for
+/** The dtype a model of Hugging Face is converted to: the entry's own when it has one (the settings of a visitor's
+ * files); else asked is ?bits= (or a setting), "8", "6" or anything else for
  * automatic, which takes int6 where int8 would pass half of what the device says it has (deviceMemory, Chromium
  * only), and otherwise leaves the choice to the worker (undefined): it knows the model's header once it converts,
  * and with it what the forward pass needs, and takes int6 where int8 would not fit a 32-bit memory (T115).
  * undefined for a model that is not converted in the page. */
 export function weightsFor(entry, asked, deviceMemory) {
   if (!entry.hf) return undefined;
+  // a visitor's own files may come with settings that say it ({"conversion": {"dtype": ...}}): they win (T119)
+  if (entry.conversion?.dtype) return entry.conversion.dtype;
   if (asked === "6" || asked === "8") return `int${asked}`;
   const int8 = modelBytes({ ...entry, conversion: { ...entry.conversion, dtype: "int8" } });
   return int8 && deviceMemory && int8 + PAGE_MEMORY > deviceMemory * 2 ** 30 / 2 ? "int6" : undefined;

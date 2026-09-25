@@ -317,15 +317,15 @@ async function init(search) {
   llama2_numpy = pyodide.pyimport("llama2_numpy");
 
   // The WASM SIMD kernels (kernels/*.ts), which llama2_numpy.py loads with ctypes. They are optional: without
-  // them, or with ?kernel=off, NumPy does the math, several times slower.
+  // them, or with ?kernel=off, NumPy does the math, several times slower. They are read even with ?kernel=off: the
+  // switches say what is used (disabled), and the benchmark's rounds with the kernels need them there (T119: its
+  // "everything" round sampled on NumPy after the page's switch had turned them off, and said nothing).
   disabled = pageSwitches = switchesOf(search);
-  if (!disabled.includes("kernels")) {
-    for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
-      const kernel = await fetch(new URL(`${name}${self.location.search}`, import.meta.url)).catch(() => undefined);
-      if (kernel?.ok) {
-        pyodide.FS.writeFile(`/home/pyodide/${name}`, new Uint8Array(await kernel.arrayBuffer()));
-        kernels = "/home/pyodide/simdkernel.so";
-      }
+  for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
+    const kernel = await fetch(new URL(`${name}${self.location.search}`, import.meta.url)).catch(() => undefined);
+    if (kernel?.ok) {
+      pyodide.FS.writeFile(`/home/pyodide/${name}`, new Uint8Array(await kernel.arrayBuffer()));
+      kernels = "/home/pyodide/simdkernel.so";
     }
   }
   // T93: the forward pass runs in forward.js, on the plain build of the same kernels (simdkernel.so stays for the
