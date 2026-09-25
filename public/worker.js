@@ -1332,17 +1332,23 @@ self.onmessage = async ({ data }) => {
   } catch (err) {
     // a cancelled load has nothing to report: the one that replaced it speaks for itself
     if (!signal?.aborted) {
+      // A JavaScript error thrown inside a call from Python comes back as a PythonError of type JsException, its own
+      // name and message on the last line: the memory of the weights, which the converter opens through the sink
+      // (weightsBuffer: Safari's refusal of a model past 4 GB, a memory the browser will not make or grow), and
+      // forward.js growing the keys and values. It is told as itself (the review of T133: it was a traceback)
+      const [, name = err?.name, text = err?.message] = err?.type === "JsException"
+        ? /^pyodide\.ffi\.JsException: (\w+): (.*)$/.exec(err.message.trim().split("\n").pop()) ?? [] : [];
       // a ValueError of the engine is a message for the reader (wrong file, prompt too long): no traceback
       const message = err.type === "ValueError" ? err.message.trim().split("\n").pop().replace(/^ValueError: /, "")
-        : err?.name === "Error" ? err.message : String(err);
+        : name === "Error" ? text : String(err);
       // T90: the memory ran out, in Python (MemoryError: malloc could not grow the WebAssembly memory) or in
       // JavaScript (RangeError: an ArrayBuffer or WebAssembly.Memory.grow was refused). The page says so in words
       // a visitor understands, with how much memory the page had when it happened.
       // (V8 also raises RangeError for a stack overflow, which is not this; Firefox says InternalError: out of memory)
-      const memory = err?.type === "MemoryError" || err?.name === "InternalError" ||
-        (err?.name === "RangeError" && !/call stack/i.test(err.message ?? ""));
+      const memory = err?.type === "MemoryError" || name === "InternalError" ||
+        (name === "RangeError" && !/call stack/i.test(text ?? ""));
       // where it happened goes to the page's console (T96): tests/e2e.mjs keeps the console of a failed run
-      postMessage({ type: "error", load: data.load, message: memory ? String(err?.message ?? err).trim().split("\n").pop() : message,
+      postMessage({ type: "error", load: data.load, message: memory ? String(text ?? err).trim().split("\n").pop() : message,
                     stack: String(err?.stack ?? err), weights: weightsNow?.buffer.byteLength ?? 0, pyodide: Boolean(err?.pyodide),
                     ...(memory && { memory: true, heap: heapBytes() }) });
     }
