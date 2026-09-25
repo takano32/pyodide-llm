@@ -131,15 +131,6 @@
 - やり方: HF の API で件数を数えてから中身を見る。**数えずに「増えそう」と書かない**（T74 で見返りが偏っていることに気づけたのは数えたから）。調べた数字と日付を TODO に残す。
 - 完了条件: そのまま動くものは一覧に足して `browsers.yml` で動くことを確かめる。実装の要るものは新しいタスクとして積む（または「いまは無い」と書く）。前回（2026-09-21）からの差分が分かる形で書く。
 
-### T97 [運用] Windows の Firefox の「Error in input stream」を調べる — 状態: **進行中（原因を絞って手当てを入れた、本番の確認中。Opus medium、2026-09-25）**（2026-09-25 採用、持ち主の指示。**調査から**。規模 小）
-- **T70（Windows の WebKit が tiny-lm で止まる）もここで見る**（2026-09-25 に T70 をここへ合わせた）。
-- 担当（Fable の切り分け、2026-09-25。対処は Fable が入れた）: **残る確認は Opus → Opus xhigh がレビュー**。**Fable の事前判断**: COOP/COEP のヘッダが要るのは同一オリジンの応答（文書、`worker.js`・`helper.js` などのスクリプト）だけで、クロスオリジンの取得（Pyodide の CDN、huggingface.co の Range 要求）は CORS で通るので Service Worker が触る必要は無い。だから `public/coi.js` は**同一オリジンの要求だけ `respondWith` し、クロスオリジンの要求はブラウザにそのまま任せる**形に変えてよい（本文を流す量が減り、T97 の疑いも消える）。手順: (1) 先に `coi.js` をその形にして、`coi.yml` で isolated が保たれること（`worker.js` と `helper.js` の読み込み、ソフトウェアスレッドが動くこと）を確かめる。(2) `browsers.yml` を 2〜3 回走らせ、Windows の Firefox で「Error in input stream」が出る回数を、変更の前（今日の走行の記録）と比べる。(3) それでも出るなら、どの取得で出るかを T82 の記録から絞る。T70（Windows の WebKit が止まる）は同じ走行で見て、再現したら別の項として切り出す。
-- 事実: `browsers.yml` の OS のジョブで、ページが「TypeError: Error in input stream」を報告して失敗することがある。2026-09-24 の実行 36003988306（T93 の前）は windows-latest の Playwright の Firefox の llm-jp-3 150M で 1 回。2026-09-25 の 36049665597（段階 3 の後）は windows-latest と windows-11-arm で 1 回ずつ。Linux と macOS では出ていない。Firefox が取得の本文のストリームを読み切れなかったときの例外（モデルの部品の取得か HF の範囲取得）と見ているが、どれかは未確認。
-- 疑い（未確認）: 段階 3 から、すべての取得が Service Worker（`public/coi.js`）を通り、本文を `new Response(response.body, …)` でそのまま流している。Firefox の Service Worker で大きな本文（8 MiB の部品）を流すときに途中で切れるなら、段階 3 から増えたことになる。ただし段階 3 の前にも 1 回出ている。
-- 手順: 走行ごとに、どのブラウザ・どのモデル・どの取得で出たかを数える（T82 の JSON とコンソールの記録）。`?coi=off`（Service Worker なし）と既定を、Windows の Firefox で同じ回数ずつ走らせて比べる。Service Worker が原因なら、`coi.js` で本文を流さずに COOP/COEP を付けずに済む取得（Worker からの部品の取得など）は `respondWith` しない、などの手当てを検討する（ヘッダが要るのは文書と Worker のスクリプトだけのはず。要確認）。
-- 完了条件: 出る条件（ブラウザ・取得・Service Worker の有無）が分かり、Service Worker が原因なら手当てを入れて、同じ回数の走行で出なくなる。
-- **戻した理由（Fable、2026-09-25 夕方）**: Service Worker がクロスオリジンの応答を素通しにする形にしたら、持ち主の iPhone の Safari で Pyodide の NumPy の段が終わらず（T113）、持ち主のスマホと PC の Chrome で HF の取得が始まらなくなった。CI の Linux（米国）のブラウザでは通るので気づけなかった。朝までの Service Worker は応答を作り直してページに渡していて、作り直した応答は隔離の検査を必ず通る。素通しにすると、検査が CDN の本物のヘッダ（地域の edge で違う）に落ちる。**Windows の Firefox の件は、素通し以外の手で**（例: 大きな本文だけ `respondWith` せずに流す前に、Firefox でどの要求が壊れるかを T82 の記録から絞る）。Playwright の Firefox では素通しで llm-jp-3 150M が通っていた（23.7 tok/s）ので、方向は合っている。
-
 ### T112 [運用] Safari で Hugging Face の取得と変換が失敗することがある — 状態: **レビュー済み（Opus xhigh、2026-09-25）。持ち主の Safari での確認だけが残る**（2026-09-25 採用、持ち主の報告「Safari で Hugging Face のダウンロードと変換に失敗することがある」。**調査から**。規模 小〜中）
 - 担当: Opus（調査と対処）→ Opus xhigh がレビュー。
 - 分かっていること: CI は HF のモデルを WebKit で試していない（`browsers.yml` の huggingface ジョブは Chromium だけ、macOS のジョブはサイトのモデルだけ）。2026-09-25 に Fable が `models.yml` で WebKit（Linux と macOS）× HF の 3 モデル × 2 回読み込みを走らせた（結果は走行の Summary）。持ち主には、出た文・モデル・1 回目か切り替え後か・Safari の版と機種を聞いている。
@@ -912,6 +903,20 @@
 - 根拠: T96 の「`stopThreads()` の後は 1 秒ごとにエラー」は効いていなかった（レビューで外した、14a179b）。ブラウザがソフトウェアスレッドの Worker を止めると（iOS はメモリで Worker を黙って止めることがある、T112 の案）、取りまとめ役は段の途中で無期限に待ち、ページは「…」のまま。
 - 手順: 待ちが一定時間進まなければエラーにして 1 本で続ける（期限は遅い 1 段より十分長く: 7B の 1 段が何 ms かを先に測る）。T112 の案（ページから Worker への ping）と合わせて決める。
 - 完了条件: `threads-check` で、ソフトウェアスレッドを 1 本 terminate したときにエラーか 1 本での続行になり、止まらない。
+
+</details>
+
+- [x] **T97 [運用] Windows の Firefox の「Error in input stream」を調べる。**（Opus medium、2026-09-25）— 状態: **レビュー待ち**。**原因の切り分け**（`models.yml`、Playwright の Firefox 150、llm-jp-3 150M を 6 回ずつ）: windows-latest の既定 0/6・`?coi=off` 1/6、windows-11-arm の既定 1/6・`?coi=off` 0/6。**Service Worker の有無で変わらない**（どちらも 12 回に 1 回）ので、Service Worker の作り（Fable が素通しにして戻した件）とは関係が無い。Windows の Firefox が、GitHub Pages が gzip で送る部品の本文を途中で途切れさせる。HF の取得（`fetchRange`）は本文の途中の失敗も 3 回まで取り直していたが、サイトのモデルの部品（`download()`）は取り直さず、1 回の途切れで読み込みが失敗していた。**手当て**（9b6d774）: 部品を 2 回まで取り直す（途中まで数えたバイトを引き、同じ位置に同じバイトを書き直す。ヘッダの 28 バイトの拾い方も、取り直しで 2 度来ても正しくなるようにした）。**本番の確認**: 同じ 4 通りを 8 回ずつ、**32 回すべて通った**。ただし取り直しの記録（console の 1 行）は失敗した回にしか残らないので、**取り直しが実際に働いた場面は見ていない**（直す前の率なら 32 回に 1 度も出ない確率は約 6%）。T70（Windows の WebKit が止まる）は今回の走行の範囲外で、再現は未確認。**レビューで見てほしいこと**: 取り直しの経路は偽の fetch の試験台で確かめる価値がある（この開発機では worker.js を単体で動かす道具が無い）。
+
+<details><summary>T97 の採用時の記録</summary>
+
+- **T70（Windows の WebKit が tiny-lm で止まる）もここで見る**（2026-09-25 に T70 をここへ合わせた）。
+- 担当（Fable の切り分け、2026-09-25。対処は Fable が入れた）: **残る確認は Opus → Opus xhigh がレビュー**。**Fable の事前判断**: COOP/COEP のヘッダが要るのは同一オリジンの応答（文書、`worker.js`・`helper.js` などのスクリプト）だけで、クロスオリジンの取得（Pyodide の CDN、huggingface.co の Range 要求）は CORS で通るので Service Worker が触る必要は無い。だから `public/coi.js` は**同一オリジンの要求だけ `respondWith` し、クロスオリジンの要求はブラウザにそのまま任せる**形に変えてよい（本文を流す量が減り、T97 の疑いも消える）。手順: (1) 先に `coi.js` をその形にして、`coi.yml` で isolated が保たれること（`worker.js` と `helper.js` の読み込み、ソフトウェアスレッドが動くこと）を確かめる。(2) `browsers.yml` を 2〜3 回走らせ、Windows の Firefox で「Error in input stream」が出る回数を、変更の前（今日の走行の記録）と比べる。(3) それでも出るなら、どの取得で出るかを T82 の記録から絞る。T70（Windows の WebKit が止まる）は同じ走行で見て、再現したら別の項として切り出す。
+- 事実: `browsers.yml` の OS のジョブで、ページが「TypeError: Error in input stream」を報告して失敗することがある。2026-09-24 の実行 36003988306（T93 の前）は windows-latest の Playwright の Firefox の llm-jp-3 150M で 1 回。2026-09-25 の 36049665597（段階 3 の後）は windows-latest と windows-11-arm で 1 回ずつ。Linux と macOS では出ていない。Firefox が取得の本文のストリームを読み切れなかったときの例外（モデルの部品の取得か HF の範囲取得）と見ているが、どれかは未確認。
+- 疑い（未確認）: 段階 3 から、すべての取得が Service Worker（`public/coi.js`）を通り、本文を `new Response(response.body, …)` でそのまま流している。Firefox の Service Worker で大きな本文（8 MiB の部品）を流すときに途中で切れるなら、段階 3 から増えたことになる。ただし段階 3 の前にも 1 回出ている。
+- 手順: 走行ごとに、どのブラウザ・どのモデル・どの取得で出たかを数える（T82 の JSON とコンソールの記録）。`?coi=off`（Service Worker なし）と既定を、Windows の Firefox で同じ回数ずつ走らせて比べる。Service Worker が原因なら、`coi.js` で本文を流さずに COOP/COEP を付けずに済む取得（Worker からの部品の取得など）は `respondWith` しない、などの手当てを検討する（ヘッダが要るのは文書と Worker のスクリプトだけのはず。要確認）。
+- 完了条件: 出る条件（ブラウザ・取得・Service Worker の有無）が分かり、Service Worker が原因なら手当てを入れて、同じ回数の走行で出なくなる。
+- **戻した理由（Fable、2026-09-25 夕方）**: Service Worker がクロスオリジンの応答を素通しにする形にしたら、持ち主の iPhone の Safari で Pyodide の NumPy の段が終わらず（T113）、持ち主のスマホと PC の Chrome で HF の取得が始まらなくなった。CI の Linux（米国）のブラウザでは通るので気づけなかった。朝までの Service Worker は応答を作り直してページに渡していて、作り直した応答は隔離の検査を必ず通る。素通しにすると、検査が CDN の本物のヘッダ（地域の edge で違う）に落ちる。**Windows の Firefox の件は、素通し以外の手で**（例: 大きな本文だけ `respondWith` せずに流す前に、Firefox でどの要求が壊れるかを T82 の記録から絞る）。Playwright の Firefox では素通しで llm-jp-3 150M が通っていた（23.7 tok/s）ので、方向は合っている。
 
 </details>
 
