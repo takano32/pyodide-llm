@@ -108,13 +108,16 @@ export const LICENSES = {
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
 /** Every source once, in the order of the list, with its license and the names of the models taken from it. A
- * model fetched from a redistribution (a GGUF, T74) names both: where it comes from, and whose model it is. */
+ * model fetched from a redistribution names both: where it comes from, and whose model it is. The redistribution's
+ * line says which it is: "(GGUF)" for a GGUF (T74), "(copy)" for the same safetensors elsewhere (unsloth's Llama;
+ * until 2026-09-26 it said "(GGUF)" for those too). */
 export function sources(models = MODELS) {
   const bySource = new Map();
   for (const entry of models) {
     for (const repo of [entry.original, sourceOf(entry)].filter(Boolean)) {
       if (!bySource.has(repo)) bySource.set(repo, { repo, license: LICENSES[repo], names: [] });
-      bySource.get(repo).names.push(entry.original && repo === sourceOf(entry) ? `${entry.name} (GGUF)` : entry.name);
+      const kind = entry.hf?.weights?.endsWith(".gguf") ? "GGUF" : "copy";
+      bySource.get(repo).names.push(entry.original && repo === sourceOf(entry) ? `${entry.name} (${kind})` : entry.name);
     }
   }
   return [...bySource.values()];

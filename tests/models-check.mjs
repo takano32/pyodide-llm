@@ -58,4 +58,9 @@ assert.match(memoryWarning(three, 4), /this device has 4 GB:/);
 // T132: a template's {date} is the visitor's day, and {prompt} what was typed (a {date} typed stays as it is)
 assert.equal(filled("Current date: {date}\n{prompt}", "a {date} b", new Date(2026, 8, 6)), "Current date: 2026-09-06\na {date} b");
 assert.equal(filled(byId("hf-llm-jp-4-8b-instruct").template, "x").includes("{"), false);
+// the line of a redistribution says what it is: a GGUF, or a copy of the same files (the review of T132)
+const lineOf = (repo) => listed.find((line) => line.repo === repo).names;
+assert.deepEqual(lineOf("bartowski/SmolLM2-135M-Instruct-GGUF"), ["SmolLM2 135M Instruct (GGUF)"]);
+assert.deepEqual(lineOf("unsloth/Llama-3.2-1B-Instruct"), ["Llama 3.2 1B Instruct (copy)"]);
+assert.ok(lineOf("meta-llama/Llama-3.2-1B-Instruct").includes("Llama 3.2 1B Instruct"), "the original's line has the plain name");
 console.log("ok");
