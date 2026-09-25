@@ -111,6 +111,16 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
           <label>Repetition penalty <output id="penalty-value"></output>
             <input id="penalty" type="range" min="1" max="2" step="0.05" /></label>
         </details>
+        <!-- T75: what the computation runs on, one switch each (T52's ?without=). The URL is the state: a change
+             rewrites it and reloads the page, so a link says what ran. -->
+        <details id="engine">
+          <summary>Engine</summary>
+          <p class="hint">Each switch takes one optimization away, to see what it is worth. Changing one reloads the page and the model; the status line then says what ran.</p>
+          <label class="switch"><input type="checkbox" data-switch="kernels" /> WASM SIMD kernels (NumPy without)</label>
+          <label class="switch"><input type="checkbox" data-switch="int8" /> int8 weights kept as int8</label>
+          <label class="switch"><input type="checkbox" data-switch="relaxed" /> relaxed SIMD, 7-bit activations</label>
+          <label class="switch"><input type="checkbox" data-switch="sampler" /> sampling in the kernel</label>
+        </details>
         <button id="settings-reset" type="button">Reset to defaults</button>
       </div>
       <form id="composer">
@@ -238,6 +248,10 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   #settings output { float: right; color: var(--text); font-variant-numeric: tabular-nums; }
   #settings input[type="range"] { display: block; width: 100%; margin: 6px 0 0; accent-color: var(--accent); }
   #settings summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
+  #settings .hint { margin: 0 0 10px; color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
+  #settings .switch { display: flex; align-items: center; gap: 8px; color: var(--text); cursor: pointer; }
+  #settings .switch input { margin: 0; accent-color: var(--accent); }
+  #settings .switch:has(input:disabled) { color: var(--muted); cursor: default; }
   .seed-field { display: flex; gap: 6px; margin-top: 6px; }
   .seed-field input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
   #settings button { font: inherit; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
@@ -462,6 +476,31 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     settings = defaults(model);
     showSettings();
   };
+  // T75: the engine's switches. They are read from the URL (?without=, and ?kernel=off as it always was) and written
+  // back to it: the page reloads with the model it has, and the worker starts from the new URL.
+  const without = new Set((parameters.get("without") ?? "").split(",").map((name) => name.trim()).filter(Boolean));
+  if (parameters.get("kernel") === "off") {
+    without.add("kernels");
+  }
+  const switches = [...document.querySelectorAll<HTMLInputElement>("#engine input[data-switch]")];
+  for (const box of switches) {
+    const name = box.dataset.switch!;
+    box.checked = !without.has(name);
+    box.disabled = name !== "kernels" && without.has("kernels");  // the other three are ways of using the kernels
+    box.onchange = () => {
+      box.checked ? without.delete(name) : without.add(name);
+      const url = new URL(location.href);
+      url.searchParams.delete("kernel");
+      // the panel's four first, in their order, then whatever else the URL had (kv16, for measuring)
+      const names = [...switches.map((each) => each.dataset.switch!).filter((each) => without.has(each)),
+                     ...[...without].filter((each) => !switches.some((box) => box.dataset.switch === each))];
+      names.length ? url.searchParams.set("without", names.join(",")) : url.searchParams.delete("without");
+      if (model.id !== "local") {
+        url.searchParams.set("model", model.id);
+      }
+      location.assign(url);
+    };
+  }
   const panel = $("settings");
   panel.addEventListener("beforetoggle", (event) => {
     if ((event as ToggleEvent).newState !== "open") {
