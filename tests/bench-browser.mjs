@@ -64,6 +64,10 @@ for (const row of bench.rows) {
 const [fast, slow] = bench.rows;
 assert.ok(fast.speed > slow.speed, `the kernels (${fast.speed.toFixed(1)}) must beat NumPy (${slow.speed.toFixed(1)})`);
 assert.ok(bench.markdown.includes("|---|---|---|---|"), "a table GitHub renders");
+// T91: the link under the table opens the issue template, with the page's Markdown as the end of the body
+const report = new URL(await page.evaluate(() => [...document.querySelectorAll(".bench-actions a")].at(-1)?.href ?? "about:blank"));
+assert.equal(report.searchParams.get("template"), "benchmark.md", `the report link: ${report}`);
+assert.ok(report.searchParams.get("body")?.endsWith(bench.markdown), "the Markdown in the issue's body");
 clearInterval(watch);
 await browser.close();
 server?.close();
