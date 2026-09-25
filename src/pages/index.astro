@@ -592,7 +592,9 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       // for tests/e2e.mjs: how long each part of the load took, and the WebAssembly memory then (T84). Not shown
       (window as any).__ready = data;
       fromTemplate = typeof data.template === "string" ? data.template : undefined;
-      if (benchmark && !(window as any).__bench) {
+      // once: every round of the benchmark loads the model again and reports ready too (T96: the second request
+      // ended the first round's threads under its coordinator, which then waited for ever)
+      if (benchmark && !benchmarking && !(window as any).__bench) {
         statusText.textContent = `${model.name} · benchmarking...`;
         benchmarking = true;
         worker.postMessage({ type: "bench", model, load: loads,

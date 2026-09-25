@@ -857,6 +857,7 @@ const threadsNow = () => outsideNow?.engine?.threads ?? 1;
 
 // the run that is going on, and whether the page asked it to stop
 let generating, stopped = false;
+let benching = false;  // the benchmark's rounds are running (T45); see the bench message
 
 // Hand the event loop a turn, so that a message sent meanwhile is delivered. setTimeout would cost 4ms per
 // call (the browsers clamp it), a MessageChannel comes back in the same millisecond.
@@ -926,6 +927,11 @@ self.onmessage = async ({ data }) => {
     } else if (data.type === "bench") {
       // T45: the same model, measured again for every combination of switches the page asked for. The model is
       // built once per round from the checkpoint that is already in the Cache API, so only the engine changes.
+      // One at a time: a second request while the rounds run would end a round's threads under its coordinator
+      if (benching) {
+        return;
+      }
+      benching = true;
       const rows = [];
       for (const round of data.rounds) {
         // every round is a load of its own, and it cancels whatever went before, exactly like a change of model
@@ -958,6 +964,7 @@ self.onmessage = async ({ data }) => {
                     backend: llama.backend, seconds: ready });
       }
       disabled = pageSwitches;  // not self.location.search: that is the worker's own URL (?v=hash)
+      benching = false;
       postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version });
     } else if (data.type === "generate") {
       if (!llama) {
