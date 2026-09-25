@@ -57,13 +57,14 @@
 | `.github/workflows/fetch.yml` | HF からの取得の部品の大きさと並列数を組み合わせで測る（T107、手動）。表は `tests/fetch-table.mjs` |
 | `.github/workflows/models.yml` | 名前を渡したモデルだけを 1 つのブラウザで本番に対して走らせる（T105、手動）。`tests/e2e.mjs` のモデル ID に `hf:<owner>/<repo>@<revision>` を渡すと `?hf=` で開くので、一覧に入れる前のモデルを試せる: `gh workflow run models.yml -f models="hf:Qwen/Qwen2.5-3B-Instruct@aa8e7253…"` |
 | `tests/models-check.mjs` | 全モデルに出典とライセンスがあるかを見る（T87、Node だけ）。モデルを足したら `src/models.js` の `LICENSES` にも足す。ライセンス名は HF のモデルカードから写し、推測で書かない |
-| `tests/profile.mjs` | 1 トークンの時間の内訳（T93 で書き直した）: `forward.js` のカーネルの呼び出しを包んで種類ごとに時間を足し上げる（行列積・入力の量子化・attention・norm・その他、呼び出しの間の JS）。Node だけ。T53 の頃の Python の forward の内訳（ctypes の費用込み）は下の「これまでに分かったこと」に残す |
+| `tests/profile.mjs` | 1 トークンの時間の内訳（T93 で書き直した。`--from <位置>` で長い文脈の attention の割合を見る、T109）: `forward.js` のカーネルの呼び出しを包んで種類ごとに時間を足し上げる（行列積・入力の量子化・attention・norm・その他、呼び出しの間の JS）。Node だけ。T53 の頃の Python の forward の内訳（ctypes の費用込み）は下の「これまでに分かったこと」に残す |
 | `tests/profile-convert.mjs` | ページの変換を Node 上の Pyodide で cProfile にかける（T89）。取得を含まない変換だけの時間 |
 | `.github/workflows/threads.yml` | `tests/threads-check.mjs` を CI のランナー（Linux の x86-64 と ARM、macOS）で走らせる手動のワークフロー。帯域の広い機械で何本まで伸びるかと、検索が選ぶ本数を見る |
 | `public/coi-test/` と `tests/coi-check.mjs`、`.github/workflows/coi.yml` | T93 の仕様 2。GitHub Pages のまま Service Worker で COOP/COEP を足し、ページが cross-origin isolated になるか、その下で Pyodide と HF が読めるかを確かめる別ページと、それを各ブラウザで開く確認（手動のワークフロー）。**Service Worker の効く範囲は `/coi-test/` だけで、モデルのページには効かない** |
 | `public/coi.js` | サイト全体の Service Worker（T93 段階 3）。応答に `Cross-Origin-Opener-Policy: same-origin` と `Cross-Origin-Embedder-Policy: require-corp` を足すだけ。ページは初回に登録して 1 回だけ再読み込みする（`sessionStorage` で 1 回に抑える）。`?coi=off` で解除 |
 | `public/helper.js` | T93 段階 2 のソフトウェアスレッド。共有メモリの上で、`forward.js` が配る行列積の行の塊を取り合う。自分専用の待ち番号（`WAKE + share`）で起こされる。ブラウザの Worker と Node の worker_threads の両方で動く |
-| `tests/threads-check.mjs` | ソフトウェアスレッドの確認: 本数を変えても logits が 1 本とビット単位で同じことと、本数ごとの速さ。forward はページと同じく Worker の中で走らせる |
+| `tests/threads-check.mjs` | ソフトウェアスレッドの確認: 本数を変えても logits が 1 本とビット単位で同じことと、本数ごとの速さ（`--from <位置>` で長い文脈から、T109）、プロンプトのまとめ処理（T108）。forward はページと同じく Worker の中で走らせる |
+| `public/jobs.js` | 段の仕事の並びと制御領域の配置、カーネルの呼び出し方を 1 か所に（T109 のレビューで、forward.js と helper.js の 2 部を寄せた）。両方が自分の `?v=` で読む |
 | `tests/engine.mjs` | Node の道具が使う「ページと同じエンジン」（T93）。Python に `kernel_llama(checkpoint, tokenizer, **options)` を渡す（JS の forward。`disable` に `kernels` があれば NumPy）。smoke・perplexity が使う |
 | `tests/forward-check.mjs` | `public/forward.js`（ページの forward）を NumPy の forward と比べる（T93）。float32 は最尤トークンが全位置で同じで logits の差 1e-3 以下（実測 1.7e-5〜3.7e-5）、int8 は活性値も量子化するので最尤トークンの一致 85% 以上・perplexity の差 5% 以内、128 位置で（実測 93.8〜100%・−0.23〜+2.00%。64 位置では llm-jp が 87.5%・+3.42% と揺れる）。デプロイでも走る |
 | `tests/ladder.mjs` | Pythia の梯子（T84）の表を、huggingface ジョブの `results.jsonl`（小さい組と大きい組の 2 つ）から起こす。単体テストは `tests/ladder-check.mjs` |

@@ -3,65 +3,33 @@
 // a module Web Worker in the page and as a worker_threads worker in Node (the tests).
 //
 // The coordinator (forward.js, in the model's worker) publishes a phase in the control area at the start of the
-// memory; see CONTROL in forward.js. A helper sleeps on GEN with Atomics.wait, takes chunks from COUNTER until there
-// are none, counts them in FINISHED, and sleeps again. It never spins.
+// memory (jobs.js has its layout). A helper sleeps on its own word with Atomics.wait, takes chunks from COUNTER until
+// there are none, counts them in FINISHED, and sleeps again. It never spins.
 const node = typeof process !== "undefined" && process.versions?.node;
 const port = node ? (await import("node:worker_threads")).parentPort : self;
 const listen = (handler) => (node ? port.on("message", handler) : (self.onmessage = (event) => handler(event.data)));
 
-// the layout of the control area: the same numbers as in forward.js. WAKE + share is this helper's own word: the
-// coordinator writes the generation there and wakes exactly the helpers it wants, always the same ones. (With one
-// word for all, Atomics.notify wakes whoever has slept longest, so a different, cold helper took every phase.)
-const GEN = 0, QUIT = 1, COUNTER = 2, FINISHED = 3, ACTIVE = 4, TOTAL = 5, WAKE = 256, JOBS = 512, JOB = 16;
-const ROWS = 9, SIZE = 14, FIRST = 15;
-// T108: how many bytes of weights a block of rows holds when several tokens use it: the same as forward.js
-const BLOCK_BYTES = 16384;
+// what a job is and how its rows are run: jobs.js, the same file forward.js reads, from the same deployment
+const { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, ROWS, SIZE, FIRST, CONTROL_BYTES, runner, warmUp } =
+  await import(new URL(`jobs.js${new URL(import.meta.url).search}`, import.meta.url));
 
 listen(({ memory, plain, relaxed, share }) => {
   const imports = { env: { memory } };
   const k = new WebAssembly.Instance(plain, imports).exports;
   const q8r = relaxed ? new WebAssembly.Instance(relaxed, imports).exports.matmul_q8r : null;
-  const ctl = new Int32Array(memory.buffer, 0, 1024);
-  // rows r0..r1 of the job at ctl[at]: the kinds and their arguments are forward.js's (0 matmul_q8r, 1 matmul_q8,
-  // 2 matmul_f32, 3 attention, whose rows are heads, 4 the same over float16). With a count of tokens (T108), the rows go in blocks and every
-  // token uses a block before the next: see runRows in forward.js, which this does the same way.
-  const call = (kind, out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => {
-    if (kind === 0) q8r(out, a, b, a4, a5, a6, a7, r0, r1);
-    else if (kind === 1) k.matmul_q8(out, a, b, a4, a5, a7, r0, r1);
-    else if (kind === 2) k.matmul_f32(out, a, a4, a7, r0, r1);
-    else if (kind === 3) k.attention(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
-    else k.attention_f16(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
-  };
-  const run = (at, r0, r1) => {
-    const [kind, out, a, b, a4, a5, a6, a7, a8, rows, count, os, as, bs] = ctl.subarray(at, at + SIZE);
-    if (count === 1) return call(kind, out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
-    const step = Math.max(1, Math.floor(BLOCK_BYTES / (kind === 2 ? 4 * a7 : a7)));
-    for (let r = r0; r < r1; r += step) {
-      const end = Math.min(r + step, r1);
-      for (let t = 0; t < count; t++) call(kind, out + t * os, a + t * as, b + t * bs, a4, a5, a6, a7, a8, rows, r, end);
-    }
-  };
+  const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
+  const runRows = runner(k, q8r);
   const steal = () => {
     const total = ctl[TOTAL], count = ctl[JOBS];
     for (let c = Atomics.add(ctl, COUNTER, 1); c < total; c = Atomics.add(ctl, COUNTER, 1)) {
       let j = count - 1;
       while (ctl[JOBS + 1 + j * JOB + FIRST] > c) j--;
       const at = JOBS + 1 + j * JOB, size = ctl[at + SIZE], r0 = (c - ctl[at + FIRST]) * size;
-      run(at, r0, Math.min(r0 + size, ctl[at + ROWS]));
+      runRows(ctl.subarray(at, at + SIZE), r0, Math.min(r0 + size, ctl[at + ROWS]));
       if (Atomics.add(ctl, FINISHED, 1) + 1 === total) Atomics.notify(ctl, FINISHED);
     }
   };
-  // Warm the kernels up before anyone waits for this thread: a new thread runs them unoptimized at first, and the
-  // search for the number of threads would take that for the speed of the count (T93). Tiny matmuls on scratch
-  // space at the end of the control area, many times; what they compute is thrown away.
-  const scratch = 3072, xq = scratch, xs = scratch + 64, w = scratch + 128, s = scratch + 192, c = scratch + 256, out = scratch + 320;
-  for (let i = 0; i < 4000; i++) {
-    k.matmul_q8(out, xq, xs, w, s, 32, 0, 1);
-    k.matmul_f32(out, out + 64, w, 8, 0, 1);
-    if (q8r) q8r(out, xq, xs, w, s, c, 32, 0, 1);
-    k.attention(out, xq, w, w, c, 0, 1, 1, 4, 0, 1);  // one head of 4 at position 0
-    k.attention_f16(out, xq, w, w, c, 0, 1, 1, 4, 0, 1);
-  }
+  warmUp(k, q8r);  // before anyone waits for this thread
   port.postMessage("ready");
   let gen = Atomics.load(ctl, WAKE + share);
   for (;;) {

@@ -10,6 +10,11 @@
 //   const { memory, base } = weightsMemory(size);              // then write the checkpoint at base
 //   const outside = external({ memory, base, size, kernels }); // what Llama(external=) takes
 
+// what a job of a phase is, shared with the software threads (helper.js), from the same deployment as this file
+const { CONTROL_BYTES, GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, BATCH, ROWS, SIZE, FIRST, runner } =
+  await import(new URL(`jobs.js${new URL(import.meta.url).search}`, import.meta.url));
+export { BATCH };
+
 const PAGE = 65536;
 const align = (n, to = 64) => Math.ceil(n / to) * to;
 
@@ -46,20 +51,10 @@ export function weightsMemory(size, { shared = false } = {}) {
   throw new Error("This browser gives no shared WebAssembly memory for this model.");
 }
 
-// ---- the helper threads (stage 2): the control area at the start of a shared memory, as helper.js reads it
-const CONTROL_BYTES = 4096;
-// WAKE + share: each helper's own word, so that a phase wakes exactly helpers 1..threads-1 (see helper.js)
-const GEN = 0, QUIT = 1, COUNTER = 2, FINISHED = 3, ACTIVE = 4, TOTAL = 5, WAKE = 256, JOBS = 512, JOB = 16;
-// within a job (see phase()): where its rows are, and the two numbers the coordinator adds to it
-const ROWS = 9, SIZE = 14, FIRST = 15;
+// ---- the helper threads (stage 2): the control area at the start of a shared memory (jobs.js has its layout)
 // how many chunks per thread the rows of a matmul are cut into: whoever is free takes the next one, so a slow core
 // (a little core of a big.LITTLE phone) simply takes fewer. 2 to 16 measured the same (T93); fewer does not steal.
 const CHUNKS_PER_THREAD = 4;
-// T108: the most tokens of a prompt that go through the layers together, and how many bytes of weights a block of
-// rows holds when several tokens use it (see runRows)
-export const BATCH = 16;
-const BLOCK_BYTES = 16384;
-export const blockRows = (kind, n) => Math.max(1, Math.floor(BLOCK_BYTES / (kind === 2 ? 4 * n : n)));
 
 /** What Llama(external=) takes: the size of the checkpoint, read() for the few bytes Python looks at itself, and
  * start(plan), which builds the forward pass. */
@@ -244,16 +239,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // whoever takes them. Every row is computed whole by one thread with the same kernel, so the numbers are the same
   // with any number of threads.
   //
-  // A job: [kind, eight arguments, rows, count, out stride, a stride, b stride], and the control area holds it as it
-  // is, then the size of its chunks and the number of its first chunk (see JOB). The kinds and their arguments:
-  //   0 matmul_q8r  out, xq, xs, w, scales, corrections, n        rows: the matrix's
-  //   1 matmul_q8   out, xq, xs, w, scales, -, n
-  //   2 matmul_f32  out, x, -, w, -, -, n
-  //   3 attention   out, q, keys, values, scores, pos, kv heads, head size   rows: the heads (T109)
-  //   4 attention_f16  the same over a cache of float16 (T110)
-  // count > 1 (T108): the same rows for count tokens, whose out, a and b are that many bytes apart. The rows go in
-  // blocks small enough to stay in the cache while every token uses them: each (row, token) is the one kernel call it
-  // is for a single token, so the numbers are the same as one token at a time.
+  // A job is what jobs.js says: [kind, eight arguments, rows, count, out stride, a stride, b stride].
   const shared = typeof SharedArrayBuffer !== "undefined" && memory.buffer instanceof SharedArrayBuffer && spawn;
   const ctl = shared ? new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4) : null;
   const helpers = [];
@@ -266,22 +252,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // the attention of token t of a run, at position pos (its scores have a place of their own: tokens run at once)
   const attentionJob = (t, pos, layerKeys, layerValues) =>
     [halfKV ? 4 : 3, xb + t * S, q + t * S, layerKeys, layerValues, att + t * A, pos, kvHeads, headSize, heads, 1, 0, 0, 0];
-  const call = (kind, out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => {
-    if (kind === 0) relaxed(out, a, b, a4, a5, a6, a7, r0, r1);
-    else if (kind === 1) k.matmul_q8(out, a, b, a4, a5, a7, r0, r1);
-    else if (kind === 2) k.matmul_f32(out, a, a4, a7, r0, r1);
-    else if (kind === 3) k.attention(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
-    else k.attention_f16(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
-  };
-  const runRows = (job, r0, r1) => {
-    const [kind, out, a, b, a4, a5, a6, a7, a8, rows, count, os, as, bs] = job;
-    if (count === 1) return call(kind, out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
-    const step = blockRows(kind, a7);
-    for (let r = r0; r < r1; r += step) {
-      const end = Math.min(r + step, r1);
-      for (let t = 0; t < count; t++) call(kind, out + t * os, a + t * as, b + t * bs, a4, a5, a6, a7, a8, rows, r, end);
-    }
-  };
+  const runRows = runner(k, relaxed);
   const waitUntil = (index, done) => {
     for (let seen = Atomics.load(ctl, index); !done(seen); seen = Atomics.load(ctl, index)) Atomics.wait(ctl, index, seen);
   };
