@@ -53,9 +53,17 @@ jobs:
           npx playwright-core install --with-deps firefox webkit
           failed=0
           for browser in chromium firefox webkit; do
-            E2E_OFFLINE=1 node tests/e2e.mjs stories260K "$browser" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            E2E_OFFLINE=1 E2E_ARTIFACTS=offline node tests/e2e.mjs stories260K "$browser" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
           done
           exit $failed
+
+      - name: Keep what the failed offline runs left
+        if: failure() && inputs.offline
+        uses: actions/upload-artifact@v7
+        with:
+          name: offline
+          path: offline/
+          retention-days: 14
 
       - name: Keep them
         if: always()

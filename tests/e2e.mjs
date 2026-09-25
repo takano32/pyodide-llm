@@ -237,6 +237,8 @@ if (process.env.E2E_OFFLINE && !failures.length) {
   const reloaded = Date.now();
   await page.reload({ waitUntil: "load" }).catch((error) => failures.push(`offline, the page did not load: ${error.message}`));
   if (!failures.length) {
+    // the new page's own report of ready (the button may be enabled before the page's script disables it)
+    await acrossReload(() => page.waitForFunction(() => window.__ready || document.querySelector(".error"), null, { timeout: 0 }));
     await idle();
     const readyOffline = (Date.now() - reloaded) / 1000;
     await page.press("#prompt", "Control+Enter");
