@@ -161,11 +161,6 @@
 
 採用したが、いまはやらないと決めたもの。条件が変わったら「これからのタスク」へ戻す。
 
-### T118 [運用] Pyodide の読み込みの期限を「進まない時間」で決める — 状態: **進行中（2026-09-26、持ち主の指示「着手せよ」: CI の帯域を絞るプロキシで確かめる）**（2026-09-25 採用、Opus xhigh のレビューから。**フォールバック（Service Worker を外す）に触るので、持ち主の端末で見てから**。T117 と同じ日に。規模 小）
-- 根拠: T113 の期限は経過時間（the loader 60 秒、the runtime 90 秒、NumPy 60 秒）。Pyodide の約 8.9MB（pyodide.asm.wasm 3.44MB、標準ライブラリ 2.51MB、NumPy の wheel 2.93MB。レビューのサブエージェントが jsDelivr で測った）を 90 秒で取れない回線（約 0.8Mbps 未満。日本の速度制限は 128k〜1Mbps）では、正常でも期限切れ → Service Worker を外して読み直し → 2 回目も期限切れでエラーになる（2a7d34a の前は遅くても最後まで読めた）。`await numpy`（NumPy の先読み）はどの期限にも入っていない。
-- 手順: 期限を「N 秒、取得が進まない」にする（進みの見方は未検討: PerformanceObserver の resource か、Service Worker が数える）。先読みにも期限。
-- 完了条件: 帯域を絞った CI（Playwright の CDP）で、遅いが正常な読み込みは期限切れにならず、止まった読み込みは期限切れになる。
-
 ### T94 [性能] WebGPU で forward を GPU に置く（GPU の帯域を使う）— 状態: **保留（2026-09-26、持ち主の判断。第 0 段の計測で、持ち主の 3 台（Android・iPhone・ARM の Chromebook）はどれも線に届かなかった。デスクトップ級の GPU（独立した GPU か Apple の M 系）の端末で測れるようになったら、`/gpu-test/` で測って再開を決める）**（2026-09-25 に採用、持ち主の指示「WebGPU のタスクを採用したいので煮詰めてほしい」）（規模 大。段階ごとに止まる点がある）
 - 担当: 第 0 段（判定の計測）と第 1〜3 段の実装は Opus、各段の判定とレビューは Opus xhigh。Worker とページの契約を変えるので、第 1 段の設計は docs/review-by-opus.md の「Fable に回すもの」に当たるかをレビュー担当が決める。速さの計測は持ち主の端末（下）。
 - **目的との折り合い（持ち主が採用した）**: WGSL のシェーダは Python でも WASM でもないが、AssemblyScript の SIMD カーネルと同じく「重い計算だけ外に出す」の延長として扱う。Python は今までどおりトークナイザ・サンプリング・生成ループを持つ。ステータス行は何で動いたかを必ず言う（「WebGPU」）。
@@ -938,6 +933,16 @@
 
 - **基準（2026-09-26、持ち主）**: T117 の直しを入れる前の本番（T111 のオフライン）で、持ち主の iPhone の Safari が機内モードの読み込み直しでも動いた。
 - **実装（2026-09-26、8b57616）**: (1) オフラインで問い合わせの違いを無視して答えるのはページ（ナビゲーション）だけ、(2) Cache API が開けなければネットに任せる（`quietly()`）、(3) `family()` が wheel の版と `/_astro/` のハッシュを同じ家族にまとめる。試験は `tests/coi-js-check.mjs`（Node の vm で coi.js をそのまま動かす、偽の Cache API と fetch。直す前の coi.js は (1) で落ちる）。デプロイでも走る。**CI**（`preview.yml` の `offline`、master、run 36153206636）: Chromium（オフラインで準備完了 1.8 秒、答えた）と Firefox（6.2 秒、答えた）は通り、Playwright の WebKit は読み込み直しで「WebKit encountered an internal error」。**これは直す前（T111、run 36106652756）から同じ**で、T117 で起きたものではない（本物の iPhone の Safari はオフラインで動く）。**残り: 持ち主の iPhone・Android・PC で、直した版の機内モードの読み込み直し。**
+
+</details>
+
+- [x] **T118 [運用] Pyodide の読み込みの期限を「進まない時間」で決める。**（Opus medium、2026-09-26）— 状態: **レビュー待ち**。**形**: 読み込みの間だけ Worker の `fetch` を包み、本文が届いたバイトを数える（`watchArrivals()`。import の 2 ファイルは PerformanceObserver の完了で数える）。各段（loader・runtime・NumPy）は **30 秒何も届かなければ**諦めてフォールバック（T113）に入る。NumPy の先読みも 30 秒何も届かなければ待たずに進む（そのときは `loadPackage` が自分で取る）。**確かめ方**: `slow.yml`（`tests/slow-check.mjs`）。CI の中に CONNECT のプロキシを立て、サーバからの流れを 1 本の回線のように共有の速さで流す（`slow`）か、cdn.jsdelivr.net を 200kB で止める（`stall`）。Chromium をそこに通して本番を開く。**直す前の本番**（8bbb48d の時点）: `slow` 0.4 Mbps で 9.0MB が届いていたのに 202 秒後に「did not finish "the runtime" in 90 seconds」、フォールバックして失敗（**不具合を再現**）。`stall` は 173 秒でエラー。**直した後**（308ce01）: `slow` は **209 秒で準備完了、フォールバックなし、隔離あり・4 本**、`stall` は「"the runtime" got nothing from the network for 30 seconds」→ フォールバック → 117 秒でエラー（止まったままにならない）。普通の回線（`models.yml`: tiny-lm・llm-jp-3 150M・SmolLM2）は 5〜8 秒で準備完了。**レビューで見てほしいこと**: 読み込みの間は `fetch` が本文を数える包みの Response を返す（`url` が空になる。Pyodide と NumPy の読み込みは CI の Chromium で通った。Safari・Firefox では未確認）。モデルの部品の取得も同じ時間に走るので、Pyodide だけが止まってもモデルの取得が続く間は「進んでいる」と数える（止まりを見つけるのが遅れるだけで、見逃しはしない）。
+
+<details><summary>T118 の採用時の記録</summary>
+
+- 根拠: T113 の期限は経過時間（the loader 60 秒、the runtime 90 秒、NumPy 60 秒）。Pyodide の約 8.9MB（pyodide.asm.wasm 3.44MB、標準ライブラリ 2.51MB、NumPy の wheel 2.93MB。レビューのサブエージェントが jsDelivr で測った）を 90 秒で取れない回線（約 0.8Mbps 未満。日本の速度制限は 128k〜1Mbps）では、正常でも期限切れ → Service Worker を外して読み直し → 2 回目も期限切れでエラーになる（2a7d34a の前は遅くても最後まで読めた）。`await numpy`（NumPy の先読み）はどの期限にも入っていない。
+- 手順: 期限を「N 秒、取得が進まない」にする（進みの見方は未検討: PerformanceObserver の resource か、Service Worker が数える）。先読みにも期限。
+- 完了条件: 帯域を絞った CI（Playwright の CDP）で、遅いが正常な読み込みは期限切れにならず、止まった読み込みは期限切れになる。
 
 </details>
 
