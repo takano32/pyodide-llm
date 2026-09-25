@@ -52,10 +52,11 @@ const RAKUTEN = "A chat between a curious user and an artificial intelligence as
 const ZEPHYR = "<|user|>\n{prompt}</s> \n<|assistant|>\n";
 const harmony = { specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
 /** What the page sends for a prompt in a model's template: {prompt} is what was typed, {date} today (YYYY-MM-DD, the
- * visitor's own day). */
+ * visitor's own day). What was typed goes in as it is: as a replacement string, its $$, $&, $` and $' were patterns
+ * (a typed $' wrote the rest of the template, special tokens and all; the review of T132). */
 export function filled(template, prompt, today = new Date()) {
   const date = [today.getFullYear(), today.getMonth() + 1, today.getDate()].map((n) => String(n).padStart(2, "0")).join("-");
-  return template.replace("{date}", date).replace("{prompt}", prompt);
+  return template.replace("{date}", date).replace("{prompt}", () => prompt);
 }
 // Models that huggingface.co serves and this page converts itself (public/llama2_convert.py, the code that builds
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
