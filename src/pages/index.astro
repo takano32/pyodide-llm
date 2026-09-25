@@ -295,7 +295,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
 
 <script>
   import { GROUPS, MODELS, memoryFailure, memoryWarning } from "../models.js";
-  import { FULL_ROUNDS, ROUNDS, benchMarkdown, environmentOf } from "../bench.js";
+  import { FULL_ROUNDS, ROUNDS, benchMarkdown, environmentOf, reportUrl } from "../bench.js";
 
   declare const __BUILD__: string;
   const $ = (id: string) => document.getElementById(id)!;
@@ -581,7 +581,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     bubble.textContent = "";
     const title = document.createElement("div");
     title.className = "bench-title";
-    title.textContent = [environment.model, environment.threads !== undefined && `${environment.threads} threads`,
+    title.textContent = [environment.model, environment.threads !== undefined && `${environment.threads} logical cores`,
       environment.pyodide && `Pyodide ${environment.pyodide}`].filter(Boolean).join(" · ");
     const table = document.createElement("table");
     const head = table.createTHead().insertRow();
@@ -613,9 +613,9 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       }
       setTimeout(() => { copy.textContent = "copy as Markdown"; }, 1500);
     };
-    // T91 will give the report a template; until then the Markdown itself is the body of the issue
+    // T91: the issue template's questions (device, OS, browser) above the Markdown
     const report = document.createElement("a");
-    report.href = `https://github.com/takano32/pyodide-llm/issues/new?title=${encodeURIComponent(`Benchmark: ${environment.model}`)}&body=${encodeURIComponent(markdown)}`;
+    report.href = reportUrl(markdown, environment);
     report.target = "_blank";
     report.rel = "noopener";
     report.textContent = "report it as an issue";

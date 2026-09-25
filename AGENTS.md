@@ -49,6 +49,7 @@
 | `src/bench.js` | ベンチマーク（T45）の組み立て。素の ES モジュールなので Node からも import できる（`tests/bench.mjs` が単体テストする）。測る組み合わせ（`ROUNDS` と `FULL_ROUNDS`）と Markdown の表を持つ |
 | `tests/compare-engines.mjs` | コミット済みのエンジンと作業中のエンジンを 1 つの Pyodide で交互に走らせて tok/s を並べる（T92）。性能に触る変更の前後比較はこれで |
 | `tests/bench.mjs` | `src/bench.js` の単体テスト。Node だけで走る（`node tests/bench.mjs`） |
+| `.github/ISSUE_TEMPLATE/benchmark.md` と `tests/reports.mjs` | 訪問者のベンチの報告（T91）。ページの「report it as an issue」は雛形の 3 つの問い（機種・OS・ブラウザ）の下にページの Markdown を入れた Issue を開く（`reportUrl()`）。`node tests/reports.mjs` がラベル `benchmark` の Issue を全部読んで 1 枚の表にする（`reportsTable()`。T83 の `30-` に写す）。問いの文言はページ（`QUESTIONS`）と雛形で同じでなければならない（`tests/bench.mjs` が見る） |
 | `tests/bench-browser.mjs` | `?bench=1` を実ブラウザで走らせる確認。**CI 用**（この開発機ではブラウザを動かさない） |
 | `tests/perplexity_prepare.py` / `tests/perplexity_native.py` | T85 の計測用。HF のモデルをページと同じ `Conversion` で変換して options を JSON に書く / float32 の原本の perplexity をネイティブの NumPy で出す（Pyodide に載らない大きさのため） |
 | `tests/test_gguf.py` | GGUF の読み手の単体テスト。テストの中で llama.cpp と同じ形の GGUF（Q8_0、Llama の q・k は回す）を書き、safetensors の経路と 1 バイトも違わないことを見る。回す処理を外すと Llama の 4 件が落ちる |
