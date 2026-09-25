@@ -161,3 +161,49 @@ def test_a_llama3_gguf_splits_like_llama3_and_refuses_the_rope_freqs_table():
     metadata, found, base = gguf_read(file)
     with pytest.raises(ValueError, match="rope_freqs"):
         gguf_model(metadata, {**found, "rope_freqs.weight": {"type": 0, "shape": [4], "offset": 0}}, base)
+
+
+def transformers5(published):
+    """The same config.json as transformers 5 saves it: rope_theta, rope_scaling and GPT-NeoX's rotary_pct and
+    rotary_emb_base go into one rope_parameters (seen with transformers 5.12.1's LlamaConfig, Qwen2Config and
+    GPTNeoXConfig)."""
+    old = dict(published)
+    theta, base = old.pop("rope_theta", None), old.pop("rotary_emb_base", None)
+    rope = {"rope_theta": theta or base or 10000.0, "rope_type": "default", **(old.pop("rope_scaling", None) or {})}
+    if "rotary_pct" in old:
+        rope["partial_rotary_factor"] = old.pop("rotary_pct")
+    return {**old, "rope_parameters": rope}
+
+
+def options_of(tensors, published, dtype, max_seq_len):
+    file = safetensors_file(tensors)
+    size = struct.unpack("<Q", file[:8])[0]
+    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
+                             "vocab": [[f"w{i}", -float(i)] for i in range(published["vocab_size"])]}}).encode()
+    conversion = Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(published), vocabulary, "tokenizer.json",
+                            dtype=dtype, max_seq_len=max_seq_len)
+    conversion.feed(file)
+    conversion.finish()
+    return bytes(conversion.checkpoint), conversion.options
+
+
+@pytest.mark.parametrize("family", ["llama3", "theta", "neox"])
+def test_a_config_of_transformers_5_converts_as_the_old_one(family):
+    """The float32 file holds the RoPE tables (theta, the scaling, the rotated width): the same bytes and the same
+    options from either spelling, for the float32 and the int8 files."""
+    from test_neox import POSITIONS, neox_model
+    if family == "neox":
+        tensors, published = neox_model(0.25, True)
+        max_seq_len = POSITIONS
+    else:
+        config, tensors, published = llama3()
+        max_seq_len = config["seq_len"]
+        if family == "theta":
+            published = {**published, "rope_theta": 1000000.0}
+            del published["rope_scaling"]
+    for dtype in ("float32", "int8"):
+        assert options_of(tensors, transformers5(published), dtype, max_seq_len) == options_of(tensors, published, dtype, max_seq_len)
+    if family != "neox":
+        # and the tables do differ from the ones of theta 10000 unscaled, which is what an unread one got
+        plain = {key: value for key, value in published.items() if key not in ("rope_theta", "rope_scaling")}
+        assert options_of(tensors, plain, "float32", max_seq_len)[0] != options_of(tensors, published, "float32", max_seq_len)[0]

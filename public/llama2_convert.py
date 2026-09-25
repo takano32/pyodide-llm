@@ -648,9 +648,20 @@ def rotary_dim(config):
 
 def normalize(config):
     """GPT-2 spells its config.json differently: give it the names the rest of this file uses."""
+    rope = config.get("rope_parameters")
+    if isinstance(rope, dict):
+        # transformers 5 writes rope_theta, rope_scaling and GPT-NeoX's rotary_pct as one rope_parameters. Unread,
+        # such a config.json ran at theta 10000, unscaled and rotating whole heads, and wrote nonsense (the review
+        # of T106): the old names are what this file reads
+        scaling = {key: value for key, value in rope.items() if key not in ("rope_theta", "partial_rotary_factor")}
+        config = {**config, "rope_theta": rope.get("rope_theta", config.get("rope_theta", 10000.0))}
+        if scaling.get("rope_type", scaling.get("type", "default")) != "default":
+            config["rope_scaling"] = scaling
+        if "partial_rotary_factor" in rope:
+            config["rotary_pct"] = rope["partial_rotary_factor"]
     if config.get("model_type") == "gpt_neox":
         # GPT-NeoX has the Llama names already; only the angles are spelled differently
-        return {**config, "rope_theta": config.get("rotary_emb_base", 10000.0),
+        return {**config, "rope_theta": config.get("rotary_emb_base", config.get("rope_theta", 10000.0)),
                 "tie_word_embeddings": config.get("tie_word_embeddings", False)}
     if config.get("model_type") != "gpt2":
         return config

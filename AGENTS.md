@@ -184,6 +184,7 @@
 - **int8 のモデルをカーネルなしで 2 つ同時に載せない。** `kernels=None` の `Llama` は int8 を float32 に広げる（SmolLM2 135M で約 540MB）。`tests/gguf_check.py logits` が 2 つを並べて載せて、この開発機が 2026-09-24 に 2 回落ちた。いまは 1 つずつ載せて logits（count × 語彙の float32）を取り置く（それでも峰は 874MB）。ネイティブでモデルを載せる前に `free -m` を見る。
 - **開発機はメモリが少ない。** 空き 600MB でヘッドレスブラウザを動かしてマシンごと落ちたことがある。ブラウザのテスト前に `free -m` で空きが 1GB 以上あることを確認する。llm-jp-3-150m の float16 原本（ブラウザで約 800MB）はこの機械では試さない。
 - **`git rm` は削除をすぐ登録する。** その後で別のタスクのファイルだけを `git add` してコミットすると、登録済みの削除も一緒に入る（T93 の旧プロファイラの削除が T83 のコミットに入った）。コミットの前に `git diff --cached --stat` でステージの中身を見る。
+- **transformers 5 が保存した config.json は、RoPE の設定を `rope_parameters` 1 つに入れる**（`rope_theta`・`rope_scaling`・GPT-NeoX の `rotary_pct` と `rotary_emb_base` がトップレベルから消える。この開発機の transformers 5.12.1 の `LlamaConfig`・`Qwen2Config`・`GPTNeoXConfig` で確かめた）。読まないと theta 10000・縮めなし・head 全体を回す、で黙って動いて文が壊れる（2026-09-25 の Opus xhigh のレビューで発見。一覧のモデルはリビジョンを固定した古い形なので無事だった。`?hf=` と T81 で足すモデルが対象）。`normalize()` が古い名前に直す。config.json の読み方を足すときは、transformers の新しい版が同じものをどう書くかも見る。
 - **Llama 3 の GGUF は RoPE の縮め方を `rope_freqs` の表で持つ**（config.json の `rope_scaling` ではなく）。読み飛ばすと素の RoPE で動き、エラーにならずに文が壊れる。だからその表のある GGUF は断っている（T106）。GGUF の読み手で「知らないテンソルは読み飛ばす」を使うときは、読み飛ばして意味が変わらないかを確かめる。
 - **止められたシェルコマンドが途中まで実行されていることがある。** 止められたら `git status` で状態を確かめる。
 - **int8 のファイルはコンテキストを変えてもサイズが変わらない**（RoPE の表を持たないので、変わるのはヘッダの 4 バイトだけ）。T56 で 512 → 4096 にしたとき、Cache API のキー（URL + サイズ）が同じままになるので `MODEL_CACHE` を `models-v2` に上げた（古い `models-v1` は Worker が消す）。float16 の原本は RoPE の表のぶん大きくなるので `src/models.js` の `bytes` を直した。
