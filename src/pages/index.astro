@@ -545,10 +545,13 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
         }
         return false;
       }
+      // Registered every time: with the same URL nothing changes, with a new ?v= the browser installs the new
+      // version and it takes over (skipWaiting, claim). A visitor who was isolated already kept the old version for
+      // ever when the page skipped this (2026-09-25: their fetches through it and the new worker did not agree).
+      await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}coi.js?v=${__BUILD__}`, { scope: import.meta.env.BASE_URL });
       if (self.crossOriginIsolated) {
         return false;
       }
-      await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}coi.js?v=${__BUILD__}`, { scope: import.meta.env.BASE_URL });
       await navigator.serviceWorker.ready;
       // once per tab: a browser that is not isolated even under the worker must not reload for ever
       if (sessionStorage.getItem("coi-reloaded")) {
