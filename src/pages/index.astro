@@ -390,7 +390,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     }
     return { fixed: fixedThreads, remembered, hint: navigator.hardwareConcurrency || 1 };
   };
-  const REPOSITORY = /^[\w.-]+\/[\w.-]+$/;
+  const REPOSITORY = /^[\w.-]+\/[\w.-]+$/, REVISION = /^[\w.-]+$/;
   // a repository nobody has looked at, as an entry of the list: the same for ?hf= and for the sheet (T88)
   function hfEntry(repository: string, revision: string): typeof MODELS[number] {
     const common = { id: "local", options: {}, prompt: parameters.get("prompt") ?? "", placeholder: "", template: parameters.get("template") ?? undefined };
@@ -401,8 +401,11 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   function named(): typeof MODELS[number] | undefined {
     const repository = parameters.get("hf"), checkpoint = parameters.get("checkpoint"), tokenizer = parameters.get("tokenizer");
     const common = { id: "local", options: {}, prompt: parameters.get("prompt") ?? "", placeholder: "", template: parameters.get("template") ?? undefined };
-    if (repository && REPOSITORY.test(repository)) {
-      return hfEntry(repository, parameters.get("revision") ?? "main");
+    // the revision goes into the file's address: only a name, as the sheet takes it (the review of T88: a link with
+    // ../ in it showed one repository and fetched another's files)
+    const revision = parameters.get("revision") ?? "main";
+    if (repository && REPOSITORY.test(repository) && REVISION.test(revision)) {
+      return hfEntry(repository, revision);
     }
     if (checkpoint && tokenizer && [checkpoint, tokenizer].every((url) => /^https:\/\//.test(url))) {
       return { ...common, name: new URL(checkpoint).pathname.split("/").pop(), note: new URL(checkpoint).hostname,
@@ -964,7 +967,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     // the address of the model's page is what people copy: owner/name is what is needed of it
     const repository = field.value.trim().replace(/^https?:\/\/huggingface\.co\//, "").replace(/\/(tree|blob)\/.*$/, "").replace(/\/+$/, "");
     const revision = ($("repository-revision") as HTMLInputElement).value.trim() || "main";
-    if (!REPOSITORY.test(repository) || !/^[\w.-]+$/.test(revision)) {
+    if (!REPOSITORY.test(repository) || !REVISION.test(revision)) {
       field.setCustomValidity("owner/name, as huggingface.co spells it");
       field.reportValidity();
       field.oninput = () => field.setCustomValidity("");
