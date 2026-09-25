@@ -268,7 +268,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   #settings-open.changed::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
   /* In the top layer, so it never moves the page. The script puts it above its button; on a narrow screen it is
      a sheet over the composer instead, where a thumb reaches it. */
-  .sheet { position: fixed; inset: auto; margin: 0; width: min(320px, calc(100vw - 32px)); box-sizing: border-box; padding: 14px 16px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 30px rgb(0 0 0 / 0.25); font-size: 0.85rem; }
+  .sheet { position: fixed; inset: auto; margin: 0; width: min(320px, calc(100vw - 32px)); box-sizing: border-box; padding: 14px 16px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 30px rgb(0 0 0 / 0.25); font-size: 0.85rem; overflow-y: auto; overscroll-behavior: contain; }
   .sheet::backdrop { background: transparent; }
   .sheet input[type="text"] { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
   .sheet label { display: block; margin-bottom: 10px; color: var(--muted); }
@@ -578,6 +578,8 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     const button = $("settings-open").getBoundingClientRect();
     panel.style.left = `${button.left}px`;
     panel.style.bottom = `${innerHeight - button.top + 10}px`;
+    // T119: no taller than the room above the button: with Engine and More both open, a phone lost its top
+    panel.style.maxHeight = `${button.top - 26}px`;
   });
 
   function show(current: typeof model) {
@@ -746,9 +748,15 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     } else if (data.type === "progress") {
       progress.hidden = false;
       progress.max = data.total;
-      progress.value = data.received;
-      statusText.textContent = data.converting ? `${model.name}: converting, ${Math.floor((data.received / data.total) * 100)} %`
-        : `${model.name}: ${(data.received / 1e6).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
+      const megabytes = (bytes: number) => (bytes / 1e6).toFixed(1);
+      // T119: a conversion says what has arrived and how fast apart from what is converted: the share converted
+      // moves only as fast as the bytes come, and alone it made a slow line look like a slow conversion. A file of
+      // the visitor's own disk has nothing to fetch: the share alone
+      const converted = data.converted === undefined ? "" : `${Math.floor(data.converted * 100)} % converted`;
+      progress.value = data.received || (data.converted ?? 0) * data.total;
+      statusText.textContent = !data.received && converted ? `${model.name}: ${converted}`
+        : `${model.name}: ${megabytes(data.received)} / ${megabytes(data.total)} MB` +
+          (data.perSecond ? ` · ${megabytes(data.perSecond)} MB/s` : "") + (converted ? ` · ${converted}` : "");
     } else if (data.type === "bench") {
       // T45 measured, T76 shows it: one bubble with the table, and under it the Markdown to copy or to report
       const environment = environmentOf(navigator, { model: model.name, pyodide: data.pyodide, site: location.origin + location.pathname });
@@ -1009,6 +1017,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     const anchor = select.getBoundingClientRect();
     repositorySheet.style.left = `${Math.max(16, Math.min(anchor.left, innerWidth - 336))}px`;
     repositorySheet.style.top = `${anchor.bottom + 8}px`;
+    repositorySheet.style.maxHeight = `${innerHeight - anchor.bottom - 24}px`;
   });
   repositorySheet.addEventListener("toggle", (event) => {
     if ((event as ToggleEvent).newState === "open") {
@@ -1017,14 +1026,19 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   });
   ($("repository-form") as HTMLFormElement).onsubmit = (event) => {
     event.preventDefault();
-    const field = $("repository-name") as HTMLInputElement;
+    const field = $("repository-name") as HTMLInputElement, revisionField = $("repository-revision") as HTMLInputElement;
     // the address of the model's page is what people copy: owner/name is what is needed of it
     const repository = field.value.trim().replace(/^https?:\/\/huggingface\.co\//, "").replace(/\/(tree|blob)\/.*$/, "").replace(/\/+$/, "");
-    const revision = ($("repository-revision") as HTMLInputElement).value.trim() || "main";
-    if (!REPOSITORY.test(repository) || !REVISION.test(revision)) {
-      field.setCustomValidity("owner/name, as huggingface.co spells it");
-      field.reportValidity();
-      field.oninput = () => field.setCustomValidity("");
+    const revision = revisionField.value.trim() || "main";
+    // T119: the message goes on the field that is wrong, and goes away as that field is edited (on the name alone,
+    // a wrong revision put right left the name marked, and the form would not open)
+    const wrong = !REPOSITORY.test(repository) ? [field, "owner/name, as huggingface.co spells it"]
+      : !REVISION.test(revision) ? [revisionField, "a branch, a tag or a commit"] : undefined;
+    if (wrong) {
+      const [at, words] = wrong;
+      at.setCustomValidity(words);
+      at.reportValidity();
+      at.oninput = () => at.setCustomValidity("");
       return;
     }
     repositorySheet.hidePopover();

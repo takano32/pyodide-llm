@@ -578,12 +578,28 @@ async function bodyBetween(res, from, to, arriving) {
 }
 
 // arriving(count): told of every stretch of the body as it comes, for a progress line before a whole part is in
+// A fetch that huggingface.co refused, in the visitor's words (T119). The status alone does not tell: a gated
+// repository and one that is not there (or private) both answer 401; X-Error-Code (which CORS shows) says which.
+// Such an answer is the same the next time: it is not asked again (status says so).
+function refused(url, res) {
+  const [, repository, revision, file] = /^https:\/\/huggingface\.co\/(.+?)\/resolve\/([^/]+)\/(.+)$/.exec(url) ?? [];
+  const code = res.headers.get("X-Error-Code");
+  const error = new Error(!repository ? `Could not fetch ${url}: ${res.status}`
+    : code === "GatedRepo" ? `${repository} is gated on huggingface.co: its owner lets it be fetched only after a login and an accepted license, which this page cannot do. A copy of it that someone else published openly may work.`
+    : code === "RevisionNotFound" ? `${repository} has no revision ${revision} on huggingface.co.`
+    : code === "EntryNotFound" ? `${repository} has no ${file} at ${revision} on huggingface.co.`
+    : res.status === 401 || res.status === 404 ? `huggingface.co has no public repository ${repository}: check its name.`
+    : `huggingface.co answered ${res.status} for ${file} of ${repository}.`);
+  error.status = res.status;
+  return error;
+}
+
 async function fetchRange(url, begin, end, signal, arriving) {
   for (let attempt = 0; ; attempt++) {
     try {
       const res = await fetch(url, { headers: { Range: `bytes=${begin}-${end - 1}` }, signal });
       if (res.status !== 206 && res.status !== 200) {
-        throw new Error(`Could not fetch ${url}: ${res.status}`);
+        throw refused(url, res);
       }
       // 200: the server ignored the range and sends the whole file (T112: a browser whose stack does this is one to
       // know about). What was asked for is cut out as it streams past, and the rest is never fetched: taking the
@@ -596,7 +612,7 @@ async function fetchRange(url, begin, end, signal, arriving) {
       const total = Number(whole ? res.headers.get("Content-Length") : (res.headers.get("Content-Range") ?? "").split("/")[1]);
       return { bytes, total };
     } catch (error) {
-      if (signal.aborted || attempt === 2) {
+      if (signal.aborted || attempt === 2 || (error.status >= 400 && error.status < 500)) {
         throw error;
       }
     }
@@ -752,7 +768,7 @@ async function convert(model, signal, id) {
   const text = async (url) => {
     const res = await fetch(url, { signal });
     if (!res.ok) {
-      throw new Error(`Could not fetch ${url}: ${res.status}`);
+      throw refused(url, res);
     }
     return res;
   };
@@ -873,25 +889,31 @@ async function convert(model, signal, id) {
   }
   let template;
   try {
-    let reported = -1, converting = 0, fed = false, told = 0;
-    // until the first part is converted, the page hears how much has arrived (a line that says nothing looks stuck)
-    const arriving = (received) => {
-      if (fed || performance.now() - told < 250) {
+    // T119: the page hears both how much has arrived (and how fast) and how much is converted. With the converted
+    // share alone, a slow line looked like a slow conversion: the share moves as fast as the bytes arrive (8 MB/s
+    // from Japan, T123), the conversion itself is about 500 MB/s
+    let converting = 0, told = 0, arrived = 0, converted = 0, firstAt = 0, firstBytes = 0;
+    const tell = (now = performance.now()) => {
+      if (now - told < 250 && converted < 1) {
         return;
       }
-      told = performance.now();
-      postMessage({ type: "progress", load: id, received, total: size });
+      told = now;
+      const perSecond = firstAt && now > firstAt + 1000 ? ((arrived - firstBytes) / (now - firstAt)) * 1000 : undefined;
+      postMessage({ type: "progress", load: id, received: arrived, total: size, converted, perSecond });
+    };
+    const arriving = (received) => {
+      if (!firstAt) {
+        [firstAt, firstBytes] = [performance.now(), received];
+      }
+      arrived = received;
+      tell();
     };
     const feed = (bytes) => {
-      fed = true;
       // T84: the time Python spends converting, apart from the time spent waiting for the download
       const began = performance.now();
-      const percent = Math.floor(conversion.feed(bytes) * 100);
+      converted = conversion.feed(bytes);
       converting += performance.now() - began;
-      if (percent !== reported) {
-        reported = percent;
-        postMessage({ type: "progress", load: id, received: Math.round((percent / 100) * size), total: size, converting: true });
-      }
+      tell();
     };
     if (shards) {
       for (const shard of shards) {

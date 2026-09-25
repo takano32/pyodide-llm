@@ -67,6 +67,10 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.evaluate(() => { document.getElementById("engine").open = true; });
   await page.waitForTimeout(300);
   await shot(page, "settings-engine", width);
+  // T119 (5): Engine and More both open: the sheet stays under the top of the screen and scrolls
+  await page.evaluate(() => { for (const part of document.querySelectorAll("#settings details")) part.open = true; });
+  await page.waitForTimeout(300);
+  await shot(page, "settings-both", width);
   await page.keyboard.press("Escape");
 
   // 3. the sheet that opens any repository, with a name typed (T88)
@@ -74,6 +78,13 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.waitForTimeout(300);
   await page.fill("#repository-name", "Qwen/Qwen2.5-0.5B-Instruct");
   await shot(page, "repository", width);
+  // T119 (1): a wrong revision is marked on the revision's field, not the name's
+  await page.fill("#repository-revision", "not a revision!");
+  await page.click("#repository-form button[type=submit]");
+  await page.waitForTimeout(300);
+  await shot(page, "repository-revision", width);
+  const marks = await page.evaluate(() => ["repository-name", "repository-revision"].map((id) => document.getElementById(id).validationMessage));
+  console.log(`${width}: the name's field says "${marks[0]}", the revision's "${marks[1]}"`);
   await page.keyboard.press("Escape");
 
   // 4. the benchmark's bubble (T76)
@@ -91,6 +102,22 @@ for (const [width, viewport] of Object.entries(widths)) {
   await acrossReload(() => page.waitForFunction(() => document.querySelector(".error"), null, { timeout: 600000 }));
   await page.waitForTimeout(300);
   await shot(page, "refused", width);
+
+  // T119 (2): a gated repository, in words
+  await context.close();
+  ({ context, page } = await fresh(viewport));
+  await page.goto(`${site}?hf=meta-llama/Llama-3.2-1B`);
+  await acrossReload(() => page.waitForFunction(() => document.querySelector(".error"), null, { timeout: 600000 }));
+  await page.waitForTimeout(300);
+  await shot(page, "gated", width);
+
+  // T119 (6): a conversion under way says what has arrived, how fast, and what is converted
+  await context.close();
+  ({ context, page } = await fresh(viewport));
+  await page.goto(`${site}?hf=HuggingFaceTB/SmolLM2-360M-Instruct`);
+  await acrossReload(() => page.waitForFunction(() => /MB\/s/.test(document.getElementById("status-text")?.textContent ?? ""), null, { timeout: 600000 }));
+  await shot(page, "converting", width);
+  console.log(`${width}: ${await page.evaluate(() => document.getElementById("status-text").textContent)}`);
   await context.close();
 }
 await browser.close();
