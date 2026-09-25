@@ -71,6 +71,7 @@ export function weightsMemory(size, { shared = false, maximum, wide = false } = 
     try {
       const memory = new WebAssembly.Memory({ ...describe(Math.max(pages, initial)), shared: true });
       memory.maximum = Math.max(pages, initial);  // the worker keeps the memory as long as the next model fits (T96)
+      memory.limited = pages < most;  // the browser gave less than was asked for: a new memory would not get more
       return { memory, base };
     } catch {
       // too much address space for this browser: ask for less

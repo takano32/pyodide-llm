@@ -372,12 +372,20 @@ const spawnThread = (data) => new Promise((resolve, reject) => {
 // as long as the next model fits under its maximum, and made anew only for a larger one. The maximum comes from the
 // model (weightsMemory: four times the file and a gigabyte): asking for 4 GB up front left a phone no room for
 // Pyodide's own memory, and "Loading Pyodide" never ended (2026-09-25).
+// The forward pass puts more after the checkpoint (the review of T96): the corrections of relaxed SIMD (a ninth of an
+// int8 file, a seventh of an int6 one) and the keys, values and activations (half a gigabyte, as needsWide keeps).
+// Pythia 1B's checkpoint (1.1 GB) fitted the memory made for tiny-lm (1.2 GB) and its corrections did not ("Maximum
+// memory size exceeded"; opened first, it ran). Where a new memory would get no more room than this one (the browser
+// gave less than it asked for, or it is not shared and grows as far as any would), the checkpoint fitting is enough.
+// shared is what was asked for, not what the browser gave: a device without shared memories made one for every model.
 let weightsPool;
 function pooledWeights(size, shared, wide) {
   const pages = (bytes) => Math.ceil(bytes / 65536);
-  const fits = weightsPool && weightsPool.shared === shared && weightsPool.wide === wide && pages(weightsPool.base + size) + 1 <= weightsPool.maximum;
+  const needs = (base) => pages(base + size + (weightsPool.limited ? 0 : size / 7 + 2 ** 29)) + 1;
+  const fits = weightsPool && weightsPool.asked === shared && weightsPool.wide === wide && needs(weightsPool.base) <= weightsPool.maximum;
   if (!fits) {
-    weightsPool = undefined;  // the old one goes with its engine; nothing else refers to it
+    // nothing may hold the old memory while the new one is made (T96: Chromium refused a page's third)
+    weightsPool = weightsNow = undefined;
     let memory, base;
     if (shared) {
       try {
@@ -390,7 +398,8 @@ function pooledWeights(size, shared, wide) {
     const isShared = shared && memory.buffer instanceof SharedArrayBuffer;
     // a memory without a maximum (not shared) grows as far as the browser allows: 4 GB of pages, 16 GB when wide
     const most = wide ? 262144 : 65536;
-    weightsPool = { memory, base, wide, shared: isShared, maximum: isShared ? memory.maximum ?? most : most };
+    weightsPool = { memory, base, wide, asked: shared, shared: isShared, maximum: isShared ? memory.maximum ?? most : most,
+                    limited: !isShared || Boolean(memory.limited) };
   }
   const { memory, base } = weightsPool;
   const more = pages(base + size) + 1 - memory.buffer.byteLength / 65536;
