@@ -70,7 +70,7 @@
 
 ## これからのタスク
 
-### T132 [追加] 大きいモデル（3B 級と 7〜8B）を一覧に足す — 状態: 未着手（2026-09-26、持ち主の判断「大きいモデルも入れる、試さないと分かんない」。**T133 の後**。規模 小〜中）
+### T132 [追加] 大きいモデル（3B 級と 7〜8B）を一覧に足す — 状態: 進行中（2026-09-26、一覧に足して push。本番の確認待ち）（2026-09-26、持ち主の判断「大きいモデルも入れる、試さないと分かんない」。**T133 の後**。規模 小〜中）
 - 足すもの（T81 の調査の値。どれもゲートなし、リビジョン固定）:
   - 3B 級: Qwen/Qwen2.5-3B-Instruct（`aa8e72537993ba99e69dfaafa59ed015b17504d1`、6171926992 バイト、qwen-research＝非商用、書式は自動）、unsloth/Llama-3.2-3B-Instruct（`006f5dcd1393c3add266de40994ba96225e9689d`、6425529048、llama3.2。自動の書式には今日の日付が入る）、sbintuitions/sarashina2.2-3b-instruct-v0.1（`4f3626fb1b64b3e97c908e67f27b2d627ba2a999`、6711252896、MIT、書式は `SARASHINA`）。
   - 7〜8B（64 ビットのメモリ、Chrome と Firefox だけ）: Qwen/Qwen2.5-7B-Instruct（`a09a35458c702b33eeacc393d103063234e8bc28`、15231271888、Apache 2.0、書式は自動）、llm-jp/llm-jp-4-8b-instruct（`098f2b2cf33021eba19a6d3582aa3d071ccc0aff`、17180435544、Apache 2.0、harmony の書式を手で書く、語彙 196608）、tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5（`b1f8317099a97e790ec872c1225ca155979b4816`、16060556376、ライセンスは llama3.3 と gemma の 2 つ、書式を手で書く）。

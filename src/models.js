@@ -26,6 +26,23 @@ const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [0, 2] }
 const SARASHINA = "<|user|>{prompt}</s><|assistant|>";
 const sarashina = { specials: ["<|assistant|>", "<|user|>", "</s>"], stop_tokens: [1, 2, 7, 8, 9] };
 const TRANSLATE = "Translate the following Japanese text into English.\n\n{日本語の文} (or English into Japanese)";
+// llm-jp-4's chat_template is OpenAI's harmony (T132), with a system message of the model's name, its knowledge cutoff
+// and the date ({date}: filled() writes today's). The template ends at "<|start|>assistant" and leaves the channel to
+// the model; this one asks for the final channel, the answer, and so skips the analysis a harmony model may write
+// first. Its tokenizer.json puts a "▁" before the text after each special token (a normalizer that replaces the start
+// of every piece with it), which the engine does not: the space after each special token here makes the same tokens
+// (the same IDs as the real Jinja and tokenizers for four prompts, T132). A turn ends with <|return|> (2), <|end|>
+// (11) or <|call|> (13), and a new message would start with <|start|> (10)
+const HARMONY = "<|start|> system<|message|> You are LLM-jp-4, a large language model trained by LLM-jp.\nKnowledge cutoff: " +
+  "2025-12\nCurrent date: {date}\n\n# Valid channels: analysis, commentary, final. Channel must be included for every " +
+  "message.<|end|><|start|> user<|message|> {prompt}<|end|><|start|> assistant<|channel|> final<|message|>";
+const harmony = { specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
+/** What the page sends for a prompt in a model's template: {prompt} is what was typed, {date} today (YYYY-MM-DD, the
+ * visitor's own day). */
+export function filled(template, prompt, today = new Date()) {
+  const date = [today.getFullYear(), today.getMonth() + 1, today.getDate()].map((n) => String(n).padStart(2, "0")).join("-");
+  return template.replace("{date}", date).replace("{prompt}", prompt);
+}
 // Models that huggingface.co serves and this page converts itself (public/llama2_convert.py, the code that builds
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
 // model. revision pins the commit, so that nothing changes under the page. download is the size of model.safetensors.
@@ -41,6 +58,11 @@ const LLAMA_32 = "Llama 3.2 Community License";
 // TinySwallow's model card: "derived from Qwen (Apache 2.0) and trained on Gemma data (Gemma Terms, Prohibited Use).
 // Use (including commercial) is permitted if you comply with both licenses/policies above."
 const APACHE_GEMMA = "Apache License 2.0 (derived from Qwen), and the Gemma Terms of Use and Prohibited Use Policy (trained on Gemma data)";
+// T132: Qwen2.5-3B's card names its own license (license_name: qwen-research), which is for research, not commercial
+// use. Swallow's card says "META LLAMA 3.1 COMMUNITY LICENSE and Gemma Terms of Use" under License (its metadata says
+// llama3.3 and gemma: the words of the card are copied)
+const QWEN_RESEARCH = "Qwen Research License Agreement";
+const SWALLOW = "Meta Llama 3.1 Community License and Gemma Terms of Use";
 export const LICENSES = {
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
@@ -58,6 +80,11 @@ export const LICENSES = {
   "SakanaAI/TinySwallow-1.5B-Instruct": APACHE_GEMMA, "llm-jp/llm-jp-3.1-1.8b-instruct4": APACHE,
   "sbintuitions/sarashina2.2-1b-instruct-v0.1": MIT, "cyberagent/CAT-Translate-0.8b": MIT, "cyberagent/CAT-Translate-1.4b": MIT,
   "HuggingFaceTB/SmolLM2-1.7B-Instruct": APACHE,
+  // T132 (2026-09-26)
+  "Qwen/Qwen2.5-3B-Instruct": QWEN_RESEARCH, "sbintuitions/sarashina2.2-3b-instruct-v0.1": MIT,
+  "Qwen/Qwen2.5-7B-Instruct": APACHE, "tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5": SWALLOW,
+  "llm-jp/llm-jp-4-8b-instruct": APACHE,
+  "meta-llama/Llama-3.2-3B-Instruct": LLAMA_32, "unsloth/Llama-3.2-3B-Instruct": LLAMA_32,
 };
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
@@ -169,6 +196,29 @@ export const MODELS = [
   { group: "hf", id: "hf-llm-jp-3.1-1.8b-instruct4", name: "llm-jp-3.1 1.8B instruct4", note: "answers instructions · 日本語 · fetches 3.7 GB → int8 2.1 GB · desktop only",
     hf: hf("llm-jp/llm-jp-3.1-1.8b-instruct4", "f19510db409090bb1737f24f868d17c4bdc86c8e"), download: 3735253776,
     conversion: {}, options: llmJp, generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T132: the large ones, in shards (T105). Past 4 GiB with their forward pass they need a 64-bit memory (T101),
+  // where the browser has one int8 (T133), else six bits (T98); the 7 to 8B ones do not fit a 32-bit memory even so
+  { group: "hf", id: "hf-qwen2.5-3b-instruct", name: "Qwen2.5 3B Instruct", note: "answers instructions · 日本語 / English · fetches 6.2 GB → int8 3.5 GB · desktop only",
+    hf: hf("Qwen/Qwen2.5-3B-Instruct", "aa8e72537993ba99e69dfaafa59ed015b17504d1"), download: 6171926992,
+    conversion: {}, options: { ...chatml, stop_tokens: [151643, 151645] }, generation: sampled(1.1), template: CHATML,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-sarashina2.2-3b-instruct", name: "sarashina2.2 3B Instruct", note: "answers instructions · 日本語 · fetches 6.7 GB → int8 3.8 GB · desktop only",
+    hf: hf("sbintuitions/sarashina2.2-3b-instruct-v0.1", "4f3626fb1b64b3e97c908e67f27b2d627ba2a999", "tokenizer.model"), download: 6711252896,
+    conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-qwen2.5-7b-instruct", name: "Qwen2.5 7B Instruct", note: "answers instructions · 日本語 / English · fetches 15.2 GB → int8 8.6 GB · desktop only · Chrome and Firefox",
+    hf: hf("Qwen/Qwen2.5-7B-Instruct", "a09a35458c702b33eeacc393d103063234e8bc28"), download: 15231271888,
+    conversion: {}, options: { ...chatml, stop_tokens: [151643, 151645] }, generation: sampled(1.1), template: CHATML,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // Swallow's own chat_template is read (T73): a Japanese system message, and a second BOS before the user's turn,
+  // as the real Jinja writes it (the same IDs as the real Jinja and tokenizers, T132)
+  { group: "hf", id: "hf-llama-3.1-swallow-8b-instruct", name: "Llama 3.1 Swallow 8B Instruct", note: "answers instructions · 日本語 / English · fetches 16.1 GB → int8 9.0 GB · desktop only · Chrome and Firefox",
+    hf: hf("tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5", "b1f8317099a97e790ec872c1225ca155979b4816"), download: 16060556376,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-llm-jp-4-8b-instruct", name: "llm-jp-4 8B instruct", note: "answers instructions · 日本語 / English · fetches 17.2 GB → int8 9.7 GB · desktop only · Chrome and Firefox",
+    hf: hf("llm-jp/llm-jp-4-8b-instruct", "098f2b2cf33021eba19a6d3582aa3d071ccc0aff"), download: 17180435544,
+    conversion: {}, options: harmony, generation: sampled(1.1), template: HARMONY,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // English. Pythia is the same design at five sizes: a ladder for measuring (T80)
   { group: "hf", id: "hf-pythia-70m", name: "Pythia 70M", note: "English · fetches 166 MB → int8 96 MB",
     hf: hf("EleutherAI/pythia-70m-deduped", "e93a9faa9c77e5d09219f6c868bfc7a1bd65593c"), download: 166029852,
@@ -230,6 +280,11 @@ export const MODELS = [
     conversion: {}, options: { specials: ["<｜begin▁of▁sentence｜>", "<｜User｜>", "<｜Assistant｜>"], stop_tokens: [151643] },
     generation: sampled(1.1), template: "<｜User｜>{prompt}<｜Assistant｜>",
     prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
+  { group: "hf", id: "hf-llama-3.2-3b-instruct", name: "Llama 3.2 3B Instruct", note: "answers instructions · English · fetches 6.4 GB → int8 3.6 GB · desktop only",
+    original: "meta-llama/Llama-3.2-3B-Instruct",
+    hf: hf("unsloth/Llama-3.2-3B-Instruct", "006f5dcd1393c3add266de40994ba96225e9689d"), download: 6425529048,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
 ];
 
 // T90: memory. A device that runs out of it kills the worker's WebAssembly memory, so the page warns before it

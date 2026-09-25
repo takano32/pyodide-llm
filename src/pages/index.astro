@@ -299,7 +299,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
 </style>
 
 <script>
-  import { GROUPS, MODELS, memoryFailure, memoryWarning, weightsFor } from "../models.js";
+  import { GROUPS, MODELS, filled, memoryFailure, memoryWarning, weightsFor } from "../models.js";
   import { FULL_ROUNDS, ROUNDS, benchMarkdown, environmentOf, reportUrl } from "../bench.js";
 
   declare const __BUILD__: string;
@@ -1123,6 +1123,6 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     // an instruction-tuned model gets what was typed inside the form it was trained on; the bubble shows what was typed
     // what src/models.js says for this model, or what its own chat_template gave (T73)
     const template = ((model as any).template ?? fromTemplate) as string | undefined;
-    worker.postMessage({ type: "generate", prompt: template ? template.replace("{prompt}", prompt.value) : prompt.value, echo: !template, ...used });
+    worker.postMessage({ type: "generate", prompt: template ? filled(template, prompt.value) : prompt.value, echo: !template, ...used });
   };
 </script>

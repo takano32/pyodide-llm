@@ -118,7 +118,7 @@ jobs:
   huggingface:
     name: models from Hugging Face (${{ matrix.size }})
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -144,6 +144,13 @@ jobs:
             models: >-
               hf-cat-translate-0.8b hf-sarashina2.2-1b-instruct hf-cat-translate-1.4b hf-tinyswallow-1.5b-instruct
               hf-llm-jp-3.1-1.8b-instruct4 hf-smollm2-1.7b-instruct
+          # T132 (2026-09-26): 3B to 8B, 68 GB of downloads; the 7 to 8B ones on a 64-bit memory with a heap of 9.7 to
+          # 11 GB (the runner has 16). In models.yml each took 2 to 4 minutes to be ready
+          - size: huge
+            timeout: 3000
+            models: >-
+              hf-qwen2.5-3b-instruct hf-sarashina2.2-3b-instruct hf-llama-3.2-3b-instruct hf-qwen2.5-7b-instruct
+              hf-llama-3.1-swallow-8b-instruct hf-llm-jp-4-8b-instruct
     steps:
       - name: Checkout
         uses: actions/checkout@v7

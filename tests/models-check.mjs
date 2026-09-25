@@ -2,7 +2,7 @@
 //
 //   node tests/models-check.mjs
 import assert from "node:assert/strict";
-import { LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, memoryFailure, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.js";
+import { LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.js";
 
 for (const entry of MODELS) {
   const repo = sourceOf(entry);
@@ -55,4 +55,7 @@ assert.equal(weightsFor(three, undefined, 4), "int6", "4 GB is told as it is");
 assert.equal(memoryWarning(three, 8), "", "3.9 GB on a device of 8 GB or more");
 assert.match(memoryWarning(seven, 8), /7B needs about 9,500 MB of memory, and this device has 8 GB or more: it may run out of memory\./);
 assert.match(memoryWarning(three, 4), /this device has 4 GB:/);
+// T132: a template's {date} is the visitor's day, and {prompt} what was typed (a {date} typed stays as it is)
+assert.equal(filled("Current date: {date}\n{prompt}", "a {date} b", new Date(2026, 8, 6)), "Current date: 2026-09-06\na {date} b");
+assert.equal(filled(byId("hf-llm-jp-4-8b-instruct").template, "x").includes("{"), false);
 console.log("ok");
