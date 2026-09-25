@@ -143,30 +143,32 @@ export const MODELS = [
     hf: hf("sbintuitions/sarashina2.2-0.5b-instruct-v0.1", "e4b9aacc3f644893d0179847946ef6c58d868f29", "tokenizer.model"),
     download: 1586121792, conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T81: a translator from sarashina2.2, Japanese to English and back, asked in its own words (its model card)
+  // T81: a translator from sarashina2.2, Japanese to English and back, asked in its own words and greedy, as its
+  // model card runs it (no generation_config: transformers' defaults; a repetition penalty bends a translation)
   { group: "hf", id: "hf-cat-translate-0.8b", name: "CAT-Translate 0.8B", note: "translates 日本語 ⇄ English · fetches 1.6 GB → int8 0.9 GB · desktop only",
     hf: hf("cyberagent/CAT-Translate-0.8b", "b555f93ef67846b6ed2773e0d2f16ceb0d30adb9", "tokenizer.model"), download: 1586121792,
-    conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
+    conversion: {}, options: sarashina, generation: greedy, template: SARASHINA,
     prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE },
   { group: "hf", id: "hf-llm-jp-3-980m-instruct3", name: "llm-jp-3 980M instruct3", note: "answers instructions · 日本語 · fetches 2.0 GB → int8 1.1 GB · desktop only",
     hf: hf("llm-jp/llm-jp-3-980m-instruct3", "c079dbf3f88aa2ab702b9696231fc3336c46b1be"), download: 1980382824, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  // T81 (2026-09-26): the survey's Japanese models that convert as they are. TinySwallow and llm-jp-3.1 read their
-  // chat templates themselves (T73)
+  // T81 (2026-09-26): the survey's Japanese models that convert as they are. TinySwallow reads its chat template
+  // itself (T73); llm-jp-3.1 has its family's format with the system sentence its model card always passes (its
+  // template alone leaves it out)
   { group: "hf", id: "hf-sarashina2.2-1b-instruct", name: "sarashina2.2 1B Instruct", note: "answers instructions · 日本語 · fetches 2.8 GB → int8 1.6 GB · desktop only",
     hf: hf("sbintuitions/sarashina2.2-1b-instruct-v0.1", "08cf5a8ae579be0fb5a9f802dda8a26acbc94951", "tokenizer.model"), download: 2815103168,
     conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-cat-translate-1.4b", name: "CAT-Translate 1.4B", note: "translates 日本語 ⇄ English · fetches 2.8 GB → int8 1.6 GB · desktop only",
     hf: hf("cyberagent/CAT-Translate-1.4b", "254120945fd9a61278ac2171ab07c831d56838fa", "tokenizer.model"), download: 2815103168,
-    conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
+    conversion: {}, options: sarashina, generation: greedy, template: SARASHINA,
     prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE },
   { group: "hf", id: "hf-tinyswallow-1.5b-instruct", name: "TinySwallow 1.5B Instruct", note: "answers instructions · 日本語 · fetches 3.1 GB → int8 1.7 GB · desktop only",
     hf: hf("SakanaAI/TinySwallow-1.5B-Instruct", "91e9fcc30f56d224aea84356c4d850cc4c5a3260"), download: 3087467144,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-llm-jp-3.1-1.8b-instruct4", name: "llm-jp-3.1 1.8B instruct4", note: "answers instructions · 日本語 · fetches 3.7 GB → int8 2.1 GB · desktop only",
     hf: hf("llm-jp/llm-jp-3.1-1.8b-instruct4", "f19510db409090bb1737f24f868d17c4bdc86c8e"), download: 3735253776,
-    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+    conversion: {}, options: llmJp, generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // English. Pythia is the same design at five sizes: a ladder for measuring (T80)
   { group: "hf", id: "hf-pythia-70m", name: "Pythia 70M", note: "English · fetches 166 MB → int8 96 MB",
     hf: hf("EleutherAI/pythia-70m-deduped", "e93a9faa9c77e5d09219f6c868bfc7a1bd65593c"), download: 166029852,
