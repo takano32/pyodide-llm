@@ -63,6 +63,18 @@ export function matmul_f32(xout: usize, x: usize, w: usize, n: i32, r0: i32, r1:
   return amax;
 }
 
+// T123: n bfloat16 values (raw) to float32 (out): a bfloat16 is the upper half of a float32, so each is its 16 bits
+// shifted up, exactly as the converter's NumPy bfloat16() does. 8 at a time, the last few one by one.
+export function widen_bf16(out: usize, raw: usize, n: i32): void {
+  let i = 0;
+  for (; i + 8 <= n; i += 8) {
+    const h = v128.load(raw + (<usize>i << 1));
+    v128.store(out + (<usize>i << 2), i32x4.shl(i32x4.extend_low_i16x8_u(h), 16));
+    v128.store(out + (<usize>i << 2), i32x4.shl(i32x4.extend_high_i16x8_u(h), 16), 16);
+  }
+  for (; i < n; i++) store<u32>(out + (<usize>i << 2), <u32>load<u16>(raw + (<usize>i << 1)) << 16);
+}
+
 // bias = 0: signed int8 in [-127,127];  bias = 64: 7-bit unsigned, real value = (q - 64) * scale (for kernel_relaxed.ts)
 export function quantize_x(xq: usize, xs: usize, x: usize, n: i32, bias: i32): void {
   // SIMD, 32 values (one group) at a time. Every step is the scalar one lane by lane (abs, max, the division, the
@@ -130,6 +142,18 @@ export function six_sums(out: usize, w: usize, ws: usize, groups: i32): void {
   for (let g = 0; g < groups; g++) {
     const p = w + <usize>g * 24, low = v128.load(p), t = sixTops(p);
     const pairs = i16x8.add(i16x8.extadd_pairwise_i8x16_s(sixFirst(low, t)), i16x8.extadd_pairwise_i8x16_s(sixSecond(low, t)));
+    const quads = i32x4.extadd_pairwise_i16x8_s(pairs);
+    const sum = i32x4.extract_lane(quads, 0) + i32x4.extract_lane(quads, 1) + i32x4.extract_lane(quads, 2) + i32x4.extract_lane(quads, 3);
+    store<f32>(out + (<usize>g << 2), load<f32>(ws + (<usize>g << 2)) * <f32>sum);
+  }
+}
+
+// T123: the same for int8 weights: the sums of groups of 32 int8 values (w), times the group's scale (ws), the
+// corrections of matmul_q8r. forward.js made them one value at a time in JavaScript (7B: 266 s of its construct)
+export function int8_sums(out: usize, w: usize, ws: usize, groups: i32): void {
+  for (let g = 0; g < groups; g++) {
+    const p = w + (<usize>g << 5);
+    const pairs = i16x8.add(i16x8.extadd_pairwise_i8x16_s(v128.load(p)), i16x8.extadd_pairwise_i8x16_s(v128.load(p + 16)));
     const quads = i32x4.extadd_pairwise_i16x8_s(pairs);
     const sum = i32x4.extract_lane(quads, 0) + i32x4.extract_lane(quads, 1) + i32x4.extract_lane(quads, 2) + i32x4.extract_lane(quads, 3);
     store<f32>(out + (<usize>g << 2), load<f32>(ws + (<usize>g << 2)) * <f32>sum);

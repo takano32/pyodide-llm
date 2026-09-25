@@ -2,22 +2,24 @@
 // fed in 8 MiB pieces as the worker feeds it, under cProfile. No download: the files are on disk, so this is the
 // converting alone, and the rest of a load in the browser is the fetching.
 //
-//   node tests/profile-convert.mjs <directory with config.json, model.safetensors and the tokenizer> [int8|int6|float32]
+//   node tests/profile-convert.mjs <directory with config.json, model.safetensors and the tokenizer> [int8|int6|float32] [--numpy]
 //
 // int8 quantizes on the SIMD kernels, as the page does (T89: kernel_quantizer); int6 (T98) as the page does too.
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
-const [dir, dtype = "int8"] = process.argv.slice(2);
+const [dir, dtype = "int8"] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const { pyodide: py } = await pyodideWithEngine();
 const convert = py.pyimport("llama2_convert");
 const quantizeRows = py.pyimport("llama2_numpy").kernel_quantizer("simdkernel.so");
+// T123: the widening of bfloat16 on the kernels, as the page does; --numpy: NumPy's, to compare
+const bfloat16 = process.argv.includes("--numpy") ? undefined : py.pyimport("llama2_numpy").kernel_widener("simdkernel.so");
 const weights = `${dir}/model.safetensors`;
 const fd = fs.openSync(weights, "r"), size = fs.fstatSync(fd).size;
 const range = (b, e) => { const x = new Uint8Array(e - b); fs.readSync(fd, x, 0, e - b, b); return x; };
 const headerBytes = Number(new DataView(range(0, 8).buffer).getBigUint64(0, true));
 const tokName = ["tokenizer.json", "spiece.model", "tokenizer.model"].find((n) => fs.existsSync(`${dir}/${n}`));
 const conversion = convert.Conversion.callKwargs(new TextDecoder().decode(range(8, 8 + headerBytes)), 8 + headerBytes,
-  fs.readFileSync(`${dir}/config.json`, "utf8"), new Uint8Array(fs.readFileSync(`${dir}/${tokName}`)), tokName, { dtype, start: 8 + headerBytes, quantize_rows: quantizeRows });
+  fs.readFileSync(`${dir}/config.json`, "utf8"), new Uint8Array(fs.readFileSync(`${dir}/${tokName}`)), tokName, { dtype, start: 8 + headerBytes, quantize_rows: quantizeRows, bfloat16 });
 py.globals.set("conversion", conversion);
 py.runPython("import cProfile, pstats, io, time; profiler = cProfile.Profile(); began = time.perf_counter(); profiler.enable()");
 let js = 0;

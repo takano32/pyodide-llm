@@ -242,15 +242,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
         // relaxed SIMD multiplies by 7-bit unsigned activations with a bias of 64, which this takes out again:
         // dot(w, q - 64) = dot(w, q) - 64 * sum(w). scale * sum of the group, in float32
         corrections = alloc(groups * 4);
-        if (six) {
-          k.six_sums(corrections, values, scales, groups);  // the same numbers, a kernel's speed (T98)
-        } else {
-          for (let g = 0; g < groups; g++) {
-            let sum = 0;
-            for (let i = 0; i < t.group; i++) sum += I[values + g * t.group + i];
-            F[corrections / 4 + g] = Math.fround(F[scales / 4 + g] * sum);
-          }
-        }
+        // the same numbers as a sum in JavaScript, a kernel's speed (T98, T123: 7B spent 266 s here one value at a
+        // time). Groups of 32: relaxed runs only where every row is whole groups
+        (six ? k.six_sums : k.int8_sums)(corrections, values, scales, groups);
       }
       const layer = (l) => [values + l * rows * rowBytes, scales + l * rows * (n / t.group) * 4, corrections + l * rows * (n / t.group) * 4];
       return { rows, n, int8: true, six, layer };

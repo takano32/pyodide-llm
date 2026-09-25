@@ -35,7 +35,7 @@ const modelOf = (id) => MODELS.find((m) => m.id === id) ?? { name: path.basename
 const file = (f) => (path.isAbsolute(f) ? f : root + f);
 
 // T98: six_sums (the corrections of int6 weights for matmul_q6r) against the sums of the int8 values the layout of
-// llama2_numpy.pack6 holds, taken apart byte by byte here; the products rounded as forward.js rounds int8's
+// llama2_numpy.pack6 holds, taken apart byte by byte here; the products rounded as JavaScript's Math.fround would
 {
   const memory = new WebAssembly.Memory({ initial: 4 });
   const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/simdkernel_plain.wasm`)), { env: { memory } }).exports;
@@ -52,6 +52,14 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
       sum += (((low | (top << 4)) << 2) << 24) >> 24;
     }
     if (Math.fround(F[scales / 4 + g] * sum) !== F[out / 4 + g]) throw new Error(`six_sums differs at group ${g}`);
+  }
+  // T123: int8_sums, the same for int8 weights, 32 bytes a group, against the sums taken here
+  const I = new Int8Array(memory.buffer);
+  k.int8_sums(out, w, scales, groups * 24 / 32);
+  for (let g = 0; g < groups * 24 / 32; g++) {
+    let sum = 0;
+    for (let j = 0; j < 32; j++) sum += I[w + g * 32 + j];
+    if (Math.fround(F[scales / 4 + g] * sum) !== F[out / 4 + g]) throw new Error(`int8_sums differs at group ${g}`);
   }
 }
 

@@ -171,6 +171,11 @@ for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensor
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int8", positions, numpy_int8)
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int8", positions, kernel_int8, quantize_rows=quantize_rows)
     assert numpy_int8 == kernel_int8, f"the kernels' quantizer changed the int8 {arch} checkpoint"
+# T123: bfloat16 widened on the kernels is NumPy's widening to the bit, every 16-bit pattern (NaNs, infinities,
+# subnormals, both zeros), in a length that leaves a tail after the groups of 8
+widen = llama2_numpy.kernel_widener("simdkernel.so")
+patterns = np.arange(65536 + 5, dtype=np.uint32).astype(np.uint16).tobytes()
+assert np.array_equal(widen(patterns).view(np.uint32), llama2_convert.bfloat16(patterns).view(np.uint32)), "widen_bf16 is not bfloat16()"
 # T98: the six bits too: quantize6_x is quantize6() and pack6() to the byte (a group of zeros, ties that round to
 # even, the largest value, and a whole conversion)
 ties = values.copy()

@@ -364,7 +364,7 @@ def load_kernels(path, without_relaxed=False):
                           swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
                           add_columns=[p, p, p, i32, i32],
                           layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32],
-                          penalize=[p, p, i32, ctypes.c_float],
+                          penalize=[p, p, i32, ctypes.c_float], widen_bf16=[p, p, i32],
                           sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p])
         kernels = {}
         for name, argtypes in signatures.items():
@@ -408,6 +408,23 @@ def kernel_quantizer(path):
         return quantized.reshape(-1, 32), scales
 
     return quantize_rows
+
+
+def kernel_widener(path):
+    """llama2_convert.bfloat16() on the SIMD kernels (T123): the same float32, a shift of every 16 bits, several
+    times faster than NumPy's two passes. For the converter's bfloat16; None where the kernels cannot be loaded."""
+    kernels = load_kernels(path) if path else None
+    if not kernels:
+        return None
+    widen = kernels["widen_bf16"]
+
+    def bfloat16(raw):
+        halves = np.frombuffer(raw, dtype=np.uint16)
+        out = np.empty(halves.size, dtype=np.float32)
+        widen(out.ctypes.data, halves.ctypes.data, halves.size)
+        return out
+
+    return bfloat16
 
 
 # T98: int6, six bits a weight. An int6 group is an int8 group whose values are multiples of 4 (-128..124: six
