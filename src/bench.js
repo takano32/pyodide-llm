@@ -7,13 +7,14 @@ export const ROUNDS = [
   { name: "without the kernels", without: ["kernels"] },
 ];
 
-/** The five steps of T52, for ?bench=full: each optimization added to the one before it. */
+/** The steps of T52, for ?bench=full: each optimization added to the one before it (T110 added the sixth). */
 export const FULL_ROUNDS = [
   { name: "NumPy only", without: ["kernels"] },
-  { name: "the kernels, int8 widened", without: ["int8", "relaxed", "sampler"] },
-  { name: "int8 kept as int8", without: ["relaxed", "sampler"] },
-  { name: "relaxed SIMD", without: ["sampler"] },
-  { name: "sampling in the kernel", without: [] },
+  { name: "the kernels, int8 widened", without: ["int8", "relaxed", "sampler", "kv16"] },
+  { name: "int8 kept as int8", without: ["relaxed", "sampler", "kv16"] },
+  { name: "relaxed SIMD", without: ["sampler", "kv16"] },
+  { name: "sampling in the kernel", without: ["kv16"] },
+  { name: "float16 keys and values", without: [] },
 ];
 
 const number = (value, digits = 1) => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "?");

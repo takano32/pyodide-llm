@@ -176,13 +176,21 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // in the order it always had, and the next token's frame follows: every array of token t is t * S bytes after token
   // 0's. (One block per array, BATCH tokens long, put token 0's arrays 32 KB apart for tiny-lm, and they fought for
   // the same lines of the cache: 3% slower on one token at a time.)
-  const D = dim * 4, HD = hidden * 4, KV = kvDim * 4;
+  // T110: an int8 model keeps its keys and values in float16 (half the bytes attention reads) where the memory is
+  // shared, that is where there are software threads: several threads wait on the memory, and reading half of it
+  // made a long context 1.2 times as fast with 4; one thread waits on the arithmetic, and widening every key and
+  // value made it 1.6 to 1.8 times as slow. A float32 model, the one held to NumPy's numbers, stays in float32.
+  // KV: the bytes of one position's keys in the cache; KF: in float32.
+  const halfKV = Boolean(plan.half_kv) && memory.buffer instanceof SharedArrayBuffer;
+  const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, KV = kvDim * (halfKV ? 2 : 4);
   const XQ = Math.max(dim, hidden), XS = Math.ceil(XQ / 32) * 4;
-  const inFrame = [["x", D], ["xb", D], ["xb2", D], ["q", D], ["before", D], ["hb", HD], ["hb2", HD], ["xq", XQ], ["xs", XS]];
+  const inFrame = [["x", D], ["xb", D], ["xb2", D], ["q", D], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD], ["hb2", HD],
+    ["xq", XQ], ["xs", XS]];
   const S = inFrame.reduce((size, [, bytes]) => size + align(bytes), 0);
   const frames = alloc(BATCH * S), at = {};
   inFrame.reduce((offset, [name, bytes]) => { at[name] = frames + offset; return offset + align(bytes); }, 0);
-  const { x, xb, xb2, q, before, hb, hb2, xq, xs } = at;
+  // kNow, vNow: this token's key and value in float32, before they go into the cache
+  const { x, xb, xb2, q, kNow, vNow, before, hb, hb2, xq, xs } = at;
   const A = seqLen * heads * 4;  // the scores of one token's attention
   const att = alloc(BATCH * A), logits = alloc(BATCH * vocab * 4);
   const wq = matrix("wq"), wk = matrix("wk"), wv = matrix("wv"), wo = matrix("wo");
@@ -242,6 +250,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   //   1 matmul_q8   out, xq, xs, w, scales, -, n
   //   2 matmul_f32  out, x, -, w, -, -, n
   //   3 attention   out, q, keys, values, scores, pos, kv heads, head size   rows: the heads (T109)
+  //   4 attention_f16  the same over a cache of float16 (T110)
   // count > 1 (T108): the same rows for count tokens, whose out, a and b are that many bytes apart. The rows go in
   // blocks small enough to stay in the cache while every token uses them: each (row, token) is the one kernel call it
   // is for a single token, so the numbers are the same as one token at a time.
@@ -256,12 +265,13 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   };
   // the attention of token t of a run, at position pos (its scores have a place of their own: tokens run at once)
   const attentionJob = (t, pos, layerKeys, layerValues) =>
-    [3, xb + t * S, q + t * S, layerKeys, layerValues, att + t * A, pos, kvHeads, headSize, heads, 1, 0, 0, 0];
+    [halfKV ? 4 : 3, xb + t * S, q + t * S, layerKeys, layerValues, att + t * A, pos, kvHeads, headSize, heads, 1, 0, 0, 0];
   const call = (kind, out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => {
     if (kind === 0) relaxed(out, a, b, a4, a5, a6, a7, r0, r1);
     else if (kind === 1) k.matmul_q8(out, a, b, a4, a5, a7, r0, r1);
     else if (kind === 2) k.matmul_f32(out, a, a4, a7, r0, r1);
-    else k.attention(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
+    else if (kind === 3) k.attention(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
+    else k.attention_f16(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
   };
   const runRows = (job, r0, r1) => {
     const [kind, out, a, b, a4, a5, a6, a7, a8, rows, count, os, as, bs] = job;
@@ -350,18 +360,26 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
         else k.rmsnorm(xb + t * S, x + t * S, attW + l * D, dim);
         if (parallel) F.copyWithin((before + t * S) / 4, (x + t * S) / 4, (x + t * S) / 4 + dim);  // GPT-NeoX reads this layer's input twice
       }
-      matmuls(xb, count, [[wq, q, S, l], [wk, kp, KV, l], [wv, vp, KV, l]]);
+      matmuls(xb, count, [[wq, q, S, l], [wk, kNow, S, l], [wv, vNow, S, l]]);
       for (let t = 0; t < count; t++) {
-        const qt = q + t * S, kt = kp + t * KV, vt = vp + t * KV, pos = pos0 + t;
+        const qt = q + t * S, kt = kNow + t * S, vt = vNow + t * S, pos = pos0 + t;
         if (bq) {
           k.add_inplace(qt, bq + l * D, dim);
-          k.add_inplace(kt, bk + l * KV, kvDim);
-          k.add_inplace(vt, bv + l * KV, kvDim);
+          k.add_inplace(kt, bk + l * KF, kvDim);
+          k.add_inplace(vt, bv + l * KF, kvDim);
         }
         if (!gpt2) {
           const cos = cosTable + pos * (headSize / 2) * 4, sin = sinTable + pos * (headSize / 2) * 4;
           k.rope(qt, cos, sin, heads, headSize, rotary);
           k.rope(kt, cos, sin, kvHeads, headSize, rotary);
+        }
+        // into the cache, at this token's position
+        if (halfKV) {
+          k.to_f16(kp + t * KV, kt, kvDim);
+          k.to_f16(vp + t * KV, vt, kvDim);
+        } else {
+          U.copyWithin(kp + t * KV, kt, kt + KF);
+          U.copyWithin(vp + t * KV, vt, vt + KF);
         }
       }
       // the keys and values of positions up to each token's are all there now: its own and the ones before it.

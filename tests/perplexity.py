@@ -35,6 +35,8 @@ def main():
     results = []
     # the 8-bit row is the kernels without relaxed SIMD (T52's switch; it used to patch load_kernels)
     variants = [("kernels, 7-bit activations (matmul_q8r)", "simdkernel.so", ()),
+                # T110: the same with the keys and values kept in float32 instead of float16
+                ("kernels, 7-bit activations, keys and values in float32", "simdkernel.so", ("kv16",)),
                 ("kernels, 8-bit activations (matmul_q8)", "simdkernel.so", ("relaxed",)),
                 ("NumPy, activations not quantized", None, ())]
     tokens = None

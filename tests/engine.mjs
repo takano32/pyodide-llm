@@ -17,25 +17,30 @@ import { compileKernels, external, weightsMemory } from "../public/forward.js";
 
 const root = new URL("../", import.meta.url).pathname;
 
-export async function pyodideWithEngine() {
+// shared: false gives the memory the page has where it is not cross-origin isolated (one thread, float32 keys)
+export async function pyodideWithEngine({ shared = true } = {}) {
   const pyodide = await loadPyodide();
   await pyodide.loadPackage("numpy", { messageCallback: () => {} });
   for (const name of ["llama2_numpy.py", "llama2_convert.py", "simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
     pyodide.FS.writeFile(name, fs.readFileSync(`${root}public/${name}`));
   }
-  const kernels = compileKernels(fs.readFileSync(`${root}public/simdkernel_plain.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_plain.wasm`));
+  // a shared memory, as the page has where it is cross-origin isolated (since T93 stage 3, the usual case), so that
+  // what these tests run is what the page runs: forward.js keeps an int8 model's keys and values in float16 there
+  // (T110). No software threads are started: those are tests/threads-check.mjs's.
+  const variant = shared ? "shared" : "plain";
+  const kernels = compileKernels(fs.readFileSync(`${root}public/simdkernel_${variant}.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_${variant}.wasm`));
   // a checkpoint (Python bytes) copied into a memory of forward.js, as what Llama(external=) takes
   pyodide.globals.set("outside", (data) => {
     const view = data.getBuffer("u8");
     const size = view.data.length;
-    const { memory, base } = weightsMemory(size);
+    const { memory, base } = weightsMemory(size, { shared });
     new Uint8Array(memory.buffer, base, size).set(view.data);
     view.release();
     return external({ memory, base, size, kernels });
   });
   pyodide.globals.set("outside_file", (file) => {
     const size = fs.statSync(file).size;
-    const { memory, base } = weightsMemory(size);
+    const { memory, base } = weightsMemory(size, { shared });
     const fd = fs.openSync(file, "r");
     for (let offset = 0; offset < size;) {
       offset += fs.readSync(fd, new Uint8Array(memory.buffer, base + offset, Math.min(64 << 20, size - offset)), 0, Math.min(64 << 20, size - offset), offset);

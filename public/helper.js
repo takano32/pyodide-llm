@@ -23,13 +23,14 @@ listen(({ memory, plain, relaxed, share }) => {
   const q8r = relaxed ? new WebAssembly.Instance(relaxed, imports).exports.matmul_q8r : null;
   const ctl = new Int32Array(memory.buffer, 0, 1024);
   // rows r0..r1 of the job at ctl[at]: the kinds and their arguments are forward.js's (0 matmul_q8r, 1 matmul_q8,
-  // 2 matmul_f32, 3 attention, whose rows are heads). With a count of tokens (T108), the rows go in blocks and every
+  // 2 matmul_f32, 3 attention, whose rows are heads, 4 the same over float16). With a count of tokens (T108), the rows go in blocks and every
   // token uses a block before the next: see runRows in forward.js, which this does the same way.
   const call = (kind, out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => {
     if (kind === 0) q8r(out, a, b, a4, a5, a6, a7, r0, r1);
     else if (kind === 1) k.matmul_q8(out, a, b, a4, a5, a7, r0, r1);
     else if (kind === 2) k.matmul_f32(out, a, a4, a7, r0, r1);
-    else k.attention(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
+    else if (kind === 3) k.attention(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
+    else k.attention_f16(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
   };
   const run = (at, r0, r1) => {
     const [kind, out, a, b, a4, a5, a6, a7, a8, rows, count, os, as, bs] = ctl.subarray(at, at + SIZE);
@@ -59,6 +60,7 @@ listen(({ memory, plain, relaxed, share }) => {
     k.matmul_f32(out, out + 64, w, 8, 0, 1);
     if (q8r) q8r(out, xq, xs, w, s, c, 32, 0, 1);
     k.attention(out, xq, w, w, c, 0, 1, 1, 4, 0, 1);  // one head of 4 at position 0
+    k.attention_f16(out, xq, w, w, c, 0, 1, 1, 4, 0, 1);
   }
   port.postMessage("ready");
   let gen = Atomics.load(ctl, WAKE + share);

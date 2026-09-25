@@ -311,7 +311,7 @@ OUTLIER_RATIO = 4.0
 
 
 # what T52 can leave out, each of them something that already has a fallback
-SWITCHES = ("kernels", "int8", "relaxed", "sampler")
+SWITCHES = ("kernels", "int8", "relaxed", "sampler", "kv16")
 
 
 def load_kernels(path, without_relaxed=False):
@@ -328,7 +328,9 @@ def load_kernels(path, without_relaxed=False):
         i32, p = ctypes.c_int32, ctypes.c_void_p
         signatures = dict(matmul_f32=[p, p, p, i32, i32, i32], quantize_x=[p, p, p, i32, i32],
                           matmul_q8=[p, p, p, p, p, i32, i32, i32], rmsnorm=[p, p, p, i32], rope=[p, p, p, i32, i32, i32],
-                          attention=[p, p, p, p, p, i32, i32, i32, i32, i32, i32], swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
+                          attention=[p, p, p, p, p, i32, i32, i32, i32, i32, i32],
+                          attention_f16=[p, p, p, p, p, i32, i32, i32, i32, i32, i32], to_f16=[p, p, i32],
+                          swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
                           add_columns=[p, p, p, i32, i32],
                           layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32],
                           penalize=[p, p, i32, ctypes.c_float],
@@ -505,8 +507,8 @@ class Llama:
         kernels is public/forward.js's (external, below); without external, NumPy computes the forward pass.
         disable: the optimizations to leave out, to measure what each one is worth (T52). Only what already has
         a fallback: "kernels" (NumPy does everything), "int8" (the weights are widened to float32 and the
-        float32 kernel multiplies them), "relaxed" (matmul_q8 instead of matmul_q8r) and "sampler" (NumPy
-        samples). Anything else is refused, so that a typo never quietly measures the wrong thing.
+        float32 kernel multiplies them), "relaxed" (matmul_q8 instead of matmul_q8r), "sampler" (NumPy
+        samples) and "kv16" (an int8 model keeps its keys and values in float32 on a shared memory too, T110). Anything else is refused, so that a typo never quietly measures the wrong thing.
         external (T93): the weights are not in Python but in a WebAssembly memory of public/forward.js, which also
         runs the forward pass. checkpoint is then None, and external has size (of the file), read(offset, length)
         (a few bytes: the header, the final norm) and start(plan), which gets where every tensor is and returns an
@@ -707,7 +709,9 @@ class Llama:
                 "vocab_size": self.vocab_size, "seq_len": self.seq_len, "rotary": self.rotary,
                 "parallel_residual": bool(self.parallel_residual), "kv_start": KV_START,
                 "shared_classifier": self.wcls is self.token_embedding_table, "int8": bool(int8),
-                "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels}
+                "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels,
+                # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
+                "half_kv": bool(int8) and "kv16" not in disable}
         engine = external.start(plan)
         self.backend = str(engine.backend)
         logits = np.zeros(self.vocab_size, dtype=np.float32)

@@ -145,6 +145,43 @@ export function rope(v: usize, fcr: usize, fci: usize, nh: i32, hs: i32, rot: i3
 // heads h0..h1 of nh (T109: the software threads take heads as they take rows of a matmul). Every head is computed
 // alone, the same whatever the range, so the numbers do not depend on how the heads are shared out.
 export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32, h0: i32, h1: i32): void {
+  attentionOf<f32>(out, q, kc, vc, att, pos, nh, nkv, hs, h0, h1);
+}
+// T110: the same over a cache of float16 keys and values (half the bytes to read, the longer the context the more
+// that is). Each is widened to the float32 it stands for, exactly, and then everything is as above: the numbers are
+// those of attention() on the widened cache.
+export function attention_f16(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32, h0: i32, h1: i32): void {
+  attentionOf<u16>(out, q, kc, vc, att, pos, nh, nkv, hs, h0, h1);
+}
+
+// float16 to float32 without the FP16 proposal (T104 is on hold): the bits of the magnitude, moved to where float32
+// keeps them, are the number times 2^-112, which one multiplication by 2^112 puts right (exactly, subnormals and
+// zero included). Infinities and NaN are not kept: a key or value never is one.
+// @ts-ignore: decorator
+@inline function halves4(p: usize): v128 {
+  const h = v128.load16x4_u(p);
+  const magnitude = i32x4.shl(v128.and(h, i32x4.splat(0x7fff)), 13);
+  const value = f32x4.mul(magnitude, f32x4.splat(reinterpret<f32>(0x77800000)));
+  return v128.or(value, i32x4.shl(v128.and(h, i32x4.splat(0x8000)), 16));
+}
+// @ts-ignore: decorator
+@inline function half(p: usize): f32 {
+  const h = <u32>load<u16>(p);
+  return reinterpret<f32>(reinterpret<u32>(reinterpret<f32>((h & 0x7fff) << 13) * reinterpret<f32>(0x77800000)) | ((h & 0x8000) << 16));
+}
+// four keys or values from the cache as float32, and one
+// @ts-ignore: decorator
+@inline function kv4<T>(p: usize): v128 {
+  return sizeof<T>() == 2 ? halves4(p) : v128.load(p);
+}
+// @ts-ignore: decorator
+@inline function kv<T>(p: usize): f32 {
+  return sizeof<T>() == 2 ? half(p) : load<f32>(p);
+}
+
+// @ts-ignore: decorator
+@inline function attentionOf<T>(out: usize, q: usize, kc: usize, vc: usize, att: usize, pos: i32, nh: i32, nkv: i32, hs: i32, h0: i32, h1: i32): void {
+  const E: usize = sizeof<T>();  // bytes per key or value
   const kvDim = nkv * hs;
   const kvMul = nh / nkv;
   const hs16 = hs & ~15, hs4 = hs & ~3;
@@ -152,22 +189,22 @@ export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize
   const isq: f32 = <f32>1.0 / sqrt<f32>(<f32>hs);
   // 1. the scores of every head against every position
   for (let t = 0; t < count; t++) {
-    const row = kc + (<usize>(t * kvDim) << 2);
+    const row = kc + <usize>(t * kvDim) * E;
     for (let h = h0; h < h1; h++) {
       const qh = q + (<usize>(h * hs) << 2);
-      const kt = row + (<usize>((h / kvMul) * hs) << 2);
+      const kt = row + <usize>((h / kvMul) * hs) * E;
       let a0 = f32x4.splat(0), a1 = f32x4.splat(0), a2 = f32x4.splat(0), a3 = f32x4.splat(0);
       let j = 0;
       for (; j < hs16; j += 16) {
-        const o = <usize>j << 2;
-        a0 = f32x4.add(a0, f32x4.mul(v128.load(qh + o), v128.load(kt + o)));
-        a1 = f32x4.add(a1, f32x4.mul(v128.load(qh + o + 16), v128.load(kt + o + 16)));
-        a2 = f32x4.add(a2, f32x4.mul(v128.load(qh + o + 32), v128.load(kt + o + 32)));
-        a3 = f32x4.add(a3, f32x4.mul(v128.load(qh + o + 48), v128.load(kt + o + 48)));
+        const o = <usize>j << 2, k = kt + <usize>j * E;
+        a0 = f32x4.add(a0, f32x4.mul(v128.load(qh + o), kv4<T>(k)));
+        a1 = f32x4.add(a1, f32x4.mul(v128.load(qh + o + 16), kv4<T>(k + 4 * E)));
+        a2 = f32x4.add(a2, f32x4.mul(v128.load(qh + o + 32), kv4<T>(k + 8 * E)));
+        a3 = f32x4.add(a3, f32x4.mul(v128.load(qh + o + 48), kv4<T>(k + 12 * E)));
       }
-      for (; j < hs4; j += 4) a0 = f32x4.add(a0, f32x4.mul(v128.load(qh + (<usize>j << 2)), v128.load(kt + (<usize>j << 2))));
+      for (; j < hs4; j += 4) a0 = f32x4.add(a0, f32x4.mul(v128.load(qh + (<usize>j << 2)), kv4<T>(kt + <usize>j * E)));
       let sc: f32 = hsum(f32x4.add(f32x4.add(a0, a1), f32x4.add(a2, a3)));
-      for (; j < hs; j++) sc += load<f32>(qh + (<usize>j << 2)) * load<f32>(kt + (<usize>j << 2));
+      for (; j < hs; j++) sc += load<f32>(qh + (<usize>j << 2)) * kv<T>(kt + <usize>j * E);
       store<f32>(att + (<usize>(h * count + t) << 2), sc * isq);
     }
   }
@@ -199,48 +236,81 @@ export function attention(out: usize, q: usize, kc: usize, vc: usize, att: usize
   // 3. the weighted sum of the values, again row by row, four positions at a time: out is loaded and stored once
   // for the four of them
   for (let j = h0 * hs; j < h1 * hs; j++) store<f32>(out + (<usize>j << 2), 0);
-  const stride = <usize>kvDim << 2;
+  const stride = <usize>kvDim * E;
   let t = 0;
   for (; t < count4; t += 4) {
-    const row = vc + (<usize>(t * kvDim) << 2);
+    const row = vc + <usize>(t * kvDim) * E;
     for (let h = h0; h < h1; h++) {
       const weights = att + (<usize>(h * count + t) << 2);
       const w0 = f32x4.splat(load<f32>(weights)), w1 = f32x4.splat(load<f32>(weights + 4));
       const w2 = f32x4.splat(load<f32>(weights + 8)), w3 = f32x4.splat(load<f32>(weights + 12));
       const oh = out + (<usize>(h * hs) << 2);
-      const v0 = row + (<usize>((h / kvMul) * hs) << 2);
+      const v0 = row + <usize>((h / kvMul) * hs) * E;
       const v1 = v0 + stride, v2 = v1 + stride, v3 = v2 + stride;
       let j = 0;
       for (; j < hs4; j += 4) {
-        const o = <usize>j << 2;
-        const pair0 = f32x4.add(f32x4.mul(w0, v128.load(v0 + o)), f32x4.mul(w1, v128.load(v1 + o)));
-        const pair1 = f32x4.add(f32x4.mul(w2, v128.load(v2 + o)), f32x4.mul(w3, v128.load(v3 + o)));
+        const o = <usize>j << 2, e = <usize>j * E;
+        const pair0 = f32x4.add(f32x4.mul(w0, kv4<T>(v0 + e)), f32x4.mul(w1, kv4<T>(v1 + e)));
+        const pair1 = f32x4.add(f32x4.mul(w2, kv4<T>(v2 + e)), f32x4.mul(w3, kv4<T>(v3 + e)));
         v128.store(oh + o, f32x4.add(v128.load(oh + o), f32x4.add(pair0, pair1)));
       }
       for (; j < hs; j++) {
-        const o = <usize>j << 2;
-        store<f32>(oh + o, load<f32>(oh + o) + load<f32>(weights) * load<f32>(v0 + o) + load<f32>(weights + 4) * load<f32>(v1 + o)
-          + load<f32>(weights + 8) * load<f32>(v2 + o) + load<f32>(weights + 12) * load<f32>(v3 + o));
+        const o = <usize>j << 2, e = <usize>j * E;
+        store<f32>(oh + o, load<f32>(oh + o) + load<f32>(weights) * kv<T>(v0 + e) + load<f32>(weights + 4) * kv<T>(v1 + e)
+          + load<f32>(weights + 8) * kv<T>(v2 + e) + load<f32>(weights + 12) * kv<T>(v3 + e));
       }
     }
   }
   for (; t < count; t++) {
-    const row = vc + (<usize>(t * kvDim) << 2);
+    const row = vc + <usize>(t * kvDim) * E;
     for (let h = h0; h < h1; h++) {
       const weight: f32 = load<f32>(att + (<usize>(h * count + t) << 2));
       const a = f32x4.splat(weight);
       const oh = out + (<usize>(h * hs) << 2);
-      const vt = row + (<usize>((h / kvMul) * hs) << 2);
+      const vt = row + <usize>((h / kvMul) * hs) * E;
       let j = 0;
       for (; j < hs4; j += 4) {
         const o = <usize>j << 2;
-        v128.store(oh + o, f32x4.add(v128.load(oh + o), f32x4.mul(a, v128.load(vt + o))));
+        v128.store(oh + o, f32x4.add(v128.load(oh + o), f32x4.mul(a, kv4<T>(vt + <usize>j * E))));
       }
       for (; j < hs; j++) {
         const o = <usize>j << 2;
-        store<f32>(oh + o, load<f32>(oh + o) + weight * load<f32>(vt + o));
+        store<f32>(oh + o, load<f32>(oh + o) + weight * kv<T>(vt + <usize>j * E));
       }
     }
+  }
+}
+
+// T110: float32 to float16, rounded to the nearest (ties to even), as NumPy's astype(float16) does: the keys and
+// values of a token, into the cache. Too large a number becomes infinity (a key never is one).
+export function to_f16(out: usize, x: usize, n: i32): void {
+  for (let i = 0; i < n; i++) {
+    const bits = reinterpret<u32>(load<f32>(x + (<usize>i << 2)));
+    const sign = (bits >> 16) & 0x8000;
+    const exponent = <i32>((bits >> 23) & 0xff) - 112;  // rebased for float16 (127 - 15)
+    let mantissa = bits & 0x7fffff;
+    let result: u32;
+    if (exponent >= 31) {
+      result = sign | 0x7c00;
+    } else if (exponent <= 0) {
+      // a subnormal float16 (or zero): the implicit bit comes in, and the rest is shifted out with rounding
+      if (exponent < -10) {
+        result = sign;
+      } else {
+        mantissa |= 0x800000;
+        const shift = <u32>(14 - exponent);
+        const rest = mantissa & ((1 << shift) - 1), middle = <u32>1 << (shift - 1);
+        let value = mantissa >> shift;
+        if (rest > middle || (rest == middle && (value & 1))) value++;
+        result = sign | value;
+      }
+    } else {
+      const rest = mantissa & 0x1fff;
+      let value = (<u32>exponent << 10) | (mantissa >> 13);
+      if (rest > 0x1000 || (rest == 0x1000 && (value & 1))) value++;  // a carry moves into the exponent, as it should
+      result = sign | value;
+    }
+    store<u16>(out + (<usize>i << 1), <u16>result);
   }
 }
 

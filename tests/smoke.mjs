@@ -171,6 +171,31 @@ for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensor
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int8", positions, numpy_int8)
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int8", positions, kernel_int8, quantize_rows=quantize_rows)
     assert numpy_int8 == kernel_int8, f"the kernels' quantizer changed the int8 {arch} checkpoint"
+# T110: float32 to float16 as NumPy rounds it, and attention over a float16 cache the same to the bit as over the
+# float32 values it stands for (every head alone, and heads in two ranges)
+kernel = llama2_numpy.load_kernels("simdkernel.so")
+rng = np.random.default_rng(11)
+wide = np.concatenate([rng.standard_normal(4000).astype(np.float32) * 10 ** rng.uniform(-9, 5, 4000).astype(np.float32),
+                       np.array([0.0, -0.0, 65504.0, 65520.0, 1e6, 2.0 ** -24, 2.0 ** -25, 3 * 2.0 ** -26, 5.96e-8, -1.5e-5,
+                                 1.0 + 2.0 ** -11, 1.0 + 3 * 2.0 ** -11], dtype=np.float32)])
+halves = np.empty(wide.size, dtype=np.float16)
+kernel["to_f16"](halves.ctypes.data, wide.ctypes.data, wide.size)
+with np.errstate(over="ignore"):
+    assert np.array_equal(halves.view(np.uint16), wide.astype(np.float16).view(np.uint16)), "to_f16 is not astype(float16)"
+heads, kv_heads, head_size, count = 8, 2, 20, 37  # head_size 20: the loops' remainders too
+q = rng.standard_normal(heads * head_size).astype(np.float32)
+keys = (rng.standard_normal((count, kv_heads * head_size)) * 3).astype(np.float16)
+values = rng.standard_normal((count, kv_heads * head_size)).astype(np.float16)
+wide_keys, wide_values = keys.astype(np.float32), values.astype(np.float32)
+scores = np.empty(heads * count, dtype=np.float32)
+out32, out16 = (np.empty(heads * head_size, dtype=np.float32) for _ in range(2))
+kernel["attention"](out32.ctypes.data, q.ctypes.data, wide_keys.ctypes.data, wide_values.ctypes.data, scores.ctypes.data,
+                    count - 1, heads, kv_heads, head_size, 0, heads)
+kernel["attention_f16"](out16.ctypes.data, q.ctypes.data, keys.ctypes.data, values.ctypes.data, scores.ctypes.data,
+                        count - 1, heads, kv_heads, head_size, 0, 3)
+kernel["attention_f16"](out16.ctypes.data, q.ctypes.data, keys.ctypes.data, values.ctypes.data, scores.ctypes.data,
+                        count - 1, heads, kv_heads, head_size, 3, heads)
+assert np.array_equal(out32, out16), "attention_f16 is not attention over the widened cache"
 # NumPy takes over when the kernels cannot be loaded
 assert llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"), kernels="missing.so").backend == "NumPy"
 

@@ -61,6 +61,7 @@ jobs:
           node tests/smoke.mjs
           # T93: the forward pass of public/forward.js against NumPy's, on the site's models (the line is for 128 positions)
           node tests/forward-check.mjs --rounds 1 --positions 128
+          node tests/forward-check.mjs stories260K tiny-lm --rounds 1 --positions 128 --plain
 
       - name: Build the site
         run: npm run build

@@ -30,6 +30,6 @@ const broken = benchMarkdown([{ name: "everything", speed: undefined, backend: "
 assert.ok(broken.includes("| everything | ? |"), broken);
 
 assert.equal(ROUNDS.length, 2, "?bench=1 runs with and without the kernels");
-assert.equal(FULL_ROUNDS.length, 5, "?bench=full walks the five steps of T52");
+assert.equal(FULL_ROUNDS.length, 6, "?bench=full walks the steps of T52, and T110's");
 assert.deepEqual(FULL_ROUNDS.at(-1).without, [], "the last step is everything switched on");
 console.log("ok");

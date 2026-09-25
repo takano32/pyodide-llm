@@ -13,7 +13,10 @@
 // Then the speeds, both in turn. Runs in the deployment.
 //
 //   node tests/forward-check.mjs [model id | <out> of tests/perplexity_prepare.py ...] [--rounds 3] [--positions 128]
-//        [--without relaxed,int8,sampler]
+//        [--without relaxed,int8,sampler] [--plain]
+//
+// The memory is shared, as the page's where it is cross-origin isolated; --plain: not shared, as the page's where it
+// is not (the keys and values then stay float32, T110).
 import fs from "node:fs";
 import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
@@ -29,7 +32,7 @@ const modelOf = (id) => MODELS.find((m) => m.id === id) ?? { name: path.basename
   tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) };
 const file = (f) => (path.isAbsolute(f) ? f : root + f);
 
-const { pyodide: py } = await pyodideWithEngine();
+const { pyodide: py } = await pyodideWithEngine({ shared: !args.includes("--plain") });
 py.runPython("import time, gc, math, numpy as np\nfrom llama2_numpy import Llama");
 let failed = false;
 for (const id of ids.length ? ids : ["stories260K", "stories15M", "tiny-lm", "llm-jp-3-150m"]) {
