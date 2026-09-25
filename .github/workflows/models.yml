@@ -69,6 +69,17 @@ jobs:
             *) npx playwright-core install --with-deps "${{ inputs.browser }}" ;;
           esac
 
+      # the ids local and hf open files of this checkout through the folder button (tests/e2e.mjs): stories260K and
+      # its tokenizer, and for hf the files tests/make_hf_fixture.py writes from them with NumPy
+      - name: The files the folder button opens
+        if: contains(format(' {0} ', inputs.models), ' local ') || contains(format(' {0} ', inputs.models), ' hf ')
+        shell: bash
+        run: |
+          for file in stories260K.bin tok512.bin; do
+            curl -sSfLO "https://huggingface.co/karpathy/tinyllamas/resolve/main/stories260K/$file"
+          done
+          python3 -m pip install --quiet numpy
+
       - name: Run
         shell: bash
         env:
