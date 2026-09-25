@@ -19,6 +19,12 @@ const ASK_JAPANESE = "質問や指示を入力（例: 日本の首都は？）";
 // ChatML. <|im_start|> and <|im_end|> are tokens of their own, so the engine is told to read them as such
 const CHATML = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
 const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [0, 2] };
+// sarashina2.2's chat_template (and CAT-Translate's, made from it) uses selectattr, which this project's template
+// reader does not take (T73): one turn of it, as the real Jinja renders it, is this. </s> is the token (T81; the
+// 0.5B Instruct had ChatML here until 2026-09-26, whose <|im_start|> its vocabulary does not have)
+const SARASHINA = "<|user|>{prompt}</s><|assistant|>";
+const sarashina = { specials: ["</s>"] };
+const TRANSLATE = "Translate the following Japanese text into English.\n\n{日本語の文} (or English into Japanese)";
 // Models that huggingface.co serves and this page converts itself (public/llama2_convert.py, the code that builds
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
 // model. revision pins the commit, so that nothing changes under the page. download is the size of model.safetensors.
@@ -31,6 +37,7 @@ const llmJp = { stop_tokens: [1, 2, 7] };
 const APACHE = "Apache License 2.0";
 const MIT = "MIT License";
 const LLAMA_32 = "Llama 3.2 Community License";
+const APACHE_GEMMA = "Apache License 2.0, and the Gemma Terms of Use for what it learned from Gemma's data";
 export const LICENSES = {
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
@@ -44,6 +51,10 @@ export const LICENSES = {
   "openai-community/gpt2": MIT, "TinyLlama/TinyLlama-1.1B-Chat-v1.0": APACHE,
   "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B": MIT,
   "meta-llama/Llama-3.2-1B-Instruct": LLAMA_32, "unsloth/Llama-3.2-1B-Instruct": LLAMA_32,
+  // T81 (2026-09-26)
+  "SakanaAI/TinySwallow-1.5B-Instruct": APACHE_GEMMA, "llm-jp/llm-jp-3.1-1.8b-instruct4": APACHE,
+  "sbintuitions/sarashina2.2-1b-instruct-v0.1": MIT, "cyberagent/CAT-Translate-0.8b": MIT, "cyberagent/CAT-Translate-1.4b": MIT,
+  "HuggingFaceTB/SmolLM2-1.7B-Instruct": APACHE,
 };
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
@@ -127,11 +138,32 @@ export const MODELS = [
     prompt: "これからの流行りは", placeholder: JAPANESE },
   { group: "hf", id: "hf-sarashina2.2-0.5b-instruct", name: "sarashina2.2 0.5B Instruct", note: "answers instructions · 日本語 · fetches 1.6 GB → int8 0.6 GB · desktop only",
     hf: hf("sbintuitions/sarashina2.2-0.5b-instruct-v0.1", "e4b9aacc3f644893d0179847946ef6c58d868f29", "tokenizer.model"),
-    download: 1586121792, conversion: {}, options: {}, generation: sampled(1.1), template: CHATML,
+    download: 1586121792, conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T81: a translator from sarashina2.2, Japanese to English and back, asked in its own words (its model card)
+  { group: "hf", id: "hf-cat-translate-0.8b", name: "CAT-Translate 0.8B", note: "translates 日本語 ⇄ English · fetches 1.6 GB → int8 0.9 GB · desktop only",
+    hf: hf("cyberagent/CAT-Translate-0.8b", "b555f93ef67846b6ed2773e0d2f16ceb0d30adb9", "tokenizer.model"), download: 1586121792,
+    conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
+    prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE },
   { group: "hf", id: "hf-llm-jp-3-980m-instruct3", name: "llm-jp-3 980M instruct3", note: "answers instructions · 日本語 · fetches 2.0 GB → int8 1.1 GB · desktop only",
     hf: hf("llm-jp/llm-jp-3-980m-instruct3", "c079dbf3f88aa2ab702b9696231fc3336c46b1be"), download: 1980382824, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T81 (2026-09-26): the survey's Japanese models that convert as they are. TinySwallow and llm-jp-3.1 read their
+  // chat templates themselves (T73)
+  { group: "hf", id: "hf-sarashina2.2-1b-instruct", name: "sarashina2.2 1B Instruct", note: "answers instructions · 日本語 · fetches 2.8 GB → int8 1.6 GB · desktop only",
+    hf: hf("sbintuitions/sarashina2.2-1b-instruct-v0.1", "08cf5a8ae579be0fb5a9f802dda8a26acbc94951", "tokenizer.model"), download: 2815103168,
+    conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-cat-translate-1.4b", name: "CAT-Translate 1.4B", note: "translates 日本語 ⇄ English · fetches 2.8 GB → int8 1.6 GB · desktop only",
+    hf: hf("cyberagent/CAT-Translate-1.4b", "254120945fd9a61278ac2171ab07c831d56838fa", "tokenizer.model"), download: 2815103168,
+    conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
+    prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE },
+  { group: "hf", id: "hf-tinyswallow-1.5b-instruct", name: "TinySwallow 1.5B Instruct", note: "answers instructions · 日本語 · fetches 3.1 GB → int8 1.7 GB · desktop only",
+    hf: hf("SakanaAI/TinySwallow-1.5B-Instruct", "91e9fcc30f56d224aea84356c4d850cc4c5a3260"), download: 3087467144,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-llm-jp-3.1-1.8b-instruct4", name: "llm-jp-3.1 1.8B instruct4", note: "answers instructions · 日本語 · fetches 3.7 GB → int8 2.1 GB · desktop only",
+    hf: hf("llm-jp/llm-jp-3.1-1.8b-instruct4", "f19510db409090bb1737f24f868d17c4bdc86c8e"), download: 3735253776,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // English. Pythia is the same design at five sizes: a ladder for measuring (T80)
   { group: "hf", id: "hf-pythia-70m", name: "Pythia 70M", note: "English · fetches 166 MB → int8 96 MB",
     hf: hf("EleutherAI/pythia-70m-deduped", "e93a9faa9c77e5d09219f6c868bfc7a1bd65593c"), download: 166029852,
@@ -184,6 +216,10 @@ export const MODELS = [
     hf: hf("Qwen/Qwen2.5-1.5B-Instruct", "989aa7980e4cf806f80c7fef2b1adb7bc71aa306"), download: 3087467144,
     conversion: {}, options: { ...chatml, stop_tokens: [151643, 151645] }, generation: sampled(1.1), template: CHATML,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-smollm2-1.7b-instruct", name: "SmolLM2 1.7B Instruct", note: "answers instructions · English · fetches 3.4 GB → int8 1.9 GB · desktop only",
+    hf: hf("HuggingFaceTB/SmolLM2-1.7B-Instruct", "31b70e2e869a7173562077fd711b654946d38674"), download: 3422777952,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   { group: "hf", id: "hf-deepseek-r1-qwen-1.5b", name: "DeepSeek-R1 Distill Qwen 1.5B", note: "thinks before it answers · English · fetches 3.6 GB → int8 1.6 GB · desktop only",
     hf: hf("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", "ad9f0ae0864d7fbcd1cd905e3c6c5b069cc8b562"), download: 3554214621,
     conversion: {}, options: { specials: ["<｜begin▁of▁sentence｜>", "<｜User｜>", "<｜Assistant｜>"], stop_tokens: [151643] },
