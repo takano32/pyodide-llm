@@ -244,10 +244,11 @@ class Sink:
     """What the worker passes for a checkpoint that goes straight into the WebAssembly memory of forward.js (T93)."""
 
     def __init__(self):
-        self.data = None
+        self.data = self.opened = None
 
-    def open(self, size):
+    def open(self, size, header, dtype, arch):
         self.data = bytearray(size)
+        self.opened = (list(header), dtype, arch)  # what the worker sizes the forward pass's memory from (T115)
 
     def write(self, offset, array):
         raw = bytes(np.asarray(array, dtype=np.uint8))
@@ -268,6 +269,30 @@ def test_a_sink_gets_the_very_checkpoint(dtype):
         stream.feed(file[start:start + 777])
     stream.finish()
     assert bytes(sink.data) == expected
+    assert sink.opened == (list(stream.header), dtype, "llama")
+
+
+def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():
+    """T115: the worker gives the converter a function in place of a dtype (int8 where the forward pass fits a 32-bit
+    memory, else int6), which gets the header and the size of either; the checkpoint is then that dtype's."""
+    config, weights = synthetic_weights()
+    tensors, published = hugging_face(config, weights, True)
+    file = safetensors_file(tensors)
+    size = struct.unpack("<Q", file[:8])[0]
+    asked = []
+
+    def choose(header, arch, sizes):
+        asked.append((list(header), arch, dict(sizes)))
+        return "int6"
+
+    sink = Sink()
+    stream = llama2_convert.Stream(json.loads(file[8:8 + size]), 8 + size, published, choose, 1 << 20, sink=sink)
+    stream.feed(file)
+    stream.finish()
+    header = list(stream.header)
+    assert asked == [(header, "llama", {name: checkpoint_size(header, name) for name in ("int8", "int6")})]
+    assert stream.dtype == "int6" and sink.opened[1] == "int6"
+    assert bytes(sink.data) == converted(Safetensors(reader(file)), published, "int6")
 
 
 def test_a_quantizer_of_rows_is_used_for_whole_groups_of_32_only():

@@ -21,6 +21,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
+import { footprint } from "../public/forward.js";
 import { MODELS } from "../src/models.js";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -69,16 +70,47 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
   }
 }
 
-const { pyodide: py } = await pyodideWithEngine({ shared: !args.includes("--plain"), wide: args.includes("--wide") });
-py.runPython("import time, gc, math, numpy as np\nfrom llama2_numpy import Llama");
+const shared = !args.includes("--plain");
+const { pyodide: py, kernels } = await pyodideWithEngine({ shared, wide: args.includes("--wide") });
+py.runPython("import time, gc, math, numpy as np, llama2_numpy\nfrom llama2_numpy import Llama");
 let failed = false;
 for (const id of ids.length ? ids : ["stories260K", "stories15M", "tiny-lm", "llm-jp-3-150m"]) {
   const entry = modelOf(id);
   py.FS.writeFile("model.bin", fs.readFileSync(file(entry.checkpoint)));
   py.FS.writeFile("tokenizer.bin", fs.readFileSync(file(entry.tokenizer)));
   py.globals.set("OPTIONS", py.toPy({ ...entry.options, disable: without }));
-  const verdict = py.runPython(`
+  // T115: what the forward pass allocates after the checkpoint, at most, against footprint(), which decides a 32-bit
+  // or a 64-bit memory and whether a kept one has room: forward() at every position where the KV cache doubles, then
+  // at the last one, so that it has grown step by step as a generation grows it, to the whole context
+  // (first, before the NumPy engine widens the weights in Pyodide's memory, which never shrinks)
+  const [used, header] = py.runPython(`
+import struct
 data, vocabulary = open("model.bin", "rb").read(), open("tokenizer.bin", "rb").read()
+llama = kernel_llama(data, vocabulary, **OPTIONS)
+if getattr(llama, "_external", None):
+    capacity = llama2_numpy.KV_START
+    while capacity < llama.seq_len:
+        llama.forward(llama.bos, capacity, need_logits=False)
+        capacity *= 2
+    llama.forward(llama.bos, llama.seq_len - 1, need_logits=False)
+used = int(llama._external[0].memoryBytes()) if getattr(llama, "_external", None) else 0
+llama.release(); del llama; gc.collect()
+(used, list(struct.unpack_from("<7i", data, 0)))
+`).toJs();
+  if (used) {
+    const size = fs.statSync(file(entry.checkpoint)).size, quantized = ["int8", "int6"].includes(entry.options.dtype);
+    const int8 = !without.includes("int8");
+    const after = used - (shared ? 8192 : 64) - size;
+    const bound = footprint(header, size, { dtype: entry.options.dtype, arch: entry.options.arch, int8,
+      relaxed: Boolean(kernels.relaxed) && !without.includes("relaxed"), halfKV: shared && quantized && int8 && !without.includes("kv16") });
+    // above what was used, and by little: a few percent, the megabyte for alignment, and the outlier columns it
+    // counts for every quantized model (4 MiB for a vocabulary of 128256; few models have them)
+    const close = after <= bound && bound - after <= 0.05 * bound + 6 * 2 ** 20;
+    console.log(`${entry.name}: ${(after / 2 ** 20).toFixed(1)} MiB after the checkpoint at the end of the context, ` +
+      `footprint ${(bound / 2 ** 20).toFixed(1)} MiB${close ? "" : " — FAILED"}`);
+    failed ||= !close;
+  }
+  const verdict = py.runPython(`
 page = kernel_llama(data, vocabulary, **OPTIONS)
 numpy = Llama(data, vocabulary, **{k: v for k, v in OPTIONS.items() if k != "disable"})
 int8 = "int8" in page.backend or "int6" in page.backend  # both quantize the activations (T98)
@@ -94,7 +126,6 @@ for pos in range(${positions}):
     sequence.append(following)
 agreement, change = agree / ${positions}, math.exp((nll[0] - nll[1]) / ${positions}) - 1
 ok = (agreement >= 0.85 and abs(change) <= 0.05) if int8 else (agree == ${positions} and largest <= 1e-3)
-import llama2_numpy
 kv_start, llama2_numpy.KV_START = llama2_numpy.KV_START, 8
 one, many = kernel_llama(data, vocabulary, **OPTIONS), kernel_llama(data, vocabulary, **OPTIONS)
 llama2_numpy.KV_START = kv_start
@@ -127,5 +158,6 @@ def run(llama, positions):
   console.log(`${entry.name}: ${line}${ok ? "" : " — FAILED"}; NumPy ${median(times.numpy).toFixed(1)} against forward.js ${median(times.page).toFixed(1)} tok/s`);
   failed ||= !ok;
   py.runPython("page.release(); del page, numpy; gc.collect()");
+
 }
 process.exit(failed ? 1 : 0);

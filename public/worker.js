@@ -105,6 +105,9 @@ function download(model, signal, load) {
   const queue = [];
   const started = performance.now();
   let sink, next = 0, received = 0, reported = -1;
+  // T115: the checkpoint's first bytes (its header), as soon as the first part brings them
+  let head = new Uint8Array(0), tell;
+  const header = new Promise((resolve) => { tell = resolve; });
   const connection = async () => {
     while (next < parts) {
       const part = next++;
@@ -121,6 +124,10 @@ function download(model, signal, load) {
         // a chunk that was already on its way when the load was cancelled: its buffer is gone
         signal.throwIfAborted();
         sink ? sink(offset, value) : queue.push([offset, value]);
+        if (offset === head.length && head.length < HEADER_BYTES) {
+          head = new Uint8Array([...head, ...value.subarray(0, HEADER_BYTES - head.length)]);
+          if (head.length === HEADER_BYTES) tell(head);
+        }
         offset += value.length;
         received += value.length;
         // one message per percent is plenty
@@ -139,6 +146,9 @@ function download(model, signal, load) {
     .then(() => { source.seconds = since(started); });
   // a load that is cancelled while Pyodide still loads never gets to into(): that is no unhandled rejection
   finished.catch(() => {});
+  // a download that fails before the header came fails the wait for it
+  source.header = Promise.race([header, finished.then(() => head)]);
+  source.header.catch(() => {});
   // write(offset, chunk) receives everything queued so far, and every later chunk
   source.into = async (write) => {
     sink = write;
@@ -203,11 +213,15 @@ function readUrl(model, signal, load) {
   return source;
 }
 
+// The header of the legacy format: 7 ints, the shape of the model. T115: they also say what the forward pass puts
+// after the checkpoint (forward.js's footprint()), which the memory is chosen by.
+const HEADER_BYTES = 28;
+const headerInts = (bytes) => [...new Int32Array(bytes.slice(0, HEADER_BYTES).buffer)];
+
 // The legacy format carries no metadata, but its header fixes the size of a float32, a float16 and an int8 file.
 // A file that is none of them is refused before it is read, and so is a tokenizer.bin of another vocabulary.
-async function localOptions(model, vocabulary) {
-  const first = model.file ? await model.file.slice(0, 28).arrayBuffer() : (await fetchRange(model.url.checkpoint, 0, 28, new AbortController().signal)).bytes.buffer;
-  const header = pyodide.toPy([...new Int32Array(first)]);
+async function localOptions(model, vocabulary, head) {
+  const header = pyodide.toPy(headerInts(head));
   const pieces = pyodide.toPy(vocabulary);
   try {
     // what the file cannot say and the settings may: a Qwen2 has biases, a GPT-2 or GPT-NeoX another set of tensors
@@ -370,18 +384,18 @@ const spawnThread = (data) => new Promise((resolve, reject) => {
 // memory, shared or not and whatever its maximum, and Chromium refused the third one of a page: the benchmark's
 // first round, or a visitor's second change of model, then found no memory at all. So a memory is kept and grown
 // as long as the next model fits under its maximum, and made anew only for a larger one. The maximum comes from the
-// model (weightsMemory: four times the file and a gigabyte): asking for 4 GB up front left a phone no room for
-// Pyodide's own memory, and "Loading Pyodide" never ended (2026-09-25).
-// The forward pass puts more after the checkpoint (the review of T96): the corrections of relaxed SIMD (a ninth of an
-// int8 file, a seventh of an int6 one) and the keys, values and activations (half a gigabyte, as needsWide keeps).
-// Pythia 1B's checkpoint (1.1 GB) fitted the memory made for tiny-lm (1.2 GB) and its corrections did not ("Maximum
-// memory size exceeded"; opened first, it ran). Where a new memory would get no more room than this one (the browser
-// gave less than it asked for, or it is not shared and grows as far as any would), the checkpoint fitting is enough.
-// shared is what was asked for, not what the browser gave: a device without shared memories made one for every model.
+// model (weightsMemory: what it needs and a gigabyte): asking for 4 GB up front left a phone no room for Pyodide's
+// own memory, and "Loading Pyodide" never ended (2026-09-25).
+// "Fits" is the checkpoint and what the forward pass puts after it (after: forward.js's footprint(), T115). Pythia
+// 1B's checkpoint (1.1 GB) fitted the memory made for tiny-lm (1.2 GB) and its corrections did not ("Maximum memory
+// size exceeded"; opened first, it ran; the review of T96). Where a new memory would get no more room than this one
+// (the browser gave less than it asked for, or it is not shared and grows as far as any would), the checkpoint
+// fitting is enough. shared is what was asked for, not what the browser gave: a device without shared memories
+// made one for every model.
 let weightsPool;
-function pooledWeights(size, shared, wide) {
+function pooledWeights(size, after, shared, wide) {
   const pages = (bytes) => Math.ceil(bytes / 65536);
-  const needs = (base) => pages(base + size + (weightsPool.limited ? 0 : size / 7 + 2 ** 29)) + 1;
+  const needs = (base) => pages(base + size + (weightsPool.limited ? 0 : after)) + 1;
   const fits = weightsPool && weightsPool.asked === shared && weightsPool.wide === wide && needs(weightsPool.base) <= weightsPool.maximum;
   if (!fits) {
     // nothing may hold the old memory while the new one is made (T96: Chromium refused a page's third)
@@ -389,7 +403,7 @@ function pooledWeights(size, shared, wide) {
     let memory, base;
     if (shared) {
       try {
-        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, wide }));
+        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, wide, after }));
       } catch {
         memory = undefined;  // no shared memory here: one thread
       }
@@ -407,17 +421,49 @@ function pooledWeights(size, shared, wide) {
   return weightsPool;
 }
 
-function weightsBuffer(size) {
+// T115: what the forward pass of a checkpoint of size bytes puts after it, at most (forward.js's footprint()): from
+// its header (the 7 ints) and the options it is loaded with, on a shared memory (an int8 model's keys and values
+// in float16 there, T110) or not
+function afterCheckpoint(header, size, { dtype = "float32", arch = "llama" }, shared) {
+  const int8 = !disabled.includes("int8"), quantized = dtype === "int8" || dtype === "int6";
+  return forwardModule.footprint(header, size, {
+    dtype, arch, int8, relaxed: Boolean(jsKernels?.relaxed) && !disabled.includes("relaxed"),
+    halfKV: shared && quantized && int8 && !disabled.includes("kv16"),
+    kvStart: llama2_numpy.KV_START, outliers: llama2_numpy.OUTLIER_CHANNELS,
+  });
+}
+// the page cross-origin isolated (stage 3), shared memories to be had, and not ?threads=1: the memory is shared
+const sharedWanted = () => Boolean(sharedKernels && self.crossOriginIsolated && threadsRequest?.fixed !== 1);
+
+// T115: the bits of a model converted with none asked for (weightsFor() in src/models.js asks for six bits where the
+// device says it has too little memory): int8 unless its forward pass does not fit a 32-bit memory, then six bits
+// (T98: 7/9 of int8's memory, and about half as fast). The converter calls this once it knows the header: the size
+// of either (sizes) and what the forward pass puts after them depend on it.
+function automaticBits(header, arch, sizes) {
+  const ints = header.toJs(), int8 = sizes.toJs({ dict_converter: Object.fromEntries }).int8;
+  header.destroy();
+  sizes.destroy();
+  if (!forwardModule) return "int8";  // no forward.js (no WebAssembly SIMD): NumPy widens every weight anyway
+  const shared = sharedWanted();
+  return forwardModule.needsWide(int8, afterCheckpoint(ints, int8, { dtype: "int8", arch }, shared)) ? "int6" : "int8";
+}
+
+// header: the checkpoint's 7 ints, options: what it is loaded with (its dtype and arch): what the forward pass puts
+// after the checkpoint follows from them (T115)
+function weightsBuffer(size, header, options) {
   if (jsKernels && !disabled.includes("kernels")) {
     // a shared memory where the page is cross-origin isolated (stage 3), unless ?threads=1; else one thread
-    const wanted = Boolean(sharedKernels && self.crossOriginIsolated && threadsRequest?.fixed !== 1);
-    // T101: a model past 4 GiB goes on a 64-bit memory (about a tenth slower: only when it has to)
-    const wide = forceWide || forwardModule.needsWide(size);
+    const wanted = sharedWanted();
+    // T101: a model past 4 GiB with its forward pass goes on a 64-bit memory (about a tenth slower: only when it has
+    // to). Where a shared one is refused after all, the plain one keeps float32 keys and values, twice what was
+    // counted: a model at the edge then runs out of memory near the end of its context (T115)
+    const after = afterCheckpoint(header, size, options, wanted);
+    const wide = forceWide || forwardModule.needsWide(size, after);
     if (wide && !wideKernels?.plain) {
       throw new Error("This model needs more than 4 GB of memory, which this browser cannot give a web page (no 64-bit " +
         "WebAssembly memory: Safari has none yet). Chrome and Firefox can.");
     }
-    const { memory, base, shared } = pooledWeights(size, wanted && (!wide || Boolean(wideKernels.shared)), wide);
+    const { memory, base, shared } = pooledWeights(size, after, wanted && (!wide || Boolean(wideKernels.shared)), wide);
     const kernels = wide ? (shared ? wideKernels.shared : wideKernels.plain) : (shared ? sharedKernels : jsKernels);
     const spawn = shared ? spawnThread : undefined;
     weightsNow = memory;
@@ -588,7 +634,10 @@ async function inOrder(url, start, size, feed, signal, arriving = () => {}) {
 async function loadConverted(model, signal, id) {
   let kept;
   try {
-    kept = await keptModule.openKept(model);
+    // no bits asked for (T115): what the worker chose then is kept under the bits it chose
+    for (const dtype of model.conversion?.dtype ? [model.conversion.dtype] : ["int8", "int6"]) {
+      kept ??= await keptModule.openKept({ ...model, conversion: { ...model.conversion, dtype } });
+    }
   } catch (error) {
     return { miss: `could not open what is kept: ${error.message ?? error}` };
   }
@@ -597,22 +646,36 @@ async function loadConverted(model, signal, id) {
   }
   const { manifest } = kept;
   const started = performance.now();
-  const weights = weightsBuffer(manifest.bytes);
+  // the first part holds the header, which the memory is chosen by (T115)
+  const parts = kept.parts()[Symbol.asyncIterator]();
+  const unreadable = (error) => {
+    if (signal.aborted) {
+      throw error;
+    }
+    return { miss: `could not read what is kept: ${error.message ?? error}` };  // evicted: convert again
+  };
+  let part;
+  try {
+    part = await parts.next();
+  } catch (error) {
+    return unreadable(error);
+  }
+  if (part.done || part.value.length < HEADER_BYTES) {
+    return { miss: "what is kept is empty" };
+  }
+  const weights = weightsBuffer(manifest.bytes, headerInts(part.value), manifest.options);
   let tokenizer;
   try {
     let offset = 0;
     try {
-      for await (const bytes of kept.parts()) {
+      for (; !part.done; part = await parts.next()) {
         signal.throwIfAborted();
-        weights.write(offset, bytes);
-        offset += bytes.length;
+        weights.write(offset, part.value);
+        offset += part.value.length;
         postMessage({ type: "progress", load: id, received: offset, total: manifest.bytes });
       }
     } catch (error) {
-      if (signal.aborted) {
-        throw error;
-      }
-      return { miss: `could not read what is kept: ${error.message ?? error}` };  // evicted: convert again
+      return unreadable(error);
     }
     const vocabulary = await kept.tokenizer();
     loadSeconds.download = since(started);
@@ -638,8 +701,10 @@ async function keepConverted(model, checkpoint, bytes, tokenizer, options, signa
   const vocabulary = view.data.slice();
   view.release();
   const manifest = { id: model.id, name: model.name, repo: model.hf.repo, revision: model.hf.revision, bytes, options, saved: Date.now() };
+  // under the bits it was converted to, which the worker may have chosen (T115)
+  const converted = { ...model, conversion: { ...model.conversion, dtype: options.dtype } };
   // slice() copies: the memory it comes from may grow (and so move) while an await waits
-  return keptModule.keep(model, manifest, (begin, end) => checkpoint.slice(begin, end), vocabulary, signal);
+  return keptModule.keep(converted, manifest, (begin, end) => checkpoint.slice(begin, end), vocabulary, signal);
 }
 
 async function convert(model, signal, id) {
@@ -674,9 +739,10 @@ async function convert(model, signal, id) {
   // A Python buffer on the way would stay: Pyodide's memory never shrinks.
   let weights, weightsSize = 0;
   const sink = {
-    open(bytes) {
+    open(bytes, header, dtype, arch) {
       weights?.destroy();  // an earlier try (another tokenizer) that got this far
-      weights = weightsBuffer(bytes);
+      weights = weightsBuffer(bytes, header.toJs(), { dtype, arch });
+      header.destroy();
       weightsSize = bytes;
     },
     write(offset, array) {
@@ -685,6 +751,9 @@ async function convert(model, signal, id) {
       view.release();
     },
   };
+  // T115: no bits asked for (weightsFor() in src/models.js asks for six only where the device says it has too little
+  // memory): int8 where its forward pass fits a 32-bit memory, six bits where it does not, once the header is known
+  const converting = { ...model.conversion, dtype: model.conversion?.dtype ?? automaticBits };
   // T89: quantize() on the SIMD kernels, the same bytes six times faster (none with ?without=kernels)
   const quantizeRows = kernels && !disabled.includes("kernels") ? llama2_numpy.kernel_quantizer(kernels) : undefined;
   if (remote && model.hf.weights.endsWith(".gguf")) {
@@ -694,7 +763,7 @@ async function convert(model, signal, id) {
     for (let bytes = 4 * HF_HEADER_BYTES; ; bytes *= 4) {
       ({ bytes: first, total: size } = await sized(at(model.hf.weights), await fetchRange(at(model.hf.weights), 0, bytes, signal), signal));
       try {
-        conversion = llama2_convert.Conversion.from_gguf.callKwargs(first, { ...model.conversion, sink, quantize_rows: quantizeRows });
+        conversion = llama2_convert.Conversion.from_gguf.callKwargs(first, { ...converting, sink, quantize_rows: quantizeRows });
         break;
       } catch (error) {
         if (error.type !== "Incomplete" || bytes >= size) {
@@ -764,7 +833,7 @@ async function convert(model, signal, id) {
         const tokenizer = new Uint8Array(remote ? await (await text(at(candidate))).arrayBuffer() : await candidate.arrayBuffer());
         signal.throwIfAborted();
         conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName,
-          { start: base, tokenizer_config: tokenizerConfig, ...model.conversion, sink, quantize_rows: quantizeRows });
+          { start: base, tokenizer_config: tokenizerConfig, ...converting, sink, quantize_rows: quantizeRows });
         break;
       } catch (error) {
         if (signal.aborted) {
@@ -877,9 +946,12 @@ async function load(model, signal, id) {
   }
   postMessage({ type: "status", load: id, text: `${model.file ? "Reading" : "Downloading"} ${model.name}...` });
   const downloadStarted = performance.now();
+  let head;  // the checkpoint's header (T115); a download of this site's tells it when its first part comes
   if (model.url) {
     // the size of a file somewhere else is what its server says
-    model.bytes = (await sized(model.url.checkpoint, await fetchRange(model.url.checkpoint, 0, 28, signal), signal)).total;
+    const first = await fetchRange(model.url.checkpoint, 0, HEADER_BYTES, signal);
+    head = first.bytes;
+    model.bytes = (await sized(model.url.checkpoint, first, signal)).total;
     if (!(model.bytes > 28)) {
       throw new Error(`${model.url.checkpoint} does not answer range requests, so its size is unknown.`);
     }
@@ -895,10 +967,14 @@ async function load(model, signal, id) {
   tokenizerBytes.catch(() => {});
   await initialized;
   signal.throwIfAborted();
-  const options = model.file || model.url ? await localOptions(model, new Uint8Array(await tokenizerBytes)) : model.options;
+  if (model.file) {
+    head = new Uint8Array(await model.file.slice(0, HEADER_BYTES).arrayBuffer());
+  }
+  const options = model.file || model.url ? await localOptions(model, new Uint8Array(await tokenizerBytes), head) : model.options;
+  head ??= await checkpoint.header;
   signal.throwIfAborted();
 
-  const weights = weightsBuffer(model.bytes);
+  const weights = weightsBuffer(model.bytes, headerInts(head), options);
   let tokenizer;
   try {
     await checkpoint.into(weights.write);

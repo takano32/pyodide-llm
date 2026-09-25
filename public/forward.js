@@ -42,10 +42,56 @@ export function memory64() {
     return false;
   }
 }
-/** Whether a checkpoint of size bytes needs a 64-bit memory: with half a gigabyte for the keys, values and
- * activations it passes the 4 GiB of a 32-bit one. (A 3B int8 ran in 32 bits with a heap of 4016 MB, T105: it stays
- * there, and faster: a 64-bit memory runs the kernels about a tenth slower, measured.) */
-export const needsWide = (size) => CONTROL_BYTES + size + 2 ** 29 > PAGES_32 * PAGE;
+
+// The arrays of one token's frame (see createForward), in their order, and the bytes of each
+const frameArrays = (dim, hidden, kvDim) => {
+  const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, XQ = Math.max(dim, hidden);
+  return [["x", D], ["xb", D], ["xb2", D], ["q", D], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD], ["hb2", HD],
+    ["xq", XQ], ["xs", Math.ceil(XQ / 32) * 4]];
+};
+const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(bytes), 0);
+
+/** T115: the most bytes the forward pass puts after a checkpoint of size bytes: at the end of its whole context,
+ * while the KV cache grows to it (the old blocks and the new ones are both there then). An upper bound, a little
+ * above what createForward allocates (tests/forward-check.mjs holds the two together).
+ * header: the 7 ints of the legacy format. dtype: the file's ("float32", "float16", "int8", "int6"). int8: the int8
+ * kernels compute on the weights (not with ?without=int8, which widens them to float32); relaxed: with relaxed SIMD
+ * (a float32 correction a group); halfKV: keys and values in float16 (T110: an int8 model on a shared memory).
+ * kvStart and outliers are llama2_numpy's KV_START and OUTLIER_CHANNELS. */
+export function footprint(header, size, { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false,
+  kvStart = 256, outliers = 8 } = {}) {
+  const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
+  const vocab = Math.abs(signedVocab), headSize = dim / heads, kvDim = kvHeads * headSize;
+  const quantized = dtype === "int8" || dtype === "int6", six = dtype === "int6";
+  // the int8 kernels take rows of whole groups of 32 (llama2_numpy widens the others)
+  const onInt8 = int8 && dim % 32 === 0 && kvDim % 32 === 0 && hidden % 32 === 0;
+  let bytes = 0;
+  // what the file holds in another form, for its matrices (not the tables that are no matrix multiplied: an
+  // embedding apart from the classifier, GPT-2's positions): the corrections of relaxed SIMD, one float32 a group,
+  // as many as the scales (a ninth of an int8 file, a seventh of an int6 one), and the float32 columns of the
+  // outlier channels (T92); or, off the int8 kernels, every weight widened to float32
+  const tables = (signedVocab < 0 ? vocab * dim : 0) + (arch === "gpt2" ? seqLen * dim : 0);
+  const weights = quantized ? size * (six ? 32 / 28 : 32 / 36) - tables : 0;
+  if (quantized && onInt8) bytes += (relaxed ? weights / 8 : 0) + Math.min(outliers, dim) * (vocab + 1) * 4;
+  else if (quantized) bytes += weights * 4;
+  else if (dtype === "float16") bytes += size * 2;
+  // what a quantized file leaves out: GPT-2's positions widened, the RoPE tables Python computes
+  if (quantized) bytes += arch === "gpt2" ? seqLen * dim * 4 : seqLen * headSize * 4;
+  // the frames of BATCH tokens, their attention scores, the logits
+  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim)) + align(seqLen * heads * 4)) + vocab * 4;
+  // the KV cache doubles from kvStart: at its largest step, the smaller blocks are still there next to the larger
+  let capacity = Math.min(kvStart, seqLen), most = capacity;
+  while (capacity < seqLen) {
+    const larger = Math.min(2 * capacity, seqLen);
+    most = Math.max(most, capacity + larger);
+    capacity = larger;
+  }
+  bytes += most * layers * 2 * kvDim * (halfKV ? 2 : 4);
+  return Math.ceil(bytes) + 2 ** 20;  // and a megabyte for the alignment of every array
+}
+/** Whether a checkpoint of size bytes and the forward pass after it (footprint) pass the 4 GiB of a 32-bit memory.
+ * A model that fits stays there: a 64-bit memory runs the kernels about a tenth slower (T101, measured). */
+export const needsWide = (size, after) => CONTROL_BYTES + size + after > PAGES_32 * PAGE;
 /** memory.grow(pages), in the number type of the memory (wide: 64-bit) */
 export function growMemory(memory, pages, wide) {
   memory.grow(wide ? BigInt(pages) : pages);
@@ -54,19 +100,19 @@ export function growMemory(memory, pages, wide) {
 /** A memory with room for a checkpoint of size bytes at base; the forward pass allocates after it. shared (stage 2):
  * a SharedArrayBuffer for the helper threads, only where the page is cross-origin isolated; its first 8 KiB are the
  * control area of the helpers. A shared memory needs a maximum: as much as the browser grants, less if it refuses.
- * maximum (pages): what to ask for first; else what this model can need at most (see below). The worker keeps the
+ * maximum (pages): what to ask for first; else what this model needs (after: what the forward pass puts after the
+ * checkpoint, footprint(); three times the file where it is not said) and a gigabyte more. The worker keeps the
  * memory for the models that fit under that maximum (T96): a browser reserves address space for each WebAssembly
  * memory whatever its maximum, and Chromium refused the third one of a page. */
-export function weightsMemory(size, { shared = false, maximum, wide = false } = {}) {
+export function weightsMemory(size, { shared = false, maximum, wide = false, after = 3 * size } = {}) {
   const base = shared ? CONTROL_BYTES : 64;
   const initial = Math.ceil((base + size) / PAGE) + 1;
   // a 64-bit memory (T101) says its sizes in BigInt
   const describe = (pages) => (wide ? { initial: BigInt(initial), ...(pages ? { maximum: BigInt(pages) } : {}), address: "i64" }
     : { initial, ...(pages ? { maximum: pages } : {}) });
   if (!shared) return { memory: new WebAssembly.Memory(describe()), base };
-  // the model can need at most the checkpoint widened to float32 (four times an int8 file, with the int8 switch
-  // off) and a gigabyte for the KV cache and the rest; less if the browser refuses
-  const most = maximum ?? Math.min(wide ? PAGES_64 : PAGES_32, Math.ceil((base + 4 * size + 2 ** 30) / PAGE));
+  // what the model needs, and a gigabyte for the next one to fit as well (T96); less if the browser refuses
+  const most = maximum ?? Math.min(wide ? PAGES_64 : PAGES_32, Math.ceil((base + size + after + 2 ** 30) / PAGE));
   for (const pages of [most, initial + 16384, initial + 4096]) {
     try {
       const memory = new WebAssembly.Memory({ ...describe(Math.max(pages, initial)), shared: true });
@@ -224,10 +270,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // KV: the bytes of one position's keys in the cache; KF: in float32.
   const halfKV = Boolean(plan.half_kv) && sharedMemory;
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, KV = kvDim * (halfKV ? 2 : 4);
-  const XQ = Math.max(dim, hidden), XS = Math.ceil(XQ / 32) * 4;
-  const inFrame = [["x", D], ["xb", D], ["xb2", D], ["q", D], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD], ["hb2", HD],
-    ["xq", XQ], ["xs", XS]];
-  const S = inFrame.reduce((size, [, bytes]) => size + align(bytes), 0);
+  const inFrame = frameArrays(dim, hidden, kvDim), S = frameBytes(inFrame);
   const frames = alloc(BATCH * S), at = {};
   inFrame.reduce((offset, [name, bytes]) => { at[name] = frames + offset; return offset + align(bytes); }, 0);
   // kNow, vNow: this token's key and value in float32, before they go into the cache

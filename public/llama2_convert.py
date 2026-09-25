@@ -75,6 +75,11 @@ def dtype_name(dtype):
     return "int6" if str(dtype) == "int6" else np.dtype(dtype).name
 
 
+def check_dtype(dtype):
+    if str(dtype) != "int6" and np.dtype(dtype) not in (np.float32, np.float16, np.int8):
+        raise ValueError(f"dtype must be float32, float16, int8 or int6, not {dtype}.")
+
+
 def tensor_bytes(shape, is_matrix, dtype):
     """How many bytes a tensor of layout() takes in a checkpoint of that dtype."""
     count, dtype = int(np.prod(shape)), dtype_name(dtype)
@@ -105,10 +110,10 @@ class Writer:
     """Puts pieces of the tensors of layout(), in any order, where they belong in the checkpoint buffer."""
 
     def __init__(self, out, header, dtype, bias=False, arch="llama", sink=None, quantize_rows=None):
-        """out: a buffer of the checkpoint's size, or None with sink: an object with open(size) and
-        write(offset, array of bytes), for a checkpoint that lives outside Python (T93: the WebAssembly memory of
-        public/forward.js). Pyodide's own memory never shrinks, so a converted model that went through a Python
-        buffer on its way there would keep taking its size twice."""
+        """out: a buffer of the checkpoint's size, or None with sink: an object with open(size, header, dtype,
+        arch) and write(offset, array of bytes), for a checkpoint that lives outside Python (T93: the WebAssembly
+        memory of public/forward.js, which the header and the rest size, T115). Pyodide's own memory never shrinks,
+        so a converted model that went through a Python buffer on its way there would keep taking its size twice."""
         # quantize_rows: quantize() on the SIMD kernels (llama2_numpy.kernel_quantizer), the same bytes six times
         # faster, for rows of whole groups of 32; NumPy's quantize() for anything else, and where there are no kernels
         self.dtype, self.sink, self.quantize_rows = dtype_name(dtype), sink, quantize_rows
@@ -117,7 +122,7 @@ class Writer:
         size = checkpoint_size(header, dtype, bias, arch)
         if sink is not None:
             self.out = None
-            sink.open(size)
+            sink.open(size, list(header), self.dtype, arch)
         else:
             self.out = np.frombuffer(out, dtype=np.uint8)
             assert self.out.size == size, "the buffer has not the size of the checkpoint"
@@ -951,6 +956,13 @@ class Stream:
         self.head_size = self.header[0] // self.header[3]
         self.arch = architecture(config)
         self.bias = has_bias(self)
+        if callable(dtype):
+            # T115: chosen once the header is known, from the size each quantized dtype would take (the worker's
+            # automatic choice: int8 where the forward pass fits a 32-bit memory, six bits where it does not)
+            sizes = {name: checkpoint_size(self.header, name, self.bias, self.arch) for name in QUANTIZED}
+            dtype = str(dtype(list(self.header), self.arch, sizes))
+        check_dtype(dtype)
+        self.dtype = dtype_name(dtype)
         if out is None and sink is None:
             out = bytearray(checkpoint_size(self.header, dtype, self.bias, self.arch))
         self.out = out  # None when the checkpoint goes to sink
@@ -1368,8 +1380,8 @@ class Conversion:
         # GPT-2 spells its config differently: from here on it has the names the rest of the file uses
         self.config = normalize(self.config)
         check_config(self.config)
-        if str(dtype) != "int6" and np.dtype(dtype) not in (np.float32, np.float16, np.int8):
-            raise ValueError(f"dtype must be float32, float16, int8 or int6, not {dtype}.")
+        if not callable(dtype):
+            check_dtype(dtype)
         try:
             header = json.loads(header)
         except ValueError:
@@ -1397,8 +1409,8 @@ class Conversion:
         self = cls.__new__(cls)
         self.config = config
         check_config(config)
-        if str(dtype) != "int6" and np.dtype(dtype) not in (np.float32, np.float16, np.int8):
-            raise ValueError(f"dtype must be float32, float16, int8 or int6, not {dtype}.")
+        if not callable(dtype):
+            check_dtype(dtype)
         self.tokenizer, options, tokenizer_config, specials = gguf_tokenizer(metadata, config["vocab_size"])
         self.base = base
         self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base, sink, quantize_rows, specials)
@@ -1414,7 +1426,7 @@ class Conversion:
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start), sink=sink,
                              quantize_rows=quantize_rows)
-        self.options = {**options, "dtype": dtype_name(dtype), "rope_theta": float(self.config.get("rope_theta", 10000.0)),
+        self.options = {**options, "dtype": self.stream.dtype, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop, "bias": self.stream.bias,
                         "arch": self.stream.arch}
         # the format of one turn, from the model's own chat_template (T73). src/models.js wins when it has one

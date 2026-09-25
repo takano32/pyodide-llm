@@ -33,6 +33,10 @@
 //   E2E_THEN       model ids of the list, separated by spaces: after the answer they are chosen one after another
 //                  in the same page, as a visitor changes models, and each must answer too (the worker keeps one
 //                  memory from model to model, T96). They write what the page sets for them, not 256 tokens.
+//   E2E_LONG       a number of words (T115): the prompt is the numbers 1 to it, in place of the model's own, so that
+//                  the keys and values grow to the end of a long context (a prompt past 2048 tokens takes the cache
+//                  of 4096 positions through its last doubling, where it needs the most memory), whatever token
+//                  would end the answer early.
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -190,6 +194,9 @@ await page.evaluate(() => {
   steps.value = "256";
   steps.dispatchEvent(new Event("input"));
 });
+if (process.env.E2E_LONG) {
+  await page.fill("#prompt", Array.from({ length: Number(process.env.E2E_LONG) }, (_, i) => i + 1).join(" "));
+}
 // Enter alone breaks the line
 await page.press("#prompt", "Control+Enter");
 await page.waitForFunction(() => document.querySelector(".model .meta") || document.querySelector(".error"), null, { timeout: 0 });
