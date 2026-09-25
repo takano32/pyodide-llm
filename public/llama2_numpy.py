@@ -106,16 +106,17 @@ def pretokenize(text, pattern):
                     i += 1
             parts.append(text[start:i])
             continue
-        # whitespace. Qwen keeps a run that ends in line breaks whole; otherwise a run that is followed by a
-        # word leaves its last character to that word, and a run at the end of the text stays whole.
+        # whitespace. Qwen takes a run up to its last line break (\s*[\r\n]+: spaces between line breaks go with
+        # them); otherwise a run that is followed by a word leaves its last character to that word, and a run at
+        # the end of the text stays whole.
         i = start
         if qwen:
             j = i
-            while j < n and text[j].isspace() and text[j] not in "\r\n":
+            while j < n and text[j].isspace():
                 j += 1
-            if j < n and text[j] in "\r\n":
-                while j < n and text[j] in "\r\n":
-                    j += 1
+            while j > i and text[j - 1] not in "\r\n":
+                j -= 1
+            if j > i:
                 parts.append(text[i:j])
                 i = j
                 continue

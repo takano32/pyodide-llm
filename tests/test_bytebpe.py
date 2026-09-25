@@ -26,7 +26,10 @@ CORPUS = (
 )
 # every kind of boundary the patterns care about
 TEXTS = [CORPUS, " ", "  ", "\n", "\r\n", " \n ", "0123", " 42 ", "a", " a", "  a", "\ta", "(abc", "、あ",
-         "a 1b", " 1,234", "1a2", "v1.2.3", "第1章 2節", "it's a dog's life", "IT'S", "end.  ", "x\n\n\ny"]
+         "a 1b", " 1,234", "1a2", "v1.2.3", "第1章 2節", "it's a dog's life", "IT'S", "end.  ", "x\n\n\ny",
+         # a line of spaces between line breaks, as pasted code has (the review of T106: Qwen's \s*[\r\n]+ takes the
+         # whole run up to its last line break, this took it up to the first)
+         "a\n  \nb", "\n \n \n", "def f(x):\n    a = 1\n    \n    return a\n", " \t\n \r\n x"]
 
 
 def trained(pattern, digits):
