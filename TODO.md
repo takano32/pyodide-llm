@@ -74,10 +74,6 @@
 - 根拠: T81 の調査で、ダウンロード上位 2000 件の 8.5B 以下のうち断られる系統で最大（90 件、ダウンロードの 29.3%、日本の組織で 14 件。Qwen3-Swallow 8B など日本語の新しいモデルもここ）。足りないのは head ごとの q・k の RMSNorm と、`dim / heads` と違う `head_dim`。legacy のヘッダ（7 個の int）が head_dim を持たないので、形式を変える設計（docs/review-by-opus.md の「Fable に回すもの」に当たる）。**レビュー（Opus xhigh、2026-09-26）の見立て**: bias や arch と同じく、ファイルから分からない設定として options で渡せば見出しは変えずに済みそう（`checkpoint_dtype()`・`layout()`・エンジンの 3 か所と `footprint()` が head_dim を受け取る）。どちらにするかは実装の前に Fable か持ち主が決める。
 - 足すモデル（採用時の方針: 有名なものは全部）: Qwen3 の 0.6B・1.7B・4B・8B、日本語の Qwen3-Swallow 8B など（ゲートなし・リビジョン固定・ライセンスはモデルカードから、T81 と同じ手順）。書式は chat_template が読めなければ手で書く。
 
-### T127 [追加] chat_template.jinja を読む、と selectattr — 状態: 進行中（2026-09-26、push。本番の確認待ち）（2026-09-26 採用、持ち主の判断「最初は有名なのはぜんぶ入れよう」。T81 の調査から。規模 小）
-- 根拠: 通った 276 件のうち少なくとも 16 件は書式が `chat_template.jinja` にしかなく、自動で取れない。sarashina2.2 の系統は `selectattr` で読めず、手で書いた（T81）。
-- 効くところ: 一覧のモデルは手で書けば足りるので、主に `?hf=` で開く一覧に無いモデル。T124 の Qwen3 の書式が読めるかもここで決まる。
-
 ### T128 [描画] モデルの一覧を、グループごとに「日本語が使える小 → 大、英語だけの小 → 大」に並べる — 状態: 未着手（2026-09-26、持ち主の指示。英語だけのモデルは**はじめは全部表示し、あとで減らす**（持ち主の判断、2026-09-26）。T132・T124〜T126 でモデルが増えた後に。規模 小）
 - 持ち主の指示（2026-09-26）: コンボボックスの 3 つのグループ（サイトのモデル・原本・HF から取得して変換）のそれぞれの中を、**日本語か英語（日本語が使えるもの）の小 → 日本語か英語の大 → 英語だけの小 → 英語だけの大**の順にする。
 - レビュー担当の見立て（2026-09-26）: 今の方針 4（「日本語の軽い → 重い、そのあと英語の軽い → 重い」）とほぼ同じで、それを厳密にする形。英語だけのモデルが末尾に固まるので、あとで減らすときはその塊を外すか隠すだけで済む。今の一覧は次のところでずれている: Qwen2.5 1.5B Instruct（日本語 / English）が英語だけの塊の中にある。塊の中の大きさの順が厳密でない（japanese-gpt2 small の 130MB が llm-jp-3 150M instruct3 の 171MB の後、Qwen2.5 0.5B の 545MB が llm-jp-3 440M の 503MB の前）。
@@ -1049,6 +1045,15 @@
 
 - 根拠: 22 件、日本の組織で 34 件。v0.2 以降は llama と同じ形（sliding window が null）なので、model_type の別名で開く見込み。sliding window のあるもの（v0.1）は断ったまま。
 - 足すモデル: 調査の 22 件と日本の組織の 34 件から、有名でゲートの無いものを全部（RakutenAI-2.0-mini 1.5B など。トークナイザが断られないかは 1 つずつ確かめる）。
+
+</details>
+
+- [x] **T127 [追加] chat_template.jinja を読む、と selectattr。**（Opus medium、2026-09-26）— 状態: **レビュー待ち**。**形**（e594a31、75fd65c）: 読み手に `selectattr` / `rejectattr`・`length`・`list`・`first`・`last`、`namespace()` と属性への `set`、整数の算術、`is` の判定、`not in`、大小の比較、スライス、引数のある文字列のメソッド、マクロの定義（読み飛ばし）、transformers と同じ `trim_blocks` と `lstrip_blocks`、エスケープした引用符、引用符を含むコメント。`chat_template.jinja` は `tokenizer_config.json` に書式が無いときだけ取る（404 を増やさない）。フォルダの経路も `tokenizer_config.json` と `chat_template.jinja` を読む。`tokenizer.model` のときは CONTROL の語片を特殊トークンとして渡す（`sentencepiece_specials()`）。`CONVERTER` 4。**確かめ方**: 一覧の HF のモデルで書式のある 28 件を本物の jinja2 と比べて 28 件とも同じ（前は 18 件）。一覧の外の Qwen3 0.6B・1.7B・4B-Instruct-2507、Qwen3-Swallow 8B、MiniCPM5 1B、Llama 3.1 8B、Supra2 100M も同じ。読めないのは llm-jp-4（マクロを呼ぶ）だけ。本物のテンプレート 7 つと 1 ターンを `tests/fixtures/chat-templates.json` に（`trim_blocks` を外すと 2 件、`selectattr` を外すと 3 件落ちる）。**本番（Linux の Chromium）**: `?hf=` の sarashina2.2 1B Instruct は書式を読み、アシスタントとして答えた（「I'm here to help you with any questions…」。e2e の `?hf=` はプロンプトが空）。**CI で見つけて直した**: 最初の版では `tokenizer.model` の特殊トークンを渡しておらず、同じ `?hf=` の sarashina で `<|user|>` と `</s>` が文字に綴られて指示に答えなかった（75fd65c）。回帰: 一覧の sarashina2.2 1B（17.3 tok/s、箇条書きで答えた）・TinyLlama（20.9）・Qwen2.5 0.5B（37.0）。**分かったこと**: MiniCPM5 1B は `chat_template.jinja` を読めたが、`head_dim` で断られる（T124 と同じ変更）。**レビューで見てほしいこと**: (1) None を「定義されていない」と見る扱い（transformers は `tools=None` を渡す。結果は同じになる理由は AGENTS.md）、(2) `+` は数どうしなら足し算・それ以外は文字列の連結、(3) `chat_template.jinja` と `tokenizer_config.json` の両方にあるときは `tokenizer_config.json` を使う（transformers は `.jinja` を先に読む。両方ある unsloth の Llama 3.2 では同じだった）。
+
+<details><summary>T127 の採用時の記録</summary>
+
+- 根拠: 通った 276 件のうち少なくとも 16 件は書式が `chat_template.jinja` にしかなく、自動で取れない。sarashina2.2 の系統は `selectattr` で読めず、手で書いた（T81）。
+- 効くところ: 一覧のモデルは手で書けば足りるので、主に `?hf=` で開く一覧に無いモデル。T124 の Qwen3 の書式が読めるかもここで決まる。
 
 </details>
 
