@@ -18,10 +18,11 @@
 // The memory is shared, as the page's where it is cross-origin isolated; --plain: not shared, as the page's where it
 // is not (the keys and values then stay float32, T110). --wide: a 64-bit memory and its kernels (T101), as the page
 // has for a model past 4 GiB.
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
-import { footprint } from "../public/forward.js";
+import { automaticDtype, footprint } from "../public/forward.js";
 import { MODELS } from "../src/models.js";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -82,6 +83,17 @@ const shared = !args.includes("--plain");
 const { pyodide: py, kernels } = await pyodideWithEngine({ shared, wide: args.includes("--wide") });
 py.runPython("import time, gc, math, numpy as np, llama2_numpy\nfrom llama2_numpy import Llama");
 let failed = false;
+// T133: the bits of a model converted with none asked for. Llama-3.2-3B's int8 (3614847004 bytes, its header from
+// config.json) does not fit a 32-bit memory with its forward pass (T115: 4.41 GiB shared): int8 on a 64-bit memory
+// where the browser has one, six bits where not; a model that fits stays int8 either way
+{
+  const header = [3072, 8192, 28, 24, 8, 128256, 4096], int8 = 3614847004;
+  const after = footprint(header, int8, { dtype: "int8", halfKV: true });
+  assert.equal(automaticDtype(int8, after, true), "int8", "a 64-bit memory: int8");
+  assert.equal(automaticDtype(int8, after, false), "int6", "no 64-bit memory: six bits");
+  const small = [1536, 8960, 28, 12, 2, 151936, 4096], qwen = 1736865820;  // Qwen2.5 1.5B
+  assert.equal(automaticDtype(qwen, footprint(small, qwen, { dtype: "int8", halfKV: true }), false), "int8");
+}
 for (const id of ids.length ? ids : ["stories260K", "stories15M", "tiny-lm", "llm-jp-3-150m"]) {
   const entry = modelOf(id);
   py.FS.writeFile("model.bin", fs.readFileSync(file(entry.checkpoint)));

@@ -550,16 +550,16 @@ function afterCheckpoint(header, size, { dtype = "float32", arch = "llama" }, sh
 const sharedWanted = () => Boolean(sharedKernels && self.crossOriginIsolated && threadsRequest?.fixed !== 1);
 
 // T115: the bits of a model converted with none asked for (weightsFor() in src/models.js asks for six bits where the
-// device says it has too little memory): int8 unless its forward pass does not fit a 32-bit memory, then six bits
-// (T98: 7/9 of int8's memory, and about half as fast). The converter calls this once it knows the header: the size
-// of either (sizes) and what the forward pass puts after them depend on it.
+// device says it has too little memory): int8 unless its forward pass does not fit a 32-bit memory and this browser
+// has no 64-bit one (T133), then six bits (T98: 7/9 of int8's memory, and about half as fast). The converter calls
+// this once it knows the header: the size of either (sizes) and what the forward pass puts after them depend on it.
 function automaticBits(header, arch, sizes) {
   const ints = header.toJs(), int8 = sizes.toJs({ dict_converter: Object.fromEntries }).int8;
   header.destroy();
   sizes.destroy();
   if (!forwardModule) return "int8";  // no forward.js (no WebAssembly SIMD): NumPy widens every weight anyway
   const shared = sharedWanted();
-  return forwardModule.needsWide(int8, afterCheckpoint(ints, int8, { dtype: "int8", arch }, shared)) ? "int6" : "int8";
+  return forwardModule.automaticDtype(int8, afterCheckpoint(ints, int8, { dtype: "int8", arch }, shared), Boolean(wideKernels?.plain));
 }
 
 // header: the checkpoint's 7 ints, options: what it is loaded with (its dtype and arch): what the forward pass puts
@@ -886,7 +886,8 @@ async function convert(model, signal, id) {
     },
   };
   // T115: no bits asked for (weightsFor() in src/models.js asks for six only where the device says it has too little
-  // memory): int8 where its forward pass fits a 32-bit memory, six bits where it does not, once the header is known
+  // memory): int8 where its forward pass fits a 32-bit memory or the browser has a 64-bit one, six bits where neither
+  // (T133), once the header is known
   const converting = { ...model.conversion, dtype: model.conversion?.dtype ?? automaticBits };
   // T89: quantize() on the SIMD kernels, the same bytes six times faster (none with ?without=kernels); T123: the
   // widening of bfloat16 too, the same float32 three times faster

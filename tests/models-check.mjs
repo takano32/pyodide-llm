@@ -47,4 +47,12 @@ assert.equal(weightsFor(qwen, undefined, 8), undefined, "1.7 GB fits in half of 
 assert.equal(weightsFor(qwen, undefined, 2), "int6", "not in half of 2 GB");
 assert.equal(weightsFor({ hf: {}, note: "int8 4.2 GB" }, undefined, undefined), undefined, "past a 32-bit memory: the worker, which knows the header, chooses");
 assert.equal(modelBytes({ ...qwen, conversion: { dtype: "int6" } }), modelBytes(qwen) * SIX_OF_EIGHT);
+// T133: Chromium says at most 8 GB: a device at the cap may have any more, so six bits are not asked for there, and
+// only a model past 8 GB is warned of
+const seven = { name: "7B", hf: {}, note: "int8 9.2 GB" }, three = { name: "3B", hf: {}, note: "int8 3.6 GB" };
+assert.equal(weightsFor(three, undefined, 8), undefined, "at the cap: the worker chooses (int8 on a 64-bit memory)");
+assert.equal(weightsFor(three, undefined, 4), "int6", "4 GB is told as it is");
+assert.equal(memoryWarning(three, 8), "", "3.9 GB on a device of 8 GB or more");
+assert.match(memoryWarning(seven, 8), /7B needs about 9,500 MB of memory, and this device has 8 GB or more: it may run out of memory\./);
+assert.match(memoryWarning(three, 4), /this device has 4 GB:/);
 console.log("ok");

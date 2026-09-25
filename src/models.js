@@ -253,26 +253,34 @@ export function modelBytes(entry) {
 // group of 32 against 32 and a scale, 7/9 of the size, at +1 to +3.4% of perplexity (measured on eight models), and
 // slower on one thread (the groups are widened as they are read). So it is taken where int8 does not fit.
 export const SIX_OF_EIGHT = 28 / 36;
+// T133: Chromium's navigator.deviceMemory stops at 8: a device that says 8 has 8 GB or more, as many as it likes
+export const DEVICE_MEMORY_CAP = 8;
 /** The dtype a model of Hugging Face is converted to: the entry's own when it has one (the settings of a visitor's
  * files); else asked is ?bits= (or a setting), "8", "6" or anything else for
  * automatic, which takes int6 where int8 would pass half of what the device says it has (deviceMemory, Chromium
- * only), and otherwise leaves the choice to the worker (undefined): it knows the model's header once it converts,
- * and with it what the forward pass needs, and takes int6 where int8 would not fit a 32-bit memory (T115).
+ * only, and below its cap of 8: a device at the cap may have any more), and otherwise leaves the choice to the
+ * worker (undefined): it knows the model's header once it converts, and with it what the forward pass needs, and
+ * takes int6 where int8 would not fit a 32-bit memory and the browser has no 64-bit one (T115, T133).
  * undefined for a model that is not converted in the page. */
 export function weightsFor(entry, asked, deviceMemory) {
   if (!entry.hf) return undefined;
   // a visitor's own files may come with settings that say it ({"conversion": {"dtype": ...}}): they win (T119)
   if (entry.conversion?.dtype) return entry.conversion.dtype;
   if (asked === "6" || asked === "8") return `int${asked}`;
+  if (!deviceMemory || deviceMemory >= DEVICE_MEMORY_CAP) return undefined;
   const int8 = modelBytes({ ...entry, conversion: { ...entry.conversion, dtype: "int8" } });
-  return int8 && deviceMemory && int8 + PAGE_MEMORY > deviceMemory * 2 ** 30 / 2 ? "int6" : undefined;
+  return int8 && int8 + PAGE_MEMORY > deviceMemory * 2 ** 30 / 2 ? "int6" : undefined;
 }
 /** A sentence for a device that says it has less memory than twice what the model needs, or "". deviceMemory is
- * navigator.deviceMemory (GB; only Chromium tells, and at most 8): without it nothing is guessed. */
+ * navigator.deviceMemory (GB; only Chromium tells, and at most 8): without it nothing is guessed. A device at the cap
+ * has 8 GB or more, so it is warned only of a model that needs more than 8 GB (T133). */
 export function memoryWarning(entry, deviceMemory) {
   const bytes = modelBytes(entry);
-  if (!deviceMemory || !bytes || bytes + PAGE_MEMORY <= deviceMemory * 2 ** 30 / 2) return "";
-  return `${entry.name} needs about ${megabytes(bytes + PAGE_MEMORY)} of memory, and this device has ${deviceMemory} GB: it may run out of memory.`;
+  if (!deviceMemory || !bytes) return "";
+  const capped = deviceMemory >= DEVICE_MEMORY_CAP;
+  if (bytes + PAGE_MEMORY <= deviceMemory * 2 ** 30 / (capped ? 1 : 2)) return "";
+  return `${entry.name} needs about ${megabytes(bytes + PAGE_MEMORY)} of memory, and this device has ` +
+    `${capped ? `${DEVICE_MEMORY_CAP} GB or more` : `${deviceMemory} GB`}: it may run out of memory.`;
 }
 /** What the page says when the worker ran out of memory (heap: the size of its WebAssembly memory then). */
 export function memoryFailure(entry, heap, detail) {
