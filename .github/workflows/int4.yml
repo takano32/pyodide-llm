@@ -9,6 +9,11 @@ on:
       rows:
         description: 'only the rows whose label begins with these, separated by commas (e.g. int5,int6,int8); all when empty'
         default: ''
+      size:
+        description: 'small: the five models of stages 1 and 2; large: three of 1B and more (T98, checking 6 bits)'
+        type: choice
+        options: [small, large]
+        default: small
 
 jobs:
   int4:
@@ -32,6 +37,10 @@ jobs:
           - { model: hf-qwen2.5-0.5b-instruct, language: en, ggufs: '' }
           - { model: hf-llm-jp-3-440m-instruct3, language: ja, ggufs: '' }
           - { model: hf-pythia-410m, language: en, ggufs: '' }
+          # a gigabyte and more: the float32 of a 1.5B is 6 GB, which a runner (16 GB) holds
+          - { model: hf-llm-jp-3-980m-instruct3, language: ja, ggufs: '', size: large }
+          - { model: hf-llama-3.2-1b-instruct, language: en, ggufs: '', size: large }
+          - { model: hf-qwen2.5-1.5b-instruct, language: en, ggufs: '', size: large }
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -46,7 +55,9 @@ jobs:
         with:
           python-version: '3.x'
 
+      # the matrix cannot be chosen from an input: the jobs of the other size skip their steps
       - name: Fetch the model, its GGUFs and the text
+        if: (matrix.size || 'small') == inputs.size
         shell: bash
         run: |
           python3 -m pip install --quiet numpy
@@ -63,6 +74,7 @@ jobs:
           node tests/wikipedia.mjs ${{ matrix.language }} text.txt
 
       - name: Measure
+        if: (matrix.size || 'small') == inputs.size
         shell: bash
         env:
           INT4_ROWS: ${{ inputs.rows }}

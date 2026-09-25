@@ -9,6 +9,9 @@
 #   python3 tests/int4_check.py <directory: config.json, model.safetensors> <out of tests/perplexity_prepare.py
 #       (for the tokenizer and the options)> <text file> [tokens = 1500] [<name>=<file.gguf> ...]
 #
+# Under the table, what each row writes: greedy, 32 tokens on from the text's first 40 characters, for a person to
+# read (a format can keep the perplexity and still write worse; T77's fourth point).
+#
 # INT4_ROWS=int5,int6 measures only the rows whose label begins with one of these (the original always, and the
 # GGUFs given): a row is a whole run of the model, and stage 2 needed only its own.
 #
@@ -142,7 +145,13 @@ def evaluate(source, config, tokenizer, options, tokens, reference=None):
             total -= logits[piece[pos + 1]] - math.log(np.exp(logits).sum())
             count += 1
     agreement = None if reference is None else sum(a == b for a, b in zip(likely, reference)) / len(likely)
-    return math.exp(total / count), likely, agreement
+    return math.exp(total / count), likely, agreement, llama
+
+
+def written(llama, prompt, steps=32):
+    """What the model writes after the prompt, greedy: the text of the sample under the table."""
+    pieces = llama.generate(prompt, steps=steps, temperature=0.0, echo=False)
+    return "".join(piece if isinstance(piece, str) else piece.decode("utf-8", "replace") for piece in pieces)
 
 
 def main():
@@ -198,6 +207,7 @@ def main():
     print("| weights | bits per weight | perplexity | against the original | most likely token the original's | seconds |")
     print("|---|---:|---:|---:|---:|---:|")
     reference = base = None
+    prompt, samples = text[:40], []
     for label, apply, bits in rows + [(f"GGUF {name}", path, None) for name, path in ggufs.items()]:
         started = time.perf_counter()
         if isinstance(apply, str):
@@ -206,11 +216,16 @@ def main():
             bits = bits_of(lambda name: BYTES[source.infos[name]["type"]] * 8)
         else:
             source = original if apply is None else Stored(original, apply)
-        value, likely, agreement = evaluate(source, config, tokenizer, options, tokens, reference)
+        value, likely, agreement, llama = evaluate(source, config, tokenizer, options, tokens, reference)
+        samples.append((label, written(llama, prompt)))
+        del llama
         if reference is None:
             reference, base = likely, value
         print(f"| {label} | {bits:.2f} | {value:.3f} | {(value / base - 1) * 100:+.2f}% | "
               f"{'' if agreement is None else f'{agreement * 100:.1f}%'} | {time.perf_counter() - started:.0f} |", flush=True)
+    print(f"\nWhat each writes after {json.dumps(prompt, ensure_ascii=False)} (greedy, 32 tokens):\n")
+    for label, sample in samples:
+        print(f"- {label}: {json.dumps(sample, ensure_ascii=False)}")
 
 
 if __name__ == "__main__":
