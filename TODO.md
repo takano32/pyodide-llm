@@ -280,6 +280,12 @@
   - 持ち主の Safari とスマホの Chrome の件は、直した版でもう一度試してもらう（スマホの Chrome の「始まらない」はこの 2 つでは説明しきれない: Chromium は `*` を効かせる）。
 - 残り（Opus）: `browsers.yml` の huggingface ジョブに WebKit の小さい組（3 モデル）を足す。持ち主の報告が続くなら、状態行の文と進捗の有無を聞いて絞る。
 
+### T113 [運用] iOS Safari では Service Worker（隔離）の下で Pyodide の NumPy の読み込みが終わらない — 状態: 未着手（2026-09-25 採用、持ち主の報告。**調査から**。規模 小〜中）
+- 担当: Opus（調査）→ Opus xhigh がレビュー。
+- 分かっていること: 持ち主の iPhone の Safari で、普通の URL では「Loading Pyodide 314.0.7: NumPy...」（`pyodide.loadPackage("numpy")`）で止まり、`?coi=off`（Service Worker なし、隔離なし）なら通る。CI の WebKit（Linux・macOS、Playwright）では隔離ありで通るので、iOS の WebKit だけ。同日の夕方に Fable が逃げ道を入れた: Pyodide の各段（loader / runtime / NumPy）に 60〜90 秒の期限を付け、期限切れなら**その 1 回だけ Service Worker を外して読み直す**（`sessionStorage` の `coi-fallback`。そのタブでは以後隔離なし）。だから iOS でも動くはずだが、1 コア版で、最初の 60 秒を無駄にする。
+- 疑うところ: 隔離の下で `SharedArrayBuffer` が使えるとき、Pyodide が NumPy の展開に別の経路（スレッド）を使う可能性。`loadPyodide()` のオプションで止められるか、Pyodide の版の changelog を読む。iOS の実機でしか出ないので、持ち主に `?threads=1` や Pyodide の版の固定（`?pyodide=`、前の版）で試してもらって絞る。
+- 完了条件: iOS Safari で隔離ありのまま NumPy の読み込みが終わる。無理なら、iOS だけ最初から隔離なしで開く判断を持ち主に諮る（60 秒の無駄を無くす）。
+
 ### T95 [計測] wllama と同じ GGUF で比べる — 状態: 未着手（2026-09-25 採用、持ち主の指示。**性能の改善（T98〜T100）の後**（2026-09-25、持ち主の判断: 公開する数字は改善の後）。規模 小〜中）
 - 担当（Fable の切り分け、2026-09-25。レビューは Opus xhigh）: **Opus が最後まで**（比較のページ、CI のワークフロー、表、負けた項目の見立て）。Opus xhigh が表と文面を読む。wllama の版は実行時に最新を解決して結果に書く。
 - 根拠: wllama は llama.cpp を WebAssembly にしたもので、ブラウザで動く言語モデルの代表。「WASM Python でどこまでできるか」を言うには、いちばん強い相手と**同じファイル・同じブラウザ・同じ機械**で比べるのが早い。T74 で GGUF を読めるようになったので、同じ Q8_0 のファイルをそのまま両方に渡せる。
