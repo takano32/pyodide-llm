@@ -536,7 +536,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     search.step = 0;
     if (helpers.length < candidate - 1) {
       search.waiting = true;
-      ensureHelpers(candidate).then(() => { if (search) search.waiting = false; }, () => finish());
+      ensureHelpers(candidate).then((complete) => {
+        if (!search) return;
+        if (complete) search.waiting = false;
+        else finish();
+      }, () => finish());
     }
   }
   function finish() {
@@ -576,7 +580,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     finish();
   }
   // the helpers in QUIT's hands: set, every one woken to see it, and each ended
+  let stops = 0;  // stopHelpers() counts them: a helper whose start began before one is not kept
   function stopHelpers() {
+    stops += 1;
     Atomics.store(ctl, QUIT, 1);
     for (let h = 1; h <= helpers.length; h++) {
       Atomics.add(ctl, WAKE + h, 2);
@@ -586,13 +592,24 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     helpers.splice(0).forEach((helper) => helper.terminate?.());
     threads = 1;
   }
+  // Resolves to whether the n threads are there. A helper that becomes ready after this engine let its helpers go
+  // (release(), stopThreads(), giveUp()) is ended at once: the review of T120 found such ones left alive when the
+  // visitor chose another model while the search started more, and the next model's engine on the same memory
+  // (T96) woke them, with the old engine's kernels (one threw holding a chunk: 10 s still, then one thread)
   async function ensureHelpers(n) {
-    if (lost) return;  // T120: none again after a helper stopped under this engine
+    if (lost) return false;  // T120: none again after a helper stopped under this engine
+    const since = stops;
     if (helpers.length < n - 1 && helpers.length === 0) Atomics.store(ctl, QUIT, 0);  // after stopThreads(): a fresh start
     while (helpers.length < n - 1) {
-      helpers.push(await spawn({ memory, wide, plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null,
-        share: helpers.length + 1 }));
+      const helper = await spawn({ memory, wide, plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null,
+        share: helpers.length + 1 });
+      if (lost || stops !== since) {
+        helper.terminate?.();
+        return false;
+      }
+      helpers.push(helper);
     }
+    return true;
   }
 
   let bound = null;
@@ -605,7 +622,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     async setThreads(n) {
       if (!shared || lost) return (threads = 1);
       search = null;
-      await ensureHelpers(n);
+      if (!(await ensureHelpers(n))) return (threads = 1);
       threads = Math.max(1, n);
       return threads;
     },
@@ -619,7 +636,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
       onCompared = compared;
       recheckEvery = recheck;
       const start = Math.max(1, remembered || from);
-      await ensureHelpers(start);
+      if (!(await ensureHelpers(start))) return (threads = 1);
       threads = start;
       if (remembered) {
         chosen = remembered;

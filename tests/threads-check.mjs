@@ -159,6 +159,17 @@ if (isMainThread) {
     token = logits.indexOf(Math.max(...logits));
   }
   again.stopThreads();
+  // The review of T120: helpers that come up after their engine let its helpers go (a visitor choosing another model
+  // while the search starts more) are ended at once, not left for the next engine on this memory to wake
+  let alive = 0;
+  const counted = (data) => spawn(data).then((helper) => {
+    alive += 1;
+    return { terminate: () => { alive -= 1; return helper.terminate(); } };
+  });
+  const released = createForward({ memory, base, size, kernels, plan, spawn: counted });
+  const starting = released.setThreads(4);  // three helpers, one after another
+  released.release();
+  const late = (await starting) === 1 && alive === 0;
   // T120: a software thread that the browser stops in the middle of its chunk (iOS may end a worker for memory):
   // this one takes a chunk and ends without counting it. The coordinator must give its helpers up, run the phase
   // again on its own, and go on with one thread, to the same logits
@@ -193,6 +204,7 @@ if (isMainThread) {
   went &&= stopped.lostThreads && stopped.threads === 1 && (await stopped.setThreads(4)) === 1;
   stopped.stopThreads();
   parentPort.postMessage(`${went ? "a software thread that stops mid-chunk is given up and the text is the same; " : "a software thread that stops mid-chunk DIFFERS or hangs; "}` +
+    `${late ? "helpers that come up after a release are ended; " : "helpers that come up after a release are left alive (DIFFERS); "}` +
     `${reused ? "a second engine on the same memory runs the same; " : "a second engine on the same memory DIFFERS or hangs; "}${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
     `${blocksDiffer.length ? `the prompt in blocks DIFFERS with ${blocksDiffer.join(", ")} threads` : "the prompt in blocks the same to the bit"}; ` +
     counts.map((n) => `${n}: ${median(times[n]).toFixed(1)} tok/s (${(median(times[n]) / one).toFixed(2)}×)`).join(", ") + `; ${promptLine}; ${searchLine}`);
