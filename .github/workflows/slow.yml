@@ -1,0 +1,40 @@
+# T118: the page on a slow line and on one that stops (tests/slow-check.mjs, a throttling proxy of its own), in
+# Chromium, against the deployed site. By hand only.
+name: Slow line
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'slow (the whole line at rate) or stall (jsDelivr stops after 200 kB)'
+        default: 'slow'
+      rate:
+        description: 'bytes a second for the whole line (50000 = 0.4 Mbps)'
+        default: '50000'
+      url:
+        description: 'the site to test (default: the deployed one)'
+        required: false
+
+jobs:
+  slow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install the test tools and Chromium
+        run: |
+          npm ci
+          npx playwright-core install --with-deps chromium
+
+      - name: Run
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+        run: node tests/slow-check.mjs "${{ inputs.scenario }}" "$SITE" --rate "${{ inputs.rate }}" | tee -a "$GITHUB_STEP_SUMMARY"
