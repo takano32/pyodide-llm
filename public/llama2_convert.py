@@ -1551,6 +1551,20 @@ def sentencepiece_pieces(model):
             yield piece.get(1, b"").decode("utf-8"), score, piece.get(3, NORMAL) in (NORMAL, USER_DEFINED)
 
 
+def sentencepiece_specials(model):
+    """The control pieces of a sentencepiece model (<s>, </s>, sarashina's <|user|>): the special tokens a chat
+    template writes between the turns. The engine's search of the vocabulary never finds them, so a template read
+    from the model (T127) needs them named; without, "</s>" became four tokens of text."""
+    CONTROL = 3
+    specials = []
+    for field, value in protobuf_fields(model):
+        if field == 1:
+            piece = dict(protobuf_fields(value))
+            if piece.get(3) == CONTROL and piece.get(1):
+                specials.append(piece[1].decode("utf-8"))
+    return specials
+
+
 def sentencepiece_options(model):
     """Llama(tokenizer_kind=, nfkc=) from the trainer and normalizer specs of a sentencepiece model."""
     UNIGRAM, BPE = 1, 2
@@ -1602,7 +1616,7 @@ class Conversion:
             specials = [token["content"] for token in parsed.get("added_tokens", []) if token.get("special")]
         else:
             self.tokenizer, options = tokenizer_bin(sentencepiece_pieces(tokenizer), vocab_size), sentencepiece_options(tokenizer)
-            specials = []
+            specials = sentencepiece_specials(tokenizer)
         self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink, quantize_rows, specials, bfloat16,
                    chat_template)
 

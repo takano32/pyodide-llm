@@ -140,3 +140,30 @@ def test_the_conversion_hands_the_template_to_the_page():
     plain = llama2_convert.Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(published), vocabulary,
                                       "tokenizer.json", dtype="float32", max_seq_len=settings["seq_len"])
     assert "template" not in plain.options
+
+
+def test_a_sentencepiece_model_names_its_control_pieces_for_the_template():
+    """T127: with a tokenizer.model, the template read from the model writes <|user|> and </s>, which are control
+    pieces: the conversion names them as specials (without, each was spelled out as text through ?hf=)."""
+    import struct
+    from conftest import synthetic_weights
+    from make_hf_fixture import field
+    from test_convert import hugging_face, safetensors_file
+    import llama2_convert
+
+    settings, weights = synthetic_weights()
+    tensors, published = hugging_face(settings, weights, True)
+    file = safetensors_file(tensors)
+    size = struct.unpack("<Q", file[:8])[0]
+    NORMAL, CONTROL, UNKNOWN = 1, 3, 2
+    pieces = [("<unk>", UNKNOWN), ("<s>", CONTROL), ("</s>", CONTROL), ("<|user|>", CONTROL), ("<|assistant|>", CONTROL)]
+    pieces += [(f"▁w{i}", NORMAL) for i in range(settings["vocab_size"] - len(pieces))]
+    model = b"".join(field(1, field(1, text.encode()) + field(2, -float(i)) + field(3, kind)) for i, (text, kind) in enumerate(pieces))
+    model += field(2, field(3, 1)) + field(3, field(1, b"identity"))
+    assert llama2_convert.sentencepiece_specials(model) == ["<s>", "</s>", "<|user|>", "<|assistant|>"]
+    template = "{% for m in messages %}<|user|>{{ m.content }}</s>{% endfor %}<|assistant|>"
+    conversion = llama2_convert.Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(published), model,
+                                           "tokenizer.model", dtype="float32", max_seq_len=settings["seq_len"],
+                                           tokenizer_config=json.dumps({"chat_template": template}))
+    assert conversion.options["template"] == "<|user|>{prompt}</s><|assistant|>"
+    assert conversion.options["specials"] == ["<|assistant|>", "<|user|>", "</s>"]
