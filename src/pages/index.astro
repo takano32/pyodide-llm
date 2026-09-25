@@ -325,6 +325,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   const requested = parameters.get("model");
   // ?bench=1 measures this model with and without the kernels, ?bench=full every step of T52 (T45)
   const benchmark = parameters.get("bench");
+  let benchmarking = false;  // the rounds are running: the run button stays off (the worker is busy loading)
   // T93: the number of threads. ?threads=N fixes it (for measuring); else the worker finds it for this device and
   // model and this page remembers the answer, so that the next visit starts with it.
   const fixedThreads = Math.max(0, Math.floor(Number(parameters.get("threads")) || 0));
@@ -582,6 +583,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       const environment = environmentOf(navigator, { model: model.name, pyodide: data.pyodide, site: location.origin + location.pathname });
       const markdown = benchMarkdown(data.rows, environment);
       (window as any).__bench = { rows: data.rows, environment, markdown };
+      benchmarking = false;
       console.log(markdown);
       statusText.textContent = `${model.name} · benchmark done, see the console`;
       run.disabled = false;
@@ -592,7 +594,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       fromTemplate = typeof data.template === "string" ? data.template : undefined;
       if (benchmark && !(window as any).__bench) {
         statusText.textContent = `${model.name} · benchmarking...`;
-        run.disabled = true;
+        benchmarking = true;
         worker.postMessage({ type: "bench", model, load: loads,
           rounds: benchmark === "full" ? FULL_ROUNDS : ROUNDS, prompt: model.prompt || "Once upon a time", steps: 64 });
       }
@@ -643,7 +645,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     if (!["status", "progress", "token"].includes(data.type)) {
       progress.hidden = true;
       setGenerating(false);
-      run.disabled = !ready;
+      run.disabled = !ready || benchmarking;  // a prompt sent during the benchmark would find no model ready
       select.disabled = files.disabled = false;
     }
   };
