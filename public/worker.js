@@ -411,6 +411,21 @@ const HF_HEADER_BYTES = 512 * 1024;  // the JSON header of a safetensors file is
 // T107: ?hfParts=<MiB>&hfConnections=<N> change the two above, to measure; the page offers no way to them
 let hfPartBytes = HF_PART_BYTES, hfConnections = HF_CONNECTIONS;
 
+// The size of a file, for the few places that need it (the whole of a model: how many parts to ask for). A range
+// response says it in Content-Range, but that header is not one CORS shows by default: huggingface.co exposes it by
+// name, its CDN by "*", and a browser that does not honour "*" (WebKit; T112) sees none and the fetch never began
+// ("The file ended before all of its tensors were read"). Content-Length of a HEAD is always shown.
+async function fileSize(url, signal) {
+  const res = await fetch(url, { method: "HEAD", signal });
+  const length = Number(res.headers.get("Content-Length"));
+  if (!res.ok || !Number.isFinite(length) || length <= 0) {
+    throw new Error(`Could not learn the size of ${url}: ${res.status}`);
+  }
+  return length;
+}
+// the size a range response reported, or the file's size asked for separately when it did not
+const sized = async (url, result, signal) => (Number.isFinite(result.total) && result.total > 0 ? result : { ...result, total: await fileSize(url, signal) });
+
 async function fetchRange(url, begin, end, signal) {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -568,7 +583,7 @@ async function convert(model, signal, id) {
     // no tokenizer to fetch. The header is a few megabytes (the vocabulary), so it is fetched in growing pieces
     // until the converter can read all of it.
     for (let bytes = 4 * HF_HEADER_BYTES; ; bytes *= 4) {
-      ({ bytes: first, total: size } = await fetchRange(at(model.hf.weights), 0, bytes, signal));
+      ({ bytes: first, total: size } = await sized(at(model.hf.weights), await fetchRange(at(model.hf.weights), 0, bytes, signal), signal));
       try {
         conversion = llama2_convert.Conversion.from_gguf.callKwargs(first, { ...model.conversion, sink, quantize_rows: quantizeRows });
         break;
@@ -582,7 +597,7 @@ async function convert(model, signal, id) {
   } else {
     // the beginning of a file: 8 bytes that say how long the JSON header is, then the header
     const head = async (name) => {
-      let { bytes, total } = remote ? await fetchRange(at(name), 0, HF_HEADER_BYTES, signal)
+      let { bytes, total } = remote ? await sized(at(name), await fetchRange(at(name), 0, HF_HEADER_BYTES, signal), signal)
         : { bytes: new Uint8Array(await name.slice(0, HF_HEADER_BYTES).arrayBuffer()), total: name.size };
       const headerBytes = bytes.length >= 8 ? Number(new DataView(bytes.buffer, bytes.byteOffset).getBigUint64(0, true)) : -1;
       if (!(headerBytes >= 2 && headerBytes <= 100e6)) {
@@ -746,7 +761,7 @@ async function load(model, signal, id) {
   const downloadStarted = performance.now();
   if (model.url) {
     // the size of a file somewhere else is what its server says
-    model.bytes = (await fetchRange(model.url.checkpoint, 0, 28, signal)).total;
+    model.bytes = (await sized(model.url.checkpoint, await fetchRange(model.url.checkpoint, 0, 28, signal), signal)).total;
     if (!(model.bytes > 28)) {
       throw new Error(`${model.url.checkpoint} does not answer range requests, so its size is unknown.`);
     }
