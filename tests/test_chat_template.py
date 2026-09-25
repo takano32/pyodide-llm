@@ -42,8 +42,9 @@ def test_one_turn_is_what_transformers_writes(template, expected):
 
 
 def test_a_template_it_cannot_read_is_refused_quietly():
-    # selectattr and the other filters of the fancier templates: the caller keeps the format it has
-    assert one_turn("{{ messages | selectattr('role', 'equalto', 'user') | list | last }}", {}) is None
+    # the filters, calls and statements it does not know: the caller keeps the format it has
+    assert one_turn("{{ messages | tojson }}{{ messages[0].content }}", {}) is None
+    assert one_turn("{% macro m() %}x{% endmacro %}{{ m() }}{{ messages[0].content }}", {}) is None  # a macro called
     assert one_turn("{% for message in messages %}{{ message['content'] }}", {}) is None  # never closed
     assert one_turn("{{ 'nothing about the prompt' }}", {}) is None  # no {prompt} in the result
 
@@ -61,7 +62,42 @@ def test_the_pieces_of_jinja_it_does_read():
     assert render("{{ ' a ' | trim }}", scope) == "a"
     assert render("{% if ('x' == 'y') or (messages[0].role == 'user') %}yes{% endif %}", scope) == "yes"
     with pytest.raises(Unsupported):
-        render("{{ messages | length % 2 }}", scope)
+        render("{{ messages | tojson }}", scope)
+
+
+def test_the_pieces_of_jinja_t127_adds():
+    """What Qwen3's, Mistral v0.3's and sarashina2.2's templates use for one turn (each checked against jinja2 with
+    transformers' trim_blocks and lstrip_blocks on the development machine)."""
+    scope = {"messages": [{"role": "system", "content": "S"}, {"role": "user", "content": "X"}]}
+    assert render("{{ messages | length % 2 }}{{ (messages|length - 1) * 3 }}{{ 7 - 2 - 1 }}", scope) == "034"
+    assert render("{{ messages | selectattr('role', 'equalto', 'user') | list | length }}", scope) == "1"
+    assert render("{% set others = messages | rejectattr('role', 'equalto', 'user') | list %}{{ others[0].content }}", scope) == "S"
+    assert render("{% set ns = namespace(n=0, last=messages|length - 1) %}{% for m in messages %}"
+                  "{% set ns.n = ns.n + 1 %}{% endfor %}{{ ns.n }}{{ ns.last }}", scope) == "21"
+    assert render("{% for m in messages[::-1] %}{{ m.role }}{% endfor %}{{ messages[1:][0].content }}", scope) == "usersystemX"
+    assert render("{% set c = 'a</t>b' %}{{ messages[-1].content }}{{ c.split('</t>')[-1] }}{{ c.split('</t>')[0].strip('a') }}", scope) == "Xb"
+    assert render("{% if messages[1].content is string and not(messages[1].content.startswith('<')) %}yes{% endif %}", scope) == "yes"
+    assert render("{% if x is defined and x is false %}no{% elif 3 > 2 and 'a' not in 'bc' %}yes{% endif %}", scope) == "yes"
+    assert render("{{ 'the user\\'s' }}", scope) == "the user's"   # an escaped quote
+    assert render("{# the user's #}ok", scope) == "ok"               # a comment is prose: its quotes are not strings
+    assert render("{% macro tools(x) %}{{ x }}{% endmacro %}ok", scope) == "ok"  # defined, never called
+    # trim_blocks and lstrip_blocks, as transformers renders: the newline after a block goes, and the indent before it
+    assert render("{% for m in messages %}\n  {% if m.role == 'user' %}\n{{ m.content }}\n  {% endif %}\n{% endfor %}", scope) == "X\n"
+
+
+FIXTURES = json.load(open(__import__("pathlib").Path(__file__).parent / "fixtures" / "chat-templates.json"))
+
+
+@pytest.mark.parametrize("fixture", FIXTURES, ids=[fixture["repo"] for fixture in FIXTURES])
+def test_real_templates_read_as_jinja_writes_them(fixture):
+    """T127: real templates of the families this site takes (tokenizers/fixtures: the template of the pinned
+    revision, and one turn of it rendered by jinja2 with transformers' settings, the BOS the template writes first
+    left out). Two of them are in chat_template.jinja, which the converter is handed on its own."""
+    config = {"bos_token": fixture["bos_token"], "eos_token": fixture["eos_token"]}
+    if fixture["file"] == "chat_template.jinja":
+        assert one_turn_template(json.dumps(config), fixture["template"]) == fixture["one_turn"]
+    else:
+        assert one_turn_template(json.dumps({**config, "chat_template": fixture["template"]})) == fixture["one_turn"]
 
 
 def test_it_reads_a_tokenizer_config():

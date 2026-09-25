@@ -907,7 +907,9 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     const given = settings ? JSON.parse(await settings.text()) : {};
     return {
       id: "local", name: given.name ?? weights[0].name, note: `local · Hugging Face · ${(weights[0].size / 1e6).toFixed(0)} MB`,
-      hf: { weights: weights[0], config, tokenizer }, conversion: given.conversion ?? {}, options: given.options ?? {},
+      // the chat template, where the folder has it: tokenizer_config.json, or chat_template.jinja (T127)
+      hf: { weights: weights[0], config, tokenizer, tokenizerConfig: named("tokenizer_config.json"), chatTemplate: named("chat_template.jinja") },
+      conversion: given.conversion ?? {}, options: given.options ?? {},
       // a model nobody has tuned this page for: sample, as such models loop when they decode greedily
       generation: given.generation ?? { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 },
       prompt: given.prompt ?? "", placeholder: given.placeholder ?? "",

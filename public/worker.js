@@ -963,6 +963,17 @@ async function convert(model, signal, id) {
     // one (or with one the converter cannot read) simply keeps the format src/models.js has for it.
     const tokenizerConfig = await (remote ? text(at("tokenizer_config.json")).then((r) => r.text())
       : model.hf.tokenizerConfig?.text() ?? Promise.resolve("")).catch(() => "");
+    // T127: newer repositories keep the template in chat_template.jinja instead. Asked for only where
+    // tokenizer_config.json has none: most repositories have no such file, and WebKit reports each 404 as an error
+    const hasTemplate = (() => {
+      try {
+        return Boolean(JSON.parse(tokenizerConfig).chat_template);
+      } catch {
+        return false;
+      }
+    })();
+    const chatTemplate = hasTemplate ? "" : await (remote ? text(at("chat_template.jinja")).then((r) => r.text())
+      : model.hf.chatTemplate?.text() ?? Promise.resolve("")).catch(() => "");
     // For a repository nobody has looked at (?hf=), the tokenizer is whichever of these it has and the converter can read
     let refusal;
     for (const candidate of [].concat(model.hf.tokenizer)) {
@@ -971,7 +982,8 @@ async function convert(model, signal, id) {
         const tokenizer = new Uint8Array(remote ? await (await text(at(candidate))).arrayBuffer() : await candidate.arrayBuffer());
         signal.throwIfAborted();
         conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName,
-          { start: base, tokenizer_config: tokenizerConfig, ...converting, sink, quantize_rows: quantizeRows, bfloat16 });
+          { start: base, tokenizer_config: tokenizerConfig, chat_template: chatTemplate || null, ...converting, sink,
+            quantize_rows: quantizeRows, bfloat16 });
         break;
       } catch (error) {
         if (signal.aborted) {

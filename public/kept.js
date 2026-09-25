@@ -21,8 +21,9 @@ export function keptName(model) {
 }
 /** T116: the version of what llama2_convert.py writes, the checkpoint's bytes and the options the engine gets.
  * Raise it when either changes: a conversion kept by an older converter is then converted again, and deleted (the
- * options of T106, BOS and specials, stayed wrong in what was kept before). 1: the manifests without it. */
-export const CONVERTER = 2;
+ * options of T106, BOS and specials, stayed wrong in what was kept before). 1: the manifests without it. 3: T127,
+ * the templates the converter reads now (selectattr, namespace(), chat_template.jinja, trim_blocks) in the options. */
+export const CONVERTER = 3;
 const converterOf = (manifest) => manifest.converter ?? 1;
 /** The names a model's conversion may be kept under: its bits, or with none asked for, either of the two the worker
  * may choose (T115) */
