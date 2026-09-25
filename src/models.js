@@ -1,6 +1,7 @@
 // The first model is the default: tiny-lm, the lightest one that writes Japanese. A public page should not make a
 // phone fetch 171 MB unasked, and it is ready soonest; llm-jp-3 writes far better Japanese and is one choice away.
-// Within each group the order is Japanese from light to heavy, then English from light to heavy.
+// Within each group the order is the ones that write Japanese from light to heavy, then the English-only ones from
+// light to heavy (T128): MODELS is sorted so at the end of this file, so a model added anywhere takes its place.
 // ?model=<id> picks another one. Every file of the first two groups is fetched when the site is built (see the
 // Makefile): llm-jp-3 and tiny-lm are converted from their Hugging Face checkpoints by convert_hf.py, and the larger
 // models are quantized to int8. bytes is the checkpoint size: it sizes the download buffer and the progress bar.
@@ -126,7 +127,8 @@ export function sources(models = MODELS) {
 // group: "site" (built with the site, the default), "original" or "hf"
 export const GROUPS = { site: "Models of this site", original: "Unquantized originals", hf: "From Hugging Face, converted in this browser" };
 
-export const MODELS = [
+// in the order they were added, more or less; MODELS below is the order of the list
+const LISTED = [
   { id: "tiny-lm", name: "tiny-lm 29M", note: "日本語 / English · int8 · 33 MB",
     source: "sbintuitions/tiny-lm", checkpoint: "tiny-lm.bin", bytes: 32891932, tokenizer: "tiny-lm.tokenizer.bin",
     options: { dtype: "int8", ...unigram, nfkc: true, stop_tokens: [1, 2] },
@@ -363,6 +365,15 @@ export function modelBytes(entry) {
 // group of 32 against 32 and a scale, 7/9 of the size, at +1 to +3.4% of perplexity (measured on eight models), and
 // slower on one thread (the groups are widened as they are read). So it is taken where int8 does not fit.
 export const SIX_OF_EIGHT = 28 / 36;
+
+/** T128: whether a model writes Japanese (its note says 日本語: Japanese alone, with English, or translating). */
+export const writesJapanese = (entry) => (entry.note ?? "").includes("日本語");
+/** The models as the list shows them (T128, the owner's order): the groups in the order of GROUPS, and within each
+ * the ones that write Japanese from light to heavy, then the English-only ones from light to heavy, by modelBytes()
+ * (int8 for a conversion, three times the file for a float16 original). The default, the first, is tiny-lm. */
+export const MODELS = LISTED.map((entry) => ({ entry, key: [Object.keys(GROUPS).indexOf(entry.group ?? "site"), writesJapanese(entry) ? 0 : 1, modelBytes(entry)] }))
+  .sort((a, b) => a.key[0] - b.key[0] || a.key[1] - b.key[1] || a.key[2] - b.key[2])
+  .map(({ entry }) => entry);
 // T133: Chromium's navigator.deviceMemory stops at 8: a device that says 8 has 8 GB or more, as many as it likes
 export const DEVICE_MEMORY_CAP = 8;
 /** The dtype a model of Hugging Face is converted to: the entry's own when it has one (the settings of a visitor's
