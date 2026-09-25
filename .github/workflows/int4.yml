@@ -1,10 +1,14 @@
-# T98, stage 1: what 4-bit weights cost in quality, on models the development machine has not the memory for
+# T98, stages 1 and 2: what 4-, 5- and 6-bit weights cost in quality, on models the development machine has not the memory for
 # (tests/int4_check.py: the page's int8 and several int4 formats of our own, and llama.cpp's Q4_0 and Q4_K_M where a
 # GGUF of the same model exists). By hand only; the tables go to the summary.
 name: int4 weights
 
 on:
   workflow_dispatch:
+    inputs:
+      rows:
+        description: 'only the rows whose label begins with these, separated by commas (e.g. int5,int6,int8); all when empty'
+        default: ''
 
 jobs:
   int4:
@@ -15,6 +19,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # the list takes this one from a GGUF: the original's safetensors are what the formats are applied to
+          - model: hf:HuggingFaceTB/SmolLM2-135M-Instruct@12fd25f77366fa6b3b4b768ec3050bf629380bac
+            language: en
+            ggufs: >-
+              Q4_K_M=https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/09816acd5d99df7be770d85ea30822623dab342c/SmolLM2-135M-Instruct-Q4_K_M.gguf
           - model: hf-smollm2-360m-instruct
             language: en
             ggufs: >-
@@ -55,4 +64,6 @@ jobs:
 
       - name: Measure
         shell: bash
+        env:
+          INT4_ROWS: ${{ inputs.rows }}
         run: python3 tests/int4_check.py "$SOURCE" prepared text.txt 1500 $GGUFS | tee -a "$GITHUB_STEP_SUMMARY"

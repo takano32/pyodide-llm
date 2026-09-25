@@ -1,5 +1,6 @@
 # int4_check.py
-# T98, stage 1: how much a model loses with its weights in 4 bits, measured before anything of it goes into the page.
+# T98, stages 1 and 2: how much a model loses with its weights in 4, 5 or 6 bits, measured before anything of it goes
+# into the page.
 # Each way of storing the weights is applied to the original and undone again (the weights come back as float32
 # with the error of the format in them), converted the way the page converts a model, and run by the NumPy engine
 # in float32, so that the only difference between the rows is the weights' format. The GGUF files of llama.cpp are
@@ -8,12 +9,16 @@
 #   python3 tests/int4_check.py <directory: config.json, model.safetensors> <out of tests/perplexity_prepare.py
 #       (for the tokenizer and the options)> <text file> [tokens = 1500] [<name>=<file.gguf> ...]
 #
+# INT4_ROWS=int5,int6 measures only the rows whose label begins with one of these (the original always, and the
+# GGUFs given): a row is a whole run of the model, and stage 2 needed only its own.
+#
 # The table: the perplexity on the text (the context starts anew every 512 tokens, as tests/perplexity.py does),
 # how far it is from the original, how often the most likely token is the original's, and the bits per weight of
 # the matrices (the scales included). The embedding is a matrix here too: with shared embeddings it is also the
 # classifier, which T85 found to be where int8 loses most.
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -166,6 +171,8 @@ def main():
     q4_16, q4_16_bits = symmetric(4, 16)
     a4, a4_bits = asymmetric(4, 32)
     a4_16, a4_16_bits = asymmetric(4, 16)
+    q5, q5_bits = symmetric(5, 32)
+    q6, q6_bits = symmetric(6, 32)
     int8_bits = 8 + 32 / 32
     rows = [("original (as stored, widened to float32)", None, 16),
             ("int8, groups of 32 (the page today)", lambda name, r: int8_ours(r), int8_bits),
@@ -176,7 +183,17 @@ def main():
             ("int4, groups of 32, symmetric; embedding int8", but_embedding(q4, int8_ours),
              bits_of(lambda name: int8_bits if is_embedding(name) else q4_bits)),
             ("int4, groups of 32, with a minimum; embedding int8", but_embedding(a4, int8_ours),
-             bits_of(lambda name: int8_bits if is_embedding(name) else a4_bits))]
+             bits_of(lambda name: int8_bits if is_embedding(name) else a4_bits)),
+            # stage 2 (Fable's decision): one uniform format of 5 or 6 bits, Q5_0's layout with a symmetric scale
+            ("int5, groups of 32, symmetric", lambda name, r: q5(r), q5_bits),
+            ("int5, groups of 32, symmetric; embedding int8", but_embedding(q5, int8_ours),
+             bits_of(lambda name: int8_bits if is_embedding(name) else q5_bits)),
+            ("int6, groups of 32, symmetric", lambda name, r: q6(r), q6_bits),
+            ("int6, groups of 32, symmetric; embedding int8", but_embedding(q6, int8_ours),
+             bits_of(lambda name: int8_bits if is_embedding(name) else q6_bits))]
+    wanted = [prefix for prefix in os.environ.get("INT4_ROWS", "").split(",") if prefix]
+    if wanted:
+        rows = rows[:1] + [row for row in rows[1:] if row[0].startswith(tuple(wanted))]
     print(f"{directory.parent.name}, {len(tokens)} tokens of {Path(sys.argv[3]).name}\n")
     print("| weights | bits per weight | perplexity | against the original | most likely token the original's | seconds |")
     print("|---|---:|---:|---:|---:|---:|")
