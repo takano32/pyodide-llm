@@ -8,10 +8,13 @@
 // ?coi=off on the page unregisters it.
 //
 // T111: offline. Registered with offline=1 (the page's ?offline=on, remembered), it also keeps a copy of what it
-// passed on: this site's files and Pyodide's (jsDelivr), not the models (the worker keeps those itself). Online
-// nothing changes: every request still goes to the network first, so the latest Pyodide is still resolved each
-// visit (policy 2); only a request that fails gets the copy. One copy per file: a new build (?v=) or a new Pyodide
-// replaces the old one. Registered without the flag, it throws the copies away.
+// passed on: this site's files and Pyodide's (jsDelivr), not the models' parts (the worker keeps those itself).
+// the latest Pyodide is still resolved each visit (policy 2), and the page itself is asked for each time; only when
+// that fails does the copy answer. A file whose address says its version (Pyodide's under /pyodide/v…/, this site's
+// with ?v=<build> or under /_astro/) cannot change, so its copy answers without asking the network at all: on a
+// mobile line a visit then costs the version check and the page, nothing more (the owner's wish; Safari does not
+// say what line it is on, so this does not ask). One copy per file: a new build or a new Pyodide replaces the old
+// one. Registered without the flag, it throws the copies away.
 const OFFLINE = new URL(self.location.href).searchParams.get("offline") === "1";
 const KEPT = "offline-v1";
 
@@ -19,8 +22,15 @@ const KEPT = "offline-v1";
 function kept(request) {
   const url = new URL(request.url);
   if (request.method !== "GET" || request.headers.has("range")) return false;
-  if (url.origin === self.location.origin) return !url.pathname.includes("/models/");
+  // the model's 8 MiB parts (.000, .001, …) the worker keeps itself; its tokenizer is kept here
+  if (url.origin === self.location.origin) return !/\/models\/.*\.\d{3}$/.test(url.pathname);
   return url.hostname === "cdn.jsdelivr.net" || url.hostname === "data.jsdelivr.com";
+}
+/** Whether the address names one version of the file, which then never changes. */
+function lasting(request) {
+  const url = new URL(request.url);
+  if (url.origin === self.location.origin) return url.searchParams.has("v") || url.pathname.includes("/_astro/");
+  return url.hostname === "cdn.jsdelivr.net" && /\/pyodide\/v[^/]+\//.test(url.pathname);
 }
 /** Files that are versions of one another: the same path of this site whatever ?v=, the same file of any Pyodide. */
 function family(address) {
@@ -62,6 +72,10 @@ self.addEventListener("fetch", (event) => {
   // (T97, for a day on 2026-09-25) stopped Pyodide's NumPy on iOS Safari and the model's fetch on the owner's
   // phone and PC, from Japan, while CI's browsers in the US went on: the checks fell on the CDN's real headers.
   event.respondWith((async () => {
+    if (OFFLINE && kept(request) && lasting(request)) {
+      const copy = await (await caches.open(KEPT)).match(request.url);
+      if (copy) return isolated(copy);
+    }
     let response;
     try {
       response = await fetch(request);
