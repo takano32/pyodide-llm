@@ -634,6 +634,8 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
         `generated ${data.tokens - data.prompt_tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s · ${seconds(data.seconds)} in all`,
       ], used.temperature ? used.seed : undefined);
     } else if (data.type === "error") {
+      // the console keeps where it happened, for a failed run's record (T82's artifacts, T96)
+      console.error(`worker error (weights memory ${data.weights} bytes):`, data.stack);
       message("model error", data.memory ? memoryFailure(model, data.heap, data.message) : data.message);
       statusText.textContent = ready ? `${model.name}` : `Could not load ${model.name}`;
     }

@@ -942,7 +942,9 @@ self.onmessage = async ({ data }) => {
       // (V8 also raises RangeError for a stack overflow, which is not this; Firefox says InternalError: out of memory)
       const memory = err?.type === "MemoryError" || err?.name === "InternalError" ||
         (err?.name === "RangeError" && !/call stack/i.test(err.message ?? ""));
+      // where it happened goes to the page's console (T96): tests/e2e.mjs keeps the console of a failed run
       postMessage({ type: "error", load: data.load, message: memory ? String(err?.message ?? err).trim().split("\n").pop() : message,
+                    stack: String(err?.stack ?? err), weights: weightsNow?.buffer.byteLength ?? 0,
                     ...(memory && { memory: true, heap: heapBytes() }) });
     }
   }
