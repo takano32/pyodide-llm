@@ -326,8 +326,14 @@ async function init(search) {
     };
     jsKernels = await build("plain");
     if (jsKernels && self.crossOriginIsolated) sharedKernels = await build("shared");
+    // T101: on their own, so that a browser that says it makes 64-bit memories and then cannot compile their kernels
+    // (Playwright's WebKit did, 2026-09-25) keeps the 32-bit ones: in the same try it lost every kernel and ran NumPy
     if (jsKernels && forwardModule.memory64()) {
-      wideKernels = { plain: await build("plain64", true), shared: self.crossOriginIsolated ? await build("shared64", true) : null };
+      try {
+        wideKernels = { plain: await build("plain64", true), shared: self.crossOriginIsolated ? await build("shared64", true) : null };
+      } catch {
+        wideKernels = undefined;
+      }
     }
   } catch {
     jsKernels = null;
