@@ -112,8 +112,9 @@ jobs:
 
   # The models that the page fetches from huggingface.co and converts itself, the two of more than a billion
   # parameters among them: the development machine has not the memory for those (and from 2026-09-21 the owner
-  # would rather this job checked all of them, the 1.6 GB ones included). Chromium on Linux is enough; how
-  # the browsers differ is what the jobs above are for.
+  # would rather this job checked all of them, the 1.6 GB ones included). Chromium on Linux, and three of them in
+  # WebKit (T112: fetching from Hugging Face is where WebKit differed); the rest of how the browsers differ is what
+  # the jobs above are for.
   huggingface:
     name: models from Hugging Face (${{ matrix.size }})
     runs-on: ubuntu-latest
@@ -150,7 +151,7 @@ jobs:
       - name: Install the test tools and Chromium
         run: |
           npm ci
-          npx playwright-core install --with-deps chromium
+          npx playwright-core install --with-deps chromium ${{ matrix.size == 'small' && 'webkit' || '' }}
 
       - name: Fetch, convert and run
         shell: bash
@@ -166,6 +167,27 @@ jobs:
             echo "### $model" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             node tests/e2e.mjs "$model" chromium "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          done
+          exit $failed
+
+      # T112: WebKit fetched and converted wrongly where Chromium did not (Content-Range behind an expose-headers
+      # wildcard, a range answered with the whole file): three of the small ones, a safetensors, a GGUF and a Qwen,
+      # in WebKit as well
+      - name: Three of them in WebKit (T112)
+        if: always() && matrix.size == 'small'
+        shell: bash
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+          E2E_TIMEOUT: ${{ matrix.timeout }}
+          E2E_RESULTS: results.jsonl
+          E2E_ARTIFACTS: artifacts
+        run: |
+          failed=0
+          for model in hf-llm-jp-3-150m-instruct3 hf-smollm2-135m-instruct hf-qwen2.5-0.5b-instruct; do
+            echo "### $model in WebKit" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            node tests/e2e.mjs "$model" webkit "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
           exit $failed
