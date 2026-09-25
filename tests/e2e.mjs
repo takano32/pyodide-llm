@@ -223,6 +223,9 @@ for (const next of (process.env.E2E_THEN ?? "").split(/\s+/).filter(Boolean)) {
   await idle();
   const answered = await page.evaluate(() => document.querySelectorAll(".model .meta").length);
   const readySeconds = (Date.now() - switched) / 1000;
+  // the URL names the model now open, and no other (a reload, or a switch of the panel, opens what it names)
+  const named = await page.evaluate(() => Object.fromEntries(new URL(location.href).searchParams));
+  if (named.model !== next || named.hf || named.checkpoint) failures.push(`then ${next}: the URL names ${named.hf ?? named.checkpoint ?? named.model}`);
   await page.press("#prompt", "Control+Enter");
   await page.waitForFunction((count) => document.querySelectorAll(".model .meta").length > count || document.querySelector(".error"), answered, { timeout: 0 });
   const last = await page.evaluate(() => {

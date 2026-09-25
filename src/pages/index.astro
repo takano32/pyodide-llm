@@ -391,9 +391,10 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     return { fixed: fixedThreads, remembered, hint: navigator.hardwareConcurrency || 1 };
   };
   const REPOSITORY = /^[\w.-]+\/[\w.-]+$/, REVISION = /^[\w.-]+$/;
-  // a repository nobody has looked at, as an entry of the list: the same for ?hf= and for the sheet (T88)
-  function hfEntry(repository: string, revision: string): typeof MODELS[number] {
-    const common = { id: "local", options: {}, prompt: parameters.get("prompt") ?? "", placeholder: "", template: parameters.get("template") ?? undefined };
+  // a repository nobody has looked at, as an entry of the list: the same for ?hf= and for the sheet (T88). The
+  // template and prompt of a link belong to the repository the link names, not to one opened later in the sheet
+  function hfEntry(repository: string, revision: string, link: { template?: string; prompt?: string } = {}): typeof MODELS[number] {
+    const common = { id: "local", options: {}, prompt: link.prompt ?? "", placeholder: "", template: link.template };
     return { ...common, name: repository, note: revision === "main" ? "Hugging Face" : `Hugging Face · ${revision.slice(0, 12)}`,
       hf: { repo: repository, revision, weights: "model.safetensors", config: "config.json", tokenizer: ["tokenizer.json", "tokenizer.model"] },
       conversion: {}, generation: { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 } } as any;
@@ -405,7 +406,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     // ../ in it showed one repository and fetched another's files)
     const revision = parameters.get("revision") ?? "main";
     if (repository && REPOSITORY.test(repository) && REVISION.test(revision)) {
-      return hfEntry(repository, revision);
+      return hfEntry(repository, revision, { template: parameters.get("template") ?? undefined, prompt: parameters.get("prompt") ?? undefined });
     }
     if (checkpoint && tokenizer && [checkpoint, tokenizer].every((url) => /^https:\/\//.test(url))) {
       return { ...common, name: new URL(checkpoint).pathname.split("/").pop(), note: new URL(checkpoint).hostname,
@@ -946,6 +947,37 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     };
   }
 
+  // The URL names the model the page has, however it was chosen (the list, the sheet, the folder), so that a reload
+  // (every switch of the panel reloads) or a shared link opens that model and no other (the review of T75 and T88:
+  // after ?hf=, choosing a model of the list and then a switch reloaded the Hugging Face model). A file of the disk
+  // has no address: its URL names nothing, and a reload opens the model remembered before it.
+  function nameInUrl(current: typeof model) {
+    const url = new URL(location.href);
+    for (const name of ["model", "hf", "revision", "checkpoint", "tokenizer", "template", "prompt"]) {
+      url.searchParams.delete(name);
+    }
+    const { hf, url: address, template } = current as any;
+    if (current.id !== "local") {
+      url.searchParams.set("model", current.id);
+    } else if (hf?.repo || address) {
+      if (hf?.repo) {
+        url.searchParams.set("hf", hf.repo);
+        if (hf.revision !== "main") {
+          url.searchParams.set("revision", hf.revision);
+        }
+      } else {
+        url.searchParams.set("checkpoint", address.checkpoint);
+        url.searchParams.set("tokenizer", address.tokenizer);
+      }
+      for (const [name, value] of [["template", template], ["prompt", current.prompt]]) {
+        if (value) {
+          url.searchParams.set(name, value);
+        }
+      }
+    }
+    history.replaceState(null, "", url);
+  }
+
   // T88: the last entry of the Hugging Face group asks which repository, in a sheet like the settings'
   const repositorySheet = $("repository");
   repositorySheet.addEventListener("beforetoggle", (event) => {
@@ -975,13 +1007,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     }
     repositorySheet.hidePopover();
     local = hfEntry(repository, revision);
-    // the URL says what is open, so that the link can be shared; ?model= would contradict it
-    const url = new URL(location.href);
-    url.searchParams.delete("model");
-    url.searchParams.set("hf", repository);
-    revision === "main" ? url.searchParams.delete("revision") : url.searchParams.set("revision", revision);
-    history.replaceState(null, "", url);
-    showLocal();
+    showLocal();  // the change of model writes the URL (nameInUrl), so that the link can be shared
   };
 
   select.onchange = () => {
@@ -1001,6 +1027,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       return;
     }
     model = chosen;
+    nameInUrl(model);
     benchmarking = false;  // the worker cancels the benchmark's round for the new model, and never reports it
     show(model);
     ready = false;
