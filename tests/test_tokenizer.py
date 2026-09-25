@@ -99,3 +99,77 @@ def test_special_tokens_inside_a_prompt_become_their_token():
     # without being told, the engine spells the same characters out
     assert end not in tokenizer.encode("hello</s>\nworld")
     assert tokenizer.encode("hello", ("</s>",)) == tokenizer.encode("hello")
+
+
+# ------------------------------------------------------------------ a sentencepiece model's normalizer (T126)
+
+def sentencepiece(normalizer, spelled=False):
+    """A sentencepiece unigram model with no byte pieces, as rinna's are, and piece 13 a word: byte + 3 for a
+    newline, which is what the engine spelled one with before it read the normalizer (rinna's 13 is った).
+    spelled: with a byte piece, as Llama's, Mistral's and tiny-lm's have them (256 of them there)."""
+    from make_hf_fixture import field
+    NORMAL, UNKNOWN, CONTROL, BYTE = 1, 2, 3, 6
+    words = ["▁", "▁a", "▁b", "a", "b", "▁x", "x", "y", "z", "c", "った"]
+    pieces = [("[UNK]", UNKNOWN), ("<s>", CONTROL), ("</s>", CONTROL)] + [(word, NORMAL) for word in words]
+    pieces += [("<0x0A>", BYTE)] if spelled else []
+    assert pieces[13][0] == "った"
+    model = b"".join(field(1, field(1, text.encode()) + field(2, -1.0 - i / 10) + field(3, kind))
+                     for i, (text, kind) in enumerate(pieces))
+    return model + field(2, field(3, 1)) + field(3, normalizer), len(pieces)
+
+
+def test_an_nmt_normalizer_makes_newlines_and_tabs_spaces_and_one_space_of_many():
+    """The review of T126: rinna's three models are nmt_nfkc with remove_extra_whitespaces, and a newline was
+    written as token 13 (った in japanese-gpt-1b) where sentencepiece writes ▁. The converter says so to the engine."""
+    from make_hf_fixture import field
+    from llama2_convert import sentencepiece_options, sentencepiece_pieces, tokenizer_bin
+    model, size = sentencepiece(field(1, b"nmt_nfkc"))  # remove_extra_whitespaces unset: true, sentencepiece's default
+    options = sentencepiece_options(model)
+    assert options == {"tokenizer_kind": "unigram", "nfkc": True, "nmt": True, "collapse": True, "unknown": 0}
+    data = tokenizer_bin(sentencepiece_pieces(model), size)
+    tokenizer = Tokenizer(data, size, kind="unigram", nfkc=True, nmt=True, collapse=True, unknown=0)
+    pieces = lambda text: [tokenizer.vocab[token].decode() for token in tokenizer.encode(text)]
+    for text in ["a\nb", "a\tb", "a  b", " a\r\n\n b ", "a​b", "a\x01\nb"]:
+        assert pieces(text) == [" a", " b"], text
+    assert pieces("\n") == [] and pieces("x　y") == [" x", " ", "y"]
+    # characters the vocabulary lacks: the unknown piece, one for a run of them, as sentencepiece writes them
+    assert pieces("a\U00020BB7\U00020BB7b") == [" a", "[UNK]", "b"] and pieces("a \U00020BB7 b") == [" a", " ", "[UNK]", " b"]
+    bpe = Tokenizer(data, size, kind="bpe", nfkc=True, nmt=True, collapse=True, unknown=0)  # rinna's 1B is BPE
+    assert [bpe.vocab[token].decode() for token in bpe.encode("a\U00020BB7\U00020BB7\nb")] == [" a", "[UNK]", " b"]
+    before = Tokenizer(data, size, kind="unigram", nfkc=True)
+    assert 13 in before.encode("a\nb"), "without the normalizer's settings: byte + 3"
+
+
+def test_an_identity_normalizer_without_collapsing_changes_nothing():
+    """Llama's and Mistral's tokenizer.model: identity, remove_extra_whitespaces off; tiny-lm's: nfkc, off."""
+    from make_hf_fixture import field
+    from llama2_convert import sentencepiece_options
+    for name, nfkc in ((b"identity", False), (b"nfkc", True)):
+        model, _ = sentencepiece(field(1, name) + field(4, 0), spelled=True)
+        assert sentencepiece_options(model) == {"tokenizer_kind": "unigram", "nfkc": nfkc}
+
+
+def test_the_conversion_hands_the_normalizer_to_the_engine():
+    """T72's lesson: what the file does not say reaches the engine through the conversion's options"""
+    import json
+    import struct
+    from conftest import synthetic_weights
+    from make_hf_fixture import field
+    from test_convert import hugging_face, safetensors_file
+    import llama2_convert
+    from llama2_numpy import Llama
+
+    settings, weights = synthetic_weights()
+    tensors, published = hugging_face(settings, weights, True)
+    file = safetensors_file(tensors)
+    size = struct.unpack("<Q", file[:8])[0]
+    model, pieces = sentencepiece(field(1, b"nmt_nfkc"))
+    model += b"".join(field(1, field(1, f"▁w{i}".encode()) + field(2, -9.0) + field(3, 1)) for i in range(settings["vocab_size"] - pieces))
+    conversion = llama2_convert.Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(published), model,
+                                           "tokenizer.model", dtype="float32", max_seq_len=settings["seq_len"], start=8 + size)
+    conversion.feed(file[8 + size:])
+    conversion.finish()
+    assert conversion.options["nmt"] and conversion.options["collapse"] and conversion.options["unknown"] == 0
+    options = {key: value for key, value in conversion.options.items() if key != "dtype"}
+    llama = Llama(bytes(conversion.checkpoint), bytes(conversion.tokenizer), **options)
+    assert llama.tokenizer.encode("a\n\tb") == llama.tokenizer.encode("a b")

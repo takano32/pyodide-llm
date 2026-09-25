@@ -1566,17 +1566,35 @@ def sentencepiece_specials(model):
 
 
 def sentencepiece_options(model):
-    """Llama(tokenizer_kind=, nfkc=) from the trainer and normalizer specs of a sentencepiece model."""
+    """Llama(tokenizer_kind=, nfkc=, nmt=, collapse=, unknown=) from the pieces and the trainer and normalizer specs
+    of a sentencepiece model.
+
+    nmt: the normalizer is one of the nmt_ kinds, which make tabs, newlines and a few more spaces and drop the other
+    control characters. collapse: remove_extra_whitespaces, runs of spaces made one and the ends trimmed. Both are
+    said only where on: rinna's models are nmt_nfkc with it (and no byte pieces to spell a newline with), Llama's and
+    Mistral's identity without it, tiny-lm's nfkc without it (the review of T126). unknown: the id of the unknown
+    piece, for a model without byte pieces (rinna's): a character the vocabulary lacks is that piece, as in
+    sentencepiece, and not bytes spelled with whatever pieces happen to be at byte + 3."""
     UNIGRAM, BPE = 1, 2
-    kind, normalizer = UNIGRAM, "nmt_nfkc"  # sentencepiece's own defaults
+    UNKNOWN, BYTE = 2, 6
+    kind, normalizer, collapse = UNIGRAM, "nmt_nfkc", True  # sentencepiece's own defaults
+    unknown, spelled, index = None, False, 0
     for field, value in protobuf_fields(model):
-        if field == 2:  # trainer_spec.model_type
+        if field == 1:  # a piece: its type
+            piece_type = dict(protobuf_fields(value)).get(3, 1)
+            unknown = index if piece_type == UNKNOWN and unknown is None else unknown
+            spelled |= piece_type == BYTE
+            index += 1
+        elif field == 2:  # trainer_spec.model_type
             kind = dict(protobuf_fields(value)).get(3, UNIGRAM)
-        elif field == 3:  # normalizer_spec.name
-            normalizer = dict(protobuf_fields(value)).get(1, b"nmt_nfkc").decode("utf-8")
+        elif field == 3:  # normalizer_spec: its name, and remove_extra_whitespaces
+            spec = dict(protobuf_fields(value))
+            normalizer, collapse = spec.get(1, b"nmt_nfkc").decode("utf-8"), bool(spec.get(4, 1))
     if kind not in (UNIGRAM, BPE):
         raise ValueError("This sentencepiece model is neither unigram nor BPE.")
-    return {"tokenizer_kind": "unigram" if kind == UNIGRAM else "bpe", "nfkc": "nfkc" in normalizer}
+    options = {"tokenizer_kind": "unigram" if kind == UNIGRAM else "bpe", "nfkc": "nfkc" in normalizer}
+    return {**options, **({"nmt": True} if normalizer.startswith("nmt") else {}), **({"collapse": True} if collapse else {}),
+            **({"unknown": unknown} if unknown is not None and not spelled else {})}
 
 
 # ------------------------------------------------------------------------------------------ in the browser

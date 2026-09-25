@@ -129,6 +129,12 @@ def pretokenize(text, pattern):
     return parts
 
 
+# sentencepiece's nmt_ normalizers (nmt_nfkc, nmt_nfkc_cf): these characters become a space, and these go
+NMT_SPACES = (0x09, 0x0A, 0x0C, 0x0D, 0x1680, 0x200B, 0x200C, 0x200E, 0x200F, 0x2028, 0x2029, 0x2581, 0xFEFF, 0xFFFD)
+NMT_DROPPED = (*range(0x01, 0x09), 0x0B, *range(0x0E, 0x20), 0x7F, 0x8F, 0x9F)
+NMT = {**{code: " " for code in NMT_SPACES}, **{code: None for code in NMT_DROPPED}}
+
+
 class Tokenizer:
     """llama2.c's tokenizer.bin: sentencepiece pieces with their scores.
 
@@ -141,8 +147,13 @@ class Tokenizer:
 
     UNMATCHABLE = -1e8  # convert_hf.py gives control and byte pieces a score below this
 
-    def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", ignore_merges=False):
+    def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", ignore_merges=False,
+                 nmt=False, collapse=False, unknown=None):
         self.kind, self.nfkc, self.nfc, self.pretokenizer = kind, nfkc, nfc, pretokenizer
+        self.nmt, self.collapse = nmt, collapse  # a sentencepiece model's normalizer: see normalized()
+        # a sentencepiece model without byte pieces (rinna's) writes a character it lacks as its unknown piece, a run
+        # of them as one; the others spell it in bytes
+        self.unknown = unknown
         self.ignore_merges = ignore_merges
         self.vocab, self.scores = [], []
         offset = 4  # skip max_token_length
@@ -173,11 +184,7 @@ class Tokenizer:
         for part in re.split("(" + "|".join(re.escape(special) for special in specials) + ")", text) if specials else [text]:
             if part in specials:
                 tokens.append(self.index[part.encode("utf-8")])
-            elif part:
-                if self.nfkc:
-                    part = unicodedata.normalize("NFKC", part)
-                if self.nfc:
-                    part = unicodedata.normalize("NFC", part)
+            elif part and (part := self.normalized(part)):
                 if self.kind == "bytebpe":
                     # no dummy prefix: a byte-level vocabulary spells the space out as a character of its own
                     tokens += self.encode_bytebpe(part)
@@ -189,6 +196,22 @@ class Tokenizer:
             first = False
         return tokens
 
+    def normalized(self, text):
+        """The text as the model's normalizer makes it. nmt: sentencepiece's nmt_ normalizers make tabs, newlines and
+        a few more characters a space, and drop the other control characters (NMT_SPACES and NMT_DROPPED: what
+        sentencepiece 0.2.2 did to each character with rinna's nmt_nfkc, the review of T126). collapse: its
+        remove_extra_whitespaces, runs of spaces one and none at either end. Without them a newline was spelled
+        with byte + 3 in a vocabulary with no byte pieces: rinna's った."""
+        if self.nmt:
+            text = text.translate(NMT)
+        if self.nfkc:
+            text = unicodedata.normalize("NFKC", text)
+        if self.nfc:
+            text = unicodedata.normalize("NFC", text)
+        if self.collapse:
+            text = re.sub(" {2,}", " ", text).strip(" ")
+        return text
+
     def encode_bpe(self, text):
         # First encode every individual character; a character the vocabulary lacks becomes its UTF-8 bytes
         tokens = []
@@ -196,6 +219,8 @@ class Tokenizer:
             piece = char.encode("utf-8")
             if piece in self.index:
                 tokens.append(self.index[piece])
+            elif self.unknown is not None:
+                tokens += [] if tokens[-1:] == [self.unknown] else [self.unknown]  # a run of them is one
             else:
                 tokens.extend(self.byte_tokens[byte] for byte in piece)
 
@@ -245,10 +270,13 @@ class Tokenizer:
             if back[i + 1] is None or back[i + 1][0] != i:
                 score = best[i] + self.unknown_score
                 if score > best[i + 1]:
-                    best[i + 1], back[i + 1] = score, (i, [self.byte_tokens[byte] for byte in text[i].encode("utf-8")])
+                    spelled = [self.unknown] if self.unknown is not None else [self.byte_tokens[byte] for byte in text[i].encode("utf-8")]
+                    best[i + 1], back[i + 1] = score, (i, spelled)
         tokens, j = [], len(text)
         while j > 0:
             i, ids = back[j]
+            if self.unknown is not None and ids == [self.unknown] and tokens[:1] == ids:
+                ids = []  # sentencepiece makes a run of unknown characters one unknown piece
             tokens[:0] = ids
             j = i
         return tokens
@@ -587,7 +615,8 @@ class Llama:
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
                  tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
-                 disable=(), external=None, rope_scaling=None, ignore_merges=False):
+                 disable=(), external=None, rope_scaling=None, ignore_merges=False, nmt=False, collapse=False,
+                 unknown=None):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py), and
@@ -631,9 +660,9 @@ class Llama:
         kv_dim = self.n_kv_heads * self.head_size
 
         disable = tuple(str(name) for name in disable)
-        unknown = [name for name in disable if name not in SWITCHES]
-        if unknown:
-            raise ValueError(f"There is no optimization called {unknown[0]!r}: {', '.join(SWITCHES)}.")
+        unnamed = [name for name in disable if name not in SWITCHES]
+        if unnamed:
+            raise ValueError(f"There is no optimization called {unnamed[0]!r}: {', '.join(SWITCHES)}.")
         self.disabled = disable
         # int6 (T98) is int8 with its values packed: from here on it is int8, except where the bytes are read
         six = str(dtype) == "int6"
@@ -719,7 +748,8 @@ class Llama:
             # the line has to say what the numbers are the numbers of
             self.backend += " (without " + ", ".join(name for name in SWITCHES if name in disable) + ")"
         self.tokenizer = Tokenizer(tokenizer, self.vocab_size, kind=tokenizer_kind, nfkc=nfkc, nfc=nfc,
-                                   pretokenizer=pretokenizer, ignore_merges=ignore_merges)
+                                   pretokenizer=pretokenizer, ignore_merges=ignore_merges, nmt=nmt, collapse=collapse,
+                                   unknown=unknown)
         self.bos, self.stop_tokens = bos, {int(token) for token in stop_tokens}
         self.specials = tuple(str(special) for special in specials)  # see Tokenizer.encode()
         self.stats = {}
