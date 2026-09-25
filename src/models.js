@@ -20,10 +20,11 @@ const ASK_JAPANESE = "質問や指示を入力（例: 日本の首都は？）";
 const CHATML = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
 const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [0, 2] };
 // sarashina2.2's chat_template (and CAT-Translate's, made from it) uses selectattr, which this project's template
-// reader does not take (T73): one turn of it, as the real Jinja renders it, is this. </s> is the token (T81; the
-// 0.5B Instruct had ChatML here until 2026-09-26, whose <|im_start|> its vocabulary does not have)
+// reader does not take (T73): one turn of it, as the real Jinja renders it, is this (T81; the 0.5B Instruct had
+// ChatML here until 2026-09-26, whose <|im_start|> its vocabulary does not have). <|user|> (9), <|assistant|> (8)
+// and </s> (2) are tokens of their own, and a model that writes the mark of a turn (7 to 9) has ended its answer
 const SARASHINA = "<|user|>{prompt}</s><|assistant|>";
-const sarashina = { specials: ["</s>"] };
+const sarashina = { specials: ["<|assistant|>", "<|user|>", "</s>"], stop_tokens: [1, 2, 7, 8, 9] };
 const TRANSLATE = "Translate the following Japanese text into English.\n\n{日本語の文} (or English into Japanese)";
 // Models that huggingface.co serves and this page converts itself (public/llama2_convert.py, the code that builds
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
