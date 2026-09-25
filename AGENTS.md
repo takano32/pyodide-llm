@@ -36,7 +36,7 @@
 | `public/llama2_numpy.py` | 推論エンジン。数値演算は SIMD カーネル（`load_kernels` / `kernel_forward`）、使えなければ NumPy。llama2.c の legacy 形式（7 個の int ヘッダ + テンソル）を読む。float32 / float16 / int8。トークナイザは BPE（llama2.c 方式）と unigram（Viterbi）と byte-level BPE（GPT-2 方式、`pretokenize()` で前分割）。アーキテクチャは `arch="llama"`（Qwen2 は `bias=True`）・`arch="gpt2"`・`arch="neox"`（`rotary` と `parallel_residual` を伴う）。`generate()` はテキスト片を返すジェネレータ |
 | `public/worker.js` | Web Worker。**T93 から重みは `forward.js` の `WebAssembly.Memory` に置き、forward は JS。cross-origin isolated なら共有メモリとソフトウェアスレッド（`helper.js`）で、本数は検索するか `?threads=N`**（`weightsBuffer()`。カーネルが無ければ Python の bytearray で NumPy）。HF の変換は変換器の `sink` で JS のメモリへ直接書く。HF のモデルの取得（16 MiB × 6 並列の Range 要求を順番どおりに変換器へ。T107）もここ。変換結果の保存と読み出しは `kept.js`（T99）。分割された safetensors は見出しを 1 本につないで順に流す（T105）。最新 Pyodide の解決、モデル部品の並列ダウンロード（8 MiB × 8 並列、Pyodide のロードと同時進行、モデルを選び直せば中止して切り替え）、Python バッファへの直接書き込み、トークンの逐次送信 |
 | `public/forward.js` | 1 トークンの forward を JavaScript で（T93）。重みを持つ自前の `WebAssembly.Memory` の上で、エンジンの `kernel_forward` と同じ順に同じカーネル（`simdkernel_plain.wasm`）を呼ぶ。テンソルの位置は Python（`Llama(external=)`）から受け取る。Python の層のループを外すぶん 1.15〜1.26 倍（int8） |
-| `public/kept.js` | 変換したモデルの保存（T99）。保存・読み出し・一覧・削除を 1 か所に持ち、Worker とページの両方が使う。OPFS があれば OPFS に 1 モデル 1 フォルダ、無ければ Cache API（`converted-v1`）。単体試験は `tests/kept-check.mjs` |
+| `public/kept.js` | 変換したモデルの保存（T99）。保存・読み出し・一覧・削除を 1 か所に持ち、Worker とページの両方が使う。保存はビット数の名前（`keptName`）で置き、manifest に変換器の版（`CONVERTER`）を書く。どの保存がそのモデルに使えるかは `serves()` の 1 つで、Worker の `openKept()` とページの「kept in this browser」が同じ判定をする（T116）。OPFS があれば OPFS に 1 モデル 1 フォルダ、無ければ Cache API（`converted-v1`）。単体試験は `tests/kept-check.mjs` |
 | `src/pages/index.astro` | チャット風のページ。Worker の報告を描画し、URL（`?model=`・`?hf=`・`?without=`・`?bits=` などが状態。モデルを替えるたびに書き直す）、設定とリポジトリのシート（T75・T88）、ベンチの吹き出し（T76）、Service Worker の登録と逃げ道（T93・T113）を持つ |
 | `src/models.js` | モデル一覧（ファイル名、バイト数、エンジンのオプション、生成設定、既定プロンプト）。`group` でコンボボックスの 3 つのグループ（サイトのモデル / 原本 / HF から取得して変換）に分かれる。HF のモデルは `hf: {repo, revision, …}`（リビジョンはコミットのハッシュで固定）、指示モデルは `template` を持つ |
 | `public/llama2_convert.py` | Hugging Face の Llama チェックポイント → legacy 形式（float32 / float16 / int8）と tokenizer.bin。NumPy のみ。`read(offset, length)` 越しに断片ずつ読んで出力バッファへ直接書くので、メモリは「出力 + 13MB」（Llama の場合。**GPT-2 / NeoX は `c_attn` や `query_key_value` を丸ごと溜めてから割る**ので、その 1 テンソルぶん多い: pythia-1.4b の qkv で F16 の 25MB と float32 に広げた 50MB）。ビルドとブラウザの両方が使う |
@@ -192,6 +192,7 @@
 - **Llama 3 の GGUF は RoPE の縮め方を `rope_freqs` の表で持つ**（config.json の `rope_scaling` ではなく）。読み飛ばすと素の RoPE で動き、エラーにならずに文が壊れる。だからその表のある GGUF は断っている（T106）。GGUF の読み手で「知らないテンソルは読み飛ばす」を使うときは、読み飛ばして意味が変わらないかを確かめる。
 - **止められたシェルコマンドが途中まで実行されていることがある。** 止められたら `git status` で状態を確かめる。
 - **int8 のファイルはコンテキストを変えてもサイズが変わらない**（RoPE の表を持たないので、変わるのはヘッダの 4 バイトだけ）。T56 で 512 → 4096 にしたとき、Cache API のキー（URL + サイズ）が同じままになるので `MODEL_CACHE` を `models-v2` に上げた（古い `models-v1` は Worker が消す）。float16 の原本は RoPE の表のぶん大きくなるので `src/models.js` の `bytes` を直した。
+- **変換器の出すもの（チェックポイントのバイトか options）を変えたら、`public/kept.js` の `CONVERTER` を上げる**（T116）。上げないと、前に保存した変換が古い options のまま使われる（T106 で BOS を外し `specials` を足したとき、保存済みのモデルには効いていなかった）。上げれば、古い版の保存は使われずに消える（新しい版の保存は古いタブが消さない）。
 - **モデルの部品は Cache API に残る。** モデルの中身を変えてもサイズが同じだと古いキャッシュが使われ続ける。その場合は `public/worker.js` の `MODEL_CACHE` の名前を上げる（`models-v2`）。
 - サイトは約 840MB。GitHub Pages の目安は 1GB なので、モデルを足すなら何かを削る。
 

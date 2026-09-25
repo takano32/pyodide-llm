@@ -634,10 +634,8 @@ async function inOrder(url, start, size, feed, signal, arriving = () => {}) {
 async function loadConverted(model, signal, id) {
   let kept;
   try {
-    // no bits asked for (T115): what the worker chose then is kept under the bits it chose
-    for (const dtype of model.conversion?.dtype ? [model.conversion.dtype] : ["int8", "int6"]) {
-      kept ??= await keptModule.openKept({ ...model, conversion: { ...model.conversion, dtype } });
-    }
+    // under the bits asked for, or either the worker may choose (T115), by this converter (T116)
+    kept = await keptModule.openKept(model);
   } catch (error) {
     return { miss: `could not open what is kept: ${error.message ?? error}` };
   }

@@ -19,6 +19,22 @@ export function keptName(model) {
   const { dtype = "int8", max_seq_len = 4096 } = model.conversion ?? {};
   return encodeURIComponent(`${model.hf.repo}@${model.hf.revision}:${dtype}:${max_seq_len}`);
 }
+/** T116: the version of what llama2_convert.py writes, the checkpoint's bytes and the options the engine gets.
+ * Raise it when either changes: a conversion kept by an older converter is then converted again, and deleted (the
+ * options of T106, BOS and specials, stayed wrong in what was kept before). 1: the manifests without it. */
+export const CONVERTER = 2;
+const converterOf = (manifest) => manifest.converter ?? 1;
+/** The names a model's conversion may be kept under: its bits, or with none asked for, either of the two the worker
+ * may choose (T115) */
+export function keptNames(model) {
+  const asked = model.conversion?.dtype;
+  return (asked ? [asked] : ["int8", "int6"]).map((dtype) => keptName({ ...model, conversion: { ...model.conversion, dtype } }));
+}
+/** Whether a kept conversion (one of keptModels()) serves a model: kept under one of its names, by this converter */
+export const serves = (kept, model) => keptNames(model).includes(kept.name) && converterOf(kept.manifest) === CONVERTER;
+/** Whether a kept conversion is of an older converter: not used, and deleted. (One of a newer converter is left
+ * alone: a tab of the older page must not delete what the newer one kept.) */
+export const outdated = (kept) => converterOf(kept.manifest) < CONVERTER;
 const cacheKey = (name, file) => `${self.location.origin}/converted/${name}/${file}`;
 
 async function folders(create = false) {
@@ -57,9 +73,17 @@ export async function keptModels() {
   return found;
 }
 
-/** A kept model to read: { manifest, where, parts(), tokenizer() }, or undefined. parts() yields its bytes in order. */
+/** A kept model to read: { manifest, where, parts(), tokenizer() }, or undefined. parts() yields its bytes in order.
+ * The first of its names (keptNames) kept by this converter; what an older one kept is deleted on the way (T116). */
 export async function openKept(model) {
-  const name = keptName(model);
+  for (const name of keptNames(model)) {
+    const found = await openNamed(name);
+    if (found && converterOf(found.manifest) === CONVERTER) return found;
+    if (found && outdated(found)) await forget({ name, where: found.where });
+  }
+  return undefined;
+}
+async function openNamed(name) {
   const directory = await folders();
   const folder = await directory?.getDirectoryHandle(name).catch(() => undefined);
   if (folder) {
@@ -102,8 +126,8 @@ export async function openKept(model) {
 /** Keep a conversion: slice(begin, end) gives the checkpoint's bytes (a copy), tokenizer is a Uint8Array.
  * Returns why nothing was kept, or undefined. Whatever was half written is removed again. Nothing asks the browser
  * beforehand how much room there is: its estimate said yes where the write then failed (T60). */
-export async function keep(model, manifest, slice, tokenizer, signal) {
-  const name = keptName(model);
+export async function keep(model, kept, slice, tokenizer, signal) {
+  const name = keptName(model), manifest = { ...kept, converter: CONVERTER };
   if (opfsWritable()) {
     const directory = await folders(true);
     if (directory) {

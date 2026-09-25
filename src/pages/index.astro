@@ -315,11 +315,15 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   const keptModule = import(/* @vite-ignore */ `${import.meta.env.BASE_URL}kept.js?v=${__BUILD__}`).catch(() => undefined);
   async function showKept() {
     const kept = await keptModule;
-    const models = (await kept?.keptModels().catch(() => [])) ?? [];
+    let models = (await kept?.keptModels().catch(() => [])) ?? [];
+    // T116: what an older converter kept is never used again, so it goes (the worker deletes it too when it looks)
+    for (const one of models.filter((one: any) => kept.outdated(one))) await kept.forget(one);
+    models = models.filter((one: any) => !kept.outdated(one));
     for (const option of select.querySelectorAll("option")) {
       const entry = MODELS.find(({ id }) => id === option.value) as any;
       if (entry?.hf) {
-        const found = models.some(({ manifest }: any) => manifest.repo === entry.hf.repo && manifest.revision === entry.hf.revision);
+        // kept as it would be loaded now: under its bits (?bits=, or either the worker may choose), by this converter
+        const found = models.some((one: any) => kept.serves(one, weighed(entry)));
         option.textContent = `${entry.name} — ${entry.note}${found ? " · kept in this browser" : ""}`;
       }
     }
@@ -434,7 +438,8 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       entry && entry.id !== "local" ? localStorage.setItem("model", JSON.stringify({ id: entry.id, kept })) : localStorage.removeItem("model");
     } catch {}
   }
-  let model = fromUrl ?? MODELS.find(({ id }) => id === requested) ?? remembered() ?? MODELS[0];
+  const recalled = fromUrl || MODELS.some(({ id }) => id === requested) ? undefined : remembered();
+  let model = fromUrl ?? MODELS.find(({ id }) => id === requested) ?? recalled ?? MODELS[0];
   let ready = false;
   let answer: HTMLElement | null = null; // the bubble that is being written
   let used: Record<string, any> = {}; // the generation settings of that run, for the line under it
@@ -852,7 +857,22 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   // The model can be changed while one is loading: the worker cancels that download and starts the new one.
   // loads numbers them, and the worker's reports carry the number.
   let loads = 1;
-  worker.postMessage({ type: "init", search: location.search, model: weighed(model), load: loads, threads: threadsFor(model) });
+  // T116: a remembered model that would be fetched anew starts unasked only because it was kept (remembered()): it
+  // must still be kept as it would be loaded now (its bits, this converter), or the first of the list starts instead
+  async function stillKept(entry: any) {
+    if ((entry.download ?? 0) <= 500e6) return true;
+    const kept = await keptModule;
+    const models = (await kept?.keptModels().catch(() => [])) ?? [];
+    return models.some((one: any) => kept.serves(one, weighed(entry)));
+  }
+  (async () => {
+    if (model === recalled && !(await stillKept(model))) {
+      model = MODELS[0];
+      remember(undefined);
+      show(model);
+    }
+    worker.postMessage({ type: "init", search: location.search, model: weighed(model), load: loads, threads: threadsFor(model) });
+  })();
 
   // A model of the visitor's own disk, from the folder button or dropped on the page. The legacy format knows
   // nothing about itself, so whatever differs from llama2.c's conventions comes as a third file: .json, shaped

@@ -154,4 +154,39 @@ const readBack = async (found) => {
   assert.equal((await kept.keptModels()).length, 0);
   assert.equal(await kept.openKept(model), undefined);
 }
+// T116: the bits. A model kept as int8 serves one that asks for int8 or for no bits (the worker chooses, T115), never
+// one that asks for six bits: that one is converted again, and the page does not call it kept
+{
+  browser();
+  const as = (dtype) => ({ ...model, conversion: dtype ? { dtype } : {} });
+  assert.equal(await kept.keep(as("int8"), manifest, (a, b) => bytes.slice(a, b), vocabulary), undefined);
+  const [one] = await kept.keptModels();
+  assert.equal(one.manifest.converter, kept.CONVERTER, "the manifest says which converter made it");
+  assert.ok(kept.serves(one, as("int8")) && kept.serves(one, as(undefined)) && !kept.serves(one, as("int6")));
+  assert.equal(await kept.openKept(as("int6")), undefined);
+  assert.deepEqual(await readBack(await kept.openKept(as(undefined))), bytes);
+  // one the worker chose six bits for is found with no bits asked too
+  await kept.forget(one);
+  await kept.keep(as("int6"), manifest, (a, b) => bytes.slice(a, b), vocabulary);
+  assert.deepEqual(await readBack(await kept.openKept(as(undefined))), bytes);
+  assert.equal(await kept.openKept(as("int8")), undefined);
+}
+// T116: the converter. What an older one kept is not used and is deleted; what a newer one kept (a tab of an older
+// page next to a newer one) is not used either, and is left alone
+{
+  const { root } = browser();
+  const manifestOf = async () => (await (await root.getDirectoryHandle("converted-v1")).getDirectoryHandle(kept.keptName(model))).children.get("manifest.json");
+  await kept.keep(model, manifest, (a, b) => bytes.slice(a, b), vocabulary);
+  (await manifestOf()).bytes = new TextEncoder().encode(JSON.stringify(manifest));  // as before T116: no converter
+  const [old] = await kept.keptModels();
+  assert.ok(kept.outdated(old) && !kept.serves(old, model));
+  assert.equal(await kept.openKept(model), undefined);
+  assert.equal((await kept.keptModels()).length, 0, "the older one is deleted");
+  await kept.keep(model, manifest, (a, b) => bytes.slice(a, b), vocabulary);
+  (await manifestOf()).bytes = new TextEncoder().encode(JSON.stringify({ ...manifest, converter: kept.CONVERTER + 1 }));
+  const [newer] = await kept.keptModels();
+  assert.ok(!kept.outdated(newer) && !kept.serves(newer, model));
+  assert.equal(await kept.openKept(model), undefined);
+  assert.equal((await kept.keptModels()).length, 1, "the newer one stays");
+}
 console.log("ok");
