@@ -264,15 +264,26 @@ async function init(search) {
   if (parts >= 1 && parts <= 64) hfPartBytes = Math.round(parts * 1024 * 1024);
   if (connections >= 1 && connections <= 32) hfConnections = Math.floor(connections);
   const version = await resolvePyodideVersion(search);
-  postMessage({ type: "status", text: `Loading Pyodide ${version}...` });
   const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
+  // Each step says its name, and ends in an error rather than never: loadPyodide() does not fail when a fetch of
+  // its files fails, it waits for ever (AGENTS.md), and a phone that stopped at "Loading Pyodide" said nothing else.
+  const step = async (name, promise, seconds = 90) => {
+    postMessage({ type: "status", text: `Loading Pyodide ${version}: ${name}...` });
+    let timer;
+    const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Pyodide ${version} did not finish "${name}" in ${seconds} seconds`)), seconds * 1000); });
+    try {
+      return await Promise.race([promise, late]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   // while Pyodide starts, not after: loadPackage("numpy") below finds the wheel in the HTTP cache
   const numpy = prefetchNumpy(base);
-  const { loadPyodide } = await import(`${base}pyodide.mjs`);
-  pyodide = await loadPyodide();
+  const { loadPyodide } = await step("the loader", import(`${base}pyodide.mjs`));
+  pyodide = await step("the runtime", loadPyodide());
   // a prefetch that is still running would otherwise be raced by loadPackage, and the wheel fetched twice
   await numpy;
-  await pyodide.loadPackage("numpy");
+  await step("NumPy", pyodide.loadPackage("numpy"));
 
   // with the ?v=<build> of this worker, so that both always come from the same deployment
   const res = await fetch(new URL(`llama2_numpy.py${self.location.search}`, import.meta.url));
