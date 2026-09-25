@@ -135,7 +135,7 @@ jobs:
             timeout: 1800
             models: >-
               hf-sarashina2.2-0.5b hf-sarashina2.2-0.5b-instruct hf-llm-jp-3-980m-instruct3
-              hf-pythia-1b hf-tinyllama-1.1b-chat hf-pythia-1.4b hf-qwen2.5-1.5b-instruct
+              hf-pythia-1b hf-tinyllama-1.1b-chat hf-llama-3.2-1b-instruct hf-pythia-1.4b hf-qwen2.5-1.5b-instruct
               hf-deepseek-r1-qwen-1.5b
     steps:
       - name: Checkout

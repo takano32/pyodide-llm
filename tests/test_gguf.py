@@ -42,7 +42,7 @@ def gguf_name(name):
     return f"blk.{layer}.{LAYER['.'.join(rest[:-1])]}.{rest[-1]}"
 
 
-def gguf_file(tensors, published, vocab_size, arch="llama"):
+def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2"):
     """A GGUF v3 of these Hugging Face tensors, and the tensors as the GGUF holds them (Q8_0 rounds)."""
     string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
     heads = {"q_proj": published["num_attention_heads"], "k_proj": published["num_key_value_heads"]}
@@ -53,7 +53,7 @@ def gguf_file(tensors, published, vocab_size, arch="llama"):
                 (f"{arch}.attention.head_count", 4, published["num_attention_heads"]),
                 (f"{arch}.attention.head_count_kv", 4, published["num_key_value_heads"]),
                 (f"{arch}.rope.freq_base", 6, 10000.0), ("tokenizer.ggml.model", 8, "gpt2"),
-                ("tokenizer.ggml.pre", 8, "gpt-2"), ("tokenizer.ggml.bos_token_id", 4, 1),
+                ("tokenizer.ggml.pre", 8, pre), ("tokenizer.ggml.bos_token_id", 4, 1),
                 ("tokenizer.ggml.eos_token_id", 4, 2)]
     tokens = [f"w{i}" for i in range(vocab_size)]
     out = [b"GGUF", struct.pack("<IQQ", 3, len(tensors), len(metadata) + 3)]

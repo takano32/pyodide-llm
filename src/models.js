@@ -30,6 +30,7 @@ const llmJp = { stop_tokens: [1, 2, 7] };
 // tests/models-check.mjs fails when a model has no license, so a new model cannot be added without one.
 const APACHE = "Apache License 2.0";
 const MIT = "MIT License";
+const LLAMA_32 = "Llama 3.2 Community License";
 export const LICENSES = {
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
@@ -42,6 +43,7 @@ export const LICENSES = {
   "bartowski/SmolLM2-135M-Instruct-GGUF": APACHE,
   "openai-community/gpt2": MIT, "TinyLlama/TinyLlama-1.1B-Chat-v1.0": APACHE,
   "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B": MIT,
+  "meta-llama/Llama-3.2-1B-Instruct": LLAMA_32, "unsloth/Llama-3.2-1B-Instruct": LLAMA_32,
 };
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
@@ -167,6 +169,13 @@ export const MODELS = [
   { group: "hf", id: "hf-tinyllama-1.1b-chat", name: "TinyLlama 1.1B Chat", note: "answers instructions · English · fetches 2.2 GB → int8 1.2 GB · desktop only",
     hf: hf("TinyLlama/TinyLlama-1.1B-Chat-v1.0", "fe8a4ea1ffedaf415f4da2f062534de366a451e6", "tokenizer.model"), download: 2200119864,
     conversion: {}, options: { specials: ["</s>"] }, generation: sampled(1.1), template: "<|user|>\n{prompt}</s>\n<|assistant|>\n",
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
+  // T106: Llama 3. The original (meta-llama) is gated, so the same weights come from unsloth's copy (`original`
+  // names whose they are). The chat template and its special tokens are read from the model (T73)
+  { group: "hf", id: "hf-llama-3.2-1b-instruct", name: "Llama 3.2 1B Instruct", note: "answers instructions · English · fetches 2.5 GB → int8 1.4 GB · desktop only",
+    original: "meta-llama/Llama-3.2-1B-Instruct",
+    hf: hf("unsloth/Llama-3.2-1B-Instruct", "5a8abab4a5d6f164389b1079fb721cfab8d7126c"), download: 2471645608,
+    conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   { group: "hf", id: "hf-pythia-1.4b", name: "Pythia 1.4B", note: "English · fetches 2.9 GB → int8 1.5 GB · desktop only",
     hf: hf("EleutherAI/pythia-1.4b", "fedc38a16eea3bd36a96b906d78d11d2ce18ed79"), download: 2930002184,

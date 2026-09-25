@@ -50,14 +50,16 @@ def pretokenize(text, pattern):
     "qwen" is the pattern Qwen2 spells out (the contractions match whatever the case, digits come one by one,
     and a piece of anything-but-a-line-break may lead a word):
         (?i:'s|…)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
-    All three are checked against the real patterns in tests/test_tokenizer.py.
+    "llama3" is Llama 3's, which is Qwen's with the digits taken up to three at a time (\p{N}{1,3}).
+    All four are checked against the real patterns in tests/test_bytebpe.py.
     """
     if pattern == "gpt2-digits":
         parts = []
         for chunk in re.findall(r"\d|\D+", text):
             parts += pretokenize(chunk, "gpt2")
         return parts
-    qwen = pattern == "qwen"
+    qwen = pattern in ("qwen", "llama3")
+    digits = 3 if pattern == "llama3" else 1  # how many digits Qwen's branch takes at a time
     parts, i, n = [], 0, len(text)
     while i < n:
         char = text[i]
@@ -79,10 +81,11 @@ def pretokenize(text, pattern):
                 i += 1
             parts.append(text[start:i])
             continue
-        # digits: Qwen takes them one by one, GPT-2 takes a run and may put a space in front
+        # digits: Qwen takes them one by one (Llama 3 up to three), GPT-2 takes a run and may put a space in front
         if qwen and number(char):
-            parts.append(char)
-            i += 1
+            while i < n and i - start < digits and number(text[i]):
+                i += 1
+            parts.append(text[start:i])
             continue
         if not qwen:
             lead = i + 1 if char == " " and i + 1 < n and number(text[i + 1]) else i
@@ -137,8 +140,9 @@ class Tokenizer:
 
     UNMATCHABLE = -1e8  # convert_hf.py gives control and byte pieces a score below this
 
-    def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2"):
+    def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", ignore_merges=False):
         self.kind, self.nfkc, self.nfc, self.pretokenizer = kind, nfkc, nfc, pretokenizer
+        self.ignore_merges = ignore_merges
         self.vocab, self.scores = [], []
         offset = 4  # skip max_token_length
         for _ in range(vocab_size):
@@ -210,6 +214,9 @@ class Tokenizer:
         tokens = []
         for part in pretokenize(text, self.pretokenizer):
             symbols = [BYTE_CHARS[byte] for byte in part.encode("utf-8")]
+            if self.ignore_merges and "".join(symbols) in self.text_index:
+                # Llama 3: a piece the vocabulary has is that one token, whatever the merges would make of it
+                symbols = ["".join(symbols)]
             while len(symbols) > 1:
                 best_score, best_id, best_idx = self.UNMATCHABLE, -1, -1
                 for i in range(len(symbols) - 1):
@@ -291,6 +298,29 @@ def rope(x, cos, sin):
     out[..., 0] = x0 * cos - x1 * sin
     out[..., 1] = x0 * sin + x1 * cos
     return out.reshape(-1, 2 * cos.size)
+
+
+def rope_frequencies(width, theta, scaling=None):
+    """The angle per position of each pair of a head's first width values (float64), for the RoPE tables.
+
+    scaling: config.json's rope_scaling. Only Llama 3's ("rope_type": "llama3") is known: the pairs that turn
+    slowly (a wavelength past original_max_position_embeddings / low_freq_factor) turn factor times slower, the
+    fast ones (shorter than original / high_freq_factor) as before, and the ones between are a blend of the two
+    (transformers' _compute_llama3_parameters).
+    """
+    frequencies = 1.0 / theta ** (np.arange(0, width, 2, dtype=np.float64) / width)
+    if not scaling:
+        return frequencies
+    kind = scaling.get("rope_type", scaling.get("type"))
+    if kind != "llama3":
+        raise ValueError(f"RoPE scaling of the {kind} kind is not supported.")
+    factor, low, high = float(scaling["factor"]), float(scaling["low_freq_factor"]), float(scaling["high_freq_factor"])
+    original = float(scaling["original_max_position_embeddings"])
+    wavelength = 2 * math.pi / frequencies
+    smooth = (original / wavelength - low) / (high - low)
+    blended = (1 - smooth) * frequencies / factor + smooth * frequencies
+    return np.where(wavelength < original / high, frequencies,
+                    np.where(wavelength > original / low, frequencies / factor, blended))
 
 
 REPETITION_WINDOW = 64  # the repetition penalty looks at this many of the latest tokens
@@ -490,7 +520,7 @@ class Llama:
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
                  tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
-                 disable=(), external=None):
+                 disable=(), external=None, rope_scaling=None, ignore_merges=False):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py).
@@ -502,6 +532,9 @@ class Llama:
         so it is llama2_convert.layout(arch=) that says what is there.
         bias=True: the checkpoint ends with a bias for q, k and v of every layer, which is added after those
         projections (Qwen2). The legacy header cannot say so, so the caller does, like the tokenizer settings.
+        rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
+        rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
+        whole (Llama 3).
         bos starts every sequence; generation ends when the model emits one of stop_tokens.
         kernels is the path of simdkernel.so: the sampling runs on it (penalize, sample). The forward pass on the
         kernels is public/forward.js's (external, below); without external, NumPy computes the forward pass.
@@ -586,10 +619,13 @@ class Llama:
         self.positions = None
         self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
         self.bo = self.b1 = self.b2 = None
+        # a dict from Python, or a JavaScript object from the worker
+        rope_scaling = rope_scaling.to_py() if hasattr(rope_scaling, "to_py") else rope_scaling
+        frequencies = lambda width: rope_frequencies(width, rope_theta, rope_scaling)
         if arch in ("gpt2", "neox"):
-            self.gpt2_tensors(take, shared_weights, keep_int8, kv_dim, dtype, rope_theta)
+            self.gpt2_tensors(take, shared_weights, keep_int8, kv_dim, dtype, frequencies)
         else:
-            self.llama_tensors(take, shared_weights, keep_int8, kv_dim, bias, dtype, rope_theta)
+            self.llama_tensors(take, shared_weights, keep_int8, kv_dim, bias, dtype, frequencies)
         self.backend = "NumPy"
         if external is not None:
             if offset != int(external.size):
@@ -610,13 +646,13 @@ class Llama:
             # the line has to say what the numbers are the numbers of
             self.backend += " (without " + ", ".join(name for name in SWITCHES if name in disable) + ")"
         self.tokenizer = Tokenizer(tokenizer, self.vocab_size, kind=tokenizer_kind, nfkc=nfkc, nfc=nfc,
-                                   pretokenizer=pretokenizer)
+                                   pretokenizer=pretokenizer, ignore_merges=ignore_merges)
         self.bos, self.stop_tokens = bos, {int(token) for token in stop_tokens}
         self.specials = tuple(str(special) for special in specials)  # see Tokenizer.encode()
         self.stats = {}
         self._run = 0
 
-    def llama_tensors(self, take, shared_weights, keep_int8, kv_dim, bias, dtype, rope_theta):
+    def llama_tensors(self, take, shared_weights, keep_int8, kv_dim, bias, dtype, frequencies):
         """The tensors of a Llama (and of a Qwen2, which adds the q, k and v biases at the end), in file order."""
         dim, hidden_dim, n_layers = self.dim, self.hidden_dim, self.n_layers
         # With a separate classifier the embedding table is only ever read one row at a time, so an int8 or
@@ -642,10 +678,10 @@ class Llama:
         self.bv = take(n_layers, kv_dim, matrix=False) if bias else None
         if dtype != np.float32:
             # half precision is too coarse for the rotation angles, and int8 files leave the RoPE tables out
-            angles = np.arange(self.seq_len)[:, None] / rope_theta ** (np.arange(0, self.head_size, 2) / self.head_size)
+            angles = np.arange(self.seq_len)[:, None] * frequencies(self.head_size)
             self.freq_cis_real, self.freq_cis_imag = np.cos(angles).astype(np.float32), np.sin(angles).astype(np.float32)
 
-    def gpt2_tensors(self, take, shared_weights, keep_int8, kv_dim, dtype, rope_theta):
+    def gpt2_tensors(self, take, shared_weights, keep_int8, kv_dim, dtype, frequencies):
         """The tensors of a GPT-2 or a GPT-NeoX, in the order llama2_convert.layout() writes them. The two
         differ in one place: GPT-2 has a learned table of positions, GPT-NeoX the RoPE tables (left out of an
         int8 checkpoint, as everywhere)."""
@@ -679,7 +715,7 @@ class Llama:
             self.freq_cis_real = self.freq_cis_imag = np.zeros((self.seq_len, self.head_size // 2), dtype=np.float32)
         elif dtype != np.float32:
             # the angles of the rotated part only, in a table of the same shape (the rest is never read)
-            angles = np.arange(self.seq_len)[:, None] / rope_theta ** (np.arange(0, self.rotary, 2) / self.rotary)
+            angles = np.arange(self.seq_len)[:, None] * frequencies(self.rotary)
             tables = [np.zeros((self.seq_len, self.head_size // 2), dtype=np.float32) for _ in range(2)]
             for table, values in zip(tables, (np.cos(angles), np.sin(angles))):
                 table[:, :self.rotary // 2] = values

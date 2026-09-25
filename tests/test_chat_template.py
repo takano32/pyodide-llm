@@ -68,7 +68,10 @@ def test_it_reads_a_tokenizer_config():
     config = {"chat_template": SMOLLM2, "bos_token": {"content": "<s>"}, "eos_token": "</s>"}
     assert one_turn_template(json.dumps(config)).endswith("<|im_start|>assistant\n")
     assert one_turn_template(json.dumps({"chat_template": [{"name": "default", "template": LLM_JP}],
-                                         "bos_token": "<s>"})) == "<s>\n\n### 指示:\n{prompt}\n\n### 応答:\n"
+                                         "bos_token": "<s>"})) == "\n\n### 指示:\n{prompt}\n\n### 応答:\n"
+    # the BOS the template writes first is left out: generate() starts with one already (T106)
+    assert one_turn_template(json.dumps({"chat_template": "{{ bos_token }}{{ messages[0].content }}",
+                                         "bos_token": "<|begin_of_text|>"})) == "{prompt}"
     assert one_turn_template("{}") is None
     assert one_turn_template("not json") is None
     assert one_turn_template(json.dumps({"chat_template": ""})) is None

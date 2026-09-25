@@ -10,6 +10,9 @@ import time
 
 import numpy as np
 
+# the RoPE angles are the engine's, which computes them itself when a file leaves the tables out (int8)
+from llama2_numpy import rope_frequencies
+
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
 # peak is the output plus 14 MB with this, plus 52 MB with pieces four times as large, at the same speed.
 PIECE = 1024 * 1024
@@ -465,7 +468,10 @@ def one_turn_template(tokenizer_config):
     if not isinstance(template, str) or not template.strip():
         return None
     token = lambda name: config.get(name) if isinstance(config.get(name), str) else (config.get(name) or {}).get("content", "")
-    return one_turn(template, {"bos_token": token("bos_token") or "", "eos_token": token("eos_token") or ""})
+    bos = token("bos_token") or ""
+    turn = one_turn(template, {"bos_token": bos, "eos_token": token("eos_token") or ""})
+    # generate() starts every run with the BOS token already: one written by the template would be a second one
+    return turn[len(bos):] if turn and bos and turn.startswith(bos) else turn
 
 
 def one_turn(template, specials, mark="\x00prompt\x00"):
@@ -651,8 +657,10 @@ def check_config(config):
     n_kv_heads = config.get("num_key_value_heads", n_heads)
     if dim % n_heads or n_heads % n_kv_heads or config.get("head_dim", dim // n_heads) != dim // n_heads or dim // n_heads % 2:
         refuse("its attention heads do not divide the hidden size the way llama2.c expects")
-    if config.get("rope_scaling"):
-        refuse("it uses RoPE scaling")
+    scaling = config.get("rope_scaling")
+    if scaling and (architecture(config) != "llama" or scaling.get("rope_type", scaling.get("type")) != "llama3"):
+        # Llama 3's is the only kind the RoPE tables know (llama2_numpy.rope_frequencies)
+        refuse(f"it uses RoPE scaling of the {scaling.get('rope_type', scaling.get('type'))} kind")
     if architecture(config) == "neox":
         if config.get("hidden_act", "gelu") not in ("gelu", "gelu_new", "gelu_fast", "gelu_pytorch_tanh"):
             refuse(f"its activation is {config['hidden_act']}, and only GELU is supported")
@@ -829,7 +837,7 @@ def rope_table(config, header, which):
     head_size, seq_len = header[0] // header[3], header[6]
     width = rotary_dim(config) if architecture(config) == "neox" else head_size
     positions = np.arange(seq_len, dtype=np.float64)[:, None]
-    frequencies = 1.0 / config.get("rope_theta", 10000.0) ** (np.arange(0, width, 2, dtype=np.float64) / width)
+    frequencies = rope_frequencies(width, config.get("rope_theta", 10000.0), config.get("rope_scaling"))
     table = (np.cos if which == 0 else np.sin)(positions * frequencies)
     if width == head_size:
         return table
@@ -1011,7 +1019,7 @@ class Incomplete(Exception):
 GGUF_VALUES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
 GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0"}  # ggml's types; the K-quants and the rest are refused
 # llama.cpp's names of the pre-tokenizers, as the engine knows them (llama2_numpy.pretokenize)
-GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen"}
+GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen", "llama-bpe": "llama3"}
 GGUF_LAYER = {"attn_norm": "input_layernorm", "ffn_norm": "post_attention_layernorm", "attn_q": "self_attn.q_proj",
               "attn_k": "self_attn.k_proj", "attn_v": "self_attn.v_proj", "attn_output": "self_attn.o_proj",
               "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj", "ffn_down": "mlp.down_proj"}
@@ -1088,6 +1096,9 @@ def gguf_model(metadata, tensors, base):
               "eos_token_id": metadata.get("tokenizer.ggml.eos_token_id", 2)}
     if key("rope.scaling.type", "none") not in ("none", None):
         config["rope_scaling"] = {"type": key("rope.scaling.type")}
+    if "rope_freqs.weight" in tensors:
+        # llama.cpp writes Llama 3's RoPE scaling as a table of divisors instead of the rope_scaling of config.json
+        raise ValueError("This GGUF scales its RoPE with a rope_freqs table, which the engine does not read.")
     heads = {"attn_q": config["num_attention_heads"], "attn_k": config["num_key_value_heads"]}
     header = {}
     for name, info in tensors.items():
@@ -1099,7 +1110,7 @@ def gguf_model(metadata, tensors, base):
         else:
             parts = name.split(".")
             if len(parts) != 4 or parts[0] != "blk" or parts[2] not in GGUF_LAYER:
-                continue  # rope_freqs and the like: nothing the engine reads
+                continue  # nothing the engine reads
             target = f"model.layers.{parts[1]}.{GGUF_LAYER[parts[2]]}.{parts[3]}"
         dtype = GGUF_TENSORS[info["type"]]
         if dtype == "Q8_0" and info["shape"][-1] % 32:
@@ -1116,7 +1127,8 @@ def gguf_model(metadata, tensors, base):
 
 
 def gguf_tokenizer(metadata, vocab_size):
-    """tokenizer.bin, the engine's options and the tokenizer_config of a GGUF's byte-level BPE vocabulary."""
+    """tokenizer.bin, the engine's options, the tokenizer_config and the special tokens of a GGUF's byte-level BPE
+    vocabulary."""
     if metadata.get("tokenizer.ggml.model") != "gpt2":
         raise ValueError(f"This GGUF has a {metadata.get('tokenizer.ggml.model')} vocabulary: only byte-level BPE "
                          f"ones (gpt2) are supported.")
@@ -1132,11 +1144,13 @@ def gguf_tokenizer(metadata, vocab_size):
     pieces = [(text, ranks.get(text, UNMATCHABLE), text in ranks and (kinds[id] if id < len(kinds) else 1) != 3)
               for id, text in enumerate(tokens)]
     # Qwen's tokenizer.json normalizes to NFC, which a GGUF does not say: the page's safetensors path does it
-    options = {"tokenizer_kind": "bytebpe", "nfkc": False, "nfc": pre == "qwen2", "pretokenizer": GGUF_PRETOKENIZERS[pre]}
+    options = {"tokenizer_kind": "bytebpe", "nfkc": False, "nfc": pre == "qwen2", "pretokenizer": GGUF_PRETOKENIZERS[pre],
+               "ignore_merges": pre == "llama-bpe"}
     special = lambda key: tokens[metadata[key]] if isinstance(metadata.get(key), int) and metadata[key] < len(tokens) else ""
     config = {"chat_template": metadata.get("tokenizer.chat_template"), "bos_token": special("tokenizer.ggml.bos_token_id"),
               "eos_token": special("tokenizer.ggml.eos_token_id")}
-    return tokenizer_bin(pieces, vocab_size), options, config
+    controls = [text for id, text in enumerate(tokens) if id < len(kinds) and kinds[id] == 3]
+    return tokenizer_bin(pieces, vocab_size), options, config, controls
 
 
 # ---------------------------------------------------------------------------------------- the tokenizer
@@ -1211,11 +1225,13 @@ def tokenizer_json_options(tokenizer):
     if tokenizer_kind_of(tokenizer) != "BPE":
         return {"tokenizer_kind": "unigram", "nfkc": nfkc}
     return {"tokenizer_kind": "bytebpe", "nfkc": nfkc, "nfc": '"NFC"' in normalizers,
-            "pretokenizer": pretokenizer_name(tokenizer.get("pre_tokenizer"))}
+            "pretokenizer": pretokenizer_name(tokenizer.get("pre_tokenizer")),
+            "ignore_merges": bool(tokenizer["model"].get("ignore_merges"))}
 
 
 # The engine writes these out by hand (llama2_numpy.pretokenize), so only the patterns it knows are accepted.
 PRETOKENIZERS = {
+    r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+": "llama3",
     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+": "qwen",
 }
 
@@ -1333,9 +1349,11 @@ class Conversion:
             except ValueError:
                 raise ValueError("tokenizer.json is not JSON.") from None
             self.tokenizer, options = tokenizer_bin(tokenizer_json_pieces(parsed), vocab_size), tokenizer_json_options(parsed)
+            specials = [token["content"] for token in parsed.get("added_tokens", []) if token.get("special")]
         else:
             self.tokenizer, options = tokenizer_bin(sentencepiece_pieces(tokenizer), vocab_size), sentencepiece_options(tokenizer)
-        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink, quantize_rows)
+            specials = []
+        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink, quantize_rows, specials)
 
     @classmethod
     def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None, quantize_rows=None):
@@ -1348,13 +1366,15 @@ class Conversion:
         check_config(config)
         if np.dtype(dtype) not in (np.float32, np.float16, np.int8):
             raise ValueError(f"dtype must be float32, float16 or int8, not {dtype}.")
-        self.tokenizer, options, tokenizer_config = gguf_tokenizer(metadata, config["vocab_size"])
+        self.tokenizer, options, tokenizer_config, specials = gguf_tokenizer(metadata, config["vocab_size"])
         self.base = base
-        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base, sink, quantize_rows)
+        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base, sink, quantize_rows, specials)
         return self
 
-    def start(self, header, base, options, tokenizer_config, dtype, max_seq_len, start, sink=None, quantize_rows=None):
-        """sink and quantize_rows: see Writer. checkpoint is None with a sink: the bytes went there."""
+    def start(self, header, base, options, tokenizer_config, dtype, max_seq_len, start, sink=None, quantize_rows=None,
+              specials=()):
+        """sink and quantize_rows: see Writer. checkpoint is None with a sink: the bytes went there. specials: the
+        tokenizer's special tokens, the ones a chat template writes between the turns."""
         bos = self.config.get("bos_token_id", 1)
         eos = self.config.get("eos_token_id", 2)
         stop = [token for token in [bos, *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
@@ -1368,6 +1388,14 @@ class Conversion:
         template = one_turn_template(tokenizer_config)
         if template:
             self.options["template"] = template
+            # the special tokens it writes stand for their token; spelled out they would be a dozen tokens each.
+            # The longest first, so that one that begins another never cuts it short
+            written = sorted({special for special in specials if special and special in template}, key=len, reverse=True)
+            if written:
+                self.options["specials"] = written
+        if self.config.get("rope_scaling"):
+            # the int8 file has no RoPE tables: the engine makes them, and needs the scaling for that (Llama 3)
+            self.options["rope_scaling"] = dict(self.config["rope_scaling"])
         if self.stream.arch == "neox":
             # GPT-NeoX turns part of every head, and may run its two branches in parallel: the file says neither
             self.options["rotary"] = rotary_dim(self.config)
