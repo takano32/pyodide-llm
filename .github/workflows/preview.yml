@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       offline:
-        description: 'T111: also open the branch with ?offline=on in Chromium, Firefox and WebKit, go offline, load again and answer'
+        description: 'T111: also open the branch in Chromium, Firefox and WebKit, go offline, load again and answer'
         type: boolean
         default: false
 

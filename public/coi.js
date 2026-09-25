@@ -7,15 +7,15 @@
 // keeps nothing: without it the page runs on one thread.
 // ?coi=off on the page unregisters it.
 //
-// T111: offline. Registered with offline=1 (the page's ?offline=on, remembered), it also keeps a copy of what it
+// T111: offline. Unless registered with offline=0 (the page's ?offline=off, remembered), it also keeps a copy of what it
 // passed on: this site's files and Pyodide's (jsDelivr), not the models' parts (the worker keeps those itself).
 // the latest Pyodide is still resolved each visit (policy 2), and the page itself is asked for each time; only when
 // that fails does the copy answer. A file whose address says its version (Pyodide's under /pyodide/v…/, this site's
 // with ?v=<build> or under /_astro/) cannot change, so its copy answers without asking the network at all: on a
 // mobile line a visit then costs the version check and the page, nothing more (the owner's wish; Safari does not
 // say what line it is on, so this does not ask). One copy per file: a new build or a new Pyodide replaces the old
-// one. Registered without the flag, it throws the copies away.
-const OFFLINE = new URL(self.location.href).searchParams.get("offline") === "1";
+// one. Registered with offline=0, it throws the copies away.
+const OFFLINE = new URL(self.location.href).searchParams.get("offline") !== "0";
 const KEPT = "offline-v1";
 
 /** Whether offline mode keeps a copy of this file. */

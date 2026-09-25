@@ -674,21 +674,18 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       // Registered every time: with the same URL nothing changes, with a new ?v= the browser installs the new
       // version and it takes over (skipWaiting, claim). A visitor who was isolated already kept the old version for
       // ever when the page skipped this (2026-09-25: their fetches through it and the new worker did not agree).
-      // T111: ?offline=on makes it keep copies too (remembered, so that every later visit registers the same one);
-      // ?offline=off, and it throws them away
+      // T111: it keeps copies for offline use, on every visit (the owner, 2026-09-25). ?offline=off turns that off
+      // (remembered, so that every later visit registers the same one; it then throws the copies away), ?offline=on
+      // back on.
+      let offline = parameters.get("offline") !== "off";
       try {
-        if (parameters.get("offline") === "on") localStorage.setItem("offline", "on");
-        if (parameters.get("offline") === "off") localStorage.removeItem("offline");
+        if (parameters.get("offline") === "off") localStorage.setItem("offline", "off");
+        if (parameters.get("offline") === "on") localStorage.removeItem("offline");
+        offline &&= localStorage.getItem("offline") !== "off";
       } catch {
-        // no storage: only a visit with ?offline=on keeps copies
+        // no storage: only the address says
       }
-      let offline = parameters.get("offline") === "on";
-      try {
-        offline ||= localStorage.getItem("offline") === "on";
-      } catch {
-        // as above
-      }
-      await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}coi.js?v=${__BUILD__}${offline ? "&offline=1" : ""}`,
+      await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}coi.js?v=${__BUILD__}${offline ? "" : "&offline=0"}`,
         { scope: import.meta.env.BASE_URL });
       if (self.crossOriginIsolated) {
         return false;

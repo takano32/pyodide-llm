@@ -25,7 +25,7 @@
 //   E2E_TWICE      when set: after the answer, the page is loaded again in the same browser, and the seconds to
 //                  ready then go into the JSON line too (T99: a model converted from Hugging Face must come from what
 //                  this browser kept, the origin private file system or the Cache API).
-//   E2E_OFFLINE    when set (T111): the page is opened with ?offline=on, and after the answer the browser goes
+//   E2E_OFFLINE    when set (T111): after the answer (the page as a visitor opens it: keeping copies is the default) the browser goes
 //                  offline, loads the page again and must answer once more (Pyodide, NumPy and the page from the
 //                  service worker's copies, the model from the worker's cache).
 //   E2E_QUERY      more of the page's URL, such as hfParts=16&hfConnections=8 (T107), added to what the model needs
@@ -150,7 +150,7 @@ const [repository, revision] = model.startsWith("hf:") ? model.slice(3).split("@
 const query = model === "url" ? `checkpoint=${encodeURIComponent(`${tinyllamas}/stories260K.bin`)}&tokenizer=${encodeURIComponent(`${tinyllamas}/tok512.bin`)}`
   : repository ? `hf=${encodeURIComponent(repository)}${revision ? `&revision=${encodeURIComponent(revision)}` : ""}`
   : `model=${opens ? "stories3_5M" : model}`;
-await page.goto(`${url}?${query}${process.env.E2E_QUERY ? `&${process.env.E2E_QUERY}` : ""}${process.env.E2E_OFFLINE ? "&offline=on" : ""}`);
+await page.goto(`${url}?${query}${process.env.E2E_QUERY ? `&${process.env.E2E_QUERY}` : ""}`);
 // T93: the first visit reloads once, under the service worker that makes the page cross-origin isolated (coi.js):
 // a wait that the reload interrupts starts again on the new page
 const acrossReload = async (wait) => {

@@ -25,7 +25,7 @@ on:
         type: boolean
         default: false
       offline:
-        description: 'T111: open with ?offline=on, then go offline, load again and answer again'
+        description: 'T111: after the answer go offline, load again and answer again'
         type: boolean
         default: false
       query:
