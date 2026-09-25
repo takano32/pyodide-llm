@@ -33,6 +33,8 @@ if (!site) {
 const browser = await playwright.chromium.launch();
 const page = await browser.newPage();
 page.on("pageerror", (error) => console.log("page error:", error.message));
+// every line of the console: a worker error comes with its stack (T96), and the rounds say where they are
+page.on("console", (message) => console.log(`[${message.type()}] ${message.text()}`));
 await page.goto(`${site}?model=${model}&bench=1`, { waitUntil: "commit" });
 // T93: the first visit reloads once under the service worker (coi.js); a wait the reload interrupts starts again
 for (;;) {

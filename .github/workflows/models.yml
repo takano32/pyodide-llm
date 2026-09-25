@@ -27,6 +27,10 @@ on:
       query:
         description: 'more of the page URL for every run, such as bench=1 or hfParts=16&hfConnections=8'
         required: false
+      bench:
+        description: 'run tests/bench-browser.mjs (?bench=1, the console kept) instead of tests/e2e.mjs'
+        type: boolean
+        default: false
       url:
         description: 'the site to test (default: the deployed one)'
         required: false
@@ -70,7 +74,11 @@ jobs:
           for model in ${{ inputs.models }}; do
             echo "### $model" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            node tests/e2e.mjs "$model" "${{ inputs.browser }}" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            if [ "${{ inputs.bench }}" = "true" ]; then
+              node tests/bench-browser.mjs "$model" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            else
+              node tests/e2e.mjs "$model" "${{ inputs.browser }}" "$SITE" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+            fi
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           done
           exit $failed
