@@ -73,29 +73,51 @@ const MODEL_CACHE = "models-v2";
 // what an earlier version of this page stored
 globalThis.caches?.delete("models-v1").catch(() => {});
 
-async function fetchPart(url, model, signal) {
+// A part's bytes: PART_BYTES, the last one less
+const partBytes = (model, part) => Math.min(PART_BYTES, model.bytes - part * PART_BYTES);
+const partKey = (url, model) => `${url}?bytes=${model.bytes}`;
+
+async function fetchPart(url, model, part, signal) {
   const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
-  const key = `${url}?bytes=${model.bytes}`;
-  const cached = await cache?.match(key);
+  const key = partKey(url, model);
+  // a Cache API that fails here (T117 met it in the service worker) leaves the network to answer
+  const cached = await cache?.match(key).catch(() => undefined);
   if (cached) {
     return cached;
   }
   const res = await fetch(url, { signal });
   if (res.ok && cache) {
     // stored while the other copy streams into Python; a full disk must not stop the download. A part that is
-    // cancelled half way is not stored at all, the finished ones stay for the next time.
-    cache.put(key, res.clone()).catch(() => {});
+    // cancelled half way is not stored at all, the finished ones stay for the next time. Nor is one whose body
+    // ends short without an error (the review of T97): it would come back from here on every visit
+    const expected = partBytes(model, part);
+    let count = 0;
+    const whole = new TransformStream({
+      transform(chunk, out) {
+        count += chunk.byteLength;
+        out.enqueue(chunk);
+      },
+      flush() {
+        if (count !== expected) throw new Error(`part ${part}: ${count} of ${expected} bytes`);
+      },
+    });
+    cache.put(key, new Response(res.clone().body.pipeThrough(whole))).catch(() => {});
   }
   return res;
+}
+// a part that broke is not read from the cache again: the next try asks the network
+async function forgetPart(url, model) {
+  const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
+  await cache?.delete(partKey(url, model)).catch(() => {});
 }
 
 // parts of this checkpoint that were cached for another size are of no use any more
 async function dropStaleParts(model) {
   const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
-  for (const request of (await cache?.keys()) ?? []) {
+  for (const request of (await cache?.keys().catch(() => undefined)) ?? []) {
     const url = new URL(request.url);
     if (url.pathname.includes(`/models/${model.checkpoint}.`) && url.searchParams.get("bytes") !== String(model.bytes)) {
-      cache.delete(request);
+      cache.delete(request).catch(() => {});
     }
   }
 }
@@ -111,8 +133,9 @@ function download(model, signal, load) {
   // T97: Firefox on Windows breaks the body of a part now and then ("Error in input stream", 1 load in 12 on the CI
   // runners, with the service worker and without it alike): the part is fetched again, twice at most. Its chunks go
   // to the same offsets, so what arrived before the break is written over with the same bytes.
+  const partUrl = (part) => new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, import.meta.url).href;
   const fetchOnce = async (part) => {
-    const res = await fetchPart(new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, import.meta.url).href, model, signal);
+    const res = await fetchPart(partUrl(part), model, part, signal);
     if (!res.ok) {
       throw Object.assign(new Error(`Could not fetch part ${part} of ${model.checkpoint}: ${res.status}`), { final: true });
     }
@@ -122,6 +145,8 @@ function download(model, signal, load) {
       for (let offset = part * PART_BYTES; ;) {
         const { done, value } = await reader.read();
         if (done) {
+          // a body that ends short without an error is a break too (the review of T97)
+          if (got !== partBytes(model, part)) throw new Error(`part ${part} of ${model.checkpoint} ended after ${got} of ${partBytes(model, part)} bytes`);
           return;
         }
         // a chunk that was already on its way when the load was cancelled: its buffer is gone
@@ -159,6 +184,7 @@ function download(model, signal, load) {
             throw error;
           }
           console.warn(`part ${part} of ${model.checkpoint} broke off (${error.message ?? error}): fetched again`);
+          await forgetPart(partUrl(part), model);  // it may have come from the cache: the next try is the network's
         }
       }
     }
