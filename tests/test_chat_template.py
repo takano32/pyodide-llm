@@ -85,6 +85,25 @@ def test_the_pieces_of_jinja_t127_adds():
     assert render("{% for m in messages %}\n  {% if m.role == 'user' %}\n{{ m.content }}\n  {% endif %}\n{% endfor %}", scope) == "X\n"
 
 
+def test_what_the_review_of_t127_found():
+    """Each against transformers' Jinja on the development machine (the same snippets, the same outputs)"""
+    scope = {"messages": [{"role": "user", "content": "X"}]}
+    # or / and are the operand that decides, as in Jinja: not True or False
+    assert render("{% set s = none %}{{ (s or 'You are a helpful assistant.') }}|{{ 'a' and 'b' }}|{{ '' and 'b' }}|{{ none or '' }}",
+                  dict(scope)) == "You are a helpful assistant.|b||"
+    # a comment stands between the text before it and a {%- after it
+    assert render("<s>\n{# The system prompt #}\n{%- if true %}[{{ messages[0].content }}]{% endif %}", dict(scope)) == "<s>\n[X]"
+    # escapes, left to right as Python's unicode-escape (Jinja's lexer)
+    assert render("{{ 'a\\\\nb' }}|{{ '\\x41' }}|{{ '\\u2581' }}|{{ 'it\\'s' }}|{{ '\\\\' }}", dict(scope)) == "a\\nb|A|\u2581|it's|\\"
+    # strftime_now() is the day the prompt is sent: filled() in src/models.js makes {date:format} of it
+    assert one_turn("Today Date: {{ strftime_now('%d %b %Y') }}\n{{ messages[0].content }}", {}) == "Today Date: {date:%d %b %Y}\n{prompt}"
+    for unknown in ("strftime_now('%j')", "strftime_now(fmt)", "strftime_now('%d ' + '%b')"):
+        assert one_turn("{{ " + unknown + " }}{{ messages[0].content }}", {}) is None, unknown
+    # a template that reckons with the date (an Unsloth copy of Mistral Small works out yesterday's) cannot be
+    # filled later: checked on two real days, it gives up
+    assert one_turn("{% set d = strftime_now('%d') %}{% if d == '01' %}first {% endif %}{{ d }} {{ messages[0].content }}", {}) is None
+
+
 FIXTURES = json.load(open(__import__("pathlib").Path(__file__).parent / "fixtures" / "chat-templates.json"))
 
 

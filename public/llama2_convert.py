@@ -5,6 +5,7 @@
 # lets the same code run when the site is built (convert_hf.py, quantize.py) and inside the browser, where the
 # WebAssembly memory has 32 bits and never shrinks.
 import json
+import re
 import struct
 import time
 
@@ -208,8 +209,8 @@ def tokenize_template(text):
         strip_after = inner.endswith("-")
         if strip_after:
             inner = inner[:-1]
-        if opening != "{#":  # a comment says nothing
-            out.append(("say" if opening == "{{" else "do", inner.strip()))
+        # a comment says nothing, but it stands between: a {%- after it strips up to it, not the text before it
+        out.append(("say" if opening == "{{" else "do", inner.strip()) if opening != "{#" else ("text", ""))
         i = end + len(closing)
         if strip_after:
             while i < len(text) and text[i] in " \t\r\n":
@@ -226,12 +227,15 @@ def evaluate(expression, scope):
     expression = expression.strip()
     while expression.startswith("(") and expression.endswith(")") and balanced(expression[1:-1]):
         expression = expression[1:-1].strip()
-    for joiner, combine in ((" or ", lambda a, b: truthy(a) or truthy(b)), (" and ", lambda a, b: truthy(a) and truthy(b))):
+    for joiner, decided in ((" or ", truthy), (" and ", lambda value: not truthy(value))):
+        # as in Jinja, the operand that decides, not True or False ('x' or 'default' is 'x'), and what follows it
+        # unread (the review of T127: (system_message or 'You are ...') wrote "True")
         parts = split_outside_quotes(expression, joiner)
         if len(parts) > 1:
-            value = evaluate(parts[0], scope)
-            for part in parts[1:]:
-                value = combine(value, evaluate(part, scope))
+            for part in parts:
+                value = evaluate(part, scope)
+                if decided(value):
+                    break
             return value
     if expression.startswith("not ") or (expression.startswith("not(") and balanced(expression[3:])):
         return not truthy(evaluate(expression[3:], scope))
@@ -336,6 +340,9 @@ def apply_filter(value, spec, scope):
 
 
 STRFTIME = object()   # so that "strftime_now is defined" is true, as it is in transformers
+DAY = "\x00day"  # in the scope: the day strftime_now() writes, instead of {date:format} (see one_turn())
+# two days that differ in every field strftime_now() may write, the first and the last of a year
+CHECK_DAYS = [time.strptime(day, "%Y-%m-%d %H:%M:%S") for day in ("2025-01-01 00:00:00", "2026-12-31 23:59:59")]
 MISSING = object()  # a name the template asks for and nothing set: Jinja calls it undefined, and it is false
 
 
@@ -507,8 +514,18 @@ def value_of(expression, scope):
     if expression in ("none", "None"):
         return None
     if expression.startswith("strftime_now(") and expression.endswith(")"):
-        # the one function these templates call: the date of today, for a system prompt
-        return time.strftime(unescape(expression[len("strftime_now("):-1].strip()[1:-1]))
+        # the one function these templates call: the date of today, for a system prompt. Written as {date:format},
+        # which filled() in src/models.js makes the visitor's day when the prompt is sent: the format is kept with
+        # the conversion, and a date written now went stale from the next day on (the review of T127)
+        argument = expression[len("strftime_now("):-1].strip()
+        if not argument or argument[0] not in "'\"" or string_end(argument) != len(argument) - 1:
+            raise Unsupported(f"strftime_now of {argument!r}")
+        form = unescape(argument[1:-1])
+        directives = form.replace("%%", "").split("%")[1:]  # what follows each %: the ones filled() knows
+        if "}" in form or not all(directive[:1] and directive[0] in "dmYybBaAHMS" for directive in directives):
+            raise Unsupported(f"the date format {form!r}")
+        day = scope.get(DAY)  # a day to write, when one_turn() checks the template against real dates
+        return "{date:" + form + "}" if day is None else time.strftime(form, day)
     name, rest = expression, ""
     for cut in ("[", "."):
         at = expression.find(cut)
@@ -556,7 +573,9 @@ def value_of(expression, scope):
 
 
 def unescape(text):
-    return text.replace("\\n", "\n").replace("\\t", "\t").replace("\\'", "'").replace('\\"', '"').replace("\\\\", "\\")
+    """A string literal's escapes, as Jinja's lexer reads them: Python's unicode-escape, left to right (the review of
+    T127: "\\\\n" was a backslash and a newline, and \\x41 and \\u2581 stayed as they were)."""
+    return text.replace("\r\n", "\n").encode("ascii", "backslashreplace").decode("unicode-escape")
 
 
 class Loop:
@@ -701,7 +720,14 @@ def one_turn(template, specials, mark="\x00prompt\x00"):
              "bos_token": specials.get("bos_token", ""), "eos_token": specials.get("eos_token", ""),
              "tools": None, "tools_json": None, "documents": None, "strftime_now": STRFTIME}
     try:
-        text = render(template, scope)
+        text = render(template, dict(scope))
+        # strftime_now() is written {date:format}, which the page fills with the day it sends the prompt. That holds
+        # where the template only writes the date; one that reckons with it (yesterday's date from today's day of
+        # the month) would come out otherwise, so the two are compared on two days, and it gives up where they differ
+        days = CHECK_DAYS if "{date:" in text else []
+        fill = lambda day: re.sub(r"\{date:([^}]*)\}", lambda found: time.strftime(found.group(1), day), text)
+        if any(fill(day) != render(template, {**scope, DAY: day}) for day in days):
+            return None
     except Unsupported:
         return None
     except Exception:

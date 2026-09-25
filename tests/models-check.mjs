@@ -58,6 +58,9 @@ assert.match(memoryWarning(three, 4), /this device has 4 GB:/);
 // T132: a template's {date} is the visitor's day, and {prompt} what was typed (a {date} typed stays as it is)
 assert.equal(filled("Current date: {date}\n{prompt}", "a {date} b", new Date(2026, 8, 6)), "Current date: 2026-09-06\na {date} b");
 assert.equal(filled(byId("hf-llm-jp-4-8b-instruct").template, "x").includes("{"), false);
+// T127's review: a template's strftime_now() is written {date:format}, and is the day the prompt is sent
+assert.equal(filled("Today Date: {date:%d %b %Y}\n{prompt}", "{date}", new Date(2026, 8, 6)), "Today Date: 06 Sep 2026\n{date}");
+assert.equal(filled("{date:%B %d, %Y (%A) %m/%y %%}", "", new Date(2026, 8, 26)), "September 26, 2026 (Saturday) 09/26 %");
 for (const typed of ["cost $$5", "a $& b", "x $` y", "y $' z"]) {
   assert.equal(filled("<u>{prompt}</u>", typed), `<u>${typed}</u>`, "what was typed goes in as it is, $ and all");
 }

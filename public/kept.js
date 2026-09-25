@@ -24,8 +24,9 @@ export function keptName(model) {
  * options of T106, BOS and specials, stayed wrong in what was kept before). 1: the manifests without it. 3: T127,
  * the templates the converter reads now (selectattr, namespace(), chat_template.jinja, trim_blocks) in the options;
  * 4: and the control pieces of a sentencepiece model as their specials; 5: the nmt and collapse of a sentencepiece
- * model's normalizer (the review of T126: rinna's newlines). */
-export const CONVERTER = 5;
+ * model's normalizer (the review of T126: rinna's newlines); 6: a template's strftime_now() as {date:format}, filled
+ * when the prompt is sent, and or / and, comments and escapes as Jinja reads them (the review of T127). */
+export const CONVERTER = 6;
 const converterOf = (manifest) => manifest.converter ?? 1;
 /** The names a model's conversion may be kept under: its bits, or with none asked for, either of the two the worker
  * may choose (T115) */

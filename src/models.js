@@ -51,12 +51,25 @@ const RAKUTEN = "A chat between a curious user and an artificial intelligence as
 // not: the space after </s> makes the same tokens
 const ZEPHYR = "<|user|>\n{prompt}</s> \n<|assistant|>\n";
 const harmony = { specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+  "November", "December"];
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** The directives of strftime the chat templates use (%d %b %Y is Llama 3's), for a date */
+function strftime(format, date) {
+  const two = (n) => String(n).padStart(2, "0");
+  const values = { d: two(date.getDate()), m: two(date.getMonth() + 1), Y: String(date.getFullYear()), y: two(date.getFullYear() % 100),
+    b: MONTHS[date.getMonth()].slice(0, 3), B: MONTHS[date.getMonth()], a: DAYS[date.getDay()].slice(0, 3), A: DAYS[date.getDay()],
+    H: two(date.getHours()), M: two(date.getMinutes()), S: two(date.getSeconds()), "%": "%" };
+  return format.replace(/%(.)/g, (directive, letter) => values[letter] ?? directive);
+}
 /** What the page sends for a prompt in a model's template: {prompt} is what was typed, {date} today (YYYY-MM-DD, the
- * visitor's own day). What was typed goes in as it is: as a replacement string, its $$, $&, $` and $' were patterns
- * (a typed $' wrote the rest of the template, special tokens and all; the review of T132). */
+ * visitor's own day), and {date:format} today in strftime's format (what the converter writes for a template's
+ * strftime_now(): the review of T127, the day of the conversion was kept with it). What was typed goes in as it
+ * is: as a replacement string, its $$, $&, $` and $' were patterns (a typed $' wrote the rest of the template,
+ * special tokens and all; the review of T132). */
 export function filled(template, prompt, today = new Date()) {
-  const date = [today.getFullYear(), today.getMonth() + 1, today.getDate()].map((n) => String(n).padStart(2, "0")).join("-");
-  return template.replace("{date}", date).replace("{prompt}", () => prompt);
+  return template.replace(/\{date(?::([^}]*))?\}/g, (_, format = "%Y-%m-%d") => strftime(format, today))
+    .replace("{prompt}", () => prompt);
 }
 // Models that huggingface.co serves and this page converts itself (public/llama2_convert.py, the code that builds
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
