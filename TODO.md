@@ -980,12 +980,15 @@
 
 </details>
 
-- [x] **T126 [追加] GPT-2 の gelu_fast と、RoPE の linear を受け付ける。**（Opus medium、2026-09-26）— 状態: **レビュー待ち**。**形**（2f8be56）: GPT-2 の許す活性化に `gelu_fast`（`gelu_new` と同じ tanh の近似）。`rope_frequencies()` に linear（角速度を factor で割る）、`check_config()` が llama 系の llama3 と linear を通す。GGUF は `rope.scaling.factor` も読む。**試験**: `test_llama3.py` の「変換器の float32 の表とエンジンの int8 の表が同じ」を linear でも（`rope_scaling` を options で渡す経路ごと）、linear の角速度が素の 1/4、GPT-2 の 4 つの GELU の名前が通り relu は断られる。pytest 426 件。**足したもの**: rinna/japanese-gpt-1b（1.3B、MIT、リビジョン `33fc2e4b`、`browsers.yml` の `added` の組）。**本番（Linux の Chromium、4 本）**: 準備完了 52.6 秒（取得と変換 44.9 秒、うち変換 30.5 秒）・17.4 tok/s・ヒープ 1958MB、「これからの流行りは「脱落者」だろう。 今の時代は、やりたいことだけをやれる時代ではない。」。回帰の確認に japanese-gpt2 small（9.6 秒・119.9 tok/s）と Llama 3.2 1B（llama3 の RoPE、30.7 秒・19.0 tok/s、どちらも答えた）。**足さなかったもの**: deepseek-coder 1.3b（linear で開く見込みだった 3 件）は**前分割で断られる**（4 つの Split と 1 桁ずつの Digits と正規表現なしの ByteLevel。T81 の調査は config だけで数えていた）。base は `pytorch_model.bin` だけ。だから **linear は実物のモデルで確かめていない**（合成モデルの表の一致だけ）。deepseek-coder を入れるなら、その前分割を `pretokenize()` に足す別のタスクが要る（持ち主に）。**レビューで見てほしいこと**: rinna 1B の変換が 30.5 秒と、同じ 1B 級の Llama 3.2 1B（3.9 秒）より 8 倍長い（GPT-2 の Conv1D の転置と `c_attn` を溜める分と見ているが、未計測）。
+- [x] **T133 [性能] 自動のビット数: 64 ビットのメモリのあるブラウザでは int8 のまま。**（Opus medium、2026-09-26）— 状態: **レビュー待ち**。**形**: 規則を `forward.js` の `automaticDtype(int8, after, wide)` に 1 つ置き（int8 が 32 ビットに入るか、64 ビットのカーネルがあれば int8、どちらも無ければ 6 ビット）、Worker の `automaticBits()` はそれを呼ぶだけ。ページの `weightsFor()` は `deviceMemory` が 8（Chromium の上限）なら 6 ビットを頼まない（Worker に任せる）。`memoryWarning()` は 8 と言う端末を「8GB 以上」と見て、8GB を超えるモデルにだけ「…, and this device has 8 GB or more: it may run out of memory.」と出す（文面は持ち主が選んだ、2026-09-26）。それまで 8 と言う端末には 3.7GB を超えるモデル（3B 級）に必ず警告が出ていた。**試験**: forward-check の頭に Llama-3.2-3B の見出しと int8 の大きさ（3614847004 バイト）で「64 ビットあり → int8、なし → int6」と Qwen2.5 1.5B は常に int8、models-check に 8 と 4 の端末の `weightsFor()` と警告の文。**本番（`models.yml`、`hf:unsloth/Llama-3.2-3B-Instruct@006f5dcd`、0e6955e）**: Linux の Chromium 148 は **int8・64 ビット・4 本で 7.5 tok/s**、準備完了 64.4 秒（取得 57.0 秒、うち変換 11.1）、ヒープ 4266MB（T115 のレビューの 6 ビット・32 ビットは 1.9 tok/s・3459MB）。Playwright の Firefox 150 も int8・64 ビット（1.8 tok/s は Playwright の Firefox なので速さではない、AGENTS.md の落とし穴）、ヒープ 4266MB。macOS の WebKit 26.4 は **int6・32 ビットのまま**（1.6 tok/s、準備完了 128.0 秒、ヒープ 3061MB）で答えた。WebKit の走行はコンソールの 404 1 つで「失敗」と記録された: 10.4 秒の、取得の始まり（2 シャードのモデルを `?hf=` で開くと、まず `model.safetensors` を問うて 404、次に index を読む）。一覧に入れるモデルは index を名指しするので起きない（T132 で確かめる）。**様子見（覆す条件）**: 持ち主の端末で 3B 級を動かし、メモリ不足やタブの落ちが出たら 6 ビットに戻す。**レビューで見てほしいこと**: 8 と言う端末で 6 ビットを頼まなくしたので、本当に 8GB ちょうどの端末で 7B（ヒープ約 9.7GB）を選ぶと、警告は出るが int8 で読みにいく（それまでは 6 ビットを頼んでいた。どちらでも 8GB には入らない）。
 
-<details><summary>T126 の採用時の記録</summary>
+<details><summary>T133 の採用時の記録</summary>
 
-- 根拠: rinna/japanese-gpt-1b と派生の 4 件は gpt2 の `gelu_fast` だけで断られる（式は gelu_new と同じで、neox ではすでに許している）。RoPE の linear（deepseek-coder の 3 件）は位置を割るだけ。
-- 足すモデル: rinna/japanese-gpt-1b、deepseek-coder 1.3b。
+- 判断（2026-09-26、T115 のレビューで持ち主に出した (c)）: 今の規則「int8 が 32 ビットのメモリに入らなければ 6 ビット」（T98・T115）を、64 ビットのメモリ（Memory64）が使えるブラウザ（Chrome・Firefox）では「int8 のまま 64 ビットのメモリに」に変える。Safari（Memory64 なし）は今のまま 6 ビット。
+- 数字（CI の Linux の Chromium）: Llama-3.2-3B は 6 ビット・32 ビットで 1.9 tok/s・ヒープ 3459MB、int8・64 ビットで 4.1 tok/s・4266MB（2.2 倍速く、メモリは 23% 多い）。Qwen2.5 7B は int8・64 ビットで 3.6 tok/s・9716MB、6 ビットは int8 の 0.37〜0.53 倍（T98）。6 ビットの品質の代償は 1B 級で +1.4〜1.7%（T98）。64 ビットのメモリは 32 ビットより約 1 割遅い（T101）。
+- 一緒に直すこと: ページの `weightsFor()` は `deviceMemory` の半分を超えると 6 ビットを頼むが、Chromium の `deviceMemory` は 8 が上限なので、どの機械でも int8 が約 3.7GB を超えると 6 ビットになる（大きなデスクトップでも）。`memoryWarning()` も同じ理由で 7B には必ず出る。上限の 8 と答える端末では、この 2 つをどうするか（当てない、文を「8 GB 以上」に）を決める。
+- 様子見（覆す条件）: 持ち主の端末で 3B 級を動かし、メモリ不足やタブの落ちが出たら 6 ビットに戻す。
+- 完了条件: `models.yml` で Llama-3.2-3B が自動で int8・64 ビットになり 4 tok/s 前後。macOS の WebKit では 6 ビットのまま。forward-check・models-check が新しい規則を見る。
 
 </details>
 
@@ -1035,18 +1038,14 @@
 
 </details>
 
-- [x] **T133 [性能] 自動のビット数: 64 ビットのメモリのあるブラウザでは int8 のまま。**（Opus medium、2026-09-26）— 状態: **レビュー待ち**。**形**: 規則を `forward.js` の `automaticDtype(int8, after, wide)` に 1 つ置き（int8 が 32 ビットに入るか、64 ビットのカーネルがあれば int8、どちらも無ければ 6 ビット）、Worker の `automaticBits()` はそれを呼ぶだけ。ページの `weightsFor()` は `deviceMemory` が 8（Chromium の上限）なら 6 ビットを頼まない（Worker に任せる）。`memoryWarning()` は 8 と言う端末を「8GB 以上」と見て、8GB を超えるモデルにだけ「…, and this device has 8 GB or more: it may run out of memory.」と出す（文面は持ち主が選んだ、2026-09-26）。それまで 8 と言う端末には 3.7GB を超えるモデル（3B 級）に必ず警告が出ていた。**試験**: forward-check の頭に Llama-3.2-3B の見出しと int8 の大きさ（3614847004 バイト）で「64 ビットあり → int8、なし → int6」と Qwen2.5 1.5B は常に int8、models-check に 8 と 4 の端末の `weightsFor()` と警告の文。**本番（`models.yml`、`hf:unsloth/Llama-3.2-3B-Instruct@006f5dcd`、0e6955e）**: Linux の Chromium 148 は **int8・64 ビット・4 本で 7.5 tok/s**、準備完了 64.4 秒（取得 57.0 秒、うち変換 11.1）、ヒープ 4266MB（T115 のレビューの 6 ビット・32 ビットは 1.9 tok/s・3459MB）。Playwright の Firefox 150 も int8・64 ビット（1.8 tok/s は Playwright の Firefox なので速さではない、AGENTS.md の落とし穴）、ヒープ 4266MB。macOS の WebKit 26.4 は **int6・32 ビットのまま**（1.6 tok/s、準備完了 128.0 秒、ヒープ 3061MB）で答えた。WebKit の走行はコンソールの 404 1 つで「失敗」と記録された: 10.4 秒の、取得の始まり（2 シャードのモデルを `?hf=` で開くと、まず `model.safetensors` を問うて 404、次に index を読む）。一覧に入れるモデルは index を名指しするので起きない（T132 で確かめる）。**様子見（覆す条件）**: 持ち主の端末で 3B 級を動かし、メモリ不足やタブの落ちが出たら 6 ビットに戻す。**レビューで見てほしいこと**: 8 と言う端末で 6 ビットを頼まなくしたので、本当に 8GB ちょうどの端末で 7B（ヒープ約 9.7GB）を選ぶと、警告は出るが int8 で読みにいく（それまでは 6 ビットを頼んでいた。どちらでも 8GB には入らない）。
+- [x] **T126 [追加] GPT-2 の gelu_fast と、RoPE の linear を受け付ける。**（Opus medium、2026-09-26）— 状態: **レビュー待ち**。**形**（2f8be56）: GPT-2 の許す活性化に `gelu_fast`（`gelu_new` と同じ tanh の近似）。`rope_frequencies()` に linear（角速度を factor で割る）、`check_config()` が llama 系の llama3 と linear を通す。GGUF は `rope.scaling.factor` も読む。**試験**: `test_llama3.py` の「変換器の float32 の表とエンジンの int8 の表が同じ」を linear でも（`rope_scaling` を options で渡す経路ごと）、linear の角速度が素の 1/4、GPT-2 の 4 つの GELU の名前が通り relu は断られる。pytest 426 件。**足したもの**: rinna/japanese-gpt-1b（1.3B、MIT、リビジョン `33fc2e4b`、`browsers.yml` の `added` の組）。**本番（Linux の Chromium、4 本）**: 準備完了 52.6 秒（取得と変換 44.9 秒、うち変換 30.5 秒）・17.4 tok/s・ヒープ 1958MB、「これからの流行りは「脱落者」だろう。 今の時代は、やりたいことだけをやれる時代ではない。」。回帰の確認に japanese-gpt2 small（9.6 秒・119.9 tok/s）と Llama 3.2 1B（llama3 の RoPE、30.7 秒・19.0 tok/s、どちらも答えた）。**足さなかったもの**: deepseek-coder 1.3b（linear で開く見込みだった 3 件）は**前分割で断られる**（4 つの Split と 1 桁ずつの Digits と正規表現なしの ByteLevel。T81 の調査は config だけで数えていた）。base は `pytorch_model.bin` だけ。だから **linear は実物のモデルで確かめていない**（合成モデルの表の一致だけ）。deepseek-coder を入れるなら、その前分割を `pretokenize()` に足す別のタスクが要る（持ち主に）。**レビューで見てほしいこと**: rinna 1B の変換が 30.5 秒と、同じ 1B 級の Llama 3.2 1B（3.9 秒）より 8 倍長い（GPT-2 の Conv1D の転置と `c_attn` を溜める分と見ているが、未計測）。
 
-<details><summary>T133 の採用時の記録</summary>
+<details><summary>T126 の採用時の記録</summary>
 
-- 判断（2026-09-26、T115 のレビューで持ち主に出した (c)）: 今の規則「int8 が 32 ビットのメモリに入らなければ 6 ビット」（T98・T115）を、64 ビットのメモリ（Memory64）が使えるブラウザ（Chrome・Firefox）では「int8 のまま 64 ビットのメモリに」に変える。Safari（Memory64 なし）は今のまま 6 ビット。
-- 数字（CI の Linux の Chromium）: Llama-3.2-3B は 6 ビット・32 ビットで 1.9 tok/s・ヒープ 3459MB、int8・64 ビットで 4.1 tok/s・4266MB（2.2 倍速く、メモリは 23% 多い）。Qwen2.5 7B は int8・64 ビットで 3.6 tok/s・9716MB、6 ビットは int8 の 0.37〜0.53 倍（T98）。6 ビットの品質の代償は 1B 級で +1.4〜1.7%（T98）。64 ビットのメモリは 32 ビットより約 1 割遅い（T101）。
-- 一緒に直すこと: ページの `weightsFor()` は `deviceMemory` の半分を超えると 6 ビットを頼むが、Chromium の `deviceMemory` は 8 が上限なので、どの機械でも int8 が約 3.7GB を超えると 6 ビットになる（大きなデスクトップでも）。`memoryWarning()` も同じ理由で 7B には必ず出る。上限の 8 と答える端末では、この 2 つをどうするか（当てない、文を「8 GB 以上」に）を決める。
-- 様子見（覆す条件）: 持ち主の端末で 3B 級を動かし、メモリ不足やタブの落ちが出たら 6 ビットに戻す。
-- 完了条件: `models.yml` で Llama-3.2-3B が自動で int8・64 ビットになり 4 tok/s 前後。macOS の WebKit では 6 ビットのまま。forward-check・models-check が新しい規則を見る。
+- 根拠: rinna/japanese-gpt-1b と派生の 4 件は gpt2 の `gelu_fast` だけで断られる（式は gelu_new と同じで、neox ではすでに許している）。RoPE の linear（deepseek-coder の 3 件）は位置を割るだけ。
+- 足すモデル: rinna/japanese-gpt-1b、deepseek-coder 1.3b。
 
 </details>
-
 
 ## やらないと決めたこと
 
