@@ -739,7 +739,15 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       $("load").classList.add("measured");
       showKept();
       remember(model, (model as any).hf && !data.notKept);
+    } else if (data.type === "threads-compared") {
+      // T114: how the worker chose the number of threads, one line per comparison (medians in ms per token)
+      const kept = data.faster ? data.candidate : data.best;
+      console.info(`threads: ${data.best} at ${data.bestMs.toFixed(2)} ms against ${data.candidate} at ` +
+        `${data.candidateMs.toFixed(2)} ms per token (${data.tokens} tokens timed): ${kept} ` +
+        `${data.faster ? "is faster by more than 5%" : "stays, the other is not faster by more than 5%"}`);
     } else if (data.type === "threads") {
+      console.info(`threads: ${data.count} for ${data.model}, searched from ${data.from === "remembered" ?
+        "the count remembered from an earlier visit" : `${data.hint} (the logical cores)`}`);
       // what the worker found for this device and model: the next visit starts with it
       try {
         localStorage.setItem(threadsKey(data.model), String(data.count));

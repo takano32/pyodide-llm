@@ -905,7 +905,8 @@ async function startThreads(model) {
       return await engine.setThreads(fixed);
     }
     return await engine.findThreads({ from: hint, remembered,
-      chose: (count) => postMessage({ type: "threads", model: model.id, count }) });
+      chose: (count) => postMessage({ type: "threads", model: model.id, count, from: remembered ? "remembered" : "hint", hint }),
+      compared: (verdict) => postMessage({ type: "threads-compared", model: model.id, ...verdict }) });
   } catch {
     engine.stopThreads?.();
     return 1;

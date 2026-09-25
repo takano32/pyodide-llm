@@ -118,11 +118,16 @@ if (isMainThread) {
   // the search, as the page runs it: from the hint, over generations of `positions` tokens
   const hint = globalThis.navigator?.hardwareConcurrency ?? 4;
   let found = 0, generationsUsed = 0;
-  await engine.findThreads({ from: hint, chose: (n) => { found = n; } });
+  const verdicts = [];  // T114: what the page writes to the console, one per comparison
+  await engine.findThreads({ from: hint, chose: (n) => { found = n; }, compared: (verdict) => verdicts.push(verdict) });
   for (; !found && generationsUsed < 8; generationsUsed++) {
     engine.newGeneration();
     for (let pos = 0; pos < positions; pos++) engine.forward(1, pos, true);
     await new Promise((resolve) => setTimeout(resolve, 0));  // let a helper that is being started come up
+  }
+  if (verdicts.length !== engine.searchLog.length || verdicts.some((v, i) => v.best !== engine.searchLog[i].best
+      || v.candidate !== engine.searchLog[i].candidate || v.faster !== engine.searchLog[i].faster || !(v.bestMs > 0) || !(v.candidateMs > 0))) {
+    throw new Error(`the verdicts told (${JSON.stringify(verdicts)}) are not the search's log`);
   }
   const fastest = counts.reduce((a, b) => (median(times[b]) > median(times[a]) ? b : a));
   const comparisons = engine.searchLog.map(({ best, candidate, times, faster }) =>

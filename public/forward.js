@@ -412,7 +412,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // first token of every block (the switch). Helpers that a count needs are started in the background; until they
   // are ready the tokens run on the best count and are not timed.
   const BLOCK = 4, BETTER = 0.95;
-  let search = null, chosen = 0, generations = 0, recheckEvery = 0, onChosen = null;
+  let search = null, chosen = 0, generations = 0, recheckEvery = 0, onChosen = null, onCompared = null;
   const searchLog = [];  // every comparison: the counts, their times in ms per token, and the verdict
   const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
   function beginSearch(from) {
@@ -452,6 +452,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     const { best, candidate } = search;
     const faster = median(search.times[candidate]) < median(search.times[best]) * BETTER;
     searchLog.push({ best, candidate, times: search.times, faster });
+    // T114: every verdict, so that a device's choice can be followed afterwards (the page writes it to the console)
+    onCompared?.({ best, candidate, bestMs: median(search.times[best]), candidateMs: median(search.times[candidate]),
+                   faster, tokens: search.times[best].length + search.times[candidate].length });
     if (faster) {
       search.best = candidate;
       search.moved = true;
@@ -486,11 +489,12 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     },
     /** Find the number of threads while generating (see above): from a hint, or from a count remembered from an
      * earlier visit, which is then only checked against its neighbours now and then (every recheck generations).
-     * chose(count) is told the answer. The helpers of the starting count are started (and warmed) before this
+     * chose(count) is told the answer, compared(verdict) every comparison on the way. The helpers of the starting count are started (and warmed) before this
      * resolves, so the first tokens do not wait for them. */
-    async findThreads({ from, remembered = 0, recheck = 8, chose }) {
+    async findThreads({ from, remembered = 0, recheck = 8, chose, compared }) {
       if (!shared) return 1;
       onChosen = chose;
+      onCompared = compared;
       recheckEvery = recheck;
       const start = Math.max(1, remembered || from);
       await ensureHelpers(start);
