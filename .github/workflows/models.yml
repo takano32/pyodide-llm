@@ -70,7 +70,14 @@ jobs:
           esac
 
       # the ids local and hf open files of this checkout through the folder button (tests/e2e.mjs): stories260K and
-      # its tokenizer, and for hf the files tests/make_hf_fixture.py writes from them with NumPy
+      # its tokenizer, and for hf the files tests/make_hf_fixture.py writes from them with NumPy (a Python of its
+      # own: macOS's refuses pip)
+      - name: Set up Python
+        if: contains(format(' {0} ', inputs.models), ' local ') || contains(format(' {0} ', inputs.models), ' hf ')
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
       - name: The files the folder button opens
         if: contains(format(' {0} ', inputs.models), ' local ') || contains(format(' {0} ', inputs.models), ' hf ')
         shell: bash
