@@ -78,10 +78,6 @@
 - 根拠: 22 件、日本の組織で 34 件。v0.2 以降は llama と同じ形（sliding window が null）なので、model_type の別名で開く見込み。sliding window のあるもの（v0.1）は断ったまま。
 - 足すモデル: 調査の 22 件と日本の組織の 34 件から、有名でゲートの無いものを全部（RakutenAI-2.0-mini 1.5B など。トークナイザが断られないかは 1 つずつ確かめる）。
 
-### T126 [追加] GPT-2 の gelu_fast と、RoPE の linear を受け付ける — 状態: 進行中（2026-09-26、push。本番の確認待ち）（2026-09-26 採用、持ち主の判断「最初は有名なのはぜんぶ入れよう」。T81 の調査から。規模 ごく小）
-- 根拠: rinna/japanese-gpt-1b と派生の 4 件は gpt2 の `gelu_fast` だけで断られる（式は gelu_new と同じで、neox ではすでに許している）。RoPE の linear（deepseek-coder の 3 件）は位置を割るだけ。
-- 足すモデル: rinna/japanese-gpt-1b、deepseek-coder 1.3b。
-
 ### T127 [追加] chat_template.jinja を読む、と selectattr — 状態: 未着手（2026-09-26 採用、持ち主の判断「最初は有名なのはぜんぶ入れよう」。T81 の調査から。規模 小）
 - 根拠: 通った 276 件のうち少なくとも 16 件は書式が `chat_template.jinja` にしかなく、自動で取れない。sarashina2.2 の系統は `selectattr` で読めず、手で書いた（T81）。
 - 効くところ: 一覧のモデルは手で書けば足りるので、主に `?hf=` で開く一覧に無いモデル。T124 の Qwen3 の書式が読めるかもここで決まる。
@@ -981,6 +977,15 @@
 - 完了条件: そのまま動くものは一覧に足して `browsers.yml` で動くことを確かめる。実装の要るものは新しいタスクとして積む（または「いまは無い」と書く）。前回（2026-09-21）からの差分が分かる形で書く。
 
 - **調査（2026-09-26、Opus medium のサブエージェント。全文は `docs/t81-survey-2026-09-26.md`、問い合わせと件数つき）**: 合否は変換器の `normalize()`・`check_config()`・`pretokenizer_name()` をそのまま import して判定。ダウンロード上位 2000 件（text-generation、transformers）のうち 8.5B 以下は 739 件、受け付ける 4 系統（llama・qwen2・gpt2・gpt_neox）はそのうち 325 件（ダウンロードの 51.7%）。4 系統の config を 438 件判定して **276 件が通る**（一覧にあるもの 9 件を含む。落ちた 162 件のうち 99 件は量子化済みの再配布、13 件はゲート付きの meta-llama）。通った 276 件の内訳（メモリは見積もり）: int8 で 32 ビット 140、6 ビットで 32 ビット 6、64 ビットが要る 130、2 シャード以上 140、RoPE が llama3 41。**2026-09-21 の条件なら 116 件**で、差の 160 件は T105・T106・T101・T98 で開いた（前回の 299 件は問い合わせが残っていないので直接は比べられない）。**断られるもの**（739 件の中）: qwen3 90（ダウンロードの 29.3%、最大。head ごとの q・k の norm と、dim / heads と違う head_dim が要り、legacy のヘッダの変更になる）、mistral 22（日本の組織では 34。v0.2 以降は llama と同じ形で、model_type の別名で開く見込み）、lfm2 22、granite 12、gemma3 11、phi3 11、gemma2 9、phi 7、stablelm 5（日本の組織で 16）。`rope_scaling` は llama3 66・linear 3・yarn 1、sliding window が真の qwen2 は 0。GGUF は上位 500 件のうち Q8_0 を持つ 372 件、読める llama / qwen2 で Q8_0 の 8.5B 以下は 36 件。GGUF にしか無い、今の読み手で読める新しい小さいモデルは見つからなかった。**そのまま足せる候補**: SakanaAI/TinySwallow-1.5B-Instruct、llm-jp/llm-jp-3.1-1.8b-instruct4、sbintuitions/sarashina2.2-1b-instruct-v0.1（書式は手書き）、cyberagent/CAT-Translate-1.4b と 0.8b、HuggingFaceTB/SmolLM2-1.7B-Instruct。64 ビットで llm-jp-4-8b-instruct（harmony の書式を手書き）、Qwen2.5-7B-Instruct、Llama-3.1-Swallow-8B-Instruct-v0.5。**気づいたこと**: 一覧の sarashina2.2 0.5B Instruct の書式が ChatML になっているが本来は `<|user|>{prompt}</s><|assistant|>`（影響は未確認）、rinna/japanese-gpt-1b は gpt2 の `gelu_fast` だけで断られている（式は gelu_new と同じ、4 件開く）、`chat_template.jinja` を読まないので 16 件以上で書式が自動で取れない、CMSManhattan/JiRackUltra_1b は出どころが確かめられないので勧めない。
+
+</details>
+
+- [x] **T126 [追加] GPT-2 の gelu_fast と、RoPE の linear を受け付ける。**（Opus medium、2026-09-26）— 状態: **レビュー待ち**。**形**（2f8be56）: GPT-2 の許す活性化に `gelu_fast`（`gelu_new` と同じ tanh の近似）。`rope_frequencies()` に linear（角速度を factor で割る）、`check_config()` が llama 系の llama3 と linear を通す。GGUF は `rope.scaling.factor` も読む。**試験**: `test_llama3.py` の「変換器の float32 の表とエンジンの int8 の表が同じ」を linear でも（`rope_scaling` を options で渡す経路ごと）、linear の角速度が素の 1/4、GPT-2 の 4 つの GELU の名前が通り relu は断られる。pytest 426 件。**足したもの**: rinna/japanese-gpt-1b（1.3B、MIT、リビジョン `33fc2e4b`、`browsers.yml` の `added` の組）。**本番（Linux の Chromium、4 本）**: 準備完了 52.6 秒（取得と変換 44.9 秒、うち変換 30.5 秒）・17.4 tok/s・ヒープ 1958MB、「これからの流行りは「脱落者」だろう。 今の時代は、やりたいことだけをやれる時代ではない。」。回帰の確認に japanese-gpt2 small（9.6 秒・119.9 tok/s）と Llama 3.2 1B（llama3 の RoPE、30.7 秒・19.0 tok/s、どちらも答えた）。**足さなかったもの**: deepseek-coder 1.3b（linear で開く見込みだった 3 件）は**前分割で断られる**（4 つの Split と 1 桁ずつの Digits と正規表現なしの ByteLevel。T81 の調査は config だけで数えていた）。base は `pytorch_model.bin` だけ。だから **linear は実物のモデルで確かめていない**（合成モデルの表の一致だけ）。deepseek-coder を入れるなら、その前分割を `pretokenize()` に足す別のタスクが要る（持ち主に）。**レビューで見てほしいこと**: rinna 1B の変換が 30.5 秒と、同じ 1B 級の Llama 3.2 1B（3.9 秒）より 8 倍長い（GPT-2 の Conv1D の転置と `c_attn` を溜める分と見ているが、未計測）。
+
+<details><summary>T126 の採用時の記録</summary>
+
+- 根拠: rinna/japanese-gpt-1b と派生の 4 件は gpt2 の `gelu_fast` だけで断られる（式は gelu_new と同じで、neox ではすでに許している）。RoPE の linear（deepseek-coder の 3 件）は位置を割るだけ。
+- 足すモデル: rinna/japanese-gpt-1b、deepseek-coder 1.3b。
 
 </details>
 
