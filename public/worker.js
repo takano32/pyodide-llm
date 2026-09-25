@@ -431,14 +431,30 @@ async function fileSize(url, signal) {
 // the size a range response reported, or the file's size asked for separately when it did not
 const sized = async (url, result, signal) => (Number.isFinite(result.total) && result.total > 0 ? result : { ...result, total: await fileSize(url, signal) });
 
-async function fetchRange(url, begin, end, signal) {
+// arriving(count): told of every stretch of the body as it comes, for a progress line before a whole part is in
+async function fetchRange(url, begin, end, signal, arriving) {
   for (let attempt = 0; ; attempt++) {
     try {
       const res = await fetch(url, { headers: { Range: `bytes=${begin}-${end - 1}` }, signal });
       if (res.status !== 206 && res.status !== 200) {
         throw new Error(`Could not fetch ${url}: ${res.status}`);
       }
-      let bytes = new Uint8Array(await res.arrayBuffer());
+      let bytes;
+      if (arriving && res.body) {
+        const pieces = [];
+        let length = 0;
+        for (const reader = res.body.getReader(); ;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          pieces.push(value);
+          length += value.length;
+          arriving(value.length);
+        }
+        bytes = new Uint8Array(length);
+        pieces.reduce((at, piece) => (bytes.set(piece, at), at + piece.length), 0);
+      } else {
+        bytes = new Uint8Array(await res.arrayBuffer());
+      }
       let total = Number((res.headers.get("Content-Range") ?? "").split("/")[1]);
       if (res.status === 200) {
         // the server ignored the range and sent the whole file: what was asked for is cut out of it (slow, but
@@ -458,12 +474,15 @@ async function fetchRange(url, begin, end, signal) {
 
 // feed(bytes) gets the file from position start to its end, in order, although the parts arrive as they like.
 // The parts are cut as they are asked for: the first small, the rest by what the first one measured (see above).
-async function inOrder(url, start, size, feed, signal) {
+// arriving(bytes): how much of the file is in so far, told as it comes (the page shows it until the conversion of
+// the first part gives it percentages: on a slow line the first part alone takes a while, and a line that says
+// nothing looks stuck).
+async function inOrder(url, start, size, feed, signal, arriving = () => {}) {
   const small = navigator.deviceMemory !== undefined && navigator.deviceMemory <= 4;
   let partBytes = hfPartBytes || HF_SMALL_PART_BYTES;
   const ranges = [];  // [begin, end] of every part asked for so far, in the order of the file
   const arrived = new Map();
-  let scheduled = start, fed = 0, waiting = [];
+  let scheduled = start, fed = 0, waiting = [], received = start;
   const connection = async () => {
     for (;;) {
       // no more than two parts per connection wait in memory for an earlier one
@@ -477,7 +496,7 @@ async function inOrder(url, start, size, feed, signal) {
       ranges.push([begin, end]);
       scheduled = end;
       const began = performance.now();
-      arrived.set(part, (await fetchRange(url, begin, end, signal)).bytes);
+      arrived.set(part, (await fetchRange(url, begin, end, signal, (count) => { received += count; arriving(received); })).bytes);
       if (part === 0 && !hfPartBytes) {
         const rate = (end - begin) / ((performance.now() - began) / 1000);
         partBytes = rate >= HF_FAST_BYTES_PER_SECOND && !small ? HF_PART_BYTES : HF_SMALL_PART_BYTES;
@@ -693,8 +712,17 @@ async function convert(model, signal, id) {
   }
   let template;
   try {
-    let reported = -1, converting = 0;
+    let reported = -1, converting = 0, fed = false, told = 0;
+    // until the first part is converted, the page hears how much has arrived (a line that says nothing looks stuck)
+    const arriving = (received) => {
+      if (fed || performance.now() - told < 250) {
+        return;
+      }
+      told = performance.now();
+      postMessage({ type: "progress", load: id, received, total: size });
+    };
     const feed = (bytes) => {
+      fed = true;
       // T84: the time Python spends converting, apart from the time spent waiting for the download
       const began = performance.now();
       const percent = Math.floor(conversion.feed(bytes) * 100);
@@ -706,10 +734,10 @@ async function convert(model, signal, id) {
     };
     if (shards) {
       for (const shard of shards) {
-        await inOrder(at(shard.name), shard.base, shard.base + shard.length, feed, signal);
+        await inOrder(at(shard.name), shard.base, shard.base + shard.length, feed, signal, arriving);
       }
     } else if (remote) {
-      await inOrder(at(model.hf.weights), base, size, feed, signal);
+      await inOrder(at(model.hf.weights), base, size, feed, signal, arriving);
     } else {
       const reader = model.hf.weights.slice(base).stream().getReader();
       for (;;) {
