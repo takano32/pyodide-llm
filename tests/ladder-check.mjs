@@ -11,7 +11,7 @@ const table = ladderMarkdown([run("hf-pythia-160m", 60), run("tiny-lm", 400), ru
 const rows = table.split("\n").filter((line) => line.startsWith("| Pythia"));
 assert.deepEqual(rows.map((row) => row.split(" | ")[0]), ["| Pythia 70M", "| Pythia 160M", "| Pythia 1.4B"], "in the order of size, only the ladder");
 assert.ok(rows[0].includes("| 96 | 20.0 | 15.0 | 6.0 | 120.0 | 11.52 | 300 |  |"), rows[0]);  // the last run of a model wins
-assert.ok(rows[2].includes("| 1500 | 20.0 |  |  | 5.0 | 7.50 |  |  |"), rows[2]);  // missing numbers stay empty
+assert.ok(rows[2].includes("| 1600 | 20.0 |  |  | 5.0 | 8.00 |  |  |"), rows[2]);  // missing numbers stay empty
 assert.ok(!table.includes("undefined") && !table.includes("NaN") && !table.includes("null"), table);
 assert.ok(table.includes("chromium 148.0; linux x64."), table);
 assert.equal(ladderMarkdown([run("tiny-lm", 400)]), "No Pythia run was recorded.\n");
