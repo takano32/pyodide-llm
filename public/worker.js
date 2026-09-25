@@ -337,28 +337,34 @@ const spawnThread = (data) => new Promise((resolve, reject) => {
   worker.postMessage(data);
 });
 
-// T96: one memory of forward.js for the life of this worker, whatever the model. A browser reserves address space
-// for every WebAssembly memory, shared or not and whatever its maximum, and Chromium refused the third one of a page:
-// the benchmark's first round, or a visitor's second change of model, then found no memory at all. So the memory is
-// made once, as large as the browser lets a shared one be (4 GB first), grows to the largest model seen and never
-// shrinks (no WebAssembly memory does). A model larger than its maximum fails at grow(), as running out of memory.
+// T96: one memory of forward.js, kept from model to model. A browser reserves address space for every WebAssembly
+// memory, shared or not and whatever its maximum, and Chromium refused the third one of a page: the benchmark's
+// first round, or a visitor's second change of model, then found no memory at all. So a memory is kept and grown
+// as long as the next model fits under its maximum, and made anew only for a larger one. The maximum comes from the
+// model (weightsMemory: four times the file and a gigabyte): asking for 4 GB up front left a phone no room for
+// Pyodide's own memory, and "Loading Pyodide" never ended (2026-09-25).
 let weightsPool;
 function pooledWeights(size, shared) {
-  if (!weightsPool || weightsPool.shared !== shared) {
+  const pages = (bytes) => Math.ceil(bytes / 65536);
+  const fits = weightsPool && weightsPool.shared === shared && pages(weightsPool.base + size) + 1 <= weightsPool.maximum;
+  if (!fits) {
+    weightsPool = undefined;  // the old one goes with its engine; nothing else refers to it
     let memory, base;
     if (shared) {
       try {
-        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, maximum: 65536 }));
+        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true }));
       } catch {
         memory = undefined;  // no shared memory here: one thread
       }
     }
     if (!memory) ({ memory, base } = forwardModule.weightsMemory(size));
-    weightsPool = { memory, base, shared: shared && memory.buffer instanceof SharedArrayBuffer };
+    const isShared = shared && memory.buffer instanceof SharedArrayBuffer;
+    // a memory without a maximum (not shared) grows as far as the browser allows: 4 GB of pages
+    weightsPool = { memory, base, shared: isShared, maximum: isShared ? memory.maximum ?? 65536 : 65536 };
   }
   const { memory, base } = weightsPool;
-  const pages = Math.ceil((base + size) / 65536) + 1 - memory.buffer.byteLength / 65536;
-  if (pages > 0) memory.grow(pages);
+  const more = pages(base + size) + 1 - memory.buffer.byteLength / 65536;
+  if (more > 0) memory.grow(more);
   return weightsPool;
 }
 

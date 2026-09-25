@@ -33,9 +33,9 @@ export function compileKernels(plain, relaxed) {
 /** A memory with room for a checkpoint of size bytes at base; the forward pass allocates after it. shared (stage 2):
  * a SharedArrayBuffer for the helper threads, only where the page is cross-origin isolated; its first 4 KiB are the
  * control area of the helpers. A shared memory needs a maximum: as much as the browser grants, less if it refuses.
- * maximum (pages): what to ask for first; else what this model can need at most (see below). The worker makes one
- * memory and keeps it for every model (T96): a browser reserves address space for each WebAssembly memory whatever
- * its maximum, and Chromium refused the third one of a page. */
+ * maximum (pages): what to ask for first; else what this model can need at most (see below). The worker keeps the
+ * memory for the models that fit under that maximum (T96): a browser reserves address space for each WebAssembly
+ * memory whatever its maximum, and Chromium refused the third one of a page. */
 export function weightsMemory(size, { shared = false, maximum } = {}) {
   const base = shared ? CONTROL_BYTES : 64;
   const initial = Math.ceil((base + size) / PAGE) + 1;
@@ -45,7 +45,9 @@ export function weightsMemory(size, { shared = false, maximum } = {}) {
   const most = maximum ?? Math.min(65536, Math.ceil((base + 4 * size + 2 ** 30) / PAGE));
   for (const pages of [most, initial + 16384, initial + 4096]) {
     try {
-      return { memory: new WebAssembly.Memory({ initial, maximum: Math.max(pages, initial), shared: true }), base };
+      const memory = new WebAssembly.Memory({ initial, maximum: Math.max(pages, initial), shared: true });
+      memory.maximum = Math.max(pages, initial);  // the worker keeps the memory as long as the next model fits (T96)
+      return { memory, base };
     } catch {
       // too much address space for this browser: ask for less
     }
