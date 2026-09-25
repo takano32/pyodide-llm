@@ -270,7 +270,11 @@ async function init(search) {
   const step = async (name, promise, seconds = 90) => {
     postMessage({ type: "status", text: `Loading Pyodide ${version}: ${name}...` });
     let timer;
-    const late = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Pyodide ${version} did not finish "${name}" in ${seconds} seconds`)), seconds * 1000); });
+    const late = new Promise((_, reject) => { timer = setTimeout(() => {
+      const error = new Error(`Pyodide ${version} did not finish "${name}" in ${seconds} seconds`);
+      error.pyodide = true;  // the page may try again without the service worker (isolation made this hang on iOS)
+      reject(error);
+    }, seconds * 1000); });
     try {
       return await Promise.race([promise, late]);
     } finally {
@@ -279,11 +283,11 @@ async function init(search) {
   };
   // while Pyodide starts, not after: loadPackage("numpy") below finds the wheel in the HTTP cache
   const numpy = prefetchNumpy(base);
-  const { loadPyodide } = await step("the loader", import(`${base}pyodide.mjs`));
-  pyodide = await step("the runtime", loadPyodide());
+  const { loadPyodide } = await step("the loader", import(`${base}pyodide.mjs`), 60);
+  pyodide = await step("the runtime", loadPyodide(), 90);
   // a prefetch that is still running would otherwise be raced by loadPackage, and the wheel fetched twice
   await numpy;
-  await step("NumPy", pyodide.loadPackage("numpy"));
+  await step("NumPy", pyodide.loadPackage("numpy"), 60);
 
   // with the ?v=<build> of this worker, so that both always come from the same deployment
   const res = await fetch(new URL(`llama2_numpy.py${self.location.search}`, import.meta.url));
@@ -1050,7 +1054,7 @@ self.onmessage = async ({ data }) => {
         (err?.name === "RangeError" && !/call stack/i.test(err.message ?? ""));
       // where it happened goes to the page's console (T96): tests/e2e.mjs keeps the console of a failed run
       postMessage({ type: "error", load: data.load, message: memory ? String(err?.message ?? err).trim().split("\n").pop() : message,
-                    stack: String(err?.stack ?? err), weights: weightsNow?.buffer.byteLength ?? 0,
+                    stack: String(err?.stack ?? err), weights: weightsNow?.buffer.byteLength ?? 0, pyodide: Boolean(err?.pyodide),
                     ...(memory && { memory: true, heap: heapBytes() }) });
     }
   }

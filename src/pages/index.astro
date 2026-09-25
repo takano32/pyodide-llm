@@ -539,7 +539,8 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       return false;
     }
     try {
-      if (parameters.get("coi") === "off") {
+      // ?coi=off, or a tab in which Pyodide did not load under the worker (see the error branch below): without it
+      if (parameters.get("coi") === "off" || sessionStorage.getItem("coi-fallback")) {
         for (const registration of await navigator.serviceWorker.getRegistrations()) {
           await registration.unregister();
         }
@@ -643,6 +644,27 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     } else if (data.type === "error") {
       // the console keeps where it happened, for a failed run's record (T82's artifacts, T96)
       console.error(`worker error (weights memory ${data.weights} bytes):`, data.stack);
+      // Pyodide that never finishes loading under the service worker (iOS Safari, 2026-09-25: its NumPy step): once,
+      // the page goes on without the worker, which is the one-core version the site runs on anyway (policy 6)
+      let fallback = false;
+      try {
+        fallback = data.pyodide && self.crossOriginIsolated && !sessionStorage.getItem("coi-fallback");
+        if (fallback) {
+          sessionStorage.setItem("coi-fallback", "1");
+        }
+      } catch {
+        // no session storage here: no second try either
+      }
+      if (fallback) {
+        statusText.textContent = "Pyodide did not load under the service worker: trying again without it...";
+        navigator.serviceWorker?.getRegistrations().then(async (registrations) => {
+          for (const registration of registrations) {
+            await registration.unregister();
+          }
+          location.reload();
+        });
+        return;
+      }
       message("model error", data.memory ? memoryFailure(model, data.heap, data.message) : data.message);
       statusText.textContent = ready ? `${model.name}` : `Could not load ${model.name}`;
     }
