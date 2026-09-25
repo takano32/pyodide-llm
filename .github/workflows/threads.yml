@@ -5,6 +5,13 @@ name: Threads prototype
 
 on:
   workflow_dispatch:
+    inputs:
+      args:
+        description: 'what tests/threads-check.mjs is given (T101: add --wide --high to place the model above 4 GiB of a 64-bit memory)'
+        default: 'tiny-lm llm-jp-3-150m --threads 1,2,4,8,16 --rounds 5 --positions 128'
+      os:
+        description: 'the runners, as a JSON list'
+        default: '["ubuntu-latest", "ubuntu-24.04-arm", "macos-latest"]'
 
 jobs:
   threads:
@@ -14,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+        os: ${{ fromJSON(inputs.os) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -43,4 +50,4 @@ jobs:
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
           # T93 stage 2: the helper threads of forward.js itself (bit for bit against one thread, then the speeds)
           echo "### forward.js with helper threads" >> "$GITHUB_STEP_SUMMARY"
-          node tests/threads-check.mjs tiny-lm llm-jp-3-150m --threads 1,2,4,8,16 --rounds 5 --positions 128 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/threads-check.mjs ${{ inputs.args }} 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"

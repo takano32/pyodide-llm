@@ -39,6 +39,9 @@ if (isMainThread) {
   const rounds = Number(option("--rounds", 5)), positions = Number(option("--positions", 64)), kvStart = Number(option("--kv-start", 16));
   const from = Number(option("--from", 0));
   const wide = args.includes("--wide");
+  // T101: --high (with --wide) puts the checkpoint 4 GiB up a 64-bit memory, so that every address the forward pass
+  // uses is past 2^32 (the pages below are never touched, so they cost no memory)
+  const high = wide && args.includes("--high") ? 2 ** 32 : 0;
   const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
   const { pyodide: py } = await pyodideWithEngine();
   let failed = false;
@@ -48,7 +51,8 @@ if (isMainThread) {
       tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) };
     const file = (f) => (path.isAbsolute(f) ? f : root + f);
     const checkpoint = fs.readFileSync(file(entry.checkpoint));
-    const { memory, base } = weightsMemory(checkpoint.length, { shared: true, wide });
+    const { memory, base: low } = weightsMemory(checkpoint.length + high, { shared: true, wide });
+    const base = low + high;
     new Uint8Array(memory.buffer).set(checkpoint, base);
     py.FS.writeFile("tokenizer.bin", fs.readFileSync(file(entry.tokenizer)));
     let plan;
