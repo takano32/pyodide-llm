@@ -70,13 +70,6 @@
 
 ## これからのタスク
 
-### T133 [性能] 自動のビット数: 64 ビットのメモリのあるブラウザでは int8 のまま — 状態: 進行中（2026-09-26、実装を push。本番の確認待ち）（2026-09-26、持ち主の判断「オススメで様子見」。**T132 の前**。規模 小）
-- 判断（2026-09-26、T115 のレビューで持ち主に出した (c)）: 今の規則「int8 が 32 ビットのメモリに入らなければ 6 ビット」（T98・T115）を、64 ビットのメモリ（Memory64）が使えるブラウザ（Chrome・Firefox）では「int8 のまま 64 ビットのメモリに」に変える。Safari（Memory64 なし）は今のまま 6 ビット。
-- 数字（CI の Linux の Chromium）: Llama-3.2-3B は 6 ビット・32 ビットで 1.9 tok/s・ヒープ 3459MB、int8・64 ビットで 4.1 tok/s・4266MB（2.2 倍速く、メモリは 23% 多い）。Qwen2.5 7B は int8・64 ビットで 3.6 tok/s・9716MB、6 ビットは int8 の 0.37〜0.53 倍（T98）。6 ビットの品質の代償は 1B 級で +1.4〜1.7%（T98）。64 ビットのメモリは 32 ビットより約 1 割遅い（T101）。
-- 一緒に直すこと: ページの `weightsFor()` は `deviceMemory` の半分を超えると 6 ビットを頼むが、Chromium の `deviceMemory` は 8 が上限なので、どの機械でも int8 が約 3.7GB を超えると 6 ビットになる（大きなデスクトップでも）。`memoryWarning()` も同じ理由で 7B には必ず出る。上限の 8 と答える端末では、この 2 つをどうするか（当てない、文を「8 GB 以上」に）を決める。
-- 様子見（覆す条件）: 持ち主の端末で 3B 級を動かし、メモリ不足やタブの落ちが出たら 6 ビットに戻す。
-- 完了条件: `models.yml` で Llama-3.2-3B が自動で int8・64 ビットになり 4 tok/s 前後。macOS の WebKit では 6 ビットのまま。forward-check・models-check が新しい規則を見る。
-
 ### T132 [追加] 大きいモデル（3B 級と 7〜8B）を一覧に足す — 状態: 未着手（2026-09-26、持ち主の判断「大きいモデルも入れる、試さないと分かんない」。**T133 の後**。規模 小〜中）
 - 足すもの（T81 の調査の値。どれもゲートなし、リビジョン固定）:
   - 3B 級: Qwen/Qwen2.5-3B-Instruct（`aa8e72537993ba99e69dfaafa59ed015b17504d1`、6171926992 バイト、qwen-research＝非商用、書式は自動）、unsloth/Llama-3.2-3B-Instruct（`006f5dcd1393c3add266de40994ba96225e9689d`、6425529048、llama3.2。自動の書式には今日の日付が入る）、sbintuitions/sarashina2.2-3b-instruct-v0.1（`4f3626fb1b64b3e97c908e67f27b2d627ba2a999`、6711252896、MIT、書式は `SARASHINA`）。
@@ -1013,6 +1006,19 @@
 - **調査（2026-09-26、Opus medium のサブエージェント。全文は `docs/t81-survey-2026-09-26.md`、問い合わせと件数つき）**: 合否は変換器の `normalize()`・`check_config()`・`pretokenizer_name()` をそのまま import して判定。ダウンロード上位 2000 件（text-generation、transformers）のうち 8.5B 以下は 739 件、受け付ける 4 系統（llama・qwen2・gpt2・gpt_neox）はそのうち 325 件（ダウンロードの 51.7%）。4 系統の config を 438 件判定して **276 件が通る**（一覧にあるもの 9 件を含む。落ちた 162 件のうち 99 件は量子化済みの再配布、13 件はゲート付きの meta-llama）。通った 276 件の内訳（メモリは見積もり）: int8 で 32 ビット 140、6 ビットで 32 ビット 6、64 ビットが要る 130、2 シャード以上 140、RoPE が llama3 41。**2026-09-21 の条件なら 116 件**で、差の 160 件は T105・T106・T101・T98 で開いた（前回の 299 件は問い合わせが残っていないので直接は比べられない）。**断られるもの**（739 件の中）: qwen3 90（ダウンロードの 29.3%、最大。head ごとの q・k の norm と、dim / heads と違う head_dim が要り、legacy のヘッダの変更になる）、mistral 22（日本の組織では 34。v0.2 以降は llama と同じ形で、model_type の別名で開く見込み）、lfm2 22、granite 12、gemma3 11、phi3 11、gemma2 9、phi 7、stablelm 5（日本の組織で 16）。`rope_scaling` は llama3 66・linear 3・yarn 1、sliding window が真の qwen2 は 0。GGUF は上位 500 件のうち Q8_0 を持つ 372 件、読める llama / qwen2 で Q8_0 の 8.5B 以下は 36 件。GGUF にしか無い、今の読み手で読める新しい小さいモデルは見つからなかった。**そのまま足せる候補**: SakanaAI/TinySwallow-1.5B-Instruct、llm-jp/llm-jp-3.1-1.8b-instruct4、sbintuitions/sarashina2.2-1b-instruct-v0.1（書式は手書き）、cyberagent/CAT-Translate-1.4b と 0.8b、HuggingFaceTB/SmolLM2-1.7B-Instruct。64 ビットで llm-jp-4-8b-instruct（harmony の書式を手書き）、Qwen2.5-7B-Instruct、Llama-3.1-Swallow-8B-Instruct-v0.5。**気づいたこと**: 一覧の sarashina2.2 0.5B Instruct の書式が ChatML になっているが本来は `<|user|>{prompt}</s><|assistant|>`（影響は未確認）、rinna/japanese-gpt-1b は gpt2 の `gelu_fast` だけで断られている（式は gelu_new と同じ、4 件開く）、`chat_template.jinja` を読まないので 16 件以上で書式が自動で取れない、CMSManhattan/JiRackUltra_1b は出どころが確かめられないので勧めない。
 
 </details>
+
+- [x] **T133 [性能] 自動のビット数: 64 ビットのメモリのあるブラウザでは int8 のまま。**（Opus medium、2026-09-26）— 状態: **レビュー待ち**。**形**: 規則を `forward.js` の `automaticDtype(int8, after, wide)` に 1 つ置き（int8 が 32 ビットに入るか、64 ビットのカーネルがあれば int8、どちらも無ければ 6 ビット）、Worker の `automaticBits()` はそれを呼ぶだけ。ページの `weightsFor()` は `deviceMemory` が 8（Chromium の上限）なら 6 ビットを頼まない（Worker に任せる）。`memoryWarning()` は 8 と言う端末を「8GB 以上」と見て、8GB を超えるモデルにだけ「…, and this device has 8 GB or more: it may run out of memory.」と出す（文面は持ち主が選んだ、2026-09-26）。それまで 8 と言う端末には 3.7GB を超えるモデル（3B 級）に必ず警告が出ていた。**試験**: forward-check の頭に Llama-3.2-3B の見出しと int8 の大きさ（3614847004 バイト）で「64 ビットあり → int8、なし → int6」と Qwen2.5 1.5B は常に int8、models-check に 8 と 4 の端末の `weightsFor()` と警告の文。**本番（`models.yml`、`hf:unsloth/Llama-3.2-3B-Instruct@006f5dcd`、0e6955e）**: Linux の Chromium 148 は **int8・64 ビット・4 本で 7.5 tok/s**、準備完了 64.4 秒（取得 57.0 秒、うち変換 11.1）、ヒープ 4266MB（T115 のレビューの 6 ビット・32 ビットは 1.9 tok/s・3459MB）。Playwright の Firefox 150 も int8・64 ビット（1.8 tok/s は Playwright の Firefox なので速さではない、AGENTS.md の落とし穴）、ヒープ 4266MB。macOS の WebKit 26.4 は **int6・32 ビットのまま**（1.6 tok/s、準備完了 128.0 秒、ヒープ 3061MB）で答えた。WebKit の走行はコンソールの 404 1 つで「失敗」と記録された: 10.4 秒の、取得の始まり（2 シャードのモデルを `?hf=` で開くと、まず `model.safetensors` を問うて 404、次に index を読む）。一覧に入れるモデルは index を名指しするので起きない（T132 で確かめる）。**様子見（覆す条件）**: 持ち主の端末で 3B 級を動かし、メモリ不足やタブの落ちが出たら 6 ビットに戻す。**レビューで見てほしいこと**: 8 と言う端末で 6 ビットを頼まなくしたので、本当に 8GB ちょうどの端末で 7B（ヒープ約 9.7GB）を選ぶと、警告は出るが int8 で読みにいく（それまでは 6 ビットを頼んでいた。どちらでも 8GB には入らない）。
+
+<details><summary>T133 の採用時の記録</summary>
+
+- 判断（2026-09-26、T115 のレビューで持ち主に出した (c)）: 今の規則「int8 が 32 ビットのメモリに入らなければ 6 ビット」（T98・T115）を、64 ビットのメモリ（Memory64）が使えるブラウザ（Chrome・Firefox）では「int8 のまま 64 ビットのメモリに」に変える。Safari（Memory64 なし）は今のまま 6 ビット。
+- 数字（CI の Linux の Chromium）: Llama-3.2-3B は 6 ビット・32 ビットで 1.9 tok/s・ヒープ 3459MB、int8・64 ビットで 4.1 tok/s・4266MB（2.2 倍速く、メモリは 23% 多い）。Qwen2.5 7B は int8・64 ビットで 3.6 tok/s・9716MB、6 ビットは int8 の 0.37〜0.53 倍（T98）。6 ビットの品質の代償は 1B 級で +1.4〜1.7%（T98）。64 ビットのメモリは 32 ビットより約 1 割遅い（T101）。
+- 一緒に直すこと: ページの `weightsFor()` は `deviceMemory` の半分を超えると 6 ビットを頼むが、Chromium の `deviceMemory` は 8 が上限なので、どの機械でも int8 が約 3.7GB を超えると 6 ビットになる（大きなデスクトップでも）。`memoryWarning()` も同じ理由で 7B には必ず出る。上限の 8 と答える端末では、この 2 つをどうするか（当てない、文を「8 GB 以上」に）を決める。
+- 様子見（覆す条件）: 持ち主の端末で 3B 級を動かし、メモリ不足やタブの落ちが出たら 6 ビットに戻す。
+- 完了条件: `models.yml` で Llama-3.2-3B が自動で int8・64 ビットになり 4 tok/s 前後。macOS の WebKit では 6 ビットのまま。forward-check・models-check が新しい規則を見る。
+
+</details>
+
 
 ## やらないと決めたこと
 
