@@ -121,6 +121,11 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
           <label class="switch"><input type="checkbox" data-switch="int8" /> int8 weights kept as int8</label>
           <label class="switch"><input type="checkbox" data-switch="relaxed" /> relaxed SIMD, 7-bit activations</label>
           <label class="switch"><input type="checkbox" data-switch="sampler" /> sampling in the kernel</label>
+          <!-- T98: the weights of a model converted in this browser (?bits=), the URL again the state -->
+          <p class="hint">Weights of a model converted from Hugging Face: six bits take 7/9 of int8's memory and write about half as fast. Automatic keeps int8 unless it does not fit.</p>
+          <label class="switch"><input type="radio" name="bits" value="" /> automatic</label>
+          <label class="switch"><input type="radio" name="bits" value="8" /> int8</label>
+          <label class="switch"><input type="radio" name="bits" value="6" /> 6 bits</label>
         </details>
         <button id="settings-reset" type="button">Reset to defaults</button>
       </div>
@@ -532,6 +537,19 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       const names = [...switches.map((each) => each.dataset.switch!).filter((each) => without.has(each)),
                      ...[...without].filter((each) => !switches.some((box) => box.dataset.switch === each))];
       names.length ? url.searchParams.set("without", names.join(",")) : url.searchParams.delete("without");
+      if (model.id !== "local") {
+        url.searchParams.set("model", model.id);
+      }
+      location.assign(url);
+    };
+  }
+  // T98: the bits of a converted model, from ?bits= (weighed() reads it) and back to it, the same way
+  const asked = ["6", "8"].includes(parameters.get("bits") ?? "") ? parameters.get("bits")! : "";
+  for (const choice of document.querySelectorAll<HTMLInputElement>('#engine input[name="bits"]')) {
+    choice.checked = choice.value === asked;
+    choice.onchange = () => {
+      const url = new URL(location.href);
+      choice.value ? url.searchParams.set("bits", choice.value) : url.searchParams.delete("bits");
       if (model.id !== "local") {
         url.searchParams.set("model", model.id);
       }
