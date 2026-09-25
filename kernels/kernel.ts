@@ -156,7 +156,8 @@ export function attention_f16(out: usize, q: usize, kc: usize, vc: usize, att: u
 
 // float16 to float32 without the FP16 proposal (T104 is on hold): the bits of the magnitude, moved to where float32
 // keeps them, are the number times 2^-112, which one multiplication by 2^112 puts right (exactly, subnormals and
-// zero included). Infinities and NaN are not kept: a key or value never is one.
+// zero included). An infinity (what to_f16 writes past 65520) reads back as 65536, and NaN is not kept: neither is
+// expected of a key or value.
 // @ts-ignore: decorator
 @inline function halves4(p: usize): v128 {
   const h = v128.load16x4_u(p);

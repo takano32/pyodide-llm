@@ -177,7 +177,8 @@ kernel = llama2_numpy.load_kernels("simdkernel.so")
 rng = np.random.default_rng(11)
 wide = np.concatenate([rng.standard_normal(4000).astype(np.float32) * 10 ** rng.uniform(-9, 5, 4000).astype(np.float32),
                        np.array([0.0, -0.0, 65504.0, 65520.0, 1e6, 2.0 ** -24, 2.0 ** -25, 3 * 2.0 ** -26, 5.96e-8, -1.5e-5,
-                                 1.0 + 2.0 ** -11, 1.0 + 3 * 2.0 ** -11], dtype=np.float32)])
+                                 1.0 + 2.0 ** -11, 1.0 + 3 * 2.0 ** -11, 2.0 ** -14, 2.0 ** -14 * (1 - 2.0 ** -12),
+                                 2.0 ** -14 * (1 - 2.0 ** -11)], dtype=np.float32)])  # the last: the subnormal that rounds up into the normals
 halves = np.empty(wide.size, dtype=np.float16)
 kernel["to_f16"](halves.ctypes.data, wide.ctypes.data, wide.size)
 with np.errstate(over="ignore"):
