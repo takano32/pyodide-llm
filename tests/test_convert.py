@@ -314,3 +314,19 @@ def test_a_quantizer_of_rows_is_used_for_whole_groups_of_32_only():
     stream.finish()
     assert bytes(stream.out) == converted(Safetensors(reader(file)), published, "int8")
     assert seen and set(seen) == {64}, "only the rows of 64 (w2) go to it; the rows of 48 stay with NumPy"
+
+
+def test_a_mistral_is_a_llama_and_its_sliding_window_cuts_the_context():
+    """T125: model_type mistral converts as the Llama it is, the same bytes; a sliding window shorter than the
+    context cuts the context to it (the window then covers every position), a longer one or none changes nothing"""
+    config, weights = synthetic_weights()
+    tensors, published = hugging_face(config, weights, True)
+    llama = converted(Arrays(tensors), published, "float32")
+    mistral = {**published, "model_type": "mistral", "sliding_window": None}
+    check_config(normalize(mistral))
+    assert converted(Arrays(tensors), mistral, "float32") == llama
+    context = published["max_position_embeddings"]
+    for window, expected in ((context // 2, context // 2), (4 * context, context)):
+        windowed = normalize({**mistral, "sliding_window": window})
+        assert windowed["model_type"] == "llama" and windowed["max_position_embeddings"] == expected
+        assert struct.unpack_from("<7i", converted(Arrays(tensors), {**mistral, "sliding_window": window}, "float32"), 0)[6] == expected

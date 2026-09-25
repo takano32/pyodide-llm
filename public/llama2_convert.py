@@ -664,6 +664,15 @@ def normalize(config):
             config["rope_scaling"] = scaling
         if "partial_rotary_factor" in rope:
             config["rotary_pct"] = rope["partial_rotary_factor"]
+    if config.get("model_type") == "mistral":
+        # T125: a Mistral is a Llama by another name (the same tensors, names and forward). v0.1 and some of its
+        # descendants attend a sliding window of the last sliding_window positions: a context no longer than the
+        # window attends the very same positions, so the context is cut to it
+        window, context = config.get("sliding_window"), config.get("max_position_embeddings")
+        config = {**config, "model_type": "llama"}
+        if isinstance(window, int) and window > 0 and isinstance(context, int):
+            config["max_position_embeddings"] = min(context, window)
+        return config
     if config.get("model_type") == "gpt_neox":
         # GPT-NeoX has the Llama names already; only the angles are spelled differently
         return {**config, "rope_theta": config.get("rotary_emb_base", config.get("rope_theta", 10000.0)),

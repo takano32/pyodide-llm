@@ -36,6 +36,19 @@ const TRANSLATE = "Translate the following Japanese text into English.\n\n{日�
 const HARMONY = "<|start|> system<|message|> You are LLM-jp-4, a large language model trained by LLM-jp.\nKnowledge cutoff: " +
   "2025-12\nCurrent date: {date}\n\n# Valid channels: analysis, commentary, final. Channel must be included for every " +
   "message.<|end|><|start|> user<|message|> {prompt}<|end|><|start|> assistant<|channel|> final<|message|>";
+// T125: Mistral's formats, one turn as the real Jinja writes it (the same IDs as the real Jinja and tokenizers for
+// four prompts, where the prompt has no space at either end: some templates trim it, the page does not). These
+// models come with a sentencepiece tokenizer.model, which the engine reads (their tokenizer.json is a BPE of
+// sentencepiece's kind, which it does not). v0.2 writes "<s> [INST]": after the BOS, the engine's dummy prefix is
+// that space. v0.3's [INST] and [/INST] are tokens of their own (3 and 4)
+const MISTRAL = "[INST] {prompt} [/INST]";
+const MISTRAL_V3 = "[INST] {prompt}[/INST]";
+// RakutenAI's (2.0 mini and 7B chat): no special tokens, a system sentence and USER / ASSISTANT
+const RAKUTEN = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, " +
+  "detailed, and polite answers to the user's questions. USER: {prompt} ASSISTANT:";
+// zephyr's tokenizer.json puts a "▁" before the text after </s> (a legacy Llama tokenizer), which the engine does
+// not: the space after </s> makes the same tokens
+const ZEPHYR = "<|user|>\n{prompt}</s> \n<|assistant|>\n";
 const harmony = { specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
 /** What the page sends for a prompt in a model's template: {prompt} is what was typed, {date} today (YYYY-MM-DD, the
  * visitor's own day). */
@@ -86,6 +99,10 @@ export const LICENSES = {
   "llm-jp/llm-jp-4-8b-instruct": APACHE,
   // T126
   "rinna/japanese-gpt-1b": MIT,
+  // T125
+  "Rakuten/RakutenAI-2.0-mini-instruct": APACHE, "Rakuten/RakutenAI-7B-chat": APACHE,
+  "tokyotech-llm/Swallow-MS-7b-instruct-v0.1": APACHE, "mistralai/Mistral-7B-Instruct-v0.2": APACHE,
+  "mistralai/Mistral-7B-Instruct-v0.3": APACHE, "HuggingFaceH4/zephyr-7b-beta": MIT,
   "meta-llama/Llama-3.2-3B-Instruct": LLAMA_32, "unsloth/Llama-3.2-3B-Instruct": LLAMA_32,
 };
 /** The Hugging Face repository a model comes from. */
@@ -200,6 +217,12 @@ export const MODELS = [
   { group: "hf", id: "hf-tinyswallow-1.5b-instruct", name: "TinySwallow 1.5B Instruct", note: "answers instructions · 日本語 · fetches 3.1 GB → int8 1.7 GB · desktop only",
     hf: hf("SakanaAI/TinySwallow-1.5B-Instruct", "91e9fcc30f56d224aea84356c4d850cc4c5a3260"), download: 3087467144,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T125: a Mistral (a Llama by another name) of 1.5B, Japanese and English; its sliding window of 8192 is past the
+  // context of 4096 the page gives it
+  { group: "hf", id: "hf-rakutenai-2.0-mini-instruct", name: "RakutenAI 2.0 mini instruct", note: "answers instructions · 日本語 / English · fetches 3.1 GB → int8 1.7 GB · desktop only",
+    hf: hf("Rakuten/RakutenAI-2.0-mini-instruct", "6d902489587d324b7d5e201299e4e1a169f3a40b", "tokenizer.model"), download: 3069389424,
+    conversion: {}, options: {}, generation: sampled(1.1), template: RAKUTEN,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-llm-jp-3.1-1.8b-instruct4", name: "llm-jp-3.1 1.8B instruct4", note: "answers instructions · 日本語 · fetches 3.7 GB → int8 2.1 GB · desktop only",
     hf: hf("llm-jp/llm-jp-3.1-1.8b-instruct4", "f19510db409090bb1737f24f868d17c4bdc86c8e"), download: 3735253776,
     conversion: {}, options: llmJp, generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
@@ -216,6 +239,15 @@ export const MODELS = [
   { group: "hf", id: "hf-qwen2.5-7b-instruct", name: "Qwen2.5 7B Instruct", note: "answers instructions · 日本語 / English · fetches 15.2 GB → int8 8.6 GB · desktop only · Chrome and Firefox",
     hf: hf("Qwen/Qwen2.5-7B-Instruct", "a09a35458c702b33eeacc393d103063234e8bc28"), download: 15231271888,
     conversion: {}, options: { ...chatml, stop_tokens: [151643, 151645] }, generation: sampled(1.1), template: CHATML,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T125: Mistral 7B's of Japanese, whose sliding window of 4096 is the page's context
+  { group: "hf", id: "hf-rakutenai-7b-chat", name: "RakutenAI 7B chat", note: "answers instructions · 日本語 / English · fetches 14.7 GB → int8 8.3 GB · desktop only · Chrome and Firefox",
+    hf: hf("Rakuten/RakutenAI-7B-chat", "7093167c61a0be6161cb68928c939c03fe0ab87d", "tokenizer.model"), download: 14745642040,
+    conversion: {}, options: {}, generation: sampled(1.1), template: RAKUTEN,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-swallow-ms-7b-instruct", name: "Swallow-MS 7B instruct", note: "answers instructions · 日本語 / English · fetches 14.7 GB → int8 8.3 GB · desktop only · Chrome and Firefox",
+    hf: hf("tokyotech-llm/Swallow-MS-7b-instruct-v0.1", "008d006f9065e37e39e31bf117ae8689390953e8", "tokenizer.model"), download: 14660445224,
+    conversion: {}, options: {}, generation: sampled(1.1), template: `${MISTRAL} `,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // Swallow's own chat_template is read (T73): a Japanese system message, and a second BOS before the user's turn,
   // as the real Jinja writes it (the same IDs as the real Jinja and tokenizers, T132)
@@ -287,6 +319,19 @@ export const MODELS = [
     conversion: {}, options: { specials: ["<｜begin▁of▁sentence｜>", "<｜User｜>", "<｜Assistant｜>"], stop_tokens: [151643] },
     generation: sampled(1.1), template: "<｜User｜>{prompt}<｜Assistant｜>",
     prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
+  // T125: Mistral 7B, and zephyr made from it
+  { group: "hf", id: "hf-mistral-7b-instruct-v0.2", name: "Mistral 7B Instruct v0.2", note: "answers instructions · English · fetches 14.5 GB → int8 8.2 GB · desktop only · Chrome and Firefox",
+    hf: hf("mistralai/Mistral-7B-Instruct-v0.2", "63a8b081895390a26e140280378bc85ec8bce07a", "tokenizer.model"), download: 14483498016,
+    conversion: {}, options: {}, generation: sampled(1.1), template: MISTRAL,
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
+  { group: "hf", id: "hf-mistral-7b-instruct-v0.3", name: "Mistral 7B Instruct v0.3", note: "answers instructions · English · fetches 14.5 GB → int8 8.2 GB · desktop only · Chrome and Firefox",
+    hf: hf("mistralai/Mistral-7B-Instruct-v0.3", "c170c708c41dac9275d15a8fff4eca08d52bab71", "tokenizer.model"), download: 14496080928,
+    conversion: {}, options: { specials: ["[/INST]", "[INST]"] }, generation: sampled(1.1), template: MISTRAL_V3,
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
+  { group: "hf", id: "hf-zephyr-7b-beta", name: "zephyr 7B beta", note: "answers instructions · English · fetches 14.5 GB → int8 8.2 GB · desktop only · Chrome and Firefox",
+    hf: hf("HuggingFaceH4/zephyr-7b-beta", "892b3d7a7b1cf10c7a701c60881cd93df615734c", "tokenizer.model"), download: 14483497952,
+    conversion: {}, options: { specials: ["</s>"] }, generation: sampled(1.1), template: ZEPHYR,
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   { group: "hf", id: "hf-llama-3.2-3b-instruct", name: "Llama 3.2 3B Instruct", note: "answers instructions · English · fetches 6.4 GB → int8 3.6 GB · desktop only",
     original: "meta-llama/Llama-3.2-3B-Instruct",
     hf: hf("unsloth/Llama-3.2-3B-Instruct", "006f5dcd1393c3add266de40994ba96225e9689d"), download: 6425529048,
