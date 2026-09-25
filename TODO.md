@@ -74,10 +74,6 @@
 - 根拠: T81 の調査で、ダウンロード上位 2000 件の 8.5B 以下のうち断られる系統で最大（90 件、ダウンロードの 29.3%、日本の組織で 14 件。Qwen3-Swallow 8B など日本語の新しいモデルもここ）。足りないのは head ごとの q・k の RMSNorm と、`dim / heads` と違う `head_dim`。legacy のヘッダ（7 個の int）が head_dim を持たないので、形式を変える設計（docs/review-by-opus.md の「Fable に回すもの」に当たる）。**レビュー（Opus xhigh、2026-09-26）の見立て**: bias や arch と同じく、ファイルから分からない設定として options で渡せば見出しは変えずに済みそう（`checkpoint_dtype()`・`layout()`・エンジンの 3 か所と `footprint()` が head_dim を受け取る）。どちらにするかは実装の前に Fable か持ち主が決める。
 - 足すモデル（採用時の方針: 有名なものは全部）: Qwen3 の 0.6B・1.7B・4B・8B、日本語の Qwen3-Swallow 8B など（ゲートなし・リビジョン固定・ライセンスはモデルカードから、T81 と同じ手順）。書式は chat_template が読めなければ手で書く。
 
-### T125 [追加] mistral を llama の別名として読む — 状態: 進行中（2026-09-26、push。本番の確認待ち）（2026-09-26 採用、持ち主の判断「最初は有名なのはぜんぶ入れよう」。T81 の調査から。規模 小）
-- 根拠: 22 件、日本の組織で 34 件。v0.2 以降は llama と同じ形（sliding window が null）なので、model_type の別名で開く見込み。sliding window のあるもの（v0.1）は断ったまま。
-- 足すモデル: 調査の 22 件と日本の組織の 34 件から、有名でゲートの無いものを全部（RakutenAI-2.0-mini 1.5B など。トークナイザが断られないかは 1 つずつ確かめる）。
-
 ### T127 [追加] chat_template.jinja を読む、と selectattr — 状態: 未着手（2026-09-26 採用、持ち主の判断「最初は有名なのはぜんぶ入れよう」。T81 の調査から。規模 小）
 - 根拠: 通った 276 件のうち少なくとも 16 件は書式が `chat_template.jinja` にしかなく、自動で取れない。sarashina2.2 の系統は `selectattr` で読めず、手で書いた（T81）。
 - 効くところ: 一覧のモデルは手で書けば足りるので、主に `?hf=` で開く一覧に無いモデル。T124 の Qwen3 の書式が読めるかもここで決まる。
@@ -1044,6 +1040,15 @@
 
 - 根拠: rinna/japanese-gpt-1b と派生の 4 件は gpt2 の `gelu_fast` だけで断られる（式は gelu_new と同じで、neox ではすでに許している）。RoPE の linear（deepseek-coder の 3 件）は位置を割るだけ。
 - 足すモデル: rinna/japanese-gpt-1b、deepseek-coder 1.3b。
+
+</details>
+
+- [x] **T125 [追加] mistral を llama の別名として読む。**（Opus medium、2026-09-26）— 状態: **レビュー待ち**。**形**（0f43609）: `normalize()` が mistral を llama に読み替え、`sliding_window` があれば文脈をその長さまでに切る（窓の中では窓なしと同じ位置を見る。4096 の窓はページの文脈 4096 と同じ）。試験は「mistral の名前で llama と 1 バイトも違わない」「窓が短ければ文脈がそれに、長ければそのまま」。**トークナイザ**: Mistral の系統の `tokenizer.json` は sentencepiece 流の BPE でエンジンは読まないので、どれも配っている `tokenizer.model` を読む。**書式**: 6 つとも本物の Jinja と `tokenizers` で 4 つのプロンプトの ID を突き合わせた（v0.2 は先頭の空白を書かない、zephyr は `</s>` の後に空白、Rakuten 2.0 mini は最初の 1 トークンだけ違う（T131）、前後に空白のあるプロンプトは `trim` のぶん違う）。**足したもの**（どれもゲートなし、リビジョン固定、ライセンスはモデルカードから）: RakutenAI 2.0 mini instruct（1.5B、Apache 2.0）、RakutenAI 7B chat（Apache 2.0）、Swallow-MS 7B instruct v0.1（Apache 2.0）、Mistral 7B Instruct v0.2 と v0.3（Apache 2.0）、zephyr 7B beta（MIT）。`browsers.yml` に組 `mistral`（6 つ、76GB）。**本番（Linux の Chromium、4 本）**: Rakuten 2.0 mini 37.8 秒・16.2 tok/s・2092MB、Rakuten 7B chat 181.9 秒・3.6 tok/s・9475MB、Swallow-MS 7B 266.4 秒・3.8 tok/s・9456MB、Mistral v0.2 156.2 秒・3.6 tok/s・9316MB、v0.3 163.8 秒・4.0 tok/s・9324MB、zephyr 146.5 秒・3.8 tok/s・9358MB（7B はどれも 64 ビット）。日本語の 3 つは日本語で、英語の 3 つは英語で、3 つ挙げる形で答えた。**断ったもの**: cyberagent/CAT-Translate-7b（`head_dim` が dim / heads と違う、T124 と同じ変更が要る）、Rakuten 7B instruct（書式が無い）、openchat と OpenHermes（`added_tokens.json` の特殊トークンが `tokenizer.model` に無い）。**レビューで見てほしいこと**: (1) 窓で文脈を切る判断（窓より長い文脈をページは使わない）、(2) `?hf=` の Mistral は `tokenizer.json` を断られてから `tokenizer.model` に移る（実物では未確認）、(3) 訪問者に見える「Other repository… — any Llama, Qwen2, GPT-2 or GPT-NeoX」とシートの説明に Mistral を足すか（文面は持ち主に）。
+
+<details><summary>T125 の採用時の記録</summary>
+
+- 根拠: 22 件、日本の組織で 34 件。v0.2 以降は llama と同じ形（sliding window が null）なので、model_type の別名で開く見込み。sliding window のあるもの（v0.1）は断ったまま。
+- 足すモデル: 調査の 22 件と日本の組織の 34 件から、有名でゲートの無いものを全部（RakutenAI-2.0-mini 1.5B など。トークナイザが断られないかは 1 つずつ確かめる）。
 
 </details>
 
