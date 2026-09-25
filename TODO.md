@@ -68,11 +68,6 @@
 
 ## これからのタスク
 
-### T116 [運用] 保存した変換の鍵に、ビット数と変換器の版を入れる — 状態: **進行中（実装済み、本番の確認中。Opus medium、2026-09-25）**（2026-09-25 採用、Opus xhigh のレビューから。**T81 の前**。規模 小）
-- 根拠: (1) ページの「kept in this browser」の判定と `remember()` は、リポジトリとリビジョンしか見ない（manifest に dtype が無い）。int8 で保存したモデルを `?bits=6` や設定のパネルで 6 ビットにすると、表示は「kept」のまま、500MB 超の確認なしに取り直しが始まる（Llama 3.2 1B なら 2.5GB。方針 4 に反する）。(2) `keptName()` に変換器の版が入っていないので、変換器が options を変えても（T106 の BOS を外す・`specials`）、前に保存したモデルは古い options のまま使われる。落とし穴の「Cache の鍵」と同じ種類。
-- 手順: manifest に dtype と変換器の版（変換器の中の定数。options や形式を変えたら上げる）を書き、ページの判定と Worker の読み出しがそれを見る。版の違う保存は使わずに消す。
-- 完了条件: `tests/kept-check.mjs` に、ビット数の違う保存と版の違う保存の 2 つを足す。`models.yml` の `twice` で 2 回目が保存から読まれる。
-
 ### T117 [運用] Service Worker の写しの 3 つの直し — 状態: 未着手（2026-09-25 採用、Opus xhigh のレビューから。**Service Worker に触るので、持ち主の端末で見てから出す**（落とし穴）。T118 と同じ日に。規模 小）
 - (1) オフラインのとき `copyOf()` の `ignoreSearch` が同じサイトの全ファイルに効き、`?v=` の違うビルドのファイル（worker.js・forward.js・helper.js・jobs.js）が混ざりうる（新しいビルドの取得が途中で切れた後など。レビューのサブエージェントの試験台で再現）。ページ（ナビゲーション）だけにする。(2) 版が URL に入ったファイルの経路で `caches.open()` の失敗を捕まえていない（試験台で、ネットが生きていても worker.js と pyodide.asm.wasm が network error になった。T111 の前は Cache API に頼っていなかった）。捕まえてネットに回す。(3) NumPy の wheel（名前に版が入る）と `/_astro/` の古いファイルは `family()` で消えずに溜まる。
 - 完了条件: `preview.yml` の `offline` で 3 つのブラウザ、持ち主の iPhone・Android・PC で機内モードの読み込み直し。
@@ -899,6 +894,16 @@
 - **第 1 段（2026-09-25、1 コアのカーネル）**: 測った内訳（この開発機、Node 上の Pyodide、`tests/profile-convert.mjs llm-jp-3-150m int8`、bf16 305MB）: 変換の Python 0.78 秒のうち bf16 → float32 の広げ（NumPy の 2 回の走査）0.28 秒、量子化（T89 のカーネル）約 0.25 秒、残りは切り出しと書き込み。**本番の内訳**（T115 の走行、CI の Linux の Chromium）: Llama-3.2-3B int8 は準備完了 64.2 秒のうち取得と変換の実時間 54.0 秒・変換 11.6 秒・construct 3.2 秒、Qwen2.5-3B は 64.6・53.9・13.5・3.7 秒。**取得と変換は重なっているので、CI では変換を縮めても準備完了は取得の 50 秒前後より縮まない。** 入れたもの: (1) `int8_sums`（int8 の補正。`six_sums` と同じ形。150M ぶんの重みで JS 193ms → 21ms、9.2 倍。forward-check が JS の和とビット単位で比べる）、(2) `widen_bf16`（bf16 の広げ。`llama2_numpy.kernel_widener()` を変換器の `bfloat16=` に渡す。0.284 → 0.090 秒、変換全体 0.78 → 0.60 秒。smoke が 65536 通りのビット列で NumPy と比べる）。
   **本番**（`models.yml`、CI の Linux の Chromium、0fca426）: Llama-3.2-3B int8（64 ビット）は construct 3.17 → **0.66 秒**、変換 11.6 → 10.4 秒、準備完了 64.2 → 69.9 秒（取得の揺れ: 取得と変換の実時間 54.0 → 61.8 秒）。tiny-lm・llm-jp-3 150M・llm-jp-3 150M instruct3（変換 0.50 秒）・SmolLM2（GGUF、0.78 秒）も通った。
 - **次（第 3 段、スレッド）の前に持ち主に確かめること**: CI の回線では取得が律速で、変換をスレッドに配っても準備完了はほとんど縮まない見込み。重いと感じた端末・モデル・準備完了の内訳（ページの ready の行の pyodide・download・convert・construct）が分かれば、スレッドに配る値打ちがその端末で出るかを先に見積もる。
+
+</details>
+
+- [x] **T116 [運用] 保存した変換の鍵に、ビット数と変換器の版を入れる。**（Opus medium、2026-09-25）— 状態: **レビュー待ち**。**形**: 保存の名前（`keptName`）にはもうビット数が入っていたので、足したのは (1) **変換器の版** `CONVERTER`（`public/kept.js`、いま 2。manifest に書く。1 は版の無い manifest）と、(2) **どの保存がそのモデルに使えるかの判定を 1 つに**（`serves(kept, model)`: 頼んだビット数の名前か、頼まないときは Worker が選びうる int8・int6 の名前で、今の版のもの）。Worker の `openKept()` も名前を順に見て、古い版の保存は使わずに消す（新しい版の保存は消さない: 古いタブが新しいページの保存を消さないように）。ページの「kept in this browser」は `serves(one, weighed(entry))`、表示のときに古い版の保存を消す。**起動**: 覚えている 500MB 超のモデルは、今の読み方（ビット数と版）で保存にあるときだけ確認なしで始め、無ければ一覧の最初から（`stillKept()`。`?bits=6` で開いた人に int8 の保存を理由に 2.5GB を黙って取らせない）。**試験**: `kept-check.mjs` に 2 件（int8 の保存は int8 と「頼まない」に使え、int6 には使えない・Worker が 6 ビットを選んだ保存も「頼まない」で見つかる／古い版は使わず消し、新しい版は使わず残す）。`openKept` の版の判定を外すと落ちることを確かめた。**本番**（`models.yml` の `twice`、1573a8a）: 2 回目は保存から、llm-jp-3 150M instruct3 が 12.4 → 2.5 秒、SmolLM2 が 6.5 → 2.2 秒、`?bits=6` の llm-jp-3 150M instruct3 は 11.7 → 3.2 秒（int6 の名前で）。tiny-lm・stories260K も通った。**変換器の版を上げる決まり**を AGENTS.md の落とし穴に書いた（チェックポイントのバイトか options を変えたら上げる）。**レビューで見てほしいこと**: 版を 2 にしたので、訪問者がこれまで保存した変換は全部、次の読み込みで取り直しになる（T106 の options の直しを効かせるため。1B 級で 2.5GB）。
+
+<details><summary>T116 の採用時の記録</summary>
+
+- 根拠: (1) ページの「kept in this browser」の判定と `remember()` は、リポジトリとリビジョンしか見ない（manifest に dtype が無い）。int8 で保存したモデルを `?bits=6` や設定のパネルで 6 ビットにすると、表示は「kept」のまま、500MB 超の確認なしに取り直しが始まる（Llama 3.2 1B なら 2.5GB。方針 4 に反する）。(2) `keptName()` に変換器の版が入っていないので、変換器が options を変えても（T106 の BOS を外す・`specials`）、前に保存したモデルは古い options のまま使われる。落とし穴の「Cache の鍵」と同じ種類。
+- 手順: manifest に dtype と変換器の版（変換器の中の定数。options や形式を変えたら上げる）を書き、ページの判定と Worker の読み出しがそれを見る。版の違う保存は使わずに消す。
+- 完了条件: `tests/kept-check.mjs` に、ビット数の違う保存と版の違う保存の 2 つを足す。`models.yml` の `twice` で 2 回目が保存から読まれる。
 
 </details>
 
