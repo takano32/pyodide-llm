@@ -483,6 +483,30 @@ async function fileSize(url, signal) {
 // the size a range response reported, or the file's size asked for separately when it did not
 const sized = async (url, result, signal) => (Number.isFinite(result.total) && result.total > 0 ? result : { ...result, total: await fileSize(url, signal) });
 
+// Bytes from..to of a response's body, taken as they stream past and no further: the rest is cancelled.
+// arriving(count) is told of every stretch kept. Fewer bytes than asked for when the body ends first.
+async function bodyBetween(res, from, to, arriving) {
+  const bytes = new Uint8Array(to - from);
+  let at = 0, kept = 0;  // at: where in the body the next chunk begins
+  const reader = res.body.getReader();
+  try {
+    while (at < to) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const start = Math.max(from - at, 0), stop = Math.min(to - at, value.length);
+      if (stop > start) {
+        bytes.set(value.subarray(start, stop), at + start - from);
+        kept += stop - start;
+        arriving?.(stop - start);
+      }
+      at += value.length;
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  return bytes.subarray(0, kept);
+}
+
 // arriving(count): told of every stretch of the body as it comes, for a progress line before a whole part is in
 async function fetchRange(url, begin, end, signal, arriving) {
   for (let attempt = 0; ; attempt++) {
@@ -491,30 +515,15 @@ async function fetchRange(url, begin, end, signal, arriving) {
       if (res.status !== 206 && res.status !== 200) {
         throw new Error(`Could not fetch ${url}: ${res.status}`);
       }
-      let bytes;
-      if (arriving && res.body) {
-        const pieces = [];
-        let length = 0;
-        for (const reader = res.body.getReader(); ;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          pieces.push(value);
-          length += value.length;
-          arriving(value.length);
-        }
-        bytes = new Uint8Array(length);
-        pieces.reduce((at, piece) => (bytes.set(piece, at), at + piece.length), 0);
-      } else {
-        bytes = new Uint8Array(await res.arrayBuffer());
+      // 200: the server ignored the range and sends the whole file (T112: a browser whose stack does this is one to
+      // know about). What was asked for is cut out as it streams past, and the rest is never fetched: taking the
+      // whole file for every part fetched SmolLM2's 145 MB ten times over, and held it whole for each (the review)
+      const whole = res.status === 200;
+      if (whole) {
+        console.warn(`${url} answered a range request with the whole file`);
       }
-      let total = Number((res.headers.get("Content-Range") ?? "").split("/")[1]);
-      if (res.status === 200) {
-        // the server ignored the range and sent the whole file: what was asked for is cut out of it (slow, but
-        // right), and the console says so (T112: a browser whose stack does this is one to know about)
-        console.warn(`${url} answered a range request with the whole file (${bytes.length} bytes)`);
-        total = bytes.length;
-        bytes = bytes.subarray(begin, end);
-      }
+      const bytes = await bodyBetween(res, whole ? begin : 0, whole ? end : end - begin, arriving);
+      const total = Number(whole ? res.headers.get("Content-Length") : (res.headers.get("Content-Range") ?? "").split("/")[1]);
       return { bytes, total };
     } catch (error) {
       if (signal.aborted || attempt === 2) {
@@ -548,7 +557,13 @@ async function inOrder(url, start, size, feed, signal, arriving = () => {}) {
       ranges.push([begin, end]);
       scheduled = end;
       const began = performance.now();
-      arrived.set(part, (await fetchRange(url, begin, end, signal, (count) => { received += count; arriving(received); })).bytes);
+      const { bytes } = await fetchRange(url, begin, end, signal, (count) => { received += count; arriving(received); });
+      // every part lies inside the file: a short one would feed the converter a file with a hole in it, which it
+      // would convert without a word (the review of T112; the header's fetches may ask past the end, these not)
+      if (bytes.length !== end - begin) {
+        throw new Error(`${url} gave ${bytes.length} of the ${end - begin} bytes asked for at ${begin}`);
+      }
+      arrived.set(part, bytes);
       if (part === 0 && !hfPartBytes) {
         const rate = (end - begin) / ((performance.now() - began) / 1000);
         partBytes = rate >= HF_FAST_BYTES_PER_SECOND && !small ? HF_PART_BYTES : HF_SMALL_PART_BYTES;
