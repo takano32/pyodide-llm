@@ -221,8 +221,11 @@ if (process.env.E2E_TWICE && !failures.length) {
   await acrossReload(() => page.waitForFunction(() => window.__ready || document.querySelector(".error"), null, { timeout: 0 }));
   const ready = await page.evaluate(() => window.__ready ?? null).catch(() => null);
   again = { readySeconds: (Date.now() - reloaded) / 1000, fromCache: Boolean(ready?.fromCache), keptIn: ready?.keptIn ?? null,
-    miss: ready?.keptMiss ?? null, kept, keptAfter: await listKept() };
-  console.log(`again: ready in ${again.readySeconds.toFixed(1)}s, ${again.fromCache ? `kept in ${again.keptIn}` : `not kept: ${again.miss}`} (kept before: ${kept.join(", ") || "nothing"}; after: ${again.keptAfter.join(", ") || "nothing"})`);
+    miss: ready?.keptMiss ?? null, kept, keptAfter: await listKept(),
+    // T111: the worker's own breakdown of the second load (Pyodide, the model), to see what the browser's cache saved
+    load: ready?.seconds ?? null };
+  const parts = Object.entries(again.load ?? {}).map(([name, value]) => `${name} ${Number(value).toFixed(2)}s`).join(", ");
+  console.log(`again: ready in ${again.readySeconds.toFixed(1)}s (${parts}), ${again.fromCache ? `kept in ${again.keptIn}` : `not kept: ${again.miss}`} (kept before: ${kept.join(", ") || "nothing"}; after: ${again.keptAfter.join(", ") || "nothing"})`);
   if (/^hf[-:]/.test(model) && !again.fromCache) failures.push(`not kept for the second visit: ${reported?.notKept ?? "no reason given"}`);
 }
 const speed = Number(result.meta.match(/([\d.]+) tok\/s/)?.[1]);
