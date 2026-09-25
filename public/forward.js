@@ -11,7 +11,7 @@
 //   const outside = external({ memory, base, size, kernels }); // what Llama(external=) takes
 
 // what a job of a phase is, shared with the software threads (helper.js), from the same deployment as this file
-const { CONTROL_BYTES, GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, BATCH, ROWS, SIZE, FIRST, addressed, runner } =
+const { CONTROL_BYTES, GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, SIZE, FIRST, addressed, runner } =
   await import(new URL(`jobs.js${new URL(import.meta.url).search}`, import.meta.url));
 export { BATCH };
 
@@ -285,6 +285,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // A job is what jobs.js says: [kind, eight arguments, rows, count, out stride, a stride, b stride].
   const shared = typeof SharedArrayBuffer !== "undefined" && memory.buffer instanceof SharedArrayBuffer && spawn;
   const ctl = shared ? new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4) : null;
+  const table = shared ? new Float64Array(memory.buffer, JOB_TABLE, BATCH * JOB) : null;  // the jobs (jobs.js)
   // the memory is kept from model to model (T96), and the control area with it: what the last engine's phases left
   // there (a helper counted in ACTIVE when it was ended, a generation) would hold this one's first phase for ever
   ctl?.fill(0);
@@ -320,11 +321,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     let total = 0;
     ctl[JOBS] = jobs.length;
     jobs.forEach((job, i) => {
-      const at = JOBS + 1 + i * JOB, rows = job[ROWS];
+      const at = i * JOB, rows = job[ROWS];
       const size = Math.max(1, Math.ceil(rows / (threads * CHUNKS_PER_THREAD)));
-      job.forEach((value, n) => { ctl[at + n] = value; });
-      ctl[at + SIZE] = size;
-      ctl[at + FIRST] = total;
+      table.set(job, at);
+      table[at + SIZE] = size;
+      table[at + FIRST] = total;
       total += Math.ceil(rows / size);
     });
     ctl[TOTAL] = total;
@@ -339,8 +340,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     }
     for (let c = Atomics.add(ctl, COUNTER, 1); c < total; c = Atomics.add(ctl, COUNTER, 1)) {
       let j = jobs.length - 1;
-      while (ctl[JOBS + 1 + j * JOB + FIRST] > c) j--;
-      const at = JOBS + 1 + j * JOB, size = ctl[at + SIZE], r0 = (c - ctl[at + FIRST]) * size;
+      while (table[j * JOB + FIRST] > c) j--;
+      const at = j * JOB, size = table[at + SIZE], r0 = (c - table[at + FIRST]) * size;
       runRows(jobs[j], r0, Math.min(r0 + size, jobs[j][ROWS]));
       Atomics.add(ctl, FINISHED, 1);
     }

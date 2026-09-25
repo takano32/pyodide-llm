@@ -13,7 +13,7 @@ const port = node ? (await import("node:worker_threads")).parentPort : self;
 const started = new Promise((resolve) => (node ? port.once("message", resolve) : (self.onmessage = (event) => resolve(event.data))));
 
 // what a job is and how its rows are run: jobs.js, the same file forward.js reads, from the same deployment
-const { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, ROWS, SIZE, FIRST, CONTROL_BYTES, addressed, runner, warmUp } =
+const { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, SIZE, FIRST, CONTROL_BYTES, addressed, runner, warmUp } =
   await import(new URL(`jobs.js${new URL(import.meta.url).search}`, import.meta.url));
 
 const { memory, plain, relaxed, share, wide = false } = await started;
@@ -21,14 +21,15 @@ const imports = { env: { memory } };
 const k = addressed(new WebAssembly.Instance(plain, imports).exports, wide);
 const r = relaxed ? addressed(new WebAssembly.Instance(relaxed, imports).exports, wide) : null;
 const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
+const table = new Float64Array(memory.buffer, JOB_TABLE, BATCH * JOB);  // the jobs, in float64 (jobs.js)
 const runRows = runner(k, r);
 const steal = () => {
   const total = ctl[TOTAL], count = ctl[JOBS];
   for (let c = Atomics.add(ctl, COUNTER, 1); c < total; c = Atomics.add(ctl, COUNTER, 1)) {
     let j = count - 1;
-    while (ctl[JOBS + 1 + j * JOB + FIRST] > c) j--;
-    const at = JOBS + 1 + j * JOB, size = ctl[at + SIZE], r0 = (c - ctl[at + FIRST]) * size;
-    runRows(ctl.subarray(at, at + SIZE), r0, Math.min(r0 + size, ctl[at + ROWS]));
+    while (table[j * JOB + FIRST] > c) j--;
+    const at = j * JOB, size = table[at + SIZE], r0 = (c - table[at + FIRST]) * size;
+    runRows(table.subarray(at, at + SIZE), r0, Math.min(r0 + size, table[at + ROWS]));
     if (Atomics.add(ctl, FINISHED, 1) + 1 === total) Atomics.notify(ctl, FINISHED);
   }
 };

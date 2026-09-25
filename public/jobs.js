@@ -6,7 +6,7 @@
 // for ten minutes: the three must come from the same deployment).
 
 /** the control area: the first bytes of a shared memory, as 32-bit words */
-export const CONTROL_BYTES = 4096;
+export const CONTROL_BYTES = 8192;
 // GEN: the generation of the phase (odd while the coordinator rewrites the jobs); QUIT: the helpers end; COUNTER:
 // the next chunk to take; FINISHED: chunks done; ACTIVE: helpers inside a phase; TOTAL: chunks in all
 export const GEN = 0, QUIT = 1, COUNTER = 2, FINISHED = 3, ACTIVE = 4, TOTAL = 5;
@@ -14,13 +14,15 @@ export const GEN = 0, QUIT = 1, COUNTER = 2, FINISHED = 3, ACTIVE = 4, TOTAL = 5
 // wants, always the same ones. (With one word for all, Atomics.notify wakes whoever has slept longest, so a
 // different, cold helper took every phase.)
 export const WAKE = 256;
-// JOBS: how many jobs the phase has, then the jobs themselves, JOB words each
-export const JOBS = 512, JOB = 16;
+// JOBS: the word that says how many jobs the phase has. The jobs themselves are a table of float64 from byte
+// JOB_TABLE, JOB numbers each: a double holds an address exactly up to 2^53, where an int32 cut the addresses of a
+// model past 4 GiB of a 64-bit memory (T101: every helper computed on the wrong bytes, only the coordinator right)
+export const JOBS = 512, JOB = 16, JOB_TABLE = 2056;
 /** T108: the most tokens that go through the layers together, and so the most jobs a phase has */
 export const BATCH = 16;
 /** scratch for a helper's warm-up, after the last job */
-export const SCRATCH = 3328;
-if ((JOBS + 1 + BATCH * JOB) * 4 > SCRATCH || SCRATCH + 448 > CONTROL_BYTES) {
+export const SCRATCH = 4608;
+if (JOB_TABLE <= JOBS * 4 || JOB_TABLE % 8 || JOB_TABLE + BATCH * JOB * 8 > SCRATCH || SCRATCH + 448 > CONTROL_BYTES) {
   throw new Error("the control area does not hold its jobs and the scratch: see jobs.js");
 }
 
