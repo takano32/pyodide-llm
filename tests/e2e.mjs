@@ -36,7 +36,7 @@
 //   E2E_LONG       a number of words (T115): the prompt is the numbers 1 to it, in place of the model's own, so that
 //                  the keys and values grow to the end of a long context (a prompt past 2048 tokens takes the cache
 //                  of 4096 positions through its last doubling, where it needs the most memory), whatever token
-//                  would end the answer early.
+//                  would end the answer early. The answer may then take the whole context.
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -188,8 +188,9 @@ const readySeconds = (Date.now() - started) / 1000;
 // T84: the worker's own breakdown (Pyodide, download, the conversion's share of it, Llama()) and its memory
 const reported = await page.evaluate(() => window.__ready ?? null).catch(() => null);
 // By default a model writes until its context is full (4096 tokens for llm-jp-3-150m). The test, and every tok/s in
-// the documents, is about 256 tokens: set that in the settings, as a visitor would.
-await page.evaluate(() => {
+// the documents, is about 256 tokens: set that in the settings, as a visitor would. (Not with E2E_LONG: the 256
+// count the prompt too, and the long prompt is there to fill the context.)
+if (!process.env.E2E_LONG) await page.evaluate(() => {
   const steps = document.getElementById("steps");
   steps.value = "256";
   steps.dispatchEvent(new Event("input"));
