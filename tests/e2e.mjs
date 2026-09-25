@@ -84,7 +84,7 @@ if (process.env.E2E_TWICE) {
   // A profile on disk, as a visitor's browser has: Playwright's usual context is like private browsing, and WebKit
   // kept nothing across a reload there (T99)
   browser = await kind.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(), "e2e-profile-")), { headless: true, channel, viewport });
-  browserVersion = browser.browser()?.version() ?? "";
+  browserVersion = browser.browser()?.version() ?? "";  // Playwright says a persistent context may not know its browser
   page = browser.pages()[0] ?? await browser.newPage();
 } else {
   browser = await kind.launch({ headless: true, channel });

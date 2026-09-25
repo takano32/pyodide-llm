@@ -133,6 +133,19 @@ const readBack = async (found) => {
   assert.match(why, /holds 0 of/);
   assert.equal((await root.getDirectoryHandle("converted-v1")).children.size, 0);
 }
+// a write that comes back short (the room ran out without an exception): found out, and nothing is left
+{
+  const { root } = browser();
+  const original = FileHandle.prototype.createSyncAccessHandle;
+  FileHandle.prototype.createSyncAccessHandle = async function () {
+    const handle = await original.call(this);
+    return { ...handle, write: (data, at) => { handle.write(data.subarray(0, data.length - 1), at); return data.length - 1; } };
+  };
+  const why = await kept.keep(model, manifest, (a, b) => bytes.slice(a, b), vocabulary);
+  FileHandle.prototype.createSyncAccessHandle = original;
+  assert.match(why, /only part of a write/);
+  assert.equal((await root.getDirectoryHandle("converted-v1")).children.size, 0);
+}
 // a folder without its manifest (a write that did not finish) is not a kept model
 {
   const { root } = browser();

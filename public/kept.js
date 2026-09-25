@@ -109,12 +109,16 @@ export async function keep(model, manifest, slice, tokenizer, signal) {
     if (directory) {
       try {
         const folder = await directory.getDirectoryHandle(name, { create: true });
+        // a write may come back short instead of throwing when the room runs out: that is a failure too
+        const put = (handle, bytes, at) => {
+          if (handle.write(bytes, { at }) !== bytes.length) throw new Error("the origin private file system took only part of a write");
+        };
         for (const [file, write] of [["model.bin", (handle) => {
           for (let offset = 0; offset < manifest.bytes; offset += PART_BYTES) {
-            handle.write(slice(offset, Math.min(offset + PART_BYTES, manifest.bytes)), { at: offset });
+            put(handle, slice(offset, Math.min(offset + PART_BYTES, manifest.bytes)), offset);
           }
-        }], ["tokenizer.bin", (handle) => handle.write(tokenizer, { at: 0 })],
-        ["manifest.json", (handle) => handle.write(new TextEncoder().encode(JSON.stringify(manifest)), { at: 0 })]]) {
+        }], ["tokenizer.bin", (handle) => put(handle, tokenizer, 0)],
+        ["manifest.json", (handle) => put(handle, new TextEncoder().encode(JSON.stringify(manifest)), 0)]]) {
           const handle = await (await folder.getFileHandle(file, { create: true })).createSyncAccessHandle();
           try {
             handle.truncate(0);
