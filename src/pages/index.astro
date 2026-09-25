@@ -95,7 +95,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       </div>
       <!-- The generation settings: a popover above its button, a sheet from the bottom on a narrow screen. It is
            no part of the form, or Enter in one of its fields would send the prompt. -->
-      <div id="settings" popover>
+      <div id="settings" class="sheet" popover>
         <label>Temperature <output id="temperature-value"></output>
           <input id="temperature" type="range" min="0" max="1.5" step="0.05" /></label>
         <label>Max tokens <output id="steps-value"></output>
@@ -123,6 +123,18 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
           <label class="switch"><input type="checkbox" data-switch="sampler" /> sampling in the kernel</label>
         </details>
         <button id="settings-reset" type="button">Reset to defaults</button>
+      </div>
+      <!-- T88: a repository that is in no list, from the last entry of the model list. It goes the way ?hf= goes,
+           and the URL then says so, to share. -->
+      <div id="repository" class="sheet" popover>
+        <form id="repository-form">
+          <label>Hugging Face repository
+            <input id="repository-name" type="text" autocomplete="off" spellcheck="false" placeholder="owner/name" /></label>
+          <label>Revision
+            <input id="repository-revision" type="text" autocomplete="off" spellcheck="false" placeholder="main" /></label>
+          <p class="hint">A Llama, Qwen2, GPT-2 or GPT-NeoX model published as safetensors with a tokenizer.json or a sentencepiece model. It is fetched from huggingface.co and converted to int8 in this browser; what the converter cannot take, it refuses in words.</p>
+          <button type="submit">Open</button>
+        </form>
       </div>
       <form id="composer">
         <button id="settings-open" type="button" popovertarget="settings" aria-label="Generation settings" title="Generation settings">
@@ -251,23 +263,24 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   #settings-open.changed::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
   /* In the top layer, so it never moves the page. The script puts it above its button; on a narrow screen it is
      a sheet over the composer instead, where a thumb reaches it. */
-  #settings { position: fixed; inset: auto; margin: 0; width: min(320px, calc(100vw - 32px)); box-sizing: border-box; padding: 14px 16px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 30px rgb(0 0 0 / 0.25); font-size: 0.85rem; }
-  #settings::backdrop { background: transparent; }
-  #settings label { display: block; margin-bottom: 10px; color: var(--muted); }
-  #settings output { float: right; color: var(--text); font-variant-numeric: tabular-nums; }
-  #settings input[type="range"] { display: block; width: 100%; margin: 6px 0 0; accent-color: var(--accent); }
-  #settings summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
-  #settings .hint { margin: 0 0 10px; color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
-  #settings .switch { display: flex; align-items: center; gap: 8px; color: var(--text); cursor: pointer; }
-  #settings .switch input { margin: 0; accent-color: var(--accent); }
-  #settings .switch:has(input:disabled) { color: var(--muted); cursor: default; }
+  .sheet { position: fixed; inset: auto; margin: 0; width: min(320px, calc(100vw - 32px)); box-sizing: border-box; padding: 14px 16px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 30px rgb(0 0 0 / 0.25); font-size: 0.85rem; }
+  .sheet::backdrop { background: transparent; }
+  .sheet input[type="text"] { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+  .sheet label { display: block; margin-bottom: 10px; color: var(--muted); }
+  .sheet output { float: right; color: var(--text); font-variant-numeric: tabular-nums; }
+  .sheet input[type="range"] { display: block; width: 100%; margin: 6px 0 0; accent-color: var(--accent); }
+  .sheet summary { cursor: pointer; color: var(--muted); margin-bottom: 10px; }
+  .sheet .hint { margin: 0 0 10px; color: var(--muted); font-size: 0.78rem; line-height: 1.4; }
+  .sheet .switch { display: flex; align-items: center; gap: 8px; color: var(--text); cursor: pointer; }
+  .sheet .switch input { margin: 0; accent-color: var(--accent); }
+  .sheet .switch:has(input:disabled) { color: var(--muted); cursor: default; }
   .seed-field { display: flex; gap: 6px; margin-top: 6px; }
   .seed-field input { flex: 1; min-width: 0; font: inherit; color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
-  #settings button { font: inherit; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
-  #settings button:hover { color: var(--text); }
+  .sheet button { font: inherit; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+  .sheet button:hover { color: var(--text); }
   @media (max-width: 640px) {
-    #settings { left: 0 !important; right: 0; bottom: 0 !important; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0; padding: 18px 20px calc(18px + env(safe-area-inset-bottom)); }
-    #settings::backdrop { background: rgb(0 0 0 / 0.3); }
+    .sheet { left: 0 !important; right: 0; top: auto !important; bottom: 0 !important; width: auto; border-radius: 16px 16px 0 0; border-width: 1px 0 0; padding: 18px 20px calc(18px + env(safe-area-inset-bottom)); }
+    .sheet::backdrop { background: rgb(0 0 0 / 0.3); }
   }
   /* the seed under an answer is a button: it fixes that seed for the next run */
   .meta .seed { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
@@ -338,6 +351,9 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     for (const { id, name, note } of MODELS.filter((entry) => ((entry as any).group ?? "site") === group)) {
       options.append(new Option(`${name} — ${note}`, id));
     }
+    if (group === "hf") {
+      options.append(new Option("Other repository… — any Llama, Qwen2, GPT-2 or GPT-NeoX", "hf-other"));  // T88
+    }
     select.append(options);
   }
   showKept();
@@ -362,13 +378,19 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     }
     return { fixed: fixedThreads, remembered, hint: navigator.hardwareConcurrency || 1 };
   };
+  const REPOSITORY = /^[\w.-]+\/[\w.-]+$/;
+  // a repository nobody has looked at, as an entry of the list: the same for ?hf= and for the sheet (T88)
+  function hfEntry(repository: string, revision: string): typeof MODELS[number] {
+    const common = { id: "local", options: {}, prompt: parameters.get("prompt") ?? "", placeholder: "", template: parameters.get("template") ?? undefined };
+    return { ...common, name: repository, note: revision === "main" ? "Hugging Face" : `Hugging Face · ${revision.slice(0, 12)}`,
+      hf: { repo: repository, revision, weights: "model.safetensors", config: "config.json", tokenizer: ["tokenizer.json", "tokenizer.model"] },
+      conversion: {}, generation: { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 } } as any;
+  }
   function named(): typeof MODELS[number] | undefined {
     const repository = parameters.get("hf"), checkpoint = parameters.get("checkpoint"), tokenizer = parameters.get("tokenizer");
     const common = { id: "local", options: {}, prompt: parameters.get("prompt") ?? "", placeholder: "", template: parameters.get("template") ?? undefined };
-    if (repository && /^[\w.-]+\/[\w.-]+$/.test(repository)) {
-      return { ...common, name: repository, note: "Hugging Face",
-        hf: { repo: repository, revision: parameters.get("revision") ?? "main", weights: "model.safetensors", config: "config.json", tokenizer: ["tokenizer.json", "tokenizer.model"] },
-        conversion: {}, generation: { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 } } as any;
+    if (repository && REPOSITORY.test(repository)) {
+      return hfEntry(repository, parameters.get("revision") ?? "main");
     }
     if (checkpoint && tokenizer && [checkpoint, tokenizer].every((url) => /^https:\/\//.test(url))) {
       return { ...common, name: new URL(checkpoint).pathname.split("/").pop(), note: new URL(checkpoint).hostname,
@@ -875,7 +897,50 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     };
   }
 
+  // T88: the last entry of the Hugging Face group asks which repository, in a sheet like the settings'
+  const repositorySheet = $("repository");
+  repositorySheet.addEventListener("beforetoggle", (event) => {
+    if ((event as ToggleEvent).newState !== "open") {
+      return;
+    }
+    const anchor = select.getBoundingClientRect();
+    repositorySheet.style.left = `${Math.max(16, Math.min(anchor.left, innerWidth - 336))}px`;
+    repositorySheet.style.top = `${anchor.bottom + 8}px`;
+  });
+  repositorySheet.addEventListener("toggle", (event) => {
+    if ((event as ToggleEvent).newState === "open") {
+      ($("repository-name") as HTMLInputElement).focus();
+    }
+  });
+  ($("repository-form") as HTMLFormElement).onsubmit = (event) => {
+    event.preventDefault();
+    const field = $("repository-name") as HTMLInputElement;
+    // the address of the model's page is what people copy: owner/name is what is needed of it
+    const repository = field.value.trim().replace(/^https?:\/\/huggingface\.co\//, "").replace(/\/(tree|blob)\/.*$/, "").replace(/\/+$/, "");
+    const revision = ($("repository-revision") as HTMLInputElement).value.trim() || "main";
+    if (!REPOSITORY.test(repository) || !/^[\w.-]+$/.test(revision)) {
+      field.setCustomValidity("owner/name, as huggingface.co spells it");
+      field.reportValidity();
+      field.oninput = () => field.setCustomValidity("");
+      return;
+    }
+    repositorySheet.hidePopover();
+    local = hfEntry(repository, revision);
+    // the URL says what is open, so that the link can be shared; ?model= would contradict it
+    const url = new URL(location.href);
+    url.searchParams.delete("model");
+    url.searchParams.set("hf", repository);
+    revision === "main" ? url.searchParams.delete("revision") : url.searchParams.set("revision", revision);
+    history.replaceState(null, "", url);
+    showLocal();
+  };
+
   select.onchange = () => {
+    if (select.value === "hf-other") {
+      select.value = model.id === "local" && !select.querySelector('option[value="local"]') ? MODELS[0].id : model.id;
+      repositorySheet.showPopover();
+      return;
+    }
     const chosen = select.value === "local" ? local! : MODELS.find(({ id }) => id === select.value)!;
     // a large download is asked for first: what is fetched, from whom, and that the conversion happens here
     const download = select.selectedOptions[0]?.textContent?.includes("kept in this browser") ? 0 : ((chosen as any).download ?? 0);
