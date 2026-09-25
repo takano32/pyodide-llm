@@ -117,6 +117,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   const gpt2 = arch === "gpt2", layerNorm = arch === "gpt2" || arch === "neox", parallel = plan.parallel_residual;
   const imports = { env: { memory } };
   const wide = Boolean(kernels.wide);  // T101: a 64-bit memory, whose kernels take their addresses as BigInt
+  // a page that is not cross-origin isolated has no SharedArrayBuffer to ask about: its memory is not shared
+  const sharedMemory = typeof SharedArrayBuffer !== "undefined" && memory.buffer instanceof SharedArrayBuffer;
   const k = wrap(addressed(new WebAssembly.Instance(kernels.plain, imports).exports, wide));
   const relaxed = plan.int8 && plan.relaxed && kernels.relaxed ? wrap(addressed(new WebAssembly.Instance(kernels.relaxed, imports).exports, wide)) : null;
   const bias = relaxed ? 64 : 0;
@@ -219,7 +221,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // made a long context 1.2 times as fast with 4; one thread waits on the arithmetic, and widening every key and
   // value made it 1.6 to 1.8 times as slow. A float32 model, the one held to NumPy's numbers, stays in float32.
   // KV: the bytes of one position's keys in the cache; KF: in float32.
-  const halfKV = Boolean(plan.half_kv) && memory.buffer instanceof SharedArrayBuffer;
+  const halfKV = Boolean(plan.half_kv) && sharedMemory;
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, KV = kvDim * (halfKV ? 2 : 4);
   const XQ = Math.max(dim, hidden), XS = Math.ceil(XQ / 32) * 4;
   const inFrame = [["x", D], ["xb", D], ["xb2", D], ["q", D], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD], ["hb2", HD],
@@ -283,7 +285,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // with any number of threads.
   //
   // A job is what jobs.js says: [kind, eight arguments, rows, count, out stride, a stride, b stride].
-  const shared = typeof SharedArrayBuffer !== "undefined" && memory.buffer instanceof SharedArrayBuffer && spawn;
+  const shared = sharedMemory && spawn;
   const ctl = shared ? new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4) : null;
   const table = shared ? new Float64Array(memory.buffer, JOB_TABLE, BATCH * JOB) : null;  // the jobs (jobs.js)
   // the memory is kept from model to model (T96), and the control area with it: what the last engine's phases left
