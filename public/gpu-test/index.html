@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebGPU check</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">
+<style>
+  :root { color-scheme: light dark; --line: #8884; }
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 0 auto; max-width: 52rem; padding: 16px; }
+  table { border-collapse: collapse; margin: 8px 0 16px; font-size: 13px; display: block; overflow-x: auto; }
+  th, td { border: 1px solid var(--line); padding: 3px 6px; text-align: left; white-space: nowrap; }
+  pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; border: 1px solid var(--line); padding: 8px; }
+  button { font: inherit; padding: 4px 12px; margin: 4px 8px 4px 0; }
+  .muted { opacity: 0.7; }
+</style>
+</head>
+<body>
+<h1>WebGPU check</h1>
+<p>T94, stage 0: how fast this device's GPU could run the models of <a href="../">the model page</a>, measured before
+anything of it is built. Nothing here changes the model page. The weights are random bytes of the models' sizes.
+Open the model page once first: its service worker makes this page cross-origin isolated, which one step needs.</p>
+<p>
+  <button id="run" type="button">Run</button>
+  <label><input id="large" type="checkbox"> also Llama 3.2 3B (3.2 GB on the GPU)</label>
+</p>
+<p id="state" class="muted"></p>
+<p><button id="copy" type="button" hidden>Copy the results</button> <a id="report" hidden target="_blank" rel="noopener">Report them as an issue</a></p>
+<pre id="markdown" hidden></pre>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const parameters = new URLSearchParams(location.search);
+// the shapes measured alone: a layer's largest matrix of llm-jp-3 150M and of Llama 3.2 1B, and the classifier of the 1B
+const SHAPES = { "llm-jp-3 150M w1": [2048, 512], "Llama 3.2 1B w1": [8192, 2048], "Llama 3.2 1B classifier": [128256, 2048] };
+const BRIDGE_ROUNDS = 2000;
+const results = { page: {}, steps: [] };
+window.__gpu = null;  // set when a run ends (tests/gpu-check.mjs waits for it)
+
+const bench = new Worker("bench.js", { type: "module" });
+let pending;
+bench.onmessage = ({ data }) => {
+  if (data.lost) {
+    results.lost = data.lost;
+    return;
+  }
+  pending?.(data);
+};
+bench.onerror = (event) => pending?.({ error: `the worker failed: ${event.message ?? "error"}` });
+const ask = (message) => new Promise((resolve) => {
+  pending = resolve;
+  bench.postMessage(message);
+});
+
+async function step(name, message) {
+  $("state").textContent = `${name}...`;
+  const began = performance.now();
+  const answer = await ask(message);
+  results.steps.push({ name, seconds: (performance.now() - began) / 1000, ...(answer.error ? { error: answer.error } : { result: answer.result }) });
+  show();
+  return answer.result;
+}
+
+async function bridge() {
+  if (!self.crossOriginIsolated) {
+    return { error: "not measured: this page is not cross-origin isolated (open the model page first, then this one again)" };
+  }
+  const memory = new SharedArrayBuffer(8);
+  const waiter = new Worker("waiter.js");
+  const waited = new Promise((resolve) => { waiter.onmessage = ({ data }) => resolve(data); });
+  const answered = ask({ step: "bridge", memory, rounds: BRIDGE_ROUNDS });
+  waiter.postMessage({ memory, rounds: BRIDGE_ROUNDS });
+  const [{ result }, { microseconds }] = await Promise.all([answered, waited]);
+  waiter.terminate();
+  return result?.waitAsync ? { microseconds } : { error: "no Atomics.waitAsync here: the GPU's worker could not wait for the model's worker without blocking" };
+}
+
+async function runAll() {
+  $("run").disabled = true;
+  results.page = { userAgent: navigator.userAgent, crossOriginIsolated: self.crossOriginIsolated, gpuOnPage: Boolean(navigator.gpu),
+    cores: navigator.hardwareConcurrency, memoryGB: navigator.deviceMemory ?? null, when: new Date().toISOString() };
+  results.steps = [];
+  const small = parameters.get("run") === "small";
+  const info = await step("the adapter", { step: "info" });
+  if (info?.worker && info.adapter) {
+    await step("the shaders against JavaScript", { step: "check" });
+    for (const [name, shape] of Object.entries(SHAPES)) {
+      if (small && name !== "llm-jp-3 150M w1") continue;
+      await step(`bandwidth: ${name}`, { step: "bandwidth", shape });
+    }
+    for (const model of ["llm-jp-3 150M", "Llama 3.2 1B", ...($("large").checked ? ["Llama 3.2 3B"] : [])]) {
+      if (small && model !== "llm-jp-3 150M") continue;
+      await step(`a token of ${model}`, { step: "token", model, kind: "widen" });
+      if (info.packed) await step(`a token of ${model}, packed int8`, { step: "token", model, kind: "packed" });
+    }
+  }
+  $("state").textContent = "the bridge...";
+  const began = performance.now();
+  results.steps.push({ name: "the bridge", seconds: 0, ...(await bridge()) });
+  results.steps.at(-1).seconds = (performance.now() - began) / 1000;
+  $("state").textContent = "done";
+  show();
+  window.__gpu = results;
+  $("run").disabled = false;
+}
+
+const fixed = (value, digits = 1) => (typeof value === "number" ? value.toFixed(digits) : "");
+function markdown() {
+  const lines = [`**Device**: ${results.page.userAgent}`, "",
+    `cores ${results.page.cores}, memory ${results.page.memoryGB ?? "?"} GB, cross-origin isolated ${results.page.crossOriginIsolated}, navigator.gpu on the page ${results.page.gpuOnPage}${results.lost ? `, device lost: ${results.lost}` : ""}`, ""];
+  const info = results.steps.find((s) => s.name === "the adapter");
+  if (info?.result) {
+    const r = info.result;
+    lines.push(`**Adapter** (in a worker: ${r.worker}): ${r.adapter ?? "none"}${r.fallback ? " (a fallback adapter)" : ""}`,
+      `max binding ${fixed(r.maxStorageBufferBindingSize / 2 ** 20, 0)} MiB, max buffer ${fixed(r.maxBufferSize / 2 ** 20, 0)} MiB, packed int8 dot ${r.packed}, shader-f16 ${r.features?.includes("shader-f16")}`, "");
+  } else if (info?.error) lines.push(`**Adapter**: ${info.error}`, "");
+  const check = results.steps.find((s) => s.name === "the shaders against JavaScript");
+  if (check?.result) lines.push(`**Shaders against JavaScript**: ${Object.entries(check.result).map(([k, v]) => `${k} ${v.ok ? "ok" : "WRONG"} (worst ${v.worstRelative.toExponential(1)})`).join(", ")}`, "");
+  const bandwidths = results.steps.filter((s) => s.name.startsWith("bandwidth"));
+  if (bandwidths.length) {
+    lines.push("| int8 matrix × vector | GPU, widened in the shader | GPU, packed int8 | CPU, one thread (matmul_q8) |", "|---|---:|---:|---:|");
+    for (const s of bandwidths) {
+      const r = s.result ?? {};
+      lines.push(`| ${s.name.slice(11)} | ${s.error ?? `${fixed(r.widen?.GBps)} GB/s`} | ${r.packed ? `${fixed(r.packed.GBps)} GB/s` : "–"} | ${r.cpu ? `${fixed(r.cpu.GBps)} GB/s` : ""} |`);
+    }
+    lines.push("");
+  }
+  const cpu = bandwidths.find((s) => s.name.includes("1B w1"))?.result?.cpu?.GBps ?? bandwidths[0]?.result?.cpu?.GBps;
+  const tokens = results.steps.filter((s) => s.name.startsWith("a token"));
+  if (tokens.length) {
+    // the CPU's side: the weights read once a token at what one thread measured, and at twice that, which the page's
+    // software threads reach at most (T93: the memory's bandwidth); attention and the rest left out on both sides
+    lines.push("| a token (weights, dispatches, logits back) | GB | GPU ms | GPU tok/s | CPU tok/s, 1 thread (estimate) | CPU tok/s, threads (≤ 2×) | GPU ÷ CPU with threads |",
+      "|---|---:|---:|---:|---:|---:|---:|");
+    for (const s of tokens) {
+      const r = s.result ?? {};
+      if (s.error || r.error) {
+        lines.push(`| ${s.name.slice(11)} | | ${s.error ?? r.error} | | | | |`);
+        continue;
+      }
+      const one = cpu ? cpu / r.GB : null;
+      lines.push(`| ${s.name.slice(11)} | ${fixed(r.GB, 2)} | ${fixed(r.msPerToken)} | ${fixed(r.tokPerSecond)} | ${fixed(one)} | ${fixed(one && 2 * one)} | ${one ? `${fixed(r.tokPerSecond / (2 * one), 2)}×` : ""} |`);
+    }
+    lines.push("");
+  }
+  const bridgeStep = results.steps.find((s) => s.name === "the bridge");
+  if (bridgeStep) lines.push(`**Bridge** (Atomics.wait ↔ Atomics.waitAsync, ${BRIDGE_ROUNDS} round trips): ${bridgeStep.error ?? `${fixed(bridgeStep.microseconds)} µs each`}`, "");
+  const failed = results.steps.filter((s) => s.error && !s.name.startsWith("the bridge"));
+  if (failed.length) lines.push(...failed.map((s) => `- ${s.name}: ${s.error}`), "");
+  return lines.join("\n");
+}
+function show() {
+  const text = markdown();
+  $("markdown").textContent = text;
+  $("markdown").hidden = false;
+  $("copy").hidden = false;
+  const body = `Device (model):\nOS and version:\nBrowser and version:\n\n${text}`;
+  $("report").href = `https://github.com/takano32/pyodide-llm/issues/new?labels=gpu&title=${encodeURIComponent("WebGPU check: ")}&body=${encodeURIComponent(body)}`;
+  $("report").hidden = false;
+}
+$("copy").onclick = () => navigator.clipboard?.writeText($("markdown").textContent);
+$("run").onclick = runAll;
+if (parameters.has("run")) runAll();
+</script>
+</body>
+</html>
