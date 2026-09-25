@@ -299,6 +299,61 @@ const loadSeconds = {};
 let pyodideAt = 0;
 const since = (started) => (performance.now() - started) / 1000;
 
+// T118: whether Pyodide's loading still moves. Its large files (pyodide.asm.wasm 3.4 MB, the standard library 2.5 MB,
+// NumPy's wheel 2.9 MB) come by this worker's fetch, which, while Pyodide loads, hands out responses whose bodies are
+// counted as they arrive; a file that is finished (the two imports too) counts as well. A step is given up when
+// nothing has arrived for QUIET_SECONDS, not when it takes long: on a line of 128 kbps to 1 Mbps (a phone's plan past
+// its limit) the 9 MB took longer than T113's limits of 60 to 90 seconds, and a sound load fell back to no service
+// worker, then timed out again. Nothing arriving for this long is a stop, not a slow line (128 kbps is 16 kB a second).
+const QUIET_SECONDS = 30;
+function watchArrivals() {
+  const watch = { arrived: 0 };
+  const plain = self.fetch;
+  self.fetch = async (...args) => {
+    const res = await plain(...args);
+    watch.arrived += 1;
+    if (!res.body || [101, 204, 205, 304].includes(res.status)) {
+      return res;
+    }
+    const counted = res.body.pipeThrough(new TransformStream({
+      transform(chunk, out) {
+        watch.arrived += chunk.byteLength;
+        out.enqueue(chunk);
+      },
+    }));
+    return new Response(counted, { status: res.status, statusText: res.statusText, headers: res.headers });
+  };
+  let observer;
+  try {
+    observer = new PerformanceObserver((list) => { watch.arrived += list.getEntries().length; });
+    observer.observe({ type: "resource" });
+  } catch {
+    observer = undefined;  // no PerformanceObserver here: the fetches alone
+  }
+  watch.stop = () => {
+    self.fetch = plain;
+    observer?.disconnect();
+  };
+  /** { promise, cancel }: the promise settles once nothing has arrived for seconds */
+  watch.quiet = (seconds) => {
+    let timer;
+    const promise = new Promise((resolve) => {
+      let seen = -1, since = 0;
+      timer = setInterval(() => {
+        const now = performance.now();
+        if (watch.arrived !== seen) {
+          [seen, since] = [watch.arrived, now];
+        } else if (now - since >= seconds * 1000) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 1000);
+    });
+    return { promise, cancel: () => clearInterval(timer) };
+  };
+  return watch;
+}
+
 async function init(search) {
   const started = performance.now();
   const asked = new URLSearchParams(search);
@@ -310,27 +365,36 @@ async function init(search) {
   const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
   // Each step says its name, and ends in an error rather than never: loadPyodide() does not fail when a fetch of
   // its files fails, it waits for ever (AGENTS.md), and a phone that stopped at "Loading Pyodide" said nothing else.
-  const step = async (name, promise, seconds = 90) => {
+  // It ends when nothing has arrived for QUIET_SECONDS (T118), however long it takes while bytes keep coming.
+  const watch = watchArrivals();
+  const step = async (name, promise) => {
     postMessage({ type: "status", text: `Loading Pyodide ${version}: ${name}...` });
-    let timer;
-    const late = new Promise((_, reject) => { timer = setTimeout(() => {
-      const error = new Error(`Pyodide ${version} did not finish "${name}" in ${seconds} seconds`);
+    const quiet = watch.quiet(QUIET_SECONDS);
+    const stalled = quiet.promise.then(() => {
+      const error = new Error(`Pyodide ${version}: "${name}" got nothing from the network for ${QUIET_SECONDS} seconds`);
       error.pyodide = true;  // the page may try again without the service worker (isolation made this hang on iOS)
-      reject(error);
-    }, seconds * 1000); });
+      throw error;
+    });
     try {
-      return await Promise.race([promise, late]);
+      return await Promise.race([promise, stalled]);
     } finally {
-      clearTimeout(timer);
+      quiet.cancel();
     }
   };
-  // while Pyodide starts, not after: loadPackage("numpy") below finds the wheel in the HTTP cache
-  const numpy = prefetchNumpy(base);
-  const { loadPyodide } = await step("the loader", import(`${base}pyodide.mjs`), 60);
-  pyodide = await step("the runtime", loadPyodide(), 90);
-  // a prefetch that is still running would otherwise be raced by loadPackage, and the wheel fetched twice
-  await numpy;
-  await step("NumPy", pyodide.loadPackage("numpy"), 60);
+  try {
+    // while Pyodide starts, not after: loadPackage("numpy") below finds the wheel in the HTTP cache
+    const numpy = prefetchNumpy(base);
+    const { loadPyodide } = await step("the loader", import(`${base}pyodide.mjs`));
+    pyodide = await step("the runtime", loadPyodide());
+    // a prefetch that is still running would otherwise be raced by loadPackage, and the wheel fetched twice. One
+    // that stopped is not waited for past a quiet spell (T118): loadPackage then fetches the wheel itself
+    const quiet = watch.quiet(QUIET_SECONDS);
+    await Promise.race([numpy, quiet.promise]);
+    quiet.cancel();
+    await step("NumPy", pyodide.loadPackage("numpy"));
+  } finally {
+    watch.stop();
+  }
 
   // with the ?v=<build> of this worker, so that both always come from the same deployment
   const res = await fetch(new URL(`llama2_numpy.py${self.location.search}`, import.meta.url));

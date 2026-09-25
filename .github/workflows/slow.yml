@@ -35,6 +35,7 @@ jobs:
           npx playwright-core install --with-deps chromium
 
       - name: Run
+        shell: bash
         env:
           SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
         run: node tests/slow-check.mjs "${{ inputs.scenario }}" "$SITE" --rate "${{ inputs.rate }}" | tee -a "$GITHUB_STEP_SUMMARY"
