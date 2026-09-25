@@ -267,6 +267,13 @@
 - 手順: 走行ごとに、どのブラウザ・どのモデル・どの取得で出たかを数える（T82 の JSON とコンソールの記録）。`?coi=off`（Service Worker なし）と既定を、Windows の Firefox で同じ回数ずつ走らせて比べる。Service Worker が原因なら、`coi.js` で本文を流さずに COOP/COEP を付けずに済む取得（Worker からの部品の取得など）は `respondWith` しない、などの手当てを検討する（ヘッダが要るのは文書と Worker のスクリプトだけのはず。要確認）。
 - 完了条件: 出る条件（ブラウザ・取得・Service Worker の有無）が分かり、Service Worker が原因なら手当てを入れて、同じ回数の走行で出なくなる。
 
+### T112 [運用] Safari で Hugging Face の取得と変換が失敗することがある — 状態: 未着手（2026-09-25 採用、持ち主の報告「Safari で Hugging Face のダウンロードと変換に失敗することがある」。**調査から**。規模 小〜中）
+- 担当: Opus（調査と対処）→ Opus xhigh がレビュー。
+- 分かっていること: CI は HF のモデルを WebKit で試していない（`browsers.yml` の huggingface ジョブは Chromium だけ、macOS のジョブはサイトのモデルだけ）。2026-09-25 に Fable が `models.yml` で WebKit（Linux と macOS）× HF の 3 モデル × 2 回読み込みを走らせた（結果は走行の Summary）。持ち主には、出た文・モデル・1 回目か切り替え後か・Safari の版と機種を聞いている。
+- 疑うところ（順に）: (1) T107 の 16 MiB × 6 本で待ち行列が最悪 192MB になり、iPhone の 1 タブの上限に近い（8 MiB のときは 96MB）。`?hfParts=8` で再現しなければこれ。(2) T96 の使い回す共有メモリを最大 4GB で作ること（WebKit が断れば 1GB → 256MB の順に落ちる。全部断られれば共有でない 1 本）。(3) T99 の OPFS の同期の書き込み（WebKit は Worker の `createSyncAccessHandle` を持つが、容量で失敗すると理由が「not kept」に出るだけで、失敗にはならないはず）。(4) HF の Range 要求が WebKit で 206 でなく 200 を返す・`Content-Range` が無い場合の扱い（`fetchRange` は 200 も受けるが、全体の大きさが NaN になると「ファイルが途中で終わった」になる。AGENTS.md の落とし穴に似た形）。
+- 手順: 持ち主の文を見て (1)〜(4) を絞り、`models.yml` の WebKit で再現させ、直す。`browsers.yml` の huggingface ジョブに WebKit の小さい組（3 モデル）を足して、以後 CI で見る。
+- 完了条件: 持ち主の Safari で同じモデルが通る。CI の WebKit で HF の 3 モデルが通る。
+
 ### T95 [計測] wllama と同じ GGUF で比べる — 状態: 未着手（2026-09-25 採用、持ち主の指示。**性能の改善（T98〜T100）の後**（2026-09-25、持ち主の判断: 公開する数字は改善の後）。規模 小〜中）
 - 担当（Fable の切り分け、2026-09-25。レビューは Opus xhigh）: **Opus が最後まで**（比較のページ、CI のワークフロー、表、負けた項目の見立て）。Opus xhigh が表と文面を読む。wllama の版は実行時に最新を解決して結果に書く。
 - 根拠: wllama は llama.cpp を WebAssembly にしたもので、ブラウザで動く言語モデルの代表。「WASM Python でどこまでできるか」を言うには、いちばん強い相手と**同じファイル・同じブラウザ・同じ機械**で比べるのが早い。T74 で GGUF を読めるようになったので、同じ Q8_0 のファイルをそのまま両方に渡せる。
