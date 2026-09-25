@@ -244,6 +244,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // A job is what jobs.js says: [kind, eight arguments, rows, count, out stride, a stride, b stride].
   const shared = typeof SharedArrayBuffer !== "undefined" && memory.buffer instanceof SharedArrayBuffer && spawn;
   const ctl = shared ? new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4) : null;
+  // the memory is kept from model to model (T96), and the control area with it: what the last engine's phases left
+  // there (a helper counted in ACTIVE when it was ended, a generation) would hold this one's first phase for ever
+  ctl?.fill(0);
   const helpers = [];
   let threads = 1, gen = 0;
   const jobOf = (m, out, outStride, input, l, count) => {

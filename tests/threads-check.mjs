@@ -131,7 +131,20 @@ if (isMainThread) {
     (found && times[found] ? ` (${found} runs at ${(median(times[found]) / median(times[fastest]) * 100).toFixed(0)}% of it)` : "");
   const promptLine = "a prompt in blocks of " + blockSizes.join(", ") + ": " + counts.map((n) =>
     `${n} thread(s) ${blockSizes.map((k) => median(prompt[n][k]).toFixed(0)).join(" / ")} tok/s (${(median(prompt[n][16]) / median(prompt[n][1])).toFixed(2)}×)`).join(", ");
-  parentPort.postMessage(`${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
+  // T96: the page keeps one memory for model after model. A second engine on this memory, after the first has
+  // ended its threads, must run as the first did (the control area holds what the first left there).
+  engine.stopThreads();
+  const again = createForward({ memory, base, size, kernels, plan, spawn });
+  await again.setThreads(counts[counts.length - 1]);
+  let token = plan.bos ?? 1, reused = true;
+  for (let pos = 0; pos < positions && reused; pos++) {
+    again.forward(token, pos, true);
+    const logits = again.logits();
+    reused = logits.every((v, j) => Object.is(v, reference[pos][j]));
+    token = logits.indexOf(Math.max(...logits));
+  }
+  again.stopThreads();
+  parentPort.postMessage(`${reused ? "a second engine on the same memory runs the same; " : "a second engine on the same memory DIFFERS or hangs; "}${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
     `${blocksDiffer.length ? `the prompt in blocks DIFFERS with ${blocksDiffer.join(", ")} threads` : "the prompt in blocks the same to the bit"}; ` +
     counts.map((n) => `${n}: ${median(times[n]).toFixed(1)} tok/s (${(median(times[n]) / one).toFixed(2)}×)`).join(", ") + `; ${promptLine}; ${searchLine}`);
   engine.stopThreads();

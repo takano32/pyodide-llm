@@ -35,6 +35,13 @@ const page = await browser.newPage();
 page.on("pageerror", (error) => console.log("page error:", error.message));
 // every line of the console: a worker error comes with its stack (T96), and the rounds say where they are
 page.on("console", (message) => console.log(`[${message.type()}] ${message.text()}`));
+// and the status line as it changes, to see where a run that never ends got to
+let lastStatus = "";
+const watch = setInterval(async () => {
+  const status = await page.evaluate(() => document.getElementById("status-text")?.textContent ?? "").catch(() => "");
+  if (status !== lastStatus) console.log(`[status] ${status}`);
+  lastStatus = status;
+}, 2000);
 await page.goto(`${site}?model=${model}&bench=1`, { waitUntil: "commit" });
 // T93: the first visit reloads once under the service worker (coi.js); a wait the reload interrupts starts again
 for (;;) {
@@ -57,6 +64,7 @@ for (const row of bench.rows) {
 const [fast, slow] = bench.rows;
 assert.ok(fast.speed > slow.speed, `the kernels (${fast.speed.toFixed(1)}) must beat NumPy (${slow.speed.toFixed(1)})`);
 assert.ok(bench.markdown.includes("|---|---|---|---|"), "a table GitHub renders");
+clearInterval(watch);
 await browser.close();
 server?.close();
 console.log("ok");
