@@ -16,6 +16,9 @@ const { CONTROL_BYTES, GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, 
 export { BATCH };
 
 const PAGE = 65536;
+// T120: no phase comes near this without progress (the longest token measured, Qwen2.5 7B's on CI, took 286 ms in
+// all): a count that has not moved for so long means a software thread the browser stopped in the middle of its chunk
+const STALLED_MS = 10000;
 const align = (n, to = 64) => Math.ceil(n / to) * to;
 
 /** The kernels as WebAssembly modules. The relaxed one fails to compile where relaxed SIMD is missing (Safari):
@@ -157,7 +160,8 @@ function halfToFloat(h) {
  * it is ready; the result has terminate(). Without it, or on a memory that is not shared, everything runs here. */
 /** wrap (tests/profile.mjs only): gets the kernels' exports and returns what to call instead, to time the forward
  * pass with some kernels replaced by functions that do nothing. */
-export function createForward({ memory, base, size, kernels, plan, spawn, wrap = (exports) => exports }) {
+/** stalledMs (tests only): how long a phase may make no progress before its software threads are given up (T120) */
+export function createForward({ memory, base, size, kernels, plan, spawn, wrap = (exports) => exports, stalledMs = STALLED_MS }) {
   const { dim, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: headSize, vocab_size: vocab,
     seq_len: seqLen, rotary, arch } = plan;
   const hidden = plan.hidden_dim, kvDim = kvHeads * headSize;
@@ -342,22 +346,41 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     [halfKV ? 4 : 3, xb + t * S, q + t * S, layerKeys, layerValues, att + t * A, pos, kvHeads, headSize, heads, 1, 0, 0, 0];
   const runRows = runner(k, relaxed);
   // stopThreads() runs on this thread too, never in the middle of a phase: a wait here ends when the helpers have done
-  // their part, and a helper the browser itself stopped would hold it for ever. (A check of a flag that stopThreads()
-  // raised and lowered again stood here and could never be seen, the review of T96 found. What held the coordinator
-  // for ever then was the second benchmark and the control area the last engine left, both fixed.)
+  // their part. A helper the browser itself stopped (iOS may end a worker for its memory) never counts the chunk it
+  // took: T120, the wait gives up when its count has not moved for stalledMs, and says false. (A check of a flag that
+  // stopThreads() raised and lowered again stood here and could never be seen, the review of T96 found.)
   const waitUntil = (index, done) => {
-    for (let seen = Atomics.load(ctl, index); !done(seen); seen = Atomics.load(ctl, index)) {
-      Atomics.wait(ctl, index, seen, 1000);
+    let moved = performance.now();
+    for (let seen = Atomics.load(ctl, index); !done(seen);) {
+      Atomics.wait(ctl, index, seen, Math.min(1000, stalledMs));
+      const now = Atomics.load(ctl, index);
+      if (now !== seen) [seen, moved] = [now, performance.now()];
+      else if (performance.now() - moved > stalledMs) return false;
     }
+    return true;
   };
+  // T120: every helper goes, and this engine keeps to one thread from here on. The phase is then run again here:
+  // each chunk writes only its own rows, from inputs that no phase changes while it runs, so what the helpers did
+  // before they stopped is written over with the same numbers
+  let lost = false;
+  function giveUp() {
+    lost = true;
+    console.warn("forward.js: a software thread stopped in the middle of its work; this model goes on with one thread");
+    stopHelpers();
+    search = null;
+    chosen = 1;
+  }
   function phase(jobs) {
-    if (threads <= 1) {
+    const alone = () => {
       for (const job of jobs) runRows(job, 0, job[ROWS]);
-      return;
-    }
+    };
+    if (threads <= 1) return alone();
     // close the previous phase (odd), let every helper still awake leave it, then rewrite the jobs
     Atomics.store(ctl, GEN, gen + 1);
-    waitUntil(ACTIVE, (seen) => seen === 0);
+    if (!waitUntil(ACTIVE, (seen) => seen === 0)) {
+      giveUp();
+      return alone();
+    }
     let total = 0;
     ctl[JOBS] = jobs.length;
     jobs.forEach((job, i) => {
@@ -385,7 +408,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
       runRows(jobs[j], r0, Math.min(r0 + size, jobs[j][ROWS]));
       Atomics.add(ctl, FINISHED, 1);
     }
-    waitUntil(FINISHED, (seen) => seen === total);
+    if (!waitUntil(FINISHED, (seen) => seen === total)) {
+      giveUp();
+      alone();
+    }
   }
   // matmuls of one input (count tokens of it, a frame apart): [matrix, output, output stride, layer] each
   function matmuls(input, count, list) {
@@ -501,6 +527,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     nextCandidate();
   }
   function nextCandidate() {
+    if (lost) return finish();
     const { best, direction } = search;
     const candidate = direction === "down" ? Math.floor(best / 2) : best * 2;
     if (candidate < 1) return finish();
@@ -513,13 +540,14 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     }
   }
   function finish() {
-    chosen = search ? search.best : threads;
+    chosen = lost ? 1 : search ? search.best : threads;
     threads = chosen;
     search = null;
     onChosen?.(chosen);
   }
   // the count for the next token, and whether it is timed
   function countForToken() {
+    if (lost) return [1, false];
     if (!search || search.waiting) return [search ? search.best : threads, false];
     const order = [search.best, search.candidate, search.candidate, search.best];
     const block = Math.floor(search.step / (BLOCK + 1)), inBlock = search.step % (BLOCK + 1);
@@ -547,7 +575,19 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     }
     finish();
   }
+  // the helpers in QUIT's hands: set, every one woken to see it, and each ended
+  function stopHelpers() {
+    Atomics.store(ctl, QUIT, 1);
+    for (let h = 1; h <= helpers.length; h++) {
+      Atomics.add(ctl, WAKE + h, 2);
+      Atomics.notify(ctl, WAKE + h);
+    }
+    // QUIT stays set until the next ensureHelpers(): a helper that wakes late must still see it
+    helpers.splice(0).forEach((helper) => helper.terminate?.());
+    threads = 1;
+  }
   async function ensureHelpers(n) {
+    if (lost) return;  // T120: none again after a helper stopped under this engine
     if (helpers.length < n - 1 && helpers.length === 0) Atomics.store(ctl, QUIT, 0);  // after stopThreads(): a fresh start
     while (helpers.length < n - 1) {
       helpers.push(await spawn({ memory, wide, plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null,
@@ -563,7 +603,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     /** Use n threads from the next token on (stage 2): starts the helpers that are missing. 1 on a memory that is
      * not shared. Resolves to the number in use. */
     async setThreads(n) {
-      if (!shared) return (threads = 1);
+      if (!shared || lost) return (threads = 1);
       search = null;
       await ensureHelpers(n);
       threads = Math.max(1, n);
@@ -574,7 +614,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
      * chose(count) is told the answer, compared(verdict) every comparison on the way. The helpers of the starting count are started (and warmed) before this
      * resolves, so the first tokens do not wait for them. */
     async findThreads({ from, remembered = 0, recheck = 8, chose, compared }) {
-      if (!shared) return 1;
+      if (!shared || lost) return 1;
       onChosen = chose;
       onCompared = compared;
       recheckEvery = recheck;
@@ -602,15 +642,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     },
     /** the helper threads end; this engine runs on its own again */
     stopThreads() {
-      if (!shared) return;
-      Atomics.store(ctl, QUIT, 1);
-      for (let h = 1; h <= helpers.length; h++) {
-        Atomics.add(ctl, WAKE + h, 2);
-        Atomics.notify(ctl, WAKE + h);
-      }
-      // QUIT stays set until the next ensureHelpers(): a helper that wakes late must still see it
-      helpers.splice(0).forEach((helper) => helper.terminate?.());
-      threads = 1;
+      if (shared) stopHelpers();
+    },
+    /** T120: whether a software thread stopped under this engine, which then went on with one */
+    get lostThreads() {
+      return lost;
     },
     /** the float32 array of Python's that forward() fills with the logits */
     bind(array) {

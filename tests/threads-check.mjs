@@ -159,7 +159,41 @@ if (isMainThread) {
     token = logits.indexOf(Math.max(...logits));
   }
   again.stopThreads();
-  parentPort.postMessage(`${reused ? "a second engine on the same memory runs the same; " : "a second engine on the same memory DIFFERS or hangs; "}${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
+  // T120: a software thread that the browser stops in the middle of its chunk (iOS may end a worker for memory):
+  // this one takes a chunk and ends without counting it. The coordinator must give its helpers up, run the phase
+  // again on its own, and go on with one thread, to the same logits
+  const { WAKE, COUNTER, ACTIVE, CONTROL_BYTES } = await import("../public/jobs.js");
+  const dying = ({ memory: shared, share }) => new Promise((resolve) => {
+    const worker = new Worker(`
+      const { parentPort, workerData: { memory, share, WAKE, COUNTER, ACTIVE, CONTROL_BYTES } } = require("node:worker_threads");
+      const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
+      parentPort.postMessage("ready");
+      for (let gen = Atomics.load(ctl, WAKE + share); ; gen = Atomics.load(ctl, WAKE + share)) {
+        Atomics.wait(ctl, WAKE + share, gen);
+        if (Atomics.load(ctl, WAKE + share) & 1) continue;
+        Atomics.add(ctl, ACTIVE, 1);
+        Atomics.add(ctl, COUNTER, 1);  // a chunk taken, never done
+        process.exit(0);
+      }`, { eval: true, workerData: { memory: shared, share, WAKE, COUNTER, ACTIVE, CONTROL_BYTES } });
+    worker.once("message", () => resolve({ terminate: () => worker.terminate() }));
+  });
+  const stopped = createForward({ memory, base, size, kernels, plan, spawn: dying, stalledMs: 500 });
+  await stopped.setThreads(2);
+  let went = true;
+  const warned = console.warn;
+  console.warn = () => {};  // the one line forward.js writes about it
+  token = plan.bos ?? 1;
+  for (let pos = 0; pos < positions && went; pos++) {
+    stopped.forward(token, pos, true);
+    const logits = stopped.logits();
+    went = logits.every((v, j) => Object.is(v, reference[pos][j]));
+    token = logits.indexOf(Math.max(...logits));
+  }
+  console.warn = warned;
+  went &&= stopped.lostThreads && stopped.threads === 1 && (await stopped.setThreads(4)) === 1;
+  stopped.stopThreads();
+  parentPort.postMessage(`${went ? "a software thread that stops mid-chunk is given up and the text is the same; " : "a software thread that stops mid-chunk DIFFERS or hangs; "}` +
+    `${reused ? "a second engine on the same memory runs the same; " : "a second engine on the same memory DIFFERS or hangs; "}${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
     `${blocksDiffer.length ? `the prompt in blocks DIFFERS with ${blocksDiffer.join(", ")} threads` : "the prompt in blocks the same to the bit"}; ` +
     counts.map((n) => `${n}: ${median(times[n]).toFixed(1)} tok/s (${(median(times[n]) / one).toFixed(2)}×)`).join(", ") + `; ${promptLine}; ${searchLine}`);
   engine.stopThreads();
