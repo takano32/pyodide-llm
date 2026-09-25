@@ -108,7 +108,9 @@ function markdown() {
   const lines = [`**Device**: ${results.page.userAgent}`, "",
     `cores ${results.page.cores}, memory ${results.page.memoryGB ?? "?"} GB, cross-origin isolated ${results.page.crossOriginIsolated}, navigator.gpu on the page ${results.page.gpuOnPage}${results.lost ? `, device lost: ${results.lost}` : ""}`, ""];
   const info = results.steps.find((s) => s.name === "the adapter");
-  if (info?.result) {
+  if (info?.result && !info.result.adapter) {
+    lines.push(`**Adapter**: none (navigator.gpu in a worker: ${info.result.worker})`, "");
+  } else if (info?.result) {
     const r = info.result;
     lines.push(`**Adapter** (in a worker: ${r.worker}): ${r.adapter ?? "none"}${r.fallback ? " (a fallback adapter)" : ""}`,
       `max binding ${fixed(r.maxStorageBufferBindingSize / 2 ** 20, 0)} MiB, max buffer ${fixed(r.maxBufferSize / 2 ** 20, 0)} MiB, packed int8 dot ${r.packed}, shader-f16 ${r.features?.includes("shader-f16")}`, "");
