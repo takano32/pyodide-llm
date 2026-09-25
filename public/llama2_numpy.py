@@ -402,10 +402,46 @@ def kernel_quantizer(path):
     return quantize_rows
 
 
+# T98: int6, six bits a weight. An int6 group is an int8 group whose values are multiples of 4 (-128..124: six
+# significant bits) and whose scale is a quarter: the same products as six bits and a whole scale, to the bit (a
+# power of two), and everything past the packing is int8. So the kernels widen a group straight into the int8 their
+# dot products take, with no offset to take out. A group of 32 takes 24 bytes: the four low bits of the six of
+# value j and of value j + 16 share byte j (0..15), and the top two bits of values k, k + 8, k + 16 and k + 24 share
+# byte 16 + k (0..7), at bits 0, 2, 4 and 6. Masks and shifts by constants only (kernels/six.ts).
+
+
+def pack6(values):
+    """int8 values that are multiples of 4, groups of 32 (rows of them) -> 24 bytes a group (uint8)."""
+    b = (np.asarray(values, dtype=np.int8).reshape(-1, 32).view(np.uint8) >> 2) & 63  # the six bits
+    low = (b[:, :16] & 15) | ((b[:, 16:] & 15) << 4)
+    top = b >> 4
+    high = top[:, 0:8] | (top[:, 8:16] << 2) | (top[:, 16:24] << 4) | (top[:, 24:32] << 6)
+    return np.concatenate([low, high], axis=1)
+
+
+def unpack6(packed):
+    """24 bytes a group -> the 32 int8 values of it (rows of them), multiples of 4."""
+    b = np.asarray(packed, dtype=np.uint8).reshape(-1, 24)
+    low = np.concatenate([b[:, :16] & 15, b[:, :16] >> 4], axis=1)
+    top = np.concatenate([(b[:, 16:] >> shift) & 3 for shift in (0, 2, 4, 6)], axis=1)
+    return ((low | (top << 4)) << 2).astype(np.uint8).view(np.int8)
+
+
+def quantize6(values):
+    """float32 values, whole rows of groups of 32 -> (int8 values, float32 scales) in six bits: v = round(x / s) in
+    -32..31 with s = the largest |x| of the group over 31, given as 4 v and s / 4 (see pack6)."""
+    groups = np.asarray(values, dtype=np.float32).reshape(-1, 32)
+    scales = (np.abs(groups).max(axis=1) / 31.0).astype(np.float32)
+    inverse = np.divide(1.0, scales, out=np.zeros_like(scales), where=scales > 0)
+    six = np.clip(np.rint(groups * inverse[:, None]), -32, 31).astype(np.int8)
+    return (six * 4).astype(np.int8), scales / np.float32(4)
+
+
 class Tensor:
     """Where a tensor of the checkpoint is, when the weights live outside Python (T93: the forward pass runs in
     public/forward.js on its own WebAssembly memory). kind: "int8" (values, then one float32 scale per group of
-    the last dimension at scales), "f32" or "f16". Offsets count from the start of the checkpoint file."""
+    the last dimension at scales), "int6" (the same with the values packed, see pack6), "f32" or "f16". Offsets count
+    from the start of the checkpoint file."""
 
     __slots__ = ("kind", "offset", "shape", "group", "scales")
 
@@ -442,7 +478,7 @@ def outlier_columns(classifier, channels):
 
 
 def checkpoint_dtype(header, size, bias=False, arch="llama"):
-    """"float32", "float16" or "int8": what a checkpoint file of size bytes with this header (7 ints) holds.
+    """"float32", "float16", "int8" or "int6": what a checkpoint file of size bytes with this header (7 ints) holds.
 
     The legacy format does not say, but the header fixes the size of each variant. Anything else is no checkpoint
     this engine can read, and the ValueError says so before hundreds of megabytes are read for nothing.
@@ -483,6 +519,9 @@ def checkpoint_dtype(header, size, bias=False, arch="llama"):
     # quantize.py: int8 values and a float32 scale per group; the vectors stay float32, the RoPE tables are left out
     int8 = sum(rows * length + 4 * (rows * length // group(length)) for rows, length in matrices) + 4 * vectors
     sizes = {28 + 4 * floats: "float32", 28 + 2 * floats: "float16", 28 + int8: "int8"}
+    if all(length % 32 == 0 for _, length in matrices):
+        # T98: 24 bytes and a float32 scale per group of 32 (only rows of whole groups can be int6)
+        sizes.setdefault(28 + sum(rows * length // 32 * 28 for rows, length in matrices) + 4 * vectors, "int6")
     if size not in sizes:
         raise ValueError(f"This is not a llama2.c checkpoint: its header asks for {28 + 4 * floats} bytes as float32, "
                          f"{28 + 2 * floats} as float16 or {28 + int8} as int8, and the file has {size}.")
@@ -523,7 +562,8 @@ class Llama:
                  disable=(), external=None, rope_scaling=None, ignore_merges=False):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
-        dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py).
+        dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py), and
+        dtype="int6" (T98) is int8 with six bits a value (pack6).
         arch="neox": GPT-NeoX, which is arch="gpt2" with RoPE over the first rotary values of every head
         (rotary=0 means all of them) and, when parallel_residual is on, the attention and the FFN both reading
         the same x instead of one after the other.
@@ -567,7 +607,9 @@ class Llama:
         if unknown:
             raise ValueError(f"There is no optimization called {unknown[0]!r}: {', '.join(SWITCHES)}.")
         self.disabled = disable
-        dtype = np.dtype(dtype)
+        # int6 (T98) is int8 with its values packed: from here on it is int8, except where the bytes are read
+        six = str(dtype) == "int6"
+        dtype = np.dtype(np.int8 if six else dtype)
         offset = 28
         # The int8 kernels work on groups of 32 only
         suitable = dtype != np.int8 or (dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0)
@@ -586,8 +628,9 @@ class Llama:
                     group = 32
                     while shape[-1] % group:
                         group //= 2
-                    tensor = Tensor("int8", offset, shape, group, offset + count)
-                    offset += count + 4 * (count // group)
+                    stored = count * 3 // 4 if six else count
+                    tensor = Tensor("int6" if six else "int8", offset, shape, group, offset + stored)
+                    offset += stored + 4 * (count // group)
                     return tensor
                 tensor = Tensor("f16" if dtype == np.float16 else "f32", offset, shape)
                 offset += count * (2 if dtype == np.float16 else 4)
@@ -597,9 +640,11 @@ class Llama:
                 group = 32
                 while shape[-1] % group:
                     group //= 2
-                values = np.frombuffer(checkpoint, dtype=np.int8, count=count, offset=offset)
-                scales = np.frombuffer(checkpoint, dtype=np.float32, count=count // group, offset=offset + count)
-                offset += count + scales.nbytes
+                stored = count * 3 // 4 if six else count
+                values = unpack6(np.frombuffer(checkpoint, dtype=np.uint8, count=stored, offset=offset)).reshape(-1) \
+                    if six else np.frombuffer(checkpoint, dtype=np.int8, count=count, offset=offset)
+                scales = np.frombuffer(checkpoint, dtype=np.float32, count=count // group, offset=offset + stored)
+                offset += stored + scales.nbytes
                 if not widen:
                     values, scales = values.reshape(*shape[:-1], -1, group), scales.reshape(*shape[:-1], -1, 1)
                     # With the kernels every tensor stays a view into the checkpoint buffer. Otherwise this is the

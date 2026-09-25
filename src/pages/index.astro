@@ -294,7 +294,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
 </style>
 
 <script>
-  import { GROUPS, MODELS, memoryFailure, memoryWarning } from "../models.js";
+  import { GROUPS, MODELS, memoryFailure, memoryWarning, weightsFor } from "../models.js";
   import { FULL_ROUNDS, ROUNDS, benchMarkdown, environmentOf, reportUrl } from "../bench.js";
 
   declare const __BUILD__: string;
@@ -369,6 +369,12 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   // model and this page remembers the answer, so that the next visit starts with it.
   const fixedThreads = Math.max(0, Math.floor(Number(parameters.get("threads")) || 0));
   const threadsKey = (id: string) => `threads:${id}:${navigator.hardwareConcurrency}:${(navigator as any).deviceMemory ?? ""}:${navigator.userAgent}`;
+  // T98: ?bits=6 converts a model of Hugging Face to six bits a weight, ?bits=8 to int8; without it, six bits only
+  // where int8 would not fit (weightsFor). What the worker gets is the entry with that in its conversion.
+  const weighed = (entry: any) => {
+    const dtype = weightsFor(entry, parameters.get("bits"), (navigator as any).deviceMemory);
+    return dtype ? { ...entry, conversion: { ...entry.conversion, dtype } } : entry;
+  };
   const threadsFor = (entry: { id: string }) => {
     let remembered = 0;
     try {
@@ -736,7 +742,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       if (benchmark && !benchmarking && !(window as any).__bench) {
         statusText.textContent = `${model.name} · benchmarking...`;
         benchmarking = true;
-        worker.postMessage({ type: "bench", model, load: loads,
+        worker.postMessage({ type: "bench", model: weighed(model), load: loads,
           rounds: benchmark === "full" ? FULL_ROUNDS : ROUNDS, prompt: model.prompt || "Once upon a time", steps: 64 });
       }
       longest = data.seq_len;
@@ -825,7 +831,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   // The model can be changed while one is loading: the worker cancels that download and starts the new one.
   // loads numbers them, and the worker's reports carry the number.
   let loads = 1;
-  worker.postMessage({ type: "init", search: location.search, model, load: loads, threads: threadsFor(model) });
+  worker.postMessage({ type: "init", search: location.search, model: weighed(model), load: loads, threads: threadsFor(model) });
 
   // A model of the visitor's own disk, from the folder button or dropped on the page. The legacy format knows
   // nothing about itself, so whatever differs from llama2.c's conventions comes as a third file: .json, shaped
@@ -969,7 +975,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     const download = select.selectedOptions[0]?.textContent?.includes("kept in this browser") ? 0 : ((chosen as any).download ?? 0);
     // T90: and one that probably does not fit in a device that says how much memory it has (Chromium only)
     const asks = [download > 500e6 && `${chosen.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser.`,
-                  memoryWarning(chosen, (navigator as any).deviceMemory)].filter(Boolean);
+                  memoryWarning(weighed(chosen), (navigator as any).deviceMemory)].filter(Boolean);
     if (asks.length && !confirm(`${asks.join(" ")} Go on?`)) {
       select.value = model.id;
       return;
@@ -982,7 +988,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     // the timings of the previous load
     $("load").classList.remove("measured");
     ($("load") as HTMLDetailsElement).open = false;
-    worker.postMessage({ type: "load", model, load: ++loads, threads: threadsFor(model) });
+    worker.postMessage({ type: "load", model: weighed(model), load: ++loads, threads: threadsFor(model) });
   };
 
   // Enter breaks the line and Shift + Enter does too; Ctrl + Enter or Cmd + Enter sends. A phone has neither key

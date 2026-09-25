@@ -22,7 +22,7 @@ const positions = option("--positions", 64), from = option("--from", 16);
 const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
 const kernels = compileKernels(fs.readFileSync(`${root}public/simdkernel_plain.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_plain.wasm`));
 // the kinds of kernel calls, and the kernel names that go into each
-const KINDS = { "matmuls": ["matmul_q8r", "matmul_q8", "matmul_f32"], "quantizing the input": ["quantize_x"],
+const KINDS = { "matmuls": ["matmul_q8r", "matmul_q8", "matmul_q6r", "matmul_q6", "matmul_f32"], "quantizing the input": ["quantize_x"],
   "attention": ["attention"], "norms": ["rmsnorm", "layernorm"], "rope, activation, adds": ["rope", "swiglu", "gelu", "add_inplace", "add_columns"] };
 const kindOf = Object.fromEntries(Object.entries(KINDS).flatMap(([kind, names]) => names.map((name) => [name, kind])));
 function timing(sums) {

@@ -11,7 +11,7 @@ import time
 import numpy as np
 
 # the RoPE angles are the engine's, which computes them itself when a file leaves the tables out (int8)
-from llama2_numpy import rope_frequencies
+from llama2_numpy import pack6, quantize6, rope_frequencies
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
 # peak is the output plus 14 MB with this, plus 52 MB with pieces four times as large, at the same speed.
@@ -67,13 +67,24 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, 
     return tensors
 
 
+QUANTIZED = ("int8", "int6")  # the dtypes with groups and scales; int6 is T98's, see llama2_numpy.pack6
+
+
+def dtype_name(dtype):
+    """"float32", "float16", "int8" or "int6" from a name or a NumPy dtype (NumPy has no six-bit type)."""
+    return "int6" if str(dtype) == "int6" else np.dtype(dtype).name
+
+
 def tensor_bytes(shape, is_matrix, dtype):
     """How many bytes a tensor of layout() takes in a checkpoint of that dtype."""
-    count = int(np.prod(shape))
-    if np.dtype(dtype) != np.int8:
+    count, dtype = int(np.prod(shape)), dtype_name(dtype)
+    if dtype not in QUANTIZED:
         return count * np.dtype(dtype).itemsize
     if is_matrix is None:
-        return 0  # int8 checkpoints leave the RoPE tables out
+        return 0  # int8 and int6 checkpoints leave the RoPE tables out
+    if dtype == "int6":
+        # 24 bytes of values and a float32 scale per group of 32; the norm weights stay float32
+        return count // 32 * 28 if is_matrix else 4 * count
     # int8 values and one float32 scale per group; the norm weights stay float32
     return count + 4 * (count // group_size(shape[-1])) if is_matrix else 4 * count
 
@@ -100,7 +111,9 @@ class Writer:
         buffer on its way there would keep taking its size twice."""
         # quantize_rows: quantize() on the SIMD kernels (llama2_numpy.kernel_quantizer), the same bytes six times
         # faster, for rows of whole groups of 32; NumPy's quantize() for anything else, and where there are no kernels
-        self.dtype, self.sink, self.quantize_rows = np.dtype(dtype), sink, quantize_rows
+        self.dtype, self.sink, self.quantize_rows = dtype_name(dtype), sink, quantize_rows
+        if self.dtype == "int6" and any(is_matrix and shape[-1] % 32 for shape, is_matrix in layout(*header, bias=bias, arch=arch)):
+            raise ValueError("Six bits a weight needs rows of whole groups of 32, and this model has other rows.")
         size = checkpoint_size(header, dtype, bias, arch)
         if sink is not None:
             self.out = None
@@ -124,8 +137,12 @@ class Writer:
     def write(self, index, first, values):
         """values: whole rows of tensor number index, beginning at its element number first."""
         offset, shape, is_matrix = self.tensors[index]
-        if self.dtype != np.int8:
-            self.put(offset + first * self.dtype.itemsize, np.asarray(values).astype(self.dtype, copy=False))
+        if self.dtype not in QUANTIZED:
+            self.put(offset + first * np.dtype(self.dtype).itemsize, np.asarray(values).astype(self.dtype, copy=False))
+        elif is_matrix and self.dtype == "int6":
+            quantized, scales = quantize6(np.asarray(values, dtype=np.float32).reshape(-1, shape[-1]))
+            self.put(offset + first * 3 // 4, pack6(quantized))
+            self.put(offset + int(np.prod(shape)) * 3 // 4 + 4 * (first // 32), scales)
         elif is_matrix:
             fast = self.quantize_rows is not None and shape[-1] % 32 == 0
             quantized, scales = (self.quantize_rows if fast else quantize)(np.asarray(values, dtype=np.float32).reshape(-1, shape[-1]))
@@ -1335,8 +1352,8 @@ class Conversion:
         # GPT-2 spells its config differently: from here on it has the names the rest of the file uses
         self.config = normalize(self.config)
         check_config(self.config)
-        if np.dtype(dtype) not in (np.float32, np.float16, np.int8):
-            raise ValueError(f"dtype must be float32, float16 or int8, not {dtype}.")
+        if str(dtype) != "int6" and np.dtype(dtype) not in (np.float32, np.float16, np.int8):
+            raise ValueError(f"dtype must be float32, float16, int8 or int6, not {dtype}.")
         try:
             header = json.loads(header)
         except ValueError:
@@ -1364,8 +1381,8 @@ class Conversion:
         self = cls.__new__(cls)
         self.config = config
         check_config(config)
-        if np.dtype(dtype) not in (np.float32, np.float16, np.int8):
-            raise ValueError(f"dtype must be float32, float16 or int8, not {dtype}.")
+        if str(dtype) != "int6" and np.dtype(dtype) not in (np.float32, np.float16, np.int8):
+            raise ValueError(f"dtype must be float32, float16, int8 or int6, not {dtype}.")
         self.tokenizer, options, tokenizer_config, specials = gguf_tokenizer(metadata, config["vocab_size"])
         self.base = base
         self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base, sink, quantize_rows, specials)
@@ -1381,7 +1398,7 @@ class Conversion:
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start), sink=sink,
                              quantize_rows=quantize_rows)
-        self.options = {**options, "dtype": np.dtype(dtype).name, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
+        self.options = {**options, "dtype": dtype_name(dtype), "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop, "bias": self.stream.bias,
                         "arch": self.stream.arch}
         # the format of one turn, from the model's own chat_template (T73). src/models.js wins when it has one

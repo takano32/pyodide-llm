@@ -93,7 +93,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   const gpt2 = arch === "gpt2", layerNorm = arch === "gpt2" || arch === "neox", parallel = plan.parallel_residual;
   const imports = { env: { memory } };
   const k = wrap(new WebAssembly.Instance(kernels.plain, imports).exports);
-  const relaxed = plan.int8 && plan.relaxed && kernels.relaxed ? wrap(new WebAssembly.Instance(kernels.relaxed, imports).exports).matmul_q8r : null;
+  const relaxed = plan.int8 && plan.relaxed && kernels.relaxed ? wrap(new WebAssembly.Instance(kernels.relaxed, imports).exports) : null;
   const bias = relaxed ? 64 : 0;
 
   // ---- memory: the checkpoint at base, everything else after it; views are made again after the memory grows
@@ -116,15 +116,24 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
 
   const T = plan.tensors, derived = plan.derived ?? {};
   const count = (t) => t.shape.reduce((a, b) => a * b, 1);
-  // a float32 copy of a tensor: float16 converted, int8 times the scale of its group (Math.fround is the float32
-  // product NumPy computes)
+  // weight i of an int8 or int6 tensor, as the int8 it is: int6 (T98) unpacked from its group of 24 bytes, the
+  // layout of llama2_numpy.pack6 (six bits, then two zero bits)
+  function weightAt(t, i) {
+    if (t.kind === "int8") return I[base + t.offset + i];
+    const group = base + t.offset + ((i / 32) | 0) * 24, j = i % 32;
+    const low = j < 16 ? U[group + j] & 15 : U[group + j - 16] >> 4;
+    const top = (U[group + 16 + (j % 8)] >> (2 * ((j / 8) | 0))) & 3;
+    return (((low | (top << 4)) << 2) << 24) >> 24;  // the byte as a signed int8
+  }
+  // a float32 copy of a tensor: float16 converted, int8 and int6 times the scale of their group (Math.fround is the
+  // float32 product NumPy computes)
   function widen(t) {
     const n = count(t), at = alloc(n * 4);
     if (t.kind === "f16") {
       for (let i = 0; i < n; i++) F[at / 4 + i] = halfToFloat(H[(base + t.offset) / 2 + i]);
     } else {
       const g = t.group;
-      for (let i = 0; i < n; i++) F[at / 4 + i] = Math.fround(I[base + t.offset + i] * F[(base + t.scales) / 4 + ((i / g) | 0)]);
+      for (let i = 0; i < n; i++) F[at / 4 + i] = Math.fround(weightAt(t, i) * F[(base + t.scales) / 4 + ((i / g) | 0)]);
     }
     return at;
   }
@@ -145,13 +154,14 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     if (!widened.has(name)) widened.set(name, widen(t));
     return widened.get(name);
   }
-  // a matrix: int8 (values, scales, corrections) when plan.int8, else float32
+  // a matrix: int8 or int6 (values, scales, corrections) when plan.int8, else float32
   function matrix(name) {
     const source = plan.shared_classifier && name === "wcls" ? "token_embedding_table" : name;
     const t = T[source];
     if (!t) return null;
     const [rows, n] = t.shape.slice(-2);
-    if (t.kind === "int8" && plan.int8) {
+    if ((t.kind === "int8" || t.kind === "int6") && plan.int8) {
+      const six = t.kind === "int6", rowBytes = six ? n / 32 * 24 : n;
       const values = base + t.offset, scales = base + t.scales, groups = count(t) / t.group;
       let corrections = scales;
       if (relaxed) {
@@ -160,12 +170,12 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
         corrections = alloc(groups * 4);
         for (let g = 0; g < groups; g++) {
           let sum = 0;
-          for (let i = 0; i < t.group; i++) sum += I[values + g * t.group + i];
+          for (let i = 0; i < t.group; i++) sum += weightAt(t, g * t.group + i);
           F[corrections / 4 + g] = Math.fround(F[scales / 4 + g] * sum);
         }
       }
-      const layer = (l) => [values + l * rows * n, scales + l * rows * (n / t.group) * 4, corrections + l * rows * (n / t.group) * 4];
-      return { rows, n, int8: true, layer };
+      const layer = (l) => [values + l * rows * rowBytes, scales + l * rows * (n / t.group) * 4, corrections + l * rows * (n / t.group) * 4];
+      return { rows, n, int8: true, six, layer };
     }
     const w = floats(source);  // float32 as it is, or widened once (shared with the embedding when it is the same table)
     return { rows, n, int8: false, layer: (l) => [w + l * rows * n * 4] };
@@ -212,7 +222,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     const groups = dim / t.group;
     channels.forEach((c, i) => {
       for (let v = 0; v < vocab; v++) {
-        F[columns / 4 + i * vocab + v] = Math.fround(I[base + t.offset + v * dim + c] * F[(base + t.scales) / 4 + v * groups + ((c / t.group) | 0)]);
+        F[columns / 4 + i * vocab + v] = Math.fround(weightAt(t, v * dim + c) * F[(base + t.scales) / 4 + v * groups + ((c / t.group) | 0)]);
       }
     });
   }
@@ -254,7 +264,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   const jobOf = (m, out, outStride, input, l, count) => {
     const [w, s, c] = m.layer(l);
     if (!m.int8) return [2, out, input, 0, w, 0, 0, m.n, 0, m.rows, count, outStride, S, 0];
-    return [relaxed ? 0 : 1, out, xq, xs, w, s, relaxed ? c : 0, m.n, 0, m.rows, count, outStride, S, S];
+    const kind = m.six ? (relaxed ? 5 : 6) : (relaxed ? 0 : 1);
+    return [kind, out, xq, xs, w, s, relaxed ? c : 0, m.n, 0, m.rows, count, outStride, S, S];
   };
   // the attention of token t of a run, at position pos (its scores have a place of their own: tokens run at once)
   const attentionJob = (t, pos, layerKeys, layerValues) =>
@@ -324,10 +335,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     // the embedding rows
     for (let t = 0; t < count; t++) {
       const row = tokens[t] * dim, to = (x + t * S) / 4;
-      if (embedding.kind === "int8") {
+      if (embedding.kind === "int8" || embedding.kind === "int6") {
         const g = embedding.group;
         for (let i = 0; i < dim; i++) {
-          F[to + i] = Math.fround(I[base + embedding.offset + row + i] * F[(base + embedding.scales) / 4 + (((row + i) / g) | 0)]);
+          F[to + i] = Math.fround(weightAt(embedding, row + i) * F[(base + embedding.scales) / 4 + (((row + i) / g) | 0)]);
         }
       } else {
         const from = embedding.kind === "f32" ? base + embedding.offset : embeddingRows;
@@ -475,7 +486,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   }
 
   let bound = null;
-  const backend = plan.int8 ? `SIMD kernels, int8${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32";
+  const backend = plan.int8 ? `SIMD kernels, ${T.wq?.kind === "int6" ? "int6" : "int8"}${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32";
   return {
     backend,
     /** Use n threads from the next token on (stage 2): starts the helpers that are missing. 1 on a memory that is

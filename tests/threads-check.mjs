@@ -18,6 +18,7 @@
 // --kv-start: the KV cache starts this small (the page's KV_START is 256), so that it has to grow, and move, under
 // the helper threads within the positions of a run (Fable's review of T93).
 import fs from "node:fs";
+import path from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { compileKernels, createForward, weightsMemory } from "../public/forward.js";
 
@@ -41,11 +42,14 @@ if (isMainThread) {
   const { pyodide: py } = await pyodideWithEngine();
   let failed = false;
   for (const id of ids.length ? ids : ["tiny-lm", "llm-jp-3-150m"]) {
-    const entry = MODELS.find((m) => m.id === id);
-    const checkpoint = fs.readFileSync(root + entry.checkpoint);
+    // a model of the list, or <out> of tests/perplexity_prepare.py (or quantize.py: <out>.bin, .tokenizer.bin, .json)
+    const entry = MODELS.find((m) => m.id === id) ?? { name: path.basename(id), checkpoint: path.resolve(`${id}.bin`),
+      tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) };
+    const file = (f) => (path.isAbsolute(f) ? f : root + f);
+    const checkpoint = fs.readFileSync(file(entry.checkpoint));
     const { memory, base } = weightsMemory(checkpoint.length, { shared: true });
     new Uint8Array(memory.buffer).set(checkpoint, base);
-    py.FS.writeFile("tokenizer.bin", fs.readFileSync(root + entry.tokenizer));
+    py.FS.writeFile("tokenizer.bin", fs.readFileSync(file(entry.tokenizer)));
     let plan;
     // Python says where every tensor is; the forward pass itself is made in the worker
     const outside = { size: checkpoint.length, read: (o, l) => new Uint8Array(memory.buffer, base + o, l).slice(),

@@ -19,9 +19,9 @@ const { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, ROWS, SIZE
 const { memory, plain, relaxed, share } = await started;
 const imports = { env: { memory } };
 const k = new WebAssembly.Instance(plain, imports).exports;
-const q8r = relaxed ? new WebAssembly.Instance(relaxed, imports).exports.matmul_q8r : null;
+const r = relaxed ? new WebAssembly.Instance(relaxed, imports).exports : null;
 const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
-const runRows = runner(k, q8r);
+const runRows = runner(k, r);
 const steal = () => {
   const total = ctl[TOTAL], count = ctl[JOBS];
   for (let c = Atomics.add(ctl, COUNTER, 1); c < total; c = Atomics.add(ctl, COUNTER, 1)) {
@@ -32,7 +32,7 @@ const steal = () => {
     if (Atomics.add(ctl, FINISHED, 1) + 1 === total) Atomics.notify(ctl, FINISHED);
   }
 };
-warmUp(k, q8r);  // before anyone waits for this thread
+warmUp(k, r);  // before anyone waits for this thread
 port.postMessage("ready");
 let gen = Atomics.load(ctl, WAKE + share);
 for (;;) {

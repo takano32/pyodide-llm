@@ -204,7 +204,26 @@ export function modelBytes(entry) {
   // file measures about 800 MB of heap (AGENTS.md), so three times the file is the honest estimate
   if (entry.bytes) return entry.options?.dtype === "float16" ? entry.bytes * 3 : entry.bytes;
   const found = /int8 ([\d.]+) (MB|GB)/.exec(entry.note ?? "");
-  return found ? Number(found[1]) * (found[2] === "GB" ? 1e9 : 1e6) : undefined;
+  const int8 = found ? Number(found[1]) * (found[2] === "GB" ? 1e9 : 1e6) : undefined;
+  return int8 && entry.conversion?.dtype === "int6" ? int8 * SIX_OF_EIGHT : int8;
+}
+
+// T98: a model converted in the page can keep its weights in six bits instead of eight: 24 bytes and a scale per
+// group of 32 against 32 and a scale, 7/9 of the size, at +1 to +3.4% of perplexity (measured on eight models), and
+// slower on one thread (the groups are widened as they are read). So it is taken where int8 does not fit.
+export const SIX_OF_EIGHT = 28 / 36;
+/** What a 32-bit WebAssembly memory holds, where the weights, the keys and values and the activations live (T93). */
+const WEIGHTS_MEMORY = 2 ** 32;
+/** The dtype a model of Hugging Face is converted to: asked is ?bits= (or a setting), "8", "6" or anything else for
+ * automatic, which takes int6 only where int8 would not fit: past a 32-bit memory, or past half of what the device
+ * says it has (deviceMemory, Chromium only). undefined for a model that is not converted in the page. */
+export function weightsFor(entry, asked, deviceMemory) {
+  if (!entry.hf) return undefined;
+  if (asked === "6" || asked === "8") return `int${asked}`;
+  const int8 = modelBytes({ ...entry, conversion: { ...entry.conversion, dtype: "int8" } });
+  if (!int8) return "int8";
+  const room = Math.min(WEIGHTS_MEMORY, deviceMemory ? deviceMemory * 2 ** 30 / 2 : Infinity);
+  return int8 + PAGE_MEMORY > room ? "int6" : "int8";
 }
 /** A sentence for a device that says it has less memory than twice what the model needs, or "". deviceMemory is
  * navigator.deviceMemory (GB; only Chromium tells, and at most 8): without it nothing is guessed. */

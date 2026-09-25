@@ -2,7 +2,7 @@
 //
 //   node tests/models-check.mjs
 import assert from "node:assert/strict";
-import { LICENSES, MODELS, PAGE_MEMORY, memoryFailure, memoryWarning, modelBytes, sourceOf, sources } from "../src/models.js";
+import { LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, memoryFailure, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.js";
 
 for (const entry of MODELS) {
   const repo = sourceOf(entry);
@@ -35,4 +35,15 @@ assert.match(memoryWarning(byId("llm-jp-3-150m-f16"), 2), /needs about 1,215 MB/
 assert.equal(modelBytes(byId("stories15M-f32")), 60816028, "float32 is used as it is");
 assert.match(memoryFailure(big, 1234567890, "MemoryError"), /ran out of memory for Qwen2.5 1.5B Instruct \(it needs about 1,900 MB\); the page was using 1,235 MB when it happened\. .* \(MemoryError\)$/);
 assert.ok(!memoryFailure({ name: "mine.bin" }, undefined, "").includes("undefined"));
+
+// T98: six bits where int8 does not fit, and where asked
+const small = byId("hf-smollm2-135m-instruct"), qwen = byId("hf-qwen2.5-1.5b-instruct");
+assert.equal(weightsFor(byId("tiny-lm"), "6", 2), undefined, "a model of the site is not converted");
+assert.equal(weightsFor(small, undefined, undefined), "int8", "nothing told: int8");
+assert.equal(weightsFor(small, "6", 8), "int6", "?bits=6");
+assert.equal(weightsFor(qwen, "8", 2), "int8", "?bits=8 even where it does not fit");
+assert.equal(weightsFor(qwen, undefined, 8), "int8", "1.6 GB fits in half of 8 GB");
+assert.equal(weightsFor(qwen, undefined, 2), "int6", "not in half of 2 GB");
+assert.equal(weightsFor({ hf: {}, note: "int8 4.2 GB" }, undefined, undefined), "int6", "past a 32-bit memory");
+assert.equal(modelBytes({ ...qwen, conversion: { dtype: "int6" } }), modelBytes(qwen) * SIX_OF_EIGHT);
 console.log("ok");

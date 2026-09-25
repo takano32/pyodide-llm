@@ -2,6 +2,8 @@
 // Loaded into Pyodide with ctypes as an Emscripten side module, they work in place on NumPy-owned memory.
 // No static data and no std math on purpose: nothing relocates a data segment in this hand-made side module.
 
+import { sixFirst, sixSecond, sixTops } from "./six";
+
 const GS: i32 = 32; // int8 quantization group size, as in quantize.py
 
 // @ts-ignore: decorator
@@ -95,6 +97,32 @@ export function matmul_q8(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
       const o = <usize>(g * GS);
       const a0 = v128.load(row + o), b0 = v128.load(xq + o);
       const a1 = v128.load(row + o + 16), b1 = v128.load(xq + o + 16);
+      const acc = i32x4.add(
+        i32x4.add(
+          i32x4.extadd_pairwise_i16x8_s(i16x8.extmul_low_i8x16_s(a0, b0)),
+          i32x4.extadd_pairwise_i16x8_s(i16x8.extmul_high_i8x16_s(a0, b0))),
+        i32x4.add(
+          i32x4.extadd_pairwise_i16x8_s(i16x8.extmul_low_i8x16_s(a1, b1)),
+          i32x4.extadd_pairwise_i16x8_s(i16x8.extmul_high_i8x16_s(a1, b1))));
+      const s = load<f32>(srow + (<usize>g << 2)) * load<f32>(xs + (<usize>g << 2));
+      facc = f32x4.add(facc, f32x4.mul(f32x4.convert_i32x4_s(acc), f32x4.splat(s)));
+    }
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
+  }
+}
+
+// T98: int6 weights (24 bytes a group, six.ts) with one float32 scale per group: matmul_q8 on the widened groups
+export function matmul_q6(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32): void {
+  const ng = n / GS;
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * <usize>ng * 24;
+    const srow = ws + ((<usize>i * <usize>ng) << 2);
+    let facc = f32x4.splat(0);
+    for (let g = 0; g < ng; g++) {
+      const p = row + <usize>g * 24, o = <usize>(g * GS);
+      const low = v128.load(p), t = sixTops(p);
+      const a0 = sixFirst(low, t), b0 = v128.load(xq + o);
+      const a1 = sixSecond(low, t), b1 = v128.load(xq + o + 16);
       const acc = i32x4.add(
         i32x4.add(
           i32x4.extadd_pairwise_i16x8_s(i16x8.extmul_low_i8x16_s(a0, b0)),

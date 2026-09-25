@@ -44,7 +44,7 @@ for (const id of ids.length ? ids : ["stories260K", "stories15M", "tiny-lm", "ll
 data, vocabulary = open("model.bin", "rb").read(), open("tokenizer.bin", "rb").read()
 page = kernel_llama(data, vocabulary, **OPTIONS)
 numpy = Llama(data, vocabulary, **{k: v for k, v in OPTIONS.items() if k != "disable"})
-int8 = "int8" in page.backend
+int8 = "int8" in page.backend or "int6" in page.backend  # both quantize the activations (T98)
 sequence, agree, largest, nll = [page.bos], 0, 0.0, [0.0, 0.0]
 for pos in range(${positions}):
     a, b = page.forward(sequence[pos], pos).astype(np.float64), numpy.forward(sequence[pos], pos).astype(np.float64)

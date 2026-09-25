@@ -49,6 +49,10 @@ def test_the_sizes_follow_the_layout_of_every_architecture(bias, arch, shared):
         assert checkpoint_dtype(header, checkpoint_size(header, dtype, bias, arch), bias, arch) == dtype
     # and told apart from the same header as a plain Llama
     assert checkpoint_size(header, "float32", bias, arch) != checkpoint_size(header, "float32")
+    # int6 (T98) needs rows of whole groups of 32: another hidden size
+    header = (64, 192, 3, 8, 8, 300 if shared else -300, 128)
+    for dtype in ("float32", "float16", "int8", "int6"):
+        assert checkpoint_dtype(header, checkpoint_size(header, dtype, bias, arch), bias, arch) == dtype
 
 
 @pytest.mark.parametrize("size", [0, 27, 1000, 123456789])
