@@ -62,6 +62,8 @@ jobs:
           # T93: the forward pass of public/forward.js against NumPy's, on the site's models (the line is for 128 positions)
           node tests/forward-check.mjs --rounds 1 --positions 128
           node tests/forward-check.mjs stories260K tiny-lm --rounds 1 --positions 128 --plain
+          # T101: the 64-bit memory and its kernels (the review: nothing ran them before a change went out)
+          node tests/forward-check.mjs stories260K tiny-lm --rounds 1 --positions 128 --wide
 
       - name: Build the site
         run: npm run build
