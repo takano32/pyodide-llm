@@ -403,13 +403,18 @@ function weightsBuffer(size) {
 // writes it to its place in a buffer of the final size. Reading in the order of the output instead would mean
 // hundreds of range requests, and each one takes a second.
 // 16 MiB over 6 connections (T107, measured in CI against huggingface.co): parts of 8 MiB took 1.36 times as long
-// for Qwen2.5 0.5B, of 4 MiB 2.8 times; more connections gained 6% at most. At most two parts per connection wait
-// for an earlier one: 192 MB in the worst case.
+// for Qwen2.5 0.5B, of 4 MiB 2.8 times; more connections gained 6% at most. But the first bytes then come late on a
+// slow line, and a phone has less room for what waits in the queue (two parts per connection: 192 MB at 16 MiB),
+// so the first part is 8 MiB wherever the size is not fixed by the URL, and the rest follow what it measured
+// (the owner's ask, 2026-09-25): 16 MiB where that part came in at 4 MB/s or more and the device says nothing of a
+// small memory, 8 MiB otherwise.
 const HF_PART_BYTES = 16 * 1024 * 1024;
+const HF_SMALL_PART_BYTES = 8 * 1024 * 1024;
+const HF_FAST_BYTES_PER_SECOND = 4e6;
 const HF_CONNECTIONS = 6;
 const HF_HEADER_BYTES = 512 * 1024;  // the JSON header of a safetensors file is a few dozen kilobytes
-// T107: ?hfParts=<MiB>&hfConnections=<N> change the two above, to measure; the page offers no way to them
-let hfPartBytes = HF_PART_BYTES, hfConnections = HF_CONNECTIONS;
+// T107: ?hfParts=<MiB>&hfConnections=<N> fix the two, to measure; the page offers no way to them
+let hfPartBytes = 0, hfConnections = HF_CONNECTIONS;  // 0: not fixed, decided per file from its first part
 
 // The size of a file, for the few places that need it (the whole of a model: how many parts to ask for). A range
 // response says it in Content-Range, but that header is not one CORS shows by default: huggingface.co exposes it by
@@ -442,23 +447,32 @@ async function fetchRange(url, begin, end, signal) {
   }
 }
 
-// feed(bytes) gets the file from position start to its end, in order, although the parts arrive as they like
+// feed(bytes) gets the file from position start to its end, in order, although the parts arrive as they like.
+// The parts are cut as they are asked for: the first small, the rest by what the first one measured (see above).
 async function inOrder(url, start, size, feed, signal) {
-  const parts = Math.ceil((size - start) / hfPartBytes);
+  const small = navigator.deviceMemory !== undefined && navigator.deviceMemory <= 4;
+  let partBytes = hfPartBytes || HF_SMALL_PART_BYTES;
+  const ranges = [];  // [begin, end] of every part asked for so far, in the order of the file
   const arrived = new Map();
-  let next = 0, fed = 0, waiting = [];
+  let scheduled = start, fed = 0, waiting = [];
   const connection = async () => {
-    while (next < parts) {
+    for (;;) {
       // no more than two parts per connection wait in memory for an earlier one
-      while (next - fed >= 2 * hfConnections) {
+      while (ranges.length - fed >= 2 * hfConnections) {
         await new Promise((resolve) => waiting.push(resolve));
       }
-      if (next >= parts) {
+      if (scheduled >= size) {
         return;
       }
-      const part = next++;
-      const begin = start + part * hfPartBytes;
-      arrived.set(part, (await fetchRange(url, begin, Math.min(begin + hfPartBytes, size), signal)).bytes);
+      const part = ranges.length, begin = scheduled, end = Math.min(begin + partBytes, size);
+      ranges.push([begin, end]);
+      scheduled = end;
+      const began = performance.now();
+      arrived.set(part, (await fetchRange(url, begin, end, signal)).bytes);
+      if (part === 0 && !hfPartBytes) {
+        const rate = (end - begin) / ((performance.now() - began) / 1000);
+        partBytes = rate >= HF_FAST_BYTES_PER_SECOND && !small ? HF_PART_BYTES : HF_SMALL_PART_BYTES;
+      }
       while (arrived.has(fed)) {
         signal.throwIfAborted();
         feed(arrived.get(fed));
@@ -469,7 +483,7 @@ async function inOrder(url, start, size, feed, signal) {
       waiting.splice(0).forEach((resolve) => resolve());
     }
   };
-  await Promise.all(Array.from({ length: Math.min(hfConnections, parts) }, connection));
+  await Promise.all(Array.from({ length: hfConnections }, connection));
 }
 
 // What a conversion made is kept for the next visit (kept.js): in the origin private file system where there is one
