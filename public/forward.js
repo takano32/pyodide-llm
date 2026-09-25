@@ -515,7 +515,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   }
 
   let bound = null;
-  const backend = plan.int8 ? `SIMD kernels, ${T.wq?.kind === "int6" ? "int6" : "int8"}${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32";
+  const backend = (plan.int8 ? `SIMD kernels, ${T.wq?.kind === "int6" ? "int6" : "int8"}${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32") +
+    (wide ? ", 64-bit memory" : "");  // T101: the status line says so, as it says every other way the model runs
   return {
     backend,
     /** Use n threads from the next token on (stage 2): starts the helpers that are missing. 1 on a memory that is
