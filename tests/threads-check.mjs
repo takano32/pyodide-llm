@@ -38,6 +38,7 @@ if (isMainThread) {
   const counts = option("--threads", "1,2,4,8").split(",").map(Number);
   const rounds = Number(option("--rounds", 5)), positions = Number(option("--positions", 64)), kvStart = Number(option("--kv-start", 16));
   const from = Number(option("--from", 0));
+  const wide = args.includes("--wide");
   const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
   const { pyodide: py } = await pyodideWithEngine();
   let failed = false;
@@ -47,7 +48,7 @@ if (isMainThread) {
       tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) };
     const file = (f) => (path.isAbsolute(f) ? f : root + f);
     const checkpoint = fs.readFileSync(file(entry.checkpoint));
-    const { memory, base } = weightsMemory(checkpoint.length, { shared: true });
+    const { memory, base } = weightsMemory(checkpoint.length, { shared: true, wide });
     new Uint8Array(memory.buffer).set(checkpoint, base);
     py.FS.writeFile("tokenizer.bin", fs.readFileSync(file(entry.tokenizer)));
     let plan;
@@ -57,7 +58,7 @@ if (isMainThread) {
     py.globals.set("OUTSIDE", outside);
     py.globals.set("OPTIONS", py.toPy(entry.options));
     py.runPython(`import llama2_numpy\nfrom llama2_numpy import Llama\nllama2_numpy.KV_START = ${kvStart}\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, **OPTIONS)`);
-    const worker = new Worker(new URL(import.meta.url), { workerData: { memory, base, size: checkpoint.length, plan, counts, rounds, positions, from } });
+    const worker = new Worker(new URL(import.meta.url), { workerData: { memory, base, size: checkpoint.length, plan, counts, rounds, positions, from, wide } });
     const result = await new Promise((resolve, reject) => { worker.once("message", resolve); worker.once("error", reject); });
     console.log(`${entry.name}: ${result}`);
     failed ||= result.includes("DIFFER");
@@ -65,8 +66,9 @@ if (isMainThread) {
   }
   process.exit(failed ? 1 : 0);
 } else {
-  const { memory, base, size, plan, counts, rounds, positions, from } = workerData;
-  const kernels = compileKernels(fs.readFileSync(`${root}public/simdkernel_shared.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_shared.wasm`));
+  const { memory, base, size, plan, counts, rounds, positions, from, wide } = workerData;
+  const suffix = wide ? "64" : "";  // T101: a 64-bit memory and its kernels
+  const kernels = compileKernels(fs.readFileSync(`${root}public/simdkernel_shared${suffix}.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_shared${suffix}.wasm`), wide);
   const engine = createForward({ memory, base, size, kernels, plan, spawn });
   const greedy = () => {
     const seen = [];

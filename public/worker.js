@@ -229,6 +229,10 @@ let forwardModule, jsKernels, weightsNow;
 // T93 stage 2: the kernels for a shared memory (only where the page is cross-origin isolated), what the page asked
 // about the number of threads ({ fixed, remembered, hint }), and the forward pass of the model loaded now
 let sharedKernels, threadsRequest, outsideNow;
+// T101: the kernels for a 64-bit memory, for a model past 4 GiB ({ plain, shared }), where the browser has Memory64
+let wideKernels;
+// ?wide=on: a 64-bit memory for every model, to try that path on a small one (measuring, tests), as ?offline=on says
+let forceWide = false;
 // the optimizations this session leaves out (T52): ?without=relaxed,sampler, and ?kernel=off as it always was
 let disabled = [];
 // what the page's own URL said, to come back to after a benchmark has tried other combinations (T77)
@@ -263,6 +267,7 @@ async function init(search) {
   const parts = Number(asked.get("hfParts")), connections = Number(asked.get("hfConnections"));
   if (parts >= 1 && parts <= 64) hfPartBytes = Math.round(parts * 1024 * 1024);
   if (connections >= 1 && connections <= 32) hfConnections = Math.floor(connections);
+  forceWide = asked.get("wide") === "on";
   const version = await resolvePyodideVersion(search);
   const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
   // Each step says its name, and ends in an error rather than never: loadPyodide() does not fail when a fetch of
@@ -313,13 +318,16 @@ async function init(search) {
   // sampling, which works on Python's logits). Without them (no WebAssembly SIMD) the engine runs NumPy.
   try {
     forwardModule = await import(new URL(`forward.js${self.location.search}`, import.meta.url));
-    const [plain, relaxed] = await Promise.all(["simdkernel_plain.wasm", "simdkernel_relaxed_plain.wasm"].map((name) =>
-      fetch(new URL(`${name}${self.location.search}`, import.meta.url)).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
-    jsKernels = plain ? forwardModule.compileKernels(plain, relaxed) : null;
-    if (jsKernels && self.crossOriginIsolated) {
-      const [sharedPlain, sharedRelaxed] = await Promise.all(["simdkernel_shared.wasm", "simdkernel_relaxed_shared.wasm"].map((name) =>
+    // one build of the kernels: simdkernel_<kind>.wasm and simdkernel_relaxed_<kind>.wasm, or null
+    const build = async (kind, wide = false) => {
+      const [plain, relaxed] = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
         fetch(new URL(`${name}${self.location.search}`, import.meta.url)).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
-      sharedKernels = sharedPlain ? forwardModule.compileKernels(sharedPlain, sharedRelaxed) : null;
+      return plain ? forwardModule.compileKernels(plain, relaxed, wide) : null;
+    };
+    jsKernels = await build("plain");
+    if (jsKernels && self.crossOriginIsolated) sharedKernels = await build("shared");
+    if (jsKernels && forwardModule.memory64()) {
+      wideKernels = { plain: await build("plain64", true), shared: self.crossOriginIsolated ? await build("shared64", true) : null };
     }
   } catch {
     jsKernels = null;
@@ -359,27 +367,28 @@ const spawnThread = (data) => new Promise((resolve, reject) => {
 // model (weightsMemory: four times the file and a gigabyte): asking for 4 GB up front left a phone no room for
 // Pyodide's own memory, and "Loading Pyodide" never ended (2026-09-25).
 let weightsPool;
-function pooledWeights(size, shared) {
+function pooledWeights(size, shared, wide) {
   const pages = (bytes) => Math.ceil(bytes / 65536);
-  const fits = weightsPool && weightsPool.shared === shared && pages(weightsPool.base + size) + 1 <= weightsPool.maximum;
+  const fits = weightsPool && weightsPool.shared === shared && weightsPool.wide === wide && pages(weightsPool.base + size) + 1 <= weightsPool.maximum;
   if (!fits) {
     weightsPool = undefined;  // the old one goes with its engine; nothing else refers to it
     let memory, base;
     if (shared) {
       try {
-        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true }));
+        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, wide }));
       } catch {
         memory = undefined;  // no shared memory here: one thread
       }
     }
-    if (!memory) ({ memory, base } = forwardModule.weightsMemory(size));
+    if (!memory) ({ memory, base } = forwardModule.weightsMemory(size, { wide }));
     const isShared = shared && memory.buffer instanceof SharedArrayBuffer;
-    // a memory without a maximum (not shared) grows as far as the browser allows: 4 GB of pages
-    weightsPool = { memory, base, shared: isShared, maximum: isShared ? memory.maximum ?? 65536 : 65536 };
+    // a memory without a maximum (not shared) grows as far as the browser allows: 4 GB of pages, 16 GB when wide
+    const most = wide ? 262144 : 65536;
+    weightsPool = { memory, base, wide, shared: isShared, maximum: isShared ? memory.maximum ?? most : most };
   }
   const { memory, base } = weightsPool;
   const more = pages(base + size) + 1 - memory.buffer.byteLength / 65536;
-  if (more > 0) memory.grow(more);
+  if (more > 0) forwardModule.growMemory(memory, more, wide);
   return weightsPool;
 }
 
@@ -387,8 +396,15 @@ function weightsBuffer(size) {
   if (jsKernels && !disabled.includes("kernels")) {
     // a shared memory where the page is cross-origin isolated (stage 3), unless ?threads=1; else one thread
     const wanted = Boolean(sharedKernels && self.crossOriginIsolated && threadsRequest?.fixed !== 1);
-    const { memory, base, shared } = pooledWeights(size, wanted);
-    const kernels = shared ? sharedKernels : jsKernels, spawn = shared ? spawnThread : undefined;
+    // T101: a model past 4 GiB goes on a 64-bit memory (about a tenth slower: only when it has to)
+    const wide = forceWide || forwardModule.needsWide(size);
+    if (wide && !wideKernels?.plain) {
+      throw new Error("This model needs more than 4 GB of memory, which this browser cannot give a web page (no 64-bit " +
+        "WebAssembly memory: Safari has none yet). Chrome and Firefox can.");
+    }
+    const { memory, base, shared } = pooledWeights(size, wanted && (!wide || Boolean(wideKernels.shared)), wide);
+    const kernels = wide ? (shared ? wideKernels.shared : wideKernels.plain) : (shared ? sharedKernels : jsKernels);
+    const spawn = shared ? spawnThread : undefined;
     weightsNow = memory;
     return {
       write: (offset, chunk) => new Uint8Array(memory.buffer, base + offset, chunk.length).set(chunk),

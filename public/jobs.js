@@ -40,6 +40,31 @@ export const ROWS = 9, COUNT = 10, SIZE = 14, FIRST = 15;
 const BLOCK_BYTES = 16384;
 export const blockRows = (kind, n) => Math.max(1, Math.floor(BLOCK_BYTES / (kind === 2 ? 4 * n : n)));
 
+/** T101: which arguments of each kernel are addresses (usize in kernels/*.ts; tests/forward-check.mjs holds this
+ * table to the source). On a 64-bit memory the kernels take them as BigInt. */
+export const ADDRESSES = {
+  matmul_f32: [0, 1, 2], quantize_x: [0, 1, 2], quantize6_x: [0, 1, 2], six_sums: [0, 1, 2], matmul_q8: [0, 1, 2, 3, 4],
+  matmul_q6: [0, 1, 2, 3, 4], rmsnorm: [0, 1, 2], rope: [0, 1, 2], attention: [0, 1, 2, 3, 4], attention_f16: [0, 1, 2, 3, 4],
+  to_f16: [0, 1], layernorm: [0, 1, 2, 3], gelu: [0, 1, 2], swiglu: [0, 1, 2], add_columns: [0, 1, 2], add_inplace: [0, 1],
+  argmax: [0], penalize: [0, 1], sample: [0, 5, 6], matmul_q8r: [0, 1, 2, 3, 4, 5], matmul_q6r: [0, 1, 2, 3, 4, 5],
+};
+/** A kernel module's exports as they are, or on a 64-bit memory (wide) with the addresses made BigInt on the way
+ * in: the rest of the code keeps its addresses in Numbers (exact up to 2^53). */
+export function addressed(exports, wide) {
+  if (!wide) return exports;
+  const out = { ...exports };
+  for (const [name, at] of Object.entries(ADDRESSES)) {
+    const kernel = exports[name];
+    if (kernel) {
+      out[name] = (...args) => {
+        for (const i of at) args[i] = BigInt(args[i]);
+        return kernel(...args);
+      };
+    }
+  }
+  return out;
+}
+
 /** runRows(job, r0, r1) on these kernels: k, the plain module's exports; r, the relaxed module's or null. job is
  * an array or a view of the control area. */
 export function runner(k, r) {

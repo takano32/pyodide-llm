@@ -13,13 +13,13 @@ const port = node ? (await import("node:worker_threads")).parentPort : self;
 const started = new Promise((resolve) => (node ? port.once("message", resolve) : (self.onmessage = (event) => resolve(event.data))));
 
 // what a job is and how its rows are run: jobs.js, the same file forward.js reads, from the same deployment
-const { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, ROWS, SIZE, FIRST, CONTROL_BYTES, runner, warmUp } =
+const { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, ROWS, SIZE, FIRST, CONTROL_BYTES, addressed, runner, warmUp } =
   await import(new URL(`jobs.js${new URL(import.meta.url).search}`, import.meta.url));
 
-const { memory, plain, relaxed, share } = await started;
+const { memory, plain, relaxed, share, wide = false } = await started;
 const imports = { env: { memory } };
-const k = new WebAssembly.Instance(plain, imports).exports;
-const r = relaxed ? new WebAssembly.Instance(relaxed, imports).exports : null;
+const k = addressed(new WebAssembly.Instance(plain, imports).exports, wide);
+const r = relaxed ? addressed(new WebAssembly.Instance(relaxed, imports).exports, wide) : null;
 const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
 const runRows = runner(k, r);
 const steal = () => {

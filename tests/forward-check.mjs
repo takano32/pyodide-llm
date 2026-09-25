@@ -13,10 +13,11 @@
 // Then the speeds, both in turn. Runs in the deployment.
 //
 //   node tests/forward-check.mjs [model id | <out> of tests/perplexity_prepare.py ...] [--rounds 3] [--positions 128]
-//        [--without relaxed,int8,sampler] [--plain]
+//        [--without relaxed,int8,sampler] [--plain] [--wide]
 //
 // The memory is shared, as the page's where it is cross-origin isolated; --plain: not shared, as the page's where it
-// is not (the keys and values then stay float32, T110).
+// is not (the keys and values then stay float32, T110). --wide: a 64-bit memory and its kernels (T101), as the page
+// has for a model past 4 GiB.
 import fs from "node:fs";
 import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
@@ -53,7 +54,22 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
   }
 }
 
-const { pyodide: py } = await pyodideWithEngine({ shared: !args.includes("--plain") });
+// T101: jobs.js says which arguments of each kernel are addresses (BigInt on a 64-bit memory): the same as the
+// usize parameters of the kernels' source, every exported one
+{
+  const { ADDRESSES } = await import("../public/jobs.js");
+  const source = {};
+  for (const file of ["kernels/kernel.ts", "kernels/kernel_relaxed.ts"]) {
+    for (const [, name, parameters] of fs.readFileSync(root + file, "utf8").matchAll(/export function (\w+)\(([^)]*)\)/g)) {
+      source[name] = parameters.split(",").map((p, i) => [i, p.split(":")[1].trim()]).filter(([, type]) => type === "usize").map(([i]) => i);
+    }
+  }
+  if (JSON.stringify(Object.keys(source).sort().map((n) => [n, source[n]])) !== JSON.stringify(Object.keys(ADDRESSES).sort().map((n) => [n, ADDRESSES[n]]))) {
+    throw new Error("jobs.js's ADDRESSES is not the kernels' usize parameters");
+  }
+}
+
+const { pyodide: py } = await pyodideWithEngine({ shared: !args.includes("--plain"), wide: args.includes("--wide") });
 py.runPython("import time, gc, math, numpy as np\nfrom llama2_numpy import Llama");
 let failed = false;
 for (const id of ids.length ? ids : ["stories260K", "stories15M", "tiny-lm", "llm-jp-3-150m"]) {

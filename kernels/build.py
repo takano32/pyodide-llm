@@ -39,14 +39,16 @@ def side_module(source, out, features):
     print(out, Path(out).stat().st_size, "bytes")
 
 
-def plain_module(source, out, features, shared=False):
+def plain_module(source, out, features, shared=False, wasm64=False):
     """T93: the same kernels as plain WebAssembly, instantiated by public/forward.js on the memory that holds the
     weights (not Pyodide's). No dylink.0. shared: on a shared memory, for threads that share the weights (stage 2,
-    and tests/threads-check.mjs)."""
+    and tests/threads-check.mjs). wasm64 (T101): on a 64-bit memory (kernels/wasm64.mjs), for models past 4 GiB."""
     flags = ["--sharedMemory", "--maximumMemory", "65536"] if shared else []
+    if wasm64:
+        flags += ["--transform", str(Path(__file__).parent / "wasm64.mjs")]
     subprocess.run(["npx", "asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory",
                     "--initialMemory", "1", *flags, str(source), "-o", str(out),
-                    "--enable", features + (",threads" if shared else "")], check=True)
+                    "--enable", features + (",threads" if shared else "") + (",memory64" if wasm64 else "")], check=True)
     print(out, Path(out).stat().st_size, "bytes")
 
 
@@ -58,3 +60,8 @@ if __name__ == "__main__":
     plain_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed_plain.wasm", "simd,relaxed-simd")
     plain_module(here / "kernel.ts", out / "simdkernel_shared.wasm", "simd,relaxed-simd", shared=True)
     plain_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed_shared.wasm", "simd,relaxed-simd", shared=True)
+    # T101: the same on a 64-bit memory
+    for shared in (False, True):
+        kind = "shared" if shared else "plain"
+        plain_module(here / "kernel.ts", out / f"simdkernel_{kind}64.wasm", "simd,relaxed-simd", shared=shared, wasm64=True)
+        plain_module(here / "kernel_relaxed.ts", out / f"simdkernel_relaxed_{kind}64.wasm", "simd,relaxed-simd", shared=shared, wasm64=True)

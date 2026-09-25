@@ -11,7 +11,7 @@
 //   const outside = external({ memory, base, size, kernels }); // what Llama(external=) takes
 
 // what a job of a phase is, shared with the software threads (helper.js), from the same deployment as this file
-const { CONTROL_BYTES, GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, BATCH, ROWS, SIZE, FIRST, runner } =
+const { CONTROL_BYTES, GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, BATCH, ROWS, SIZE, FIRST, addressed, runner } =
   await import(new URL(`jobs.js${new URL(import.meta.url).search}`, import.meta.url));
 export { BATCH };
 
@@ -19,15 +19,36 @@ const PAGE = 65536;
 const align = (n, to = 64) => Math.ceil(n / to) * to;
 
 /** The kernels as WebAssembly modules. The relaxed one fails to compile where relaxed SIMD is missing (Safari):
- * then int8 runs on matmul_q8. */
-export function compileKernels(plain, relaxed) {
+ * then int8 runs on matmul_q8. wide (T101): the build for a 64-bit memory (simdkernel_*64.wasm). */
+export function compileKernels(plain, relaxed, wide = false) {
   let relaxedModule = null;
   try {
     relaxedModule = relaxed ? new WebAssembly.Module(relaxed) : null;
   } catch {
     relaxedModule = null;
   }
-  return { plain: new WebAssembly.Module(plain), relaxed: relaxedModule };
+  return { plain: new WebAssembly.Module(plain), relaxed: relaxedModule, wide };
+}
+
+// T101: a 64-bit memory (Memory64) holds more than 4 GiB. Chrome and Firefox have it, shipping Safari not. Its sizes
+// are BigInt; the pages of a 32-bit memory stop at 65536, those of a 64-bit one here at 262144 (16 GiB, Chrome's).
+const PAGES_32 = 65536, PAGES_64 = 262144;
+/** Whether this browser makes 64-bit memories. */
+export function memory64() {
+  try {
+    new WebAssembly.Memory({ initial: 1n, address: "i64" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+/** Whether a checkpoint of size bytes needs a 64-bit memory: with half a gigabyte for the keys, values and
+ * activations it passes the 4 GiB of a 32-bit one. (A 3B int8 ran in 32 bits with a heap of 4016 MB, T105: it stays
+ * there, and faster: a 64-bit memory runs the kernels about a tenth slower, measured.) */
+export const needsWide = (size) => CONTROL_BYTES + size + 2 ** 29 > PAGES_32 * PAGE;
+/** memory.grow(pages), in the number type of the memory (wide: 64-bit) */
+export function growMemory(memory, pages, wide) {
+  memory.grow(wide ? BigInt(pages) : pages);
 }
 
 /** A memory with room for a checkpoint of size bytes at base; the forward pass allocates after it. shared (stage 2):
@@ -36,16 +57,19 @@ export function compileKernels(plain, relaxed) {
  * maximum (pages): what to ask for first; else what this model can need at most (see below). The worker keeps the
  * memory for the models that fit under that maximum (T96): a browser reserves address space for each WebAssembly
  * memory whatever its maximum, and Chromium refused the third one of a page. */
-export function weightsMemory(size, { shared = false, maximum } = {}) {
+export function weightsMemory(size, { shared = false, maximum, wide = false } = {}) {
   const base = shared ? CONTROL_BYTES : 64;
   const initial = Math.ceil((base + size) / PAGE) + 1;
-  if (!shared) return { memory: new WebAssembly.Memory({ initial }), base };
+  // a 64-bit memory (T101) says its sizes in BigInt
+  const describe = (pages) => (wide ? { initial: BigInt(initial), ...(pages ? { maximum: BigInt(pages) } : {}), address: "i64" }
+    : { initial, ...(pages ? { maximum: pages } : {}) });
+  if (!shared) return { memory: new WebAssembly.Memory(describe()), base };
   // the model can need at most the checkpoint widened to float32 (four times an int8 file, with the int8 switch
   // off) and a gigabyte for the KV cache and the rest; less if the browser refuses
-  const most = maximum ?? Math.min(65536, Math.ceil((base + 4 * size + 2 ** 30) / PAGE));
+  const most = maximum ?? Math.min(wide ? PAGES_64 : PAGES_32, Math.ceil((base + 4 * size + 2 ** 30) / PAGE));
   for (const pages of [most, initial + 16384, initial + 4096]) {
     try {
-      const memory = new WebAssembly.Memory({ initial, maximum: Math.max(pages, initial), shared: true });
+      const memory = new WebAssembly.Memory({ ...describe(Math.max(pages, initial)), shared: true });
       memory.maximum = Math.max(pages, initial);  // the worker keeps the memory as long as the next model fits (T96)
       return { memory, base };
     } catch {
@@ -92,8 +116,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   const hidden = plan.hidden_dim, kvDim = kvHeads * headSize;
   const gpt2 = arch === "gpt2", layerNorm = arch === "gpt2" || arch === "neox", parallel = plan.parallel_residual;
   const imports = { env: { memory } };
-  const k = wrap(new WebAssembly.Instance(kernels.plain, imports).exports);
-  const relaxed = plan.int8 && plan.relaxed && kernels.relaxed ? wrap(new WebAssembly.Instance(kernels.relaxed, imports).exports) : null;
+  const wide = Boolean(kernels.wide);  // T101: a 64-bit memory, whose kernels take their addresses as BigInt
+  const k = wrap(addressed(new WebAssembly.Instance(kernels.plain, imports).exports, wide));
+  const relaxed = plan.int8 && plan.relaxed && kernels.relaxed ? wrap(addressed(new WebAssembly.Instance(kernels.relaxed, imports).exports, wide)) : null;
   const bias = relaxed ? 64 : 0;
 
   // ---- memory: the checkpoint at base, everything else after it; views are made again after the memory grows
@@ -108,7 +133,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   const alloc = (bytes) => {
     const at = top;
     top = align(at + bytes);
-    if (top > memory.buffer.byteLength) memory.grow(Math.ceil((top - memory.buffer.byteLength) / PAGE));
+    if (top > memory.buffer.byteLength) growMemory(memory, Math.ceil((top - memory.buffer.byteLength) / PAGE), wide);
     views();
     return at;
   };
@@ -484,7 +509,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   async function ensureHelpers(n) {
     if (helpers.length < n - 1 && helpers.length === 0) Atomics.store(ctl, QUIT, 0);  // after stopThreads(): a fresh start
     while (helpers.length < n - 1) {
-      helpers.push(await spawn({ memory, plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null,
+      helpers.push(await spawn({ memory, wide, plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null,
         share: helpers.length + 1 }));
     }
   }
