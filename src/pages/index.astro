@@ -239,7 +239,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   .bench table { border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
   .bench th, .bench td { text-align: left; padding: 3px 12px 3px 0; vertical-align: top; }
   .bench th { font-weight: 500; color: var(--muted); border-bottom: 1px solid var(--line); }
-  .bench td:nth-child(2) { text-align: right; }
+  .bench td:nth-child(2) { text-align: right; white-space: nowrap; }  /* a number never breaks; the names may */
   .bench-actions a { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
   /* The meta line and the status line open into their numbers. Closed they must look exactly as they did before,
      so the disclosure triangle goes away and the summary keeps the colour of the line. */
