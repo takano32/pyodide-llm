@@ -910,8 +910,8 @@ def check_config(config):
     # qwen2 is a Llama with a bias on q, k and v: the converter writes those three vectors per layer, the engine
     # adds them after the projections (T64). Everything else about it is the same.
     if config.get("model_type") not in ("llama", "qwen2", "gpt2", "gpt_neox"):
-        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Qwen2, GPT-2 and "
-               f"GPT-NeoX models are supported")
+        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Mistral, Qwen2, GPT-2 "
+               f"and GPT-NeoX models are supported")
     for key in ("hidden_size", "intermediate_size", "num_hidden_layers", "num_attention_heads", "vocab_size",
                 "max_position_embeddings"):
         if not isinstance(config.get(key), int) or config[key] <= 0:
