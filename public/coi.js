@@ -32,11 +32,13 @@ function lasting(request) {
   if (url.origin === self.location.origin) return url.searchParams.has("v") || url.pathname.includes("/_astro/");
   return url.hostname === "cdn.jsdelivr.net" && /\/pyodide\/v[^/]+\//.test(url.pathname);
 }
-/** Files that are versions of one another: the same path of this site whatever ?v=, the same file of any Pyodide. */
+/** Files that are versions of one another: the same path of this site whatever ?v=, the same file of any Pyodide.
+ * T117: and the names that carry a version or a hash of their own, so that the old one goes when the new one is
+ * kept: a wheel (numpy-2.2.5-cp313-….whl) of any version, a file of /_astro/ (index.3Fq9xZ1a.js) of any hash. */
 function family(address) {
   const url = new URL(address);
-  if (url.origin === self.location.origin) return url.origin + url.pathname;
-  return url.href.replace(/\/pyodide\/v[^/]+\//, "/pyodide/*/");
+  if (url.origin === self.location.origin) return url.origin + url.pathname.replace(/\/_astro\/(.+?)\.[\w-]{6,}\.(\w+)$/, "/_astro/$1.*.$2");
+  return url.href.replace(/\/pyodide\/v[^/]+\//, "/pyodide/*/").replace(/\/([A-Za-z0-9_.]+?)-\d[^/]*\.whl$/, "/$1-*.whl");
 }
 async function keep(request, response) {
   const cache = await caches.open(KEPT);
@@ -47,10 +49,13 @@ async function keep(request, response) {
 }
 async function copyOf(request) {
   const cache = await caches.open(KEPT);
-  // the page itself is asked for with whatever query the visitor wrote (?model=…): any of it will do
-  return (await cache.match(request.url)) ?? (new URL(request.url).origin === self.location.origin
-    ? await cache.match(request.url, { ignoreSearch: true }) : undefined);
+  // T117: the page itself is asked for with whatever query the visitor wrote (?model=…): any of it will do. Nothing
+  // else: a file of another build (worker.js?v=<another>) would mix two deployments in one page
+  return (await cache.match(request.url)) ?? (request.mode === "navigate" ? await cache.match(request.url, { ignoreSearch: true }) : undefined);
 }
+// T117: the Cache API may fail to open (storage turned off, a private window, a full disk): then there is no copy,
+// and the network answers as it did before T111. (A failure here made worker.js a network error with the network up.)
+const quietly = (promise) => promise.catch(() => undefined);
 function isolated(response) {
   if (response.status === 0) return response;  // opaque: nothing to add, and nothing may be read
   const headers = new Headers(response.headers);
@@ -73,18 +78,18 @@ self.addEventListener("fetch", (event) => {
   // phone and PC, from Japan, while CI's browsers in the US went on: the checks fell on the CDN's real headers.
   event.respondWith((async () => {
     if (OFFLINE && kept(request) && lasting(request)) {
-      const copy = await (await caches.open(KEPT)).match(request.url);
+      const copy = await quietly((async () => (await caches.open(KEPT)).match(request.url))());
       if (copy) return isolated(copy);
     }
     let response;
     try {
       response = await fetch(request);
     } catch (error) {
-      const copy = OFFLINE && kept(request) ? await copyOf(request) : undefined;
+      const copy = OFFLINE && kept(request) ? await quietly(copyOf(request)) : undefined;
       if (copy) return isolated(copy);
       throw error;
     }
-    if (OFFLINE && response.status === 200 && kept(request)) event.waitUntil(keep(request, response.clone()));
+    if (OFFLINE && response.status === 200 && kept(request)) event.waitUntil(quietly(keep(request, response.clone())));
     return isolated(response);
   })());
 });

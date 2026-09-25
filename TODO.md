@@ -68,7 +68,7 @@
 
 ## これからのタスク
 
-### T117 [運用] Service Worker の写しの 3 つの直し — 状態: 未着手（2026-09-25 採用、Opus xhigh のレビューから。**Service Worker に触るので、持ち主の端末で見てから出す**（落とし穴）。T118 と同じ日に。規模 小）
+### T117 [運用] Service Worker の写しの 3 つの直し — 状態: **進行中（実装済み、持ち主の端末の確認待ち。Opus medium、2026-09-26）**（2026-09-25 採用、Opus xhigh のレビューから。**Service Worker に触るので、持ち主の端末で見てから出す**（落とし穴）。T118 と同じ日に。規模 小）
 - (1) オフラインのとき `copyOf()` の `ignoreSearch` が同じサイトの全ファイルに効き、`?v=` の違うビルドのファイル（worker.js・forward.js・helper.js・jobs.js）が混ざりうる（新しいビルドの取得が途中で切れた後など。レビューのサブエージェントの試験台で再現）。ページ（ナビゲーション）だけにする。(2) 版が URL に入ったファイルの経路で `caches.open()` の失敗を捕まえていない（試験台で、ネットが生きていても worker.js と pyodide.asm.wasm が network error になった。T111 の前は Cache API に頼っていなかった）。捕まえてネットに回す。(3) NumPy の wheel（名前に版が入る）と `/_astro/` の古いファイルは `family()` で消えずに溜まる。
 - 完了条件: `preview.yml` の `offline` で 3 つのブラウザ、持ち主の iPhone・Android・PC で機内モードの読み込み直し。
 
