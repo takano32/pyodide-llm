@@ -1,0 +1,49 @@
+# Screenshots of the page as a branch has it, before it goes out (AGENTS.md: a drawing task shows a phone-width and
+# a desktop-width screenshot to the owner first). Builds the site with its smallest model only, serves it from the
+# runner and runs tests/screenshots.mjs in Chromium. By hand only: pick the branch when running it.
+name: Preview screenshots
+
+on:
+  workflow_dispatch:
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Build the site with its smallest model
+        shell: bash
+        run: |
+          npm ci
+          python3 -m pip install --quiet numpy
+          make kernels stories260K.bin tok512.bin
+          mkdir -p public/models
+          split -b 8388608 -d -a 3 stories260K.bin public/models/stories260K.bin.
+          cp tok512.bin public/models/
+          npm run build
+          npx playwright-core install --with-deps chromium
+
+      - name: Take the screenshots
+        run: node tests/screenshots.mjs screenshots
+
+      - name: Keep them
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots
+          path: screenshots/
+          retention-days: 14
