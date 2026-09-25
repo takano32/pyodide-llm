@@ -8,8 +8,6 @@
 //      against the fastest of 2.
 //   4. T108: the same text as a prompt in blocks (forwardMany): the last logits the same to the bit with every
 //      count, and what a token of a prompt costs in blocks of 1, 2, 4, 8 and 16, with each count.
-//   5. T100: the same text in drafts of k tokens with the logits of each (forwardEach): every token's logits the same
-//      to the bit, and what one such pass costs against one token's, for k = 1, 2, 4, 8 and 16.
 //
 //   node tests/threads-check.mjs [model id ...] [--threads 1,2,4,8] [--rounds 5] [--positions 64] [--kv-start 16]
 //        [--from 0]
@@ -93,19 +91,6 @@ if (isMainThread) {
     engine.forward(text[positions - 1], positions - 1, true);
     if (!engine.logits().every((v, j) => Object.is(v, reference[positions - 1][j]))) blocksDiffer.push(n);
   }
-  // T100: drafts of 3 tokens (a size that does not divide the text), every token's logits against the reference
-  const draftsDiffer = [];
-  for (const n of counts) {
-    await engine.setThreads(n);
-    for (let at = 0; at < positions; at += 3) {
-      const draft = text.slice(at, Math.min(at + 3, positions));
-      engine.forwardEach(draft, at);
-      if (!draft.every((_, i) => engine.logits(i).every((v, j) => Object.is(v, reference[at + i][j])))) {
-        draftsDiffer.push(n);
-        break;
-      }
-    }
-  }
   const blockSizes = [1, 2, 4, 8, 16], prompt = Object.fromEntries(counts.map((n) => [n, Object.fromEntries(blockSizes.map((k) => [k, []]))]));
   for (let r = 0; r < rounds; r++) {
     for (const n of counts) {
@@ -114,18 +99,6 @@ if (isMainThread) {
         const began = performance.now();
         for (let at = 0; at < positions; at += k) engine.forwardMany(text.slice(at, Math.min(at + k, positions)).map((t) => t ?? 1), at);
         prompt[n][k].push((positions * 1000) / (performance.now() - began));
-      }
-    }
-  }
-  // what one pass over a draft of k tokens costs, with the logits of each, in milliseconds
-  const pass = Object.fromEntries(counts.map((n) => [n, Object.fromEntries(blockSizes.map((k) => [k, []]))]));
-  for (let r = 0; r < rounds; r++) {
-    for (const n of counts) {
-      await engine.setThreads(n);
-      for (const k of blockSizes) {
-        const passes = Math.floor(positions / k), began = performance.now();
-        for (let p = 0; p < passes; p++) engine.forwardEach(text.slice(p * k, (p + 1) * k).map((t) => t ?? 1), p * k);
-        pass[n][k].push((performance.now() - began) / passes);
       }
     }
   }
@@ -158,12 +131,8 @@ if (isMainThread) {
     (found && times[found] ? ` (${found} runs at ${(median(times[found]) / median(times[fastest]) * 100).toFixed(0)}% of it)` : "");
   const promptLine = "a prompt in blocks of " + blockSizes.join(", ") + ": " + counts.map((n) =>
     `${n} thread(s) ${blockSizes.map((k) => median(prompt[n][k]).toFixed(0)).join(" / ")} tok/s (${(median(prompt[n][16]) / median(prompt[n][1])).toFixed(2)}×)`).join(", ");
-  const draftLine = "a draft of " + blockSizes.join(", ") + " tokens with every token's logits: " + counts.map((n) =>
-    `${n} thread(s) ${blockSizes.map((k) => median(pass[n][k]).toFixed(1)).join(" / ")} ms per pass (` +
-    blockSizes.map((k) => (median(pass[n][k]) / median(pass[n][1])).toFixed(2)).join(" / ") + " times one token's)").join(", ");
   parentPort.postMessage(`${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
     `${blocksDiffer.length ? `the prompt in blocks DIFFERS with ${blocksDiffer.join(", ")} threads` : "the prompt in blocks the same to the bit"}; ` +
-    `${draftsDiffer.length ? `drafts DIFFER with ${draftsDiffer.join(", ")} threads` : "drafts the same to the bit"}; ` +
-    counts.map((n) => `${n}: ${median(times[n]).toFixed(1)} tok/s (${(median(times[n]) / one).toFixed(2)}×)`).join(", ") + `; ${promptLine}; ${draftLine}; ${searchLine}`);
+    counts.map((n) => `${n}: ${median(times[n]).toFixed(1)} tok/s (${(median(times[n]) / one).toFixed(2)}×)`).join(", ") + `; ${promptLine}; ${searchLine}`);
   engine.stopThreads();
 }

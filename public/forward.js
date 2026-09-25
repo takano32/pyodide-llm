@@ -192,7 +192,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // kNow, vNow: this token's key and value in float32, before they go into the cache
   const { x, xb, xb2, q, kNow, vNow, before, hb, hb2, xq, xs } = at;
   const A = seqLen * heads * 4;  // the scores of one token's attention
-  const att = alloc(BATCH * A), logits = alloc(BATCH * vocab * 4);
+  const att = alloc(BATCH * A), logits = alloc(vocab * 4);
   const wq = matrix("wq"), wk = matrix("wk"), wv = matrix("wv"), wo = matrix("wo");
   const w1 = matrix("w1"), w2 = matrix("w2"), w3 = matrix("w3"), wcls = matrix("wcls");
   const attW = floats("rms_att_weight"), ffnW = floats("rms_ffn_weight"), finalW = floats("rms_final_weight");
@@ -209,7 +209,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   if (channels.length) {
     const t = plan.shared_classifier ? T.token_embedding_table : T.wcls;
     columns = alloc(channels.length * vocab * 4);
-    picked = alloc(BATCH * channels.length * 4);
+    picked = alloc(channels.length * 4);
     const groups = dim / t.group;
     channels.forEach((c, i) => {
       for (let v = 0; v < vocab; v++) {
@@ -330,11 +330,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     phase(list.map(([m, out, outStride, l]) => jobOf(m, out, outStride, input, l, count)));
   }
 
-  // one token (count 1) or up to BATCH tokens at positions pos0, pos0 + 1, ...: a prompt's (T108), or a draft to
-  // check (T100). Every token is computed as it would be alone: the same kernels on the same numbers, only the
-  // matmuls of a layer go out once for all of them. withLogits: how many of the last tokens need their logits (0 for
-  // a prompt, 1 for the next token, all of them for a draft); the first of them lands at logits, the next after it.
-  function run(tokens, pos0, withLogits) {
+  // one token (count 1) or up to BATCH tokens of a prompt at positions pos0, pos0 + 1, ... (T108). Every token is
+  // computed as it would be alone: the same kernels on the same numbers, only the matmuls of a layer go out once for
+  // all of them. The logits, if asked for, are the last token's.
+  function run(tokens, pos0, needLogits) {
     const count = tokens.length;
     if (pos0 + count - 1 >= capacity) grow(pos0 + count - 1);
     views();
@@ -407,23 +406,18 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
       matmuls(hb, count, [[w2, xb2, S, l]]);
       for (let t = 0; t < count; t++) k.add_inplace(x + t * S, xb2 + t * S, dim);
     }
-    if (!withLogits) return;
-    const first = count - withLogits, V = vocab * 4, P = channels.length * 4;
-    for (let t = 0; t < withLogits; t++) {
-      const out = xb + t * S, from = x + (first + t) * S;
-      if (layerNorm) k.layernorm(out, from, finalW, finalB, dim);
-      else k.rmsnorm(out, from, finalW, dim);
-      channels.forEach((c, i) => {  // T92: the outlier channels are multiplied apart
-        F[(picked + t * P) / 4 + i] = F[out / 4 + c];
-        F[out / 4 + c] = 0;
-      });
-    }
-    matmuls(xb, withLogits, [[wcls, logits, V, 0]]);
-    if (channels.length) {
-      for (let t = 0; t < withLogits; t++) k.add_columns(logits + t * V, columns, picked + t * P, channels.length, vocab);
-    }
+    if (!needLogits) return;
+    const last = x + (count - 1) * S;
+    if (layerNorm) k.layernorm(xb, last, finalW, finalB, dim);
+    else k.rmsnorm(xb, last, finalW, dim);
+    channels.forEach((c, i) => {  // T92: the outlier channels are multiplied apart
+      F[picked / 4 + i] = F[xb / 4 + c];
+      F[xb / 4 + c] = 0;
+    });
+    matmuls(xb, 1, [[wcls, logits, 0, 0]]);
+    if (channels.length) k.add_columns(logits, columns, picked, channels.length, vocab);
   }
-  const forward = (token, pos, needLogits) => run([token], pos, needLogits ? 1 : 0);
+  const forward = (token, pos, needLogits) => run([token], pos, needLogits);
 
   // ---- the number of threads (stage 2b): found by measuring, never written down. The search starts from a hint
   // (navigator.hardwareConcurrency, which counts the little cores of a big.LITTLE phone too) and compares the best
@@ -556,14 +550,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
      * in turn without logits, in one pass through the layers */
     forwardMany(tokens, pos) {
       const list = tokens.toJs ? tokens.toJs() : [...tokens];
-      for (let at = 0; at < list.length; at += BATCH) run(list.slice(at, at + BATCH), pos + at, 0);
-    },
-    /** T100: tokens (up to BATCH) at positions pos, pos + 1, ..., with the logits of every one of them, the same as
-     * forward() gives for each in turn: logits(i) is token i's. For checking a draft in one pass. */
-    forwardEach(tokens, pos) {
-      const list = tokens.toJs ? tokens.toJs() : [...tokens];
-      if (list.length > BATCH) throw new Error(`forwardEach() takes up to ${BATCH} tokens`);
-      run(list, pos, list.length);
+      for (let at = 0; at < list.length; at += BATCH) run(list.slice(at, at + BATCH), pos + at, false);
     },
     forward(token, pos, needLogits = true) {
       if (search && needLogits) {
@@ -587,8 +574,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
       bound = null;
       this.stopThreads();
     },
-    /** the logits in this memory, for callers without Python (tests): token i's of the last forwardEach() */
-    logits: (i = 0) => new Float32Array(memory.buffer, logits + i * vocab * 4, vocab),
+    /** the logits in this memory, for callers without Python (tests) */
+    logits: () => new Float32Array(memory.buffer, logits, vocab),
     memoryBytes: () => memory.buffer.byteLength,
   };
 }
