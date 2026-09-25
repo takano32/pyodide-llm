@@ -875,13 +875,16 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     const models = (await kept?.keptModels().catch(() => [])) ?? [];
     return models.some((one: any) => kept.serves(one, weighed(entry)));
   }
+  // (A model chosen while this looks has started the worker itself, and wins: the review of T116)
   (async () => {
-    if (model === recalled && !(await stillKept(model))) {
+    if (model === recalled && !(await stillKept(model)) && loads === 1) {
       model = MODELS[0];
       remember(undefined);
       show(model);
     }
-    worker.postMessage({ type: "init", search: location.search, model: weighed(model), load: loads, threads: threadsFor(model) });
+    if (loads === 1) {
+      worker.postMessage({ type: "init", search: location.search, model: weighed(model), load: loads, threads: threadsFor(model) });
+    }
   })();
 
   // A model of the visitor's own disk, from the folder button or dropped on the page. The legacy format knows
@@ -1072,7 +1075,8 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     // the timings of the previous load
     $("load").classList.remove("measured");
     ($("load") as HTMLDetailsElement).open = false;
-    worker.postMessage({ type: "load", model: weighed(model), load: ++loads, threads: threadsFor(model) });
+    // search: this may reach the worker before init does, while the page looks at what is kept (T116)
+    worker.postMessage({ type: "load", search: location.search, model: weighed(model), load: ++loads, threads: threadsFor(model) });
   };
 
   // Enter breaks the line and Shift + Enter does too; Ctrl + Enter or Cmd + Enter sends. A phone has neither key

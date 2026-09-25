@@ -3,7 +3,7 @@
 // which are read where they are and go nowhere. Or one with {hf: {weights, config, tokenizer}}: a Hugging Face
 // model, of that disk (Files) or of huggingface.co ({repo, revision} and file names), which
 // public/llama2_convert.py converts in here as it arrives.
-// The page sends   {type: "init", search, model, load},  {type: "load", model, load},
+// The page sends   {type: "init", search, model, load},  {type: "load", search, model, load},
 //                  {type: "generate", prompt, ...options}  and  {type: "stop"}
 // and receives     {type: "status" | "progress" | "ready" | "token" | "done" | "error", ...}
 // load is a number the page counts up: a newer load cancels the one that is going on, and whatever this worker
