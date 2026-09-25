@@ -278,12 +278,12 @@
 - **原因と対処（Fable、2026-09-25、`models.yml` の WebKit で再現させた）。** 2 つとも HF の CDN と WebKit の取得の相性で、コードの読み方の問題ではなかった。
   1. **`Content-Range` が読めない**: 3 モデルとも「The file ended before all of its tensors were read」（ヘッダを読んだ直後）。全体の大きさを Range 応答の `Content-Range` から取っていたが、CORS ではこのヘッダは既定で隠され、huggingface.co は名前で見せる一方、CDN（xet-bridge）は `Access-Control-Expose-Headers: *` で見せる。**WebKit は `*` を効かせない**ので大きさが NaN になり、取得のループが 1 回も回らなかった。対処: 大きさが読めないときは HEAD の `Content-Length`（CORS が常に見せる）を取る（`fileSize()`・`sized()`）。これで llm-jp-3 150M instruct3 が WebKit で通った（68 tok/s）。
   2. **Range 要求にファイル全体（200）が返る**: SmolLM2（GGUF、bartowski）は読み込めても壊れた文（語彙の外のトークン）を出した。スレッド無し・float16 のキャッシュ無しでも同じ。`fetchRange` は 200 も受けて本文をそのまま流していたので、WebKit が（キャッシュか CDN の都合で）Range を無視してファイル全体を返すと、変換器が位置のずれたバイトを読んで重みが壊れた。対処: 200 なら要求した範囲を本文から切り出し、console に記録する。これで SmolLM2 も WebKit で通った（47.4 tok/s）。
-  - 持ち主の Safari とスマホの Chrome の件は、直した版でもう一度試してもらう（スマホの Chrome の「始まらない」はこの 2 つでは説明しきれない: Chromium は `*` を効かせる）。
+  - 持ち主のスマホの Chrome と PC の「始まらない」は、この 2 つではなく T97（Service Worker の素通し）だった。T97 を戻して通った（2026-09-25 夕方）。
 - 残り（Opus）: `browsers.yml` の huggingface ジョブに WebKit の小さい組（3 モデル）を足す。持ち主の報告が続くなら、状態行の文と進捗の有無を聞いて絞る。
 
-### T113 [運用] iOS Safari では Service Worker（隔離）の下で Pyodide の NumPy の読み込みが終わらない — 状態: 未着手（2026-09-25 採用、持ち主の報告。**調査から**。規模 小〜中）
+### T113 [運用] iOS Safari では Service Worker（隔離）の下で Pyodide の NumPy の読み込みが終わらない — 状態: **T97 を戻して直った（持ち主の iPhone で確認、2026-09-25 夕方）。逃げ道（期限切れで Service Worker を外して読み直す）は残す。レビュー待ち**（2026-09-25 採用、持ち主の報告。**調査から**。規模 小〜中）
 - 担当: Opus（調査）→ Opus xhigh がレビュー。
-- **同日夕方の見立て**: T97（Service Worker がクロスオリジンの応答を素通しにする変更）の後に始まった。持ち主は「最近まで動いていた」。T97 を戻して確かめる（戻した後も止まるなら、この項の調査が要る）。
+- **結果（2026-09-25 夕方）**: T97 を戻したら、持ち主の iPhone の Safari は通り、スマホの Chrome の「fetching」も通った（古い Service Worker が残っていた間は止まり、入れ替わってから進んだ）。原因は T97 で、Pyodide にも iOS にも問題は無かった。逃げ道は残す（別の理由で固まっても 1 コア版で動く）。
 - 分かっていること: 持ち主の iPhone の Safari で、普通の URL では「Loading Pyodide 314.0.7: NumPy...」（`pyodide.loadPackage("numpy")`）で止まり、`?coi=off`（Service Worker なし、隔離なし）なら通る。CI の WebKit（Linux・macOS、Playwright）では隔離ありで通るので、iOS の WebKit だけ。同日の夕方に Fable が逃げ道を入れた: Pyodide の各段（loader / runtime / NumPy）に 60〜90 秒の期限を付け、期限切れなら**その 1 回だけ Service Worker を外して読み直す**（`sessionStorage` の `coi-fallback`。そのタブでは以後隔離なし）。だから iOS でも動くはずだが、1 コア版で、最初の 60 秒を無駄にする。
 - 疑うところ: 隔離の下で `SharedArrayBuffer` が使えるとき、Pyodide が NumPy の展開に別の経路（スレッド）を使う可能性。`loadPyodide()` のオプションで止められるか、Pyodide の版の changelog を読む。iOS の実機でしか出ないので、持ち主に `?threads=1` や Pyodide の版の固定（`?pyodide=`、前の版）で試してもらって絞る。
 - 完了条件: iOS Safari で隔離ありのまま NumPy の読み込みが終わる。無理なら、iOS だけ最初から隔離なしで開く判断を持ち主に諮る（60 秒の無駄を無くす）。
