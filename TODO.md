@@ -83,17 +83,6 @@
 - 完了条件: 5 段の表が `kernels/README.md` か T83 の `30-` に載り、tok/s と大きさの関係を 1 文で言える。
 - **材料を取る仕組み（2026-09-24、Opus 5.5）**: Worker が HF の変換で「Python が変換していた時間」を取得と分けて数え（`seconds.convert`。取得と変換は重なるので、`seconds.download` は両方込みの実時間）、準備完了の報告に WebAssembly のメモリの大きさ（`heap`）を添える。ページはその報告を `window.__ready` に置くだけで、画面は変えていない。`tests/e2e.mjs` はそれを JSON の `load` と `heapMB` に書く。表は `node tests/ladder.mjs <小さい組の results.jsonl> <大きい組の results.jsonl>`（2 つのジョブの artifact）で起こす。列は int8 MB・準備完了・取得と変換・うち変換・tok/s・**int8 MB × tok/s（毎秒読む重みの GB）**・ヒープ。最後の列が梯子を通して一定なら「大きさに反比例」と 1 文で言える。単体テストは `tests/ladder-check.mjs`（デプロイで走る）。**残り**: 持ち主が `browsers.yml` を走らせたら、artifact を取って表を起こし、読み方を書く。
 
-### T81 [追加] 足せるモデルを調べ直して、一覧に足す（調査と追加） — 状態: **進行中（調査済み、候補を本番で試す。Opus medium、2026-09-26）**（2026-09-21 採用。持ち主の指示。**T80 とは別件**。2026-09-25 に「調査と追加」にした。**T101 の判定の後、T83 はこの後**）
-- **T101（Memory64）の判定の結果で、4GB を超えるモデルを候補に数えるかを決める**（2026-09-25、持ち主の判断）。数えないことになっても、「4GB を超えるので入らないもの」の件数は記録する。
-- 担当（Fable の切り分け、2026-09-25）: **Opus が数えて、そのまま動くものは Opus が足す。新しいアーキテクチャやトークナイザが要るものは、件数と「何が足りないか」を書いて止まり、レビュー担当（Opus xhigh）が判断する。** 足すときの手順は T79・T80 と同じ（`src/models.js`・`LICENSES`・`browsers.yml` の一覧。ライセンスはモデルカードから写す。`browsers.yml` で動くことを確かめる）。1GB を超えるものは「desktop only」の組へ。
-- **実装はほとんど無い見込み（2026-09-25）**: そのまま動くモデルの追加は、`src/models.js` の項目（リポジトリ・リビジョン・大きさ・生成の設定・プロンプト）、`LICENSES`（`tests/models-check.mjs` が見る）、`browsers.yml` の huggingface ジョブの一覧を書き足すだけ。T80・T79 と同じ作業。新しいアーキテクチャやトークナイザが要るものが見つかったら、実装は別のタスクとして積む（この項の中ではやらない）。
-- 目的: モデルの世界は動くので、**時間が経ってから調べ直す**。T80（2026-09-21 の調査でそのまま足せるもの）とは別に、「いまの実装では足りないが、少し足せば入るもの」まで広げて見る。
-- **調べる条件は「そのときの実装」で決めること。** この項目に書いてある条件をそのまま使わない。着手時に AGENTS.md の「現在の構成」と `public/llama2_convert.py` の `check_config()`・`architecture()`・`layout()` を読み、**そのとき動くアーキテクチャ・トークナイザ・ファイルの形を洗い出してから数える**（2026-09-21 の時点では llama / qwen2 / gpt2 / gpt_neox、sentencepiece と Unigram と byte-level BPE、safetensors 1 ファイルか 1 つだけの分割、`rope_scaling` と sliding window と mlp_bias は不可、カーネルは dim・kv_dim・hidden が 32 の倍数。**これは当時の条件であって、そのときの条件ではない**）。条件が広がっていれば候補も変わる。
-- 見る範囲（T80 より広く）: (1) 新しく出た小さいモデル（特に日本語）、(2) いまは断っているアーキテクチャ（gemma2、phi3、mistral、stablelm、olmo など）の件数と、それぞれ何を足せば通るか、(3) 分割が 2 ファイル以上のモデルがどれだけあるか（T78 は 1 ファイルだけ）、(4) `rope_scaling` を使うモデルの件数（2026-09-21 時点では 1.5B 以下に 0 件だった）、(5) GGUF しか無いモデルが出てきたか（T74 の価値が変わる）。
-- やり方: HF の API で件数を数えてから中身を見る。**数えずに「増えそう」と書かない**（T74 で見返りが偏っていることに気づけたのは数えたから）。調べた数字と日付を TODO に残す。
-- 完了条件: そのまま動くものは一覧に足して `browsers.yml` で動くことを確かめる。実装の要るものは新しいタスクとして積む（または「いまは無い」と書く）。前回（2026-09-21）からの差分が分かる形で書く。
-
-- **調査（2026-09-26、Opus medium のサブエージェント。全文は `docs/t81-survey-2026-09-26.md`、問い合わせと件数つき）**: 合否は変換器の `normalize()`・`check_config()`・`pretokenizer_name()` をそのまま import して判定。ダウンロード上位 2000 件（text-generation、transformers）のうち 8.5B 以下は 739 件、受け付ける 4 系統（llama・qwen2・gpt2・gpt_neox）はそのうち 325 件（ダウンロードの 51.7%）。4 系統の config を 438 件判定して **276 件が通る**（一覧にあるもの 9 件を含む。落ちた 162 件のうち 99 件は量子化済みの再配布、13 件はゲート付きの meta-llama）。通った 276 件の内訳（メモリは見積もり）: int8 で 32 ビット 140、6 ビットで 32 ビット 6、64 ビットが要る 130、2 シャード以上 140、RoPE が llama3 41。**2026-09-21 の条件なら 116 件**で、差の 160 件は T105・T106・T101・T98 で開いた（前回の 299 件は問い合わせが残っていないので直接は比べられない）。**断られるもの**（739 件の中）: qwen3 90（ダウンロードの 29.3%、最大。head ごとの q・k の norm と、dim / heads と違う head_dim が要り、legacy のヘッダの変更になる）、mistral 22（日本の組織では 34。v0.2 以降は llama と同じ形で、model_type の別名で開く見込み）、lfm2 22、granite 12、gemma3 11、phi3 11、gemma2 9、phi 7、stablelm 5（日本の組織で 16）。`rope_scaling` は llama3 66・linear 3・yarn 1、sliding window が真の qwen2 は 0。GGUF は上位 500 件のうち Q8_0 を持つ 372 件、読める llama / qwen2 で Q8_0 の 8.5B 以下は 36 件。GGUF にしか無い、今の読み手で読める新しい小さいモデルは見つからなかった。**そのまま足せる候補**: SakanaAI/TinySwallow-1.5B-Instruct、llm-jp/llm-jp-3.1-1.8b-instruct4、sbintuitions/sarashina2.2-1b-instruct-v0.1（書式は手書き）、cyberagent/CAT-Translate-1.4b と 0.8b、HuggingFaceTB/SmolLM2-1.7B-Instruct。64 ビットで llm-jp-4-8b-instruct（harmony の書式を手書き）、Qwen2.5-7B-Instruct、Llama-3.1-Swallow-8B-Instruct-v0.5。**気づいたこと**: 一覧の sarashina2.2 0.5B Instruct の書式が ChatML になっているが本来は `<|user|>{prompt}</s><|assistant|>`（影響は未確認）、rinna/japanese-gpt-1b は gpt2 の `gelu_fast` だけで断られている（式は gelu_new と同じ、4 件開く）、`chat_template.jinja` を読まないので 16 件以上で書式が自動で取れない、CMSManhattan/JiRackUltra_1b は出どころが確かめられないので勧めない。
 ### T95 [計測] wllama と同じ GGUF で比べる — 状態: 未着手（2026-09-25 採用、持ち主の指示。**性能の改善（T98〜T100）の後**（2026-09-25、持ち主の判断: 公開する数字は改善の後）。規模 小〜中）
 - 担当（Fable の切り分け、2026-09-25。レビューは Opus xhigh）: **Opus が最後まで**（比較のページ、CI のワークフロー、表、負けた項目の見立て）。Opus xhigh が表と文面を読む。wllama の版は実行時に最新を解決して結果に書く。
 - 根拠: wllama は llama.cpp を WebAssembly にしたもので、ブラウザで動く言語モデルの代表。「WASM Python でどこまでできるか」を言うには、いちばん強い相手と**同じファイル・同じブラウザ・同じ機械**で比べるのが早い。T74 で GGUF を読めるようになったので、同じ Q8_0 のファイルをそのまま両方に渡せる。
@@ -104,6 +93,18 @@
 ## 候補（採否未定）
 
 2026-09-19 に Fable が提案したもの。持ち主が 1 つずつ採用か却下かを決める。採用したら「これからのタスク」へ移し、却下したら理由を添えて「やらないと決めたこと」へ移す。番号はどちらの場合もそのまま。並びは提案時の費用対効果の順。
+
+### T124 [追加] qwen3 を読む — 状態: 候補（2026-09-26、T81 の調査から。規模 中、legacy 形式の変更）
+- 根拠: T81 の調査で、ダウンロード上位 2000 件の 8.5B 以下のうち断られる系統で最大（90 件、ダウンロードの 29.3%、日本の組織で 14 件。Qwen3-Swallow 8B など日本語の新しいモデルもここ）。足りないのは head ごとの q・k の RMSNorm と、`dim / heads` と違う `head_dim`。legacy のヘッダ（7 個の int）が head_dim を持たないので、形式を変える設計（docs/review-by-opus.md の「Fable に回すもの」に当たる）。
+
+### T125 [追加] mistral を llama の別名として読む — 状態: 候補（2026-09-26、T81 の調査から。規模 小）
+- 根拠: 22 件、日本の組織で 34 件。v0.2 以降は llama と同じ形（sliding window が null）なので、model_type の別名で開く見込み。sliding window のあるもの（v0.1）は断ったまま。
+
+### T126 [追加] GPT-2 の gelu_fast と、RoPE の linear を受け付ける — 状態: 候補（2026-09-26、T81 の調査から。規模 ごく小）
+- 根拠: rinna/japanese-gpt-1b と派生の 4 件は gpt2 の `gelu_fast` だけで断られる（式は gelu_new と同じで、neox ではすでに許している）。RoPE の linear（deepseek-coder の 3 件）は位置を割るだけ。
+
+### T127 [追加] chat_template.jinja を読む、と selectattr — 状態: 候補（2026-09-26、T81 の調査から。規模 小）
+- 根拠: 通った 276 件のうち少なくとも 16 件は書式が `chat_template.jinja` にしかなく、自動で取れない。sarashina2.2 の系統は `selectattr` で読めず、手で書いた（T81）。
 
 ### T121 [追加] 画像を生成する: まず自己回帰型（画像のトークンを言語モデルで書く）が動くかの判定 — 状態: 候補（2026-09-25、持ち主の問い「画像生成ってできるかな」への Opus xhigh の考察。持ち主が候補に積んだ。規模 判定は小〜中）
 - 見立て: **相性が良いのは、画像をトークン列として言語モデルで 1 つずつ書く自己回帰型**。LlamaGen（中身は Llama。ImageNet の 1000 クラスを指定して 256×256 を 16×16 のトークンで。いちばん小さい B は 111M）と Janus-Pro-1B（文章から 384×384 を 576 トークンで。言語モデルの部分は DeepSeek-LLM 系）。今のエンジンと forward がほぼそのまま使え、「言語モデルで画像のトークンを書く」ので目的（言語モデルを動かす実験）の中に収まる。細部（2 次元の RoPE か、トークナイザの形、ライセンス）は着手のときにモデルカードとコードで確かめる（未確認）。
@@ -944,6 +945,23 @@
 - 根拠: T113 の期限は経過時間（the loader 60 秒、the runtime 90 秒、NumPy 60 秒）。Pyodide の約 8.9MB（pyodide.asm.wasm 3.44MB、標準ライブラリ 2.51MB、NumPy の wheel 2.93MB。レビューのサブエージェントが jsDelivr で測った）を 90 秒で取れない回線（約 0.8Mbps 未満。日本の速度制限は 128k〜1Mbps）では、正常でも期限切れ → Service Worker を外して読み直し → 2 回目も期限切れでエラーになる（2a7d34a の前は遅くても最後まで読めた）。`await numpy`（NumPy の先読み）はどの期限にも入っていない。
 - 手順: 期限を「N 秒、取得が進まない」にする（進みの見方は未検討: PerformanceObserver の resource か、Service Worker が数える）。先読みにも期限。
 - 完了条件: 帯域を絞った CI（Playwright の CDP）で、遅いが正常な読み込みは期限切れにならず、止まった読み込みは期限切れになる。
+
+</details>
+
+- [x] **T81 [追加] 足せるモデルを調べ直して、一覧に足す（調査と追加）。**（Opus medium、2026-09-26）— 状態: **レビュー待ち**。**調査**は下の記録と `docs/t81-survey-2026-09-26.md`（変換器が受け付ける 276 件、9 月 21 日の条件なら 116 件、断られる最大は qwen3）。**足したもの**（a99b78f、4a4bd51。どれもゲートなし、リビジョン固定、ライセンスはモデルカードから）: sarashina2.2 1B Instruct（MIT）、CAT-Translate 0.8B と 1.4B（日英の翻訳、MIT）、TinySwallow 1.5B Instruct（Apache 2.0 と Gemma Terms）、llm-jp-3.1 1.8B instruct4（Apache 2.0）、SmolLM2 1.7B Instruct（Apache 2.0）。`browsers.yml` の huggingface ジョブに 6 つの組（`added`）を足した。**一覧の誤りを直した**: sarashina2.2 0.5B Instruct の書式は ChatML ではなく `<|user|>{prompt}</s><|assistant|>` で、`<|user|>`（9）・`<|assistant|>`（8）・`</s>`（2）はトークン、7〜9（ターンの印）で止める（この系統の chat_template は `selectattr` を使うので T73 の読み手では読めない。本物の Jinja で 1 ターンを描いて写した）。**本番**（`models.yml`、Linux の Chromium）: sarashina2.2 0.5B Instruct 25.2 秒・30.9 tok/s（指示に答える）、CAT-Translate 0.8B 24.8 秒・31.5 tok/s（「Fuji‑san is Japan's tallest mountain, and many people climb it during summer.」で止まる）、sarashina2.2 1B 35.7 秒・18.7 tok/s、CAT-Translate 1.4B 35.4 秒・19.6 tok/s、TinySwallow 1.5B 56.7 秒・14.7 tok/s、llm-jp-3.1 1.8B 49.6 秒・13.9 tok/s、SmolLM2 1.7B 43.3 秒・13.5 tok/s（どれも 4 本）。**足さなかったもの**: 64 ビットのメモリの 7〜8B（llm-jp-4-8b-instruct は harmony の書式、Qwen2.5-7B、Llama-3.1-Swallow-8B）と 3B 級は、取得が 6〜17GB で CI の 1 回が長いので、足すかは持ち主に（T115 で動くことは Llama-3.2-3B で確かめてある）。**実装の要るものは候補に積んだ**（T124〜T127）。**レビューで見てほしいこと**: 書式を手で書いた sarashina の系統（`SARASHINA`）の特殊トークンと止まり、TinySwallow のライセンスの書き方。
+
+<details><summary>T81 の採用時の記録と調査の要約</summary>
+
+- **T101（Memory64）の判定の結果で、4GB を超えるモデルを候補に数えるかを決める**（2026-09-25、持ち主の判断）。数えないことになっても、「4GB を超えるので入らないもの」の件数は記録する。
+- 担当（Fable の切り分け、2026-09-25）: **Opus が数えて、そのまま動くものは Opus が足す。新しいアーキテクチャやトークナイザが要るものは、件数と「何が足りないか」を書いて止まり、レビュー担当（Opus xhigh）が判断する。** 足すときの手順は T79・T80 と同じ（`src/models.js`・`LICENSES`・`browsers.yml` の一覧。ライセンスはモデルカードから写す。`browsers.yml` で動くことを確かめる）。1GB を超えるものは「desktop only」の組へ。
+- **実装はほとんど無い見込み（2026-09-25）**: そのまま動くモデルの追加は、`src/models.js` の項目（リポジトリ・リビジョン・大きさ・生成の設定・プロンプト）、`LICENSES`（`tests/models-check.mjs` が見る）、`browsers.yml` の huggingface ジョブの一覧を書き足すだけ。T80・T79 と同じ作業。新しいアーキテクチャやトークナイザが要るものが見つかったら、実装は別のタスクとして積む（この項の中ではやらない）。
+- 目的: モデルの世界は動くので、**時間が経ってから調べ直す**。T80（2026-09-21 の調査でそのまま足せるもの）とは別に、「いまの実装では足りないが、少し足せば入るもの」まで広げて見る。
+- **調べる条件は「そのときの実装」で決めること。** この項目に書いてある条件をそのまま使わない。着手時に AGENTS.md の「現在の構成」と `public/llama2_convert.py` の `check_config()`・`architecture()`・`layout()` を読み、**そのとき動くアーキテクチャ・トークナイザ・ファイルの形を洗い出してから数える**（2026-09-21 の時点では llama / qwen2 / gpt2 / gpt_neox、sentencepiece と Unigram と byte-level BPE、safetensors 1 ファイルか 1 つだけの分割、`rope_scaling` と sliding window と mlp_bias は不可、カーネルは dim・kv_dim・hidden が 32 の倍数。**これは当時の条件であって、そのときの条件ではない**）。条件が広がっていれば候補も変わる。
+- 見る範囲（T80 より広く）: (1) 新しく出た小さいモデル（特に日本語）、(2) いまは断っているアーキテクチャ（gemma2、phi3、mistral、stablelm、olmo など）の件数と、それぞれ何を足せば通るか、(3) 分割が 2 ファイル以上のモデルがどれだけあるか（T78 は 1 ファイルだけ）、(4) `rope_scaling` を使うモデルの件数（2026-09-21 時点では 1.5B 以下に 0 件だった）、(5) GGUF しか無いモデルが出てきたか（T74 の価値が変わる）。
+- やり方: HF の API で件数を数えてから中身を見る。**数えずに「増えそう」と書かない**（T74 で見返りが偏っていることに気づけたのは数えたから）。調べた数字と日付を TODO に残す。
+- 完了条件: そのまま動くものは一覧に足して `browsers.yml` で動くことを確かめる。実装の要るものは新しいタスクとして積む（または「いまは無い」と書く）。前回（2026-09-21）からの差分が分かる形で書く。
+
+- **調査（2026-09-26、Opus medium のサブエージェント。全文は `docs/t81-survey-2026-09-26.md`、問い合わせと件数つき）**: 合否は変換器の `normalize()`・`check_config()`・`pretokenizer_name()` をそのまま import して判定。ダウンロード上位 2000 件（text-generation、transformers）のうち 8.5B 以下は 739 件、受け付ける 4 系統（llama・qwen2・gpt2・gpt_neox）はそのうち 325 件（ダウンロードの 51.7%）。4 系統の config を 438 件判定して **276 件が通る**（一覧にあるもの 9 件を含む。落ちた 162 件のうち 99 件は量子化済みの再配布、13 件はゲート付きの meta-llama）。通った 276 件の内訳（メモリは見積もり）: int8 で 32 ビット 140、6 ビットで 32 ビット 6、64 ビットが要る 130、2 シャード以上 140、RoPE が llama3 41。**2026-09-21 の条件なら 116 件**で、差の 160 件は T105・T106・T101・T98 で開いた（前回の 299 件は問い合わせが残っていないので直接は比べられない）。**断られるもの**（739 件の中）: qwen3 90（ダウンロードの 29.3%、最大。head ごとの q・k の norm と、dim / heads と違う head_dim が要り、legacy のヘッダの変更になる）、mistral 22（日本の組織では 34。v0.2 以降は llama と同じ形で、model_type の別名で開く見込み）、lfm2 22、granite 12、gemma3 11、phi3 11、gemma2 9、phi 7、stablelm 5（日本の組織で 16）。`rope_scaling` は llama3 66・linear 3・yarn 1、sliding window が真の qwen2 は 0。GGUF は上位 500 件のうち Q8_0 を持つ 372 件、読める llama / qwen2 で Q8_0 の 8.5B 以下は 36 件。GGUF にしか無い、今の読み手で読める新しい小さいモデルは見つからなかった。**そのまま足せる候補**: SakanaAI/TinySwallow-1.5B-Instruct、llm-jp/llm-jp-3.1-1.8b-instruct4、sbintuitions/sarashina2.2-1b-instruct-v0.1（書式は手書き）、cyberagent/CAT-Translate-1.4b と 0.8b、HuggingFaceTB/SmolLM2-1.7B-Instruct。64 ビットで llm-jp-4-8b-instruct（harmony の書式を手書き）、Qwen2.5-7B-Instruct、Llama-3.1-Swallow-8B-Instruct-v0.5。**気づいたこと**: 一覧の sarashina2.2 0.5B Instruct の書式が ChatML になっているが本来は `<|user|>{prompt}</s><|assistant|>`（影響は未確認）、rinna/japanese-gpt-1b は gpt2 の `gelu_fast` だけで断られている（式は gelu_new と同じ、4 件開く）、`chat_template.jinja` を読まないので 16 件以上で書式が自動で取れない、CMSManhattan/JiRackUltra_1b は出どころが確かめられないので勧めない。
 
 </details>
 
