@@ -70,9 +70,20 @@
 
 ## これからのタスク
 
-### T124 [追加] qwen3 を読む — 状態: 未着手（2026-09-26 採用、持ち主の判断「最初は有名なのはぜんぶ入れよう」。T81 の調査から。規模 中、legacy 形式の変更）
+### T124 [追加] qwen3 を読む — 状態: **設計を出して止まっている（2026-09-26、Opus medium。持ち主かレビュー担当の判断待ち）**（2026-09-26 採用、持ち主の判断「最初は有名なのはぜんぶ入れよう」。T81 の調査から。規模 中、legacy 形式の変更）
 - 根拠: T81 の調査で、ダウンロード上位 2000 件の 8.5B 以下のうち断られる系統で最大（90 件、ダウンロードの 29.3%、日本の組織で 14 件。Qwen3-Swallow 8B など日本語の新しいモデルもここ）。足りないのは head ごとの q・k の RMSNorm と、`dim / heads` と違う `head_dim`。legacy のヘッダ（7 個の int）が head_dim を持たないので、形式を変える設計（docs/review-by-opus.md の「Fable に回すもの」に当たる）。**レビュー（Opus xhigh、2026-09-26）の見立て**: bias や arch と同じく、ファイルから分からない設定として options で渡せば見出しは変えずに済みそう（`checkpoint_dtype()`・`layout()`・エンジンの 3 か所と `footprint()` が head_dim を受け取る）。どちらにするかは実装の前に Fable か持ち主が決める。
 - 足すモデル（採用時の方針: 有名なものは全部）: Qwen3 の 0.6B・1.7B・4B・8B、日本語の Qwen3-Swallow 8B など（ゲートなし・リビジョン固定・ライセンスはモデルカードから、T81 と同じ手順）。書式は chat_template が読めなければ手で書く。
+
+- **設計（2026-09-26、Opus medium）**
+  - **足りないものは 2 つで、別々に効く**（config.json を読んだ、2026-09-26）: (1) **head ごとの q・k の RMSNorm**（`self_attn.q_norm.weight` / `k_norm.weight`、各層に head_dim 個ずつ。qwen3 のすべて）、(2) **head_dim が dim / heads と違う**（Qwen3 0.6B は 128 対 64、4B は 128 対 80、MiniCPM5 1B（llama）は 128 対 96）。Qwen3 1.7B・8B・Qwen3-Swallow 8B は head_dim = dim / heads なので (1) だけで開く。ほかに (0) **`"head_dim": null` を「無い」と読まない小さな不具合**: cyberagent/CAT-Translate-7b（mistral、dim / heads = 128）が「heads do not divide」で断られている（`config.get("head_dim", dim // n_heads)` が null を返す）。
+  - **(1) q・k の norm**: T64 の bias と同じ形にする。各層の 2 本のベクトル（head_dim の float32）をファイルの末尾に足し、見出しは変えない。ファイルから分からないので options（`qk_norm=True`、変換器が `q_norm.weight` の有無で決める）でエンジンに渡す。計算は RoPE の前に head ごとに `rmsnorm`（既存のカーネル、n = head_dim、heads + kv_heads 回。新しいカーネルは 0）。並べ替え: q・k の重みは `permute_heads` で回すので、norm の重みも同じ並びに（bias と同じく 1 次元の `permute_heads`）。
+  - **(2) head_dim を渡す方法の選択肢**:
+    - (a) **options で渡す**（`head_dim=`。見出しは 7 個の int のまま）。変えるのは `layout()`・`checkpoint_dtype()`・`Llama.__init__` の 3 か所と `footprint()`、forward.js の枠（q と attention の出力は heads × head_dim で、dim と違う）、RoPE の表（幅 head_dim）、GGUF の読み手（`attention.key_length`）。bias・arch・rotary と同じやり方で、形式の変更が要らない。**弱み**: フォルダで開く legacy のファイルは設定の JSON で head_dim を渡す必要がある（bias や arch と同じ。大きさの判定 `checkpoint_dtype()` は head_dim が無いと合わずに断る）。
+    - (b) **見出しを変える**（8 個目の int など）。legacy 形式（llama2.c）との互換が切れ、保存した変換（`CONVERTER`）、`convert_hf.py`・`quantize.py`・サイトのモデルのファイルがすべて関わる。docs/review-by-opus.md の「形式を変える設計 → Fable」に当たる。
+  - **勧め: (a)**。数字: 変えるファイルは (a) が 6 つ（llama2_convert・llama2_numpy・forward.js・jobs.js の段の大きさ・worker の footprint の呼び出し・pytest）、(b) はそれに加えて見出しを読むすべて（エンジン・変換器・convert_hf・quantize・tests の固定値、サイトの `make models` の出力）。見返りは同じ（開くモデルは同じ）。**覆す条件**: head_dim ≠ dim / heads のモデルを「フォルダで開く legacy のファイル」として配る必要が出たとき（今は無い）は (b)。
+  - **順番の提案**: (0) の不具合 → (1)（Qwen3 1.7B・8B・Qwen3-Swallow 8B が開く）→ (2)（Qwen3 0.6B・4B、MiniCPM5 1B、CAT-Translate-7b は (0) だけで開く）。それぞれ別のコミット。確かめ方は T64・T72 と同じ 3 本（合成モデル → 変換 → 参照と一致、ストリーム変換、options の経路）と実物の固定値（`tests/fixed_outputs.py` に Qwen3 0.6B を足す）。
+  - **書式**: Qwen3 の chat_template は T127 で読めるようになった（本物と同じ 1 ターン）。**Qwen3 は既定で考えてから答える**（`<think>…</think>`。`enable_thinking=false` を渡すと空の think を書く）。ページは今は渡さないので考える形になる（DeepSeek-R1 と同じ扱い）。考えない形にするかは持ち主に。
+  - ライセンス: Qwen3 は Apache 2.0（Qwen/Qwen3-0.6B のカード、ゲートなし）。
 
 ### T128 [描画] モデルの一覧を、グループごとに「日本語が使える小 → 大、英語だけの小 → 大」に並べる — 状態: 未着手（2026-09-26、持ち主の指示。英語だけのモデルは**はじめは全部表示し、あとで減らす**（持ち主の判断、2026-09-26）。T132・T124〜T126 でモデルが増えた後に。規模 小）
 - 持ち主の指示（2026-09-26）: コンボボックスの 3 つのグループ（サイトのモデル・原本・HF から取得して変換）のそれぞれの中を、**日本語か英語（日本語が使えるもの）の小 → 日本語か英語の大 → 英語だけの小 → 英語だけの大**の順にする。
