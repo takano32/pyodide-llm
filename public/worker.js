@@ -108,33 +108,57 @@ function download(model, signal, load) {
   // T115: the checkpoint's first bytes (its header), as soon as the first part brings them
   let head = new Uint8Array(0), tell;
   const header = new Promise((resolve) => { tell = resolve; });
-  const connection = async () => {
-    while (next < parts) {
-      const part = next++;
-      const res = await fetchPart(new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, import.meta.url).href, model, signal);
-      if (!res.ok) {
-        throw new Error(`Could not fetch part ${part} of ${model.checkpoint}: ${res.status}`);
-      }
-      const reader = res.body.getReader();
+  // T97: Firefox on Windows breaks the body of a part now and then ("Error in input stream", 1 load in 12 on the CI
+  // runners, with the service worker and without it alike): the part is fetched again, twice at most. Its chunks go
+  // to the same offsets, so what arrived before the break is written over with the same bytes.
+  const fetchOnce = async (part) => {
+    const res = await fetchPart(new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, import.meta.url).href, model, signal);
+    if (!res.ok) {
+      throw Object.assign(new Error(`Could not fetch part ${part} of ${model.checkpoint}: ${res.status}`), { final: true });
+    }
+    const reader = res.body.getReader();
+    let got = 0;
+    try {
       for (let offset = part * PART_BYTES; ;) {
         const { done, value } = await reader.read();
         if (done) {
-          break;
+          return;
         }
         // a chunk that was already on its way when the load was cancelled: its buffer is gone
         signal.throwIfAborted();
         sink ? sink(offset, value) : queue.push([offset, value]);
-        if (offset === head.length && head.length < HEADER_BYTES) {
-          head = new Uint8Array([...head, ...value.subarray(0, HEADER_BYTES - head.length)]);
+        // the header's bytes that this chunk brings (a part fetched again brings some a second time)
+        if (head.length < HEADER_BYTES && offset <= head.length && offset + value.length > head.length) {
+          head = new Uint8Array([...head, ...value.subarray(head.length - offset, HEADER_BYTES - offset)]);
           if (head.length === HEADER_BYTES) tell(head);
         }
         offset += value.length;
+        got += value.length;
         received += value.length;
         // one message per percent is plenty
         const percent = Math.floor((received / model.bytes) * 100);
         if (percent !== reported) {
           reported = percent;
           postMessage({ type: "progress", load, received, total: model.bytes });
+        }
+      }
+    } catch (error) {
+      received -= got;  // counted again when the part comes again
+      throw error;
+    }
+  };
+  const connection = async () => {
+    while (next < parts) {
+      const part = next++;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await fetchOnce(part);
+          break;
+        } catch (error) {
+          if (signal.aborted || error.final || attempt === 2) {
+            throw error;
+          }
+          console.warn(`part ${part} of ${model.checkpoint} broke off (${error.message ?? error}): fetched again`);
         }
       }
     }

@@ -130,7 +130,7 @@
 - やり方: HF の API で件数を数えてから中身を見る。**数えずに「増えそう」と書かない**（T74 で見返りが偏っていることに気づけたのは数えたから）。調べた数字と日付を TODO に残す。
 - 完了条件: そのまま動くものは一覧に足して `browsers.yml` で動くことを確かめる。実装の要るものは新しいタスクとして積む（または「いまは無い」と書く）。前回（2026-09-21）からの差分が分かる形で書く。
 
-### T97 [運用] Windows の Firefox の「Error in input stream」を調べる — 状態: **いったん直したが同日夕方に戻した（Fable、2026-09-25）。未着手に戻る**（2026-09-25 採用、持ち主の指示。**調査から**。規模 小）
+### T97 [運用] Windows の Firefox の「Error in input stream」を調べる — 状態: **進行中（原因を絞って手当てを入れた、本番の確認中。Opus medium、2026-09-25）**（2026-09-25 採用、持ち主の指示。**調査から**。規模 小）
 - **T70（Windows の WebKit が tiny-lm で止まる）もここで見る**（2026-09-25 に T70 をここへ合わせた）。
 - 担当（Fable の切り分け、2026-09-25。対処は Fable が入れた）: **残る確認は Opus → Opus xhigh がレビュー**。**Fable の事前判断**: COOP/COEP のヘッダが要るのは同一オリジンの応答（文書、`worker.js`・`helper.js` などのスクリプト）だけで、クロスオリジンの取得（Pyodide の CDN、huggingface.co の Range 要求）は CORS で通るので Service Worker が触る必要は無い。だから `public/coi.js` は**同一オリジンの要求だけ `respondWith` し、クロスオリジンの要求はブラウザにそのまま任せる**形に変えてよい（本文を流す量が減り、T97 の疑いも消える）。手順: (1) 先に `coi.js` をその形にして、`coi.yml` で isolated が保たれること（`worker.js` と `helper.js` の読み込み、ソフトウェアスレッドが動くこと）を確かめる。(2) `browsers.yml` を 2〜3 回走らせ、Windows の Firefox で「Error in input stream」が出る回数を、変更の前（今日の走行の記録）と比べる。(3) それでも出るなら、どの取得で出るかを T82 の記録から絞る。T70（Windows の WebKit が止まる）は同じ走行で見て、再現したら別の項として切り出す。
 - 事実: `browsers.yml` の OS のジョブで、ページが「TypeError: Error in input stream」を報告して失敗することがある。2026-09-24 の実行 36003988306（T93 の前）は windows-latest の Playwright の Firefox の llm-jp-3 150M で 1 回。2026-09-25 の 36049665597（段階 3 の後）は windows-latest と windows-11-arm で 1 回ずつ。Linux と macOS では出ていない。Firefox が取得の本文のストリームを読み切れなかったときの例外（モデルの部品の取得か HF の範囲取得）と見ているが、どれかは未確認。
