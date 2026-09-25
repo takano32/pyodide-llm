@@ -349,13 +349,19 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // their part. A helper the browser itself stopped (iOS may end a worker for its memory) never counts the chunk it
   // took: T120, the wait gives up when its count has not moved for stalledMs, and says false. (A check of a flag that
   // stopThreads() raised and lowered again stood here and could never be seen, the review of T96 found.)
+  // A wait that took far longer than it asked for means this thread did not run either (a frozen tab, a phone that
+  // suspended the page): the helpers were stopped with it, and the time from before does not count (the review of
+  // T120: a stop of 10 s gave a thread up now and then as the page came back)
   const waitUntil = (index, done) => {
-    let moved = performance.now();
+    const tick = Math.min(1000, stalledMs);
+    let moved = performance.now(), last = moved;
     for (let seen = Atomics.load(ctl, index); !done(seen);) {
-      Atomics.wait(ctl, index, seen, Math.min(1000, stalledMs));
-      const now = Atomics.load(ctl, index);
-      if (now !== seen) [seen, moved] = [now, performance.now()];
-      else if (performance.now() - moved > stalledMs) return false;
+      Atomics.wait(ctl, index, seen, tick);
+      const now = Atomics.load(ctl, index), at = performance.now();
+      if (at - last > 2 * tick) moved = at;
+      last = at;
+      if (now !== seen) [seen, moved] = [now, at];
+      else if (at - moved > stalledMs) return false;
     }
     return true;
   };
@@ -547,7 +553,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     chosen = lost ? 1 : search ? search.best : threads;
     threads = chosen;
     search = null;
-    onChosen?.(chosen);
+    // one thread after a give-up says nothing about the device: the page would start with it next time (the review of T120)
+    if (!lost) onChosen?.(chosen);
   }
   // the count for the next token, and whether it is timed
   function countForToken() {
