@@ -78,7 +78,7 @@
 - 根拠: 22 件、日本の組織で 34 件。v0.2 以降は llama と同じ形（sliding window が null）なので、model_type の別名で開く見込み。sliding window のあるもの（v0.1）は断ったまま。
 - 足すモデル: 調査の 22 件と日本の組織の 34 件から、有名でゲートの無いものを全部（RakutenAI-2.0-mini 1.5B など。トークナイザが断られないかは 1 つずつ確かめる）。
 
-### T126 [追加] GPT-2 の gelu_fast と、RoPE の linear を受け付ける — 状態: 未着手（2026-09-26 採用、持ち主の判断「最初は有名なのはぜんぶ入れよう」。T81 の調査から。規模 ごく小）
+### T126 [追加] GPT-2 の gelu_fast と、RoPE の linear を受け付ける — 状態: 進行中（2026-09-26、push。本番の確認待ち）（2026-09-26 採用、持ち主の判断「最初は有名なのはぜんぶ入れよう」。T81 の調査から。規模 ごく小）
 - 根拠: rinna/japanese-gpt-1b と派生の 4 件は gpt2 の `gelu_fast` だけで断られる（式は gelu_new と同じで、neox ではすでに許している）。RoPE の linear（deepseek-coder の 3 件）は位置を割るだけ。
 - 足すモデル: rinna/japanese-gpt-1b、deepseek-coder 1.3b。
 

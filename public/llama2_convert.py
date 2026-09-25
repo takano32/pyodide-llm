@@ -696,8 +696,8 @@ def check_config(config):
     if dim % n_heads or n_heads % n_kv_heads or config.get("head_dim", dim // n_heads) != dim // n_heads or dim // n_heads % 2:
         refuse("its attention heads do not divide the hidden size the way llama2.c expects")
     scaling = config.get("rope_scaling")
-    if scaling and (architecture(config) != "llama" or scaling.get("rope_type", scaling.get("type")) != "llama3"):
-        # Llama 3's is the only kind the RoPE tables know (llama2_numpy.rope_frequencies)
+    if scaling and (architecture(config) != "llama" or scaling.get("rope_type", scaling.get("type")) not in ("llama3", "linear")):
+        # Llama 3's and the linear one are the kinds the RoPE tables know (llama2_numpy.rope_frequencies)
         refuse(f"it uses RoPE scaling of the {scaling.get('rope_type', scaling.get('type'))} kind")
     if architecture(config) == "neox":
         if config.get("hidden_act", "gelu") not in ("gelu", "gelu_new", "gelu_fast", "gelu_pytorch_tanh"):
@@ -709,7 +709,8 @@ def check_config(config):
         return
     if architecture(config) == "gpt2":
         # GPT-2 has one kind of everything; only the activation could be something the GELU kernel is not
-        if config.get("activation_function", "gelu_new") not in ("gelu_new", "gelu", "gelu_pytorch_tanh"):
+        # gelu_fast (T126: rinna/japanese-gpt-1b) is gelu_new's tanh approximation written another way
+        if config.get("activation_function", "gelu_new") not in ("gelu_new", "gelu", "gelu_pytorch_tanh", "gelu_fast"):
             refuse(f"its activation is {config['activation_function']}, and only GELU is supported")
         if config.get("num_key_value_heads", config["num_attention_heads"]) != config["num_attention_heads"]:
             refuse("it has grouped-query attention, which GPT-2 models do not")
@@ -1145,7 +1146,7 @@ def gguf_model(metadata, tensors, base):
               "bos_token_id": metadata.get("tokenizer.ggml.bos_token_id", 1),
               "eos_token_id": metadata.get("tokenizer.ggml.eos_token_id", 2)}
     if key("rope.scaling.type", "none") not in ("none", None):
-        config["rope_scaling"] = {"type": key("rope.scaling.type")}
+        config["rope_scaling"] = {"type": key("rope.scaling.type"), "factor": key("rope.scaling.factor", 1.0)}
     if "rope_freqs.weight" in tensors:
         # llama.cpp writes Llama 3's RoPE scaling as a table of divisors instead of the rope_scaling of config.json
         raise ValueError("This GGUF scales its RoPE with a rope_freqs table, which the engine does not read.")

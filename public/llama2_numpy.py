@@ -304,15 +304,18 @@ def rope(x, cos, sin):
 def rope_frequencies(width, theta, scaling=None):
     """The angle per position of each pair of a head's first width values (float64), for the RoPE tables.
 
-    scaling: config.json's rope_scaling. Only Llama 3's ("rope_type": "llama3") is known: the pairs that turn
-    slowly (a wavelength past original_max_position_embeddings / low_freq_factor) turn factor times slower, the
-    fast ones (shorter than original / high_freq_factor) as before, and the ones between are a blend of the two
-    (transformers' _compute_llama3_parameters).
+    scaling: config.json's rope_scaling, of two kinds. "linear" (T126: deepseek-coder): every pair turns factor times
+    slower, as if the positions were divided by factor. "llama3": the pairs that turn slowly (a wavelength past
+    original_max_position_embeddings / low_freq_factor) turn factor times slower, the fast ones (shorter than
+    original / high_freq_factor) as before, and the ones between are a blend of the two (transformers'
+    _compute_llama3_parameters).
     """
     frequencies = 1.0 / theta ** (np.arange(0, width, 2, dtype=np.float64) / width)
     if not scaling:
         return frequencies
     kind = scaling.get("rope_type", scaling.get("type"))
+    if kind == "linear":
+        return frequencies / float(scaling["factor"])
     if kind != "llama3":
         raise ValueError(f"RoPE scaling of the {kind} kind is not supported.")
     factor, low, high = float(scaling["factor"]), float(scaling["low_freq_factor"]), float(scaling["high_freq_factor"])

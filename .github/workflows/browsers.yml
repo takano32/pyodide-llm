@@ -138,12 +138,12 @@ jobs:
               hf-sarashina2.2-0.5b hf-sarashina2.2-0.5b-instruct hf-llm-jp-3-980m-instruct3
               hf-pythia-1b hf-tinyllama-1.1b-chat hf-llama-3.2-1b-instruct hf-pythia-1.4b hf-qwen2.5-1.5b-instruct
               hf-deepseek-r1-qwen-1.5b
-          # the models T81 added (2026-09-26), 17 GB of downloads more: a job of their own
+          # the models T81 added (2026-09-26), 17 GB of downloads more, and T126's rinna 1B (2.7 GB): a job of their own
           - size: added
             timeout: 1800
             models: >-
               hf-cat-translate-0.8b hf-sarashina2.2-1b-instruct hf-cat-translate-1.4b hf-tinyswallow-1.5b-instruct
-              hf-llm-jp-3.1-1.8b-instruct4 hf-smollm2-1.7b-instruct
+              hf-llm-jp-3.1-1.8b-instruct4 hf-smollm2-1.7b-instruct hf-japanese-gpt-1b
           # T132 (2026-09-26): 3B to 8B, 68 GB of downloads; the 7 to 8B ones on a 64-bit memory with a heap of 9.7 to
           # 11 GB (the runner has 16). In models.yml each took 2 to 4 minutes to be ready
           - size: huge

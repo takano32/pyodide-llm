@@ -22,6 +22,8 @@ SCALING = {"factor": 32.0, "high_freq_factor": 4.0, "low_freq_factor": 1.0, "ori
 # what llama.cpp's convert wrote as rope_freqs into bartowski/Llama-3.2-1B-Instruct-GGUF@067b946c (Q8_0): for
 # head_size 64 and rope_theta 500000, the plain frequency over the scaled one, pair by pair. An implementation of
 # the same formula independent of this one (transformers needs PyTorch, which this machine has not).
+# config.json of deepseek-ai/deepseek-coder-1.3b-instruct@e063262d (T126)
+LINEAR = {"factor": 4.0, "type": "linear"}
 LLAMA_CPP_DIVISORS = [1.0] * 15 + [1.6513293, 3.2922628, 9.666731] + [32.0] * 14
 
 
@@ -36,27 +38,35 @@ def test_without_scaling_the_frequencies_are_what_they_were():
         rope_frequencies(64, 10000.0, {"rope_type": "yarn", "factor": 4.0})
 
 
-def test_only_the_llama3_kind_of_scaling_is_let_through():
+def test_the_linear_frequencies_are_the_plain_ones_over_the_factor():
+    """T126 (deepseek-coder): positions divided by factor, which is every frequency divided by it"""
+    assert np.allclose(rope_frequencies(64, 100000.0) / rope_frequencies(64, 100000.0, LINEAR), 4.0, rtol=1e-12)
+
+
+def test_only_the_llama3_and_linear_kinds_of_scaling_are_let_through():
     config, weights = synthetic_weights()
     _, published = hugging_face(config, weights, True)
     check_config({**published, "rope_scaling": SCALING})
-    for kind in ("linear", "dynamic", "yarn"):
+    check_config({**published, "rope_scaling": LINEAR})
+    for kind in ("dynamic", "yarn"):
         with pytest.raises(ValueError, match="RoPE scaling"):
             check_config({**published, "rope_scaling": {"rope_type": kind, "factor": 2.0}})
 
 
-def llama3(max_seq_len=64):
+def llama3(max_seq_len=64, scaling=None):
     """A small Llama with Llama 3's scaling (a short original context, so that all three bands are there)."""
     config, weights = synthetic_weights(n_kv_heads=2)
     tensors, published = hugging_face(config, weights, True)
-    published = {**published, "rope_theta": 500000.0, "rope_scaling": {**SCALING, "original_max_position_embeddings": 32}}
+    published = {**published, "rope_theta": 500000.0,
+                 "rope_scaling": scaling or {**SCALING, "original_max_position_embeddings": 32}}
     return config, tensors, published
 
 
-def test_the_file_and_the_engine_make_the_same_scaled_tables():
+@pytest.mark.parametrize("scaling", [None, LINEAR], ids=["llama3", "linear"])
+def test_the_file_and_the_engine_make_the_same_scaled_tables(scaling):
     """float32 files hold the tables (the converter makes them), int8 files do not (the engine does): the two must
     agree, and the engine needs rope_scaling from the options for that (T72's lesson: test the options' path)."""
-    config, tensors, published = llama3()
+    config, tensors, published = llama3(scaling=scaling)
     file = safetensors_file(tensors)
     size = struct.unpack("<Q", file[:8])[0]
     vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,

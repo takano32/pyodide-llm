@@ -117,3 +117,13 @@ def test_the_context_of_a_gpt2_is_its_table_of_positions():
     source = Safetensors(reader(safetensors_file(tensors)))
     # a shorter context would need a shorter table: the learned positions cannot be cut the way RoPE can
     assert checkpoint_header(normalize(config), source, 8)[6] == POSITIONS
+
+
+@pytest.mark.parametrize("activation", ["gelu_new", "gelu", "gelu_pytorch_tanh", "gelu_fast"])
+def test_the_activations_that_are_the_gelu_kernel_are_let_through(activation):
+    """T126: gelu_fast (rinna/japanese-gpt-1b) is gelu_new's tanh approximation, written another way"""
+    from llama2_convert import check_config, normalize
+    _, config = gpt2_model()
+    check_config(normalize({**config, "activation_function": activation}))
+    with pytest.raises(ValueError, match="relu"):
+        check_config(normalize({**config, "activation_function": "relu"}))

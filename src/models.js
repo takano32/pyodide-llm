@@ -84,6 +84,8 @@ export const LICENSES = {
   "Qwen/Qwen2.5-3B-Instruct": QWEN_RESEARCH, "sbintuitions/sarashina2.2-3b-instruct-v0.1": MIT,
   "Qwen/Qwen2.5-7B-Instruct": APACHE, "tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5": SWALLOW,
   "llm-jp/llm-jp-4-8b-instruct": APACHE,
+  // T126
+  "rinna/japanese-gpt-1b": MIT,
   "meta-llama/Llama-3.2-3B-Instruct": LLAMA_32, "unsloth/Llama-3.2-3B-Instruct": LLAMA_32,
 };
 /** The Hugging Face repository a model comes from. */
@@ -179,6 +181,11 @@ export const MODELS = [
   { group: "hf", id: "hf-llm-jp-3-980m-instruct3", name: "llm-jp-3 980M instruct3", note: "answers instructions · 日本語 · fetches 2.0 GB → int8 1.1 GB · desktop only",
     hf: hf("llm-jp/llm-jp-3-980m-instruct3", "c079dbf3f88aa2ab702b9696231fc3336c46b1be"), download: 1980382824, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T126: a GPT-2 of 1.3B, whose activation is written gelu_fast (the same tanh approximation as gelu_new). Its
+  // table of positions holds 1024, which is its context
+  { group: "hf", id: "hf-japanese-gpt-1b", name: "japanese-gpt 1B", note: "日本語 · fetches 2.7 GB → int8 1.5 GB · desktop only",
+    hf: hf("rinna/japanese-gpt-1b", "33fc2e4b4e97e229d24a2973073a1361157ecef6", "spiece.model"), download: 2655791788,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   // T81 (2026-09-26): the survey's Japanese models that convert as they are. TinySwallow reads its chat template
   // itself (T73); llm-jp-3.1 has its family's format with the system sentence its model card always passes (its
   // template alone leaves it out)

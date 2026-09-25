@@ -135,7 +135,7 @@ def test_the_context_can_be_cut_and_the_engine_runs_the_result():
 
 
 @pytest.mark.parametrize("change, reason", [
-    (dict(model_type="rwkv"), "only Llama, Qwen2, GPT-2 and GPT-NeoX"), (dict(rope_scaling={"type": "linear"}), "RoPE scaling"),
+    (dict(model_type="rwkv"), "only Llama, Qwen2, GPT-2 and GPT-NeoX"), (dict(rope_scaling={"type": "dynamic", "factor": 2.0}), "RoPE scaling"),
     (dict(hidden_act="gelu"), "gelu"), (dict(attention_bias=True), "biases"), (dict(num_attention_heads=5), "heads"),
     (dict(vocab_size=None), "vocab_size"), (dict(head_dim=3), "heads")])
 def test_a_model_the_engine_cannot_run_is_refused(change, reason):
