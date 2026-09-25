@@ -52,7 +52,7 @@ export function growMemory(memory, pages, wide) {
 }
 
 /** A memory with room for a checkpoint of size bytes at base; the forward pass allocates after it. shared (stage 2):
- * a SharedArrayBuffer for the helper threads, only where the page is cross-origin isolated; its first 4 KiB are the
+ * a SharedArrayBuffer for the helper threads, only where the page is cross-origin isolated; its first 8 KiB are the
  * control area of the helpers. A shared memory needs a maximum: as much as the browser grants, less if it refuses.
  * maximum (pages): what to ask for first; else what this model can need at most (see below). The worker keeps the
  * memory for the models that fit under that maximum (T96): a browser reserves address space for each WebAssembly
@@ -304,12 +304,12 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   const attentionJob = (t, pos, layerKeys, layerValues) =>
     [halfKV ? 4 : 3, xb + t * S, q + t * S, layerKeys, layerValues, att + t * A, pos, kvHeads, headSize, heads, 1, 0, 0, 0];
   const runRows = runner(k, relaxed);
-  // A wait on the helpers ends in an error, not for ever, once stopThreads() has ended them: a helper ended in the
-  // middle of a phase never counts its chunk (T96 found the coordinator waiting so, under a second benchmark).
-  let stopping = false;
+  // stopThreads() runs on this thread too, never in the middle of a phase: a wait here ends when the helpers have done
+  // their part, and a helper the browser itself stopped would hold it for ever. (A check of a flag that stopThreads()
+  // raised and lowered again stood here and could never be seen, the review of T96 found. What held the coordinator
+  // for ever then was the second benchmark and the control area the last engine left, both fixed.)
   const waitUntil = (index, done) => {
     for (let seen = Atomics.load(ctl, index); !done(seen); seen = Atomics.load(ctl, index)) {
-      if (stopping) throw new Error("the software threads were ended in the middle of a phase");
       Atomics.wait(ctl, index, seen, 1000);
     }
   };
@@ -566,7 +566,6 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     /** the helper threads end; this engine runs on its own again */
     stopThreads() {
       if (!shared) return;
-      stopping = true;
       Atomics.store(ctl, QUIT, 1);
       for (let h = 1; h <= helpers.length; h++) {
         Atomics.add(ctl, WAKE + h, 2);
@@ -575,7 +574,6 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
       // QUIT stays set until the next ensureHelpers(): a helper that wakes late must still see it
       helpers.splice(0).forEach((helper) => helper.terminate?.());
       threads = 1;
-      stopping = false;
     },
     /** the float32 array of Python's that forward() fills with the logits */
     bind(array) {
