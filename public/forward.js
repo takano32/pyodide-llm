@@ -32,18 +32,20 @@ export function compileKernels(plain, relaxed) {
 
 /** A memory with room for a checkpoint of size bytes at base; the forward pass allocates after it. shared (stage 2):
  * a SharedArrayBuffer for the helper threads, only where the page is cross-origin isolated; its first 4 KiB are the
- * control area of the helpers. A shared memory needs a maximum: as much as the browser grants, less if it refuses. */
-export function weightsMemory(size, { shared = false } = {}) {
+ * control area of the helpers. A shared memory needs a maximum: as much as the browser grants, less if it refuses.
+ * maximum (pages): what to ask for first; else what this model can need at most (see below). The worker makes one
+ * memory and keeps it for every model (T96): a browser reserves address space for each WebAssembly memory whatever
+ * its maximum, and Chromium refused the third one of a page. */
+export function weightsMemory(size, { shared = false, maximum } = {}) {
   const base = shared ? CONTROL_BYTES : 64;
   const initial = Math.ceil((base + size) / PAGE) + 1;
   if (!shared) return { memory: new WebAssembly.Memory({ initial }), base };
-  // A shared memory reserves its maximum up front, and a page that loads model after model (the benchmark does)
-  // ran out of address space with 4 GB each (T93). So: what this model can need at most, the checkpoint widened
-  // to float32 (four times an int8 file, with the int8 switch off) and a gigabyte for the KV cache and the rest.
-  const most = Math.min(65536, Math.ceil((base + 4 * size + 2 ** 30) / PAGE));
-  for (const maximum of [most, initial + 16384, initial + 4096]) {
+  // the model can need at most the checkpoint widened to float32 (four times an int8 file, with the int8 switch
+  // off) and a gigabyte for the KV cache and the rest; less if the browser refuses
+  const most = maximum ?? Math.min(65536, Math.ceil((base + 4 * size + 2 ** 30) / PAGE));
+  for (const pages of [most, initial + 16384, initial + 4096]) {
     try {
-      return { memory: new WebAssembly.Memory({ initial, maximum: Math.max(maximum, initial), shared: true }), base };
+      return { memory: new WebAssembly.Memory({ initial, maximum: Math.max(pages, initial), shared: true }), base };
     } catch {
       // too much address space for this browser: ask for less
     }

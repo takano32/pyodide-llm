@@ -337,20 +337,37 @@ const spawnThread = (data) => new Promise((resolve, reject) => {
   worker.postMessage(data);
 });
 
-function weightsBuffer(size) {
-  if (jsKernels && !disabled.includes("kernels")) {
-    // a shared memory where the page is cross-origin isolated (stage 3), unless ?threads=1; else one thread
-    let memory, base, kernels = jsKernels, spawn;
-    if (sharedKernels && self.crossOriginIsolated && threadsRequest?.fixed !== 1) {
+// T96: one memory of forward.js for the life of this worker, whatever the model. A browser reserves address space
+// for every WebAssembly memory, shared or not and whatever its maximum, and Chromium refused the third one of a page:
+// the benchmark's first round, or a visitor's second change of model, then found no memory at all. So the memory is
+// made once, as large as the browser lets a shared one be (4 GB first), grows to the largest model seen and never
+// shrinks (no WebAssembly memory does). A model larger than its maximum fails at grow(), as running out of memory.
+let weightsPool;
+function pooledWeights(size, shared) {
+  if (!weightsPool || weightsPool.shared !== shared) {
+    let memory, base;
+    if (shared) {
       try {
-        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true }));
-        kernels = sharedKernels;
-        spawn = spawnThread;
+        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, maximum: 65536 }));
       } catch {
-        memory = undefined;  // no shared memory this large here: one thread
+        memory = undefined;  // no shared memory here: one thread
       }
     }
     if (!memory) ({ memory, base } = forwardModule.weightsMemory(size));
+    weightsPool = { memory, base, shared: shared && memory.buffer instanceof SharedArrayBuffer };
+  }
+  const { memory, base } = weightsPool;
+  const pages = Math.ceil((base + size) / 65536) + 1 - memory.buffer.byteLength / 65536;
+  if (pages > 0) memory.grow(pages);
+  return weightsPool;
+}
+
+function weightsBuffer(size) {
+  if (jsKernels && !disabled.includes("kernels")) {
+    // a shared memory where the page is cross-origin isolated (stage 3), unless ?threads=1; else one thread
+    const wanted = Boolean(sharedKernels && self.crossOriginIsolated && threadsRequest?.fixed !== 1);
+    const { memory, base, shared } = pooledWeights(size, wanted);
+    const kernels = shared ? sharedKernels : jsKernels, spawn = shared ? spawnThread : undefined;
     weightsNow = memory;
     return {
       write: (offset, chunk) => new Uint8Array(memory.buffer, base + offset, chunk.length).set(chunk),
@@ -709,8 +726,7 @@ async function load(model, signal, id) {
     llama.release?.();  // what forward.js holds of Python's, and its software threads (T93)
     llama.destroy();
     llama = undefined;
-    weightsNow = undefined;
-    outsideNow = undefined;  // the last reference to the old memory: it can go before the next one is made
+    outsideNow = undefined;  // the engine goes; the memory stays for the next model (T96)
     // the engine's closures and the model refer to each other, so only the cycle collector frees the weights
     pyodide.runPython("import gc; gc.collect()");
   }
