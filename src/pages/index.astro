@@ -64,6 +64,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
             <li><a href="https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901">Pyodide LLM の概要</a>: しくみと計測結果のまとめ / how it works and what was measured (in Japanese)</li>
             <li><a href="https://pyodide.org/">Pyodide</a>: Python for the browser, based on WebAssembly</li>
             <li><a href="https://github.com/tairov/llama2.py">llama2.py</a> and <a href="https://github.com/karpathy/llama2.c">llama2.c</a>, which the NumPy engine is a port of</li>
+            <li><a href="?bench=1">Measure this browser</a>: the model of this page with and without the kernels, as a table you can copy or report (<a href="?bench=full">every step</a> takes longer)</li>
           </ul>
           <p>The models and their licenses. The models of the last group are fetched from Hugging Face when you choose one, and converted to int8 in this browser.</p>
           <ul class="sources">
@@ -220,6 +221,14 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   .model .bubble:empty::before { content: "…"; color: var(--muted); }
   .meta { font-size: 0.72rem; color: var(--muted); padding-inline: 6px; }
   .error .bubble { color: #dc2626; }
+  /* T76: the benchmark's table, in the model's bubble */
+  .bench .bubble { white-space: normal; }
+  .bench-title { font-size: 0.8rem; color: var(--muted); margin-bottom: 6px; }
+  .bench table { border-collapse: collapse; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+  .bench th, .bench td { text-align: left; padding: 3px 12px 3px 0; vertical-align: top; }
+  .bench th { font-weight: 500; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .bench td:nth-child(2) { text-align: right; }
+  .bench-actions a { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
   /* The meta line and the status line open into their numbers. Closed they must look exactly as they did before,
      so the disclosure triangle goes away and the summary keeps the colour of the line. */
   .meta > summary, #load > summary { color: inherit; list-style: none; }
@@ -543,6 +552,55 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       element.append(row);
     }
   }
+  // T76: the benchmark's bubble. The table is the Markdown's; the buttons under it are the way to send it on.
+  function showBench(benchRows: any[], environment: any, markdown: string) {
+    const element = message("model bench");
+    const bubble = element.firstElementChild!;
+    bubble.textContent = "";
+    const title = document.createElement("div");
+    title.className = "bench-title";
+    title.textContent = [environment.model, environment.threads !== undefined && `${environment.threads} threads`,
+      environment.pyodide && `Pyodide ${environment.pyodide}`].filter(Boolean).join(" · ");
+    const table = document.createElement("table");
+    const head = table.createTHead().insertRow();
+    for (const text of ["what ran", "tok/s", "backend"]) {
+      const cell = document.createElement("th");
+      cell.textContent = text;
+      head.append(cell);
+    }
+    const body = table.createTBody();
+    for (const row of benchRows) {
+      const line = body.insertRow();
+      for (const text of [row.name, Number.isFinite(row.speed) ? row.speed.toFixed(1) : "?", row.backend ?? ""]) {
+        line.insertCell().textContent = text;
+      }
+    }
+    bubble.append(title, table);
+    const line = document.createElement("div");
+    line.className = "meta bench-actions";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "seed";
+    copy.textContent = "copy as Markdown";
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(markdown);
+        copy.textContent = "copied";
+      } catch {
+        copy.textContent = "could not copy";
+      }
+      setTimeout(() => { copy.textContent = "copy as Markdown"; }, 1500);
+    };
+    // T91 will give the report a template; until then the Markdown itself is the body of the issue
+    const report = document.createElement("a");
+    report.href = `https://github.com/takano32/pyodide-llm/issues/new?title=${encodeURIComponent(`Benchmark: ${environment.model}`)}&body=${encodeURIComponent(markdown)}`;
+    report.target = "_blank";
+    report.rel = "noopener";
+    report.textContent = "report it as an issue";
+    line.append(copy, " · ", report);
+    element.append(line);
+    chat.scrollTop = chat.scrollHeight;
+  }
   function meta(element: Element, text: string, breakdown: string[], seed?: number) {
     const line = document.createElement("details");
     line.className = "meta";
@@ -622,13 +680,14 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       statusText.textContent = data.converting ? `${model.name}: converting, ${Math.floor((data.received / data.total) * 100)} %`
         : `${model.name}: ${(data.received / 1e6).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
     } else if (data.type === "bench") {
-      // T45: the numbers are here; T76 will put them on the screen. Until then the console and window.__bench.
+      // T45 measured, T76 shows it: one bubble with the table, and under it the Markdown to copy or to report
       const environment = environmentOf(navigator, { model: model.name, pyodide: data.pyodide, site: location.origin + location.pathname });
       const markdown = benchMarkdown(data.rows, environment);
       (window as any).__bench = { rows: data.rows, environment, markdown };
       benchmarking = false;
       console.log(markdown);
-      statusText.textContent = `${model.name} · benchmark done, see the console`;
+      showBench(data.rows, environment, markdown);
+      statusText.textContent = `${model.name} · benchmark done`;
       run.disabled = false;
     } else if (data.type === "ready") {
       ready = true;
