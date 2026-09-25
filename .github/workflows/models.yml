@@ -24,6 +24,10 @@ on:
         description: 'load the page again after the answer (T99: the second visit reads what the browser kept)'
         type: boolean
         default: false
+      offline:
+        description: 'T111: open with ?offline=on, then go offline, load again and answer again'
+        type: boolean
+        default: false
       query:
         description: 'more of the page URL for every run, such as bench=1 or hfParts=16&hfConnections=8'
         required: false
@@ -67,6 +71,7 @@ jobs:
           E2E_RESULTS: results.jsonl
           E2E_ARTIFACTS: artifacts
           E2E_TWICE: ${{ inputs.twice && '1' || '' }}
+          E2E_OFFLINE: ${{ inputs.offline && '1' || '' }}
           E2E_QUERY: ${{ inputs.query }}
         run: |
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"

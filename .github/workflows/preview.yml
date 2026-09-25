@@ -5,6 +5,11 @@ name: Preview screenshots
 
 on:
   workflow_dispatch:
+    inputs:
+      offline:
+        description: 'T111: also open the branch with ?offline=on in Chromium, Firefox and WebKit, go offline, load again and answer'
+        type: boolean
+        default: false
 
 jobs:
   screenshots:
@@ -39,6 +44,18 @@ jobs:
 
       - name: Take the screenshots
         run: node tests/screenshots.mjs screenshots
+
+      # a change to the service worker is tried here, on the branch, before it goes out (AGENTS.md)
+      - name: Offline (T111)
+        if: inputs.offline
+        shell: bash
+        run: |
+          npx playwright-core install --with-deps firefox webkit
+          failed=0
+          for browser in chromium firefox webkit; do
+            E2E_OFFLINE=1 node tests/e2e.mjs stories260K "$browser" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+          done
+          exit $failed
 
       - name: Keep them
         if: always()

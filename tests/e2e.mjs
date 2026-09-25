@@ -25,6 +25,9 @@
 //   E2E_TWICE      when set: after the answer, the page is loaded again in the same browser, and the seconds to
 //                  ready then go into the JSON line too (T99: a model converted from Hugging Face must come from what
 //                  this browser kept, the origin private file system or the Cache API).
+//   E2E_OFFLINE    when set (T111): the page is opened with ?offline=on, and after the answer the browser goes
+//                  offline, loads the page again and must answer once more (Pyodide, NumPy and the page from the
+//                  service worker's copies, the model from the worker's cache).
 //   E2E_QUERY      more of the page's URL, such as hfParts=16&hfConnections=8 (T107), added to what the model needs
 //                  and kept in the JSON line.
 import http from "node:http";
@@ -147,7 +150,7 @@ const [repository, revision] = model.startsWith("hf:") ? model.slice(3).split("@
 const query = model === "url" ? `checkpoint=${encodeURIComponent(`${tinyllamas}/stories260K.bin`)}&tokenizer=${encodeURIComponent(`${tinyllamas}/tok512.bin`)}`
   : repository ? `hf=${encodeURIComponent(repository)}${revision ? `&revision=${encodeURIComponent(revision)}` : ""}`
   : `model=${opens ? "stories3_5M" : model}`;
-await page.goto(`${url}?${query}${process.env.E2E_QUERY ? `&${process.env.E2E_QUERY}` : ""}`);
+await page.goto(`${url}?${query}${process.env.E2E_QUERY ? `&${process.env.E2E_QUERY}` : ""}${process.env.E2E_OFFLINE ? "&offline=on" : ""}`);
 // T93: the first visit reloads once, under the service worker that makes the page cross-origin isolated (coi.js):
 // a wait that the reload interrupts starts again on the new page
 const acrossReload = async (wait) => {
@@ -228,10 +231,28 @@ if (process.env.E2E_TWICE && !failures.length) {
   console.log(`again: ready in ${again.readySeconds.toFixed(1)}s (${parts}), ${again.fromCache ? `kept in ${again.keptIn}` : `not kept: ${again.miss}`} (kept before: ${kept.join(", ") || "nothing"}; after: ${again.keptAfter.join(", ") || "nothing"})`);
   if (/^hf[-:]/.test(model) && !again.fromCache) failures.push(`not kept for the second visit: ${reported?.notKept ?? "no reason given"}`);
 }
+let offline = null;
+if (process.env.E2E_OFFLINE && !failures.length) {
+  await page.context().setOffline(true);
+  const reloaded = Date.now();
+  await page.reload({ waitUntil: "load" }).catch((error) => failures.push(`offline, the page did not load: ${error.message}`));
+  if (!failures.length) {
+    await idle();
+    const readyOffline = (Date.now() - reloaded) / 1000;
+    await page.press("#prompt", "Control+Enter");
+    await page.waitForFunction(() => document.querySelectorAll(".model .meta").length || document.querySelector(".error"), null, { timeout: 0 });
+    offline = await page.evaluate(() => ({ meta: document.querySelector(".model .meta summary")?.textContent ?? "",
+      text: document.querySelector(".model .bubble")?.textContent ?? "", error: document.querySelector(".error .bubble")?.textContent ?? "" }));
+    offline.readySeconds = readyOffline;
+    console.log(`offline: ready in ${readyOffline.toFixed(1)}s, ${offline.meta || offline.error}`);
+    if (offline.error || !/tok\/s/.test(offline.meta)) failures.push(`offline: ${offline.error || "no answer"}`);
+  }
+  await page.context().setOffline(false);
+}
 const speed = Number(result.meta.match(/([\d.]+) tok\/s/)?.[1]);
 record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Number.isFinite(speed) ? speed : null,
          backend: result.status, meta: result.meta, failures, isolated: result.isolated, load: reported?.seconds ?? null,
-         heapMB: reported?.heap ? Math.round(reported.heap / 1e6) : null, notKept: reported?.notKept ?? null, again });
+         heapMB: reported?.heap ? Math.round(reported.heap / 1e6) : null, notKept: reported?.notKept ?? null, again, offline });
 if (failures.length) await keepArtifacts(failures.join("; "));
 clearTimeout(watchdog);
 await browser.close();
