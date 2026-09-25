@@ -677,7 +677,9 @@ function refused(url, res) {
   const error = new Error(!repository ? `Could not fetch ${url}: ${res.status}`
     : code === "GatedRepo" ? `${repository} is gated on huggingface.co: its owner lets it be fetched only after a login and an accepted license, which this page cannot do. A copy of it that someone else published openly may work.`
     : code === "RevisionNotFound" ? `${repository} has no revision ${revision} on huggingface.co.`
-    : code === "EntryNotFound" ? `${repository} has no ${file} at ${revision} on huggingface.co.`
+    : code === "EntryNotFound" ? `${repository} has no ${file} at ${revision} on huggingface.co` +
+      // a commit that does not exist is answered so too (only a branch or tag that does not is RevisionNotFound)
+      (/^[0-9a-f]{40}$/.test(revision) ? `, or has no commit ${revision}.` : ".")
     : res.status === 401 || res.status === 404 ? `huggingface.co has no public repository ${repository}: check its name.`
     : `huggingface.co answered ${res.status} for ${file} of ${repository}.`);
   error.status = res.status;
@@ -686,6 +688,9 @@ function refused(url, res) {
 
 async function fetchRange(url, begin, end, signal, arriving) {
   for (let attempt = 0; ; attempt++) {
+    // the bytes of a body that broke come again with the next try: they are taken back (the review of T119)
+    let counted = 0;
+    const counting = arriving && ((count) => { counted += count; arriving(count); });
     try {
       const res = await fetch(url, { headers: { Range: `bytes=${begin}-${end - 1}` }, signal });
       if (res.status !== 206 && res.status !== 200) {
@@ -698,10 +703,11 @@ async function fetchRange(url, begin, end, signal, arriving) {
       if (whole) {
         console.warn(`${url} answered a range request with the whole file`);
       }
-      const bytes = await bodyBetween(res, whole ? begin : 0, whole ? end : end - begin, arriving);
+      const bytes = await bodyBetween(res, whole ? begin : 0, whole ? end : end - begin, counting);
       const total = Number(whole ? res.headers.get("Content-Length") : (res.headers.get("Content-Range") ?? "").split("/")[1]);
       return { bytes, total };
     } catch (error) {
+      if (counted) arriving(-counted);
       if (signal.aborted || attempt === 2 || (error.status >= 400 && error.status < 500)) {
         throw error;
       }
@@ -1006,8 +1012,12 @@ async function convert(model, signal, id) {
       tell();
     };
     if (shards) {
+      // what has arrived counts across the shards, one after another (the review of T119: it went back to 0 with each)
+      let before = 0;
       for (const shard of shards) {
-        await inOrder(at(shard.name), shard.base, shard.base + shard.length, feed, signal, arriving);
+        await inOrder(at(shard.name), shard.base, shard.base + shard.length, feed, signal,
+          (received) => arriving(before + received - shard.base));
+        before += shard.length;
       }
     } else if (remote) {
       await inOrder(at(model.hf.weights), base, size, feed, signal, arriving);
