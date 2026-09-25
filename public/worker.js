@@ -1023,38 +1023,43 @@ self.onmessage = async ({ data }) => {
       }
       benching = true;
       const rows = [];
-      for (const round of data.rounds) {
-        // every round is a load of its own, and it cancels whatever went before, exactly like a change of model
-        loading?.abort();
-        loading = new AbortController();
-        signal = loading.signal;
-        disabled = round.without;
-        const started = performance.now();
-        const previous = unloaded;
-        const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
-        unloaded = current.catch(() => {});
-        await current;
-        const ready = since(started);
-        // a warm-up, then the measured run: the same prompt, greedy, the same number of tokens
-        const settings = { prompt: data.prompt, steps: data.steps, temperature: 0, echo: false };
-        llama.generate.callKwargs(settings.prompt, { steps: 8, temperature: 0 }).return();
-        const begin = performance.now();
-        const pieces = llama.generate.callKwargs(settings.prompt, { steps: settings.steps, temperature: 0, echo: false });
-        let tokens = 0;
-        for (;;) {
-          const { done } = pieces.next();
-          if (done) {
-            break;
+      try {
+        for (const round of data.rounds) {
+          // every round is a load of its own, and it cancels whatever went before, exactly like a change of model
+          loading?.abort();
+          loading = new AbortController();
+          signal = loading.signal;
+          disabled = round.without;
+          const started = performance.now();
+          const previous = unloaded;
+          const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+          unloaded = current.catch(() => {});
+          await current;
+          const ready = since(started);
+          // a warm-up, then the measured run: the same prompt, greedy, the same number of tokens
+          const settings = { prompt: data.prompt, steps: data.steps, temperature: 0, echo: false };
+          llama.generate.callKwargs(settings.prompt, { steps: 8, temperature: 0 }).return();
+          const begin = performance.now();
+          const pieces = llama.generate.callKwargs(settings.prompt, { steps: settings.steps, temperature: 0, echo: false });
+          let tokens = 0;
+          for (;;) {
+            const { done } = pieces.next();
+            if (done) {
+              break;
+            }
+            tokens += 1;
           }
-          tokens += 1;
+          pieces.destroy();
+          const seconds = (performance.now() - begin) / 1000;
+          rows.push({ name: round.name, without: round.without, tokens, speed: tokens / seconds,
+                      backend: llama.backend, seconds: ready });
         }
-        pieces.destroy();
-        const seconds = (performance.now() - begin) / 1000;
-        rows.push({ name: round.name, without: round.without, tokens, speed: tokens / seconds,
-                    backend: llama.backend, seconds: ready });
+      } finally {
+        // also when a round failed or a change of model cancelled it (the review of T76): the next model must not
+        // load with a round's switches off while the panel shows them on
+        disabled = pageSwitches;  // not self.location.search: that is the worker's own URL (?v=hash)
+        benching = false;
       }
-      disabled = pageSwitches;  // not self.location.search: that is the worker's own URL (?v=hash)
-      benching = false;
       postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version });
     } else if (data.type === "generate") {
       if (!llama) {

@@ -370,6 +370,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   // ?bench=1 measures this model with and without the kernels, ?bench=full every step of T52 (T45)
   const benchmark = parameters.get("bench");
   let benchmarking = false;  // the rounds are running: the run button stays off (the worker is busy loading)
+  let benchAsked = false;  // the benchmark is asked for once a page, whatever becomes of it
   // T93: the number of threads. ?threads=N fixes it (for measuring); else the worker finds it for this device and
   // model and this page remembers the answer, so that the next visit starts with it.
   const fixedThreads = Math.max(0, Math.floor(Number(parameters.get("threads")) || 0));
@@ -754,9 +755,9 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       fromTemplate = typeof data.template === "string" ? data.template : undefined;
       // once: every round of the benchmark loads the model again and reports ready too (T96: the second request
       // ended the first round's threads under its coordinator, which then waited for ever)
-      if (benchmark && !benchmarking && !(window as any).__bench) {
+      if (benchmark && !benchAsked) {
         statusText.textContent = `${model.name} · benchmarking...`;
-        benchmarking = true;
+        benchAsked = benchmarking = true;
         worker.postMessage({ type: "bench", model: weighed(model), load: loads,
           rounds: benchmark === "full" ? FULL_ROUNDS : ROUNDS, prompt: model.prompt || "Once upon a time", steps: 64 });
       }
@@ -808,6 +809,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     } else if (data.type === "error") {
       // the console keeps where it happened, for a failed run's record (T82's artifacts, T96)
       console.error(`worker error (weights memory ${data.weights} bytes):`, data.stack);
+      benchmarking = false;  // a round that failed ends the benchmark: the run button must not stay off (the review of T76)
       // Pyodide that never finishes loading under the service worker (iOS Safari, 2026-09-25: its NumPy step): once,
       // the page goes on without the worker, which is the one-core version the site runs on anyway (policy 6)
       let fallback = false;
@@ -996,6 +998,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       return;
     }
     model = chosen;
+    benchmarking = false;  // the worker cancels the benchmark's round for the new model, and never reports it
     show(model);
     ready = false;
     run.disabled = true;
