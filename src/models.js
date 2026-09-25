@@ -38,7 +38,9 @@ const llmJp = { stop_tokens: [1, 2, 7] };
 const APACHE = "Apache License 2.0";
 const MIT = "MIT License";
 const LLAMA_32 = "Llama 3.2 Community License";
-const APACHE_GEMMA = "Apache License 2.0, and the Gemma Terms of Use for what it learned from Gemma's data";
+// TinySwallow's model card: "derived from Qwen (Apache 2.0) and trained on Gemma data (Gemma Terms, Prohibited Use).
+// Use (including commercial) is permitted if you comply with both licenses/policies above."
+const APACHE_GEMMA = "Apache License 2.0 (derived from Qwen), and the Gemma Terms of Use and Prohibited Use Policy (trained on Gemma data)";
 export const LICENSES = {
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
