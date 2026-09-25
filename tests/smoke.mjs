@@ -171,6 +171,24 @@ for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensor
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int8", positions, numpy_int8)
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int8", positions, kernel_int8, quantize_rows=quantize_rows)
     assert numpy_int8 == kernel_int8, f"the kernels' quantizer changed the int8 {arch} checkpoint"
+# T98: the six bits too: quantize6_x is quantize6() and pack6() to the byte (a group of zeros, ties that round to
+# even, the largest value, and a whole conversion)
+ties = values.copy()
+ties[5, :32] = np.arange(32, dtype=np.float32) - 15.5  # halves: with the largest 31 the scale is 1, and they all tie
+ties[5, 31] = 31.0
+assert np.array_equal(np.rint(ties[5, :31]), np.rint(ties[5, :31] / 1.0)) and np.any(np.rint(ties[5, :31]) % 2 == 0)
+packed, scales = quantize_rows(values, six=True)
+sixes, quarter = llama2_numpy.quantize6(values)
+assert np.array_equal(packed.reshape(-1), llama2_numpy.pack6(sixes).reshape(-1)) and np.array_equal(scales, quarter), "quantize6_x is not quantize6()"
+packed, scales = quantize_rows(ties, six=True)
+sixes, quarter = llama2_numpy.quantize6(ties)
+assert np.array_equal(packed.reshape(-1), llama2_numpy.pack6(sixes).reshape(-1)) and np.array_equal(scales, quarter), "quantize6_x rounds otherwise"
+for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensors, neox_config, "neox")):
+    header = llama2_convert.checkpoint_header(llama2_convert.normalize(config_of), llama2_convert.Arrays(tensors_of), positions)
+    numpy_six, kernel_six = (bytearray(llama2_convert.checkpoint_size(header, "int6", False, arch)) for _ in range(2))
+    llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int6", positions, numpy_six)
+    llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int6", positions, kernel_six, quantize_rows=quantize_rows)
+    assert numpy_six == kernel_six, f"the kernels' quantizer changed the int6 {arch} checkpoint"
 # T110: float32 to float16 as NumPy rounds it, and attention over a float16 cache the same to the bit as over the
 # float32 values it stands for (every head alone, and heads in two ranges)
 kernel = llama2_numpy.load_kernels("simdkernel.so")

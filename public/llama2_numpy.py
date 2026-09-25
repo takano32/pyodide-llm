@@ -356,7 +356,7 @@ def load_kernels(path, without_relaxed=False):
 
         lib = ctypes.CDLL(path)
         i32, p = ctypes.c_int32, ctypes.c_void_p
-        signatures = dict(matmul_f32=[p, p, p, i32, i32, i32], quantize_x=[p, p, p, i32, i32],
+        signatures = dict(matmul_f32=[p, p, p, i32, i32, i32], quantize_x=[p, p, p, i32, i32], quantize6_x=[p, p, p, i32],
                           matmul_q8=[p, p, p, p, p, i32, i32, i32], rmsnorm=[p, p, p, i32], rope=[p, p, p, i32, i32, i32],
                           attention=[p, p, p, p, p, i32, i32, i32, i32, i32, i32],
                           attention_f16=[p, p, p, p, p, i32, i32, i32, i32, i32, i32], to_f16=[p, p, i32],
@@ -386,14 +386,21 @@ def load_kernels(path, without_relaxed=False):
 def kernel_quantizer(path):
     """llama2_convert.quantize() on the SIMD kernels (T89): int8 values in groups of 32 and one float32 scale per
     group, the same bytes as NumPy's, six times faster (quantize_x with no bias: the activations' quantizer is the
-    same computation). For the converter's quantize_rows; None where the kernels cannot be loaded."""
+    same computation). For the converter's quantize_rows; None where the kernels cannot be loaded.
+    six=True: quantize6() and pack6() in one pass on the kernel quantize6_x (T98), the same bytes: the packed groups
+    (24 bytes each) and their scales."""
     kernels = load_kernels(path) if path else None
     if not kernels:
         return None
-    quantize_x = kernels["quantize_x"]
+    quantize_x, quantize6_x = kernels["quantize_x"], kernels["quantize6_x"]
 
-    def quantize_rows(values):
+    def quantize_rows(values, six=False):
         values = np.ascontiguousarray(values, dtype=np.float32)
+        if six:
+            packed = np.empty(values.size // 32 * 24, dtype=np.uint8)
+            scales = np.empty(values.size // 32, dtype=np.float32)
+            quantize6_x(packed.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size)
+            return packed.reshape(-1, 24), scales
         quantized = np.empty(values.size, dtype=np.int8)
         scales = np.empty(values.size // 32, dtype=np.float32)
         quantize_x(quantized.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size, 0)

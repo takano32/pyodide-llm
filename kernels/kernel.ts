@@ -50,6 +50,19 @@ export function matmul_f32(xout: usize, x: usize, w: usize, n: i32, r0: i32, r1:
   }
 }
 
+// the largest |value| of a group of 32, lane by lane as the scalar comparisons were (see quantize_x)
+// @ts-ignore: decorator
+@inline function groupMax(v0: v128, v1: v128, v2: v128, v3: v128, v4: v128, v5: v128, v6: v128, v7: v128): f32 {
+  const m = f32x4.max(f32x4.max(f32x4.max(f32x4.abs(v0), f32x4.abs(v1)), f32x4.max(f32x4.abs(v2), f32x4.abs(v3))),
+                      f32x4.max(f32x4.max(f32x4.abs(v4), f32x4.abs(v5)), f32x4.max(f32x4.abs(v6), f32x4.abs(v7))));
+  let amax = f32x4.extract_lane(m, 0);
+  const m1 = f32x4.extract_lane(m, 1), m2 = f32x4.extract_lane(m, 2), m3 = f32x4.extract_lane(m, 3);
+  if (m1 > amax) amax = m1;
+  if (m2 > amax) amax = m2;
+  if (m3 > amax) amax = m3;
+  return amax;
+}
+
 // bias = 0: signed int8 in [-127,127];  bias = 64: 7-bit unsigned, real value = (q - 64) * scale (for kernel_relaxed.ts)
 export function quantize_x(xq: usize, xs: usize, x: usize, n: i32, bias: i32): void {
   // SIMD, 32 values (one group) at a time. Every step is the scalar one lane by lane (abs, max, the division, the
@@ -62,13 +75,7 @@ export function quantize_x(xq: usize, xs: usize, x: usize, n: i32, bias: i32): v
     const p = x + (<usize>g << 2);
     const v0 = v128.load(p), v1 = v128.load(p, 16), v2 = v128.load(p, 32), v3 = v128.load(p, 48);
     const v4 = v128.load(p, 64), v5 = v128.load(p, 80), v6 = v128.load(p, 96), v7 = v128.load(p, 112);
-    const m = f32x4.max(f32x4.max(f32x4.max(f32x4.abs(v0), f32x4.abs(v1)), f32x4.max(f32x4.abs(v2), f32x4.abs(v3))),
-                        f32x4.max(f32x4.max(f32x4.abs(v4), f32x4.abs(v5)), f32x4.max(f32x4.abs(v6), f32x4.abs(v7))));
-    let amax = f32x4.extract_lane(m, 0);
-    const m1 = f32x4.extract_lane(m, 1), m2 = f32x4.extract_lane(m, 2), m3 = f32x4.extract_lane(m, 3);
-    if (m1 > amax) amax = m1;
-    if (m2 > amax) amax = m2;
-    if (m3 > amax) amax = m3;
+    const amax = groupMax(v0, v1, v2, v3, v4, v5, v6, v7);
     const scale: f32 = amax / qmax;
     store<f32>(xs + (<usize>(g / GS) << 2), scale);
     const inv = f32x4.splat(scale > 0 ? <f32>1.0 / scale : 0);
@@ -83,6 +90,37 @@ export function quantize_x(xq: usize, xs: usize, x: usize, n: i32, bias: i32): v
     const out = xq + <usize>g;
     v128.store(out, i8x16.narrow_i16x8_s(i16x8.narrow_i32x4_s(q0, q1), i16x8.narrow_i32x4_s(q2, q3)));
     v128.store(out, i8x16.narrow_i16x8_s(i16x8.narrow_i32x4_s(q4, q5), i16x8.narrow_i32x4_s(q6, q7)), 16);
+  }
+}
+
+// T98: the converter's six bits (llama2_numpy.quantize6 and pack6 in one pass, the same bytes): per group of 32,
+// scale = the largest |value| / 31, v = round(value / scale) in -32..31, stored as the int8 4 v packed into 24 bytes
+// (six.ts reads them back) and the scale as scale / 4 (xs).
+// round(value / scale), clipped to six bits (-32..31), as NumPy's rint and clip
+// @ts-ignore: decorator
+@inline function six(v: v128, inv: v128): v128 {
+  return i32x4.max_s(i32x4.min_s(i32x4.trunc_sat_f32x4_s(f32x4.nearest(f32x4.mul(v, inv))), i32x4.splat(31)), i32x4.splat(-32));
+}
+export function quantize6_x(out: usize, xs: usize, x: usize, n: i32): void {
+  const low6 = i8x16.splat(63);
+  for (let g = 0; g < n; g += GS) {
+    const p = x + (<usize>g << 2);
+    const v0 = v128.load(p), v1 = v128.load(p, 16), v2 = v128.load(p, 32), v3 = v128.load(p, 48);
+    const v4 = v128.load(p, 64), v5 = v128.load(p, 80), v6 = v128.load(p, 96), v7 = v128.load(p, 112);
+    const scale: f32 = groupMax(v0, v1, v2, v3, v4, v5, v6, v7) / <f32>31.0;
+    store<f32>(xs + (<usize>(g / GS) << 2), scale * <f32>0.25);
+    const inv = f32x4.splat(scale > 0 ? <f32>1.0 / scale : 0);
+    // the six bits of values 0..15 and 16..31
+    const first = v128.and(i8x16.narrow_i16x8_s(i16x8.narrow_i32x4_s(six(v0, inv), six(v1, inv)),
+                                                i16x8.narrow_i32x4_s(six(v2, inv), six(v3, inv))), low6);
+    const second = v128.and(i8x16.narrow_i16x8_s(i16x8.narrow_i32x4_s(six(v4, inv), six(v5, inv)),
+                                                 i16x8.narrow_i32x4_s(six(v6, inv), six(v7, inv))), low6);
+    const at = out + <usize>(g / GS) * 24;
+    v128.store(at, v128.or(v128.and(first, i8x16.splat(15)), i8x16.shl(second, 4)));
+    // top two bits: lane k of a holds those of values k and k + 16; byte k takes lanes k and k + 8 of a
+    const a = v128.or(i8x16.shr_u(first, 4), i8x16.shl(i8x16.shr_u(second, 4), 4));
+    const b = i8x16.shuffle(a, a, 8, 9, 10, 11, 12, 13, 14, 15, 8, 9, 10, 11, 12, 13, 14, 15);
+    v128.store64_lane(at + 16, v128.or(a, i8x16.shl(b, 2)), 0);
   }
 }
 

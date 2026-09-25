@@ -140,8 +140,13 @@ class Writer:
         if self.dtype not in QUANTIZED:
             self.put(offset + first * np.dtype(self.dtype).itemsize, np.asarray(values).astype(self.dtype, copy=False))
         elif is_matrix and self.dtype == "int6":
-            quantized, scales = quantize6(np.asarray(values, dtype=np.float32).reshape(-1, shape[-1]))
-            self.put(offset + first * 3 // 4, pack6(quantized))
+            rows = np.asarray(values, dtype=np.float32).reshape(-1, shape[-1])
+            if self.quantize_rows is not None:
+                packed, scales = self.quantize_rows(rows, six=True)  # the same bytes on the kernel (T98)
+            else:
+                quantized, scales = quantize6(rows)
+                packed = pack6(quantized)
+            self.put(offset + first * 3 // 4, packed)
             self.put(offset + int(np.prod(shape)) * 3 // 4 + 4 * (first // 32), scales)
         elif is_matrix:
             fast = self.quantize_rows is not None and shape[-1] % 32 == 0
