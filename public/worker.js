@@ -438,7 +438,16 @@ async function fetchRange(url, begin, end, signal) {
       if (res.status !== 206 && res.status !== 200) {
         throw new Error(`Could not fetch ${url}: ${res.status}`);
       }
-      return { bytes: new Uint8Array(await res.arrayBuffer()), total: Number((res.headers.get("Content-Range") ?? "").split("/")[1]) };
+      let bytes = new Uint8Array(await res.arrayBuffer());
+      let total = Number((res.headers.get("Content-Range") ?? "").split("/")[1]);
+      if (res.status === 200) {
+        // the server ignored the range and sent the whole file: what was asked for is cut out of it (slow, but
+        // right), and the console says so (T112: a browser whose stack does this is one to know about)
+        console.warn(`${url} answered a range request with the whole file (${bytes.length} bytes)`);
+        total = bytes.length;
+        bytes = bytes.subarray(begin, end);
+      }
+      return { bytes, total };
     } catch (error) {
       if (signal.aborted || attempt === 2) {
         throw error;
