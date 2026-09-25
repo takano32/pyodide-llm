@@ -32,6 +32,27 @@ const modelOf = (id) => MODELS.find((m) => m.id === id) ?? { name: path.basename
   tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) };
 const file = (f) => (path.isAbsolute(f) ? f : root + f);
 
+// T98: six_sums (the corrections of int6 weights for matmul_q6r) against the sums of the int8 values the layout of
+// llama2_numpy.pack6 holds, taken apart byte by byte here; the products rounded as forward.js rounds int8's
+{
+  const memory = new WebAssembly.Memory({ initial: 4 });
+  const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/simdkernel_plain.wasm`)), { env: { memory } }).exports;
+  const U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer);
+  const groups = 2000, w = 4096, scales = w + groups * 24, out = scales + groups * 4;
+  for (let i = 0; i < groups * 24; i++) U[w + i] = (Math.imul(i, 2654435761) >>> 7) & 255;
+  for (let g = 0; g < groups; g++) F[scales / 4 + g] = Math.fround(0.001 + g * 1.37e-3);
+  k.six_sums(out, w, scales, groups);
+  for (let g = 0; g < groups; g++) {
+    let sum = 0;
+    for (let j = 0; j < 32; j++) {
+      const at = w + g * 24, low = j < 16 ? U[at + j] & 15 : U[at + j - 16] >> 4;
+      const top = (U[at + 16 + (j % 8)] >> (2 * ((j / 8) | 0))) & 3;
+      sum += (((low | (top << 4)) << 2) << 24) >> 24;
+    }
+    if (Math.fround(F[scales / 4 + g] * sum) !== F[out / 4 + g]) throw new Error(`six_sums differs at group ${g}`);
+  }
+}
+
 const { pyodide: py } = await pyodideWithEngine({ shared: !args.includes("--plain") });
 py.runPython("import time, gc, math, numpy as np\nfrom llama2_numpy import Llama");
 let failed = false;
