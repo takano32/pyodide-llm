@@ -479,9 +479,9 @@ def check_tokenizer(tokenizer, header):
                          f"{vocab_size}: they do not belong together.")
 
 
-# T108: how many tokens of a prompt forward_many() takes at once (forward.js goes BATCH at a time within it). Larger
-# blocks leave the page's worker less often: 64 keeps a block under a second on the models of the list.
-PROMPT_BLOCK = 64
+# T108: how many tokens of a prompt forward_many() takes at once: forward.js's BATCH. The worker cannot answer a
+# message (stop, a new model) while one call runs, and a block of 16 keeps that under a second on a 1.5B model.
+PROMPT_BLOCK = 16
 
 
 class Llama:
