@@ -30,6 +30,9 @@
 //                  service worker's copies, the model from the worker's cache).
 //   E2E_QUERY      more of the page's URL, such as hfParts=16&hfConnections=8 (T107), added to what the model needs
 //                  and kept in the JSON line.
+//   E2E_THEN       model ids of the list, separated by spaces: after the answer they are chosen one after another
+//                  in the same page, as a visitor changes models, and each must answer too (the worker keeps one
+//                  memory from model to model, T96). They write what the page sets for them, not 256 tokens.
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -210,6 +213,29 @@ if (expected[model] && !result.text.startsWith(expected[model])) failures.push(`
 console.log(`${engine} ${browserVersion}, ${model}: ready in ${readySeconds.toFixed(1)}s, ${result.meta}`);
 console.log(`status: ${result.status}${result.isolated ? "" : " (not cross-origin isolated)"}`);
 console.log(result.text.slice(0, 160).replace(/\n/g, " / "));
+const then = [];
+for (const next of (process.env.E2E_THEN ?? "").split(/\s+/).filter(Boolean)) {
+  if (failures.length) break;
+  const switched = Date.now();
+  await page.evaluate(() => { window.__ready = null; });
+  await page.selectOption("#model", next);
+  await page.waitForFunction(() => window.__ready || document.querySelector(".error"), null, { timeout: 0 });
+  await idle();
+  const answered = await page.evaluate(() => document.querySelectorAll(".model .meta").length);
+  const readySeconds = (Date.now() - switched) / 1000;
+  await page.press("#prompt", "Control+Enter");
+  await page.waitForFunction((count) => document.querySelectorAll(".model .meta").length > count || document.querySelector(".error"), answered, { timeout: 0 });
+  const last = await page.evaluate(() => {
+    const final = (selector) => [...document.querySelectorAll(selector)].pop()?.textContent ?? "";
+    return { meta: final(".model .meta summary"), text: final(".model .bubble"), error: final(".error .bubble"),
+             status: document.getElementById("status-text")?.textContent ?? "", heap: window.__ready?.heap ?? null };
+  });
+  then.push({ model: next, readySeconds, ...last });
+  console.log(`then ${next}: ready in ${readySeconds.toFixed(1)}s, ${last.meta || last.error}`);
+  console.log(`status: ${last.status}`);
+  console.log(last.text.slice(0, 160).replace(/\n/g, " / "));
+  if (last.error || !/tok\/s/.test(last.meta)) failures.push(`then ${next}: ${last.error || "no answer"}`);
+}
 let again = null;
 if (process.env.E2E_TWICE && !failures.length) {
   // what the browser holds, as the page lists it (public/kept.js)
@@ -254,7 +280,8 @@ if (process.env.E2E_OFFLINE && !failures.length) {
 const speed = Number(result.meta.match(/([\d.]+) tok\/s/)?.[1]);
 record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Number.isFinite(speed) ? speed : null,
          backend: result.status, meta: result.meta, failures, isolated: result.isolated, load: reported?.seconds ?? null,
-         heapMB: reported?.heap ? Math.round(reported.heap / 1e6) : null, notKept: reported?.notKept ?? null, again, offline });
+         heapMB: reported?.heap ? Math.round(reported.heap / 1e6) : null, notKept: reported?.notKept ?? null, again, offline,
+         ...(then.length ? { then } : {}) });
 if (failures.length) await keepArtifacts(failures.join("; "));
 clearTimeout(watchdog);
 await browser.close();

@@ -31,6 +31,9 @@ on:
       query:
         description: 'more of the page URL for every run, such as bench=1 or hfParts=16&hfConnections=8'
         required: false
+      then:
+        description: 'model ids chosen after the answer in the same page, one after another (a visitor changing models)'
+        required: false
       bench:
         description: 'run tests/bench-browser.mjs (?bench=1, the console kept) instead of tests/e2e.mjs'
         type: boolean
@@ -73,6 +76,7 @@ jobs:
           E2E_TWICE: ${{ inputs.twice && '1' || '' }}
           E2E_OFFLINE: ${{ inputs.offline && '1' || '' }}
           E2E_QUERY: ${{ inputs.query }}
+          E2E_THEN: ${{ inputs.then }}
         run: |
           node -e 'const os = require("os"); console.log(`${os.cpus()[0].model}, ${os.cpus().length} threads, ${Math.round(os.totalmem() / 1e9)} GB, ${os.arch()}`)' | tee -a "$GITHUB_STEP_SUMMARY"
           failed=0
