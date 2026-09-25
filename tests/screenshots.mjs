@@ -45,9 +45,16 @@ const acrossReload = async (wait) => {
 };
 const shot = (page, name, width) => page.screenshot({ path: path.join(directory, `${name}-${width}.png`) });
 
-for (const [width, viewport] of Object.entries(widths)) {
-  const page = await browser.newPage({ viewport });
+// Every scene in a context of its own: a second document in the same tab could not allocate its WebAssembly memory
+// (T96's failure, seen here first with the benchmark as the second document).
+const fresh = async (viewport) => {
+  const context = await browser.newContext({ viewport });
+  const page = await context.newPage();
   page.on("dialog", (dialog) => dialog.accept());
+  return { context, page };
+};
+for (const [width, viewport] of Object.entries(widths)) {
+  let { context, page } = await fresh(viewport);
   const ready = () => acrossReload(() => page.waitForFunction(() => document.getElementById("run")?.disabled === false || document.querySelector(".error"), null, { timeout: 600000 }));
 
   // 1. the page, the smallest model ready
@@ -70,17 +77,21 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.keyboard.press("Escape");
 
   // 4. the benchmark's bubble (T76)
+  await context.close();
+  ({ context, page } = await fresh(viewport));
   await page.goto(`${site}?model=stories260K&bench=1`);
   await acrossReload(() => page.waitForFunction(() => window.__bench || document.querySelector(".error"), null, { timeout: 600000 }));
   await page.waitForTimeout(300);
   await shot(page, "bench", width);
 
   // 5. a repository the converter refuses, in words (T88)
+  await context.close();
+  ({ context, page } = await fresh(viewport));
   await page.goto(`${site}?hf=microsoft/phi-1_5`);
   await acrossReload(() => page.waitForFunction(() => document.querySelector(".error"), null, { timeout: 600000 }));
   await page.waitForTimeout(300);
   await shot(page, "refused", width);
-  await page.close();
+  await context.close();
 }
 await browser.close();
 server?.close();
