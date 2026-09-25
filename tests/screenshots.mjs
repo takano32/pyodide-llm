@@ -61,6 +61,15 @@ for (const [width, viewport] of Object.entries(widths)) {
   await page.goto(`${site}?model=stories260K`);
   await ready();
   await shot(page, "home", width);
+  // T128: the order of the list. A browser draws an open <select> outside the page, where a screenshot does not
+  // reach, so the select is shown as a list box of every entry (the order is the same; its look is not the phone's)
+  await page.evaluate(() => {
+    const select = document.getElementById("model");
+    select.size = select.querySelectorAll("option, optgroup").length;
+  });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(directory, `list-${width}.png`), fullPage: true });
+  await page.evaluate(() => { document.getElementById("model").size = 0; });
 
   // 2. the settings sheet, the engine's switches open (T75)
   await page.click("#settings-open");

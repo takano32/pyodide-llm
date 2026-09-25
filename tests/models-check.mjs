@@ -2,7 +2,7 @@
 //
 //   node tests/models-check.mjs
 import assert from "node:assert/strict";
-import { LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.js";
+import { GROUPS, LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.js";
 
 for (const entry of MODELS) {
   const repo = sourceOf(entry);
@@ -58,4 +58,17 @@ assert.match(memoryWarning(three, 4), /this device has 4 GB:/);
 // T132: a template's {date} is the visitor's day, and {prompt} what was typed (a {date} typed stays as it is)
 assert.equal(filled("Current date: {date}\n{prompt}", "a {date} b", new Date(2026, 8, 6)), "Current date: 2026-09-06\na {date} b");
 assert.equal(filled(byId("hf-llm-jp-4-8b-instruct").template, "x").includes("{"), false);
+// T128: the list's order (the owner's): the groups as GROUPS has them, and within each the ones that write Japanese
+// from light to heavy, then the English-only ones from light to heavy. The default is the first
+assert.equal(MODELS[0].id, "tiny-lm", "the default comes first");
+assert.equal(new Set(MODELS.map(({ id }) => id)).size, MODELS.length, "no model twice");
+const groupOf = (entry) => Object.keys(GROUPS).indexOf(entry.group ?? "site");
+MODELS.slice(1).forEach((entry, i) => {
+  const before = MODELS[i];
+  const key = (m) => [groupOf(m), writesJapanese(m) ? 0 : 1, modelBytes(m)];
+  const [a, b] = [key(before), key(entry)];
+  assert.ok(a[0] < b[0] || (a[0] === b[0] && (a[1] < b[1] || (a[1] === b[1] && a[2] <= b[2]))),
+    `${before.id} comes before ${entry.id}, out of the order of T128`);
+});
+assert.ok(writesJapanese({ note: "translates 日本語 ⇄ English" }) && !writesJapanese({ note: "English" }));
 console.log("ok");
