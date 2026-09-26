@@ -139,3 +139,12 @@ def test_names_without_a_hugging_face_counterpart_do_not_raise():
     assert gguf_check.hugging_face_name("rope_freqs.weight") is None
     assert gguf_check.hugging_face_name("blk.0.attn_q.weight") == "model.layers.0.self_attn.q_proj.weight"
     assert math.isfinite(gguf_check.ROW_LINE)
+
+
+def test_q_and_k_compared_in_blocks_are_read_turned(tmp_path, capsys, monkeypatch):
+    """Llama 3.2 3B's q is 3072 x 3072, past BLOCK: compared a block at a time, it was read in Hugging Face's order
+    and a GGUF turned the way llama.cpp turns it was 1.4 off (the first run of stage 2)."""
+    monkeypatch.setattr(gguf_check, "BLOCK", 256)  # q and k of 32 x 32 go by blocks of 8 rows, one head each
+    assert gguf_check.check_tensors(*model(tmp_path))
+    result = summary(capsys)
+    assert result["orders"] == ["turned (llama2.c order)"] and result["worst"] < 0.02

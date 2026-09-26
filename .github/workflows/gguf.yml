@@ -160,6 +160,7 @@ jobs:
           status=0
           python3 tests/gguf_check.py tensors /mnt/gguf/model.gguf /mnt/gguf --original-vocabulary > check.md || status=$?
           { echo; tail -n 2 check.md; echo; grep -v '^| blk\.' check.md; } >> "$GITHUB_STEP_SUMMARY"
+          grep -v '^| blk\.' check.md | head -n -1
           echo "gguf_check ${{ matrix.id }}: $(tail -n 1 check.md)"
           echo "gguf_check.py tensors: exit $status" | tee -a "$GITHUB_STEP_SUMMARY"
           exit $status

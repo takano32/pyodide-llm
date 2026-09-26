@@ -295,16 +295,35 @@ def row_errors(values, original, floor):
     return difference / np.maximum(np.linalg.norm(original.reshape(len(original), -1).astype(np.float64), axis=1), floor)
 
 
-def large(info, data, base, hf, target, shape, quantize, by_row):
+def past_the_line(each, norms):
+    """(how many rows are past ROW_LINE, the worst error, its row, and up to 16 of the rows past the line as
+    [row, error, the row's norm over the median]: a row of nearly nothing reads apart from a row of other values)."""
+    median = max(float(np.median(norms)), 1e-30)
+    bad = np.flatnonzero(each > ROW_LINE)
+    return (len(bad), float(each.max()), int(each.argmax()),
+            [[int(i), round(float(each[i]), 4), float(f"{norms[i] / median:.3g}")] for i in bad[:16]])
+
+
+def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0):
     """relative error and int8 equality of a large matrix, a block of rows at a time; by_row: also the error of
-    each row, returned as (the rows past ROW_LINE, the worst row's error, its index)."""
+    each row (past_the_line()). head_rows: q or k, whose heads of head_rows rows the GGUF may hold turned: the
+    blocks are whole heads, and the order is the one of the first block (the order found is returned too)."""
     rows = max(1, BLOCK // math.prod(shape[1:]))
+    if head_rows:
+        rows = max(head_rows, rows // head_rows * head_rows)
     difference = total = same = count = 0.0
     norms, errors = [], []
+    order = ""
     for first in range(0, shape[0], rows):
         last = min(first + rows, shape[0])
         values, raw = tensor(info, data, base, first, last)
         original = hf.rows(target, first, last).reshape(last - first, *shape[1:]).astype(np.float32)
+        if head_rows:
+            turn = turned(original, (last - first) // head_rows)
+            if not order:
+                order = "turned (llama2.c order)" if relative(values, turn) < relative(values, original) else "as Hugging Face"
+            if order.startswith("turned"):
+                original = turn
         difference += float(((values - original) ** 2).sum())
         total += float((original ** 2).sum())
         if by_row:
@@ -318,9 +337,8 @@ def large(info, data, base, hf, target, shape, quantize, by_row):
     rowwise = None
     if by_row:
         norms, errors = np.concatenate(norms), np.concatenate(errors)
-        each = errors / np.maximum(norms, 1e-3 * float(np.median(norms)))
-        rowwise = (int((each > ROW_LINE).sum()), float(each.max()), int(each.argmax()))
-    return math.sqrt(difference / max(total, 1e-30)), f"{same / count * 100:.2f}%" if count else "", rowwise
+        rowwise = past_the_line(errors / np.maximum(norms, 1e-3 * float(np.median(norms))), norms)
+    return math.sqrt(difference / max(total, 1e-30)), f"{same / count * 100:.2f}%" if count else "", rowwise, order
 
 
 def config_pairs(config):
@@ -403,7 +421,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
     heads, kv_heads = config["num_attention_heads"], config.get("num_key_value_heads", config["num_attention_heads"])
     print("\n| tensor | type | shape | relative error | order | int8 equal to quantize() | rows past "
           f"{ROW_LINE} (worst) |\n|---|---|---|---:|---|---:|---|")
-    worst, orders, rope_difference, bad_rows = 0.0, set(), None, {}
+    worst, orders, rope_difference, bad_rows, row_detail = 0.0, set(), None, {}, {}
     for name, info in infos.items():
         if name == "rope_freqs.weight":
             values, _ = tensor(info, data, base)
@@ -425,8 +443,14 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
         if math.prod(shape) > BLOCK and len(shape) > 1 and tuple(info["shape"]) == shape:
             # a large matrix (Qwen's embedding is 545 MB as float32) is compared a block of rows at a time: two
             # whole copies side by side are what took this machine down
-            error, equal, rowwise = large(info, data, base, hf, target, shape, quantize, by_row)
-            order = ""
+            # (q and k of an 8B are 16.8M values: before T136's stage 2 they were compared here as Hugging Face holds
+            # them, and a turned GGUF read as 1.4 off)
+            head_rows = 0
+            if name.endswith(("attn_q.weight", "attn_k.weight")):
+                head_rows = shape[0] // (heads if "attn_q" in name else kv_heads)
+            error, equal, rowwise, order = large(info, data, base, hf, target, shape, quantize, by_row, head_rows)
+            if order:
+                orders.add(order)
         else:
             values, raw = tensor(info, data, base)
             original = hf.rows(target, 0, shape[0]).reshape(shape).astype(np.float32)
@@ -445,19 +469,19 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
                 equal = f"{(ours.reshape(-1) == raw[0].reshape(-1)).mean() * 100:.2f}%"
             if by_row and values.shape == original.shape:
                 norms = np.linalg.norm(original.reshape(len(original), -1).astype(np.float64), axis=1)
-                each = row_errors(values, original, 1e-3 * float(np.median(norms)))
-                rowwise = (int((each > ROW_LINE).sum()), float(each.max()), int(each.argmax()))
+                rowwise = past_the_line(row_errors(values, original, 1e-3 * float(np.median(norms))), norms)
         worst = max(worst, error) if not math.isnan(error) else math.inf
         rows_note = ""
         if rowwise is not None:
             bad_rows[name] = rowwise[0]
+            row_detail[name] = rowwise[3]
             mismatched += rowwise[0]
             rows_note = f"{rowwise[0]} ({rowwise[1]:.4f} at row {rowwise[2]}){' **differs**' if rowwise[0] else ''}"
         print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | {error:.5f} | {order} | {equal} | {rows_note} |")
     ok = mismatched == 0 and worst < 0.02
     print(f"\nworst relative error {worst:.5f}; q and k are stored {' and '.join(sorted(orders)) or '(none)'}; "
           f"{mismatched} mismatches")
-    print(json.dumps({"worst": worst, "mismatches": mismatched, "rows": bad_rows, "orders": sorted(orders),
+    print(json.dumps({"worst": worst, "mismatches": mismatched, "rows": bad_rows, "bad_rows": row_detail, "orders": sorted(orders),
                       "rope_freqs_diff": rope_difference, "vocab_diffs": vocab_diffs, "ok": ok}))
     return ok
 
