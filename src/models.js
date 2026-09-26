@@ -44,9 +44,14 @@ const HARMONY = "<|start|> system<|message|> You are LLM-jp-4, a large language 
 // that space. v0.3's [INST] and [/INST] are tokens of their own (3 and 4)
 const MISTRAL = "[INST] {prompt} [/INST]";
 const MISTRAL_V3 = "[INST] {prompt}[/INST]";
-// RakutenAI's (2.0 mini and 7B chat): no special tokens, a system sentence and USER / ASSISTANT
+// RakutenAI's (2.0 mini and 7B chat): no special tokens, a system sentence and USER / ASSISTANT; the template trims
+// what was typed (T138)
 const RAKUTEN = "A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, " +
-  "detailed, and polite answers to the user's questions. USER: {prompt} ASSISTANT:";
+  "detailed, and polite answers to the user's questions. USER: {prompt:trim} ASSISTANT:";
+// T138: Swallow-MS's card always passes this system message, which its template puts in the user's turn; the template
+// strips the whole turn, which trims what was typed at its end only (filled() trims both ends: a prompt that begins
+// with spaces differs)
+const SWALLOW_MS = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST] ";
 // zephyr's tokenizer.json puts a "▁" before the text after </s> (a legacy Llama tokenizer), which the engine does
 // not: the space after </s> makes the same tokens
 const ZEPHYR = "<|user|>\n{prompt}</s> \n<|assistant|>\n";
@@ -218,7 +223,7 @@ const LISTED = [
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   { group: "hf", id: "hf-qwen2.5-0.5b-instruct", name: "Qwen2.5 0.5B Instruct", note: "answers instructions · 日本語 / English · fetches 0.9 GB → int8 545 MB",
     hf: hf("Qwen/Qwen2.5-0.5B-Instruct", "7ae557604adf67be50417f59c2c2f167def9a775"), download: 988097824,
-    conversion: {}, options: { ...chatml, stop_tokens: [151643, 151645] }, generation: sampled(1.1), template: CHATML,
+    conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-llm-jp-3-440m", name: "llm-jp-3 440M", note: "日本語 / English · fetches 0.9 GB → int8 503 MB",
     hf: hf("llm-jp/llm-jp-3-440m", "0bfbf24efdcc5e4c57327e9c52e8cd832637adc2"), download: 894519624, conversion: {}, options: llmJp,
@@ -276,7 +281,7 @@ const LISTED = [
   // where the browser has one int8 (T133), else six bits (T98); the 7 to 8B ones do not fit a 32-bit memory even so
   { group: "hf", id: "hf-qwen2.5-3b-instruct", name: "Qwen2.5 3B Instruct", note: "answers instructions · 日本語 / English · fetches 6.2 GB → int8 3.5 GB · desktop only",
     hf: hf("Qwen/Qwen2.5-3B-Instruct", "aa8e72537993ba99e69dfaafa59ed015b17504d1"), download: 6171926992,
-    conversion: {}, options: { ...chatml, stop_tokens: [151643, 151645] }, generation: sampled(1.1), template: CHATML,
+    conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-sarashina2.2-3b-instruct", name: "sarashina2.2 3B Instruct", note: "answers instructions · 日本語 · fetches 6.7 GB → int8 3.8 GB · desktop only",
     hf: hf("sbintuitions/sarashina2.2-3b-instruct-v0.1", "4f3626fb1b64b3e97c908e67f27b2d627ba2a999", "tokenizer.model"), download: 6711252896,
@@ -284,7 +289,7 @@ const LISTED = [
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-qwen2.5-7b-instruct", name: "Qwen2.5 7B Instruct", note: "answers instructions · 日本語 / English · fetches 15.2 GB → int8 8.6 GB · desktop only · Chrome and Firefox",
     hf: hf("Qwen/Qwen2.5-7B-Instruct", "a09a35458c702b33eeacc393d103063234e8bc28"), download: 15231271888,
-    conversion: {}, options: { ...chatml, stop_tokens: [151643, 151645] }, generation: sampled(1.1), template: CHATML,
+    conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T125: Mistral 7B's of Japanese, whose sliding window of 4096 is the page's context
   { group: "hf", id: "hf-rakutenai-7b-chat", name: "RakutenAI 7B chat", note: "answers instructions · 日本語 / English · fetches 14.7 GB → int8 8.3 GB · desktop only · Chrome and Firefox",
@@ -293,7 +298,7 @@ const LISTED = [
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-swallow-ms-7b-instruct", name: "Swallow-MS 7B instruct", note: "answers instructions · 日本語 / English · fetches 14.7 GB → int8 8.3 GB · desktop only · Chrome and Firefox",
     hf: hf("tokyotech-llm/Swallow-MS-7b-instruct-v0.1", "008d006f9065e37e39e31bf117ae8689390953e8", "tokenizer.model"), download: 14660445224,
-    conversion: {}, options: {}, generation: sampled(1.1), template: `${MISTRAL} `,
+    conversion: {}, options: {}, generation: sampled(1.1), template: SWALLOW_MS,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // Swallow's own chat_template is read (T73): a Japanese system message, and a second BOS before the user's turn,
   // as the real Jinja writes it (the same IDs as the real Jinja and tokenizers, T132)
@@ -325,14 +330,14 @@ const LISTED = [
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
   { group: "hf", id: "hf-smollm2-360m-instruct", name: "SmolLM2 360M Instruct", note: "answers instructions · English · fetches 724 MB → int8 390 MB",
     hf: hf("HuggingFaceTB/SmolLM2-360M-Instruct", "a10cc1512eabd3dde888204e902eca88bddb4951"), download: 723674912,
-    conversion: {}, options: chatml, generation: sampled(1.1), template: CHATML,
+    conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   { group: "hf", id: "hf-pythia-410m", name: "Pythia 410M", note: "English · fetches 911 MB → int8 506 MB",
     hf: hf("EleutherAI/pythia-410m", "9879c9b5f8bea9051dcb0e68dff21493d67e9d4f"), download: 911373632,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
   { group: "hf", id: "hf-qwen2.5-coder-0.5b-instruct", name: "Qwen2.5 Coder 0.5B Instruct", note: "writes code · English · fetches 988 MB → int8 545 MB",
     hf: hf("Qwen/Qwen2.5-Coder-0.5B-Instruct", "ea3f2471cf1b1f0db85067f1ef93848e38e88c25"), download: 988097824,
-    conversion: {}, options: { ...chatml, stop_tokens: [151643, 151645] }, generation: sampled(1.1), template: CHATML,
+    conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
   { group: "hf", id: "hf-pythia-1b", name: "Pythia 1B", note: "English · fetches 2.1 GB → int8 1.1 GB · desktop only",
     hf: hf("EleutherAI/pythia-1b", "f73d7dcc545c8bd326d8559c8ef84ffe92fea6b2"), download: 2090701528,
@@ -354,7 +359,7 @@ const LISTED = [
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
   { group: "hf", id: "hf-qwen2.5-1.5b-instruct", name: "Qwen2.5 1.5B Instruct", note: "answers instructions · 日本語 / English · fetches 3.1 GB → int8 1.7 GB · desktop only",
     hf: hf("Qwen/Qwen2.5-1.5B-Instruct", "989aa7980e4cf806f80c7fef2b1adb7bc71aa306"), download: 3087467144,
-    conversion: {}, options: { ...chatml, stop_tokens: [151643, 151645] }, generation: sampled(1.1), template: CHATML,
+    conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-smollm2-1.7b-instruct", name: "SmolLM2 1.7B Instruct", note: "answers instructions · English · fetches 3.4 GB → int8 1.9 GB · desktop only",
     hf: hf("HuggingFaceTB/SmolLM2-1.7B-Instruct", "31b70e2e869a7173562077fd711b654946d38674"), download: 3422777952,
