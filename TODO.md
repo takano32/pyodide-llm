@@ -89,6 +89,13 @@
 - 案: (a) 共有を断られたら共有でないメモリとして測り直し、32 ビットに入らなければ 64 ビットにする（Safari では分かる文で止める）、(b) 共有でないメモリでも入らないときだけ KV を float16 にする（1 本では attention が遅い、T110: 位置 4000 で 38 → 21 tok/s）、(c) KV をその場で伸ばして峰を下げる（古い塊と新しい塊の和でなく、差の分だけ取って後ろから詰め直す。Qwen2.5-3B の共有なしが 4.029 → 3.888 GiB で 32 ビットに入る）。
 - 完了条件: forward-check に「共有を頼んで断られた」経路の試験。`models.yml` の `long` で 3B 級が文脈の終わりまで書く。
 
+### T140 [運用] 既定のブランチを master から main に — 状態: 未着手（2026-09-26、持ち主の指示「ブランチ名変更をタスクに積んであとでやろう」。**T139 の新しい機械で clone する前に**やると手元の直しが 1 か所で済む。外向きの操作なので実行の前に持ち主に確認。規模 小、15 分ほど）
+- **`master` を指しているところ（2026-09-26 に洗った）**: (1) `.github/workflows/deploy.yml` の `on: push: branches: [master]`、(2) **環境 `github-pages` の「デプロイしてよいブランチ」の決まり（custom branch policy が `master` だけ）**: GitHub のブランチ名の変更がこれを書き換えるかは未確認で、書き換えなければ main からのデプロイが断られる、(3) AGENTS.md の方針 7「master に push するとデプロイされる」の 1 行（TODO.md の 11 か所は過去の記録なのでそのまま）、(4) 手元の checkout と記憶（`feedback-*` の「master」）。Pages の設定の `source.branch` も `master` だが、`build_type` が `workflow`（Actions でデプロイ）なので効かない（未確認）。ブランチの保護は無い。リポジトリの中の `…/master/…` のリンクは他人のリポジトリ（llama2.c、nvm）だけ。
+- **GitHub が面倒を見るもの**: 既定のブランチの切り替え、古い URL（`tree/master` など）の転送。週 1 回の `browsers.yml` と `workflow_dispatch` は既定のブランチで動く。
+- **手順**: ① 走っているワークフローが終わるのを待つ → ② `deploy.yml` を `main` にするコミット（master に push してもデプロイは起きない）→ ③ 環境の決まりに `main` を足す（`gh api -X POST repos/takano32/pyodide-llm/environments/github-pages/deployment-branch-policies -f name=main`）→ ④ 名前を変える（`gh api -X POST repos/takano32/pyodide-llm/branches/master/rename -f new_name=main`）→ ⑤ 手元: `git branch -m master main && git fetch origin && git branch -u origin/main main && git remote set-head origin -a` → ⑥ main への push でデプロイされ本番が動くのを確かめる → ⑦ 環境の決まりから `master` を消す → ⑧ AGENTS.md と記憶の「master」を直す。
+- **戻し方**: 名前を main から master に戻し、`deploy.yml` を戻す。
+- 完了条件: main への push でデプロイされ、本番が動き、`master` を指すものが（過去の記録のほかに）残っていない。
+
 ### T139 [運用] 開発を OCI Ampere に移行 — 状態: **進行中（準備）**（2026-09-26、持ち主の指示「移行計画をタスクにして進めようよ」「マシンが変わるということはエージェントの記憶がなくなるので準備が必要でしょ？」。規模 小〜中）
 - **根拠**: 今の開発機（ARM の big.LITTLE、約 6.6GB で空きは約 2.3GB、スワップなし）はメモリで詰まっている: float32 の原本の計測（T124 の eps は 1500 トークンをあきらめて 511 に縮めた）、1B 以上の突き合わせ（CI に回す）、ブラウザ（動かさない決まり）、重い計測は同時に 1 つ。**移る先**: OCI の Ampere A1（Neoverse N1、ARM）、**2 コア・12GB**（Always Free の今の枠いっぱい: 月 1,500 OCPU 時間・9,000 GB 時間、Oracle の文書で確かめた、2026-09-26）、回線は速い（データセンター）。1 コアの速さは今の A78 と同程度の見込み（未計測）。
 - **移って手元でできるようになるもの**（見込み、未計測）: 3B 級までの float32 の計測と GGUF の突き合わせ、ヘッドレスの Chromium で 1〜3B 級の確認（デプロイ前に `e2e.mjs`）、重い計測を 2 つ同時に。**CI に残るもの**: 7〜8B（ヒープ 9.7〜11GB）、64 ビットのメモリ、スレッドの伸び（2 コア）、ブラウザごとの速さ。**持ち主の家の回線に近い速さは測れなくなる**（データセンターの回線）: それは `/benchmark/` の回線の節（T134）を持ち主の端末で。
