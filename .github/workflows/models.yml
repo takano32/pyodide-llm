@@ -4,6 +4,8 @@
 #
 #   gh workflow run models.yml -f models="hf:Qwen/Qwen2.5-3B-Instruct@aa8e72537993ba99e69dfaafa59ed015b17504d1"
 name: Models by name
+# what the run tried, so that runs can be told apart in the list of runs and in tests/ci.mjs (T142)
+run-name: "Models: ${{ inputs.models }} · ${{ inputs.browser }} · ${{ inputs.os }}"
 
 on:
   workflow_dispatch:
