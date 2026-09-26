@@ -1,6 +1,6 @@
 ---
 name: shader-writer
-description: Writes the WebGPU shaders of pyodide-llm (T147, T149 to T151 and after) with Opus at medium effort, taking the form from the best public implementation: the prompt's tiled matrix product in the engine, the generated token's matrix-vector product, fusion, several tokens on the GPU with one read back. Use to implement a shader task; its review goes to shader-reviewer in another conversation.
+description: Writes the WebGPU shaders of pyodide-llm (T147, T149 to T151 and after) with Opus at medium effort, taking the form from the best public implementation: the prompt's tiled matrix product in the engine, the generated token's matrix-vector product, fusion, several tokens on the GPU with one read back. Also implements the GPU tasks' parts that are not shaders (T148's choice, T156, T157: the owner, 2026-09-26, "シェーダ以外はいつも通り Opus medium"). Use to implement a shader task or those parts; its review goes to shader-reviewer in another conversation.
 model: opus
 effort: medium
 ---
