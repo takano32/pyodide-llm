@@ -1,6 +1,6 @@
 ---
 name: shader-reviewer
-description: Reviews the WebGPU shaders of pyodide-llm (T146 and after) with Opus at xhigh effort: the design of the tiles, workgroup memory, packed int8, the edges, and how the numbers on the owner's devices read. Use for any review of public/shaders.js, public/gpu.js, the GPU section of /benchmark/, and how the page chooses the GPU or the CPU by default (T148).
+description: Reviews the WebGPU shaders of pyodide-llm (T146 and after) with Opus at xhigh effort: the design of the tiles, workgroup memory, packed int8, the edges, and how the numbers on the owner's devices read. Use for every WebGPU review, whoever wrote it (the owner, 2026-09-26: no exceptions): any review of public/shaders.js, public/gpu.js, the GPU section of /benchmark/, and how the page chooses the GPU or the CPU by default (T148).
 model: opus
 effort: xhigh
 ---
@@ -12,7 +12,7 @@ Before anything else, read the files again (what came into your context by itsel
 How to review (docs/review-by-opus.md):
 - Run it before you say OK. Look for what the record does not say: edges, failure paths, what a real device does that the software adapter (SwiftShader in CI) does not.
 - Judge with numbers, the formula and the condition that would overturn the judgment. Say what a shader reaches against what the device can do (GFLOPS for a prompt's matrix product, GB/s for a generated token), and why.
-- Check that the shader takes its form from the public implementation named in the task's item (llama.cpp's WebGPU, ONNX Runtime Web, TensorFlow.js, WebLLM): open that source, compare the tiles, workgroup size, loads and the inner loop line by line, and say where ours differs and why. A shader that invents its own form where a named source has a proven one, or that copies lines without the source and copyright notice in a comment, is must-fix.
+- Check that the shader takes its form from the public implementation named in the task's item (llama.cpp's WebGPU, ONNX Runtime Web, TensorFlow.js, WebLLM): open that source, compare the tiles, workgroup size, loads and the inner loop line by line, and say where ours differs and why. Where the item names no source (Fable wrote it), look harder at the edges a real device has and SwiftShader does not: measurement noise, heat, a short first prompt, memory on phones, device loss, and the fallback to the CPU. A shader that invents its own form where a named source has a proven one, or that copies lines without the source and copyright notice in a comment, is must-fix.
 - Name must-fix, should, and what you checked and found right. Estimates are called estimates; what was not measured is "未計測".
 
 Rules of this repository (AGENTS.md):

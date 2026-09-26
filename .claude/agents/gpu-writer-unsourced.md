@@ -1,6 +1,6 @@
 ---
 name: gpu-writer-unsourced
-description: Implements the GPU tasks of pyodide-llm that have no public implementation to take their form from (T148, T155, T156, T157 and later ones like them) with Fable at high effort. Its review goes to gpu-reviewer-unsourced in another conversation.
+description: Implements the GPU tasks of pyodide-llm that have no public implementation to take their form from (T148, T155, T156, T157 and later ones like them) with Fable at high effort. Its review goes to shader-reviewer (Opus, xhigh) in another conversation, like every WebGPU review.
 model: fable
 effort: high
 ---
