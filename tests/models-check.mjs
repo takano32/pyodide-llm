@@ -87,6 +87,13 @@ const lineOf = (repo) => listed.find((line) => line.repo === repo).names;
 assert.deepEqual(lineOf("bartowski/SmolLM2-135M-Instruct-GGUF"), ["SmolLM2 135M Instruct (GGUF)"]);
 assert.deepEqual(lineOf("unsloth/Llama-3.2-1B-Instruct"), ["Llama 3.2 1B Instruct (copy)"]);
 assert.ok(lineOf("meta-llama/Llama-3.2-1B-Instruct").includes("Llama 3.2 1B Instruct"), "the original's line has the plain name");
+// every GGUF of the list names its original, is under the original's license (its card's, the same: T136) and is
+// "(GGUF)" on its line (the review of T136: a copy's word, another license or no original went through before)
+for (const entry of MODELS.filter((entry) => entry.hf?.weights?.endsWith(".gguf"))) {
+  assert.ok(entry.original, `${entry.id}: a GGUF without its original`);
+  assert.deepEqual(LICENSES[entry.hf.repo], LICENSES[entry.original], `${entry.id}: the GGUF's license is not its original's`);
+  assert.ok(lineOf(entry.hf.repo).includes(`${entry.name} (GGUF)`), `${entry.id}: the GGUF's line does not say (GGUF)`);
+}
 // T128: the list's order (the owner's): the groups as GROUPS has them, and within each the ones that write Japanese
 // from light to heavy, then the English-only ones from light to heavy. The default is the first
 assert.equal(MODELS[0].id, "tiny-lm", "the default comes first");
