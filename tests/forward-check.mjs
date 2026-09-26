@@ -121,7 +121,7 @@ llama.release(); del llama; gc.collect()
     const size = fs.statSync(file(entry.checkpoint)).size, quantized = ["int8", "int6"].includes(entry.options.dtype);
     const int8 = !without.includes("int8");
     const after = used - (shared ? 8192 : 64) - size;
-    const bound = footprint(header, size, { dtype: entry.options.dtype, arch: entry.options.arch, int8,
+    const bound = footprint(header, size, { dtype: entry.options.dtype, arch: entry.options.arch, headDim: entry.options.head_dim, int8,
       relaxed: Boolean(kernels.relaxed) && !without.includes("relaxed"), halfKV: shared && quantized && int8 && !without.includes("kv16") });
     // above what was used, and by little: a few percent, the megabyte for alignment, and the outlier columns it
     // counts for every quantized model (4 MiB for a vocabulary of 128256; few models have them)

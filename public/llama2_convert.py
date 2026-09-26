@@ -27,7 +27,8 @@ def group_size(row_length):
     return size
 
 
-def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, bias=False, arch="llama", qk_norm=False):
+def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, bias=False, arch="llama", qk_norm=False,
+           head_dim=0):
     """(shape, is a matrix) of every tensor, in file order. llama2_numpy.py reads the same order.
 
     is a matrix: True for what int8 quantizes, False for the norm weights, None for the RoPE tables.
@@ -35,9 +36,11 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, 
     so that a checkpoint without them is byte for byte the file it always was.
     qk_norm: the model normalizes every head of q and k before RoPE (Qwen3, T124): the two weights of a head's size
     per layer go after the biases, for the same reason.
+    head_dim: the size of a head where it is not dim / n_heads (0: it is). Then q and the attention's output are
+    n_heads * head_dim wide, not dim (Qwen3 0.6B: 16 heads of 128 in a dim of 1024, T124).
     """
-    head_size = dim // n_heads
-    kv_dim = n_kv_heads * head_size
+    head_size = head_dim or dim // n_heads
+    q_dim, kv_dim = n_heads * head_size, n_kv_heads * head_size
     if arch in ("gpt2", "neox"):
         # GPT-2: LayerNorm (a weight and a bias), a bias after every projection, learned positions instead of
         # RoPE, and an FFN of two matrices instead of three (no gate). Same attention.
@@ -59,14 +62,14 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, 
             tensors.append(((abs(vocab_size), dim), True))
         return tensors
     tensors = [((abs(vocab_size), dim), True), ((n_layers, dim), False),
-               ((n_layers, dim, dim), True), ((n_layers, kv_dim, dim), True), ((n_layers, kv_dim, dim), True),
-               ((n_layers, dim, dim), True), ((n_layers, dim), False),
+               ((n_layers, q_dim, dim), True), ((n_layers, kv_dim, dim), True), ((n_layers, kv_dim, dim), True),
+               ((n_layers, dim, q_dim), True), ((n_layers, dim), False),
                ((n_layers, hidden_dim, dim), True), ((n_layers, dim, hidden_dim), True), ((n_layers, hidden_dim, dim), True),
                ((dim,), False), ((seq_len, head_size // 2), None), ((seq_len, head_size // 2), None)]
     if vocab_size < 0:
         tensors.append(((abs(vocab_size), dim), True))
     if bias:
-        tensors += [((n_layers, dim), False), ((n_layers, kv_dim), False), ((n_layers, kv_dim), False)]
+        tensors += [((n_layers, q_dim), False), ((n_layers, kv_dim), False), ((n_layers, kv_dim), False)]
     if qk_norm:
         tensors += [((n_layers, head_size), False), ((n_layers, head_size), False)]
     return tensors
@@ -99,9 +102,9 @@ def tensor_bytes(shape, is_matrix, dtype):
     return count + 4 * (count // group_size(shape[-1])) if is_matrix else 4 * count
 
 
-def checkpoint_size(header, dtype, bias=False, arch="llama", qk_norm=False):
+def checkpoint_size(header, dtype, bias=False, arch="llama", qk_norm=False, head_dim=0):
     return 28 + sum(tensor_bytes(shape, is_matrix, dtype)
-                    for shape, is_matrix in layout(*header, bias=bias, arch=arch, qk_norm=qk_norm))
+                    for shape, is_matrix in layout(*header, bias=bias, arch=arch, qk_norm=qk_norm, head_dim=head_dim))
 
 
 def quantize(values):
@@ -115,21 +118,23 @@ def quantize(values):
 class Writer:
     """Puts pieces of the tensors of layout(), in any order, where they belong in the checkpoint buffer."""
 
-    def __init__(self, out, header, dtype, bias=False, arch="llama", sink=None, quantize_rows=None, qk_norm=False):
+    def __init__(self, out, header, dtype, bias=False, arch="llama", sink=None, quantize_rows=None, qk_norm=False,
+                 head_dim=0):
         """out: a buffer of the checkpoint's size, or None with sink: an object with open(size, header, dtype,
-        arch) and write(offset, array of bytes), for a checkpoint that lives outside Python (T93: the WebAssembly
+        form) and write(offset, array of bytes), for a checkpoint that lives outside Python (T93: the WebAssembly
         memory of public/forward.js, which the header and the rest size, T115). Pyodide's own memory never shrinks,
-        so a converted model that went through a Python buffer on its way there would keep taking its size twice."""
+        so a converted model that went through a Python buffer on its way there would keep taking its size twice.
+        form (see Stream.form): what the forward pass is sized by that the header does not say."""
         # quantize_rows: quantize() on the SIMD kernels (llama2_numpy.kernel_quantizer), the same bytes six times
         # faster, for rows of whole groups of 32; NumPy's quantize() for anything else, and where there are no kernels
         self.dtype, self.sink, self.quantize_rows = dtype_name(dtype), sink, quantize_rows
-        tensors = layout(*header, bias=bias, arch=arch, qk_norm=qk_norm)
+        tensors = layout(*header, bias=bias, arch=arch, qk_norm=qk_norm, head_dim=head_dim)
         if self.dtype == "int6" and any(is_matrix and shape[-1] % 32 for shape, is_matrix in tensors):
             raise ValueError("Six bits a weight needs rows of whole groups of 32, and this model has other rows.")
-        size = checkpoint_size(header, dtype, bias, arch, qk_norm)
+        size = checkpoint_size(header, dtype, bias, arch, qk_norm, head_dim)
         if sink is not None:
             self.out = None
-            sink.open(size, list(header), self.dtype, arch)
+            sink.open(size, list(header), self.dtype, {"arch": arch, "head_dim": head_dim or header[0] // header[3]})
         else:
             self.out = np.frombuffer(out, dtype=np.uint8)
             assert self.out.size == size, "the buffer has not the size of the checkpoint"
@@ -867,6 +872,12 @@ def architecture(config):
     return {"gpt2": "gpt2", "gpt_neox": "neox"}.get(config.get("model_type"), "llama")
 
 
+def head_size(config):
+    """The size of an attention head: config.json's head_dim where it says one (Qwen3 0.6B: 128 in a dim of 1024,
+    T124), else dim / heads. "head_dim": null says as much as no head_dim at all (cyberagent/CAT-Translate-7b)."""
+    return config.get("head_dim") or config["hidden_size"] // config["num_attention_heads"]
+
+
 def rotary_dim(config):
     """How many of each head's values GPT-NeoX rotates (rotary_pct of them, an even number)."""
     head_size = config["hidden_size"] // config["num_attention_heads"]
@@ -925,8 +936,12 @@ def check_config(config):
             refuse(f"its config.json has no usable {key}")
     dim, n_heads = config["hidden_size"], config["num_attention_heads"]
     n_kv_heads = config.get("num_key_value_heads", n_heads)
-    # "head_dim": null says as much as no head_dim at all (cyberagent/CAT-Translate-7b writes it so)
-    if dim % n_heads or n_heads % n_kv_heads or (config.get("head_dim") or dim // n_heads) != dim // n_heads or dim // n_heads % 2:
+    size = head_size(config)
+    # a head of another size than dim / n_heads (T124) only where q and o are matrices of their own: a Llama's.
+    # GPT-2's c_attn and GPT-NeoX's query_key_value are cut into heads of dim / n_heads
+    divides = not dim % n_heads and size == dim // n_heads
+    if not isinstance(size, int) or size <= 0 or size % 2 or n_heads % n_kv_heads \
+            or not (divides or (config.get("head_dim") and architecture(config) == "llama")):
         refuse("its attention heads do not divide the hidden size the way llama2.c expects")
     scaling = config.get("rope_scaling")
     if scaling and (architecture(config) != "llama" or scaling.get("rope_type", scaling.get("type")) not in ("llama3", "linear")):
@@ -1023,6 +1038,10 @@ def permute_heads(w, heads, head_size):
     # Hugging Face stores each head of wq/wk as [first halves, second halves] (rotate_half);
     # llama2.c rotates adjacent pairs, so interleave the two halves again. A bias is a vector of the same rows,
     # and -1 as the last dimension lets one line do both.
+    if w.shape[0] != heads * head_size:
+        # a head of another size reshapes without complaint and turns rows across heads (the review of T124 found
+        # half the rows of a Qwen3 0.6B's wq moved so)
+        raise ValueError(f"{w.shape[0]} rows are not {heads} heads of {head_size}.")
     return w.reshape(heads, 2, head_size // 2, -1).transpose(0, 2, 1, 3).reshape(w.shape)
 
 
@@ -1042,7 +1061,7 @@ def has_qk_norm(source):
     return "model.layers.0.self_attn.q_norm.weight" in source
 
 
-def conversion_plan(header, bias=False, arch="llama", prefix="transformer.", rotary=0, qk_norm=False):
+def conversion_plan(header, bias=False, arch="llama", prefix="transformer.", rotary=0, qk_norm=False, head_dim=0):
     """For every tensor of layout(): the tensors of the Hugging Face checkpoint it is made of, in order, as
     (name, transform); None instead of a list stands for a RoPE table. And the shapes of layout()."""
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
@@ -1105,7 +1124,7 @@ def conversion_plan(header, bias=False, arch="llama", prefix="transformer.", rot
     if qk_norm:
         # one weight for every head, over the rows of a head: interleaved like the rows it multiplies
         plan += [layers("self_attn.q_norm", ("permute", 1)), layers("self_attn.k_norm", ("permute", 1))]
-    return plan, [shape for shape, _ in layout(*header, bias=bias, qk_norm=qk_norm)]
+    return plan, [shape for shape, _ in layout(*header, bias=bias, qk_norm=qk_norm, head_dim=head_dim)]
 
 
 def rope_table(config, header, which):
@@ -1114,14 +1133,14 @@ def rope_table(config, header, which):
     GPT-NeoX rotates only rotary_pct of each head, and the angles follow that width. The table keeps the shape
     the layout gives it (head_size // 2 columns); the columns past the rotated part are never read.
     """
-    head_size, seq_len = header[0] // header[3], header[6]
-    width = rotary_dim(config) if architecture(config) == "neox" else head_size
+    size, seq_len = head_size(config), header[6]
+    width = rotary_dim(config) if architecture(config) == "neox" else size
     positions = np.arange(seq_len, dtype=np.float64)[:, None]
     frequencies = rope_frequencies(width, config.get("rope_theta", 10000.0), config.get("rope_scaling"))
     table = (np.cos if which == 0 else np.sin)(positions * frequencies)
-    if width == head_size:
+    if width == size:
         return table
-    full = np.zeros((seq_len, head_size // 2), dtype=np.float64)
+    full = np.zeros((seq_len, size // 2), dtype=np.float64)
     full[:, :width // 2] = table
     return full
 
@@ -1143,14 +1162,14 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
     config = normalize(config)
     check_config(config)
     header = checkpoint_header(config, source, max_seq_len)
-    dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
-    head_size = dim // n_heads
+    # the size the heads of wq and wk are interleaved by: another size turns rows across heads without a word
+    size = head_size(config)
     arch = architecture(config)
     bias, qk_norm = has_bias(source), has_qk_norm(source)
-    writer = Writer(out, header, dtype, bias, arch, quantize_rows=quantize_rows, qk_norm=qk_norm)
+    writer = Writer(out, header, dtype, bias, arch, quantize_rows=quantize_rows, qk_norm=qk_norm, head_dim=size)
 
     plan, shapes = conversion_plan(header, bias, arch, gpt2_prefix(source), rotary_dim(config) if arch == "neox" else 0,
-                                   qk_norm)
+                                   qk_norm, size)
     total, done = sum(int(np.prod(shape)) for shape in shapes), 0
 
     for index, (parts, shape) in enumerate(zip(plan, shapes)):
@@ -1173,7 +1192,7 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
             for start in range(0, rows, step):
                 stop = min(start + step, rows)
                 values = source.rows(name, 0, found[0]) if len(found) == 1 else source.rows(name, start, stop)
-                values = transformed(values, transform, head_size)
+                values = transformed(values, transform, size)
                 writer.write(index, first, values)
                 first += values.size
                 done += values.size
@@ -1199,23 +1218,25 @@ class Stream:
         check_config(config)
         self.tensors = {name: info for name, info in header.items() if name != "__metadata__"}
         self.header = checkpoint_header(config, self, max_seq_len)
-        self.head_size = self.header[0] // self.header[3]
+        self.head_size = head_size(config)
         self.arch = architecture(config)
         self.bias, self.qk_norm = has_bias(self), has_qk_norm(self)
+        # what sizes the forward pass that the header does not say (T115, T124): the worker's footprint() reads it
+        self.form = {"arch": self.arch, "head_dim": self.head_size}
         if callable(dtype):
             # T115: chosen once the header is known, from the size each quantized dtype would take (the worker's
             # automatic choice: int8 where the forward pass fits a 32-bit memory, six bits where it does not)
-            sizes = {name: checkpoint_size(self.header, name, self.bias, self.arch, self.qk_norm) for name in QUANTIZED}
-            dtype = str(dtype(list(self.header), self.arch, sizes))
+            sizes = {name: self.size(name) for name in QUANTIZED}
+            dtype = str(dtype(list(self.header), self.form, sizes))
         check_dtype(dtype)
         self.dtype = dtype_name(dtype)
         if out is None and sink is None:
-            out = bytearray(checkpoint_size(self.header, dtype, self.bias, self.arch, self.qk_norm))
+            out = bytearray(self.size(dtype))
         self.out = out  # None when the checkpoint goes to sink
         self.writer = Writer(self.out, self.header, dtype, self.bias, self.arch, sink=sink, quantize_rows=quantize_rows,
-                             qk_norm=self.qk_norm)
+                             qk_norm=self.qk_norm, head_dim=self.head_size)
         plan, shapes = conversion_plan(self.header, self.bias, self.arch, gpt2_prefix(self),
-                                       rotary_dim(config) if self.arch == "neox" else 0, self.qk_norm)
+                                       rotary_dim(config) if self.arch == "neox" else 0, self.qk_norm, self.head_size)
         self.total, self.done = sum(int(np.prod(shape)) for shape in shapes), 0
         wanted = {}
         for index, (parts, shape) in enumerate(zip(plan, shapes)):
@@ -1244,6 +1265,10 @@ class Stream:
 
     def __contains__(self, name):  # what checkpoint_header() asks
         return name in self.tensors
+
+    def size(self, dtype):
+        """The bytes of the checkpoint in that dtype."""
+        return checkpoint_size(self.header, dtype, self.bias, self.arch, self.qk_norm, self.head_size)
 
     def feed(self, data):
         """data: the next bytes of the file. Returns (values done, values in all)."""
@@ -1387,7 +1412,9 @@ def gguf_model(metadata, tensors, base):
               "vocab_size": tensors["token_embd.weight"]["shape"][0] if "token_embd.weight" in tensors else None,
               "tie_word_embeddings": "output.weight" not in tensors, "hidden_act": "silu",
               "bos_token_id": metadata.get("tokenizer.ggml.bos_token_id", 1),
-              "eos_token_id": metadata.get("tokenizer.ggml.eos_token_id", 2)}
+              "eos_token_id": metadata.get("tokenizer.ggml.eos_token_id", 2),
+              # a head of another size than dim / heads (T124): llama.cpp says it as the length of a key
+              "head_dim": key("attention.key_length")}
     if key("rope.scaling.type", "none") not in ("none", None):
         config["rope_scaling"] = {"type": key("rope.scaling.type"), "factor": key("rope.scaling.factor", 1.0)}
     if "rope_freqs.weight" in tensors:
@@ -1712,9 +1739,11 @@ class Conversion:
         self.options = {**options, "dtype": self.stream.dtype, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop, "bias": self.stream.bias,
                         "arch": self.stream.arch}
+        # only where there are: the options of every model before T124 stay what they were (kept.js's CONVERTER)
         if self.stream.qk_norm:
-            # only where there is one: the options of every model before T124 stay what they were (kept.js's CONVERTER)
             self.options["qk_norm"] = True
+        if self.stream.head_size != self.stream.header[0] // self.stream.header[3]:
+            self.options["head_dim"] = self.stream.head_size
         # the format of one turn, from the model's own chat_template (T73). src/models.js wins when it has one
         template = one_turn_template(tokenizer_config, chat_template)
         if template:

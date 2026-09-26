@@ -137,15 +137,16 @@ def qwen3_model(dim, heads, kv_heads, head_dim, hidden=96, layers=2, vocab=320, 
     return tensors, config
 
 qwen3_vocabulary = gpt2_vocabulary
-for dim, heads, kv_heads, head_dim in ((64, 4, 2, 16),):
+# heads of dim / heads, twice as wide as dim (Qwen3 0.6B), and half as wide
+for dim, heads, kv_heads, head_dim in ((64, 4, 2, 16), (64, 4, 2, 32), (96, 2, 1, 32)):
     qwen3_tensors, qwen3_config = qwen3_model(dim, heads, kv_heads, head_dim)
     source = llama2_convert.Arrays(qwen3_tensors)
     header = llama2_convert.checkpoint_header(qwen3_config, source, 24)
     for dtype in ("float32", "int8"):
-        qwen3_file = bytearray(llama2_convert.checkpoint_size(header, dtype, qk_norm=True))
+        qwen3_file = bytearray(llama2_convert.checkpoint_size(header, dtype, qk_norm=True, head_dim=head_dim))
         llama2_convert.convert_weights(source, qwen3_config, dtype, 24, qwen3_file)
-        plain = llama2_numpy.Llama(bytes(qwen3_file), qwen3_vocabulary, dtype=dtype, qk_norm=True)
-        quick = kernel_llama(bytes(qwen3_file), qwen3_vocabulary, dtype=dtype, qk_norm=True)
+        plain = llama2_numpy.Llama(bytes(qwen3_file), qwen3_vocabulary, dtype=dtype, qk_norm=True, head_dim=head_dim)
+        quick = kernel_llama(bytes(qwen3_file), qwen3_vocabulary, dtype=dtype, qk_norm=True, head_dim=head_dim)
         assert quick.backend.startswith("SIMD"), f"the kernels did not load for Qwen3: {quick.backend}"
         same = 0
         for pos, token in enumerate([1, 5, 9, 13, 17, 21, 25, 29]):

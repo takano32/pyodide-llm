@@ -26,7 +26,8 @@ def qwen2_model():
 
 
 def qwen3_model():
-    config, weights = synthetic_weights()
+    # heads of 16 in a dim of 32 with 4 heads: q twice as wide as dim, as in Qwen3 0.6B (T124)
+    config, weights = synthetic_weights(n_kv_heads=2, head_size=16)
     return qwen3(config, weights, True)
 
 

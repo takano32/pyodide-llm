@@ -17,7 +17,7 @@ from llama2_numpy import Llama, Tokenizer, check_tokenizer, checkpoint_dtype
 def hugging_face(config, weights, shared):
     """The tensors and the config.json Hugging Face would publish for these llama2.c weights."""
     dim, n_heads, n_kv_heads = config["dim"], config["n_heads"], config["n_kv_heads"]
-    head_size = dim // n_heads
+    head_size = config["head_size"]
 
     def permute(w, heads):  # llama2.c's adjacent pairs -> [first halves, second halves]: what convert undoes
         return w.reshape(heads, head_size // 2, 2, w.shape[1]).transpose(0, 2, 1, 3).reshape(w.shape)
@@ -38,6 +38,8 @@ def hugging_face(config, weights, shared):
                      num_hidden_layers=config["n_layers"], num_attention_heads=n_heads, num_key_value_heads=n_kv_heads,
                      vocab_size=config["vocab_size"], max_position_embeddings=config["seq_len"], rope_theta=10000.0,
                      tie_word_embeddings=shared)
+    if head_size != dim // n_heads:
+        published["head_dim"] = head_size
     return tensors, published
 
 
@@ -65,7 +67,7 @@ def reader(file, log=None):
 def converted(source, published, dtype, max_seq_len=1 << 20):
     arch = architecture(normalize(published))
     out = bytearray(checkpoint_size(checkpoint_header(published, source, max_seq_len), dtype, has_bias(source), arch,
-                                    has_qk_norm(source)))
+                                    has_qk_norm(source), llama2_convert.head_size(normalize(published))))
     convert_weights(source, published, dtype, max_seq_len, out)
     return bytes(out)
 
@@ -254,9 +256,9 @@ class Sink:
     def __init__(self):
         self.data = self.opened = None
 
-    def open(self, size, header, dtype, arch):
+    def open(self, size, header, dtype, form):
         self.data = bytearray(size)
-        self.opened = (list(header), dtype, arch)  # what the worker sizes the forward pass's memory from (T115)
+        self.opened = (list(header), dtype, form)  # what the worker sizes the forward pass's memory from (T115)
 
     def write(self, offset, array):
         raw = bytes(np.asarray(array, dtype=np.uint8))
@@ -277,7 +279,7 @@ def test_a_sink_gets_the_very_checkpoint(dtype):
         stream.feed(file[start:start + 777])
     stream.finish()
     assert bytes(sink.data) == expected
-    assert sink.opened == (list(stream.header), dtype, "llama")
+    assert sink.opened == (list(stream.header), dtype, {"arch": "llama", "head_dim": stream.header[0] // stream.header[3]})
 
 
 def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():
@@ -289,8 +291,8 @@ def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():
     size = struct.unpack("<Q", file[:8])[0]
     asked = []
 
-    def choose(header, arch, sizes):
-        asked.append((list(header), arch, dict(sizes)))
+    def choose(header, form, sizes):
+        asked.append((list(header), form, dict(sizes)))
         return "int6"
 
     sink = Sink()
@@ -298,7 +300,8 @@ def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():
     stream.feed(file)
     stream.finish()
     header = list(stream.header)
-    assert asked == [(header, "llama", {name: checkpoint_size(header, name) for name in ("int8", "int6")})]
+    form = {"arch": "llama", "head_dim": header[0] // header[3]}
+    assert asked == [(header, form, {name: checkpoint_size(header, name) for name in ("int8", "int6")})]
     assert stream.dtype == "int6" and sink.opened[1] == "int6"
     assert bytes(sink.data) == converted(Safetensors(reader(file)), published, "int6")
 

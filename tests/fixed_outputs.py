@@ -59,15 +59,30 @@ def fetch(entry, name, directory):
     return target
 
 
+class File:
+    """The converter's sink (llama2_convert.Writer): the float32 checkpoint goes into a file of its own, a memory map,
+    never whole into memory (Qwen3 0.6B's is 2.4 GB, T124)."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def open(self, size, header, dtype, form):
+        self.data = np.memmap(self.path, dtype=np.uint8, mode="w+", shape=(size,))
+
+    def write(self, offset, raw):
+        self.data[offset:offset + raw.size] = raw
+
+
 def converted(entry, directory):
     hf = entry["hf"]
     weights = fetch(entry, hf["weights"], directory)
     data = np.memmap(weights, dtype=np.uint8, mode="r")
+    sink = File(weights.with_name("float32.bin"))
     if hf["weights"].endswith(".gguf"):
         size = 1 << 20
         while True:
             try:
-                conversion = Conversion.from_gguf(bytes(data[:size]), dtype="float32")
+                conversion = Conversion.from_gguf(bytes(data[:size]), dtype="float32", sink=sink)
                 break
             except Incomplete:
                 size *= 4
@@ -82,22 +97,23 @@ def converted(entry, directory):
         conversion = Conversion(bytes(data[8:8 + int(header)]).decode(), 8 + int(header),
                                 fetch(entry, hf["config"], directory).read_text(),
                                 fetch(entry, tokenizer, directory).read_bytes(), tokenizer, dtype="float32",
-                                tokenizer_config=tokenizer_config)
+                                tokenizer_config=tokenizer_config, sink=sink)
         first = 0
     for start in range(first, len(data), CHUNK):
         conversion.feed(bytes(data[start:start + CHUNK]))
     conversion.finish()
-    return conversion
+    sink.data.flush()
+    return conversion, sink.path
 
 
-def written(entry, conversion):
+def written(entry, conversion, checkpoint):
     """What the page would write with this model at temperature 0: the prompt in the model's template, the
     options of the conversion with those of src/models.js on top (as the worker merges them)."""
     options = {**conversion.options, **entry.get("options", {})}
     template = entry.get("template") or options.pop("template", None)
     options.pop("template", None)
     prompt = template.replace("{prompt}", entry["prompt"]) if template else entry["prompt"]
-    llama = Llama(conversion.checkpoint, conversion.tokenizer, kernels=None, **options)
+    llama = Llama(np.memmap(checkpoint, dtype=np.uint8, mode="r"), conversion.tokenizer, kernels=None, **options)
     steps = len(llama.tokenizer.encode(prompt, llama.specials)) + NEW_TOKENS
     return "".join(llama.generate(prompt, steps=steps, temperature=0.0, echo=False))
 
@@ -107,7 +123,7 @@ def main():
     expected = json.loads(FIXTURES.read_text()) if FIXTURES.exists() else {}
     got, failures = {}, []
     for entry in entries():
-        text = written(entry, converted(entry, directory))
+        text = written(entry, *converted(entry, directory))
         got[entry["id"]] = {"prompt": entry["prompt"], "text": text}
         same = expected.get(entry["id"], {}).get("text") == text
         print(f"{'ok  ' if same else 'DIFF'} {entry['id']}: {json.dumps(text, ensure_ascii=False)}", flush=True)

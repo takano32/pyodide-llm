@@ -39,13 +39,16 @@ def test_the_sizes_follow_the_layout_of_quantize():
     assert checkpoint_dtype(list(header), 28 + 2 * floats) == "float16"
 
 
-@pytest.mark.parametrize("bias, arch, qk_norm", [(True, "llama", False), (False, "gpt2", False), (False, "neox", False),
-                                                  (False, "llama", True), (True, "llama", True)])
+@pytest.mark.parametrize("bias, arch, qk_norm, head_dim", [(True, "llama", False, 0), (False, "gpt2", False, 0),
+                                                            (False, "neox", False, 0), (False, "llama", True, 0),
+                                                            (True, "llama", True, 0), (False, "llama", True, 32),
+                                                            (True, "llama", False, 32)])
 @pytest.mark.parametrize("shared", [True, False])
-def test_the_sizes_follow_the_layout_of_every_architecture(bias, arch, qk_norm, shared):
-    """A local Qwen2, Qwen3, GPT-2 or GPT-NeoX file has other tensors than a Llama: the size check must know (T77)."""
+def test_the_sizes_follow_the_layout_of_every_architecture(bias, arch, qk_norm, head_dim, shared):
+    """A local Qwen2, Qwen3, GPT-2 or GPT-NeoX file has other tensors than a Llama: the size check must know (T77).
+    So has a model with heads of another size than dim / heads (T124: 8 heads of 32 in a dim of 64)."""
     from llama2_convert import checkpoint_size
-    form = dict(qk_norm=qk_norm)
+    form = dict(qk_norm=qk_norm, head_dim=head_dim)
     header = (64, 172, 3, 8, 8, 300 if shared else -300, 128)
     for dtype in ("float32", "float16", "int8"):
         assert checkpoint_dtype(header, checkpoint_size(header, dtype, bias, arch, **form), bias, arch, **form) == dtype

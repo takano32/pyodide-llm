@@ -539,20 +539,22 @@ def outlier_columns(classifier, channels):
     return np.ascontiguousarray(columns)
 
 
-def checkpoint_dtype(header, size, bias=False, arch="llama", qk_norm=False):
+def checkpoint_dtype(header, size, bias=False, arch="llama", qk_norm=False, head_dim=0):
     """"float32", "float16", "int8" or "int6": what a checkpoint file of size bytes with this header (7 ints) holds.
 
     The legacy format does not say, but the header fixes the size of each variant. Anything else is no checkpoint
     this engine can read, and the ValueError says so before hundreds of megabytes are read for nothing.
-    bias, arch and qk_norm are what the file cannot say either (see Llama.__init__): the tensors differ with them.
+    bias, arch, qk_norm and head_dim are what the file cannot say either (see Llama.__init__): the tensors differ
+    with them.
     """
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = (int(value) for value in header)
+    head_size = int(head_dim) or (dim // n_heads if n_heads and dim % n_heads == 0 else 0)
     limit = 1 << 24
     if not (0 < dim < limit and 0 < hidden_dim < limit and 0 < n_layers < 4096 and 0 < n_kv_heads <= n_heads <= dim
-            and 0 < abs(vocab_size) < limit and 0 < seq_len < limit and dim % n_heads == 0 and n_heads % n_kv_heads == 0):
+            and 0 < abs(vocab_size) < limit and 0 < seq_len < limit and 0 < head_size < limit and n_heads % n_kv_heads == 0):
         raise ValueError("This is not a llama2.c checkpoint: the header makes no sense.")
-    kv_dim = n_kv_heads * (dim // n_heads)
-    rope = 2 * seq_len * (dim // n_heads // 2)
+    q_dim, kv_dim = n_heads * head_size, n_kv_heads * head_size
+    rope = 2 * seq_len * (head_size // 2)
     if arch in ("gpt2", "neox"):
         # the same tensors in the same order as gpt2_tensors() and llama2_convert.layout(arch=): q, k, v, o, the two
         # FFN matrices (no gate), and for GPT-2 the table of positions in place of the RoPE tables
@@ -564,11 +566,11 @@ def checkpoint_dtype(header, size, bias=False, arch="llama", qk_norm=False):
         vectors = n_layers * (4 * dim + 3 * dim + dim + hidden_dim + dim) + 2 * dim
     else:
         # the same tensors in the same order as llama_tensors() and quantize.py: (rows, row length) of the matrices
-        matrices = [(abs(vocab_size), dim), (n_layers * dim, dim), (n_layers * kv_dim, dim), (n_layers * kv_dim, dim),
-                    (n_layers * dim, dim), (n_layers * hidden_dim, dim), (n_layers * dim, hidden_dim),
+        matrices = [(abs(vocab_size), dim), (n_layers * q_dim, dim), (n_layers * kv_dim, dim), (n_layers * kv_dim, dim),
+                    (n_layers * dim, q_dim), (n_layers * hidden_dim, dim), (n_layers * dim, hidden_dim),
                     (n_layers * hidden_dim, dim)]
-        vectors = 2 * n_layers * dim + dim + (n_layers * (dim + 2 * kv_dim) if bias else 0) \
-            + (2 * n_layers * (dim // n_heads) if qk_norm else 0)
+        vectors = 2 * n_layers * dim + dim + (n_layers * (q_dim + 2 * kv_dim) if bias else 0) \
+            + (2 * n_layers * head_size if qk_norm else 0)
     if vocab_size < 0:
         matrices.append((abs(vocab_size), dim))
     floats = sum(rows * length for rows, length in matrices) + vectors + rope
@@ -623,7 +625,7 @@ class Llama:
                  tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, nmt=False, collapse=False,
-                 unknown=None, qk_norm=False):
+                 unknown=None, qk_norm=False, head_dim=0):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py), and
@@ -638,6 +640,8 @@ class Llama:
         projections (Qwen2). The legacy header cannot say so, so the caller does, like the tokenizer settings.
         qk_norm=True (T124): after them come the RMSNorm weights of q and k (one head's size each, per layer), and
         every head of q and k is normalized with them before RoPE (Qwen3). The caller says so, like bias.
+        head_dim: the size of a head where it is not dim / n_heads (T124: Qwen3 0.6B has 16 heads of 128 in a dim of
+        1024): q and the attention's output are then n_heads * head_dim wide.
         rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
         rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
         whole (Llama 3).
@@ -664,9 +668,9 @@ class Llama:
         # negative vocab size is hacky way of signaling unshared weights. bit yikes.
         shared_weights = vocab_size > 0
         self.vocab_size = abs(vocab_size)
-        self.head_size = self.dim // self.n_heads
+        self.head_size = int(head_dim) or self.dim // self.n_heads
         dim, hidden_dim, n_layers = self.dim, self.hidden_dim, self.n_layers
-        kv_dim = self.n_kv_heads * self.head_size
+        self.q_dim, kv_dim = self.n_heads * self.head_size, self.n_kv_heads * self.head_size
 
         disable = tuple(str(name) for name in disable)
         unnamed = [name for name in disable if name not in SWITCHES]
@@ -678,7 +682,7 @@ class Llama:
         dtype = np.dtype(np.int8 if six else dtype)
         offset = 28
         # The int8 kernels work on groups of 32 only
-        suitable = dtype != np.int8 or (dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0)
+        suitable = dtype != np.int8 or (dim % 32 == 0 and self.q_dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0)
         kernels = load_kernels(kernels, "relaxed" in disable) if kernels and "kernels" not in disable and \
             (suitable or external is not None) else None
         # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
@@ -773,10 +777,10 @@ class Llama:
         # float16 table stays as it is (a quarter or half of the memory) and forward() widens the row it needs.
         self.token_embedding_table = take(self.vocab_size, dim, widen=shared_weights and not keep_int8)
         self.rms_att_weight = take(n_layers, dim, matrix=False)
-        self.wq = take(n_layers, dim, dim, widen=not keep_int8)
+        self.wq = take(n_layers, self.q_dim, dim, widen=not keep_int8)
         self.wk = take(n_layers, kv_dim, dim, widen=not keep_int8)
         self.wv = take(n_layers, kv_dim, dim, widen=not keep_int8)
-        self.wo = take(n_layers, dim, dim, widen=not keep_int8)
+        self.wo = take(n_layers, dim, self.q_dim, widen=not keep_int8)
         self.rms_ffn_weight = take(n_layers, dim, matrix=False)
         self.w1 = take(n_layers, hidden_dim, dim, widen=not keep_int8)
         self.w2 = take(n_layers, dim, hidden_dim, widen=not keep_int8)
@@ -787,7 +791,7 @@ class Llama:
             self.freq_cis_imag = take(self.seq_len, self.head_size // 2, matrix=False)
         self.wcls = self.token_embedding_table if shared_weights else take(self.vocab_size, dim, widen=not keep_int8)
         # the q, k and v biases go last, so that a checkpoint without them is the file it always was
-        self.bq = take(n_layers, dim, matrix=False) if bias else None
+        self.bq = take(n_layers, self.q_dim, matrix=False) if bias else None
         self.bk = take(n_layers, kv_dim, matrix=False) if bias else None
         self.bv = take(n_layers, kv_dim, matrix=False) if bias else None
         if qk_norm:
@@ -940,7 +944,7 @@ class Llama:
             att = np.exp(att - att.max(axis=-1, keepdims=True))
             att /= att.sum(axis=-1, keepdims=True)
             # Output projection and residual connection
-            attended = self.wo[l] @ (att @ values).reshape(self.dim)
+            attended = self.wo[l] @ (att @ values).reshape(self.q_dim)
             if layer_norm:
                 attended = attended + self.bo[l]
             # GPT-NeoX with use_parallel_residual: both branches read the x this layer began with

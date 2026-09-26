@@ -275,9 +275,9 @@ async function localOptions(model, vocabulary, head) {
   const pieces = pyodide.toPy(vocabulary);
   try {
     // what the file cannot say and the settings may: a Qwen2 has biases, a GPT-2 or GPT-NeoX another set of tensors,
-    // a Qwen3 the norms of q and k (T124)
-    const { bias = false, arch = "llama", qk_norm = false } = model.options ?? {};
-    const dtype = llama2_numpy.checkpoint_dtype.callKwargs(header, model.bytes, bias, arch, { qk_norm });
+    // a Qwen3 the norms of q and k and maybe heads of another size than dim / heads (T124)
+    const { bias = false, arch = "llama", qk_norm = false, head_dim = 0 } = model.options ?? {};
+    const dtype = llama2_numpy.checkpoint_dtype.callKwargs(header, model.bytes, bias, arch, { qk_norm, head_dim });
     llama2_numpy.check_tokenizer(pieces, header);
     return { ...model.options, dtype };
   } finally {
@@ -537,12 +537,13 @@ function pooledWeights(size, after, shared, wide) {
 }
 
 // T115: what the forward pass of a checkpoint of size bytes puts after it, at most (forward.js's footprint()): from
-// its header (the 7 ints) and the options it is loaded with, on a shared memory (an int8 model's keys and values
-// in float16 there, T110) or not
-function afterCheckpoint(header, size, { dtype = "float32", arch = "llama" }, shared) {
+// its header (the 7 ints) and the options it is loaded with (head_dim where a head is not dim / heads, T124: the
+// keys and values of a Qwen3 0.6B are twice what the header says), on a shared memory (an int8 model's keys and
+// values in float16 there, T110) or not
+function afterCheckpoint(header, size, { dtype = "float32", arch = "llama", head_dim = 0 }, shared) {
   const int8 = !disabled.includes("int8"), quantized = dtype === "int8" || dtype === "int6";
   return forwardModule.footprint(header, size, {
-    dtype, arch, int8, relaxed: Boolean(jsKernels?.relaxed) && !disabled.includes("relaxed"),
+    dtype, arch, headDim: head_dim, int8, relaxed: Boolean(jsKernels?.relaxed) && !disabled.includes("relaxed"),
     halfKV: shared && quantized && int8 && !disabled.includes("kv16"),
     kvStart: llama2_numpy.KV_START, outliers: llama2_numpy.OUTLIER_CHANNELS,
   });
@@ -554,13 +555,17 @@ const sharedWanted = () => Boolean(sharedKernels && self.crossOriginIsolated && 
 // device says it has too little memory): int8 unless its forward pass does not fit a 32-bit memory and this browser
 // has no 64-bit one (T133), then six bits (T98: 7/9 of int8's memory, and about half as fast). The converter calls
 // this once it knows the header: the size of either (sizes) and what the forward pass puts after them depend on it.
-function automaticBits(header, arch, sizes) {
+// form: what else sizes the forward pass ({ arch, head_dim }, llama2_convert.Stream.form).
+function automaticBits(header, form, sizes) {
   const ints = header.toJs(), int8 = sizes.toJs({ dict_converter: Object.fromEntries }).int8;
+  const { arch, head_dim } = form.toJs({ dict_converter: Object.fromEntries });
   header.destroy();
   sizes.destroy();
+  form.destroy();
   if (!forwardModule) return "int8";  // no forward.js (no WebAssembly SIMD): NumPy widens every weight anyway
   const shared = sharedWanted();
-  return forwardModule.automaticDtype(int8, afterCheckpoint(ints, int8, { dtype: "int8", arch }, shared), Boolean(wideKernels?.plain));
+  return forwardModule.automaticDtype(int8, afterCheckpoint(ints, int8, { dtype: "int8", arch, head_dim }, shared),
+    Boolean(wideKernels?.plain));
 }
 
 // header: the checkpoint's 7 ints, options: what it is loaded with (its dtype and arch): what the forward pass puts
@@ -874,10 +879,12 @@ async function convert(model, signal, id) {
   // A Python buffer on the way would stay: Pyodide's memory never shrinks.
   let weights, weightsSize = 0;
   const sink = {
-    open(bytes, header, dtype, arch) {
+    // form: { arch, head_dim }, what sizes the forward pass besides the header (T115, T124)
+    open(bytes, header, dtype, form) {
       weights?.destroy();  // an earlier try (another tokenizer) that got this far
-      weights = weightsBuffer(bytes, header.toJs(), { dtype, arch });
+      weights = weightsBuffer(bytes, header.toJs(), { dtype, ...form.toJs({ dict_converter: Object.fromEntries }) });
       header.destroy();
+      form.destroy();
       weightsSize = bytes;
     },
     write(offset, array) {

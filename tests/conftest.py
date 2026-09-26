@@ -37,18 +37,19 @@ def rope_tables(seq_len, head_size, rope_theta=10000.0):
 
 
 def synthetic_weights(dim=32, hidden_dim=64, n_layers=2, n_heads=4, n_kv_heads=4,
-                      vocab_size=320, seq_len=24, shared=True, seed=0):
-    """Random weights for a tiny model, plus its configuration. Small enough for a naive reference."""
+                      vocab_size=320, seq_len=24, shared=True, seed=0, head_size=0):
+    """Random weights for a tiny model, plus its configuration. Small enough for a naive reference.
+    head_size: where a head is not dim / n_heads (T124), q and the attention's output are n_heads * head_size wide."""
     rng = np.random.default_rng(seed)
-    head_size = dim // n_heads
-    kv_dim = n_kv_heads * head_size
+    head_size = head_size or dim // n_heads
+    q_dim, kv_dim = n_heads * head_size, n_kv_heads * head_size
     normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
     cos, sin = rope_tables(seq_len, head_size)
     weights = {
         "token_embedding_table": normal(vocab_size, dim),
         "rms_att_weight": (1.0 + normal(n_layers, dim) * 0.1).astype(np.float32),
-        "wq": normal(n_layers, dim, dim), "wk": normal(n_layers, kv_dim, dim),
-        "wv": normal(n_layers, kv_dim, dim), "wo": normal(n_layers, dim, dim),
+        "wq": normal(n_layers, q_dim, dim), "wk": normal(n_layers, kv_dim, dim),
+        "wv": normal(n_layers, kv_dim, dim), "wo": normal(n_layers, dim, q_dim),
         "rms_ffn_weight": (1.0 + normal(n_layers, dim) * 0.1).astype(np.float32),
         "w1": normal(n_layers, hidden_dim, dim), "w2": normal(n_layers, dim, hidden_dim),
         "w3": normal(n_layers, hidden_dim, dim),
@@ -58,7 +59,7 @@ def synthetic_weights(dim=32, hidden_dim=64, n_layers=2, n_heads=4, n_kv_heads=4
     weights["wcls"] = weights["token_embedding_table"] if shared else normal(vocab_size, dim)
     config = dict(dim=dim, hidden_dim=hidden_dim, n_layers=n_layers, n_heads=n_heads,
                   n_kv_heads=n_kv_heads, vocab_size=vocab_size, seq_len=seq_len,
-                  head_size=head_size, kv_dim=kv_dim, shared=shared)
+                  head_size=head_size, q_dim=q_dim, kv_dim=kv_dim, shared=shared)
     return config, weights
 
 
@@ -156,7 +157,7 @@ def naive_logits(config, weights, tokens):
             keys.append(rope(head_norm(weights["wk"][l] @ xb + bias("bk"), "k_norm", l), pos, n_kv_heads))
             values.append(weights["wv"][l] @ xb + bias("bv"))
         for pos in range(len(tokens)):
-            attended = np.zeros(dim, dtype=np.float64)
+            attended = np.zeros(n_heads * head_size, dtype=np.float64)
             for h in range(n_heads):
                 kv = h // kv_mul
                 q = queries[pos][h * head_size:(h + 1) * head_size]

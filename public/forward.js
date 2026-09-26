@@ -46,11 +46,12 @@ export function memory64() {
   }
 }
 
-// The arrays of one token's frame (see createForward), in their order, and the bytes of each
-const frameArrays = (dim, hidden, kvDim) => {
-  const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, XQ = Math.max(dim, hidden);
-  return [["x", D], ["xb", D], ["xb2", D], ["q", D], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD], ["hb2", HD],
-    ["xq", XQ], ["xs", Math.ceil(XQ / 32) * 4]];
+// The arrays of one token's frame (see createForward), in their order, and the bytes of each. qDim: the width of q
+// and of the attention's output (into xb), heads times the head size: dim, except where a head has another size (T124)
+const frameArrays = (dim, hidden, kvDim, qDim = dim) => {
+  const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QD = Math.max(dim, qDim) * 4, XQ = Math.max(dim, hidden, qDim);
+  return [["x", D], ["xb", QD], ["xb2", D], ["q", qDim * 4], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD],
+    ["hb2", HD], ["xq", XQ], ["xs", Math.ceil(XQ / 32) * 4]];
 };
 const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(bytes), 0);
 
@@ -60,14 +61,15 @@ const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(b
  * header: the 7 ints of the legacy format. dtype: the file's ("float32", "float16", "int8", "int6"). int8: the int8
  * kernels compute on the weights (not with ?without=int8, which widens them to float32); relaxed: with relaxed SIMD
  * (a float32 correction a group); halfKV: keys and values in float16 (T110: an int8 model on a shared memory).
- * kvStart and outliers are llama2_numpy's KV_START and OUTLIER_CHANNELS. */
+ * kvStart and outliers are llama2_numpy's KV_START and OUTLIER_CHANNELS. headDim: the size of a head where it is not
+ * dim / heads (T124: the converter's options say head_dim then; 0 where they do not). */
 export function footprint(header, size, { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false,
-  kvStart = 256, outliers = 8 } = {}) {
+  kvStart = 256, outliers = 8, headDim = 0 } = {}) {
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
-  const vocab = Math.abs(signedVocab), headSize = dim / heads, kvDim = kvHeads * headSize;
+  const vocab = Math.abs(signedVocab), headSize = headDim || dim / heads, kvDim = kvHeads * headSize, qDim = heads * headSize;
   const quantized = dtype === "int8" || dtype === "int6", six = dtype === "int6";
   // the int8 kernels take rows of whole groups of 32 (llama2_numpy widens the others)
-  const onInt8 = int8 && dim % 32 === 0 && kvDim % 32 === 0 && hidden % 32 === 0;
+  const onInt8 = int8 && dim % 32 === 0 && qDim % 32 === 0 && kvDim % 32 === 0 && hidden % 32 === 0;
   let bytes = 0;
   // what the file holds in another form, for its matrices (not the tables that are no matrix multiplied: an
   // embedding apart from the classifier, GPT-2's positions): the corrections of relaxed SIMD, one float32 a group,
@@ -81,7 +83,7 @@ export function footprint(header, size, { dtype = "float32", arch = "llama", int
   // what a quantized file leaves out: GPT-2's positions widened, the RoPE tables Python computes
   if (quantized) bytes += arch === "gpt2" ? seqLen * dim * 4 : seqLen * headSize * 4;
   // the frames of BATCH tokens, their attention scores, the logits
-  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim)) + align(seqLen * heads * 4)) + vocab * 4;
+  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim)) + align(seqLen * heads * 4)) + vocab * 4;
   // the KV cache doubles from kvStart: at its largest step, the smaller blocks are still there next to the larger
   let capacity = Math.min(kvStart, seqLen), most = capacity;
   while (capacity < seqLen) {
@@ -169,7 +171,7 @@ function halfToFloat(h) {
 export function createForward({ memory, base, size, kernels, plan, spawn, wrap = (exports) => exports, stalledMs = STALLED_MS }) {
   const { dim, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: headSize, vocab_size: vocab,
     seq_len: seqLen, rotary, arch } = plan;
-  const hidden = plan.hidden_dim, kvDim = kvHeads * headSize;
+  const hidden = plan.hidden_dim, kvDim = kvHeads * headSize, qDim = heads * headSize;
   const gpt2 = arch === "gpt2", layerNorm = arch === "gpt2" || arch === "neox", parallel = plan.parallel_residual;
   const imports = { env: { memory } };
   const wide = Boolean(kernels.wide);  // T101: a 64-bit memory, whose kernels take their addresses as BigInt
@@ -272,8 +274,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // value made it 1.6 to 1.8 times as slow. A float32 model, the one held to NumPy's numbers, stays in float32.
   // KV: the bytes of one position's keys in the cache; KF: in float32.
   const halfKV = Boolean(plan.half_kv) && sharedMemory;
-  const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, KV = kvDim * (halfKV ? 2 : 4);
-  const inFrame = frameArrays(dim, hidden, kvDim), S = frameBytes(inFrame);
+  const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QF = qDim * 4, KV = kvDim * (halfKV ? 2 : 4);
+  const inFrame = frameArrays(dim, hidden, kvDim, qDim), S = frameBytes(inFrame);
   const frames = alloc(BATCH * S), at = {};
   inFrame.reduce((offset, [name, bytes]) => { at[name] = frames + offset; return offset + align(bytes); }, 0);
   // kNow, vNow: this token's key and value in float32, before they go into the cache
@@ -466,7 +468,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
       for (let t = 0; t < count; t++) {
         const qt = q + t * S, kt = kNow + t * S, vt = vNow + t * S, pos = pos0 + t;
         if (bq) {
-          k.add_inplace(qt, bq + l * D, dim);
+          k.add_inplace(qt, bq + l * QF, qDim);
           k.add_inplace(kt, bk + l * KF, kvDim);
           k.add_inplace(vt, bv + l * KF, kvDim);
         }
