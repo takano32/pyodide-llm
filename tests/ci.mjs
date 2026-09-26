@@ -192,10 +192,15 @@ async function report(target) {
       for (const line of lines) if (matching.test(line)) out(line);
     }
     if (failed) {
+      // what the failed step printed up to its first error: from the step's start (the runner's "##[group]Run"), without
+      // its echo of the script and its groups
       const error = lines.findIndex((line) => line.startsWith("##[error]"));
       const end = error < 0 ? lines.length : error + 1;
+      const step = lines.slice(0, end).findLastIndex((line) => line.startsWith("##[group]Run "));
+      const printed = lines.slice(Math.max(0, step), end)
+        .filter((line) => line.trim() && !/^(\x1b\[36;1m|##\[(group|endgroup)\]|shell: |env:$|  [A-Z0-9_]+: )/.test(line));
       out("-- up to the first error:");
-      for (const line of lines.slice(Math.max(0, end - 30), end)) out(line);
+      for (const line of printed.slice(-15)) out(line);
     }
   }
 }
