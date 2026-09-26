@@ -12,6 +12,7 @@ Before anything else, read the files again (what came into your context by itsel
 How to review (docs/review-by-opus.md):
 - Run it before you say OK. Look for what the record does not say: edges, failure paths, what a real device does that the software adapter (SwiftShader in CI) does not.
 - Judge with numbers, the formula and the condition that would overturn the judgment. Say what a shader reaches against what the device can do (GFLOPS for a prompt's matrix product, GB/s for a generated token), and why.
+- Check that the shader takes its form from the public implementation named in the task's item (llama.cpp's WebGPU, ONNX Runtime Web, TensorFlow.js, WebLLM): open that source, compare the tiles, workgroup size, loads and the inner loop line by line, and say where ours differs and why. A shader that invents its own form where a named source has a proven one, or that copies lines without the source and copyright notice in a comment, is must-fix.
 - Name must-fix, should, and what you checked and found right. Estimates are called estimates; what was not measured is "未計測".
 
 Rules of this repository (AGENTS.md):
