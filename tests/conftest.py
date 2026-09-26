@@ -1,6 +1,7 @@
 # Shared helpers for the engine tests: they run on native Python + NumPy, no Pyodide and no torch.
 # Synthetic checkpoints and tokenizers are built here, so that no binary has to live in the repository.
 import math
+import os
 import struct
 import sys
 from pathlib import Path
@@ -11,6 +12,12 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "public"))
 sys.path.insert(0, str(ROOT))  # quantize.py
+
+# tmp_path lives under the system's temporary directory, which on the development machine is a tmpfs, that is memory
+# (AGENTS.md), and was written there without a word (the owner, 2026-09-26): here it is the repository's .tmp, which
+# .gitignore has. pytest reads this where it first makes a tmp_path, after the conftests; a caller may say otherwise.
+(ROOT / ".tmp").mkdir(exist_ok=True)
+os.environ.setdefault("PYTEST_DEBUG_TEMPROOT", str(ROOT / ".tmp"))
 
 import llama2_numpy  # noqa: E402
 
