@@ -32,12 +32,26 @@ PROMPTS = ["これからの流行りを3つ挙げてください。", "What will
            "Hello  world\ttab", "<think> and <|im_end|> typed"]
 # the system message a model card always passes with the prompt
 SYSTEM = {"hf-swallow-ms-7b-instruct": "あなたは誠実で優秀な日本人のアシスタントです。"}
+# The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
+# (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
+ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9a775",
+             "Qwen/Qwen2.5-1.5B-Instruct": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+             "Qwen/Qwen2.5-3B-Instruct": "aa8e72537993ba99e69dfaafa59ed015b17504d1",
+             "Qwen/Qwen2.5-7B-Instruct": "a09a35458c702b33eeacc393d103063234e8bc28",
+             "Qwen/Qwen2.5-Coder-0.5B-Instruct": "ea3f2471cf1b1f0db85067f1ef93848e38e88c25",
+             "SakanaAI/TinySwallow-1.5B-Instruct": "91e9fcc30f56d224aea84356c4d850cc4c5a3260",
+             "HuggingFaceTB/SmolLM2-135M-Instruct": "12fd25f77366fa6b3b4b768ec3050bf629380bac",
+             "HuggingFaceTB/SmolLM2-360M-Instruct": "a10cc1512eabd3dde888204e902eca88bddb4951",
+             "HuggingFaceTB/SmolLM2-1.7B-Instruct": "31b70e2e869a7173562077fd711b654946d38674"}
 
 
 def entries():
-    script = ("import('./src/models.js').then(({ MODELS }) => console.log(JSON.stringify("
-              "MODELS.filter((m) => m.hf && !m.hf.weights.endsWith('.gguf')))))")
+    script = "import('./src/models.js').then(({ MODELS }) => console.log(JSON.stringify(MODELS.filter((m) => m.hf))))"
     return json.loads(subprocess.check_output(["node", "-e", script], cwd=HERE.parent))
+
+
+def gguf(entry):
+    return entry["hf"]["weights"].endswith(".gguf")
 
 
 def get(url, headers=None):
@@ -45,12 +59,29 @@ def get(url, headers=None):
 
 
 def fetch(entry, directory):
-    """The small files of the entry's repository at its revision, and the headers of its safetensors."""
+    """The small files of the entry's repository at its revision (of the original's for a GGUF), and the headers of
+    its safetensors or the beginning of its GGUF."""
     repo, revision = entry["hf"]["repo"], entry["hf"]["revision"]
+    if gguf(entry):
+        vocabulary = entry["hf"].get("vocabulary") or {"repo": entry["original"], "revision": ORIGINALS[entry["original"]]}
+        head = directory / repo.replace("/", "__") / revision / f"{entry['hf']['weights']}.head"
+        if not head.exists():
+            head.parent.mkdir(parents=True, exist_ok=True)
+            at = f"https://huggingface.co/{repo}/resolve/{revision}/{entry['hf']['weights']}"
+            for size in (8 << 20, 32 << 20, 128 << 20):  # as the worker does: until the tensors' data begins
+                data = get(at, {"Range": f"bytes=0-{size - 1}"})
+                try:
+                    llama2_convert.gguf_read(data)
+                    break
+                except llama2_convert.Incomplete:
+                    continue
+            head.write_bytes(data)
+        repo, revision = vocabulary["repo"], vocabulary["revision"]
     folder = directory / repo.replace("/", "__") / revision
     folder.mkdir(parents=True, exist_ok=True)
     at = lambda name: f"https://huggingface.co/{repo}/resolve/{revision}/{name}"
-    tokenizers = [entry["hf"]["tokenizer"]] if isinstance(entry["hf"]["tokenizer"], str) else entry["hf"]["tokenizer"]
+    named = (entry["hf"].get("vocabulary") or {}).get("tokenizer") or entry["hf"].get("tokenizer") or "tokenizer.json"
+    tokenizers = [named] if isinstance(named, str) else named
     # tokenizer.json and special_tokens_map.json too: transformers' reference reads them where they are
     for name in ["config.json", "tokenizer_config.json", "chat_template.jinja", "tokenizer.json",
                  "special_tokens_map.json", *tokenizers]:
@@ -63,6 +94,8 @@ def fetch(entry, directory):
             (folder / f"{name}.missing").touch()  # asked once; an empty file would look like an empty template
             continue
         target.write_bytes(data)
+    if gguf(entry):
+        return folder, head, tokenizers
     try:
         get(at("model.safetensors"), {"Range": "bytes=0-7"})
         shards = ["model.safetensors"]
@@ -93,9 +126,14 @@ def filled(template, prompt):
     return re.sub(r"\{prompt(:trim)?\}", lambda found: prompt.strip() if found.group(1) else prompt, template, count=1)
 
 
-def conversion(folder, shards, tokenizers):
-    """What the worker builds: the joined headers, config.json, the first tokenizer the converter takes, the template"""
-    if shards == ["model.safetensors"]:
+def conversion(entry, folder, shards, tokenizers):
+    """What the worker builds: the joined headers, config.json, the first tokenizer the converter takes, the template.
+    shards: for a GGUF, the file of its beginning"""
+    if gguf(entry) and not entry["hf"].get("vocabulary"):
+        return llama2_convert.Conversion.from_gguf(shards.read_bytes(), dtype="int8", sink=Sink())
+    if gguf(entry):
+        header, base = llama2_convert.gguf_weights(shards.read_bytes(), (folder / "config.json").read_text())
+    elif shards == ["model.safetensors"]:
         header = (folder / "model.safetensors.header.json").read_text()
         base = 8 + len(header.encode())
     else:
@@ -127,7 +165,7 @@ def main():
         if only and entry["id"] not in only:
             continue
         folder, shards, tokenizers = fetch(entry, directory)
-        made = conversion(folder, shards, tokenizers)
+        made = conversion(entry, folder, shards, tokenizers)
         options = {**made.options, **entry.get("options", {})}
         template = entry.get("template") or made.options.get("template")
         if not template:

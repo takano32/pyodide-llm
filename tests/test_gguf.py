@@ -1,6 +1,7 @@
 # GGUF as a source (T74): a GGUF written here the way llama.cpp writes one (Q8_0 matrices, F32 vectors, q and k of
 # a Llama turned into llama2.c's order, a Qwen2's left alone) must give the very checkpoint that the safetensors of
 # the same values gives. The real file is checked by tests/gguf_check.py.
+import json
 import struct
 
 import numpy as np
@@ -11,6 +12,7 @@ from test_convert import converted, hugging_face, reader, safetensors_file
 
 import llama2_convert
 from llama2_convert import Conversion, Incomplete, Safetensors, gguf_read
+from llama2_numpy import rope_frequencies
 
 NAMES = {"model.embed_tokens.weight": "token_embd.weight", "model.norm.weight": "output_norm.weight",
          "lm_head.weight": "output.weight"}
@@ -42,8 +44,9 @@ def gguf_name(name):
     return f"blk.{layer}.{LAYER['.'.join(rest[:-1])]}.{rest[-1]}"
 
 
-def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2"):
-    """A GGUF v3 of these Hugging Face tensors, and the tensors as the GGUF holds them (Q8_0 rounds)."""
+def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", rope_freqs=None, eps=None):
+    """A GGUF v3 of these Hugging Face tensors, and the tensors as the GGUF holds them (Q8_0 rounds). rope_freqs:
+    llama.cpp's table of Llama 3's RoPE scaling, written after the other tensors (as Swallow 8B's GGUF has it)."""
     string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
     heads = {"q_proj": published["num_attention_heads"], "k_proj": published["num_key_value_heads"]}
     metadata = [("general.architecture", 8, arch), (f"{arch}.block_count", 4, published["num_hidden_layers"]),
@@ -55,8 +58,10 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2"):
                 (f"{arch}.rope.freq_base", 6, 10000.0), ("tokenizer.ggml.model", 8, "gpt2"),
                 ("tokenizer.ggml.pre", 8, pre), ("tokenizer.ggml.bos_token_id", 4, 1),
                 ("tokenizer.ggml.eos_token_id", 4, 2)]
+    if eps is not None:
+        metadata.append((f"{arch}.attention.layer_norm_rms_epsilon", 6, eps))
     tokens = [f"w{i}" for i in range(vocab_size)]
-    out = [b"GGUF", struct.pack("<IQQ", 3, len(tensors), len(metadata) + 3)]
+    out = [b"GGUF", struct.pack("<IQQ", 3, len(tensors) + (rope_freqs is not None), len(metadata) + 3)]
     for key, kind, value in metadata:
         out.append(string(key) + struct.pack("<I", kind))
         out.append(string(value) if kind == 8 else struct.pack({4: "<I", 6: "<f"}[kind], value))
@@ -80,6 +85,10 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2"):
                    + struct.pack("<IQ", type_, offset))
         blobs.append(blob + b"\0" * (-len(blob) % 32))
         offset += len(blobs[-1])
+    if rope_freqs is not None:
+        blob = np.asarray(rope_freqs, dtype=np.float32).tobytes()
+        out.append(string("rope_freqs.weight") + struct.pack("<IQ", 1, len(rope_freqs)) + struct.pack("<IQ", 0, offset))
+        blobs.append(blob + b"\0" * (-len(blob) % 32))
     head = b"".join(out)
     head += b"\0" * (-len(head) % 32)
     # the values the GGUF stands for, back in Hugging Face's order: what a safetensors of the same model holds
@@ -149,4 +158,100 @@ def test_a_q8_0_tensor_whose_rows_are_not_groups_of_32_is_refused():
     tensors, published = hugging_face(config, weights, True)
     file, _ = gguf_file(tensors, published, config["vocab_size"])
     with pytest.raises(ValueError, match="multiple of 32"):
+        Conversion.from_gguf(file)
+
+
+# ---- T136's second stage: the weights of a GGUF with the vocabulary and config.json of the original repository
+def with_original(file, published, vocabulary, name, dtype, chunk=4096):
+    """What worker.js does for such an item: the GGUF's header made a safetensors one, then the original's files."""
+    header, base = llama2_convert.gguf_weights(file, json.dumps(published))
+    conversion = Conversion(header, base, json.dumps(published), vocabulary, name, dtype=dtype, max_seq_len=1 << 20,
+                            start=base)
+    for start in range(base, len(file), chunk):
+        conversion.feed(file[start:start + chunk])
+    conversion.finish()
+    return conversion
+
+
+def sentencepiece(vocab_size):
+    from make_hf_fixture import field
+    NORMAL, UNKNOWN, CONTROL = 1, 2, 3
+    pieces = [("<unk>", UNKNOWN), ("<s>", CONTROL), ("</s>", CONTROL)]
+    pieces += [(f"▁w{i}", NORMAL) for i in range(vocab_size - len(pieces))]
+    model = b"".join(field(1, field(1, text.encode()) + field(2, -float(i)) + field(3, kind)) for i, (text, kind) in enumerate(pieces))
+    return model + field(2, field(3, 1)) + field(3, field(1, b"identity"))
+
+
+LLAMA3 = {"rope_type": "llama3", "factor": 8.0, "low_freq_factor": 1.0, "high_freq_factor": 4.0,
+          "original_max_position_embeddings": 64}
+
+
+def llama3_table(published):
+    width = llama2_convert.head_size(published)
+    return rope_frequencies(width, 10000.0) / rope_frequencies(width, 10000.0, LLAMA3)
+
+
+@pytest.mark.parametrize("dtype", ["int8", "float32"])
+@pytest.mark.parametrize("model", ["sentencepiece", "llama3"])
+def test_a_gguf_with_the_originals_vocabulary_is_the_safetensors_conversion(model, dtype):
+    """The same checkpoint, tokenizer.bin and options as the safetensors of the same values with the same files:
+    the GGUF's own vocabulary and settings play no part, and a rope_freqs table is checked and dropped."""
+    config, weights = synthetic_weights(n_kv_heads=2, shared=False)
+    tensors, published = hugging_face(config, weights, False)
+    published["rms_norm_eps"] = 1e-5
+    table = None
+    if model == "llama3":
+        published["rope_scaling"] = LLAMA3
+        table = llama3_table(published)
+    file, same = gguf_file(tensors, published, config["vocab_size"], rope_freqs=table, eps=1e-5)
+    vocabulary, name = (sentencepiece(config["vocab_size"]), "tokenizer.model") if model == "sentencepiece" else \
+        (json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
+                     "vocab": [[f"w{i}", -float(i)] for i in range(config["vocab_size"])]}}).encode(), "tokenizer.json")
+    got = with_original(file, published, vocabulary, name, dtype)
+    safetensors = safetensors_file(same)
+    size = struct.unpack("<Q", safetensors[:8])[0]
+    expected = Conversion(safetensors[8:8 + size].decode(), 8 + size, json.dumps(published), vocabulary, name,
+                          dtype=dtype, max_seq_len=1 << 20)
+    expected.feed(safetensors)
+    expected.finish()
+    assert bytes(got.checkpoint) == bytes(expected.checkpoint)
+    assert bytes(got.tokenizer) == bytes(expected.tokenizer)
+    assert got.options == expected.options
+    assert (got.options.get("rope_scaling") == LLAMA3) is (model == "llama3")
+
+
+@pytest.mark.parametrize("change, what", [
+    (dict(num_attention_heads=2, num_key_value_heads=2, head_dim=16), "number of heads"),
+    (dict(num_key_value_heads=4), "number of key-value heads"),
+    (dict(rope_theta=500000.0), "RoPE theta"),
+    (dict(rms_norm_eps=1e-6), "RMSNorm epsilon"),
+    (dict(model_type="qwen2"), "architecture"),
+    (dict(tie_word_embeddings=False), "classifier of its own"),
+])
+def test_a_gguf_that_is_not_the_originals_is_refused(change, what):
+    """What the sizes of the tensors do not show (T136's review, point 5): heads and key-value heads of the same
+    product, a classifier that would silently be the embedding, and the numbers that are no tensor."""
+    config, weights = synthetic_weights(n_kv_heads=2)
+    tensors, published = hugging_face(config, weights, True)
+    published["rms_norm_eps"] = 1e-5
+    file, _ = gguf_file(tensors, published, config["vocab_size"], eps=1e-5)
+    llama2_convert.gguf_weights(file, json.dumps(published))  # its own config goes through
+    with pytest.raises(ValueError, match=what):
+        llama2_convert.gguf_weights(file, json.dumps({**published, **change}))
+
+
+def test_a_rope_freqs_table_that_is_not_the_originals_scaling_is_refused():
+    """A GGUF's rope_freqs is dropped for the engine's own tables (rope_frequencies of rope_scaling): only where the
+    two agree. Here it comes after every other tensor, as in Swallow 8B's GGUF, and is refused before finish()."""
+    config, weights = synthetic_weights(n_kv_heads=2)
+    tensors, published = hugging_face(config, weights, True)
+    published["rope_scaling"] = LLAMA3
+    table = llama3_table(published)
+    table[-1] *= 1.01
+    file, _ = gguf_file(tensors, published, config["vocab_size"], rope_freqs=table)
+    vocabulary = sentencepiece(config["vocab_size"])
+    with pytest.raises(ValueError, match="scales its RoPE otherwise"):
+        with_original(file, published, vocabulary, "tokenizer.model", "int8")
+    # without the original's config.json (?hf= of a GGUF) the table is refused as before
+    with pytest.raises(ValueError, match="rope_freqs table"):
         Conversion.from_gguf(file)

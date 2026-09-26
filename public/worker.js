@@ -902,7 +902,11 @@ async function convert(model, signal, id) {
   const onKernels = kernels && !disabled.includes("kernels");
   const quantizeRows = onKernels ? llama2_numpy.kernel_quantizer(kernels) : undefined;
   const bfloat16 = onKernels ? llama2_numpy.kernel_widener(kernels) : undefined;
-  if (remote && model.hf.weights.endsWith(".gguf")) {
+  // T136: a GGUF's weights with the vocabulary and config.json of the original repository (a sentencepiece vocabulary
+  // in a GGUF says neither its kind nor its normalization): those files come from there, the weights from the GGUF
+  const vocabulary = remote ? model.hf.vocabulary : undefined;
+  const from = (name) => vocabulary ? `https://huggingface.co/${vocabulary.repo}/resolve/${vocabulary.revision}/${name}` : at(name);
+  if (remote && model.hf.weights.endsWith(".gguf") && !vocabulary) {
     // T74: a GGUF holds the configuration and the vocabulary in its header, before the tensors: no config.json and
     // no tokenizer to fetch. The header is a few megabytes (the vocabulary), so it is fetched in growing pieces
     // until the converter can read all of it.
@@ -934,42 +938,60 @@ async function convert(model, signal, id) {
       return { name, header: new TextDecoder().decode(bytes.subarray(8, start)), base: start, total };
     };
     let header;
-    try {
-      ({ header, base, total: size } = await head(model.hf.weights));
-    } catch (error) {
-      if (!remote) {
-        throw error;
-      }
-      signal.throwIfAborted();
-      const index = await text(at(`${model.hf.weights}.index.json`)).then((res) => res.text())
-        .catch(() => { throw error; });
-      const files = shardsOf(index);
-      if (!files.length) {
-        throw error;
-      }
-      if (files.length === 1) {
-        model = { ...model, hf: { ...model.hf, weights: files[0] } };
-        ({ header, base, total: size } = await head(files[0]));
-      } else {
-        // T105: the shards' headers joined into the header of one file made of their data one after another, which
-        // the converter reads as it reads any file. Each shard is then fed from its own base, the next after it.
-        shards = [];
-        for (const name of files) {
-          shards.push(await head(name));
+    const config = remote ? await (await text(from(model.hf.config ?? "config.json"))).text() : await model.hf.config.text();
+    if (vocabulary) {
+      // the GGUF's header as a safetensors one, once the original's config.json agrees with it; the header is a few
+      // megabytes (the GGUF's own vocabulary), fetched in growing pieces as above
+      for (let bytes = 4 * HF_HEADER_BYTES; ; bytes *= 4) {
+        ({ bytes: first, total: size } = await sized(at(model.hf.weights), await fetchRange(at(model.hf.weights), 0, bytes, signal), signal));
+        try {
+          const made = llama2_convert.gguf_weights(first, config);
+          [header, base] = made.toJs();
+          made.destroy();
+          break;
+        } catch (error) {
+          if (error.type !== "Incomplete" || bytes >= size) {
+            throw error;
+          }
         }
-        const joined = llama2_convert.joined_shards(shards.map((shard) => shard.header));
-        let lengths;
-        [header, lengths] = joined.toJs();
-        joined.destroy();
-        shards.forEach((shard, i) => { shard.length = lengths[i]; });
-        base = 0;
-        size = shards.reduce((sum, shard) => sum + shard.length, 0);
+      }
+    } else {
+      try {
+        ({ header, base, total: size } = await head(model.hf.weights));
+      } catch (error) {
+        if (!remote) {
+          throw error;
+        }
+        signal.throwIfAborted();
+        const index = await text(at(`${model.hf.weights}.index.json`)).then((res) => res.text())
+          .catch(() => { throw error; });
+        const files = shardsOf(index);
+        if (!files.length) {
+          throw error;
+        }
+        if (files.length === 1) {
+          model = { ...model, hf: { ...model.hf, weights: files[0] } };
+          ({ header, base, total: size } = await head(files[0]));
+        } else {
+          // T105: the shards' headers joined into the header of one file made of their data one after another, which
+          // the converter reads as it reads any file. Each shard is then fed from its own base, the next after it.
+          shards = [];
+          for (const name of files) {
+            shards.push(await head(name));
+          }
+          const joined = llama2_convert.joined_shards(shards.map((shard) => shard.header));
+          let lengths;
+          [header, lengths] = joined.toJs();
+          joined.destroy();
+          shards.forEach((shard, i) => { shard.length = lengths[i]; });
+          base = 0;
+          size = shards.reduce((sum, shard) => sum + shard.length, 0);
+        }
       }
     }
-    const config = remote ? await (await text(at(model.hf.config))).text() : await model.hf.config.text();
     // The format of one turn, when the model publishes a chat_template (T73). It is small, and a model without
     // one (or with one the converter cannot read) simply keeps the format src/models.js has for it.
-    const tokenizerConfig = await (remote ? text(at("tokenizer_config.json")).then((r) => r.text())
+    const tokenizerConfig = await (remote ? text(from("tokenizer_config.json")).then((r) => r.text())
       : model.hf.tokenizerConfig?.text() ?? Promise.resolve("")).catch(() => "");
     // T127: newer repositories keep the template in chat_template.jinja instead. Asked for only where
     // tokenizer_config.json has none: most repositories have no such file, and WebKit reports each 404 as an error
@@ -980,14 +1002,14 @@ async function convert(model, signal, id) {
         return false;
       }
     })();
-    const chatTemplate = hasTemplate ? "" : await (remote ? text(at("chat_template.jinja")).then((r) => r.text())
+    const chatTemplate = hasTemplate ? "" : await (remote ? text(from("chat_template.jinja")).then((r) => r.text())
       : model.hf.chatTemplate?.text() ?? Promise.resolve("")).catch(() => "");
     // For a repository nobody has looked at (?hf=), the tokenizer is whichever of these it has and the converter can read
     let refusal;
-    for (const candidate of [].concat(model.hf.tokenizer)) {
+    for (const candidate of [].concat(vocabulary?.tokenizer ?? model.hf.tokenizer)) {
       try {
         const tokenizerName = remote ? candidate : candidate.name;
-        const tokenizer = new Uint8Array(remote ? await (await text(at(candidate))).arrayBuffer() : await candidate.arrayBuffer());
+        const tokenizer = new Uint8Array(remote ? await (await text(from(candidate))).arrayBuffer() : await candidate.arrayBuffer());
         signal.throwIfAborted();
         conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName,
           { start: base, tokenizer_config: tokenizerConfig, chat_template: chatTemplate || null, ...converting, sink,

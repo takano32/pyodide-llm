@@ -14,10 +14,13 @@ export const CACHE_NAME = "converted-v1";
 const FOLDER = "converted-v1";
 const PART_BYTES = 8 * 1024 * 1024;
 
-// the name of a model's conversion: its repository, revision, dtype and context, as the Cache API key has it
+// the name of a model's conversion: its repository, revision, dtype and context, as the Cache API key has it, and
+// where the vocabulary and config.json come from another repository than the weights (T136), that one too
 export function keptName(model) {
   const { dtype = "int8", max_seq_len = 4096 } = model.conversion ?? {};
-  return encodeURIComponent(`${model.hf.repo}@${model.hf.revision}:${dtype}:${max_seq_len}`);
+  const { vocabulary } = model.hf;
+  const from = vocabulary ? `+${vocabulary.repo}@${vocabulary.revision}` : "";
+  return encodeURIComponent(`${model.hf.repo}@${model.hf.revision}${from}:${dtype}:${max_seq_len}`);
 }
 /** T116: the version of what llama2_convert.py writes, the checkpoint's bytes and the options the engine gets.
  * Raise it when either changes: a conversion kept by an older converter is then converted again, and deleted (the

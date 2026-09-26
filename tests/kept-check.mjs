@@ -189,4 +189,11 @@ const readBack = async (found) => {
   assert.equal(await kept.openKept(model), undefined);
   assert.equal((await kept.keptModels()).length, 1, "the newer one stays");
 }
+// T136: a GGUF's weights with another repository's vocabulary and config.json is kept under both: the same GGUF with
+// another vocabulary is another conversion. Without one, the name is what it always was
+{
+  const withVocabulary = { ...model, hf: { ...model.hf, vocabulary: { repo: "c/d", revision: "4567", tokenizer: "tokenizer.model" } } };
+  assert.equal(decodeURIComponent(kept.keptName(model)), "a/b@0123:int8:4096");
+  assert.equal(decodeURIComponent(kept.keptName(withVocabulary)), "a/b@0123+c/d@4567:int8:4096");
+}
 console.log("ok");

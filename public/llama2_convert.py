@@ -1270,9 +1270,12 @@ class Stream:
         self.steps = []
         for name, info in sorted(self.tensors.items(), key=lambda item: item[1]["data_offsets"][0]):
             begin, end = info["data_offsets"]
-            self.steps.append((base + begin, base + end, name, wanted.get(name)))
+            # T136: a table to check as it passes, not to convert (gguf_weights)
+            target = wanted.get(name) or ("check" if info.get("rope_freqs") else None)
+            self.steps.append((base + begin, base + end, name, target))
         self.position, self.step, self.pending, self.first = start, 0, bytearray(), 0
         self.size = max((end for _, end, _, _ in self.steps), default=base)
+        self.config = config
 
     def __contains__(self, name):  # what checkpoint_header() asks
         return name in self.tensors
@@ -1292,7 +1295,11 @@ class Stream:
                 offset += min(begin - here, len(data) - offset)
                 continue
             take = min(end - here, len(data) - offset)
-            if target is not None:
+            if target == "check":
+                self.pending += data[offset:offset + take]
+                if here + take == end:
+                    rope_freqs_agree(np.frombuffer(bytes(self.pending), dtype=np.float32), self.config)
+            elif target is not None:
                 self.pending += data[offset:offset + take]
                 self.convert(name, target, last=here + take == end)
             offset += take
@@ -1410,8 +1417,10 @@ def gguf_read(data):
     return metadata, tensors, (at + alignment - 1) // alignment * alignment
 
 
-def gguf_model(metadata, tensors, base):
-    """The safetensors-like header (Hugging Face's names, offsets from base) and the config.json of a GGUF."""
+def gguf_model(metadata, tensors, base, rope_freqs=False):
+    """The safetensors-like header (Hugging Face's names, offsets from base) and the config.json of a GGUF.
+    rope_freqs: keep llama.cpp's table of Llama 3's RoPE scaling in the header, to be checked against the original's
+    rope_scaling as it streams past (gguf_weights, T136), instead of refusing it."""
     arch = metadata.get("general.architecture")
     if arch not in ("llama", "qwen2"):
         raise ValueError(f"This GGUF holds a {arch}: only Llama and Qwen2 ones are supported.")
@@ -1428,11 +1437,18 @@ def gguf_model(metadata, tensors, base):
               "head_dim": key("attention.key_length"), "rms_norm_eps": key("attention.layer_norm_rms_epsilon")}
     if key("rope.scaling.type", "none") not in ("none", None):
         config["rope_scaling"] = {"type": key("rope.scaling.type"), "factor": key("rope.scaling.factor", 1.0)}
+    header = {}
     if "rope_freqs.weight" in tensors:
         # llama.cpp writes Llama 3's RoPE scaling as a table of divisors instead of the rope_scaling of config.json
-        raise ValueError("This GGUF scales its RoPE with a rope_freqs table, which the engine does not read.")
+        if not rope_freqs:
+            raise ValueError("This GGUF scales its RoPE with a rope_freqs table, which the engine does not read.")
+        info = tensors["rope_freqs.weight"]
+        if info["type"] != 0:
+            raise ValueError(f"rope_freqs.weight is stored as ggml type {info['type']}, not F32.")
+        size = 4 * int(np.prod(info["shape"]))
+        header["rope_freqs.weight"] = {"dtype": "F32", "shape": info["shape"], "rope_freqs": True,
+                                       "data_offsets": [info["offset"], info["offset"] + size]}
     heads = {"attn_q": config["num_attention_heads"], "attn_k": config["num_key_value_heads"]}
-    header = {}
     for name, info in tensors.items():
         if info["type"] not in GGUF_TENSORS:
             raise ValueError(f"{name} is stored as ggml type {info['type']}: only F32, F16 and Q8_0 GGUF files are "
@@ -1456,6 +1472,62 @@ def gguf_model(metadata, tensors, base):
             entry["turned"] = heads[name.split(".")[2]]
         header[target] = entry
     return header, config
+
+
+def gguf_weights(head, config):
+    """T136's second stage: the weights of a GGUF with the vocabulary and config.json of the original repository,
+    for the GGUF's own vocabulary is of no use there (a sentencepiece one says neither Unigram or BPE nor its
+    normalization; llm-jp's scores are all -1000). head: the GGUF's beginning, as far as the tensors' data (Incomplete
+    when it is not), config: the text of the original's config.json. Returns the safetensors-like header (JSON text)
+    and where the tensors begin, which Conversion() then takes as it takes a safetensors file's."""
+    metadata, tensors, base = gguf_read(head)
+    header, own = gguf_model(metadata, tensors, base, rope_freqs=True)
+    try:
+        original = json.loads(config)
+    except ValueError:
+        raise ValueError("config.json is not JSON.") from None
+    if not isinstance(original, dict):
+        raise ValueError("config.json is not the configuration of a model.")
+    gguf_agrees(own, normalize(original))
+    return json.dumps(header), base
+
+
+def gguf_agrees(own, config):
+    """ValueError unless a GGUF (own: what gguf_model() read of it) holds the model config.json describes. The
+    sizes of the tensors the conversion checks anyway (Stream); these are what the sizes do not show: heads and
+    key-value heads of the same product, a classifier that would silently be the embedding (Stream shares it where
+    lm_head is missing), and the numbers that are no tensor. The context is not compared: a sliding window cuts it
+    (RakutenAI 2.0 mini: 131072 in the GGUF, 8192 as normalize() cuts it)."""
+    f32 = lambda value: float(np.float32(value))
+    heads = config.get("num_attention_heads")
+    pairs = [("architecture", own["model_type"], config.get("model_type")),
+             ("number of heads", own["num_attention_heads"], heads),
+             ("number of key-value heads", own["num_key_value_heads"], config.get("num_key_value_heads", heads)),
+             ("RoPE theta", f32(own["rope_theta"]), f32(config.get("rope_theta", 10000.0)))]
+    if own.get("head_dim") and config.get("hidden_size") and heads:
+        pairs.append(("size of a head", own["head_dim"], head_size(config)))
+    if own.get("rms_norm_eps") is not None and config.get("rms_norm_eps") is not None:
+        pairs.append(("RMSNorm epsilon", f32(own["rms_norm_eps"]), f32(config["rms_norm_eps"])))
+    for what, here, there in pairs:
+        if here != there:
+            raise ValueError(f"This GGUF does not belong with the original's config.json: its {what} is {here} here "
+                             f"and {there} there.")
+    if own["tie_word_embeddings"] and not config.get("tie_word_embeddings", False):
+        raise ValueError("This GGUF does not belong with the original's config.json: the original has a classifier of "
+                         "its own, this GGUF has none.")
+
+
+def rope_freqs_agree(table, config):
+    """ValueError unless llama.cpp's rope_freqs (a divisor of each pair's angle) is what the original's rope_scaling
+    makes: the engine makes its RoPE tables from rope_scaling (rope_frequencies), and the table is not used."""
+    width = head_size(config)
+    theta = config.get("rope_theta", 10000.0)
+    expected = rope_frequencies(width, theta) / rope_frequencies(width, theta, config.get("rope_scaling"))
+    table = np.asarray(table, dtype=np.float64)
+    worst = float(np.max(np.abs(table - expected) / expected)) if table.shape == expected.shape else float("inf")
+    if not worst <= 1e-5:
+        raise ValueError(f"This GGUF scales its RoPE otherwise than the original's rope_scaling says (by {worst:.1e} "
+                         f"at most).")
 
 
 def gguf_tokenizer(metadata, vocab_size):
