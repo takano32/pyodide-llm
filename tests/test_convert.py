@@ -145,6 +145,13 @@ def test_a_model_the_engine_cannot_run_is_refused(change, reason):
         check_config({**published, **change})
 
 
+def test_a_head_dim_of_null_is_no_head_dim():
+    # cyberagent/CAT-Translate-7b writes "head_dim": null, and was refused as heads that do not divide (T124)
+    config, weights = synthetic_weights()
+    _, published = hugging_face(config, weights, True)
+    check_config({**published, "head_dim": None})
+
+
 def test_missing_and_misshapen_tensors_are_refused():
     config, weights = synthetic_weights()
     tensors, published = hugging_face(config, weights, True)

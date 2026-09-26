@@ -918,7 +918,8 @@ def check_config(config):
             refuse(f"its config.json has no usable {key}")
     dim, n_heads = config["hidden_size"], config["num_attention_heads"]
     n_kv_heads = config.get("num_key_value_heads", n_heads)
-    if dim % n_heads or n_heads % n_kv_heads or config.get("head_dim", dim // n_heads) != dim // n_heads or dim // n_heads % 2:
+    # "head_dim": null says as much as no head_dim at all (cyberagent/CAT-Translate-7b writes it so)
+    if dim % n_heads or n_heads % n_kv_heads or (config.get("head_dim") or dim // n_heads) != dim // n_heads or dim // n_heads % 2:
         refuse("its attention heads do not divide the hidden size the way llama2.c expects")
     scaling = config.get("rope_scaling")
     if scaling and (architecture(config) != "llama" or scaling.get("rope_type", scaling.get("type")) not in ("llama3", "linear")):
