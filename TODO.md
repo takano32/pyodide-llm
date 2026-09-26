@@ -195,12 +195,6 @@
 - 手順: (1) 比べるファイル: SmolLM2-135M-Instruct の Q8_0（一覧の `hf-smollm2-135m-instruct` と同じ bartowski のもの）。余裕があれば 0.5B 級も 1 つ（Qwen2.5 は公式の GGUF が原本と別の重みなので避ける。T74）。(2) wllama は npm（jsDelivr）から読み込む小さな比較のページを `public/` の別ディレクトリに置く（本番のページには触らない）。版は実行時に最新を解決し、結果に版を書く（方針 2 と同じ考え方）。(3) CI の実ブラウザ（`browsers.yml` の OS ジョブか、別の手動のワークフロー）で、**同じプロンプト・greedy・同じトークン数**で、準備完了までの秒数・プロンプトの tok/s・生成の tok/s・メモリを、wllama の 1 スレッドとマルチスレッド、こちらの 1 スレッドと（T93 の段階 2 の後なら）マルチスレッドで測る。wllama のマルチスレッドは COOP/COEP が要るので、T93 の `coi-test` と同じ Service Worker の下で。(4) 出力の文も並べる（量子化の違いで少し変わるのは構わないが、壊れていないことを見る）。
 - 完了条件: 表 1 枚（ブラウザ × 実装 × スレッド数 → 準備完了・プロンプト tok/s・生成 tok/s・メモリ）が T83 の gist の計測の表（`30-`）と AGENTS.md に載る。勝ち負けのどちらでも載せる。負けた項目には、何が差を作っているかの見立てを 1 文添える。
 
-### T141 [運用] CI の実行が「ok」の後で終わらず、Windows のジョブが 90 分止まる — 状態: **進行中**（2026-09-26、持ち主の問い「案のうち Windows にきくやつはやらんか？」。規模 小）
-- 根拠: browsers.yml の windows-latest のジョブが 2 回続けて（run 36088172033・36133345856）90 分の上限で取り消された。「Run the models in every browser」が 5122 秒。2 回とも最後の行は WebKit の実行の答えの文で、その実行の「ok」は出なかった（その前の「ok」は前のモデルのもの）。`tests/e2e.mjs` は答えを書いた後、見張りのタイマー（`E2E_TIMEOUT`、600 秒）を止めてから `browser.close()` を待ち、そのあと「ok」を書いて、`process.exit` を呼ばずに終わるのを待つ作り。**止まったのは `browser.close()`**（Windows の WebKit で返らない）: 直す前の main で models.yml（windows-latest、WebKit、4 モデル、run 36240760614）を回すと、4 モデル目の llm-jp-3-150m が答えの文を書いた後、「ok」を出さずに 13 分止まった（取り消した）。ほかの OS のジョブは 3〜10 分。
-- 直し: `tests/e2e.mjs`・`tests/stock-firefox.mjs`・`tests/bench-browser.mjs` は「ok」を書いたら `process.exit(0)`（stdout を流しきってから）。`browser.close()` は 15 秒で見切る。
-- 確かめ方: 直す前の main で models.yml（windows-latest、WebKit、stories260K・stories15M・tiny-lm・llm-jp-3-150m、run 36240760614）は llm-jp-3-150m の close で止まった（上）。**直した後の同じ組（run 36240871082）は 4 モデルとも「ok」まで行き、ジョブは 2 分 14 秒で終わった**。そのあと browsers.yml を 1 回。
-- 完了条件: browsers.yml の windows-latest のジョブが上限の前に終わる。
-
 ### T143 [追加] `?hf=` の書式の特殊トークンと BOS を変換器で合わせる — 状態: 未着手、**持ち主の判断待ち**（いつ `CONVERTER` を上げるか）（2026-09-26、T124 と T138 のレビューから。規模 小）
 - 根拠: 変換器が `specials` に入れるのは `tokenizer.json` で `special: true` の追加のトークンだけ（`public/llama2_convert.py:1716`、そこから書式に書かれているものに絞る）。本物の tokenizers は special でない追加のトークンも 1 つのトークンに読む。`?hf=` で開くと、書式に書かれたそのトークンが綴られる: Qwen3-4B-Thinking-2507 は書式の末尾の `<think>` が `<th`・`ink`・`>` になり 0/9、DeepSeek-R1 Distill Qwen は `<｜User｜>` と `<think>` が綴られて 0/9（ほかの Qwen3 は訪問者が `<think>` と打った場合だけ違う、8/9）。一覧の項目は手で書いた `specials` があるので無事。ほかに同じ種類: (a) config.json と tokenizer の BOS が食い違うモデル（DeepSeek-R1 の系統。変換器は書式の頭で bos_token の ID をもう削っているので、その ID を `options.bos` にする）、(b) GGUF の経路の詰め物の語片の文（T136 のレビュー: 種類 5 を空の文にする 1 行で safetensors の経路と 1 バイトも違わなくなる）。
 - 直し: 書式に現れる追加のトークンは special かどうかに関わらず `specials` に入れる。(a)(b) も一緒に。どれも変換器の出すものが変わるので `CONVERTER` を上げる。
@@ -1261,6 +1255,20 @@
 - 直し方（案）: (1) CI は run の ID で待つ（`timeout 1800 gh run watch <id> --exit-status` のように、終わりの状態なら何でも抜け、期限もある）。「最近の N 件」で探さない（新しい run が入ると ID が外れる）。(2) 手元の計算は PID（`while kill -0 $pid`）か、最後に必ず書く印のファイルで待つ（失敗しても `trap` で書く）。`pgrep -f` で名前を探さない。(3) どの待ちにも期限を付け、期限で「まだ動いている」と報告する。同じものを 2 回待たない。(4) サブエージェントに渡す頼みにも同じ決まりを書く。
 - 置き場: AGENTS.md の落とし穴（と、要るなら待ちの小さな道具を tests/ に）。
 - 完了条件: AGENTS.md に決まりがあり、次のレビューの回で待ちが期限なしに残らない。
+
+</details>
+
+- [x] **T141 [運用] CI の実行が終わらず、Windows のジョブが 90 分止まる**（Opus xhigh、2026-09-26、持ち主の問い「案のうち Windows にきくやつはやらんか？」）— 状態: **レビュー待ち**
+- **結果（2026-09-26）**: 止まっていたのは Windows の WebKit の `browser.close()`（返らない）。見張りのタイマーはその前に止めていたので、何も終わらせなかった。`tests/e2e.mjs`・`tests/bench-browser.mjs` は close を 15 秒で見切り、`tests/stock-firefox.mjs` も含めて「ok」を書いたら `process.exit(0)` で終わる（37f3b23、ac7513c）。**確かめたこと**: 直す前の main の models.yml（windows-latest、WebKit、4 モデル）は 4 モデル目の close で 13 分止まった（取り消した）。直した後の同じ組は 2 分 14 秒で終わった。**browsers.yml を 1 回（run 36241545614）: 全体で 20 分**（前の 2 回は Windows x64 が 90 分の上限で取り消され、全体も約 90 分）。Windows x64 のジョブは 19.6 分で最後まで回った。ほかの OS のジョブは 5〜11 分、HF の 6 つの組は 5.8〜18.9 分。**残った 1 件（別の件）**: そのジョブで Playwright の Firefox の stories15M が 600 秒の持ち時間を使い切り、見張りで「timed out」として止まって次へ進んだ（ジョブは failure）。前の 2 回の Windows では同じ組が 26 秒で準備完了していたので、たまに起きる止まりと見る（原因は未確認）。
+
+<details><summary>T141 の採番時の記録</summary>
+
+**採番時の見出し**: T141 [運用] CI の実行が「ok」の後で終わらず、Windows のジョブが 90 分止まる — 状態: **進行中**（2026-09-26、持ち主の問い「案のうち Windows にきくやつはやらんか？」。規模 小）
+
+- 根拠: browsers.yml の windows-latest のジョブが 2 回続けて（run 36088172033・36133345856）90 分の上限で取り消された。「Run the models in every browser」が 5122 秒。2 回とも最後の行は WebKit の実行の答えの文で、その実行の「ok」は出なかった（その前の「ok」は前のモデルのもの）。`tests/e2e.mjs` は答えを書いた後、見張りのタイマー（`E2E_TIMEOUT`、600 秒）を止めてから `browser.close()` を待ち、そのあと「ok」を書いて、`process.exit` を呼ばずに終わるのを待つ作り。**止まったのは `browser.close()`**（Windows の WebKit で返らない）: 直す前の main で models.yml（windows-latest、WebKit、4 モデル、run 36240760614）を回すと、4 モデル目の llm-jp-3-150m が答えの文を書いた後、「ok」を出さずに 13 分止まった（取り消した）。ほかの OS のジョブは 3〜10 分。
+- 直し: `tests/e2e.mjs`・`tests/stock-firefox.mjs`・`tests/bench-browser.mjs` は「ok」を書いたら `process.exit(0)`（stdout を流しきってから）。`browser.close()` は 15 秒で見切る。
+- 確かめ方: 直す前の main で models.yml（windows-latest、WebKit、stories260K・stories15M・tiny-lm・llm-jp-3-150m、run 36240760614）は llm-jp-3-150m の close で止まった（上）。**直した後の同じ組（run 36240871082）は 4 モデルとも「ok」まで行き、ジョブは 2 分 14 秒で終わった**。そのあと browsers.yml を 1 回。
+- 完了条件: browsers.yml の windows-latest のジョブが上限の前に終わる。
 
 </details>
 
