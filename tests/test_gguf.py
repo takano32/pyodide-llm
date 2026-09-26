@@ -42,8 +42,10 @@ def gguf_name(name):
     return f"blk.{layer}.{LAYER['.'.join(rest[:-1])]}.{rest[-1]}"
 
 
-def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2"):
-    """A GGUF v3 of these Hugging Face tensors, and the tensors as the GGUF holds them (Q8_0 rounds)."""
+def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=10000.0, more=(), extra=None):
+    """A GGUF v3 of these Hugging Face tensors, and the tensors as the GGUF holds them (Q8_0 rounds).
+    more: further metadata (key, GGUF type, value); extra: {GGUF name: float32 values} written as they are
+    (rope_freqs.weight)."""
     string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
     heads = {"q_proj": published["num_attention_heads"], "k_proj": published["num_key_value_heads"]}
     metadata = [("general.architecture", 8, arch), (f"{arch}.block_count", 4, published["num_hidden_layers"]),
@@ -52,11 +54,11 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2"):
                 (f"{arch}.feed_forward_length", 4, published["intermediate_size"]),
                 (f"{arch}.attention.head_count", 4, published["num_attention_heads"]),
                 (f"{arch}.attention.head_count_kv", 4, published["num_key_value_heads"]),
-                (f"{arch}.rope.freq_base", 6, 10000.0), ("tokenizer.ggml.model", 8, "gpt2"),
+                (f"{arch}.rope.freq_base", 6, theta), ("tokenizer.ggml.model", 8, "gpt2"),
                 ("tokenizer.ggml.pre", 8, pre), ("tokenizer.ggml.bos_token_id", 4, 1),
-                ("tokenizer.ggml.eos_token_id", 4, 2)]
+                ("tokenizer.ggml.eos_token_id", 4, 2), *more]
     tokens = [f"w{i}" for i in range(vocab_size)]
-    out = [b"GGUF", struct.pack("<IQQ", 3, len(tensors), len(metadata) + 3)]
+    out = [b"GGUF", struct.pack("<IQQ", 3, len(tensors) + len(extra or {}), len(metadata) + 3)]
     for key, kind, value in metadata:
         out.append(string(key) + struct.pack("<I", kind))
         out.append(string(value) if kind == 8 else struct.pack({4: "<I", 6: "<f"}[kind], value))
@@ -64,6 +66,11 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2"):
     out.append(string("tokenizer.ggml.token_type") + struct.pack("<IIQ", 9, 5, len(tokens)) + struct.pack(f"<{len(tokens)}i", *[1] * len(tokens)))
     out.append(string("tokenizer.ggml.merges") + struct.pack("<IIQ", 9, 8, 0))
     held, blobs, offset = {}, [], 0
+    for name, values in (extra or {}).items():
+        blob = np.asarray(values, np.float32).tobytes()
+        out.append(string(name) + struct.pack("<I", 1) + struct.pack("<Q", len(values)) + struct.pack("<IQ", 0, offset))
+        blobs.append(blob + b"\0" * (-len(blob) % 32))
+        offset += len(blobs[-1])
     for name, tensor in tensors.items():
         stored = tensor
         kind = next((k for k in heads if f".{k}." in name), None)

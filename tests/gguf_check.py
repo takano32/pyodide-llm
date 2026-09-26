@@ -6,11 +6,15 @@
 # public/llama2_convert.py on purpose: the reader that goes into the page must not share code with what checks it.
 #
 #   python3 tests/gguf_check.py tensors <model.gguf> <directory of the same model: config.json, model.safetensors
-#                                       or its shards and model.safetensors.index.json>
+#                                       or its shards and model.safetensors.index.json> [--original-vocabulary]
 #       Every tensor of the GGUF against the Hugging Face one: its name, shape and relative error, and for the
 #       q and k matrices which order the GGUF holds (Hugging Face's, or turned the way llama.cpp and llama2.c turn
 #       them). For Q8_0, also how many int8 values equal what llama2_convert.quantize() makes of the original.
-#       The metadata against config.json, and the vocabulary against tokenizer.json.
+#       The embedding and the classifier also row by row (T136 stage 2), and Llama 3's rope_freqs.weight against
+#       the engine's rope_frequencies() of the original's rope_scaling. The metadata against config.json (after
+#       normalize()), and the vocabulary against tokenizer.json and tokenizer.model. --original-vocabulary (stage 2:
+#       the page takes the vocabulary from the original) shows a difference in the GGUF's vocabulary without
+#       counting it. The last line is the summary as JSON.
 #   python3 tests/gguf_check.py logits <out A> <out B> <text file> [tokens = 300]
 #       Two converted checkpoints (the <out> of tests/perplexity_prepare.py) on the same text: the largest logit
 #       difference, how often the most likely token agrees, and the perplexity of each. The acceptance of T74 is
@@ -177,17 +181,22 @@ def tensor(info, data, base, first=0, last=None):
 
 # ------------------------------------------------------------------------------------------- names and orders
 def hugging_face_name(name):
-    """blk.3.attn_q.weight -> model.layers.3.self_attn.q_proj.weight (Llama; T74 starts with it)."""
+    """blk.3.attn_q.weight -> model.layers.3.self_attn.q_proj.weight (Llama; T74 starts with it). None for a
+    tensor Hugging Face has no counterpart of (rope_freqs.weight: llama.cpp's table of Llama 3's RoPE scaling,
+    made from config.json's rope_scaling, checked on its own)."""
     fixed = {"token_embd.weight": "model.embed_tokens.weight", "output_norm.weight": "model.norm.weight",
              "output.weight": "lm_head.weight"}
     if name in fixed:
         return fixed[name]
-    _, layer, rest = name.split(".", 2)
     parts = {"attn_norm": "input_layernorm", "ffn_norm": "post_attention_layernorm", "attn_q": "self_attn.q_proj",
              "attn_k": "self_attn.k_proj", "attn_v": "self_attn.v_proj", "attn_output": "self_attn.o_proj",
              "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj", "ffn_down": "mlp.down_proj"}
+    pieces = name.split(".", 2)
+    if len(pieces) != 3 or pieces[0] != "blk":
+        return None
+    _, layer, rest = pieces
     tensor, kind = rest.rsplit(".", 1)  # .weight, or .bias (Qwen2's q, k and v)
-    return f"model.layers.{layer}.{parts[tensor]}.{kind}"
+    return f"model.layers.{layer}.{parts[tensor]}.{kind}" if tensor in parts else None
 
 
 def turned(w, heads):
@@ -202,32 +211,155 @@ def relative(a, b):
     return float(np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-30))
 
 
+# ------------------------------------------------------------------------------------------- the vocabularies
+def protobuf(data):
+    """(field, value) of one protobuf message, nested messages as bytes: enough of the format for a sentencepiece
+    model (again apart from llama2_convert's own reader)."""
+    i = 0
+
+    def varint():
+        nonlocal i
+        value = shift = 0
+        while True:
+            byte = data[i]
+            i += 1
+            value |= (byte & 0x7F) << shift
+            shift += 7
+            if not byte & 0x80:
+                return value
+
+    while i < len(data):
+        key = varint()
+        kind = key & 7
+        if kind == 0:
+            yield key >> 3, varint()
+        elif kind in (1, 5):
+            i += 8 if kind == 1 else 4
+            yield key >> 3, data[i - (8 if kind == 1 else 4):i]
+        elif kind == 2:
+            size = varint()
+            i += size
+            yield key >> 3, data[i - size:i]
+        else:
+            raise ValueError(f"protobuf wire type {kind}")
+
+
+def original_vocabularies(directory):
+    """{file name: the pieces by id} of the original's tokenizer.json and tokenizer.model, where they are."""
+    found = {}
+    path = directory / "tokenizer.json"
+    if path.exists():
+        parsed = json.loads(path.read_text())
+        vocab = parsed["model"]["vocab"]
+        # BPE writes {piece: id}, Unigram [[piece, score], ...] in the order of the ids (llm-jp's)
+        by_id = dict(enumerate(p for p, _ in vocab)) if isinstance(vocab, list) else {i: p for p, i in vocab.items()}
+        by_id.update({t["id"]: t["content"] for t in parsed.get("added_tokens", [])})
+        found["tokenizer.json"] = [by_id.get(i) for i in range(max(by_id) + 1)]
+    for name in ("tokenizer.model", "spiece.model"):
+        if (directory / name).exists():
+            pieces = [dict(protobuf(value)).get(1, b"").decode("utf-8")
+                      for field, value in protobuf((directory / name).read_bytes()) if field == 1]
+            found[name] = pieces
+    return found
+
+
+def compare_vocabulary(metadata, pieces, name, rows):
+    """How many ids hold another piece in the GGUF than in the original, and whether the only difference in
+    length is llama.cpp's padding: it fills the vocabulary up to the rows of the embedding with pieces of its
+    own ([PAD151665] ..., token type 5, unused), where tokenizer.json ends earlier (T136: Qwen2.5's 151665 of
+    151936)."""
+    tokens = metadata.get("tokenizer.ggml.tokens", [])
+    kinds = metadata.get("tokenizer.ggml.token_type", [])
+    differ = sum(a != b for a, b in zip(tokens, pieces))
+    padding = len(tokens) > len(pieces) and len(tokens) == rows and len(kinds) == len(tokens) \
+        and all(kind == 5 for kind in kinds[len(pieces):])
+    print(f"\nvocabulary: GGUF {len(tokens)} pieces ({metadata.get('tokenizer.ggml.model')}), {name} {len(pieces)}; "
+          f"{differ} differ at the same id"
+          + (f"; the GGUF's last {len(tokens) - len(pieces)} are its padding (unused) up to vocab_size" if padding else ""))
+    return differ + (0 if len(tokens) == len(pieces) or padding else abs(len(tokens) - len(pieces)))
+
+
 # ------------------------------------------------------------------------------------------- the two checks
 BLOCK = 8 << 20  # values; larger tensors are compared in blocks of rows
+# T136 stage 2: the embedding and the classifier are held row by row. The error of the whole tensor under 0.02
+# let 8 rows of Qwen2.5 0.5B's embedding be swapped (0.0122; 26 rows before it failed), while one wrong row is
+# a token that means another. A row of Q8_0 is off by about 0.005.
+ROW_LINE = 0.05
+BY_ROW = ("token_embd.weight", "output.weight")
 
 
-def large(info, data, base, hf, target, shape, quantize):
-    """relative error and int8 equality of a large matrix, a block of rows at a time."""
+def row_errors(values, original, floor):
+    """The relative error of each row. floor: a row norm below it counts as that norm, so that the rows of
+    nearly nothing (Qwen2.5 7B's unused ones, largest value 1.2e-37, which Q8_0 writes as 0) are not all error."""
+    difference = np.linalg.norm((values - original).reshape(len(values), -1).astype(np.float64), axis=1)
+    return difference / np.maximum(np.linalg.norm(original.reshape(len(original), -1).astype(np.float64), axis=1), floor)
+
+
+def large(info, data, base, hf, target, shape, quantize, by_row):
+    """relative error and int8 equality of a large matrix, a block of rows at a time; by_row: also the error of
+    each row, returned as (the rows past ROW_LINE, the worst row's error, its index)."""
     rows = max(1, BLOCK // math.prod(shape[1:]))
     difference = total = same = count = 0.0
+    norms, errors = [], []
     for first in range(0, shape[0], rows):
         last = min(first + rows, shape[0])
         values, raw = tensor(info, data, base, first, last)
         original = hf.rows(target, first, last).reshape(last - first, *shape[1:]).astype(np.float32)
         difference += float(((values - original) ** 2).sum())
         total += float((original ** 2).sum())
+        if by_row:
+            # in float64: a row of 1e-37 squares to nothing in float32
+            norms.append(np.linalg.norm(original.astype(np.float64), axis=1))
+            errors.append(np.linalg.norm((values - original).astype(np.float64), axis=1))
         if raw is not None:
             ours, _ = quantize(original.reshape(-1, original.shape[-1]))
             same += float((ours.reshape(-1) == raw[0].reshape(-1)).sum())
             count += ours.size
-    return math.sqrt(difference / max(total, 1e-30)), f"{same / count * 100:.2f}%" if count else ""
+    rowwise = None
+    if by_row:
+        norms, errors = np.concatenate(norms), np.concatenate(errors)
+        each = errors / np.maximum(norms, 1e-3 * float(np.median(norms)))
+        rowwise = (int((each > ROW_LINE).sum()), float(each.max()), int(each.argmax()))
+    return math.sqrt(difference / max(total, 1e-30)), f"{same / count * 100:.2f}%" if count else "", rowwise
 
 
-def check_tensors(gguf_path, directory):
+def config_pairs(config):
+    """(GGUF key, config.json name, the value config.json says, counted) of the original's config.json after
+    normalize(): what the page reads (CAT-Translate 1.4b writes transformers 5's rope_parameters). The context is
+    shown and not counted: a Mistral's sliding window cuts it in normalize()."""
+    from llama2_convert import head_size, normalize
+
+    config = normalize(config)
+    heads = config["num_attention_heads"]
+    return [("block_count", "num_hidden_layers", config.get("num_hidden_layers"), True),
+            ("embedding_length", "hidden_size", config.get("hidden_size"), True),
+            ("feed_forward_length", "intermediate_size", config.get("intermediate_size"), True),
+            ("attention.head_count", "num_attention_heads", heads, True),
+            ("attention.head_count_kv", "num_key_value_heads", config.get("num_key_value_heads", heads), True),
+            ("attention.key_length", "head_dim", head_size(config), True),
+            ("rope.freq_base", "rope_theta", config.get("rope_theta", 10000.0), True),
+            ("attention.layer_norm_rms_epsilon", "rms_norm_eps", config.get("rms_norm_eps"), True),
+            ("context_length", "max_position_embeddings", config.get("max_position_embeddings"), False)], config
+
+
+def rope_factors(config, width):
+    """What llama.cpp writes as rope_freqs.weight: how many times slower each pair of a head turns under
+    config.json's rope_scaling, from the engine's own rope_frequencies() (so the check is that the table the page
+    makes is the GGUF's)."""
+    from llama2_numpy import rope_frequencies
+
+    theta = float(config.get("rope_theta", 10000.0))
+    return rope_frequencies(width, theta) / rope_frequencies(width, theta, config.get("rope_scaling"))
+
+
+def check_tensors(gguf_path, directory, original_vocabulary=False):
+    """True when the GGUF holds the original's weights. original_vocabulary (T136 stage 2): the page takes the
+    vocabulary from the original, so a difference in the GGUF's is shown and not counted. The summary (worst
+    error, mismatches, the rope_freqs difference, the vocabulary differences) is printed last as one JSON line."""
     from llama2_convert import Safetensors, Shards, quantize
 
     version, metadata, infos, data, base = read_gguf(gguf_path)
-    config = json.loads((directory / "config.json").read_text())
+    raw_config = json.loads((directory / "config.json").read_text())
     index = directory / "model.safetensors.index.json"
     if not (directory / "model.safetensors").exists() and index.exists():
         # a model split over several files (T136: Qwen2.5 3B and 7B): every shard as one source, as convert_hf.py reads it
@@ -241,74 +373,93 @@ def check_tensors(gguf_path, directory):
     print(f"GGUF v{version}, {len(infos)} tensors, architecture {arch}, "
           f"types {sorted({TYPE_NAMES.get(i['type'], i['type']) for i in infos.values()})}")
 
-    print("\n| metadata | GGUF | config.json |\n|---|---|---|")
-    pairs = [("block_count", "num_hidden_layers"), ("embedding_length", "hidden_size"),
-             ("feed_forward_length", "intermediate_size"), ("attention.head_count", "num_attention_heads"),
-             ("attention.head_count_kv", "num_key_value_heads"), ("context_length", "max_position_embeddings"),
-             ("rope.freq_base", "rope_theta"), ("attention.layer_norm_rms_epsilon", "rms_norm_eps")]
+    print("\n| metadata | GGUF | config.json (normalized) |\n|---|---|---|")
+    pairs, config = config_pairs(raw_config)
     mismatched = 0
-    for key, name in pairs:
-        ours, theirs = metadata.get(f"{arch}.{key}"), config.get(name)
+    for key, name, theirs, counted in pairs:
+        ours = metadata.get(f"{arch}.{key}")
+        if ours is None and key == "attention.key_length":
+            ours = metadata.get(f"{arch}.embedding_length", 0) // metadata.get(f"{arch}.attention.head_count", 1)
+        # the GGUF writes floats as float32: 1e-6 of relative difference is its rounding
         same = ours is not None and theirs is not None and math.isclose(float(ours), float(theirs), rel_tol=1e-6)
-        mismatched += not same
-        print(f"| {arch}.{key} | {ours} | {name} = {theirs}{'' if same else ' **differs**'} |")
+        mismatched += counted and not same
+        note = "" if same else " **differs**" if counted else " (differs, not counted)"
+        print(f"| {arch}.{key} | {ours} | {name} = {theirs}{note} |")
+    rows = infos["token_embd.weight"]["shape"][0] if "token_embd.weight" in infos else None
+    tied = "output.weight" not in infos
+    for what, ours, theirs in (("embedding rows", rows, config.get("vocab_size")),
+                               ("classifier shared with the embedding", tied, bool(config.get("tie_word_embeddings", False)))):
+        mismatched += ours != theirs
+        print(f"| {what} | {ours} | {theirs}{'' if ours == theirs else ' **differs**'} |")
 
-    tokens = metadata.get("tokenizer.ggml.tokens", [])
-    tokenizer = directory / "tokenizer.json"
-    if tokenizer.exists():
-        parsed = json.loads(tokenizer.read_text())
-        vocab = {**parsed["model"]["vocab"], **{t["content"]: t["id"] for t in parsed.get("added_tokens", [])}}
-        by_id = sorted(vocab, key=vocab.get)
-        differ = sum(a != b for a, b in zip(tokens, by_id))
-        merges = parsed["model"].get("merges", [])
-        # llama.cpp fills the vocabulary up to the rows of the embedding with pieces of its own ([PAD151665] ...,
-        # token type 5, unused), where tokenizer.json ends earlier (T136: Qwen2.5's 151665 of 151936): no difference
-        kinds = metadata.get("tokenizer.ggml.token_type", [])
-        padding = len(tokens) > len(by_id) == len(set(by_id)) and len(tokens) == config.get("vocab_size") \
-            and all(kind == 5 for kind in kinds[len(by_id):]) and len(kinds) == len(tokens)
-        print(f"\nvocabulary: GGUF {len(tokens)} pieces ({metadata.get('tokenizer.ggml.model')}), tokenizer.json "
-              f"{len(by_id)}; {differ} differ at the same id. merges: GGUF "
-              f"{len(metadata.get('tokenizer.ggml.merges', []))}, tokenizer.json {len(merges)}"
-              + (f"; the GGUF's last {len(tokens) - len(by_id)} are its padding (unused) up to vocab_size" if padding else ""))
-        mismatched += differ > 0 or (len(tokens) != len(by_id) and not padding)
+    vocab_diffs = {}
+    for name, pieces in original_vocabularies(directory).items():
+        vocab_diffs[name] = compare_vocabulary(metadata, pieces, name, config.get("vocab_size"))
+        if original_vocabulary:
+            print("(not counted: the page takes the vocabulary from the original)")
+        else:
+            mismatched += vocab_diffs[name] > 0
 
     heads, kv_heads = config["num_attention_heads"], config.get("num_key_value_heads", config["num_attention_heads"])
-    print("\n| tensor | type | shape | relative error | order | int8 equal to quantize() |\n|---|---|---|---:|---|---:|")
-    worst, orders = 0.0, set()
+    print("\n| tensor | type | shape | relative error | order | int8 equal to quantize() | rows past "
+          f"{ROW_LINE} (worst) |\n|---|---|---|---:|---|---:|---|")
+    worst, orders, rope_difference, bad_rows = 0.0, set(), None, {}
     for name, info in infos.items():
+        if name == "rope_freqs.weight":
+            values, _ = tensor(info, data, base)
+            factors = rope_factors(config, 2 * len(values))
+            rope_difference = relative(values.astype(np.float64), factors) if values.shape == factors.shape else math.inf
+            counted = rope_difference > 1e-5
+            mismatched += counted
+            print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | {rope_difference:.2e} against "
+                  f"rope_frequencies() of rope_scaling = {config.get('rope_scaling')}{' **differs**' if counted else ''} | | | |")
+            continue
         target = hugging_face_name(name)
-        if target not in hf:
-            print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | | no {target} in safetensors | |")
+        if target is None or target not in hf:
+            print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | | no {target} in safetensors | | |")
             mismatched += 1
             continue
         shape = tuple(hf.shape(target))
+        by_row = name in BY_ROW
+        rowwise = None
         if math.prod(shape) > BLOCK and len(shape) > 1 and tuple(info["shape"]) == shape:
             # a large matrix (Qwen's embedding is 545 MB as float32) is compared a block of rows at a time: two
             # whole copies side by side are what took this machine down
-            error, equal = large(info, data, base, hf, target, shape, quantize)
-            worst = max(worst, error)
-            print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | {error:.5f} | | {equal} |")
-            continue
-        values, raw = tensor(info, data, base)
-        original = hf.rows(target, 0, shape[0]).reshape(shape).astype(np.float32)
-        order = ""
-        if name.endswith(("attn_q.weight", "attn_k.weight", "attn_q.bias", "attn_k.bias")):
-            n = heads if "attn_q" in name else kv_heads
-            as_is, turn = relative(values, original), relative(values, turned(original, n))
-            order = "turned (llama2.c order)" if turn < as_is else "as Hugging Face"
-            orders.add(order)
-            if turn < as_is:
-                original = turned(original, n)
-        error = relative(values, original) if values.shape == original.shape else float("nan")
+            error, equal, rowwise = large(info, data, base, hf, target, shape, quantize, by_row)
+            order = ""
+        else:
+            values, raw = tensor(info, data, base)
+            original = hf.rows(target, 0, shape[0]).reshape(shape).astype(np.float32)
+            order = ""
+            if name.endswith(("attn_q.weight", "attn_k.weight", "attn_q.bias", "attn_k.bias")):
+                n = heads if "attn_q" in name else kv_heads
+                as_is, turn = relative(values, original), relative(values, turned(original, n))
+                order = "turned (llama2.c order)" if turn < as_is else "as Hugging Face"
+                orders.add(order)
+                if turn < as_is:
+                    original = turned(original, n)
+            error = relative(values, original) if values.shape == original.shape else float("nan")
+            equal = ""
+            if raw is not None and values.shape == original.shape:
+                ours, _ = quantize(original.reshape(-1, original.shape[-1]))
+                equal = f"{(ours.reshape(-1) == raw[0].reshape(-1)).mean() * 100:.2f}%"
+            if by_row and values.shape == original.shape:
+                norms = np.linalg.norm(original.reshape(len(original), -1).astype(np.float64), axis=1)
+                each = row_errors(values, original, 1e-3 * float(np.median(norms)))
+                rowwise = (int((each > ROW_LINE).sum()), float(each.max()), int(each.argmax()))
         worst = max(worst, error) if not math.isnan(error) else math.inf
-        equal = ""
-        if raw is not None and values.shape == original.shape:
-            ours, _ = quantize(original.reshape(-1, original.shape[-1]))
-            equal = f"{(ours.reshape(-1) == raw[0].reshape(-1)).mean() * 100:.2f}%"
-        print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | {error:.5f} | {order} | {equal} |")
+        rows_note = ""
+        if rowwise is not None:
+            bad_rows[name] = rowwise[0]
+            mismatched += rowwise[0]
+            rows_note = f"{rowwise[0]} ({rowwise[1]:.4f} at row {rowwise[2]}){' **differs**' if rowwise[0] else ''}"
+        print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | {error:.5f} | {order} | {equal} | {rows_note} |")
+    ok = mismatched == 0 and worst < 0.02
     print(f"\nworst relative error {worst:.5f}; q and k are stored {' and '.join(sorted(orders)) or '(none)'}; "
           f"{mismatched} mismatches")
-    return mismatched == 0 and worst < 0.02
+    print(json.dumps({"worst": worst, "mismatches": mismatched, "rows": bad_rows, "orders": sorted(orders),
+                      "rope_freqs_diff": rope_difference, "vocab_diffs": vocab_diffs, "ok": ok}))
+    return ok
 
 
 def check_logits(a, b, text_file, count):
@@ -359,6 +510,6 @@ def check_logits(a, b, text_file, count):
 
 if __name__ == "__main__":
     if sys.argv[1] == "tensors":
-        sys.exit(0 if check_tensors(sys.argv[2], Path(sys.argv[3])) else 1)
+        sys.exit(0 if check_tensors(sys.argv[2], Path(sys.argv[3]), "--original-vocabulary" in sys.argv[4:]) else 1)
     elif sys.argv[1] == "logits":
         sys.exit(0 if check_logits(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]) if len(sys.argv) > 5 else 300) else 1)
