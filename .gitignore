@@ -16,3 +16,5 @@ __pycache__/
 *.wasmlib
 .venv/
 .tmp/
+# the agents' worktrees (Claude Code makes them for work in parallel)
+.claude/worktrees/
