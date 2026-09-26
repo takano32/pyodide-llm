@@ -8,9 +8,40 @@ CI（`.github/workflows/deploy.yml`）が毎回やっていることと同じ手
 
 - **git と gh**: `gh auth login`（持ち主がする。push とワークフローの起動に使う）。git の `user.name` と `user.email` は持ち主のもの。
 - **Node 24**: `.nvmrc` の版。nvm などで。`npm` が付いてくる。
-- **Python 3**（3.14 で確かめた）と NumPy・pytest・tokenizers・regex: `pip install numpy pytest tokenizers regex`（deploy.yml と同じ）。ディストリビューションのパッケージでもよい。
+- **Python 3**（3.14 で確かめた）と NumPy・pytest・tokenizers・regex: `pip install numpy pytest tokenizers regex`（deploy.yml と同じ）。ディストリビューションのパッケージでもよい。Ubuntu では venv に（下）。
 - **wget**: `make models` がモデルを取る。
 - **Claude Code**。
+
+### Ubuntu 26.04 LTS（OCI の Ampere A1、arm64）の場合
+
+**この一覧はまだ Ubuntu 26.04 で試していない**（2026-09-26 に書いた。新しい機械で最初に通したら、足りなかったもの・要らなかったものを直す）。
+
+```sh
+sudo apt update
+sudo apt install -y git gh curl wget ca-certificates build-essential \
+    python3 python3-venv python3-dev
+```
+
+- `gh` は Ubuntu の universe にある。無い・古いときは GitHub の apt のリポジトリから（https://cli.github.com/）。
+- `build-essential` は必須ではない（C の計測に使ったことがある程度。NumPy と tokenizers は arm64 の wheel が出ている）。
+- **Python のパッケージは venv に入れる**: Ubuntu の Python はシステムに `pip install` させない（PEP 668）。
+
+```sh
+python3 -m venv ~/venvs/dev
+~/venvs/dev/bin/pip install numpy pytest tokenizers regex
+# 以降は ~/venvs/dev/bin/python3 を使う（または source ~/venvs/dev/bin/activate）
+```
+
+- **Node 24 は nvm で**（`.nvmrc` の版を確実に取るため。Ubuntu の `nodejs` の版は未確認）:
+
+```sh
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
+# 新しいシェルで
+nvm install    # .nvmrc の版
+```
+
+- **ブラウザ**: `npx playwright-core install --with-deps chromium`（`--with-deps` が apt で依存のライブラリを入れる。sudo が要る）。Playwright が Ubuntu 26.04 を正式に扱うかは未確認（扱わなければ依存のライブラリの名前がずれて失敗することがある。そのときは表示された足りないライブラリを apt で）。
+- **`systemd-run --user`** は、SSH でログインしたユーザーのセッションで使えるはず（未確認）。使えなければ `loginctl enable-linger $USER` を試す。
 
 ## 2. リポジトリと生成物
 
