@@ -1,0 +1,73 @@
+# T136, stage 1: the Q8_0 GGUFs the list would take instead of the originals' safetensors (half the download), each
+# held to its original by tests/gguf_check.py tensors first (T74's rule: a GGUF that does not pass is not switched to).
+# The development machine checks the ones under 2 GB; the 3B and 7B need a runner's memory and disk (the 7B's
+# originals are 15 GB and its GGUF 8 GB). By hand only; each check's table goes to the summary.
+#
+#   gh workflow run gguf.yml -f only=hf-qwen2.5-3b-instruct,hf-qwen2.5-7b-instruct
+name: GGUF against the originals
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: 'the model ids to check, separated by commas; all eight when empty'
+        default: 'hf-qwen2.5-3b-instruct,hf-qwen2.5-7b-instruct'
+
+jobs:
+  gguf:
+    name: ${{ matrix.id }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        # the original at the revision src/models.js pins, and the GGUF (repository@revision/file)
+        include:
+          - { id: hf-qwen2.5-0.5b-instruct, original: Qwen/Qwen2.5-0.5B-Instruct@7ae557604adf67be50417f59c2c2f167def9a775, gguf: bartowski/Qwen2.5-0.5B-Instruct-GGUF@41ba88dbac95fed2528c92514c131d73eb5a174b/Qwen2.5-0.5B-Instruct-Q8_0.gguf }
+          - { id: hf-qwen2.5-coder-0.5b-instruct, original: Qwen/Qwen2.5-Coder-0.5B-Instruct@ea3f2471cf1b1f0db85067f1ef93848e38e88c25, gguf: bartowski/Qwen2.5-Coder-0.5B-Instruct-GGUF@69a2c192eed24297fb09a34d8ba948b8624cc3e2/Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf }
+          - { id: hf-smollm2-360m-instruct, original: HuggingFaceTB/SmolLM2-360M-Instruct@a10cc1512eabd3dde888204e902eca88bddb4951, gguf: HuggingFaceTB/SmolLM2-360M-Instruct-GGUF@593b5a2e04c8f3e4ee880263f93e0bd2901ad47f/smollm2-360m-instruct-q8_0.gguf }
+          - { id: hf-qwen2.5-1.5b-instruct, original: Qwen/Qwen2.5-1.5B-Instruct@989aa7980e4cf806f80c7fef2b1adb7bc71aa306, gguf: bartowski/Qwen2.5-1.5B-Instruct-GGUF@9eadc66189c7641e1ddd226b8267a9119b2ce2d4/Qwen2.5-1.5B-Instruct-Q8_0.gguf }
+          - { id: hf-tinyswallow-1.5b-instruct, original: SakanaAI/TinySwallow-1.5B-Instruct@91e9fcc30f56d224aea84356c4d850cc4c5a3260, gguf: SakanaAI/TinySwallow-1.5B-Instruct-GGUF@38c003aaf8be9d17af11dece1fbabeb873c567fa/tinyswallow-1.5b-instruct-q8_0.gguf }
+          - { id: hf-smollm2-1.7b-instruct, original: HuggingFaceTB/SmolLM2-1.7B-Instruct@31b70e2e869a7173562077fd711b654946d38674, gguf: bartowski/SmolLM2-1.7B-Instruct-GGUF@1f03464768bfcc0319fc50da8ff5fb20b6417ba2/SmolLM2-1.7B-Instruct-Q8_0.gguf }
+          - { id: hf-qwen2.5-3b-instruct, original: Qwen/Qwen2.5-3B-Instruct@aa8e72537993ba99e69dfaafa59ed015b17504d1, gguf: bartowski/Qwen2.5-3B-Instruct-GGUF@f302c64a2269a69fb27b2f9473b362f5bb8e78d8/Qwen2.5-3B-Instruct-Q8_0.gguf }
+          - { id: hf-qwen2.5-7b-instruct, original: Qwen/Qwen2.5-7B-Instruct@a09a35458c702b33eeacc393d103063234e8bc28, gguf: bartowski/Qwen2.5-7B-Instruct-GGUF@8911e8a47f92bac19d6f5c64a2e2095bd2f7d031/Qwen2.5-7B-Instruct-Q8_0.gguf }
+    steps:
+      - name: Checkout
+        if: inputs.only == '' || contains(format(',{0},', inputs.only), format(',{0},', matrix.id))
+        uses: actions/checkout@v7
+
+      # the matrix cannot be chosen from an input: the jobs not asked for skip their steps. /mnt has the room (the
+      # 7B's originals and its GGUF are 23 GB; / has about 14 GB free)
+      - name: Fetch the original and the GGUF, and check
+        if: inputs.only == '' || contains(format(',{0},', inputs.only), format(',{0},', matrix.id))
+        shell: bash
+        run: |
+          python3 -m pip install --quiet numpy
+          sudo mkdir -p /mnt/gguf && sudo chown "$USER" /mnt/gguf
+          python3 - "${{ matrix.original }}" "${{ matrix.gguf }}" /mnt/gguf <<'EOF'
+          import json, os, sys, urllib.error, urllib.request
+          (repo, rev), (grepo, grest), out = sys.argv[1].split("@"), sys.argv[2].split("@"), sys.argv[3]
+          grev, gfile = grest.split("/", 1)
+          def get(url, name):
+              with urllib.request.urlopen(url, timeout=300) as response, open(os.path.join(out, name), "wb") as f:
+                  while block := response.read(8 << 20):
+                      f.write(block)
+          at = lambda name: f"https://huggingface.co/{repo}/resolve/{rev}/{name}"
+          for name in ("config.json", "tokenizer.json"):
+              get(at(name), name)
+          try:
+              get(at("model.safetensors"), "model.safetensors")
+          except urllib.error.HTTPError:
+              get(at("model.safetensors.index.json"), "model.safetensors.index.json")
+              index = json.load(open(os.path.join(out, "model.safetensors.index.json")))
+              for shard in sorted(set(index["weight_map"].values())):
+                  get(at(shard), shard)
+          get(f"https://huggingface.co/{grepo}/resolve/{grev}/{gfile}", "model.gguf")
+          print(sorted(os.listdir(out)))
+          EOF
+          echo "### ${{ matrix.id }}: ${{ matrix.gguf }}" >> "$GITHUB_STEP_SUMMARY"
+          status=0
+          python3 tests/gguf_check.py tensors /mnt/gguf/model.gguf /mnt/gguf > check.md || status=$?
+          { echo; tail -n 1 check.md; echo; grep -v '^| blk\.' check.md; } >> "$GITHUB_STEP_SUMMARY"
+          echo "gguf_check.py tensors: exit $status" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit $status

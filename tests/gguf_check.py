@@ -5,7 +5,8 @@
 # The GGUF reading here is a reference of its own, written from the format's description and kept apart from
 # public/llama2_convert.py on purpose: the reader that goes into the page must not share code with what checks it.
 #
-#   python3 tests/gguf_check.py tensors <model.gguf> <directory of the same model: config.json, model.safetensors>
+#   python3 tests/gguf_check.py tensors <model.gguf> <directory of the same model: config.json, model.safetensors
+#                                       or its shards and model.safetensors.index.json>
 #       Every tensor of the GGUF against the Hugging Face one: its name, shape and relative error, and for the
 #       q and k matrices which order the GGUF holds (Hugging Face's, or turned the way llama.cpp and llama2.c turn
 #       them). For Q8_0, also how many int8 values equal what llama2_convert.quantize() makes of the original.
@@ -223,12 +224,19 @@ def large(info, data, base, hf, target, shape, quantize):
 
 
 def check_tensors(gguf_path, directory):
-    from llama2_convert import Safetensors, quantize
+    from llama2_convert import Safetensors, Shards, quantize
 
     version, metadata, infos, data, base = read_gguf(gguf_path)
     config = json.loads((directory / "config.json").read_text())
-    hf_data = np.memmap(directory / "model.safetensors", dtype=np.uint8, mode="r")
-    hf = Safetensors(lambda offset, length: hf_data[offset:offset + length])
+    index = directory / "model.safetensors.index.json"
+    if not (directory / "model.safetensors").exists() and index.exists():
+        # a model split over several files (T136: Qwen2.5 3B and 7B): every shard as one source, as convert_hf.py reads it
+        files = sorted(set(json.loads(index.read_text())["weight_map"].values()))
+        maps = [np.memmap(directory / name, dtype=np.uint8, mode="r") for name in files]
+        hf = Shards([Safetensors(lambda offset, length, data=data: data[offset:offset + length]) for data in maps])
+    else:
+        hf_data = np.memmap(directory / "model.safetensors", dtype=np.uint8, mode="r")
+        hf = Safetensors(lambda offset, length: hf_data[offset:offset + length])
     arch = metadata["general.architecture"]
     print(f"GGUF v{version}, {len(infos)} tensors, architecture {arch}, "
           f"types {sorted({TYPE_NAMES.get(i['type'], i['type']) for i in infos.values()})}")
@@ -253,10 +261,16 @@ def check_tensors(gguf_path, directory):
         by_id = sorted(vocab, key=vocab.get)
         differ = sum(a != b for a, b in zip(tokens, by_id))
         merges = parsed["model"].get("merges", [])
+        # llama.cpp fills the vocabulary up to the rows of the embedding with pieces of its own ([PAD151665] ...,
+        # token type 5, unused), where tokenizer.json ends earlier (T136: Qwen2.5's 151665 of 151936): no difference
+        kinds = metadata.get("tokenizer.ggml.token_type", [])
+        padding = len(tokens) > len(by_id) == len(set(by_id)) and len(tokens) == config.get("vocab_size") \
+            and all(kind == 5 for kind in kinds[len(by_id):]) and len(kinds) == len(tokens)
         print(f"\nvocabulary: GGUF {len(tokens)} pieces ({metadata.get('tokenizer.ggml.model')}), tokenizer.json "
               f"{len(by_id)}; {differ} differ at the same id. merges: GGUF "
-              f"{len(metadata.get('tokenizer.ggml.merges', []))}, tokenizer.json {len(merges)}")
-        mismatched += differ > 0 or len(tokens) != len(by_id)
+              f"{len(metadata.get('tokenizer.ggml.merges', []))}, tokenizer.json {len(merges)}"
+              + (f"; the GGUF's last {len(tokens) - len(by_id)} are its padding (unused) up to vocab_size" if padding else ""))
+        mismatched += differ > 0 or (len(tokens) != len(by_id) and not padding)
 
     heads, kv_heads = config["num_attention_heads"], config.get("num_key_value_heads", config["num_attention_heads"])
     print("\n| tensor | type | shape | relative error | order | int8 equal to quantize() |\n|---|---|---|---:|---|---:|")
