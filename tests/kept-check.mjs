@@ -196,4 +196,23 @@ const readBack = async (found) => {
   assert.equal(decodeURIComponent(kept.keptName(model)), "a/b@0123:int8:4096");
   assert.equal(decodeURIComponent(kept.keptName(withVocabulary)), "a/b@0123+c/d@4567:int8:4096");
 }
+// T136's review: a model whose source changed (the 19 of stage 2) keeps its new conversion under a new name. What it
+// was kept as before is replaced: never served, and in the way of the new one where the room is short. Its other
+// bits are not, nor another model, nor what ?hf= and folders keep (all "local")
+{
+  browser();
+  const moved = { ...model, hf: { repo: "a/b-GGUF", revision: "89ab", vocabulary: { repo: "a/b", revision: "0123" } } };
+  const keepAs = (entry, dtype, id = entry.id) =>
+    kept.keep({ ...entry, conversion: { dtype } }, { ...manifest, id }, (a, b) => bytes.slice(a, b), vocabulary);
+  await keepAs(model, "int8");
+  await keepAs(model, "int6");
+  await keepAs({ ...model, hf: { repo: "x/y", revision: "1" } }, "int8", "other");
+  await keepAs({ ...model, id: "local", hf: { repo: "p/q", revision: "2" } }, "int8");
+  await keepAs(moved, "int6");
+  const names = (list) => list.map((one) => decodeURIComponent(one.name)).sort();
+  assert.deepEqual(names(await kept.replaced(moved)), ["a/b@0123:int6:4096", "a/b@0123:int8:4096"]);
+  assert.deepEqual(names(await kept.replaced({ ...moved, conversion: { dtype: "int8" } })), names(await kept.replaced(moved)),
+    "asking for eight bits does not make its own six-bit conversion replaced");
+  assert.deepEqual(await kept.replaced({ ...model, id: "local", hf: { repo: "r/s", revision: "3" } }), []);
+}
 console.log("ok");

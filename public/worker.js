@@ -843,6 +843,8 @@ async function keepConverted(model, checkpoint, bytes, tokenizer, options, signa
   const manifest = { id: model.id, name: model.name, repo: model.hf.repo, revision: model.hf.revision, bytes, options, saved: Date.now() };
   // under the bits it was converted to, which the worker may have chosen (T115)
   const converted = { ...model, conversion: { ...model.conversion, dtype: options.dtype } };
+  // T136: what this model was kept as before its source changed is never used again, and takes the room it needs
+  for (const old of await keptModule.replaced(model).catch(() => [])) await keptModule.forget(old).catch(() => {});
   // slice() copies: the memory it comes from may grow (and so move) while an await waits
   return keptModule.keep(converted, manifest, (begin, end) => checkpoint.slice(begin, end), vocabulary, signal);
 }
