@@ -187,3 +187,19 @@ def test_a_gguf_made_through_float16_is_held_to_the_q8_0_of_that():
     parts = gguf_check.row_parts(gguf, original, True)
     assert len(parts) == 6 and parts[2][5] > 0 and parts[4][5] == 0
     assert gguf_check.row_check(parts)[0] == 0
+
+
+def test_a_row_whose_q8_0_reference_overflows_is_still_compared():
+    """The review of stage 2 (2026-09-26): a row of the original under about 3.7e-37 has a d under 2.9e-39, whose
+    1 / d overflows to inf, and inf * a float16 d of 0 made the reference NaN: np.minimum passed the row whatever the
+    GGUF held (llm-jp-4's 490 unused rows went through so; the GGUF's are 0, as llama.cpp writes them). The reference
+    is 0 there now: a GGUF of 0 passes, a used row put in its place does not."""
+    rng = np.random.default_rng(3)
+    original = (rng.standard_normal((64, 1536)) * 0.02).astype(np.float32)
+    original[8] = rng.standard_normal(1536).astype(np.float32) * 1.1e-37
+    gguf = llama_cpp_q8_0(original)
+    assert not gguf[8].any()
+    assert not np.isnan(gguf_check.q8_0_of(original)).any()
+    assert gguf_check.row_check(gguf_check.row_parts(gguf, original, True))[0] == 0
+    gguf[8] = gguf[40]
+    assert gguf_check.row_check(gguf_check.row_parts(gguf, original, True))[0] == 1

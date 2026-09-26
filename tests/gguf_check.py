@@ -296,8 +296,9 @@ def q8_0_of(original):
     d = np.abs(groups).max(axis=1) / 127
     inverse = np.divide(1.0, d, out=np.zeros_like(d), where=d > 0)
     scaled = groups * inverse[:, None]
-    return (np.sign(scaled) * np.floor(np.abs(scaled) + 0.5) * d.astype(np.float16).astype(np.float32)[:, None]
-            ).reshape(original.shape)
+    scale = d.astype(np.float16).astype(np.float32)[:, None]
+    # a d under float16's half step is stored as 0 and reads back 0 (1/d may have overflowed to inf: inf * 0 is NaN)
+    return np.where(scale > 0, np.sign(scaled) * np.floor(np.abs(scaled) + 0.5) * scale, 0).reshape(original.shape)
 
 
 def row_parts(values, original, q8_0):
@@ -323,10 +324,10 @@ def row_check(parts):
     norms = parts[1]
     median = max(float(np.median(norms)), 1e-30)
     floor = 1e-3 * median
-    against = parts[0] / np.maximum(norms, floor)
+    against = np.nan_to_num(parts[0] / np.maximum(norms, floor), nan=np.inf)  # a NaN is past the line
     each = against
     for difference, norm in zip(parts[2::2], parts[3::2]):
-        each = np.minimum(each, difference / np.maximum(norm, floor))
+        each = np.fmin(each, difference / np.maximum(norm, floor))  # a reference of NaN (float16 overflow) is no reference
     bad = np.flatnonzero(each > ROW_LINE)
     return (len(bad), float(each.max()), int(each.argmax()),
             [[int(i), round(float(each[i]), 4), float(f"{norms[i] / median:.3g}")] for i in bad[:16]],
