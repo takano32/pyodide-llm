@@ -77,6 +77,8 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     for (const [name, result] of Object.entries(results)) {
       if (result.status === "wrong" || (result.status === "error" && OURS.includes(name))) failed = true;
     }
+    // the shaders against JavaScript are the GPU section's check of its own results: with an adapter they must run
+    if (results.gpu?.data?.steps?.some((s) => s.name === "the shaders against JavaScript" && s.error)) failed = true;
   } catch (error) {
     console.log(`failed: ${String(error.message).split("\n")[0]}`);
     failed = true;

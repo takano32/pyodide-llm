@@ -342,7 +342,11 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
       await step("a prompt all at once", { step: "prompt", counts: PROMPT_COUNTS });
       const bridge = await gpuBridge(w);
       const wrong = check && Object.values(check).some((v: any) => !v.ok);
-      return { status: wrong ? "wrong" : "ok", data: { steps, bridge, lost }, markdown: gpuMarkdown(steps, bridge, lost) };
+      // not ok either when the shaders could not be checked, or when the device was lost: a lost device answers
+      // every later wait at once, and the times after it are no GPU's (T134's review)
+      const unchecked = steps.find((s) => s.name === "the shaders against JavaScript")?.error;
+      return { status: wrong ? "wrong" : unchecked || lost ? "error" : "ok", data: { steps, bridge, lost },
+               markdown: gpuMarkdown(steps, bridge, lost) };
     } finally {
       w.terminate();
     }
@@ -362,8 +366,10 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
     const lines: string[] = [];
     const r = steps.find((s) => s.name === "the adapter").result;
     lines.push(`**Adapter**: ${r.adapter}${r.fallback ? " (a fallback adapter: the CPU in a GPU's place, each measured once, its speed no GPU's)" : ""}; max binding ${fixed(r.maxStorageBufferBindingSize / 2 ** 20, 0)} MiB, ` +
-      `max buffer ${fixed(r.maxBufferSize / 2 ** 20, 0)} MiB, packed int8 dot ${yes(r.packed)}, shader-f16 ${yes(r.features?.includes("shader-f16"))}${lost ? `; device lost: ${lost}` : ""}`, "");
+      `max buffer ${fixed(r.maxBufferSize / 2 ** 20, 0)} MiB, packed int8 dot ${yes(r.packed)}, shader-f16 ${yes(r.features?.includes("shader-f16"))}`, "");
+    if (lost) lines.push(`**The device was lost** (${lost}): the times measured after it are not the GPU's.`, "");
     const check = steps.find((s) => s.name === "the shaders against JavaScript");
+    if (check?.error) lines.push(`**Shaders against JavaScript**: not checked (${check.error})`, "");
     if (check?.result) lines.push(`**Shaders against JavaScript**: ${Object.entries(check.result).map(([k, v]: any) => `${k} ${v.ok ? "ok" : "WRONG"} (worst ${v.worstRelative.toExponential(1)})`).join(", ")}`, "");
     const bandwidths = steps.filter((s) => s.name.startsWith("bandwidth"));
     lines.push("| int8 matrix × vector | GPU, widened in the shader | GPU, packed int8 | CPU, one thread |", "|---|---:|---:|---:|");
