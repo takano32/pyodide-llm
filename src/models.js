@@ -381,8 +381,11 @@ const LISTED = [
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   { group: "hf", id: "hf-deepseek-r1-qwen-1.5b", name: "DeepSeek-R1 Distill Qwen 1.5B", note: "thinks before it answers · English · fetches 3.6 GB → int8 2.0 GB · desktop only",
     hf: hf("deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B", "ad9f0ae0864d7fbcd1cd905e3c6c5b069cc8b562"), download: 3554214621,
-    conversion: {}, options: { specials: ["<｜begin▁of▁sentence｜>", "<｜User｜>", "<｜Assistant｜>"], stop_tokens: [151643] },
-    generation: sampled(1.1), template: "<｜User｜>{prompt}<｜Assistant｜>",
+    // the BOS is the tokenizer's <｜begin▁of▁sentence｜> (151646): config.json says 151643, the end of a sentence, and
+    // with it perplexity was 2.5 to 2.7 times higher and four answers of five fell apart; the real format opens the
+    // thought with <think> (T138's review). The list's options go over what the kept conversion says: no new CONVERTER
+    conversion: {}, options: { bos: 151646, specials: ["<｜begin▁of▁sentence｜>", "<｜User｜>", "<｜Assistant｜>", "<think>"], stop_tokens: [151643] },
+    generation: sampled(1.1), template: "<｜User｜>{prompt}<｜Assistant｜><think>\n",
     prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
   // T125: Mistral 7B, and zephyr made from it
   { group: "hf", id: "hf-mistral-7b-instruct-v0.2", name: "Mistral 7B Instruct v0.2", note: "answers instructions · English · fetches 14.5 GB → int8 8.2 GB · desktop only · Chrome and Firefox",
