@@ -151,6 +151,7 @@
 - **作るもの**: `public/shaders.js` に、(1) タイル + 広げる形（活性値の塊を workgroup 共有メモリに、スレッドごとに行 × トークンの塊をレジスタで。shader-f16 があれば f16 も）、(2) タイル + packed int8（活性値をグループ 32 ごとに int8 にしてから `dot4I8Packed`。CPU の `matmul_q8` と同じ計算）。タイルの形は数通りを持つ。`/benchmark/` の GPU の節の「A prompt」に、今の `BATCHED` と並べて新しい変種の行と GFLOPS の列。持ち主は `/benchmark/` を開いてボタンで測る（`?run=` は付けない）。
 - **止まる点**: 本線に入れて持ち主の端末で測る。並行して、シェーダの設計と実装を Opus xhigh でレビューする（`.claude/agents/shader-reviewer.md`）。
 - **完了条件**: 持ち主の端末で、プロンプトの GPU の GFLOPS が今の `BATCHED` の 5 倍以上になる変種がある（この Android で 1 ms / トークン前後、CPU の 2〜3 倍）。届かなければ、数字と理由を書いて形を変える。
+- **元ネタ**（2026-09-26 の夜、持ち主「既存実装の最高なやつパクらん？」。担当に途中で伝えた）: llama.cpp の WebGPU の `mul_mat`（`ggml/src/ggml-webgpu/wgsl-shaders/`、MIT）、ONNX Runtime Web の `dp4a_matmul_nbits.cc`（MIT、プロンプト用の DP4A）、TensorFlow.js の `matmul_packed_webgpu.ts`（Apache-2.0）。どれを取ったかと出どころをこの項に書く。
 
 ### GPU の順番（2026-09-26、持ち主「細かく T を分けて深く進めようや」）
 T146 → T147 → T148 → T149 → T150 → T151 → T152 → T153 → T154 → T155 → T156 → T157。**CPU の側の点検 T158（Fable の max）は T146 と並行に**（別の場所を触る）。**レビューは全部 Opus xhigh**（2026-09-26 の夜、持ち主「すべてのレビュー Opus xhigh でよさそう」。それまではシェーダの設計を変えるもの（T146・T147・T149〜T152）と T148 が Fable の max）。シェーダのレビューは `.claude/agents/shader-reviewer.md` の決まり（上限と比べる: GFLOPS・GB/s と式と覆す条件）で。**シェーダを書くタスク（T147・T149〜T151）の実装は Opus medium で、公開の最良の実装から形を取る**（2026-09-26 の夜、持ち主「既存実装の最高なやつパクらん？」「元ネタあるなら Opus medium でよくねーか？」。それまでは「書き起こしから Fable xhigh」だった）。読む先: llama.cpp の WebGPU バックエンド（`ggml/src/ggml-webgpu/wgsl-shaders/`、MIT。Q8_0 はうちの int8 + グループ 32 とほぼ同じ並び）、ONNX Runtime Web の `MatMulNBits`（MIT。プロンプト用の DP4A の形と生成用の形）、TensorFlow.js の WebGPU の `matmul_packed_webgpu.ts`（Apache-2.0。共有メモリのタイルの古典の形）。融合と GPU の上のサンプリング（T150〜T152）は WebLLM の runtime と llama.cpp の norm・rope・softmax。どれを取ってなぜかを各項に書き、写した行には出どころと著作権表示をコメントで残す（このリポジトリに LICENSE は無い。公開の形は持ち主に）。設計を外す危険（端末での計測の往復が増える）は、形を公開の実装から取ることで小さくする。T146 は Fable xhigh がそのまま終える（途中で読む先を伝えた）。レビューは別の会話で（決まり 1 のとおり、実装とレビューを同じ会話でしない）。ほかのタスク（T148・T152〜T157 のつなぎの部分）の実装は Opus medium。どれも AGENTS.md の方針 9（既定で GPU、端末で測って遅ければ CPU）の上で、速さは持ち主の端末で測る（CI の SwiftShader は正しさだけ）。
@@ -158,6 +159,7 @@ T146 → T147 → T148 → T149 → T150 → T151 → T152 → T153 → T154 →
 ### T147 [性能] エンジンのプロンプトを、T146 のタイルの行列積に — 状態: 未着手（T146 の後。規模 小〜中）
 - 作るもの: `public/gpu.js`（T135 の第 1 段）のプロンプトの行列積を、T146 の変種のうちその端末で速いものに替える（読み込みの時に短く測って選ぶ。開発機の値を既定にしない）。**`gpu.js` の骨組み（橋渡し、K と V の書き戻し、バッファの持ち方、norm・RoPE・attention のシェーダ）は、T146 のレビューが挙げた所を書き直す**（持ち主「いままでのコードは書き直さなくて平気？」、2026-09-26。今の形は Opus が書き、正しさは試験で確かめてある）。**プロンプトをまとめて渡す形も考える**: Python は画面に文字を出すため 16 トークンずつ `forward_many` を呼び、第 1 段はそのたびに GPU の Worker と往復する。GPU は一度に多いほど得をする（持ち主の Android で 1 → 16 → 64 トークンの ms / トークンが下がる）。
 - 完了条件: `tests/gpu-check.mjs` が通り（packed は活性値を 8 ビットにするので、線を変えるなら数字と理由）、持ち主の端末でプロンプトの tok/s が CPU より速い。
+- 元ネタ: T146 で取った形。norm・RoPE・attention の書き直しは llama.cpp の WebGPU（`rms_norm`・`rope`・`flash_attn` の WGSL、MIT）と WebLLM の runtime（Apache-2.0）から。
 
 ### T148 [性能] 既定で GPU、端末で測って選ぶ（方針 9） — 状態: 未着手（T147 の後。規模 小〜中）
 - 作るもの: オプションなしで GPU を使う。読み込みか最初のプロンプトで GPU と CPU を短く測り、その端末で GPU が遅ければ CPU に戻す（ソフトウェアスレッドの本数の検索と同じ形）。判断はコンソールに 1 行、ステータス行に「prompts on WebGPU」か「on the CPU (理由)」。重みを 2 重に持つと入らないモデル（T156 の前）は CPU。`?gpu=` の旗は外す。
@@ -167,20 +169,24 @@ T146 → T147 → T148 → T149 → T150 → T151 → T152 → T153 → T154 →
 - 根拠: 持ち主の Android で、1B の分類器は 27〜36 GB/s 出るのに、w1（16.8MB）は 3.3〜15.7 GB/s。小さい行列ほど帯域が出ていない。CPU の 4 本は 23〜29 GB/s。
 - 作るもの: u32 のまとめ読み、1 ワークグループの受け持つ行の数、subgroups があればその変種。ベンチの「int8 matrix × vector」に変種の行。
 - 完了条件: 持ち主の端末で、1B の w1 と分類器の両方が端末のいちばん良い GB/s（今の分類器の値）に近づく。
+- 元ネタ: llama.cpp の WebGPU の `mul_mat_vec`（Q8_0、subgroup の変種、MIT）と ONNX Runtime Web の `matmul_nbits.cc` の生成用の形（MIT）。
 
 ### T150 [性能] 融合でディスパッチを減らす — 状態: 未着手（T149 の後。規模 中）
 - 根拠: 1 トークンに約 240 回のディスパッチで、空のディスパッチだけで 2〜9 ms（持ち主の Android）。ベンチの「fused」は回数の効きだけを見る形で、計算の中身は畳んでいない。
 - 作るもの: 同じ入力を読む行列を 1 つに（q・k・v、gate・up）、norm を次の行列の入力の読みへ、残差の足しを前の行列へ、本当に畳む。
 - 完了条件: 1 トークンのディスパッチが層あたり 3〜4 回になり、持ち主の端末で固定費が半分以下。
+- 元ネタ: WebLLM / MLC の融合したカーネル（Apache-2.0）と llama.cpp の WebGPU の融合（`rms_norm` と掛け算、MIT）。
 
 ### T151 [性能] 数トークンを GPU の上で回して、読み戻しをまとめる — 状態: 未着手（T150 の後。規模 中〜大）
 - 根拠: 読み戻しは大きさでなく待ちで、4 バイトでも 3〜8.6 ms（持ち主の Android）。1 トークンごとに待つと、その分がそのまま乗る。
 - 作るもの: サンプリング（繰り返しの罰、softmax、top-p、乱数）を GPU で。次のトークンの埋め込みの引きも GPU で。N トークンぶんを 1 回の submit で回し、トークンの ID をまとめて読む。止まりのトークンの扱い。CPU のサンプリングと同じ分布になることの試験。
 - 完了条件: 持ち主の端末で、生成の 1 トークンあたりの固定費が読み戻し 1 回ぶんより小さくなる。
+- 元ネタ: WebLLM の GPU の上のサンプリング（top-p・softmax、Apache-2.0）と llama.cpp の WebGPU の `soft_max`・`argmax`（MIT）。
 
 ### T152 [性能] 生成を GPU に置く（端末で測って選ぶ） — 状態: 未着手（T149〜T151 の後。規模 中）
 - 作るもの: `gpu.js` に 1 トークンの forward（KV キャッシュも GPU に）。T148 と同じ形で、生成も端末で GPU と CPU を測って選ぶ。
 - 完了条件: 持ち主の端末のどれかで、生成の tok/s が CPU より有意に速い。PC の独立した GPU や Apple の M 系で大きく伸びる見込み（未計測）。
+- 元ネタ: WebLLM の KV キャッシュと 1 トークンの流れ（Apache-2.0）、llama.cpp の WebGPU のグラフの回し方（MIT）。
 
 ### T153 [追加] Qwen2 の bias、Qwen3 の q・k の norm と head の大きさを GPU で — 状態: 未着手（規模 小〜中）
 - 今は理由を 1 行出して CPU（T135 の第 1 段）。一覧の Qwen2.5・TinySwallow・DeepSeek-R1・Qwen3 が GPU に乗る。
