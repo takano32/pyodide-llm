@@ -190,8 +190,9 @@ async function cpu(counts = [1, 2, 4]) {
 }
 
 // ---- the line. A fetch read to its end, or read no faster than rate (MB/s): each piece is taken only when the bytes
-// so far are due at that rate. The browser then stops taking from the connection, and the server's sending slows with
-// it (the connection's flow control): what is paced is this page's download, not the whole line of the device.
+// so far are due at that rate. Chromium and Firefox then stop taking from the connection, and the server's sending
+// slows with it (the connection's flow control): what is paced is this page's download, not the whole line of the
+// device. WebKit does not stop taking (T134's review): there only this page's reading is paced.
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // range: false for a part of the site's model, which GitHub Pages sends gzipped and answers a range of with a piece of
 // the gzip stream (AGENTS.md): the whole part, read to its end
@@ -207,14 +208,16 @@ async function measure(url, { bytes, rate, range = true }) {
     if (done) break;
     first ??= performance.now();
     got += value.length;
+    // the last piece waits too: WebKit takes the whole range whether it is read or not and hands it over in large
+    // pieces, so there only the reading is paced, and a last piece taken at once made the rate look many times higher
+    if (rate) {
+      const due = first + (Math.min(got, bytes) / (rate * 1e6)) * 1000;
+      if (due > performance.now()) await sleep(due - performance.now());
+    }
     if (got >= bytes) {
       // a server that sends the whole file for a range (WebKit and Hugging Face's CDN, T112) is read no further
       reader.cancel().catch(() => {});
       break;
-    }
-    if (rate) {
-      const due = first + (got / (rate * 1e6)) * 1000;
-      if (due > performance.now()) await sleep(due - performance.now());
     }
   }
   const ended = performance.now();
