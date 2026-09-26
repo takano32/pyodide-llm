@@ -405,7 +405,7 @@ def load_kernels(path, without_relaxed=False):
                           swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
                           add_columns=[p, p, p, i32, i32],
                           layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32],
-                          penalize=[p, p, i32, ctypes.c_float], widen_bf16=[p, p, i32],
+                          penalize=[p, p, i32, ctypes.c_float], widen_bf16=[p, p, i32], widen_q8_0=[p, p, i32],
                           sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p])
         kernels = {}
         for name, argtypes in signatures.items():
@@ -466,6 +466,25 @@ def kernel_widener(path):
         return out
 
     return bfloat16
+
+
+def kernel_q8_0(path):
+    """llama2_convert.q8_0() on the SIMD kernels (T136): GGUF's Q8_0 blocks widened to the same float32, each int8
+    times its block's float16 scale. For the converter's q8_0; None where the kernels cannot be loaded."""
+    kernels = load_kernels(path) if path else None
+    if not kernels:
+        return None
+    widen = kernels["widen_q8_0"]
+
+    def q8_0(raw):
+        blocks = np.frombuffer(raw, dtype=np.uint8)
+        if blocks.size % 34:
+            raise ValueError("Q8_0 data is not whole blocks of 34 bytes.")
+        out = np.empty(blocks.size // 34 * 32, dtype=np.float32)
+        widen(out.ctypes.data, blocks.ctypes.data, blocks.size // 34)
+        return out
+
+    return q8_0
 
 
 # T98: int6, six bits a weight. An int6 group is an int8 group whose values are multiples of 4 (-128..124: six

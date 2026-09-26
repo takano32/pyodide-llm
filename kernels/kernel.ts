@@ -75,6 +75,39 @@ export function widen_bf16(out: usize, raw: usize, n: i32): void {
   for (; i < n; i++) store<u32>(out + (<usize>i << 2), <u32>load<u16>(raw + (<usize>i << 1)) << 16);
 }
 
+// a float16 (its 16 bits) as float32, exactly: every float16 is a float32. The bits as NumPy's software conversion
+// makes them: infinities and NaNs keep their payload (shifted up), subnormals become normal float32.
+// @ts-ignore: decorator
+@inline function halfToFloat(h: u32): f32 {
+  const sign = (h & 0x8000) << 16, exp = h & 0x7c00, sig = h & 0x03ff;
+  if (exp == 0x7c00) return reinterpret<f32>(sign | 0x7f800000 | (sig << 13));
+  if (exp == 0) {
+    const tiny = <f32>sig * <f32>5.9604644775390625e-8; // sig * 2^-24: exact, a power of two times an integer < 1024
+    return sign ? -tiny : tiny;
+  }
+  return reinterpret<f32>(sign | (((h & 0x7fff) << 13) + (112 << 23))); // the exponent bias 15 -> 127
+}
+
+// T136: n blocks of GGUF's Q8_0 (raw, 34 bytes each: a float16 scale and 32 int8) to 32 n float32 (out), each int8
+// times its block's scale in float32: exactly the converter's NumPy q8_0() (one rounding, the product).
+export function widen_q8_0(out: usize, raw: usize, n: i32): void {
+  for (let b = 0; b < n; b++) {
+    const block = raw + <usize>b * 34, to = out + (<usize>b << 7);
+    const scale = f32x4.splat(halfToFloat(<u32>load<u16>(block)));
+    const lo = v128.load(block, 2), hi = v128.load(block, 18);
+    const l0 = i16x8.extend_low_i8x16_s(lo), l1 = i16x8.extend_high_i8x16_s(lo);
+    const h0 = i16x8.extend_low_i8x16_s(hi), h1 = i16x8.extend_high_i8x16_s(hi);
+    v128.store(to, f32x4.mul(f32x4.convert_i32x4_s(i32x4.extend_low_i16x8_s(l0)), scale));
+    v128.store(to, f32x4.mul(f32x4.convert_i32x4_s(i32x4.extend_high_i16x8_s(l0)), scale), 16);
+    v128.store(to, f32x4.mul(f32x4.convert_i32x4_s(i32x4.extend_low_i16x8_s(l1)), scale), 32);
+    v128.store(to, f32x4.mul(f32x4.convert_i32x4_s(i32x4.extend_high_i16x8_s(l1)), scale), 48);
+    v128.store(to, f32x4.mul(f32x4.convert_i32x4_s(i32x4.extend_low_i16x8_s(h0)), scale), 64);
+    v128.store(to, f32x4.mul(f32x4.convert_i32x4_s(i32x4.extend_high_i16x8_s(h0)), scale), 80);
+    v128.store(to, f32x4.mul(f32x4.convert_i32x4_s(i32x4.extend_low_i16x8_s(h1)), scale), 96);
+    v128.store(to, f32x4.mul(f32x4.convert_i32x4_s(i32x4.extend_high_i16x8_s(h1)), scale), 112);
+  }
+}
+
 // bias = 0: signed int8 in [-127,127];  bias = 64: 7-bit unsigned, real value = (q - 64) * scale (for kernel_relaxed.ts)
 export function quantize_x(xq: usize, xs: usize, x: usize, n: i32, bias: i32): void {
   // SIMD, 32 values (one group) at a time. Every step is the scalar one lane by lane (abs, max, the division, the

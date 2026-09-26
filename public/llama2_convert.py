@@ -1219,13 +1219,14 @@ class Stream:
     header: the JSON of the file (its first 8 bytes say how long it is), base: where the tensors begin, start: the
     position in the file of the first byte that feed() will get. out: a buffer of checkpoint_size() bytes, or None
     to have one made (self.out). sink and quantize_rows: see Writer. bfloat16: the widening of bfloat16 on the SIMD
-    kernels (llama2_numpy.kernel_widener, T123), the same float32 as this file's bfloat16().
+    kernels (llama2_numpy.kernel_widener, T123), the same float32 as this file's bfloat16(). q8_0: the widening of
+    GGUF's Q8_0 on the kernels (llama2_numpy.kernel_q8_0, T136), the same float32 as this file's q8_0().
     """
 
     def __init__(self, header, base, config, dtype, max_seq_len, out=None, start=0, sink=None, quantize_rows=None,
-                 bfloat16=None):
+                 bfloat16=None, q8_0=None):
         config = normalize(config)
-        self.bfloat16 = bfloat16
+        self.bfloat16, self.q8_0 = bfloat16, q8_0
         check_config(config)
         self.tensors = {name: info for name, info in header.items() if name != "__metadata__"}
         self.header = checkpoint_header(config, self, max_seq_len)
@@ -1313,6 +1314,8 @@ class Stream:
         itemsize, reader = READERS[info["dtype"]]
         if info["dtype"] == "BF16" and self.bfloat16 is not None:
             reader = self.bfloat16
+        if info["dtype"] == "Q8_0" and self.q8_0 is not None:
+            reader = self.q8_0
         shape = tuple(info["shape"])
         row = int((int(np.prod(shape[1:])) if len(shape) > 1 else int(shape[0])) * itemsize)
         # the head permutation needs its whole matrix (a small one); everything else goes row by row, as it comes
@@ -1761,7 +1764,7 @@ class Conversion:
     """
 
     def __init__(self, header, base, config, tokenizer, tokenizer_name, dtype="int8", max_seq_len=4096, start=0,
-                 tokenizer_config=None, sink=None, quantize_rows=None, bfloat16=None, chat_template=None):
+                 tokenizer_config=None, sink=None, quantize_rows=None, bfloat16=None, chat_template=None, q8_0=None):
         try:
             self.config = json.loads(config)
         except ValueError:
@@ -1790,10 +1793,10 @@ class Conversion:
             self.tokenizer, options = tokenizer_bin(sentencepiece_pieces(tokenizer), vocab_size), sentencepiece_options(tokenizer)
             specials = sentencepiece_specials(tokenizer)
         self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink, quantize_rows, specials, bfloat16,
-                   chat_template)
+                   chat_template, q8_0)
 
     @classmethod
-    def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None, quantize_rows=None, bfloat16=None):
+    def from_gguf(cls, head, dtype="int8", max_seq_len=4096, sink=None, quantize_rows=None, bfloat16=None, q8_0=None):
         """The same from a GGUF file (T74): head is its beginning, as far as the tensors' data (Incomplete when it
         is not). Then feed() the file from self.base on. No config.json and no tokenizer: the GGUF has both."""
         metadata, tensors, base = gguf_read(head)
@@ -1805,12 +1808,13 @@ class Conversion:
             check_dtype(dtype)
         self.tokenizer, options, tokenizer_config, specials = gguf_tokenizer(metadata, config["vocab_size"])
         self.base = base
-        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base, sink, quantize_rows, specials, bfloat16)
+        self.start(header, base, options, tokenizer_config, dtype, max_seq_len, base, sink, quantize_rows, specials, bfloat16,
+                   q8_0=q8_0)
         return self
 
     def start(self, header, base, options, tokenizer_config, dtype, max_seq_len, start, sink=None, quantize_rows=None,
-              specials=(), bfloat16=None, chat_template=None):
-        """sink and quantize_rows: see Writer, bfloat16: see Stream. checkpoint is None with a sink: the bytes went there. specials: the
+              specials=(), bfloat16=None, chat_template=None, q8_0=None):
+        """sink and quantize_rows: see Writer, bfloat16 and q8_0: see Stream. checkpoint is None with a sink: the bytes went there. specials: the
         tokenizer's special tokens, the ones a chat template writes between the turns. chat_template: the text of
         chat_template.jinja, where there is one (T127)."""
         bos = self.config.get("bos_token_id", 1)
@@ -1818,7 +1822,7 @@ class Conversion:
         stop = [token for token in [bos, *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start), sink=sink,
-                             quantize_rows=quantize_rows, bfloat16=bfloat16)
+                             quantize_rows=quantize_rows, bfloat16=bfloat16, q8_0=q8_0)
         self.options = {**options, "dtype": self.stream.dtype, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop, "bias": self.stream.bias,
                         "arch": self.stream.arch}
