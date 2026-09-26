@@ -71,7 +71,8 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
       </section>
       <div class="report" hidden>
         <h2>Results</h2>
-        <p><button id="copy" type="button">Copy the results</button> <a id="issue" target="_blank" rel="noopener">Report them as an issue</a></p>
+        <p><button id="copy" type="button">Copy the results</button> <a id="issue" target="_blank" rel="noopener">Report them as an issue</a>
+          <span id="long" class="about" hidden>(long: the results go to your clipboard, paste them into the issue)</span></p>
         <pre id="markdown"></pre>
       </div>
     </main>
@@ -115,7 +116,7 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
 </style>
 
 <script>
-  import { FULL_ROUNDS, ROUNDS, benchMarkdown, environmentOf, reportUrl } from "../bench.js";
+  import { FULL_ROUNDS, ROUNDS, benchMarkdown, environmentOf, reportTooLong, reportUrl } from "../bench.js";
   import { MODELS } from "../models.js";
 
   declare const __BUILD__: string;
@@ -215,14 +216,41 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
   function ask(worker: Worker, message: any): Promise<any> {
     return new Promise((resolve) => {
       worker.onmessage = ({ data }) => {
-        if (data.lost) return;  // the GPU section's device-lost notice comes on its own
+        // the GPU section's device-lost notice comes on its own, and so do the line's "still reading"
+        if (data.lost || data.alive) return;
         resolve(data);
       };
       worker.onerror = (event) => resolve({ error: `the worker failed: ${event.message ?? "error"}` });
       worker.postMessage(message);
     });
   }
-  const worker = (file: string) => new Worker(`${BASE}${file}${V}`, { type: "module" });
+  // the workers of the running section, and when one of them last said anything: a section that says nothing for
+  // STALL_MS is stopped, its workers ended, and the run goes on (T134's review: a GPU without Atomics.waitAsync in its
+  // worker never ended the bridge, and the storage and the line never ran)
+  const live = new Set<Worker>();
+  let heard = 0;
+  function worker(file: string) {
+    const w = new Worker(`${BASE}${file}${V}`, { type: "module" });
+    live.add(w);
+    w.addEventListener("message", () => { heard = performance.now(); });
+    return w;
+  }
+  const STALL_MS = 5 * 60_000, TICK_MS = 5000;
+  function stalled(): { promise: Promise<Result>; stop: () => void } {
+    heard = performance.now();
+    let last = heard, timer = 0;
+    const promise = new Promise<Result>((resolve) => {
+      timer = setInterval(() => {
+        const now = performance.now();
+        // a tick far later than asked for is a page the device stopped (a switched app, a frozen tab): the section's
+        // workers were stopped with it, and that time is no silence of theirs
+        if (now - last > 2 * TICK_MS) heard += now - last - TICK_MS;
+        last = now;
+        if (now - heard > STALL_MS) resolve({ status: "error", markdown: "stopped: nothing came from this section for 5 minutes" });
+      }, TICK_MS) as unknown as number;
+    });
+    return { promise, stop: () => clearInterval(timer) };
+  }
   const fixed = (value: any, digits = 1) => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "?");
   const yes = (value: boolean) => (value ? "yes" : "none");
   const model = () => MODELS.find((entry: any) => entry.id === ($("model") as HTMLSelectElement).value) as any;
@@ -272,10 +300,11 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
   }
 
   // the model page's worker itself (public/worker.js): the model loads, then the rounds of ?bench=1 (T45)
-  let modelRows: any[] = [], pyodideVersion: string | undefined;
+  // what the model section measured, under the name of the model it ran (the choice may change after)
+  let measured: { name: string; rows: any[]; pyodide: string } | undefined;
   async function modelSection(): Promise<Result> {
     const entry = model();
-    const w = new Worker(`${BASE}worker.js${V}`, { type: "module" });
+    const w = worker("worker.js");
     const rounds = ($("full") as HTMLInputElement).checked ? FULL_ROUNDS : ROUNDS;
     try {
       const answer: any = await new Promise((resolve) => {
@@ -296,8 +325,7 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
           threads: { remembered: 0, hint: navigator.hardwareConcurrency || 1 } });
       });
       if (answer.error) return { status: "error", markdown: answer.error };
-      modelRows = answer.rows;
-      pyodideVersion = answer.pyodide;
+      measured = { name: entry.name, rows: answer.rows, pyodide: answer.pyodide };
       const lines = ["| what ran | tok/s | ready | backend |", "|---|---|---|---|",
         ...answer.rows.map((row: any) => `| ${row.name} | ${fixed(row.speed)} | ${fixed(row.seconds)} s | ${row.backend} |`)];
       return { status: "ok", data: answer.rows, markdown: `${entry.name} · Pyodide ${answer.pyodide}\n\n${lines.join("\n")}` };
@@ -358,9 +386,14 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
     const waited = new Promise<any>((resolve) => { waiter.onmessage = ({ data }) => resolve(data); });
     const answered = ask(w, { step: "bridge", memory, rounds: BRIDGE_ROUNDS });
     waiter.postMessage({ memory, rounds: BRIDGE_ROUNDS });
-    const [answer, { microseconds }] = await Promise.all([answered, waited]);
-    waiter.terminate();
-    return answer.result?.waitAsync ? { microseconds } : { error: "no Atomics.waitAsync here" };
+    try {
+      // without Atomics.waitAsync nothing answers the waiter, which would wait for ever (T134's review)
+      const answer = await answered;
+      if (!answer.result?.waitAsync) return { error: answer.error ?? "no Atomics.waitAsync here" };
+      return { microseconds: (await waited).microseconds };
+    } finally {
+      waiter.terminate();
+    }
   }
   function gpuMarkdown(steps: any[], bridge: any, lost?: string) {
     const lines: string[] = [];
@@ -481,14 +514,17 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
 
   // ---- one report: the model's table first (as ?bench=1 writes it, which tests/reports.mjs reads), then every section
   function report() {
-    const entry = model();
-    const environment = environmentOf(navigator, { model: entry.name, pyodide: pyodideVersion, site: location.origin + location.pathname });
+    // the model and its table only when the model section measured: a report of the other sections names no model,
+    // which tests/reports.mjs then leaves out (T134's review)
+    const environment = environmentOf(navigator, { model: measured?.name, pyodide: measured?.pyodide, site: location.origin + location.pathname });
     const TITLES: Record<Name, string> = { device: "This browser", cpu: "CPU", model: "Model", gpu: "GPU", storage: "Storage", line: "Line" };
-    const sections = SECTIONS.filter((name) => name !== "model" && results[name])
+    // the model section's table is the one on top; the section itself only where it did not measure
+    const sections = SECTIONS.filter((name) => results[name] && (name !== "model" || results[name]!.status !== "ok"))
       .map((name) => `#### ${TITLES[name]}${results[name]!.status === "ok" ? "" : ` (${STATE[results[name]!.status]})`}\n\n${results[name]!.markdown}`);
-    const markdown = [benchMarkdown(modelRows, environment), ...sections].join("\n\n");
+    const markdown = [benchMarkdown(measured?.rows ?? [], environment), ...sections].join("\n\n");
     $("markdown").textContent = markdown;
     ($("issue") as HTMLAnchorElement).href = reportUrl(markdown, environment);
+    $("long").hidden = !reportTooLong(markdown, environment);
     (document.querySelector(".report") as HTMLElement).hidden = false;
     (window as any).__benchmark.markdown = markdown;
   }
@@ -506,10 +542,15 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
       state.textContent = "running...";
       out.innerHTML = "";
       let result: Result;
+      const stall = stalled();
       try {
-        result = await RUN[name]();
+        result = await Promise.race([RUN[name](), stall.promise]);
       } catch (error) {
         result = { status: "error", markdown: String((error as Error)?.message ?? error) };
+      } finally {
+        stall.stop();
+        live.forEach((w) => w.terminate());  // the section's own finally has done it, unless it was stopped
+        live.clear();
       }
       results[name] = result;
       state.className = `state ${result.status}`;
@@ -523,6 +564,10 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
   }
   $("run-all").onclick = () => runSections(SECTIONS);
   $("copy").onclick = () => navigator.clipboard?.writeText($("markdown").textContent ?? "");
+  // a report too long for the link goes by the clipboard, in the click itself (Safari writes only there)
+  $("issue").addEventListener("click", () => {
+    if (!$("long").hidden) navigator.clipboard?.writeText($("markdown").textContent ?? "").catch(() => {});
+  });
   // ?run=all runs every section at once, ?run=cpu,line those (tests/bench-check.mjs)
   const asked = parameters.get("run");
   if (asked) runSections(asked === "all" ? SECTIONS : SECTIONS.filter((name) => asked.split(",").includes(name)));

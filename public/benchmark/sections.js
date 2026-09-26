@@ -194,31 +194,52 @@ async function cpu(counts = [1, 2, 4]) {
 // slows with it (the connection's flow control): what is paced is this page's download, not the whole line of the
 // device. WebKit does not stop taking (T134's review): there only this page's reading is paced.
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// A fetch that brings nothing for STALL_MS is given up (as the model's worker gives up on Pyodide, T118), and while
+// bytes come the page hears of it once a second: its own deadline is for a section that says nothing at all.
+const STALL_MS = 30_000;
 // range: false for a part of the site's model, which GitHub Pages sends gzipped and answers a range of with a piece of
 // the gzip stream (AGENTS.md): the whole part, read to its end
 async function measure(url, { bytes, rate, range = true }) {
   const began = performance.now();
-  const res = await fetch(url, { headers: range ? { Range: `bytes=0-${bytes - 1}` } : {}, cache: "no-store" });
-  if (!res.ok) throw new Error(`${url.split("?")[0]}: ${res.status}`);
-  const headers = performance.now() - began;
-  const reader = res.body.getReader();
-  let got = 0, first;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    first ??= performance.now();
-    got += value.length;
-    // the last piece waits too: WebKit takes the whole range whether it is read or not and hands it over in large
-    // pieces, so there only the reading is paced, and a last piece taken at once made the rate look many times higher
-    if (rate) {
-      const due = first + (Math.min(got, bytes) / (rate * 1e6)) * 1000;
-      if (due > performance.now()) await sleep(due - performance.now());
+  const abort = new AbortController();
+  let stalled = false, told = began, timer;
+  const alive = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { stalled = true; abort.abort(); }, STALL_MS);
+    if (performance.now() - told > 1000) {
+      told = performance.now();
+      postMessage({ alive: true });
     }
-    if (got >= bytes) {
-      // a server that sends the whole file for a range (WebKit and Hugging Face's CDN, T112) is read no further
-      reader.cancel().catch(() => {});
-      break;
+  };
+  alive();
+  let res, headers, got = 0, first;
+  try {
+    res = await fetch(url, { headers: range ? { Range: `bytes=0-${bytes - 1}` } : {}, cache: "no-store", signal: abort.signal });
+    if (!res.ok) throw new Error(`${url.split("?")[0]}: ${res.status}`);
+    headers = performance.now() - began;
+    const reader = res.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      alive();
+      if (done) break;
+      first ??= performance.now();
+      got += value.length;
+      // the last piece waits too: WebKit takes the whole range whether it is read or not and hands it over in large
+      // pieces, so there only the reading is paced, and a last piece taken at once made the rate look many times higher
+      if (rate) {
+        const due = first + (Math.min(got, bytes) / (rate * 1e6)) * 1000;
+        if (due > performance.now()) await sleep(due - performance.now());
+      }
+      if (got >= bytes) {
+        // a server that sends the whole file for a range (WebKit and Hugging Face's CDN, T112) is read no further
+        reader.cancel().catch(() => {});
+        break;
+      }
     }
+  } catch (error) {
+    throw stalled ? new Error("no bytes came for 30 s") : error;
+  } finally {
+    clearTimeout(timer);
   }
   const ended = performance.now();
   return { status: res.status, headersMs: headers, firstByteMs: (first ?? ended) - began, bytes: Math.min(got, bytes),

@@ -43,13 +43,12 @@ export function benchMarkdown(rows, environment) {
     environment.pyodide && `Pyodide ${environment.pyodide}`,
     environment.site,
   ].filter(Boolean).join(" · ");
-  const head = ["| what ran | tok/s | ready | backend |", "|---|---|---|---|"];
-  const body = rows.map((row) => {
+  // no rounds, no table: a /benchmark/ report without its model section (T134) is no row of reportsTable()
+  const table = rows.length ? ["| what ran | tok/s | ready | backend |", "|---|---|---|---|", ...rows.map((row) => {
     const ready = row.seconds === undefined ? "" : `${number(row.seconds)} s`;
     return `| ${row.name} | ${number(row.speed)} | ${ready} | ${row.backend ?? ""} |`;
-  });
-  return [`### Pyodide LLM benchmark`, "", machine, "", ...head, ...body, "",
-          `<sub>${environment.userAgent}</sub>`].join("\n");
+  }), ""] : [];
+  return [`### Pyodide LLM benchmark`, "", machine, "", ...table, `<sub>${environment.userAgent}</sub>`].join("\n");
 }
 
 // T91: where a visitor sends the result, and the one table the results make.
@@ -68,11 +67,22 @@ export function reportBody(markdown) {
           "<!-- the page's Markdown, as the page wrote it: please leave it as it is -->", markdown].join("\n");
 }
 
-/** The address of a new issue with the template, the title and the body filled in. */
+/** The longest address of a new issue the page opens with the results in it. GitHub answers 500 from about 7,000
+ * characters to a visitor who is not signed in (6,799 went through), and 414 to anyone from about 8,100 (T134's
+ * review, 2026-09-26): a longer report goes to the clipboard, and the issue asks for it to be pasted. */
+export const REPORT_LIMIT = 6000;
+export const TOO_LONG = "The results were too long for the link and are on your clipboard: please paste them here.";
+
+const issueUrl = (body, environment) => `https://github.com/${REPOSITORY}/issues/new?${new URLSearchParams(
+  { template: "benchmark.md", title: `Benchmark: ${environment.model ?? "this device"}`, body: reportBody(body) })}`;
+
+/** Whether the results are too long for the address of a new issue (reportUrl() then leaves them out). */
+export const reportTooLong = (markdown, environment) => issueUrl(markdown, environment).length > REPORT_LIMIT;
+
+/** The address of a new issue with the template, the title and the body filled in: the page's Markdown, or where it
+ * is too long, a line that asks for it from the clipboard. */
 export function reportUrl(markdown, environment) {
-  const query = new URLSearchParams({ template: "benchmark.md", title: `Benchmark: ${environment.model ?? "a model"}`,
-                                      body: reportBody(markdown) });
-  return `https://github.com/${REPOSITORY}/issues/new?${query}`;
+  return issueUrl(reportTooLong(markdown, environment) ? TOO_LONG : markdown, environment);
 }
 
 const cells = (line) => line.split("|").slice(1, -1).map((cell) => cell.trim());

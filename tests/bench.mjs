@@ -2,7 +2,8 @@
 //
 //   node tests/bench.mjs
 import assert from "node:assert/strict";
-import { FULL_ROUNDS, QUESTIONS, ROUNDS, benchMarkdown, environmentOf, parseReport, reportBody, reportUrl, reportsTable } from "../src/bench.js";
+import { FULL_ROUNDS, QUESTIONS, REPORT_LIMIT, ROUNDS, TOO_LONG, benchMarkdown, environmentOf, parseReport, reportBody, reportTooLong,
+         reportUrl, reportsTable } from "../src/bench.js";
 import fs from "node:fs";
 
 const rows = [
@@ -64,4 +65,20 @@ const everything = [markdown, "#### This browser\n\n| feature | here |\n|---|---
 const whole = parseReport(reportBody(everything).replace(/\*\*Device\*\*: \(.*\)/, "**Device**: iPhone 15"));
 assert.deepEqual([whole.device, whole.model, whole.cores], ["iPhone 15", "tiny-lm 29M", "8"]);
 assert.deepEqual(whole.rows.map((row) => row.name), ["everything", "without the kernels"]);
+// T134: a report without the model's section has no table and no model, so that reportsTable() leaves it out rather
+// than writing a row of question marks under a model that did not run
+const deviceOnly = [benchMarkdown([], environmentOf({ hardwareConcurrency: 4, userAgent: "UA" }, {})),
+  "#### GPU\n\n| int8 matrix × vector | GPU |\n|---|---:|\n| Llama 3.2 1B w1 | 51.0 GB/s |"].join("\n\n");
+assert.ok(!deviceOnly.includes("| what ran |"), deviceOnly);
+assert.equal(parseReport(reportBody(deviceOnly)), undefined);
+assert.equal(reportsTable([{ number: 10, url: "u", body: reportBody(deviceOnly) }]).split("\n").length, 2, "no row for it");
+assert.equal(new URL(reportUrl(deviceOnly, environmentOf({}, {}))).searchParams.get("title"), "Benchmark: this device");
+// T134: a report too long for the address goes by the clipboard; the address says so and stays short
+assert.ok(!reportTooLong(everything, environment));
+const long = [everything, `#### Line\n\n${"| x | y |\n".repeat(600)}`].join("\n\n");
+assert.ok(reportTooLong(long, environment));
+const longUrl = reportUrl(long, environment);
+assert.ok(longUrl.length <= REPORT_LIMIT, `${longUrl.length}`);
+assert.ok(new URL(longUrl).searchParams.get("body").endsWith(TOO_LONG));
+assert.ok(new URL(longUrl).searchParams.get("body").includes("**Device**: ("), "the three questions stay");
 console.log("ok");
