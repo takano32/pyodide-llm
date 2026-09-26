@@ -128,7 +128,13 @@ def naive_logits(config, weights, tokens):
     cos, sin = weights["freq_cis_real"], weights["freq_cis_imag"]
 
     def rmsnorm(vector, weight):
-        return weight * vector / math.sqrt(sum(float(v) * float(v) for v in vector) / dim + 1e-5)
+        return weight * vector / math.sqrt(sum(float(v) * float(v) for v in vector) / len(vector) + 1e-5)
+
+    def head_norm(vector, name, l):
+        # Qwen3 (T124): every head of q and k normalized on its own, with one weight of a head's size
+        if name not in weights:
+            return vector
+        return np.concatenate([rmsnorm(vector[h:h + head_size], weights[name][l]) for h in range(0, len(vector), head_size)])
 
     def rope(vector, pos, heads):
         out = vector.copy()
@@ -146,8 +152,8 @@ def naive_logits(config, weights, tokens):
             xb = rmsnorm(x[pos], weights["rms_att_weight"][l])
             # Qwen2 adds a bias to q, k and v before the rotation
             bias = lambda name: weights[name][l] if name in weights else 0.0
-            queries.append(rope(weights["wq"][l] @ xb + bias("bq"), pos, n_heads))
-            keys.append(rope(weights["wk"][l] @ xb + bias("bk"), pos, n_kv_heads))
+            queries.append(rope(head_norm(weights["wq"][l] @ xb + bias("bq"), "q_norm", l), pos, n_heads))
+            keys.append(rope(head_norm(weights["wk"][l] @ xb + bias("bk"), "k_norm", l), pos, n_kv_heads))
             values.append(weights["wv"][l] @ xb + bias("bv"))
         for pos in range(len(tokens)):
             attended = np.zeros(dim, dtype=np.float64)

@@ -39,20 +39,22 @@ def test_the_sizes_follow_the_layout_of_quantize():
     assert checkpoint_dtype(list(header), 28 + 2 * floats) == "float16"
 
 
-@pytest.mark.parametrize("bias, arch", [(True, "llama"), (False, "gpt2"), (False, "neox")])
+@pytest.mark.parametrize("bias, arch, qk_norm", [(True, "llama", False), (False, "gpt2", False), (False, "neox", False),
+                                                  (False, "llama", True), (True, "llama", True)])
 @pytest.mark.parametrize("shared", [True, False])
-def test_the_sizes_follow_the_layout_of_every_architecture(bias, arch, shared):
-    """A local Qwen2, GPT-2 or GPT-NeoX file has other tensors than a Llama: the size check must know (T77)."""
+def test_the_sizes_follow_the_layout_of_every_architecture(bias, arch, qk_norm, shared):
+    """A local Qwen2, Qwen3, GPT-2 or GPT-NeoX file has other tensors than a Llama: the size check must know (T77)."""
     from llama2_convert import checkpoint_size
+    form = dict(qk_norm=qk_norm)
     header = (64, 172, 3, 8, 8, 300 if shared else -300, 128)
     for dtype in ("float32", "float16", "int8"):
-        assert checkpoint_dtype(header, checkpoint_size(header, dtype, bias, arch), bias, arch) == dtype
+        assert checkpoint_dtype(header, checkpoint_size(header, dtype, bias, arch, **form), bias, arch, **form) == dtype
     # and told apart from the same header as a plain Llama
-    assert checkpoint_size(header, "float32", bias, arch) != checkpoint_size(header, "float32")
+    assert checkpoint_size(header, "float32", bias, arch, **form) != checkpoint_size(header, "float32")
     # int6 (T98) needs rows of whole groups of 32: another hidden size
     header = (64, 192, 3, 8, 8, 300 if shared else -300, 128)
     for dtype in ("float32", "float16", "int8", "int6"):
-        assert checkpoint_dtype(header, checkpoint_size(header, dtype, bias, arch), bias, arch) == dtype
+        assert checkpoint_dtype(header, checkpoint_size(header, dtype, bias, arch, **form), bias, arch, **form) == dtype
 
 
 @pytest.mark.parametrize("size", [0, 27, 1000, 123456789])

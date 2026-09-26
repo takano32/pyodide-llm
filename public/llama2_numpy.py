@@ -307,6 +307,12 @@ def rmsnorm(x, weight):
     return weight * (x / np.sqrt(x.dot(x) / x.size + 1e-5))
 
 
+def head_norm(x, weight):
+    """rmsnorm() of every head of x (heads one after another), all with the same weight of one head's size."""
+    heads = x.reshape(-1, weight.size)
+    return (weight * heads / np.sqrt((heads * heads).mean(axis=1, keepdims=True) + 1e-5)).reshape(-1)
+
+
 def layernorm(x, weight, bias):
     """GPT-2 normalizes by the mean and the variance, and adds a bias."""
     centred = x - x.mean()
@@ -512,7 +518,7 @@ class Tensor:
 # the attributes of Llama that are tensors of the file, in no particular order
 TENSOR_NAMES = ("token_embedding_table", "rms_att_weight", "wq", "wk", "wv", "wo", "rms_ffn_weight", "w1", "w2", "w3",
                 "rms_final_weight", "freq_cis_real", "freq_cis_imag", "wcls", "bq", "bk", "bv", "positions",
-                "ln_att_bias", "ln_ffn_bias", "ln_final_bias", "bo", "b1", "b2")
+                "ln_att_bias", "ln_ffn_bias", "ln_final_bias", "bo", "b1", "b2", "q_norm", "k_norm")
 
 
 def outlier_channels(weight, count=OUTLIER_CHANNELS, ratio=OUTLIER_RATIO):
@@ -533,12 +539,12 @@ def outlier_columns(classifier, channels):
     return np.ascontiguousarray(columns)
 
 
-def checkpoint_dtype(header, size, bias=False, arch="llama"):
+def checkpoint_dtype(header, size, bias=False, arch="llama", qk_norm=False):
     """"float32", "float16", "int8" or "int6": what a checkpoint file of size bytes with this header (7 ints) holds.
 
     The legacy format does not say, but the header fixes the size of each variant. Anything else is no checkpoint
     this engine can read, and the ValueError says so before hundreds of megabytes are read for nothing.
-    bias and arch are what the file cannot say either (see Llama.__init__): the tensors differ with them.
+    bias, arch and qk_norm are what the file cannot say either (see Llama.__init__): the tensors differ with them.
     """
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = (int(value) for value in header)
     limit = 1 << 24
@@ -561,7 +567,8 @@ def checkpoint_dtype(header, size, bias=False, arch="llama"):
         matrices = [(abs(vocab_size), dim), (n_layers * dim, dim), (n_layers * kv_dim, dim), (n_layers * kv_dim, dim),
                     (n_layers * dim, dim), (n_layers * hidden_dim, dim), (n_layers * dim, hidden_dim),
                     (n_layers * hidden_dim, dim)]
-        vectors = 2 * n_layers * dim + dim + (n_layers * (dim + 2 * kv_dim) if bias else 0)
+        vectors = 2 * n_layers * dim + dim + (n_layers * (dim + 2 * kv_dim) if bias else 0) \
+            + (2 * n_layers * (dim // n_heads) if qk_norm else 0)
     if vocab_size < 0:
         matrices.append((abs(vocab_size), dim))
     floats = sum(rows * length for rows, length in matrices) + vectors + rope
@@ -616,7 +623,7 @@ class Llama:
                  tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, nmt=False, collapse=False,
-                 unknown=None):
+                 unknown=None, qk_norm=False):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py), and
@@ -629,6 +636,8 @@ class Llama:
         so it is llama2_convert.layout(arch=) that says what is there.
         bias=True: the checkpoint ends with a bias for q, k and v of every layer, which is added after those
         projections (Qwen2). The legacy header cannot say so, so the caller does, like the tokenizer settings.
+        qk_norm=True (T124): after them come the RMSNorm weights of q and k (one head's size each, per layer), and
+        every head of q and k is normalized with them before RoPE (Qwen3). The caller says so, like bias.
         rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
         rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
         whole (Llama 3).
@@ -719,6 +728,7 @@ class Llama:
         # how many values of each head RoPE turns: all of them unless the model says otherwise
         self.rotary = int(rotary) if rotary else self.head_size
         self.positions = None
+        self.q_norm = self.k_norm = None
         self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
         self.bo = self.b1 = self.b2 = None
         # a dict from Python, or a JavaScript object from the worker
@@ -727,7 +737,7 @@ class Llama:
         if arch in ("gpt2", "neox"):
             self.gpt2_tensors(take, shared_weights, keep_int8, kv_dim, dtype, frequencies)
         else:
-            self.llama_tensors(take, shared_weights, keep_int8, kv_dim, bias, dtype, frequencies)
+            self.llama_tensors(take, shared_weights, keep_int8, kv_dim, bias, dtype, frequencies, qk_norm)
         self.backend = "NumPy"
         if external is not None:
             if offset != int(external.size):
@@ -755,8 +765,9 @@ class Llama:
         self.stats = {}
         self._run = 0
 
-    def llama_tensors(self, take, shared_weights, keep_int8, kv_dim, bias, dtype, frequencies):
-        """The tensors of a Llama (and of a Qwen2, which adds the q, k and v biases at the end), in file order."""
+    def llama_tensors(self, take, shared_weights, keep_int8, kv_dim, bias, dtype, frequencies, qk_norm=False):
+        """The tensors of a Llama (and of a Qwen2, which adds the q, k and v biases at the end, and of a Qwen3, which
+        adds the norms of q and k after them), in file order."""
         dim, hidden_dim, n_layers = self.dim, self.hidden_dim, self.n_layers
         # With a separate classifier the embedding table is only ever read one row at a time, so an int8 or
         # float16 table stays as it is (a quarter or half of the memory) and forward() widens the row it needs.
@@ -779,6 +790,9 @@ class Llama:
         self.bq = take(n_layers, dim, matrix=False) if bias else None
         self.bk = take(n_layers, kv_dim, matrix=False) if bias else None
         self.bv = take(n_layers, kv_dim, matrix=False) if bias else None
+        if qk_norm:
+            self.q_norm = take(n_layers, self.head_size, matrix=False)
+            self.k_norm = take(n_layers, self.head_size, matrix=False)
         if dtype != np.float32:
             # half precision is too coarse for the rotation angles, and int8 files leave the RoPE tables out
             angles = np.arange(self.seq_len)[:, None] * frequencies(self.head_size)
@@ -913,6 +927,8 @@ class Llama:
             qv, kv, vv = self.wq[l] @ xb, self.wk[l] @ xb, self.wv[l] @ xb
             if self.bq is not None:  # Qwen2 and GPT-2 add a bias to q, k and v
                 qv, kv, vv = qv + self.bq[l], kv + self.bk[l], vv + self.bv[l]
+            if self.q_norm is not None:  # Qwen3 normalizes every head of q and k
+                qv, kv = head_norm(qv, self.q_norm[l]), head_norm(kv, self.k_norm[l])
             q = turn(qv, cos, sin).reshape(n_kv_heads, kv_mul, head_size)
             self.key_cache[l, :, pos] = turn(kv, cos, sin)
             self.value_cache[l, :, pos] = vv.reshape(n_kv_heads, head_size)

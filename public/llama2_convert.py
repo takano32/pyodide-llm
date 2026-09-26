@@ -27,12 +27,14 @@ def group_size(row_length):
     return size
 
 
-def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, bias=False, arch="llama"):
+def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, bias=False, arch="llama", qk_norm=False):
     """(shape, is a matrix) of every tensor, in file order. llama2_numpy.py reads the same order.
 
     is a matrix: True for what int8 quantizes, False for the norm weights, None for the RoPE tables.
     bias: the model adds a bias after the q, k and v projections (Qwen2). Those three vectors per layer go last,
     so that a checkpoint without them is byte for byte the file it always was.
+    qk_norm: the model normalizes every head of q and k before RoPE (Qwen3, T124): the two weights of a head's size
+    per layer go after the biases, for the same reason.
     """
     head_size = dim // n_heads
     kv_dim = n_kv_heads * head_size
@@ -65,6 +67,8 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, 
         tensors.append(((abs(vocab_size), dim), True))
     if bias:
         tensors += [((n_layers, dim), False), ((n_layers, kv_dim), False), ((n_layers, kv_dim), False)]
+    if qk_norm:
+        tensors += [((n_layers, head_size), False), ((n_layers, head_size), False)]
     return tensors
 
 
@@ -95,8 +99,9 @@ def tensor_bytes(shape, is_matrix, dtype):
     return count + 4 * (count // group_size(shape[-1])) if is_matrix else 4 * count
 
 
-def checkpoint_size(header, dtype, bias=False, arch="llama"):
-    return 28 + sum(tensor_bytes(shape, is_matrix, dtype) for shape, is_matrix in layout(*header, bias=bias, arch=arch))
+def checkpoint_size(header, dtype, bias=False, arch="llama", qk_norm=False):
+    return 28 + sum(tensor_bytes(shape, is_matrix, dtype)
+                    for shape, is_matrix in layout(*header, bias=bias, arch=arch, qk_norm=qk_norm))
 
 
 def quantize(values):
@@ -110,7 +115,7 @@ def quantize(values):
 class Writer:
     """Puts pieces of the tensors of layout(), in any order, where they belong in the checkpoint buffer."""
 
-    def __init__(self, out, header, dtype, bias=False, arch="llama", sink=None, quantize_rows=None):
+    def __init__(self, out, header, dtype, bias=False, arch="llama", sink=None, quantize_rows=None, qk_norm=False):
         """out: a buffer of the checkpoint's size, or None with sink: an object with open(size, header, dtype,
         arch) and write(offset, array of bytes), for a checkpoint that lives outside Python (T93: the WebAssembly
         memory of public/forward.js, which the header and the rest size, T115). Pyodide's own memory never shrinks,
@@ -118,9 +123,10 @@ class Writer:
         # quantize_rows: quantize() on the SIMD kernels (llama2_numpy.kernel_quantizer), the same bytes six times
         # faster, for rows of whole groups of 32; NumPy's quantize() for anything else, and where there are no kernels
         self.dtype, self.sink, self.quantize_rows = dtype_name(dtype), sink, quantize_rows
-        if self.dtype == "int6" and any(is_matrix and shape[-1] % 32 for shape, is_matrix in layout(*header, bias=bias, arch=arch)):
+        tensors = layout(*header, bias=bias, arch=arch, qk_norm=qk_norm)
+        if self.dtype == "int6" and any(is_matrix and shape[-1] % 32 for shape, is_matrix in tensors):
             raise ValueError("Six bits a weight needs rows of whole groups of 32, and this model has other rows.")
-        size = checkpoint_size(header, dtype, bias, arch)
+        size = checkpoint_size(header, dtype, bias, arch, qk_norm)
         if sink is not None:
             self.out = None
             sink.open(size, list(header), self.dtype, arch)
@@ -129,7 +135,7 @@ class Writer:
             assert self.out.size == size, "the buffer has not the size of the checkpoint"
         self.put(0, np.frombuffer(struct.pack("<7i", *header), dtype=np.uint8))
         self.tensors, offset = [], 28
-        for shape, is_matrix in layout(*header, bias=bias, arch=arch):
+        for shape, is_matrix in tensors:
             self.tensors.append((offset, shape, is_matrix))
             offset += tensor_bytes(shape, is_matrix, dtype)
 
@@ -908,8 +914,9 @@ def check_config(config):
         raise ValueError(f"This model cannot be converted: {reason}.")
 
     # qwen2 is a Llama with a bias on q, k and v: the converter writes those three vectors per layer, the engine
-    # adds them after the projections (T64). Everything else about it is the same.
-    if config.get("model_type") not in ("llama", "qwen2", "gpt2", "gpt_neox"):
+    # adds them after the projections (T64). Everything else about it is the same. qwen3 is a Llama that normalizes
+    # every head of q and k (T124): two vectors per layer, the same way.
+    if config.get("model_type") not in ("llama", "qwen2", "qwen3", "gpt2", "gpt_neox"):
         refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Mistral, Qwen2, GPT-2 "
                f"and GPT-NeoX models are supported")
     for key in ("hidden_size", "intermediate_size", "num_hidden_layers", "num_attention_heads", "vocab_size",
@@ -1030,7 +1037,12 @@ def has_bias(source):
     return "model.layers.0.self_attn.q_proj.bias" in source
 
 
-def conversion_plan(header, bias=False, arch="llama", prefix="transformer.", rotary=0):
+def has_qk_norm(source):
+    """Whether this checkpoint normalizes every head of q and k before RoPE (Qwen3, T124)."""
+    return "model.layers.0.self_attn.q_norm.weight" in source
+
+
+def conversion_plan(header, bias=False, arch="llama", prefix="transformer.", rotary=0, qk_norm=False):
     """For every tensor of layout(): the tensors of the Hugging Face checkpoint it is made of, in order, as
     (name, transform); None instead of a list stands for a RoPE table. And the shapes of layout()."""
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
@@ -1090,7 +1102,10 @@ def conversion_plan(header, bias=False, arch="llama", prefix="transformer.", rot
     if bias:
         plan += [layers("self_attn.q_proj", ("permute", n_heads), "bias"),
                  layers("self_attn.k_proj", ("permute", n_kv_heads), "bias"), layers("self_attn.v_proj", None, "bias")]
-    return plan, [shape for shape, _ in layout(*header, bias=bias)]
+    if qk_norm:
+        # one weight for every head, over the rows of a head: interleaved like the rows it multiplies
+        plan += [layers("self_attn.q_norm", ("permute", 1)), layers("self_attn.k_norm", ("permute", 1))]
+    return plan, [shape for shape, _ in layout(*header, bias=bias, qk_norm=qk_norm)]
 
 
 def rope_table(config, header, which):
@@ -1131,10 +1146,11 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
     head_size = dim // n_heads
     arch = architecture(config)
-    bias = has_bias(source)
-    writer = Writer(out, header, dtype, bias, arch, quantize_rows=quantize_rows)
+    bias, qk_norm = has_bias(source), has_qk_norm(source)
+    writer = Writer(out, header, dtype, bias, arch, quantize_rows=quantize_rows, qk_norm=qk_norm)
 
-    plan, shapes = conversion_plan(header, bias, arch, gpt2_prefix(source), rotary_dim(config) if arch == "neox" else 0)
+    plan, shapes = conversion_plan(header, bias, arch, gpt2_prefix(source), rotary_dim(config) if arch == "neox" else 0,
+                                   qk_norm)
     total, done = sum(int(np.prod(shape)) for shape in shapes), 0
 
     for index, (parts, shape) in enumerate(zip(plan, shapes)):
@@ -1185,20 +1201,21 @@ class Stream:
         self.header = checkpoint_header(config, self, max_seq_len)
         self.head_size = self.header[0] // self.header[3]
         self.arch = architecture(config)
-        self.bias = has_bias(self)
+        self.bias, self.qk_norm = has_bias(self), has_qk_norm(self)
         if callable(dtype):
             # T115: chosen once the header is known, from the size each quantized dtype would take (the worker's
             # automatic choice: int8 where the forward pass fits a 32-bit memory, six bits where it does not)
-            sizes = {name: checkpoint_size(self.header, name, self.bias, self.arch) for name in QUANTIZED}
+            sizes = {name: checkpoint_size(self.header, name, self.bias, self.arch, self.qk_norm) for name in QUANTIZED}
             dtype = str(dtype(list(self.header), self.arch, sizes))
         check_dtype(dtype)
         self.dtype = dtype_name(dtype)
         if out is None and sink is None:
-            out = bytearray(checkpoint_size(self.header, dtype, self.bias, self.arch))
+            out = bytearray(checkpoint_size(self.header, dtype, self.bias, self.arch, self.qk_norm))
         self.out = out  # None when the checkpoint goes to sink
-        self.writer = Writer(self.out, self.header, dtype, self.bias, self.arch, sink=sink, quantize_rows=quantize_rows)
+        self.writer = Writer(self.out, self.header, dtype, self.bias, self.arch, sink=sink, quantize_rows=quantize_rows,
+                             qk_norm=self.qk_norm)
         plan, shapes = conversion_plan(self.header, self.bias, self.arch, gpt2_prefix(self),
-                                       rotary_dim(config) if self.arch == "neox" else 0)
+                                       rotary_dim(config) if self.arch == "neox" else 0, self.qk_norm)
         self.total, self.done = sum(int(np.prod(shape)) for shape in shapes), 0
         wanted = {}
         for index, (parts, shape) in enumerate(zip(plan, shapes)):
@@ -1695,6 +1712,9 @@ class Conversion:
         self.options = {**options, "dtype": self.stream.dtype, "rope_theta": float(self.config.get("rope_theta", 10000.0)),
                         "bos": bos if isinstance(bos, int) else 1, "stop_tokens": stop, "bias": self.stream.bias,
                         "arch": self.stream.arch}
+        if self.stream.qk_norm:
+            # only where there is one: the options of every model before T124 stay what they were (kept.js's CONVERTER)
+            self.options["qk_norm"] = True
         # the format of one turn, from the model's own chat_template (T73). src/models.js wins when it has one
         template = one_turn_template(tokenizer_config, chat_template)
         if template:

@@ -285,6 +285,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   const attW = floats("rms_att_weight"), ffnW = floats("rms_ffn_weight"), finalW = floats("rms_final_weight");
   const attB = floats("ln_att_bias"), ffnB = floats("ln_ffn_bias"), finalB = floats("ln_final_bias");
   const bo = floats("bo"), b1 = floats("b1"), b2 = floats("b2"), bq = floats("bq"), bk = floats("bk"), bv = floats("bv");
+  const qNorm = floats("q_norm"), kNorm = floats("k_norm");  // T124: Qwen3 normalizes every head of q and k
   const cosTable = floats("freq_cis_real"), sinTable = floats("freq_cis_imag");
   const positions = gpt2 ? floats("positions") : 0;
   const embedding = T.token_embedding_table;
@@ -468,6 +469,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
           k.add_inplace(qt, bq + l * D, dim);
           k.add_inplace(kt, bk + l * KF, kvDim);
           k.add_inplace(vt, bv + l * KF, kvDim);
+        }
+        if (qNorm) {
+          const HS = headSize * 4;
+          for (let h = 0; h < heads; h++) k.rmsnorm(qt + h * HS, qt + h * HS, qNorm + l * HS, headSize);
+          for (let h = 0; h < kvHeads; h++) k.rmsnorm(kt + h * HS, kt + h * HS, kNorm + l * HS, headSize);
         }
         if (!gpt2) {
           const cos = cosTable + pos * (headSize / 2) * 4, sin = sinTable + pos * (headSize / 2) * 4;

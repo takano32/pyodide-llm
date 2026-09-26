@@ -9,7 +9,7 @@ import pytest
 from conftest import ROOT, pack_checkpoint, synthetic_weights
 import llama2_convert
 from llama2_convert import (Arrays, Safetensors, architecture, check_config, checkpoint_header, checkpoint_size,
-                            convert_weights, has_bias, normalize,
+                            convert_weights, has_bias, has_qk_norm, normalize,
                             tokenizer_bin, tokenizer_json_options, tokenizer_json_pieces)
 from llama2_numpy import Llama, Tokenizer, check_tokenizer, checkpoint_dtype
 
@@ -64,7 +64,8 @@ def reader(file, log=None):
 
 def converted(source, published, dtype, max_seq_len=1 << 20):
     arch = architecture(normalize(published))
-    out = bytearray(checkpoint_size(checkpoint_header(published, source, max_seq_len), dtype, has_bias(source), arch))
+    out = bytearray(checkpoint_size(checkpoint_header(published, source, max_seq_len), dtype, has_bias(source), arch,
+                                    has_qk_norm(source)))
     convert_weights(source, published, dtype, max_seq_len, out)
     return bytes(out)
 

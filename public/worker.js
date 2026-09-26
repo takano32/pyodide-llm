@@ -274,9 +274,10 @@ async function localOptions(model, vocabulary, head) {
   const header = pyodide.toPy(headerInts(head));
   const pieces = pyodide.toPy(vocabulary);
   try {
-    // what the file cannot say and the settings may: a Qwen2 has biases, a GPT-2 or GPT-NeoX another set of tensors
-    const { bias = false, arch = "llama" } = model.options ?? {};
-    const dtype = llama2_numpy.checkpoint_dtype(header, model.bytes, bias, arch);
+    // what the file cannot say and the settings may: a Qwen2 has biases, a GPT-2 or GPT-NeoX another set of tensors,
+    // a Qwen3 the norms of q and k (T124)
+    const { bias = false, arch = "llama", qk_norm = false } = model.options ?? {};
+    const dtype = llama2_numpy.checkpoint_dtype.callKwargs(header, model.bytes, bias, arch, { qk_norm });
     llama2_numpy.check_tokenizer(pieces, header);
     return { ...model.options, dtype };
   } finally {

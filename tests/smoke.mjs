@@ -114,6 +114,47 @@ for rotary_pct, parallel in ((0.25, True), (1.0, False)):
         assert np.allclose(wanted, got, rtol=1e-4, atol=1e-4), \
             f"GPT-NeoX kernels differ (rotary_pct {rotary_pct}, parallel {parallel}) at {pos}: {np.abs(wanted - got).max()}"
 
+# Qwen3 on the kernels (T124): the norms of every head of q and k must write what NumPy writes, in float32; int8
+# computes on its own numbers (the activations are quantized too) and must pick mostly the same tokens
+def qwen3_model(dim, heads, kv_heads, head_dim, hidden=96, layers=2, vocab=320, positions=24):
+    rng = np.random.default_rng(5)
+    normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
+    near_one = lambda n: (1.0 + normal(n) * 0.3).astype(np.float32)
+    tensors = {"model.embed_tokens.weight": normal(vocab, dim), "model.norm.weight": near_one(dim)}
+    for layer in range(layers):
+        p = f"model.layers.{layer}."
+        tensors.update({p + "input_layernorm.weight": near_one(dim), p + "post_attention_layernorm.weight": near_one(dim),
+                        p + "self_attn.q_proj.weight": normal(heads * head_dim, dim),
+                        p + "self_attn.k_proj.weight": normal(kv_heads * head_dim, dim),
+                        p + "self_attn.v_proj.weight": normal(kv_heads * head_dim, dim),
+                        p + "self_attn.o_proj.weight": normal(dim, heads * head_dim),
+                        p + "self_attn.q_norm.weight": near_one(head_dim), p + "self_attn.k_norm.weight": near_one(head_dim),
+                        p + "mlp.gate_proj.weight": normal(hidden, dim), p + "mlp.up_proj.weight": normal(hidden, dim),
+                        p + "mlp.down_proj.weight": normal(dim, hidden)})
+    config = dict(model_type="qwen3", hidden_size=dim, intermediate_size=hidden, num_hidden_layers=layers,
+                  num_attention_heads=heads, num_key_value_heads=kv_heads, head_dim=head_dim, vocab_size=vocab,
+                  max_position_embeddings=positions, rope_theta=10000.0, tie_word_embeddings=True)
+    return tensors, config
+
+qwen3_vocabulary = gpt2_vocabulary
+for dim, heads, kv_heads, head_dim in ((64, 4, 2, 16),):
+    qwen3_tensors, qwen3_config = qwen3_model(dim, heads, kv_heads, head_dim)
+    source = llama2_convert.Arrays(qwen3_tensors)
+    header = llama2_convert.checkpoint_header(qwen3_config, source, 24)
+    for dtype in ("float32", "int8"):
+        qwen3_file = bytearray(llama2_convert.checkpoint_size(header, dtype, qk_norm=True))
+        llama2_convert.convert_weights(source, qwen3_config, dtype, 24, qwen3_file)
+        plain = llama2_numpy.Llama(bytes(qwen3_file), qwen3_vocabulary, dtype=dtype, qk_norm=True)
+        quick = kernel_llama(bytes(qwen3_file), qwen3_vocabulary, dtype=dtype, qk_norm=True)
+        assert quick.backend.startswith("SIMD"), f"the kernels did not load for Qwen3: {quick.backend}"
+        same = 0
+        for pos, token in enumerate([1, 5, 9, 13, 17, 21, 25, 29]):
+            wanted, got = plain.forward(token, pos), quick.forward(token, pos)
+            same += int(np.argmax(wanted) == np.argmax(got))
+            if dtype == "float32":
+                assert np.allclose(wanted, got, rtol=1e-4, atol=1e-4), f"Qwen3 kernels differ ({head_dim}) at {pos}: {np.abs(wanted - got).max()}"
+        assert same >= 6, f"Qwen3 int8 on the kernels picks other tokens ({same} of 8 the same)"
+
 # the switches of T52: every one of them must leave a path that still works, and float32 must not change
 for disable in ((), ("relaxed",), ("sampler",), ("int8", "relaxed", "sampler"), ("kernels",)):
     switched = kernel_llama(read("stories15M.f32"), read("tokenizer.bin"), disable=disable)
