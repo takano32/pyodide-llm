@@ -1508,12 +1508,14 @@ def gguf_weights(head, config):
 def gguf_agrees(own, config):
     """ValueError unless a GGUF (own: what gguf_model() read of it) holds the model config.json describes. The
     sizes of the tensors the conversion checks anyway (Stream); these are what the sizes do not show: heads and
-    key-value heads of the same product, a classifier that would silently be the embedding (Stream shares it where
-    lm_head is missing), and the numbers that are no tensor. The context is not compared: a sliding window cuts it
-    (RakutenAI 2.0 mini: 131072 in the GGUF, 8192 as normalize() cuts it)."""
+    key-value heads of the same product, the number of layers (a GGUF of more layers than config.json says went
+    through cut to that many: Stream reads the layers the header asks for), a classifier that would silently be the
+    embedding (Stream shares it where lm_head is missing), and the numbers that are no tensor. The context is not
+    compared: a sliding window cuts it (RakutenAI 2.0 mini: 131072 in the GGUF, 8192 as normalize() cuts it)."""
     f32 = lambda value: float(np.float32(value))
     heads = config.get("num_attention_heads")
     pairs = [("architecture", own["model_type"], config.get("model_type")),
+             ("number of layers", own["num_hidden_layers"], config.get("num_hidden_layers")),
              ("number of heads", own["num_attention_heads"], heads),
              ("number of key-value heads", own["num_key_value_heads"], config.get("num_key_value_heads", heads)),
              ("RoPE theta", f32(own["rope_theta"]), f32(config.get("rope_theta", 10000.0)))]

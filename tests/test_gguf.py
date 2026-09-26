@@ -245,10 +245,12 @@ def test_a_gguf_with_the_originals_vocabulary_is_the_safetensors_conversion(mode
     (dict(rms_norm_eps=1e-6), "RMSNorm epsilon"),
     (dict(model_type="qwen2"), "architecture"),
     (dict(tie_word_embeddings=False), "classifier of its own"),
+    (dict(num_hidden_layers=1), "number of layers"),
 ])
 def test_a_gguf_that_is_not_the_originals_is_refused(change, what):
     """What the sizes of the tensors do not show (T136's review, point 5): heads and key-value heads of the same
-    product, a classifier that would silently be the embedding, and the numbers that are no tensor."""
+    product, fewer layers than the GGUF has (it went through, cut to them), a classifier that would silently be the
+    embedding, and the numbers that are no tensor."""
     config, weights = synthetic_weights(n_kv_heads=2)
     tensors, published = hugging_face(config, weights, True)
     published["rms_norm_eps"] = 1e-5
