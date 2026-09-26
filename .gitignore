@@ -15,3 +15,4 @@ dist/
 __pycache__/
 *.wasmlib
 .venv/
+.tmp/

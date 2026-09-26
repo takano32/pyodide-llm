@@ -42,7 +42,7 @@ sudo apt install python3-numpy python3-pytest python3-regex python3-jinja2 pytho
 python3 -m venv --system-site-packages .venv
 .venv/bin/pip install tokenizers==0.23.1 transformers==5.16.1
 .venv/bin/python -m pytest tests -q        # 本物の tokenizers との突き合わせも走る（471 件）
-.venv/bin/python tests/format_check.py ~/tmp/format-check hf-qwen3-0.6b
+.venv/bin/python tests/format_check.py .tmp/format-check hf-qwen3-0.6b
 ```
 
 - **transformers は 5.16.1**（5.12.1 ではない）。PyPI の 5.12.1〜5.15.1 は `tokenizers<=0.23.0` を求め、import のときにも版を見て止まる（pip で 0.23.1 を上書きしても `ImportError`）。0.23.0 は PyPI に無く、0.23.1 を許すのは 5.16.0 から。前の開発機の 5.12.1 は AUR の `python-transformers-git`（git から作ったもの）で、この縛りが無かった。
@@ -104,7 +104,7 @@ npm install --no-save pyodide@latest   # smoke は最新の Pyodide で確かめ
 `tests/format_check.py`（書式）、sentencepiece の突き合わせ（T126）などは transformers と sentencepiece を使う。ページもデプロイも使わない。どちらの形でも 1 の `.venv` に入っている（入れ方の版は `tests/requirements-reference.txt`）。
 
 ```sh
-.venv/bin/python tests/format_check.py ~/tmp/format-check hf-qwen3-0.6b
+.venv/bin/python tests/format_check.py .tmp/format-check hf-qwen3-0.6b
 ```
 
 PyTorch は要らない（入れない。transformers は「PyTorch was not found」と言うだけで、語彙と書式には困らない）。
@@ -127,7 +127,7 @@ claude mcp add chrome-devtools -s local -- bunx -y chrome-devtools-mcp@latest --
 
 AGENTS.md の落とし穴のいくつかは機械しだい。新しい機械では確かめて、AGENTS.md の該当の行を書き直す。
 
-- `/tmp` が tmpfs（メモリ）か: `df -h /tmp`。tmpfs なら大きいもの（モデル、`dist` の写し）は `~/tmp` に置く。
+- `/tmp` が tmpfs（メモリ）か: `df -h /tmp`。tmpfs なら大きいもの（モデル、`dist` の写し）は `/tmp` に置かない。**作業ファイルはリポジトリの中の `.tmp/`**（`.gitignore` にある。2026-09-26、持ち主の指示）。`$HOME` の下には黙って作らない（AGENTS.md の「持ち主の指示」）。
 - メモリの枠で計測を包めるか: `systemd-run --user --scope -p MemoryMax=1G -p MemorySwapMax=0 true`。使えなければ `ulimit -v` で。
 - スワップの有無、メモリの量、コアの数と種類（`lscpu`）: AGENTS.md の「計測環境」の行に。
 
