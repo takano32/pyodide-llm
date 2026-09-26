@@ -188,11 +188,15 @@ const PROMPT_MODEL = { dim: 2048, hidden: 8192, layers: 2, heads: 32, kvHeads: 8
 const matrixBytes = ([rows, n]) => rows * n + (rows * n / GROUP) * 4;
 
 let device, adapter, packed = false;
+// a fallback adapter (SwiftShader: the CPU pretending to be a GPU, as in CI) says nothing of a GPU's speed, and takes
+// 16 s for one token of Llama 3.2 1B: every measurement is taken once there, and only its answers are worth anything
+let fallback = false;
 async function gpu() {
   if (device) return device;
   if (!self.navigator?.gpu) throw new Error("no navigator.gpu in a worker here");
   adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
   if (!adapter) throw new Error("navigator.gpu gave no adapter");
+  fallback = Boolean(adapter.info?.isFallbackAdapter ?? adapter.isFallbackAdapter);
   packed = navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product") ?? false;
   // as much of a buffer and of a binding as the adapter allows: the weights are the point
   device = await adapter.requestDevice({
@@ -316,8 +320,9 @@ async function readBack(encoder, source, size, target) {
   if (!target) into.destroy();
   return got;
 }
-// the median of runs of a measurement, in ms, after warm-up runs
+// the median of runs of a measurement, in ms, after warm-up runs (one run and no warm-up on a fallback adapter)
 async function median(measure, times = 10, warm = 3) {
+  if (fallback) [times, warm] = [1, 0];
   for (let i = 0; i < warm; i++) await measure();
   const ms = [];
   for (let i = 0; i < times; i++) {
@@ -439,9 +444,10 @@ async function bandwidth(shape) {
       await device.queue.onSubmittedWorkDone();
       return performance.now() - began;
     };
-    await time(2);
-    const ms = await time(20);
-    found[kind] = { GBps: (20 * m.bytes) / (ms / 1000) / 1e9, msEach: ms / 20 };
+    const times = fallback ? 1 : 20;
+    if (!fallback) await time(2);
+    const ms = await time(times);
+    found[kind] = { GBps: (times * m.bytes) / (ms / 1000) / 1e9, msEach: ms / times };
     m.owned.forEach((b) => b.destroy());
   }
   found.cpu = await cpuBandwidth(shape);

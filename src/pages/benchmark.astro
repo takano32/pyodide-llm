@@ -361,7 +361,7 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
   function gpuMarkdown(steps: any[], bridge: any, lost?: string) {
     const lines: string[] = [];
     const r = steps.find((s) => s.name === "the adapter").result;
-    lines.push(`**Adapter**: ${r.adapter}${r.fallback ? " (a fallback adapter)" : ""}; max binding ${fixed(r.maxStorageBufferBindingSize / 2 ** 20, 0)} MiB, ` +
+    lines.push(`**Adapter**: ${r.adapter}${r.fallback ? " (a fallback adapter: the CPU in a GPU's place, each measured once, its speed no GPU's)" : ""}; max binding ${fixed(r.maxStorageBufferBindingSize / 2 ** 20, 0)} MiB, ` +
       `max buffer ${fixed(r.maxBufferSize / 2 ** 20, 0)} MiB, packed int8 dot ${yes(r.packed)}, shader-f16 ${yes(r.features?.includes("shader-f16"))}${lost ? `; device lost: ${lost}` : ""}`, "");
     const check = steps.find((s) => s.name === "the shaders against JavaScript");
     if (check?.result) lines.push(`**Shaders against JavaScript**: ${Object.entries(check.result).map(([k, v]: any) => `${k} ${v.ok ? "ok" : "WRONG"} (worst ${v.worstRelative.toExponential(1)})`).join(", ")}`, "");
