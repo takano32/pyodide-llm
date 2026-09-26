@@ -295,9 +295,9 @@ record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Numb
          ...(then.length ? { then } : {}) });
 if (failures.length) await keepArtifacts(failures.join("; "));
 clearTimeout(watchdog);
-// T141: end the process here, not when nothing is left to wait for. In CI on Windows, Node kept running after "ok"
-// twice (after a WebKit run), the next run never started and the job ran into its 90 minutes: something of the
-// browser outlived browser.close() and kept the process alive. A close that hangs may not keep it either.
+// T141: browser.close() of WebKit on Windows did not return (three times in CI: the answer printed, then nothing),
+// the watchdog was already stopped, the next run never started and the job ran into its limit. The close is given
+// fifteen seconds, and the process ends here rather than when nothing is left to wait for.
 await Promise.race([browser.close(), new Promise((resolve) => setTimeout(resolve, 15000))]);
 server?.close();
 if (failures.length) {

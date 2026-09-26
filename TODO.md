@@ -192,9 +192,9 @@
 - 完了条件: 表 1 枚（ブラウザ × 実装 × スレッド数 → 準備完了・プロンプト tok/s・生成 tok/s・メモリ）が T83 の gist の計測の表（`30-`）と AGENTS.md に載る。勝ち負けのどちらでも載せる。負けた項目には、何が差を作っているかの見立てを 1 文添える。
 
 ### T141 [運用] CI の実行が「ok」の後で終わらず、Windows のジョブが 90 分止まる — 状態: **進行中**（2026-09-26、持ち主の問い「案のうち Windows にきくやつはやらんか？」。規模 小）
-- 根拠: browsers.yml の windows-latest のジョブが 2 回続けて（run 36088172033・36133345856）90 分の上限で取り消された。「Run the models in every browser」が 5122 秒。2 回とも最後の行は WebKit の実行の「ok」で、次の実行（WebKit の tiny-lm、Chrome の stories260K）は何も出さなかった。`tests/e2e.mjs` は「ok」の前に見張りのタイマー（`E2E_TIMEOUT`、600 秒）を止め、`process.exit` を呼ばずに、待つものが無くなって終わるのを待つ作り。**見立て**（未確認）: WebKit の何かが `browser.close()` の後も残り、Node が終わらなかった。ほかの OS のジョブは 3〜10 分。
+- 根拠: browsers.yml の windows-latest のジョブが 2 回続けて（run 36088172033・36133345856）90 分の上限で取り消された。「Run the models in every browser」が 5122 秒。2 回とも最後の行は WebKit の実行の答えの文で、その実行の「ok」は出なかった（その前の「ok」は前のモデルのもの）。`tests/e2e.mjs` は答えを書いた後、見張りのタイマー（`E2E_TIMEOUT`、600 秒）を止めてから `browser.close()` を待ち、そのあと「ok」を書いて、`process.exit` を呼ばずに終わるのを待つ作り。**止まったのは `browser.close()`**（Windows の WebKit で返らない）: 直す前の main で models.yml（windows-latest、WebKit、4 モデル、run 36240760614）を回すと、4 モデル目の llm-jp-3-150m が答えの文を書いた後、「ok」を出さずに 13 分止まった（取り消した）。ほかの OS のジョブは 3〜10 分。
 - 直し: `tests/e2e.mjs`・`tests/stock-firefox.mjs`・`tests/bench-browser.mjs` は「ok」を書いたら `process.exit(0)`（stdout を流しきってから）。`browser.close()` は 15 秒で見切る。
-- 確かめ方: 直す前の main で models.yml（windows-latest、WebKit、stories260K・stories15M・tiny-lm・llm-jp-3-150m、run 36240760614）を回して止まりを再現させ、直した後に同じ組で最後まで終わること。そのあと browsers.yml を 1 回。
+- 確かめ方: 直す前の main で models.yml（windows-latest、WebKit、stories260K・stories15M・tiny-lm・llm-jp-3-150m、run 36240760614）は llm-jp-3-150m の close で止まった（上）。**直した後の同じ組（run 36240871082）は 4 モデルとも「ok」まで行き、ジョブは 2 分 14 秒で終わった**。そのあと browsers.yml を 1 回。
 - 完了条件: browsers.yml の windows-latest のジョブが上限の前に終わる。
 
 ### T143 [追加] `?hf=` の書式の特殊トークンと BOS を変換器で合わせる — 状態: 未着手、**持ち主の判断待ち**（いつ `CONVERTER` を上げるか）（2026-09-26、T124 と T138 のレビューから。規模 小）
