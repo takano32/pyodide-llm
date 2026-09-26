@@ -94,6 +94,18 @@ let failed = false;
   const small = [1536, 8960, 28, 12, 2, 151936, 4096], qwen = 1736865820;  // Qwen2.5 1.5B
   assert.equal(automaticDtype(qwen, footprint(small, qwen, { dtype: "int8", halfKV: true }), false), "int8");
 }
+// T144: heads of another size than dim / heads, which none of the models below has. Qwen3 0.6B's int8 (670744604
+// bytes, its header from config.json) with the options the converter gives it: forward.js put 755.3 MiB after it on
+// a shared memory and 1427.3 MiB on a plain one (measured in the review of T124). Without head_dim footprint() counts
+// its keys and values 45% short (419.1 and 755.1 MiB) and a memory chosen by that runs out near the end of the context
+{
+  const header = [1024, 3072, 28, 16, 8, 151936, 4096], int8 = 670744604, MiB = 1 << 20;
+  const options = { dtype: "int8", bias: false, arch: "llama", qk_norm: true, head_dim: 128 };
+  for (const [halfKV, placed] of [[true, 755.3], [false, 1427.3]]) {
+    const bound = footprint(header, int8, { ...options, halfKV }) / MiB;
+    assert.ok(bound >= placed && bound < placed + 4, `Qwen3 0.6B: ${bound.toFixed(1)} MiB counted, ${placed} placed`);
+  }
+}
 for (const id of ids.length ? ids : ["stories260K", "stories15M", "tiny-lm", "llm-jp-3-150m"]) {
   const entry = modelOf(id);
   py.FS.writeFile("model.bin", fs.readFileSync(file(entry.checkpoint)));
@@ -121,7 +133,7 @@ llama.release(); del llama; gc.collect()
     const size = fs.statSync(file(entry.checkpoint)).size, quantized = ["int8", "int6"].includes(entry.options.dtype);
     const int8 = !without.includes("int8");
     const after = used - (shared ? 8192 : 64) - size;
-    const bound = footprint(header, size, { dtype: entry.options.dtype, arch: entry.options.arch, headDim: entry.options.head_dim, int8,
+    const bound = footprint(header, size, { ...entry.options, int8,
       relaxed: Boolean(kernels.relaxed) && !without.includes("relaxed"), halfKV: shared && quantized && int8 && !without.includes("kv16") });
     // above what was used, and by little: a few percent, the megabyte for alignment, and the outlier columns it
     // counts for every quantized model (4 MiB for a vocabulary of 128256; few models have them)

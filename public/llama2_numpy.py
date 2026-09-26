@@ -562,16 +562,32 @@ def outlier_columns(classifier, channels):
     return np.ascontiguousarray(columns)
 
 
-def checkpoint_dtype(header, size, bias=False, arch="llama", qk_norm=False, head_dim=0):
+# The form of a checkpoint: what sets its tensors and sizes its forward pass besides the 7 ints of the header, which
+# the legacy file cannot say (see Llama.__init__), with the value of a file that says nothing. The converter writes
+# them into the options, and one dict of these names goes to everything that lays the file out or sizes it
+# (llama2_convert.layout(), checkpoint_size() and Writer, checkpoint_dtype() below, forward.js's footprint()), so
+# that another one is added where it is used, not along the way (T144).
+FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0}
+
+
+def form_of(options=None):
+    """The form (FORM's keys, each with its default where options has none) out of options, a dict with those and
+    any others (the options of a model, a manifest's). Dicts from JavaScript are read too (a JsProxy)."""
+    options = options.to_py() if hasattr(options, "to_py") else (options or {})
+    return {key: options.get(key, default) for key, default in FORM.items()}
+
+
+def checkpoint_dtype(header, size, form=None):
     """"float32", "float16", "int8" or "int6": what a checkpoint file of size bytes with this header (7 ints) holds.
 
     The legacy format does not say, but the header fixes the size of each variant. Anything else is no checkpoint
     this engine can read, and the ValueError says so before hundreds of megabytes are read for nothing.
-    bias, arch, qk_norm and head_dim are what the file cannot say either (see Llama.__init__): the tensors differ
-    with them.
+    form: what the file cannot say either (FORM, taken out of a model's options): the tensors differ with it.
     """
+    form = form_of(form)
+    arch = form["arch"]
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = (int(value) for value in header)
-    head_size = int(head_dim) or (dim // n_heads if n_heads and dim % n_heads == 0 else 0)
+    head_size = int(form["head_dim"]) or (dim // n_heads if n_heads and dim % n_heads == 0 else 0)
     limit = 1 << 24
     if not (0 < dim < limit and 0 < hidden_dim < limit and 0 < n_layers < 4096 and 0 < n_kv_heads <= n_heads <= dim
             and 0 < abs(vocab_size) < limit and 0 < seq_len < limit and 0 < head_size < limit and n_heads % n_kv_heads == 0):
@@ -592,8 +608,8 @@ def checkpoint_dtype(header, size, bias=False, arch="llama", qk_norm=False, head
         matrices = [(abs(vocab_size), dim), (n_layers * q_dim, dim), (n_layers * kv_dim, dim), (n_layers * kv_dim, dim),
                     (n_layers * dim, q_dim), (n_layers * hidden_dim, dim), (n_layers * dim, hidden_dim),
                     (n_layers * hidden_dim, dim)]
-        vectors = 2 * n_layers * dim + dim + (n_layers * (q_dim + 2 * kv_dim) if bias else 0) \
-            + (2 * n_layers * head_size if qk_norm else 0)
+        vectors = 2 * n_layers * dim + dim + (n_layers * (q_dim + 2 * kv_dim) if form["bias"] else 0) \
+            + (2 * n_layers * head_size if form["qk_norm"] else 0)
     if vocab_size < 0:
         matrices.append((abs(vocab_size), dim))
     floats = sum(rows * length for rows, length in matrices) + vectors + rope

@@ -29,6 +29,28 @@ def checkpoint_vocab_size(name):
         return abs(struct.unpack("<7i", f.read(28))[5])
 
 
+# ------------------------------------------------------------------------------------------- texts to split
+# The texts the pre-tokenizers are checked on (test_bytebpe.py against the real tokenizers, test_llama3.py against
+# the patterns). Here and not in test_bytebpe.py, which skips as a whole without tokenizers and took test_llama3.py's
+# own tests along when it imported them from there (T144).
+CORPUS = (
+    "The quick brown fox jumps over the lazy dog. 日本語の文章も混ぜる。"
+    "Don't stop; it's theirs, they'll go. I'D LIKE 'IT'.\n"
+    "Pyodide は WebAssembly 版の Python で、ブラウザの中で NumPy が動く。"
+    "def forward(x, w):\n\treturn w @ x  # matmul\n\n\n"
+    "価格は1,234,567円（税込）です。2026-09-21T00:00:00Z\r\n"
+    "絵文字 \U0001f600\U0001f389 と外字 \U00029E3D、全角ＡＢＣ１２３、半角ｶﾅ。"
+    "https://example.com/a/b?c=1&d=2#frag  'single' \"double\" `tick`\n"
+    "   spaces\tand\ttabs\n\n\nnewlines   \nTHE END. the end. The End?!  "
+)
+# every kind of boundary the patterns care about
+TEXTS = [CORPUS, " ", "  ", "\n", "\r\n", " \n ", "0123", " 42 ", "a", " a", "  a", "\ta", "(abc", "、あ",
+         "a 1b", " 1,234", "1a2", "v1.2.3", "第1章 2節", "it's a dog's life", "IT'S", "end.  ", "x\n\n\ny",
+         # a line of spaces between line breaks, as pasted code has (the review of T106: Qwen's \s*[\r\n]+ takes the
+         # whole run up to its last line break, this took it up to the first)
+         "a\n  \nb", "\n \n \n", "def f(x):\n    a = 1\n    \n    return a\n", " \t\n \r\n x"]
+
+
 # ------------------------------------------------------------------------------------- synthetic checkpoints
 
 def rope_tables(seq_len, head_size, rope_theta=10000.0):

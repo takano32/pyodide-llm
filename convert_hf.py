@@ -17,8 +17,8 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "public"))
-from llama2_convert import (Arrays, Safetensors, Shards, architecture, bfloat16, checkpoint_header, checkpoint_size,  # noqa: E402
-                            convert_weights, has_bias, has_qk_norm, head_size, normalize, sentencepiece_pieces, tokenizer_bin, tokenizer_json_pieces)
+from llama2_convert import (Arrays, Safetensors, Shards, bfloat16, checkpoint_form, checkpoint_header, checkpoint_size,  # noqa: E402
+                            convert_weights, normalize, sentencepiece_pieces, tokenizer_bin, tokenizer_json_pieces)
 
 
 # ------------------------------------------------------------------------------------------------ weights
@@ -68,8 +68,7 @@ def convert(directory, out_path, dtype, max_seq_len):
         source = Arrays(load_torch_pickle(directory / "pytorch_model.bin"))
     # a GPT-2 or a GPT-NeoX has more tensors than a Llama of the same header, a Qwen3 the norms of q and k and maybe
     # heads of another size (T124): the size needs what the header cannot say
-    size = checkpoint_size(checkpoint_header(normalize(config), source, max_seq_len), dtype, has_bias(source),
-                           architecture(normalize(config)), has_qk_norm(source), head_size(normalize(config)))
+    size = checkpoint_size(checkpoint_header(normalize(config), source, max_seq_len), dtype, checkpoint_form(config, source))
     out = np.memmap(out_path, dtype=np.uint8, mode="w+", shape=(size,))
     convert_weights(source, config, dtype, max_seq_len, out)
     out.flush()

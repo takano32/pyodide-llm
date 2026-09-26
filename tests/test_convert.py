@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 from conftest import ROOT, pack_checkpoint, synthetic_weights
 import llama2_convert
-from llama2_convert import (Arrays, Safetensors, architecture, check_config, checkpoint_header, checkpoint_size,
-                            convert_weights, has_bias, has_qk_norm, normalize,
+from llama2_convert import (Arrays, Safetensors, check_config, checkpoint_form, checkpoint_header, checkpoint_size,
+                            convert_weights, normalize,
                             tokenizer_bin, tokenizer_json_options, tokenizer_json_pieces)
 from llama2_numpy import Llama, Tokenizer, check_tokenizer, checkpoint_dtype
 
@@ -65,9 +65,8 @@ def reader(file, log=None):
 
 
 def converted(source, published, dtype, max_seq_len=1 << 20):
-    arch = architecture(normalize(published))
-    out = bytearray(checkpoint_size(checkpoint_header(published, source, max_seq_len), dtype, has_bias(source), arch,
-                                    has_qk_norm(source), llama2_convert.head_size(normalize(published))))
+    out = bytearray(checkpoint_size(checkpoint_header(published, source, max_seq_len), dtype,
+                                    checkpoint_form(published, source)))
     convert_weights(source, published, dtype, max_seq_len, out)
     return bytes(out)
 
@@ -266,8 +265,11 @@ class Sink:
 
 
 @pytest.mark.parametrize("dtype", ["float32", "float16", "int8"])
-def test_a_sink_gets_the_very_checkpoint(dtype):
-    config, weights = synthetic_weights()
+@pytest.mark.parametrize("head_size", [0, 16])
+def test_a_sink_gets_the_very_checkpoint(dtype, head_size):
+    """And the form (T144: with heads of 16 in a dim of 32 and 4 heads, the worker sizes the keys and values of heads
+    twice what the header says; with the size of dim / heads, footprint() counted them 45% short for Qwen3 0.6B)."""
+    config, weights = synthetic_weights(head_size=head_size)
     tensors, published = hugging_face(config, weights, True)
     file = safetensors_file(tensors)
     expected = converted(Safetensors(reader(file)), published, dtype)
@@ -279,7 +281,7 @@ def test_a_sink_gets_the_very_checkpoint(dtype):
         stream.feed(file[start:start + 777])
     stream.finish()
     assert bytes(sink.data) == expected
-    assert sink.opened == (list(stream.header), dtype, {"arch": "llama", "head_dim": stream.header[0] // stream.header[3]})
+    assert sink.opened == (list(stream.header), dtype, {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": head_size})
 
 
 def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():
@@ -300,7 +302,7 @@ def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():
     stream.feed(file)
     stream.finish()
     header = list(stream.header)
-    form = {"arch": "llama", "head_dim": header[0] // header[3]}
+    form = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0}
     assert asked == [(header, form, {name: checkpoint_size(header, name) for name in ("int8", "int6")})]
     assert stream.dtype == "int6" and sink.opened[1] == "int6"
     assert bytes(sink.data) == converted(Safetensors(reader(file)), published, "int6")

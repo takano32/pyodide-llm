@@ -52,8 +52,8 @@ def test_the_engine_reads_int6_as_the_float32_of_the_same_values(model):
     six = converted(Arrays(tensors), published, "int6")
     header = struct.unpack_from("<7i", six, 0)
     bias = model == "qwen2"
-    assert checkpoint_dtype(header, len(six), bias=bias) == "int6"
-    assert len(six) == checkpoint_size(checkpoint_header(published, Arrays(tensors), 1 << 20), "int6", bias)
+    assert checkpoint_dtype(header, len(six), {"bias": bias}) == "int6"
+    assert len(six) == checkpoint_size(checkpoint_header(published, Arrays(tensors), 1 << 20), "int6", {"bias": bias})
     assert len(six) < len(converted(Arrays(tensors), published, "int8")), "smaller than int8"
     reference = converted(Arrays(rounded(tensors)), published, "float32")
     vocabulary = pack_tokenizer(tiny_vocab(config["vocab_size"]))

@@ -64,6 +64,15 @@ assert.equal(filled("Today Date: {date:%d %b %Y}\n{prompt}", "{date}", new Date(
 assert.equal(filled("USER: {prompt:trim} ASSISTANT:", "  x \n"), "USER: x ASSISTANT:");
 assert.equal(filled("[{prompt}]", "  x \n"), "[  x \n]");
 assert.equal(filled("[{prompt:trim}]", " $' "), "[$']");
+// T144: and the white space it takes off is Python's str.strip()'s (Jinja's trim), not JavaScript's trim()'s. These
+// are the code points of str.isspace() (Python 3.14; none past the BMP): every other one stays, U+FEFF too
+const PYTHON_SPACE = new Set([0x9, 0xa, 0xb, 0xc, 0xd, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x85, 0xa0, 0x1680, 0x2000, 0x2001,
+  0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000]);
+for (let code = 0; code < 0x10000; code++) {
+  if (code >= 0xd800 && code < 0xe000) continue;  // no characters of their own
+  const c = String.fromCharCode(code), got = filled("[{prompt:trim}]", `${c}${c}x${c}y${c}${c}`);
+  assert.equal(got, PYTHON_SPACE.has(code) ? `[x${c}y]` : `[${c}${c}x${c}y${c}${c}]`, `U+${code.toString(16).padStart(4, "0")}`);
+}
 assert.equal(filled("{date:%B %d, %Y (%A) %m/%y %%}", "", new Date(2026, 8, 26)), "September 26, 2026 (Saturday) 09/26 %");
 for (const typed of ["cost $$5", "a $& b", "x $` y", "y $' z"]) {
   assert.equal(filled("<u>{prompt}</u>", typed), `<u>${typed}</u>`, "what was typed goes in as it is, $ and all");

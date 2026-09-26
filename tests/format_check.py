@@ -8,8 +8,9 @@
 #
 # Needs the reference tools, which the page never uses: a venv with tests/requirements-reference.txt (docs/dev-setup.md).
 # The first BOS may differ (the page always starts with it, T131). What a card always passes besides the prompt
-# (Swallow-MS's system message) is in SYSTEM. Models with only a sentencepiece tokenizer.model are compared through
-# transformers' slow tokenizer, which is not the real one for every model (sarashina's): read those diffs with care.
+# (Swallow-MS's and llm-jp's system message) is in SYSTEM. Models with a sentencepiece tokenizer.model are compared
+# through transformers' slow tokenizer, which is not the real one for every model: for those of SENTENCEPIECE the
+# reference is the real template's text through the real sentencepiece instead.
 import inspect
 import json
 import os
@@ -30,8 +31,17 @@ import llama2_numpy  # noqa: E402
 PROMPTS = ["これからの流行りを3つ挙げてください。", "What will be popular next? Name three things.",
            "  leading and trailing spaces  ", "trailing only \n", "改行\nを含む\n\n文", "A", "ＡＢＣ１２３ｶﾀｶﾅ①",
            "Hello  world\ttab", "<think> and <|im_end|> typed"]
-# the system message a model card always passes with the prompt
-SYSTEM = {"hf-swallow-ms-7b-instruct": "あなたは誠実で優秀な日本人のアシスタントです。"}
+# the system message a model card always passes with the prompt. llm-jp's instruct models: the page's format is the one
+# their template writes with it (T144; without it the real one leaves out the first sentence of LLM_JP_INSTRUCT)
+LLM_JP_SYSTEM = "以下は、タスクを説明する指示です。要求を適切に満たす応答を書きなさい。"
+SYSTEM = {"hf-swallow-ms-7b-instruct": "あなたは誠実で優秀な日本人のアシスタントです。",
+          **{id: LLM_JP_SYSTEM for id in ("hf-llm-jp-3-150m-instruct3", "hf-llm-jp-3-440m-instruct3",
+                                          "hf-llm-jp-3-980m-instruct3", "hf-llm-jp-3.1-1.8b-instruct4")}}
+# where transformers builds a slow tokenizer out of the tokenizer.model that is not the real one (2026-09-26,
+# transformers 5.16.1: sarashina's split "挙げてください" and "next", CAT-Translate's spell everything a character at a time
+# although they have a tokenizer.json): the real sentencepiece reads the real template's text instead (T144)
+SENTENCEPIECE = {"hf-sarashina2.2-0.5b-instruct", "hf-sarashina2.2-1b-instruct", "hf-sarashina2.2-3b-instruct",
+                 "hf-cat-translate-0.8b", "hf-cat-translate-1.4b"}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
 # (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
 ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9a775",
@@ -120,6 +130,22 @@ class Sink:
         pass
 
 
+def sentencepiece_ids(model_file, text):
+    """text as the real sentencepiece reads it where a tokenizer.json cuts it at the special tokens: the control
+    pieces (<s>, </s>, <|user|> ...) stand for themselves, and every stretch between them is encoded (a user-defined
+    piece sentencepiece keeps whole by itself)"""
+    import sentencepiece
+    model = sentencepiece.SentencePieceProcessor(model_file=str(model_file))
+    specials = sorted({model.id_to_piece(i) for i in range(model.get_piece_size())
+                       if model.is_control(i)} - {""}, key=len, reverse=True)
+    ids, at = [], 0
+    for found in re.finditer("|".join(map(re.escape, specials)), text):
+        ids += model.encode(text[at:found.start()]) if found.start() > at else []
+        ids.append(model.piece_to_id(found.group()))
+        at = found.end()
+    return ids + (model.encode(text[at:]) if at < len(text) else [])
+
+
 def filled(template, prompt):
     """src/models.js's filled(), for today"""
     template = re.sub(r"\{date(?::([^}]*))?\}", lambda found: time.strftime(found.group(1) or "%Y-%m-%d"), template)
@@ -179,8 +205,12 @@ def main():
             page = [options["bos"]] + tokenizer.encode(filled(template, prompt), tuple(options.get("specials", ())))
             messages = ([{"role": "system", "content": SYSTEM[entry["id"]]}] if entry["id"] in SYSTEM else []) \
                 + [{"role": "user", "content": prompt}]
-            real = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, **thinking)
-            real = list(real["input_ids"] if hasattr(real, "keys") else real)
+            if entry["id"] in SENTENCEPIECE:
+                text = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, **thinking)
+                real = sentencepiece_ids(folder / "tokenizer.model", text)
+            else:
+                real = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, **thinking)
+                real = list(real["input_ids"] if hasattr(real, "keys") else real)
             if page == real or page[1:] == real:
                 same += 1
             else:

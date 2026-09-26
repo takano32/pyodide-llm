@@ -7,29 +7,13 @@ import pytest
 
 from llama2_convert import tokenizer_bin, tokenizer_json_options, tokenizer_json_pieces
 from llama2_numpy import Tokenizer, pretokenize
+from conftest import CORPUS, TEXTS
 
 tokenizers = pytest.importorskip("tokenizers", reason="pip install tokenizers to check against the real one")
 
 GPT2_PATTERN = r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
 QWEN_PATTERN = (r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*"
                 r"|\s*[\r\n]+|\s+(?!\S)|\s+")
-
-CORPUS = (
-    "The quick brown fox jumps over the lazy dog. 日本語の文章も混ぜる。"
-    "Don't stop; it's theirs, they'll go. I'D LIKE 'IT'.\n"
-    "Pyodide は WebAssembly 版の Python で、ブラウザの中で NumPy が動く。"
-    "def forward(x, w):\n\treturn w @ x  # matmul\n\n\n"
-    "価格は1,234,567円（税込）です。2026-09-21T00:00:00Z\r\n"
-    "絵文字 \U0001f600\U0001f389 と外字 \U00029E3D、全角ＡＢＣ１２３、半角ｶﾅ。"
-    "https://example.com/a/b?c=1&d=2#frag  'single' \"double\" `tick`\n"
-    "   spaces\tand\ttabs\n\n\nnewlines   \nTHE END. the end. The End?!  "
-)
-# every kind of boundary the patterns care about
-TEXTS = [CORPUS, " ", "  ", "\n", "\r\n", " \n ", "0123", " 42 ", "a", " a", "  a", "\ta", "(abc", "、あ",
-         "a 1b", " 1,234", "1a2", "v1.2.3", "第1章 2節", "it's a dog's life", "IT'S", "end.  ", "x\n\n\ny",
-         # a line of spaces between line breaks, as pasted code has (the review of T106: Qwen's \s*[\r\n]+ takes the
-         # whole run up to its last line break, this took it up to the first)
-         "a\n  \nb", "\n \n \n", "def f(x):\n    a = 1\n    \n    return a\n", " \t\n \r\n x"]
 
 
 def trained(pattern, digits):
