@@ -898,10 +898,11 @@ async function convert(model, signal, id) {
   // (T133), once the header is known
   const converting = { ...model.conversion, dtype: model.conversion?.dtype ?? automaticBits };
   // T89: quantize() on the SIMD kernels, the same bytes six times faster (none with ?without=kernels); T123: the
-  // widening of bfloat16 too, the same float32 three times faster
+  // widening of bfloat16 too, the same float32 three times faster; T136: and of GGUF's Q8_0
   const onKernels = kernels && !disabled.includes("kernels");
   const quantizeRows = onKernels ? llama2_numpy.kernel_quantizer(kernels) : undefined;
   const bfloat16 = onKernels ? llama2_numpy.kernel_widener(kernels) : undefined;
+  const q8_0 = onKernels ? llama2_numpy.kernel_q8_0(kernels) : undefined;
   if (remote && model.hf.weights.endsWith(".gguf")) {
     // T74: a GGUF holds the configuration and the vocabulary in its header, before the tensors: no config.json and
     // no tokenizer to fetch. The header is a few megabytes (the vocabulary), so it is fetched in growing pieces
@@ -909,7 +910,7 @@ async function convert(model, signal, id) {
     for (let bytes = 4 * HF_HEADER_BYTES; ; bytes *= 4) {
       ({ bytes: first, total: size } = await sized(at(model.hf.weights), await fetchRange(at(model.hf.weights), 0, bytes, signal), signal));
       try {
-        conversion = llama2_convert.Conversion.from_gguf.callKwargs(first, { ...converting, sink, quantize_rows: quantizeRows, bfloat16 });
+        conversion = llama2_convert.Conversion.from_gguf.callKwargs(first, { ...converting, sink, quantize_rows: quantizeRows, bfloat16, q8_0 });
         break;
       } catch (error) {
         if (error.type !== "Incomplete" || bytes >= size) {
@@ -991,7 +992,7 @@ async function convert(model, signal, id) {
         signal.throwIfAborted();
         conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, tokenizerName,
           { start: base, tokenizer_config: tokenizerConfig, chat_template: chatTemplate || null, ...converting, sink,
-            quantize_rows: quantizeRows, bfloat16 });
+            quantize_rows: quantizeRows, bfloat16, q8_0 });
         break;
       } catch (error) {
         if (signal.aborted) {
@@ -1087,6 +1088,7 @@ async function convert(model, signal, id) {
     conversion.destroy();
     quantizeRows?.destroy();
     bfloat16?.destroy();
+    q8_0?.destroy();
   }
 }
 

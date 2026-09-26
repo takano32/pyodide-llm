@@ -220,6 +220,40 @@ for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensor
 widen = llama2_numpy.kernel_widener("simdkernel.so")
 patterns = np.arange(65536 + 5, dtype=np.uint32).astype(np.uint16).tobytes()
 assert np.array_equal(widen(patterns).view(np.uint32), llama2_convert.bfloat16(patterns).view(np.uint32)), "widen_bf16 is not bfloat16()"
+# T136: GGUF's Q8_0 widened on the kernels is NumPy's q8_0() to the bit: every float16 scale (NaNs, infinities,
+# subnormals, both zeros) once, with every int8 (-128 and 127 included) across the blocks, in odd numbers of blocks
+q8_0 = llama2_numpy.kernel_q8_0("simdkernel.so")
+rng = np.random.default_rng(11)
+blocks = np.empty((65536 + 3, 34), dtype=np.uint8)
+blocks[:, :2] = np.arange(65536 + 3, dtype=np.uint32).astype(np.uint16).view(np.uint8).reshape(-1, 2)
+blocks[:, 2:] = rng.integers(0, 256, (65536 + 3, 32), dtype=np.uint8)
+blocks[:256, 2:] = (np.arange(256 * 32) % 256).astype(np.uint8).reshape(256, 32)
+for count in (0, 1, 3, 65536 + 3):
+    raw = blocks[:count].tobytes()
+    assert np.array_equal(q8_0(raw).view(np.uint32), llama2_convert.q8_0(raw).view(np.uint32)), f"widen_q8_0 is not q8_0() ({count} blocks)"
+# and a whole conversion of Q8_0 tensors (Stream, fed in odd pieces) writes the same bytes with it as without
+q8_tensors, q8_config = qwen3_model(64, 4, 2, 16)
+q8_header, q8_file = {}, bytearray()
+for name, tensor in q8_tensors.items():
+    if tensor.ndim == 2:
+        count = tensor.size // 32
+        data = np.empty((count, 34), dtype=np.uint8)
+        data[:, :2] = (np.abs(rng.standard_normal(count)) * 0.01).astype(np.float16).view(np.uint8).reshape(-1, 2)
+        data[:, 2:] = rng.integers(0, 256, (count, 32), dtype=np.uint8)
+        data, kind = data.tobytes(), "Q8_0"
+    else:
+        data, kind = tensor.tobytes(), "F32"
+    q8_header[name] = {"dtype": kind, "shape": list(tensor.shape), "data_offsets": [len(q8_file), len(q8_file) + len(data)]}
+    q8_file += data
+for dtype in ("int8", "float32"):
+    outs = []
+    for widener in (None, q8_0):
+        stream = llama2_convert.Stream(q8_header, 0, q8_config, dtype, 24, q8_0=widener)
+        for at in range(0, len(q8_file), 1000):
+            stream.feed(bytes(q8_file[at:at + 1000]))
+        stream.finish()
+        outs.append(bytes(stream.out))
+    assert outs[0] == outs[1], f"widen_q8_0 changed the {dtype} checkpoint"
 # T98: the six bits too: quantize6_x is quantize6() and pack6() to the byte (a group of zeros, ties that round to
 # even, the largest value, and a whole conversion)
 ties = values.copy()
