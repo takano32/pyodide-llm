@@ -6,7 +6,8 @@
 //                                               memory, WebGPU and OPFS in a worker, the storage the browser grants
 //   { step: "cpu", threads }                    the forward pass of forward.js, the one the model page runs, on a
 //                                               made-up int8 model of Llama 3.2 1B's width (random weights, two
-//                                               layers), one token at a time at each count of software threads
+//                                               layers), one token at a time at each count of software threads, and
+//                                               a prompt's tokens 16 at a time (T108), as the GPU section does them
 //   { step: "line", site, hf, rates, seconds }  the line: a part of the site's model and a range of a model on
 //                                               huggingface.co, how long until the first byte and how fast; then
 //                                               huggingface.co read no faster than each of rates (MB/s)
@@ -72,6 +73,8 @@ async function device() {
 const SHAPE = { dim: 2048, hidden: 8192, layers: 2, heads: 32, kvHeads: 8, vocab: 32000, seqLen: 64 };
 const GROUP = 32;
 const TOKENS = 12, WARM = 3;
+// T108: a prompt's tokens go through the layers BATCH (16) at a time, without logits
+const PROMPT = Array.from({ length: 16 }, (_, i) => 1 + i), PROMPT_RUNS = 5;
 
 function madeUpModel() {
   const { dim, hidden, layers, heads, kvHeads, vocab, seqLen } = SHAPE;
@@ -168,8 +171,17 @@ async function cpu(counts = [1, 2, 4]) {
       times.sort((a, b) => a - b);
       const ms = times[times.length >> 1];
       const logits = engine.logits();
+      // a prompt of 16 tokens at positions 0 to 15, over and over (the keys and values of those positions are rewritten)
+      engine.forwardMany(PROMPT, 0);
+      const blocks = [];
+      for (let i = 0; i < PROMPT_RUNS; i++) {
+        const began = performance.now();
+        engine.forwardMany(PROMPT, 0);
+        blocks.push(performance.now() - began);
+      }
+      blocks.sort((a, b) => a - b);
       rows.push({ asked, threads, msPerToken: ms, GBps: model.size / (ms / 1000) / 1e9,
-                  finite: logits.every(Number.isFinite) });
+                  promptMsPerToken: blocks[blocks.length >> 1] / PROMPT.length, finite: logits.every(Number.isFinite) });
     }
   } finally {
     engine.release();

@@ -55,7 +55,9 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
       <section data-section="gpu">
         <h2>GPU</h2>
         <p class="about">WebGPU: the adapter, its shaders checked against JavaScript, how fast it reads int8 weights, and
-          a token's work of three model sizes against the CPU. The weights are random bytes.</p>
+          a token's work of three model sizes against the CPU. Then the same token in fewer dispatches and with the next
+          token chosen on the GPU, what a token costs besides its weights, and a prompt's tokens all at once. The weights
+          are random bytes.</p>
       </section>
       <section data-section="storage">
         <h2>Storage</h2>
@@ -259,9 +261,9 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
       if (r.none) return { status: "none", markdown: r.none };
       const wrong = r.rows.some((row: any) => row.finite === false);
       const lines = [`${r.backend}, ${fixed(r.megabytes, 0)} MB a token${r.shared ? "" : " (not cross-origin isolated: one thread only)"}`, "",
-        "| software threads | ms a token | GB/s | tok/s |", "|---:|---:|---:|---:|",
-        ...r.rows.map((row: any) => row.none ? `| ${row.asked} | ${row.none} | | |`
-          : `| ${row.threads} | ${fixed(row.msPerToken)} | ${fixed(row.GBps)} | ${fixed(1000 / row.msPerToken)} |`)];
+        "| software threads | ms a token | GB/s | tok/s | ms a token of a prompt, 16 at once |", "|---:|---:|---:|---:|---:|",
+        ...r.rows.map((row: any) => row.none ? `| ${row.asked} | ${row.none} | | | |`
+          : `| ${row.threads} | ${fixed(row.msPerToken)} | ${fixed(row.GBps)} | ${fixed(1000 / row.msPerToken)} | ${fixed(row.promptMsPerToken, 2)} |`)];
       if (wrong) lines.push("", "**The logits were not finite numbers: the forward pass computed something wrong.**");
       return { status: wrong ? "wrong" : "ok", data: r, markdown: lines.join("\n") };
     } finally {
@@ -307,6 +309,10 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
   // the GPU section of T94's stage 0, step by step as /gpu-test/ ran it
   const SHAPES: Record<string, number[]> = { "llm-jp-3 150M w1": [2048, 512], "Llama 3.2 1B w1": [8192, 2048], "Llama 3.2 1B classifier": [128256, 2048] };
   const BRIDGE_ROUNDS = 2000;
+  // T135's candidates for a token (T134): the same weights in fewer dispatches, and the next token chosen on the GPU
+  const GPU_WAYS: [string, any][] = [["fused", { fused: true }], ["chosen on the GPU", { sample: true }],
+    ["fused and chosen on the GPU", { fused: true, sample: true }]];
+  const PROMPT_COUNTS = [1, 16, 64];
   async function gpu(): Promise<Result> {
     const w = worker("benchmark/gpu.js");
     const steps: any[] = [];
@@ -330,6 +336,10 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
         await step(`a token of ${name}`, { step: "token", model: name, kind: "widen" });
         if (info.packed) await step(`a token of ${name}, packed int8`, { step: "token", model: name, kind: "packed" });
       }
+      // T135's candidates on Llama 3.2 1B: fewer dispatches, the token chosen on the GPU, both
+      for (const [label, how] of GPU_WAYS) await step(`a token of Llama 3.2 1B, ${label}`, { step: "token", model: "Llama 3.2 1B", kind: "widen", ...how });
+      await step("what a token costs besides the weights", { step: "overhead" });
+      await step("a prompt all at once", { step: "prompt", counts: PROMPT_COUNTS });
       const bridge = await gpuBridge(w);
       const wrong = check && Object.values(check).some((v: any) => !v.ok);
       return { status: wrong ? "wrong" : "ok", data: { steps, bridge, lost }, markdown: gpuMarkdown(steps, bridge, lost) };
@@ -365,18 +375,44 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
     // the CPU's side of a token: the weights read once at what one thread measured, and at twice that, which the
     // software threads reach at most (T93: the memory's bandwidth)
     const cpuGBps = bandwidths.find((s) => s.name.includes("1B w1"))?.result?.cpu?.GBps ?? bandwidths[0]?.result?.cpu?.GBps;
-    lines.push("| a token (weights, dispatches, logits back) | GB | GPU ms | GPU tok/s | CPU tok/s, 1 thread (estimate) | GPU ÷ CPU with threads (≤ 2×) |", "|---|---:|---:|---:|---:|---:|");
+    lines.push("| a token (weights, dispatches, logits back) | GB | dispatches | GPU ms | GPU tok/s | CPU tok/s, 1 thread (estimate) | GPU ÷ CPU with threads (≤ 2×) |", "|---|---:|---:|---:|---:|---:|---:|");
     for (const s of steps.filter((x) => x.name.startsWith("a token"))) {
       const t = s.result ?? {};
       if (s.error || t.error) {
-        lines.push(`| ${s.name.slice(11)} | | ${s.error ?? t.error} | | | |`);
+        lines.push(`| ${s.name.slice(11)} | | | ${s.error ?? t.error} | | | |`);
         continue;
       }
       const one = cpuGBps ? cpuGBps / t.GB : undefined;
-      lines.push(`| ${s.name.slice(11)} | ${fixed(t.GB, 2)} | ${fixed(t.msPerToken)} | ${fixed(t.tokPerSecond)} | ${fixed(one)} | ${one ? `${fixed(t.tokPerSecond / (2 * one), 2)}×` : ""} |`);
+      lines.push(`| ${s.name.slice(11)} | ${fixed(t.GB, 2)} | ${t.dispatches} | ${fixed(t.msPerToken)} | ${fixed(t.tokPerSecond)} | ${fixed(one)} | ${one ? `${fixed(t.tokPerSecond / (2 * one), 2)}×` : ""} |`);
     }
+    lines.push("", ...overheadMarkdown(steps.find((s) => s.name === "what a token costs besides the weights")),
+      "", ...promptMarkdown(steps.find((s) => s.name === "a prompt all at once")));
     lines.push("", `**Bridge** (Atomics.wait ↔ Atomics.waitAsync, ${BRIDGE_ROUNDS} round trips): ${bridge.error ?? `${fixed(bridge.microseconds)} µs each`}`);
     return lines.join("\n");
+  }
+
+  // what a token costs on the GPU besides reading its weights (T135: the phones' 18 to 20 ms, T94)
+  function overheadMarkdown(s: any) {
+    if (!s || s.error) return [`**Besides the weights**: ${s?.error ?? "not measured"}`];
+    const o = s.result;
+    return ["| besides the weights | GPU ms |", "|---|---:|",
+      `| ${o.dispatches} dispatches that do nothing, one submission | ${fixed(o.emptyDispatches, 2)} |`,
+      `| one submission, not waited for | ${fixed(o.submitOnly, 3)} |`,
+      `| one submission, waited for | ${fixed(o.submitAndWait, 2)} |`,
+      `| the token's id read back (4 bytes) | ${fixed(o.readToken, 2)} |`,
+      `| every logit read back (${o.vocab} floats) | ${fixed(o.readLogits, 2)} |`];
+  }
+  // a prompt's tokens at once on the GPU against the CPU section's blocks of 16 (the same made-up model: two layers of
+  // Llama 3.2 1B's width, no classifier)
+  function promptMarkdown(s: any) {
+    if (!s || s.error) return [`**A prompt all at once**: ${s?.error ?? "not measured"}`];
+    const cpuRows = (results.cpu?.data?.rows ?? []).filter((row: any) => row.promptMsPerToken);
+    const cpu = cpuRows.length ? cpuRows.map((row: any) => `${fixed(row.promptMsPerToken, 2)} ms with ${row.threads}`).join(", ")
+      : "run the CPU section for it";
+    return [`**A prompt** (the CPU section's model: two layers of Llama 3.2 1B's width, ${fixed(s.result.rows[0]?.GB, 2)} GB, no classifier); ` +
+      `the CPU, 16 tokens at once: ${cpu}`, "",
+      "| tokens at once on the GPU | GPU ms | GPU ms a token |", "|---:|---:|---:|",
+      ...s.result.rows.map((row: any) => `| ${row.tokens} | ${fixed(row.ms)} | ${fixed(row.msPerToken, 2)} |`)];
   }
 
   // the storage section of T137's stage 0 (the download it is compared with: huggingface.co from Japan, T123, T136)
