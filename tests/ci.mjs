@@ -5,7 +5,8 @@
 //
 //   node tests/ci.mjs run <workflow file> [input=value ...] [--ref main] [--minutes 60] [--grep <regex>]
 //   node tests/ci.mjs wait <run id> [--minutes 60] [--grep <regex>]
-//   node tests/ci.mjs deploy [--sha <commit>] [--minutes 20] [--grep <regex>]   the deploy of a commit (HEAD)
+//   node tests/ci.mjs deploy [--sha <commit>] [--minutes 20] [--grep <regex>]   the deploy of a commit (HEAD); if a newer
+//     push cancelled it while it waited for its turn, the newer deploy (which has the commit too)
 //
 //   node tests/ci.mjs run models.yml models="hf-qwen3-0.6b" browser=webkit --grep "ready in|FAILED|timed out"
 //
@@ -135,6 +136,16 @@ if (!id) {
   say(`no deploy of ${sha ?? "HEAD"} appeared in ${minutes} min`);
   process.exit(3);
 }
-const run = await wait(id);
+let run = await wait(id);
+// a deploy waiting for its turn is cancelled by a newer push (deploy.yml's concurrency): the newer deploy has this
+// commit too, so it is the one to wait for
+while (command === "deploy" && run?.conclusion === "cancelled") {
+  const { workflow_runs: runs } = await api(`repos/{owner}/{repo}/actions/workflows/deploy.yml/runs?branch=main&per_page=10`);
+  const newer = runs.filter((r) => r.id > id).sort((a, b) => a.id - b.id).at(-1);
+  if (!newer) break;
+  say(`superseded by the deploy of ${newer.head_sha.slice(0, 7)}: run ${newer.id}`);
+  id = newer.id;
+  run = await wait(id);
+}
 if (run && grep) await logs(id, grep);
 process.exit(!run ? 2 : run.conclusion === "success" ? 0 : 1);
