@@ -1,6 +1,6 @@
 # 開発機の用意
 
-新しい開発機でこのリポジトリの作業を始めるための手順（T139、2026-09-26）。AGENTS.md と TODO.md と、この文書だけで始められるように書いてある。エージェントの記憶（`~/.claude/…/memory/`）は機械ごとで、移ると無くなる。持ち主から受けた決まりは AGENTS.md の「持ち主の指示」にある。
+新しい開発機でこのリポジトリの作業を始めるための手順（T139、2026-09-26）。AGENTS.md と TODO.md と、この文書だけで始められるように書いてある。エージェントの記憶（`~/.claude/…/memory/`）は機械ごとで、移ると無くなるので写さない。持ち主から受けた決まりは AGENTS.md の「持ち主の指示」にある。
 
 CI（`.github/workflows/deploy.yml`）が毎回やっていることと同じ手順なので、迷ったらそちらを見る。
 
@@ -16,7 +16,7 @@ CI（`.github/workflows/deploy.yml`）が毎回やっていることと同じ手
 
 **この一覧はまだ Ubuntu 26.04 で試していない**（2026-09-26 に書いた。新しい機械で最初に通したら、足りなかったもの・要らなかったものを直す）。
 
-2026-09-26 に ssh で見た a1-free（Ubuntu 26.04.1、Neoverse-N1 × 2、11.9GB、スワップ 4GB、`/tmp` は tmpfs 5.9GB）には、git・gh（未ログイン）・Node v24.20.0（nvm）・Python 3.14.4・python3-numpy・python3-pytest・python3-venv・wget・curl・gcc・make がもう入っている。足りないのは tokenizers と regex の入った venv、参照の venv、Playwright のブラウザ、`gh auth login`。ユーザー名が今の機械と同じ（takano32）なので、リポジトリを `~/GitHub/pyodide-llm` に置けば、エージェントの記憶のフォルダ（`~/.claude/projects/-home-takano32-GitHub-pyodide-llm/memory/`）を写すだけで効く。
+2026-09-26 に ssh で見た a1-free（Ubuntu 26.04.1、Neoverse-N1 × 2、11.9GB、スワップ 4GB、`/tmp` は tmpfs 5.9GB）には、git・gh（未ログイン）・Node v24.20.0（nvm）・Python 3.14.4・python3-numpy・python3-pytest・python3-venv・wget・curl・gcc・make がもう入っている。足りないのは tokenizers と regex の入った venv、参照の venv、Playwright のブラウザ、`gh auth login`。エージェントの記憶のフォルダは写さない（中身は 2026-09-26 に AGENTS.md と TODO.md に移した）。
 
 ```sh
 sudo apt update
