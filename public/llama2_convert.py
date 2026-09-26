@@ -745,7 +745,18 @@ def one_turn(template, specials, mark="\x00prompt\x00"):
         return None
     if text.count(mark) != 1:
         return None
-    return text.replace(mark, "{prompt}")
+    # T138: a template that trims what was typed ({{ message['content'] | trim }}) says so as {prompt:trim}, which the
+    # page's filled() trims: rendered once more with spaces around the mark, it either keeps them or drops both.
+    # (Whether the spaces are there is no test: RakutenAI's writes "USER: " and " ASSISTANT:" around a trimmed one)
+    try:
+        spaced = render(template, {**scope, "messages": [{"role": "user", "content": f" {mark} "}]})
+    except Exception:
+        return None
+    if spaced == text.replace(mark, f" {mark} "):
+        return text.replace(mark, "{prompt}")
+    if spaced == text:
+        return text.replace(mark, "{prompt:trim}")
+    return None  # it drops one of the two, or changes more than that: nothing filled() would do
 
 
 # ------------------------------------------------------------------------------------------ the weights

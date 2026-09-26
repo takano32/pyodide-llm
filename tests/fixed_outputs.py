@@ -113,7 +113,8 @@ def written(entry, conversion, checkpoint):
     options = {**conversion.options, **entry.get("options", {})}
     template = entry.get("template") or options.pop("template", None)
     options.pop("template", None)
-    prompt = template.replace("{prompt}", entry["prompt"]) if template else entry["prompt"]
+    # filled() of src/models.js: {prompt:trim} trims (T138); the prompts here have no spaces to trim
+    prompt = template.replace("{prompt:trim}", "{prompt}").replace("{prompt}", entry["prompt"]) if template else entry["prompt"]
     llama = Llama(np.memmap(checkpoint, dtype=np.uint8, mode="r"), conversion.tokenizer, kernels=None, **options)
     steps = len(llama.tokenizer.encode(prompt, llama.specials)) + NEW_TOKENS
     return "".join(llama.generate(prompt, steps=steps, temperature=0.0, echo=False))

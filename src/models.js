@@ -84,14 +84,15 @@ function strftime(format, date) {
     H: two(date.getHours()), M: two(date.getMinutes()), S: two(date.getSeconds()), "%": "%" };
   return format.replace(/%(.)/g, (directive, letter) => values[letter] ?? directive);
 }
-/** What the page sends for a prompt in a model's template: {prompt} is what was typed, {date} today (YYYY-MM-DD, the
- * visitor's own day), and {date:format} today in strftime's format (what the converter writes for a template's
- * strftime_now(): the review of T127, the day of the conversion was kept with it). What was typed goes in as it
- * is: as a replacement string, its $$, $&, $` and $' were patterns (a typed $' wrote the rest of the template,
- * special tokens and all; the review of T132). */
+/** What the page sends for a prompt in a model's template: {prompt} is what was typed, {prompt:trim} the same
+ * without the white space at either end (T138: what a template that pipes the message through Jinja's trim writes;
+ * the converter says so), {date} today (YYYY-MM-DD, the visitor's own day), and {date:format} today in strftime's
+ * format (what the converter writes for a template's strftime_now(): the review of T127, the day of the conversion
+ * was kept with it). What was typed goes in as it is: as a replacement string, its $$, $&, $` and $' were patterns
+ * (a typed $' wrote the rest of the template, special tokens and all; the review of T132). */
 export function filled(template, prompt, today = new Date()) {
   return template.replace(/\{date(?::([^}]*))?\}/g, (_, format = "%Y-%m-%d") => strftime(format, today))
-    .replace("{prompt}", () => prompt);
+    .replace(/\{prompt(:trim)?\}/, (_, trim) => (trim ? prompt.trim() : prompt));
 }
 // Models that huggingface.co serves and this page converts itself (public/llama2_convert.py, the code that builds
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece

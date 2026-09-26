@@ -60,6 +60,10 @@ assert.equal(filled("Current date: {date}\n{prompt}", "a {date} b", new Date(202
 assert.equal(filled(byId("hf-llm-jp-4-8b-instruct").template, "x").includes("{"), false);
 // T127's review: a template's strftime_now() is written {date:format}, and is the day the prompt is sent
 assert.equal(filled("Today Date: {date:%d %b %Y}\n{prompt}", "{date}", new Date(2026, 8, 6)), "Today Date: 06 Sep 2026\n{date}");
+// T138: {prompt:trim} is what was typed without the white space at its ends (a template that trims it); {prompt} keeps it
+assert.equal(filled("USER: {prompt:trim} ASSISTANT:", "  x \n"), "USER: x ASSISTANT:");
+assert.equal(filled("[{prompt}]", "  x \n"), "[  x \n]");
+assert.equal(filled("[{prompt:trim}]", " $' "), "[$']");
 assert.equal(filled("{date:%B %d, %Y (%A) %m/%y %%}", "", new Date(2026, 8, 26)), "September 26, 2026 (Saturday) 09/26 %");
 for (const typed of ["cost $$5", "a $& b", "x $` y", "y $' z"]) {
   assert.equal(filled("<u>{prompt}</u>", typed), `<u>${typed}</u>`, "what was typed goes in as it is, $ and all");

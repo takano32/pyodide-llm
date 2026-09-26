@@ -26,8 +26,9 @@ export function keptName(model) {
  * 4: and the control pieces of a sentencepiece model as their specials; 5: the nmt and collapse of a sentencepiece
  * model's normalizer (the review of T126: rinna's newlines); 6: a template's strftime_now() as {date:format}, filled
  * when the prompt is sent, and or / and, comments and escapes as Jinja reads them (the review of T127); 7: the
- * rms_norm_eps of a model whose is not 1e-5 (T124: the Qwen2.5 of the list, TinySwallow, DeepSeek-R1 and llm-jp-4, at 1e-6). */
-export const CONVERTER = 7;
+ * rms_norm_eps of a model whose is not 1e-5 (T124: the Qwen2.5 of the list, TinySwallow, DeepSeek-R1 and llm-jp-4, at 1e-6);
+ * 8: {prompt:trim} for a template that trims what was typed (T138: Llama 3.1 and 3.2, Swallow 8B). */
+export const CONVERTER = 8;
 const converterOf = (manifest) => manifest.converter ?? 1;
 /** The names a model's conversion may be kept under: its bits, or with none asked for, either of the two the worker
  * may choose (T115) */

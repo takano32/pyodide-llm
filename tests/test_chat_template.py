@@ -47,6 +47,11 @@ def test_a_template_it_cannot_read_is_refused_quietly():
     assert one_turn("{% macro m() %}x{% endmacro %}{{ m() }}{{ messages[0].content }}", {}) is None  # a macro called
     assert one_turn("{% for message in messages %}{{ message['content'] }}", {}) is None  # never closed
     assert one_turn("{{ 'nothing about the prompt' }}", {}) is None  # no {prompt} in the result
+    # T138: trimmed, on its own and between words of the template's (RakutenAI's), or cut on one side only
+    assert one_turn("[{{ messages[0].content | trim }}]", {}) == "[{prompt:trim}]"
+    assert one_turn("USER: {{ messages[0].content | trim }} ASSISTANT:", {}) == "USER: {prompt:trim} ASSISTANT:"
+    assert one_turn("USER: {{ messages[0].content }} ASSISTANT:", {}) == "USER: {prompt} ASSISTANT:"
+    assert one_turn("[{{ messages[0].content.lstrip() }}]", {}) is None
 
 
 def test_the_pieces_of_jinja_it_does_read():
@@ -114,9 +119,11 @@ def test_real_templates_read_as_jinja_writes_them(fixture):
     left out). Two of them are in chat_template.jinja, which the converter is handed on its own."""
     config = {"bos_token": fixture["bos_token"], "eos_token": fixture["eos_token"]}
     if fixture["file"] == "chat_template.jinja":
-        assert one_turn_template(json.dumps(config), fixture["template"]) == fixture["one_turn"]
+        got = one_turn_template(json.dumps(config), fixture["template"])
     else:
-        assert one_turn_template(json.dumps({**config, "chat_template": fixture["template"]})) == fixture["one_turn"]
+        got = one_turn_template(json.dumps({**config, "chat_template": fixture["template"]}))
+    # T138: trims: whether jinja2 drops the spaces around what was typed, which the converter says as {prompt:trim}
+    assert got == fixture["one_turn"].replace("{prompt}", "{prompt:trim}" if fixture["trims"] else "{prompt}")
 
 
 def test_it_reads_a_tokenizer_config():
