@@ -158,6 +158,8 @@ def test_the_form_has_one_set_of_defaults():
         parameters = inspect.signature(function).parameters
         assert {key: parameters[key].default for key in FORM} == FORM, function.__qualname__
     assert form_of(None) == form_of({"tokenizer_kind": "bpe"}) == FORM
+    # a key given as None (JSON's null, JavaScript's undefined) says nothing either (the review of T144)
+    assert form_of({key: None for key in FORM}) == FORM
 
 
 def test_heads_of_the_wrong_size_are_never_interleaved():

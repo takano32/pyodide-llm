@@ -572,9 +572,11 @@ FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0}
 
 def form_of(options=None):
     """The form (FORM's keys, each with its default where options has none) out of options, a dict with those and
-    any others (the options of a model, a manifest's). Dicts from JavaScript are read too (a JsProxy)."""
+    any others (the options of a model, a manifest's). Dicts from JavaScript are read too (a JsProxy). A key given as
+    None (a JSON null, or JavaScript's undefined) says nothing, as head_size() reads "head_dim": null: it had
+    checkpoint_dtype() fail on int(None) while footprint() counted dim / heads (the review of T144)."""
     options = options.to_py() if hasattr(options, "to_py") else (options or {})
-    return {key: options.get(key, default) for key, default in FORM.items()}
+    return {key: default if options.get(key) is None else options[key] for key, default in FORM.items()}
 
 
 def checkpoint_dtype(header, size, form=None):
