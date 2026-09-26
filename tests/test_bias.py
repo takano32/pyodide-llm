@@ -44,7 +44,7 @@ def test_a_qwen2_converts_and_runs_like_the_reference(config):
     kv_dim = settings["kv_dim"]
     assert len(checkpoint) == plain + 4 * settings["n_layers"] * (settings["dim"] + 2 * kv_dim)
     assert struct.unpack_from("<7i", checkpoint, 0) == struct.unpack_from("<7i", pack_checkpoint(settings, weights), 0)
-    assert checkpoint_dtype(struct.unpack_from("<7i", checkpoint, 0), len(checkpoint), bias=True) == "float32"
+    assert checkpoint_dtype(struct.unpack_from("<7i", checkpoint, 0), len(checkpoint), {"bias": True}) == "float32"
 
     llama = Llama(checkpoint, pack_tokenizer(tiny_vocab(settings["vocab_size"])), bias=True)
     tokens = [1, 5, 7, 9]

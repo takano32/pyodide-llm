@@ -2,6 +2,7 @@
 weights (one head's size) per layer after everything else, and the engine applies them. The file keeps the 7 int
 header, so the caller passes qk_norm=True, as it passes bias=True for a Qwen2. Some Qwen3 (0.6B, 4B) and some
 Llamas (MiniCPM5 1B) have heads of another size than dim / n_heads: head_dim, which the caller passes too."""
+import inspect
 import json
 import struct
 
@@ -12,7 +13,7 @@ from test_convert import converted, hugging_face, reader, safetensors_file, stre
 
 import llama2_convert
 from llama2_convert import Safetensors, has_qk_norm, permute_heads
-from llama2_numpy import Llama, checkpoint_dtype
+from llama2_numpy import FORM, Llama, checkpoint_dtype, form_of
 
 # head_size 16: q twice as wide as dim (Qwen3 0.6B's 16 heads of 128 in 1024); 4: half as wide
 CONFIGS = [dict(n_kv_heads=4), dict(n_kv_heads=2), dict(n_kv_heads=1, shared=False), dict(n_kv_heads=2, head_size=16),
@@ -64,7 +65,7 @@ def test_a_qwen3_converts_and_runs_like_the_reference(config):
     assert len(checkpoint) == len(plain) + 4 * settings["n_layers"] * 2 * settings["head_size"]
     assert checkpoint[:28] == plain[:28]
     options = options_of(settings)
-    assert checkpoint_dtype(struct.unpack_from("<7i", checkpoint, 0), len(checkpoint), **options) == "float32"
+    assert checkpoint_dtype(struct.unpack_from("<7i", checkpoint, 0), len(checkpoint), options) == "float32"
 
     llama = Llama(checkpoint, pack_tokenizer(tiny_vocab(settings["vocab_size"])), **options)
     tokens = [1, 5, 7, 9]
@@ -94,7 +95,7 @@ def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, head_size):
     expected = converted(Safetensors(reader(file)), published, dtype)
     got, progress = streamed(file, published, dtype, 4096)
     assert got == expected and progress[-1][0] == progress[-1][1]
-    assert checkpoint_dtype(struct.unpack_from("<7i", got, 0), len(got), **options_of(settings)) == dtype
+    assert checkpoint_dtype(struct.unpack_from("<7i", got, 0), len(got), options_of(settings)) == dtype
 
 
 @pytest.mark.parametrize("head_size", [0, 16])
@@ -133,6 +134,32 @@ def test_a_llama_with_heads_of_another_size_needs_no_norms():
         assert np.allclose(llama.forward(token, pos), want[pos], rtol=1e-4, atol=1e-4)
 
 
+def test_heads_that_do_not_fill_dim_are_said_where_dim_over_heads_rounds_to_them():
+    """T144: head_dim goes into the options where heads * head_dim is not dim, not only where dim // heads is not
+    head_dim. 4 heads of 8 in a dim of 34 round to 8: without head_dim, checkpoint_dtype() took such a file for no
+    checkpoint at all and footprint() counted heads of 8.5 (no real model of the kind is known)."""
+    settings, weights = synthetic_weights(dim=34, n_kv_heads=2, head_size=8)
+    tensors, published = hugging_face(settings, weights, True)
+    published["head_dim"] = 8  # hugging_face() writes it only where it is not dim // heads
+    made = conversion(tensors, published, settings)
+    assert made.options["head_dim"] == 8
+    checkpoint = bytes(made.stream.out)
+    assert checkpoint_dtype(struct.unpack_from("<7i", checkpoint, 0), len(checkpoint), made.options) == "float32"
+    llama = Llama(checkpoint, pack_tokenizer(tiny_vocab(settings["vocab_size"])), **form_of(made.options))
+    want = naive_logits(settings, weights, [5, 7, 9])
+    for pos, token in enumerate([5, 7, 9]):
+        assert np.allclose(llama.forward(token, pos), want[pos], rtol=1e-4, atol=1e-4)
+
+
+def test_the_form_has_one_set_of_defaults():
+    """T144: FORM is what the file cannot say, with the value of a form that says nothing. Everything that takes it by
+    its names must mean the same by nothing, or a model whose options leave one out is laid out two ways."""
+    for function in (llama2_convert.layout, Llama.__init__):
+        parameters = inspect.signature(function).parameters
+        assert {key: parameters[key].default for key in FORM} == FORM, function.__qualname__
+    assert form_of(None) == form_of({"tokenizer_kind": "bpe"}) == FORM
+
+
 def test_heads_of_the_wrong_size_are_never_interleaved():
     """permute_heads() reshaped rows of another head size without a word and moved rows across heads (the review of
     T124: half the rows of a Qwen3 0.6B's wq). Now it refuses."""
@@ -151,7 +178,7 @@ def test_a_head_size_that_is_not_the_one_of_the_file_is_refused():
     checkpoint = converted(Safetensors(reader(safetensors_file(tensors))), published, "float32")
     header = struct.unpack_from("<7i", checkpoint, 0)
     with pytest.raises(ValueError, match="not a llama2.c checkpoint"):
-        checkpoint_dtype(header, len(checkpoint), qk_norm=True)
+        checkpoint_dtype(header, len(checkpoint), {"qk_norm": True})
 
 
 def test_gpt2_and_neox_keep_heads_of_dim_over_heads():

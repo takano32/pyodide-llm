@@ -71,7 +71,7 @@ gpt2_config = dict(model_type="gpt2", n_embd=dim, n_head=heads, n_layer=layers, 
 source = llama2_convert.Arrays(tensors)
 normalized = llama2_convert.normalize(gpt2_config)
 header = llama2_convert.checkpoint_header(normalized, source, positions)
-gpt2_file = bytearray(llama2_convert.checkpoint_size(header, "float32", False, "gpt2"))
+gpt2_file = bytearray(llama2_convert.checkpoint_size(header, "float32", {"arch": "gpt2"}))
 llama2_convert.convert_weights(source, gpt2_config, "float32", positions, gpt2_file)
 gpt2_vocabulary = llama2_convert.tokenizer_bin([("<unk>", 0.0, False)] + [(f"w{i}", -float(i), True) for i in range(vocab - 1)], vocab)
 plain = llama2_numpy.Llama(bytes(gpt2_file), gpt2_vocabulary, arch="gpt2")
@@ -102,7 +102,7 @@ for rotary_pct, parallel in ((0.25, True), (1.0, False)):
                        hidden_act="gelu", tie_word_embeddings=False)
     source = llama2_convert.Arrays(neox_tensors)
     header = llama2_convert.checkpoint_header(llama2_convert.normalize(neox_config), source, positions)
-    neox_file = bytearray(llama2_convert.checkpoint_size(header, "float32", False, "neox"))
+    neox_file = bytearray(llama2_convert.checkpoint_size(header, "float32", {"arch": "neox"}))
     llama2_convert.convert_weights(source, neox_config, "float32", positions, neox_file)
     rotary = llama2_convert.rotary_dim(llama2_convert.normalize(neox_config))
     options = dict(arch="neox", rotary=rotary, parallel_residual=parallel)
@@ -137,19 +137,21 @@ def qwen3_model(dim, heads, kv_heads, head_dim, hidden=96, layers=2, vocab=320, 
     return tensors, config
 
 qwen3_vocabulary = gpt2_vocabulary
-# heads of dim / heads, twice as wide as dim (Qwen3 0.6B), and half as wide
+# heads of dim / heads, twice as wide as dim (Qwen3 0.6B), and two thirds as wide
 for dim, heads, kv_heads, head_dim in ((64, 4, 2, 16), (64, 4, 2, 32), (96, 2, 1, 32)):
     qwen3_tensors, qwen3_config = qwen3_model(dim, heads, kv_heads, head_dim)
     source = llama2_convert.Arrays(qwen3_tensors)
     header = llama2_convert.checkpoint_header(qwen3_config, source, 24)
     for dtype in ("float32", "int8"):
-        qwen3_file = bytearray(llama2_convert.checkpoint_size(header, dtype, qk_norm=True, head_dim=head_dim))
+        qwen3_file = bytearray(llama2_convert.checkpoint_size(header, dtype, {"qk_norm": True, "head_dim": head_dim}))
         llama2_convert.convert_weights(source, qwen3_config, dtype, 24, qwen3_file)
         # an epsilon far from 1e-5, so that a kernel that did not take it would differ (T124)
         shape = dict(dtype=dtype, qk_norm=True, head_dim=head_dim, rms_norm_eps=0.25)
         plain = llama2_numpy.Llama(bytes(qwen3_file), qwen3_vocabulary, **shape)
         quick = kernel_llama(bytes(qwen3_file), qwen3_vocabulary, **shape)
         assert quick.backend.startswith("SIMD"), f"the kernels did not load for Qwen3: {quick.backend}"
+        # T144: int8 on the int8 kernels, not widened to float32 on the way (which the tokens alone would not show)
+        assert (dtype == "int8") == ("int8" in quick.backend), f"Qwen3 {dtype} runs as {quick.backend}"
         same = 0
         for pos, token in enumerate([1, 5, 9, 13, 17, 21, 25, 29]):
             wanted, got = plain.forward(token, pos), quick.forward(token, pos)
@@ -211,7 +213,7 @@ ours, theirs = quantize_rows(values), llama2_convert.quantize(values)
 assert np.array_equal(ours[0].reshape(-1), theirs[0].reshape(-1)) and np.array_equal(ours[1], theirs[1]), "quantize_x is not quantize()"
 for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensors, neox_config, "neox")):
     header = llama2_convert.checkpoint_header(llama2_convert.normalize(config_of), llama2_convert.Arrays(tensors_of), positions)
-    numpy_int8, kernel_int8 = (bytearray(llama2_convert.checkpoint_size(header, "int8", False, arch)) for _ in range(2))
+    numpy_int8, kernel_int8 = (bytearray(llama2_convert.checkpoint_size(header, "int8", {"arch": arch})) for _ in range(2))
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int8", positions, numpy_int8)
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int8", positions, kernel_int8, quantize_rows=quantize_rows)
     assert numpy_int8 == kernel_int8, f"the kernels' quantizer changed the int8 {arch} checkpoint"
@@ -234,7 +236,7 @@ sixes, quarter = llama2_numpy.quantize6(ties)
 assert np.array_equal(packed.reshape(-1), llama2_numpy.pack6(sixes).reshape(-1)) and np.array_equal(scales, quarter), "quantize6_x rounds otherwise"
 for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensors, neox_config, "neox")):
     header = llama2_convert.checkpoint_header(llama2_convert.normalize(config_of), llama2_convert.Arrays(tensors_of), positions)
-    numpy_six, kernel_six = (bytearray(llama2_convert.checkpoint_size(header, "int6", False, arch)) for _ in range(2))
+    numpy_six, kernel_six = (bytearray(llama2_convert.checkpoint_size(header, "int6", {"arch": arch})) for _ in range(2))
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int6", positions, numpy_six)
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int6", positions, kernel_six, quantize_rows=quantize_rows)
     assert numpy_six == kernel_six, f"the kernels' quantizer changed the int6 {arch} checkpoint"
@@ -269,5 +271,23 @@ assert llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"), kernels
 
 f"Python {sys.version.split()[0]}: kernels {simd15.stats['tokens_per_second']:.0f} against NumPy {numpy15.stats['tokens_per_second']:.0f} tok/s, {fast.backend} {fast.stats['tokens_per_second']:.0f} tok/s, stories260K {stories.stats['tokens_per_second']:.0f} tok/s, tiny-lm {tiny.stats['tokens_per_second']:.0f} tok/s, {japanese!r}"
 `);
+// T144: a file opened from a folder: the worker hands checkpoint_dtype() the model's options as they are, a JavaScript
+// object, and it reads the form out of them (a Qwen3 with heads twice as wide as dim / heads)
+{
+  const header = [64, 96, 2, 4, 2, 320, 24];
+  const form = { qk_norm: true, head_dim: 32, tokenizer_kind: "bpe" };
+  const size = pyodide.runPython(`import llama2_convert
+llama2_convert.checkpoint_size([64, 96, 2, 4, 2, 320, 24], "int8", {"qk_norm": True, "head_dim": 32})`);
+  const engine = pyodide.pyimport("llama2_numpy");
+  if (engine.checkpoint_dtype(header, size, form) !== "int8") throw new Error("checkpoint_dtype() misread the options");
+  let refused = false;
+  try {
+    engine.checkpoint_dtype(header, size, { qk_norm: true });
+  } catch {
+    refused = true;
+  }
+  if (!refused) throw new Error("checkpoint_dtype() took the file without its head_dim");
+  engine.destroy();
+}
 console.log(`Pyodide ${version}, ${report} (${((Date.now() - started) / 1000).toFixed(1)}s)`);
 console.log("ok");

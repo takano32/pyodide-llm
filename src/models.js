@@ -89,6 +89,10 @@ function strftime(format, date) {
     H: two(date.getHours()), M: two(date.getMinutes()), S: two(date.getSeconds()), "%": "%" };
   return format.replace(/%(.)/g, (directive, letter) => values[letter] ?? directive);
 }
+// Jinja's trim is Python's str.strip(): the white space of str.isspace() at either end. JavaScript's trim() takes
+// another set, U+FEFF too and not U+001C to U+001F nor U+0085 (the review of T138, T144: a prompt with one of them at
+// an end differed from the real template's)
+const STRIPPED = /^[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/g;
 /** What the page sends for a prompt in a model's template: {prompt} is what was typed, {prompt:trim} the same
  * without the white space at either end (T138: what a template that pipes the message through Jinja's trim writes;
  * the converter says so), {date} today (YYYY-MM-DD, the visitor's own day), and {date:format} today in strftime's
@@ -97,7 +101,7 @@ function strftime(format, date) {
  * (a typed $' wrote the rest of the template, special tokens and all; the review of T132). */
 export function filled(template, prompt, today = new Date()) {
   return template.replace(/\{date(?::([^}]*))?\}/g, (_, format = "%Y-%m-%d") => strftime(format, today))
-    .replace(/\{prompt(:trim)?\}/, (_, trim) => (trim ? prompt.trim() : prompt));
+    .replace(/\{prompt(:trim)?\}/, (_, trim) => (trim ? prompt.replace(STRIPPED, "") : prompt));
 }
 // Models that huggingface.co serves and this page converts itself (public/llama2_convert.py, the code that builds
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
@@ -385,7 +389,8 @@ const LISTED = [
     // with it perplexity was 2.5 to 2.7 times higher and four answers of five fell apart; the real format opens the
     // thought with <think> (T138's review). The list's options go over what the kept conversion says: no new CONVERTER
     conversion: {}, options: { bos: 151646, specials: ["<｜begin▁of▁sentence｜>", "<｜User｜>", "<｜Assistant｜>", "<think>"], stop_tokens: [151643] },
-    generation: sampled(1.1), template: "<｜User｜>{prompt}<｜Assistant｜><think>\n",
+    // its model card's sampling: temperature 0.6 and top-p 0.95, and no penalty (it names none): Qwen3's thinking (T144)
+    generation: thinking, template: "<｜User｜>{prompt}<｜Assistant｜><think>\n",
     prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
   // T125: Mistral 7B, and zephyr made from it
   { group: "hf", id: "hf-mistral-7b-instruct-v0.2", name: "Mistral 7B Instruct v0.2", note: "answers instructions · English · fetches 14.5 GB → int8 8.2 GB · desktop only · Chrome and Firefox",

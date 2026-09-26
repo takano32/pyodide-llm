@@ -203,14 +203,6 @@
 - 試験: pytest で「special でない追加のトークンが書式にあるとき specials に入る」、`format_check.py` を `?hf=` 相当（一覧の options なし）でも回せるように。
 - 完了条件: `?hf=` の Qwen3-4B-Thinking-2507 と DeepSeek-R1 が本物と同じ ID の列。
 
-### T144 [運用] T124・T138 のレビューの残り（試験・道具・エラーの文） — 状態: 未着手（2026-09-26、レビューから。規模 小〜中。T129 と同じ形の寄せ集め）
-- 試験（T124 のレビュー。どれも、わざと壊しても今の試験が通ってしまった所）: (1) `Writer` が `sink.open` に渡す head_dim を常に dim/heads にしても pytest が通る（footprint が Qwen3 0.6B の KV を 45% 少なく数える形）→ `tests/test_convert.py` に head_dim の違う場合。(2) GGUF の `attention.layer_norm_rms_epsilon` と `attention.key_length` を読まなくしても通る（GGUF にした Qwen2.5 の 5 つと TinySwallow が、壊れても分からずに 1e-5 に戻る）→ `tests/test_gguf.py` に。(3) デプロイで走る forward-check の 4 モデルに head_dim のあるものが無い → T133 の静的な assert の区画に、Qwen3 0.6B の見出しで `footprint()` の headDim あり・なしを。(4) smoke の Qwen3 の int8 は `backend.startswith("SIMD")` しか見ない（float32 に広がっても通る）→ "int8" を見る。`:140` の「half as wide」は実際は 2/3。
-- 形（T124 のレビュー）: (5) head_dim を options に載せる条件が `head_size != dim // heads`（割り切れない dim で取りこぼす）→ `head_size * n_heads != dim`（実在するモデルは見つかっていない）。(6) ファイルから分からない設定を 1 つの辞書で layout・checkpoint_dtype・footprint・sink.open に通す（1 つ足すたびに約 14 か所を触る形をやめる）。
-- 道具（T138・T136・T139 のレビュー）: (7) `tests/format_check.py` が GGUF の 9 項目を外している（`:39`）→ GGUF の経路を入れ、`original` にもリビジョンを持たせる。(8) llm-jp の 4 つはカードのシステム文を `SYSTEM` に、sarashina と CAT-Translate の 5 つは本物の Jinja の文を特殊トークンで区切って sentencepiece で符号化して比べる（既知の違い 13 のうち 9 が消える）。(9) `tests/test_llama3.py` が `test_bytebpe.py` を import していて、tokenizers が無いと tokenizers と関係の無い 13 件ごと skip になる → 共有のデータを conftest などに。
-- ページ（T138 のレビュー）: (10) `?hf=` のトークナイザの候補が全部断られたとき、最初の候補のエラー（404 など）を出して、変換器の断りの本当の理由が隠れる（`worker.js:1000` の `refusal ??= error`）→ 変換器の断りを優先。フォルダの経路のエラーの文が `spiece.model` を挙げない（`index.astro:910`）。(11) `filled()` の `trim()` の空白の集合を Python の `str.strip()` に揃える（U+FEFF、U+0085、U+001C〜001F。本物の trim のテンプレート 28 件の全部で、この文字のあるプロンプトだけ違う）。(12) DeepSeek-R1 の生成の設定をカードの勧め（temperature 0.6・top-p 0.95）に。
-- **済（2026-09-26）**: e2e.mjs と bench-browser.mjs は、一覧に無いモデルの ID（`local`・`hf`・`url`・`hf:…` を除く）をブラウザを開く前に落とす。それまでは `?model=` に渡し、ページが既定の tiny-lm を開いて通っていた（ci.mjs を試した models.yml の `models=no-such-model` が success になって見つけた）。
-- 完了条件: 上の試験が、わざと壊したときに落ちる。
-
 ## 候補（採否未定）
 
 2026-09-19 に Fable が提案したもの。持ち主が 1 つずつ採用か却下かを決める。採用したら「これからのタスク」へ移し、却下したら理由を添えて「やらないと決めたこと」へ移す。番号はどちらの場合もそのまま。並びは提案時の費用対効果の順。
@@ -1270,6 +1262,32 @@
 - 直し: `tests/e2e.mjs`・`tests/stock-firefox.mjs`・`tests/bench-browser.mjs` は「ok」を書いたら `process.exit(0)`（stdout を流しきってから）。`browser.close()` は 15 秒で見切る。
 - 確かめ方: 直す前の main で models.yml（windows-latest、WebKit、stories260K・stories15M・tiny-lm・llm-jp-3-150m、run 36240760614）は llm-jp-3-150m の close で止まった（上）。**直した後の同じ組（run 36240871082）は 4 モデルとも「ok」まで行き、ジョブは 2 分 14 秒で終わった**。そのあと browsers.yml を 1 回。
 - 完了条件: browsers.yml の windows-latest のジョブが上限の前に終わる。
+
+</details>
+
+- [x] **T144 [運用] T124・T138 のレビューの残り（試験・道具・エラーの文）**（Opus medium、2026-09-26）— 状態: **レビュー待ち**
+- **結果（2026-09-26）**: (7) を除く 11 項目（(10) は文面を除く）。(7)（`format_check.py` の GGUF の項目）は T136 の担当が別に進めるので触っていない。`CONVERTER` は上げていない（変換器の出すものは options もバイトも変わらない。一覧の 33 項目の options が前と同じことは `format_check.py` の全部の回と pytest の固定の試験で見た）。
+  - (6) **ファイルから分からない設定は `llama2_numpy.FORM` の 1 つの辞書で通す**（`{"bias", "arch", "qk_norm", "head_dim"}` と、何も言わないときの値）。`checkpoint_size(header, dtype, form)`・`Writer(out, header, dtype, form)`・`conversion_plan(header, form, …)`・`checkpoint_dtype(header, size, form)`・`sink.open(…, form)`・`footprint(header, size, {…options})` がどれも同じ名前の辞書を受け取り、`form_of()` が options（や JavaScript の object）から取り出す。変換器は `checkpoint_form(config, source)` の 1 か所で作り、options には bias と arch はいつも、ほかは既定と違うときだけ載せる（それまでの options と同じ）。`footprint()` の `headDim` は `head_dim` にした（worker は options をそのまま渡す）。1 つ足すときに触るのは、使う所（layout・`checkpoint_dtype`・`Llama.__init__`・要るなら `footprint`）と作る所（`checkpoint_form`）と `FORM` だけ。`FORM` の既定と `layout`・`Llama.__init__` の既定が同じことは pytest が見る。
+  - (5) head_dim を載せる条件は `head_size * heads != dim`（`checkpoint_form`）。dim 34・4 heads・head 8（dim // heads が 8 に丸まる形）で、前の条件では options に載らず `checkpoint_dtype` が断っていた。
+  - (1) sink が受け取る form を head_dim の違うモデルでも見る（`test_convert.py` の sink の試験を head 16 でも）。(2) GGUF の `attention.layer_norm_rms_epsilon` と `attention.key_length` を読むことを `test_gguf.py` で（head 16 と、key_length が dim / heads のときは options に載らないこと）。(3) forward-check の静的な確認に Qwen3 0.6B の見出しで `footprint()`（共有 756.3・共有なし 1428.3 MiB、置いた実測 755.3・1427.3 の上 4 MiB 以内）。(4) smoke の Qwen3 は int8 のとき backend に「int8」があること、「half as wide」は「two thirds as wide」に。smoke に JavaScript の object で `checkpoint_dtype` を呼ぶ確認も（フォルダの経路の worker と同じ呼び方）。
+  - (8) `format_check.py`: llm-jp の 4 つはカードのシステム文を `SYSTEM` に、sarashina と CAT-Translate の 5 つ（`SENTENCEPIECE`）は本物の Jinja の文を CONTROL の語片で区切って本物の sentencepiece で符号化したものと比べる。**一覧の 33 項目で違いは 13 → 3**（Rakuten 2.0 mini の頭の空白 0/9、Swallow-MS の前後の空白 7/9、llm-jp-4 の BOS 0/9。どれも既知）。
+  - (9) `CORPUS` と `TEXTS` を `conftest.py` に移した。tokenizers の無い system の python3 で `test_llama3.py` の 12 件が走る（skip は 185 → 62: `test_bytebpe.py` と、`test_llama3.py` の tokenizers を使う 61 件）。
+  - (10) `?hf=` のトークナイザの候補が全部だめなとき、取れなかった候補（404）より変換器の断りを出す（worker.js。取れた候補が 1 つも無いときだけ最初の取れなかった理由）。**文面の変更はしていない**（フォルダの経路の文に `spiece.model` を足す案は持ち主に）。試験は足していない（worker.js の候補の回し方は Node で動かせない。Chromium の `local`・`hf` の経路が通ることは見た）。
+  - (11) `filled()` の `{prompt:trim}` は Python の `str.strip()` と同じ空白（`str.isspace()` の 29 字）を削る。models-check が BMP の全文字で見る。
+  - (12) DeepSeek-R1 の生成の設定をカードの勧め（temperature 0.6・top-p 0.95、繰り返しの罰なし: Qwen3 の考える形と同じ `thinking`）に。
+- **わざと壊して落ちることを確かめた（2026-09-26、a1-free）**: (1) sink に head_dim 0 を渡す → `test_a_sink_gets_the_very_checkpoint[16-*]` が落ちる。(2) GGUF の key_length を読まない → 形が合わず変換が断る、eps を読まない → `rms_norm_eps` が無く落ちる（どちらも `test_a_gguf_says_the_epsilon_and_the_size_of_a_head`）。(3) `footprint()` が head_dim を見ない → forward-check が「Qwen3 0.6B: 419.1 MiB counted, 755.3 placed」で落ちる。(4) qk_norm のとき int8 を広げる → smoke が「Qwen3 int8 runs as SIMD kernels, float32」で落ちる（前の `startswith("SIMD")` と最尤トークンの一致は通っていた）。(5) head_dim の条件を dim // heads に戻す → `test_heads_that_do_not_fill_dim…` が落ちる。(6) `Llama.__init__` の head_dim の既定を None に → `test_the_form_has_one_set_of_defaults` が落ちる、`form_of` が JavaScript の object を読まない → smoke が落ちる。(8) llm-jp の `SYSTEM` を外す → 150M instruct3 が 0/9、sarashina を `SENTENCEPIECE` から外す → 3/9。(11) `trim()` に戻す → models-check が U+001C で落ちる。壊さなければ全部通る。
+- 確かめたこと: `.venv` の pytest 478 件（前は 471）、system の python3 で 305 件・62 skip、smoke、forward-check の共有・`--plain`・`--wide`、models-check、`npm run build`、Chromium の e2e の `local`（`checkpoint_dtype` に options を渡す経路）と `hf`（sink の form）、`?hf=` の経路の Qwen3 0.6B（HF から取得して変換、自動のビット数に form が渡る。準備完了 282.4 秒、int8、2 スレッド、16.7 tok/s、日本語で答えた）。
+
+<details><summary>T144 の採番時の記録</summary>
+
+**採番時の見出し**: T144 [運用] T124・T138 のレビューの残り（試験・道具・エラーの文） — 状態: 未着手（2026-09-26、レビューから。規模 小〜中。T129 と同じ形の寄せ集め）
+
+- 試験（T124 のレビュー。どれも、わざと壊しても今の試験が通ってしまった所）: (1) `Writer` が `sink.open` に渡す head_dim を常に dim/heads にしても pytest が通る（footprint が Qwen3 0.6B の KV を 45% 少なく数える形）→ `tests/test_convert.py` に head_dim の違う場合。(2) GGUF の `attention.layer_norm_rms_epsilon` と `attention.key_length` を読まなくしても通る（GGUF にした Qwen2.5 の 5 つと TinySwallow が、壊れても分からずに 1e-5 に戻る）→ `tests/test_gguf.py` に。(3) デプロイで走る forward-check の 4 モデルに head_dim のあるものが無い → T133 の静的な assert の区画に、Qwen3 0.6B の見出しで `footprint()` の headDim あり・なしを。(4) smoke の Qwen3 の int8 は `backend.startswith("SIMD")` しか見ない（float32 に広がっても通る）→ "int8" を見る。`:140` の「half as wide」は実際は 2/3。
+- 形（T124 のレビュー）: (5) head_dim を options に載せる条件が `head_size != dim // heads`（割り切れない dim で取りこぼす）→ `head_size * n_heads != dim`（実在するモデルは見つかっていない）。(6) ファイルから分からない設定を 1 つの辞書で layout・checkpoint_dtype・footprint・sink.open に通す（1 つ足すたびに約 14 か所を触る形をやめる）。
+- 道具（T138・T136・T139 のレビュー）: (7) `tests/format_check.py` が GGUF の 9 項目を外している（`:39`）→ GGUF の経路を入れ、`original` にもリビジョンを持たせる。(8) llm-jp の 4 つはカードのシステム文を `SYSTEM` に、sarashina と CAT-Translate の 5 つは本物の Jinja の文を特殊トークンで区切って sentencepiece で符号化して比べる（既知の違い 13 のうち 9 が消える）。(9) `tests/test_llama3.py` が `test_bytebpe.py` を import していて、tokenizers が無いと tokenizers と関係の無い 13 件ごと skip になる → 共有のデータを conftest などに。
+- ページ（T138 のレビュー）: (10) `?hf=` のトークナイザの候補が全部断られたとき、最初の候補のエラー（404 など）を出して、変換器の断りの本当の理由が隠れる（`worker.js:1000` の `refusal ??= error`）→ 変換器の断りを優先。フォルダの経路のエラーの文が `spiece.model` を挙げない（`index.astro:910`）。(11) `filled()` の `trim()` の空白の集合を Python の `str.strip()` に揃える（U+FEFF、U+0085、U+001C〜001F。本物の trim のテンプレート 28 件の全部で、この文字のあるプロンプトだけ違う）。(12) DeepSeek-R1 の生成の設定をカードの勧め（temperature 0.6・top-p 0.95）に。
+- **済（2026-09-26）**: e2e.mjs と bench-browser.mjs は、一覧に無いモデルの ID（`local`・`hf`・`url`・`hf:…` を除く）をブラウザを開く前に落とす。それまでは `?model=` に渡し、ページが既定の tiny-lm を開いて通っていた（ci.mjs を試した models.yml の `models=no-such-model` が success になって見つけた）。
+- 完了条件: 上の試験が、わざと壊したときに落ちる。
 
 </details>
 

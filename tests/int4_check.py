@@ -32,8 +32,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "public"))
 sys.path.insert(0, str(HERE))
 from gguf_check import BYTES, hugging_face_name, read_gguf, tensor  # noqa: E402
-from llama2_convert import (Safetensors, architecture, checkpoint_header, checkpoint_size, convert_weights,  # noqa: E402
-                            has_bias, normalize, quantize)
+from llama2_convert import (Safetensors, checkpoint_form, checkpoint_header, checkpoint_size, convert_weights,  # noqa: E402
+                            normalize, quantize)
 from llama2_numpy import Llama, Tokenizer  # noqa: E402
 
 WINDOW = 512
@@ -132,7 +132,7 @@ def evaluate(source, config, tokenizer, options, tokens, reference=None):
     """perplexity, and the most likely token at every position (and how often it is the reference's)."""
     normalized = normalize(config)  # GPT-2 and GPT-NeoX spell their configs their own way (as convert_hf.py does)
     header = checkpoint_header(normalized, source, WINDOW)
-    out = bytearray(checkpoint_size(header, "float32", has_bias(source), architecture(normalized)))
+    out = bytearray(checkpoint_size(header, "float32", checkpoint_form(config, source)))
     convert_weights(source, config, "float32", WINDOW, out)
     llama = Llama(out, tokenizer, kernels=None, **options)  # reads the bytearray where it is: no second copy
     total, count, likely = 0.0, 0, []

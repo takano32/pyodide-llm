@@ -5,8 +5,7 @@ import struct
 
 import numpy as np
 import pytest
-from conftest import synthetic_weights
-from test_bytebpe import CORPUS, TEXTS
+from conftest import CORPUS, TEXTS, synthetic_weights
 from test_convert import converted, hugging_face, reader, safetensors_file
 from test_gguf import gguf_file
 

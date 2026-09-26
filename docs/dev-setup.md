@@ -36,7 +36,7 @@ sudo apt install -y git gh curl wget ca-certificates build-essential \
 sudo apt install python3-numpy python3-pytest python3-regex python3-jinja2 python3-sentencepiece python3-protobuf
 ```
 
-`tokenizers`（pytest の本物との突き合わせ。無ければ system の python3 では pytest の表示が「2 skipped」: `tests/test_bytebpe.py` の先頭の `importorskip("tokenizers")` と、それを import する `tests/test_llama3.py` の 185 件が走らない。うち 13 件は tokenizers と関係が無い（RoPE の表など））と `transformers`（`tests/format_check.py` だけ）は 26.04 の apt に無いので、system の site-packages を見る小さな venv に入れる（apt の numpy・jinja2・sentencepiece・protobuf はそのまま使う。PyTorch は入らない、要らない）。**venv はリポジトリの中の `.venv`**（2026-09-26、持ち主の指示。`.gitignore` にある。pytest には `tests` を渡すので `.venv` の中は集めない）。下の 2 の clone の後、リポジトリの中で:
+`tokenizers`（pytest の本物との突き合わせ。無ければ system の python3 では `tests/test_bytebpe.py`（先頭の `importorskip("tokenizers")`）と `tests/test_llama3.py` の本物と比べる 61 件が走らない。表示は「62 skipped」。T144 までは test_llama3.py が test_bytebpe.py を import していて 185 件が走らず、うち 12 件は tokenizers と関係が無かった（RoPE の表など））と `transformers`（`tests/format_check.py` だけ）は 26.04 の apt に無いので、system の site-packages を見る小さな venv に入れる（apt の numpy・jinja2・sentencepiece・protobuf はそのまま使う。PyTorch は入らない、要らない）。**venv はリポジトリの中の `.venv`**（2026-09-26、持ち主の指示。`.gitignore` にある。pytest には `tests` を渡すので `.venv` の中は集めない）。下の 2 の clone の後、リポジトリの中で:
 
 ```sh
 python3 -m venv --system-site-packages .venv
@@ -138,7 +138,7 @@ a1-free（2026-09-26）: `/tmp` は tmpfs 5.9GB、`systemd-run --user` の枠は
 deploy.yml と同じものが全部通れば用意できている。
 
 ```sh
-.venv/bin/python -m pytest tests -q    # CI と同じ 471 件（system の python3 では 185 件が skip: 上の 1 の venv の節）
+.venv/bin/python -m pytest tests -q    # CI と同じ 478 件（2026-09-26、T144。system の python3 では 62 件が skip: 上の 1 の venv の節）
 for t in bench summary-check models-check ladder-check kept-check coi-js-check; do node tests/$t.mjs; done
 node tests/smoke.mjs
 node tests/forward-check.mjs --rounds 1 --positions 128

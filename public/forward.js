@@ -61,12 +61,13 @@ const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(b
  * header: the 7 ints of the legacy format. dtype: the file's ("float32", "float16", "int8", "int6"). int8: the int8
  * kernels compute on the weights (not with ?without=int8, which widens them to float32); relaxed: with relaxed SIMD
  * (a float32 correction a group); halfKV: keys and values in float16 (T110: an int8 model on a shared memory).
- * kvStart and outliers are llama2_numpy's KV_START and OUTLIER_CHANNELS. headDim: the size of a head where it is not
- * dim / heads (T124: the converter's options say head_dim then; 0 where they do not). */
+ * kvStart and outliers are llama2_numpy's KV_START and OUTLIER_CHANNELS. arch and head_dim are of the form
+ * (llama2_numpy.FORM, which a model's options carry: the caller passes them in as they are, T144): head_dim is the
+ * size of a head where it is not dim / heads (T124), 0 where it is. */
 export function footprint(header, size, { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false,
-  kvStart = 256, outliers = 8, headDim = 0 } = {}) {
+  kvStart = 256, outliers = 8, head_dim = 0 } = {}) {
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
-  const vocab = Math.abs(signedVocab), headSize = headDim || dim / heads, kvDim = kvHeads * headSize, qDim = heads * headSize;
+  const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads, kvDim = kvHeads * headSize, qDim = heads * headSize;
   const quantized = dtype === "int8" || dtype === "int6", six = dtype === "int6";
   // the int8 kernels take rows of whole groups of 32 (llama2_numpy widens the others)
   const onInt8 = int8 && dim % 32 === 0 && qDim % 32 === 0 && kvDim % 32 === 0 && hidden % 32 === 0;
