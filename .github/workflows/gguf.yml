@@ -101,7 +101,11 @@ jobs:
               const entry = MODELS.find((model) => model.id === id);
               if (!entry?.hf) throw new Error(`${id}: no item from Hugging Face by that id in src/models.js`);
               if (!/^[^@\/]+\/[^@\/]+@[0-9a-f]{40}\/.+\.gguf$/.test(gguf ?? "")) throw new Error(`${pair}: not <id>=<repo>@<revision>/<file>`);
-              return { id, original: `${entry.hf.repo}@${entry.hf.revision}`, gguf };
+              // an item that takes a GGUF already (T136) has its original where its vocabulary comes from; one of
+              // stage 1 (a GGUF with its own vocabulary) has no original revision in the list
+              const source = entry.hf.vocabulary ?? entry.hf;
+              if (source.weights?.endsWith(".gguf")) throw new Error(`${id}: takes a GGUF of its own vocabulary, and the list has no revision of its original`);
+              return { id, original: `${source.repo}@${source.revision}`, gguf };
             });
             console.log(`matrix=${JSON.stringify(jobs)}`);
           ' >> "$GITHUB_OUTPUT"
