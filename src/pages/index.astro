@@ -48,6 +48,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
           Python で、1 トークンぶんの計算は WASM SIMD カーネルが、使える端末では複数のコアで行います。実験なのでモデルは小さく、出力はそれなりです。
           既定のモデルはいちばん軽いモデルです。もっと自然な日本語は <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M（171 MB）</button>
           で生成できます。一覧の最後のグループは Hugging Face から取得してこのブラウザの中で変換します。
+          この端末の CPU・GPU・保存・回線は <a href="benchmark/">ベンチマーク</a> でまとめて測れます。
           くわしくは <a href="https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901">Pyodide LLM の概要</a> へ。
         </p>
         <p class="en">
@@ -56,6 +57,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
           WASM SIMD kernels, on several cores where the device allows. The default is the lightest model;
           <button type="button" class="choose" data-model="llm-jp-3-150m">llm-jp-3 150M (171 MB)</button> generates far
           more natural Japanese. The last group of the list is fetched from Hugging Face and converted right here.
+          The <a href="benchmark/">benchmark</a> measures this device's CPU, GPU, storage and line in one run.
         </p>
         <details>
           <summary>このプロジェクトについて / About, models and licenses</summary>
