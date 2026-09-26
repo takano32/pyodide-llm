@@ -1,0 +1,51 @@
+# T137, stage 0: public/opfs-test/ in every browser the runners offer (tests/opfs-check.mjs): writes 8 MiB pieces far
+# apart into a file of the origin private file system, and reads them back. The runners' disks are not the owner's
+# devices: this checks that the page works everywhere and gives a first number; the verdict waits for the owner's
+# devices. Playwright's Firefox runs under a debugger (AGENTS.md): its numbers are not Firefox's. By hand only.
+name: OPFS check
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Site to check
+        required: false
+      size:
+        description: MiB to write in each browser
+        default: '256'
+
+jobs:
+  opfs:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, browsers: chromium firefox webkit chrome msedge }
+          - { os: macos-latest, browsers: chromium firefox webkit chrome msedge }
+          - { os: windows-latest, browsers: chromium firefox webkit chrome msedge }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install the test tools and the browsers
+        shell: bash
+        run: |
+          npm ci
+          npx playwright-core install --with-deps chromium firefox webkit
+
+      - name: Check
+        shell: bash
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+        run: |
+          echo "## ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+          node tests/opfs-check.mjs "$SITE" ${{ matrix.browsers }} --size "${{ inputs.size || '256' }}" | tee -a "$GITHUB_STEP_SUMMARY"

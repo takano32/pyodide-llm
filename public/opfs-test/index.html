@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OPFS check</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E">
+<style>
+  :root { color-scheme: light dark; --line: #8884; }
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 0 auto; max-width: 52rem; padding: 16px; }
+  pre { white-space: pre-wrap; word-break: break-word; font-size: 12px; border: 1px solid var(--line); padding: 8px; }
+  button, select { font: inherit; padding: 4px 12px; margin: 4px 8px 4px 0; }
+  .muted { opacity: 0.7; }
+</style>
+</head>
+<body>
+<h1>OPFS check</h1>
+<p>T137, stage 0: how fast this browser writes a large file in its private storage, 8 MB at a time and far apart, as
+a download that can resume after a reload would (measured before anything of it is built). Nothing here changes
+<a href="../">the model page</a> or the models it keeps. The file is removed at the end.</p>
+<p>
+  <button id="run" type="button">Run</button>
+  <label>size <select id="size">
+    <option value="256">256 MB</option>
+    <option value="1024" selected>1 GB</option>
+    <option value="2048">2 GB</option>
+  </select></label>
+</p>
+<p id="state" class="muted"></p>
+<p><button id="copy" type="button" hidden>Copy the results</button> <a id="report" hidden target="_blank" rel="noopener">Report them as an issue</a></p>
+<pre id="markdown" hidden></pre>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const parameters = new URLSearchParams(location.search);
+if (parameters.has("size")) {
+  const size = parameters.get("size");
+  if (![...$("size").options].some((o) => o.value === size)) $("size").add(new Option(`${size} MB`, size));
+  $("size").value = size;
+}
+// the download this is compared with: huggingface.co from Japan, the development machine's line (T123, T136)
+const DOWNLOAD_MBPS = 8.3;
+const results = { page: {}, steps: [] };
+window.__opfs = null;  // set when a run ends (tests/opfs-check.mjs waits for it)
+
+const writer = new Worker("writer.js", { type: "module" });
+let pending;
+writer.onmessage = ({ data }) => pending?.(data);
+writer.onerror = (event) => pending?.({ error: `the worker failed: ${event.message ?? "error"}` });
+const ask = (message) => new Promise((resolve) => {
+  pending = resolve;
+  writer.postMessage(message);
+});
+
+async function step(name, message) {
+  $("state").textContent = `${name}...`;
+  const answer = await ask(message);
+  results.steps.push({ name, ...(answer.error ? { error: answer.error } : { result: answer.result }) });
+  show();
+  return answer.result;
+}
+
+async function runAll() {
+  $("run").disabled = true;
+  results.page = { userAgent: navigator.userAgent, cores: navigator.hardwareConcurrency, memoryGB: navigator.deviceMemory ?? null,
+    when: new Date().toISOString() };
+  results.steps = [];
+  const info = await step("the storage", { step: "info" });
+  if (info?.syncHandle) await step("the writes", { step: "run", mib: Number($("size").value) });
+  $("state").textContent = "done";
+  show();
+  window.__opfs = results;
+  $("run").disabled = false;
+}
+
+const fixed = (value, digits = 1) => (typeof value === "number" ? value.toFixed(digits) : "");
+const gb = (bytes) => (typeof bytes === "number" ? `${(bytes / 1e9).toFixed(1)} GB` : "?");
+function markdown() {
+  const lines = [`**Device**: ${results.page.userAgent}`, "", `cores ${results.page.cores}, memory ${results.page.memoryGB ?? "?"} GB`, ""];
+  const info = results.steps.find((s) => s.name === "the storage");
+  if (info?.error) lines.push(`**Storage**: ${info.error}`, "");
+  else if (info?.result) {
+    const r = info.result;
+    lines.push(`**Storage**: OPFS ${r.opfs}, sync access handle in a worker ${r.syncHandle}, used ${gb(r.usage)} of ${gb(r.quota)}${r.estimate ? ` (${r.estimate})` : ""}`, "");
+  }
+  const run = results.steps.find((s) => s.name === "the writes");
+  if (run?.error) lines.push(`**Writes**: ${run.error}`, "");
+  else if (run?.result) {
+    const r = run.result, mb = r.mib * 2 ** 20 / 1e6;
+    const row = (name, t, flush) => {
+      const speed = mb / t;
+      return `| ${name} | ${fixed(t, 2)} | ${flush === undefined ? "" : fixed(flush, 2)} | ${fixed(speed, 0)} | ${fixed(speed / DOWNLOAD_MBPS, 0)}× |`;
+    };
+    lines.push(`**Writes**: ${r.mib} MiB in ${r.pieces} pieces of 8 MiB; opening a handle ${fixed(r.openSeconds * 1000, 1)} ms, ` +
+      `setting the size ${fixed(r.truncateSeconds, 2)} s; a second handle on the same file: ${r.secondHandle}; opened again after close: ${r.reopen}`, "",
+      `| | s | of it flushing, s | MB/s | × the download (${DOWNLOAD_MBPS} MB/s) |`, "|---|---:|---:|---:|---:|",
+      row("in order, one flush", r.sequential.seconds, r.sequential.flushSeconds),
+      row("far apart, one flush", r.scattered.seconds, r.scattered.flushSeconds),
+      row("far apart, a flush and a record each piece", r.scatteredFlushEach.seconds, r.scatteredFlushEach.flushSeconds),
+      row(`read back in order${r.read.wrong ? ` (${r.read.wrong} pieces WRONG)` : ", every piece right"}`, r.read.seconds), "");
+  }
+  return lines.join("\n");
+}
+function show() {
+  const text = markdown();
+  $("markdown").textContent = text;
+  $("markdown").hidden = false;
+  $("copy").hidden = false;
+  const body = `Device (model):\nOS and version:\nBrowser and version:\n\n${text}`;
+  $("report").href = `https://github.com/takano32/pyodide-llm/issues/new?labels=opfs&title=${encodeURIComponent("OPFS check: ")}&body=${encodeURIComponent(body)}`;
+  $("report").hidden = false;
+}
+$("copy").onclick = () => navigator.clipboard?.writeText($("markdown").textContent);
+$("run").onclick = runAll;
+if (parameters.has("run")) runAll();
+</script>
+</body>
+</html>
