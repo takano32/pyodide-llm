@@ -1009,14 +1009,16 @@ async function convert(model, signal, id) {
       : model.hf.chatTemplate?.text() ?? Promise.resolve("")).catch(() => "");
     // For a repository nobody has looked at (?hf=), the tokenizer is whichever of these it has and the converter can read.
     // Where none will do, the converter's refusal of one that is there says why; a file that is not there (a 404 of the
-    // first candidate) is said only where no other was there either (T144)
+    // first candidate) is said only where no other was there either (T144). Only a 404 moves on: a fetch that failed
+    // otherwise (the line, 429, 5xx) must neither hide behind a later refusal nor let a later candidate be converted
+    // and kept in its place (the review of T144)
     let refusal, missing;
     for (const candidate of [].concat(vocabulary?.tokenizer ?? model.hf.tokenizer)) {
       let tokenizer;
       try {
         tokenizer = new Uint8Array(remote ? await (await text(from(candidate))).arrayBuffer() : await candidate.arrayBuffer());
       } catch (error) {
-        if (signal.aborted) {
+        if (signal.aborted || !remote || error.status !== 404) {
           throw error;
         }
         missing ??= error;
