@@ -16,7 +16,9 @@ jobs:
       matrix:
         include:
           - { small: hf-llm-jp-3-150m-instruct3, large: hf-llm-jp-3-440m-instruct3, language: ja }
-          - { small: hf-llm-jp-3-150m-instruct3, large: hf-llm-jp-3-980m-instruct3, language: ja }
+          # T136: the list takes this one's weights from a GGUF with the original's vocabulary, which
+          # tests/perplexity_prepare.py does not put together: the original it is
+          - { small: hf-llm-jp-3-150m-instruct3, large: 'hf:llm-jp/llm-jp-3-980m-instruct3@c079dbf3f88aa2ab702b9696231fc3336c46b1be', language: ja }
           - { small: hf-qwen2.5-0.5b-instruct, large: hf-qwen2.5-1.5b-instruct, language: en }
           - { small: hf-qwen2.5-0.5b-instruct, large: hf-qwen2.5-1.5b-instruct, language: ja }
           - { small: hf-smollm2-135m-instruct, large: hf-smollm2-360m-instruct, language: en }
