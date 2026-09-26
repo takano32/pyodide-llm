@@ -36,13 +36,13 @@ sudo apt install -y git gh curl wget ca-certificates build-essential \
 sudo apt install python3-numpy python3-pytest python3-regex python3-jinja2 python3-sentencepiece python3-protobuf
 ```
 
-`tokenizers`（pytest の本物との突き合わせ。無ければ 2 つのファイルの 185 件が skip）と `transformers`（`tests/format_check.py` だけ）は 26.04 の apt に無いので、system の site-packages を見る小さな venv に入れる（apt の numpy・jinja2・sentencepiece はそのまま使う。PyTorch は入らない、要らない）:
+`tokenizers`（pytest の本物との突き合わせ。無ければ 2 つのファイルの 185 件が skip）と `transformers`（`tests/format_check.py` だけ）は 26.04 の apt に無いので、system の site-packages を見る小さな venv に入れる（apt の numpy・jinja2・sentencepiece・protobuf はそのまま使う。PyTorch は入らない、要らない）。**venv はリポジトリの中の `.venv`**（2026-09-26、持ち主の指示。`.gitignore` にある。pytest には `tests` を渡すので `.venv` の中は集めない）。下の 2 の clone の後、リポジトリの中で:
 
 ```sh
-python3 -m venv --system-site-packages ~/venvs/reference
-~/venvs/reference/bin/pip install tokenizers==0.23.1 transformers==5.16.1
-~/venvs/reference/bin/python -m pytest tests -q        # 本物の tokenizers との突き合わせも走る（471 件）
-~/venvs/reference/bin/python tests/format_check.py ~/tmp/format-check hf-qwen3-0.6b
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install tokenizers==0.23.1 transformers==5.16.1
+.venv/bin/python -m pytest tests -q        # 本物の tokenizers との突き合わせも走る（471 件）
+.venv/bin/python tests/format_check.py ~/tmp/format-check hf-qwen3-0.6b
 ```
 
 - **transformers は 5.16.1**（5.12.1 ではない）。PyPI の 5.12.1〜5.15.1 は `tokenizers<=0.23.0` を求め、import のときにも版を見て止まる（pip で 0.23.1 を上書きしても `ImportError`）。0.23.0 は PyPI に無く、0.23.1 を許すのは 5.16.0 から。前の開発機の 5.12.1 は AUR の `python-transformers-git`（git から作ったもの）で、この縛りが無かった。
@@ -61,12 +61,12 @@ python3 -m venv --system-site-packages ~/venvs/reference
 
 #### venv に全部入れる（apt を使わない機械）
 
-
+同じ `.venv` に、試験の分（pytest）と参照の道具（`tests/requirements-reference.txt`）を全部:
 
 ```sh
-python3 -m venv ~/venvs/dev
-~/venvs/dev/bin/pip install numpy pytest tokenizers regex
-# 以降は ~/venvs/dev/bin/python3 を使う（または source ~/venvs/dev/bin/activate）
+python3 -m venv .venv
+.venv/bin/pip install pytest -r tests/requirements-reference.txt
+# 以降は .venv/bin/python を使う（または source .venv/bin/activate）
 ```
 
 - **Node 24 は nvm で**（`.nvmrc` の版を確実に取るため。Ubuntu の `nodejs` の版は未確認）:
@@ -101,12 +101,10 @@ npm install --no-save pyodide@latest   # smoke は最新の Pyodide で確かめ
 
 ## 3. 参照の道具（本物と突き合わせる検査だけ）
 
-`tests/format_check.py`（書式）、sentencepiece の突き合わせ（T126）などは transformers と sentencepiece を使う。ページもデプロイも使わないので、venv に分ける。
+`tests/format_check.py`（書式）、sentencepiece の突き合わせ（T126）などは transformers と sentencepiece を使う。ページもデプロイも使わない。どちらの形でも 1 の `.venv` に入っている（入れ方の版は `tests/requirements-reference.txt`）。
 
 ```sh
-python3 -m venv ~/venvs/reference
-~/venvs/reference/bin/pip install -r tests/requirements-reference.txt
-~/venvs/reference/bin/python tests/format_check.py ~/tmp/format-check hf-qwen3-0.6b
+.venv/bin/python tests/format_check.py ~/tmp/format-check hf-qwen3-0.6b
 ```
 
 PyTorch は要らない（入れない。transformers は「PyTorch was not found」と言うだけで、語彙と書式には困らない）。
@@ -138,7 +136,7 @@ a1-free（2026-09-26）: `/tmp` は tmpfs 5.9GB、`systemd-run --user` の枠は
 deploy.yml と同じものが全部通れば用意できている。
 
 ```sh
-~/venvs/reference/bin/python -m pytest tests -q    # CI と同じ 471 件（system の python3 では tokenizers の 185 件が skip）
+.venv/bin/python -m pytest tests -q    # CI と同じ 471 件（system の python3 では tokenizers の 185 件が skip）
 for t in bench summary-check models-check ladder-check kept-check coi-js-check; do node tests/$t.mjs; done
 node tests/smoke.mjs
 node tests/forward-check.mjs --rounds 1 --positions 128

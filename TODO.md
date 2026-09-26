@@ -1192,6 +1192,7 @@
   - **見込みと違ったこと**: (a) **回線は速くない**: huggingface.co から 5.4 MB/s（`fetch-node.mjs`、16 MiB × 6 本、256MB。OCI の東京）。前の開発機の家の回線（7.1〜9.4 MB/s）より遅い。1B 級の準備完了のほとんどは取得（348 秒）。(b) **1 コアの速さ**: `node tests/profile.mjs`（JS の forward、1 本、2 回とも同じ）で llm-jp-3 150M が 12.0 ms / トークン（前の開発機の記録は 9.2）、tiny-lm 1.62（1.6）、stories15M 1.67（1.6）。小さいモデルは A78 と同じくらいで、llm-jp-3 150M は 1.3 倍遅い（「同程度」の見込みは小さいモデルでだけ当たった）。
   - **書式の全件**（`format_check.py`、33 項目）: 違いは 13 で、どれも既知の種類（AGENTS.md の `format_check.py` の行）。ただし **transformers 5.16.1 の参照は `tokenizer.model` のある一部のモデル（sarashina の 3 つ、CAT-Translate の 2 つ）で本物と違う**（CAT-Translate は `tokenizer.json` があるのに `tokenizer.model` から作り直して 1 文字ずつ）。違いの出たプロンプトで、ページの ID は本物の sentencepiece と同じだった。
   - **持ち主の指示（AGENTS.md の「持ち主の指示」と落とし穴に書いた）**: 「メモリたくさんあるから活用せよ」（重いものも峰の合計が available に収まれば並行に）、「Chrome DevTools MCP も活用してね」。持ち主の入れた Chrome DevTools MCP は X サーバーが無くて起動しなかったので、`--headless --isolated` で登録し直した（`claude mcp add chrome-devtools -s local -- bunx -y chrome-devtools-mcp@latest --headless --isolated`、持ち主が再接続）。本物の Chrome 154 で本番のページの tiny-lm が準備完了になった（隔離、2 スレッド、コンソールにエラーなし）。
+  - **venv はリポジトリの中の `.venv`**（2026-09-26、持ち主の指示「移動させてください」。`.gitignore` に足した。最初は dev-setup.md の書いていた `~/venvs/reference` に作った）。
   - **範囲外で気づいたこと（レビューで見る）**: (1) `tests/e2e.mjs` の 1B と 3B の実行で、Playwright の一時プロファイルの OPFS が変換の保存を途中で断った（`notKept`: the origin private file system took only part of a write）。T99 の落とし穴（ヘッドレスの Cache API の割り当て）と同じ種類か未確認。(2) T134 の見出しの「GPU の項目に足す計測はブランチで実装済み」は、T140 で本線に入った後も古いまま。
 
 <details><summary>T139 の採番時の記録</summary>
