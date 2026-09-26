@@ -1,0 +1,487 @@
+---
+// /benchmark/ (T134): everything this site can measure about a device, in one run and one report. It took the place
+// of ?bench=1 alone, /gpu-test/ (T94) and /opfs-test/ (T137), which a visitor had to open one by one and report one
+// by one. Every section runs in a worker of its own, which the page ends before the next section starts: a phone
+// never holds the model, the GPU's buffers and a large file at once (T96: Chromium refused a page its third memory).
+import { MODELS } from "../models.js";
+// the models of the site itself: the model section loads one of them, and the line section fetches its first part
+const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Pyodide LLM · Benchmark</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🦙%3C/text%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <header>
+      <h1><a href="../">Pyodide LLM</a> · Benchmark</h1>
+    </header>
+    <main>
+      <p class="intro">What this device and this browser do for the models of this site, measured in one run: the
+        browser's features, the CPU, a model, the GPU, the storage and the line. Nothing is sent anywhere; at the end
+        you can copy the results or open an issue with them yourself.</p>
+      <div class="controls">
+        <button id="run-all" type="button" class="primary">Run all</button>
+        <label>model <select id="model">
+          {SITE_MODELS.map((entry) => <option value={entry.id}>{entry.name}</option>)}
+        </select></label>
+        <label>storage <select id="size">
+          <option value="64">64 MB</option>
+          <option value="256" selected>256 MB</option>
+          <option value="1024">1 GB</option>
+        </select></label>
+        <label><input id="large" type="checkbox" /> GPU: also Llama 3.2 3B (3.2 GB)</label>
+        <label><input id="full" type="checkbox" /> model: every step (slower)</label>
+      </div>
+      <section data-section="device">
+        <h2>This browser</h2>
+        <p class="about">WebAssembly SIMD and relaxed SIMD, 64-bit memories, shared memory (software threads), WebGPU and
+          the private file system, as the model page finds them.</p>
+      </section>
+      <section data-section="cpu">
+        <h2>CPU</h2>
+        <p class="about">The model page's own forward pass on a made-up int8 model as wide as Llama 3.2 1B (211 MB of
+          weights a token), with 1, 2 and 4 software threads.</p>
+      </section>
+      <section data-section="model">
+        <h2>Model</h2>
+        <p class="about">The chosen model, with and without the SIMD kernels: the table of "Measure this browser" on the
+          model page.</p>
+      </section>
+      <section data-section="gpu">
+        <h2>GPU</h2>
+        <p class="about">WebGPU: the adapter, its shaders checked against JavaScript, how fast it reads int8 weights, and
+          a token's work of three model sizes against the CPU. The weights are random bytes.</p>
+      </section>
+      <section data-section="storage">
+        <h2>Storage</h2>
+        <p class="about">The browser's private file system: a file written 8 MB at a time, in order and far apart, then
+          read back and checked. The file is removed at the end.</p>
+      </section>
+      <section data-section="line">
+        <h2>Line</h2>
+        <p class="about">A part of this site's model and a range of a model on huggingface.co: the wait for the first byte
+          and the speed. Then huggingface.co read no faster than 1, 4 and 8 MB/s, as a slower line would deliver it.</p>
+      </section>
+      <div class="report" hidden>
+        <h2>Results</h2>
+        <p><button id="copy" type="button">Copy the results</button> <a id="issue" target="_blank" rel="noopener">Report them as an issue</a></p>
+        <pre id="markdown"></pre>
+      </div>
+    </main>
+  </body>
+</html>
+
+<style is:global>
+  :root {
+    --bg: #ffffff; --panel: #f4f4f5; --text: #18181b; --muted: #71717a; --line: #e4e4e7;
+    --accent: #2563eb; --accent-text: #ffffff; --bad: #dc2626;
+    font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f0f11; --panel: #1c1c1f; --text: #ededf0; --muted: #9a9aa3; --line: #2c2c31; --accent: #3b82f6; --bad: #f87171; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.6; }
+  header, main { max-width: 792px; margin-inline: auto; padding: 10px 16px; }
+  header { border-bottom: 1px solid var(--line); }
+  h1 { font-size: 1.05rem; margin: 0; }
+  h1 a { color: inherit; text-decoration: none; }
+  h2 { font-size: 0.95rem; margin: 0; }
+  a { color: var(--accent); }
+  .intro, .about { color: var(--muted); font-size: 0.85rem; margin: 4px 0 8px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: 0.85rem; margin: 8px 0 16px; }
+  button, select { font: inherit; font-size: 0.85rem; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; cursor: pointer; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  section { border-top: 1px solid var(--line); padding: 12px 0; }
+  .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .head .state { font-size: 0.8rem; color: var(--muted); }
+  .state.ok { color: inherit; }
+  .state.wrong, .state.error { color: var(--bad); }
+  /* a table wider than a phone scrolls inside itself: the page never does */
+  .out { overflow-x: auto; }
+  .out table { border-collapse: collapse; font-size: 0.8rem; font-variant-numeric: tabular-nums; margin: 6px 0; }
+  .out th, .out td { text-align: left; padding: 3px 12px 3px 0; vertical-align: top; white-space: nowrap; }
+  .out th { font-weight: 500; color: var(--muted); border-bottom: 1px solid var(--line); }
+  .out p { font-size: 0.8rem; margin: 4px 0; overflow-wrap: anywhere; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.75rem; background: var(--panel); border-radius: 10px; padding: 10px; }
+</style>
+
+<script>
+  import { FULL_ROUNDS, ROUNDS, benchMarkdown, environmentOf, reportUrl } from "../bench.js";
+  import { MODELS } from "../models.js";
+
+  declare const __BUILD__: string;
+  const BASE = import.meta.env.BASE_URL;
+  // every worker of the same deployment as this page (GitHub Pages keeps a file for ten minutes)
+  const V = `?v=${__BUILD__}`;
+  const $ = (id: string) => document.getElementById(id)!;
+  const parameters = new URLSearchParams(location.search);
+  const SECTIONS = ["device", "cpu", "model", "gpu", "storage", "line"] as const;
+  type Name = typeof SECTIONS[number];
+  // ok: measured; none: the browser has no such thing (said, and the run goes on); wrong: a result that cannot be
+  // right (a shader against JavaScript, a piece read back); error: a section that failed
+  type Result = { status: "ok" | "none" | "wrong" | "error"; markdown: string; data?: any };
+  const results: Partial<Record<Name, Result>> = {};
+  (window as any).__benchmark = { results, done: false };
+
+  for (const [name, value] of [["model", parameters.get("model")], ["size", parameters.get("size")]] as const) {
+    const select = $(name) as HTMLSelectElement;
+    if (value && [...select.options].some((option) => option.value === value)) select.value = value;
+    else if (name === "size" && value && Number(value) > 0) { select.add(new Option(`${value} MB`, value)); select.value = value; }
+  }
+  if (parameters.has("large")) ($("large") as HTMLInputElement).checked = true;
+  if (parameters.has("full")) ($("full") as HTMLInputElement).checked = true;
+
+  // ---- cross-origin isolation, for the software threads and the GPU section's bridge: the site's service worker
+  // (coi.js, T93), registered as the model page registers it, and one reload the first time it takes the page over
+  async function isolating(): Promise<boolean> {
+    if (!("serviceWorker" in navigator) || parameters.get("coi") === "off") return false;
+    try {
+      // a tab in which the model page gave up on it (Pyodide did not load under it, T113) stays without it
+      if (sessionStorage.getItem("coi-fallback")) return false;
+      let offline = true;
+      try {
+        offline = localStorage.getItem("offline") !== "off";  // the model page's ?offline=off, remembered
+      } catch {
+        // no storage: the copies are kept, as by default
+      }
+      await navigator.serviceWorker.register(`${BASE}coi.js${V}${offline ? "" : "&offline=0"}`, { scope: BASE });
+      if (self.crossOriginIsolated) return false;
+      await navigator.serviceWorker.ready;
+      if (sessionStorage.getItem("coi-reloaded")) return false;
+      sessionStorage.setItem("coi-reloaded", "1");
+      location.reload();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  if (await isolating()) await new Promise(() => {});
+
+  // ---- the sections' elements: a head with a Run button and the state, and what the section found
+  const parts: Record<string, { run: HTMLButtonElement; state: HTMLElement; out: HTMLElement }> = {};
+  for (const section of document.querySelectorAll<HTMLElement>("section[data-section]")) {
+    const name = section.dataset.section as Name;
+    const head = document.createElement("div");
+    head.className = "head";
+    const title = section.querySelector("h2")!;
+    const run = document.createElement("button");
+    run.type = "button";
+    run.textContent = "Run";
+    const state = document.createElement("span");
+    state.className = "state";
+    head.append(title, run, state);
+    section.prepend(head);
+    const out = document.createElement("div");
+    out.className = "out";
+    section.append(out);
+    parts[name] = { run, state, out };
+    run.onclick = () => runSections([name]);
+  }
+
+  // Markdown as the page shows it: tables and paragraphs, which is all the sections write
+  const escape = (text: string) => text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]!));
+  const inline = (text: string) => escape(text).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/&lt;sub&gt;(.*?)&lt;\/sub&gt;/g, "<small>$1</small>");
+  function rendered(markdown: string) {
+    const html: string[] = [];
+    const lines = markdown.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.startsWith("|")) {
+        const cells = (row: string) => row.split("|").slice(1, -1).map((cell) => cell.trim());
+        const head = cells(line);
+        const rows: string[][] = [];
+        for (i += 2; i < lines.length && lines[i].startsWith("|"); i++) rows.push(cells(lines[i]));
+        i--;
+        html.push(`<table><tr>${head.map((c) => `<th>${inline(c)}</th>`).join("")}</tr>${rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</table>`);
+      } else if (line.startsWith("#")) {
+        continue;  // the section's own title is on the page already
+      } else if (line.trim()) {
+        html.push(`<p>${inline(line.replace(/^- /, "· "))}</p>`);
+      }
+    }
+    return html.join("");
+  }
+
+  // one worker, one question, one answer (the section workers answer every message once)
+  function ask(worker: Worker, message: any): Promise<any> {
+    return new Promise((resolve) => {
+      worker.onmessage = ({ data }) => {
+        if (data.lost) return;  // the GPU section's device-lost notice comes on its own
+        resolve(data);
+      };
+      worker.onerror = (event) => resolve({ error: `the worker failed: ${event.message ?? "error"}` });
+      worker.postMessage(message);
+    });
+  }
+  const worker = (file: string) => new Worker(`${BASE}${file}${V}`, { type: "module" });
+  const fixed = (value: any, digits = 1) => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "?");
+  const yes = (value: boolean) => (value ? "yes" : "none");
+  const model = () => MODELS.find((entry: any) => entry.id === ($("model") as HTMLSelectElement).value) as any;
+
+  // ---- the sections: each one starts its worker, asks, ends it, and says what it found as Markdown
+  async function device(): Promise<Result> {
+    const w = worker("benchmark/sections.js");
+    try {
+      const answer = await ask(w, { step: "device" });
+      if (answer.error) return { status: "error", markdown: answer.error };
+      const r = answer.result;
+      const gb = (bytes: any) => (typeof bytes === "number" ? `${(bytes / 1e9).toFixed(1)} GB` : "?");
+      return { status: "ok", data: r, markdown: [
+        "| feature | here |", "|---|---|",
+        `| logical cores | ${r.cores ?? "?"} |`,
+        `| memory the browser says | ${r.memoryGB === null ? "not told" : `${r.memoryGB} GB or more`} |`,
+        `| WebAssembly SIMD | ${yes(r.simd)} |`,
+        `| relaxed SIMD | ${yes(r.relaxedSimd)} |`,
+        `| 64-bit memory (models past 4 GB) | ${yes(r.memory64)} |`,
+        `| cross-origin isolated (software threads) | ${yes(r.crossOriginIsolated && r.sharedMemory)} |`,
+        `| WebGPU in a worker | ${yes(r.webgpu)} |`,
+        `| private file system, writable in place | ${yes(r.opfs && r.syncHandle)} |`,
+        `| storage the browser grants | ${gb(r.usage)} used of ${gb(r.quota)} |`,
+      ].join("\n") };
+    } finally {
+      w.terminate();
+    }
+  }
+
+  async function cpu(): Promise<Result> {
+    const w = worker("benchmark/sections.js");
+    try {
+      const answer = await ask(w, { step: "cpu", threads: [1, 2, 4] });
+      if (answer.error) return { status: "error", markdown: answer.error };
+      const r = answer.result;
+      if (r.none) return { status: "none", markdown: r.none };
+      const wrong = r.rows.some((row: any) => row.finite === false);
+      const lines = [`${r.backend}, ${fixed(r.megabytes, 0)} MB a token${r.shared ? "" : " (not cross-origin isolated: one thread only)"}`, "",
+        "| software threads | ms a token | GB/s | tok/s |", "|---:|---:|---:|---:|",
+        ...r.rows.map((row: any) => row.none ? `| ${row.asked} | ${row.none} | | |`
+          : `| ${row.threads} | ${fixed(row.msPerToken)} | ${fixed(row.GBps)} | ${fixed(1000 / row.msPerToken)} |`)];
+      if (wrong) lines.push("", "**The logits were not finite numbers: the forward pass computed something wrong.**");
+      return { status: wrong ? "wrong" : "ok", data: r, markdown: lines.join("\n") };
+    } finally {
+      w.terminate();
+    }
+  }
+
+  // the model page's worker itself (public/worker.js): the model loads, then the rounds of ?bench=1 (T45)
+  let modelRows: any[] = [], pyodideVersion: string | undefined;
+  async function modelSection(): Promise<Result> {
+    const entry = model();
+    const w = new Worker(`${BASE}worker.js${V}`, { type: "module" });
+    const rounds = ($("full") as HTMLInputElement).checked ? FULL_ROUNDS : ROUNDS;
+    try {
+      const answer: any = await new Promise((resolve) => {
+        let asked = false;
+        w.onmessage = ({ data }) => {
+          if (data.type === "status") parts.model.state.textContent = data.text;
+          else if (data.type === "progress") parts.model.state.textContent = `${(data.received / 1e6 || 0).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
+          else if (data.type === "ready" && !asked) {
+            // once: every round loads the model again and says ready too (T96)
+            asked = true;
+            parts.model.state.textContent = "the rounds...";
+            w.postMessage({ type: "bench", model: entry, load: 1, rounds, prompt: entry.prompt || "Once upon a time", steps: 64 });
+          } else if (data.type === "bench") resolve(data);
+          else if (data.type === "error") resolve({ error: data.message });
+        };
+        w.onerror = (event) => resolve({ error: `the worker failed: ${event.message ?? "error"}` });
+        w.postMessage({ type: "init", search: "", model: entry, load: 1,
+          threads: { remembered: 0, hint: navigator.hardwareConcurrency || 1 } });
+      });
+      if (answer.error) return { status: "error", markdown: answer.error };
+      modelRows = answer.rows;
+      pyodideVersion = answer.pyodide;
+      const lines = ["| what ran | tok/s | ready | backend |", "|---|---|---|---|",
+        ...answer.rows.map((row: any) => `| ${row.name} | ${fixed(row.speed)} | ${fixed(row.seconds)} s | ${row.backend} |`)];
+      return { status: "ok", data: answer.rows, markdown: `${entry.name} · Pyodide ${answer.pyodide}\n\n${lines.join("\n")}` };
+    } finally {
+      w.terminate();
+    }
+  }
+
+  // the GPU section of T94's stage 0, step by step as /gpu-test/ ran it
+  const SHAPES: Record<string, number[]> = { "llm-jp-3 150M w1": [2048, 512], "Llama 3.2 1B w1": [8192, 2048], "Llama 3.2 1B classifier": [128256, 2048] };
+  const BRIDGE_ROUNDS = 2000;
+  async function gpu(): Promise<Result> {
+    const w = worker("benchmark/gpu.js");
+    const steps: any[] = [];
+    let lost: string | undefined;
+    const step = async (name: string, message: any) => {
+      parts.gpu.state.textContent = `${name}...`;
+      const answer = await ask(w, message);
+      steps.push({ name, ...(answer.error ? { error: answer.error } : { result: answer.result }) });
+      return answer.result;
+    };
+    w.addEventListener("message", ({ data }) => { if (data.lost) lost = data.lost; });
+    try {
+      const info = await step("the adapter", { step: "info" });
+      if (!info?.worker || !info.adapter) {
+        const why = steps[0].error ?? (info?.worker ? "navigator.gpu gave no adapter" : "no WebGPU in a worker here");
+        return { status: "none", markdown: why };
+      }
+      const check = await step("the shaders against JavaScript", { step: "check" });
+      for (const [name, shape] of Object.entries(SHAPES)) await step(`bandwidth: ${name}`, { step: "bandwidth", shape });
+      for (const name of ["llm-jp-3 150M", "Llama 3.2 1B", ...(($("large") as HTMLInputElement).checked ? ["Llama 3.2 3B"] : [])]) {
+        await step(`a token of ${name}`, { step: "token", model: name, kind: "widen" });
+        if (info.packed) await step(`a token of ${name}, packed int8`, { step: "token", model: name, kind: "packed" });
+      }
+      const bridge = await gpuBridge(w);
+      const wrong = check && Object.values(check).some((v: any) => !v.ok);
+      return { status: wrong ? "wrong" : "ok", data: { steps, bridge, lost }, markdown: gpuMarkdown(steps, bridge, lost) };
+    } finally {
+      w.terminate();
+    }
+  }
+  async function gpuBridge(w: Worker) {
+    if (!self.crossOriginIsolated) return { error: "not measured: the page is not cross-origin isolated" };
+    const memory = new SharedArrayBuffer(8);
+    const waiter = worker("benchmark/waiter.js");
+    const waited = new Promise<any>((resolve) => { waiter.onmessage = ({ data }) => resolve(data); });
+    const answered = ask(w, { step: "bridge", memory, rounds: BRIDGE_ROUNDS });
+    waiter.postMessage({ memory, rounds: BRIDGE_ROUNDS });
+    const [answer, { microseconds }] = await Promise.all([answered, waited]);
+    waiter.terminate();
+    return answer.result?.waitAsync ? { microseconds } : { error: "no Atomics.waitAsync here" };
+  }
+  function gpuMarkdown(steps: any[], bridge: any, lost?: string) {
+    const lines: string[] = [];
+    const r = steps.find((s) => s.name === "the adapter").result;
+    lines.push(`**Adapter**: ${r.adapter}${r.fallback ? " (a fallback adapter)" : ""}; max binding ${fixed(r.maxStorageBufferBindingSize / 2 ** 20, 0)} MiB, ` +
+      `max buffer ${fixed(r.maxBufferSize / 2 ** 20, 0)} MiB, packed int8 dot ${yes(r.packed)}, shader-f16 ${yes(r.features?.includes("shader-f16"))}${lost ? `; device lost: ${lost}` : ""}`, "");
+    const check = steps.find((s) => s.name === "the shaders against JavaScript");
+    if (check?.result) lines.push(`**Shaders against JavaScript**: ${Object.entries(check.result).map(([k, v]: any) => `${k} ${v.ok ? "ok" : "WRONG"} (worst ${v.worstRelative.toExponential(1)})`).join(", ")}`, "");
+    const bandwidths = steps.filter((s) => s.name.startsWith("bandwidth"));
+    lines.push("| int8 matrix × vector | GPU, widened in the shader | GPU, packed int8 | CPU, one thread |", "|---|---:|---:|---:|");
+    for (const s of bandwidths) {
+      const b = s.result ?? {};
+      lines.push(`| ${s.name.slice(11)} | ${s.error ?? `${fixed(b.widen?.GBps)} GB/s`} | ${b.packed ? `${fixed(b.packed.GBps)} GB/s` : "–"} | ${b.cpu ? `${fixed(b.cpu.GBps)} GB/s` : ""} |`);
+    }
+    lines.push("");
+    // the CPU's side of a token: the weights read once at what one thread measured, and at twice that, which the
+    // software threads reach at most (T93: the memory's bandwidth)
+    const cpuGBps = bandwidths.find((s) => s.name.includes("1B w1"))?.result?.cpu?.GBps ?? bandwidths[0]?.result?.cpu?.GBps;
+    lines.push("| a token (weights, dispatches, logits back) | GB | GPU ms | GPU tok/s | CPU tok/s, 1 thread (estimate) | GPU ÷ CPU with threads (≤ 2×) |", "|---|---:|---:|---:|---:|---:|");
+    for (const s of steps.filter((x) => x.name.startsWith("a token"))) {
+      const t = s.result ?? {};
+      if (s.error || t.error) {
+        lines.push(`| ${s.name.slice(11)} | | ${s.error ?? t.error} | | | |`);
+        continue;
+      }
+      const one = cpuGBps ? cpuGBps / t.GB : undefined;
+      lines.push(`| ${s.name.slice(11)} | ${fixed(t.GB, 2)} | ${fixed(t.msPerToken)} | ${fixed(t.tokPerSecond)} | ${fixed(one)} | ${one ? `${fixed(t.tokPerSecond / (2 * one), 2)}×` : ""} |`);
+    }
+    lines.push("", `**Bridge** (Atomics.wait ↔ Atomics.waitAsync, ${BRIDGE_ROUNDS} round trips): ${bridge.error ?? `${fixed(bridge.microseconds)} µs each`}`);
+    return lines.join("\n");
+  }
+
+  // the storage section of T137's stage 0 (the download it is compared with: huggingface.co from Japan, T123, T136)
+  const DOWNLOAD_MBPS = 8.3;
+  async function storage(): Promise<Result> {
+    const w = worker("benchmark/storage.js");
+    try {
+      const info = await ask(w, { step: "info" });
+      if (info.error) return { status: "error", markdown: info.error };
+      if (!info.result.syncHandle) return { status: "none", markdown: "no private file system that a worker can write in place here" };
+      parts.storage.state.textContent = "writing...";
+      const answer = await ask(w, { step: "run", mib: Number(($("size") as HTMLSelectElement).value) });
+      if (answer.error) return { status: "error", markdown: answer.error };
+      const r = answer.result, mb = (r.mib * 2 ** 20) / 1e6;
+      const row = (name: string, t: number, flush?: number) => `| ${name} | ${fixed(t, 2)} | ${flush === undefined ? "" : fixed(flush, 2)} | ${fixed(mb / t, 0)} | ${fixed(mb / t / DOWNLOAD_MBPS, 0)}× |`;
+      return { status: r.read.wrong ? "wrong" : "ok", data: r, markdown: [
+        `${r.mib} MiB in ${r.pieces} pieces of 8 MiB; opening a file ${fixed(r.openSeconds * 1000)} ms; a second handle on it: ${r.secondHandle}; opened again after close: ${r.reopen}`, "",
+        `| writes | s | of it flushing, s | MB/s | × a download of ${DOWNLOAD_MBPS} MB/s |`, "|---|---:|---:|---:|---:|",
+        row("in order, one flush", r.sequential.seconds, r.sequential.flushSeconds),
+        row("far apart, one flush", r.scattered.seconds, r.scattered.flushSeconds),
+        row("far apart, a flush and a record each piece", r.scatteredFlushEach.seconds, r.scatteredFlushEach.flushSeconds),
+        row(`read back in order${r.read.wrong ? ` (${r.read.wrong} pieces WRONG)` : ", every piece right"}`, r.read.seconds),
+      ].join("\n") };
+    } finally {
+      w.terminate();
+    }
+  }
+
+  // the line: the first part of the chosen model of the site, and 32 MiB of a model on huggingface.co (the one of the
+  // list the line section names; any large file would do)
+  const LINE_MODEL = "hf-qwen2.5-0.5b-instruct", RATES = [1, 4, 8], PACED_SECONDS = 4;
+  async function line(): Promise<Result> {
+    const entry = model();
+    const remote: any = MODELS.find((m: any) => m.id === LINE_MODEL) ?? MODELS.find((m: any) => m.hf && m.download > 64e6);
+    const w = worker("benchmark/sections.js");
+    try {
+      const answer = await ask(w, { step: "line", rates: RATES, seconds: PACED_SECONDS,
+        site: { url: `${location.origin}${BASE}models/${entry.checkpoint}.000`, bytes: Math.min(8 << 20, entry.bytes), range: false },
+        hf: { url: `https://huggingface.co/${remote.hf.repo}/resolve/${remote.hf.revision}/${remote.hf.weights}`, bytes: 32 << 20 } });
+      if (answer.error) return { status: "error", markdown: answer.error };
+      const r = answer.result;
+      const fetched = (name: string, f: any) => f?.error ? `| ${name} | ${f.error} | | |`
+        : `| ${name} | ${fixed(f.bytes / 1e6)} MB | ${fixed(f.firstByteMs, 0)} ms | ${fixed(f.MBps)} MB/s |`;
+      const lines = ["| fetched | size | first byte | speed |", "|---|---:|---:|---:|",
+        fetched("this site: a part of the model", r.site), fetched("huggingface.co: a range of a model", r.hf)];
+      if (r.paced.length) {
+        lines.push("", "| huggingface.co read no faster than | got | within 10% |", "|---:|---:|---|",
+          ...r.paced.map((p: any) => p.slower ? `| ${p.rate} MB/s | the line is slower | |` : p.error ? `| ${p.rate} MB/s | ${p.error} | |`
+            : `| ${p.rate} MB/s | ${fixed(p.MBps, 2)} MB/s | ${Math.abs(p.MBps - p.rate) <= 0.1 * p.rate ? "yes" : "no"} |`));
+      }
+      const failed = r.site?.error && r.hf?.error;
+      return { status: failed ? "error" : "ok", data: r, markdown: lines.join("\n") };
+    } finally {
+      w.terminate();
+    }
+  }
+
+  const RUN: Record<Name, () => Promise<Result>> = { device, cpu, model: modelSection, gpu, storage, line };
+  const STATE = { ok: "done", none: "not in this browser", wrong: "WRONG", error: "failed" };
+
+  // ---- one report: the model's table first (as ?bench=1 writes it, which tests/reports.mjs reads), then every section
+  function report() {
+    const entry = model();
+    const environment = environmentOf(navigator, { model: entry.name, pyodide: pyodideVersion, site: location.origin + location.pathname });
+    const TITLES: Record<Name, string> = { device: "This browser", cpu: "CPU", model: "Model", gpu: "GPU", storage: "Storage", line: "Line" };
+    const sections = SECTIONS.filter((name) => name !== "model" && results[name])
+      .map((name) => `#### ${TITLES[name]}${results[name]!.status === "ok" ? "" : ` (${STATE[results[name]!.status]})`}\n\n${results[name]!.markdown}`);
+    const markdown = [benchMarkdown(modelRows, environment), ...sections].join("\n\n");
+    $("markdown").textContent = markdown;
+    ($("issue") as HTMLAnchorElement).href = reportUrl(markdown, environment);
+    (document.querySelector(".report") as HTMLElement).hidden = false;
+    (window as any).__benchmark.markdown = markdown;
+  }
+
+  let running = false;
+  async function runSections(names: readonly Name[]) {
+    if (running) return;
+    running = true;
+    const buttons = [$("run-all"), ...Object.values(parts).map((p) => p.run)] as HTMLButtonElement[];
+    buttons.forEach((b) => (b.disabled = true));
+    (window as any).__benchmark.done = false;
+    for (const name of names) {
+      const { state, out } = parts[name];
+      state.className = "state";
+      state.textContent = "running...";
+      out.innerHTML = "";
+      let result: Result;
+      try {
+        result = await RUN[name]();
+      } catch (error) {
+        result = { status: "error", markdown: String((error as Error)?.message ?? error) };
+      }
+      results[name] = result;
+      state.className = `state ${result.status}`;
+      state.textContent = STATE[result.status];
+      out.innerHTML = rendered(result.markdown);
+      report();
+    }
+    buttons.forEach((b) => (b.disabled = false));
+    (window as any).__benchmark.done = true;
+    running = false;
+  }
+  $("run-all").onclick = () => runSections(SECTIONS);
+  $("copy").onclick = () => navigator.clipboard?.writeText($("markdown").textContent ?? "");
+  // ?run=all runs every section at once, ?run=cpu,line those (tests/bench-check.mjs)
+  const asked = parameters.get("run");
+  if (asked) runSections(asked === "all" ? SECTIONS : SECTIONS.filter((name) => asked.split(",").includes(name)));
+</script>

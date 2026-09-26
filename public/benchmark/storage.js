@@ -1,6 +1,7 @@
-// T137, stage 0: how fast this browser's origin private file system (OPFS) takes the writes a resumable conversion
-// would make, measured in a worker with a synchronous access handle (the only kind that writes at an offset). The page
-// (index.html) asks for one step at a time; nothing here touches the model page or what it keeps.
+// The storage section of /benchmark/ (T134; T137's stage 0 until then, at /opfs-test/): how fast this browser's origin
+// private file system (OPFS) takes the writes a resumable conversion would make, measured in a worker with a
+// synchronous access handle (the only kind that writes at an offset). The page (src/pages/benchmark.astro) asks for one
+// step at a time; nothing here touches the model page or what it keeps.
 //
 //   { step: "info" }              whether there is an OPFS and a sync handle here, and navigator.storage.estimate()
 //   { step: "run", mib }          a file of mib MiB written 8 MiB at a time: in order, far apart, far apart with a flush
@@ -9,7 +10,7 @@
 //                                 whether the file opens again once the first is closed. The file is removed at the end.
 
 const PIECE = 8 << 20;
-const FOLDER = "opfs-test", FILE = "pieces.bin", PROGRESS = "progress.json";
+const FOLDER = "benchmark", FILE = "pieces.bin", PROGRESS = "progress.json";
 
 // the bytes of piece i: a pattern of its own, so that the read-back can tell the pieces apart
 function fill(bytes, i) {

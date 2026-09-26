@@ -1,4 +1,4 @@
-// T94, stage 0: the model's worker as stage 1 would have it: it cannot return to its event loop while Python calls
+// The GPU section of /benchmark/ (T134; T94's stage 0): the model's worker as a GPU forward pass would have it: it cannot return to its event loop while Python calls
 // forward(), so it hands the token to the GPU's worker and blocks in Atomics.wait until the answer is there. Here the
 // answer is nothing but a counter: this measures the round trip alone. words[0]: the requests, words[1]: the answers.
 onmessage = ({ data: { memory, rounds } }) => {

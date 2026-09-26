@@ -1,5 +1,6 @@
-// T94, stage 0: what WebGPU gives this device, measured in a worker (where stage 1 would put the GPU). The page
-// (index.html) asks for one step at a time and shows what comes back; nothing here touches the model page.
+// The GPU section of /benchmark/ (T134; T94's stage 0 until then, at /gpu-test/): what WebGPU gives this device,
+// measured in a worker (where a GPU forward pass would run). The page (src/pages/benchmark.astro) asks for one step at
+// a time and shows what comes back, and ends the worker after the section; nothing here touches the model page.
 //
 //   { step: "info" }                      the adapter, its limits and features, WGSL's language features
 //   { step: "check" }                     the two int8 shaders against JavaScript on a small matrix
@@ -285,7 +286,8 @@ async function cpuBandwidth([rows, n]) {
   const weights = rows * n, scales = (rows * n / GROUP) * 4, copies = Math.max(1, Math.min(4, Math.floor(128e6 / weights)));
   const bytes = 4096 + n * 8 + rows * 4 + copies * (weights + scales);
   const memory = new WebAssembly.Memory({ initial: Math.ceil(bytes / 65536) + 1 });
-  cpuKernel ??= await WebAssembly.compile(await (await fetch(new URL("../simdkernel_plain.wasm", import.meta.url))).arrayBuffer());
+  // the kernels of the same deployment as this file (?v=, GitHub Pages keeps a file for ten minutes)
+  cpuKernel ??= await WebAssembly.compile(await (await fetch(new URL(`../simdkernel_plain.wasm${new URL(import.meta.url).search}`, import.meta.url))).arrayBuffer());
   const k = (await WebAssembly.instantiate(cpuKernel, { env: { memory } })).exports;
   const U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer);
   const x = 4096, xq = x + n * 4, xs = xq + n, out = xs + (n / GROUP) * 4 + 64, first = Math.ceil((out + rows * 4) / 64) * 64;
