@@ -295,10 +295,13 @@ record({ ok: !failures.length, timedOut: false, readySeconds, tokPerSecond: Numb
          ...(then.length ? { then } : {}) });
 if (failures.length) await keepArtifacts(failures.join("; "));
 clearTimeout(watchdog);
-await browser.close();
+// T141: end the process here, not when nothing is left to wait for. In CI on Windows, Node kept running after "ok"
+// twice (after a WebKit run), the next run never started and the job ran into its 90 minutes: something of the
+// browser outlived browser.close() and kept the process alive. A close that hangs may not keep it either.
+await Promise.race([browser.close(), new Promise((resolve) => setTimeout(resolve, 15000))]);
 server?.close();
 if (failures.length) {
   console.error("FAILED\n- " + failures.join("\n- "));
   process.exit(1);
 }
-console.log("ok");
+process.stdout.write("ok\n", () => process.exit(0));

@@ -49,4 +49,5 @@ if (failures.length) {
   console.error("FAILED\n- " + failures.join("\n- "));
   process.exit(1);
 }
-console.log("ok");
+// T141: end here, as tests/e2e.mjs does: what the browser leaves behind must not keep the job waiting
+process.stdout.write("ok\n", () => process.exit(0));

@@ -69,6 +69,7 @@ const report = new URL(await page.evaluate(() => [...document.querySelectorAll("
 assert.equal(report.searchParams.get("template"), "benchmark.md", `the report link: ${report}`);
 assert.ok(report.searchParams.get("body")?.endsWith(bench.markdown), "the Markdown in the issue's body");
 clearInterval(watch);
-await browser.close();
+// T141: end here, as tests/e2e.mjs does: what the browser leaves behind must not keep the job waiting
+await Promise.race([browser.close(), new Promise((resolve) => setTimeout(resolve, 15000))]);
 server?.close();
-console.log("ok");
+process.stdout.write("ok\n", () => process.exit(0));
