@@ -7,8 +7,14 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import * as playwright from "playwright-core";
+import { MODELS } from "../src/models.js";
 
 const [model = "stories260K", deployed] = process.argv.slice(2);
+// an id the list does not have would open the default model and pass on it (T144)
+if (!MODELS.some((entry) => entry.id === model)) {
+  console.error(`FAILED\n- no model ${model} in src/models.js`);
+  process.exit(1);
+}
 const base = "/pyodide-llm/";
 const root = new URL("../dist/", import.meta.url).pathname;
 const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".py": "text/plain" };

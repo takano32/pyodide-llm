@@ -43,8 +43,15 @@ import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
 import * as playwright from "playwright-core";
+import { MODELS } from "../src/models.js";
 
 const [model = "stories260K", engine = "chromium", deployed] = process.argv.slice(2);
+// an id the list does not have opens the page's default model, and the run passed on it (T144: models.yml with a
+// misspelt id answered with tiny-lm): such an id fails before a browser starts
+if (!/^(local|hf|url|hf:.+)$/.test(model) && !MODELS.some((entry) => entry.id === model)) {
+  console.error(`FAILED\n- no model ${model} in src/models.js (the page would open its default model instead)`);
+  process.exit(1);
+}
 const base = "/pyodide-llm/";
 const root = new URL("../dist/", import.meta.url).pathname;
 const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".py": "text/plain" };

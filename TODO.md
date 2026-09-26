@@ -213,6 +213,7 @@
 - 形（T124 のレビュー）: (5) head_dim を options に載せる条件が `head_size != dim // heads`（割り切れない dim で取りこぼす）→ `head_size * n_heads != dim`（実在するモデルは見つかっていない）。(6) ファイルから分からない設定を 1 つの辞書で layout・checkpoint_dtype・footprint・sink.open に通す（1 つ足すたびに約 14 か所を触る形をやめる）。
 - 道具（T138・T136・T139 のレビュー）: (7) `tests/format_check.py` が GGUF の 9 項目を外している（`:39`）→ GGUF の経路を入れ、`original` にもリビジョンを持たせる。(8) llm-jp の 4 つはカードのシステム文を `SYSTEM` に、sarashina と CAT-Translate の 5 つは本物の Jinja の文を特殊トークンで区切って sentencepiece で符号化して比べる（既知の違い 13 のうち 9 が消える）。(9) `tests/test_llama3.py` が `test_bytebpe.py` を import していて、tokenizers が無いと tokenizers と関係の無い 13 件ごと skip になる → 共有のデータを conftest などに。
 - ページ（T138 のレビュー）: (10) `?hf=` のトークナイザの候補が全部断られたとき、最初の候補のエラー（404 など）を出して、変換器の断りの本当の理由が隠れる（`worker.js:1000` の `refusal ??= error`）→ 変換器の断りを優先。フォルダの経路のエラーの文が `spiece.model` を挙げない（`index.astro:910`）。(11) `filled()` の `trim()` の空白の集合を Python の `str.strip()` に揃える（U+FEFF、U+0085、U+001C〜001F。本物の trim のテンプレート 28 件の全部で、この文字のあるプロンプトだけ違う）。(12) DeepSeek-R1 の生成の設定をカードの勧め（temperature 0.6・top-p 0.95）に。
+- **済（2026-09-26）**: e2e.mjs と bench-browser.mjs は、一覧に無いモデルの ID（`local`・`hf`・`url`・`hf:…` を除く）をブラウザを開く前に落とす。それまでは `?model=` に渡し、ページが既定の tiny-lm を開いて通っていた（ci.mjs を試した models.yml の `models=no-such-model` が success になって見つけた）。
 - 完了条件: 上の試験が、わざと壊したときに落ちる。
 
 ## 候補（採否未定）
