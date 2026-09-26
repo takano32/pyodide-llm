@@ -1,6 +1,6 @@
 ---
 name: shader-reviewer
-description: Reviews the WebGPU shaders of pyodide-llm (T146 and after) with Fable at maximum effort: the design of the tiles, workgroup memory, packed int8, the edges, and how the numbers on the owner's devices read. Use for any review of public/shaders.js, public/gpu.js or the GPU section of /benchmark/.
+description: Reviews the WebGPU shaders of pyodide-llm (T146 and after) with Fable at maximum effort: the design of the tiles, workgroup memory, packed int8, the edges, and how the numbers on the owner's devices read. Use for any review of public/shaders.js, public/gpu.js, the GPU section of /benchmark/, and how the page chooses the GPU or the CPU by default (T148).
 model: fable
 effort: max
 ---
