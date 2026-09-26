@@ -18,8 +18,8 @@
 // first error. Everything printed also goes to .tmp/ci/<time>-<pid>.log, and a run already waited for by another
 // ci.mjs is not waited for twice: that one's log is named instead.
 // Exit: 0 every run succeeded, 1 one ended otherwise (failure, cancelled...), 2 the deadline passed with one still
-// going, 3 there was no run to wait for (a dispatch failed, no deploy of that commit appeared), 4 all were waited for
-// by another ci.mjs already.
+// going, 3 there was no run to wait for (a dispatch failed, no deploy of that commit appeared, no run of that ID), 4
+// all were waited for by another ci.mjs already.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -243,16 +243,27 @@ say(`waiting for ${mine.map((t) => t.id).join(", ")} until ${new Date(deadline).
 // ---- the wait: every 15 seconds for the first ten minutes, then every 30 (long runs, and the API's hourly limit)
 const began = Date.now();
 for (;;) {
-  for (const target of mine.filter((t) => !t.run)) {
+  for (const target of mine.filter((t) => !t.run && !t.missing)) {
     target.jobs ??= new Map();
-    await look(target);
-    if (target.deploy && target.run?.conclusion === "cancelled" && (await newerDeploy(target))) await look(target);
+    try {
+      await look(target);
+      if (target.deploy && target.run?.conclusion === "cancelled" && (await newerDeploy(target))) await look(target);
+    } catch (error) {
+      // a run that is not there (a mistyped ID) is not a run that failed: its wait ends with exit 3. What gh could not
+      // get past after its tries is said, and the wait goes on to the deadline (a crash here read as a failed run)
+      if (!target.state && /HTTP 404/.test(error.message)) {
+        target.missing = true;
+        say(`no run ${target.id}: ${error.message}`);
+      } else {
+        say(`(could not look at run ${target.id}: ${error.message})`);
+      }
+    }
   }
-  if (mine.every((t) => t.run) || Date.now() > deadline) break;
+  if (mine.every((t) => t.run || t.missing) || Date.now() > deadline) break;
   await sleep(Date.now() - began < 600000 ? 15000 : 30000);
 }
 for (const target of mine) {
-  if (target.run) await report(target);
+  if (target.run) await report(target).catch((error) => out(`== ${target.id}: no logs (${error.message})`));
   release(target.id);
 }
 
@@ -261,9 +272,10 @@ out("");
 out("| run | title | result | min | url |");
 out("|---|---|---|---:|---|");
 for (const t of mine) {
-  const result = t.run ? t.run.conclusion : `still ${t.state || "unknown"} (deadline)`;
+  const result = t.run ? t.run.conclusion : t.missing ? "no such run" : `still ${t.state || "unknown"} (deadline)`;
   const took = t.run ? minutesSince(t.run.run_started_at, t.run.updated_at) : "";
   out(`| ${t.id} | ${t.title ?? ""} | ${result} | ${took} | ${t.url ?? ""} |`);
 }
 if (startFailed) out("(a dispatch failed: see the top)");
-process.exit(mine.some((t) => !t.run) ? 2 : startFailed ? 3 : mine.every((t) => t.run.conclusion === "success") ? 0 : 1);
+const going = mine.some((t) => !t.run && !t.missing);
+process.exit(going ? 2 : startFailed || mine.some((t) => t.missing) ? 3 : mine.every((t) => t.run.conclusion === "success") ? 0 : 1);
