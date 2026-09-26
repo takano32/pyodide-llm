@@ -148,3 +148,30 @@ def test_q_and_k_compared_in_blocks_are_read_turned(tmp_path, capsys, monkeypatc
     assert gguf_check.check_tensors(*model(tmp_path))
     result = summary(capsys)
     assert result["orders"] == ["turned (llama2.c order)"] and result["worst"] < 0.02
+
+
+def llama_cpp_q8_0(values):
+    """llama.cpp's quantize_row_q8_0_ref, as ggml-quants.c writes it: d = amax / 127, q = roundf(x / d), d stored
+    as float16 (the rounded d is what reads back)."""
+    groups = values.reshape(-1, 32).astype(np.float32)
+    d = np.abs(groups).max(axis=1) / 127
+    q = np.array([[math.floor(abs(x) / di + 0.5) * math.copysign(1, x) if di else 0 for x in g]
+                  for g, di in zip(groups, d)])
+    return (q * d.astype(np.float16).astype(np.float32)[:, None]).reshape(values.shape).astype(np.float32)
+
+
+def test_rows_only_the_float16_scale_rounds_pass_and_a_swapped_row_does_not():
+    """llm-jp-3 980M's embedding (the first run of stage 2): 8 rows of values near 1e-5, whose Q8_0 scale is under
+    float16's smallest steps, came back 7 to 22% off (one as 0), and read as rows of other weights. Against
+    llama.cpp's Q8_0 of the original they are the same; a swapped row is far from both."""
+    rng = np.random.default_rng(1)
+    original = (rng.standard_normal((64, 1536)) * 0.02).astype(np.float32)
+    original[5] *= 2.5e-3  # largest value about 2e-4: d about 1.6e-6, in float16's steps of 6e-8
+    original[6] *= 5e-4
+    gguf = llama_cpp_q8_0(original)
+    count, _, _, _, rounded = gguf_check.row_check(gguf_check.row_parts(gguf, original, True))
+    assert count == 0 and rounded >= 1
+    assert gguf_check.row_check(gguf_check.row_parts(gguf, original, False))[0] >= 1, \
+        "against the original alone the rounded rows read as other weights"
+    gguf[[10, 20]] = gguf[[20, 10]]
+    assert gguf_check.row_check(gguf_check.row_parts(gguf, original, True))[0] == 2
