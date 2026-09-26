@@ -14,9 +14,9 @@ CI（`.github/workflows/deploy.yml`）が毎回やっていることと同じ手
 
 ### Ubuntu 26.04 LTS（OCI の Ampere A1、arm64）の場合
 
-**この一覧はまだ Ubuntu 26.04 で試していない**（2026-09-26 に書いた。新しい機械で最初に通したら、足りなかったもの・要らなかったものを直す）。
+**この手順で a1-free を用意した（2026-09-26、T139 の段 6）**。書いたとおりに入らなかったのは 3 つで、どれも直した: transformers の版と protobuf（下の venv）、Playwright のブラウザ（下の「ブラウザ」）。
 
-2026-09-26 に ssh で見た a1-free（Ubuntu 26.04.1、Neoverse-N1 × 2、11.9GB、スワップ 4GB、`/tmp` は tmpfs 5.9GB）には、git・gh（未ログイン）・Node v24.20.0（nvm）・Python 3.14.4・python3-numpy・python3-pytest・python3-venv・wget・curl・gcc・make がもう入っている。足りないのは tokenizers と regex の入った venv、参照の venv、Playwright のブラウザ、`gh auth login`。エージェントの記憶のフォルダは写さない（中身は 2026-09-26 に AGENTS.md と TODO.md に移した）。
+a1-free（Ubuntu 26.04.1、Neoverse-N1 × 2、11.9GB、スワップ 4GB、`/tmp` は tmpfs 5.9GB）には、持ち主が git・gh（ログイン済み）・Node v24.20.0（nvm）・Python 3.14.4・python3-numpy・python3-pytest・python3-regex・python3-jinja2・python3-sentencepiece（0.2.1）・python3-venv・wget・curl・gcc・make・Google Chrome 154 を入れてあった。T139 の段 6 で足したのは python3-protobuf、参照の venv、Playwright の Chromium だけ。エージェントの記憶のフォルダは写さない（中身は 2026-09-26 に AGENTS.md と TODO.md に移した）。
 
 ```sh
 sudo apt update
@@ -33,17 +33,22 @@ sudo apt install -y git gh curl wget ca-certificates build-essential \
 毎回の試験（pytest・smoke・forward-check・build）に要るものは 26.04 の apt にある（a1-free には入っている）。sentencepiece の突き合わせ（T126）の分だけ足す:
 
 ```sh
-sudo apt install python3-numpy python3-pytest python3-regex python3-jinja2 python3-sentencepiece
+sudo apt install python3-numpy python3-pytest python3-regex python3-jinja2 python3-sentencepiece python3-protobuf
 ```
 
-`tokenizers`（pytest の本物との突き合わせ数件。無ければ skip）と `transformers`（`tests/format_check.py` だけ）は 26.04 の apt に無いので、system の site-packages を見る小さな venv に入れる（apt の numpy・jinja2・sentencepiece はそのまま使う。PyTorch は入らない、要らない）:
+`tokenizers`（pytest の本物との突き合わせ。無ければ 2 つのファイルの 185 件が skip）と `transformers`（`tests/format_check.py` だけ）は 26.04 の apt に無いので、system の site-packages を見る小さな venv に入れる（apt の numpy・jinja2・sentencepiece はそのまま使う。PyTorch は入らない、要らない）:
 
 ```sh
 python3 -m venv --system-site-packages ~/venvs/reference
-~/venvs/reference/bin/pip install tokenizers==0.23.1 transformers==5.12.1
-~/venvs/reference/bin/python -m pytest tests -q        # 本物の tokenizers との突き合わせも走る
+~/venvs/reference/bin/pip install tokenizers==0.23.1 transformers==5.16.1
+~/venvs/reference/bin/python -m pytest tests -q        # 本物の tokenizers との突き合わせも走る（471 件）
 ~/venvs/reference/bin/python tests/format_check.py ~/tmp/format-check hf-qwen3-0.6b
 ```
+
+- **transformers は 5.16.1**（5.12.1 ではない）。PyPI の 5.12.1〜5.15.1 は `tokenizers<=0.23.0` を求め、import のときにも版を見て止まる（pip で 0.23.1 を上書きしても `ImportError`）。0.23.0 は PyPI に無く、0.23.1 を許すのは 5.16.0 から。前の開発機の 5.12.1 は AUR の `python-transformers-git`（git から作ったもの）で、この縛りが無かった。
+- 5.16.1 で `format_check.py` は、記録のある 4 項目（Qwen3 0.6B・Rakuten 7B・Llama 3.2 1B・Swallow-MS）で記録と同じ結果になった。`tokenizer.model` のあるモデルでは参照が本物と違うことがある（AGENTS.md の `format_check.py` の行）。
+- sentencepiece は apt の 0.2.1。T126 の突き合わせは 0.2.2 で取った（違いが出るかは未確認）。
+- **protobuf も要る**（apt の python3-protobuf）。transformers が sentencepiece の `tokenizer.model` を読むのに使い、無いと `format_check.py` は最初の `tokenizer.model` だけのモデル（sarashina）で止まる（tiktoken が無いという、関係の無いエラーで終わる）。前の開発機では sarashina も比べられていた（T138）。
 
 <details><summary>調べて採らなかった形: <code>tokenizers</code> を 26.10 からピン留めで（2026-09-26、a1-free で入れずに調べた）</summary>
 
@@ -72,8 +77,15 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
 nvm install    # .nvmrc の版
 ```
 
-- **ブラウザ**: `npx playwright-core install --with-deps chromium`（`--with-deps` が apt で依存のライブラリを入れる。sudo が要る）。Playwright が Ubuntu 26.04 を正式に扱うかは未確認（扱わなければ依存のライブラリの名前がずれて失敗することがある。そのときは表示された足りないライブラリを apt で）。
-- **`systemd-run --user`** は、SSH でログインしたユーザーのセッションで使えるはず（未確認）。使えなければ `loginctl enable-linger $USER` を試す。
+- **ブラウザ**: Playwright 1.60 は Ubuntu 26.04 の arm64 を扱わない（`npx playwright-core install --with-deps chromium` は「Cannot install dependencies for ubuntu26.04-arm64」、`--with-deps` なしでも「does not support chromium on ubuntu26.04-arm64」で止まる）。24.04 の版を取らせれば入る:
+
+```sh
+PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-arm64 npx playwright-core install chromium
+ldd ~/.cache/ms-playwright/chromium_headless_shell-*/chrome-linux/headless_shell | grep "not found"   # 何も出なければよい
+```
+
+  a1-free では足りない共有ライブラリは無かった。起動するとき（`tests/e2e.mjs`）はこの変数は要らない。
+- **`systemd-run --user --scope -p MemoryMax=…`** は SSH のセッションで使えた（linger なし）。
 
 ## 2. リポジトリと生成物
 
@@ -101,7 +113,15 @@ PyTorch は要らない（入れない。transformers は「PyTorch was not foun
 
 ## 4. ブラウザ（手元で確かめるとき）
 
-`npx playwright-core install chromium`（Firefox・WebKit も同じ形）。Linux では `--with-deps` で依存のライブラリも（root が要る）。**メモリを先に見る**: Pyodide とモデルのブラウザは 400MB 以上、1B 級で数 GB（`free -m`）。7〜8B（ヒープ 9.7〜11GB）は CI で。速さは手元で測らない（CI と持ち主の端末で。「開発機の値を既定にしない」）。
+`npx playwright-core install chromium`（Firefox・WebKit も同じ形）。Linux では `--with-deps` で依存のライブラリも（root が要る）。Ubuntu 26.04 の arm64 は上の「ブラウザ」のとおり 24.04 の版を取らせる。**メモリを先に見る**: Pyodide とモデルのブラウザは 400MB 以上、1B 級で数 GB（`free -m`）。a1-free では llm-jp-3 980M（ヒープ 1398MB）で機械全体の使用が 2.1GB → 5.3GB、Qwen2.5 3B（ヒープ 4050MB）で 2.1GB → 8.1GB。7〜8B（ヒープ 9.7〜11GB）は CI で。速さは手元で測らない（CI と持ち主の端末で。「開発機の値を既定にしない」）。
+
+**Chrome DevTools MCP**（Claude Code からページを開いて、コンソールやネットワークを見る）: X サーバーの無い機械では `--headless` で登録する。a1-free では Google Chrome 154（`/usr/bin/google-chrome`）を使う:
+
+```sh
+claude mcp add chrome-devtools -s local -- bunx -y chrome-devtools-mcp@latest --headless --isolated
+```
+
+`--headless` が無いと「Missing X server to start the headful browser」で開かない（Xvfb の下で動かす手もあるが、要らなかった）。登録を変えたら Claude Code の `/mcp` で再接続する。a1-free で本番のページを開き、tiny-lm が準備完了になった（`crossOriginIsolated` が真、2 スレッド、コンソールにエラーと警告なし。2026-09-26）。
 
 ## 5. 機械のことを確かめる
 
@@ -111,12 +131,14 @@ AGENTS.md の落とし穴のいくつかは機械しだい。新しい機械で�
 - メモリの枠で計測を包めるか: `systemd-run --user --scope -p MemoryMax=1G -p MemorySwapMax=0 true`。使えなければ `ulimit -v` で。
 - スワップの有無、メモリの量、コアの数と種類（`lscpu`）: AGENTS.md の「計測環境」の行に。
 
+a1-free（2026-09-26）: `/tmp` は tmpfs 5.9GB、`systemd-run --user` の枠は使える、スワップ 4GB、11.9GB（持ち主の別の Claude Code のセッションと searxng の docker などで available は約 9.9GB）、Neoverse-N1 × 2（`asimddp` あり、`i8mm` なし）、OCI の東京（ap-tokyo-1）。
+
 ## 6. 用意できたかの確かめ方
 
 deploy.yml と同じものが全部通れば用意できている。
 
 ```sh
-python3 -m pytest tests -q
+~/venvs/reference/bin/python -m pytest tests -q    # CI と同じ 471 件（system の python3 では tokenizers の 185 件が skip）
 for t in bench summary-check models-check ladder-check kept-check coi-js-check; do node tests/$t.mjs; done
 node tests/smoke.mjs
 node tests/forward-check.mjs --rounds 1 --positions 128
@@ -125,4 +147,4 @@ node tests/forward-check.mjs stories260K tiny-lm --rounds 1 --positions 128 --wi
 npm run build
 ```
 
-新しい機械で初めて通したときは、かかった時間（pytest、smoke、forward-check の tok/s、`make kernels`）を AGENTS.md に書く。前の開発機（ARM の big.LITTLE、Cortex-A78 × 4 + A55 × 4、約 6.6GB）では pytest 約 20 秒、smoke 約 8 秒（Qwen3 の検査を足した後、2026-09-26）。
+新しい機械で初めて通したときは、かかった時間（pytest、smoke、forward-check の tok/s、`make kernels`）を AGENTS.md に書く。前の開発機（ARM の big.LITTLE、Cortex-A78 × 4 + A55 × 4、約 6.6GB）では pytest 約 20 秒、smoke 約 8 秒（Qwen3 の検査を足した後、2026-09-26）。a1-free の時間は AGENTS.md の「開発機の移行（T139）」にある（上の 10 本は全部通った）。
