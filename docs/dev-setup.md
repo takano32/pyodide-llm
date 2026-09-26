@@ -16,6 +16,8 @@ CI（`.github/workflows/deploy.yml`）が毎回やっていることと同じ手
 
 **この一覧はまだ Ubuntu 26.04 で試していない**（2026-09-26 に書いた。新しい機械で最初に通したら、足りなかったもの・要らなかったものを直す）。
 
+2026-09-26 に ssh で見た a1-free（Ubuntu 26.04.1、Neoverse-N1 × 2、11.9GB、スワップ 4GB、`/tmp` は tmpfs 5.9GB）には、git・gh（未ログイン）・Node v24.20.0（nvm）・Python 3.14.4・python3-numpy・python3-pytest・python3-venv・wget・curl・gcc・make がもう入っている。足りないのは tokenizers と regex の入った venv、参照の venv、Playwright のブラウザ、`gh auth login`。ユーザー名が今の機械と同じ（takano32）なので、リポジトリを `~/GitHub/pyodide-llm` に置けば、エージェントの記憶のフォルダ（`~/.claude/projects/-home-takano32-GitHub-pyodide-llm/memory/`）を写すだけで効く。
+
 ```sh
 sudo apt update
 sudo apt install -y git gh curl wget ca-certificates build-essential \
