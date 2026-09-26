@@ -50,6 +50,28 @@ const RAKUTEN = "A chat between a curious user and an artificial intelligence as
 // zephyr's tokenizer.json puts a "▁" before the text after </s> (a legacy Llama tokenizer), which the engine does
 // not: the space after </s> makes the same tokens
 const ZEPHYR = "<|user|>\n{prompt}</s> \n<|assistant|>\n";
+// T124: Qwen3 thinks before it answers (<think>…</think>, then the answer), which is the form its chat_template writes
+// and the converter reads. The same weights answer at once when the answer begins with an empty thought: the form of
+// enable_thinking=false. <think> and </think> are tokens of the vocabulary that tokenizer.json does not call special,
+// and the converter passes only the special ones: they are named here for every Qwen3, or they would be spelled out
+// (in a template, or where a visitor types them: the real tokenizer reads them as the tokens they are)
+const QWEN3_AT_ONCE = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
+const qwen3 = { specials: ["<|im_start|>", "<|im_end|>", "</think>", "<think>"] };
+// the sampling of Qwen3's model card for either form (its top-k and presence penalty the page's sampler has not)
+const thinking = { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 };
+const atOnce = { steps: 0, temperature: 0.7, topp: 0.8, repetition_penalty: 1.0 };
+/** A Qwen3 twice (T124, the owner's "両方を別々に用意できないのか"): thinking first, and answering at once. The two
+ * share their weights, and so a conversion kept in the browser; only the format differs. */
+function thinkingAndNot(id, name, repo, revision, download, sizes, chat = {}) {
+  const common = { group: "hf", hf: hf(repo, revision), download, conversion: {}, options: qwen3,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE, ...chat };
+  return [
+    { ...common, id: `${id}-thinking`, name: `${name} (thinking)`, note: `thinks before it answers · 日本語 / English · ${sizes}`,
+      generation: thinking },
+    { ...common, id, name: `${name} (no thinking)`, note: `answers at once · 日本語 / English · ${sizes}`,
+      generation: chat.generation ?? atOnce, template: QWEN3_AT_ONCE },
+  ];
+}
 const harmony = { specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
   "November", "December"];
@@ -119,6 +141,10 @@ export const LICENSES = {
   "tokyotech-llm/Swallow-MS-7b-instruct-v0.1": APACHE, "mistralai/Mistral-7B-Instruct-v0.2": APACHE,
   "mistralai/Mistral-7B-Instruct-v0.3": APACHE, "HuggingFaceH4/zephyr-7b-beta": MIT,
   "meta-llama/Llama-3.2-3B-Instruct": LLAMA_32, "unsloth/Llama-3.2-3B-Instruct": LLAMA_32,
+  // T124
+  "Qwen/Qwen3-0.6B": APACHE, "Qwen/Qwen3-1.7B": APACHE, "Qwen/Qwen3-4B": APACHE, "Qwen/Qwen3-8B": APACHE,
+  "tokyotech-llm/Qwen3-Swallow-8B-RL-v0.2": APACHE, "Qwen/Qwen3-4B-Instruct-2507": APACHE,
+  "Qwen/Qwen3-4B-Thinking-2507": APACHE,
 };
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
@@ -356,6 +382,26 @@ const LISTED = [
     hf: hf("unsloth/Llama-3.2-3B-Instruct", "006f5dcd1393c3add266de40994ba96225e9689d"), download: 6425529048,
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
+  // T124: Qwen3, each twice (thinking and not), and Qwen3's 2507 4B, one of each form
+  ...thinkingAndNot("hf-qwen3-0.6b", "Qwen3 0.6B", "Qwen/Qwen3-0.6B", "c1899de289a04d12100db370d81485cdf75e47ca", 1503300328,
+    "fetches 1.5 GB → int8 671 MB"),
+  ...thinkingAndNot("hf-qwen3-1.7b", "Qwen3 1.7B", "Qwen/Qwen3-1.7B", "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e", 4063515592,
+    "fetches 4.1 GB → int8 1.9 GB · desktop only"),
+  ...thinkingAndNot("hf-qwen3-4b", "Qwen3 4B", "Qwen/Qwen3-4B", "1cfa9a7208912126459214e8b04321603b3df60c", 8044982000,
+    "fetches 8.0 GB → int8 4.5 GB · desktop only · Chrome and Firefox"),
+  ...thinkingAndNot("hf-qwen3-8b", "Qwen3 8B", "Qwen/Qwen3-8B", "b968826d9c46dd6066d109eabc6255188de91218", 16381516776,
+    "fetches 16.4 GB → int8 9.2 GB · desktop only · Chrome and Firefox"),
+  // Qwen3 Swallow's card gives one sampling, the thinking one, for both
+  ...thinkingAndNot("hf-qwen3-swallow-8b", "Qwen3 Swallow 8B RL", "tokyotech-llm/Qwen3-Swallow-8B-RL-v0.2",
+    "9218f4843b6f93369a0b0999d8f58d61487ea71c", 16381516776, "fetches 16.4 GB → int8 9.2 GB · desktop only · Chrome and Firefox",
+    { generation: thinking }),
+  { group: "hf", id: "hf-qwen3-4b-instruct-2507", name: "Qwen3 4B Instruct 2507", note: "answers instructions · 日本語 / English · fetches 8.0 GB → int8 4.5 GB · desktop only · Chrome and Firefox",
+    hf: hf("Qwen/Qwen3-4B-Instruct-2507", "cdbee75f17c01a7cc42f958dc650907174af0554"), download: 8044982000,
+    conversion: {}, options: qwen3, generation: atOnce, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // its chat_template begins the answer with <think> itself
+  { group: "hf", id: "hf-qwen3-4b-thinking-2507", name: "Qwen3 4B Thinking 2507", note: "thinks before it answers · 日本語 / English · fetches 8.0 GB → int8 4.5 GB · desktop only · Chrome and Firefox",
+    hf: hf("Qwen/Qwen3-4B-Thinking-2507", "768f209d9ea81521153ed38c47d515654e938aea"), download: 8044982000,
+    conversion: {}, options: qwen3, generation: thinking, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
 ];
 
 // T90: memory. A device that runs out of it kills the worker's WebAssembly memory, so the page warns before it

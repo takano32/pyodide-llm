@@ -28,8 +28,9 @@ from llama2_numpy import Llama  # noqa: E402
 FIXTURES = HERE / "fixtures" / "fixed-outputs.json"
 NEW_TOKENS = 16
 CHUNK = 8 << 20
-# one per architecture and way in: GPT-NeoX, GPT-2, a Llama from a GGUF (T74), a Llama with a Unigram tokenizer.json
-MODELS = ["hf-pythia-70m", "hf-gpt2", "hf-smollm2-135m-instruct", "hf-llm-jp-3-150m-instruct3"]
+# one per architecture and way in: GPT-NeoX, GPT-2, a Llama from a GGUF (T74), a Llama with a Unigram tokenizer.json,
+# and a Qwen3 (T124: the norms of q and k, heads of 128 in a dim of 1024)
+MODELS = ["hf-pythia-70m", "hf-gpt2", "hf-smollm2-135m-instruct", "hf-llm-jp-3-150m-instruct3", "hf-qwen3-0.6b"]
 
 
 def entries():

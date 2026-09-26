@@ -928,8 +928,8 @@ def check_config(config):
     # adds them after the projections (T64). Everything else about it is the same. qwen3 is a Llama that normalizes
     # every head of q and k (T124): two vectors per layer, the same way.
     if config.get("model_type") not in ("llama", "qwen2", "qwen3", "gpt2", "gpt_neox"):
-        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Mistral, Qwen2, GPT-2 "
-               f"and GPT-NeoX models are supported")
+        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Mistral, Qwen2, Qwen3, "
+               f"GPT-2 and GPT-NeoX models are supported")
     for key in ("hidden_size", "intermediate_size", "num_hidden_layers", "num_attention_heads", "vocab_size",
                 "max_position_embeddings"):
         if not isinstance(config.get(key), int) or config[key] <= 0:

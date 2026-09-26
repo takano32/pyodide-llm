@@ -137,7 +137,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
             <input id="repository-name" type="text" autocomplete="off" spellcheck="false" placeholder="owner/name" /></label>
           <label>Revision
             <input id="repository-revision" type="text" autocomplete="off" spellcheck="false" placeholder="main" /></label>
-          <p class="hint">A Llama, Mistral, Qwen2, GPT-2 or GPT-NeoX model published as safetensors with a tokenizer.json or a sentencepiece model. It is fetched from huggingface.co and converted to int8 in this browser; what the converter cannot take, it refuses in words.</p>
+          <p class="hint">A Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX model published as safetensors with a tokenizer.json or a sentencepiece model. It is fetched from huggingface.co and converted to int8 in this browser; what the converter cannot take, it refuses in words.</p>
           <button type="submit">Open</button>
         </form>
       </div>
@@ -361,7 +361,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       options.append(new Option(`${name} — ${note}`, id));
     }
     if (group === "hf") {
-      options.append(new Option("Other repository… — any Llama, Mistral, Qwen2, GPT-2 or GPT-NeoX", "hf-other"));  // T88
+      options.append(new Option("Other repository… — any Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX", "hf-other"));  // T88
     }
     select.append(options);
   }
