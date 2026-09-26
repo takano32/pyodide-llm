@@ -123,6 +123,345 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) count: vec3u,
   }
 }`;
 
+// ---- T146: a matrix times the tokens of a prompt by tiles (the benchmark measures them; the model's GPU worker is to
+// take the fastest on each device, T147). BATCHED reads each weight once for TILE tokens but loads an activation for
+// every multiply-add, and 64 threads add up every sum. These two take their form from public implementations instead
+// (the owner, 2026-09-26: take the best public one rather than invent one):
+//   regTile(half): llama.cpp's WebGPU register tiling (mul_mat_reg_tile.wgsl with mul_mat_decls.tmpl's Q8_0 and float
+//     loaders). A workgroup owns TILE_M × WORKGROUP_SIZE_M rows by TILE_N × WORKGROUP_SIZE_N tokens; each step of
+//     TILE_K = 32 (one group) widens the step's weights (× their scale) and copies the tokens' activations into the
+//     workgroup's memory, then each thread multiplies its 4 rows by its 4 tokens with the sums in registers. half: the
+//     workgroup's memory holds f16 as llama.cpp's does (shader-f16), else f32; the sums are f32 either way.
+//   dp4a(subgroups): ONNX Runtime Web's DP4A MatMulNBits (dp4a_matmul.wgsl.template, 8 bits, no zero points): a tile
+//     of 64 tokens × 64 rows, 256 threads, 32 of the width a step as packed int8 in the workgroup's memory; each thread
+//     one token × 16 rows, a group's int sum by dot4I8Packed times the two scales, as the CPU's matmul_q8 sums them.
+//     The activations are quantized first (QUANTIZE). subgroups: the same with ORT's subgroupShuffle path where the
+//     device's subgroups are 16 wide (Arm Valhall's), which reads the rows from the registers of the subgroup's lanes.
+// Changed from the sources for this project's weights, and why: the int8 values and their float32 scales are two
+// buffers (llama2_numpy's layout), not Q8_0's 34-byte blocks of f16 scale and 32 values, so the loaders read a group's
+// scale from its own buffer; the weights are signed already (ORT's 8-bit ones are unsigned about 128); a group is 32
+// for the activations too (ORT's scales_a are per 128); the outputs are written one float at a time, with each row and
+// token checked and added to y where shape.add (a matrix cut in chunks of rows of any count, the residual stream),
+// where ORT writes a vec4 and asks N % 16 == 0 and llama.cpp a vec4 of rows; the workgroups are numbered as each
+// source numbers them, over x and then y (a dispatch's dimension holds at most 65535). The Shape, the Step and the
+// bindings are BATCHED's (dp4a reads x as xq and adds the activations' scales, 6).
+
+// llama.cpp's defaults (ggml-webgpu-shader-lib.hpp: WEBGPU_MUL_MAT_WG_SIZE_M/N 8, TILE_M/N 4, REG_TILE_K_QUANT 32)
+// and a workgroup of 256 threads for a tile of 64 tokens (the benchmark measures both; the overrides are the pipeline's)
+export const REG_TILES = [{ m: 8, n: 8 }, { m: 16, n: 16 }];
+export const regTileShape = ({ m, n }) => ({ rows: 4 * m, tokens: 4 * n, threads: m * n });
+// the workgroup's memory of a regTile: a step's weights and activations, 2 or 4 bytes each
+export const regTileBytes = ({ m, n }, half) => 32 * 4 * (m + n) * (half ? 2 : 4);
+export const DP4A_SHAPE = { rows: 64, tokens: 64, threads: 256 };
+
+// Adapted from llama.cpp, ggml/src/ggml-webgpu/wgsl-shaders/mul_mat_reg_tile.wgsl, mul_mat_decls.tmpl and
+// quant_inner_loops.tmpl (https://github.com/ggml-org/llama.cpp, commit 2145525a, 2026-09-26).
+// Copyright (c) 2023-2026 The ggml authors. MIT License.
+export const regTile = (half) => /* wgsl */ `${half ? "enable f16;\n" : ""}
+struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
+${STEP}
+alias shmem_t = ${half ? "f16" : "f32"};
+@group(0) @binding(0) var<storage, read> w: array<u32>;             // M rows, K columns: 4 int8 to a u32
+@group(0) @binding(1) var<storage, read> scales: array<f32>;        // a scale a row and group of 32
+@group(0) @binding(2) var<storage, read> x: array<vec4<f32>>;       // N tokens, K columns (xStride floats apart)
+@group(0) @binding(3) var<storage, read_write> y: array<f32>;       // N tokens, M rows (yStride floats apart)
+@group(0) @binding(4) var<uniform> shape: Shape;
+@group(0) @binding(5) var<uniform> step: Step;
+
+override WORKGROUP_SIZE_M: u32 = 8u;
+override WORKGROUP_SIZE_N: u32 = 8u;
+const TILE_M = 4u;
+const TILE_N = 4u;
+const TILE_K = 32u;
+const BLOCK_SIZE = 32u;
+const BLOCKS_K = TILE_K / BLOCK_SIZE;
+const NQ = 16u;
+const BYTES_PER_THREAD = 16u;  // NQ(16) weights use 16 bytes of q
+const BYTES_PER_INNER_LOOP = 4u;
+override TOTAL_WORKGROUP_SIZE: u32 = WORKGROUP_SIZE_M * WORKGROUP_SIZE_N;
+override TILE_SRC0_SHMEM: u32 = TILE_K * WORKGROUP_SIZE_M * TILE_M;
+override TILE_SRC1_SHMEM: u32 = TILE_K * WORKGROUP_SIZE_N * TILE_N;
+override TILE_SHMEM: u32 = TILE_SRC0_SHMEM + TILE_SRC1_SHMEM;
+var<workgroup> shmem: array<shmem_t, TILE_SHMEM>;
+
+fn get_byte_i32(value: u32, index: u32) -> i32 {
+  return bitcast<i32>(((value >> (index * 8u)) & 0xFFu) << 24u) >> 24u;
+}
+// Q8_0's loader: NQ weights a thread, widened with their scale (here a float32 of its own buffer, the product rounded
+// once into the memory's type)
+fn init_shmem_src0(thread_id: u32, offset_m: u32, k_outer: u32) {
+  for (var i = thread_id * NQ; i < TILE_SRC0_SHMEM; i += TOTAL_WORKGROUP_SIZE * NQ) {
+    let block_idx = i / BLOCK_SIZE;
+    let block_offset = (i % BLOCK_SIZE) / NQ;
+    let shmem_idx = block_idx * BLOCK_SIZE + block_offset * BYTES_PER_THREAD;
+    let tile_m = block_idx / BLOCKS_K;
+    let global_m = offset_m + tile_m;
+    let block_k = block_idx % BLOCKS_K;
+    let global_block_k = k_outer / BLOCK_SIZE + block_k;
+    if (global_m < shape.rows && global_block_k < shape.perRow) {
+      let d = scales[global_m * shape.perRow + global_block_k];
+      for (var j = 0u; j < BYTES_PER_THREAD / BYTES_PER_INNER_LOOP; j += 1u) {
+        let q_packed = w[global_m * shape.words + global_block_k * (BLOCK_SIZE / 4u) + (block_offset * BYTES_PER_THREAD) / 4u + j];
+        for (var k = 0u; k < 4u; k++) {
+          shmem[shmem_idx + j * BYTES_PER_INNER_LOOP + k] = shmem_t(f32(get_byte_i32(q_packed, k)) * d);
+        }
+      }
+    }
+  }
+}
+// the float loader, four at a time (llama.cpp's VEC): a token past the request or a column past the width reads 0
+fn init_shmem_src1(thread_id: u32, offset_n: u32, k_outer: u32) {
+  let k = shape.words * 4u;
+  for (var elem_idx = thread_id * 4u; elem_idx < TILE_SRC1_SHMEM; elem_idx += TOTAL_WORKGROUP_SIZE * 4u) {
+    let tile_n = elem_idx / TILE_K;
+    let tile_k = elem_idx % TILE_K;
+    let global_n = offset_n + tile_n;
+    let global_k = k_outer + tile_k;
+    let src1_idx = global_n * shape.xStride + global_k;
+    let src1_val = select(vec4<f32>(0.0), x[src1_idx / 4u], global_n < step.tokens && global_k < k);
+    let at = TILE_SRC0_SHMEM + elem_idx;
+    shmem[at] = shmem_t(src1_val.x);
+    shmem[at + 1u] = shmem_t(src1_val.y);
+    shmem[at + 2u] = shmem_t(src1_val.z);
+    shmem[at + 3u] = shmem_t(src1_val.w);
+  }
+}
+
+@compute @workgroup_size(TOTAL_WORKGROUP_SIZE)
+fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(local_invocation_id) local_id: vec3<u32>,
+        @builtin(num_workgroups) num_wg: vec3<u32>) {
+  let thread_id = local_id.x;
+  let local_m = thread_id % WORKGROUP_SIZE_M;
+  let local_n = thread_id / WORKGROUP_SIZE_M;
+
+  let wg_n_count = (step.tokens + WORKGROUP_SIZE_N * TILE_N - 1u) / (WORKGROUP_SIZE_N * TILE_N);
+  let wg_m_count = (shape.rows + WORKGROUP_SIZE_M * TILE_M - 1u) / (WORKGROUP_SIZE_M * TILE_M);
+  let wg_linear = wg_id.y * num_wg.x + wg_id.x;
+  if (wg_linear >= wg_m_count * wg_n_count) {
+    return;
+  }
+  let wg_m = wg_linear % wg_m_count;
+  let wg_n = wg_linear / wg_m_count;
+
+  let output_row_base = wg_m * WORKGROUP_SIZE_M * TILE_M + local_m * TILE_M;
+  let output_col_base = wg_n * WORKGROUP_SIZE_N * TILE_N + local_n * TILE_N;
+  let offset_m = wg_m * WORKGROUP_SIZE_M * TILE_M;
+  let offset_n = wg_n * WORKGROUP_SIZE_N * TILE_N;
+
+  var acc: array<array<f32, TILE_N>, TILE_M>;
+  let k = shape.words * 4u;
+  for (var k_outer = 0u; k_outer < k; k_outer += TILE_K) {
+    init_shmem_src0(thread_id, offset_m, k_outer);
+    init_shmem_src1(thread_id, offset_n, k_outer);
+    workgroupBarrier();
+    let k_end = min(TILE_K, k - k_outer);
+    for (var k_inner = 0u; k_inner < k_end; k_inner++) {
+      var src0_tile: array<shmem_t, TILE_M>;
+      for (var tm = 0u; tm < TILE_M; tm++) {
+        let src0_m = local_m * TILE_M + tm;
+        let src0_idx = k_inner + src0_m * TILE_K;
+        src0_tile[tm] = shmem[src0_idx];
+      }
+      for (var tn = 0u; tn < TILE_N; tn++) {
+        let src1_n = local_n * TILE_N + tn;
+        let src1_idx = src1_n * TILE_K + k_inner;
+        let src1_val = shmem[TILE_SRC0_SHMEM + src1_idx];
+        for (var tm = 0u; tm < TILE_M; tm++) {
+          acc[tm][tn] += f32(src0_tile[tm]) * f32(src1_val);
+        }
+      }
+    }
+    workgroupBarrier();
+  }
+
+  for (var tn = 0u; tn < TILE_N; tn++) {
+    let global_col = output_col_base + tn;
+    if (global_col < step.tokens) {
+      for (var tm = 0u; tm < TILE_M; tm++) {
+        let global_row = output_row_base + tm;
+        if (global_row < shape.rows) {
+          let at = global_col * shape.yStride + shape.first + global_row;
+          y[at] = select(0.0, y[at], shape.add != 0u) + acc[tm][tn];
+        }
+      }
+    }
+  }
+}`;
+
+// Adapted from ONNX Runtime, onnxruntime/contrib_ops/webgpu/quantization/dp4a_matmul.wgsl.template and
+// dp4a_matmul_common.wgsl.template (https://github.com/microsoft/onnxruntime, commit 3756d4dc, 2026-09-26).
+// Copyright (c) Microsoft Corporation. MIT License.
+// A is the activations (M = the tokens), B the weights (N = the rows): "a_global" is a token and "b_global" a row.
+const sdp8ai = /* wgsl */ `
+// Scaled dot product of 8 packed integers.
+fn SDP8AI(a1: vec4<u32>, b1: vec4<u32>, a2: vec4<u32>, b2: vec4<u32>, scale: f32) -> f32 {
+  var local_sum = dot4I8Packed(a1[0], b1[0]);
+  local_sum += dot4I8Packed(a1[1], b1[1]);
+  local_sum += dot4I8Packed(a1[2], b1[2]);
+  local_sum += dot4I8Packed(a1[3], b1[3]);
+  local_sum += dot4I8Packed(a2[0], b2[0]);
+  local_sum += dot4I8Packed(a2[1], b2[1]);
+  local_sum += dot4I8Packed(a2[2], b2[2]);
+  local_sum += dot4I8Packed(a2[3], b2[3]);
+  return f32(local_sum) * scale;
+}`;
+// ORT's step 2, one line a row of the subtile: from the workgroup's memory, or from the lanes of a subgroup of 16
+const dp4aLines = (subgroup) => Array.from({ length: 16 }, (_, i) => `    lane_output${(i >> 2) + 1}[${i & 3}] += ` + (subgroup
+  ? `SDP8AI(own_a0, subgroupShuffle(own_b0, ${i}u), own_a1, subgroupShuffle(own_b1, ${i}u), subgroupShuffle(own_scale_b, ${i}u) * own_scale_a);`
+  : `SDP8AI(own_a0, tile_B[0][base_B + ${i}u], own_a1, tile_B[1][base_B + ${i}u], own_scale_a * scale_B[base_B + ${i}u]);`)).join("\n");
+export const dp4a = (subgroups) => /* wgsl */ `requires packed_4x8_integer_dot_product;
+${subgroups ? "enable subgroups;\n" : ""}
+struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
+${STEP}
+@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>
+@group(0) @binding(1) var<storage, read> scales_b: array<f32>;
+@group(0) @binding(2) var<storage, read> a: array<vec4<u32>>;        // the quantized activations (QUANTIZE's xq)
+@group(0) @binding(3) var<storage, read_write> y: array<f32>;
+@group(0) @binding(4) var<uniform> shape: Shape;
+@group(0) @binding(5) var<uniform> step: Step;
+@group(0) @binding(6) var<storage, read> scales_a: array<f32>;       // QUANTIZE's xs: a scale a token and group of 32
+${sdp8ai}
+
+const tile_size = 64u;
+const subtile_size = 16u;
+const tile_size_k_vec = 2u;
+
+// Shared memory
+var<workgroup> tile_A: array<array<vec4<u32>, tile_size>, tile_size_k_vec>;  // 64 x 32
+var<workgroup> scale_A: array<f32, tile_size>;                                // 64 x 1
+var<workgroup> tile_B: array<array<vec4<u32>, tile_size>, tile_size_k_vec>;  // 64 x 32
+var<workgroup> scale_B: array<f32, tile_size>;                                // 64 x 1
+
+fn loadSHMA(a_global_base: u32, kidx_v: u32, row: u32, col: u32) {
+  let a_global = a_global_base + row;
+  if (a_global >= step.tokens) {
+    return;
+  }
+  tile_A[col][row] = a[a_global * (shape.xStride / 16u) + kidx_v + col];
+  if (col == 0u) {
+    // kidx_v covers 16 values of k: a group of 32 is two
+    scale_A[row] = scales_a[a_global * (shape.xStride / 32u) + kidx_v / 2u];
+  }
+}
+fn loadSHMB(b_global_base: u32, kidx_v: u32, row: u32, col: u32) {
+  let b_global = b_global_base + row;
+  if (b_global >= shape.rows) {
+    return;
+  }
+  tile_B[col][row] = b[b_global * (shape.words / 4u) + kidx_v + col];
+  if (col == 0u) {
+    scale_B[row] = scales_b[b_global * shape.perRow + kidx_v / 2u];
+  }
+}
+
+@compute @workgroup_size(256)
+fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg: vec3<u32>,
+        @builtin(local_invocation_index) local_idx: u32${subgroups ? `,
+        @builtin(subgroup_size) sg_size: u32, @builtin(subgroup_invocation_id) sg_id: u32` : ""}) {
+  let num_M_tile = (step.tokens + tile_size - 1u) / tile_size;
+  let num_N_tile = (shape.rows + tile_size - 1u) / tile_size;
+  let workgroup_idx = wg_id.y * num_wg.x + wg_id.x;
+  if (workgroup_idx >= num_M_tile * num_N_tile) {
+    return;
+  }
+  // During the load phase we use all 256 threads to load 64 rows of A/B.
+  // For each row we load tile_size_k_vec (2) vectorized elements, which are 32 elements of K.
+  let a_global_base = (workgroup_idx / num_N_tile) * tile_size;
+  let b_global_base = (workgroup_idx % num_N_tile) * tile_size;
+  let load_AorB = local_idx / 128u;
+  let load_row = (local_idx % 128u) / 2u;
+  let load_col = local_idx % 2u;
+
+  // During the compute phase, we have the 64x64 tile split into subtiles of 16x16. We have a grid of 4x4 subtiles.
+  let subtile_id = local_idx / subtile_size;
+  let subtile_idx = subtile_id / 4u;
+  let subtile_idy = subtile_id % 4u;
+  let base_A = subtile_idx * 16u;
+  let base_B = subtile_idy * 16u;
+  // For each subtile we have 16 threads assigned.
+  let a_idx = local_idx % subtile_size;
+
+  var lane_output1: vec4<f32>;
+  var lane_output2: vec4<f32>;
+  var lane_output3: vec4<f32>;
+  var lane_output4: vec4<f32>;
+  // K's vectorization is 16 items per index; tile_size_k_vec (2) is the k tile of 32 in it.
+  let K16 = shape.words / 4u;
+  for (var kidx_v = 0u; kidx_v < K16; kidx_v += tile_size_k_vec) {
+    // Load Phase: Populate shared memory for the workgroup.
+    if (load_AorB == 0u) {
+      loadSHMA(a_global_base, kidx_v, load_row, load_col);
+    } else {
+      loadSHMB(b_global_base, kidx_v, load_row, load_col);
+    }
+    workgroupBarrier();
+
+    // Compute phase: Perform matmul for this subtile 16 x 32 x 16.
+    // Step 1: Load from shared memory into registers across entire subgroup.
+    let own_a0: vec4<u32> = tile_A[0][base_A + a_idx];
+    let own_a1: vec4<u32> = tile_A[1][base_A + a_idx];
+    let own_scale_a: f32 = scale_A[base_A + a_idx];
+${subgroups ? `    if (sg_size == 16u) {
+      let own_b0: vec4<u32> = tile_B[0][base_B + sg_id];
+      let own_b1: vec4<u32> = tile_B[1][base_B + sg_id];
+      let own_scale_b: f32 = scale_B[base_B + sg_id];
+      // Step 2: Access registers across the subgroup using subgroupShuffle and perform the matmul.
+${dp4aLines(true).replace(/^/gm, "  ")}
+    } else {
+      // Code for other subgroup sizes, simply doesn't use subgroups at all.
+${dp4aLines(false).replace(/^/gm, "  ")}
+    }` : `    // Relies on reads from single location tile_B[][base_B + col] by all being optimized by the hardware.
+${dp4aLines(false)}`}
+    workgroupBarrier();
+  }
+  let a_global = a_global_base + base_A + a_idx;
+  let b_global = b_global_base + base_B;
+  if (a_global < step.tokens) {
+    let outputs = array<vec4<f32>, 4>(lane_output1, lane_output2, lane_output3, lane_output4);
+    for (var i = 0u; i < 16u; i++) {
+      if (b_global + i < shape.rows) {
+        let at = a_global * shape.yStride + shape.first + b_global + i;
+        y[at] = select(0.0, y[at], shape.add != 0u) + outputs[i / 4u][i % 4u];
+      }
+    }
+  }
+}`;
+
+// The activations of the packed shaders, as the CPU's quantize_x makes them (kernels/kernel.ts): per token and group
+// of 32, the scale is the largest |value| / 127 and a value round(value × (1 / scale)) (half to even), clamped to
+// ±127, four to a u32 with the first in the lowest byte. One thread a group; the tokens are the dispatch's y. x holds
+// the tokens xStride floats apart, xq the same bytes apart and xs the scales xStride / 32 floats apart.
+export const QUANTIZE = /* wgsl */ `
+struct Quantize { n: u32, xStride: u32, unused0: u32, unused1: u32 }
+${STEP}
+@group(0) @binding(0) var<storage, read> x: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> xq: array<u32>;
+@group(0) @binding(2) var<storage, read_write> xs: array<f32>;
+@group(0) @binding(3) var<uniform> quantize: Quantize;
+@group(0) @binding(4) var<uniform> step: Step;
+fn packed(v: vec4<i32>) -> u32 {
+  let b = bitcast<vec4<u32>>(v) & vec4<u32>(0xffu);
+  return b.x | (b.y << 8u) | (b.z << 16u) | (b.w << 24u);
+}
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  let g = id.x;
+  let token = id.y;
+  if (g >= quantize.n / ${GROUP}u || token >= step.tokens) { return; }
+  let at = (token * quantize.xStride) / 4u + g * 8u;
+  var largest = 0.0;
+  for (var k = 0u; k < 8u; k++) {
+    let v = abs(x[at + k]);
+    largest = max(largest, max(max(v.x, v.y), max(v.z, v.w)));
+  }
+  let scale = largest / 127.0;
+  let inverse = select(0.0, 1.0 / scale, scale > 0.0);
+  for (var k = 0u; k < 8u; k++) {
+    xq[at + k] = packed(clamp(vec4<i32>(round(x[at + k] * inverse)), vec4<i32>(-127), vec4<i32>(127)));
+  }
+  xs[token * (quantize.xStride / ${GROUP}u) + g] = scale;
+}`;
+
 // the most likely token: the first index of the largest logit, in one workgroup, so that only 4 bytes come back
 export const ARGMAX = /* wgsl */ `
 @group(0) @binding(0) var<storage, read> logits: array<f32>;

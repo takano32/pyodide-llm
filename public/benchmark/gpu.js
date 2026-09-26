@@ -3,7 +3,8 @@
 // a time and shows what comes back, and ends the worker after the section; nothing here touches the model page.
 //
 //   { step: "info" }                      the adapter, its limits and features, WGSL's language features
-//   { step: "check" }                     the two int8 shaders against JavaScript on a small matrix
+//   { step: "check" }                     the int8 shaders against JavaScript on small matrices (T146: the tiled ones
+//                                         too, with their edges)
 //   { step: "bandwidth", shape }          GB/s of one int8 matrix times a vector, both shaders, and the CPU's
 //   { step: "token", model, kind, fused, sample }
 //                                         a whole token's work of a model's shapes (every layer's matrices, a few small
@@ -14,7 +15,8 @@
 //   { step: "overhead" }                  what a token costs besides the weights: 240 empty dispatches, a submission
 //                                         with and without waiting for it, reading back 4 bytes and all the logits
 //   { step: "prompt", counts }            the tokens of a prompt through the matrices all at once (matrix × matrix,
-//                                         T135's first candidate), on the made-up model of the CPU section's shape
+//                                         T135's first candidate), on the made-up model of the CPU section's shape,
+//                                         by T135's batched shader and T146's tiled ones, with the GFLOPS of each
 //   { step: "bridge", memory, rounds }    the round trip of a worker that waits with Atomics.wait and this one, which
 //                                         answers with Atomics.waitAsync (stage 1's design), in microseconds
 //
@@ -61,8 +63,10 @@ async function gpu() {
   if (!adapter) throw new Error("navigator.gpu gave no adapter");
   fallback = Boolean(adapter.info?.isFallbackAdapter ?? adapter.isFallbackAdapter);
   packed = navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product") ?? false;
-  // as much of a buffer and of a binding as the adapter allows: the weights are the point
+  // as much of a buffer and of a binding as the adapter allows: the weights are the point. T146's tiled shaders use
+  // shader-f16 and subgroups where the adapter has them (asked for only then: a device refuses a feature it lacks)
   device = await adapter.requestDevice({
+    requiredFeatures: ["shader-f16", "subgroups"].filter((name) => adapter.features.has(name)),
     requiredLimits: {
       maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
       maxBufferSize: adapter.limits.maxBufferSize,
@@ -83,6 +87,11 @@ async function info() {
     maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
     maxBufferSize: adapter.limits.maxBufferSize,
     maxComputeWorkgroupsPerDimension: adapter.limits.maxComputeWorkgroupsPerDimension,
+    // what a tiled shader (T146) may take: the device's, though the tiles keep to the defaults (16 KiB, 256)
+    maxComputeWorkgroupStorageSize: adapter.limits.maxComputeWorkgroupStorageSize,
+    maxComputeInvocationsPerWorkgroup: adapter.limits.maxComputeInvocationsPerWorkgroup,
+    // the DP4A shader's subgroup path runs only where a subgroup is 16 wide (SwiftShader's is not: CI never runs it)
+    subgroupSizes: adapter.info?.subgroupMinSize ? [adapter.info.subgroupMinSize, adapter.info.subgroupMaxSize] : null,
     features: [...adapter.features].sort(),
     wgsl: [...(navigator.gpu.wgslLanguageFeatures ?? [])].sort(),
     packed,
@@ -116,14 +125,62 @@ function pipelinesFor() {
   return pipelines;
 }
 
-// A matrix of [rows, n] on the GPU, cut into chunks of rows that each fit a binding. Returns the dispatches that
-// multiply it by x into y: [pipeline, bind group, workgroups x, workgroups y, workgroups z] each. kind "batched": by
-// io.tokens vectors at once (x and y hold them io.xStride and io.yStride floats apart)
-function matrix([rows, n], io, kind = "widen", data) {
+// T146: the shaders of a prompt: T135's batched one, then the tiled ones of shaders.js: llama.cpp's register tiles
+// (f16 in the workgroup's memory where shader-f16 is, else f32) in both shapes of REG_TILES, and ONNX Runtime's DP4A
+// (where the packed int8 dot is), with its subgroup path where subgroups are. A shape past the device's workgroup
+// memory or threads is not made (none says why). A tiled shader's pipeline is made when first asked for, asynchronously
+// and in an error scope: one this device refuses rejects there, and only its own rows say so
+const tiledPipelines = new Map();
+function promptShaders() {
+  const half = device.features.has("shader-f16"), subgroups = device.features.has("subgroups");
+  const { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup: threads } = device.limits;
+  const past = ({ threads: wanted }, bytes) => (wanted > threads ? `${wanted} threads, the device ${threads}`
+    : bytes > memory ? `${bytes} bytes of workgroup memory, the device ${memory}` : undefined);
+  const shaders = [{ name: "batched (T135)", kind: "batched" }];
+  for (const tile of WGSL.REG_TILES) {
+    const shape = WGSL.regTileShape(tile);
+    shaders.push({ name: `llama.cpp tiles ${shape.rows}×${shape.tokens}, ${half ? "f16" : "f32"}`, tile: shape, packed: false, half,
+      code: WGSL.regTile(half), constants: { WORKGROUP_SIZE_M: tile.m, WORKGROUP_SIZE_N: tile.n },
+      none: past(shape, WGSL.regTileBytes(tile, half)) });
+  }
+  const dp4aNone = packed ? past(WGSL.DP4A_SHAPE, 4608) : "no packed int8 dot here";
+  shaders.push({ name: "ORT DP4A 64×64", tile: WGSL.DP4A_SHAPE, packed: true, code: WGSL.dp4a(false), none: dp4aNone });
+  if (subgroups) shaders.push({ name: "ORT DP4A 64×64, subgroups", tile: WGSL.DP4A_SHAPE, packed: true, code: WGSL.dp4a(true), none: dp4aNone });
+  return shaders;
+}
+// what matrix() takes for a shader: "batched", or { pipeline, tile, packed } of a tiled one
+async function kindOf(shader) {
+  if (!shader.tile) return shader.kind;
+  if (!tiledPipelines.has(shader.name)) {
+    tiledPipelines.set(shader.name, validated(() => device.createComputePipelineAsync({ layout: "auto",
+      compute: { module: device.createShaderModule({ code: shader.code }), entryPoint: "main", constants: shader.constants } })));
+  }
+  return { pipeline: await tiledPipelines.get(shader.name), tile: shader.tile, packed: shader.packed };
+}
+// the activations of the packed tiled shaders, quantized on the GPU (shaders.js's QUANTIZE): the first n values of
+// each of io's tokens, from io.x into io.xq and io.xs. One thread a group of 32, the tokens along y
+let quantizePipeline;
+function quantizer(io, n) {
+  quantizePipeline ??= device.createComputePipeline({ layout: "auto", compute: { module: device.createShaderModule({ code: WGSL.QUANTIZE }), entryPoint: "main" } });
+  const shape = buffer(16, UNIFORM | COPY_DST);
+  device.queue.writeBuffer(shape, 0, new Uint32Array([n, io.xStride, 0, 0]));
+  const group = device.createBindGroup({ layout: quantizePipeline.getBindGroupLayout(0),
+    entries: [io.x, io.xq, io.xs, shape, io.step].map((b, binding) => ({ binding, resource: { buffer: b } })) });
+  return { dispatch: [quantizePipeline, group, Math.ceil(n / GROUP / 64), io.tokens, 1], owned: [shape] };
+}
+
+// A matrix of [rows, n] on the GPU, cut into chunks of rows that each fit a binding (chunk: rows a chunk, for the
+// checks; else as many as fit). Returns the dispatches that multiply it by x into y: [pipeline, bind group, workgroups
+// x, workgroups y, workgroups z] each. kind "batched" or a tiled one (kindOf): by io.tokens vectors at once (x and y
+// hold them io.xStride and io.yStride floats apart); add: the products added to what y holds (the residual stream of
+// the model's layers), for the checks
+function matrix([rows, n], io, kind = "widen", data, { add = false, chunk } = {}) {
+  const tiled = typeof kind === "object";
   const { widen, packed: packedPipeline, batched } = pipelinesFor();
-  const pipeline = { widen, packed: packedPipeline, batched }[kind];
+  const pipeline = tiled ? kind.pipeline : { widen, packed: packedPipeline, batched }[kind];
+  const quantized = tiled ? kind.packed : kind === "packed";
   const words = n / 4, perRow = n / GROUP, rowBytes = n;
-  const most = Math.max(1, Math.floor(Math.min(device.limits.maxStorageBufferBindingSize, device.limits.maxBufferSize) / rowBytes));
+  const most = chunk ?? Math.max(1, Math.floor(Math.min(device.limits.maxStorageBufferBindingSize, device.limits.maxBufferSize) / rowBytes));
   const dispatches = [], owned = [];
   for (let first = 0; first < rows; first += most) {
     const count = Math.min(most, rows - first);
@@ -136,31 +193,55 @@ function matrix([rows, n], io, kind = "widen", data) {
       fill(w, count * rowBytes);
       device.queue.writeBuffer(s, 0, floats(count * perRow, 0.002));
     }
-    // the batched shader's shape goes on with the strides of the tokens (and "add" off), the others read four
-    device.queue.writeBuffer(shape, 0, new Uint32Array([count, words, perRow, first, io.xStride ?? 0, io.yStride ?? 0, 0, 0]));
+    // the batched and tiled shaders' shape goes on with the strides of the tokens and "add", the others read four
+    device.queue.writeBuffer(shape, 0, new Uint32Array([count, words, perRow, first, io.xStride ?? 0, io.yStride ?? 0, add ? 1 : 0, 0]));
     const entries = [{ binding: 0, resource: { buffer: w } }, { binding: 1, resource: { buffer: s } },
-      { binding: 2, resource: { buffer: kind === "packed" ? io.xq : io.x } }, { binding: 3, resource: { buffer: io.y } },
+      { binding: 2, resource: { buffer: quantized ? io.xq : io.x } }, { binding: 3, resource: { buffer: io.y } },
       { binding: 4, resource: { buffer: shape } }];
     if (kind === "packed") entries.push({ binding: 5, resource: { buffer: io.xs } });
-    if (kind === "batched") entries.push({ binding: 5, resource: { buffer: io.step } });
-    const across = Math.min(count, device.limits.maxComputeWorkgroupsPerDimension);
-    dispatches.push([pipeline, device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries }), across,
-      Math.ceil(count / across), kind === "batched" ? Math.ceil(io.tokens / TILE) : 1]);
+    if (kind === "batched" || tiled) entries.push({ binding: 5, resource: { buffer: io.step } });
+    if (tiled && quantized) entries.push({ binding: 6, resource: { buffer: io.xs } });
+    const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
+    if (tiled) {
+      // the tiles numbered over x, then y (as both sources number them: the rows' tiles first, then the tokens')
+      const tiles = Math.ceil(count / kind.tile.rows) * Math.ceil(io.tokens / kind.tile.tokens);
+      const across = Math.min(tiles, device.limits.maxComputeWorkgroupsPerDimension);
+      dispatches.push([pipeline, group, across, Math.ceil(tiles / across)]);
+    } else {
+      const across = Math.min(count, device.limits.maxComputeWorkgroupsPerDimension);
+      dispatches.push([pipeline, group, across, Math.ceil(count / across), kind === "batched" ? Math.ceil(io.tokens / TILE) : 1]);
+    }
   }
   return { dispatches, owned, bytes: matrixBytes([rows, n]) };
 }
-// the vectors every matrix reads and writes: x of the longest row, y of the most rows; tokens of each for "batched"
+// the vectors every matrix reads and writes: x of the longest row, y of the most rows, tokens of each (the batched and
+// tiled shaders take several); xq and xs: x quantized, 8 bits a value and a float32 scale a group of 32, of every token
 function vectors(longest, most, tokens = 1) {
-  const io = { x: buffer(tokens * longest * 4), xq: buffer(longest), xs: buffer((longest / GROUP) * 4),
+  const io = { x: buffer(tokens * longest * 4), xq: buffer(tokens * longest, STORAGE | COPY_DST | COPY_SRC),
+               xs: buffer(tokens * (longest / GROUP) * 4, STORAGE | COPY_DST | COPY_SRC),
                y: buffer(tokens * most * 4 + 16, STORAGE | COPY_DST | COPY_SRC), tokens, xStride: longest, yStride: most,
                step: buffer(16, UNIFORM | COPY_DST) };
-  device.queue.writeBuffer(io.step, 0, new Uint32Array([tokens, 0, 0, 0]));  // the batched shader's tokens
+  device.queue.writeBuffer(io.step, 0, new Uint32Array([tokens, 0, 0, 0]));  // the batched and tiled shaders' tokens
   device.queue.writeBuffer(io.x, 0, floats(tokens * longest, 2));
-  fill(io.xq, longest);
-  device.queue.writeBuffer(io.xs, 0, floats(longest / GROUP, 0.1));
+  fill(io.xq, tokens * longest);
+  device.queue.writeBuffer(io.xs, 0, floats(tokens * (longest / GROUP), 0.1));
   return io;
 }
 const destroyVectors = (io) => [io.x, io.xq, io.xs, io.y, io.step].forEach((b) => b.destroy());
+// x (groups of GROUP values) quantized as the CPU's quantize_x does it: the largest |value| / 127, round half to even
+function quantized(x) {
+  const xq = new Int8Array(x.length), xs = new Float32Array(x.length / GROUP);
+  for (let g = 0; g < xs.length; g++) {
+    let largest = 0;
+    for (let i = 0; i < GROUP; i++) largest = Math.max(largest, Math.abs(x[g * GROUP + i]));
+    xs[g] = Math.fround(largest / 127);
+    for (let i = 0; i < GROUP; i++) {
+      const v = x[g * GROUP + i] / xs[g], r = Math.round(v);
+      xq[g * GROUP + i] = Math.abs(v - Math.trunc(v)) === 0.5 && r % 2 ? r - 1 : r;
+    }
+  }
+  return { xq, xs };
+}
 function run(pass, [pipeline, group, x, y, z = 1]) {
   pass.setPipeline(pipeline);
   if (group) pass.setBindGroup(0, group);  // none for the empty dispatch
@@ -201,25 +282,15 @@ async function median(measure, times = 10, warm = 3) {
 }
 
 // ---- check: every shader against JavaScript: the two of a matrix × vector on 300 rows of 512 (rows that are not a
-// power of two), the batched one on the same with 11 tokens (a tile and a part of one), the argmax on logits of
-// Llama 3's vocabulary and on a tie (the first of the largest, as JavaScript finds it)
+// power of two), the batched one on the same with 11 tokens (a tile and a part of one), the tiled ones (checkTiled),
+// the argmax on logits of Llama 3's vocabulary and on a tie (the first of the largest, as JavaScript finds it)
 async function check() {
   await gpu();
   const rows = 300, n = 512, words = n / 4;
   const w = new Uint8Array(rows * n).map(() => (Math.random() * 256) | 0), s = floats(rows * n / GROUP, 0.01);
   const io = vectors(n, rows), x = floats(n, 2);
   device.queue.writeBuffer(io.x, 0, x);
-  // x quantized as the CPU's quantize_x does it (largest |value| / 127, round half to even)
-  const xq = new Int8Array(n), xs = new Float32Array(n / GROUP);
-  for (let g = 0; g < n / GROUP; g++) {
-    let largest = 0;
-    for (let i = 0; i < GROUP; i++) largest = Math.max(largest, Math.abs(x[g * GROUP + i]));
-    xs[g] = Math.fround(largest / 127);
-    for (let i = 0; i < GROUP; i++) {
-      const v = x[g * GROUP + i] / xs[g], r = Math.round(v);
-      xq[g * GROUP + i] = Math.abs(v - Math.trunc(v)) === 0.5 && r % 2 ? r - 1 : r;
-    }
-  }
+  const { xq, xs } = quantized(x);
   device.queue.writeBuffer(io.xq, 0, new Uint8Array(xq.buffer));
   device.queue.writeBuffer(io.xs, 0, xs);
   const signed = new Int8Array(w.buffer);
@@ -251,8 +322,94 @@ async function check() {
   }
   destroyVectors(io);
   verdicts.batched = await checkBatched(w, s, rows, n);
+  Object.assign(verdicts, await checkTiled());
   verdicts.argmax = await checkArgmax();
   return verdicts;
+}
+// T146: every tiled shader on 300 rows of 544 (17 groups of 32), cut into chunks of 100 rows (tiles of 32 or 64 rows
+// and a part of one each, a subtile of 16 and a part, and shape.first past 0), with 11 and 70 tokens (a part of a tile
+// of 32 or 64; two or one and a part), twice into the same y (the second added to the first: shape.add) against
+// JavaScript's product: half of y. The packed ones on what the GPU quantized, and that against JavaScript's
+// quantize_x: a scale may differ in its last bits (WGSL's division is not rounded exactly) and a value then by 1, a
+// wrong index by far more. The products are held to WORST_TILED of the sum of the |products| of the row and token:
+// what a float32 sum in another order may differ by is 544 × 2^-24 = 3.2e-5 of it at most, and a wrong index, scale or
+// group is off by about |value| / |sum of |products|| = 1 / sqrt(544) = 4e-2. The f16 tiles hold a weight times its
+// scale and an activation as halves: JavaScript rounds them the same (Math.f16round), or where it cannot, the products
+// are held to WORST_HALF (two roundings of 2^-11 each: 1e-3 of the sum at most)
+const WORST_TILED = 1e-4, WORST_HALF = 2e-3;
+async function checkTiled() {
+  const rows = 300, n = 544, perRow = n / GROUP;
+  const w = new Uint8Array(rows * n).map(() => (Math.random() * 256) | 0), s = floats(rows * perRow, 0.01);
+  const signed = new Int8Array(w.buffer);
+  const verdicts = {};
+  for (const shader of promptShaders().filter((one) => one.tile && !one.none)) {
+    try {
+      const kind = await kindOf(shader);
+      let worst = 0, far = false, apart = 0, values = 0;
+      const half = shader.half ? Math.f16round : null, line = shader.half && !half ? WORST_HALF : WORST_TILED;
+      for (const tokens of [11, 70]) {
+        const io = vectors(n, rows, tokens), x = floats(tokens * n, 2);
+        device.queue.writeBuffer(io.x, 0, x);
+        const owned = [];
+        const [got, xq, xs] = await validated(async () => {
+          const made = [matrix([rows, n], io, kind, { w, s }, { chunk: 100 }), matrix([rows, n], io, kind, { w, s }, { chunk: 100, add: true })];
+          const quantize = shader.packed ? quantizer(io, n) : null;
+          owned.push(...made.flatMap((m) => m.owned), ...(quantize?.owned ?? []));
+          const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
+          if (quantize) run(pass, quantize.dispatch);
+          made.forEach((m) => m.dispatches.forEach((d) => run(pass, d)));
+          pass.end();
+          const y = new Float32Array(await readBack(encoder, io.y, tokens * rows * 4));
+          if (!quantize) return [y];
+          return [y, new Int8Array(await readBack(device.createCommandEncoder(), io.xq, tokens * n)),
+            new Float32Array(await readBack(device.createCommandEncoder(), io.xs, tokens * perRow * 4))];
+        }).finally(() => {
+          owned.forEach((b) => b.destroy());
+          destroyVectors(io);
+        });
+        if (xq) {
+          const mine = quantized(x);
+          far ||= xs.some((scale, i) => Math.abs(scale - mine.xs[i]) > 1e-6 * mine.xs[i]);
+          for (let i = 0; i < xq.length; i++) {
+            far ||= Math.abs(xq[i] - mine.xq[i]) > 1;
+            apart += xq[i] !== mine.xq[i];
+          }
+          values += xq.length;
+        }
+        for (let t = 0; t < tokens; t++) {
+          for (let r = 0; r < rows; r++) {
+            let want = 0, size = 0;
+            for (let g = 0; g < perRow; g++) {
+              const scale = s[r * perRow + g] * (xs ? xs[t * perRow + g] : 1);
+              for (let i = g * GROUP; i < (g + 1) * GROUP; i++) {
+                const product = half ? half(Math.fround(signed[r * n + i] * s[r * perRow + g])) * half(x[t * n + i])
+                  : signed[r * n + i] * (xq ? xq[t * n + i] : x[t * n + i]) * scale;
+                want += product;
+                size += Math.abs(product);
+              }
+            }
+            worst = Math.max(worst, Math.abs(got[t * rows + r] / 2 - want) / size);
+          }
+        }
+      }
+      // the quantized values no more than 1 apart, and apart in no more than 1 of 100
+      const quantizing = values ? { apart: apart / values, far } : {};
+      verdicts[shader.name] = { worstRelative: worst, ok: worst < line && !far && apart <= 0.01 * values, ...quantizing };
+    } catch (error) {
+      verdicts[shader.name] = { worstRelative: NaN, ok: false, error: String(error?.message ?? error) };
+    }
+  }
+  return verdicts;
+}
+// what fn does on the GPU, a validation error of it thrown (a pipeline or a bind group the device refused)
+async function validated(fn) {
+  device.pushErrorScope("validation");
+  try {
+    return await fn();
+  } finally {
+    const invalid = await device.popErrorScope();
+    if (invalid) throw new Error(invalid.message);
+  }
 }
 async function checkBatched(w, s, rows, n) {
   const tokens = 11, io = vectors(n, rows, tokens), x = floats(tokens * n, 2);
@@ -444,35 +601,65 @@ async function overhead() {
 
 // ---- a prompt: its tokens through the matrices of the CPU section's made-up model (two layers of Llama 3.2 1B's
 // width, no classifier: a prompt's tokens make no logits) all at once, count tokens at a time, with the small steps
-// once a layer as for one token. ms per token, against the same weights one token at a time
+// once a layer as for one token. ms per token, for every shader of promptShaders() (T146: the tiled ones, whose rows
+// say none or error on their own where they cannot run), and the GFLOPS of it: a multiply and an add for each weight
+// and token. A packed shader's input is quantized first where a matrix reads an input of its own (q: the norm's; o:
+// the attention's; gate: the norm's; down: SwiGLU's), as the model's layers would
+const NEW_INPUT = new Set([0, 3, 4, 6]);
 async function prompt(counts = [1, 16, 64]) {
   await gpu();
-  const model = PROMPT_MODEL, shapes = [...Array(model.layers)].flatMap(() => layerMatrices(model));
+  // a fallback adapter measures one count, the block of 16 the CPU also takes: each shader and count takes 10 to 100 s
+  // there (SwiftShader on the development machine, T146: 580 s for all three), and its times are no GPU's anyway
+  if (fallback) counts = counts.filter((tokens) => tokens === 16).slice(0, 1);
+  const model = PROMPT_MODEL, perLayer = layerMatrices(model), shapes = [...Array(model.layers)].flatMap(() => perLayer);
+  const weights = shapes.reduce((sum, [rows, n]) => sum + rows * n, 0);
   const longest = Math.max(model.dim, model.hidden), most = model.hidden;
   const smallPipeline = pipelinesFor().small, a = buffer(model.dim * 4), b = buffer(model.dim * 4);
   const smallGroup = device.createBindGroup({ layout: smallPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: a } }, { binding: 1, resource: { buffer: b } }] });
-  const rows = [];
-  for (const tokens of counts) {
-    const io = vectors(longest, most, tokens);
-    const made = shapes.map((shape) => matrix(shape, io, "batched"));
-    await device.queue.onSubmittedWorkDone();
-    const once = async () => {
-      const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
-      made.forEach((m, i) => {
-        m.dispatches.forEach((d) => run(pass, d));
-        if (i % 7 === 6) for (let j = 0; j < SMALL_PER_LAYER; j++) run(pass, [smallPipeline, smallGroup, 1, 1]);
+  const measure = async (kind, tokens) => {
+    const io = vectors(longest, most, tokens), owned = [];
+    try {
+      return await validated(async () => {
+        const made = shapes.map((shape) => matrix(shape, io, kind));
+        const quantize = kind.packed ? new Map(perLayer.map(([, n]) => [n, quantizer(io, n)])) : null;
+        owned.push(...made.flatMap((m) => m.owned), ...[...(quantize?.values() ?? [])].flatMap((q) => q.owned));
+        await device.queue.onSubmittedWorkDone();
+        const once = async () => {
+          const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
+          made.forEach((m, i) => {
+            if (quantize && NEW_INPUT.has(i % perLayer.length)) run(pass, quantize.get(shapes[i][1]).dispatch);
+            m.dispatches.forEach((d) => run(pass, d));
+            if (i % perLayer.length === perLayer.length - 1) for (let j = 0; j < SMALL_PER_LAYER; j++) run(pass, [smallPipeline, smallGroup, 1, 1]);
+          });
+          pass.end();
+          device.queue.submit([encoder.finish()]);
+          await device.queue.onSubmittedWorkDone();
+        };
+        const ms = await median(once, 5, 2);
+        return { tokens, ms, msPerToken: ms / tokens, GFLOPS: (2 * weights * tokens) / (ms / 1000) / 1e9 };
       });
-      pass.end();
-      device.queue.submit([encoder.finish()]);
-      await device.queue.onSubmittedWorkDone();
-    };
-    const ms = await median(once, 5, 2);
-    rows.push({ tokens, ms, msPerToken: ms / tokens, GB: made.reduce((n, m) => n + m.bytes, 0) / 1e9 });
-    made.forEach((m) => m.owned.forEach((x) => x.destroy()));
-    destroyVectors(io);
+    } finally {
+      owned.forEach((x) => x.destroy());
+      destroyVectors(io);
+      // the page stops a section that says nothing for 5 minutes, and a fallback adapter takes minutes for all of these
+      postMessage({ alive: true });
+    }
+  };
+  const rows = [];
+  for (const shader of promptShaders()) {
+    if (shader.none) {
+      rows.push({ shader: shader.name, none: shader.none });
+      continue;
+    }
+    try {
+      const kind = await kindOf(shader);
+      for (const tokens of counts) rows.push({ shader: shader.name, ...await measure(kind, tokens) });
+    } catch (error) {
+      rows.push({ shader: shader.name, error: String(error?.message ?? error) });
+    }
   }
   [a, b].forEach((x) => x.destroy());
-  return { rows, layers: model.layers };
+  return { rows, layers: model.layers, weights, GB: shapes.reduce((sum, shape) => sum + matrixBytes(shape), 0) / 1e9 };
 }
 
 // ---- the bridge: a worker that waits (Atomics.wait, as the model's worker would while Python calls forward())

@@ -3,9 +3,10 @@
 // page says so and goes on. The runners are not the owner's devices, so the numbers only show that the page works;
 // Playwright's Firefox runs under a debugger and its numbers are not Firefox's (AGENTS.md). Meant for CI.
 //
-//   node tests/bench-check.mjs [url of a site | --dist] [engine ...] [--model id] [--size MiB]
+//   node tests/bench-check.mjs [url of a site | --dist] [engine ...] [--model id] [--size MiB] [--run sections]
 //     engines: chromium firefox webkit chrome msedge (default: the first three)
 //     --dist serves dist/ (npm run build) itself, as tests/screenshots.mjs does: a branch before it goes out
+//     --run the page's ?run= (default all; "gpu" alone: the GPU section takes minutes on SwiftShader, T146)
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
@@ -16,7 +17,7 @@ const option = (name, value) => {
   const at = args.indexOf(name);
   return at >= 0 ? args.splice(at, 2)[1] : value;
 };
-const model = option("--model", "tiny-lm"), size = option("--size", "256");
+const model = option("--model", "tiny-lm"), size = option("--size", "256"), sections = option("--run", "all");
 const dist = args.includes("--dist") ? args.splice(args.indexOf("--dist"), 1) : null;
 let [site = "https://takano32.github.io/pyodide-llm/", ...engines] = dist ? [undefined, ...args] : args;
 let server;
@@ -59,7 +60,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error.message)));
   try {
-    await page.goto(`${site}benchmark/?run=all&model=${model}&size=${size}`);
+    await page.goto(`${site}benchmark/?run=${sections}&model=${model}&size=${size}`);
     // the first visit reloads once, when the service worker takes the page over (T93): the wait starts again
     for (;;) {
       try {
@@ -78,7 +79,9 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
       if (result.status === "wrong" || (result.status === "error" && OURS.includes(name))) failed = true;
     }
     // the shaders against JavaScript are the GPU section's check of its own results: with an adapter they must run
-    if (results.gpu?.data?.steps?.some((s) => s.name === "the shaders against JavaScript" && s.error)) failed = true;
+    // (and every tiled shader of T146 among them: one the runner's adapter could not make fails here too)
+    const check = results.gpu?.data?.steps?.find((s) => s.name === "the shaders against JavaScript");
+    if (check?.error || Object.values(check?.result ?? {}).some((v) => v.error)) failed = true;
   } catch (error) {
     console.log(`failed: ${String(error.message).split("\n")[0]}`);
     failed = true;
