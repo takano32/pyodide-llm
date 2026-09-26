@@ -1,8 +1,9 @@
-# T137, stage 0: public/opfs-test/ in every browser the runners offer (tests/opfs-check.mjs): writes 8 MiB pieces far
-# apart into a file of the origin private file system, and reads them back. The runners' disks are not the owner's
-# devices: this checks that the page works everywhere and gives a first number; the verdict waits for the owner's
-# devices. Playwright's Firefox runs under a debugger (AGENTS.md): its numbers are not Firefox's. By hand only.
-name: OPFS check
+# /benchmark/ (T134) in every browser the runners offer (tests/bench-check.mjs): every section once, the Markdown of
+# each browser in the summary. It took the place of gpu.yml (T94) and opfs.yml (T137). The runners have no GPU and are
+# not the owner's devices: this shows that the page works everywhere (the shaders agree with JavaScript on a software
+# adapter, every piece of the file reads back right, the forward pass gives finite numbers); the speeds that count are
+# the owner's. Playwright's Firefox runs under a debugger (AGENTS.md): its numbers are not Firefox's. By hand only.
+name: Benchmark
 
 on:
   workflow_dispatch:
@@ -10,15 +11,18 @@ on:
       url:
         description: Site to check
         required: false
+      model:
+        description: The site's model the model section loads
+        default: 'tiny-lm'
       size:
-        description: MiB to write in each browser
+        description: MiB the storage section writes
         default: '256'
 
 jobs:
-  opfs:
+  bench:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -42,10 +46,10 @@ jobs:
           npm ci
           npx playwright-core install --with-deps chromium firefox webkit
 
-      - name: Check
+      - name: Run all
         shell: bash
         env:
           SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
         run: |
           echo "## ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
-          node tests/opfs-check.mjs "$SITE" ${{ matrix.browsers }} --size "${{ inputs.size || '256' }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/bench-check.mjs "$SITE" ${{ matrix.browsers }} --model "${{ inputs.model || 'tiny-lm' }}" --size "${{ inputs.size || '256' }}" | tee -a "$GITHUB_STEP_SUMMARY"

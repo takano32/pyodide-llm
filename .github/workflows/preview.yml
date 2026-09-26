@@ -45,6 +45,11 @@ jobs:
       - name: Take the screenshots
         run: node tests/screenshots.mjs screenshots
 
+      # T134: /benchmark/ of this branch, every section in Chromium (tests/bench-check.mjs serves dist/ itself)
+      - name: The benchmark page
+        shell: bash
+        run: node tests/bench-check.mjs --dist chromium --model stories260K --size 64 | tee -a "$GITHUB_STEP_SUMMARY"
+
       # a change to the service worker is tried here, on the branch, before it goes out (AGENTS.md)
       - name: Offline (T111)
         if: inputs.offline

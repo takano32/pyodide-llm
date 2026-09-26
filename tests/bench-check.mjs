@@ -1,0 +1,89 @@
+// /benchmark/ (T134) in real browsers: every section run once (?run=all), the Markdown printed, and a failure where a
+// result cannot be right. A feature a browser lacks (no WebGPU, no private file system in a worker) is no failure: the
+// page says so and goes on. The runners are not the owner's devices, so the numbers only show that the page works;
+// Playwright's Firefox runs under a debugger and its numbers are not Firefox's (AGENTS.md). Meant for CI.
+//
+//   node tests/bench-check.mjs [url of a site | --dist] [engine ...] [--model id] [--size MiB]
+//     engines: chromium firefox webkit chrome msedge (default: the first three)
+//     --dist serves dist/ (npm run build) itself, as tests/screenshots.mjs does: a branch before it goes out
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import * as playwright from "playwright-core";
+
+const args = process.argv.slice(2);
+const option = (name, value) => {
+  const at = args.indexOf(name);
+  return at >= 0 ? args.splice(at, 2)[1] : value;
+};
+const model = option("--model", "tiny-lm"), size = option("--size", "256");
+const dist = args.includes("--dist") ? args.splice(args.indexOf("--dist"), 1) : null;
+let [site = "https://takano32.github.io/pyodide-llm/", ...engines] = dist ? [undefined, ...args] : args;
+let server;
+if (dist) {
+  const base = "/pyodide-llm/", root = new URL("../dist/", import.meta.url).pathname;
+  const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
+    ".py": "text/plain", ".wasm": "application/wasm" };
+  server = http.createServer((req, res) => {
+    const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
+    let file = path.join(root, pathname.slice(base.length));
+    if (fs.existsSync(file) && fs.statSync(file).isDirectory()) file = path.join(file, "index.html");
+    if (!pathname.startsWith(base) || !fs.existsSync(file)) {
+      res.writeHead(404);
+      return res.end();
+    }
+    res.writeHead(200, { "Content-Type": types[path.extname(file)] ?? "application/octet-stream" });
+    fs.createReadStream(file).pipe(res);
+  }).listen(0);
+  site = `http://localhost:${server.address().port}${base}`;
+}
+// Chromium's WebGPU without a GPU: SwiftShader's Vulkan, where the build has it (as tests/gpu-check.mjs had it)
+const WEBGPU = ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-webgpu-adapter=swiftshader"];
+// the sections whose failure is this page's: the others depend on the runner (its GPU, its disk, its line), and what
+// they could not do is printed
+const OURS = ["device", "cpu", "model"];
+
+let failed = false;
+for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"]) {
+  const branded = ["chrome", "msedge"].includes(engine);
+  const type = branded ? playwright.chromium : playwright[engine];
+  console.log(`### ${engine}`);
+  let browser;
+  try {
+    browser = await type.launch({ ...(branded ? { channel: engine } : {}), args: branded || engine === "chromium" ? WEBGPU : [] });
+  } catch (error) {
+    console.log(`could not start: ${String(error.message).split("\n")[0]}\n`);
+    continue;
+  }
+  const page = await (await browser.newContext()).newPage();
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(String(error.message)));
+  try {
+    await page.goto(`${site}benchmark/?run=all&model=${model}&size=${size}`);
+    // the first visit reloads once, when the service worker takes the page over (T93): the wait starts again
+    for (;;) {
+      try {
+        await page.waitForFunction(() => window.__benchmark?.done, null, { timeout: 1200000 });
+        break;
+      } catch (error) {
+        if (!/destroyed|navigat|detached/i.test(String(error.message))) throw error;
+      }
+    }
+    console.log(`${browser.version()}\n`);
+    const { results, markdown } = await page.evaluate(() => window.__benchmark);
+    console.log(markdown, "\n");
+    const statuses = Object.entries(results).map(([name, result]) => `${name} ${result.status}`);
+    console.log(`sections: ${statuses.join(", ")}`);
+    for (const [name, result] of Object.entries(results)) {
+      if (result.status === "wrong" || (result.status === "error" && OURS.includes(name))) failed = true;
+    }
+  } catch (error) {
+    console.log(`failed: ${String(error.message).split("\n")[0]}`);
+    failed = true;
+  }
+  if (errors.length) console.log(`page errors: ${errors.join(" / ")}`);
+  console.log("");
+  await browser.close();
+}
+server?.close();
+process.exit(failed ? 1 : 0);
