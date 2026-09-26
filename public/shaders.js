@@ -125,13 +125,18 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) count: vec3u,
 
 // ---- T146: a matrix times the tokens of a prompt by tiles (the benchmark measures them; the model's GPU worker is to
 // take the fastest on each device, T147). BATCHED reads each weight once for TILE tokens but loads an activation for
-// every multiply-add, and 64 threads add up every sum. These two take their form from public implementations instead
-// (the owner, 2026-09-26: take the best public one rather than invent one):
+// every multiply-add, and 64 threads add up every sum. These three take their form from public implementations
+// instead (the owner, 2026-09-26: take the best public one rather than invent one):
 //   regTile(half): llama.cpp's WebGPU register tiling (mul_mat_reg_tile.wgsl with mul_mat_decls.tmpl's Q8_0 and float
 //     loaders). A workgroup owns TILE_M × WORKGROUP_SIZE_M rows by TILE_N × WORKGROUP_SIZE_N tokens; each step of
 //     TILE_K = 32 (one group) widens the step's weights (× their scale) and copies the tokens' activations into the
 //     workgroup's memory, then each thread multiplies its 4 rows by its 4 tokens with the sums in registers. half: the
-//     workgroup's memory holds f16 as llama.cpp's does (shader-f16), else f32; the sums are f32 either way.
+//     workgroup's memory holds f16 as llama.cpp's does (shader-f16); the f32 form (no shader-f16) is this project's,
+//     llama.cpp's register tiling is f16 only. The sums are f32 either way.
+//   tfjsTile: TensorFlow.js's WebGPU makeMatMulPackedVec4Source (matmul_packed_webgpu.ts): the same classic tiles
+//     (32 × 32, 8 × 8 threads, 4 × 4 a thread, 32 of the width a step), but the workgroup's memory is read as vec4 and
+//     a thread's 4 tokens are one vec4 of sums (fma), where llama.cpp reads scalars (T146's review: a Mali GPU is
+//     likely bound by the workgroup memory's reads, and on Apple llama.cpp's src0 rows 512 bytes apart share a bank).
 //   dp4a(subgroups): ONNX Runtime Web's DP4A MatMulNBits (dp4a_matmul.wgsl.template, 8 bits, no zero points): a tile
 //     of 64 tokens × 64 rows, 256 threads, 32 of the width a step as packed int8 in the workgroup's memory; each thread
 //     one token × 16 rows, a group's int sum by dot4I8Packed times the two scales, as the CPU's matmul_q8 sums them.
@@ -142,8 +147,9 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) count: vec3u,
 // scale from its own buffer; the weights are signed already (ORT's 8-bit ones are unsigned about 128); a group is 32
 // for the activations too (ORT's scales_a are per 128); the outputs are written one float at a time, with each row and
 // token checked and added to y where shape.add (a matrix cut in chunks of rows of any count, the residual stream),
-// where ORT writes a vec4 and asks N % 16 == 0 and llama.cpp a vec4 of rows; the workgroups are numbered as each
-// source numbers them, over x and then y (a dispatch's dimension holds at most 65535). The Shape, the Step and the
+// where ORT writes a vec4 and asks N % 16 == 0, llama.cpp a vec4 of rows and TensorFlow.js a vec4 of its columns; the workgroups are numbered as each
+// source numbers them, over x and then y (a dispatch's dimension holds at most 65535; TensorFlow.js dispatches in two
+// dimensions, here numbered as the others). The Shape, the Step and the
 // bindings are BATCHED's (dp4a reads x as xq and adds the activations' scales, 6).
 
 // llama.cpp's defaults (ggml-webgpu-shader-lib.hpp: WEBGPU_MUL_MAT_WG_SIZE_M/N 8, TILE_M/N 4, REG_TILE_K_QUANT 32)
@@ -155,8 +161,22 @@ export const regTileBytes = ({ m, n }, half) => 32 * 4 * (m + n) * (half ? 2 : 4
 export const DP4A_SHAPE = { rows: 64, tokens: 64, threads: 256 };
 
 // Adapted from llama.cpp, ggml/src/ggml-webgpu/wgsl-shaders/mul_mat_reg_tile.wgsl, mul_mat_decls.tmpl and
-// quant_inner_loops.tmpl (https://github.com/ggml-org/llama.cpp, commit 2145525a, 2026-09-26).
-// Copyright (c) 2023-2026 The ggml authors. MIT License.
+// quant_inner_loops.tmpl (https://github.com/ggml-org/llama.cpp, commit 2145525a, 2026-09-26), under the MIT License:
+//
+// Copyright (c) 2023-2026 The ggml authors
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+// Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+// WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+// COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 export const regTile = (half) => /* wgsl */ `${half ? "enable f16;\n" : ""}
 struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
 ${STEP}
@@ -209,7 +229,9 @@ fn init_shmem_src0(thread_id: u32, offset_m: u32, k_outer: u32) {
     }
   }
 }
-// the float loader, four at a time (llama.cpp's VEC): a token past the request or a column past the width reads 0
+// the activations' loader, four at a time: llama.cpp's VEC loader, which llama.cpp itself takes only for F32 and F16
+// weights (Q8_0 takes its SCALAR one; x here is float32 and four aligned). A token past the request or a column past
+// the width reads 0
 fn init_shmem_src1(thread_id: u32, offset_n: u32, k_outer: u32) {
   let k = shape.words * 4u;
   for (var elem_idx = thread_id * 4u; elem_idx < TILE_SRC1_SHMEM; elem_idx += TOTAL_WORKGROUP_SIZE * 4u) {
@@ -288,9 +310,156 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(local_invocation_id) l
   }
 }`;
 
+// TensorFlow.js's tile: 32 rows × 32 tokens, 8 × 8 threads, 4 rows × 4 tokens a thread
+export const TFJS_SHAPE = { rows: 32, tokens: 32, threads: 64 };
+
+// Adapted from TensorFlow.js, tfjs-backend-webgpu/src/matmul_packed_webgpu.ts (makeMatMulPackedVec4Source,
+// matMulReadFnSource and matMulReadWriteFnSource; https://github.com/tensorflow/tfjs, 2026-09-26).
+// Copyright 2019 Google LLC. All Rights Reserved.
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+// specific language governing permissions and limitations under the License.
+// Changed: A is the weights (M = the rows), read as 4 int8 of a u32 widened with their group's scale; B is the
+// activations transposed (N = the tokens, a vec4 of 4 tokens at one column of the width), so that a thread's vec4 of
+// sums is 4 tokens of a row; the tile's number is linear over x and then y as the other tiled shaders'; mm_write
+// writes the 4 tokens one float at a time with shape.add; workPerThread [4, 4], workgroupSize [8, 8, 1] and
+// tileInner 32 are TensorFlow.js's for large products (computeWorkgroupInfoForMatMul), and not transposed.
+export const tfjsTile = /* wgsl */ `
+struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
+${STEP}
+@group(0) @binding(0) var<storage, read> w: array<u32>;
+@group(0) @binding(1) var<storage, read> scales: array<f32>;
+@group(0) @binding(2) var<storage, read> x: array<f32>;
+@group(0) @binding(3) var<storage, read_write> y: array<f32>;
+@group(0) @binding(4) var<uniform> shape: Shape;
+@group(0) @binding(5) var<uniform> step: Step;
+
+const rowPerThread = 4;
+const colPerThread = 4;
+const tileInner = 32;
+const innerElementSize = 4;
+const rowPerThreadB = 4;  // tileInner / workgroupSize[1]
+const tileAOuter = 32;
+const tileBOuter = 32;
+
+var<workgroup> mm_Asub : array<array<vec4<f32>, 8>, 32>;
+var<workgroup> mm_Bsub : array<array<vec4<f32>, 8>, 32>;
+
+// four weights of a row (columns col to col + 3) times their group's scale
+fn mm_readA(row: i32, col: i32) -> vec4<f32> {
+  var value = vec4<f32>(0.0);
+  if (row < i32(shape.rows) && col < i32(shape.words * 4u)) {
+    let word = w[u32(row) * shape.words + u32(col) / 4u];
+    let q = vec4<i32>(bitcast<i32>(word << 24u), bitcast<i32>(word << 16u), bitcast<i32>(word << 8u), bitcast<i32>(word)) >> vec4<u32>(24u);
+    value = vec4<f32>(q) * scales[u32(row) * shape.perRow + u32(col) / ${GROUP}u];
+  }
+  return value;
+}
+// the activations of four tokens (col to col + 3) at one column of the width (row)
+fn mm_readB(row: i32, col: i32) -> vec4<f32> {
+  var value = vec4<f32>(0.0);
+  if (row < i32(shape.words * 4u)) {
+    for (var i = 0; i < 4; i++) {
+      if (col + i < i32(step.tokens)) {
+        value[i] = x[u32(col + i) * shape.xStride + u32(row)];
+      }
+    }
+  }
+  return value;
+}
+fn mm_write(row: i32, col: i32, valueIn: vec4<f32>) {
+  if (row < i32(shape.rows)) {
+    for (var i = 0; i < 4; i++) {
+      if (col + i < i32(step.tokens)) {
+        let at = u32(col + i) * shape.yStride + shape.first + u32(row);
+        y[at] = select(0.0, y[at], shape.add != 0u) + valueIn[i];
+      }
+    }
+  }
+}
+
+@compute @workgroup_size(8, 8, 1)
+fn main(@builtin(local_invocation_id) localId: vec3<u32>, @builtin(workgroup_id) workgroupId: vec3<u32>,
+        @builtin(num_workgroups) numWorkgroups: vec3<u32>) {
+  let tilesA = (shape.rows + 31u) / 32u;
+  let tilesB = (step.tokens + 31u) / 32u;
+  let linear = workgroupId.y * numWorkgroups.x + workgroupId.x;
+  if (linear >= tilesA * tilesB) {
+    return;
+  }
+  let localRow = i32(localId.y);
+  let tileRow = localRow * rowPerThread;
+  let tileCol = i32(localId.x);
+
+  let globalRow = i32(linear % tilesA) * tileAOuter + tileRow;
+  let globalCol = i32(linear / tilesA) * tileBOuter + tileCol * colPerThread;
+
+  let numTiles = (i32(shape.words * 4u) - 1) / tileInner + 1;
+  var kStart = 0;
+
+  var acc: array<vec4<f32>, rowPerThread>;
+
+  // Loop over shared dimension.
+  let tileRowB = localRow * rowPerThreadB;
+  for (var t = 0; t < numTiles; t++) {
+      // Load one tile of A into local memory.
+      for (var innerRow = 0; innerRow < rowPerThread; innerRow++) {
+          let inputRow = tileRow + innerRow;
+          let inputCol = tileCol;
+          mm_Asub[inputRow][inputCol] = mm_readA(globalRow + innerRow, kStart + inputCol * innerElementSize);
+      }
+
+      // Load one tile of B into local memory.
+      for (var innerRow = 0; innerRow < rowPerThreadB; innerRow++) {
+          let inputRow = tileRowB + innerRow;
+          let inputCol = tileCol;
+          mm_Bsub[inputRow][inputCol] = mm_readB(kStart + inputRow, globalCol);
+      }
+      kStart = kStart + tileInner;
+      workgroupBarrier();
+
+      // Compute acc values for a single thread.
+      for (var k = 0; k < tileInner / innerElementSize; k++) {
+        let BCached0 = mm_Bsub[k * innerElementSize + 0][tileCol];
+        let BCached1 = mm_Bsub[k * innerElementSize + 1][tileCol];
+        let BCached2 = mm_Bsub[k * innerElementSize + 2][tileCol];
+        let BCached3 = mm_Bsub[k * innerElementSize + 3][tileCol];
+        for (var i = 0; i < rowPerThread; i++) {
+          let ACached = mm_Asub[tileRow + i][k];
+          acc[i] = fma(BCached0, vec4<f32>(ACached[0]), acc[i]);
+          acc[i] = fma(BCached1, vec4<f32>(ACached[1]), acc[i]);
+          acc[i] = fma(BCached2, vec4<f32>(ACached[2]), acc[i]);
+          acc[i] = fma(BCached3, vec4<f32>(ACached[3]), acc[i]);
+        }
+      }
+      workgroupBarrier();
+  }
+
+  for (var innerRow = 0; innerRow < rowPerThread; innerRow++) {
+      mm_write(globalRow + innerRow, globalCol, acc[innerRow]);
+  }
+}`;
+
 // Adapted from ONNX Runtime, onnxruntime/contrib_ops/webgpu/quantization/dp4a_matmul.wgsl.template and
-// dp4a_matmul_common.wgsl.template (https://github.com/microsoft/onnxruntime, commit 3756d4dc, 2026-09-26).
-// Copyright (c) Microsoft Corporation. MIT License.
+// dp4a_matmul_common.wgsl.template (https://github.com/microsoft/onnxruntime, commit 3756d4dc, 2026-09-26), under the
+// MIT License:
+//
+// Copyright (c) Microsoft Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+// Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+// WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+// COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // A is the activations (M = the tokens), B the weights (N = the rows): "a_global" is a token and "b_global" a row.
 const sdp8ai = /* wgsl */ `
 // Scaled dot product of 8 packed integers.
@@ -429,7 +598,8 @@ ${dp4aLines(false)}`}
 
 // The activations of the packed shaders, as the CPU's quantize_x makes them (kernels/kernel.ts): per token and group
 // of 32, the scale is the largest |value| / 127 and a value round(value × (1 / scale)) (half to even), clamped to
-// ±127, four to a u32 with the first in the lowest byte. One thread a group; the tokens are the dispatch's y. x holds
+// ±127, four to a u32 with the first in the lowest byte. ORT's dp4a_quantize is not taken: its pack4x8snorm rounds
+// as ⌊0.5 + 127 × value⌋ (half up, not the CPU's half to even), and its groups are 128. One thread a group; the tokens are the dispatch's y. x holds
 // the tokens xStride floats apart, xq the same bytes apart and xs the scales xStride / 32 floats apart.
 export const QUANTIZE = /* wgsl */ `
 struct Quantize { n: u32, xStride: u32, unused0: u32, unused1: u32 }

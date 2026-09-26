@@ -432,7 +432,7 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
       lines.push(`| ${s.name.slice(11)} | ${fixed(t.GB, 2)} | ${t.dispatches} | ${fixed(t.msPerToken)} | ${fixed(t.tokPerSecond)} | ${fixed(one)} | ${one ? `${fixed(t.tokPerSecond / (2 * one), 2)}×` : ""} |`);
     }
     lines.push("", ...overheadMarkdown(steps.find((s) => s.name === "what a token costs besides the weights")),
-      "", ...promptMarkdown(steps.find((s) => s.name === "a prompt all at once")));
+      "", ...promptMarkdown(steps.find((s) => s.name === "a prompt all at once"), check?.result));
     lines.push("", `**Bridge** (Atomics.wait ↔ Atomics.waitAsync, ${BRIDGE_ROUNDS} round trips): ${bridge.error ?? `${fixed(bridge.microseconds)} µs each`}`);
     return lines.join("\n");
   }
@@ -451,22 +451,27 @@ const SITE_MODELS = MODELS.filter((entry) => !entry.hf && entry.checkpoint);
   // a prompt's tokens at once on the GPU against the CPU section's blocks of 16 (the same made-up model: two layers of
   // Llama 3.2 1B's width, no classifier), by every shader of it (T146: the tiled ones beside T135's batched one), with
   // the GFLOPS of each (a multiply and an add for each weight and token) and the CPU's GOPS from the same count
-  function promptMarkdown(s: any) {
+  function promptMarkdown(s: any, check?: any) {
     if (!s || s.error) return [`**A prompt all at once**: ${s?.error ?? "not measured"}`];
     const r = s.result;
     const cpuRows = (results.cpu?.data?.rows ?? []).filter((row: any) => row.promptMsPerToken);
     const cpu = cpuRows.length ? cpuRows.map((row: any) => `${fixed(row.promptMsPerToken, 2)} ms with ${row.threads} (${fixed((2 * r.weights) / (row.promptMsPerToken / 1000) / 1e9, 0)} GOPS)`).join(", ")
       : "run the CPU section for it";
+    // a shader the check found WRONG (or could not check) says so on its rows, and is never the fastest (T146's review)
+    const verdict = (row: any) => check?.[row.shader.replace(/, again at the end$/, "")];
+    const wrong = (row: any) => { const v = verdict(row); return v !== undefined && !v.ok; };
     const fastest = (tokens: number) => {
-      const best = r.rows.filter((row: any) => row.tokens === tokens).sort((a: any, b: any) => a.msPerToken - b.msPerToken)[0];
+      const best = r.rows.filter((row: any) => row.tokens === tokens && !row.again && !wrong(row)).sort((a: any, b: any) => a.msPerToken - b.msPerToken)[0];
       return best ? `at ${tokens} tokens ${best.shader}, ${fixed(best.msPerToken, 2)} ms a token (${fixed(best.GFLOPS, 0)} GFLOPS)` : "";
     };
+    const name = (row: any) => (wrong(row) ? `${row.shader} (WRONG in the check)` : row.shader);
     return [`**A prompt** (the CPU section's model: two layers of Llama 3.2 1B's width, ${fixed(r.GB, 2)} GB, ${fixed(r.weights / 1e6, 0)} million weights, no classifier); ` +
-      `the CPU, 16 tokens at once: ${cpu}. A tiled shader's name says whose form it takes (llama.cpp's, ONNX Runtime's) and the rows × tokens of a workgroup's tile`, "",
+      `the CPU, 16 tokens at once: ${cpu}. A tiled shader's name says whose form it takes (llama.cpp's, TensorFlow.js's, ONNX Runtime's) and the rows × tokens of a workgroup's tile. ` +
+      "The batched shader is measured again at the end: a device that slows down as it warms up shows it there", "",
       "| shader | tokens at once on the GPU | GPU ms | GPU ms a token | GFLOPS |", "|---|---:|---:|---:|---:|",
-      ...r.rows.map((row: any) => (row.none || row.error ? `| ${row.shader} | ${row.none ?? `failed: ${row.error}`} | | | |`
-        : `| ${row.shader} | ${row.tokens} | ${fixed(row.ms)} | ${fixed(row.msPerToken, 2)} | ${fixed(row.GFLOPS, 0)} |`)),
-      "", `**Fastest on the GPU**: ${[fastest(16), fastest(64)].filter(Boolean).join("; ") || "nothing measured"}`];
+      ...r.rows.map((row: any) => (row.none || row.error ? `| ${name(row)} | ${row.none ?? `failed: ${row.error}`} | | | |`
+        : `| ${name(row)} | ${row.tokens} | ${fixed(row.ms)} | ${fixed(row.msPerToken, 2)} | ${fixed(row.GFLOPS, 0)} |`)),
+      "", `**Fastest on the GPU** (of the shaders the check found right): ${[fastest(16), fastest(64)].filter(Boolean).join("; ") || "nothing measured"}`];
   }
 
   // the storage section of T137's stage 0 (the download it is compared with: huggingface.co from Japan, T123, T136)

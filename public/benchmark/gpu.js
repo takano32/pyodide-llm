@@ -143,6 +143,9 @@ function promptShaders() {
       code: WGSL.regTile(half), constants: { WORKGROUP_SIZE_M: tile.m, WORKGROUP_SIZE_N: tile.n },
       none: past(shape, WGSL.regTileBytes(tile, half)) });
   }
+  // TensorFlow.js's: a step's 32 rows and 32 tokens of 32 as vec4<f32>
+  shaders.push({ name: "TF.js tiles 32×32, vec4", tile: WGSL.TFJS_SHAPE, packed: false, code: WGSL.tfjsTile,
+    none: past(WGSL.TFJS_SHAPE, 2 * 32 * 32 * 4) });
   const dp4aNone = packed ? past(WGSL.DP4A_SHAPE, 4608) : "no packed int8 dot here";
   shaders.push({ name: "ORT DP4A 64×64", tile: WGSL.DP4A_SHAPE, packed: true, code: WGSL.dp4a(false), none: dp4aNone });
   if (subgroups) shaders.push({ name: "ORT DP4A 64×64, subgroups", tile: WGSL.DP4A_SHAPE, packed: true, code: WGSL.dp4a(true), none: dp4aNone });
@@ -328,15 +331,20 @@ async function check() {
 }
 // T146: every tiled shader on 300 rows of 544 (17 groups of 32), cut into chunks of 100 rows (tiles of 32 or 64 rows
 // and a part of one each, a subtile of 16 and a part, and shape.first past 0), with 11 and 70 tokens (a part of a tile
-// of 32 or 64; two or one and a part), twice into the same y (the second added to the first: shape.add) against
-// JavaScript's product: half of y. The packed ones on what the GPU quantized, and that against JavaScript's
-// quantize_x: a scale may differ in its last bits (WGSL's division is not rounded exactly) and a value then by 1, a
-// wrong index by far more. The products are held to WORST_TILED of the sum of the |products| of the row and token:
-// what a float32 sum in another order may differ by is 544 × 2^-24 = 3.2e-5 of it at most, and a wrong index, scale or
-// group is off by about |value| / |sum of |products|| = 1 / sqrt(544) = 4e-2. The f16 tiles hold a weight times its
-// scale and an activation as halves: JavaScript rounds them the same (Math.f16round), or where it cannot, the products
-// are held to WORST_HALF (two roundings of 2^-11 each: 1e-3 of the sum at most)
-const WORST_TILED = 1e-4, WORST_HALF = 2e-3;
+// of 32 or 64; two or one and a part), and 11 tokens whose x and y are wider than the product (xStride 608 for 544 of
+// the width, yStride 320 for 300 rows: the prompt's model reads 2048 of 8192), twice into the same y (the second added
+// to the first: shape.add) against JavaScript's product: half of y. The packed ones on what the GPU quantized, and that
+// against JavaScript's quantize_x: a scale may differ in its last bits (WGSL's division is not rounded exactly) and a
+// value then by 1, a wrong index by far more. The products are held to WORST_TILED of the sum of the |products| of the
+// row and token: what a float32 sum in another order may differ by is 544 × 2^-24 = 3.2e-5 of it at most, and a wrong
+// index, scale or group is off by about |value| / |sum of |products|| = 1 / sqrt(544) = 4e-2. The f16 tiles hold a
+// weight times its scale and an activation as halves, and WGSL leaves the direction of that rounding to the device
+// (round to nearest or toward zero, T146's review): each is then within 1 ulp, 2^-10 of it, or 2^-24 where it is
+// subnormal, whatever the direction, so a product is within 2^-9 + 2^-20 of it and 2^-24 × (|weight| + |activation|),
+// and the float32 sum adds (n + 1) × 2^-24 of the sum of |products|: the f16 tiles are held to that bound, row by row
+// (about 2e-3 of the sum; still 1/20 of a wrong index's)
+const WORST_TILED = 1e-4;
+const CASES = [{ tokens: 11, wider: 0 }, { tokens: 70, wider: 0 }, { tokens: 11, wider: 64 }];
 async function checkTiled() {
   const rows = 300, n = 544, perRow = n / GROUP;
   const w = new Uint8Array(rows * n).map(() => (Math.random() * 256) | 0), s = floats(rows * perRow, 0.01);
@@ -345,10 +353,10 @@ async function checkTiled() {
   for (const shader of promptShaders().filter((one) => one.tile && !one.none)) {
     try {
       const kind = await kindOf(shader);
-      let worst = 0, far = false, apart = 0, values = 0;
-      const half = shader.half ? Math.f16round : null, line = shader.half && !half ? WORST_HALF : WORST_TILED;
-      for (const tokens of [11, 70]) {
-        const io = vectors(n, rows, tokens), x = floats(tokens * n, 2);
+      let worst = 0, over = false, far = false, apart = 0, values = 0;
+      for (const { tokens, wider } of CASES) {
+        const xStride = n + wider, yStride = rows + (wider ? 20 : 0);
+        const io = vectors(xStride, yStride, tokens), x = floats(tokens * xStride, 2);
         device.queue.writeBuffer(io.x, 0, x);
         const owned = [];
         const [got, xq, xs] = await validated(async () => {
@@ -359,42 +367,46 @@ async function checkTiled() {
           if (quantize) run(pass, quantize.dispatch);
           made.forEach((m) => m.dispatches.forEach((d) => run(pass, d)));
           pass.end();
-          const y = new Float32Array(await readBack(encoder, io.y, tokens * rows * 4));
+          const y = new Float32Array(await readBack(encoder, io.y, tokens * yStride * 4));
           if (!quantize) return [y];
-          return [y, new Int8Array(await readBack(device.createCommandEncoder(), io.xq, tokens * n)),
-            new Float32Array(await readBack(device.createCommandEncoder(), io.xs, tokens * perRow * 4))];
+          return [y, new Int8Array(await readBack(device.createCommandEncoder(), io.xq, tokens * xStride)),
+            new Float32Array(await readBack(device.createCommandEncoder(), io.xs, tokens * (xStride / GROUP) * 4))];
         }).finally(() => {
           owned.forEach((b) => b.destroy());
           destroyVectors(io);
         });
-        if (xq) {
-          const mine = quantized(x);
-          far ||= xs.some((scale, i) => Math.abs(scale - mine.xs[i]) > 1e-6 * mine.xs[i]);
-          for (let i = 0; i < xq.length; i++) {
-            far ||= Math.abs(xq[i] - mine.xq[i]) > 1;
-            apart += xq[i] !== mine.xq[i];
-          }
-          values += xq.length;
-        }
         for (let t = 0; t < tokens; t++) {
+          const at = t * xStride, groups = t * (xStride / GROUP);
+          const mine = xq ? quantized(x.subarray(at, at + n)) : null;
+          if (mine) {
+            for (let g = 0; g < perRow; g++) far ||= Math.abs(xs[groups + g] - mine.xs[g]) > 1e-6 * mine.xs[g];
+            for (let i = 0; i < n; i++) {
+              far ||= Math.abs(xq[at + i] - mine.xq[i]) > 1;
+              apart += xq[at + i] !== mine.xq[i];
+            }
+            values += n;
+          }
           for (let r = 0; r < rows; r++) {
-            let want = 0, size = 0;
+            let want = 0, size = 0, small = 0;
             for (let g = 0; g < perRow; g++) {
-              const scale = s[r * perRow + g] * (xs ? xs[t * perRow + g] : 1);
+              const scale = s[r * perRow + g] * (mine ? xs[groups + g] : 1);
               for (let i = g * GROUP; i < (g + 1) * GROUP; i++) {
-                const product = half ? half(Math.fround(signed[r * n + i] * s[r * perRow + g])) * half(x[t * n + i])
-                  : signed[r * n + i] * (xq ? xq[t * n + i] : x[t * n + i]) * scale;
+                const weight = Math.fround(signed[r * n + i] * s[r * perRow + g]), value = x[at + i];
+                const product = mine ? signed[r * n + i] * xq[at + i] * scale : shader.half ? weight * value : signed[r * n + i] * value * s[r * perRow + g];
                 want += product;
                 size += Math.abs(product);
+                small += Math.abs(weight) + Math.abs(value);
               }
             }
-            worst = Math.max(worst, Math.abs(got[t * rows + r] / 2 - want) / size);
+            const off = Math.abs(got[t * yStride + r] / 2 - want);
+            worst = Math.max(worst, off / size);
+            over ||= shader.half ? off > size * (2 ** -9 + 2 ** -20 + (n + 1) * 2 ** -24) + small * 2 ** -24 : off >= WORST_TILED * size;
           }
         }
       }
       // the quantized values no more than 1 apart, and apart in no more than 1 of 100
       const quantizing = values ? { apart: apart / values, far } : {};
-      verdicts[shader.name] = { worstRelative: worst, ok: worst < line && !far && apart <= 0.01 * values, ...quantizing };
+      verdicts[shader.name] = { worstRelative: worst, ok: !over && !far && apart <= 0.01 * values, ...quantizing };
     } catch (error) {
       verdicts[shader.name] = { worstRelative: NaN, ok: false, error: String(error?.message ?? error) };
     }
@@ -621,7 +633,8 @@ async function prompt(counts = [1, 16, 64]) {
     try {
       return await validated(async () => {
         const made = shapes.map((shape) => matrix(shape, io, kind));
-        const quantize = kind.packed ? new Map(perLayer.map(([, n]) => [n, quantizer(io, n)])) : null;
+        // one quantizer a width (q, k, v and gate, up read the same width: one each, not one a matrix left unowned)
+        const quantize = kind.packed ? new Map([...new Set(perLayer.map(([, n]) => n))].map((n) => [n, quantizer(io, n)])) : null;
         owned.push(...made.flatMap((m) => m.owned), ...[...(quantize?.values() ?? [])].flatMap((q) => q.owned));
         await device.queue.onSubmittedWorkDone();
         const once = async () => {
@@ -658,6 +671,10 @@ async function prompt(counts = [1, 16, 64]) {
       rows.push({ shader: shader.name, error: String(error?.message ?? error) });
     }
   }
+  // the batched shader once more at the most tokens, last: a device that has warmed up and slowed down since shows it
+  // here, beside the same shader's row at the start (T146's review)
+  const last = counts[counts.length - 1];
+  if (last) rows.push({ shader: "batched (T135), again at the end", again: true, ...await measure("batched", last) });
   [a, b].forEach((x) => x.destroy());
   return { rows, layers: model.layers, weights, GB: shapes.reduce((sum, shape) => sum + matrixBytes(shape), 0) / 1e9 };
 }
