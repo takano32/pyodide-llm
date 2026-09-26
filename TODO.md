@@ -210,6 +210,13 @@
 - 試験: pytest で「special でない追加のトークンが書式にあるとき specials に入る」、`format_check.py` を `?hf=` 相当（一覧の options なし）でも回せるように。
 - 完了条件: `?hf=` の Qwen3-4B-Thinking-2507 と DeepSeek-R1 が本物と同じ ID の列。
 
+### T144 [運用] T124・T138 のレビューの残り（試験・道具・エラーの文） — 状態: 未着手（2026-09-26、レビューから。規模 小〜中。T129 と同じ形の寄せ集め）
+- 試験（T124 のレビュー。どれも、わざと壊しても今の試験が通ってしまった所）: (1) `Writer` が `sink.open` に渡す head_dim を常に dim/heads にしても pytest が通る（footprint が Qwen3 0.6B の KV を 45% 少なく数える形）→ `tests/test_convert.py` に head_dim の違う場合。(2) GGUF の `attention.layer_norm_rms_epsilon` と `attention.key_length` を読まなくしても通る（GGUF にした Qwen2.5 の 5 つと TinySwallow が、壊れても分からずに 1e-5 に戻る）→ `tests/test_gguf.py` に。(3) デプロイで走る forward-check の 4 モデルに head_dim のあるものが無い → T133 の静的な assert の区画に、Qwen3 0.6B の見出しで `footprint()` の headDim あり・なしを。(4) smoke の Qwen3 の int8 は `backend.startswith("SIMD")` しか見ない（float32 に広がっても通る）→ "int8" を見る。`:140` の「half as wide」は実際は 2/3。
+- 形（T124 のレビュー）: (5) head_dim を options に載せる条件が `head_size != dim // heads`（割り切れない dim で取りこぼす）→ `head_size * n_heads != dim`（実在するモデルは見つかっていない）。(6) ファイルから分からない設定を 1 つの辞書で layout・checkpoint_dtype・footprint・sink.open に通す（1 つ足すたびに約 14 か所を触る形をやめる）。
+- 道具（T138・T136・T139 のレビュー）: (7) `tests/format_check.py` が GGUF の 9 項目を外している（`:39`）→ GGUF の経路を入れ、`original` にもリビジョンを持たせる。(8) llm-jp の 4 つはカードのシステム文を `SYSTEM` に、sarashina と CAT-Translate の 5 つは本物の Jinja の文を特殊トークンで区切って sentencepiece で符号化して比べる（既知の違い 13 のうち 9 が消える）。(9) `tests/test_llama3.py` が `test_bytebpe.py` を import していて、tokenizers が無いと tokenizers と関係の無い 13 件ごと skip になる → 共有のデータを conftest などに。
+- ページ（T138 のレビュー）: (10) `?hf=` のトークナイザの候補が全部断られたとき、最初の候補のエラー（404 など）を出して、変換器の断りの本当の理由が隠れる（`worker.js:1000` の `refusal ??= error`）→ 変換器の断りを優先。フォルダの経路のエラーの文が `spiece.model` を挙げない（`index.astro:910`）。(11) `filled()` の `trim()` の空白の集合を Python の `str.strip()` に揃える（U+FEFF、U+0085、U+001C〜001F。本物の trim のテンプレート 28 件の全部で、この文字のあるプロンプトだけ違う）。(12) DeepSeek-R1 の生成の設定をカードの勧め（temperature 0.6・top-p 0.95）に。
+- 完了条件: 上の試験が、わざと壊したときに落ちる。
+
 ## 候補（採否未定）
 
 2026-09-19 に Fable が提案したもの。持ち主が 1 つずつ採用か却下かを決める。採用したら「これからのタスク」へ移し、却下したら理由を添えて「やらないと決めたこと」へ移す。番号はどちらの場合もそのまま。並びは提案時の費用対効果の順。
