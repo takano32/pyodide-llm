@@ -11,14 +11,16 @@
 //   const outside = external({ memory, base, size, kernels }); // what Llama(external=) takes
 
 // what a job of a phase is, shared with the software threads (helper.js), from the same deployment as this file
-const { CONTROL_BYTES, GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, SIZE, FIRST, addressed, runner } =
-  await import(new URL(`jobs.js${new URL(import.meta.url).search}`, import.meta.url));
+const { CONTROL_BYTES, GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, SIZE, FIRST,
+  GPU_DONE, GPU_FAILED, GPU_BEAT, addressed, runner } = await import(new URL(`jobs.js${new URL(import.meta.url).search}`, import.meta.url));
 export { BATCH };
 
 const PAGE = 65536;
 // T120: no phase comes near this without progress (the longest token measured, Qwen2.5 7B's on CI, took 286 ms in
 // all): a count that has not moved for so long means a software thread the browser stopped in the middle of its chunk
 const STALLED_MS = 10000;
+// T135: the GPU's worker says something at least this often while it puts a model on the GPU (after every layer)
+const GPU_QUIET_MS = 30000;
 const align = (n, to = 64) => Math.ceil(n / to) * to;
 
 /** The kernels as WebAssembly modules. The relaxed one fails to compile where relaxed SIMD is missing (Safari):
@@ -63,9 +65,10 @@ const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(b
  * (a float32 correction a group); halfKV: keys and values in float16 (T110: an int8 model on a shared memory).
  * kvStart and outliers are llama2_numpy's KV_START and OUTLIER_CHANNELS. arch and head_dim are of the form
  * (llama2_numpy.FORM, which a model's options carry: the caller passes them in as they are, T144): head_dim is the
- * size of a head where it is not dim / heads (T124), 0 where it is. */
+ * size of a head where it is not dim / heads (T124), 0 where it is. gpu (T135): the page asked for the prompt on the
+ * GPU, whose keys and values of a block come back through a place of their own. */
 export function footprint(header, size, { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false,
-  kvStart = 256, outliers = 8, head_dim = 0 } = {}) {
+  kvStart = 256, outliers = 8, head_dim = 0, gpu = false } = {}) {
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
   const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads, kvDim = kvHeads * headSize, qDim = heads * headSize;
   const quantized = dtype === "int8" || dtype === "int6", six = dtype === "int6";
@@ -83,8 +86,9 @@ export function footprint(header, size, { dtype = "float32", arch = "llama", int
   else if (dtype === "float16") bytes += size * 2;
   // what a quantized file leaves out: GPT-2's positions widened, the RoPE tables Python computes
   if (quantized) bytes += arch === "gpt2" ? seqLen * dim * 4 : seqLen * headSize * 4;
-  // the frames of BATCH tokens, their attention scores, the logits
+  // the frames of BATCH tokens, their attention scores, the logits; the keys and values of a block from the GPU
   bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim)) + align(seqLen * heads * 4)) + vocab * 4;
+  if (gpu) bytes += 2 * layers * BATCH * kvDim * 4;
   // the KV cache doubles from kvStart: at its largest step, the smaller blocks are still there next to the larger
   let capacity = Math.min(kvStart, seqLen), most = capacity;
   while (capacity < seqLen) {
@@ -144,12 +148,12 @@ const CHUNKS_PER_THREAD = 4;
 
 /** What Llama(external=) takes: the size of the checkpoint, read() for the few bytes Python looks at itself, and
  * start(plan), which builds the forward pass. */
-export function external({ memory, base, size, kernels, spawn }) {
+export function external({ memory, base, size, kernels, spawn, gpu }) {
   const outside = {
     size,
     read: (offset, length) => new Uint8Array(memory.buffer, base + offset, length).slice(),
     start: (plan) => {
-      outside.engine = createForward({ memory, base, size, kernels, spawn, plan: plan.toJs ? plan.toJs({ dict_converter: Object.fromEntries }) : plan });
+      outside.engine = createForward({ memory, base, size, kernels, spawn, gpu, plan: plan.toJs ? plan.toJs({ dict_converter: Object.fromEntries }) : plan });
       return outside.engine;
     },
   };
@@ -166,10 +170,12 @@ function halfToFloat(h) {
 
 /** spawn (stage 2, a shared memory only): starts one helper thread with { memory, plain, relaxed } and resolves once
  * it is ready; the result has terminate(). Without it, or on a memory that is not shared, everything runs here. */
+/** gpu (T135, where the page asks for it): makes the GPU's worker (gpu.js, not started: a Worker, or what posts and
+ * listens as one). A prompt's blocks then go through the layers there where the model allows it; see forwardMany. */
 /** wrap (tests/profile.mjs only): gets the kernels' exports and returns what to call instead, to time the forward
  * pass with some kernels replaced by functions that do nothing. */
 /** stalledMs (tests only): how long a phase may make no progress before its software threads are given up (T120) */
-export function createForward({ memory, base, size, kernels, plan, spawn, wrap = (exports) => exports, stalledMs = STALLED_MS }) {
+export function createForward({ memory, base, size, kernels, plan, spawn, gpu, wrap = (exports) => exports, stalledMs = STALLED_MS }) {
   const { dim, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: headSize, vocab_size: vocab,
     seq_len: seqLen, rotary, arch } = plan;
   const hidden = plan.hidden_dim, kvDim = kvHeads * headSize, qDim = heads * headSize;
@@ -259,7 +265,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
         (six ? k.six_sums : k.int8_sums)(corrections, values, scales, groups);
       }
       const layer = (l) => [values + l * rows * rowBytes, scales + l * rows * (n / t.group) * 4, corrections + l * rows * (n / t.group) * 4];
-      return { rows, n, int8: true, six, layer };
+      return { rows, n, int8: true, six, group: t.group, layer };
     }
     const w = floats(source);  // float32 as it is, or widened once (shared with the embedding when it is the same table)
     return { rows, n, int8: false, layer: (l) => [w + l * rows * n * 4] };
@@ -310,6 +316,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     });
   }
 
+  // T135: where the GPU's worker puts the keys and values of a prompt's block (float32: the keys [layers][BATCH][kvDim],
+  // then the values the same), for the cache below. Only where the page asked for the GPU and it can take this model
+  const gpuWhyNot = gpu ? gpuUnfit() : null;
+  const staging = gpu && !gpuWhyNot ? alloc(2 * layers * BATCH * KF) : 0;
+
   // the KV cache: per layer [positions][kvDim], one block for the keys and one for the values, last in memory
   // so that growing it (KV_START, doubling) can take the space of the smaller one
   let capacity = Math.min(plan.kv_start, seqLen);
@@ -338,7 +349,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   //
   // A job is what jobs.js says: [kind, eight arguments, rows, count, out stride, a stride, b stride].
   const shared = sharedMemory && spawn;
-  const ctl = shared ? new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4) : null;
+  // the control area of a shared memory: the helpers' words, and the GPU's (T135: with or without helpers)
+  const ctl = sharedMemory ? new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4) : null;
   const table = shared ? new Float64Array(memory.buffer, JOB_TABLE, BATCH * JOB) : null;  // the jobs (jobs.js)
   // the memory is kept from model to model (T96), and the control area with it: what the last engine's phases left
   // there (a helper counted in ACTIVE when it was ended, a generation) would hold this one's first phase for ever
@@ -362,15 +374,17 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   // A wait that took far longer than it asked for means this thread did not run either (a frozen tab, a phone that
   // suspended the page): the helpers were stopped with it, and the time from before does not count (the review of
   // T120: a stop of 10 s gave a thread up now and then as the page came back)
-  const waitUntil = (index, done) => {
+  // alive (T135): the word whose change counts as progress, where it is not the one waited on (the GPU's worker counts
+  // one up while it works, and answers only at the end)
+  const waitUntil = (index, done, alive = index) => {
     const tick = Math.min(1000, stalledMs);
-    let moved = performance.now(), last = moved;
+    let moved = performance.now(), last = moved, beat = Atomics.load(ctl, alive);
     for (let seen = Atomics.load(ctl, index); !done(seen);) {
       Atomics.wait(ctl, index, seen, tick);
-      const now = Atomics.load(ctl, index), at = performance.now();
+      const now = Atomics.load(ctl, index), beatNow = Atomics.load(ctl, alive), at = performance.now();
       if (at - last > 2 * tick) moved = at;
       last = at;
-      if (now !== seen) [seen, moved] = [now, at];
+      if (now !== seen || beatNow !== beat) [seen, beat, moved] = [now, beatNow, at];
       else if (at - moved > stalledMs) return false;
     }
     return true;
@@ -437,15 +451,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     phase(list.map(([m, out, outStride, l]) => jobOf(m, out, outStride, input, l, count)));
   }
 
-  // one token (count 1) or up to BATCH tokens of a prompt at positions pos0, pos0 + 1, ... (T108). Every token is
-  // computed as it would be alone: the same kernels on the same numbers, only the matmuls of a layer go out once for
-  // all of them. The logits, if asked for, are the last token's.
-  function run(tokens, pos0, needLogits) {
-    const count = tokens.length;
-    if (pos0 + count - 1 >= capacity) grow(pos0 + count - 1);
-    views();
-    // the embedding rows
-    for (let t = 0; t < count; t++) {
+  // the embedding rows of tokens at positions pos0, pos0 + 1, ... into x, a frame apart
+  function embed(tokens, pos0) {
+    for (let t = 0; t < tokens.length; t++) {
       const row = tokens[t] * dim, to = (x + t * S) / 4;
       if (embedding.kind === "int8" || embedding.kind === "int6") {
         const g = embedding.group;
@@ -458,6 +466,27 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
       }
       if (positions) k.add_inplace(x + t * S, positions + (pos0 + t) * D, dim);
     }
+  }
+  // a token's key and value (float32, at key and value) into the cache at keyAt and valueAt
+  function cache(keyAt, valueAt, key, value) {
+    if (halfKV) {
+      k.to_f16(keyAt, key, kvDim);
+      k.to_f16(valueAt, value, kvDim);
+    } else {
+      U.copyWithin(keyAt, key, key + KF);
+      U.copyWithin(valueAt, value, value + KF);
+    }
+  }
+
+  // one token (count 1) or up to BATCH tokens of a prompt at positions pos0, pos0 + 1, ... (T108). Every token is
+  // computed as it would be alone: the same kernels on the same numbers, only the matmuls of a layer go out once for
+  // all of them. The logits, if asked for, are the last token's.
+  function run(tokens, pos0, needLogits) {
+    const count = tokens.length;
+    if (pos0 + count - 1 >= capacity) grow(pos0 + count - 1);
+    views();
+    gpuEnd = Math.min(gpuEnd, pos0);  // T135: from here on the cache holds what the GPU does not
+    embed(tokens, pos0);
     for (let l = 0; l < layers; l++) {
       const layerKeys = keys + l * capacity * KV, layerValues = values + l * capacity * KV;
       const kp = layerKeys + pos0 * KV, vp = layerValues + pos0 * KV;
@@ -484,14 +513,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
           k.rope(qt, cos, sin, heads, headSize, rotary);
           k.rope(kt, cos, sin, kvHeads, headSize, rotary);
         }
-        // into the cache, at this token's position
-        if (halfKV) {
-          k.to_f16(kp + t * KV, kt, kvDim);
-          k.to_f16(vp + t * KV, vt, kvDim);
-        } else {
-          U.copyWithin(kp + t * KV, kt, kt + KF);
-          U.copyWithin(vp + t * KV, vt, vt + KF);
-        }
+        cache(kp + t * KV, vp + t * KV, kt, vt);  // into the cache, at this token's position
       }
       // the keys and values of positions up to each token's are all there now: its own and the ones before it.
       // The heads of every token go out as one phase (T109).
@@ -634,6 +656,108 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     return true;
   }
 
+  // ---- T135: a prompt on the GPU, where the page asked for it (?gpu=on). gpu() makes the GPU's worker (gpu.js),
+  // which puts this model's layers on the GPU once (a second copy of them: the CPU keeps its own, for the tokens after
+  // the prompt), and then runs each block of a prompt that forwardMany() hands it through all the layers in one
+  // submission, while this thread waits for its answer in the control area (Python calls forwardMany() and cannot
+  // wait for a promise; the GPU's answer is one). The GPU multiplies a block's tokens by each weight it reads once
+  // (a matrix by a matrix: T134's "A prompt"), in float32 with the weights widened. It writes the keys and values of
+  // the block back (staging), and they go into the cache here as if the CPU had computed them: the prompt's last
+  // token, with its logits, and every token after it stay the CPU's (T94: one token at a time the GPU was slower on
+  // the owner's three devices). A model it does not take, or any failure, leaves the prompt on the CPU, said once.
+  // gpuEnd: the positions up to which the GPU's own keys and values are the cache's (a block that begins after it
+  // goes to the CPU; run() ends it where the CPU writes)
+  let gpuWorker = null, gpuOn = false, gpuEnd = 0, gpuSerial = 0, gpuTokens = 0, settleGpu = null;
+  const gpuNote = !gpu ? undefined : new Promise((resolve) => {
+    settleGpu = (note) => {
+      settleGpu = null;
+      resolve(note);
+    };
+    if (gpuWhyNot) settleGpu(`prompts on the CPU (${gpuWhyNot})`);
+    else startGpu();
+  });
+  // why this model's prompt stays on the CPU, or null: the first stage (T135) takes Llama's layers of int8 weights
+  function gpuUnfit() {
+    if (!sharedMemory) return "the page is not cross-origin isolated";
+    if (wide) return "a 64-bit memory: not on the GPU yet";
+    if (arch !== "llama") return `${arch === "gpt2" ? "GPT-2" : "GPT-NeoX"} is not on the GPU yet`;
+    if (bq) return "the biases of q, k and v are not on the GPU yet";
+    if (qNorm) return "the norms of q and k are not on the GPU yet";
+    if (qDim !== dim) return "heads of another size than dim / heads are not on the GPU yet";
+    if (![wq, wk, wv, wo, w1, w2, w3].every((m) => m?.int8 && !m.six && m.group === 32)) {
+      return `${T.wq?.kind === "int6" ? "int6" : "float32"} weights are not on the GPU yet`;
+    }
+    return null;
+  }
+  function startGpu() {
+    const turned = plan.rotary > 0 && plan.rotary < headSize ? plan.rotary : headSize;
+    const matrices = Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3 }).map(([name, m]) =>
+      [name, { rows: m.rows, n: m.n, layers: Array.from({ length: layers }, (_, l) => m.layer(l).slice(0, 2)) }]));
+    let quiet;
+    const listen = () => {
+      clearTimeout(quiet);
+      quiet = setTimeout(() => stopGpu(`the GPU said nothing for ${GPU_QUIET_MS / 1000} s`), GPU_QUIET_MS);
+    };
+    gpuWorker = gpu();
+    gpuWorker.onmessage = ({ data }) => {
+      if (data.type === "progress") return listen();
+      clearTimeout(quiet);
+      if (data.type === "ready") {
+        gpuOn = true;
+        console.info(`gpu: ${data.adapter}: ${Math.round(data.bytes / 1e6)} MB of layers on it in ${data.seconds.toFixed(1)} s`);
+        settleGpu?.("prompts on WebGPU");
+      } else if (data.type === "unusable") {
+        stopGpu(data.reason);
+      } else if (data.type === "failed") {
+        console.warn(`gpu: ${data.reason}`);
+      }
+    };
+    gpuWorker.onerror = (event) => stopGpu(`the GPU's worker did not start (${event.message ?? "an error"})`);
+    listen();
+    gpuWorker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, seqLen,
+      kvStart: plan.kv_start, eps, batch: BATCH, matrices, norms: { attention: attW, ffn: ffnW }, x, frame: S,
+      cos: cosTable, sin: sinTable, staging, words: { done: GPU_DONE, failed: GPU_FAILED, beat: GPU_BEAT } } });
+  }
+  // the prompt stays on the CPU from here on (why: what the console says, where it was on the GPU); the GPU's worker
+  // lets go of the device and ends
+  function stopGpu(why) {
+    if (gpuOn && why) console.warn(`gpu: ${why}: the prompts go on on the CPU`);
+    gpuOn = false;
+    gpuWorker?.postMessage({ type: "stop" });
+    gpuWorker = null;
+    settleGpu?.(`prompts on the CPU (${why ?? "the model was let go"})`);
+  }
+  // A block of a prompt (up to BATCH tokens at pos0, pos0 + 1, ...) through the layers on the GPU: false where it
+  // must go to the CPU instead (no GPU, keys and values the GPU does not have, a failure)
+  function promptOnGpu(tokens, pos0) {
+    if (!gpuOn || pos0 > gpuEnd) return false;
+    const count = tokens.length;
+    if (pos0 + count - 1 >= capacity) grow(pos0 + count - 1);
+    views();
+    embed(tokens, pos0);  // the GPU reads the rows from x, as the layers would
+    gpuSerial += 1;
+    gpuWorker.postMessage({ type: "prompt", serial: gpuSerial, count, pos: pos0 });
+    if (!waitUntil(GPU_DONE, (seen) => seen === gpuSerial, GPU_BEAT)) {
+      stopGpu(`the GPU's worker stopped answering for ${stalledMs / 1000} s`);
+      return false;
+    }
+    if (Atomics.load(ctl, GPU_FAILED)) {
+      stopGpu("the GPU failed on a block of the prompt");  // the GPU's worker said why in the console
+      return false;
+    }
+    views();
+    for (let l = 0; l < layers; l++) {
+      const layerKeys = keys + l * capacity * KV, layerValues = values + l * capacity * KV;
+      for (let t = 0; t < count; t++) {
+        cache(layerKeys + (pos0 + t) * KV, layerValues + (pos0 + t) * KV,
+          staging + (l * BATCH + t) * KF, staging + ((layers + l) * BATCH + t) * KF);
+      }
+    }
+    gpuEnd = pos0 + count;
+    gpuTokens += count;
+    return true;
+  }
+
   let bound = null;
   const backend = (plan.int8 ? `SIMD kernels, ${T.wq?.kind === "int6" ? "int6" : "int8"}${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32") +
     (wide ? ", 64-bit memory" : "");  // T101: the status line says so, as it says every other way the model runs
@@ -669,6 +793,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     },
     /** the page starts a generation: now and then the remembered count is checked against its neighbours again */
     newGeneration() {
+      gpuTokens = 0;
       generations += 1;
       if (!search && chosen && recheckEvery && generations % recheckEvery === 0) beginSearch(chosen);
     },
@@ -692,10 +817,20 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
       bound = array.copy ? array.copy() : array;
     },
     /** T108: tokens (up to BATCH) of a prompt at positions pos, pos + 1, ...: the same as forward() for each of them
-     * in turn without logits, in one pass through the layers */
+     * in turn without logits, in one pass through the layers. T135: on the GPU where it is on (see above) */
     forwardMany(tokens, pos) {
       const list = tokens.toJs ? tokens.toJs() : [...tokens];
-      for (let at = 0; at < list.length; at += BATCH) run(list.slice(at, at + BATCH), pos + at, false);
+      for (let at = 0; at < list.length; at += BATCH) {
+        const block = list.slice(at, at + BATCH);
+        if (!promptOnGpu(block, pos + at)) run(block, pos + at, false);
+      }
+    },
+    /** T135: where the page asked for the GPU, a promise of what the status line says of it ("prompts on WebGPU", or
+     * on the CPU and why), settled once the layers are on the GPU or it is known that they will not be */
+    gpu: gpuNote,
+    /** T135: the tokens of a prompt that went through the GPU since the generation began */
+    get gpuTokens() {
+      return gpuTokens;
     },
     forward(token, pos, needLogits = true) {
       if (search && needLogits) {
@@ -713,14 +848,31 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
       view.data.set(new Float32Array(memory.buffer, logits, vocab));
       view.release();
     },
-    /** Python's array goes back (Llama.release()), and the helper threads end */
+    /** Python's array goes back (Llama.release()), the helper threads end, and the GPU's worker (T135) */
     release() {
       bound?.destroy?.();
       bound = null;
       this.stopThreads();
+      if (gpuWorker) stopGpu();
     },
     /** the logits in this memory, for callers without Python (tests) */
     logits: () => new Float32Array(memory.buffer, logits, vocab),
+    /** the keys and values in the cache at positions from .. from + count - 1, in float32, [layers][count][kvDim] each
+     * (tests: T135 holds what the GPU wrote back to what the CPU computes) */
+    keysAndValues(from, count) {
+      views();
+      const read = (block) => {
+        const out = new Float32Array(layers * count * kvDim);
+        for (let l = 0; l < layers; l++) {
+          for (let t = 0; t < count; t++) {
+            const at = block + l * capacity * KV + (from + t) * KV;
+            for (let i = 0; i < kvDim; i++) out[(l * count + t) * kvDim + i] = halfKV ? halfToFloat(H[at / 2 + i]) : F[at / 4 + i];
+          }
+        }
+        return out;
+      };
+      return { keys: read(keys), values: read(values) };
+    },
     memoryBytes: () => memory.buffer.byteLength,
   };
 }

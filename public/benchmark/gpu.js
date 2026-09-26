@@ -21,148 +21,11 @@
 // The weights are random: only their size and layout matter. int8 in groups of 32 with a float32 scale each, as the
 // checkpoints of this project (llama2_numpy's layout), 4 values to a u32.
 
-const GROUP = 32;
-
-// ---- the shaders. Every matrix times vector: one workgroup of 64 per row, each thread a word (4 weights) at a time
-// with the stride of the workgroup, so that neighbours read neighbouring words; the partial sums add up in the
-// workgroup's memory. rows past 65535 go to a second dimension of the dispatch.
-const WIDEN = /* wgsl */ `
-struct Shape { rows: u32, words: u32, perRow: u32, first: u32 }
-@group(0) @binding(0) var<storage, read> w: array<u32>;
-@group(0) @binding(1) var<storage, read> scales: array<f32>;
-@group(0) @binding(2) var<storage, read> x: array<f32>;
-@group(0) @binding(3) var<storage, read_write> y: array<f32>;
-@group(0) @binding(4) var<uniform> shape: Shape;
-var<workgroup> partial: array<f32, 64>;
-@compute @workgroup_size(64)
-fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) count: vec3u, @builtin(local_invocation_index) t: u32) {
-  let row = id.x + id.y * count.x;
-  if (row >= shape.rows) { return; }
-  var sum = 0.0;
-  for (var i = t; i < shape.words; i += 64u) {
-    let word = bitcast<i32>(w[row * shape.words + i]);
-    let at = i * 4u;
-    let dot = f32(extractBits(word, 0u, 8u)) * x[at] + f32(extractBits(word, 8u, 8u)) * x[at + 1u]
-            + f32(extractBits(word, 16u, 8u)) * x[at + 2u] + f32(extractBits(word, 24u, 8u)) * x[at + 3u];
-    sum += dot * scales[row * shape.perRow + i / 8u];
-  }
-  partial[t] = sum;
-  workgroupBarrier();
-  for (var half = 32u; half > 0u; half >>= 1u) {
-    if (t < half) { partial[t] += partial[t + half]; }
-    workgroupBarrier();
-  }
-  if (t == 0u) { y[shape.first + row] = partial[0]; }
-}`;
-// the same with the activations quantized to int8 as the CPU's matmul_q8 takes them (a float32 scale per group of
-// 32), and WGSL's packed dot product: where the language feature is there
-const PACKED = /* wgsl */ `
-requires packed_4x8_integer_dot_product;
-struct Shape { rows: u32, words: u32, perRow: u32, first: u32 }
-@group(0) @binding(0) var<storage, read> w: array<u32>;
-@group(0) @binding(1) var<storage, read> scales: array<f32>;
-@group(0) @binding(2) var<storage, read> xq: array<u32>;
-@group(0) @binding(3) var<storage, read_write> y: array<f32>;
-@group(0) @binding(4) var<uniform> shape: Shape;
-@group(0) @binding(5) var<storage, read> xs: array<f32>;
-var<workgroup> partial: array<f32, 64>;
-@compute @workgroup_size(64)
-fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) count: vec3u, @builtin(local_invocation_index) t: u32) {
-  let row = id.x + id.y * count.x;
-  if (row >= shape.rows) { return; }
-  var sum = 0.0;
-  for (var i = t; i < shape.words; i += 64u) {
-    sum += f32(dot4I8Packed(w[row * shape.words + i], xq[i])) * scales[row * shape.perRow + i / 8u] * xs[i / 8u];
-  }
-  partial[t] = sum;
-  workgroupBarrier();
-  for (var half = 32u; half > 0u; half >>= 1u) {
-    if (t < half) { partial[t] += partial[t + half]; }
-    workgroupBarrier();
-  }
-  if (t == 0u) { y[shape.first + row] = partial[0]; }
-}`;
-// a matrix times TILE vectors at once (the tokens of a prompt): each weight is read once for all of them. One
-// workgroup per row and tile of tokens (the third dimension of the dispatch); x holds the tokens xStride floats apart,
-// y their outputs yStride apart
-const TILE = 8;
-const BATCHED = /* wgsl */ `
-struct Shape { rows: u32, words: u32, perRow: u32, first: u32, tokens: u32, xStride: u32, yStride: u32, unused: u32 }
-@group(0) @binding(0) var<storage, read> w: array<u32>;
-@group(0) @binding(1) var<storage, read> scales: array<f32>;
-@group(0) @binding(2) var<storage, read> x: array<f32>;
-@group(0) @binding(3) var<storage, read_write> y: array<f32>;
-@group(0) @binding(4) var<uniform> shape: Shape;
-const TILE = ${TILE}u;
-var<workgroup> partial: array<f32, ${TILE * 64}>;
-@compute @workgroup_size(64)
-fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) count: vec3u, @builtin(local_invocation_index) t: u32) {
-  let row = id.x + id.y * count.x;
-  if (row >= shape.rows) { return; }
-  let first = id.z * TILE;
-  var sums: array<f32, ${TILE}>;
-  for (var i = t; i < shape.words; i += 64u) {
-    let word = bitcast<i32>(w[row * shape.words + i]);
-    let scale = scales[row * shape.perRow + i / 8u];
-    let w0 = f32(extractBits(word, 0u, 8u)) * scale;
-    let w1 = f32(extractBits(word, 8u, 8u)) * scale;
-    let w2 = f32(extractBits(word, 16u, 8u)) * scale;
-    let w3 = f32(extractBits(word, 24u, 8u)) * scale;
-    for (var k = 0u; k < TILE; k++) {
-      if (first + k < shape.tokens) {
-        let at = (first + k) * shape.xStride + i * 4u;
-        sums[k] += w0 * x[at] + w1 * x[at + 1u] + w2 * x[at + 2u] + w3 * x[at + 3u];
-      }
-    }
-  }
-  for (var k = 0u; k < TILE; k++) { partial[k * 64u + t] = sums[k]; }
-  workgroupBarrier();
-  for (var half = 32u; half > 0u; half >>= 1u) {
-    if (t < half) {
-      for (var k = 0u; k < TILE; k++) { partial[k * 64u + t] += partial[k * 64u + t + half]; }
-    }
-    workgroupBarrier();
-  }
-  if (t < TILE && first + t < shape.tokens) { y[(first + t) * shape.yStride + shape.first + row] = partial[t * 64u]; }
-}`;
-// the most likely token: the first index of the largest logit, in one workgroup, so that only 4 bytes come back
-const ARGMAX = /* wgsl */ `
-@group(0) @binding(0) var<storage, read> logits: array<f32>;
-@group(0) @binding(1) var<storage, read_write> chosen: array<u32>;
-@group(0) @binding(2) var<uniform> count: vec4u;
-var<workgroup> best: array<f32, 256>;
-var<workgroup> index: array<u32, 256>;
-@compute @workgroup_size(256)
-fn main(@builtin(local_invocation_index) t: u32) {
-  var value = -3.4e38;
-  var at = 0u;
-  for (var i = t; i < count.x; i += 256u) {
-    if (logits[i] > value) { value = logits[i]; at = i; }
-  }
-  best[t] = value;
-  index[t] = at;
-  workgroupBarrier();
-  for (var half = 128u; half > 0u; half >>= 1u) {
-    if (t < half && (best[t + half] > best[t] || (best[t + half] == best[t] && index[t + half] < index[t]))) {
-      best[t] = best[t + half];
-      index[t] = index[t + half];
-    }
-    workgroupBarrier();
-  }
-  if (t == 0u) { chosen[0] = index[0]; }
-}`;
-// a dispatch that does nothing: what a dispatch costs by itself
-const EMPTY = /* wgsl */ `@compute @workgroup_size(1) fn main() {}`;
-// the small steps of a layer (norms, RoPE, the attention of a short context, SwiGLU, the residual adds): what they
-// cost is mostly that they are dispatches of their own, so one that adds a vector of dim stands for each
-const SMALL = /* wgsl */ `
-@group(0) @binding(0) var<storage, read> x: array<f32>;
-@group(0) @binding(1) var<storage, read_write> y: array<f32>;
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) id: vec3u) {
-  let n = arrayLength(&x);
-  for (var i = id.x; i < n; i += 64u) { y[i] = y[i] + x[i]; }
-}`;
+// the WGSL, shared with the model's GPU worker (public/shaders.js, T135), from the same deployment as this file. Not
+// awaited here: a module worker's port opens at its first await, and a message that comes before onmessage is set is
+// lost (T109); every step awaits it instead
+const shaders = import(new URL(`../shaders.js${new URL(import.meta.url).search}`, import.meta.url));
+let WGSL, GROUP, TILE;
 
 // the shapes of the models in the list that the measurement stands for (legacy header: dim, hidden, layers, heads,
 // kv heads, vocab), and the int8 matrices of a layer, [rows, n]
@@ -248,8 +111,8 @@ let pipelines;
 function pipelinesFor() {
   if (pipelines) return pipelines;
   const make = (code) => device.createComputePipeline({ layout: "auto", compute: { module: device.createShaderModule({ code }), entryPoint: "main" } });
-  pipelines = { widen: make(WIDEN), packed: packed ? make(PACKED) : null, small: make(SMALL), batched: make(BATCHED),
-                argmax: make(ARGMAX), empty: make(EMPTY) };
+  pipelines = { widen: make(WGSL.WIDEN), packed: packed ? make(WGSL.PACKED) : null, small: make(WGSL.SMALL),
+                batched: make(WGSL.BATCHED), argmax: make(WGSL.ARGMAX), empty: make(WGSL.EMPTY) };
   return pipelines;
 }
 
@@ -273,11 +136,13 @@ function matrix([rows, n], io, kind = "widen", data) {
       fill(w, count * rowBytes);
       device.queue.writeBuffer(s, 0, floats(count * perRow, 0.002));
     }
-    device.queue.writeBuffer(shape, 0, new Uint32Array([count, words, perRow, first, io.tokens ?? 1, io.xStride ?? 0, io.yStride ?? 0, 0]));
+    // the batched shader's shape goes on with the strides of the tokens (and "add" off), the others read four
+    device.queue.writeBuffer(shape, 0, new Uint32Array([count, words, perRow, first, io.xStride ?? 0, io.yStride ?? 0, 0, 0]));
     const entries = [{ binding: 0, resource: { buffer: w } }, { binding: 1, resource: { buffer: s } },
       { binding: 2, resource: { buffer: kind === "packed" ? io.xq : io.x } }, { binding: 3, resource: { buffer: io.y } },
       { binding: 4, resource: { buffer: shape } }];
     if (kind === "packed") entries.push({ binding: 5, resource: { buffer: io.xs } });
+    if (kind === "batched") entries.push({ binding: 5, resource: { buffer: io.step } });
     const across = Math.min(count, device.limits.maxComputeWorkgroupsPerDimension);
     dispatches.push([pipeline, device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries }), across,
       Math.ceil(count / across), kind === "batched" ? Math.ceil(io.tokens / TILE) : 1]);
@@ -287,13 +152,15 @@ function matrix([rows, n], io, kind = "widen", data) {
 // the vectors every matrix reads and writes: x of the longest row, y of the most rows; tokens of each for "batched"
 function vectors(longest, most, tokens = 1) {
   const io = { x: buffer(tokens * longest * 4), xq: buffer(longest), xs: buffer((longest / GROUP) * 4),
-               y: buffer(tokens * most * 4 + 16, STORAGE | COPY_DST | COPY_SRC), tokens, xStride: longest, yStride: most };
+               y: buffer(tokens * most * 4 + 16, STORAGE | COPY_DST | COPY_SRC), tokens, xStride: longest, yStride: most,
+               step: buffer(16, UNIFORM | COPY_DST) };
+  device.queue.writeBuffer(io.step, 0, new Uint32Array([tokens, 0, 0, 0]));  // the batched shader's tokens
   device.queue.writeBuffer(io.x, 0, floats(tokens * longest, 2));
   fill(io.xq, longest);
   device.queue.writeBuffer(io.xs, 0, floats(longest / GROUP, 0.1));
   return io;
 }
-const destroyVectors = (io) => [io.x, io.xq, io.xs, io.y].forEach((b) => b.destroy());
+const destroyVectors = (io) => [io.x, io.xq, io.xs, io.y, io.step].forEach((b) => b.destroy());
 function run(pass, [pipeline, group, x, y, z = 1]) {
   pass.setPipeline(pipeline);
   if (group) pass.setBindGroup(0, group);  // none for the empty dispatch
@@ -632,6 +499,8 @@ async function bridge(memory, rounds) {
 
 onmessage = async ({ data }) => {
   try {
+    WGSL ??= await shaders;
+    ({ GROUP, TILE } = WGSL);
     let result;
     if (data.step === "info") result = await info();
     else if (data.step === "check") result = await check();

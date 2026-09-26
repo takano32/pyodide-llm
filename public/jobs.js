@@ -5,7 +5,7 @@
 // A plain ES module. forward.js and helper.js import it with the ?v= of their own URL (GitHub Pages caches a file
 // for ten minutes: the three must come from the same deployment).
 
-/** the control area: the first bytes of a shared memory, as 32-bit words */
+/** the control area: the first bytes of a shared memory, as 32-bit words (the helpers', then the GPU's: GPU_DONE) */
 export const CONTROL_BYTES = 8192;
 // GEN: the generation of the phase (odd while the coordinator rewrites the jobs); QUIT: the helpers end; COUNTER:
 // the next chunk to take; FINISHED: chunks done; ACTIVE: helpers inside a phase; TOTAL: chunks in all
@@ -22,8 +22,13 @@ export const JOBS = 512, JOB = 16, JOB_TABLE = 2056;
 export const BATCH = 16;
 /** scratch for a helper's warm-up, after the last job */
 export const SCRATCH = 4608;
-if (JOB_TABLE <= JOBS * 4 || JOB_TABLE % 8 || JOB_TABLE + BATCH * JOB * 8 > SCRATCH || SCRATCH + 448 > CONTROL_BYTES) {
-  throw new Error("the control area does not hold its jobs and the scratch: see jobs.js");
+// T135: the words of the GPU's worker (gpu.js), which runs the blocks of a prompt that forward.js hands it while
+// forward.js waits: GPU_DONE, the number of the last request it finished; GPU_FAILED, whether that one failed;
+// GPU_BEAT, counted up while it works (a worker that stopped counting has stopped)
+export const GPU_DONE = 1280, GPU_FAILED = 1281, GPU_BEAT = 1282;
+if (JOB_TABLE <= JOBS * 4 || JOB_TABLE % 8 || JOB_TABLE + BATCH * JOB * 8 > SCRATCH || SCRATCH + 448 > GPU_DONE * 4 ||
+    (GPU_BEAT + 1) * 4 > CONTROL_BYTES) {
+  throw new Error("the control area does not hold its jobs, the scratch and the GPU's words: see jobs.js");
 }
 
 // A job: [kind, eight arguments, rows, count, out stride, a stride, b stride], and the control area holds it as it
