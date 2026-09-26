@@ -288,6 +288,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
   const attB = floats("ln_att_bias"), ffnB = floats("ln_ffn_bias"), finalB = floats("ln_final_bias");
   const bo = floats("bo"), b1 = floats("b1"), b2 = floats("b2"), bq = floats("bq"), bk = floats("bk"), bv = floats("bv");
   const qNorm = floats("q_norm"), kNorm = floats("k_norm");  // T124: Qwen3 normalizes every head of q and k
+  const eps = plan.rms_norm_eps ?? 1e-5;  // the epsilon of every RMSNorm (T124: Qwen3's is 1e-6)
   const cosTable = floats("freq_cis_real"), sinTable = floats("freq_cis_imag");
   const positions = gpt2 ? floats("positions") : 0;
   const embedding = T.token_embedding_table;
@@ -461,7 +462,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
       const kp = layerKeys + pos0 * KV, vp = layerValues + pos0 * KV;
       for (let t = 0; t < count; t++) {
         if (layerNorm) k.layernorm(xb + t * S, x + t * S, attW + l * D, attB + l * D, dim);
-        else k.rmsnorm(xb + t * S, x + t * S, attW + l * D, dim);
+        else k.rmsnorm(xb + t * S, x + t * S, attW + l * D, dim, eps);
         if (parallel) F.copyWithin((before + t * S) / 4, (x + t * S) / 4, (x + t * S) / 4 + dim);  // GPT-NeoX reads this layer's input twice
       }
       matmuls(xb, count, [[wq, q, S, l], [wk, kNow, S, l], [wv, vNow, S, l]]);
@@ -474,8 +475,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
         }
         if (qNorm) {
           const HS = headSize * 4;
-          for (let h = 0; h < heads; h++) k.rmsnorm(qt + h * HS, qt + h * HS, qNorm + l * HS, headSize);
-          for (let h = 0; h < kvHeads; h++) k.rmsnorm(kt + h * HS, kt + h * HS, kNorm + l * HS, headSize);
+          for (let h = 0; h < heads; h++) k.rmsnorm(qt + h * HS, qt + h * HS, qNorm + l * HS, headSize, eps);
+          for (let h = 0; h < kvHeads; h++) k.rmsnorm(kt + h * HS, kt + h * HS, kNorm + l * HS, headSize, eps);
         }
         if (!gpt2) {
           const cos = cosTable + pos * (headSize / 2) * 4, sin = sinTable + pos * (headSize / 2) * 4;
@@ -510,7 +511,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
         }
         continue;
       }
-      for (let t = 0; t < count; t++) k.rmsnorm(xb + t * S, x + t * S, ffnW + l * D, dim);
+      for (let t = 0; t < count; t++) k.rmsnorm(xb + t * S, x + t * S, ffnW + l * D, dim, eps);
       matmuls(xb, count, [[w1, hb, S, l], [w3, hb2, S, l]]);
       for (let t = 0; t < count; t++) k.swiglu(hb + t * S, hb + t * S, hb2 + t * S, hidden);
       matmuls(hb, count, [[w2, xb2, S, l]]);
@@ -519,7 +520,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, wrap =
     if (!needLogits) return;
     const last = x + (count - 1) * S;
     if (layerNorm) k.layernorm(xb, last, finalW, finalB, dim);
-    else k.rmsnorm(xb, last, finalW, dim);
+    else k.rmsnorm(xb, last, finalW, dim, eps);
     channels.forEach((c, i) => {  // T92: the outlier channels are multiplied apart
       F[picked / 4 + i] = F[xb / 4 + c];
       F[xb / 4 + c] = 0;

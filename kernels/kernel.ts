@@ -211,14 +211,15 @@ export function matmul_q6(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
   }
 }
 
-export function rmsnorm(out: usize, x: usize, w: usize, n: i32): void {
+// eps: the model's (config.json's rms_norm_eps): Qwen3's 1e-6 against 1e-5 moved its perplexity by 0.12% (T124)
+export function rmsnorm(out: usize, x: usize, w: usize, n: i32, eps: f32): void {
   let acc = f32x4.splat(0);
   let j = 0;
   const n4 = n & ~3;
   for (; j < n4; j += 4) { const v = v128.load(x + (<usize>j << 2)); acc = f32x4.add(acc, f32x4.mul(v, v)); }
   let ss: f32 = hsum(acc);
   for (; j < n; j++) { const v = load<f32>(x + (<usize>j << 2)); ss += v * v; }
-  const s: f32 = <f32>1.0 / sqrt<f32>(ss / <f32>n + <f32>1e-5);
+  const s: f32 = <f32>1.0 / sqrt<f32>(ss / <f32>n + eps);
   for (j = 0; j < n; j++) {
     const o = <usize>j << 2;
     store<f32>(out + o, load<f32>(w + o) * (s * load<f32>(x + o)));

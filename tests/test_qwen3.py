@@ -166,3 +166,19 @@ def test_gpt2_and_neox_keep_heads_of_dim_over_heads():
         check_config({**published, "num_attention_heads": 5})
     check_config({**published, "num_attention_heads": 5, "num_key_value_heads": 5, "head_dim": 8})
 
+
+def test_the_epsilon_of_the_config_reaches_the_engine():
+    """rms_norm_eps goes from config.json through the options to every RMSNorm (T124: Qwen3's 1e-6 against the 1e-5
+    the engine always had moved its perplexity by 0.12%). A large one, so that the reference sees it."""
+    settings, weights = synthetic_weights(n_kv_heads=2, head_size=16)
+    tensors, published = qwen3(settings, weights, True)
+    made = conversion(tensors, {**published, "rms_norm_eps": 0.5}, settings)
+    assert made.options["rms_norm_eps"] == 0.5
+    options = {key: made.options[key] for key in ("qk_norm", "head_dim", "rms_norm_eps")}
+    llama = Llama(bytes(made.stream.out), pack_tokenizer(tiny_vocab(settings["vocab_size"])), **options)
+    want, other = (naive_logits({**settings, "eps": eps}, weights, [5, 7]) for eps in (0.5, 1e-5))
+    for pos, token in enumerate([5, 7]):
+        got = llama.forward(token, pos)
+        assert np.allclose(got, want[pos], rtol=1e-4, atol=1e-4) and not np.allclose(got, other[pos], rtol=1e-3, atol=1e-3)
+    # the engine's own 1e-5 is not written down: the options of every model of 1e-5 stay what they were
+    assert "rms_norm_eps" not in conversion(tensors, {**published, "rms_norm_eps": 1e-5}, settings).options

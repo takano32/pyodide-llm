@@ -12,7 +12,7 @@ import time
 import numpy as np
 
 # the RoPE angles are the engine's, which computes them itself when a file leaves the tables out (int8)
-from llama2_numpy import pack6, quantize6, rope_frequencies
+from llama2_numpy import RMS_EPS, pack6, quantize6, rope_frequencies
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
 # peak is the output plus 14 MB with this, plus 52 MB with pieces four times as large, at the same speed.
@@ -1414,7 +1414,7 @@ def gguf_model(metadata, tensors, base):
               "bos_token_id": metadata.get("tokenizer.ggml.bos_token_id", 1),
               "eos_token_id": metadata.get("tokenizer.ggml.eos_token_id", 2),
               # a head of another size than dim / heads (T124): llama.cpp says it as the length of a key
-              "head_dim": key("attention.key_length")}
+              "head_dim": key("attention.key_length"), "rms_norm_eps": key("attention.layer_norm_rms_epsilon")}
     if key("rope.scaling.type", "none") not in ("none", None):
         config["rope_scaling"] = {"type": key("rope.scaling.type"), "factor": key("rope.scaling.factor", 1.0)}
     if "rope_freqs.weight" in tensors:
@@ -1753,6 +1753,13 @@ class Conversion:
             written = sorted({special for special in specials if special and special in template}, key=len, reverse=True)
             if written:
                 self.options["specials"] = written
+        eps = self.config.get("rms_norm_eps")
+        # a GGUF says it in float32 (1e-5 is 9.99999974e-06 there): six digits are what config.json writes
+        eps = float(f"{eps:.6g}") if isinstance(eps, (int, float)) and eps > 0 else RMS_EPS
+        if self.stream.arch == "llama" and eps != RMS_EPS:
+            # T124: the epsilon of RMSNorm, where it is not the engine's 1e-5 (Qwen2.5 and Qwen3: 1e-6, which moved
+            # Qwen3 0.6B's perplexity by 0.12%). Only where it differs, like qk_norm and head_dim
+            self.options["rms_norm_eps"] = float(eps)
         if self.config.get("rope_scaling"):
             # the int8 file has no RoPE tables: the engine makes them, and needs the scaling for that (Llama 3)
             self.options["rope_scaling"] = dict(self.config["rope_scaling"])

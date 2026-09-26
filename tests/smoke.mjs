@@ -133,7 +133,7 @@ def qwen3_model(dim, heads, kv_heads, head_dim, hidden=96, layers=2, vocab=320, 
                         p + "mlp.down_proj.weight": normal(dim, hidden)})
     config = dict(model_type="qwen3", hidden_size=dim, intermediate_size=hidden, num_hidden_layers=layers,
                   num_attention_heads=heads, num_key_value_heads=kv_heads, head_dim=head_dim, vocab_size=vocab,
-                  max_position_embeddings=positions, rope_theta=10000.0, tie_word_embeddings=True)
+                  max_position_embeddings=positions, rope_theta=10000.0, tie_word_embeddings=True, rms_norm_eps=0.25)
     return tensors, config
 
 qwen3_vocabulary = gpt2_vocabulary
@@ -145,8 +145,10 @@ for dim, heads, kv_heads, head_dim in ((64, 4, 2, 16), (64, 4, 2, 32), (96, 2, 1
     for dtype in ("float32", "int8"):
         qwen3_file = bytearray(llama2_convert.checkpoint_size(header, dtype, qk_norm=True, head_dim=head_dim))
         llama2_convert.convert_weights(source, qwen3_config, dtype, 24, qwen3_file)
-        plain = llama2_numpy.Llama(bytes(qwen3_file), qwen3_vocabulary, dtype=dtype, qk_norm=True, head_dim=head_dim)
-        quick = kernel_llama(bytes(qwen3_file), qwen3_vocabulary, dtype=dtype, qk_norm=True, head_dim=head_dim)
+        # an epsilon far from 1e-5, so that a kernel that did not take it would differ (T124)
+        shape = dict(dtype=dtype, qk_norm=True, head_dim=head_dim, rms_norm_eps=0.25)
+        plain = llama2_numpy.Llama(bytes(qwen3_file), qwen3_vocabulary, **shape)
+        quick = kernel_llama(bytes(qwen3_file), qwen3_vocabulary, **shape)
         assert quick.backend.startswith("SIMD"), f"the kernels did not load for Qwen3: {quick.backend}"
         same = 0
         for pos, token in enumerate([1, 5, 9, 13, 17, 21, 25, 29]):

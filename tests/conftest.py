@@ -128,8 +128,10 @@ def naive_logits(config, weights, tokens):
     kv_mul = n_heads // n_kv_heads
     cos, sin = weights["freq_cis_real"], weights["freq_cis_imag"]
 
+    eps = config.get("eps", 1e-5)  # config.json's rms_norm_eps (T124)
+
     def rmsnorm(vector, weight):
-        return weight * vector / math.sqrt(sum(float(v) * float(v) for v in vector) / len(vector) + 1e-5)
+        return weight * vector / math.sqrt(sum(float(v) * float(v) for v in vector) / len(vector) + eps)
 
     def head_norm(vector, name, l):
         # Qwen3 (T124): every head of q and k normalized on its own, with one weight of a head's size

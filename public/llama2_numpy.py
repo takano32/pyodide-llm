@@ -303,14 +303,18 @@ def partial_rope(heads, cos, sin, rotary):
     return np.concatenate([turned, heads[:, rotary:]], axis=1) if rotary < heads.shape[1] else turned
 
 
-def rmsnorm(x, weight):
-    return weight * (x / np.sqrt(x.dot(x) / x.size + 1e-5))
+# the epsilon of RMSNorm where config.json does not say another (T124: Qwen3's 1e-6 moved perplexity by 0.12%)
+RMS_EPS = 1e-5
 
 
-def head_norm(x, weight):
+def rmsnorm(x, weight, eps=RMS_EPS):
+    return weight * (x / np.sqrt(x.dot(x) / x.size + np.float32(eps)))
+
+
+def head_norm(x, weight, eps=RMS_EPS):
     """rmsnorm() of every head of x (heads one after another), all with the same weight of one head's size."""
     heads = x.reshape(-1, weight.size)
-    return (weight * heads / np.sqrt((heads * heads).mean(axis=1, keepdims=True) + 1e-5)).reshape(-1)
+    return (weight * heads / np.sqrt((heads * heads).mean(axis=1, keepdims=True) + np.float32(eps))).reshape(-1)
 
 
 def layernorm(x, weight, bias):
@@ -395,7 +399,7 @@ def load_kernels(path, without_relaxed=False):
         lib = ctypes.CDLL(path)
         i32, p = ctypes.c_int32, ctypes.c_void_p
         signatures = dict(matmul_f32=[p, p, p, i32, i32, i32], quantize_x=[p, p, p, i32, i32], quantize6_x=[p, p, p, i32],
-                          matmul_q8=[p, p, p, p, p, i32, i32, i32], rmsnorm=[p, p, p, i32], rope=[p, p, p, i32, i32, i32],
+                          matmul_q8=[p, p, p, p, p, i32, i32, i32], rmsnorm=[p, p, p, i32, ctypes.c_float], rope=[p, p, p, i32, i32, i32],
                           attention=[p, p, p, p, p, i32, i32, i32, i32, i32, i32],
                           attention_f16=[p, p, p, p, p, i32, i32, i32, i32, i32, i32], to_f16=[p, p, i32],
                           swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
@@ -625,7 +629,7 @@ class Llama:
                  tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, nmt=False, collapse=False,
-                 unknown=None, qk_norm=False, head_dim=0):
+                 unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py), and
@@ -641,7 +645,8 @@ class Llama:
         qk_norm=True (T124): after them come the RMSNorm weights of q and k (one head's size each, per layer), and
         every head of q and k is normalized with them before RoPE (Qwen3). The caller says so, like bias.
         head_dim: the size of a head where it is not dim / n_heads (T124: Qwen3 0.6B has 16 heads of 128 in a dim of
-        1024): q and the attention's output are then n_heads * head_dim wide.
+        1024): q and the attention's output are then n_heads * head_dim wide. rms_norm_eps: config.json's, the epsilon
+        of every RMSNorm (the kernels take it too).
         rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
         rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
         whole (Llama 3).
@@ -729,6 +734,7 @@ class Llama:
             return array.astype(np.float32, copy=dtype == np.int8 and not keep_int8).reshape(shape)
 
         self.arch, self.parallel_residual = arch, parallel_residual
+        self.rms_norm_eps = float(rms_norm_eps)
         # how many values of each head RoPE turns: all of them unless the model says otherwise
         self.rotary = int(rotary) if rotary else self.head_size
         self.positions = None
@@ -864,7 +870,7 @@ class Llama:
         plan = {"arch": self.arch, "dim": self.dim, "hidden_dim": self.hidden_dim, "n_layers": self.n_layers,
                 "n_heads": self.n_heads, "n_kv_heads": self.n_kv_heads, "head_size": self.head_size,
                 "vocab_size": self.vocab_size, "seq_len": self.seq_len, "rotary": self.rotary,
-                "parallel_residual": bool(self.parallel_residual), "kv_start": KV_START,
+                "parallel_residual": bool(self.parallel_residual), "kv_start": KV_START, "rms_norm_eps": self.rms_norm_eps,
                 "shared_classifier": self.wcls is self.token_embedding_table, "int8": bool(int8),
                 "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels,
                 # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
@@ -910,7 +916,8 @@ class Llama:
         neox, gpt2 = self.arch == "neox", self.arch == "gpt2"
         layer_norm = neox or gpt2
         # GPT-2 and GPT-NeoX normalize by the mean as well, and have a bias on every projection
-        norm = (lambda v, w, b: layernorm(v, w, b)) if layer_norm else (lambda v, w, b: rmsnorm(v, w))
+        eps = self.rms_norm_eps
+        norm = (lambda v, w, b: layernorm(v, w, b)) if layer_norm else (lambda v, w, b: rmsnorm(v, w, eps))
         if gpt2:
             turn = lambda v, c, s: v.reshape(-1, head_size)
         elif neox:
@@ -932,7 +939,7 @@ class Llama:
             if self.bq is not None:  # Qwen2 and GPT-2 add a bias to q, k and v
                 qv, kv, vv = qv + self.bq[l], kv + self.bk[l], vv + self.bv[l]
             if self.q_norm is not None:  # Qwen3 normalizes every head of q and k
-                qv, kv = head_norm(qv, self.q_norm[l]), head_norm(kv, self.k_norm[l])
+                qv, kv = head_norm(qv, self.q_norm[l], eps), head_norm(kv, self.k_norm[l], eps)
             q = turn(qv, cos, sin).reshape(n_kv_heads, kv_mul, head_size)
             self.key_cache[l, :, pos] = turn(kv, cos, sin)
             self.value_cache[l, :, pos] = vv.reshape(n_kv_heads, head_size)
