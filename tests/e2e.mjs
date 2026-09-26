@@ -29,7 +29,8 @@
 //                  offline, loads the page again and must answer once more (Pyodide, NumPy and the page from the
 //                  service worker's copies, the model from the worker's cache).
 //   E2E_QUERY      more of the page's URL, such as hfParts=16&hfConnections=8 (T107), added to what the model needs
-//                  and kept in the JSON line.
+//                  and kept in the JSON line. With gpu=on (T135) a Chromium gets WebGPU without a GPU (SwiftShader, as
+//                  tests/bench-check.mjs has it), and the run fails unless the prompt went through it.
 //   E2E_THEN       model ids of the list, separated by spaces: after the answer they are chosen one after another
 //                  in the same page, as a visitor changes models, and each must answer too (the worker keeps one
 //                  memory from model to model, T96). They write what the page sets for them, not 256 tokens.
@@ -97,14 +98,17 @@ const watchdog = setTimeout(async () => {
   process.stdout.write(`${engine} ${browserVersion}, ${model}: timed out after ${seconds}s\n`, () => process.exit(2));
 }, limit);
 const kind = playwright[channel ? "chromium" : engine], viewport = { width: 390, height: 844 };
+// T135: ?gpu=on asks for the prompt on the GPU; a runner has none, SwiftShader stands in (its speed means nothing)
+const gpuAsked = /(^|&)gpu=on(&|$)/.test(process.env.E2E_QUERY ?? "");
+const args = gpuAsked && kind === playwright.chromium ? ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-webgpu-adapter=swiftshader"] : [];
 if (process.env.E2E_TWICE) {
   // A profile on disk, as a visitor's browser has: Playwright's usual context is like private browsing, and WebKit
   // kept nothing across a reload there (T99)
-  browser = await kind.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(), "e2e-profile-")), { headless: true, channel, viewport });
+  browser = await kind.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(), "e2e-profile-")), { headless: true, channel, viewport, args });
   browserVersion = browser.browser()?.version() ?? "";  // Playwright says a persistent context may not know its browser
   page = browser.pages()[0] ?? await browser.newPage();
 } else {
-  browser = await kind.launch({ headless: true, channel });
+  browser = await kind.launch({ headless: true, channel, args });
   browserVersion = browser.version();
   page = await browser.newPage({ viewport });
 }
@@ -212,6 +216,8 @@ const result = await page.evaluate(() => ({
   text: document.querySelector(".model .bubble")?.textContent ?? "",
   // the closed line; the breakdown below it is in the same element
   meta: document.querySelector(".model .meta summary")?.textContent ?? "",
+  // the breakdown's line of the prompt (T135: "prompt 40 tokens on WebGPU · …")
+  prompt: [...document.querySelectorAll(".model .meta *")].map((e) => e.textContent).find((t) => /^prompt \d/.test(t ?? "")) ?? "",
   error: document.querySelector(".error .bubble")?.textContent ?? "",
   // which kernels this browser got: "SIMD kernels, int8, relaxed SIMD", or less
   status: document.getElementById("status-text")?.textContent ?? "",
@@ -225,8 +231,10 @@ if (errors.length) failures.push(`console errors: ${errors.join(" | ")}`);
 if (!/tok\/s/.test(result.meta)) failures.push("no speed line under the answer");
 if (result.pageScrolls) failures.push("the page itself scrolls");
 if (expected[model] && !result.text.startsWith(expected[model])) failures.push(`unexpected text: ${result.text.slice(0, 120)}`);
+if (gpuAsked && !/on WebGPU/.test(result.prompt)) failures.push(`the prompt did not go through the GPU (${result.prompt || "no prompt line"}; ${result.status})`);
 console.log(`${engine} ${browserVersion}, ${model}: ready in ${readySeconds.toFixed(1)}s, ${result.meta}`);
 console.log(`status: ${result.status}${result.isolated ? "" : " (not cross-origin isolated)"}`);
+if (result.prompt) console.log(result.prompt);
 console.log(result.text.slice(0, 160).replace(/\n/g, " / "));
 const then = [];
 for (const next of (process.env.E2E_THEN ?? "").split(/\s+/).filter(Boolean)) {

@@ -1,0 +1,55 @@
+# The prompt on the GPU (T135, ?gpu=on) against the CPU and NumPy, in Chromium-family browsers with WebGPU on a
+# software adapter (SwiftShader: the runners have no GPU): tests/gpu-check.mjs on the models this workflow builds (the
+# site's int8 models and a made-up one with grouped-query attention). It shows that the numbers are right; the speeds
+# that count are the owner's devices'. The page itself with ?gpu=on: models.yml with query "gpu=on". By hand only.
+#
+#   gh workflow run gpu-prompt.yml [-f models="synthetic tiny-lm"] [--ref <branch>]
+name: The prompt on the GPU
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: 'model ids of this directory, or synthetic, separated by spaces (default: the check''s own)'
+        required: false
+
+jobs:
+  gpu:
+    name: ${{ matrix.os }} ${{ matrix.engine }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        # the models are built as the deployment builds them, on Linux; Chrome and Edge are the runner's own
+        os: [ubuntu-latest]
+        engine: [chromium, chrome, msedge]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Download and convert the models, compile the kernels, install the browser
+        shell: bash
+        run: |
+          pip install numpy tokenizers regex
+          npm ci
+          make models kernels
+          npx playwright-core install --with-deps chromium
+
+      - name: The prompt on the GPU against the CPU and NumPy
+        shell: bash
+        run: |
+          echo "## ${{ matrix.os }} ${{ matrix.engine }}" >> "$GITHUB_STEP_SUMMARY"
+          node tests/gpu-check.mjs ${{ inputs.models }} --engine ${{ matrix.engine }} 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "${PIPESTATUS[0]}"
