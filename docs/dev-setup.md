@@ -28,51 +28,33 @@ sudo apt install -y git gh curl wget ca-certificates build-essential \
 - `build-essential` は必須ではない（C の計測に使ったことがある程度。NumPy と tokenizers は arm64 の wheel が出ている）。
 - **Python のパッケージ**: Ubuntu の Python はシステムに `pip install` させない（PEP 668）。apt で足りるものは apt で、足りないものだけ下の 2 つの方法で。
 
-#### apt だけで入れる（持ち主の検討、2026-09-26 に a1-free で入れずに調べた）
+#### 決めた形（持ち主の判断、2026-09-26）: apt で足りるものは apt、`tokenizers` と `transformers` だけ venv
 
-毎回の試験（pytest・smoke・forward-check・build）に要るものは 26.04 の apt にある: `python3-numpy` 2.3.5、`python3-pytest` 9.0.2、`python3-regex`、`python3-jinja2` 3.1.6（a1-free には入っている）。sentencepiece の突き合わせ（T126）には `python3-sentencepiece` 0.2.1（入れる。確かめたのは 0.2.2 で、版の差は未確認）。
-
-**26.04 の apt に無いのは 2 つ**: `tokenizers`（pytest の本物との突き合わせ数件。無ければ skip）と `transformers`（`tests/format_check.py` だけ）。どちらも次の版の 26.10（`stonking`、開発中、例年 10 月に出る）の universe にある（`python3-tokenizers` 0.23.1、`python3-transformers` 5.12.1。Debian の forky・sid も同じ版）。
-
-- **`tokenizers` は 26.10 から 1 つだけピン留めで入れられる。Python 本体は 26.04 のまま**: 26.10 の Python も 3.14（3.14.7）で、`python3-tokenizers` の中身は Python の安定 ABI の `tokenizers.abi3-aarch64-linux-gnu.so`（Python 3 の版に縛られない）、glibc は 2.34 まで。26.10 の `.deb` を入れずに展開して 26.04 の Python 3.14 で `import tokenizers` できた（0.23.1）。入れずに見積もると、`--no-install-recommends` なら 26.10 から来るのは `python3-tokenizers` だけで、ほかの依存 5 つ（`python3-huggingface-hub` 1.2.2 など）は 26.04 から。
-- **`transformers` は apt では入らない**: Ubuntu（と Debian）の `python3-transformers` は PyTorch（`python3-torch`・`python3-torchvision`）に依存し、26.04 の上では 26.10 の依存を全部許しても解けない（torchvision → libtorch → openmpi → libucc → AMD の ROCm のライブラリで食い違う）。このリポジトリの突き合わせは PyTorch を使わない。`transformers` は下の小さな venv に。
-
-**手順（ピン留め）**
+毎回の試験（pytest・smoke・forward-check・build）に要るものは 26.04 の apt にある（a1-free には入っている）。sentencepiece の突き合わせ（T126）の分だけ足す:
 
 ```sh
-# 26.10 を「頼んだものだけ」取れる低い優先度で足す（既定の 500 より低い 100: 名指ししない限り入らない）
-sudo tee /etc/apt/sources.list.d/stonking.sources <<'EOS'
-Types: deb
-URIs: http://ap-tokyo-1-ad-1.clouds.archive.ubuntu.com/ubuntu/
-Suites: stonking
-Components: main universe
-Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
-EOS
-sudo tee /etc/apt/preferences.d/stonking <<'EOS'
-Package: *
-Pin: release n=stonking
-Pin-Priority: 100
-EOS
-sudo apt update
-# 先に入れずに見る: 26.10 から来るのが python3-tokenizers だけであること
-apt-get -s --no-install-recommends install python3-tokenizers/stonking python3-sentencepiece | grep ^Inst
-sudo apt install --no-install-recommends python3-tokenizers/stonking python3-sentencepiece
-python3 -c "import tokenizers; print(tokenizers.__version__)"   # 0.23.1
+sudo apt install python3-numpy python3-pytest python3-regex python3-jinja2 python3-sentencepiece
 ```
 
-- `URIs` は a1-free の OCI の東京のミラー（`/etc/apt/sources.list.d/ubuntu.sources` と同じ）。ほかの機械ではその機械の `ubuntu.sources` の URI に。
-- **ピン留めの後の注意**: 優先度 100 なので、`apt upgrade` は 26.04 のものを 26.10 に上げない。ただし 26.10 の `python3-tokenizers` 自身は 26.10 の更新に付いていく。26.10 が出た後の版で依存が変わったら、`apt-get -s` で見てから上げる。26.10 の保守が切れたら（出てから 9 か月）、この 2 つのファイルを消して `python3-tokenizers` を外すか、次の LTS に上げる。
-- **戻し方**: `sudo apt remove python3-tokenizers`、2 つのファイルを消して `sudo apt update`。
-
-**`transformers` だけの小さな venv**（`tests/format_check.py` を使うときだけ）:
+`tokenizers`（pytest の本物との突き合わせ数件。無ければ skip）と `transformers`（`tests/format_check.py` だけ）は 26.04 の apt に無いので、system の site-packages を見る小さな venv に入れる（apt の numpy・jinja2・sentencepiece はそのまま使う。PyTorch は入らない、要らない）:
 
 ```sh
-python3 -m venv --system-site-packages ~/venvs/reference   # apt の numpy・jinja2・tokenizers・sentencepiece をそのまま使う
-~/venvs/reference/bin/pip install transformers==5.12.1      # PyTorch は入らない（要らない）
+python3 -m venv --system-site-packages ~/venvs/reference
+~/venvs/reference/bin/pip install tokenizers==0.23.1 transformers==5.12.1
+~/venvs/reference/bin/python -m pytest tests -q        # 本物の tokenizers との突き合わせも走る
 ~/venvs/reference/bin/python tests/format_check.py ~/tmp/format-check hf-qwen3-0.6b
 ```
 
-#### venv に全部入れる（前の書き方）
+<details><summary>調べて採らなかった形: <code>tokenizers</code> を 26.10 からピン留めで（2026-09-26、a1-free で入れずに調べた）</summary>
+
+- 26.10（`stonking`）の universe に `python3-tokenizers` 0.23.1 と `python3-transformers` 5.12.1 がある（Debian の forky・sid も同じ版）。
+- `tokenizers` は 26.04 の Python のまま入れられる: 26.10 の Python も 3.14、中身は安定 ABI の `tokenizers.abi3-aarch64-linux-gnu.so`、glibc は 2.34 まで。展開しただけの 26.10 の `.deb` を 26.04 の Python 3.14 で import できた。優先度 100 のピン留めと `--no-install-recommends` なら、26.10 から来るのはそれ 1 つ。
+- `transformers` は apt では入らない: PyTorch（`python3-torch`・`python3-torchvision`）に依存し、26.04 の上では 26.10 の依存を全部許しても解けない（torchvision → libtorch → openmpi → libucc → ROCm で食い違う）。
+- 片方は venv が要るなら両方 venv のほうが単純、というのが持ち主の判断。
+
+</details>
+
+#### venv に全部入れる（apt を使わない機械）
 
 
 
