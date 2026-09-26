@@ -907,7 +907,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     const config = named("config.json"), tokenizers = [named("tokenizer.json"), named("tokenizer.model"), named("spiece.model")].filter(Boolean);
     const settings = chosen.find(({ name }) => name.toLowerCase().endsWith(".json") && name !== config?.name && !tokenizers.some((file) => file!.name === name) && !HF_IGNORED.includes(name.toLowerCase()));
     if (weights.length !== 1 || !config || !tokenizers.length) {
-      throw new Error("A Hugging Face model needs three files together: one .safetensors file (a model in several shards is not supported), config.json, and tokenizer.json or tokenizer.model.");
+      throw new Error("A Hugging Face model needs three files together: one .safetensors file (a model in several shards is not supported), config.json, and tokenizer.json, tokenizer.model or spiece.model.");
     }
     const given = settings ? JSON.parse(await settings.text()) : {};
     return {
