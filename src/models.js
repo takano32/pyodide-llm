@@ -161,20 +161,32 @@ export const LICENSES = {
   "bartowski/Qwen2.5-1.5B-Instruct-GGUF": APACHE, "HuggingFaceTB/SmolLM2-360M-Instruct-GGUF": APACHE,
   "SakanaAI/TinySwallow-1.5B-Instruct-GGUF": APACHE_GEMMA, "bartowski/SmolLM2-1.7B-Instruct-GGUF": APACHE,
   "bartowski/Qwen2.5-3B-Instruct-GGUF": QWEN_RESEARCH, "bartowski/Qwen2.5-7B-Instruct-GGUF": APACHE,
+  // T136's second stage: the GGUF each takes its weights from (the card's license is the original's)
+  "mradermacher/sarashina2.2-0.5b-GGUF": MIT, "mmnga/sarashina2.2-0.5b-instruct-v0.1-gguf": MIT,
+  "mmnga/sarashina2.2-1b-instruct-v0.1-gguf": MIT, "mmnga/sarashina2.2-3b-instruct-v0.1-gguf": MIT,
+  "mmnga-o/CAT-Translate-0.8b-gguf": MIT, "mmnga-o/CAT-Translate-1.4b-gguf": MIT,
+  "mmnga/llm-jp-3-980m-instruct3-gguf": APACHE, "mmnga/llm-jp-3.1-1.8b-instruct4-gguf": APACHE,
+  "mmnga-o/llm-jp-4-8b-instruct-gguf": APACHE, "mmnga/RakutenAI-2.0-mini-instruct-gguf": APACHE,
+  "mradermacher/RakutenAI-7B-chat-GGUF": APACHE, "mmnga/tokyotech-llm-Swallow-MS-7b-instruct-v0.1-gguf": APACHE,
+  "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF": APACHE, "TheBloke/Mistral-7B-Instruct-v0.2-GGUF": APACHE,
+  "bartowski/Mistral-7B-Instruct-v0.3-GGUF": APACHE, "TheBloke/zephyr-7B-beta-GGUF": MIT,
+  "bartowski/Llama-3.2-1B-Instruct-GGUF": LLAMA_32, "bartowski/Llama-3.2-3B-Instruct-GGUF": LLAMA_32,
+  "mmnga/Llama-3.1-Swallow-8B-Instruct-v0.5-gguf": SWALLOW,
 };
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
 /** Every source once, in the order of the list, with its license and the names of the models taken from it. A
  * model fetched from a redistribution names both: where it comes from, and whose model it is. The redistribution's
  * line says which it is: "(GGUF)" for a GGUF (T74), "(copy)" for the same safetensors elsewhere (unsloth's Llama;
- * until 2026-09-26 it said "(GGUF)" for those too). */
+ * until 2026-09-26 it said "(GGUF)" for those too). A GGUF with a copy's vocabulary (T136: Llama 3.2's) is on all three. */
 export function sources(models = MODELS) {
   const bySource = new Map();
   for (const entry of models) {
-    for (const repo of [entry.original, sourceOf(entry)].filter(Boolean)) {
+    // T136: the repository the vocabulary and config.json come from, where it is neither (unsloth's copy of Llama)
+    for (const repo of new Set([entry.original, entry.hf?.vocabulary?.repo, sourceOf(entry)].filter(Boolean))) {
       if (!bySource.has(repo)) bySource.set(repo, { repo, license: LICENSES[repo], names: [] });
-      const kind = entry.hf?.weights?.endsWith(".gguf") ? "GGUF" : "copy";
-      bySource.get(repo).names.push(entry.original && repo === sourceOf(entry) ? `${entry.name} (${kind})` : entry.name);
+      const kind = repo !== sourceOf(entry) ? "copy" : entry.hf?.weights?.endsWith(".gguf") ? "GGUF" : "copy";
+      bySource.get(repo).names.push(entry.original && repo !== entry.original ? `${entry.name} (${kind})` : entry.name);
     }
   }
   return [...bySource.values()];
@@ -243,22 +255,30 @@ const LISTED = [
     hf: hf("llm-jp/llm-jp-3-440m-instruct3", "a308f143bd5824c4033b3a2efaa1c00afbb3aa9e"), download: 894519624, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // sarashina2.2 (T79): the instruct one is published as a single shard with an index (T78)
-  { group: "hf", id: "hf-sarashina2.2-0.5b", name: "sarashina2.2 0.5B", note: "日本語 · fetches 1.6 GB → int8 0.9 GB · desktop only",
-    hf: hf("sbintuitions/sarashina2.2-0.5b", "5fb086c49f49824cfc93f09cc4ed5cd5917bef3d", "tokenizer.model"),
-    download: 1586121792, conversion: {}, options: {}, generation: sampled(1.1),
+  { group: "hf", id: "hf-sarashina2.2-0.5b", name: "sarashina2.2 0.5B", note: "日本語 · fetches 845 MB (GGUF) → int8 0.9 GB · desktop only",
+    original: "sbintuitions/sarashina2.2-0.5b",
+    hf: { repo: "mradermacher/sarashina2.2-0.5b-GGUF", revision: "2aed15b94f8c25b7582369f62d9801f3524e4721", weights: "sarashina2.2-0.5b.Q8_0.gguf",
+          vocabulary: { repo: "sbintuitions/sarashina2.2-0.5b", revision: "5fb086c49f49824cfc93f09cc4ed5cd5917bef3d", tokenizer: "tokenizer.model" } },
+    download: 845360480, conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "これからの流行りは", placeholder: JAPANESE },
-  { group: "hf", id: "hf-sarashina2.2-0.5b-instruct", name: "sarashina2.2 0.5B Instruct", note: "answers instructions · 日本語 · fetches 1.6 GB → int8 0.9 GB · desktop only",
-    hf: hf("sbintuitions/sarashina2.2-0.5b-instruct-v0.1", "e4b9aacc3f644893d0179847946ef6c58d868f29", "tokenizer.model"),
-    download: 1586121792, conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
+  { group: "hf", id: "hf-sarashina2.2-0.5b-instruct", name: "sarashina2.2 0.5B Instruct", note: "answers instructions · 日本語 · fetches 845 MB (GGUF) → int8 0.9 GB · desktop only",
+    original: "sbintuitions/sarashina2.2-0.5b-instruct-v0.1",
+    hf: { repo: "mmnga/sarashina2.2-0.5b-instruct-v0.1-gguf", revision: "5c71186a7a57b8c0325dec70ba2f295303effcd8", weights: "sarashina2.2-0.5b-instruct-v0.1-Q8_0.gguf",
+          vocabulary: { repo: "sbintuitions/sarashina2.2-0.5b-instruct-v0.1", revision: "e4b9aacc3f644893d0179847946ef6c58d868f29", tokenizer: "tokenizer.model" } },
+    download: 845363072, conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T81: a translator from sarashina2.2, Japanese to English and back, asked in its own words and greedy, as its
   // model card runs it (no generation_config: transformers' defaults; a repetition penalty bends a translation)
-  { group: "hf", id: "hf-cat-translate-0.8b", name: "CAT-Translate 0.8B", note: "translates 日本語 ⇄ English · fetches 1.6 GB → int8 0.9 GB · desktop only",
-    hf: hf("cyberagent/CAT-Translate-0.8b", "b555f93ef67846b6ed2773e0d2f16ceb0d30adb9", "tokenizer.model"), download: 1586121792,
+  { group: "hf", id: "hf-cat-translate-0.8b", name: "CAT-Translate 0.8B", note: "translates 日本語 ⇄ English · fetches 845 MB (GGUF) → int8 0.9 GB · desktop only",
+    original: "cyberagent/CAT-Translate-0.8b",
+    hf: { repo: "mmnga-o/CAT-Translate-0.8b-gguf", revision: "c770a1944b55223ccbe766c770882c30c9866445", weights: "CAT-Translate-0.8b-Q8_0.gguf",
+          vocabulary: { repo: "cyberagent/CAT-Translate-0.8b", revision: "b555f93ef67846b6ed2773e0d2f16ceb0d30adb9", tokenizer: "tokenizer.model" } }, download: 845363136,
     conversion: {}, options: sarashina, generation: greedy, template: SARASHINA,
     prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE },
-  { group: "hf", id: "hf-llm-jp-3-980m-instruct3", name: "llm-jp-3 980M instruct3", note: "answers instructions · 日本語 · fetches 2.0 GB → int8 1.1 GB · desktop only",
-    hf: hf("llm-jp/llm-jp-3-980m-instruct3", "c079dbf3f88aa2ab702b9696231fc3336c46b1be"), download: 1980382824, conversion: {}, options: llmJp,
+  { group: "hf", id: "hf-llm-jp-3-980m-instruct3", name: "llm-jp-3 980M instruct3", note: "answers instructions · 日本語 · fetches 1.1 GB (GGUF) → int8 1.1 GB · desktop only",
+    original: "llm-jp/llm-jp-3-980m-instruct3",
+    hf: { repo: "mmnga/llm-jp-3-980m-instruct3-gguf", revision: "5966bc9958a7d313da9b8cb4679cfdf6814b6d42", weights: "llm-jp-3-980m-instruct3-Q8_0.gguf",
+          vocabulary: { repo: "llm-jp/llm-jp-3-980m-instruct3", revision: "c079dbf3f88aa2ab702b9696231fc3336c46b1be", tokenizer: "tokenizer.json" } }, download: 1054638240, conversion: {}, options: llmJp,
     generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T126: a GPT-2 of 1.3B, whose activation is written gelu_fast (the same tanh approximation as gelu_new). Its
   // table of positions holds 1024, which is its context
@@ -268,12 +288,16 @@ const LISTED = [
   // T81 (2026-09-26): the survey's Japanese models that convert as they are. TinySwallow reads its chat template
   // itself (T73); llm-jp-3.1 has its family's format with the system sentence its model card always passes (its
   // template alone leaves it out)
-  { group: "hf", id: "hf-sarashina2.2-1b-instruct", name: "sarashina2.2 1B Instruct", note: "answers instructions · 日本語 · fetches 2.8 GB → int8 1.6 GB · desktop only",
-    hf: hf("sbintuitions/sarashina2.2-1b-instruct-v0.1", "08cf5a8ae579be0fb5a9f802dda8a26acbc94951", "tokenizer.model"), download: 2815103168,
+  { group: "hf", id: "hf-sarashina2.2-1b-instruct", name: "sarashina2.2 1B Instruct", note: "answers instructions · 日本語 · fetches 1.5 GB (GGUF) → int8 1.6 GB · desktop only",
+    original: "sbintuitions/sarashina2.2-1b-instruct-v0.1",
+    hf: { repo: "mmnga/sarashina2.2-1b-instruct-v0.1-gguf", revision: "cd8b02dcc14f38a5101171f304ab269d514fafd4", weights: "sarashina2.2-1b-instruct-v0.1-Q8_0.gguf",
+          vocabulary: { repo: "sbintuitions/sarashina2.2-1b-instruct-v0.1", revision: "08cf5a8ae579be0fb5a9f802dda8a26acbc94951", tokenizer: "tokenizer.model" } }, download: 1498333056,
     conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  { group: "hf", id: "hf-cat-translate-1.4b", name: "CAT-Translate 1.4B", note: "translates 日本語 ⇄ English · fetches 2.8 GB → int8 1.6 GB · desktop only",
-    hf: hf("cyberagent/CAT-Translate-1.4b", "254120945fd9a61278ac2171ab07c831d56838fa", "tokenizer.model"), download: 2815103168,
+  { group: "hf", id: "hf-cat-translate-1.4b", name: "CAT-Translate 1.4B", note: "translates 日本語 ⇄ English · fetches 1.5 GB (GGUF) → int8 1.6 GB · desktop only",
+    original: "cyberagent/CAT-Translate-1.4b",
+    hf: { repo: "mmnga-o/CAT-Translate-1.4b-gguf", revision: "fe0ab30f267cd976a4f03d218defa6151af88b87", weights: "CAT-Translate-1.4b-Q8_0.gguf",
+          vocabulary: { repo: "cyberagent/CAT-Translate-1.4b", revision: "254120945fd9a61278ac2171ab07c831d56838fa", tokenizer: "tokenizer.model" } }, download: 1498333088,
     conversion: {}, options: sarashina, generation: greedy, template: SARASHINA,
     prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE },
   { group: "hf", id: "hf-tinyswallow-1.5b-instruct", name: "TinySwallow 1.5B Instruct", note: "answers instructions · 日本語 · fetches 1.6 GB (GGUF) → int8 1.7 GB · desktop only",
@@ -282,12 +306,16 @@ const LISTED = [
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T125: a Mistral (a Llama by another name) of 1.5B, Japanese and English; its sliding window of 8192 is past the
   // context of 4096 the page gives it
-  { group: "hf", id: "hf-rakutenai-2.0-mini-instruct", name: "RakutenAI 2.0 mini instruct", note: "answers instructions · 日本語 / English · fetches 3.1 GB → int8 1.7 GB · desktop only",
-    hf: hf("Rakuten/RakutenAI-2.0-mini-instruct", "6d902489587d324b7d5e201299e4e1a169f3a40b", "tokenizer.model"), download: 3069389424,
+  { group: "hf", id: "hf-rakutenai-2.0-mini-instruct", name: "RakutenAI 2.0 mini instruct", note: "answers instructions · 日本語 / English · fetches 1.6 GB (GGUF) → int8 1.7 GB · desktop only",
+    original: "Rakuten/RakutenAI-2.0-mini-instruct",
+    hf: { repo: "mmnga/RakutenAI-2.0-mini-instruct-gguf", revision: "9bd2900dd7bff11c248fb510d4297b3a88817b76", weights: "RakutenAI-2.0-mini-instruct-Q8_0.gguf",
+          vocabulary: { repo: "Rakuten/RakutenAI-2.0-mini-instruct", revision: "6d902489587d324b7d5e201299e4e1a169f3a40b", tokenizer: "tokenizer.model" } }, download: 1631976352,
     conversion: {}, options: {}, generation: sampled(1.1), template: RAKUTEN,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  { group: "hf", id: "hf-llm-jp-3.1-1.8b-instruct4", name: "llm-jp-3.1 1.8B instruct4", note: "answers instructions · 日本語 · fetches 3.7 GB → int8 2.1 GB · desktop only",
-    hf: hf("llm-jp/llm-jp-3.1-1.8b-instruct4", "f19510db409090bb1737f24f868d17c4bdc86c8e"), download: 3735253776,
+  { group: "hf", id: "hf-llm-jp-3.1-1.8b-instruct4", name: "llm-jp-3.1 1.8B instruct4", note: "answers instructions · 日本語 · fetches 2.0 GB (GGUF) → int8 2.1 GB · desktop only",
+    original: "llm-jp/llm-jp-3.1-1.8b-instruct4",
+    hf: { repo: "mmnga/llm-jp-3.1-1.8b-instruct4-gguf", revision: "14ddbab20c68d8befdced79bd9daa3d7a1a29376", weights: "llm-jp-3.1-1.8b-instruct4-Q8_0.gguf",
+          vocabulary: { repo: "llm-jp/llm-jp-3.1-1.8b-instruct4", revision: "f19510db409090bb1737f24f868d17c4bdc86c8e", tokenizer: "tokenizer.json" } }, download: 1987023136,
     conversion: {}, options: llmJp, generation: sampled(1.1), template: LLM_JP_INSTRUCT, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T132: the large ones, in shards (T105). Past 4 GiB with their forward pass they need a 64-bit memory (T101),
   // where the browser has one int8 (T133), else six bits (T98); the 7 to 8B ones do not fit a 32-bit memory even so
@@ -296,8 +324,10 @@ const LISTED = [
     hf: { repo: "bartowski/Qwen2.5-3B-Instruct-GGUF", revision: "f302c64a2269a69fb27b2f9473b362f5bb8e78d8", weights: "Qwen2.5-3B-Instruct-Q8_0.gguf" }, download: 3285476512,
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  { group: "hf", id: "hf-sarashina2.2-3b-instruct", name: "sarashina2.2 3B Instruct", note: "answers instructions · 日本語 · fetches 6.7 GB → int8 3.8 GB · desktop only",
-    hf: hf("sbintuitions/sarashina2.2-3b-instruct-v0.1", "4f3626fb1b64b3e97c908e67f27b2d627ba2a999", "tokenizer.model"), download: 6711252896,
+  { group: "hf", id: "hf-sarashina2.2-3b-instruct", name: "sarashina2.2 3B Instruct", note: "answers instructions · 日本語 · fetches 3.6 GB (GGUF) → int8 3.8 GB · desktop only",
+    original: "sbintuitions/sarashina2.2-3b-instruct-v0.1",
+    hf: { repo: "mmnga/sarashina2.2-3b-instruct-v0.1-gguf", revision: "31d771319b04032f33e0d9d860f3984ea4812154", weights: "sarashina2.2-3b-instruct-v0.1-Q8_0.gguf",
+          vocabulary: { repo: "sbintuitions/sarashina2.2-3b-instruct-v0.1", revision: "4f3626fb1b64b3e97c908e67f27b2d627ba2a999", tokenizer: "tokenizer.model" } }, download: 3568393312,
     conversion: {}, options: sarashina, generation: sampled(1.1), template: SARASHINA,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-qwen2.5-7b-instruct", name: "Qwen2.5 7B Instruct", note: "answers instructions · 日本語 / English · fetches 8.1 GB (GGUF) → int8 8.6 GB · desktop only · Chrome and Firefox",
@@ -306,21 +336,29 @@ const LISTED = [
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T125: Mistral 7B's of Japanese, whose sliding window of 4096 is the page's context
-  { group: "hf", id: "hf-rakutenai-7b-chat", name: "RakutenAI 7B chat", note: "answers instructions · 日本語 / English · fetches 14.7 GB → int8 8.3 GB · desktop only · Chrome and Firefox",
-    hf: hf("Rakuten/RakutenAI-7B-chat", "7093167c61a0be6161cb68928c939c03fe0ab87d", "tokenizer.model"), download: 14745642040,
+  { group: "hf", id: "hf-rakutenai-7b-chat", name: "RakutenAI 7B chat", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB · desktop only · Chrome and Firefox",
+    original: "Rakuten/RakutenAI-7B-chat",
+    hf: { repo: "mradermacher/RakutenAI-7B-chat-GGUF", revision: "d118d842e84cd542a48c6a89464d95b98d37e4e7", weights: "RakutenAI-7B-chat.Q8_0.gguf",
+          vocabulary: { repo: "Rakuten/RakutenAI-7B-chat", revision: "7093167c61a0be6161cb68928c939c03fe0ab87d", tokenizer: "tokenizer.model" } }, download: 7835496736,
     conversion: {}, options: {}, generation: sampled(1.1), template: RAKUTEN,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  { group: "hf", id: "hf-swallow-ms-7b-instruct", name: "Swallow-MS 7B instruct", note: "answers instructions · 日本語 / English · fetches 14.7 GB → int8 8.3 GB · desktop only · Chrome and Firefox",
-    hf: hf("tokyotech-llm/Swallow-MS-7b-instruct-v0.1", "008d006f9065e37e39e31bf117ae8689390953e8", "tokenizer.model"), download: 14660445224,
+  { group: "hf", id: "hf-swallow-ms-7b-instruct", name: "Swallow-MS 7B instruct", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB · desktop only · Chrome and Firefox",
+    original: "tokyotech-llm/Swallow-MS-7b-instruct-v0.1",
+    hf: { repo: "mmnga/tokyotech-llm-Swallow-MS-7b-instruct-v0.1-gguf", revision: "cb9ab1c831cfdb8f56371f0ba94806df0fabd518", weights: "tokyotech-llm-Swallow-MS-7b-instruct-v0.1-Q8_0.gguf",
+          vocabulary: { repo: "tokyotech-llm/Swallow-MS-7b-instruct-v0.1", revision: "008d006f9065e37e39e31bf117ae8689390953e8", tokenizer: "tokenizer.model" } }, download: 7790109536,
     conversion: {}, options: {}, generation: sampled(1.1), template: SWALLOW_MS,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // Swallow's own chat_template is read (T73): a Japanese system message, and a second BOS before the user's turn,
   // as the real Jinja writes it (the same IDs as the real Jinja and tokenizers, T132)
-  { group: "hf", id: "hf-llama-3.1-swallow-8b-instruct", name: "Llama 3.1 Swallow 8B Instruct", note: "answers instructions · 日本語 / English · fetches 16.1 GB → int8 9.0 GB · desktop only · Chrome and Firefox",
-    hf: hf("tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5", "b1f8317099a97e790ec872c1225ca155979b4816"), download: 16060556376,
+  { group: "hf", id: "hf-llama-3.1-swallow-8b-instruct", name: "Llama 3.1 Swallow 8B Instruct", note: "answers instructions · 日本語 / English · fetches 8.5 GB (GGUF) → int8 9.0 GB · desktop only · Chrome and Firefox",
+    original: "tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5",
+    hf: { repo: "mmnga/Llama-3.1-Swallow-8B-Instruct-v0.5-gguf", revision: "dc00f584312c641eb7af415f7f44bcc4487350cb", weights: "Llama-3.1-Swallow-8B-Instruct-v0.5-Q8_0.gguf",
+          vocabulary: { repo: "tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5", revision: "b1f8317099a97e790ec872c1225ca155979b4816", tokenizer: "tokenizer.json" } }, download: 8540772672,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
-  { group: "hf", id: "hf-llm-jp-4-8b-instruct", name: "llm-jp-4 8B instruct", note: "answers instructions · 日本語 / English · fetches 17.2 GB → int8 9.7 GB · desktop only · Chrome and Firefox",
-    hf: hf("llm-jp/llm-jp-4-8b-instruct", "098f2b2cf33021eba19a6d3582aa3d071ccc0aff"), download: 17180435544,
+  { group: "hf", id: "hf-llm-jp-4-8b-instruct", name: "llm-jp-4 8B instruct", note: "answers instructions · 日本語 / English · fetches 9.1 GB (GGUF) → int8 9.7 GB · desktop only · Chrome and Firefox",
+    original: "llm-jp/llm-jp-4-8b-instruct",
+    hf: { repo: "mmnga-o/llm-jp-4-8b-instruct-gguf", revision: "7ae4da12cee2f109509cb8e1d01cf8a0f1a5fbc1", weights: "llm-jp-4-8b-instruct-Q8_0.gguf",
+          vocabulary: { repo: "llm-jp/llm-jp-4-8b-instruct", revision: "098f2b2cf33021eba19a6d3582aa3d071ccc0aff", tokenizer: "tokenizer.json" } }, download: 9132708384,
     conversion: {}, options: harmony, generation: sampled(1.1), template: HARMONY,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // English. Pythia is the same design at five sizes: a ladder for measuring (T80)
@@ -359,15 +397,18 @@ const LISTED = [
     hf: hf("EleutherAI/pythia-1b", "f73d7dcc545c8bd326d8559c8ef84ffe92fea6b2"), download: 2090701528,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
   // TinyLlama's template has </s> between the turns: specials makes the tokenizer read it as the token, not as text
-  { group: "hf", id: "hf-tinyllama-1.1b-chat", name: "TinyLlama 1.1B Chat", note: "answers instructions · English · fetches 2.2 GB → int8 1.2 GB · desktop only",
-    hf: hf("TinyLlama/TinyLlama-1.1B-Chat-v1.0", "fe8a4ea1ffedaf415f4da2f062534de366a451e6", "tokenizer.model"), download: 2200119864,
+  { group: "hf", id: "hf-tinyllama-1.1b-chat", name: "TinyLlama 1.1B Chat", note: "answers instructions · English · fetches 1.2 GB (GGUF) → int8 1.2 GB · desktop only",
+    original: "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+    hf: { repo: "TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF", revision: "52e7645ba7c309695bec7ac98f4f005b139cf465", weights: "tinyllama-1.1b-chat-v1.0.Q8_0.gguf",
+          vocabulary: { repo: "TinyLlama/TinyLlama-1.1B-Chat-v1.0", revision: "fe8a4ea1ffedaf415f4da2f062534de366a451e6", tokenizer: "tokenizer.model" } }, download: 1170781568,
     conversion: {}, options: { specials: ["</s>"] }, generation: sampled(1.1), template: "<|user|>\n{prompt}</s>\n<|assistant|>\n",
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   // T106: Llama 3. The original (meta-llama) is gated, so the same weights come from unsloth's copy (`original`
   // names whose they are). The chat template and its special tokens are read from the model (T73)
-  { group: "hf", id: "hf-llama-3.2-1b-instruct", name: "Llama 3.2 1B Instruct", note: "answers instructions · English · fetches 2.5 GB → int8 1.4 GB · desktop only",
+  { group: "hf", id: "hf-llama-3.2-1b-instruct", name: "Llama 3.2 1B Instruct", note: "answers instructions · English · fetches 1.3 GB (GGUF) → int8 1.4 GB · desktop only",
     original: "meta-llama/Llama-3.2-1B-Instruct",
-    hf: hf("unsloth/Llama-3.2-1B-Instruct", "5a8abab4a5d6f164389b1079fb721cfab8d7126c"), download: 2471645608,
+    hf: { repo: "bartowski/Llama-3.2-1B-Instruct-GGUF", revision: "067b946cf014b7c697f3654f621d577a3e3afd1c", weights: "Llama-3.2-1B-Instruct-Q8_0.gguf",
+          vocabulary: { repo: "unsloth/Llama-3.2-1B-Instruct", revision: "5a8abab4a5d6f164389b1079fb721cfab8d7126c", tokenizer: "tokenizer.json" } }, download: 1321083008,
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   { group: "hf", id: "hf-pythia-1.4b", name: "Pythia 1.4B", note: "English · fetches 2.9 GB → int8 1.6 GB · desktop only",
@@ -393,21 +434,28 @@ const LISTED = [
     generation: thinking, template: "<｜User｜>{prompt}<｜Assistant｜><think>\n",
     prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
   // T125: Mistral 7B, and zephyr made from it
-  { group: "hf", id: "hf-mistral-7b-instruct-v0.2", name: "Mistral 7B Instruct v0.2", note: "answers instructions · English · fetches 14.5 GB → int8 8.2 GB · desktop only · Chrome and Firefox",
-    hf: hf("mistralai/Mistral-7B-Instruct-v0.2", "63a8b081895390a26e140280378bc85ec8bce07a", "tokenizer.model"), download: 14483498016,
+  { group: "hf", id: "hf-mistral-7b-instruct-v0.2", name: "Mistral 7B Instruct v0.2", note: "answers instructions · English · fetches 7.7 GB (GGUF) → int8 8.2 GB · desktop only · Chrome and Firefox",
+    original: "mistralai/Mistral-7B-Instruct-v0.2",
+    hf: { repo: "TheBloke/Mistral-7B-Instruct-v0.2-GGUF", revision: "3a6fbf4a41a1d52e415a4958cde6856d34b2db93", weights: "mistral-7b-instruct-v0.2.Q8_0.gguf",
+          vocabulary: { repo: "mistralai/Mistral-7B-Instruct-v0.2", revision: "63a8b081895390a26e140280378bc85ec8bce07a", tokenizer: "tokenizer.model" } }, download: 7695857952,
     conversion: {}, options: {}, generation: sampled(1.1), template: MISTRAL,
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
-  { group: "hf", id: "hf-mistral-7b-instruct-v0.3", name: "Mistral 7B Instruct v0.3", note: "answers instructions · English · fetches 14.5 GB → int8 8.2 GB · desktop only · Chrome and Firefox",
-    hf: hf("mistralai/Mistral-7B-Instruct-v0.3", "c170c708c41dac9275d15a8fff4eca08d52bab71", "tokenizer.model"), download: 14496080928,
+  { group: "hf", id: "hf-mistral-7b-instruct-v0.3", name: "Mistral 7B Instruct v0.3", note: "answers instructions · English · fetches 7.7 GB (GGUF) → int8 8.2 GB · desktop only · Chrome and Firefox",
+    original: "mistralai/Mistral-7B-Instruct-v0.3",
+    hf: { repo: "bartowski/Mistral-7B-Instruct-v0.3-GGUF", revision: "61fd4167fff3ab01ee1cfe0da183fa27a944db48", weights: "Mistral-7B-Instruct-v0.3-Q8_0.gguf",
+          vocabulary: { repo: "mistralai/Mistral-7B-Instruct-v0.3", revision: "c170c708c41dac9275d15a8fff4eca08d52bab71", tokenizer: "tokenizer.model" } }, download: 7702565088,
     conversion: {}, options: { specials: ["[/INST]", "[INST]"] }, generation: sampled(1.1), template: MISTRAL_V3,
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
-  { group: "hf", id: "hf-zephyr-7b-beta", name: "zephyr 7B beta", note: "answers instructions · English · fetches 14.5 GB → int8 8.2 GB · desktop only · Chrome and Firefox",
-    hf: hf("HuggingFaceH4/zephyr-7b-beta", "892b3d7a7b1cf10c7a701c60881cd93df615734c", "tokenizer.model"), download: 14483497952,
+  { group: "hf", id: "hf-zephyr-7b-beta", name: "zephyr 7B beta", note: "answers instructions · English · fetches 7.7 GB (GGUF) → int8 8.2 GB · desktop only · Chrome and Firefox",
+    original: "HuggingFaceH4/zephyr-7b-beta",
+    hf: { repo: "TheBloke/zephyr-7B-beta-GGUF", revision: "e4714d14e9652aa9658fa937732cceadc63ac42e", weights: "zephyr-7b-beta.Q8_0.gguf",
+          vocabulary: { repo: "HuggingFaceH4/zephyr-7b-beta", revision: "892b3d7a7b1cf10c7a701c60881cd93df615734c", tokenizer: "tokenizer.model" } }, download: 7695857344,
     conversion: {}, options: { specials: ["</s>"] }, generation: sampled(1.1), template: ZEPHYR,
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
-  { group: "hf", id: "hf-llama-3.2-3b-instruct", name: "Llama 3.2 3B Instruct", note: "answers instructions · English · fetches 6.4 GB → int8 3.6 GB · desktop only",
+  { group: "hf", id: "hf-llama-3.2-3b-instruct", name: "Llama 3.2 3B Instruct", note: "answers instructions · English · fetches 3.4 GB (GGUF) → int8 3.6 GB · desktop only",
     original: "meta-llama/Llama-3.2-3B-Instruct",
-    hf: hf("unsloth/Llama-3.2-3B-Instruct", "006f5dcd1393c3add266de40994ba96225e9689d"), download: 6425529048,
+    hf: { repo: "bartowski/Llama-3.2-3B-Instruct-GGUF", revision: "5ab33fa94d1d04e903623ae72c95d1696f09f9e8", weights: "Llama-3.2-3B-Instruct-Q8_0.gguf",
+          vocabulary: { repo: "unsloth/Llama-3.2-3B-Instruct", revision: "006f5dcd1393c3add266de40994ba96225e9689d", tokenizer: "tokenizer.json" } }, download: 3421899296,
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   // T124: Qwen3, each twice (thinking and not), and Qwen3's 2507 4B, one of each form

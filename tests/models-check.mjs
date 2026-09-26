@@ -12,12 +12,17 @@ for (const entry of MODELS) {
 for (const entry of MODELS.filter((entry) => entry.original)) {
   assert.ok(LICENSES[entry.original], `${entry.id}: no license for its original ${entry.original}`);
 }
-const used = new Set(MODELS.flatMap((entry) => [sourceOf(entry), entry.original].filter(Boolean)));
+for (const entry of MODELS.filter((entry) => entry.hf?.vocabulary)) {
+  // T136: the repository its vocabulary and config.json come from is a source too
+  assert.ok(LICENSES[entry.hf.vocabulary.repo], `${entry.id}: no license for ${entry.hf.vocabulary.repo} in LICENSES`);
+}
+const used = new Set(MODELS.flatMap((entry) => [sourceOf(entry), entry.original, entry.hf?.vocabulary?.repo].filter(Boolean)));
 for (const repo of Object.keys(LICENSES)) assert.ok(used.has(repo), `LICENSES names ${repo}, which no model uses`);
 const listed = sources();
 assert.equal(listed.length, used.size, "one line per source");
 assert.equal(listed.reduce((n, { names }) => n + names.length, 0),
-  MODELS.length + MODELS.filter((entry) => entry.original).length, "every model on some line, a GGUF on two");
+  MODELS.reduce((n, entry) => n + new Set([entry.original, entry.hf?.vocabulary?.repo, sourceOf(entry)].filter(Boolean)).size, 0),
+  "every model on the line of each repository it comes from: a GGUF on two, or three where its vocabulary is a copy's");
 
 // T90: every model knows how much memory it takes, so the warning never silently skips one
 for (const entry of MODELS) assert.ok(modelBytes(entry) > 0, `${entry.id}: no size (bytes, or "int8 N MB" in the note)`);
