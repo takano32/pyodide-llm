@@ -2,7 +2,7 @@
 //
 //   node tests/bench.mjs
 import assert from "node:assert/strict";
-import { FULL_ROUNDS, QUESTIONS, REPORT_LIMIT, ROUNDS, TOO_LONG, benchMarkdown, environmentOf, parseReport, reportBody, reportTooLong,
+import { FULL_ROUNDS, QUESTIONS, REPORT_LIMIT, ROUNDS, TOO_LONG, benchMarkdown, environmentOf, loginUrl, parseReport, reportBody, reportTooLong,
          reportUrl, reportsTable } from "../src/bench.js";
 import fs from "node:fs";
 
@@ -78,7 +78,14 @@ assert.ok(!reportTooLong(everything, environment));
 const long = [everything, `#### Line\n\n${"| x | y |\n".repeat(600)}`].join("\n\n");
 assert.ok(reportTooLong(long, environment));
 const longUrl = reportUrl(long, environment);
-assert.ok(longUrl.length <= REPORT_LIMIT, `${longUrl.length}`);
+assert.ok(loginUrl(long, environment).length <= REPORT_LIMIT, `${loginUrl(long, environment).length}`);
+// what GitHub's login drops is the address once more encoded: a report of pipes and × (a table's) is too long long
+// before its own address is (the second review of T134: 4,935 characters of it were dropped by the login)
+for (let rows = 1; rows < 120; rows++) {
+  const markdown = `#### GPU\n\n${"| Llama 3.2 1B · 16 tokens | 12.3 ms | 45.6 GB/s | ok × |\n".repeat(rows)}`;
+  if (!reportTooLong(markdown, environment)) assert.ok(reportUrl(markdown, environment).length < 4935, `${rows} rows`);
+  assert.ok(loginUrl(markdown, environment).length <= REPORT_LIMIT, `${rows} rows`);
+}
 assert.ok(new URL(longUrl).searchParams.get("body").endsWith(TOO_LONG));
 assert.ok(new URL(longUrl).searchParams.get("body").includes("**Device**: ("), "the three questions stay");
 console.log("ok");

@@ -67,23 +67,31 @@ export function reportBody(markdown) {
           "<!-- the page's Markdown, as the page wrote it: please leave it as it is -->", markdown].join("\n");
 }
 
-/** The longest address of a new issue the page opens with the results in it. GitHub answers 500 from about 7,000
- * characters to a visitor who is not signed in (6,799 went through), and 414 to anyone from about 8,100 (T134's
- * review, 2026-09-26): a longer report goes to the clipboard, and the issue asks for it to be pasted. */
-export const REPORT_LIMIT = 6000;
+/** The longest address of GitHub's login a new issue may be sent through. A visitor who is not signed in is sent to
+ * https://github.com/login?return_to=<the new issue's address, encoded once more: every % becomes %25>, and from
+ * about 7,700 characters of that GitHub drops return_to without a word: the visitor signs in, lands on the dashboard,
+ * and the report is gone (the second review of T134, 2026-09-26, by curl: an address of 4,485 characters of a
+ * report's table was kept, one of 4,935 dropped; the 302 that "6,799 went through" once read was that drop). GitHub
+ * also answers 500 from about 7,000 characters of the address itself, and 414 to anyone from about 8,100. A report
+ * whose login address would pass this goes to the clipboard, and the issue asks for it to be pasted. */
+export const REPORT_LIMIT = 7000;
 export const TOO_LONG = "The results were too long for the link and are on your clipboard: please paste them here.";
 
 const issueUrl = (body, environment) => `https://github.com/${REPOSITORY}/issues/new?${new URLSearchParams(
   { template: "benchmark.md", title: `Benchmark: ${environment.model ?? "this device"}`, body: reportBody(body) })}`;
 
+const throughLogin = (url) => `https://github.com/login?return_to=${encodeURIComponent(url)}`;
+
 /** Whether the results are too long for the address of a new issue (reportUrl() then leaves them out). */
-export const reportTooLong = (markdown, environment) => issueUrl(markdown, environment).length > REPORT_LIMIT;
+export const reportTooLong = (markdown, environment) => throughLogin(issueUrl(markdown, environment)).length > REPORT_LIMIT;
 
 /** The address of a new issue with the template, the title and the body filled in: the page's Markdown, or where it
  * is too long, a line that asks for it from the clipboard. */
 export function reportUrl(markdown, environment) {
   return issueUrl(reportTooLong(markdown, environment) ? TOO_LONG : markdown, environment);
 }
+/** reportUrl() as GitHub's login gets it (tests/bench.mjs) */
+export const loginUrl = (markdown, environment) => throughLogin(reportUrl(markdown, environment));
 
 const cells = (line) => line.split("|").slice(1, -1).map((cell) => cell.trim());
 
