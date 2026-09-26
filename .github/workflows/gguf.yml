@@ -4,6 +4,12 @@
 # originals are 15 GB and its GGUF 8 GB). By hand only; each check's table goes to the summary.
 #
 #   gh workflow run gguf.yml -f only=hf-qwen2.5-3b-instruct,hf-qwen2.5-7b-instruct
+#
+# T136, stage 2: candidate GGUFs not in the list yet, each against the original src/models.js pins for that item.
+# The page will take the vocabulary and config.json from the original, so a difference in the GGUF's vocabulary is
+# shown and not counted (gguf_check.py --original-vocabulary). One job per candidate; the eight above do not run.
+#
+#   gh workflow run gguf.yml -f candidates="hf-tinyllama-1.1b-chat=TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF@<commit>/tinyllama-1.1b-chat-v1.0.Q8_0.gguf"
 name: GGUF against the originals
 
 on:
@@ -12,10 +18,14 @@ on:
       only:
         description: 'the model ids to check, separated by commas; all eight when empty'
         default: 'hf-qwen2.5-3b-instruct,hf-qwen2.5-7b-instruct'
+      candidates:
+        description: 'stage 2: <id>=<repo>@<revision>/<file> of GGUFs not in the list yet, separated by spaces or commas'
+        default: ''
 
 jobs:
   gguf:
     name: ${{ matrix.id }}
+    if: inputs.candidates == ''
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
@@ -69,5 +79,88 @@ jobs:
           status=0
           python3 tests/gguf_check.py tensors /mnt/gguf/model.gguf /mnt/gguf > check.md || status=$?
           { echo; tail -n 1 check.md; echo; grep -v '^| blk\.' check.md; } >> "$GITHUB_STEP_SUMMARY"
+          echo "gguf_check.py tensors: exit $status" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit $status
+
+  # stage 2: the candidates, each with its original from src/models.js
+  plan:
+    if: inputs.candidates != ''
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: plan
+        env:
+          CANDIDATES: ${{ inputs.candidates }}
+        run: |
+          node --input-type=module -e '
+            const { MODELS } = await import("./src/models.js");
+            const jobs = process.env.CANDIDATES.split(/[\s,]+/).filter(Boolean).map((pair) => {
+              const [id, gguf] = pair.split("=");
+              const entry = MODELS.find((model) => model.id === id);
+              if (!entry?.hf) throw new Error(`${id}: no item from Hugging Face by that id in src/models.js`);
+              if (!/^[^@\/]+\/[^@\/]+@[0-9a-f]{40}\/.+\.gguf$/.test(gguf ?? "")) throw new Error(`${pair}: not <id>=<repo>@<revision>/<file>`);
+              return { id, original: `${entry.hf.repo}@${entry.hf.revision}`, gguf };
+            });
+            console.log(`matrix=${JSON.stringify(jobs)}`);
+          ' >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+  candidate:
+    name: ${{ matrix.id }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # an 8B's original and its GGUF are 26 GB
+      - name: Make room
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h / /mnt
+
+      - name: Fetch the original and the GGUF, and check
+        shell: bash
+        run: |
+          python3 -m pip install --quiet numpy
+          sudo mkdir -p /mnt/gguf && sudo chown "$USER" /mnt/gguf
+          python3 - "${{ matrix.original }}" "${{ matrix.gguf }}" /mnt/gguf <<'EOF'
+          import json, os, sys, urllib.error, urllib.request
+          (repo, rev), (grepo, grest), out = sys.argv[1].split("@"), sys.argv[2].split("@"), sys.argv[3]
+          grev, gfile = grest.split("/", 1)
+          def get(url, name):
+              with urllib.request.urlopen(url, timeout=300) as response, open(os.path.join(out, name), "wb") as f:
+                  while block := response.read(8 << 20):
+                      f.write(block)
+          at = lambda name: f"https://huggingface.co/{repo}/resolve/{rev}/{name}"
+          get(at("config.json"), "config.json")
+          for name in ("tokenizer.json", "tokenizer.model"):  # whichever the original has: each is compared
+              try:
+                  get(at(name), name)
+              except urllib.error.HTTPError as error:
+                  print(name, error.code)
+          try:
+              get(at("model.safetensors"), "model.safetensors")
+          except urllib.error.HTTPError:
+              get(at("model.safetensors.index.json"), "model.safetensors.index.json")
+              index = json.load(open(os.path.join(out, "model.safetensors.index.json")))
+              for shard in sorted(set(index["weight_map"].values())):
+                  get(at(shard), shard)
+          get(f"https://huggingface.co/{grepo}/resolve/{grev}/{gfile}", "model.gguf")
+          print(sorted(os.listdir(out)))
+          EOF
+          df -h /mnt
+          echo "### ${{ matrix.id }}: ${{ matrix.gguf }}" >> "$GITHUB_STEP_SUMMARY"
+          status=0
+          python3 tests/gguf_check.py tensors /mnt/gguf/model.gguf /mnt/gguf --original-vocabulary > check.md || status=$?
+          { echo; tail -n 2 check.md; echo; grep -v '^| blk\.' check.md; } >> "$GITHUB_STEP_SUMMARY"
+          grep -v '^| blk\.' check.md | head -n -1
+          echo "gguf_check ${{ matrix.id }}: $(tail -n 1 check.md)"
           echo "gguf_check.py tensors: exit $status" | tee -a "$GITHUB_STEP_SUMMARY"
           exit $status

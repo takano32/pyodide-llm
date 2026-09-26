@@ -44,10 +44,10 @@ def gguf_name(name):
     return f"blk.{layer}.{LAYER['.'.join(rest[:-1])]}.{rest[-1]}"
 
 
-def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", extra=(), rope_freqs=None):
-    """A GGUF v3 of these Hugging Face tensors, and the tensors as the GGUF holds them (Q8_0 rounds). extra: more
-    metadata, as (key, type, value) with the types 4 (uint32) and 6 (float32). rope_freqs: llama.cpp's table of
-    Llama 3's RoPE scaling, written after the other tensors (as Swallow 8B's GGUF has it)."""
+def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=10000.0, more=(), extra=None):
+    """A GGUF v3 of these Hugging Face tensors, and the tensors as the GGUF holds them (Q8_0 rounds).
+    more: further metadata (key, GGUF type, value); extra: {GGUF name: float32 values} written as they are
+    (rope_freqs.weight)."""
     string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
     heads = {"q_proj": published["num_attention_heads"], "k_proj": published["num_key_value_heads"]}
     metadata = [("general.architecture", 8, arch), (f"{arch}.block_count", 4, published["num_hidden_layers"]),
@@ -56,11 +56,11 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", extra=(
                 (f"{arch}.feed_forward_length", 4, published["intermediate_size"]),
                 (f"{arch}.attention.head_count", 4, published["num_attention_heads"]),
                 (f"{arch}.attention.head_count_kv", 4, published["num_key_value_heads"]),
-                (f"{arch}.rope.freq_base", 6, 10000.0), ("tokenizer.ggml.model", 8, "gpt2"),
+                (f"{arch}.rope.freq_base", 6, theta), ("tokenizer.ggml.model", 8, "gpt2"),
                 ("tokenizer.ggml.pre", 8, pre), ("tokenizer.ggml.bos_token_id", 4, 1),
-                ("tokenizer.ggml.eos_token_id", 4, 2), *extra]
+                ("tokenizer.ggml.eos_token_id", 4, 2), *more]
     tokens = [f"w{i}" for i in range(vocab_size)]
-    out = [b"GGUF", struct.pack("<IQQ", 3, len(tensors) + (rope_freqs is not None), len(metadata) + 3)]
+    out = [b"GGUF", struct.pack("<IQQ", 3, len(tensors) + len(extra or {}), len(metadata) + 3)]
     for key, kind, value in metadata:
         out.append(string(key) + struct.pack("<I", kind))
         out.append(string(value) if kind == 8 else struct.pack({4: "<I", 6: "<f"}[kind], value))
@@ -84,10 +84,12 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", extra=(
                    + struct.pack("<IQ", type_, offset))
         blobs.append(blob + b"\0" * (-len(blob) % 32))
         offset += len(blobs[-1])
-    if rope_freqs is not None:
-        blob = np.asarray(rope_freqs, dtype=np.float32).tobytes()
-        out.append(string("rope_freqs.weight") + struct.pack("<IQ", 1, len(rope_freqs)) + struct.pack("<IQ", 0, offset))
+    # after every other tensor, as Swallow 8B's GGUF has its rope_freqs
+    for name, values in (extra or {}).items():
+        blob = np.asarray(values, np.float32).tobytes()
+        out.append(string(name) + struct.pack("<I", 1) + struct.pack("<Q", len(values)) + struct.pack("<IQ", 0, offset))
         blobs.append(blob + b"\0" * (-len(blob) % 32))
+        offset += len(blobs[-1])
     head = b"".join(out)
     head += b"\0" * (-len(head) % 32)
     # the values the GGUF stands for, back in Hugging Face's order: what a safetensors of the same model holds
@@ -133,7 +135,7 @@ def test_a_gguf_says_the_epsilon_and_the_size_of_a_head(head_size):
     config, weights = synthetic_weights(n_kv_heads=2, head_size=head_size)
     tensors, published = hugging_face(config, weights, True)
     extra = [("llama.attention.layer_norm_rms_epsilon", 6, 1e-6), ("llama.attention.key_length", 4, config["head_size"])]
-    file, same = gguf_file(tensors, published, config["vocab_size"], extra=extra)
+    file, same = gguf_file(tensors, published, config["vocab_size"], more=extra)
     conversion = fed(file, "float32")
     assert conversion.options["rms_norm_eps"] == 1e-6
     assert conversion.options.get("head_dim") == (head_size or None)
@@ -219,7 +221,7 @@ def test_a_gguf_with_the_originals_vocabulary_is_the_safetensors_conversion(mode
     if model == "llama3":
         published["rope_scaling"] = LLAMA3
         table = llama3_table(published)
-    file, same = gguf_file(tensors, published, config["vocab_size"], rope_freqs=table, extra=[EPS])
+    file, same = gguf_file(tensors, published, config["vocab_size"], extra=None if table is None else {"rope_freqs.weight": table}, more=[EPS])
     vocabulary, name = (sentencepiece(config["vocab_size"]), "tokenizer.model") if model == "sentencepiece" else \
         (json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
                      "vocab": [[f"w{i}", -float(i)] for i in range(config["vocab_size"])]}}).encode(), "tokenizer.json")
@@ -250,7 +252,7 @@ def test_a_gguf_that_is_not_the_originals_is_refused(change, what):
     config, weights = synthetic_weights(n_kv_heads=2)
     tensors, published = hugging_face(config, weights, True)
     published["rms_norm_eps"] = 1e-5
-    file, _ = gguf_file(tensors, published, config["vocab_size"], extra=[EPS])
+    file, _ = gguf_file(tensors, published, config["vocab_size"], more=[EPS])
     llama2_convert.gguf_weights(file, json.dumps(published))  # its own config goes through
     with pytest.raises(ValueError, match=what):
         llama2_convert.gguf_weights(file, json.dumps({**published, **change}))
@@ -264,7 +266,7 @@ def test_a_rope_freqs_table_that_is_not_the_originals_scaling_is_refused():
     published["rope_scaling"] = LLAMA3
     table = llama3_table(published)
     table[-1] *= 1.01
-    file, _ = gguf_file(tensors, published, config["vocab_size"], rope_freqs=table)
+    file, _ = gguf_file(tensors, published, config["vocab_size"], extra={"rope_freqs.weight": table})
     vocabulary = sentencepiece(config["vocab_size"])
     with pytest.raises(ValueError, match="scales its RoPE otherwise"):
         with_original(file, published, vocabulary, "tokenizer.model", "int8")
