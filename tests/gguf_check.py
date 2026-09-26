@@ -302,28 +302,31 @@ def q8_0_of(original):
 
 def row_parts(values, original, q8_0):
     """Per row (in float64: a row of 1e-37 squares to nothing in float32): the norm of the difference and of the
-    original, and for a Q8_0 tensor the same against q8_0_of(original)."""
+    original, and for a Q8_0 tensor the same against q8_0_of(original) and q8_0_of(the original made float16):
+    some GGUFs went through a float16 file first (mradermacher's RakutenAI 7B chat, T136), and float16 rounds the
+    values under 6.1e-5 more coarsely than bfloat16 holds them."""
     norm = lambda a: np.linalg.norm(a.reshape(len(a), -1).astype(np.float64), axis=1)
     parts = [norm(values - original), norm(original)]
     if q8_0:
-        rounded = q8_0_of(original)
-        parts += [norm(values - rounded), norm(rounded)]
+        for rounded in (q8_0_of(original), q8_0_of(original.astype(np.float16).astype(np.float32))):
+            parts += [norm(values - rounded), norm(rounded)]
     return parts
 
 
 def row_check(parts):
     """(how many rows are past ROW_LINE, the worst error, its row, up to 16 of the rows past the line as [row, error,
     the row's norm over the median], and how many rows are past it against the original but not against its Q8_0).
-    A row's error is against the original, or against llama.cpp's Q8_0 of it where that is nearer: a row of values
-    so small that the float16 scale rounds them is the format's rounding, while a row of another token is far from
-    both. A norm under 1e-3 of the median counts as that (Qwen2.5 7B's unused rows, largest value 1.2e-37)."""
-    difference, norms = parts[0], parts[1]
+    A row's error is against the original, or against llama.cpp's Q8_0 of it where that is nearer (row_parts()): a
+    row of values so small that the float16 scale rounds them is the format's rounding, while a row of another
+    token is far from all of them. A norm under 1e-3 of the median counts as that (Qwen2.5 7B's unused rows,
+    largest value 1.2e-37)."""
+    norms = parts[1]
     median = max(float(np.median(norms)), 1e-30)
     floor = 1e-3 * median
-    against = difference / np.maximum(norms, floor)
+    against = parts[0] / np.maximum(norms, floor)
     each = against
-    if len(parts) == 4:
-        each = np.minimum(against, parts[2] / np.maximum(parts[3], floor))
+    for difference, norm in zip(parts[2::2], parts[3::2]):
+        each = np.minimum(each, difference / np.maximum(norm, floor))
     bad = np.flatnonzero(each > ROW_LINE)
     return (len(bad), float(each.max()), int(each.argmax()),
             [[int(i), round(float(each[i]), 4), float(f"{norms[i] / median:.3g}")] for i in bad[:16]],

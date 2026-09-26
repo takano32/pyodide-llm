@@ -175,3 +175,15 @@ def test_rows_only_the_float16_scale_rounds_pass_and_a_swapped_row_does_not():
         "against the original alone the rounded rows read as other weights"
     gguf[[10, 20]] = gguf[[20, 10]]
     assert gguf_check.row_check(gguf_check.row_parts(gguf, original, True))[0] == 2
+
+
+def test_a_gguf_made_through_float16_is_held_to_the_q8_0_of_that():
+    """mradermacher's RakutenAI 7B chat went through a float16 file: its row 79 (largest values near 1e-5) is 11%
+    from llama.cpp's Q8_0 of the bfloat16 original and exactly the Q8_0 of the original made float16."""
+    rng = np.random.default_rng(2)
+    original = (rng.standard_normal((64, 4096)) * 0.0027).astype(np.float32)
+    original[5] = np.sign(rng.standard_normal(4096)) * np.exp(rng.standard_normal(4096) * 2) * 1e-7
+    gguf = gguf_check.q8_0_of(original.astype(np.float16).astype(np.float32))
+    parts = gguf_check.row_parts(gguf, original, True)
+    assert len(parts) == 6 and parts[2][5] > 0 and parts[4][5] == 0
+    assert gguf_check.row_check(parts)[0] == 0
