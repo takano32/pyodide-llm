@@ -401,6 +401,20 @@ assert.ok(lengthsLines.includes("| the prompt's tiles (flash attention's tile) |
 assert.ok(lengthsLines.includes("| flash_attn_vec (subgroups) | 25.0 (2.0× the tiles) | unsteady: 100.0 | 200.0 (8.0× the tiles) |"), lengthsText);
 assert.ok(lengthsLines.includes("| flash_attn_vec | not here: a \\| b | failed: refused | 400.0 (4.0× the tiles) |"), lengthsText);
 assert.ok(!layerStepsTable(lengthsStep, layerRight, { ...layerCeilings, fallback: true }, { fallback: true }).join("\n").includes("the tiles)"));
+// T224's review: the tiles twice where the engine makes them otherwise (f16, subgroups): the vec rows against the
+// engine's (base), the f32 tiles with no ratio
+{
+  const twoStep = { ...chosenStep, result: { ...chosenStep.result, lengths: { positions: [128, 1024, 4096], MB: 134.2, base: 1, rows: [
+    { attention: "the prompt's tiles (flash attention's tile)", tiles: true, times: [{ ms: 0.9 }, { ms: 7.2 }, { ms: 28.8 }] },
+    { attention: "the prompt's tiles, f16, subgroups (the engine's here)", tiles: true, times: [{ ms: 0.3 }, { ms: 2.4 }, { ms: 9.6 }] },
+    { attention: "flash_attn_vec (subgroups)", times: [{ ms: 0.05 }, { ms: 0.12 }, { ms: 0.48 }] }] } } };
+  const twoLines = layerStepsTable(twoStep, layerRight, layerCeilings), twoText = twoLines.join("\n");
+  assert.ok(twoLines.includes("| the prompt's tiles (flash attention's tile) | 900.0 | 7200.0 | 28800.0 |"), twoText);
+  assert.ok(twoLines.includes("| the prompt's tiles, f16, subgroups (the engine's here) | 300.0 | 2400.0 | 9600.0 |"), twoText);
+  assert.ok(twoLines.includes("| flash_attn_vec (subgroups) | 50.0 (6.0× the engine's tiles) | 120.0 (20.0× the engine's tiles) | 480.0 (20.0× the engine's tiles) |"), twoText);
+  assert.ok(twoText.includes("The tiles are here twice"), twoText);
+  assert.ok(!twoText.includes("undefined") && !twoText.includes("NaN"), twoText);
+}
 assert.ok(!chosenText.includes("A token's attention alone"), "no lengths where none were taken (a result before T224)");
 assert.ok(layerStepsTable({ ...chosenStep, result: { ...chosenStep.result, lengths: { error: "no | memory" } } }, layerRight, layerCeilings)
   .includes("**A token's attention alone, by the positions it reads** (T224): failed: no \\| memory"));

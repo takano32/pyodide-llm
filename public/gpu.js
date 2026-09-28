@@ -1437,7 +1437,11 @@ async function checkTokenAttention(m, a) {
 }
 // ms of the attention of a token (every layer's) with each of right, on made-up numbers: at 128 positions and at 2048
 // (the model's context where shorter), all in turn, as the tiled shaders are timed (timeForms: a submission of n
-// passes and one of 2n, n doubled until n takes TIMED_MS, PAIRS pairs, the median); the two lengths' ms added
+// attentions and one of 2n, n doubled from 1 until n takes TIMED_MS, up to MOST_PASSES layers of them, PAIRS pairs,
+// the median), times the layers; the two lengths' ms added. (T224's review: n counts attentions, not layers of them.
+// A submission of a whole token's layers at the least made the slowest one long: the prompt's tiles at 2048
+// positions, if they take the time of T202's 0.90 ms at 127 positions in proportion (an estimate: the f32 tiles, on
+// the owner's Android), 16 × 14 ms a submission and some 3.9 s of timing at every start, 0.5 s so)
 async function timeTokenAttention(m, right) {
   const { device, plan } = m, owned = [];
   try {
@@ -1448,7 +1452,7 @@ async function timeTokenAttention(m, right) {
     }));
     const submission = async ({ passes }, n) => {
       const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
-      for (let i = 0; i < n * plan.layers; i++) for (const [pipeline, group, x, y] of passes) dispatch(pass, pipeline, group, x, y);
+      for (let i = 0; i < n; i++) for (const [pipeline, group, x, y] of passes) dispatch(pass, pipeline, group, x, y);
       pass.end();
       const began = performance.now();
       device.queue.submit([encoder.finish()]);
@@ -1459,7 +1463,7 @@ async function timeTokenAttention(m, right) {
     for (const item of items) {
       await submission(item, 1);  // warm
       let n = 1;
-      while (!m.fallback && n < MOST_PASSES && (await submission(item, n)) < TIMED_MS) n *= 2;
+      while (!m.fallback && n < MOST_PASSES * plan.layers && (await submission(item, n)) < TIMED_MS) n *= 2;
       counts.push(n);
     }
     for (let round = 0; round < (m.fallback ? 1 : PAIRS); round++) {
@@ -1469,7 +1473,7 @@ async function timeTokenAttention(m, right) {
       }
       if (stopping) break;
     }
-    const ms = differences.map((d) => d.sort((x, y) => x - y)[d.length >> 1]);
+    const ms = differences.map((d) => d.sort((x, y) => x - y)[d.length >> 1] * plan.layers);
     return right.map((a) => items.reduce((sum, item, i) => (item.a === a ? sum + ms[i] : sum), 0));
   } finally {
     owned.forEach((b) => b.destroy());

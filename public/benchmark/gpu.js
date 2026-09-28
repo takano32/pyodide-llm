@@ -756,6 +756,18 @@ const layerForms = () => {
 };
 // whether this device's shaders may use subgroups and subgroup_id
 const hasSubgroupId = () => device.features.has("subgroups") && (navigator.gpu.wgslLanguageFeatures?.has("subgroup_id") ?? false);
+// T224's review: the prompt's tiles for a head of headSize as the engine makes them on this device (public/gpu.js's
+// chooseAttention: f16 in the workgroup's memory where there is shader-f16, subgroups where there are and subgroup_id,
+// the first it tries), which it chooses a token's attention against; the layer rows' tiles are f32 without subgroups
+// (T150), which the engine makes only where the first is not here. { name, shape }, or null where the two are one
+function engineTiles(headSize) {
+  const half = device.features.has("shader-f16"), subgroups = hasSubgroupId();
+  if (!half && !subgroups) return null;
+  const shape = WGSL.flashShape({ headSize, half, subgroups, memory: device.limits.maxComputeWorkgroupStorageSize,
+    threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX),
+    subgroupMin: adapter.info?.subgroupMinSize, subgroupMax: adapter.info?.subgroupMaxSize });
+  return shape.none ? null : { shape, name: `the prompt's tiles${half ? ", f16" : ""}${subgroups ? ", subgroups" : ""} (the engine's here)` };
+}
 // T224: the attention of a token by llama.cpp's flash_attn_vec (shaders.js's flashVec and flashVecReduce), with
 // subgroups where there are, else with the lanes of the workgroup standing for a subgroup; shape(headSize): its shape
 const vecAttention = (subgroups = hasSubgroupId()) => ({ subgroups, name: `flash_attn_vec${subgroups ? " (subgroups)" : ""}`,
@@ -1322,12 +1334,15 @@ async function checkLayer() {
 // positions (flash_attn_vec's one part, two, and as many as it takes, of more than one tile each), positions past the
 // token's that it must not read, and a steep head of q (a largest taken wrong shows only there). Each head's output no
 // farther than TOKEN_ATTENTION_LINE of the largest |value| of its head (the tiles hold the weights in float16 where
-// there is shader-f16: here in float32, as the layer rows). { "a token's attention, <form>": { ok, worstRelative, at } }
+// there is shader-f16: in float32 as the layer rows, and (T224's review) as the engine makes them here where that is
+// another form). { "a token's attention, <form>": { ok, worstRelative, at } }
 const TOKEN_ATTENTION_SIZES = [64, 128, 256], TOKEN_ATTENTION_POSITIONS = [40, 70, 300, 1100], TOKEN_ATTENTION_LINE = 4e-3;
 async function checkTokenAttentions() {
   const heads = 4, kvHeads = 2, verdicts = {};
   const { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX } = device.limits;
-  const forms = [{ name: "the prompt's tiles" }, ...(hasSubgroupId() ? [true] : []).map(() => ({ name: vecAttention(true).name, attention: "vec", vecSubgroups: true })),
+  const engine = engineTiles(64);
+  const forms = [{ name: "the prompt's tiles" }, ...(engine ? [{ name: engine.name, engine: true }] : []),
+    ...(hasSubgroupId() ? [true] : []).map(() => ({ name: vecAttention(true).name, attention: "vec", vecSubgroups: true })),
     { name: vecAttention(false).name, attention: "vec", vecSubgroups: false }];
   for (const form of forms) {
     const verdict = { ok: true, worstRelative: 0 };
@@ -1340,7 +1355,9 @@ async function checkTokenAttentions() {
           pipes.vec = await compiled(WGSL.flashVec(pipes.vecShape));
           pipes.vecReduce = await compiled(WGSL.flashVecReduce(pipes.vecShape));
         } else {
-          const flash = WGSL.flashShape({ headSize: size, half: false, subgroups: false, memory, threads: Math.min(maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX) });
+          const flash = form.engine ? engineTiles(size)?.shape
+            : WGSL.flashShape({ headSize: size, half: false, subgroups: false, memory, threads: Math.min(maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX) });
+          if (!flash) continue;  // (the engine's tiles for this size are the f32 ones: checked in the row above)
           if (flash.none) throw new Error(flash.none);
           pipes.flash = await compiled(WGSL.flashTile(flash));
         }
@@ -1559,15 +1576,19 @@ async function layerSteps() {
 // the lanes of the workgroup standing for a subgroup), all in turn at a length (interleaved()), each on the next of
 // copies of a cache of that length (the same random float16 keys and values in each, MATVEC_BYTES of them: not from the GPU's
 // caches, as T208's attention alone), one length at a time (4096 positions of Llama 3.2 1B's keys and values are 8.4 MB
-// a copy). { positions, rows: [{ attention, times: [{ ms, n, ratio, unsteady }, { error } or { none } a length] }], MB } or
-// { error }
+// a copy). T224's review: the prompt's tiles twice where the engine makes them otherwise here (engineTiles(): f16 and
+// subgroups), the f32 tiles without subgroups of the layer rows and the engine's, which a token's attention is chosen
+// against and the vec rows are read against (base). { positions, rows: [{ attention, tiles, times: [{ ms, n, ratio,
+// unsteady }, { error } or { none } a length] }], base, MB } or { error }
 const ATTENTION_LENGTHS = [128, 1024, 4096];
 async function attentionLengths(shape) {
   const { heads, kvHeads, headSize, kvDim } = shape;
-  const forms = [{ name: "the prompt's tiles (flash attention's tile)" },
+  const engine = engineTiles(headSize);
+  const forms = [{ name: "the prompt's tiles (flash attention's tile)", tiles: true }, ...(engine ? [{ name: engine.name, tiles: true, engine: true }] : []),
     ...(hasSubgroupId() ? [true] : []).map(() => ({ name: vecAttention(true).name, attention: "vec", vecSubgroups: true })),
     { name: vecAttention(false).name, attention: "vec", vecSubgroups: false }];
-  const rows = forms.map((form) => ({ attention: form.name, times: [] }));
+  const rows = forms.map((form) => ({ attention: form.name, ...(form.tiles ? { tiles: true } : {}), times: [] }));
+  const base = engine ? 1 : 0;
   let MB = 0;
   try {
     const { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX } = device.limits;
@@ -1576,7 +1597,7 @@ async function attentionLengths(shape) {
     // (one at a time: each in an error scope of its own)
     const pipes = [];
     for (const form of forms) {
-      const made = { flash: await compiled(WGSL.flashTile(flash)) };
+      const made = { flash: await compiled(WGSL.flashTile(form.engine ? engine.shape : flash)) };
       if (form.attention === "vec") {
         made.vecShape = vecAttention(form.vecSubgroups).shape(headSize);
         if (made.vecShape.none) {
@@ -1647,7 +1668,7 @@ async function attentionLengths(shape) {
         postMessage({ alive: true });
       });
     }
-    return { positions: ATTENTION_LENGTHS, rows, MB };
+    return { positions: ATTENTION_LENGTHS, rows, base, MB };
   } catch (error) {
     return { error: String(error?.message ?? error) };
   }
