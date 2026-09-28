@@ -1573,16 +1573,21 @@ async function attentionLengths(shape) {
     const { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX } = device.limits;
     const flash = WGSL.flashShape({ headSize, half: false, subgroups: false, memory, threads: Math.min(maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX) });
     if (flash.none) throw new Error(flash.none);
-    const pipes = await Promise.all(forms.map(async (form) => {
+    // (one at a time: each in an error scope of its own)
+    const pipes = [];
+    for (const form of forms) {
       const made = { flash: await compiled(WGSL.flashTile(flash)) };
       if (form.attention === "vec") {
         made.vecShape = vecAttention(form.vecSubgroups).shape(headSize);
-        if (made.vecShape.none) return { none: made.vecShape.none };
+        if (made.vecShape.none) {
+          pipes.push({ none: made.vecShape.none });
+          continue;
+        }
         made.vec = await compiled(WGSL.flashVec(made.vecShape));
         made.vecReduce = await compiled(WGSL.flashVecReduce(made.vecShape));
       }
-      return made;
-    }));
+      pipes.push(made);
+    }
     for (const positions of ATTENTION_LENGTHS) {
       await scoped(async (owned) => {
         const make = (bytes, usage = STORAGE | COPY_DST) => {
