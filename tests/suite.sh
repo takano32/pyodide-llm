@@ -40,6 +40,8 @@ page_modules() {
   node tests/coi-js-check.mjs
   node tests/gpu-choice-check.mjs
   node tests/worker-sink-check.mjs
+  # T129: where fetching and loading meet in worker.js, on made-up fetches and a fast clock (a few seconds)
+  node tests/worker-check.mjs
 }
 part "unit tests of the page's modules" page_modules
 
