@@ -2588,7 +2588,8 @@ var<workgroup> any_word: atomic<u32>;
 fn not_finite(bits: u32) -> bool {
     return (bits & 0x7fffffffu) > 0x7f800000u || bits == 0x7f800000u;
 }
-// whether any thread's flag is set: to every thread (a barrier)
+// whether any thread's flag is set, to every thread as a uniform value (a barrier; through workgroupUniformLoad, so
+// that a branch on it may hold the barriers of the reductions after: an atomicLoad's value is not uniform to WGSL)
 fn any_of(flag: bool, t: u32) -> bool {
     if (t == 0u) {
         atomicStore(&any_word, 0u);
@@ -2598,9 +2599,10 @@ fn any_of(flag: bool, t: u32) -> bool {
         atomicStore(&any_word, 1u);
     }
     workgroupBarrier();
-    let any = atomicLoad(&any_word) != 0u;
-    workgroupBarrier();
-    return any;
+    if (t == 0u) {
+        uniform_word = atomicLoad(&any_word);
+    }
+    return workgroupUniformLoad(&uniform_word) != 0u;
 }
 
 // cumsum.wgsl's scan: (the sum of the values of the threads before t, the sum of all), in the same order every run
@@ -2865,8 +2867,9 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     let argmax = largest.at;
 
     // T219: the step is refused where the largest logit is no finite number (T195's rule: a NaN or +inf anywhere,
-    // or nothing over -3.4e38): the flag into the state, the run stopped, no token written; the CPU takes the step
-    if (any_of(bad, t) || argmax == NONE) {
+    // or nothing over -3.4e38): the flag into the state, the run stopped, no token written; the CPU takes the step.
+    // (argmax's NONE goes in as a flag: a value from the workgroup's memory is not uniform to WGSL's analysis either)
+    if (any_of(bad || argmax == NONE, t)) {
         if (t == 0u) {
             state.not_finite = 1u;
             state.stopped = 1u;
@@ -3220,7 +3223,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     for (var j = t; j < chunks; j += WG_SIZE) {
         bad = bad || flagged(j);
     }
-    if (any_of(bad, t) || argmax == NONE) {
+    if (any_of(bad || argmax == NONE, t)) {
         if (t == 0u) {
             state.not_finite = 1u;
             state.stopped = 1u;
