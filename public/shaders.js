@@ -2436,13 +2436,18 @@ export const REPETITION_WINDOW = 64;
 export const STOPS_MOST = 8;
 // State: Step's four words first (copied into the Step uniform after each token), then the loop's own
 const STATE = /* wgsl */ `struct State {
-  tokens: u32, pos: u32, unused0: u32, unused1: u32,
+  tokens: u32, pos: u32, unused0: u32,
+  not_finite: u32, // T219: 1 once a step's logits held a NaN or +inf, or none over -3.4e38 (all -inf): the sampler
+                   // refused that step (nothing sampled, stopped set), and the CPU takes it by T195's rule. Word 3,
+                   // the last of the four the Step uniform gets a copy of (which reads only tokens and pos)
   token: u32,     // the input of the next pass: EMBED's row
   sampled: u32,   // the tokens sampled so far in this run: the index of the next random number and of chosen[]
   history: u32,   // how long the history is (BOS, the prompt, the sampled tokens): recent[history % WINDOW] is next
-  stopped: u32,   // 1 once a stop token was sampled
+  stopped: u32,   // 1 once a stop token was sampled, or a step was refused (not_finite): nothing changes after
   recent: array<u32, ${REPETITION_WINDOW}>,
 }`;
+/** T219: the State's word that says a step was refused (read back with the ids: gpu.js, forward.js) */
+export const STATE_NOT_FINITE = 3;
 export const STATE_BYTES = 32 + 4 * REPETITION_WINDOW;
 /** T152's review (T160): float32 values into float16 bits, rounded to the nearest (ties to even), as the GPU's own keys
  * and values are (pack2x16float) where it rounds so: a float32 cache's keys and values going up to the GPU. out: a
@@ -2542,7 +2547,18 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 }`;
 
 // What SAMPLE and the stages of the sampling in chunks (T191, below) share: the constants, the workgroup's memory of
-// the reductions, and cumsum.wgsl's scan
+// the reductions, and cumsum.wgsl's scan.
+// T219: not_finite() below takes the form of isnan() in TensorFlow.js, tfjs-backend-webgpu/src/webgpu_program.ts
+// (https://github.com/tensorflow/tfjs, 2026-09-28: `(floatToUint & 0x7fffffffu) > 0x7f800000u` of the bitcast<u32>
+// of the value). Copyright 2022 Google LLC. All Rights Reserved.
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+// an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+// specific language governing permissions and limitations under the License.
+// Changed: +inf counts too (TensorFlow.js's isinf compares the value with a uniform INFINITY in floating point, which
+// an implementation may fold: not taken); how the flag travels (the State's word, the chunks' partial results) is
+// this project's.
 const SAMPLER_COMMON = /* wgsl */ `
 ${STATE}
 ${SAMPLING}
@@ -2562,6 +2578,30 @@ var<workgroup> best_value: array<f32, WG_SIZE>;
 var<workgroup> best_index: array<u32, WG_SIZE>;
 var<workgroup> shared_sum: array<f32, WG_SIZE>;
 var<workgroup> uniform_word: u32;
+var<workgroup> any_word: atomic<u32>;
+
+// T219: a logit the engine draws no token from (T195's rule: the largest logit is no finite number), by its bits.
+// WGSL lets an implementation assume that no NaN nor infinity occurs (§15.7), so 'x != x' and comparisons with an
+// infinity may be folded away; the bits of a u32 are not. isnan's form is TensorFlow.js's (below): the exponent all
+// ones and a fraction. +inf is that exponent, no fraction and the sign clear; -inf (the sign set) is left alone, as the
+// CPU's sampler leaves it (a token it never draws is no error)
+fn not_finite(bits: u32) -> bool {
+    return (bits & 0x7fffffffu) > 0x7f800000u || bits == 0x7f800000u;
+}
+// whether any thread's flag is set: to every thread (a barrier)
+fn any_of(flag: bool, t: u32) -> bool {
+    if (t == 0u) {
+        atomicStore(&any_word, 0u);
+    }
+    workgroupBarrier();
+    if (flag) {
+        atomicStore(&any_word, 1u);
+    }
+    workgroupBarrier();
+    let any = atomicLoad(&any_word) != 0u;
+    workgroupBarrier();
+    return any;
+}
 
 // cumsum.wgsl's scan: (the sum of the values of the threads before t, the sum of all), in the same order every run
 fn scan(value: f32, t: u32) -> vec2<f32> {
@@ -2803,15 +2843,18 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     }
     storageBarrier();
 
-    // a run of consecutive tokens a thread (cumsum.wgsl's): the largest logit and its first index (argmax.wgsl's pairs)
+    // a run of consecutive tokens a thread (cumsum.wgsl's): the largest logit and its first index (argmax.wgsl's pairs),
+    // and (T219) whether any logit is a NaN or +inf, by its bits
     let vocab = settings.vocab;
     let chunk = (vocab + WG_SIZE - 1u) / WG_SIZE;
     let begin = min(t * chunk, vocab);
     let end = min(begin + chunk, vocab);
     var value = -3.4e38;
     var at = NONE;
+    var bad = false;
     for (var i = begin; i < end; i++) {
         let v = logits[i];
+        bad = bad || not_finite(bitcast<u32>(v));
         if (v > value) {
             value = v;
             at = i;
@@ -2820,6 +2863,16 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     let largest = best_of(value, at, t);
     let best = largest.value;
     let argmax = largest.at;
+
+    // T219: the step is refused where the largest logit is no finite number (T195's rule: a NaN or +inf anywhere,
+    // or nothing over -3.4e38): the flag into the state, the run stopped, no token written; the CPU takes the step
+    if (any_of(bad, t) || argmax == NONE) {
+        if (t == 0u) {
+            state.not_finite = 1u;
+            state.stopped = 1u;
+        }
+        return;
+    }
 
     if (settings.temperature == 0.0) {
         if (t == 0u) {
@@ -2915,10 +2968,14 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 // the partial results, never computed again in the later pipeline (the floor: SAMPLE_GATHER's comment).
 // Bindings, of the same numbers as SAMPLE's (each stage binds those it reads: samplerStages): 0 the logits, 1 probs, 2
 // order, 3 the state, 4 chosen, 5 the random numbers, 6 the settings, and 7 the chunks' partial results
-// (samplePartsBytes: CHUNKS_COMMON's counted()).
+// (samplePartsBytes: CHUNKS_COMMON's counted() and flagged()).
+// T219: SAMPLE_MAX (the one stage that reads every logit whatever the settings) flags each chunk that holds a NaN or
+// +inf in the partial results, and SAMPLE_PICK, which alone writes the state, folds the chunks' flags and refuses the
+// step as SAMPLE does (the stages between run on such logits harmlessly: a NaN is under any floor, +inf over it, and
+// what they count and gather stays within the vocabulary).
 export const SAMPLE_CHUNK = 1024;
 export const sampleChunks = (vocab) => Math.ceil(vocab / SAMPLE_CHUNK);
-export const samplePartsBytes = (vocab) => 8 * (1 + 2 * sampleChunks(vocab));
+export const samplePartsBytes = (vocab) => 8 * (1 + 3 * sampleChunks(vocab));
 const CHUNKS_COMMON = /* wgsl */ `
 ${SAMPLER_COMMON}
 const CHUNK = ${SAMPLE_CHUNK}u;
@@ -2936,9 +2993,13 @@ fn chunk_count() -> u32 {
     return (settings.vocab + CHUNK - 1u) / CHUNK;
 }
 // the partial results: [0] the vocabulary's largest logit and the floor (SAMPLE_SUM's), [1 + j] chunk j's largest logit
-// and its index (SAMPLE_MAX's), [1 + chunks + j] how many of its tokens are over the floor and their sum (SAMPLE_SUM's)
+// and its index (SAMPLE_MAX's), [1 + chunks + j] how many of its tokens are over the floor and their sum (SAMPLE_SUM's),
+// [1 + 2 × chunks + j] whether chunk j holds a logit that is not finite (T219, SAMPLE_MAX's; .y unused)
 fn counted(j: u32) -> vec2<u32> {
     return parts[1u + chunk_count() + j];
+}
+fn flagged(j: u32) -> bool {
+    return parts[1u + 2u * chunk_count() + j].x != 0u;
 }
 
 // the vocabulary's largest logit and its first index, from the chunks' (SAMPLE_MAX's)
@@ -3009,16 +3070,21 @@ ${CHUNK_MAIN} {
     let last = min(first + EACH, end);
     var value = -3.4e38;
     var at = NONE;
+    var bad = false;
     for (var i = first; i < last; i++) {
         let v = logits[i];
+        bad = bad || not_finite(bitcast<u32>(v));
         if (v > value) {
             value = v;
             at = i;
         }
     }
     let best = best_of(value, at, t);
+    // (T219) and whether the chunk holds a NaN or +inf, for SAMPLE_PICK
+    let chunk_bad = any_of(bad, t);
     if (t == 0u) {
         parts[1u + wid.x] = vec2<u32>(bitcast<u32>(best.value), best.at);
+        parts[1u + 2u * chunk_count() + wid.x] = vec2<u32>(u32(chunk_bad), 0u);
     }
 }`;
 export const SAMPLE_SUM = /* wgsl */ `
@@ -3148,6 +3214,19 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     let vocab = settings.vocab;
     let chunks = (vocab + CHUNK - 1u) / CHUNK;
     let argmax = largest(t).at;
+    // T219: the step is refused where the largest logit is no finite number (SAMPLE_MAX's flags of the chunks, or no
+    // chunk with a logit over -3.4e38), as SAMPLE refuses it
+    var bad = false;
+    for (var j = t; j < chunks; j += WG_SIZE) {
+        bad = bad || flagged(j);
+    }
+    if (any_of(bad, t) || argmax == NONE) {
+        if (t == 0u) {
+            state.not_finite = 1u;
+            state.stopped = 1u;
+        }
+        return;
+    }
     if (settings.temperature == 0.0) {
         if (t == 0u) {
             finish(argmax);
@@ -3271,8 +3350,9 @@ export function argmaxLikeCpu(logits) {
 /** T195: the engine draws no token when the largest logit is no finite number (a NaN anywhere, +inf anywhere, or
  * all -inf): the kernel returns -1 and NumPy's sample() raises, and the engine stops with an error. So does this: it
  * throws, and returns the logits otherwise. (argmaxLikeCpu alone passes over a NaN, as `>` is false for it.) SAMPLE
- * cannot be held to it: WGSL lets an implementation assume that no NaN nor infinity occurs (§15.7), so what it draws
- * from such logits is the device's; the engine has to find them some other way before it trusts SAMPLE (T152). */
+ * is held to it by T219: it sees such logits by their bits (not_finite: WGSL lets an implementation assume that no NaN
+ * nor infinity occurs, §15.7, so a comparison would not do), refuses the step with the State's not_finite word, and the
+ * CPU takes the step and decides by this rule. */
 export function finiteLikeCpu(logits) {
   let best = -Infinity;
   for (let i = 0; i < logits.length; i++) {

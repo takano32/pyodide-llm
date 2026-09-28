@@ -48,14 +48,15 @@ const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf(
 // sleep of that long and the answer
 const FAKE = `
 const { parentPort, workerData: line } = require("node:worker_threads");
-let ctl, words, ids, blocks = 0, requests = 0, asked = 0, held = null;
+let ctl, words, ids, most, blocks = 0, requests = 0, asked = 0, held = null;
 const nap = new Int32Array(new SharedArrayBuffer(4)), ms = (n) => line.fixed + line.perToken * n;
 parentPort.on("message", (data) => {
   if (data.type === "start") {
     ctl = new Int32Array(data.memory.buffer, 0, 2048);
     words = data.plan.words;
+    most = data.plan.tokens?.most;
     // T152: where forward.js asked for the steps and the line has a cost of a step
-    ids = data.plan.tokens && line.step !== undefined ? new Int32Array(data.memory.buffer, data.plan.tokens.ids, 1 + data.plan.tokens.most) : null;
+    ids = data.plan.tokens && line.step !== undefined ? new Int32Array(data.memory.buffer, data.plan.tokens.ids, 2 + data.plan.tokens.most) : null;
     const ready = { type: "ready", adapter: "made up", key: "k", bytes: 1, seconds: 0, form: "made up", attention: "made up",
       forms: [], remembered: false, blocks: [{ count: 16, ms: ms(16) }, { count: 64, ms: ms(64) }],
       ...(ids ? { tokens: { form: "made up", ms: line.step, forms: [] } } : {}) };
@@ -80,10 +81,15 @@ parentPort.on("message", (data) => {
     const odd = data.randoms.length !== (data.settings.temperature ? data.count : 0) || data.history.length > 64 ||
       data.length < data.history.length || data.history.at(-1) !== data.token || !Array.isArray(data.settings.stops);
     const fail = odd || (Boolean(line.failTokensAt) && ++requests >= line.failTokensAt);
+    asked++;
     // T219: a GPU whose outsideAt-th request samples outsideId (-1, SAMPLE's NONE, or one past the vocabulary) last
-    const outside = Boolean(line.outsideAt) && ++asked === line.outsideAt;
-    ids[0] = data.count;
-    for (let i = 0; i < data.count; i++) ids[1 + i] = outside && i === data.count - 1 ? line.outsideId : data.token + 1 + i;
+    const outside = Boolean(line.outsideAt) && asked === line.outsideAt;
+    // T219 (2): a GPU whose refuseAt-th request's sampler refused the step after refuseAfter sampled ones (its logits
+    // not finite): the State's not_finite word after the ids
+    const refuse = Boolean(line.refuseAt) && asked === line.refuseAt, sampled = refuse ? line.refuseAfter : data.count;
+    ids[0] = sampled;
+    for (let i = 0; i < sampled; i++) ids[1 + i] = outside && i === data.count - 1 ? line.outsideId : data.token + 1 + i;
+    ids[1 + most] = refuse ? 1 : 0;
     Atomics.store(ctl, words.failed, fail ? 1 : 0);
     Atomics.store(ctl, words.done, data.serial);
     Atomics.notify(ctl, words.done);
@@ -492,11 +498,21 @@ if (isMainThread) {
     expect(`${outsideId}: the status line says the GPU sampled outside the vocabulary (${seen.status})`,
       new RegExp(`^prompts on the CPU \\(the GPU sampled ${outsideId}, outside the vocabulary`).test(seen.status), true);
   }
+  // T219 (2): a GPU whose sampler refused a step (its logits not finite: the State's not_finite word after the ids) on
+  // its second request, after one sampled token: the whole request refused (that token not taken either), the CPU from
+  // there on, the GPU stopped and the status line says why (as an id outside the vocabulary above)
+  {
+    const seen = await steps("the steps, a GPU whose sampler refuses a step (logits not finite) on its second request", 0.2, 2, { refuseAt: 2, refuseAfter: 1 });
+    expect("refused: the CPU from that request on, its one id not taken", [...seen], [[4, STEPS - 4], [0, STEPS]]);
+    expect(`refused: the status line says the GPU computed logits that are not finite (${seen.status})`,
+      /^prompts on the CPU \(the GPU computed logits that are not finite numbers/.test(seen.status), true);
+  }
   // T219: a model on the GPU alone (T156's direct) cannot take the step on the CPU: generateMany stops with words (the
   // page says them), and does not load the model again on the CPU (onLost: the CPU's logits would be those of the same
-  // weights); a request of good ids after it is taken on the GPU as before
-  for (const outsideId of [-1, plan.vocab_size]) {
-    const line = { fixed: 10 * perToken, perToken: 0.05 * perToken, step: 0.2 * cpuStep, outsideAt: 1, outsideId };
+  // weights); a request of good ids after it is taken on the GPU as before. (2): the same where the sampler refused the
+  // first request's first step
+  for (const [outsideId, more] of [[-1, { outsideAt: 1, outsideId: -1 }], [plan.vocab_size, { outsideAt: 1, outsideId: plan.vocab_size }], ["a refused step", { refuseAt: 1, refuseAfter: 0 }]]) {
+    const line = { fixed: 10 * perToken, perToken: 0.05 * perToken, step: 0.2 * cpuStep, ...more };
     const fake = new Worker(FAKE, { eval: true, workerData: line });
     const gpu = () => ({ postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
       set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() });

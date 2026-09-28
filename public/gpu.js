@@ -1158,8 +1158,9 @@ function tokenStep(m, form) {
 }
 // count steps of the dispatches from the state given (with the settings and a random number a step), in one
 // submission, and read back: the ids and the state's words, and (keep) the keys and values of the positions pos to
-// pos + count - 1. extra(encoder): what a check copies out besides. Returns { ids, sampled, stopped, kv: [keys,
-// values][layer], the positions' rows of float16 as bytes }
+// pos + count - 1. extra(encoder): what a check copies out besides. Returns { ids, sampled, stopped, notFinite (T219:
+// the sampler refused the step after the sampled ones: its logits were not finite), kv: [keys, values][layer], the
+// positions' rows of float16 as bytes }
 async function runTokens(m, dispatches, { count, pos, state, settings, randoms, keep = false, extra }) {
   const { device, plan, wgsl, gen: g } = m, kvRow = plan.kvHeads * plan.headSize * 2, idsBytes = g.most * 4;
   if (pos + count > m.cache.capacity) throw new Error(`positions to ${pos + count} are past the GPU's cache`);
@@ -1194,7 +1195,7 @@ async function runTokens(m, dispatches, { count, pos, state, settings, randoms, 
   try {
     const words = new Uint32Array(g.readback.getMappedRange(0, idsBytes + wgsl.STATE_BYTES).slice(0));
     const after = words.subarray(g.most);
-    const out = { ids: words.slice(0, count), sampled: after[5], stopped: after[7] };
+    const out = { ids: words.slice(0, count), sampled: after[5], stopped: after[7], notFinite: after[wgsl.STATE_NOT_FINITE] };
     if (keep) {
       const bytes = new Uint8Array(g.readback.getMappedRange(kvAt, 2 * plan.layers * g.most * kvRow).slice(0));
       out.kv = [0, 1].map((side) => [...Array(plan.layers)].map((_, l) => {
@@ -1442,7 +1443,8 @@ async function checkTokens(m, form) {
 // pos - 1 up from forward.js's cache first (cache: its addresses of the keys and the values, its capacity and the
 // bytes of a position; half: float16 as here, else float32, narrowed on the way up: T160, a grouped-query model's),
 // the state (token, pos, the end of the history and its length), the settings and a random number a step; the ids into
-// plan.tokens.ids ([sampled, id, id, ...], a stop token last where one came), and the keys and values of the positions
+// plan.tokens.ids ([sampled, id, id, ...] and, after plan.tokens.most ids, the State's not_finite word: T219, the step
+// after the sampled ones was refused, its logits not finite; a stop token last where one came), and the keys and values of the positions
 // sampled in float16 into plan.staging as a prompt's block's ([keys, values][layer][plan.batch positions]), which
 // forward.js puts into its cache (widened where it is float32), where it still wants the answer
 function generate({ serial, count, pos, from, token, history, length, cache, settings, randoms }) {
@@ -1467,9 +1469,10 @@ function generate({ serial, count, pos, from, token, history, length, cache, set
           .set(out.kv[side][l].subarray(0, out.sampled * kvRow));
       }
     }
-    const ids = new Int32Array(m.memory.buffer, plan.tokens.ids, 1 + count);
+    const ids = new Int32Array(m.memory.buffer, plan.tokens.ids, 2 + g.most);
     ids[0] = out.sampled;
     ids.set(out.ids.subarray(0, out.sampled), 1);
+    ids[1 + g.most] = out.notFinite;
   });
 }
 
