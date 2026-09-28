@@ -1724,13 +1724,21 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
  * a softmax or of the reduce that is not the largest of all makes exp() go past float32 there, where a largest taken
  * wrong cancels out of any softmax whose scores are within 88 of each other), and the keys and values of positions
  * and TOKEN_ATTENTION_PAST more ([position][kvHeads × size], float16 of random bits between 2^-3 and 4 in size: those
- * past the token's must not be read). */
-export const TOKEN_ATTENTION_PAST = 8, TOKEN_ATTENTION_STEEP = 40;
+ * past the token's must not be read). A steep head's key at TOKEN_ATTENTION_PEAK (in the second KV_TILE: flash_attn_vec's
+ * second part where there are two or more) is 4 in the sign of its q, so that its score is hundreds above every other:
+ * random keys alone leave every part's largest within 88 of the largest of all (the CI's mutations, T224: the reduce
+ * taking part 0's largest passed), and a part's largest must be that far from another's to be seen. */
+export const TOKEN_ATTENTION_PAST = 8, TOKEN_ATTENTION_STEEP = 40, TOKEN_ATTENTION_PEAK = 33;
 export function tokenAttentionData({ heads, kvHeads, size, positions, steep = [] }) {
   const q = new Float32Array(heads * size).map((_, i) => (Math.random() * 2 - 1) * (steep.includes(Math.floor(i / size)) ? TOKEN_ATTENTION_STEEP : 1));
   const halfBits = () => ((Math.random() < 0.5 ? 0x8000 : 0) | ((12 + ((Math.random() * 5) | 0)) << 10) | ((Math.random() * 1024) | 0));
   const rows = (positions + TOKEN_ATTENTION_PAST) * kvHeads * size;
-  return { q, keys: new Uint16Array(rows).map(halfBits), values: new Uint16Array(rows).map(halfBits) };
+  const keys = new Uint16Array(rows).map(halfBits);
+  for (const h of steep.filter(() => positions > TOKEN_ATTENTION_PEAK)) {
+    const kv = Math.floor(h / (heads / kvHeads)) * size, at = TOKEN_ATTENTION_PEAK * kvHeads * size + kv;
+    for (let d = 0; d < size; d++) keys[at + d] = q[h * size + d] < 0 ? 0xc400 : 0x4400;  // ±4 in float16
+  }
+  return { q, keys, values: new Uint16Array(rows).map(halfBits) };
 }
 const fromHalf = (h) => (h & 0x8000 ? -1 : 1) * ((h >> 10) & 31 ? 2 ** (((h >> 10) & 31) - 15) * (1 + (h & 1023) / 1024) : 2 ** -14 * ((h & 1023) / 1024));
 /** T224: how far got (a token's attention output, heads × size, from the GPU) is from the attention of data
