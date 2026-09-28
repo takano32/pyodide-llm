@@ -33,7 +33,16 @@ console.log(`adapter: ${adapter.info?.description ?? adapter.info?.vendor ?? "?"
 const scratch = path.join(root, ".tmp", "sample-gpu-bench");
 fs.mkdirSync(scratch, { recursive: true });
 const old = path.join(scratch, `shaders-${against.replace(/[^\w.-]/g, "_")}.js`);
-fs.writeFileSync(old, execFileSync("git", ["show", `${against}:public/shaders.js`], { cwd: root, maxBuffer: 1 << 26 }));
+const shown = (ref) => execFileSync("git", ["show", `${ref}:public/shaders.js`], { cwd: root, maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "ignore"] });
+let text;
+try {
+  text = shown(against);
+} catch {
+  // (the CI's checkout holds the branch alone: the ref fetched, shallow)
+  execFileSync("git", ["fetch", "--depth", "1", "origin", against.replace(/^origin\//, "")], { cwd: root, stdio: "ignore" });
+  text = shown("FETCH_HEAD");
+}
+fs.writeFileSync(old, text);
 const versions = [{ name: against, wgsl: await import(pathToFileURL(old).href) }, { name: "working tree", wgsl: await import(pathToFileURL(path.join(root, "public", "shaders.js")).href) }];
 
 const VOCAB = 128256, MOST = 128, SETTINGS = { temperature: 0.7, topp: 0.9, penalty: 1 }, SUBMISSION_MS = 40, N_MOST = 256;
