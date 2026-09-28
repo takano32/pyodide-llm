@@ -2548,7 +2548,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 
 // What SAMPLE and the stages of the sampling in chunks (T191, below) share: the constants, the workgroup's memory of
 // the reductions, and cumsum.wgsl's scan.
-// T219: not_finite() below takes the form of isnan() in TensorFlow.js, tfjs-backend-webgpu/src/webgpu_program.ts
+// T219: is_nan_magnitude() below takes the form of isnan() in TensorFlow.js, tfjs-backend-webgpu/src/webgpu_program.ts
 // (https://github.com/tensorflow/tfjs, 2026-09-28: `(floatToUint & 0x7fffffffu) > 0x7f800000u` of the bitcast<u32>
 // of the value). Copyright 2022 Google LLC. All Rights Reserved.
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
@@ -2580,13 +2580,17 @@ var<workgroup> shared_sum: array<f32, WG_SIZE>;
 var<workgroup> uniform_word: u32;
 var<workgroup> any_word: atomic<u32>;
 
-// T219: a logit the engine draws no token from (T195's rule: the largest logit is no finite number), by its bits.
+// T219: the logits the engine draws no token from (T195's rule: the largest logit is no finite number), by their bits.
 // WGSL lets an implementation assume that no NaN nor infinity occurs (§15.7), so 'x != x' and comparisons with an
-// infinity may be folded away; the bits of a u32 are not. isnan's form is TensorFlow.js's (below): the exponent all
-// ones and a fraction. +inf is that exponent, no fraction and the sign clear; -inf (the sign set) is left alone, as the
-// CPU's sampler leaves it (a token it never draws is no error)
-fn not_finite(bits: u32) -> bool {
-    return (bits & 0x7fffffffu) > 0x7f800000u || bits == 0x7f800000u;
+// infinity may be folded away (lavapipe folds 'x != x': the broken copy of T219); the bits of a u32 are not. isnan's
+// form is TensorFlow.js's: the magnitude (the bits without the sign) over 0x7f800000, the exponent all ones and a
+// fraction. Here over the largest magnitude a thread saw (an AND and a max a logit, no branch): it is over 0x7f800000
+// iff some logit's is. +inf is caught apart, as the largest logit (its bits INFINITY_BITS); -inf (the sign set) is
+// left alone, as the CPU's sampler leaves it (a token it never draws is no error)
+const FLOAT_MAGNITUDE = 0x7fffffffu;
+const INFINITY_BITS = 0x7f800000u;
+fn is_nan_magnitude(largest_magnitude: u32) -> bool {
+    return largest_magnitude > INFINITY_BITS;
 }
 // whether any thread's flag is set, to every thread as a uniform value (a barrier; through workgroupUniformLoad, so
 // that a branch on it may hold the barriers of the reductions after: an atomicLoad's value is not uniform to WGSL)
@@ -2853,10 +2857,10 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     let end = min(begin + chunk, vocab);
     var value = -3.4e38;
     var at = NONE;
-    var bad = false;
+    var magnitude = 0u;
     for (var i = begin; i < end; i++) {
         let v = logits[i];
-        bad = bad || not_finite(bitcast<u32>(v));
+        magnitude = max(magnitude, bitcast<u32>(v) & FLOAT_MAGNITUDE);
         if (v > value) {
             value = v;
             at = i;
@@ -2869,7 +2873,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     // T219: the step is refused where the largest logit is no finite number (T195's rule: a NaN or +inf anywhere,
     // or nothing over -3.4e38): the flag into the state, the run stopped, no token written; the CPU takes the step.
     // (argmax's NONE goes in as a flag: a value from the workgroup's memory is not uniform to WGSL's analysis either)
-    if (any_of(bad || argmax == NONE, t)) {
+    if (any_of(is_nan_magnitude(magnitude) || bitcast<u32>(best) == INFINITY_BITS || argmax == NONE, t)) {
         if (t == 0u) {
             state.not_finite = 1u;
             state.stopped = 1u;
@@ -2972,8 +2976,9 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
 // Bindings, of the same numbers as SAMPLE's (each stage binds those it reads: samplerStages): 0 the logits, 1 probs, 2
 // order, 3 the state, 4 chosen, 5 the random numbers, 6 the settings, and 7 the chunks' partial results
 // (samplePartsBytes: CHUNKS_COMMON's counted() and flagged()).
-// T219: SAMPLE_MAX (the one stage that reads every logit whatever the settings) flags each chunk that holds a NaN or
-// +inf in the partial results, and SAMPLE_PICK, which alone writes the state, folds the chunks' flags and refuses the
+// T219: SAMPLE_MAX (the one stage that reads every logit whatever the settings) flags each chunk that holds a NaN in
+// the partial results, and SAMPLE_PICK, which alone writes the state, folds the chunks' flags (and sees +inf as the
+// largest logit) and refuses the
 // step as SAMPLE does (the stages between run on such logits harmlessly: a NaN is under any floor, +inf over it, and
 // what they count and gather stays within the vocabulary).
 export const SAMPLE_CHUNK = 1024;
@@ -2997,7 +3002,7 @@ fn chunk_count() -> u32 {
 }
 // the partial results: [0] the vocabulary's largest logit and the floor (SAMPLE_SUM's), [1 + j] chunk j's largest logit
 // and its index (SAMPLE_MAX's), [1 + chunks + j] how many of its tokens are over the floor and their sum (SAMPLE_SUM's),
-// [1 + 2 × chunks + j] whether chunk j holds a logit that is not finite (T219, SAMPLE_MAX's; .y unused)
+// [1 + 2 × chunks + j] whether chunk j holds a NaN (T219, SAMPLE_MAX's; .y unused)
 fn counted(j: u32) -> vec2<u32> {
     return parts[1u + chunk_count() + j];
 }
@@ -3073,18 +3078,18 @@ ${CHUNK_MAIN} {
     let last = min(first + EACH, end);
     var value = -3.4e38;
     var at = NONE;
-    var bad = false;
+    var magnitude = 0u;
     for (var i = first; i < last; i++) {
         let v = logits[i];
-        bad = bad || not_finite(bitcast<u32>(v));
+        magnitude = max(magnitude, bitcast<u32>(v) & FLOAT_MAGNITUDE);
         if (v > value) {
             value = v;
             at = i;
         }
     }
     let best = best_of(value, at, t);
-    // (T219) and whether the chunk holds a NaN or +inf, for SAMPLE_PICK
-    let chunk_bad = any_of(bad, t);
+    // (T219) and whether the chunk holds a NaN, for SAMPLE_PICK (+inf shows in the largest logit there)
+    let chunk_bad = any_of(is_nan_magnitude(magnitude), t);
     if (t == 0u) {
         parts[1u + wid.x] = vec2<u32>(bitcast<u32>(best.value), best.at);
         parts[1u + 2u * chunk_count() + wid.x] = vec2<u32>(u32(chunk_bad), 0u);
@@ -3216,14 +3221,15 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
     }
     let vocab = settings.vocab;
     let chunks = (vocab + CHUNK - 1u) / CHUNK;
-    let argmax = largest(t).at;
-    // T219: the step is refused where the largest logit is no finite number (SAMPLE_MAX's flags of the chunks, or no
-    // chunk with a logit over -3.4e38), as SAMPLE refuses it
+    let top = largest(t);
+    let argmax = top.at;
+    // T219: the step is refused where the largest logit is no finite number (a NaN: SAMPLE_MAX's flags of the chunks;
+    // +inf: the largest; or no chunk with a logit over -3.4e38), as SAMPLE refuses it
     var bad = false;
     for (var j = t; j < chunks; j += WG_SIZE) {
         bad = bad || flagged(j);
     }
-    if (any_of(bad || argmax == NONE, t)) {
+    if (any_of(bad || bitcast<u32>(top.value) == INFINITY_BITS || argmax == NONE, t)) {
         if (t == 0u) {
             state.not_finite = 1u;
             state.stopped = 1u;
