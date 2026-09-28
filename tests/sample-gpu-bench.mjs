@@ -21,14 +21,6 @@ if (!webgpu) {
   process.exit(2);
 }
 const root = new URL("../", import.meta.url).pathname;
-const { create, globals } = await import(pathToFileURL(path.resolve(webgpu, "index.js")).href);
-Object.assign(globalThis, globals);
-const adapter = await create([]).requestAdapter();
-if (!adapter) throw new Error("no WebGPU adapter");
-const device = await adapter.requestDevice();
-console.log(`adapter: ${adapter.info?.description ?? adapter.info?.vendor ?? "?"}${adapter.info?.isFallbackAdapter ? " (a fallback adapter: the numbers are a CPU's)" : ""}` +
-  `, subgroups ${device.features.has("subgroups") ? "yes" : "no"}, against ${against}, ${rounds} rounds`);
-
 // the two versions of shaders.js: the working tree's and the ref's, written under .tmp (shaders.js imports nothing)
 const scratch = path.join(root, ".tmp", "sample-gpu-bench");
 fs.mkdirSync(scratch, { recursive: true });
@@ -45,6 +37,19 @@ try {
 fs.writeFileSync(old, text);
 const versions = [{ name: against, wgsl: await import(pathToFileURL(old).href) }, { name: "working tree", wgsl: await import(pathToFileURL(path.join(root, "public", "shaders.js")).href) }];
 
+const { create, globals } = await import(pathToFileURL(path.resolve(webgpu, "index.js")).href);
+Object.assign(globalThis, globals);
+// The Dawn instance is kept (navigator.gpu, as the benchmark's worker finds it): one made for the one call
+// (create([]).requestAdapter()) was collected while its device lived, and Dawn ended in a bus error or a system_error
+// at the first asynchronous call after (a pipeline made asynchronously, an error scope popped), at random
+Object.defineProperty(globalThis, "navigator", { value: { gpu: create([]) }, configurable: true });
+const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+if (!adapter) throw new Error("no WebGPU adapter");
+const device = await adapter.requestDevice({ requiredFeatures: ["shader-f16", "subgroups"].filter((name) => adapter.features.has(name)),
+  requiredLimits: { maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize, maxBufferSize: adapter.limits.maxBufferSize } });
+console.log(`adapter: ${adapter.info?.description ?? adapter.info?.vendor ?? "?"}${adapter.info?.isFallbackAdapter ? " (a fallback adapter: the numbers are a CPU's)" : ""}` +
+  `, subgroups ${device.features.has("subgroups") ? "yes" : "no"}, against ${against}, ${rounds} rounds`);
+
 const VOCAB = 128256, MOST = 128, SETTINGS = { temperature: 0.7, topp: 0.9, penalty: 1 }, SUBMISSION_MS = 40, N_MOST = 256;
 const { STORAGE, COPY_DST, UNIFORM } = GPUBufferUsage;
 const buffer = (size, usage = STORAGE | COPY_DST) => device.createBuffer({ size, usage });
@@ -57,10 +62,13 @@ device.queue.writeBuffer(b[6], 0, versions[1].wgsl.samplingSettings({ vocab: VOC
 const history = [...Array(64)].map(() => (Math.random() * VOCAB) | 0), start = versions[1].wgsl.samplingState({ token: history[63], pos: 0, history });
 
 const pipeline = async (code) => {
-  const module = device.createShaderModule({ code }), info = await module.getCompilationInfo();
-  const errors = info.messages.filter((m) => m.type === "error");
-  if (errors.length) throw new Error(errors.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`).join("\n"));
-  return device.createComputePipeline({ layout: "auto", compute: { module, entryPoint: "main" } });
+  // (synchronously, under a validation scope: createComputePipelineAsync ended Dawn in Node here with a system_error,
+  // and a child process run after Dawn started ended it with a bus error: the ref is read above, before)
+  device.pushErrorScope("validation");
+  const made = device.createComputePipeline({ layout: "auto", compute: { module: device.createShaderModule({ code }), entryPoint: "main" } });
+  const invalid = await device.popErrorScope();
+  if (invalid) throw new Error(invalid.message);
+  return made;
 };
 const group = (pipe, bindings) => device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: bindings.map((binding) => ({ binding, resource: { buffer: b[binding] } })) });
 // each version's two forms as lists of [pipeline, bind group, workgroups]
@@ -100,9 +108,10 @@ const rows = [];
 for (const [name, logits] of [["as a model's", madeUp(2, 20)], ["flat", madeUp(1, 0)]]) {
   device.queue.writeBuffer(b[0], 0, logits);
   for (const form of ["one", "chunks"]) {
-    // n from the working tree's shaders: a submission of 40 ms or more, up to N_MOST; the same n for both versions
+    // each version warmed (a fallback adapter compiles on the first submission), then n from the working tree's
+    // shaders: a submission of 40 ms or more, up to N_MOST; the same n for both versions
+    for (const version of versions) await submission(version.forms[form], 2);
     const fresh = versions[1].forms[form];
-    await submission(fresh, 2);
     let n = 1;
     while ((await submission(fresh, n)) < SUBMISSION_MS && n < N_MOST) n *= 2;
     const differences = versions.map(() => []);
