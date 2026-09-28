@@ -154,7 +154,7 @@ async function cpu(counts = [1, 2, 4]) {
   let done = 0;
   stage("making the model", ++done, stages);
   const model = madeUpModel();
-  const after = forward.footprint(model.header, model.size, { dtype: "int8", relaxed: Boolean(kernels.relaxed), halfKV: shared });
+  const after = forward.footprint(model.header, model.size, { dtype: "int8", relaxed: Boolean(kernels.relaxed), halfKV: true, shared });
   const { memory, base } = forward.weightsMemory(model.size, { shared, after });
   fillWeights(memory, base, model);
   const engine = forward.createForward({ memory, base, size: model.size, kernels, plan: model.plan, spawn: shared ? spawn : undefined });

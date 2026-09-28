@@ -128,7 +128,8 @@ in Pyodide (7.8 → 8.7 MiB).
 ## Long texts
 
 By default a model writes until it stops or its context is full; llm-jp-3-150m has 4096 tokens. Its KV cache grows
-with the text (302 MB of heap for a short text, 522 MB at the end), and the speed falls with the position: about
+with the text (302 MB of heap for a short text, 522 MB at the end; since T130 the cache grows in place, so less
+at the end: not measured), and the speed falls with the position: about
 85 tok/s at position 8, 65 at 1000, 50 at 2000, 35 at 4070 (Node). The tables above are about 256 tokens.
 
 ## Threads

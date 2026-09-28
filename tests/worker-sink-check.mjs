@@ -43,6 +43,8 @@ const source = fs.readFileSync(at, "utf8").replaceAll("import.meta.url", JSON.st
 const context = vm.createContext({
   self: { navigator: {}, location: { search: "" }, crossOriginIsolated: false },
   console, performance, URL, TextDecoder, TextEncoder, setTimeout, clearTimeout, WebAssembly, Atomics, postMessage() {},
+  // (this realm's, which the memories below are made in: worker.js asks whether a memory is shared with instanceof)
+  SharedArrayBuffer,
 });
 vm.runInContext(source, context, { filename: fileURLToPath(at) });
 const counted = [];
@@ -54,7 +56,12 @@ context.stand = {
       counted.push(args);
       return forward.footprint(...args);
     },
-    weightsMemory: () => ({ memory: new WebAssembly.Memory({ initial: 1 }), base: 0 }),
+    // a shared memory where one is asked for, unless the test refuses it (T130)
+    weightsMemory: (size, { shared } = {}) => {
+      if (shared && context.refuseShared) throw new Error("no shared memory here");
+      return shared ? { memory: new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true }), base: 8192 }
+        : { memory: new WebAssembly.Memory({ initial: 1 }), base: 0 };
+    },
     growMemory() {},
   },
   // with ?without=kernels: the checkpoint in a Python bytearray
@@ -84,9 +91,12 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
 
 // T160 (the review): the type of the keys and values the worker sized the memory for (keysInHalf) is what it hands the
 // engine (external's halfKeys). Without it createForward takes float32 for every grouped-query model: the same answer
-// where float32 fits a 32-bit memory, and not for Qwen2.5 3B (3.82 GiB with float16, 4.03 with float32: out of memory
-// at the last growth of the cache, near position 2048) or Llama 3.2 3B (64-bit either way: 0.66 GB more). No other
-// test runs this path: forward-check and gpu-check make their engines themselves.
+// where float32 fits a 32-bit memory, and not for Llama 3.2 3B (64-bit either way: 0.46 GB more). No other test runs
+// this path: forward-check and gpu-check make their engines themselves.
+// T130: a shared memory asked for and refused. The plain one keeps float32 but where that would not fit a 32-bit
+// memory: llm-jp-3.1 1.8B float32 (3.66 GiB; the float16 of a shared memory would have left it 1.1 GiB short of
+// counting it), sarashina2.2 3B in six bits float16 (4.36 GiB in float32). Before, the worker handed the engine the
+// shared memory's answer and the engine took float32 on any plain memory: out of memory near the end of the context.
 {
   const handed = [];
   context.stand.forward.external = (args) => {
@@ -97,25 +107,35 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
     "llama2_numpy.Llama = { callKwargs: () => ({}) };", context);
   const cases = [["llm-jp-3 150M", [512, 2048, 12, 8, 8, 99584, 4096], 160e6, {}, true],
     ["Qwen2.5 0.5B", [896, 4864, 24, 14, 2, 151936, 4096], 555992604, { bias: true }, false],
-    ["Qwen2.5 3B", [2048, 11008, 36, 16, 2, 151936, 4096], 3472375836, { bias: true }, true],
-    ["Llama 3.2 3B", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, {}, true]];
-  const handedFor = (header, size, form) => {
+    ["Qwen2.5 3B", [2048, 11008, 36, 16, 2, 151936, 4096], 3472375836, { bias: true }, false],
+    ["Llama 3.2 3B", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, {}, true],
+    ["llm-jp-3.1 1.8B", [2048, 7168, 24, 16, 16, -99584, 4096], 2101354524, {}, true],
+    ["sarashina2.2 3B, six bits", [2560, 8960, 32, 16, 8, -102400, 4096], 2936678428, {}, true, "int6"]];
+  // on a plain memory: float32 but where it would not fit a 32-bit memory
+  const plain = { "llm-jp-3 150M": false, "Qwen2.5 0.5B": false, "Qwen2.5 3B": false, "Llama 3.2 3B": true, "llm-jp-3.1 1.8B": false,
+    "sarashina2.2 3B, six bits": true };
+  const handedFor = (header, size, form, dtype) => {
     handed.length = 0;
     const into = vm.runInContext("checkpointSink()", context);
-    into.sink.open(size, proxy(header), "int8", proxy({ ...FORM, ...form }));
+    into.sink.open(size, proxy(header), dtype, proxy({ ...FORM, ...form }));
     into.weights.llama({}, {});
     assert.equal(handed.length, 1, "the engine was not made through external()");
     return handed[0];
   };
-  for (const isolated of [true, false]) {
+  for (const [isolated, refused] of [[true, false], [false, false], [true, true]]) {
     context.self.crossOriginIsolated = isolated;
-    for (const [name, header, size, form, half] of cases) {
-      const want = isolated && half;
-      assert.equal(handedFor(header, size, form), want,
-        `${name}${isolated ? "" : " (not isolated)"}: the worker hands the engine ${want ? "float16" : "float32"} keys and values`);
+    context.refuseShared = refused;
+    vm.runInContext("weightsPool = undefined", context);  // a new memory for every case: the refusal is when one is made
+    for (const [name, header, size, form, half, dtype = "int8"] of cases) {
+      const want = isolated && !refused ? half : plain[name];
+      const where = `${name}${isolated ? refused ? " (a shared memory refused)" : "" : " (not isolated)"}`;
+      assert.equal(handedFor(header, size, form, dtype), want,
+        `${where}: the worker hands the engine ${want ? "float16" : "float32"} keys and values`);
+      vm.runInContext("weightsPool = undefined", context);
     }
   }
   context.self.crossOriginIsolated = false;
+  context.refuseShared = false;
   vm.runInContext("sharedKernels = undefined; wideKernels = undefined; delete llama2_numpy.Llama;", context);
   console.log("ok: the worker hands the engine the type of keys and values it sized the memory for");
 }

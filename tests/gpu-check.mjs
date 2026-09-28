@@ -411,7 +411,7 @@ try {
     // T155: a 64-bit memory (c.wide) with its kernels, the checkpoint 4 GiB up as threads-check's --high puts it
     const high = c.wide ? 2 ** 32 : 0;
     const kernels = c.wide ? compileKernels(await fetched("/public/simdkernel_shared64.wasm"), await fetched("/public/simdkernel_relaxed_shared64.wasm"), true) : narrow;
-    const after = footprint(c.reference.header, size, { dtype: c.dtype, halfKV: true, gpu: true, kvStart: plan.kv_start, head_dim: c.headDim, arch: c.arch });
+    const after = footprint(c.reference.header, size, { dtype: c.dtype, halfKV: true, shared: true, gpu: true, head_dim: c.headDim, arch: c.arch });
     const { memory, base: low } = weightsMemory(size + high, { shared: true, wide: Boolean(c.wide), after });
     const base = low + high;
     new Uint8Array(memory.buffer, base, size).set(checkpoint);

@@ -10,19 +10,22 @@
 //         the perplexity a multiple.
 // T108: the same text read by forward.js one token at a time and in blocks (forward_many), from a KV cache that
 // starts small so that it grows within the blocks: the last logits must be the same to the bit.
+// T130: forward.js's KV cache starts at 16 positions against NumPy, so that it grows in place (16 -> 32 -> 64 -> 128)
+// within the positions compared: a block moved to the wrong place, or written over before it moved, is read back.
 // Then the speeds, both in turn. Runs in the deployment.
 //
 //   node tests/forward-check.mjs [model id | <out> of tests/perplexity_prepare.py ...] [--rounds 3] [--positions 128]
 //        [--without relaxed,int8,sampler] [--plain] [--wide]
 //
 // The memory is shared, as the page's where it is cross-origin isolated; --plain: not shared, as the page's where it
-// is not (the keys and values then stay float32, T110). --wide: a 64-bit memory and its kernels (T101), as the page
+// is not, or where the page asked for a shared one and the browser refused it (the keys and values then float32
+// where that fits a 32-bit memory, T110, T130). --wide: a 64-bit memory and its kernels (T101), as the page
 // has for a model past 4 GiB.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
-import { automaticDtype, footprint, keysInHalf } from "../public/forward.js";
+import { automaticDtype, footprint, keysInHalf, needsWide } from "../public/forward.js";
 import { MODELS } from "../src/models.js";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -243,59 +246,83 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
 
 const shared = !args.includes("--plain");
 const { pyodide: py, kernels } = await pyodideWithEngine({ shared, wide: args.includes("--wide") });
-py.runPython("import time, gc, math, numpy as np, llama2_numpy\nfrom llama2_numpy import Llama");
+// (T130: the cache starts at 16 positions, so that it grows in place within every comparison below)
+py.runPython("import time, gc, math, numpy as np, llama2_numpy\nfrom llama2_numpy import Llama\nllama2_numpy.KV_START = 16");
 let failed = false;
 // T133: the bits of a model converted with none asked for. Llama-3.2-3B's int8 (3614847004 bytes, its header from
 // config.json) does not fit a 32-bit memory with its forward pass (T115: 4.41 GiB shared): int8 on a 64-bit memory
 // where the browser has one, six bits where not; a model that fits stays int8 either way
 {
   const header = [3072, 8192, 28, 24, 8, 128256, 4096], int8 = 3614847004;
-  const after = footprint(header, int8, { dtype: "int8", halfKV: true });
+  const after = footprint(header, int8, { dtype: "int8", halfKV: true, shared: true });
   assert.equal(automaticDtype(int8, after, true), "int8", "a 64-bit memory: int8");
   assert.equal(automaticDtype(int8, after, false), "int6", "no 64-bit memory: six bits");
   const small = [1536, 8960, 28, 12, 2, 151936, 4096], qwen = 1736865820;  // Qwen2.5 1.5B
-  assert.equal(automaticDtype(qwen, footprint(small, qwen, { dtype: "int8", halfKV: true }), false), "int8");
+  assert.equal(automaticDtype(qwen, footprint(small, qwen, { dtype: "int8", halfKV: true, shared: true }), false), "int8");
 }
 // T144: heads of another size than dim / heads, which none of the models below has. Qwen3 0.6B's int8 (670744604
 // bytes, its header from config.json) with the options the converter gives it: forward.js put 755.3 MiB after it on
 // a shared memory and 1427.3 MiB on a plain one (measured in the review of T124). Without head_dim footprint() counts
 // its keys and values 45% short (419.1 and 755.1 MiB) and a memory chosen by that runs out near the end of the context.
 // T160: a grouped-query model (16 heads, 8 of keys and values) keeps float32 keys and values on a shared memory too:
-// the 1427.3 MiB of the plain one either way (the two differ in nothing else footprint() counts)
+// the 1427.3 MiB of the plain one either way (the two differ in nothing else footprint() counts).
+// T130: the cache grows in place, and holds the 2048 positions of its last step once where it held them twice:
+// 1427.3 MiB less 2048 × 28 layers × 2 × 1024 × 4 bytes (448 MiB)
 {
   const header = [1024, 3072, 28, 16, 8, 151936, 4096], int8 = 670744604, MiB = 1 << 20;
-  const options = { dtype: "int8", bias: false, arch: "llama", qk_norm: true, head_dim: 128 };
-  for (const halfKV of [true, false]) {
-    const bound = footprint(header, int8, { ...options, halfKV }) / MiB, placed = 1427.3;
+  const options = { dtype: "int8", bias: false, arch: "llama", qk_norm: true, head_dim: 128, halfKV: true };
+  for (const shared of [true, false]) {
+    const bound = footprint(header, int8, { ...options, shared }) / MiB, placed = 1427.3 - 448;
     assert.ok(bound >= placed && bound < placed + 4, `Qwen3 0.6B: ${bound.toFixed(1)} MiB counted, ${placed} placed`);
   }
 }
-// T160: keys and values in float16 (a shared memory) for a model with a key of every head; for a grouped-query one
-// float32, but where that does not fit a 32-bit memory (Qwen2.5 3B: 3.82 GiB, 4.03 in float32; Llama 3.2 3B on a
-// 64-bit memory either way, 4.41 GiB in float16: the owner, 2026-09-27). The sizes: llama2_convert.checkpoint_size()
+// T160: keys and values in float16 on a shared memory for a model with a key of every head; for a grouped-query one
+// float32, but where that does not fit a 32-bit memory (Llama 3.2 3B on a 64-bit memory either way, 4.20 GiB in
+// float16: the owner, 2026-09-27). T130: on a memory that is not shared (not cross-origin isolated, or a shared one
+// refused) float32 for every model, but where that does not fit a 32-bit memory: Llama 3.2 3B's int8 without relaxed
+// SIMD (Safari's, T130: 3.82 GiB, 4.26 in float32), sarashina2.2 3B in six bits (Chrome's ?bits=6: 3.73 and 4.36),
+// Llama 3.2 3B with relaxed SIMD (64-bit either way).
+// Qwen2.5 3B is float32 now on either (3.89 GiB: 3.82 in float16 and 4.03 in float32 before the cache grew in place,
+// T130), and llm-jp-3.1 1.8B (a key for every head) float16 on a shared memory and float32 on a plain one (2.91 and
+// 3.66 GiB). The sizes: llama2_convert.checkpoint_size(). Each: shared, not shared
 {
-  const cases = [["llm-jp-3 150M", [512, 2048, 12, 8, 8, 99584, 4096], 160e6, {}, true],
-    ["Qwen2.5 0.5B", [896, 4864, 24, 14, 2, 151936, 4096], 555992604, { bias: true }, false],
-    ["Qwen2.5 3B", [2048, 11008, 36, 16, 2, 151936, 4096], 3472375836, { bias: true }, true],
-    ["Llama 3.2 3B", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, {}, true]];
-  for (const [name, header, size, form, half] of cases) {
+  const cases = [["llm-jp-3 150M", [512, 2048, 12, 8, 8, 99584, 4096], 160e6, {}, true, false],
+    ["Qwen2.5 0.5B", [896, 4864, 24, 14, 2, 151936, 4096], 555992604, { bias: true }, false, false],
+    ["Qwen2.5 3B", [2048, 11008, 36, 16, 2, 151936, 4096], 3472375836, { bias: true }, false, false],
+    ["Llama 3.2 3B", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, {}, true, true],
+    ["llm-jp-3.1 1.8B", [2048, 7168, 24, 16, 16, -99584, 4096], 2101354524, {}, true, false],
+    ["Llama 3.2 3B, no relaxed SIMD", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, { relaxed: false }, true, true],
+    ["sarashina2.2 3B, six bits", [2560, 8960, 32, 16, 8, -102400, 4096], 2936678428, { dtype: "int6" }, true, true]];
+  for (const [name, header, size, form, onShared, onPlain] of cases) {
     const options = { dtype: "int8", ...form };
-    assert.equal(keysInHalf(header, size, { ...options, halfKV: true }), half, `${name}: float16 keys and values ${!half}`);
-    assert.equal(keysInHalf(header, size, options), false, `${name}: float16 keys and values not on a shared memory`);
-    const [f16, f32] = [true, false].map((halfKV) => footprint(header, size, { ...options, halfKV }));
-    assert.equal(f16 < f32, half, `${name}: footprint() counts ${half ? "float32" : "float16"} keys and values`);
+    assert.equal(keysInHalf(header, size, { ...options, shared: true }), false, `${name}: float16 keys and values where they may not be`);
+    for (const [shared, half] of [[true, onShared], [false, onPlain]]) {
+      const where = `${name}${shared ? "" : ", not shared"}`;
+      assert.equal(keysInHalf(header, size, { ...options, halfKV: true, shared }), half, `${where}: float16 keys and values ${!half}`);
+      const [f16, f32] = [true, false].map((halfKV) => footprint(header, size, { ...options, halfKV, shared }));
+      assert.equal(f16 < f32, half, `${where}: footprint() counts ${half ? "float32" : "float16"} keys and values`);
+    }
+    // the worker chose a 32-bit or a 64-bit memory for the shared one: the plain one it got instead fits the same (T130)
+    const [onShared32, onPlain32] = [true, false].map((shared) => !needsWide(size, footprint(header, size, { ...options, halfKV: true, shared })));
+    assert.ok(onPlain32 || !onShared32, `${name}: past a 32-bit memory where a shared one refused is not`);
   }
 }
 // T160: what forward.js allocates against footprint() (as for the models below), on made-up int8 models of 4096
 // positions whose keys and values outweigh the rest: grouped-query (16 heads, 8 of keys and values: float32 on a
 // shared memory too) and not (8 and 8: float16 there). None of the models below has grouped-query attention. A
 // footprint() that counts the other type is 25 MiB off, past the line's 6 MiB and 5%.
+// T130, with --plain: a shared memory asked for and refused. The worker hands the engine float16 keys and values
+// where float32 would not fit a 32-bit memory (keysInHalf on the plain memory; tests/worker-sink-check.mjs sees it do
+// so). No model here is that large, so the model with a key for every head is made again with float16 handed over:
+// what it puts after the checkpoint is footprint()'s float16 count, and its logits at the last position are those
+// of float32 keys and values but for float16's rounding.
 py.globals.set("WITHOUT", py.toPy(without));
 py.runPython(`
 import struct, numpy as np, llama2_convert
 
-def made_up(dim, heads, kv_heads, hidden=512, layers=4, vocab=320, seq_len=4096):
-    """an int8 checkpoint as quantize.py writes one, and its bytes after the checkpoint at the end of the context"""
+def made_up(dim, heads, kv_heads, half_keys=None, hidden=512, layers=4, vocab=320, seq_len=4096):
+    """an int8 checkpoint as quantize.py writes one, its bytes after the checkpoint at the end of the context and
+    the logits there; half_keys: the type of the keys and values handed to forward.js (external's halfKeys)"""
     rng = np.random.default_rng(0)
     header = (dim, hidden, layers, heads, kv_heads, vocab, seq_len)
     out = [struct.pack("<7i", *header)]
@@ -311,27 +338,40 @@ def made_up(dim, heads, kv_heads, hidden=512, layers=4, vocab=320, seq_len=4096)
     pieces = [f"<{i}>".encode() for i in range(vocab)]
     tokenizer = struct.pack("<i", max(map(len, pieces))) + b"".join(struct.pack("<fi", 0.0, len(p)) + p for p in pieces)
     data = b"".join(out)
-    llama = kernel_llama(data, tokenizer, dtype="int8", disable=WITHOUT)
+    llama = kernel_llama(data, tokenizer, half_keys=half_keys, dtype="int8", disable=WITHOUT)
     capacity = llama2_numpy.KV_START
     while capacity < seq_len:
         llama.forward(llama.bos, capacity, need_logits=False)
         capacity *= 2
-    llama.forward(llama.bos, seq_len - 1, need_logits=False)
+    logits = llama.forward(llama.bos, seq_len - 1).tolist()
     used = int(llama._external[0].memoryBytes())
     llama.release(); del llama; gc.collect()
-    return used, len(data), list(header)
+    return used, len(data), list(header), logits
 `);
-for (const [name, dim, heads, kvHeads] of [["made-up, grouped-query", 512, 16, 8], ["made-up, a key for every head", 256, 8, 8]]) {
-  const [used, size, header] = py.runPython(`made_up(${dim}, ${heads}, ${kvHeads})`).toJs();
+const madeUp = [["made-up, grouped-query", 512, 16, 8], ["made-up, a key for every head", 256, 8, 8]];
+const int8Weights = !without.includes("int8"), mayHalve = int8Weights && !without.includes("kv16");
+if (!shared && mayHalve) madeUp.push(["made-up, a key for every head, a shared memory refused (float16 handed over)", 256, 8, 8, true]);
+const madeUpLogits = {};
+for (const [name, dim, heads, kvHeads, halfKeys] of madeUp) {
+  const [used, size, header, logits] = py.runPython(`made_up(${dim}, ${heads}, ${kvHeads}${halfKeys ? ", True" : ""})`).toJs();
   const after = used - (shared ? 8192 : 64) - size;
-  const int8 = !without.includes("int8");
-  const options = { dtype: "int8", int8, relaxed: Boolean(kernels.relaxed) && !without.includes("relaxed"),
-    halfKV: shared && int8 && !without.includes("kv16") };
+  // (float16 handed over: what footprint() counts where it keeps float16, as on a shared memory)
+  const options = { dtype: "int8", int8: int8Weights, relaxed: Boolean(kernels.relaxed) && !without.includes("relaxed"),
+    halfKV: mayHalve, shared: shared || Boolean(halfKeys) };
   const bound = footprint(header, size, options);
-  const close = after <= bound && bound - after <= 0.05 * bound + 6 * 2 ** 20;
+  let close = after <= bound && bound - after <= 0.05 * bound + 6 * 2 ** 20;
+  let also = "";
+  if (halfKeys) {
+    // against the same model with float32 keys and values, made just before
+    const other = madeUpLogits[`${dim} ${heads} ${kvHeads}`], largest = Math.max(...other.map(Math.abs));
+    const apart = Math.max(...logits.map((v, i) => Math.abs(v - other[i]))) / largest;
+    const argmax = (xs) => xs.indexOf(Math.max(...xs));
+    also = `; logits ${apart.toExponential(2)} of the largest from float32's, the most likely token ${argmax(logits) === argmax(other) ? "the same" : "ANOTHER"}`;
+    close &&= apart <= 1e-2 && argmax(logits) === argmax(other);
+  } else madeUpLogits[`${dim} ${heads} ${kvHeads}`] = logits;
   console.log(`${name}: ${(after / 2 ** 20).toFixed(1)} MiB after the checkpoint at the end of the context, footprint ` +
-    `${(bound / 2 ** 20).toFixed(1)} MiB, keys and values in ${keysInHalf(header, size, options) ? "float16" : "float32"}` +
-    `${close ? "" : " — FAILED"}`);
+    `${(bound / 2 ** 20).toFixed(1)} MiB, keys and values in ${halfKeys || keysInHalf(header, size, options) ? "float16" : "float32"}` +
+    `${also}${close ? "" : " — FAILED"}`);
   failed ||= !close;
 }
 for (const id of ids.length ? ids : ["stories260K", "stories15M", "tiny-lm", "llm-jp-3-150m"]) {
@@ -362,7 +402,7 @@ llama.release(); del llama; gc.collect()
     const int8 = !without.includes("int8");
     const after = used - (shared ? 8192 : 64) - size;
     const bound = footprint(header, size, { ...entry.options, int8,
-      relaxed: Boolean(kernels.relaxed) && !without.includes("relaxed"), halfKV: shared && quantized && int8 && !without.includes("kv16") });
+      relaxed: Boolean(kernels.relaxed) && !without.includes("relaxed"), halfKV: quantized && int8 && !without.includes("kv16"), shared });
     // above what was used, and by little: a few percent, the megabyte for alignment, and the outlier columns it
     // counts for every quantized model (4 MiB for a vocabulary of 128256; few models have them)
     const close = after <= bound && bound - after <= 0.05 * bound + 6 * 2 ** 20;
