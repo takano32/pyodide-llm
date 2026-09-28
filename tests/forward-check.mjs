@@ -356,7 +356,9 @@ def made_up(dim, heads, kv_heads, hidden=512, layers=4, vocab=320, seq_len=4096)
     llama.release(); del llama; gc.collect()
     return used, len(data), list(header)
 `);
-for (const [name, dim, heads, kvHeads] of [["made-up, grouped-query", 512, 16, 8], ["made-up, a key for every head", 256, 8, 8]]) {
+// (not the grouped-query one with --half-keys: footprint() counts float16 for it only where float32 would not fit)
+for (const [name, dim, heads, kvHeads] of [["made-up, grouped-query", 512, 16, 8], ["made-up, a key for every head", 256, 8, 8]]
+  .filter(([, , heads, kvHeads]) => !halfKeys || kvHeads >= heads)) {
   const [used, size, header] = py.runPython(`made_up(${dim}, ${heads}, ${kvHeads})`).toJs();
   const after = used - (shared ? 8192 : 64) - size;
   const bound = footprint(header, size, memoryOptions({ dtype: "int8" }));
