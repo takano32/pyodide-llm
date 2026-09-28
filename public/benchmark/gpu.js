@@ -1885,6 +1885,13 @@ function sparseLogits(vocab) {
 // T219: logits that are not finite, in place: a NaN or +inf at `at`, every logit -inf, or a few -inf (seven, every
 // 131st token from 5; where the most likely is among them both sides take the next: the CPU leaves them out, and draws as ever)
 function unfiniteLogits(logits, kind, at) {
+  // (the review's probe, t219-review-probe: NaNs of other bits, +inf with -inf, and two that must not be refused)
+  const bits = new Uint32Array(logits.buffer, logits.byteOffset, logits.length);
+  if (kind.startsWith("nan bits ")) return void (bits[at] = parseInt(kind.slice(9), 16));
+  if (kind === "+inf -inf") return void (logits[at] = Infinity, logits[at + 1] = -Infinity);
+  if (kind === "largest finite") return void (logits[at] = 3.4028234663852886e38);
+  if (kind === "one finite") return void (logits.fill(-Infinity), logits[at] = 1.5);
+  if (kind === "nan in window") return;
   if (kind === "nan") logits[at] = NaN;
   else if (kind === "+inf") logits[at] = Infinity;
   else if (kind === "-inf all") logits.fill(-Infinity);
@@ -1982,6 +1989,17 @@ async function checkSampling(kind = "one") {
     for (const topp of [0.9, 1]) cases.push({ vocab, spread: 2, topp, temperature: 0.7, penalty: 1.3, random: 0.5, unfinite: "-inf some" });
     cases.push({ vocab, spread: 2, topp: 0.9, temperature: 0, penalty: 1.3, random: 0.5, unfinite: "-inf some" });
   }
+  // (the review's probe) refused: a NaN with the sign set (x86's default NaN), a signaling NaN, all ones, +inf beside
+  // -inf, a NaN on the window's last token (the penalty multiplies it); not refused: the largest finite float as the
+  // most likely (0x7f7fffff: one under +inf's bits), one finite token among -inf
+  for (const vocab of [1003, 128256]) {
+    for (const [unfinite, at] of [["nan bits ffc00000", 3], ["nan bits 7f800001", vocab - 2], ["nan bits ffffffff", 500], ["+inf -inf", 600], ["nan in window", 0]]) {
+      for (const [topp, temperature] of [[0.9, 0.7], [1, 0.7], [0.9, 0]]) cases.push({ vocab, spread: 2, topp, temperature, penalty: 1.3, random: 0.5, unfinite, at });
+    }
+    for (const unfinite of ["largest finite", "one finite"]) {
+      for (const [topp, temperature] of [[0.9, 0.7], [1, 0.7], [0.9, 0]]) cases.push({ vocab, spread: 2, topp, temperature, penalty: 1.3, random: 0.5, unfinite, at: 321, kept: true });
+    }
+  }
   const most = 128256, owned = [];
   let wrong = 0, edge = 0, checked = 0;
   const problems = [];
@@ -2061,6 +2079,7 @@ async function checkSampling(kind = "one") {
           : [ranked[3], ranked[4], ...ranked.slice(-4), ranked[0], ...ranked.slice(5, 35), ranked[1], ...ranked.slice(-30, -10), ranked[0], ranked[2],
             ranked[1], ...ranked.slice(35, 43), ranked[2]];
         if (c.short) logits[0] = (logits[ranked[0]] + logits[ranked[1]]) / 2;
+        if (c.unfinite === "nan in window") logits[history[history.length - 1]] = NaN;
         let random = c.random;
         if (random === "fifth") {
           // the middle of the fifth tied token's share in the CPU's walk (the ties in the order of their index)
@@ -2068,7 +2087,7 @@ async function checkSampling(kind = "one") {
           const k = walk.tokens.map((token, at) => [token, at]).filter(([token]) => logits[token] === TIED_RUN)[4][1];
           random = (walk.cumulative[k - 1] + walk.cumulative[k]) / 2 / walk.mass;
         }
-        if (c.unfinite && c.unfinite !== "-inf some") {
+        if (c.unfinite && c.unfinite !== "-inf some" && !c.kept) {
           // (T219) refused: the ids untouched, the state's not_finite and stopped set, nothing sampled, the position and
           // the token as they were; a run of 4 all refused too
           for (const draws of [[random], [random, 0.1, 0.9, 0.3]]) {
