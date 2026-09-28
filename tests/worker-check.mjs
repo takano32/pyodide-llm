@@ -96,7 +96,7 @@ const context = vm.createContext({
 context.self = context;
 vm.runInContext(source, context, { filename: fileURLToPath(at) });
 const run = (code) => vm.runInContext(code, context);
-const quiet = run("QUIET_SECONDS"), numpySeconds = run("NUMPY_SECONDS");
+const quiet = run("QUIET_SECONDS");
 
 // the error a promise rejects with, and when (on the worker's clock); undefined when it resolved
 async function failure(promise) {
@@ -369,39 +369,45 @@ const ok = (line) => {
   assert.equal(requests.length, 0);
   ok("the version of Pyodide is given up after 30 s without an answer");
 
-  // (2) pyodideSteps(): the NumPy step is given up after QUIET_SECONDS of nothing where the wheel was read ahead (its
-  // bytes are counted), and after NUMPY_SECONDS where it was not (loadPackage's fetch with integrity counts nothing)
+  // (2) pyodideSteps(): loadPackage("numpy") is asked to fetch without integrity (the owner's choice, 2026-09-28), so
+  // the wheel's bytes are counted as they come even where the prefetch did not read it. The stand-in loadPackage acts
+  // as Pyodide's: with integrity its fetch settles only at the end of the body (counted as one arrival then), without
+  // it the body is read through the worker's (counting) fetch as it comes.
   const base = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
   const wheel = "numpy-2.2.5-cp313-cp313-pyodide_2025_0_wasm32.whl";
   const lock = new Response(JSON.stringify({ packages: { numpy: { file_name: wheel } } }), { status: 200 });
-  const steps = (numpyTakes, { lockAnswer = () => lock.clone(), wheelAnswer } = {}) => {
+  const asked = [];
+  const steps = ({ lockAnswer = () => lock.clone(), wheelDelay = 500, stall = false } = {}) => {
     fresh((url, init) => (url === `${base}pyodide-lock.json` ? lockAnswer()
-      : url === base + wheel ? (wheelAnswer ?? (() => new Response(body(0, 2 * MiB, { signal: init.signal, delay: 500 }), { status: 200 })))()
+      : url === base + wheel ? new Response(body(0, 2 * MiB, { signal: init.signal, delay: wheelDelay, stall }), { status: 200 })
       : new Response("", { status: 404 })));
-    const loadPackage = () => (numpyTakes === Infinity ? new Promise(() => {}) : sleep(numpyTakes * 1000));
+    const loadPackage = async (names, options = {}) => {
+      asked.push(options);
+      if (options.checkIntegrity !== false) {
+        // what an integrity fetch shows the page while the wheel comes: nothing, then one arrival at its end
+        await sleep(2 * wheelDelay);
+        return;
+      }
+      await (await context.fetch(base + wheel)).arrayBuffer();
+    };
     return run("pyodideSteps")("314.0.7", async () => ({ loadPyodide: async () => ({ loadPackage, version: "314.0.7" }) }));
   };
-  {
-    // read ahead: loadPackage finds the wheel, and a loadPackage that says nothing for 30 s is a stop
-    const began = clock.now();
-    const failed = await failure(steps(Infinity));
-    assert.match(failed?.error.message ?? "", /"NumPy" got nothing from the network for 30 seconds/);
-    assert.ok(failed.at - began < (quiet + 20) * 1000);
-    assert.ok(requests.some((r) => r.url === base + wheel));
-  }
-  for (const [name, answers] of [["no lock", { lockAnswer: () => new Response("", { status: 404 }) }],
-    ["a wheel refused", { wheelAnswer: () => new Response("", { status: 403 }) }],
+  for (const [name, answers] of [["read ahead", {}], ["no lock", { lockAnswer: () => new Response("", { status: 404 }) }],
     ["a lock of another shape", { lockAnswer: () => new Response("{}", { status: 200 }) }]]) {
-    // not read ahead: a loadPackage that takes 100 s (a slow line) is waited for, one that never ends given up at last
-    assert.equal(await failure(steps(100, answers)), undefined, `${name}: a slow NumPy was given up after 30 s without a word`);
+    // a slow line: the wheel's two chunks come 20 s apart (40 s in all, past QUIET_SECONDS); NumPy is waited for
+    asked.length = 0;
+    const slow = await failure(steps({ ...answers, wheelDelay: 20000 }));
+    assert.equal(slow, undefined, `${name}: NumPy on a slow line was given up: ${slow?.error.message}`);
+    assert.deepEqual(asked.map((options) => options.checkIntegrity), [false], `${name}: NumPy was fetched with integrity`);
+    // a wheel that stops: given up after QUIET_SECONDS of nothing, as a step of Pyodide's
     const began = clock.now();
-    const failed = await failure(steps(Infinity, answers));
-    assert.match(failed?.error.message ?? "", new RegExp(`"NumPy" did not finish in ${numpySeconds} seconds`), name);
+    const failed = await failure(steps({ ...answers, stall: true }));
+    assert.match(failed?.error.message ?? "", /"NumPy" got nothing from the network for 30 seconds/, name);
     assert.equal(failed.error.pyodide, true);
-    assert.ok(failed.at - began >= numpySeconds * 1000);
+    assert.ok(failed.at - began < (2 * quiet + 20) * 1000, `${name}: a stopped NumPy was given up after ${(failed.at - began) / 1000} s`);
   }
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
-  ok("NumPy not read ahead is waited for longer, and still given up");
+  ok("NumPy is fetched without integrity: its bytes count on a slow line, and a stop is given up after 30 s");
 }
 
 // ---- (7) weightsBuffer(): a model past even a 64-bit memory is refused before a byte of its weights comes
@@ -421,7 +427,7 @@ const ok = (line) => {
     "llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }; disabled = [];");
   const QWEN32B = [5120, 27648, 64, 40, 8, 152064, 32768];
   const refused = await failure(Promise.resolve().then(() => context.weightsBuffer(34.8e9, QWEN32B, { dtype: "int8", bias: true })));
-  assert.match(refused?.error.message ?? "", /needs about \d+ GB of memory, and a web page can have 16 GB at most/);
+  assert.match(refused?.error.message ?? "", /too large for a web page: it needs about \d+ GB of memory, and a browser gives a page 16 GB at most\./);
   assert.deepEqual(made, [], "a memory was made for a model no memory holds");
   // a 7B (about 9.2 GiB with its forward pass) is still placed on a 64-bit memory
   const QWEN7B = [3584, 18944, 28, 28, 4, 152064, 4096];

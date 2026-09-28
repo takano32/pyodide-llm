@@ -53,23 +53,18 @@ async function resolvePyodideVersion(search) {
 // as well and puts the wheel into the HTTP cache while Pyodide is still coming up. Nothing is written down here:
 // the version is the one resolved at run time, the file name comes from the lock. Anything unexpected (another
 // shape of the lock, a CDN that says no) only means no head start, so every error is dropped.
-// T129 (2): true where it read the wheel to its end. Only then does the step "NumPy" see its bytes arrive: Pyodide's
-// loadPackage fetches with integrity, and such a fetch settles only once its whole body is in, so watchArrivals()
-// counts nothing of it until the end (on a line below 0.8 Mbps that is past QUIET_SECONDS).
 async function prefetchNumpy(base) {
   try {
     const lock = await (await fetch(`${base}pyodide-lock.json`)).json();
     const name = lock.packages?.numpy?.file_name;
     if (typeof name !== "string" || !/^[A-Za-z0-9._+-]+\.whl$/.test(name)) {
-      return false;
+      return;
     }
     const wheel = await fetch(base + name);
-    if (!wheel.ok) return false;
     // read it to the end so that the browser keeps it, and drop every chunk: this copy is never used
     await (wheel.body ? wheel.body.pipeTo(new WritableStream()) : wheel.arrayBuffer());
-    return true;
   } catch {
-    return false;  // no head start
+    // no head start
   }
 }
 
@@ -499,11 +494,11 @@ function watchArrivals() {
 // never: loadPyodide() does not fail when a fetch of its files fails, it waits for ever (AGENTS.md), and a phone that
 // stopped at "Loading Pyodide" said nothing else. It ends when nothing has arrived for QUIET_SECONDS (T118), however
 // long it takes while bytes keep coming. importer(url) imports pyodide.mjs (tests/worker-check.mjs gives its own).
-// A slow line with the wheel of NumPy not read ahead (prefetchNumpy() false, T129 (2)): the step "NumPy" counts none
-// of the wheel's bytes (loadPackage fetches with integrity), so it is given up after NUMPY_SECONDS instead, 2.9 MB at
-// 64 kbps (half the 128 kbps above). Whether loadPackage should fetch without integrity (checkIntegrity: false), so
-// that its bytes are counted, is the owner's to decide.
-const NUMPY_SECONDS = 360;
+// T129 (2), the owner's choice (2026-09-28): loadPackage fetches NumPy's wheel without integrity (checkIntegrity:
+// false). A fetch with integrity settles only once its whole body is in, so watchArrivals() counted none of the wheel
+// until its end, and where the prefetch had not put it in the HTTP cache (no lock, another shape of it, a CDN that said
+// no, a cache that did not keep it) a line below 0.8 Mbps gave NumPy up after QUIET_SECONDS while it was arriving. The
+// check of the wheel's hash (SRI) goes; the wheel comes from the same CDN and version as the rest of Pyodide.
 async function pyodideSteps(version, importer) {
   const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
   const watch = watchArrivals();
@@ -512,24 +507,14 @@ async function pyodideSteps(version, importer) {
     error.pyodide = true;  // the page may try again without the service worker (isolation made this hang on iOS)
     return error;
   };
-  const step = async (name, promise, { seconds } = {}) => {
+  const step = async (name, promise) => {
     postMessage({ type: "status", text: `Loading Pyodide ${version}: ${name}...` });
-    let cancel, stalled;
-    if (seconds) {
-      stalled = new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(stop(name, `did not finish in ${seconds} seconds`)), seconds * 1000);
-        cancel = () => clearTimeout(timer);
-      });
-    } else {
-      const quiet = watch.quiet(QUIET_SECONDS);
-      cancel = quiet.cancel;
-      stalled = quiet.promise.then(() => { throw stop(name, `got nothing from the network for ${QUIET_SECONDS} seconds`); });
-    }
-    stalled.catch(() => {});
+    const quiet = watch.quiet(QUIET_SECONDS);
+    const stalled = quiet.promise.then(() => { throw stop(name, `got nothing from the network for ${QUIET_SECONDS} seconds`); });
     try {
       return await Promise.race([promise, stalled]);
     } finally {
-      cancel();
+      quiet.cancel();
     }
   };
   try {
@@ -540,9 +525,9 @@ async function pyodideSteps(version, importer) {
     // a prefetch that is still running would otherwise be raced by loadPackage, and the wheel fetched twice. One
     // that stopped is not waited for past a quiet spell (T118): loadPackage then fetches the wheel itself
     const quiet = watch.quiet(QUIET_SECONDS);
-    const ahead = await Promise.race([numpy, quiet.promise.then(() => false)]);
+    await Promise.race([numpy, quiet.promise]);
     quiet.cancel();
-    await step("NumPy", loaded.loadPackage("numpy"), ahead ? {} : { seconds: NUMPY_SECONDS });
+    await step("NumPy", loaded.loadPackage("numpy", { checkIntegrity: false }));
     return loaded;
   } finally {
     watch.stop();
@@ -726,10 +711,10 @@ function weightsBuffer(size, header, options, keep) {
     const after = afterCheckpoint(header, size, options, wanted);
     const halfKeys = forwardModule.keysInHalf(header, size, forwardOptions(options, wanted));  // T160: what after counts
     // T129 (7): a model past even a 64-bit memory is refused here, before its weights are fetched (a Qwen2.5 32B of
-    // ?hf=, about 37 GB as int8, began a 65 GB download and failed at 7.8 GB). The words are the owner's to choose
+    // ?hf=, about 37 GB as int8, began a 65 GB download and failed at 7.8 GB). The words are the owner's (2026-09-28)
     if (forwardModule.pastWide(size, after)) {
-      throw new Error(`This model needs about ${Math.ceil((size + after) / 1e9)} GB of memory, and a web page can have ` +
-        "16 GB at most (Chrome and Firefox). A smaller model will work.");
+      throw new Error(`This model is too large for a web page: it needs about ${Math.ceil((size + after) / 1e9)} GB of ` +
+        "memory, and a browser gives a page 16 GB at most.");
     }
     // T148: the layers on the GPU are a second copy of them, in the same memory where the GPU is a phone's or an
     // Apple's: both, with the rest of this model, within half of what the device says it has (as src/models.js's
