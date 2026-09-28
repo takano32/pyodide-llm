@@ -1974,7 +1974,9 @@ async function checkSampling(kind = "one") {
   // either): a NaN or +inf at the first token, the last (a thread's last, the vocabulary's last chunk's) and in the
   // middle, with a nucleus and without, at temperature 0 too
   for (const vocab of [1003, 128256]) {
-    for (const [unfinite, at] of [["nan", 0], ["nan", vocab - 1], ["nan", (vocab / 2 | 0) + 1], ["+inf", vocab - 1], ["+inf", 777], ["-inf all", 0]]) {
+    // (a fallback adapter takes a second or so for each of the big vocabulary's: three there)
+    const places = [["nan", 0], ["nan", vocab - 1], ["nan", (vocab / 2 | 0) + 1], ["+inf", vocab - 1], ["+inf", 777], ["-inf all", 0]];
+    for (const [unfinite, at] of fallback && vocab > 1003 ? [places[1], places[4], places[5]] : places) {
       for (const [topp, temperature] of [[0.9, 0.7], [1, 0.7], [0.9, 0]]) cases.push({ vocab, spread: 2, topp, temperature, penalty: 1.3, random: 0.5, unfinite, at });
     }
     for (const topp of [0.9, 1]) cases.push({ vocab, spread: 2, topp, temperature: 0.7, penalty: 1.3, random: 0.5, unfinite: "-inf some" });
