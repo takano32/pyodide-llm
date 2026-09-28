@@ -388,6 +388,28 @@ for (const [label, lines] of [["chosen", chosenLines], ["one form", oneFormLines
   for (const line of rowsOf) assert.equal(cellsOf(line).length, cellsOf(rowsOf[0]).length, `${label}: ${line}`);
   assert.ok(!lines.join("\n").includes("undefined") && !lines.join("\n").includes("NaN"), `${label}: ${lines.join("\n")}`);
 }
+// T224: a token's attention alone by the positions it reads, under the steps' table: µs a length, the vec forms how
+// many times faster than the tiles (not where either is unsteady, nor on a fallback adapter), a form not here, a
+// length that failed; nothing where the result has no lengths (before T224), one line where they failed
+const lengthsStep = { ...chosenStep, result: { ...chosenStep.result, lengths: { positions: [128, 1024, 4096], MB: 134.2, rows: [
+  { attention: "the prompt's tiles (flash attention's tile)", times: [{ ms: 0.05 }, { ms: 0.4 }, { ms: 1.6 }] },
+  { attention: "flash_attn_vec (subgroups)", times: [{ ms: 0.025 }, { ms: 0.1, unsteady: true }, { ms: 0.2 }] },
+  { attention: "flash_attn_vec", times: [{ none: "a | b" }, { error: "refused" }, { ms: 0.4 }] }] } } };
+const lengthsLines = layerStepsTable(lengthsStep, layerRight, layerCeilings), lengthsText = lengthsLines.join("\n");
+assert.ok(lengthsLines.includes("| attention | 128 positions, µs | 1024 positions, µs | 4096 positions, µs |"), lengthsText);
+assert.ok(lengthsLines.includes("| the prompt's tiles (flash attention's tile) | 50.0 | 400.0 | 1600.0 |"), lengthsText);
+assert.ok(lengthsLines.includes("| flash_attn_vec (subgroups) | 25.0 (2.0× the tiles) | unsteady: 100.0 | 200.0 (8.0× the tiles) |"), lengthsText);
+assert.ok(lengthsLines.includes("| flash_attn_vec | not here: a \\| b | failed: refused | 400.0 (4.0× the tiles) |"), lengthsText);
+assert.ok(!layerStepsTable(lengthsStep, layerRight, { ...layerCeilings, fallback: true }, { fallback: true }).join("\n").includes("the tiles)"));
+assert.ok(!chosenText.includes("A token's attention alone"), "no lengths where none were taken (a result before T224)");
+assert.ok(layerStepsTable({ ...chosenStep, result: { ...chosenStep.result, lengths: { error: "no | memory" } } }, layerRight, layerCeilings)
+  .includes("**A token's attention alone, by the positions it reads** (T224): failed: no \\| memory"));
+{
+  const rowsOf = lengthsLines.slice(lengthsLines.indexOf("| attention | 128 positions, µs | 1024 positions, µs | 4096 positions, µs |")).filter((line) => line.startsWith("|"));
+  assert.equal(rowsOf.length, 5, lengthsText);
+  for (const line of rowsOf) assert.equal(cellsOf(line).length, 4, line);
+  assert.ok(!lengthsText.includes("undefined") && !lengthsText.includes("NaN"), lengthsText);
+}
 const unsteadyStep = { ...layerStep, result: { ...layerStep.result, rows: layerStep.result.rows.map((row) => (row.form === "llama.cpp, fused (T150)" ? { ...row, unsteady: true } : row)) } };
 assert.ok(layerTable(unsteadyStep, layerRight).includes("| llama.cpp, fused (T150) | 5 | unsteady: 2.10 | 32.6 | 33.6 |  |"));
 // a fallback adapter's few hundredths of a GB/s still show

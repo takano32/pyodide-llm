@@ -1315,11 +1315,13 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         if (data.tokens) {
           tokensOn = true;
           gpuChosen.tokens = data.tokens.form;
+          gpuChosen.tokenAttention = data.tokens.attention;  // T224: the attention of a token chosen here (tests)
           gpuChosen.tablePieces = data.tokens.pieces;  // T209: the classifier in pieces past what the device binds
           if (data.tokens.ms !== undefined) steps.gpu(data.tokens.ms);
           tokenStatus = always ? "gpu" : "untimed";
           const kinds = data.tokens.forms.map((f) => `${f.name} ${f.none ?? (f.remembered ? "remembered" : f.ms ? `${f.ms.toFixed(2)} ms` : "untimed")}`).join("; ");
-          console.info(`gpu: a token by ${data.tokens.form} (a step of a run of ${GPU_TOKENS}: ${kinds})`);
+          const attentions = (data.tokens.attentions ?? []).map((a) => `${a.name} ${a.none ?? (a.ms ? `${a.ms.toFixed(2)} ms` : "untimed")}`).join("; ");
+          console.info(`gpu: a token by ${data.tokens.form} (a step of a run of ${GPU_TOKENS}: ${kinds}), its attention by ${data.tokens.attention} (${attentions})`);
         } else if (data.tokensWhy) {
           tokensReason = data.tokensWhy;
           tokenStatus = "why";

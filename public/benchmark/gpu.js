@@ -352,6 +352,7 @@ async function check() {
   Object.assign(verdicts, await checkTiled());
   verdicts.argmax = await checkArgmax();
   Object.assign(verdicts, await checkLayer());
+  Object.assign(verdicts, await checkTokenAttentions());
   verdicts.sampling = await checkSampling();
   verdicts["sampling in chunks"] = await checkSampling("chunks");
   Object.assign(verdicts, await checkGeneration());
@@ -742,13 +743,24 @@ const LAYER_KINDS = [{ name: "llama.cpp, separate steps", base: "llama.cpp", fus
   { name: "DP4A, separate steps", base: "DP4A", dp4a: true, fused: false },
   { name: "DP4A, fused (T175), the norms apart", base: "DP4A", dp4a: true, fused: true, normApart: true },
   { name: "DP4A, fused (T175)", base: "DP4A", dp4a: true, fused: true }];
+// T224: each fused form the engine has (not withoutDp4a) twice, with the prompt's tiles for its attention and with
+// llama.cpp's decode form, flash_attn_vec (vecAttention()): the engine chooses the attention of a token on the device
 const layerForms = () => {
-  const subgroups = device.features.has("subgroups") && (navigator.gpu.wgslLanguageFeatures?.has("subgroup_id") ?? false);
+  const subgroups = hasSubgroupId();
   const llama = LAYER_KINDS.filter((kind) => !kind.dp4a && !(kind.withoutDp4a && packed)), dp4a = LAYER_KINDS.filter((kind) => kind.dp4a);
+  const vec = vecAttention();
+  const withVec = (form) => (form.fused && !form.withoutDp4a ? [form, { ...form, name: `${form.name}, ${vec.name}`, attention: "vec", vecSubgroups: vec.subgroups }] : [form]);
   return [...(subgroups ? [false, true] : [false]).flatMap((withSubgroups) => llama.map((kind) =>
     ({ ...kind, name: `${kind.name}${withSubgroups ? ", subgroups" : ""}`, subgroups: withSubgroups }))),
-    ...dp4a.map((kind) => ({ ...kind, subgroups: false, ...(packed ? {} : { none: "no packed int8 dot here" }) }))];
+    ...dp4a.map((kind) => ({ ...kind, subgroups: false, ...(packed ? {} : { none: "no packed int8 dot here" }) }))].flatMap(withVec);
 };
+// whether this device's shaders may use subgroups and subgroup_id
+const hasSubgroupId = () => device.features.has("subgroups") && (navigator.gpu.wgslLanguageFeatures?.has("subgroup_id") ?? false);
+// T224: the attention of a token by llama.cpp's flash_attn_vec (shaders.js's flashVec and flashVecReduce), with
+// subgroups where there are, else with the lanes of the workgroup standing for a subgroup; shape(headSize): its shape
+const vecAttention = (subgroups = hasSubgroupId()) => ({ subgroups, name: `flash_attn_vec${subgroups ? " (subgroups)" : ""}`,
+  shape: (headSize) => WGSL.flashVecShape({ headSize, subgroups, threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX),
+    subgroupMin: adapter.info?.subgroupMinSize, subgroupMax: adapter.info?.subgroupMaxSize }) });
 // the layer a token runs on the GPU (generate(), T151): T175's fused DP4A where the check found it right (checkLayer
 // ran in this worker and its verdict is ok: T175's review), else T150's fused one (generate() builds the fused forms
 // only; which is fastest on the device is the layer table's, and the engine's choice is T152's)
@@ -782,7 +794,7 @@ const quantizing = (pipes, group, x, into, uniform, n, step) => [pipes.quantize,
 // quantization, q, k and v's, o's, gate and up's, down's); u: the uniforms (step, flash, the matrices' Params, the norms'
 // attentionNorm and ffnNorm, and quantize: QUANTIZE's of dim and of hidden); group(pipeline, entries): a bind group
 function fusedLayer(form, pipes, { dim, hidden, heads }, m, cache, v, u, group) {
-  const attention = attentionStep(pipes, heads, cache, v, u, group);
+  const attention = attentionSteps(form, pipes, heads, cache, v, u, group);
   const rope = [[5, v.q], [6, cache.keys], [7, cache.values], [8, v.angles], [9, u.step]];
   // RMSNORM of the stream into xb (the forms with the norms apart)
   const norm = (params) => named("the norm (RMSNORM)", "small", [pipes.norm, group(pipes.norm, [[0, v.h], [1, v.norms], [2, v.xb], [3, params], [4, u.step]]), 1, 1]);
@@ -793,7 +805,7 @@ function fusedLayer(form, pipes, { dim, hidden, heads }, m, cache, v, u, group) 
     const withNorm = form.normApart ? "" : " the norm,";
     return [...(form.normApart ? [norm(u.attentionNorm)] : []),
       named(`q, k and v with${withNorm} RoPE and the cache`, "matrix", [pipes.qkv, group(pipes.qkv, [[0, m.qkv.w], [1, m.qkv.s], ...input, [3, u.qkv], ...rope]), groups(m.qkv.rows), 1], "qkv"),
-      attention,
+      ...attention,
       named("o with the residual's add", "matrix", [pipes.add, group(pipes.add, [[0, m.o.w], [1, m.o.s], [2, v.att], [3, u.o], [5, v.h]]), groups(dim), 1], "o"),
       ...(form.normApart ? [norm(u.ffnNorm)] : []),
       named(`gate and up with${withNorm} SwiGLU`, "matrix", [pipes.glu, group(pipes.glu, [[0, m.gateUp.w], [1, m.gateUp.s], ...input, [3, u.gateUp], [5, v.g]]), groups(hidden), 1], "gateUp"),
@@ -808,13 +820,21 @@ function fusedLayer(form, pipes, { dim, hidden, heads }, m, cache, v, u, group) 
   const product = (step, matrix, pipeline, { w, s }, into, params, rows, output) => named(step, "matrix", [pipeline, group(pipeline, [[0, w], [1, s], [2, into.xq], [3, params], [4, into.xs], ...output]),
     Math.ceil(rows / WGSL.ORT_DP4A_MATVEC_ROWS), 1], matrix);
   return [...normed(u.attentionNorm, qkvIn), product("q, k and v with RoPE and the cache", "qkv", pipes.qkv, m.qkv, qkvIn, u.qkv, m.qkv.rows, rope),
-    attention, quantized(v.att, oIn, u.quantize[0], dim), product("o with the residual's add", "o", pipes.add, m.o, oIn, u.o, dim, [[5, v.h]]),
+    ...attention, quantized(v.att, oIn, u.quantize[0], dim), product("o with the residual's add", "o", pipes.add, m.o, oIn, u.o, dim, [[5, v.h]]),
     ...normed(u.ffnNorm, gluIn), product("gate and up with SwiGLU", "gateUp", pipes.glu, m.gateUp, gluIn, u.gateUp, hidden, [[5, v.g]]),
     quantized(v.g, downIn, u.quantize[1], hidden), product("down with the residual's add", "down", pipes.add, m.down, downIn, u.down, dim, [[5, v.h]])];
 }
-// the attention of a fused layer (flash attention's tile) on cache ({ keys, values }: buffers, or T208's ranges of one)
-function attentionStep(pipes, heads, cache, v, u, group) {
-  return named("the attention (flash attention's tile)", "attention", [pipes.flash, group(pipes.flash, [[0, v.q], [1, cache.keys], [2, cache.values], [3, v.att], [4, u.flash], [5, u.step]]), heads, 1]);
+// the attention of a fused layer on cache ({ keys, values }: buffers, or T208's ranges of one) for a token that reads
+// u.positions: flash attention's tile, or (T224, form.attention "vec") flash_attn_vec's parts of the positions, nwg a
+// head, and where there is more than one their reduce (pipes.vecShape: its shape; v.parts, u.vecParams(nwg))
+function attentionSteps(form, pipes, heads, cache, v, u, group) {
+  if (form.attention !== "vec") {
+    return [named("the attention (flash attention's tile)", "attention", [pipes.flash, group(pipes.flash, [[0, v.q], [1, cache.keys], [2, cache.values], [3, v.att], [4, u.flash], [5, u.step]]), heads, 1])];
+  }
+  const nwg = WGSL.flashVecSplits(pipes.vecShape, u.positions), params = u.vecParams(nwg), which = form.vecSubgroups ? ", subgroups" : "";
+  return [named(`the attention (flash_attn_vec${which}: ${nwg} parts of the positions a head)`, "attention",
+    [pipes.vec, group(pipes.vec, [[0, v.q], [1, cache.keys], [2, cache.values], [3, v.parts], [4, v.att], [5, params], [6, u.step]]), heads * nwg, 1]),
+  ...(nwg > 1 ? [named(`the attention's parts reduced (flash_attn_vec${which})`, "attention", [pipes.vecReduce, group(pipes.vecReduce, [[0, v.parts], [1, v.att], [2, params]]), heads, 1])] : [])];
 }
 // T202: a dispatch of a fused layer with what it is (run() reads only its first five): step, its name in the steps'
 // table (the same name where two dispatches cost the same: the two norms, the quantizing of a vector of dim); kind,
@@ -842,6 +862,13 @@ async function layerPipes(shape, form) {
   // one at a time: each in an error scope of its own
   const pipes = { small: pipelinesFor().small };
   for (const [key, code] of [["flash", WGSL.flashTile(flash)], ...layerCodes(form)]) pipes[key] = await compiled(code);
+  // T224: flash_attn_vec and its reduce, where the form's attention is it
+  if (form.attention === "vec") {
+    pipes.vecShape = vecAttention(form.vecSubgroups).shape(shape.headSize);
+    if (pipes.vecShape.none) throw new Error(pipes.vecShape.none);
+    pipes.vec = await compiled(WGSL.flashVec(pipes.vecShape));
+    pipes.vecReduce = await compiled(WGSL.flashVecReduce(pipes.vecShape));
+  }
   return pipes;
 }
 // A layer's buffers: copies of its four matrices (data: the check's weights, else random), the vectors, the norms'
@@ -885,7 +912,9 @@ function layerParts(shape, pos, copies, owned, data, reach = 0) {
     scratch: make(2 * hidden * 4), norms: make(2 * dim * 4), angles: make((pos + 1) * headSize * 4),
     keys: make(cacheBytes), values: make(cacheBytes),
     // T175: the DP4A forms' four quantized vectors, each its own (the check reads every one back)
-    quantized: [dim, dim, dim, hidden].map((n) => ({ xq: make(n), xs: make((n / GROUP) * 4) })) };
+    quantized: [dim, dim, dim, hidden].map((n) => ({ xq: make(n), xs: make((n / GROUP) * 4) })),
+    // T224: flash_attn_vec's parts, as many as its shape with or without subgroups takes a head at the most
+    parts: make(Math.max(...[true, false].map((sub) => WGSL.flashVecPartsBytes(vecAttention(sub).shape(headSize), heads)))) };
   const eps = data?.eps ?? EPS;
   // RoPE's table on the GPU, a row a position up to pos (T151: fusedMatVec reads the Step's row; ROPE, the prompt's,
   // takes the rows of its block's positions, here the row at pos bound on its own: a row of headSize 64 is 256 bytes,
@@ -919,7 +948,10 @@ function layerParts(shape, pos, copies, owned, data, reach = 0) {
     new Float32Array(bytes, 16, 1)[0] = eps;
     return uniform(new Uint8Array(bytes));
   };
-  const u = { step, attentionNorm: normParams(0), ffnNorm: normParams(dim), rope: uniform(new Uint32Array([heads, kvHeads, headSize, headSize])),
+  // T224: flash_attn_vec's Params a count of parts, made as the forms ask for them
+  const vecParams = new Map();
+  const u = { step, positions: pos + 1, attentionNorm: normParams(0), ffnNorm: normParams(dim), rope: uniform(new Uint32Array([heads, kvHeads, headSize, headSize])),
+    vecParams: (nwg) => vecParams.get(nwg) ?? vecParams.set(nwg, uniform(WGSL.flashVecParams({ headSize }, heads, kvHeads, nwg))).get(nwg),
     flash: uniform(new Uint8Array(flashParams)), swiglu: uniform(new Uint32Array([hidden, 0, 0, 0])),
     qkv: fusedParams(dim + 2 * kvDim, dim), o: fusedParams(dim, dim), gateUp: fusedParams(hidden, dim, hidden, dim), down: fusedParams(dim, hidden),
     // QUANTIZE's (n, xStride) of dim and of hidden
@@ -991,8 +1023,8 @@ function layerParts(shape, pos, copies, owned, data, reach = 0) {
     device.queue.submit([encoder.finish()]);
     return cacheRanges;
   };
-  // T208: the attention alone on a cache of caches()
-  const attention = (pipes, cache) => attentionStep(pipes, heads, cache, v, u, group);
+  // T208: the attention alone on a cache of caches() (T224: a form's, its dispatches)
+  const attention = (form, pipes, cache) => attentionSteps(form, pipes, heads, cache, v, u, group);
   // T202: a matrix of the layer alone on a range of ranges(key), into the scratch buffer (no RoPE, cache, add or
   // SwiGLU after it): its plain matrix × vector (pipeline: mulMatVec, or ortDp4aMatVec reading the quantized vector
   // the fused form reads), one dispatch over all its rows
@@ -1185,8 +1217,9 @@ async function checkLayer() {
   for (const [key, [rows, n]] of Object.entries(shape.matrices)) {
     data[key] = { w: new Uint8Array(rows * n).map(() => (Math.random() * 256) | 0), s: floats(rows * n / GROUP, 0.01 * Math.sqrt(256 / n)) };
   }
-  // what the DP4A fused form with the norms apart left, for the fused form to be held to (within a few ulp)
-  let normsApart;
+  // what the DP4A fused form with the norms apart left, for the fused form to be held to (within a few ulp), by the
+  // attention (T224: the prompt's tiles or flash_attn_vec, whose sums go in another order)
+  const normsApart = {};
   const sameBytes = (a, b) => {
     const x = new Uint8Array(a.buffer, a.byteOffset, a.byteLength), y = new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
     return x.length === y.length && x.every((byte, i) => byte === y[i]);
@@ -1264,8 +1297,9 @@ async function checkLayer() {
       // the DP4A fused form against the one with the norms apart, within a few ulp (undefined where that one was not run)
       let agreed;
       if (form.dp4a && form.fused) {
-        if (form.normApart) normsApart = got;
-        else if (normsApart) agreed = sameAs(got, normsApart, added);
+        const key = form.attention ?? "tiles";
+        if (form.normApart) normsApart[key] = got;
+        else if (normsApart[key]) agreed = sameAs(got, normsApart[key], added);
       }
       // on DP4A, how each quantized vector held (for CI's logs): the worst scale apart and the values off by 1
       verdicts[layerCheck(form)] = { worstRelative: Math.max(off, cache), ok: off < LAYER_LINE && cache < CACHE_LINE && !touched && !wrongly.length && agreed?.ok !== false,
@@ -1279,6 +1313,77 @@ async function checkLayer() {
     }
   }
   layerVerdicts = verdicts;
+  return verdicts;
+}
+// T224: a token's attention, every form the layer rows and the engine may run (the prompt's tiles, flash_attn_vec with
+// subgroups where there are and with the lanes of the workgroup standing for a subgroup), on made-up numbers against
+// JavaScript's (shaders.js's tokenAttentionData and tokenAttentionOff, as the engine checks them, gpu.js): heads of 64,
+// 128 and 256 values (the list's models'), 4 heads of q on 2 of keys and values, a token that reads 40, 70, 300 and 1100
+// positions (flash_attn_vec's one part, two, and as many as it takes, of more than one tile each), positions past the
+// token's that it must not read, and a steep head of q (a largest taken wrong shows only there). Each head's output no
+// farther than TOKEN_ATTENTION_LINE of the largest |value| of its head (the tiles hold the weights in float16 where
+// there is shader-f16: here in float32, as the layer rows). { "a token's attention, <form>": { ok, worstRelative, at } }
+const TOKEN_ATTENTION_SIZES = [64, 128, 256], TOKEN_ATTENTION_POSITIONS = [40, 70, 300, 1100], TOKEN_ATTENTION_LINE = 4e-3;
+async function checkTokenAttentions() {
+  const heads = 4, kvHeads = 2, verdicts = {};
+  const { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX } = device.limits;
+  const forms = [{ name: "the prompt's tiles" }, ...(hasSubgroupId() ? [true] : []).map(() => ({ name: vecAttention(true).name, attention: "vec", vecSubgroups: true })),
+    { name: vecAttention(false).name, attention: "vec", vecSubgroups: false }];
+  for (const form of forms) {
+    const verdict = { ok: true, worstRelative: 0 };
+    try {
+      for (const size of TOKEN_ATTENTION_SIZES) {
+        const pipes = {};
+        if (form.attention === "vec") {
+          pipes.vecShape = vecAttention(form.vecSubgroups).shape(size);
+          if (pipes.vecShape.none) throw new Error(pipes.vecShape.none);
+          pipes.vec = await compiled(WGSL.flashVec(pipes.vecShape));
+          pipes.vecReduce = await compiled(WGSL.flashVecReduce(pipes.vecShape));
+        } else {
+          const flash = WGSL.flashShape({ headSize: size, half: false, subgroups: false, memory, threads: Math.min(maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX) });
+          if (flash.none) throw new Error(flash.none);
+          pipes.flash = await compiled(WGSL.flashTile(flash));
+        }
+        for (const positions of TOKEN_ATTENTION_POSITIONS) {
+          const data = WGSL.tokenAttentionData({ heads, kvHeads, size, positions, steep: [3] });
+          const got = await scoped(async (owned) => {
+            const make = (bytes, usage = STORAGE | COPY_DST | COPY_SRC) => {
+              const b = buffer(bytes, usage);
+              owned.push(b);
+              return b;
+            };
+            const put = (values, usage) => {
+              const b = make(values.byteLength, usage);
+              device.queue.writeBuffer(b, 0, values);
+              return b;
+            };
+            const uniform = (values) => put(values, UNIFORM | COPY_DST);
+            const flashParams = new ArrayBuffer(16);
+            new Uint32Array(flashParams, 0, 2).set([heads, kvHeads]);
+            new Float32Array(flashParams, 8, 1)[0] = 1 / Math.sqrt(size);
+            const vecParams = new Map();
+            const u = { step: uniform(new Uint32Array([1, positions - 1, 0, 0])), positions, flash: uniform(new Uint8Array(flashParams)),
+              vecParams: (nwg) => vecParams.get(nwg) ?? vecParams.set(nwg, uniform(WGSL.flashVecParams({ headSize: size }, heads, kvHeads, nwg))).get(nwg) };
+            const v = { q: put(data.q), att: make(heads * size * 4), parts: make(pipes.vecShape ? WGSL.flashVecPartsBytes(pipes.vecShape, heads) : 16) };
+            const cache = { keys: put(data.keys), values: put(data.values) };
+            const group = (pipeline, entries) => device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
+              entries: entries.map(([binding, resource]) => ({ binding, resource: { buffer: resource } })) });
+            const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
+            attentionSteps(form, pipes, heads, cache, v, u, group).forEach((d) => run(pass, d));
+            pass.end();
+            return new Float32Array(await readBack(encoder, v.att, heads * size * 4));
+          });
+          const off = WGSL.tokenAttentionOff(got, data, { heads, kvHeads, size, positions });
+          if (!(off <= verdict.worstRelative)) Object.assign(verdict, { worstRelative: off, at: { headSize: size, positions } });
+        }
+        postMessage({ alive: true });
+      }
+      verdict.ok = verdict.worstRelative <= TOKEN_ATTENTION_LINE;
+    } catch (error) {
+      Object.assign(verdict, { ok: false, worstRelative: NaN, error: String(error?.message ?? error) });
+    }
+    verdicts[`a token's attention, ${form.name}`] = verdict;
+  }
   return verdicts;
 }
 async function layer() {
@@ -1365,8 +1470,8 @@ async function layerSteps() {
   const copies = fallback ? 1 : Math.ceil(MATVEC_BYTES / bytes);
   const { forms, chosen } = stepForms();
   const result = { model: "Llama 3.2 1B", pos: LAYER_POS, layers: MODELS["Llama 3.2 1B"].layers, copies, GB: bytes / 1e9, dp4a: Boolean(forms[0]?.dp4a), chosen };
-  if (!forms.length) return { ...result, forms: [], steps: [] };
-  return scoped(async (owned) => {
+  if (!forms.length) return { ...result, forms: [], steps: [], lengths: await attentionLengths(shape) };
+  const out = await scoped(async (owned) => {
     const parts = layerParts(shape, LAYER_POS, copies, owned, undefined, fallback ? 0 : MATVEC_BYTES);
     const caches = parts.caches();
     // the fewest MB of weights read before the same ones again: the layer's copies or a matrix's ranges (the
@@ -1412,7 +1517,8 @@ async function layerSteps() {
         const fresh = each[0].map((d, k) => ({ d, k })).filter(({ d, k }) => !seen.has(d.step) && each[0].findIndex((e) => e.step === d.step) === k);
         const stepUnits = await validated(async () => fresh.map(({ d: { matrix, kind }, k }) => (matrix
           ? parts.ranges(matrix).map((range) => [parts.dispatches(form, pipes, 0, { [matrix]: range })[k]])
-          : kind === "attention" ? caches.map((cache) => [parts.attention(pipes, cache)]) : each.map((layer) => [layer[k]]))));
+          : kind === "attention" ? caches.map((cache) => parts.attention(form, pipes, cache).filter((one) => one.step === each[0][k].step))
+          : each.map((layer) => [layer[k]]))));
         add({ form: form.name }, each);
         layers.push({ form: form.name, each });
         fresh.forEach(({ d: { step, kind, matrix } }, i) => {
@@ -1445,6 +1551,101 @@ async function layerSteps() {
     postMessage({ alive: true });
     return { ...result, forms: rows, steps, timestamps: await timestamps(parts, layers) };
   });
+  return { ...out, lengths: await attentionLengths(shape) };
+}
+// T224: a token's attention alone at ATTENTION_LENGTHS positions (the owner asked for long contexts too: the prompt's
+// tiles run a workgroup a head at any length, flash_attn_vec splits the positions over more of them as they grow), each
+// attention the steps' table could meet (the prompt's tiles, flash_attn_vec with subgroups where there are, and with
+// the lanes of the workgroup standing for a subgroup), all in turn at a length (interleaved()), each on the next of
+// copies of a cache of that length (the same random float16 keys and values in each, MATVEC_BYTES of them: not from the GPU's
+// caches, as T208's attention alone), one length at a time (4096 positions of Llama 3.2 1B's keys and values are 8.4 MB
+// a copy). { positions, rows: [{ attention, times: [{ ms, n, ratio, unsteady }, { error } or { none } a length] }], MB } or
+// { error }
+const ATTENTION_LENGTHS = [128, 1024, 4096];
+async function attentionLengths(shape) {
+  const { heads, kvHeads, headSize, kvDim } = shape;
+  const forms = [{ name: "the prompt's tiles (flash attention's tile)" },
+    ...(hasSubgroupId() ? [true] : []).map(() => ({ name: vecAttention(true).name, attention: "vec", vecSubgroups: true })),
+    { name: vecAttention(false).name, attention: "vec", vecSubgroups: false }];
+  const rows = forms.map((form) => ({ attention: form.name, times: [] }));
+  let MB = 0;
+  try {
+    const { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX } = device.limits;
+    const flash = WGSL.flashShape({ headSize, half: false, subgroups: false, memory, threads: Math.min(maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX) });
+    if (flash.none) throw new Error(flash.none);
+    const pipes = await Promise.all(forms.map(async (form) => {
+      const made = { flash: await compiled(WGSL.flashTile(flash)) };
+      if (form.attention === "vec") {
+        made.vecShape = vecAttention(form.vecSubgroups).shape(headSize);
+        if (made.vecShape.none) return { none: made.vecShape.none };
+        made.vec = await compiled(WGSL.flashVec(made.vecShape));
+        made.vecReduce = await compiled(WGSL.flashVecReduce(made.vecShape));
+      }
+      return made;
+    }));
+    for (const positions of ATTENTION_LENGTHS) {
+      await scoped(async (owned) => {
+        const make = (bytes, usage = STORAGE | COPY_DST) => {
+          const b = buffer(bytes, usage);
+          owned.push(b);
+          return b;
+        };
+        const uniform = (bytes) => {
+          const b = make(bytes.byteLength, UNIFORM | COPY_DST);
+          device.queue.writeBuffer(b, 0, bytes);
+          return b;
+        };
+        const cacheBytes = positions * kvDim * 2, stride = Math.ceil(cacheBytes / 256) * 256;
+        const count = fallback ? 1 : Math.max(1, Math.ceil(MATVEC_BYTES / (2 * stride)));
+        const all = make(2 * stride * count);
+        const pattern = () => new Uint16Array(positions * kvDim).map(() => toHalf((Math.random() - 0.5) * 4));
+        const [keys, values] = [pattern(), pattern()];
+        for (let i = 0; i < count; i++) {
+          device.queue.writeBuffer(all, 2 * i * stride, keys);
+          device.queue.writeBuffer(all, (2 * i + 1) * stride, values);
+        }
+        MB = Math.max(MB, (2 * stride * count) / 1e6);
+        const caches = [...Array(count)].map((_, i) => ({ keys: { buffer: all, offset: 2 * i * stride, size: cacheBytes },
+          values: { buffer: all, offset: (2 * i + 1) * stride, size: cacheBytes } }));
+        const v = { q: make(heads * headSize * 4), att: make(heads * headSize * 4),
+          parts: make(Math.max(...[true, false].map((sub) => WGSL.flashVecPartsBytes(vecAttention(sub).shape(headSize), heads)))) };
+        device.queue.writeBuffer(v.q, 0, floats(heads * headSize, 2));
+        const flashParams = new ArrayBuffer(16);
+        new Uint32Array(flashParams, 0, 2).set([heads, kvHeads]);
+        new Float32Array(flashParams, 8, 1)[0] = 1 / Math.sqrt(headSize);
+        const vecParams = new Map();
+        const u = { step: uniform(new Uint32Array([1, positions - 1, 0, 0])), positions, flash: uniform(new Uint8Array(flashParams)),
+          vecParams: (nwg) => vecParams.get(nwg) ?? vecParams.set(nwg, uniform(WGSL.flashVecParams({ headSize }, heads, kvHeads, nwg))).get(nwg) };
+        const group = (pipeline, entries) => device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
+          entries: entries.map(([binding, resource]) => ({ binding, resource: "offset" in resource ? resource : { buffer: resource } })) });
+        const timing = (units) => {
+          let next = 0;
+          return async (n) => {
+            const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
+            for (let i = 0; i < n; i++) units[next++ % units.length].forEach((d) => run(pass, d));
+            pass.end();
+            const began = performance.now();
+            device.queue.submit([encoder.finish()]);
+            await device.queue.onSubmittedWorkDone();
+            return performance.now() - began;
+          };
+        };
+        const running = forms.map((form, i) => (pipes[i].none ? null
+          : timing(caches.map((cache) => attentionSteps(form, pipes[i], heads, cache, v, u, group)))));
+        const results = await validated(() => interleaved(running.filter(Boolean), MATVEC_MOST));
+        let k = 0;
+        running.forEach((submission, i) => {
+          if (!submission) return rows[i].times.push({ none: pipes[i].none });
+          const r = results[k++];
+          rows[i].times.push(r.error ? { error: r.error } : { ms: r.ms / r.dispatches, n: r.dispatches, ratio: r.ratio, ...(r.unsteady ? { unsteady: true } : {}) });
+        });
+        postMessage({ alive: true });
+      });
+    }
+    return { positions: ATTENTION_LENGTHS, rows, MB };
+  } catch (error) {
+    return { error: String(error?.message ?? error) };
+  }
 }
 // T208: the fused forms the steps' table breaks down. The engine runs the fastest fused layer the check found right
 // (T152: T150's fusedMatVec, with subgroupAdd where subgroups are, and T175's fusedDp4aMatVec where the packed int8
@@ -1465,7 +1666,8 @@ function stepForms() {
     const forms = LAYER_KINDS.filter((kind) => kind.fused && Boolean(kind.dp4a) === packed).map((kind) => ({ ...kind, subgroups: false }));
     return { forms, chosen: { by: "packed", why: layerTimes ? "the layer table has no fused layer timed and found right" : "no layer table was timed before" } };
   }
-  const partner = fused.find((form) => form !== fastest && form.base === fastest.base && form.subgroups === fastest.subgroups && Boolean(form.normApart) !== Boolean(fastest.normApart));
+  const partner = fused.find((form) => form !== fastest && form.base === fastest.base && form.subgroups === fastest.subgroups && form.attention === fastest.attention &&
+    Boolean(form.normApart) !== Boolean(fastest.normApart));
   // in the layer table's order (the norms apart first)
   return { forms: fused.filter((form) => form === fastest || form === partner), chosen: { by: "layer", fastest: fastest.name } };
 }

@@ -165,13 +165,15 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     // the stream's and the cache's differences, each quantized vector's scales and values off by 1, and the DP4A fused
     // form against the one with the norms apart (the ulp of the scales, the values off by 1, bit for bit or not)
     for (const [name, v] of Object.entries(check?.result ?? {})) {
-      if (!name.startsWith("a layer, ") && name !== "tokens on the GPU") continue;
+      if (!name.startsWith("a layer, ") && !name.startsWith("a token's attention, ") && name !== "tokens on the GPU") continue;
       const apart = v.sameAsNormsApart;
       console.log(`check ${name}: ${v.ok ? "ok" : "WRONG"}` + (v.error ? `, ${v.error}` : "") +
         (Number.isFinite(v.stream) ? `, stream ${v.stream.toExponential(1)}, cache ${v.cache.toExponential(1)}` : "") +
         (v.quantized ? `; ${v.quantized.map((q) => `${q.point}: ${q.wrong ?? `scales ${q.scale.toExponential(1)}, ${q.apart} of ${q.of} values off by 1`}`).join("; ")}` : "") +
         (apart ? `; against the norms apart: scales ${apart.ulps} ulp, ${apart.apart} values off by 1, stream ${apart.stream.toExponential(1)}, ${apart.bitForBit ? "bit for bit" : "not bit for bit"}` : "") +
-        (name === "tokens on the GPU" ? `; ${v.tokens} tokens, layer ${v.layer}${v.problems ? `, ${v.problems.join(" / ")}` : ""}` : ""));
+        (name === "tokens on the GPU" ? `; ${v.tokens} tokens, layer ${v.layer}${v.problems ? `, ${v.problems.join(" / ")}` : ""}` : "") +
+        // T224: a token's attention, its worst head over the largest value, and where (the head's size, the positions)
+        (v.at ? `, worst ${v.worstRelative.toExponential(1)} at a head of ${v.at.headSize}, ${v.at.positions} positions` : ""));
     }
     // T157: after the CPU section, the GPU section's token table holds the GPU against it (and not the old estimate)
     if (results.cpu?.status === "ok" && results.gpu?.data && !results.gpu.markdown.includes("The CPU (an estimate): each model's weights at the CPU section's fastest")) {
