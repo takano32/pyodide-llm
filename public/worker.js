@@ -456,18 +456,13 @@ function watchArrivals() {
     if (!wraps || !res.body || [101, 204, 205, 304].includes(res.status)) {
       return res;
     }
-    let counting;
-    try {
-      counting = new TransformStream({
-        transform(chunk, out) {
-          watch.arrived += chunk.byteLength;
-          out.enqueue(chunk);
-        },
-      });
-    } catch {
-      return res;
-    }
-    return new Response(res.body.pipeThrough(counting), { status: res.status, statusText: res.statusText, headers: res.headers });
+    const counted = res.body.pipeThrough(new TransformStream({
+      transform(chunk, out) {
+        watch.arrived += chunk.byteLength;
+        out.enqueue(chunk);
+      },
+    }));
+    return new Response(counted, { status: res.status, statusText: res.statusText, headers: res.headers });
   };
   let observer;
   try {
@@ -1066,18 +1061,16 @@ async function inOrder(url, start, size, feed, outer, arriving = () => {}) {
   const ranges = [];  // [begin, end] of every part asked for so far, in the order of the file
   const arrived = new Map();
   let scheduled = start, fed = 0, waiting = [], received = start;
-  // T129 (3): a part that failed for good (or a feed the converter refused) stops the other connections, and wakes
-  // the ones that wait for room, rather than fetching the rest of the file until the next load cancels this one
+  // T129 (3): a part that failed for good (or a feed the converter refused) stops the other connections rather than
+  // fetching the rest of the file until the next load cancels this one. (One that waits for room is never woken, and
+  // goes with the rest of this call.)
   const inner = innerAbort(outer), signal = inner.signal;
-  const wake = () => waiting.splice(0).forEach((resolve) => resolve());
-  signal.addEventListener("abort", wake, { once: true });
   const connection = async () => {
     for (;;) {
       // no more than two parts per connection wait in memory for an earlier one
-      while (ranges.length - fed >= 2 * hfConnections && !signal.aborted) {
+      while (ranges.length - fed >= 2 * hfConnections) {
         await new Promise((resolve) => waiting.push(resolve));
       }
-      signal.throwIfAborted();
       if (scheduled >= size) {
         return;
       }
@@ -1104,7 +1097,7 @@ async function inOrder(url, start, size, feed, outer, arriving = () => {}) {
         await breathe();
         await weightsRoom();
       }
-      wake();
+      waiting.splice(0).forEach((resolve) => resolve());
     }
   };
   try {

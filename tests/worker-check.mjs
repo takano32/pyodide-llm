@@ -16,6 +16,11 @@ import vm from "node:vm";
 import * as forward from "../public/forward.js";
 
 const SCALE = 100;  // the worker's milliseconds per real millisecond
+// a check that waits for ever (a fix undone: the version asked for ever) fails rather than hangs
+setTimeout(() => {
+  console.error("worker-check: still waiting after 180 s");
+  process.exit(1);
+}, 180000).unref();
 const MiB = 1024 * 1024, PART = 8 * MiB;
 const realNow = () => performance.now();
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms / SCALE));  // ms of the worker's clock
@@ -314,22 +319,30 @@ const ok = (line) => {
   assert.equal(context.fetch, plain);
   ok("what arrives while Pyodide loads is counted, and nothing for 30 s is a stop");
 
-  // (6) a browser that would not make the counting Response: the responses come as they were, counted once
-  const made = context.TransformStream;
-  context.TransformStream = class {
+  // (6) a browser that would not make the counting stream or Response: the responses come as they were, counted once
+  // (before, the wrapper threw, and every fetch of the load failed)
+  for (const [name, stand] of [["TransformStream", class {
     constructor() {
       throw new TypeError("no TransformStream here");
     }
-  };
-  try {
-    fresh((url, init) => new Response(body(0, MiB, { signal: init.signal }), { status: 200 }));
-    const watch = run("watchArrivals()");
-    const res = await context.fetch("https://cdn.jsdelivr.net/pyodide/v1.0.0/full/python_stdlib.zip");
-    assert.deepEqual(new Uint8Array(await res.arrayBuffer()), bytesOf(0, MiB));
-    assert.equal(watch.arrived, 1);
-    watch.stop();
-  } finally {
-    context.TransformStream = made;
+  }], ["Response", class extends Response {
+    constructor(content, init) {
+      if (content instanceof ReadableStream) throw new TypeError("no Response of a stream here");
+      super(content, init);
+    }
+  }]]) {
+    const made = context[name];
+    context[name] = stand;
+    try {
+      fresh((url, init) => new Response(body(0, MiB, { signal: init.signal }), { status: 200 }));
+      const watch = run("watchArrivals()");
+      const res = await context.fetch("https://cdn.jsdelivr.net/pyodide/v1.0.0/full/python_stdlib.zip");
+      assert.deepEqual(new Uint8Array(await res.arrayBuffer()), bytesOf(0, MiB), name);
+      assert.equal(watch.arrived, 1, name);
+      watch.stop();
+    } finally {
+      context[name] = made;
+    }
   }
   ok("a browser that cannot count a body still gets it");
 }
@@ -341,8 +354,8 @@ const ok = (line) => {
   fresh(() => "hang");
   {
     const began = clock.now();
-    const failed = await failure(context.resolvePyodideVersion(""));
-    assert.ok(failed, "the version was waited for for ever");
+    const failed = await failure(Promise.race([context.resolvePyodideVersion(""),
+      sleep(120000).then(() => { throw new Error("still waiting for the version after 120 s"); })]));
     assert.equal(failed.error.pyodide, true, "the page would not try again without the service worker");
     assert.match(failed.error.message, /did not answer in 30 seconds/);
     assert.ok(failed.at - began >= quiet * 1000 && failed.at - began < (quiet + 10) * 1000);
