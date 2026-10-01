@@ -98,6 +98,35 @@ for (const wide of [false, true]) {
         checked += 1;
       }
     }
+    // ---- matmul_t2r_tile: a prompt's tokens, a frame apart, each (row, token) matmul_t2r's number to the bit, for 1 to
+    // 9 tokens (the fours and what is left after them) and rows that begin and end anywhere
+    {
+      const frame = 2048, outFrame = 64, tokens = 9;
+      const frames = end + 4096, outs = frames + tokens * frame, alone = outs + tokens * outFrame;
+      if (alone + rows * 4 > memory.buffer.byteLength) throw new Error("ternary-check's memory is too small for the tile");
+      for (let t = 0; t < tokens; t++) {
+        const at = frames + t * frame;  // a token's activations, and after them (at most * 128) its scales and sums
+        for (let j = 0; j < n; j++) I[at + j] = (next() & 255) - 128;
+        for (let g = 0; g < ng; g++) F[(at + most * 128) / 4 + g] = f(1e-2 * (1 + (next() % 1000)));
+        k.interleave(at, at + most * 128, n);
+      }
+      for (const count of [1, 2, 3, 4, 5, 7, 8, tokens]) {
+        for (const [r0, r1] of [[0, rows], [2, 9], [rows - 1, rows]]) {
+          F.fill(-7, outs / 4, (outs + tokens * outFrame) / 4);
+          r.matmul_t2r_tile(outs, frames, frames + most * 128, w, ws, n, r0, r1, count, outFrame, frame, 3);
+          for (let t = 0; t < tokens; t++) {
+            F.fill(-7, alone / 4, alone / 4 + rows);
+            if (t < count) r.matmul_t2r(alone, frames + t * frame, frames + t * frame + most * 128, w, ws, n, r0, r1, 3);
+            for (let i = 0; i < rows; i++) {
+              if (!Object.is(F[(outs + t * outFrame) / 4 + i], F[alone / 4 + i])) {
+                throw new Error(`matmul_t2r_tile${where} differs from matmul_t2r at row ${i}, token ${t} of ${count}, rows ${r0}..${r1}, ${groups} groups`);
+              }
+            }
+          }
+          checked += 1;
+        }
+      }
+    }
   }
 
   // ---- ternary_x

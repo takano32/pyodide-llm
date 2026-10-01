@@ -250,3 +250,61 @@ export function matmul_t2r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
     store<f32>(xout + (<usize>i << 2), f32x4.extract_lane(facc, 0) + f32x4.extract_lane(facc, 1) + f32x4.extract_lane(facc, 2) + f32x4.extract_lane(facc, 3));
   }
 }
+
+// T231: matmul_t2r for count tokens of a prompt (T108) at once: token t's activations and their scales (and sums) at
+// xq + t * frame and xs + t * frame, its outputs at xout + t * os. A row against four tokens a turn: the codes of its
+// 64 weights are made once for the four (the load, the shifts and the masks are half of what a token's 64 weights
+// cost) and meet each token's activations in turn. Every (row, token) is matmul_t2r's number to the bit: the same
+// integer sums, scaled and added in the same order. The tokens past the last four go through matmul_t2r itself.
+// A row's bytes are read in order, once for every four tokens, and stay in the first cache meanwhile (a row of 17408
+// weights is 4 KB).
+// @ts-ignore: decorator
+@inline function planes(x: usize, c0: v128, c1: v128, c2: v128, c3: v128): v128 {
+  let acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x), c0, i32x4.splat(0));
+  acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 16), c1, acc);
+  acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 32), c2, acc);
+  return i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 48), c3, acc);
+}
+// @ts-ignore: decorator
+@inline function scaled(lo: v128, hi: v128, xs: usize, sums: usize, at: usize, d: v128): v128 {
+  const whole = i32x4.add(fourSums(lo, hi), v128.load(xs + sums + at));
+  return f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), d);
+}
+// @ts-ignore: decorator
+@inline function sumOf(facc: v128): f32 {
+  return f32x4.extract_lane(facc, 0) + f32x4.extract_lane(facc, 1) + f32x4.extract_lane(facc, 2) + f32x4.extract_lane(facc, 3);
+}
+export function matmul_t2r_tile(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, count: i32, os: i32, frame: i32, three: i32): void {
+  const groups = n >> 7, mask = i8x16.splat(<i8>three), count4 = count & ~3;
+  const sums = <usize>(n >> 5) << 2, outStride = <usize>os, f = <usize>frame;
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * <usize>(n >> 2);
+    const srow = ws + ((<usize>i * <usize>groups) << 2);
+    let t = 0;
+    for (; t < count4; t += 4) {
+      const x0 = xq + <usize>t * f, x1 = x0 + f, x2 = x1 + f, x3 = x2 + f;
+      const s0 = xs + <usize>t * f, s1 = s0 + f, s2 = s1 + f, s3 = s2 + f;
+      let f0 = f32x4.splat(0), f1 = f0, f2 = f0, f3 = f0;
+      for (let g = 0; g < groups; g++) {
+        const w = row + (<usize>g << 5), o = <usize>g << 7, at = <usize>g << 4;
+        const v = v128.load(w);
+        let c0 = codes(v, 0, mask), c1 = codes(v, 1, mask), c2 = codes(v, 2, mask), c3 = codes(v, 3, mask);
+        const a0 = planes(x0 + o, c0, c1, c2, c3), a1 = planes(x1 + o, c0, c1, c2, c3);
+        const a2 = planes(x2 + o, c0, c1, c2, c3), a3 = planes(x3 + o, c0, c1, c2, c3);
+        const u = v128.load(w, 16);
+        c0 = codes(u, 0, mask); c1 = codes(u, 1, mask); c2 = codes(u, 2, mask); c3 = codes(u, 3, mask);
+        const d = v128.load32_splat(srow + (<usize>g << 2));
+        f0 = f32x4.add(f0, scaled(a0, planes(x0 + o + 64, c0, c1, c2, c3), s0, sums, at, d));
+        f1 = f32x4.add(f1, scaled(a1, planes(x1 + o + 64, c0, c1, c2, c3), s1, sums, at, d));
+        f2 = f32x4.add(f2, scaled(a2, planes(x2 + o + 64, c0, c1, c2, c3), s2, sums, at, d));
+        f3 = f32x4.add(f3, scaled(a3, planes(x3 + o + 64, c0, c1, c2, c3), s3, sums, at, d));
+      }
+      const out = xout + <usize>t * outStride + (<usize>i << 2);
+      store<f32>(out, sumOf(f0));
+      store<f32>(out + outStride, sumOf(f1));
+      store<f32>(out + 2 * outStride, sumOf(f2));
+      store<f32>(out + 3 * outStride, sumOf(f3));
+    }
+    for (; t < count; t++) matmul_t2r(xout + <usize>t * outStride, xq + <usize>t * f, xs + <usize>t * f, wq, ws, n, i, i + 1, three);
+  }
+}

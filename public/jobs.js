@@ -48,7 +48,8 @@ if (JOB_TABLE <= JOBS * 4 || JOB_TABLE % 8 || JOB_TABLE + BATCH * JOB * 8 > SCRA
 // blocks small enough to stay in the cache while every token uses them: each (row, token) is the one kernel call it
 // is for a single token, so the numbers are the same as one token at a time. Kind 0 takes the count tokens in one
 // call instead (T159: matmul_q8r_tile, four rows by four tokens, each number matmul_q8r's to the bit; a and b are
-// then one frame apart, the same stride). Attention is always one token a job, and so is the delta rule (a Gated
+// then one frame apart, the same stride), and so does kind 8 (T231: matmul_t2r_tile, a row against four tokens, each
+// number matmul_t2r's to the bit). Attention is always one token a job, and so is the delta rule (a Gated
 // DeltaNet layer's state after a token is what the next token reads).
 export const ROWS = 9, COUNT = 10, SIZE = 14, FIRST = 15;
 const BLOCK_BYTES = 16384;
@@ -67,7 +68,7 @@ export const ADDRESSES = {
   to_f16: [0, 1], from_f16: [0, 1], finite_f16: [0], layernorm: [0, 1, 2, 3], gelu: [0, 1, 2], swiglu: [0, 1, 2], add_columns: [0, 1, 2], add_inplace: [0, 1],
   gate: [0, 1, 2], convolve: [0, 1, 2], delta_rule: [0, 1, 2, 3, 4],
   argmax: [0], penalize: [0, 1], sample: [0, 5, 6], matmul_q8r: [0, 1, 2, 3, 4, 5], matmul_q6r: [0, 1, 2, 3, 4, 5],
-  matmul_q8r_tile: [0, 1, 2, 3, 4, 5],
+  matmul_q8r_tile: [0, 1, 2, 3, 4, 5], matmul_t2r_tile: [0, 1, 2, 3, 4],
 };
 /** A kernel module's exports as they are, or on a 64-bit memory (wide) with the addresses made BigInt on the way
  * in: the rest of the code keeps its addresses in Numbers (exact up to 2^53). */
@@ -105,6 +106,7 @@ export function runner(k, r) {
     const [kind, out, a, b, a4, a5, a6, a7, a8, rows, count, os, as, bs] = job;
     if (count === 1) return call(kind, out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
     if (kind === 0) return r.matmul_q8r_tile(out, a, b, a4, a5, a6, a7, r0, r1, count, os, as);
+    if (kind === 8) return r.matmul_t2r_tile(out, a, b, a4, a5, a7, r0, r1, count, os, as, THREE);
     const step = blockRows(kind, a7);
     for (let r = r0; r < r1; r += step) {
       const end = Math.min(r + step, r1);
@@ -126,6 +128,7 @@ export function warmUp(k, r) {
       r.matmul_q8r(out, xq, xs, w, s, c, 32, 0, 1);
       r.matmul_q6r(out, xq, xs, w, s, c, 32, 0, 1);
       r.matmul_t2r(out, xq, xs, w, s, 128, 0, 1, THREE);
+      r.matmul_t2r_tile(out, xq, xs, w, s, 128, 0, 1, 4, 0, 0, THREE);  // one row and four tokens, all the same
       r.matmul_q8r_tile(out, xq, xs, w, s, c, 32, 0, 4, 4, 0, 0);  // one tile: four rows and four tokens, all the same
     }
     k.attention(out, xq, w, w, c, 0, 1, 1, 4, 0, 1);  // one head of 4 at position 0

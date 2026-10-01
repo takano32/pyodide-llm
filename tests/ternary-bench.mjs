@@ -9,7 +9,10 @@
 // to the bit. G weights/s is rows x n a second; GB/s counts what a row reads of the weights (their scales and
 // corrections too).
 //
-//   node tests/ternary-bench.mjs [--rounds 2] [--turns 5] [--megabytes 256] [--shapes 2048x2048,17408x5120] [--forms t2r,q8r]
+//   node tests/ternary-bench.mjs [--rounds 2] [--turns 5] [--megabytes 256] [--shapes 2048x2048,17408x5120] [--forms t2r,q8r] [--no-prompt]
+//
+// Then a prompt of 16 tokens through the same matrices: the ternary tile (matmul_t2r_tile, a row against four tokens)
+// against the token's kernel for every token, and int8's tile (T159) on the widened weights.
 //
 // The shapes are those of Ternary Bonsai 1.7B (2048 wide, its FFN 6144) and of the 27B (5120 wide, its FFN 17408).
 // Compiles with AssemblyScript into .tmp/ternary-bench/ (needs `npm ci`).
@@ -23,7 +26,9 @@ const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..")
 const work = root + ".tmp/ternary-bench/";
 // the numbers every thread reads: 0 the form, 1 the first copy, 2 a copy's bytes, 3 the copies, 4 the copy to start at,
 // 5 n, 6 rows, 7 threads, 8 out, 9 the activations, 10 their scales, 11 the calls
-const FORM = 0, FIRST = 1, STRIDE = 2, COPIES = 3, START = 4, N = 5, ROWS = 6, THREADS = 7, OUT = 8, XQ = 9, XS = 10, CALLS = 11;
+// (and for a prompt: 12 its tokens, 13 the bytes from a token's frame to the next, 14 from its outputs to the next's)
+const FORM = 0, FIRST = 1, STRIDE = 2, COPIES = 3, START = 4, N = 5, ROWS = 6, THREADS = 7, OUT = 8, XQ = 9, XS = 10, CALLS = 11,
+  COUNT = 12, FRAME = 13, OUT_FRAME = 14;
 const GO = 0, DONE = 1, NEXT = 2;
 
 // Every form: its module, the bytes a group of 128 weights takes (values, scales, corrections), which activations it
@@ -49,16 +54,34 @@ const FORMS = {
   q8: { module: "plain", bytes: [128, 16, 0], activations: "eight",
     run: (k, c, w, r0, r1) => k.matmul_q8(c[OUT], c[XQ], c[XS], w, w + g128(c) * 128, c[N], r0, r1) },
 };
-const NAMES = Object.keys(FORMS);
+// A prompt's tokens (T108) through the same matrix: the token's kernel for every token, the rows in blocks that stay in
+// the first cache (jobs.js's way for a kernel without a tile), the ternary tile (matmul_t2r_tile), and int8's (T159) on
+// the same weights widened. of: whose copies of the weights it reads
+const blockOf = (n) => Math.max(1, Math.floor(16384 / (n / 4)));
+const PROMPTS = {
+  "t2r, token by token": { module: "tree", of: "t2r", activations: "interleaved", run: (k, c, w, r0, r1) => {
+    for (let r = r0, step = blockOf(c[N]); r < r1; r += step) {
+      for (let t = 0; t < c[COUNT]; t++) {
+        k.matmul_t2r(c[OUT] + t * c[OUT_FRAME], c[XQ] + t * c[FRAME], c[XS] + t * c[FRAME], w, w + g128(c) * 32, c[N], r, Math.min(r + step, r1), 3);
+      }
+    }
+  } },
+  "t2r tile": { module: "tree", of: "t2r", activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_t2r_tile(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME], 3) },
+  "q8r tile": { module: "tree", of: "q8r", activations: "seven",
+    run: (k, c, w, r0, r1) => k.matmul_q8r_tile(c[OUT], c[XQ], c[XS], w, w + g128(c) * 128, w + g128(c) * 144, c[N], r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME]) },
+};
+const NAMES = Object.keys(FORMS), ALL = { ...FORMS, ...PROMPTS }, EVERY = Object.keys(ALL);
 const modules = { forms: "forms.wasm", tree: "relaxed.wasm", plain: "plain.wasm" };
 const instances = (memory) => Object.fromEntries(Object.entries(modules).map(([name, file]) =>
   [name, new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(work + file)), { env: { memory } }).exports]));
 // forward.js's phase(): chunks of a quarter of a thread's share (T93), taken in turn; one thread the whole matrix
-const chunkOf = (rows, threads) => (threads === 1 ? rows : Math.ceil(rows / (threads * 4)));
+// (a prompt's chunks in fours of rows, as phase() cuts them for the tiles)
+const chunkOf = (rows, threads, quad = 1) => (threads === 1 ? rows : quad * Math.ceil(rows / (threads * 4 * quad)));
 function runCalls(kernels, sync, c, index) {
-  const form = FORMS[NAMES[c[FORM]]], k = kernels[form.module];
+  const form = ALL[EVERY[c[FORM]]], k = kernels[form.module];
   const threads = c[THREADS], rows = c[ROWS], calls = c[CALLS];
-  const size = chunkOf(rows, threads), chunks = Math.ceil(rows / size);
+  const size = chunkOf(rows, threads, c[COUNT] > 1 ? 4 : 1), chunks = Math.ceil(rows / size);
   const weights = (call) => c[FIRST] + ((c[START] + call) % c[COPIES]) * c[STRIDE];
   if (threads === 1) {
     if (index === 0) for (let call = 0; call < calls; call++) form.run(k, c, weights(call), 0, rows);
@@ -110,7 +133,7 @@ const PAGE = 65536, align = (bytes, to = 4096) => Math.ceil(bytes / to) * to;
 const largest = Math.max(...shapes.map(([rows, n]) => rows * n));
 const bytesOf = (form, rows, n) => align(((rows * n) / 128) * FORMS[form].bytes.reduce((a, b) => a + b) + 64);
 // the small arrays (the activations of each kind, the outputs), then every form's copies
-const small = align(PAGE + 16 * Math.max(...shapes.map(([rows, n]) => 2 * n + rows * 4 * 3)), PAGE);
+const small = align(PAGE + 64 * Math.max(...shapes.map(([rows, n]) => 2 * n + rows * 4)), PAGE);
 const region = (form) => Math.max(megabytes * 2 ** 20, 2 * bytesOf(form, 1, largest));
 const total = small + NAMES.reduce((sum, form) => sum + align(region(form), PAGE), 0);
 if (total > 65536 * PAGE) throw new Error(`${(total / 2 ** 30).toFixed(1)} GiB of copies do not fit a 32-bit memory: fewer --megabytes`);
@@ -132,7 +155,7 @@ const U = new Uint8Array(memory.buffer), I = new Int8Array(memory.buffer), F = n
 const firsts = {};
 NAMES.reduce((at, form) => { firsts[form] = at; return at + align(region(form), PAGE); }, small);
 
-const table = [];
+const table = [], promptTable = [], prompts = !args.includes("--no-prompt");
 for (const [rows, n] of shapes) {
   if (n % 128) throw new Error(`rows of ${n} are not whole groups of 128`);
   const groups = (rows * n) / 128, ng = n / 32;
@@ -263,7 +286,7 @@ for (const [rows, n] of shapes) {
   references.t2 = references.bc = references.bs = references.bx = references.a = references.t2r;
   Object.assign(c, { [N]: n, [ROWS]: rows });
   const set = (form) => Object.assign(c, { [FORM]: NAMES.indexOf(form), [FIRST]: firsts[form], [STRIDE]: bytesOf(form, rows, n),
-    [COPIES]: copies[form], [XQ]: places[FORMS[form].activations].xq, [XS]: places[FORMS[form].activations].xs });
+    [COPIES]: copies[form], [XQ]: places[FORMS[form].activations].xq, [XS]: places[FORMS[form].activations].xs, [COUNT]: 1 });
   const errors = {};
   for (const form of timed) {
     set(form);
@@ -311,6 +334,63 @@ for (const [rows, n] of shapes) {
     });
     console.log(`ternary-bench: ${rows} x ${n}, ${threads} thread${threads > 1 ? "s" : ""}, G weights/s: ${cells.join(" | ")}`);
   }
+  if (!prompts) continue;
+  // ---- a prompt of 16 tokens: a frame a token (its activations, then their scales and sums), the vector above turned
+  // by a group a token
+  {
+    const count = 16, frame = align(n + ng * 8, 64), outFrame = align(rows * 4, 64);
+    const frames = {};
+    for (const [kind, { q, scales }] of [["interleaved", eight], ["seven", seven]]) {
+      frames[kind] = take(count * frame);
+      for (let t = 0; t < count; t++) {
+        const at = frames[kind] + t * frame;
+        for (let j = 0; j < n; j++) I[at + j] = q[(j + 32 * t) % n];
+        for (let g = 0; g < ng; g++) F[(at + n) / 4 + g] = scales[(g + t) % ng];
+        if (kind === "interleaved") kernels.plain.interleave(at, at + n, n);
+      }
+    }
+    const tokenOuts = [take(count * outFrame), take(count * outFrame)];
+    if (top > small) throw new Error("the small arrays do not fit their place");
+    const setPrompt = (name) => {
+      const { of, activations } = PROMPTS[name];
+      Object.assign(c, { [FORM]: EVERY.indexOf(name), [FIRST]: firsts[of], [STRIDE]: bytesOf(of, rows, n), [COPIES]: copies[of],
+        [XQ]: frames[activations], [XS]: frames[activations] + n, [COUNT]: count, [FRAME]: frame, [OUT_FRAME]: outFrame });
+    };
+    // the tile's numbers are the token kernel's, to the bit
+    for (const [slot, name] of [[0, "t2r, token by token"], [1, "t2r tile"]]) {
+      setPrompt(name);
+      Object.assign(c, { [THREADS]: 4, [CALLS]: 1, [START]: 0, [OUT]: tokenOuts[slot] });
+      go();
+    }
+    for (let i = 0; i < (count * outFrame) / 4; i++) {
+      if (!Object.is(F[tokenOuts[0] / 4 + i], F[tokenOuts[1] / 4 + i])) throw new Error(`${rows} x ${n}: the tile differs from the token's kernel at ${i}`);
+    }
+    for (const threads of [1, 4]) {
+      c[THREADS] = threads;
+      const calls = Math.max(2, Math.round((threads === 1 ? 6e8 : 18e8) / (rows * n * count)));
+      const starts = {};
+      const time = (name) => {
+        setPrompt(name);
+        Object.assign(c, { [CALLS]: calls, [OUT]: tokenOuts[0], [START]: starts[name] ?? 0 });
+        starts[name] = ((starts[name] ?? 0) + calls) % c[COPIES];
+        const t0 = performance.now();
+        go();
+        return (performance.now() - t0) / calls;
+      };
+      for (const name of Object.keys(PROMPTS)) time(name);
+      const speeds = Object.fromEntries(Object.keys(PROMPTS).map((name) => [name, []]));
+      for (let r = 0; r < rounds; r++) {
+        const ms = Object.fromEntries(Object.keys(PROMPTS).map((name) => [name, []]));
+        for (let t = 0; t < turns; t++) for (const name of Object.keys(PROMPTS)) ms[name].push(time(name));
+        for (const name of Object.keys(PROMPTS)) speeds[name].push((rows * n * count) / median(ms[name]) / 1e6);
+      }
+      const cells = Object.keys(PROMPTS).map((name) => {
+        promptTable.push({ n, threads, name, g: median(speeds[name]) });
+        return `${name} ${median(speeds[name]).toFixed(1)}`;
+      });
+      console.log(`ternary-bench: a prompt of ${count} tokens, ${rows} x ${n}, ${threads} thread${threads > 1 ? "s" : ""}, G weights/s: ${cells.join(" | ")}`);
+    }
+  }
 }
 // ---- every form against the int8 kernel that runs a ternary model today (q8r), the geometric mean over the shapes
 const geo = (list) => Math.exp(list.reduce((a, b) => a + Math.log(b), 0) / list.length);
@@ -322,6 +402,12 @@ for (const threads of [1, 4]) {
     const line = timed.map((form) => `${form} ${geo(pick(of(form)).map((row) => row.g)).toFixed(1)} (${geo(pick(of(form)).map((row, i) => row.g / pick(base)[i].g)).toFixed(2)}x)`);
     console.log(`ternary-bench: ${threads} thread${threads > 1 ? "s" : ""}, rows of ${width}, G weights/s (against ${base[0].form}): ${line.join(" | ")}`);
   }
+}
+for (const threads of prompts ? [1, 4] : []) {
+  const of = (name) => promptTable.filter((row) => row.threads === threads && row.name === name).map((row) => row.g);
+  const base = of("t2r, token by token");
+  console.log(`ternary-bench: a prompt of 16 tokens, ${threads} thread${threads > 1 ? "s" : ""}, all the shapes, G weights/s (against the token's kernel): ` +
+    Object.keys(PROMPTS).map((name) => `${name} ${geo(of(name)).toFixed(1)} (${geo(of(name).map((g, i) => g / base[i])).toFixed(2)}x)`).join(" | "));
 }
 Atomics.store(sync, GO, -1);
 Atomics.notify(sync, GO);
