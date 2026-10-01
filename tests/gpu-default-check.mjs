@@ -66,17 +66,19 @@ const FAKE = `
 const { parentPort, workerData: line } = require("node:worker_threads");
 let ctl, words, ids, most, blocks = 0, requests = 0, asked = 0, held = null, memory, plan;
 // T243: the keys and values of count positions into the staging place ([keys, values][layer][plan.batch positions], in
-// float16, as gpu.js writes them back), where line.kv asks for them; and in the kv.at-th request of kv.request (a
+// float16, as gpu.js writes them back), where line.kv asks for them (zeros where it does not); and in the kv.at-th request of kv.request (a
 // "prompt"'s block, or "tokens"), kv.bad: its bits in one of them (side 0 a key, 1 a value; layer, token, column: 0 the
 // first, 1 the last)
 const madeUpHalf = ${madeUpHalf.toString()};
 const kvAsked = { prompt: 0, tokens: 0 };
 const writeBack = (request, count) => {
-  if (!line.kv) return;
   const row = plan.kvHeads * plan.headSize, H = new Uint16Array(memory.buffer, plan.staging, 2 * plan.layers * plan.batch * row);
+  // (zeros where not asked: the staging place is in a memory the engines before this one wrote other things into,
+  // which forward.js would now read as the keys and values of this request)
   for (let part = 0; part < 2 * plan.layers; part++) {
-    for (let t = 0; t < count; t++) for (let i = 0; i < row; i++) H[(part * plan.batch + t) * row + i] = madeUpHalf(part, t, i);
+    for (let t = 0; t < count; t++) for (let i = 0; i < row; i++) H[(part * plan.batch + t) * row + i] = line.kv ? madeUpHalf(part, t, i) : 0;
   }
+  if (!line.kv) return;
   const bad = line.kv.request === request && ++kvAsked[request] === line.kv.at ? line.kv.bad : null;
   if (bad) H[((bad.side * plan.layers + (bad.layer ? plan.layers - 1 : 0)) * plan.batch + (bad.token ? count - 1 : 0)) * row + (bad.column ? row - 1 : 0)] = bad.bits;
 };
