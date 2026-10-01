@@ -676,6 +676,133 @@ const ok = (line) => {
   ok("a worker told the loads that follow on its one model makes its shared memory for the largest of them");
 }
 
+// ---- T242's review: the page's message to the worker's memory. The handler takes the loads that follow from the page's message
+// (/benchmark/'s init says them; the model page's loads say none). A handler that forgot the last one's would make the model
+// page's memory without its gigabyte for the next model, or the benchmark's with one, and nothing else here sees the wiring:
+// the memory's own checks above set loadsAhead by hand
+{
+  const small = { id: "small", name: "Small", checkpoint: "small", tokenizer: "small.tokenizer.bin", bytes: 64, options: {} };
+  const said = async (data) => {
+    fresh(() => new Response(new Uint8Array(64), { status: 200 }));
+    run("initialized = Promise.reject(new Error('no runtime in this check')); initialized.catch(() => {})");
+    await context.onmessage({ data: { type: "load", load: 9, model: small, ...data } });
+    run("initialized = undefined");
+    return run("loadsAhead");
+  };
+  assert.deepEqual(await said({ ahead: [[], ["kernels"], ["int8", "relaxed"]] }), [[], ["kernels"], ["int8", "relaxed"]]);
+  assert.equal(await said({}), undefined, "a load that says none left the last one's loads ahead");
+  assert.equal(await said({ ahead: [[]] }).then(() => said({ ahead: "int8" })), undefined, "a thing that is no list was taken for one");
+  ok("the loads that follow come from the page's message, and the next load that says none forgets them");
+}
+
+// ---- T242's review: a browser that refuses the benchmark's memory (the model's alone, a small one). It is asked for less after
+// and never for more (a Windows WebKit that refused 45 MB was then asked for a gigabyte, the size its page went down in), and a
+// shared memory it gave at a lowered maximum must hold the loads the page said follow, as the one going on (T130's guard)
+{
+  const PAGE = 65536, RealMemory = WebAssembly.Memory, info = console.info;
+  const refusing = (limit) => {
+    const asked = [];
+    WebAssembly.Memory = class extends RealMemory {
+      constructor(descriptor) {
+        asked.push(Number(descriptor.maximum ?? 0));
+        if (descriptor.shared && Number(descriptor.maximum) > limit) throw new RangeError("too much address space");
+        super(descriptor);
+      }
+    };
+    return asked;
+  };
+  console.info = () => {};  // (the guard says what it did)
+  try {
+    const size = 32891932, after = 12537888;
+    let asked = refusing(0);
+    const refused = await failure(Promise.resolve().then(() => forward.weightsMemory(size, { shared: true, after, spare: PAGE })));
+    assert.match(refused?.error.message ?? "", /no shared WebAssembly memory/);
+    assert.equal(asked.length, 1, `a memory of the model alone was refused, and then the browser was asked for ${asked.slice(1).join(", ")} pages`);
+    asked = refusing(0);
+    await failure(Promise.resolve().then(() => forward.weightsMemory(size, { shared: true, after })));
+    assert.equal(asked.length, 3, "the model page's memory has its two lesser tries still");
+    assert.ok(asked[0] > asked[1] && asked[1] > asked[2], `the tries are not each less than the one before: ${asked.join(", ")}`);
+
+    // a shared memory at a lowered maximum (weightsMemory's second try) that holds the load going on and not the largest that
+    // follows is not kept: a plain one is made, as for a load that is alone (the model page's, with no loads ahead, keeps it)
+    context.stand.real = forward;
+    const widest = 600e6;  // past what the lesser tries hold: a quarter of a gigabyte over the checkpoint
+    for (const [limit, ahead, shared] of [[Infinity, widest, true], [5000, widest, false], [5000, 100e6, true], [5000, undefined, true]]) {
+      run("forwardModule = stand.real; weightsPool = weightsNow = undefined; loadsAhead = undefined");
+      refusing(limit);
+      const pool = context.pooledWeights(size, after, true, false, ahead);
+      assert.equal(pool.shared, shared, `a browser that gives ${limit} pages, the loads ahead ${ahead}: ${pool.shared ? `a shared memory of ${pool.maximum} pages` : "a plain one"}`);
+      if (pool.shared && ahead !== undefined) assert.ok(pool.maximum * PAGE >= pool.base + size + ahead, "the shared memory does not hold the loads ahead");
+    }
+  } finally {
+    WebAssembly.Memory = RealMemory;
+    console.info = info;
+    run("forwardModule = stand.forward; weightsPool = weightsNow = undefined; loadsAhead = undefined");
+  }
+  ok("a browser that refuses the memory is asked for less and never for more, and a lowered one must hold the loads ahead too");
+}
+
+// ---- T242's review: every load /benchmark/'s model section makes (the page's path, then each round that loads) fits the one memory
+// the worker made for the largest of them, for every model that page can take (the site's own) and each set of rounds (?full or
+// not; a browser that says its memory or one that does not, which skips the rounds that widen the weights, T214). Another memory
+// would be a page's third (T96), and the memory has no gigabyte over to hide a load that does not fit. The headers are of the
+// built models (make models; where there are none this says so and checks nothing)
+{
+  const { MODELS } = await import("../src/models.js");
+  const { ROUNDS, FULL_ROUNDS, roundsHere } = await import("../src/bench.js");
+  const PAGE = 65536, folder = new URL("../public/models/", import.meta.url);
+  const headerOf = (entry) => {
+    const part = new URL(`${entry.checkpoint}.000`, folder);
+    if (!fs.existsSync(part)) return undefined;
+    const bytes = Buffer.alloc(28), file = fs.openSync(part, "r");
+    fs.readSync(file, bytes, 0, 28, 0);
+    fs.closeSync(file);
+    return Array.from(new Int32Array(bytes.buffer, bytes.byteOffset, 7));
+  };
+  const sited = MODELS.filter((one) => !one.hf && one.checkpoint), headers = sited.map(headerOf);
+  if (headers.every((header) => !header)) {
+    console.log("skipped: every load of the benchmark's model section fits its memory (no built models in public/models)");
+  } else {
+    context.stand.real = forward;
+    context.crossOriginIsolated = true;
+    let loads = 0;
+    try {
+      run("sharedKernels = {}; jsKernels = { relaxed: true }; wideKernels = undefined; threadsRequest = undefined; " +
+        "llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }");
+      for (const [at, entry] of sited.entries()) {
+        const header = headers[at], options = { dtype: "float32", ...entry.options };
+        if (!header) continue;
+        for (const asked of [ROUNDS, FULL_ROUNDS]) {
+          for (const deviceMemory of [8, undefined]) {
+            const rounds = roundsHere(asked, deviceMemory).filter((round) => round.skip === undefined);
+            run("forwardModule = stand.real; weightsPool = weightsNow = undefined");
+            context.rounds = rounds.map((round) => round.without);
+            run("loadsAhead = rounds");
+            const memories = new Set(), what = `${entry.id}, ${asked === ROUNDS ? "the two rounds" : "every step"}, memory ${deviceMemory ?? "not said"}`;
+            for (const without of [[], ...rounds.map((round) => round.without)]) {
+              if (without.includes("kernels")) continue;  // (NumPy's weights are Python's: no memory of the worker's)
+              context.without = without;
+              run("disabled = without");
+              context.weightsBuffer(entry.bytes, header, options);
+              const pool = run("weightsPool"), int8 = !without.includes("int8"), quantized = ["int8", "int6", "ternary"].includes(options.dtype);
+              const needs = pool.base + entry.bytes + forward.footprint(header, entry.bytes, { ...options, int8, relaxed: !without.includes("relaxed"),
+                halfKV: quantized && int8 && !without.includes("kv16"), shared: true, outliers: 8, gpu: false });
+              assert.ok(pool.maximum * PAGE >= needs, `${what}, without ${without.join("+") || "nothing"}: a memory of ${pool.maximum} pages for a load that needs ${needs} bytes`);
+              memories.add(pool.memory);
+              loads++;
+            }
+            assert.equal(memories.size, 1, `${what}: a load of the model section made a memory of its own`);
+          }
+        }
+      }
+    } finally {
+      context.crossOriginIsolated = false;
+      run("sharedKernels = undefined; forwardModule = stand.forward; weightsPool = weightsNow = undefined; loadsAhead = undefined; disabled = []");
+    }
+    ok(`every load of the benchmark's model section fits the one memory made for it (${sited.length} models, ${loads} loads)`);
+  }
+}
+
 // ---- T242: what is thrown and is no Error is told in words, not as "[object Object]" (which /benchmark/ showed)
 {
   const told = context.told;

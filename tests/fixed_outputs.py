@@ -46,16 +46,22 @@ CHUNK = 8 << 20
 # -exp(A_log), the two small matrices of the gates as Q8_0 rounds them) and from the safetensors of the original (the
 # revision tests/reference_qwen35.py holds the engine to transformers on, whose weights are one file under a shard's
 # name). The format is the list's: the model's own calls a macro, which the converter does not read.
+# T247: Qwen3.5 2B, the smallest of the sizes added then (heads that fill dim, where the 0.8B's do not), the same two
+# ways. The text of the safetensors is what transformers' generate() writes for the same ids on the float32 original
+# (tests/reference_qwen35.py --model=2B); the GGUF's, Q8_0's rounding of those weights, leaves it at the fourth token.
+# Each float32 checkpoint is 7.5 GB.
 # T253: Granite 4.2 3B, the smallest of the models whose q the converter scales (a Granite's attention multiplies its
 # scores by config.json's attention_multiplier), from the list's GGUF, where the multiplier is metadata and q is turned
 # as a Llama's. Its float32 checkpoint is 14.6 GB. T254: MiniCPM5 1B, the model of the two-stage pre-tokenizer and the
 # first Llama from a GGUF whose heads are not dim / heads (128 in 1536).
 # {the id here: (the list's entry, the file of the original's weights)}
 SAFETENSORS = {"hf-qwen3-0.6b-safetensors": ("hf-qwen3-0.6b", "model.safetensors"),
-               "hf-qwen3.5-0.8b-safetensors": ("hf-qwen3.5-0.8b", "model.safetensors-00001-of-00001.safetensors")}
+               "hf-qwen3.5-0.8b-safetensors": ("hf-qwen3.5-0.8b", "model.safetensors-00001-of-00001.safetensors"),
+               "hf-qwen3.5-2b-safetensors": ("hf-qwen3.5-2b", "model.safetensors-00001-of-00001.safetensors")}
 MODELS = ["hf-pythia-70m", "hf-gpt2", "hf-japanese-gpt2-small", "hf-smollm2-135m-instruct", "hf-llm-jp-3-150m-instruct3",
           "hf-qwen3-0.6b", "hf-qwen3-0.6b-safetensors", "hf-ternary-bonsai-1.7b", "hf-qwen3.5-0.8b",
-          "hf-qwen3.5-0.8b-safetensors", "hf-granite-4.2-3b", "hf-minicpm5-1b"]
+          "hf-qwen3.5-0.8b-safetensors", "hf-qwen3.5-2b", "hf-qwen3.5-2b-safetensors", "hf-granite-4.2-3b",
+          "hf-minicpm5-1b"]
 
 
 def entries():

@@ -432,15 +432,14 @@ QWEN35_WRONG = {
 }
 
 
-@pytest.mark.parametrize("wrong", [None, *QWEN35_WRONG, "another interval", "more value heads than key heads"])
+@pytest.mark.parametrize("wrong", [None, *QWEN35_WRONG, "another interval"])
 def test_a_qwen35_gguf_is_held_to_what_llama_cpp_makes_of_its_original(tmp_path, capsys, wrong):
     """T236: a Qwen3.5's GGUF as llama.cpp writes one (test_gguf.qwen35_gguf) passes against its original, 0 off: the
     norms with their 1, -exp(A_log), the convolution without its axis of one, dt_bias and A_log under their other
     names, the original's names with "model.language_model." in front. An original that is not what the GGUF was made
-    of is past the line at that tensor, a config.json of another interval a mismatch, and a model whose value heads
-    llama.cpp tiles is not passed."""
+    of is past the line at that tensor, and a config.json of another interval a mismatch."""
     from test_gguf import qwen35_gguf
-    config, file, same = qwen35_gguf(n_layers=4, **({"value_heads": 4} if wrong and wrong.startswith("more") else {}))
+    config, file, same = qwen35_gguf(n_layers=4)
     original = {name: tensor.copy() for name, tensor in same.items()}
     if wrong == "the 1 not added to a norm":
         original[QWEN35 + "0.input_layernorm.weight"] += 1  # the GGUF's is then the original's without its 1
@@ -479,3 +478,102 @@ def test_a_qwen35_gguf_is_held_to_what_llama_cpp_makes_of_its_original(tmp_path,
         assert sorted(result["past_tight"]) == sorted(past) and result["mismatches"] == len(past)
     else:
         assert result["mismatches"] >= 1 and result["past_tight"] == {}
+
+
+# T245: the tensors of a linear-attention layer that have the value heads along an axis, by the GGUF's name
+TILED_TENSORS = ("attn_qkv.weight", "attn_gate.weight", "ssm_alpha.weight", "ssm_beta.weight", "ssm_dt.bias", "ssm_a",
+                 "ssm_conv1d.weight", "ssm_out.weight")
+TILED_MODELS = {"two to one": dict(key_heads=4, value_heads=8, key_dim=8, value_dim=32),
+                "three to one (the 27B)": dict(value_heads=6, value_dim=32, key_dim=16),
+                "three to one, heads of half a Q8_0 block": dict(value_heads=6, value_dim=16, key_dim=8)}
+
+
+def qwen35_directory(tmp_path, config, file, original):
+    (tmp_path / "model.gguf").write_bytes(file)
+    (tmp_path / "model.safetensors").write_bytes(safetensors_file(original))
+    (tmp_path / "config.json").write_text(json.dumps(config))
+    return tmp_path / "model.gguf", tmp_path
+
+
+@pytest.mark.parametrize("block", [gguf_check.BLOCK, 512])  # the whole tensor at once, and a block of rows at a time
+@pytest.mark.parametrize("shape", TILED_MODELS)
+def test_a_qwen35_gguf_of_more_value_heads_than_key_heads_passes_tiled(tmp_path, capsys, monkeypatch, block, shape):
+    """T245: llama.cpp writes the value heads of such a model tiled (every key head's first value head, then every key
+    head's second), in the rows, entries or columns of eight tensors of each linear-attention layer. As it writes
+    them, the GGUF is 0 off its original, and the order is said. In blocks of rows too (the real 4B's matrices are
+    past BLOCK)."""
+    from test_gguf import qwen35_gguf
+    monkeypatch.setattr(gguf_check, "BLOCK", block)
+    config, file, same = qwen35_gguf(n_layers=4, **TILED_MODELS[shape])
+    assert gguf_check.check_tensors(*qwen35_directory(tmp_path, config, file, same))
+    out = capsys.readouterr().out
+    result = json.loads(out.strip().splitlines()[-1])
+    assert result["mismatches"] == 0 and result["nearest"] == 0
+    assert result["orders"] == ["as Hugging Face", gguf_check.TILED]
+    said = [line.split(" | ")[0][2:] for line in out.splitlines() if line.startswith("| blk.") and gguf_check.TILED in line]
+    # whole: every one of the eight in each of the two linear-attention layers. In blocks: the matrices that went by
+    # blocks say it too (the small ones still go whole)
+    assert sorted(said) == sorted(f"blk.{layer}.{name}" for layer in (0, 2) for name in TILED_TENSORS)
+
+
+@pytest.mark.parametrize("block", [gguf_check.BLOCK, 512])
+@pytest.mark.parametrize("shape", TILED_MODELS)
+def test_value_heads_as_hugging_face_has_them_are_not_passed(tmp_path, capsys, monkeypatch, block, shape):
+    """A GGUF with the value heads in Hugging Face's order is 0 off its original too, and is not what the page reads
+    (nor what llama.cpp runs): every tensor found so is a mismatch."""
+    from test_gguf import qwen35_gguf
+    monkeypatch.setattr(gguf_check, "BLOCK", block)
+    config, file, same = qwen35_gguf(n_layers=4, tile=False, **TILED_MODELS[shape])
+    assert not gguf_check.check_tensors(*qwen35_directory(tmp_path, config, file, same))
+    result = summary(capsys)
+    assert result["orders"] == ["as Hugging Face", gguf_check.UNTILED]
+    assert result["nearest"] == 0 and result["past_tight"] == {}
+    assert result["mismatches"] == 2 * len(TILED_TENSORS)
+
+
+TILED_WRONG = {
+    # the original's tensor changed, as (name in the original, the GGUF's tensor that must be past the line, the change)
+    "two value heads of z swapped": ("0.linear_attn.in_proj_z.weight", "blk.0.attn_gate.weight", "heads"),
+    "two value heads of v swapped": ("2.linear_attn.in_proj_qkv.weight", "blk.2.attn_qkv.weight", "v"),
+    "two columns of heads of the output swapped": ("0.linear_attn.out_proj.weight", "blk.0.ssm_out.weight", "columns"),
+    "two entries of dt_bias swapped": ("2.linear_attn.dt_bias", "blk.2.ssm_dt.bias", "entries"),
+    "two rows of beta swapped": ("0.linear_attn.in_proj_b.weight", "blk.0.ssm_beta.weight", "entries"),
+    "two heads of the convolution swapped": ("2.linear_attn.conv1d.weight", "blk.2.ssm_conv1d.weight", "v"),
+}
+
+
+@pytest.mark.parametrize("block", [gguf_check.BLOCK, 512])
+@pytest.mark.parametrize("wrong", TILED_WRONG)
+def test_a_tiled_gguf_with_two_value_heads_of_its_original_swapped_is_caught(tmp_path, capsys, monkeypatch, block, wrong):
+    """The second and the third value head of one tensor of the original change places (in a model of three to a key
+    head they are tiled apart): that tensor is past the line, and no other."""
+    from test_gguf import qwen35_gguf
+    monkeypatch.setattr(gguf_check, "BLOCK", block)
+    config, file, same = qwen35_gguf(n_layers=4, **TILED_MODELS["three to one (the 27B)"])
+    text = config["text_config"]
+    name, past, kind = TILED_WRONG[wrong]
+    original = {key: tensor.copy() for key, tensor in same.items()}
+    w = original[QWEN35 + name]
+    size = 1 if kind == "entries" else text["linear_value_head_dim"]
+    first = 2 * text["linear_num_key_heads"] * text["linear_key_head_dim"] if kind == "v" else 0
+    moved = np.moveaxis(w, 1 if kind == "columns" else 0, 0).copy()
+    a, b = slice(first + size, first + 2 * size), slice(first + 2 * size, first + 3 * size)
+    moved[a], moved[b] = moved[b].copy(), moved[a].copy()
+    original[QWEN35 + name] = np.ascontiguousarray(np.moveaxis(moved, 0, 1 if kind == "columns" else 0))
+    assert not gguf_check.check_tensors(*qwen35_directory(tmp_path, config, file, original))
+    result = summary(capsys)
+    assert list(result["past_tight"]) == [past]
+
+
+def test_tiled_is_llama_cpps_order():
+    """Hugging Face's value head h * per + j is at place j * keys + h of the GGUF, after what stands before the heads."""
+    rows = np.arange(4 + 6 * 2)  # 4 of q and k, then 2 key heads of 3 value heads of 2
+    assert gguf_check.tiled(rows, 4, 2, 3, 2, 0).tolist() == [0, 1, 2, 3, 4, 5, 10, 11, 6, 7, 12, 13, 8, 9, 14, 15]
+    matrix = np.arange(3)[:, None] * 100 + rows[None, :]
+    assert gguf_check.tiled(matrix, 4, 2, 3, 2, 1)[2].tolist() == [200 + i for i in gguf_check.tiled(rows, 4, 2, 3, 2, 0)]
+    text = {"linear_num_key_heads": 16, "linear_num_value_heads": 48, "linear_key_head_dim": 128, "linear_value_head_dim": 128}
+    assert gguf_check.value_heads("blk.0.attn_qkv.weight", text) == (4096, 16, 3, 128, 0)
+    assert gguf_check.value_heads("blk.0.ssm_out.weight", text) == (0, 16, 3, 128, 1)
+    assert gguf_check.value_heads("blk.0.ssm_a", text) == (0, 16, 3, 1, 0)
+    assert gguf_check.value_heads("blk.0.ssm_norm.weight", text) is None  # one norm for all the heads
+    assert gguf_check.value_heads("blk.0.attn_qkv.weight", {**text, "linear_num_value_heads": 16}) is None

@@ -597,9 +597,11 @@ export function weightsMemory(size, { shared = false, maximum, wide = false, aft
   const describe = (pages) => (wide ? { initial: BigInt(initial), ...(pages ? { maximum: BigInt(pages) } : {}), address: "i64" }
     : { initial, ...(pages ? { maximum: pages } : {}) });
   if (!shared) return { memory: new WebAssembly.Memory(describe()), base };
-  // what the model needs, and a gigabyte for the next one to fit as well (T96); less if the browser refuses
+  // what the model needs, and a gigabyte for the next one to fit as well (T96); less if the browser refuses, never more
+  // (T242's review: where no gigabyte is asked for, the model alone may be under both of the others, and a browser that
+  // refused it would be asked for a gigabyte: the reservation a Windows WebKit's page went down in)
   const most = maximum ?? Math.min(wide ? PAGES_64 : PAGES_32, Math.ceil((base + size + after + spare) / PAGE));
-  for (const pages of [most, initial + 16384, initial + 4096]) {
+  for (const pages of [most, ...[initial + 16384, initial + 4096].filter((fewer) => fewer < most)]) {
     try {
       const memory = new WebAssembly.Memory({ ...describe(Math.max(pages, initial)), shared: true });
       memory.maximum = Math.max(pages, initial);  // the worker keeps the memory as long as the next model fits (T96)
