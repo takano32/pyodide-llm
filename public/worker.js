@@ -5,6 +5,7 @@
 // public/llama2_convert.py converts in here as it arrives.
 // The page sends   {type: "init", search, model, load},  {type: "load", search, model, load},
 //                  {type: "generate", prompt, ...options}  and  {type: "stop"}; /benchmark/'s model section also
+//                  ahead in its init (T242: the switches of each load that follows on the same model, see loadsAhead),
 //                  {type: "bench", model, load, rounds, prompt, steps} and (T184) {type: "paths", load, prompt, counts, sampled}
 // and receives     {type: "status" | "progress" | "ready" | "token" | "done" | "bench" | "paths" | "error"
 //                         | "threads" | "threads-compared" | "gpu", ...}
@@ -16,6 +17,29 @@
 // of the ends says so.
 // load is a number the page counts up: a newer load cancels the one that is going on, and whatever this worker
 // reports about a load carries its number, so that the page can tell a late report of a cancelled one.
+
+// T242: a caught value in words. An Error reads as it always did ("TypeError: Load failed"). What is thrown is not always
+// one: Emscripten's ExitStatus (Pyodide's runtime ending) is an object with a name and a message, and String() of it, or
+// of any plain object, is "[object Object]", which is what /benchmark/ showed a visitor. Such a value is told by its name
+// and message, else by what kind of thing it is and its own fields
+const isError = (err) => err instanceof Error || Object.prototype.toString.call(err) === "[object Error]";
+function told(err) {
+  if (isError(err) || typeof err !== "object" || err === null) {
+    return String(err);
+  }
+  const text = (value) => (typeof value === "string" && value ? value : undefined);
+  const name = text(err.name) ?? text(err.constructor?.name === "Object" ? undefined : err.constructor?.name);
+  if (text(err.message)) {
+    return name ? `${name}: ${err.message}` : err.message;
+  }
+  let fields;
+  try {
+    fields = JSON.stringify(err);
+  } catch {
+    fields = undefined;  // it refers to itself
+  }
+  return `${name ?? "something that is not an error"} was thrown${fields && fields !== "{}" ? `: ${fields.slice(0, 300)}` : ""}`;
+}
 
 // the version becomes part of a CDN URL, so accept nothing but a plain version number
 const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
@@ -242,9 +266,9 @@ function download(model, signal, load) {
           }
           if (attempt === 2) {
             // T129 (4): which part, where the browser's words do not say ("TypeError: Error in input stream")
-            throw new Error(`Part ${part} of ${model.checkpoint} failed three times: ${error.message ?? error}`, { cause: error });
+            throw new Error(`Part ${part} of ${model.checkpoint} failed three times: ${error?.message ?? told(error)}`, { cause: error });
           }
-          console.warn(`part ${part} of ${model.checkpoint} broke off (${error.message ?? error}): fetched again`);
+          console.warn(`part ${part} of ${model.checkpoint} broke off (${error?.message ?? told(error)}): fetched again`);
           await forgetPart(partUrl(part), model);  // it may have come from the cache: the next try is the network's
         }
       }
@@ -520,6 +544,13 @@ async function pyodideSteps(version, importer) {
     const stalled = quiet.promise.then(() => { throw stop(name, `got nothing from the network for ${QUIET_SECONDS} seconds`); });
     try {
       return await Promise.race([promise, stalled]);
+    } catch (error) {
+      // T242: loadPyodide() goes on without a standard library whose fetch failed (it writes that to the console), and
+      // Python then ends as it starts: the promise rejects with Emscripten's ExitStatus, which is no Error and said
+      // "[object Object]" (bench.yml's Windows WebKit, 2026-10-01: its fetches of jsDelivr failed together now and then).
+      // Told as a step of Pyodide's that stopped, as one whose file never came is
+      if (isError(error)) throw error;
+      throw stop(name, `ended as it started (${told(error)}): one of its files may not have arrived`);
     } finally {
       quiet.cancel();
     }
@@ -642,7 +673,17 @@ const openGpu = () => new Worker(new URL(`gpu.js${self.location.search}`, import
 // fitting is enough. shared is what was asked for, not what the browser gave: a device without shared memories
 // made one for every model.
 let weightsPool;
-function pooledWeights(size, after, shared, wide) {
+// T242: the switches (?without=) of each load the page says will follow on the model of its init, and no other model
+// ({ ahead: [[...], ...] }: /benchmark/'s model section, whose worker loads one model, for the page's path and again
+// for each round). The shared memory is then made for the largest of those loads and no more: the gigabyte that
+// pooledWeights() keeps for the next model (T96) is for a model that never comes there, and it took the page down.
+// Playwright's WebKit on Windows (bench.yml, 2026-10-01) ended the page's process in new WebAssembly.Memory() of that
+// maximum (1.07 GiB for tiny-lm) in about one run in four, once the CPU section's worker, ended before, had had a
+// shared memory of its own; with the maximum of the model alone (45 MB) it never did (0 of 39 runs), and neither
+// section alone ends it. undefined on the model page: any model may follow.
+let loadsAhead;
+// ahead: what the forward pass of the largest of loadsAhead puts after the checkpoint, or undefined
+function pooledWeights(size, after, shared, wide, ahead) {
   const pages = (bytes) => Math.ceil(bytes / 65536);
   const needs = (base) => pages(base + size + (weightsPool.limited ? 0 : after)) + 1;
   const fits = weightsPool && weightsPool.asked === shared && weightsPool.wide === wide && needs(weightsPool.base) <= weightsPool.maximum;
@@ -652,7 +693,9 @@ function pooledWeights(size, after, shared, wide) {
     let memory, base;
     if (shared) {
       try {
-        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, wide, after }));
+        // (a page more, as needs() counts one past what the model takes)
+        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, wide, after,
+          ...(ahead !== undefined && { after: Math.max(after, ahead), spare: 65536 }) }));
       } catch {
         memory = undefined;  // no shared memory here: one thread
       }
@@ -684,16 +727,17 @@ function pooledWeights(size, after, shared, wide) {
 // T124: the keys and values of a Qwen3 0.6B are twice what the header says), on a shared memory or not (an int8
 // model's keys and values may be float16; forward.js's keysInHalf says whether they are, T160, T130).
 // What footprint() takes (the worker asks keysInHalf the same).
-function forwardOptions(options, shared) {
+// without: the switches of the load (those of the load going on, or of one that follows: loadsAhead, T242).
+function forwardOptions(options, shared, without = disabled) {
   const { dtype = "float32" } = options;
-  const int8 = !disabled.includes("int8"), quantized = ["int8", "int6", "ternary"].includes(dtype);
+  const int8 = !without.includes("int8"), quantized = ["int8", "int6", "ternary"].includes(dtype);
   return {
-    ...options, dtype, int8, relaxed: Boolean(jsKernels?.relaxed) && !disabled.includes("relaxed"),
-    halfKV: quantized && int8 && !disabled.includes("kv16"), shared,
+    ...options, dtype, int8, relaxed: Boolean(jsKernels?.relaxed) && !without.includes("relaxed"),
+    halfKV: quantized && int8 && !without.includes("kv16"), shared,
     outliers: llama2_numpy.OUTLIER_CHANNELS, gpu: hasWebGpu,
   };
 }
-const afterCheckpoint = (header, size, options, shared) => forwardModule.footprint(header, size, forwardOptions(options, shared));
+const afterCheckpoint = (header, size, options, shared, without) => forwardModule.footprint(header, size, forwardOptions(options, shared, without));
 // the page cross-origin isolated (stage 3), shared memories to be had, and not ?threads=1: the memory is shared
 const sharedWanted = () => Boolean(sharedKernels && self.crossOriginIsolated && threadsRequest?.fixed !== 1);
 
@@ -749,7 +793,11 @@ function weightsBuffer(size, header, options, keep) {
       throw new Error("This model needs more than 4 GB of memory, which this browser cannot give a web page (no 64-bit " +
         "WebAssembly memory: Safari has none yet). Chrome and Firefox can.");
     }
-    const { memory, base, shared } = pooledWeights(size, after, wanted && (!wide || Boolean(wideKernels.shared)), wide);
+    // T242: where the page said which loads follow on this model, the memory is made for the largest of them (a load
+    // without the kernels takes none: NumPy's weights are Python's)
+    const ahead = loadsAhead && Math.max(0, ...loadsAhead.filter((without) => !without.includes("kernels"))
+      .map((without) => afterCheckpoint(header, size, options, wanted, without)));
+    const { memory, base, shared } = pooledWeights(size, after, wanted && (!wide || Boolean(wideKernels.shared)), wide, ahead);
     // T160: the type of the keys and values that after counts, T130: on the memory the browser gave
     const halfKeys = forwardModule.keysInHalf(header, size, forwardOptions(options, shared));
     const kernels = wide ? (shared ? wideKernels.shared : wideKernels.plain) : (shared ? sharedKernels : jsKernels);
@@ -1814,6 +1862,7 @@ self.onmessage = async ({ data }) => {
       lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
       threadsRequest = data.threads;
       gpuRequest = data.gpu;
+      loadsAhead = Array.isArray(data.ahead) ? data.ahead : undefined;  // (T242; a load of the model page says none)
       // The latest choice wins: the download that is going on stops, and its parts that are complete stay in
       // the cache. Pyodide is loaded once, whatever happens to the model that was asked for first.
       loading?.abort();
@@ -1915,8 +1964,8 @@ self.onmessage = async ({ data }) => {
       const [, name = err?.name, text = err?.message] = err?.type === "JsException"
         ? /^pyodide\.ffi\.JsException: (\w+): (.*)$/.exec(err.message.trim().split("\n").pop()) ?? [] : [];
       // a ValueError of the engine is a message for the reader (wrong file, prompt too long): no traceback
-      const message = err.type === "ValueError" ? err.message.trim().split("\n").pop().replace(/^ValueError: /, "")
-        : name === "Error" ? text : String(err);
+      const message = err?.type === "ValueError" ? err.message.trim().split("\n").pop().replace(/^ValueError: /, "")
+        : name === "Error" ? text : told(err);
       // T90: the memory ran out, in Python (MemoryError: malloc could not grow the WebAssembly memory) or in
       // JavaScript (RangeError: an ArrayBuffer or WebAssembly.Memory.grow was refused). The page says so in words
       // a visitor understands, with how much memory the page had when it happened.
@@ -1925,7 +1974,7 @@ self.onmessage = async ({ data }) => {
         (name === "RangeError" && !/call stack/i.test(text ?? ""));
       // where it happened goes to the page's console (T96): tests/e2e.mjs keeps the console of a failed run
       postMessage({ type: "error", load: data.load, message: memory ? String(text ?? err).trim().split("\n").pop() : message,
-                    stack: String(err?.stack ?? err), weights: weightsNow?.buffer.byteLength ?? 0, pyodide: Boolean(err?.pyodide),
+                    stack: String(err?.stack ?? told(err)), weights: weightsNow?.buffer.byteLength ?? 0, pyodide: Boolean(err?.pyodide),
                     ...(memory && { memory: true, heap: heapBytes() }) });
     }
   }

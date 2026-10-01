@@ -1580,7 +1580,8 @@ async function timeTokenAttention(m, right) {
 //   1. EMBED of a token of the second half of the vocabulary and the first layer at position 1 (the cache's row 0 of random
 //      float16), the stream h and the keys and values of position 1 read back: against JavaScript's layer in float64
 //      (the weights read from the shared memory as forward.js holds them: int6 widened by shaders.js's sixValues; RoPE
-//      from the CPU's tables; the keys and values rounded to float16 where the attention reads them; on DP4A each
+//      from the CPU's tables; the keys and values rounded to float16 where the attention reads them (T225's review: the
+//      device's own float16 where it is a neighbour of the float64 value, heldFloats; else the nearest); on DP4A each
 //      matrix's input quantized as quantize_x quantizes it, in float32). The stream: no farther than LAYER_LINE of the
 //      largest change the layer made; the keys and values no farther than it of their largest. A wrong row, group,
 //      head, angle or scale is a tenth and more off; on DP4A a value quantized to the other side of a rounding moves
@@ -1593,6 +1594,24 @@ async function timeTokenAttention(m, right) {
 //      random number's share of the mass (T151's line: the GPU's exp and its float32 sums).
 // The reason it is wrong, or null.
 const LAYER_LINE = 2e-3, LOGITS_LINE = 1e-3, DP4A_LINE = 2e-2;
+// T225's review: WGSL leaves it to the device which of its two float16 neighbours a float32 becomes (§15.7.6 Floating
+// Point Conversion: "WGSL does not specify whether the higher or lower representable value is chosen, and different
+// instances of such a conversion may choose differently"; pack2x16float is such a conversion), and Direct3D, where
+// Chrome on Windows runs WebGPU, converts toward zero (D3D11.3 functional specification 3.2.2: "Round-to-zero must be
+// used during conversion to another float format"; Dawn's HLSL writer makes pack2x16float of f32tof16). The position's
+// keys and values the GPU writes are then 1 float16 spacing from the nearest's on about half of their numbers, and the
+// stream computed from the nearest's was up to 3.2 times the line off the GPU's (CI, Dawn on lavapipe with every
+// conversion cut toward zero: a llama.cpp form on llm-jp-3 150M 6.5e-3 at the line 2e-3; with the GPU's own keys and
+// values 2.3e-6, as public/benchmark/gpu.js's heldHalves takes them: T225). So the reference takes the device's own
+// float16 (got, as floats) of a value where it is within a float16 spacing of the value and the float32 sums' noise
+// (HALF_SLACK of the largest: about 10 times a sum of 2112 products's), and the nearest where it is not: a wrong key
+// or value is as far from the line as before, and the keys' and values' lines below are unchanged.
+const HALF_SLACK = 1e-5;
+function heldFloats(x, got) {
+  const round16 = Math.f16round ?? ((value) => value), slack = HALF_SLACK * x.reduce((top, value) => Math.max(top, Math.abs(value)), 0);
+  return x.map((value, i) => (Math.abs(got[i] - value) <= 2 ** (Math.max(Math.floor(Math.log2(Math.abs(value))), -14) - 10) + slack ? got[i] : round16(value)));
+}
+export { heldFloats };  // (tests/gpu-choice-check.mjs)
 // T156: the first layer's matrices, { name: [values, scales] } as an Int8Array and a Float32Array each, read back from
 // their buffers (a piece after another: the rows in order)
 async function firstLayer(m) {
@@ -1640,7 +1659,6 @@ async function checkTokens(m, form) {
   const { plan, wgsl, gen: g, device } = m, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize, half = headSize / 2;
   const qDim = plan.heads * headSize, kvDim = plan.kvHeads * headSize, line = form.dp4a ? DP4A_LINE : LAYER_LINE;
   const floats = (address, n) => Float64Array.from(new Float32Array(m.memory.buffer, address, n));
-  const round16 = Math.f16round ?? ((x) => x);
   // row r of a matrix or a table ({ n, six }, its values and scales at [valuesAt, scalesAt] in the shared memory):
   // [its int8 values, its scales]; (T156) of a matrix read back from the GPU (firstLayer: [values, scales]); (T210) of
   // a table's rows read back (tableRows)
@@ -1735,7 +1753,7 @@ async function checkTokens(m, form) {
     };
     turn(q);
     turn(k);
-    const keys = [Float64Array.from(row0[0], halfToFloat), k.map(round16)], values = [Float64Array.from(row0[1], halfToFloat), v.map(round16)];
+    const keys = [Float64Array.from(row0[0], halfToFloat), heldFloats(k, gotK)], values = [Float64Array.from(row0[1], halfToFloat), heldFloats(v, gotV)];
     const att = new Float64Array(qDim), group = plan.heads / plan.kvHeads;
     for (let head = 0; head < plan.heads; head++) {
       const kvAt = Math.floor(head / group) * headSize, at = head * headSize;
