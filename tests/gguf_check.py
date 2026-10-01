@@ -24,6 +24,11 @@
 #       against config.json's rope_scaling. Ternary-Bonsai 1.7B's is 8.7e-5 off at its worst tensor, not 0: a block here
 #       and there has two magnitudes in the safetensors, 0.5% apart, and the larger one for all its values in the GGUF
 #       (blk.0.attn_k.weight: one block of 16384, 63 values).
+#       T236: a Qwen3.5 (hybrid attention), whose linear-attention layers llama.cpp names after a state-space model's
+#       (ssm_*) and some of whose tensors it changes as it writes them: the norms with the 1 the model adds to them,
+#       A_log as -exp(A_log), the convolution without its axis of one (as_llama_cpp_writes()); its metadata's heads,
+#       interval and turned part of a head against config.json's. One whose value heads llama.cpp tiles (more value
+#       heads than key heads: the 4B and up) is not passed: that order is not read here.
 #   python3 tests/gguf_check.py logits <out A> <out B> <text file> [tokens = 300]
 #       Two converted checkpoints (the <out> of tests/perplexity_prepare.py) on the same text: the largest logit
 #       difference, how often the most likely token agrees, and the perplexity of each. The acceptance of T74 is
@@ -225,6 +230,17 @@ NAMES["qwen2"] = NAMES["llama"]
 # T203: a Qwen3's are a Llama's and the norms of each head of q and k
 NAMES["qwen3"] = (NAMES["llama"][0], NAMES["llama"][1],
                   {**NAMES["llama"][2], "attn_q_norm": "self_attn.q_norm", "attn_k_norm": "self_attn.k_norm"})
+# T236: a Qwen3.5's (llama.cpp's conversion/qwen.py and gguf-py's tensor_mapping.py at dcd387a4: the second norm is
+# post_attention_norm here, a linear-attention layer's tensors are attn_qkv, attn_gate and ssm_*). The names are those
+# of the language model saved alone; the vision-language checkpoint has "model.language_model." (check_tensors() tries
+# both)
+NAMES["qwen35"] = (NAMES["llama"][0], NAMES["llama"][1],
+                   {**NAMES["qwen3"][2], "post_attention_norm": "post_attention_layernorm",
+                    "attn_qkv": "linear_attn.in_proj_qkv", "attn_gate": "linear_attn.in_proj_z",
+                    "ssm_alpha": "linear_attn.in_proj_a", "ssm_beta": "linear_attn.in_proj_b",
+                    "ssm_conv1d": "linear_attn.conv1d", "ssm_norm": "linear_attn.norm", "ssm_out": "linear_attn.out_proj"})
+# and the two whose names llama.cpp changes whole: dt_bias is written as dt_proj.bias, A_log has no ".weight"
+WHOLE = {"qwen35": {"ssm_dt.bias": "linear_attn.dt_bias", "ssm_a": "linear_attn.A_log"}}
 
 
 def hugging_face_name(name, arch="llama"):
@@ -238,8 +254,28 @@ def hugging_face_name(name, arch="llama"):
     if len(pieces) != 3 or pieces[0] != "blk":
         return None
     _, number, rest = pieces
+    if rest in WHOLE.get(arch, {}):
+        return f"{layer.format(number)}{WHOLE[arch][rest]}"
+    if "." not in rest:
+        return None
     tensor, kind = rest.rsplit(".", 1)  # .weight, or .bias (Qwen2's q, k and v)
     return f"{layer.format(number)}{parts[tensor]}.{kind}" if tensor in parts else None
+
+
+def as_llama_cpp_writes(target, original, arch):
+    """What llama.cpp's converter makes of a Qwen3.5's tensor besides quantizing it (T236, conversion/qwen.py's
+    Qwen3NextModel.modify_tensors at dcd387a4), and what it is called here: the norms with the 1 the model adds to them
+    (all but a linear-attention layer's own), A_log as -exp(A_log), the convolution without its axis of one. Written
+    out here rather than taken from llama2_convert.transformed, which is what is being checked."""
+    if arch != "qwen35":
+        return original, ""
+    if target.endswith(".A_log"):
+        return -np.exp(original.astype(np.float32)), "-exp(A_log)"
+    if target.endswith(".conv1d.weight"):
+        return original.reshape(original.shape[0], original.shape[-1]), "(channels, taps)"
+    if target.endswith("norm.weight") and not target.endswith("linear_attn.norm.weight"):
+        return original.astype(np.float32) + np.float32(1), "1 + weight"
+    return original, ""
 
 
 def turned(w, heads):
@@ -489,15 +525,29 @@ def config_pairs(config, arch="llama"):
             pairs += [("rope.dimension_count", "rotary_pct (as values)", rotary_dim(config), True),
                       ("use_parallel_residual", "use_parallel_residual", config.get("use_parallel_residual", True), True)]
         return pairs, config
-    return [("block_count", "num_hidden_layers", config.get("num_hidden_layers"), True),
-            ("embedding_length", "hidden_size", config.get("hidden_size"), True),
-            ("feed_forward_length", "intermediate_size", config.get("intermediate_size"), True),
-            ("attention.head_count", "num_attention_heads", heads, True),
-            ("attention.head_count_kv", "num_key_value_heads", config.get("num_key_value_heads", heads), True),
-            ("attention.key_length", "head_dim", head_size(config), True),
-            ("rope.freq_base", "rope_theta", config.get("rope_theta", 10000.0), True),
-            ("attention.layer_norm_rms_epsilon", "rms_norm_eps", config.get("rms_norm_eps"), True),
-            ("context_length", "max_position_embeddings", config.get("max_position_embeddings"), False)], config
+    pairs = [("block_count", "num_hidden_layers", config.get("num_hidden_layers"), True),
+             ("embedding_length", "hidden_size", config.get("hidden_size"), True),
+             ("feed_forward_length", "intermediate_size", config.get("intermediate_size"), True),
+             ("attention.head_count", "num_attention_heads", heads, True),
+             ("attention.head_count_kv", "num_key_value_heads", config.get("num_key_value_heads", heads), True),
+             ("attention.key_length", "head_dim", head_size(config), True),
+             ("rope.freq_base", "rope_theta", config.get("rope_theta", 10000.0), True),
+             ("attention.layer_norm_rms_epsilon", "rms_norm_eps", config.get("rms_norm_eps"), True),
+             ("context_length", "max_position_embeddings", config.get("max_position_embeddings"), False)]
+    if arch == "qwen35":
+        # T236: which layers attend over all positions, the heads of the others and the taps of their convolution (the
+        # tensors show only the products of heads and sizes), and how much of a head turns. The defaults are those of
+        # transformers' Qwen3_5TextConfig
+        value_heads = config.get("linear_num_value_heads", 32)
+        pairs += [("full_attention_interval", "full_attention_interval", config.get("full_attention_interval", 4), True),
+                  ("ssm.conv_kernel", "linear_conv_kernel_dim", config.get("linear_conv_kernel_dim", 4), True),
+                  ("ssm.state_size", "linear_key_head_dim", config.get("linear_key_head_dim", 128), True),
+                  ("ssm.group_count", "linear_num_key_heads", config.get("linear_num_key_heads", 16), True),
+                  ("ssm.time_step_rank", "linear_num_value_heads", value_heads, True),
+                  ("ssm.inner_size", "linear_value_head_dim * linear_num_value_heads",
+                   config.get("linear_value_head_dim", 128) * value_heads, True),
+                  ("rope.dimension_count", "partial_rotary_factor (as values)", rotary_dim(config), True)]
+    return pairs, config
 
 
 def rope_factors(config, width):
@@ -563,6 +613,11 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
                                ("classifier shared with the embedding", tied, bool(config.get("tie_word_embeddings", False)))):
         mismatched += ours != theirs
         print(f"| {what} | {ours} | {theirs}{'' if ours == theirs else ' **differs**'} |")
+    if arch == "qwen35" and config.get("linear_num_value_heads", 32) != config.get("linear_num_key_heads", 16):
+        # T236: llama.cpp stores the value heads of such a model tiled (every key head's first, then every key head's
+        # second: conversion/qwen.py's _reorder_v_heads), which this does not put back: nothing below would mean much
+        mismatched += 1
+        print("| order of the value heads | tiled by llama.cpp | not read here **differs** |")
 
     vocab_diffs = {}
     originals = original_vocabularies(directory)
@@ -591,6 +646,8 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
         target = hugging_face_name(name, arch)
         if target is not None and target not in hf and f"transformer.{target}" in hf:
             target = f"transformer.{target}"  # a GPT-2 of the other spelling (rinna's)
+        if target is not None and target not in hf and target.replace("model.", "model.language_model.", 1) in hf:
+            target = target.replace("model.", "model.language_model.", 1)  # a Qwen3.5 with its vision model (T236)
         if target is None or target not in hf:
             print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | | | no {target} in safetensors | | |")
             mismatched += 1
@@ -616,7 +673,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
         else:
             values, raw = tensor(info, data, base)
             original = hf.rows(target, 0, shape[0]).reshape(shape).astype(np.float32)
-            order = ""
+            original, order = as_llama_cpp_writes(target, original, arch)
             if name.endswith(("attn_q.weight", "attn_k.weight", "attn_q.bias", "attn_k.bias")):
                 n = heads if "attn_q" in name else kv_heads
                 as_is, turn = relative(values, original), relative(values, turned(original, n))
