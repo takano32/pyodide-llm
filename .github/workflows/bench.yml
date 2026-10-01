@@ -123,9 +123,10 @@ jobs:
           TIMES: ${{ inputs.times || '1' }}
           BUILD: ${{ inputs.build }}
           QUERY: ${{ inputs.query }}
+          MATRIX_OS: ${{ matrix.os }}
         run: |
           set -o pipefail
-          echo "## ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "## $MATRIX_OS" >> "$GITHUB_STEP_SUMMARY"
           if [ -n "$BUILD" ]; then where=(--dist); else where=("$SITE"); fi
           failed=0
           for try in $(seq 1 "$TIMES"); do

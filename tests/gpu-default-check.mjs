@@ -68,7 +68,8 @@ let ctl, words, ids, most, blocks = 0, requests = 0, asked = 0, held = null, mem
 // T243: the keys and values of count positions into the staging place ([keys, values][layer][plan.batch positions], in
 // float16, as gpu.js writes them back), where line.kv asks for them (zeros where it does not); and in the kv.at-th request of kv.request (a
 // "prompt"'s block, or "tokens"), kv.bad: its bits in one of them (side 0 a key, 1 a value; layer, token, column: 0 the
-// first, 1 the last)
+// first, 1 the last). kv.stale: bad halves (this one, and -inf) in the positions after those of the request; kv.stopAfter:
+// a request for steps that stops after that many (a stop token: fewer ids than asked for)
 const madeUpHalf = ${madeUpHalf.toString()};
 const kvAsked = { prompt: 0, tokens: 0 };
 const writeBack = (request, count) => {
@@ -79,6 +80,13 @@ const writeBack = (request, count) => {
     for (let t = 0; t < count; t++) for (let i = 0; i < row; i++) H[(part * plan.batch + t) * row + i] = line.kv ? madeUpHalf(part, t, i) : 0;
   }
   if (!line.kv) return;
+  // (T243's review: the positions after the request's, which the GPU's read-back buffer still holds from before, hold bad
+  // halves where line.kv.stale says so: a look at them is none of forward.js's business, the request did not write them)
+  if (line.kv.stale !== undefined) {
+    for (let part = 0; part < 2 * plan.layers; part++) {
+      for (let t = count; t < plan.batch; t++) for (let i = 0; i < row; i++) H[(part * plan.batch + t) * row + i] = (part + t + i) & 1 ? line.kv.stale : 0xfc00;
+    }
+  }
   const bad = line.kv.request === request && ++kvAsked[request] === line.kv.at ? line.kv.bad : null;
   if (bad) H[((bad.side * plan.layers + (bad.layer ? plan.layers - 1 : 0)) * plan.batch + (bad.token ? count - 1 : 0)) * row + (bad.column ? row - 1 : 0)] = bad.bits;
 };
@@ -121,7 +129,7 @@ parentPort.on("message", (data) => {
     const outside = Boolean(line.outsideAt) && asked === line.outsideAt;
     // T219 (2): a GPU whose refuseAt-th request's sampler refused the step after refuseAfter sampled ones (its logits
     // not finite): the State's not_finite word after the ids
-    const refuse = Boolean(line.refuseAt) && asked === line.refuseAt, sampled = refuse ? line.refuseAfter : data.count;
+    const refuse = Boolean(line.refuseAt) && asked === line.refuseAt, sampled = refuse ? line.refuseAfter : Math.min(data.count, line.kv?.stopAfter ?? data.count);
     ids[0] = sampled;
     for (let i = 0; i < sampled; i++) ids[1 + i] = outside && i === data.count - 1 ? line.outsideId : data.token + 1 + i;
     ids[1 + most] = refuse ? 1 : 0;
@@ -682,9 +690,10 @@ if (isMainThread) {
       expect(`T243, ${cache}: the CPU's own keys are ${halfKeys ? "" : "not all "}float16 numbers`, cpuKv.keys.every((x) => Math.f16round(x) === x), halfKeys);
       // every block finite: all taken, and the cache holds what the GPU wrote, to the bit
       {
-        const engine = await ready({});
+        const engine = await ready({ stale: NAN });
         const tokens = feed(engine, FED)[1], got = engine.keysAndValues(0, FED), status = engine.gpuStatus;
         await engine.release();
+        // (T243's review: and the positions after the last block's 22, bad ones in the read-back buffer's, are left alone)
         expect(`T243, ${cache}: a prompt of finite keys and values is taken whole, as the GPU wrote it (${status})`,
           [tokens, sameKv(got, madeUp(FED, (p) => p % 64)), /not finite/.test(status ?? "")], [FED, true, false]);
       }
@@ -727,13 +736,22 @@ if (isMainThread) {
         engine.forwardMany(fed, 0);
         return [engine, ask(engine, 100, 16)];
       };
-      const [good, first] = await begin({});
+      const [good, first] = await begin({ stale: NAN });
       const taken = good.keysAndValues(16, 4);
       good.gpuSide = "cpu";
       good.forward(104, 20);
       const want = good.keysAndValues(0, 21);
       await good.release();
       expect(`T243, ${cache}: steps of finite keys and values are taken as the GPU wrote them`, [first, sameKv(taken, madeUp(4, (p) => p))], [[101, 102, 103, 104], true]);
+      // (T243's review) a request that stops early, at a stop token: 2 of the 4 steps, the positions after them bad ones in the
+      // read-back buffer: only the 2 are looked at and taken
+      {
+        const [engine, early] = await begin({ stale: NAN, stopAfter: 2 });
+        const got = engine.keysAndValues(16, 2), status = engine.gpuStatus, sampled = engine.gpuSampled;
+        await engine.release();
+        expect(`T243, ${cache}: a request that stops after 2 of 4 steps takes the 2 (${status})`,
+          [early, sameKv(got, madeUp(2, (p) => p)), sampled, /not finite/.test(status ?? "")], [[101, 102], true, 2, false]);
+      }
       const steps = [];
       for (const bad of BAD) {
         const [engine, before] = await begin({ request: "tokens", at: 2, bad });
