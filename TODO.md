@@ -1408,6 +1408,9 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 状態: 未着手（T233 の後。規模 小）
 - 速さ・メモリ・品質（perplexity か固定値）を記録のあるものだけで。
 
+### T242 [バグ][計測実行] 本番の /benchmark/ のモデルの節が Windows の WebKit で 2 回続けて落ちた — 状態: 進行中（2026-10-01、T227 のレビューが見つけた。規模 小〜中。**先に見る**: Safari でも起きうる）
+- bench.yml（本番、windows-latest の Playwright の WebKit）: run 36884698323 はモデルの節が「Model: failed: [object Object]」とページのエラー「TypeError: Load failed」で、32.9 MB のうち 23.5 MB で止まった。run 36886029331 は「Target page, context or browser has been closed」。同じジョブは 13:13 と 13:42（site 869e37a・aa5d17e）には通っていた。その間に `worker.js`・`forward.js`・`benchmark/gpu.js` が変わった（T226、T235、T130・T223 と T219・T220 と T224 のレビューの直し）。本番のモデルのページは Windows の WebKit で動く（models.yml run 36887697231、tiny-lm 219.6 tok/s）ので、落ちるのは /benchmark/ の流れ。原因は未確認。「[object Object]」は `worker.js` が Error でないものを `String(err)` にしているため。
+
 ### T239 [性能][CPU] スレッドの本数の検索が局所解に止まる（持ち主の PC で 8 本、最速は 2 本） — 状態: 未着手（2026-10-01、T223 のレビューから。規模 小）
 - 検索は近い本数だけを比べるので、持ち主の PC（16 論理コア）は「16 か 8 で 8、8 か 4 で 8」を選び、2 本が最速（書くこと 171 tok/s、T225 の報告）のまま。T223 の再検索も同じ 8 から始まるので直らない。案: 下りの終わりに best / 4 も比べる（比べ 1 回 = 20 トークン）。試験は `tests/thread-search-check.mjs` の偽の時計で。
 
