@@ -1763,8 +1763,9 @@ export function tokenAttentionOff(got, { q, keys, values }, { heads, kvHeads, si
     for (let d = 0; d < size; d++) {
       let want = 0;
       for (let p = 0; p < positions; p++) want += weights[p] * fromHalf(values[p * kvDim + kv + d]);
-      const off = Math.abs(got[row + d] - want / sum) / largest;
-      if (!(off <= worst)) worst = off;  // (a NaN stays)
+      // (Math.max keeps a NaN, as the comment above says: `if (!(off <= worst)) worst = off` let the next value take its
+      // place, and a NaN in one head, or in the first values of the last, passed: T224's review)
+      worst = Math.max(worst, Math.abs(got[row + d] - want / sum) / largest);
     }
   }
   return worst;
