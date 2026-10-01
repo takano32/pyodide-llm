@@ -29,8 +29,9 @@
 //                                    went up from forward.js's cache; the ids into plan.tokens.ids and the keys and
 //                                    values of their positions into plan.staging (see generate() below). The answer is
 //                                    in the control area as a prompt's. Where plan.tokens asks for it, "ready" says
-//                                    tokens ({ form, ms, forms, remembered }: the layer of a token chosen here and its
-//                                    ms a step) or tokensWhy (why they stay on the CPU)
+//                                    tokens ({ form, ms, forms, remembered, attention, attentions }: the layer of a
+//                                    token chosen here and its ms a step, T224: the attention of a token chosen here
+//                                    and what each came to) or tokensWhy (why they stay on the CPU)
 //   { type: "stop" }                 every buffer and the device let go, and the worker ends; T205: it says
 //                                    { type: "ended" } as it does (so does a start that ends as "unusable")
 //
@@ -77,6 +78,7 @@ onmessage = ({ data }) => {
   else if (data.type === "start") start(data.memory, data.plan);
   else if (data.type === "prompt") prompt(data);
   else if (data.type === "tokens") generate(data);
+  else if (data.type === "keys") keysOf(data);
   else if (data.type === "stop") stop();
 };
 
@@ -156,6 +158,9 @@ function open(plan, shared) {
       }
       model.direct = { routes: [], partial: new Map(), bytes: 0 };
       model.direct.bytes = await uploadLayers(model);
+      // T210: the tables too, which nothing holds in the shared memory either
+      model.direct.bytes += tablesOn(model);
+      model.direct.routes.sort((a, b) => a[0] - b[0]);
       if (stopping) failure ??= "the GPU's worker was stopped";
     } catch (error) {
       failure = String(error?.message ?? error);
@@ -263,7 +268,7 @@ async function start(memory, plan) {
       } finally {
         // (the review of T156: the first layer read back for the checks of a model on the GPU alone goes with them: it
         // stayed in this worker for the whole visit, 113 MB of Llama 3.2 3B, 245 MB of Llama 3.1 Swallow 8B)
-        model.firstLayer = undefined;
+        model.firstLayer = model.tableRows = undefined;
       }
       if (stopping) return end();
     }
@@ -271,7 +276,8 @@ async function start(memory, plan) {
     const g = model.gen;
     postMessage({ type: "ready", adapter: describe(adapter), key, bytes, seconds: (performance.now() - began) / 1000,
       form: model.form.name, attention: model.attention.name, forms: model.forms, remembered: Boolean(model.form.remembered), blocks,
-      tokens: g?.form ? { form: g.form.name, ms: g.ms, forms: g.forms, remembered: g.forms.some((f) => f.remembered), pieces: model.tables.classifier.length } : null,
+      tokens: g?.form ? { form: g.form.name, ms: g.ms, forms: g.forms, remembered: g.forms.some((f) => f.remembered), pieces: model.tables.classifier.length,
+        attention: g.attention.name, attentions: g.attentions } : null,
       tokensWhy: plan.tokens ? model.tokensWhy ?? null : undefined });
   } catch (error) {
     unusable(String(error?.message ?? error));
@@ -453,7 +459,6 @@ async function uploadLayers(m) {
     await within(m.device.queue.onSubmittedWorkDone(), `layer ${l + 1}'s weights`);
     if (stopping) return bytes;
   }
-  m.direct?.routes.sort((a, b) => a[0] - b[0]);
   return bytes;
 }
 // the tables of a token (where the layers are joined for them, T152), and the norms, from the shared memory
@@ -486,9 +491,36 @@ function piecesOf(m, rows, n, most = m.plan.force.pieceBytes) {
   return Array.from({ length: Math.ceil(rows / step) }, (_, i) => [i * step, Math.min(step, rows - i * step)]);
 }
 
-// T152: the tables a token needs besides the layers (plan.tokens): the classifier, and the embedding where it is
-// another table (else the classifier is the embedding too)
-const tablesOf = (plan) => ({ classifier: plan.tokens.classifier, ...(plan.tokens.embedding ? { embedding: plan.tokens.embedding } : {}) });
+// T152: the tables a token needs besides the layers (plan.tokens; T210, a model on the GPU alone as it opens:
+// plan.tables): the classifier, and the embedding where it is another table (else the classifier is the embedding
+// too), each made by make(spec) where it is given, else the specs themselves
+function tablesOf(plan, make = (spec) => spec) {
+  const { classifier, embedding } = plan.tables ?? plan.tokens, made = make(classifier);
+  return { classifier: made, embedding: embedding ? make(embedding) : made };
+}
+// T209: a table ({ rows, n }) in pieces of rows where it is past what the device binds (piecesOf), a buffer of values
+// and one of scales each, [{ first, rows, values, scales }]; fill(piece, valueBytes, scaleBytes) puts its bytes there
+function tablePieces(m, { rows, n }, fill, usage = STORAGE | COPY_DST) {
+  return piecesOf(m, rows, n, m.plan.force.tablePieceBytes ?? m.plan.force.pieceBytes).map(([first, count]) => {
+    const valueBytes = count * n, scaleBytes = (valueBytes / m.wgsl.GROUP) * 4;
+    const piece = { first, rows: count, values: buffer(m, valueBytes, usage), scales: buffer(m, scaleBytes, usage) };
+    fill(piece, valueBytes, scaleBytes);
+    return piece;
+  });
+}
+// T210: the tables of a model on the GPU alone, made as it opens (plan.tables: where each starts in the checkpoint),
+// their stretches routes that take() writes the bytes to as they come; COPY_SRC for the check's rows (checkTokens).
+// The bytes on the GPU
+function tablesOn(m) {
+  const group = m.wgsl.GROUP;
+  let bytes = 0;
+  m.tables = tablesOf(m.plan, (spec) => tablePieces(m, spec, ({ first, values, scales }, valueBytes, scaleBytes) => {
+    const [valuesAt, scalesAt] = spec.at, from = [valuesAt + first * spec.n, scalesAt + (first * spec.n / group) * 4];
+    m.direct.routes.push([from[0], from[0] + valueBytes, values, 0], [from[1], from[1] + scaleBytes, scales, 0]);
+    bytes += valueBytes + scaleBytes;
+  }, STORAGE | COPY_DST | COPY_SRC));
+  return bytes;
+}
 // T152: how a token's layer holds its matrices (shaders.js's fusedMatVec and fusedDp4aMatVec read q, k and v as one
 // matrix, gate and up as one, up's rows after gate's): a buffer of values and one of scales a layer for each (sizes),
 // and each matrix's range of them (homes: its offsets in bytes), which the prompt's tiled shaders bind as a matrix of
@@ -527,21 +559,18 @@ function tokensLayout(m) {
 // T209: a table in pieces of rows where it is past what the device binds (piecesOf: Llama 3.2 3B's classifier is
 // 394 MB, the owner's Android binds 256 MiB; T152's review (e)), [{ first, rows, values, scales }] each. The
 // classifier is then a dispatch a piece into its range of the logits, and EMBED one a piece (tokenPass)
+// T210: a model on the GPU alone makes them as it opens, their bytes routes of the checkpoint as the layers' are
+// (tablesOn), and only the final norm and RoPE's table come from the shared memory here
 async function uploadTokens(m, widen) {
   const { plan } = m, group = m.wgsl.GROUP, half = plan.headSize / 2;
   let bytes = 0;
-  const table = ({ rows, n, six, at: [valuesAt, scalesAt] }) =>
-    piecesOf(m, rows, n, plan.force.tablePieceBytes ?? plan.force.pieceBytes).map(([first, count]) => {
-      const valueBytes = count * n, scaleBytes = (valueBytes / group) * 4;
-      const values = buffer(m, valueBytes, STORAGE | COPY_DST), scales = buffer(m, scaleBytes, STORAGE | COPY_DST);
-      if (six) widen.into(values, valuesAt + (first * n * 3) / 4, valueBytes / group);
-      else copyIn(m, values, valuesAt + first * n, valueBytes);
-      copyIn(m, scales, scalesAt + (first * n / group) * 4, scaleBytes);
-      bytes += valueBytes + scaleBytes;
-      return { first, rows: count, values, scales };
-    });
-  const classifier = table(plan.tokens.classifier);
-  m.tables = { classifier, embedding: plan.tokens.embedding ? table(plan.tokens.embedding) : classifier };
+  m.tables ??= tablesOf(plan, (spec) => tablePieces(m, spec, (piece, valueBytes, scaleBytes) => {
+    const { first, values, scales } = piece, { n, six, at: [valuesAt, scalesAt] } = spec;
+    if (six) widen.into(values, valuesAt + (first * n * 3) / 4, valueBytes / group);
+    else copyIn(m, values, valuesAt + first * n, valueBytes);
+    copyIn(m, scales, scalesAt + (first * n / group) * 4, scaleBytes);
+    bytes += valueBytes + scaleBytes;
+  }));
   m.finalNorm = buffer(m, plan.dim * 4, STORAGE | COPY_DST);
   copyIn(m, m.finalNorm, plan.tokens.final, plan.dim * 4);
   m.angleTable = buffer(m, plan.seqLen * plan.headSize * 4, STORAGE | COPY_DST);
@@ -655,6 +684,14 @@ async function prepare(m) {
   m.quantizeAttention = quantizing(m.xb, qDim);
   m.quantizeFfn = plan.parallel ? quantizing(m.ffnInput, plan.dim) : m.quantizeXb;
   m.quantizeGate = quantizing(m.gate, plan.hidden);
+  // T210: a model on the GPU alone embeds a block's tokens here (the CPU holds no embedding): EMBED_ROWS a piece of
+  // the table (T209), from the block's ids into x
+  if (plan.direct) {
+    m.embedRows = await within(validated(m, () => pipelineOf(m, wgsl.EMBED_ROWS)), "compiling the embedding's rows");
+    m.ids = buffer(m, B * 4, STORAGE | COPY_DST);
+    m.embedGroups = m.tables.embedding.map((piece) => bind(m, m.embedRows,
+      [piece.values, piece.scales, m.ids, m.x, uniform(m, new Uint32Array([plan.dim, piece.first, piece.rows, 0]))]));
+  }
 }
 
 // ---- the attention: llama.cpp's flash attention with tiles, with f16 in the workgroup's memory where there is
@@ -1035,8 +1072,8 @@ async function timeBlocks(m) {
 // JavaScript on the model's own weights (checkTokens), and the right ones are timed, a run of plan.tokens.most steps
 // each in turn: the fastest is taken (T150's and T175's tables left which is fastest to the device: the owner's
 // Android read a layer at 18.5% of its buffer's reads with mul_mat_vec and a matrix at 96.8% with DP4A). The attention
-// is the prompt's (llama.cpp's flash attention with tiles, T147, for one token: T150's (a), a KV-split form is left for
-// long contexts), on this pass's q. Where it came from: the run of T151 (public/benchmark/gpu.js's generate()), whose
+// (T224, chooseTokenAttention) is llama.cpp's decode form, flash_attn_vec, split over the positions and reduced, or the
+// prompt's tiles, whichever is right and faster here, on this pass's q. Where it came from: the run of T151 (public/benchmark/gpu.js's generate()), whose
 // form is WebLLM's decode loop without its sync of every token (web-llm, src/llm_chat.ts; no line taken) and llama.cpp's
 // WebGPU graph of a token, one command encoder for all of it (ggml-webgpu.cpp, commit 2145525a, MIT; no line taken).
 // (T175's fused DP4A with the norms apart as well, RMSNORM and QUANTIZE where NORM_QUANTIZE is one: the owner's
@@ -1115,8 +1152,9 @@ function spread(m, rows, perGroup) {
   return [across, Math.ceil(groups / across)];
 }
 // The dispatches of one step in a form: EMBED, the layers (from, to: those of a check), the head (the final norm and
-// the classifier) and SAMPLE, [pipeline, bind group, x, y] each
-function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed = true } = {}) {
+// the classifier) and SAMPLE, [pipeline, bind group, x, y] each. positions: how many the attention reads at the most
+// (T224: flash_attn_vec's parts a head go by it)
+function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed = true, positions = m.cache.capacity } = {}) {
   const { plan, wgsl, gen: g } = m, V = m.vectors, P = form.pipes, cache = m.cache, qDim = plan.heads * plan.headSize;
   const rows = form.dp4a ? wgsl.ORT_DP4A_MATVEC_ROWS : wgsl.MUL_MAT_VEC_ROWS;
   const matrix = (pipeline, [w, s], input, params, count, output) =>
@@ -1137,7 +1175,8 @@ function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed =
     list.push(...normed(V.attention, g.u.norm[l]),
       matrix(P.qkv, qkv, read(g.h, V.attention), g.u.qkv[l], qDim + 2 * plan.kvHeads * plan.headSize,
         [[5, g.q], [6, cache.keys[l]], [7, cache.values[l]], [8, m.angleTable], [9, g.step]]),
-      [m.attention.pipeline, bind(m, m.attention.pipeline, [g.q, cache.keys[l], cache.values[l], g.att, g.u.flash, g.step]), plan.heads, 1],
+      ...attentionPasses(m, g.attention, { q: g.q, keys: cache.keys[l], values: cache.values[l], out: g.att, parts: g.parts, params: g.params,
+        flash: g.u.flash, step: g.step }, plan.heads, positions),
       ...quantized(g.att, g.u.quantizeAttention, qDim), matrix(P.add, o.layers[l], read(g.att), g.u.o, plan.dim, [[5, g.h]]),
       ...normed(V.ffn, g.u.norm[l]), matrix(P.glu, gateUp, read(g.h, V.ffn), g.u.gateUp[l], plan.hidden, [[5, g.gate]]),
       ...quantized(g.gate, g.u.quantizeGate, plan.hidden), matrix(P.add, down.layers[l], read(g.gate), g.u.down, plan.dim, [[5, g.h]]));
@@ -1151,10 +1190,13 @@ function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed =
   }
   return list;
 }
-// a form's whole step, made again when the cache has grown (its buffers are others then)
-function tokenStep(m, form) {
-  if (form.step?.cache !== m.cache) form.step = { cache: m.cache, list: tokenPass(m, form) };
-  return form.step.list;
+// a form's whole step for a run that reads up to positions, made again when the cache has grown (its buffers are others
+// then); T224: one a count of the attention's parts a head (flash_attn_vec's nwg goes by the positions)
+function tokenStep(m, form, positions) {
+  const a = m.gen.attention, parts = a.tiles ? 0 : m.wgsl.flashVecSplits(a.shape, positions);
+  if (form.steps?.cache !== m.cache) form.steps = { cache: m.cache, lists: new Map() };
+  if (!form.steps.lists.has(parts)) form.steps.lists.set(parts, tokenPass(m, form, { positions }));
+  return form.steps.lists.get(parts);
 }
 // count steps of the dispatches from the state given (with the settings and a random number a step), in one
 // submission, and read back: the ids and the state's words, and (keep) the keys and values of the positions pos to
@@ -1215,9 +1257,14 @@ async function runTokens(m, dispatches, { count, pos, state, settings, randoms, 
 async function chooseTokens(m) {
   const { plan, wgsl } = m;
   m.gen = await tokenBuffers(m);
+  await chooseTokenAttention(m);
+  if (stopping) return;
   // T156: the first layer's matrices of a model on the GPU alone are not in the shared memory: checkTokens reads them
-  // back from the GPU
-  if (m.direct) m.firstLayer ??= await within(firstLayer(m), "reading the first layer back");
+  // back from the GPU (T210: and the rows of the tables it reads)
+  if (m.direct) {
+    m.firstLayer ??= await within(firstLayer(m), "reading the first layer back");
+    m.tableRows ??= await within(tableRows(m), "reading the tables' rows back");
+  }
   let forms = tokenCandidates(m);
   if (plan.force.tokens) forms = forms.filter((form) => form.name === plan.force.tokens);
   const kept = !plan.force.tokens && forms.find((form) => form.name === m.remembered?.tokens);
@@ -1262,7 +1309,7 @@ async function timeTokens(m, forms) {
   if (most > m.cache.capacity) grow(m, most);
   const timed = async (form) => {
     const began = performance.now();
-    await runTokens(m, tokenStep(m, form), { count: most, pos: 0, state, settings, randoms });
+    await runTokens(m, tokenStep(m, form, most), { count: most, pos: 0, state, settings, randoms });
     return performance.now() - began;
   };
   for (const form of forms) await timed(form);
@@ -1272,6 +1319,165 @@ async function timeTokens(m, forms) {
     if (stopping) break;
   }
   return times.map((list) => list.sort((a, b) => a - b)[list.length >> 1] / most);
+}
+
+// ---- T224: the attention of a generated token. The candidates: llama.cpp's decode form (shaders.js's flashVec and
+// flashVecReduce: the positions split over nwg workgroups a head, then reduced), with subgroups where there are (and
+// subgroup_id), and with the lanes of the workgroup standing for a subgroup; and the prompt's tiles (m.attention: one
+// row of four used, a workgroup a head, T150's (a)). Each checked against JavaScript (checkTokenAttention), the right
+// ones timed (timeTokenAttention), the fastest taken: m.gen.attention, with what each came to (m.gen.attentions).
+// plan.force.tokenAttention (tests): that one alone; plan.force.quick: the first right one, untimed. None is
+// remembered (T148 remembers the matrices, the prompt's attention and the token's layer): the two small shaders are
+// compiled, checked and timed at every start.
+const TOKEN_ATTENTION_VEC = "llama.cpp flash_attn_vec", TOKEN_ATTENTION_TILES = "the prompt's attention tiles";
+async function chooseTokenAttention(m) {
+  const { device, plan, wgsl, gen: g } = m;
+  const subgroups = device.features.has("subgroups") && Boolean(navigator.gpu.wgslLanguageFeatures?.has("subgroup_id"));
+  const vec = (withSubgroups) => ({ name: `${TOKEN_ATTENTION_VEC}${withSubgroups ? ", subgroups" : ""}`,
+    shape: wgsl.flashVecShape({ headSize: plan.headSize, subgroups: withSubgroups, threads: threadsOf(device),
+      subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize }) });
+  let candidates = [...(subgroups ? [vec(true)] : []), vec(false), { name: TOKEN_ATTENTION_TILES, tiles: true, pipeline: m.attention.pipeline }];
+  if (plan.force.tokenAttention) candidates = candidates.filter((a) => a.name === plan.force.tokenAttention);
+  const right = [];
+  g.attentions = [];
+  for (const a of candidates) {
+    if (plan.force.quick && right.length) break;
+    if (a.shape?.none) {
+      g.attentions.push({ name: a.name, none: a.shape.none });
+      continue;
+    }
+    try {
+      if (!a.tiles) {
+        a.pipeline = await within(validated(m, () => pipelineOf(m, wgsl.flashVec(a.shape))), `compiling ${a.name}`);
+        a.reduce = await within(validated(m, () => pipelineOf(m, wgsl.flashVecReduce(a.shape))), `compiling ${a.name}'s reduce`);
+      }
+      const wrong = await within(checkTokenAttention(m, a), `checking ${a.name}`);
+      if (wrong) g.attentions.push({ name: a.name, none: `wrong: ${wrong}` });
+      else right.push(a);
+    } catch (error) {
+      if (error?.late) throw error;
+      g.attentions.push({ name: a.name, none: String(error?.message ?? error) });
+    }
+    if (stopping) return;
+  }
+  if (!right.length) {
+    throw new Error(`no attention of a token is right on this GPU (${g.attentions.map((a) => `${a.name}: ${a.none}`).join("; ") || `none named ${plan.force.tokenAttention}`})`);
+  }
+  const ms = plan.force.quick || right.length === 1 ? right.map(() => undefined) : await within(timeTokenAttention(m, right), "timing the attention of a token");
+  const best = ms.reduce((b, t, i) => (t !== undefined && (ms[b] === undefined || t < ms[b]) ? i : b), 0);
+  right.forEach((a, i) => g.attentions.push({ name: a.name, ms: ms[i] }));
+  g.attention = right[best];
+  // the vec form's parts (every head's, nwg of the most) and its Params a count of parts, made as a run needs them
+  if (!g.attention.tiles) {
+    g.parts = buffer(m, wgsl.flashVecPartsBytes(g.attention.shape, plan.heads));
+    g.params = paramsOf(m, g.attention.shape, plan.heads, plan.kvHeads, m.owned);
+  }
+}
+// flashVec's Params a count of parts, each made once (owned: where they go)
+function paramsOf(m, shape, heads, kvHeads, owned) {
+  const made = new Map();
+  return (nwg) => {
+    if (!made.has(nwg)) made.set(nwg, uniform(m, m.wgsl.flashVecParams(shape, heads, kvHeads, nwg), owned));
+    return made.get(nwg);
+  };
+}
+// The dispatches of attention a for a token of heads that reads positions: io's q, keys, values into out (flash: the
+// tiles' Params; parts and params(nwg): the vec form's parts and Params; step: the token's Step), [pipeline, bind
+// group, x, y] each: the tiles a workgroup a head; the vec form nwg a head, then (nwg more than 1) the reduce
+function attentionPasses(m, a, io, heads, positions) {
+  if (a.tiles) return [[a.pipeline, bind(m, a.pipeline, [io.q, io.keys, io.values, io.out, io.flash, io.step]), heads, 1]];
+  const nwg = m.wgsl.flashVecSplits(a.shape, positions), params = io.params(nwg);
+  return [[a.pipeline, bind(m, a.pipeline, [io.q, io.keys, io.values, io.parts, io.out, params, io.step]), heads * nwg, 1],
+    ...(nwg > 1 ? [[a.reduce, bind(m, a.reduce, [io.parts, io.out, params]), heads, 1]] : [])];
+}
+// Made-up buffers of an attention of a token over positions (heads of q on kvHeads of keys and values, the model's
+// headSize; shaders.js's tokenAttentionData: steep, the heads whose q is steep), the output, the Step of the token at
+// positions - 1, the tiles' Params, and the vec form's parts and Params
+function attentionIo(m, a, { heads, kvHeads, positions, steep = [] }, owned) {
+  const size = m.plan.headSize, { q, keys, values } = m.wgsl.tokenAttentionData({ heads, kvHeads, size, positions, steep });
+  const make = (data) => {
+    const made = buffer(m, data.byteLength, STORAGE | COPY_DST, owned);
+    m.device.queue.writeBuffer(made, 0, data);
+    return made;
+  };
+  const flash = new ArrayBuffer(16);
+  new Uint32Array(flash, 0, 2).set([heads, kvHeads]);
+  new Float32Array(flash, 8, 1)[0] = 1 / Math.sqrt(size);
+  return { data: { q, keys, values }, q: make(q), keys: make(keys), values: make(values), out: buffer(m, heads * size * 4, STORAGE | COPY_SRC, owned),
+    step: uniform(m, new Uint32Array([1, positions - 1, 0, 0]), owned), flash: uniform(m, flash, owned),
+    ...(a.tiles ? {} : { parts: buffer(m, m.wgsl.flashVecPartsBytes(a.shape, heads), STORAGE, owned), params: paramsOf(m, a.shape, heads, kvHeads, owned) }) };
+}
+// The check of an attention of a token, on made-up numbers against JavaScript's (shaders.js's tokenAttentionData and
+// tokenAttentionOff): 4 heads of q on 2 of keys and values (each head of q to its own), a token that reads 40 positions
+// (a KV_TILE of 32 and a part of the next: one part), 70 (two parts), 300 and 1100 (as many parts as the vec form takes,
+// each of more than one tile: the reduce over them), with positions past the token's that it must not read, and head
+// 3's q steep (a largest taken wrong shows only in a steep softmax). Each head's output against its softmax over the
+// positions up to the token's, no farther than LINE of the largest |value| of its head (checkAttention's: the tiles
+// hold the weights in float16)
+const TOKEN_ATTENTION_LENGTHS = [40, 70, 300, 1100];
+async function checkTokenAttention(m, a) {
+  const size = m.plan.headSize, heads = 4, kvHeads = 2;
+  for (const positions of TOKEN_ATTENTION_LENGTHS) {
+    const owned = [];
+    try {
+      const io = attentionIo(m, a, { heads, kvHeads, positions, steep: [3] }, owned);
+      const passes = await validated(m, () => attentionPasses(m, a, io, heads, positions));
+      const encoder = m.device.createCommandEncoder(), pass = encoder.beginComputePass();
+      for (const [pipeline, group, x, y] of passes) dispatch(pass, pipeline, group, x, y);
+      pass.end();
+      m.device.queue.submit([encoder.finish()]);
+      const got = new Float32Array(await readBack(m, io.out, heads * size * 4));
+      const worst = m.wgsl.tokenAttentionOff(got, io.data, { heads, kvHeads, size, positions });
+      if (!(worst <= LINE)) return `its output is ${worst.toExponential(2)} of the largest value from JavaScript's at ${positions} positions (line ${LINE})`;
+    } finally {
+      owned.forEach((b) => b.destroy());
+    }
+  }
+  return null;
+}
+// ms of the attention of a token (every layer's) with each of right, on made-up numbers: at 128 positions and at 2048
+// (the model's context where shorter), all in turn, as the tiled shaders are timed (timeForms: a submission of n
+// attentions and one of 2n, n doubled from 1 until n takes TIMED_MS, up to MOST_PASSES layers of them, PAIRS pairs,
+// the median), times the layers; the two lengths' ms added. (T224's review: n counts attentions, not layers of them.
+// A submission of a whole token's layers at the least made the slowest one long: the prompt's tiles at 2048
+// positions, if they take the time of T202's 0.90 ms at 127 positions in proportion (an estimate: the f32 tiles, on
+// the owner's Android), 16 × 14 ms a submission and some 3.9 s of timing at every start, 0.5 s so)
+async function timeTokenAttention(m, right) {
+  const { device, plan } = m, owned = [];
+  try {
+    const lengths = [...new Set([128, 2048].map((n) => Math.min(n, plan.seqLen)))];
+    const items = right.flatMap((a) => lengths.map((positions) => {
+      const io = attentionIo(m, a, { heads: plan.heads, kvHeads: plan.kvHeads, positions }, owned);
+      return { a, passes: attentionPasses(m, a, io, plan.heads, positions) };
+    }));
+    const submission = async ({ passes }, n) => {
+      const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
+      for (let i = 0; i < n; i++) for (const [pipeline, group, x, y] of passes) dispatch(pass, pipeline, group, x, y);
+      pass.end();
+      const began = performance.now();
+      device.queue.submit([encoder.finish()]);
+      await device.queue.onSubmittedWorkDone();
+      return performance.now() - began;
+    };
+    const counts = [], differences = items.map(() => []);
+    for (const item of items) {
+      await submission(item, 1);  // warm
+      let n = 1;
+      while (!m.fallback && n < MOST_PASSES * plan.layers && (await submission(item, n)) < TIMED_MS) n *= 2;
+      counts.push(n);
+    }
+    for (let round = 0; round < (m.fallback ? 1 : PAIRS); round++) {
+      for (const [i, item] of items.entries()) {
+        const once = await submission(item, counts[i]), twice = await submission(item, 2 * counts[i]);
+        differences[i].push((twice - once) / counts[i]);
+      }
+      if (stopping) break;
+    }
+    const ms = differences.map((d) => d.sort((x, y) => x - y)[d.length >> 1] * plan.layers);
+    return right.map((a) => items.reduce((sum, item, i) => (item.a === a ? sum + ms[i] : sum), 0));
+  } finally {
+    owned.forEach((b) => b.destroy());
+  }
 }
 
 // ---- T152's check of a form on the model's own weights, against JavaScript (the drivers, the subgroups and the
@@ -1308,21 +1514,52 @@ async function firstLayer(m) {
   }
   return out;
 }
+// the tokens whose rows of the embedding the first layer's check may take (of the second half of the vocabulary: see
+// below), and the rows of the classifier it holds to JavaScript's (every 256th, and the last)
+const checkCandidates = (vocab) => [...Array(64).keys()].map((i) => vocab - 1 - Math.floor((i * vocab) / 128));
+const checkRows = (vocab) => [...new Set([...[...Array(Math.ceil(vocab / 256)).keys()].map((i) => i * 256), vocab - 1])];
+// T210: those rows of the tables of a model on the GPU alone, which are there only: { embedding, classifier }, Maps of
+// a row to [its int8 values, its scales], read back in one copy each (a row of a piece at a time)
+async function tableRows(m) {
+  const n = m.plan.dim, perRow = (n / m.wgsl.GROUP) * 4, vocab = m.plan.tokens.classifier.rows;
+  const read = async (pieces, rows) => {
+    const target = m.device.createBuffer({ size: rows.length * (n + perRow), usage: MAP_READ | COPY_DST });
+    try {
+      const encoder = m.device.createCommandEncoder();
+      rows.forEach((r, j) => {
+        const piece = pieces.find((p) => r >= p.first && r < p.first + p.rows);
+        encoder.copyBufferToBuffer(piece.values, (r - piece.first) * n, target, j * n, n);
+        encoder.copyBufferToBuffer(piece.scales, (r - piece.first) * perRow, target, rows.length * n + j * perRow, perRow);
+      });
+      m.device.queue.submit([encoder.finish()]);
+      await target.mapAsync(MAP_READ);
+      const bytes = target.getMappedRange().slice(0);
+      return new Map(rows.map((r, j) => [r, [new Int8Array(bytes, j * n, n), new Float32Array(bytes, rows.length * n + j * perRow, perRow / 4)]]));
+    } finally {
+      target.destroy();
+    }
+  };
+  return { embedding: await read(m.tables.embedding, checkCandidates(vocab)), classifier: await read(m.tables.classifier, checkRows(vocab)) };
+}
 async function checkTokens(m, form) {
   const { plan, wgsl, gen: g, device } = m, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize, half = headSize / 2;
   const qDim = plan.heads * headSize, kvDim = plan.kvHeads * headSize, line = form.dp4a ? DP4A_LINE : LAYER_LINE;
   const floats = (address, n) => Float64Array.from(new Float32Array(m.memory.buffer, address, n));
   const round16 = Math.f16round ?? ((x) => x);
-  // a matrix's rows ({ n, six }, its values and scales at [valuesAt, scalesAt]) times x, the rows given
-  // (T156: or the values and scales themselves, read back from the GPU: firstLayer)
-  const product = ({ n, six }, [valuesAt, scalesAt], x, rows) => {
+  // row r of a matrix or a table ({ n, six }, its values and scales at [valuesAt, scalesAt] in the shared memory):
+  // [its int8 values, its scales]; (T156) of a matrix read back from the GPU (firstLayer: [values, scales]); (T210) of
+  // a table's rows read back (tableRows)
+  const inMemory = ({ n, six }, [valuesAt, scalesAt]) => (r) => [
+    six ? wgsl.sixValues(new Uint8Array(m.memory.buffer, valuesAt + (r * n * 3) / 4, (n * 3) / 4)) : new Int8Array(m.memory.buffer, valuesAt + r * n, n),
+    new Float32Array(m.memory.buffer, scalesAt + r * (n / wgsl.GROUP) * 4, n / wgsl.GROUP)];
+  const readBackRows = (n, [values, scales]) => (r) => [values.subarray(r * n, (r + 1) * n), scales.subarray(r * (n / wgsl.GROUP), (r + 1) * (n / wgsl.GROUP))];
+  const tableSpec = (name) => (name === "embedding" ? plan.tokens.embedding ?? plan.tokens.classifier : plan.tokens.classifier);
+  const tableRow = (name) => (m.tableRows ? (r) => m.tableRows[name].get(r) : inMemory(tableSpec(name), tableSpec(name).at));
+  // a matrix's rows (n weights each, rowOf(r): [values, scales]) times x, the rows given
+  const product = (n, rowOf, x, rows) => {
     const q = form.dp4a ? wgsl.quantizedLikeCpu(Float32Array.from(x)) : null, perRow = n / wgsl.GROUP;
-    const read = typeof valuesAt !== "number";
     return Float64Array.from(rows, (r) => {
-      const w = read ? valuesAt.subarray(r * n, (r + 1) * n)
-        : six ? wgsl.sixValues(new Uint8Array(m.memory.buffer, valuesAt + (r * n * 3) / 4, (n * 3) / 4))
-          : new Int8Array(m.memory.buffer, valuesAt + r * n, n);
-      const s = read ? scalesAt.subarray(r * perRow, (r + 1) * perRow) : new Float32Array(m.memory.buffer, scalesAt + r * perRow * 4, perRow);
+      const [w, s] = rowOf(r);
       let sum = 0;
       for (let b = 0; b < perRow; b++) {
         let part = 0;
@@ -1333,7 +1570,10 @@ async function checkTokens(m, form) {
     });
   };
   const all = (n) => [...Array(n).keys()];
-  const matmul = (name, x) => product(plan.matrices[name], m.firstLayer?.[name] ?? plan.matrices[name].layers[0], x, all(plan.matrices[name].rows));
+  const matmul = (name, x) => {
+    const matrix = plan.matrices[name];
+    return product(matrix.n, m.firstLayer ? readBackRows(matrix.n, m.firstLayer[name]) : inMemory(matrix, matrix.layers[0]), x, all(matrix.rows));
+  };
   const rms = (x, weights) => {
     const s = 1 / Math.sqrt(x.reduce((sum, v) => sum + v * v, 0) / x.length + plan.eps);
     return x.map((v, i) => weights[i] * (s * v));
@@ -1345,9 +1585,9 @@ async function checkTokens(m, form) {
     // 1. the first layer at position 1
     // a token of the second half of the vocabulary whose row is large: the rows of tokens no text has (llm-jp-3's
     // last) are nearly 0, and their keys and values then float16's subnormals (a check of them was 15% off, CI)
-    const embeddingOf = plan.tokens.embedding ?? plan.tokens.classifier, groups = dim / wgsl.GROUP;
-    const sizeOf = (t) => new Float32Array(m.memory.buffer, embeddingOf.at[1] + t * groups * 4, groups).reduce((sum, v) => sum + Math.abs(v), 0);
-    const token = [...Array(64).keys()].map((i) => vocab - 1 - Math.floor((i * vocab) / 128)).reduce((best, t) => (sizeOf(t) > sizeOf(best) ? t : best));
+    const embeddingRow = tableRow("embedding");
+    const sizeOf = (t) => embeddingRow(t)[1].reduce((sum, v) => sum + Math.abs(v), 0);
+    const token = checkCandidates(vocab).reduce((best, t) => (sizeOf(t) > sizeOf(best) ? t : best));
     const pos = 1;
     const halfBits = () => (Math.random() < 0.5 ? 0x8000 : 0) | ((13 + ((Math.random() * 3) | 0)) << 10) | ((Math.random() * 1024) | 0);
     const row0 = [0, 1].map(() => new Uint16Array(kvDim).map(halfBits));
@@ -1355,17 +1595,14 @@ async function checkTokens(m, form) {
     device.queue.writeBuffer(m.cache.keys[0], 0, row0[0]);
     device.queue.writeBuffer(m.cache.values[0], 0, row0[1]);
     const readH = buffer(m, dim * 4, MAP_READ | COPY_DST, owned);
-    const { kv } = await runTokens(m, tokenPass(m, form, { to: 1, head: false }), { count: 1, pos, keep: true,
+    const { kv } = await runTokens(m, tokenPass(m, form, { to: 1, head: false, positions: pos + 1 }), { count: 1, pos, keep: true,
       state: wgsl.samplingState({ token, pos, history: [token] }), extra: (encoder) => encoder.copyBufferToBuffer(g.h, 0, readH, 0, dim * 4) });
     await readH.mapAsync(MAP_READ);
     const h = new Float32Array(readH.getMappedRange().slice(0));
     readH.unmap();
     const [gotK, gotV] = kv.map((layers) => Float64Array.from(new Uint16Array(layers[0].buffer, layers[0].byteOffset, kvDim), halfToFloat));
     // JavaScript's layer
-    const embedding = plan.tokens.embedding ?? plan.tokens.classifier, perRow = dim / wgsl.GROUP;
-    const eRow = embedding.six ? wgsl.sixValues(new Uint8Array(m.memory.buffer, embedding.at[0] + (token * dim * 3) / 4, (dim * 3) / 4))
-      : new Int8Array(m.memory.buffer, embedding.at[0] + token * dim, dim);
-    const eScales = new Float32Array(m.memory.buffer, embedding.at[1] + token * perRow * 4, perRow);
+    const [eRow, eScales] = embeddingRow(token);
     const x0 = Float64Array.from(eRow, (v, i) => v * eScales[(i / wgsl.GROUP) | 0]);
     const xn = rms(x0, floats(plan.vectors.attention.at, dim));
     const [q, k, v] = ["wq", "wk", "wv"].map((name) => matmul(name, xn));
@@ -1405,7 +1642,7 @@ async function checkTokens(m, form) {
     }
     // 2. the head: greedy, then sampled
     const stream2 = new Float32Array(dim).map(() => (Math.random() - 0.5) * 4);
-    const rows = [...new Set([...all(Math.ceil(vocab / 256)).map((i) => i * 256), vocab - 1])];
+    const rows = checkRows(vocab);
     const readLogits = buffer(m, vocab * 4, MAP_READ | COPY_DST, owned);
     const head = tokenPass(m, form, { to: 0, embed: false });
     const run = async (settings, history, random) => {
@@ -1418,8 +1655,7 @@ async function checkTokens(m, form) {
       return { id: ids[0], logits };
     };
     const greedy = await run(wgsl.samplingSettings({ vocab, temperature: 0, topp: 0.9 }), [token], 0);
-    const classifier = plan.tokens.classifier;
-    const want = product(classifier, classifier.at, rms(Float64Array.from(stream2), floats(plan.tokens.final, dim)), rows);
+    const want = product(dim, tableRow("classifier"), rms(Float64Array.from(stream2), floats(plan.tokens.final, dim)), rows);
     const logitsOff = off(rows.map((r) => greedy.logits[r]), want) / largest(want), logitsLine = form.dp4a ? DP4A_LINE : LOGITS_LINE;
     if (!(logitsOff <= logitsLine)) return `the logits are ${logitsOff.toExponential(2)} of their largest from JavaScript's (line ${logitsLine})`;
     if (greedy.id !== wgsl.argmaxLikeCpu(greedy.logits)) return `the greedy token is ${greedy.id}, the largest logit's ${wgsl.argmaxLikeCpu(greedy.logits)}`;
@@ -1444,24 +1680,25 @@ async function checkTokens(m, form) {
 // the state (token, pos, the end of the history and its length), the settings and a random number a step; the ids into
 // plan.tokens.ids ([sampled, id, id, ...], a stop token last where one came), and the keys and values of the positions
 // sampled in float16 into plan.staging as a prompt's block's ([keys, values][layer][plan.batch positions]), which
-// forward.js puts into its cache (widened where it is float32), where it still wants the answer
+// forward.js puts into its cache (widened where it is float32), where it still wants the answer. T210: a model on the
+// GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back
 function generate({ serial, count, pos, from, token, history, length, cache, settings, randoms }) {
   serve(serial, async (wanted) => {
     const m = model, { plan, wgsl, gen: g } = m, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
     if (!g?.form) throw new Error("no tokens on this GPU");
     if (pos + count > m.cache.capacity) grow(m, pos + count);
     const at = (block, l, p) => block + l * cache.capacity * cache.row + p * cache.row;
-    for (let l = 0; l < plan.layers; l++) {
+    for (let l = 0; cache && l < plan.layers; l++) {
       for (const [block, target] of [[cache.keys, m.cache.keys[l]], [cache.values, m.cache.values[l]]]) {
         if (cache.half) copyIn(m, target, at(block, l, from), (pos - from) * kvRow, from * kvRow);
         else narrowIn(m, target, at(block, l, from), (pos - from) * kvDim, from * kvRow);
       }
     }
-    const out = await runTokens(m, tokenStep(m, g.form), { count, pos, keep: true,
+    const out = await runTokens(m, tokenStep(m, g.form, pos + count), { count, pos, keep: Boolean(cache),
       state: wgsl.samplingState({ token, pos, history, length }), settings: wgsl.samplingSettings({ vocab: g.vocab, ...settings }),
       randoms: Float32Array.from({ length: count }, (_, i) => randoms[i] ?? 0) });
     if (!wanted()) return;
-    for (let side = 0; side < 2; side++) {
+    for (let side = 0; cache && side < 2; side++) {
       for (let l = 0; l < plan.layers; l++) {
         new Uint8Array(m.memory.buffer, plan.staging + (side * plan.layers + l) * plan.batch * kvRow, out.sampled * kvRow)
           .set(out.kv[side][l].subarray(0, out.sampled * kvRow));
@@ -1473,9 +1710,9 @@ function generate({ serial, count, pos, from, token, history, length, cache, set
   });
 }
 
-// ---- a block of a prompt
-function prompt({ serial, count, pos }) {
-  serve(serial, (wanted) => block(model, count, pos, wanted));
+// ---- a block of a prompt (T210: tokens, the ids of a model on the GPU alone, which embeds them here)
+function prompt({ serial, count, pos, tokens }) {
+  serve(serial, (wanted) => block(model, count, pos, wanted, false, tokens));
 }
 // The answer to a request (a block of a prompt, T152: the steps of a generation), in the control area: work(wanted)
 // runs while words.beat counts up, then words.failed and words.done = serial, where forward.js still waits for this
@@ -1506,12 +1743,14 @@ async function serve(serial, work) {
 
 // A block of count tokens at pos through the layers, its keys and values into plan.staging where wanted() still says
 // so. timing (T148, timeBlocks): rows and angles of zeros instead of forward.js's, and nothing written back
-async function block(m, count, pos, wanted, timing = false) {
-  const { device, plan } = m, B = plan.batch, half = plan.headSize / 2, kvDim = plan.kvHeads * plan.headSize;
+async function block(m, count, pos, wanted, timing = false, tokens) {
+  const { device, plan } = m, half = plan.headSize / 2;
   // the rows forward.js embedded (dense), and the angles of their positions (the tables forward.js has); views of just
   // those floats (T155: not a view of the whole of a 64-bit memory of some GB for every block)
   const floats = (address, n) => new Float32Array(m.memory.buffer, address, n);
-  if (timing) m.rows.fill(0);
+  // (T210: on the GPU alone, the tokens themselves, embedded here; token 0 where it is timed)
+  if (plan.direct) m.device.queue.writeBuffer(m.ids, 0, Uint32Array.from({ length: count }, (_, t) => (timing ? 0 : tokens[t])));
+  else if (timing) m.rows.fill(0);
   else m.rows.set(floats(plan.rows, count * plan.dim));
   // (T154: GPT-2 turns nothing and has no tables)
   if (timing || !plan.turned) {
@@ -1524,7 +1763,7 @@ async function block(m, count, pos, wanted, timing = false) {
   }
   device.pushErrorScope("out-of-memory");
   device.pushErrorScope("validation");
-  device.queue.writeBuffer(m.x, 0, m.rows, 0, count * plan.dim);
+  if (!plan.direct) device.queue.writeBuffer(m.x, 0, m.rows, 0, count * plan.dim);
   device.queue.writeBuffer(m.angles, 0, m.turns, 0, count * plan.headSize);
   device.queue.writeBuffer(m.step, 0, new Uint32Array([count, pos, 0, 0]));
   if (pos + count > m.cache.capacity) grow(m, pos + count);
@@ -1535,6 +1774,7 @@ async function block(m, count, pos, wanted, timing = false) {
   const flash = m.attention;
   // a bias added to a matrix's output (T153: Qwen2's q, k and v; T154: GPT-2's and GPT-NeoX's every matrix's)
   const biased = (bias) => bias && dispatch(pass, m.add, bias.group, bias.x, count);
+  m.embedGroups?.forEach((group) => dispatch(pass, m.embedRows, group, 1, count));
   for (let l = 0; l < plan.layers; l++) {
     const layer = m.layers[l];
     dispatch(pass, m.norm, layer.attentionNorm, 1, count);
@@ -1564,20 +1804,42 @@ async function block(m, count, pos, wanted, timing = false) {
     biased(layer.downBias);
   }
   pass.end();
-  // the block's keys of every layer, then its values, [layers][B][kvDim] each in float16, as plan.staging lays them out
-  const row = kvDim * 2;
+  // (T210: a model on the GPU alone keeps them there: nothing comes back)
+  if (!plan.direct) keysOut(m, encoder, pos, count);
+  device.queue.submit([encoder.finish()]);
+  const invalid = await device.popErrorScope(), full = await device.popErrorScope();
+  if (invalid || full) throw new Error(`the GPU refused a block (${(invalid ?? full).message})`);
+  if (plan.direct) await device.queue.onSubmittedWorkDone();
+  else await keysBack(m, () => !timing && wanted());
+}
+// the keys of count positions from pos of every layer, then their values, [layers][plan.batch][kvDim] each in float16,
+// into m.readback as plan.staging lays them out
+function keysOut(m, encoder, pos, count) {
+  const { plan } = m, B = plan.batch, row = plan.kvHeads * plan.headSize * 2;
   for (let l = 0; l < plan.layers; l++) {
     encoder.copyBufferToBuffer(m.cache.keys[l], pos * row, m.readback, l * B * row, count * row);
     encoder.copyBufferToBuffer(m.cache.values[l], pos * row, m.readback, (plan.layers + l) * B * row, count * row);
   }
-  device.queue.submit([encoder.finish()]);
-  const invalid = await device.popErrorScope(), full = await device.popErrorScope();
-  if (invalid || full) throw new Error(`the GPU refused a block (${(invalid ?? full).message})`);
+}
+// and from m.readback into plan.staging, where wanted() still says so
+async function keysBack(m, wanted) {
+  const { plan } = m;
   await m.readback.mapAsync(MAP_READ);
   try {
-    const bytes = 2 * plan.layers * B * row;
-    if (!timing && wanted()) new Uint8Array(m.memory.buffer, plan.staging, bytes).set(new Uint8Array(m.readback.getMappedRange(), 0, bytes));
+    const bytes = 2 * plan.layers * plan.batch * plan.kvHeads * plan.headSize * 2;
+    if (wanted()) new Uint8Array(m.memory.buffer, plan.staging, bytes).set(new Uint8Array(m.readback.getMappedRange(), 0, bytes));
   } finally {
     m.readback.unmap();
   }
+}
+// T210: the GPU's own keys and values of count positions (plan.batch at most) from pos into plan.staging, as a block
+// writes them back: a model on the GPU alone keeps none in the shared memory, and the tests read them so
+// (forward.js's keysAndValues)
+function keysOf({ serial, count, pos }) {
+  serve(serial, async (wanted) => {
+    const encoder = model.device.createCommandEncoder();
+    keysOut(model, encoder, pos, count);
+    model.device.queue.submit([encoder.finish()]);
+    await keysBack(model, wanted);
+  });
 }
