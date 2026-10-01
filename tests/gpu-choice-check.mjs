@@ -186,6 +186,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(gpuOnlyUnfit([4096, 12288, 36, 32, 8, 151936, 4096], "int8", { qk_norm: true, head_dim: 128 }, adapter), null, "Qwen3 8B");
   assert.match(gpuOnlyUnfit(oneB, "int8", { arch: "gpt2" }, adapter), /GPT-2 and GPT-NeoX/);
   assert.match(gpuOnlyUnfit(oneB, "int8", { arch: "neox" }, adapter), /GPT-2 and GPT-NeoX/);
+  assert.match(gpuOnlyUnfit(oneB, "int8", { arch: "qwen35" }, adapter), /Qwen3\.5/, "T229: a hybrid model is not placed on the GPU alone either");
   assert.match(gpuOnlyUnfit(oneB, "int6", {}, adapter), /int6/);
   // stories15M (dim 288, 6 heads): k starts at 288 × 288 weights, no multiple of 2048 (T152)
   assert.match(gpuOnlyUnfit([288, 768, 6, 6, 6, 32000, 256], "int8", {}, adapter), /would not start/);
