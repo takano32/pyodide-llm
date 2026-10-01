@@ -167,14 +167,16 @@ const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] };
  * change covers them all (the owner's open choices of T235's review: config.json's yarn or a plain RoPE, which would
  * be rope_scaling: {} in these options; a word more in the note; Prism ML's attribution). The original's template
  * always begins the answer with an empty thought (Qwen3's enable_thinking=false): the model has one form, and the
- * converter reads it. It names no BOS (QWEN3_OWN_BOS). The sampling is the originals' generation_config.json, the
- * same file in the three (its top-k the page's sampler has not) */
-const ternaryBonsai = (size, revision, originalRevision, download, sizes) => ({
+ * converter reads it. It names no BOS (QWEN3_OWN_BOS, which the 1.7B and the 4B bear: 1.5% better than nothing in front
+ * on plain text; the 8B does not: 70% worse, as a Qwen3 8B is, and begins at QWEN3_FROM_IM_START: `start`, T250's review).
+ * The sampling is the originals' generation_config.json, the same file in the three (its top-k the page's sampler
+ * has not) */
+const ternaryBonsai = (size, revision, originalRevision, download, sizes, start = {}) => ({
   group: "hf", id: `hf-ternary-bonsai-${size.toLowerCase()}`, name: `Ternary Bonsai ${size}`,
   note: `answers at once · 日本語 / English · ternary weights · ${sizes}`,
   ...ggufOf(`prism-ml/Ternary-Bonsai-${size}-gguf`, revision, `Ternary-Bonsai-${size}-PQ2_0.gguf`,
     `prism-ml/Ternary-Bonsai-${size}-unpacked`, originalRevision), download,
-  weights: "ternary", conversion: {}, options: QWEN3_OWN_BOS,
+  weights: "ternary", conversion: {}, options: QWEN3_OWN_BOS, ...start,
   generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE });
 const harmony ={ specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
@@ -757,7 +759,7 @@ const LISTED = [
   ternaryBonsai("4B", "a3eb42bafe873f9686bc97486c43b72ef7d75ec8", "4485fae7a00129467b9329b738110d88b2942a1a", 1074969344,
     "fetches 1.1 GB (GGUF) → ternary 1.1 GB · desktop only"),
   ternaryBonsai("8B", "c2aefbeb4b24469cd11579c3384b990404c17a30", "ac20f03fc62e872399218b659c8e949dfca05769", 2182184672,
-    "fetches 2.2 GB (GGUF) → ternary 2.3 GB · desktop only"),
+    "fetches 2.2 GB (GGUF) → ternary 2.3 GB · desktop only", { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
   // T236: Qwen3.5 0.8B, the first of the list with hybrid attention (T229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
   // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which
