@@ -304,8 +304,9 @@ def real(entry, directory, positions):
     reference = AutoTokenizer.from_pretrained(folder)
     ids = list(reference(TEXT)["input_ids"])
     mine = llama.tokenizer.encode(TEXT, specials)
-    front = ids[:len(ids) - len(mine)]
-    failed = ids[len(front):] != mine or len(front) > 1
+    # one token in front where the real tokenizer's first is one the text does not begin with (its BOS), else none
+    front = ids[:1] if ids[:1] != mine[:1] and ids[1:2] == mine[:1] else []
+    failed = ids[len(front):] != mine
     say(f"{id}: {len(ids)} tokens of text, the real tokenizer puts {front or 'nothing'} in front "
         f"({reference.convert_ids_to_tokens(front)}); after it the engine's tokenizer gives "
         f"{'the same ids' if not failed else 'OTHER IDS — FAILED'}")
