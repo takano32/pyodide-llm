@@ -14,14 +14,24 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from transformers import AutoTokenizer, Qwen3_5ForConditionalGeneration
+from transformers import AutoModelForCausalLM, AutoTokenizer, Qwen3_5ForConditionalGeneration
 
-directory, pairs = Path(sys.argv[1]), Path(sys.argv[2])
+# <the original's directory | owner/repository@revision> <the jsonl> [<the page's BOS> <the end of a turn>]: the defaults are
+# Qwen3.5's (248044, 248046); for a Ternary Bonsai (a Qwen3, which the list begins with <|endoftext|>) 151643 and 151645
+target, pairs = sys.argv[1], Path(sys.argv[2])
+ENDOFTEXT, IM_END = (int(sys.argv[3]), int(sys.argv[4])) if len(sys.argv) > 4 else (248044, 248046)
+if "@" in target:
+    from huggingface_hub import snapshot_download
+    repo, revision = target.split("@")
+    directory = Path(snapshot_download(repo, revision=revision, local_dir=Path("/mnt/t236/dl") / repo.replace("/", "--")))
+else:
+    directory = Path(target)
 started = time.time()
 say = lambda *parts: print(f"T236HAND [{time.time() - started:6.0f} s]", *parts, flush=True)
 tokenizer = AutoTokenizer.from_pretrained(directory)
-model = Qwen3_5ForConditionalGeneration.from_pretrained(str(directory), dtype=torch.float32).eval()
-ENDOFTEXT, IM_END = 248044, 248046
+qwen35 = json.loads((directory / "config.json").read_text()).get("model_type", "").startswith("qwen3_5")
+model = (Qwen3_5ForConditionalGeneration if qwen35 else AutoModelForCausalLM).from_pretrained(str(directory), dtype=torch.float32).eval()
+say(f"{target}: {type(model).__name__}, the page's BOS {ENDOFTEXT}, the end of a turn {IM_END}")
 
 
 def nll(prefix, answer):
