@@ -210,6 +210,12 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     const held = heldFloats(values, far);
     assert.ok(top.filter((i) => held[i] !== far[i]).length >= 0.85 * top.length, "one more float16 off: not taken, for all but the few within the slack");
     for (const i of top) if (held[i] !== far[i]) assert.equal(held[i], toFloat(nearest(values[i])), `element ${i} (${values[i]}) is the nearest's`);
+    // the engine's rule and the benchmark's are one: the same values taken, on the same cases (a change to one alone fails here)
+    const bitsOf = (how) => Uint16Array.from(values, (x) => how(x));
+    const oneMoreBits = Uint16Array.from(values, (x) => (Math.abs(x) >= largest / 4 ? inwards(x) - 1 : inwards(x)));
+    for (const got of [bitsOf(nearest), bitsOf(inwards), bitsOf(outwards), oneMoreBits]) {
+      assert.deepEqual([...heldFloats(values, Float64Array.from(got, toFloat))], [...Float64Array.from(heldHalves(values, got).bits, toFloat)]);
+    }
     assert.deepEqual([...heldFloats(Float64Array.of(8, 2.5), Float64Array.of(8, NaN))], [8, 2.5], "a NaN: the nearest");
     assert.deepEqual([...heldFloats(Float64Array.of(8, 2.5), Float64Array.of(8, Infinity))], [8, 2.5], "an infinity: the nearest");
   }
