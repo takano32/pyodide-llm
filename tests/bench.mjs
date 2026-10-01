@@ -832,6 +832,16 @@ for (const paths of [steadyPath, { ...steadyPath, threads: 1, how: { alone: "no 
   assert.deepEqual(pathWarnings(paths), []);
 }
 assert.deepEqual(warnings([{ title: "Model", markdown: pathTable({ error: "x" }, "m"), said: pathWarnings({ error: "x" }) }]), ["Model: **The model page's path** (m): failed: x"]);
+// a line of several sentences lists the sentence with the word, not the line: a form of the layer's steps that was unsteady
+// is one in a bullet of five sentences (549 characters)
+const unsteadyForm = { ...stepsStep, result: { ...stepsStep.result, forms: stepsStep.result.forms.map((form, i) => (i ? { ...form, unsteady: true } : form)) } };
+assert.deepEqual(warnings([{ title: "GPU", status: "ok", markdown: layerStepsTable(unsteadyForm, layerRight, layerCeilings).join("\n") }]),
+  ['GPU: "DP4A, fused (T175)", 9 dispatches: the layer (unsteady) 3.50 ms.']);
+// WRONG in a row of its own (no verdict of the check says it): the storage section's read back, which the page writes
+// itself (no function of src/bench.js to build it from, so this is its row as written there)
+assert.deepEqual(warnings([{ title: "Storage", status: "wrong", markdown: ["| writes | s | of it flushing, s | MB/s | × a download of 8.3 MB/s |", "|---|---:|---:|---:|---:|",
+  "| in order, one flush | 0.33 | 0.31 | 204 | 25× |", "| read back in order (3 pieces WRONG) | 0.01 |  | 6711 | 809× |"].join("\n") }]),
+  ["Storage: writes: read back in order (3 pieces WRONG); s: 0.01; MB/s: 6711; × a download of 8.3 MB/s: 809×"]);
 // the CPU section's ceilings that could not be measured at all say so in that word, as the GPU section's steps do (T227's own
 // change left this one at "Not measured:")
 const noCeilings = cpuTable({ ...aCpu, ceilings: { error: "out of memory\nsecond | line" } });
