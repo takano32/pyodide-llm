@@ -742,6 +742,67 @@ const ok = (line) => {
   ok("a browser that refuses the memory is asked for less and never for more, and a lowered one must hold the loads ahead too");
 }
 
+// ---- T242's review: every load /benchmark/'s model section makes (the page's path, then each round that loads) fits the one memory
+// the worker made for the largest of them, for every model that page can take (the site's own) and each set of rounds (?full or
+// not; a browser that says its memory or one that does not, which skips the rounds that widen the weights, T214). Another memory
+// would be a page's third (T96), and the memory has no gigabyte over to hide a load that does not fit. The headers are of the
+// built models (make models; where there are none this says so and checks nothing)
+{
+  const { MODELS } = await import("../src/models.js");
+  const { ROUNDS, FULL_ROUNDS, roundsHere } = await import("../src/bench.js");
+  const PAGE = 65536, folder = new URL("../public/models/", import.meta.url);
+  const headerOf = (entry) => {
+    const part = new URL(`${entry.checkpoint}.000`, folder);
+    if (!fs.existsSync(part)) return undefined;
+    const bytes = Buffer.alloc(28), file = fs.openSync(part, "r");
+    fs.readSync(file, bytes, 0, 28, 0);
+    fs.closeSync(file);
+    return Array.from(new Int32Array(bytes.buffer, bytes.byteOffset, 7));
+  };
+  const sited = MODELS.filter((one) => !one.hf && one.checkpoint), headers = sited.map(headerOf);
+  if (headers.every((header) => !header)) {
+    console.log("skipped: every load of the benchmark's model section fits its memory (no built models in public/models)");
+  } else {
+    context.stand.real = forward;
+    context.crossOriginIsolated = true;
+    let loads = 0;
+    try {
+      run("sharedKernels = {}; jsKernels = { relaxed: true }; wideKernels = undefined; threadsRequest = undefined; " +
+        "llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }");
+      for (const [at, entry] of sited.entries()) {
+        const header = headers[at], options = { dtype: "float32", ...entry.options };
+        if (!header) continue;
+        for (const asked of [ROUNDS, FULL_ROUNDS]) {
+          for (const deviceMemory of [8, undefined]) {
+            const rounds = roundsHere(asked, deviceMemory).filter((round) => round.skip === undefined);
+            run("forwardModule = stand.real; weightsPool = weightsNow = undefined");
+            context.rounds = rounds.map((round) => round.without);
+            run("loadsAhead = rounds");
+            const memories = new Set(), what = `${entry.id}, ${asked === ROUNDS ? "the two rounds" : "every step"}, memory ${deviceMemory ?? "not said"}`;
+            for (const without of [[], ...rounds.map((round) => round.without)]) {
+              if (without.includes("kernels")) continue;  // (NumPy's weights are Python's: no memory of the worker's)
+              context.without = without;
+              run("disabled = without");
+              context.weightsBuffer(entry.bytes, header, options);
+              const pool = run("weightsPool"), int8 = !without.includes("int8"), quantized = ["int8", "int6", "ternary"].includes(options.dtype);
+              const needs = pool.base + entry.bytes + forward.footprint(header, entry.bytes, { ...options, int8, relaxed: !without.includes("relaxed"),
+                halfKV: quantized && int8 && !without.includes("kv16"), shared: true, outliers: 8, gpu: false });
+              assert.ok(pool.maximum * PAGE >= needs, `${what}, without ${without.join("+") || "nothing"}: a memory of ${pool.maximum} pages for a load that needs ${needs} bytes`);
+              memories.add(pool.memory);
+              loads++;
+            }
+            assert.equal(memories.size, 1, `${what}: a load of the model section made a memory of its own`);
+          }
+        }
+      }
+    } finally {
+      context.crossOriginIsolated = false;
+      run("sharedKernels = undefined; forwardModule = stand.forward; weightsPool = weightsNow = undefined; loadsAhead = undefined; disabled = []");
+    }
+    ok(`every load of the benchmark's model section fits the one memory made for it (${sited.length} models, ${loads} loads)`);
+  }
+}
+
 // ---- T242: what is thrown and is no Error is told in words, not as "[object Object]" (which /benchmark/ showed)
 {
   const told = context.told;
