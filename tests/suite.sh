@@ -39,6 +39,8 @@ page_modules() {
   node tests/kept-check.mjs
   node tests/coi-js-check.mjs
   node tests/gpu-choice-check.mjs
+  # T225's review: /benchmark/'s layer check against devices that round the cache's float16 as WGSL lets them (about 10 s)
+  node tests/layer-check.mjs
   node tests/worker-sink-check.mjs
   # T129: where fetching and loading meet in worker.js, on made-up fetches and a fast clock (a few seconds)
   node tests/worker-check.mjs
