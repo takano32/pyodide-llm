@@ -709,6 +709,10 @@ function automaticBits(header, form, sizes) {
 // after the checkpoint follows from them (T115). T156, keep: where a conversion is kept as it comes (kept.js's
 // keeper()), for a model on the GPU alone, whose weights nothing holds whole to keep afterwards
 function weightsBuffer(size, header, options, keep) {
+  // PROBE (the review of T129, never main): what the real browser sees of a model of the size of this one (the bench's is 34.8e9)
+  if ((size > 30e9 || (size > 7.8e9 && size < 7.95e9)) && size !== 34.8e9) throw new Error("probe " + JSON.stringify({ size: String(size), type: typeof size, header, options, deviceMemory: self.navigator?.deviceMemory,
+    kernels: Boolean(jsKernels), disabled, forceWide, wide: Boolean(wideKernels?.plain), shared: Boolean(sharedKernels), wanted: sharedWanted(),
+    after: String(afterCheckpoint(header, size, options, sharedWanted())), pastWide: forwardModule.pastWide(size, afterCheckpoint(header, size, options, sharedWanted())) }));
   if (jsKernels && !disabled.includes("kernels")) {
     // a shared memory where the page is cross-origin isolated (stage 3), unless ?threads=1; else one thread
     const wanted = sharedWanted();
