@@ -1639,7 +1639,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T245 [追加][Bonsai] GGUF の、値の head が鍵の head より多いモデルの並びを読む — 状態: 進行中（2026-10-01、T236 から。T233 と T247 の前。規模 小〜中）
 - llama.cpp は値の head が鍵の head より多い linear attention の層（Qwen3.5 の 4B 以上と 27B、3 対 1）で head を並べ替えて（tile して）置く。いまの読み手はそういう GGUF を断り、`gguf_check.py` も通さない（T236）。読み手が HF の並びに戻す形と、`gguf_check.py` の並びを足す。
 
-### T246 [追加][Bonsai] Ternary Bonsai の 4B と 8B を一覧に — 状態: **反映済み**（2026-10-01、本線に入れるのは本会話。レビュー前）
+### T246 [追加][Bonsai] Ternary Bonsai の 4B と 8B を一覧に — 状態: **反映済み**（2026-10-01、2026-10-01 に本線に入れた、レビュー前）
 - ブランチ `t246-ternary-bonsai-4b-8b`（確かめの道具は別のブランチ `t246-probe`: `tests/t246_page.mjs`・`tests/t246_reference.py`・`tests/t246_run.sh`。本線には入れない）。決定と落とし穴は AGENTS.md の「3 値の Ternary Bonsai の 4B と 8B」。エンジンも変換器もページも触っていない。変えたのは `src/models.js` の項目と `LICENSES`、README と docs の数だけで、`CONVERTER` は上げていない。
 - **あるもの**（prism-ml、HF の API、2026-10-01）: Ternary-Bonsai は 1.7B・4B・8B・27B と Ternary-Bonsai-2 の 27B。ほかに 1 ビットの Bonsai（1.7B・4B・8B・27B）と画像の bonsai-image。Ternary-Bonsai の 1.7B・4B・8B・27B には `-gguf`・`-unpacked`・`-mlx-2bit` がある。
 
