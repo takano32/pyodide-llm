@@ -34,6 +34,11 @@
 // that fails on its second request: the generation goes on whole on the CPU (T152's review: JavaScript's null is jsnull).
 // T219: a GPU that samples -1 (SAMPLE's NONE) or an id past the vocabulary: that request refused whole, the CPU from
 // there on, and the status line says why; a model on the GPU alone stops with words and is not loaded again.
+// T243: a GPU that writes back a key or a value that is no finite number (a float16 with every bit of its exponent set: a
+// NaN, an infinity of either sign), which the CPU's kernels would read as a finite one: the block of the prompt, or the
+// request for steps, refused whole (nothing of it in the cache, to the bit), the GPU stopped and the status line says
+// why, the CPU on from its own keys and values; in a cache kept in float16 and in a float32 one; a finite block taken
+// as the GPU wrote it, the largest halves and the subnormals among them.
 // T205: release() waits for the GPU's worker to say "ended" (a slow one; one that never does, terminated after 5 s; one
 // stopped while it got ready), and so does Llama.release() called from JavaScript through Python, as the page's worker
 // calls it (the review); a browser that does not say the device's memory keeps the steps on the CPU.
@@ -46,15 +51,42 @@ const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : path.join(root, "public", "forward.js");
 
+// T243: the keys and values the made-up GPU writes back where it is asked to (line.kv), as float16 bits: of part (the
+// keys of every layer, then the values), of the t-th position of the request, the i-th of a position. Finite numbers
+// all: of a size a key has, and every so often the largest half, of either sign, zeros, subnormals and the smallest
+// normal (none of which is to be taken for a NaN or an infinity)
+const madeUpHalf = (part, t, i) => {
+  const n = part * 131 + t * 17 + i;
+  if (n % 29 === 0) return [0x7bff, 0xfbff, 0x0000, 0x8000, 0x0001, 0x83ff, 0x7800, 0x0400][(n / 29) % 8];
+  return (n & 1 ? 0x8000 : 0) | ((12 + (n % 5)) << 10) | ((n * 37) & 0x3ff);
+};
 // the made-up GPU: ready with the times of a block of 16 and of 64 on its line (fixed + a token), then each block a
 // sleep of that long and the answer
 const FAKE = `
 const { parentPort, workerData: line } = require("node:worker_threads");
-let ctl, words, ids, most, blocks = 0, requests = 0, asked = 0, held = null;
+let ctl, words, ids, most, blocks = 0, requests = 0, asked = 0, held = null, memory, plan;
+// T243: the keys and values of count positions into the staging place ([keys, values][layer][plan.batch positions], in
+// float16, as gpu.js writes them back), where line.kv asks for them (zeros where it does not); and in the kv.at-th request of kv.request (a
+// "prompt"'s block, or "tokens"), kv.bad: its bits in one of them (side 0 a key, 1 a value; layer, token, column: 0 the
+// first, 1 the last)
+const madeUpHalf = ${madeUpHalf.toString()};
+const kvAsked = { prompt: 0, tokens: 0 };
+const writeBack = (request, count) => {
+  const row = plan.kvHeads * plan.headSize, H = new Uint16Array(memory.buffer, plan.staging, 2 * plan.layers * plan.batch * row);
+  // (zeros where not asked: the staging place is in a memory the engines before this one wrote other things into,
+  // which forward.js would now read as the keys and values of this request)
+  for (let part = 0; part < 2 * plan.layers; part++) {
+    for (let t = 0; t < count; t++) for (let i = 0; i < row; i++) H[(part * plan.batch + t) * row + i] = line.kv ? madeUpHalf(part, t, i) : 0;
+  }
+  if (!line.kv) return;
+  const bad = line.kv.request === request && ++kvAsked[request] === line.kv.at ? line.kv.bad : null;
+  if (bad) H[((bad.side * plan.layers + (bad.layer ? plan.layers - 1 : 0)) * plan.batch + (bad.token ? count - 1 : 0)) * row + (bad.column ? row - 1 : 0)] = bad.bits;
+};
 const nap = new Int32Array(new SharedArrayBuffer(4)), ms = (n) => line.fixed + line.perToken * n;
 parentPort.on("message", (data) => {
   if (data.type === "start") {
     ctl = new Int32Array(data.memory.buffer, 0, 2048);
+    ({ memory, plan } = data);
     words = data.plan.words;
     most = data.plan.tokens?.most;
     // T152: where forward.js asked for the steps and the line has a cost of a step
@@ -71,6 +103,7 @@ parentPort.on("message", (data) => {
     Atomics.wait(nap, 0, 0, ms(data.count));
     if (Atomics.load(ctl, words.wanted) !== data.serial) return;
     const fail = Boolean(line.failAt) && ++blocks >= line.failAt;  // T184: a GPU that fails on its failAt-th block
+    writeBack("prompt", data.count);
     Atomics.store(ctl, words.failed, fail ? 1 : 0);
     Atomics.store(ctl, words.done, data.serial);
     Atomics.notify(ctl, words.done);
@@ -92,6 +125,7 @@ parentPort.on("message", (data) => {
     ids[0] = sampled;
     for (let i = 0; i < sampled; i++) ids[1 + i] = outside && i === data.count - 1 ? line.outsideId : data.token + 1 + i;
     ids[1 + most] = refuse ? 1 : 0;
+    writeBack("tokens", sampled);
     Atomics.store(ctl, words.failed, fail ? 1 : 0);
     Atomics.store(ctl, words.done, data.serial);
     Atomics.notify(ctl, words.done);
@@ -593,6 +627,128 @@ if (isMainThread) {
     expect(`${outsideId} on the GPU alone: stopped with words, not loaded again on the CPU, the GPU still taking the steps`,
       [thrown === OUTSIDE_VOCABULARY, lost, second], [true, null, [101, 102, 103, 104]]);
     await engine.release();
+  }
+  // T243: a made-up GPU that writes keys and values back (madeUpHalf), one of them no finite number. In a cache kept in
+  // float16 (this model's on a shared memory) and in a float32 one (halfKeys false: a grouped-query model's, T160, into
+  // which the GPU's are widened); every block and step is put to the GPU (gpuSide), on one thread
+  {
+    const fast = { fixed: 10 * perToken, perToken: 0.05 * perToken, step: 0.2 * cpuStep };
+    const LAYERS = plan.n_layers, ROW = plan.n_kv_heads * (plan.dim / plan.n_heads), FED = 150;  // blocks of 64, 64 and 22
+    const wide = new Float16Array(1), narrow = new Uint16Array(wide.buffer);
+    const float = (bits) => { narrow[0] = bits; return wide[0]; };
+    const bitsOf = (floats) => new Uint32Array(floats.buffer, floats.byteOffset, floats.length);
+    const same = (a, b) => { const x = bitsOf(a), y = bitsOf(b); return x.length === y.length && x.every((word, i) => word === y[i]); };
+    const sameKv = (a, b) => same(a.keys, b.keys) && same(a.values, b.values);
+    // what the cache holds of count positions the made-up GPU wrote back, whose place in their request at(p) gives
+    const madeUp = (count, at) => {
+      const side = (s) => Float32Array.from({ length: LAYERS * count * ROW }, (_, j) =>
+        float(madeUpHalf(s * LAYERS + Math.floor(j / (count * ROW)), at(Math.floor(j / ROW) % count), j % ROW)));
+      return { keys: side(0), values: side(1) };
+    };
+    const notFinite = (where) => new RegExp(`^prompts on the CPU \\(the GPU computed keys or values that are not finite numbers \\(NaN or infinity\\) ${where}\\)`);
+    const NAN = 0x7e00, INF = 0x7c00, MINUS_INF = 0xfc00;
+    const names = { [NAN]: "a NaN", [INF]: "+inf", [MINUS_INF]: "-inf", 0x7c01: "a NaN of the smallest mantissa", 0xffff: "a NaN of every bit" };
+    // one key or one value: of the first layer and of the last, of the request's first position and of its last, in the
+    // first column and in the last, each of the three kinds on either side
+    const BAD = [{ side: 0, layer: 0, token: 0, column: 0, bits: NAN }, { side: 0, layer: 1, token: 1, column: 1, bits: INF },
+      { side: 0, layer: 0, token: 1, column: 0, bits: MINUS_INF }, { side: 1, layer: 0, token: 0, column: 1, bits: INF },
+      { side: 1, layer: 1, token: 1, column: 1, bits: NAN }, { side: 1, layer: 1, token: 0, column: 0, bits: MINUS_INF },
+      { side: 1, layer: 0, token: 1, column: 0, bits: 0x7c01 }, { side: 0, layer: 1, token: 0, column: 1, bits: 0xffff }];
+    const said = (bad) => `${names[bad.bits]} in a ${bad.side ? "value" : "key"} of the ${bad.layer ? "last" : "first"} layer, the ${bad.token ? "last" : "first"} position, the ${bad.column ? "last" : "first"} column`;
+    for (const halfKeys of [true, false]) {
+      const cache = halfKeys ? "a float16 cache" : "a float32 cache";
+      const open = (kv) => {
+        const gpu = () => {
+          const fake = new Worker(FAKE, { eval: true, workerData: { ...fast, kv } });
+          return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
+            set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+        };
+        return createForward({ memory, base, size, kernels, plan, spawn, halfKeys, ...(kv ? { gpu } : {}) });
+      };
+      const ready = async (kv) => {
+        const engine = open(kv);
+        await engine.setThreads(1);
+        await engine.gpu;
+        engine.gpuSide = "gpu";
+        return engine;
+      };
+      // the CPU alone: what a prompt refused from its first block on is to leave. (The cache is the kind asked for: the
+      // CPU's own keys are float16 numbers in the one, and not all of them in the other)
+      const cpu = open(null);
+      await cpu.setThreads(1);
+      feed(cpu, FED);
+      const cpuKv = cpu.keysAndValues(0, FED);
+      cpu.release();
+      expect(`T243, ${cache}: the CPU's own keys are ${halfKeys ? "" : "not all "}float16 numbers`, cpuKv.keys.every((x) => Math.f16round(x) === x), halfKeys);
+      // every block finite: all taken, and the cache holds what the GPU wrote, to the bit
+      {
+        const engine = await ready({});
+        const tokens = feed(engine, FED)[1], got = engine.keysAndValues(0, FED), status = engine.gpuStatus;
+        await engine.release();
+        expect(`T243, ${cache}: a prompt of finite keys and values is taken whole, as the GPU wrote it (${status})`,
+          [tokens, sameKv(got, madeUp(FED, (p) => p % 64)), /not finite/.test(status ?? "")], [FED, true, false]);
+      }
+      // the first block refused: nothing on the GPU, the cache the CPU's own, and the next prompt on the CPU too
+      const outcomes = [];
+      for (const bad of BAD) {
+        const engine = await ready({ request: "prompt", at: 1, bad });
+        const tokens = feed(engine, FED)[1], got = engine.keysAndValues(0, FED), status = engine.gpuStatus, next = feed(engine, FED)[1];
+        await engine.release();
+        outcomes.push(`${names[bad.bits]}: ${tokens}`);
+        expect(`T243, ${cache}, a block of the prompt with ${said(bad)}: refused, the cache the CPU's own, the next prompt on the CPU (${status})`,
+          [tokens, sameKv(got, cpuKv), notFinite("in a block of the prompt at position 0").test(status ?? ""), next], [0, true, true, 0]);
+      }
+      // the second block refused: the first stays as the GPU wrote it, and the CPU goes on from it as it would have
+      // (a GPU whose first block is taken and whose side is then the CPU's)
+      {
+        const engine = await ready({});
+        engine.newGeneration();
+        engine.forwardMany(prompt(FED).slice(0, 64), 0);
+        engine.gpuSide = "cpu";
+        for (let at = 64; at < FED; at += 16) engine.forwardMany(prompt(FED).slice(at, Math.min(at + 16, FED)), at);
+        const want = engine.keysAndValues(0, FED);
+        await engine.release();
+        const bad = BAD[4], refused = await ready({ request: "prompt", at: 2, bad });
+        const tokens = feed(refused, FED)[1], got = refused.keysAndValues(0, FED), status = refused.gpuStatus;
+        await refused.release();
+        outcomes.push(`the second block: ${tokens}`);
+        expect(`T243, ${cache}, the second block with ${said(bad)}: refused, the first block the GPU's, the rest the CPU's from it (${status})`,
+          [tokens, sameKv(got, want), notFinite("in a block of the prompt at position 64").test(status ?? "")], [64, true, true]);
+      }
+      say(`T243, ${cache}: tokens on a GPU of a prompt of ${FED} whose keys or values hold ${outcomes.join(", ")}`);
+      // the steps: a prompt of 16 and a request of 4 on the GPU (taken: the cache holds them), then a request refused:
+      // nothing of it written (the cache at its positions as it was, and not the GPU's), the GPU stopped, and the CPU's
+      // step from there what it is after a GPU that only stopped taking steps
+      const fed = prompt(16), history = [...fed, 100, 101, 102, 103, 104];
+      const ask = (engine, token, pos) => engine.generateMany(token, pos, history.slice(0, pos + 1).slice(-64), pos + 1, 4, 0, 0.9, 1, [], []) ?? null;
+      const begin = async (kv) => {
+        const engine = await ready(kv);
+        engine.newGeneration();
+        engine.forwardMany(fed, 0);
+        return [engine, ask(engine, 100, 16)];
+      };
+      const [good, first] = await begin({});
+      const taken = good.keysAndValues(16, 4);
+      good.gpuSide = "cpu";
+      good.forward(104, 20);
+      const want = good.keysAndValues(0, 21);
+      await good.release();
+      expect(`T243, ${cache}: steps of finite keys and values are taken as the GPU wrote them`, [first, sameKv(taken, madeUp(4, (p) => p))], [[101, 102, 103, 104], true]);
+      const steps = [];
+      for (const bad of BAD) {
+        const [engine, before] = await begin({ request: "tokens", at: 2, bad });
+        const was = engine.keysAndValues(20, 4), second = ask(engine, 104, 20), now = engine.keysAndValues(20, 4), status = engine.gpuStatus;
+        const third = ask(engine, 104, 20), sampled = engine.gpuSampled;
+        engine.forward(104, 20);
+        const got = engine.keysAndValues(0, 21), finite = engine.logits().every((x) => Number.isFinite(x));
+        await engine.release();
+        steps.push(`${names[bad.bits]}: ${JSON.stringify(second)}`);
+        expect(`T243, ${cache}, steps with ${said(bad)}: the request refused whole, nothing of it written, the GPU stopped, the CPU's step from its own cache (${status})`,
+          [before, second, sameKv(was, now), sameKv(now, madeUp(4, (p) => p)), notFinite("in a step at position 20").test(status ?? ""), third, sampled, sameKv(got, want), finite],
+          [[101, 102, 103, 104], null, true, false, true, null, 4, true, true]);
+      }
+      say(`T243, ${cache}: the second request for steps of a GPU whose keys or values hold ${steps.join(", ")}`);
+    }
   }
   // T205: the next model is read after the GPU's worker let go of its device (an iPhone's tab went down in
   // /benchmark/'s rounds where the one before still held it). release() waits for its "ended": a slow let-go of 400 ms
