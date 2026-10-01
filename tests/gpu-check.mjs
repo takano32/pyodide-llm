@@ -857,10 +857,15 @@ async function inDawn() {
   if (!webgpu) throw new Error("--engine dawn wants --webgpu <the directory of the npm package webgpu>");
   const dir = path.join(directory, "dawn");
   fs.mkdirSync(dir, { recursive: true });
+  // (T225's review: GPU_ROUNDING=toward-zero|away|everything has the device round a float32 to a float16 that way, as
+  // Direct3D's and Mesa's AMD do and lavapipe does not: tests/rounding.mjs. The lines of this check that hold a key or a
+  // value of the cache to NumPy's (the first layer's scale, T187) assume the nearest and fail where it is not: read the
+  // engine's own checks of its forms by the "gpu:" lines of the log)
   const prelude = `import { parentPort, Worker as NodeWorker } from "node:worker_threads";
 import { create, globals } from ${JSON.stringify(pathToFileURL(path.resolve(webgpu, "index.js")).href)};
+import { roundedGpu } from ${JSON.stringify(pathToFileURL(path.join(root, "tests", "rounding.mjs")).href)};
 Object.assign(globalThis, globals);
-Object.defineProperty(globalThis, "navigator", { value: { gpu: create([]) }, configurable: true });
+Object.defineProperty(globalThis, "navigator", { value: { gpu: roundedGpu(create([]), process.env.GPU_ROUNDING) }, configurable: true });
 globalThis.self = globalThis;
 globalThis.postMessage = (data) => parentPort.postMessage(data);
 const origin = "http://localhost:${server.address().port}", nativeFetch = fetch;
