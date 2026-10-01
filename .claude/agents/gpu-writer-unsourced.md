@@ -1,6 +1,6 @@
 ---
 name: gpu-writer-unsourced
-description: Implements the WebGPU shaders of pyodide-llm that have no public implementation to take their form from (T155's 6-bit widening and later ones like it) with Opus at medium effort (from 2026-10-01, the owner: every implementation is Opus medium; Fable at high before). Everything that is not a shader goes to shader-writer (Opus, medium). It goes to main without waiting for a review; shader-reviewer (Sonnet, max) reviews it afterwards in another conversation.
+description: Implements the WebGPU shaders of pyodide-llm that have no public implementation to take their form from (T155's 6-bit widening and later ones like it) with Opus at medium effort (from 2026-10-01, the owner: every implementation is Opus medium; Fable at high before). Everything that is not a shader goes to shader-writer (Opus, medium). It goes to main without waiting for a review; shader-reviewer (Sonnet 5.5, max) reviews it afterwards in another conversation.
 model: opus
 effort: medium
 ---
