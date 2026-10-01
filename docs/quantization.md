@@ -74,7 +74,7 @@ on 64-bit memory (Chromium in CI). `?bits=6` or `?bits=8` chooses by hand.
 
 ## Models from GGUF
 
-47 of the 53 Hugging Face models of the list are fetched as a Q8_0 GGUF (llama.cpp's int8 with a float16 scale
+47 of the 54 Hugging Face models of the list are fetched as a Q8_0 GGUF (llama.cpp's int8 with a float16 scale
 per 32 values), with the vocabulary and the configuration of the original repository. Q8_0 turns back into int8
 without loss. Each GGUF was compared with its original tensor by tensor before it went into the list
 (`tests/gguf_check.py`): every row had to be within a relative error of 0.05 of the original, of llama.cpp's Q8_0 of the original, or
@@ -89,6 +89,15 @@ the rounding of the page's own int8 moves them.
 
 In 6 bits, a GGUF is quantized twice, which adds about 3% to the error of the weights (Qwen2.5 0.5B: 0.02375
 against 0.02308); on 1,500 tokens the perplexity could not tell the two apart.
+
+One more model comes from a GGUF of another kind: Ternary Bonsai 1.7B (Prism ML), whose every weight is −1, 0 or 1
+times a scale shared by 128 weights. Its GGUF holds two bits a weight (PQ2_0, a type of Prism ML's fork of
+llama.cpp; 463 MB). The page widens it to int8, which holds those values as they are: each group of 32 becomes
+−127, 0 and 127 with a scale of d / 127 (all 1,719,904,256 weights of the file; what the engine multiplies is
+within 5.3e-8 of the file's value, float32's rounding of d / 127). So the page runs it with the int8 kernels, at
+int8's size (1.94 GB) and not at the file's: it has no ternary kernel. The GGUF was compared with the float16
+safetensors of the same weights: no tensor is further than 8.7e-5 from it (a few blocks of 128 have two
+magnitudes there, 0.5% apart, and one in the GGUF).
 
 ## Other small effects
 
