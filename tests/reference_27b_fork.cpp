@@ -15,6 +15,15 @@
 //                           through the linear-attention layers)
 // and on stdout the texts, the largest logits of every written position and the seconds of every decode. The
 // writing stops early once <seconds> have passed (the files then hold what was written).
+//
+// T237's review, three switches (the environment), for a second run beside the first that computes the model with the
+// ternary matrices multiplied by float32 activations, where the fork rounds them to Q8_0 first (tests/reference_27b_patch.py
+// adds the float32 path to the fork: PTQ1_0_F32_ACTIVATIONS=1 asks for it):
+//   KV_F32=1            the keys and values of the attention layers are float32 (the fork's own default is float16)
+//   REPLAY_FROM=<dir>   decode the tokens the first run wrote, not what this one would choose: for prompt i the ids of
+//                       <dir>/fork-<i>.ids (its prompt's, then what it wrote but the last), one token at a time, into
+//                       <out>/fork-<i>.single (a row for each); the prompt arguments only count the prompts
+//   REPLAY_BATCH=1      and the same tokens as one batch, into <out>/fork-<i>.logits
 #include "llama.h"
 
 #include <algorithm>
@@ -22,6 +31,8 @@
 #include <clocale>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -67,6 +78,24 @@ static llama_token largest(const float * logits, int n) {
     return (llama_token) (std::max_element(logits, logits + n) - logits);
 }
 
+// the two lines of a fork-<i>.ids: the prompt's ids, then the ids it wrote
+static bool read_ids(const std::string & path, std::vector<llama_token> & prompt, std::vector<llama_token> & wrote) {
+    std::ifstream in(path);
+    std::string line;
+    if (!std::getline(in, line)) return false;
+    {
+        std::istringstream words(line);
+        llama_token id;
+        while (words >> id) prompt.push_back(id);
+    }
+    if (std::getline(in, line)) {
+        std::istringstream words(line);
+        llama_token id;
+        while (words >> id) wrote.push_back(id);
+    }
+    return !prompt.empty();
+}
+
 int main(int argc, char ** argv) {
     std::setlocale(LC_NUMERIC, "C");
     if (argc < 7) {
@@ -97,6 +126,16 @@ int main(int argc, char ** argv) {
     ctx_params.n_threads = threads;
     ctx_params.n_threads_batch = threads;
     ctx_params.no_perf = false;
+    const bool kv_f32 = getenv("KV_F32") != NULL;
+    if (kv_f32) {
+        ctx_params.type_k = GGML_TYPE_F32;
+        ctx_params.type_v = GGML_TYPE_F32;
+    }
+    const char * replay_dir = getenv("REPLAY_FROM");
+    const bool replay_batch = getenv("REPLAY_BATCH") != NULL;
+    printf("fork: keys and values %s, ptq1_0 activations %s%s\n", kv_f32 ? "float32" : "float16 (the fork's default)",
+           getenv("PTQ1_0_F32_ACTIVATIONS") != NULL ? "float32" : "Q8_0 (the fork's own)",
+           replay_dir ? ", replaying the ids of the first run" : "");
     llama_context * ctx = llama_init_from_model(model, ctx_params);
     if (ctx == NULL) {
         fprintf(stderr, "the fork could not make a context\n");
@@ -107,6 +146,62 @@ int main(int argc, char ** argv) {
     int decodes = 0;
     for (int p = 6; p < argc; p++) {
         const int index = p - 6;
+        if (replay_dir) {
+            std::vector<llama_token> first, wrote;
+            const std::string from = std::string(replay_dir) + "/fork-" + std::to_string(index) + ".ids";
+            if (!read_ids(from, first, wrote)) {
+                fprintf(stderr, "no ids to replay in %s\n", from.c_str());
+                return 1;
+            }
+            // what the first run decoded: the prompt, then every token it wrote but the last
+            std::vector<llama_token> sequence = first;
+            if (!wrote.empty()) sequence.insert(sequence.end(), wrote.begin(), wrote.end() - 1);
+            const std::string base = out + "/fork-" + std::to_string(index);
+            FILE * single_file = fopen((base + ".single").c_str(), "wb");
+            if (!single_file) {
+                fprintf(stderr, "cannot write into %s\n", out.c_str());
+                return 1;
+            }
+            llama_memory_clear(llama_get_memory(ctx), true);
+            double t0 = now();
+            size_t done = 0;
+            for (size_t t = 0; t < sequence.size(); t++) {
+                if (now() - began > seconds) {
+                    printf("fork: out of time after %zu of the %zu tokens of text %d\n", done, sequence.size(), index);
+                    break;
+                }
+                if (!decode(ctx, { sequence[t] }, (int) t)) return 1;
+                fwrite(llama_get_logits_ith(ctx, 0), sizeof(float), n_vocab, single_file);
+                done++;
+                if (t % 8 == 7) {
+                    printf("fork: replay %d: %zu tokens, %.2f s\n", index, t + 1, now() - t0);
+                    fflush(stdout);
+                }
+            }
+            fclose(single_file);
+            const double replay_seconds = now() - t0;
+            one_at_a_time += replay_seconds;
+            decodes += (int) done;
+            printf("fork: replay %d: %zu tokens one at a time %.2f s (%.3f tokens/s)\n", index, done, replay_seconds,
+                   done / replay_seconds);
+            if (replay_batch && done == sequence.size()) {
+                FILE * logits_file = fopen((base + ".logits").c_str(), "wb");
+                if (!logits_file) {
+                    fprintf(stderr, "cannot write into %s\n", out.c_str());
+                    return 1;
+                }
+                llama_memory_clear(llama_get_memory(ctx), true);
+                t0 = now();
+                if (!decode(ctx, sequence, 0)) return 1;
+                for (size_t t = 0; t < sequence.size(); t++) {
+                    fwrite(llama_get_logits_ith(ctx, (int32_t) t), sizeof(float), n_vocab, logits_file);
+                }
+                fclose(logits_file);
+                printf("fork: replay %d: as one batch %.2f s\n", index, now() - t0);
+            }
+            fflush(stdout);
+            continue;
+        }
         const std::string prompt = argv[p];
         const int n_prompt = -llama_tokenize(vocab, prompt.c_str(), (int32_t) prompt.size(), NULL, 0, true, true);
         std::vector<llama_token> ids(n_prompt);

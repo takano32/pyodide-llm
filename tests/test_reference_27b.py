@@ -97,3 +97,195 @@ def test_a_job_that_fails_ends_the_pass():
     except ZeroDivisionError:
         return
     raise AssertionError("the error of a job was lost")
+
+
+# ------------------------------------------------------------------------------------------- the review of T237
+def test_the_roundings_of_the_page_are_what_the_converter_makes_of_a_row():
+    """The page's 8-bit rounding (Safari) is llama2_convert.quantize() on the activation (which quantize_x is to the bit,
+    smoke.mjs); the 7-bit one (relaxed SIMD) is the same with 63."""
+    import llama2_convert
+    from reference_27b import as_page
+    rng = np.random.default_rng(7)
+    x = (rng.standard_normal(256) * 10.0 ** rng.integers(-3, 3, 256)).astype(np.float32)
+    x[:32] = 0.0  # a group of zeros: no scale
+    q, scales = llama2_convert.quantize(x)
+    want = (q.astype(np.float32) * scales[:, None]).reshape(-1)
+    assert np.array_equal(as_page(127)(x), want)
+    seven = as_page(63)(x).reshape(-1, 32)
+    scale7 = np.abs(x.reshape(-1, 32)).max(axis=1) / np.float32(63)
+    assert np.all(np.abs(seven - x.reshape(-1, 32)) <= scale7[:, None] * 0.5 * (1 + 1e-6))
+    assert np.array_equal(seven[0], np.zeros(32, dtype=np.float32))
+    # the integers it stands for are in -63..63
+    steps = np.divide(seven, scale7[:, None], out=np.zeros_like(seven), where=scale7[:, None] > 0)
+    assert np.abs(np.rint(steps)).max() <= 63
+
+
+def test_a_distance_is_the_largest_difference_the_agreement_and_the_kl():
+    from reference_27b import Distance, kl_of
+    rng = np.random.default_rng(1)
+    theirs = rng.standard_normal((3, 50)).astype(np.float32) * 4
+    ours = theirs.copy()
+    ours[1, 7] += 0.5
+    ours[2] = theirs[2][::-1]
+    same = Distance(ours[:2], theirs[:2])
+    assert same.count == 2 and same.same == 2 and abs(same.worst - 0.5) < 1e-6 and same.where == 1
+    assert same.kls[0] == 0.0 and same.kls[1] > 0 and same.kl_worst == same.kls[1]
+    assert Distance(ours, theirs[:2]).count == 2  # the positions both have
+    other = Distance(ours, theirs)
+    assert other.same < 3 and len(other.close) == 3 - other.same
+    # where the largest logit is another, the gap is how far apart the other's own first two are (never negative)
+    firsts = [float(np.sort(theirs[p])[-1] - np.sort(theirs[p])[-2]) for p in range(3) if np.argmax(ours[p]) != np.argmax(theirs[p])]
+    assert other.gaps == firsts and all(gap >= 0 for gap in other.gaps) and Distance(ours[:2], theirs[:2]).gaps == []
+    # KL(P || Q) against the definition, in float64
+    t, o = theirs[0].astype(np.float64), ours[2].astype(np.float64)
+    p, q = np.exp(t - t.max()), np.exp(o - o.max())
+    p, q = p / p.sum(), q / q.sum()
+    assert abs(kl_of(ours[2], theirs[0]) - float((p * np.log(p / q)).sum())) < 1e-9
+    assert kl_of(theirs[0], theirs[0]) == 0.0
+
+
+def test_the_signs_a_broken_run_is_given_differ_from_the_files_where_it_says():
+    import llama2_numpy
+    from reference_27b import BREAKS, SIGN_BREAKS, broken_basis, signs_of
+    rng = np.random.default_rng(2)
+    widths = (5120, 6144, 17408)
+    basis = {"block": 1024, "signs": {str(w): llama2_numpy.sign_bits(rng.choice([-1, 1], w)) for w in widths}}
+    assert all(name in BREAKS for name in SIGN_BREAKS)
+    for width in widths:  # the text of a width reads back as the signs it was made of
+        assert llama2_numpy.sign_bits(signs_of(basis, width)) == basis["signs"][str(width)]
+    for name, (width, places) in SIGN_BREAKS.items():
+        broken = broken_basis(basis, name)
+        flipped = np.flatnonzero(signs_of(basis, width) != signs_of(broken, width))
+        assert flipped.tolist() == list(range(width))[places], name
+        assert all(broken["signs"][str(w)] == basis["signs"][str(w)] for w in widths if w != width), name
+    wide = broken_basis(basis, "6144 with 5120's signs")
+    assert np.array_equal(signs_of(wide, 6144)[:5120], signs_of(basis, 5120))
+    assert np.array_equal(signs_of(wide, 6144)[5120:], signs_of(basis, 6144)[5120:])
+    last = broken_basis(basis, "last block of 5120 as the first")
+    assert np.array_equal(signs_of(last, 5120)[4096:], signs_of(basis, 5120)[:1024])
+    assert np.array_equal(signs_of(last, 5120)[:4096], signs_of(basis, 5120)[:4096])
+    assert broken_basis(basis, "no rotation") is None
+    assert not np.any(signs_of(broken_basis(basis, "no signs"), 5120) == -1)
+    for unchanged in ("tiled", "embedding", "halves", "gates rotated", "output normalized twice", "epsilon 1e-5"):
+        assert broken_basis(basis, unchanged) == basis
+
+
+# ------------------------------------------------------------------------------------------- the reference reads a GGUF as the converter does
+def rotated_qwen35_gguf(tmp_path, shape):
+    """A rotated Qwen3.5 GGUF as the 27B's is (a classifier of its own, the basis in the metadata, and where a key head has
+    more value heads than one the value heads of every tensor but the output matrix's columns tiled: T245), written to a file."""
+    import test_gguf
+    from conftest import FOLDED, basis, folded
+    from test_rotated import prism_metadata, widths_of
+    shape = {**test_gguf.QWEN35, **shape, "shared": False}
+    tensors, config = qwen35_model(**shape)
+    said, signs = basis(16, widths_of(config))
+    kinds = [test_gguf.QWEN35_LAYER[kind.rsplit(".", 1)[0]] for kind in FOLDED if kind.rsplit(".", 1)[0] in test_gguf.QWEN35_LAYER]
+    layers, types = config["text_config"]["num_hidden_layers"], config["text_config"]["layer_types"]
+    names = [f"blk.{layer}.{kind}.weight" for layer in range(layers) for kind in kinds
+             if (kind in ("attn_qkv", "attn_gate", "ssm_out")) == (types[layer] == "linear_attention") or kind.startswith("ffn")]
+    config, file, _ = test_gguf.qwen35_gguf(more=prism_metadata(config, 16, dict(signs), names + ["output.weight"]),
+                                            fold=lambda t: folded(t, 16, signs), **shape)
+    path = tmp_path / "rotated.gguf"
+    path.write_bytes(file)
+    return path, file, config
+
+
+def streamed_run(path, tokens, rounding="float32", broken=""):
+    """(the model, its logits at every position) of a run of the reference over a GGUF's tokens."""
+    from unittest import mock
+
+    import llama2_numpy
+    from reference_27b import Source, Streamed
+    conductor = Conductor()
+    with mock.patch.object(llama2_numpy, "Tokenizer", lambda *arguments, **named: None):  # (forward() needs none; and no other test is left without one)
+        model = Streamed(Source(path, positions=len(tokens) + 1), conductor, rounding=rounding, broken=broken)
+    return model, conductor.run([(lambda token=token, position=position: np.array(model.forward(token, position)))
+                                 for position, token in enumerate(tokens)])
+
+
+def streamed_logits(path, tokens, rounding="float32", broken=""):
+    return streamed_run(path, tokens, rounding, broken)[1]
+
+
+def test_the_reference_reads_a_rotated_gguf_as_the_converter_does(tmp_path):
+    """The reference reads the 27B's GGUF by its own code (the engine's forward pass over what the conductor widens); the page
+    will read it through the converter. On a made-up file in the 27B's form both give the same logits: the rows of q and its
+    gate and k, the norms with their 1, the taps, the gates, the basis, the output matrix and the classifier."""
+    import test_gguf
+    from test_rotated import run
+    path, file, config = rotated_qwen35_gguf(tmp_path, {})
+    vocabulary = test_gguf.unigram(config["text_config"]["vocab_size"])
+    made = test_gguf.with_original(file, config, vocabulary, "tokenizer.json", "float32")
+    tokens = [1, 5, 7, 9, 11, 5]
+    want = run(made, config["text_config"]["vocab_size"], tokens)
+    got = streamed_logits(path, tokens)
+    for position in range(len(tokens)):
+        assert np.allclose(got[position], want[position], rtol=1e-3, atol=1e-3), position
+
+
+def test_a_saved_run_holds_the_logits_keys_and_values_in_the_layout_forward_js_reads(tmp_path):
+    """T233 compares forward.js's keysAndValues() ([layers that attend][positions][kv heads x head size]) with these."""
+    from reference_27b import save_run
+    path, _, _ = rotated_qwen35_gguf(tmp_path, {})
+    tokens = [1, 5, 7, 9, 11, 5]
+    model, rows = streamed_run(path, tokens, rounding="as 8 bits round")
+    save_run(tmp_path, 3, "as 8 bits round", model, rows)
+    stem = tmp_path / "engine-3-as-8-bits-round"
+    assert np.array_equal(np.fromfile(f"{stem}.logits", dtype=np.float32).reshape(len(tokens), -1), np.asarray(rows, dtype=np.float32))
+    attending, kv_dim = model.key_cache.shape[0], model.n_kv_heads * model.head_size
+    assert attending == 2  # (two of the made-up model's four layers attend)
+    for kind, cache in (("keys", model.key_cache), ("values", model.value_cache)):
+        saved = np.fromfile(f"{stem}.{kind}", dtype=np.float32).reshape(attending, len(tokens), kv_dim)
+        assert np.abs(saved).sum() > 0
+        for layer in range(attending):
+            for position in range(len(tokens)):  # a position's row is its kv heads one after the other, as the cache keeps them
+                assert np.array_equal(saved[layer, position], cache[layer, :, position].reshape(-1)), (kind, layer, position)
+
+
+def test_the_reference_reads_a_rotated_and_tiled_gguf_as_the_converter_does(tmp_path, monkeypatch):
+    """The same where a key head has two or three value heads, which llama.cpp tiles (T245's reader against the reference's
+    grouped()), and the output matrix keeps its columns as the file holds them."""
+    import pytest
+    import test_gguf
+    from test_rotated import run
+    if not hasattr(test_gguf, "QWEN35_VALUE_HEADS"):
+        pytest.skip("T245's reader of value heads that llama.cpp tiled (test_gguf.QWEN35_VALUE_HEADS) is not in this tree yet")
+    monkeypatch.delitem(test_gguf.QWEN35_VALUE_HEADS, "linear_attn.out_proj.weight")
+    for name in ("two value heads to a key head", "three value heads to a key head (the 27B)"):
+        path, file, config = rotated_qwen35_gguf(tmp_path, test_gguf.QWEN35_SHAPES[name])
+        vocabulary = test_gguf.unigram(config["text_config"]["vocab_size"])
+        made = test_gguf.with_original(file, config, vocabulary, "tokenizer.json", "float32")
+        tokens = [1, 5, 7, 9, 11, 5]
+        want = run(made, config["text_config"]["vocab_size"], tokens)
+        got = streamed_logits(path, tokens)
+        for position in range(len(tokens)):
+            assert np.allclose(got[position], want[position], rtol=1e-3, atol=1e-3), (name, position)
+        # and the reading that leaves the value heads tiled is another model
+        tiled = streamed_logits(path, tokens, broken="tiled")
+        assert not np.allclose(tiled[-1], want[-1], rtol=1e-2, atol=1e-2), name
+
+
+def test_a_break_of_the_reference_changes_the_logits_where_it_applies(tmp_path):
+    import pytest
+    from reference_27b import BREAKS, LAYERS, SIGN_BREAKS
+    path, file, config = rotated_qwen35_gguf(tmp_path, {})
+    tokens = [1, 5, 7, 9, 11, 5]
+    base = streamed_logits(path, tokens)[-1]
+    # (the breaks made for the 27B's widths and layers have no place here: its inputs are 64, 96 and 128 wide, 4 layers, and
+    # a value head to a key head: they say so by the width they name, or change nothing)
+    nowhere = {"6144 with 5120's signs", "last block of 5120 as the first"} | set(SIGN_BREAKS)
+    unchanged = {"tiled"} | {name for name, (layer, _) in LAYERS.items() if layer >= 4}
+    for name in BREAKS:
+        if name in nowhere:
+            with pytest.raises(KeyError):
+                streamed_logits(path, tokens, broken=name)
+            continue
+        got = streamed_logits(path, tokens, broken=name)[-1]
+        if name in unchanged:
+            assert np.array_equal(got, base), f"{name} changes what it has no place in"
+        else:
+            assert not np.allclose(got, base, rtol=1e-3, atol=1e-3), f"{name} changes nothing"
+    # the roundings of the page are not float32, and the page's 7 bits are not Safari's 8
+    seven, eight = (streamed_logits(path, tokens, rounding=name)[-1] for name in ("as 7 bits round", "as 8 bits round"))
+    assert not np.allclose(seven, base, rtol=1e-3, atol=1e-3) and not np.array_equal(seven, eight)
