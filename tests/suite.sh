@@ -69,13 +69,16 @@ if [ "$suite" = full ]; then
   # T229: a made-up Qwen3.5 (hybrid attention; no real one is small enough for the build): float32 to NumPy's numbers,
   # int8 within the line of a made-up model, one with a state as large as a real model's for the memory after the
   # checkpoint against footprint(); on a shared memory, a plain one and a 64-bit one
+  # (the review: and the float16 and six-bit files, which the page opens too: a Safari keeps a 4B in six bits)
   made_up_qwen35() {
     mkdir -p .tmp
     python tests/make_qwen35.py .tmp/made-up-qwen35-float32 float32
+    python tests/make_qwen35.py .tmp/made-up-qwen35-float16 float16
     python tests/make_qwen35.py .tmp/made-up-qwen35-int8 int8
+    python tests/make_qwen35.py .tmp/made-up-qwen35-int6 int6
     python tests/make_qwen35.py .tmp/made-up-qwen35-state int8 state
     for memory in "" --plain --wide; do
-      node tests/forward-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-state --rounds 1 --positions 128 $memory
+      node tests/forward-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-float16 .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-int6 .tmp/made-up-qwen35-state --rounds 1 --positions 128 $memory
     done
   }
   part "forward.js against NumPy, a made-up Qwen3.5" made_up_qwen35
