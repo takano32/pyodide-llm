@@ -558,6 +558,22 @@ export function from_f16(out: usize, x: usize, n: i32): void {
   for (; i < n; i++) store<f32>(out + (<usize>i << 2), half(x + (<usize>i << 1)));
 }
 
+// T243: whether n float16 values are all finite numbers: 1, or 0 where one has every bit of its exponent set (a NaN or
+// an infinity, which halves4 above reads as a finite number: 65536 and more). The keys and values a GPU wrote back,
+// looked at once before they go into the cache (forward.js's stagingFinite), eight a step: the attention's loops, which
+// read the cache at every token, stay as they are
+export function finite_f16(x: usize, n: i32): i32 {
+  const exponent = i16x8.splat(0x7c00);
+  let found = i16x8.splat(0);
+  let i = 0;
+  for (; i + 8 <= n; i += 8) {
+    found = v128.or(found, i16x8.eq(v128.and(v128.load(x + (<usize>i << 1)), exponent), exponent));
+  }
+  let rest: i32 = 0;
+  for (; i < n; i++) rest |= <i32>((<i32>load<u16>(x + (<usize>i << 1)) & 0x7c00) == 0x7c00);
+  return <i32>(!v128.any_true(found) && rest == 0);
+}
+
 export function layernorm(out: usize, x: usize, w: usize, b: usize, n: i32): void {
   // GPT-2 normalizes by the mean and the variance, and adds a bias after the scale
   let sum = f32x4.splat(0);
