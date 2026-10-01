@@ -68,12 +68,13 @@ jobs:
         run: node tests/bench-check.mjs --dist chromium --model "$MODEL" --size 64 --query "$QUERY" | tee -a "$GITHUB_STEP_SUMMARY"
 
       # T227's review: the GPU section's worker served with its layer check's line cut to 1e-12, so that every layer
-      # verdict is WRONG (no runner makes one): the report must hold them under "Warnings", the worst first, before the
-      # sections, and the link what fits of them (the fallback adapter checks the shaders and times nothing: a few minutes)
+      # verdict is WRONG (no runner makes one): the report must hold them under "Warnings", the worst first (the model
+      # section's rough times, which every report has, come after them), before the sections, and the link what fits of
+      # them (the fallback adapter checks the shaders and times nothing: a few minutes)
       - name: The benchmark's report with the GPU's check WRONG
         if: always()
         shell: bash
-        run: node tests/bench-check.mjs --dist chromium --model stories260K --size 64 --run gpu --wrong | tee -a "$GITHUB_STEP_SUMMARY"
+        run: node tests/bench-check.mjs --dist chromium --model stories260K --size 64 --run model,gpu --wrong | tee -a "$GITHUB_STEP_SUMMARY"
 
       # T214: the model section where the browser does not say its memory (Safari, Firefox): the round without the
       # kernels is a row that says why, and never loads
