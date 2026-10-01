@@ -534,9 +534,11 @@ function tokensLayout(m) {
     m.tokensWhy = reason;
     return null;
   };
-  for (const name of ["wo", "w2"]) if (m.matrices[name].pieces.length > 1) return why(`${name} is past a buffer of this GPU`);
+  // (T226: GPT-2's and GPT-NeoX's FFN has no gate: w1 is a matrix of its own, as wo and w2 are)
+  const gated = Boolean(m.matrices.w3);
+  for (const name of ["wo", "w2", ...(gated ? [] : ["w1"])]) if (m.matrices[name].pieces.length > 1) return why(`${name} is past a buffer of this GPU`);
   const homes = {}, sizes = {};
-  for (const [joined, names] of Object.entries({ qkv: ["wq", "wk", "wv"], gateUp: ["w1", "w3"] })) {
+  for (const [joined, names] of Object.entries({ qkv: ["wq", "wk", "wv"], ...(gated ? { gateUp: ["w1", "w3"] } : {}) })) {
     let values = 0, scales = 0;
     for (const name of names) {
       const matrix = m.matrices[name];
@@ -571,11 +573,21 @@ async function uploadTokens(m, widen) {
     copyIn(m, scales, scalesAt + (first * n / group) * 4, scaleBytes);
     bytes += valueBytes + scaleBytes;
   }));
-  m.finalNorm = buffer(m, plan.dim * 4, STORAGE | COPY_DST);
-  copyIn(m, m.finalNorm, plan.tokens.final, plan.dim * 4);
+  // (T226: the final LayerNorm's bias, and GPT-2's learned positions, a row a position as the CPU widened them: a
+  // step adds its position's row to the embedding's, as the CPU's embed() does)
+  const vector = (address, floats) => {
+    const made = buffer(m, floats * 4, STORAGE | COPY_DST);
+    copyIn(m, made, address, floats * 4);
+    bytes += floats * 4;
+    return made;
+  };
+  m.finalNorm = vector(plan.tokens.final, plan.dim);
+  m.finalBias = plan.tokens.finalBias ? vector(plan.tokens.finalBias, plan.dim) : null;
+  m.positions = plan.tokens.positions ? vector(plan.tokens.positions, plan.seqLen * plan.dim) : null;
   m.angleTable = buffer(m, plan.seqLen * plan.headSize * 4, STORAGE | COPY_DST);
   const rows = Math.max(1, Math.floor(CHUNK / (plan.headSize * 4))), chunk = new Float32Array(rows * plan.headSize);
-  for (let p = 0; p < plan.seqLen; p += rows) {
+  // (GPT-2 turns nothing and has no tables: the buffer stays, bound and never read)
+  for (let p = 0; plan.turned && p < plan.seqLen; p += rows) {
     const count = Math.min(rows, plan.seqLen - p);
     for (let r = 0; r < count; r++) {
       chunk.set(new Float32Array(m.memory.buffer, plan.cos + (p + r) * half * 4, half), r * plan.headSize);
@@ -583,7 +595,7 @@ async function uploadTokens(m, widen) {
     }
     m.device.queue.writeBuffer(m.angleTable, p * plan.headSize * 4, chunk, 0, count * plan.headSize);
   }
-  bytes += plan.dim * 4 + plan.seqLen * plan.headSize * 4;
+  bytes += plan.seqLen * plan.headSize * 4;
   await within(m.device.queue.onSubmittedWorkDone(), "the classifier's weights");
   return bytes;
 }
@@ -1076,6 +1088,10 @@ async function timeBlocks(m) {
 // prompt's tiles, whichever is right and faster here, on this pass's q. Where it came from: the run of T151 (public/benchmark/gpu.js's generate()), whose
 // form is WebLLM's decode loop without its sync of every token (web-llm, src/llm_chat.ts; no line taken) and llama.cpp's
 // WebGPU graph of a token, one command encoder for all of it (ggml-webgpu.cpp, commit 2145525a, MIT; no line taken).
+// T226: Qwen2's and Qwen3's steps too. What they have between the matrix of q, k and v and RoPE (T153: a bias of each,
+// a norm of every head of q and of k) is the prompt's dispatches, ADD and HEAD_NORM, as the CPU orders them, on the
+// three as their matrix wrote them, and then shaders.js's TOKEN_ROPE (the fused write's own lines, as a dispatch):
+// two dispatches a layer more with the biases, three with the norms of the heads, none for a model without either.
 // (T175's fused DP4A with the norms apart as well, RMSNORM and QUANTIZE where NORM_QUANTIZE is one: the owner's
 // Android ran a layer so in 3.36 ms against 3.67 fused, the fastest of its table, 2026-09-27; T175's condition to
 // reverse NORM_QUANTIZE, here chosen on the device)
@@ -1087,14 +1103,27 @@ function tokenCandidates(m) {
   const features = navigator.gpu.wgslLanguageFeatures;
   const subgroups = m.device.features.has("subgroups") && Boolean(features?.has("subgroup_id"));
   const packed = Boolean(features?.has("packed_4x8_integer_dot_product"));
-  return TOKEN_FORMS.filter((form) => (!form.subgroups || subgroups) && (!form.dp4a || packed));
+  // (T226: NORM_QUANTIZE is RMSNorm's: a model with LayerNorm has its norms apart, and the form with them fused is
+  // the same as the one with them apart)
+  return TOKEN_FORMS.filter((form) => (!form.subgroups || subgroups) && (!form.dp4a || packed) && (!m.plan.layerNorm || !form.dp4a || form.normApart));
 }
-// a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers)
-const tokenCodes = (wgsl, { dp4a, subgroups, normApart }) => (dp4a
-  ? [...(normApart ? [] : [["normQuantize", wgsl.NORM_QUANTIZE]]), ["qkv", wgsl.fusedDp4aMatVec({ output: "rope" })], ["add", wgsl.fusedDp4aMatVec({ output: "add" })],
-    ["glu", wgsl.fusedDp4aMatVec({ output: "swiglu" })], ["classifier", wgsl.fusedDp4aMatVec({ output: "write" })]]
-  : [["qkv", wgsl.fusedMatVec({ input: "norm", output: "rope", subgroups })], ["add", wgsl.fusedMatVec({ input: "plain", output: "add", subgroups })],
-    ["glu", wgsl.fusedMatVec({ input: "norm", output: "swiglu", subgroups })], ["classifier", wgsl.fusedMatVec({ input: "norm", output: "write", subgroups })]]);
+// T226: what of the model's form shapes a token's dispatches: apart, q, k and v are written as they are for what comes
+// before RoPE (the biases, the norms of the heads); gated, the FFN has a gate (SwiGLU on the write of gate and up; else
+// one matrix written as it is, then its bias and GELU); floatHead, the classifier multiplies floats on a DP4A form too
+// (T92's outlier channels: a few of the final norm's weights are 12 to 17 times the others (GPT-2), and a group of 32
+// quantized to 8 bits with one of them loses the other 31; the CPU multiplies their columns apart, and the GPU has
+// T150's matrix of floats, which needs no such thing)
+const tokenShape = (m) => ({ apart: Boolean(m.gen.qkv), gated: Boolean(m.matrices.w3), layerNorm: m.plan.layerNorm, floatHead: m.plan.tokens.outliers });
+// a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers); the same code
+// under two keys is compiled once (chooseTokens). The norm is on the read of T150's matrices where it is RMSNorm
+// (LayerNorm takes the mean out first, which no sum of the matrix's rows gives: a dispatch of its own before them)
+const tokenCodes = (wgsl, { dp4a, subgroups, normApart }, { apart, gated, layerNorm, floatHead }) => {
+  const floats = (output) => wgsl.fusedMatVec({ input: layerNorm ? "plain" : "norm", output, subgroups });
+  const matrix = dp4a ? (output) => wgsl.fusedDp4aMatVec({ output }) : floats;
+  return [...(dp4a && !normApart ? [["normQuantize", wgsl.NORM_QUANTIZE]] : []), ["qkv", matrix(apart ? "write" : "rope")],
+    ["add", dp4a ? matrix("add") : wgsl.fusedMatVec({ input: "plain", output: "add", subgroups })], ["glu", matrix(gated ? "swiglu" : "write")],
+    ["classifier", (floatHead ? floats : matrix)("write")]];
+};
 
 // a bind group of the bindings given ([binding, a buffer or a range of one] each: the fused shaders skip binding 4
 // where the norm is not on their read)
@@ -1126,23 +1155,52 @@ async function tokenBuffers(m) {
     new Float32Array(bytes, 16, 1)[0] = plan.eps;
     return uniform(m, bytes);
   };
-  // RMSNORM's and NORM_QUANTIZE's Norm: size, at, eps
-  const norm = (at) => {
+  // RMSNORM's, HEAD_NORM's and NORM_QUANTIZE's Norm: size, at, eps, first (HEAD_NORM's: the rows before its first)
+  const norm = (at, size = plan.dim, first = 0) => {
     const bytes = new ArrayBuffer(16);
-    new Uint32Array(bytes, 0, 2).set([plan.dim, at]);
+    new Uint32Array(bytes).set([size, at, 0, first]);
     new Float32Array(bytes, 8, 1)[0] = plan.eps;
     return uniform(m, bytes);
   };
   const flash = new ArrayBuffer(16);
   new Uint32Array(flash, 0, 2).set([plan.heads, plan.kvHeads]);
   new Float32Array(flash, 8, 1)[0] = 1 / Math.sqrt(plan.headSize);
-  const layers = [...Array(plan.layers)].map((_, l) => l * plan.dim);
+  const layers = [...Array(plan.layers)].map((_, l) => l * plan.dim), qkvRows = qDim + 2 * kvDim;
   g.u = { embed: m.tables.embedding.map((piece) => uniform(m, new Uint32Array([plan.dim, piece.first, piece.rows, 0]))), flash: uniform(m, flash), o: params(plan.dim, qDim), down: params(plan.dim, plan.hidden),
-    qkv: layers.map((at) => params(qDim + 2 * kvDim, plan.dim, 0, at)), gateUp: layers.map((at) => params(plan.hidden, plan.dim, plan.hidden, at)),
-    norm: layers.map(norm), final: norm(0), classifier: m.tables.classifier.map((piece) => params(piece.rows, plan.dim)),
+    qkv: layers.map((at) => params(qkvRows, plan.dim, 0, at)), gateUp: layers.map((at) => params(plan.hidden, plan.dim, plan.hidden, at)),
+    norm: layers.map((at) => norm(at)), final: norm(0), classifier: m.tables.classifier.map((piece) => params(piece.rows, plan.dim)),
     // QUANTIZE's (n, xStride): the attention's output, SwiGLU's
     quantizeAttention: uniform(m, new Uint32Array([qDim, qDim, 0, 0])), quantizeGate: uniform(m, new Uint32Array([plan.hidden, plan.hidden, 0, 0])),
     quantizeNormed: uniform(m, new Uint32Array([plan.dim, plan.dim, 0, 0])) };
+  // T226: a model whose q, k and v are not ready for RoPE as their matrix leaves them (T153: Qwen2's biases, Qwen3's
+  // norms of the heads) has the matrix write the three as they are into qkv (q's rows, then k's, then v's), the
+  // prompt's ADD and HEAD_NORM change them there, and TOKEN_ROPE turns them into q and the cache (tokenPass). The
+  // biases of a layer are one vector then, in the rows' order (one ADD for the three); k's heads are the rows after q's
+  const { bq, bk, bv, qNorm } = plan.vectors;
+  if (bq || qNorm) {
+    g.rope = await within(validated(m, () => pipelineOf(m, wgsl.TOKEN_ROPE)), "compiling a token's RoPE");
+    g.qkv = buffer(m, qkvRows * 4);
+  }
+  if (bq) {
+    g.qkvBias = buffer(m, plan.layers * qkvRows * 4, STORAGE | COPY_DST);
+    for (let l = 0; l < plan.layers; l++) {
+      let at = l * qkvRows * 4;
+      for (const bias of [bq, bk, bv]) {
+        copyIn(m, g.qkvBias, bias.at + l * bias.size * 4, bias.size * 4, at);
+        at += bias.size * 4;
+      }
+    }
+    g.u.qkvBias = layers.map((_, l) => uniform(m, new Uint32Array([qkvRows, l * qkvRows, 0, 0])));
+  }
+  if (qNorm) g.u.headNorms = layers.map((_, l) => [0, plan.heads].map((first) => norm(l * plan.headSize, plan.headSize, first)));
+  // T226, GPT-2's and GPT-NeoX's (T154's dispatches of a prompt's block, on a token's vectors): ADD's shapes of the
+  // biases after o, w1 and w2 (a layer's from its place in the vector) and of GPT-2's positions (a row a position), and
+  // GELU's size
+  const { bo, b1, b2 } = plan.vectors;
+  if (bo) g.u.biases = layers.map((_, l) => Object.fromEntries([["bo", bo], ["b1", b1], ["b2", b2]].map(([name, { size }]) =>
+    [name, uniform(m, new Uint32Array([size, l * size, 0, 0]))])));
+  if (m.positions) g.u.positions = uniform(m, new Uint32Array([plan.dim, 0, plan.dim, 0]));
+  g.u.hidden = uniform(m, new Uint32Array([plan.hidden, 0, 0, 0]));
   return g;
 }
 
@@ -1159,32 +1217,65 @@ function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed =
   const rows = form.dp4a ? wgsl.ORT_DP4A_MATVEC_ROWS : wgsl.MUL_MAT_VEC_ROWS;
   const matrix = (pipeline, [w, s], input, params, count, output) =>
     [pipeline, bindAt(m, pipeline, [[0, w], [1, s], ...input, [3, params], ...output]), ...spread(m, count, rows)];
-  // what a matrix reads: the stream, normed on the read (T150), or the vector as it is; on DP4A its quantizing (T175)
-  const read = form.dp4a ? () => [[2, g.xq], [4, g.xs]] : (x, weights) => [[2, x], ...(weights ? [[4, weights]] : [])];
-  // (the norms apart: the prompt's RMSNORM into xb, then its QUANTIZE, as T175's form with the norms apart)
-  const normed = (weights, params) => (!form.dp4a ? []
-    : form.normApart ? [[m.norm, bind(m, m.norm, [g.h, weights, g.xb, params, g.step]), 1, 1], ...quantized(g.xb, g.u.quantizeNormed, plan.dim)]
-      : [[P.normQuantize, bindAt(m, P.normQuantize, [[0, g.h], [1, weights], [2, g.xq], [3, g.xs], [4, params], [5, g.step]]), 1, 1]]);
-  const quantized = (x, params, n) => (form.dp4a
-    ? [[m.quantize, bindAt(m, m.quantize, [[0, x], [1, g.xq], [2, g.xs], [3, params], [4, g.step]]), Math.ceil(n / wgsl.GROUP / 64), 1]] : []);
+  const quantize = (x, params, n) => [m.quantize, bindAt(m, m.quantize, [[0, x], [1, g.xq], [2, g.xs], [3, params], [4, g.step]]), Math.ceil(n / wgsl.GROUP / 64), 1];
+  // What a matrix reads: { norm, quantize, input }, the dispatches before it (the stream's norm where it is one of its
+  // own, the quantizing of DP4A's vector: T175) and its bindings of the vector.
+  // The stream normed, for a matrix of floats (T150's; T226: the classifier of a model with outlier channels on DP4A
+  // too) or of DP4A: RMSNorm on the read of T150's matrices, or with DP4A's quantizer (NORM_QUANTIZE); else a dispatch
+  // of its own into xb (the prompt's RMSNORM, T175's form with the norms apart; T226: the prompt's LAYER_NORM with its
+  // bias, T154), which the matrix reads as it is or quantized
+  const normed = (weights, bias, params, floats = !form.dp4a) => {
+    const apart = () => [[m.norm, bind(m, m.norm, plan.layerNorm ? [g.h, weights, bias, g.xb, params, g.step] : [g.h, weights, g.xb, params, g.step]), 1, 1]];
+    if (floats) return plan.layerNorm ? { norm: apart(), quantize: [], input: [[2, g.xb]] } : { norm: [], quantize: [], input: [[2, g.h], [4, weights]] };
+    if (!form.normApart && !plan.layerNorm) {
+      return { norm: [[P.normQuantize, bindAt(m, P.normQuantize, [[0, g.h], [1, weights], [2, g.xq], [3, g.xs], [4, params], [5, g.step]]), 1, 1]],
+        quantize: [], input: [[2, g.xq], [4, g.xs]] };
+    }
+    return { norm: apart(), quantize: [quantize(g.xb, g.u.quantizeNormed, plan.dim)], input: [[2, g.xq], [4, g.xs]] };
+  };
+  // a vector as it is (the attention's output, the activation's)
+  const plain = (x, params, n) => (form.dp4a ? { quantize: [quantize(x, params, n)], input: [[2, g.xq], [4, g.xs]] } : { quantize: [], input: [[2, x]] });
+  // T226: a bias added after a matrix (ADD: Qwen2's of q, k and v as one vector; T154's after o, w1 and w2)
+  const added = (to, bias, shape, n) => [m.add, bind(m, m.add, [to, bias, shape, g.step]), Math.ceil(n / 64), 1];
+  const biased = (to, name, l) => (V[name] ? [added(to, V[name], g.u.biases[l][name], plan.vectors[name].size)] : []);
   // (T209: a dispatch a piece of the table, each writing the row where the token is in its rows)
   const list = !embed ? [] : m.tables.embedding.map((piece, i) =>
     [g.embed, bindAt(m, g.embed, [[0, piece.values], [1, piece.scales], [2, g.state], [3, g.h], [4, g.u.embed[i]]]), 1, 1]);
+  // T226: GPT-2's learned positions: the row of the Step's position added to the embedding's (the CPU's embed())
+  if (embed && m.positions) list.push(added(g.h, m.positions, g.u.positions, plan.dim));
+  const qkvRows = qDim + 2 * plan.kvHeads * plan.headSize, gated = Boolean(m.matrices.w3);
   for (let l = from; l < to; l++) {
-    const { qkv, gateUp } = m.joined[l], [o] = m.matrices.wo.pieces, [down] = m.matrices.w2.pieces;
-    list.push(...normed(V.attention, g.u.norm[l]),
-      matrix(P.qkv, qkv, read(g.h, V.attention), g.u.qkv[l], qDim + 2 * plan.kvHeads * plan.headSize,
-        [[5, g.q], [6, cache.keys[l]], [7, cache.values[l]], [8, m.angleTable], [9, g.step]]),
+    const [o] = m.matrices.wo.pieces, [down] = m.matrices.w2.pieces;
+    const attention = normed(V.attention, V.attentionBias, g.u.norm[l]), ffn = normed(V.ffn, V.ffnBias, g.u.norm[l]);
+    const attended = plain(g.att, g.u.quantizeAttention, qDim), activated = plain(g.gate, g.u.quantizeGate, plan.hidden);
+    // where q, k and v go turned: q, and the cache at the Step's position
+    const turned = [[5, g.q], [6, cache.keys[l]], [7, cache.values[l]], [8, m.angleTable], [9, g.step]];
+    list.push(...attention.norm, ...attention.quantize,
+      // T226: turned on the matrix's write (Llama: one dispatch), or written as they are where something comes before
+      // RoPE: as the CPU has it and a prompt's block (T153), the biases, the norms of the heads of q and of k, RoPE
+      matrix(P.qkv, m.joined[l].qkv, attention.input, g.u.qkv[l], qkvRows, g.qkv ? [[5, g.qkv]] : turned),
+      ...(g.qkvBias ? [added(g.qkv, g.qkvBias, g.u.qkvBias[l], qkvRows)] : []),
+      ...(g.u.headNorms ? [[V.qNorm, plan.heads], [V.kNorm, plan.kvHeads]].map(([weights, heads], i) =>
+        [m.headNorm, bind(m, m.headNorm, [g.qkv, weights, g.u.headNorms[l][i], g.step]), heads, 1]) : []),
+      ...(g.qkv ? [[g.rope, bindAt(m, g.rope, [[2, g.qkv], [3, g.u.qkv[l]], ...turned]), 1, 1]] : []),
+      // T154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it (into xb, which q,
+      // k and v have read by now; a norm on the matrix's read would come too late: chooseTokens refuses the pair)
+      ...(plan.parallel ? ffn.norm : []),
       ...attentionPasses(m, g.attention, { q: g.q, keys: cache.keys[l], values: cache.values[l], out: g.att, parts: g.parts, params: g.params,
         flash: g.u.flash, step: g.step }, plan.heads, positions),
-      ...quantized(g.att, g.u.quantizeAttention, qDim), matrix(P.add, o.layers[l], read(g.att), g.u.o, plan.dim, [[5, g.h]]),
-      ...normed(V.ffn, g.u.norm[l]), matrix(P.glu, gateUp, read(g.h, V.ffn), g.u.gateUp[l], plan.hidden, [[5, g.gate]]),
-      ...quantized(g.gate, g.u.quantizeGate, plan.hidden), matrix(P.add, down.layers[l], read(g.gate), g.u.down, plan.dim, [[5, g.h]]));
+      ...attended.quantize, matrix(P.add, o.layers[l], attended.input, g.u.o, plan.dim, [[5, g.h]]), ...biased(g.h, "bo", l),
+      ...(plan.parallel ? [] : ffn.norm), ...ffn.quantize,
+      // gate and up as one matrix with SwiGLU on its write; or (T154: no gate) w1, its bias and GELU
+      ...(gated ? [matrix(P.glu, m.joined[l].gateUp, ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]])]
+        : [matrix(P.glu, m.matrices.w1.pieces[0].layers[l], ffn.input, g.u.gateUp[l], plan.hidden, [[5, g.gate]]), ...biased(g.gate, "b1", l),
+          [m.activation, bind(m, m.activation, [g.gate, g.u.hidden, g.step]), Math.ceil(plan.hidden / 64), 1]]),
+      ...activated.quantize, matrix(P.add, down.layers[l], activated.input, g.u.down, plan.dim, [[5, g.h]]), ...biased(g.h, "b2", l));
   }
   if (head) {
-    list.push(...normed(m.finalNorm, g.u.final),
+    const final = normed(m.finalNorm, m.finalBias, g.u.final, !form.dp4a || plan.tokens.outliers);
+    list.push(...final.norm, ...final.quantize,
       // (T209: a piece at a time into its range of the logits: its first row is where the device binds, piecesOf)
-      ...m.tables.classifier.map((piece, i) => matrix(P.classifier, [piece.values, piece.scales], read(g.h, m.finalNorm), g.u.classifier[i], piece.rows,
+      ...m.tables.classifier.map((piece, i) => matrix(P.classifier, [piece.values, piece.scales], final.input, g.u.classifier[i], piece.rows,
         [[5, { buffer: g.logits, offset: piece.first * 4, size: piece.rows * 4 }]])),
       [g.sample, bindAt(m, g.sample, [[0, g.logits], [1, g.probs], [2, g.order], [3, g.state], [4, g.chosen], [5, g.randoms], [6, g.settings]]), 1, 1]);
   }
@@ -1257,6 +1348,8 @@ async function runTokens(m, dispatches, { count, pos, state, settings, randoms, 
 // plan.force.quick: the first right one, untimed. Throws where none is right (the tokens then stay on the CPU)
 async function chooseTokens(m) {
   const { plan, wgsl } = m;
+  // (tokenPass puts a parallel residual's second norm before o as a dispatch: LayerNorm's, GPT-NeoX's)
+  if (plan.parallel && !plan.layerNorm) throw new Error("a parallel residual without LayerNorm is not on the GPU's tokens");
   m.gen = await tokenBuffers(m);
   await chooseTokenAttention(m);
   if (stopping) return;
@@ -1274,10 +1367,11 @@ async function chooseTokens(m) {
   for (const candidate of forms) {
     // the remembered one right: no other is compiled or timed (as the matrices, T148)
     if ((plan.force.quick || (kept && right[0]?.name === kept.name)) && right.length) break;
-    const form = { ...candidate, pipes: {} };
+    const form = { ...candidate, pipes: {} }, compiled = new Map();
     try {
-      for (const [key, code] of tokenCodes(wgsl, form)) {
-        form.pipes[key] = await within(validated(m, () => pipelineOf(m, code)), `compiling ${form.name}`);
+      for (const [key, code] of tokenCodes(wgsl, form, tokenShape(m))) {
+        if (!compiled.has(code)) compiled.set(code, await within(validated(m, () => pipelineOf(m, code)), `compiling ${form.name}`));
+        form.pipes[key] = compiled.get(code);
       }
       const wrong = await within(checkTokens(m, form), `checking ${form.name}`);
       if (wrong) tried.push({ name: form.name, none: `wrong: ${wrong}` });
@@ -1556,9 +1650,9 @@ async function checkTokens(m, form) {
   const readBackRows = (n, [values, scales]) => (r) => [values.subarray(r * n, (r + 1) * n), scales.subarray(r * (n / wgsl.GROUP), (r + 1) * (n / wgsl.GROUP))];
   const tableSpec = (name) => (name === "embedding" ? plan.tokens.embedding ?? plan.tokens.classifier : plan.tokens.classifier);
   const tableRow = (name) => (m.tableRows ? (r) => m.tableRows[name].get(r) : inMemory(tableSpec(name), tableSpec(name).at));
-  // a matrix's rows (n weights each, rowOf(r): [values, scales]) times x, the rows given
-  const product = (n, rowOf, x, rows) => {
-    const q = form.dp4a ? wgsl.quantizedLikeCpu(Float32Array.from(x)) : null, perRow = n / wgsl.GROUP;
+  // a matrix's rows (n weights each, rowOf(r): [values, scales]) times x, the rows given (packed: x quantized first)
+  const product = (n, rowOf, x, rows, packed = form.dp4a) => {
+    const q = packed ? wgsl.quantizedLikeCpu(Float32Array.from(x)) : null, perRow = n / wgsl.GROUP;
     return Float64Array.from(rows, (r) => {
       const [w, s] = rowOf(r);
       let sum = 0;
@@ -1579,7 +1673,20 @@ async function checkTokens(m, form) {
     const s = 1 / Math.sqrt(x.reduce((sum, v) => sum + v * v, 0) / x.length + plan.eps);
     return x.map((v, i) => weights[i] * (s * v));
   };
-  const largest = (xs) => xs.reduce((a, v) => Math.max(a, Math.abs(v)), 0);
+  // T226: the stream's norm, RMSNorm or (T154) LayerNorm with its bias, as the CPU's kernels have them
+  const norm = (x, weights, bias) => {
+    if (!plan.layerNorm) return rms(x, weights);
+    const mean = x.reduce((sum, v) => sum + v, 0) / x.length;
+    const s = 1 / Math.sqrt(x.reduce((sum, v) => sum + (v - mean) ** 2, 0) / x.length + plan.eps);
+    return x.map((v, i) => weights[i] * (s * (v - mean)) + bias[i]);
+  };
+  // the first layer's vector of a name (plan.vectors), where the model has it; and a vector with it added
+  const vectorOf = (name) => plan.vectors[name] && floats(plan.vectors[name].at, plan.vectors[name].size);
+  const plus = (x, name) => {
+    vectorOf(name)?.forEach((b, i) => { x[i] += b; });
+    return x;
+  };
+  const largest =(xs) => xs.reduce((a, v) => Math.max(a, Math.abs(v)), 0);
   const off = (got, want) => largest(want.map((v, i) => got[i] - v));
   const owned = [];
   try {
@@ -1604,9 +1711,18 @@ async function checkTokens(m, form) {
     const [gotK, gotV] = kv.map((layers) => Float64Array.from(new Uint16Array(layers[0].buffer, layers[0].byteOffset, kvDim), halfToFloat));
     // JavaScript's layer
     const [eRow, eScales] = embeddingRow(token);
+    // (T226: with GPT-2's learned position of pos, as the CPU's embed() adds it)
     const x0 = Float64Array.from(eRow, (v, i) => v * eScales[(i / wgsl.GROUP) | 0]);
-    const xn = rms(x0, floats(plan.vectors.attention.at, dim));
-    const [q, k, v] = ["wq", "wk", "wv"].map((name) => matmul(name, xn));
+    if (plan.tokens.positions) floats(plan.tokens.positions + pos * dim * 4, dim).forEach((p, i) => { x0[i] += p; });
+    const xn = norm(x0, vectorOf("attention"), vectorOf("attentionBias"));
+    // T226: as the CPU has it (forward.js), the biases (Qwen2's; T154's), then the norms of the heads of q and k
+    // (Qwen3's), then RoPE (all of a head, T154: a part of it, or none); the first layer's of each, where the model
+    // has them
+    const [q, k, v] = [["wq", "bq"], ["wk", "bk"], ["wv", "bv"]].map(([name, bias]) => plus(matmul(name, xn), bias));
+    for (const [name, x] of [["qNorm", q], ["kNorm", k]]) {
+      const weights = vectorOf(name);
+      for (let at = 0; weights && at < x.length; at += headSize) x.set(rms(x.subarray(at, at + headSize), weights), at);
+    }
     const cos = floats(plan.cos + pos * half * 4, half), sin = floats(plan.sin + pos * half * 4, half);
     const turn = (vector) => {
       for (let at = 0; at < vector.length; at += 2) {
@@ -1631,10 +1747,14 @@ async function checkTokens(m, form) {
       const top = Math.max(...scores), weights = scores.map((score) => Math.exp(score - top)), total = weights[0] + weights[1];
       for (let d = 0; d < headSize; d++) att[at + d] = (weights[0] * values[0][kvAt + d] + weights[1] * values[1][kvAt + d]) / total;
     }
-    const o = matmul("wo", att), h1 = x0.map((value, i) => value + o[i]);
-    const xn2 = rms(h1, floats(plan.vectors.ffn.at, dim));
-    const gate = matmul("w1", xn2), up = matmul("w3", xn2);
-    const down = matmul("w2", gate.map((value, i) => (value / (1 + Math.exp(-value))) * up[i])), h2 = h1.map((value, i) => value + down[i]);
+    const o = plus(matmul("wo", att), "bo"), h1 = x0.map((value, i) => value + o[i]);
+    // (T154: GPT-NeoX's parallel residual, the FFN's norm of the layer's input; no gate, w1's bias and GELU as
+    // shaders.js's has it)
+    const xn2 = norm(plan.parallel ? x0 : h1, vectorOf("ffn"), vectorOf("ffnBias"));
+    const gate = plus(matmul("w1", xn2), "b1"), up = plan.matrices.w3 && matmul("w3", xn2);
+    const gelu = (value) => 0.5 * value * (1 + Math.tanh(Math.min(9.010913, Math.max(-9.010913, 0.7978845608028654 * (value + 0.044715 * value ** 3)))));
+    const activated = gate.map(up ? (value, i) => (value / (1 + Math.exp(-value))) * up[i] : gelu);
+    const down = plus(matmul("w2", activated), "b2"), h2 = h1.map((value, i) => value + down[i]);
     const stream = off(h, h2) / largest(h2.map((value, i) => value - x0[i]));
     const keyOff = off(gotK, k) / largest(k), valueOff = off(gotV, v) / largest(v);
     if (!(stream <= line)) return `the first layer's stream is ${stream.toExponential(2)} of its change from JavaScript's (line ${line})`;
@@ -1651,13 +1771,19 @@ async function checkTokens(m, form) {
       const { ids } = await runTokens(m, head, { count: 1, pos, state: wgsl.samplingState({ token, pos, history }), settings,
         randoms: new Float32Array([random]), extra: (encoder) => encoder.copyBufferToBuffer(g.logits, 0, readLogits, 0, vocab * 4) });
       await readLogits.mapAsync(MAP_READ);
-      const logits = new Float32Array(readLogits.getMappedRange().slice(0));
+      // (T226: the vocabulary's logits and no more. A buffer is made in whole 16 bytes, and GPT-2's 50257 logits left
+      // 3 zeros after them: where every logit of the made-up stream was negative, the check took one of those zeros
+      // for the largest, and refused a form that was right: CI's run 36869126011, 2 runs of 16)
+      const logits = new Float32Array(readLogits.getMappedRange().slice(0, vocab * 4));
       readLogits.unmap();
       return { id: ids[0], logits };
     };
     const greedy = await run(wgsl.samplingSettings({ vocab, temperature: 0, topp: 0.9 }), [token], 0);
-    const want = product(dim, tableRow("classifier"), rms(Float64Array.from(stream2), floats(plan.tokens.final, dim)), rows);
-    const logitsOff = off(rows.map((r) => greedy.logits[r]), want) / largest(want), logitsLine = form.dp4a ? DP4A_LINE : LOGITS_LINE;
+    // (T226: a classifier of floats on DP4A too where the model has outlier channels: tokenShape's floatHead)
+    const packedHead = form.dp4a && !plan.tokens.outliers;
+    const want = product(dim, tableRow("classifier"), norm(Float64Array.from(stream2), floats(plan.tokens.final, dim),
+      plan.tokens.finalBias && floats(plan.tokens.finalBias, dim)), rows, packedHead);
+    const logitsOff = off(rows.map((r) => greedy.logits[r]), want) / largest(want), logitsLine = packedHead ? DP4A_LINE : LOGITS_LINE;
     if (!(logitsOff <= logitsLine)) return `the logits are ${logitsOff.toExponential(2)} of their largest from JavaScript's (line ${logitsLine})`;
     if (greedy.id !== wgsl.argmaxLikeCpu(greedy.logits)) return `the greedy token is ${greedy.id}, the largest logit's ${wgsl.argmaxLikeCpu(greedy.logits)}`;
     const sampled = { temperature: 0.8, topp: 0.9, penalty: 1.3 }, history = [token, greedy.id, 0, 1];
