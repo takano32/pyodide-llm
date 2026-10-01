@@ -95,7 +95,8 @@ The model list has three groups:
 
 - `?hf=<owner>/<repository>` (optionally `&revision=` and `&template=` with `{prompt}` in it) converts a Hugging
   Face repository, and says in words what it cannot run. What it reads: the Llama architecture (with Llama 3,
-  linear and yarn RoPE scaling; Mistral is read as Llama), Qwen2, Qwen3, GPT-2 and GPT-NeoX, in safetensors (one file or
+  linear and yarn RoPE scaling, yarn only as a factor and an original context, nothing else it can set; Mistral is read
+  as Llama), Qwen2, Qwen3, GPT-2 and GPT-NeoX, in safetensors (one file or
   several shards), with a Unigram or byte-level BPE `tokenizer.json` or a sentencepiece model. It does not open a
   repository that has only GGUF files: the GGUFs of the list are read together with the vocabulary and
   configuration of their original repository. Instruction models get what you type inside their chat template,
