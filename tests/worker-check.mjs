@@ -629,4 +629,100 @@ const ok = (line) => {
   ok("a load that ends before its weights have a place stops what is fetched for it");
 }
 
+// ---- T242: the shared memory of a worker that is told which loads follow on its one model (/benchmark/'s model
+// section) is made for the largest of them, without the gigabyte for a next model; each of those loads then fits it
+{
+  const PAGE = 65536, pagesOf = (bytes) => Math.ceil(bytes / PAGE);
+  context.stand.real = forward;
+  const again = () => run("forwardModule = stand.real; weightsPool = weightsNow = undefined; loadsAhead = undefined");
+  again();
+  const size = 32891932, after = 12537888, widest = 150e6;
+  const usual = context.pooledWeights(size, after, true, false);
+  assert.ok(usual.shared && usual.maximum * PAGE >= usual.base + size + after + 2 ** 30, "the model page's memory keeps a gigabyte for the next model");
+  again();
+  const lone = context.pooledWeights(size, after, true, false, widest);
+  assert.equal(lone.maximum, pagesOf(lone.base + size + widest) + 1);
+  assert.equal(context.pooledWeights(size, widest, true, false, widest).memory, lone.memory, "the widest load that follows got another memory");
+  assert.equal(context.pooledWeights(size, after, true, false, widest).memory, lone.memory, "a load that follows got another memory");
+  // (what follows may all be smaller than the load going on)
+  again();
+  const least = context.pooledWeights(size, after, true, false, 0);
+  assert.equal(least.maximum, pagesOf(least.base + size + after) + 1);
+  // and from the page's init to the memory: the largest of the rounds that take one (NumPy's takes none)
+  again();
+  const HEADER = [288, 768, 6, 6, 6, 32000, 256], OPTIONS = { dtype: "int8" };
+  const rounds = [[], ["kernels"], ["int8", "relaxed", "sampler", "kv16"], ["relaxed", "sampler", "kv16"]];
+  run("sharedKernels = {}; jsKernels = { relaxed: true }; wideKernels = undefined; disabled = []; threadsRequest = undefined; " +
+    "llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }");
+  context.crossOriginIsolated = true;
+  try {
+    const footprintOf = (without) => forward.footprint(HEADER, size, { ...OPTIONS, int8: !without.includes("int8"), relaxed: !without.includes("relaxed"),
+      halfKV: !without.includes("int8") && !without.includes("kv16"), shared: true, outliers: 8, gpu: false });
+    const widened = footprintOf(rounds[2]);
+    assert.ok(widened > footprintOf([]) && widened > footprintOf(rounds[3]), "the round with int8 widened is not the largest");
+    context.rounds = rounds;
+    run("loadsAhead = rounds");
+    context.weightsBuffer(size, HEADER, OPTIONS);
+    const pool = run("weightsPool");
+    assert.equal(pool.maximum, pagesOf(pool.base + size + widened) + 1);
+    // the model page's init says none: the gigabyte is there again (a larger model makes its own memory)
+    again();
+    context.weightsBuffer(size, HEADER, OPTIONS);
+    assert.ok(run("weightsPool").maximum * PAGE >= size + 2 ** 30);
+  } finally {
+    context.crossOriginIsolated = false;
+    run("sharedKernels = undefined; forwardModule = stand.forward; weightsPool = weightsNow = undefined; loadsAhead = undefined");
+  }
+  ok("a worker told the loads that follow on its one model makes its shared memory for the largest of them");
+}
+
+// ---- T242: what is thrown and is no Error is told in words, not as "[object Object]" (which /benchmark/ showed)
+{
+  const told = context.told;
+  assert.equal(told(new TypeError("Load failed")), "TypeError: Load failed");
+  assert.equal(told(run("new TypeError('Load failed')")), "TypeError: Load failed");  // the worker's own realm's
+  assert.equal(told(new DOMException("The operation was aborted.", "AbortError")), "AbortError: The operation was aborted.");
+  class ExitStatus {  // Emscripten's: no Error, a name and a message
+    name = "ExitStatus";
+    constructor(status) {
+      this.message = `Program terminated with exit(${status})`;
+      this.status = status;
+    }
+  }
+  assert.equal(told(new ExitStatus(1)), "ExitStatus: Program terminated with exit(1)");
+  assert.equal(told({ message: "no name" }), "no name");
+  assert.equal(told({ code: 7, why: "x" }), 'something that is not an error was thrown: {"code":7,"why":"x"}');
+  assert.equal(told({}), "something that is not an error was thrown");
+  const loop = {};
+  loop.self = loop;
+  assert.equal(told(loop), "something that is not an error was thrown");
+  assert.equal(told(new (class Odd {})()), "Odd was thrown");
+  assert.equal(told(undefined), "undefined");
+  assert.equal(told("a string"), "a string");
+  // and through the worker's own handler: a load whose runtime ended with such a value says it to the page
+  for (const [thrown, said] of [["{ name: 'ExitStatus', message: 'Program terminated with exit(1)', status: 1 }", "ExitStatus: Program terminated with exit(1)"],
+    ["{ code: 7 }", 'something that is not an error was thrown: {"code":7}'], ["undefined", "undefined"]]) {
+    fresh(() => new Response(new Uint8Array(64), { status: 200 }));
+    run(`initialized = Promise.reject(${thrown}); initialized.catch(() => {})`);
+    await context.onmessage({ data: { type: "load", load: 9, model: { id: "small", name: "Small", checkpoint: "small", tokenizer: "small.tokenizer.bin", bytes: 64, options: {} } } });
+    const error = messages.find((m) => m.type === "error");
+    assert.equal(error?.message, said);
+    assert.ok(!/\[object /.test(`${error.message} ${error.stack}`), error.stack);
+  }
+  run("initialized = undefined");
+  ok("a thrown value that is no Error is told by its name and message, or its fields");
+
+  // Pyodide's runtime that ends as it starts (its standard library did not arrive: loadPyodide() goes on without it, and
+  // Python exits) rejects with Emscripten's ExitStatus: told as a step of Pyodide's that stopped; an Error stays itself
+  fresh(() => new Response("", { status: 404 }));
+  const ended = await failure(run("pyodideSteps")("314.0.7", async () => ({ loadPyodide: () => Promise.reject(new ExitStatus(1)) })));
+  assert.equal(ended?.error.message,
+    'Pyodide 314.0.7: "the runtime" ended as it started (ExitStatus: Program terminated with exit(1)): one of its files may not have arrived');
+  assert.equal(ended.error.pyodide, true);
+  const broke = await failure(run("pyodideSteps")("314.0.7", async () => { throw new TypeError("Importing a module script failed."); }));
+  assert.equal(String(broke?.error), "TypeError: Importing a module script failed.");
+  assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
+  ok("a runtime of Pyodide's that ended as it started is told as a step that stopped");
+}
+
 console.log(`worker-check: ${passed} checks passed`);
