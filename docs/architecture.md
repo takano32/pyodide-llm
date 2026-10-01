@@ -30,8 +30,8 @@ flowchart TD
 | `src/pages/index.astro` | The chat page. It draws what the worker reports; the URL holds the state (`?model=`, `?hf=`, `?bits=`, `?without=` and others). |
 | `src/models.js` | The model list: files, sizes, engine options, generation settings, chat templates. The first entry is the default. |
 | `public/worker.js` | Loads Pyodide and NumPy, downloads the model in parts while Pyodide loads, and runs `generate()`. |
-| `public/llama2_numpy.py` | The engine. Reads llama2.c's legacy format (float32, float16, int8, 6 bits), the tokenizers (llama2.c's BPE, sentencepiece Unigram, byte-level BPE), the architectures (Llama, Qwen2, Qwen3, GPT-2, GPT-NeoX), and samples. Without the kernels, NumPy does the arithmetic. |
-| `public/llama2_convert.py` | Converts a Hugging Face model (or a Q8_0 GGUF) as its file arrives, and writes it into the model's memory. The same code builds the site's models (`convert_hf.py`, `quantize.py`) and converts in the browser. It also reads a model's chat template (a small part of Jinja). |
+| `public/llama2_numpy.py` | The engine. Reads llama2.c's legacy format (float32, float16, int8, 6 bits), the tokenizers (llama2.c's BPE, sentencepiece Unigram, byte-level BPE), the architectures (Llama, Qwen2, Qwen3, Qwen3.5, GPT-2, GPT-NeoX), and samples. Without the kernels, NumPy does the arithmetic. |
+| `public/llama2_convert.py` | Converts a Hugging Face model (or a GGUF: Q8_0, or the ternary PQ2_0) as its file arrives, and writes it into the model's memory. The same code builds the site's models (`convert_hf.py`, `quantize.py`) and converts in the browser. It also reads a model's chat template (a small part of Jinja). |
 | `public/forward.js` | One token's forward pass, and a block of prompt tokens, in JavaScript. It calls the same kernels in the same order as the Python engine would, and chooses for each block and each few tokens whether the CPU or the GPU runs them. |
 | `kernels/` | The SIMD kernels: int8 and float32 matrix products, activation quantization, RMSNorm, LayerNorm, RoPE, attention, SwiGLU, GELU, and the sampling (repetition penalty, softmax, top-p). |
 | `public/helper.js`, `public/jobs.js` | Software threads, and the work they share. |
@@ -62,7 +62,10 @@ memory between workers. Where that fails, the page runs on one thread.
 
 With shared memory, the forward pass is split among software threads: each matrix product is cut into chunks of
 rows that the threads take in turn, and attention is split by head. The page searches for the fastest number of
-threads on each device and writes its decision to the console (lines starting with `threads:`).
+threads on each device and writes its decision to the console (lines starting with `threads:`). The number is kept
+for the next visit, one for each model and device, and checked against its neighbours again on the first answer of
+every visit; a search that ran while the GPU was getting ready (its upload and its compiling use the CPU too) is
+used, but not kept, and is run again once the GPU is ready.
 
 ## Memory
 
@@ -76,8 +79,16 @@ threads on each device and writes its decision to the console (lines starting wi
   threads, except for a model with grouped-query attention, which keeps float32 unless that would push it out of
   32-bit memory or it needs 64-bit memory anyway (see [performance.md](performance.md#threads)). Where the page asks
   for a shared memory (for threads) and the browser refuses it, or the page is not cross-origin isolated, the model
-  runs on one thread with float32, except where float16 keeps it within 32-bit memory and float32 would not: there
-  float16 is kept so that the model still reaches the end of its context.
+  runs on one thread with float32, except where float16 keeps it within 32-bit memory and float32 would not, or
+  float16 keeps it within a 64-bit memory's 16 GiB and float32 would not: there float16 is kept so that the model
+  still reaches the end of its context. (A shared memory the browser grants at a lowered maximum that the model does
+  not fit is made a memory that is not shared as well.)
+- A Qwen3.5 (hybrid attention) keeps keys and values only for its full-attention layers, one layer in four. The
+  others are Gated DeltaNet layers ("linear attention"), which keep a state whose size does not depend on the
+  context: a 128 by 128 matrix for each of their heads, and the last four tokens' inputs of a short convolution.
+  The matrices are held twice (a step reads one copy and writes the other, so that it can be repeated if a thread
+  stops in the middle of it): 38 MB for Qwen3.5 0.8B. Such a model takes its tokens in order from position 0, and
+  its layers run on the CPU only.
 - The model's WebAssembly memory is reused when another model is chosen: Chromium would not create a third
   WebAssembly memory on one page. Before the next model loads, the page also waits (up to 5 seconds) for the GPU
   worker of the last one to let go of its buffers and its device.
@@ -88,7 +99,7 @@ threads on each device and writes its decision to the console (lines starting wi
 - Hugging Face models are fetched in parts of 8 or 16 MiB over 6 connections, in the order of the file, and each
   tensor is converted when it arrives. The download is never held as a whole: the peak is about the converted
   model.
-- 47 of the 53 Hugging Face models in the list are fetched as a Q8_0 GGUF, with the vocabulary and the
+- 48 of the 54 Hugging Face models in the list are fetched as a GGUF (47 as Q8_0), with the vocabulary and the
   configuration of the original repository: about half the download, the same weights to within the rounding of
   the scales. Each GGUF was compared with its original tensor by tensor before it replaced it, one file at a time:
   two GGUFs from the same publisher can differ (Qwen's own GGUFs of Qwen3 0.6B and 1.7B did not match their

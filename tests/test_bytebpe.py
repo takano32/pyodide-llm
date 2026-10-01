@@ -17,6 +17,13 @@ tokenizers = pytest.importorskip("tokenizers", reason="pip install tokenizers to
 GPT2_PATTERN = r"'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
 QWEN_PATTERN = (r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*"
                 r"|\s*[\r\n]+|\s+(?!\S)|\s+")
+# T229: Qwen3.5's (Qwen/Qwen3.5-0.8B's tokenizer.json), Qwen's with the combining marks taken into a word
+QWEN35_PATTERN = (r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*"
+                  r"|\s*[\r\n]+|\s+(?!\S)|\s+")
+# texts with marks: a letter and its accent, a kana and its voicing mark, Devanagari and Thai vowel signs, an
+# enclosing mark, a mark that begins the text, follows a digit, a space, a line break, punctuation
+MARKED = ["e\u0301te\u0301", "\u304b\u3099\u304d", "\u0915\u093e\u092e", "\u0e01\u0e31\u0e19", "a\u20dd b",
+          "\u0301a", "1\u0301", " \u0301a", "\n\u0301a", "!\u0301!", "a\u0301\u0301 \u0301", "it's\u0301", "'\u0301s"]
 
 
 def trained(pattern, digits):
@@ -34,8 +41,8 @@ def trained(pattern, digits):
 
 
 @pytest.mark.parametrize("name, pattern, digits", [
-    ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False)])
-@pytest.mark.parametrize("text", TEXTS)
+    ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False), ("qwen35", QWEN35_PATTERN, False)])
+@pytest.mark.parametrize("text", TEXTS + MARKED)
 def test_matches_the_real_tokenizer(name, pattern, digits, text):
     real, spec = trained(pattern, digits)
     options = tokenizer_json_options(spec)
@@ -47,7 +54,7 @@ def test_matches_the_real_tokenizer(name, pattern, digits, text):
 
 
 @pytest.mark.parametrize("name, pattern, digits", [
-    ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False)])
+    ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False), ("qwen35", QWEN35_PATTERN, False)])
 def test_decodes_every_piece(name, pattern, digits):
     real, spec = trained(pattern, digits)
     vocab_size = real.get_vocab_size()
@@ -58,12 +65,13 @@ def test_decodes_every_piece(name, pattern, digits):
         assert mine.decode(0, id).decode("utf-8", "replace") == real.decode([id], skip_special_tokens=False)
 
 
-@pytest.mark.parametrize("text", TEXTS)
+@pytest.mark.parametrize("text", TEXTS + MARKED)
 def test_pretokenizers_follow_the_patterns(text):
     """The engine runs the patterns on the characters' classes, because re has no \\p{L} (T200)."""
     regex = pytest.importorskip("regex", reason="pip install regex to check the patterns themselves")
     assert pretokenize(text, "gpt2") == regex.findall(GPT2_PATTERN, text)
     assert pretokenize(text, "qwen") == regex.findall(QWEN_PATTERN, text)
+    assert pretokenize(text, "qwen35") == regex.findall(QWEN35_PATTERN, text)
     assert pretokenize(text, "gpt2-digits") == digits_then_gpt2(regex, text)
 
 
@@ -81,12 +89,14 @@ PIECES = ["a", "b", "s", "t", "d", "m", "l", "r", "e", "v", "S", "T", "L", "D", 
           " ", "  ", "\t", "\n", "\r", "\r\n", "\x0b", "\x0c", "\x85", "\xa0", " ", "　", "0", "7", "123",
           ".", ",", "!", "-", "_", "(", '"', "@", "é", "ß", "Ω", "я", "あ", "カ", "漢", "한", "ｱ", "Ａ", "１", "٣", "²", "Ⅻ",
           "①", "́", "‍", "、", "。", "\U0001f600", "\U00020bb7", "\U0001d7ce", "\U00010140", "’",
-          "\x1c", "\x1f", "ſ", "'ſ", "'ſt"]
+          "\x1c", "\x1f", "ſ", "'ſ", "'ſt",
+          # T229: combining marks of the three kinds (Mn, Mc, Me), which Qwen3.5's pattern takes into a word
+          "\u3099", "\u093e", "\u0e31", "\u20dd"]
 
 
 def test_pretokenizers_follow_the_patterns_on_random_texts():
     regex = pytest.importorskip("regex", reason="pip install regex to check the patterns themselves")
-    patterns = {"gpt2": GPT2_PATTERN, "qwen": QWEN_PATTERN,
+    patterns = {"gpt2": GPT2_PATTERN, "qwen": QWEN_PATTERN, "qwen35": QWEN35_PATTERN,
                 "llama3": QWEN_PATTERN.replace(r"|\p{N}|", r"|\p{N}{1,3}|")}
     rng = random.Random(200)
     for _ in range(3000):
@@ -111,13 +121,13 @@ def real_pretokenizer(name):
         return byte_level
     if name == "gpt2-digits":
         return pre_tokenizers.Sequence([pre_tokenizers.Digits(individual_digits=True), byte_level])
-    pattern = QWEN_PATTERN if name == "qwen" else QWEN_PATTERN.replace(r"|\p{N}|", r"|\p{N}{1,3}|")
+    pattern = {"qwen": QWEN_PATTERN, "qwen35": QWEN35_PATTERN}.get(name) or QWEN_PATTERN.replace(r"|\p{N}|", r"|\p{N}{1,3}|")
     return pre_tokenizers.Split(Regex(pattern), behavior="isolated")
 
 
 # 17 to 29 s for each of the four on CI's runner, so only the full suite runs it (tests/suite.sh full, T193)
 @pytest.mark.skipif(not os.environ.get("EVERY_CODE_POINT"), reason="EVERY_CODE_POINT=1: tests/suite.sh full runs it")
-@pytest.mark.parametrize("name", ["gpt2", "gpt2-digits", "qwen", "llama3"])
+@pytest.mark.parametrize("name", ["gpt2", "gpt2-digits", "qwen", "llama3", "qwen35"])
 def test_pretokenizers_split_every_character_as_the_real_ones_do(name):
     real = real_pretokenizer(name)
 

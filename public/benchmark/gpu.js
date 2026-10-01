@@ -2049,6 +2049,9 @@ async function generationRun(parts, count, per, target) {
   }
   const ms = performance.now() - began;
   if (!target) into.destroy();
+  // T219's review: a step whose logits were not finite is refused by the sampler (the run is stopped there, the tokens
+  // after it are not sampled), which would make the time of a run, and of a token, a shorter one than it is: said, not timed
+  if (state[WGSL.STATE_NOT_FINITE]) throw new Error("the sampler refused a step: its logits were not finite numbers, so the time is not a token's");
   return { ms, ids, state };
 }
 // made-up random numbers in [0, 1) (the engine's are NumPy's generator's, drawn by the CPU in the same order)
@@ -2202,13 +2205,31 @@ function sparseLogits(vocab) {
   for (const [at, value] of SPARSE_PEAKS) logits[at] = value;
   return logits;
 }
-// T219: logits that are not finite, in place: a NaN or +inf at `at`, every logit -inf, or a few -inf (seven, every
-// 131st token from 5; where the most likely is among them both sides take the next: the CPU leaves them out, and draws as ever)
+// T219: logits that are not finite, in place, at `at` (the kinds of two or three logits take the places after it). What
+// the sampler must refuse (T195's rule: the largest logit is no finite number: a NaN or +inf anywhere, or every logit
+// -inf), and what it must not (UNREFUSED). The bits of a NaN are a device's to give (the review of T219): the NaN
+// JavaScript writes is the quiet one, and a device may give one with the sign set (x86's default NaN), a signaling one,
+// or one of all ones, which a test of a quiet NaN alone, or of the bits as a signed number, does not see. The kinds
+// "... in the window" are set where the history is known (the penalty multiplies or divides the logit of its tokens).
+// A few -inf are seven, every 131st token from 5 (where the most likely is among them both sides take the next: the CPU
+// leaves them out, and draws as ever); one finite logit is the only token that can be drawn. (The largest finite float
+// is not here: that its bits are under the infinity's is proved for every float32 in the review's notes, and a draw
+// from logits of 3.4e38 asks the device's arithmetic overflowing, which a verdict of WRONG on the owner's device, with
+// its ratios withheld, should not hang on.)
+const UNREFUSED = ["-inf some", "denormals and -0", "one finite"];
 function unfiniteLogits(logits, kind, at) {
+  const bits = new Uint32Array(logits.buffer, logits.byteOffset, logits.length);
   if (kind === "nan") logits[at] = NaN;
+  else if (kind === "nan, the sign set") bits[at] = 0xffc00000;
+  else if (kind === "nan, signaling") bits[at] = 0x7f800001;
+  else if (kind === "nan, all ones") bits[at] = 0xffffffff;
+  else if (kind === "nan all") logits.fill(NaN);
   else if (kind === "+inf") logits[at] = Infinity;
+  else if (kind === "+inf and -inf") (logits[at] = Infinity), (logits[at + 1] = -Infinity);
   else if (kind === "-inf all") logits.fill(-Infinity);
-  else for (let i = 5; i < logits.length; i += 131) logits[i] = -Infinity;
+  else if (kind === "-inf some") for (let i = 5; i < logits.length; i += 131) logits[i] = -Infinity;
+  else if (kind === "denormals and -0") (logits[at] = 1e-45), (logits[at + 1] = -0), (logits[at + 2] = -1e-45);
+  else if (kind === "one finite") (logits.fill(-Infinity), (logits[at] = 1.5));
 }
 // logits as a model's look (a few tokens far above the rest), made up: a normal spread and `peaks` tokens 8 to 14 over it
 function madeUpLogits(vocab, spread, peaks = 20) {
@@ -2290,17 +2311,24 @@ async function checkSampling(kind = "one") {
     cases.push({ vocab, topp: 0.9, temperature: 0, penalty: 1, random: 0.3, ties: true });
   }
   // T219: logits the sampler must refuse (T195's rule: a NaN anywhere, +inf anywhere, or all -inf: the State's
-  // not_finite word set, stopped set, nothing sampled) and ones it must not (a few -inf, which the CPU never draws
-  // either): a NaN or +inf at the first token, the last (a thread's last, the vocabulary's last chunk's) and in the
-  // middle, with a nucleus and without, at temperature 0 too
+  // not_finite word set, stopped set, nothing sampled) and ones it must not (UNREFUSED: a few -inf, which the CPU never
+  // draws either, and the review's: denormals and -0, one finite logit among -inf): a NaN or +inf at the first token,
+  // the last (a thread's last, the vocabulary's last chunk's) and in the middle, with a nucleus and without, at
+  // temperature 0 too; the review's: NaNs of other bits, every logit NaN, +inf beside -inf, and a NaN or +inf on the
+  // penalty's last token (which the penalty multiplies or divides)
   for (const vocab of [1003, 128256]) {
-    // (a fallback adapter takes a second or so for each of the big vocabulary's: three there)
-    const places = [["nan", 0], ["nan", vocab - 1], ["nan", (vocab / 2 | 0) + 1], ["+inf", vocab - 1], ["+inf", 777], ["-inf all", 0]];
-    for (const [unfinite, at] of fallback && vocab > 1003 ? [places[1], places[4], places[5]] : places) {
+    const places = [["nan", 0], ["nan", vocab - 1], ["nan", (vocab / 2 | 0) + 1], ["+inf", vocab - 1], ["+inf", 777], ["-inf all", 0],
+      ["nan, the sign set", 3], ["nan, signaling", vocab - 2], ["nan, all ones", 500], ["nan all", 0], ["+inf and -inf", 600],
+      ["nan in the window", 0], ["+inf in the window", 0]];
+    // (a fallback adapter takes a second or so for each of the big vocabulary's: six of them there)
+    for (const [unfinite, at] of fallback && vocab > 1003 ? [1, 4, 5, 6, 9, 11].map((i) => places[i]) : places) {
       for (const [topp, temperature] of [[0.9, 0.7], [1, 0.7], [0.9, 0]]) cases.push({ vocab, spread: 2, topp, temperature, penalty: 1.3, random: 0.5, unfinite, at });
     }
     for (const topp of [0.9, 1]) cases.push({ vocab, spread: 2, topp, temperature: 0.7, penalty: 1.3, random: 0.5, unfinite: "-inf some" });
     cases.push({ vocab, spread: 2, topp: 0.9, temperature: 0, penalty: 1.3, random: 0.5, unfinite: "-inf some" });
+    for (const unfinite of fallback && vocab > 1003 ? ["one finite"] : ["denormals and -0", "one finite"]) {
+      for (const [topp, temperature] of [[0.9, 0.7], [1, 0.7], [0.9, 0]]) cases.push({ vocab, spread: 2, topp, temperature, penalty: 1.3, random: 0.5, unfinite, at: 321 });
+    }
   }
   const most = 128256, owned = [];
   let wrong = 0, edge = 0, checked = 0;
@@ -2381,6 +2409,9 @@ async function checkSampling(kind = "one") {
           : [ranked[3], ranked[4], ...ranked.slice(-4), ranked[0], ...ranked.slice(5, 35), ranked[1], ...ranked.slice(-30, -10), ranked[0], ranked[2],
             ranked[1], ...ranked.slice(35, 43), ranked[2]];
         if (c.short) logits[0] = (logits[ranked[0]] + logits[ranked[1]]) / 2;
+        // (T219's review) the penalty's last token a NaN or +inf: the penalty multiplies or divides it, and it stays one
+        if (c.unfinite === "nan in the window") logits[history[history.length - 1]] = NaN;
+        if (c.unfinite === "+inf in the window") logits[history[history.length - 1]] = Infinity;
         let random = c.random;
         if (random === "fifth") {
           // the middle of the fifth tied token's share in the CPU's walk (the ties in the order of their index)
@@ -2388,16 +2419,17 @@ async function checkSampling(kind = "one") {
           const k = walk.tokens.map((token, at) => [token, at]).filter(([token]) => logits[token] === TIED_RUN)[4][1];
           random = (walk.cumulative[k - 1] + walk.cumulative[k]) / 2 / walk.mass;
         }
-        if (c.unfinite && c.unfinite !== "-inf some") {
-          // (T219) refused: the ids untouched, the state's not_finite and stopped set, nothing sampled, the position and
-          // the token as they were; a run of 4 all refused too
+        if (c.unfinite && !UNREFUSED.includes(c.unfinite)) {
+          // (T219) refused: the ids untouched (every one of the run's), the state's not_finite and stopped set, nothing
+          // sampled, the position, the token and the history's length as they were; a run of 4 all refused too
           for (const draws of [[random], [random, 0.1, 0.9, 0.3]]) {
             const got = await sampled(c, logits, history, draws, draws.length), s = got.state;
             checked++;
-            const right = got.ids[0] === SENTINEL_ID && s[WGSL.STATE_NOT_FINITE] === 1 && s[7] === 1 && s[5] === 0 && s[1] === 40 && s[4] === history[history.length - 1];
+            const right = draws.every((_, i) => got.ids[i] === SENTINEL_ID) && s[WGSL.STATE_NOT_FINITE] === 1 && s[7] === 1 && s[5] === 0 && s[1] === 40 &&
+              s[4] === history[history.length - 1] && s[6] === history.length;
             if (!right) {
               wrong++;
-              problems.push(`${c.vocab} ${c.unfinite} at ${c.at} top-p ${c.topp} T ${c.temperature}, ${draws.length} steps: not refused (id ${got.ids[0]}, state ${[...s.subarray(0, 8)].join(" ")})`);
+              problems.push(`${c.vocab} ${c.unfinite} at ${c.at} top-p ${c.topp} T ${c.temperature}, ${draws.length} steps: not refused (ids ${[...got.ids.subarray(0, draws.length)].join(" ")}, state ${[...s.subarray(0, 8)].join(" ")})`);
             }
           }
         } else {
