@@ -107,6 +107,23 @@ class File:
         self.data[offset:offset + raw.size] = raw
 
 
+def with_the_entrys_rope(config, entry):
+    """The config.json the converter is given, with the RoPE the entry's options say (T235's review). The worker lets an
+    entry's options win over the conversion's, and the engine makes the RoPE tables from them for an int8 model (the
+    page's), but a float32 checkpoint, which this tool writes, holds its tables in the file, made by the converter from
+    config.json: an entry that says rope_scaling would be read with the original's here, not with its own."""
+    said = entry.get("options", {})
+    if "rope_scaling" not in said:
+        return config
+    patched = json.loads(config)
+    assert "rope_parameters" not in patched, "transformers 5's rope_parameters: patch them as well"
+    if said["rope_scaling"]:
+        patched["rope_scaling"] = said["rope_scaling"]
+    else:
+        patched.pop("rope_scaling", None)
+    return json.dumps(patched)
+
+
 def converted(entry, directory):
     hf = entry["hf"]
     weights = fetch(entry, hf["weights"], directory)
@@ -139,7 +156,7 @@ def converted(entry, directory):
                 chat_template = fetch(source, "chat_template.jinja", directory).read_text()
             except OSError:
                 pass  # most repositories have none
-        config = fetch(source, "config.json" if vocabulary else hf["config"], directory).read_text()
+        config = with_the_entrys_rope(fetch(source, "config.json" if vocabulary else hf["config"], directory).read_text(), entry)
         if vocabulary:
             size = 1 << 20
             while True:
