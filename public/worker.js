@@ -472,16 +472,18 @@ function watchArrivals() {
     self.fetch = plain;
     observer?.disconnect();
   };
-  /** { promise, cancel }: the promise settles once nothing has arrived for seconds */
+  /** { promise, cancel }: the promise settles once nothing has arrived for seconds. The silence is counted in the
+   * ticks that ran (one a second), not in the clock's seconds: a page that a phone froze while another app was in front,
+   * or a worker busy for a long while, runs no tick, and a clock that jumped over it would call that a line that
+   * stopped (T129's review; the same lesson as the software threads', T120) */
   watch.quiet = (seconds) => {
     let timer;
     const promise = new Promise((resolve) => {
-      let seen = -1, since = 0;
+      let seen = -1, silent = 0;
       timer = setInterval(() => {
-        const now = performance.now();
         if (watch.arrived !== seen) {
-          [seen, since] = [watch.arrived, now];
-        } else if (now - since >= seconds * 1000) {
+          [seen, silent] = [watch.arrived, 0];
+        } else if (++silent >= seconds) {
           clearInterval(timer);
           resolve();
         }
