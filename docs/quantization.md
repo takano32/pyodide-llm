@@ -146,8 +146,15 @@ activations and 25.086 with 8-bit ones (CI's x86-64 runner).
 ## Other small effects
 
 - A BOS token at the start: the page always starts with one, while some models are used without it. The
-  difference was within ±3%, in either direction depending on the text, so it was kept. One model broke without
-  the right BOS (DeepSeek-R1 Distill Qwen 1.5B), and its entry now names it.
+  difference was within ±3% on plain text, in either direction depending on the text, so it was kept. Two models
+  were different. DeepSeek-R1 Distill Qwen 1.5B broke without the right BOS, and its entry now names it. Qwen3.5
+  0.8B, whose layers mostly keep a state, is 20% to 65% worse on 512 tokens of plain text with the converter's
+  `<|endoftext|>` in front (four Wikipedia texts, English and Japanese; the damage lasts: 5% to 30% still at tokens 256
+  to 512), 1% to 4% worse with `<|im_start|>` and 0% to 1% with a newline. Its entries begin with the chat format's
+  own first token, `<|im_start|>`, so the page sends the ids the real template writes. In chat form the first token
+  costs nothing measurable (24 answers written by hand, `tests/chat_nll.py`: −0.8% in perplexity with
+  `<|endoftext|>` in front, worse on 12 of 24): what `?hf=Qwen/Qwen3.5-0.8B` loses is plain text, where there is no
+  chat format and the converter's BOS comes first.
 - RMSNorm's epsilon: 1e-5 for all models until Qwen3 0.6B showed +0.12% with it; the converter now passes the
   model's own value.
 - The order of rounding inside the int8 kernels changed twice on 2026-09-27 (one scaling per group instead of
