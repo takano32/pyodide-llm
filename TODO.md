@@ -1632,8 +1632,88 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T247 [追加][モデル] Qwen3.5 のほかの大きさを一覧に — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T245 の後。規模 小〜中）
 - 0.8B（T236）のほかの大きさ（HF にあるものを調べて）を、Q8_0 の GGUF から。`gguf_check.py tensors` を 1 つずつ通してから。
 
-### T248 [調査][モデル] 足せるモデルの調べ直し（2026-10） — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T81 と同じ形の調べ。規模 小〜中）
+### T248 [調査][モデル] 足せるモデルの調べ直し（2026-10） — 状態: **反映済み**（2026-10-01、調べだけ。本線に入れた。出たタスクは T249〜T261）
 - 2026-09-26 の T81 の調べの後に出たもの・人気の上がったものを、今のエンジンで開けるか（形・トークナイザ・書式・大きさ）で分け、足りないものを採番できる形に書く。
+- **調べの結果（2026-10-01、[docs/notes/t248-survey-2026-10-01.md](docs/notes/t248-survey-2026-10-01.md)）**。コードは触っていない。判定は変換器そのもの（`normalize()`・`check_config()`・前分割の読み手を 1,358 件に、ページと同じ `Conversion` を約 90 件に、重みなしで）。
+  - ダウンロード上位 2000 件の 9.5B 以下 782 件のうち、今受け付ける種類は 458 件でダウンロードの 83.0%（T81 のときは 51.7%）。残りはどの種類も 3% 未満。判定にかけた 1,358 件のうち 877 件が通った（落ちた 481 件の 278 件は量子化済みの再配布）。
+  - **今のまま開く日本語のモデル**: rinna japanese-gpt2 xsmall（int8 43 MB。tiny-lm の次に軽い）と medium、llm-jp-3 3.7B・7.2B instruct3、llm-jp-4.1 8B thinking（2026-09-15。Q8_0 の GGUF は見つからず、書式は harmony の手書き、止まりは [1, 2, 13]）、shisa v2.1（Llama 3.2 3B と Qwen3 8B）、CAT-Translate 3.3B、Llama-3-ELYZA-JP 8B、CAT-Thinking 8B、EuroLLM 1.7B（35 言語）ほか 33 件。Qwen3 と Qwen2.5 の派生の 4 つは BOS が 1 になるので、項目に `bos: 151643` が要る。
+  - **今のまま開く英語のモデル**: GPT-2 の medium・large・xl と distilgpt2、Pythia 14M・2.8B・6.9B、Qwen2.5 Coder、DeepSeek-R1 Distill の Qwen 7B と Llama 8B、Llama 3.1 8B Instruct、h2o-danube3 500M、Supra2 100M。
+  - **小さな穴（勧める順）**: Granite 4.2（倍率は attention の 1 つだけで、q の行列に畳めば変換器だけで済む見込み。日本語を試験した言語に挙げる）、MiniCPM5 の 2 段の前分割（29 件・150 万ダウンロード）、SmolLM3 の RoPE なしの層（18 件・113 万）、Mistral の新しいトークナイザと Phi-4 の前分割（Ministral 8B、Mistral Nemo の日本語版、Phi-4 mini の前提）、tokenizer.json の sentencepiece 流の BPE（CAT-Translate 7B、Gemma 4 の前提）、Phi-3 mini（まとまったテンソルを割る）、DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor`（読み方の判断が先）。
+  - **新しいアーキテクチャで勧めるもの**: LFM2.5（畳み込みの層と attention の層。規模 中。日本語を挙げる 230M・350M と日本語用の 1.2B-JP、作り手の Q8_0 の GGUF あり。日本語のタグの小さいモデルでいちばん多い種類）、Gemma 3 の 270M と 1B（norm 4 つ・GeGLU・512 の窓。規模 中〜大。原本はゲート付きで unsloth の写しから）。Gemma 4 は Gemma 3 の後（規模 大）。状態空間（Nemotron-H・Mamba・RWKV7）と MoE は今は勧めない。
+  - 途中で見つけたこと: API の `language=ja` は効かない（`filter=ja` が効く）。前分割の Split が `String` の tokenizer.json で `pretokenizer_name()` が `KeyError` で落ちる（worker は次のトークナイザに移るので開くものは開く）。CAT-Translate-7b は `tokenizer.model` が無く今も開かない。
+  - 確かめていないもの: ブラウザでの動作、GGUF と原本の突き合わせ、手書きの書式の本物、ライセンスの条文、Gemma 3 と LFM2.5 の日本語の質。
+  - **持ち主に決めてもらうこと**（文書の 9 節）: A のどれを入れるか（全部で約 80 項目になる）、llm-jp-4.1 を safetensors の 17.2 GB から取るか・考えを見せるか、独自のライセンスのモデルのために仕事をするか、新しいアーキテクチャの順（LFM2.5 → Gemma 3 を勧める）、英語の古典を入れるか、Mistral Nemo 12B（約 15.3 GiB の見積もり）を試すか。
+  - 採番の案は文書の 6 節（すぐ入れる 4 つ、小さな穴 7 つ、新しいアーキテクチャ 2 つ。番号は本会話が付ける）。
+
+### T249 [追加][モデル] 日本語の軽いモデルと中くらいのモデルを一覧に（rinna GPT-2 xsmall・medium、llm-jp-3 3.7B、shisa v2.1 3B、CAT-Translate 3.3B、EuroLLM 1.7B） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- どれも今の変換器を通った（この文書の 2 節）。GGUF のあるものは `gguf.yml` の `candidates` で原本と突き合わせてから。rinna の 2 つは safetensors から。
+- 書式: rinna は書式なし、llm-jp は `llmJp`、shisa は Llama 3.2 と同じ日付つき、CAT-Translate は 0.8B・1.4B と同じ、EuroLLM は変換器の読む ChatML。`format_check.py` に足す。
+
+```
+### T250 [追加][モデル] 日本語の 8B を一覧に（llm-jp-4.1 8B thinking、Llama-3-ELYZA-JP 8B、shisa v2.1 Qwen3 8B、CAT-Thinking 8B） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- 64 ビットのメモリ（Chrome と Firefox）。llm-jp-4.1 は harmony の手書きと止まりのトークン [1, 2, 13]、Qwen3 の派生は `bos: 151643`。
+- llm-jp-4.1 の Q8_0 の GGUF が無ければ safetensors の 17.2 GB から（持ち主の判断）。thinking の考えを見せるかも決める。
+
+```
+### T251 [追加][モデル] 英語の古典の梯子を一覧に（GPT-2 medium・large・xl と distilgpt2、Pythia 14M・2.8B・6.9B） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- GPT-2 と NeoX の GGUF の道（T136 の段 ③）のまま。実物の固定値に 1 つ足すかは任意。
+
+```
+### T252 [追加][モデル] 名前の通った 7〜8B と Coder を一覧に（Qwen2.5 Coder 1.5B・7B、DeepSeek-R1 Distill Qwen 7B・Llama 8B、Llama 3.1 8B Instruct） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- どれも bartowski の Q8_0 がある。DeepSeek の 2 つは 1.5B の項目と同じ書式と BOS。
+
+**小さな穴（勧める順）**
+
+```
+### T253 [追加][変換] Granite 4.2（attention の倍率を q に畳む）と一覧への追加 — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- `normalize()` で granite を llama に読み替え、q の行列を `attention_multiplier × √head_dim` 倍にして書く。ほかの倍率が 1.0 でないもの（4.1）は断る。GGUF の `granite` の名前。書式は手書き。日本語を試験した言語に挙げる 3B（int8 約 4.1 GB）と 8B。
+
+```
+### T254 [追加][解析分割] MiniCPM5 の前分割（数字を先に切る 2 段の Split） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- 新しい型を 1 つ。全符号位置と乱数の文で本物の tokenizers と比べる。MiniCPM5 1B・2B（apache-2.0、英語と中国語）が開く。29 件。
+
+```
+### T255 [追加][CPU][WebGPU] SmolLM3（4 層に 1 つ RoPE を使わない層） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- options に RoPE なしの層を持ち、forward.js と GPU の ROPE でその層の回す本数を 0 に。書式は手書き。3B（apache-2.0、6 言語、日本語なし）。
+
+```
+### T256 [追加][解析分割] Mistral の新しいトークナイザと Phi-4 の前分割（大文字と小文字の種類を分ける型 2 つ） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- `CharClasses` を Lu・Lt・Lm・Lo・Ll・M まで細かくする。Ministral 8B（研究用のライセンス）、Mistral Nemo の日本語版（12B、メモリは実測）、kanana-2 が開き、Phi-4 mini の前提になる。
+
+```
+### T257 [追加][変換] tokenizer.json の sentencepiece 流の BPE を読む（CAT-Translate 7B、Gemma 4 の前提） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- merges の順位を点数にして llama2.c 形の BPE の語片に直す。normalizer は「先頭に ▁」「空白を ▁」だけを受け付ける。本物と ID を突き合わせる。
+
+```
+### T258 [追加][変換] Phi-3 mini（1 つにまとまった q・k・v と gate・up を割る）、続けて Phi-4 mini（longrope と回す割合） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- Phi-3 mini 4k は文脈を窓の 2047 で切る。Phi-4 mini は前分割の仕事の後。
+
+```
+### T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- transformers は読まない名前。llama.cpp が読むかを確かめ、カードの勧める実行のしかたと、両方の読みの perplexity で決める。
+
+**新しいアーキテクチャ**
+
+```
+### T260 [追加][CPU] LFM2.5（畳み込みの層と attention の層）を CPU で: 350M と 1.2B-JP を一覧に — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- 層の種類の並び、畳み込みの層の forward と状態、GGUF の `lfm2`。規模 中。日本語の使える 0.26〜0.40 GB のモデルが増える。GPU は別のタスク（畳み込みのシェーダ）。
+
+```
+### T261 [追加][CPU][WebGPU] Gemma 3 の 270M と 1B（norm 4 つ・GeGLU・512 の窓・2 つの RoPE） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- 規模 中〜大。窓つきの attention は CPU と GPU の両方。原本はゲート付きで、unsloth の写しから。Gemma 2 と Gemma 4 はこの部品の上に。
 
 ### T235 [追加][Bonsai] Ternary-Bonsai-1.7B を一覧に（PQ2_0 を int8 に広げる読みと yarn の RoPE） — 状態: **完了**（2026-10-01 に本線に入れた 8d65233、レビュー済み Sonnet max。持ち主の判断待ちが 4 つ: 下のレビューの項）
 - ブランチ `t235-ternary-bonsai-1.7b`（確かめの道具は別のブランチ `t235-probe`: `tests/yarn_reference.py` と測った 2 つの文。本線には入れない）。決定と落とし穴は AGENTS.md の「3 値の Ternary Bonsai 1.7B」。
