@@ -4,7 +4,8 @@
 #
 #   pip install numpy tokenizers torch --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
 #   pip install safetensors "transformers @ git+https://github.com/huggingface/transformers@7fb5bcd1d4b8a5c225a2c33429b2e9e023dd61ae"
-#   python tests/reference_qwen35.py <directory for the download> [--only=made-up|real] [--positions=96]
+#   python tests/reference_qwen35.py <directory for the download> [--only=made-up|real|fetch] [--positions=96]
+#   (--only=fetch: the real model's files into the directory and no more, for tests/page_qwen35.sh)
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/reference_qwen35.sh" --ref <branch> --grep "qwen35"
 #
@@ -293,6 +294,10 @@ def main():
     only = next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--only=")), None)
     positions = int(next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--positions=")), 96))
     failed = False
+    if only == "fetch":
+        for name in FILES:
+            fetch(name, directory)
+        return
     if only in (None, "made-up"):
         for name, settings in MADE_UP.items():
             failed |= made_up(name, settings)
