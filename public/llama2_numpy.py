@@ -1029,7 +1029,10 @@ class Llama:
         dtype = np.dtype(np.int8 if six else dtype)
         offset = 28
         # The int8 kernels work on groups of 32 only
-        suitable = dtype != np.int8 or (dim % 32 == 0 and self.q_dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0)
+        self.linear = linear_form(linear)
+        # (T229: and a linear-attention layer's output matrix, whose rows are as long as its value heads together)
+        suitable = dtype != np.int8 or (dim % 32 == 0 and self.q_dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0
+                                        and (self.linear is None or linear_widths(self.linear)[2] % 32 == 0))
         kernels = load_kernels(kernels, "relaxed" in disable) if kernels and "kernels" not in disable and \
             (suitable or external is not None) else None
         # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
@@ -1075,7 +1078,6 @@ class Llama:
         self.rotary = int(rotary) if rotary else self.head_size
         self.positions = None
         self.q_norm = self.k_norm = self.wg = None
-        self.linear = linear_form(linear)
         if (arch == "qwen35") != (self.linear is not None) or (self.linear and n_layers < self.linear["every"]):
             raise ValueError("A hybrid model (qwen35) and the numbers of its linear layers go together.")
         # for every layer: (is it a linear-attention one, its place in the stacks of its kind's tensors)
@@ -1258,14 +1260,14 @@ class Llama:
             raw = external.read(final.offset, self.dim * 4)
             weight = np.frombuffer(bytes(raw.to_py() if hasattr(raw, "to_py") else raw), dtype=np.float32)
             channels = [int(c) for c in outlier_channels(weight, min(OUTLIER_CHANNELS, self.dim))]
-        if self.linear is not None:
-            raise ValueError("forward.js does not run the linear-attention layers yet: disable the kernels (T229).")
         plan = {"arch": self.arch, "dim": self.dim, "hidden_dim": self.hidden_dim, "n_layers": self.n_layers,
                 "n_heads": self.n_heads, "n_kv_heads": self.n_kv_heads, "head_size": self.head_size,
                 "vocab_size": self.vocab_size, "seq_len": self.seq_len, "rotary": self.rotary,
                 "parallel_residual": bool(self.parallel_residual), "kv_start": KV_START, "rms_norm_eps": self.rms_norm_eps,
                 "shared_classifier": self.wcls is self.token_embedding_table, "int8": bool(int8),
                 "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels,
+                # T229: a Qwen3.5's linear-attention layers (None: none)
+                "linear": self.linear,
                 # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
                 "half_kv": bool(int8) and "kv16" not in disable}
         engine = external.start(plan)
