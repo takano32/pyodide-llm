@@ -116,7 +116,7 @@ AGENTS.md の「役割」から参照する。決まりが変わったら（Opus
 - **偽の device で計画（ディスパッチの数と、層ごとに読む重みの層）を見る試験は、1 秒で全部の族と形を見る**: `tests/gpu-token-plan-check.mjs`（ブランチ `t226-review-plan-check`、本線には入れていない）。重みの値に層の番号を埋めて 312 回の読みを突き合わせ、わざと壊した 6 通りが全部落ちる。白箱なので、gpu.js の中の名前が変わると直す手間が要る。
 - **記録の run は、ジョブの結論まで読む**: 記録の `real=` の 2 回は Chromium のジョブを「まだ走っている」と書いたが、90 分の TimeoutError で落ちていた（SwiftShader に実物を回した。検査の失敗ではない）。`gh api repos/<repo>/actions/jobs/<id>/logs` で読める。
 - **`models.yml` の `steps=` はプロンプトの長さを含む**: `steps=4` は「The prompt is 67 tokens long, but only 3 fit」で落ちた（Qwen の書式の文は 67 トークン）。
-- **端末の事実は記事でなく本線のソースで**: Chromium の `approximated_device_memory.cc` は物理メモリを近い 2 のべきに丸め（同じ近さなら小さいほう）、Android 以外は 2〜32、Android は 1〜8 に切る。だから 6 GB のスマホは 4、持ち主の Android は 8 止まり、PC は 16 や 32 を言いうる。持ち主の ARM Chromebook は 4 かもしれない。
+- **端末の事実は記事でなく本線のソースで**: Chromium の `approximated_device_memory.cc` は物理メモリを近い 2 のべきに丸め（同じ近さなら小さいほう）、Android 以外は 2〜32、Android は 1〜8 に切る。だから 6 GB のスマホは 4、持ち主の Android は 8 止まり、PC は 16 や 32 を言いうる。持ち主の ARM Chromebook は 4 かもしれない。**これは 2026-01-23 の変更（それまでは全部の機種で上限 8）で、AGENTS.md の古い「8 で頭打ち」「8 は 8 GB 以上」は Android だけの話になっていた**。決まりの前提が日付つきの変更で替わっていないかは、そのファイルの変更履歴（GitHub の chromium/chromium の commits）で見る。
 
 ## T219・T220 の回（2026-10-01、Sonnet max）で分かったこと
 
