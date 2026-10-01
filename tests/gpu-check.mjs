@@ -678,8 +678,12 @@ server.close();
 if (lines.length) console.log(lines.join("\n"));
 // T147: the list of forms comes from an adapter of its own, which SwiftShader now and then does not give (AGENTS.md)
 if (!outcome.error && !outcome.forms?.length) outcome.error = "no tiled shader to force: the harness got no GPU adapter (run it again)";
+// (T226: an exit once what was printed has gone out. An exit at once cut the log of CI's Dawn job in the middle of a
+// line of the console, before the error: run 36867483459 failed, and nothing said why)
+const flushed = () => Promise.all([process.stdout, process.stderr].map((stream) => new Promise((resolve) => stream.write("", resolve))));
 if (outcome.error) {
   console.error(`FAILED\n- ${outcome.error}`);
+  await flushed();
   process.exit(1);
 }
 
@@ -917,6 +921,7 @@ for (const { id, cpu, gpu: runs, late, refused, remembered, alone } of outcome.r
   }
   layerTables(c, cpu, runs, measures);
 }
+await flushed();
 process.exit(failed ? 1 : 0);
 
 // T213: the first matrix a token's layer would bind inside a joined buffer (q, k and v as one, gate and up as one,
