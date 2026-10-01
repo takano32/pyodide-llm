@@ -107,8 +107,8 @@
 - **残してあるブランチ**: レビューが使う調べと壊し方の捨てのブランチ（`t129-probe`、`t219-review-probe`、）、`t225-broken`、T224 のレビューの調べ `t224-review-probes`、T226 のレビューの `t226-review-plan-check`（Node だけで 1 トークンの層の計画を見る試験 1 つ。本線には入れていない: gpu.js の中の名前に結びつくので、gpu.js が変わるたびに直す手間が要る。入れるなら `tests/suite.sh` の full に）。T224 の前の版の写しと前のレビューの書きかけ・調べのブランチは、レビューが済んだので消した。
 - **レビュー待ち（Sonnet max）**: なし。**T229 は済み**（2026-10-01、ブランチ `t229-review`、T229 の項。must-fix 0、試験の穴を 13 か所直した。持ち主の判断が 1 つ: 7 ビットの活性値を残すか。日本語で +2.6〜3.4%）。**T225 は済み**（ブランチ `t225-review`。must-fix 1: エンジンの `checkTokens` にも最近接の思い込みがあった、を直した。0 の向きの装置を CI に足した）。**T235 は済み**（ブランチ `t235-review`、上の T235 の項）。**T226 は済み**（ブランチ `t226-review`。must-fix 0、should 2 を直し、持ち主の判断が 2 つ: (4) の線と、4 GB と言う端末。T226 の項）。**T227 は済み**（ブランチ `t227-review`。must-fix 1: 装置のエラーの改行が警告を壊した、を直した）。**T129 は済み**（ブランチ `t129-review`、下の T129 の項。must-fix 1: (7) の断りが本物のブラウザで働いていなかった、を直した）。**T219 の (1)(2) と T220 は済み**（ブランチ `t219-review-sonnet` を本線に入れた。must-fix 0、should 6 を直した）。**T224 はレビュー済みで完了**（must-fix 1: 検査の集計が NaN を残さなかった、を直した。本線に入れた）。**T130 と T223 は済み**（2026-10-01、本線に入れた。must-fix 0。T130 の直し 4 つと、T223 のステータス行の本数と、新しい試験 2 つ `tests/memory-check.mjs`・`tests/thread-search-check.mjs`）。
 - **持ち主の端末でまとめて見るもの（2026-10-01、持ち主「計測はすべての実装が終わったら見直す形に」: タスクごとに頼まず、並んでいる実装が本線に入り終わってから端末ごとに 1 回で）**。実装は下の数字を待たずに進める。
-  - PC（Windows の Chrome、NVIDIA）: `/benchmark/` を 1 回（T241: GPU の節の層の表の DP4A の行（`a layer, DP4A, …`）が ok のままか、「Quantizing the vector」の µs と層の段の表の「the norm with its quantizing」「a vector … quantized」の µs が前の報告より増えていないか。T225: `a layer, …` と `tokens on the GPU` が ok で「K and V … toward zero」が約半分・「0 farther」か。T227: 報告の頭の Warnings（WRONG・failed が先、skipped、unsteady の順に並ぶか。行数と字数は何か。リンクの要約に何行入るか。モデルの経路の止まりの行「a software thread stopped …」「WebGPU stopped while timed: …」が出るか）。T226: Qwen3 4B のステータス行が「prompts and answers on WebGPU」になるかと tok/s。T235: Ternary Bonsai 1.7B の準備完了の秒・tok/s・ステータス行。T226 の (4): 機能の節の `deviceMemory` が 8 のままか 16・32 か。案 A か B かを決める材料）。モデルのページ（T223 のレビュー: llm-jp-3 150M を開いて 2 つ答えさせ、コンソールの `threads:` の行が 8 のままか 2 になるか。**T239 を入れた後は「8 … against 4 …: 8 stays」のあとに「8 … against 2 …: 2 is faster」が出て 2 本になる見込み**。8 のままなら、2 本と 8 本の差が検索の余裕 5% に入らなかった回なので、/benchmark/ のモデルの節の「Writing on each number of software threads」の行も貼る）。
-  - Android（Xiaomi 13T Pro、Chrome）: `/benchmark/` を 1 回（T241: PC と同じ 2 つ（DP4A の行が ok か、量子化の µs。前は T175・T202 の報告）。T219 の (2): 「the sampling alone」の文の「on flat logits, one workgroup」の ms（**平らな logits の 1 ワークグループ**）が 6.71 ms 以下か（T191 の平らな 6.104 ms の 1.1 倍。山のある方の前の 5.893 ms は罰で崩れていて使えない）。T224: 「A token's attention alone」の vec の行が 1024・4096 位置でエンジンのタイルより速いか、ページのコンソールの「its attention by」が何を選ぶか。T173: Page memory。T156 の (c)）と、モデルのページ（T223: llm-jp-3 150M が 2 本を選ぶか。ステータス行の本数が答えごとの行の本数と同じか（レビューで直した）。1 つ目の答えは初めての訪問で最大 0.6 秒、2 つ目からは 0.2 秒ほど遅く見えるはず。T240: 初めての訪問（サイトのデータを消してから）に長い答えを 1 つ書かせ、`threads:` の行に「(timed while the GPU got ready: searched again once it is)」の付いた行のあと、同じ答えの間に付かない行が出るか。T130: Qwen2.5 3B か Llama 3.2 3B を 2048 位置を越えるまで書かせてメモリ不足にならないか。コンソールに `memory: the browser gave a shared memory of …` が出たら、その端末は共有メモリを下げて渡されているので教える。T210: Llama 3.2 3B を GPU だけで、8B が入るか。T226: Qwen2.5 0.5B か Qwen3 0.6B の答えが GPU か CPU か、Qwen2.5 3B（前は全部 CPU、今は GPU だけ）でメモリが苦しくないか。T129: 初めての訪問・HF のモデル・取得の途中の選び直し・2 回目の訪問が今までどおりか。T235: Ternary Bonsai 1.7B を選ぶ（463 MB を取り、1.9 GB の int8 に変換）: 読み込みが通るか、準備完了の秒と tok/s、ステータス行（8 と言う端末では CPU と GPU の両方に置く見積もり 5.5 GB で、メモリが苦しくないか）、日本語の答えが読めるか）。
+  - PC（Windows の Chrome、NVIDIA）: `/benchmark/` を 1 回（T241: GPU の節の層の表の DP4A の行（`a layer, DP4A, …`）が ok のままか、「Quantizing the vector」の µs と層の段の表の「the norm with its quantizing」「a vector … quantized」の µs が前の報告より増えていないか。T225: `a layer, …` と `tokens on the GPU` が ok で「K and V … toward zero」が約半分・「0 farther」か。T227: 報告の頭の Warnings（WRONG・failed が先、skipped、unsteady の順に並ぶか。行数と字数は何か。リンクの要約に何行入るか。モデルの経路の止まりの行「a software thread stopped …」「WebGPU stopped while timed: …」が出るか）。T226: Qwen3 4B のステータス行が「prompts and answers on WebGPU」になるかと tok/s。T235: Ternary Bonsai 1.7B の準備完了の秒・tok/s・ステータス行。T226 の (4): 機能の節の `deviceMemory` が 8 のままか 16・32 か。案 A か B かを決める材料）。モデルのページ（T223 のレビュー: llm-jp-3 150M を開いて 2 つ答えさせ、コンソールの `threads:` の行が 8 のままか 2 になるか。**T239 を入れた後は「8 … against 4 …: 8 stays」のあとに「8 … against 2 …: 2 is faster」が出て 2 本になる見込み**。8 のままなら、2 本と 8 本の差が検索の余裕 5% に入らなかった回なので、/benchmark/ のモデルの節の「Writing on each number of software threads」の行も貼る）。 **T246**: Ternary Bonsai 4B（1.1 GB を取り、int8 4.5 GB）と 8B（2.2 GB を取り、int8 9.2 GB）を開く: 準備完了の秒・tok/s・ステータス行（8 と言う端末では GPU だけに置く見積もり 4.80 GiB と 9.17 GiB。「prompts and answers on WebGPU」になるか、CPU に読み直すか）、8B のメモリの警告の後に読み込みが通るか、日本語の答えが 1.7B より良く読めるか。
+  - Android（Xiaomi 13T Pro、Chrome）: `/benchmark/` を 1 回（T241: PC と同じ 2 つ（DP4A の行が ok か、量子化の µs。前は T175・T202 の報告）。T219 の (2): 「the sampling alone」の文の「on flat logits, one workgroup」の ms（**平らな logits の 1 ワークグループ**）が 6.71 ms 以下か（T191 の平らな 6.104 ms の 1.1 倍。山のある方の前の 5.893 ms は罰で崩れていて使えない）。T224: 「A token's attention alone」の vec の行が 1024・4096 位置でエンジンのタイルより速いか、ページのコンソールの「its attention by」が何を選ぶか。T173: Page memory。T156 の (c)）と、モデルのページ（T223: llm-jp-3 150M が 2 本を選ぶか。ステータス行の本数が答えごとの行の本数と同じか（レビューで直した）。1 つ目の答えは初めての訪問で最大 0.6 秒、2 つ目からは 0.2 秒ほど遅く見えるはず。T240: 初めての訪問（サイトのデータを消してから）に長い答えを 1 つ書かせ、`threads:` の行に「(timed while the GPU got ready: searched again once it is)」の付いた行のあと、同じ答えの間に付かない行が出るか。T130: Qwen2.5 3B か Llama 3.2 3B を 2048 位置を越えるまで書かせてメモリ不足にならないか。コンソールに `memory: the browser gave a shared memory of …` が出たら、その端末は共有メモリを下げて渡されているので教える。T210: Llama 3.2 3B を GPU だけで、8B が入るか。T226: Qwen2.5 0.5B か Qwen3 0.6B の答えが GPU か CPU か、Qwen2.5 3B（前は全部 CPU、今は GPU だけ）でメモリが苦しくないか。T129: 初めての訪問・HF のモデル・取得の途中の選び直し・2 回目の訪問が今までどおりか。T235: Ternary Bonsai 1.7B を選ぶ（463 MB を取り、1.9 GB の int8 に変換）: 読み込みが通るか、準備完了の秒と tok/s、ステータス行（8 と言う端末では CPU と GPU の両方に置く見積もり 5.5 GB で、メモリが苦しくないか）、日本語の答えが読めるか）。 **T246**: Ternary Bonsai 4B を選ぶ（8 と言う端末なので int8 を GPU だけに置く見積もり 4.80 GiB。読み込みが通るか、メモリが苦しくないか、準備完了の秒と tok/s とステータス行。8B は 9.17 GiB でスマホには大きい: 試すなら警告の後にタブが落ちるかだけ）。
   - Chromebook（ARM、Chrome、Arm Valhall）: `/benchmark/` を 1 回（T226 の「4 GB と言う端末」: 機能の節の `deviceMemory` が 4 か 8 か。4 なら Qwen3 0.6B か Qwen2.5 1.5B を開いて、ステータス行（GPU だけか）と tok/s が、同じ回の CPU の節から見積もる CPU の速さ（重みの GB ÷ 読みの GB/s）より遅くないか。T226 の項の持ち主の判断 (2) の材料）。
   - iPhone（Safari）: モデルのページ（T129 の同じ 4 つ）と `/benchmark/` の Page memory（T173）、モデルの節が終わるか（T205・T214）、GPU の節の「sampling」と「sampling in chunks」の検査が ok か（T219: Safari の WGSL がこのシェーダを通すか）。
   - **T129 のレビューから（スマホと PC、本線に入れた後）**: (a) スマホで、初めての訪問の読み込みの途中に別のアプリへ 1 分切り替えて戻る: 「got nothing from the network for 30 seconds」が出ず、準備完了まで行くか（静けさを時計でなく回ったチックで数えるようにした）。(b) 機内モードで 2 回目の訪問（T111 のオフライン。NumPy の wheel の SRI を外した）が開いて答えるか。(c) 速度制限中の回線（約 128 kbps）で開く: 準備完了まで行き、フォールバック（隔離のない 1 コア）に入らないか（CI は fifo の 0.15 Mbps でフォールバックした。T129 の項の持ち主の判断の材料）。(d) PC の Chrome で `?hf=Qwen/Qwen2.5-32B-Instruct` を開く: 数秒で「This model is too large for a web page: it needs about 42 GB …」が出るか（直す前は 8GB を取って「ran out of memory」。CI の Chromium では確かめた）。実 GPU のある PC では、断った後に OPFS（devtools の Application → Storage）に空のフォルダが残らないか（`keeper()` の開きっぱなし、T129 の項）。
@@ -1639,8 +1639,110 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T245 [追加][Bonsai] GGUF の、値の head が鍵の head より多いモデルの並びを読む — 状態: 進行中（2026-10-01、T236 から。T233 と T247 の前。規模 小〜中）
 - llama.cpp は値の head が鍵の head より多い linear attention の層（Qwen3.5 の 4B 以上と 27B、3 対 1）で head を並べ替えて（tile して）置く。いまの読み手はそういう GGUF を断り、`gguf_check.py` も通さない（T236）。読み手が HF の並びに戻す形と、`gguf_check.py` の並びを足す。
 
-### T246 [追加][Bonsai] Ternary Bonsai の 4B と 8B を一覧に — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T235 の読み手で。規模 小）
-- prism-ml の Ternary-Bonsai の 1.7B より大きいもの（T228 の調べ: 1.7B〜8B）を、T235 と同じ形（PQ2_0 を int8 に、原本は unpacked のリポジトリ）で一覧に。8B の int8 は 64 ビットのメモリ。T230 の 3 値の型ができたら小さく持てる。
+### T246 [追加][Bonsai] Ternary Bonsai の 4B と 8B を一覧に — 状態: **反映済み**（2026-10-01、本線に入れるのは本会話。レビュー前）
+- ブランチ `t246-ternary-bonsai-4b-8b`（確かめの道具は別のブランチ `t246-probe`: `tests/t246_page.mjs`・`tests/t246_reference.py`・`tests/t246_run.sh`。本線には入れない）。決定と落とし穴は AGENTS.md の「3 値の Ternary Bonsai の 4B と 8B」。エンジンも変換器もページも触っていない。変えたのは `src/models.js` の項目と `LICENSES`、README と docs の数だけで、`CONVERTER` は上げていない。
+- **あるもの**（prism-ml、HF の API、2026-10-01）: Ternary-Bonsai は 1.7B・4B・8B・27B と Ternary-Bonsai-2 の 27B。ほかに 1 ビットの Bonsai（1.7B・4B・8B・27B）と画像の bonsai-image。Ternary-Bonsai の 1.7B・4B・8B・27B には `-gguf`・`-unpacked`・`-mlx-2bit` がある。
+
+  | 大きさ | あるか | 確かめ | 一覧 | 入れない訳 |
+  |---|---|---|---|---|
+  | 1.7B | ある | T235 で済み | 入っている（T235） | |
+  | 4B | ある | 通った（下） | **入れた** `hf-ternary-bonsai-4b` | |
+  | 8B | ある | 通った（下） | **入れた** `hf-ternary-bonsai-8b` | |
+  | 27B（と Bonsai-2 の 27B） | ある | していない | 入れない | T233 の仕事（形が Qwen3 でない。T228 の調べ） |
+  | 1 ビットの Bonsai | ある | していない | 入れない | このタスクの外（別の量子化の型。読み手が無い） |
+
+- **出どころ**（どれも card の license は apache-2.0、NOTICE.txt は 1.7B と同じ文で「built from Qwen3-4B」「Qwen3-8B」。「Created using Bonsai by Prism ML.」の表示の求めも同じ）:
+  - 4B: GGUF https://huggingface.co/prism-ml/Ternary-Bonsai-4B-gguf （`a3eb42bafe873f9686bc97486c43b72ef7d75ec8`）。`Ternary-Bonsai-4B-PQ2_0.gguf` 1,074,969,344 バイト（型 142 が 253 個と F32 が 145 個）、`-Q2_0.gguf` 1,074,969,344（型 42。読み手は断る）、`-Q2_0_g64.gguf` 1,137,806,656、`-F16.gguf` 8,049,911,840。原本 https://huggingface.co/prism-ml/Ternary-Bonsai-4B-unpacked （`4485fae7a00129467b9329b738110d88b2942a1a`、float16 の safetensors 2 つで 8.04 GB）。
+  - 8B: GGUF https://huggingface.co/prism-ml/Ternary-Bonsai-8B-gguf （`c2aefbeb4b24469cd11579c3384b990404c17a30`）。`-PQ2_0.gguf` 2,182,184,672 バイト（型 142 が 254 個と F32 が 145 個）、`-Q2_0.gguf` 2,182,184,672、`-Q2_0_g64.gguf` 2,310,125,920、`-F16.gguf` 16,383,663,200。原本 https://huggingface.co/prism-ml/Ternary-Bonsai-8B-unpacked （`ac20f03fc62e872399218b659c8e949dfca05769`、safetensors 4 つで 16.4 GB）。
+  - PTQ1_0 のファイルはどの大きさにも無い（Ternary-Bonsai の GGUF は PQ2_0・Q2_0・Q2_0_g64・F16 の 4 つ）。
+- **本物の config（T235 のレビューは 4B と 8B の GGUF の頭だけを読んでいた）**: 3 つとも `model_type` qwen3・`Qwen3ForCausalLM`・全部 full_attention・語彙 151669・KV head 8・head の大きさ 128・eps 1e-6・bias なし・yarn の factor 4。違う所:
+
+  | | 1.7B | 4B | 8B |
+  |---|---:|---:|---:|
+  | 幅 / FFN / 層 / head | 2048 / 6144 / 28 / 16 | 2560 / 9728 / 36 / 32 | 4096 / 12288 / 36 / 32 |
+  | head の合計の幅（q の行） | 2048 | 4096（幅と違う。`head_dim` 128 が options に載る） | 4096 |
+  | rope_theta | 1e6 | **5e6** | 1e6 |
+  | yarn の元の文脈 | 8192 | 8192 | **16384** |
+  | max_position_embeddings | 32768 | 32768 | 65536 |
+  | 分類器 | 埋め込みと共有 | 共有 | **別**（GGUF に `output.weight` も PQ2_0 で） |
+
+  `generation_config.json`・`chat_template.jinja`・`tokenizer_config.json`・`special_tokens_map.json` は 3 つの原本でバイト単位で同じ（sha1 の頭 `b300748141`・`93820c4e65`・`cc6d0620b8`・`34d3d839bc`）。`bos_token` は 3 つとも null、config の `bos_token_id` も null。だから項目の BOS・止まり・生成の設定・書式は 1.7B と同じでよい。4B と 8B は一覧の Qwen3 4B・8B と同じ形（head の大きさが幅 / head でない 4B、分類器が別の 8B）で、新しい道は通らない。**止めた大きさは無い。**
+- **GGUF の頭を Range で読んで**（`.tmp/t246/heads.py`、ページの `gguf_read()` と `gguf_weights()`）: 4B と 8B の PQ2_0 は原本の config と合い（`gguf_agrees()` が通る。yarn の factor と元の文脈も）、行の長さは 2560・4096・9728 と 4096・12288 で全部 128 の倍数。`qwen3.rope.scaling.attn_factor` も `yarn_log_multiplier` も無い。
+- **`gguf.yml` の candidates（run 36902611140、2 つとも成功）**: 4B は不一致 0・テンソルの相対誤差の最大 8.53e-5（線 1e-3）・語彙の違い 0・yarn の factor 4 と元の文脈 8192 が同じ。8B は不一致 0・**相対誤差 0**（原本と同じ値）・語彙の違い 0・factor 4 と元の文脈 16384 が同じ。
+- **大きさと置き場**（`.tmp/t246/place.mjs`: `footprint()`・`weightsPlace()`・`gpuOnlyUnfit()`・`weightsFor()` を Node で。文脈 4096。1.7B の数字は T235 のレビューの数字と同じに出る）:
+
+  | | 4B | 8B |
+  |---|---:|---:|
+  | 取得（PQ2_0） | 1.07 GB | 2.18 GB |
+  | int8 | 4,525,071,452 バイト（Qwen3 4B と同じ） | 9,213,002,780 バイト（Qwen3 8B と同じ） |
+  | int8 と forward（共有メモリ、K と V は float16） | 5.66 GB = 5.27 GiB | 10.79 GB = 10.05 GiB |
+  | 同じ、共有でないメモリ（K と V は float32） | 5.84 GiB | 10.62 GiB |
+  | 6 ビット | 3.52 GB（forward と 4.34 GiB） | 7.17 GB（8.15 GiB） |
+  | GPU の持つ量（`gpuBytes()`） | 5.13 GB | 9.82 GB |
+  | GPU だけのときの全体 | 5.16 GB = 4.80 GiB | 9.85 GB = 9.17 GiB |
+
+  どちらも 16 GiB の内（8B の int8 は 64 ビットのメモリに入る）で、4 GiB は越える。だから note は一覧の Qwen3 4B・8B と同じ「desktop only · Chrome and Firefox」。
+  - `deviceMemory` が 8 と言う端末（Chrome）: ページは何も頼まず（`weightsFor()` は undefined）、Worker は int8 を 64 ビットのメモリに。置き場は **T226 の前は CPU だけ**（2 重は 10.05 GiB と 19.2 GiB で 6.5 GiB を越え、Qwen3 の形は GPU だけにできなかった。4B は GPU の余地 1.32 GB に層が入らずプロンプトも CPU）、**T226 の後は GPU だけ**（WebGPU と共有メモリと 64 ビットのカーネルがあり、アダプタがフォールバックでないとき。層の行列の束は 8B の gate と up の 101 MB が最大で、256 MiB しか束ねない端末でも断らない）。8B は 8 と言う端末で警告が出る（「needs about 9,500 MB … 8 GB or more」。一覧のほかの 9.2 GB のモデルと同じ）。
+  - 4 と言う端末: ページが 6 ビットを頼み（警告が出る）、CPU だけ。4B の 6 ビットは 64 ビットのメモリ。
+  - 言わないブラウザ: Firefox は int8 を 64 ビットのメモリに、CPU だけ。Safari は 64 ビットのメモリが無いので 6 ビットになり、4B の 6 ビットは見積もりで 3.86 GiB（relaxed SIMD も WebGPU も無い形）と 32 ビットに 0.14 GiB の余りで入る（**動くかは未確認**。note は Qwen3 4B に合わせて「Chrome and Firefox」のまま）。8B は 6 ビットでも入らず、今ある断りの文が出る。
+- **入れた項目**（訪問者に見える文）:
+  - 「Ternary Bonsai 4B」— 「answers at once · 日本語 / English · ternary weights · fetches 1.1 GB (GGUF) → int8 4.5 GB · desktop only · Chrome and Firefox」
+  - 「Ternary Bonsai 8B」— 「answers at once · 日本語 / English · ternary weights · fetches 2.2 GB (GGUF) → int8 9.2 GB · desktop only · Chrome and Firefox」
+  - **3 つの大きさは `src/models.js` の `ternaryBonsai()` の 1 か所から作る**（BOS 151643・止まり 151643 と 151645・生成の設定 temperature 0.5 と top-p 0.85・note の頭・プロンプト）。T235 のレビューの持ち主の判断待ち（yarn か素の RoPE か、note に言い足すか、Prism ML の表示）は**決めていない**。決まったらこの 1 か所を変えれば 3 つとも変わる（素の RoPE なら options に `rope_scaling: {}`。float32 の固定値の道具の直しはブランチ `t235-plain-rope` のまま）。1.7B の項目の中身は前と同じ（id・名前・note・取得元・options・生成の設定・プロンプト）。
+- **確かめ**:
+  - `tests/format_check.py`（手元、`.venv`）: `hf-ternary-bonsai-1.7b`・`-4b`・`-8b` とも 9/9（変換器の書式）。
+  - `tests/models-check.mjs`（手元と CI）: ok（revision は 4 つとも 40 桁のハッシュ、`LICENSES` に 4 つ）。
+  - ブランチの `tests.yml` の軽い組: run 36912824908（成功、EPYC 9V74、62 秒）。本線を取り込んだ先頭（a4aa643）でも run 36920344399（成功、EPYC 7763、70 秒）。
+  - README と docs の数: HF の項目 58、GGUF から 52（Q8_0 が 49、PQ2_0 が 3）。
+  - 新しい固定値は足していない（どちらも 1.7B と一覧の Qwen3 4B・8B が通る道だけを通る）。
+- **ページの forward で（CI、`t246-probe` の `tests/t246_page.mjs`: forward.js と int8 のカーネル、7 ビットの活性値、共有の 64 ビットのメモリ、ソフトウェアスレッド。変換は `perplexity_prepare.py` でページと同じ `Conversion`）**。ランナーは AMD EPYC 7763（4 論理コア、15.6 GiB）。書くことの tok/s（一覧のプロンプトの後の 16 トークン、3 回の中央値）:
+
+  | | 1 本 | 2 本 | 4 本 | プロンプト（16 ずつ）1 / 2 / 4 本 | run |
+  |---|---:|---:|---:|---|---|
+  | 1.7B（32 ビットのメモリ） | 9.21 | 15.10 | 15.67 | 13.88 / 26.37 / 28.52 | 36915522097 |
+  | 4B（64 ビット） | 3.73 | 6.27 | 6.74 | 5.27 / 10.15 / 10.63 | 36915522097（別の回 36912720203 は 3.56 / 6.42 / 7.16） |
+  | 8B（64 ビット） | 1.83 | 3.31 | 3.82 | 2.73 / 5.29 / 5.57 | 36915368301（別の回 36912802360 は 1.93 / 3.30 / 3.78） |
+
+  最後のトークンの logits はどの本数でもビット単位で同じ。ネイティブの Python の変換は 4B が 28〜29 秒、8B が 56 秒（取得は 19〜20 秒と 39 秒。CI の回線）。8B の run の後、ランナーのメモリは足りていた（swap 0.1 GB）。
+- **書いた文**（greedy、ページの forward の int8、4 本、64 トークンまで。読んだ）:
+  - 4B「これからの流行りを3つ挙げてください。」→「1. **AIアシスタント**  \n2. **SNSアプリケーション**  \n3. **動画コンテンツ**」（27 トークンで止まる）。「日本で一番高い山は…」→「日本で最も高い山は**富士山（Mount Fuji）**です。…富士山の高度は**3,776メートル（12,389フィート」（山と高さは正しい。「世界で最も高い山の一つ（第1位）」は誤り）。「What is the capital of Japan? …」→「The capital of Japan is Tokyo. It is the largest city in the country and serves as its political, economic, and cultural center.」で止まる。「富士山について、三つの文で…」→「…東京から約1,000キロ離れた山の頂に位置する。…1,838メートルの高さで」（**事実が誤る**）。訳「今日は天気がいいので、散歩に行きます。」→「The weather is nice today, so I'll go for a walk.」で止まる（正しい）。
+  - 8B: 1 つ目 →「以下は、今後の流行りを3つ挙げたものです：\n\n1. **AIによるコンテンツ生成** – AIが文章、画像、音声を生成する技術が広く利用され、コンテンツ制作の効率が向上します。\n\n2. **SNSのより深いユーザー体」。山 →「日本で最も高い山は**富士山**（富士山）です。富士山は日本の象徴的な山であり、世界で最も高い火山の一つとして知られています。」（最後の句は誤り）。英語 →「The capital of Japan is Tokyo. It is the largest city in the country and serves as the political, economic, and cultural center.」で止まる。三つの文 →「富士山は日本の標山であり、静岡県にある火山です。  \n富士山は高い山で、多くの観光客が訪れます。  \n富士山は自然の美しさと文化的な価値を備えています。」で止まる（三つの文で、頼みのとおり。「標山」は誤字）。訳 →「「Today the weather is nice, so I will go for a walk.」」で止まる。
+  - 1.7B（同じ道具、比べ用）: 1 つ目は固定値の文「以下は、このテキストから流行りとしての3つの例です」で始まり、山は「千葉県の山梨山」（T235 のレビューと同じ誤り）。**大きいほど答えは良い**が、4B も事実を誤る。
+- **transformers との一致**（transformers 4.57.6 と torch、原本の safetensors、float32 の計算、同じ ID の列 [BOS] + トークナイザ。文の sha256 と ID の和が 2 つの道具で同じ）:
+  - **4B はランナーに入る形で**（run 36912760289）: float16 で読み（8 GB）、層を 1 つずつ float32 に広げて通す（float16 → float32 は損なし）。yarn の倍率 1.138629436 はエンジンの `rope_magnitude()` と同じ、inv_freq は `rope_frequencies()` と相対 8.2e-8。
+
+    | 文（トークン） | yarn: transformers / エンジン int8 | 素の RoPE: transformers / エンジン int8 |
+    |---|---:|---:|
+    | 富士山（1024） | 33.155 / 33.248 | 31.580 / 31.591 |
+    | 夏目漱石（1024） | 38.342 / 38.373 | 36.680 / 36.592 |
+    | 英語 Wikipedia 3 記事（1024） | 15.194 / 15.191 | 15.154 / 15.155 |
+    | 自作の英文（256） | 9.331 / 9.325 | 9.282 / 9.263 |
+
+    エンジン（int8、7 ビットの活性値）は transformers から −0.24〜+0.28%。greedy の 24 トークン（3 つのプロンプト）は、英語の答えが 24 トークンとも同じ、山の答えも 24 トークンとも同じ、1 つ目は「1. **AIアシスタント**  \n2. **SNS」まで同じで、そのあと transformers は「（SNS）」、int8 は「アプリケーション」（int8 は途中で分かれる: AGENTS.md の落とし穴のとおり）。プロンプトの ID は 26 個で 2 つの道具が同じ。
+  - **8B は transformers のモデルをそのままは載せられない**（float16 で 16.4 GB）。transformers の config で層を 1 つだけ持つモデルを作り、その 1 層に原本の各層の重みを順に読み込んで通した（埋め込み・回転の埋め込み・層・最後の norm・分類器は transformers のモジュールで、層を回すループと因果のマスクは道具のもの。`--by-layer`）。**この形は 4B で丸ごとのモデルと小数 4 桁まで同じ数字を出した**（run 36915470372: 33.1554・38.3424・15.1938・9.3306 と 31.5801・36.6803・15.1537・9.2820）。8B（run 36915419681）の inv_freq は `rope_frequencies()` と相対 1.0e-7。
+
+    | 文（トークン） | yarn: transformers / エンジン int8 | 素の RoPE: transformers / エンジン int8 |
+    |---|---:|---:|
+    | 富士山（1024） | 35.634 / 35.637 | 30.620 / 30.728 |
+    | 夏目漱石（1024） | 42.406 / 42.649 | 35.721 / 35.714 |
+    | 英語 Wikipedia 3 記事（1024） | 18.085 / 18.054 | 16.576 / 16.574 |
+    | 自作の英文（256） | 11.858 / 11.854 | 10.683 / 10.722 |
+
+    エンジンの int8（run 36915368301）は transformers から −0.17〜+0.57%。
+
+    プロンプトの後の最初のトークンは 5 つとも transformers の最尤（「以下」「日本」「The」「富」「「」）。
+- **yarn と素の RoPE（持ち主の判断の材料。決めていない）**: yarn ÷ 素の RoPE − 1（transformers、float32）。
+
+  | 文 | 1.7B（T235 のレビュー）256 / 1024 | 4B 256 / 512 / 1024 | 8B 256 / 512 / 1024 |
+  |---|---:|---:|---:|
+  | 富士山 | +6.65% / +6.70% | +7.55% / +5.89% / +4.99% | **+22.05% / +18.91% / +16.37%** |
+  | 夏目漱石 | +7.39% / +4.44% | +2.46% / +2.33% / +4.53% | **+19.10% / +20.98% / +18.72%** |
+  | 英語 Wikipedia 3 記事 | +1.52% / +0.35% | +2.12% / +1.63% / +0.26% | +8.26% / +8.80% / +9.10% |
+  | 自作の英文（256） | −0.55% | +0.52% | +10.99% |
+
+  **4B は 1.7B と同じ向きと大きさ、8B は差がずっと大きい**（日本語で +16〜+22%、英語でも +8〜+11%。4B と 8B の 14 の測りの全部で素の RoPE が低い）。エンジンの int8 でも同じ（4B: +5.25%・+4.87%・+0.24%・+0.68%。8B: +15.97%・+19.42%・+8.93%・+10.56%）。8B の元の Qwen3-8B の config には rope_scaling が無い（Qwen/Qwen3-8B@b968826d: T235 のレビューの「none 40」の 1 つ）。元の Qwen3-4B の rope_theta は 1e6 で、Bonsai の 4B の 5e6 と違う（Qwen/Qwen3-4B@1cfa9a72。GGUF も 5e6）。どちらも訳は調べていない。**素の RoPE に決めるなら 8B がいちばん得をする**。記事は run のときに取ったもので（sha256 の頭 `f99578348c85`・`33739ce3e0fb`・`b9464d2618f4`）、T235 のレビューの日の本文と同じとは限らない。
+- **T230 の 3 値の型ができたら**（別の担当が進めている）: この 2 つの項目は int8 に広げずに持てる（4B は 1.07 GB、8B は 2.18 GB の桁）。そのときは note の「→ int8 N GB」と「Chrome and Firefox」と「desktop only」を見直し、`ternaryBonsai()` の 3 つを一緒に切り替える。`pq2_0()` の出す形は T230 の持ち物なので、ここでは触っていない。
+- **未計測・未確認**: 本番の `models.yml`（準備完了の秒・tok/s・ヒープ。本線に入れた後に本会話が回す）。ブラウザの中の変換の秒（PQ2_0 の広げは NumPy のまま）。本物の GPU と GPU だけの置き場（CI は CPU の道だけを回した。`gpu-prompt.yml real=` は回していない: 1.7B で lavapipe に 85 分かかった）。Safari の 4B の 6 ビット。持ち主の端末。8B の transformers の greedy の文（最初のトークンだけを比べた）。1024 トークンより長い文脈。考える形（1.7B と同じく項目を作っていない）。
 
 ### T247 [追加][モデル] Qwen3.5 のほかの大きさを一覧に — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T245 の後。規模 小〜中）
 - 0.8B（T236）のほかの大きさ（HF にあるものを調べて）を、Q8_0 の GGUF から。`gguf_check.py tensors` を 1 つずつ通してから。
