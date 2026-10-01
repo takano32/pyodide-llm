@@ -79,7 +79,12 @@
 // GPT-NeoX, 0.4 to 2.1 on Qwen2 and 0.3 to 1.2 on Qwen3 (a float form's 3.7 to 111), and on the calm ones at 4.8 and
 // more on GPT-2 and 9.2 and more on the Qwen, but for the vectors of q alone (q's bias and norm change the attention's
 // weights, and so the next layer's keys, which a calm model's flat attention hardly shows: 1.1 and 0.8 on the DP4A
-// line, 4 to 9 on a float form's; q's bias goes by one ADD with k's and v's, and its norm by the code of k's).
+// line, 4 to 9 on a float form's; q's bias goes by one ADD with k's and v's, and its norm by the code of k's). CI's
+// Dawn, the layers' vectors of a step read from layer 0 (gpu.js's tokenPass; runs 36884705557, 36884706717, 36884707864
+// and 36884707646): the calm ones' DP4A rows 5.7 to 18.7 of their lines (a correct GPU 0.27 to 0.37), the others' 0.34
+// to 1.17 (an RMSNorm model's packed shaders read the norm weights through a uniform of their own, g.u.norm, which
+// none of its float forms reads: the FFN's from layer 0 reads 0.36 and 0.57 on Qwen2 and Qwen3, 5.7 to 5.9 on the calm
+// Qwen; on GPT-2, whose LayerNorm every form runs apart, 0.85 and 6.8 on the packed shaders).
 //
 // T183: what a person reads to judge it, in the log of CI (the development machine does not run WebGPU's tests): E16,
 // how far NumPy's answer moves when nothing but its cache is rounded to float16 (answer(half=True), T153's review), and

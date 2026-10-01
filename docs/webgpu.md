@@ -177,7 +177,9 @@ the attention on any real GPU. The numbers from CI and from the development mach
 - It then writes 8 tokens greedy on the GPU (4, one on the CPU, 3 more) and checks the ids against NumPy's
   (or a near tie), the keys and values written back, a stop token and a sampled token.
 - Deliberately broken shaders (a wrong causal mask, a RoPE sign, a GQA head mapping, a missing quantization step
-  and others) fail these checks.
+  and others) fail these checks. So does a bias or a norm's weights read from another layer, on the packed shaders
+  too, because two of the made-up models (GPT-2 and Qwen with small matrices) are drawn so that 8-bit rounding does
+  not grow from layer to layer and their lines are tight.
 - The sampling on the GPU picks the token the CPU's sampling picks for the same logits and random number (or, where
   a float32 sum moves a border, one next to it: within 1e-4 of the probability mass), in the benchmark's check; the JavaScript it
   is held to is held to the CPU's kernel in `tests/smoke.mjs`.
