@@ -6,12 +6,13 @@
 # converts them (llama2_convert.Conversion), with rows of whole groups of 32 for the int8 kernels, two value heads to
 # a key head, heads that do not fill dim, and RoPE over a quarter of a head.
 #
-#   python tests/make_qwen35.py <out> [int8 | float32 | float16 | int6] [small | state]
+#   python tests/make_qwen35.py <out> [int8 | float32 | float16 | int6] [small | state | wide]
 #
 # small (the default): a context of 1024, heads and states of a few kilobytes: for the numbers.
 # state: a context of 4096 and value heads as large as the real models' (16 of 128 by 128), so that the state of the
 # linear-attention layers (6.3 MB, held twice) and the keys and values of the two attending layers (8.4 MB in
 # float32) outweigh the rest: for what forward.js puts after the checkpoint against footprint().
+# wide (the review of T229): heads of 256, as every real Qwen3.5 has.
 import json
 import struct
 import sys
@@ -28,7 +29,11 @@ VOCAB = 320
 SHAPES = {"small": dict(dim=64, hidden_dim=128, n_heads=4, n_kv_heads=2, head_dim=32, key_heads=2, value_heads=4,
                         key_dim=16, value_dim=16, seq_len=1024),
           "state": dict(dim=256, hidden_dim=512, n_heads=4, n_kv_heads=2, head_dim=64, key_heads=8, value_heads=16,
-                        key_dim=128, value_dim=128, seq_len=4096)}
+                        key_dim=128, value_dim=128, seq_len=4096),
+          # heads of 256 as every real Qwen3.5 has (the others' heads are 32 and 64), a key and value head of 32: the
+          # attention kernels on heads that wide, in float16 too (a 4B or a 9B keeps float16 keys and values past 4 GiB)
+          "wide": dict(dim=256, hidden_dim=512, n_heads=2, n_kv_heads=1, head_dim=256, key_heads=2, value_heads=4,
+                       key_dim=32, value_dim=32, seq_len=1024)}
 
 
 def main():

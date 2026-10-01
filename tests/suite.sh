@@ -77,9 +77,14 @@ if [ "$suite" = full ]; then
     python tests/make_qwen35.py .tmp/made-up-qwen35-int8 int8
     python tests/make_qwen35.py .tmp/made-up-qwen35-int6 int6
     python tests/make_qwen35.py .tmp/made-up-qwen35-state int8 state
+    # heads of 256, as every real Qwen3.5 has (the others' are 32 and 64); a plain memory with float16 keys and values too, which
+    # a 4B or a 9B keeps past 4 GiB: the attention kernels on heads that wide
+    python tests/make_qwen35.py .tmp/made-up-qwen35-wide-float32 float32 wide
+    python tests/make_qwen35.py .tmp/made-up-qwen35-wide-int8 int8 wide
     for memory in "" --plain --wide; do
-      node tests/forward-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-float16 .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-int6 .tmp/made-up-qwen35-state --rounds 1 --positions 128 $memory
+      node tests/forward-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-float16 .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-int6 .tmp/made-up-qwen35-state .tmp/made-up-qwen35-wide-float32 .tmp/made-up-qwen35-wide-int8 --rounds 1 --positions 128 $memory
     done
+    node tests/forward-check.mjs .tmp/made-up-qwen35-wide-int8 --rounds 1 --positions 128 --plain --half-keys
   }
   part "forward.js against NumPy, a made-up Qwen3.5" made_up_qwen35
   # T148: the default choice of the GPU or the CPU for a prompt's blocks, with a made-up GPU's worker
