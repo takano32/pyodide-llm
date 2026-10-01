@@ -41,11 +41,11 @@ tokens, and the fixed cost is shared among them.
    grows from about 73 to 189 MB, estimated), and such a browser gives no way to tell whether that fits.
    The attention of a written token is chosen the same way: llama.cpp's decode form, which splits the positions over
    as many workgroups a head as the device's smallest subgroup holds lanes, at most, and reduces the parts in a second
-   dispatch (with subgroups where the device has them, and with the lanes of one workgroup standing for a subgroup where
-   it has not), or the prompt's tiles. Each is checked against JavaScript on made-up numbers (the model's head size,
-   40 to 1100 positions, one head steep enough for a wrong largest to show), timed at 128 and 2048 positions, and the
-   faster taken. This is not remembered between visits: the two small shaders are compiled, checked and timed at every
-   start.
+   dispatch (in two shapes: with subgroups, where the device has them, and with the lanes of one workgroup standing
+   for a subgroup, the only one where it has not), or the prompt's tiles. Each is checked against JavaScript on
+   made-up numbers (the model's head size, 40 to 1100 positions, one head steep enough for a wrong largest to show),
+   timed at 128 and 2048 positions, and the faster taken. This is not remembered between visits: the small shaders
+   are compiled, checked and timed at every start.
 6. Every 8 answers, the page measures the side it did not choose again, on part of a prompt and on the first
    tokens of an answer, in case the device has warmed up or cooled down.
 
