@@ -533,7 +533,8 @@ const BENCH_MODEL = "llm-jp-3-150m";
     try {
       // without Atomics.waitAsync nothing answers the waiter, which would wait for ever (T134's review)
       const answer = await answered;
-      if (!answer.result?.waitAsync) return { error: answer.error ?? "no Atomics.waitAsync here" };
+      // (T227's review: a worker's error says "failed", as every step's does, so that the warnings list it; no waitAsync is no failure)
+      if (!answer.result?.waitAsync) return { error: answer.error ? `failed: ${answer.error}` : "no Atomics.waitAsync here" };
       return { microseconds: (await waited).microseconds };
     } finally {
       waiter.terminate();
