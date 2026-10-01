@@ -13,8 +13,8 @@ import time
 import numpy as np
 
 # the RoPE angles are the engine's, which computes them itself when a file leaves the tables out (int8)
-from llama2_numpy import (CHARSMAP, FORM, RMS_EPS, form_of, layer_slots, linear_form, linear_widths, pack6, quantize6,
-                          rope_frequencies, rope_magnitude)
+from llama2_numpy import (CHARSMAP, FORM, RMS_EPS, TERNARY_GROUP, TERNARY_VALUES, form_of, layer_slots, linear_form,
+                          linear_widths, pack6, quantize6, rope_frequencies, rope_magnitude, ternary)
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
 # peak is the output plus 14 MB with this, plus 52 MB with pieces four times as large, at the same speed.
@@ -101,17 +101,22 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, 
     return tensors
 
 
-QUANTIZED = ("int8", "int6")  # the dtypes with groups and scales; int6 is T98's, see llama2_numpy.pack6
+# the dtypes with groups and scales; int6 is T98's, see llama2_numpy.pack6; ternary T230's (pack_ternary): the weights
+# of a ternary model as they are, two bits each, which no other model can be written as (Writer refuses)
+QUANTIZED = ("int8", "int6", "ternary")
+# the two a model converted with no dtype asked for may get (Stream's callable dtype, T115)
+EITHER = ("int8", "int6")
 
 
 def dtype_name(dtype):
-    """"float32", "float16", "int8" or "int6" from a name or a NumPy dtype (NumPy has no six-bit type)."""
-    return "int6" if str(dtype) == "int6" else np.dtype(dtype).name
+    """"float32", "float16", "int8", "int6" or "ternary" from a name or a NumPy dtype (NumPy has neither of the last
+    two)."""
+    return str(dtype) if str(dtype) in ("int6", "ternary") else np.dtype(dtype).name
 
 
 def check_dtype(dtype):
-    if str(dtype) != "int6" and np.dtype(dtype) not in (np.float32, np.float16, np.int8):
-        raise ValueError(f"dtype must be float32, float16, int8 or int6, not {dtype}.")
+    if str(dtype) not in ("int6", "ternary") and np.dtype(dtype) not in (np.float32, np.float16, np.int8):
+        raise ValueError(f"dtype must be float32, float16, int8, int6 or ternary, not {dtype}.")
 
 
 def tensor_bytes(shape, is_matrix, dtype):
@@ -124,6 +129,9 @@ def tensor_bytes(shape, is_matrix, dtype):
     if dtype == "int6":
         # 24 bytes of values and a float32 scale per group of 32; the norm weights stay float32
         return count // 32 * 28 if is_matrix else 4 * count
+    if dtype == "ternary":
+        # 32 bytes of values and a float32 scale per group of 128
+        return count // TERNARY_GROUP * 36 if is_matrix else 4 * count
     # int8 values and one float32 scale per group; the norm weights stay float32
     return count + 4 * (count // group_size(shape[-1])) if is_matrix else 4 * count
 
@@ -159,6 +167,8 @@ class Writer:
         tensors = layout(*header, **form)
         if self.dtype == "int6" and any(is_matrix and shape[-1] % 32 for shape, is_matrix in tensors):
             raise ValueError("Six bits a weight needs rows of whole groups of 32, and this model has other rows.")
+        if self.dtype == "ternary" and any(is_matrix and shape[-1] % TERNARY_GROUP for shape, is_matrix in tensors):
+            raise ValueError("Ternary weights need rows of whole groups of 128, and this model has other rows.")
         size = checkpoint_size(header, dtype, form)
         if sink is not None:
             self.out = None
@@ -187,12 +197,18 @@ class Writer:
         elif is_matrix and self.dtype == "int6":
             rows = np.asarray(values, dtype=np.float32).reshape(-1, shape[-1])
             if self.quantize_rows is not None:
-                packed, scales = self.quantize_rows(rows, six=True)  # the same bytes on the kernel (T98)
+                packed, scales = self.quantize_rows(rows, "int6")  # the same bytes on the kernel (T98)
             else:
                 quantized, scales = quantize6(rows)
                 packed = pack6(quantized)
             self.put(offset + first * 3 // 4, packed)
             self.put(offset + math.prod(shape) * 3 // 4 + 4 * (first // 32), scales)
+        elif is_matrix and self.dtype == "ternary":
+            # T230: nothing is rounded, the values are ternary already or this raises (the same bytes on the kernel)
+            rows = np.asarray(values, dtype=np.float32).reshape(-1, shape[-1])
+            packed, scales = self.quantize_rows(rows, "ternary") if self.quantize_rows is not None else ternary(rows)
+            self.put(offset + first // 4, packed)
+            self.put(offset + math.prod(shape) // 4 + 4 * (first // TERNARY_GROUP), scales)
         elif is_matrix:
             fast = self.quantize_rows is not None and shape[-1] % 32 == 0
             quantized, scales = (self.quantize_rows if fast else quantize)(np.asarray(values, dtype=np.float32).reshape(-1, shape[-1]))
@@ -811,7 +827,7 @@ def q8_0(raw):
 
 
 # the four values of each byte of PQ2_0, the lowest two bits first, as one little-endian word of four int8
-PQ2_0_CODES = ((np.arange(256)[:, None] >> (0, 2, 4, 6) & 3) - 1).astype(np.int8).view("<u4").reshape(256)
+PQ2_0_CODES = TERNARY_VALUES.view("<u4").reshape(256)
 
 
 def pq2_0(raw):
@@ -831,12 +847,41 @@ def pq2_0(raw):
     return (values * scales).reshape(-1)
 
 
-# bytes per value (Q8_0: 34 bytes for 32 of them, PQ2_0: 34 for 128), and how to read them
+def base3(packed, digits):
+    """The digits (0, 1 or 2) of bytes that hold several in base 3, as PTQ1_0 packs them: (rows, bytes) -> (rows,
+    digits, bytes), the first digit of every byte, then the second... A digit is the high byte of three times the
+    byte, and what is left of the product goes on to the next one (the byte is ceil(256 v / 243) for the number v
+    whose base 3 digits they are, the first the most significant)."""
+    left, out = packed.astype(np.uint16), np.empty((packed.shape[0], digits, packed.shape[1]), dtype=np.uint8)
+    for digit in range(digits):
+        left *= 3
+        out[:, digit] = left >> 8
+        left &= 255
+    return out
+
+
+def ptq1_0(raw):
+    """Prism ML's PTQ1_0 (T230: Ternary Bonsai 2's smaller GGUF, ggml type 143): blocks of 128 ternary values in 28
+    bytes, 1.75 bits a value. 24 bytes of five values each in base 3, 2 bytes of four, and a float16 scale d at the end;
+    a value is (digit - 1) * d. The values are not in the order of the bytes: the first 16 bytes hold values 16 n + m
+    (digit n of byte m), the next 8 bytes values 80 + 8 n + m, the 2 bytes values 120 + 2 n + m. The form is that of
+    block_ptq1_0 and dequantize_row_ptq1_0() of the fork of llama.cpp that reads these files (MIT; no line of it is
+    copied): ggml/src/ggml-common.h#L209-L220 and ggml/src/ggml-quants.c#L2196-L2285 of
+    https://github.com/PrismML-Eng/llama.cpp/tree/88c4bc60b9c9578f134385be9535e853f2db9b9f (upstream's TQ1_0 in
+    groups of 128). docs/notes/t228-bonsai-2-2026-10-01.md has how it was held to the F16 file of the same model."""
+    blocks = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 28)
+    scales = np.ascontiguousarray(blocks[:, 26:]).view(np.float16).astype(np.float32)
+    digits = np.concatenate([base3(blocks[:, :16], 5).reshape(-1, 80), base3(blocks[:, 16:24], 5).reshape(-1, 40),
+                             base3(blocks[:, 24:26], 4).reshape(-1, 8)], axis=1)
+    return ((digits.view(np.int8) - np.int8(1)) * scales).reshape(-1)
+
+
+# bytes per value (Q8_0: 34 bytes for 32 of them, PQ2_0: 34 for 128, PTQ1_0: 28 for 128), and how to read them
 READERS = {"F32": (4, lambda raw: np.frombuffer(raw, dtype=np.float32)),
            "F16": (2, lambda raw: np.frombuffer(raw, dtype=np.float16)), "BF16": (2, bfloat16),
-           "Q8_0": (34 / 32, q8_0), "PQ2_0": (34 / 128, pq2_0)}
+           "Q8_0": (34 / 32, q8_0), "PQ2_0": (34 / 128, pq2_0), "PTQ1_0": (28 / 128, ptq1_0)}
 # how many values a block of a GGUF's type holds: a row is whole blocks
-BLOCKS = {"Q8_0": 32, "PQ2_0": 128}
+BLOCKS = {"Q8_0": 32, "PQ2_0": 128, "PTQ1_0": 128}
 
 
 class Safetensors:
@@ -1434,7 +1479,7 @@ class Stream:
         if callable(dtype):
             # T115: chosen once the header is known, from the size each quantized dtype would take (the worker's
             # automatic choice: int8 where the forward pass fits a 32-bit memory, six bits where it does not)
-            sizes = {name: self.size(name) for name in QUANTIZED}
+            sizes = {name: self.size(name) for name in EITHER}
             dtype = str(dtype(list(self.header), self.form, sizes))
         check_dtype(dtype)
         self.dtype = dtype_name(dtype)
@@ -1581,8 +1626,9 @@ class Incomplete(Exception):
 
 
 GGUF_VALUES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
-# ggml's types; the K-quants and the rest are refused. 142 is PQ2_0 of Prism ML's fork of llama.cpp (T235, pq2_0())
-GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0", 142: "PQ2_0"}
+# ggml's types; the K-quants and the rest are refused. 142 and 143 are PQ2_0 and PTQ1_0 of Prism ML's fork of
+# llama.cpp (T235's pq2_0(), T230's ptq1_0()); 30 is BF16 (Ternary Bonsai 2's two small matrices of the gates)
+GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0", 30: "BF16", 142: "PQ2_0", 143: "PTQ1_0"}
 # llama.cpp's names of the pre-tokenizers, as the engine knows them (llama2_numpy.pretokenize)
 GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen", "llama-bpe": "llama3",
                       "qwen35": "qwen35"}
@@ -1760,8 +1806,8 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
     turns = {"attn_q": heads, "attn_k": config.get("num_key_value_heads")}
     for name, info in tensors.items():
         if info["type"] not in GGUF_TENSORS:
-            raise ValueError(f"{name} is stored as ggml type {info['type']}: only F32, F16, Q8_0 and PQ2_0 GGUF files "
-                             f"are supported (not the K-quants).")
+            raise ValueError(f"{name} is stored as ggml type {info['type']}: only F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0 "
+                             f"GGUF files are supported (not the K-quants).")
         parts = name.split(".")
         if name in names:
             target = names[name]

@@ -419,9 +419,9 @@ def test_int8_holds_a_ternary_block_under_every_scale():
     assert np.array_equal(sixes.reshape(-1, 128), 4 * 31 * ternary * sign[some])
 
 
-def bonsai_gguf(yarn=YARN, head_size=0, bos=1, eos=2, also=()):
+def bonsai_gguf(yarn=YARN, head_size=0, bos=1, eos=2, also=(), matrices=(pq2_0_blocks, 142)):
     """A small Qwen3 as Ternary-Bonsai's GGUF has one: PQ2_0 matrices (rows of 128 and 256), F32 norms, and yarn.
-    also: further metadata."""
+    also: further metadata. matrices: the blocks and ggml type of the matrices (T230: tests/test_ternary.py's PTQ1_0)."""
     from test_qwen3 import qwen3
     config, weights = synthetic_weights(dim=128, hidden_dim=256, n_kv_heads=2, vocab_size=40, head_size=head_size)
     tensors, published = qwen3(config, weights, True)
@@ -433,7 +433,7 @@ def bonsai_gguf(yarn=YARN, head_size=0, bos=1, eos=2, also=()):
         more += [("qwen3.rope.scaling.type", 8, "yarn"), ("qwen3.rope.scaling.factor", 6, yarn["factor"]),
                  ("qwen3.rope.scaling.original_context_length", 4, yarn["original_max_position_embeddings"])]
     file, same = gguf_file(tensors, published, config["vocab_size"], "qwen3", pre="qwen2", theta=1000000.0, more=more,
-                           bos=bos, eos=eos, matrices=(pq2_0_blocks, 142))
+                           bos=bos, eos=eos, matrices=matrices)
     return config, published, file, same
 
 

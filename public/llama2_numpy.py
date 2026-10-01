@@ -646,6 +646,7 @@ def load_kernels(path, without_relaxed=False):
         lib = ctypes.CDLL(path)
         i32, p = ctypes.c_int32, ctypes.c_void_p
         signatures = dict(matmul_f32=[p, p, p, i32, i32, i32], quantize_x=[p, p, p, i32, i32], quantize6_x=[p, p, p, i32],
+                          ternary_x=[p, p, p, i32],
                           matmul_q8=[p, p, p, p, p, i32, i32, i32], rmsnorm=[p, p, p, i32, ctypes.c_float], rope=[p, p, p, i32, i32, i32],
                           attention=[p, p, p, p, p, i32, i32, i32, i32, i32, i32],
                           attention_f16=[p, p, p, p, p, i32, i32, i32, i32, i32, i32], to_f16=[p, p, i32], from_f16=[p, p, i32], finite_f16=[p, i32],
@@ -657,7 +658,7 @@ def load_kernels(path, without_relaxed=False):
         kernels = {}
         for name, argtypes in signatures.items():
             kernels[name] = getattr(lib, name)
-            kernels[name].argtypes, kernels[name].restype = argtypes, i32 if name in ("sample", "finite_f16") else None
+            kernels[name].argtypes, kernels[name].restype = argtypes, i32 if name in ("sample", "finite_f16", "ternary_x") else None
     except Exception:
         return None
     if without_relaxed:
@@ -676,16 +677,23 @@ def kernel_quantizer(path):
     """llama2_convert.quantize() on the SIMD kernels (T89): int8 values in groups of 32 and one float32 scale per
     group, the same bytes as NumPy's, six times faster (quantize_x with no bias: the activations' quantizer is the
     same computation). For the converter's quantize_rows; None where the kernels cannot be loaded.
-    six=True: quantize6() and pack6() in one pass on the kernel quantize6_x (T98), the same bytes: the packed groups
-    (24 bytes each) and their scales."""
+    dtype "int6": quantize6() and pack6() in one pass on the kernel quantize6_x (T98), the same bytes: the packed
+    groups (24 bytes each) and their scales. dtype "ternary" (T230): ternary() on the kernel ternary_x, the same bytes
+    (32 a group of 128) and scales, and the same refusal of values that are not ternary."""
     kernels = load_kernels(path) if path else None
     if not kernels:
         return None
-    quantize_x, quantize6_x = kernels["quantize_x"], kernels["quantize6_x"]
+    quantize_x, quantize6_x, ternary_x = kernels["quantize_x"], kernels["quantize6_x"], kernels["ternary_x"]
 
-    def quantize_rows(values, six=False):
+    def quantize_rows(values, dtype="int8"):
         values = np.ascontiguousarray(values, dtype=np.float32)
-        if six:
+        if dtype == "ternary":
+            packed = np.empty(values.size // 4, dtype=np.uint8)
+            scales = np.empty(values.size // TERNARY_GROUP, dtype=np.float32)
+            if ternary_x(packed.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size):
+                raise ValueError(NOT_TERNARY)
+            return packed.reshape(-1, TERNARY_GROUP // 4), scales
+        if dtype == "int6":
             packed = np.empty(values.size // 32 * 24, dtype=np.uint8)
             scales = np.empty(values.size // 32, dtype=np.float32)
             quantize6_x(packed.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size)
@@ -769,10 +777,65 @@ def quantize6(values):
     return (six * 4).astype(np.int8), scales / np.float32(4)
 
 
+# T230: ternary, two bits a weight. Every weight is -1, 0 or +1 times the scale of its group of 128 along the row (a
+# float32): what Prism ML's Ternary Bonsai models are, and how their GGUFs hold them (PQ2_0: two bits a weight;
+# PTQ1_0: five weights a byte in base 3). A group takes 32 bytes, in PQ2_0's own order: weight j is the code (weight +
+# 1: 0, 1 or 2) in byte j // 4 at bits 2 (j % 4). The kernels multiply the codes as they are (kernels/ternary.ts): a
+# shift of sixteen bytes and a mask give every fourth weight of 64, so nothing is widened, and nothing is kept for a
+# row besides its weights and scales. The values are exactly the file's (int8 holds 127 times float32(d / 127)).
+TERNARY_GROUP = 128
+# the four weights of every byte, the lowest two bits first
+TERNARY_VALUES = ((np.arange(256)[:, None] >> (0, 2, 4, 6) & 3) - 1).astype(np.int8)
+NOT_TERNARY = "These weights are not ternary: a value is neither 0 nor the largest of its group of 128, or its negative."
+
+
+def pack_ternary(values):
+    """int8 values of -1, 0 and 1 -> a byte for every four of them (uint8), the first in the lowest two bits."""
+    codes = (np.asarray(values, dtype=np.int8).reshape(-1, 4) + 1).astype(np.uint8)
+    return codes[:, 0] | codes[:, 1] << 2 | codes[:, 2] << 4 | codes[:, 3] << 6
+
+
+def unpack_ternary(packed):
+    """A byte for every four values -> the int8 values, -1, 0 and 1 (2 for the code a ternary file never has)."""
+    return TERNARY_VALUES[np.asarray(packed, dtype=np.uint8).reshape(-1)].reshape(-1)
+
+
+def ternary(values):
+    """float32 values, whole rows of groups of 128 -> (32 bytes a group, float32 scales): each value's sign, and the
+    largest |value| of its group. Nothing is rounded: a value that is neither 0 nor plus or minus that scale is a
+    ValueError (the weights of a model that is not ternary, which int8 is for)."""
+    groups = np.asarray(values, dtype=np.float32).reshape(-1, TERNARY_GROUP)
+    scales = np.abs(groups).max(axis=1)
+    signs = np.sign(groups)
+    if not np.array_equal(signs * scales[:, None], groups):
+        raise ValueError(NOT_TERNARY)
+    return pack_ternary(signs.astype(np.int8)).reshape(-1, TERNARY_GROUP // 4), scales
+
+
+# the dtypes whose matrices are int8 values in another packing; what a packing does to a matrix: the bytes its count
+# values take, and the group of a row of that length (int8 and int6: 32, or for int8 the largest power of two below
+# it that divides the row)
+PACKED = ("int6", "ternary")
+
+
+def stored_bytes(count, packing=None):
+    return count // 4 if packing == "ternary" else count * 3 // 4 if packing == "int6" else count
+
+
+def group_of(length, packing=None):
+    if packing == "ternary":
+        return TERNARY_GROUP
+    group = 32
+    while length % group:
+        group //= 2
+    return group
+
+
 class Tensor:
     """Where a tensor of the checkpoint is, when the weights live outside Python (T93: the forward pass runs in
     public/forward.js on its own WebAssembly memory). kind: "int8" (values, then one float32 scale per group of
-    the last dimension at scales), "int6" (the same with the values packed, see pack6), "f32" or "f16". Offsets count
+    the last dimension at scales), "int6" (the same with the values packed, see pack6), "ternary" (T230: two bits a
+    value and a scale per group of 128, see pack_ternary), "f32" or "f16". Offsets count
     from the start of the checkpoint file."""
 
     __slots__ = ("kind", "offset", "shape", "group", "scales")
@@ -787,19 +850,17 @@ class Tensor:
 
 class Places:
     """Where the tensors of a checkpoint are, taken in file order (Llama's take() with external=, T93): a Tensor for
-    each, from the header's 28 bytes on. dtype: the checkpoint's as numpy has it (int6 is int8 with six=True)."""
+    each, from the header's 28 bytes on. dtype: the checkpoint's as numpy has it (int6 and ternary are int8 with that
+    packing, PACKED)."""
 
-    def __init__(self, dtype, six=False):
-        self.dtype, self.six, self.offset = np.dtype(dtype), six, 28
+    def __init__(self, dtype, packing=None):
+        self.dtype, self.packing, self.offset = np.dtype(dtype), packing, 28
 
     def take(self, *shape, matrix=True, widen=True):
         count = math.prod(shape)
         if self.dtype == np.int8 and matrix:
-            group = 32
-            while shape[-1] % group:
-                group //= 2
-            stored = count * 3 // 4 if self.six else count
-            tensor = Tensor("int6" if self.six else "int8", self.offset, shape, group, self.offset + stored)
+            group, stored = group_of(shape[-1], self.packing), stored_bytes(count, self.packing)
+            tensor = Tensor(self.packing or "int8", self.offset, shape, group, self.offset + stored)
             self.offset += stored + 4 * (count // group)
             return tensor
         tensor = Tensor("f16" if self.dtype == np.float16 else "f32", self.offset, shape)
@@ -821,8 +882,8 @@ def external_tensors(header, dtype, form=None):
     probe.head_size = int(form["head_dim"]) or probe.dim // probe.n_heads
     probe.q_dim, kv_dim = probe.n_heads * probe.head_size, probe.n_kv_heads * probe.head_size
     probe.rope_magnitude = 1.0  # the places, not the values
-    six = str(dtype) == "int6"
-    places = Places(np.int8 if six else dtype, six)
+    packing = str(dtype) if str(dtype) in PACKED else None
+    places = Places(np.int8 if packing else dtype, packing)
     probe.llama_tensors(places.take, vocab_size > 0, True, kv_dim, form["bias"], places.dtype,
                         lambda width: np.zeros(width // 2), form["qk_norm"])
     return {name: getattr(probe, name).plan() for name in TENSOR_NAMES if isinstance(getattr(probe, name, None), Tensor)}
@@ -872,7 +933,8 @@ def form_of(options=None):
 
 
 def checkpoint_dtype(header, size, form=None):
-    """"float32", "float16", "int8" or "int6": what a checkpoint file of size bytes with this header (7 ints) holds.
+    """"float32", "float16", "int8", "int6" or "ternary": what a checkpoint file of size bytes with this header (7
+    ints) holds.
 
     The legacy format does not say, but the header fixes the size of each variant. Anything else is no checkpoint
     this engine can read, and the ValueError says so before hundreds of megabytes are read for nothing.
@@ -937,6 +999,12 @@ def checkpoint_dtype(header, size, form=None):
     if all(length % 32 == 0 for _, length in matrices):
         # T98: 24 bytes and a float32 scale per group of 32 (only rows of whole groups can be int6)
         sizes.setdefault(28 + sum(rows * length // 32 * 28 for rows, length in matrices) + 4 * vectors, "int6")
+    if all(length % TERNARY_GROUP == 0 for _, length in matrices):
+        # T230: 32 bytes and a float32 scale per group of 128 (only rows of whole groups can be ternary). No other
+        # dtype of the same header has this size: with M values in the matrices and V in the vectors it is 0.28125 M
+        # + 4 V, int6 0.875 M + 4 V, int8 1.125 M + 4 V, float32 more than 4 M + 4 V, and float16 (2 M + 2 V and the
+        # RoPE tables) would need 2 V > 1.7 M, vectors as large as the matrices (tests/test_ternary.py tries shapes)
+        sizes.setdefault(28 + sum(rows * length // TERNARY_GROUP * 36 for rows, length in matrices) + 4 * vectors, "ternary")
     if size not in sizes:
         raise ValueError(f"This is not a llama2.c checkpoint: its header asks for {28 + 4 * floats} bytes as float32, "
                          f"{28 + 2 * floats} as float16 or {28 + int8} as int8, and the file has {size}.")
@@ -991,8 +1059,9 @@ class Llama:
                  unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
-        dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py), and
-        dtype="int6" (T98) is int8 with six bits a value (pack6).
+        dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py),
+        dtype="int6" (T98) is int8 with six bits a value (pack6), and dtype="ternary" (T230) two bits a value with a
+        scale per group of 128 (pack_ternary): the weights of a ternary model as they are.
         arch="neox": GPT-NeoX, which is arch="gpt2" with RoPE over the first rotary values of every head
         (rotary=0 means all of them) and, when parallel_residual is on, the attention and the FFN both reading
         the same x instead of one after the other.
@@ -1046,9 +1115,10 @@ class Llama:
         if unnamed:
             raise ValueError(f"There is no optimization called {unnamed[0]!r}: {', '.join(SWITCHES)}.")
         self.disabled = disable
-        # int6 (T98) is int8 with its values packed: from here on it is int8, except where the bytes are read
-        six = str(dtype) == "int6"
-        dtype = np.dtype(np.int8 if six else dtype)
+        # int6 (T98) and ternary (T230) are int8 with the values packed: from here on it is int8, except where the
+        # bytes are read
+        packing = str(dtype) if str(dtype) in PACKED else None
+        dtype = np.dtype(np.int8 if packing else dtype)
         offset = 28
         # The int8 kernels work on groups of 32 only
         self.linear = linear_form(linear)
@@ -1062,7 +1132,7 @@ class Llama:
         keep_int8 = external is not None and suitable and dtype == np.int8 and "int8" not in disable
 
         # only where it is: public/forward.js reads it (and widens what has to be widened) itself
-        places = Places(dtype, six) if external is not None else None
+        places = Places(dtype, packing) if external is not None else None
 
         def take(*shape, matrix=True, widen=True):
             nonlocal offset
@@ -1072,13 +1142,11 @@ class Llama:
                 offset = places.offset
                 return tensor
             if dtype == np.int8 and matrix:
-                # quantize.py: int8 values, then one float32 scale per group
-                group = 32
-                while shape[-1] % group:
-                    group //= 2
-                stored = count * 3 // 4 if six else count
-                values = unpack6(np.frombuffer(checkpoint, dtype=np.uint8, count=stored, offset=offset)).reshape(-1) \
-                    if six else np.frombuffer(checkpoint, dtype=np.int8, count=count, offset=offset)
+                # quantize.py: int8 values (or their packing), then one float32 scale per group
+                group, stored = group_of(shape[-1], packing), stored_bytes(count, packing)
+                raw = np.frombuffer(checkpoint, dtype=np.uint8, count=stored, offset=offset)
+                values = unpack_ternary(raw) if packing == "ternary" else unpack6(raw).reshape(-1) if packing == "int6" \
+                    else raw.view(np.int8)
                 scales = np.frombuffer(checkpoint, dtype=np.float32, count=count // group, offset=offset + stored)
                 offset += stored + scales.nbytes
                 if not widen:
