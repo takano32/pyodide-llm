@@ -30,7 +30,8 @@
 // of this directory has it). T153: "synthetic-qwen2", the same with biases of q, k and v (Qwen2's; T187: drawn around
 // 0, 0.3·N, as GPT-2's below) and an epsilon of 1e-6; "synthetic-qwen3", the norms of every head of q and k (Qwen3's), heads of 32 where dim / heads is 16 (q and
 // the attention's output 128 wide, dim 64), and an epsilon of 0.5, near mean(x²) (T150: an epsilon far below it
-// hides a wrong one); both of three layers. T154: "synthetic-gpt2", GPT-2's form (LayerNorm with biases, a bias after
+// hides a wrong one); both of three layers. The review of T235: "synthetic-yarn", "synthetic-qwen3" with yarn's RoPE (its
+// tables are 1.1386 times a unit turn, which no other model here has). T154: "synthetic-gpt2", GPT-2's form (LayerNorm with biases, a bias after
 // every matrix, an FFN of two matrices and GELU, learned positions and no RoPE), and "synthetic-neox", GPT-NeoX's (the
 // same with RoPE on the first quarter of every head, as Pythia's rotary_pct 0.25, and the parallel residual), both of
 // three layers and 4 heads of keys and values (neither has grouped-query attention), their biases drawn around 0 (the
@@ -114,6 +115,12 @@ const webgpu = option("--webgpu", "");
 // which a second layer alone would not tell from 0 + size
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
   "synthetic-qwen3": [{ layers: 3, qk_norm: true, head_dim: 32 }, { qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 }],
+  // the review of T235: Qwen3 with yarn's RoPE (Ternary Bonsai's): the cos and sin of every pair are 1 + 0.1 ln 4 = 1.1386
+  // times a unit turn, and the pairs turn as plain at first and slower after (original context 32 of heads of 32: the
+  // pairs 0 to 3 a ramp, the rest four times slower). The shaders turn by the table as Python gives it, and a shader that
+  // takes the table for a unit turn is wrong on this model only
+  "synthetic-yarn": [{ layers: 3, qk_norm: true, head_dim: 32 },
+    { qk_norm: true, head_dim: 32, rms_norm_eps: 0.5, rope_scaling: { rope_type: "yarn", factor: 4.0, original_max_position_embeddings: 32 } }],
   "synthetic-gpt2": [{ layers: 3, kv_heads: 4, arch: "gpt2", outliers: 8 }, { arch: "gpt2" }],
   "synthetic-neox": [{ layers: 3, kv_heads: 4, arch: "neox" }, { arch: "neox", rotary: 4, parallel_residual: true }],
   "synthetic-neox-256": [{ dim: 512, hidden: 1024, layers: 3, heads: 2, kv_heads: 2, arch: "neox" }, { arch: "neox", rotary: 64, parallel_residual: true }],

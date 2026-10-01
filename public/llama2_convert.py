@@ -1720,10 +1720,12 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
             if key("rope.scaling.type") == "yarn":
                 # T235: yarn's other numbers, by config.json's names. llama.cpp takes the trained context where the
                 # GGUF names no original one; what else a GGUF may say of yarn, check_config() refuses by these names
-                # and gguf_agrees() where the original's config.json has it not
+                # and gguf_agrees() where the original's config.json has it not. The keys are llama.cpp's own (the
+                # fork's src/llama-arch.cpp: yarn_log_multiplier, which only a DeepSeek-V2 GGUF has; the review of
+                # T235 found "yarn_log_mul" here, a name no GGUF has)
                 config["rope_scaling"]["original_max_position_embeddings"] = \
                     key("rope.scaling.original_context_length", key("context_length"))
-                for name, ours in (("attn_factor", "attention_factor"), ("yarn_log_mul", "mscale_all_dim")):
+                for name, ours in (("attn_factor", "attention_factor"), ("yarn_log_multiplier", "mscale_all_dim")):
                     if key(f"rope.scaling.{name}") is not None:
                         config["rope_scaling"][ours] = key(f"rope.scaling.{name}")
         if arch == "qwen35":
