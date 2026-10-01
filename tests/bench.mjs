@@ -854,7 +854,12 @@ for (const [what, pattern] of [
   ["the model section hands over what its path says", /said: pathWarnings\(paths\)/],
   ["the report lists the head's and the sections' warnings", /warnings\(\[\{ title: TITLES\.model, markdown: head, said: measured\?\.said \}, \.\.\.shown\.map\(/],
   ["and cuts the summary to the link", /shortReport\(head, .*, warned, environment\)/],
+  // T242's review: the worker makes its shared memory for the loads it is told follow, without a gigabyte for a next model
+  // (the Windows WebKit of bench.yml went down in that gigabyte, one run in four), and only this page's init says them
+  ["the model section tells its worker the rounds that follow", /type: "init"[^}]*\}[^;]*ahead: rounds\.map\(\(round\) => round\.without\)/],
 ]) assert.ok(pattern.test(benchmarkPage), `benchmark.astro: ${what}`);
+// ... and the model page, whose visitor may choose a next model, tells none: its memory keeps that gigabyte (T96)
+assert.ok(!/\bahead\b/.test(fs.readFileSync(new URL("../src/pages/index.astro", import.meta.url), "utf8")), "index.astro tells its worker no loads ahead (T242)");
 // the CPU section's ceilings that could not be measured at all say so in that word, as the GPU section's steps do (T227's own
 // change left this one at "Not measured:")
 const noCeilings = cpuTable({ ...aCpu, ceilings: { error: "out of memory\nsecond | line" } });

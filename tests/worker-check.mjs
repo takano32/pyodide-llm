@@ -676,6 +676,25 @@ const ok = (line) => {
   ok("a worker told the loads that follow on its one model makes its shared memory for the largest of them");
 }
 
+// ---- T242's review: the page's message to the worker's memory. The handler takes the loads that follow from the page's message
+// (/benchmark/'s init says them; the model page's loads say none). A handler that forgot the last one's would make the model
+// page's memory without its gigabyte for the next model, or the benchmark's with one, and nothing else here sees the wiring:
+// the memory's own checks above set loadsAhead by hand
+{
+  const small = { id: "small", name: "Small", checkpoint: "small", tokenizer: "small.tokenizer.bin", bytes: 64, options: {} };
+  const said = async (data) => {
+    fresh(() => new Response(new Uint8Array(64), { status: 200 }));
+    run("initialized = Promise.reject(new Error('no runtime in this check')); initialized.catch(() => {})");
+    await context.onmessage({ data: { type: "load", load: 9, model: small, ...data } });
+    run("initialized = undefined");
+    return run("loadsAhead");
+  };
+  assert.deepEqual(await said({ ahead: [[], ["kernels"], ["int8", "relaxed"]] }), [[], ["kernels"], ["int8", "relaxed"]]);
+  assert.equal(await said({}), undefined, "a load that says none left the last one's loads ahead");
+  assert.equal(await said({ ahead: [[]] }).then(() => said({ ahead: "int8" })), undefined, "a thing that is no list was taken for one");
+  ok("the loads that follow come from the page's message, and the next load that says none forgets them");
+}
+
 // ---- T242: what is thrown and is no Error is told in words, not as "[object Object]" (which /benchmark/ showed)
 {
   const told = context.told;
