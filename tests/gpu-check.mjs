@@ -511,6 +511,24 @@ try {
       Object.assign(out, { uploadedLogits: one.logits, uploaded: one.id, uploadedTwice: two.id, uploadedSame: one.kv === two.kv });
       return out;
     };
+    // T219 (2): the sampler's refusal of logits that are not finite numbers, end to end from the GPU's own forward pass
+    // (shaders.js's SAMPLE sets the State's not_finite word, gpu.js's generate() writes it after the ids, forward.js's
+    // generateMany() reads it). The CPU's norm weights of layer 0 are made NaN (the GPU holds its own copy, uploaded as it
+    // got ready), the prompt goes through the CPU (its keys and values are NaN then), and the GPU's step from there reads
+    // those up: its logits are NaN. Asked after everything else a run does, for the GPU stops. The weights go back
+    const refusal = (engine) => {
+      const t = plan.tensors.rms_att_weight;
+      if (t?.kind !== "f32") return { skipped: "the norm weights are not float32 here" };
+      const norm = new Float32Array(memory.buffer, base + t.offset, plan.dim), kept = norm.slice();
+      engine.newGeneration();
+      engine.gpuSide = "cpu";
+      norm.fill(NaN);
+      engine.forwardMany(tokens.slice(0, -1), 0);
+      norm.set(kept);
+      engine.gpuSide = null;
+      const taken = engine.generateMany(tokens[n], n, tokens.slice(-64), tokens.length, 4, 0, 0.9, 1, [], []);
+      return { taken: taken ?? null, status: engine.gpuStatus };
+    };
     const run = async (gpu, gpuForce, gpuRemembered, steps = false) => {
       const started = performance.now();
       const engine = createForward({ memory, base, size, kernels, plan, gpu, gpuForce: { ...TESTS, ...gpuForce }, gpuRemembered });
@@ -540,6 +558,7 @@ try {
         engine.forwardMany(tokens.slice(0, 2), n + 1);
         out.past = { gpuTokens: engine.gpuTokens };
       }
+      if (gpu && steps && out.steps && !out.steps.why) out.steps.nanLogits = refusal(engine);
       // T205: the GPU's worker says it let go of its device before the next model is read (false: not within 5 s)
       out.ended = await engine.release();
       // T183: the seconds of the run, and of those until the GPU's worker said it was ready (its shaders compiled)
@@ -1066,6 +1085,23 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
     failures.push(`sampled at 0.02 and 0.98: ${low?.[0]} and ${high?.[0]}, of NumPy's nucleus of ${walk.tokens.length}, which are to differ`);
   }
   said.push(`sampled ${low?.[0]} and ${high?.[0]}${peaked ? ` (NumPy's first token has ${(walk.cumulative[0] / walk.mass).toFixed(3)} of its nucleus)` : ""}`);
+  // T219 (2): the GPU's logits made NaN (the harness's refusal()): the request refused whole (nothing of it taken), the GPU
+  // stopped, and the status line says the logits were not finite (the word gpu.js passes on, not an id outside the
+  // vocabulary or too few sampled: those are what a sampler that did not refuse, or a word that did not arrive, leaves).
+  // The DP4A forms quantize the attention's output to 8 bits (QUANTIZE: the group's largest is a max, and the value then
+  // an integer, both of which a device does as it likes for a NaN), which can hide a NaN of the keys and values: on
+  // lavapipe max drops a NaN, i32(NaN) is the least integer and clamps to -127, so the NaN becomes a finite number, the
+  // logits stay finite, the sampler sees nothing and the ids are taken (found by this check on lavapipe and SwiftShader,
+  // whose DP4A forms took 4 ids where the float forms refused; the CPU's activations are quantized by a max that keeps
+  // a NaN). Said, not failed, there; a request that gave nothing but did not say the logits were not finite fails anywhere
+  if (steps.nanLogits && !steps.nanLogits.skipped) {
+    const { taken, status } = steps.nanLogits, hides = /DP4A/.test(steps.form ?? "");
+    const refused = taken === null && /^prompts on the CPU \(the GPU computed logits that are not finite numbers/.test(status ?? "");
+    if (!refused && !(hides && taken !== null)) {
+      failures.push(`logits made NaN: the request gave ${JSON.stringify(taken)} and the status line "${status}", where it is to be refused whole and say the logits were not finite`);
+    }
+    said.push(refused ? "NaN logits refused" : `NaN logits taken as ${JSON.stringify(taken)}${hides ? " (hidden by DP4A's 8-bit quantizer)" : ""}`);
+  } else if (steps.nanLogits?.skipped) said.push(`NaN logits not tried (${steps.nanLogits.skipped})`);
   // T209: the tables were cut where the run asked for it (a vocabulary of 192 rows or more is 3 pieces of 64)
   if (steps.cut && !(steps.pieces > 1)) failures.push(`the tables in ${steps.pieces} piece, not cut`);
   console.log(`  a token by ${steps.form}, its attention by ${steps.attention}${steps.pieces > 1 ? ` (the tables in ${steps.pieces} pieces)` : ""}: ${said.join(", ")}${failures.length ? ` — FAILED\n    - ${failures.join("\n    - ")}` : ""}`);

@@ -3,21 +3,38 @@
 // or to the sampling in chunks (T191's SAMPLER_STAGES) costs time, as /benchmark/'s "the sampling alone" measures
 // them (Llama 3's vocabulary, logits as a model's and flat ones, the penalty 1: T191's review), before and after. The
 // ms of one sampling is T168's difference of a submission of n and one of 2n (n from the working tree's shaders,
-// the same for both), the median of `rounds` rounds taken in turn: old, new, old, new, ... On lavapipe the numbers are a
-// CPU's, not any GPU's: read the ratio only (a device's numbers come from /benchmark/ on the device).
+// the same for both), the median of `rounds` rounds, the versions in a random order each round. On lavapipe the numbers
+// are a CPU's, not any GPU's.
+// T219's review: read a ratio against its noise. The versions were first timed in a fixed order, and lavapipe gave the
+// same shader one speed in one place of the round and another in the next (a store under a condition no thread meets
+// took 0.67 to 0.77 of the time of the shader it was made from; the flag of T219 read 1.59 on one EPYC 7763 and 0.73 on
+// another run's, the same shaders), so the order is random now, and the working tree's text is timed twice: its
+// ratio to itself is what the method cannot tell apart, and a ratio of the tree to the ref means something only far
+// from it.
 //   VK_ICD_FILENAMES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1) \
-//   node tests/sample-gpu-bench.mjs <the webgpu package's directory> [--against <ref>] [--rounds 5]
+//   node tests/sample-gpu-bench.mjs <the webgpu package's directory> [--against <ref>] [--rounds 9] [--seed 1]
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-const args = process.argv.slice(2), OPTIONS = ["--against", "--rounds"];
+const args = process.argv.slice(2), OPTIONS = ["--against", "--rounds", "--seed"];
 const webgpu = args.find((a, i) => !a.startsWith("--") && !OPTIONS.includes(args[i - 1]));
 const option = (name, fallback) => (args.includes(name) ? args[args.indexOf(name) + 1] : fallback);
-const against = option("--against", "main"), rounds = Number(option("--rounds", 5));
+const against = option("--against", "main"), rounds = Number(option("--rounds", 9));
+// a seeded shuffle (the same orders again for the same seed)
+let seed = Number(option("--seed", 1)) >>> 0;
+const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32);
+const shuffled = (list) => {
+  const out = [...list];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+};
 if (!webgpu) {
-  console.error("node tests/sample-gpu-bench.mjs <the webgpu package's directory> [--against <ref>] [--rounds 5]");
+  console.error("node tests/sample-gpu-bench.mjs <the webgpu package's directory> [--against <ref>] [--rounds 9] [--seed 1]");
   process.exit(2);
 }
 const root = new URL("../", import.meta.url).pathname;
@@ -35,7 +52,11 @@ try {
   text = shown("FETCH_HEAD");
 }
 fs.writeFileSync(old, text);
-const versions = [{ name: against, wgsl: await import(pathToFileURL(old).href) }, { name: "working tree", wgsl: await import(pathToFileURL(path.join(root, "public", "shaders.js")).href) }];
+// (the working tree's text again, a copy: a module is imported once by its address)
+const again = path.join(scratch, "shaders-working-tree-again.js");
+fs.copyFileSync(path.join(root, "public", "shaders.js"), again);
+const versions = [{ name: against, wgsl: await import(pathToFileURL(old).href) }, { name: "working tree", wgsl: await import(pathToFileURL(path.join(root, "public", "shaders.js")).href) },
+  { name: "working tree again", wgsl: await import(pathToFileURL(again).href) }];
 
 const { create, globals } = await import(pathToFileURL(path.resolve(webgpu, "index.js")).href);
 Object.assign(globalThis, globals);
@@ -116,17 +137,17 @@ for (const [name, logits] of [["as a model's", madeUp(2, 20)], ["flat", madeUp(1
     while ((await submission(fresh, n)) < SUBMISSION_MS && n < N_MOST) n *= 2;
     const differences = versions.map(() => []);
     for (let round = 0; round < rounds; round++) {
-      for (let v = 0; v < versions.length; v++) {
+      for (const v of shuffled(versions.map((_, i) => i))) {
         const once = await submission(versions[v].forms[form], n), twice = await submission(versions[v].forms[form], 2 * n);
         differences[v].push((twice - once) / n);
       }
     }
     const ms = differences.map(middle);
-    rows.push({ logits: name, form, n, [versions[0].name]: ms[0], "working tree": ms[1], ratio: ms[1] / ms[0] });
+    rows.push({ logits: name, form, n, ms, ratio: ms[1] / ms[0], noise: ms[2] / ms[1] });
   }
 }
-console.log(`ms a sampling (Llama 3's vocabulary ${VOCAB}, the difference of 2n and n over n, the median of ${rounds} rounds in turn):`);
-console.log(`| logits | form | n | ${versions[0].name} | working tree | working tree / ${versions[0].name} |`);
-console.log("|---|---|---:|---:|---:|---:|");
-for (const row of rows) console.log(`| ${row.logits} | ${row.form} | ${row.n} | ${row[versions[0].name].toFixed(3)} | ${row["working tree"].toFixed(3)} | ${row.ratio.toFixed(3)} |`);
+console.log(`ms a sampling (Llama 3's vocabulary ${VOCAB}, the difference of 2n and n over n, the median of ${rounds} rounds, the versions in a random order each round):`);
+console.log(`| logits | form | n | ${versions[0].name} | working tree | working tree again | working tree / ${versions[0].name} | again / working tree (the noise) |`);
+console.log("|---|---|---:|---:|---:|---:|---:|---:|");
+for (const row of rows) console.log(`| ${row.logits} | ${row.form} | ${row.n} | ${row.ms.map((x) => x.toFixed(3)).join(" | ")} | ${row.ratio.toFixed(3)} | ${row.noise.toFixed(3)} |`);
 process.exit(0);
