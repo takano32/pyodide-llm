@@ -170,9 +170,10 @@ const safari = cpuTable({ ...cpuResult, tokenMegabytes: 211, ceilings: ceilingsO
 assert.ok(safari.includes("| relaxed_dot, registers only | 1 | not in this browser |"));
 assert.ok(safari.includes("| relaxed_dot with its two loads (int8) | 1 | not in this browser |"));
 assert.ok(safari.includes("| 1 | 11.2 | 18.9 (50%) | 89.3 | 5.80 | 21.0 |"), safari.join("\n"));
-// the ceilings could not start: the forward pass stands, the ceilings say why
+// the ceilings could not start: the forward pass stands, the ceilings say why (T227's review: "failed:", as the GPU
+// section's steps say it, so that the report's warnings list it)
 const unstarted = cpuTable({ ...cpuResult, ceilings: { error: "Error: the ceilings' loops could not be fetched" } });
-assert.ok(unstarted.includes("| 1 | 11.2 | 18.9 | 89.3 | 5.80 | 21.0 |") && unstarted.at(-1).startsWith("Not measured: Error"), unstarted.join("\n"));
+assert.ok(unstarted.includes("| 1 | 11.2 | 18.9 | 89.3 | 5.80 | 21.0 |") && unstarted.at(-1).startsWith("failed: Error"), unstarted.join("\n"));
 // a report from before T163 (no ceilings, no layerWeights) still makes a table
 assert.ok(cpuTable({ ...cpuResult, layerWeights: undefined, ceilings: undefined }).includes("| 1 | 11.2 | 18.9 | 89.3 | 5.80 | ? |"));
 // the counts of threads: doubling up to the logical cores, and the cores themselves
@@ -831,4 +832,9 @@ for (const paths of [steadyPath, { ...steadyPath, threads: 1, how: { alone: "no 
   assert.deepEqual(pathWarnings(paths), []);
 }
 assert.deepEqual(warnings([{ title: "Model", markdown: pathTable({ error: "x" }, "m"), said: pathWarnings({ error: "x" }) }]), ["Model: **The model page's path** (m): failed: x"]);
+// the CPU section's ceilings that could not be measured at all say so in that word, as the GPU section's steps do (T227's own
+// change left this one at "Not measured:")
+const noCeilings = cpuTable({ ...aCpu, ceilings: { error: "out of memory\nsecond | line" } });
+assert.equal(noCeilings.at(-1), "failed: out of memory second \\| line");
+assert.deepEqual(warnings([{ title: "CPU", status: "ok", markdown: noCeilings.join("\n") }]), ["CPU: failed: out of memory second \\| line"]);
 console.log("ok");

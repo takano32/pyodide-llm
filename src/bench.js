@@ -306,7 +306,7 @@ export function cpuTable(r) {
     "Reading alone reads the model's weights above, a megabyte at a time taken in turn by the threads. " +
     "relaxed_dot with its two loads reads 8 KB that stay in the first cache, a weight and an activation for each dot, as the one-token kernel (matmul_q8r) does. " +
     "On registers alone it is the instruction's own rate, which no kernel that loads its weights and tokens reaches; a prompt's tiles, with half a load of data for each dot, lie between the two.");
-  if (c.error) return [...lines, "", tableCell(`Not measured: ${c.error}`)];
+  if (c.error) return [...lines, "", tableCell(unmeasured(c.error))];
   lines.push("", "| loop | software threads | ceiling |", "|---|---:|---:|",
     ...(c.read ?? []).map((one) => `| reading alone | ${one.threads} | ${ceiling(one, "GBps", "GB/s")} |`),
     `| relaxed_dot with its two loads (int8) | 1 | ${ceiling(c.dot, "GMACs", "G MAC/s")} |`,
