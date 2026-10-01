@@ -256,6 +256,36 @@ next to vocab_size × dim). GPT-2 is back to 36.127 (+0.16% against NumPy); its 
 its median gets it (`OUTLIER_RATIO`; GPT-2 13.9, every other model of the list 1.1-1.9): tiny-lm gains nothing
 from it (+0.31% either way) and would pay about 3% of speed. `simdkernel.so` is 6307 → 6572 bytes.
 
+## Ternary weights (2026-10-01, T230 and T231)
+
+A ternary model's weights (-1, 0, +1 times one scale a group of 128) are held two bits each, in the order of Prism
+ML's PQ2_0 (weight j as its code, the weight + 1, in byte j >> 2 at bits 2 (j & 3)), with a float32 scale a group:
+`ternary.ts`. Nothing is widened: `matmul_t2r` loads sixteen bytes (64 weights), and a shift by 0, 2, 4 and 6 bits
+and a mask of 3 give four planes of codes, every fourth weight each. `interleave` lays the int8 activations of
+`quantize_x` (no bias) out the same way, once a token, and leaves minus the sum of every group of 32 after their
+scales. The codes are the 7-bit side of the relaxed dot product and the activations its signed side, in all 8 bits:
+`dot(a, w + 1) = dot(a, w) + sum(a)`, so a row adds the token's sums to its integers and keeps no corrections of
+its own. `matmul_t2` is the same without relaxed SIMD (the same numbers to the bit), `matmul_t2r_tile` a prompt's
+tokens four to a row (the codes made once for the four), and `ternary_x` the converter's packing.
+
+Chosen among the forms of `tests/ternary-forms.ts` by `tests/ternary-bench.mjs` (matrices read from memory, the
+widths of Ternary Bonsai 1.7B and 27B; billions of weights a second, and against `matmul_q8r` on the same weights
+widened to int8):
+
+| form | CI arm64 (Neoverse-N2), 1 / 4 threads | CI x86-64 (EPYC 7763) | CI x86-64 (Xeon 8573C) |
+|---|---:|---:|---:|
+| `matmul_t2r` | 20.2 (1.26) / 78.0 (1.30) | 17.8 (1.00) / 37.4 (1.05) | 15.8 (1.99) / 33.1 (1.52) |
+| the same with its mask written as a constant | 17.8 / 68.2 | 13.0 / 27.9 | 13.8 / 28.5 |
+| the pairs' products kept in int16 (x86's `pmaddubsw` alone) | 11.1 / 44.0 | 15.7 / 34.6 | 17.6 / 36.9 |
+| `matmul_t2` (no relaxed SIMD) | 12.1 / 47.9 | 10.4 / 21.4 | 9.9 / 20.3 |
+| widened to signed int8 for the int8 dot product | 12.5 / 49.3 | 9.3 / 19.4 | 9.9 / 20.4 |
+| PTQ1_0's base 3 kept as it is | 6.9 / 27.6 | 5.4 / 12.1 | 5.7 / 11.5 |
+| `matmul_q8r` on the weights widened to int8 | 16.1 / 59.9 | 17.8 / 35.6 | 8.0 / 21.7 |
+
+The mask of 3 is an argument of the kernels (`jobs.js` passes it): V8 makes a constant vector written in the loop
+again at every use. The form that keeps int16 sums is as fast or faster on x86-64 and half as fast on arm64; the
+phones this is for are arm64.
+
 ## Rules that are easy to break
 
 - **No static data.** The side module has no relocations, so a data segment would be written over Pyodide's own

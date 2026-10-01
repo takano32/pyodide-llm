@@ -10,7 +10,7 @@ flowchart TD
   page["the page: src/pages/index.astro"]
   worker["Web Worker: public/worker.js<br/>resolves Pyodide, downloads and converts models, keeps them (public/kept.js)"]
   engine["the engine: public/llama2_numpy.py<br/>checkpoint, tokenizer, sampling, generate()"]
-  convert["the converter: public/llama2_convert.py<br/>safetensors and GGUF to the llama2.c format, int8 or 6 bits"]
+  convert["the converter: public/llama2_convert.py<br/>safetensors and GGUF to the llama2.c format, int8, 6 bits or ternary"]
   forward["public/forward.js<br/>the forward pass, on its own WebAssembly memory"]
   kernels["kernels/: WebAssembly SIMD kernels"]
   helper["public/helper.js: software threads"]
@@ -30,8 +30,8 @@ flowchart TD
 | `src/pages/index.astro` | The chat page. It draws what the worker reports; the URL holds the state (`?model=`, `?hf=`, `?bits=`, `?without=` and others). |
 | `src/models.js` | The model list: files, sizes, engine options, generation settings, chat templates. The first entry is the default. |
 | `public/worker.js` | Loads Pyodide and NumPy, downloads the model in parts while Pyodide loads, and runs `generate()`. |
-| `public/llama2_numpy.py` | The engine. Reads llama2.c's legacy format (float32, float16, int8, 6 bits), the tokenizers (llama2.c's BPE, sentencepiece Unigram, byte-level BPE), the architectures (Llama, Qwen2, Qwen3, Qwen3.5, GPT-2, GPT-NeoX), and samples. Without the kernels, NumPy does the arithmetic. |
-| `public/llama2_convert.py` | Converts a Hugging Face model (or a GGUF: Q8_0, or the ternary PQ2_0) as its file arrives, and writes it into the model's memory. The same code builds the site's models (`convert_hf.py`, `quantize.py`) and converts in the browser. It also reads a model's chat template (a small part of Jinja). |
+| `public/llama2_numpy.py` | The engine. Reads llama2.c's legacy format (float32, float16, int8, 6 bits, ternary), the tokenizers (llama2.c's BPE, sentencepiece Unigram, byte-level BPE), the architectures (Llama, Qwen2, Qwen3, Qwen3.5, GPT-2, GPT-NeoX), and samples. Without the kernels, NumPy does the arithmetic. |
+| `public/llama2_convert.py` | Converts a Hugging Face model (or a GGUF: Q8_0, or the ternary PQ2_0 and PTQ1_0) as its file arrives, and writes it into the model's memory. The same code builds the site's models (`convert_hf.py`, `quantize.py`) and converts in the browser. It also reads a model's chat template (a small part of Jinja). |
 | `public/forward.js` | One token's forward pass, and a block of prompt tokens, in JavaScript. It calls the same kernels in the same order as the Python engine would, and chooses for each block and each few tokens whether the CPU or the GPU runs them. |
 | `kernels/` | The SIMD kernels: int8 and float32 matrix products, activation quantization, RMSNorm, LayerNorm, RoPE, attention, SwiGLU, GELU, and the sampling (repetition penalty, softmax, top-p). |
 | `public/helper.js`, `public/jobs.js` | Software threads, and the work they share. |

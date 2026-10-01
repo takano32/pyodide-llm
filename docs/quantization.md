@@ -1,6 +1,7 @@
 # Quantization
 
-The larger models are stored in int8, and in 6 bits where int8 does not fit. This page says how, and what it costs
+The larger models are stored in int8, and in 6 bits where int8 does not fit; a ternary model keeps its weights as
+they are, in 2 bits. This page says how, and what it costs
 in quality. Perplexity is lower for better predictions; "+1%" means 1% worse than the original.
 
 ## int8
@@ -92,12 +93,41 @@ against 0.02308); on 1,500 tokens the perplexity could not tell the two apart.
 
 One more model comes from a GGUF of another kind: Ternary Bonsai 1.7B (Prism ML), whose every weight is −1, 0 or 1
 times a scale shared by 128 weights. Its GGUF holds two bits a weight (PQ2_0, a type of Prism ML's fork of
-llama.cpp; 463 MB). The page widens it to int8, which holds those values as they are: each group of 32 becomes
-−127, 0 and 127 with a scale of d / 127 (all 1,719,904,256 weights of the file; what the engine multiplies is
-within 5.3e-8 of the file's value, float32's rounding of d / 127). So the page runs it with the int8 kernels, at
-int8's size (1.94 GB) and not at the file's: it has no ternary kernel. The GGUF was compared with the float16
-safetensors of the same weights: no tensor is further than 8.7e-5 from it (a few blocks of 128 have two
-magnitudes there, 0.5% apart, and one in the GGUF).
+llama.cpp; 463 MB). The GGUF was compared with the float16 safetensors of the same weights: no tensor is further
+than 8.7e-5 from it (a few blocks of 128 have two magnitudes there, 0.5% apart, and one in the GGUF). How the page
+holds such weights is the next section.
+
+## Ternary weights: 2 bits
+
+A ternary model is not quantized by the page: its weights are kept as the file has them. The format is PQ2_0's
+own, 32 bytes for 128 weights (2 bits each: the weight plus 1) and one float32 scale for the 128, 2.25 bits a
+weight. Ternary Bonsai 1.7B takes 484 MB that way, a quarter of the 1.94 GB it took widened to int8 (which the
+page did until 2026-10-01, and still does with `?bits=8`). Nothing is rounded: the converter refuses a value
+that is neither 0 nor plus or minus its group's scale, so it cannot turn another model into this format by
+mistake. The other ternary type of that fork, PTQ1_0 (five weights a byte in base 3, 28 bytes for 128), is read
+into the same format; the two files of one model give the same bytes.
+
+The kernel does not widen the weights either. A shift of sixteen bytes and a mask give the codes 0, 1, 2 of every
+fourth weight of 64; the activations are laid out the same way once a token, so the codes meet them as they
+are loaded. The codes are never negative, so the activations keep all their 8 bits (the int8 kernel gives them 7
+with relaxed SIMD), and what the "+1" adds, the sum of the activations, is taken off once a token and not once a
+row. Measured on Ternary Bonsai 1.7B in CI, on 1,500 tokens of Wikipedia:
+
+| computation | English | Japanese |
+|---|---:|---:|
+| the file's values in float32, NumPy | 22.046 | 45.727 |
+| widened to int8, kernels, 7-bit activations (the page before) | 22.087 (+0.19%) | 45.623 (−0.23%) |
+| ternary, kernels, 8-bit activations | 22.066 (+0.09%) | 45.761 (+0.07%) |
+
+and its speed against the same weights widened to int8, in tok/s (ternary / int8):
+
+| threads | CI arm64 (Neoverse-N2) | CI x86-64 (AMD EPYC 7763) |
+|---:|---:|---:|
+| 1 | 10.9 / 9.3 | 10.1 / 9.2 |
+| 2 | 19.4 / 16.0 | 18.6 / 15.1 |
+| 4 | 33.0 / 26.5 | 19.5 / 15.8 |
+
+It runs on the CPU only for now (no GPU path), and has not been measured on a phone.
 
 Qwen3.5 0.8B's Q8_0 GGUF holds some tensors otherwise than the original does: llama.cpp writes the norms with the 1
 the model adds to them and `A_log` as −exp(A_log), and it quantizes the two small matrices of the gates of each
