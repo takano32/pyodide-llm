@@ -192,13 +192,15 @@ function download(model, signal, load) {
         // a chunk that was already on its way when the load was cancelled: its buffer is gone
         inner.signal.throwIfAborted();
         if (sink) {
-          // T129 (3): a write the memory refused (gone, or too small) is not cured by fetching the part again
+          // T129 (3): a write the memory refused (gone, or too small) is not cured by fetching the part again, nor is a
+          // GPU's worker that takes no more of the weights (T156: a model on the GPU alone, its worker no more than
+          // FLOW_BYTES behind; it gives up after FLOW_STALL_MS, and three more tries would wait that long each)
           try {
             sink(offset, value);
+            await weightsRoom();
           } catch (error) {
             throw Object.assign(error, { final: true });
           }
-          await weightsRoom();  // (T156: a model on the GPU alone, its worker no more than FLOW_BYTES behind)
         } else {
           queue.push([offset, value]);
         }
