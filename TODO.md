@@ -1787,18 +1787,63 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **持ち主に決めてもらうこと**（文書の 9 節）: A のどれを入れるか（全部で約 80 項目になる）、llm-jp-4.1 を safetensors の 17.2 GB から取るか・考えを見せるか、独自のライセンスのモデルのために仕事をするか、新しいアーキテクチャの順（LFM2.5 → Gemma 3 を勧める）、英語の古典を入れるか、Mistral Nemo 12B（約 15.3 GiB の見積もり）を試すか。
   - 採番の案は文書の 6 節（すぐ入れる 4 つ、小さな穴 7 つ、新しいアーキテクチャ 2 つ。番号は本会話が付ける）。
 
-### T249 [追加][モデル] 日本語の軽いモデルと中くらいのモデルを一覧に（rinna GPT-2 xsmall・medium、llm-jp-3 3.7B、shisa v2.1 3B、CAT-Translate 3.3B、EuroLLM 1.7B） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
-```
-- どれも今の変換器を通った（この文書の 2 節）。GGUF のあるものは `gguf.yml` の `candidates` で原本と突き合わせてから。rinna の 2 つは safetensors から。
-- 書式: rinna は書式なし、llm-jp は `llmJp`、shisa は Llama 3.2 と同じ日付つき、CAT-Translate は 0.8B・1.4B と同じ、EuroLLM は変換器の読む ChatML。`format_check.py` に足す。
+### T249 [追加][モデル] 日本語の軽いモデルと中くらいのモデルを一覧に（rinna GPT-2 xsmall・medium、llm-jp-3 3.7B、shisa v2.1 3B、CAT-Translate 3.3B、EuroLLM 1.7B） — 状態: **反映済み**（2026-10-01、本線に入れるのは本会話。レビュー前。Opus medium、ブランチ `t249-t250-japanese-models`。T248 の調べから）
 
-```
-### T250 [追加][モデル] 日本語の 8B を一覧に（llm-jp-4.1 8B thinking、Llama-3-ELYZA-JP 8B、shisa v2.1 Qwen3 8B、CAT-Thinking 8B） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
-```
-- 64 ビットのメモリ（Chrome と Firefox）。llm-jp-4.1 は harmony の手書きと止まりのトークン [1, 2, 13]、Qwen3 の派生は `bos: 151643`。
-- llm-jp-4.1 の Q8_0 の GGUF が無ければ safetensors の 17.2 GB から（持ち主の判断）。thinking の考えを見せるかも決める。
+**結果: 10 項目を足した**（T248 の表の 6 つと、日本語の表の sarashina2.2 1B・gpt-neox-japanese 1.4B・japanese-large-lm 1.7B・llm-jp-3 1.8B instruct3）。変換器・エンジン・`CONVERTER` は変えていない。分かったことと落とし穴は AGENTS.md の「日本語のモデルを 10 足した」。
 
-```
+| モデル（ID） | 取り込み元と突き合わせ（最大の相対誤差・いちばん近い参照から・不一致） | 取得 → int8 | 一覧 |
+|---|---|---|---|
+| japanese-gpt2 xsmall（`hf-japanese-gpt2-xsmall`） | rinna の safetensors（GGUF は見つからない） | 156 MB → 42 MB | 入れた |
+| japanese-gpt2 medium（`hf-japanese-gpt2-medium`） | rinna の safetensors（GGUF は見つからない） | 1.4 GB → 379 MB | 入れた |
+| sarashina2.2 1B（`hf-sarashina2.2-1b`） | mradermacher の Q8_0: 0.0060・0・0 | 1.5 GB → 1.6 GB | 入れた |
+| gpt-neox-japanese 1.4B（`hf-gpt-neox-japanese-1.4b`） | stockmark の safetensors。mmnga の 2023 年の Q8_0 は値は通った（0.0054・0・0）が、q・k・v の並びが古く、変換すると壊れた文になる | 2.9 GB → 1.6 GB | 入れた |
+| japanese-large-lm 1.7B（`hf-japanese-large-lm-1.7b`） | mmnga の Q8_0（2023 年）: 0.0070・0・0 | 1.9 GB → 1.9 GB | 入れた（BOS は `</s>`） |
+| EuroLLM 1.7B Instruct（`hf-eurollm-1.7b-instruct`） | mradermacher の Q8_0: 0.0064・0・0 | 1.8 GB → 1.9 GB | 入れた（書式は手書き） |
+| llm-jp-3 1.8B instruct3（`hf-llm-jp-3-1.8b-instruct3`） | mmnga の Q8_0: 0.0067・0・0（Q8_0 の参照でだけ通った埋め込みの行 8） | 2.0 GB → 2.1 GB | 入れた |
+| Llama 3.2 Shisa V2.1 3B（`hf-shisa-v2.1-llama3.2-3b`） | mradermacher の Q8_0: 0.0062・0・0、`rope_freqs` は 1.4e-8 | 3.4 GB → 3.6 GB | 入れた |
+| CAT-Translate 3.3B（`hf-cat-translate-3.3b`） | cyberagent の safetensors（2 シャード。Q8_0 の GGUF は beta のものだけ） | 6.7 GB → 3.8 GB | 入れた |
+| llm-jp-3 3.7B instruct3（`hf-llm-jp-3-3.7b-instruct3`） | mmnga の Q8_0: 0.0076・0・0（Q8_0 の参照でだけ通った埋め込みの行 430） | 4.0 GB → 4.3 GB | 入れた（64 ビットのメモリ。Chrome と Firefox） |
+
+- **CI の run**: GGUF の突き合わせ 36918507849（`gguf.yml` の `candidates`。T250 の 3 つも同じ run）。書かせる 36918507541（10 項目、greedy の 32 トークン）と 36922250769（直した後の base モデルの 6 つ、greedy とページのサンプリングの seed 1〜3）。壊れた 3 つを transformers と比べる 36920931524（ブランチ `t249-probe`）。
+- **書式と語彙**（手元、`tests/format_check.py` と本物の sentencepiece・tokenizers）: 書式のある 5 項目は llm-jp の 2 つ・Shisa・CAT-Translate が 9/9、EuroLLM が 8/9 と既知の 1（全角の英数字。`KNOWN` に足した）。書式の無い 5 項目は 22 の文の ID を本物と比べ、rinna の 2 つ・stockmark・LINE は 22/22、sarashina2.2 1B は頭のダミーの空白だけが違う（一覧の 0.5B と同じ、T131 で却下した違い）。
+- **書いた文**（ページのエンジン、int8、1 本、greedy。プロンプトは項目のもの）:
+  - japanese-gpt2 xsmall: greedy は「、<unk>C<unk> <unk> …」。ページのサンプリングの seed 1 は「、すべての人にやさしい『スタイリッシュ』なデザインです。」、seed 2・3 も日本語。
+  - japanese-gpt2 medium: 「、おしゃれなカフェやレストランで、おしゃれなスイーツを味わうのが流行るのではないでしょうか。 今回」
+  - sarashina2.2 1B: 「、この「3D」！\n3Dプリンターで、3Dプリントした「指輪」…」（greedy はくり返す。サンプリングでは 3 つとも別の文）
+  - gpt-neox-japanese 1.4B: 「、やっぱり「レトロ」なスタイル。レトロな雰囲気のファッションは、今っぽくて可愛いですよね。…」（GGUF からは「ののののの…」だった）
+  - japanese-large-lm 1.7B: 「? 2018年は、 ・ ワイドパンツ ・ ガウチョパンツ ・ スカーチョ ・ スカンツ」（BOS が `<s>` のときは「、 ・ ・ ・ …」）
+  - EuroLLM 1.7B Instruct: 「1. メタバース（仮想現実）\n2. ドローン\n3. 人工知能…」
+  - llm-jp-3 1.8B instruct3: 「申し訳ありませんが、私は未来の出来事について予測することはできません。しかし、一般的に流行する可能性がある事柄についてお話しすることはできます。…」
+  - Llama 3.2 Shisa V2.1 3B: 「これからの流行りを3つ挙げると以下のようになります。\n\n1. **サステナブルファッション**…」
+  - CAT-Translate 3.3B: 「Mount Fuji is Japan’s highest mountain, and many people climb it in summer.」（19 トークンで止まった）
+  - llm-jp-3 3.7B instruct3: 「流行りは常に変化しています。ここでは、2023年10月時点での流行りを3つ挙げます。\n\n1.SNS映えするスイーツ…」
+- **CI の 1 本の速さ**（Node、`tests/engine.mjs`、スレッドなし。ページの速さではない）: xsmall 298〜331、medium 38〜44、sarashina 1B 11〜13、gpt-neox-japanese 10〜12、japanese-large-lm 8〜9、EuroLLM 9.7、llm-jp-3 1.8B 8.2、Shisa 3B 4.3、CAT-Translate 3.3B 4.3、llm-jp-3 3.7B 3.8 tok/s。
+- **メモリの見積もり**（`footprint()`、4096 位置まで伸びたとき）: Shisa 3B と CAT-Translate 3.3B は int8 で 4 GiB を越え（4.19・4.51 GiB）、6 ビットなら 32 ビットに入る（3.88・3.73 GiB）ので Safari でも開く見込み。llm-jp-3 3.7B は 6 ビットでも 4.82 GiB で、note に「Chrome and Firefox」。
+- **足した道具**: `tests/write.sh`・`tests/write.mjs`・`tests/write_options.py`（AGENTS.md の表）。`browsers.yml` の huggingface ジョブに japanese の組。
+- **未計測**: ブラウザでは 1 つも動かしていない（本番の `models.yml` が最初の実行）。準備完了の秒、ヒープ、スレッドのある速さ、GPU の道、6 ビット、保存と 2 回目の訪問。LINE のモデルの BOS ごとの perplexity（文を読んだだけ）。EuroLLM の日本語は 1 つのプロンプトだけ。xsmall の `?bench=1`（greedy）の見え方。
+- **持ち主に決めてもらうこと**: (1) xsmall を残すか（greedy では `<unk>` をくり返す。ページの既定のサンプリングでは書く）。(2) CAT-Translate 3.3B を safetensors の 6.7 GB のまま置くか、Q8_0 の GGUF を待つか。(3) EuroLLM の note の言い方（「日本語 / English and 33 more languages」）。(4) llm-jp-3 1.8B instruct3 は一覧の llm-jp-3.1 1.8B instruct4 の前の版で、両方置くか。
+
+### T250 [追加][モデル] 日本語の 8B を一覧に（llm-jp-4.1 8B thinking、Llama-3-ELYZA-JP 8B、shisa v2.1 Qwen3 8B、CAT-Thinking 8B） — 状態: **反映済み**（2026-10-01、本線に入れるのは本会話。レビュー前。Opus medium、ブランチ `t249-t250-japanese-models`。T248 の調べから。llm-jp-4.1 8B thinking は入れていない: 持ち主の判断待ち）
+
+**結果: 3 項目を足し、llm-jp-4.1 8B thinking は待ちにした。** 変換器・エンジン・`CONVERTER` は変えていない。分かったことは AGENTS.md の「日本語の 8B を 3 つ足した」。
+
+| モデル（ID） | 取り込み元と突き合わせ（最大の相対誤差・いちばん近い参照から・不一致） | 取得 → int8 | 一覧 |
+|---|---|---|---|
+| Llama-3-ELYZA-JP 8B（`hf-llama-3-elyza-jp-8b`） | mmnga の Q8_0: 0.0075・0・0（Q8_0 の参照でだけ通った埋め込みの行 3） | 8.5 GB → 9.0 GB | 入れた（カードのシステム文つきの手書きの書式） |
+| Shisa V2.1 Qwen3 8B（`hf-shisa-v2.1-qwen3-8b`） | mradermacher の Q8_0: 0.0074・0・0 | 8.7 GB → 9.2 GB | 入れた（BOS は項目の options で 151643） |
+| CAT-Thinking 8B（`hf-cat-thinking-8b`） | mmnga-o の Q8_0: 0.0074・0・0。mradermacher の Q8_0 は通らなかった（256 のテンソルがいちばん近い参照から 0.11〜0.39%） | 8.7 GB → 9.2 GB | 入れた（BOS は項目の options で 151643） |
+| llm-jp-4.1 8B thinking | Q8_0 の GGUF が無い（2026-10-01 に名前で探して、作り手の BF16 の 17.2 GB の 1 件だけ）。safetensors は 17.2 GB（4 シャード） | — | 入れていない |
+
+- **CI の run**: GGUF の突き合わせ 36918507849（ELYZA・Shisa は成功、mradermacher の CAT-Thinking は失敗）と 36920519236（mmnga-o の CAT-Thinking、成功）。書かせる 36918507856（3 項目、greedy の 64 トークン。このときの CAT-Thinking は mradermacher の GGUF）と 36923126803（mmnga-o の GGUF の CAT-Thinking）。
+- **書式**（手元、`tests/format_check.py`）: 3 項目とも 9/9（ELYZA は一覧の手書き、ほかの 2 つは変換器の読み）。
+- **書いた文**（ページのエンジン、int8、64 ビットのメモリ、1 本で 2.0 tok/s、greedy の 64 トークン）:
+  - Llama-3-ELYZA-JP 8B: 「流行りは常に変化するものですが、現在のトレンドや将来の予測を含め、以下の3つを挙げます。\n\n1. メタバース: メタバースは、インターネット上に構築される仮想空間のことで、」
+  - Shisa V2.1 Qwen3 8B: 「流行りの予測は非常に困難で、不確実性を含む可能性が高いです。ただし、現在のトレンドや技術の進歩を考慮すると、以下のような「今後」の流行りをいくつか挙げることができます。…」
+  - CAT-Thinking 8B: 「<think>\nユーザーは「これからの流行りを3つ挙げてください」という質問をしています。これは一般的な話題であり、特定のカテゴリや禁止事項に該当しません。したがって、回答を提供できます。流行りのトレンドについて、例えばテク」（mradermacher の GGUF では「<think>済みの指示を確認しますか？はい、…」と別の文だった）
+- **llm-jp-4.1 8B thinking が待つ訳**: Q8_0 の GGUF が出れば `gguf.yml` の `candidates` にかけて入れられる。safetensors から取るなら 17.2 GB の取得になる（一覧のいちばん大きい取得は今 9.1 GB）。どちらでも要るもの: harmony の手書きの書式（T132 の `HARMONY` はモデルの名前と知識の締め日が違う）、止まりのトークン [1, 2, 13]、thinking の考え（analysis のチャンネル）を画面に出すかの決め。
+- **未計測**: ブラウザでは 1 つも動かしていない（本番の `models.yml` が最初の実行）。準備完了の秒、ヒープ（見積もりは 4096 位置で 9.8〜10.1 GiB）、スレッドのある速さ、GPU の道、保存と 2 回目の訪問。CAT-Thinking が考えを終えて答えるまで（64 トークンでは考えの途中）。mradermacher の CAT-Thinking の GGUF が何の重みか。
+- **持ち主に決めてもらうこと**: (1) llm-jp-4.1 8B thinking を safetensors の 17.2 GB から入れるか、Q8_0 の GGUF を待つか。入れるなら考えを見せるか。(2) Shisa V2.1 Qwen3 8B に考える形の項目も足すか（書式は言えば考える。カードは考える形に触れていない）。(3) CAT-Thinking に「すぐ答える」形も足すか（考える学習をしたモデルなので足していない）。
+
 ### T251 [追加][モデル] 英語の古典の梯子を一覧に（GPT-2 medium・large・xl と distilgpt2、Pythia 14M・2.8B・6.9B） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
 ```
 - GPT-2 と NeoX の GGUF の道（T136 の段 ③）のまま。実物の固定値に 1 つ足すかは任意。
