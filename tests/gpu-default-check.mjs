@@ -21,6 +21,7 @@
 // a search timed while the GPU gets ready is not remembered, and is searched again once the GPU is ready (the times
 // beside the GPU say 4, those after it 2: 2 is remembered); a count remembered from an earlier visit is searched again
 // on the first generation (not only on the eighth); and the page's key of the count is one a model.
+// T239: the owner's PC's times (8 remembered, 4 no faster, 2 fastest): 2, by the quarter the search compares after half.
 // T152: the steps of a generation (forward.js's tokenBlock and generateMany, tokenTimes) on the same made-up GPU, whose
 // step sleeps a multiple of the CPU's own ms of a token and writes made-up ids: generations of STEPS steps after a short
 // prompt, as Python takes them (tokenBlock at a time on the GPU, else one on the CPU). Far faster: the first steps on the
@@ -361,6 +362,24 @@ if (isMainThread) {
     expect("T223: the verdicts beside the GPU marked, those after it not", log.map((v) => v.whileGpu),
       log.map((_, i) => i < beforeReady.searched));
     expect("T223: searched again once the GPU is ready: 2, remembered", [after, told], [2, [2]]);
+  }
+  {
+    // T239: the owner's PC's llm-jp-3 150M (2 threads 171 tok/s, 8 threads 158; 1, 4 and 16 made up to agree with its
+    // verdicts "16 or 8: 8, 8 or 4: 8"): the 8 the page remembers there is left for 2, by the quarter (8 or 2)
+    const PC = { 1: 1000 / 100, 2: 1000 / 171, 4: 1000 / 150, 8: 1000 / 158, 16: 1000 / 120 };
+    let engine = null;
+    engine = createForward({ memory, base, size, kernels, plan, spawn, clock: madeUpClock(() => PC[engine.threads] ?? 40) });
+    const told = [];
+    await engine.findThreads({ from: 16, remembered: 8, chose: (count) => told.push(count) });
+    const turn = () => new Promise((resolve) => setTimeout(resolve, 0));
+    for (let g = 0; g < 200 && (g === 0 || engine.searching); g++) {
+      generation(engine);
+      await turn();
+    }
+    const after = engine.threads, log = verdicts(engine);
+    say(`T239, a remembered 8 on the owner's PC's times: ${after}, remembered ${JSON.stringify(told)} (${log.join(", ")})`);
+    engine.release();
+    expect("T239: a remembered 8 on the owner's PC: 8 or 2 after 8 or 4, then 2 remembered", [log, after, told], [["8 or 4: 8", "8 or 2: 2", "2 or 1: 2"], 2, [2]]);
   }
   {
     // a count remembered from an earlier visit (4, the owner's Android's) is searched again on the first generation
