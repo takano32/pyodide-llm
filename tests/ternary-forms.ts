@@ -1,21 +1,18 @@
-// tests/ternary-forms.ts (T231): the inner loops that were set against each other for the matrix product on ternary
-// weights (-1, 0, +1 times one scale a group of 128, as Prism ML's PQ2_0 and PTQ1_0 hold them), before one was built
-// into kernels/. tests/ternary-bench.mjs compiles this file and times each form beside the int8 kernels of kernels/
-// on the same weights; TODO.md's T231 has the table and the choice. Not a kernel of the page: nothing here is shipped.
+// tests/ternary-forms.ts (T231): the inner loops that were set against the one kernels/ took for the matrix product
+// on ternary weights (-1, 0, +1 times one scale a group of 128, as Prism ML's PQ2_0 and PTQ1_0 hold them).
+// tests/ternary-bench.mjs compiles this file and times each form beside the kernels of kernels/ (matmul_t2r and
+// matmul_t2, and the int8 kernels on the same weights widened to int8); TODO.md's T231 has the table and the choice.
+// Not a kernel of the page: nothing here is shipped.
 //
 // In every form a row is whole groups of 128 weights, the activations are int8 in groups of 32 with a float32 scale a
 // group (xs), and the group's scale of the weights is a float32 (ws, one a group of 128 of every row).
 //
-//   b   two bits a weight in PQ2_0's own order (weight j in byte j >> 2 at bits 2 (j & 3)): the form kernels/ took.
-//       A shift of a whole vector of 16 bytes and a mask give 16 codes 0, 1, 2 (the weight + 1), every fourth weight
-//       of 64: the activations are laid out the same way once a token (interleaved: byte 16 p + c of a block of 64 is
-//       activation 4 c + p). The codes are not negative, so they are the 7-bit side of the relaxed dot product and the
-//       activations its signed side, in all 8 bits: dot(a, w + 1) = dot(a, w) + sum(a), and minus the sum of each
-//       group's activations (after the scales in xs, an int32 a group) is added to the group's integer sum. Nothing
-//       is kept for a row besides its weights and scales.
-//   bx  b with the products of pairs kept in int16 over the four planes of a vector (x86's pmaddubsw alone, one
+//   bc  the form taken (kernels/ternary.ts: two bits a weight in PQ2_0's own order, the activations interleaved and
+//       signed, the codes 0, 1, 2 the 7-bit side of the relaxed dot product) with its mask of 3 written as a constant
+//       in the loop, which V8 makes again at every use; the kernel takes it from an argument
+//   bs  bc whose last plane is a shift of bytes with no mask (arm64 has one, x86-64 not)
+//   bx  bc with the products of pairs kept in int16 over the four planes of a vector (x86's pmaddubsw alone, one
 //       pmaddwd a vector instead of four)
-//   bp  b without relaxed SIMD (Safari): the products widened to int16, added over the four planes, then widened
 //   c   two bits a weight widened to the signed int8 -1, 0, 1 and given to the int8 kernel's dot product as it is:
 //       the activations as matmul_q8r takes them (7 bits and a bias of 64, in their own order) and so an int32
 //       correction a group of 32 of every row (-64 times the sum of its weights: a bit a weight more memory). The
@@ -40,8 +37,8 @@
   return i32x4.add(v128.shuffle<i32>(s01, s23, 0, 1, 4, 5), v128.shuffle<i32>(s01, s23, 2, 3, 6, 7));
 }
 
-// ---- b: 64 weights (16 bytes at w) against their 64 interleaved activations (x): lanes 0 and 1 hold the first group
-// of 32, lanes 2 and 3 the second
+// ---- bc: 64 weights (16 bytes at w) against their 64 interleaved activations (x): lanes 0 and 1 hold the first
+// group of 32, lanes 2 and 3 the second
 // @ts-ignore: decorator
 @inline function dot64(w: usize, x: usize, three: v128): v128 {
   const v = v128.load(w);
@@ -50,7 +47,7 @@
   acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 32), v128.and(i16x8.shr_u(v, 4), three), acc);
   return i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 48), v128.and(i16x8.shr_u(v, 6), three), acc);
 }
-export function matmul_b(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32): void {
+export function matmul_bc(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32): void {
   const blocks = n >> 7, three = i8x16.splat(3);
   const xa = xs + (<usize>(n >> 5) << 2);
   for (let i = r0; i < r1; i++) {
@@ -67,8 +64,7 @@ export function matmul_b(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize
   }
 }
 
-// ---- bm: b with the mask made from an argument of the call (V8 makes a constant written in a loop again at every
-// use on x86-64, T163), and bs: b whose last plane is a shift of bytes with no mask (arm64 has one, x86-64 not)
+// ---- bs: bc whose last plane is a shift of bytes with no mask
 // @ts-ignore: decorator
 @inline function dot64s(w: usize, x: usize, three: v128): v128 {
   const v = v128.load(w);
@@ -76,22 +72,6 @@ export function matmul_b(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize
   acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 16), v128.and(i16x8.shr_u(v, 2), three), acc);
   acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 32), v128.and(i16x8.shr_u(v, 4), three), acc);
   return i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 48), i8x16.shr_u(v, 6), acc);
-}
-export function matmul_bm(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, mask: i32): void {
-  const blocks = n >> 7, three = i8x16.splat(<i8>mask);
-  const xa = xs + (<usize>(n >> 5) << 2);
-  for (let i = r0; i < r1; i++) {
-    const row = wq + <usize>i * <usize>(n >> 2);
-    const srow = ws + ((<usize>i * <usize>blocks) << 2);
-    let facc = f32x4.splat(0);
-    for (let b = 0; b < blocks; b++) {
-      const w = row + (<usize>b << 5), x = xq + (<usize>b << 7), at = <usize>b << 4;
-      const lo = dot64(w, x, three), hi = dot64(w + 16, x + 64, three);
-      const sums = i32x4.add(i32x4.add(v128.shuffle<i32>(lo, hi, 0, 2, 4, 6), v128.shuffle<i32>(lo, hi, 1, 3, 5, 7)), v128.load(xa + at));
-      facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(sums), v128.load(xs + at)), v128.load32_splat(srow + (<usize>b << 2))));
-    }
-    store<f32>(xout + (<usize>i << 2), hsum(facc));
-  }
 }
 export function matmul_bs(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32): void {
   const blocks = n >> 7, three = i8x16.splat(3);
@@ -131,39 +111,6 @@ export function matmul_bx(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
       const w = row + (<usize>b << 5), x = xq + (<usize>b << 7), at = <usize>b << 4;
       const lo = dot64x(w, x, three), hi = dot64x(w + 16, x + 64, three);
       const sums = i32x4.add(i32x4.add(v128.shuffle<i32>(lo, hi, 0, 2, 4, 6), v128.shuffle<i32>(lo, hi, 1, 3, 5, 7)), v128.load(xa + at));
-      facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(sums), v128.load(xs + at)), v128.load32_splat(srow + (<usize>b << 2))));
-    }
-    store<f32>(xout + (<usize>i << 2), hsum(facc));
-  }
-}
-
-// ---- bp: without relaxed SIMD. The low eight bytes of a plane are of the first group, the high eight of the second:
-// each half's products in int16 over the four planes (4 x 2 x 127 a lane at most), then widened
-// @ts-ignore: decorator
-@inline function low4(v: v128, x: usize, three: v128): v128 {
-  let acc = i16x8.extmul_low_i8x16_s(v128.load(x), v128.and(v, three));
-  acc = i16x8.add(acc, i16x8.extmul_low_i8x16_s(v128.load(x, 16), v128.and(i16x8.shr_u(v, 2), three)));
-  acc = i16x8.add(acc, i16x8.extmul_low_i8x16_s(v128.load(x, 32), v128.and(i16x8.shr_u(v, 4), three)));
-  return i32x4.extadd_pairwise_i16x8_s(i16x8.add(acc, i16x8.extmul_low_i8x16_s(v128.load(x, 48), v128.and(i16x8.shr_u(v, 6), three))));
-}
-// @ts-ignore: decorator
-@inline function high4(v: v128, x: usize, three: v128): v128 {
-  let acc = i16x8.extmul_high_i8x16_s(v128.load(x), v128.and(v, three));
-  acc = i16x8.add(acc, i16x8.extmul_high_i8x16_s(v128.load(x, 16), v128.and(i16x8.shr_u(v, 2), three)));
-  acc = i16x8.add(acc, i16x8.extmul_high_i8x16_s(v128.load(x, 32), v128.and(i16x8.shr_u(v, 4), three)));
-  return i32x4.extadd_pairwise_i16x8_s(i16x8.add(acc, i16x8.extmul_high_i8x16_s(v128.load(x, 48), v128.and(i16x8.shr_u(v, 6), three))));
-}
-export function matmul_bp(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32): void {
-  const blocks = n >> 7, three = i8x16.splat(3);
-  const xa = xs + (<usize>(n >> 5) << 2);
-  for (let i = r0; i < r1; i++) {
-    const row = wq + <usize>i * <usize>(n >> 2);
-    const srow = ws + ((<usize>i * <usize>blocks) << 2);
-    let facc = f32x4.splat(0);
-    for (let b = 0; b < blocks; b++) {
-      const w = row + (<usize>b << 5), x = xq + (<usize>b << 7), at = <usize>b << 4;
-      const v0 = v128.load(w), v1 = v128.load(w, 16);
-      const sums = i32x4.add(groupSums(low4(v0, x, three), high4(v0, x, three), low4(v1, x + 64, three), high4(v1, x + 64, three)), v128.load(xa + at));
       facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(sums), v128.load(xs + at)), v128.load32_splat(srow + (<usize>b << 2))));
     }
     store<f32>(xout + (<usize>i << 2), hsum(facc));

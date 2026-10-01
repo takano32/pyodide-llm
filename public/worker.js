@@ -686,7 +686,7 @@ function pooledWeights(size, after, shared, wide) {
 // What footprint() takes (the worker asks keysInHalf the same).
 function forwardOptions(options, shared) {
   const { dtype = "float32" } = options;
-  const int8 = !disabled.includes("int8"), quantized = dtype === "int8" || dtype === "int6";
+  const int8 = !disabled.includes("int8"), quantized = ["int8", "int6", "ternary"].includes(dtype);
   return {
     ...options, dtype, int8, relaxed: Boolean(jsKernels?.relaxed) && !disabled.includes("relaxed"),
     halfKV: quantized && int8 && !disabled.includes("kv16"), shared,

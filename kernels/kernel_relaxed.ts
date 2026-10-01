@@ -3,6 +3,7 @@
 // Python loader simply falls back to kernel.ts.
 
 import { sixFirst, sixSecond, sixTops } from "./six";
+import { codes, fourSums } from "./ternary";
 
 const GS: i32 = 32;
 
@@ -214,5 +215,38 @@ export function matmul_q6r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
       sum += <f32>whole * (load<f32>(srow + (<usize>g << 2)) * load<f32>(xs + (<usize>g << 2)));
     }
     store<f32>(xout + (<usize>i << 2), sum);
+  }
+}
+
+// T231: ternary weights (ternary.ts: 32 bytes a group of 128, a float32 scale a group) against the activations
+// interleave() left (kernel.ts: int8 in all 8 bits, the planes of a block of 64, and after their scales minus the sum
+// of each group of 32). 64 weights a step: their sixteen bytes loaded once, four planes of codes, four dot products
+// into one accumulator whose lanes 0 and 1 are of the first group of 32 activations and 2 and 3 of the second.
+// A code times an activation is at most 2 x 128, two of them an int16 (x86's pmaddubsw adds pairs with saturation).
+// @ts-ignore: decorator
+@inline function dot64(w: usize, x: usize, three: v128): v128 {
+  const v = v128.load(w);
+  let acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x), codes(v, 0, three), i32x4.splat(0));
+  acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 16), codes(v, 1, three), acc);
+  acc = i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 32), codes(v, 2, three), acc);
+  return i32x4.relaxed_dot_i8x16_i7x16_add_s(v128.load(x, 48), codes(v, 3, three), acc);
+}
+// A group of 128 weights a turn: the exact integer sums of its four groups of 32 activations (minus each one's sum
+// added: dot(a, w) of the weights -1, 0, 1), times the activations' four scales, times the weights' one. Lane k of the
+// accumulator holds the k-th group of 32 of every group of 128, in order; the lanes are added in order at the end.
+// three: 3 (ternary.ts says why it is an argument).
+export function matmul_t2r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
+  const groups = n >> 7, mask = i8x16.splat(<i8>three);
+  const sums = xs + (<usize>(n >> 5) << 2);  // after the scales: minus the sum of each group's activations
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * <usize>(n >> 2);
+    const srow = ws + ((<usize>i * <usize>groups) << 2);
+    let facc = f32x4.splat(0);
+    for (let g = 0; g < groups; g++) {
+      const w = row + (<usize>g << 5), x = xq + (<usize>g << 7), at = <usize>g << 4;
+      const whole = i32x4.add(fourSums(dot64(w, x, mask), dot64(w + 16, x + 64, mask)), v128.load(sums + at));
+      facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), v128.load32_splat(srow + (<usize>g << 2))));
+    }
+    store<f32>(xout + (<usize>i << 2), f32x4.extract_lane(facc, 0) + f32x4.extract_lane(facc, 1) + f32x4.extract_lane(facc, 2) + f32x4.extract_lane(facc, 3));
   }
 }

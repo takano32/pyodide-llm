@@ -1,6 +1,6 @@
-// T231: the matrix product of a token on ternary weights, in the forms of tests/ternary-forms.ts and of kernels/ (the
-// form taken, and the int8 kernels on the same weights widened to int8, which is how T235 runs a ternary model), in
-// one process, taking turns, on 1 and 4 threads of one shared memory, the rows in chunks taken in turn as forward.js's
+// T231: the matrix product of a token on ternary weights: the kernels of kernels/ (t2r: matmul_t2r, t2: matmul_t2 without
+// relaxed SIMD; q8r and q8: the int8 kernels on the same weights widened to int8, which is how T235 ran a ternary
+// model) and the forms of tests/ternary-forms.ts that were set against them (bc, bs, bx, c, a), in one process, taking turns, on 1 and 4 threads of one shared memory, the rows in chunks taken in turn as forward.js's
 // phase() cuts them (TODO.md's T231 has what each form is and the table).
 //
 // The matrices are read from memory, as a model's are (each read once a token): copies of each past every cache
@@ -9,7 +9,7 @@
 // to the bit. G weights/s is rows x n a second; GB/s counts what a row reads of the weights (their scales and
 // corrections too).
 //
-//   node tests/ternary-bench.mjs [--rounds 2] [--turns 5] [--megabytes 256] [--shapes 2048x2048,17408x5120] [--forms b,q8r]
+//   node tests/ternary-bench.mjs [--rounds 2] [--turns 5] [--megabytes 256] [--shapes 2048x2048,17408x5120] [--forms t2r,q8r]
 //
 // The shapes are those of Ternary Bonsai 1.7B (2048 wide, its FFN 6144) and of the 27B (5120 wide, its FFN 17408).
 // Compiles with AssemblyScript into .tmp/ternary-bench/ (needs `npm ci`).
@@ -30,16 +30,16 @@ const GO = 0, DONE = 1, NEXT = 2;
 // reads, and the call on rows r0..r1 of the copy at w (its values, then its scales, then its corrections)
 const g128 = (c) => (c[ROWS] * c[N]) / 128;
 const FORMS = {
-  b: { module: "tree", bytes: [32, 4, 0], activations: "interleaved", fits: "ternary_r",
-    run: (k, c, w, r0, r1) => k.matmul_t2r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1) },
-  bm: { module: "forms", bytes: [32, 4, 0], activations: "interleaved",
-    run: (k, c, w, r0, r1) => k.matmul_bm(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
+  t2r: { module: "tree", bytes: [32, 4, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_t2r(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
+  t2: { module: "plain", bytes: [32, 4, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_t2(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
+  bc: { module: "forms", bytes: [32, 4, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_bc(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1) },
   bs: { module: "forms", bytes: [32, 4, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_bs(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1) },
   bx: { module: "forms", bytes: [32, 4, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_bx(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1) },
-  bp: { module: "plain", bytes: [32, 4, 0], activations: "interleaved", fits: "ternary",
-    run: (k, c, w, r0, r1) => k.matmul_t2(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1) },
   c: { module: "forms", bytes: [32, 4, 16], activations: "seven",
     run: (k, c, w, r0, r1) => k.matmul_c(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, w + g128(c) * 36, c[N], r0, r1) },
   a: { module: "forms", bytes: [28, 4, 0], activations: "base3",
@@ -49,17 +49,10 @@ const FORMS = {
   q8: { module: "plain", bytes: [128, 16, 0], activations: "eight",
     run: (k, c, w, r0, r1) => k.matmul_q8(c[OUT], c[XQ], c[XS], w, w + g128(c) * 128, c[N], r0, r1) },
 };
-// (until the form taken is in kernels/, b and bp are tests/ternary-forms.ts's matmul_b and matmul_bp)
 const NAMES = Object.keys(FORMS);
 const modules = { forms: "forms.wasm", tree: "relaxed.wasm", plain: "plain.wasm" };
 const instances = (memory) => Object.fromEntries(Object.entries(modules).map(([name, file]) =>
   [name, new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(work + file)), { env: { memory } }).exports]));
-function kernelsOf(all) {
-  // the form taken, from kernels/ once it is there (matmul_t2r, matmul_t2), from tests/ternary-forms.ts before
-  const tree = all.tree.matmul_t2r ? all.tree : { ...all.tree, matmul_t2r: all.forms.matmul_b };
-  const plain = all.plain.matmul_t2 ? all.plain : { ...all.plain, matmul_t2: all.forms.matmul_bp };
-  return { forms: all.forms, tree, plain };
-}
 // forward.js's phase(): chunks of a quarter of a thread's share (T93), taken in turn; one thread the whole matrix
 const chunkOf = (rows, threads) => (threads === 1 ? rows : Math.ceil(rows / (threads * 4)));
 function runCalls(kernels, sync, c, index) {
@@ -80,7 +73,7 @@ function runCalls(kernels, sync, c, index) {
 if (!isMainThread) {
   const { memory, control, numbers, index } = workerData;
   const sync = new Int32Array(control), c = new Float64Array(numbers);
-  const kernels = kernelsOf(instances(memory));
+  const kernels = instances(memory);
   let seen = 0;
   for (;;) {
     Atomics.wait(sync, GO, seen);
@@ -124,7 +117,7 @@ if (total > 65536 * PAGE) throw new Error(`${(total / 2 ** 30).toFixed(1)} GiB o
 const memory = new WebAssembly.Memory({ initial: Math.ceil(total / PAGE), maximum: 65536, shared: true });
 const control = new SharedArrayBuffer(16), sync = new Int32Array(control);
 const numbers = new SharedArrayBuffer(16 * 8), c = new Float64Array(numbers);
-const kernels = kernelsOf(instances(memory));
+const kernels = instances(memory);
 const workers = Array.from({ length: 4 }, (_, index) => new Worker(new URL(import.meta.url), { workerData: { memory, control, numbers, index } }));
 let gen = 0;
 function go() {
@@ -151,7 +144,7 @@ for (const [rows, n] of shapes) {
   for (let g = 0; g < groups; g++) d[g] = Math.fround(0.005 + (next() % 4096) / 163840);
   // ---- each form's copy of the weights
   const writers = {
-    b(at) {
+    t2r(at) {
       const scales = at + groups * 32;
       U.fill(0, at, scales);
       for (let j = 0; j < tw.length; j++) U[at + (j >> 2)] |= (tw[j] + 1) << (2 * (j & 3));
@@ -192,7 +185,7 @@ for (const [rows, n] of shapes) {
       }
     },
   };
-  writers.bm = writers.bs = writers.bx = writers.bp = writers.b;
+  writers.t2 = writers.bc = writers.bs = writers.bx = writers.t2r;
   writers.q8 = writers.q8r;
   const copies = {};
   for (const form of NAMES) {
@@ -241,6 +234,14 @@ for (const [rows, n] of shapes) {
     }
   }
   put("base3", base3, eight.scales, sums(eight.q));
+  {
+    // interleave() itself (kernel.ts), on a copy of the int8 activations: the bytes and sums written above
+    const { xq, xs } = places.interleaved, own = take(n), ownScales = take(ng * 8);
+    I.set(eight.q, own);
+    kernels.plain.interleave(own, ownScales, n);
+    for (let j = 0; j < n; j++) if (I[own + j] !== I[xq + j]) throw new Error(`interleave() differs at byte ${j}`);
+    for (let g = 0; g < ng; g++) if (N32[(ownScales + ng * 4) / 4 + g] !== N32[(xs + ng * 4) / 4 + g]) throw new Error(`interleave()'s sum of group ${g} differs`);
+  }
   const outs = [take(rows * 4), take(rows * 4), take(rows * 4)];
   if (top > small) throw new Error("the small arrays do not fit their place");
   // ---- the float64 sums of each kind's integers and scales
@@ -258,8 +259,8 @@ for (const [rows, n] of shapes) {
     return out;
   };
   const whole = (scale) => scale, over127 = (scale) => Math.fround(scale / 127);
-  const references = { b: reference(eight, whole, 1), c: reference(seven, whole, 1), q8r: reference(seven, over127, 127), q8: reference(eight, over127, 127) };
-  references.bm = references.bs = references.bx = references.bp = references.a = references.b;
+  const references = { t2r: reference(eight, whole, 1), c: reference(seven, whole, 1), q8r: reference(seven, over127, 127), q8: reference(eight, over127, 127) };
+  references.t2 = references.bc = references.bs = references.bx = references.a = references.t2r;
   Object.assign(c, { [N]: n, [ROWS]: rows });
   const set = (form) => Object.assign(c, { [FORM]: NAMES.indexOf(form), [FIRST]: firsts[form], [STRIDE]: bytesOf(form, rows, n),
     [COPIES]: copies[form], [XQ]: places[FORMS[form].activations].xq, [XS]: places[FORMS[form].activations].xs });
