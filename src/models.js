@@ -67,16 +67,35 @@ const atOnce = { steps: 0, temperature: 0.7, topp: 0.8, repetition_penalty: 1.0 
 /** A Qwen3 twice (T124, the owner's "両方を別々に用意できないのか"): thinking first, and answering at once. The two
  * share their weights, and so a conversion kept in the browser; only the format differs. shares: both ids, for
  * kept.js's replaced() (what either kept before its source changed goes, whichever form is opened first) */
-function thinkingAndNot(id, name, source, download, sizes, chat = {}) {
+function thinkingAndNot(id, name, source, download, sizes, chat = {}, formats = {}) {
   const common = { group: "hf", ...source, download, conversion: {}, options: {}, shares: [`${id}-thinking`, id],
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE, ...chat };
   return [
+    // formats.thinking: where the converter cannot read the model's chat_template (T236), else what it reads
     { ...common, id: `${id}-thinking`, name: `${name} (thinking)`, note: `thinks before it answers · 日本語 / English · ${sizes}`,
-      generation: thinking },
+      generation: thinking, ...(formats.thinking ? { template: formats.thinking } : {}) },
     { ...common, id, name: `${name} (no thinking)`, note: `answers at once · 日本語 / English · ${sizes}`,
-      generation: chat.generation ?? atOnce, template: QWEN3_AT_ONCE },
+      generation: chat.generation ?? atOnce, template: formats.atOnce ?? QWEN3_AT_ONCE },
   ];
 }
+// T236: Qwen3.5's chat_template calls a macro (render_content, for the pictures of a message), which the converter's
+// reader refuses: one turn of text by hand, as the real Jinja writes it with enable_thinking true and without (the
+// same IDs as transformers' apply_chat_template for tests/format_check.py's prompts). The template trims what was
+// typed. Without a template the converter read, its special tokens are not in the converter's specials, and a list of
+// the entry's replaces the converter's (T221): so all of the converter's are here (the added tokens tokenizer.json
+// does not call special, T143) with <|im_start|> and <|im_end|>, in the converter's order (the longest first).
+// The BOS: the real tokenizer begins a text with none (bos_token null), and the page begins every text with one, the
+// converter's being <|endoftext|> (248044, T229). That one costs this model much (on 299 tokens of Wikipedia the
+// perplexity is 46% higher in English and 95% in Japanese with it in front: its linear-attention layers keep what they
+// read in a state, where a Qwen3's attention looks past it, T131's ±3%). So the BOS here is the format's own first
+// token, <|im_start|> (248045), and the formats begin after it: the page then sends the very IDs the real template
+// makes, none more. The answer stops at <|im_end|> (248046), at <|endoftext|> (all that config.json names) and at the
+// mark of a new turn
+const QWEN35_THINKING = "user\n{prompt:trim}<|im_end|>\n<|im_start|>assistant\n<think>\n";
+const QWEN35_AT_ONCE = `${QWEN35_THINKING}\n</think>\n\n`;
+const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
+  specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>",
+    "</tool_call>", "<|file_sep|>", "<|im_start|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
 /** T203 (T136's fourth stage): a Q8_0 GGUF's weights with the vocabulary and config.json of its original, which
  * tests/gguf_check.py tensors held them to (gguf.yml's candidates) */
 const ggufOf = (repo, revision, weights, original, originalRevision, tokenizer = "tokenizer.json") =>
@@ -196,6 +215,8 @@ export const LICENSES = {
   // T235: both cards say apache-2.0. Their NOTICE.txt: "copyright 2026-present Prism ML, Inc. ... built from Qwen3-1.7B,
   // Copyright 2024 Alibaba Cloud ... Apache 2.0", and asks for "Created using Bonsai by Prism ML." where it is deployed
   "prism-ml/Ternary-Bonsai-1.7B-gguf": APACHE, "prism-ml/Ternary-Bonsai-1.7B-unpacked": APACHE,
+  // T236: both cards say apache-2.0 (the GGUF's names the original's LICENSE as its license_link)
+  "Qwen/Qwen3.5-0.8B": APACHE, "unsloth/Qwen3.5-0.8B-GGUF": APACHE,
 };
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
@@ -549,6 +570,21 @@ const LISTED = [
     conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
     generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T236: Qwen3.5 0.8B, the first of the list with hybrid attention (T229: three layers of four are Gated DeltaNet
+  // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
+  // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which
+  // tests/gguf_check.py tensors held to the original (every Q8_0 tensor is llama.cpp's Q8_0 of the original's, every
+  // F32 one the original's values). Its card: thinking is off unless asked for (the 0.8B "is more prone to entering
+  // thinking loops"), and for the sampling without thinking it names temperature 1.0, top-p 1.0, top-k 20 and a
+  // presence penalty of 2.0 for text, and 0.7, 0.8, 20 and 1.5 for pictures and in its benchmarks; with thinking 1.0,
+  // 0.95, 20 and 1.5, or 0.6, 0.95, 20 and no penalty "for precise coding". The page's sampler has neither top-k nor a
+  // presence penalty, and temperature 1.0 over the whole vocabulary leans on the top-k: so Qwen3's two, which are the
+  // card's 0.7 and 0.8 without thinking and its 0.6 and 0.95 with
+  ...thinkingAndNot("hf-qwen3.5-0.8b", "Qwen3.5 0.8B",
+    ggufOf("unsloth/Qwen3.5-0.8B-GGUF", "6ab461498e2023f6e3c1baea90a8f0fe38ab64d0", "Qwen3.5-0.8B-Q8_0.gguf",
+      "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"), 811843840,
+    "fetches 812 MB (GGUF) → int8 850 MB · desktop only", { options: qwen35 },
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
 ];
 
 // T90: memory. A device that runs out of it kills the worker's WebAssembly memory, so the page warns before it

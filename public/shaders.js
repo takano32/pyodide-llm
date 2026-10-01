@@ -644,8 +644,9 @@ ${dp4aLines(false)}`}
 // every layer's round there: the scale word is tested alone (tests/gpu-check.mjs's quantizerProbe), and this word makes
 // the way short and independent of what a device does with an infinity. (4) The word is chosen by a comparison of integers and stored as an
 // integer: no float of the device's is asked whether it is a NaN. In a prompt's block (the same QUANTIZE) the keys
-// and values written back are NaN then. The GPU's next step finds them (by the above); the CPU's does not: its cache
-// reads a float16 NaN as a finite number (kernels/kernel.ts's halves4, T243), so T195's rule cannot see them there.
+// and values written back are NaN then. The GPU's next step finds them (by the above), and forward.js looks at the
+// halves it reads back by their bits before they go into the CPU's cache and refuses the block (T243: the CPU's own
+// reading of a float16 NaN, kernels/kernel.ts's halves4, is a finite number, so T195's rule alone would not see it).
 // The cost: a value's AND and integer max where its abs and float max were (the abs is a source modifier on most
 // devices, so one instruction a value more: 32 a group), and a comparison, an OR and a select a group of 32.
 const SCALE_WORD = /* wgsl */ `

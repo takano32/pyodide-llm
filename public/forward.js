@@ -833,7 +833,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   }
 
   // the outlier channels of the classifier's input (T92): their columns in float32, multiplied apart (T210: not of a
-  // classifier on the GPU alone, which is not here: a model with them does not stay there, tokensUnfit)
+  // classifier on the GPU alone, which is not here; T226: the GPU multiplies a float classifier for a model with them,
+  // so such a model stays on the GPU alone and needs no columns)
   const channels = plan.outliers ?? [];
   let columns = 0, picked = 0;
   if (channels.length && !direct) {
@@ -1033,6 +1034,19 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       }
     }
   }
+  // T243: whether the keys and values of count positions in staging are all finite numbers. The CPU's readers of a
+  // float16 (the kernels' halves4, and so from_f16 and attention_f16) make a finite number of a NaN and of an infinity
+  // (65536 and more), so that what a GPU computed wrong would be read from the cache as numbers ever after, by the CPU's
+  // steps and its logits (T195 sees nothing then). They are looked at by their bits (finite_f16: the exponent's five)
+  // before anything of them is written: one pass of a kernel over what fromStaging reads, none in the attention's loops
+  function stagingFinite(count) {
+    for (let part = 0; part < 2 * layers; part++) {
+      if (!k.finite_f16(staging + part * GPU_BLOCK * kvDim * 2, count * kvDim)) return false;
+    }
+    return true;
+  }
+  // T243: what the status line says of a GPU stopped for them (where: the request)
+  const notFiniteKV = (where) => `the GPU computed keys or values that are not finite numbers (NaN or infinity) ${where}`;
   // a token's key and value (float32, at key and value) into the cache at keyAt and valueAt
   function cache(keyAt, valueAt, key, value) {
     if (halfKV) {
@@ -1592,6 +1606,14 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       return false;
     }
     views();
+    // T243: a key or a value that is no finite number: the block is refused as a step with an id outside the vocabulary
+    // is (T219): nothing of it written, the GPU's positions not counted as the cache's, the GPU stopped, and the CPU
+    // takes the block from its own keys and values (forwardMany). T210: a model on the GPU alone reads none back (its
+    // keys and values stay on the GPU, where T219's flag on the logits of the steps is what guards them)
+    if (!direct && !stagingFinite(count)) {
+      stopGpu(notFiniteKV(`in a block of the prompt at position ${pos0}`));
+      return false;
+    }
     if (!direct) fromStaging(pos0, count);
     gpuEnd = pos0 + count;
     gpuTokens += count;
@@ -1879,7 +1901,12 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       }
       // the keys and values of the positions sampled, float16 in the staging place as a prompt's block's (T147), into the
       // cache (T160's review of T152: a float32 cache, a grouped-query model's, widens them as a prompt's). T210: none
-      // on the GPU alone
+      // on the GPU alone. T243: where one of them is no finite number, the whole request is refused as above (nothing
+      // written, none of its ids taken): the CPU takes the step, from keys and values that are its own
+      if (!direct && !stagingFinite(sampled)) {
+        stopGpu(notFiniteKV(`in a step at position ${pos}`));
+        return undefined;
+      }
       if (!direct) fromStaging(pos, sampled);
       gpuEnd = pos + sampled;
       gpuSampled += sampled;
