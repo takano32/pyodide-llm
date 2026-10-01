@@ -578,6 +578,28 @@ const ok = (line) => {
   }
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
   ok("NumPy is fetched without integrity: its bytes count on a slow line, and a stop is given up after 30 s");
+
+  // (the review of T129) a model of this site streams while Pyodide loads, its parts fetched before the counting
+  // began: what they bring is a sign that the line is alive. The version asked for, and the loader that waits for its
+  // import, are not given up at 30 s while the model's bytes come (a line that they fill holds back the first bytes of
+  // a new connection: slow.yml at 0.15 Mbps with one queue of 256 KB), but 30 s after the last of them
+  {
+    const slowModel = { checkpoint: "m", bytes: PART };  // 8 chunks, one every 5 s: the last byte at 40 s
+    const streaming = (url, init) => (url.endsWith(".000") ? new Response(body(0, PART, { signal: init.signal, delay: 5000 }), { status: 200 }) : "hang");
+    for (const [name, wait, why] of [
+      ["the version", () => context.resolvePyodideVersion(""), /did not answer in 30 seconds/],
+      ["the loader", () => run("pyodideSteps")("314.0.7", () => new Promise(() => {})), /"the loader" got nothing from the network for 30 seconds/],
+    ]) {
+      fresh(streaming);
+      context.download(slowModel, new AbortController().signal, 1);
+      const began = clock.now();
+      const failed = await failure(wait());
+      assert.match(failed?.error.message ?? "", why, name);
+      const after = (failed.at - began) / 1000;
+      assert.ok(after >= 40 + quiet && after < 40 + quiet + 30, `${name} was given up after ${after} s: 30 s after the model's last byte (at 40 s) is the time`);
+    }
+  }
+  ok("the model's bytes are a sign of life while Pyodide loads");
 }
 
 // ---- (7) weightsBuffer(): a model past even a 64-bit memory is refused before a byte of its weights comes

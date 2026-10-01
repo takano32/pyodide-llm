@@ -20,21 +20,49 @@
 // the version becomes part of a CDN URL, so accept nothing but a plain version number
 const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
 
+// The bytes of the model's parts that have come so far (download(): a model of this site is fetched while Pyodide
+// loads). They count as a line that is alive: the parts start before Pyodide's own fetches are counted (the version
+// is asked for first), and a line that they fill (a slow one, or one with a deep queue) holds the first bytes of a
+// new connection back for longer than the stillness that is called a stop (the review of T129: slow.yml at 0.15 Mbps
+// with one queue of 256 KB gave up "the loader" after 30 seconds, while the model's part was arriving).
+const modelArrived = { bytes: 0 };
+
+// { promise, cancel }: the promise settles once count() has not changed for seconds ticks of one second that ran.
+// Ticks, not the clock's seconds: a page that a phone froze while another app was in front, or a worker busy for a
+// long while, runs none, and a clock that jumped over it would call the line stopped (T129's review, as T120's).
+function silence(seconds, count) {
+  let timer;
+  const promise = new Promise((resolve) => {
+    let seen = -1, silent = 0;
+    timer = setInterval(() => {
+      const now = count();
+      if (now !== seen) {
+        [seen, silent] = [now, 0];
+      } else if (++silent >= seconds) {
+        clearInterval(timer);
+        resolve();
+      }
+    }, 1000);
+  });
+  return { promise, cancel: () => clearInterval(timer) };
+}
+
 // the latest release on npm (the "latest" tag never points at an alpha), or ?pyodide=<version> to force one.
 // T129 (1): its answer is a hundred bytes, so a connection that opened and never answered left "Loading Pyodide" for
-// ever (the review of T118). It is given up after QUIET_SECONDS like a step of Pyodide's (the page may try again
-// without the service worker). Not a step under watchArrivals(): that would count every part of the model, which
-// downloads meanwhile, and find a stop of Pyodide only after the model's end. But it is not always quick on a line the
-// model's parts fill: the first bytes of a new connection wait behind them (slow.yml, the review of T129: 20.5 s behind
-// a 1 MB model at 0.4 Mbps with the oldest connection served first, 14.2 s through one queue of 256 KB at 0.4 Mbps,
-// 0.8 s with the line shared by turns), so 30 seconds is little more than such a line's queue.
+// ever (the review of T118). It is given up after QUIET_SECONDS without a sign of life, like a step of Pyodide's (the
+// page may try again without the service worker). On a line the model's parts fill, the first bytes of a new
+// connection wait behind them (slow.yml, the review of T129: 20.5 s behind a 1 MB model at 0.4 Mbps with the oldest
+// connection served first, 14.2 s through one queue of 256 KB at 0.4 Mbps, 0.8 s with the line shared by turns), so the
+// model's bytes that come meanwhile are a sign of life (modelArrived): a stop of Pyodide is then found 30 seconds after
+// the model's last byte, not before.
 async function resolvePyodideVersion(search) {
   const forced = new URLSearchParams(search).get("pyodide");
   if (PYODIDE_VERSION_PATTERN.test(forced)) {
     return forced;
   }
   const given = new AbortController();
-  const timer = setTimeout(() => given.abort(), QUIET_SECONDS * 1000);
+  const silent = silence(QUIET_SECONDS, () => modelArrived.bytes);
+  silent.promise.then(() => given.abort());
   let version;
   try {
     const res = await fetch("https://data.jsdelivr.com/v1/packages/npm/pyodide/resolved?specifier=latest", { signal: given.signal });
@@ -43,7 +71,7 @@ async function resolvePyodideVersion(search) {
     if (!given.signal.aborted) throw error;
     throw Object.assign(new Error(`The latest version of Pyodide: data.jsdelivr.com did not answer in ${QUIET_SECONDS} seconds`), { pyodide: true });
   } finally {
-    clearTimeout(timer);
+    silent.cancel();
   }
   if (!PYODIDE_VERSION_PATTERN.test(version)) {
     throw new Error(`Unexpected Pyodide version: ${version}`);
@@ -194,6 +222,7 @@ function download(model, signal, load) {
         }
         // a chunk that was already on its way when the load was cancelled: its buffer is gone
         inner.signal.throwIfAborted();
+        modelArrived.bytes += value.length;
         if (sink) {
           // T129 (3): a write the memory refused (gone, or too small) is not cured by fetching the part again, nor is a
           // GPU's worker that takes no more of the weights (T156: a model on the GPU alone, its worker no more than
@@ -475,25 +504,9 @@ function watchArrivals() {
     self.fetch = plain;
     observer?.disconnect();
   };
-  /** { promise, cancel }: the promise settles once nothing has arrived for seconds. The silence is counted in the
-   * ticks that ran (one a second), not in the clock's seconds: a page that a phone froze while another app was in front,
-   * or a worker busy for a long while, runs no tick, and a clock that jumped over it would call that a line that
-   * stopped (T129's review; the same lesson as the software threads', T120) */
-  watch.quiet = (seconds) => {
-    let timer;
-    const promise = new Promise((resolve) => {
-      let seen = -1, silent = 0;
-      timer = setInterval(() => {
-        if (watch.arrived !== seen) {
-          [seen, silent] = [watch.arrived, 0];
-        } else if (++silent >= seconds) {
-          clearInterval(timer);
-          resolve();
-        }
-      }, 1000);
-    });
-    return { promise, cancel: () => clearInterval(timer) };
-  };
+  /** { promise, cancel }: the promise settles once nothing has arrived for seconds: neither what this watch counts
+   * nor the model's parts (modelArrived), silence() counts it in the ticks that ran */
+  watch.quiet = (seconds) => silence(seconds, () => watch.arrived + modelArrived.bytes);
   return watch;
 }
 
