@@ -193,6 +193,9 @@ export const LICENSES = {
   "Qwen/Qwen3-8B-GGUF": APACHE, "mmnga-o/Qwen3-Swallow-8B-RL-v0.2-gguf": APACHE,
   "unsloth/Qwen3-4B-Instruct-2507-GGUF": APACHE, "unsloth/Qwen3-4B-Thinking-2507-GGUF": APACHE,
   "mradermacher/DeepSeek-R1-Distill-Qwen-1.5B-GGUF": MIT,
+  // T235: both cards say apache-2.0. Their NOTICE.txt: "copyright 2026-present Prism ML, Inc. ... built from Qwen3-1.7B,
+  // Copyright 2024 Alibaba Cloud ... Apache 2.0", and asks for "Created using Bonsai by Prism ML." where it is deployed
+  "prism-ml/Ternary-Bonsai-1.7B-gguf": APACHE, "prism-ml/Ternary-Bonsai-1.7B-unpacked": APACHE,
 };
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
@@ -533,6 +536,19 @@ const LISTED = [
     ...ggufOf("unsloth/Qwen3-4B-Thinking-2507-GGUF", "f40adb104d4d44aee52f398b60597c5866a973a3", "Qwen3-4B-Thinking-2507-Q8_0.gguf",
       "Qwen/Qwen3-4B-Thinking-2507", "768f209d9ea81521153ed38c47d515654e938aea"), download: 4280405632,
     conversion: {}, options: {}, generation: thinking, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T235: Prism ML's ternary Qwen3 1.7B, every weight -1, 0 or 1 times a scale of its 128. Its PQ2_0 GGUF holds two
+  // bits a weight, which the converter widens to int8 without loss of the values, with the vocabulary, config.json and
+  // chat template of the float16 safetensors of the same weights (the card's base model). That template always begins
+  // the answer with an empty thought (Qwen3's enable_thinking=false): the model has one form, and the converter reads
+  // it. config.json and the tokenizer name no BOS (the converter would take token 1, '"'): Qwen3's own, <|endoftext|>,
+  // as every Qwen3 of the list begins, and the answer stops at it and at <|im_end|>. The sampling is the card's
+  // generation_config.json (its top-k the page's sampler has not)
+  { group: "hf", id: "hf-ternary-bonsai-1.7b", name: "Ternary Bonsai 1.7B", note: "answers at once · 日本語 / English · ternary weights · fetches 463 MB (GGUF) → int8 1.9 GB · desktop only",
+    ...ggufOf("prism-ml/Ternary-Bonsai-1.7B-gguf", "983b5dec2ff16aab79990711ba0f828a499a7e6a", "Ternary-Bonsai-1.7B-PQ2_0.gguf",
+      "prism-ml/Ternary-Bonsai-1.7B-unpacked", "3aca840085293d026ce6f6b80fafdae937fd2eeb"), download: 463290464,
+    conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
+    generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
 ];
 
 // T90: memory. A device that runs out of it kills the worker's WebAssembly memory, so the page warns before it
