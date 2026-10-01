@@ -11,7 +11,8 @@
 # left out. A difference known for the list's format is then no error when it is gone.
 #
 # Needs the reference tools, which the page never uses: a venv with tests/requirements-reference.txt (docs/notes/dev-setup.md).
-# The first BOS may differ (the page always starts with it, T131). The other differences known are in KNOWN, each
+# The first BOS may differ (the page always starts with it, T131), unless it is the token the real IDs begin with
+# (same_ids). The other differences known are in KNOWN, each
 # taking out only its own difference, and anything else makes the exit status 1 (T145). What a card always passes besides the prompt
 # (Swallow-MS's and llm-jp's system message) is in SYSTEM. Models with a sentencepiece tokenizer.model are compared
 # through transformers' slow tokenizer, which is not the real one for every model: for those of SENTENCEPIECE the
@@ -262,7 +263,7 @@ def main():
                 encoded = lambda text: list(reference(text, add_special_tokens=False)["input_ids"])
                 real = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, **thinking)
                 real = list(real["input_ids"] if hasattr(real, "keys") else real)
-            matches = lambda real: page == real or page[1:] == real
+            matches = lambda real: same_ids(page, real)
             if matches(real):
                 same += 1
             elif "text" in known and matches(encoded(known["text"](text, prompt))):
@@ -296,6 +297,14 @@ def trimmed(text, prompt):
         if typed and typed in text:
             return text.replace(typed, prompt.strip(), 1)
     return text
+
+
+def same_ids(page, real):
+    """Whether the page's IDs are the real ones: the same, or with one more token in front, the BOS the page always
+    starts with (T131). Not when that token is the one the real IDs begin with: then the format writes the BOS it was
+    given again, as Llama 3's <|begin_of_text|> was written twice before T106, and a BOS set to the format's own first
+    token (T236's <|im_start|>) with the format left beginning with it (T250's review: the lenient rule passed it)."""
+    return page == real or (page[1:] == real and page[:1] != real[:1])
 
 
 def first_piece(page, real):
