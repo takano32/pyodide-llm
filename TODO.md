@@ -116,6 +116,7 @@
   - **T129 のレビューから（スマホと PC、本線に入れた後）**: (a) スマホで、初めての訪問の読み込みの途中に別のアプリへ 1 分切り替えて戻る: 「got nothing from the network for 30 seconds」が出ず、準備完了まで行くか（静けさを時計でなく回ったチックで数えるようにした）。(b) 機内モードで 2 回目の訪問（T111 のオフライン。NumPy の wheel の SRI を外した）が開いて答えるか。(c) 速度制限中の回線（約 128 kbps）で開く: 準備完了まで行き、フォールバック（隔離のない 1 コア）に入らないか（CI は fifo の 0.15 Mbps でフォールバックした。T129 の項の持ち主の判断の材料）。(d) PC の Chrome で `?hf=Qwen/Qwen2.5-32B-Instruct` を開く: 数秒で「This model is too large for a web page: it needs about 42 GB …」が出るか（直す前は 8GB を取って「ran out of memory」。CI の Chromium では確かめた）。実 GPU のある PC では、断った後に OPFS（devtools の Application → Storage）に空のフォルダが残らないか（`keeper()` の開きっぱなし、T129 の項）。
   - **T225 のレビューから（PC の Windows の Chrome で `/benchmark/` を 1 回。Android も (a) を見る）**: (a) GPU の節の `a layer, …` の全部と `tokens on the GPU` が ok か。各行の `stages:` の「K and V N to the nearest float16, M toward zero, 0 away from it, 0 farther」の M が約半分（K と V の合計 384 のうち 170〜215）なら、Direct3D の 0 の向きで確定（見立てどおり）。M が 0 の端末は最近接（Android は未計測: 前の検査が通っただけ）。M が 0 なのに WRONG なら見立ては外れ。「farther」が 1 つでも出たら丸めでない誤りで、同じ行の `first to depart:` が最初に離れた段（`q` の段が 1e-6 を越えれば norm の尺度の誤り）。(b) **同じ PC の DP4A の層が 2 回目の報告で前の 5 倍遅かった件**（0.42〜0.54 → 2.19〜2.63 ms）: 2 回目の GB/s の括弧の割合（バッファの読みの 8.5〜10.2%）から割り戻すと読みの上限は約 305 GB/s で、1 回目の 298 GB/s と同じ（表の注の「… N GB/s below」の N に出る）。遅かったのは層の行だけで、上限の側ではない。次の報告では「The whole layer by the GPU's own clock」の行（DP4A の形の GPU の時計と、上の時間の差: 時計も遅ければ GPU の仕事の遅れ、合っていれば待ちや提出の側）、llama.cpp の層の行の ms（DP4A だけが遅いか）、「Unsteady: …」の文（unsteady の印）、「what a token costs besides the weights」の空のディスパッチ 240 回の ms を見て、GPU の節を続けて 2 回押した値も貼る（遅さが残るか）。DP4A の層が ok になると「tokens generated on the GPU」の行は DP4A の形で測られる（前は ok でなかったので llama.cpp の形だった）ので、前の報告の 15.0 ms と比べるときはそれを断る。(c) モデルのページ（llm-jp-3 150M など実モデルを開いて 1 回答えさせる）のコンソールの「gpu: a token by …」の行に `wrong:` が無いか（レビューで直したエンジンの `checkTokens` が、0 の向きの端末で形を断らないか。断った形はその行に `wrong: the first layer's stream is …` と出る）。
   - **T236 から（PC と Android、本線に入れた後）**: モデルのページで「Qwen3.5 0.8B (no thinking)」を開いて日本語で 2 つ聞く: 答えが読めるか、ステータス行の tok/s と本数（CPU だけで動く。CI のランナーは 4 本で 29.5 tok/s）。「(thinking)」で 1 つ: 考えが終わって答えまで行くか（カードは 0.8B の考えが回り続けやすいと書いている）。
+  - **T247 から（PC の Chrome、本線に入れた後）**: モデルのページで「Qwen3.5 2B (no thinking)」と「Qwen3.5 4B (no thinking)」を開いて日本語で 1 つずつ聞く: 答えが読めるか、準備完了までの秒、ステータス行の tok/s と本数（CI のランナーは 4 本で 2B が 14.4、4B が 4.6、9B が 3.6 tok/s。4B と 9B は 64 ビットのメモリ）。メモリに余裕があれば「Qwen3.5 9B」も。「(thinking)」の 4B で 1 つ: 考えが終わって答えまで行くか。Android と iPhone では 2B だけ（開けるか、メモリの警告が出るか）。
   - **T229 のレビューから（T236 の項と同じモデルで、Android と PC の Chrome と iPhone の Safari）**: ステータス行が「prompts on the CPU (linear-attention layers are not on the GPU yet)」か（GPU のある端末で、GPU の Worker が始まらないこと）。Android で、コンソールの `threads:` の行が選ぶ本数（CI の x86 は 1 本 15.5・2 本 26.5・4 本 30.1・8 本 28.1 tok/s）。質は、7 ビットの活性値が arm64 の CI で +2.29%（x86 は +1.86%、一覧の GGUF の道は +1.37%、3 つの英語の記事では −0.17〜+1.86%）なので、同じ問いを `?without=relaxed`（8 ビット）でも答えさせて読み比べる（崩れや繰り返しが 7 ビットだけに出れば、T229 の項の「出力行列だけ 8 ビット」を入れる）。iPhone は開けるか（int8 の 0.79 GiB + 後ろ 0.24 GiB、Safari は 8 ビットの道）。
 - ブランチを本線に入れる形: この回は `git merge --no-ff <ブランチ>`（題は「T番号: Merge …」。戻すときは `git revert -m 1 <その merge>` の 1 つ）。前の回の `.tmp/merge-branch.sh`（rebase）は、本線を merge 済みのブランチには使えない。
 
@@ -1798,8 +1799,54 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **T230 の 3 値の型ができたら**（別の担当が進めている）: この 2 つの項目は int8 に広げずに持てる（4B は 1.07 GB、8B は 2.18 GB の桁）。そのときは note の「→ int8 N GB」と「Chrome and Firefox」と「desktop only」を見直し、`ternaryBonsai()` の 3 つを一緒に切り替える。`pq2_0()` の出す形は T230 の持ち物なので、ここでは触っていない。
 - **未計測・未確認**: 本番の `models.yml`（準備完了の秒・tok/s・ヒープ。本線に入れた後に本会話が回す）。ブラウザの中の変換の秒（PQ2_0 の広げは NumPy のまま）。本物の GPU と GPU だけの置き場（CI は CPU の道だけを回した。`gpu-prompt.yml real=` は回していない: 1.7B で lavapipe に 85 分かかった）。Safari の 4B の 6 ビット。持ち主の端末。8B の transformers の greedy の文（最初のトークンだけを比べた）。1024 トークンより長い文脈。考える形（1.7B と同じく項目を作っていない）。
 
-### T247 [追加][モデル] Qwen3.5 のほかの大きさを一覧に — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T245 の後。規模 小〜中）
+### T247 [追加][モデル] Qwen3.5 のほかの大きさを一覧に — 状態: **反映済み**（2026-10-01、本線に入れるのは本会話。レビュー前。持ち主「他にも対応したいな」。T245 の後。規模 小〜中）
 - 0.8B（T236）のほかの大きさ（HF にあるものを調べて）を、Q8_0 の GGUF から。`gguf_check.py tensors` を 1 つずつ通してから。
+- ブランチ `t245-t247-qwen35`（Opus medium）。**2B・4B・9B の 3 つを足した**（どれも考える形とすぐ答える形の 2 項目で、一覧は 6 項目増えた）。決定と落とし穴は AGENTS.md の「Qwen3.5 の 2B・4B・9B を一覧に」。
+- **HF にある大きさ**（2026-10-01、`https://huggingface.co/api/models?author=Qwen&search=Qwen3.5`。どれも絵も読むモデルで、ライセンスはカードの `license: apache-2.0`、LICENSE のファイルも Apache-2.0）:
+
+  | 大きさ | 原本（リビジョン） | dim・FFN・層 | head（full）・KV | linear の鍵 : 値の head | 分類器 | Q8_0 の GGUF（unsloth） | int8 | 後ろ込み（4096 位置） | GGUF の突き合わせ | 一覧 |
+  |---|---|---|---|---|---|---:|---:|---:|---|---|
+  | 0.8B | `Qwen/Qwen3.5-0.8B`（`2fc06364`） | 1024・3584・24 | 8・2（head 256） | 16 : 16 | 埋め込みと共有 | 811,843,840 | 849,571,100 | 1.027 GiB | 通った（T236） | T236 で入れた |
+  | 2B | `Qwen/Qwen3.5-2B`（`15852e8c16360a2fea060d615a32b45270f8a8fc`） | 2048・6144・24 | 8・2 | 16 : 16 | 共有 | 2,012,012,800 | 2,122,022,172 | 2.344 GiB | 通った | **入れた** |
+  | 4B | `Qwen/Qwen3.5-4B`（`851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a`） | 2560・9216・32 | 16・4 | 16 : 32（2 対 1） | 共有 | 4,482,403,488 | 4,745,539,612 | 5.154 GiB | 通った（tiled） | **入れた** |
+  | 9B | `Qwen/Qwen3.5-9B`（`c202236235762e1c871ad0ccb60c8ee5ba337b9a`） | 4096・12288・32 | 16・4 | 16 : 32（2 対 1） | 別に持つ | 9,527,502,048 | 10,094,168,092 | 10.571 GiB | 通った（tiled） | **入れた** |
+  | 27B | `Qwen/Qwen3.5-27B`（`fc05daec`） | 5120・17408・64 | 24・4 | 16 : 48（3 対 1） | 別に持つ | 28,595,763,104 | 未計算（Q8_0 がもう 16 GiB を越える） | — | かけていない | **入れない**: int8 が 64 ビットのメモリの 16 GiB に入らない（3 値などの小さい型を待つ: T230・T233） |
+  | 35B-A3B・122B-A10B・397B-A17B | `Qwen/Qwen3.5-35B-A3B` など | （35B: 2048・40 層、experts 256） | | | | 36,903,139,968（35B） | | | かけていない | **入れない**: mixture of experts（`qwen3_5_moe_text`）で、エンジンに無い形。大きさも越える |
+
+  語彙は 248,320、文脈は 262,144（一覧は変換器の既定の 4096 で切る）、4 層ごとに full attention、畳み込みは 4 タップ、RoPE は head 256 のうち 64、theta 1e7、eps 1e-6 が全部の大きさで同じ。ほかに `-Base`（指示なしの元のモデル）・`-FP8`・`-GPTQ-Int4`・SAE のリポジトリがあるが、見ていない。
+- **絵の部分の飛ばし方**（0.8B と同じ）: 原本の safetensors は言語モデルのテンソルを `model.language_model.` の下に、絵のモデルを `model.visual.` の下に持つ。変換器は計画にある名前だけを読むので絵のテンソルは読み飛ばされ、config は `text_config` を読む。unsloth の GGUF は言語モデルのテンソルだけ（絵は別の mmproj のファイルで、取らない）。
+- **出どころ**: GGUF は `unsloth/Qwen3.5-2B-GGUF`（`f6d5376be1edb4d416d56da11e5397a961aca8ae`）・`unsloth/Qwen3.5-4B-GGUF`（`e87f176479d0855a907a41277aca2f8ee7a09523`）・`unsloth/Qwen3.5-9B-GGUF`（`3885219b6810b007914f3a7950a8d1b469d598a5`）の `Qwen3.5-<大きさ>-Q8_0.gguf`（カードは apache-2.0）。語彙と config は上の原本。ほかの作り手（bartowski・lmstudio-community・mradermacher）の Q8_0 もあるが、unsloth のものが通ったのでかけていない。
+- **GGUF の突き合わせ（`gguf.yml` の candidates、run 36913731181、3 つとも成功）**:
+
+  | GGUF | 不一致 | いちばん近い参照から（線 1e-3） | テンソル全体の相対誤差の最大 | 並び | 語彙 |
+  |---|---:|---:|---:|---|---|
+  | 2B | 0 | 1.03e-7 | 0.00773 | q・k は HF の並び | 同じ ID で違い 0（GGUF は 250 個多い: 0.8B と同じ） |
+  | 4B | 0 | 1.02e-7 | 0.00625 | q・k は HF の並び、値の head は tiled | 同じ |
+  | 9B | 0 | 9.81e-8 | 0.00697 | q・k は HF の並び、値の head は tiled | 同じ（埋め込みの 2 行は Q8_0 の float16 のスケールの丸めでだけ通る: ID 107517 と 233708、行のノルムが中央値の 9e-4 と 4e-3） |
+
+- **transformers との比べ**: 2B は `tests/reference_qwen35.sh --model=2B`（run 36914742012、EPYC 9V74。その run は固定値の無い文で落ちた印になっているが、比べは通っている）: 原本の float32 で 96 位置の logits の差の最大 6.54e-5（1 回で）・7.75e-5（1 トークンずつ）、最尤トークンは 96 位置とも同じ、greedy の 16 トークンも同じ文（「The capital of Japan is Tokyo.」）。4B は T245 の項（1.44e-4、96 / 96）。**9B は比べていない**（float32 が 35.8 GB）。
+- **ページの forward での品質と速さ**（CI、`bash tests/page_qwen35.sh <ID> [回す部分] [トークン数]`、英語版 Wikipedia の 1500 トークン。CPU は run ごとに違うので、速さを run の間で比べない）:
+
+  | モデル（一覧の GGUF の道） | float32 の原本 | GGUF の値の float32、NumPy | int8、NumPy | カーネル 8 ビットの活性値 | カーネル 7 ビットの活性値 | tok/s（1・2・4・8 本、32 位置） | プロンプト（16 トークンの塊、1 本・4 本） | run と CPU |
+  |---|---:|---:|---:|---:|---:|---|---|---|
+  | 0.8B（T236） | 25.056（NumPy） | 25.055 | 25.055 | 25.086（+0.12%） | 25.398（+1.37%） | 17.3・28.4・29.5・28.5 | 35・66 | 36890462933、EPYC 7763 |
+  | 2B | 未計測 | 16.589 | 16.589 | 16.608（+0.11%） | 16.873（+1.71%） | 7.6・13.4・14.4・14.2 | 14・25 | 36914472449 と 36917253938、EPYC 9V74 |
+  | 4B | 14.834（transformers） | 未計測（1500 トークンは回せない） | 未計測 | 14.492（原本比 −2.31%） | 14.710（原本比 −0.84%） | 2.1・4.0・4.6・4.5 | 9・18 | 36917254402、Xeon 8573C。原本は 36914472084 |
+  | 9B | 未計測（35.8 GB） | 未計測 | 未計測 | 11.707 | 11.806（8 ビット比 +0.85%） | 1.9・3.2・3.6・3.6 | 3・6 | 36919959707、EPYC 7763 |
+
+  括弧の % は 2B が NumPy 比、4B が transformers の原本比。4B の頭の 192 トークンでは、原本 7.873、GGUF の値の float32（NumPy）7.574、8 ビット 7.537、7 ビット 7.689（run 36923411082、Xeon 8370C と T245 の項）。**4B は GGUF の値（Q8_0）の perplexity が原本より 2〜4% 低い**（エンジンは原本では transformers と同じ 7.873 を出す。0.8B はこの差が無い。2B と 9B は原本を測っていない）。7 ビットの活性値の損は 8 ビット比で 2B +1.6%、4B +1.5%、9B +0.85%。スレッド 1・2・4・8 本で logits もプロンプトのブロックもビット単位で同じ（3 つとも）。perplexity の道具は 1 本で回る（4B の 1 行が 720〜930 秒、9B が 860〜1230 秒）。
+- **16 GB のランナーで回せなかったもの**: 4B と 9B の NumPy の 2 行（int8 を float32 に広げると 16.8 GB と 35.8 GB）。4B の float32 は `tests/reference_qwen35.py` の `large()` の形（T245）で 96 位置と 192 トークンだけ回した。9B の float32 は変換もしていない（int8 への変換と、そのページの forward は回した）。**9B は perplexity の行ごとにプロセスを分ける**: 1 つのプロセスで 3 行を回した 1 回目（run 36917254113）は、行を 1 つも書かずにランナーが落ちた（前の行の 10 GB のメモリが返る前に次の行のメモリを作る。4B は 2 つぶんが入る）。
+- **固定値**（`tests/fixed_outputs.py`、足したうちでいちばん小さい 2B を GGUF と safetensors の 2 つの道で、run 36917253938 で 2 つとも ok）: プロンプト「これからの流行りを3つ挙げてください。」（すぐ答える形、float32、greedy 16 トークン）に、safetensors の道は「AI 技術の進化、特に生成 AI（大規模言語モデルなど）」、GGUF の道は「AI 技術の進化に伴い、今後 3 年〜5 」。**safetensors の文は、エンジンに書かせる前に transformers の `generate()` が同じ ID の列（書式の頭の `<|im_start|>` から、`<|endoftext|>` なし）に書いた文を fixture に置き、CI でエンジンが同じ文を書いた**（run 36914742012 の「transformers wrote for the list's prompt」）。GGUF の道は 4 トークン目で分かれる（Q8_0 の丸め。0.8B は 2 つの道が同じ文だった）。
+- **書式**: `tests/format_check.py` が 6 項目とも 9/9（手元、transformers 5.16.1）。4B と 9B の書式は 0.8B・2B のものと 1 バイト違い、**言われなければ考える**（0.8B と 2B は言われたときだけ）。一覧は 2 つの形をどちらも手で書いているので、項目は 0.8B と同じ 2 つ。`options`（BOS を `<|im_start|>` に、止まり、specials の 14 個）は 0.8B と同じもの。
+- **生成の設定**: 4B と 9B のカードは、考える形の「正確なコード」に 0.6・0.95、考えない形のふつうの用に 0.7・0.8（どちらも top_k 20 と presence_penalty つき。ほかに 1.0・0.95）。2B のカードは 0.8B と同じ文。一覧は 0.8B と同じ 2 組（0.6・0.95 と 0.7・0.8）。2B のカードも「考える形で考えが回り続けやすい」と書いている。
+- **メモリ**（`footprint()`、文脈 4096、共有メモリ）: 2B は int8 2.122 GB + 後ろ 376.7 MiB = 2.344 GiB で 32 ビットに入る。4B は 5.154 GiB、9B は 10.571 GiB で 64 ビットのメモリ（Chrome と Firefox）。**4B の 6 ビットは Safari の形（relaxed なし、後ろ 376.7 MiB）で 3.809 GiB と見積もられ、32 ビットに入る計算**だが、Qwen3.5 の 6 ビットは forward.js で回していない（T229）ので、note は Qwen3 4B などと同じ「Chrome and Firefox」にした。9B の 6 ビットは 7.56 GiB で入らない。どれも CPU だけ（linear の層は GPU に載せない、T229）。
+- **入れたもの**: 一覧の 6 項目と `LICENSES` の 6 つ、`tests/fixed_outputs.py` の 2 つ（12 個になった）、`browsers.yml` の huggingface ジョブの組 `qwen35`（2B・4B・9B の考える形、取得 16 GB）、README の数（HF の項目 64、GGUF 58: T246 の 2 つを含む）、docs/quantization.md。道具: `tests/page_qwen35.sh` の「回す部分」と「トークン数」、`tests/perplexity.mjs` の `--wide` と `--rows`、`tests/threads-check.mjs` はチェックポイントを塊で読む（2 GiB を越えるファイルは `fs.readFileSync` が読まない）、`tests/reference_qwen35.py` の `--model=2B`。
+- **持ち主に決めてもらうこと**: (1) 名前と note（下）。(2) 4B と 9B の考える形を先に置く並び（0.8B と同じ形: 考える形、すぐ答える形の順）。(3) 9B（取得 9.5 GB、int8 10.1 GB、CI の 4 本で 3.6 tok/s）を置くか。
+  - 「Qwen3.5 2B (thinking)」「Qwen3.5 2B (no thinking)」: 「thinks before it answers · 日本語 / English · fetches 2.0 GB (GGUF) → int8 2.1 GB · desktop only」「answers at once · …（同じ）」
+  - 「Qwen3.5 4B (thinking)」「Qwen3.5 4B (no thinking)」: 「… · fetches 4.5 GB (GGUF) → int8 4.7 GB · desktop only · Chrome and Firefox」
+  - 「Qwen3.5 9B (thinking)」「Qwen3.5 9B (no thinking)」: 「… · fetches 9.5 GB (GGUF) → int8 10.1 GB · desktop only · Chrome and Firefox」
+- **CI**（どれも `--ref t245-t247-qwen35`）: `gguf.yml` 36913731181（成功）。`tests.yml` の軽い組と `extra=`: 36914472084（4B と transformers、成功）、36917656339（4B の GGUF、成功）、36923411594・36923411695（4B の 192 トークン、成功）、36914742012（2B と transformers: 比べは通り、fixture の無い固定値で失敗の印）、36917253938（2B の int8 の NumPy と固定値 2 つ、成功）、36914472449（2B のページ、成功）、36917254402（4B のページ、成功）、36923411082（4B の 192 トークン、成功）、36917254113（9B のページの 1 回目、ランナーが落ちた）、36919959707（9B のページ、成功）。どの run も軽い組（pytest・ページの単体・smoke・build）が通っている。
+- **未計測・未確認**: 本番の `models.yml`（準備完了の秒、tok/s、ヒープ。本線に入れた後に本会話が回す）。実ブラウザ（`browsers.yml` の `qwen35` の組は回していない）。ブラウザの中の変換の秒とメモリの峰（4B と 9B は `attn_qkv` などを丸ごと持って並びを戻す）。9B の transformers との比べと float32 の perplexity。2B と 9B の原本の perplexity。4B の GGUF の値が原本より低い perplexity を出す訳。Safari（6 ビットの Qwen3.5）。持ち主の端末。考える形の答えの質（どの大きさも読んでいない）。日本語の答えの質（2B の固定値の 16 トークンを読んだだけ）。arm64 のランナーの数字。
 
 ### T248 [調査][モデル] 足せるモデルの調べ直し（2026-10） — 状態: **反映済み**（2026-10-01、調べだけ。本線に入れた。出たタスクは T249〜T261）
 - 2026-09-26 の T81 の調べの後に出たもの・人気の上がったものを、今のエンジンで開けるか（形・トークナイザ・書式・大きさ）で分け、足りないものを採番できる形に書く。
