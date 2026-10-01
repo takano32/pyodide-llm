@@ -1523,20 +1523,22 @@ async function load(model, signal, id) {
       return res.arrayBuffer();
     });
   tokenizerBytes.catch(() => {});
-  await initialized;
-  signal.throwIfAborted();
-  if (model.file) {
-    head = new Uint8Array(await model.file.slice(0, HEADER_BYTES).arrayBuffer());
-  }
-  const options = model.file || model.url ? await localOptions(model, new Uint8Array(await tokenizerBytes), head) : model.options;
-  head ??= await checkpoint.header;
-  signal.throwIfAborted();
-
-  let weights;
+  let options, weights;
   try {
+    await initialized;
+    signal.throwIfAborted();
+    if (model.file) {
+      head = new Uint8Array(await model.file.slice(0, HEADER_BYTES).arrayBuffer());
+    }
+    options = model.file || model.url ? await localOptions(model, new Uint8Array(await tokenizerBytes), head) : model.options;
+    head ??= await checkpoint.header;
+    signal.throwIfAborted();
     weights = weightsBuffer(model.bytes, headerInts(head), options);
   } catch (error) {
-    checkpoint.stop?.(error);  // T129 (3): no part of a model that will not load is fetched further
+    // T129 (3): a load that ends before its weights have a place (the runtime never came, the file is none the engine
+    // takes, the memory said no) fetches no more of the model, as a part that failed for good stops the others. What
+    // was queued for the memory goes with the download
+    checkpoint.stop?.(error);
     throw error;
   }
   let tokenizer;
