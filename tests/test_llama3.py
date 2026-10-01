@@ -1,6 +1,7 @@
 # Llama 3 (T106): the llama3 kind of RoPE scaling, its pre-tokenizer (digits up to three at a time), ignore_merges,
 # the BOS its chat template writes, and the special tokens of a chat template read from tokenizer.json.
 import json
+import math
 import struct
 
 import numpy as np
@@ -63,6 +64,68 @@ def test_the_yarn_frequencies_are_transformers_and_llama_cpps():
     assert np.allclose(small, [1.0, 1 / (0.25 * 0.5 + 0.5), 4.0, 4.0], rtol=1e-12)
 
 
+def transformers_yarn(head_dim, base, factor, original):
+    """_compute_yarn_parameters of transformers 4.57.6 (modeling_rope_utils.py), transcribed line by line in float64:
+    the inverse frequencies and the attention factor, for a config.json that names a factor and an original context
+    only (beta_fast 32, beta_slow 1, truncate on). Written for the review of T235, from the file, not from rope_frequencies()."""
+    dim = head_dim
+
+    def get_mscale(scale, mscale=1):
+        return 1.0 if scale <= 1 else 0.1 * mscale * math.log(scale) + 1.0
+
+    def find_correction_dim(num_rotations, dim, base, max_position_embeddings):
+        return (dim * math.log(max_position_embeddings / (num_rotations * 2 * math.pi))) / (2 * math.log(base))
+
+    def find_correction_range(low_rot, high_rot, dim, base, max_position_embeddings, truncate):
+        low = find_correction_dim(low_rot, dim, base, max_position_embeddings)
+        high = find_correction_dim(high_rot, dim, base, max_position_embeddings)
+        if truncate:
+            low, high = math.floor(low), math.ceil(high)
+        return max(low, 0), min(high, dim - 1)
+
+    def linear_ramp_factor(low, high, dim):
+        if low == high:
+            high += 0.001
+        return np.clip((np.arange(dim, dtype=np.float64) - low) / (high - low), 0, 1)
+
+    pos_freqs = base ** (np.arange(0, dim, 2, dtype=np.float64) / dim)
+    low, high = find_correction_range(32, 1, dim, base, original, True)
+    extrapolation = 1 - linear_ramp_factor(low, high, dim // 2)
+    return (1.0 / (factor * pos_freqs)) * (1 - extrapolation) + (1.0 / pos_freqs) * extrapolation, get_mscale(factor), (low, high)
+
+
+def llama_cpp_yarn(n_dims, base, factor, n_ctx_orig):
+    """The same by the fork of llama.cpp that Ternary-Bonsai's GGUFs come with (88c4bc60), at position 1: ggml.c's
+    ggml_rope_yarn_corr_dims(), ggml-cpu/ops.cpp's rope_yarn_ramp() and rope_yarn(), and the factor llama-context.cpp
+    hands them (get_mscale(factor), taken out again by 1 / (1 + 0.1 ln factor) because rope_yarn() puts it in itself)."""
+    freq_scale = 1.0 / factor
+    corr_dim = lambda n_rot: n_dims * math.log(n_ctx_orig / (n_rot * 2 * math.pi)) / (2 * math.log(base))
+    dims = (max(0, math.floor(corr_dim(32.0))), min(n_dims - 1, math.ceil(corr_dim(1.0))))
+    angles, theta = [], 1.0
+    for i0 in range(0, n_dims, 2):
+        ramp = 1 - min(1, max(0, (i0 // 2 - dims[0]) / max(0.001, dims[1] - dims[0])))
+        angles.append(freq_scale * theta * (1 - ramp) + theta * ramp)
+        theta *= base ** (-2.0 / n_dims)
+    attn_factor = (0.1 * math.log(factor) + 1.0) * (1.0 / (1.0 + 0.1 * math.log(factor)))
+    return np.array(angles), attn_factor * (1.0 + 0.1 * math.log(1.0 / freq_scale)), dims
+
+
+def test_the_yarn_frequencies_and_magnitude_are_those_of_transformers_and_llama_cpp_on_a_grid():
+    """The review of T235: not one head of 128 and one of 8 (the test above) but 600 combinations of head size, theta,
+    factor and original context, against the two code bases' own formulas: the same range of pairs (low, high), the
+    same angle of every pair to 1e-12 (float64 against float64), and the same magnitude."""
+    for head, base, factor, original in ((h, b, f, o) for h in (8, 64, 96, 128, 256) for b in (1e4, 5e5, 1e6, 1e7)
+                                         for f in (1.5, 2.0, 4.0, 8.0, 32.0) for o in (64, 2048, 8192, 16384, 32768, 131072)):
+        scaling = {"rope_type": "yarn", "factor": factor, "original_max_position_embeddings": original}
+        from_transformers, magnitude, dims = transformers_yarn(head, base, factor, original)
+        from_llama_cpp, scale, same_dims = llama_cpp_yarn(head, base, factor, original)
+        assert dims == same_dims, (head, base, factor, original)
+        assert np.allclose(rope_frequencies(head, base, scaling), from_transformers, rtol=1e-12, atol=0), (head, base, factor, original)
+        assert np.allclose(rope_frequencies(head, base, scaling), from_llama_cpp, rtol=1e-12, atol=0), (head, base, factor, original)
+        assert rope_magnitude(scaling) == pytest.approx(magnitude, rel=1e-14)
+        assert rope_magnitude(scaling) == pytest.approx(scale, rel=1e-14)
+
+
 def test_only_the_kinds_of_scaling_the_tables_know_are_let_through():
     config, weights = synthetic_weights()
     _, published = hugging_face(config, weights, True)
@@ -96,7 +159,9 @@ def llama3(max_seq_len=64, scaling=None):
 def test_the_file_and_the_engine_make_the_same_scaled_tables(scaling):
     """float32 files hold the tables (the converter makes them), int8 files do not (the engine does): the two must
     agree, and the engine needs rope_scaling from the options for that (T72's lesson: test the options' path).
-    yarn's tables are also longer by its magnitude (T235), in both: the cos of position 0 says it."""
+    yarn's tables are also longer by its magnitude (T235), in both: the cos of position 0 says it, and every row's cos
+    and sin together (the review of T235: the cos at 0 does not see a sin that was left out, in the file and in the engine
+    alike, as one shared helper written wrong would)."""
     config, tensors, published = llama3(scaling=scaling)
     file = safetensors_file(tensors)
     size = struct.unpack("<Q", file[:8])[0]
@@ -122,6 +187,8 @@ def test_the_file_and_the_engine_make_the_same_scaled_tables(scaling):
     assert (magnitude > 1.13) is (published["rope_scaling"].get("rope_type") == "yarn")
     for dtype in ("float32", "int8"):
         assert np.all(tables[dtype][0][0] == np.float32(magnitude))
+        # every pair of every position is turned and scaled: cos^2 + sin^2 is the magnitude squared, in both tables
+        assert np.allclose(np.hypot(tables[dtype][0], tables[dtype][1]), magnitude, atol=1e-6, rtol=0)
 
 
 def test_llama3_pretokenizer_follows_the_pattern():
