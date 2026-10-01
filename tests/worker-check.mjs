@@ -9,11 +9,12 @@
 //   node tests/worker-check.mjs
 //
 // A slow or stopped line is played by the made-up fetches (a body that comes a chunk at a time, one that stops, one
-// that breaks), on the fast clock: 30 seconds of the worker's are 0.3 s here. What it cannot see (the review of T129,
-// 2026-10-01): the Cache API (there is none in the context, so fetchPart()'s copy and forgetPart() are not run), the
-// Service Worker (public/coi.js) between the worker and the network, a connection that is really stopped by an abort
-// (the made-up fetch only says its signal aborted), and the queue of a real line (a version asked for while the model's
-// parts fill it: tests/slow-check.mjs, slow.yml, sees a line with a queue, by its own proxy).
+// that breaks), on the fast clock: 30 seconds of the worker's are 0.3 s here. The Cache API is a made-up one that does
+// what the specification says of put() (the review of T129, 2026-10-01). What it cannot see: the Service Worker
+// (public/coi.js) between the worker and the network, a connection that is really stopped by an abort (the made-up
+// fetch only says its signal aborted), a browser's own limits (a 64-bit memory's size: tests/mem64-limit.mjs of the
+// probe branch asked Chromium and Firefox), and the queue of a real line (a version asked for while the model's parts
+// fill it: tests/slow-check.mjs, slow.yml, sees a line with a queue, by its own proxy).
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import fs from "node:fs";
@@ -304,6 +305,87 @@ const ok = (line) => {
     assert.ok(!messages.some((m) => m.type === "progress" && m.received === model.bytes));
   }
   ok("the load stops a download it does not want any more");
+
+  // ---- the Cache API (T97's finding, and T129's inner abort and reader.cancel() beside the copy that goes in as the part
+  // streams): a Cache that does what the specification says of put(), which reads the body to its end and, where it
+  // breaks, stores nothing and rejects. A part that came whole is kept for the next visit; none that did not
+  {
+    const kept = new Map();
+    context.caches = {
+      open: async () => ({
+        match: async (key) => (kept.has(key) ? new Response(kept.get(key).slice(), { status: 200 }) : undefined),
+        put: async (key, response) => { kept.set(key, new Uint8Array(await response.arrayBuffer())); },
+        delete: async (key) => kept.delete(key),
+        keys: async () => [],
+      }),
+    };
+    const partsKept = async () => {
+      await sleep(2000);  // the copies go in as the parts stream, and a little after
+      return [...kept].map(([key, bytes]) => [partOf(key.split("?")[0]), bytes.length]).sort();
+    };
+    const keyOf = (part) => `${new URL(`models/m.${String(part).padStart(3, "0")}`, at).href}?bytes=${model.bytes}`;
+    const expectKept = async (parts, what) => {
+      assert.deepEqual(await partsKept(), parts.map((part) => [part, whole(part)[1] - whole(part)[0]]), what);
+      for (const part of parts) assert.deepEqual(kept.get(keyOf(part)), bytesOf(...whole(part)), `${what}: the copy of part ${part} is not the file's`);
+    };
+    try {
+      // a part whose body broke once comes again, and one whole copy is kept
+      kept.clear();
+      fresh((url, init, n) => new Response(body(...whole(partOf(url)), { signal: init.signal, breakAt: partOf(url) === 1 && n === 0 ? PART + 5 * MiB : undefined }), { status: 200 }));
+      {
+        const { into, write } = written();
+        await download().into(write);
+        assert.deepEqual(into, bytesOf(0, model.bytes));
+        await expectKept([0, 1, 2], "a part that broke once");
+      }
+      // a part whose body ends short without an error is no whole: not kept, fetched again
+      kept.clear();
+      fresh((url, init, n) => {
+        const [from, to] = whole(partOf(url));
+        return new Response(body(from, partOf(url) === 1 && n === 0 ? from + 3 * MiB : to, { signal: init.signal }), { status: 200 });
+      });
+      {
+        const { into, write } = written();
+        await download().into(write);
+        assert.deepEqual(into, bytesOf(0, model.bytes));
+        await expectKept([0, 1, 2], "a part that ended short");
+        assert.equal(requests.filter((r) => partOf(r.url) === 1).length, 2);
+      }
+      // a copy that is short (kept before T97's check) is not read again after it failed
+      kept.clear();
+      kept.set(keyOf(1), bytesOf(PART, PART + 3 * MiB));
+      fresh(plain);
+      {
+        const { into, write } = written();
+        await download().into(write);
+        assert.deepEqual(into, bytesOf(0, model.bytes));
+        await expectKept([0, 1, 2], "a short copy");
+        assert.equal(requests.filter((r) => partOf(r.url) === 1).length, 1, "the short copy was not left for the network's answer");
+      }
+      // a load cancelled, or a write refused, while parts stream: no part that did not come whole is kept
+      kept.clear();
+      fresh((url, init) => new Response(body(...whole(partOf(url)), { signal: init.signal, delay: 200 }), { status: 200 }));
+      {
+        const load = new AbortController(), source = download(load.signal);
+        await sleep(300);
+        load.abort();
+        await failure(source.into(() => {}));
+        assert.deepEqual(await partsKept(), [], "a cancelled load kept parts that did not come whole");
+      }
+      kept.clear();
+      fresh((url, init) => new Response(body(...whole(partOf(url)), { signal: init.signal, delay: 20 }), { status: 200 }));
+      {
+        const failed = await failure(download().into((offset) => {
+          if (offset >= PART) throw new RangeError("Invalid typed array length: 4188160");
+        }));
+        assert.equal(failed?.error.name, "RangeError");
+        assert.deepEqual(await partsKept(), [], "a refused write kept parts that did not come whole");
+      }
+    } finally {
+      context.caches = undefined;
+    }
+  }
+  ok("the Cache API keeps the parts that came whole, and none that did not");
 }
 
 // ---- huggingface.co: fetchRange(), inOrder(), refused() (T112, T119, T129 (3) and (5))
