@@ -1240,24 +1240,38 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### Bonsai 2 の列（T228〜T234）: Bonsai 2（prism-ml の 3 値の 27B）に対応する — 週明けに着手（2026-09-28、持ち主「緊急対応、新しいモデルに対応して本番更新してほしい」→「分割してタスクに積んでくれ、週明けに対応だ」）
 - 出どころ: https://huggingface.co/collections/prism-ml/bonsai-2 。中身は `prism-ml/Ternary-Bonsai-2-27B-gguf`（apache-2.0、base は Qwen/Qwen3.8-27B、sha b072e1d3…）: `Ternary-Bonsai-2-27B-PTQ1_0.gguf`（5.95 GB、1.75 ビット / 重み）・`-PQ2_0.gguf`（7.21 GB、2.13 ビット）・`-F16.gguf`・mmproj（視覚、BF16 と Q8_0）。ほかに `-gguf-dev`（Q2_0、prism の fork が要る）と `-mlx-2bit`。カードの要点: 27.36B（言語 24.35B・64 ブロック、埋め込みと LM head 2.54B、視覚 0.46B）、Qwen3.8 の hybrid attention（約 75% が linear attention）、262K の文脈、埋め込み・attention・MLP・LM head まで全部 3 値、カーネルは Prism ML の llama.cpp の fork（CUDA・Metal）。
 - 順（前にやるべきことは採番する、の決まり）: T228 → T229 → T230 → T231 → T232 → T233 → T234。T228 の調べで無理と分かれば、そこで持ち主に判断を仰ぐ。
+- **T228 の調べの勧め（2026-10-01、持ち主の判断待ち）: 小さいモデルから。** (1) Ternary-Bonsai-1.7B（PQ2_0 463 MB、形は今ある Qwen3）を、PQ2_0 を int8 に広げる読みと yarn の RoPE で一覧に。(2) T229 を Qwen3.5 0.8B（同じ hybrid attention、Q8_0 の GGUF 812 MB）で通す。(3) T230 の残りと T231 を Ternary-Bonsai の 1.7B〜8B で。(4) 回した基底（Hadamard）と 27B の参照、T233 で 27B。(5) T232 と T234。**まだ番号の無い前の仕事が 4 つある**（本会話が採番する）: 「Ternary-Bonsai-1.7B を一覧に（PQ2_0 → int8 と yarn）」「Qwen3.5 0.8B を一覧に」「回した基底（符号と Walsh–Hadamard 変換）を forward に」「27B の参照（CI で fork を建てて固定値、または行列を 1 つずつ広げる NumPy）」。
 
-### T228 [調査][Bonsai] Bonsai 2 と Qwen3.8 の形を調べる — 状態: 未着手（週明け。規模 小〜中）
-- Qwen3.8 の hybrid attention の中身（linear attention の種類: Gated DeltaNet などか、層の並び、状態の大きさ、RoPE の有無）、tokenizer と chat_template（思考の形）、config の項目。PTQ1_0・PQ2_0 のブロックの並び（Prism の llama.cpp の fork の `ggml` の型の定義と、CPU の参照の dequant）。ライセンス（apache-2.0、NOTICE）と KNOWN_ISSUES.md。prism-ml のほかの小さいモデル（前の版の Bonsai など）が一覧に入れやすいか。結果として、T229〜T234 の規模と、ブラウザの上限（64 ビットのメモリ 16 GB、iPhone）で動く見込みを数字で出す。元ネタの許諾（fork は MIT のはず、確かめる）。
+### T228 [調査][Bonsai] Bonsai 2 と Qwen3.8 の形を調べる — 状態: **反映済み**（2026-10-01、調べだけ。本線に入れるのは本会話）
+- 結果は [docs/notes/t228-bonsai-2-2026-10-01.md](docs/notes/t228-bonsai-2-2026-10-01.md)（出どころの URL と版つき）。台帳の名前と大きさは実物と合っていた。
+- **形**: linear attention は Gated DeltaNet。64 層のうち 4 層ごとの 4 つ目（16 層）が full attention、48 層が linear。linear の層は KV を持たず、状態は 48 head × 128 × 128 の float32（48 層で 144 MiB、文脈に依らない）と畳み込みの前 3 トークン。full の層は q が 2 倍幅（gate つき）、head 256、RoPE は先頭 64 次元。KV は 1 位置 64 KiB（float16）。
+- **3 値**: PQ2_0 は 34 バイト（float16 のスケール + 2 ビット × 128）、PTQ1_0 は 28 バイト（3 進で 5 個 / バイトを 24 バイト、4 個 / バイトを 2 バイト、float16 のスケール）。読み方は F16 のファイルと頭の数十行でビット単位に合った。埋め込みと分類器も 3 値。fork（PrismML-Eng/llama.cpp、`88c4bc60`）は MIT。
+- **台帳に無かったもの**: 重みは回した基底（Hadamard、1024 個の塊、符号つき）で入っていて、行列の前に毎回活性値を変換する。F16 のファイルも同じ。前分割は新しい型（`qwen35`: 結合文字を字に入れる）、chat_template はマクロを呼ぶので手で書く。原本の Qwen3.8 は 3 値でないので、重みを比べる相手は F16 の GGUF だけ。
+- **入るか**: 重み 5.53 GiB（PTQ1_0）、文脈 4096 で合計 5.92 GiB。16 GiB の 64 ビットのメモリに入る（文脈は約 16 万位置まで）。Safari の 4 GiB には入らない。持ち主のスマホで持てるかは未計測。
+- **速さ（見積もり、未計測）**: 1 トークンに 25.6 G の積和。int8 に広げて掛けるなら持ち主の Android の 4 本で約 1.1〜1.7 tok/s、CI の 4 本で約 1.0 tok/s。考える形（既定）の勧めの出力は 16384 トークンで、1 tok/s なら 4.5 時間。GPU は帯域の上限で 5.8〜7.1 tok/s まで。
+- **小さい実物**: Ternary-Bonsai の 1.7B・4B・8B は Qwen3 の形で回した基底でない（PQ2_0 463 MB・1.07 GB・2.18 GB、yarn の RoPE）。Qwen3.5 の 0.8B・2B・4B・9B は同じ hybrid attention（3 値でない）。
+- **持ち主に決めてもらうこと**: 27B を最後まで進めるか、小さい 2 つを一覧に足すか、27B の詰め方（PTQ1_0 か PQ2_0）、既定をすぐ答える形にするか、文脈をいくつで切るか、top_k・min_p・presence_penalty を足すか。
+- 頼みの文（残す）: Qwen3.8 の hybrid attention の中身（linear attention の種類: Gated DeltaNet などか、層の並び、状態の大きさ、RoPE の有無）、tokenizer と chat_template（思考の形）、config の項目。PTQ1_0・PQ2_0 のブロックの並び（Prism の llama.cpp の fork の `ggml` の型の定義と、CPU の参照の dequant）。ライセンス（apache-2.0、NOTICE）と KNOWN_ISSUES.md。prism-ml のほかの小さいモデル（前の版の Bonsai など）が一覧に入れやすいか。結果として、T229〜T234 の規模と、ブラウザの上限（64 ビットのメモリ 16 GB、iPhone）で動く見込みを数字で出す。元ネタの許諾（fork は MIT のはず、確かめる）。
 
 ### T229 [追加][Bonsai] linear attention（Qwen3.8 の hybrid attention）をエンジンの CPU の道に — 状態: 未着手（T228 の後。規模 大）
 - NumPy の参照（`llama2_numpy.py`）と `forward.js` の両方。状態（再帰の状態）を KV キャッシュの代わりに持つ層と、普通の attention の層の混ぜ方。legacy 形式に層の種類をどう持たせるか（`FORM` に足す、T144 の決まり）。元ネタは transformers の Qwen3.8 の実装と llama.cpp（MIT）。
+- T228 から（2026-10-01）: 規模は大のまま。**小さい実物で通す: Qwen3.5 0.8B**（`Qwen/Qwen3.5-0.8B`、dim 1024・24 層、`unsloth/Qwen3.5-0.8B-GGUF` の Q8_0 が 812 MB。3 値でも回した基底でもないので、今の int8 の道で動く。GGUF が原本と同じ重みかは `gguf_check.py tensors` で先に）。足すもの: 層の種類（4 層ごとに full）、Gated DeltaNet（長さ 4 の畳み込みと状態、q と k の L2、sigmoid・softplus・exp の門、状態の更新、門つきの RMSNorm）、full の層の 2 倍幅の q と gate、先頭 64 次元だけの RoPE（theta 1e7）、head 256、前分割 `qwen35`、GGUF の `qwen35` の名前の表（`ssm_*`・`attn_qkv`・`attn_gate`）。`FORM` に層の並びと linear の head の数。HF の norm の重みは `1 + weight`（GGUF は足した後）。**v の head が k の head より多いモデル（Qwen3.5 4B から、27B は 16 対 48）は、GGUF が v の head の並びを替えてある**（0.8B と 2B は踏まない）。参照は transformers（Apache-2.0、`modeling_qwen3_5.py`）だが開発機に PyTorch が無いので、素朴な Python の参照を試験に書くか CI で。式と行番号は docs/notes/t228-bonsai-2-2026-10-01.md の 1 節。27B に要る「回した基底」はここに入れず、別のタスクに（採番待ち）。
 
-### T230 [追加][Bonsai] 3 値の重み（PTQ1_0・PQ2_0）を読む — 状態: 未着手（T228 の後。規模 中〜大）
+### T230 [追加][Bonsai] 3 値の重み（PTQ1_0・PQ2_0）を読む — 状態: 未着手（T228 の後。規模 中、int8 に広げる読みだけなら小）
 - GGUF の読み手（`gguf_model()`）に 2 つの型。int8 に広げると 27B で 27 GB になり 16 GB に入らないので、**3 値のまま持つ**新しい dtype を legacy 形式と変換器に足す（`CONVERTER` を上げる回。T143 の決まりどおり、待っている変換器の直しを同じ回に）。`gguf_check.py` に参照の読み（F16 の GGUF と比べる）。
+- T228 から（2026-10-01）: 規模は中（int8 に広げる読みだけなら小）。**2 つに分けられる**: (a) PQ2_0（型 142、34 バイトに 128 個）を int8 に損なく広げて読む。これだけで Ternary-Bonsai-1.7B（int8 で 1.80 GiB）が今のカーネルで動く（yarn の RoPE も要る: 変換器は今 yarn を断る）。(b) 3 値のまま持つ dtype（128 個ごとに float16 のスケール）と PTQ1_0（型 143、28 バイト。重みの順はバイトの順でない）、BF16 の行列。27B は int8 だと 30.2 GB なので (b) が要る。読み方は F16 のファイルとビット単位で合うことを確かめてある（`.tmp/t228/sample.py` の形を `gguf_check.py` に）。ブロックの並びは docs/notes/t228-bonsai-2-2026-10-01.md の 3 節。原本の Qwen3.8 は 3 値でないので、比べる相手は F16 の GGUF（53.8 GB、Range で一部だけ）。
 
 ### T231 [性能][Bonsai] 3 値の行列 × ベクトルと行列 × 行列の CPU のカーネル — 状態: 未着手（T230 の後。規模 大）
 - WASM SIMD で 3 値のまま掛ける（T98 の 6 ビットの広げと同じ考え方で、グループを int8 に広げて relaxed_dot か、3 値の加減算で）。元ネタは Prism の fork の CPU のカーネル（MIT なら行を写せる）、BitNet の TL1/TL2（MIT）。スレッド（jobs.js）、タイル（T159）、補正（T197）。
+- T228 から（2026-10-01）: 規模は大のまま。fork は MIT と確かめた（`Copyright (c) 2023-2026 The ggml authors`。行を写すなら著作権の行と許諾文の全文を残す）。fork の CPU は活性値を Q8_0 にして 3 値のグループと整数で掛ける形で、今の int8 の道と同じ作り。元ネタの場所: NEON の PQ2_0 は `ggml/src/ggml-cpu/arch/arm/quants.c` 297〜361 行、x86 の PTQ1_0 は `arch/x86/quants.c` 717〜791 行（NEON の PTQ1_0 と WASM のものは無い）。**27B の速さの見積もりは約 1〜1.7 tok/s**（25.6 G 積和 / トークン、int8 のカーネルの積和の速さを越えない前提。未計測）。帯域には 3〜4 倍の余りがあるので、決めるのは計算。まず Ternary-Bonsai の 1.7B・4B・8B で測る。Hadamard のカーネル（1024 個の塊の和と差）は別のタスク（採番待ち）。
 
 ### T232 [性能][Bonsai][WebGPU] 3 値の GPU の道 — 状態: 未着手（T231 の後。規模 大）
 - 行列 × ベクトル（答え）とタイル（プロンプト）のシェーダ、linear attention の層の GPU の段。WebGPU の元ネタは Hugging Face の space `webml-community/ternary-bonsai-2-webgpu-kernels`（コレクションに入っている。許諾を確かめる）。重みを GPU だけに（T156・T210）。
+- T228 から（2026-10-01）: 規模は大のまま。**space には許諾の記載が無い**（README に無く、`index.html` は縮めた JavaScript）ので、行は写さず形だけ。重みは PTQ1_0 を使い、`shader-f16` と `subgroups` を求めている。fork の WebGPU の backend には `gated_delta_net.wgsl`（MIT、写せる）があるが、3 値の型と Hadamard は無い（Vulkan の `fwht.comp`・`mul_mat_vecq_ptq1_0.comp` が形の手本）。3 値の広げ・Hadamard・Gated DeltaNet の段は元ネタの無いシェーダになる。帯域の上限は持ち主の Android の GPU（39.9 GB/s）で 5.8〜7.1 tok/s。GPU に 5.5 GiB を置けるかは未計測（T173 の数が要る）。
 
-### T233 [追加][Bonsai] 一覧に Bonsai 2 を足す — 状態: 未着手（T229〜T231 の後、GPU は T232 の後でもよい。規模 小〜中）
+### T233 [追加][Bonsai] 一覧に Bonsai 2 を足す — 状態: 未着手（T229〜T231 と、回した基底・27B の参照（採番待ち）の後、GPU は T232 の後でもよい。規模 中）
 - `src/models.js` の項目（PTQ1_0 か PQ2_0、語彙と config は原本 Qwen3.8 から T136 の段 ② の形で、書式、思考の形の 2 つ）、`LICENSES`、`gguf.yml` の突き合わせ、固定値、format_check。大きさの警告（64 ビットのメモリ、Chrome と Firefox のみ、iPhone は不可の見込み）。本番の `models.yml` で答えること。
+- T228 から（2026-10-01）: 規模を中に上げた。**原本の Qwen3.8 は 3 値でない**ので、段 ② の形で原本から取るのは語彙・config・書式だけで、`gguf.yml` の突き合わせの相手は F16 の GGUF。書式はマクロを呼ぶので手で書く（ChatML。考える形の既定は `reasoning_effort: xhigh` で、システム文が無くてもシステムのターンが入る。すぐ答える形は `<think>\n\n</think>\n\n`）。BOS は本物では置かない（`add_bos_token: false`）。止まりは 248046 と 248044。文脈は 262144 だが 16 GiB に入るのは約 16 万位置まで（PTQ1_0）で、切る値は持ち主に聞く。出典は Prism ML と Qwen の両方（NOTICE.txt）。勧めの設定の top_k・min_p・presence_penalty はエンジンに無い。Safari は不可（重みだけで 5.53 GiB）。
 
 ### T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 状態: 未着手（T233 の後。規模 小）
 - 速さ・メモリ・品質（perplexity か固定値）を記録のあるものだけで。
