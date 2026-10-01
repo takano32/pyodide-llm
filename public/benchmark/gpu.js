@@ -1144,15 +1144,19 @@ function quantizedOff(x, xq, xs, line) {
 }
 // T225: the keys or values of a position as the GPU wrote them (got: float16 bits), against the reference's own (x,
 // float64). WGSL leaves to the implementation which of the two float16 next to a float32 a conversion gives (§15.7.6
-// "the result is either one or the other, and the choice is implementation-defined"; pack2x16float converts so), and
-// Direct3D rounds toward zero (the D3D11.3 functional specification, 3.2.2: "round-to-zero must be used during
-// conversion to another float format"), where JavaScript's toHalf() and Vulkan's and Metal's devices here round to the
-// nearest. A reference that rounds its own way is then off by up to a float16's ulp (2^-10 of the value) in every key
-// and value of the position, which the attention carries into its output: on the layer check's numbers, in JavaScript,
-// keys and values rounded toward zero move the scales of the attention's quantized output by 1.0e-3 to 5.9e-3
-// (QUANTIZED_SCALE_LINE is 1e-3) and the stream by 7.5e-4 to 1.4e-3 of what the layer added (LAYER_LINE is 1e-3), with
-// the cache at 6.9e-4 to 9.5e-4 of its largest (.tmp/t225/sim.mjs, 8 draws, 2026-10-01): what the owner's NVIDIA PC on
-// Windows reported twice (T225). So the reference takes the GPU's bits wherever they are a float16 next to its own
+// Floating Point Conversion: "WGSL does not specify whether the higher or lower representable value is chosen, and
+// different instances of such a conversion may choose differently"; §17.9.9: pack2x16float converts so), and Direct3D
+// rounds toward zero (the D3D11.3 functional specification, 3.2.2 Floating Point Conversion: "Round-to-zero must be
+// used during conversion to another float format"; 22.13.2: f32tof16 "Follows D3D rules for floating point
+// conversion", which is what Dawn's HLSL writer makes of pack2x16float), where JavaScript's toHalf() and the software
+// adapters here (lavapipe, SwiftShader) round to the nearest. A reference that rounds its own way is then off by up to
+// a float16's ulp (2^-10 of the value) in every key and value of the position, which the attention carries into its
+// output, the keys' shift of the scores the most (a score moves by up to 2^-10 × Σ|q·k| ÷ √head: 5e-2 to 1e-1 at the
+// largest head of the layer check, 7e-3 to 3e-2 as it falls out): on the layer check's numbers, in JavaScript, keys
+// and values rounded toward zero move the scales of the attention's quantized output by 5.7e-4 to 1.2e-2, in 97% of
+// 300 draws past QUANTIZED_SCALE_LINE (1e-3), and the stream by 3.4e-4 to 2.5e-3 of what the layer added, in 45% past
+// LAYER_LINE (1e-3), with the cache at 4.5e-4 to 9.7e-4 of its largest: what the owner's NVIDIA PC on Windows reported
+// twice (T225; the T225 review's 300 draws, 2026-10-01). So the reference takes the GPU's bits wherever they are a float16 next to its own
 // value: no farther from x than a float16's ulp at x and HALF_SLACK of the row's largest, for the GPU's float32 value
 // is not x itself (a float32 sum of n products in another order is off by about sqrt(n) × 2^-24 of the terms' spread,
 // 2.7e-6 of it at n = 2112, about 1e-6 of the row's largest: the slack is ten times that, 1 to 2% of an ulp at the
@@ -1190,6 +1194,8 @@ const farthest = (got, want) => {
   });
   return off / largest;
 };
+// (these are pure: tests/gpu-choice-check.mjs imports them, to hold the rounding of the cache to what a device may choose)
+export { toHalf, fromHalf, heldHalves, halvesSaid, farthest };
 // The layer in JavaScript (float64 sums), as the CPU's forward pass runs it: what every form is held to. d: the
 // check's weights ({w, s} of each matrix), h, norms, keys, values (float16 bits), angles and eps. inputs(point, x): the
 // vector a matrix takes where x comes in, at the points INPUTS names (T175: the DP4A forms' x quantized; else x itself).

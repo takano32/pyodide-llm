@@ -120,6 +120,84 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(one(2 ** -25), 0, "half the least subnormal: 0 (the even one)");
   assert.equal(one(-(2 ** -26)), 0x8000, "below it: -0");
 }
+// T225's review: heldHalves, with which /benchmark/'s layer check holds a key or a value of the cache to a float16 next
+// to its own (WGSL leaves to the device which of the two neighbours a conversion gives, §15.7.6, and Direct3D takes the
+// one toward zero, D3D11.3 3.2.2: the owner's NVIDIA PC on Windows rounded every key and value that way). A device that
+// rounds to the nearest, toward zero or away from zero is right, and the reference goes on with its bits; one that is
+// a float16 farther off is not (counted "farther", and the reference keeps its own nearest). Nothing else in the
+// repository rounds toward zero (lavapipe and SwiftShader round to the nearest), so this is where that is held
+{
+  globalThis.onmessage = null;  // (the worker's file sets it as a module's plain assignment)
+  const { fromHalf, halvesSaid, farthest, heldHalves, toHalf } = await import("../public/benchmark/gpu.js");
+  const toFloat = (h) => {
+    const sign = h & 0x8000 ? -1 : 1, exponent = (h >> 10) & 0x1f, fraction = h & 0x3ff;
+    return exponent ? sign * 2 ** (exponent - 15) * (1 + fraction / 1024) : sign * 2 ** -24 * fraction;
+  };
+  const nearest = (x) => halvesOf(Float32Array.of(x), new Uint16Array(1))[0];
+  // the neighbours by hand: toward zero (the nearest, or the one below it where the nearest is the larger) and away
+  const inwards = (x) => (Math.abs(toFloat(nearest(x))) > Math.abs(x) ? nearest(x) - 1 : nearest(x));
+  const outwards = (x) => (Math.abs(toFloat(nearest(x))) < Math.abs(x) ? nearest(x) + 1 : nearest(x));
+  let seed = 12345;
+  const random = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+  // 600 values of the size of keys and values (either sign, 2^-13 to 2^6 times 1 to 2: past the subnormals' edge at
+  // 2^-14 too), float32 as the GPU's are, and a few the float16 holds exactly
+  const values = Float64Array.from({ length: 600 }, () => Math.fround((random() < 0.5 ? -1 : 1) * 2 ** (-13 + 19 * random()) * (1 + random())));
+  values.set([0, 2 ** -24, -(2 ** -24), 1, -2, 0.5, 8], 0);
+  const counts = (got) => {
+    const held = heldHalves(values, Uint16Array.from(values, got));
+    return { held, line: [held.same, held.inward, held.outward, held.far] };
+  };
+  // toHalf (the check's) and halvesOf (the engine's) are the same rounding; fromHalf takes every finite float16 back
+  for (const x of values) assert.equal(toHalf(x), nearest(x), `toHalf of ${x}`);
+  for (let h = 0; h < 0x10000; h++) if ((h & 0x7c00) !== 0x7c00) assert.equal(fromHalf(h), toFloat(h), `fromHalf of ${h.toString(16)}`);
+  // to the nearest: all of them
+  assert.deepEqual(counts(nearest).line, [values.length, 0, 0, 0]);
+  // toward zero: the ones that differ from the nearest are neighbours toward zero, about half of them, taken as the
+  // GPU's; and away from zero the same the other way
+  const inward = values.filter((x) => inwards(x) !== nearest(x)).length, outward = values.filter((x) => outwards(x) !== nearest(x)).length;
+  assert.ok(inward > 200 && inward < 400 && outward > 200 && outward < 400, `about half round the other way: ${inward} and ${outward}`);
+  {
+    const { held, line } = counts(inwards);
+    assert.deepEqual(line, [values.length - inward, inward, 0, 0]);
+    assert.deepEqual([...held.bits], [...Uint16Array.from(values, inwards)], "the reference goes on with the GPU's bits");
+    assert.deepEqual([...held.nearest], [...Uint16Array.from(values, nearest)], "and has its own nearest beside them");
+  }
+  assert.deepEqual(counts(outwards).line, [values.length - outward, 0, outward, 0]);
+  // a float16 farther than that (one below the neighbour toward zero: 1 to 2 ulp off the value), on the elements in the top
+  // quarter of the row's largest, where the slack (HALF_SLACK, 1e-5 of the largest) is under a tenth of an ulp: not
+  // taken (the reference keeps its own nearest), counted farther, but for the few that lie within the slack of a float16
+  {
+    const largest = values.reduce((most, x) => Math.max(most, Math.abs(x)), 0), top = [...values.keys()].filter((i) => Math.abs(values[i]) >= largest / 4);
+    const got = Uint16Array.from(values, (x) => (Math.abs(x) >= largest / 4 ? inwards(x) - 1 : inwards(x)));
+    const held = heldHalves(values, got);
+    assert.ok(top.length > 30, `${top.length} in the top quarter`);
+    assert.ok(held.far >= 0.85 * top.length, `${held.far} farther of ${top.length}`);
+    for (const i of top) if (held.bits[i] !== got[i]) assert.equal(held.bits[i], held.nearest[i], `element ${i} (${values[i]}) not taken`);
+    assert.equal(held.same + held.inward + held.outward + held.far, values.length);
+  }
+  // the slack: a tiny element (1e-7) the GPU gives as 5e-5 is within 1e-5 of the largest (8: 8e-5), as 2e-4 is not
+  {
+    const x = Float64Array.of(8, 1e-7), within = heldHalves(x, Uint16Array.of(nearest(8), nearest(5e-5))), beyond = heldHalves(x, Uint16Array.of(nearest(8), nearest(2e-4)));
+    assert.deepEqual([within.same, within.outward, within.far], [1, 1, 0]);
+    assert.equal(within.bits[1], nearest(5e-5));
+    assert.deepEqual([beyond.same, beyond.outward, beyond.far], [1, 0, 1]);
+    assert.equal(beyond.bits[1], nearest(1e-7));
+  }
+  // an infinity or a NaN of the GPU's is farther; an exact value one float16 either side is a neighbour, two is not
+  {
+    const x = Float64Array.of(8, 2.5), exact = nearest(2.5);
+    for (const wrong of [0x7c00, 0x7e00, 0xfc00]) assert.equal(heldHalves(x, Uint16Array.of(nearest(8), wrong)).far, 1, `float16 ${wrong.toString(16)}`);
+    assert.equal(heldHalves(x, Uint16Array.of(nearest(8), exact + 1)).outward, 1);
+    assert.equal(heldHalves(x, Uint16Array.of(nearest(8), exact - 1)).inward, 1);
+    assert.equal(heldHalves(x, Uint16Array.of(nearest(8), exact + 2)).far, 1);
+  }
+  // the words
+  assert.equal(halvesSaid([{ same: 100, inward: 0, outward: 0, far: 0 }, { same: 92, inward: 0, outward: 0, far: 0 }]), "K and V 192 to the nearest float16");
+  assert.equal(halvesSaid([{ same: 50, inward: 50, outward: 0, far: 0 }, { same: 40, inward: 52, outward: 0, far: 0 }]),
+    "K and V 90 to the nearest float16, 102 toward zero, 0 away from it, 0 farther");
+  assert.equal(farthest([1, 2.5], [1, 2]), 0.25);
+  assert.ok(Number.isNaN(farthest([NaN, 1], [1, 2])), "a NaN is not within any line");
+}
 // T152: the status line's words (the owner's, 2026-09-27): both on the GPU, before either is timed, the answers alone on
 // the CPU (faster here), and a reason for the answers (in the console alone)
 {
