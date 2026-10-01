@@ -124,7 +124,9 @@ for (const wide of [false, true]) {
       }
     }
     // one value of any one place that is not ternary: half the scale, a little more than it, twice it, not a number
-    for (const [at, spoil] of [[0, 0.5], [127, 1.0000001], [128 + 63, 2], [128 * 39 + 127, NaN], [128 * 7 + 5, -0.999999]]) {
+    // (and half the scale in each of the four vectors of sixteen values, which a look at three of them would miss)
+    for (const [at, spoil] of [[0, 0.5], [127, 1.0000001], [128 + 63, 2], [128 * 39 + 127, NaN], [128 * 7 + 5, -0.999999],
+      [128 * 9 + 32 + 1, 0.5], [128 * 9 + 32 + 6, 0.5], [128 * 9 + 32 + 11, 0.5], [128 * 9 + 32 + 14, 0.5], [128 * 39 + 127, 0.5]]) {
       make();
       const g = at >> 7;
       for (let j = 0; j < 128; j++) F[x / 4 + g * 128 + j] = j % 2 ? 3 : -3;

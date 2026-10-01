@@ -226,7 +226,18 @@ function halfToFloat(h) {
   // of a block come back through, and its rows), for every model the GPU takes: int8 and six bits of whole groups
   let withGpu = 0;
   plans.forEach((p, n) => {
-    if (!p.keep_int8 || shapes[n].loose || p.dtype === "ternary") return;  // (T231: ternary weights stay on the CPU, T232 is the GPU's)
+    if (p.dtype === "ternary") {
+      // T231: ternary weights stay on the CPU (T232 is the GPU's): the engine says why, and puts nothing aside for a GPU
+      const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: true, outliers: 8, gpu: false, shared: true };
+      const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
+      const engine = engineOn(p, planOf(p, { outliers: 8 }), { base: CONTROL_BYTES, memory: sharedMemory(p, bound), halfKeys, gpu: silentGpu });
+      const used = engine.memoryBytes() - CONTROL_BYTES - p.size;
+      assert.equal(engine.gpuWhyNot, "ternary weights are not on the GPU yet", `${shapes[n].name}: the GPU was not refused for its ternary weights`);
+      assert.ok(used <= bound, `${shapes[n].name}: a GPU asked for put ${(used / MiB).toFixed(2)} MiB after the checkpoint, the CPU alone counts ${(bound / MiB).toFixed(2)}`);
+      engine.release();
+      return;
+    }
+    if (!p.keep_int8 || shapes[n].loose) return;
     for (const relaxed of [true, false]) {
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: true, outliers: 8, gpu: true, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
