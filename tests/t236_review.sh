@@ -128,8 +128,12 @@ case "$stage" in
     revision=${2:?a revision}
     base="https://huggingface.co/prism-ml/Ternary-Bonsai-$size-unpacked/resolve/$revision"
     mkdir -p "$dir/scan-$size"
-    curl -sSL -f --retry 5 "$base/model.safetensors.index.json" -o "$dir/scan-$size/index.json"
-    for shard in $(python3 -c "import json,sys; print(' '.join(sorted(set(json.load(open(sys.argv[1]))['weight_map'].values()))))" "$dir/scan-$size/index.json"); do
+    if curl -sSL -f --retry 5 "$base/model.safetensors.index.json" -o "$dir/scan-$size/index.json"; then
+      shards=$(python3 -c "import json,sys; print(' '.join(sorted(set(json.load(open(sys.argv[1]))['weight_map'].values()))))" "$dir/scan-$size/index.json")
+    else
+      shards=model.safetensors  # a repository of one file (the 1.7B)
+    fi
+    for shard in $shards; do
       curl -sSL -f --retry 5 --retry-delay 10 -C - -o "$dir/scan-$size/$shard" "$base/$shard"
       echo "T246SCAN fetched $shard: $(stat -c %s "$dir/scan-$size/$shard") bytes"
     done
