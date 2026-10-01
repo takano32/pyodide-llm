@@ -111,6 +111,8 @@ const ids = (args.length ? args : ["made-up", "stories15M", "tiny-lm", "llm-jp-3
 const COUNT = 150, KV_START = 8;
 // T152: the greedy steps NumPy takes after the prompt
 const GEN = 8;
+// T219: the status line of a step refused for its logits (forward.js's generateMany)
+const NOT_FINITE_STATUS = /^prompts on the CPU \(the GPU computed logits that are not finite numbers/;
 // The worst row of the keys and values against NumPy's, by what the matrices' shader computes in (T147, measured on
 // Dawn's lavapipe and this machine's SwiftShader, 149 tokens: two blocks of 64 and a part). The CPU's forward.js: 4.1e-2
 // to 3.2e-1 (its 7-bit activations; the made-up model's random weights the most). A GPU that is wrong lands far past
@@ -1095,9 +1097,6 @@ for (const { id, cpu, gpu: runs, late, refused, remembered, alone, broken } of o
 }
 await flushed();
 process.exit(failed ? 1 : 0);
-
-// T219: the status line of a step refused for its logits (forward.js's generateMany)
-const NOT_FINITE_STATUS = /^prompts on the CPU \(the GPU computed logits that are not finite numbers/;
 
 // T213: the first matrix a token's layer would bind inside a joined buffer (q, k and v as one, gate and up as one,
 // in gpu.js's tokensLayout's order; each after the ones before it) whose values or scales would not start where a device binds a buffer, or null where every
