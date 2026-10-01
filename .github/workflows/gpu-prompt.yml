@@ -51,7 +51,7 @@ on:
         required: false
         default: false
       models:
-        description: 'model ids of this directory, synthetic, or made-up (every made-up model), separated by spaces (default: the suite; none with real=)'
+        description: 'model ids of this directory, synthetic, or made-up (every made-up model on Dawn, fewer in the browsers: gpu-check.mjs madeUp; name a model to run it in all), separated by spaces (default: the suite; none with real=)'
         required: false
       real:
         description: 'T183: ids of Hugging Face models of src/models.js, fetched and converted to int8 here (e.g. hf-qwen2.5-0.5b-instruct hf-qwen3-0.6b)'
