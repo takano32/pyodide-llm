@@ -93,6 +93,19 @@ const engine = option("--engine", "chromium");
 // T147: --forms <part,part>: only the matrices' shaders whose names hold one of these (all of them by default)
 const only = option("--forms", "");
 const webgpu = option("--webgpu", "");
+// T241's review: the rounds that put a NaN or an infinity in a block's row, a step's values and the GPU's weights, and the
+// quantizers alone. They cost 0.4 s a run on Dawn's lavapipe and 6 to 17 s a run of the steps on SwiftShader (the made-up
+// models of 512 wide the most: 60 s), and 6 s an engine for the weights (30 engines): the full suite's Edge job went from
+// 23 to 35 minutes with them (3 to 6 minutes of that in the runs, 3.5 in the engines; the rest was the runner's pace,
+// run 36889437902 against 36884862122). A browser's SwiftShader is the same compiler in Chromium, Chrome and Edge, and the
+// shaders do not depend on the model (QUANTIZE and NORM_QUANTIZE are one each; the three made-up models below differ in the
+// steps around them: Llama's fused layer, Qwen3's norms of the heads, GPT-2's LayerNorm and GELU), so: Dawn runs every
+// round on every model, Chromium the rows and the values on those three (the weights are lavapipe's), Chrome and Edge none.
+// --nan all|small|none chooses otherwise
+const NAN_MODELS = ["synthetic", "synthetic-qwen3", "synthetic-gpt2"];
+const nanRounds = { dawn: { models: "all", weights: true }, chromium: { models: NAN_MODELS, weights: false } }[engine] ?? { models: [], weights: false };
+const nanChoice = option("--nan", "");
+if (nanChoice) Object.assign(nanRounds, { all: { models: "all", weights: true }, small: { models: NAN_MODELS, weights: false }, none: { models: [], weights: false } }[nanChoice]);
 // T153: the made-up models of another form (see above). Three layers: a layer's vectors are read at l × their size,
 // which a second layer alone would not tell from 0 + size
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
@@ -527,6 +540,8 @@ try {
     // and give the GPU every block it can take (always: a fallback adapter is far slower than the CPU). T155: the
     // case's own (the pieces of its matrices)
     const TESTS = { fallback: true, always: true, ...c.force };
+    // T241's review: whether this browser puts a NaN in this model's rows and values (NAN_ROUNDS, and why, are above)
+    const nan = NAN_ROUNDS.models === "all" || NAN_ROUNDS.models.includes(c.id);
     // T152: the steps of a generation (see the head of this file), where the GPU took them
     const generation = (engine) => {
       // (T152's review: and the most this adapter binds, which a classifier may pass, Llama 3.2 1B's 262.7 MB on lavapipe's 128 MiB)
@@ -738,10 +753,10 @@ try {
         engine.newGeneration();
         engine.forwardMany(tokens.slice(0, 2), n + 1);
         out.past = { gpuTokens: engine.gpuTokens };
-        out.brokenRows = brokenRows(engine, seen);
+        if (nan) out.brokenRows = brokenRows(engine, seen);
       }
       if (gpu && steps && out.steps && !out.steps.why) {
-        out.steps.brokenValues = brokenValues(engine, seen);
+        if (nan) out.steps.brokenValues = brokenValues(engine, seen);
         out.steps.nanLogits = refusal(engine);
       }
       // T205: the GPU's worker says it let go of its device before the next model is read (false: not within 5 s)
@@ -838,7 +853,7 @@ try {
     // T241: the DP4A forms on a GPU with a weight of the last layer that is no finite number (brokenWeight), on three
     // of the made-up models (Llama's form, Qwen3's norms of the heads, GPT-2's LayerNorm and GELU: an engine a case)
     const broken = [];
-    if (gpu[0].steps?.planned !== false && ["synthetic", "synthetic-qwen3", "synthetic-gpt2"].includes(c.id)) {
+    if (NAN_ROUNDS.weights && gpu[0].steps?.planned !== false && ["synthetic", "synthetic-qwen3", "synthetic-gpt2"].includes(c.id)) {
       const force = { matrices: forms[0], quick: true, pieceBytes: Infinity };
       for (const form of tokenForms.filter((name) => /DP4A/.test(name) && (c.arch === "llama" || name !== "DP4A, fused (T175)"))) {
         for (const place of brokenPlaces()) for (const value of [NaN, Infinity]) broken.push(await brokenWeight(form, place, value, force));
@@ -896,7 +911,7 @@ const server = http.createServer((req, res) => {
   };
   const found = cases.find((c) => c.checkpoint === pathname);
   if (pathname === "/") return send(types[".html"], PAGE);
-  if (pathname === "/harness.js") return send(types[".js"], `const ONLY = ${JSON.stringify(only ? only.split(",") : [])};\n${HARNESS}`);
+  if (pathname === "/harness.js") return send(types[".js"], `const ONLY = ${JSON.stringify(only ? only.split(",") : [])};\nconst NAN_ROUNDS = ${JSON.stringify(nanRounds)};\n${HARNESS}`);
   // (T152: and NumPy's greedy ids after the prompt, which the harness feeds the GPU's steps)
   if (pathname === "/cases.json") return send(types[".json"], JSON.stringify(cases.map(({ file, reference: { tokens, header, greedy }, ...c }) => ({ ...c, reference: { tokens, header, greedy } }))));
   if (found) return send("application/octet-stream", fs.readFileSync(found.file));
@@ -977,6 +992,7 @@ globalThis.Worker = class {
   terminate() { this.worker.terminate(); }
 };
 const ONLY = ${JSON.stringify(only ? only.split(",") : [])};
+const NAN_ROUNDS = ${JSON.stringify(nanRounds)};
 ${HARNESS.replaceAll('import("/public/', `import(${JSON.stringify(pathToFileURL(path.join(root, "public")).href + "/")} + "`)}
 `);
   return new Promise((resolve) => {
@@ -1169,13 +1185,14 @@ for (const { id, cpu, gpu: runs, late, refused, remembered, alone, broken } of o
         failures.push(`a block with ${b.value} in the row of token ${b.token} (at ${b.at}): the GPU took ${b.gpuTokens} of 16 tokens, and ${b.finite} of that token's ${b.of} keys and values are finite numbers (none is to be)`);
       }
     }
-    const rowsSaid = gpu.brokenRows?.skipped ? `not tried (${gpu.brokenRows.skipped})`
-      : (gpu.brokenRows?.cases ?? []).map((b) => `${b.value} ${b.finite} of ${b.of} finite (the CPU's cache reads ${b.cpuFinite} of them as finite)`).join(", ");
+    // (none where this browser does not put a NaN in this model's rows: gpu-check's NAN_ROUNDS)
+    const rowsSaid = !gpu.brokenRows ? "" : ", the keys and values of a token whose row held " + (gpu.brokenRows.skipped ? `not tried (${gpu.brokenRows.skipped})`
+      : gpu.brokenRows.cases.map((b) => `${b.value} ${b.finite} of ${b.of} finite (the CPU's cache reads ${b.cpuFinite} of them as finite)`).join(", "));
     console.log(`  ${gpu.form ?? "no form"}, ${gpu.attention ?? "no attention"}: keys and values ${gpuKv.toExponential(2)} (all at once ${againKv.toExponential(2)}, ` +
       `the first layer ${gpuFirst.toExponential(2)} from ${name}, the CPU's ${firstKv(cpu).toExponential(2)}; ${(gpuKv / e16).toFixed(1)} E16, ${(gpuKv / q8).toFixed(2)} Q8; ` +
       `layer ${at} ${ratios[at].toFixed(2)} of its line), ` +
       `the first layer's scale ${gpuScale.toExponential(1)} (${againScale.toExponential(1)}), logits KL ${gpuLogits.kl.toExponential(2)} (${againLogits.kl.toExponential(2)}), ` +
-      `the prompt ${(gpu.promptMs / n).toFixed(2)} ms a token (${gpu.note}), the keys and values of a token whose row held ${rowsSaid}` +
+      `the prompt ${(gpu.promptMs / n).toFixed(2)} ms a token (${gpu.note})${rowsSaid}` +
       (failures.length ? ` — FAILED\n    - ${failures.join("\n    - ")}` : ""));
     failed ||= failures.length > 0;
     // (evaluated, and said, whatever came before)
