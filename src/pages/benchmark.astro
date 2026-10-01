@@ -443,8 +443,10 @@ const BENCH_MODEL = "llm-jp-3-150m";
       } catch {
         // no storage here: searched
       }
+      // T242, ahead: the switches of each round that follows on this model, the only one this worker loads: its memory is
+      // made for the largest of them, and not for a next model as well (that gigabyte took down Windows' WebKit here)
       const loaded = await request({ type: "init", search: parameters.get("gpuTest") === "on" ? "?gpuTest=on" : "", model: entry, load: 1,
-        threads: { remembered, hint: navigator.hardwareConcurrency || 1 } });
+        threads: { remembered, hint: navigator.hardwareConcurrency || 1 }, ahead: rounds.map((round) => round.without) });
       if (loaded.error) return { status: "error", markdown: loaded.error };
       pathing = true;
       staged("model", { stage: "the page's path", at: 2, of: stages });

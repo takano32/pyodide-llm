@@ -5,6 +5,7 @@
 // public/llama2_convert.py converts in here as it arrives.
 // The page sends   {type: "init", search, model, load},  {type: "load", search, model, load},
 //                  {type: "generate", prompt, ...options}  and  {type: "stop"}; /benchmark/'s model section also
+//                  ahead in its init (T242: the switches of each load that follows on the same model, see loadsAhead),
 //                  {type: "bench", model, load, rounds, prompt, steps} and (T184) {type: "paths", load, prompt, counts, sampled}
 // and receives     {type: "status" | "progress" | "ready" | "token" | "done" | "bench" | "paths" | "error"
 //                         | "threads" | "threads-compared" | "gpu", ...}
@@ -664,7 +665,17 @@ const openGpu = () => new Worker(new URL(`gpu.js${self.location.search}`, import
 // fitting is enough. shared is what was asked for, not what the browser gave: a device without shared memories
 // made one for every model.
 let weightsPool;
-function pooledWeights(size, after, shared, wide) {
+// T242: the switches (?without=) of each load the page says will follow on the model of its init, and no other model
+// ({ ahead: [[...], ...] }: /benchmark/'s model section, whose worker loads one model, for the page's path and again
+// for each round). The shared memory is then made for the largest of those loads and no more: the gigabyte that
+// pooledWeights() keeps for the next model (T96) is for a model that never comes there, and it took the page down.
+// Playwright's WebKit on Windows (bench.yml, 2026-10-01) ended the page's process in new WebAssembly.Memory() of that
+// maximum (1.07 GiB for tiny-lm) in about one run in four, once the CPU section's worker, ended before, had had a
+// shared memory of its own; with the maximum of the model alone (45 MB) it never did (0 of 39 runs), and neither
+// section alone ends it. undefined on the model page: any model may follow.
+let loadsAhead;
+// ahead: what the forward pass of the largest of loadsAhead puts after the checkpoint, or undefined
+function pooledWeights(size, after, shared, wide, ahead) {
   const pages = (bytes) => Math.ceil(bytes / 65536);
   const needs = (base) => pages(base + size + (weightsPool.limited ? 0 : after)) + 1;
   const fits = weightsPool && weightsPool.asked === shared && weightsPool.wide === wide && needs(weightsPool.base) <= weightsPool.maximum;
@@ -674,7 +685,9 @@ function pooledWeights(size, after, shared, wide) {
     let memory, base;
     if (shared) {
       try {
-        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, wide, after }));
+        // (a page more, as needs() counts one past what the model takes)
+        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, wide, after,
+          ...(ahead !== undefined && { after: Math.max(after, ahead), spare: 65536 }) }));
       } catch {
         memory = undefined;  // no shared memory here: one thread
       }
@@ -706,16 +719,17 @@ function pooledWeights(size, after, shared, wide) {
 // T124: the keys and values of a Qwen3 0.6B are twice what the header says), on a shared memory or not (an int8
 // model's keys and values may be float16; forward.js's keysInHalf says whether they are, T160, T130).
 // What footprint() takes (the worker asks keysInHalf the same).
-function forwardOptions(options, shared) {
+// without: the switches of the load (those of the load going on, or of one that follows: loadsAhead, T242).
+function forwardOptions(options, shared, without = disabled) {
   const { dtype = "float32" } = options;
-  const int8 = !disabled.includes("int8"), quantized = dtype === "int8" || dtype === "int6";
+  const int8 = !without.includes("int8"), quantized = dtype === "int8" || dtype === "int6";
   return {
-    ...options, dtype, int8, relaxed: Boolean(jsKernels?.relaxed) && !disabled.includes("relaxed"),
-    halfKV: quantized && int8 && !disabled.includes("kv16"), shared,
+    ...options, dtype, int8, relaxed: Boolean(jsKernels?.relaxed) && !without.includes("relaxed"),
+    halfKV: quantized && int8 && !without.includes("kv16"), shared,
     outliers: llama2_numpy.OUTLIER_CHANNELS, gpu: hasWebGpu,
   };
 }
-const afterCheckpoint = (header, size, options, shared) => forwardModule.footprint(header, size, forwardOptions(options, shared));
+const afterCheckpoint = (header, size, options, shared, without) => forwardModule.footprint(header, size, forwardOptions(options, shared, without));
 // the page cross-origin isolated (stage 3), shared memories to be had, and not ?threads=1: the memory is shared
 const sharedWanted = () => Boolean(sharedKernels && self.crossOriginIsolated && threadsRequest?.fixed !== 1);
 
@@ -771,7 +785,11 @@ function weightsBuffer(size, header, options, keep) {
       throw new Error("This model needs more than 4 GB of memory, which this browser cannot give a web page (no 64-bit " +
         "WebAssembly memory: Safari has none yet). Chrome and Firefox can.");
     }
-    const { memory, base, shared } = pooledWeights(size, after, wanted && (!wide || Boolean(wideKernels.shared)), wide);
+    // T242: where the page said which loads follow on this model, the memory is made for the largest of them (a load
+    // without the kernels takes none: NumPy's weights are Python's)
+    const ahead = loadsAhead && Math.max(0, ...loadsAhead.filter((without) => !without.includes("kernels"))
+      .map((without) => afterCheckpoint(header, size, options, wanted, without)));
+    const { memory, base, shared } = pooledWeights(size, after, wanted && (!wide || Boolean(wideKernels.shared)), wide, ahead);
     // T160: the type of the keys and values that after counts, T130: on the memory the browser gave
     const halfKeys = forwardModule.keysInHalf(header, size, forwardOptions(options, shared));
     const kernels = wide ? (shared ? wideKernels.shared : wideKernels.plain) : (shared ? sharedKernels : jsKernels);
@@ -1836,6 +1854,7 @@ self.onmessage = async ({ data }) => {
       lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
       threadsRequest = data.threads;
       gpuRequest = data.gpu;
+      loadsAhead = Array.isArray(data.ahead) ? data.ahead : undefined;  // (T242; a load of the model page says none)
       // The latest choice wins: the download that is going on stops, and its parts that are complete stay in
       // the cache. Pyodide is loaded once, whatever happens to the model that was asked for first.
       loading?.abort();
