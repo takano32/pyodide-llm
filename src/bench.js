@@ -772,8 +772,8 @@ export const threadsKey = (id, nav) => `threads:${id}:${nav.hardwareConcurrency}
 // review): software threads that stopped after the count was found, a search that did not end, the GPU stopped while the
 // sides were timed; and (public/worker.js) why a page that is not isolated has one thread, which is no failure
 const STOPPED_WHILE_TIMED = "a software thread stopped while timed, and one thread went on";
-const NOT_ENDED = (how) => `the search had not ended after ${how.unfinished} s`;
-const GPU_STOPPED = (gpu) => `WebGPU stopped while timed: ${tableCell(gpu.lost)}`;
+const searchNotEnded = (how) => `the search had not ended after ${how.unfinished} s`;
+const gpuStopped = (gpu) => `WebGPU stopped while timed: ${tableCell(gpu.lost)}`;
 const NO_SHARED_MEMORY = "no shared memory here";
 
 /** T190: how the page path's number of threads came about (worker.js's timedPaths), in a few words */
@@ -782,7 +782,7 @@ export function threadsHow(how) {
   if (how.alone) return `: ${how.alone}`;
   // T190's review: a software thread that stopped after the count was found (T120): the later times are one thread's
   const stopped = how.stopped ? `; ${STOPPED_WHILE_TIMED}` : "";
-  if (how.unfinished) return `: ${NOT_ENDED(how)}${stopped}`;
+  if (how.unfinished) return `: ${searchNotEnded(how)}${stopped}`;
   if (how.remembered) return `, as the model page remembers${stopped}`;
   const verdicts = (how.searched ?? []).map(([best, candidate, kept]) => `${best} or ${candidate}: ${kept}`);
   return `${verdicts.length ? `, searched here (${verdicts.join(", ")})` : ""}${stopped}`;
@@ -827,7 +827,7 @@ export function pathTable(paths, name = "") {
   const { gpu = {}, rows = [] } = paths;
   const facts = [paths.threads !== undefined && `${paths.threads} software thread${paths.threads === 1 ? "" : "s"}${threadsHow(paths.how)}`];
   if (gpu.why !== undefined) facts.push(`WebGPU: ${tableCell(gpuSkipped(gpu.why))}`);
-  else if (gpu.lost) facts.push(GPU_STOPPED(gpu));
+  else if (gpu.lost) facts.push(gpuStopped(gpu));
   else {
     facts.push(`WebGPU ready in ${number(gpu.seconds)} s`, `matrices by ${tableCell(gpu.matrices ?? "?")}`, `attention by ${tableCell(gpu.attention ?? "?")}`);
     if (paths.status) facts.push(tableCell(paths.status));
@@ -868,8 +868,8 @@ export function pathWarnings(paths) {
   if (!paths || paths.error) return [];  // (an error says "failed" itself)
   const { gpu = {}, how = {} } = paths;
   // (as threadsHow() and pathTable() write them: alone says why the count is one, and nothing else of the threads)
-  const threads = how.alone ? [how.alone !== NO_SHARED_MEMORY && how.alone] : [how.unfinished && NOT_ENDED(how), how.stopped && STOPPED_WHILE_TIMED];
-  return [gpu.why === undefined && gpu.lost && GPU_STOPPED(gpu), ...threads].filter(Boolean);
+  const threads = how.alone ? [how.alone !== NO_SHARED_MEMORY && how.alone] : [how.unfinished && searchNotEnded(how), how.stopped && STOPPED_WHILE_TIMED];
+  return [gpu.why === undefined && gpu.lost && gpuStopped(gpu), ...threads].filter(Boolean);
 }
 
 // ---- T185: a line of the summary for each section (shortReport()), from the data the section's tables are made of.
