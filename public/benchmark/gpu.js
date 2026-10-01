@@ -2110,6 +2110,14 @@ function sparseLogits(vocab) {
   for (const [at, value] of SPARSE_PEAKS) logits[at] = value;
   return logits;
 }
+// T219: logits that are not finite, in place: a NaN or +inf at `at`, every logit -inf, or a few -inf (seven, every
+// 131st token from 5; where the most likely is among them both sides take the next: the CPU leaves them out, and draws as ever)
+function unfiniteLogits(logits, kind, at) {
+  if (kind === "nan") logits[at] = NaN;
+  else if (kind === "+inf") logits[at] = Infinity;
+  else if (kind === "-inf all") logits.fill(-Infinity);
+  else for (let i = 5; i < logits.length; i += 131) logits[i] = -Infinity;
+}
 // logits as a model's look (a few tokens far above the rest), made up: a normal spread and `peaks` tokens 8 to 14 over it
 function madeUpLogits(vocab, spread, peaks = 20) {
   const logits = new Float32Array(vocab);
@@ -2189,6 +2197,19 @@ async function checkSampling(kind = "one") {
     cases.push({ vocab, topp: 0.9, temperature: 0.7, penalty: 1, random: "fifth", ties: true });
     cases.push({ vocab, topp: 0.9, temperature: 0, penalty: 1, random: 0.3, ties: true });
   }
+  // T219: logits the sampler must refuse (T195's rule: a NaN anywhere, +inf anywhere, or all -inf: the State's
+  // not_finite word set, stopped set, nothing sampled) and ones it must not (a few -inf, which the CPU never draws
+  // either): a NaN or +inf at the first token, the last (a thread's last, the vocabulary's last chunk's) and in the
+  // middle, with a nucleus and without, at temperature 0 too
+  for (const vocab of [1003, 128256]) {
+    // (a fallback adapter takes a second or so for each of the big vocabulary's: three there)
+    const places = [["nan", 0], ["nan", vocab - 1], ["nan", (vocab / 2 | 0) + 1], ["+inf", vocab - 1], ["+inf", 777], ["-inf all", 0]];
+    for (const [unfinite, at] of fallback && vocab > 1003 ? [places[1], places[4], places[5]] : places) {
+      for (const [topp, temperature] of [[0.9, 0.7], [1, 0.7], [0.9, 0]]) cases.push({ vocab, spread: 2, topp, temperature, penalty: 1.3, random: 0.5, unfinite, at });
+    }
+    for (const topp of [0.9, 1]) cases.push({ vocab, spread: 2, topp, temperature: 0.7, penalty: 1.3, random: 0.5, unfinite: "-inf some" });
+    cases.push({ vocab, spread: 2, topp: 0.9, temperature: 0, penalty: 1.3, random: 0.5, unfinite: "-inf some" });
+  }
   const most = 128256, owned = [];
   let wrong = 0, edge = 0, checked = 0;
   const problems = [];
@@ -2249,7 +2270,7 @@ async function checkSampling(kind = "one") {
         // the state: stopped after a stop token (its id written, nothing after it), else at the next position
         const stopped = k < draws.length, taken = stopped ? k + 1 : draws.length;
         const s = got.state, fed = stopped ? k : draws.length;
-        const right = s[5] === taken && s[7] === (stopped ? 1 : 0) && s[1] === 40 + fed && s[6] === history.length + fed &&
+        const right = s[5] === taken && s[7] === (stopped ? 1 : 0) && s[WGSL.STATE_NOT_FINITE] === 0 && s[1] === 40 + fed && s[6] === history.length + fed &&
           s[4] === (fed ? got.ids[fed - 1] : history[history.length - 1]) && got.ids[taken] === SENTINEL_ID &&
           (fed === 0 || s[8 + ((history.length + fed - 1) % WGSL.REPETITION_WINDOW)] === got.ids[fed - 1]);
         if (!right) {
@@ -2259,6 +2280,7 @@ async function checkSampling(kind = "one") {
       };
       for (const c of cases) {
         const logits = c.ties ? tiedLogits(c.vocab) : c.sparse ? sparseLogits(c.vocab) : madeUpLogits(c.vocab, c.spread, c.peaks);
+        if (c.unfinite) unfiniteLogits(logits, c.unfinite, c.at);
         const ranked = [...logits.keys()].sort((a, b) => logits[b] - logits[a]);
         // 70 tokens: the 6 before the window two of the most likely (3rd and 4th, which must not be penalized), then the
         // window: the three most likely twice each (a repeat is penalized once), early and late in it (both halves of
@@ -2274,7 +2296,21 @@ async function checkSampling(kind = "one") {
           const k = walk.tokens.map((token, at) => [token, at]).filter(([token]) => logits[token] === TIED_RUN)[4][1];
           random = (walk.cumulative[k - 1] + walk.cumulative[k]) / 2 / walk.mass;
         }
-        judge(c, logits, history, [random], await sampled(c, logits, history, [random], 1));
+        if (c.unfinite && c.unfinite !== "-inf some") {
+          // (T219) refused: the ids untouched, the state's not_finite and stopped set, nothing sampled, the position and
+          // the token as they were; a run of 4 all refused too
+          for (const draws of [[random], [random, 0.1, 0.9, 0.3]]) {
+            const got = await sampled(c, logits, history, draws, draws.length), s = got.state;
+            checked++;
+            const right = got.ids[0] === SENTINEL_ID && s[WGSL.STATE_NOT_FINITE] === 1 && s[7] === 1 && s[5] === 0 && s[1] === 40 && s[4] === history[history.length - 1];
+            if (!right) {
+              wrong++;
+              problems.push(`${c.vocab} ${c.unfinite} at ${c.at} top-p ${c.topp} T ${c.temperature}, ${draws.length} steps: not refused (id ${got.ids[0]}, state ${[...s.subarray(0, 8)].join(" ")})`);
+            }
+          }
+        } else {
+          judge(c, logits, history, [random], await sampled(c, logits, history, [random], 1));
+        }
         postMessage({ alive: true });
       }
       // runs: the i-th random number for the i-th token, and a stop token (the run's third token, taken again), second

@@ -785,7 +785,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T152: why a generation's steps stay on the CPU where the prompt's blocks may go to the GPU (else null), and where
   // the GPU's worker writes the ids of the steps it took ([sampled, id, ...])
   const tokensWhyNot = staging ? tokensUnfit() : null;
-  const gpuIds = staging && !tokensWhyNot ? alloc((1 + GPU_TOKENS) * 4) : 0;
+  // (T219: and after the ids, the word that says the step after them was refused: its logits were not finite)
+  const gpuIds = staging && !tokensWhyNot ? alloc((2 + GPU_TOKENS) * 4) : 0;
 
   // the KV cache: per layer [positions][kvDim], one block for the keys and one for the values, last in memory
   // so that growing it (KV_START, doubling) takes only the room it adds (T130): every layer's block moves up to where
@@ -1696,7 +1697,17 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         return undefined;
       }
       views();
-      const words = new Int32Array(memory.buffer, gpuIds, 1 + count), sampled = words[0];
+      const words = new Int32Array(memory.buffer, gpuIds, 2 + GPU_TOKENS), sampled = words[0], notFinite = words[1 + GPU_TOKENS];
+      if (notFinite) {
+        // T219: the sampler refused the step after the `sampled` ones: its logits held a NaN or +inf, or none over
+        // -3.4e38 (the State's not_finite word, set by the bits: WGSL lets a GPU take NaN and infinities as absent). The
+        // whole request is refused as one with an id outside the vocabulary below is (nothing of it written, the ids
+        // before it not taken), the GPU stops, and the CPU takes the step again and stops where its own logits are not
+        // finite either (T195's NOT_FINITE). A model on the GPU alone cannot: it stops, said in words
+        if (direct) throw new Error(OUTSIDE_VOCABULARY);
+        stopGpu(`the GPU computed logits that are not finite numbers (NaN or infinity) at position ${pos + sampled}`);
+        return undefined;
+      }
       if (!(sampled >= 1 && sampled <= count)) {
         stopGpu(`the GPU sampled ${sampled} of ${count} tokens`);
         return undefined;
