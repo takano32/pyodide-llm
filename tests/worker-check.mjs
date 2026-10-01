@@ -2,14 +2,20 @@
 // and a clock that goes a hundred times as fast: the parts of this site's models (download()), the ranges of
 // huggingface.co (fetchRange(), inOrder(), refused()), the count of what arrives while Pyodide loads (watchArrivals()),
 // the version of Pyodide and its steps (resolvePyodideVersion(), pyodideSteps()), and a model past even a 64-bit memory
-// (weightsBuffer()). The review of T97, T118 and T119 (2026-09-26) had a bench like this and did not keep it; what it
-// found is T129's (1) to (7). Node only, no Pyodide, a few seconds:
+// (weightsBuffer()), and load() as far as the place of the weights (what it stops where it ends before it). The review
+// of T97, T118 and T119 (2026-09-26) had a bench like this and did not keep it; what it found is T129's (1) to (7).
+// Node only, no Pyodide, a few seconds:
 //
 //   node tests/worker-check.mjs
 //
 // A slow or stopped line is played by the made-up fetches (a body that comes a chunk at a time, one that stops, one
-// that breaks), on the fast clock: 30 seconds of the worker's are 0.3 s here.
+// that breaks), on the fast clock: 30 seconds of the worker's are 0.3 s here. What it cannot see (the review of T129,
+// 2026-10-01): the Cache API (there is none in the context, so fetchPart()'s copy and forgetPart() are not run), the
+// Service Worker (public/coi.js) between the worker and the network, a connection that is really stopped by an abort
+// (the made-up fetch only says its signal aborted), and the queue of a real line (a version asked for while the model's
+// parts fill it: tests/slow-check.mjs, slow.yml, sees a line with a queue, by its own proxy).
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
@@ -40,8 +46,9 @@ function bytesOf(from, to) {
 }
 const abortError = (signal) => signal.reason ?? new DOMException("aborted", "AbortError");
 
-// a body of the file's bytes [from, to), chunk by chunk, each after delay ms of the worker's; breakAt: it breaks there
-function body(from, to, { chunk = MiB, delay = 0, breakAt, signal, stall } = {}) {
+// a body of the file's bytes [from, to), chunk by chunk, each after delay ms of the worker's; breakAt: it breaks there;
+// cancelled(): told when its reader lets go of it
+function body(from, to, { chunk = MiB, delay = 0, breakAt, signal, stall, cancelled } = {}) {
   let at = from;
   return new ReadableStream({
     async pull(controller) {
@@ -51,8 +58,12 @@ function body(from, to, { chunk = MiB, delay = 0, breakAt, signal, stall } = {})
       if (breakAt !== undefined && at >= breakAt) return controller.error(new TypeError("Error in input stream"));
       if (at >= to) return controller.close();
       const end = Math.min(to, at + chunk, breakAt ?? Infinity);
-      controller.enqueue(bytesOf(at, end));
+      const bytes = bytesOf(at, end);
+      controller.enqueue(bytes);
       at = end;
+    },
+    cancel() {
+      cancelled?.();
     },
   }, { highWaterMark: 0 });
 }
@@ -209,9 +220,10 @@ const ok = (line) => {
   }
   ok("a part that failed for good stops the other connections");
 
-  // (3) a write the memory refused is not fetched again, and stops the rest
-  fresh((url, init) => new Response(body(...whole(partOf(url)), { signal: init.signal, delay: 20 }), { status: 200 }));
+  // (3) a write the memory refused is not fetched again, and stops the rest; the body that was being read is let go of
   {
+    const letGo = [];
+    fresh((url, init) => new Response(body(...whole(partOf(url)), { signal: init.signal, delay: 20, cancelled: () => letGo.push(partOf(url)) }), { status: 200 }));
     const source = download();
     const failed = await failure(source.into((offset) => {
       if (offset >= PART) throw new RangeError("Invalid typed array length: 4188160");
@@ -219,8 +231,42 @@ const ok = (line) => {
     assert.equal(failed?.error.name, "RangeError");
     assert.deepEqual(requests.map((r) => partOf(r.url)).sort(), [0, 1, 2], "a write the memory refused was fetched again");
     assert.ok(requests.every((r) => r.signal.aborted || partOf(r.url) === 0));
+    assert.ok(letGo.length >= 1, "the body of the part that failed was left open");
   }
   ok("a write the memory refused is not fetched again");
+
+  // (3, the review) chunks that came before there was a memory (the download starts long before Pyodide is there, so
+  // this is the usual order) and that the memory then refuses: the rest of the model is not fetched either
+  {
+    const many = { checkpoint: "m", bytes: 12 * PART };
+    fresh((url, init) => new Response(body(partOf(url) * PART, (partOf(url) + 1) * PART, { signal: init.signal, delay: 100 }), { status: 200 }));
+    const source = context.download(many, new AbortController().signal, 1);
+    await sleep(500);  // chunks are queued meanwhile
+    let writes = 0;  // (only the first write fails: what comes after it would stop the download by itself)
+    const failed = await failure(source.into(() => {
+      if (writes++ === 0) throw new RangeError("Invalid typed array length: 4188160");
+    }));
+    assert.equal(failed?.error.name, "RangeError");
+    await sleep(3000);
+    assert.deepEqual(requests.filter((r) => r.at > failed.at).map((r) => partOf(r.url)), [], "parts were fetched after the queued chunks were refused");
+    assert.ok(requests.every((r) => r.signal.aborted), "the parts in flight were not aborted");
+  }
+  ok("queued chunks that the memory refuses stop the download");
+
+  // the load's signal is let go of once the download is over, whichever way it ends
+  fresh(plain);
+  {
+    const load = new AbortController(), source = download(load.signal);
+    await source.into(written().write);
+    assert.equal(getEventListeners(load.signal, "abort").length, 0, "a download that ended kept a listener on the load's signal");
+  }
+  fresh((url, init) => (partOf(url) === 1 ? new Response("", { status: 404 }) : plain(url, init)));
+  {
+    const load = new AbortController();
+    assert.ok(await failure(download(load.signal).into(written().write)));
+    assert.equal(getEventListeners(load.signal, "abort").length, 0, "a download that failed kept a listener on the load's signal");
+  }
+  ok("a download lets go of the load's signal");
 
   // (3) the load stops the download where it failed without it (weightsBuffer() said no)
   fresh((url, init) => new Response(body(...whole(partOf(url)), { signal: init.signal, delay: 200 }), { status: 200 }));
@@ -264,10 +310,11 @@ const ok = (line) => {
 
   fresh((url, init) => ranged(init));
   {
-    const { into, feed, at } = fed();
-    await context.inOrder(HF, 0, size, feed, new AbortController().signal);
+    const { into, feed, at } = fed(), load = new AbortController();
+    await context.inOrder(HF, 0, size, feed, load.signal);
     assert.equal(at(), size);
     assert.deepEqual(into, bytesOf(0, size));
+    assert.equal(getEventListeners(load.signal, "abort").length, 0, "a file that came kept a listener on the load's signal");
   }
   ok("a file of huggingface.co comes whole and in order");
 
@@ -280,8 +327,10 @@ const ok = (line) => {
   ]) {
     fresh(routing);
     let n = 0;
-    const failed = await failure(context.inOrder(HF, 0, size, (bytes) => feeding?.(bytes, n++), new AbortController().signal));
+    const load = new AbortController();
+    const failed = await failure(context.inOrder(HF, 0, size, (bytes) => feeding?.(bytes, n++), load.signal));
     assert.ok(failed, `${name}: inOrder() did not fail`);
+    assert.equal(getEventListeners(load.signal, "abort").length, 0, `${name}: a call that failed kept a listener on the load's signal`);
     await sleep(3000);
     assert.deepEqual(requests.filter((r) => r.at > failed.at).map((r) => r.range), [], `${name}: ranges were fetched afterwards`);
     assert.ok(requests.every((r) => r.signal.aborted || r.range.startsWith(`bytes=${PART}-`)), `${name}: ranges in flight were not aborted`);
@@ -359,6 +408,14 @@ const ok = (line) => {
     assert.equal(failed.error.pyodide, true, "the page would not try again without the service worker");
     assert.match(failed.error.message, /did not answer in 30 seconds/);
     assert.ok(failed.at - began >= quiet * 1000 && failed.at - began < (quiet + 10) * 1000);
+  }
+  // (1) a network that fails at once is told as it is, not as a wait of 30 seconds
+  fresh(() => Promise.reject(new TypeError("Failed to fetch")));
+  {
+    const began = clock.now();
+    const failed = await failure(context.resolvePyodideVersion(""));
+    assert.equal(failed?.error.message, "Failed to fetch");
+    assert.ok(!failed.error.pyodide && failed.at - began < 1000);
   }
   fresh(() => new Response(JSON.stringify({ version: "314.0.7" }), { status: 200 }));
   assert.equal(await context.resolvePyodideVersion(""), "314.0.7");
