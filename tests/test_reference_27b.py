@@ -97,3 +97,71 @@ def test_a_job_that_fails_ends_the_pass():
     except ZeroDivisionError:
         return
     raise AssertionError("the error of a job was lost")
+
+
+# ------------------------------------------------------------------------------------------- the review of T237
+def test_the_roundings_of_the_page_are_what_the_converter_makes_of_a_row():
+    """The page's 8-bit rounding (Safari) is llama2_convert.quantize() on the activation (which quantize_x is to the bit,
+    smoke.mjs); the 7-bit one (relaxed SIMD) is the same with 63."""
+    import llama2_convert
+    from reference_27b import as_page
+    rng = np.random.default_rng(7)
+    x = (rng.standard_normal(256) * 10.0 ** rng.integers(-3, 3, 256)).astype(np.float32)
+    x[:32] = 0.0  # a group of zeros: no scale
+    q, scales = llama2_convert.quantize(x)
+    want = (q.astype(np.float32) * scales[:, None]).reshape(-1)
+    assert np.array_equal(as_page(127)(x), want)
+    seven = as_page(63)(x).reshape(-1, 32)
+    scale7 = np.abs(x.reshape(-1, 32)).max(axis=1) / np.float32(63)
+    assert np.all(np.abs(seven - x.reshape(-1, 32)) <= scale7[:, None] * 0.5 * (1 + 1e-6))
+    assert np.array_equal(seven[0], np.zeros(32, dtype=np.float32))
+    # the integers it stands for are in -63..63
+    steps = np.divide(seven, scale7[:, None], out=np.zeros_like(seven), where=scale7[:, None] > 0)
+    assert np.abs(np.rint(steps)).max() <= 63
+
+
+def test_a_distance_is_the_largest_difference_the_agreement_and_the_kl():
+    from reference_27b import Distance, kl_of
+    rng = np.random.default_rng(1)
+    theirs = rng.standard_normal((3, 50)).astype(np.float32) * 4
+    ours = theirs.copy()
+    ours[1, 7] += 0.5
+    ours[2] = theirs[2][::-1]
+    same = Distance(ours[:2], theirs[:2])
+    assert same.count == 2 and same.same == 2 and abs(same.worst - 0.5) < 1e-6 and same.where == 1
+    assert same.kls[0] == 0.0 and same.kls[1] > 0 and same.kl_worst == same.kls[1]
+    assert Distance(ours, theirs[:2]).count == 2  # the positions both have
+    other = Distance(ours, theirs)
+    assert other.same < 3 and len(other.close) == 3 - other.same
+    # KL(P || Q) against the definition, in float64
+    t, o = theirs[0].astype(np.float64), ours[2].astype(np.float64)
+    p, q = np.exp(t - t.max()), np.exp(o - o.max())
+    p, q = p / p.sum(), q / q.sum()
+    assert abs(kl_of(ours[2], theirs[0]) - float((p * np.log(p / q)).sum())) < 1e-9
+    assert kl_of(theirs[0], theirs[0]) == 0.0
+
+
+def test_the_signs_a_broken_run_is_given_differ_from_the_files_where_it_says():
+    import llama2_numpy
+    from reference_27b import BREAKS, SIGN_BREAKS, broken_basis, signs_of
+    rng = np.random.default_rng(2)
+    widths = (5120, 6144, 17408)
+    basis = {"block": 1024, "signs": {str(w): llama2_numpy.sign_bits(rng.choice([-1, 1], w)) for w in widths}}
+    assert all(name in BREAKS for name in SIGN_BREAKS)
+    for width in widths:  # the text of a width reads back as the signs it was made of
+        assert llama2_numpy.sign_bits(signs_of(basis, width)) == basis["signs"][str(width)]
+    for name, (width, places) in SIGN_BREAKS.items():
+        broken = broken_basis(basis, name)
+        flipped = np.flatnonzero(signs_of(basis, width) != signs_of(broken, width))
+        assert flipped.tolist() == list(range(width))[places], name
+        assert all(broken["signs"][str(w)] == basis["signs"][str(w)] for w in widths if w != width), name
+    wide = broken_basis(basis, "6144 with 5120's signs")
+    assert np.array_equal(signs_of(wide, 6144)[:5120], signs_of(basis, 5120))
+    assert np.array_equal(signs_of(wide, 6144)[5120:], signs_of(basis, 6144)[5120:])
+    last = broken_basis(basis, "last block of 5120 as the first")
+    assert np.array_equal(signs_of(last, 5120)[4096:], signs_of(basis, 5120)[:1024])
+    assert np.array_equal(signs_of(last, 5120)[:4096], signs_of(basis, 5120)[:4096])
+    assert broken_basis(basis, "no rotation") is None
+    assert not np.any(signs_of(broken_basis(basis, "no signs"), 5120) == -1)
+    for unchanged in ("tiled", "embedding", "halves", "gates rotated", "output normalized twice"):
+        assert broken_basis(basis, unchanged) == basis
