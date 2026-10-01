@@ -79,11 +79,14 @@ def gguf_name(name):
 
 
 def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=10000.0, more=(), extra=None, bos=1, eos=2,
-              matrices=(q8_0_blocks, 8)):
+              matrices=(q8_0_blocks, 8), turned=None):
     """A GGUF v3 of these Hugging Face tensors, and the tensors as the GGUF holds them (Q8_0 rounds).
     more: further metadata (key, GGUF type, value); extra: {GGUF name: float32 values} written as they are
     (rope_freqs.weight). bos, eos: None leaves the token out (unsloth's Qwen3 GGUFs name no BOS). matrices: what makes
-    the blocks of a matrix and their ggml type (T235: pq2_0_blocks and 142)."""
+    the blocks of a matrix and their ggml type (T235: pq2_0_blocks and 142). turned: whether q and k are turned, as
+    llama.cpp turns a Llama's (and a Granite's) and leaves a Qwen2's (the default: arch in TURNED; T250's review: the
+    other way round is a GGUF the reader does not read)."""
+    turned = arch in TURNED if turned is None else turned
     string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
     heads = {"q_proj": published["num_attention_heads"], "k_proj": published["num_key_value_heads"]}
     metadata = [("general.architecture", 8, arch), (f"{arch}.block_count", 4, published["num_hidden_layers"]),
@@ -108,7 +111,7 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=1
     for name, tensor in tensors.items():
         stored = tensor
         kind = next((k for k in heads if f".{k}." in name), None)
-        if arch in TURNED and kind:
+        if turned and kind:
             stored = turn(tensor, heads[kind])
         if tensor.ndim == 2:
             blob, rounded = matrices[0](stored)
@@ -133,7 +136,7 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=1
     same = {}
     for name, values in held.items():
         kind = next((k for k in heads if f".{k}." in name), None)
-        same[name] = llama2_convert.unturned(values, heads[kind]) if arch in TURNED and kind else values
+        same[name] = llama2_convert.unturned(values, heads[kind]) if turned and kind else values
     return head + b"".join(blobs), same
 
 
@@ -315,14 +318,15 @@ def test_a_rope_freqs_table_that_is_not_the_originals_scaling_is_refused():
 
 
 # ---- T203 (T136's fourth stage): a Qwen3, whose GGUF holds q, k and the norms of their heads in Hugging Face's order
-def qwen3_gguf(head_size, eps=1e-6, bos=1, eos=2):
+def qwen3_gguf(head_size, eps=1e-6, bos=1, eos=2, turned=None):
     from test_qwen3 import qwen3
     config, weights = synthetic_weights(n_kv_heads=2, head_size=head_size)
     tensors, published = qwen3(config, weights, True)
     published["rms_norm_eps"] = eps
     # llama.cpp writes the size of a head as the length of a key, whatever it is, and always the epsilon
     more = [("qwen3.attention.key_length", 4, config["head_size"]), ("qwen3.attention.layer_norm_rms_epsilon", 6, eps)]
-    file, same = gguf_file(tensors, published, config["vocab_size"], "qwen3", pre="qwen2", more=more, bos=bos, eos=eos)
+    file, same = gguf_file(tensors, published, config["vocab_size"], "qwen3", pre="qwen2", more=more, bos=bos, eos=eos,
+                           turned=turned)
     return config, published, file, same
 
 
@@ -536,11 +540,13 @@ NEOX_NAMES = {"gpt_neox.embed_in.weight": "token_embd.weight", "embed_out.weight
 CONV1D = ("attn_qkv", "attn_output", "ffn_up", "ffn_down")  # GPT-2's matrices, which llama.cpp stores as (out, in)
 
 
-def other_gguf(tensors, config):
+def other_gguf(tensors, config, split=True, transposed=True):
     """A GGUF v3 of a GPT-2's or GPT-NeoX's Hugging Face tensors the way llama.cpp writes one (checked on the real
     files by Range, T136's third stage): GPT-2's Conv1D matrices turned to (out, in) and a copy of the embedding as
     output.weight, GPT-NeoX's query_key_value (and its bias) as all of q, then k, then v; Q8_0 matrices (GPT-2's
-    positions F32), F32 vectors. Returns the file and, under the Hugging Face names, the values it stands for."""
+    positions F32), F32 vectors. Returns the file and, under the Hugging Face names, the values it stands for.
+    split=False, transposed=False: those two left as Hugging Face has them, as a GGUF of 2023 has GPT-NeoX's
+    query_key_value (stockmark's, T250's review): the same values in an order the reader does not read."""
     string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
     neox = config["model_type"] == "gpt_neox"
     arch = "gptneox" if neox else "gpt2"
@@ -570,9 +576,9 @@ def other_gguf(tensors, config):
         at = 3 if neox else 2  # gpt_neox.layers.N. or h.N.
         layer, what, kind = parts[at - 1], ".".join(parts[at:-1]), parts[-1]
         gguf, value = names[what], tensor
-        if not neox and kind == "weight" and gguf in CONV1D:
+        if not neox and kind == "weight" and gguf in CONV1D and transposed:
             value = tensor.T
-        if neox and gguf == "attn_qkv":
+        if neox and gguf == "attn_qkv" and split:
             value = tensor.reshape(heads, 3, dim // heads, -1).swapaxes(0, 1).reshape(tensor.shape)
         stored[f"blk.{layer}.{gguf}.{kind}"] = (name, value)
     if not neox:
@@ -589,9 +595,9 @@ def other_gguf(tensors, config):
         else:
             blob, held, type_ = np.ascontiguousarray(value, np.float32).tobytes(), value.astype(np.float32), 0
         if name is not None:  # back to the Hugging Face tensor these values stand for
-            if not neox and gguf.startswith("blk.") and gguf.endswith(".weight") and gguf.split(".")[2] in CONV1D:
+            if not neox and gguf.startswith("blk.") and gguf.endswith(".weight") and gguf.split(".")[2] in CONV1D and transposed:
                 held = held.T
-            if neox and ".attn_qkv." in gguf:
+            if neox and ".attn_qkv." in gguf and split:
                 held = held.reshape(3, heads, dim // heads, -1).swapaxes(0, 1).reshape(held.shape)
             same[name] = np.ascontiguousarray(held)
         out.append(string(gguf) + struct.pack("<I", value.ndim) + struct.pack(f"<{value.ndim}Q", *reversed(value.shape))

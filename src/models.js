@@ -19,6 +19,9 @@ const LLM_JP_INSTRUCT = "以下は、タスクを説明する指示です。要�
 const ASK_JAPANESE = "質問や指示を入力（例: 日本の首都は？）";
 // ChatML. <|im_start|> and <|im_end|> are tokens of their own, so the engine is told to read them as such
 const CHATML = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
+// the same for a model whose BOS is <|im_start|> itself, which the page begins every text with (SmolLM2's, and a Qwen3's
+// QWEN3_FROM_IM_START): the format begins after it (T250's review)
+const CHATML_AFTER_START = "user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
 const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [0, 2] };
 // sarashina2.2's chat_template (and CAT-Translate's, made from it) uses selectattr, which this project's template
 // reader does not take (T73): one turn of it, as the real Jinja renders it, is this (T81; the 0.5B Instruct had
@@ -71,6 +74,16 @@ const ELYZA = "<|start_header_id|>system<|end_header_id|>\n\nあなたは誠実�
 // the converter names those as specials with the rest (T143: <tool_call>, <|fim_prefix|> ...), so the list names none
 // for Qwen3. A list of its own would go over the converter's and spell the others out where a visitor types them (T221)
 const QWEN3_AT_ONCE = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
+// T250's review: the real Qwen3 tokenizer puts nothing in front of a text and its format begins with <|im_start|>, but
+// the converter's BOS is <|endoftext|> (QWEN3_OWN_BOS below, and what config.json names). A Qwen3 of 8 billion
+// parameters is much worse with it in front: its own answers to five questions are 178% higher in perplexity (Qwen3 8B,
+// plain text 144%; Shisa V2.1's fine-tune of it 67% and 54%), where Qwen's 0.6B and 1.7B are 1 to 4% off and CAT-Thinking
+// 8B (Qwen3 Swallow's, continued on Japanese text) 0.4% (tests/answer_check.mjs, tests/start_check.mjs). For those the BOS
+// is the format's own first token, <|im_start|> (151644), and the formats begin after it (as Qwen3.5's, T236): the page
+// sends the very IDs the real template makes. The answer stops at <|im_end|>, at <|endoftext|> and at the mark of a new turn
+const QWEN3_FROM_IM_START = { bos: 151644, stop_tokens: [151643, 151644, 151645] };
+const QWEN3_THINKING_AFTER_START = CHATML_AFTER_START;
+const QWEN3_AT_ONCE_AFTER_START = `${QWEN3_THINKING_AFTER_START}<think>\n\n</think>\n\n`;
 // the sampling of Qwen3's model card for either form (its top-k and presence penalty the page's sampler has not)
 const thinking = { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 };
 const atOnce = { steps: 0, temperature: 0.7, topp: 0.8, repetition_penalty: 1.0 };
@@ -141,20 +154,29 @@ function miniCpm5(id, name, source, download, sizes, sampling) {
  * tests/gguf_check.py tensors held them to (gguf.yml's candidates) */
 const ggufOf = (repo, revision, weights, original, originalRevision, tokenizer = "tokenizer.json") =>
   ({ original, hf: { repo, revision, weights, vocabulary: { repo: original, revision: originalRevision, tokenizer } } });
+// A Qwen3 whose config.json and tokenizer name no BOS (Ternary Bonsai, CAT-Thinking 8B; a Qwen3 of Qwen's own has
+// bos_token_id in config.json): the converter would take token 1, '"'. The BOS here is Qwen3's own, <|endoftext|>
+// (151643), as every Qwen3 of the list begins (the real tokenizer puts nothing in front: T131), and the answer stops at
+// it and at <|im_end|> (151645). The converter could say this itself (a BOS that is named nowhere, and <|endoftext|> in
+// the vocabulary: T248's survey, 7 (4)), at the next CONVERTER: then these lose their options. What it costs is the
+// model's: QWEN3_FROM_IM_START (above) says which are worse for it. Where a model of this family is added,
+// tests/start_check.mjs and tests/answer_check.mjs say whether this BOS is one it can bear
+const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] };
 /** T235, T246: a Ternary Bonsai of Prism ML (a ternary Qwen3) in one of its sizes: its PQ2_0 GGUF's weights with the
  * vocabulary, config.json and chat template of its -unpacked original. What the sizes share is here alone, so that one
  * change covers them all (the owner's open choices of T235's review: config.json's yarn or a plain RoPE, which would
  * be rope_scaling: {} in these options; a word more in the note; Prism ML's attribution). The original's template
  * always begins the answer with an empty thought (Qwen3's enable_thinking=false): the model has one form, and the
- * converter reads it. config.json and the tokenizer name no BOS (the converter would take token 1, '"'): Qwen3's own,
- * <|endoftext|>, as every Qwen3 of the list begins, and the answer stops at it and at <|im_end|>. The sampling is the
- * originals' generation_config.json, the same file in the three (its top-k the page's sampler has not) */
-const ternaryBonsai = (size, revision, originalRevision, download, sizes) => ({
+ * converter reads it. It names no BOS (QWEN3_OWN_BOS, which the 1.7B and the 4B bear: 1.5% better than nothing in front
+ * on plain text; the 8B does not: 70% worse, as a Qwen3 8B is, and begins at QWEN3_FROM_IM_START: `start`, T250's review).
+ * The sampling is the originals' generation_config.json, the same file in the three (its top-k the page's sampler
+ * has not) */
+const ternaryBonsai = (size, revision, originalRevision, download, sizes, start = {}) => ({
   group: "hf", id: `hf-ternary-bonsai-${size.toLowerCase()}`, name: `Ternary Bonsai ${size}`,
   note: `answers at once · 日本語 / English · ternary weights · ${sizes}`,
   ...ggufOf(`prism-ml/Ternary-Bonsai-${size}-gguf`, revision, `Ternary-Bonsai-${size}-PQ2_0.gguf`,
     `prism-ml/Ternary-Bonsai-${size}-unpacked`, originalRevision), download,
-  weights: "ternary", conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
+  weights: "ternary", conversion: {}, options: QWEN3_OWN_BOS, ...start,
   generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE });
 const harmony ={ specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
@@ -545,14 +567,19 @@ const LISTED = [
     conversion: {}, options: harmony, generation: sampled(1.1), template: HARMONY,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T250: three more of 8B. ELYZA's Llama 3 with its card's system message. Shisa V2.1's Qwen3 8B, whose template
-  // answers at once unless told to think (the other way round from Qwen3's), read from the model; CAT-Thinking, from
-  // Qwen3 Swallow, which thinks in Japanese before it answers (Qwen3's template). Neither of the two names a BOS in
-  // config.json or its tokenizer (Qwen3's config.json does), and the converter would take token 1 ('"'): Qwen3's own,
-  // <|endoftext|>, as every Qwen3 of the list begins, and the answer stops at it and at <|im_end|> (T235's Bonsai).
-  // Shisa's sampling is its generation_config.json's; CAT-Thinking's is its card's (0.8 and 0.95, and "to mitigate the
-  // probability of repetition, we find repetition_penalty=1.05 or larger to be useful"). CAT-Thinking's GGUF is
-  // mmnga-o's: mradermacher's Q8_0 has 256 tensors 0.1 to 0.4% from the nearest of the original's (tests/gguf_check.py
-  // tensors: other weights than the pinned original's), mmnga-o's is llama.cpp's Q8_0 of it
+  // answers at once unless told to think (the other way round from Qwen3's); CAT-Thinking, from Qwen3 Swallow, which
+  // thinks in Japanese before it answers (Qwen3's template). Neither of the two names a BOS. CAT-Thinking's options are
+  // QWEN3_OWN_BOS and its format the converter's reading of the template. Shisa's sampling is its generation_config.json's;
+  // CAT-Thinking's is its card's (0.8 and 0.95, and "to mitigate the probability of repetition, we find
+  // repetition_penalty=1.05 or larger to be useful").
+  // Shisa's BOS is QWEN3_FROM_IM_START's: with <|endoftext|> in front its own answers to five questions were 67% higher in
+  // perplexity, the likeliest next token differed at one in four, and all five answers written again parted within the
+  // first 12 tokens (the first hedged where the real IDs answer); plain text 54% higher (the review, tests/answer_check.mjs
+  // and tests/start_check.mjs).
+  // CAT-Thinking's GGUF is mmnga-o's: mradermacher's Q8_0 has 256 tensors 0.1 to 0.4% from the nearest of the original's
+  // (tests/gguf_check.py tensors: not the pinned original's weights). The original was uploaded in float32 on 2026-05-28
+  // and "converted to bf16 from float32" on 2026-05-29 (the pinned revision holds the bf16): mradermacher's GGUF is of
+  // 2026-05-28, mmnga-o's of 2026-06-02, which is llama.cpp's Q8_0 of the pinned weights (0 off the nearest reference)
   { group: "hf", id: "hf-llama-3-elyza-jp-8b", name: "Llama-3-ELYZA-JP 8B", note: "answers instructions · 日本語 / English · fetches 8.5 GB (GGUF) → int8 9.0 GB · desktop only · Chrome and Firefox",
     ...ggufOf("mmnga/Llama-3-ELYZA-JP-8B-gguf", "1a5f8f625074ccb91568fa858402dc43c5170856", "Llama-3-ELYZA-JP-8B-Q8_0.gguf",
       "elyza/Llama-3-ELYZA-JP-8B", "e6c316496ee7d9a11710c50229e8cb39b6b0a4a3"), download: 8540770592,
@@ -560,13 +587,13 @@ const LISTED = [
   { group: "hf", id: "hf-shisa-v2.1-qwen3-8b", name: "Shisa V2.1 Qwen3 8B", note: "answers at once · 日本語 / English · fetches 8.7 GB (GGUF) → int8 9.2 GB · desktop only · Chrome and Firefox",
     ...ggufOf("mradermacher/shisa-v2.1-qwen3-8b-GGUF", "9b9187f69adca28b8e2b9490b2c151fcb85c0df6", "shisa-v2.1-qwen3-8b.Q8_0.gguf",
       "shisa-ai/shisa-v2.1-qwen3-8b", "0b0fe7c76dac910510ccd04fc807fdbdbc2fc16e"), download: 8709519392,
-    conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
+    conversion: {}, options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START,
     generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-cat-thinking-8b", name: "CAT-Thinking 8B", note: "thinks in Japanese before it answers · 日本語 / English · fetches 8.7 GB (GGUF) → int8 9.2 GB · desktop only · Chrome and Firefox",
     ...ggufOf("mmnga-o/CAT-Thinking-8B-gguf", "d1747e658749aa7a67858914f0a60a2364172c2b", "CAT-Thinking-8B-Q8_0.gguf",
       "cyberagent/CAT-Thinking-8B", "0337f7bcf8d5e6dc08610e205bfe01d566e17669"), download: 8709518944,
-    conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
+    conversion: {}, options: QWEN3_OWN_BOS,
     generation: { steps: 0, temperature: 0.8, topp: 0.95, repetition_penalty: 1.05 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // English. Pythia is the same design at five sizes: a ladder for measuring (T80)
@@ -578,12 +605,14 @@ const LISTED = [
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
   // T74: from a GGUF (Q8_0): 145 MB instead of the 269 MB of model.safetensors, and the same int8 in the end (99.7%
   // of the most likely tokens and 0.13% of perplexity, tests/gguf_check.py). The GGUF is a redistribution; the
-  // model and its license are HuggingFaceTB's (`original`)
+  // model and its license are HuggingFaceTB's (`original`). Its BOS is <|im_start|> itself (bos_token_id 1), which the page
+  // begins every text with: the format begins after it, where CHATML here made two (T250's review, tests/format_check.py's
+  // same_ids(): its own answers to five questions were 5.5% higher in perplexity, the likeliest next token differed at 9 in 100)
   { group: "hf", id: "hf-smollm2-135m-instruct", name: "SmolLM2 135M Instruct", note: "answers instructions · English · fetches 145 MB (GGUF) → int8 145 MB",
     original: "HuggingFaceTB/SmolLM2-135M-Instruct",
     hf: { repo: "bartowski/SmolLM2-135M-Instruct-GGUF", revision: "09816acd5d99df7be770d85ea30822623dab342c",
           weights: "SmolLM2-135M-Instruct-Q8_0.gguf" }, download: 144811360,
-    conversion: {}, options: chatml, generation: sampled(1.1), template: CHATML,
+    conversion: {}, options: chatml, generation: sampled(1.1), template: CHATML_AFTER_START,
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   { group: "hf", id: "hf-pythia-160m", name: "Pythia 160M", note: "English · fetches 175 MB (GGUF) → int8 213 MB",
     original: "EleutherAI/pythia-160m",
@@ -705,7 +734,8 @@ const LISTED = [
   ...thinkingAndNot("hf-qwen3-8b", "Qwen3 8B",
     ggufOf("Qwen/Qwen3-8B-GGUF", "7c41481f57cb95916b40956ab2f0b139b296d974", "Qwen3-8B-Q8_0.gguf",
       "Qwen/Qwen3-8B", "b968826d9c46dd6066d109eabc6255188de91218"), 8709518112,
-    "fetches 8.7 GB (GGUF) → int8 9.2 GB · desktop only · Chrome and Firefox"),
+    "fetches 8.7 GB (GGUF) → int8 9.2 GB · desktop only · Chrome and Firefox",
+    { options: QWEN3_FROM_IM_START }, { thinking: QWEN3_THINKING_AFTER_START, atOnce: QWEN3_AT_ONCE_AFTER_START }),
   // Qwen3 Swallow's card gives one sampling, the thinking one, for both
   ...thinkingAndNot("hf-qwen3-swallow-8b", "Qwen3 Swallow 8B RL",
     ggufOf("mmnga-o/Qwen3-Swallow-8B-RL-v0.2-gguf", "3fc755c6ab3780ebad6671130fc1b630bbd1575b", "Qwen3-Swallow-8B-RL-v0.2-Q8_0.gguf",
@@ -733,7 +763,7 @@ const LISTED = [
   ternaryBonsai("4B", "a3eb42bafe873f9686bc97486c43b72ef7d75ec8", "4485fae7a00129467b9329b738110d88b2942a1a", 1074969344,
     "fetches 1.1 GB (GGUF) → ternary 1.1 GB · desktop only"),
   ternaryBonsai("8B", "c2aefbeb4b24469cd11579c3384b990404c17a30", "ac20f03fc62e872399218b659c8e949dfca05769", 2182184672,
-    "fetches 2.2 GB (GGUF) → ternary 2.3 GB · desktop only"),
+    "fetches 2.2 GB (GGUF) → ternary 2.3 GB · desktop only", { options: QWEN3_FROM_IM_START, template: QWEN3_AT_ONCE_AFTER_START }),
   // T236: Qwen3.5 0.8B, the first of the list with hybrid attention (T229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
   // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which
