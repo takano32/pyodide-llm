@@ -55,6 +55,7 @@ def plan_of(header, form, dtype):
     probe.q_dim = probe.n_heads * probe.head_size
     kv_dim = probe.n_kv_heads * probe.head_size
     probe.arch, probe.rotary = form["arch"], probe.head_size
+    probe.rope_magnitude = 1.0  # the places, not the values (as external_tensors() sets it)
     # the engine's own condition for keeping int8: the int8 kernels work on groups of 32 only
     keep = npdtype == np.int8 and all(n % 32 == 0 for n in (probe.dim, probe.q_dim, kv_dim, probe.hidden_dim))
     places = L.Places(npdtype, six)
