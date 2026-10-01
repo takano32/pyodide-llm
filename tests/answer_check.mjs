@@ -1,18 +1,19 @@
 // answer_check.mjs (T250's review): what the token the page puts in front does to a chat model's own answers. The page begins every text
 // with the BOS of its options; a Qwen3's real tokenizer puts nothing in front, and its format begins with <|im_start|>
 // (tests/start_check.mjs found Shisa V2.1 Qwen3 8B 54% worse on plain Japanese with <|endoftext|> in front, 1.1% better with
-// <|im_start|>). Plain text is not what a chat is, so this takes the answers: the model writes greedily from the format as the
-// real template makes it (no token in front: its own <|im_start|> is the first), and the same answer is read again with the
-// page's BOS in front of the format. Per answer and in all: the answer's tokens' negative log likelihood each way (the model's own
-// greedy answer is as likely as it gets with nothing in front, so the gap is the push), how often the likeliest token is
-// the same (the next one in the answer: if it is not, the page's start would have written another answer), and the KL
-// divergence of the page's next-token distribution from the natural one.
+// <|im_start|>). Plain text is not what a chat is, so this takes the answers: for each question the model writes greedily from the
+// format as the real template makes it (nothing in front: its own <|im_start|> is the first token), then
+//   - the same answer is read again with the page's BOS in front of the format: its perplexity there against the natural one, how
+//     often the likeliest next token is the same, and the KL divergence of the page's next-token distribution from the natural one;
+//   - the model writes greedily again with the page's BOS in front: where its answer first differs from the natural one, and both
+//     answers' beginnings (what a visitor would see differ).
+// The lines are `answer_check <id>: ...` (ci.mjs's --grep "answer_check"): a line for each question and one for all.
 //
 //   node tests/answer_check.mjs <out of tests/perplexity_prepare.py> <JSON of tests/write_options.py> [answer tokens = 60]
 //
-// PROMPTS='["…"]': the questions (else the entry's own and four more). START=<id>: the token in front in the page's reading
-// (else the options' bos). The format's own first token is the natural start: the entry's template must begin with a special
-// token (<|im_start|>) that the options' specials name. tests/write.sh runs it (WRITER=answer_check.mjs).
+// PROMPTS='["…"]': the questions (else the entry's own and four more). START=<id>: the token in front in the page's reading (else
+// the options' bos). The format's first token is the natural start: the entry's template must begin with a special token
+// (<|im_start|>) that the options' specials name. tests/write.sh runs it (WRITER=answer_check.mjs).
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { footprint, needsWide } from "../public/forward.js";
@@ -49,54 +50,70 @@ def logits_from(row, first):
             rows.append(np.array(logits, dtype=np.float64))
     return rows
 
+def greedy(prefix):
+    """what the model writes after prefix, greedily up to COUNT tokens or a stop token: the tokens and the logits that chose each"""
+    logits = logits_from(prefix, len(prefix) - 1)[-1]
+    written, rows = [], []
+    while True:
+        token = int(np.argmax(logits))
+        if token in stops:
+            break
+        written.append(token)
+        rows.append(logits)
+        if len(written) == COUNT:
+            break
+        logits = np.array(llama.forward(token, len(prefix) + len(written) - 1), dtype=np.float64)
+    return written, rows
+
 def log_softmax(logits):
     shifted = logits - logits.max()
     return shifted - math.log(np.exp(shifted).sum())
 
+def text_of(last, tokens):
+    return b"".join(llama.tokenizer.decode(prev, token, llama.bos) for prev, token in zip([last] + tokens, tokens)).decode("utf-8", "replace")
+
 began = time.perf_counter()
 answers = []
 for text in TEXTS:
-    format_ids = llama.tokenizer.encode(text, llama.specials)
-    natural = format_ids  # the real template begins with its own first token: nothing in front
-    # the model writes greedily from the natural start
-    row = list(natural)
-    written = []
-    rows = logits_from(row, len(row) - 1)
-    for step in range(COUNT):
-        token = int(np.argmax(rows[-1]))
-        if token in stops:
-            break
-        written.append(token)
-        rows = [np.array(llama.forward(token, len(row) + len(written) - 1), dtype=np.float64)]
+    natural = llama.tokenizer.encode(text, llama.specials)  # the real template begins with its own first token: nothing in front
+    paged = [start] + natural
+    written, rows_natural = greedy(natural)
     if not written:
         continue
-    # the same answer, scored from the natural start and from the page's
-    with_natural = logits_from(natural + written, len(natural) - 1)[:len(written)]
-    paged = [start] + natural + written
-    with_page = logits_from(paged, len(natural))[:len(written)]
+    rows_page = logits_from(paged + written, len(paged) - 1)[:len(written)]  # the same answer, the page's start in front
     nll_n = nll_p = agree = 0
     kl = 0.0
     for k, token in enumerate(written):
-        ln, lp = log_softmax(with_natural[k]), log_softmax(with_page[k])
+        ln, lp = log_softmax(rows_natural[k]), log_softmax(rows_page[k])
         nll_n -= ln[token]
         nll_p -= lp[token]
-        agree += int(np.argmax(with_natural[k]) == np.argmax(with_page[k]))
+        agree += int(np.argmax(rows_natural[k]) == np.argmax(rows_page[k]))
         kl += float((np.exp(ln) * (ln - lp)).sum())
+    written_page, _ = greedy(paged)  # what the model writes with the page's start in front
+    same = 0
+    while same < min(len(written), len(written_page)) and written[same] == written_page[same]:
+        same += 1
     answers.append({"tokens": len(written), "nll_natural": float(nll_n), "nll_page": float(nll_p), "agree": agree, "kl": kl,
-                    "text": b"".join(llama.tokenizer.decode(prev, token, llama.bos)
-                                     for prev, token in zip([natural[-1]] + written, written)).decode("utf-8", "replace")})
+                    "text": text_of(natural[-1], written), "page_tokens": len(written_page), "same": same,
+                    "page_text": text_of(natural[-1], written_page)})
     print(f"answer {len(answers)}/{len(TEXTS)} done, {time.perf_counter() - began:.0f} s", flush=True)
-json.dumps({"answers": answers, "bos": start, "seconds": time.perf_counter() - began})
+json.dumps({"answers": answers, "bos": start, "stops": sorted(stops), "seconds": time.perf_counter() - began})
 `));
 const id = page.id;
-console.log(`answer_check ${id}: ${result.answers.length} answers of up to ${count} tokens written from the real format (nothing in front), read again with ${result.bos} in front, ${result.seconds.toFixed(0)} s`);
-let tokens = 0, natural = 0, paged = 0, agree = 0, kl = 0;
+console.log(`answer_check ${id}: ${result.answers.length} answers of up to ${count} tokens written greedily from the real format (nothing in front), ` +
+  `read again with ${result.bos} in front and written again with it in front, ${result.seconds.toFixed(0)} s`);
+let tokens = 0, natural = 0, paged = 0, agree = 0, kl = 0, same = 0, differ = 0;
 result.answers.forEach((row, k) => {
-  tokens += row.tokens; natural += row.nll_natural; paged += row.nll_page; agree += row.agree; kl += row.kl;
+  tokens += row.tokens; natural += row.nll_natural; paged += row.nll_page; agree += row.agree; kl += row.kl; same += row.same;
+  const alike = row.same === row.tokens && row.same === row.page_tokens;
+  if (!alike) differ++;
   console.log(`answer_check ${id}: ${JSON.stringify(prompts[k])}: ${row.tokens} tokens, nll a token ${(row.nll_natural / row.tokens).toFixed(3)} natural, ` +
     `${(row.nll_page / row.tokens).toFixed(3)} with the start in front (${(Math.exp((row.nll_page - row.nll_natural) / row.tokens) * 100 - 100).toFixed(1)}% in perplexity), likeliest token the same ` +
-    `${row.agree}/${row.tokens}, KL ${(row.kl / row.tokens).toFixed(4)} a token; ${JSON.stringify(row.text.slice(0, 90))}`);
+    `${row.agree}/${row.tokens}, KL ${(row.kl / row.tokens).toFixed(4)} a token; written again with the start in front: ${alike ? "the same answer" : `the same for ${row.same} tokens, then another (${row.page_tokens} tokens)`}`);
+  console.log(`answer_check ${id}:   natural: ${JSON.stringify(row.text.slice(0, 100))}`);
+  if (!alike) console.log(`answer_check ${id}:   with the start: ${JSON.stringify(row.page_text.slice(0, 100))}`);
 });
 console.log(`answer_check ${id}: all: ${tokens} tokens, perplexity ${Math.exp(natural / tokens).toFixed(3)} natural, ${Math.exp(paged / tokens).toFixed(3)} with ${result.bos} in front ` +
-  `(${(Math.exp((paged - natural) / tokens) * 100 - 100).toFixed(1)}%), likeliest token the same ${agree}/${tokens} (${(agree / tokens * 100).toFixed(1)}%), KL ${(kl / tokens).toFixed(4)} a token`);
+  `(${(Math.exp((paged - natural) / tokens) * 100 - 100).toFixed(1)}%), likeliest token the same ${agree}/${tokens} (${(agree / tokens * 100).toFixed(1)}%), KL ${(kl / tokens).toFixed(4)} a token; ` +
+  `${differ} of ${result.answers.length} answers written again differ, the same for ${same} of ${tokens} tokens`);
 process.exit(0);
