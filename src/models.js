@@ -83,11 +83,17 @@ function thinkingAndNot(id, name, source, download, sizes, chat = {}, formats = 
 // same IDs as transformers' apply_chat_template for tests/format_check.py's prompts). The template trims what was
 // typed. Without a template the converter read, its special tokens are not in the converter's specials, and a list of
 // the entry's replaces the converter's (T221): so all of the converter's are here (the added tokens tokenizer.json
-// does not call special, T143) with <|im_start|> and <|im_end|>, in the converter's order (the longest first). The
-// answer stops at <|im_end|> (248046) and at <|endoftext|> (248044, all that config.json names; the BOS too, T229)
-const QWEN35_THINKING = "<|im_start|>user\n{prompt:trim}<|im_end|>\n<|im_start|>assistant\n<think>\n";
+// does not call special, T143) with <|im_start|> and <|im_end|>, in the converter's order (the longest first).
+// The BOS: the real tokenizer begins a text with none (bos_token null), and the page begins every text with one, the
+// converter's being <|endoftext|> (248044, T229). That one costs this model much (on 299 tokens of Wikipedia the
+// perplexity is 46% higher in English and 95% in Japanese with it in front: its linear-attention layers keep what they
+// read in a state, where a Qwen3's attention looks past it, T131's ±3%). So the BOS here is the format's own first
+// token, <|im_start|> (248045), and the formats begin after it: the page then sends the very IDs the real template
+// makes, none more. The answer stops at <|im_end|> (248046), at <|endoftext|> (all that config.json names) and at the
+// mark of a new turn
+const QWEN35_THINKING = "user\n{prompt:trim}<|im_end|>\n<|im_start|>assistant\n<think>\n";
 const QWEN35_AT_ONCE = `${QWEN35_THINKING}\n</think>\n\n`;
-const qwen35 = { stop_tokens: [248044, 248046],
+const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
   specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>",
     "</tool_call>", "<|file_sep|>", "<|im_start|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
 /** T203 (T136's fourth stage): a Q8_0 GGUF's weights with the vocabulary and config.json of its original, which
