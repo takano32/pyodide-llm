@@ -630,7 +630,9 @@ def main():
         for index, name, model in runs:
             if name in ("float32", "as 7 bits round", "as 8 bits round"):
                 save_run(saved, index, name, model, logits[(index, name)])
-        print(f"reference: the logits, keys and values of the runs for the page are in {saved}", flush=True)
+        files = sorted(saved.glob("engine-*"))
+        print(f"reference: the logits, keys and values of the runs for the page are in {saved}: {len(files)} files, "
+              f"{sum(file.stat().st_size for file in files) / 1e6:.0f} MB", flush=True)
 
     failed = []
     for index, text in enumerate(texts):
