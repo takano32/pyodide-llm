@@ -369,8 +369,10 @@ export const unmeasured = (error) => (error ? `failed: ${error}` : "not measured
 /** T186: the numbers under a layer's verdict in the check (T175), in one short line for the page and the report: its
  * quantized vectors held to quantize_x (quantized: [{point, wrong, scale, apart, of}]; the worst scale's relative
  * difference and the values off by 1 of all four, or the first that was wrong) and, for the DP4A fused form, the one
- * with the norms apart (sameAsNormsApart: {ulps, apart, stream, bitForBit}). "" where the verdict has neither. */
-export function layerCheckNumbers({ quantized, sameAsNormsApart: apart } = {}) {
+ * with the norms apart (sameAsNormsApart: {ulps, apart, stream, bitForBit}). T225: then the worker's own line of how
+ * each stage of the layer held (stages: short where the form is ok, every stage and the first that departed where it
+ * is not). "" where the verdict has none of them. */
+export function layerCheckNumbers({ quantized, sameAsNormsApart: apart, stages } = {}) {
   const parts = [];
   if (quantized?.length) {
     const wrong = quantized.find((q) => q.wrong);
@@ -381,17 +383,19 @@ export function layerCheckNumbers({ quantized, sameAsNormsApart: apart } = {}) {
   if (apart) {
     parts.push(`norms apart: ${apart.bitForBit ? "bit for bit" : `${apart.ulps} ulp, ${apart.apart} off by 1, stream ${apart.stream.toExponential(1)}`}`);
   }
+  if (stages) parts.push(tableCell(stages));
   return parts.join("; ");
 }
 
 /** A verdict of the GPU's check of its shaders against JavaScript, as the GPU section's line of them and the list of
  * warnings (T227) write it. A tiled shader the device refused says so (T146); a packed one also says how many of the
  * values the GPU quantized came out apart from the CPU's; a layer, its quantized vectors and the fused form against
- * the norms apart (T186); the tokens generated, the first that differed. */
+ * the norms apart (T186); the tokens generated, the first that differed, and (T225) the worker's line of how each
+ * run's steps held (steps). */
 export function checkVerdict([name, v]) {
   if (v.error) return `${name} FAILED (${v.error})`;
   const verdict = `${name} ${v.ok ? "ok" : "WRONG"}`;
-  if (v.tokens !== undefined) return `${verdict} (${v.tokens} tokens, ${v.edge} next to a border${v.problems ? `: ${tableCell(v.problems[0])}` : ""})`;
+  if (v.tokens !== undefined) return `${verdict} (${v.tokens} tokens, ${v.edge} next to a border${v.problems ? `: ${tableCell(v.problems[0])}` : ""}${v.steps ? `; ${tableCell(v.steps)}` : ""})`;
   const apart = v.apart === undefined ? "" : `, quantized ${v.far ? "far apart" : `${number(100 * v.apart, 2)}% apart by 1`}`;
   const numbers = layerCheckNumbers(v);
   return `${verdict} (worst ${v.worstRelative.toExponential(1)}${apart}${numbers ? `; ${numbers}` : ""})`;

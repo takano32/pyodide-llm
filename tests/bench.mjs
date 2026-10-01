@@ -557,6 +557,14 @@ assert.equal(layerCheckNumbers({ quantized, sameAsNormsApart: { ulps: 2, apart: 
 assert.equal(layerCheckNumbers({ sameAsNormsApart: { ulps: 0, apart: 0, stream: 0, bitForBit: true } }), "norms apart: bit for bit");
 assert.equal(layerCheckNumbers({ quantized: [quantized[0], { ...quantized[1], wrong: "far from quantize_x's" }] }), "quantized: o far from quantize_x's");
 assert.equal(layerCheckNumbers({ worstRelative: 1e-6, ok: true }), "");
+// T225: the worker's line of the layer's stages comes last, as it is
+assert.equal(layerCheckNumbers({ stages: "stages: q 2.1e-7, K and V 396 to the nearest float16" }), "stages: q 2.1e-7, K and V 396 to the nearest float16");
+assert.equal(layerCheckNumbers({ quantized, stages: "stages: q 2.1e-7; first to depart: none" }), "quantized: scales 2.5e-7, 6 of 8416 off by 1; stages: q 2.1e-7; first to depart: none");
+// and the line of the tokens' steps, in the verdict of the tokens (after the first problem, where there is one)
+assert.equal(checkVerdict(["tokens on the GPU", { ok: true, worstRelative: 0, tokens: 12, edge: 0, steps: "steps: T 0: logits within 2.0e-6 of the largest" }]),
+  "tokens on the GPU ok (12 tokens, 0 next to a border; steps: T 0: logits within 2.0e-6 of the largest)");
+assert.equal(checkVerdict(["tokens on the GPU", { ok: false, worstRelative: 0, tokens: 9, edge: 0, problems: ["T 0.7, token 2: 48, the CPU 483"], steps: "steps: T 0.7: logits 1.0e-3 | 2.0e-3" }]),
+  "tokens on the GPU WRONG (9 tokens, 0 next to a border: T 0.7, token 2: 48, the CPU 483; steps: T 0.7: logits 1.0e-3 \\| 2.0e-3)");
 // T185: a report of a real GPU is about four times the link's limit (the owner's Android's shape: packed int8 dot,
 // shader-f16 and subgroups, 8 logical cores, the page's path; the numbers made up). Where the whole is too long the link
 // holds the head and a line a section, and asks for the whole from the clipboard; parseReport() reads it as before.

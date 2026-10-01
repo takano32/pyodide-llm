@@ -172,6 +172,8 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
         (v.quantized ? `; ${v.quantized.map((q) => `${q.point}: ${q.wrong ?? `scales ${q.scale.toExponential(1)}, ${q.apart} of ${q.of} values off by 1`}`).join("; ")}` : "") +
         (apart ? `; against the norms apart: scales ${apart.ulps} ulp, ${apart.apart} values off by 1, stream ${apart.stream.toExponential(1)}, ${apart.bitForBit ? "bit for bit" : "not bit for bit"}` : "") +
         (name === "tokens on the GPU" ? `; ${v.tokens} tokens, layer ${v.layer}${v.problems ? `, ${v.problems.join(" / ")}` : ""}` : "") +
+        // T225: how each stage of the layer held, and each step of the tokens (the worker's own lines)
+        (v.stages ? `; ${v.stages}` : "") + (v.steps ? `; ${v.steps}` : "") +
         // T224: a token's attention, its worst head over the largest value, and where (the head's size, the positions)
         (v.at ? `, worst ${v.worstRelative.toExponential(1)} at a head of ${v.at.headSize}, ${v.at.positions} positions` : ""));
     }
