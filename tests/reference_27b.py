@@ -31,7 +31,8 @@
 # the activations signed, in all 8 bits, so this is the run that stands for the 27B on the page), "bfloat16 gates" (float32
 # but for the two small matrices).
 # Against the fork as it is, the line is three times what that rounding moves the engine (T238). It cannot see an error
-# that moves the logits by less, and a few errors of this kind do (one sign of 17408 values moves them by 0.43), so
+# that moves the logits by less, and a few errors of this kind do (one sign of 17408 values moves them by 0.11 to 0.43,
+# one of 6144 by 0.16), so
 # (T237's review) the fork is also run with float32 activations (tests/reference_27b_patch.py, REPLAY of the tokens of
 # the first run): then the engine is 0.003 to 0.007 from it, KL 4e-6 at most, and the line is 0.03 (TIGHT_LINE).
 #
