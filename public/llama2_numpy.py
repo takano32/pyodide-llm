@@ -560,6 +560,85 @@ def delta_rule(state, q, k, v, beta, decay):
     return (q[:, None, :] @ state)[:, 0]
 
 
+# ------------------------------------------------------------------------ the rotated basis (T237)
+# Ternary Bonsai 2 27B (prism-ml/Ternary-Bonsai-2-27B-gguf) stores its matrices in a rotated basis. With R = H S,
+# where S flips the signs of the input's values (a vector of +1 and -1 for every width of an input) and H is the
+# normalized Walsh-Hadamard transform of every block values in turn (Sylvester's order: entry (i, j) is
+# (-1) ** popcount(i & j) / sqrt(block), so H is symmetric and its own inverse), the file holds W R^-1 = W S H in
+# place of W, and the forward pass multiplies it by R x: W x as before, with a matrix that is ternary. The rows of the
+# embedding are stored as R e, and the row looked up is turned back: e = S (H z). Every matrix the forward pass
+# multiplies an activation by is stored so (q and its gate, k, v, o, a linear-attention layer's q-k-v, z and output,
+# the three of the FFN, the classifier); the two small matrices of a linear-attention layer's gates, the norms and
+# the convolution's taps are in the model's own basis. The matrices that read the same input share one R x.
+# The rotation cannot be taken out of the file instead: (W S H) R is W again, which is not ternary (107 GB as float32).
+# From Prism ML's fork of llama.cpp, the formulas and no line of it (MIT; 88c4bc60b9c9578f134385be9535e853f2db9b9f):
+# https://github.com/PrismML-Eng/llama.cpp/blob/88c4bc60b9c9578f134385be9535e853f2db9b9f/src/llama-graph.cpp
+# (build_lora_mm, lines 1546 to 1576: the signs, then the rotation, before the matrix, once for each input;
+# build_embd_rows, 2398 to 2410: h = s * (H z)), src/llama-model.cpp (1196 to 1355: the metadata prism.hadamard.*, a
+# sign vector for every width, a block that divides every width; 2054 to 2065: H's entries) and
+# ggml/src/ggml-cpu/ops.cpp (12066 to 12140: times 1 / sqrt(block), then the butterflies of 1, 2, 4, ... apart).
+# A layer whose value heads outnumber its key heads needs no more: the fork turns that layer's output into Hugging
+# Face's order of heads before the signs (gdn_v_grouped), which is the order this engine computes in.
+def hadamard(x, block):
+    """The normalized Walsh-Hadamard transform of every block values of x in turn (its last axis, a multiple of block
+    long; block a power of two): x / sqrt(block), then sums and differences of values 1, 2, 4, ... apart, the order
+    the kernel and the fork compute in. Its own inverse."""
+    y = (np.asarray(x, dtype=np.float32) * np.float32(1.0 / math.sqrt(block))).reshape(-1, block)
+    half = 1
+    while half < block:
+        pairs = y.reshape(-1, block // (2 * half), 2, half)
+        y = np.stack([pairs[:, :, 0] + pairs[:, :, 1], pairs[:, :, 0] - pairs[:, :, 1]], axis=2)
+        half *= 2
+    return y.reshape(np.shape(x))
+
+
+def rotate(x, signs, block):
+    """R x of the rotated basis: the signs, then the transform. What a matrix of the file is multiplied by, and how a
+    row of a matrix (or of the embedding) is stored: W R^-1 has the rows rotate(w)."""
+    return hadamard(x * signs, block)
+
+
+def unrotate(z, signs, block):
+    """R^-1 z: the transform, then the signs. A row of the embedding as the model reads it."""
+    return hadamard(z, block) * signs
+
+
+def sign_bits(signs):
+    """A vector of +1 and -1 as the text the options carry: its bits (1 for -1, the first value the highest bit of the
+    first byte) in hexadecimal."""
+    return np.packbits(np.asarray(signs) < 0).tobytes().hex()
+
+
+def rotated_form(rotated, widths=()):
+    """The rotated basis of a model, FORM's "rotated", as {"block": the block of the transform, "signs": {width: a
+    float32 vector of +1 and -1}}, from a dict of Python or of JavaScript whose signs are sign_bits() texts by the
+    width (a text itself, as JSON's keys are). None for a model in its own basis. widths: the widths the model's
+    matrices read, each of which has to be whole blocks and have its signs."""
+    if rotated is None:
+        return None
+    rotated = rotated.to_py() if hasattr(rotated, "to_py") else rotated
+    block = int(rotated["block"])
+    if block < 1 or block & (block - 1):
+        raise ValueError(f"The block of a rotated basis is a power of two, not {block}.")
+    signs = {}
+    for width, bits in dict(rotated["signs"]).items():
+        width = int(width)
+        raw = np.frombuffer(bytes.fromhex(str(bits)), dtype=np.uint8)
+        if width < 1 or width % block or raw.size != (width + 7) // 8:
+            raise ValueError(f"The signs of width {width} are not those of whole blocks of {block}.")
+        signs[width] = (1.0 - 2.0 * np.unpackbits(raw)[:width]).astype(np.float32)
+    missing = [width for width in widths if width not in signs]
+    if missing:
+        raise ValueError(f"The rotated basis has no signs for an input {missing[0]} wide.")
+    return {"block": block, "signs": signs}
+
+
+def rotated_widths(dim, q_dim, hidden_dim, linear=None):
+    """The widths of what a model's matrices read: the residual stream, an attention's output (and a linear-attention
+    layer's), the FFN's inside."""
+    return sorted({dim, q_dim, hidden_dim} | ({linear_widths(linear)[2]} if linear else set()))
+
+
 def rope(x, cos, sin):
     # Rotate each pair (x[2i], x[2i+1]) of every head by the angle for this position
     pairs = x.reshape(-1, cos.size, 2)
@@ -658,6 +737,7 @@ def load_kernels(path, without_relaxed=False):
                           attention=[p, p, p, p, p, i32, i32, i32, i32, i32, i32],
                           attention_f16=[p, p, p, p, p, i32, i32, i32, i32, i32, i32], to_f16=[p, p, i32], from_f16=[p, p, i32], finite_f16=[p, i32],
                           swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
+                          rotate=[p, p, p, i32, i32], unrotate=[p, p, p, i32, i32],
                           add_columns=[p, p, p, i32, i32],
                           layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32],
                           penalize=[p, p, i32, ctypes.c_float], widen_bf16=[p, p, i32], widen_q8_0=[p, p, i32],
@@ -867,7 +947,7 @@ def outlier_columns(classifier, channels):
 # (llama2_convert.layout(), checkpoint_size() and Writer, checkpoint_dtype() below, forward.js's footprint()), so
 # that another one is added where it is used, not along the way (T144).
 # linear (T229): the linear-attention layers of arch "qwen35", see linear_form(); None where there are none.
-FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None}
+FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None, "rotated": None}
 
 
 def form_of(options=None):
@@ -996,7 +1076,7 @@ class Llama:
                  tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, collapse=False,
-                 unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None):
+                 unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None, rotated=None):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py), and
@@ -1019,6 +1099,9 @@ class Llama:
         head_dim: the size of a head where it is not dim / n_heads (T124: Qwen3 0.6B has 16 heads of 128 in a dim of
         1024): q and the attention's output are then n_heads * head_dim wide. rms_norm_eps: config.json's, the epsilon
         of every RMSNorm (the kernels take it too).
+        rotated (T237): the matrices are in a rotated basis (the comment above hadamard()): its block and the signs
+        of every width (FORM's, the file cannot say them). The same tensors in the same places: only what they are
+        multiplied by changes, and the row of the embedding is turned back.
         rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
         rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
         whole (Llama 3).
@@ -1103,6 +1186,12 @@ class Llama:
             return array.astype(np.float32, copy=dtype == np.int8 and not keep_int8).reshape(shape)
 
         self.arch, self.parallel_residual = arch, parallel_residual
+        # T237: a rotated basis turns what every matrix reads (turned), and the embedding's row back
+        self.rotated = rotated_form(rotated, rotated_widths(dim, self.q_dim, hidden_dim, self.linear))
+        if self.rotated is not None and arch in ("gpt2", "neox"):
+            raise ValueError("A rotated basis is a Llama's, a Qwen's or a Qwen3.5's: no GPT-2 or GPT-NeoX has one.")
+        block = self.rotated and self.rotated["block"]
+        self.turned = (lambda v: v) if self.rotated is None else (lambda v: rotate(v, self.rotated["signs"][v.size], block))
         self.rms_norm_eps = float(rms_norm_eps)
         # how many values of each head RoPE turns: all of them unless the model says otherwise
         self.rotary = int(rotary) if rotary else self.head_size
@@ -1286,8 +1375,14 @@ class Llama:
         tensors = {name: getattr(self, name).plan() for name in TENSOR_NAMES if isinstance(getattr(self, name, None), Tensor)}
         derived = {name: np.ascontiguousarray(getattr(self, name), dtype=np.float32).tobytes()
                    for name in ("freq_cis_real", "freq_cis_imag") if isinstance(getattr(self, name), np.ndarray)}
+        if self.rotated is not None:
+            # T237: the signs of every width, with the transform's 1 / sqrt(block) in them (what the kernel multiplies by)
+            scale = np.float32(1.0 / math.sqrt(self.rotated["block"]))
+            derived.update({f"signs.{width}": (signs * scale).tobytes() for width, signs in self.rotated["signs"].items()})
         channels = []
-        if int8:
+        # (T237: not in a rotated basis, where the classifier reads R of its input: the rotation spreads a channel
+        # over its block, and a column of the stored matrix is no channel's)
+        if int8 and self.rotated is None:
             final = self.rms_final_weight
             raw = external.read(final.offset, self.dim * 4)
             weight = np.frombuffer(bytes(raw.to_py() if hasattr(raw, "to_py") else raw), dtype=np.float32)
@@ -1300,6 +1395,8 @@ class Llama:
                 "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels,
                 # T229: a Qwen3.5's linear-attention layers (None: none)
                 "linear": self.linear,
+                # T237: the block of a rotated basis (0: the model's own basis); its signs are in derived
+                "rotated": self.rotated["block"] if self.rotated else 0,
                 # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
                 "half_kv": bool(int8) and "kv16" not in disable}
         engine = external.start(plan)
@@ -1373,6 +1470,9 @@ class Llama:
         x = self.embedding(token)
         if gpt2:
             x = x + self.positions[pos]
+        turned = self.turned
+        if self.rotated is not None:  # T237: the table holds rotated rows
+            x = unrotate(x, self.rotated["signs"][self.dim], self.rotated["block"])
 
         # Forward all the layers
         for l, (lines, a) in enumerate(self.slots):
@@ -1382,7 +1482,9 @@ class Llama:
             else:
                 # QKV matmuls for this position, RoPE on q and k, k and v go to the kv cache (a: the layer's place
                 # among the attending layers, which is l where all of them attend)
-                qv, kv, vv = self.wq[a] @ xb, self.wk[a] @ xb, self.wv[a] @ xb
+                # (xr: what the matrices read of xb, itself but in a rotated basis, T237; turned once for all of them)
+                xr = turned(xb)
+                qv, kv, vv = self.wq[a] @ xr, self.wk[a] @ xr, self.wv[a] @ xr
                 if self.bq is not None:  # Qwen2 and GPT-2 add a bias to q, k and v
                     qv, kv, vv = qv + self.bq[a], kv + self.bk[a], vv + self.bv[a]
                 if self.q_norm is not None:  # Qwen3 normalizes every head of q and k
@@ -1399,9 +1501,9 @@ class Llama:
                 att /= att.sum(axis=-1, keepdims=True)
                 attended = (att @ values).reshape(self.q_dim)
                 if self.wg is not None:  # Qwen3.5 gates what the attention read
-                    attended = attended / (1.0 + np.exp(-(self.wg[a] @ xb)))
+                    attended = attended / (1.0 + np.exp(-(self.wg[a] @ xr)))
                 # Output projection and residual connection
-                attended = self.wo[a] @ attended
+                attended = self.wo[a] @ turned(attended)
                 if layer_norm:
                     attended = attended + self.bo[a]
             # GPT-NeoX with use_parallel_residual: both branches read the x this layer began with
@@ -1411,17 +1513,18 @@ class Llama:
             # FFN: w2(silu(w1(x)) * w3(x)), or GPT-2's w2(gelu(w1(x))), and residual connection
             xb = norm(before if self.parallel_residual else x, self.rms_ffn_weight[l],
                       self.ln_ffn_bias[l] if layer_norm else None)
-            hb = self.w1[l] @ xb
+            xr = turned(xb)
+            hb = self.w1[l] @ xr
             if layer_norm:
                 x = x + self.w2[l] @ gelu(hb + self.b1[l]) + self.b2[l]
             else:
-                hb = hb / (1.0 + np.exp(-hb)) * (self.w3[l] @ xb)
-                x = x + self.w2[l] @ hb
+                hb = hb / (1.0 + np.exp(-hb)) * (self.w3[l] @ xr)
+                x = x + self.w2[l] @ turned(hb)
 
         if not need_logits:
             return None
         # Final norm, then the classifier into logits (60% of all the multiply-adds of stories15M)
-        return self.wcls @ norm(x, self.rms_final_weight, self.ln_final_bias)
+        return self.wcls @ turned(norm(x, self.rms_final_weight, self.ln_final_bias))
 
     def follow(self, pos):
         """T229: the linear-attention layers' state is what the tokens before this position left, so position 0 clears
@@ -1441,7 +1544,8 @@ class Llama:
         linear, eps = self.linear, np.float32(self.rms_norm_eps)
         key_heads, value_heads, key_dim = linear["key_heads"], linear["value_heads"], linear["key_dim"]
         _, keys, _ = linear_widths(linear)
-        mixed = self.wqkv[a] @ xb
+        xr = self.turned(xb)  # T237: what the two large matrices read (the gates' small ones read xb itself)
+        mixed = self.wqkv[a] @ xr
         # the convolution over this token and the conv - 1 before it, each channel with its own taps
         taps, before = self.conv[a], self.conv_state[a]
         convolved = silu((taps[:-1] * before).sum(axis=0) + taps[-1] * mixed)
@@ -1455,7 +1559,7 @@ class Llama:
         decay = np.exp(self.decay[a] * softplus(self.wa[a] @ xb + self.dt_bias[a]))
         read = delta_rule(self.delta_state[a], q, k, v, beta.astype(np.float32), decay.astype(np.float32))
         read = self.delta_norm[a] * read / np.sqrt((read * read).mean(axis=1, keepdims=True) + eps)
-        return self.wout[a] @ (read * silu((self.wz[a] @ xb).reshape(value_heads, -1))).reshape(-1)
+        return self.wout[a] @ self.turned((read * silu((self.wz[a] @ xr).reshape(value_heads, -1))).reshape(-1))
 
 
     def kernel_sampler(self, kernels):

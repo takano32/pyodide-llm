@@ -322,6 +322,28 @@ def qwen35_model(dim=32, hidden_dim=64, n_layers=4, every=2, n_heads=4, n_kv_hea
     return tensors, dict(model_type="qwen3_5", text_config=text, tie_word_embeddings=shared)
 
 
+# T237: a model folded into a rotated basis (tests/test_rotated.py, tests/make_qwen35.py)
+# the matrices of a Hugging Face checkpoint that the forward pass multiplies an activation by, and the embedding
+FOLDED = ("embed_tokens.weight", "lm_head.weight", "self_attn.q_proj.weight", "self_attn.k_proj.weight",
+          "self_attn.v_proj.weight", "self_attn.o_proj.weight", "mlp.gate_proj.weight", "mlp.up_proj.weight",
+          "mlp.down_proj.weight", "linear_attn.in_proj_qkv.weight", "linear_attn.in_proj_z.weight",
+          "linear_attn.out_proj.weight")
+
+
+def basis(block, widths, seed=5):
+    """A rotated basis with random signs for these widths, as the options say one, and the signs."""
+    rng = np.random.default_rng(seed)
+    signs = {width: rng.choice([-1.0, 1.0], width).astype(np.float32) for width in sorted(set(widths))}
+    return {"block": block, "signs": {str(width): llama2_numpy.sign_bits(values) for width, values in signs.items()}}, signs
+
+
+def folded(tensors, block, signs):
+    """The tensors of a model as a file in the rotated basis holds them: every row of a matrix (and of the embedding)
+    is R of the row, with the signs of the row's length."""
+    return {name: llama2_numpy.rotate(tensor, signs[tensor.shape[-1]], block).astype(np.float32) if name.endswith(FOLDED) else tensor
+            for name, tensor in tensors.items()}
+
+
 def naive_qwen35_logits(tensors, config, tokens):
     """transformers' Qwen3_5 (modeling_qwen3_5.py at 7fb5bcd1: Qwen3_5DecoderLayer, Qwen3_5Attention,
     Qwen3_5GatedDeltaNet with torch_recurrent_gated_delta_rule, Qwen3_5RMSNorm and Qwen3_5RMSNormGated), written out
