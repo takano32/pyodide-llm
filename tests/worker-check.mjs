@@ -382,6 +382,23 @@ const ok = (line) => {
   assert.equal(context.fetch, plain);
   ok("what arrives while Pyodide loads is counted, and nothing for 30 s is a stop");
 
+  // (the review) a worker that was frozen (a phone switched to another app) or busy for longer than the 30 seconds has
+  // run no tick, and tells nothing of the line: the silence is counted in the ticks that ran, not in the clock's
+  // seconds. Here the event loop is held for 45 seconds of the worker's clock in the middle of the spell
+  {
+    const watch = run("watchArrivals()"), spell = watch.quiet(quiet);
+    let stopped = false;
+    spell.promise.then(() => { stopped = true; });
+    await sleep(3000);
+    for (const until = realNow() + 45000 / SCALE; realNow() < until;);
+    await sleep(2000);
+    assert.equal(stopped, false, "a worker that was frozen was told its line had stopped");
+    await Promise.race([spell.promise, sleep(120000)]);  // (the ticks left to run: a line that stopped is found all the same)
+    assert.equal(stopped, true, "a line that stopped after the freeze was not found");
+    watch.stop();
+  }
+  ok("a freeze of the worker is no stop of the line");
+
   // (6) a browser that would not make the counting stream or Response: the responses come as they were, counted once
   // (before, the wrapper threw, and every fetch of the load failed)
   for (const [name, stand] of [["TransformStream", class {
