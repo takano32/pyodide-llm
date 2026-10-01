@@ -422,7 +422,11 @@ const BENCH_MODEL = "llm-jp-3-150m";
             readies++;
             if (readies === 1) resolve(data);
           } else if (data.type === "bench" || data.type === "paths") resolve(data);
-          else if (data.type === "error") resolve({ error: data.message });
+          else if (data.type === "error") {
+            // T242: where it happened goes to the console, as on the model page (the report holds the message alone)
+            console.error(`worker error (weights memory ${data.weights} bytes):`, data.stack);
+            resolve({ error: data.message });
+          }
         };
         w.onerror = (event) => resolve({ error: `the worker failed: ${event.message ?? "error"}` });
       };
