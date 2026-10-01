@@ -133,18 +133,21 @@ case "$stage" in
     printf 'w1 w2 w3 w4 w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20' > "$dir/tiny.txt"
     node tests/t236_rows.mjs "{\"count\": 16, \"paths\": [{\"name\": \"tiny\", \"out\": \"$dir/tiny8\"}], \"texts\": [\"$dir/tiny.txt\"]}"
     node tests/t236_loops.mjs "{\"out\": \"$dir/tiny8\", \"id\": \"hf-qwen3.5-0.8b-thinking\", \"tiny\": true, \"prompts\": [\"w1 w2\", \"w3\"], \"seed\": 1}"
+    node tests/t236_loops.mjs "{\"out\": \"$dir/tiny8\", \"id\": \"hf-qwen3.5-0.8b-thinking\", \"tiny\": true, \"prompts\": [\"w1 w2\", \"w3\"], \"seed\": 1, \"presence\": 1.5, \"temperature\": 1.0}"
     ;;
-  loops)
+  loops)  # loops <id> <penalty|none> [<presence penalty> [<temperature>]]
     id=${1:?an entry id}
     penalty=${2:-none}
+    presence=${3:-0}
+    temperature=${4:-0}
     page_tools
     source=$(gguf)
     prepare "$source" g8 int8
     spec=$(node -e '
       const fs = require("node:fs");
-      const [out, id, penalty] = process.argv.slice(1);
+      const [out, id, penalty, presence, temperature] = process.argv.slice(1);
       console.log(JSON.stringify({ out, id, prompts: JSON.parse(fs.readFileSync("tests/t236_prompts.json", "utf8")), seed: 1000,
-        penalty: penalty === "none" ? null : Number(penalty) }));' "$dir/g8" "$id" "$penalty")
+        penalty: penalty === "none" ? null : Number(penalty), presence: Number(presence), temperature: Number(temperature) }));' "$dir/g8" "$id" "$penalty" "$presence" "$temperature")
     node tests/t236_loops.mjs "$spec"
     ;;
   loops-entry)  # any entry of the list, as the page opens it: its options, its format and its sampling (write_options.py)

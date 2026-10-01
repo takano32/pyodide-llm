@@ -20,20 +20,35 @@ if (!entry) throw new Error(`no entry ${spec.id}`);
 const page = spec.page ? JSON.parse(fs.readFileSync(spec.page, "utf8")) : null;
 const options = { ...JSON.parse(fs.readFileSync(`${spec.out}.json`, "utf8")), ...(spec.tiny ? {} : page ? page.options : entry.options) };
 const sampling = { ...(spec.tiny ? { steps: 30, temperature: 0.7, topp: 0.8, repetition_penalty: 1.0 } : page ? page.generation : entry.generation),
-  ...(spec.penalty ? { repetition_penalty: spec.penalty } : {}) };
+  ...(spec.penalty ? { repetition_penalty: spec.penalty } : {}), ...(spec.temperature ? { temperature: spec.temperature } : {}) };
 const template = spec.tiny ? "{prompt}" : page ? page.template : entry.template;
 console.log(`T236LOOPS ${spec.id}: sampling ${JSON.stringify(sampling)}, options ${JSON.stringify({ ...options, specials: `${options.specials?.length} of them` })}, template ${JSON.stringify(template)}`);
 const { pyodide } = await pyodideWithEngine();
 pyodide.FS.writeFile("tokenizer.bin", fs.readFileSync(`${spec.out}.tokenizer.bin`));
 pyodide.globals.set("SPEC", JSON.stringify({ file: path.resolve(`${spec.out}.bin`), options, sampling, seed: spec.seed ?? 1000,
-  prompts: spec.prompts.map((prompt) => filled(template, prompt)), asked: spec.prompts, id: spec.id }));
+  prompts: spec.prompts.map((prompt) => filled(template, prompt)), asked: spec.prompts, id: spec.id, presence: spec.presence ?? 0 }));
 try {
 pyodide.runPython(`
 import json, math, time, re
 spec = json.loads(SPEC)
 llama = kernel_llama_file(spec["file"], open("tokenizer.bin", "rb").read(), **spec["options"])
 s = spec["sampling"]
-print("T236LOOPS", spec["id"], "seq_len", llama.seq_len, "backend", llama.backend, flush=True)
+print("T236LOOPS", spec["id"], "seq_len", llama.seq_len, "backend", llama.backend, "presence penalty", spec["presence"], flush=True)
+
+# the card's presence penalty, which the page's sampler does not have: a token the answer has written (not the prompt's)
+# loses this much of its logit, whatever the window. generate() calls penalize() only when the repetition penalty is not 1
+penalty_to_pass = s.get("repetition_penalty", 1.0)
+if spec["presence"]:
+    import numpy as np
+    state = {"history": None, "start": 0}
+    def presence_penalize(logits, history, penalty):
+        if state["history"] is not history:
+            state["history"], state["start"] = history, len(history)
+        written = history[state["start"]:]
+        if written:
+            logits[np.unique(written)] -= spec["presence"]
+    llama.penalize = presence_penalize
+    penalty_to_pass = 2.0
 
 def repeats(text):
     """the most often the same 40 characters occur in the last 3000 characters: a loop says itself here"""
@@ -47,7 +62,7 @@ for i, prompt in enumerate(spec["prompts"]):
     began = time.perf_counter()
     pieces = []
     for piece in llama.generate(prompt, steps=s.get("steps", 0), temperature=s["temperature"], topp=s["topp"],
-                                repetition_penalty=s.get("repetition_penalty", 1.0), seed=spec["seed"] + i, echo=False):
+                                repetition_penalty=penalty_to_pass, seed=spec["seed"] + i, echo=False):
         pieces.append(piece)
     text = "".join(pieces)
     stats = llama.stats
