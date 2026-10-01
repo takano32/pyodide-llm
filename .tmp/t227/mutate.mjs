@@ -38,8 +38,8 @@ const M = [
   ["the fallback state sorted last", "add(STATES[status], 0);", "add(STATES[status], 2);"],
   ["pathWarnings says nothing", "if (!paths || paths.error) return [];", "return [];"],
   ["pathWarnings lists no shared memory", "how.alone !== NO_SHARED_MEMORY && how.alone", "how.alone"],
-  ["pathWarnings leaves the GPU out", "gpu.why === undefined && gpu.lost && GPU_STOPPED(gpu), ", ""],
-  ["pathWarnings leaves unfinished out", "how.unfinished && NOT_ENDED(how), ", ""],
+  ["pathWarnings leaves the GPU out", "gpu.why === undefined && gpu.lost && gpuStopped(gpu), ", ""],
+  ["pathWarnings leaves unfinished out", "how.unfinished && searchNotEnded(how), ", ""],
   ["pathWarnings leaves stopped out", ", how.stopped && STOPPED_WHILE_TIMED]", "]"],
   ["the CPU ceilings said as before", "tableCell(unmeasured(c.error))", "tableCell(`Not measured: ${c.error}`)"],
 ];
