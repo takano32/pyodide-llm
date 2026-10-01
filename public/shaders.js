@@ -2732,11 +2732,9 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
   let s = 1.0 / sqrt(partial[0] / f32(norm.size) + norm.eps);
   for (var g = t; g < norm.size / ${GROUP}u; g += 64u) {
     let at = g * ${GROUP}u;
-    var magnitude = 0u;
-    for (var i = 0u; i < ${GROUP}u; i++) {
-      magnitude = max(magnitude, bitcast<u32>(weight[norm.at + at + i] * (s * x[row + at + i])) & FLOAT_MAGNITUDE);
-    }
-    let scale = bitcast<f32>(magnitude) / 127.0;
+    var largest = 0.0;
+    for (var i = 0u; i < ${GROUP}u; i++) { largest = max(largest, abs(weight[norm.at + at + i] * (s * x[row + at + i]))); }
+    let scale = largest / 127.0;
     let inverse = select(0.0, 1.0 / scale, scale > 0.0);
     for (var k = 0u; k < ${GROUP / 4}u; k++) {
       let i = at + 4u * k;
@@ -2744,7 +2742,7 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
                         weight[norm.at + i + 2u] * (s * x[row + i + 2u]), weight[norm.at + i + 3u] * (s * x[row + i + 3u]));
       xq[(row + i) / 4u] = packed(clamp(vec4<i32>(round(v * inverse)), vec4<i32>(-127), vec4<i32>(127)));
     }
-    xs[token * (norm.size / ${GROUP}u) + g] = scale_word(magnitude, scale);
+    xs[token * (norm.size / ${GROUP}u) + g] = bitcast<u32>(scale);
   }
 }`;
 
