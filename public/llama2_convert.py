@@ -14,6 +14,7 @@ import numpy as np
 
 # the RoPE angles are the engine's, which computes them itself when a file leaves the tables out (int8)
 from llama2_numpy import (CHARSMAP, FORM, RMS_EPS, form_of, layer_slots, linear_form, linear_widths, pack6, quantize6,
+                         rotated_form, rotated_widths, sign_bits,
                           rope_frequencies, rope_magnitude)
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
@@ -30,7 +31,7 @@ def group_size(row_length):
 
 
 def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, bias=False, arch="llama", qk_norm=False,
-           head_dim=0, linear=None):
+           head_dim=0, linear=None, rotated=None):
     """(shape, is a matrix) of every tensor, in file order. llama2_numpy.py reads the same order.
 
     is a matrix: True for what int8 quantizes, False for the norm weights, None for the RoPE tables.
@@ -45,6 +46,7 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, 
     and k), those of the linear-attention layers (q, k and v in one matrix, z, the two small matrices of the gates,
     which are never quantized, the taps of the convolution, dt_bias, the decay, the norm of a value head, the output),
     and the FFN of every layer.
+    rotated: the form's rotated basis (T237), which moves no tensor: the same ones are stored in another basis.
     """
     head_size = head_dim or dim // n_heads
     q_dim, kv_dim = n_heads * head_size, n_kv_heads * head_size
@@ -839,6 +841,23 @@ READERS = {"F32": (4, lambda raw: np.frombuffer(raw, dtype=np.float32)),
 BLOCKS = {"Q8_0": 32, "PQ2_0": 128}
 
 
+ROTATED = "rotated"  # the key of a header's __metadata__ that says a rotated basis (T237)
+
+
+def header_rotated(header):
+    """T237: the rotated basis a safetensors-like header says its matrices are in (FORM's "rotated": the block and
+    the signs of every width, llama2_numpy.rotated_form), None where it says none. gguf_model() writes it there from
+    a GGUF's prism.hadamard.* (gguf_rotated); a file's own __metadata__ holds texts, so it is JSON's text."""
+    said = (header.get("__metadata__") or {}).get(ROTATED)
+    if said is None:
+        return None
+    try:
+        rotated = json.loads(said)
+        return {"block": int(rotated["block"]), "signs": {str(int(width)): str(bits) for width, bits in rotated["signs"].items()}}
+    except (ValueError, TypeError, KeyError, AttributeError):
+        raise ValueError("This file's rotated basis is not said in a way the converter reads.") from None
+
+
 class Safetensors:
     """The tensors of a .safetensors file behind read(offset, length): a local file, a File of the browser, a URL."""
 
@@ -848,9 +867,11 @@ class Safetensors:
         if not 2 <= header_size <= 100_000_000:
             raise ValueError("This is not a safetensors file.")
         try:
-            self.tensors = {name: info for name, info in json.loads(bytes(read(8, header_size))).items() if name != "__metadata__"}
+            header = json.loads(bytes(read(8, header_size)))
+            self.tensors = {name: info for name, info in header.items() if name != "__metadata__"}
         except ValueError:
             raise ValueError("This is not a safetensors file.") from None
+        self.rotated = header_rotated(header)
         self.base = 8 + header_size
 
     def __contains__(self, name):
@@ -1237,9 +1258,17 @@ def checkpoint_form(config, source):
     where dim // heads is the head's size, which a dim that heads do not divide would pass with narrower heads)."""
     config = normalize(config)
     size = head_size(config)
-    return {"bias": has_bias(source), "arch": architecture(config), "qk_norm": has_qk_norm(source),
+    form = {"bias": has_bias(source), "arch": architecture(config), "qk_norm": has_qk_norm(source),
             "head_dim": 0 if size * config["num_attention_heads"] == config["hidden_size"] else size,
-            "linear": linear_layers(config)}
+            "linear": linear_layers(config), "rotated": getattr(source, "rotated", None)}
+    if form["rotated"] is not None:
+        # T237: a rotated basis is no tensor and no number of config.json: the source says it (a GGUF's metadata).
+        # Held to the model here: signs for every width its matrices read, in whole blocks, and no GPT-2's
+        if form["arch"] in ("gpt2", "neox"):
+            raise ValueError("This model cannot be converted: a GPT-2 or a GPT-NeoX in a rotated basis.")
+        rotated_form(form["rotated"], rotated_widths(config["hidden_size"], size * config["num_attention_heads"],
+                                                     config["intermediate_size"], linear_form(form["linear"])))
+    return form
 
 
 def conversion_plan(header, form=None, prefix="transformer.", rotary=0):
@@ -1426,6 +1455,7 @@ class Stream:
         self.bfloat16, self.q8_0 = bfloat16, q8_0
         check_config(config)
         self.tensors = {name: info for name, info in header.items() if name != "__metadata__"}
+        self.rotated = header_rotated(header)  # T237: what checkpoint_form() asks
         self.header = checkpoint_header(config, self, max_seq_len)
         self.head_size = head_size(config)
         # what lays out the checkpoint and sizes the forward pass that the header does not say (T115, T124, T144):
@@ -1804,7 +1834,75 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
             if target.endswith("linear_attn.conv1d.weight") and len(info["shape"]) == 2:
                 entry["shape"] = [info["shape"][0], 1, info["shape"][1]]
         header[target] = entry
+    # T237: a rotated basis is the header's to say (header_rotated), next to the tensors it is about
+    more = arch == "qwen35" and linear["value_heads"] != linear["key_heads"]
+    rotated = gguf_rotated(metadata, tensors, more)
+    if rotated is not None:
+        header["__metadata__"] = {ROTATED: json.dumps(rotated)}
     return header, config
+
+
+# T237: the kinds of a layer's matrices that the engine multiplies a rotated input by, by llama.cpp's names (and
+# output.weight): all the matrices of a Llama, a Qwen and a Qwen3.5 but the two small ones of a linear-attention
+# layer's gates (ssm_alpha, ssm_beta)
+GGUF_ROTATED = ("attn_q", "attn_k", "attn_v", "attn_output", "attn_qkv", "attn_gate", "ssm_out", "ffn_gate", "ffn_up",
+                "ffn_down")
+
+
+def gguf_rotated(metadata, tensors, more_value_heads=False):
+    """T237: the rotated basis a GGUF of Prism ML's says its matrices are in (prism.hadamard.*), as FORM's "rotated"
+    ({"block", "signs": {width: sign_bits()}}), or None where it says none. The fork's loader is the definition
+    (src/llama-model.cpp, lines 1196 to 1355 at 88c4bc60): version 1 (2 with tied_output: the embedding is the
+    classifier too), the transform's name, the axis, a block that is a power of two and divides every width,
+    sign_mode "explicit" (sign_widths, and sign_values one width after the other) or "identity" (no signs),
+    weight_names (the matrices stored as W R^-1), inverse_weight_names (the embedding, whose rows are turned back) and
+    gdn_v_grouped (a linear-attention layer's output matrix reads its heads in Hugging Face's order). The engine
+    turns the input of every matrix and the embedding's row, so a file that rotates other tensors than those is
+    refused: it would run without a word and write nonsense. more_value_heads: a linear-attention layer has more
+    value heads than key heads, whose output matrix in llama.cpp's own order of heads could not be put back."""
+    said = lambda name, default=None: metadata.get(f"prism.hadamard.{name}", default)
+    version = said("version")
+    if version is None:
+        if any(key.startswith("prism.hadamard.") for key in metadata):
+            raise ValueError("This GGUF says a rotated basis without its version.")
+        return None
+    refuse = lambda why: ValueError(f"This GGUF's rotated basis is not one the engine computes in: {why}.")
+    tied = bool(said("tied_output", False))
+    if version not in (1, 2) or (version == 2) != tied or (tied and "output.weight" in tensors):
+        raise refuse(f"version {version}{' with a tied output' if tied else ''}")
+    if said("transform") != "normalized-sylvester-walsh-hadamard" or said("axis") != "input-last-dimension":
+        raise refuse(f"the transform {said('transform')} along {said('axis')}")
+    block = said("block_size")
+    if not isinstance(block, int) or block < 1 or block & (block - 1):
+        raise refuse(f"blocks of {block}")
+    parts = lambda name: name.split(".")
+    folded = {name for name in tensors if name == "output.weight" or (
+        len(parts(name)) == 4 and parts(name)[0] == "blk" and parts(name)[2] in GGUF_ROTATED and parts(name)[3] == "weight")}
+    names = set(said("weight_names", []))
+    if names != folded:
+        odd = sorted(names ^ folded)
+        raise refuse(f"it rotates {'' if odd[0] in names else 'not '}{odd[0]}")
+    if list(said("inverse_weight_names", [])) != ["token_embd.weight"]:
+        raise refuse("the embedding's rows are not the only ones to turn back")
+    if more_value_heads and not said("gdn_v_grouped", False):
+        raise refuse("a linear-attention layer's output matrix in llama.cpp's order of value heads")
+    widths = sorted({tensors[name]["shape"][-1] for name in folded | {"token_embd.weight"}})
+    mode = said("sign_mode")
+    if mode == "identity":
+        signs = {width: np.ones(width) for width in widths}
+    elif mode == "explicit":
+        values, signs, at = np.asarray(said("sign_values", []), dtype=np.int64), {}, 0
+        for width in said("sign_widths", []):
+            signs[int(width)] = values[at:at + int(width)]
+            at += int(width)
+        if at != values.size or np.any(np.abs(values) != 1):
+            raise refuse("its signs are not +1 and -1 for the widths it names")
+    else:
+        raise refuse(f"sign mode {mode}")
+    for width in widths:
+        if width % block or width not in signs or signs[width].size != width:
+            raise refuse(f"no signs in whole blocks of {block} for an input {width} wide")
+    return {"block": block, "signs": {str(width): sign_bits(signs[width]) for width in widths}}
 
 
 def gguf_weights(head, config):
