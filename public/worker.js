@@ -686,6 +686,8 @@ let loadsAhead;
 function pooledWeights(size, after, shared, wide, ahead) {
   const pages = (bytes) => Math.ceil(bytes / 65536);
   const needs = (base) => pages(base + size + (weightsPool.limited ? 0 : after)) + 1;
+  // what a memory made now is for: the load going on, and the largest of those that follow it where the page said which do
+  const largest = ahead === undefined ? after : Math.max(after, ahead);
   const fits = weightsPool && weightsPool.asked === shared && weightsPool.wide === wide && needs(weightsPool.base) <= weightsPool.maximum;
   if (!fits) {
     // nothing may hold the old memory while the new one is made (T96: Chromium refused a page's third)
@@ -693,19 +695,19 @@ function pooledWeights(size, after, shared, wide, ahead) {
     let memory, base;
     if (shared) {
       try {
-        // (a page more, as needs() counts one past what the model takes)
-        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, wide, after,
-          ...(ahead !== undefined && { after: Math.max(after, ahead), spare: 65536 }) }));
+        // (a page more where nothing follows, as needs() counts one past what the model takes)
+        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, wide, after: largest, ...(ahead !== undefined && { spare: 65536 }) }));
       } catch {
         memory = undefined;  // no shared memory here: one thread
       }
       // (T130's review) a shared memory the browser gave at a lowered maximum (weightsMemory's second and third try: the
       // checkpoint and a gigabyte, or a quarter of one) that the forward pass does not fit would run out of memory when
       // the cache grows, or at once where the corrections do not fit, after the whole checkpoint was read: a plain memory
-      // grows as far as the browser allows. One thread, but the model reaches the end of its context
-      if (memory?.limited && memory.maximum < pages(base + size + after) + 1) {
+      // grows as far as the browser allows. One thread, but the model reaches the end of its context. (T242's review: for the
+      // loads that follow as well, where the page said which: a round of /benchmark/ that widens int8 needs the most)
+      if (memory?.limited && memory.maximum < pages(base + size + largest) + 1) {
         console.info(`memory: the browser gave a shared memory of ${Math.round(memory.maximum * 65536 / 2 ** 20)} MiB, and this model needs ` +
-          `${Math.round(pages(base + size + after) * 65536 / 2 ** 20)} MiB: a memory that is not shared, and one thread`);
+          `${Math.round(pages(base + size + largest) * 65536 / 2 ** 20)} MiB: a memory that is not shared, and one thread`);
         memory = undefined;
       }
     }

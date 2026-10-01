@@ -695,6 +695,53 @@ const ok = (line) => {
   ok("the loads that follow come from the page's message, and the next load that says none forgets them");
 }
 
+// ---- T242's review: a browser that refuses the benchmark's memory (the model's alone, a small one). It is asked for less after
+// and never for more (a Windows WebKit that refused 45 MB was then asked for a gigabyte, the size its page went down in), and a
+// shared memory it gave at a lowered maximum must hold the loads the page said follow, as the one going on (T130's guard)
+{
+  const PAGE = 65536, RealMemory = WebAssembly.Memory, info = console.info;
+  const refusing = (limit) => {
+    const asked = [];
+    WebAssembly.Memory = class extends RealMemory {
+      constructor(descriptor) {
+        asked.push(Number(descriptor.maximum ?? 0));
+        if (descriptor.shared && Number(descriptor.maximum) > limit) throw new RangeError("too much address space");
+        super(descriptor);
+      }
+    };
+    return asked;
+  };
+  console.info = () => {};  // (the guard says what it did)
+  try {
+    const size = 32891932, after = 12537888;
+    let asked = refusing(0);
+    const refused = await failure(Promise.resolve().then(() => forward.weightsMemory(size, { shared: true, after, spare: PAGE })));
+    assert.match(refused?.error.message ?? "", /no shared WebAssembly memory/);
+    assert.equal(asked.length, 1, `a memory of the model alone was refused, and then the browser was asked for ${asked.slice(1).join(", ")} pages`);
+    asked = refusing(0);
+    await failure(Promise.resolve().then(() => forward.weightsMemory(size, { shared: true, after })));
+    assert.equal(asked.length, 3, "the model page's memory has its two lesser tries still");
+    assert.ok(asked[0] > asked[1] && asked[1] > asked[2], `the tries are not each less than the one before: ${asked.join(", ")}`);
+
+    // a shared memory at a lowered maximum (weightsMemory's second try) that holds the load going on and not the largest that
+    // follows is not kept: a plain one is made, as for a load that is alone (the model page's, with no loads ahead, keeps it)
+    context.stand.real = forward;
+    const widest = 600e6;  // past what the lesser tries hold: a quarter of a gigabyte over the checkpoint
+    for (const [limit, ahead, shared] of [[Infinity, widest, true], [5000, widest, false], [5000, 100e6, true], [5000, undefined, true]]) {
+      run("forwardModule = stand.real; weightsPool = weightsNow = undefined; loadsAhead = undefined");
+      refusing(limit);
+      const pool = context.pooledWeights(size, after, true, false, ahead);
+      assert.equal(pool.shared, shared, `a browser that gives ${limit} pages, the loads ahead ${ahead}: ${pool.shared ? `a shared memory of ${pool.maximum} pages` : "a plain one"}`);
+      if (pool.shared && ahead !== undefined) assert.ok(pool.maximum * PAGE >= pool.base + size + ahead, "the shared memory does not hold the loads ahead");
+    }
+  } finally {
+    WebAssembly.Memory = RealMemory;
+    console.info = info;
+    run("forwardModule = stand.forward; weightsPool = weightsNow = undefined; loadsAhead = undefined");
+  }
+  ok("a browser that refuses the memory is asked for less and never for more, and a lowered one must hold the loads ahead too");
+}
+
 // ---- T242: what is thrown and is no Error is told in words, not as "[object Object]" (which /benchmark/ showed)
 {
   const told = context.told;
