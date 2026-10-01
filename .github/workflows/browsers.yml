@@ -172,6 +172,11 @@ jobs:
               hf-japanese-gpt2-xsmall hf-japanese-gpt2-medium hf-sarashina2.2-1b hf-gpt-neox-japanese-1.4b
               hf-japanese-large-lm-1.7b hf-eurollm-1.7b-instruct hf-llm-jp-3-1.8b-instruct3
               hf-shisa-v2.1-llama3.2-3b hf-cat-translate-3.3b hf-llm-jp-3-3.7b-instruct3
+          # T250 (2026-10-01): three more of 8B, 26 GB of downloads, each on a 64-bit memory
+          - size: japanese-8b
+            timeout: 3000
+            models: >-
+              hf-llama-3-elyza-jp-8b hf-shisa-v2.1-qwen3-8b hf-cat-thinking-8b
     steps:
       - name: Checkout
         uses: actions/checkout@v7

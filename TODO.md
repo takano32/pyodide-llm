@@ -1823,12 +1823,27 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **未計測**: ブラウザでは 1 つも動かしていない（本番の `models.yml` が最初の実行）。準備完了の秒、ヒープ、スレッドのある速さ、GPU の道、6 ビット、保存と 2 回目の訪問。LINE のモデルの BOS ごとの perplexity（文を読んだだけ）。EuroLLM の日本語は 1 つのプロンプトだけ。xsmall の `?bench=1`（greedy）の見え方。
 - **持ち主に決めてもらうこと**: (1) xsmall を残すか（greedy では `<unk>` をくり返す。ページの既定のサンプリングでは書く）。(2) CAT-Translate 3.3B を safetensors の 6.7 GB のまま置くか、Q8_0 の GGUF を待つか。(3) EuroLLM の note の言い方（「日本語 / English and 33 more languages」）。(4) llm-jp-3 1.8B instruct3 は一覧の llm-jp-3.1 1.8B instruct4 の前の版で、両方置くか。
 
-### T250 [追加][モデル] 日本語の 8B を一覧に（llm-jp-4.1 8B thinking、Llama-3-ELYZA-JP 8B、shisa v2.1 Qwen3 8B、CAT-Thinking 8B） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
-```
-- 64 ビットのメモリ（Chrome と Firefox）。llm-jp-4.1 は harmony の手書きと止まりのトークン [1, 2, 13]、Qwen3 の派生は `bos: 151643`。
-- llm-jp-4.1 の Q8_0 の GGUF が無ければ safetensors の 17.2 GB から（持ち主の判断）。thinking の考えを見せるかも決める。
+### T250 [追加][モデル] 日本語の 8B を一覧に（llm-jp-4.1 8B thinking、Llama-3-ELYZA-JP 8B、shisa v2.1 Qwen3 8B、CAT-Thinking 8B） — 状態: **反映済み**（2026-10-01、本線に入れるのは本会話。レビュー前。Opus medium、ブランチ `t249-t250-japanese-models`。T248 の調べから。llm-jp-4.1 8B thinking は入れていない: 持ち主の判断待ち）
 
-```
+**結果: 3 項目を足し、llm-jp-4.1 8B thinking は待ちにした。** 変換器・エンジン・`CONVERTER` は変えていない。分かったことは AGENTS.md の「日本語の 8B を 3 つ足した」。
+
+| モデル（ID） | 取り込み元と突き合わせ（最大の相対誤差・いちばん近い参照から・不一致） | 取得 → int8 | 一覧 |
+|---|---|---|---|
+| Llama-3-ELYZA-JP 8B（`hf-llama-3-elyza-jp-8b`） | mmnga の Q8_0: 0.0075・0・0（Q8_0 の参照でだけ通った埋め込みの行 3） | 8.5 GB → 9.0 GB | 入れた（カードのシステム文つきの手書きの書式） |
+| Shisa V2.1 Qwen3 8B（`hf-shisa-v2.1-qwen3-8b`） | mradermacher の Q8_0: 0.0074・0・0 | 8.7 GB → 9.2 GB | 入れた（BOS は項目の options で 151643） |
+| CAT-Thinking 8B（`hf-cat-thinking-8b`） | mmnga-o の Q8_0: 0.0074・0・0。mradermacher の Q8_0 は通らなかった（256 のテンソルがいちばん近い参照から 0.11〜0.39%） | 8.7 GB → 9.2 GB | 入れた（BOS は項目の options で 151643） |
+| llm-jp-4.1 8B thinking | Q8_0 の GGUF が無い（2026-10-01 に名前で探して、作り手の BF16 の 17.2 GB の 1 件だけ）。safetensors は 17.2 GB（4 シャード） | — | 入れていない |
+
+- **CI の run**: GGUF の突き合わせ 36918507849（ELYZA・Shisa は成功、mradermacher の CAT-Thinking は失敗）と 36920519236（mmnga-o の CAT-Thinking、成功）。書かせる 36918507856（3 項目、greedy の 64 トークン。このときの CAT-Thinking は mradermacher の GGUF）と 36923126803（mmnga-o の GGUF の CAT-Thinking）。
+- **書式**（手元、`tests/format_check.py`）: 3 項目とも 9/9（ELYZA は一覧の手書き、ほかの 2 つは変換器の読み）。
+- **書いた文**（ページのエンジン、int8、64 ビットのメモリ、1 本で 2.0 tok/s、greedy の 64 トークン）:
+  - Llama-3-ELYZA-JP 8B: 「流行りは常に変化するものですが、現在のトレンドや将来の予測を含め、以下の3つを挙げます。\n\n1. メタバース: メタバースは、インターネット上に構築される仮想空間のことで、」
+  - Shisa V2.1 Qwen3 8B: 「流行りの予測は非常に困難で、不確実性を含む可能性が高いです。ただし、現在のトレンドや技術の進歩を考慮すると、以下のような「今後」の流行りをいくつか挙げることができます。…」
+  - CAT-Thinking 8B: 「<think>\nユーザーは「これからの流行りを3つ挙げてください」という質問をしています。これは一般的な話題であり、特定のカテゴリや禁止事項に該当しません。したがって、回答を提供できます。流行りのトレンドについて、例えばテク」（mradermacher の GGUF では「<think>済みの指示を確認しますか？はい、…」と別の文だった）
+- **llm-jp-4.1 8B thinking が待つ訳**: Q8_0 の GGUF が出れば `gguf.yml` の `candidates` にかけて入れられる。safetensors から取るなら 17.2 GB の取得になる（一覧のいちばん大きい取得は今 9.1 GB）。どちらでも要るもの: harmony の手書きの書式（T132 の `HARMONY` はモデルの名前と知識の締め日が違う）、止まりのトークン [1, 2, 13]、thinking の考え（analysis のチャンネル）を画面に出すかの決め。
+- **未計測**: ブラウザでは 1 つも動かしていない（本番の `models.yml` が最初の実行）。準備完了の秒、ヒープ（見積もりは 4096 位置で 9.8〜10.1 GiB）、スレッドのある速さ、GPU の道、保存と 2 回目の訪問。CAT-Thinking が考えを終えて答えるまで（64 トークンでは考えの途中）。mradermacher の CAT-Thinking の GGUF が何の重みか。
+- **持ち主に決めてもらうこと**: (1) llm-jp-4.1 8B thinking を safetensors の 17.2 GB から入れるか、Q8_0 の GGUF を待つか。入れるなら考えを見せるか。(2) Shisa V2.1 Qwen3 8B に考える形の項目も足すか（書式は言えば考える。カードは考える形に触れていない）。(3) CAT-Thinking に「すぐ答える」形も足すか（考える学習をしたモデルなので足していない）。
+
 ### T251 [追加][モデル] 英語の古典の梯子を一覧に（GPT-2 medium・large・xl と distilgpt2、Pythia 14M・2.8B・6.9B） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
 ```
 - GPT-2 と NeoX の GGUF の道（T136 の段 ③）のまま。実物の固定値に 1 つ足すかは任意。
