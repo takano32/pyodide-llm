@@ -19,9 +19,11 @@
 # T247: a second word says which of the four parts to run, "float32 int8 kernels threads" when left out. NumPy's two
 # rows widen the weights to float32, which a runner's 16 GB holds for the 2B (7.5 GB) and not for the 4B (16.8 GB) or
 # the 9B (35.8 GB): those run "kernels threads" (bash tests/page_qwen35.sh hf-qwen3.5-4b "kernels threads"), and the
-# 2B's rows take two runs of the job's 90 minutes. On a runner the files go to /mnt, which has the room.
+# 2B's rows take two runs of the job's 90 minutes. On a runner the files go to /mnt, which has the room. A third word
+# is the number of tokens (1500 when left out).
 set -euo pipefail
 parts=" ${2:-float32 int8 kernels threads} "
+tokens="${3:-1500}"
 has() { case "$parts" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 dir="${RUNNER_TEMP:-.tmp}/qwen35"
 if [ -n "${RUNNER_TEMP:-}" ] && [ -d /mnt ]; then
@@ -39,7 +41,7 @@ fi
 node tests/wikipedia.mjs en "$dir/en.txt"
 if has float32; then
   python tests/perplexity_prepare.py "$model" "$dir/float32" float32 2>&1 | tail -1 | cut -c1-200
-  echo "qwen35: perplexity of $what, NumPy: $(python tests/perplexity_native.py "$dir/float32" 1500 "$dir/en.txt")"
+  echo "qwen35: perplexity of $what, NumPy: $(python tests/perplexity_native.py "$dir/float32" "$tokens" "$dir/en.txt")"
   rm "$dir/float32.bin"
 fi
 python tests/perplexity_prepare.py "$model" "$dir/int8" int8 2>&1 | tail -1 | cut -c1-200
@@ -48,7 +50,7 @@ wide=
 if [ "$(stat -c %s "$dir/int8.bin")" -gt 3400000000 ]; then wide=--wide; fi
 numpy=
 if has int8; then
-  numpy=$(python tests/perplexity_native.py "$dir/int8" 1500 "$dir/en.txt")
+  numpy=$(python tests/perplexity_native.py "$dir/int8" "$tokens" "$dir/en.txt")
   echo "qwen35: perplexity of the int8 weights, NumPy: $numpy"
   # (--max-change: the review of T229. 7 bits cost +1.86% on x86-64 and +2.29% on arm64, 8 bits -0.36% and -0.45%; a fault of the
   # int8 path is 10% or more)
@@ -57,10 +59,10 @@ fi
 if has kernels; then
   if [ "$(stat -c %s "$dir/int8.bin")" -gt 6000000000 ]; then
     # a process for each row (7-bit and 8-bit activations): two memories of the 9B at once are more than a runner has
-    node tests/perplexity.mjs "$dir/int8" 1500 "$dir/en.txt" --file $numpy $wide --rows=0
-    node tests/perplexity.mjs "$dir/int8" 1500 "$dir/en.txt" --file $numpy $wide --rows=2
+    node tests/perplexity.mjs "$dir/int8" "$tokens" "$dir/en.txt" --file $numpy $wide --rows=0
+    node tests/perplexity.mjs "$dir/int8" "$tokens" "$dir/en.txt" --file $numpy $wide --rows=2
   else
-    node tests/perplexity.mjs "$dir/int8" 1500 "$dir/en.txt" --file $numpy $wide
+    node tests/perplexity.mjs "$dir/int8" "$tokens" "$dir/en.txt" --file $numpy $wide
   fi
 fi
 if has threads; then

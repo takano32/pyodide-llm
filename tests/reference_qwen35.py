@@ -32,6 +32,8 @@
 #     --from=gguf: the engine on the list's GGUF instead (unsloth's Q8_0, whose value heads llama.cpp tiled), its
 #     float32 checkpoint held to the safetensors' tensor by tensor, and its logits to transformers' of the original.
 #     --text: transformers' perplexity of the original on 1500 tokens of that text too, as tests/perplexity.py counts.
+#     --first=192: and the engine's on the first so many of them, token by token, against transformers' on the same
+#     (what the weights of a GGUF cost, which the 1500 tokens are hours of for the engine here).
 # The lines it holds the engine to are at the end of each part; anything past them is exit 1.
 import gc
 import json
@@ -509,12 +511,15 @@ def theirs(directory, ids_file):
         logits = model(input_ids=ids, attention_mask=mask).logits
     say(f"large: transformers, {len(rows)} rows of up to {width} positions at once in {time.perf_counter() - began:.0f} s")
     np.save(directory / "theirs.npy", logits[0, :len(rows[0])].float().numpy())
-    total, count = 0.0, 0
+    total, count, first = 0.0, 0, []
     for at, row in enumerate(rows[1:], 1):
         logs = torch.log_softmax(logits[at, :len(row) - 1].double(), dim=-1)
-        total -= float(logs.gather(1, torch.tensor(row[1:])[:, None]).sum())
+        each = -logs.gather(1, torch.tensor(row[1:])[:, None])[:, 0]
+        if at == 1:
+            first = each.tolist()  # the first window, token by token: large() holds the engine's to it
+        total += float(each.sum())
         count += len(row) - 1
-    (directory / "theirs.json").write_text(json.dumps({"total": total, "count": count}))
+    (directory / "theirs.json").write_text(json.dumps({"total": total, "count": count, "first": first}))
 
 
 def tensors_apart(ours, other, options):
@@ -542,7 +547,7 @@ def tensors_apart(ours, other, options):
     return out, failed or offset != len(a)
 
 
-def large(directory, positions, name, source, text_file, minutes):
+def large(directory, positions, name, source, text_file, minutes, first=0):
     """A real model whose float32 is more than the runner's memory (T245: the 4B, 16.8 GB). What the 0.8B's part does
     not do here: transformers token by token and its generate() (each a pass over all the weights, through the swap),
     so the line is the 0.8B's 2e-2 with no floor measured, and the greedy text is left to tests/fixed_outputs.py's
@@ -645,6 +650,24 @@ def large(directory, positions, name, source, text_file, minutes):
         f"largest difference {largest:.2e}, mean {mean:.2e}, the same most likely token at {agree} of {len(ours)} "
         f"positions (the largest gap between the reference's best two where it is not: {margin:.2e})"
         f"{'' if ok else f' — FAILED (the line: {line})'}")
+    if text_file and first:
+        # the same on the first tokens of the perplexity's text: the negative log likelihood of each, as
+        # tests/perplexity.py counts it (float64, from the page's BOS)
+        row, began, mine = rows[1][:first + 1], time.perf_counter(), []
+        for pos in range(len(row) - 1):
+            logits = np.asarray(llama.forward(row[pos], pos), dtype=np.float64)
+            logits -= logits.max()
+            mine.append(-(logits[row[pos + 1]] - math.log(np.exp(logits).sum())))
+        reference = nll["first"][:len(mine)]
+        furthest = max(abs(a - b) for a, b in zip(mine, reference))
+        ours_value, theirs_value = (math.exp(sum(values) / len(values)) for values in (mine, reference))
+        say(f"large: perplexity of the first {len(mine)} tokens of {Path(text_file).name}: transformers on the float32 "
+            f"original {theirs_value:.3f}, the engine (NumPy, float32) on {'the GGUF' if source == 'gguf' else 'the safetensors'} "
+            f"{ours_value:.3f} ({(ours_value / theirs_value - 1) * 100:+.2f}%; a token's negative log likelihood at most "
+            f"{furthest:.2e} apart; {time.perf_counter() - began:.0f} s)")
+        if source != "gguf" and abs(ours_value / theirs_value - 1) > 1e-3:
+            failed = True
+            say("large: the engine's perplexity on the original's weights is not transformers' — FAILED")
     return failed
 
 
@@ -663,7 +686,7 @@ def main():
         sys.exit(1 if failed else 0)
     if option("model") in LARGE:
         failed = large(directory, positions, option("model"), option("from", "safetensors"), option("text"),
-                       float(option("minutes", 40)))
+                       float(option("minutes", 40)), int(option("first", 0)))
         say("FAILED" if failed else "the engine computes what transformers computes")
         sys.exit(1 if failed else 0)
     if only == "fetch":
