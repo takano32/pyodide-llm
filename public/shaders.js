@@ -847,7 +847,9 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 // rows of a token are the dispatch's x (one for the layer's norms, a row of dim; T153: Qwen3's norms of q and k, a row
 // a head of headSize, heads of them), the tokens its y. inPlace (T153): x is written over (a head's q or k), as
 // llama.cpp's rms_norm_mul.wgsl has it (INPLACE: the norm and the weight's product in one dispatch, the weight's row
-// the same for every row, mul_src_ne1 1); else out is another buffer (xb, the layer's norms).
+// the same for every row, mul_src_ne1 1); else out is another buffer (xb, the layer's norms). T226: norm.first, the rows
+// before the dispatch's first (0 for a prompt's): a generated token's q, k and v are one buffer as their matrix writes
+// them, and the heads of k are the rows after q's heads.
 //
 // The row of a norm, its weight broadcast over the rows and the in-place form adapted from llama.cpp,
 // ggml/src/ggml-webgpu/wgsl-shaders/rms_norm_mul.wgsl and binary.wgsl (OP_ADD, INPLACE; ADD below), and (T154)
@@ -870,7 +872,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 // COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 const rmsNorm = (inPlace) => /* wgsl */ `
-struct Norm { size: u32, at: u32, eps: f32, unused: u32 }
+struct Norm { size: u32, at: u32, eps: f32, first: u32 }
 ${STEP}
 @group(0) @binding(0) var<storage, ${inPlace ? "read_write" : "read"}> x: array<f32>;
 @group(0) @binding(1) var<storage, read> weight: array<f32>;
@@ -880,7 +882,7 @@ var<workgroup> partial: array<f32, 64>;
 @compute @workgroup_size(64)
 fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) rows: vec3u, @builtin(local_invocation_index) t: u32) {
   if (id.y >= step.tokens) { return; }
-  let row = (id.y * rows.x + id.x) * norm.size;
+  let row = (id.y * rows.x + id.x + norm.first) * norm.size;
   var squares = 0.0;
   for (var i = t; i < norm.size; i += 64u) { squares += x[row + i] * x[row + i]; }
   partial[t] = squares;
@@ -2385,48 +2387,54 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
 // (the rows of the CPU's table: the model's own, Llama 3's scaling too).
 const FUSED_PARAMS = /* wgsl */ `struct Params { rows: u32, words: u32, perRow: u32, second: u32, eps: f32, normAt: u32, qRows: u32, kvRows: u32,
                 headSize: u32, turned: u32, unused0: u32, unused1: u32 }`;
-// where the write of an output goes (bindings 5 on): T150's, and T175's DP4A form's alike
+// where the write of an output goes (bindings 5 on): T150's, and T175's DP4A form's alike. T226: the write of a pair
+// is a function (write_pair), which TOKEN_ROPE below calls too: the same lines where the matrix's write cannot turn
+// the pair yet (a bias or a head's norm comes between)
 const fusedOutputs = (output) => (output === "rope" ? `@group(0) @binding(5) var<storage, read_write> q: array<f32>;
 @group(0) @binding(6) var<storage, read_write> keys: array<u32>;
 @group(0) @binding(7) var<storage, read_write> values: array<u32>;
 @group(0) @binding(8) var<storage, read> angles: array<f32>;
-@group(0) @binding(9) var<uniform> step: Step;` : "@group(0) @binding(5) var<storage, read_write> dst: array<f32>;");
+@group(0) @binding(9) var<uniform> step: Step;
+
+// a pair of neighbouring rows (row even, v0 and v1 their values): q's turned into q; k's turned and v's as they are
+// into the cache at pos
+fn write_pair(row: u32, v0: f32, v1: f32) {
+    let size = params.headSize;
+    let half = size / 2u;
+    let at = step.pos * size;  // the position's row of the table: its cos, then its sin
+    if (row < params.qRows) {
+        let in_head = row % size;
+        if (in_head < params.turned) {
+            let c = angles[at + in_head / 2u];
+            let s = angles[at + half + in_head / 2u];
+            q[row] = v0 * c - v1 * s;
+            q[row + 1u] = v0 * s + v1 * c;
+        } else {
+            q[row] = v0;
+            q[row + 1u] = v1;
+        }
+    } else if (row < params.qRows + params.kvRows) {
+        let j = row - params.qRows;
+        var key = vec2<f32>(v0, v1);
+        let in_head = j % size;
+        if (in_head < params.turned) {
+            let c = angles[at + in_head / 2u];
+            let s = angles[at + half + in_head / 2u];
+            key = vec2<f32>(key.x * c - key.y * s, key.x * s + key.y * c);
+        }
+        keys[step.pos * params.kvRows / 2u + j / 2u] = pack2x16float(key);
+    } else {
+        let j = row - params.qRows - params.kvRows;
+        values[step.pos * params.kvRows / 2u + j / 2u] = pack2x16float(vec2<f32>(v0, v1));
+    }
+}` : "@group(0) @binding(5) var<storage, read_write> dst: array<f32>;");
 // The write (the epilogue), T150's and T175's DP4A form's alike: a workgroup's OUTPUTS_PER_WG rows from row_base on,
 // their sums in totals (up's rows' after them, for SwiGLU), each times scale (the norm's, or 1), by thread thread_id
-const fusedWrite = (output) => (output === "rope" ? `    // a pair of neighbouring rows a thread: q's turned into q; k's turned and v's as they are into the cache at pos
+const fusedWrite = (output) => (output === "rope" ? `    // a pair of neighbouring rows a thread
     if (thread_id < OUTPUTS_PER_WG / 2u) {
         let row = row_base + 2u * thread_id;
         if (row < params.rows) {
-            let v0 = totals[2u * thread_id] * scale;
-            let v1 = totals[2u * thread_id + 1u] * scale;
-            let size = params.headSize;
-            let half = size / 2u;
-            let at = step.pos * size;  // the position's row of the table: its cos, then its sin
-            if (row < params.qRows) {
-                let in_head = row % size;
-                if (in_head < params.turned) {
-                    let c = angles[at + in_head / 2u];
-                    let s = angles[at + half + in_head / 2u];
-                    q[row] = v0 * c - v1 * s;
-                    q[row + 1u] = v0 * s + v1 * c;
-                } else {
-                    q[row] = v0;
-                    q[row + 1u] = v1;
-                }
-            } else if (row < params.qRows + params.kvRows) {
-                let j = row - params.qRows;
-                var key = vec2<f32>(v0, v1);
-                let in_head = j % size;
-                if (in_head < params.turned) {
-                    let c = angles[at + in_head / 2u];
-                    let s = angles[at + half + in_head / 2u];
-                    key = vec2<f32>(key.x * c - key.y * s, key.x * s + key.y * c);
-                }
-                keys[step.pos * params.kvRows / 2u + j / 2u] = pack2x16float(key);
-            } else {
-                let j = row - params.qRows - params.kvRows;
-                values[step.pos * params.kvRows / 2u + j / 2u] = pack2x16float(vec2<f32>(v0, v1));
-            }
+            write_pair(row, totals[2u * thread_id] * scale, totals[2u * thread_id + 1u] * scale);
         }
     }` : `    if (thread_id < OUTPUTS_PER_WG) {
         let row = row_base + thread_id;
@@ -2440,7 +2448,27 @@ const fusedWrite = (output) => (output === "rope" ? `    // a pair of neighbouri
             dst[row] = dst[row] + value;`}
         }
     }`);
-export const fusedMatVec = ({ input, output, subgroups }) => {
+// T226: RoPE and the cache of a generated token whose q, k and v cannot be turned on their matrix's write: Qwen2's
+// biases (ADD) and Qwen3's norms of the heads (HEAD_NORM) come between, as on the CPU and in a prompt's block (T153:
+// the biases, the norms of the heads, RoPE). The matrix then writes q, k and v as they are into one buffer (output
+// "write": the rows of q, then k's, then v's), those dispatches change them in place, and this one does with every
+// pair what the matrix's write would have done (write_pair above: ROPE's turning, the keys and values as pairs of
+// float16 into the cache at step.pos). One workgroup, a thread a pair. Bindings: 2 the rows, 3 the matrix's Params
+// (rows, qRows, kvRows, headSize, turned), 5 to 9 as the fused "rope"
+export const TOKEN_ROPE = /* wgsl */ `
+${FUSED_PARAMS}
+${STEP}
+@group(0) @binding(2) var<storage, read> src1: array<f32>;
+@group(0) @binding(3) var<uniform> params: Params;
+${fusedOutputs("rope")}
+
+@compute @workgroup_size(64)
+fn main(@builtin(local_invocation_index) t: u32) {
+    for (var row = 2u * t; row < params.rows; row += 128u) {
+        write_pair(row, src1[row], src1[row + 1u]);
+    }
+}`;
+export const fusedMatVec =({ input, output, subgroups }) => {
   const norm = input === "norm", glu = output === "swiglu";
   const matrices = glu ? 2 : 1, sums = MUL_MAT_VEC_ROWS * matrices + (norm ? 1 : 0);
   return /* wgsl */ `${subgroups ? "enable subgroups;\nrequires subgroup_id;\n" : ""}

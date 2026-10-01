@@ -1076,6 +1076,10 @@ async function timeBlocks(m) {
 // prompt's tiles, whichever is right and faster here, on this pass's q. Where it came from: the run of T151 (public/benchmark/gpu.js's generate()), whose
 // form is WebLLM's decode loop without its sync of every token (web-llm, src/llm_chat.ts; no line taken) and llama.cpp's
 // WebGPU graph of a token, one command encoder for all of it (ggml-webgpu.cpp, commit 2145525a, MIT; no line taken).
+// T226: Qwen2's and Qwen3's steps too. What they have between the matrix of q, k and v and RoPE (T153: a bias of each,
+// a norm of every head of q and of k) is the prompt's dispatches, ADD and HEAD_NORM, as the CPU orders them, on the
+// three as their matrix wrote them, and then shaders.js's TOKEN_ROPE (the fused write's own lines, as a dispatch):
+// two dispatches a layer more with the biases, three with the norms of the heads, none for a model without either.
 // (T175's fused DP4A with the norms apart as well, RMSNORM and QUANTIZE where NORM_QUANTIZE is one: the owner's
 // Android ran a layer so in 3.36 ms against 3.67 fused, the fastest of its table, 2026-09-27; T175's condition to
 // reverse NORM_QUANTIZE, here chosen on the device)
@@ -1089,11 +1093,12 @@ function tokenCandidates(m) {
   const packed = Boolean(features?.has("packed_4x8_integer_dot_product"));
   return TOKEN_FORMS.filter((form) => (!form.subgroups || subgroups) && (!form.dp4a || packed));
 }
-// a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers)
-const tokenCodes = (wgsl, { dp4a, subgroups, normApart }) => (dp4a
-  ? [...(normApart ? [] : [["normQuantize", wgsl.NORM_QUANTIZE]]), ["qkv", wgsl.fusedDp4aMatVec({ output: "rope" })], ["add", wgsl.fusedDp4aMatVec({ output: "add" })],
+// a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers). T226, apart: q,
+// k and v written as they are (the classifier's shader: one code, compiled once), for what comes before RoPE
+const tokenCodes = (wgsl, { dp4a, subgroups, normApart }, apart) => (dp4a
+  ? [...(normApart ? [] : [["normQuantize", wgsl.NORM_QUANTIZE]]), ["qkv", wgsl.fusedDp4aMatVec({ output: apart ? "write" : "rope" })], ["add", wgsl.fusedDp4aMatVec({ output: "add" })],
     ["glu", wgsl.fusedDp4aMatVec({ output: "swiglu" })], ["classifier", wgsl.fusedDp4aMatVec({ output: "write" })]]
-  : [["qkv", wgsl.fusedMatVec({ input: "norm", output: "rope", subgroups })], ["add", wgsl.fusedMatVec({ input: "plain", output: "add", subgroups })],
+  : [["qkv", wgsl.fusedMatVec({ input: "norm", output: apart ? "write" : "rope", subgroups })], ["add", wgsl.fusedMatVec({ input: "plain", output: "add", subgroups })],
     ["glu", wgsl.fusedMatVec({ input: "norm", output: "swiglu", subgroups })], ["classifier", wgsl.fusedMatVec({ input: "norm", output: "write", subgroups })]]);
 
 // a bind group of the bindings given ([binding, a buffer or a range of one] each: the fused shaders skip binding 4
@@ -1126,23 +1131,44 @@ async function tokenBuffers(m) {
     new Float32Array(bytes, 16, 1)[0] = plan.eps;
     return uniform(m, bytes);
   };
-  // RMSNORM's and NORM_QUANTIZE's Norm: size, at, eps
-  const norm = (at) => {
+  // RMSNORM's, HEAD_NORM's and NORM_QUANTIZE's Norm: size, at, eps, first (HEAD_NORM's: the rows before its first)
+  const norm = (at, size = plan.dim, first = 0) => {
     const bytes = new ArrayBuffer(16);
-    new Uint32Array(bytes, 0, 2).set([plan.dim, at]);
+    new Uint32Array(bytes).set([size, at, 0, first]);
     new Float32Array(bytes, 8, 1)[0] = plan.eps;
     return uniform(m, bytes);
   };
   const flash = new ArrayBuffer(16);
   new Uint32Array(flash, 0, 2).set([plan.heads, plan.kvHeads]);
   new Float32Array(flash, 8, 1)[0] = 1 / Math.sqrt(plan.headSize);
-  const layers = [...Array(plan.layers)].map((_, l) => l * plan.dim);
+  const layers = [...Array(plan.layers)].map((_, l) => l * plan.dim), qkvRows = qDim + 2 * kvDim;
   g.u = { embed: m.tables.embedding.map((piece) => uniform(m, new Uint32Array([plan.dim, piece.first, piece.rows, 0]))), flash: uniform(m, flash), o: params(plan.dim, qDim), down: params(plan.dim, plan.hidden),
-    qkv: layers.map((at) => params(qDim + 2 * kvDim, plan.dim, 0, at)), gateUp: layers.map((at) => params(plan.hidden, plan.dim, plan.hidden, at)),
-    norm: layers.map(norm), final: norm(0), classifier: m.tables.classifier.map((piece) => params(piece.rows, plan.dim)),
+    qkv: layers.map((at) => params(qkvRows, plan.dim, 0, at)), gateUp: layers.map((at) => params(plan.hidden, plan.dim, plan.hidden, at)),
+    norm: layers.map((at) => norm(at)), final: norm(0), classifier: m.tables.classifier.map((piece) => params(piece.rows, plan.dim)),
     // QUANTIZE's (n, xStride): the attention's output, SwiGLU's
     quantizeAttention: uniform(m, new Uint32Array([qDim, qDim, 0, 0])), quantizeGate: uniform(m, new Uint32Array([plan.hidden, plan.hidden, 0, 0])),
     quantizeNormed: uniform(m, new Uint32Array([plan.dim, plan.dim, 0, 0])) };
+  // T226: a model whose q, k and v are not ready for RoPE as their matrix leaves them (T153: Qwen2's biases, Qwen3's
+  // norms of the heads) has the matrix write the three as they are into qkv (q's rows, then k's, then v's), the
+  // prompt's ADD and HEAD_NORM change them there, and TOKEN_ROPE turns them into q and the cache (tokenPass). The
+  // biases of a layer are one vector then, in the rows' order (one ADD for the three); k's heads are the rows after q's
+  const { bq, bk, bv, qNorm } = plan.vectors;
+  if (bq || qNorm) {
+    g.rope = await within(validated(m, () => pipelineOf(m, wgsl.TOKEN_ROPE)), "compiling a token's RoPE");
+    g.qkv = buffer(m, qkvRows * 4);
+  }
+  if (bq) {
+    g.qkvBias = buffer(m, plan.layers * qkvRows * 4, STORAGE | COPY_DST);
+    for (let l = 0; l < plan.layers; l++) {
+      let at = l * qkvRows * 4;
+      for (const bias of [bq, bk, bv]) {
+        copyIn(m, g.qkvBias, bias.at + l * bias.size * 4, bias.size * 4, at);
+        at += bias.size * 4;
+      }
+    }
+    g.u.qkvBias = layers.map((_, l) => uniform(m, new Uint32Array([qkvRows, l * qkvRows, 0, 0])));
+  }
+  if (qNorm) g.u.headNorms = layers.map((_, l) => [0, plan.heads].map((first) => norm(l * plan.headSize, plan.headSize, first)));
   return g;
 }
 
@@ -1170,11 +1196,19 @@ function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed =
   // (T209: a dispatch a piece of the table, each writing the row where the token is in its rows)
   const list = !embed ? [] : m.tables.embedding.map((piece, i) =>
     [g.embed, bindAt(m, g.embed, [[0, piece.values], [1, piece.scales], [2, g.state], [3, g.h], [4, g.u.embed[i]]]), 1, 1]);
+  const qkvRows = qDim + 2 * plan.kvHeads * plan.headSize;
   for (let l = from; l < to; l++) {
     const { qkv, gateUp } = m.joined[l], [o] = m.matrices.wo.pieces, [down] = m.matrices.w2.pieces;
+    // where q, k and v go turned: q, and the cache at the Step's position
+    const turned = [[5, g.q], [6, cache.keys[l]], [7, cache.values[l]], [8, m.angleTable], [9, g.step]];
     list.push(...normed(V.attention, g.u.norm[l]),
-      matrix(P.qkv, qkv, read(g.h, V.attention), g.u.qkv[l], qDim + 2 * plan.kvHeads * plan.headSize,
-        [[5, g.q], [6, cache.keys[l]], [7, cache.values[l]], [8, m.angleTable], [9, g.step]]),
+      // T226: turned on the matrix's write (Llama: one dispatch), or written as they are where something comes before
+      // RoPE: as the CPU has it and a prompt's block (T153), the biases, the norms of the heads of q and of k, RoPE
+      matrix(P.qkv, qkv, read(g.h, V.attention), g.u.qkv[l], qkvRows, g.qkv ? [[5, g.qkv]] : turned),
+      ...(g.qkvBias ? [[m.add, bind(m, m.add, [g.qkv, g.qkvBias, g.u.qkvBias[l], g.step]), Math.ceil(qkvRows / 64), 1]] : []),
+      ...(g.u.headNorms ? [[V.qNorm, plan.heads], [V.kNorm, plan.kvHeads]].map(([weights, heads], i) =>
+        [m.headNorm, bind(m, m.headNorm, [g.qkv, weights, g.u.headNorms[l][i], g.step]), heads, 1]) : []),
+      ...(g.qkv ? [[g.rope, bindAt(m, g.rope, [[2, g.qkv], [3, g.u.qkv[l]], ...turned]), 1, 1]] : []),
       ...attentionPasses(m, g.attention, { q: g.q, keys: cache.keys[l], values: cache.values[l], out: g.att, parts: g.parts, params: g.params,
         flash: g.u.flash, step: g.step }, plan.heads, positions),
       ...quantized(g.att, g.u.quantizeAttention, qDim), matrix(P.add, o.layers[l], read(g.att), g.u.o, plan.dim, [[5, g.h]]),
@@ -1274,10 +1308,11 @@ async function chooseTokens(m) {
   for (const candidate of forms) {
     // the remembered one right: no other is compiled or timed (as the matrices, T148)
     if ((plan.force.quick || (kept && right[0]?.name === kept.name)) && right.length) break;
-    const form = { ...candidate, pipes: {} };
+    const form = { ...candidate, pipes: {} }, compiled = new Map();
     try {
-      for (const [key, code] of tokenCodes(wgsl, form)) {
-        form.pipes[key] = await within(validated(m, () => pipelineOf(m, code)), `compiling ${form.name}`);
+      for (const [key, code] of tokenCodes(wgsl, form, Boolean(m.gen.qkv))) {
+        if (!compiled.has(code)) compiled.set(code, await within(validated(m, () => pipelineOf(m, code)), `compiling ${form.name}`));
+        form.pipes[key] = compiled.get(code);
       }
       const wrong = await within(checkTokens(m, form), `checking ${form.name}`);
       if (wrong) tried.push({ name: form.name, none: `wrong: ${wrong}` });
@@ -1607,6 +1642,14 @@ async function checkTokens(m, form) {
     const x0 = Float64Array.from(eRow, (v, i) => v * eScales[(i / wgsl.GROUP) | 0]);
     const xn = rms(x0, floats(plan.vectors.attention.at, dim));
     const [q, k, v] = ["wq", "wk", "wv"].map((name) => matmul(name, xn));
+    // T226: as the CPU has it (forward.js), the biases (Qwen2's), then the norms of the heads of q and k (Qwen3's),
+    // then RoPE; the first layer's of each, where the model has them
+    const vector = (name) => plan.vectors[name] && floats(plan.vectors[name].at, plan.vectors[name].size);
+    for (const [name, x] of [["bq", q], ["bk", k], ["bv", v]]) vector(name)?.forEach((b, i) => { x[i] += b; });
+    for (const [name, x] of [["qNorm", q], ["kNorm", k]]) {
+      const weights = vector(name);
+      for (let at = 0; weights && at < x.length; at += headSize) x.set(rms(x.subarray(at, at + headSize), weights), at);
+    }
     const cos = floats(plan.cos + pos * half * 4, half), sin = floats(plan.sin + pos * half * 4, half);
     const turn = (vector) => {
       for (let at = 0; at < vector.length; at += 2) {

@@ -62,7 +62,9 @@
 // held to NumPy's, the GPU's logits being others; the draw itself is SAMPLE's, checked on the device, gpu.js); and a
 // step after the prompt went through the CPU while the GPU's own cache held the keys and values of other tokens
 // (a prompt of them through the GPU first): the CPU's most likely token on its own keys and values, or a near tie of
-// its logits (the CPU's keys and values went up).
+// its logits (the CPU's keys and values went up). T226: the made-up Qwen2 and Qwen3 too (their biases of q, k and v
+// drawn around 0, an epsilon of 0.5 on the norms of heads of 32 where dim / heads is 16: what a step's ADD, HEAD_NORM
+// and TOKEN_ROPE must get right in every layer, held by the keys and values a layer at a time).
 //
 // T183: what a person reads to judge it, in the log of CI (the development machine does not run WebGPU's tests): E16,
 // how far NumPy's answer moves when nothing but its cache is rounded to float16 (answer(half=True), T153's review), and
@@ -584,8 +586,8 @@ try {
     const gpu = [];
     // (the forced ones untimed, T153: a block of 64 tokens of Qwen3 0.6B took more than the 180 s of a step on lavapipe)
     for (const form of [undefined, ...forms]) gpu.push(await run(openGpu, form ? { matrices: form, quick: true } : {}, undefined, !form));
-    // T152: every form of a token's layer, forced, where the model's steps go to the GPU (not Qwen's, GPT-2's, GPT-NeoX's
-    // yet); in one piece each (a token's layer reads a matrix whole: the first run's pieces, T155, left the steps on
+    // T152: every form of a token's layer, forced, where the model's steps go to the GPU (T226: Qwen2's and Qwen3's
+    // too; not GPT-2's or GPT-NeoX's yet); in one piece each (a token's layer reads a matrix whole: the first run's pieces, T155, left the steps on
     // the CPU)
     // T209: the classifier and the embedding in pieces of about a third of the table (as a table past what the device
     // binds: Llama 3.2 3B's on the owner's Android), so that EMBED's and the classifier's pieces are what the steps read
@@ -931,7 +933,9 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
     // (T152's review: or a classifier larger than what the adapter binds, a table being one piece; the rows of the
     // logits hold its size: vocabulary × dim)
     const table = floats(ref.logits).length * ref.header[0];
-    const right = steps.planned === false || (c.force?.pieceBytes && !steps.forced && /past a buffer/.test(steps.why)) ||
+    // (T226: a model whose steps forward.js does not ask of the GPU is right there only where its form says so, T213's
+    // rule: GPT-2's and GPT-NeoX's, not Qwen2's or Qwen3's any more)
+    const right = (steps.planned === false && c.arch !== "llama") || (c.force?.pieceBytes && !steps.forced && /past a buffer/.test(steps.why)) ||
       (/^the (classifier|embedding) is past a buffer/.test(steps.why ?? "") && table > steps.binds) ||
       steps.why === `${unbound(c)} would not start where this GPU binds a buffer`;
     console.log(`  a token: on the CPU (${steps.why})${right ? "" : " — FAILED"}`);

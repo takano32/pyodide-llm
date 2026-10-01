@@ -1243,15 +1243,14 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       Object.values(gpuVectors()).reduce((bytes, { size }) => bytes + layers * size * 4, 0) + 2 * layers * seqLen * kvDim * 2;
   }
   // T152: why a generation's steps stay on the CPU, or null. A step on the GPU is T150's and T175's fused layer (gpu.js):
-  // Llama's (RMSNorm, RoPE on whole heads, SwiGLU) and no more yet (the keys and values in float16 as the GPU's, or in
+  // Llama's (RMSNorm, RoPE on whole heads, SwiGLU; T226: with Qwen2's biases of q, k and v, Qwen3's norms of the heads
+  // and heads of another size than dim / heads) and no more yet (the keys and values in float16 as the GPU's, or in
   // float32 where the CPU keeps them so: T160, widened on the way back and narrowed on the way up), no outlier
   // channels (T92: the classifier's input with them apart), a classifier
   // and an embedding of int8 or int6 in groups of 32; and the memory for the classifier, the embedding where it is
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
     if (arch !== "llama") return "GPT-2's and GPT-NeoX's tokens are not on the GPU yet";
-    if (bq) return "Qwen2's biases are not on the GPU's tokens yet";
-    if (qNorm) return "Qwen3's norms of the heads are not on the GPU's tokens yet";
     if (rotary > 0 && rotary < headSize) return "RoPE on a part of the heads is not on the GPU's tokens yet";
     if (channels.length) return "the classifier's outlier channels are not on the GPU's tokens";
     const embedding = T.token_embedding_table;
