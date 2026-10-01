@@ -93,7 +93,10 @@
 - **T225 も本線に入れた（反映済み）**: 見立ては「検査の参照が K と V を float16 の最近接に丸めると思い込んでいた。Direct3D は 0 の向きに丸める」。線は緩めず、参照が GPU の書いた隣の float16 を受け取る形に。持ち主の PC（Windows の Chrome）で GPU の節をもう 1 回押して報告を貼ってもらう: `a layer, …` と `tokens on the GPU` が全部 ok で「K and V … toward zero」が約半分・「0 farther」なら確定。壊し方の捨てのブランチ `t225-broken` はレビューまで残す。
 - **残してあるブランチ**: レビューが使う調べと壊し方の捨てのブランチ（`t129-probe`、`t219-review-probe`、`t224-review-probe`、`t224-review-t210`）、T224 の前の版の写し（`t224-attn-vec`、`t224-attn-vec-fable`）とレビューの書きかけ（`t224-opus-review`）。T224 のレビューが済んだら消す。
 - **レビュー待ち（Sonnet max、別の会話で）**: T129、T130、T219 の (1)(2) と T220、T223、T224（始めた）。
-- **持ち主の端末で見てもらうもの**: T129（iPhone の Safari・Android の Chrome・PC で、初めての訪問・HF のモデル・取得の途中の選び直し・2 回目の訪問が今までどおりか。おかしければ T129 の 1 つを戻す）、T223（llm-jp-3 150M が 2 本を選ぶか）、T173（iPhone と Android の Page memory）、T210（Llama 3.2 3B を GPU だけで、8B が入るか）、T156 の (c)（ベンチの CPU の節の後に 3B を 2 回開いて CPU に倒れるか）、T219 の (2)（Android の「the sampling alone」が前より 1.1 倍を越えて遅くないか）。
+- **持ち主の端末でまとめて見るもの（2026-10-01、持ち主「計測はすべての実装が終わったら見直す形に」: タスクごとに頼まず、並んでいる実装が本線に入り終わってから端末ごとに 1 回で）**。実装は下の数字を待たずに進める。
+  - PC（Windows の Chrome、NVIDIA）: `/benchmark/` を 1 回（T225: `a layer, …` と `tokens on the GPU` が ok で「K and V … toward zero」が約半分・「0 farther」か。T227: 報告の頭の Warnings。T226: Qwen3 4B が GPU で答えるか）。
+  - Android（Xiaomi 13T Pro、Chrome）: `/benchmark/` を 1 回（T219 の (2): 「the sampling alone」が前より 1.1 倍を越えて遅くないか。T224: vec の行。T173: Page memory。T156 の (c)）と、モデルのページ（T223: llm-jp-3 150M が 2 本を選ぶか。T210: Llama 3.2 3B を GPU だけで、8B が入るか。T226: Qwen のモデルの答えが GPU か。T129: 初めての訪問・HF のモデル・取得の途中の選び直し・2 回目の訪問が今までどおりか）。
+  - iPhone（Safari）: モデルのページ（T129 の同じ 4 つ）と `/benchmark/` の Page memory（T173）、モデルの節が終わるか（T205・T214）。
 - ブランチを本線に入れる形: この回は `git merge --no-ff <ブランチ>`（題は「T番号: Merge …」。戻すときは `git revert -m 1 <その merge>` の 1 つ）。前の回の `.tmp/merge-branch.sh`（rebase）は、本線を merge 済みのブランチには使えない。
 
 ### T129 [運用][変換] 取得と読み込みの境界の残り（2026-09-26 の Opus xhigh のレビューから）— 状態: **反映済み**（2026-10-01 に本線に入れた、レビュー前: 2026-10-01 からの進め方。2026-09-28、持ち主「進めてくれや」。Opus medium。**読み込みの経路に触るので、持ち主の端末で見てもらい、問題が出たらこの 1 つを戻す**。(2) と (7) は持ち主が案 B に決めた）
