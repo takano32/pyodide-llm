@@ -8,12 +8,17 @@
 //     --dist serves dist/ (npm run build) itself, as tests/screenshots.mjs does: a branch before it goes out
 //     --run the page's ?run= (default all; "gpu" alone: the GPU section takes minutes on SwiftShader, T146)
 //     --unsaid hides navigator.deviceMemory from the page (T214: the model section skips its NumPy round)
+//     --wrong (with --dist) serves the GPU section's worker with its layer check's line cut to 1e-12, so that every layer
+//       verdict is WRONG, as a device whose rounding differs from the check's would make them (T227's review: no CI
+//       runner makes a WRONG verdict, and nothing else tries the page's wiring of the report's warnings): the report must
+//       hold the WRONG rows under "#### Warnings", before the sections, and the link what fits of them. A change to a
+//       served file, in this test alone: the page has no flag for it
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as playwright from "playwright-core";
-import { pathTable } from "../src/bench.js";
+import { REPORT_LIMIT, TOO_LONG, pathTable } from "../src/bench.js";
 
 // T180: the browsers' profiles, in the repository's .tmp/ (never $HOME or /tmp)
 // fileURLToPath, not URL.pathname: on Windows the pathname is "/D:/a/…" and joined it made "D:\\D:\\a\\…" (T181)
@@ -31,6 +36,13 @@ const query = option("--query", "");
 // round without the kernels must be a row that says why, and never load
 const unsaid = args.includes("--unsaid") ? args.splice(args.indexOf("--unsaid"), 1) : null;
 const dist = args.includes("--dist") ? args.splice(args.indexOf("--dist"), 1) : null;
+const wrong = args.includes("--wrong") ? args.splice(args.indexOf("--wrong"), 1) : null;
+if (wrong && !dist) {
+  console.log("--wrong changes a file the page is served, so it needs --dist");
+  process.exit(1);
+}
+// the layer check's line in public/benchmark/gpu.js: a stream off by more than it is WRONG
+const LAYER_LINE = "LAYER_LINE = 1e-3", NO_LINE = "LAYER_LINE = 1e-12";
 let [site = "https://takano32.github.io/pyodide-llm/", ...engines] = dist ? [undefined, ...args] : args;
 let server;
 if (dist) {
@@ -44,6 +56,16 @@ if (dist) {
     if (!pathname.startsWith(base) || !fs.existsSync(file)) {
       res.writeHead(404);
       return res.end();
+    }
+    // --wrong: the GPU section's worker with no line left for the layer check to hold (a rename of it fails here, loudly)
+    if (wrong && pathname.endsWith("/benchmark/gpu.js")) {
+      const text = fs.readFileSync(file, "utf8");
+      if (!text.includes(LAYER_LINE)) {
+        console.log(`--wrong: ${LAYER_LINE} is not in benchmark/gpu.js any more: change this test with it`);
+        process.exit(1);
+      }
+      res.writeHead(200, { "Content-Type": types[".js"] });
+      return res.end(text.replace(LAYER_LINE, NO_LINE));
     }
     res.writeHead(200, { "Content-Type": types[path.extname(file)] ?? "application/octet-stream" });
     fs.createReadStream(file).pipe(res);
@@ -120,7 +142,33 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     const statuses = Object.entries(results).map(([name, result]) => `${name} ${result.status}`);
     console.log(`sections: ${statuses.join(", ")}`);
     for (const [name, result] of Object.entries(results)) {
-      if (result.status === "wrong" || (result.status === "error" && OURS.includes(name))) failed = true;
+      // (--wrong: the GPU section is meant to be WRONG, and is checked below that it is, and what its report says)
+      if ((result.status === "wrong" && !(wrong && name === "gpu")) || (result.status === "error" && OURS.includes(name))) failed = true;
+    }
+    if (wrong) {
+      // T227's review: the verdicts every layer form gave, WRONG, are in the report's warnings, the worst first, before the
+      // sections (what parseReport() reads is above them), and the link holds what fits of them: the whole, or the summary
+      // with the first of them and a line of how many are left, or (nothing fits) the request to paste, never nothing
+      const at = markdown.indexOf("\n#### Warnings\n"), end = markdown.indexOf("\n#### ", at + 1);
+      const firstSection = markdown.search(/\n#### (This browser|CPU|GPU|Storage|Line)/);
+      const warned = at < 0 ? [] : markdown.slice(at, end < 0 ? undefined : end).split("\n").filter((line) => line.startsWith("- "));
+      const layers = warned.filter((line) => line.startsWith("- GPU: a layer, ") && line.includes(" WRONG ("));
+      const href = await page.evaluate(() => document.getElementById("issue").href);
+      const body = new URL(href).searchParams.get("body") ?? "";
+      const login = `https://github.com/login?return_to=${encodeURIComponent(href)}`.length;
+      const kept = body.split("\n").filter((line) => layers.includes(line)).length;
+      console.log(`wrong: the GPU section is ${results.gpu?.status}; ${warned.length} warnings, ${layers.length} of them a layer WRONG; ` +
+        `the link holds ${body.includes("#### Summary") ? `the summary with ${kept} of them` : body.endsWith(TOO_LONG) ? "only the request to paste" : "the whole report"} (login ${login} of ${REPORT_LIMIT})`);
+      const problems = [];
+      if (results.gpu?.status !== "wrong") problems.push(`the GPU section is ${results.gpu?.status}, not WRONG`);
+      if (!layers.length) problems.push("no layer WRONG among the report's warnings");
+      if (!(at >= 0 && at < firstSection)) problems.push("the warnings are not before the sections");
+      const other = warned.findIndex((line) => !line.includes(" WRONG ("));
+      if (other >= 0 && warned.slice(other).some((line) => line.includes(" WRONG ("))) problems.push("a warning that is not WRONG comes before one that is");
+      if (login > REPORT_LIMIT) problems.push("the link is past its limit");
+      if (!body.endsWith(TOO_LONG) && !body.includes("- GPU: a layer, ")) problems.push("the link holds no layer WRONG");
+      for (const problem of problems) console.log(`wrong: FAILED, ${problem}`);
+      if (problems.length) failed = true;
     }
     // T184: the model page's own path, a line a row (CI's fallback adapter times the CPU sides only: the GPU's cells
     // say why), and none at all, or no row of it, is a failure of the model section
