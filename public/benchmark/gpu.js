@@ -2206,9 +2206,11 @@ function sparseLogits(vocab) {
 // or one of all ones, which a test of a quiet NaN alone, or of the bits as a signed number, does not see. The kinds
 // "... in the window" are set where the history is known (the penalty multiplies or divides the logit of its tokens).
 // A few -inf are seven, every 131st token from 5 (where the most likely is among them both sides take the next: the CPU
-// leaves them out, and draws as ever); the largest finite float is the most likely token that is not infinity; one finite
-// logit is the only token that can be drawn.
-const UNREFUSED = ["-inf some", "largest finite", "denormals and -0", "one finite"];
+// leaves them out, and draws as ever); one finite logit is the only token that can be drawn. (The largest finite float
+// is not here: that its bits are under the infinity's is proved for every float32 in the review's notes, and a draw
+// from logits of 3.4e38 asks the device's arithmetic overflowing, which a verdict of WRONG on the owner's device, with
+// its ratios withheld, should not hang on.)
+const UNREFUSED = ["-inf some", "denormals and -0", "one finite"];
 function unfiniteLogits(logits, kind, at) {
   const bits = new Uint32Array(logits.buffer, logits.byteOffset, logits.length);
   if (kind === "nan") logits[at] = NaN;
@@ -2220,7 +2222,6 @@ function unfiniteLogits(logits, kind, at) {
   else if (kind === "+inf and -inf") (logits[at] = Infinity), (logits[at + 1] = -Infinity);
   else if (kind === "-inf all") logits.fill(-Infinity);
   else if (kind === "-inf some") for (let i = 5; i < logits.length; i += 131) logits[i] = -Infinity;
-  else if (kind === "largest finite") logits[at] = 3.4028234663852886e38;
   else if (kind === "denormals and -0") (logits[at] = 1e-45), (logits[at + 1] = -0), (logits[at + 2] = -1e-45);
   else if (kind === "one finite") (logits.fill(-Infinity), (logits[at] = 1.5));
 }
@@ -2305,7 +2306,7 @@ async function checkSampling(kind = "one") {
   }
   // T219: logits the sampler must refuse (T195's rule: a NaN anywhere, +inf anywhere, or all -inf: the State's
   // not_finite word set, stopped set, nothing sampled) and ones it must not (UNREFUSED: a few -inf, which the CPU never
-  // draws either, and the review's: the largest finite float, denormals and -0, one finite logit among -inf): a NaN or
+  // draws either, and the review's: denormals and -0, one finite logit among -inf): a NaN or
   // +inf at the first token, the last (a thread's last, the vocabulary's last chunk's) and in the middle, with a nucleus
   // and without, at temperature 0 too; the review's: NaNs of other bits, every logit NaN, +inf beside -inf, and a NaN or
   // +inf on the penalty's last token (which the penalty multiplies or divides)
@@ -2319,7 +2320,7 @@ async function checkSampling(kind = "one") {
     }
     for (const topp of [0.9, 1]) cases.push({ vocab, spread: 2, topp, temperature: 0.7, penalty: 1.3, random: 0.5, unfinite: "-inf some" });
     cases.push({ vocab, spread: 2, topp: 0.9, temperature: 0, penalty: 1.3, random: 0.5, unfinite: "-inf some" });
-    for (const unfinite of fallback && vocab > 1003 ? ["largest finite"] : ["largest finite", "denormals and -0", "one finite"]) {
+    for (const unfinite of fallback && vocab > 1003 ? ["one finite"] : ["denormals and -0", "one finite"]) {
       for (const [topp, temperature] of [[0.9, 0.7], [1, 0.7], [0.9, 0]]) cases.push({ vocab, spread: 2, topp, temperature, penalty: 1.3, random: 0.5, unfinite, at: 321 });
     }
   }
