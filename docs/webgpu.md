@@ -39,6 +39,13 @@ tokens, and the fixed cost is shared among them.
    and so, as a precaution, does a browser that does not say how much memory the device has (Safari, Firefox):
    with the answer on the GPU the classifier and the embeddings go there too (for llm-jp-3-150m the GPU's share
    grows from about 73 to 189 MB, estimated), and such a browser gives no way to tell whether that fits.
+   The attention of a written token is chosen the same way: llama.cpp's decode form, which splits the positions over
+   as many workgroups a head as the device's smallest subgroup holds lanes, at most, and reduces the parts in a second
+   dispatch (in two shapes: with subgroups, where the device has them, and with the lanes of one workgroup standing
+   for a subgroup, the only one where it has not), or the prompt's tiles. Each is checked against JavaScript on
+   made-up numbers (the model's head size, 40 to 1100 positions, one head steep enough for a wrong largest to show),
+   timed at 128 and 2048 positions, and the faster taken. This is not remembered between visits: the small shaders
+   are compiled, checked and timed at every start.
 6. Every 8 answers, the page measures the side it did not choose again, on part of a prompt and on the first
    tokens of an answer, in case the device has warmed up or cooled down.
 
@@ -114,6 +121,7 @@ The shapes are taken from public implementations, and each file keeps their noti
 | Prompt matrix products, vec4 tiles | TensorFlow.js's `matmul_packed_webgpu.ts` (Apache-2.0) |
 | Prompt matrix products with packed int8 dot products (DP4A) | ONNX Runtime Web's MatMulNBits (MIT) |
 | Attention | llama.cpp's `flash_attn_tile` (MIT). The path for devices without subgroups is ours. |
+| One token's attention, the positions split over more workgroups a head and then reduced | llama.cpp's `flash_attn_vec_split` and `flash_attn_vec_reduce`, and its choice of the number of parts (MIT). The path for devices without subgroups, 32 lanes of a workgroup standing for a subgroup, is ours. |
 | RMSNorm, and Qwen3's per-head norms of q and k | llama.cpp's `rms_norm_mul` (MIT) |
 | Qwen2's biases of q, k and v, GPT-2's and GPT-NeoX's biases | llama.cpp's `binary` ADD (MIT) |
 | LayerNorm of GPT-2 and GPT-NeoX | llama.cpp's `row_norm` NORM (MIT), with the weight and the bias in the same dispatch as llama.cpp's Metal `kernel_norm_mul_add_f32` has them (MIT) |
@@ -129,7 +137,7 @@ The shapes are taken from public implementations, and each file keeps their noti
 ## Measured
 
 On the owner's Android phone (Xiaomi 13T Pro, Chrome 153, Arm Valhall GPU), in the `/benchmark/` reports of
-2026-09-27, each number from one run:
+2026-09-27 and 2026-09-28, each number from one run:
 
 - **The device's ceilings**: 1146 GFLOPS in float32, 1650 in float16, 4684 G operations per second in packed int8
   dot products, 242 GB/s reading workgroup memory and 39.9 GB/s reading a buffer.
@@ -142,6 +150,11 @@ On the owner's Android phone (Xiaomi 13T Pro, Chrome 153, Arm Valhall GPU), in t
 - **One token's layer** of Llama 3.2 1B's shape: 3.36 ms in the fastest form (DP4A, with the norms in their own
   dispatches), that is 20.4 GB/s of weights, half the buffer read.
 - **Fixed costs**: an empty dispatch 36 µs, waiting for a submission 8.76 ms, reading 4 bytes back 7.87 ms.
+- **Where a layer's time goes** (2026-09-28, one run): by the GPU's own clock a layer of Llama 3.2 1B's shape took 2.59 to
+  2.63 ms, its matrices alone 1.90 ms (36.0 GB/s, 91.5% of the buffer read) and its attention alone 0.90 ms at 127
+  positions. That attention is the benchmark's float32 tile without subgroups, which is not necessarily the tile the page
+  runs on this phone; the 262 KB of keys and values of 128 positions would take 6.6 µs at the buffer's read speed, so it
+  waits on latency rather than bandwidth. llama.cpp's decode form of the attention has not been measured on it.
 
 From these, one written token of Llama 3.2 1B on this GPU comes to about 70 ms, against about 58 ms on the CPU's 4
 threads, so the page is expected to keep the answer on the CPU there (an estimate from the parts: 16 layers, the
@@ -150,9 +163,9 @@ the GPU. The page's own choice on this phone has not been reported yet. The samp
 workgroup, on nearly flat logits; the benchmark now also times it split over chunks of the vocabulary.
 
 **Not measured yet**: the page's choice on real devices (which side, from how many tokens, how long the GPU takes
-to get ready), the iPhone and the PC with the current shaders, where the time of a layer goes, and the sampling in
-chunks. The numbers from CI and from the development machine come from fallback adapters (a CPU doing the GPU's
-work) and say only that the shaders are right, not how fast a GPU is.
+to get ready), the iPhone and the PC with the current shaders, the sampling in chunks, and llama.cpp's decode form of
+the attention on any real GPU. The numbers from CI and from the development machine come from fallback adapters
+(a CPU doing the GPU's work) and say only that the shaders are right, not how fast a GPU is.
 
 ## Correctness
 
