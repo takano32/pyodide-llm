@@ -946,9 +946,12 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) rows: vec3u, 
 // T153: a bias added to every token of a matrix's output (Qwen2's q, k and v), llama.cpp's binary.wgsl with OP_ADD and
 // INPLACE (the notice above): y += bias, the bias (this layer's, from float at) the same for every token (b_ne1 1).
 // Changed: the token is the dispatch's y and the element its x (as SWIGLU here), where llama.cpp numbers every element
-// of the tensor along x and y and finds its place in either by strides
+// of the tensor along x and y and finds its place in either by strides. T226: byPos, the floats a position of the
+// bias takes (0: the same vector for every token, as all the biases are): GPT-2's learned positions added to a
+// generated token's row of the embedding, the table's row of the token's position (llama.cpp adds the rows of
+// position_embd to the embedding with the same ADD, after a get_rows of them: here the row is found by the Step)
 export const ADD = /* wgsl */ `
-struct Bias { n: u32, at: u32, unused0: u32, unused1: u32 }
+struct Bias { n: u32, at: u32, byPos: u32, unused1: u32 }
 ${STEP}
 @group(0) @binding(0) var<storage, read_write> y: array<f32>;
 @group(0) @binding(1) var<storage, read> bias: array<f32>;
@@ -957,7 +960,7 @@ ${STEP}
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id: vec3u) {
   if (id.y >= step.tokens || id.x >= shape.n) { return; }
-  y[id.y * shape.n + id.x] += bias[shape.at + id.x];
+  y[id.y * shape.n + id.x] += bias[shape.at + (step.pos + id.y) * shape.byPos + id.x];
 }`;
 
 // RoPE on q and k, and the keys and values of every token into this layer's cache at its position (step.pos + the

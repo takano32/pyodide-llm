@@ -1245,16 +1245,15 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       Object.values(gpuVectors()).reduce((bytes, { size }) => bytes + layers * size * 4, 0) + 2 * layers * seqLen * kvDim * 2;
   }
   // T152: why a generation's steps stay on the CPU, or null. A step on the GPU is T150's and T175's fused layer (gpu.js):
-  // Llama's (RMSNorm, RoPE on whole heads, SwiGLU; T226: with Qwen2's biases of q, k and v, Qwen3's norms of the heads
-  // and heads of another size than dim / heads) and no more yet (the keys and values in float16 as the GPU's, or in
-  // float32 where the CPU keeps them so: T160, widened on the way back and narrowed on the way up), no outlier
-  // channels (T92: the classifier's input with them apart), a classifier
+  // Llama's (RMSNorm, RoPE on whole heads, SwiGLU), and T226: with what the prompt's blocks take besides (T153: Qwen2's
+  // biases of q, k and v, Qwen3's norms of the heads and heads of another size than dim / heads; T154: GPT-2's and
+  // GPT-NeoX's LayerNorm, biases, GELU, learned positions, RoPE on a part of a head, parallel residual), and T92's
+  // outlier channels (the GPU's classifier multiplies floats for such a model, and needs no columns apart). The keys
+  // and values are float16 as the GPU's, or float32 where the CPU keeps them so (T160, widened on the way back and
+  // narrowed on the way up). What is left: a classifier
   // and an embedding of int8 or int6 in groups of 32; and the memory for the classifier, the embedding where it is
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
-    if (arch !== "llama") return "GPT-2's and GPT-NeoX's tokens are not on the GPU yet";
-    if (rotary > 0 && rotary < headSize) return "RoPE on a part of the heads is not on the GPU's tokens yet";
-    if (channels.length) return "the classifier's outlier channels are not on the GPU's tokens";
     const embedding = T.token_embedding_table;
     if (!wcls?.int8 || wcls.group !== 32 || !["int8", "int6"].includes(embedding.kind) || embedding.group !== 32) {
       return "a classifier of float weights is not on the GPU's tokens";
@@ -1264,20 +1263,23 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     // prompts' blocks still go (their layers alone)
     if (memoryUnsaid) return "this browser does not say how much memory the device has";
     const table = vocab * dim * (1 + 4 / 32);
-    const onGpu = layersOnGpu() + table * (plan.shared_classifier ? 1 : 2) + seqLen * headSize * 4 + 3 * vocab * 4;
+    // (GPT-2's positions on the GPU as well, a row a position)
+    const onGpu = layersOnGpu() + table * (plan.shared_classifier ? 1 : 2) + seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0);
     if (gpuRoom !== undefined && onGpu > gpuRoom) {
       return `the classifier on the GPU as well (${Math.round(onGpu / 1e6)} MB with the layers) would not leave this device enough memory`;
     }
     return null;
   }
   // T152: what gpu.js takes for a generation's steps: the classifier and (where it is another table) the embedding,
-  // { rows, n, six, at: [values, scales] }, the final norm's weights, where the ids go, and the steps a submission
+  // { rows, n, six, at: [values, scales] }, the final norm's weights, where the ids go, and the steps a submission.
+  // T226: the final LayerNorm's bias and GPT-2's positions (float32, a row a position), 0 where the model has none; and
+  // whether its classifier has outlier channels (T92)
   function gpuTokensPlan() {
     const embedding = T.token_embedding_table;
     return { classifier: { rows: wcls.rows, n: wcls.n, six: wcls.six, at: wcls.layer(0).slice(0, 2) },
       embedding: plan.shared_classifier ? null
         : { rows: vocab, n: dim, six: embedding.kind === "int6", at: [base + embedding.offset, base + embedding.scales] },
-      final: finalW, ids: gpuIds, most: GPU_TOKENS };
+      final: finalW, finalBias: finalB, positions, outliers: channels.length > 0, ids: gpuIds, most: GPU_TOKENS };
   }
   // the vectors of every layer the GPU reads (gpu.js's plan.vectors): the norms' weights; T153: Qwen2's biases of q,
   // k and v, Qwen3's norms of a head of q and of k; T154: GPT-2's and GPT-NeoX's biases of the two LayerNorms, of q,

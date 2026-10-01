@@ -64,7 +64,10 @@
 // (a prompt of them through the GPU first): the CPU's most likely token on its own keys and values, or a near tie of
 // its logits (the CPU's keys and values went up). T226: the made-up Qwen2 and Qwen3 too (their biases of q, k and v
 // drawn around 0, an epsilon of 0.5 on the norms of heads of 32 where dim / heads is 16: what a step's ADD, HEAD_NORM
-// and TOKEN_ROPE must get right in every layer, held by the keys and values a layer at a time).
+// and TOKEN_ROPE must get right in every layer, held by the keys and values a layer at a time), and the made-up GPT-2
+// and GPT-NeoX (LayerNorm, the biases, GELU, the positions added to a step's embedding, RoPE on a part of a head, the
+// parallel residual); the made-up GPT-2's final norm has eight weights of 12 (GPT-2's outlier channels, T92: the
+// engine takes their columns of the classifier apart on the CPU, and the GPU's classifier multiplies floats).
 //
 // T183: what a person reads to judge it, in the log of CI (the development machine does not run WebGPU's tests): E16,
 // how far NumPy's answer moves when nothing but its cache is rounded to float16 (answer(half=True), T153's review), and
@@ -94,7 +97,7 @@ const webgpu = option("--webgpu", "");
 // which a second layer alone would not tell from 0 + size
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
   "synthetic-qwen3": [{ layers: 3, qk_norm: true, head_dim: 32 }, { qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 }],
-  "synthetic-gpt2": [{ layers: 3, kv_heads: 4, arch: "gpt2" }, { arch: "gpt2" }],
+  "synthetic-gpt2": [{ layers: 3, kv_heads: 4, arch: "gpt2", outliers: 8 }, { arch: "gpt2" }],
   "synthetic-neox": [{ layers: 3, kv_heads: 4, arch: "neox" }, { arch: "neox", rotary: 4, parallel_residual: true }],
   "synthetic-neox-256": [{ dim: 512, hidden: 1024, layers: 3, heads: 2, kv_heads: 2, arch: "neox" }, { arch: "neox", rotary: 64, parallel_residual: true }],
   // T155: [form, options, the run's: the GPU's pieces, a 64-bit memory]
@@ -188,10 +191,12 @@ const PYTHON = `
 import base64, gc, struct, numpy as np, llama2_numpy, llama2_convert
 from llama2_numpy import Llama, external_tensors
 
-def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, six=False, **form):
+def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, six=False, outliers=0, **form):
     """A made-up int8 checkpoint and its tokenizer.bin, as quantize.py writes one: grouped-query attention. form
     (T153): llama2_numpy.FORM's bias, qk_norm and head_dim, whose vectors are drawn as the norms' are. six (T155):
-    int6 (T98), as llama2_convert's Writer writes it: every matrix's packed values, then its scales"""
+    int6 (T98), as llama2_convert's Writer writes it: every matrix's packed values, then its scales. outliers (T226):
+    that many weights of the final norm are 12 (GPT-2's are 12 to 17 times the others, T92), so that the engine takes
+    their channels apart in the classifier (llama2_numpy.outlier_channels)"""
     rng = np.random.default_rng(seed)
     header = (dim, hidden, layers, heads, kv_heads, vocab, seq_len)
     out = [struct.pack("<7i", *header)]
@@ -201,15 +206,18 @@ def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_
     # same, and DP4A's 8 bits hid a GPU that read layer 0's in every layer (0.98 of its line)
     gpt = form.get("arch", "llama") in ("gpt2", "neox")
     is_bias = (lambda i: i not in (0, 6, 10)) if gpt else (lambda i: bool(form.get("bias")) and 3 <= i < 6)
+    final = 10 if gpt else 2  # the final norm's weight
     vectors = 0
     for shape, is_matrix in llama2_convert.layout(*header, **form):
         if is_matrix is None:
             continue  # the RoPE tables: an int8 file leaves them out
         values = (rng.standard_normal(shape) * 0.3).astype(np.float32)
         if not is_matrix:
-            bias = is_bias(vectors)
+            values = values if is_bias(vectors) else 1.0 + values * 0.1
+            if outliers and vectors == final:
+                values[np.arange(outliers) * 7 % dim] = 12.0
             vectors += 1
-            out.append((values if bias else 1.0 + values * 0.1).astype(np.float32).tobytes())
+            out.append(values.astype(np.float32).tobytes())
             continue
         if six:
             q, scales = llama2_numpy.quantize6(values.reshape(-1, shape[-1]))
@@ -587,14 +595,15 @@ try {
     const gpu = [];
     // (the forced ones untimed, T153: a block of 64 tokens of Qwen3 0.6B took more than the 180 s of a step on lavapipe)
     for (const form of [undefined, ...forms]) gpu.push(await run(openGpu, form ? { matrices: form, quick: true } : {}, undefined, !form));
-    // T152: every form of a token's layer, forced, where the model's steps go to the GPU (T226: Qwen2's and Qwen3's
-    // too; not GPT-2's or GPT-NeoX's yet); in one piece each (a token's layer reads a matrix whole: the first run's pieces, T155, left the steps on
+    // T152: every form of a token's layer, forced, where the model's steps go to the GPU (T226: every made-up model's;
+    // a model with LayerNorm has no DP4A form with the norm in the quantizer, NORM_QUANTIZE being RMSNorm's: gpu.js's
+    // tokenCandidates); in one piece each (a token's layer reads a matrix whole: the first run's pieces, T155, left the steps on
     // the CPU)
     // T209: the classifier and the embedding in pieces of about a third of the table (as a table past what the device
     // binds: Llama 3.2 3B's on the owner's Android), so that EMBED's and the classifier's pieces are what the steps read
     if (gpu[0].steps?.planned !== false) {
       const tablePieceBytes = Math.ceil((plan.vocab_size * plan.dim) / 3);
-      for (const form of tokenForms) gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: form, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
+      for (const form of tokenForms.filter((name) => c.arch === "llama" || name !== "DP4A, fused (T175)")) gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: form, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
       for (const attention of tokenAttentions) {
         gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: tokenForms[0], tokenAttention: attention, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
       }
@@ -917,7 +926,8 @@ process.exit(failed ? 1 : 0);
 // scales, 10368 bytes, are not a multiple of 256 (T150's (b))
 function unbound(c) {
   const [dim, hidden, , heads, kvHeads] = c.reference.header, head = c.headDim || dim / heads, ALIGN = 256, GROUP = 32;
-  const joined = { wk: head * heads * dim, wv: head * (heads + kvHeads) * dim, w3: hidden * dim };
+  // (T226: GPT-2's and GPT-NeoX's FFN has no gate: no w3, and w1 a buffer of its own)
+  const joined = { wk: head * heads * dim, wv: head * (heads + kvHeads) * dim, ...(c.arch === "llama" ? { w3: hidden * dim } : {}) };
   for (const [name, values] of Object.entries(joined)) if (values % ALIGN || (values / GROUP) * 4 % ALIGN) return name;
   return null;
 }
@@ -934,9 +944,9 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
     // (T152's review: or a classifier larger than what the adapter binds, a table being one piece; the rows of the
     // logits hold its size: vocabulary × dim)
     const table = floats(ref.logits).length * ref.header[0];
-    // (T226: a model whose steps forward.js does not ask of the GPU is right there only where its form says so, T213's
-    // rule: GPT-2's and GPT-NeoX's, not Qwen2's or Qwen3's any more)
-    const right = (steps.planned === false && c.arch !== "llama") || (c.force?.pieceBytes && !steps.forced && /past a buffer/.test(steps.why)) ||
+    // (T226: no model of these has its steps left unasked for by its form any more: Qwen2's, Qwen3's, GPT-2's and
+    // GPT-NeoX's go to the GPU too, and steps.planned === false, which passed them before, is a failure now: T213's rule)
+    const right = (c.force?.pieceBytes && !steps.forced && /past a buffer/.test(steps.why)) ||
       (/^the (classifier|embedding) is past a buffer/.test(steps.why ?? "") && table > steps.binds) ||
       steps.why === `${unbound(c)} would not start where this GPU binds a buffer`;
     console.log(`  a token: on the CPU (${steps.why})${right ? "" : " — FAILED"}`);
