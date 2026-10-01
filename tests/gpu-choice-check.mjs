@@ -304,6 +304,8 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(gpuOnlyUnfit([2560, 9728, 36, 32, 8, 151936, 4096], "int8", { qk_norm: true, head_dim: 128 }, adapter), null, "Qwen3 4B");
   assert.equal(gpuOnlyUnfit([4096, 12288, 36, 32, 8, 151936, 4096], "int8", { qk_norm: true, head_dim: 128 }, adapter), null, "Qwen3 8B");
   assert.match(gpuOnlyUnfit(oneB, "int8", { arch: "gpt2" }, adapter), /GPT-2 and GPT-NeoX/);
+  // T237: a model in a rotated basis, whose inputs the GPU does not turn
+  assert.match(gpuOnlyUnfit(oneB, "int8", { rotated: { block: 1024, signs: {} } }, adapter), /rotated basis/);
   assert.match(gpuOnlyUnfit(oneB, "int8", { arch: "neox" }, adapter), /GPT-2 and GPT-NeoX/);
   assert.match(gpuOnlyUnfit(oneB, "int8", { arch: "qwen35" }, adapter), /Qwen3\.5/, "T229: a hybrid model is not placed on the GPU alone either");
   assert.match(gpuOnlyUnfit(oneB, "int6", {}, adapter), /int6/);

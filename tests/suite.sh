@@ -56,6 +56,8 @@ part "the latest Pyodide" npm install --no-save pyodide@latest
 part "smoke test" node tests/smoke.mjs
 # T229: the kernels of Qwen3.5's linear attention against the same arithmetic in JavaScript (under a second)
 part "the delta rule's kernels" node tests/delta-check.mjs
+# T237: the kernels of the rotated basis against the same arithmetic in JavaScript, to the bit (under a second)
+part "the rotated basis's kernels" node tests/rotate-check.mjs
 # T229 (the review): a Qwen3.5 is not put on a GPU where an adapter is there: forward.js's gpuUnfit says so first, and no
 # adapter of CI's reaches that line (a few seconds)
 hybrid_stays_on_the_cpu() {
@@ -99,6 +101,17 @@ if [ "$suite" = full ]; then
     node tests/forward-check.mjs .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-int6 .tmp/made-up-qwen35-state --without relaxed --rounds 1 --positions 128
   }
   part "forward.js against NumPy, a made-up Qwen3.5" made_up_qwen35
+  # T237: the same made-up Qwen3.5 folded into a rotated basis (Ternary Bonsai 2 27B's): forward.js turns every
+  # matrix's input and the embedding's rows back, to NumPy's numbers
+  made_up_rotated() {
+    python tests/make_qwen35.py .tmp/made-up-rotated-float32 float32 small rotated
+    python tests/make_qwen35.py .tmp/made-up-rotated-int8 int8 small rotated
+    python tests/make_qwen35.py .tmp/made-up-rotated-state int8 state rotated
+    for memory in "" --plain --wide; do
+      node tests/forward-check.mjs .tmp/made-up-rotated-float32 .tmp/made-up-rotated-int8 .tmp/made-up-rotated-state --rounds 1 --positions 128 $memory
+    done
+  }
+  part "forward.js against NumPy, a made-up Qwen3.5 in a rotated basis" made_up_rotated
   # T148: the default choice of the GPU or the CPU for a prompt's blocks, with a made-up GPU's worker
   part "the GPU or the CPU by default" node tests/gpu-default-check.mjs
   part "the software threads" node tests/threads-check.mjs
@@ -107,6 +120,7 @@ if [ "$suite" = full ]; then
   part "the software threads, a made-up Qwen3.5" node tests/threads-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-state --rounds 1
   # and with every address above 4 GiB (--wide --high), where a Qwen3.5 4B or 9B keeps its states and its tensors of the linear layers
   part "the software threads, a made-up Qwen3.5 above 4 GiB" node tests/threads-check.mjs .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-state --wide --high --rounds 1 --positions 24
+  part "the software threads, a made-up Qwen3.5 in a rotated basis" node tests/threads-check.mjs .tmp/made-up-rotated-float32 .tmp/made-up-rotated-int8 --rounds 1
   # T206: the pre-tokenizers against the real ones at every code point (about 90 s, too long for the deploy)
   part "the pre-tokenizers at every code point" env EVERY_CODE_POINT=1 python -m pytest tests/test_bytebpe.py -q -k every_character
 fi
