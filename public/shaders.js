@@ -637,8 +637,12 @@ ${dp4aLines(false)}`}
 // already. The tests on lavapipe and SwiftShader, where max drops a NaN, hold that for those two; a device where exp(NaN)
 // or a half's NaN is another number is not tried.) A flag word would need a binding in every quantizer, a place in the
 // State and a reader in gpu.js and forward.js for what the logits already say. (3) An infinity becomes a NaN too: a scale of
-// infinity makes a row +inf or -inf by the sign of its dot (and NaN where the dot is 0), and logits of -inf alone are
-// not refused (tokens that cannot be drawn, T195). (4) The word is chosen by a comparison of integers and stored as an
+// infinity makes a row +inf or -inf by the sign of its dot (and NaN where the dot is 0), and the way from there to the
+// logits then rests on the next norm's 0 × inf (a NaN) and on T195's rule for logits that are all -inf (refused: no token
+// over -3.4e38; some -inf among finite ones are tokens that cannot be drawn, which no scale of one infinity makes).
+// lavapipe and SwiftShader do both, so the review's mutants that keep an infinity as it is ("no-or", "no-select") pass
+// every layer's round there: the scale word is tested alone (tests/gpu-check.mjs's quantizerProbe), and this word makes
+// the way short and independent of what a device does with an infinity. (4) The word is chosen by a comparison of integers and stored as an
 // integer: no float of the device's is asked whether it is a NaN. In a prompt's block (the same QUANTIZE) the keys
 // and values written back are NaN then. The GPU's next step finds them (by the above); the CPU's does not: its cache
 // reads a float16 NaN as a finite number (kernels/kernel.ts's halves4, T243), so T195's rule cannot see them there.
