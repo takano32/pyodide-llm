@@ -62,7 +62,10 @@ memory between workers. Where that fails, the page runs on one thread.
 
 With shared memory, the forward pass is split among software threads: each matrix product is cut into chunks of
 rows that the threads take in turn, and attention is split by head. The page searches for the fastest number of
-threads on each device and writes its decision to the console (lines starting with `threads:`).
+threads on each device and writes its decision to the console (lines starting with `threads:`). The number is kept
+for the next visit, one for each model and device, and checked against its neighbours again on the first answer of
+every visit; a search that ran while the GPU was getting ready (its upload and its compiling use the CPU too) is
+used, but not kept, and is run again once the GPU is ready.
 
 ## Memory
 
