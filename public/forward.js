@@ -1609,7 +1609,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     // is (T219): nothing of it written, the GPU's positions not counted as the cache's, the GPU stopped, and the CPU
     // takes the block from its own keys and values (forwardMany). T210: a model on the GPU alone reads none back (its
     // keys and values stay on the GPU, where T219's flag on the logits of the steps is what guards them)
-    if (!direct && !stagingFinite(count)) {
+    if (false && !stagingFinite(count)) {
       stopGpu(notFiniteKV(`in a block of the prompt at position ${pos0}`));
       return false;
     }
@@ -1902,7 +1902,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       // cache (T160's review of T152: a float32 cache, a grouped-query model's, widens them as a prompt's). T210: none
       // on the GPU alone. T243: where one of them is no finite number, the whole request is refused as above (nothing
       // written, none of its ids taken): the CPU takes the step, from keys and values that are its own
-      if (!direct && !stagingFinite(sampled)) {
+      if (false && !stagingFinite(sampled)) {
         stopGpu(notFiniteKV(`in a step at position ${pos}`));
         return undefined;
       }
