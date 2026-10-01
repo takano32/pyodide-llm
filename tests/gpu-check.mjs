@@ -68,6 +68,23 @@
 // and GPT-NeoX (LayerNorm, the biases, GELU, the positions added to a step's embedding, RoPE on a part of a head, the
 // parallel residual); the made-up GPT-2's final norm has eight weights of 12 (GPT-2's outlier channels, T92: the
 // engine takes their columns of the classifier apart on the CPU, and the GPU's classifier multiplies floats).
+// T226's review: "synthetic-gpt2-calm" and "synthetic-qwen-calm" (Qwen2's biases and Qwen3's norms of the heads in one
+// model: no real model has both, the engine takes them as they come), whose layers' matrices are at 0.1 where the
+// others' are at 0.3, and the norms' weights 1 ± 0.3 where the others' are 1 ± 0.03. A matrix of 64 weights a row
+// multiplies the size of a vector by 8 × 0.3 = 2.4, or 8 × 0.1 = 0.8: on the others the 8-bit rounding of an
+// activation grows from layer to layer (Q8 of the made-up GPT-2's keys and values, 1.1e-2, 5.1e-2 and 7.9e-2 at layers
+// 0 to 2), and the packed shaders' line, K_PACKED × Q8, lay above the distance of a GPU that reads another layer's
+// vector. NumPy's own answers (this file's references, the layers' vectors taken from layer 0 in every layer, 149
+// positions; TODO.md's T226) put such a GPU at 0.4 to 3.8 of the DP4A line on the made-up GPT-2, 0.4 to 6.9 on
+// GPT-NeoX, 0.4 to 2.1 on Qwen2 and 0.3 to 1.2 on Qwen3 (a float form's 3.7 to 111), and on the calm ones at 4.8 and
+// more on GPT-2 and 9.2 and more on the Qwen, but for the vectors of q alone (q's bias and norm change the attention's
+// weights, and so the next layer's keys, which a calm model's flat attention hardly shows: 1.1 and 0.8 on the DP4A
+// line, 4 to 9 on a float form's; q's bias goes by one ADD with k's and v's, and its norm by the code of k's). CI's
+// Dawn, the layers' vectors of a step read from layer 0 (gpu.js's tokenPass; runs 36884705557, 36884706717, 36884707864
+// and 36884707646): the calm ones' DP4A rows 5.7 to 18.7 of their lines (a correct GPU 0.27 to 0.37), the others' 0.34
+// to 1.17 (an RMSNorm model's packed shaders read the norm weights through a uniform of their own, g.u.norm, which
+// none of its float forms reads: the FFN's from layer 0 reads 0.36 and 0.57 on Qwen2 and Qwen3, 5.7 to 5.9 on the calm
+// Qwen; on GPT-2, whose LayerNorm every form runs apart, 0.85 and 6.8 on the packed shaders).
 //
 // T183: what a person reads to judge it, in the log of CI (the development machine does not run WebGPU's tests): E16,
 // how far NumPy's answer moves when nothing but its cache is rounded to float16 (answer(half=True), T153's review), and
@@ -100,6 +117,9 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   "synthetic-gpt2": [{ layers: 3, kv_heads: 4, arch: "gpt2", outliers: 8 }, { arch: "gpt2" }],
   "synthetic-neox": [{ layers: 3, kv_heads: 4, arch: "neox" }, { arch: "neox", rotary: 4, parallel_residual: true }],
   "synthetic-neox-256": [{ dim: 512, hidden: 1024, layers: 3, heads: 2, kv_heads: 2, arch: "neox" }, { arch: "neox", rotary: 64, parallel_residual: true }],
+  // T226's review (calm: see above): a vector read from the wrong layer is far from NumPy's on the packed shaders too
+  "synthetic-gpt2-calm": [{ layers: 3, kv_heads: 4, arch: "gpt2", outliers: 8, calm: true }, { arch: "gpt2" }],
+  "synthetic-qwen-calm": [{ layers: 3, bias: true, qk_norm: true, head_dim: 32, calm: true }, { bias: true, qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 }],
   // T155: [form, options, the run's: the GPU's pieces, a 64-bit memory]
   "synthetic-6bit": [{ dim: 128, hidden: 320, layers: 3, six: true }, { dtype: "int6" }, { force: { pieceBytes: 20480 } }],
   "synthetic-wide": [{ dim: 128, hidden: 320, layers: 3 }, {}, { force: { pieceBytes: 20480 }, wide: true }] };
@@ -193,12 +213,13 @@ const PYTHON = `
 import base64, gc, struct, numpy as np, llama2_numpy, llama2_convert
 from llama2_numpy import Llama, external_tensors
 
-def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, six=False, outliers=0, **form):
+def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, six=False, outliers=0, calm=False, **form):
     """A made-up int8 checkpoint and its tokenizer.bin, as quantize.py writes one: grouped-query attention. form
     (T153): llama2_numpy.FORM's bias, qk_norm and head_dim, whose vectors are drawn as the norms' are. six (T155):
     int6 (T98), as llama2_convert's Writer writes it: every matrix's packed values, then its scales. outliers (T226):
     that many weights of the final norm are 12 (GPT-2's are 12 to 17 times the others, T92), so that the engine takes
-    their channels apart in the classifier (llama2_numpy.outlier_channels)"""
+    their channels apart in the classifier (llama2_numpy.outlier_channels). calm (T226's review): the layers' matrices
+    at 0.1 and the norms' weights 1 +- 0.3, see the head of this file"""
     rng = np.random.default_rng(seed)
     header = (dim, hidden, layers, heads, kv_heads, vocab, seq_len)
     out = [struct.pack("<7i", *header)]
@@ -215,12 +236,14 @@ def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_
             continue  # the RoPE tables: an int8 file leaves them out
         values = (rng.standard_normal(shape) * 0.3).astype(np.float32)
         if not is_matrix:
-            values = values if is_bias(vectors) else 1.0 + values * 0.1
+            values = values if is_bias(vectors) else 1.0 + values * (1.0 if calm else 0.1)
             if outliers and vectors == final:
                 values[np.arange(outliers) * 7 % dim] = 12.0
             vectors += 1
             out.append(values.astype(np.float32).tobytes())
             continue
+        if calm and len(shape) == 3:
+            values = values / 3  # a layer's matrix (the embedding, the positions and the classifier are 2-D: as they are)
         if six:
             q, scales = llama2_numpy.quantize6(values.reshape(-1, shape[-1]))
             out += [llama2_numpy.pack6(q).tobytes(), scales.tobytes()]
