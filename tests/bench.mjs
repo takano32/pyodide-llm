@@ -750,4 +750,23 @@ assert.deepEqual(others, [
 assert.deepEqual(warnings([{ title: "GPU", status: "ok", markdown: [...tokenTable([{ name: "a token of Llama 3.2 1B", error: "out of memory" }], aBaseline), "",
   ...layerTable({ name: "a layer of a token", error: "x | y" }), "", ...generateTable({ name: "tokens generated on the GPU" })].join("\n") }]),
   ["GPU: a token (weights, dispatches, logits back): Llama 3.2 1B; GPU ms: failed: out of memory", "GPU: **A layer of a token**: failed: x \\| y"]);
+// T227's review: a device's error message has line breaks (a validation error of Dawn's: "Invalid ComputePipeline …\n - While
+// validating …\n - While calling …"). A verdict that FAILED with one is a line of the check's line and one warning: the
+// message's own lines are no lines to read again, however it ran over them (the line of the check was cut at the first break
+// into a warning of every verdict before it, 451 characters here)
+const dawn = 'Invalid ComputePipeline "tile 32x32".\n - While validating compute stage ([ShaderModule "main"]).\n - While calling [Device].CreateComputePipeline().';
+assert.equal(checkVerdict(["llama.cpp tiles 32×32, f16", { worstRelative: NaN, ok: false, error: dawn }]),
+  'llama.cpp tiles 32×32, f16 FAILED (Invalid ComputePipeline "tile 32x32". - While validating compute stage ([ShaderModule "main"]). - While calling [Device].CreateComputePipeline().)');
+const refused = gpuSection({ ...aCheck, "llama.cpp tiles 32×32, f16": { worstRelative: NaN, ok: false, error: dawn }, "TF.js tiles 32×32, vec4": { worstRelative: NaN, ok: false, error: "refused | x" } });
+assert.ok(!refused.said.some((line) => line.includes("\n")) && !refused.markdown.split("\n")[0].includes("\n"));
+assert.ok(refused.markdown.split("\n")[0].includes("FAILED (Invalid ComputePipeline") && refused.markdown.split("\n")[0].includes("CreateComputePipeline()."), "the check's line holds the whole message");
+assert.deepEqual(warnings([refused]), [
+  'GPU: llama.cpp tiles 32×32, f16 FAILED (Invalid ComputePipeline "tile 32x32". - While validating compute stage ([ShaderModule "main"]). - While calling [Device].CreateComputePipeline().)',
+  "GPU: TF.js tiles 32×32, vec4 FAILED (refused \\| x)"]);
+// what the section says itself runs over lines as well (the page's lost device and unchecked shaders): once, whole, and
+// not again by a piece of it with a word in it
+const lost = "**The device was lost** (destroyed: Device was destroyed.\n - While calling [Queue].Submit() failed): the times measured after it are not the GPU's.";
+assert.deepEqual(warnings([{ title: "GPU", status: "error", said: [lost], markdown: `${lost}\n\n${layerTable({ name: "a layer of a token", error: "a\nb" }).join("\n")}` }]),
+  ["GPU: **The device was lost** (destroyed: Device was destroyed. - While calling [Queue].Submit() failed): the times measured after it are not the GPU's.",
+    "GPU: **A layer of a token**: failed: a b"]);
 console.log("ok");
