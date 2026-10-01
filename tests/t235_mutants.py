@@ -56,6 +56,8 @@ MUTANTS = [
     ("gguf_agrees leaves yarn out", [(CONVERT, "(\"yarn RoPE scaling\", scaled(own), scaled(config))]", "]")]),
     ("check_config lets other yarn keys through", [(CONVERT, "for key in sorted(set(said) - {\"factor\", \"original_max_position_embeddings\"}):", "for key in []:")]),
     ("yarn's original context from the context length, not the GGUF's", [(CONVERT, "key(\"rope.scaling.original_context_length\", key(\"context_length\"))", "key(\"context_length\")")]),
+    ("a GGUF's yarn_log_multiplier read under the old, wrong name", [(CONVERT, "(\"yarn_log_multiplier\", \"mscale_all_dim\")", "(\"yarn_log_mul\", \"mscale_all_dim\")")]),
+    ("yarn's ramp without the guard against a zero width", [(NUMPY, "max(high - low, 0.001)", "(high - low)")]),
     ("the test reader's bit order reversed (gguf_check.py)", [(CHECK, "np.arange(0, 8, 2, dtype=np.uint8)) & 3", "np.arange(6, -1, -2, dtype=np.uint8)) & 3")]),
     ("the test reader's scale position (gguf_check.py)", [(CHECK, "return (codes.reshape(-1, 128).astype(np.float32) - 1) * half(blocks[:, :2])",
                                                            "return (codes.reshape(-1, 128).astype(np.float32) - 1) * half(blocks[:, 32:])")]),
