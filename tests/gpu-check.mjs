@@ -1038,11 +1038,12 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
   // T219 (2): the GPU's logits made NaN (the harness's refusal()): the request refused whole (nothing of it taken), the GPU
   // stopped, and the status line says the logits were not finite (the word gpu.js passes on, not an id outside the
   // vocabulary or too few sampled: those are what a sampler that did not refuse, or a word that did not arrive, leaves).
-  // The DP4A forms quantize the attention's output to 8 bits (QUANTIZE: its group's largest ignores a NaN where the
-  // device's max does, and the conversion of NaN to an integer is 0), which hides a NaN of the keys and values: the
+  // The DP4A forms quantize the attention's output to 8 bits (QUANTIZE: the group's largest is a max, and the value then
+  // an integer, both of which a device does as it likes for a NaN), which can hide a NaN of the keys and values: the
   // logits stay finite, the sampler sees nothing and the ids are taken (found by this check on lavapipe and SwiftShader,
-  // whose DP4A forms took 4 ids where the float forms refused; the CPU's activations are quantized by a max that keeps
-  // a NaN). Said, not failed, there; a request that gave nothing but did not say the logits were not finite fails anywhere
+  // whose DP4A forms took 4 ids where the float forms refused; which of the max and the conversion lost the NaN is not
+  // isolated; the CPU's activations are quantized by a max that keeps a NaN). Said, not failed, there; a request that
+  // gave nothing but did not say the logits were not finite fails anywhere
   if (steps.nanLogits && !steps.nanLogits.skipped) {
     const { taken, status } = steps.nanLogits, hides = /DP4A/.test(steps.form ?? "");
     const refused = taken === null && /^prompts on the CPU \(the GPU computed logits that are not finite numbers/.test(status ?? "");
