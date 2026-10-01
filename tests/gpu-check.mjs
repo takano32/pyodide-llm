@@ -401,6 +401,10 @@ const features = navigator.gpu?.wgslLanguageFeatures;
 const tokenForms = !adapter ? [] : ["llama.cpp, fused (T150)",
   ...(adapter.features.has("subgroups") && features?.has("subgroup_id") ? ["llama.cpp, fused (T150), subgroups"] : []),
   ...(features?.has("packed_4x8_integer_dot_product") ? ["DP4A, fused (T175)", "DP4A, fused (T175), the norms apart"] : [])];
+// T224: the attentions of a token this adapter can make (gpu.js's chooseTokenAttention), each forced in a run of its own
+// with the first form of a token's layer
+const tokenAttentions = !adapter ? [] : [...(adapter.features.has("subgroups") && features?.has("subgroup_id") ? ["llama.cpp flash_attn_vec, subgroups"] : []),
+  "llama.cpp flash_attn_vec", "the prompt's attention tiles"];
 try {
   const narrow = compileKernels(await fetched("/public/simdkernel_shared.wasm"), await fetched("/public/simdkernel_relaxed_shared.wasm"));
   const results = [];
@@ -429,7 +433,7 @@ try {
         const h = history(before);
         return engine.generateMany(token, pos, h.slice(-64), h.length, count, ...settings, randoms, stops);
       };
-      const out = { form: engine.gpuReady?.tokens, pieces: engine.gpuReady?.tablePieces, first: ask(tokens[n], n, [], 4) };
+      const out = { form: engine.gpuReady?.tokens, attention: engine.gpuReady?.tokenAttention, pieces: engine.gpuReady?.tablePieces, first: ask(tokens[n], n, [], 4) };
       if (out.first && out.first.every((id, i) => id === greedy[i])) {
         // the CPU's step, on the keys and values the GPU wrote back; then the GPU's, from the CPU's position up
         engine.forward(greedy[3], n + 4);
@@ -588,6 +592,9 @@ try {
     if (gpu[0].steps?.planned !== false) {
       const tablePieceBytes = Math.ceil((plan.vocab_size * plan.dim) / 3);
       for (const form of tokenForms) gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: form, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
+      for (const attention of tokenAttentions) {
+        gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: tokenForms[0], tokenAttention: attention, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
+      }
     }
     // the attention without subgroups or f16 (the lanes of the workgroup stand for a subgroup), where the adapter
     // has them and so chose the other
@@ -1011,7 +1018,7 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
   said.push(`sampled ${low?.[0]} and ${high?.[0]}`);
   // T209: the tables were cut where the run asked for it (a vocabulary of 192 rows or more is 3 pieces of 64)
   if (steps.cut && !(steps.pieces > 1)) failures.push(`the tables in ${steps.pieces} piece, not cut`);
-  console.log(`  a token by ${steps.form}${steps.pieces > 1 ? ` (the tables in ${steps.pieces} pieces)` : ""}: ${said.join(", ")}${failures.length ? ` — FAILED\n    - ${failures.join("\n    - ")}` : ""}`);
+  console.log(`  a token by ${steps.form}, its attention by ${steps.attention}${steps.pieces > 1 ? ` (the tables in ${steps.pieces} pieces)` : ""}: ${said.join(", ")}${failures.length ? ` — FAILED\n    - ${failures.join("\n    - ")}` : ""}`);
   return !failures.length;
 }
 

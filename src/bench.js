@@ -442,6 +442,9 @@ export function layerTable(step, check, ceilings, gpu = {}) {
     "on ONNX Runtime's DP4A, the vector quantized to 8 bits before each matrix, as separate steps (eighteen), fused but for the two norms (eleven), " +
     "and fused (nine: the norm with its quantizing, q, k and v with RoPE and the cache, the attention, its quantizing, o with the add, the norm with its quantizing, " +
     "gate and up with SwiGLU, its quantizing, down with the add). The forms are timed in turn, each as a submission of 2n layers less one of n, the weights read from copies of them in turn, as the matrix × vector is. " +
+    "The attention is the prompt's tiles (one row of their four used for a token), in float32 and without subgroups (the engine's own take f16 and subgroups where the device has them: " +
+    "the table of a token's attention alone, under the steps', has both); the fused forms a token runs are there again with llama.cpp's flash_attn_vec for it " +
+    "(T224: its decode form, the positions split over more workgroups a head, then reduced; with subgroups where there are), one dispatch more where it takes two parts or more. " +
     `GB/s: the layer's weights over its time${reads ? `; in parentheses, the share of what a loop that only reads a buffer reads, ${number(reads)} GB/s below` : ""}.`,
     ...(none ? [`Faster than the separate steps: ${none}.`] : []), ...(gpu.lost ? ["No share of the buffer's reads: the device was lost."] : []), "",
     `| a layer | dispatches | GPU ms | GB/s | its ${r.layers} layers, ms | faster than the separate steps |`, "|---|---:|---:|---:|---:|---:|",
@@ -568,7 +571,42 @@ export function layerStepsTable(step, check, ceilings, gpu = {}) {
         "Where these agree with the times above to about 0.1 ms, the times above are the layers' work; where these are well below, the times above hold something besides it (what comes between one layer and the next, or of the submissions).");
     }
   }
+  lines.push(...attentionLengthsLines(r.lengths, none));
   return lines;
+}
+
+/**
+ * T224: under the steps' table, a token's attention alone at 128, 1024 and 4096 positions (public/benchmark/gpu.js's
+ * attentionLengths()): the prompt's tiles, and llama.cpp's flash_attn_vec with subgroups and with the lanes of the
+ * workgroup standing for one. lengths: { positions, rows: [{ attention, tiles, times: [{ ms, n, ratio, unsteady } or
+ * { error } or { none } a length] }], base, MB } or { error }; none: noRatios()'s (no "faster than the tiles" then). The
+ * vec rows say how many times faster they are than the tiles at the same length (neither unsteady): T224's review, the
+ * tiles of row base, the engine's here where there are two (f32 without subgroups as the layer rows, and f16 and
+ * subgroups as the engine makes them where the device has them).
+ */
+function attentionLengthsLines(lengths, none) {
+  if (!lengths) return [];
+  const head = "**A token's attention alone, by the positions it reads** (T224)";
+  if (lengths.error) return ["", `${head}: failed: ${tableCell(lengths.error)}`];
+  const tiles = lengths.rows[lengths.base ?? 0], two = lengths.rows.filter((row) => row.tiles).length > 1;
+  const cell = (one, i, row) => {
+    if (one?.none) return tableCell(`not here: ${one.none}`);
+    if (one?.error || !(Number.isFinite(one?.ms) && one.ms > 0)) return `failed: ${tableCell(one?.error ?? "no time")}`;
+    const base = tiles.times[i], steady = !one.unsteady && !base?.unsteady && Number.isFinite(base?.ms) && base.ms > 0;
+    const faster = row !== tiles && !row.tiles && !none && steady ? ` (${times(base.ms / one.ms)} the ${two ? "engine's " : ""}tiles)` : "";
+    return `${one.unsteady ? "unsteady: " : ""}${number(1000 * one.ms, 1)}${faster}`;
+  };
+  return ["", `${head}: Llama 3.2 1B's heads (32 of q on 8 of keys and values, 64 each), a token that reads 128, 1024 and 4096 positions of the cache, ` +
+    "each attention as a submission of 2n of it less one of n, all in turn at a length, each on the next of copies of the cache " +
+    `(${number(lengths.MB, 0)} MB of them at the most: not from the GPU's caches, as a token's layers each read their own). ` +
+    "The prompt's tiles run a workgroup a head at any length and use one row of their four for a token; llama.cpp's flash_attn_vec (its decode form) splits the positions " +
+    "over more workgroups a head as they grow (up to the least subgroup, or 32 where the lanes of a workgroup stand for one), then a second dispatch reduces the parts. " +
+    (two ? "The tiles are here twice: in float32 without subgroups, as the layer table and the steps above run them, and as the engine makes them on this device (f16, subgroups), " +
+      "which is what a token's attention is chosen against, and what the vec rows are read against. " : "") +
+    "The engine times the ones right on the device at 128 and 2048 positions and takes the fastest.",
+  ...(none ? [`Faster than the tiles: ${none}.`] : []), "",
+  `| attention | ${lengths.positions.map((p) => `${p} positions, µs`).join(" | ")} |`, `|---|${lengths.positions.map(() => "---:|").join("")}`,
+  ...lengths.rows.map((row) => `| ${tableCell(row.attention)} | ${lengths.positions.map((_, i) => cell(row.times[i], i, row)).join(" | ")} |`)];
 }
 
 /**
