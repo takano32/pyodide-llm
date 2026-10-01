@@ -13,7 +13,7 @@ import numpy as np
 
 # the RoPE angles are the engine's, which computes them itself when a file leaves the tables out (int8)
 from llama2_numpy import (CHARSMAP, FORM, RMS_EPS, form_of, layer_slots, linear_form, linear_widths, pack6, quantize6,
-                          rope_frequencies)
+                          rope_frequencies, rope_magnitude)
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
 # peak is the output plus 14 MB with this, plus 52 MB with pieces four times as large, at the same speed.
@@ -809,10 +809,33 @@ def q8_0(raw):
     return (values * scales).reshape(-1)
 
 
-# bytes per value (Q8_0: 34 bytes for 32 of them), and how to read them
+# the four values of each byte of PQ2_0, the lowest two bits first, as one little-endian word of four int8
+PQ2_0_CODES = ((np.arange(256)[:, None] >> (0, 2, 4, 6) & 3) - 1).astype(np.int8).view("<u4").reshape(256)
+
+
+def pq2_0(raw):
+    """Prism ML's PQ2_0 (T235: Ternary-Bonsai's GGUFs, ggml type 142): blocks of 128 values, each a float16 scale d
+    and 32 bytes of two bits a value, the first value in the lowest bits of the first byte. A value is (code - 1) * d:
+    -d, 0 or +d in a ternary model, whose files leave the code 3 (+2 d) unused. The form is that of block_pq2_0 and
+    dequantize_row_pq2_0() of the fork of llama.cpp that reads these files (MIT; no line of it is copied):
+    https://github.com/PrismML-Eng/llama.cpp/blob/88c4bc60b9c9578f134385be9535e853f2db9b9f/ggml/src/ggml-common.h#L199-L207
+    and ggml/src/ggml-quants.c#L494-L511 there.
+
+    The engine's int8 holds a ternary block without loss of its values: quantize() makes every group of 32 of them
+    -127, 0 and 127 and a scale of float32(d / 127), so what the forward pass multiplies is 127 * float32(d / 127)
+    where the file says d, at most 6e-8 of d away (tests/test_gguf.py tries every float16 scale)."""
+    blocks = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 34)
+    scales = np.ascontiguousarray(blocks[:, :2]).view(np.float16).astype(np.float32)
+    values = PQ2_0_CODES[blocks[:, 2:]].view(np.int8)
+    return (values * scales).reshape(-1)
+
+
+# bytes per value (Q8_0: 34 bytes for 32 of them, PQ2_0: 34 for 128), and how to read them
 READERS = {"F32": (4, lambda raw: np.frombuffer(raw, dtype=np.float32)),
            "F16": (2, lambda raw: np.frombuffer(raw, dtype=np.float16)), "BF16": (2, bfloat16),
-           "Q8_0": (34 / 32, q8_0)}
+           "Q8_0": (34 / 32, q8_0), "PQ2_0": (34 / 128, pq2_0)}
+# how many values a block of a GGUF's type holds: a row is whole blocks
+BLOCKS = {"Q8_0": 32, "PQ2_0": 128}
 
 
 class Safetensors:
@@ -957,6 +980,14 @@ def linear_layers(config):
             "conv": numbers["linear_conv_kernel_dim"]}
 
 
+def yarn(config):
+    """What a config.json whose RoPE scaling is yarn says of it besides its kind (T235), else None."""
+    scaling = config.get("rope_scaling") or {}
+    if scaling.get("rope_type", scaling.get("type")) != "yarn":
+        return None
+    return {key: value for key, value in scaling.items() if key not in ("rope_type", "type") and value is not None}
+
+
 def normalize(config):
     """GPT-2 spells its config.json differently: give it the names the rest of this file uses."""
     if config.get("model_type") == "qwen3_5" and isinstance(config.get("text_config"), dict):
@@ -1029,9 +1060,19 @@ def check_config(config):
             or not (divides or (config.get("head_dim") and architecture(config) in ("llama", "qwen35"))):
         refuse("its attention heads do not divide the hidden size the way llama2.c expects")
     scaling = config.get("rope_scaling")
-    if scaling and (architecture(config) != "llama" or scaling.get("rope_type", scaling.get("type")) not in ("llama3", "linear")):
-        # Llama 3's and the linear one are the kinds the RoPE tables know (llama2_numpy.rope_frequencies)
+    if scaling and (architecture(config) != "llama"
+                    or scaling.get("rope_type", scaling.get("type")) not in ("llama3", "linear", "yarn")):
+        # Llama 3's, the linear one and yarn are the kinds the RoPE tables know (llama2_numpy.rope_frequencies)
         refuse(f"it uses RoPE scaling of the {scaling.get('rope_type', scaling.get('type'))} kind")
+    said = yarn(config)
+    if said is not None:
+        # T235: yarn as Ternary-Bonsai's config.json says it, a factor and the original context. What else transformers
+        # reads of a yarn (attention_factor, mscale, mscale_all_dim, beta_fast, beta_slow, truncate) changes the angles
+        # or how much the turned values are scaled, and the tables know none of it
+        for key in sorted(set(said) - {"factor", "original_max_position_embeddings"}):
+            refuse(f"its yarn RoPE scaling sets {key}, which the engine does not read")
+        if not all(isinstance(said.get(key), (int, float)) and said[key] > 0 for key in ("factor", "original_max_position_embeddings")):
+            refuse("its yarn RoPE scaling names no factor or no original context")
     if architecture(config) == "neox":
         if config.get("hidden_act", "gelu") not in ("gelu", "gelu_new", "gelu_fast", "gelu_pytorch_tanh"):
             refuse(f"its activation is {config['hidden_act']}, and only GELU is supported")
@@ -1304,7 +1345,7 @@ def rope_table(config, header, which):
     width = rotary_dim(config) if architecture(config) in PARTLY_TURNED else size
     positions = np.arange(seq_len, dtype=np.float64)[:, None]
     frequencies = rope_frequencies(width, config.get("rope_theta", 10000.0), config.get("rope_scaling"))
-    table = (np.cos if which == 0 else np.sin)(positions * frequencies)
+    table = (np.cos if which == 0 else np.sin)(positions * frequencies) * rope_magnitude(config.get("rope_scaling"))
     if width == size:
         return table
     full = np.zeros((seq_len, size // 2), dtype=np.float64)
@@ -1518,14 +1559,15 @@ def unsplit(w, heads):
 
 
 # ------------------------------------------------------------------------------------------------- GGUF (T74)
-# A GGUF file holds what config.json, tokenizer.json and model.safetensors hold, in one. Only what a Q8_0 or F16
+# A GGUF file holds what config.json, tokenizer.json and model.safetensors hold, in one. Only what a Q8_0, PQ2_0 or F16
 # Llama, Qwen2, Qwen3, GPT-2 or GPT-NeoX needs is read; tests/gguf_check.py is the separate reference this is held to.
 class Incomplete(Exception):
     """The GGUF header goes on past the bytes given: fetch more and try again."""
 
 
 GGUF_VALUES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
-GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0"}  # ggml's types; the K-quants and the rest are refused
+# ggml's types; the K-quants and the rest are refused. 142 is PQ2_0 of Prism ML's fork of llama.cpp (T235, pq2_0())
+GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0", 142: "PQ2_0"}
 # llama.cpp's names of the pre-tokenizers, as the engine knows them (llama2_numpy.pretokenize)
 GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen", "llama-bpe": "llama3"}
 GGUF_LAYER = {"attn_norm": "input_layernorm", "ffn_norm": "post_attention_layernorm", "attn_q": "self_attn.q_proj",
@@ -1647,6 +1689,15 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
                   **common}
         if key("rope.scaling.type", "none") not in ("none", None):
             config["rope_scaling"] = {"type": key("rope.scaling.type"), "factor": key("rope.scaling.factor", 1.0)}
+            if key("rope.scaling.type") == "yarn":
+                # T235: yarn's other numbers, by config.json's names. llama.cpp takes the trained context where the
+                # GGUF names no original one; what else a GGUF may say of yarn, check_config() refuses by these names
+                # and gguf_agrees() where the original's config.json has it not
+                config["rope_scaling"]["original_max_position_embeddings"] = \
+                    key("rope.scaling.original_context_length", key("context_length"))
+                for name, ours in (("attn_factor", "attention_factor"), ("yarn_log_mul", "mscale_all_dim")):
+                    if key(f"rope.scaling.{name}") is not None:
+                        config["rope_scaling"][ours] = key(f"rope.scaling.{name}")
     header = {}
     if "rope_freqs.weight" in tensors:
         # llama.cpp writes Llama 3's RoPE scaling as a table of divisors instead of the rope_scaling of config.json
@@ -1662,8 +1713,8 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
     turns = {"attn_q": heads, "attn_k": config.get("num_key_value_heads")}
     for name, info in tensors.items():
         if info["type"] not in GGUF_TENSORS:
-            raise ValueError(f"{name} is stored as ggml type {info['type']}: only F32, F16 and Q8_0 GGUF files are "
-                             f"supported (not the K-quants).")
+            raise ValueError(f"{name} is stored as ggml type {info['type']}: only F32, F16, Q8_0 and PQ2_0 GGUF files "
+                             f"are supported (not the K-quants).")
         parts = name.split(".")
         if name in names:
             target = names[name]
@@ -1672,9 +1723,10 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
         else:
             continue  # nothing the engine reads
         dtype = GGUF_TENSORS[info["type"]]
-        if dtype == "Q8_0" and info["shape"][-1] % 32:
+        if info["shape"][-1] % BLOCKS.get(dtype, 1):
             # ggml itself requires it; a file that breaks it would be read at the wrong offsets and write nonsense
-            raise ValueError(f"{name} is Q8_0 with rows of {info['shape'][-1]}, which is not a multiple of 32.")
+            raise ValueError(f"{name} is {dtype} with rows of {info['shape'][-1]}, which is not a multiple of "
+                             f"{BLOCKS[dtype]}.")
         size = int(int(np.prod(info["shape"])) * READERS[dtype][0])
         entry = {"dtype": dtype, "shape": info["shape"], "data_offsets": [info["offset"], info["offset"] + size]}
         kind = parts[2] if len(parts) == 4 else None
@@ -1722,13 +1774,16 @@ def gguf_agrees(own, config):
     Both are normalize()d. GPT-NeoX's (T136's third stage): also how much of each head turns and whether the two
     branches run in parallel, which the options say (no tensor does)."""
     f32 = lambda value: float(np.float32(value))
+    scaled = lambda c: yarn(c) and {key: f32(value) for key, value in yarn(c).items()}
     heads = config.get("num_attention_heads")
     pairs = [("architecture", own["model_type"], config.get("model_type")),
              ("number of layers", own["num_hidden_layers"], config.get("num_hidden_layers")),
              ("number of heads", own["num_attention_heads"], heads),
              ("number of key-value heads", own.get("num_key_value_heads", own["num_attention_heads"]),
               config.get("num_key_value_heads", heads)),
-             ("RoPE theta", f32(own.get("rope_theta", 10000.0)), f32(config.get("rope_theta", 10000.0)))]
+             ("RoPE theta", f32(own.get("rope_theta", 10000.0)), f32(config.get("rope_theta", 10000.0))),
+             # T235: what a yarn says (None: no yarn), which changes every angle and is no tensor
+             ("yarn RoPE scaling", scaled(own), scaled(config))]
     if own.get("head_dim") and config.get("hidden_size") and heads:
         pairs.append(("size of a head", own["head_dim"], head_size(config)))
     if own.get("rms_norm_eps") is not None and config.get("rms_norm_eps") is not None:

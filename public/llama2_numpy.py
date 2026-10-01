@@ -565,11 +565,15 @@ def rope(x, cos, sin):
 def rope_frequencies(width, theta, scaling=None):
     """The angle per position of each pair of a head's first width values (float64), for the RoPE tables.
 
-    scaling: config.json's rope_scaling, of two kinds. "linear" (T126: deepseek-coder): every pair turns factor times
+    scaling: config.json's rope_scaling, of three kinds. "linear" (T126: deepseek-coder): every pair turns factor times
     slower, as if the positions were divided by factor. "llama3": the pairs that turn slowly (a wavelength past
     original_max_position_embeddings / low_freq_factor) turn factor times slower, the fast ones (shorter than
     original / high_freq_factor) as before, and the ones between are a blend of the two (transformers'
-    _compute_llama3_parameters).
+    _compute_llama3_parameters). "yarn" (T235: Ternary-Bonsai): the pairs that turn 32 times or more within
+    original_max_position_embeddings positions turn as before, the ones that turn once or less factor times slower,
+    and the pairs between (counted by their number, each bound rounded outward) go from the one to the other in even
+    steps: transformers' _compute_yarn_parameters and llama.cpp's rope_yarn(), which are the same table at every
+    position, whatever the context. yarn also scales the turned values: rope_magnitude().
     """
     frequencies = 1.0 / theta ** (np.arange(0, width, 2, dtype=np.float64) / width)
     if not scaling:
@@ -577,6 +581,13 @@ def rope_frequencies(width, theta, scaling=None):
     kind = scaling.get("rope_type", scaling.get("type"))
     if kind == "linear":
         return frequencies / float(scaling["factor"])
+    if kind == "yarn":
+        original = float(scaling["original_max_position_embeddings"])
+        # the pair whose angle makes this many turns in the original context (a real number: the pairs slow down evenly)
+        pair = lambda turns: width * math.log(original / (turns * 2 * math.pi)) / (2 * math.log(theta))
+        low, high = max(math.floor(pair(32)), 0), min(math.ceil(pair(1)), width - 1)
+        slowed = np.clip((np.arange(width // 2) - low) / max(high - low, 0.001), 0, 1)
+        return frequencies * (1 - slowed) + frequencies / float(scaling["factor"]) * slowed
     if kind != "llama3":
         raise ValueError(f"RoPE scaling of the {kind} kind is not supported.")
     factor, low, high = float(scaling["factor"]), float(scaling["low_freq_factor"]), float(scaling["high_freq_factor"])
@@ -586,6 +597,16 @@ def rope_frequencies(width, theta, scaling=None):
     blended = (1 - smooth) * frequencies / factor + smooth * frequencies
     return np.where(wavelength < original / high, frequencies,
                     np.where(wavelength > original / low, frequencies / factor, blended))
+
+
+def rope_magnitude(scaling=None):
+    """What the cos and sin of the RoPE tables are multiplied by: 1, but 0.1 ln(factor) + 1 under yarn (T235), which so
+    makes q and k that much longer and the attention's scores sharper by its square (yarn's temperature: transformers'
+    attention_factor, which scales cos and sin, and llama.cpp's mscale in rope_yarn(), where it comes to the same).
+    Left out, a yarn model's attention is 1.30 times too flat at factor 4 and nothing says so."""
+    if not scaling or scaling.get("rope_type", scaling.get("type")) != "yarn":
+        return 1.0
+    return 0.1 * math.log(max(float(scaling["factor"]), 1.0)) + 1.0
 
 
 REPETITION_WINDOW = 64  # the repetition penalty looks at this many of the latest tokens
@@ -799,6 +820,7 @@ def external_tensors(header, dtype, form=None):
     probe.vocab_size = abs(vocab_size)
     probe.head_size = int(form["head_dim"]) or probe.dim // probe.n_heads
     probe.q_dim, kv_dim = probe.n_heads * probe.head_size, probe.n_kv_heads * probe.head_size
+    probe.rope_magnitude = 1.0  # the places, not the values
     six = str(dtype) == "int6"
     places = Places(np.int8 if six else dtype, six)
     probe.llama_tensors(places.take, vocab_size > 0, True, kv_dim, form["bias"], places.dtype,
@@ -1087,6 +1109,7 @@ class Llama:
         # a dict from Python, or a JavaScript object from the worker
         rope_scaling = rope_scaling.to_py() if hasattr(rope_scaling, "to_py") else rope_scaling
         frequencies = lambda width: rope_frequencies(width, rope_theta, rope_scaling)
+        self.rope_magnitude = rope_magnitude(rope_scaling)
         if arch in ("gpt2", "neox"):
             self.gpt2_tensors(take, shared_weights, keep_int8, kv_dim, dtype, frequencies)
         elif arch == "qwen35":
@@ -1160,7 +1183,8 @@ class Llama:
         if dtype != np.float32:
             # half precision is too coarse for the rotation angles, and int8 files leave the RoPE tables out
             angles = np.arange(self.seq_len)[:, None] * frequencies(self.head_size)
-            self.freq_cis_real, self.freq_cis_imag = np.cos(angles).astype(np.float32), np.sin(angles).astype(np.float32)
+            self.freq_cis_real, self.freq_cis_imag = ((turn(angles) * self.rope_magnitude).astype(np.float32)
+                                                      for turn in (np.cos, np.sin))
 
     def qwen35_tensors(self, take, shared_weights, keep_int8, kv_dim, dtype, frequencies):
         """The tensors of a Qwen3.5 (T229), in the order llama2_convert.layout() writes them: the stacks of the

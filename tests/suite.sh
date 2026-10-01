@@ -42,6 +42,10 @@ page_modules() {
   node tests/worker-sink-check.mjs
   # T129: where fetching and loading meet in worker.js, on made-up fetches and a fast clock (a few seconds)
   node tests/worker-check.mjs
+  # T130's review, on forward.js's createForward() with kernels that do nothing: the KV cache grows in place without losing a
+  # byte, and footprint() holds what is allocated (a few seconds); T223's: the search for the software threads on noisy times
+  node tests/memory-check.mjs
+  node tests/thread-search-check.mjs
 }
 part "unit tests of the page's modules" page_modules
 

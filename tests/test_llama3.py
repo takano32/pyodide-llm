@@ -11,7 +11,7 @@ from test_gguf import gguf_file
 
 import llama2_convert
 from llama2_convert import Arrays, Conversion, check_config, gguf_model, gguf_read, rope_table, tokenizer_json_options
-from llama2_numpy import Llama, Tokenizer, pretokenize, rope_frequencies
+from llama2_numpy import Llama, Tokenizer, pretokenize, rope_frequencies, rope_magnitude
 
 LLAMA3_PATTERN = (r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*"
                   r"|\s*[\r\n]+|\s+(?!\S)|\s+")
@@ -23,6 +23,8 @@ SCALING = {"factor": 32.0, "high_freq_factor": 4.0, "low_freq_factor": 1.0, "ori
 # the same formula independent of this one (transformers needs PyTorch, which this machine has not).
 # config.json of deepseek-ai/deepseek-coder-1.3b-instruct@e063262d (T126)
 LINEAR = {"factor": 4.0, "type": "linear"}
+# config.json of prism-ml/Ternary-Bonsai-1.7B-unpacked@3aca8400 (T235)
+YARN = {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 8192}
 LLAMA_CPP_DIVISORS = [1.0] * 15 + [1.6513293, 3.2922628, 9.666731] + [32.0] * 14
 
 
@@ -33,8 +35,8 @@ def test_the_llama3_frequencies_are_llama_cpps():
 
 def test_without_scaling_the_frequencies_are_what_they_were():
     assert np.array_equal(rope_frequencies(64, 10000.0), 1.0 / 10000.0 ** (np.arange(0, 64, 2) / 64))
-    with pytest.raises(ValueError, match="yarn"):
-        rope_frequencies(64, 10000.0, {"rope_type": "yarn", "factor": 4.0})
+    with pytest.raises(ValueError, match="dynamic"):
+        rope_frequencies(64, 10000.0, {"rope_type": "dynamic", "factor": 4.0})
 
 
 def test_the_linear_frequencies_are_the_plain_ones_over_the_factor():
@@ -42,14 +44,42 @@ def test_the_linear_frequencies_are_the_plain_ones_over_the_factor():
     assert np.allclose(rope_frequencies(64, 100000.0) / rope_frequencies(64, 100000.0, LINEAR), 4.0, rtol=1e-12)
 
 
-def test_only_the_llama3_and_linear_kinds_of_scaling_are_let_through():
+def test_the_yarn_frequencies_are_transformers_and_llama_cpps():
+    """T235, for Ternary-Bonsai 1.7B's heads of 128 and theta of 1e6. By hand, the pair that makes 32 turns in the
+    original 8192 positions is 128 ln(8192 / (32 * 2 pi)) / (2 ln 1e6) = 17.17, rounded down, and the one that makes one
+    turn 33.23, rounded up: the pairs up to 17 turn as before, from 34 on four times slower. Between them llama.cpp's
+    rope_yarn() mixes the plain angle and the slowed one by 1 - (pair - 17) / (34 - 17), which is transformers'
+    _compute_yarn_parameters with the two named the other way round. And the cos and sin are 0.1 ln 4 + 1 times
+    longer (transformers' attention_factor; llama.cpp's mscale comes to the same), which nothing else scales."""
+    divisors = rope_frequencies(128, 1e6) / rope_frequencies(128, 1e6, YARN)
+    assert np.array_equal(divisors[:18], np.ones(18)) and np.allclose(divisors[34:], 4.0, rtol=1e-12)
+    for pair in range(18, 34):
+        plain = 1 - (pair - 17) / 17
+        assert divisors[pair] == pytest.approx(1 / (0.25 * (1 - plain) + plain), rel=1e-12)
+    assert rope_magnitude(YARN) == pytest.approx(1.1386294361, rel=1e-9)
+    assert rope_magnitude(None) == rope_magnitude(SCALING) == rope_magnitude(LINEAR) == 1.0
+    # a head so small that no pair makes 32 turns: the ramp begins at the first pair and ends at the last
+    small = rope_frequencies(8, 10000.0) / rope_frequencies(8, 10000.0, {**YARN, "original_max_position_embeddings": 64})
+    assert np.allclose(small, [1.0, 1 / (0.25 * 0.5 + 0.5), 4.0, 4.0], rtol=1e-12)
+
+
+def test_only_the_kinds_of_scaling_the_tables_know_are_let_through():
     config, weights = synthetic_weights()
     _, published = hugging_face(config, weights, True)
     check_config({**published, "rope_scaling": SCALING})
     check_config({**published, "rope_scaling": LINEAR})
-    for kind in ("dynamic", "yarn"):
+    check_config({**published, "rope_scaling": YARN})
+    for kind in ("dynamic", "longrope"):
         with pytest.raises(ValueError, match="RoPE scaling"):
             check_config({**published, "rope_scaling": {"rope_type": kind, "factor": 2.0}})
+    # T235: what else a yarn may say changes the tables, and is refused rather than dropped without a word
+    for key, value in (("attention_factor", 1.2), ("mscale", 1.0), ("mscale_all_dim", 0.707), ("beta_fast", 16),
+                       ("beta_slow", 2), ("truncate", False)):
+        with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {key}"):
+            check_config({**published, "rope_scaling": {**YARN, key: value}})
+    for missing in ("factor", "original_max_position_embeddings"):
+        with pytest.raises(ValueError, match="names no factor or no original context"):
+            check_config({**published, "rope_scaling": {key: value for key, value in YARN.items() if key != missing}})
 
 
 def llama3(max_seq_len=64, scaling=None):
@@ -61,10 +91,12 @@ def llama3(max_seq_len=64, scaling=None):
     return config, tensors, published
 
 
-@pytest.mark.parametrize("scaling", [None, LINEAR], ids=["llama3", "linear"])
+@pytest.mark.parametrize("scaling", [None, LINEAR, {**YARN, "original_max_position_embeddings": 32}],
+                         ids=["llama3", "linear", "yarn"])
 def test_the_file_and_the_engine_make_the_same_scaled_tables(scaling):
     """float32 files hold the tables (the converter makes them), int8 files do not (the engine does): the two must
-    agree, and the engine needs rope_scaling from the options for that (T72's lesson: test the options' path)."""
+    agree, and the engine needs rope_scaling from the options for that (T72's lesson: test the options' path).
+    yarn's tables are also longer by its magnitude (T235), in both: the cos of position 0 says it."""
     config, tensors, published = llama3(scaling=scaling)
     file = safetensors_file(tensors)
     size = struct.unpack("<Q", file[:8])[0]
@@ -86,6 +118,10 @@ def test_the_file_and_the_engine_make_the_same_scaled_tables(scaling):
     assert not np.allclose(tables["float32"][0], plain), "the scaling changes the table"
     for which in (0, 1):
         assert np.allclose(tables["int8"][which], tables["float32"][which], atol=1e-6)
+    magnitude = rope_magnitude(published["rope_scaling"])
+    assert (magnitude > 1.13) is (published["rope_scaling"].get("rope_type") == "yarn")
+    for dtype in ("float32", "int8"):
+        assert np.all(tables[dtype][0][0] == np.float32(magnitude))
 
 
 def test_llama3_pretokenizer_follows_the_pattern():

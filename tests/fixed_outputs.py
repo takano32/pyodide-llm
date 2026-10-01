@@ -39,7 +39,8 @@ CHUNK = 8 << 20
 # The list takes Qwen3 from a GGUF since T203, so its safetensors, the way ?hf= opens a Qwen3 (the norms of q and k and
 # the size of the heads read from config.json and the tensors' names), gets a fixed output of its own too (T212): the
 # same entry with the weights of the original repository its vocabulary comes from, named as the page's hfEntry()
-# names them.
+# names them. T235: Ternary-Bonsai 1.7B, the one model of PQ2_0 blocks and of yarn's RoPE (its angles and the longer
+# cos and sin), and the one whose template comes from chat_template.jinja. Its float32 checkpoint is 6.9 GB.
 SAFETENSORS = {"hf-qwen3-0.6b-safetensors": "hf-qwen3-0.6b"}
 # T229: a Qwen3.5 (hybrid attention: Gated DeltaNet layers between full-attention ones), which the list does not have
 # yet (T236), so its entry is written here: the 0.8B's safetensors at the revision tests/reference_qwen35.py holds the
@@ -52,7 +53,7 @@ UNLISTED = {"hf-qwen3.5-0.8b-safetensors": {
     "template": "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
     "options": {"specials": ["<|im_start|>", "<|im_end|>", "<think>", "</think>"], "stop_tokens": [248044, 248046]}}}
 MODELS = ["hf-pythia-70m", "hf-gpt2", "hf-japanese-gpt2-small", "hf-smollm2-135m-instruct", "hf-llm-jp-3-150m-instruct3",
-          "hf-qwen3-0.6b", "hf-qwen3-0.6b-safetensors", "hf-qwen3.5-0.8b-safetensors"]
+          "hf-qwen3-0.6b", "hf-qwen3-0.6b-safetensors", "hf-ternary-bonsai-1.7b", "hf-qwen3.5-0.8b-safetensors"]
 
 
 def entries():
@@ -130,6 +131,14 @@ def converted(entry, directory):
             tokenizer_config = fetch(source, "tokenizer_config.json", directory).read_text()
         except OSError:
             tokenizer_config = ""
+        # T127: the template is in chat_template.jinja where tokenizer_config.json has none, and the page asks for it
+        # there (T235: Ternary-Bonsai's original keeps it so; without it this wrote on from the bare prompt)
+        chat_template = None
+        if not (tokenizer_config and json.loads(tokenizer_config).get("chat_template")):
+            try:
+                chat_template = fetch(source, "chat_template.jinja", directory).read_text()
+            except OSError:
+                pass  # most repositories have none
         config = fetch(source, "config.json" if vocabulary else hf["config"], directory).read_text()
         if vocabulary:
             size = 1 << 20
@@ -143,7 +152,8 @@ def converted(entry, directory):
             (length,) = np.frombuffer(bytes(data[:8]), dtype="<u8")
             header, first = bytes(data[8:8 + int(length)]).decode(), 8 + int(length)
         conversion = Conversion(header, first, config, fetch(source, tokenizer, directory).read_bytes(), tokenizer,
-                                dtype="float32", tokenizer_config=tokenizer_config, sink=sink, start=first)
+                                dtype="float32", tokenizer_config=tokenizer_config, chat_template=chat_template, sink=sink,
+                                start=first)
     for start in range(first, len(data), CHUNK):
         conversion.feed(bytes(data[start:start + CHUNK]))
     conversion.finish()
