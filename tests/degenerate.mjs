@@ -6,7 +6,8 @@
 //
 //   SEEDS="1 2 … 64" PROMPTS='["これからの流行りは", "富士山は、"]' WRITER=degenerate.mjs TOKENS=200 bash tests/write.sh hf-japanese-gpt2-xsmall
 //
-// (BOS=<token id> begins every text with that token instead of the entry's: how another start compares.)
+// (BOS=<token id> begins every text with that token instead of the entry's: how another start compares. BAN=unknown, or
+// token ids "5,7": those are never drawn: how the answers look without the unknown piece.)
 // For each prompt (PROMPTS: a JSON list, else the entry's own and two more openings) and seed it writes up to TOKENS
 // tokens with the entry's sampling (until a stop token, as the page does) and counts what a reader sees come apart:
 //   unk     the answer has <unk> in it (the model wrote the piece that stands for what its vocabulary lacks)
@@ -43,11 +44,24 @@ pyodide.globals.set("OPTIONS", pyodide.toPy({ ...page.options, ...(process.env.B
 pyodide.globals.set("TEXTS", pyodide.toPy(prompts.map((prompt) => (page.template ? filled(page.template, prompt) : prompt))));
 pyodide.globals.set("COUNT", Number(count));
 pyodide.globals.set("SEEDS", pyodide.toPy(seeds));
+// BAN=unknown (or token ids, "5,7"): those tokens are never drawn (-inf written into their logits after the forward pass, where
+// the sampling reads them): how the answers look if the page left the unknown piece out of what a model may write
+pyodide.globals.set("BAN", pyodide.toPy((process.env.BAN ?? "").split(",").filter(Boolean)));
 pyodide.globals.set("SAMPLING", pyodide.toPy(Object.fromEntries(Object.entries({ temperature, topp, repetition_penalty }).filter(([, v]) => v !== undefined))));
 const result = JSON.parse(pyodide.runPython(`
 import json, re, time
 llama = kernel_llama_file(CHECKPOINT, open("tokenizer.bin", "rb").read(), **OPTIONS)
-JAPANESE = re.compile(r"[\\u3040-\\u30ff\\u3400-\\u9fff\\uff00-\\uffef]")
+banned = [llama.tokenizer.unknown if name == "unknown" else int(name) for name in BAN]
+if banned:
+    import numpy as np
+    drawn_from = llama.forward
+    def forward(token, pos, need_logits=True):
+        logits = drawn_from(token, pos, need_logits=need_logits)
+        if need_logits:
+            logits[banned] = -np.inf
+        return logits
+    llama.forward = forward
+JAPANESE =re.compile(r"[\\u3040-\\u30ff\\u3400-\\u9fff\\uff00-\\uffef]")
 LETTERS = re.compile(r"[^\\W\\d_]", re.UNICODE)
 
 def judge(answer):
