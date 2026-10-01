@@ -663,7 +663,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   let at = (token * quantize.xStride) / 4u + g * 8u;
   var magnitude = 0u;
   for (var k = 0u; k < 8u; k++) {
-    let v = bitcast<vec4<u32>>(x[at + k]) & vec4<u32>(FLOAT_MAGNITUDE);
+    let v = bitcast<vec4<u32>>(x[at + k]);
     magnitude = max(magnitude, max(max(v.x, v.y), max(v.z, v.w)));
   }
   let scale = bitcast<f32>(magnitude) / 127.0;
@@ -2734,7 +2734,7 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
     let at = g * ${GROUP}u;
     var magnitude = 0u;
     for (var i = 0u; i < ${GROUP}u; i++) {
-      magnitude = max(magnitude, bitcast<u32>(weight[norm.at + at + i] * (s * x[row + at + i])) & FLOAT_MAGNITUDE);
+      magnitude = max(magnitude, bitcast<u32>(weight[norm.at + at + i] * (s * x[row + at + i])));
     }
     let scale = bitcast<f32>(magnitude) / 127.0;
     let inverse = select(0.0, 1.0 / scale, scale > 0.0);
