@@ -308,11 +308,15 @@ export function footprint(header, size, { dtype = "float32", arch = "llama", int
   // keep their memory), and T130, on a memory that is not shared (a page not cross-origin isolated, or a shared one
   // refused) only where float16 keeps on a 32-bit memory a model that float32 would take past 4 GiB (Llama 3.2 3B's
   // int8 on Safari, without relaxed SIMD: 3.82 GiB, 4.26 in float32). A model past 4 GiB either way keeps float32
-  // there (the owner, 2026-09-28: one thread's long contexts stay fast). keysInHalf tells which.
+  // there (the owner, 2026-09-28: one thread's long contexts stay fast), unless float32 would not fit even a 64-bit
+  // memory (16 GiB) where float16 does: the plain memory that a refused shared one leaves must hold what the worker sized
+  // the shared one for, which pastWide() was asked with (T130's review: Pythia 12B's int8 of ?hf= is 15.2 GiB with
+  // float16 keys and values and 16.6 with float32). keysInHalf tells which.
   const past = needsWide(size, others + 4 * keys);
   // (and only where the int8 kernels run, as the engine's half_kv says: a file whose rows are not whole groups of 32 is
   // widened to float32 and keeps float32 keys and values; T130's review)
-  const half = halfKV && onInt8 && (shared ? kvHeads >= heads || past : past && !needsWide(size, others + 2 * keys));
+  const half = halfKV && onInt8 &&
+    (shared ? kvHeads >= heads || past : past && (!needsWide(size, others + 2 * keys) || pastWide(size, others + 4 * keys)));
   return others + keys * (half ? 2 : 4);
 }
 /** T160: whether the keys and values of a model that may keep them in float16 (footprint's halfKV) do, as footprint

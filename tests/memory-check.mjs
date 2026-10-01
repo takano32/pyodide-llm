@@ -17,6 +17,10 @@
 //       when the last doubling is done (a memory does not shrink, so what it held at its largest is what it holds). The cache
 //       before T130 held 1.5 times the context at the last doubling, and a model at the edge of a 32-bit memory (Qwen2.5 3B:
 //       3.89 GiB) ran out of memory there.
+//   (4) a shared memory that the browser refuses leaves a plain one that holds what the worker sized the shared one for: of
+//       the models of the list that are near an edge and two a visitor can open with ?hf=, the plain engine fits a 32-bit
+//       memory wherever the shared one did, and a 64-bit memory (16 GiB) wherever pastWide(), asked with the shared size, let
+//       it pass (T130: the type of the keys and values on the plain memory, in footprint()).
 //   node tests/memory-check.mjs [--forward <another forward.js, to see a broken one fail>]     (PYTHON=.venv/bin/python)
 // A forward.js of another place needs jobs.js beside it (it imports it by its own address).
 import assert from "node:assert/strict";
@@ -27,7 +31,7 @@ import { fileURLToPath } from "node:url";
 const root = new URL("..", import.meta.url);
 const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : fileURLToPath(new URL("public/forward.js", root));
-const { createForward, footprint, keysInHalf } = await import(forwardFile);
+const { createForward, footprint, keysInHalf, needsWide, pastWide } = await import(forwardFile);
 const { CONTROL_BYTES } = await import(new URL("public/jobs.js", root));
 const PAGE = 65536, MiB = 2 ** 20;
 let began = performance.now();
@@ -259,4 +263,52 @@ function halfToFloat(h) {
     }
   }
   console.log(`ok: a cache that doubles up to its context holds the whole context and no more at its last doubling (${engines} engines of 4096 and 3000 positions, float32 and float16; ${seconds()})`);
+}
+
+// ---- (4) a shared memory refused leaves a plain one that holds what the shared one was sized for
+{
+  const GiB = 2 ** 30;
+  // [name, header, size, form, dtype]: sizes from llama2_convert.checkpoint_size() of each model's config.json (the list's
+  // headers; a 12B and a 13B model are what ?hf= can open that the list has none like)
+  const listed = [
+    ["llm-jp-3 440M", [1024, 3584, 16, 8, 8, -99584, 4096], 503255068, {}, "int8"],
+    ["Qwen2.5 0.5B Instruct", [896, 4864, 24, 14, 2, 151936, 4096], 555992604, { bias: true }, "int8"],
+    ["Qwen3 0.6B (no thinking)", [1024, 3072, 28, 16, 8, 151936, 4096], 670744604, { qk_norm: true, head_dim: 128 }, "int8"],
+    ["llm-jp-3.1 1.8B instruct4", [2048, 7168, 24, 16, 16, -99584, 4096], 2101354524, {}, "int8"],
+    ["SmolLM2 1.7B Instruct", [2048, 8192, 24, 32, 32, 49152, 4096], 1925586972, {}, "int8"],
+    ["Qwen2.5 3B Instruct", [2048, 11008, 36, 16, 2, 151936, 4096], 3472375836, { bias: true }, "int8"],
+    ["Llama 3.2 3B Instruct", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, {}, "int8"],
+    ["sarashina2.2 3B Instruct", [2560, 8960, 32, 16, 8, -102400, 4096], 2936678428, {}, "int6"],
+    ["Qwen3 4B (no thinking)", [2560, 9728, 36, 32, 8, 151936, 4096], 4525840412, { qk_norm: true, head_dim: 128 }, "int8"],
+    ["Qwen3 4B (no thinking)", [2560, 9728, 36, 32, 8, 151936, 4096], 3520272412, { qk_norm: true, head_dim: 128 }, "int6"],
+    ["Llama 3.1 Swallow 8B Instruct", [4096, 14336, 32, 32, 8, -128256, 4096], 9034809372, {}, "int8"],
+    ["llm-jp-4 8B instruct", [4096, 14336, 32, 32, 8, -196608, 4096], 9664741404, {}, "int8"],
+    ["Qwen3 8B (no thinking)", [4096, 12288, 36, 32, 8, -151936, 4096], 9215463452, { qk_norm: true }, "int8"],
+    ["japanese-gpt 1B", [2048, 8192, 24, 16, 16, 44928, 1024], 1467400220, { arch: "gpt2" }, "int8"],
+    ["japanese-gpt-neox small", [768, 3072, 12, 12, 12, -44416, 2048], 172787740, { arch: "neox" }, "int8"],
+    ["Pythia 12B (?hf=)", [5120, 20480, 36, 40, 40, -50688, 2048], 13333749788, { arch: "neox" }, "int8"],
+    ["Llama 2 13B (?hf=)", [5120, 13824, 40, 40, 40, -32000, 4096], 11390177308, {}, "int6"],
+  ];
+  let cases = 0, atTheEdge = 0;
+  for (const [name, header, size, form, dtype] of listed) {
+    for (const relaxed of [true, false]) {
+      for (const gpu of [true, false]) {
+        const options = { ...FORM, ...form, dtype, int8: true, relaxed, halfKV: true, outliers: 8, gpu };
+        const shared = footprint(header, size, { ...options, shared: true }), plain = footprint(header, size, { ...options, shared: false });
+        const where = `${name} as ${dtype}, ${relaxed ? "relaxed SIMD" : "no relaxed SIMD"}${gpu ? ", the GPU asked for" : ""}`;
+        // a model the shared memory holds in 32 bits is held by the plain one, which the page makes where the browser refused
+        // the shared (the worker sized by the shared one's, and chose 32 or 64 bits by it)
+        assert.ok(needsWide(size, shared) || !needsWide(size, plain),
+          `${where}: ${((8192 + size + shared) / GiB).toFixed(2)} GiB on a shared memory fits 32 bits, ${((64 + size + plain) / GiB).toFixed(2)} on a plain one does not`);
+        // and pastWide(), asked with the shared size before the weights are fetched, lets through no model that the plain
+        // memory a refusal leaves cannot hold (16 GiB of a 64-bit memory)
+        assert.ok(pastWide(size, shared) || !pastWide(size, plain),
+          `${where}: ${((8192 + size + shared) / GiB).toFixed(2)} GiB on a shared memory passes pastWide(), ${((64 + size + plain) / GiB).toFixed(2)} on a plain one is past 16 GiB`);
+        if (needsWide(size, plain) !== needsWide(size, shared) || plain !== shared) atTheEdge++;
+        cases++;
+      }
+    }
+  }
+  console.log(`ok: a shared memory refused leaves a plain one that holds what the shared one was sized for (${cases} cases of ${listed.length} models, ` +
+    `the plain memory's keys and values a type of their own in ${atTheEdge})`);
 }
