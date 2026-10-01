@@ -761,7 +761,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const embeddingRows = embedding.kind === "f16" ? floats("token_embedding_table") : 0;
 
   // the outlier channels of the classifier's input (T92): their columns in float32, multiplied apart (T210: not of a
-  // classifier on the GPU alone, which is not here: a model with them does not stay there, tokensUnfit)
+  // classifier on the GPU alone, which is not here; T226: the GPU multiplies a float classifier for a model with them,
+  // so such a model stays on the GPU alone and needs no columns)
   const channels = plan.outliers ?? [];
   let columns = 0, picked = 0;
   if (channels.length && !direct) {
