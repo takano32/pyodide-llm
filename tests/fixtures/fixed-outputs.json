@@ -46,5 +46,13 @@
   "hf-qwen3.5-2b-safetensors": {
     "prompt": "これからの流行りを3つ挙げてください。",
     "text": "AI 技術の進化、特に生成 AI（大規模言語モデルなど）"
+  },
+  "hf-granite-4.2-3b": {
+    "prompt": "これからの流行りを3つ挙げてください。",
+    "text": "もちろんです。以下は、2024年～2025年"
+  },
+  "hf-minicpm5-1b": {
+    "prompt": "What will be popular next? Name three things.",
+    "text": "Since I don't have access to real-time data or current trends, I cannot"
   }
 }

@@ -13,9 +13,9 @@ import time
 import numpy as np
 
 # the RoPE angles are the engine's, which computes them itself when a file leaves the tables out (int8)
-from llama2_numpy import (CHARSMAP, FORM, RMS_EPS, form_of, layer_slots, linear_form, linear_widths, pack6, quantize6,
-                         rotated_form, rotated_widths, sign_bits,
-                          rope_frequencies, rope_magnitude)
+from llama2_numpy import (CHARSMAP, FORM, RMS_EPS, TERNARY_GROUP, TERNARY_VALUES, form_of, layer_slots, linear_form,
+                          linear_widths, pack6, quantize6, rope_frequencies, rope_magnitude, rotated_form, rotated_widths,
+                          sign_bits, ternary)
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
 # peak is the output plus 14 MB with this, plus 52 MB with pieces four times as large, at the same speed.
@@ -103,17 +103,22 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, 
     return tensors
 
 
-QUANTIZED = ("int8", "int6")  # the dtypes with groups and scales; int6 is T98's, see llama2_numpy.pack6
+# the dtypes with groups and scales; int6 is T98's, see llama2_numpy.pack6; ternary T230's (pack_ternary): the weights
+# of a ternary model as they are, two bits each, which no other model can be written as (Writer refuses)
+QUANTIZED = ("int8", "int6", "ternary")
+# the two a model converted with no dtype asked for may get (Stream's callable dtype, T115)
+EITHER = ("int8", "int6")
 
 
 def dtype_name(dtype):
-    """"float32", "float16", "int8" or "int6" from a name or a NumPy dtype (NumPy has no six-bit type)."""
-    return "int6" if str(dtype) == "int6" else np.dtype(dtype).name
+    """"float32", "float16", "int8", "int6" or "ternary" from a name or a NumPy dtype (NumPy has neither of the last
+    two)."""
+    return str(dtype) if str(dtype) in ("int6", "ternary") else np.dtype(dtype).name
 
 
 def check_dtype(dtype):
-    if str(dtype) != "int6" and np.dtype(dtype) not in (np.float32, np.float16, np.int8):
-        raise ValueError(f"dtype must be float32, float16, int8 or int6, not {dtype}.")
+    if str(dtype) not in ("int6", "ternary") and np.dtype(dtype) not in (np.float32, np.float16, np.int8):
+        raise ValueError(f"dtype must be float32, float16, int8, int6 or ternary, not {dtype}.")
 
 
 def tensor_bytes(shape, is_matrix, dtype):
@@ -126,6 +131,9 @@ def tensor_bytes(shape, is_matrix, dtype):
     if dtype == "int6":
         # 24 bytes of values and a float32 scale per group of 32; the norm weights stay float32
         return count // 32 * 28 if is_matrix else 4 * count
+    if dtype == "ternary":
+        # 32 bytes of values and a float32 scale per group of 128
+        return count // TERNARY_GROUP * 36 if is_matrix else 4 * count
     # int8 values and one float32 scale per group; the norm weights stay float32
     return count + 4 * (count // group_size(shape[-1])) if is_matrix else 4 * count
 
@@ -161,6 +169,8 @@ class Writer:
         tensors = layout(*header, **form)
         if self.dtype == "int6" and any(is_matrix and shape[-1] % 32 for shape, is_matrix in tensors):
             raise ValueError("Six bits a weight needs rows of whole groups of 32, and this model has other rows.")
+        if self.dtype == "ternary" and any(is_matrix and shape[-1] % TERNARY_GROUP for shape, is_matrix in tensors):
+            raise ValueError("Ternary weights need rows of whole groups of 128, and this model has other rows.")
         size = checkpoint_size(header, dtype, form)
         if sink is not None:
             self.out = None
@@ -189,12 +199,18 @@ class Writer:
         elif is_matrix and self.dtype == "int6":
             rows = np.asarray(values, dtype=np.float32).reshape(-1, shape[-1])
             if self.quantize_rows is not None:
-                packed, scales = self.quantize_rows(rows, six=True)  # the same bytes on the kernel (T98)
+                packed, scales = self.quantize_rows(rows, "int6")  # the same bytes on the kernel (T98)
             else:
                 quantized, scales = quantize6(rows)
                 packed = pack6(quantized)
             self.put(offset + first * 3 // 4, packed)
             self.put(offset + math.prod(shape) * 3 // 4 + 4 * (first // 32), scales)
+        elif is_matrix and self.dtype == "ternary":
+            # T230: nothing is rounded, the values are ternary already or this raises (the same bytes on the kernel)
+            rows = np.asarray(values, dtype=np.float32).reshape(-1, shape[-1])
+            packed, scales = self.quantize_rows(rows, "ternary") if self.quantize_rows is not None else ternary(rows)
+            self.put(offset + first // 4, packed)
+            self.put(offset + math.prod(shape) // 4 + 4 * (first // TERNARY_GROUP), scales)
         elif is_matrix:
             fast = self.quantize_rows is not None and shape[-1] % 32 == 0
             quantized, scales = (self.quantize_rows if fast else quantize)(np.asarray(values, dtype=np.float32).reshape(-1, shape[-1]))
@@ -813,7 +829,7 @@ def q8_0(raw):
 
 
 # the four values of each byte of PQ2_0, the lowest two bits first, as one little-endian word of four int8
-PQ2_0_CODES = ((np.arange(256)[:, None] >> (0, 2, 4, 6) & 3) - 1).astype(np.int8).view("<u4").reshape(256)
+PQ2_0_CODES = TERNARY_VALUES.view("<u4").reshape(256)
 
 
 def pq2_0(raw):
@@ -833,12 +849,41 @@ def pq2_0(raw):
     return (values * scales).reshape(-1)
 
 
-# bytes per value (Q8_0: 34 bytes for 32 of them, PQ2_0: 34 for 128), and how to read them
+def base3(packed, digits):
+    """The digits (0, 1 or 2) of bytes that hold several in base 3, as PTQ1_0 packs them: (rows, bytes) -> (rows,
+    digits, bytes), the first digit of every byte, then the second... A digit is the high byte of three times the
+    byte, and what is left of the product goes on to the next one (the byte is ceil(256 v / 243) for the number v
+    whose base 3 digits they are, the first the most significant)."""
+    left, out = packed.astype(np.uint16), np.empty((packed.shape[0], digits, packed.shape[1]), dtype=np.uint8)
+    for digit in range(digits):
+        left *= 3
+        out[:, digit] = left >> 8
+        left &= 255
+    return out
+
+
+def ptq1_0(raw):
+    """Prism ML's PTQ1_0 (T230: Ternary Bonsai 2's smaller GGUF, ggml type 143): blocks of 128 ternary values in 28
+    bytes, 1.75 bits a value. 24 bytes of five values each in base 3, 2 bytes of four, and a float16 scale d at the end;
+    a value is (digit - 1) * d. The values are not in the order of the bytes: the first 16 bytes hold values 16 n + m
+    (digit n of byte m), the next 8 bytes values 80 + 8 n + m, the 2 bytes values 120 + 2 n + m. The form is that of
+    block_ptq1_0 and dequantize_row_ptq1_0() of the fork of llama.cpp that reads these files (MIT; no line of it is
+    copied): ggml/src/ggml-common.h#L209-L220 and ggml/src/ggml-quants.c#L2196-L2285 of
+    https://github.com/PrismML-Eng/llama.cpp/tree/88c4bc60b9c9578f134385be9535e853f2db9b9f (upstream's TQ1_0 in
+    groups of 128). docs/notes/t228-bonsai-2-2026-10-01.md has how it was held to the F16 file of the same model."""
+    blocks = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 28)
+    scales = np.ascontiguousarray(blocks[:, 26:]).view(np.float16).astype(np.float32)
+    digits = np.concatenate([base3(blocks[:, :16], 5).reshape(-1, 80), base3(blocks[:, 16:24], 5).reshape(-1, 40),
+                             base3(blocks[:, 24:26], 4).reshape(-1, 8)], axis=1)
+    return ((digits.view(np.int8) - np.int8(1)) * scales).reshape(-1)
+
+
+# bytes per value (Q8_0: 34 bytes for 32 of them, PQ2_0: 34 for 128, PTQ1_0: 28 for 128), and how to read them
 READERS = {"F32": (4, lambda raw: np.frombuffer(raw, dtype=np.float32)),
            "F16": (2, lambda raw: np.frombuffer(raw, dtype=np.float16)), "BF16": (2, bfloat16),
-           "Q8_0": (34 / 32, q8_0), "PQ2_0": (34 / 128, pq2_0)}
+           "Q8_0": (34 / 32, q8_0), "PQ2_0": (34 / 128, pq2_0), "PTQ1_0": (28 / 128, ptq1_0)}
 # how many values a block of a GGUF's type holds: a row is whole blocks
-BLOCKS = {"Q8_0": 32, "PQ2_0": 128}
+BLOCKS = {"Q8_0": 32, "PQ2_0": 128, "PTQ1_0": 128}
 
 
 ROTATED = "rotated"  # the key of a header's __metadata__ that says a rotated basis (T237)
@@ -974,6 +1019,28 @@ def rotary_dim(config):
     return int(head_size(config) * float(config.get("rotary_pct", 1.0))) // 2 * 2
 
 
+# T253: a Granite (IBM's, transformers' model_type "granite") is a Llama but for four numbers of its config.json. Its
+# attention multiplies the scores by attention_multiplier where a Llama divides them by the root of the head's size
+# (transformers' GraniteAttention: matmul(query, key^T) * config.attention_multiplier), its embedding is multiplied by
+# embedding_multiplier, each branch by residual_multiplier before it joins the stream, and its logits are divided by
+# logits_scaling. The engine has none of the four; the first goes into the weights (query_scale()), and a model whose
+# other three are not 1 is refused (Granite 3.x and 4.1: 12, 0.22 and a scaling of the logits, with the embedding and
+# the classifier one table, which no scaling of that table makes right for both).
+GRANITE_ONES = ("embedding_multiplier", "residual_multiplier", "logits_scaling")
+
+
+def query_scale(config):
+    """What the conversion multiplies q by (T253), 1.0 for every model but a Granite. The engine's score is q·k /
+    sqrt(head), a Granite's q·k * attention_multiplier: with q multiplied by attention_multiplier * sqrt(head) the
+    engine computes the Granite's. Nothing stands between the matrix and the score that is not linear in q (RoPE turns
+    it; a norm of the heads, which would undo the scale, a Granite has not and conversion_plan() refuses with it), so
+    it is the same model, and its file and its options are a Llama's: no kernel, no shader and no option knows of it.
+    Granite 4.2 3B's is 1/64 * 8, a power of two, which changes no bit of a value but its exponent."""
+    if config.get("model_type") != "granite":
+        return 1.0
+    return float(config.get("attention_multiplier", 1.0)) * math.sqrt(head_size(config))
+
+
 # the architectures that turn part of each head only: the options say how much (rotary)
 PARTLY_TURNED = ("neox", "qwen35")
 # transformers' Qwen3_5TextConfig, where config.json leaves one out
@@ -1073,9 +1140,10 @@ def check_config(config):
     # adds them after the projections (T64). Everything else about it is the same. qwen3 is a Llama that normalizes
     # every head of q and k (T124): two vectors per layer, the same way.
     # qwen3_5 (T229) is a Qwen3 most of whose layers are linear-attention ones (normalize() lifted its text_config).
-    if config.get("model_type") not in ("llama", "qwen2", "qwen3", "gpt2", "gpt_neox", "qwen3_5_text"):
-        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Mistral, Qwen2, Qwen3, "
-               f"Qwen3.5, GPT-2 and GPT-NeoX models are supported")
+    # granite (T253) is a Llama whose scores are scaled otherwise, which the conversion puts into q (query_scale()).
+    if config.get("model_type") not in ("llama", "qwen2", "qwen3", "gpt2", "gpt_neox", "qwen3_5_text", "granite"):
+        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Mistral, Granite, Qwen2, "
+               f"Qwen3, Qwen3.5, GPT-2 and GPT-NeoX models are supported")
     for key in ("hidden_size", "intermediate_size", "num_hidden_layers", "num_attention_heads", "vocab_size",
                 "max_position_embeddings"):
         if not isinstance(config.get(key), int) or config[key] <= 0:
@@ -1125,6 +1193,17 @@ def check_config(config):
         refuse("its layers have biases")
     if config.get("use_sliding_window"):
         refuse("it uses a sliding window of attention")
+    if config.get("model_type") == "granite":
+        # T253: what the engine has not (see GRANITE_ONES), and a multiplier of the scores that is no number to scale
+        # q by. transformers' Granite has heads of dim / heads only (its config has no head_dim)
+        number = lambda value: isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+        for key in GRANITE_ONES:
+            if not number(config.get(key, 1.0)) or config.get(key, 1.0) != 1.0:
+                refuse(f"its {key} is {config[key]}, and of a Granite's multipliers the engine has the attention's only")
+        if not number(config.get("attention_multiplier", 1.0)) or config.get("attention_multiplier", 1.0) <= 0:
+            refuse("its config.json has no usable attention_multiplier")
+        if not divides:
+            refuse("its attention heads do not divide the hidden size the way a Granite's do")
     if architecture(config) == "qwen35":
         linear = linear_form(linear_layers(config))
         if config["num_hidden_layers"] < linear["every"]:
@@ -1164,7 +1243,7 @@ def transformed(values, transform, head_size):
     the n stacked matrices of GPT-2's c_attn, transposed with it; ("row", i, n) the same for its bias.
     ("heads", parts, i, heads, rot): the i-th of the parts each head's rows are stacked in, with the halves of its
     first rot rows interleaved (GPT-NeoX's query_key_value: 3 parts; Qwen3.5's q_proj: q and its gate; 1 part: a k
-    or a norm of which RoPE turns part). T229, Qwen3.5: ("one",) is a norm's weight stored around zero, ("decay",)
+    or a norm of which RoPE turns part). ("scale", c): every value times c (T253: a Granite's q). T229, Qwen3.5: ("one",) is a norm's weight stored around zero, ("decay",)
     A_log as the engine multiplies it, ("taps",) the convolution's taps, a row for each. A tuple of transforms is
     one after the other.
     """
@@ -1197,6 +1276,9 @@ def transformed(values, transform, head_size):
         index, parts = transform[1], transform[2]
         length = values.shape[0] // parts
         return values[index * length:(index + 1) * length]
+    if transform[0] == "scale":
+        # T253: a Granite's q by query_scale(), in float32 whatever the tensor was stored as
+        return np.asarray(values, dtype=np.float32) * np.float32(transform[1])
     if transform[0] == "one":
         # Qwen3.5's RMSNorm multiplies by 1 + weight: the file holds what the engine's rmsnorm multiplies by
         return np.asarray(values, dtype=np.float32) + np.float32(1.0)
@@ -1212,7 +1294,7 @@ def transformed(values, transform, head_size):
 
 def source_shape(shape, transform):
     """The shape the Hugging Face tensor must have to become a tensor of this shape."""
-    if transform is None or transform[0] in ("permute", "one", "decay"):
+    if transform is None or transform[0] in ("permute", "one", "decay", "scale"):
         return tuple(shape)
     if isinstance(transform[0], tuple):
         for step in reversed(transform):
@@ -1283,12 +1365,18 @@ def checkpoint_form(config, source):
     return form
 
 
-def conversion_plan(header, form=None, prefix="transformer.", rotary=0):
+def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.0):
     """For every tensor of layout(): the tensors of the Hugging Face checkpoint it is made of, in order, as
-    (name, transform); None instead of a list stands for a RoPE table. And the shapes of layout()."""
+    (name, transform); None instead of a list stands for a RoPE table. And the shapes of layout(). scale: what q is
+    multiplied by (query_scale(), T253), for a Llama without biases and without norms of its heads."""
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
     form = form_of(form)
     arch, shapes = form["arch"], [shape for shape, _ in layout(*header, **form)]
+    if scale != 1.0 and (arch != "llama" or form["bias"] or form["qk_norm"]):
+        # a norm of q's heads undoes whatever q was multiplied by, and a bias of q would have to be multiplied too:
+        # no Granite has either, and one that had would go through as another model without a word
+        raise ValueError("This model cannot be converted: it scales its attention's scores, and has a bias or a "
+                         "norm on its queries.")
 
     if arch == "qwen35":
         # T229: the stacks of layout(), each from the layers of its kind. RoPE turns the first rotary rows of each
@@ -1360,8 +1448,9 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0):
     def layers(name, transform=None, what="weight"):
         return [(f"model.layers.{layer}.{name}.{what}", transform) for layer in range(n_layers)]
 
+    turn_q = ("permute", n_heads) if scale == 1.0 else (("permute", n_heads), ("scale", scale))
     plan = [[("model.embed_tokens.weight", None)], layers("input_layernorm"),
-            layers("self_attn.q_proj", ("permute", n_heads)), layers("self_attn.k_proj", ("permute", n_kv_heads)),
+            layers("self_attn.q_proj", turn_q), layers("self_attn.k_proj", ("permute", n_kv_heads)),
             layers("self_attn.v_proj"),
             layers("self_attn.o_proj"), layers("post_attention_layernorm"),
             layers("mlp.gate_proj"), layers("mlp.down_proj"), layers("mlp.up_proj"), [("model.norm.weight", None)],
@@ -1418,7 +1507,7 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
     writer = Writer(out, header, dtype, form, quantize_rows=quantize_rows)
 
     plan, shapes = conversion_plan(header, form, name_prefix(source, form["arch"]),
-                                   rotary_dim(config) if form["arch"] in PARTLY_TURNED else 0)
+                                   rotary_dim(config) if form["arch"] in PARTLY_TURNED else 0, query_scale(config))
     total, done = sum(math.prod(shape) for shape in shapes), 0
 
     for index, (parts, shape) in enumerate(zip(plan, shapes)):
@@ -1476,7 +1565,7 @@ class Stream:
         if callable(dtype):
             # T115: chosen once the header is known, from the size each quantized dtype would take (the worker's
             # automatic choice: int8 where the forward pass fits a 32-bit memory, six bits where it does not)
-            sizes = {name: self.size(name) for name in QUANTIZED}
+            sizes = {name: self.size(name) for name in EITHER}
             dtype = str(dtype(list(self.header), self.form, sizes))
         check_dtype(dtype)
         self.dtype = dtype_name(dtype)
@@ -1485,7 +1574,7 @@ class Stream:
         self.out = out  # None when the checkpoint goes to sink
         self.writer = Writer(self.out, self.header, dtype, self.form, sink=sink, quantize_rows=quantize_rows)
         plan, shapes = conversion_plan(self.header, self.form, name_prefix(self, self.form["arch"]),
-                                       rotary_dim(config) if self.form["arch"] in PARTLY_TURNED else 0)
+                                       rotary_dim(config) if self.form["arch"] in PARTLY_TURNED else 0, query_scale(config))
         self.total, self.done = sum(math.prod(shape) for shape in shapes), 0
         wanted = {}
         for index, (parts, shape) in enumerate(zip(plan, shapes)):
@@ -1633,18 +1722,22 @@ def untiled(w, first, key_heads, per, size, axis=0):
 
 # ------------------------------------------------------------------------------------------------- GGUF (T74)
 # A GGUF file holds what config.json, tokenizer.json and model.safetensors hold, in one. Only what a Q8_0, PQ2_0 or F16
-# Llama, Qwen2, Qwen3, Qwen3.5, GPT-2 or GPT-NeoX needs is read; tests/gguf_check.py is the separate reference this is
+# Llama, Granite, Qwen2, Qwen3, Qwen3.5, GPT-2 or GPT-NeoX needs is read; tests/gguf_check.py is the separate reference this is
 # held to.
 class Incomplete(Exception):
     """The GGUF header goes on past the bytes given: fetch more and try again."""
 
 
 GGUF_VALUES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
-# ggml's types; the K-quants and the rest are refused. 142 is PQ2_0 of Prism ML's fork of llama.cpp (T235, pq2_0())
-GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0", 142: "PQ2_0"}
+# ggml's types; the K-quants and the rest are refused. 142 and 143 are PQ2_0 and PTQ1_0 of Prism ML's fork of
+# llama.cpp (T235's pq2_0(), T230's ptq1_0()); 30 is BF16 (Ternary Bonsai 2's two small matrices of the gates)
+GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0", 30: "BF16", 142: "PQ2_0", 143: "PTQ1_0"}
 # llama.cpp's names of the pre-tokenizers, as the engine knows them (llama2_numpy.pretokenize)
+# (granite-docling, T253: what llama.cpp calls a Granite 4.2's ByteLevel with its regex, and splits by GPT-2's pattern.
+# minicpm5, T254: llama.cpp's two patterns of that name are tokenizer.json's but for the contractions, written out by
+# case, which leaves a 's after U+017F unmatched; openbmb's own GGUFs of 2026-09 still say llama-bpe)
 GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen", "llama-bpe": "llama3",
-                      "qwen35": "qwen35"}
+                      "qwen35": "qwen35", "granite-docling": "gpt2", "minicpm5": "minicpm5"}
 # the ones whose tokenizer.json normalizes to NFC, which a GGUF does not say (Qwen's)
 GGUF_NFC = ("qwen2", "qwen35")
 # T245: the tensors of a Qwen3.5's linear-attention layer that have the value heads along an axis, as (whether q and k
@@ -1665,6 +1758,9 @@ GGUF_NAMES = {"token_embd.weight": "model.embed_tokens.weight", "output_norm.wei
 GGUF_ARCHITECTURES = {
     "llama": (GGUF_NAMES, "model.layers.{}.", GGUF_LAYER),
     "qwen2": (GGUF_NAMES, "model.layers.{}.", GGUF_LAYER),
+    # T253: a Granite, a Llama to the name of every tensor (llama.cpp's GraniteModel is its LlamaModel with four numbers
+    # more in the metadata, and turns q and k as that does)
+    "granite": (GGUF_NAMES, "model.layers.{}.", GGUF_LAYER),
     # T203 (T136's fourth stage): a Qwen3 is a Qwen2 without the biases that normalizes each head of q and k (T124).
     # llama.cpp leaves q, k and the two norms in Hugging Face's order, as a Qwen2's; the head's size is key_length
     "qwen3": (GGUF_NAMES, "model.layers.{}.", {**GGUF_LAYER, "attn_q_norm": "self_attn.q_norm",
@@ -1750,7 +1846,7 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
     rope_scaling as it streams past (gguf_weights, T136), instead of refusing it."""
     arch = metadata.get("general.architecture")
     if arch not in GGUF_ARCHITECTURES:
-        raise ValueError(f"This GGUF holds a {arch}: only Llama, Qwen2, Qwen3, Qwen3.5, GPT-2 and GPT-NeoX ones are supported.")
+        raise ValueError(f"This GGUF holds a {arch}: only Llama, Granite, Qwen2, Qwen3, Qwen3.5, GPT-2 and GPT-NeoX ones are supported.")
     key = lambda name, default=None: metadata.get(f"{arch}.{name}", default)
     common = {"vocab_size": tensors["token_embd.weight"]["shape"][0] if "token_embd.weight" in tensors else None,
               "bos_token_id": metadata.get("tokenizer.ggml.bos_token_id", 1),
@@ -1795,6 +1891,17 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
                 for name, ours in (("attn_factor", "attention_factor"), ("yarn_log_multiplier", "mscale_all_dim")):
                     if key(f"rope.scaling.{name}") is not None:
                         config["rope_scaling"][ours] = key(f"rope.scaling.{name}")
+        if arch == "granite":
+            # T253: a Granite's four multipliers by config.json's names. llama.cpp keeps the scores' in the metadata
+            # (attention.scale) and multiplies at run time: q is not scaled in the file, and the conversion scales it
+            # once, as it does a safetensors' (query_scale()). Where a GGUF names none llama.cpp divides by the root of
+            # the head's size, a Llama's score; the other three it leaves out of the computation where they are
+            # missing or 0 (logit_scale it requires)
+            size = key("embedding_length") // heads if key("embedding_length") and heads else 0
+            config["attention_multiplier"] = key("attention.scale") or (1.0 / math.sqrt(size) if size else None)
+            for name, ours in (("embedding_scale", "embedding_multiplier"), ("residual_scale", "residual_multiplier"),
+                               ("logit_scale", "logits_scaling")):
+                config[ours] = key(name) or 1.0
         if arch == "qwen35":
             # T236: what config.json's text_config says of the linear-attention layers, by its names (llama.cpp's are a
             # state-space model's: the state is a key head, the groups the key heads, the rank the value heads), and
@@ -1825,8 +1932,8 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
     turns = {"attn_q": heads, "attn_k": config.get("num_key_value_heads")}
     for name, info in tensors.items():
         if info["type"] not in GGUF_TENSORS:
-            raise ValueError(f"{name} is stored as ggml type {info['type']}: only F32, F16, Q8_0 and PQ2_0 GGUF files "
-                             f"are supported (not the K-quants).")
+            raise ValueError(f"{name} is stored as ggml type {info['type']}: only F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0 "
+                             f"GGUF files are supported (not the K-quants).")
         parts = name.split(".")
         if name in names:
             target = names[name]
@@ -1844,9 +1951,10 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
         size = int(math.prod(info["shape"]) * READERS[dtype][0])
         entry = {"dtype": dtype, "shape": info["shape"], "data_offsets": [info["offset"], info["offset"] + size]}
         kind = parts[2] if len(parts) == 4 else None
-        if arch == "llama" and kind in turns:
+        if arch in ("llama", "granite") and kind in turns:
             # llama.cpp turns q and k of a Llama (and their biases) into llama2.c's order; a Qwen2 it leaves alone
-            # (it rotates the other way at run time). tests/gguf_check.py found SmolLM2's turned.
+            # (it rotates the other way at run time). tests/gguf_check.py found SmolLM2's turned. A Granite's as a
+            # Llama's (T253: its converter is the Llama's).
             entry["turned"] = turns[kind]
         if arch == "gpt2" and parts[-1] == "weight" and kind in ("attn_qkv", "attn_output", "ffn_up", "ffn_down"):
             # GPT-2's matrices are Conv1D, (in, out): llama.cpp stores them the other way round, as every other
@@ -1996,6 +2104,12 @@ def gguf_agrees(own, config):
         pairs.append(("size of a head", own["head_dim"], head_size(config)))
     if own.get("rms_norm_eps") is not None and config.get("rms_norm_eps") is not None:
         pairs.append(("RMSNorm epsilon", f32(own["rms_norm_eps"]), f32(config["rms_norm_eps"])))
+    if "granite" in (own["model_type"], config.get("model_type")):
+        # T253: a Granite's multipliers, which are no tensor: the scores' goes into q from config.json's (a GGUF that
+        # says another would be scaled by the wrong one), and the three the engine has not must be 1 in both
+        multipliers = lambda c: {key: f32(c.get(key, 1.0)) for key in ("attention_multiplier", *GRANITE_ONES)
+                                 if isinstance(c.get(key, 1.0), (int, float))}
+        pairs.append(("Granite's multipliers", multipliers(own), multipliers(config)))
     if architecture(own) in ("gpt2", "neox"):
         # transformers' default where config.json says none (the engine's LayerNorm takes 1e-5 whatever it says)
         layer_norm_eps = lambda c: c.get("layer_norm_eps", c.get("layer_norm_epsilon", 1e-5))
@@ -2164,10 +2278,27 @@ PRETOKENIZERS = {
 }
 
 
+# T254: MiniCPM5's two Splits (openbmb/MiniCPM5-1B's tokenizer.json): the numbers cut off three at a time, then Llama
+# 3's pattern with \p{N}+ on each piece, and a ByteLevel that splits no more. llama2_numpy.pretokenize's "minicpm5"
+STAGED_PRETOKENIZERS = {
+    (r"\p{N}{1,3}",
+     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}+| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"): "minicpm5",
+}
+
+
 def pretokenizer_name(spec):
     steps = spec.get("pretokenizers", [spec]) if spec else []
     kinds = [step["type"] for step in steps]
-    patterns = [step["pattern"]["Regex"] for step in steps if step["type"] == "Split"]
+    patterns = [step["pattern"].get("Regex") for step in steps if step["type"] == "Split"]
+    if tuple(patterns) in STAGED_PRETOKENIZERS:
+        # every Split keeps what it matches as a piece of its own (Isolated) and matches what its pattern says (no
+        # invert), and the ByteLevel after them does not split again or put a space in front
+        plain = all(step.get("behavior") == "Isolated" and not step.get("invert") for step in steps if step["type"] == "Split")
+        rest = [step for step in steps if step["type"] != "Split"]
+        if plain and kinds[:len(patterns)] == ["Split"] * len(patterns) and len(rest) == 1 and rest[0]["type"] == "ByteLevel" \
+                and rest[0].get("use_regex") is False and not rest[0].get("add_prefix_space"):
+            return STAGED_PRETOKENIZERS[tuple(patterns)]
+        raise ValueError(f"This tokenizer.json splits text in a way the engine does not know: {steps}")
     if patterns:
         if len(patterns) > 1 or patterns[0] not in PRETOKENIZERS:
             raise ValueError(f"This tokenizer.json splits text in a way the engine does not know: {patterns}")

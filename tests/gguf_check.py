@@ -59,11 +59,13 @@ F32, F16, Q8_0, BF16 = 0, 1, 8, 30
 Q4_0, Q4_1, Q5_0, Q4_K, Q6_K = 2, 3, 6, 12, 14
 # T235: the ternary type of Prism ML's fork of llama.cpp (Ternary-Bonsai), which the page reads (llama2_convert.pq2_0)
 PQ2_0 = 142
+# T230: its other ternary type, five values a byte in base 3 (Ternary Bonsai 2's smaller GGUF; llama2_convert.ptq1_0)
+PTQ1_0 = 143
 TYPE_NAMES = {F32: "F32", F16: "F16", Q8_0: "Q8_0", BF16: "BF16", Q4_0: "Q4_0", Q4_1: "Q4_1", Q5_0: "Q5_0",
-              Q4_K: "Q4_K", Q6_K: "Q6_K", PQ2_0: "PQ2_0"}
-# bytes per value: a block of 32 values (or a super-block of 256, or PQ2_0's block of 128) and its scales
+              Q4_K: "Q4_K", Q6_K: "Q6_K", PQ2_0: "PQ2_0", PTQ1_0: "PTQ1_0"}
+# bytes per value: a block of 32 values (or a super-block of 256, or PQ2_0's and PTQ1_0's block of 128) and its scales
 BYTES = {F32: 4, F16: 2, BF16: 2, Q8_0: 34 / 32, Q4_0: 18 / 32, Q4_1: 20 / 32, Q5_0: 22 / 32, Q4_K: 144 / 256, Q6_K: 210 / 256,
-         PQ2_0: 34 / 128}
+         PQ2_0: 34 / 128, PTQ1_0: 28 / 128}
 
 
 def half(raw):
@@ -129,8 +131,25 @@ def widen_pq2_0(raw):
     return (codes.reshape(-1, 128).astype(np.float32) - 1) * half(blocks[:, :2])
 
 
+def widen_ptq1_0(raw):
+    """Blocks of 128 in 28 bytes (ggml-common.h's block_ptq1_0 of the fork): 24 bytes of five ternary values each, 2
+    bytes of four, then a float16 d. A byte is ceil(256 v / 243) of the number v whose base 3 digits its values are
+    (the first the most significant), so v is the byte times 243 over 256, rounded down, and its digits come out by
+    division: another way to the same values than the converter's (which takes the high byte of three times the
+    byte, digit after digit, as the fork does). The values of a block are not in the order of its bytes: the n-th
+    digits of the first 16 bytes are values 16 n .. 16 n + 15, those of the next 8 values 80 + 8 n .., those of the
+    last 2 values 120 + 2 n .. (four digits there, the fifth is nothing). (digit - 1) * d."""
+    blocks = raw.reshape(-1, 28)
+    numbers = (blocks[:, :26].astype(np.int64) * 243) >> 8
+    digits = np.stack([numbers // 3 ** (4 - place) % 3 for place in range(5)], axis=1)  # (blocks, digit, byte)
+    values = np.concatenate([digits[:, :, :16].reshape(-1, 80), digits[:, :, 16:24].reshape(-1, 40),
+                             digits[:, :4, 24:26].reshape(-1, 8)], axis=1)
+    return (values.astype(np.float32) - 1) * half(blocks[:, 26:])
+
+
 WIDEN = {Q4_0: (32, 18, widen_q4_0), Q4_1: (32, 20, widen_q4_1), Q5_0: (32, 22, widen_q5_0),
-         Q4_K: (256, 144, widen_q4_k), Q6_K: (256, 210, widen_q6_k), PQ2_0: (128, 34, widen_pq2_0)}
+         Q4_K: (256, 144, widen_q4_k), Q6_K: (256, 210, widen_q6_k), PQ2_0: (128, 34, widen_pq2_0),
+         PTQ1_0: (128, 28, widen_ptq1_0)}
 
 
 class Reader:
@@ -593,6 +612,12 @@ def config_pairs(config, arch="llama"):
              ("rope.freq_base", "rope_theta", config.get("rope_theta", 10000.0), True),
              ("attention.layer_norm_rms_epsilon", "rms_norm_eps", config.get("rms_norm_eps"), True),
              ("context_length", "max_position_embeddings", config.get("max_position_embeddings"), False)]
+    if arch == "granite":
+        # T253: a Granite's four multipliers, which are no tensor (llama.cpp multiplies at run time, and the page's
+        # converter puts the scores' into q). transformers' default where config.json names none is 1
+        pairs += [(key, name, config.get(name, 1.0), True) for key, name in (
+            ("attention.scale", "attention_multiplier"), ("embedding_scale", "embedding_multiplier"),
+            ("residual_scale", "residual_multiplier"), ("logit_scale", "logits_scaling"))]
     if arch == "qwen35":
         # T236: which layers attend over all positions, the heads of the others and the taps of their convolution (the
         # tensors show only the products of heads and sizes), and how much of a head turns. The defaults are those of

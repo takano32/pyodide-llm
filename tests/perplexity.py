@@ -43,6 +43,12 @@ def main():
                 ("kernels, 7-bit activations, keys and values in float32", "simdkernel.so", ("kv16",)),
                 ("kernels, 8-bit activations (matmul_q8)", "simdkernel.so", ("relaxed",)),
                 ("NumPy, activations not quantized", None, ())]
+    if MODEL["options"].get("dtype") == "ternary":  # noqa: F821
+        # T231: ternary weights meet the activations in all 8 bits with relaxed SIMD and without, the same numbers to
+        # the bit (matmul_t2r, matmul_t2)
+        variants = [("kernels, 8-bit activations (matmul_t2r)", "simdkernel.so", ()),
+                    ("kernels, 8-bit activations, without relaxed SIMD (matmul_t2)", "simdkernel.so", ("relaxed",)),
+                    variants[-1]]
     if file:
         variants = [variant for variant in variants if variant[1]]
     if MODEL.get("rows") is not None:  # noqa: F821
