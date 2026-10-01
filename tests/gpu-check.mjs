@@ -93,19 +93,22 @@ const engine = option("--engine", "chromium");
 // T147: --forms <part,part>: only the matrices' shaders whose names hold one of these (all of them by default)
 const only = option("--forms", "");
 const webgpu = option("--webgpu", "");
-// T241's review: the rounds that put a NaN or an infinity in a block's row, a step's values and the GPU's weights, and the
-// quantizers alone. They cost 0.4 s a run on Dawn's lavapipe and 6 to 17 s a run of the steps on SwiftShader (the made-up
-// models of 512 wide the most: 60 s), and 6 s an engine for the weights (30 engines): the full suite's Edge job went from
-// 23 to 35 minutes with them (3 to 6 minutes of that in the runs, 3.5 in the engines; the rest was the runner's pace,
-// run 36889437902 against 36884862122). A browser's SwiftShader is the same compiler in Chromium, Chrome and Edge, and the
-// shaders do not depend on the model (QUANTIZE and NORM_QUANTIZE are one each; the three made-up models below differ in the
-// steps around them: Llama's fused layer, Qwen3's norms of the heads, GPT-2's LayerNorm and GELU), so: Dawn runs every
-// round on every model, Chromium the rows and the values on those three (the weights are lavapipe's), Chrome and Edge none.
-// --nan all|small|none chooses otherwise
+// T241's review: the rounds that put a NaN or an infinity in a block's row, a step's values and the GPU's weights (the
+// quantizers alone run everywhere: one tiny dispatch). T241 took the full suite's Edge job from 23 to 35 minutes: run
+// 36889437902 against 36884862122 (the same models before T241), the seconds after the GPU is ready lined up by the
+// runner's pace (the ratio of the seconds it took to get ready: 1.27, 0.79 and 0.83 for Edge, Chrome and Chromium) say 3 to
+// 6 minutes more in the runs of a SwiftShader job (the made-up model of 512 wide the most: 84 to 143 s), and the 30
+// engines of the weights' rounds at about 6 s each, 3.5 minutes (the rest of the 12 minutes was Edge's runner). On
+// Dawn's lavapipe a run takes 0.4 s more and the whole growth was 1.7 minutes. A browser's SwiftShader is the same
+// compiler in Chromium, Chrome and Edge, and the shaders do not depend on the model (QUANTIZE and NORM_QUANTIZE are one
+// each; the three made-up models below differ in the steps around them: Llama's fused layer, Qwen3's norms of the heads,
+// GPT-2's LayerNorm and GELU), so: Dawn runs every round on the made-up models, Chromium the rows and the values on those
+// three (the weights are lavapipe's), Chrome and Edge none. --nan all|made-up|small|none chooses otherwise (all: the
+// models of src/models.js too)
 const NAN_MODELS = ["synthetic", "synthetic-qwen3", "synthetic-gpt2"];
-const nanRounds = { dawn: { models: "all", weights: true }, chromium: { models: NAN_MODELS, weights: false } }[engine] ?? { models: [], weights: false };
-const nanChoice = option("--nan", "");
-if (nanChoice) Object.assign(nanRounds, { all: { models: "all", weights: true }, small: { models: NAN_MODELS, weights: false }, none: { models: [], weights: false } }[nanChoice]);
+const NAN_CHOICES = { all: { models: "all", weights: true }, "made-up": { models: "made-up", weights: true }, small: { models: NAN_MODELS, weights: false },
+  none: { models: [], weights: false } };
+const nanRounds = NAN_CHOICES[option("--nan", { dawn: "made-up", chromium: "small" }[engine] ?? "none")] ?? NAN_CHOICES.none;
 // T153: the made-up models of another form (see above). Three layers: a layer's vectors are read at l × their size,
 // which a second layer alone would not tell from 0 + size
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
@@ -543,7 +546,7 @@ try {
     // case's own (the pieces of its matrices)
     const TESTS = { fallback: true, always: true, ...c.force };
     // T241's review: whether this browser puts a NaN in this model's rows and values (NAN_ROUNDS, and why, are above)
-    const nan = NAN_ROUNDS.models === "all" || NAN_ROUNDS.models.includes(c.id);
+    const nan = NAN_ROUNDS.models === "all" || (NAN_ROUNDS.models === "made-up" ? c.id.startsWith("synthetic") : NAN_ROUNDS.models.includes(c.id));
     // T152: the steps of a generation (see the head of this file), where the GPU took them
     const generation = (engine) => {
       // (T152's review: and the most this adapter binds, which a classifier may pass, Llama 3.2 1B's 262.7 MB on lavapipe's 128 MiB)
