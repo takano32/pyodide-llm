@@ -711,6 +711,18 @@ const ok = (line) => {
   }
   run("initialized = undefined");
   ok("a thrown value that is no Error is told by its name and message, or its fields");
+
+  // Pyodide's runtime that ends as it starts (its standard library did not arrive: loadPyodide() goes on without it, and
+  // Python exits) rejects with Emscripten's ExitStatus: told as a step of Pyodide's that stopped; an Error stays itself
+  fresh(() => new Response("", { status: 404 }));
+  const ended = await failure(run("pyodideSteps")("314.0.7", async () => ({ loadPyodide: () => Promise.reject(new ExitStatus(1)) })));
+  assert.equal(ended?.error.message,
+    'Pyodide 314.0.7: "the runtime" ended as it started (ExitStatus: Program terminated with exit(1)): one of its files may not have arrived');
+  assert.equal(ended.error.pyodide, true);
+  const broke = await failure(run("pyodideSteps")("314.0.7", async () => { throw new TypeError("Importing a module script failed."); }));
+  assert.equal(String(broke?.error), "TypeError: Importing a module script failed.");
+  assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
+  ok("a runtime of Pyodide's that ended as it started is told as a step that stopped");
 }
 
 console.log(`worker-check: ${passed} checks passed`);

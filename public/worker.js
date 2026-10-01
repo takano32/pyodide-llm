@@ -22,8 +22,9 @@
 // one: Emscripten's ExitStatus (Pyodide's runtime ending) is an object with a name and a message, and String() of it, or
 // of any plain object, is "[object Object]", which is what /benchmark/ showed a visitor. Such a value is told by its name
 // and message, else by what kind of thing it is and its own fields
+const isError = (err) => err instanceof Error || Object.prototype.toString.call(err) === "[object Error]";
 function told(err) {
-  if (err instanceof Error || typeof err !== "object" || err === null) {
+  if (isError(err) || typeof err !== "object" || err === null) {
     return String(err);
   }
   const text = (value) => (typeof value === "string" && value ? value : undefined);
@@ -543,6 +544,13 @@ async function pyodideSteps(version, importer) {
     const stalled = quiet.promise.then(() => { throw stop(name, `got nothing from the network for ${QUIET_SECONDS} seconds`); });
     try {
       return await Promise.race([promise, stalled]);
+    } catch (error) {
+      // T242: loadPyodide() goes on without a standard library whose fetch failed (it writes that to the console), and
+      // Python then ends as it starts: the promise rejects with Emscripten's ExitStatus, which is no Error and said
+      // "[object Object]" (bench.yml's Windows WebKit, 2026-10-01: its fetches of jsDelivr failed together now and then).
+      // Told as a step of Pyodide's that stopped, as one whose file never came is
+      if (isError(error)) throw error;
+      throw stop(name, `ended as it started (${told(error)}): one of its files may not have arrived`);
     } finally {
       quiet.cancel();
     }
