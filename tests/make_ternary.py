@@ -6,7 +6,7 @@
 # and +d of one d of its own, about a third each, as Prism ML's Ternary Bonsai models are), converted the way the page
 # converts them (llama2_convert.Conversion), to the ternary dtype or to any other of the same values.
 #
-#   python tests/make_ternary.py <out> [ternary | int8 | float32 | int6] [qwen3 | own | hybrid | rotated]
+#   python tests/make_ternary.py <out> [ternary | int8 | float32 | int6] [qwen3 | own | hybrid | rotated | rotated-tied]
 #
 # qwen3 (the default): the shape of Ternary Bonsai 1.7B in small, a Qwen3 (norms of the heads of q and k, heads that
 #   do not fill dim, grouped-query attention, the classifier shared with the embedding).
@@ -17,6 +17,9 @@
 # rotated: hybrid said to be in a rotated basis (T237: blocks of 128 with random signs), as the 27B's file is: the
 #   engine turns every matrix's input before it is quantized and laid out for the ternary kernels, and the
 #   embedding's rows back.
+# rotated-tied: the same with the embedding as the classifier too (no output matrix: what version 2 of Prism ML's
+#   rotated basis is for, `tied_output`, as the smaller models of a Qwen3.5 have it): one ternary table whose rows
+#   the engine turns back where it embeds and multiplies by the turned input where it classifies (T237's review).
 import json
 import struct
 import sys
@@ -52,12 +55,12 @@ def ternarized(tensors, seed=5):
 
 def model(kind):
     """(the Hugging Face tensors, config.json, the context, the header's metadata)"""
-    if kind in ("hybrid", "rotated"):
+    if kind in ("hybrid", "rotated", "rotated-tied"):
         tensors, config = qwen35_model(dim=128, hidden_dim=256, n_layers=8, every=4, n_heads=4, n_kv_heads=2, head_dim=64,
                                        key_heads=2, value_heads=6, key_dim=64, value_dim=64, vocab_size=VOCAB, seq_len=1024,
-                                       shared=False)
+                                       shared=kind == "rotated-tied")
         # (the widths a matrix reads: the residual stream, an attention's output and the FFN's inside, a linear layer's output)
-        said = basis(128, {128, 256, 384})[0] if kind == "rotated" else None
+        said = basis(128, {128, 256, 384})[0] if kind.startswith("rotated") else None
         return tensors, config, 1024, said and {llama2_convert.ROTATED: json.dumps(said)}
     settings, weights = synthetic_weights(dim=128, hidden_dim=384, n_layers=4, n_heads=4, n_kv_heads=2, vocab_size=VOCAB,
                                           seq_len=1024, shared=kind != "own", head_size=64)
