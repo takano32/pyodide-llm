@@ -57,19 +57,25 @@ if (isMainThread) {
     const entry = MODELS.find((m) => m.id === id) ?? { name: path.basename(id), checkpoint: path.resolve(`${id}.bin`),
       tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) };
     const file = (f) => (path.isAbsolute(f) ? f : root + f);
-    const checkpoint = fs.readFileSync(file(entry.checkpoint));
-    const { memory, base: low } = weightsMemory(checkpoint.length + high, { shared: true, wide });
+    // the file in pieces straight into the memory: fs.readFileSync takes no file past 2 GiB (T247: Qwen3.5 4B and 9B)
+    const size = fs.statSync(file(entry.checkpoint)).size;
+    const { memory, base: low } = weightsMemory(size + high, { shared: true, wide });
     const base = low + high;
-    new Uint8Array(memory.buffer).set(checkpoint, base);
+    const fd = fs.openSync(file(entry.checkpoint), "r");
+    for (let offset = 0; offset < size;) {
+      const length = Math.min(64 << 20, size - offset);
+      offset += fs.readSync(fd, new Uint8Array(memory.buffer, base + offset, length), 0, length, offset);
+    }
+    fs.closeSync(fd);
     py.FS.writeFile("tokenizer.bin", fs.readFileSync(file(entry.tokenizer)));
     let plan;
     // Python says where every tensor is; the forward pass itself is made in the worker
-    const outside = { size: checkpoint.length, read: (o, l) => new Uint8Array(memory.buffer, base + o, l).slice(),
+    const outside = { size, read: (o, l) => new Uint8Array(memory.buffer, base + o, l).slice(),
       start: (p) => { plan = p.toJs({ dict_converter: Object.fromEntries }); return { backend: "", bind() {}, forward() {}, release() {} }; } };
     py.globals.set("OUTSIDE", outside);
     py.globals.set("OPTIONS", py.toPy(entry.options));
     py.runPython(`import llama2_numpy\nfrom llama2_numpy import Llama\nllama2_numpy.KV_START = ${kvStart}\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, disable=${JSON.stringify(without)}, **OPTIONS)`);
-    const worker = new Worker(new URL(import.meta.url), { workerData: { memory, base, size: checkpoint.length, plan, counts, rounds, positions, from, wide, versusHalf } });
+    const worker = new Worker(new URL(import.meta.url), { workerData: { memory, base, size, plan, counts, rounds, positions, from, wide, versusHalf } });
     const result = await new Promise((resolve, reject) => { worker.once("message", resolve); worker.once("error", reject); });
     console.log(`${entry.name}: ${result}`);
     failed ||= result.includes("DIFFER");

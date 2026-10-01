@@ -15,8 +15,19 @@
 # T236: with an id of the list (bash tests/page_qwen35.sh hf-qwen3.5-0.8b), that entry as the page takes it instead of
 # the original's safetensors: the GGUF's weights with the original's vocabulary and config.json (tests/hf_fetch.py).
 # The float32 row is then the GGUF's values, as Q8_0 rounded them.
+#
+# T247: a second word says which of the four parts to run, "float32 int8 kernels threads" when left out. NumPy's two
+# rows widen the weights to float32, which a runner's 16 GB holds for the 2B (7.5 GB) and not for the 4B (16.8 GB) or
+# the 9B (35.8 GB): those run "kernels threads" (bash tests/page_qwen35.sh hf-qwen3.5-4b "kernels threads"), and the
+# 2B's rows take two runs of the job's 90 minutes. On a runner the files go to /mnt, which has the room.
 set -euo pipefail
+parts=" ${2:-float32 int8 kernels threads} "
+has() { case "$parts" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 dir="${RUNNER_TEMP:-.tmp}/qwen35"
+if [ -n "${RUNNER_TEMP:-}" ] && [ -d /mnt ]; then
+  dir=/mnt/qwen35
+  sudo mkdir -p "$dir" && sudo chown "$USER" "$dir"
+fi
 if [ -n "${1:-}" ]; then
   model=$(python tests/hf_fetch.py "$1" "$dir" | tail -1)
   what="the float32 of the list's $1"
@@ -26,13 +37,25 @@ else
   what="the float32 original"
 fi
 node tests/wikipedia.mjs en "$dir/en.txt"
-for dtype in float32 int8; do
-  python tests/perplexity_prepare.py "$model" "$dir/$dtype" "$dtype" 2>&1 | tail -1 | cut -c1-200
-done
-echo "qwen35: perplexity of $what, NumPy: $(python tests/perplexity_native.py "$dir/float32" 1500 "$dir/en.txt")"
-rm "$dir/float32.bin"
-numpy=$(python tests/perplexity_native.py "$dir/int8" 1500 "$dir/en.txt")
-echo "qwen35: perplexity of the int8 weights, NumPy: $numpy"
-node tests/perplexity.mjs "$dir/int8" 1500 "$dir/en.txt" --file "--numpy=$(node -p "JSON.parse(process.argv[1]).perplexity" "$numpy")"
-echo "qwen35: the software threads"
-node tests/threads-check.mjs "$dir/int8" --rounds 1 --positions 32
+if has float32; then
+  python tests/perplexity_prepare.py "$model" "$dir/float32" float32 2>&1 | tail -1 | cut -c1-200
+  echo "qwen35: perplexity of $what, NumPy: $(python tests/perplexity_native.py "$dir/float32" 1500 "$dir/en.txt")"
+  rm "$dir/float32.bin"
+fi
+python tests/perplexity_prepare.py "$model" "$dir/int8" int8 2>&1 | tail -1 | cut -c1-200
+# a 64-bit memory where the checkpoint and what forward.js puts after it pass 4 GiB (the 4B's 4.7 GB, the 9B's 10.1 GB)
+wide=
+if [ "$(stat -c %s "$dir/int8.bin")" -gt 3400000000 ]; then wide=--wide; fi
+numpy=
+if has int8; then
+  numpy=$(python tests/perplexity_native.py "$dir/int8" 1500 "$dir/en.txt")
+  echo "qwen35: perplexity of the int8 weights, NumPy: $numpy"
+  numpy="--numpy=$(node -p "JSON.parse(process.argv[1]).perplexity" "$numpy")"
+fi
+if has kernels; then
+  node tests/perplexity.mjs "$dir/int8" 1500 "$dir/en.txt" --file $numpy $wide
+fi
+if has threads; then
+  echo "qwen35: the software threads"
+  node tests/threads-check.mjs "$dir/int8" --rounds 1 --positions 32 $wide
+fi

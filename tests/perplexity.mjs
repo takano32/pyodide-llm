@@ -8,7 +8,8 @@
 //
 // --file (T229): the checkpoint is read from its file straight into forward.js's memory, never into Pyodide's, and
 // the NumPy row is left out (a model whose weights widened to float32 pass Pyodide's 4 GiB: tests/perplexity_native.py
-// has that row). --numpy=<its perplexity>: what the rows are held against then.
+// has that row). --numpy=<its perplexity>: what the rows are held against then. --wide (T247): a 64-bit memory and its
+// kernels, for a checkpoint that with what forward.js puts after it passes 4 GiB (Qwen3.5 4B and 9B).
 //
 // Without a text file the text is fetched from Japanese Wikipedia (plain-text extracts; nothing of it is stored in
 // this repository). The NumPy row takes minutes: it runs at a tenth of the speed.
@@ -35,7 +36,7 @@ for (const source of titles) {
   text += fs.existsSync(source) ? fs.readFileSync(source, "utf8") : await wikipediaText("ja", [source]);
 }
 
-const { pyodide } = await pyodideWithEngine();
+const { pyodide } = await pyodideWithEngine({ wide: flags.includes("--wide") });
 for (const file of fromFile ? [model.tokenizer] : [model.checkpoint, model.tokenizer]) {
   pyodide.FS.writeFile(path.basename(file), fs.readFileSync(local(file)));
 }
