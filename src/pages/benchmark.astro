@@ -154,7 +154,7 @@ const BENCH_MODEL = "llm-jp-3-150m";
 
 <script>
   import { FULL_ROUNDS, PATH_PROMPTS, PATH_WRITES, ROUNDS, benchMarkdown, checkVerdict, roundsHere, roundsTable, layerStepsTable, pathTable, cpuBaseline, cpuSummary, cpuTable, deviceSummary, environmentOf, generateTable, gpuSummary, layerTable, lineSummary,
-    matVecTable, noRatios, reportTooLong, shortReport, storageSummary, tableCell, reportUrl, threadCounts, threadsKey, threadsOf, timesFaster, tokenTable, unmeasured, warnings, warningsBlock, CPU_SPEED_KEY } from "../bench.js";
+    matVecTable, noRatios, reportTooLong, shortReport, storageSummary, tableCell, reportUrl, threadCounts, threadsKey, threadsOf, timesFaster, tokenTable, unmeasured, pathWarnings, warnings, warningsBlock, CPU_SPEED_KEY } from "../bench.js";
   import { MODELS } from "../models.js";
   import { forgetMark, holdMemory, memoryLimit, memoryResult, memorySummary, readMark } from "../page-memory.js";
   import { hiddenLine, wakeKeeper } from "../wake.js";
@@ -388,7 +388,8 @@ const BENCH_MODEL = "llm-jp-3-150m";
   // model page's own path is timed on it (T184: prompts and writing as the page chooses between the GPU and the CPU,
   // and on each alone), then the rounds of ?bench=1 (T45), which load it again each, on the CPU alone
   // what the model section measured, under the name of the model it ran (the choice may change after)
-  let measured: { name: string; rows: any[]; pyodide: string; paths?: string } | undefined;
+  // said (T227's review): what the page's path says went wrong in its first line (src/bench.js's pathWarnings()), for the warnings
+  let measured: { name: string; rows: any[]; pyodide: string; paths?: string; said?: string[] } | undefined;
   async function modelSection(): Promise<Result> {
     const entry = model();
     const w = worker("worker.js");
@@ -448,7 +449,7 @@ const BENCH_MODEL = "llm-jp-3-150m";
       const answer = await request({ type: "bench", model: entry, load: 1, rounds: asked, prompt, steps: 64 });
       if (answer.error) return { status: "error", markdown: answer.error };
       const table = pathTable(paths, entry.name);
-      measured = { name: entry.name, rows: answer.rows, pyodide: answer.pyodide, paths: table };
+      measured = { name: entry.name, rows: answer.rows, pyodide: answer.pyodide, paths: table, said: pathWarnings(paths) };
       const lines = roundsTable(answer.rows);
       return { status: "ok", data: { rows: answer.rows, paths },
                markdown: `${entry.name} · Pyodide ${answer.pyodide}\n\n${lines.join("\n")}\n\n${table}` };
@@ -532,7 +533,8 @@ const BENCH_MODEL = "llm-jp-3-150m";
     try {
       // without Atomics.waitAsync nothing answers the waiter, which would wait for ever (T134's review)
       const answer = await answered;
-      if (!answer.result?.waitAsync) return { error: answer.error ?? "no Atomics.waitAsync here" };
+      // (T227's review: a worker's error says "failed", as every step's does, so that the warnings list it; no waitAsync is no failure)
+      if (!answer.result?.waitAsync) return { error: answer.error ? `failed: ${answer.error}` : "no Atomics.waitAsync here" };
       return { microseconds: (await waited).microseconds };
     } finally {
       waiter.terminate();
@@ -767,7 +769,7 @@ const BENCH_MODEL = "llm-jp-3-150m";
     const head = [benchMarkdown(measured?.rows ?? [], environment), ...(hidden ? [hidden] : []), ...(measured?.paths ? [measured.paths] : [])].join("\n\n");
     // T227: all that came out WRONG, failed, unsteady or skipped, in one place under the top (parseReport() reads the
     // rounds' table above it), from the Markdown of the top and of the sections, in the page's own words
-    const warned = warnings([{ title: TITLES.model, markdown: head }, ...shown.map((name) => ({ title: TITLES[name], ...results[name]! }))]);
+    const warned = warnings([{ title: TITLES.model, markdown: head, said: measured?.said }, ...shown.map((name) => ({ title: TITLES[name], ...results[name]! }))]);
     const markdown = [head, warningsBlock(warned), ...sections].filter(Boolean).join("\n\n");
     $("markdown").textContent = markdown;
     // T185: where the whole is too long for the link, the link holds the head, the warnings and a line a section
