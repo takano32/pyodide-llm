@@ -163,5 +163,5 @@ def test_the_signs_a_broken_run_is_given_differ_from_the_files_where_it_says():
     assert np.array_equal(signs_of(last, 5120)[:4096], signs_of(basis, 5120)[:4096])
     assert broken_basis(basis, "no rotation") is None
     assert not np.any(signs_of(broken_basis(basis, "no signs"), 5120) == -1)
-    for unchanged in ("tiled", "embedding", "halves", "gates rotated", "output normalized twice"):
+    for unchanged in ("tiled", "embedding", "halves", "gates rotated", "output normalized twice", "epsilon 1e-5"):
         assert broken_basis(basis, unchanged) == basis

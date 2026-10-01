@@ -23,16 +23,25 @@
 # The fork multiplies a ternary matrix by an activation it first rounds to Q8_0 (blocks of 32, a float16 scale,
 # int8 values: ggml's vec_dot type of PTQ1_0), and the two small BF16 matrices of a linear-attention layer by one
 # rounded to bfloat16. So it is not a float32 reference, and float32 rounding is not the size of the difference: the
-# rounding of the activations is. Two runs here measure it: "float32" (the engine as the page will run it without
-# its own rounding of the activations) and "as the fork rounds" (the same activations rounded the fork's way before
-# every matrix). The second is what the fork computes up to the order of its sums, and every rounding that falls the
-# other way after that; the first differs from it by the rounding itself.
+# rounding of the activations is (0.07 to 0.19 in a logit on the four texts; its own batch and token-at-a-time paths are
+# that far from each other). The runs of this file with a rounding of their own measure it: "float32" (the engine as the page
+# will run it without its own rounding of the activations), "as the fork rounds" (the same activations rounded the fork's way
+# before every matrix), "as the page rounds" (7 bits, relaxed SIMD) and "as Safari rounds" (8 bits, none), "bfloat16 gates"
+# (float32 but for the two small matrices).
+# Against the fork as it is, the line is three times what that rounding moves the engine (T238). It cannot see an error
+# that moves the logits by less, and a few errors of this kind do (one sign of 17408 values moves them by 0.43), so
+# (T237's review) the fork is also run with float32 activations (tests/reference_27b_patch.py, REPLAY of the tokens of
+# the first run): then the engine is 0.003 to 0.007 from it, KL 4e-6 at most, and the line is 0.03 (TIGHT_LINE).
 #
-# Runs with the engine broken on purpose (the first text only) show what the comparison catches: the value heads
-# read in the GGUF's order, no signs, no rotation, the embedding's rows not turned back, q and k read as if no part
-# of a head were stored in halves.
+# Runs with the engine broken on purpose (the first text only; BREAKS has them, 25) show what the comparison catches: the
+# value heads read in the GGUF's order, no signs, no rotation, the embedding's rows not turned back, q and k read as if no
+# part of a head were stored in halves (T238's five), and weaker ones: a sign or a few, a block of signs, signs of another
+# width, a normalization twice, one layer that reads the model's own basis, the gates that read the rotated one.
+# SAVE_LOGITS=<a directory> writes the logits of the runs that stand for the page (float32, as the page rounds, as Safari
+# rounds): the comparison of forward.js's own numbers with them needs no pass over the file again (T233).
 import json
 import math
+import os
 import struct
 import sys
 import threading
@@ -268,6 +277,18 @@ def grouped(key_heads, value_heads, size=1):
     return (heads[:, None] * size + np.arange(size)).reshape(-1)
 
 
+# ------------------------------------------------------------------------------------------- the lines
+# The engine's float32 forward pass against the fork with float32 activations (tests/reference_27b_patch.py): the largest
+# difference of a logit over the positions of a text, and the KL of its distribution over a position. CI run 36928767105 (an
+# AMD EPYC 9V74, the fork built for it): 0.0032 to 0.0074 and 4e-6 at most over four texts of 20 to 77 positions, the largest
+# logit the same at every one; the weakest of the 25 errors tried is 0.43 (one sign of 17408) and the others 2.7 and more. The
+# lines are 4 and 25 times the largest of what was seen (the fork's sums and the engine's differ in their order alone, so
+# the CPU the fork runs on moves them by a rounding, not by the activations' rounding that made the line against the fork
+# as it is 3 times 0.1 or more).
+TIGHT_LINE = 0.03
+TIGHT_KL = 1e-4
+
+
 # ------------------------------------------------------------------------------------------- what is computed wrong
 # (the review of T237: how far from the fork can an error of the rotated basis be and still not be seen?) The first five are
 # T238's, the rest are weaker ones: a sign or a few of them, a block of signs, signs of another width, a normalization
@@ -280,6 +301,10 @@ SIGN_BREAKS = {  # name: (the width of the signs, the places whose signs are the
     "512 signs": (5120, slice(0, 512)),
     "a block of 1024 signs": (5120, slice(0, 1024)),
     "the last sign of 17408": (17408, slice(17407, 17408)),
+    # (one sign in other places: where the channel is a quiet one, an error of a single value costs the least)
+    "the sign in the middle of 5120": (5120, slice(2557, 2558)),
+    "the first sign of 6144": (6144, slice(0, 1)),
+    "the first sign of 17408": (17408, slice(0, 1)),
 }
 LAYERS = {  # name: (the layer, the kinds of matrix of it that read the model's own basis, not the rotated one)
     "layer 0's FFN in the model's own basis": (0, ("ffn_gate", "ffn_up", "ffn_down")),
@@ -297,8 +322,9 @@ OTHER_BREAKS = {
     "output normalized twice": "the attention's output matrix reads x times 1 / sqrt(block) again",
     "gates rotated": "the two small matrices of a linear layer's gates read the rotated input",
     "classifier in the model's own basis": "the classifier reads the model's own basis",
+    "epsilon 1e-5": "the epsilon of every RMSNorm is 1e-5, not the model's 1e-6",
 }
-BREAKS = {**OTHER_BREAKS, **{name: f"the signs of {places.stop - places.start} of the {width} values the other way round"
+BREAKS = {**OTHER_BREAKS, **{name: f"the signs of {places.stop - places.start} of the {width} values (from the {places.start}th) the other way round"
                              for name, (width, places) in SIGN_BREAKS.items()},
           **{name: f"{', '.join(kinds)} of layer {layer} read the model's own basis" for name, (layer, kinds) in LAYERS.items()}}
 
@@ -353,7 +379,8 @@ class Streamed(Llama):
         # float16: the RoPE tables are the engine's own (partial_tables), not a file's
         super().__init__(header, None, dtype="float16", arch="qwen35", linear=linear, head_dim=head,
                          rotary=key("rope.dimension_count"), rope_theta=float(key("rope.freq_base")),
-                         rms_norm_eps=float(f"{key('attention.layer_norm_rms_epsilon'):.6g}"), rotated=rotated,
+                         rms_norm_eps=1e-5 if broken == "epsilon 1e-5" else float(f"{key('attention.layer_norm_rms_epsilon'):.6g}"),
+                         rotated=rotated,
                          bos=metadata["tokenizer.ggml.bos_token_id"])
 
     def qwen35_tensors(self, take, shared_weights, keep_int8, kv_dim, dtype, frequencies):
@@ -576,6 +603,16 @@ def main():
         logits[(index, name)] = results[at:at + count]
         at += count
     del results
+    # SAVE_LOGITS=<a directory>: the logits of the runs that stand for the page (float32, and as the page rounds with relaxed
+    # SIMD and as Safari does without it), a row for every position of every text, for the comparison of the page's own forward
+    # pass (forward.js, T233) with them without the pass over the file again: engine-<text>-<the run's name>.logits, float32
+    if os.environ.get("SAVE_LOGITS"):
+        saved = Path(os.environ["SAVE_LOGITS"])
+        saved.mkdir(parents=True, exist_ok=True)
+        for (index, name), rows in logits.items():
+            if name in ("float32", "as the page rounds", "as Safari rounds"):
+                np.asarray(rows, dtype=np.float32).tofile(saved / f"engine-{index}-{name.replace(' ', '-')}.logits")
+        print(f"reference: the logits of the runs for the page are in {saved}", flush=True)
 
     failed = []
     for index, text in enumerate(texts):
@@ -610,6 +647,13 @@ def main():
             compare(f"text {index}, the float32 fork against the fork (the rounding of the activations)", text["f32"], fork)
             for name in ("float32", "bfloat16 gates", "as the page rounds", "as Safari rounds"):
                 compare(f"text {index}, {name} against the float32 fork", logits[(index, name)], text["f32"])
+            near = Distance(ours, text["f32"])
+            tight_ok = near.worst <= TIGHT_LINE and near.same == near.count and near.kl_worst <= TIGHT_KL
+            print(f"reference: text {index}: {'ok' if tight_ok else 'FAILED'} against the float32 fork: {near.worst:.4f} against the line "
+                  f"{TIGHT_LINE}, the largest logit the same at {near.same} of {near.count} positions, the KL at most {near.kl_worst:.1e} "
+                  f"against {TIGHT_KL:.0e}", flush=True)
+            if not tight_ok:
+                failed.append(f"text {index} against the float32 fork")
 
     # the weaker errors: how far each is from the fork (as it is) and from the float32 fork, against what the unbroken
     # engine is from each
@@ -623,8 +667,12 @@ def main():
               f"the unbroken engine's difference {reference.worst:.4f})", flush=True)
         if single is not None:
             near = compare(f"broken, {what}, against the float32 fork", logits[(0, name)], single)
-            print(f"reference: broken, {what}: {near.worst / tight.worst:.1f} times the unbroken engine's difference {tight.worst:.4f} from the "
-                  f"float32 fork, {near.kl / max(tight.kl, 1e-12):.1f} times its KL {tight.kl:.2e}", flush=True)
+            caught_tight = near.worst > TIGHT_LINE
+            print(f"reference: broken, {what}: {'caught' if caught_tight else 'NOT CAUGHT'} by the float32 fork: {near.worst / tight.worst:.1f} "
+                  f"times the unbroken engine's difference {tight.worst:.4f}, {near.worst / TIGHT_LINE:.0f} times the line {TIGHT_LINE}, "
+                  f"{near.kl / max(tight.kl, 1e-12):.1f} times its KL {tight.kl:.2e}", flush=True)
+            if not caught_tight:
+                failed.append(f"broken, {what} (against the float32 fork)")
         if not caught and name in T238_BREAKS:
             failed.append(f"broken, {what}")
     if failed:
