@@ -239,6 +239,10 @@ function halfToFloat(h) {
     ...big("qwen3.5, a state of 12.6 MB, in a rotated basis", [256, 512, 8, 4, 2, 20000, 4096],
       { arch: "qwen35", head_dim: 64, linear: LINEAR_SMALL, rotated: ROTATED_SMALL }, ["int8", "float32"]),
     ...big("llama in a rotated basis", [256, 512, 8, 8, 2, 20000, 4096], { rotated: ROTATED_SMALL }, ["int8", "int6"]),
+    // and ternary in a rotated basis, as Ternary Bonsai 2 27B is (T231's frame: the activations' scales and their sums, and T237's:
+    // the rotated input of a matrix, in one frame; every row of the 27B's matrices is whole groups of 128)
+    ...big("ternary qwen3.5 27B's layers, 4 of 64, in a rotated basis", [5120, 17408, 4, 24, 4, 1000, 4096],
+      { arch: "qwen35", head_dim: 256, linear: LINEAR_27B, rotated: ROTATED }, ["ternary"]),
   ];
   // the float32 vectors of the linear layers of a hybrid model, whose relaxed corrections (a ninth of a float32's bytes) footprint() counts
   const hybridOver = (p) => {
@@ -284,7 +288,9 @@ function halfToFloat(h) {
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
       const engine = engineOn(p, planOf(p, { outliers: 8 }), { base: CONTROL_BYTES, memory: sharedMemory(p, bound), halfKeys, gpu: silentGpu });
       const used = engine.memoryBytes() - CONTROL_BYTES - p.size;
-      assert.equal(engine.gpuWhyNot, "ternary weights are not on the GPU yet", `${shapes[n].name}: the GPU was not refused for its ternary weights`);
+      // (a hybrid model is refused for its linear-attention layers first: forward.js's gpuUnfit())
+      const why = p.form.linear ? "linear-attention layers are not on the GPU yet" : "ternary weights are not on the GPU yet";
+      assert.equal(engine.gpuWhyNot, why, `${shapes[n].name}: the GPU was not refused for ${p.form.linear ? "its linear-attention layers" : "its ternary weights"}`);
       assert.ok(used <= bound, `${shapes[n].name}: a GPU asked for put ${(used / MiB).toFixed(2)} MiB after the checkpoint, the CPU alone counts ${(bound / MiB).toFixed(2)}`);
       engine.release();
       return;
@@ -360,7 +366,8 @@ function halfToFloat(h) {
     ["Ternary Bonsai 4B", [2560, 9728, 36, 32, 8, 151936, 4096], 1132048412, { qk_norm: true, head_dim: 128 }, "ternary"],
     ["Ternary Bonsai 8B", [4096, 12288, 36, 32, 8, -151936, 4096], 2304790556, { qk_norm: true }, "ternary"],
     ["Ternary Bonsai 2 27B", [5120, 17408, 64, 24, 4, -248320, 4096], 7662073884,
-      { arch: "qwen35", head_dim: 256, linear: { every: 4, key_heads: 16, value_heads: 48, key_dim: 128, value_dim: 128, conv: 4 } }, "ternary"],
+      { arch: "qwen35", head_dim: 256, linear: { every: 4, key_heads: 16, value_heads: 48, key_dim: 128, value_dim: 128, conv: 4 },
+        rotated: ROTATED }, "ternary"],
   ];
   let cases = 0, atTheEdge = 0;
   for (const [name, header, size, form, dtype] of listed) {
