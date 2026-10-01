@@ -21,10 +21,13 @@
 const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
 
 // the latest release on npm (the "latest" tag never points at an alpha), or ?pyodide=<version> to force one.
-// T129 (1): its answer is a hundred bytes, so the only way it takes QUIET_SECONDS is none at all: a connection that
-// opened and never answered left "Loading Pyodide" for ever (the review of T118). It is given up then like a step
-// of Pyodide's (the page may try again without the service worker). Not a step under watchArrivals(): that would
-// count every part of the model, which downloads meanwhile, and find a stop of Pyodide only after the model's end.
+// T129 (1): its answer is a hundred bytes, so a connection that opened and never answered left "Loading Pyodide" for
+// ever (the review of T118). It is given up after QUIET_SECONDS like a step of Pyodide's (the page may try again
+// without the service worker). Not a step under watchArrivals(): that would count every part of the model, which
+// downloads meanwhile, and find a stop of Pyodide only after the model's end. But it is not always quick on a line the
+// model's parts fill: the first bytes of a new connection wait behind them (slow.yml, the review of T129: 20.5 s behind
+// a 1 MB model at 0.4 Mbps with the oldest connection served first, 14.2 s through one queue of 256 KB at 0.4 Mbps,
+// 0.8 s with the line shared by turns), so 30 seconds is little more than such a line's queue.
 async function resolvePyodideVersion(search) {
   const forced = new URLSearchParams(search).get("pyodide");
   if (PYODIDE_VERSION_PATTERN.test(forced)) {
