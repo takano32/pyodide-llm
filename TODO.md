@@ -1632,8 +1632,18 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T247 [追加][モデル] Qwen3.5 のほかの大きさを一覧に — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T245 の後。規模 小〜中）
 - 0.8B（T236）のほかの大きさ（HF にあるものを調べて）を、Q8_0 の GGUF から。`gguf_check.py tensors` を 1 つずつ通してから。
 
-### T248 [調査][モデル] 足せるモデルの調べ直し（2026-10） — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T81 と同じ形の調べ。規模 小〜中）
+### T248 [調査][モデル] 足せるモデルの調べ直し（2026-10） — 状態: **反映済み**（2026-10-01、調べだけ。本線に入れるのは本会話）
 - 2026-09-26 の T81 の調べの後に出たもの・人気の上がったものを、今のエンジンで開けるか（形・トークナイザ・書式・大きさ）で分け、足りないものを採番できる形に書く。
+- **調べの結果（2026-10-01、[docs/notes/t248-survey-2026-10-01.md](docs/notes/t248-survey-2026-10-01.md)）**。コードは触っていない。判定は変換器そのもの（`normalize()`・`check_config()`・前分割の読み手を 1,358 件に、ページと同じ `Conversion` を約 90 件に、重みなしで）。
+  - ダウンロード上位 2000 件の 9.5B 以下 782 件のうち、今受け付ける種類は 458 件でダウンロードの 83.0%（T81 のときは 51.7%）。残りはどの種類も 3% 未満。判定にかけた 1,358 件のうち 877 件が通った（落ちた 481 件の 278 件は量子化済みの再配布）。
+  - **今のまま開く日本語のモデル**: rinna japanese-gpt2 xsmall（int8 43 MB。tiny-lm の次に軽い）と medium、llm-jp-3 3.7B・7.2B instruct3、llm-jp-4.1 8B thinking（2026-09-15。Q8_0 の GGUF は見つからず、書式は harmony の手書き、止まりは [1, 2, 13]）、shisa v2.1（Llama 3.2 3B と Qwen3 8B）、CAT-Translate 3.3B、Llama-3-ELYZA-JP 8B、CAT-Thinking 8B、EuroLLM 1.7B（35 言語）ほか 33 件。Qwen3 と Qwen2.5 の派生の 4 つは BOS が 1 になるので、項目に `bos: 151643` が要る。
+  - **今のまま開く英語のモデル**: GPT-2 の medium・large・xl と distilgpt2、Pythia 14M・2.8B・6.9B、Qwen2.5 Coder、DeepSeek-R1 Distill の Qwen 7B と Llama 8B、Llama 3.1 8B Instruct、h2o-danube3 500M、Supra2 100M。
+  - **小さな穴（勧める順）**: Granite 4.2（倍率は attention の 1 つだけで、q の行列に畳めば変換器だけで済む見込み。日本語を試験した言語に挙げる）、MiniCPM5 の 2 段の前分割（29 件・150 万ダウンロード）、SmolLM3 の RoPE なしの層（18 件・113 万）、Mistral の新しいトークナイザと Phi-4 の前分割（Ministral 8B、Mistral Nemo の日本語版、Phi-4 mini の前提）、tokenizer.json の sentencepiece 流の BPE（CAT-Translate 7B、Gemma 4 の前提）、Phi-3 mini（まとまったテンソルを割る）、DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor`（読み方の判断が先）。
+  - **新しいアーキテクチャで勧めるもの**: LFM2.5（畳み込みの層と attention の層。規模 中。日本語を挙げる 230M・350M と日本語用の 1.2B-JP、作り手の Q8_0 の GGUF あり。日本語のタグの小さいモデルでいちばん多い種類）、Gemma 3 の 270M と 1B（norm 4 つ・GeGLU・512 の窓。規模 中〜大。原本はゲート付きで unsloth の写しから）。Gemma 4 は Gemma 3 の後（規模 大）。状態空間（Nemotron-H・Mamba・RWKV7）と MoE は今は勧めない。
+  - 途中で見つけたこと: API の `language=ja` は効かない（`filter=ja` が効く）。前分割の Split が `String` の tokenizer.json で `pretokenizer_name()` が `KeyError` で落ちる（worker は次のトークナイザに移るので開くものは開く）。CAT-Translate-7b は `tokenizer.model` が無く今も開かない。
+  - 確かめていないもの: ブラウザでの動作、GGUF と原本の突き合わせ、手書きの書式の本物、ライセンスの条文、Gemma 3 と LFM2.5 の日本語の質。
+  - **持ち主に決めてもらうこと**（文書の 9 節）: A のどれを入れるか（全部で約 80 項目になる）、llm-jp-4.1 を safetensors の 17.2 GB から取るか・考えを見せるか、独自のライセンスのモデルのために仕事をするか、新しいアーキテクチャの順（LFM2.5 → Gemma 3 を勧める）、英語の古典を入れるか、Mistral Nemo 12B（約 15.3 GiB の見積もり）を試すか。
+  - 採番の案は文書の 6 節（すぐ入れる 4 つ、小さな穴 7 つ、新しいアーキテクチャ 2 つ。番号は本会話が付ける）。
 
 ### T235 [追加][Bonsai] Ternary-Bonsai-1.7B を一覧に（PQ2_0 を int8 に広げる読みと yarn の RoPE） — 状態: **完了**（2026-10-01 に本線に入れた 8d65233、レビュー済み Sonnet max。持ち主の判断待ちが 4 つ: 下のレビューの項）
 - ブランチ `t235-ternary-bonsai-1.7b`（確かめの道具は別のブランチ `t235-probe`: `tests/yarn_reference.py` と測った 2 つの文。本線には入れない）。決定と落とし穴は AGENTS.md の「3 値の Ternary Bonsai 1.7B」。
