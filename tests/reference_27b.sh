@@ -53,6 +53,8 @@ prompts=("The capital of Japan is"
          "日本でいちばん高い山は"
          $'<|im_start|>user\nWhat is 17 times 24?<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n')
 
+for index in "${!prompts[@]}"; do printf '%s' "${prompts[$index]}" > "$work/prompt-$index.txt"; done
+
 case " $stages " in *" fork "*)
   began=$SECONDS
   if [ ! -d "$work/fork/.git" ]; then
@@ -87,6 +89,7 @@ case " $stages " in *" fork "*)
 
 case " $stages " in *" numpy "*)
   began=$SECONDS
+  python -m pip install -q numpy
   python "$here/reference_27b.py" "$work/$file" "$work"
   echo "reference: ran in $((SECONDS - began)) s"
 ;; esac
