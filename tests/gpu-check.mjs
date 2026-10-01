@@ -365,8 +365,9 @@ function caseOf(id, options, reference, bytes) {
   py.runPython(`Llama(None, vocabulary, kernels="simdkernel.so", external=recorder, **OPTIONS).release()`);
   plan.kv_start = KV_START;
   // T156: a Llama of int8 whose steps the GPU takes goes on the GPU alone too: where its tensors are from its header
+  // (T226: Qwen2 and Qwen3 with it)
   let places;
-  if ((options.arch ?? "llama") === "llama" && !options.bias && !options.qk_norm && options.dtype === "int8") {
+  if ((options.arch ?? "llama") === "llama" && options.dtype === "int8") {
     py.globals.set("HEADER", py.toPy([...new Int32Array(bytes.slice(0, 28).buffer)]));
     places = py.runPython(`external_tensors(HEADER, OPTIONS["dtype"], OPTIONS)`).toJs({ dict_converter: Object.fromEntries });
   }
