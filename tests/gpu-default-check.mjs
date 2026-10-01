@@ -21,6 +21,8 @@
 // a search timed while the GPU gets ready is not remembered, and is searched again once the GPU is ready (the times
 // beside the GPU say 4, those after it 2: 2 is remembered); a count remembered from an earlier visit is searched again
 // on the first generation (not only on the eighth); and the page's key of the count is one a model.
+// T240: the GPU ready inside a generation: the search owed begins at that generation's next token and ends in it.
+// T239: the owner's PC's times (8 remembered, 4 no faster, 2 fastest): 2, by the quarter the search compares after half.
 // T152: the steps of a generation (forward.js's tokenBlock and generateMany, tokenTimes) on the same made-up GPU, whose
 // step sleeps a multiple of the CPU's own ms of a token and writes made-up ids: generations of STEPS steps after a short
 // prompt, as Python takes them (tokenBlock at a time on the GPU, else one on the CPU). Far faster: the first steps on the
@@ -361,6 +363,64 @@ if (isMainThread) {
     expect("T223: the verdicts beside the GPU marked, those after it not", log.map((v) => v.whileGpu),
       log.map((_, i) => i < beforeReady.searched));
     expect("T223: searched again once the GPU is ready: 2, remembered", [after, told], [2, [2]]);
+  }
+  {
+    // T240: the GPU ready inside a generation. The first search ends beside the GPU's getting ready (4, not remembered);
+    // the next generation writes 3 tokens, the GPU is ready, and the same generation goes on: the search begins at its
+    // next token (not at the next generation's head) and ends in it, 2 remembered
+    let engine = null, gpuReady = false, fake = null;
+    const beside = { 1: 16, 2: 12, 4: 8, 8: 10 };
+    const gpu = () => {
+      fake = new Worker(FAKE, { eval: true, workerData: { fixed: 1e3, perToken: 1e3, readyOnGo: true } });
+      return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
+        set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+    };
+    engine = createForward({ memory, base, size, kernels, plan, spawn, gpu, clock: madeUpClock(() => (gpuReady ? LLM_JP : beside)[engine.threads] ?? 40) });
+    const told = [];
+    await engine.findThreads({ from: 8, chose: (count) => told.push(count) });
+    const turn = () => new Promise((resolve) => setTimeout(resolve, 0));
+    for (let g = 0; g < 200 && engine.searching; g++) {
+      generation(engine);
+      await turn();
+    }
+    const before = { threads: engine.threads, told: [...told], searched: engine.searchLog.length };
+    engine.newGeneration();
+    for (let pos = 0; pos < 3; pos++) engine.forward(100 + pos, pos, true);
+    const idle = engine.searching || engine.searchLog.length !== before.searched;
+    fake.postMessage({ type: "go" });
+    await engine.gpu;
+    gpuReady = true;
+    engine.forward(103, 3, true);  // the generation goes on: no newGeneration() from here
+    const began = engine.searching;
+    for (let t = 0; t < 600 && engine.searching; t++) {
+      engine.forward(100 + (t % 6), t % 6, true);
+      if (t % 6 === 5) await turn();
+    }
+    say(`T240, the GPU ready inside a generation: ${before.threads} then ${engine.threads}, remembered ${JSON.stringify(told)} (${verdicts(engine).join(", ")})`);
+    const log = engine.searchLog, after = engine.threads;
+    engine.release();
+    expect("T240: beside the GPU's getting ready, the search's 4 used and not remembered", [before.threads, before.told], [4, []]);
+    expect("T240: no search begins inside a generation while the GPU gets ready", idle, false);
+    expect("T240: the search begins at the token after the GPU is ready, inside the generation", began, true);
+    expect("T240: ...and ends in it: 2, remembered, its verdicts not marked", [after, told, log.slice(before.searched).map((v) => v.whileGpu)], [2, [2], [false, false]]);
+  }
+  {
+    // T239: the owner's PC's llm-jp-3 150M (2 threads 171 tok/s, 8 threads 158; 1, 4 and 16 made up to agree with its
+    // verdicts "16 or 8: 8, 8 or 4: 8"): the 8 the page remembers there is left for 2, by the quarter (8 or 2)
+    const PC = { 1: 1000 / 100, 2: 1000 / 171, 4: 1000 / 150, 8: 1000 / 158, 16: 1000 / 120 };
+    let engine = null;
+    engine = createForward({ memory, base, size, kernels, plan, spawn, clock: madeUpClock(() => PC[engine.threads] ?? 40) });
+    const told = [];
+    await engine.findThreads({ from: 16, remembered: 8, chose: (count) => told.push(count) });
+    const turn = () => new Promise((resolve) => setTimeout(resolve, 0));
+    for (let g = 0; g < 200 && (g === 0 || engine.searching); g++) {
+      generation(engine);
+      await turn();
+    }
+    const after = engine.threads, log = verdicts(engine);
+    say(`T239, a remembered 8 on the owner's PC's times: ${after}, remembered ${JSON.stringify(told)} (${log.join(", ")})`);
+    engine.release();
+    expect("T239: a remembered 8 on the owner's PC: 8 or 2 after 8 or 4, then 2 remembered", [log, after, told], [["8 or 4: 8", "8 or 2: 2", "2 or 1: 2"], 2, [2]]);
   }
   {
     // a count remembered from an earlier visit (4, the owner's Android's) is searched again on the first generation
