@@ -1031,11 +1031,14 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
   said.push(`penalized ${gotPenalized}${gotPenalized === wantPenalized ? " as NumPy's" : ` (NumPy's ${wantPenalized})`}`);
   // sampled at temperature 2 with a random number of 0.02 and one of 0.98: two tokens of NumPy's nucleus, and not
   // the same (the random numbers reach the GPU; its logits are not NumPy's, so where either lands is not held to it)
-  const walk = wgsl.walkLikeCpu(logitsOf(0), 2, 0.999), [low, high] = steps.sampled ?? [];
-  if (!(walk.tokens.includes(low?.[0]) && walk.tokens.includes(high?.[0]) && low[0] !== high[0])) {
+  // (T226: they need not differ where NumPy's most likely token alone has more than 0.9 of the nucleus: the made-up
+  // GPT-NeoX with heads of 256 gave 282 and 63 on five runs and 282 twice on one whose prompt went through other
+  // shaders, run 36868289185: its first token's share is about 0.98, and 0.98 lands on either side of its border)
+  const walk = wgsl.walkLikeCpu(logitsOf(0), 2, 0.999), [low, high] = steps.sampled ?? [], peaked = walk.cumulative[0] > 0.9 * walk.mass;
+  if (!(walk.tokens.includes(low?.[0]) && walk.tokens.includes(high?.[0]) && (low[0] !== high[0] || peaked))) {
     failures.push(`sampled at 0.02 and 0.98: ${low?.[0]} and ${high?.[0]}, of NumPy's nucleus of ${walk.tokens.length}, which are to differ`);
   }
-  said.push(`sampled ${low?.[0]} and ${high?.[0]}`);
+  said.push(`sampled ${low?.[0]} and ${high?.[0]}${peaked ? ` (NumPy's first token has ${(walk.cumulative[0] / walk.mass).toFixed(3)} of its nucleus)` : ""}`);
   // T209: the tables were cut where the run asked for it (a vocabulary of 192 rows or more is 3 pieces of 64)
   if (steps.cut && !(steps.pieces > 1)) failures.push(`the tables in ${steps.pieces} piece, not cut`);
   console.log(`  a token by ${steps.form}, its attention by ${steps.attention}${steps.pieces > 1 ? ` (the tables in ${steps.pieces} pieces)` : ""}: ${said.join(", ")}${failures.length ? ` — FAILED\n    - ${failures.join("\n    - ")}` : ""}`);
