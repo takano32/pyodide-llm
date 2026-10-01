@@ -94,8 +94,15 @@ timed on the owner's devices yet.
 | Safari's int8 kernel (no relaxed SIMD) | the second development machine, 1 thread | 1.17-1.21 |
 | SwiGLU and GELU four values at a time | the second development machine, 1 thread | 4.12 / 4.24 |
 | one token's int8 kernel scales a group once, not four times | CI arm64 (Neoverse-N2) / x86-64 (EPYC 9V45) | 1.04-1.12 / 0.88-0.95 |
+| ternary weights multiplied as they are, against the same weights widened to int8 (2026-10-01) | CI arm64 (Neoverse-N2) / x86-64 (EPYC 7763) / x86-64 (Xeon 8573C), 1 and 4 threads | 1.26-1.30 / 1.00-1.05 / 1.52-1.99 |
+| a prompt on ternary weights, a row against four tokens at once | CI arm64 (Neoverse-N2) / x86-64 (Xeon 8573C) | 1.39-1.40 / 1.17-1.18 |
 
-The last row is slower on AMD's Zen 5 with one thread, where the kernel before it already read 87 to 94% as fast as
+The ternary rows are matrices read from memory, in billions of weights a second (20.2 on one thread and 78.0 on four
+on the arm64 runner); the Xeon's int8 kernel was held back by its memory, which the ternary one reads a quarter of.
+Keeping the file's smaller packing (PTQ1_0, 1.75 bits a weight) in memory was 0.30 to 0.36 times as fast, so the
+weights are held in 2 bits. [quantization.md](quantization.md) has the model's own numbers.
+
+The row before them is slower on AMD's Zen 5 with one thread, where the kernel before it already read 87 to 94% as fast as
 a loop that only reads; with 4 threads it is 0.99 to 1.01 there. The owner chose to keep it. The prompt's tiles
 reduce only the reads: the bookkeeping of each group stays, so they stay far from what a loop of dot products
 alone reaches.

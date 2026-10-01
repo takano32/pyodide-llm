@@ -22,6 +22,9 @@ LAYER = {"input_layernorm": "attn_norm", "post_attention_layernorm": "ffn_norm",
          "self_attn.q_norm": "attn_q_norm", "self_attn.k_norm": "attn_k_norm"}  # a Qwen3's (T203)
 
 
+TURNED = ("llama", "granite")  # the architectures whose q and k llama.cpp's convert turns (T253: a Granite's too)
+
+
 def q8_0_blocks(values):
     """llama.cpp's Q8_0 (ggml-quants.c's quantize_row_q8_0_ref): per 32 values d = largest / 127 in float32, the
     values times 1 / d rounded half away from zero, and d kept as float16; a d under float16's smallest half step
@@ -81,9 +84,9 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=1
     more: further metadata (key, GGUF type, value); extra: {GGUF name: float32 values} written as they are
     (rope_freqs.weight). bos, eos: None leaves the token out (unsloth's Qwen3 GGUFs name no BOS). matrices: what makes
     the blocks of a matrix and their ggml type (T235: pq2_0_blocks and 142). turned: whether q and k are turned, as
-    llama.cpp turns a Llama's and leaves a Qwen2's (the default: arch == "llama"; T250's review: the other way round is
-    a GGUF the reader does not read)."""
-    turned = arch == "llama" if turned is None else turned
+    llama.cpp turns a Llama's (and a Granite's) and leaves a Qwen2's (the default: arch in TURNED; T250's review: the
+    other way round is a GGUF the reader does not read)."""
+    turned = arch in TURNED if turned is None else turned
     string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
     heads = {"q_proj": published["num_attention_heads"], "k_proj": published["num_key_value_heads"]}
     metadata = [("general.architecture", 8, arch), (f"{arch}.block_count", 4, published["num_hidden_layers"]),
@@ -112,7 +115,7 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=1
             stored = turn(tensor, heads[kind])
         if tensor.ndim == 2:
             blob, rounded = matrices[0](stored)
-            held[name] = rounded  # as the GGUF holds it (turned, for q and k of a Llama)
+            held[name] = rounded  # as the GGUF holds it (turned, for q and k of a Llama and of a Granite)
             type_ = matrices[1]
         else:
             blob, type_ = stored.astype(np.float32).tobytes(), 0
@@ -434,9 +437,9 @@ def test_int8_holds_a_ternary_block_under_every_scale():
     assert np.array_equal(sixes.reshape(-1, 128), 4 * 31 * ternary * sign[some])
 
 
-def bonsai_gguf(yarn=YARN, head_size=0, bos=1, eos=2, also=()):
+def bonsai_gguf(yarn=YARN, head_size=0, bos=1, eos=2, also=(), matrices=(pq2_0_blocks, 142)):
     """A small Qwen3 as Ternary-Bonsai's GGUF has one: PQ2_0 matrices (rows of 128 and 256), F32 norms, and yarn.
-    also: further metadata."""
+    also: further metadata. matrices: the blocks and ggml type of the matrices (T230: tests/test_ternary.py's PTQ1_0)."""
     from test_qwen3 import qwen3
     config, weights = synthetic_weights(dim=128, hidden_dim=256, n_kv_heads=2, vocab_size=40, head_size=head_size)
     tensors, published = qwen3(config, weights, True)
@@ -448,7 +451,7 @@ def bonsai_gguf(yarn=YARN, head_size=0, bos=1, eos=2, also=()):
         more += [("qwen3.rope.scaling.type", 8, "yarn"), ("qwen3.rope.scaling.factor", 6, yarn["factor"]),
                  ("qwen3.rope.scaling.original_context_length", 4, yarn["original_max_position_embeddings"])]
     file, same = gguf_file(tensors, published, config["vocab_size"], "qwen3", pre="qwen2", theta=1000000.0, more=more,
-                           bos=bos, eos=eos, matrices=(pq2_0_blocks, 142))
+                           bos=bos, eos=eos, matrices=matrices)
     return config, published, file, same
 
 
