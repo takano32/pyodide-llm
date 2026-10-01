@@ -1161,8 +1161,9 @@ function quantizedOff(x, xq, xs, line) {
 // and values rounded toward zero move the scales of the attention's quantized output by 5.7e-4 to 1.2e-2, in 97% of
 // 300 draws past QUANTIZED_SCALE_LINE (1e-3), and the stream by 3.4e-4 to 2.5e-3 of what the layer added, in 45% past
 // LAYER_LINE (1e-3), with the cache at 4.5e-4 to 9.7e-4 of its largest: what the owner's NVIDIA PC on Windows reported
-// twice (T225; the T225 review's 300 draws, 2026-10-01). So the reference takes the GPU's bits wherever they are a float16 next to its own
-// value: no farther from x than a float16's ulp at x and HALF_SLACK of the row's largest, for the GPU's float32 value
+// twice (T225; the T225 review's 300 draws, 2026-10-01). So the reference takes the GPU's bits wherever they are a
+// float16 next to its own value: no farther from x than a float16's ulp at x and HALF_SLACK of the row's largest, for
+// the GPU's float32 value
 // is not x itself (a float32 sum of n products in another order is off by about sqrt(n) × 2^-24 of the terms' spread,
 // 2.7e-6 of it at n = 2112, about 1e-6 of the row's largest: the slack is ten times that, 1 to 2% of an ulp at the
 // largest). Any other value stays the reference's own nearest, and the check goes on as it did (a key or value read

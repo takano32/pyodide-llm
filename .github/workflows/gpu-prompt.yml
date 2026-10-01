@@ -167,3 +167,15 @@ jobs:
           echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-${suite:-made-up and the site models}}"
           node tests/gpu-check.mjs ${ids:-$suite} ${FORMS:+--forms "$FORMS"} --engine dawn --webgpu .tmp/dawn/node_modules/webgpu 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
+
+      # T225's review: /benchmark/'s layer and token checks on devices that round a float32 to a float16 the other ways WGSL
+      # lets a device (§15.7.6): Direct3D, which Chrome on Windows runs, rounds toward zero, where lavapipe's own is the
+      # nearest (tests/rounding.mjs). About half a minute a rounding and subgroup width; with the models of the default only
+      - name: The benchmark's checks on devices that round to a float16 toward zero and away from it, on Dawn
+        if: inputs.models == '' && inputs.real == ''
+        shell: bash
+        run: |
+          export VK_ICD_FILENAMES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)
+          [ "$SUITE" = full ] && roundings="toward-zero away everything" || roundings="toward-zero"
+          node tests/rounding-check.mjs .tmp/dawn/node_modules/webgpu $roundings 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "${PIPESTATUS[0]}"

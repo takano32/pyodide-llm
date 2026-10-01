@@ -214,6 +214,25 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     assert.deepEqual([...heldFloats(Float64Array.of(8, 2.5), Float64Array.of(8, Infinity))], [8, 2.5], "an infinity: the nearest");
   }
 }
+// T225's review: tests/rounding.mjs's rewriting of a shader's text for a device that rounds a float32 to a float16 another
+// way (the arithmetic is held by tests/rounding-check.mjs on Dawn: every key and value must come out as the rounding asked)
+{
+  const { rounded } = await import("./rounding.mjs");
+  const keys = "keys[row] = pack2x16float(key);\nlet back = unpack2x16float(h);";
+  assert.equal(rounded(keys, ""), keys);
+  assert.equal(rounded(keys, "nearest"), keys);
+  const zero = rounded(keys, "toward-zero");
+  assert.ok(zero.startsWith("keys[row] = pack2x16float_rounded(key);\nlet back = unpack2x16float(h);"), "pack2x16float( is the call changed, not unpack2x16float(");
+  assert.ok(zero.includes("fn pack2x16float_rounded(") && zero.includes("fn rounded16(") && !zero.includes("fn toward16("), "its helpers after it");
+  assert.ok(rounded(keys, "away").includes("fn toward16("), "away from zero is toward zero and one more");
+  assert.equal(rounded("var a = 1;", "toward-zero"), "var a = 1;", "a shader that converts nothing is left as it is");
+  const tiles = (type) => `alias shmem_t = ${type};\nshmem[at] = shmem_t(x);\nvar<workgroup> p: array<vec4<shmem_t>, 4>;`;
+  assert.equal(rounded(tiles("f16"), "toward-zero"), tiles("f16"), "the tiles' conversions are left to the device unless asked");
+  assert.ok(rounded(tiles("f16"), "everything").includes("shmem[at] = to_shmem(x);") && rounded(tiles("f16"), "everything").includes("return shmem_t(unpack2x16float(rounded16(x)).x);"));
+  assert.ok(rounded(tiles("f32"), "everything").includes("fn to_shmem(x: f32) -> shmem_t { return x; }"), "in the float32 tiles it converts nothing");
+  assert.ok(rounded(tiles("f16"), "everything").includes("array<vec4<shmem_t>, 4>"), "a type is not a conversion");
+  assert.throws(() => rounded("", "sideways"), /unknown rounding/);
+}
 // T152: the status line's words (the owner's, 2026-09-27): both on the GPU, before either is timed, the answers alone on
 // the CPU (faster here), and a reason for the answers (in the console alone)
 {
