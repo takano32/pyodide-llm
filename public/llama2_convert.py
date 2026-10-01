@@ -1034,6 +1034,14 @@ def normalize(config):
             config["rope_scaling"] = scaling
         if "partial_rotary_factor" in rope:
             config["rotary_pct"] = rope["partial_rotary_factor"]
+    if config.get("model_type") == "qwen3_5_text":
+        # (the review of T229) what transformers' Qwen3_5TextConfig says where a config.json leaves it out: RoPE over a
+        # quarter of a head (partial_rotary_factor, at the top where there is no rope_parameters: it is the config's
+        # own name for it) and heads of 256. Every published Qwen3.5 and Qwen3.8 config.json says both, but a config
+        # that did not would have run with whole heads turning (and sizes dim / heads), without a word
+        config = {**config, "rotary_pct": config.get("rotary_pct", config.get("partial_rotary_factor", 0.25))}
+        if config.get("head_dim") is None:
+            config["head_dim"] = 256
     if config.get("model_type") == "mistral":
         # T125: a Mistral is a Llama by another name (the same tensors, names and forward). v0.1 and some of its
         # descendants attend a sliding window of the last sliding_window positions: a context no longer than the
@@ -1126,6 +1134,10 @@ def check_config(config):
         if config.get("mlp_only_layers") or config.get("attn_output_gate") is False:
             # what transformers' Qwen3_5 does not read either: a model that says so is another model
             refuse("its layers are not the ones of a Qwen3.5")
+        if config.get("output_gate_type", "silu") not in ("silu", "swish"):
+            # the activation of the gate that a Gated DeltaNet layer's norm multiplies by (vLLM's and Modular's readers of the
+            # field; transformers' does not read it): Qwen3.5's config has none and Qwen3.8's says "swish", which is silu
+            refuse(f"its linear-attention layers gate their norm with {config['output_gate_type']}, not silu")
 
 
 def checkpoint_header(config, source, max_seq_len):
