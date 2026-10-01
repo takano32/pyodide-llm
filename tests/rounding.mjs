@@ -17,8 +17,10 @@
 // by hand in 32-bit integer arithmetic: toward zero is the bits' truncation (a float32's exponent and 10 bits of its
 // fraction, the subnormals shifted), away from zero is that and one more where the value was not exactly a float16.
 // (A "round to the nearest and one lower where it rounded up" wrapper was the first one tried: it moved a quarter of the
-// keys and values, not half: the first of each pair (x) and none of the second (y: 95 and 0 in a row of 192), for a reason
-// in lavapipe not found. So the number that did round the other way is counted, and rounding-check.mjs asks for half.)
+// keys and values, not half: the first of each pair (x) and none of the second (y: 95 and 0 in a row of 192); written
+// four ways it was the same, and packing one lane alone moved neither (run 36897421596): the compare of the unpacked half
+// with the value does not come out right in lavapipe's compiled code. So the number that did round the other way is
+// counted, and rounding-check.mjs asks for half.)
 
 const TOWARD_ZERO = `
 fn rounded16(x: f32) -> u32 {

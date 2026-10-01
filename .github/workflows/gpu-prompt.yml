@@ -26,6 +26,10 @@
 # either; full= still chooses the browsers. An empty full= is the default, light (T192).
 #
 #   node tests/ci.mjs run gpu-prompt.yml full=true --ref <branch>
+#
+# T225's review: the Dawn job also runs /benchmark/'s checks on devices that round a float32 to a float16 toward zero (as
+# Direct3D does) and, in the full suite, away from zero and in every conversion (tests/rounding-check.mjs), when models=
+# and real= are not given: lavapipe's own rounding is the nearest, and a check that rests on it was WRONG on the owner's PC.
 name: The prompt on the GPU
 
 on:

@@ -3,8 +3,9 @@
 // PC on Windows did; away from zero; every conversion toward zero), in Node on Dawn + lavapipe at subgroups of 4 and 16
 // (tests/bench-dawn.mjs, the step "check"). CI's own implementations round to the nearest, so nothing else in CI says
 // whether a check of the keys and values the GPU writes rests on that (T225's did). Every check must be right on each,
-// and the cache must show the rounding asked: about half of the keys and values the other way from the nearest, none
-// the other way again, none farther.
+// and the cache must show the rounding asked: about half of the keys and values (35 to 65%) the way asked and not the
+// nearest, at most 1% the other way (a float32 sum in the GPU's order falls across a rounding boundary now and then),
+// none farther than a neighbour.
 //   node tests/rounding-check.mjs <the webgpu package's directory> [toward-zero] [away] [everything] [nearest]
 // (about 30 s a rounding and width; gpu-prompt.yml's Dawn job runs it; tests.yml's extra= can: bash tests/rounding-check.sh)
 import { spawnSync } from "node:child_process";
