@@ -216,6 +216,36 @@ if (isMainThread) {
   console.warn = warned;
   went &&= stopped.lostThreads && stopped.threads === 1 && (await stopped.setThreads(4)) === 1;
   stopped.stopThreads();
+  // T229's review: a hybrid model's delta rule reads a state and writes it (the new state beside the old, forward.js's
+  // flips), so a phase that is run again must compute the same. A thread that stops after it has written the first value
+  // head of its chunk of a delta rule's phase, never counting the chunk (threads-late-helper.mjs), leaves the new state
+  // half written; the coordinator gives it up and runs the whole phase again, to the logits the first count computed. A
+  // state written in place would have advanced those heads twice. Where the heads are too small for a thread to get a
+  // chunk before the coordinator has run them all, nothing stops and nothing is tested: the line says so.
+  let lateLine = "";
+  if (plan.linear) {
+    const late = createForward({ memory, base, size, kernels, plan, stalledMs: 500, spawn: (data) => new Promise((resolve) => {
+      const worker = new Worker(new URL("./threads-late-helper.mjs", import.meta.url));
+      worker.once("message", () => resolve({ terminate: () => worker.terminate() }));
+      worker.postMessage(data);
+    }) });
+    await late.setThreads(2);
+    let same = true;
+    console.warn = () => {};
+    token = plan.bos ?? 1;
+    for (let pos = 0; pos < positions && same; pos++) {
+      late.forward(token, pos, true);
+      const logits = late.logits();
+      same = logits.every((v, j) => Object.is(v, reference[pos][j]));
+      token = logits.indexOf(Math.max(...logits));
+    }
+    console.warn = warned;
+    const stoppedInDelta = late.lostThreads;
+    late.stopThreads();
+    lateLine = !stoppedInDelta && same ? "no thread stopped in a delta rule (its heads are too small to share: nothing tested); "
+      : same ? "a thread that stops after writing a head of a delta rule is given up and the text is the same; "
+        : "a thread that stops after writing a head of a delta rule DIFFERS; ";
+  }
   // T160: as chosen against float16, an engine of each in turn every round (each fills its cache up to from)
   let versusLine = "";
   if (versusHalf) {
@@ -239,7 +269,7 @@ if (isMainThread) {
       `${n}: ${median(speeds.chosen[n]).toFixed(1)} / ${median(speeds.half[n]).toFixed(1)} tok/s ` +
       `(${(median(speeds.chosen[n]) / median(speeds.half[n])).toFixed(2)}×)`).join(", ");
   }
-  parentPort.postMessage(`${went ? "a software thread that stops mid-chunk is given up and the text is the same; " : "a software thread that stops mid-chunk DIFFERS or hangs; "}` +
+  parentPort.postMessage(`${went ? "a software thread that stops mid-chunk is given up and the text is the same; " : "a software thread that stops mid-chunk DIFFERS or hangs; "}${lateLine}` +
     `${late ? "helpers that come up after a release are ended; " : "helpers that come up after a release are left alive (DIFFERS); "}` +
     `${reused ? "a second engine on the same memory runs the same; " : "a second engine on the same memory DIFFERS or hangs; "}${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
     `${blocksDiffer.length ? `the prompt in blocks DIFFERS with ${blocksDiffer.join(", ")} threads` : "the prompt in blocks the same to the bit"}; ` +

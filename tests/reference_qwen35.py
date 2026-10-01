@@ -16,10 +16,13 @@
 #     not: three value heads to a key head (the 27B's), key and value heads of two sizes, a classifier of its own.
 #     transformers' logits, over the whole text at once (its chunked delta rule) and token by token with its cache
 #     (its recurrent rule), against the naive reference of the unit tests (conftest.naive_qwen35_logits) and against
-#     the engine, converted the way the page converts (llama2_convert.Conversion).
+#     the engine, converted the way the page converts (llama2_convert.Conversion). And what each holds after the text (the
+#     review of T229): the recurrent state and the convolution's rows of every linear-attention layer, the keys and
+#     values of every full-attention one, which a fault shows in long before the logits do.
 #   real: Qwen/Qwen3.5-0.8B at a fixed revision, float32. The same token ids through transformers and through the
-#     engine (NumPy): the largest difference of the logits, how often the most likely token is the same, and 16 greedy
-#     tokens of each for the chat prompt.
+#     engine (NumPy): the largest difference of the logits, how often the most likely token is the same, the states
+#     after them, 16 greedy tokens of each for the chat prompt, and then 1024 positions of a longer text (the cache of
+#     the full-attention layers doubling twice, a thousand tokens for the state to drift in).
 #   --model=2B (T247): the real part on Qwen/Qwen3.5-2B (7.5 GB as float32, which a runner holds), before its greedy
 #     text is fixed in tests/fixed_outputs.py: the same lines, and what transformers writes for that prompt in the
 #     list's format, from the format's own first token.
@@ -113,6 +116,109 @@ def differences(ours, theirs):
     return float(gap.max()), float(gap.mean()), int(same.sum()), float(margins.max()) if margins.size else 0.0
 
 
+def relative(a, b):
+    """how far a is from b, in b's own size: the norm of the difference over the norm of b"""
+    a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
+    return float(np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-30))
+
+
+# What the engine and transformers hold after the same positions, which a fault of the engine shows in long before the
+# logits do (the logits of the review's 34 faults of the real model were 5e-2 to 30, their states 8e-3 to 1e+29, against
+# 3e-6 for the right computation): per layer a linear-attention layer's recurrent state (value heads, key_dim, value_dim)
+# and the last conv - 1 tokens' q, k and v before the convolution; a full-attention layer's keys (as Hugging Face has them:
+# the first rotary values of a head not interleaved) and values. STATES: what is compared.
+STATES = ("recurrent state", "convolution rows", "keys", "values")
+STATE_LINE = 1e-4  # at least: ten times what transformers' own two computations differ by where that is more
+
+
+def engine_states(llama, count):
+    """{layer: (kind, [two arrays])}"""
+    out = {}
+    rot = llama.rotary
+    order = np.concatenate([np.arange(0, rot, 2), np.arange(1, rot, 2)])  # the engine's index of Hugging Face's 0..rot-1
+    for l, (lines, a) in enumerate(llama.slots):
+        if lines:
+            out[l] = ("linear", [llama.delta_state[a], llama.conv_state[a].T])
+        else:
+            keys = llama.key_cache[a, :, :count].copy()
+            keys[..., :rot] = keys[..., :rot][..., order]
+            out[l] = ("full", [keys, llama.value_cache[a, :, :count]])
+    return out
+
+
+def model_states(past, count):
+    out = {}
+    for l, layer in enumerate(past.layers):
+        if hasattr(layer, "recurrent_states"):
+            out[l] = ("linear", [layer.recurrent_states[0][0].float().numpy(), layer.conv_states[0][0, :, 1:].float().numpy()])
+        else:
+            out[l] = ("full", [layer.keys[0].float().numpy()[:, :count], layer.values[0].float().numpy()[:, :count]])
+    return out
+
+
+def state_distances(ours, theirs):
+    """the largest relative distance over the layers, for each of STATES"""
+    worst = dict.fromkeys(STATES, 0.0)
+    for l, (kind, mine) in ours.items():
+        for name, a, b in zip(STATES[:2] if kind == "linear" else STATES[2:], mine, theirs[l][1]):
+            worst[name] = max(worst[name], relative(a, b))
+    return worst
+
+
+def compare_states(label, llama, count, at_once, stepped):
+    """the engine's states against transformers' after count positions: each within the line of 10 times what transformers'
+    own two computations (at once, token by token) differ by, and 1e-4 at least. True where they are not"""
+    apart = state_distances(engine_states(llama, count), stepped)
+    floor = state_distances(at_once, stepped)
+    failed = False
+    parts = []
+    for name in STATES:
+        line = max(STATE_LINE, 10 * floor[name])
+        bad = apart[name] > line
+        failed |= bad
+        parts.append(f"{name} {apart[name]:.1e} (transformers' own {floor[name]:.1e}, line {line:.1e}){' — FAILED' if bad else ''}")
+    say(f"{label}: the states after {count} positions against transformers': " + "; ".join(parts))
+    return failed
+
+
+# Past the 96 positions of the main comparison: LONG positions of a text through transformers (at once, its chunks of 64) and
+# through the engine, the logits at LONG_AT (the keys and values of the full-attention layers double at 256 and 512 here, the
+# linear layers' state has had a thousand tokens to drift in) and the states at the end. The engine ran 1024 positions
+# of English Wikipedia at 1.6e-4 and 1.7e-6 from transformers in the review (CI's x86-64, 100 s).
+LONG = 1024
+LONG_AT = (0, 3, 63, 64, 65, 255, 256, 257, 511, 512, 513, 1023)
+
+
+def long_check(directory, tokenizer, llama, line):
+    import torch
+    from transformers import Qwen3_5ForConditionalGeneration
+
+    text = " ".join(f"Section {i}. {TEXT}" for i in range(12))
+    ids = ([BOS] + tokenizer.encode(text, add_special_tokens=False).ids)[:LONG]
+    at = [position for position in LONG_AT if position < len(ids)]
+    model = Qwen3_5ForConditionalGeneration.from_pretrained(str(directory), dtype=torch.float32).eval()
+    with torch.no_grad():
+        out = model(input_ids=torch.tensor([ids]), use_cache=True, logits_to_keep=torch.tensor(at))
+    theirs, states = out.logits[0].float().numpy(), model_states(out.past_key_values, len(ids))
+    del model, out
+    gc.collect()
+    began = time.perf_counter()
+    kept = {}
+    for pos, token in enumerate(ids):
+        logits = llama.forward(token, pos)
+        if pos in at:
+            kept[pos] = logits.copy()
+    largest, mean, same, margin = differences(np.stack([kept[position] for position in at]), theirs)
+    apart = state_distances(engine_states(llama, len(ids)), states)
+    ok = largest <= line and (same == len(at) or margin <= 2 * largest)
+    bad = [name for name in STATES if apart[name] > STATE_LINE]
+    say(f"long: the engine ran {len(ids)} positions in {time.perf_counter() - began:.1f} s; the logits at {len(at)} of them against transformers': "
+        f"largest difference {largest:.2e}, mean {mean:.2e}, the same most likely token at {same} of {len(at)}"
+        f"{'' if ok else f' — FAILED (the line: {line:.1e})'}; the states after them: "
+        + "; ".join(f"{name} {apart[name]:.1e}" for name in STATES) + (f" — FAILED (the line: {STATE_LINE:.0e}): {', '.join(bad)}" if bad else ""))
+    return not ok or bool(bad)
+
+
 # --------------------------------------------------------------------------------------------- made-up models
 MADE_UP = {
     "three value heads a key head": dict(linear_num_key_heads=2, linear_num_value_heads=6, linear_key_head_dim=8,
@@ -123,6 +229,13 @@ MADE_UP = {
     "every second layer, whole heads turn": dict(linear_num_key_heads=1, linear_num_value_heads=2, linear_key_head_dim=16,
                                                   linear_value_head_dim=4, num_hidden_layers=4, full_attention_interval=2,
                                                   partial_rotary_factor=1.0, linear_conv_kernel_dim=3),
+    # (the review) heads of 256 with RoPE over 64 of them, as every real Qwen3.5 has (the others' heads are 16): the
+    # rotated count and its interleaving on heads that wide, the attention kernels' scale of 1/16. Eight layers, two of them
+    # full: the converter takes a stacked kind of exactly one layer for a tensor of its own (a 1-layer Llama has no better
+    # luck: "(32,), not (1, 32)"), which no real model has
+    "heads of 256, a quarter turned": dict(linear_num_key_heads=2, linear_num_value_heads=4, linear_key_head_dim=32,
+                                           linear_value_head_dim=32, num_hidden_layers=8, head_dim=256, num_attention_heads=2,
+                                           num_key_value_heads=1, intermediate_size=64),
 }
 
 
@@ -134,8 +247,10 @@ def made_up(name, settings, positions=80):
     settings = dict(settings)
     every, layers = settings.pop("full_attention_interval", 4), settings["num_hidden_layers"]
     rotary = settings.pop("partial_rotary_factor", 0.25)
+    shape = dict(intermediate_size=64, num_attention_heads=4, num_key_value_heads=2, head_dim=16)
+    shape.update({key: settings.pop(key) for key in tuple(shape) if key in settings})
     config = Qwen3_5TextConfig(
-        vocab_size=320, hidden_size=32, intermediate_size=64, num_attention_heads=4, num_key_value_heads=2, head_dim=16,
+        vocab_size=320, hidden_size=32, **shape,
         max_position_embeddings=256, eos_token_id=7,
         layer_types=["linear_attention" if (layer + 1) % every else "full_attention" for layer in range(layers)],
         rope_parameters={"rope_type": "default", "rope_theta": 10000000.0, "partial_rotary_factor": rotary,
@@ -155,7 +270,8 @@ def made_up(name, settings, positions=80):
     tokens = [int(token) for token in rng.integers(0, 320, positions)]
     ids = torch.tensor([tokens])
     with torch.no_grad():
-        whole = model(input_ids=ids).logits[0].numpy()
+        out = model(input_ids=ids, use_cache=True)
+        whole, at_once = out.logits[0].numpy(), model_states(out.past_key_values, positions)
         past, stepped = None, []
         for at in range(positions):
             out = model(input_ids=ids[:, at:at + 1], past_key_values=past, use_cache=True)
@@ -201,6 +317,7 @@ def made_up(name, settings, positions=80):
         failed |= not ok
         say(f"made-up ({name}), {what}: largest difference {largest:.2e}, mean {mean:.2e}, the same most likely "
             f"token at {same} of {positions} positions{'' if ok else f' — FAILED (the line: {line:.1e})'}")
+    failed |= compare_states(f"made-up ({name})", llama, positions, at_once, model_states(past, positions))
     say(f"made-up ({name}): options {json.dumps({key: options[key] for key in ('arch', 'linear', 'head_dim', 'rotary', 'rope_theta', 'rms_norm_eps') if key in options})}")
     return failed
 
@@ -262,7 +379,8 @@ def real(directory, positions, repo=REPO, revision=REVISION):
     tensor = torch.tensor([ids])
     with torch.no_grad():
         began = time.perf_counter()
-        whole = model(input_ids=tensor).logits[0].float().numpy()
+        out = model(input_ids=tensor, use_cache=True)
+        whole, at_once = out.logits[0].float().numpy(), model_states(out.past_key_values, len(ids))
         say(f"real: transformers, {len(ids)} positions at once in {time.perf_counter() - began:.1f} s")
         past, stepped = None, []
         for at in range(len(ids)):
@@ -275,7 +393,8 @@ def real(directory, positions, repo=REPO, revision=REVISION):
     theirs = generated[1 + len(chat_ids):]
     say(f"real: transformers wrote for the list's prompt, from the format's first token: "
         f"{json.dumps(tokenizer.decode(as_listed, skip_special_tokens=False), ensure_ascii=False)} {as_listed}")
-    del model, past, out
+    stepped_states = model_states(past, len(ids))
+    del model, out
     gc.collect()
 
     began = time.perf_counter()
@@ -288,10 +407,13 @@ def real(directory, positions, repo=REPO, revision=REVISION):
     floor = differences(stepped, whole)[0]
     say(f"real: transformers token by token against transformers at once: largest difference {floor:.2e} "
         f"(its two forms of the delta rule: what float32 leaves between two right computations)")
-    # the line: ten times what transformers' own two computations differ by, and no less than 2e-2 (logits of the
-    # order of 10 through 24 layers in float32); the most likely token the same wherever the reference's best two
-    # are further apart than twice the difference
-    line = max(2e-2, 10 * floor)
+    # the line: ten times what transformers' own two computations differ by, and no less than 1e-3 (the engine's 1.6e-4 to
+    # 2.0e-4 and transformers' 1.2e-4 to 1.3e-4 in CI's runs); the most likely token the same wherever the reference's best
+    # two are further apart than twice the difference. The review of T229 held the engine to it with 34 faults one at a time
+    # (tests/probe_qwen35.py, a throwaway branch): the weakest, RoPE over 32 values of a head and not 64, is 4.6e-2 away
+    # (a line of 2e-2 let it by 2.3 times), and the states (below) are 3e-6 away from transformers' where the weakest
+    # fault's are 8e-3. The line was 2e-2 before.
+    line = max(1e-3, 10 * floor)
     for what, reference in (("transformers at once", whole), ("transformers token by token", stepped)):
         largest, mean, same, margin = differences(ours, reference)
         ok = largest <= line and (same == len(ids) or margin <= 2 * largest)
@@ -299,6 +421,8 @@ def real(directory, positions, repo=REPO, revision=REVISION):
         say(f"real: the engine against {what}: largest difference {largest:.2e}, mean {mean:.2e}, the same most "
             f"likely token at {same} of {len(ids)} positions (the largest gap between the reference's best two where "
             f"it is not: {margin:.2e}){'' if ok else f' — FAILED (the line: {line:.1e})'}")
+
+    failed |= compare_states("real", llama, len(ids), at_once, stepped_states)
 
     # 16 greedy tokens for the chat prompt, by transformers' generate() and by the engine's
     text = "".join(llama.generate(chat, steps=len(chat_ids) + NEW_TOKENS, temperature=0.0, echo=False))
@@ -310,6 +434,7 @@ def real(directory, positions, repo=REPO, revision=REVISION):
     same = tokenizer.decode(theirs[:stop], skip_special_tokens=False) == text
     failed |= not same
     say(f"real: the two wrote {'the same' if same else 'OTHER TEXTS — FAILED'}")
+    failed |= long_check(directory, tokenizer, llama, line)
     sink.path.unlink()
     return failed
 

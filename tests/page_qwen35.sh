@@ -50,7 +50,9 @@ numpy=
 if has int8; then
   numpy=$(python tests/perplexity_native.py "$dir/int8" 1500 "$dir/en.txt")
   echo "qwen35: perplexity of the int8 weights, NumPy: $numpy"
-  numpy="--numpy=$(node -p "JSON.parse(process.argv[1]).perplexity" "$numpy")"
+  # (--max-change: the review of T229. 7 bits cost +1.86% on x86-64 and +2.29% on arm64, 8 bits -0.36% and -0.45%; a fault of the
+  # int8 path is 10% or more)
+  numpy="--numpy=$(node -p "JSON.parse(process.argv[1]).perplexity" "$numpy") --max-change=5"
 fi
 if has kernels; then
   if [ "$(stat -c %s "$dir/int8.bin")" -gt 6000000000 ]; then
