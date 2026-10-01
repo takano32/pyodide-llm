@@ -131,7 +131,9 @@ It runs on the CPU only for now (no GPU path), and has not been measured on a ph
 
 Ternary Bonsai 4B and 8B come the same way (1.07 GB and 2.18 GB of PQ2_0, held as 1.1 GB and 2.3 GB of ternary
 weights; widened to int8 they were 4.5 GB and 9.2 GB, on a 64-bit memory). Their speed has not been measured. Compared with their float16 safetensors, no tensor of the 4B is further than 8.5e-5 from them, and
-the 8B's are the same values.
+the 8B's are the same values. The difference is in the originals: the 1.7B's and the 4B's float16 files hold a few blocks of 128
+(about 5 in 100,000: 740 and 1,643) with two scales one bfloat16 step (0.78%) apart, of which the GGUF keeps the larger
+for the whole block, and the 8B's hold none (64 million blocks, counted).
 
 Qwen3.5 0.8B's Q8_0 GGUF holds some tensors otherwise than the original does: llama.cpp writes the norms with the 1
 the model adds to them and `A_log` as −exp(A_log), and it quantizes the two small matrices of the gates of each
