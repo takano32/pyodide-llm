@@ -165,6 +165,12 @@ jobs:
             models: >-
               hf-qwen3-0.6b-thinking hf-qwen3-0.6b hf-qwen3-1.7b hf-qwen3-4b hf-qwen3-4b-instruct-2507
               hf-qwen3-4b-thinking-2507 hf-qwen3-8b hf-qwen3-swallow-8b-thinking hf-qwen3.5-0.8b
+          # T247: the other sizes of Qwen3.5, 16 GB of downloads: the 2B, and the two whose linear-attention layers
+          # have two value heads to a key head (T245) and which need a 64-bit memory, one of each form
+          - size: qwen35
+            timeout: 3000
+            models: >-
+              hf-qwen3.5-2b hf-qwen3.5-4b hf-qwen3.5-9b-thinking
     steps:
       - name: Checkout
         uses: actions/checkout@v7
