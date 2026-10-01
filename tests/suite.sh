@@ -93,6 +93,8 @@ if [ "$suite" = full ]; then
       node tests/forward-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-float16 .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-int6 .tmp/made-up-qwen35-state .tmp/made-up-qwen35-wide-float32 .tmp/made-up-qwen35-wide-int8 --rounds 1 --positions 128 $memory
     done
     node tests/forward-check.mjs .tmp/made-up-qwen35-wide-int8 --rounds 1 --positions 128 --plain --half-keys
+    # Safari's path, with no relaxed SIMD (8-bit activations: matmul_q8 and matmul_q6), where a 4B is held in six bits
+    node tests/forward-check.mjs .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-int6 .tmp/made-up-qwen35-state --without relaxed --rounds 1 --positions 128
   }
   part "forward.js against NumPy, a made-up Qwen3.5" made_up_qwen35
   # T148: the default choice of the GPU or the CPU for a prompt's blocks, with a made-up GPU's worker
