@@ -87,7 +87,7 @@
 **いまの状態（2026-10-01、再開した回）**: 2026-09-28 に止めた 4 つ（T129・T130・T219 の (2)・T224）は全部本線に入れた（反映済み、レビューは Sonnet max が後で）。本線は T129 105bb4a、T130 89a24e9（持ち主の判断の 1 行つき: 共有でないメモリで float16 にしても 64 ビットが要るモデルは KV を float32 のまま）、T219 の (2) b76cd65。止めた頃の経緯は `git show 1a0cc1d:TODO.md` のこの段にある。
 - **CI**: 本線（T129 と T130 の後）の tests.yml の全部の組は成功（run 36864748112、EPYC 7763、383 秒）。T219 のブランチ（T224 と合わせた後）の gpu-prompt.yml の全部の組は成功、FAILED 0（run 36864349281、13.9 分）。本番の確かめは T130（`long=850` の 3B 級と `coi=off`）と T129（`slow.yml` の slow と stall、モデルの切り替え、2 回目の訪問）が通った（数字は各項）。T219 の後の本線の gpu-prompt.yml の軽い組は成功（run 36866412202）、`gpuTest=on` の本番の回（run 36866409090、SwiftShader）は tiny-lm が「prompts and answers on WebGPU (gpuTest)」で 66 トークンを GPU で書いた（467 秒）。同じ回の llm-jp-3 150M は 1800 秒の持ち時間で打ち切り（SwiftShader で生成の歩を回す e2e は遅い、AGENTS.md の T156 の記録のとおり。壊れではない: 大きいモデルを `gpuTest=on` で書かせない）。
 - **持ち主の指示（2026-10-01 の夜）: いったん落ち着く。新しい実装とレビューは始めず、いま動いているものを終わらせる**（「いったん落ち着こう。新しい実装とレビューをせずに現在の実行を完了させよう」）。動いている担当が報告したら本線に入れて本番を確かめるだけにする。レビューがまだのもの（T236・T242・T243 と、これから入るもの）と未着手のタスク（T251・T252・T255〜T261・T244・T233・T232・T234）は、持ち主が言うまで始めない。
-- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: 実装は T230・T231 `t230-t231-ternary`、T245・T247 `t245-t247-qwen35`、T249・T250 `t249-t250-japanese-models`、T253・T254 `t253-t254-granite-minicpm`。レビューは動いていない（T229 と T239〜T241 は済んで本線に入れた、どちらも must-fix 0）。レビューがまだのもの: T236、T242、T243、T246。**同時に動かす担当が 9〜10 本だと使用量の上限に当たる**（2026-10-01 に 1 回、全部が止まった。SendMessage で続きから再開できる）。
+- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: 実装は T230・T231 `t230-t231-ternary`、T245・T247 `t245-t247-qwen35`、T253・T254 `t253-t254-granite-minicpm`。レビューは動いていない（T229 と T239〜T241 は済んで本線に入れた、どちらも must-fix 0）。レビューがまだのもの: T236、T242、T243、T246。**同時に動かす担当が 9〜10 本だと使用量の上限に当たる**（2026-10-01 に 1 回、全部が止まった。SendMessage で続きから再開できる）。
 - **T227 も本線に入れた（4623fb3）。レビュー済み（Sonnet max、2026-10-01、ブランチ `t227-review`）**: 報告の頭と要約に「#### Warnings」の一覧。レビューの直し（must-fix 1・should 5。装置のエラーの改行が警告を壊す件が must-fix。並びは重い順に、経路の止まりも載せる、など）はこのブランチ。見出しと切り詰めの文（「… and N more, in the whole report below」）は実装が選んだ仮の文のまま、持ち主が決める（勧めは T227 の項）。WRONG の報告は本物の Chromium で見た（`bench-check.mjs --wrong`: 層の検査の線を 1e-12 にして配る。本物の端末の WRONG の行はまだ見ていない）。
 - **T228 の調べも本線に入れた**（docs/notes/t228-bonsai-2-2026-10-01.md。前の仕事を T235〜T238 に採番した。勧めは小さいモデルから、持ち主の判断待ち）。
 - **lishogi.org の WebGPU（2026-10-01、持ち主の問い）**: 使っていない。ソース（WandererXII/lishogi、master 5394fc3、2026-09-10）にも本番の解析ページの JS にも `navigator.gpu`・WGSL は無い。ブラウザの解析は YaneuraOu の K-P の NNUE と Fairy-Stockfish の NNUE の WASM（SIMD と pthreads、共有メモリ）で、隔離はサーバのヘッダ（COEP は `credentialless` が使えるブラウザではそれ、ほかは `require-corp`）。取り込む GPU の手法は無い。
@@ -1787,7 +1787,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **持ち主に決めてもらうこと**（文書の 9 節）: A のどれを入れるか（全部で約 80 項目になる）、llm-jp-4.1 を safetensors の 17.2 GB から取るか・考えを見せるか、独自のライセンスのモデルのために仕事をするか、新しいアーキテクチャの順（LFM2.5 → Gemma 3 を勧める）、英語の古典を入れるか、Mistral Nemo 12B（約 15.3 GiB の見積もり）を試すか。
   - 採番の案は文書の 6 節（すぐ入れる 4 つ、小さな穴 7 つ、新しいアーキテクチャ 2 つ。番号は本会話が付ける）。
 
-### T249 [追加][モデル] 日本語の軽いモデルと中くらいのモデルを一覧に（rinna GPT-2 xsmall・medium、llm-jp-3 3.7B、shisa v2.1 3B、CAT-Translate 3.3B、EuroLLM 1.7B） — 状態: **反映済み**（2026-10-01、本線に入れるのは本会話。レビュー前。Opus medium、ブランチ `t249-t250-japanese-models`。T248 の調べから）
+### T249 [追加][モデル] 日本語の軽いモデルと中くらいのモデルを一覧に（rinna GPT-2 xsmall・medium、llm-jp-3 3.7B、shisa v2.1 3B、CAT-Translate 3.3B、EuroLLM 1.7B） — 状態: **反映済み**（2026-10-01、2026-10-01 に本線に入れた、レビュー前。Opus medium、ブランチ `t249-t250-japanese-models`。T248 の調べから）
 
 **結果: 10 項目を足した**（T248 の表の 6 つと、日本語の表の sarashina2.2 1B・gpt-neox-japanese 1.4B・japanese-large-lm 1.7B・llm-jp-3 1.8B instruct3）。変換器・エンジン・`CONVERTER` は変えていない。分かったことと落とし穴は AGENTS.md の「日本語のモデルを 10 足した」。
 
@@ -1823,7 +1823,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **未計測**: ブラウザでは 1 つも動かしていない（本番の `models.yml` が最初の実行）。準備完了の秒、ヒープ、スレッドのある速さ、GPU の道、6 ビット、保存と 2 回目の訪問。LINE のモデルの BOS ごとの perplexity（文を読んだだけ）。EuroLLM の日本語は 1 つのプロンプトだけ。xsmall の `?bench=1`（greedy）の見え方。
 - **持ち主に決めてもらうこと**: (1) xsmall を残すか（greedy では `<unk>` をくり返す。ページの既定のサンプリングでは書く）。(2) CAT-Translate 3.3B を safetensors の 6.7 GB のまま置くか、Q8_0 の GGUF を待つか。(3) EuroLLM の note の言い方（「日本語 / English and 33 more languages」）。(4) llm-jp-3 1.8B instruct3 は一覧の llm-jp-3.1 1.8B instruct4 の前の版で、両方置くか。
 
-### T250 [追加][モデル] 日本語の 8B を一覧に（llm-jp-4.1 8B thinking、Llama-3-ELYZA-JP 8B、shisa v2.1 Qwen3 8B、CAT-Thinking 8B） — 状態: **反映済み**（2026-10-01、本線に入れるのは本会話。レビュー前。Opus medium、ブランチ `t249-t250-japanese-models`。T248 の調べから。llm-jp-4.1 8B thinking は入れていない: 持ち主の判断待ち）
+### T250 [追加][モデル] 日本語の 8B を一覧に（llm-jp-4.1 8B thinking、Llama-3-ELYZA-JP 8B、shisa v2.1 Qwen3 8B、CAT-Thinking 8B） — 状態: **反映済み**（2026-10-01、2026-10-01 に本線に入れた、レビュー前。Opus medium、ブランチ `t249-t250-japanese-models`。T248 の調べから。llm-jp-4.1 8B thinking は入れていない: 持ち主の判断待ち）
 
 **結果: 3 項目を足し、llm-jp-4.1 8B thinking は待ちにした。** 変換器・エンジン・`CONVERTER` は変えていない。分かったことは AGENTS.md の「日本語の 8B を 3 つ足した」。
 
