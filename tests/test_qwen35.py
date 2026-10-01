@@ -15,7 +15,8 @@ from conftest import naive_qwen35_logits, pack_tokenizer, qwen35_model, tiny_voc
 from test_convert import converted, reader, safetensors_file, streamed
 
 import llama2_convert
-from llama2_convert import Safetensors, check_config, checkpoint_form, checkpoint_size, normalize, rotary_dim, transformed
+from llama2_convert import (Safetensors, architecture, check_config, checkpoint_form, checkpoint_size, head_size, linear_layers,
+                            normalize, rotary_dim, transformed)
 from llama2_numpy import FORM, Llama, checkpoint_dtype, form_of, layer_slots, linear_form
 
 TOKENS = [1, 5, 7, 9, 11, 5, 5, 300, 2]  # more than the taps of the convolution, and a token that comes again
@@ -29,6 +30,9 @@ MODELS = {
     "every third": dict(n_layers=7, every=3, prefix="model."),
     "every fourth": dict(n_layers=8, every=4, n_kv_heads=4, head_dim=8, rotary=0.5),
     "whole heads turn": dict(rotary=1.0, conv=2, n_kv_heads=1),
+    # (the review) heads of 256 with a quarter of them turned, as every real Qwen3.5 has: 64 of 256, and q's matrix of
+    # 1024 rows in a dim of 32
+    "heads of 256": dict(n_heads=2, n_kv_heads=1, head_dim=256, rotary=0.25, key_heads=2, value_heads=4, key_dim=32, value_dim=32),
 }
 
 
@@ -255,6 +259,7 @@ def test_the_config_is_the_language_models():
     (dict(linear_conv_kernel_dim=0), "no usable linear-attention layers"),
     (dict(mlp_only_layers=[1]), "not the ones of a Qwen3.5"),
     (dict(attn_output_gate=False), "not the ones of a Qwen3.5"),
+    (dict(output_gate_type="sigmoid"), "gate their norm with sigmoid"),
     (dict(hidden_act="gelu"), "activation"),
     (dict(attention_bias=True), "biases"),
     (dict(rope_parameters={"rope_theta": 1e7, "partial_rotary_factor": 0.01}), "rotates none"),
@@ -265,6 +270,49 @@ def test_a_qwen35_the_engine_cannot_run_is_refused(change, reason):
     text = {key: value for key, value in {**config["text_config"], **change}.items() if value is not None}
     with pytest.raises(ValueError, match=reason):
         check_config(normalize({**config, "text_config": text}))
+
+
+def test_the_rotation_and_the_heads_follow_transformers_where_the_config_leaves_them_out():
+    """Qwen3_5TextConfig: partial_rotary_factor 0.25 (at the top of a config that has no rope_parameters, or left out) and
+    heads of 256. The published ones say both; one that did not must not turn whole heads."""
+    _, config = qwen35_model()
+    text = {key: value for key, value in config["text_config"].items() if key not in ("head_dim", "rope_parameters")}
+    text["rope_theta"] = 10000000
+    for extra, rotary in (({}, 0.25), ({"partial_rotary_factor": 0.5}, 0.5)):
+        lifted = normalize({**config, "text_config": {**text, **extra}})
+        assert lifted["rotary_pct"] == rotary and lifted["head_dim"] == 256 and lifted["rope_theta"] == 10000000
+        assert rotary_dim(lifted) == int(256 * rotary)
+    # a config that says it keeps what it says
+    said = normalize(config)
+    assert said["rotary_pct"] == 0.25 and said["head_dim"] == 16
+
+
+# Qwen/Qwen3.8-27B's config.json (revision 1d4bf0f2, the text model's part; layer_types are the interval's): what T233 and T237
+# will read. It says output_gate_type "swish" (the activation of the gate that a Gated DeltaNet layer's norm multiplies by:
+# silu, as vLLM and Modular read it; Qwen3.5-27B's says nothing), the bos and the partial_rotary_factor at the top of the
+# text model as well as in rope_parameters, and a classifier of its own.
+QWEN38_27B = {
+    "attention_bias": False, "attn_output_gate": True, "bos_token_id": 248044, "eos_token_id": 248044, "full_attention_interval": 4,
+    "head_dim": 256, "hidden_act": "silu", "hidden_size": 5120, "intermediate_size": 17408, "linear_conv_kernel_dim": 4,
+    "linear_key_head_dim": 128, "linear_num_key_heads": 16, "linear_num_value_heads": 48, "linear_value_head_dim": 128,
+    "max_position_embeddings": 262144, "model_type": "qwen3_5_text", "num_attention_heads": 24, "num_hidden_layers": 64,
+    "num_key_value_heads": 4, "output_gate_type": "swish", "partial_rotary_factor": 0.25, "rms_norm_eps": 1e-06,
+    "rope_parameters": {"mrope_interleaved": True, "mrope_section": [11, 11, 10], "partial_rotary_factor": 0.25,
+                        "rope_theta": 10000000, "rope_type": "default"},
+    "tie_word_embeddings": False, "vocab_size": 248320,
+    "layer_types": ["linear_attention" if (layer + 1) % 4 else "full_attention" for layer in range(64)],
+}
+
+
+def test_the_published_27b_reads_as_the_shape_that_was_planned_for_it():
+    config = normalize({"model_type": "qwen3_5", "tie_word_embeddings": False, "text_config": QWEN38_27B})
+    check_config(config)  # "swish" is silu: not refused
+    assert architecture(config) == "qwen35"
+    assert (config["num_hidden_layers"], config["hidden_size"], config["intermediate_size"], config["vocab_size"]) == (64, 5120, 17408, 248320)
+    assert (config["num_attention_heads"], config["num_key_value_heads"], head_size(config)) == (24, 4, 256)
+    assert rotary_dim(config) == 64 and config["rope_theta"] == 10000000
+    assert config["bos_token_id"] == 248044
+    assert linear_layers(config) == {"every": 4, "key_heads": 16, "value_heads": 48, "key_dim": 128, "value_dim": 128, "conv": 4}
 
 
 def test_the_layers_follow_transformers_where_the_config_leaves_them_out():
