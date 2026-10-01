@@ -105,7 +105,7 @@ const rest = args.slice(1);
 // the lines of a workflow's logs worth reading when nothing else is asked for
 const LINES = {
   "models.yml": "ready in|^then |^again|^offline|thread reports during|FAILED|timed out",
-  "bench.yml": "^### (chromium|firefox|webkit|chrome|msedge)$|^sections:|^model path:|WRONG|^failed:",
+  "bench.yml": "^### (chromium|firefox|webkit|chrome|msedge)$|^sections:|^model path:|WRONG|^failed:|^page errors:|^heard:|^=== |site [0-9a-f]{7} ",
   "browsers.yml": "ready in|FAILED|timed out",
   "preview.yml": "^sections:|^model path:|FAILED|timed out",
   // T193: which suite ran, and the seconds of each of its parts (tests/suite.sh)

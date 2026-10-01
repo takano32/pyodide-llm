@@ -19,7 +19,10 @@ const { create, globals } = await import(pathToFileURL(path.resolve(webgpu, "ind
 Object.assign(globalThis, globals);
 globalThis.self = globalThis;
 globalThis.onmessage = null;
-Object.defineProperty(globalThis, "navigator", { value: { gpu: create([]) }, configurable: true });
+// (T225's review: GPU_ROUNDING=toward-zero|away|everything gives the device's shaders another rounding of a float32 to a
+// float16 than lavapipe's own, the nearest: tests/rounding.mjs, tests/rounding-check.mjs)
+const { roundedGpu } = await import("./rounding.mjs");
+Object.defineProperty(globalThis, "navigator", { value: { gpu: roundedGpu(create([]), process.env.GPU_ROUNDING) }, configurable: true });
 let answer;
 globalThis.postMessage = (message) => {
   if (message.lost) console.log("LOST", message.lost);
