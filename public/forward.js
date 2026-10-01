@@ -256,19 +256,19 @@ const frameArrays = (dim, hidden, kvDim, qDim = dim) => {
 const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(bytes), 0);
 
 /** T115: the most bytes the forward pass puts after a checkpoint of size bytes: at the end of its whole context,
- * while the KV cache grows to it (the old blocks and the new ones are both there then). An upper bound, a little
- * above what createForward allocates (tests/forward-check.mjs holds the two together).
+ * the KV cache grown to it in place (T130). An upper bound, a little above what createForward allocates
+ * (tests/forward-check.mjs holds the two together).
  * header: the 7 ints of the legacy format. dtype: the file's ("float32", "float16", "int8", "int6"). int8: the int8
  * kernels compute on the weights (not with ?without=int8, which widens them to float32); relaxed: with relaxed SIMD
- * (an int32 correction a group, T197); halfKV: the keys and values may be float16 (T110: an int8 model on a shared memory;
- * whether they are is keysInHalf's, T160).
- * kvStart and outliers are llama2_numpy's KV_START and OUTLIER_CHANNELS. arch and head_dim are of the form
+ * (an int32 correction a group, T197); halfKV: the keys and values may be float16 (an int8 model, not ?without=kv16;
+ * whether they are is keysInHalf's, T160); shared: on a shared memory (T110, where there are software threads).
+ * outliers is llama2_numpy's OUTLIER_CHANNELS. arch and head_dim are of the form
  * (llama2_numpy.FORM, which a model's options carry: the caller passes them in as they are, T144): head_dim is the
  * size of a head where it is not dim / heads (T124), 0 where it is. gpu (T135): the page asked for the prompt on the
  * GPU, whose keys and values of a block come back through a place of their own. direct (T156, T210): a model on the
  * GPU alone, whose matrices, tables and keys and values are all there. */
 export function footprint(header, size, { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false,
-  kvStart = 256, outliers = 8, head_dim = 0, gpu = false, direct = false } = {}) {
+  shared = false, outliers = 8, head_dim = 0, gpu = false, direct = false } = {}) {
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
   const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads, kvDim = kvHeads * headSize, qDim = heads * headSize;
   const quantized = dtype === "int8" || dtype === "int6", six = dtype === "int6";
@@ -292,21 +292,23 @@ export function footprint(header, size, { dtype = "float32", arch = "llama", int
   // float16) and its rows
   bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim)) + align(seqLen * heads * 4)) + vocab * 4;
   if (gpu) bytes += 2 * layers * GPU_BLOCK * kvDim * 2 + GPU_BLOCK * dim * 4;
-  // the KV cache doubles from kvStart: at its largest step, the smaller blocks are still there next to the larger
-  let capacity = Math.min(kvStart, seqLen), most = capacity;
-  while (capacity < seqLen) {
-    const larger = Math.min(2 * capacity, seqLen);
-    most = Math.max(most, capacity + larger);
-    capacity = larger;
-  }
-  // (and a megabyte for the alignment of every array; T210, direct: the keys and values are the GPU's alone)
-  const others = Math.ceil(bytes) + 2 ** 20, keys = direct ? 0 : most * layers * 2 * kvDim;
-  // T160: a grouped-query model's keys and values are widened for every head of their group, g = heads / kvHeads
-  // times, which float16 saves nothing of (Qwen2.5 0.5B, g = 7: float32 1.42 to 1.44 times as fast on one thread at
-  // position 2000, 1.15 to 1.26 on four, CI's x86-64 and arm64; TODO.md's T160): float32 there where the model still
-  // fits a 32-bit memory with it (not Qwen2.5 3B: 3.82 GiB, 4.03 in float32), float16 on a 64-bit one (the owner,
-  // 2026-09-27: Llama 3.2 3B and the 7B models keep their memory). keysInHalf tells which.
-  const half = halfKV && (kvHeads >= heads || needsWide(size, others + 4 * keys));
+  // the KV cache, doubled in place up to the whole context (T130: createForward's grow() moves the blocks up into the
+  // room it adds; before, the smaller blocks were still there next to the larger ones at each step, 1.5 times the
+  // context at the last), and a megabyte for the alignment of every array (T210, direct: the keys and values are the
+  // GPU's alone)
+  const others = Math.ceil(bytes) + 2 ** 20, keys = direct ? 0 : seqLen * layers * 2 * kvDim;
+  // The type of the keys and values: float16 on a shared memory where every head has keys of its own (T110: several
+  // threads wait on the memory, and read half of it). T160: a grouped-query model's are widened for every head of
+  // their group, g = heads / kvHeads times, which float16 saves nothing of (Qwen2.5 0.5B, g = 7: float32 1.42 to 1.44
+  // times as fast on one thread at position 2000, 1.15 to 1.26 on four, CI's x86-64 and arm64; TODO.md's T160), and
+  // one thread waits on the arithmetic of the widening (T110): float32 there. But float16 on a shared memory wherever
+  // float32 would not fit a 32-bit one (the owner, 2026-09-27: Llama 3.2 3B and the 7B models, on a 64-bit memory,
+  // keep their memory), and T130, on a memory that is not shared (a page not cross-origin isolated, or a shared one
+  // refused) only where float16 keeps on a 32-bit memory a model that float32 would take past 4 GiB (Llama 3.2 3B's
+  // int8 on Safari, without relaxed SIMD: 3.82 GiB, 4.26 in float32). A model past 4 GiB either way keeps float32
+  // there (the owner, 2026-09-28: one thread's long contexts stay fast). keysInHalf tells which.
+  const past = needsWide(size, others + 4 * keys);
+  const half = halfKV && (shared ? kvHeads >= heads || past : past && !needsWide(size, others + 2 * keys));
   return others + keys * (half ? 2 : 4);
 }
 /** T160: whether the keys and values of a model that may keep them in float16 (footprint's halfKV) do, as footprint
@@ -507,6 +509,8 @@ export function gpuOnlyPlan(header, tensors, force = {}, remembered) {
 /** Whether a checkpoint of size bytes and the forward pass after it (footprint) pass the 4 GiB of a 32-bit memory.
  * A model that fits stays there: a 64-bit memory runs the kernels about a tenth slower (T101, measured). */
 export const needsWide = (size, after) => CONTROL_BYTES + size + after > PAGES_32 * PAGE;
+/** T129 (7): whether they pass even a 64-bit memory (16 GiB here, Chrome's): no memory holds such a model. */
+export const pastWide = (size, after) => CONTROL_BYTES + size + after > PAGES_64 * PAGE;
 /** T133: the dtype of a model converted with none asked for, from its int8 size and what the forward pass puts after
  * it (footprint, as int8): int8 where that fits a 32-bit memory, or where the browser has a 64-bit one (wide: Chrome
  * and Firefox; about a tenth slower, against six bits' half the speed and +1.4 to 1.7% of perplexity, T98); else six
@@ -598,9 +602,10 @@ function halfToFloat(h) {
  * pass with some kernels replaced by functions that do nothing. */
 /** stalledMs (tests only): how long a phase may make no progress before its software threads are given up (T120) */
 /** clock (tests only, T199): the time the threads' search reads, in ms (a made-up one slows a block of its choice) */
-/** halfKeys (T160): keysInHalf's answer for this model, which the worker sized the memory by. Left out (the tests,
- * the benchmark's own model): float16 where every head has keys of its own, which keysInHalf answers for every model
- * that fits a 32-bit memory with float32 keys and values. */
+/** halfKeys (T160): keysInHalf's answer for this model on the memory it got (T130: a shared one refused, the
+ * worker asks again for the plain one). Left out (the tests, the benchmark's own model): float16 on a shared memory
+ * where every head has keys of its own, which keysInHalf answers for every model that fits a 32-bit memory with
+ * float32 keys and values. */
 /** gpuForce (tests only, T147): { matrices, attention }, the names of the GPU's shaders to take (shaders.js's
  * promptForms, gpu.js's attentions), without timing the others. T148: fallback, a fallback adapter taken as a GPU
  * (SwiftShader and lavapipe: the only WebGPU of CI and the development machine); always, every block the GPU can take
@@ -728,10 +733,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // shared, that is where there are software threads: several threads wait on the memory, and reading half of it
   // made a long context 1.2 times as fast with 4; one thread waits on the arithmetic, and widening every key and
   // value made it 1.6 to 1.8 times as slow. A float32 model, the one held to NumPy's numbers, stays in float32.
-  // T160: a grouped-query model's too, unless that alone would not fit a 32-bit memory (keysInHalf, halfKeys). The
-  // GPU's keys and values stay float16 either way: cacheHalves widens them into a float32 cache.
+  // T160: a grouped-query model's too, unless that alone would not fit a 32-bit memory (keysInHalf, halfKeys). T130: and
+  // on a memory that is not shared, float16 where float32 would not fit (halfKeys). The GPU's keys and values stay
+  // float16 either way: cacheHalves widens them into a float32 cache.
   // KV: the bytes of one position's keys in the cache; KF: in float32.
-  const halfKV = Boolean(plan.half_kv) && sharedMemory && (halfKeys ?? kvHeads >= heads);
+  const halfKV = Boolean(plan.half_kv) && (halfKeys ?? (sharedMemory && kvHeads >= heads));
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QF = qDim * 4, KV = kvDim * (halfKV ? 2 : 4);
   const inFrame = frameArrays(dim, hidden, kvDim, qDim), S = frameBytes(inFrame);
   const frames = alloc(BATCH * S), at = {};
@@ -783,24 +789,23 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const gpuIds = staging && !tokensWhyNot ? alloc((2 + GPU_TOKENS) * 4) : 0;
 
   // the KV cache: per layer [positions][kvDim], one block for the keys and one for the values, last in memory
-  // so that growing it (KV_START, doubling) can take the space of the smaller one. T210: none on the GPU alone, whose
-  // keys and values are the GPU's alone (no step runs here, and one that fails is loaded again on the CPU)
+  // so that growing it (KV_START, doubling) takes only the room it adds (T130): every layer's block moves up to where
+  // it starts at the larger size, the last first, so that none is written over before it has moved (a block starts no
+  // lower than it did, and past the end of the ones below it). Before, the larger blocks were made after the smaller
+  // and moved down onto them: 1.5 times the context at the step to the whole of it, which a 32-bit memory at the edge
+  // could not hold (Qwen2.5 3B's float32 keys and values on a memory that is not shared: 4.03 GiB, 3.89 now). T210:
+  // none on the GPU alone, whose keys and values are the GPU's alone (no step runs here, and one that fails is loaded
+  // again on the CPU)
   let capacity = direct ? 0 : Math.min(plan.kv_start, seqLen);
-  let keys = alloc(layers * capacity * KV), values = alloc(layers * capacity * KV);
+  let keys = alloc(2 * layers * capacity * KV), values = keys + layers * capacity * KV;
   function grow(pos) {
     const larger = Math.min(Math.max(2 * capacity, pos + 1), seqLen);
     const oldLayer = capacity * KV, newLayer = larger * KV;
-    const newKeys = alloc(layers * newLayer), newValues = alloc(layers * newLayer);
-    for (let l = 0; l < layers; l++) {
-      U.copyWithin(newKeys + l * newLayer, keys + l * oldLayer, keys + (l + 1) * oldLayer);
-      U.copyWithin(newValues + l * newLayer, values + l * oldLayer, values + (l + 1) * oldLayer);
-    }
-    // move both down onto the old blocks, which were the last thing in memory
-    const start = keys;
-    U.copyWithin(start, newKeys, newValues + layers * newLayer);
-    keys = start;
-    values = start + (newValues - newKeys);
-    top = align(values + layers * newLayer);
+    alloc(2 * layers * (newLayer - oldLayer));
+    const newValues = keys + layers * newLayer;
+    for (let l = layers - 1; l >= 0; l--) U.copyWithin(newValues + l * newLayer, values + l * oldLayer, values + (l + 1) * oldLayer);
+    for (let l = layers - 1; l > 0; l--) U.copyWithin(keys + l * newLayer, keys + l * oldLayer, keys + (l + 1) * oldLayer);
+    values = newValues;
     capacity = larger;
   }
 

@@ -34,14 +34,15 @@ export async function pyodideWithEngine({ shared = true, wide = false } = {}) {
   if (!shared) delete globalThis.SharedArrayBuffer;
   const variant = (shared ? "shared" : "plain") + (wide ? "64" : "");
   const kernels = compileKernels(fs.readFileSync(`${root}public/simdkernel_${variant}.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_${variant}.wasm`), wide);
-  // a checkpoint (Python bytes) copied into a memory of forward.js, as what Llama(external=) takes
-  pyodide.globals.set("outside", (data) => {
+  // a checkpoint (Python bytes) copied into a memory of forward.js, as what Llama(external=) takes. halfKeys: the type of
+  // the keys and values the worker would hand the engine (external's, T160, T130); left out (None), the engine's own
+  pyodide.globals.set("outside", (data, halfKeys) => {
     const view = data.getBuffer("u8");
     const size = view.data.length;
     const { memory, base } = weightsMemory(size, { shared, wide });
     new Uint8Array(memory.buffer, base, size).set(view.data);
     view.release();
-    return external({ memory, base, size, kernels });
+    return external({ memory, base, size, kernels, halfKeys });
   });
   pyodide.globals.set("outside_file", (file) => {
     const size = fs.statSync(file).size;
@@ -56,11 +57,11 @@ export async function pyodideWithEngine({ shared = true, wide = false } = {}) {
   pyodide.runPython(`
 import llama2_numpy
 
-def kernel_llama(checkpoint, tokenizer, **options):
+def kernel_llama(checkpoint, tokenizer, half_keys=None, **options):
     """The engine as the page runs it: the forward pass in forward.js, the sampling on simdkernel.so (T93)."""
     if "kernels" in tuple(options.get("disable", ())):
         return llama2_numpy.Llama(checkpoint, tokenizer, kernels="simdkernel.so", **options)
-    return llama2_numpy.Llama(None, tokenizer, kernels="simdkernel.so", external=outside(checkpoint), **options)
+    return llama2_numpy.Llama(None, tokenizer, kernels="simdkernel.so", external=outside(checkpoint, half_keys), **options)
 
 def kernel_llama_file(path, tokenizer, **options):
     """The same with the checkpoint read from a file of this machine into the memory of forward.js directly."""
