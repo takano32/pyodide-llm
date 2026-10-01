@@ -1,6 +1,7 @@
 # Llama 3 (T106): the llama3 kind of RoPE scaling, its pre-tokenizer (digits up to three at a time), ignore_merges,
 # the BOS its chat template writes, and the special tokens of a chat template read from tokenizer.json.
 import json
+import math
 import struct
 
 import numpy as np
@@ -67,7 +68,6 @@ def transformers_yarn(head_dim, base, factor, original):
     """_compute_yarn_parameters of transformers 4.57.6 (modeling_rope_utils.py), transcribed line by line in float64:
     the inverse frequencies and the attention factor, for a config.json that names a factor and an original context
     only (beta_fast 32, beta_slow 1, truncate on). Written for the review of T235, from the file, not from rope_frequencies()."""
-    import math
     dim = head_dim
 
     def get_mscale(scale, mscale=1):
@@ -98,7 +98,6 @@ def llama_cpp_yarn(n_dims, base, factor, n_ctx_orig):
     """The same by the fork of llama.cpp that Ternary-Bonsai's GGUFs come with (88c4bc60), at position 1: ggml.c's
     ggml_rope_yarn_corr_dims(), ggml-cpu/ops.cpp's rope_yarn_ramp() and rope_yarn(), and the factor llama-context.cpp
     hands them (get_mscale(factor), taken out again by 1 / (1 + 0.1 ln factor) because rope_yarn() puts it in itself)."""
-    import math
     freq_scale = 1.0 / factor
     corr_dim = lambda n_rot: n_dims * math.log(n_ctx_orig / (n_rot * 2 * math.pi)) / (2 * math.log(base))
     dims = (max(0, math.floor(corr_dim(32.0))), min(n_dims - 1, math.ceil(corr_dim(1.0))))
