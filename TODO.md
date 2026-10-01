@@ -96,6 +96,8 @@
 - **T229 も本線に入れた（反映済み、c6dc910）**: Qwen3.5 の hybrid attention（Gated DeltaNet）が CPU の道に（NumPy・変換器・forward.js・カーネル 3 つ）。transformers と 96 位置で logits の差 1.64e-4・最尤 96/96。実物の 0.8B は int8 の 7 ビットの活性値で perplexity +1.86%（ほかのモデルの +0.2〜2.2% の上の端）。GPU には置かない。一覧にはまだ無い（T236）。
 - **本線（3881b9a）の確かめ（2026-10-01）**: tests.yml の全部の組は成功（run 36887089625、575 秒）。本番: `?hf=` の Qwen2.5 32B は 12.2 秒で「This model is too large for a web page: it needs about 42 GB of memory, and a browser gives a page 16 GB at most.」と断った（run 36889450658。e2e は答えが無いので失敗と数えるが、見たかった形）。tiny-lm 455.9 tok/s・SmolLM2 360M 47.2 tok/s・llm-jp-3 150M 124.0 tok/s（36889454702）、`slow.yml` の slow と stall は成功（36889458238・36889461441）。
 - **T129 のレビューも済み（完了、c413a40）**: must-fix 1（Pyodide の NumPy は整数が 32 ビットで、変換器の大きさの積が巻いていた: 16 GiB を越えるモデルの断りが本物のブラウザで働いていなかった）を直した。**持ち主の判断待ち**: 静けさの 30 秒がモデルの部品の届いたバイトを数えない件（案のブランチ `t129-review-model-bytes`）。
+- **T236 も本線に入れた（反映済み）**: Qwen3.5 0.8B を一覧に（考える形とすぐ答える形、unsloth の Q8_0 の GGUF 812 MB、int8 850 MB）。**BOS は `<|im_start|>` に**（本物のトークナイザは文の前に何も置かない。変換器の `<|endoftext|>` を前に置くと、素の文の perplexity が英語 +46%・日本語 +95%）。**持ち主の判断待ち**: 項目の名前と note、ページの「開けるモデル」の 2 つの文に Qwen3.5 を足すか（`src/pages/index.astro` の 143 行と 367 行、README の 98 行）。
+- **T226 のレビューも済み（完了）、T239・T240・T241 も本線に入れた（反映済み）**。
 - **残してあるブランチ**: レビューが使う調べと壊し方の捨てのブランチ（`t129-probe`、`t219-review-probe`、）、`t225-broken`、T224 のレビューの調べ `t224-review-probes`、T226 のレビューの `t226-review-plan-check`（Node だけで 1 トークンの層の計画を見る試験 1 つ。本線には入れていない: gpu.js の中の名前に結びつくので、gpu.js が変わるたびに直す手間が要る。入れるなら `tests/suite.sh` の full に）。T224 の前の版の写しと前のレビューの書きかけ・調べのブランチは、レビューが済んだので消した。
 - **レビュー待ち（Sonnet max）**: T225（始めた）。**T235 は済み**（ブランチ `t235-review`、上の T235 の項）。**T226 は済み**（ブランチ `t226-review`。must-fix 0、should 2 を直し、持ち主の判断が 2 つ: (4) の線と、4 GB と言う端末。T226 の項）。**T227 は済み**（ブランチ `t227-review`。must-fix 1: 装置のエラーの改行が警告を壊した、を直した）。**T129 は済み**（ブランチ `t129-review`、下の T129 の項。must-fix 1: (7) の断りが本物のブラウザで働いていなかった、を直した）。**T219 の (1)(2) と T220 は済み**（ブランチ `t219-review-sonnet` を本線に入れた。must-fix 0、should 6 を直した）。**T224 はレビュー済みで完了**（must-fix 1: 検査の集計が NaN を残さなかった、を直した。本線に入れた）。**T130 と T223 は済み**（2026-10-01、本線に入れた。must-fix 0。T130 の直し 4 つと、T223 のステータス行の本数と、新しい試験 2 つ `tests/memory-check.mjs`・`tests/thread-search-check.mjs`）。
 - **持ち主の端末でまとめて見るもの（2026-10-01、持ち主「計測はすべての実装が終わったら見直す形に」: タスクごとに頼まず、並んでいる実装が本線に入り終わってから端末ごとに 1 回で）**。実装は下の数字を待たずに進める。
@@ -104,6 +106,7 @@
   - Chromebook（ARM、Chrome、Arm Valhall）: `/benchmark/` を 1 回（T226 の「4 GB と言う端末」: 機能の節の `deviceMemory` が 4 か 8 か。4 なら Qwen3 0.6B か Qwen2.5 1.5B を開いて、ステータス行（GPU だけか）と tok/s が、同じ回の CPU の節から見積もる CPU の速さ（重みの GB ÷ 読みの GB/s）より遅くないか。T226 の項の持ち主の判断 (2) の材料）。
   - iPhone（Safari）: モデルのページ（T129 の同じ 4 つ）と `/benchmark/` の Page memory（T173）、モデルの節が終わるか（T205・T214）、GPU の節の「sampling」と「sampling in chunks」の検査が ok か（T219: Safari の WGSL がこのシェーダを通すか）。
   - **T129 のレビューから（スマホと PC、本線に入れた後）**: (a) スマホで、初めての訪問の読み込みの途中に別のアプリへ 1 分切り替えて戻る: 「got nothing from the network for 30 seconds」が出ず、準備完了まで行くか（静けさを時計でなく回ったチックで数えるようにした）。(b) 機内モードで 2 回目の訪問（T111 のオフライン。NumPy の wheel の SRI を外した）が開いて答えるか。(c) 速度制限中の回線（約 128 kbps）で開く: 準備完了まで行き、フォールバック（隔離のない 1 コア）に入らないか（CI は fifo の 0.15 Mbps でフォールバックした。T129 の項の持ち主の判断の材料）。(d) PC の Chrome で `?hf=Qwen/Qwen2.5-32B-Instruct` を開く: 数秒で「This model is too large for a web page: it needs about 42 GB …」が出るか（直す前は 8GB を取って「ran out of memory」。CI の Chromium では確かめた）。実 GPU のある PC では、断った後に OPFS（devtools の Application → Storage）に空のフォルダが残らないか（`keeper()` の開きっぱなし、T129 の項）。
+  - **T236 から（PC と Android、本線に入れた後）**: モデルのページで「Qwen3.5 0.8B (no thinking)」を開いて日本語で 2 つ聞く: 答えが読めるか、ステータス行の tok/s と本数（CPU だけで動く。CI のランナーは 4 本で 29.5 tok/s）。「(thinking)」で 1 つ: 考えが終わって答えまで行くか（カードは 0.8B の考えが回り続けやすいと書いている）。
 - ブランチを本線に入れる形: この回は `git merge --no-ff <ブランチ>`（題は「T番号: Merge …」。戻すときは `git revert -m 1 <その merge>` の 1 つ）。前の回の `.tmp/merge-branch.sh`（rebase）は、本線を merge 済みのブランチには使えない。
 
 ### T129 [運用][変換] 取得と読み込みの境界の残り（2026-09-26 の Opus xhigh のレビューから）— 状態: **完了（Sonnet max のレビュー済み、2026-10-01。持ち主の判断が 1 つ残る）**（2026-10-01 に本線に入れた: 2026-10-01 からの進め方。2026-09-28、持ち主「進めてくれや」。Opus medium。**読み込みの経路に触るので、持ち主の端末で見てもらい、問題が出たらこの 1 つを戻す**。(2) と (7) は持ち主が案 B に決めた）
@@ -1581,8 +1584,43 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **試験を壊して見た結果**（`tests/t235_mutants.py`、ブランチ `t235-review-probe2`、tests.yml の `extra=`、全部の pytest）: 直す前（main の試験、run 36885500962）は 29 通りのうち 28 が落ち、**「sin だけ倍率が抜けた表を変換器とエンジンの両方に」だけが素通り**（629 件が通った）。直した後（run 36887252617）は 31 通りのうち 30 が落ちる。落ちない 1 つは、yarn の ramp の `max(high - low, 0.001)` の 0.001 を外す壊し方で、transformers にも同じ guard がある。`low == high` になるのは元の文脈が 6 位置より短いか 201 × theta² 以上のときだけで、どの実物の config でも届かない（同値）。PQ2_0 の壊し方（ビットの順・スケールの位置・q − 2・q = 3 を 0・全部 0）は 1〜6 件の試験が落とす。
   - **未確認**: 持ち主の端末（Android・iPhone・PC の GPU）。本物の GPU（CI は SwiftShader と lavapipe だけ。実物のモデルは上の (i) の lavapipe まで）。4B と 8B の変換（ヘッダだけを読んだ。8B の GGUF の元の文脈は 16384）。日本語の文のエンジンの perplexity は 1024 トークンより長い所（transformers は 4096 まで）。8192 より長い文脈での yarn と素の RoPE。ページの int8 の道（`forward.js`）での 64 トークンの文（float32 の NumPy と transformers だけを並べた。T235 は 16 トークンで int8 も同じと見た）。
 
-### T236 [追加][Bonsai] Qwen3.5 0.8B を一覧に — 状態: 未着手（T229 の後。持ち主の判断待ち。規模 小）
+### T236 [追加][Bonsai] Qwen3.5 0.8B を一覧に — 状態: **反映済み**（2026-10-01、2026-10-01 に本線に入れた、レビュー前）
 - 27B と同じ hybrid attention（Gated DeltaNet）で 3 値ではない。T229 をこのモデルの int8 の道で通してから一覧に。unsloth の Q8_0 の GGUF（812 MB）が原本と同じ重みかは未確認（`gguf_check.py tensors` を先に）。
+- ブランチ `t236-qwen3.5-0.8b`（Opus medium）。決定と落とし穴は AGENTS.md の「Qwen3.5 0.8B を一覧に」。
+- **出どころ**: GGUF は https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF （`6ab461498e2023f6e3c1baea90a8f0fe38ab64d0`、`Qwen3.5-0.8B-Q8_0.gguf` 811,843,840 バイト、カードは apache-2.0 で license_link は原本の LICENSE）。原本は https://huggingface.co/Qwen/Qwen3.5-0.8B （`2fc06364715b967f1860aea9cf38778875588b17`、bfloat16 の safetensors 1,746,942,600 バイト、apache-2.0）。GGUF の形は llama.cpp の `conversion/qwen.py`（`Qwen3NextModel`・`_LinearAttentionVReorderBase`・`Qwen3_5TextModel`）と `gguf-py/gguf/tensor_mapping.py`・`constants.py`、前分割は `src/llama-vocab.cpp`（https://github.com/ggml-org/llama.cpp 、`dcd387a412ca54e172a8d60eb71ef6753850c8ca`、MIT。行は写していない）。
+- **重みは GGUF にした**（段 ② の形）。`gguf_check.py tensors` は手元と CI（`gguf.yml` の candidates、run 36890478879）で通った: 不一致 0、テンソル全体の相対誤差の最大 0.00673、いちばん近い参照から 3.71e-8（線 1e-3）、q と k は HF の並び、メタデータの 16 行が config と同じ、語彙は同じ ID で違い 0（GGUF は 250 個多い: `tokenizer_config.json` だけにある special 7 つと詰め物 243 個）。原本の safetensors にすると取得は 1.75 GB で約 2.2 倍になる。
+- **入れたもの**: 変換器の `qwen35` の名前の表と前分割の名前、`done`（済んだ段）と `left_to_do()`、`gguf_agrees()` の Qwen3.5 の比べ（層の並び・head の数と大きさ・回す幅）、value head が key head より多い GGUF の断り、`gguf_check.py` の Qwen3.5、一覧の 2 項目（`hf-qwen3.5-0.8b-thinking`・`hf-qwen3.5-0.8b`）、`LICENSES` の 2 つ、`format_check.py` の `enable_thinking`、固定値（一覧の項目と、同じ項目の safetensors）、`tests/page_qwen35.sh` に一覧の ID、`browsers.yml` の qwen3 の組、README と docs の数。`CONVERTER` は上げていない（作り物の変換 164 通りが main と同じバイトと options: safetensors の 5 系統と Qwen3.5、GGUF の Llama・Qwen2・Qwen3・PQ2_0・GPT-2・NeoX、4 つの dtype）。
+- **GGUF の道と原本の道の int8**（手元、849,571,100 バイトずつ）: 見出し・options・tokenizer.bin は同じ。バイトは 94.30% 同じ（行列は 94.36〜94.42%: スケールの丸め）。norm の全部・畳み込み・dt_bias・linear の norm は全部同じ。`−exp(A_log)` は 288 個のうち 4 個が 1 ulp 違う。gate の行列 2 つは相対 5.7e-3（GGUF では Q8_0）。
+- **ページの forward での品質と速さ**（CI、EPYC 7763、run 36890462933、`bash tests/page_qwen35.sh hf-qwen3.5-0.8b`、英語版 Wikipedia の 1500 トークン）:
+
+  | 計算（一覧の GGUF の道） | perplexity | NumPy 比 |
+  |---|---:|---:|
+  | GGUF の値を float32 に広げたもの、NumPy | 25.055 | — |
+  | int8 の重み、NumPy | 25.055 | 0（Q8_0 は損なく int8 に戻る） |
+  | int8、カーネル、8 ビットの活性値 | 25.086 | +0.12% |
+  | int8、カーネル、7 ビットの活性値 | 25.398 | +1.37% |
+
+  T229 の原本の道は 25.056・25.034・24.944・25.500。スレッド 1・2・4・8 本で logits もプロンプトのブロックもビット単位で同じ。32 位置で 1 本 17.3・2 本 28.4・4 本 29.5・8 本 28.5 tok/s、プロンプトは 16 トークンの塊で 1 本 35・4 本 66 tok/s（そのランナーの値）。
+- **書いた文**（greedy、16 トークン、float32 の NumPy、プロンプト「これからの流行りを3つ挙げてください。」、すぐ答える形、本物の書式と同じ ID の列）: 「2024 年（令和 6 年）は、世界」。GGUF の道と原本の safetensors の道で同じ文（CI の run 36893976457、捨てのブランチ `t236-probe` で。本線に入れる枝の確かめは下の最後の run）。**頭に `<|endoftext|>` を置いていたとき**（下の BOS を替える前）は GGUF の道が「3 つの今後の流行りを挙げます。\n\n1.  **AI 」、原本の道が「3 つの今後の流行りを挙げます：\n\n1.  **AI 」（T229 の固定値）で、1 字違い（run 36890481248 で 10 個とも ok）。
+- **BOS**: 本物は文の頭に何も置かない。ページは BOS から始め、変換器の BOS は `<|endoftext|>`。素の文では大きく効いた（299 トークン、int8 の NumPy、開発機: 英語 7.889 → 11.526、日本語 30.408 → 59.376）。だから項目の `bos` を `<|im_start|>`（248045）にして、書式をその次から書いた。**チャットの形では差が小さい**（同じ道具、すぐ答える形の 5 問と考える形の 1 問、greedy 32 トークン、答えの 1 トークンあたりの対数尤度を両方の頭で）:
+
+  | 問い | 本物の ID の答え（本物 / 頭に `<|endoftext|>`） | 頭に `<|endoftext|>` の答え（本物 / 頭に `<|endoftext|>`） |
+  |---|---|---|
+  | これからの流行りを3つ挙げてください。 | −1.064 / −1.247 | −1.204 / −0.851 |
+  | What is the capital of Japan? | −0.321 / −0.386 | −0.360 / −0.382 |
+  | 日本でいちばん高い山は何ですか？ | −0.998 / −1.147 | −0.662 / −0.581 |
+  | Write a haiku about autumn. | −1.180 / −1.263 | −1.092 / −1.163 |
+  | 17 × 24 はいくつですか？ | −0.438 / −0.490 | −0.393 / −0.366 |
+  | What is 17 times 24? Think first.（考える形） | −0.104 / −0.275 | −0.200 / −0.102 |
+
+  答えの文はどちらも読める（富士山、Tokyo、408、俳句）。日本語の 1 問目は、頭に `<|endoftext|>` を置いたほうが「3 つの今後の流行りを挙げます。」と問いにまっすぐで、本物の ID は「2024 年（令和 6 年）は、世界が…」と前置きから入る。英語の 2 問は本物の ID のほうがどちらの答えも尤もらしく、日本語は答えごとに自分の頭のほうが尤もらしい。**本物と同じ ID にしたのは、ほかの実装（transformers・llama.cpp）と同じ入力になることと、素の文の損からの判断で、チャットの質で勝ったという数字ではない**。戻すなら項目の options の `bos` と書式の頭の 2 か所。
+- **書式**: `tests/format_check.py` が 2 項目とも 9/9（本物の `apply_chat_template`、transformers 5.16.1。`<tool_call>` などを打った文を足した 10 個目も同じ）。`<|audio_start|>` のような、`tokenizer_config.json` だけにある special を打つと違う（ページは綴る。書式に書かれない special を打ったときと同じ扱い）。
+- **メモリ**（`footprint()`、文脈 4096）: int8 849.6 MB + 後ろ 241.4 MiB = 1.027 GiB（Safari の relaxed なしは後ろ 151.3 MiB）。6 ビットは 661.7 MB。32 ビットのメモリに入る。`weightsFor()` は `deviceMemory` が 2 以下で 6 ビット、4・8・言わない端末は Worker に任せて int8。GPU には置かない（T229）ので `weightsPlace()` に関わらず CPU。文脈は変換器の既定の 4096（HF の項目はどれも同じ）。32768 なら後ろ 955 MiB、原本の 262,144 なら後ろ 3.6 GiB（共有メモリ、KV は float16）で 64 ビットのメモリ。
+- **カードの勧める設定**: 考えない形の文は temperature 1.0・top_p 1.0・top_k 20・presence_penalty 2.0、絵と評価は 0.7・0.8・20・1.5。考える形は 1.0・0.95・20・1.5、「正確なコード」は 0.6・0.95・20・0。エンジンに top_k と presence_penalty は無い。top_k なしの 1.0・1.0 は語彙の全部から引くことになるので、項目は Qwen3 と同じ 2 つ（0.7・0.8 と 0.6・0.95。どちらもカードにある組）にした。カードは「0.8B は考える形で考えが回り続けやすい」と書いている。
+- **わざと壊す**: 変換器の Qwen3.5 の GGUF の読みを 14 通り壊して、単体試験が全部落ちた（`.tmp/t236/mutate.py`、git に入らない: norm に 1 を足し直す、`−exp` をやり直す、alpha と beta の取り違え、dt_bias と A_log の取り違え、norm の読み落とし 2 つ、k を Llama のように回す、畳み込みの軸、`gguf_agrees()` の比べを外す、value head の断りを外す、NFC、層の間隔、回す幅）。`gguf_check.py` は原本と違う 9 通りと config の 2 通りを通さない（`tests/test_gguf_check.py`）。
+- **CI**（どれも成功）: `tests.yml` の全部の組と `page_qwen35.sh` run 36890462933（pytest 840 件。BOS を替える前の枝）。`gguf.yml` の candidates run 36890478879。`tests.yml` の軽い組と固定値の全部 run 36890481248（BOS を替える前、10 個とも ok）。捨ての `t236-probe` で BOS を替えた後の 2 つの固定値 run 36893976457。**本線を取り込んだ先（b4969c5）で `tests.yml` の全部の組と固定値の全部 run 36896337339**（EPYC 9V74、pytest 840 件、固定値は 10 個とも ok で Qwen3.5 の 2 つは「2024 年（令和 6 年）は、世界」）。手元: 触った pytest 275 件、ページの単体 13 個、`format_check.py`。
+- **持ち主に決めてもらうこと**: (1) 名前「Qwen3.5 0.8B (thinking)」「Qwen3.5 0.8B (no thinking)」と note「thinks before it answers · 日本語 / English · fetches 812 MB (GGUF) → int8 850 MB · desktop only」「answers at once · 日本語 / English · fetches 812 MB (GGUF) → int8 850 MB · desktop only」（Qwen3 の並びと同じ形。絵も読むモデルで、ページは文だけ）。(2) BOS（上の表。本物の ID にしてある）。(3) 考える形の項目を置くか（カードの注意。書式が考える形を持つので Qwen3 にならって置いた）。(4) 生成の設定（上）。(5) 文脈を 4096 より伸ばすか。(6) ページの「開けるモデル」の文（`src/pages/index.astro` の 2 か所、変えていない）: 「A Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX model published as safetensors …」と「Other repository… — any Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX」。案は Qwen3 の後に「Qwen3.5」を足す。ただし `?hf=` の Qwen3.5 は書式を読めず（素の続き書き、`&template=` で渡せる）、頭に `<|endoftext|>` が付く。
+- **未計測・未確認**: 本番の `models.yml`（準備完了の秒、tok/s、ヒープ。本線に入れた後に本会話が回す）。実ブラウザ。ブラウザの中の変換の秒。Safari の 6 ビットの道（Qwen3.5 の int6 は forward.js で回していない、T229）。持ち主の端末。考える形の答えの質と、考えが回り続ける頻度（考える形は 1 問の頭の 32 トークンを読んだだけ）。日本語の文の質（数問の頭を読んだだけ）。`browsers.yml` の huggingface ジョブ（週 1 回）。`?hf=Qwen/Qwen3.5-0.8B`。BOS の損がどこから来るか（状態に残るという見立てだけ）。チャットの形の BOS の差は 6 問の greedy で、数は少ない。
 
 ### T237 [追加][Bonsai] 回した基底（符号と Walsh–Hadamard 変換）を forward に — 状態: 未着手（T230・T231 の後。規模 中）
 - Bonsai 2 の 27B の重みは Hadamard で回した基底にある（F16 の GGUF も）: 3 値の行列の前に活性値の符号の反転と塊ごと（1024）の Walsh–Hadamard 変換、埋め込みを引いた後にその逆。CPU の費用は積和の約 0.1%（見積もり）。触る所は NumPy の forward・`forward.js`・カーネル 1 つ・シェーダ。
