@@ -17,6 +17,18 @@ on:
       size:
         description: MiB the storage section writes
         default: '256'
+      os:
+        description: 'T242: one runner only (ubuntu-latest, macos-latest or windows-latest); all three when left out'
+        default: 'all'
+      browsers:
+        description: 'T242: the browsers, e.g. "webkit"; all five when left out'
+        default: 'chromium firefox webkit chrome msedge'
+      run:
+        description: 'T242: the page''s ?run= (e.g. model, or cpu,model)'
+        default: 'all'
+      times:
+        description: 'T242: how many times over, each a fresh browser (a failure that comes now and then)'
+        default: '1'
 
 jobs:
   bench:
@@ -26,10 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-latest, browsers: chromium firefox webkit chrome msedge }
-          - { os: macos-latest, browsers: chromium firefox webkit chrome msedge }
-          - { os: windows-latest, browsers: chromium firefox webkit chrome msedge }
+        os: ${{ fromJSON((inputs.os && inputs.os != 'all') && format('["{0}"]', inputs.os) || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -50,6 +59,18 @@ jobs:
         shell: bash
         env:
           SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+          BROWSERS: ${{ inputs.browsers || 'chromium firefox webkit chrome msedge' }}
+          MODEL: ${{ inputs.model || 'tiny-lm' }}
+          SIZE: ${{ inputs.size || '256' }}
+          SECTIONS: ${{ inputs.run || 'all' }}
+          TIMES: ${{ inputs.times || '1' }}
         run: |
+          set -o pipefail
           echo "## ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
-          node tests/bench-check.mjs "$SITE" ${{ matrix.browsers }} --model "${{ inputs.model || 'tiny-lm' }}" --size "${{ inputs.size || '256' }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          failed=0
+          for try in $(seq 1 "$TIMES"); do
+            echo "=== try $try of $TIMES"
+            node tests/bench-check.mjs "$SITE" $BROWSERS --model "$MODEL" --size "$SIZE" --run "$SECTIONS" | tee -a "$GITHUB_STEP_SUMMARY" || { failed=$((failed + 1)); echo "=== try $try FAILED"; }
+          done
+          echo "=== $failed of $TIMES tries failed"
+          [ "$failed" = 0 ]
