@@ -4,6 +4,7 @@
 //
 //   node tests/gpu-check.mjs [model id | synthetic | made-up ...] [--engine chromium|chrome|msedge] [--forms <part,part>]
 //   node tests/gpu-check.mjs ... --engine dawn --webgpu <the npm package webgpu's directory>
+//   ... [--nan all|made-up|small|none]   (T241's review: where the rounds with a NaN or an infinity run; see NAN_CHOICES)
 //
 // T147: --engine dawn runs the same in Node on Dawn (the npm package webgpu, not a dependency of this project: install
 // it under .tmp/) with the Vulkan of the machine, Mesa's lavapipe on the development machine: shader-f16 and subgroups,
