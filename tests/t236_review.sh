@@ -135,19 +135,20 @@ case "$stage" in
     node tests/t236_loops.mjs "{\"out\": \"$dir/tiny8\", \"id\": \"hf-qwen3.5-0.8b-thinking\", \"tiny\": true, \"prompts\": [\"w1 w2\", \"w3\"], \"seed\": 1}"
     node tests/t236_loops.mjs "{\"out\": \"$dir/tiny8\", \"id\": \"hf-qwen3.5-0.8b-thinking\", \"tiny\": true, \"prompts\": [\"w1 w2\", \"w3\"], \"seed\": 1, \"presence\": 1.5, \"temperature\": 1.0}"
     ;;
-  loops)  # loops <id> <penalty|none> [<presence penalty> [<temperature>]]
+  loops)  # loops <id> <penalty|none> [<presence penalty> [<temperature> [<seed>]]]
     id=${1:?an entry id}
     penalty=${2:-none}
     presence=${3:-0}
     temperature=${4:-0}
+    seed=${5:-1000}
     page_tools
     source=$(gguf)
     prepare "$source" g8 int8
     spec=$(node -e '
       const fs = require("node:fs");
-      const [out, id, penalty, presence, temperature] = process.argv.slice(1);
-      console.log(JSON.stringify({ out, id, prompts: JSON.parse(fs.readFileSync("tests/t236_prompts.json", "utf8")), seed: 1000,
-        penalty: penalty === "none" ? null : Number(penalty), presence: Number(presence), temperature: Number(temperature) }));' "$dir/g8" "$id" "$penalty" "$presence" "$temperature")
+      const [out, id, penalty, presence, temperature, seed] = process.argv.slice(1);
+      console.log(JSON.stringify({ out, id, prompts: JSON.parse(fs.readFileSync("tests/t236_prompts.json", "utf8")), seed: Number(seed),
+        penalty: penalty === "none" ? null : Number(penalty), presence: Number(presence), temperature: Number(temperature) }));' "$dir/g8" "$id" "$penalty" "$presence" "$temperature" "$seed")
     node tests/t236_loops.mjs "$spec"
     ;;
   loops-entry)  # any entry of the list, as the page opens it: its options, its format and its sampling (write_options.py)
