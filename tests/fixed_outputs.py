@@ -111,7 +111,9 @@ def with_the_entrys_rope(config, entry):
     """The config.json the converter is given, with the RoPE the entry's options say (T235's review). The worker lets an
     entry's options win over the conversion's, and the engine makes the RoPE tables from them for an int8 model (the
     page's), but a float32 checkpoint, which this tool writes, holds its tables in the file, made by the converter from
-    config.json: an entry that says rope_scaling would be read with the original's here, not with its own."""
+    config.json: an entry that says rope_scaling would be read with the original's here, not with its own. Only the
+    converter is given the patched config: a GGUF is still held to the original's own (gguf_agrees() refuses a config
+    whose yarn is not the GGUF's, as it should)."""
     said = entry.get("options", {})
     if "rope_scaling" not in said:
         return config
@@ -156,7 +158,7 @@ def converted(entry, directory):
                 chat_template = fetch(source, "chat_template.jinja", directory).read_text()
             except OSError:
                 pass  # most repositories have none
-        config = with_the_entrys_rope(fetch(source, "config.json" if vocabulary else hf["config"], directory).read_text(), entry)
+        config = fetch(source, "config.json" if vocabulary else hf["config"], directory).read_text()
         if vocabulary:
             size = 1 << 20
             while True:
@@ -168,7 +170,7 @@ def converted(entry, directory):
         else:
             (length,) = np.frombuffer(bytes(data[:8]), dtype="<u8")
             header, first = bytes(data[8:8 + int(length)]).decode(), 8 + int(length)
-        conversion = Conversion(header, first, config, fetch(source, tokenizer, directory).read_bytes(), tokenizer,
+        conversion = Conversion(header, first, with_the_entrys_rope(config, entry), fetch(source, tokenizer, directory).read_bytes(), tokenizer,
                                 dtype="float32", tokenizer_config=tokenizer_config, chat_template=chat_template, sink=sink,
                                 start=first)
     for start in range(first, len(data), CHUNK):
