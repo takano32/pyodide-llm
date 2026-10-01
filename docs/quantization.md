@@ -129,8 +129,8 @@ and its speed against the same weights widened to int8, in tok/s (ternary / int8
 
 It runs on the CPU only for now (no GPU path), and has not been measured on a phone.
 
-Ternary Bonsai 4B and 8B come the same way (1.07 GB and 2.18 GB of PQ2_0, widened to 4.5 GB and 9.2 GB of int8, on
-a 64-bit memory). Compared with their float16 safetensors, no tensor of the 4B is further than 8.5e-5 from them, and
+Ternary Bonsai 4B and 8B come the same way (1.07 GB and 2.18 GB of PQ2_0, held as 1.1 GB and 2.3 GB of ternary
+weights; widened to int8 they were 4.5 GB and 9.2 GB, on a 64-bit memory). Their speed has not been measured. Compared with their float16 safetensors, no tensor of the 4B is further than 8.5e-5 from them, and
 the 8B's are the same values.
 
 Qwen3.5 0.8B's Q8_0 GGUF holds some tensors otherwise than the original does: llama.cpp writes the norms with the 1
