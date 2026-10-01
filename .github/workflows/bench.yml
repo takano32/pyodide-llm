@@ -17,19 +17,78 @@ on:
       size:
         description: MiB the storage section writes
         default: '256'
+      os:
+        description: 'T242: one runner only (ubuntu-latest, macos-latest or windows-latest); all three when left out'
+        default: 'all'
+      browsers:
+        description: 'T242: the browsers, e.g. "webkit"; all five when left out'
+        default: 'chromium firefox webkit chrome msedge'
+      run:
+        description: 'T242: the page''s ?run= (e.g. model, or cpu,model)'
+        default: 'all'
+      query:
+        description: 'T242: more of the page''s query, e.g. full (the six rounds of ?full)'
+        default: ''
+      times:
+        description: 'T242: how many times over, each a fresh browser (a failure that comes now and then)'
+        default: '1'
+      build:
+        description: 'T242: a commit or branch to build (with tiny-lm alone) and serve from the runner in place of the site: a version before it goes out, or an old one'
+        default: ''
 
 jobs:
+  # T242: the site of inputs.build, built once on Linux (the kernels and tiny-lm alone) and handed to every runner
+  site:
+    if: ${{ inputs.build != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.build }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Build the site with tiny-lm alone
+        shell: bash
+        run: |
+          npm ci
+          python3 -m pip install --quiet numpy sentencepiece
+          make kernels tiny-lm.bin tiny-lm.tokenizer.bin
+          mkdir -p public/models
+          split -b 8388608 -d -a 3 tiny-lm.bin public/models/tiny-lm.bin.
+          cp tiny-lm.tokenizer.bin public/models/
+          # the page says the commit it was built from (astro.config.mjs reads GITHUB_SHA, which is the workflow's)
+          GITHUB_SHA=$(git rev-parse HEAD) npm run build
+          echo "=== built $(git log -1 --format='%h %s')"
+
+      - name: Hand it on
+        uses: actions/upload-artifact@v7
+        with:
+          name: site
+          path: dist/
+          retention-days: 1
+
   bench:
     name: ${{ matrix.os }}
+    needs: site
+    if: ${{ always() && (needs.site.result == 'success' || needs.site.result == 'skipped') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { os: ubuntu-latest, browsers: chromium firefox webkit chrome msedge }
-          - { os: macos-latest, browsers: chromium firefox webkit chrome msedge }
-          - { os: windows-latest, browsers: chromium firefox webkit chrome msedge }
+        os: ${{ fromJSON((inputs.os && inputs.os != 'all') && format('["{0}"]', inputs.os) || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -46,10 +105,32 @@ jobs:
           npm ci
           npx playwright-core install --with-deps chromium firefox webkit
 
+      - name: Take the built site
+        if: ${{ inputs.build != '' }}
+        uses: actions/download-artifact@v7
+        with:
+          name: site
+          path: dist/
+
       - name: Run all
         shell: bash
         env:
           SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+          BROWSERS: ${{ inputs.browsers || 'chromium firefox webkit chrome msedge' }}
+          MODEL: ${{ inputs.model || 'tiny-lm' }}
+          SIZE: ${{ inputs.size || '256' }}
+          SECTIONS: ${{ inputs.run || 'all' }}
+          TIMES: ${{ inputs.times || '1' }}
+          BUILD: ${{ inputs.build }}
+          QUERY: ${{ inputs.query }}
         run: |
+          set -o pipefail
           echo "## ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
-          node tests/bench-check.mjs "$SITE" ${{ matrix.browsers }} --model "${{ inputs.model || 'tiny-lm' }}" --size "${{ inputs.size || '256' }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ -n "$BUILD" ]; then where=(--dist); else where=("$SITE"); fi
+          failed=0
+          for try in $(seq 1 "$TIMES"); do
+            echo "=== try $try of $TIMES"
+            node tests/bench-check.mjs "${where[@]}" $BROWSERS --model "$MODEL" --size "$SIZE" --run "$SECTIONS" --query "$QUERY" | tee -a "$GITHUB_STEP_SUMMARY" || { failed=$((failed + 1)); echo "=== try $try FAILED"; }
+          done
+          echo "=== $failed of $TIMES tries failed"
+          [ "$failed" = 0 ]

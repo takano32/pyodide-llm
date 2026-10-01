@@ -46,7 +46,7 @@ const LAYER_LINE = "LAYER_LINE = 1e-3", NO_LINE = "LAYER_LINE = 1e-12";
 let [site = "https://takano32.github.io/pyodide-llm/", ...engines] = dist ? [undefined, ...args] : args;
 let server;
 if (dist) {
-  const base = "/pyodide-llm/", root = new URL("../dist/", import.meta.url).pathname;
+  const base = "/pyodide-llm/", root = fileURLToPath(new URL("../dist/", import.meta.url));  // (T242: on Windows too, as PROFILES)
   const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
     ".py": "text/plain", ".wasm": "application/wasm" };
   server = http.createServer((req, res) => {
@@ -91,7 +91,11 @@ function watchStages() {
       const name = box.closest("section").dataset.section;
       if (box.hidden || !text) continue;
       const list = (seen[name] ??= []);
-      if (list.at(-1) !== text) list.push(text);
+      if (list.at(-1) !== text) {
+        list.push(text);
+        // T242: and to the console as it comes, so that a page that went down says how far it had got
+        console.info(`stage of ${name}: ${text}`);
+      }
     }
   };
   document.addEventListener("DOMContentLoaded", () => {
@@ -125,6 +129,18 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
   if (unsaid) await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "deviceMemory", { get: () => undefined, configurable: true }));
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error.message)));
+  // T242: what the page and its workers said and which requests failed, printed where a section failed or the page
+  // went down ("[object Object]" and "Load failed" alone did not say which fetch, of which worker, nor why)
+  const heard = [];
+  const hear = (line) => heard.push(`${((Date.now() - opened) / 1000).toFixed(1)} s ${line}`.slice(0, 600));
+  const opened = Date.now();
+  page.on("console", (message) => {
+    if (["error", "warning", "info"].includes(message.type())) hear(`console ${message.type()}: ${message.text()}`);
+  });
+  page.on("requestfailed", (request) => hear(`request failed: ${request.method()} ${request.url()} (${request.failure()?.errorText ?? "no reason given"})`));
+  page.on("crash", () => hear("the page crashed"));
+  page.on("close", () => hear("the page closed"));
+  let wentWrong = false;
   try {
     await page.goto(`${site}benchmark/?run=${sections}&model=${model}&size=${size}${query ? `&${query}` : ""}`);
     // the first visit reloads once, when the service worker takes the page over (T93): the wait starts again
@@ -143,7 +159,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     console.log(`sections: ${statuses.join(", ")}`);
     for (const [name, result] of Object.entries(results)) {
       // (--wrong: the GPU section is meant to be WRONG, and is checked below that it is, and what its report says)
-      if ((result.status === "wrong" && !(wrong && name === "gpu")) || (result.status === "error" && OURS.includes(name))) failed = true;
+      if ((result.status === "wrong" && !(wrong && name === "gpu")) || (result.status === "error" && OURS.includes(name))) failed = wentWrong = true;
     }
     if (wrong) {
       // T227's review: the verdicts every layer form gave, WRONG, are in the report's warnings, the worst first, before the
@@ -232,9 +248,14 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     }
   } catch (error) {
     console.log(`failed: ${String(error.message).split("\n")[0]}`);
-    failed = true;
+    failed = wentWrong = true;
   }
   if (errors.length) console.log(`page errors: ${errors.join(" / ")}`);
+  // (every error, warning and failed request, and of the rest, the stages, the last 40)
+  if (wentWrong || errors.length) {
+    const from = heard.length - 40;
+    for (const [at, line] of heard.entries()) if (at >= from || !line.includes(" console info: ")) console.log(`heard: ${line}`);
+  }
   console.log("");
   // T141: Windows' WebKit sometimes never returns from close(), and each browser waits for the one before it (bench.yml's
   // Windows job sat 55 minutes after WebKit's report, 2026-09-27): give it 15 seconds and go on
