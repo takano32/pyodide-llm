@@ -433,6 +433,19 @@ for count in (65536, 65535, 65534, 65533, 3, 0):
     kernel["from_f16"](widened.ctypes.data, every.ctypes.data, count)
     assert np.array_equal(widened[:count].view(np.uint32), stand[:count].view(np.uint32)), f"from_f16 widens a half wrong (n {count})"
     assert np.isnan(widened[count:]).all(), f"from_f16 wrote past n {count}"
+# T243: finite_f16, the look at the GPU's float16 keys and values before they go into the cache: every one of the 65536
+# halves alone (0 for the 2048 whose exponent's bits are all set, the NaNs and the two infinities, which the widening
+# above makes finite numbers; 1 for the rest: NumPy's isfinite), one at every place of a run of 19 (the eights and the
+# rest), and no half outside its n looked at
+finite = np.array([kernel["finite_f16"](every.ctypes.data + 2 * i, 1) for i in range(65536)])
+assert np.array_equal(finite, np.isfinite(every.view(np.float16)).astype(finite.dtype)), "finite_f16 is not isfinite"
+assert kernel["finite_f16"](every.ctypes.data, 0x7c00) == 1 and kernel["finite_f16"](every.ctypes.data, 0x7c01) == 0, "finite_f16 of the positive halves"
+row = np.empty(21, dtype=np.uint16)
+for bad in (0x7c00, 0xfc00, 0x7e00, 0xffff):
+    for at in range(21):
+        row[:] = 0x7bff  # the largest half
+        row[at] = bad
+        assert kernel["finite_f16"](row.ctypes.data + 2, 19) == (1 if at in (0, 20) else 0), f"finite_f16 of 19 with {bad:#x} at {at - 1}"
 # NumPy takes over when the kernels cannot be loaded
 assert llama2_numpy.Llama(read("stories15M.f32"), read("tokenizer.bin"), kernels="missing.so").backend == "NumPy"
 
