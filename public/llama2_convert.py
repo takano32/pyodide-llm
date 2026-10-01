@@ -1516,7 +1516,7 @@ class Stream:
         row = int((math.prod(stored[1:]) if len(stored) > 1 else int(stored[0])) * itemsize)
         # the head permutation needs its whole matrix (a small one); everything else goes row by row, as it comes.
         # A GGUF's tensor held in another order than Hugging Face's is put back whole too
-        again = info.get("turned") or info.get("split") or info.get("transposed")
+        again = info.get("turned") or info.get("split") or info.get("transposed") or info.get("tiled")
         whole = any(transform for _, _, transform in targets) or len(targets) > 1 or bool(again)
         rows = len(self.pending) // row if not whole or last else 0
         if whole and last:
@@ -1535,6 +1535,8 @@ class Stream:
             values = unturned(values, info["turned"])
         if info.get("split"):
             values = unsplit(values, info["split"])
+        if info.get("tiled"):
+            values = untiled(values, *info["tiled"])
         for index, first, transform in targets:
             out = transformed(values, left_to_do(transform, info.get("done")), self.head_size)
             self.writer.write(index, first + self.first, out)
@@ -1572,6 +1574,21 @@ def unsplit(w, heads):
     return w.reshape(3, heads, w.shape[0] // 3 // heads, -1).swapaxes(0, 1).reshape(w.shape)
 
 
+def untiled(w, first, key_heads, per, size, axis=0):
+    """The value heads of a Qwen3.5's linear-attention layer as llama.cpp stores them where a key head has per (more
+    than one) of them, back to Hugging Face's order (T245). Hugging Face holds them grouped by their key head: the per
+    value heads of key head 0, then those of key head 1, ... llama.cpp writes them tiled, every key head's first value
+    head, then every key head's second, ..., so that its broadcast of the key heads over the value heads is a plain
+    repeat (conversion/qwen.py's _reorder_v_heads at dcd387a4): the value head at place j * key_heads + h of the GGUF
+    is Hugging Face's value head h * per + j. w: the whole tensor. The heads are what it has from first on along axis,
+    size entries to a head; what stands before first (q and k in in_proj_qkv and in the convolution's channels) stays."""
+    w = np.moveaxis(np.asarray(w), axis, 0)
+    if w.shape[0] - first != key_heads * per * size:
+        raise ValueError(f"{w.shape[0] - first} are not {key_heads * per} value heads of {size}.")
+    heads = w[first:].reshape(per, key_heads, size, *w.shape[1:]).swapaxes(0, 1).reshape(-1, *w.shape[1:])
+    return np.moveaxis(np.concatenate([w[:first], heads]), 0, axis)
+
+
 # ------------------------------------------------------------------------------------------------- GGUF (T74)
 # A GGUF file holds what config.json, tokenizer.json and model.safetensors hold, in one. Only what a Q8_0, PQ2_0 or F16
 # Llama, Qwen2, Qwen3, Qwen3.5, GPT-2 or GPT-NeoX needs is read; tests/gguf_check.py is the separate reference this is
@@ -1588,6 +1605,14 @@ GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", 
                       "qwen35": "qwen35"}
 # the ones whose tokenizer.json normalizes to NFC, which a GGUF does not say (Qwen's)
 GGUF_NFC = ("qwen2", "qwen35")
+# T245: the tensors of a Qwen3.5's linear-attention layer that have the value heads along an axis, as (whether q and k
+# stand before them, whether a head has value_dim entries there or one, the axis). llama.cpp's conversion/qwen.py at
+# dcd387a4, _LinearAttentionVReorderBase.modify_tensors (lines 584 to 633), reorders these and no other (the norm of a
+# value head, linear_attn.norm, is one for all the heads)
+QWEN35_TILED = {"in_proj_qkv.weight": (True, True, 0), "in_proj_z.weight": (False, True, 0),
+                "in_proj_a.weight": (False, False, 0), "in_proj_b.weight": (False, False, 0),
+                "dt_bias": (False, False, 0), "A_log": (False, False, 0),
+                "conv1d.weight": (True, True, 0), "out_proj.weight": (False, True, 1)}
 GGUF_LAYER = {"attn_norm": "input_layernorm", "ffn_norm": "post_attention_layernorm", "attn_q": "self_attn.q_proj",
               "attn_k": "self_attn.k_proj", "attn_v": "self_attn.v_proj", "attn_output": "self_attn.o_proj",
               "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj", "ffn_down": "mlp.down_proj"}
@@ -1740,11 +1765,9 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
                     "rotary_pct": key("rope.dimension_count", 0) / head if head else None}
             config.update({name: value for name, value in said.items() if value is not None}, model_type="qwen3_5_text")
             linear = linear_layers(config)
-            if linear["value_heads"] != linear["key_heads"]:
-                # llama.cpp stores the value heads of such a model (Qwen3.5 4B and up) in another order, every key
-                # head's first value head, then every key head's second: read as they are, they would be other heads
-                raise ValueError("This GGUF holds a Qwen3.5 with more value heads than key heads, whose order in a GGUF "
-                                 "the converter does not read yet.")
+            if linear["value_heads"] % linear["key_heads"]:
+                raise ValueError(f"This GGUF holds a Qwen3.5 of {linear['value_heads']} value heads to "
+                                 f"{linear['key_heads']} key heads, which is not as many to each.")
     header = {}
     if "rope_freqs.weight" in tensors:
         # llama.cpp writes Llama 3's RoPE scaling as a table of divisors instead of the rope_scaling of config.json
@@ -1803,6 +1826,14 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
                 entry["done"] = "decay"
             if target.endswith("linear_attn.conv1d.weight") and len(info["shape"]) == 2:
                 entry["shape"] = [info["shape"][0], 1, info["shape"][1]]
+            # T245: and where a key head has more value heads than one (the 4B and up: 2 or 3), it writes the value
+            # heads in another order (untiled()) in every tensor that has them along an axis. Put back whole, as a
+            # turned q is: it is a move of values, which comes back to the bit
+            per, part = linear["value_heads"] // linear["key_heads"], target.rsplit("linear_attn.", 1)[-1]
+            if per > 1 and "linear_attn." in target and part in QWEN35_TILED:
+                after_keys, of_a_head, axis = QWEN35_TILED[part]
+                entry["tiled"] = (2 * linear["key_heads"] * linear["key_dim"] if after_keys else 0, linear["key_heads"],
+                                  per, linear["value_dim"] if of_a_head else 1, axis)
         header[target] = entry
     return header, config
 
