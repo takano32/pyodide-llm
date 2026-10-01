@@ -333,22 +333,26 @@ for name, first, other in (("swiglu", inputs, others), ("gelu", others, inputs))
 # T237: the rotated basis's kernels are NumPy's rotate() and unrotate() to the bit: every block from 1 to 4096, one to
 # five blocks of it (lengths that are no multiple of four too, for blocks of 1 and 2), large and small numbers and
 # both zeros, into another place and in place, and nothing written past n
-for block in (2 ** e for e in range(13)):
-    for blocks in (1, 2, 3, 5) + ((7, 9) if block < 4 else ()):
-        n = blocks * block
-        values = (rng.standard_normal(n) * 10.0 ** rng.integers(-20, 20, n)).astype(np.float32)
-        values[:: 7] = 0.0
-        values[3:: 11] = -0.0
-        signs = rng.choice([-1.0, 1.0], n).astype(np.float32)
-        scaled = (signs * np.float32(1.0 / np.sqrt(block))).astype(np.float32)
-        for name, want in (("rotate", llama2_numpy.rotate(values, signs, block)), ("unrotate", llama2_numpy.unrotate(values, signs, block))):
-            out = np.full(n + 3, np.nan, dtype=np.float32)
-            simd[name](out.ctypes.data, values.ctypes.data, scaled.ctypes.data, n, block)
-            assert np.array_equal(out[:n].view(np.uint32), want.view(np.uint32)), f"{name} is not NumPy's (block {block}, {n} values)"
-            assert np.isnan(out[n:]).all(), f"{name} wrote past n {n} (block {block})"
-            there = values.copy()
-            simd[name](there.ctypes.data, there.ctypes.data, scaled.ctypes.data, n, block)
-            assert np.array_equal(there.view(np.uint32), want.view(np.uint32)), f"{name} in place is not NumPy's (block {block}, {n} values)"
+# (in a function, with random numbers of its own: the test's values, blocks and draws further down stay what they were)
+def rotated_kernels():
+    rng = np.random.default_rng(237)
+    for block in (2 ** e for e in range(13)):
+        for blocks in (1, 2, 3, 5) + ((7, 9) if block < 4 else ()):
+            n = blocks * block
+            values = (rng.standard_normal(n) * 10.0 ** rng.integers(-20, 20, n)).astype(np.float32)
+            values[:: 7] = 0.0
+            values[3:: 11] = -0.0
+            signs = rng.choice([-1.0, 1.0], n).astype(np.float32)
+            scaled = (signs * np.float32(1.0 / np.sqrt(block))).astype(np.float32)
+            for name, want in (("rotate", llama2_numpy.rotate(values, signs, block)), ("unrotate", llama2_numpy.unrotate(values, signs, block))):
+                out = np.full(n + 3, np.nan, dtype=np.float32)
+                simd[name](out.ctypes.data, values.ctypes.data, scaled.ctypes.data, n, block)
+                assert np.array_equal(out[:n].view(np.uint32), want.view(np.uint32)), f"{name} is not NumPy's (block {block}, {n} values)"
+                assert np.isnan(out[n:]).all(), f"{name} wrote past n {n} (block {block})"
+                there = values.copy()
+                simd[name](there.ctypes.data, there.ctypes.data, scaled.ctypes.data, n, block)
+                assert np.array_equal(there.view(np.uint32), want.view(np.uint32)), f"{name} in place is not NumPy's (block {block}, {n} values)"
+rotated_kernels()
 # T136: GGUF's Q8_0 widened on the kernels is NumPy's q8_0() to the bit: every float16 scale (NaNs, infinities,
 # subnormals, both zeros) once, with every int8 (-128 and 127 included) across the blocks, in odd numbers of blocks
 q8_0 = llama2_numpy.kernel_q8_0("simdkernel.so")
