@@ -6,6 +6,7 @@
 //
 //   SEEDS="1 2 … 64" PROMPTS='["これからの流行りは", "富士山は、"]' WRITER=degenerate.mjs TOKENS=200 bash tests/write.sh hf-japanese-gpt2-xsmall
 //
+// (BOS=<token id> begins every text with that token instead of the entry's: how another start compares.)
 // For each prompt (PROMPTS: a JSON list, else the entry's own and two more openings) and seed it writes up to TOKENS
 // tokens with the entry's sampling (until a stop token, as the page does) and counts what a reader sees come apart:
 //   unk     the answer has <unk> in it (the model wrote the piece that stands for what its vocabulary lacks)
@@ -37,7 +38,8 @@ const prompts = process.env.PROMPTS ? JSON.parse(process.env.PROMPTS) : [page.pr
 const seeds = (process.env.SEEDS ?? "1 2 3 4 5 6 7 8 9 10").split(/\s+/).filter(Boolean).map(Number);
 const { temperature, topp, repetition_penalty } = page.generation;
 pyodide.globals.set("CHECKPOINT", files.checkpoint);
-pyodide.globals.set("OPTIONS", pyodide.toPy(page.options));
+// BOS=<token id>: the token that begins every text, where the entry's says another (how the entry's choice compares)
+pyodide.globals.set("OPTIONS", pyodide.toPy({ ...page.options, ...(process.env.BOS ? { bos: Number(process.env.BOS) } : {}) }));
 pyodide.globals.set("TEXTS", pyodide.toPy(prompts.map((prompt) => (page.template ? filled(page.template, prompt) : prompt))));
 pyodide.globals.set("COUNT", Number(count));
 pyodide.globals.set("SEEDS", pyodide.toPy(seeds));
