@@ -20,8 +20,10 @@
 #       llama.cpp turns to (out, in), and its output.weight, a copy of the embedding) and GPT-NeoX (its
 #       query_key_value, which llama.cpp splits into all of q, k, then v); the order found is said as for q and k.
 #       T235: a PQ2_0 GGUF (Prism ML's ternary blocks of 128) against the float16 safetensors of the same ternary
-#       weights, which it holds as they are (the reference is the original's values, as for an F16 tensor), and
-#       yarn's factor and original context against config.json's rope_scaling.
+#       weights (the reference is the original's values, as for an F16 tensor), and yarn's factor and original context
+#       against config.json's rope_scaling. Ternary-Bonsai 1.7B's is 8.7e-5 off at its worst tensor, not 0: a block here
+#       and there has two magnitudes in the safetensors, 0.5% apart, and the larger one for all its values in the GGUF
+#       (blk.0.attn_k.weight: one block of 16384, 63 values).
 #   python3 tests/gguf_check.py logits <out A> <out B> <text file> [tokens = 300]
 #       Two converted checkpoints (the <out> of tests/perplexity_prepare.py) on the same text: the largest logit
 #       difference, how often the most likely token agrees, and the perplexity of each. The acceptance of T74 is
