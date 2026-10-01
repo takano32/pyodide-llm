@@ -29,8 +29,9 @@
 //                                    went up from forward.js's cache; the ids into plan.tokens.ids and the keys and
 //                                    values of their positions into plan.staging (see generate() below). The answer is
 //                                    in the control area as a prompt's. Where plan.tokens asks for it, "ready" says
-//                                    tokens ({ form, ms, forms, remembered }: the layer of a token chosen here and its
-//                                    ms a step) or tokensWhy (why they stay on the CPU)
+//                                    tokens ({ form, ms, forms, remembered, attention, attentions }: the layer of a
+//                                    token chosen here and its ms a step, T224: the attention of a token chosen here
+//                                    and what each came to) or tokensWhy (why they stay on the CPU)
 //   { type: "stop" }                 every buffer and the device let go, and the worker ends; T205: it says
 //                                    { type: "ended" } as it does (so does a start that ends as "unusable")
 //
@@ -275,7 +276,8 @@ async function start(memory, plan) {
     const g = model.gen;
     postMessage({ type: "ready", adapter: describe(adapter), key, bytes, seconds: (performance.now() - began) / 1000,
       form: model.form.name, attention: model.attention.name, forms: model.forms, remembered: Boolean(model.form.remembered), blocks,
-      tokens: g?.form ? { form: g.form.name, ms: g.ms, forms: g.forms, remembered: g.forms.some((f) => f.remembered), pieces: model.tables.classifier.length } : null,
+      tokens: g?.form ? { form: g.form.name, ms: g.ms, forms: g.forms, remembered: g.forms.some((f) => f.remembered), pieces: model.tables.classifier.length,
+        attention: g.attention.name, attentions: g.attentions } : null,
       tokensWhy: plan.tokens ? model.tokensWhy ?? null : undefined });
   } catch (error) {
     unusable(String(error?.message ?? error));
@@ -1070,8 +1072,8 @@ async function timeBlocks(m) {
 // JavaScript on the model's own weights (checkTokens), and the right ones are timed, a run of plan.tokens.most steps
 // each in turn: the fastest is taken (T150's and T175's tables left which is fastest to the device: the owner's
 // Android read a layer at 18.5% of its buffer's reads with mul_mat_vec and a matrix at 96.8% with DP4A). The attention
-// is the prompt's (llama.cpp's flash attention with tiles, T147, for one token: T150's (a), a KV-split form is left for
-// long contexts), on this pass's q. Where it came from: the run of T151 (public/benchmark/gpu.js's generate()), whose
+// (T224, chooseTokenAttention) is llama.cpp's decode form, flash_attn_vec, split over the positions and reduced, or the
+// prompt's tiles, whichever is right and faster here, on this pass's q. Where it came from: the run of T151 (public/benchmark/gpu.js's generate()), whose
 // form is WebLLM's decode loop without its sync of every token (web-llm, src/llm_chat.ts; no line taken) and llama.cpp's
 // WebGPU graph of a token, one command encoder for all of it (ggml-webgpu.cpp, commit 2145525a, MIT; no line taken).
 // (T175's fused DP4A with the norms apart as well, RMSNORM and QUANTIZE where NORM_QUANTIZE is one: the owner's
@@ -1150,8 +1152,9 @@ function spread(m, rows, perGroup) {
   return [across, Math.ceil(groups / across)];
 }
 // The dispatches of one step in a form: EMBED, the layers (from, to: those of a check), the head (the final norm and
-// the classifier) and SAMPLE, [pipeline, bind group, x, y] each
-function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed = true } = {}) {
+// the classifier) and SAMPLE, [pipeline, bind group, x, y] each. positions: how many the attention reads at the most
+// (T224: flash_attn_vec's parts a head go by it)
+function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed = true, positions = m.cache.capacity } = {}) {
   const { plan, wgsl, gen: g } = m, V = m.vectors, P = form.pipes, cache = m.cache, qDim = plan.heads * plan.headSize;
   const rows = form.dp4a ? wgsl.ORT_DP4A_MATVEC_ROWS : wgsl.MUL_MAT_VEC_ROWS;
   const matrix = (pipeline, [w, s], input, params, count, output) =>
@@ -1172,7 +1175,8 @@ function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed =
     list.push(...normed(V.attention, g.u.norm[l]),
       matrix(P.qkv, qkv, read(g.h, V.attention), g.u.qkv[l], qDim + 2 * plan.kvHeads * plan.headSize,
         [[5, g.q], [6, cache.keys[l]], [7, cache.values[l]], [8, m.angleTable], [9, g.step]]),
-      [m.attention.pipeline, bind(m, m.attention.pipeline, [g.q, cache.keys[l], cache.values[l], g.att, g.u.flash, g.step]), plan.heads, 1],
+      ...attentionPasses(m, g.attention, { q: g.q, keys: cache.keys[l], values: cache.values[l], out: g.att, parts: g.parts, params: g.params,
+        flash: g.u.flash, step: g.step }, plan.heads, positions),
       ...quantized(g.att, g.u.quantizeAttention, qDim), matrix(P.add, o.layers[l], read(g.att), g.u.o, plan.dim, [[5, g.h]]),
       ...normed(V.ffn, g.u.norm[l]), matrix(P.glu, gateUp, read(g.h, V.ffn), g.u.gateUp[l], plan.hidden, [[5, g.gate]]),
       ...quantized(g.gate, g.u.quantizeGate, plan.hidden), matrix(P.add, down.layers[l], read(g.gate), g.u.down, plan.dim, [[5, g.h]]));
@@ -1186,10 +1190,13 @@ function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed =
   }
   return list;
 }
-// a form's whole step, made again when the cache has grown (its buffers are others then)
-function tokenStep(m, form) {
-  if (form.step?.cache !== m.cache) form.step = { cache: m.cache, list: tokenPass(m, form) };
-  return form.step.list;
+// a form's whole step for a run that reads up to positions, made again when the cache has grown (its buffers are others
+// then); T224: one a count of the attention's parts a head (flash_attn_vec's nwg goes by the positions)
+function tokenStep(m, form, positions) {
+  const a = m.gen.attention, parts = a.tiles ? 0 : m.wgsl.flashVecSplits(a.shape, positions);
+  if (form.steps?.cache !== m.cache) form.steps = { cache: m.cache, lists: new Map() };
+  if (!form.steps.lists.has(parts)) form.steps.lists.set(parts, tokenPass(m, form, { positions }));
+  return form.steps.lists.get(parts);
 }
 // count steps of the dispatches from the state given (with the settings and a random number a step), in one
 // submission, and read back: the ids and the state's words, and (keep) the keys and values of the positions pos to
@@ -1250,6 +1257,8 @@ async function runTokens(m, dispatches, { count, pos, state, settings, randoms, 
 async function chooseTokens(m) {
   const { plan, wgsl } = m;
   m.gen = await tokenBuffers(m);
+  await chooseTokenAttention(m);
+  if (stopping) return;
   // T156: the first layer's matrices of a model on the GPU alone are not in the shared memory: checkTokens reads them
   // back from the GPU (T210: and the rows of the tables it reads)
   if (m.direct) {
@@ -1300,7 +1309,7 @@ async function timeTokens(m, forms) {
   if (most > m.cache.capacity) grow(m, most);
   const timed = async (form) => {
     const began = performance.now();
-    await runTokens(m, tokenStep(m, form), { count: most, pos: 0, state, settings, randoms });
+    await runTokens(m, tokenStep(m, form, most), { count: most, pos: 0, state, settings, randoms });
     return performance.now() - began;
   };
   for (const form of forms) await timed(form);
@@ -1310,6 +1319,165 @@ async function timeTokens(m, forms) {
     if (stopping) break;
   }
   return times.map((list) => list.sort((a, b) => a - b)[list.length >> 1] / most);
+}
+
+// ---- T224: the attention of a generated token. The candidates: llama.cpp's decode form (shaders.js's flashVec and
+// flashVecReduce: the positions split over nwg workgroups a head, then reduced), with subgroups where there are (and
+// subgroup_id), and with the lanes of the workgroup standing for a subgroup; and the prompt's tiles (m.attention: one
+// row of four used, a workgroup a head, T150's (a)). Each checked against JavaScript (checkTokenAttention), the right
+// ones timed (timeTokenAttention), the fastest taken: m.gen.attention, with what each came to (m.gen.attentions).
+// plan.force.tokenAttention (tests): that one alone; plan.force.quick: the first right one, untimed. None is
+// remembered (T148 remembers the matrices, the prompt's attention and the token's layer): the two small shaders are
+// compiled, checked and timed at every start.
+const TOKEN_ATTENTION_VEC = "llama.cpp flash_attn_vec", TOKEN_ATTENTION_TILES = "the prompt's attention tiles";
+async function chooseTokenAttention(m) {
+  const { device, plan, wgsl, gen: g } = m;
+  const subgroups = device.features.has("subgroups") && Boolean(navigator.gpu.wgslLanguageFeatures?.has("subgroup_id"));
+  const vec = (withSubgroups) => ({ name: `${TOKEN_ATTENTION_VEC}${withSubgroups ? ", subgroups" : ""}`,
+    shape: wgsl.flashVecShape({ headSize: plan.headSize, subgroups: withSubgroups, threads: threadsOf(device),
+      subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize }) });
+  let candidates = [...(subgroups ? [vec(true)] : []), vec(false), { name: TOKEN_ATTENTION_TILES, tiles: true, pipeline: m.attention.pipeline }];
+  if (plan.force.tokenAttention) candidates = candidates.filter((a) => a.name === plan.force.tokenAttention);
+  const right = [];
+  g.attentions = [];
+  for (const a of candidates) {
+    if (plan.force.quick && right.length) break;
+    if (a.shape?.none) {
+      g.attentions.push({ name: a.name, none: a.shape.none });
+      continue;
+    }
+    try {
+      if (!a.tiles) {
+        a.pipeline = await within(validated(m, () => pipelineOf(m, wgsl.flashVec(a.shape))), `compiling ${a.name}`);
+        a.reduce = await within(validated(m, () => pipelineOf(m, wgsl.flashVecReduce(a.shape))), `compiling ${a.name}'s reduce`);
+      }
+      const wrong = await within(checkTokenAttention(m, a), `checking ${a.name}`);
+      if (wrong) g.attentions.push({ name: a.name, none: `wrong: ${wrong}` });
+      else right.push(a);
+    } catch (error) {
+      if (error?.late) throw error;
+      g.attentions.push({ name: a.name, none: String(error?.message ?? error) });
+    }
+    if (stopping) return;
+  }
+  if (!right.length) {
+    throw new Error(`no attention of a token is right on this GPU (${g.attentions.map((a) => `${a.name}: ${a.none}`).join("; ") || `none named ${plan.force.tokenAttention}`})`);
+  }
+  const ms = plan.force.quick || right.length === 1 ? right.map(() => undefined) : await within(timeTokenAttention(m, right), "timing the attention of a token");
+  const best = ms.reduce((b, t, i) => (t !== undefined && (ms[b] === undefined || t < ms[b]) ? i : b), 0);
+  right.forEach((a, i) => g.attentions.push({ name: a.name, ms: ms[i] }));
+  g.attention = right[best];
+  // the vec form's parts (every head's, nwg of the most) and its Params a count of parts, made as a run needs them
+  if (!g.attention.tiles) {
+    g.parts = buffer(m, wgsl.flashVecPartsBytes(g.attention.shape, plan.heads));
+    g.params = paramsOf(m, g.attention.shape, plan.heads, plan.kvHeads, m.owned);
+  }
+}
+// flashVec's Params a count of parts, each made once (owned: where they go)
+function paramsOf(m, shape, heads, kvHeads, owned) {
+  const made = new Map();
+  return (nwg) => {
+    if (!made.has(nwg)) made.set(nwg, uniform(m, m.wgsl.flashVecParams(shape, heads, kvHeads, nwg), owned));
+    return made.get(nwg);
+  };
+}
+// The dispatches of attention a for a token of heads that reads positions: io's q, keys, values into out (flash: the
+// tiles' Params; parts and params(nwg): the vec form's parts and Params; step: the token's Step), [pipeline, bind
+// group, x, y] each: the tiles a workgroup a head; the vec form nwg a head, then (nwg more than 1) the reduce
+function attentionPasses(m, a, io, heads, positions) {
+  if (a.tiles) return [[a.pipeline, bind(m, a.pipeline, [io.q, io.keys, io.values, io.out, io.flash, io.step]), heads, 1]];
+  const nwg = m.wgsl.flashVecSplits(a.shape, positions), params = io.params(nwg);
+  return [[a.pipeline, bind(m, a.pipeline, [io.q, io.keys, io.values, io.parts, io.out, params, io.step]), heads * nwg, 1],
+    ...(nwg > 1 ? [[a.reduce, bind(m, a.reduce, [io.parts, io.out, params]), heads, 1]] : [])];
+}
+// Made-up buffers of an attention of a token over positions (heads of q on kvHeads of keys and values, the model's
+// headSize; shaders.js's tokenAttentionData: steep, the heads whose q is steep), the output, the Step of the token at
+// positions - 1, the tiles' Params, and the vec form's parts and Params
+function attentionIo(m, a, { heads, kvHeads, positions, steep = [] }, owned) {
+  const size = m.plan.headSize, { q, keys, values } = m.wgsl.tokenAttentionData({ heads, kvHeads, size, positions, steep });
+  const make = (data) => {
+    const made = buffer(m, data.byteLength, STORAGE | COPY_DST, owned);
+    m.device.queue.writeBuffer(made, 0, data);
+    return made;
+  };
+  const flash = new ArrayBuffer(16);
+  new Uint32Array(flash, 0, 2).set([heads, kvHeads]);
+  new Float32Array(flash, 8, 1)[0] = 1 / Math.sqrt(size);
+  return { data: { q, keys, values }, q: make(q), keys: make(keys), values: make(values), out: buffer(m, heads * size * 4, STORAGE | COPY_SRC, owned),
+    step: uniform(m, new Uint32Array([1, positions - 1, 0, 0]), owned), flash: uniform(m, flash, owned),
+    ...(a.tiles ? {} : { parts: buffer(m, m.wgsl.flashVecPartsBytes(a.shape, heads), STORAGE, owned), params: paramsOf(m, a.shape, heads, kvHeads, owned) }) };
+}
+// The check of an attention of a token, on made-up numbers against JavaScript's (shaders.js's tokenAttentionData and
+// tokenAttentionOff): 4 heads of q on 2 of keys and values (each head of q to its own), a token that reads 40 positions
+// (a KV_TILE of 32 and a part of the next: one part), 70 (two parts), 300 and 1100 (as many parts as the vec form takes,
+// each of more than one tile: the reduce over them), with positions past the token's that it must not read, and head
+// 3's q steep (a largest taken wrong shows only in a steep softmax). Each head's output against its softmax over the
+// positions up to the token's, no farther than LINE of the largest |value| of its head (checkAttention's: the tiles
+// hold the weights in float16)
+const TOKEN_ATTENTION_LENGTHS = [40, 70, 300, 1100];
+async function checkTokenAttention(m, a) {
+  const size = m.plan.headSize, heads = 4, kvHeads = 2;
+  for (const positions of TOKEN_ATTENTION_LENGTHS) {
+    const owned = [];
+    try {
+      const io = attentionIo(m, a, { heads, kvHeads, positions, steep: [3] }, owned);
+      const passes = await validated(m, () => attentionPasses(m, a, io, heads, positions));
+      const encoder = m.device.createCommandEncoder(), pass = encoder.beginComputePass();
+      for (const [pipeline, group, x, y] of passes) dispatch(pass, pipeline, group, x, y);
+      pass.end();
+      m.device.queue.submit([encoder.finish()]);
+      const got = new Float32Array(await readBack(m, io.out, heads * size * 4));
+      const worst = m.wgsl.tokenAttentionOff(got, io.data, { heads, kvHeads, size, positions });
+      if (!(worst <= LINE)) return `its output is ${worst.toExponential(2)} of the largest value from JavaScript's at ${positions} positions (line ${LINE})`;
+    } finally {
+      owned.forEach((b) => b.destroy());
+    }
+  }
+  return null;
+}
+// ms of the attention of a token (every layer's) with each of right, on made-up numbers: at 128 positions and at 2048
+// (the model's context where shorter), all in turn, as the tiled shaders are timed (timeForms: a submission of n
+// attentions and one of 2n, n doubled from 1 until n takes TIMED_MS, up to MOST_PASSES layers of them, PAIRS pairs,
+// the median), times the layers; the two lengths' ms added. (T224's review: n counts attentions, not layers of them.
+// A submission of a whole token's layers at the least made the slowest one long: the prompt's tiles at 2048
+// positions, if they take the time of T202's 0.90 ms at 127 positions in proportion (an estimate: the f32 tiles, on
+// the owner's Android), 16 × 14 ms a submission and some 3.9 s of timing at every start, 0.5 s so)
+async function timeTokenAttention(m, right) {
+  const { device, plan } = m, owned = [];
+  try {
+    const lengths = [...new Set([128, 2048].map((n) => Math.min(n, plan.seqLen)))];
+    const items = right.flatMap((a) => lengths.map((positions) => {
+      const io = attentionIo(m, a, { heads: plan.heads, kvHeads: plan.kvHeads, positions }, owned);
+      return { a, passes: attentionPasses(m, a, io, plan.heads, positions) };
+    }));
+    const submission = async ({ passes }, n) => {
+      const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
+      for (let i = 0; i < n; i++) for (const [pipeline, group, x, y] of passes) dispatch(pass, pipeline, group, x, y);
+      pass.end();
+      const began = performance.now();
+      device.queue.submit([encoder.finish()]);
+      await device.queue.onSubmittedWorkDone();
+      return performance.now() - began;
+    };
+    const counts = [], differences = items.map(() => []);
+    for (const item of items) {
+      await submission(item, 1);  // warm
+      let n = 1;
+      while (!m.fallback && n < MOST_PASSES * plan.layers && (await submission(item, n)) < TIMED_MS) n *= 2;
+      counts.push(n);
+    }
+    for (let round = 0; round < (m.fallback ? 1 : PAIRS); round++) {
+      for (const [i, item] of items.entries()) {
+        const once = await submission(item, counts[i]), twice = await submission(item, 2 * counts[i]);
+        differences[i].push((twice - once) / counts[i]);
+      }
+      if (stopping) break;
+    }
+    const ms = differences.map((d) => d.sort((x, y) => x - y)[d.length >> 1] * plan.layers);
+    return right.map((a) => items.reduce((sum, item, i) => (item.a === a ? sum + ms[i] : sum), 0));
+  } finally {
+    owned.forEach((b) => b.destroy());
+  }
 }
 
 // ---- T152's check of a form on the model's own weights, against JavaScript (the drivers, the subgroups and the
@@ -1427,7 +1595,7 @@ async function checkTokens(m, form) {
     device.queue.writeBuffer(m.cache.keys[0], 0, row0[0]);
     device.queue.writeBuffer(m.cache.values[0], 0, row0[1]);
     const readH = buffer(m, dim * 4, MAP_READ | COPY_DST, owned);
-    const { kv } = await runTokens(m, tokenPass(m, form, { to: 1, head: false }), { count: 1, pos, keep: true,
+    const { kv } = await runTokens(m, tokenPass(m, form, { to: 1, head: false, positions: pos + 1 }), { count: 1, pos, keep: true,
       state: wgsl.samplingState({ token, pos, history: [token] }), extra: (encoder) => encoder.copyBufferToBuffer(g.h, 0, readH, 0, dim * 4) });
     await readH.mapAsync(MAP_READ);
     const h = new Float32Array(readH.getMappedRange().slice(0));
@@ -1526,7 +1694,7 @@ function generate({ serial, count, pos, from, token, history, length, cache, set
         else narrowIn(m, target, at(block, l, from), (pos - from) * kvDim, from * kvRow);
       }
     }
-    const out = await runTokens(m, tokenStep(m, g.form), { count, pos, keep: Boolean(cache),
+    const out = await runTokens(m, tokenStep(m, g.form, pos + count), { count, pos, keep: Boolean(cache),
       state: wgsl.samplingState({ token, pos, history, length }), settings: wgsl.samplingSettings({ vocab: g.vocab, ...settings }),
       randoms: Float32Array.from({ length: count }, (_, i) => randoms[i] ?? 0) });
     if (!wanted()) return;
