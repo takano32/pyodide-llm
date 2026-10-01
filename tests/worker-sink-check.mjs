@@ -121,11 +121,16 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
     ["Qwen2.5 3B", [2048, 11008, 36, 16, 2, 151936, 4096], 3472375836, { bias: true }, false],
     ["Llama 3.2 3B", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, {}, true],
     ["llm-jp-3.1 1.8B", [2048, 7168, 24, 16, 16, -99584, 4096], 2101354524, {}, true],
-    ["sarashina2.2 3B, six bits", [2560, 8960, 32, 16, 8, -102400, 4096], 2936678428, {}, true, "int6"]];
+    ["sarashina2.2 3B, six bits", [2560, 8960, 32, 16, 8, -102400, 4096], 2936678428, {}, true, "int6"],
+    // T230: the ternary dtype is sized as int8 is but for its bytes: a grouped-query model's keys and values float32
+    // (Ternary Bonsai 1.7B, 0.48 GB), float16 on a shared memory where the model is past 4 GiB (Ternary Bonsai 2 27B, 7.7 GB)
+    ["Ternary Bonsai 1.7B, ternary", [2048, 6144, 28, 16, 8, 151936, 4096], 484372508, { qk_norm: true, head_dim: 128 }, false, "ternary"],
+    ["Ternary Bonsai 2 27B, ternary", [5120, 17408, 64, 24, 4, -248320, 4096], 7662073884, { arch: "qwen35", head_dim: 256,
+      linear: { every: 4, key_heads: 16, value_heads: 48, key_dim: 128, value_dim: 128, conv: 4 } }, true, "ternary"]];
   // on a plain memory: float32 but where float16 keeps on a 32-bit memory a model float32 would not (Llama 3.2 3B is
   // past it either way: float32, the owner, 2026-09-28)
   const plain = { "llm-jp-3 150M": false, "Qwen2.5 0.5B": false, "Qwen2.5 3B": false, "Llama 3.2 3B": false, "llm-jp-3.1 1.8B": false,
-    "sarashina2.2 3B, six bits": true };
+    "sarashina2.2 3B, six bits": true, "Ternary Bonsai 1.7B, ternary": false, "Ternary Bonsai 2 27B, ternary": false };
   const handedFor = (header, size, form, dtype) => {
     handed.length = 0;
     const into = vm.runInContext("checkpointSink()", context);

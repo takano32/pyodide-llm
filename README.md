@@ -85,7 +85,7 @@ The model list has three groups:
   Qwen2.5, Qwen3, Qwen3.5, llm-jp, sarashina, Swallow, GPT-2, GPT-NeoX and others). The page fetches the weights from
   huggingface.co (for 61 of them a GGUF: Q8_0, and for the three Ternary Bonsai their two-bit PQ2_0, read with the original
   repository's vocabulary and configuration),
-  converts them to int8 in your browser with the same Python code that
+  converts them to int8 in your browser (Ternary Bonsai stays in its 2 bits) with the same Python code that
   builds the site's models, and keeps the result for the next visit. About lists what is kept and deletes it. A
   download of more than 500 MB asks first.
 

@@ -123,7 +123,7 @@ const ternaryBonsai = (size, revision, originalRevision, download, sizes) => ({
   note: `answers at once · 日本語 / English · ternary weights · ${sizes}`,
   ...ggufOf(`prism-ml/Ternary-Bonsai-${size}-gguf`, revision, `Ternary-Bonsai-${size}-PQ2_0.gguf`,
     `prism-ml/Ternary-Bonsai-${size}-unpacked`, originalRevision), download,
-  conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
+  weights: "ternary", conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
   generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE });
 const harmony ={ specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
@@ -680,17 +680,19 @@ const LISTED = [
       "Qwen/Qwen3-4B-Thinking-2507", "768f209d9ea81521153ed38c47d515654e938aea"), download: 4280405632,
     conversion: {}, options: {}, generation: thinking, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T235: Prism ML's ternary Qwen3 1.7B, every weight -1, 0 or 1 times a scale of its 128. Its PQ2_0 GGUF holds two
-  // bits a weight, which the converter widens to int8 without loss of the values, with the vocabulary, config.json and
+  // bits a weight, which the converter keeps as they are (T230: the ternary dtype, a quarter of int8's bytes, on kernels
+  // of its own, T231; ?bits=8 widens them to int8 without loss of the values, as T235 did), with the vocabulary, config.json and
   // chat template of the float16 safetensors of the same weights (the card's base model). T246: and the 4B and the 8B,
   // the same in every file but the weights and config.json's sizes (ternaryBonsai() has what the three share). The
   // 4B's heads are not dim / heads wide and the 8B has a classifier of its own, as the Qwen3 4B and 8B they are built
-  // from; their int8 with its forward pass is past 4 GiB (5.3 and 10.1 GiB at 4096 positions): a 64-bit memory
+  // from; as ternary they fit a 32-bit memory with their forward pass (2.2 and 3.3 GiB at 4096 positions; widened to
+  // int8 they were 5.3 and 10.1 GiB, on a 64-bit one)
   ternaryBonsai("1.7B", "983b5dec2ff16aab79990711ba0f828a499a7e6a", "3aca840085293d026ce6f6b80fafdae937fd2eeb", 463290464,
-    "fetches 463 MB (GGUF) → int8 1.9 GB · desktop only"),
+    "fetches 463 MB (GGUF) → ternary 484 MB"),
   ternaryBonsai("4B", "a3eb42bafe873f9686bc97486c43b72ef7d75ec8", "4485fae7a00129467b9329b738110d88b2942a1a", 1074969344,
-    "fetches 1.1 GB (GGUF) → int8 4.5 GB · desktop only · Chrome and Firefox"),
+    "fetches 1.1 GB (GGUF) → ternary 1.1 GB · desktop only"),
   ternaryBonsai("8B", "c2aefbeb4b24469cd11579c3384b990404c17a30", "ac20f03fc62e872399218b659c8e949dfca05769", 2182184672,
-    "fetches 2.2 GB (GGUF) → int8 9.2 GB · desktop only · Chrome and Firefox"),
+    "fetches 2.2 GB (GGUF) → ternary 2.3 GB · desktop only"),
   // T236: Qwen3.5 0.8B, the first of the list with hybrid attention (T229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
   // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which
@@ -715,20 +717,27 @@ const LISTED = [
 export const PAGE_MEMORY = 300e6;
 const megabytes = (bytes) => `${Math.round(bytes / 1e6).toLocaleString("en")} MB`;
 /** The bytes of a model once loaded: `bytes` of a file of this site, or the "int8 N MB" its note gives for a
- * conversion. undefined when neither says (a file of the visitor's). */
+ * conversion ("ternary N MB" for a ternary model, T230: four times that as int8, where ?bits= asks for it). undefined
+ * when neither says (a file of the visitor's). */
 export function modelBytes(entry) {
   // a float16 original is widened to float32 when loaded, next to the file it came from: llm-jp-3 150M's 305 MB
   // file measures about 800 MB of heap (AGENTS.md), so three times the file is the honest estimate
   if (entry.bytes) return entry.options?.dtype === "float16" ? entry.bytes * 3 : entry.bytes;
-  const found = /int8 ([\d.]+) (MB|GB)/.exec(entry.note ?? "");
-  const int8 = found ? Number(found[1]) * (found[2] === "GB" ? 1e9 : 1e6) : undefined;
-  return int8 && entry.conversion?.dtype === "int6" ? int8 * SIX_OF_EIGHT : int8;
+  const found = /(int8|ternary) ([\d.]+) (MB|GB)/.exec(entry.note ?? "");
+  if (!found) return undefined;
+  const said = Number(found[2]) * (found[3] === "GB" ? 1e9 : 1e6), asked = entry.conversion?.dtype;
+  if (found[1] === "ternary" && !["int8", "int6"].includes(asked)) return said;
+  const int8 = found[1] === "ternary" ? said / TERNARY_OF_EIGHT : said;
+  return asked === "int6" ? int8 * SIX_OF_EIGHT : int8;
 }
 
 // T98: a model converted in the page can keep its weights in six bits instead of eight: 24 bytes and a scale per
 // group of 32 against 32 and a scale, 7/9 of the size, at +1 to +3.4% of perplexity (measured on eight models), and
 // slower on one thread (the groups are widened as they are read). So it is taken where int8 does not fit.
 export const SIX_OF_EIGHT = 28 / 36;
+// T230: a ternary model keeps its weights as they are, two bits each: 32 bytes and a scale per group of 128, a quarter
+// of int8's 128 bytes and four scales, with no loss at all (int8 is the same weights widened)
+export const TERNARY_OF_EIGHT = 36 / 144;
 
 /** T128: whether a model writes Japanese (its note says 日本語: Japanese alone, with English, or translating). */
 export const writesJapanese = (entry) => (entry.note ?? "").includes("日本語");
@@ -742,7 +751,8 @@ export const MODELS = LISTED.map((entry) => ({ entry, key: [Object.keys(GROUPS).
 export const DEVICE_MEMORY_CAP = 8;
 /** The dtype a model of Hugging Face is converted to: the entry's own when it has one (the settings of a visitor's
  * files); else asked is ?bits= (or a setting), "8", "6" or anything else for
- * automatic, which takes int6 where int8 would pass half of what the device says it has (deviceMemory, Chromium
+ * automatic, which is the entry's own `weights` where it names them (T230: "ternary", a ternary model's weights as
+ * they are, smaller than six bits of them and exact), and else takes int6 where int8 would pass half of what the device says it has (deviceMemory, Chromium
  * only, and below its cap of 8: a device at the cap may have any more), and otherwise leaves the choice to the
  * worker (undefined): it knows the model's header once it converts, and with it what the forward pass needs, and
  * takes int6 where int8 would not fit a 32-bit memory and the browser has no 64-bit one (T115, T133).
@@ -752,6 +762,7 @@ export function weightsFor(entry, asked, deviceMemory) {
   // a visitor's own files may come with settings that say it ({"conversion": {"dtype": ...}}): they win (T119)
   if (entry.conversion?.dtype) return entry.conversion.dtype;
   if (asked === "6" || asked === "8") return `int${asked}`;
+  if (entry.weights) return entry.weights;
   if (!deviceMemory || deviceMemory >= DEVICE_MEMORY_CAP) return undefined;
   const int8 = modelBytes({ ...entry, conversion: { ...entry.conversion, dtype: "int8" } });
   return int8 && int8 + PAGE_MEMORY > deviceMemory * 2 ** 30 / 2 ? "int6" : undefined;

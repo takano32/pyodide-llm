@@ -3,6 +3,7 @@
 // No static data and no std math on purpose: nothing relocates a data segment in this hand-made side module.
 
 import { sixFirst, sixSecond, sixTops } from "./six";
+import { codes, fourSums } from "./ternary";
 
 const GS: i32 = 32; // int8 quantization group size, as in quantize.py
 
@@ -255,6 +256,109 @@ export function matmul_q8(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
 @inline function groupQ8(row: usize, xq: usize, g: i32): v128 {
   const o = <usize>(g * GS);
   return dot32(v128.load(row + o), v128.load(xq + o), v128.load(row + o + 16), v128.load(xq + o + 16));
+}
+
+// ---- T230, T231: ternary weights (ternary.ts)
+// The int8 activations of quantize_x (no bias) as the ternary kernels read them, in place: every block of 64 in four
+// planes, byte 16 p + c of the block activation 4 c + p (plane p meets the codes of weights 4 c + p), and after the
+// n / 32 scales at xs an int32 a group of 32: minus the sum of its activations, which a row's sums take (the codes
+// are the weights + 1). n is a multiple of 64 (a ternary row is whole groups of 128).
+// @ts-ignore: decorator
+@inline function sumOf32(a: v128, b: v128): i32 {
+  const quads = i32x4.extadd_pairwise_i16x8_s(i16x8.add(i16x8.extadd_pairwise_i8x16_s(a), i16x8.extadd_pairwise_i8x16_s(b)));
+  return i32x4.extract_lane(quads, 0) + i32x4.extract_lane(quads, 1) + i32x4.extract_lane(quads, 2) + i32x4.extract_lane(quads, 3);
+}
+// every fourth byte of v, four times: lane r holds bytes r, r + 4, r + 8, r + 12
+// @ts-ignore: decorator
+@inline function fourths(v: v128): v128 {
+  return i8x16.shuffle(v, v, 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15);
+}
+export function interleave(xq: usize, xs: usize, n: i32): void {
+  const sums = xs + (<usize>(n >> 5) << 2);
+  for (let b = 0; b < n; b += 64) {
+    const p = xq + <usize>b, at = sums + (<usize>(b >> 5) << 2);
+    const v0 = v128.load(p), v1 = v128.load(p, 16), v2 = v128.load(p, 32), v3 = v128.load(p, 48);
+    store<i32>(at, -sumOf32(v0, v1));
+    store<i32>(at, -sumOf32(v2, v3), 4);
+    // plane r is lane r of each of the four: a transpose
+    const s0 = fourths(v0), s1 = fourths(v1), s2 = fourths(v2), s3 = fourths(v3);
+    const a01 = v128.shuffle<i32>(s0, s1, 0, 4, 1, 5), a23 = v128.shuffle<i32>(s2, s3, 0, 4, 1, 5);
+    const b01 = v128.shuffle<i32>(s0, s1, 2, 6, 3, 7), b23 = v128.shuffle<i32>(s2, s3, 2, 6, 3, 7);
+    v128.store(p, v128.shuffle<i64>(a01, a23, 0, 2));
+    v128.store(p, v128.shuffle<i64>(a01, a23, 1, 3), 16);
+    v128.store(p, v128.shuffle<i64>(b01, b23, 0, 2), 32);
+    v128.store(p, v128.shuffle<i64>(b01, b23, 1, 3), 48);
+  }
+}
+
+// matmul_t2r (kernel_relaxed.ts) without relaxed SIMD: the same weights, activations and sums, the same exact
+// integers a group and the same float32 operations in the same order, so the same numbers to the bit. A plane's
+// products are widened to int16 (its low eight bytes are of the first group of 32 activations, its high eight of the
+// second) and added over the four planes there (4 x 2 x 128 a lane at most), then widened once.
+// @ts-ignore: decorator
+@inline function plain64(w: usize, x: usize, three: v128): v128 {
+  const v = v128.load(w);
+  const x0 = v128.load(x), x1 = v128.load(x, 16), x2 = v128.load(x, 32), x3 = v128.load(x, 48);
+  const c0 = codes(v, 0, three), c1 = codes(v, 1, three), c2 = codes(v, 2, three), c3 = codes(v, 3, three);
+  const low = i16x8.add(i16x8.add(i16x8.extmul_low_i8x16_s(x0, c0), i16x8.extmul_low_i8x16_s(x1, c1)),
+                        i16x8.add(i16x8.extmul_low_i8x16_s(x2, c2), i16x8.extmul_low_i8x16_s(x3, c3)));
+  const high = i16x8.add(i16x8.add(i16x8.extmul_high_i8x16_s(x0, c0), i16x8.extmul_high_i8x16_s(x1, c1)),
+                         i16x8.add(i16x8.extmul_high_i8x16_s(x2, c2), i16x8.extmul_high_i8x16_s(x3, c3)));
+  // lanes 0 and 1 the first group's, 2 and 3 the second's, as the relaxed dot product leaves them
+  const first = i32x4.extadd_pairwise_i16x8_s(low), second = i32x4.extadd_pairwise_i16x8_s(high);
+  return i32x4.add(v128.shuffle<i32>(first, second, 0, 1, 4, 5), v128.shuffle<i32>(first, second, 2, 3, 6, 7));
+}
+export function matmul_t2(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
+  const groups = n >> 7, mask = i8x16.splat(<i8>three);
+  const sums = xs + (<usize>(n >> 5) << 2);
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * <usize>(n >> 2);
+    const srow = ws + ((<usize>i * <usize>groups) << 2);
+    let facc = f32x4.splat(0);
+    for (let g = 0; g < groups; g++) {
+      const w = row + (<usize>g << 5), x = xq + (<usize>g << 7), at = <usize>g << 4;
+      const whole = i32x4.add(fourSums(plain64(w, x, mask), plain64(w + 16, x + 64, mask)), v128.load(sums + at));
+      facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(whole), v128.load(xs + at)), v128.load32_splat(srow + (<usize>g << 2))));
+    }
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
+  }
+}
+
+// T230: the converter's ternary() (llama2_numpy.py) in one pass, the same bytes: n float32 values (x), whole groups of
+// 128, to two bits a value (out, 32 bytes a group: the code sign + 1 of value j in byte j >> 2 at bits 2 (j & 3)) and
+// the largest |value| of every group (xs). Returns 1 where a value is neither 0 nor plus or minus its group's largest
+// (the weights are not ternary, or not a number), else 0.
+export function ternary_x(out: usize, xs: usize, x: usize, n: i32): i32 {
+  let bad = i32x4.splat(0);
+  const one = i32x4.splat(1), zero = f32x4.splat(0);
+  for (let g = 0; g < n; g += 128) {
+    const p = x + (<usize>g << 2);
+    let largest = f32x4.splat(0);
+    for (let j: usize = 0; j < 512; j += 16) largest = f32x4.max(largest, f32x4.abs(v128.load(p + j)));
+    const scale = f32x4.splat(max<f32>(max<f32>(f32x4.extract_lane(largest, 0), f32x4.extract_lane(largest, 1)),
+                                      max<f32>(f32x4.extract_lane(largest, 2), f32x4.extract_lane(largest, 3))));
+    v128.store32_lane(xs + (<usize>(g >> 7) << 2), scale, 0);
+    const to = out + <usize>(g >> 2);
+    for (let j: usize = 0; j < 8; j++) {  // sixteen values, four bytes
+      const at = p + (j << 6);
+      const v0 = v128.load(at), v1 = v128.load(at, 16), v2 = v128.load(at, 32), v3 = v128.load(at, 48);
+      // 1 + (v > 0) - (v < 0): a comparison is -1 where it holds
+      const c0 = i32x4.add(i32x4.sub(one, f32x4.gt(v0, zero)), f32x4.lt(v0, zero));
+      const c1 = i32x4.add(i32x4.sub(one, f32x4.gt(v1, zero)), f32x4.lt(v1, zero));
+      const c2 = i32x4.add(i32x4.sub(one, f32x4.gt(v2, zero)), f32x4.lt(v2, zero));
+      const c3 = i32x4.add(i32x4.sub(one, f32x4.gt(v3, zero)), f32x4.lt(v3, zero));
+      // a lane of four codes, a byte each, to one byte: the codes at bits 0, 2, 4 and 6
+      const four = i8x16.narrow_i16x8_s(i16x8.narrow_i32x4_s(c0, c1), i16x8.narrow_i32x4_s(c2, c3));
+      const packed = v128.or(v128.or(four, i32x4.shr_u(four, 6)), v128.or(i32x4.shr_u(four, 12), i32x4.shr_u(four, 18)));
+      const bytes = v128.and(packed, i32x4.splat(255));
+      v128.store32_lane(to + (j << 2), i8x16.narrow_i16x8_u(i16x8.narrow_i32x4_s(bytes, bytes), i16x8.splat(0)), 0);
+      // every value 0 or of the scale's size
+      const ok0 = v128.or(f32x4.eq(f32x4.abs(v0), scale), f32x4.eq(v0, zero)), ok1 = v128.or(f32x4.eq(f32x4.abs(v1), scale), f32x4.eq(v1, zero));
+      const ok2 = v128.or(f32x4.eq(f32x4.abs(v2), scale), f32x4.eq(v2, zero)), ok3 = v128.or(f32x4.eq(f32x4.abs(v3), scale), f32x4.eq(v3, zero));
+      bad = v128.or(bad, v128.not(v128.and(v128.and(ok0, ok1), v128.and(ok2, ok3))));
+    }
+  }
+  return v128.any_true(bad) ? 1 : 0;
 }
 
 // T98: int6 weights (24 bytes a group, six.ts) with one float32 scale per group: matmul_q8 on the widened groups
