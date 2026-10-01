@@ -84,6 +84,12 @@ case "$stage" in
     python tests/t236_bos.py --original "$dir/orig" --gguf "$dir/g32" --entries "$dir/entries.json" --tokens 40 --plain-tokens 512 \
       --texts "$dir/en1.txt" "$dir/en2.txt" "$dir/ja1.txt" "$dir/ja2.txt"
     ;;
+  handwritten)
+    reference_tools
+    transformers_of_t229
+    original
+    python tests/t236_handwritten.py "$dir/orig" tests/t246_chat.jsonl
+    ;;
   plainbos)
     reference_tools
     transformers_of_t229
