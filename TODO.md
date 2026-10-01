@@ -86,8 +86,10 @@
 
 **いまの状態（2026-10-01、再開した回）**: 2026-09-28 に止めた 4 つ（T129・T130・T219 の (2)・T224）は全部本線に入れた（反映済み、レビューは Sonnet max が後で）。本線は T129 105bb4a、T130 89a24e9（持ち主の判断の 1 行つき: 共有でないメモリで float16 にしても 64 ビットが要るモデルは KV を float32 のまま）、T219 の (2) b76cd65。止めた頃の経緯は `git show 1a0cc1d:TODO.md` のこの段にある。
 - **CI**: 本線（T129 と T130 の後）の tests.yml の全部の組は成功（run 36864748112、EPYC 7763、383 秒）。T219 のブランチ（T224 と合わせた後）の gpu-prompt.yml の全部の組は成功、FAILED 0（run 36864349281、13.9 分）。本番の確かめ（T130: `models.yml` の `long=850` で Qwen2.5 3B（`coi=off` も）・llm-jp-3.1 1.8B・SmolLM2 1.7B、T129: `slow.yml` の slow と stall、2 回目の訪問とモデルの切り替え、T219: `gpuTest=on`）は回している途中で、結果は各項に足す。
-- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: T225 `t225-nvidia-layer-check`、T226 `t226-steps-all-archs`、T228 `t228-bonsai-survey`（調べだけ）、T224 のレビュー `t224-review`（Sonnet max）。終わったものから本会話が本線に入れる。
+- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: T225 `t225-nvidia-layer-check`、T226 `t226-steps-all-archs`、T224 のレビュー `t224-review`（Sonnet max）。終わったものから本会話が本線に入れる。
 - **T227 も本線に入れた（4623fb3、反映済み）**: 報告の頭と要約に「#### Warnings」の一覧。見出しと切り詰めの文（「… and N more, in the whole report below」）は実装が選んだ仮の文で、持ち主が変えてよい。本物の端末の WRONG の行はまだ見ていない（CI の代わりのアダプタは全部 ok）。
+- **T228 の調べも本線に入れた**（docs/notes/t228-bonsai-2-2026-10-01.md。前の仕事を T235〜T238 に採番した。勧めは小さいモデルから、持ち主の判断待ち）。
+- **lishogi.org の WebGPU（2026-10-01、持ち主の問い）**: 使っていない。ソース（WandererXII/lishogi、master 5394fc3、2026-09-10）にも本番の解析ページの JS にも `navigator.gpu`・WGSL は無い。ブラウザの解析は YaneuraOu の K-P の NNUE と Fairy-Stockfish の NNUE の WASM（SIMD と pthreads、共有メモリ）で、隔離はサーバのヘッダ（COEP は `credentialless` が使えるブラウザではそれ、ほかは `require-corp`）。取り込む GPU の手法は無い。
 - **残してあるブランチ**: レビューが使う調べと壊し方の捨てのブランチ（`t129-probe`、`t219-review-probe`、`t224-review-probe`、`t224-review-t210`）、T224 の前の版の写し（`t224-attn-vec`、`t224-attn-vec-fable`）とレビューの書きかけ（`t224-opus-review`）。T224 のレビューが済んだら消す。
 - **レビュー待ち（Sonnet max、別の会話で）**: T129、T130、T219 の (1)(2) と T220、T223、T224（始めた）。
 - **持ち主の端末で見てもらうもの**: T129（iPhone の Safari・Android の Chrome・PC で、初めての訪問・HF のモデル・取得の途中の選び直し・2 回目の訪問が今までどおりか。おかしければ T129 の 1 つを戻す）、T223（llm-jp-3 150M が 2 本を選ぶか）、T173（iPhone と Android の Page memory）、T210（Llama 3.2 3B を GPU だけで、8B が入るか）、T156 の (c)（ベンチの CPU の節の後に 3B を 2 回開いて CPU に倒れるか）、T219 の (2)（Android の「the sampling alone」が前より 1.1 倍を越えて遅くないか）。
@@ -1227,7 +1229,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 今の形: 答えを GPU で書けるのは Llama の形だけ（T152 の fused の層のシェーダに bias・head の norm・違う head の大きさ・LayerNorm・GELU・並列残差が無い）。GPU だけ（T156）もそれが条件。Chrome は `deviceMemory` を 8 で止めるので、32 GB の PC も 2 重は 6.5 GiB まで。Qwen3 4B の int8 は 2 重で線を越え、GPU だけにもできず、プロンプトも含めて全部 CPU になる。
 - 作るもの: (1) 答えの層（fusedMatVec / fusedDp4aMatVec と歩の道）に、プロンプトの側（T153・T154）と同じ bias の ADD、head ごとの RMSNorm、qDim の幅、LayerNorm・GELU・並列残差を足す（元ネタはプロンプトの側と同じ llama.cpp の WebGPU）。(2) そうすれば `gpuOnlyUnfit()` の形の条件も外れ、Qwen3 4B などが GPU だけに置ける。(3) 見直し: `deviceMemory` が 8 と言う端末の 2 重の線（6.5 GiB）が、32 GB の PC でも同じになること。`performance.memory`（Chromium）や GPU の `maxBufferSize` を足した判定を考える（開発機の値を既定にしない）。
 
-### T227 [バグ][計測実行] /benchmark/ の警告（WRONG と、その訳）が写した報告に全部入らない — 状態: **反映済み**（2026-10-01、本線に入れるのは本会話。レビュー前）（2026-09-28、持ち主「警告もコピペするようになってないの、不備では？」。規模 小）
+### T227 [バグ][計測実行] /benchmark/ の警告（WRONG と、その訳）が写した報告に全部入らない — 状態: **反映済み**（2026-10-01 に本線に入れた 4623fb3、レビュー前）（2026-09-28、持ち主「警告もコピペするようになってないの、不備では？」。規模 小）
 - 持ち主の PC の回で、画面に出た検査の WRONG とその訳（どの検査がどの数で落ちたか、tokens on the GPU の「token 2: 48, the CPU 483」など）が、写した Markdown（と Issue の要約、T185）から読み取れず、持ち主が行を拾って貼り直すことになった。報告の頭に、その回で WRONG・failed・unsteady・skipped になったものを 1 か所に全部並べる（節・検査の名前・訳の文そのまま）。要約（`shortReport()`）にも同じものを入れる。持ち主の決まり: 計測のページは詳しい説明でよい。`tests/bench.mjs` に、WRONG のある報告の頭と要約にその行が出る試験。
 - **作ったもの（2026-10-01、ブランチ `t227-report-warnings`）**: `src/bench.js` の `warnings()` と `warningsBlock()`。`warnings()` は報告の頭と各節の Markdown（画面に出すものと同じ文）を読み、WRONG・FAILED・failed・unsteady・skipped の語のある表の行（見出しの語と一緒にその行の欄を全部）と、表の外の文を 1 行ずつ拾う。節が自分で言う行は `said` でそのまま並べる: GPU の検査の ok でない判定（「a layer, DP4A, fused (T175) WRONG (worst 9.1e-4; quantized: o far from quantize_x's)」「tokens on the GPU WRONG (9 tokens, 0 next to a border: T 0.7, token 2: 48, the CPU 483)」の形）、失った device、検査できなかった訳、CPU の有限でない logits と消えた上限のループ。訳だけを書いて失敗した節は「failed: 訳」。判定の文はページから `checkVerdict()` に移し、画面の 1 行と一覧が同じ関数の文を使う。何も無い回は何も足さない。
 - **置き場と訳**: 全文では頭（機械の行・ラウンドの表・モデルのページの経路の表）のすぐ下、最初の節の前に見出し「#### Warnings」で。`parseReport()` は最初の「| what ran |」の表と機械の行を読むので、その後ろなら読みは変わらない（試験が全文と要約の両方で見る）。要約（`shortReport()`）では頭と「#### Summary」の間に同じ一覧。リンクの枠（ログインの URL で 7,000）を越えるときは後ろの行から外し、「… and N more, in the whole report below」の 1 行を残す（1 行も入らなければ「N of them, in the whole report below」）。
@@ -1240,9 +1242,9 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### Bonsai 2 の列（T228〜T234）: Bonsai 2（prism-ml の 3 値の 27B）に対応する — 週明けに着手（2026-09-28、持ち主「緊急対応、新しいモデルに対応して本番更新してほしい」→「分割してタスクに積んでくれ、週明けに対応だ」）
 - 出どころ: https://huggingface.co/collections/prism-ml/bonsai-2 。中身は `prism-ml/Ternary-Bonsai-2-27B-gguf`（apache-2.0、base は Qwen/Qwen3.8-27B、sha b072e1d3…）: `Ternary-Bonsai-2-27B-PTQ1_0.gguf`（5.95 GB、1.75 ビット / 重み）・`-PQ2_0.gguf`（7.21 GB、2.13 ビット）・`-F16.gguf`・mmproj（視覚、BF16 と Q8_0）。ほかに `-gguf-dev`（Q2_0、prism の fork が要る）と `-mlx-2bit`。カードの要点: 27.36B（言語 24.35B・64 ブロック、埋め込みと LM head 2.54B、視覚 0.46B）、Qwen3.8 の hybrid attention（約 75% が linear attention）、262K の文脈、埋め込み・attention・MLP・LM head まで全部 3 値、カーネルは Prism ML の llama.cpp の fork（CUDA・Metal）。
 - 順（前にやるべきことは採番する、の決まり）: T228 → T229 → T230 → T231 → T232 → T233 → T234。T228 の調べで無理と分かれば、そこで持ち主に判断を仰ぐ。
-- **T228 の調べの勧め（2026-10-01、持ち主の判断待ち）: 小さいモデルから。** (1) Ternary-Bonsai-1.7B（PQ2_0 463 MB、形は今ある Qwen3）を、PQ2_0 を int8 に広げる読みと yarn の RoPE で一覧に。(2) T229 を Qwen3.5 0.8B（同じ hybrid attention、Q8_0 の GGUF 812 MB）で通す。(3) T230 の残りと T231 を Ternary-Bonsai の 1.7B〜8B で。(4) 回した基底（Hadamard）と 27B の参照、T233 で 27B。(5) T232 と T234。**まだ番号の無い前の仕事が 4 つある**（本会話が採番する）: 「Ternary-Bonsai-1.7B を一覧に（PQ2_0 → int8 と yarn）」「Qwen3.5 0.8B を一覧に」「回した基底（符号と Walsh–Hadamard 変換）を forward に」「27B の参照（CI で fork を建てて固定値、または行列を 1 つずつ広げる NumPy）」。
+- **T228 の調べの勧め（2026-10-01、持ち主の判断待ち）: 小さいモデルから。** (1) Ternary-Bonsai-1.7B（PQ2_0 463 MB、形は今ある Qwen3）を、PQ2_0 を int8 に広げる読みと yarn の RoPE で一覧に。(2) T229 を Qwen3.5 0.8B（同じ hybrid attention、Q8_0 の GGUF 812 MB）で通す。(3) T230 の残りと T231 を Ternary-Bonsai の 1.7B〜8B で。(4) 回した基底（Hadamard）と 27B の参照、T233 で 27B。(5) T232 と T234。**前の仕事 4 つに番号を付けた（2026-10-01）**: T235「Ternary-Bonsai-1.7B を一覧に（PQ2_0 → int8 と yarn）」、T236「Qwen3.5 0.8B を一覧に」、T237「回した基底（符号と Walsh–Hadamard 変換）を forward に」、T238「27B の参照」。**勧める順: T235 → T229 → T236 → T230 の残りと T231 → T237 → T238 → T233 → T232 → T234**（27B まで進めるか、小さいモデルを一覧に入れるかは持ち主の判断）。
 
-### T228 [調査][Bonsai] Bonsai 2 と Qwen3.8 の形を調べる — 状態: **反映済み**（2026-10-01、調べだけ。本線に入れるのは本会話）
+### T228 [調査][Bonsai] Bonsai 2 と Qwen3.8 の形を調べる — 状態: **反映済み**（2026-10-01、調べだけ。本線に入れた）
 - 結果は [docs/notes/t228-bonsai-2-2026-10-01.md](docs/notes/t228-bonsai-2-2026-10-01.md)（出どころの URL と版つき）。台帳の名前と大きさは実物と合っていた。
 - **形**: linear attention は Gated DeltaNet。64 層のうち 4 層ごとの 4 つ目（16 層）が full attention、48 層が linear。linear の層は KV を持たず、状態は 48 head × 128 × 128 の float32（48 層で 144 MiB、文脈に依らない）と畳み込みの前 3 トークン。full の層は q が 2 倍幅（gate つき）、head 256、RoPE は先頭 64 次元。KV は 1 位置 64 KiB（float16）。
 - **3 値**: PQ2_0 は 34 バイト（float16 のスケール + 2 ビット × 128）、PTQ1_0 は 28 バイト（3 進で 5 個 / バイトを 24 バイト、4 個 / バイトを 2 バイト、float16 のスケール）。読み方は F16 のファイルと頭の数十行でビット単位に合った。埋め込みと分類器も 3 値。fork（PrismML-Eng/llama.cpp、`88c4bc60`）は MIT。
@@ -1269,12 +1271,24 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 行列 × ベクトル（答え）とタイル（プロンプト）のシェーダ、linear attention の層の GPU の段。WebGPU の元ネタは Hugging Face の space `webml-community/ternary-bonsai-2-webgpu-kernels`（コレクションに入っている。許諾を確かめる）。重みを GPU だけに（T156・T210）。
 - T228 から（2026-10-01）: 規模は大のまま。**space には許諾の記載が無い**（README に無く、`index.html` は縮めた JavaScript）ので、行は写さず形だけ。重みは PTQ1_0 を使い、`shader-f16` と `subgroups` を求めている。fork の WebGPU の backend には `gated_delta_net.wgsl`（MIT、写せる）があるが、3 値の型と Hadamard は無い（Vulkan の `fwht.comp`・`mul_mat_vecq_ptq1_0.comp` が形の手本）。3 値の広げ・Hadamard・Gated DeltaNet の段は元ネタの無いシェーダになる。帯域の上限は持ち主の Android の GPU（39.9 GB/s）で 5.8〜7.1 tok/s。GPU に 5.5 GiB を置けるかは未計測（T173 の数が要る）。
 
-### T233 [追加][Bonsai] 一覧に Bonsai 2 を足す — 状態: 未着手（T229〜T231 と、回した基底・27B の参照（採番待ち）の後、GPU は T232 の後でもよい。規模 中）
+### T233 [追加][Bonsai] 一覧に Bonsai 2 を足す — 状態: 未着手（T229〜T231 と、回した基底 T237・27B の参照 T238 の後、GPU は T232 の後でもよい。規模 中）
 - `src/models.js` の項目（PTQ1_0 か PQ2_0、語彙と config は原本 Qwen3.8 から T136 の段 ② の形で、書式、思考の形の 2 つ）、`LICENSES`、`gguf.yml` の突き合わせ、固定値、format_check。大きさの警告（64 ビットのメモリ、Chrome と Firefox のみ、iPhone は不可の見込み）。本番の `models.yml` で答えること。
 - T228 から（2026-10-01）: 規模を中に上げた。**原本の Qwen3.8 は 3 値でない**ので、段 ② の形で原本から取るのは語彙・config・書式だけで、`gguf.yml` の突き合わせの相手は F16 の GGUF。書式はマクロを呼ぶので手で書く（ChatML。考える形の既定は `reasoning_effort: xhigh` で、システム文が無くてもシステムのターンが入る。すぐ答える形は `<think>\n\n</think>\n\n`）。BOS は本物では置かない（`add_bos_token: false`）。止まりは 248046 と 248044。文脈は 262144 だが 16 GiB に入るのは約 16 万位置まで（PTQ1_0）で、切る値は持ち主に聞く。出典は Prism ML と Qwen の両方（NOTICE.txt）。勧めの設定の top_k・min_p・presence_penalty はエンジンに無い。Safari は不可（重みだけで 5.53 GiB）。
 
 ### T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 状態: 未着手（T233 の後。規模 小）
 - 速さ・メモリ・品質（perplexity か固定値）を記録のあるものだけで。
+
+### T235 [追加][Bonsai] Ternary-Bonsai-1.7B を一覧に（PQ2_0 を int8 に広げる読みと yarn の RoPE） — 状態: 未着手（T228 から。持ち主の判断待ち: 小さいモデルを一覧に入れるか。規模 小〜中）
+- T228 の調べ（docs/notes/t228-bonsai-2-2026-10-01.md）: `prism-ml/Ternary-Bonsai-1.7B-gguf` は PQ2_0 で 463 MB、形は今ある Qwen3。PQ2_0 は損なしで int8 に広がり（1.80 GiB）、今のカーネルで動く。要るのは PQ2_0 の読み手（34 バイトで 128 個）と yarn の RoPE（変換器は今 yarn を断る。transformers と llama.cpp の式は未読）。足す前に `gguf_check.py tensors` を F16 の GGUF と。
+
+### T236 [追加][Bonsai] Qwen3.5 0.8B を一覧に — 状態: 未着手（T229 の後。持ち主の判断待ち。規模 小）
+- 27B と同じ hybrid attention（Gated DeltaNet）で 3 値ではない。T229 をこのモデルの int8 の道で通してから一覧に。unsloth の Q8_0 の GGUF（812 MB）が原本と同じ重みかは未確認（`gguf_check.py tensors` を先に）。
+
+### T237 [追加][Bonsai] 回した基底（符号と Walsh–Hadamard 変換）を forward に — 状態: 未着手（T230・T231 の後。規模 中）
+- Bonsai 2 の 27B の重みは Hadamard で回した基底にある（F16 の GGUF も）: 3 値の行列の前に活性値の符号の反転と塊ごと（1024）の Walsh–Hadamard 変換、埋め込みを引いた後にその逆。CPU の費用は積和の約 0.1%（見積もり）。触る所は NumPy の forward・`forward.js`・カーネル 1 つ・シェーダ。
+
+### T238 [試験][Bonsai] 27B の参照 — 状態: 未着手（T237 と一緒に。規模 中）
+- float32 に広げると 107 GB で NumPy の参照に載らない。案: CI で Prism の fork（MIT、`88c4bc60`）を建てて greedy の固定値を取る、または行列を 1 つずつ広げる NumPy の参照。原本の Qwen3.8 の safetensors は 3 値でないので、重みは F16 の GGUF としか比べられない。
 
 ### T199 [性能][CPU] スレッドの本数の検索を、1 塊の乱れに強くする — 状態: **完了（本線に入れた 48f8ee5、レビュー済み T217）**（2026-09-27、T190 のレビューの「あれば良い」。ブランチ `t199-search`、Opus medium。規模 小）
 - CI で 2 回、2 本のほうが 1.24〜1.34 倍速いのに 1 本を選んだ（8 つの時間を 4 つずつ 2 塊から取る上側の中央値なので、1 塊が乱れると判定が返る）。検索の判定を 1 塊の乱れに強い形にする。偽の時計の試験（gpu-default-check の形）で、乱れた 1 塊があっても正しく選ぶことを見る。持ち主の Android（的の端末）で 4 本を選ぶことは変えない。
