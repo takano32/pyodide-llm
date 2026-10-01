@@ -19,6 +19,9 @@
 #       counting it. The last line is the summary as JSON. T136's third stage: GPT-2 (its Conv1D matrices, which
 #       llama.cpp turns to (out, in), and its output.weight, a copy of the embedding) and GPT-NeoX (its
 #       query_key_value, which llama.cpp splits into all of q, k, then v); the order found is said as for q and k.
+#       T235: a PQ2_0 GGUF (Prism ML's ternary blocks of 128) against the float16 safetensors of the same ternary
+#       weights, which it holds as they are (the reference is the original's values, as for an F16 tensor), and
+#       yarn's factor and original context against config.json's rope_scaling.
 #   python3 tests/gguf_check.py logits <out A> <out B> <text file> [tokens = 300]
 #       Two converted checkpoints (the <out> of tests/perplexity_prepare.py) on the same text: the largest logit
 #       difference, how often the most likely token agrees, and the perplexity of each. The acceptance of T74 is
@@ -46,10 +49,13 @@ STRING, ARRAY = 8, 9
 F32, F16, Q8_0, BF16 = 0, 1, 8, 30
 # T98: the 4- and 5-bit types of the GGUF files that are about int4, read only to measure them (widened to float32)
 Q4_0, Q4_1, Q5_0, Q4_K, Q6_K = 2, 3, 6, 12, 14
+# T235: the ternary type of Prism ML's fork of llama.cpp (Ternary-Bonsai), which the page reads (llama2_convert.pq2_0)
+PQ2_0 = 142
 TYPE_NAMES = {F32: "F32", F16: "F16", Q8_0: "Q8_0", BF16: "BF16", Q4_0: "Q4_0", Q4_1: "Q4_1", Q5_0: "Q5_0",
-              Q4_K: "Q4_K", Q6_K: "Q6_K"}
-# bytes per value: a block of 32 values (or a super-block of 256) and its scales
-BYTES = {F32: 4, F16: 2, BF16: 2, Q8_0: 34 / 32, Q4_0: 18 / 32, Q4_1: 20 / 32, Q5_0: 22 / 32, Q4_K: 144 / 256, Q6_K: 210 / 256}
+              Q4_K: "Q4_K", Q6_K: "Q6_K", PQ2_0: "PQ2_0"}
+# bytes per value: a block of 32 values (or a super-block of 256, or PQ2_0's block of 128) and its scales
+BYTES = {F32: 4, F16: 2, BF16: 2, Q8_0: 34 / 32, Q4_0: 18 / 32, Q4_1: 20 / 32, Q5_0: 22 / 32, Q4_K: 144 / 256, Q6_K: 210 / 256,
+         PQ2_0: 34 / 128}
 
 
 def half(raw):
@@ -107,8 +113,16 @@ def widen_q6_k(raw):
     return (values * scale * d[:, :, None, None]).reshape(-1, 256)
 
 
+def widen_pq2_0(raw):
+    """Blocks of 128 (ggml-common.h's block_pq2_0 of the fork): a float16 d, then 32 bytes of two bits a value, a
+    byte's lowest two bits its first value. (q - 1) * d: -d, 0, +d, and +2 d for the q of 3 a ternary file leaves unused."""
+    blocks = raw.reshape(-1, 34)
+    codes = (blocks[:, 2:, None] >> np.arange(0, 8, 2, dtype=np.uint8)) & 3
+    return (codes.reshape(-1, 128).astype(np.float32) - 1) * half(blocks[:, :2])
+
+
 WIDEN = {Q4_0: (32, 18, widen_q4_0), Q4_1: (32, 20, widen_q4_1), Q5_0: (32, 22, widen_q5_0),
-         Q4_K: (256, 144, widen_q4_k), Q6_K: (256, 210, widen_q6_k)}
+         Q4_K: (256, 144, widen_q4_k), Q6_K: (256, 210, widen_q6_k), PQ2_0: (128, 34, widen_pq2_0)}
 
 
 class Reader:
@@ -498,7 +512,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
     """True when the GGUF holds the original's weights. original_vocabulary (T136 stage 2): the page takes the
     vocabulary from the original, so a difference in the GGUF's is shown and not counted. The summary (worst
     error, mismatches, the rope_freqs difference, the vocabulary differences) is printed last as one JSON line."""
-    from llama2_convert import Safetensors, Shards, quantize
+    from llama2_convert import Safetensors, Shards, quantize, yarn
 
     version, metadata, infos, data, base = read_gguf(gguf_path)
     raw_config = json.loads((directory / "config.json").read_text())
@@ -527,6 +541,18 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
         mismatched += counted and not same
         note = "" if same else " **differs**" if counted else " (differs, not counted)"
         print(f"| {arch}.{key} | {ours} | {name} = {theirs}{note} |")
+    # T235: yarn, where either says it: its factor and original context change every angle, and no tensor shows them
+    said = metadata.get(f"{arch}.rope.scaling.type") == "yarn"
+    theirs = yarn(config)
+    if said or theirs is not None:
+        names = {"factor": "factor", "original_context_length": "original_max_position_embeddings",
+                 "attn_factor": "attention_factor", "yarn_log_mul": "mscale_all_dim"}
+        ours = {name: metadata[f"{arch}.rope.scaling.{key}"] for key, name in names.items()
+                if metadata.get(f"{arch}.rope.scaling.{key}") is not None} if said else None
+        same = ours is not None and theirs is not None and set(ours) == set(theirs) \
+            and all(math.isclose(float(ours[name]), float(theirs[name]), rel_tol=1e-6) for name in ours)
+        mismatched += not same
+        print(f"| {arch}.rope.scaling (yarn) | {ours} | rope_scaling = {theirs}{'' if same else ' **differs**'} |")
     rows = infos["token_embd.weight"]["shape"][0] if "token_embd.weight" in infos else None
     # a GPT-2 always shares its classifier: llama.cpp writes a copy of the embedding as output.weight, which is held
     # to the original's embedding below (T136's third stage)
