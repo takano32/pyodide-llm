@@ -68,11 +68,16 @@ threads on each device and writes its decision to the console (lines starting wi
 
 - WebAssembly has 32-bit addresses (4 GB). Where the browser has 64-bit memory (Chrome and Firefox), a model that
   does not fit runs on it, about 10% slower. Where it does not (Safari), the page stores the weights in 6 bits.
-- What the forward pass needs besides the weights (the KV cache for the whole context, its growth, the
-  activations) is computed from the header before the model is loaded (`footprint()` in `forward.js`). The same
-  place decides the type of the KV cache: float32 on one thread; float16 with threads, except for a model with
-  grouped-query attention, which keeps float32 unless that would push it out of 32-bit memory or it needs 64-bit
-  memory anyway (see [performance.md](performance.md#threads)).
+- What the forward pass needs besides the weights (the KV cache for the whole context, the activations) is
+  computed from the header before the model is loaded (`footprint()` in `forward.js`). The cache starts at 256
+  positions and doubles in place, moving each layer's block up into the room it adds, so that at most the whole
+  context is held (before, the old blocks stayed next to the new ones while they were copied: 1.5 times the
+  context at the last step). The same place decides the type of the KV cache: float32 on one thread; float16 with
+  threads, except for a model with grouped-query attention, which keeps float32 unless that would push it out of
+  32-bit memory or it needs 64-bit memory anyway (see [performance.md](performance.md#threads)). Where the page asks
+  for a shared memory (for threads) and the browser refuses it, or the page is not cross-origin isolated, the model
+  runs on one thread with float32, except where float16 keeps it within 32-bit memory and float32 would not: there
+  float16 is kept so that the model still reaches the end of its context.
 - The model's WebAssembly memory is reused when another model is chosen: Chromium would not create a third
   WebAssembly memory on one page. Before the next model loads, the page also waits (up to 5 seconds) for the GPU
   worker of the last one to let go of its buffers and its device.

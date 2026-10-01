@@ -56,6 +56,8 @@ if [ "$suite" = full ]; then
   # T93: the forward pass of public/forward.js against NumPy's, on the site's models (the line is for 128 positions)
   part "forward.js against NumPy" node tests/forward-check.mjs --rounds 1 --positions 128
   part "forward.js against NumPy, not shared" node tests/forward-check.mjs stories260K tiny-lm --rounds 1 --positions 128 --plain
+  # T130: a shared memory refused for a model whose float32 keys and values would not fit: float16 on a plain memory
+  part "forward.js against NumPy, float16 on a plain memory" node tests/forward-check.mjs tiny-lm llm-jp-3-150m --rounds 1 --positions 128 --plain --half-keys
   # T101: the 64-bit memory and its kernels
   part "forward.js against NumPy, 64-bit" node tests/forward-check.mjs stories260K tiny-lm --rounds 1 --positions 128 --wide
   # T148: the default choice of the GPU or the CPU for a prompt's blocks, with a made-up GPU's worker

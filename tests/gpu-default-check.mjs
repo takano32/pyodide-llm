@@ -113,7 +113,7 @@ if (isMainThread) {
   py.globals.set("OPTIONS", py.toPy(entry.options ?? {}));
   py.runPython(`from llama2_numpy import Llama\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, **OPTIONS).release()`);
   const header = [plan.dim, plan.hidden_dim, plan.n_layers, plan.n_heads, plan.n_kv_heads, plan.vocab_size, plan.seq_len];
-  const { memory, base } = weightsMemory(checkpoint.length, { shared: true, after: footprint(header, checkpoint.length, { dtype: "int8", halfKV: true, gpu: true, kvStart: plan.kv_start }) });
+  const { memory, base } = weightsMemory(checkpoint.length, { shared: true, after: footprint(header, checkpoint.length, { dtype: "int8", halfKV: true, shared: true, gpu: true }) });
   new Uint8Array(memory.buffer).set(checkpoint, base);
   // forward.js waits in Atomics.wait: in a worker, as in the page
   const worker = new Worker(new URL(import.meta.url), { workerData: { memory, base, size: checkpoint.length, plan, forwardFile,

@@ -665,16 +665,16 @@ function pooledWeights(size, after, shared, wide) {
 
 // T115: what the forward pass of a checkpoint of size bytes puts after it, at most (forward.js's footprint()): from
 // its header (the 7 ints) and the options it is loaded with (their form: head_dim where a head is not dim / heads,
-// T124: the keys and values of a Qwen3 0.6B are twice what the header says), on a shared memory (an int8 model's keys
-// and values may be float16 there, T110; forward.js's keysInHalf says whether they are, T160) or not.
+// T124: the keys and values of a Qwen3 0.6B are twice what the header says), on a shared memory or not (an int8
+// model's keys and values may be float16; forward.js's keysInHalf says whether they are, T160, T130).
 // What footprint() takes (the worker asks keysInHalf the same).
 function forwardOptions(options, shared) {
   const { dtype = "float32" } = options;
   const int8 = !disabled.includes("int8"), quantized = dtype === "int8" || dtype === "int6";
   return {
     ...options, dtype, int8, relaxed: Boolean(jsKernels?.relaxed) && !disabled.includes("relaxed"),
-    halfKV: shared && quantized && int8 && !disabled.includes("kv16"),
-    kvStart: llama2_numpy.KV_START, outliers: llama2_numpy.OUTLIER_CHANNELS, gpu: hasWebGpu,
+    halfKV: quantized && int8 && !disabled.includes("kv16"), shared,
+    outliers: llama2_numpy.OUTLIER_CHANNELS, gpu: hasWebGpu,
   };
 }
 const afterCheckpoint = (header, size, options, shared) => forwardModule.footprint(header, size, forwardOptions(options, shared));
@@ -706,10 +706,10 @@ function weightsBuffer(size, header, options, keep) {
     // a shared memory where the page is cross-origin isolated (stage 3), unless ?threads=1; else one thread
     const wanted = sharedWanted();
     // T101: a model past 4 GiB with its forward pass goes on a 64-bit memory (about a tenth slower: only when it has
-    // to). Where a shared one is refused after all, the plain one keeps float32 keys and values, twice what was
-    // counted: a model at the edge then runs out of memory near the end of its context (T115)
+    // to). T130: where a shared one is refused after all, a model that fit a 32-bit one still does on the plain one
+    // (footprint() keeps float16 keys and values there where only float32 would not fit), and a 64-bit one stays
+    // 64-bit (with float32 keys and values, on a memory that has no maximum): the 64-bit question stays answered
     const after = afterCheckpoint(header, size, options, wanted);
-    const halfKeys = forwardModule.keysInHalf(header, size, forwardOptions(options, wanted));  // T160: what after counts
     // T129 (7): a model past even a 64-bit memory is refused here, before its weights are fetched (a Qwen2.5 32B of
     // ?hf=, about 37 GB as int8, began a 65 GB download and failed at 7.8 GB). The words are the owner's (2026-09-28)
     if (forwardModule.pastWide(size, after)) {
@@ -734,6 +734,8 @@ function weightsBuffer(size, header, options, keep) {
         "WebAssembly memory: Safari has none yet). Chrome and Firefox can.");
     }
     const { memory, base, shared } = pooledWeights(size, after, wanted && (!wide || Boolean(wideKernels.shared)), wide);
+    // T160: the type of the keys and values that after counts, T130: on the memory the browser gave
+    const halfKeys = forwardModule.keysInHalf(header, size, forwardOptions(options, shared));
     const kernels = wide ? (shared ? wideKernels.shared : wideKernels.plain) : (shared ? sharedKernels : jsKernels);
     const spawn = shared ? spawnThread : undefined;
     weightsNow = memory;
