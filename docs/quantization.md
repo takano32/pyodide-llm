@@ -151,10 +151,14 @@ activations and 25.086 with 8-bit ones (CI's x86-64 runner).
   0.8B, whose layers mostly keep a state, is 20% to 65% worse on 512 tokens of plain text with the converter's
   `<|endoftext|>` in front (four Wikipedia texts, English and Japanese; the damage lasts: 5% to 30% still at tokens 256
   to 512), 1% to 4% worse with `<|im_start|>` and 0% to 1% with a newline. Its entries begin with the chat format's
-  own first token, `<|im_start|>`, so the page sends the ids the real template writes. In chat form the first token
-  costs nothing measurable (24 answers written by hand, `tests/chat_nll.py`: −0.8% in perplexity with
-  `<|endoftext|>` in front, worse on 12 of 24): what `?hf=Qwen/Qwen3.5-0.8B` loses is plain text, where there is no
-  chat format and the converter's BOS comes first.
+  own first token, `<|im_start|>`, so the page sends the ids the real template writes. In chat form the
+  first token does not change how likely an answer written by hand is (24 answers, `tests/chat_nll.py`: −0.8% in
+  perplexity with `<|endoftext|>` in front, worse on 12 of 24), but it changes what the model writes: along the
+  model's own answers the next-token distributions move by 0.12 nats a token (0.18 when it thinks), and the most
+  likely token changes at 13% (9%) of the positions. The page's engine agrees with transformers on the most likely
+  token at 98.9% (99.6%) of the positions with the entry's way of beginning, and at 86.7% (91.4%) with the old one.
+  What `?hf=Qwen/Qwen3.5-0.8B` still loses is plain text, where there is no chat format and the converter's BOS
+  comes first.
 - RMSNorm's epsilon: 1e-5 for all models until Qwen3 0.6B showed +0.12% with it; the converter now passes the
   model's own value.
 - The order of rounding inside the int8 kernels changed twice on 2026-09-27 (one scaling per group instead of
