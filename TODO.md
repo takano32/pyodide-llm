@@ -1692,7 +1692,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **確かめ**:
   - `tests/format_check.py`（手元、`.venv`）: `hf-ternary-bonsai-1.7b`・`-4b`・`-8b` とも 9/9（変換器の書式）。
   - `tests/models-check.mjs`（手元と CI）: ok（revision は 4 つとも 40 桁のハッシュ、`LICENSES` に 4 つ）。
-  - ブランチの `tests.yml` の軽い組: run 36912824908（成功、EPYC 9V74、62 秒）。
+  - ブランチの `tests.yml` の軽い組: run 36912824908（成功、EPYC 9V74、62 秒）。本線を取り込んだ先頭（a4aa643）でも run 36920344399（成功、EPYC 7763、70 秒）。
   - README と docs の数: HF の項目 58、GGUF から 52（Q8_0 が 49、PQ2_0 が 3）。
   - 新しい固定値は足していない（どちらも 1.7B と一覧の Qwen3 4B・8B が通る道だけを通る）。
 - **ページの forward で（CI、`t246-probe` の `tests/t246_page.mjs`: forward.js と int8 のカーネル、7 ビットの活性値、共有の 64 ビットのメモリ、ソフトウェアスレッド。変換は `perplexity_prepare.py` でページと同じ `Conversion`）**。ランナーは AMD EPYC 7763（4 論理コア、15.6 GiB）。書くことの tok/s（一覧のプロンプトの後の 16 トークン、3 回の中央値）:
