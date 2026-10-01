@@ -233,7 +233,9 @@ def main():
         tokenizer = llama2_numpy.Tokenizer(made.tokenizer, abs(made.stream.header[5]), kind=options["tokenizer_kind"],
                                            **{key: value for key, value in options.items() if key in accepted})
         reference = AutoTokenizer.from_pretrained(folder)
-        thinking = {"enable_thinking": False} if "(no thinking)" in entry["name"] else {}
+        # T236: said either way. A Qwen3's template thinks unless told not to, a Qwen3.5 0.8B's only when told to
+        thinking = {"enable_thinking": False} if "(no thinking)" in entry["name"] else \
+            {"enable_thinking": True} if "(thinking)" in entry["name"] else {}
         known = KNOWN.get(entry["id"], {})
         same, explained, diffs = 0, 0, []
         for prompt in prompts:
