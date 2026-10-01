@@ -1587,6 +1587,26 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T245 [追加][Bonsai] GGUF の、値の head が鍵の head より多いモデルの並びを読む — 状態: 進行中（2026-10-01、T236 から。T233 と T247 の前。規模 小〜中）
 - llama.cpp は値の head が鍵の head より多い linear attention の層（Qwen3.5 の 4B 以上と 27B、3 対 1）で head を並べ替えて（tile して）置く。いまの読み手はそういう GGUF を断り、`gguf_check.py` も通さない（T236）。読み手が HF の並びに戻す形と、`gguf_check.py` の並びを足す。
+- ブランチ `t245-t247-qwen35`（Opus medium）。読み手と `gguf_check.py` と単体試験は入れた（2026-10-01）。実物の 4B での確かめは下に足す。
+- **head の並び（T237・T238 の参照もこれを使う）**。出どころは llama.cpp の `conversion/qwen.py`、コミット `dcd387a412ca54e172a8d60eb71ef6753850c8ca`（MIT、行は写していない）の `_LinearAttentionVReorderBase`（453〜633 行）: 並べ替えの関数 `_reorder_v_heads` が 466〜491 行、どのテンソルにかけるかの `modify_tensors` が 584〜633 行。いちばん新しい版（`e358d59178377be4c58ba567925e05faadbccb57`、2026-10-01）の同じファイルは 1 バイトも違わない。
+  - 鍵の head の数を K、鍵の head 1 つあたりの値の head の数を r（= 値の head の数 ÷ K。4B と 9B は 2、27B は 3）とする。**HF は値の head を鍵の head ごとにまとめて持つ**（鍵 0 の r 個、鍵 1 の r 個、…: HF の値の head v は鍵の head v ÷ r に付く）。**GGUF は「どの鍵の head も 1 つ目、次にどの鍵の head も 2 つ目」の順**（llama.cpp の言う tiled）。式: **GGUF の値の head の位置 j × K + h にあるのは、HF の値の head h × r + j**（h は鍵の head 0〜K−1、j は 0〜r−1）。逆に HF の値の head v は GGUF の位置 (v mod r) × K + (v ÷ r)。
+  - 並べ替わるのは linear attention の層の次の 8 つで、どれも値の head の並ぶ軸だけ（1 つの head の中の順は変わらない）:
+
+    | HF の名前（`linear_attn.`） | GGUF の名前 | 並べ替わる所 | 1 つの head の大きさ |
+    |---|---|---|---|
+    | `in_proj_qkv.weight` | `attn_qkv.weight` | 行のうち q と k（2 × K × key_dim 行）の後ろの v の行 | value_dim 行 |
+    | `in_proj_z.weight` | `attn_gate.weight` | 行の全部 | value_dim 行 |
+    | `in_proj_a.weight` | `ssm_alpha.weight` | 行の全部 | 1 行 |
+    | `in_proj_b.weight` | `ssm_beta.weight` | 行の全部 | 1 行 |
+    | `A_log` | `ssm_a`（値は `−exp(A_log)`） | 要素の全部 | 1 個 |
+    | `dt_bias` | `ssm_dt.bias` | 要素の全部 | 1 個 |
+    | `conv1d.weight` | `ssm_conv1d.weight`（(チャネル, タップ)） | チャネルのうち q と k（2 × K × key_dim）の後ろの v のチャネル | value_dim チャネル |
+    | `out_proj.weight` | `ssm_out.weight` | **列**の全部（入力の側） | value_dim 列 |
+
+    並べ替わらないもの: `linear_attn.norm.weight`（`ssm_norm`。値の head の大きさの 1 本を全部の head が使う）、q と k の行、full attention の層の全部、FFN、norm。値の head と鍵の head が同じ数のモデル（0.8B と 2B の 16 対 16）では何も並べ替わらない。
+  - Q8_0 は並べ替えた後の行列にかかる。行の並べ替えは行ごとの量子化なので値は同じ。`ssm_out` の列は value_dim（128）が 32 の倍数なので、Q8_0 の 32 個の塊がそのまま動き、HF の並びに戻してから作る int8 は Q8_0 の値と同じ（value_dim が 32 の倍数でないモデルでは、戻した後の int8 の 32 個の組が GGUF の塊と違うので丸め直しになる。公開されているモデルはどれも 128）。
+- **入れた形**: 変換器は `gguf_model()` がその 8 つの見出しに `tiled`（頭の飛ばす数、K、r、head の大きさ、軸）を付け、`Stream` が `untiled()` でテンソルを丸ごと HF の並びに戻してから今までの計画に渡す（Llama の q・k の `unturned()`、NeoX の `unsplit()` と同じ扱い: 値を動かすだけなのでビット単位で戻る。`done` の印は値を変える段のためで、`ssm_a` は「並びを戻す → `decay` の段は済み」の両方）。値の head の数が鍵の head の数で割り切れない GGUF は断る。丸ごと持つ大きさは float32 で 4B の `attn_qkv` が 8192 × 2560 の 84 MB、9B が 134 MB、27B が 10240 × 5120 の 210 MB（full の層の q も同じ桁を丸ごと持っている）。`gguf_check.py` は自分の `tiled()`（llama.cpp と同じ向き）で原本を並べ替えてから比べ、並びを「value heads tiled」か「as Hugging Face」かで言う。**HF の並びのままの GGUF は、値が原本と 0 の差でも不一致に数える**（ページは llama.cpp と同じく tiled と読むので、別の head として読むことになる）。8M 値を超える行列は塊で比べる（行は値の head 1 つずつを HF の置き場所から取り、列は塊ごとに並べ替える）。
+- **単体試験**: `tests/test_gguf.py` の作り物の GGUF（`qwen35_gguf()`）が、値の head が多いときに llama.cpp と同じ向きに並べ替えて書く（`tiled_places()`）。2 対 1（K が 4）・3 対 1・3 対 1 で 4 層ごと、の 3 つの形 × 4 つの dtype で、チェックポイント・tokenizer.bin・options が safetensors の道と 1 バイトも違わない（4096 バイトずつ、700 バイトの塊で）。value_dim が 16（Q8_0 の塊の半分）の形は float32 と float16 で同じ。HF の並びのままの GGUF は別のチェックポイントになる。`tests/test_gguf_check.py` は tiled の GGUF が 0 の差で通ること（丸ごとと塊で）、HF の並びのままは 16 個の不一致、原本の値の head を 2 つ入れ替えた 6 通りがそのテンソルだけ線を越えることを見る。**わざと壊す 32 通りは全部落ちた**（`.tmp/t245/mutate.py`、git に入らない: 読み手 18（もう一度並べ替える、入れ替えを抜く、戻さない、q だけを飛ばす、3 対 1 だけ、塊ごと、割り切れない数を通す、`ssm_out` を行で、畳み込みを頭から、z を 1 行ずつ、8 つのテンソルを 1 つずつ外す）と `gguf_check.py` 14）。2 対 1 で K が 2 だと並べ替えが自分の逆になり「もう一度並べ替える」が通るので、2 対 1 の形は K を 4 にした。
 
 ### T246 [追加][Bonsai] Ternary Bonsai の 4B と 8B を一覧に — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T235 の読み手で。規模 小）
 - prism-ml の Ternary-Bonsai の 1.7B より大きいもの（T228 の調べ: 1.7B〜8B）を、T235 と同じ形（PQ2_0 を int8 に、原本は unpacked のリポジトリ）で一覧に。8B の int8 は 64 ビットのメモリ。T230 の 3 値の型ができたら小さく持てる。
