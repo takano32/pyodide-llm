@@ -22,11 +22,12 @@
 #   python3 tests/chat_nll.py <the original's directory | owner/repository@revision> [<BOS> <end of a turn>]
 #   (the defaults are Qwen3.5's: 248044 and 248046; a Qwen3: 151643 and 151645)
 #
-# Qwen3.5 0.8B (CI's x86-64 runner, run 36931659534 and the review's probe 36929881421): 1. A 2.0572, B 2.0494 nats a
-# token over the 24 answers (B 0.77% lower in perplexity, worse on 12 of 24, the pair's difference -0.0007 with a
-# standard error of 0.027); 2. KL(A || B) 0.115 a token at once and 0.178 thinking, the most likely token changing at
-# 13% and 9% of the positions, the answer likelier under A on 23 of 24 and 24 of 24 prompts. Ternary Bonsai 1.7B (a
-# Qwen3): 1. B 4.4% better than A (worse on 3 of 24; standard error 0.010). TODO.md's T236 and T246 have the rest.
+# Qwen3.5 0.8B (CI's x86-64 runner, run 36935583881): 1. fluency A 2.0572, B 2.0494 nats a token over the 24 answers (B
+# 0.77% lower in perplexity, worse on 12 of 24, the pair's difference -0.0007 with a standard error of 0.027); 2. fidelity
+# KL(A || B) 0.115 a token at once (standard error 0.010) and 0.178 thinking (0.017), the most likely token the same at
+# 87.0% and 91.0% of the positions, the answer likelier under A on 23 of 24 and 24 of 24 prompts. Ternary Bonsai 1.7B (a
+# Qwen3, 151643 and 151645; run 36936367926): 1. B 4.4% better than A (worse on 3 of 24; standard error 0.010); 2. KL 0.0080
+# (standard error 0.0010), the most likely token the same at 96.9%. TODO.md's T236 and T246 have the rest.
 import json
 import math
 import sys
