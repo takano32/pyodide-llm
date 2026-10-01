@@ -1222,9 +1222,51 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **同じ PC の 2 回目の報告（2026-09-28、持ち主が貼った検査の行）**: llama.cpp の層 4 つは今回 ok（worst 8.4e-4。1 回目は 1.8e-3 で WRONG）。DP4A の層 3 つは 2 回とも WRONG で「quantized: o far from quantize_x's」（worst 8.3e-4〜9.1e-4）。sampling と sampling in chunks は ok。**tokens on the GPU が WRONG**（9 トークン、境の近くは 0、T 0.7、token 2 が GPU 48・CPU 483）。読み: (a) llama.cpp の層の worst は回ごとに 8.4e-4〜1.8e-3 で、線 1e-3 のまわりを行き来している（線が NVIDIA の丸めに近すぎるか、入力の乱数しだい）。(b) DP4A は 2 回とも同じ所（o の前の量子化が JS の `quantize_x` と合わない）なので、回の揺れではなく NVIDIA での量子化の違い（丸めの規則、スケールの割り算の精度、fma）の見込み。o の前は attention の出力の量子化で、NORM_QUANTIZE とは別の QUANTIZE。(c) tokens on the GPU は、層（この回は DP4A が WRONG なので llama.cpp の融合の形）で数ステップのうちに logits がずれ、境でないのに違う語を引いた形。(a)(b) の結果か、SAMPLE の外の何か（EMBED、分類器）かは未確認。2 回目の層の表の DP4A の 3 行は 2.19〜2.63 ms（26〜31 GB/s、バッファの読みの 8.5〜10.2%）で、1 回目の 0.42〜0.54 ms の約 5 倍遅い（同じ PC、どちらも 1 回）。原因は未確認（GPU の省電力の状態、ほかの仕事、測る間の揺れ）。llama.cpp の行と「unsteady」の印も見て、回の揺れか DP4A の道だけの遅れかを分ける。切り分け: その端末で各段（QUANTIZE の出力、o の入力、層の出力、分類器の logits）を JS と比べる形をベンチの検査に足し、どこから離れるかを出す。本物の端末（NVIDIA）でしか出ないので、持ち主の PC で回してもらう。
 - 同じ報告の数字（1 回ずつ）: プロンプトは GPU で 5.6 倍（64 トークン）・4.5 倍（256）、書くことは GPU 360〜373 tok/s 対 CPU 158（2.3 倍）。1B の 1 トークン GPU 15.0 ms（66.6 tok/s、CPU の見積もり 17.9）、3B 34.0 ms。1 層 0.42〜0.44 ms（timestamp と一致）、バッファの読み 298 GB/s、行列だけ 68%。サンプリングだけ 1 ワークグループ 0.371 ms・塊 0.104 ms（T191 が 3.6 倍効く）。CPU は 2 本が速い（書くこと 171 tok/s、ページは 8 本を選んだ: 16 か 8 で 8、8 か 4 で 8。T223 の見直しの材料）。
 
-### T226 [性能][WebGPU] Qwen2・Qwen3・GPT-2・NeoX の答えも GPU で（GPU だけにも置けるように） — 状態: 進行中（2026-10-01、ブランチ `t226-steps-all-archs`、Opus medium。2026-09-28、持ち主「Qwen3 4B ですら GPU 使われないんだが？」、NVIDIA の PC で。規模 中。再開のとき T225 の次に）
+### T226 [性能][WebGPU] Qwen2・Qwen3・GPT-2・NeoX の答えも GPU で（GPU だけにも置けるように） — 状態: **反映済み**（2026-10-01、本線に入れるのは本会話。レビュー前。ブランチ `t226-steps-all-archs`、Opus medium。(1)(2)(3) を作った。(4) の 2 重の線は持ち主の判断待ちで、下に材料。2026-09-28、持ち主「Qwen3 4B ですら GPU 使われないんだが？」、NVIDIA の PC で。規模 中。再開のとき T225 の次に）
 - 今の形: 答えを GPU で書けるのは Llama の形だけ（T152 の fused の層のシェーダに bias・head の norm・違う head の大きさ・LayerNorm・GELU・並列残差が無い）。GPU だけ（T156）もそれが条件。Chrome は `deviceMemory` を 8 で止めるので、32 GB の PC も 2 重は 6.5 GiB まで。Qwen3 4B の int8 は 2 重で線を越え、GPU だけにもできず、プロンプトも含めて全部 CPU になる。
 - 作るもの: (1) 答えの層（fusedMatVec / fusedDp4aMatVec と歩の道）に、プロンプトの側（T153・T154）と同じ bias の ADD、head ごとの RMSNorm、qDim の幅、LayerNorm・GELU・並列残差を足す（元ネタはプロンプトの側と同じ llama.cpp の WebGPU）。(2) そうすれば `gpuOnlyUnfit()` の形の条件も外れ、Qwen3 4B などが GPU だけに置ける。(3) 見直し: `deviceMemory` が 8 と言う端末の 2 重の線（6.5 GiB）が、32 GB の PC でも同じになること。`performance.memory`（Chromium）や GPU の `maxBufferSize` を足した判定を考える（開発機の値を既定にしない）。
+- **作ったもの（2026-10-01、Opus medium）**: 答えの 1 歩（T152 の融合した層）が Qwen2・Qwen3・GPT-2・GPT-NeoX と、外れ値の列（T92）のあるモデルも取る。Qwen2・Qwen3 は GPU だけ（T156・T210）にも置ける。
+  - **元ネタ**: 新しい融合の形は作らず、プロンプトの側（T153・T154）のシェーダをそのまま 1 トークンのベクトルに掛ける。bias は llama.cpp の WebGPU の `binary.wgsl`（ADD）、head ごとの norm は `rms_norm_mul.wgsl`（`HEAD_NORM`）、LayerNorm は `row_norm.wgsl`（`LAYER_NORM`）、GELU は `unary.wgsl`（どれも MIT、`shaders.js` に許諾文つきで前からある）。写した行は増えていない。
+  - **q・k・v の後ろ**: bias や head の norm があるモデルは、行列の書き出しで RoPE を回せない（CPU と同じ順は bias → head の norm → RoPE）。だから行列は q・k・v をそのまま 1 つのバッファに書き（分類器と同じ「write」のシェーダで、コンパイルは 1 回）、ADD と `HEAD_NORM` がそこで直し、新しい小さなシェーダ `TOKEN_ROPE` が回してキャッシュに書く。`TOKEN_ROPE` の中身は融合した書き出しの行そのもので、その行を WGSL の関数 `write_pair` にして両方が呼ぶ（元ネタは無いが、新しい計算は無い）。q・k・v の bias は層ごとに 1 本につないで ADD は 1 回。k の head は q の head の後ろの行なので、`HEAD_NORM` に「最初の行」（`norm.first`、プロンプトでは 0）を足した。
+  - **GPT-2・NeoX**: LayerNorm は平均を引くので行列の読みに畳めない。別のディスパッチで `xb` に書き、行列はそれをそのまま読む（DP4A はその後に量子化）。だから LayerNorm のモデルには DP4A の「norm を量子化に畳んだ形」（`NORM_QUANTIZE`、RMSNorm のもの）は無い。FFN は w1 を「write」で書いて bias の ADD と `GELU`。並列残差（NeoX）は FFN の norm を o の足し込みの前に置く。GPT-2 の位置の表は GPU にも置き、歩の埋め込みの行に ADD で足す（`ADD` に `byPos` を足した: Step の位置の行を読む。CPU の `embed()` は歩の道に居ないため）。RoPE の一部だけ回す・回さないは `TOKEN_ROPE` の `turned`。
+  - **外れ値の列（GPT-2）**: CPU は量子化で消える 8 チャネルの列を float で別に掛ける。GPU には float で掛ける行列（T150）があるので、外れ値のあるモデルの分類器は DP4A の形でも float で掛ける（列は要らない）。それまでは外れ値のあるモデルの歩は CPU で、GPU だけのモデルは CPU に読み直していた。
+  - **Llama の形のディスパッチの数は変わらない**。1 層あたり（attention は 1 つ。長い文脈の `flash_attn_vec` は reduce で +1）:
+
+    | 形 | Llama | Qwen2 | Qwen3 | GPT-2・NeoX |
+    |---|---:|---:|---:|---:|
+    | llama.cpp の融合（T150） | 5 | 7 | 8 | 13 |
+    | DP4A の融合（T175） | 9 | 11 | 12 | 無い |
+    | DP4A、norm は別 | 11 | 13 | 14 | 17 |
+
+    GPT-2 はトークンごとに位置の ADD が 1 つ、LayerNorm のモデルは最後の norm が 1 つ増える。
+  - **GPU だけ（(2)）**: `gpuOnlyUnfit()` から bias と head の norm の条件を外した。bias と head の norm のベクトルは norm の重みと同じく共有メモリに残る（穴にしない）ので、`gpuHoles()`・`gpuOnlyPlan()`・`footprint()` の `direct`・表の塊（T209）・256 バイトの揃え（T220）は head の大きさを渡すだけで合っていた。**GPT-2・NeoX は GPU だけにしない**: `llama2_numpy.external_tensors()` が Llama のテンソルしか置かず、一覧のいちばん大きい GPT-2・NeoX（rinna 1B と Pythia 1.4B、int8 で約 1.5 GB）は 8 と言う端末の 2 重の線に入る見込み（見積もり、未計測）。要るようになったら `external_tensors()` に `gpt2_tensors()` の並びを足し、GPU だけのプロンプトの埋め込みに位置の ADD を足す（別のタスク）。
+  - **読み込みの時の検査**（`checkTokens`）: モデル自身の 1 層目と分類器で、JavaScript の参照に bias・head の norm・LayerNorm・GELU・位置・並列残差・一部の RoPE を足した。検査が見るのは 1 層目だけなので、層の番号の誤り（どの層も層 0 の bias を読む）は検査を通り、gpu-check の歩の K と V の層ごとの線が捕まえる。eps の誤りは作り物の Qwen3（eps 0.5）で検査が落とす。
+  - **CI**（どれも 2026-10-01、Dawn は lavapipe、ブラウザは SwiftShader）: 全部の組 `gpu-prompt.yml full=true` は run 36869117008（Chromium・Chrome・Edge 24.6〜26.0 分、Dawn 12.7 分、どれも成功）、`tests.yml full=true` は run 36869120095 で成功。実物は Dawn で、Qwen2.5 0.5B と Qwen3 0.6B が run 36869123174（歩は 8 回とも greedy の 7 つが NumPy と同じ、GPU だけは K・V と ID がビット単位で同じ）、GPT-2 124M と Pythia 160M が run 36870894253（7 回とも同じ）。歩の K と V は層ごとの線の 0.05〜0.64（float の形: 作り物 0.41 まで、GPT-2 124M 0.64、Qwen3 0.6B 0.45。DP4A: 0.18〜0.36）。最後のコードでの全部の組は run の番号を下に足す。
+  - **わざと壊したもの**（捨てるブランチ 5 本、軽い組の Dawn。どれも落ちた）:
+
+    | 壊し方 | 落ちた所 | 数字 |
+    |---|---|---|
+    | q・k・v の bias をどの層も層 0 のもの | 作り物の Qwen2 の歩の K と V（読み込みの検査は通る） | float 2.49e-1（線 1.23e-2、20 倍）。DP4A は 4.86e-1〜5.19e-1（線 4.56e-1、1.07〜1.14 倍） |
+    | head の norm を飛ばす | 作り物の Qwen3 の読み込みの検査（どの形も） | 流れが 1.3e-1〜4.3e-1（線 2e-3、DP4A 2e-2） |
+    | head の norm を RoPE の後に | 同じ | 8.6e-2〜2.4e-1 |
+    | k の head の norm を q の行に（`first` 0） | 同じ | 3.8e-2〜1.5e-1 |
+    | qDim を dim と見る | 同じ | 1.2〜2.5 |
+    | head の norm の eps を 1e-5（正しくは 0.5） | 同じ | 1.3e-1〜3.7e-1 |
+    | GPT-2 の位置をどの歩も行 0 | 作り物の GPT-2 の読み込みの検査 | 5.9e-1〜1.09 |
+    | 並列残差をやめる | 作り物の NeoX 2 つの読み込みの検査 | 7.6e-1〜1.78 |
+    | o・w1・w2 の bias をどの層も層 0 | 作り物の GPT-2・NeoX の float の形の歩の K と V、NeoX-256 は ID | 8.06e-2（線 1.27e-2）、1.12e-1（線 8.0e-3）。**DP4A の形は通った**（線が 3 × Q8 で緩い: T187 のとおり、形に依らないシェーダの誤りは float の形が捕まえる） |
+    | 外れ値のあるモデルの分類器を DP4A で | 作り物の GPT-2 の DP4A の形の読み込みの検査 | logits が 8.84e-3（線 1e-3） |
+
+    run は 36869314957・36869310263・36869310564・36869310949・36869310351。
+  - **見つけて直したもの**: (a) `gpu-check.mjs` は出力がパイプを抜ける前に `process.exit()` していて、Dawn のジョブが落ちたときログが行の途中で切れ、何が落ちたか出なかった（run 36867483459）。出し切ってから終える。(b) 読み込みの検査は logits を 16 バイト単位のバッファごと読んでいて、語彙が 4 の倍数でない GPT-2（50257）は後ろに 0 が 3 つ付いた。作った流れの logits が全部負のとき、その 0 を最大と読んで正しい形を断っていた（run 36869126011、16 回のうち 2 回。T152 からの形で、GPT-2 の歩が GPU に来て初めて当たった）。(c) gpu-check の「乱数 0.02 と 0.98 は違うトークン」は、いちばん確からしいトークンが nucleus の 0.9 を超えるモデルでは成り立たない（作り物の NeoX-256、run 36868289185）。そのときは同じでもよいとし、割合を行に出す。
+  - **未計測**: 持ち主の端末の速さと選ばれ方（Android の Qwen、NVIDIA の PC の Qwen3 4B）。足したディスパッチ（Qwen2 +2、Qwen3 +3、GPT-2・NeoX +8）が CPU に勝つかは端末が測って選ぶ。SwiftShader と lavapipe の秒は GPU の速さではない。実物の Qwen3 4B は CI でも動かしていない（GGUF 4.3 GB。0.6B と作り物で形は同じ）。Qwen3 4B の最後の norm に外れ値があるかも未確認（あれば分類器は float で掛ける）。`/benchmark/` の GPU の節の層の表（T150・T175・T202）は Llama の形だけを測るので、Qwen や GPT-2 の 1 層の ms は出ない（`public/benchmark/gpu.js` は T225・T227 が触っているので変えていない。要るなら別のタスクで、層の表に「bias と head の norm つき」の行を足す）。
+  - **持ち主に試してほしいこと**: (i) NVIDIA の PC で Qwen3 4B を選ぶ。ステータス行が「prompts and answers on WebGPU」になり、コンソールに `gpu: a token by …` の行が出るはず。tok/s を前（CPU）と比べる。(ii) Android で Qwen2.5 0.5B か Qwen3 0.6B。答えが GPU か CPU か（「answers on the CPU (faster here)」なら測って CPU を選んだ）。(iii) Android で Qwen2.5 3B（2 重 7.20 GiB で前は全部 CPU。今は GPU だけになる）。メモリが苦しければ教えてほしい。
+- **(4) 2 重の線（6.5 GiB）の見直し: 実装していない。持ち主の判断の材料**。T226 の (2) の後は、Qwen3 4B は 2 重に入らなくても GPU だけに置けるので、PC で「全部 CPU」にはならない。残る違いは、GPU だけのモデルは CPU と測り比べず（`/benchmark/` の CPU の節の値から見積もる、T156）、GPU が落ちたら読み直しになること。使える信号と、それが本当に言うこと:
+  - `navigator.deviceMemory`（Chromium だけ）: 物理メモリを段に丸めた値。今のコードは 8 以上を全部「8 以上」と読んで 6.5 GiB にする。**新しい Chrome は Android 以外で 16 や 32 も言うようになったという記事がある**（2026-10-01 に検索で見ただけで、持ち主の PC の値は未確認。`/benchmark/` の機能の節に出る）。言うなら、いちばん安い直しは「8 を超える値はその半分まで 2 重」（32 GB なら 16 GiB）で、`weightsPlace()` の 1 行。8 と言う端末は今のまま。
+  - `performance.memory.jsHeapSizeLimit`（Chromium だけ、標準外）: V8 の JS のヒープの上限で、物理メモリから決まる粗い段（未計測。PC でおよそ 2 GB か 4 GB）。WebAssembly のメモリや GPU のメモリの上限ではない。「16 GB 以上らしい」を間接に言えるだけで、段の境は V8 の版で変わる。勧めない。
+  - アダプタの `maxBufferSize`・`maxStorageBufferBindingSize`: 1 つのバッファの上限（持ち主の Android は 256 MiB、PC は 2 GiB 以上が多い）。GPU のメモリの総量ではない。WebGPU は総量を言わない（指紋対策）。内蔵か外付けかも言わない。線には使えない。
+  - 実際に確保して測る: GPU のバッファを作って書き、エラースコープで見る。PC の外付け GPU は VRAM を越えると共有メモリに逃げるので「入った」と出て遅くなる。スマホと Apple は越えるとタブごと落ちる（T173）。読み込みのたびに測るのは遅く危ない。測るなら `/benchmark/` の Page memory の節（T173、落ちても報告に残る形）の値を `localStorage` に置き、モデルのページが CPU の読みと同じように使う（T156 の `gpu:usage` と同じ道）。
+  - 案: (A) 何もしない（T226 で PC の Qwen3 4B は GPU だけで動く）。(B) `deviceMemory` が 8 を超えて言う端末だけ線を上げる（1 行。持ち主の PC が 32 と言うなら効く）。(C) T173 の値を線に使う（端末で測る、いちばん正直。T173 を本線に入れた後）。勧めは、まず持ち主の PC の `deviceMemory` を見て、32 と言うなら (B)。
 
 ### T227 [バグ][計測実行] /benchmark/ の警告（WRONG と、その訳）が写した報告に全部入らない — 状態: 未着手（2026-09-28、持ち主「警告もコピペするようになってないの、不備では？」。規模 小。再開のとき T225 と一緒に）
 - 持ち主の PC の回で、画面に出た検査の WRONG とその訳（どの検査がどの数で落ちたか、tokens on the GPU の「token 2: 48, the CPU 483」など）が、写した Markdown（と Issue の要約、T185）から読み取れず、持ち主が行を拾って貼り直すことになった。報告の頭に、その回で WRONG・failed・unsteady・skipped になったものを 1 か所に全部並べる（節・検査の名前・訳の文そのまま）。要約（`shortReport()`）にも同じものを入れる。持ち主の決まり: 計測のページは詳しい説明でよい。`tests/bench.mjs` に、WRONG のある報告の頭と要約にその行が出る試験。
