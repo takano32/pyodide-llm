@@ -127,13 +127,71 @@ export const loginUrl = (markdown, environment, summary) => throughLogin(reportU
 
 /** T185: the report the link holds where the whole is too long: the top of the report as it is (the machine's line and
  * the rounds' table, which parseReport() reads, and T184's table of the model page's path), a line for each section,
- * and the request to paste the whole below. */
-export function shortReport(head, lines) {
-  return [head, "#### Summary", lines.map((line) => `- ${line}`).join("\n"), PASTE].filter(Boolean).join("\n\n");
+ * and the request to paste the whole below. T227: the warnings (warnings()) between the top and the lines, as in the
+ * whole report; where they make the link too long (environment: what the link is made with), the last of them are
+ * left to the whole report, and a line says how many. */
+export function shortReport(head, lines, warned = [], environment) {
+  const summary = (kept) => [head, warningsBlock(warned, kept), "#### Summary", lines.map((line) => `- ${line}`).join("\n"), PASTE].filter(Boolean).join("\n\n");
+  let kept = warned.length;
+  while (kept && environment && reportTooLong(summary(kept), environment)) kept--;
+  return summary(kept);
 }
 
 // a | that tableCell() escaped stays in its cell (T214: a skipped round's reason is the words of a cell)
 const cells = (line) => line.split(/(?<!\\)\|/).slice(1, -1).map((cell) => cell.trim().replace(/\\\|/g, "|"));
+
+// T227: the words the page writes where something did not come out right
+const MARKED = /\b(?:WRONG|FAILED|failed|unsteady|skipped)\b/;
+// a row or a sentence that only repeats a verdict of the GPU's check, which is listed itself
+const REPEATED = /\(WRONG in the check\)|The check found [^.]*WRONG\./g;
+const marked = (text) => MARKED.test(text.replace(REPEATED, ""));
+
+/**
+ * T227: all that came out WRONG, failed, unsteady or skipped in a run, a line each, in the words the page shows (the
+ * owner picked them off the screen by hand: they were spread over the report's tables, and the summary had none of
+ * the reasons). Read from the Markdown the sections wrote, so that what is listed is what the page says. sections:
+ * [{title, status, markdown, said}], the top of the report (the rounds, the model page's path) as one of them. Of each:
+ * a section that failed as a whole (its Markdown is why: no table, nothing it names itself); said, the lines the
+ * section says went wrong itself (the GPU's verdicts of its check, a lost device, the CPU's logits not finite), as they
+ * are; every row of a table with one of the words in a cell, its cells under their headers; and every sentence outside
+ * the tables with one.
+ * A line of the Markdown that holds one of said is not read again (the GPU's line of all its verdicts), nor are the
+ * marks that only repeat a verdict ("WRONG in the check" beside a row). A failure the page writes in none of these
+ * words is not here. [] where nothing did.
+ */
+export function warnings(sections) {
+  const out = [];
+  for (const { title, status, markdown = "", said = [] } of sections) {
+    const before = out.length, add = (text) => out.push(`${title}: ${text.replace(/\s*\n\s*/g, " ")}`);
+    // a section that failed and wrote only why (no table, nothing it names itself)
+    if (status === "error" && !said.length && !/^\|/m.test(markdown)) {
+      add(`failed: ${markdown}`);
+      continue;
+    }
+    said.forEach(add);
+    const lines = markdown.split("\n");
+    let head = [];
+    lines.forEach((line, i) => {
+      if (said.some((one) => line.includes(one))) return;
+      if (!line.startsWith("|")) {
+        for (const sentence of line.split(/(?<=\.) (?=[A-Z"])/)) if (marked(sentence)) add(sentence.replace(/^- /, ""));
+      } else if (lines[i + 1]?.startsWith("|---")) head = cells(line);
+      else if (marked(line)) add(cells(line).map((cell, j) => cell && `${head[j] ? `${head[j]}: ` : ""}${cell}`).filter(Boolean).join("; "));
+    });
+    // a section the page calls WRONG or failed with none of the above: its state at the least
+    if (out.length === before && (status === "wrong" || status === "error")) add(STATES[status]);
+  }
+  return [...new Set(out)];
+}
+
+/** T227: the warnings as the report holds them, under a heading of their own ("" where there are none); kept: how
+ * many of them a summary has room for (shortReport()), the rest counted in a last line. */
+export function warningsBlock(warned, kept = warned.length) {
+  if (!warned.length) return "";
+  const rest = warned.length - kept;
+  const more = rest ? [`- ${kept ? `… and ${rest} more` : `${rest} of them`}, in the whole report below`] : [];
+  return ["#### Warnings", "", ...warned.slice(0, kept).map((line) => `- ${line}`), ...more].join("\n");
+}
 
 /** What one issue says: the answers, the model, the logical cores, and the rows of its table. undefined when the body
  * has no table of the page's. */
@@ -304,11 +362,17 @@ export function noRatios({ fallback, lost } = {}) {
  * \| as a | in a cell). */
 export const tableCell = (text) => String(text).replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
 
+/** Why a step of the GPU section has no table: it failed (T227: in that word, as the rows say it, so that warnings()
+ * lists it), or it was not run. */
+export const unmeasured = (error) => (error ? `failed: ${error}` : "not measured");
+
 /** T186: the numbers under a layer's verdict in the check (T175), in one short line for the page and the report: its
  * quantized vectors held to quantize_x (quantized: [{point, wrong, scale, apart, of}]; the worst scale's relative
  * difference and the values off by 1 of all four, or the first that was wrong) and, for the DP4A fused form, the one
- * with the norms apart (sameAsNormsApart: {ulps, apart, stream, bitForBit}). "" where the verdict has neither. */
-export function layerCheckNumbers({ quantized, sameAsNormsApart: apart } = {}) {
+ * with the norms apart (sameAsNormsApart: {ulps, apart, stream, bitForBit}). T225: then the worker's own line of how
+ * each stage of the layer held (stages: short where the form is ok, every stage and the first that departed where it
+ * is not). "" where the verdict has none of them. */
+export function layerCheckNumbers({ quantized, sameAsNormsApart: apart, stages } = {}) {
   const parts = [];
   if (quantized?.length) {
     const wrong = quantized.find((q) => q.wrong);
@@ -319,7 +383,22 @@ export function layerCheckNumbers({ quantized, sameAsNormsApart: apart } = {}) {
   if (apart) {
     parts.push(`norms apart: ${apart.bitForBit ? "bit for bit" : `${apart.ulps} ulp, ${apart.apart} off by 1, stream ${apart.stream.toExponential(1)}`}`);
   }
+  if (stages) parts.push(tableCell(stages));
   return parts.join("; ");
+}
+
+/** A verdict of the GPU's check of its shaders against JavaScript, as the GPU section's line of them and the list of
+ * warnings (T227) write it. A tiled shader the device refused says so (T146); a packed one also says how many of the
+ * values the GPU quantized came out apart from the CPU's; a layer, its quantized vectors and the fused form against
+ * the norms apart (T186); the tokens generated, the first that differed, and (T225) the worker's line of how each
+ * run's steps held (steps). */
+export function checkVerdict([name, v]) {
+  if (v.error) return `${name} FAILED (${v.error})`;
+  const verdict = `${name} ${v.ok ? "ok" : "WRONG"}`;
+  if (v.tokens !== undefined) return `${verdict} (${v.tokens} tokens, ${v.edge} next to a border${v.problems ? `: ${tableCell(v.problems[0])}` : ""}${v.steps ? `; ${tableCell(v.steps)}` : ""})`;
+  const apart = v.apart === undefined ? "" : `, quantized ${v.far ? "far apart" : `${number(100 * v.apart, 2)}% apart by 1`}`;
+  const numbers = layerCheckNumbers(v);
+  return `${verdict} (worst ${v.worstRelative.toExponential(1)}${apart}${numbers ? `; ${numbers}` : ""})`;
 }
 
 /** Whether the check of the shaders found the one a token's row ran with wrong (or could not run it): widened or
@@ -350,7 +429,7 @@ export function matVecTable(bandwidths, check, ceilings, gpu = {}) {
   const shaders = [...new Map(bandwidths.flatMap((s) => (s.result?.rows ?? []).map((row) => [row.shader, row]))).values()];
   const cell = (s, name) => {
     const row = s.result?.rows?.find((one) => one.shader === name);
-    if (s.error || !row) return tableCell(s.error ?? "");
+    if (s.error || !row) return s.error ? tableCell(unmeasured(s.error)) : "";
     if (row.none || row.error) return tableCell(row.none ?? `failed: ${row.error}`);
     return `${row.unsteady ? "unsteady: " : ""}${number(row.GBps)} GB/s${reads ? ` (${percent(row.GBps, reads)})` : ""}`;
   };
@@ -397,7 +476,7 @@ export function tokenTable(steps, baseline, gpu = {}) {
     const t = s.result ?? {};
     const name = s.name.replace(/^a token of /, "");
     if (s.error || t.error) {
-      lines.push(`| ${name} | | | ${tableCell(s.error ?? t.error)} | | | |`);
+      lines.push(`| ${name} | | | ${tableCell(unmeasured(s.error ?? t.error))} | | | |`);
       continue;
     }
     const cpuTok = cpu && Number.isFinite(t.GB) && t.GB > 0 ? cpu.GBps / t.GB : undefined;
@@ -424,7 +503,7 @@ export function tokenTable(steps, baseline, gpu = {}) {
  */
 export function layerTable(step, check, ceilings, gpu = {}) {
   if (!step) return [];
-  if (step.error || !step.result) return [`**A layer of a token**: ${tableCell(step.error ?? "not measured")}`];
+  if (step.error || !step.result) return [`**A layer of a token**: ${tableCell(unmeasured(step.error))}`];
   const r = step.result, none = noRatios(gpu);
   const reads = !gpu.lost && ceilings && !ceilings.fallback && !ceilings.global?.unsteady ? ceilings.global?.GBps : undefined;
   const wrong = (row) => Boolean(check && check[row.check] && !check[row.check].ok);
@@ -489,7 +568,7 @@ function layerSplit(r, form) {
 export function layerStepsTable(step, check, ceilings, gpu = {}) {
   if (!step) return [];
   const title = "**Where a layer's time goes**";
-  if (step.error || !step.result) return [`${title}: ${tableCell(step.error ?? "not measured")}`];
+  if (step.error || !step.result) return [`${title}: ${tableCell(unmeasured(step.error))}`];
   const r = step.result, none = noRatios(gpu);
   const reads = !gpu.lost && ceilings && !ceilings.fallback && !ceilings.global?.unsteady ? ceilings.global?.GBps : undefined;
   const wrong = (form) => Boolean(check && check[form.check] && !check[form.check].ok);
@@ -628,7 +707,7 @@ function attentionLengthsLines(lengths, none) {
  */
 export function generateTable(step, check, gpu = {}) {
   if (!step) return [];
-  if (step.error || !step.result) return [`**Tokens generated on the GPU**: ${tableCell(step.error ?? "not measured")}`];
+  if (step.error || !step.result) return [`**Tokens generated on the GPU**: ${tableCell(unmeasured(step.error))}`];
   const r = step.result, none = noRatios(gpu);
   const wrong = ["sampling", "tokens on the GPU"].some((key) => check?.[key] && !check[key].ok);
   const chunksWrong = check?.["sampling in chunks"] && !check["sampling in chunks"].ok;
