@@ -17,6 +17,8 @@
 # embedding) and multiplies them by C vectors, 25.6 G x C multiply-adds: about 25.6e9 / (1e8 values a second of
 # NumPy's table look-ups) = 4 to 5 minutes of widening, and with C = 240 vectors 6.1e12 multiply-adds, 2 to 4
 # minutes of BLAS on 4 cores. A token by itself would cost the same widening: 5 minutes a token.
+# Measured (run 36913721685, Xeon 6973P-C, 4 logical cores): the pass over 256 positions of 11 runs took 257 s, 157 s
+# of it widening 26.6 G weights (170 M a second) and 41 s multiplying (165 G multiply-adds a second).
 #
 # The fork multiplies a ternary matrix by an activation it first rounds to Q8_0 (blocks of 32, a float16 scale,
 # int8 values: ggml's vec_dot type of PTQ1_0), and the two small BF16 matrices of a linear-attention layer by one
@@ -440,7 +442,11 @@ def main():
         far, same = compare(f"text {index}, float32 against the fork", ours, fork, wrote)
         # the line: the float32 engine is no farther from the fork than three times what the rounding of the
         # activations moves the engine itself (and the fork's two paths), and where its largest logit is another, the
-        # fork's own first two are closer than twice that difference
+        # fork's own first two are closer than twice that difference. Not float32 rounding: the fork is not one set of
+        # numbers to that precision (run 36913721685: its batch and its token at a time differ by 0.097 to 0.134 on
+        # the three texts, the engine from the fork by 0.095 to 0.149, the rounding moves the engine by 0.096 to 0.284;
+        # a wrong order of heads, no signs, no rotation or an embedding not turned back by 18 to 20, q and k read
+        # without their halves by 3.3)
         line = 3 * max(rounding, own)
         margins = [float(np.sort(b)[-1] - np.sort(b)[-2]) for a, b in zip(ours, fork) if int(np.argmax(a)) != int(np.argmax(b))]
         ok = far <= line and all(margin <= 2 * far for margin in margins) and text.get("tokens", True)

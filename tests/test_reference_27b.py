@@ -84,7 +84,8 @@ def test_one_pass_for_all_positions_is_the_forward_pass_a_position_at_a_time():
             for model in models for pos, token in enumerate(TOKENS)]
     got = conductor.run(jobs)
     for index, logits in enumerate(got):
-        assert np.allclose(logits, want[index % len(TOKENS)], rtol=1e-5, atol=1e-5), index
+        # (a matrix times all the vectors at once sums in another order than times one: float32 rounding)
+        assert np.allclose(logits, want[index % len(TOKENS)], rtol=2e-4, atol=2e-4), index
     # every matrix was read once for the 18 positions, not once a position
     assert len(read) == len(set(read)) == len(stores)
 
