@@ -267,6 +267,21 @@ def test_a_qwen35_the_engine_cannot_run_is_refused(change, reason):
         check_config(normalize({**config, "text_config": text}))
 
 
+def test_the_rotation_and_the_heads_follow_transformers_where_the_config_leaves_them_out():
+    """Qwen3_5TextConfig: partial_rotary_factor 0.25 (at the top of a config that has no rope_parameters, or left out) and
+    heads of 256. The published ones say both; one that did not must not turn whole heads."""
+    _, config = qwen35_model()
+    text = {key: value for key, value in config["text_config"].items() if key not in ("head_dim", "rope_parameters")}
+    text["rope_theta"] = 10000000
+    for extra, rotary in (({}, 0.25), ({"partial_rotary_factor": 0.5}, 0.5)):
+        lifted = normalize({**config, "text_config": {**text, **extra}})
+        assert lifted["rotary_pct"] == rotary and lifted["head_dim"] == 256 and lifted["rope_theta"] == 10000000
+        assert rotary_dim(lifted) == int(256 * rotary)
+    # a config that says it keeps what it says
+    said = normalize(config)
+    assert said["rotary_pct"] == 0.25 and said["head_dim"] == 16
+
+
 def test_the_layers_follow_transformers_where_the_config_leaves_them_out():
     """transformers makes layer_types from full_attention_interval (4 where there is none), and has its own numbers
     for the linear layers."""
