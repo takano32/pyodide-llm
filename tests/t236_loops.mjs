@@ -7,6 +7,7 @@
 // penalty: a repetition penalty in place of the entry's (the page's own way against a loop; the card's presence
 // penalty the sampler does not have).
 import fs from "node:fs";
+import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
 import { MODELS, filled } from "../src/models.js";
 
@@ -21,8 +22,9 @@ const template = spec.tiny ? "{prompt}" : entry.template;
 console.log(`T236LOOPS ${spec.id}: sampling ${JSON.stringify(sampling)}, options ${JSON.stringify({ ...options, specials: `${options.specials?.length} of them` })}, template ${JSON.stringify(template)}`);
 const { pyodide } = await pyodideWithEngine();
 pyodide.FS.writeFile("tokenizer.bin", fs.readFileSync(`${spec.out}.tokenizer.bin`));
-pyodide.globals.set("SPEC", JSON.stringify({ file: `${process.cwd()}/${spec.out}.bin`, options, sampling, seed: spec.seed ?? 1000,
+pyodide.globals.set("SPEC", JSON.stringify({ file: path.resolve(`${spec.out}.bin`), options, sampling, seed: spec.seed ?? 1000,
   prompts: spec.prompts.map((prompt) => filled(template, prompt)), asked: spec.prompts, id: spec.id }));
+try {
 pyodide.runPython(`
 import json, math, time, re
 spec = json.loads(SPEC)
@@ -57,4 +59,8 @@ for i, prompt in enumerate(spec["prompts"]):
            "head": text[:160], "tail": text[-260:]}
     print("T236LOOPS", spec["id"], json.dumps(row, ensure_ascii=False), flush=True)
 `);
+} catch (error) {
+  console.log("T236LOOPS FAILED:", String(error.message).slice(-1500));
+  process.exit(1);
+}
 process.exit(0);

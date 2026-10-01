@@ -37,13 +37,25 @@ page_tools() {
 entries() {
   node -e "import('./src/models.js').then(({ MODELS }) => console.log(JSON.stringify(MODELS.filter((m) => m.id.startsWith('hf-qwen3.5-0.8b')))))" > "$dir/entries.json"
 }
+article() {  # <language> <out> <title>: Wikipedia's API timed out from a runner once, so more than once
+  local attempt
+  for attempt in 1 2 3 4 5 6; do
+    if node tests/wikipedia.mjs "$@" 2> "$dir/wikipedia.err" && [ -s "$2" ]; then
+      echo "T236 article $3 ($1): $(wc -c < "$2") bytes, sha256 $(sha256sum "$2" | cut -c1-12)"
+      return 0
+    fi
+    echo "T236 article $3: attempt $attempt failed ($(head -c 200 "$dir/wikipedia.err" | tr '\n' ' ')); waiting"
+    sleep 30
+  done
+  return 1
+}
 articles() {  # T85's three, English and Japanese: the first of each article, plain text
-  node tests/wikipedia.mjs en "$dir/en1.txt" "Mount Fuji"
-  node tests/wikipedia.mjs en "$dir/en2.txt" "Natsume Sōseki"
-  node tests/wikipedia.mjs en "$dir/en3.txt" "Shinkansen"
-  node tests/wikipedia.mjs ja "$dir/ja1.txt" 富士山
-  node tests/wikipedia.mjs ja "$dir/ja2.txt" 夏目漱石
-  node tests/wikipedia.mjs ja "$dir/ja3.txt" 新幹線
+  article en "$dir/en1.txt" "Mount Fuji"
+  article en "$dir/en2.txt" "Natsume Sōseki"
+  article en "$dir/en3.txt" "Shinkansen"
+  article ja "$dir/ja1.txt" 富士山
+  article ja "$dir/ja2.txt" 夏目漱石
+  article ja "$dir/ja3.txt" 新幹線
 }
 original() {  # the original's files (tests/reference_qwen35.py fetches them at its revision)
   python tests/reference_qwen35.py "$dir/orig" --only=fetch
@@ -129,8 +141,8 @@ case "$stage" in
     mode=${3:-}
     reference_tools
     pip install --quiet transformers==4.57.6
-    node tests/wikipedia.mjs ja "$dir/ja-tokyo.txt" 東京都
-    node tests/wikipedia.mjs en "$dir/en-tokyo.txt" "Tokyo"
+    article ja "$dir/ja-tokyo.txt" 東京都
+    article en "$dir/en-tokyo.txt" "Tokyo"
     flags=()
     if [ "$mode" = by-layer ]; then flags=(--by-layer); fi
     python tests/t246_chat_reference.py "$dir" "$size" "$revision" "${flags[@]}" --chat tests/t246_chat.jsonl "$dir/ja-tokyo.txt:1024" "$dir/en-tokyo.txt:1024"
