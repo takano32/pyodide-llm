@@ -52,6 +52,23 @@ assert "int8" in fast.backend and len("".join(fast.generate("これからの流�
 # GPT-2 on the kernels (T65): LayerNorm, GELU and the learned positions must write what NumPy writes
 import numpy as np
 import llama2_convert
+# T129's review: NumPy's integers are 32 bits in Pyodide (wasm32): np.prod((64, 27648, 5120)) wrapped to 469762048, so the
+# converter sized a Qwen2.5 32B as 7.87 GB instead of 36.86 GB, the page began a 65 GB download and stopped at 7.8 GB,
+# and the refusal of a model past a 64-bit memory (T129 (7)) was never given the size. Sizes and places are Python ints
+class Sized:
+    def open(self, size, header, dtype, form):
+        self.size = size
+
+    def write(self, offset, array):
+        pass
+big, big_form = [5120, 27648, 64, 40, 8, -152064, 4096], {"arch": "llama", "bias": True}
+for big_dtype, big_bytes in (("int8", 36862578716), ("int6", 28671889436)):
+    sized = Sized()
+    writer = llama2_convert.Writer(None, big, big_dtype, big_form, sink=sized)
+    assert sized.size == big_bytes == llama2_convert.checkpoint_size(big, big_dtype, big_form), \\
+        f"a 32B model in {big_dtype} is {sized.size} bytes, not {big_bytes} (NumPy's 32-bit integers?)"
+    last_offset, last_shape, last_is_matrix = writer.tensors[-1]
+    assert last_offset + llama2_convert.tensor_bytes(last_shape, last_is_matrix, big_dtype) == big_bytes, f"its tensors do not end at its size in {big_dtype}"
 dim, hidden, layers, heads, vocab, positions = 32, 64, 2, 4, 320, 16
 rng = np.random.default_rng(3)
 normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
