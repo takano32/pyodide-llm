@@ -640,7 +640,7 @@ ${dp4aLines(false)}`}
 const SCALE_WORD = /* wgsl */ `
 const FLOAT_MAGNITUDE = 0x7fffffffu;
 fn scale_word(magnitude: u32, scale: f32) -> u32 {
-  return select(bitcast<u32>(scale), magnitude | 0x00400000u, magnitude >= 0x7f800000u);
+  return select(bitcast<u32>(scale), magnitude, magnitude >= 0x7f800000u);
 }`;
 export const QUANTIZE = /* wgsl */ `
 struct Quantize { n: u32, xStride: u32, unused0: u32, unused1: u32 }
