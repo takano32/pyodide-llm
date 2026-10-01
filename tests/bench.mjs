@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { FULL_ROUNDS, MEMORY_UNSAID, PASTE, QUESTIONS, REPORT_LIMIT, ROUNDS, TOO_LONG, benchMarkdown, cpuBaseline, cpuSummary, cpuTable, deviceSummary, environmentOf, gpuSummary, lineSummary,
          loginUrl, parseReport, reportBody, shortReport, storageSummary,
          generateTable, gpuSkipped, layerCheckNumbers, layerStepsTable, layerTable, matVecTable, PATH_PROMPTS, PATH_WRITES, pathTable, reportTooLong, reportUrl, reportsTable, roundsHere, roundsTable, tableCell, threadCounts, threadsKey, threadsLine, times, timesFaster, tokenTable,
-         checkVerdict, warnings, warningsBlock } from "../src/bench.js";
+         checkVerdict, pathWarnings, warnings, warningsBlock } from "../src/bench.js";
 import fs from "node:fs";
 
 const rows = [
@@ -803,4 +803,32 @@ const probeKept = probeSummary.split("\n").filter((line) => probeWarned.some((on
 assert.ok(loginUrl(aWhole, android, probeSummary).length <= REPORT_LIMIT, `${loginUrl(aWhole, android, probeSummary).length}`);
 assert.ok(probeKept.length >= 1 && probeKept.length < 12 && probeKept.every((line) => line.startsWith("- GPU: ") && line.includes(" WRONG (")), `the summary keeps WRONG rows first: ${probeKept.join("\n")}`);
 assert.ok(probeSummary.includes(`- … and ${probeWarned.length - probeKept.length} more, in the whole report below`), "and says how many are left to the whole report");
+// T227's review: what the model page's path says went wrong in words none of warnings()'s: the GPU stopped while the sides
+// were timed (forward.js's reasons: only "the GPU failed on …" has "failed" in it), software threads that stopped or did not
+// start, a search for their count that did not end. pathTable() writes them in its first line, pathWarnings() hands the same
+// words to warnings() as the section's own; a page that is not isolated has one thread, which is no failure
+const steadyPath = { ...real, rows: real.rows.map((row) => ({ ...row, cpu: { ...row.cpu, unsteady: false } })) };
+const stoppedGpu = (lost) => ({ ...steadyPath, gpu: { ...steadyPath.gpu, lost } });
+const notFinite = "the GPU computed logits that are not finite numbers (NaN or infinity) at position 3";
+const pathCases = [
+  [stoppedGpu("the GPU said nothing for 10 s"), ["WebGPU stopped while timed: the GPU said nothing for 10 s"]],
+  [stoppedGpu(notFinite), [`WebGPU stopped while timed: ${notFinite}`]],
+  [{ ...steadyPath, threads: 1, how: { alone: "a software thread stopped" } }, ["a software thread stopped"]],
+  [{ ...steadyPath, threads: 1, how: { alone: "not the 4 asked for: its software threads did not start" } }, ["not the 4 asked for: its software threads did not start"]],
+  [{ ...steadyPath, how: { unfinished: 120 } }, ["the search had not ended after 120 s"]],
+  [{ ...steadyPath, how: { remembered: true, stopped: true } }, ["a software thread stopped while timed, and one thread went on"]],
+  [{ ...stoppedGpu("the GPU's worker stopped answering for 10 s"), how: { unfinished: 120, stopped: true } },
+    ["WebGPU stopped while timed: the GPU's worker stopped answering for 10 s", "the search had not ended after 120 s", "a software thread stopped while timed, and one thread went on"]],
+];
+for (const [paths, said] of pathCases) {
+  const head = [benchMarkdown(rows, android), pathTable(paths, "tiny-lm 29M")].join("\n\n");
+  assert.deepEqual(pathWarnings(paths), said);
+  for (const line of said) assert.ok(head.split("\n").find((one) => one.startsWith("**The model page's path**")).includes(line), `${line} is the table's own words`);
+  assert.deepEqual(warnings([{ title: "Model", markdown: head, said: pathWarnings(paths) }]), said.map((line) => `Model: ${line}`));
+}
+// none of them where nothing stopped: a path that went well, one with no shared memory, one that went wrong whole (its own word)
+for (const paths of [steadyPath, { ...steadyPath, threads: 1, how: { alone: "no shared memory here" } }, { ...steadyPath, how: { searched: [[8, 4, 4]], remembered: false } }, undefined, { error: "x" }]) {
+  assert.deepEqual(pathWarnings(paths), []);
+}
+assert.deepEqual(warnings([{ title: "Model", markdown: pathTable({ error: "x" }, "m"), said: pathWarnings({ error: "x" }) }]), ["Model: **The model page's path** (m): failed: x"]);
 console.log("ok");

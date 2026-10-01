@@ -768,13 +768,21 @@ const samplingCell = (s) => `${s.chunks ? "one workgroup " : ""}${samplingTime(s
  * T190: /benchmark/ reads the same, so that the page path is timed on the model page's count. nav: the navigator */
 export const threadsKey = (id, nav) => `threads:${id}:${nav.hardwareConcurrency}:${nav.deviceMemory ?? ""}:${nav.userAgent}`;
 
+// the words of the page path's first line for what stopped, which pathTable() writes and pathWarnings() lists (T227's
+// review): software threads that stopped after the count was found, a search that did not end, the GPU stopped while the
+// sides were timed; and (public/worker.js) why a page that is not isolated has one thread, which is no failure
+const STOPPED_WHILE_TIMED = "a software thread stopped while timed, and one thread went on";
+const NOT_ENDED = (how) => `the search had not ended after ${how.unfinished} s`;
+const GPU_STOPPED = (gpu) => `WebGPU stopped while timed: ${tableCell(gpu.lost)}`;
+const NO_SHARED_MEMORY = "no shared memory here";
+
 /** T190: how the page path's number of threads came about (worker.js's timedPaths), in a few words */
 export function threadsHow(how) {
   if (!how) return "";
   if (how.alone) return `: ${how.alone}`;
   // T190's review: a software thread that stopped after the count was found (T120): the later times are one thread's
-  const stopped = how.stopped ? "; a software thread stopped while timed, and one thread went on" : "";
-  if (how.unfinished) return `: the search had not ended after ${how.unfinished} s${stopped}`;
+  const stopped = how.stopped ? `; ${STOPPED_WHILE_TIMED}` : "";
+  if (how.unfinished) return `: ${NOT_ENDED(how)}${stopped}`;
   if (how.remembered) return `, as the model page remembers${stopped}`;
   const verdicts = (how.searched ?? []).map(([best, candidate, kept]) => `${best} or ${candidate}: ${kept}`);
   return `${verdicts.length ? `, searched here (${verdicts.join(", ")})` : ""}${stopped}`;
@@ -819,7 +827,7 @@ export function pathTable(paths, name = "") {
   const { gpu = {}, rows = [] } = paths;
   const facts = [paths.threads !== undefined && `${paths.threads} software thread${paths.threads === 1 ? "" : "s"}${threadsHow(paths.how)}`];
   if (gpu.why !== undefined) facts.push(`WebGPU: ${tableCell(gpuSkipped(gpu.why))}`);
-  else if (gpu.lost) facts.push(`WebGPU stopped while timed: ${tableCell(gpu.lost)}`);
+  else if (gpu.lost) facts.push(GPU_STOPPED(gpu));
   else {
     facts.push(`WebGPU ready in ${number(gpu.seconds)} s`, `matrices by ${tableCell(gpu.matrices ?? "?")}`, `attention by ${tableCell(gpu.attention ?? "?")}`);
     if (paths.status) facts.push(tableCell(paths.status));
@@ -847,6 +855,21 @@ export function pathTable(paths, name = "") {
   const counts = threadsLine(paths.perCount, paths.threads);
   if (counts) lines.push("", counts);
   return lines.join("\n");
+}
+
+/**
+ * T227's review: what the model page's path says went wrong, as it says it in pathTable()'s first line, for warnings() to
+ * list as the section's own (said). The GPU stopped while the sides were timed (forward.js gives a dozen reasons for
+ * stopping it, and only some have "failed" in them: it said nothing, its worker stopped answering, its logits were not
+ * finite), software threads that stopped or did not start, a search for their count that did not end. [] where none
+ * did; a page that is not isolated has no software threads, and that is no failure.
+ */
+export function pathWarnings(paths) {
+  if (!paths || paths.error) return [];  // (an error says "failed" itself)
+  const { gpu = {}, how = {} } = paths;
+  // (as threadsHow() and pathTable() write them: alone says why the count is one, and nothing else of the threads)
+  const threads = how.alone ? [how.alone !== NO_SHARED_MEMORY && how.alone] : [how.unfinished && NOT_ENDED(how), how.stopped && STOPPED_WHILE_TIMED];
+  return [gpu.why === undefined && gpu.lost && GPU_STOPPED(gpu), ...threads].filter(Boolean);
 }
 
 // ---- T185: a line of the summary for each section (shortReport()), from the data the section's tables are made of.
