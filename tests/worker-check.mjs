@@ -47,8 +47,8 @@ function bytesOf(from, to) {
 const abortError = (signal) => signal.reason ?? new DOMException("aborted", "AbortError");
 
 // a body of the file's bytes [from, to), chunk by chunk, each after delay ms of the worker's; breakAt: it breaks there;
-// cancelled(): told when its reader lets go of it
-function body(from, to, { chunk = MiB, delay = 0, breakAt, signal, stall, cancelled } = {}) {
+// head: the bytes that begin it instead of the made-up ones (a header); cancelled(): told when its reader lets go of it
+function body(from, to, { chunk = MiB, delay = 0, breakAt, signal, stall, head, cancelled } = {}) {
   let at = from;
   return new ReadableStream({
     async pull(controller) {
@@ -59,6 +59,7 @@ function body(from, to, { chunk = MiB, delay = 0, breakAt, signal, stall, cancel
       if (at >= to) return controller.close();
       const end = Math.min(to, at + chunk, breakAt ?? Infinity);
       const bytes = bytesOf(at, end);
+      if (head && at === from) bytes.set(head.subarray(0, bytes.length));
       controller.enqueue(bytes);
       at = end;
     },
@@ -491,6 +492,29 @@ const ok = (line) => {
   context.weightsBuffer(8.1e9, QWEN7B, { dtype: "int8", bias: true });
   assert.equal(made.length, 1);
   ok("a model past a 64-bit memory is refused before its weights come");
+
+  // ---- load() as far as the weights' place: the parts that are on their way stop where the load ends before the
+  // weights have one (T129 (3): the memory said no; the review: the runtime never came). A model of this site's kind
+  // with a Qwen2.5 32B's header, whose parts are made as they are read
+  const HEADER = new Uint8Array(new Int32Array(QWEN32B).buffer);
+  const big = { id: "big", name: "Big", checkpoint: "big", tokenizer: "big.tokenizer.bin", bytes: 34.8e9, options: { dtype: "int8", bias: true } };
+  const slowly = (url, init) => (url.endsWith("big.tokenizer.bin") ? new Response(new Uint8Array(64), { status: 200 })
+    : new Response(body(partOf(url) * PART, (partOf(url) + 1) * PART, { signal: init.signal, delay: 100, head: partOf(url) === 0 ? HEADER : undefined }), { status: 200 }));
+  const partRequests = () => requests.filter((r) => /\.\d{3}$/.test(r.url));
+  for (const [name, why, init] of [
+    ["the memory said no", /too large for a web page/, "initialized = undefined"],
+    ["the runtime never came", /Pyodide did not come/, "initialized = Promise.reject(new Error('Pyodide did not come')); initialized.catch(() => {})"],
+  ]) {
+    fresh(slowly);
+    run(init);
+    const failed = await failure(context.load(big, new AbortController().signal, 1));
+    assert.match(failed?.error.message ?? "", why, name);
+    await sleep(3000);
+    assert.deepEqual(partRequests().filter((r) => r.at > failed.at).map((r) => partOf(r.url)), [], `${name}: parts were fetched after the load ended`);
+    assert.ok(partRequests().length >= 1 && partRequests().every((r) => r.signal.aborted), `${name}: the parts in flight were not aborted`);
+  }
+  run("initialized = undefined");
+  ok("a load that ends before its weights have a place stops what is fetched for it");
 }
 
 console.log(`worker-check: ${passed} checks passed`);
