@@ -54,6 +54,14 @@ part "the latest Pyodide" npm install --no-save pyodide@latest
 part "smoke test" node tests/smoke.mjs
 # T229: the kernels of Qwen3.5's linear attention against the same arithmetic in JavaScript (under a second)
 part "the delta rule's kernels" node tests/delta-check.mjs
+# T229 (the review): a Qwen3.5 is not put on a GPU where an adapter is there: forward.js's gpuUnfit says so first, and no
+# adapter of CI's reaches that line (a few seconds)
+hybrid_stays_on_the_cpu() {
+  mkdir -p .tmp
+  python tests/make_qwen35.py .tmp/made-up-qwen35-int8 int8
+  node tests/gpu-hybrid-check.mjs .tmp/made-up-qwen35-int8
+}
+part "a Qwen3.5 where a GPU adapter is" hybrid_stays_on_the_cpu
 # T217 (the review of T201): attention's softmax where its largest score decides something (two positions far above
 # the rest): a largest that leaves positions out, which forward-check's line cannot see (under a second)
 part "attention's largest score" node tests/attention-check.mjs
