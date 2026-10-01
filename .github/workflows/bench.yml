@@ -65,8 +65,9 @@ jobs:
           mkdir -p public/models
           split -b 8388608 -d -a 3 tiny-lm.bin public/models/tiny-lm.bin.
           cp tiny-lm.tokenizer.bin public/models/
-          npm run build
-          echo "built $(git log -1 --format='%h %s')"
+          # the page says the commit it was built from (astro.config.mjs reads GITHUB_SHA, which is the workflow's)
+          GITHUB_SHA=$(git rev-parse HEAD) npm run build
+          echo "=== built $(git log -1 --format='%h %s')"
 
       - name: Hand it on
         uses: actions/upload-artifact@v7
