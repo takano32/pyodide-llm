@@ -1062,7 +1062,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // ---- the number of threads (stage 2b): found by measuring, never written down. The search starts from a hint
   // (navigator.hardwareConcurrency, which counts the little cores of a big.LITTLE phone too) and compares the best
   // count so far with half of it and, if half is not faster, with twice as many; it goes on in that direction while
-  // the other is faster by more than the noise of a run, and stops at the first that is not. Only the tokens that
+  // the other is faster by more than the noise of a run, and stops at the first that is not (T239: on the way down, at
+  // the second in a row that is not: a quarter is compared where half was not faster). Only the tokens that
   // make logits are timed (a prompt's tokens skip the classifier). One comparison runs the two counts in blocks,
   // best-candidate-candidate-best, so that the growing cost of later positions falls on both alike, and drops the
   // first token of every block (the switch). Helpers that a count needs are started in the background; until they
@@ -1079,19 +1080,25 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // is searched again the same way once a visit (the first generation with no GPU getting ready), not only every
   // recheck generations of one load: the owner's Android kept 4 threads for llm-jp-3 150M where 2 wrote 3.2 times as
   // fast (T223), and a visit seldom writes 8 answers. unchecked: the count in use is not such a search's verdict yet.
+  // T239: half may be a dip with a faster count below it. The owner's PC (16 logical cores) stopped at 8 threads ("16 or
+  // 8: 8, 8 or 4: 8") where 2 wrote faster, and the search of every later visit began from that 8 and ended on it. So a
+  // count that half did not beat is compared with a quarter of it too (far), and the way down goes on by halves from a
+  // quarter that is faster. A comparison more (20 tokens) where the best count is 4 or more and nothing below it is
+  // faster; none more where it is 1 or 2. Not on the way up: a visit that remembers 2 would time 8 threads every time
+  // (the owner's Android: 0.23 s), and no device's report has a dip above its count (TODO.md's T239 has the table).
   const BLOCK = 4;
   let search = null, chosen = 0, generations = 0, recheckEvery = 0, onChosen = null, onCompared = null, unchecked = false;
   const gpuGettingReady = () => settleGpu !== null;
   const searchLog = [];  // every comparison: the counts, their times in ms per token, and the verdict
   function beginSearch(from) {
-    search = { best: Math.max(1, from), direction: from > 1 ? "down" : "up", moved: false, candidate: 0, times: null, step: 0, waiting: false, whileGpu: false };
+    search = { best: Math.max(1, from), direction: from > 1 ? "down" : "up", moved: false, far: false, candidate: 0, times: null, step: 0, waiting: false, whileGpu: false };
     nextCandidate();
   }
   function nextCandidate() {
     if (lost) return finish();
-    const { best, direction } = search;
-    const candidate = direction === "down" ? Math.floor(best / 2) : best * 2;
-    if (candidate < 1) return finish();
+    const { best, direction, far } = search;
+    const candidate = direction === "down" ? Math.floor(best / (far ? 4 : 2)) : best * 2;
+    if (candidate < 1) return passed();
     search.candidate = candidate;
     search.times = { [best]: [], [candidate]: [] };
     search.step = 0;
@@ -1103,6 +1110,14 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         else finish();
       }, () => finish());
     }
+  }
+  // the candidate was not faster than the best, or there is no count there: the next one, or the end (T239: a quarter
+  // after half; then twice as many, where the best is still the count the search began from)
+  function passed() {
+    if (search.direction === "down" && !search.far) search.far = true;
+    else if (search.direction === "down" && !search.moved) search.direction = "up";
+    else return finish();
+    nextCandidate();
   }
   function finish() {
     chosen = lost ? 1 : search ? search.best : threads;
@@ -1135,16 +1150,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     searchLog.push({ best, candidate, times: search.times, faster, whileGpu });
     // T114: every verdict, so that a device's choice can be followed afterwards (the page writes it to the console)
     onCompared?.({ best, candidate, bestMs, candidateMs, faster, whileGpu, tokens: search.times[best].length + search.times[candidate].length });
-    if (faster) {
-      search.best = candidate;
-      search.moved = true;
-      return nextCandidate();
-    }
-    if (search.direction === "down" && !search.moved) {
-      search.direction = "up";
-      return nextCandidate();
-    }
-    finish();
+    if (!faster) return passed();
+    Object.assign(search, { best: candidate, moved: true, far: false });
+    nextCandidate();
   }
   // the helpers in QUIT's hands: set, every one woken to see it, and each ended
   let stops = 0;  // stopHelpers() counts them: a helper whose start began before one is not kept
