@@ -22,6 +22,9 @@ LAYER = {"input_layernorm": "attn_norm", "post_attention_layernorm": "ffn_norm",
          "self_attn.q_norm": "attn_q_norm", "self_attn.k_norm": "attn_k_norm"}  # a Qwen3's (T203)
 
 
+TURNED = ("llama", "granite")  # the architectures whose q and k llama.cpp's convert turns (T253: a Granite's too)
+
+
 def q8_0_blocks(values):
     """llama.cpp's Q8_0 (ggml-quants.c's quantize_row_q8_0_ref): per 32 values d = largest / 127 in float32, the
     values times 1 / d rounded half away from zero, and d kept as float16; a d under float16's smallest half step
@@ -105,11 +108,11 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=1
     for name, tensor in tensors.items():
         stored = tensor
         kind = next((k for k in heads if f".{k}." in name), None)
-        if arch == "llama" and kind:
+        if arch in TURNED and kind:
             stored = turn(tensor, heads[kind])
         if tensor.ndim == 2:
             blob, rounded = matrices[0](stored)
-            held[name] = rounded  # as the GGUF holds it (turned, for q and k of a Llama)
+            held[name] = rounded  # as the GGUF holds it (turned, for q and k of a Llama and of a Granite)
             type_ = matrices[1]
         else:
             blob, type_ = stored.astype(np.float32).tobytes(), 0
@@ -130,7 +133,7 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=1
     same = {}
     for name, values in held.items():
         kind = next((k for k in heads if f".{k}." in name), None)
-        same[name] = llama2_convert.unturned(values, heads[kind]) if arch == "llama" and kind else values
+        same[name] = llama2_convert.unturned(values, heads[kind]) if arch in TURNED and kind else values
     return head + b"".join(blobs), same
 
 

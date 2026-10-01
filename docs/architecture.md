@@ -118,7 +118,7 @@ copied to the other, so either can go on from any position. See [webgpu.md](webg
 ## The tokenizers
 
 The engine reads three kinds of tokenizer: llama2.c's BPE, sentencepiece's Unigram, and byte-level BPE (GPT-2's
-kind, with the pre-tokenizers of GPT-2, SmolLM2, Qwen and Llama 3). They are compared with the real ones (Hugging
+kind, with the pre-tokenizers of GPT-2, SmolLM2, Qwen, Llama 3, Qwen3.5 and MiniCPM5). They are compared with the real ones (Hugging
 Face's `tokenizers` and `sentencepiece`) on every character (for sentencepiece, those of the Basic Multilingual
 Plane) and on random texts. A sentencepiece model's normalizer is its own map, carried in the converted tokenizer,
 and the added tokens of a `tokenizer.json` are read as one token wherever they are written, as the real ones do.
