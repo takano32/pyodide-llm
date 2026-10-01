@@ -96,6 +96,22 @@ const QWEN35_AT_ONCE = `${QWEN35_THINKING}\n</think>\n\n`;
 const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
   specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>",
     "</tool_call>", "<|file_sep|>", "<|im_start|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
+// T253: IBM's Granite 4.2. Its chat_template defines a macro (tool_to_json), which the converter's reader refuses:
+// one turn by hand, as the real Jinja writes it with enable_thinking true (its default) and false, with the empty
+// system turn it always writes (the same IDs as transformers' apply_chat_template for tests/format_check.py's
+// prompts). As for a Qwen3.5 (T236): the real tokenizer begins a text with no BOS (its post-processor adds none, and
+// the template does not write the <s> config.json names), so the BOS here is the format's own first token,
+// <|im_start|> (100256), and the formats begin after it: the page sends the very IDs the real template makes. The
+// specials are the converter's (the added tokens tokenizer.json does not call special, T143) with <|im_start|> and
+// <|im_end|>, in the converter's order. The answer stops at <|im_end|> (100257, the EOS), at the mark of a new turn
+// and at <s> (100283)
+const GRANITE_THINKING = "system\n<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n";
+const GRANITE_AT_ONCE = "system\n<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think></think>";
+const granite = { bos: 100256, stop_tokens: [100256, 100257, 100283],
+  specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "</tool_call>",
+    "<|filename|>", "<|im_start|>", "<|reponame|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
+// its card: "Use temperature=1.0 and top_p=0.95 across all tasks", thinking or not
+const graniteSampling = { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 };
 /** T203 (T136's fourth stage): a Q8_0 GGUF's weights with the vocabulary and config.json of its original, which
  * tests/gguf_check.py tensors held them to (gguf.yml's candidates) */
 const ggufOf = (repo, revision, weights, original, originalRevision, tokenizer = "tokenizer.json") =>
@@ -217,6 +233,9 @@ export const LICENSES = {
   "prism-ml/Ternary-Bonsai-1.7B-gguf": APACHE, "prism-ml/Ternary-Bonsai-1.7B-unpacked": APACHE,
   // T236: both cards say apache-2.0 (the GGUF's names the original's LICENSE as its license_link)
   "Qwen/Qwen3.5-0.8B": APACHE, "unsloth/Qwen3.5-0.8B-GGUF": APACHE,
+  // T253: the four cards say apache-2.0
+  "ibm-granite/granite-4.2-3b": APACHE, "ibm-granite/granite-4.2-3b-GGUF": APACHE,
+  "ibm-granite/granite-4.2-8b": APACHE, "ibm-granite/granite-4.2-8b-GGUF": APACHE,
 };
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
@@ -585,6 +604,20 @@ const LISTED = [
       "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"), 811843840,
     "fetches 812 MB (GGUF) → int8 850 MB · desktop only", { options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+  // T253: Granite 4.2 (IBM; Japanese is among the languages its card says it was tested in), a Llama whose attention
+  // multiplies its scores by config.json's attention_multiplier, which the converter puts into q (llama2_convert's
+  // query_scale()). IBM's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals. The 3B fits a
+  // 32-bit memory in six bits (Safari); the 8B does not
+  ...thinkingAndNot("hf-granite-4.2-3b", "Granite 4.2 3B",
+    ggufOf("ibm-granite/granite-4.2-3b-GGUF", "c40945d71cd90f249a56985e8155551a9188dc30", "granite-4.2-3b-Q8_0.gguf",
+      "ibm-granite/granite-4.2-3b", "e459acceac81e5fe67c07d9cfc72329a332e7eb1"), 3892651552,
+    "fetches 3.9 GB (GGUF) → int8 4.1 GB · desktop only", { options: granite },
+    { thinking: GRANITE_THINKING, atOnce: GRANITE_AT_ONCE }).map((entry) => ({ ...entry, generation: graniteSampling })),
+  ...thinkingAndNot("hf-granite-4.2-8b", "Granite 4.2 8B",
+    ggufOf("ibm-granite/granite-4.2-8b-GGUF", "93f3f6a8938ee922b784cf4e5b4203cd3428df8f", "granite-4.2-8b-Q8_0.gguf",
+      "ibm-granite/granite-4.2-8b", "f8de16cdcdbc6c779ca517604e050d82cc119e44"), 9345613952,
+    "fetches 9.3 GB (GGUF) → int8 9.9 GB · desktop only · Chrome and Firefox", { options: granite },
+    { thinking: GRANITE_THINKING, atOnce: GRANITE_AT_ONCE }).map((entry) => ({ ...entry, generation: graniteSampling })),
 ];
 
 // T90: memory. A device that runs out of it kills the worker's WebAssembly memory, so the page warns before it

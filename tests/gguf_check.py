@@ -534,6 +534,12 @@ def config_pairs(config, arch="llama"):
              ("rope.freq_base", "rope_theta", config.get("rope_theta", 10000.0), True),
              ("attention.layer_norm_rms_epsilon", "rms_norm_eps", config.get("rms_norm_eps"), True),
              ("context_length", "max_position_embeddings", config.get("max_position_embeddings"), False)]
+    if arch == "granite":
+        # T253: a Granite's four multipliers, which are no tensor (llama.cpp multiplies at run time, and the page's
+        # converter puts the scores' into q). transformers' default where config.json names none is 1
+        pairs += [(key, name, config.get(name, 1.0), True) for key, name in (
+            ("attention.scale", "attention_multiplier"), ("embedding_scale", "embedding_multiplier"),
+            ("residual_scale", "residual_multiplier"), ("logit_scale", "logits_scaling"))]
     if arch == "qwen35":
         # T236: which layers attend over all positions, the heads of the others and the taps of their convolution (the
         # tensors show only the products of heads and sizes), and how much of a head turns. The defaults are those of
