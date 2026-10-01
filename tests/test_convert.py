@@ -43,8 +43,9 @@ def hugging_face(config, weights, shared):
     return tensors, published
 
 
-def safetensors_file(tensors, stored="F32"):
-    header, data = {"__metadata__": {"format": "pt"}}, b""
+def safetensors_file(tensors, stored="F32", metadata=None):
+    """metadata: more of the header's __metadata__ (T237: a rotated basis, as gguf_model() says one)."""
+    header, data = {"__metadata__": {"format": "pt", **(metadata or {})}}, b""
     for name, tensor in tensors.items():
         if stored == "BF16":  # the upper half of the float32: what bfloat16 is
             raw = (np.ascontiguousarray(tensor, dtype=np.float32).view(np.uint32) >> 16).astype(np.uint16).tobytes()
@@ -302,7 +303,7 @@ def test_a_sink_gets_the_very_checkpoint(dtype, head_size):
     stream.finish()
     assert bytes(sink.data) == expected
     assert sink.opened == (list(stream.header), dtype, {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": head_size,
-                                                           "linear": None})
+                                                           "linear": None, "rotated": None})
 
 
 def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():
@@ -323,7 +324,7 @@ def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():
     stream.feed(file)
     stream.finish()
     header = list(stream.header)
-    form = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None}
+    form = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None, "rotated": None}
     assert asked == [(header, form, {name: checkpoint_size(header, name) for name in ("int8", "int6")})]
     assert stream.dtype == "int6" and sink.opened[1] == "int6"
     assert bytes(sink.data) == converted(Safetensors(reader(file)), published, "int6")

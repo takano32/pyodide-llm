@@ -100,7 +100,23 @@ const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
  * tests/gguf_check.py tensors held them to (gguf.yml's candidates) */
 const ggufOf = (repo, revision, weights, original, originalRevision, tokenizer = "tokenizer.json") =>
   ({ original, hf: { repo, revision, weights, vocabulary: { repo: original, revision: originalRevision, tokenizer } } });
-const harmony = { specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
+/** T235, T246: a Ternary Bonsai of Prism ML (a ternary Qwen3) in one of its sizes: its PQ2_0 GGUF's weights with the
+ * vocabulary, config.json and chat template of its -unpacked original. What the sizes share is here alone, so that one
+ * change covers them all (the owner's open choices of T235's review: config.json's yarn or a plain RoPE, which would
+ * be rope_scaling: {} in these options; a word more in the note; Prism ML's attribution). The original's template
+ * always begins the answer with an empty thought (Qwen3's enable_thinking=false): the model has one form, and the
+ * converter reads it. config.json and the tokenizer name no BOS (the converter would take token 1, '"'): Qwen3's own,
+ * <|endoftext|>, as every Qwen3 of the list begins, and the answer stops at it and at <|im_end|>. The sampling is the
+ * originals' generation_config.json, the same file in the three (its top-k the page's sampler has not) */
+const ternaryBonsai = (size, revision, originalRevision, download, sizes) => ({
+  group: "hf", id: `hf-ternary-bonsai-${size.toLowerCase()}`, name: `Ternary Bonsai ${size}`,
+  note: `answers at once · 日本語 / English · ternary weights · ${sizes}`,
+  ...ggufOf(`prism-ml/Ternary-Bonsai-${size}-gguf`, revision, `Ternary-Bonsai-${size}-PQ2_0.gguf`,
+    `prism-ml/Ternary-Bonsai-${size}-unpacked`, originalRevision), download,
+  weights: "ternary", conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
+  generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
+  prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE });
+const harmony ={ specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
   "November", "December"];
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -215,6 +231,9 @@ export const LICENSES = {
   // T235: both cards say apache-2.0. Their NOTICE.txt: "copyright 2026-present Prism ML, Inc. ... built from Qwen3-1.7B,
   // Copyright 2024 Alibaba Cloud ... Apache 2.0", and asks for "Created using Bonsai by Prism ML." where it is deployed
   "prism-ml/Ternary-Bonsai-1.7B-gguf": APACHE, "prism-ml/Ternary-Bonsai-1.7B-unpacked": APACHE,
+  // T246: the same of the 4B's and the 8B's cards and NOTICE.txt ("built from Qwen3-4B", "from Qwen3-8B")
+  "prism-ml/Ternary-Bonsai-4B-gguf": APACHE, "prism-ml/Ternary-Bonsai-4B-unpacked": APACHE,
+  "prism-ml/Ternary-Bonsai-8B-gguf": APACHE, "prism-ml/Ternary-Bonsai-8B-unpacked": APACHE,
   // T236: both cards say apache-2.0 (the GGUF's names the original's LICENSE as its license_link)
   "Qwen/Qwen3.5-0.8B": APACHE, "unsloth/Qwen3.5-0.8B-GGUF": APACHE,
 };
@@ -560,17 +579,17 @@ const LISTED = [
   // T235: Prism ML's ternary Qwen3 1.7B, every weight -1, 0 or 1 times a scale of its 128. Its PQ2_0 GGUF holds two
   // bits a weight, which the converter keeps as they are (T230: the ternary dtype, a quarter of int8's bytes, on kernels
   // of its own, T231; ?bits=8 widens them to int8 without loss of the values, as T235 did), with the vocabulary, config.json and
-  // chat template of the float16 safetensors of the same weights (the card's base model). That template always begins
-  // the answer with an empty thought (Qwen3's enable_thinking=false): the model has one form, and the converter reads
-  // it. config.json and the tokenizer name no BOS (the converter would take token 1, '"'): Qwen3's own, <|endoftext|>,
-  // as every Qwen3 of the list begins, and the answer stops at it and at <|im_end|>. The sampling is the card's
-  // generation_config.json (its top-k the page's sampler has not)
-  { group: "hf", id: "hf-ternary-bonsai-1.7b", name: "Ternary Bonsai 1.7B", note: "answers at once · 日本語 / English · fetches 463 MB (GGUF) → ternary 484 MB",
-    ...ggufOf("prism-ml/Ternary-Bonsai-1.7B-gguf", "983b5dec2ff16aab79990711ba0f828a499a7e6a", "Ternary-Bonsai-1.7B-PQ2_0.gguf",
-      "prism-ml/Ternary-Bonsai-1.7B-unpacked", "3aca840085293d026ce6f6b80fafdae937fd2eeb"), download: 463290464,
-    weights: "ternary", conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
-    generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
-    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // chat template of the float16 safetensors of the same weights (the card's base model). T246: and the 4B and the 8B,
+  // the same in every file but the weights and config.json's sizes (ternaryBonsai() has what the three share). The
+  // 4B's heads are not dim / heads wide and the 8B has a classifier of its own, as the Qwen3 4B and 8B they are built
+  // from; as ternary they fit a 32-bit memory with their forward pass (2.2 and 3.3 GiB at 4096 positions; widened to
+  // int8 they were 5.3 and 10.1 GiB, on a 64-bit one)
+  ternaryBonsai("1.7B", "983b5dec2ff16aab79990711ba0f828a499a7e6a", "3aca840085293d026ce6f6b80fafdae937fd2eeb", 463290464,
+    "fetches 463 MB (GGUF) → ternary 484 MB"),
+  ternaryBonsai("4B", "a3eb42bafe873f9686bc97486c43b72ef7d75ec8", "4485fae7a00129467b9329b738110d88b2942a1a", 1074969344,
+    "fetches 1.1 GB (GGUF) → ternary 1.1 GB · desktop only"),
+  ternaryBonsai("8B", "c2aefbeb4b24469cd11579c3384b990404c17a30", "ac20f03fc62e872399218b659c8e949dfca05769", 2182184672,
+    "fetches 2.2 GB (GGUF) → ternary 2.3 GB · desktop only"),
   // T236: Qwen3.5 0.8B, the first of the list with hybrid attention (T229: three layers of four are Gated DeltaNet
   // layers, which keep a state of a fixed size where the fourth keeps keys and values), on the CPU (no GPU path yet).
   // A vision-language model, of which the page reads the language model. unsloth's Q8_0 GGUF, which

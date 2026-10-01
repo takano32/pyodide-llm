@@ -19,8 +19,9 @@ const root = new URL("..", import.meta.url);
 const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
   "import json, sys; sys.path.insert(0, 'public'); import llama2_numpy; print(json.dumps(llama2_numpy.FORM))"],
 { cwd: fileURLToPath(root) }).toString());
-// T229: "linear", the linear-attention layers of a Qwen3.5 (null where there are none)
-assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "head_dim", "linear", "qk_norm"],
+// T229: "linear", the linear-attention layers of a Qwen3.5 (null where there are none); T237: "rotated", the basis the
+// matrices are stored in (null: the model's own), whose signs and rotated inputs footprint() counts
+assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "head_dim", "linear", "qk_norm", "rotated"],
   "FORM has other keys now: say here which of them footprint() reads");
 
 // (7) footprint()'s defaults are FORM's: a form without arch or head_dim (the options of a model converted before
@@ -91,6 +92,11 @@ const qwen3 = { ...FORM, qk_norm: true, head_dim: 128 };
 opened(QWEN3, qwen3);
 // what the test stands on: the head's size changes what footprint() counts (a Qwen3 0.6B, T124)
 assert.ok(forward.footprint(QWEN3, 600e6, { ...qwen3, dtype: "int8" }) > 1.5 * forward.footprint(QWEN3, 600e6, { ...FORM, dtype: "int8" }));
+// T237: a rotated basis reaches footprint() as the options carry it (its block and the signs' texts by the width), and
+// is counted: the signs of the three widths and a rotated input in each of the 16 frames
+const rotated = { block: 1024, signs: { 1024: "00".repeat(128), 2048: "00".repeat(256), 3072: "00".repeat(384) } };
+assert.ok(forward.footprint(QWEN3, 600e6, { ...qwen3, rotated, dtype: "int8" }) - forward.footprint(QWEN3, 600e6, { ...qwen3, dtype: "int8" })
+  >= (1024 + 2048 + 3072) * 4 + 16 * 3072 * 4, "footprint() does not count a rotated basis");
 opened(GPT2, { ...FORM, bias: true, arch: "gpt2" });
 assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "int8" }), forward.footprint(GPT2, 600e6, { ...FORM, dtype: "int8" }));
 
