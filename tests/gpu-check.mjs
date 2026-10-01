@@ -668,7 +668,7 @@ if (lines.length) console.log(lines.join("\n"));
 if (!outcome.error && !outcome.forms?.length) outcome.error = "no tiled shader to force: the harness got no GPU adapter (run it again)";
 if (outcome.error) {
   console.error(`FAILED\n- ${outcome.error}`);
-  process.exit(1);
+  leave(1);
 }
 
 async function inBrowser() {
@@ -905,7 +905,14 @@ for (const { id, cpu, gpu: runs, late, refused, remembered, alone } of outcome.r
   }
   layerTables(c, cpu, runs, measures);
 }
-process.exit(failed ? 1 : 0);
+leave(failed ? 1 : 0);
+// T224's review: after what is written. A pipe (the workflows' `| grep | tee`) takes a write of the whole log of the
+// harness's console (`lines`, over 100 KB with the site's models: Dawn's job of the full suite) later than process.exit() comes
+// after it, and the log ended in the middle of a line, with none of the rows of the models (run 36869718389 and 36867893552,
+// and no FAILED either, had there been one). An empty write's callback comes after every write before it.
+function leave(code) {
+  process.stdout.write("", () => process.exit(code));
+}
 
 // T213: the first matrix a token's layer would bind inside a joined buffer (q, k and v as one, gate and up as one,
 // in gpu.js's tokensLayout's order; each after the ones before it) whose values or scales would not start where a device binds a buffer, or null where every

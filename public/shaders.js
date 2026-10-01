@@ -1338,7 +1338,10 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
 // The shape is llama.cpp's choice (ggml-webgpu-shader-lib.hpp's get_flash_attn_vec_pipeline): KV_TILE 32
 // (GGML_WEBGPU_FLASH_ATTN_VEC_MAX_KV_TILE), a workgroup of the largest subgroup, D_SPLIT the least of the least
 // subgroup, 4 and the lowest bit of headSize / 4; the reduce's workgroup the larger of the largest subgroup and nwg of
-// them (at most the device's threads).
+// them (at most the device's threads), where llama.cpp makes a reduce pipeline for the nwg of the call and this makes
+// one for the most nwg a head can have (splits: the least subgroup), which every nwg runs: for two parts a head on a
+// Mali (16..16) a workgroup of 256 threads where llama.cpp's is 32 (T224's review: the same sums, more subgroups to
+// share the output's vec4s).
 // Where there are no subgroups (or no subgroup_id), FLASH_VEC_LANES threads stand for one subgroup, its shuffles, largest
 // and sum through the workgroup's memory (a butterfly: each pair of lanes adds the same two values, so every lane holds
 // the same sum), and nwg goes up to FLASH_VEC_LANES (this project's, as flashTile's LANES: llama.cpp's vec path needs
@@ -1352,7 +1355,7 @@ export const flashVecShape = ({ headSize, subgroups, threads, subgroupMin = 4, s
     none: headSize % 4 ? `a head of ${headSize} is not of four values` : wgSize > threads ? `subgroups of ${wgSize} are more than ${threads} threads` : undefined };
 };
 // Adapted from llama.cpp, ggml/src/ggml-webgpu/ggml-webgpu.cpp (ggml_webgpu_flash_attn_vec_nwg), commit 95887577, under
-// the MIT License (its notice below flashVec): the workgroups a head for positions
+// the MIT License (the notice is the one above flashVec): the workgroups a head for positions
 export function flashVecSplits({ splits, kvTile }, positions) {
   let nwg = 1;
   while (2 * nwg * kvTile < positions && nwg < splits) nwg <<= 1;
@@ -1404,7 +1407,8 @@ const FLASH_VEC_PARAMS = /* wgsl */ `struct Params { heads: u32, kvHeads: u32, s
 const flashVecHead = (subgroups) => (subgroups ? "diagnostic(off, subgroup_uniformity);\nenable subgroups;\nrequires subgroup_id;\n" : "");
 
 // Adapted from llama.cpp, ggml/src/ggml-webgpu/wgsl-shaders/flash_attn_vec_split.wgsl and flash_attn_vec_reduce.wgsl
-// (https://github.com/ggml-org/llama.cpp, commit 95887577, 2026-09-27), under the MIT License:
+// (and, for flashVecShape's and flashVecSplits' numbers, ggml-webgpu.cpp and ggml-webgpu-shader-lib.hpp; commit
+// 95887577, committed 2026-09-26 20:05 UTC, https://github.com/ggml-org/llama.cpp), under the MIT License:
 //
 // Copyright (c) 2023-2026 The ggml authors
 //
@@ -1759,8 +1763,9 @@ export function tokenAttentionOff(got, { q, keys, values }, { heads, kvHeads, si
     for (let d = 0; d < size; d++) {
       let want = 0;
       for (let p = 0; p < positions; p++) want += weights[p] * fromHalf(values[p * kvDim + kv + d]);
-      const off = Math.abs(got[row + d] - want / sum) / largest;
-      if (!(off <= worst)) worst = off;  // (a NaN stays)
+      // (Math.max keeps a NaN, as the comment above says: `if (!(off <= worst)) worst = off` let the next value take its
+      // place, and a NaN in one head, or in the first values of the last, passed: T224's review)
+      worst = Math.max(worst, Math.abs(got[row + d] - want / sum) / largest);
     }
   }
   return worst;
