@@ -165,3 +165,98 @@ def test_the_signs_a_broken_run_is_given_differ_from_the_files_where_it_says():
     assert not np.any(signs_of(broken_basis(basis, "no signs"), 5120) == -1)
     for unchanged in ("tiled", "embedding", "halves", "gates rotated", "output normalized twice", "epsilon 1e-5"):
         assert broken_basis(basis, unchanged) == basis
+
+
+# ------------------------------------------------------------------------------------------- the reference reads a GGUF as the converter does
+def rotated_qwen35_gguf(tmp_path, shape):
+    """A rotated Qwen3.5 GGUF as the 27B's is (a classifier of its own, the basis in the metadata, and where a key head has
+    more value heads than one the value heads of every tensor but the output matrix's columns tiled: T245), written to a file."""
+    import test_gguf
+    from conftest import FOLDED, basis, folded
+    from test_rotated import prism_metadata, widths_of
+    shape = {**test_gguf.QWEN35, **shape, "shared": False}
+    tensors, config = qwen35_model(**shape)
+    said, signs = basis(16, widths_of(config))
+    kinds = [test_gguf.QWEN35_LAYER[kind.rsplit(".", 1)[0]] for kind in FOLDED if kind.rsplit(".", 1)[0] in test_gguf.QWEN35_LAYER]
+    layers, types = config["text_config"]["num_hidden_layers"], config["text_config"]["layer_types"]
+    names = [f"blk.{layer}.{kind}.weight" for layer in range(layers) for kind in kinds
+             if (kind in ("attn_qkv", "attn_gate", "ssm_out")) == (types[layer] == "linear_attention") or kind.startswith("ffn")]
+    config, file, _ = test_gguf.qwen35_gguf(more=prism_metadata(config, 16, dict(signs), names + ["output.weight"]),
+                                            fold=lambda t: folded(t, 16, signs), **shape)
+    path = tmp_path / "rotated.gguf"
+    path.write_bytes(file)
+    return path, file, config
+
+
+def streamed_logits(path, tokens, rounding="float32", broken=""):
+    import llama2_numpy
+    from reference_27b import Source, Streamed
+    llama2_numpy.Tokenizer = lambda *arguments, **named: None  # (forward() needs none)
+    conductor = Conductor()
+    model = Streamed(Source(path, positions=len(tokens) + 1), conductor, rounding=rounding, broken=broken)
+    return conductor.run([(lambda token=token, position=position: np.array(model.forward(token, position)))
+                          for position, token in enumerate(tokens)])
+
+
+def test_the_reference_reads_a_rotated_gguf_as_the_converter_does(tmp_path):
+    """The reference reads the 27B's GGUF by its own code (the engine's forward pass over what the conductor widens); the page
+    will read it through the converter. On a made-up file in the 27B's form both give the same logits: the rows of q and its
+    gate and k, the norms with their 1, the taps, the gates, the basis, the output matrix and the classifier."""
+    import test_gguf
+    from test_rotated import run
+    path, file, config = rotated_qwen35_gguf(tmp_path, {})
+    vocabulary = test_gguf.unigram(config["text_config"]["vocab_size"])
+    made = test_gguf.with_original(file, config, vocabulary, "tokenizer.json", "float32")
+    tokens = [1, 5, 7, 9, 11, 5]
+    want = run(made, config["text_config"]["vocab_size"], tokens)
+    got = streamed_logits(path, tokens)
+    for position in range(len(tokens)):
+        assert np.allclose(got[position], want[position], rtol=1e-3, atol=1e-3), position
+
+
+def test_the_reference_reads_a_rotated_and_tiled_gguf_as_the_converter_does(tmp_path, monkeypatch):
+    """The same where a key head has two or three value heads, which llama.cpp tiles (T245's reader against the reference's
+    grouped()), and the output matrix keeps its columns as the file holds them."""
+    import pytest
+    import test_gguf
+    from test_rotated import run
+    if not hasattr(test_gguf, "QWEN35_VALUE_HEADS"):
+        pytest.skip("T245's reader of value heads that llama.cpp tiled (test_gguf.QWEN35_VALUE_HEADS) is not in this tree yet")
+    monkeypatch.delitem(test_gguf.QWEN35_VALUE_HEADS, "linear_attn.out_proj.weight")
+    for name in ("two value heads to a key head", "three value heads to a key head (the 27B)"):
+        path, file, config = rotated_qwen35_gguf(tmp_path, test_gguf.QWEN35_SHAPES[name])
+        vocabulary = test_gguf.unigram(config["text_config"]["vocab_size"])
+        made = test_gguf.with_original(file, config, vocabulary, "tokenizer.json", "float32")
+        tokens = [1, 5, 7, 9, 11, 5]
+        want = run(made, config["text_config"]["vocab_size"], tokens)
+        got = streamed_logits(path, tokens)
+        for position in range(len(tokens)):
+            assert np.allclose(got[position], want[position], rtol=1e-3, atol=1e-3), (name, position)
+        # and the reading that leaves the value heads tiled is another model
+        tiled = streamed_logits(path, tokens, broken="tiled")
+        assert not np.allclose(tiled[-1], want[-1], rtol=1e-2, atol=1e-2), name
+
+
+def test_a_break_of_the_reference_changes_the_logits_where_it_applies(tmp_path):
+    import pytest
+    from reference_27b import BREAKS, LAYERS, SIGN_BREAKS
+    path, file, config = rotated_qwen35_gguf(tmp_path, {})
+    tokens = [1, 5, 7, 9, 11, 5]
+    base = streamed_logits(path, tokens)[-1]
+    # (the breaks made for the 27B's widths and layers have no place here: its inputs are 64, 96 and 128 wide, 4 layers, and
+    # a value head to a key head: they say so by the width they name, or change nothing)
+    nowhere = {"6144 with 5120's signs", "last block of 5120 as the first"} | set(SIGN_BREAKS)
+    unchanged = {"tiled"} | {name for name, (layer, _) in LAYERS.items() if layer >= 4}
+    for name in BREAKS:
+        if name in nowhere:
+            with pytest.raises(KeyError):
+                streamed_logits(path, tokens, broken=name)
+            continue
+        got = streamed_logits(path, tokens, broken=name)[-1]
+        if name in unchanged:
+            assert np.array_equal(got, base), f"{name} changes what it has no place in"
+        else:
+            assert not np.allclose(got, base, rtol=1e-3, atol=1e-3), f"{name} changes nothing"
+    # the roundings of the page are not float32, and the page's 7 bits are not Safari's 8
+    seven, eight = (streamed_logits(path, tokens, rounding=name)[-1] for name in ("as the page rounds", "as Safari rounds"))
+    assert not np.allclose(seven, base, rtol=1e-3, atol=1e-3) and not np.array_equal(seven, eight)
