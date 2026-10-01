@@ -732,7 +732,7 @@ function pooledWeights(size, after, shared, wide, ahead) {
 // without: the switches of the load (those of the load going on, or of one that follows: loadsAhead, T242).
 function forwardOptions(options, shared, without = disabled) {
   const { dtype = "float32" } = options;
-  const int8 = !without.includes("int8"), quantized = dtype === "int8" || dtype === "int6";
+  const int8 = !without.includes("int8"), quantized = ["int8", "int6", "ternary"].includes(dtype);
   return {
     ...options, dtype, int8, relaxed: Boolean(jsKernels?.relaxed) && !without.includes("relaxed"),
     halfKV: quantized && int8 && !without.includes("kv16"), shared,

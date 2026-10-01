@@ -279,11 +279,13 @@ const linearStateBytes = (layers, linear) => {
 // after the convolution, z, and the delta rule's work (beta and decay of every value head, then its delta); xb holds
 // what the delta rule reads (as wide as v)
 // T237, a model in a rotated basis: xr, what a matrix reads of its input (the widest of them)
-const frameArrays = (dim, hidden, kvDim, qDim = dim, linear = null, rotated = null) => {
+// ternary (T231): after the scales of the activations' groups of 32 (xs) come as many int32, minus each group's sum
+// (kernels' interleave)
+const frameArrays = (dim, hidden, kvDim, qDim = dim, linear = null, rotated = null, ternary = false) => {
   const { mixed = 0, read = 0 } = linear ? linearWidths(linear) : {};
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QD = Math.max(dim, qDim, read) * 4, XQ = Math.max(dim, hidden, qDim, read);
   return [["x", D], ["xb", QD], ["xb2", D], ["q", qDim * 4], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD],
-    ["hb2", HD], ["xq", XQ], ["xs", Math.ceil(XQ / 32) * 4],
+    ["hb2", HD], ["xq", XQ], ["xs", Math.ceil(XQ / 32) * (ternary ? 8 : 4)],
     ...(linear ? [["gate", qDim * 4], ["mixed", mixed * 4], ["conv", mixed * 4], ["z", read * 4],
       ["work", (2 * linear.value_heads + read) * 4]] : []),
     ...(rotated ? [["xr", XQ * 4]] : [])];
@@ -297,7 +299,7 @@ const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(b
 /** T115: the most bytes the forward pass puts after a checkpoint of size bytes: at the end of its whole context,
  * the KV cache grown to it in place (T130). An upper bound, a little above what createForward allocates
  * (tests/forward-check.mjs holds the two together).
- * header: the 7 ints of the legacy format. dtype: the file's ("float32", "float16", "int8", "int6"). int8: the int8
+ * header: the 7 ints of the legacy format. dtype: the file's ("float32", "float16", "int8", "int6", "ternary"). int8: the int8
  * kernels compute on the weights (not with ?without=int8, which widens them to float32); relaxed: with relaxed SIMD
  * (an int32 correction a group, T197); halfKV: the keys and values may be float16 (an int8 model, not ?without=kv16;
  * whether they are is keysInHalf's, T160); shared: on a shared memory (T110, where there are software threads).
@@ -312,8 +314,9 @@ export function footprint(header, size, { dtype = "float32", arch = "llama", int
   shared = false, outliers = 8, head_dim = 0, gpu = false, direct = false, linear = null, rotated = null } = {}) {
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
   const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads, kvDim = kvHeads * headSize, qDim = heads * headSize;
-  const quantized = dtype === "int8" || dtype === "int6", six = dtype === "int6";
-  // the int8 kernels take rows of whole groups of 32 (llama2_numpy widens the others)
+  const ternary = dtype === "ternary", quantized = dtype === "int8" || dtype === "int6" || ternary, six = dtype === "int6";
+  // the int8 kernels take rows of whole groups of 32 (llama2_numpy widens the others; a ternary file's rows are whole
+  // groups of 128)
   const onInt8 = int8 && dim % 32 === 0 && qDim % 32 === 0 && kvDim % 32 === 0 && hidden % 32 === 0 &&
     (!linear || linearWidths(linear).read % 32 === 0);
   let bytes = 0;
@@ -324,8 +327,9 @@ export function footprint(header, size, { dtype = "float32", arch = "llama", int
   const tables = (signedVocab < 0 ? vocab * dim : 0) + (arch === "gpt2" ? seqLen * dim : 0);
   // (T156, direct: the layers' matrices are on the GPU alone; T210: so are the embedding and the classifier, and none
   // of their corrections or outlier columns is here)
-  const weights = !quantized ? 0 : size * (six ? 32 / 28 : 32 / 36) - tables, matrices = quantized && !direct;
-  if (matrices && onInt8) bytes += (relaxed ? weights / 8 : 0) + Math.min(outliers, dim) * (vocab + 1) * 4;
+  // (T231: ternary weights, 36 bytes a group of 128, have no corrections: their kernels take the activations signed)
+  const weights = !quantized ? 0 : size * (ternary ? 128 / 36 : six ? 32 / 28 : 32 / 36) - tables, matrices = quantized && !direct;
+  if (matrices && onInt8) bytes += (relaxed && !ternary ? weights / 8 : 0) + Math.min(outliers, dim) * (vocab + 1) * 4;
   else if (matrices) bytes += weights * 4;
   else if (dtype === "float16") bytes += size * 2;
   // what a quantized file leaves out: GPT-2's positions widened, and the RoPE tables Python computes (two of seqLen ×
@@ -334,7 +338,7 @@ export function footprint(header, size, { dtype = "float32", arch = "llama", int
   if (quantized || arch === "gpt2") bytes += seqLen * headSize * 4;
   // the frames of BATCH tokens, their attention scores, the logits; the keys and values of a block from the GPU (in
   // float16) and its rows
-  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, linear, rotated)) + align(seqLen * heads * 4)) + vocab * 4;
+  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, linear, rotated, ternary)) + align(seqLen * heads * 4)) + vocab * 4;
   // T237: the signs of a rotated basis, a float32 for every value of every width
   if (rotated) bytes += rotatedWidths(dim, hidden, qDim, linear).reduce((sum, width) => sum + align(width * 4), 0);
   if (gpu) bytes += 2 * layers * GPU_BLOCK * kvDim * 2 + GPU_BLOCK * dim * 4;
@@ -721,16 +725,18 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
 
   const T = plan.tensors, derived = plan.derived ?? {};
   const count = (t) => t.shape.reduce((a, b) => a * b, 1);
-  // weight i of an int8 or int6 tensor, as the int8 it is: int6 (T98) unpacked from its group of 24 bytes, the
-  // layout of llama2_numpy.pack6 (six bits, then two zero bits)
+  // weight i of an int8, int6 or ternary tensor, as the int8 it is: int6 (T98) unpacked from its group of 24 bytes,
+  // the layout of llama2_numpy.pack6 (six bits, then two zero bits); ternary (T230) its two bits less one, the layout
+  // of llama2_numpy.pack_ternary
   function weightAt(t, i) {
     if (t.kind === "int8") return I[base + t.offset + i];
+    if (t.kind === "ternary") return ((U[base + t.offset + (i >> 2)] >> (2 * (i & 3))) & 3) - 1;
     const group = base + t.offset + ((i / 32) | 0) * 24, j = i % 32;
     const low = j < 16 ? U[group + j] & 15 : U[group + j - 16] >> 4;
     const top = (U[group + 16 + (j % 8)] >> (2 * ((j / 8) | 0))) & 3;
     return (((low | (top << 4)) << 2) << 24) >> 24;  // the byte as a signed int8
   }
-  // a float32 copy of a tensor: float16 converted, int8 and int6 times the scale of their group (Math.fround is the
+  // a float32 copy of a tensor: float16 converted, int8, int6 and ternary times the scale of their group (Math.fround is the
   // float32 product NumPy computes)
   function widen(t) {
     const n = count(t), at = alloc(n * 4);
@@ -759,7 +765,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     if (!widened.has(name)) widened.set(name, widen(t));
     return widened.get(name);
   }
-  // a matrix: int8 or int6 (values, scales, corrections) when plan.int8, else float32
+  // a matrix: int8 or int6 (values, scales, corrections) or ternary (values, scales) when plan.int8, else float32
   function matrix(name) {
     const source = plan.shared_classifier && name === "wcls" ? "token_embedding_table" : name;
     const t = T[source];
@@ -771,11 +777,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       return { rows, n, int8: true, six: false, group: t.group, onGpu: true,
         layer: (l) => [t.offset + l * rows * n, t.scales + l * rows * (n / t.group) * 4] };
     }
-    if ((t.kind === "int8" || t.kind === "int6") && plan.int8) {
-      const six = t.kind === "int6", rowBytes = six ? n / 32 * 24 : n;
+    if ((t.kind === "int8" || t.kind === "int6" || t.kind === "ternary") && plan.int8) {
+      const six = t.kind === "int6", ternary = t.kind === "ternary", rowBytes = ternary ? n / 4 : six ? n / 32 * 24 : n;
       const values = base + t.offset, scales = base + t.scales, groups = count(t) / t.group;
       let corrections = scales;
-      if (relaxed) {
+      if (relaxed && !ternary) {
         // relaxed SIMD multiplies by 7-bit unsigned activations with a bias of 64, which this takes out again:
         // dot(w, q - 64) = dot(w, q) - 64 * sum(w). -64 * sum of the group, an int32 (T197: the kernels add it to the
         // group's integer sum; before it the float32 scale * sum)
@@ -785,7 +791,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         (six ? k.six_sums : k.int8_sums)(corrections, values, groups);
       }
       const layer = (l) => [values + l * rows * rowBytes, scales + l * rows * (n / t.group) * 4, corrections + l * rows * (n / t.group) * 4];
-      return { rows, n, int8: true, six, group: t.group, layer };
+      return { rows, n, int8: true, six, ternary, group: t.group, layer };
     }
     const w = floats(source);  // float32 as it is, or widened once (shared with the embedding when it is the same table)
     return { rows, n, int8: false, layer: (l) => [w + l * rows * n * 4] };
@@ -805,7 +811,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // KV: the bytes of one position's keys in the cache; KF: in float32.
   const halfKV = Boolean(plan.half_kv) && (halfKeys ?? (sharedMemory && kvHeads >= heads));
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QF = qDim * 4, KV = kvDim * (halfKV ? 2 : 4);
-  const inFrame = frameArrays(dim, hidden, kvDim, qDim, linear, rotated), S = frameBytes(inFrame);
+  const inFrame = frameArrays(dim, hidden, kvDim, qDim, linear, rotated, T.wo?.kind === "ternary"), S = frameBytes(inFrame);
   const frames = alloc(BATCH * S), at = {};
   inFrame.reduce((offset, [name, bytes]) => { at[name] = frames + offset; return offset + align(bytes); }, 0);
   // kNow, vNow: this token's key and value in float32, before they go into the cache
@@ -924,8 +930,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const jobOf = (m, out, outStride, input, l, count) => {
     const [w, s, c] = m.layer(l);
     if (!m.int8) return [2, out, input, 0, w, 0, 0, m.n, 0, m.rows, count, outStride, S, 0];
-    const kind = m.six ? (relaxed ? 5 : 6) : (relaxed ? 0 : 1);
-    return [kind, out, xq, xs, w, s, relaxed ? c : 0, m.n, 0, m.rows, count, outStride, S, S];
+    const kind = m.ternary ? (relaxed ? 8 : 9) : m.six ? (relaxed ? 5 : 6) : (relaxed ? 0 : 1);
+    return [kind, out, xq, xs, w, s, relaxed && !m.ternary ? c : 0, m.n, 0, m.rows, count, outStride, S, S];
   };
   // the attention of token t of a run, at position pos (its scores have a place of their own: tokens run at once)
   const attentionJob = (t, pos, layerKeys, layerValues) =>
@@ -1017,8 +1023,15 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       for (let t = 0; t < count; t++) k.rotate(xr + t * S, input + t * S, signs[n], n, rotated);
       input = xr;
     }
-    if (list[0][0].int8) {
-      for (let t = 0; t < count; t++) k.quantize_x(xq + t * S, xs + t * S, input + t * S, list[0][0].n, bias);
+    const [first] = list[0];
+    if (first.ternary) {
+      // T231: the ternary kernels take the activations signed, in all 8 bits, and laid out as the weights' planes are
+      for (let t = 0; t < count; t++) {
+        k.quantize_x(xq + t * S, xs + t * S, input + t * S, first.n, 0);
+        k.interleave(xq + t * S, xs + t * S, first.n);
+      }
+    } else if (first.int8) {
+      for (let t = 0; t < count; t++) k.quantize_x(xq + t * S, xs + t * S, input + t * S, first.n, bias);
     }
     phase(list.map(([m, out, outStride, l]) => jobOf(m, out, outStride, input, l, count)));
   }
@@ -1027,7 +1040,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   function embed(tokens, pos0, rows = x, stride = S) {
     for (let t = 0; t < tokens.length; t++) {
       const row = tokens[t] * dim, to = (rows + t * stride) / 4;
-      if (embedding.kind === "int8" || embedding.kind === "int6") {
+      if (embedding.kind === "int8" || embedding.kind === "int6" || embedding.kind === "ternary") {
         const g = embedding.group;
         for (let i = 0; i < dim; i++) {
           F[to + i] = Math.fround(weightAt(embedding, row + i) * F[(base + embedding.scales) / 4 + (((row + i) / g) | 0)]);
@@ -1421,6 +1434,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // (T155: int6 weights too, widened to int8 on the GPU, and a model in a 64-bit memory: gpu.js)
   function gpuUnfit() {
     if (linear) return "linear-attention layers are not on the GPU yet";  // T229
+    if (T.wo?.kind === "ternary") return "ternary weights are not on the GPU yet";  // T231 (T232 is the GPU's)
     if (rotated) return "a rotated basis is not on the GPU yet";  // T237
     if (!sharedMemory) return "the page is not cross-origin isolated";
     if (headSize % 4) return "heads of a size that is no multiple of 4 are not on the GPU";
@@ -1713,7 +1727,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   }
 
   let bound = null;
-  const backend = (plan.int8 ? `SIMD kernels, ${T.wq?.kind === "int6" ? "int6" : "int8"}${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32") +
+  const backend = (plan.int8 ? `SIMD kernels, ${["int6", "ternary"].includes(T.wo?.kind) ? T.wo.kind : "int8"}${relaxed ? ", relaxed SIMD" : ""}` : "SIMD kernels, float32") +
     (wide ? ", 64-bit memory" : "");  // T101: the status line says so, as it says every other way the model runs
   return {
     backend,

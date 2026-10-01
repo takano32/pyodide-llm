@@ -177,6 +177,13 @@ jobs:
             timeout: 3000
             models: >-
               hf-llama-3-elyza-jp-8b hf-shisa-v2.1-qwen3-8b hf-cat-thinking-8b
+          # T253 and T254 (2026-10-01): Granite 4.2 (13 GB of downloads; the 8B on a 64-bit memory) and MiniCPM5 (4 GB).
+          # Both forms of the smallest of each, one of the others
+          - size: granite
+            timeout: 3000
+            models: >-
+              hf-granite-4.2-3b-thinking hf-granite-4.2-3b hf-granite-4.2-8b
+              hf-minicpm5-1b-thinking hf-minicpm5-1b hf-minicpm5-2b
     steps:
       - name: Checkout
         uses: actions/checkout@v7

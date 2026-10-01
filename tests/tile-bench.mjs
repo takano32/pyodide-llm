@@ -80,9 +80,13 @@ try { execFileSync("git", ["fetch", "--depth=1", "origin", "+main:refs/remotes/o
 for (const form of FORMS) {
   const dir = `${work}${form}/`;
   fs.mkdirSync(dir, { recursive: true });
-  for (const file of ["kernel_relaxed.ts", "six.ts"]) {
-    fs.writeFileSync(dir + file, form === "main" ? execFileSync("git", ["show", `origin/main:kernels/${file}`], { cwd: root, encoding: "utf8" })
-      : fs.readFileSync(`${root}kernels/${file}`, "utf8"));
+  for (const file of ["kernel_relaxed.ts", "six.ts", "ternary.ts"]) {
+    try {
+      fs.writeFileSync(dir + file, form === "main" ? execFileSync("git", ["show", `origin/main:kernels/${file}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+        : fs.readFileSync(`${root}kernels/${file}`, "utf8"));
+    } catch (error) {
+      if (file !== "ternary.ts") throw error;  // a main before T231 has no ternary.ts, and its kernels import none
+    }
   }
   execFileSync("npx", ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1",
     "--sharedMemory", "--maximumMemory", "32768", dir + "kernel_relaxed.ts", "-o", dir + "relaxed-shared.wasm",

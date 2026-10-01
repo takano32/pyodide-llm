@@ -170,6 +170,15 @@ const readBack = async (found) => {
   await kept.keep(as("int6"), manifest, (a, b) => bytes.slice(a, b), vocabulary);
   assert.deepEqual(await readBack(await kept.openKept(as(undefined))), bytes);
   assert.equal(await kept.openKept(as("int8")), undefined);
+  // T230: a ternary model is converted to the ternary dtype (the page asks for it by name: src/models.js's
+  // weightsFor), kept under that name. What was kept of it as int8 before serves ?bits=8 alone, never the ternary one
+  const [six] = await kept.keptModels();
+  assert.ok(!kept.serves(six, as("ternary")));
+  assert.equal(await kept.openKept(as("ternary")), undefined);
+  await kept.keep(as("ternary"), manifest, (a, b) => bytes.slice(a, b), vocabulary);
+  assert.deepEqual(await readBack(await kept.openKept(as("ternary"))), bytes);
+  const ternary = (await kept.keptModels()).find((one) => one.name === kept.keptName(as("ternary")));
+  assert.ok(ternary && kept.serves(ternary, as("ternary")) && !kept.serves(ternary, as(undefined)) && !kept.serves(ternary, as("int8")));
 }
 // T116: the converter. What an older one kept is not used and is deleted; what a newer one kept (a tab of an older
 // page next to a newer one) is not used either, and is left alone
