@@ -112,6 +112,21 @@ const granite = { bos: 100256, stop_tokens: [100256, 100257, 100283],
     "<|filename|>", "<|im_start|>", "<|reponame|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
 // its card: "Use temperature=1.0 and top_p=0.95 across all tasks", thinking or not
 const graniteSampling = { steps: 0, temperature: 1.0, topp: 0.95, repetition_penalty: 1.0 };
+/** T254: OpenBMB's MiniCPM5 (a Llama; English and Chinese), twice as a Qwen3 is: its chat_template begins the answer
+ * with "<think>\n" where enable_thinking is true and with an empty thought where it is false (and with neither where
+ * nothing is said, which is the format the converter reads). The real tokenizer begins every text with <s>, the
+ * converter's BOS. sampling: its card's for either form */
+function miniCpm5(id, name, source, download, sizes, sampling) {
+  const common = { group: "hf", ...source, download, conversion: {}, options: {}, shares: [`${id}-thinking`, id],
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" };
+  const sampled = (temperature) => ({ steps: 0, temperature, topp: 0.95, repetition_penalty: 1.0 });
+  return [
+    { ...common, id: `${id}-thinking`, name: `${name} (thinking)`, note: `thinks before it answers · English / 中文 · ${sizes}`,
+      generation: sampled(sampling.thinking), template: `${CHATML}<think>\n` },
+    { ...common, id, name: `${name} (no thinking)`, note: `answers at once · English / 中文 · ${sizes}`,
+      generation: sampled(sampling.atOnce), template: QWEN3_AT_ONCE },
+  ];
+}
 /** T203 (T136's fourth stage): a Q8_0 GGUF's weights with the vocabulary and config.json of its original, which
  * tests/gguf_check.py tensors held them to (gguf.yml's candidates) */
 const ggufOf = (repo, revision, weights, original, originalRevision, tokenizer = "tokenizer.json") =>
@@ -236,6 +251,9 @@ export const LICENSES = {
   // T253: the four cards say apache-2.0
   "ibm-granite/granite-4.2-3b": APACHE, "ibm-granite/granite-4.2-3b-GGUF": APACHE,
   "ibm-granite/granite-4.2-8b": APACHE, "ibm-granite/granite-4.2-8b-GGUF": APACHE,
+  // T254: the four cards say apache-2.0
+  "openbmb/MiniCPM5-1B": APACHE, "openbmb/MiniCPM5-1B-GGUF": APACHE,
+  "openbmb/MiniCPM5-2B": APACHE, "openbmb/MiniCPM5-2B-GGUF": APACHE,
 };
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
@@ -618,6 +636,18 @@ const LISTED = [
       "ibm-granite/granite-4.2-8b", "f8de16cdcdbc6c779ca517604e050d82cc119e44"), 9345613952,
     "fetches 9.3 GB (GGUF) → int8 9.9 GB · desktop only · Chrome and Firefox", { options: granite },
     { thinking: GRANITE_THINKING, atOnce: GRANITE_AT_ONCE }).map((entry) => ({ ...entry, generation: graniteSampling })),
+  // T254: MiniCPM5, whose tokenizer.json cuts the numbers off before Llama 3's pattern runs (the engine's "minicpm5").
+  // OpenBMB's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals; the vocabulary is the
+  // original's (the 1B's GGUF calls its pre-tokenizer llama-bpe, which is not what its tokenizer.json does). The
+  // cards: temperature 0.9 thinking and 0.7 without for the 1B, 1.0 for the 2B, top-p 0.95
+  ...miniCpm5("hf-minicpm5-1b", "MiniCPM5 1B",
+    ggufOf("openbmb/MiniCPM5-1B-GGUF", "3d55fac80935ae6456986ad2384b5cbcc4d6c948", "MiniCPM5-1B-Q8_0.gguf",
+      "openbmb/MiniCPM5-1B", "87179e5c1f455ef22e6223592d2d61351b525bfc"), 1153529216,
+    "fetches 1.2 GB (GGUF) → int8 1.2 GB · desktop only", { thinking: 0.9, atOnce: 0.7 }),
+  ...miniCpm5("hf-minicpm5-2b", "MiniCPM5 2B",
+    ggufOf("openbmb/MiniCPM5-2B-GGUF", "2079a22f3beaa4e306449978533478fe0522f4b3", "MiniCPM5-2B-Q8_0.gguf",
+      "openbmb/MiniCPM5-2B", "f97400052a43d642bbc6e9975e2397e3ae6a6b52"), 2679710688,
+    "fetches 2.7 GB (GGUF) → int8 2.8 GB · desktop only", { thinking: 1.0, atOnce: 1.0 }),
 ];
 
 // T90: memory. A device that runs out of it kills the worker's WebAssembly memory, so the page warns before it

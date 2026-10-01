@@ -109,6 +109,9 @@ PATTERNS = {
     "qwen35": re.compile(f"(?i:{CONTRACTED})" + r"|[^\r\nA-Za-zſ0]?[A-Za-zſ~]+|0| ?['!]+[\r\n]*|[ \t\r\n]*[\r\n]+|" + SPACES),
 }
 DIGITS = re.compile("0|[^0]+")  # Digits(individual_digits) on the classes: every number a piece of its own
+THREES = re.compile("0{1,3}|[^0]+")  # Split(\p{N}{1,3}) on the classes: numbers cut off, three at a time (T254)
+# the pre-tokenizers of two stages: what cuts the text first, and the pattern that then runs on each piece alone
+STAGED = {"gpt2-digits": (DIGITS, PATTERNS["gpt2"]), "minicpm5": (THREES, PATTERNS["llama3"])}
 
 
 def pretokenize(text, pattern):
@@ -127,13 +130,18 @@ def pretokenize(text, pattern):
     "llama3" is Llama 3's, which is Qwen's with the digits taken up to three at a time (\p{N}{1,3}).
     "qwen35" is Qwen3.5's (T229), which is Qwen's with the combining marks (\p{M}) taken into the word they follow:
         (?i:'s|…)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
-    All five are checked against the real patterns in tests/test_bytebpe.py and tests/test_llama3.py.
+    "minicpm5" is MiniCPM5's (T254), two Splits one after the other: \p{N}{1,3} cuts the numbers off first, up to
+    three at a time, and then Llama 3's pattern with \p{N}+ for its numbers runs on each piece as if the piece were
+    the whole text. A number piece is one piece either way, so the second stage here is Llama 3's pattern itself. It is
+    not Llama 3's on the whole text: before a number, \s+(?!\S) ends at the piece's end and takes all of a run of
+    spaces, where Llama 3's leaves the last one of them to stand alone ("a  1": "a", "  ", "1", not "a", " ", " ", "1").
+    All six are checked against the real patterns in tests/test_bytebpe.py and tests/test_llama3.py.
     """
     classes = text.translate(CHAR_CLASSES)
-    if pattern == "gpt2-digits":
-        gpt2 = PATTERNS["gpt2"]
-        return [text[match.start():match.end()] for piece in DIGITS.finditer(classes)
-                for match in gpt2.finditer(classes, piece.start(), piece.end())]
+    if pattern in STAGED:
+        first, then = STAGED[pattern]
+        return [text[match.start():match.end()] for piece in first.finditer(classes)
+                for match in then.finditer(classes, piece.start(), piece.end())]
     return [text[match.start():match.end()] for match in PATTERNS.get(pattern, PATTERNS["gpt2"]).finditer(classes)]
 
 

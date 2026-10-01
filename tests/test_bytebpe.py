@@ -20,6 +20,13 @@ QWEN_PATTERN = (r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?
 # T229: Qwen3.5's (Qwen/Qwen3.5-0.8B's tokenizer.json), Qwen's with the combining marks taken into a word
 QWEN35_PATTERN = (r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*"
                   r"|\s*[\r\n]+|\s+(?!\S)|\s+")
+# T254: MiniCPM5's (openbmb/MiniCPM5-1B's tokenizer.json), two Splits: the numbers cut off three at a time, then Llama
+# 3's pattern with \p{N}+ on each piece
+MINICPM5_PATTERNS = (r"\p{N}{1,3}", QWEN_PATTERN.replace(r"|\p{N}|", r"|\p{N}+|"))
+# where the two stages are not Llama 3's one: runs of spaces before a number, numbers of more than three digits,
+# numbers next to words, contractions, line breaks and punctuation
+NUMBERED = ["a  1", "Hello 123  45 world", "12345 a1b", "1  \n 2", "in 2013,  2014 and   20156", "x\t\t7", " 1", "  1",
+            "1  ", "1 2  3   4", "①②③④ Ⅻ", "a\n\n 12", "it's 1's", "3.14159", "1,234,567", "\r\n  42", "２０２６年１０月", "!!  7"]
 # texts with marks: a letter and its accent, a kana and its voicing mark, Devanagari and Thai vowel signs, an
 # enclosing mark, a mark that begins the text, follows a digit, a space, a line break, punctuation
 MARKED = ["e\u0301te\u0301", "\u304b\u3099\u304d", "\u0915\u093e\u092e", "\u0e01\u0e31\u0e19", "a\u20dd b",
@@ -27,11 +34,12 @@ MARKED = ["e\u0301te\u0301", "\u304b\u3099\u304d", "\u0915\u093e\u092e", "\u0e01
 
 
 def trained(pattern, digits):
-    """A small byte-level BPE, and the tokenizer.json it saves."""
+    """A small byte-level BPE, and the tokenizer.json it saves. pattern: a Split's, or those of several (T254)."""
     from tokenizers import Tokenizer as Real, decoders, models, pre_tokenizers, trainers
     real = Real(models.BPE())
     steps = ([pre_tokenizers.Digits(individual_digits=True)] if digits else [])
-    steps += ([pre_tokenizers.Split(tokenizers.Regex(pattern), behavior="isolated")] if pattern else [])
+    steps += [pre_tokenizers.Split(tokenizers.Regex(one), behavior="isolated")
+              for one in ((pattern,) if isinstance(pattern, str) else pattern or ())]
     steps += [pre_tokenizers.ByteLevel(add_prefix_space=False, use_regex=not pattern)]
     real.pre_tokenizer = pre_tokenizers.Sequence(steps)
     real.decoder = decoders.ByteLevel()
@@ -41,8 +49,9 @@ def trained(pattern, digits):
 
 
 @pytest.mark.parametrize("name, pattern, digits", [
-    ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False), ("qwen35", QWEN35_PATTERN, False)])
-@pytest.mark.parametrize("text", TEXTS + MARKED)
+    ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False), ("qwen35", QWEN35_PATTERN, False),
+    ("minicpm5", MINICPM5_PATTERNS, False)])
+@pytest.mark.parametrize("text", TEXTS + MARKED + NUMBERED)
 def test_matches_the_real_tokenizer(name, pattern, digits, text):
     real, spec = trained(pattern, digits)
     options = tokenizer_json_options(spec)
@@ -54,7 +63,8 @@ def test_matches_the_real_tokenizer(name, pattern, digits, text):
 
 
 @pytest.mark.parametrize("name, pattern, digits", [
-    ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False), ("qwen35", QWEN35_PATTERN, False)])
+    ("gpt2", None, False), ("gpt2-digits", None, True), ("qwen", QWEN_PATTERN, False), ("qwen35", QWEN35_PATTERN, False),
+    ("minicpm5", MINICPM5_PATTERNS, False)])
 def test_decodes_every_piece(name, pattern, digits):
     real, spec = trained(pattern, digits)
     vocab_size = real.get_vocab_size()
@@ -65,7 +75,7 @@ def test_decodes_every_piece(name, pattern, digits):
         assert mine.decode(0, id).decode("utf-8", "replace") == real.decode([id], skip_special_tokens=False)
 
 
-@pytest.mark.parametrize("text", TEXTS + MARKED)
+@pytest.mark.parametrize("text", TEXTS + MARKED + NUMBERED)
 def test_pretokenizers_follow_the_patterns(text):
     """The engine runs the patterns on the characters' classes, because re has no \\p{L} (T200)."""
     regex = pytest.importorskip("regex", reason="pip install regex to check the patterns themselves")
@@ -73,6 +83,14 @@ def test_pretokenizers_follow_the_patterns(text):
     assert pretokenize(text, "qwen") == regex.findall(QWEN_PATTERN, text)
     assert pretokenize(text, "qwen35") == regex.findall(QWEN35_PATTERN, text)
     assert pretokenize(text, "gpt2-digits") == digits_then_gpt2(regex, text)
+    assert pretokenize(text, "minicpm5") == threes_then_the_rest(regex, text)
+
+
+def threes_then_the_rest(regex, text):
+    """MiniCPM5's pre_tokenizer (T254): Split(\\p{N}{1,3}, Isolated) keeps every match and every stretch between
+    two matches as a piece, and the second Split's pattern runs on each piece as if it were the whole text."""
+    first, second = MINICPM5_PATTERNS
+    return [part for chunk in regex.findall(rf"{first}|\P{{N}}+", text) for part in regex.findall(second, chunk)]
 
 
 def digits_then_gpt2(regex, text):
@@ -104,14 +122,37 @@ def test_pretokenizers_follow_the_patterns_on_random_texts():
         for name, pattern in patterns.items():
             assert pretokenize(text, name) == regex.findall(pattern, text), (name, text)
         assert pretokenize(text, "gpt2-digits") == digits_then_gpt2(regex, text), text
+        assert pretokenize(text, "minicpm5") == threes_then_the_rest(regex, text), text
+
+
+def test_minicpm5_is_not_llama3_before_a_number():
+    """T254: what one pattern cannot say. Llama 3's \\s+(?!\\S) leaves the last space of a run before a number to
+    stand alone; cut off from the number first, the run is one piece. Elsewhere the two are the same pieces."""
+    assert pretokenize("a  1", "llama3") == ["a", " ", " ", "1"]
+    assert pretokenize("a  1", "minicpm5") == ["a", "  ", "1"]
+    assert pretokenize("12345  x", "minicpm5") == pretokenize("12345  x", "llama3") == ["123", "45", " ", " x"]
+    rng = random.Random(254)
+    differ = 0
+    for _ in range(2000):
+        text = "".join(rng.choices(PIECES, k=rng.randrange(0, 16)))
+        ours, llama3 = pretokenize(text, "minicpm5"), pretokenize(text, "llama3")
+        differ += ours != llama3
+        # the only difference: runs of white space that Llama 3 cuts once more. Joined again they are the same text,
+        # and without the pieces of white space the same pieces
+        space = lambda piece: all(c.isspace() and not "\x1c" <= c <= "\x1f" for c in piece)
+        assert "".join(ours) == "".join(llama3) == text
+        assert [piece for piece in ours if not space(piece)] == [piece for piece in llama3 if not space(piece)], text
+    assert differ > 20
 
 
 # T206: the classes against the real pre_tokenizers themselves (Oniguruma's \s, \p{L}, \p{N} and (?i), and Rust's
 # char::is_numeric for Digits), at every code point but the surrogates. Each code point c goes into a few places that
 # tell its class apart: next to letters, to punctuation, to digits, after a space, and after an apostrophe (for (?i)'s
 # folds, of s, t, m, d and of the r, e, l of 're, 've, 'll).
+# T254: and twice and after a space before a digit, where MiniCPM5's two stages are not one pattern (a run of white
+# space before a number)
 def around(c):
-    return f"a{c}a!{c}!1{c}1 {c}'{c}'{c}e'r{c}'{c}l\n"
+    return f"a{c}a!{c}!1{c}1 {c}'{c}'{c}e'r{c}'{c}l\n{c}{c}1 {c}1{c}{c}\n"
 
 
 def real_pretokenizer(name):
@@ -121,13 +162,15 @@ def real_pretokenizer(name):
         return byte_level
     if name == "gpt2-digits":
         return pre_tokenizers.Sequence([pre_tokenizers.Digits(individual_digits=True), byte_level])
+    if name == "minicpm5":
+        return pre_tokenizers.Sequence([pre_tokenizers.Split(Regex(pattern), behavior="isolated") for pattern in MINICPM5_PATTERNS])
     pattern = {"qwen": QWEN_PATTERN, "qwen35": QWEN35_PATTERN}.get(name) or QWEN_PATTERN.replace(r"|\p{N}|", r"|\p{N}{1,3}|")
     return pre_tokenizers.Split(Regex(pattern), behavior="isolated")
 
 
 # 17 to 29 s for each of the four on CI's runner, so only the full suite runs it (tests/suite.sh full, T193)
 @pytest.mark.skipif(not os.environ.get("EVERY_CODE_POINT"), reason="EVERY_CODE_POINT=1: tests/suite.sh full runs it")
-@pytest.mark.parametrize("name", ["gpt2", "gpt2-digits", "qwen", "llama3", "qwen35"])
+@pytest.mark.parametrize("name", ["gpt2", "gpt2-digits", "qwen", "llama3", "qwen35", "minicpm5"])
 def test_pretokenizers_split_every_character_as_the_real_ones_do(name):
     real = real_pretokenizer(name)
 
@@ -214,6 +257,24 @@ def test_leaves_out_the_bytes_the_vocabulary_lacks(name, pattern, digits, ignore
 def test_refuses_what_the_engine_cannot_split():
     with pytest.raises(ValueError, match="does not know"):
         tokenizer_json_options({"model": {"type": "BPE"}, "pre_tokenizer": {"type": "Whitespace"}})
+    # T254: MiniCPM5's two Splits as its tokenizer.json has them, and nothing that is those two patterns otherwise
+    split = lambda pattern, **more: {"type": "Split", "pattern": {"Regex": pattern}, "behavior": "Isolated", "invert": False, **more}
+    byte_level = {"type": "ByteLevel", "add_prefix_space": False, "trim_offsets": True, "use_regex": False}
+    first, second = MINICPM5_PATTERNS
+    named = lambda *steps: tokenizer_json_options({"model": {"type": "BPE"}, "pre_tokenizer": {"type": "Sequence", "pretokenizers": list(steps)}})
+    assert named(split(first), split(second), byte_level)["pretokenizer"] == "minicpm5"
+    for steps in ([split(second), split(first), byte_level], [split(first), split(second)],
+                  [split(first, behavior="Removed"), split(second), byte_level],
+                  [split(first), split(second, invert=True), byte_level],
+                  [split(first), split(second), {**byte_level, "use_regex": True}],
+                  [split(first), split(second), {**byte_level, "add_prefix_space": True}],
+                  [split(first), byte_level, split(second)],
+                  [split(first), split(second), byte_level, {"type": "Digits", "individual_digits": True}],
+                  [split(first), split(first), split(second), byte_level],
+                  [split(first), {"type": "Split", "pattern": {"String": " "}, "behavior": "Isolated", "invert": False}, byte_level],
+                  [split(first), split(QWEN_PATTERN), byte_level]):
+        with pytest.raises(ValueError, match="does not know"):
+            named(*steps)
     with pytest.raises(ValueError, match="adds a space"):
         tokenizer_json_options({"model": {"type": "BPE"},
                                 "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": True}})

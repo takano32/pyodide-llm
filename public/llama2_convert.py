@@ -1628,9 +1628,11 @@ GGUF_VALUES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7:
 # ggml's types; the K-quants and the rest are refused. 142 is PQ2_0 of Prism ML's fork of llama.cpp (T235, pq2_0())
 GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0", 142: "PQ2_0"}
 # llama.cpp's names of the pre-tokenizers, as the engine knows them (llama2_numpy.pretokenize)
-# (granite-docling, T253: what llama.cpp calls a Granite 4.2's ByteLevel with its regex, and splits by GPT-2's pattern)
+# (granite-docling, T253: what llama.cpp calls a Granite 4.2's ByteLevel with its regex, and splits by GPT-2's pattern.
+# minicpm5, T254: llama.cpp's two patterns of that name are tokenizer.json's but for the contractions, written out by
+# case, which leaves a 's after U+017F unmatched; openbmb's own GGUFs of 2026-09 still say llama-bpe)
 GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen", "llama-bpe": "llama3",
-                      "qwen35": "qwen35", "granite-docling": "gpt2"}
+                      "qwen35": "qwen35", "granite-docling": "gpt2", "minicpm5": "minicpm5"}
 # the ones whose tokenizer.json normalizes to NFC, which a GGUF does not say (Qwen's)
 GGUF_NFC = ("qwen2", "qwen35")
 GGUF_LAYER = {"attn_norm": "input_layernorm", "ffn_norm": "post_attention_layernorm", "attn_q": "self_attn.q_proj",
@@ -2083,10 +2085,27 @@ PRETOKENIZERS = {
 }
 
 
+# T254: MiniCPM5's two Splits (openbmb/MiniCPM5-1B's tokenizer.json): the numbers cut off three at a time, then Llama
+# 3's pattern with \p{N}+ on each piece, and a ByteLevel that splits no more. llama2_numpy.pretokenize's "minicpm5"
+STAGED_PRETOKENIZERS = {
+    (r"\p{N}{1,3}",
+     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}+| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"): "minicpm5",
+}
+
+
 def pretokenizer_name(spec):
     steps = spec.get("pretokenizers", [spec]) if spec else []
     kinds = [step["type"] for step in steps]
-    patterns = [step["pattern"]["Regex"] for step in steps if step["type"] == "Split"]
+    patterns = [step["pattern"].get("Regex") for step in steps if step["type"] == "Split"]
+    if tuple(patterns) in STAGED_PRETOKENIZERS:
+        # every Split keeps what it matches as a piece of its own (Isolated) and matches what its pattern says (no
+        # invert), and the ByteLevel after them does not split again or put a space in front
+        plain = all(step.get("behavior") == "Isolated" and not step.get("invert") for step in steps if step["type"] == "Split")
+        rest = [step for step in steps if step["type"] != "Split"]
+        if plain and kinds[:len(patterns)] == ["Split"] * len(patterns) and len(rest) == 1 and rest[0]["type"] == "ByteLevel" \
+                and rest[0].get("use_regex") is False and not rest[0].get("add_prefix_space"):
+            return STAGED_PRETOKENIZERS[tuple(patterns)]
+        raise ValueError(f"This tokenizer.json splits text in a way the engine does not know: {steps}")
     if patterns:
         if len(patterns) > 1 or patterns[0] not in PRETOKENIZERS:
             raise ValueError(f"This tokenizer.json splits text in a way the engine does not know: {patterns}")
