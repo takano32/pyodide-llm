@@ -151,9 +151,10 @@ const marked = (text) => MARKED.test(text.replace(REPEATED, ""));
  * owner picked them off the screen by hand: they were spread over the report's tables, and the summary had none of
  * the reasons). Read from the Markdown the sections wrote, so that what is listed is what the page says. sections:
  * [{title, status, markdown, said}], the top of the report (the rounds, the model page's path) as one of them. Of each:
- * a section that failed as a whole (its Markdown is why: no table, nothing it names itself); said, the lines the section says went wrong
- * itself (the GPU's verdicts of its check, a lost device, the CPU's logits not finite), as they are; every row of a
- * table with one of the words in a cell, its cells under their headers; and every sentence outside the tables with one.
+ * a section that failed as a whole (its Markdown is why: no table, nothing it names itself); said, the lines the
+ * section says went wrong itself (the GPU's verdicts of its check, a lost device, the CPU's logits not finite), as they
+ * are; every row of a table with one of the words in a cell, its cells under their headers; and every sentence outside
+ * the tables with one.
  * A line of the Markdown that holds one of said is not read again (the GPU's line of all its verdicts), nor are the
  * marks that only repeat a verdict ("WRONG in the check" beside a row). A failure the page writes in none of these
  * words is not here. [] where nothing did.
