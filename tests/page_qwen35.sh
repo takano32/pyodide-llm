@@ -53,7 +53,13 @@ if has int8; then
   numpy="--numpy=$(node -p "JSON.parse(process.argv[1]).perplexity" "$numpy")"
 fi
 if has kernels; then
-  node tests/perplexity.mjs "$dir/int8" 1500 "$dir/en.txt" --file $numpy $wide
+  if [ "$(stat -c %s "$dir/int8.bin")" -gt 6000000000 ]; then
+    # a process for each row (7-bit and 8-bit activations): two memories of the 9B at once are more than a runner has
+    node tests/perplexity.mjs "$dir/int8" 1500 "$dir/en.txt" --file $numpy $wide --rows=0
+    node tests/perplexity.mjs "$dir/int8" 1500 "$dir/en.txt" --file $numpy $wide --rows=2
+  else
+    node tests/perplexity.mjs "$dir/int8" 1500 "$dir/en.txt" --file $numpy $wide
+  fi
 fi
 if has threads; then
   echo "qwen35: the software threads"

@@ -59,7 +59,7 @@ Firefox and WebKit and in the installed Chrome and Edge: all 23 combinations run
 | WebGPU for the answer | yes, for Llama, Qwen2, Qwen3, GPT-2 and GPT-NeoX models | no | no (Safari does not say how much memory the device has) |
 
 - Where a model does not fit in 32-bit memory and the browser has no 64-bit memory (Safari), the page stores the
-  weights in 6 bits instead of 8. The 7B and 8B models do not fit even then, so they need Chrome or Firefox.
+  weights in 6 bits instead of 8. The 7B to 9B models do not fit even then, so they need Chrome or Firefox.
 - The GPU is used by default where the browser has WebGPU. The page measures the GPU against the CPU on your device
   and keeps the CPU where it is faster. A model whose weights would not fit twice in memory (once for the CPU, once
   for the GPU; up to 2B on a device with 8 GB or more) goes on the GPU alone where it can (int8; Llama, Qwen2 and Qwen3). The
@@ -81,9 +81,9 @@ The model list has three groups:
   [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project (260K to 42M parameters), in int8 (the small
   ones in float32). They are built into the site when it is deployed.
 - **Unquantized originals** of some of them (float16 or float32), to compare with int8.
-- **From Hugging Face, converted in this browser** (56 entries, from Pythia 70M to 8B models: Llama, Mistral,
+- **From Hugging Face, converted in this browser** (62 entries, from Pythia 70M to 9B models: Llama, Mistral,
   Qwen2.5, Qwen3, Qwen3.5, llm-jp, sarashina, Swallow, GPT-2, GPT-NeoX and others). The page fetches the weights from
-  huggingface.co (for 50 of them a GGUF: Q8_0, and for Ternary Bonsai its two-bit PQ2_0, read with the original
+  huggingface.co (for 56 of them a GGUF: Q8_0, and for Ternary Bonsai its two-bit PQ2_0, read with the original
   repository's vocabulary and configuration),
   converts them to int8 in your browser with the same Python code that
   builds the site's models, and keeps the result for the next visit. About lists what is kept and deletes it. A

@@ -9,7 +9,9 @@
 // --file (T229): the checkpoint is read from its file straight into forward.js's memory, never into Pyodide's, and
 // the NumPy row is left out (a model whose weights widened to float32 pass Pyodide's 4 GiB: tests/perplexity_native.py
 // has that row). --numpy=<its perplexity>: what the rows are held against then. --wide (T247): a 64-bit memory and its
-// kernels, for a checkpoint that with what forward.js puts after it passes 4 GiB (Qwen3.5 4B and 9B).
+// kernels, for a checkpoint that with what forward.js puts after it passes 4 GiB (Qwen3.5 4B and 9B). --rows=0,2: only
+// those rows, counted from 0 in the order of tests/perplexity.py (a model of 10 GB takes a process for each row: the
+// memory of one row is not given back before the next row's is made).
 //
 // Without a text file the text is fetched from Japanese Wikipedia (plain-text extracts; nothing of it is stored in
 // this repository). The NumPy row takes minutes: it runs at a tenth of the speed.
@@ -24,6 +26,7 @@ const root = new URL("../", import.meta.url).pathname;
 const flags = process.argv.slice(2).filter((arg) => arg.startsWith("--"));
 const [id = "llm-jp-3-150m", count = "1500", ...sources] = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
 const fromFile = flags.includes("--file"), numpy = Number(flags.find((flag) => flag.startsWith("--numpy="))?.split("=")[1]);
+const rows = flags.find((flag) => flag.startsWith("--rows="))?.split("=")[1].split(",").map(Number);
 const model = MODELS.find((entry) => entry.id === id) ?? (fs.existsSync(`${id}.json`) &&
   { id: path.basename(id), checkpoint: path.resolve(`${id}.bin`), tokenizer: path.resolve(`${id}.tokenizer.bin`),
     options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) });
@@ -42,7 +45,7 @@ for (const file of fromFile ? [model.tokenizer] : [model.checkpoint, model.token
 }
 const name = (file) => path.basename(file);
 pyodide.globals.set("MODEL", pyodide.toPy({ checkpoint: name(model.checkpoint), tokenizer: name(model.tokenizer), options: model.options,
-  ...(fromFile ? { file: local(model.checkpoint) } : {}) }));
+  ...(fromFile ? { file: local(model.checkpoint) } : {}), ...(rows ? { rows } : {}) }));
 pyodide.globals.set("TEXT", text);
 pyodide.globals.set("TOKENS", Number(count));
 pyodide.globals.set("WINDOW", 512);
