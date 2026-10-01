@@ -62,7 +62,10 @@ memory between workers. Where that fails, the page runs on one thread.
 
 With shared memory, the forward pass is split among software threads: each matrix product is cut into chunks of
 rows that the threads take in turn, and attention is split by head. The page searches for the fastest number of
-threads on each device and writes its decision to the console (lines starting with `threads:`).
+threads on each device and writes its decision to the console (lines starting with `threads:`). The number is kept
+for the next visit, one for each model and device, and checked against its neighbours again on the first answer of
+every visit; a search that ran while the GPU was getting ready (its upload and its compiling use the CPU too) is
+used, but not kept, and is run again once the GPU is ready.
 
 ## Memory
 
@@ -76,8 +79,10 @@ threads on each device and writes its decision to the console (lines starting wi
   threads, except for a model with grouped-query attention, which keeps float32 unless that would push it out of
   32-bit memory or it needs 64-bit memory anyway (see [performance.md](performance.md#threads)). Where the page asks
   for a shared memory (for threads) and the browser refuses it, or the page is not cross-origin isolated, the model
-  runs on one thread with float32, except where float16 keeps it within 32-bit memory and float32 would not: there
-  float16 is kept so that the model still reaches the end of its context.
+  runs on one thread with float32, except where float16 keeps it within 32-bit memory and float32 would not, or
+  float16 keeps it within a 64-bit memory's 16 GiB and float32 would not: there float16 is kept so that the model
+  still reaches the end of its context. (A shared memory the browser grants at a lowered maximum that the model does
+  not fit is made a memory that is not shared as well.)
 - The model's WebAssembly memory is reused when another model is chosen: Chromium would not create a third
   WebAssembly memory on one page. Before the next model loads, the page also waits (up to 5 seconds) for the GPU
   worker of the last one to let go of its buffers and its device.

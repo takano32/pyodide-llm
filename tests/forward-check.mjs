@@ -281,7 +281,8 @@ let failed = false;
 // float16: the owner, 2026-09-27). T130: on a memory that is not shared (not cross-origin isolated, or a shared one
 // refused) float32 for every model, but where that does not fit a 32-bit memory: Llama 3.2 3B's int8 without relaxed
 // SIMD (Safari's, T130: 3.82 GiB, 4.26 in float32), sarashina2.2 3B in six bits (Chrome's ?bits=6: 3.73 and 4.36).
-// Not Llama 3.2 3B with relaxed SIMD, past 4 GiB either way: float32 on a plain memory (the owner, 2026-09-28).
+// Not Llama 3.2 3B with relaxed SIMD, past 4 GiB either way: float32 on a plain memory (the owner, 2026-09-28), but where
+// float32 would not fit a 64-bit memory's 16 GiB (Pythia 12B of ?hf=: 15.2 GiB with float16, 16.6 with float32; the review).
 // Qwen2.5 3B is float32 now on either (3.89 GiB: 3.82 in float16 and 4.03 in float32 before the cache grew in place,
 // T130), and llm-jp-3.1 1.8B (a key for every head) float16 on a shared memory and float32 on a plain one (2.91 and
 // 3.66 GiB). The sizes: llama2_convert.checkpoint_size(). Each: shared, not shared
@@ -292,7 +293,8 @@ let failed = false;
     ["Llama 3.2 3B", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, {}, true, false],
     ["llm-jp-3.1 1.8B", [2048, 7168, 24, 16, 16, -99584, 4096], 2101354524, {}, true, false],
     ["Llama 3.2 3B, no relaxed SIMD", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, { relaxed: false }, true, true],
-    ["sarashina2.2 3B, six bits", [2560, 8960, 32, 16, 8, -102400, 4096], 2936678428, { dtype: "int6" }, true, true]];
+    ["sarashina2.2 3B, six bits", [2560, 8960, 32, 16, 8, -102400, 4096], 2936678428, { dtype: "int6" }, true, true],
+    ["Pythia 12B (?hf=)", [5120, 20480, 36, 40, 40, -50688, 2048], 13333749788, { arch: "neox" }, true, true]];
   for (const [name, header, size, form, onShared, onPlain] of cases) {
     const options = { dtype: "int8", ...form };
     assert.equal(keysInHalf(header, size, { ...options, shared: true }), false, `${name}: float16 keys and values where they may not be`);

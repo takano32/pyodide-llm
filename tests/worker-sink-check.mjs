@@ -56,11 +56,15 @@ context.stand = {
       counted.push(args);
       return forward.footprint(...args);
     },
-    // a shared memory where one is asked for, unless the test refuses it (T130)
+    // a shared memory where one is asked for, unless the test refuses it (T130), or gives it at a lowered maximum (in pages: as
+    // weightsMemory() marks a memory it made at its second or third try, the review of T130); what was made is written down
     weightsMemory: (size, { shared } = {}) => {
+      (context.made ??= []).push(shared ? "shared" : "plain");
       if (shared && context.refuseShared) throw new Error("no shared memory here");
-      return shared ? { memory: new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true }), base: 8192 }
-        : { memory: new WebAssembly.Memory({ initial: 1 }), base: 0 };
+      if (!shared) return { memory: new WebAssembly.Memory({ initial: 1 }), base: 0 };
+      const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+      if (context.sharedMaximum !== undefined) Object.assign(memory, { maximum: context.sharedMaximum, limited: true });
+      return { memory, base: 8192 };
     },
     growMemory() {},
   },
@@ -135,6 +139,26 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
       vm.runInContext("weightsPool = undefined", context);
     }
   }
+  // (the review of T130) a shared memory the browser gave at a lowered maximum: where the forward pass does not fit it, the
+  // worker makes a plain one instead (and hands the engine what a plain memory keeps); where it does, it keeps the shared one
+  context.self.crossOriginIsolated = true;
+  context.refuseShared = false;
+  const GiB = 2 ** 30 / 65536;  // pages
+  const said = context.console;
+  context.console = { ...console, info() {} };  // (what the worker says of it)
+  for (const [name, header, size, form, half, dtype = "int8"] of cases) {
+    const need = Math.ceil((8192 + size + forward.footprint(header, size, { ...FORM, ...form, dtype, int8: true, relaxed: true, halfKV: true, shared: true, outliers: 8, gpu: false })) / 65536) + 1;
+    for (const [maximum, shared] of [[need - 1, false], [need, true], [need + GiB, true]]) {
+      context.sharedMaximum = maximum;
+      context.made = [];
+      vm.runInContext("weightsPool = undefined", context);
+      const want = shared ? half : plain[name], where = `${name}, a shared memory of ${maximum} pages where ${need} are needed`;
+      assert.equal(handedFor(header, size, form, dtype), want, `${where}: the worker hands the engine ${want ? "float16" : "float32"} keys and values`);
+      assert.deepEqual(context.made, shared ? ["shared"] : ["shared", "plain"], `${where}: ${shared ? "kept" : "a plain memory made instead"}`);
+    }
+  }
+  context.console = said;
+  context.sharedMaximum = undefined;
   context.self.crossOriginIsolated = false;
   context.refuseShared = false;
   vm.runInContext("sharedKernels = undefined; wideKernels = undefined; delete llama2_numpy.Llama;", context);
