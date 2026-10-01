@@ -299,6 +299,10 @@ export const LICENSES = {
   "prism-ml/Ternary-Bonsai-8B-gguf": APACHE, "prism-ml/Ternary-Bonsai-8B-unpacked": APACHE,
   // T236: both cards say apache-2.0 (the GGUF's names the original's LICENSE as its license_link)
   "Qwen/Qwen3.5-0.8B": APACHE, "unsloth/Qwen3.5-0.8B-GGUF": APACHE,
+  // T247: the same of the other sizes' cards
+  "Qwen/Qwen3.5-2B": APACHE, "unsloth/Qwen3.5-2B-GGUF": APACHE,
+  "Qwen/Qwen3.5-4B": APACHE, "unsloth/Qwen3.5-4B-GGUF": APACHE,
+  "Qwen/Qwen3.5-9B": APACHE, "unsloth/Qwen3.5-9B-GGUF": APACHE,
   // T253: the four cards say apache-2.0
   "ibm-granite/granite-4.2-3b": APACHE, "ibm-granite/granite-4.2-3b-GGUF": APACHE,
   "ibm-granite/granite-4.2-8b": APACHE, "ibm-granite/granite-4.2-8b-GGUF": APACHE,
@@ -749,6 +753,28 @@ const LISTED = [
     ggufOf("unsloth/Qwen3.5-0.8B-GGUF", "6ab461498e2023f6e3c1baea90a8f0fe38ab64d0", "Qwen3.5-0.8B-Q8_0.gguf",
       "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"), 811843840,
     "fetches 812 MB (GGUF) → int8 850 MB · desktop only", { options: qwen35 },
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+  // T247: the other sizes of Qwen3.5 whose int8 a 64-bit memory of 16 GiB holds (the 27B's Q8_0 is 28.6 GB, and the
+  // larger ones are mixtures of experts, which the engine has not). The same vocabulary, format and form as the 0.8B.
+  // The 4B and the 9B have two value heads to a key head in their linear-attention layers, which llama.cpp writes in
+  // another order than Hugging Face (T245: the converter puts them back), and they think unless told not to (the 0.8B
+  // and the 2B only when told to): either form is written out here, so the two entries are the same two. Their cards
+  // name 0.7 and 0.8 without thinking and 0.6 and 0.95 "for precise coding" with (and 1.0 and 0.95 with a top-k and a
+  // presence penalty, which the page's sampler has not). The 4B and the 9B are past a 32-bit memory as int8
+  ...thinkingAndNot("hf-qwen3.5-2b", "Qwen3.5 2B",
+    ggufOf("unsloth/Qwen3.5-2B-GGUF", "f6d5376be1edb4d416d56da11e5397a961aca8ae", "Qwen3.5-2B-Q8_0.gguf",
+      "Qwen/Qwen3.5-2B", "15852e8c16360a2fea060d615a32b45270f8a8fc"), 2012012800,
+    "fetches 2.0 GB (GGUF) → int8 2.1 GB · desktop only", { options: qwen35 },
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+  ...thinkingAndNot("hf-qwen3.5-4b", "Qwen3.5 4B",
+    ggufOf("unsloth/Qwen3.5-4B-GGUF", "e87f176479d0855a907a41277aca2f8ee7a09523", "Qwen3.5-4B-Q8_0.gguf",
+      "Qwen/Qwen3.5-4B", "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"), 4482403488,
+    "fetches 4.5 GB (GGUF) → int8 4.7 GB · desktop only · Chrome and Firefox", { options: qwen35 },
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+  ...thinkingAndNot("hf-qwen3.5-9b", "Qwen3.5 9B",
+    ggufOf("unsloth/Qwen3.5-9B-GGUF", "3885219b6810b007914f3a7950a8d1b469d598a5", "Qwen3.5-9B-Q8_0.gguf",
+      "Qwen/Qwen3.5-9B", "c202236235762e1c871ad0ccb60c8ee5ba337b9a"), 9527502048,
+    "fetches 9.5 GB (GGUF) → int8 10.1 GB · desktop only · Chrome and Firefox", { options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
   // T253: Granite 4.2 (IBM; Japanese is among the languages its card says it was tested in), a Llama whose attention
   // multiplies its scores by config.json's attention_multiplier, which the converter puts into q (llama2_convert's
