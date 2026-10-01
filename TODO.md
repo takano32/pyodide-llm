@@ -1367,6 +1367,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### Bonsai 2 の列（T228〜T234）: Bonsai 2（prism-ml の 3 値の 27B）に対応する — 週明けに着手（2026-09-28、持ち主「緊急対応、新しいモデルに対応して本番更新してほしい」→「分割してタスクに積んでくれ、週明けに対応だ」）
 - 出どころ: https://huggingface.co/collections/prism-ml/bonsai-2 。中身は `prism-ml/Ternary-Bonsai-2-27B-gguf`（apache-2.0、base は Qwen/Qwen3.8-27B、sha b072e1d3…）: `Ternary-Bonsai-2-27B-PTQ1_0.gguf`（5.95 GB、1.75 ビット / 重み）・`-PQ2_0.gguf`（7.21 GB、2.13 ビット）・`-F16.gguf`・mmproj（視覚、BF16 と Q8_0）。ほかに `-gguf-dev`（Q2_0、prism の fork が要る）と `-mlx-2bit`。カードの要点: 27.36B（言語 24.35B・64 ブロック、埋め込みと LM head 2.54B、視覚 0.46B）、Qwen3.8 の hybrid attention（約 75% が linear attention）、262K の文脈、埋め込み・attention・MLP・LM head まで全部 3 値、カーネルは Prism ML の llama.cpp の fork（CUDA・Metal）。
+- **持ち主の判断（2026-10-01）: 27B まで進める。ほかのモデルにも対応したい**（「なるべく対応するから 27B ももちろん対応したいよ？他にも対応したいな」）。並行に進める組: (a) T230 の残り（3 値の型と PTQ1_0）と T231（3 値のカーネル）、(b) T245（GGUF の値の head の並び）と T247（Qwen3.5 のほかの大きさ）、(c) T246（Ternary Bonsai の 4B・8B）、(d) T237（回した基底）と T238（27B の参照）、(e) T248（足せるモデルの調べ直し）。そのあと T233（27B を一覧に）→ T232（3 値の GPU）→ T234。
 - 順（前にやるべきことは採番する、の決まり）: T228 → T229 → T230 → T231 → T232 → T233 → T234。T228 の調べで無理と分かれば、そこで持ち主に判断を仰ぐ。
 - **T228 の調べの勧め（2026-10-01、持ち主の判断待ち）: 小さいモデルから。** (1) Ternary-Bonsai-1.7B（PQ2_0 463 MB、形は今ある Qwen3）を、PQ2_0 を int8 に広げる読みと yarn の RoPE で一覧に。(2) T229 を Qwen3.5 0.8B（同じ hybrid attention、Q8_0 の GGUF 812 MB）で通す。(3) T230 の残りと T231 を Ternary-Bonsai の 1.7B〜8B で。(4) 回した基底（Hadamard）と 27B の参照、T233 で 27B。(5) T232 と T234。**前の仕事 4 つに番号を付けた（2026-10-01）**: T235「Ternary-Bonsai-1.7B を一覧に（PQ2_0 → int8 と yarn）」、T236「Qwen3.5 0.8B を一覧に」、T237「回した基底（符号と Walsh–Hadamard 変換）を forward に」、T238「27B の参照」。**勧める順: T235 → T229 → T236 → T230 の残りと T231 → T237 → T238 → T233 → T232 → T234**（27B まで進めるか、小さいモデルを一覧に入れるかは持ち主の判断）。
 
@@ -1583,6 +1584,18 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **端末の覚えた形**: `deviceKey()` はシェーダの文のハッシュを含むので、本線に入ると訪問者の端末は次の訪問で形を 1 回選び直す（読み込みの裏で。T148 と同じ）。
 - **未確認**: 本物の GPU（持ち主の Android の Mali、PC の NVIDIA、Apple）で NaN が隠れていたか、直しで届くか（NaN の max と整数への変換、掛け算と足し算、attention の NaN は GPU ごとに違いうる。端末で NaN を作る検査は無い）。量子化の時間（端末の一覧）。Safari の WGSL がこの 2 つのシェーダを通すか（`bitcast` と整数の `max`・`select` だけ）。D3D12 と Metal。lavapipe の幅 8。
 - 初めの記録（T219 のレビューから）: `QUANTIZE` と `NORM_QUANTIZE` の最大は NaN を落とす（lavapipe で、max と min は NaN を引数の順に依らず落とし、i32(NaN) は −2147483648 で clamp が −127 に。NORM_QUANTIZE は尺度 0 で出力が全部 0）。CPU の K と V を NaN にした歩で、float の形は T219 の印で断り、DP4A の形は ID を 4 つ返した（lavapipe と SwiftShader、run 36876165803）。印は NaN が logits に届いたときだけ見える。本物の GPU で隠れるかは未確認。案: 2 つの量子化の最大を、符号を除いたビットの整数の最大に替える（約 6 行）。gpu-check は今「hidden by DP4A」と言うだけで落とさない: 直したら落とす。
+
+### T245 [追加][Bonsai] GGUF の、値の head が鍵の head より多いモデルの並びを読む — 状態: 進行中（2026-10-01、T236 から。T233 と T247 の前。規模 小〜中）
+- llama.cpp は値の head が鍵の head より多い linear attention の層（Qwen3.5 の 4B 以上と 27B、3 対 1）で head を並べ替えて（tile して）置く。いまの読み手はそういう GGUF を断り、`gguf_check.py` も通さない（T236）。読み手が HF の並びに戻す形と、`gguf_check.py` の並びを足す。
+
+### T246 [追加][Bonsai] Ternary Bonsai の 4B と 8B を一覧に — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T235 の読み手で。規模 小）
+- prism-ml の Ternary-Bonsai の 1.7B より大きいもの（T228 の調べ: 1.7B〜8B）を、T235 と同じ形（PQ2_0 を int8 に、原本は unpacked のリポジトリ）で一覧に。8B の int8 は 64 ビットのメモリ。T230 の 3 値の型ができたら小さく持てる。
+
+### T247 [追加][モデル] Qwen3.5 のほかの大きさを一覧に — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T245 の後。規模 小〜中）
+- 0.8B（T236）のほかの大きさ（HF にあるものを調べて）を、Q8_0 の GGUF から。`gguf_check.py tensors` を 1 つずつ通してから。
+
+### T248 [調査][モデル] 足せるモデルの調べ直し（2026-10） — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T81 と同じ形の調べ。規模 小〜中）
+- 2026-09-26 の T81 の調べの後に出たもの・人気の上がったものを、今のエンジンで開けるか（形・トークナイザ・書式・大きさ）で分け、足りないものを採番できる形に書く。
 
 ### T235 [追加][Bonsai] Ternary-Bonsai-1.7B を一覧に（PQ2_0 を int8 に広げる読みと yarn の RoPE） — 状態: **完了**（2026-10-01 に本線に入れた 8d65233、レビュー済み Sonnet max。持ち主の判断待ちが 4 つ: 下のレビューの項）
 - ブランチ `t235-ternary-bonsai-1.7b`（確かめの道具は別のブランチ `t235-probe`: `tests/yarn_reference.py` と測った 2 つの文。本線には入れない）。決定と落とし穴は AGENTS.md の「3 値の Ternary Bonsai 1.7B」。
