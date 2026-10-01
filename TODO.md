@@ -1408,8 +1408,37 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 状態: 未着手（T233 の後。規模 小）
 - 速さ・メモリ・品質（perplexity か固定値）を記録のあるものだけで。
 
-### T242 [バグ][計測実行] 本番の /benchmark/ のモデルの節が Windows の WebKit で 2 回続けて落ちた — 状態: 進行中（2026-10-01、T227 のレビューが見つけた。規模 小〜中。**先に見る**: Safari でも起きうる）
-- bench.yml（本番、windows-latest の Playwright の WebKit）: run 36884698323 はモデルの節が「Model: failed: [object Object]」とページのエラー「TypeError: Load failed」で、32.9 MB のうち 23.5 MB で止まった。run 36886029331 は「Target page, context or browser has been closed」。同じジョブは 13:13 と 13:42（site 869e37a・aa5d17e）には通っていた。その間に `worker.js`・`forward.js`・`benchmark/gpu.js` が変わった（T226、T235、T130・T223 と T219・T220 と T224 のレビューの直し）。本番のモデルのページは Windows の WebKit で動く（models.yml run 36887697231、tiny-lm 219.6 tok/s）ので、落ちるのは /benchmark/ の流れ。原因は未確認。「[object Object]」は `worker.js` が Error でないものを `String(err)` にしているため。
+### T242 [バグ][計測実行] 本番の /benchmark/ のモデルの節が Windows の WebKit で 2 回続けて落ちた — 状態: **反映済み**（2026-10-01、本線に入れるのは本会話。レビュー前）
+- ブランチ `t242-windows-webkit-bench`。決定と落とし穴は AGENTS.md の「落とし穴」の T242 の 3 項。
+- **原因は 2 つあり、どちらもきょうのコミットのせいではない。** (A) Playwright の Windows の WebKit は、モデルの節の Worker が共有メモリを作る `new WebAssembly.Memory()` でページのプロセスごと落ちる。約 4 回に 1 回。(B) 同じブラウザで、jsDelivr への取得がまとめて失敗することがある（Service Worker の `fetch` が「Load failed」）。
+- **(A) の証拠**: 印を入れた版（ブランチ `t242-probe`、run 36894273061）で、落ちた 3 回とも最後の印は「making a shared memory for 32891932 bytes and 12537888 after them」で、その 0.1〜0.2 秒後にページが落ちた。その最大は tiny-lm で 1.07 GiB（モデルと後ろの 45 MB に、次のモデルのための 1 GiB: T96）。CPU の節だけ（0 / 10、run 36891194325）とモデルの節だけ（0 / 10、run 36891194015）では落ちない。CPU の節の Worker が共有メモリを持って終わった後でだけ落ちる。
+- **(A) を切り分けた表**（windows-latest、Playwright の WebKit 26.4（v2287）、ランナーのイメージ 20260925.250.1。「配った版」は bench.yml の `build=` でそのコミットを作ってランナーから配ったもの、節は CPU とモデル）:
+
+  | 何を | run | 落ちた回 / 回 |
+  |---|---|---:|
+  | 本番 site 8016599、全部の節 | 36889528940 | 2 / 8 |
+  | 本番 site 13d12ed、全部の節 | 36891194503 | 3 / 10 |
+  | 配った版 8016599（main） | 36892639433 | 3 / 12 |
+  | 配った版 869e37a（13:42 に本番で通った版） | 36892639708 | 2 / 12 |
+  | 配った版 c4714b4（9 月 27 日に本番で通っていた頃） | 36894291914 | 4 / 16 |
+  | 印を入れた版 | 36894273061 | 3 / 16 |
+  | CPU の節の後に 3 秒待つ | 36895905680 | 7 / 20 |
+  | 直しを戻した版（`t242-reverted`） | 36898456744 | 7 / 24 |
+  | CPU の節のメモリから 1 GiB を外す | 36895905196 | 2 / 20（別の落ち方: CPU の節の「making the model」の 7 秒後） |
+  | モデルの節のメモリから 1 GiB を外す | 36895906166 | 0 / 20 |
+  | 両方から外す | 36895905763 | 0 / 20 |
+  | **直した版 0e3e90f** | 36898456943 | **0 / 24** |
+
+  モデルの節のメモリに 1 GiB のある 8 行は合わせて 31 / 118（26%）、無い 3 行は 0 / 64。26% で落ちるものが 64 回続けて通る見込みは 4e-9。
+- **きょうのコミットではない**: 9 月 27 日の版（c4714b4）も 13:42 に通った版（869e37a）も、きょう作って配ると同じ割合で落ちる。9 月 26〜27 日の本番の 14 回は全部通っていて、そのときのランナーのイメージは 20260922.246.2（run 36326833940 で確かめた）、きょうは 20260925.250.1。WebKit のビルドとランナーの版は同じ。違いはイメージだけなので、イメージの更新が引き金という見立て（確かめていない）。きょうの 13:13 と 13:42 の 2 回が通ったのは偶然で、26% で落ちるものが 2 回続けて通る見込みは 55%。
+- **(A) の直し**: `/benchmark/` のモデルの節の Worker は 1 つのモデルしか読まない（ページの経路の読み込みと、ラウンドごとの読み込み）。次のモデルのための 1 GiB はそこでは要らないので、ページが init に `ahead`（これから走るラウンドごとの `without`）を付け、Worker は共有メモリをそのうちいちばん大きい読み込みの大きさで作る（`worker.js` の `loadsAhead`、`forward.js` の `weightsMemory()` の `spare`）。tiny-lm で最大は 1.07 GiB → 45 MB（`?full` の Chromium では int8 を広げるラウンドのぶんまで）。ラウンドは今までどおり同じメモリを使い回す（T96）。モデルのページは `ahead` を送らないので何も変わらない。
+- **(B) の証拠**: 配った版の 184 回のうち 3 回（run 36895905196・36895905763・36895906166 の 1 回ずつ。ほかに 1 回、節は通ってページのエラー「TypeError: Load failed」だけが出た: run 36898456943）と、本番の 1 回（run 36884698323: 「Model: failed: [object Object]」と「TypeError: Load failed」）。配った版の 3 回は、`cdn.jsdelivr.net` の `pyodide.asm.wasm`・`python_stdlib.zip`・NumPy の wheel（1 回は `pyodide.asm.mjs` も）が同じ 0.1 秒の中で「FetchEvent.respondWith received an error: TypeError: Load failed」。**「[object Object]」の訳**: Pyodide は標準ライブラリの取得に失敗しても先へ進み（コンソールに 1 行書くだけ）、Python が始まってすぐ終わって、`loadPyodide()` が Emscripten の `ExitStatus`（Error ではないオブジェクト）で reject する。`worker.js` はそれを `String()` にしていた。本番の 1 回がこの形だったことは、コンソールを取っていなかったので Pyodide のコードからの見立て。
+- **(B) で直したのは文だけ**: Error でない値は名前と文で言い（`told()`）、Pyodide の段が Error でない値で終わったら「Pyodide 314.0.7: "the runtime" ended as it started (ExitStatus: Program terminated with exit(1)): one of its files may not have arrived」（`pyodide: true` なので、モデルのページは Service Worker なしで 1 回やり直す: T113）。**取り直しは足していない**: `download()` の 2 回の取り直しはサイトのモデルの部品だけで、Pyodide のファイルは Pyodide 自身が取るので届かない。足すなら Pyodide を読む間の `fetch` の包み（`watchArrivals()`）で 1 回取り直す形だが、方針 2（CDN のための信頼性の仕組みは足さない）に触るので持ち主の判断。
+- **Safari には出ていない**: macOS の Playwright の WebKit は本番で 0 / 6（run 36889529270、site 8016599、全部の節）、きょうの bench.yml の macOS のジョブも全部通っている。(A) も (B) も Windows の WebKit だけで、このブラウザを使う訪問者はいない（Playwright の配る WinCairo 版）。iPhone は未確認。
+- **道具**: `tests/bench-check.mjs` は節が失敗したかページが落ちたら、聞こえたもの（コンソールのエラーと警告、失敗した要求、段の移り変わり、ページが落ちた時刻）を `heard:` の行で出す。bench.yml に入力 `os`・`browsers`・`run`・`query`・`times`（同じジョブで N 回、最後に「N of M tries failed」）・`build`（コミットを tiny-lm だけで作ってランナーから配る。枝を出す前の版や古い版を、本番の代わりに）。`/benchmark/` のモデルの節は Worker のエラーの場所をコンソールに出す（モデルのページと同じ）。
+- **CI**（ブランチ、どれも成功）: 直した版を全部の OS と全部のブラウザで 2 回（run 36898457036・36900832408、15 通りとも全部の節が ok か「このブラウザに無い」）。Chromium の `?full` の 6 ラウンド（run 36898458262）。`tests.yml` の軽い組（run 36898458493）。手元は `node tests/worker-check.mjs`（24 件）・`tests/bench.mjs`・`tests/worker-sink-check.mjs`。
+- **未確認**: WebKit の中で何が落ちているか（WinCairo 版の JavaScriptCore の中。クラッシュの記録は取っていない）。ランナーのイメージの更新が引き金かどうか。CPU の節のメモリの 1 GiB を外したときの別の落ち方（2 / 20、両方外すと 0 / 20: 回数が少なく、言えない）。iPhone と本物の Safari。本番での確かめ（本線に入れた後に `node tests/ci.mjs run bench.yml os=windows-latest browsers=webkit times=12`）。持ち主の端末の報告に変わりが無いか。
+- **持ち主に決めてもらうこと**: (1) Pyodide のファイルの取得が失敗したときに 1 回取り直すか（方針 2）。(2) 上の英語の文。(3) CPU の節のメモリも 1 GiB を外すか（その Worker も次のモデルを読まない。今回は触っていない）。
 
 ### T239 [性能][CPU] スレッドの本数の検索が局所解に止まる（持ち主の PC で 8 本、最速は 2 本） — 状態: 未着手（2026-10-01、T223 のレビューから。規模 小）
 - 検索は近い本数だけを比べるので、持ち主の PC（16 論理コア）は「16 か 8 で 8、8 か 4 で 8」を選び、2 本が最速（書くこと 171 tok/s、T225 の報告）のまま。T223 の再検索も同じ 8 から始まるので直らない。案: 下りの終わりに best / 4 も比べる（比べ 1 回 = 20 トークン）。試験は `tests/thread-search-check.mjs` の偽の時計で。
