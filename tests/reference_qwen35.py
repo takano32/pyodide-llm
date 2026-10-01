@@ -20,6 +20,9 @@
 #   real: Qwen/Qwen3.5-0.8B at a fixed revision, float32. The same token ids through transformers and through the
 #     engine (NumPy): the largest difference of the logits, how often the most likely token is the same, and 16 greedy
 #     tokens of each for the chat prompt.
+#   --model=2B (T247): the real part on Qwen/Qwen3.5-2B (7.5 GB as float32, which a runner holds), before its greedy
+#     text is fixed in tests/fixed_outputs.py: the same lines, and what transformers writes for that prompt in the
+#     list's format, from the format's own first token.
 #   --model=4B (T245): Qwen/Qwen3.5-4B, the smallest real model with more value heads than key heads (two to one), and
 #     17 GB as float32, more than a runner's 16 GB of memory holds: see large(). The engine (NumPy, float32, the
 #     original's safetensors converted the way the page converts) against transformers over the whole text at once.
@@ -203,15 +206,22 @@ def made_up(name, settings, positions=80):
 
 
 # ------------------------------------------------------------------------------------------------- the real model
-def real(directory, positions):
+# the other models the real part runs on (--model=): one file of weights under a shard's name, as the 0.8B's
+OTHERS = {"2B": ("Qwen/Qwen3.5-2B", "15852e8c16360a2fea060d615a32b45270f8a8fc")}
+# tests/fixed_outputs.py's prompt in the list's format without thinking (src/models.js's QWEN35_AT_ONCE after its BOS,
+# <|im_start|>): the ids the page sends, with no <|endoftext|> in front
+LISTED = "<|im_start|>user\nこれからの流行りを3つ挙げてください。<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+
+
+def real(directory, positions, repo=REPO, revision=REVISION):
     import tokenizers
     import torch
     import transformers
     from transformers import Qwen3_5ForConditionalGeneration
 
-    say(f"real: {REPO}@{REVISION}, transformers {transformers.__version__}, torch {torch.__version__}, numpy {np.__version__}")
+    say(f"real: {repo}@{revision}, transformers {transformers.__version__}, torch {torch.__version__}, numpy {np.__version__}")
     for name in FILES:
-        fetch(name, directory)
+        fetch(name, directory, repo, revision)
     tokenizer = tokenizers.Tokenizer.from_file(str(directory / "tokenizer.json"))
 
     # the conversion, the way the page does it: the file in its own order, float32
@@ -260,7 +270,11 @@ def real(directory, positions):
             past = out.past_key_values
             stepped.append(out.logits[0, -1].float().numpy())
         generated = model.generate(torch.tensor([[BOS] + chat_ids]), max_new_tokens=NEW_TOKENS, do_sample=False)[0].tolist()
+        listed = tokenizer.encode(LISTED, add_special_tokens=False).ids
+        as_listed = model.generate(torch.tensor([listed]), max_new_tokens=NEW_TOKENS, do_sample=False)[0].tolist()[len(listed):]
     theirs = generated[1 + len(chat_ids):]
+    say(f"real: transformers wrote for the list's prompt, from the format's first token: "
+        f"{json.dumps(tokenizer.decode(as_listed, skip_special_tokens=False), ensure_ascii=False)} {as_listed}")
     del model, past, out
     gc.collect()
 
@@ -518,6 +532,10 @@ def main():
     if only == "theirs":
         theirs(directory, directory / "ids.json")
         return
+    if option("model") in OTHERS:
+        failed = real(directory / option("model"), positions, *OTHERS[option("model")])
+        say("FAILED" if failed else "the engine computes what transformers computes")
+        sys.exit(1 if failed else 0)
     if option("model") in LARGE:
         failed = large(directory, positions, option("model"), option("from", "safetensors"), option("text"),
                        float(option("minutes", 40)))
