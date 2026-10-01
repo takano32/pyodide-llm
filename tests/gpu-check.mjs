@@ -420,9 +420,98 @@ const tokenForms = !adapter ? [] : ["llama.cpp, fused (T150)",
 // with the first form of a token's layer
 const tokenAttentions = !adapter ? [] : [...(adapter.features.has("subgroups") && features?.has("subgroup_id") ? ["llama.cpp flash_attn_vec, subgroups"] : []),
   "llama.cpp flash_attn_vec", "the prompt's attention tiles"];
+// T241's review: the two quantizers alone (QUANTIZE and NORM_QUANTIZE of shaders.js) on groups that hold a value that is no
+// finite number, and the word each stores for a group's scale (xs, a u32). The rounds of the layers below cannot tell a scale
+// of infinity from a NaN one: it makes a row of the next matrix infinite, and the next norm's 0 x inf a NaN, on lavapipe and
+// SwiftShader alike (the implementer's mutants "no-or" and "no-select" passed all of them). A finite group's word is to be the
+// scale of JavaScript's quantize_x (the largest |value| / 127, within 1e-4: a device's division and square root are not
+// rounded exactly); a group with a NaN or an infinity (a NaN's own, an infinity of a value, a NaN or an infinity of the norm's
+// weight, what the norm makes of a row that holds an infinity) a NaN word: the exponent all ones and a fraction. The inputs
+// are words, so that a signalling NaN and a negative one arrive as they are written. Returns { rows: [{ shader, what, word,
+// want, ok }] } (a row a group), or { skipped } or { error }
+const quantizerProbe = async () => {
+  if (!adapter) return { skipped: "no adapter" };
+  const device = await adapter.requestDevice();
+  const STORAGE = 0x80, UNIFORM = 0x40, COPY_SRC = 0x04, COPY_DST = 0x08, MAP_READ = 0x01, GROUP = wgsl.GROUP;
+  const room = (bytes) => Math.max(16, Math.ceil(bytes / 16) * 16);
+  const make = (code) => device.createComputePipeline({ layout: "auto", compute: { module: device.createShaderModule({ code }), entryPoint: "main" } });
+  const upload = (data, usage) => {
+    const buffer = device.createBuffer({ size: room(data.byteLength), usage: usage | COPY_DST });
+    device.queue.writeBuffer(buffer, 0, data);
+    return buffer;
+  };
+  const output = (bytes) => device.createBuffer({ size: room(bytes), usage: STORAGE | COPY_SRC });
+  // one dispatch of pipeline on the buffers (binding 0, 1, ...), then the count words of the one at scaleAt
+  const scales = async (pipeline, buffers, scaleAt, workgroups, count) => {
+    const group = device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries: buffers.map((buffer, binding) => ({ binding, resource: { buffer } })) });
+    const back = device.createBuffer({ size: room(count * 4), usage: MAP_READ | COPY_DST });
+    const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
+    pass.setPipeline(pipeline);
+    pass.setBindGroup(0, group);
+    pass.dispatchWorkgroups(workgroups, 1, 1);
+    pass.end();
+    encoder.copyBufferToBuffer(buffers[scaleAt], 0, back, 0, room(count * 4));
+    device.queue.submit([encoder.finish()]);
+    await back.mapAsync(MAP_READ);
+    const got = Array.from(new Uint32Array(back.getMappedRange().slice(0)).subarray(0, count));
+    back.unmap();
+    return got;
+  };
+  const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
+  const bits = (value) => ((f32[0] = value), u32[0]);
+  const float = (word) => ((u32[0] = word), f32[0]);
+  const isNaNWord = (word) => ((word >>> 23) & 0xff) === 0xff && (word & 0x7fffff) !== 0;
+  let seed = 241;
+  const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const spread = (width, count = GROUP) => Array.from({ length: count }, () => bits(Math.fround((random() * 2 - 1) * width)));
+  const at = (word, index, rest = 1.5) => Array.from({ length: GROUP }, (_, i) => (i === index ? word : bits(rest)));
+  const INF = 0x7f800000, NEGATIVE_INF = 0xff800000, NAN = 0x7fc00000, SIGNALLING = 0x7f800001, NEGATIVE_NAN = 0xffc00000, LARGEST = 0x7f7fffff;
+  const rows = [];
+  const say = (shader, what, word, want, tolerance) => {
+    const ok = want === "NaN" ? isNaNWord(word) : !isNaNWord(word) && Number.isFinite(float(word)) && Math.abs(float(word) - want) <= tolerance * want;
+    rows.push({ shader, what, word: word.toString(16), want: want === "NaN" ? "a NaN" : want, ok });
+  };
+  const largest = (words) => words.reduce((most, word) => Math.max(most, Math.abs(float(word))), 0);
+  // QUANTIZE: a group each: finite ones (random; zeros and negative zeros; a denormal among small values; the largest
+  // finite value; 1e30 among 1e-30), then +inf, -inf, a NaN, a signalling NaN, a negative NaN, only -inf, an infinity and a NaN
+  const cases = [["a finite group", spread(3)], ["zeros and negative zeros", Array.from({ length: GROUP }, (_, i) => (i % 2 ? 0x80000000 : 0))],
+    ["a denormal among small values", at(5, 3, 0.25)], ["the largest finite value", at(LARGEST, 31, 0.5)], ["1e30 among 1e-30", at(bits(1e30), 12, 1e-30)],
+    ["+inf", at(INF, 5)], ["-inf", at(NEGATIVE_INF, 31)], ["a NaN", at(NAN, 0)], ["a signalling NaN", at(SIGNALLING, 17)], ["a negative NaN", at(NEGATIVE_NAN, 9)],
+    ["only -inf", new Array(GROUP).fill(NEGATIVE_INF)], ["an infinity and a NaN", Array.from({ length: GROUP }, (_, i) => (i === 2 ? INF : i === 20 ? NAN : bits(1)))]];
+  const words = cases.flatMap(([, group]) => group), tokens = (count) => upload(new Uint32Array([count, 0, 0, 0]), UNIFORM);
+  const quantizedScales = await scales(make(wgsl.QUANTIZE), [upload(new Uint32Array(words), STORAGE), output(words.length), output(cases.length * 4),
+    upload(new Uint32Array([words.length, words.length, 0, 0]), UNIFORM), tokens(1)], 2, Math.ceil(cases.length / 64), cases.length);
+  cases.forEach(([what, group], g) => say("QUANTIZE", what, quantizedScales[g], group.some((w) => ((w >>> 23) & 0xff) === 0xff) ? "NaN" : Math.fround(largest(group) / 127), 1e-5));
+  // NORM_QUANTIZE: rows of 4 groups, the weight 1 and eps 1 where it is not the case's own. Three tokens: finite; an infinity
+  // at 40 (group 1: its norm's scale is 0, and 0 x inf a NaN); a NaN at 70 (group 2, and the norm's scale a NaN). Then one
+  // token whose weights hold an infinity (40, over x = 1.5) and a NaN (70)
+  const size = 4 * GROUP, row = spread(2, size), ones = new Array(size).fill(bits(1));
+  const norm = new ArrayBuffer(16);
+  new Uint32Array(norm).set([size, 0, 0, 0]);
+  new Float32Array(norm)[2] = 1;
+  const withWord = (list, index, word) => list.map((w, i) => (i === index ? word : w));
+  const expected = (x, weight) => {
+    const values = x.map(float);
+    const s = 1 / Math.sqrt(values.reduce((sum, v) => sum + v * v, 0) / size + 1);
+    return Array.from({ length: size / GROUP }, (_, g) => Math.fround(Array.from({ length: GROUP }, (_, i) => Math.abs(float(weight[g * GROUP + i]) * s * values[g * GROUP + i])).reduce((m, v) => Math.max(m, v), 0) / 127));
+  };
+  const normed = make(wgsl.NORM_QUANTIZE);
+  const normalize = async (what, xRows, weight, groupsOf) => {
+    const got = await scales(normed, [upload(new Uint32Array(xRows.flat()), STORAGE), upload(new Uint32Array(weight), STORAGE), output(xRows.length * size),
+      output(xRows.length * 4 * 4), upload(norm, UNIFORM), tokens(xRows.length)], 3, xRows.length, xRows.length * 4);
+    xRows.forEach((x, t) => groupsOf(t, expected(x.map((w) => (isNaNWord(w) || (w & 0x7fffffff) === INF ? bits(0) : w)), weight)).forEach(([g, want, tolerance]) => say("NORM_QUANTIZE", what[t] + ", group " + g, got[t * 4 + g], want, tolerance)));
+  };
+  await normalize(["finite", "an infinity at 40", "a NaN at 70"], [row, withWord(row, 40, INF), withWord(row, 70, NAN)], ones,
+    (t, finite) => (t === 0 ? finite.map((want, g) => [g, want, 1e-4]) : t === 1 ? [[1, "NaN"]] : [[2, "NaN"]]));
+  await normalize(["weights with an infinity at 40 and a NaN at 70"], [withWord(row, 40, bits(1.5))], withWord(withWord(ones, 40, INF), 70, NAN),
+    (t, finite) => [[0, finite[0], 1e-4], [1, "NaN"], [2, "NaN"], [3, finite[3], 1e-4]]);
+  device.destroy();
+  return { rows };
+};
 try {
   const narrow = compileKernels(await fetched("/public/simdkernel_shared.wasm"), await fetched("/public/simdkernel_relaxed_shared.wasm"));
   const results = [];
+  const quantizers = await quantizerProbe().catch((error) => ({ error: String(error?.stack ?? error) }));
   for (const c of await (await fetch("/cases.json")).json()) {
     const plan = c.plan;
     for (const name of Object.keys(plan.derived)) plan.derived[name] = Uint8Array.from(atob(plan.derived[name]), (ch) => ch.charCodeAt(0));
@@ -786,7 +875,7 @@ try {
     }
     results.push({ id: c.id, cpu, gpu, late: lateRun, refused, remembered, alone, broken });
   }
-  postMessage({ results, forms });
+  postMessage({ results, forms, quantizers });
 } catch (error) {
   postMessage({ error: String(error?.stack ?? error) });
 }
@@ -946,6 +1035,20 @@ function scaleOff(got, want) {
 // (T152: "prompts and answers on WebGPU", or "prompts on WebGPU, answers on the CPU")
 const promptsOnGpu = (note) => /^prompts (and answers )?on WebGPU($|, )/.test(note ?? "");
 let failed = false;
+// T241's review: the quantizers alone (the harness's quantizerProbe): the word of every group's scale as the contract in
+// shaders.js says (a finite group's the largest |value| / 127, a group with a NaN or an infinity a NaN)
+{
+  const q = outcome.quantizers;
+  if (q?.rows) {
+    const wrong = q.rows.filter((r) => !r.ok);
+    console.log(`the quantizers alone (QUANTIZE, NORM_QUANTIZE): ${q.rows.length - wrong.length} of ${q.rows.length} groups' scale words as they are to be (a finite group's the largest |value| / 127, ` +
+      `a group with a NaN or an infinity a NaN)${wrong.length ? ` — FAILED\n    - ${wrong.map((r) => `${r.shader}, ${r.what}: the word is ${r.word}, where ${r.want} is to be`).join("\n    - ")}` : ""}`);
+    failed ||= wrong.length > 0;
+  } else if (q?.error) {
+    console.log(`the quantizers alone: FAILED\n    - ${q.error}`);
+    failed = true;
+  } else console.log(`the quantizers alone: not tried (${q?.skipped ?? "no answer"})`);
+}
 for (const { id, cpu, gpu: runs, late, refused, remembered, alone, broken } of outcome.results) {
   const c = cases.find((entry) => entry.id === id), ref = c.reference, n = ref.tokens.length - 1;
   const [dim, , layers, heads, kvHeads] = ref.header, kvDim = (c.headDim || dim / heads) * kvHeads;
