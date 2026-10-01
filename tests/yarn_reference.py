@@ -54,6 +54,13 @@ for name, scaling in (("config.json as it is (yarn)", yarn), ("yarn with attenti
             logits = model(torch.tensor([ids])).logits[0, :-1].double()
             nll = torch.nn.functional.cross_entropy(logits, torch.tensor(ids[1:]), reduction="mean")
             print(f"{name}: {path}: perplexity {math.exp(float(nll)):.3f} over {len(ids) - 1} tokens", flush=True)
+        # the four most likely tokens after the prompt and each of the first four tokens every reading writes
+        forced = prompt + [87752, 15322, 5373, 50230]
+        logits = model(torch.tensor([forced])).logits[0].double()
+        for pos in range(len(forced) - 5, len(forced)):
+            top = torch.topk(logits[pos], 4)
+            print(f"{name}: logits at {pos}: {[[int(i), round(float(v), 3)] for v, i in zip(top.values, top.indices)]}", flush=True)
+        print(f"{name}: the prompt's ids {prompt}", flush=True)
         written = model.generate(torch.tensor([prompt]), max_new_tokens=16, do_sample=False)[0, len(prompt):]
         print(f"{name}: greedy {json.dumps(tokenizer.decode(written), ensure_ascii=False)} {written.tolist()}", flush=True)
     print(f"{name}: {time.time() - began:.0f} s", flush=True)
