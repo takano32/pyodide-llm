@@ -649,6 +649,15 @@ function pooledWeights(size, after, shared, wide) {
       } catch {
         memory = undefined;  // no shared memory here: one thread
       }
+      // (T130's review) a shared memory the browser gave at a lowered maximum (weightsMemory's second and third try: the
+      // checkpoint and a gigabyte, or a quarter of one) that the forward pass does not fit would run out of memory when
+      // the cache grows, or at once where the corrections do not fit, after the whole checkpoint was read: a plain memory
+      // grows as far as the browser allows. One thread, but the model reaches the end of its context
+      if (memory?.limited && memory.maximum < pages(base + size + after) + 1) {
+        console.info(`memory: the browser gave a shared memory of ${Math.round(memory.maximum * 65536 / 2 ** 20)} MiB, and this model needs ` +
+          `${Math.round(pages(base + size + after) * 65536 / 2 ** 20)} MiB: a memory that is not shared, and one thread`);
+        memory = undefined;
+      }
     }
     if (!memory) ({ memory, base } = forwardModule.weightsMemory(size, { wide }));
     const isShared = shared && memory.buffer instanceof SharedArrayBuffer;
