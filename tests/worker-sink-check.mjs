@@ -93,7 +93,7 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
 // engine (external's halfKeys). Without it createForward takes float32 for every grouped-query model: the same answer
 // where float32 fits a 32-bit memory, and not for Llama 3.2 3B (64-bit either way: 0.46 GB more). No other test runs
 // this path: forward-check and gpu-check make their engines themselves.
-// T130: a shared memory asked for and refused. The plain one keeps float32 but where that would not fit a 32-bit
+// T130: a shared memory asked for and refused. The plain one keeps float32 but where only float16 fits a 32-bit
 // memory: llm-jp-3.1 1.8B float32 (3.66 GiB; the float16 of a shared memory would have left it 1.1 GiB short of
 // counting it), sarashina2.2 3B in six bits float16 (4.36 GiB in float32). Before, the worker handed the engine the
 // shared memory's answer and the engine took float32 on any plain memory: out of memory near the end of the context.
@@ -111,8 +111,9 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
     ["Llama 3.2 3B", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, {}, true],
     ["llm-jp-3.1 1.8B", [2048, 7168, 24, 16, 16, -99584, 4096], 2101354524, {}, true],
     ["sarashina2.2 3B, six bits", [2560, 8960, 32, 16, 8, -102400, 4096], 2936678428, {}, true, "int6"]];
-  // on a plain memory: float32 but where it would not fit a 32-bit memory
-  const plain = { "llm-jp-3 150M": false, "Qwen2.5 0.5B": false, "Qwen2.5 3B": false, "Llama 3.2 3B": true, "llm-jp-3.1 1.8B": false,
+  // on a plain memory: float32 but where float16 keeps on a 32-bit memory a model float32 would not (Llama 3.2 3B is
+  // past it either way: float32, the owner, 2026-09-28)
+  const plain = { "llm-jp-3 150M": false, "Qwen2.5 0.5B": false, "Qwen2.5 3B": false, "Llama 3.2 3B": false, "llm-jp-3.1 1.8B": false,
     "sarashina2.2 3B, six bits": true };
   const handedFor = (header, size, form, dtype) => {
     handed.length = 0;
