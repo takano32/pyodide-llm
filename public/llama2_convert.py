@@ -1113,6 +1113,10 @@ def check_config(config):
         if config.get("mlp_only_layers") or config.get("attn_output_gate") is False:
             # what transformers' Qwen3_5 does not read either: a model that says so is another model
             refuse("its layers are not the ones of a Qwen3.5")
+        if config.get("output_gate_type", "silu") not in ("silu", "swish"):
+            # the activation of the gate that a Gated DeltaNet layer's norm multiplies by (vLLM's and Modular's readers of the
+            # field; transformers' does not read it): Qwen3.5's config has none and Qwen3.8's says "swish", which is silu
+            refuse(f"its linear-attention layers gate their norm with {config['output_gate_type']}, not silu")
 
 
 def checkpoint_header(config, source, max_seq_len):
