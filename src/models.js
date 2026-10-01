@@ -193,7 +193,7 @@ export const LICENSES = {
   // from (the card's license is the original's)
   "rinna/japanese-gpt2-xsmall": MIT, "rinna/japanese-gpt2-medium": MIT,
   "sbintuitions/sarashina2.2-1b": MIT, "mradermacher/sarashina2.2-1b-GGUF": MIT,
-  "stockmark/gpt-neox-japanese-1.4b": MIT, "mmnga/stockmark-gpt-neox-japanese-1.4b-gguf": MIT,
+  "stockmark/gpt-neox-japanese-1.4b": MIT,
   "line-corporation/japanese-large-lm-1.7b": APACHE, "mmnga/line-corp-japanese-large-lm-1.7b-gguf": APACHE,
   "utter-project/EuroLLM-1.7B-Instruct": APACHE, "mradermacher/EuroLLM-1.7B-Instruct-GGUF": APACHE,
   "llm-jp/llm-jp-3-1.8b-instruct3": APACHE, "mmnga/llm-jp-3-1.8b-instruct3-gguf": APACHE,
@@ -379,20 +379,24 @@ const LISTED = [
           vocabulary: { repo: "cyberagent/CAT-Translate-1.4b", revision: "254120945fd9a61278ac2171ab07c831d56838fa", tokenizer: "tokenizer.model" } }, download: 1498333088,
     conversion: {}, options: sarashina, generation: greedy, template: SARASHINA,
     prompt: "Translate the following Japanese text into English.\n\n富士山は日本でいちばん高い山で、夏には多くの人が登ります。", placeholder: TRANSLATE },
-  // T249: the base model of sarashina2.2 1B, and two Japanese base models of 2023 (stockmark's GPT-NeoX, which rotates
-  // a quarter of each head and has no parallel residual; LINE's GPT-2, whose table of positions holds 2048)
+  // T249: the base model of sarashina2.2 1B, and two Japanese base models of 2023. stockmark's GPT-NeoX rotates a
+  // quarter of each head and has no parallel residual; mmnga's Q8_0 GGUF of it (2023) holds the very values, but with
+  // q, k and v of a head in turns as Hugging Face has them, where today's llama.cpp writes all of q, then k, then v,
+  // which is what the converter undoes (T136): read so, it wrote "のののの", so the safetensors. LINE's GPT-2, whose
+  // table of positions holds 2048: its tokenizer puts nothing in front of a text, and the model writes nonsense after
+  // <s> (1), the converter's BOS, and after nothing; after </s> (2) it writes Japanese (transformers on the original
+  // says the same of all three), so that is the BOS here
   { group: "hf", id: "hf-sarashina2.2-1b", name: "sarashina2.2 1B", note: "日本語 · fetches 1.5 GB (GGUF) → int8 1.6 GB · desktop only",
     ...ggufOf("mradermacher/sarashina2.2-1b-GGUF", "9eaeb885b7b61d8ceb274bac21b9df4f42151e23", "sarashina2.2-1b.Q8_0.gguf",
       "sbintuitions/sarashina2.2-1b", "3bb836ad7475ba192926be66651e4730825df7da", "tokenizer.model"), download: 1498330464,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
-  { group: "hf", id: "hf-gpt-neox-japanese-1.4b", name: "gpt-neox-japanese 1.4B", note: "日本語 · fetches 1.5 GB (GGUF) → int8 1.6 GB · desktop only",
-    ...ggufOf("mmnga/stockmark-gpt-neox-japanese-1.4b-gguf", "44e26dd2c90208d986a04a98e9fada0fc3d9f8de", "stockmark-gpt-neox-japanese-1.4b-q8_0.gguf",
-      "stockmark/gpt-neox-japanese-1.4b", "c8f1288a46ac11cf4445dfd18147605d9b692261"), download: 1506271424,
+  { group: "hf", id: "hf-gpt-neox-japanese-1.4b", name: "gpt-neox-japanese 1.4B", note: "日本語 · fetches 2.9 GB → int8 1.6 GB · desktop only",
+    hf: hf("stockmark/gpt-neox-japanese-1.4b", "c8f1288a46ac11cf4445dfd18147605d9b692261"), download: 2852015168,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   { group: "hf", id: "hf-japanese-large-lm-1.7b", name: "japanese-large-lm 1.7B", note: "日本語 · fetches 1.9 GB (GGUF) → int8 1.9 GB · desktop only",
     ...ggufOf("mmnga/line-corp-japanese-large-lm-1.7b-gguf", "d49108e627b7b6b7b6977184a6b81045b60a8582", "line-corp-japanese-large-lm-1.7b-q8_0.gguf",
       "line-corporation/japanese-large-lm-1.7b", "4288da0a536789f0615c730af0c6cbd9e475a7db", "spiece.model"), download: 1888727168,
-    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+    conversion: {}, options: { bos: 2 }, generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
   // T249: EuroLLM, of 35 languages with Japanese among them. Its tokenizer.json is a BPE of sentencepiece's kind, so
   // the tokenizer.model; the special tokens of its format are the converter's (it reads the template too)
   { group: "hf", id: "hf-eurollm-1.7b-instruct", name: "EuroLLM 1.7B Instruct", note: "answers instructions · 日本語 / English and 33 more languages · fetches 1.8 GB (GGUF) → int8 1.9 GB · desktop only",

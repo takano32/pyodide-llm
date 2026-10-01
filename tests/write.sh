@@ -7,7 +7,7 @@
 #
 # Each model is fetched at the revision the list pins (tests/hf_fetch.py), converted to int8 as the page converts it
 # (tests/perplexity_prepare.py) and given the options and the format the page gives it (tests/write_options.py); then
-# tests/write.mjs writes TOKENS tokens (32). What was fetched and converted goes before the next model (an 8B's GGUF
+# tests/write.mjs writes TOKENS tokens (32), and with SEEDS="1 2" also as the page samples. What was fetched and converted goes before the next model (an 8B's GGUF
 # and its int8 are 18 GB, so on /mnt where a runner has one). A model that fails says so and the next one runs; the
 # exit status is the number that failed.
 set -uo pipefail

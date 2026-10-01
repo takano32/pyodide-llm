@@ -17,4 +17,4 @@ options = {**made.options, **entry.get("options", {})}
 template = entry.get("template") or options.get("template")
 options.pop("template", None)
 print(json.dumps({"id": model_id, "name": entry["name"], "options": options, "template": template,
-                  "prompt": entry["prompt"], "header": [int(value) for value in made.stream.header]}, ensure_ascii=False))
+                  "prompt": entry["prompt"], "generation": entry["generation"], "header": [int(value) for value in made.stream.header]}, ensure_ascii=False))
