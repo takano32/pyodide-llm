@@ -476,7 +476,7 @@ export function gpuOnlyUnfit(header, dtype, { arch = "llama", head_dim = 0 } = {
   const headSize = head_dim || dim / heads, qDim = heads * headSize, kvDim = kvHeads * headSize;
   if (!adapter) return "no GPU adapter here";
   if (adapter.fallback && !force.fallback) return "a fallback adapter";
-  if (arch !== "llama") return "GPT-2 and GPT-NeoX are not placed on the GPU alone";
+  if (arch !== "llama") return "only a Llama's layers are placed on the GPU alone (not GPT-2's, GPT-NeoX's or a Qwen3.5's, whose tensors external_tensors() does not place)";
   if (dtype !== "int8") return `${dtype} weights stay on the CPU`;
   if (headSize % 4) return "heads of a size that is no multiple of 4";
   const { maxStorageBufferBindingSize, maxBufferSize } = adapter.limits;
