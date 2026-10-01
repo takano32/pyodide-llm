@@ -15,6 +15,9 @@
 //   - T239: the owner's PC (16 logical cores: 2 threads 171 tok/s, 8 threads 158, and 4 no faster than 8) ends on 2, from
 //     its logical cores and from the 8 the page remembered, by the quarter the search compares where half was not faster;
 //     the Android's visits cost what they did, and a device whose logical cores are its best count one comparison more.
+//   - T240: the search a count is owed (one found beside the GPU's getting ready, or remembered from an earlier visit)
+//     begins at the token after the GPU is ready, inside the generation, on an int8 model with a made-up GPU's worker;
+//     never while the GPU gets ready, and never where the page began no generation (/benchmark/).
 //   node tests/thread-search-check.mjs [--forward <another forward.js, to see a broken one fail>] [--table: T239's table]
 import assert from "node:assert/strict";
 import path from "node:path";
@@ -249,6 +252,120 @@ if (args.includes("--table")) {
     lines.push(`${name}: ${Object.entries(kept).map(([count, n]) => `${count} by ${n}`).join(", ")} of ${visits} visits`);
   }
   console.log(`ok: T239, the owner's PC: from 16 ${JSON.stringify(pc.log)}, from a remembered 8 ${JSON.stringify(kept.log)}; ${lines.join("; ")}`);
+}
+
+// ---- T240: the GPU ready inside a generation. An int8 model (the GPU takes no other) of the same size, and a GPU's worker
+// that is this test: ready when ready() is called, "ended" at once when stopped. A token's times are 4 threads' best
+// while the GPU gets ready (as gpu-default-check.mjs's) and the owner's Android's after it
+{
+  const quantized = {};
+  let at = 28;
+  for (const [name, shape] of [["token_embedding_table", [vocab, dim]], ["rms_att_weight", [layers, dim]], ["wq", [layers, dim, dim]],
+    ["wk", [layers, dim, dim]], ["wv", [layers, dim, dim]], ["wo", [layers, dim, dim]], ["rms_ffn_weight", [layers, dim]],
+    ["w1", [layers, hidden, dim]], ["w2", [layers, dim, hidden]], ["w3", [layers, hidden, dim]], ["rms_final_weight", [dim]]]) {
+    const count = shape.reduce((a, b) => a * b, 1);
+    if (name.startsWith("rms")) {
+      quantized[name] = { kind: "f32", offset: at, shape, group: 0, scales: 0 };
+      at += count * 4;
+    } else {
+      quantized[name] = { kind: "int8", offset: at, shape, group: 32, scales: at + count };
+      at += count + (count / 32) * 4;
+    }
+  }
+  const bytes = at, cos = new Float32Array(seqLen * headSize / 2).fill(1), sin = new Float32Array(seqLen * headSize / 2);
+  const int8Plan = { ...plan, int8: true, half_kv: true, tensors: quantized, derived: { freq_cis_real: cos, freq_cis_imag: sin } };
+  const room = footprint([dim, hidden, layers, heads, heads, vocab, seqLen], bytes, { dtype: "int8", relaxed: false, halfKV: true, shared: true, gpu: true });
+  const pages = Math.ceil((CONTROL_BYTES + bytes + room) / PAGE) + 1;
+  const int8Memory = new WebAssembly.Memory({ initial: pages, maximum: pages + 1, shared: true });
+  const BESIDE = { 1: 16, 2: 12, 4: 8, 8: 10 };
+  const info = console.info;
+  console.info = () => {};  // forward.js's lines about the GPU
+  /** an engine with a GPU getting ready; ready(): the GPU's worker says it is; write(n): n tokens with logits */
+  async function withGpu({ remembered = 0 } = {}) {
+    let engine = null, starting = false, time = 0, said = null, isReady = false, pos = 0;
+    const clock = () => {
+      starting = !starting;
+      if (!starting) time += (isReady ? ANDROID : BESIDE)[engine.threads] ?? 30;
+      return time;
+    };
+    const gpu = () => ({ postMessage: (data) => { if (data.type === "stop") said({ data: { type: "ended" } }); },
+      set onmessage(f) { said = f; }, set onerror(f) {}, terminate() {} });
+    engine = createForward({ memory: int8Memory, base: CONTROL_BYTES, size: bytes, kernels: { plain: empty, relaxed: null, wide: false }, plan: int8Plan, spawn, clock, gpu,
+      wrap: () => new Proxy({}, { get: (_, name) => (name === "then" ? undefined : () => 0) }) });
+    assert.equal(engine.gpuWhyNot, null, "the made-up model is one the GPU takes");
+    const told = [];
+    await engine.findThreads({ from: 8, remembered, chose: (count) => told.push(count) });
+    const ready = () => {
+      isReady = true;
+      said({ data: { type: "ready", adapter: "made up", key: "k", bytes: 1, seconds: 0, form: "made up", attention: "made up", forms: [], remembered: false, blocks: [] } });
+    };
+    const write = async (tokens) => {
+      for (let t = 0; t < tokens; t++, pos = (pos + 1) % seqLen) {
+        engine.forward(1, pos, true);
+        if (t % 20 === 19) await Promise.resolve();
+      }
+    };
+    const log = () => engine.searchLog.map(({ best, candidate, faster, whileGpu }) => `${best} or ${candidate}: ${faster ? candidate : best}${whileGpu ? " (GPU getting ready)" : ""}`);
+    return { engine, told, ready, write, log };
+  }
+  // (1) the first search ended beside the GPU's getting ready: 4 threads, not remembered. The GPU is ready 30 tokens into
+  // the next generation: the search begins at the next token, in that generation, and 2 is remembered
+  {
+    const { engine, told, ready, write, log } = await withGpu();
+    for (let g = 0; g < 10 && engine.searching; g++) {
+      engine.newGeneration();
+      await write(20);
+    }
+    const first = log();
+    assert.deepEqual([engine.searching, engine.threads, told, first], [false, 4, [], ["8 or 4: 4 (GPU getting ready)", "4 or 2: 4 (GPU getting ready)", "4 or 1: 4 (GPU getting ready)"]],
+      "the first search beside the GPU's getting ready: 4 threads in use, none remembered");
+    engine.newGeneration();
+    await write(30);
+    assert.deepEqual([engine.searching, log().length, engine.threads], [false, first.length, 4], "no search begins while the GPU gets ready, inside a generation either");
+    ready();
+    await write(1);
+    assert.equal(engine.searching, true, "T240: the GPU ready inside a generation: the search begins at the next token, not at the next generation");
+    await write(60);
+    assert.deepEqual([engine.searching, engine.threads, told, log().slice(first.length)], [false, 2, [2], ["4 or 2: 2", "2 or 1: 2"]],
+      "...and ends in that generation: 2 threads, remembered");
+    await engine.release();
+  }
+  // (2) the GPU ready while the first search is under way: that search ends as it began (marked, not remembered), and the
+  // next token begins the one that is remembered, with no generation begun between
+  {
+    const { engine, told, ready, write, log } = await withGpu();
+    engine.newGeneration();
+    await write(20);
+    assert.deepEqual(log(), ["8 or 4: 4 (GPU getting ready)"]);
+    ready();
+    await write(200);
+    assert.deepEqual([engine.searching, engine.threads, told, log()], [false, 2, [2],
+      ["8 or 4: 4 (GPU getting ready)", "4 or 2: 2 (GPU getting ready)", "2 or 1: 2 (GPU getting ready)", "2 or 1: 2", "2 or 4: 2"]],
+      "T240: a search that ends after the GPU is ready is run again from the next token on");
+    await engine.release();
+  }
+  // (3) a count remembered from an earlier visit, its first generation begun while the GPU gets ready
+  {
+    const { engine, told, ready, write, log } = await withGpu({ remembered: 4 });
+    engine.newGeneration();
+    await write(30);
+    assert.deepEqual([engine.searching, log()], [false, []], "a remembered count is not searched while the GPU gets ready");
+    ready();
+    await write(60);
+    assert.deepEqual([engine.searching, engine.threads, told, log()], [false, 2, [2], ["4 or 2: 2", "2 or 1: 2"]], "T240: a remembered 4, the GPU ready inside its first generation: 2");
+    await engine.release();
+  }
+  // (4) /benchmark/ begins no generation: the count the model page remembers is taken as it is (T190), GPU ready or not
+  {
+    const { engine, told, ready, write, log } = await withGpu({ remembered: 4 });
+    await write(30);
+    ready();
+    await write(60);
+    assert.deepEqual([engine.searching, engine.threads, told, log()], [false, 4, [], []], "no generation begun by the page: no search of a remembered count");
+    await engine.release();
+  }
+  console.info = info;
+  console.log("ok: T240, the GPU ready inside a generation: the search owed begins at the next token (after a first search beside the GPU, under one, of a remembered count), none where no generation began");
 }
 
 // ---- the page's key of the count: one a model, a device and a browser (the page and /benchmark/ read the same one)
