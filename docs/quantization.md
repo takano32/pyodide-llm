@@ -74,7 +74,7 @@ on 64-bit memory (Chromium in CI). `?bits=6` or `?bits=8` chooses by hand.
 
 ## Models from GGUF
 
-49 of the 56 Hugging Face models of the list are fetched as a Q8_0 GGUF (llama.cpp's int8 with a float16 scale
+55 of the 66 Hugging Face models of the list are fetched as a Q8_0 GGUF (llama.cpp's int8 with a float16 scale
 per 32 values), with the vocabulary and the configuration of the original repository. Q8_0 turns back into int8
 without loss. Each GGUF was compared with its original tensor by tensor before it went into the list
 (`tests/gguf_check.py`): every row had to be within a relative error of 0.05 of the original, of llama.cpp's Q8_0 of the original, or
