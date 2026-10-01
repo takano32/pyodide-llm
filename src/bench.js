@@ -361,6 +361,10 @@ export function noRatios({ fallback, lost } = {}) {
  * \| as a | in a cell). */
 export const tableCell = (text) => String(text).replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
 
+/** Why a step of the GPU section has no table: it failed (T227: in that word, as the rows say it, so that warnings()
+ * lists it), or it was not run. */
+export const unmeasured = (error) => (error ? `failed: ${error}` : "not measured");
+
 /** T186: the numbers under a layer's verdict in the check (T175), in one short line for the page and the report: its
  * quantized vectors held to quantize_x (quantized: [{point, wrong, scale, apart, of}]; the worst scale's relative
  * difference and the values off by 1 of all four, or the first that was wrong) and, for the DP4A fused form, the one
@@ -420,7 +424,7 @@ export function matVecTable(bandwidths, check, ceilings, gpu = {}) {
   const shaders = [...new Map(bandwidths.flatMap((s) => (s.result?.rows ?? []).map((row) => [row.shader, row]))).values()];
   const cell = (s, name) => {
     const row = s.result?.rows?.find((one) => one.shader === name);
-    if (s.error || !row) return tableCell(s.error ?? "");
+    if (s.error || !row) return s.error ? tableCell(unmeasured(s.error)) : "";
     if (row.none || row.error) return tableCell(row.none ?? `failed: ${row.error}`);
     return `${row.unsteady ? "unsteady: " : ""}${number(row.GBps)} GB/s${reads ? ` (${percent(row.GBps, reads)})` : ""}`;
   };
@@ -467,7 +471,7 @@ export function tokenTable(steps, baseline, gpu = {}) {
     const t = s.result ?? {};
     const name = s.name.replace(/^a token of /, "");
     if (s.error || t.error) {
-      lines.push(`| ${name} | | | ${tableCell(s.error ?? t.error)} | | | |`);
+      lines.push(`| ${name} | | | ${tableCell(unmeasured(s.error ?? t.error))} | | | |`);
       continue;
     }
     const cpuTok = cpu && Number.isFinite(t.GB) && t.GB > 0 ? cpu.GBps / t.GB : undefined;
@@ -494,7 +498,7 @@ export function tokenTable(steps, baseline, gpu = {}) {
  */
 export function layerTable(step, check, ceilings, gpu = {}) {
   if (!step) return [];
-  if (step.error || !step.result) return [`**A layer of a token**: ${tableCell(step.error ?? "not measured")}`];
+  if (step.error || !step.result) return [`**A layer of a token**: ${tableCell(unmeasured(step.error))}`];
   const r = step.result, none = noRatios(gpu);
   const reads = !gpu.lost && ceilings && !ceilings.fallback && !ceilings.global?.unsteady ? ceilings.global?.GBps : undefined;
   const wrong = (row) => Boolean(check && check[row.check] && !check[row.check].ok);
@@ -559,7 +563,7 @@ function layerSplit(r, form) {
 export function layerStepsTable(step, check, ceilings, gpu = {}) {
   if (!step) return [];
   const title = "**Where a layer's time goes**";
-  if (step.error || !step.result) return [`${title}: ${tableCell(step.error ?? "not measured")}`];
+  if (step.error || !step.result) return [`${title}: ${tableCell(unmeasured(step.error))}`];
   const r = step.result, none = noRatios(gpu);
   const reads = !gpu.lost && ceilings && !ceilings.fallback && !ceilings.global?.unsteady ? ceilings.global?.GBps : undefined;
   const wrong = (form) => Boolean(check && check[form.check] && !check[form.check].ok);
@@ -698,7 +702,7 @@ function attentionLengthsLines(lengths, none) {
  */
 export function generateTable(step, check, gpu = {}) {
   if (!step) return [];
-  if (step.error || !step.result) return [`**Tokens generated on the GPU**: ${tableCell(step.error ?? "not measured")}`];
+  if (step.error || !step.result) return [`**Tokens generated on the GPU**: ${tableCell(unmeasured(step.error))}`];
   const r = step.result, none = noRatios(gpu);
   const wrong = ["sampling", "tokens on the GPU"].some((key) => check?.[key] && !check[key].ok);
   const chunksWrong = check?.["sampling in chunks"] && !check["sampling in chunks"].ok;

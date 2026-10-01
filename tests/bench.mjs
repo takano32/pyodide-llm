@@ -358,7 +358,7 @@ assert.ok(layerStepsTable(stepsFailedForm, layerRight, layerCeilings).includes('
 assert.ok(!layerStepsTable(stepsStep, layerRight, layerCeilings, { lost: "lost" }).join("\n").includes("of the buffer's reads"));
 assert.ok(layerStepsTable(stepsStep, layerRight, layerCeilings, { lost: "lost" }).some((line) => line.includes("the device was lost")));
 assert.ok(layerStepsTable(stepsStep, layerWrong, layerCeilings).join("\n").includes('in "DP4A, fused (T175)" (WRONG in the check), µs a layer'));
-assert.deepEqual(layerStepsTable({ name: "the steps of a layer", error: "no | here" }), ["**Where a layer's time goes**: no \\| here"]);
+assert.deepEqual(layerStepsTable({ name: "the steps of a layer", error: "no | here" }), ["**Where a layer's time goes**: failed: no \\| here"]);
 // T208: the forms chosen by the layer table's fastest (named in the head, with the partner's norms), or by the packed
 // int8 dot where it gave none (and why); the attention alone on its caches; the spares; the whole layer by timestamps
 // in one line, or why not
@@ -430,7 +430,7 @@ assert.ok(layerTable(unsteadyStep, layerRight).includes("| llama.cpp, fused (T15
 // a fallback adapter's few hundredths of a GB/s still show
 const slowStep = { ...layerStep, result: { ...layerStep.result, rows: [{ ...layerStep.result.rows[0], msPerLayer: 2900, GBps: 0.0236 }] } };
 assert.ok(layerTable(slowStep, layerRight, undefined, { fallback: true }).includes("| llama.cpp, separate steps | 14 | 2900.00 | 0.024 | 46400.0 |  |"));
-assert.equal(layerTable({ name: "a layer of a token", error: "x | y" })[0], "**A layer of a token**: x \\| y");
+assert.equal(layerTable({ name: "a layer of a token", error: "x | y" })[0], "**A layer of a token**: failed: x \\| y");
 // T151: the table of tokens generated on the GPU: what a submission costs besides its tokens and how many times faster
 // several a submission are than one, neither after a lost device, on a fallback adapter or with the sampling WRONG
 const generateStep = { name: "tokens generated on the GPU", result: { model: "Llama 3.2 1B's width", layers: 2, vocab: 32000, GB: 0.21,
@@ -478,7 +478,7 @@ const noisy = { ...generateStep, result: { ...generateStep.result, rows: [genera
 assert.ok(generateTable(noisy, generateRight).includes("| 8, read back once | 9.00 |  | under the noise | under the noise | 1.6× |"), generateTable(noisy, generateRight).join("\n"));
 assert.ok(generateTable(generateStep, { ...generateRight, "tokens on the GPU": { ok: false } }).some((line) => line.startsWith("| 4, read back once (WRONG in the check) |")));
 assert.ok(generateTable(generateStep, generateRight, { fallback: true }).some((line) => line.includes("none on a fallback adapter")));
-assert.equal(generateTable({ name: "x", error: "a | b" })[0], "**Tokens generated on the GPU**: a \\| b");
+assert.equal(generateTable({ name: "x", error: "a | b" })[0], "**Tokens generated on the GPU**: failed: a \\| b");
 const unmeasured = generateTable({ ...generateStep, result: { ...generateStep.result, work: undefined, sampling: undefined, rows: [{ perSubmission: 1, msPerToken: 900 }, { perSubmission: 2, msPerToken: 800 }] } }, generateRight, { fallback: true });
 assert.ok(unmeasured.at(-1).includes("not measured here"), unmeasured.at(-1));
 // T184: the model page's own path, one table: a device whose GPU took the prompts, one whose GPU stopped while timed,
@@ -721,4 +721,9 @@ assert.deepEqual(others, [
   "GPU: a layer: llama.cpp, separate steps, subgroups; dispatches: failed: a | b c",
   'GPU: "DP4A, fused (T175)": failed: refused',
   "Storage: computed something wrong"], others.join("\n"));
+// a step of the GPU section that failed as a whole says so in that word (a token's row, a table's one line), so it is
+// listed; one that was not run is no warning
+assert.deepEqual(warnings([{ title: "GPU", status: "ok", markdown: [...tokenTable([{ name: "a token of Llama 3.2 1B", error: "out of memory" }], aBaseline), "",
+  ...layerTable({ name: "a layer of a token", error: "x | y" }), "", ...generateTable({ name: "tokens generated on the GPU" })].join("\n") }]),
+  ["GPU: a token (weights, dispatches, logits back): Llama 3.2 1B; GPU ms: failed: out of memory", "GPU: **A layer of a token**: failed: x \\| y"]);
 console.log("ok");

@@ -154,7 +154,7 @@ const BENCH_MODEL = "llm-jp-3-150m";
 
 <script>
   import { FULL_ROUNDS, PATH_PROMPTS, PATH_WRITES, ROUNDS, benchMarkdown, checkVerdict, roundsHere, roundsTable, layerStepsTable, pathTable, cpuBaseline, cpuSummary, cpuTable, deviceSummary, environmentOf, generateTable, gpuSummary, layerTable, lineSummary,
-    matVecTable, noRatios, reportTooLong, shortReport, storageSummary, tableCell, reportUrl, threadCounts, threadsKey, threadsOf, timesFaster, tokenTable, warnings, warningsBlock, CPU_SPEED_KEY } from "../bench.js";
+    matVecTable, noRatios, reportTooLong, shortReport, storageSummary, tableCell, reportUrl, threadCounts, threadsKey, threadsOf, timesFaster, tokenTable, unmeasured, warnings, warningsBlock, CPU_SPEED_KEY } from "../bench.js";
   import { MODELS } from "../models.js";
   import { forgetMark, holdMemory, memoryLimit, memoryResult, memorySummary, readMark } from "../page-memory.js";
   import { hiddenLine, wakeKeeper } from "../wake.js";
@@ -573,7 +573,7 @@ const BENCH_MODEL = "llm-jp-3-150m";
 
   // what a token costs on the GPU besides reading its weights (T135: the phones' 18 to 20 ms, T94)
   function overheadMarkdown(s: any) {
-    if (!s || s.error) return [`**Besides the weights**: ${s?.error ?? "not measured"}`];
+    if (!s || s.error) return [`**Besides the weights**: ${unmeasured(s?.error)}`];
     const o = s.result;
     return ["| besides the weights | GPU ms |", "|---|---:|",
       `| ${o.dispatches} dispatches that do nothing, one submission | ${fixed(o.emptyDispatches, 2)} |`,
@@ -586,7 +586,7 @@ const BENCH_MODEL = "llm-jp-3-150m";
   // prompt's shaders are held against
   const percent = (part: number, whole: number) => `${fixed((100 * part) / whole, 1)}%`;
   function ceilingsMarkdown(s: any) {
-    if (!s || s.error) return [`**The device's ceilings**: ${s?.error ?? "not measured"}`];
+    if (!s || s.error) return [`**The device's ceilings**: ${unmeasured(s?.error)}`];
     const c = s.result;
     // three digits where it is small (a fallback adapter's reads of the workgroup's memory are well under 1 GB/s); an
     // unsteady one (its 2n not about twice its n) says so, and the prompt is not held against it
@@ -618,7 +618,7 @@ const BENCH_MODEL = "llm-jp-3-150m";
   // the GFLOPS of each (a multiply and an add for each weight and token) and the CPU's GOPS from the same count; and
   // how many times faster each is than the CPU's fastest count of threads (T157)
   function promptMarkdown(s: any, check?: any, ceilings?: any, baseline?: any, gpu?: any) {
-    if (!s || s.error) return [`**A prompt all at once**: ${s?.error ?? "not measured"}`];
+    if (!s || s.error) return [`**A prompt all at once**: ${unmeasured(s?.error)}`];
     const r = s.result, cpuPrompt = baseline?.prompt, none = noRatios(gpu);
     const cpuRows = (results.cpu?.data?.rows ?? []).filter((row: any) => row.promptMsPerToken);
     const cpu = cpuRows.length ? cpuRows.map((row: any) => `${fixed(row.promptMsPerToken, 2)} ms with ${row.threads} (${fixed((2 * r.weights) / (row.promptMsPerToken / 1000) / 1e9, 0)} GOPS)`).join(", ")
@@ -683,13 +683,13 @@ const BENCH_MODEL = "llm-jp-3-150m";
         hf: { url: `https://huggingface.co/${remote.hf.repo}/resolve/${remote.hf.revision}/${remote.hf.weights}`, bytes: 32 << 20 } });
       if (answer.error) return { status: "error", markdown: answer.error };
       const r = answer.result;
-      const fetched = (name: string, f: any) => f?.error ? `| ${name} | ${f.error} | | |`
+      const fetched = (name: string, f: any) => f?.error ? `| ${name} | ${tableCell(unmeasured(f.error))} | | |`
         : `| ${name} | ${fixed(f.bytes / 1e6)} MB | ${fixed(f.firstByteMs, 0)} ms | ${fixed(f.MBps)} MB/s |`;
       const lines = ["| fetched | size | first byte | speed |", "|---|---:|---:|---:|",
         fetched("this site: a part of the model", r.site), fetched("huggingface.co: a range of a model", r.hf)];
       if (r.paced.length) {
         lines.push("", "| huggingface.co read no faster than | got | within 10% |", "|---:|---:|---|",
-          ...r.paced.map((p: any) => p.slower ? `| ${p.rate} MB/s | the line is slower | |` : p.error ? `| ${p.rate} MB/s | ${p.error} | |`
+          ...r.paced.map((p: any) => p.slower ? `| ${p.rate} MB/s | the line is slower | |` : p.error ? `| ${p.rate} MB/s | ${tableCell(unmeasured(p.error))} | |`
             : `| ${p.rate} MB/s | ${fixed(p.MBps, 2)} MB/s | ${Math.abs(p.MBps - p.rate) <= 0.1 * p.rate ? "yes" : "no"} |`));
       }
       const failed = r.site?.error && r.hf?.error;
