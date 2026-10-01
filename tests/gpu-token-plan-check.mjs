@@ -8,12 +8,15 @@
 //   - that every vector a layer reads of its own (a norm's weights, a bias, a head's norm weights) is its layer's: each
 //     is made of numbers that say their layer (vector * 1e5 + layer * 1e3 + index), and what an ADD, a norm, a head's
 //     norm, NORM_QUANTIZE and a fused matrix with the norm on its read start reading at is looked up in them (the
-//     biases of q, k and v where tokenBuffers joins them: the first of each).
+//     biases of q, k and v where tokenBuffers joins them: the first of each);
+//   - that a dispatch of layer l binds no matrix, joined matrix, keys or values that are another layer's (each of those
+//     buffers says its layer).
 // The review of T226 found that gpu-check's packed rows (8-bit activations, a line of 3 times Q8's distance) took a
 // vector of another layer on the made-up models for noise, and added two models whose lines are tight; this is the other
 // way to the same ground: it cannot be fooled by noise, takes under a second and sees every form. A bias of o, w1 and w2,
 // of q, k and v, the norms of the heads and the FFN's norm each read from layer 0 in every layer (the review's four
-// throwaway branches) fail it.
+// throwaway branches), and the matrices q, k and v, o, gate and up and down, the keys and values of attention and of RoPE's
+// write each from layer 0, fail it.
 //
 // gpu.js is a worker's module and exports nothing: this copies it (and shaders.js) under .tmp/gpu-token-plan/ with an
 // export of what is tested added, and imports the copy. It stands in for what start() makes of a model (uploadLayers,
@@ -107,6 +110,8 @@ function modelOf(family) {
     cos: room(SEQ * f.headSize / 2), sin: room(SEQ * f.headSize / 2) };
   const m = { device, plan, wgsl, owned: [], memory, limit: 2 ** 30, fallback: false, info: {} };
   const buffer = (size, usage = 0x80) => device.createBuffer({ size: Math.max(16, size), usage });
+  // a buffer of one layer's own (a matrix of it, a joined matrix, its keys and values) says which layer it is
+  const of = (layer, b) => Object.assign(b, { layer });
   const piece = (rows, n) => ({ first: 0, rows, values: buffer(rows * n), scales: buffer(rows * n / 8) });
   m.tables = { classifier: [piece(VOCAB, DIM)] };
   m.tables.embedding = m.tables.classifier;
@@ -118,10 +123,10 @@ function modelOf(family) {
   const rows = { wq: qDim, wk: kvDim, wv: kvDim, wo: DIM, w1: f.hidden, w2: DIM, ...(gated ? { w3: f.hidden } : {}) };
   const columns = { wq: DIM, wk: DIM, wv: DIM, wo: qDim, w1: DIM, w2: f.hidden, w3: DIM };
   m.matrices = Object.fromEntries(Object.entries(rows).map(([name, count]) => [name, { rows: count, n: columns[name], pieces: [{ first: 0, rows: count,
-    layers: Array.from({ length: LAYERS }, () => [buffer(count * columns[name]), buffer(count * columns[name] / 8)]) }] }]));
-  m.joined = Array.from({ length: LAYERS }, () => ({ qkv: [buffer((qDim + 2 * kvDim) * DIM), buffer((qDim + 2 * kvDim) * DIM / 8)],
-    ...(gated ? { gateUp: [buffer(2 * f.hidden * DIM), buffer(2 * f.hidden * DIM / 8)] } : {}) }));
-  m.cache = { capacity: 8, owned: [], keys: Array.from({ length: LAYERS }, () => buffer(8 * kvDim * 2)), values: Array.from({ length: LAYERS }, () => buffer(8 * kvDim * 2)) };
+    layers: Array.from({ length: LAYERS }, (_, l) => [of(l, buffer(count * columns[name])), of(l, buffer(count * columns[name] / 8))]) }] }]));
+  m.joined = Array.from({ length: LAYERS }, (_, l) => ({ qkv: [of(l, buffer((qDim + 2 * kvDim) * DIM)), of(l, buffer((qDim + 2 * kvDim) * DIM / 8))],
+    ...(gated ? { gateUp: [of(l, buffer(2 * f.hidden * DIM)), of(l, buffer(2 * f.hidden * DIM / 8))] } : {}) }));
+  m.cache = { capacity: 8, owned: [], keys: Array.from({ length: LAYERS }, (_, l) => of(l, buffer(8 * kvDim * 2))), values: Array.from({ length: LAYERS }, (_, l) => of(l, buffer(8 * kvDim * 2))) };
   const pipeline = (code) => ({ code, getBindGroupLayout: () => ({ code }) });
   m.norm = pipeline(f.layerNorm ? wgsl.LAYER_NORM : wgsl.RMSNORM);
   m.headNorm = pipeline(wgsl.HEAD_NORM);
@@ -170,7 +175,7 @@ function readsOf(M, labelOf, [, group]) {
   return out;
 }
 
-let failures = 0, reads = 0, forms = 0;
+let failures = 0, reads = 0, forms = 0, bound = 0;
 const fail = (text) => { failures++; console.error(`FAILED ${text}`); };
 for (const family of Object.keys(FAMILIES)) {
   const counts = [];
@@ -192,6 +197,13 @@ for (const family of Object.keys(FAMILIES)) {
       size ??= list.length;
       if (list.length !== size) fail(`${family}, ${candidate.name}: layer ${l} has ${list.length} dispatches, layer 0 ${size}`);
       for (const dispatch of list) {
+        // a dispatch of layer l binds no buffer that is another layer's
+        for (const e of dispatch[1].entries) {
+          const b = e.resource.buffer ?? e.resource;
+          if (b.layer === undefined) continue;
+          bound++;
+          if (b.layer !== l) fail(`${family}, ${candidate.name}: layer ${l}'s ${labelOf(dispatch[1].code)} binds a buffer of layer ${b.layer} (binding ${e.binding})`);
+        }
         for (const read of readsOf(M, labelOf, dispatch)) {
           reads++;
           if (!read.ok || read.layer !== l) fail(`${family}, ${candidate.name}: layer ${l}'s ${labelOf(dispatch[1].code)} reads ${read.name} of layer ${read.layer}${read.ok ? "" : " (not at the start of a layer's part)"}`);
@@ -203,6 +215,7 @@ for (const family of Object.keys(FAMILIES)) {
   }
   if (JSON.stringify(counts) !== JSON.stringify(EXPECTED[family])) fail(`${family}: a layer has ${counts.join(", ")} dispatches in its forms, expected ${EXPECTED[family].join(", ")} (TODO.md's T226)`);
 }
+if (bound < 500) fail(`only ${bound} bindings of a buffer of one layer's own were checked (648 when this was written): the check no longer sees the plan's matrices and caches`);
 if (reads < 250) fail(`only ${reads} reads of a vector of a layer were checked (312 when this was written): the check no longer sees the plan's vectors`);
-console.log(`${failures ? "FAILED" : "ok"}: ${Object.keys(FAMILIES).length} families, ${forms} forms of a token's layer, ${reads} reads of a vector of a layer`);
+console.log(`${failures ? "FAILED" : "ok"}: ${Object.keys(FAMILIES).length} families, ${forms} forms of a token's layer, ${reads} reads of a vector of a layer, ${bound} bindings of a layer's own buffer`);
 process.exit(failures ? 1 : 0);
