@@ -207,7 +207,7 @@ def test_the_file_in_its_own_order_gives_the_same_ternary():
 # a Qwen3.5 whose value heads are three times its key heads), with the context the page cuts them to and their own
 BONSAI = [([2048, 6144, 28, 16, 8, 151936, context], {"qk_norm": True, "head_dim": 128}) for context in (4096, 32768)] + \
     [([2560, 9728, 36, 32, 8, 151936, context], {"qk_norm": True, "head_dim": 128}) for context in (4096, 32768)] + \
-    [([4096, 12288, 36, 32, 8, 151936, context], {"qk_norm": True, "head_dim": 128}) for context in (4096, 65536)] + \
+    [([4096, 12288, 36, 32, 8, -151936, context], {"qk_norm": True}) for context in (4096, 65536)] + \
     [([5120, 17408, 64, 24, 4, -248320, context],
       {"arch": "qwen35", "head_dim": 256,
        "linear": {"every": 4, "key_heads": 16, "value_heads": 48, "key_dim": 128, "value_dim": 128, "conv": 4}})

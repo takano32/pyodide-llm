@@ -6,7 +6,7 @@
 # and +d of one d of its own, about a third each, as Prism ML's Ternary Bonsai models are), converted the way the page
 # converts them (llama2_convert.Conversion), to the ternary dtype or to any other of the same values.
 #
-#   python tests/make_ternary.py <out> [ternary | int8 | float32 | int6] [qwen3 | own | hybrid]
+#   python tests/make_ternary.py <out> [ternary | int8 | float32 | int6] [qwen3 | own | hybrid | rotated]
 #
 # qwen3 (the default): the shape of Ternary Bonsai 1.7B in small, a Qwen3 (norms of the heads of q and k, heads that
 #   do not fill dim, grouped-query attention, the classifier shared with the embedding).
@@ -14,6 +14,9 @@
 #   multiplies apart as an int8 one does.
 # hybrid: the shape of Ternary Bonsai 2 27B in small, a Qwen3.5 (T229: Gated DeltaNet layers, three value heads to a
 #   key head) with a classifier of its own.
+# rotated: hybrid said to be in a rotated basis (T237: blocks of 128 with random signs), as the 27B's file is: the
+#   engine turns every matrix's input before it is quantized and laid out for the ternary kernels, and the
+#   embedding's rows back.
 import json
 import struct
 import sys
@@ -24,7 +27,7 @@ import numpy as np
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "public"))
 sys.path.insert(0, str(HERE))
-from conftest import qwen35_model, synthetic_weights  # noqa: E402
+from conftest import basis, qwen35_model, synthetic_weights  # noqa: E402
 from test_convert import safetensors_file  # noqa: E402
 from test_qwen3 import qwen3  # noqa: E402
 import llama2_convert  # noqa: E402
@@ -48,24 +51,27 @@ def ternarized(tensors, seed=5):
 
 
 def model(kind):
-    if kind == "hybrid":
+    """(the Hugging Face tensors, config.json, the context, the header's metadata)"""
+    if kind in ("hybrid", "rotated"):
         tensors, config = qwen35_model(dim=128, hidden_dim=256, n_layers=8, every=4, n_heads=4, n_kv_heads=2, head_dim=64,
                                        key_heads=2, value_heads=6, key_dim=64, value_dim=64, vocab_size=VOCAB, seq_len=1024,
                                        shared=False)
-        return tensors, config, 1024
+        # (the widths a matrix reads: the residual stream, an attention's output and the FFN's inside, a linear layer's output)
+        said = basis(128, {128, 256, 384})[0] if kind == "rotated" else None
+        return tensors, config, 1024, said and {llama2_convert.ROTATED: json.dumps(said)}
     settings, weights = synthetic_weights(dim=128, hidden_dim=384, n_layers=4, n_heads=4, n_kv_heads=2, vocab_size=VOCAB,
                                           seq_len=1024, shared=kind != "own", head_size=64)
     if kind == "own":
         # a final norm with outlier channels (llama2_numpy.OUTLIER_RATIO: the largest 4 times the median and more)
         weights["rms_final_weight"][[3, 40, 77]] *= 9
     tensors, config = qwen3(settings, weights, kind != "own")
-    return tensors, {**config, "rms_norm_eps": 1e-6}, 1024
+    return tensors, {**config, "rms_norm_eps": 1e-6}, 1024, None
 
 
 def main():
     out, dtype = sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "ternary"
-    tensors, config, seq_len = model(sys.argv[3] if len(sys.argv) > 3 else "qwen3")
-    file = safetensors_file(ternarized(tensors))
+    tensors, config, seq_len, metadata = model(sys.argv[3] if len(sys.argv) > 3 else "qwen3")
+    file = safetensors_file(ternarized(tensors), metadata=metadata)
     size = struct.unpack("<Q", file[:8])[0]
     vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
                              "vocab": [[f"w{i}", -float(i)] for i in range(VOCAB)]}}).encode()
