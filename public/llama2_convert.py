@@ -1536,7 +1536,7 @@ class Stream:
         if info.get("split"):
             values = unsplit(values, info["split"])
         for index, first, transform in targets:
-            out = transformed(values, transform, self.head_size)
+            out = transformed(values, left_to_do(transform, info.get("done")), self.head_size)
             self.writer.write(index, first + self.first, out)
             self.done += out.size
         self.first += 0 if whole else values.size
@@ -1545,6 +1545,19 @@ class Stream:
         if self.step < len(self.steps) or self.done != self.total:
             raise ValueError("The file ended before all of its tensors were read.")
         return self.header
+
+
+def left_to_do(transform, done):
+    """transform without the step a GGUF's tensor comes with (gguf_model()'s "done", T236: the 1 llama.cpp adds to a
+    Qwen3.5's norms, its -exp(A_log)). A tensor said to come with a step the plan does not have for it is refused: the
+    table of names and the plan would have drifted apart, and the values would go through changed once too often."""
+    if not done:
+        return transform
+    steps = () if transform is None else transform if isinstance(transform[0], tuple) else (transform,)
+    left = tuple(step for step in steps if step[0] != done)
+    if len(left) != len(steps) - 1:
+        raise ValueError(f"A tensor of this GGUF comes with the step {done!r} done, which the conversion has not for it.")
+    return left or None
 
 
 def unturned(w, heads):
@@ -1561,7 +1574,8 @@ def unsplit(w, heads):
 
 # ------------------------------------------------------------------------------------------------- GGUF (T74)
 # A GGUF file holds what config.json, tokenizer.json and model.safetensors hold, in one. Only what a Q8_0, PQ2_0 or F16
-# Llama, Qwen2, Qwen3, GPT-2 or GPT-NeoX needs is read; tests/gguf_check.py is the separate reference this is held to.
+# Llama, Qwen2, Qwen3, Qwen3.5, GPT-2 or GPT-NeoX needs is read; tests/gguf_check.py is the separate reference this is
+# held to.
 class Incomplete(Exception):
     """The GGUF header goes on past the bytes given: fetch more and try again."""
 
@@ -1570,7 +1584,10 @@ GGUF_VALUES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7:
 # ggml's types; the K-quants and the rest are refused. 142 is PQ2_0 of Prism ML's fork of llama.cpp (T235, pq2_0())
 GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0", 142: "PQ2_0"}
 # llama.cpp's names of the pre-tokenizers, as the engine knows them (llama2_numpy.pretokenize)
-GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen", "llama-bpe": "llama3"}
+GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen", "llama-bpe": "llama3",
+                      "qwen35": "qwen35"}
+# the ones whose tokenizer.json normalizes to NFC, which a GGUF does not say (Qwen's)
+GGUF_NFC = ("qwen2", "qwen35")
 GGUF_LAYER = {"attn_norm": "input_layernorm", "ffn_norm": "post_attention_layernorm", "attn_q": "self_attn.q_proj",
               "attn_k": "self_attn.k_proj", "attn_v": "self_attn.v_proj", "attn_output": "self_attn.o_proj",
               "ffn_gate": "mlp.gate_proj", "ffn_up": "mlp.up_proj", "ffn_down": "mlp.down_proj"}
@@ -1585,6 +1602,16 @@ GGUF_ARCHITECTURES = {
     # llama.cpp leaves q, k and the two norms in Hugging Face's order, as a Qwen2's; the head's size is key_length
     "qwen3": (GGUF_NAMES, "model.layers.{}.", {**GGUF_LAYER, "attn_q_norm": "self_attn.q_norm",
                                                  "attn_k_norm": "self_attn.k_norm"}),
+    # T236: a Qwen3.5 (T229's hybrid attention), by the names of the language model saved alone ("model." in front).
+    # llama.cpp calls the second norm post_attention_norm here, the linear-attention layer's q, k and v attn_qkv, its z
+    # attn_gate, and the rest ssm_* after the state-space models it shares code with. A name with a dot is all of a
+    # tensor's name after its layer (llama.cpp writes dt_bias as ssm_dt.bias, and A_log as ssm_a without a ".weight")
+    "qwen35": (GGUF_NAMES, "model.layers.{}.",
+               {**GGUF_LAYER, "attn_q_norm": "self_attn.q_norm", "attn_k_norm": "self_attn.k_norm",
+                "post_attention_norm": "post_attention_layernorm", "attn_qkv": "linear_attn.in_proj_qkv",
+                "attn_gate": "linear_attn.in_proj_z", "ssm_alpha": "linear_attn.in_proj_a",
+                "ssm_beta": "linear_attn.in_proj_b", "ssm_conv1d": "linear_attn.conv1d", "ssm_norm": "linear_attn.norm",
+                "ssm_out": "linear_attn.out_proj", "ssm_dt.bias": "linear_attn.dt_bias", "ssm_a": "linear_attn.A_log"}),
     "gpt2": ({"token_embd.weight": "wte.weight", "position_embd.weight": "wpe.weight", "output_norm.weight": "ln_f.weight",
               "output_norm.bias": "ln_f.bias", "output.weight": "lm_head.weight"}, "h.{}.",
              {"attn_norm": "ln_1", "attn_qkv": "attn.c_attn", "attn_output": "attn.c_proj", "ffn_norm": "ln_2",
@@ -1656,7 +1683,7 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
     rope_scaling as it streams past (gguf_weights, T136), instead of refusing it."""
     arch = metadata.get("general.architecture")
     if arch not in GGUF_ARCHITECTURES:
-        raise ValueError(f"This GGUF holds a {arch}: only Llama, Qwen2, Qwen3, GPT-2 and GPT-NeoX ones are supported.")
+        raise ValueError(f"This GGUF holds a {arch}: only Llama, Qwen2, Qwen3, Qwen3.5, GPT-2 and GPT-NeoX ones are supported.")
     key = lambda name, default=None: metadata.get(f"{arch}.{name}", default)
     common = {"vocab_size": tensors["token_embd.weight"]["shape"][0] if "token_embd.weight" in tensors else None,
               "bos_token_id": metadata.get("tokenizer.ggml.bos_token_id", 1),
@@ -1701,6 +1728,23 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
                 for name, ours in (("attn_factor", "attention_factor"), ("yarn_log_multiplier", "mscale_all_dim")):
                     if key(f"rope.scaling.{name}") is not None:
                         config["rope_scaling"][ours] = key(f"rope.scaling.{name}")
+        if arch == "qwen35":
+            # T236: what config.json's text_config says of the linear-attention layers, by its names (llama.cpp's are a
+            # state-space model's: the state is a key head, the groups the key heads, the rank the value heads), and
+            # how much of a head turns, as GPT-NeoX's. One the GGUF leaves out is left out: linear_layers() has
+            # transformers' defaults, and gguf_agrees() holds the whole to the original's
+            head, values, inner = key("attention.key_length"), key("ssm.time_step_rank"), key("ssm.inner_size")
+            said = {"full_attention_interval": key("full_attention_interval"), "linear_conv_kernel_dim": key("ssm.conv_kernel"),
+                    "linear_key_head_dim": key("ssm.state_size"), "linear_num_key_heads": key("ssm.group_count"),
+                    "linear_num_value_heads": values, "linear_value_head_dim": inner // values if inner and values else None,
+                    "rotary_pct": key("rope.dimension_count", 0) / head if head else None}
+            config.update({name: value for name, value in said.items() if value is not None}, model_type="qwen3_5_text")
+            linear = linear_layers(config)
+            if linear["value_heads"] != linear["key_heads"]:
+                # llama.cpp stores the value heads of such a model (Qwen3.5 4B and up) in another order, every key
+                # head's first value head, then every key head's second: read as they are, they would be other heads
+                raise ValueError("This GGUF holds a Qwen3.5 with more value heads than key heads, whose order in a GGUF "
+                                 "the converter does not read yet.")
     header = {}
     if "rope_freqs.weight" in tensors:
         # llama.cpp writes Llama 3's RoPE scaling as a table of divisors instead of the rope_scaling of config.json
@@ -1721,6 +1765,8 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
         parts = name.split(".")
         if name in names:
             target = names[name]
+        elif len(parts) > 2 and parts[0] == "blk" and ".".join(parts[2:]) in layers:
+            target = f"{layer.format(parts[1])}{layers['.'.join(parts[2:])]}"  # a whole name (a Qwen3.5's ssm_a)
         elif len(parts) == 4 and parts[0] == "blk" and parts[2] in layers:
             target = f"{layer.format(parts[1])}{layers[parts[2]]}.{parts[3]}"
         else:
@@ -1745,6 +1791,18 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
             # GPT-NeoX's query_key_value holds q, k and v of every head in turn; llama.cpp stores all of q, then k,
             # then v (the matrix and its bias). Back to Hugging Face's order, like the turned q and k of a Llama
             entry["split"] = heads
+        if arch == "qwen35":
+            # T236: llama.cpp writes a Qwen3.5's norms with the 1 added that the model adds to them (all but the norm
+            # of a linear-attention layer's value heads, which has none), A_log as -exp(A_log), and the convolution
+            # (channels, 1, taps) without its axis of one. The first two are steps of the plan (transformed()'s "one"
+            # and "decay") that are done already: no float32 comes back from them to the bit, so they are not undone
+            # to be done again, as a turned q is
+            if target.endswith("norm.weight") and not target.endswith("linear_attn.norm.weight"):
+                entry["done"] = "one"
+            if target.endswith("linear_attn.A_log"):
+                entry["done"] = "decay"
+            if target.endswith("linear_attn.conv1d.weight") and len(info["shape"]) == 2:
+                entry["shape"] = [info["shape"][0], 1, info["shape"][1]]
         header[target] = entry
     return header, config
 
@@ -1798,6 +1856,11 @@ def gguf_agrees(own, config):
     if architecture(own) == "neox" and architecture(config) == "neox":
         pairs += [("number of rotated values of a head", rotary_dim(own), rotary_dim(config)),
                   ("parallel residual", own.get("use_parallel_residual", True), config.get("use_parallel_residual", True))]
+    if architecture(own) == "qwen35" and architecture(config) == "qwen35":
+        # T236: how much of a head turns, and the linear-attention layers: which layers they are and their heads
+        # (the tensors show the products only: 16 key heads of 128 are 8 of 256 to them)
+        pairs += [("number of rotated values of a head", rotary_dim(own), rotary_dim(config)),
+                  ("linear-attention layers", linear_layers(own), linear_layers(config))]
     for what, here, there in pairs:
         if here != there:
             raise ValueError(f"This GGUF does not belong with the original's config.json: its {what} is {here} here "
@@ -1840,7 +1903,7 @@ def gguf_tokenizer(metadata, vocab_size):
     pieces = [("" if kind(id) == 5 else text, ranks.get(text, UNMATCHABLE), text in ranks and kind(id) != 3)
               for id, text in enumerate(tokens)]
     # Qwen's tokenizer.json normalizes to NFC, which a GGUF does not say: the page's safetensors path does it
-    options = {"tokenizer_kind": "bytebpe", "nfkc": False, "nfc": pre == "qwen2", "pretokenizer": GGUF_PRETOKENIZERS[pre],
+    options = {"tokenizer_kind": "bytebpe", "nfkc": False, "nfc": pre in GGUF_NFC, "pretokenizer": GGUF_PRETOKENIZERS[pre],
                "ignore_merges": pre == "llama-bpe"}
     special = lambda key: tokens[metadata[key]] if isinstance(metadata.get(key), int) and metadata[key] < len(tokens) else ""
     config = {"chat_template": metadata.get("tokenizer.chat_template"), "bos_token": special("tokenizer.ggml.bos_token_id"),

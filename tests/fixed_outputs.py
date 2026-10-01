@@ -41,32 +41,29 @@ CHUNK = 8 << 20
 # same entry with the weights of the original repository its vocabulary comes from, named as the page's hfEntry()
 # names them. T235: Ternary-Bonsai 1.7B, the one model of PQ2_0 blocks and of yarn's RoPE (its angles and the longer
 # cos and sin), and the one whose template comes from chat_template.jinja. Its float32 checkpoint is 6.9 GB.
-SAFETENSORS = {"hf-qwen3-0.6b-safetensors": "hf-qwen3-0.6b"}
-# T229: a Qwen3.5 (hybrid attention: Gated DeltaNet layers between full-attention ones), which the list does not have
-# yet (T236), so its entry is written here: the 0.8B's safetensors at the revision tests/reference_qwen35.py holds the
-# engine to transformers on. Its chat template calls a macro, which the converter does not read: one turn without
-# thinking as chat_template.jinja writes it, and the tokens it is written with (the entry's options, as the list's)
-UNLISTED = {"hf-qwen3.5-0.8b-safetensors": {
-    "id": "hf-qwen3.5-0.8b-safetensors", "prompt": "これからの流行りを3つ挙げてください。",
-    "hf": {"repo": "Qwen/Qwen3.5-0.8B", "revision": "2fc06364715b967f1860aea9cf38778875588b17",
-           "weights": "model.safetensors-00001-of-00001.safetensors", "config": "config.json", "tokenizer": ["tokenizer.json"]},
-    "template": "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
-    "options": {"specials": ["<|im_start|>", "<|im_end|>", "<think>", "</think>"], "stop_tokens": [248044, 248046]}}}
+# T229 and T236: a Qwen3.5 (hybrid attention: Gated DeltaNet layers between full-attention ones), the 0.8B, the same
+# two ways: from the list's GGUF (llama.cpp's names for the linear-attention layers, the norms that come with their 1,
+# -exp(A_log), the two small matrices of the gates as Q8_0 rounds them) and from the safetensors of the original (the
+# revision tests/reference_qwen35.py holds the engine to transformers on, whose weights are one file under a shard's
+# name). The format is the list's: the model's own calls a macro, which the converter does not read.
+# {the id here: (the list's entry, the file of the original's weights)}
+SAFETENSORS = {"hf-qwen3-0.6b-safetensors": ("hf-qwen3-0.6b", "model.safetensors"),
+               "hf-qwen3.5-0.8b-safetensors": ("hf-qwen3.5-0.8b", "model.safetensors-00001-of-00001.safetensors")}
 MODELS = ["hf-pythia-70m", "hf-gpt2", "hf-japanese-gpt2-small", "hf-smollm2-135m-instruct", "hf-llm-jp-3-150m-instruct3",
-          "hf-qwen3-0.6b", "hf-qwen3-0.6b-safetensors", "hf-ternary-bonsai-1.7b", "hf-qwen3.5-0.8b-safetensors"]
+          "hf-qwen3-0.6b", "hf-qwen3-0.6b-safetensors", "hf-ternary-bonsai-1.7b", "hf-qwen3.5-0.8b",
+          "hf-qwen3.5-0.8b-safetensors"]
 
 
 def entries():
-    wanted = [SAFETENSORS.get(id, id) for id in MODELS]
+    wanted = [SAFETENSORS.get(id, (id,))[0] for id in MODELS]
     script = ("import('./src/models.js').then(({ MODELS }) => console.log(JSON.stringify("
               f"MODELS.filter((m) => {json.dumps(wanted)}.includes(m.id)))))")
     found = {entry["id"]: entry for entry in json.loads(subprocess.check_output(["node", "-e", script], cwd=HERE.parent))}
-    for id, of in SAFETENSORS.items():
+    for id, (of, weights) in SAFETENSORS.items():
         original = found[of]["hf"]["vocabulary"]
         found[id] = {**found[of], "id": id, "hf": {"repo": original["repo"], "revision": original["revision"],
-                     "weights": "model.safetensors", "config": "config.json",
+                     "weights": weights, "config": "config.json",
                      "tokenizer": ["tokenizer.json", "tokenizer.model", "spiece.model"]}}
-    found.update(UNLISTED)
     return [found[id] for id in MODELS]
 
 
