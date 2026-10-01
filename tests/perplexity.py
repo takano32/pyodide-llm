@@ -4,6 +4,9 @@
 # (matmul_q8r, relaxed SIMD). tests/perplexity.mjs runs this inside Pyodide.
 #
 # Input: the globals MODEL ({"checkpoint", "tokenizer", "options"}), TEXT, TOKENS and WINDOW. Output: a JSON string.
+# MODEL["file"] (T229): the checkpoint as a file of this machine, read straight into forward.js's memory
+# (tests/engine.mjs's kernel_llama_file), for a model whose weights widened to float32 pass Pyodide's 4 GiB: the
+# kernels' rows alone, and NumPy's from tests/perplexity_native.py.
 # tests/perplexity_native.py imports perplexity() from here, for the float32 originals that Pyodide cannot hold.
 import gc
 import json
@@ -31,7 +34,8 @@ def perplexity(llama, tokens, window):
 
 def main():
     read = lambda name: open(name, "rb").read()
-    checkpoint, vocabulary = read(MODEL["checkpoint"]), read(MODEL["tokenizer"])  # noqa: F821
+    file = MODEL.get("file")  # noqa: F821
+    checkpoint, vocabulary = None if file else read(MODEL["checkpoint"]), read(MODEL["tokenizer"])  # noqa: F821
     results = []
     # the 8-bit row is the kernels without relaxed SIMD (T52's switch; it used to patch load_kernels)
     variants = [("kernels, 7-bit activations (matmul_q8r)", "simdkernel.so", ()),
@@ -39,17 +43,23 @@ def main():
                 ("kernels, 7-bit activations, keys and values in float32", "simdkernel.so", ("kv16",)),
                 ("kernels, 8-bit activations (matmul_q8)", "simdkernel.so", ("relaxed",)),
                 ("NumPy, activations not quantized", None, ())]
+    if file:
+        variants = [variant for variant in variants if variant[1]]
     tokens = None
     for label, kernels, disable in variants:
         # the kernels' rows run the forward pass of forward.js, as the page does (tests/engine.mjs, T93)
         options = dict(MODEL["options"], disable=disable)  # noqa: F821
-        llama = kernel_llama(checkpoint, vocabulary, **options) if kernels else Llama(checkpoint, vocabulary, **options)  # noqa: F821
+        if file:
+            llama = kernel_llama_file(file, vocabulary, **options)  # noqa: F821
+        else:
+            llama = kernel_llama(checkpoint, vocabulary, **options) if kernels else Llama(checkpoint, vocabulary, **options)  # noqa: F821
         if tokens is None:
             tokens = llama.tokenizer.encode(TEXT)[:TOKENS]  # noqa: F821
         started = time.perf_counter()
         value, count = perplexity(llama, tokens, min(WINDOW, llama.seq_len))  # noqa: F821
         results.append({"variant": label, "backend": llama.backend, "perplexity": value, "tokens": count,
                         "seconds": time.perf_counter() - started})
+        llama.release()  # what forward.js holds for it (the memory of a model of gigabytes, with --file)
         del llama
         gc.collect()
     return json.dumps(results)

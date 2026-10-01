@@ -39,16 +39,21 @@ def test_the_sizes_follow_the_layout_of_quantize():
     assert checkpoint_dtype(list(header), 28 + 2 * floats) == "float16"
 
 
-@pytest.mark.parametrize("bias, arch, qk_norm, head_dim", [(True, "llama", False, 0), (False, "gpt2", False, 0),
-                                                            (False, "neox", False, 0), (False, "llama", True, 0),
-                                                            (True, "llama", True, 0), (False, "llama", True, 32),
-                                                            (True, "llama", False, 32)])
+# T229: a Qwen3.5's linear-attention layers (value heads of 32, so that six bits can hold its rows)
+LINEAR = {"every": 3, "key_heads": 2, "value_heads": 4, "key_dim": 16, "value_dim": 32, "conv": 4}
+
+
+@pytest.mark.parametrize("bias, arch, qk_norm, head_dim, linear", [
+    (True, "llama", False, 0, None), (False, "gpt2", False, 0, None), (False, "neox", False, 0, None),
+    (False, "llama", True, 0, None), (True, "llama", True, 0, None), (False, "llama", True, 32, None),
+    (True, "llama", False, 32, None), (False, "qwen35", False, 0, LINEAR), (False, "qwen35", False, 32, LINEAR),
+    (False, "qwen35", False, 32, {**LINEAR, "every": 2, "value_heads": 2})])
 @pytest.mark.parametrize("shared", [True, False])
-def test_the_sizes_follow_the_layout_of_every_architecture(bias, arch, qk_norm, head_dim, shared):
-    """A local Qwen2, Qwen3, GPT-2 or GPT-NeoX file has other tensors than a Llama: the size check must know (T77).
-    So has a model with heads of another size than dim / heads (T124: 8 heads of 32 in a dim of 64)."""
+def test_the_sizes_follow_the_layout_of_every_architecture(bias, arch, qk_norm, head_dim, linear, shared):
+    """A local Qwen2, Qwen3, Qwen3.5, GPT-2 or GPT-NeoX file has other tensors than a Llama: the size check must know
+    (T77). So has a model with heads of another size than dim / heads (T124: 8 heads of 32 in a dim of 64)."""
     from llama2_convert import checkpoint_size
-    form = dict(bias=bias, arch=arch, qk_norm=qk_norm, head_dim=head_dim)
+    form = dict(bias=bias, arch=arch, qk_norm=qk_norm, head_dim=head_dim, linear=linear)
     header = (64, 172, 3, 8, 8, 300 if shared else -300, 128)
     for dtype in ("float32", "float16", "int8"):
         assert checkpoint_dtype(header, checkpoint_size(header, dtype, form), form) == dtype

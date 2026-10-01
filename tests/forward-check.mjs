@@ -13,6 +13,14 @@
 // T130: forward.js's KV cache starts at 16 positions against NumPy, so that it grows in place (16 -> 32 -> 64 -> 128)
 // within the positions compared: a block moved to the wrong place, or written over before it moved, is read back.
 // Then the speeds, both in turn. Runs in the deployment.
+// T229: a model whose name begins with "made-up" (tests/make_qwen35.py's Qwen3.5, the only models of its architecture
+// small enough to run here) has random weights, which have no most likely token to agree on once the activations are
+// quantized (a made-up Qwen3 of the same widths agreed at 84 to 87 of 96 positions, the made-up Qwen3.5 at 69 to 75,
+// measured 2026-10-01). Its int8 line is the logits' own distance from NumPy's, relative (the root of the sum of the
+// squared differences over that of NumPy's squares): 0.5 or less (measured 0.12 to 0.25 with relaxed SIMD). That
+// line sees the faults of the int8 path's own plumbing, a matrix read at another layer's place (0.83 to 0.89 where
+// forward.js was broken so on purpose, 2026-10-01) or a state that is not moved on (1.2); the smaller ones (the
+// attention's gate left out: 0.14) are for the float32 model, whose line is every model's and exact.
 //
 //   node tests/forward-check.mjs [model id | <out> of tests/perplexity_prepare.py ...] [--rounds 3] [--positions 128]
 //        [--without relaxed,int8,sampler] [--plain [--half-keys]] [--wide]
@@ -35,7 +43,9 @@ const rounds = option("--rounds", 3), positions = option("--positions", 128);
 const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").startsWith("--"));
 const without = args.includes("--without") ? args[args.indexOf("--without") + 1].split(",") : [];
 const modelOf = (id) => MODELS.find((m) => m.id === id) ?? { name: path.basename(id), checkpoint: path.resolve(`${id}.bin`),
-  tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) };
+  tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")),
+  madeUp: path.basename(id).startsWith("made-up") };
+const MADE_UP_LINE = 0.5;  // T229: the relative distance of a made-up int8 model's logits from NumPy's
 const file = (f) => (path.isAbsolute(f) ? f : root + f);
 
 // T98: six_sums (the corrections of int6 weights for matmul_q6r) against the sums of the int8 values the layout of
@@ -281,7 +291,8 @@ let failed = false;
 // float16: the owner, 2026-09-27). T130: on a memory that is not shared (not cross-origin isolated, or a shared one
 // refused) float32 for every model, but where that does not fit a 32-bit memory: Llama 3.2 3B's int8 without relaxed
 // SIMD (Safari's, T130: 3.82 GiB, 4.26 in float32), sarashina2.2 3B in six bits (Chrome's ?bits=6: 3.73 and 4.36).
-// Not Llama 3.2 3B with relaxed SIMD, past 4 GiB either way: float32 on a plain memory (the owner, 2026-09-28).
+// Not Llama 3.2 3B with relaxed SIMD, past 4 GiB either way: float32 on a plain memory (the owner, 2026-09-28), but where
+// float32 would not fit a 64-bit memory's 16 GiB (Pythia 12B of ?hf=: 15.2 GiB with float16, 16.6 with float32; the review).
 // Qwen2.5 3B is float32 now on either (3.89 GiB: 3.82 in float16 and 4.03 in float32 before the cache grew in place,
 // T130), and llm-jp-3.1 1.8B (a key for every head) float16 on a shared memory and float32 on a plain one (2.91 and
 // 3.66 GiB). The sizes: llama2_convert.checkpoint_size(). Each: shared, not shared
@@ -292,7 +303,8 @@ let failed = false;
     ["Llama 3.2 3B", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, {}, true, false],
     ["llm-jp-3.1 1.8B", [2048, 7168, 24, 16, 16, -99584, 4096], 2101354524, {}, true, false],
     ["Llama 3.2 3B, no relaxed SIMD", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, { relaxed: false }, true, true],
-    ["sarashina2.2 3B, six bits", [2560, 8960, 32, 16, 8, -102400, 4096], 2936678428, { dtype: "int6" }, true, true]];
+    ["sarashina2.2 3B, six bits", [2560, 8960, 32, 16, 8, -102400, 4096], 2936678428, { dtype: "int6" }, true, true],
+    ["Pythia 12B (?hf=)", [5120, 20480, 36, 40, 40, -50688, 2048], 13333749788, { arch: "neox" }, true, true]];
   for (const [name, header, size, form, onShared, onPlain] of cases) {
     const options = { dtype: "int8", ...form };
     assert.equal(keysInHalf(header, size, { ...options, shared: true }), false, `${name}: float16 keys and values where they may not be`);
@@ -329,6 +341,20 @@ const memoryOptions = (options) => {
 py.runPython(`
 import struct, numpy as np, llama2_convert
 
+def to_the_end(llama):
+    """forward() at every position where the KV cache doubles, then at the last one, so that the cache has grown step
+    by step as a generation grows it, to the whole context. T229: a model that keeps a state from token to token takes
+    its positions in turn: the whole context, in blocks."""
+    if llama.linear is not None:
+        for at in range(0, llama.seq_len, 16):
+            llama.forward_many([llama.bos] * min(16, llama.seq_len - at), at)
+        return
+    capacity = llama2_numpy.KV_START
+    while capacity < llama.seq_len:
+        llama.forward(llama.bos, capacity, need_logits=False)
+        capacity *= 2
+    llama.forward(llama.bos, llama.seq_len - 1, need_logits=False)
+
 def made_up(dim, heads, kv_heads, hidden=512, layers=4, vocab=320, seq_len=4096):
     """an int8 checkpoint as quantize.py writes one, and its bytes after the checkpoint at the end of the context"""
     rng = np.random.default_rng(0)
@@ -347,11 +373,7 @@ def made_up(dim, heads, kv_heads, hidden=512, layers=4, vocab=320, seq_len=4096)
     tokenizer = struct.pack("<i", max(map(len, pieces))) + b"".join(struct.pack("<fi", 0.0, len(p)) + p for p in pieces)
     data = b"".join(out)
     llama = kernel_llama(data, tokenizer, half_keys=HALF_KEYS, dtype="int8", disable=WITHOUT)
-    capacity = llama2_numpy.KV_START
-    while capacity < seq_len:
-        llama.forward(llama.bos, capacity, need_logits=False)
-        capacity *= 2
-    llama.forward(llama.bos, seq_len - 1, need_logits=False)
+    to_the_end(llama)
     used = int(llama._external[0].memoryBytes())
     llama.release(); del llama; gc.collect()
     return used, len(data), list(header)
@@ -382,11 +404,7 @@ import struct
 data, vocabulary = open("model.bin", "rb").read(), open("tokenizer.bin", "rb").read()
 llama = kernel_llama(data, vocabulary, **OPTIONS)
 if getattr(llama, "_external", None):
-    capacity = llama2_numpy.KV_START
-    while capacity < llama.seq_len:
-        llama.forward(llama.bos, capacity, need_logits=False)
-        capacity *= 2
-    llama.forward(llama.bos, llama.seq_len - 1, need_logits=False)
+    to_the_end(llama)
 used = int(llama._external[0].memoryBytes()) if getattr(llama, "_external", None) else 0
 llama.release(); del llama; gc.collect()
 (used, list(struct.unpack_from("<7i", data, 0)))
@@ -406,18 +424,19 @@ llama.release(); del llama; gc.collect()
 page = kernel_llama(data, vocabulary, **OPTIONS)
 numpy = Llama(data, vocabulary, **{k: v for k, v in OPTIONS.items() if k not in ("disable", "half_keys")})
 int8 = "int8" in page.backend or "int6" in page.backend  # both quantize the activations (T98)
-sequence, agree, largest, nll = [page.bos], 0, 0.0, [0.0, 0.0]
+sequence, agree, largest, nll, apart, size = [page.bos], 0, 0.0, [0.0, 0.0], 0.0, 0.0
 for pos in range(${positions}):
     a, b = page.forward(sequence[pos], pos).astype(np.float64), numpy.forward(sequence[pos], pos).astype(np.float64)
     largest = max(largest, float(np.abs(a - b).max()))
+    apart, size = apart + float(((a - b) ** 2).sum()), size + float((b ** 2).sum())
     agree += int(a.argmax() == b.argmax())
     following = int(b.argmax())  # NumPy's greedy text, which both read
     for i, logits in enumerate((a, b)):
         shifted = logits - logits.max()
         nll[i] -= shifted[following] - math.log(np.exp(shifted).sum())
     sequence.append(following)
-agreement, change = agree / ${positions}, math.exp((nll[0] - nll[1]) / ${positions}) - 1
-ok = (agreement >= 0.85 and abs(change) <= 0.05) if int8 else (agree == ${positions} and largest <= 1e-3)
+agreement, change, relative = agree / ${positions}, math.exp((nll[0] - nll[1]) / ${positions}) - 1, math.sqrt(apart / size)
+ok = (agree == ${positions} and largest <= 1e-3) if not int8 else relative <= ${MADE_UP_LINE} if ${entry.madeUp ? "True" : "False"} else (agreement >= 0.85 and abs(change) <= 0.05)
 kv_start, llama2_numpy.KV_START = llama2_numpy.KV_START, 8
 one, many = kernel_llama(data, vocabulary, **OPTIONS), kernel_llama(data, vocabulary, **OPTIONS)
 llama2_numpy.KV_START = kv_start
@@ -440,6 +459,7 @@ def run(llama, positions):
         token = int(np.argmax(llama.forward(token, pos)))
     return time.perf_counter() - began
 (ok, f"{page.backend}: " + (f"most likely token the same at {agreement * 100:.1f}%, perplexity {change * 100:+.2f}% against NumPy"
+     + (f", the logits {relative:.3f} of NumPy's apart (the line of a made-up model: ${MADE_UP_LINE})" if ${entry.madeUp ? "True" : "False"} else "")
      if int8 else f"most likely token the same at {agreement * 100:.1f}%, largest logit difference {largest:.2e} against NumPy")
      + (f"; the prompt in blocks {'the same to the bit' if same else 'DIFFERENT'}" if blocks else "; no blocks (NumPy)"))
 `).toJs();

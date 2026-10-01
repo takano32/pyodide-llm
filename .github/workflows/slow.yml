@@ -11,6 +11,15 @@ on:
       rate:
         description: 'bytes a second for the whole line (50000 = 0.4 Mbps)'
         default: '50000'
+      model:
+        description: 'the model the page is opened with (stories260K: 1 MB; stories3_5M: 15 MB; tiny-lm: 33 MB)'
+        default: 'stories260K'
+      queue:
+        description: 'how the line is shared: lane (the oldest connection first, T118), fair, or fifo (one queue: a deep buffer)'
+        default: 'lane'
+      buffer:
+        description: 'fifo: the queue in bytes'
+        default: '262144'
       url:
         description: 'the site to test (default: the deployed one)'
         required: false
@@ -34,8 +43,14 @@ jobs:
           npm ci
           npx playwright-core install --with-deps chromium
 
+      # the inputs go in by the environment, not into the script's text (AGENTS.md: gguf.yml's lesson)
       - name: Run
         shell: bash
         env:
           SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
-        run: node tests/slow-check.mjs "${{ inputs.scenario }}" "$SITE" --rate "${{ inputs.rate }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          SCENARIO: ${{ inputs.scenario }}
+          RATE: ${{ inputs.rate }}
+          MODEL: ${{ inputs.model }}
+          QUEUE: ${{ inputs.queue }}
+          BUFFER: ${{ inputs.buffer }}
+        run: node tests/slow-check.mjs "$SCENARIO" "$SITE" --rate "$RATE" --model "$MODEL" --queue "$QUEUE" --buffer "$BUFFER" | tee -a "$GITHUB_STEP_SUMMARY"
