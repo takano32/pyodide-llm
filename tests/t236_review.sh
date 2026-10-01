@@ -90,6 +90,11 @@ case "$stage" in
     original
     python tests/t236_handwritten.py "$dir/orig" tests/t246_chat.jsonl
     ;;
+  klother)
+    reference_tools
+    transformers_of_t229
+    python tests/t236_klother.py "${1:?owner/repository@revision}" "${2:?the BOS}" "${3:?the end of a turn}" "${4:-40}"
+    ;;
   handwritten-other)
     reference_tools
     transformers_of_t229
