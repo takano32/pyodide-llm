@@ -34,7 +34,7 @@
 # that moves the logits by less, and a few errors of this kind do (one sign of 17408 values moves them by 0.11 to 0.43,
 # one of 6144 by 0.16), so
 # (T237's review) the fork is also run with float32 activations (tests/reference_27b_patch.py, REPLAY of the tokens of
-# the first run): then the engine is 0.003 to 0.007 from it, KL 4e-6 at most, and the line is 0.03 (TIGHT_LINE).
+# the first run): then the engine is 0.003 to 0.008 from it, KL 5e-6 at most, and the line is 0.03 (TIGHT_LINE).
 #
 # Runs with the engine broken on purpose (the first text only; BREAKS has them, 25) show what the comparison catches: the
 # value heads read in the GGUF's order, no signs, no rotation, the embedding's rows not turned back, q and k read as if no
@@ -284,12 +284,13 @@ def grouped(key_heads, value_heads, size=1):
 
 # ------------------------------------------------------------------------------------------- the lines
 # The engine's float32 forward pass against the fork with float32 activations (tests/reference_27b_patch.py): the largest
-# difference of a logit over the positions of a text, and the KL of its distribution over a position. CI run 36928767105 (an
-# AMD EPYC 9V74, the fork built for it): 0.0032 to 0.0074 and 4e-6 at most over four texts of 20 to 77 positions, the largest
-# logit the same at every one; the weakest of the 25 errors tried is 0.43 (one sign of 17408) and the others 2.7 and more. The
-# lines are 4 and 25 times the largest of what was seen (the fork's sums and the engine's differ in their order alone, so
-# the CPU the fork runs on moves them by a rounding, not by the activations' rounding that made the line against the fork
-# as it is 3 times 0.1 or more).
+# difference of a logit over the positions of a text, and the KL of its distribution over a position. Three CI runs (a fork
+# that uses AVX2 only, on an AMD EPYC 9V74 and on a 7763: the same numbers to four digits; and one that uses AVX512, VNNI
+# and BF16, on a 9V74): 0.0032 to 0.0076 and 4.4e-6 at most over four texts of 20 to 77 positions, the largest logit the same
+# at every one; the weakest of the 25 errors tried is 0.11 (the first sign of 17408), then 0.14 and 0.43 (the first of 6144, the last of
+# 17408) and the others 2.6 and more. The lines are 4 and 23 times the largest of what was seen (the fork's sums and the engine's differ in
+# their order alone, so the instruction set the fork runs with moves them by a rounding, by 0.003 at most between those
+# runs, and not by the activations' rounding that moves the fork as it is by 0.07 (AVX2) to 0.14 (AVX512, VNNI)).
 TIGHT_LINE = 0.03
 TIGHT_KL = 1e-4
 
