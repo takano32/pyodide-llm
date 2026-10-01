@@ -280,8 +280,8 @@ let failed = false;
 // float32, but where that does not fit a 32-bit memory (Llama 3.2 3B on a 64-bit memory either way, 4.20 GiB in
 // float16: the owner, 2026-09-27). T130: on a memory that is not shared (not cross-origin isolated, or a shared one
 // refused) float32 for every model, but where that does not fit a 32-bit memory: Llama 3.2 3B's int8 without relaxed
-// SIMD (Safari's, T130: 3.82 GiB, 4.26 in float32), sarashina2.2 3B in six bits (Chrome's ?bits=6: 3.73 and 4.36),
-// Llama 3.2 3B with relaxed SIMD (64-bit either way).
+// SIMD (Safari's, T130: 3.82 GiB, 4.26 in float32), sarashina2.2 3B in six bits (Chrome's ?bits=6: 3.73 and 4.36).
+// Not Llama 3.2 3B with relaxed SIMD, past 4 GiB either way: float32 on a plain memory (the owner, 2026-09-28).
 // Qwen2.5 3B is float32 now on either (3.89 GiB: 3.82 in float16 and 4.03 in float32 before the cache grew in place,
 // T130), and llm-jp-3.1 1.8B (a key for every head) float16 on a shared memory and float32 on a plain one (2.91 and
 // 3.66 GiB). The sizes: llama2_convert.checkpoint_size(). Each: shared, not shared
@@ -289,7 +289,7 @@ let failed = false;
   const cases = [["llm-jp-3 150M", [512, 2048, 12, 8, 8, 99584, 4096], 160e6, {}, true, false],
     ["Qwen2.5 0.5B", [896, 4864, 24, 14, 2, 151936, 4096], 555992604, { bias: true }, false, false],
     ["Qwen2.5 3B", [2048, 11008, 36, 16, 2, 151936, 4096], 3472375836, { bias: true }, false, false],
-    ["Llama 3.2 3B", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, {}, true, true],
+    ["Llama 3.2 3B", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, {}, true, false],
     ["llm-jp-3.1 1.8B", [2048, 7168, 24, 16, 16, -99584, 4096], 2101354524, {}, true, false],
     ["Llama 3.2 3B, no relaxed SIMD", [3072, 8192, 28, 24, 8, 128256, 4096], 3614847004, { relaxed: false }, true, true],
     ["sarashina2.2 3B, six bits", [2560, 8960, 32, 16, 8, -102400, 4096], 2936678428, { dtype: "int6" }, true, true]];

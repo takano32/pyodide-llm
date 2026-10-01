@@ -301,12 +301,14 @@ export function footprint(header, size, { dtype = "float32", arch = "llama", int
   // threads wait on the memory, and read half of it). T160: a grouped-query model's are widened for every head of
   // their group, g = heads / kvHeads times, which float16 saves nothing of (Qwen2.5 0.5B, g = 7: float32 1.42 to 1.44
   // times as fast on one thread at position 2000, 1.15 to 1.26 on four, CI's x86-64 and arm64; TODO.md's T160), and
-  // one thread waits on the arithmetic of the widening (T110): float32 there. But float16 wherever float32 would not
-  // fit a 32-bit memory: on a 64-bit one (the owner, 2026-09-27: Llama 3.2 3B and the 7B models keep their memory),
-  // and T130, on a memory that is not shared (a page not cross-origin isolated, or a shared one refused) where float32
-  // would take a model past 4 GiB that fits with float16 (Llama 3.2 3B's int8 on Safari, without relaxed SIMD: 3.82
-  // GiB, 4.26 in float32). keysInHalf tells which.
-  const half = halfKV && ((shared && kvHeads >= heads) || needsWide(size, others + 4 * keys));
+  // one thread waits on the arithmetic of the widening (T110): float32 there. But float16 on a shared memory wherever
+  // float32 would not fit a 32-bit one (the owner, 2026-09-27: Llama 3.2 3B and the 7B models, on a 64-bit memory,
+  // keep their memory), and T130, on a memory that is not shared (a page not cross-origin isolated, or a shared one
+  // refused) only where float16 keeps on a 32-bit memory a model that float32 would take past 4 GiB (Llama 3.2 3B's
+  // int8 on Safari, without relaxed SIMD: 3.82 GiB, 4.26 in float32). A model past 4 GiB either way keeps float32
+  // there (the owner, 2026-09-28: one thread's long contexts stay fast). keysInHalf tells which.
+  const past = needsWide(size, others + 4 * keys);
+  const half = halfKV && (shared ? kvHeads >= heads || past : past && !needsWide(size, others + 2 * keys));
   return others + keys * (half ? 2 : 4);
 }
 /** T160: whether the keys and values of a model that may keep them in float16 (footprint's halfKV) do, as footprint

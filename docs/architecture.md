@@ -75,8 +75,9 @@ threads on each device and writes its decision to the console (lines starting wi
   context at the last step). The same place decides the type of the KV cache: float32 on one thread; float16 with
   threads, except for a model with grouped-query attention, which keeps float32 unless that would push it out of
   32-bit memory or it needs 64-bit memory anyway (see [performance.md](performance.md#threads)). Where the page asks
-  for a shared memory (for threads) and the browser refuses it, the model runs on one thread with float32 unless
-  that would not fit 32-bit memory, where float16 is kept so that the model still reaches the end of its context.
+  for a shared memory (for threads) and the browser refuses it, or the page is not cross-origin isolated, the model
+  runs on one thread with float32, except where float16 keeps it within 32-bit memory and float32 would not: there
+  float16 is kept so that the model still reaches the end of its context.
 - The model's WebAssembly memory is reused when another model is chosen: Chromium would not create a third
   WebAssembly memory on one page. Before the next model loads, the page also waits (up to 5 seconds) for the GPU
   worker of the last one to let go of its buffers and its device.
