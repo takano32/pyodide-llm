@@ -149,8 +149,18 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   "synthetic-wide": [{ dim: 128, hidden: 320, layers: 3 }, {}, { force: { pieceBytes: 20480 }, wide: true }] };
 // the models to check: by default every made-up one and the site's three; "made-up" stands for every made-up one (T193:
 // gpu-prompt.yml's suites name them so, and a made-up model added above joins them)
+// T241's review (the full suite's time: the Chromium job of main took more than 80 minutes, 42 before T243 and T226's calm
+// models): a run of a model on SwiftShader costs 5 to 7 s of its shaders' compiling before anything is checked, a made-up
+// model 14 runs, and the three browsers run the same SwiftShader. So "made-up" is every made-up model on Dawn (lavapipe,
+// 0.5 s a run); on Chromium all but the ones that only change the numbers a form is held to (DAWN_ONLY: yarn's tables,
+// the calm models' lines); on Chrome and Edge, which differ from Chromium by the build, the three whose shaders differ
+// (NAN_MODELS: Llama's fused layer, Qwen3's norms of the heads, GPT-2's LayerNorm and GELU). A model named is run
+// wherever it is named. TODO.md's T241 has the minutes (the review of 2026-10-01)
+const DAWN_ONLY = ["synthetic-yarn", "synthetic-gpt2-calm", "synthetic-qwen-calm"];
+const madeUp = Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 const ids = (args.length ? args : ["made-up", "stories15M", "tiny-lm", "llm-jp-3-150m"])
-  .flatMap((id) => (id === "made-up" ? Object.keys(SYNTHETIC) : [id]));
+  .flatMap((id) => (id === "made-up" ? madeUp : [id]));
+if ((args.length ? args : ["made-up"]).includes("made-up")) console.log(`suite: "made-up" on ${engine} is ${madeUp.join(" ")}`);
 // T147: 150 tokens, so that the GPU's blocks of 64 are two and a part (the tiles' ends), and the caches grow to 256
 const COUNT = 150, KV_START = 8;
 // T152: the greedy steps NumPy takes after the prompt

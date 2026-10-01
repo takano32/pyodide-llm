@@ -22,8 +22,14 @@
 # T193 (the owner, 2026-09-27: "たまーにフルテストする感じでコミットたくさんあるときは軽くしたい"): two suites of what
 # runs when models= and real= are not given. Light, the default: Chromium only with the made-up model "synthetic", and
 # Dawn with every made-up model. Full (full=true, and the nightly schedule on main): Chromium, Chrome and Edge with
-# every made-up model, and Dawn with every made-up model and the site's three. models= and real= choose the models in
-# either; full= still chooses the browsers. An empty full= is the default, light (T192).
+# the made-up models gpu-check gives a browser for "made-up", and Dawn with every made-up model and the site's three.
+# models= and real= choose the models in either; full= still chooses the browsers. An empty full= is the default,
+# light (T192).
+# T241's review (the full suite took more than 80 minutes on the Chromium job: SwiftShader compiles a model's shaders in
+# each of its 14 runs, 5 to 7 s, and Chromium, Chrome and Edge run the same SwiftShader): "made-up" is every made-up model
+# on Dawn; on Chromium all but those that only change the numbers a form is held to (gpu-check's DAWN_ONLY); on Chrome and
+# Edge the three whose shaders differ (Llama's, Qwen3's, GPT-2's). The rounds with a NaN or an infinity run on Dawn's made-up
+# models and Chromium's three: the input nan= (gpu-check's --nan) chooses otherwise.
 #
 #   node tests/ci.mjs run gpu-prompt.yml full=true --ref <branch>
 name: The prompt on the GPU
