@@ -41,6 +41,8 @@ PROMPTS = ["これからの流行りを3つ挙げてください。", "What will
 # their template writes with it (T144; without it the real one leaves out the first sentence of LLM_JP_INSTRUCT)
 LLM_JP_SYSTEM = "以下は、タスクを説明する指示です。要求を適切に満たす応答を書きなさい。"
 SYSTEM = {"hf-swallow-ms-7b-instruct": "あなたは誠実で優秀な日本人のアシスタントです。",
+          # T250: the system message of ELYZA's card
+          "hf-llama-3-elyza-jp-8b": "あなたは誠実で優秀な日本人のアシスタントです。特に指示が無い場合は、常に日本語で回答してください。",
           **{id: LLM_JP_SYSTEM for id in ("hf-llm-jp-3-150m-instruct3", "hf-llm-jp-3-440m-instruct3",
                                           "hf-llm-jp-3-980m-instruct3", "hf-llm-jp-3.1-1.8b-instruct4",
                                           "hf-llm-jp-3-1.8b-instruct3", "hf-llm-jp-3-3.7b-instruct3")}}

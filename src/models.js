@@ -60,6 +60,11 @@ const ZEPHYR = "<|user|>\n{prompt}</s> \n<|assistant|>\n";
 // not: the space after each makes the same tokens (the same IDs as the real Jinja and tokenizers for
 // tests/format_check.py's prompts; the converter's own reading of the template, without the spaces, made none the same)
 const EUROLLM = "<|im_start|> system\n<|im_end|> \n<|im_start|> user\n{prompt}<|im_end|> \n<|im_start|> assistant\n";
+// T250: Llama-3-ELYZA-JP's template is Llama 3's (no date, the turns trimmed), and its card always passes this system
+// message, as Swallow-MS's does: one turn of it as the real Jinja writes it with that message
+const ELYZA = "<|start_header_id|>system<|end_header_id|>\n\nあなたは誠実で優秀な日本人のアシスタントです。特に指示が無い場合は、" +
+  "常に日本語で回答してください。<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{prompt:trim}<|eot_id|>" +
+  "<|start_header_id|>assistant<|end_header_id|>\n\n";
 // T124: Qwen3 thinks before it answers (<think>…</think>, then the answer), which is the form its chat_template writes
 // and the converter reads. The same weights answer at once when the answer begins with an empty thought: the form of
 // enable_thinking=false. <think> and </think> are tokens of the vocabulary that tokenizer.json does not call special:
@@ -159,6 +164,8 @@ const APACHE_GEMMA = "Apache License 2.0 (derived from Qwen), and the Gemma Term
 // llama3.3 and gemma: the words of the card are copied)
 const QWEN_RESEARCH = "Qwen Research License Agreement";
 const SWALLOW = "Meta Llama 3.1 Community License and Gemma Terms of Use";
+// T250: ELYZA's card says "Meta Llama 3 Community License" under License (its metadata: llama3)
+const LLAMA_3 = "Meta Llama 3 Community License";
 export const LICENSES = {
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
@@ -193,6 +200,10 @@ export const LICENSES = {
   "llm-jp/llm-jp-3-3.7b-instruct3": APACHE, "mmnga/llm-jp-3-3.7b-instruct3-gguf": APACHE,
   "shisa-ai/shisa-v2.1-llama3.2-3b": LLAMA_32, "mradermacher/shisa-v2.1-llama3.2-3b-GGUF": LLAMA_32,
   "cyberagent/CAT-Translate-3.3b": MIT,
+  // T250 (2026-10-01): the 8B ones
+  "elyza/Llama-3-ELYZA-JP-8B": LLAMA_3, "mmnga/Llama-3-ELYZA-JP-8B-gguf": LLAMA_3,
+  "shisa-ai/shisa-v2.1-qwen3-8b": APACHE, "mradermacher/shisa-v2.1-qwen3-8b-GGUF": APACHE,
+  "cyberagent/CAT-Thinking-8B": APACHE, "mradermacher/CAT-Thinking-8B-GGUF": APACHE,
   // T125
   "Rakuten/RakutenAI-2.0-mini-instruct": APACHE, "Rakuten/RakutenAI-7B-chat": APACHE,
   "tokyotech-llm/Swallow-MS-7b-instruct-v0.1": APACHE, "mistralai/Mistral-7B-Instruct-v0.2": APACHE,
@@ -468,6 +479,29 @@ const LISTED = [
     hf: { repo: "mmnga-o/llm-jp-4-8b-instruct-gguf", revision: "7ae4da12cee2f109509cb8e1d01cf8a0f1a5fbc1", weights: "llm-jp-4-8b-instruct-Q8_0.gguf",
           vocabulary: { repo: "llm-jp/llm-jp-4-8b-instruct", revision: "098f2b2cf33021eba19a6d3582aa3d071ccc0aff", tokenizer: "tokenizer.json" } }, download: 9132708384,
     conversion: {}, options: harmony, generation: sampled(1.1), template: HARMONY,
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // T250: three more of 8B. ELYZA's Llama 3 with its card's system message. Shisa V2.1's Qwen3 8B, whose template
+  // answers at once unless told to think (the other way round from Qwen3's), read from the model; CAT-Thinking, from
+  // Qwen3 Swallow, which thinks in Japanese before it answers (Qwen3's template). Neither of the two names a BOS in
+  // config.json or its tokenizer (Qwen3's config.json does), and the converter would take token 1 ('"'): Qwen3's own,
+  // <|endoftext|>, as every Qwen3 of the list begins, and the answer stops at it and at <|im_end|> (T235's Bonsai).
+  // Shisa's sampling is its generation_config.json's; CAT-Thinking's is its card's (0.8 and 0.95, and "to mitigate the
+  // probability of repetition, we find repetition_penalty=1.05 or larger to be useful")
+  { group: "hf", id: "hf-llama-3-elyza-jp-8b", name: "Llama-3-ELYZA-JP 8B", note: "answers instructions · 日本語 / English · fetches 8.5 GB (GGUF) → int8 9.0 GB · desktop only · Chrome and Firefox",
+    ...ggufOf("mmnga/Llama-3-ELYZA-JP-8B-gguf", "1a5f8f625074ccb91568fa858402dc43c5170856", "Llama-3-ELYZA-JP-8B-Q8_0.gguf",
+      "elyza/Llama-3-ELYZA-JP-8B", "e6c316496ee7d9a11710c50229e8cb39b6b0a4a3"), download: 8540770592,
+    conversion: {}, options: {}, generation: sampled(1.1), template: ELYZA, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-shisa-v2.1-qwen3-8b", name: "Shisa V2.1 Qwen3 8B", note: "answers at once · 日本語 / English · fetches 8.7 GB (GGUF) → int8 9.2 GB · desktop only · Chrome and Firefox",
+    ...ggufOf("mradermacher/shisa-v2.1-qwen3-8b-GGUF", "9b9187f69adca28b8e2b9490b2c151fcb85c0df6", "shisa-v2.1-qwen3-8b.Q8_0.gguf",
+      "shisa-ai/shisa-v2.1-qwen3-8b", "0b0fe7c76dac910510ccd04fc807fdbdbc2fc16e"), download: 8709519392,
+    conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
+    generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
+    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  { group: "hf", id: "hf-cat-thinking-8b", name: "CAT-Thinking 8B", note: "thinks in Japanese before it answers · 日本語 / English · fetches 8.7 GB (GGUF) → int8 9.2 GB · desktop only · Chrome and Firefox",
+    ...ggufOf("mradermacher/CAT-Thinking-8B-GGUF", "bdc313f45827a80426b36b93df98b10cfe279fe6", "CAT-Thinking-8B.Q8_0.gguf",
+      "cyberagent/CAT-Thinking-8B", "0337f7bcf8d5e6dc08610e205bfe01d566e17669"), download: 8709519392,
+    conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
+    generation: { steps: 0, temperature: 0.8, topp: 0.95, repetition_penalty: 1.05 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // English. Pythia is the same design at five sizes: a ladder for measuring (T80)
   { group: "hf", id: "hf-pythia-70m", name: "Pythia 70M", note: "English · fetches 77 MB (GGUF) → int8 96 MB",
