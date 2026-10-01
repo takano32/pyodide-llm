@@ -9,6 +9,7 @@
 #
 # The parts (all of them by default):
 #   convert     the page's conversion of the GGUF to either dtype in Pyodide, under cProfile (tests/profile-convert.mjs)
+#   ptq1_0      the same of a PTQ1_0 file of the same weights, made here, and the checkpoint the same byte for byte
 #   perplexity  on 1500 tokens of Wikipedia (T85's articles, English or Japanese): the float32 of the file's values and
 #               the int8 weights in native NumPy (widened to float32 they are past Pyodide), then both dtypes on the
 #               kernels (tests/perplexity.mjs --file). The ternary dtype in NumPy is the float32 row: its first logits
@@ -19,7 +20,7 @@
 set -euo pipefail
 id="${1:-hf-ternary-bonsai-1.7b}"
 language="${2:-en}"
-parts="${3:-convert perplexity compare threads}"
+parts="${3:-convert ptq1_0 perplexity compare threads}"
 dir="${RUNNER_TEMP:-.tmp}/ternary"
 has() { [[ " $parts " == *" $1 "* ]]; }
 model=$(python tests/hf_fetch.py "$id" "$dir" | tail -1)
@@ -38,6 +39,22 @@ for dtype in $dtypes; do
   python tests/perplexity_prepare.py "$model" "$dir/$dtype" "$dtype" 2>&1 | tail -1 | cut -c1-200
   echo "ternary: $dtype is $(stat -c %s "$dir/$dtype.bin") bytes"
 done
+if has ptq1_0; then
+  # the same weights as a PTQ1_0 file (tests/make_ptq1_0.py: no model this small is published as one): the page's
+  # conversion of it under cProfile, and the checkpoint it makes against the one of the PQ2_0 file
+  gguf=$(ls "$model"/*.gguf | head -1)
+  mkdir -p "$dir/ptq"
+  for file in "$model"/*; do
+    case "$file" in *.gguf) ;; *) ln -sf "$(realpath "$file")" "$dir/ptq/" ;; esac
+  done
+  python tests/make_ptq1_0.py "$gguf" "$dir/ptq/model-PTQ1_0.gguf"
+  echo "ternary: the conversion of the PTQ1_0 file to ternary"
+  node tests/profile-convert.mjs "$dir/ptq" ternary | head -12 | cut -c1-200
+  python tests/perplexity_prepare.py "$dir/ptq" "$dir/from-ptq" ternary 2>&1 | tail -1 | cut -c1-200
+  cmp "$dir/from-ptq.bin" "$dir/ternary.bin"
+  echo "ternary: the PTQ1_0 file of the same weights converts to the same ternary checkpoint, byte for byte ($(stat -c %s "$dir/ptq/model-PTQ1_0.gguf") bytes of GGUF)"
+  rm "$dir/from-ptq.bin" "$dir/ptq/model-PTQ1_0.gguf"
+fi
 if has perplexity; then
   # the ternary dtype in NumPy is the float32 file's values: the same logits to the bit, a few positions of each
   python - "$dir" <<'PYTHON'
