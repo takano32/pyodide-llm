@@ -159,12 +159,12 @@ jobs:
               hf-mistral-7b-instruct-v0.3 hf-zephyr-7b-beta
           # T124 (2026-09-26): Qwen3, 33 GB of downloads (64 GB before T203's Q8_0 GGUFs). The two forms of a Qwen3
           # (thinking and not) share the weights and differ in the format alone, so both only for the 0.6B and one of
-          # each other pair
+          # each other pair. T236: and Qwen3.5 0.8B (0.8 GB more), the one model of hybrid attention
           - size: qwen3
             timeout: 3000
             models: >-
               hf-qwen3-0.6b-thinking hf-qwen3-0.6b hf-qwen3-1.7b hf-qwen3-4b hf-qwen3-4b-instruct-2507
-              hf-qwen3-4b-thinking-2507 hf-qwen3-8b hf-qwen3-swallow-8b-thinking
+              hf-qwen3-4b-thinking-2507 hf-qwen3-8b hf-qwen3-swallow-8b-thinking hf-qwen3.5-0.8b
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -233,8 +233,8 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       # T86: real models (tests/fixed_outputs.py's MODELS: GPT-NeoX, GPT-2 from GGUFs and from a safetensors, Llamas, a
-      # Qwen3 from its GGUF and from its safetensors, T235: a ternary Qwen3 of PQ2_0 blocks and yarn) against the text a
-      # person read and found sound. Not the site: the converter and engine of this checkout, in native Python, so
+      # Qwen3 from its GGUF and from its safetensors, T235: a ternary Qwen3 of PQ2_0 blocks and yarn, T236: a Qwen3.5
+      # from its GGUF and from its safetensors) against the text a person read and found sound. Not the site: the converter and engine of this checkout, in native Python, so
       # "it runs but writes nonsense" (T72) fails here. Once is enough, so only in the small half.
       - name: Real models write what they wrote before (T86)
         if: always() && matrix.size == 'small'

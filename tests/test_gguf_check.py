@@ -369,3 +369,67 @@ def test_a_pq2_0_gguf_is_held_to_its_ternary_original_and_its_yarn(tmp_path, cap
     if wrong is None:
         assert result["worst"] == 0 and result["nearest"] == 0
     assert list(result["past_tight"]) == (["blk.1.attn_v.weight"] if wrong == "a value" else [])
+
+
+QWEN35 = "model.language_model.layers."
+QWEN35_WRONG = {
+    # what the GGUF holds that is not what llama.cpp makes of the original: {the name: (the GGUF's tensor past the line)}
+    "the 1 not added to a norm": "blk.0.attn_norm.weight",
+    "the 1 not added to a head's norm": "blk.1.attn_q_norm.weight",
+    "the 1 added to a linear layer's norm": "blk.0.ssm_norm.weight",
+    "A_log as it is": "blk.2.ssm_a",
+    "another dt_bias": "blk.0.ssm_dt.bias",
+    "the gates before q": "blk.1.attn_q.weight",
+    "k before q in a linear layer": "blk.2.attn_qkv.weight",
+    "the taps the other way round": "blk.0.ssm_conv1d.weight",
+    "alpha and beta swapped": "blk.0.ssm_alpha.weight",
+}
+
+
+@pytest.mark.parametrize("wrong", [None, *QWEN35_WRONG, "another interval", "more value heads than key heads"])
+def test_a_qwen35_gguf_is_held_to_what_llama_cpp_makes_of_its_original(tmp_path, capsys, wrong):
+    """T236: a Qwen3.5's GGUF as llama.cpp writes one (test_gguf.qwen35_gguf) passes against its original, 0 off: the
+    norms with their 1, -exp(A_log), the convolution without its axis of one, dt_bias and A_log under their other
+    names, the original's names with "model.language_model." in front. An original that is not what the GGUF was made
+    of is past the line at that tensor, a config.json of another interval a mismatch, and a model whose value heads
+    llama.cpp tiles is not passed."""
+    from test_gguf import qwen35_gguf
+    config, file, same = qwen35_gguf(n_layers=4, **({"value_heads": 4} if wrong and wrong.startswith("more") else {}))
+    original = {name: tensor.copy() for name, tensor in same.items()}
+    if wrong == "the 1 not added to a norm":
+        original[QWEN35 + "0.input_layernorm.weight"] += 1  # the GGUF's is then the original's without its 1
+    if wrong == "the 1 not added to a head's norm":
+        original[QWEN35 + "1.self_attn.q_norm.weight"] += 1
+    if wrong == "the 1 added to a linear layer's norm":
+        original[QWEN35 + "0.linear_attn.norm.weight"] -= 1
+    if wrong == "A_log as it is":
+        original[QWEN35 + "2.linear_attn.A_log"] = -np.exp(original[QWEN35 + "2.linear_attn.A_log"])
+    if wrong == "another dt_bias":
+        original[QWEN35 + "0.linear_attn.dt_bias"] = original[QWEN35 + "2.linear_attn.dt_bias"].copy()
+    if wrong == "the gates before q":
+        q = original[QWEN35 + "1.self_attn.q_proj.weight"]
+        heads = config["text_config"]["num_attention_heads"]
+        original[QWEN35 + "1.self_attn.q_proj.weight"] = q.reshape(heads, 2, -1, q.shape[1])[:, ::-1].reshape(q.shape).copy()
+    if wrong == "k before q in a linear layer":
+        qkv = original[QWEN35 + "2.linear_attn.in_proj_qkv.weight"]
+        keys = config["text_config"]["linear_num_key_heads"] * config["text_config"]["linear_key_head_dim"]
+        original[QWEN35 + "2.linear_attn.in_proj_qkv.weight"] = np.concatenate([qkv[keys:2 * keys], qkv[:keys], qkv[2 * keys:]])
+    if wrong == "the taps the other way round":
+        original[QWEN35 + "0.linear_attn.conv1d.weight"] = original[QWEN35 + "0.linear_attn.conv1d.weight"][:, :, ::-1].copy()
+    if wrong == "alpha and beta swapped":
+        a, b = QWEN35 + "0.linear_attn.in_proj_a.weight", QWEN35 + "0.linear_attn.in_proj_b.weight"
+        original[a], original[b] = original[b], original[a]
+    if wrong == "another interval":
+        config = {**config, "text_config": {**config["text_config"], "full_attention_interval": 4}}
+    (tmp_path / "model.gguf").write_bytes(file)
+    (tmp_path / "model.safetensors").write_bytes(safetensors_file(original))
+    (tmp_path / "config.json").write_text(json.dumps(config))
+    assert gguf_check.check_tensors(tmp_path / "model.gguf", tmp_path) is (wrong is None)
+    result = summary(capsys)
+    if wrong is None:
+        assert result["mismatches"] == 0 and result["nearest"] == 0 and result["orders"] == ["as Hugging Face"]
+    elif wrong in QWEN35_WRONG:
+        past = [QWEN35_WRONG[wrong]] + (["blk.0.ssm_beta.weight"] if wrong.startswith("alpha") else [])
+        assert sorted(result["past_tight"]) == sorted(past) and result["mismatches"] == len(past)
+    else:
+        assert result["mismatches"] >= 1 and result["past_tight"] == {}
