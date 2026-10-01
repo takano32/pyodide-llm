@@ -12,6 +12,10 @@ name: Tests
 # with its default: T192).
 #
 #   node tests/ci.mjs run tests.yml [full=true] [extra="node tests/profile.mjs"] [runner=ubuntu-24.04-arm] --ref <branch>
+#
+# T238: only_extra=true runs the `extra` commands alone (no models, no suite, no build: a job that needs none of them,
+# like tests/reference_27b.sh, which builds another program and fetches a model of its own), and minutes= is the job's
+# time limit (90 where it says nothing).
 on:
   schedule:
     # every night at 03:17 in Japan (18:17 UTC; off the hour, when GitHub's schedules crowd), the full suite on main
@@ -31,6 +35,15 @@ on:
         description: 'the runner (optional), e.g. ubuntu-24.04-arm for arm64 (T166: a kernel measured where it matters)'
         required: false
         default: 'ubuntu-latest'
+      only_extra:
+        description: 'T238: run the extra commands alone: no models, no suite, no build'
+        type: boolean
+        required: false
+        default: false
+      minutes:
+        description: 'T238: the time limit of the job in minutes (optional, 90)'
+        required: false
+        default: '90'
 
 permissions:
   contents: read
@@ -39,7 +52,7 @@ jobs:
   tests:
     name: tests (${{ (github.event_name == 'schedule' || inputs.full == true || inputs.full == 'true') && 'full' || 'light' }})
     runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
-    timeout-minutes: 90
+    timeout-minutes: ${{ fromJSON(inputs.minutes || '90') }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -56,12 +69,14 @@ jobs:
           cache: 'npm'
 
       - name: Download and convert the models, compile the kernels
+        if: ${{ !(inputs.only_extra == true || inputs.only_extra == 'true') }}
         run: |
           pip install numpy pytest tokenizers regex sentencepiece
           npm ci
           make models kernels
 
       - name: Tests (tests/suite.sh)
+        if: ${{ !(inputs.only_extra == true || inputs.only_extra == 'true') }}
         env:
           SUITE: ${{ (github.event_name == 'schedule' || inputs.full == true || inputs.full == 'true') && 'full' || 'light' }}
           WHY: ${{ github.event_name }}
@@ -70,6 +85,7 @@ jobs:
           bash tests/suite.sh "$SUITE"
 
       - name: Build the site
+        if: ${{ !(inputs.only_extra == true || inputs.only_extra == 'true') }}
         run: npm run build
 
       - name: More
