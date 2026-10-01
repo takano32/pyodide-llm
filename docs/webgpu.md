@@ -34,8 +34,9 @@ tokens, and the fixed cost is shared among them.
    benchmark below: llama.cpp's `mul_mat_vec` or ONNX Runtime's DP4A), checks each form against JavaScript on the
    model's own first layer and classifier, and takes the fastest. Four tokens go in one submission, each sampled on
    the GPU with the random number the CPU drew for it. The page times a token on each side and gives the tokens to
-   the GPU where it is faster by more than 5%. Models with biases (Qwen2), per-head norms (Qwen3), LayerNorm (GPT-2,
-   GPT-NeoX) or matrices whose parts do not start on the device's binding alignment keep their tokens on the CPU,
+   the GPU where it is faster by more than 5%. Qwen2's biases, Qwen3's per-head norms and GPT-2's and GPT-NeoX's
+   LayerNorm, biases and GELU run as small dispatches between the fused ones (the same shaders as for a prompt).
+   Models whose matrices' parts do not start on the device's binding alignment keep their tokens on the CPU,
    and so, as a precaution, does a browser that does not say how much memory the device has (Safari, Firefox):
    with the answer on the GPU the classifier and the embeddings go there too (for llm-jp-3-150m the GPU's share
    grows from about 73 to 189 MB, estimated), and such a browser gives no way to tell whether that fits.
@@ -69,8 +70,8 @@ reports, the page keeps both and measures, as above. Chromium reports at most 8,
 there both copies may take up to 6.5 GiB, so the models of the list up to 2B keep both, and those of 3B and more do
 not.
 
-Otherwise a Llama-shaped int8 model whose tokens the GPU can write goes on the GPU alone: the layers' matrices and the
-embedding and classifier go to the GPU as they are converted or read, and only the norms stay in the CPU's memory. The
+Otherwise an int8 model of the Llama family (Llama, Qwen2, Qwen3) goes on the GPU alone: the layers' matrices and the
+embedding and classifier go to the GPU as they are converted or read, and only the norms and biases stay in the CPU's memory. The
 GPU embeds the prompt's tokens itself and keeps the keys and values; nothing but the chosen tokens comes back. Nothing
 then runs on the CPU. On a device that reports 8 there is no limit to its size, as there is none for the CPU alone (a
 7B model takes about 9.2 GB there); on a smaller device it must fit in half of the memory. A browser that does not
@@ -105,11 +106,11 @@ and 0.02 GB on the CPU's side) against 4.7 GB on the CPU alone, and Llama 3.1 Sw
   that reports less than 8 GB, or Safari for a model past 4 GB), and there the rule below keeps the model on the
   CPU: today a 6-bit model reaches the GPU in practice only when it is asked for (`?bits=6`).
 - The weights would not fit twice (in WebAssembly memory for the CPU and again on the GPU; on phones and Apple
-  devices both are the same memory), and the model cannot go on the GPU alone (above): Qwen2, Qwen3, GPT-2,
-  GPT-NeoX and 6-bit models. Twice must fit in half of `navigator.deviceMemory`, or in 6.5 GiB where Chromium
-  reports 8. A browser that does not report it (Safari, Firefox) is taken as 4 GB, so the 1B models stay on the CPU
-  there. The prompts of such a model still go to the GPU where its layers alone fit in the room the CPU's copy
-  leaves (Qwen2.5 3B's do not).
+  devices both are the same memory), and the model cannot go on the GPU alone (above): GPT-2, GPT-NeoX and 6-bit
+  models (Llama, Qwen2 and Qwen3 models can). Twice must fit in half of `navigator.deviceMemory`, or in 6.5 GiB
+  where Chromium reports 8. A browser that does not report it (Safari, Firefox) is taken as 4 GB, so the 1B models
+  stay on the CPU there. The prompts of such a model still go to the GPU where its layers alone fit in the room the
+  CPU's copy leaves.
 
 ## The shaders and where they come from
 

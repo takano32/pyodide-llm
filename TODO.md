@@ -86,16 +86,17 @@
 
 **いまの状態（2026-10-01、再開した回）**: 2026-09-28 に止めた 4 つ（T129・T130・T219 の (2)・T224）は全部本線に入れた（反映済み、レビューは Sonnet max が後で）。本線は T129 105bb4a、T130 89a24e9（持ち主の判断の 1 行つき: 共有でないメモリで float16 にしても 64 ビットが要るモデルは KV を float32 のまま）、T219 の (2) b76cd65。止めた頃の経緯は `git show 1a0cc1d:TODO.md` のこの段にある。
 - **CI**: 本線（T129 と T130 の後）の tests.yml の全部の組は成功（run 36864748112、EPYC 7763、383 秒）。T219 のブランチ（T224 と合わせた後）の gpu-prompt.yml の全部の組は成功、FAILED 0（run 36864349281、13.9 分）。本番の確かめは T130（`long=850` の 3B 級と `coi=off`）と T129（`slow.yml` の slow と stall、モデルの切り替え、2 回目の訪問）が通った（数字は各項）。T219 の後の本線の gpu-prompt.yml の軽い組は成功（run 36866412202）、`gpuTest=on` の本番の回（run 36866409090、SwiftShader）は tiny-lm が「prompts and answers on WebGPU (gpuTest)」で 66 トークンを GPU で書いた（467 秒）。同じ回の llm-jp-3 150M は 1800 秒の持ち時間で打ち切り（SwiftShader で生成の歩を回す e2e は遅い、AGENTS.md の T156 の記録のとおり。壊れではない: 大きいモデルを `gpuTest=on` で書かせない）。
-- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: T226 `t226-steps-all-archs`、T235 `t235-ternary-bonsai-1.7b`（持ち主「着手できるものははじめて構わない」、2026-10-01）、T229 `t229-hybrid-attention`（Qwen3.5 0.8B で。段 A: NumPy と変換器、段 B: forward.js とカーネル）、レビュー（Sonnet max）は T219・T220 `t219-review-sonnet`、T129 `t129-review`、T130・T223 `t130-t223-review`。終わったものから本会話が本線に入れる。CPU の側のレビュー（T129・T130・T223）は `.claude/agents/reviewer.md`（Sonnet max）で。
+- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: T235 `t235-ternary-bonsai-1.7b`（持ち主「着手できるものははじめて構わない」、2026-10-01）、T229 `t229-hybrid-attention`（Qwen3.5 0.8B で。段 A: NumPy と変換器、段 B: forward.js とカーネル）、レビュー（Sonnet max）は T219・T220 `t219-review-sonnet`、T129 `t129-review`、T130・T223 `t130-t223-review`。終わったものから本会話が本線に入れる。CPU の側のレビュー（T129・T130・T223）は `.claude/agents/reviewer.md`（Sonnet max）で。
 - **T227 も本線に入れた（4623fb3、反映済み）**: 報告の頭と要約に「#### Warnings」の一覧。見出しと切り詰めの文（「… and N more, in the whole report below」）は実装が選んだ仮の文で、持ち主が変えてよい。本物の端末の WRONG の行はまだ見ていない（CI の代わりのアダプタは全部 ok）。
 - **T228 の調べも本線に入れた**（docs/notes/t228-bonsai-2-2026-10-01.md。前の仕事を T235〜T238 に採番した。勧めは小さいモデルから、持ち主の判断待ち）。
 - **lishogi.org の WebGPU（2026-10-01、持ち主の問い）**: 使っていない。ソース（WandererXII/lishogi、master 5394fc3、2026-09-10）にも本番の解析ページの JS にも `navigator.gpu`・WGSL は無い。ブラウザの解析は YaneuraOu の K-P の NNUE と Fairy-Stockfish の NNUE の WASM（SIMD と pthreads、共有メモリ）で、隔離はサーバのヘッダ（COEP は `credentialless` が使えるブラウザではそれ、ほかは `require-corp`）。取り込む GPU の手法は無い。
 - **T225 も本線に入れた（反映済み）**: 見立ては「検査の参照が K と V を float16 の最近接に丸めると思い込んでいた。Direct3D は 0 の向きに丸める」。線は緩めず、参照が GPU の書いた隣の float16 を受け取る形に。持ち主の PC（Windows の Chrome）で GPU の節をもう 1 回押して報告を貼ってもらう: `a layer, …` と `tokens on the GPU` が全部 ok で「K and V … toward zero」が約半分・「0 farther」なら確定。壊し方の捨てのブランチ `t225-broken` はレビューまで残す。
+- **T226 も本線に入れた（反映済み）**: Qwen2・Qwen3・GPT-2・NeoX の答えの歩が GPU に、Qwen2・Qwen3 は GPU だけにも置ける。Llama のディスパッチ数は変わらない。**持ち主の判断待ち**: 2 重の線 6.5 GiB（T226 の項の案 A〜C。勧めは案 B「8 を超える値を言う端末はその半分まで 2 重」）、GPT-2・NeoX を GPU だけにも置くか（今は要るモデルが無い）。`/benchmark/` の層の表は Llama の形だけを測る（Qwen などの 1 層の ms は出ない: 要るなら別のタスク）。
 - **残してあるブランチ**: レビューが使う調べと壊し方の捨てのブランチ（`t129-probe`、`t219-review-probe`、）、`t225-broken`、T224 のレビューの調べ `t224-review-probes`。T224 の前の版の写しと前のレビューの書きかけ・調べのブランチは、レビューが済んだので消した。
 - **レビュー待ち（Sonnet max、別の会話で）**: T129、T130、T223（どれも始めた）。T219 の (1)(2) と T220 は 2026-10-01 に済んだ（ブランチ `t219-review-sonnet`、各項のレビューの行）。**T224 はレビュー済みで完了**（must-fix 1: 検査の集計が NaN を残さなかった、を直した。本線に入れた）。
 - **持ち主の端末でまとめて見るもの（2026-10-01、持ち主「計測はすべての実装が終わったら見直す形に」: タスクごとに頼まず、並んでいる実装が本線に入り終わってから端末ごとに 1 回で）**。実装は下の数字を待たずに進める。
-  - PC（Windows の Chrome、NVIDIA）: `/benchmark/` を 1 回（T225: `a layer, …` と `tokens on the GPU` が ok で「K and V … toward zero」が約半分・「0 farther」か。T227: 報告の頭の Warnings。T226: Qwen3 4B が GPU で答えるか）。
-  - Android（Xiaomi 13T Pro、Chrome）: `/benchmark/` を 1 回（T219 の (2): 「the sampling alone」の**平らな logits の 1 ワークグループ**が 6.71 ms 以下か（T191 の平らな 6.104 ms の 1.1 倍。山のある方の前の 5.893 ms は罰で崩れていて使えない）。T224: 「A token's attention alone」の vec の行が 1024・4096 位置でエンジンのタイルより速いか、ページのコンソールの「its attention by」が何を選ぶか。T173: Page memory。T156 の (c)）と、モデルのページ（T223: llm-jp-3 150M が 2 本を選ぶか。T210: Llama 3.2 3B を GPU だけで、8B が入るか。T226: Qwen のモデルの答えが GPU か。T129: 初めての訪問・HF のモデル・取得の途中の選び直し・2 回目の訪問が今までどおりか）。
+  - PC（Windows の Chrome、NVIDIA）: `/benchmark/` を 1 回（T225: `a layer, …` と `tokens on the GPU` が ok で「K and V … toward zero」が約半分・「0 farther」か。T227: 報告の頭の Warnings。T226: Qwen3 4B のステータス行が「prompts and answers on WebGPU」になるかと tok/s）。
+  - Android（Xiaomi 13T Pro、Chrome）: `/benchmark/` を 1 回（T219 の (2): 「the sampling alone」の**平らな logits の 1 ワークグループ**が 6.71 ms 以下か（T191 の平らな 6.104 ms の 1.1 倍。山のある方の前の 5.893 ms は罰で崩れていて使えない）。T224: 「A token's attention alone」の vec の行が 1024・4096 位置でエンジンのタイルより速いか、ページのコンソールの「its attention by」が何を選ぶか。T173: Page memory。T156 の (c)）と、モデルのページ（T223: llm-jp-3 150M が 2 本を選ぶか。T210: Llama 3.2 3B を GPU だけで、8B が入るか。T226: Qwen2.5 0.5B か Qwen3 0.6B の答えが GPU か CPU か、Qwen2.5 3B（前は全部 CPU、今は GPU だけ）でメモリが苦しくないか。T129: 初めての訪問・HF のモデル・取得の途中の選び直し・2 回目の訪問が今までどおりか）。
   - iPhone（Safari）: モデルのページ（T129 の同じ 4 つ）と `/benchmark/` の Page memory（T173）、モデルの節が終わるか（T205・T214）、GPU の節の「sampling」と「sampling in chunks」の検査が ok か（T219: Safari の WGSL がこのシェーダを通すか）。
 - ブランチを本線に入れる形: この回は `git merge --no-ff <ブランチ>`（題は「T番号: Merge …」。戻すときは `git revert -m 1 <その merge>` の 1 つ）。前の回の `.tmp/merge-branch.sh`（rebase）は、本線を merge 済みのブランチには使えない。
 
@@ -1265,9 +1266,51 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **未確認**: 持ち主の PC の 2 回目の報告で DP4A の 3 行が約 5 倍遅かった件（2.19〜2.63 ms 対 0.42〜0.54 ms）は見ていない。エンジンの読み込みの検査（`public/gpu.js`）と gpu-check は、この PC で通っているので触っていない（gpu-check の尺度の線は T187 のとおり最近接の GPU のときだけ）。
 - **持ち主にお願いすること**: 本線に入ってデプロイされた後、同じ PC（Windows の Chrome）で /benchmark/ を開き、GPU の節のボタンを押して、報告を写して貼る。見るのは「Shaders against JavaScript」の行のうち `a layer, …` の全部と `tokens on the GPU`（WRONG があれば報告の頭の警告にも同じ行が出る）。見込み: 全部 ok で、`K and V … to the nearest float16, … toward zero, 0 away from it, 0 farther` の「toward zero」が約半分。そうなら Direct3D の丸めで確定。
 
-### T226 [性能][WebGPU] Qwen2・Qwen3・GPT-2・NeoX の答えも GPU で（GPU だけにも置けるように） — 状態: 未着手（2026-09-28、持ち主「Qwen3 4B ですら GPU 使われないんだが？」、NVIDIA の PC で。規模 中。再開のとき T225 の次に）
+### T226 [性能][WebGPU] Qwen2・Qwen3・GPT-2・NeoX の答えも GPU で（GPU だけにも置けるように） — 状態: **反映済み**（2026-10-01 に本線に入れた、レビュー前。Opus medium。(1)(2)(3) を作った。(4) の 2 重の線は持ち主の判断待ちで、下に材料。2026-09-28、持ち主「Qwen3 4B ですら GPU 使われないんだが？」、NVIDIA の PC で。規模 中。再開のとき T225 の次に）
 - 今の形: 答えを GPU で書けるのは Llama の形だけ（T152 の fused の層のシェーダに bias・head の norm・違う head の大きさ・LayerNorm・GELU・並列残差が無い）。GPU だけ（T156）もそれが条件。Chrome は `deviceMemory` を 8 で止めるので、32 GB の PC も 2 重は 6.5 GiB まで。Qwen3 4B の int8 は 2 重で線を越え、GPU だけにもできず、プロンプトも含めて全部 CPU になる。
 - 作るもの: (1) 答えの層（fusedMatVec / fusedDp4aMatVec と歩の道）に、プロンプトの側（T153・T154）と同じ bias の ADD、head ごとの RMSNorm、qDim の幅、LayerNorm・GELU・並列残差を足す（元ネタはプロンプトの側と同じ llama.cpp の WebGPU）。(2) そうすれば `gpuOnlyUnfit()` の形の条件も外れ、Qwen3 4B などが GPU だけに置ける。(3) 見直し: `deviceMemory` が 8 と言う端末の 2 重の線（6.5 GiB）が、32 GB の PC でも同じになること。`performance.memory`（Chromium）や GPU の `maxBufferSize` を足した判定を考える（開発機の値を既定にしない）。
+- **作ったもの（2026-10-01、Opus medium）**: 答えの 1 歩（T152 の融合した層）が Qwen2・Qwen3・GPT-2・GPT-NeoX と、外れ値の列（T92）のあるモデルも取る。Qwen2・Qwen3 は GPU だけ（T156・T210）にも置ける。
+  - **元ネタ**: 新しい融合の形は作らず、プロンプトの側（T153・T154）のシェーダをそのまま 1 トークンのベクトルに掛ける。bias は llama.cpp の WebGPU の `binary.wgsl`（ADD）、head ごとの norm は `rms_norm_mul.wgsl`（`HEAD_NORM`）、LayerNorm は `row_norm.wgsl`（`LAYER_NORM`）、GELU は `unary.wgsl`（どれも MIT、`shaders.js` に許諾文つきで前からある）。写した行は増えていない。
+  - **q・k・v の後ろ**: bias や head の norm があるモデルは、行列の書き出しで RoPE を回せない（CPU と同じ順は bias → head の norm → RoPE）。だから行列は q・k・v をそのまま 1 つのバッファに書き（分類器と同じ「write」のシェーダで、コンパイルは 1 回）、ADD と `HEAD_NORM` がそこで直し、新しい小さなシェーダ `TOKEN_ROPE` が回してキャッシュに書く。`TOKEN_ROPE` の中身は融合した書き出しの行そのもので、その行を WGSL の関数 `write_pair` にして両方が呼ぶ（元ネタは無いが、新しい計算は無い）。q・k・v の bias は層ごとに 1 本につないで ADD は 1 回。k の head は q の head の後ろの行なので、`HEAD_NORM` に「最初の行」（`norm.first`、プロンプトでは 0）を足した。
+  - **GPT-2・NeoX**: LayerNorm は平均を引くので行列の読みに畳めない。別のディスパッチで `xb` に書き、行列はそれをそのまま読む（DP4A はその後に量子化）。だから LayerNorm のモデルには DP4A の「norm を量子化に畳んだ形」（`NORM_QUANTIZE`、RMSNorm のもの）は無い。FFN は w1 を「write」で書いて bias の ADD と `GELU`。並列残差（NeoX）は FFN の norm を o の足し込みの前に置く。GPT-2 の位置の表は GPU にも置き、歩の埋め込みの行に ADD で足す（`ADD` に `byPos` を足した: Step の位置の行を読む。CPU の `embed()` は歩の道に居ないため）。RoPE の一部だけ回す・回さないは `TOKEN_ROPE` の `turned`。
+  - **外れ値の列（GPT-2）**: CPU は量子化で消える 8 チャネルの列を float で別に掛ける。GPU には float で掛ける行列（T150）があるので、外れ値のあるモデルの分類器は DP4A の形でも float で掛ける（列は要らない）。それまでは外れ値のあるモデルの歩は CPU で、GPU だけのモデルは CPU に読み直していた。
+  - **Llama の形のディスパッチの数は変わらない**。1 層あたり（attention は 1 つ。長い文脈の `flash_attn_vec` は reduce で +1）:
+
+    | 形 | Llama | Qwen2 | Qwen3 | GPT-2・NeoX |
+    |---|---:|---:|---:|---:|
+    | llama.cpp の融合（T150） | 5 | 7 | 8 | 13 |
+    | DP4A の融合（T175） | 9 | 11 | 12 | 無い |
+    | DP4A、norm は別 | 11 | 13 | 14 | 17 |
+
+    GPT-2 はトークンごとに位置の ADD が 1 つ、LayerNorm のモデルは最後の norm が 1 つ増える。
+  - **GPU だけ（(2)）**: `gpuOnlyUnfit()` から bias と head の norm の条件を外した。bias と head の norm のベクトルは norm の重みと同じく共有メモリに残る（穴にしない）ので、`gpuHoles()`・`gpuOnlyPlan()`・`footprint()` の `direct`・表の塊（T209）・256 バイトの揃え（T220）は head の大きさを渡すだけで合っていた。**GPT-2・NeoX は GPU だけにしない**: `llama2_numpy.external_tensors()` が Llama のテンソルしか置かず、一覧のいちばん大きい GPT-2・NeoX（rinna 1B と Pythia 1.4B、int8 で約 1.5 GB）は 8 と言う端末の 2 重の線に入る見込み（見積もり、未計測）。要るようになったら `external_tensors()` に `gpt2_tensors()` の並びを足し、GPU だけのプロンプトの埋め込みに位置の ADD を足す（別のタスク）。
+  - **読み込みの時の検査**（`checkTokens`）: モデル自身の 1 層目と分類器で、JavaScript の参照に bias・head の norm・LayerNorm・GELU・位置・並列残差・一部の RoPE を足した。検査が見るのは 1 層目だけなので、層の番号の誤り（どの層も層 0 の bias を読む）は検査を通り、gpu-check の歩の K と V の層ごとの線が捕まえる。eps の誤りは作り物の Qwen3（eps 0.5）で検査が落とす。
+  - **CI**（どれも 2026-10-01、Dawn は lavapipe、ブラウザは SwiftShader）: 全部の組 `gpu-prompt.yml full=true` は run 36869117008（Chromium・Chrome・Edge 24.6〜26.0 分、Dawn 12.7 分、どれも成功）、`tests.yml full=true` は run 36869120095 で成功。実物は Dawn で、Qwen2.5 0.5B と Qwen3 0.6B が run 36869123174（歩は 8 回とも greedy の 7 つが NumPy と同じ、GPU だけは K・V と ID がビット単位で同じ）、GPT-2 124M と Pythia 160M が run 36870894253（7 回とも同じ）。歩の K と V は層ごとの線の 0.05〜0.64（float の形: 作り物 0.41 まで、GPT-2 124M 0.64、Qwen3 0.6B 0.45。DP4A: 0.18〜0.36）。最後のコード（fc1bc4a）の全部の組は run 36873644246（4 ジョブとも成功: Dawn 8.7 分、Chrome 14.7、Edge 15.8、Chromium 25.1）と `tests.yml full=true` の run 36873648802（成功）。本線（T225 まで）を取り込んだ後は軽い組の run 36875447665 と `preview.yml` の run 36875443140（`/benchmark/` の GPU の節が ok: 書き出しを `write_pair` にした融合のシェーダは、ベンチの検査も通る）。実物のモデルの SwiftShader のジョブ（同じ run の Chromium）は遅く、この記録の時点でまだ走っていた（結果は報告に）。
+  - **わざと壊したもの**（捨てるブランチ 5 本、軽い組の Dawn。どれも落ちた）:
+
+    | 壊し方 | 落ちた所 | 数字 |
+    |---|---|---|
+    | q・k・v の bias をどの層も層 0 のもの | 作り物の Qwen2 の歩の K と V（読み込みの検査は通る） | float 2.49e-1（線 1.23e-2、20 倍）。DP4A は 4.86e-1〜5.19e-1（線 4.56e-1、1.07〜1.14 倍） |
+    | head の norm を飛ばす | 作り物の Qwen3 の読み込みの検査（どの形も） | 流れが 1.3e-1〜4.3e-1（線 2e-3、DP4A 2e-2） |
+    | head の norm を RoPE の後に | 同じ | 8.6e-2〜2.4e-1 |
+    | k の head の norm を q の行に（`first` 0） | 同じ | 3.8e-2〜1.5e-1 |
+    | qDim を dim と見る | 同じ | 1.2〜2.5 |
+    | head の norm の eps を 1e-5（正しくは 0.5） | 同じ | 1.3e-1〜3.7e-1 |
+    | GPT-2 の位置をどの歩も行 0 | 作り物の GPT-2 の読み込みの検査 | 5.9e-1〜1.09 |
+    | 並列残差をやめる | 作り物の NeoX 2 つの読み込みの検査 | 7.6e-1〜1.78 |
+    | o・w1・w2 の bias をどの層も層 0 | 作り物の GPT-2・NeoX の float の形の歩の K と V、NeoX-256 は ID | 8.06e-2（線 1.27e-2）、1.12e-1（線 8.0e-3）。**DP4A の形は通った**（線が 3 × Q8 で緩い: T187 のとおり、形に依らないシェーダの誤りは float の形が捕まえる） |
+    | 外れ値のあるモデルの分類器を DP4A で | 作り物の GPT-2 の DP4A の形の読み込みの検査 | logits が 8.84e-3（線 1e-3） |
+
+    run は 36869314957・36869310263・36869310564・36869310949・36869310351。
+  - **見つけて直したもの**: (a) `gpu-check.mjs` は出力がパイプを抜ける前に `process.exit()` していて、Dawn のジョブが落ちたときログが行の途中で切れ、何が落ちたか出なかった（run 36867483459）。出し切ってから終える。(b) 読み込みの検査は logits を 16 バイト単位のバッファごと読んでいて、語彙が 4 の倍数でない GPT-2（50257）は後ろに 0 が 3 つ付いた。作った流れの logits が全部負のとき、その 0 を最大と読んで正しい形を断っていた（run 36869126011、16 回のうち 2 回。T152 からの形で、GPT-2 の歩が GPU に来て初めて当たった）。(c) gpu-check の「乱数 0.02 と 0.98 は違うトークン」は、いちばん確からしいトークンが nucleus の 0.9 を超えるモデルでは成り立たない（作り物の NeoX-256、run 36868289185）。そのときは同じでもよいとし、割合を行に出す。
+  - **未計測**: 持ち主の端末の速さと選ばれ方（Android の Qwen、NVIDIA の PC の Qwen3 4B）。足したディスパッチ（Qwen2 +2、Qwen3 +3、GPT-2・NeoX +8）が CPU に勝つかは端末が測って選ぶ。SwiftShader と lavapipe の秒は GPU の速さではない。実物の Qwen3 4B は CI でも動かしていない（GGUF 4.3 GB。0.6B と作り物で形は同じ）。Qwen3 4B の最後の norm に外れ値があるかも未確認（あれば分類器は float で掛ける）。`/benchmark/` の GPU の節の層の表（T150・T175・T202）は Llama の形だけを測るので、Qwen や GPT-2 の 1 層の ms は出ない（`public/benchmark/gpu.js` は T225・T227 が触っているので変えていない。要るなら別のタスクで、層の表に「bias と head の norm つき」の行を足す）。
+  - **持ち主に試してほしいこと**: (i) NVIDIA の PC で Qwen3 4B を選ぶ。ステータス行が「prompts and answers on WebGPU」になり、コンソールに `gpu: a token by …` の行が出るはず。tok/s を前（CPU）と比べる。(ii) Android で Qwen2.5 0.5B か Qwen3 0.6B。答えが GPU か CPU か（「answers on the CPU (faster here)」なら測って CPU を選んだ）。(iii) Android で Qwen2.5 3B（2 重 7.20 GiB で前は全部 CPU。今は GPU だけになる）。メモリが苦しければ教えてほしい。
+- **(4) 2 重の線（6.5 GiB）の見直し: 実装していない。持ち主の判断の材料**。T226 の (2) の後は、Qwen3 4B は 2 重に入らなくても GPU だけに置けるので、PC で「全部 CPU」にはならない。残る違いは、GPU だけのモデルは CPU と測り比べず（`/benchmark/` の CPU の節の値から見積もる、T156）、GPU が落ちたら読み直しになること。使える信号と、それが本当に言うこと:
+  - `navigator.deviceMemory`（Chromium だけ）: 物理メモリを段に丸めた値。今のコードは 8 以上を全部「8 以上」と読んで 6.5 GiB にする。**新しい Chrome は Android 以外で 16 や 32 も言うようになったという記事がある**（2026-10-01 に検索で見ただけで、持ち主の PC の値は未確認。`/benchmark/` の機能の節に出る）。言うなら、いちばん安い直しは「8 を超える値はその半分まで 2 重」（32 GB なら 16 GiB）で、`weightsPlace()` の 1 行。8 と言う端末は今のまま。
+  - `performance.memory.jsHeapSizeLimit`（Chromium だけ、標準外）: V8 の JS のヒープの上限で、物理メモリから決まる粗い段（未計測。PC でおよそ 2 GB か 4 GB）。WebAssembly のメモリや GPU のメモリの上限ではない。「16 GB 以上らしい」を間接に言えるだけで、段の境は V8 の版で変わる。勧めない。
+  - アダプタの `maxBufferSize`・`maxStorageBufferBindingSize`: 1 つのバッファの上限（持ち主の Android は 256 MiB、PC は 2 GiB 以上が多い）。GPU のメモリの総量ではない。WebGPU は総量を言わない（指紋対策）。内蔵か外付けかも言わない。線には使えない。
+  - 実際に確保して測る: GPU のバッファを作って書き、エラースコープで見る。PC の外付け GPU は VRAM を越えると共有メモリに逃げるので「入った」と出て遅くなる。スマホと Apple は越えるとタブごと落ちる（T173）。読み込みのたびに測るのは遅く危ない。測るなら `/benchmark/` の Page memory の節（T173、落ちても報告に残る形）の値を `localStorage` に置き、モデルのページが CPU の読みと同じように使う（T156 の `gpu:usage` と同じ道）。
+  - 案: (A) 何もしない（T226 で PC の Qwen3 4B は GPU だけで動く）。(B) `deviceMemory` が 8 を超えて言う端末だけ線を上げる（1 行。持ち主の PC が 32 と言うなら効く）。(C) T173 の値を線に使う（端末で測る、いちばん正直。T173 を本線に入れた後）。勧めは、まず持ち主の PC の `deviceMemory` を見て、32 と言うなら (B)。
 
 ### T227 [バグ][計測実行] /benchmark/ の警告（WRONG と、その訳）が写した報告に全部入らない — 状態: **反映済み**（2026-10-01 に本線に入れた 4623fb3、レビュー前）（2026-09-28、持ち主「警告もコピペするようになってないの、不備では？」。規模 小）
 - 持ち主の PC の回で、画面に出た検査の WRONG とその訳（どの検査がどの数で落ちたか、tokens on the GPU の「token 2: 48, the CPU 483」など）が、写した Markdown（と Issue の要約、T185）から読み取れず、持ち主が行を拾って貼り直すことになった。報告の頭に、その回で WRONG・failed・unsteady・skipped になったものを 1 か所に全部並べる（節・検査の名前・訳の文そのまま）。要約（`shortReport()`）にも同じものを入れる。持ち主の決まり: 計測のページは詳しい説明でよい。`tests/bench.mjs` に、WRONG のある報告の頭と要約にその行が出る試験。
