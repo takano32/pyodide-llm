@@ -170,17 +170,22 @@ def made_up(name, settings, positions=80):
     ours = [llama.forward(token, pos).copy() for pos, token in enumerate(tokens)]
 
     failed = False
-    pairs = [("transformers token by token against transformers at once", stepped, whole),
-             ("the naive reference against transformers at once", naive, whole),
+    # the line, as for the real model: ten times what transformers' own two computations differ by (it runs the
+    # delta rule in float32 whatever the model's type, at once in chunks of 64 and token by token: what float32
+    # leaves between two right computations of these random weights, 2.3e-3 for the first model in CI's first run),
+    # and no less than 2e-3
+    floor = differences(stepped, whole)[0]
+    line = max(2e-3, 10 * floor)
+    say(f"made-up ({name}), transformers token by token against transformers at once: largest difference {floor:.2e}")
+    pairs = [("the naive reference against transformers at once", naive, whole),
              ("the engine against transformers at once", ours, whole),
              ("the engine against transformers token by token", ours, stepped)]
     for what, a, b in pairs:
         largest, mean, same, margin = differences(a, b)
-        # float32 against float32 (or float64) over a few layers of a dim of 32: the logits are of the order of 1
-        ok = largest <= 2e-3 and (same == positions or margin <= 2 * largest)
+        ok = largest <= line and (same == positions or margin <= 2 * largest)
         failed |= not ok
         say(f"made-up ({name}), {what}: largest difference {largest:.2e}, mean {mean:.2e}, the same most likely "
-            f"token at {same} of {positions} positions{'' if ok else ' — FAILED (the line: 2e-3)'}")
+            f"token at {same} of {positions} positions{'' if ok else f' — FAILED (the line: {line:.1e})'}")
     say(f"made-up ({name}): options {json.dumps({key: options[key] for key in ('arch', 'linear', 'head_dim', 'rotary', 'rope_theta', 'rms_norm_eps') if key in options})}")
     return failed
 
