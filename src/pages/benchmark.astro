@@ -153,8 +153,8 @@ const BENCH_MODEL = "llm-jp-3-150m";
 </style>
 
 <script>
-  import { FULL_ROUNDS, PATH_PROMPTS, PATH_WRITES, ROUNDS, benchMarkdown, roundsHere, roundsTable, layerCheckNumbers, layerStepsTable, pathTable, cpuBaseline, cpuSummary, cpuTable, deviceSummary, environmentOf, generateTable, gpuSummary, layerTable, lineSummary,
-    matVecTable, noRatios, reportTooLong, shortReport, storageSummary, tableCell, reportUrl, threadCounts, threadsKey, threadsOf, timesFaster, tokenTable, CPU_SPEED_KEY } from "../bench.js";
+  import { FULL_ROUNDS, PATH_PROMPTS, PATH_WRITES, ROUNDS, benchMarkdown, checkVerdict, roundsHere, roundsTable, layerStepsTable, pathTable, cpuBaseline, cpuSummary, cpuTable, deviceSummary, environmentOf, generateTable, gpuSummary, layerTable, lineSummary,
+    matVecTable, noRatios, reportTooLong, shortReport, storageSummary, tableCell, reportUrl, threadCounts, threadsKey, threadsOf, timesFaster, tokenTable, warnings, warningsBlock, CPU_SPEED_KEY } from "../bench.js";
   import { MODELS } from "../models.js";
   import { forgetMark, holdMemory, memoryLimit, memoryResult, memorySummary, readMark } from "../page-memory.js";
   import { hiddenLine, wakeKeeper } from "../wake.js";
@@ -171,7 +171,8 @@ const BENCH_MODEL = "llm-jp-3-150m";
   const ALL = SECTIONS.filter((name) => name !== "memory");
   // ok: measured; none: the browser has no such thing (said, and the run goes on); wrong: a result that cannot be
   // right (a shader against JavaScript, a piece read back); error: a section that failed
-  type Result = { status: "ok" | "none" | "wrong" | "error"; markdown: string; data?: any };
+  // said (T227): the lines of the Markdown with which the section itself says what went wrong, for the report's warnings
+  type Result = { status: "ok" | "none" | "wrong" | "error"; markdown: string; data?: any; said?: string[] };
   const results: Partial<Record<Name, Result>> = {};
   (window as any).__benchmark = { results, done: false };
 
@@ -374,10 +375,10 @@ const BENCH_MODEL = "llm-jp-3-150m";
       const c = r.ceilings ?? {};
       const cutShort = [...(c.read ?? []), c.dot, c.dotRegisters, c.fma].some((one: any) => one?.cutShort);
       const notFinite = r.rows.some((row: any) => row.finite === false);
-      const lines = cpuTable(r);
-      if (notFinite) lines.push("", "**The logits were not finite numbers: the forward pass computed something wrong.**");
-      if (cutShort) lines.push("", "**A ceiling's loop did not do its work (its checksum or its time): the compiler cut it short, and its number is no ceiling.**");
-      return { status: notFinite || cutShort ? "wrong" : "ok", data: r, markdown: lines.join("\n") };
+      const said = [...(notFinite ? ["**The logits were not finite numbers: the forward pass computed something wrong.**"] : []),
+        ...(cutShort ? ["**A ceiling's loop did not do its work (its checksum or its time): the compiler cut it short, and its number is no ceiling.**"] : [])];
+      const lines = [...cpuTable(r), ...said.flatMap((line) => ["", line])];
+      return { status: said.length ? "wrong" : "ok", data: r, markdown: lines.join("\n"), said };
     } finally {
       w.terminate();
     }
@@ -516,8 +517,7 @@ const BENCH_MODEL = "llm-jp-3-150m";
       // was lost: a lost device answers every later wait at once, and the times after it are no GPU's (T134's review)
       const unchecked = steps.find((s) => s.name === "the shaders against JavaScript")?.error
         ?? (check && Object.values(check).find((v: any) => v.error) as any)?.error;
-      return { status: wrong ? "wrong" : unchecked || lost ? "error" : "ok", data: { steps, bridge, lost },
-               markdown: gpuMarkdown(steps, bridge, lost) };
+      return { status: wrong ? "wrong" : unchecked || lost ? "error" : "ok", data: { steps, bridge, lost }, ...gpuMarkdown(steps, bridge, lost) };
     } finally {
       w.terminate();
     }
@@ -538,22 +538,22 @@ const BENCH_MODEL = "llm-jp-3-150m";
       waiter.terminate();
     }
   }
+  // the section's Markdown, and of its lines those that say what went wrong (T227: a lost device, shaders not checked,
+  // the verdicts that are not ok)
   function gpuMarkdown(steps: any[], bridge: any, lost?: string) {
-    const lines: string[] = [];
+    const lines: string[] = [], said: string[] = [];
     const r = steps.find((s) => s.name === "the adapter").result;
     lines.push(`**Adapter**: ${r.adapter}${r.fallback ? " (a fallback adapter: the CPU in a GPU's place, each measured once, its speed no GPU's)" : ""}; max binding ${fixed(r.maxStorageBufferBindingSize / 2 ** 20, 0)} MiB, ` +
       `max buffer ${fixed(r.maxBufferSize / 2 ** 20, 0)} MiB, workgroup memory ${fixed(r.maxComputeWorkgroupStorageSize / 1024, 0)} KiB, ${r.maxComputeInvocationsPerWorkgroup} threads a workgroup, ` +
       `packed int8 dot ${yes(r.packed)}, shader-f16 ${yes(r.features?.includes("shader-f16"))}, subgroups ${yes(r.features?.includes("subgroups"))}${r.subgroupSizes ? ` (${r.subgroupSizes[0] === r.subgroupSizes[1] ? r.subgroupSizes[0] : r.subgroupSizes.join(" to ")} wide)` : ""}`, "");
-    if (lost) lines.push(`**The device was lost** (${lost}): the times measured after it are not the GPU's.`, "");
+    if (lost) said.push(`**The device was lost** (${lost}): the times measured after it are not the GPU's.`);
     const check = steps.find((s) => s.name === "the shaders against JavaScript");
-    if (check?.error) lines.push(`**Shaders against JavaScript**: not checked (${check.error})`, "");
-    // a tiled shader the device refused says so (T146); a packed one also says how many of the values the GPU
-    // quantized came out apart from the CPU's; a layer, its quantized vectors and the fused form against the norms apart (T186)
-    const verdict = ([k, v]: any) => (v.error ? `${k} FAILED (${v.error})`
-      : v.tokens !== undefined ? `${k} ${v.ok ? "ok" : "WRONG"} (${v.tokens} tokens, ${v.edge} next to a border${v.problems ? `: ${tableCell(v.problems[0])}` : ""})`
-      : `${k} ${v.ok ? "ok" : "WRONG"} (worst ${v.worstRelative.toExponential(1)}${v.apart === undefined ? "" : `, quantized ${v.far ? "far apart" : `${fixed(100 * v.apart, 2)}% apart by 1`}`}` +
-        `${[layerCheckNumbers(v)].filter(Boolean).map((numbers) => `; ${numbers}`).join("")})`);
-    if (check?.result) lines.push(`**Shaders against JavaScript**: ${Object.entries(check.result).map(verdict).join(", ")}`, "");
+    if (check?.error) said.push(`**Shaders against JavaScript**: not checked (${check.error})`);
+    lines.push(...said.flatMap((line) => [line, ""]));
+    // every verdict of the check in one line (src/bench.js's checkVerdict()); those not ok are the section's own warnings
+    const verdicts = Object.entries(check?.result ?? {});
+    if (check?.result) lines.push(`**Shaders against JavaScript**: ${verdicts.map(checkVerdict).join(", ")}`, "");
+    said.push(...verdicts.filter(([, v]: any) => v.error || !v.ok).map(checkVerdict));
     const bandwidths = steps.filter((s) => s.name.startsWith("bandwidth"));
     const ceilings = steps.find((s) => s.name === "the device's ceilings")?.result;
     lines.push(...matVecTable(bandwidths, check?.result, ceilings, { lost }), "");
@@ -568,7 +568,7 @@ const BENCH_MODEL = "llm-jp-3-150m";
       "", ...ceilingsMarkdown(steps.find((s) => s.name === "the device's ceilings")),
       "", ...promptMarkdown(steps.find((s) => s.name === "a prompt all at once"), check?.result, ceilings, baseline, gpu));
     lines.push("", `**Bridge** (Atomics.wait ↔ Atomics.waitAsync, ${BRIDGE_ROUNDS} round trips): ${bridge.error ?? `${fixed(bridge.microseconds)} µs each`}`);
-    return lines.join("\n");
+    return { markdown: lines.join("\n"), said };
   }
 
   // what a token costs on the GPU besides reading its weights (T135: the phones' 18 to 20 ms, T94)
@@ -765,10 +765,13 @@ const BENCH_MODEL = "llm-jp-3-150m";
     // T194: the seconds the page was hidden while it ran, right under the machine (no line when it never was)
     const hidden = hiddenLine(awake.hidden());
     const head = [benchMarkdown(measured?.rows ?? [], environment), ...(hidden ? [hidden] : []), ...(measured?.paths ? [measured.paths] : [])].join("\n\n");
-    const markdown = [head, ...sections].join("\n\n");
+    // T227: all that came out WRONG, failed, unsteady or skipped, in one place under the top (parseReport() reads the
+    // rounds' table above it), from the Markdown of the top and of the sections, in the page's own words
+    const warned = warnings([{ title: TITLES.model, markdown: head }, ...shown.map((name) => ({ title: TITLES[name], ...results[name]! }))]);
+    const markdown = [head, warningsBlock(warned), ...sections].filter(Boolean).join("\n\n");
     $("markdown").textContent = markdown;
-    // T185: where the whole is too long for the link, the link holds the head and a line a section
-    const summary = shortReport(head, shown.flatMap((name) => summaryOf(name, results[name]!)));
+    // T185: where the whole is too long for the link, the link holds the head, the warnings and a line a section
+    const summary = shortReport(head, shown.flatMap((name) => summaryOf(name, results[name]!)), warned, environment);
     ($("issue") as HTMLAnchorElement).href = reportUrl(markdown, environment, summary);
     // T192: where the summary is too long as well, the link holds only the request to paste (TOO_LONG)
     const long = reportTooLong(markdown, environment), longer = long && reportTooLong(summary, environment);
@@ -837,7 +840,7 @@ const BENCH_MODEL = "llm-jp-3-150m";
       // button) writes them again, and the report with them
       const g = results.gpu;
       if (name === "cpu" && g?.data?.steps) {
-        g.markdown = gpuMarkdown(g.data.steps, g.data.bridge, g.data.lost);
+        Object.assign(g, gpuMarkdown(g.data.steps, g.data.bridge, g.data.lost));
         parts.gpu.out.innerHTML = rendered(g.markdown);
       }
       report();
