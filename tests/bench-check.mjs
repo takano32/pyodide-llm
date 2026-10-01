@@ -251,7 +251,11 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     failed = wentWrong = true;
   }
   if (errors.length) console.log(`page errors: ${errors.join(" / ")}`);
-  if (wentWrong || errors.length) for (const line of heard.slice(-60)) console.log(`heard: ${line}`);
+  // (every error, warning and failed request, and of the rest, the stages, the last 40)
+  if (wentWrong || errors.length) {
+    const from = heard.length - 40;
+    for (const [at, line] of heard.entries()) if (at >= from || !line.includes(" console info: ")) console.log(`heard: ${line}`);
+  }
   console.log("");
   // T141: Windows' WebKit sometimes never returns from close(), and each browser waits for the one before it (bench.yml's
   // Windows job sat 55 minutes after WebKit's report, 2026-09-27): give it 15 seconds and go on
