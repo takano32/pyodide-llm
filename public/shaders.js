@@ -629,15 +629,21 @@ ${dp4aLines(false)}`}
 // groups of a row, so every row of its output is a NaN, whatever the integers of that group are; the residual stream
 // is a NaN from there, each quantizer after it finds it again by its bits (NORM_QUANTIZE's values are weight × (s × x),
 // a NaN where x or the sum of x² is one), and the classifier's logits are NaN, which T219's flag refuses by their
-// bits. A multiplication and an addition by a NaN are the hardware's own; no max, min, clamp, select or comparison of
-// floats, which may drop one, is on the way. A flag word would need a binding in every quantizer, a place in the State
-// and a reader in gpu.js and forward.js for what the logits already say. (3) An infinity becomes a NaN too: a scale of
+// bits. A multiplication and an addition by a NaN are the hardware's own. (T241's review: there are floats' max,
+// comparisons and a clamp on the way, where a device may drop a NaN: the attention's softmax (the max of the scores,
+// exp_sum != 0), GELU's clamp, the quantizers' own scale > 0. None is the one thing that carries the NaN. A score that is
+// a NaN makes p = exp(score - m) a NaN whatever max did with it, and then p × V, the sum and the output; GELU and SwiGLU
+// multiply the NaN input itself; the quantizers' comparison only picks the integers of a group whose scale is a NaN
+// already. The tests on lavapipe and SwiftShader, where max drops a NaN, hold that for those two; a device where exp(NaN)
+// or a half's NaN is another number is not tried.) A flag word would need a binding in every quantizer, a place in the
+// State and a reader in gpu.js and forward.js for what the logits already say. (3) An infinity becomes a NaN too: a scale of
 // infinity makes a row +inf or -inf by the sign of its dot (and NaN where the dot is 0), and logits of -inf alone are
 // not refused (tokens that cannot be drawn, T195). (4) The word is chosen by a comparison of integers and stored as an
 // integer: no float of the device's is asked whether it is a NaN. In a prompt's block (the same QUANTIZE) the keys
-// and values written back are NaN then, which the next step finds (the CPU's by T195, the GPU's by the above).
-// The cost: a value's AND and integer max where its abs and float max were (none more), and a comparison, an OR and
-// a select a group of 32.
+// and values written back are NaN then. The GPU's next step finds them (by the above); the CPU's does not: its cache
+// reads a float16 NaN as a finite number (kernels/kernel.ts's halves4, T243), so T195's rule cannot see them there.
+// The cost: a value's AND and integer max where its abs and float max were (the abs is a source modifier on most
+// devices, so one instruction a value more: 32 a group), and a comparison, an OR and a select a group of 32.
 const SCALE_WORD = /* wgsl */ `
 const FLOAT_MAGNITUDE = 0x7fffffffu;
 fn scale_word(magnitude: u32, scale: f32) -> u32 {
