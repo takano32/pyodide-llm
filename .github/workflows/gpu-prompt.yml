@@ -48,6 +48,9 @@ on:
       forms:
         description: "T147: only the matrices' shaders whose names hold one of these, separated by commas (gpu-check --forms)"
         required: false
+      nan:
+        description: "T241's review: where the rounds with a NaN or an infinity run, all, made-up, small or none (gpu-check --nan; empty: Dawn made-up, Chromium small, Chrome and Edge none)"
+        required: false
 
 # T193: light or full, for both jobs (the browsers' matrix below says the same by itself: a matrix cannot read env)
 env:
@@ -102,6 +105,7 @@ jobs:
           MODELS: ${{ inputs.models }}
           REAL: ${{ inputs.real }}
           FORMS: ${{ inputs.forms }}
+          NAN: ${{ inputs.nan }}
         run: |
           echo "## ${{ matrix.os }} ${{ matrix.engine }}" >> "$GITHUB_STEP_SUMMARY"
           ids="$MODELS"
@@ -109,7 +113,7 @@ jobs:
           # T193: the suite's models when none are given: "synthetic" alone (light) or every made-up one (full)
           [ "$SUITE" = full ] && suite=made-up || suite=synthetic
           echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-$suite}"
-          node tests/gpu-check.mjs ${ids:-$suite} ${FORMS:+--forms "$FORMS"} --engine ${{ matrix.engine }} 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/gpu-check.mjs ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} --engine ${{ matrix.engine }} 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
 
   dawn:
@@ -156,6 +160,7 @@ jobs:
           MODELS: ${{ inputs.models }}
           REAL: ${{ inputs.real }}
           FORMS: ${{ inputs.forms }}
+          NAN: ${{ inputs.nan }}
         run: |
           export VK_ICD_FILENAMES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)
           echo "## ubuntu-latest dawn ($VK_ICD_FILENAMES)" >> "$GITHUB_STEP_SUMMARY"
@@ -165,5 +170,5 @@ jobs:
           # gpu-check's default)
           [ "$SUITE" = full ] && suite="" || suite=made-up
           echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-${suite:-made-up and the site models}}"
-          node tests/gpu-check.mjs ${ids:-$suite} ${FORMS:+--forms "$FORMS"} --engine dawn --webgpu .tmp/dawn/node_modules/webgpu 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
+          node tests/gpu-check.mjs ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} --engine dawn --webgpu .tmp/dawn/node_modules/webgpu 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"

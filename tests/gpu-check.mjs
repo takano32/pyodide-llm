@@ -583,6 +583,17 @@ try {
     const TESTS = { fallback: true, always: true, ...c.force };
     // T241's review: whether this browser puts a NaN in this model's rows and values (NAN_ROUNDS, and why, are above)
     const nan = NAN_ROUNDS.models === "all" || (NAN_ROUNDS.models === "made-up" ? c.id.startsWith("synthetic") : NAN_ROUNDS.models.includes(c.id));
+    // the seconds the NaN rounds take in this model's runs (the log's "seconds of the NaN rounds of <model>"): rows and
+    // values (T241), the NaN-logits round (T219), the block through forward.js (T243), the weights (T241)
+    const nanSeconds = { rows: 0, values: 0, logits: 0, block: 0, weights: 0 };
+    const timed = (round, fn) => {
+      const began = performance.now();
+      try {
+        return fn();
+      } finally {
+        nanSeconds[round] += (performance.now() - began) / 1000;
+      }
+    };
     // T152: the steps of a generation (see the head of this file), where the GPU took them
     const generation = (engine) => {
       // (T152's review: and the most this adapter binds, which a classifier may pass, Llama 3.2 1B's 262.7 MB on lavapipe's 128 MiB)
@@ -817,15 +828,15 @@ try {
         engine.newGeneration();
         engine.forwardMany(tokens.slice(0, 2), n + 1);
         out.past = { gpuTokens: engine.gpuTokens };
-        if (nan) out.brokenRows = brokenRows(engine, seen);
+        if (nan) out.brokenRows = timed("rows", () => brokenRows(engine, seen));
       }
       if (gpu && steps && out.steps && !out.steps.why) {
-        if (nan) out.steps.brokenValues = brokenValues(engine, seen);
-        out.steps.nanLogits = refusal(engine);
+        if (nan) out.steps.brokenValues = timed("values", () => brokenValues(engine, seen));
+        out.steps.nanLogits = timed("logits", () => refusal(engine));
       } else if (gpu && nan) {
         // T243 (the runs whose last request is not refusal()'s: either stops the GPU; T241's review: where this browser
         // puts a NaN in this model's rows, NAN_ROUNDS)
-        out.refusedBlock = refusedBlock(engine, seen, [[NaN, 0, 5], [Infinity, 15, plan.dim - 1], [NaN, 15, 0], [Infinity, 0, 3]][refusals++ % 4]);
+        out.refusedBlock = timed("block", () => refusedBlock(engine, seen, [[NaN, 0, 5], [Infinity, 15, plan.dim - 1], [NaN, 15, 0], [Infinity, 0, 3]][refusals++ % 4]));
       }
       // T205: the GPU's worker says it let go of its device before the next model is read (false: not within 5 s)
       out.ended = await engine.release();
@@ -922,10 +933,11 @@ try {
     // of the made-up models (Llama's form, Qwen3's norms of the heads, GPT-2's LayerNorm and GELU: an engine a case)
     const broken = [];
     if (NAN_ROUNDS.weights && gpu[0].steps?.planned !== false && ["synthetic", "synthetic-qwen3", "synthetic-gpt2"].includes(c.id)) {
-      const force = { matrices: forms[0], quick: true, pieceBytes: Infinity };
+      const force = { matrices: forms[0], quick: true, pieceBytes: Infinity }, weightsBegan = performance.now();
       for (const form of tokenForms.filter((name) => /DP4A/.test(name) && (c.arch === "llama" || name !== "DP4A, fused (T175)"))) {
         for (const place of brokenPlaces()) for (const value of [NaN, Infinity]) broken.push(await brokenWeight(form, place, value, force));
       }
+      nanSeconds.weights = (performance.now() - weightsBegan) / 1000;
     }
     // the attention without subgroups or f16 (the lanes of the workgroup stand for a subgroup), where the adapter
     // has them and so chose the other
@@ -956,7 +968,7 @@ try {
         ...(synthetic ? { cpuFaster: await direct({ ...force, quick: false }, { GBps: 1e9, promptGMACs: 1e9 }), key: adapter && wgsl.deviceKey(adapter) } : {}),
         keys: tokenRun.keys, values: tokenRun.values, first: tokenRun.steps.first };
     }
-    results.push({ id: c.id, cpu, gpu, late: lateRun, refused, remembered, alone, broken });
+    results.push({ id: c.id, cpu, gpu, late: lateRun, refused, remembered, alone, broken, nanSeconds });
   }
   postMessage({ results, forms, quantizers });
 } catch (error) {
@@ -1133,7 +1145,7 @@ let failed = false;
     failed = true;
   } else console.log(`the quantizers alone: not tried (${q?.skipped ?? "no answer"})`);
 }
-for (const { id, cpu, gpu: runs, late, refused, remembered, alone, broken } of outcome.results) {
+for (const { id, cpu, gpu: runs, late, refused, remembered, alone, broken, nanSeconds } of outcome.results) {
   const c = cases.find((entry) => entry.id === id), ref = c.reference, n = ref.tokens.length - 1;
   const [dim, , layers, heads, kvHeads] = ref.header, kvDim = (c.headDim || dim / heads) * kvHeads;
   const exact = { keys: ref.keys, values: ref.values };
@@ -1303,6 +1315,10 @@ for (const { id, cpu, gpu: runs, late, refused, remembered, alone, broken } of o
     failed ||= failures.length > 0;
   }
   layerTables(c, cpu, runs, measures);
+  // T241's review: what the NaN rounds took of the seconds above, summed over the runs, where this browser runs them
+  if (nanSeconds && Object.values(nanSeconds).some((s) => s > 0)) {
+    console.log(`seconds of the NaN rounds of ${id}: ${Object.entries(nanSeconds).map(([round, s]) => `${round} ${s.toFixed(1)}`).join(", ")}`);
+  }
 }
 await flushed();
 process.exit(failed ? 1 : 0);
