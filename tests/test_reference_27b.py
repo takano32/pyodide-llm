@@ -191,7 +191,8 @@ def rotated_qwen35_gguf(tmp_path, shape):
     return path, file, config
 
 
-def streamed_logits(path, tokens, rounding="float32", broken=""):
+def streamed_run(path, tokens, rounding="float32", broken=""):
+    """(the model, its logits at every position) of a run of the reference over a GGUF's tokens."""
     from unittest import mock
 
     import llama2_numpy
@@ -199,8 +200,12 @@ def streamed_logits(path, tokens, rounding="float32", broken=""):
     conductor = Conductor()
     with mock.patch.object(llama2_numpy, "Tokenizer", lambda *arguments, **named: None):  # (forward() needs none; and no other test is left without one)
         model = Streamed(Source(path, positions=len(tokens) + 1), conductor, rounding=rounding, broken=broken)
-    return conductor.run([(lambda token=token, position=position: np.array(model.forward(token, position)))
-                          for position, token in enumerate(tokens)])
+    return model, conductor.run([(lambda token=token, position=position: np.array(model.forward(token, position)))
+                                 for position, token in enumerate(tokens)])
+
+
+def streamed_logits(path, tokens, rounding="float32", broken=""):
+    return streamed_run(path, tokens, rounding, broken)[1]
 
 
 def test_the_reference_reads_a_rotated_gguf_as_the_converter_does(tmp_path):
@@ -217,6 +222,25 @@ def test_the_reference_reads_a_rotated_gguf_as_the_converter_does(tmp_path):
     got = streamed_logits(path, tokens)
     for position in range(len(tokens)):
         assert np.allclose(got[position], want[position], rtol=1e-3, atol=1e-3), position
+
+
+def test_a_saved_run_holds_the_logits_keys_and_values_in_the_layout_forward_js_reads(tmp_path):
+    """T233 compares forward.js's keysAndValues() ([layers that attend][positions][kv heads x head size]) with these."""
+    from reference_27b import save_run
+    path, _, _ = rotated_qwen35_gguf(tmp_path, {})
+    tokens = [1, 5, 7, 9, 11, 5]
+    model, rows = streamed_run(path, tokens, rounding="as 8 bits round")
+    save_run(tmp_path, 3, "as 8 bits round", model, rows)
+    stem = tmp_path / "engine-3-as-8-bits-round"
+    assert np.array_equal(np.fromfile(f"{stem}.logits", dtype=np.float32).reshape(len(tokens), -1), np.asarray(rows, dtype=np.float32))
+    attending, kv_dim = model.key_cache.shape[0], model.n_kv_heads * model.head_size
+    assert attending == 2  # (two of the made-up model's four layers attend)
+    for kind, cache in (("keys", model.key_cache), ("values", model.value_cache)):
+        saved = np.fromfile(f"{stem}.{kind}", dtype=np.float32).reshape(attending, len(tokens), kv_dim)
+        assert np.abs(saved).sum() > 0
+        for layer in range(attending):
+            for position in range(len(tokens)):  # a position's row is its kv heads one after the other, as the cache keeps them
+                assert np.array_equal(saved[layer, position], cache[layer, :, position].reshape(-1)), (kind, layer, position)
 
 
 def test_the_reference_reads_a_rotated_and_tiled_gguf_as_the_converter_does(tmp_path, monkeypatch):

@@ -39,8 +39,9 @@
 # value heads read in the GGUF's order, no signs, no rotation, the embedding's rows not turned back, q and k read as if no
 # part of a head were stored in halves (T238's five), and weaker ones: a sign or a few, a block of signs, signs of another
 # width, a normalization twice, one layer that reads the model's own basis, the gates that read the rotated one.
-# SAVE_LOGITS=<a directory> writes the logits of the runs that stand for the page (float32, as 7 bits round, as 8 bits
-# round): the comparison of forward.js's own numbers with them needs no pass over the file again (T233).
+# SAVE_LOGITS=<a directory> writes the logits, and the keys and values of the layers that attend, of the runs that stand for
+# the page (float32, as 7 bits round, as 8 bits round): the comparison of forward.js's own numbers with them needs no pass
+# over the file again (T233; save_run() says the layout).
 import json
 import math
 import os
@@ -539,6 +540,18 @@ def compare(name, ours, theirs, wrote=None):
     return distance
 
 
+def save_run(saved, index, name, model, rows):
+    """What a run leaves for the comparison of the page's forward pass with it (T233), in <saved>/engine-<text>-<the
+    run's name>.{logits,keys,values}, float32: the logits, a row for every position; and the keys and values of the
+    layers that attend, in the layout of forward.js's keysAndValues(): [layers][positions][kv heads x head size]. A key
+    or a value of a layer is a function of everything below it, so these hold forward.js to the run where the noise is
+    float32's (the order of the sums) and not an activation's rounding step (the logits')."""
+    stem = Path(saved) / f"engine-{index}-{name.replace(' ', '-')}"
+    np.asarray(rows, dtype=np.float32).tofile(f"{stem}.logits")
+    for kind, cache in (("keys", model.key_cache), ("values", model.value_cache)):
+        np.ascontiguousarray(cache[:, :, :len(rows)].transpose(0, 2, 1, 3), dtype=np.float32).tofile(f"{stem}.{kind}")
+
+
 def rows_of_file(path, vocab):
     return np.fromfile(path, dtype=np.float32).reshape(-1, vocab) if path.exists() else None
 
@@ -608,16 +621,16 @@ def main():
         logits[(index, name)] = results[at:at + count]
         at += count
     del results
-    # SAVE_LOGITS=<a directory>: the logits of the runs that stand for the page (float32, and as 7 bits round with relaxed
-    # SIMD, and as 8 bits round: Safari's and the ternary kernels'), a row for every position of every text, for the comparison of the page's own forward
-    # pass (forward.js, T233) with them without the pass over the file again: engine-<text>-<the run's name>.logits, float32
+    # SAVE_LOGITS=<a directory>: what the runs that stand for the page (float32, and as 7 bits round with relaxed SIMD, and
+    # as 8 bits round: Safari's and the ternary kernels') hold, for the comparison of the page's own forward pass (forward.js,
+    # T233) with them without the pass over the file again (save_run())
     if os.environ.get("SAVE_LOGITS"):
         saved = Path(os.environ["SAVE_LOGITS"])
         saved.mkdir(parents=True, exist_ok=True)
-        for (index, name), rows in logits.items():
+        for index, name, model in runs:
             if name in ("float32", "as 7 bits round", "as 8 bits round"):
-                np.asarray(rows, dtype=np.float32).tofile(saved / f"engine-{index}-{name.replace(' ', '-')}.logits")
-        print(f"reference: the logits of the runs for the page are in {saved}", flush=True)
+                save_run(saved, index, name, model, logits[(index, name)])
+        print(f"reference: the logits, keys and values of the runs for the page are in {saved}", flush=True)
 
     failed = []
     for index, text in enumerate(texts):
