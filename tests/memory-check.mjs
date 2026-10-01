@@ -86,23 +86,32 @@ print(json.dumps([plan_of(**s) for s in json.loads(sys.stdin.read())]))
 `;
 const plansOf = (shapes) => JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c", python],
   { cwd: fileURLToPath(root), input: JSON.stringify(shapes), maxBuffer: 1 << 28 }).toString());
-const FORM = { bias: false, arch: "llama", qk_norm: false, head_dim: 0, linear: null };
+const FORM = { bias: false, arch: "llama", qk_norm: false, head_dim: 0, linear: null, rotated: null };
 // T229: the linear-attention layers of the Qwen3.5 shapes below (llama2_numpy.linear_form())
 const LINEAR_SMALL = { every: 4, key_heads: 8, value_heads: 16, key_dim: 128, value_dim: 128, conv: 4 };
 const LINEAR_08B = { every: 4, key_heads: 16, value_heads: 16, key_dim: 128, value_dim: 128, conv: 4 };
 const LINEAR_27B = { every: 4, key_heads: 16, value_heads: 48, key_dim: 128, value_dim: 128, conv: 4 };
+// T237: a rotated basis is a block and the signs of every width (footprint() counts them by their widths; what they are is no
+// matter here)
+const ROTATED = { block: 1024, signs: { 5120: "", 6144: "", 17408: "" } };
+const ROTATED_SMALL = { block: 64, signs: { 256: "", 512: "" } };
 
 // what createForward is handed, from a plan of Python's: kv_start where the cache starts, and the outlier channels of the
 // final norm there are (footprint() counts the most there can be for every int8 model: the second part asks for them)
 const empty = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
 function planOf(p, { relaxed = true, kvStart = p.header[6], outliers = 0 } = {}) {
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = p.header;
+  // T237's review: a rotated basis (the form's) is a block and a float32 for every value of every width a matrix reads: the
+  // residual stream, an attention's output, the FFN's inside, a linear layer's output (what Python's plan holds in derived)
+  const rotated = p.form.rotated ? p.form.rotated.block : 0, linear = p.form.linear;
+  const signs = rotated ? [...new Set([dim, heads * p.head_size, hidden, ...(linear ? [linear.value_heads * linear.value_dim] : [])])] : [];
   return {
     arch: p.form.arch, dim, hidden_dim: hidden, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: p.head_size,
     vocab_size: Math.abs(signedVocab), seq_len: seqLen, rotary: p.form.linear ? p.head_size / 4 : p.head_size, linear: p.form.linear,
-    parallel_residual: p.form.arch === "neox",
+    parallel_residual: p.form.arch === "neox", rotated,
     kv_start: kvStart, rms_norm_eps: 1e-5, shared_classifier: signedVocab > 0, int8: p.keep_int8, relaxed, tensors: p.tensors,
-    derived: Object.fromEntries(Object.entries(p.derived).map(([name, bytes]) => [name, new Uint8Array(bytes)])),
+    derived: Object.fromEntries([...Object.entries(p.derived).map(([name, bytes]) => [name, new Uint8Array(bytes)]),
+      ...signs.map((width) => [`signs.${width}`, new Uint8Array(width * 4)])]),
     outliers: p.keep_int8 ? Array.from({ length: Math.min(outliers, dim) }, (_, c) => c) : [], half_kv: p.keep_int8,
   };
 }
@@ -220,6 +229,13 @@ function halfToFloat(h) {
     // than the megabyte (hybridOver()), 0.5 MiB for the 0.8B, 12 MiB of the 27B's 28 GB, never under
     ...big("qwen3.5 0.8B", [1024, 3584, 24, 8, 2, 248320, 4096], { arch: "qwen35", head_dim: 256, linear: LINEAR_08B }, ["int8"]),
     ...big("qwen3.5 27B's layers, 4 of 64", [5120, 17408, 4, 24, 4, 1000, 4096], { arch: "qwen35", head_dim: 256, linear: LINEAR_27B }, ["int8"]),
+    // T237's review: and in a rotated basis, as Ternary Bonsai 2 27B is (its signs of three widths, and a place in every
+    // frame for the rotated input of a matrix: 27B's widest input is 17408 wide, 16 frames of it)
+    ...big("qwen3.5 27B's layers, 4 of 64, in a rotated basis", [5120, 17408, 4, 24, 4, 1000, 4096],
+      { arch: "qwen35", head_dim: 256, linear: LINEAR_27B, rotated: ROTATED }, ["int8"]),
+    ...big("qwen3.5, a state of 12.6 MB, in a rotated basis", [256, 512, 8, 4, 2, 20000, 4096],
+      { arch: "qwen35", head_dim: 64, linear: LINEAR_SMALL, rotated: ROTATED_SMALL }, ["int8", "float32"]),
+    ...big("llama in a rotated basis", [256, 512, 8, 8, 2, 20000, 4096], { rotated: ROTATED_SMALL }, ["int8", "int6"]),
   ];
   // the float32 vectors of the linear layers of a hybrid model, whose relaxed corrections (a ninth of a float32's bytes) footprint() counts
   const hybridOver = (p) => {
