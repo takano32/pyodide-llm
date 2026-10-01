@@ -694,8 +694,8 @@ const t225Check = { ...aCheck, "a layer, llama.cpp, separate steps": offLine, "a
   "a layer, llama.cpp, fused (T150), vec": offLine, "a layer, DP4A, separate steps": farO, "a layer, DP4A, fused (T175), the norms apart": farO, "a layer, DP4A, fused (T175)": farO,
   "tokens on the GPU": { ok: false, worstRelative: 0, tokens: 9, edge: 0, problems: ["T 0.7, token 2: 48, the CPU 483", "T 0.7, token 3: 9, the CPU 12"] } };
 const t225Sections = sectionsOf(aHead, t225Check), t225Warned = warnings(t225Sections);
+// (the WRONG ones first, in the order the check wrote them, then the rough time of the page's path: severity())
 assert.deepEqual(t225Warned, [
-  "Model: the page: a prompt of 64 tokens; as chosen: 820 tok/s (800–830), GPU; CPU only: 612 tok/s (600–640, unsteady); GPU only: 830 tok/s (810–840); GPU ÷ CPU: 1.4×",
   "GPU: a layer, llama.cpp, separate steps WRONG (worst 1.8e-3)",
   "GPU: a layer, llama.cpp, fused (T150) WRONG (worst 1.8e-3)",
   "GPU: a layer, DP4A, separate steps WRONG (worst 9.1e-4; quantized: o far from quantize_x's)",
@@ -703,7 +703,8 @@ assert.deepEqual(t225Warned, [
   "GPU: tokens on the GPU WRONG (9 tokens, 0 next to a border: T 0.7, token 2: 48, the CPU 483)",
   "GPU: a layer, llama.cpp, fused (T150), the norms apart WRONG (worst 1.8e-3)",
   "GPU: a layer, llama.cpp, fused (T150), vec WRONG (worst 1.8e-3)",
-  "GPU: a layer, DP4A, fused (T175), the norms apart WRONG (worst 9.1e-4; quantized: o far from quantize_x's)"]);
+  "GPU: a layer, DP4A, fused (T175), the norms apart WRONG (worst 9.1e-4; quantized: o far from quantize_x's)",
+  "Model: the page: a prompt of 64 tokens; as chosen: 820 tok/s (800–830), GPU; CPU only: 612 tok/s (600–640, unsteady); GPU only: 830 tok/s (810–840); GPU ÷ CPU: 1.4×"]);
 // the whole report: the list right under the top, before the first section, each line as it is; parseReport() reads
 // the rounds above it as before
 const t225Whole = wholeOf(aHead, t225Sections);
@@ -737,14 +738,15 @@ const others = warnings([{ title: "Model", markdown: iphone }, { title: "CPU", s
     markdown: ["**The device was lost** (gone): the times measured after it are not the GPU's.", "", ...layerTable(unsteadyStep, layerRight, layerCeilings), "",
       ...layerStepsTable(stepsFailedForm, layerRight, layerCeilings), "", ...layerStepsTable(stepsFailedForm, layerRight, layerCeilings)].join("\n") },
   { title: "Storage", status: "wrong", markdown: "| writes | s |\n|---|---:|\n| in order | 0.95 |" }]);
+// (the worst first: what failed or is WRONG, then a skipped round, then a rough time; within each, the sections' order)
 assert.deepEqual(others, [
-  `Model: what ran: without the kernels; tok/s: skipped; backend: ${MEMORY_UNSAID}`,
   "CPU: failed: the worker failed: a | b c",
   "GPU: **The device was lost** (gone): the times measured after it are not the GPU's.",
-  "GPU: a layer: llama.cpp, fused (T150); dispatches: 5; GPU ms: unsteady: 2.10; GB/s: 32.6 (81.5%); its 16 layers, ms: 33.6",
   "GPU: a layer: llama.cpp, separate steps, subgroups; dispatches: failed: a | b c",
   'GPU: "DP4A, fused (T175)": failed: refused',
-  "Storage: computed something wrong"], others.join("\n"));
+  "Storage: computed something wrong",
+  `Model: what ran: without the kernels; tok/s: skipped; backend: ${MEMORY_UNSAID}`,
+  "GPU: a layer: llama.cpp, fused (T150); dispatches: 5; GPU ms: unsteady: 2.10; GB/s: 32.6 (81.5%); its 16 layers, ms: 33.6"], others.join("\n"));
 // a step of the GPU section that failed as a whole says so in that word (a token's row, a table's one line), so it is
 // listed; one that was not run is no warning
 assert.deepEqual(warnings([{ title: "GPU", status: "ok", markdown: [...tokenTable([{ name: "a token of Llama 3.2 1B", error: "out of memory" }], aBaseline), "",
@@ -769,4 +771,36 @@ const lost = "**The device was lost** (destroyed: Device was destroyed.\n - Whil
 assert.deepEqual(warnings([{ title: "GPU", status: "error", said: [lost], markdown: `${lost}\n\n${layerTable({ name: "a layer of a token", error: "a\nb" }).join("\n")}` }]),
   ["GPU: **The device was lost** (destroyed: Device was destroyed. - While calling [Queue].Submit() failed): the times measured after it are not the GPU's.",
     "GPU: **A layer of a token**: failed: a b"]);
+// T227's review: the worst first. T225 made the WRONG rows 250 to 530 characters each (the worker's line of the stages and
+// where the layer departed first; the words are of CI run 36867111944's probe, K and V rounded a float16 too far), and a
+// device with every one of the 11 forms of the layer table and the tokens WRONG has 12 of them. At the link's limit a
+// summary has room for one or two. On a device whose page's path is rough all through (as CI's are) the section order put
+// three rough times and the counts of threads before the first WRONG row: the summary kept one of them and no WRONG row.
+const stagesFloat = "stages: q 1.3e-7, K and V 0 to the nearest float16, 152 toward zero, 0 away from it, 232 farther, attention 3.8e-3, silu(gate) × up 2.9e-3, stream 2.6e-3; cache 1.7e-3; first to depart: K and V";
+const stagesDp4a = "stages: qkv quantized: scales 1.0e-7, 1 of 2112 off by 1, q 1.6e-7, K and V 1 to the nearest float16, 146 toward zero, 0 away from it, 237 farther, attention 3.2e-3, " +
+  "o quantized: scales 8.8e-3, 32 of 2112 off by 1, ffn quantized: scales 2.3e-7, 0 of 2112 off by 1, silu(gate) × up 2.0e-7, down quantized: scales 5.1e-7, 0 of 2080 off by 1, stream 2.0e-7; cache 1.7e-3; first to depart: K and V";
+const elevenForms = ["llama.cpp, separate steps", "llama.cpp, fused (T150)", "llama.cpp, fused (T150), flash_attn_vec (subgroups)", "llama.cpp, separate steps, subgroups", "llama.cpp, fused (T150), subgroups",
+  "llama.cpp, fused (T150), subgroups, flash_attn_vec (subgroups)", "DP4A, separate steps", "DP4A, fused (T175), the norms apart", "DP4A, fused (T175), the norms apart, flash_attn_vec (subgroups)",
+  "DP4A, fused (T175)", "DP4A, fused (T175), flash_attn_vec (subgroups)"];
+const probeCheck = { ...aCheck, "tokens on the GPU": { ok: false, worstRelative: 0, tokens: 8, edge: 0, problems: ["T 0.7, token 1: 331, the CPU 260"],
+  steps: "steps: T 0: logits within 1.3e-2 of the largest, the most likely token the same at 6 of 6 steps, K and V 144 to the nearest float16, 739 toward zero, 58 away from it, 2131 farther" } };
+for (const form of elevenForms) {
+  probeCheck[`a layer, ${form}`] = form.startsWith("DP4A")
+    ? { ok: false, worstRelative: 1.7e-3, stages: stagesDp4a, quantized: [{ point: "qkv", wrong: null, scale: 1e-7, apart: 1, of: 2112 }, { point: "o", wrong: "far from quantize_x's", scale: 8.8e-3, apart: 32, of: 2112 }] }
+    : { ok: false, worstRelative: 2.6e-3, stages: stagesFloat };
+}
+const roughHead = [benchMarkdown(rows, android), pathTable({ ...real, rows: real.rows.map((row) => ({ ...row, cpu: { ...row.cpu, unsteady: true } })),
+  perCount: [{ threads: 1, speed: 107, low: 100, high: 108, unsteady: true }, { threads: 4, speed: 163, low: 120, high: 165, unsteady: true }] }, "tiny-lm 29M")].join("\n\n");
+const probeWarned = warnings(sectionsOf(roughHead, probeCheck));
+const probeWrong = probeWarned.filter((line) => line.startsWith("GPU: ") && line.includes(" WRONG ("));
+assert.equal(probeWrong.length, 12, probeWarned.join("\n"));
+assert.deepEqual(probeWarned.slice(0, 12), probeWrong, "the WRONG ones come first");
+assert.ok(probeWarned.length > 12 && probeWarned.slice(12).every((line) => line.startsWith("Model: ") && line.includes("unsteady")), "then the rough times");
+const probeLines = [...deviceSummary(aDevice), ...cpuSummary(aCpu), ...gpuSummary(aSteps.map((s) => (s.name === "the shaders against JavaScript" ? { ...s, result: probeCheck } : s)), aBaseline),
+  ...storageSummary(aStorage), ...lineSummary(aLine)];
+const probeSummary = shortReport(roughHead, probeLines, probeWarned, android);
+const probeKept = probeSummary.split("\n").filter((line) => probeWarned.some((one) => line === `- ${one}`));
+assert.ok(loginUrl(aWhole, android, probeSummary).length <= REPORT_LIMIT, `${loginUrl(aWhole, android, probeSummary).length}`);
+assert.ok(probeKept.length >= 1 && probeKept.length < 12 && probeKept.every((line) => line.startsWith("- GPU: ") && line.includes(" WRONG (")), `the summary keeps WRONG rows first: ${probeKept.join("\n")}`);
+assert.ok(probeSummary.includes(`- … and ${probeWarned.length - probeKept.length} more, in the whole report below`), "and says how many are left to the whole report");
 console.log("ok");

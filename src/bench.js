@@ -145,6 +145,12 @@ const MARKED = /\b(?:WRONG|FAILED|failed|unsteady|skipped)\b/;
 // a row or a sentence that only repeats a verdict of the GPU's check, which is listed itself
 const REPEATED = /\(WRONG in the check\)|The check found [^.]*WRONG\./g;
 const marked = (text) => MARKED.test(text.replace(REPEATED, ""));
+// how much a warning matters (T227's review), the worst first: 0 a result that cannot be right or a step that did not
+// run (WRONG, FAILED, failed), 1 a round that was skipped, 2 a time that was rough (unsteady)
+const severity = (text) => {
+  const words = text.replace(REPEATED, "");
+  return /\b(?:WRONG|FAILED|failed)\b/.test(words) ? 0 : /\bskipped\b/.test(words) ? 1 : 2;
+};
 
 /**
  * T227: all that came out WRONG, failed, unsteady or skipped in a run, a line each, in the words the page shows (the
@@ -157,18 +163,20 @@ const marked = (text) => MARKED.test(text.replace(REPEATED, ""));
  * the tables with one.
  * What a section says itself is taken out of its Markdown, wherever it runs over a line break (a device's error message
  * has some), so that it is listed once; nor are the marks that only repeat a verdict ("WRONG in the check" beside a
- * row) listed. A failure the page writes in none of these words is not here. [] where nothing did.
+ * row) listed. A failure the page writes in none of these words is not here. The worst come first, within each kind in
+ * the order of the sections (severity()): a summary that has room for a few (shortReport()) keeps the WRONG ones, not
+ * the rough times of the page's path that open the report. [] where nothing did.
  */
 export function warnings(sections) {
   const out = [];
   for (const { title, status, markdown = "", said = [] } of sections) {
-    const before = out.length, add = (text) => out.push(`${title}: ${text.replace(/\s*\n\s*/g, " ")}`);
+    const before = out.length, add = (text, rank = severity(text)) => out.push({ rank, text: `${title}: ${text.replace(/\s*\n\s*/g, " ")}` });
     // a section that failed and wrote only why (no table, nothing it names itself)
     if (status === "error" && !said.length && !/^\|/m.test(markdown)) {
-      add(`failed: ${markdown}`);
+      add(`failed: ${markdown}`, 0);
       continue;
     }
-    said.forEach(add);
+    said.forEach((text) => add(text, 0));
     let rest = markdown;
     for (const one of said) rest = rest.split(one).join("");
     const lines = rest.split("\n");
@@ -180,9 +188,10 @@ export function warnings(sections) {
       else if (marked(line)) add(cells(line).map((cell, j) => cell && `${head[j] ? `${head[j]}: ` : ""}${cell}`).filter(Boolean).join("; "));
     });
     // a section the page calls WRONG or failed with none of the above: its state at the least
-    if (out.length === before && (status === "wrong" || status === "error")) add(STATES[status]);
+    if (out.length === before && (status === "wrong" || status === "error")) add(STATES[status], 0);
   }
-  return [...new Set(out)];
+  // (a sort keeps the order of equals: the sections' own)
+  return [...new Set(out.sort((a, b) => a.rank - b.rank).map(({ text }) => text))];
 }
 
 /** T227: the warnings as the report holds them, under a heading of their own ("" where there are none); kept: how
