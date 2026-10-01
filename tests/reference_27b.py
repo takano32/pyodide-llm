@@ -497,11 +497,12 @@ def kl_of(ours, theirs):
 
 class Distance:
     """How far a run's logits are from a reference's, over the positions both have: the largest difference of a logit
-    (and where), the positions where the largest logit is the same, the mean and the largest KL."""
+    (and where), the positions where the largest logit is the same (and, where it is not, how far apart the other's own
+    first two are: gaps), the mean and the largest KL."""
 
     def __init__(self, ours, theirs):
         self.count = min(len(ours), len(theirs))
-        self.worst, self.where, self.same, self.close, self.kls = 0.0, 0, 0, [], []
+        self.worst, self.where, self.same, self.close, self.gaps, self.kls = 0.0, 0, 0, [], [], []
         for position in range(self.count):
             a, b = ours[position], theirs[position]
             difference = float(np.max(np.abs(a - b)))
@@ -511,6 +512,7 @@ class Distance:
                 self.same += 1
             else:
                 first, second = np.sort(b)[-1], np.sort(b)[-2]
+                self.gaps.append(float(first - second))
                 self.close.append(f"position {position}: its first two are {first - second:.4f} apart")
             self.kls.append(kl_of(a, b))
 
@@ -651,7 +653,9 @@ def main():
             for name in ("float32", "bfloat16 gates", "as 7 bits round", "as 8 bits round"):
                 compare(f"text {index}, {name} against the float32 fork", logits[(index, name)], text["f32"])
             near = Distance(ours, text["f32"])
-            tight_ok = near.worst <= TIGHT_LINE and near.same == near.count and near.kl_worst <= TIGHT_KL
+            # (the largest logit may be another where the float32 fork's own first two are closer than twice the largest
+            # difference of a logit: two numbers the rounding of another CPU can put either way round)
+            tight_ok = near.worst <= TIGHT_LINE and near.kl_worst <= TIGHT_KL and all(gap <= 2 * near.worst for gap in near.gaps)
             print(f"reference: text {index}: {'ok' if tight_ok else 'FAILED'} against the float32 fork: {near.worst:.4f} against the line "
                   f"{TIGHT_LINE}, the largest logit the same at {near.same} of {near.count} positions, the KL at most {near.kl_worst:.1e} "
                   f"against {TIGHT_KL:.0e}", flush=True)

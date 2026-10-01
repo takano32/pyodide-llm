@@ -133,6 +133,9 @@ def test_a_distance_is_the_largest_difference_the_agreement_and_the_kl():
     assert Distance(ours, theirs[:2]).count == 2  # the positions both have
     other = Distance(ours, theirs)
     assert other.same < 3 and len(other.close) == 3 - other.same
+    # where the largest logit is another, the gap is how far apart the other's own first two are (never negative)
+    firsts = [float(np.sort(theirs[p])[-1] - np.sort(theirs[p])[-2]) for p in range(3) if np.argmax(ours[p]) != np.argmax(theirs[p])]
+    assert other.gaps == firsts and all(gap >= 0 for gap in other.gaps) and Distance(ours[:2], theirs[:2]).gaps == []
     # KL(P || Q) against the definition, in float64
     t, o = theirs[0].astype(np.float64), ours[2].astype(np.float64)
     p, q = np.exp(t - t.max()), np.exp(o - o.max())
