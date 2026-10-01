@@ -661,17 +661,17 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   let token = id.y;
   if (g >= quantize.n / ${GROUP}u || token >= step.tokens) { return; }
   let at = (token * quantize.xStride) / 4u + g * 8u;
-  var magnitude = 0u;
+  var largest = 0.0;
   for (var k = 0u; k < 8u; k++) {
-    let v = bitcast<vec4<u32>>(x[at + k]) & vec4<u32>(FLOAT_MAGNITUDE);
-    magnitude = max(magnitude, max(max(v.x, v.y), max(v.z, v.w)));
+    let v = abs(x[at + k]);
+    largest = max(largest, max(max(v.x, v.y), max(v.z, v.w)));
   }
-  let scale = bitcast<f32>(magnitude) / 127.0;
+  let scale = largest / 127.0;
   let inverse = select(0.0, 1.0 / scale, scale > 0.0);
   for (var k = 0u; k < 8u; k++) {
     xq[at + k] = packed(clamp(vec4<i32>(round(x[at + k] * inverse)), vec4<i32>(-127), vec4<i32>(127)));
   }
-  xs[token * (quantize.xStride / ${GROUP}u) + g] = scale_word(magnitude, scale);
+  xs[token * (quantize.xStride / ${GROUP}u) + g] = bitcast<u32>(scale);
 }`;
 
 // ---- T155: int6 weights (T98) on the GPU. The model's GPU worker widens every int6 matrix once, as it puts it on the
@@ -2732,11 +2732,9 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
   let s = 1.0 / sqrt(partial[0] / f32(norm.size) + norm.eps);
   for (var g = t; g < norm.size / ${GROUP}u; g += 64u) {
     let at = g * ${GROUP}u;
-    var magnitude = 0u;
-    for (var i = 0u; i < ${GROUP}u; i++) {
-      magnitude = max(magnitude, bitcast<u32>(weight[norm.at + at + i] * (s * x[row + at + i])) & FLOAT_MAGNITUDE);
-    }
-    let scale = bitcast<f32>(magnitude) / 127.0;
+    var largest = 0.0;
+    for (var i = 0u; i < ${GROUP}u; i++) { largest = max(largest, abs(weight[norm.at + at + i] * (s * x[row + at + i]))); }
+    let scale = largest / 127.0;
     let inverse = select(0.0, 1.0 / scale, scale > 0.0);
     for (var k = 0u; k < ${GROUP / 4}u; k++) {
       let i = at + 4u * k;
@@ -2744,7 +2742,7 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
                         weight[norm.at + i + 2u] * (s * x[row + i + 2u]), weight[norm.at + i + 3u] * (s * x[row + i + 3u]));
       xq[(row + i) / 4u] = packed(clamp(vec4<i32>(round(v * inverse)), vec4<i32>(-127), vec4<i32>(127)));
     }
-    xs[token * (norm.size / ${GROUP}u) + g] = scale_word(magnitude, scale);
+    xs[token * (norm.size / ${GROUP}u) + g] = bitcast<u32>(scale);
   }
 }`;
 
