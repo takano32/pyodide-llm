@@ -141,11 +141,13 @@ function miniCpm5(id, name, source, download, sizes, sampling) {
  * tests/gguf_check.py tensors held them to (gguf.yml's candidates) */
 const ggufOf = (repo, revision, weights, original, originalRevision, tokenizer = "tokenizer.json") =>
   ({ original, hf: { repo, revision, weights, vocabulary: { repo: original, revision: originalRevision, tokenizer } } });
-// A Qwen3 whose config.json and tokenizer name no BOS (Ternary Bonsai, Shisa V2.1 Qwen3 8B, CAT-Thinking 8B; a Qwen3 of
-// Qwen's own has bos_token_id in config.json): the converter would take token 1, '"'. The BOS here is Qwen3's own,
-// <|endoftext|> (151643), as every Qwen3 of the list begins (the real tokenizer puts nothing in front: T131), and the
-// answer stops at it and at <|im_end|> (151645). The converter could say this itself (a BOS that is named nowhere, and
-// <|endoftext|> in the vocabulary: T248's survey, 7 (4)), at the next CONVERTER: then these three lose their options
+// A Qwen3 whose config.json and tokenizer name no BOS (Ternary Bonsai, CAT-Thinking 8B; a Qwen3 of Qwen's own has
+// bos_token_id in config.json): the converter would take token 1, '"'. The BOS here is Qwen3's own, <|endoftext|>
+// (151643), as every Qwen3 of the list begins (the real tokenizer puts nothing in front: T131), and the answer stops at
+// it and at <|im_end|> (151645). The converter could say this itself (a BOS that is named nowhere, and <|endoftext|> in
+// the vocabulary: T248's survey, 7 (4)), at the next CONVERTER: then these lose their options. What it costs is the
+// model's: 1 to 4% in perplexity for Qwen's own and CAT-Thinking, 54% for Shisa V2.1 Qwen3 8B, which has its own start
+// (below). Where a model of this family is added, tests/start_check.mjs says which
 const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] };
 /** T235, T246: a Ternary Bonsai of Prism ML (a ternary Qwen3) in one of its sizes: its PQ2_0 GGUF's weights with the
  * vocabulary, config.json and chat template of its -unpacked original. What the sizes share is here alone, so that one
@@ -546,10 +548,18 @@ const LISTED = [
     conversion: {}, options: harmony, generation: sampled(1.1), template: HARMONY,
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T250: three more of 8B. ELYZA's Llama 3 with its card's system message. Shisa V2.1's Qwen3 8B, whose template
-  // answers at once unless told to think (the other way round from Qwen3's), read from the model; CAT-Thinking, from
-  // Qwen3 Swallow, which thinks in Japanese before it answers (Qwen3's template). Neither of the two names a BOS (the
-  // options are QWEN3_OWN_BOS). Shisa's sampling is its generation_config.json's; CAT-Thinking's is its card's (0.8 and
-  // 0.95, and "to mitigate the probability of repetition, we find repetition_penalty=1.05 or larger to be useful").
+  // answers at once unless told to think (the other way round from Qwen3's); CAT-Thinking, from Qwen3 Swallow, which
+  // thinks in Japanese before it answers (Qwen3's template). Neither of the two names a BOS. CAT-Thinking's options are
+  // QWEN3_OWN_BOS and its format the converter's reading of the template. Shisa's sampling is its generation_config.json's;
+  // CAT-Thinking's is its card's (0.8 and 0.95, and "to mitigate the probability of repetition, we find
+  // repetition_penalty=1.05 or larger to be useful").
+  // Shisa's BOS is the format's own first token, <|im_start|> (151644), and its format begins after it (as a Qwen3.5's, T236):
+  // the page then sends the very IDs the real template makes. The real tokenizer puts nothing in front of a text, and with
+  // QWEN3_OWN_BOS's <|endoftext|> in front this model answers worse (the review, tests/answer_check.mjs: its own answers
+  // to five questions are 67% higher in perplexity, the likeliest next token differs at one in four, and all five answers
+  // written again part within the first 12 tokens; plain text 54% higher). CAT-Thinking is 3.5% off with it on plain text,
+  // Qwen's own Qwen3 0.6B and 1.7B 1 to 4% (T131's ±3%). The answer stops at <|im_end|> (151645), at <|endoftext|> and at
+  // the mark of a new turn.
   // CAT-Thinking's GGUF is mmnga-o's: mradermacher's Q8_0 has 256 tensors 0.1 to 0.4% from the nearest of the original's
   // (tests/gguf_check.py tensors: not the pinned original's weights). The original was uploaded in float32 on 2026-05-28
   // and "converted to bf16 from float32" on 2026-05-29 (the pinned revision holds the bf16): mradermacher's GGUF is of
@@ -561,7 +571,8 @@ const LISTED = [
   { group: "hf", id: "hf-shisa-v2.1-qwen3-8b", name: "Shisa V2.1 Qwen3 8B", note: "answers at once · 日本語 / English · fetches 8.7 GB (GGUF) → int8 9.2 GB · desktop only · Chrome and Firefox",
     ...ggufOf("mradermacher/shisa-v2.1-qwen3-8b-GGUF", "9b9187f69adca28b8e2b9490b2c151fcb85c0df6", "shisa-v2.1-qwen3-8b.Q8_0.gguf",
       "shisa-ai/shisa-v2.1-qwen3-8b", "0b0fe7c76dac910510ccd04fc807fdbdbc2fc16e"), download: 8709519392,
-    conversion: {}, options: QWEN3_OWN_BOS,
+    conversion: {}, options: { bos: 151644, stop_tokens: [151643, 151644, 151645] },
+    template: "user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
     generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-cat-thinking-8b", name: "CAT-Thinking 8B", note: "thinks in Japanese before it answers · 日本語 / English · fetches 8.7 GB (GGUF) → int8 9.2 GB · desktop only · Chrome and Firefox",
