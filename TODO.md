@@ -86,7 +86,7 @@
 
 **いまの状態（2026-10-01、再開した回）**: 2026-09-28 に止めた 4 つ（T129・T130・T219 の (2)・T224）は全部本線に入れた（反映済み、レビューは Sonnet max が後で）。本線は T129 105bb4a、T130 89a24e9（持ち主の判断の 1 行つき: 共有でないメモリで float16 にしても 64 ビットが要るモデルは KV を float32 のまま）、T219 の (2) b76cd65。止めた頃の経緯は `git show 1a0cc1d:TODO.md` のこの段にある。
 - **CI**: 本線（T129 と T130 の後）の tests.yml の全部の組は成功（run 36864748112、EPYC 7763、383 秒）。T219 のブランチ（T224 と合わせた後）の gpu-prompt.yml の全部の組は成功、FAILED 0（run 36864349281、13.9 分）。本番の確かめは T130（`long=850` の 3B 級と `coi=off`）と T129（`slow.yml` の slow と stall、モデルの切り替え、2 回目の訪問）が通った（数字は各項）。T219 の後の本線の gpu-prompt.yml の軽い組は成功（run 36866412202）、`gpuTest=on` の本番の回（run 36866409090、SwiftShader）は tiny-lm が「prompts and answers on WebGPU (gpuTest)」で 66 トークンを GPU で書いた（467 秒）。同じ回の llm-jp-3 150M は 1800 秒の持ち時間で打ち切り（SwiftShader で生成の歩を回す e2e は遅い、AGENTS.md の T156 の記録のとおり。壊れではない: 大きいモデルを `gpuTest=on` で書かせない）。
-- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: 実装は T239・T240 `t239-t240-thread-search`、T241 `t241-quantize-nan`、T236（Qwen3.5 0.8B を一覧に）。レビュー（Sonnet max、`.claude/agents/` の `reviewer` と `shader-reviewer`）は T225・T226・T235・T229（T227 は済み）。終わったものから本会話が本線に入れる。
+- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: 実装は T230・T231 `t230-t231-ternary`、T237・T238 `t237-t238-rotated-basis`、T245・T247 `t245-t247-qwen35`、T246 `t246-ternary-bonsai-4b-8b`、T249・T250 `t249-t250-japanese-models`、T253・T254 `t253-t254-granite-minicpm`。レビュー（Sonnet max）は T229 `t229-review`、T239〜T241 `t239-t241-review`。レビューがまだ始まっていないもの: T236、T242、T243。終わったものから本会話が本線に入れる。**同時に動かす担当が 9〜10 本だと使用量の上限に当たる**（2026-10-01 に 1 回、全部が止まった。SendMessage で続きから再開できる）。
 - **T227 も本線に入れた（4623fb3）。レビュー済み（Sonnet max、2026-10-01、ブランチ `t227-review`）**: 報告の頭と要約に「#### Warnings」の一覧。レビューの直し（must-fix 1・should 5。装置のエラーの改行が警告を壊す件が must-fix。並びは重い順に、経路の止まりも載せる、など）はこのブランチ。見出しと切り詰めの文（「… and N more, in the whole report below」）は実装が選んだ仮の文のまま、持ち主が決める（勧めは T227 の項）。WRONG の報告は本物の Chromium で見た（`bench-check.mjs --wrong`: 層の検査の線を 1e-12 にして配る。本物の端末の WRONG の行はまだ見ていない）。
 - **T228 の調べも本線に入れた**（docs/notes/t228-bonsai-2-2026-10-01.md。前の仕事を T235〜T238 に採番した。勧めは小さいモデルから、持ち主の判断待ち）。
 - **lishogi.org の WebGPU（2026-10-01、持ち主の問い）**: 使っていない。ソース（WandererXII/lishogi、master 5394fc3、2026-09-10）にも本番の解析ページの JS にも `navigator.gpu`・WGSL は無い。ブラウザの解析は YaneuraOu の K-P の NNUE と Fairy-Stockfish の NNUE の WASM（SIMD と pthreads、共有メモリ）で、隔離はサーバのヘッダ（COEP は `credentialless` が使えるブラウザではそれ、ほかは `require-corp`）。取り込む GPU の手法は無い。
@@ -100,6 +100,9 @@
 - **T235 のレビューも済み（完了）**: must-fix 0。**持ち主の判断待ち**: yarn か素の RoPE か（レビューの勧めは素。26 の測りのうち 24 で素が低く、日本語は +3.6〜+7.4%。替える変更はブランチ `t235-plain-rope`）、note に「事実を誤る」と言い足すか、「Created using Bonsai by Prism ML.」の表示（NOTICE.txt の求め）。
 - **T236 も本線に入れた（反映済み）**: Qwen3.5 0.8B を一覧に（考える形とすぐ答える形、unsloth の Q8_0 の GGUF 812 MB、int8 850 MB）。**BOS は `<|im_start|>` に**（本物のトークナイザは文の前に何も置かない。変換器の `<|endoftext|>` を前に置くと、素の文の perplexity が英語 +46%・日本語 +95%）。**持ち主の判断待ち**: 項目の名前と note、ページの「開けるモデル」の 2 つの文に Qwen3.5 を足すか（`src/pages/index.astro` の 143 行と 367 行、README の 98 行）。
 - **T226 のレビューも済み（完了）、T239・T240・T241 も本線に入れた（反映済み）**。
+- **T242 も本線に入れた（反映済み）、本番で確かめた**: bench.yml を Windows の WebKit で 12 回、落ちたのは 0 回（run 36915406195。直す前は 26%）。原因は今日の変更ではなく、Playwright の Windows 版 WebKit が 2 つ目の大きい共有メモリ（次のモデルのための 1 GiB つき）で落ちる件と、jsDelivr の取得がまとめて失敗する件（約 2%、文だけ直した）。**持ち主の判断待ち**: Pyodide のファイルの取得を 1 回取り直すか（方針 2）、新しい英文、CPU の節の 1 GiB も外すか。
+- **T225 のレビューも済み（完了）**: must-fix 1（エンジンの `checkTokens` も K と V を最近接と思い込んでいて、0 の向きに丸める GPU で正しい形を断りえた）を直した。
+- **T248 の調べも本線に入れ、T249〜T261 に採番した**。始めたのは T249・T250（日本語のモデルを一覧に）と T253・T254（Granite 4.2、MiniCPM5 の前分割）。エンジンの本体に触る T255・T260・T261 は T230・T231 が入ってから。
 - **残してあるブランチ**: レビューが使う調べと壊し方の捨てのブランチ（`t129-probe`、`t219-review-probe`、）、`t225-broken`、T224 のレビューの調べ `t224-review-probes`、T226 のレビューの `t226-review-plan-check`（Node だけで 1 トークンの層の計画を見る試験 1 つ。本線には入れていない: gpu.js の中の名前に結びつくので、gpu.js が変わるたびに直す手間が要る。入れるなら `tests/suite.sh` の full に）。T224 の前の版の写しと前のレビューの書きかけ・調べのブランチは、レビューが済んだので消した。
 - **レビュー待ち（Sonnet max）**: なし。**T225 は済み**（ブランチ `t225-review`。must-fix 1: エンジンの `checkTokens` にも最近接の思い込みがあった、を直した。0 の向きの装置を CI に足した）。**T235 は済み**（ブランチ `t235-review`、上の T235 の項）。**T226 は済み**（ブランチ `t226-review`。must-fix 0、should 2 を直し、持ち主の判断が 2 つ: (4) の線と、4 GB と言う端末。T226 の項）。**T227 は済み**（ブランチ `t227-review`。must-fix 1: 装置のエラーの改行が警告を壊した、を直した）。**T129 は済み**（ブランチ `t129-review`、下の T129 の項。must-fix 1: (7) の断りが本物のブラウザで働いていなかった、を直した）。**T219 の (1)(2) と T220 は済み**（ブランチ `t219-review-sonnet` を本線に入れた。must-fix 0、should 6 を直した）。**T224 はレビュー済みで完了**（must-fix 1: 検査の集計が NaN を残さなかった、を直した。本線に入れた）。**T130 と T223 は済み**（2026-10-01、本線に入れた。must-fix 0。T130 の直し 4 つと、T223 のステータス行の本数と、新しい試験 2 つ `tests/memory-check.mjs`・`tests/thread-search-check.mjs`）。
 - **持ち主の端末でまとめて見るもの（2026-10-01、持ち主「計測はすべての実装が終わったら見直す形に」: タスクごとに頼まず、並んでいる実装が本線に入り終わってから端末ごとに 1 回で）**。実装は下の数字を待たずに進める。
@@ -1652,8 +1655,88 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T247 [追加][モデル] Qwen3.5 のほかの大きさを一覧に — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T245 の後。規模 小〜中）
 - 0.8B（T236）のほかの大きさ（HF にあるものを調べて）を、Q8_0 の GGUF から。`gguf_check.py tensors` を 1 つずつ通してから。
 
-### T248 [調査][モデル] 足せるモデルの調べ直し（2026-10） — 状態: 進行中（2026-10-01、持ち主「他にも対応したいな」。T81 と同じ形の調べ。規模 小〜中）
+### T248 [調査][モデル] 足せるモデルの調べ直し（2026-10） — 状態: **反映済み**（2026-10-01、調べだけ。本線に入れた。出たタスクは T249〜T261）
 - 2026-09-26 の T81 の調べの後に出たもの・人気の上がったものを、今のエンジンで開けるか（形・トークナイザ・書式・大きさ）で分け、足りないものを採番できる形に書く。
+- **調べの結果（2026-10-01、[docs/notes/t248-survey-2026-10-01.md](docs/notes/t248-survey-2026-10-01.md)）**。コードは触っていない。判定は変換器そのもの（`normalize()`・`check_config()`・前分割の読み手を 1,358 件に、ページと同じ `Conversion` を約 90 件に、重みなしで）。
+  - ダウンロード上位 2000 件の 9.5B 以下 782 件のうち、今受け付ける種類は 458 件でダウンロードの 83.0%（T81 のときは 51.7%）。残りはどの種類も 3% 未満。判定にかけた 1,358 件のうち 877 件が通った（落ちた 481 件の 278 件は量子化済みの再配布）。
+  - **今のまま開く日本語のモデル**: rinna japanese-gpt2 xsmall（int8 43 MB。tiny-lm の次に軽い）と medium、llm-jp-3 3.7B・7.2B instruct3、llm-jp-4.1 8B thinking（2026-09-15。Q8_0 の GGUF は見つからず、書式は harmony の手書き、止まりは [1, 2, 13]）、shisa v2.1（Llama 3.2 3B と Qwen3 8B）、CAT-Translate 3.3B、Llama-3-ELYZA-JP 8B、CAT-Thinking 8B、EuroLLM 1.7B（35 言語）ほか 33 件。Qwen3 と Qwen2.5 の派生の 4 つは BOS が 1 になるので、項目に `bos: 151643` が要る。
+  - **今のまま開く英語のモデル**: GPT-2 の medium・large・xl と distilgpt2、Pythia 14M・2.8B・6.9B、Qwen2.5 Coder、DeepSeek-R1 Distill の Qwen 7B と Llama 8B、Llama 3.1 8B Instruct、h2o-danube3 500M、Supra2 100M。
+  - **小さな穴（勧める順）**: Granite 4.2（倍率は attention の 1 つだけで、q の行列に畳めば変換器だけで済む見込み。日本語を試験した言語に挙げる）、MiniCPM5 の 2 段の前分割（29 件・150 万ダウンロード）、SmolLM3 の RoPE なしの層（18 件・113 万）、Mistral の新しいトークナイザと Phi-4 の前分割（Ministral 8B、Mistral Nemo の日本語版、Phi-4 mini の前提）、tokenizer.json の sentencepiece 流の BPE（CAT-Translate 7B、Gemma 4 の前提）、Phi-3 mini（まとまったテンソルを割る）、DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor`（読み方の判断が先）。
+  - **新しいアーキテクチャで勧めるもの**: LFM2.5（畳み込みの層と attention の層。規模 中。日本語を挙げる 230M・350M と日本語用の 1.2B-JP、作り手の Q8_0 の GGUF あり。日本語のタグの小さいモデルでいちばん多い種類）、Gemma 3 の 270M と 1B（norm 4 つ・GeGLU・512 の窓。規模 中〜大。原本はゲート付きで unsloth の写しから）。Gemma 4 は Gemma 3 の後（規模 大）。状態空間（Nemotron-H・Mamba・RWKV7）と MoE は今は勧めない。
+  - 途中で見つけたこと: API の `language=ja` は効かない（`filter=ja` が効く）。前分割の Split が `String` の tokenizer.json で `pretokenizer_name()` が `KeyError` で落ちる（worker は次のトークナイザに移るので開くものは開く）。CAT-Translate-7b は `tokenizer.model` が無く今も開かない。
+  - 確かめていないもの: ブラウザでの動作、GGUF と原本の突き合わせ、手書きの書式の本物、ライセンスの条文、Gemma 3 と LFM2.5 の日本語の質。
+  - **持ち主に決めてもらうこと**（文書の 9 節）: A のどれを入れるか（全部で約 80 項目になる）、llm-jp-4.1 を safetensors の 17.2 GB から取るか・考えを見せるか、独自のライセンスのモデルのために仕事をするか、新しいアーキテクチャの順（LFM2.5 → Gemma 3 を勧める）、英語の古典を入れるか、Mistral Nemo 12B（約 15.3 GiB の見積もり）を試すか。
+  - 採番の案は文書の 6 節（すぐ入れる 4 つ、小さな穴 7 つ、新しいアーキテクチャ 2 つ。番号は本会話が付ける）。
+
+### T249 [追加][モデル] 日本語の軽いモデルと中くらいのモデルを一覧に（rinna GPT-2 xsmall・medium、llm-jp-3 3.7B、shisa v2.1 3B、CAT-Translate 3.3B、EuroLLM 1.7B） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- どれも今の変換器を通った（この文書の 2 節）。GGUF のあるものは `gguf.yml` の `candidates` で原本と突き合わせてから。rinna の 2 つは safetensors から。
+- 書式: rinna は書式なし、llm-jp は `llmJp`、shisa は Llama 3.2 と同じ日付つき、CAT-Translate は 0.8B・1.4B と同じ、EuroLLM は変換器の読む ChatML。`format_check.py` に足す。
+
+```
+### T250 [追加][モデル] 日本語の 8B を一覧に（llm-jp-4.1 8B thinking、Llama-3-ELYZA-JP 8B、shisa v2.1 Qwen3 8B、CAT-Thinking 8B） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- 64 ビットのメモリ（Chrome と Firefox）。llm-jp-4.1 は harmony の手書きと止まりのトークン [1, 2, 13]、Qwen3 の派生は `bos: 151643`。
+- llm-jp-4.1 の Q8_0 の GGUF が無ければ safetensors の 17.2 GB から（持ち主の判断）。thinking の考えを見せるかも決める。
+
+```
+### T251 [追加][モデル] 英語の古典の梯子を一覧に（GPT-2 medium・large・xl と distilgpt2、Pythia 14M・2.8B・6.9B） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- GPT-2 と NeoX の GGUF の道（T136 の段 ③）のまま。実物の固定値に 1 つ足すかは任意。
+
+```
+### T252 [追加][モデル] 名前の通った 7〜8B と Coder を一覧に（Qwen2.5 Coder 1.5B・7B、DeepSeek-R1 Distill Qwen 7B・Llama 8B、Llama 3.1 8B Instruct） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- どれも bartowski の Q8_0 がある。DeepSeek の 2 つは 1.5B の項目と同じ書式と BOS。
+
+**小さな穴（勧める順）**
+
+```
+### T253 [追加][変換] Granite 4.2（attention の倍率を q に畳む）と一覧への追加 — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- `normalize()` で granite を llama に読み替え、q の行列を `attention_multiplier × √head_dim` 倍にして書く。ほかの倍率が 1.0 でないもの（4.1）は断る。GGUF の `granite` の名前。書式は手書き。日本語を試験した言語に挙げる 3B（int8 約 4.1 GB）と 8B。
+
+```
+### T254 [追加][解析分割] MiniCPM5 の前分割（数字を先に切る 2 段の Split） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- 新しい型を 1 つ。全符号位置と乱数の文で本物の tokenizers と比べる。MiniCPM5 1B・2B（apache-2.0、英語と中国語）が開く。29 件。
+
+```
+### T255 [追加][CPU][WebGPU] SmolLM3（4 層に 1 つ RoPE を使わない層） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- options に RoPE なしの層を持ち、forward.js と GPU の ROPE でその層の回す本数を 0 に。書式は手書き。3B（apache-2.0、6 言語、日本語なし）。
+
+```
+### T256 [追加][解析分割] Mistral の新しいトークナイザと Phi-4 の前分割（大文字と小文字の種類を分ける型 2 つ） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- `CharClasses` を Lu・Lt・Lm・Lo・Ll・M まで細かくする。Ministral 8B（研究用のライセンス）、Mistral Nemo の日本語版（12B、メモリは実測）、kanana-2 が開き、Phi-4 mini の前提になる。
+
+```
+### T257 [追加][変換] tokenizer.json の sentencepiece 流の BPE を読む（CAT-Translate 7B、Gemma 4 の前提） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- merges の順位を点数にして llama2.c 形の BPE の語片に直す。normalizer は「先頭に ▁」「空白を ▁」だけを受け付ける。本物と ID を突き合わせる。
+
+```
+### T258 [追加][変換] Phi-3 mini（1 つにまとまった q・k・v と gate・up を割る）、続けて Phi-4 mini（longrope と回す割合） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- Phi-3 mini 4k は文脈を窓の 2047 で切る。Phi-4 mini は前分割の仕事の後。
+
+```
+### T259 [調査][変換] DeepSeek-R1-0528-Qwen3-8B の yarn の `attn_factor` をどう読むか — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- transformers は読まない名前。llama.cpp が読むかを確かめ、カードの勧める実行のしかたと、両方の読みの perplexity で決める。
+
+**新しいアーキテクチャ**
+
+```
+### T260 [追加][CPU] LFM2.5（畳み込みの層と attention の層）を CPU で: 350M と 1.2B-JP を一覧に — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- 層の種類の並び、畳み込みの層の forward と状態、GGUF の `lfm2`。規模 中。日本語の使える 0.26〜0.40 GB のモデルが増える。GPU は別のタスク（畳み込みのシェーダ）。
+
+```
+### T261 [追加][CPU][WebGPU] Gemma 3 の 270M と 1B（norm 4 つ・GeGLU・512 の窓・2 つの RoPE） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+```
+- 規模 中〜大。窓つきの attention は CPU と GPU の両方。原本はゲート付きで、unsloth の写しから。Gemma 2 と Gemma 4 はこの部品の上に。
 
 ### T235 [追加][Bonsai] Ternary-Bonsai-1.7B を一覧に（PQ2_0 を int8 に広げる読みと yarn の RoPE） — 状態: **完了**（2026-10-01 に本線に入れた 8d65233、レビュー済み Sonnet max。持ち主の判断待ちが 4 つ: 下のレビューの項）
 - ブランチ `t235-ternary-bonsai-1.7b`（確かめの道具は別のブランチ `t235-probe`: `tests/yarn_reference.py` と測った 2 つの文。本線には入れない）。決定と落とし穴は AGENTS.md の「3 値の Ternary Bonsai 1.7B」。
