@@ -74,6 +74,11 @@ KNOWN = {
     "hf-eurollm-1.7b-instruct": {"why": "NFKC of tokenizer.model (T249)",
                                  "text": lambda text, prompt: unicodedata.normalize("NFKC", text)},
 }
+# T236 (its review): the entries whose BOS is the format's own first token (<|im_start|>), so that the page sends the
+# real template's ids exactly, none before them. Everywhere else a BOS of the page's in front of the real ids is let
+# by (the first BOS may differ, T131): that let the design of before T236, <|endoftext|> in front of <|im_start|>
+# (which costs a Qwen3.5 much, TODO.md's T236), pass for these two as well.
+STRICT = {"hf-qwen3.5-0.8b", "hf-qwen3.5-0.8b-thinking"}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
 # (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
 ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9a775",
@@ -258,7 +263,7 @@ def main():
                 encoded = lambda text: list(reference(text, add_special_tokens=False)["input_ids"])
                 real = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, **thinking)
                 real = list(real["input_ids"] if hasattr(real, "keys") else real)
-            matches = lambda real: page == real or page[1:] == real
+            matches = (lambda real: page == real) if entry["id"] in STRICT else (lambda real: page == real or page[1:] == real)
             if matches(real):
                 same += 1
             elif "text" in known and matches(encoded(known["text"](text, prompt))):
