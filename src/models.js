@@ -542,11 +542,17 @@ const LISTED = [
   // the answer with an empty thought (Qwen3's enable_thinking=false): the model has one form, and the converter reads
   // it. config.json and the tokenizer name no BOS (the converter would take token 1, '"'): Qwen3's own, <|endoftext|>,
   // as every Qwen3 of the list begins, and the answer stops at it and at <|im_end|>. The sampling is the card's
-  // generation_config.json (its top-k the page's sampler has not)
+  // generation_config.json (its top-k the page's sampler has not). rope_scaling: {} is the RoPE plain, where config.json
+  // says yarn (factor 4, original context 8192: Prism's way to 32768, which transformers, vLLM and llama.cpp apply to every
+  // position). The page cuts the context at 4096, inside the 8192, and there the plain RoPE has the lower perplexity:
+  // transformers 4.57.6 on five texts of 256 to 4096 tokens, yarn +3.6 to +7.4% on Japanese, +0.2 to +1.7% on English
+  // prose and +5 to +7% on a technical text (AGENTS.md's T235; Qwen3's own card advises against a static yarn for texts
+  // short of 32768). An empty dict is false, which the engine reads as no scaling; null would reach Python as jsnull.
+  // Raise the context past 8192 and measure again: yarn is made for what is past it (not measured here)
   { group: "hf", id: "hf-ternary-bonsai-1.7b", name: "Ternary Bonsai 1.7B", note: "answers at once · 日本語 / English · ternary weights · fetches 463 MB (GGUF) → int8 1.9 GB · desktop only",
     ...ggufOf("prism-ml/Ternary-Bonsai-1.7B-gguf", "983b5dec2ff16aab79990711ba0f828a499a7e6a", "Ternary-Bonsai-1.7B-PQ2_0.gguf",
       "prism-ml/Ternary-Bonsai-1.7B-unpacked", "3aca840085293d026ce6f6b80fafdae937fd2eeb"), download: 463290464,
-    conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
+    conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645], rope_scaling: {} },
     generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
 ];
