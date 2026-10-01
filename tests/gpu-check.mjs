@@ -443,8 +443,10 @@ const tokenAttentions = !adapter ? [] : [...(adapter.features.has("subgroups") &
 // are words, so that a signalling NaN and a negative one arrive as they are written. Returns { rows: [{ shader, what, word,
 // want, ok }] } (a row a group), or { skipped } or { error }
 const quantizerProbe = async () => {
-  if (!adapter) return { skipped: "no adapter" };
-  const device = await adapter.requestDevice();
+  // (an adapter of its own: an adapter makes one device, and this harness reads its features and key beside the probe)
+  const own = await navigator.gpu?.requestAdapter();
+  if (!own) return { skipped: "no adapter" };
+  const device = await own.requestDevice();
   const STORAGE = 0x80, UNIFORM = 0x40, COPY_SRC = 0x04, COPY_DST = 0x08, MAP_READ = 0x01, GROUP = wgsl.GROUP;
   const room = (bytes) => Math.max(16, Math.ceil(bytes / 16) * 16);
   const make = (code) => device.createComputePipeline({ layout: "auto", compute: { module: device.createShaderModule({ code }), entryPoint: "main" } });
