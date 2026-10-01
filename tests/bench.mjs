@@ -842,6 +842,19 @@ assert.deepEqual(warnings([{ title: "GPU", status: "ok", markdown: layerStepsTab
 assert.deepEqual(warnings([{ title: "Storage", status: "wrong", markdown: ["| writes | s | of it flushing, s | MB/s | × a download of 8.3 MB/s |", "|---|---:|---:|---:|---:|",
   "| in order, one flush | 0.33 | 0.31 | 204 | 25× |", "| read back in order (3 pieces WRONG) | 0.01 |  | 6711 | 809× |"].join("\n") }]),
   ["Storage: writes: read back in order (3 pieces WRONG); s: 0.01; MB/s: 6711; × a download of 8.3 MB/s: 809×"]);
+// the page's wiring of the warnings, which only a browser runs (and no runner makes anything WRONG: the --wrong of
+// tests/bench-check.mjs, a step of preview.yml, does): what each section says itself reaches warnings() as said, the GPU
+// section's Markdown and said are written again together after the CPU section, and the summary is cut to the link
+const benchmarkPage = fs.readFileSync(new URL("../src/pages/benchmark.astro", import.meta.url), "utf8");
+for (const [what, pattern] of [
+  ["the CPU section hands over what it says", /return \{ status: said\.length \? "wrong" : "ok", data: r, markdown: lines\.join\("\\n"\), said \};/],
+  ["the GPU section spreads its Markdown and what it says", /\.\.\.gpuMarkdown\(steps, bridge, lost\) \};/],
+  ["and writes both again after the CPU section", /Object\.assign\(g, gpuMarkdown\(g\.data\.steps, g\.data\.bridge, g\.data\.lost\)\);/],
+  ["gpuMarkdown says the verdicts that are not ok", /said\.push\(\.\.\.verdicts\.filter\(\(\[, v\]: any\) => v\.error \|\| !v\.ok\)\.map\(checkVerdict\)\);[\s\S]*return \{ markdown: lines\.join\("\\n"\), said \};/],
+  ["the model section hands over what its path says", /said: pathWarnings\(paths\)/],
+  ["the report lists the head's and the sections' warnings", /warnings\(\[\{ title: TITLES\.model, markdown: head, said: measured\?\.said \}, \.\.\.shown\.map\(/],
+  ["and cuts the summary to the link", /shortReport\(head, .*, warned, environment\)/],
+]) assert.ok(pattern.test(benchmarkPage), `benchmark.astro: ${what}`);
 // the CPU section's ceilings that could not be measured at all say so in that word, as the GPU section's steps do (T227's own
 // change left this one at "Not measured:")
 const noCeilings = cpuTable({ ...aCpu, ceilings: { error: "out of memory\nsecond | line" } });
