@@ -145,6 +145,12 @@ const MARKED = /\b(?:WRONG|FAILED|failed|unsteady|skipped)\b/;
 // a row or a sentence that only repeats a verdict of the GPU's check, which is listed itself
 const REPEATED = /\(WRONG in the check\)|The check found [^.]*WRONG\./g;
 const marked = (text) => MARKED.test(text.replace(REPEATED, ""));
+// how much a warning matters (T227's review), the worst first: 0 a result that cannot be right or a step that did not
+// run (WRONG, FAILED, failed), 1 a round that was skipped, 2 a time that was rough (unsteady)
+const severity = (text) => {
+  const words = text.replace(REPEATED, "");
+  return /\b(?:WRONG|FAILED|failed)\b/.test(words) ? 0 : /\bskipped\b/.test(words) ? 1 : 2;
+};
 
 /**
  * T227: all that came out WRONG, failed, unsteady or skipped in a run, a line each, in the words the page shows (the
@@ -155,33 +161,37 @@ const marked = (text) => MARKED.test(text.replace(REPEATED, ""));
  * section says went wrong itself (the GPU's verdicts of its check, a lost device, the CPU's logits not finite), as they
  * are; every row of a table with one of the words in a cell, its cells under their headers; and every sentence outside
  * the tables with one.
- * A line of the Markdown that holds one of said is not read again (the GPU's line of all its verdicts), nor are the
- * marks that only repeat a verdict ("WRONG in the check" beside a row). A failure the page writes in none of these
- * words is not here. [] where nothing did.
+ * What a section says itself is taken out of its Markdown, wherever it runs over a line break (a device's error message
+ * has some), so that it is listed once; nor are the marks that only repeat a verdict ("WRONG in the check" beside a
+ * row) listed. A failure the page writes in none of these words is not here. The worst come first, within each kind in
+ * the order of the sections (severity()): a summary that has room for a few (shortReport()) keeps the WRONG ones, not
+ * the rough times of the page's path that open the report. [] where nothing did.
  */
 export function warnings(sections) {
   const out = [];
   for (const { title, status, markdown = "", said = [] } of sections) {
-    const before = out.length, add = (text) => out.push(`${title}: ${text.replace(/\s*\n\s*/g, " ")}`);
+    const before = out.length, add = (text, rank = severity(text)) => out.push({ rank, text: `${title}: ${text.replace(/\s*\n\s*/g, " ")}` });
     // a section that failed and wrote only why (no table, nothing it names itself)
     if (status === "error" && !said.length && !/^\|/m.test(markdown)) {
-      add(`failed: ${markdown}`);
+      add(`failed: ${markdown}`, 0);
       continue;
     }
-    said.forEach(add);
-    const lines = markdown.split("\n");
+    said.forEach((text) => add(text, 0));
+    let rest = markdown;
+    for (const one of said) rest = rest.split(one).join("");
+    const lines = rest.split("\n");
     let head = [];
     lines.forEach((line, i) => {
-      if (said.some((one) => line.includes(one))) return;
       if (!line.startsWith("|")) {
         for (const sentence of line.split(/(?<=\.) (?=[A-Z"])/)) if (marked(sentence)) add(sentence.replace(/^- /, ""));
       } else if (lines[i + 1]?.startsWith("|---")) head = cells(line);
       else if (marked(line)) add(cells(line).map((cell, j) => cell && `${head[j] ? `${head[j]}: ` : ""}${cell}`).filter(Boolean).join("; "));
     });
     // a section the page calls WRONG or failed with none of the above: its state at the least
-    if (out.length === before && (status === "wrong" || status === "error")) add(STATES[status]);
+    if (out.length === before && (status === "wrong" || status === "error")) add(STATES[status], 0);
   }
-  return [...new Set(out)];
+  // (a sort keeps the order of equals: the sections' own)
+  return [...new Set(out.sort((a, b) => a.rank - b.rank).map(({ text }) => text))];
 }
 
 /** T227: the warnings as the report holds them, under a heading of their own ("" where there are none); kept: how
@@ -296,7 +306,7 @@ export function cpuTable(r) {
     "Reading alone reads the model's weights above, a megabyte at a time taken in turn by the threads. " +
     "relaxed_dot with its two loads reads 8 KB that stay in the first cache, a weight and an activation for each dot, as the one-token kernel (matmul_q8r) does. " +
     "On registers alone it is the instruction's own rate, which no kernel that loads its weights and tokens reaches; a prompt's tiles, with half a load of data for each dot, lie between the two.");
-  if (c.error) return [...lines, "", tableCell(`Not measured: ${c.error}`)];
+  if (c.error) return [...lines, "", tableCell(unmeasured(c.error))];
   lines.push("", "| loop | software threads | ceiling |", "|---|---:|---:|",
     ...(c.read ?? []).map((one) => `| reading alone | ${one.threads} | ${ceiling(one, "GBps", "GB/s")} |`),
     `| relaxed_dot with its two loads (int8) | 1 | ${ceiling(c.dot, "GMACs", "G MAC/s")} |`,
@@ -393,7 +403,8 @@ export function layerCheckNumbers({ quantized, sameAsNormsApart: apart, stages }
  * the norms apart (T186); the tokens generated, the first that differed, and (T225) the worker's line of how each
  * run's steps held (steps). */
 export function checkVerdict([name, v]) {
-  if (v.error) return `${name} FAILED (${v.error})`;
+  // (a device's validation error has line breaks, and with them the verdict is lines of its own in the report)
+  if (v.error) return `${name} FAILED (${tableCell(v.error)})`;
   const verdict = `${name} ${v.ok ? "ok" : "WRONG"}`;
   if (v.tokens !== undefined) return `${verdict} (${v.tokens} tokens, ${v.edge} next to a border${v.problems ? `: ${tableCell(v.problems[0])}` : ""}${v.steps ? `; ${tableCell(v.steps)}` : ""})`;
   const apart = v.apart === undefined ? "" : `, quantized ${v.far ? "far apart" : `${number(100 * v.apart, 2)}% apart by 1`}`;
@@ -757,13 +768,21 @@ const samplingCell = (s) => `${s.chunks ? "one workgroup " : ""}${samplingTime(s
  * T190: /benchmark/ reads the same, so that the page path is timed on the model page's count. nav: the navigator */
 export const threadsKey = (id, nav) => `threads:${id}:${nav.hardwareConcurrency}:${nav.deviceMemory ?? ""}:${nav.userAgent}`;
 
+// the words of the page path's first line for what stopped, which pathTable() writes and pathWarnings() lists (T227's
+// review): software threads that stopped after the count was found, a search that did not end, the GPU stopped while the
+// sides were timed; and (public/worker.js) why a page that is not isolated has one thread, which is no failure
+const STOPPED_WHILE_TIMED = "a software thread stopped while timed, and one thread went on";
+const searchNotEnded = (how) => `the search had not ended after ${how.unfinished} s`;
+const gpuStopped = (gpu) => `WebGPU stopped while timed: ${tableCell(gpu.lost)}`;
+const NO_SHARED_MEMORY = "no shared memory here";
+
 /** T190: how the page path's number of threads came about (worker.js's timedPaths), in a few words */
 export function threadsHow(how) {
   if (!how) return "";
   if (how.alone) return `: ${how.alone}`;
   // T190's review: a software thread that stopped after the count was found (T120): the later times are one thread's
-  const stopped = how.stopped ? "; a software thread stopped while timed, and one thread went on" : "";
-  if (how.unfinished) return `: the search had not ended after ${how.unfinished} s${stopped}`;
+  const stopped = how.stopped ? `; ${STOPPED_WHILE_TIMED}` : "";
+  if (how.unfinished) return `: ${searchNotEnded(how)}${stopped}`;
   if (how.remembered) return `, as the model page remembers${stopped}`;
   const verdicts = (how.searched ?? []).map(([best, candidate, kept]) => `${best} or ${candidate}: ${kept}`);
   return `${verdicts.length ? `, searched here (${verdicts.join(", ")})` : ""}${stopped}`;
@@ -808,7 +827,7 @@ export function pathTable(paths, name = "") {
   const { gpu = {}, rows = [] } = paths;
   const facts = [paths.threads !== undefined && `${paths.threads} software thread${paths.threads === 1 ? "" : "s"}${threadsHow(paths.how)}`];
   if (gpu.why !== undefined) facts.push(`WebGPU: ${tableCell(gpuSkipped(gpu.why))}`);
-  else if (gpu.lost) facts.push(`WebGPU stopped while timed: ${tableCell(gpu.lost)}`);
+  else if (gpu.lost) facts.push(gpuStopped(gpu));
   else {
     facts.push(`WebGPU ready in ${number(gpu.seconds)} s`, `matrices by ${tableCell(gpu.matrices ?? "?")}`, `attention by ${tableCell(gpu.attention ?? "?")}`);
     if (paths.status) facts.push(tableCell(paths.status));
@@ -836,6 +855,21 @@ export function pathTable(paths, name = "") {
   const counts = threadsLine(paths.perCount, paths.threads);
   if (counts) lines.push("", counts);
   return lines.join("\n");
+}
+
+/**
+ * T227's review: what the model page's path says went wrong, as it says it in pathTable()'s first line, for warnings() to
+ * list as the section's own (said). The GPU stopped while the sides were timed (forward.js gives a dozen reasons for
+ * stopping it, and only some have "failed" in them: it said nothing, its worker stopped answering, its logits were not
+ * finite), software threads that stopped or did not start, a search for their count that did not end. [] where none
+ * did; a page that is not isolated has no software threads, and that is no failure.
+ */
+export function pathWarnings(paths) {
+  if (!paths || paths.error) return [];  // (an error says "failed" itself)
+  const { gpu = {}, how = {} } = paths;
+  // (as threadsHow() and pathTable() write them: alone says why the count is one, and nothing else of the threads)
+  const threads = how.alone ? [how.alone !== NO_SHARED_MEMORY && how.alone] : [how.unfinished && searchNotEnded(how), how.stopped && STOPPED_WHILE_TIMED];
+  return [gpu.why === undefined && gpu.lost && gpuStopped(gpu), ...threads].filter(Boolean);
 }
 
 // ---- T185: a line of the summary for each section (shortReport()), from the data the section's tables are made of.
