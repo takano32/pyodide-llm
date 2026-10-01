@@ -26,6 +26,9 @@ on:
       run:
         description: 'T242: the page''s ?run= (e.g. model, or cpu,model)'
         default: 'all'
+      query:
+        description: 'T242: more of the page''s query, e.g. full (the six rounds of ?full)'
+        default: ''
       times:
         description: 'T242: how many times over, each a fresh browser (a failure that comes now and then)'
         default: '1'
@@ -119,6 +122,7 @@ jobs:
           SECTIONS: ${{ inputs.run || 'all' }}
           TIMES: ${{ inputs.times || '1' }}
           BUILD: ${{ inputs.build }}
+          QUERY: ${{ inputs.query }}
         run: |
           set -o pipefail
           echo "## ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
@@ -126,7 +130,7 @@ jobs:
           failed=0
           for try in $(seq 1 "$TIMES"); do
             echo "=== try $try of $TIMES"
-            node tests/bench-check.mjs "${where[@]}" $BROWSERS --model "$MODEL" --size "$SIZE" --run "$SECTIONS" | tee -a "$GITHUB_STEP_SUMMARY" || { failed=$((failed + 1)); echo "=== try $try FAILED"; }
+            node tests/bench-check.mjs "${where[@]}" $BROWSERS --model "$MODEL" --size "$SIZE" --run "$SECTIONS" --query "$QUERY" | tee -a "$GITHUB_STEP_SUMMARY" || { failed=$((failed + 1)); echo "=== try $try FAILED"; }
           done
           echo "=== $failed of $TIMES tries failed"
           [ "$failed" = 0 ]
