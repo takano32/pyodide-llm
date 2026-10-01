@@ -509,6 +509,8 @@ export function gpuOnlyPlan(header, tensors, force = {}, remembered) {
 /** Whether a checkpoint of size bytes and the forward pass after it (footprint) pass the 4 GiB of a 32-bit memory.
  * A model that fits stays there: a 64-bit memory runs the kernels about a tenth slower (T101, measured). */
 export const needsWide = (size, after) => CONTROL_BYTES + size + after > PAGES_32 * PAGE;
+/** T129 (7): whether they pass even a 64-bit memory (16 GiB here, Chrome's): no memory holds such a model. */
+export const pastWide = (size, after) => CONTROL_BYTES + size + after > PAGES_64 * PAGE;
 /** T133: the dtype of a model converted with none asked for, from its int8 size and what the forward pass puts after
  * it (footprint, as int8): int8 where that fits a 32-bit memory, or where the browser has a 64-bit one (wide: Chrome
  * and Firefox; about a tenth slower, against six bits' half the speed and +1.4 to 1.7% of perplexity, T98); else six
