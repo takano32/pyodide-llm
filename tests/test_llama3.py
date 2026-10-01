@@ -96,7 +96,9 @@ def llama3(max_seq_len=64, scaling=None):
 def test_the_file_and_the_engine_make_the_same_scaled_tables(scaling):
     """float32 files hold the tables (the converter makes them), int8 files do not (the engine does): the two must
     agree, and the engine needs rope_scaling from the options for that (T72's lesson: test the options' path).
-    yarn's tables are also longer by its magnitude (T235), in both: the cos of position 0 says it."""
+    yarn's tables are also longer by its magnitude (T235), in both: the cos of position 0 says it, and every row's cos
+    and sin together (the review of T235: the cos at 0 does not see a sin that was left out, in the file and in the engine
+    alike, as one shared helper written wrong would)."""
     config, tensors, published = llama3(scaling=scaling)
     file = safetensors_file(tensors)
     size = struct.unpack("<Q", file[:8])[0]
@@ -122,6 +124,8 @@ def test_the_file_and_the_engine_make_the_same_scaled_tables(scaling):
     assert (magnitude > 1.13) is (published["rope_scaling"].get("rope_type") == "yarn")
     for dtype in ("float32", "int8"):
         assert np.all(tables[dtype][0][0] == np.float32(magnitude))
+        # every pair of every position is turned and scaled: cos^2 + sin^2 is the magnitude squared, in both tables
+        assert np.allclose(np.hypot(tables[dtype][0], tables[dtype][1]), magnitude, atol=1e-6, rtol=0)
 
 
 def test_llama3_pretokenizer_follows_the_pattern():
