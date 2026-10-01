@@ -415,6 +415,22 @@ assert.ok(!layerStepsTable(lengthsStep, layerRight, { ...layerCeilings, fallback
   assert.ok(twoLines.includes("| flash_attn_vec (subgroups) | 50.0 (6.0× the engine's tiles) | 120.0 (20.0× the engine's tiles) | 480.0 (20.0× the engine's tiles) |"), twoText);
   assert.ok(twoText.includes("The tiles are here twice"), twoText);
   assert.ok(!twoText.includes("undefined") && !twoText.includes("NaN"), twoText);
+  assert.ok(!twoText.includes("GB/s: the keys and values"), "no GB/s of the cache before the review's bytes");
+  // T224's review: bytes, the keys and values of each length read once (Llama 3.2 1B's: positions × 512 × 2 B × 2): the
+  // GB/s of every cell, and against the buffer's reads (40 GB/s here) where there is that ceiling
+  const bytes = [128, 1024, 4096].map((positions) => positions * 512 * 4);
+  const rateStep = { ...twoStep, result: { ...twoStep.result, lengths: { ...twoStep.result.lengths, bytes } } };
+  const rateLines = layerStepsTable(rateStep, layerRight, layerCeilings), rateText = rateLines.join("\n");
+  assert.ok(rateLines.includes("| the prompt's tiles (flash attention's tile) | 900.0 (0.3 GB/s, 1% of the buffer's reads) | 7200.0 (0.3 GB/s, 1% of the buffer's reads) | 28800.0 (0.3 GB/s, 1% of the buffer's reads) |"), rateText);
+  assert.ok(rateLines.includes("| flash_attn_vec (subgroups) | 50.0 (6.0× the engine's tiles; 5.2 GB/s, 13% of the buffer's reads) | 120.0 (20.0× the engine's tiles; 17.5 GB/s, 44% of the buffer's reads) | 480.0 (20.0× the engine's tiles; 17.5 GB/s, 44% of the buffer's reads) |"), rateText);
+  assert.ok(rateText.includes("GB/s: the keys and values of the length read once over the time, and its share of what a loop that only reads a buffer reads (40.0 GB/s)"), rateText);
+  const noCeiling = layerStepsTable(rateStep, layerRight, { ...layerCeilings, fallback: true }, { fallback: true }).join("\n");
+  assert.ok(noCeiling.includes("| flash_attn_vec (subgroups) | 50.0 (5.2 GB/s) | 120.0 (17.5 GB/s) | 480.0 (17.5 GB/s) |"), noCeiling);
+  assert.ok(!rateText.includes("undefined") && !rateText.includes("NaN"), rateText);
+  // an unsteady time has no rate
+  const unsteadyRates = layerStepsTable({ ...rateStep, result: { ...rateStep.result, lengths: { ...rateStep.result.lengths, base: 0, rows: [{ attention: "a", times: [{ ms: 1, unsteady: true }, { ms: 1 }, { ms: 1 }] }] } } },
+    layerRight, layerCeilings).join("\n");
+  assert.ok(unsteadyRates.includes("| a | unsteady: 1000.0 | 1000.0 (2.1 GB/s, 5% of the buffer's reads) | 1000.0 (8.4 GB/s, 21% of the buffer's reads) |"), unsteadyRates);
 }
 assert.ok(!chosenText.includes("A token's attention alone"), "no lengths where none were taken (a result before T224)");
 assert.ok(layerStepsTable({ ...chosenStep, result: { ...chosenStep.result, lengths: { error: "no | memory" } } }, layerRight, layerCeilings)

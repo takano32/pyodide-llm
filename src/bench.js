@@ -650,7 +650,7 @@ export function layerStepsTable(step, check, ceilings, gpu = {}) {
         "Where these agree with the times above to about 0.1 ms, the times above are the layers' work; where these are well below, the times above hold something besides it (what comes between one layer and the next, or of the submissions).");
     }
   }
-  lines.push(...attentionLengthsLines(r.lengths, none));
+  lines.push(...attentionLengthsLines(r.lengths, none, reads));
   return lines;
 }
 
@@ -661,9 +661,12 @@ export function layerStepsTable(step, check, ceilings, gpu = {}) {
  * { error } or { none } a length] }], base, MB } or { error }; none: noRatios()'s (no "faster than the tiles" then). The
  * vec rows say how many times faster they are than the tiles at the same length (neither unsteady): T224's review, the
  * tiles of row base, the engine's here where there are two (f32 without subgroups as the layer rows, and f16 and
- * subgroups as the engine makes them where the device has them).
+ * subgroups as the engine makes them where the device has them). bytes (a result of the review's, optional): the bytes
+ * of the keys and values of each length read once; every cell then says GB/s of them, and with reads (the GB/s of a loop
+ * that only reads a buffer: T168's, the layer steps' `reads`) their share: a head of q reads its keys and values
+ * again for every head of q that shares them (4 on Llama 3.2 1B's), so past 100% the caches serve the rereads.
  */
-function attentionLengthsLines(lengths, none) {
+function attentionLengthsLines(lengths, none, reads) {
   if (!lengths) return [];
   const head = "**A token's attention alone, by the positions it reads** (T224)";
   if (lengths.error) return ["", `${head}: failed: ${tableCell(lengths.error)}`];
@@ -672,8 +675,11 @@ function attentionLengthsLines(lengths, none) {
     if (one?.none) return tableCell(`not here: ${one.none}`);
     if (one?.error || !(Number.isFinite(one?.ms) && one.ms > 0)) return `failed: ${tableCell(one?.error ?? "no time")}`;
     const base = tiles.times[i], steady = !one.unsteady && !base?.unsteady && Number.isFinite(base?.ms) && base.ms > 0;
-    const faster = row !== tiles && !row.tiles && !none && steady ? ` (${times(base.ms / one.ms)} the ${two ? "engine's " : ""}tiles)` : "";
-    return `${one.unsteady ? "unsteady: " : ""}${number(1000 * one.ms, 1)}${faster}`;
+    const faster = row !== tiles && !row.tiles && !none && steady ? `${times(base.ms / one.ms)} the ${two ? "engine's " : ""}tiles` : "";
+    const rate = lengths.bytes?.[i] > 0 && !one.unsteady ? lengths.bytes[i] / (one.ms / 1000) / 1e9 : undefined;
+    const reading = rate === undefined ? "" : `${number(rate)} GB/s${reads ? `, ${number((100 * rate) / reads, 0)}% of the buffer's reads` : ""}`;
+    const notes = [faster, reading].filter(Boolean).join("; ");
+    return `${one.unsteady ? "unsteady: " : ""}${number(1000 * one.ms, 1)}${notes ? ` (${notes})` : ""}`;
   };
   return ["", `${head}: Llama 3.2 1B's heads (32 of q on 8 of keys and values, 64 each), a token that reads 128, 1024 and 4096 positions of the cache, ` +
     "each attention as a submission of 2n of it less one of n, all in turn at a length, each on the next of copies of the cache " +
@@ -682,6 +688,8 @@ function attentionLengthsLines(lengths, none) {
     "over more workgroups a head as they grow (up to the least subgroup, or 32 where the lanes of a workgroup stand for one), then a second dispatch reduces the parts. " +
     (two ? "The tiles are here twice: in float32 without subgroups, as the layer table and the steps above run them, and as the engine makes them on this device (f16, subgroups), " +
       "which is what a token's attention is chosen against, and what the vec rows are read against. " : "") +
+    (lengths.bytes ? "GB/s: the keys and values of the length read once over the time" + (reads ? `, and its share of what a loop that only reads a buffer reads (${number(reads)} GB/s)` : "") +
+      " (each of the 4 heads of q that share a head of keys and values reads them again, so what the GPU's caches serve of the rereads can take a share past 100%). " : "") +
     "The engine times the ones right on the device at 128 and 2048 positions and takes the fastest.",
   ...(none ? [`Faster than the tiles: ${none}.`] : []), "",
   `| attention | ${lengths.positions.map((p) => `${p} positions, µs`).join(" | ")} |`, `|---|${lengths.positions.map(() => "---:|").join("")}`,

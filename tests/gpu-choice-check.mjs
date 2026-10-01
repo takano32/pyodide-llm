@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { aloneHolds, BOTH_ON_8, aloneVerdict, gpuBytes, gpuLine, gpuOnlyPlan, gpuOnlyUnfit, gpuOnlyWeights, gpuHoles, layerWeightsOf, placer, PROMPTS_CPU,
   PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes, USAGE_UNKNOWN, weightsPlace } from "../public/forward.js";
-import { deviceKey, halvesOf } from "../public/shaders.js";
+import { deviceKey, halvesOf, tokenAttentionData, tokenAttentionOff } from "../public/shaders.js";
 import { usedAfter } from "../src/bench.js";
 
 // a GPU with a fixed cost of 40 ms a block and 0.5 ms a token (16 tokens 48 ms, 64 tokens 72 ms)
@@ -281,5 +281,36 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(aloneHolds(alone, key, { ...cpu, GBps: 30.1 }), false, "/benchmark/'s CPU measured again");
   assert.equal(aloneHolds(alone, key, undefined), false, "no /benchmark/ now");
   assert.equal(aloneHolds(undefined, key, cpu), false);
+}
+// T224's review: shaders.js's tokenAttentionOff (how far a token's attention from the GPU is from JavaScript's, the check
+// of the engine and of /benchmark/) keeps a NaN. `if (!(off <= worst)) worst = off` let the next value take its place,
+// and a NaN in one head, or in the first values of the last, was a pass (a reduce that wrote NaN for head 0 only: 4e-8)
+{
+  const dims = { heads: 4, kvHeads: 2, size: 8, positions: 40 };
+  const data = tokenAttentionData({ ...dims, steep: [3] });
+  // the answer in float64, apart from the function's: the weights of a head over its positions, then their values
+  const half = (h) => (h & 0x8000 ? -1 : 1) * ((h >> 10) & 31 ? 2 ** (((h >> 10) & 31) - 15) * (1 + (h & 1023) / 1024) : 2 ** -14 * ((h & 1023) / 1024));
+  const exact = new Float32Array(dims.heads * dims.size), kvDim = dims.kvHeads * dims.size;
+  for (let h = 0; h < dims.heads; h++) {
+    const kv = Math.floor(h / (dims.heads / dims.kvHeads)) * dims.size;
+    const scores = Array.from({ length: dims.positions }, (_, p) => {
+      let sum = 0;
+      for (let d = 0; d < dims.size; d++) sum += data.q[h * dims.size + d] * half(data.keys[p * kvDim + kv + d]);
+      return sum / Math.sqrt(dims.size);
+    });
+    const top = Math.max(...scores), weights = scores.map((s) => Math.exp(s - top)), total = weights.reduce((a, b) => a + b, 0);
+    for (let d = 0; d < dims.size; d++) {
+      exact[h * dims.size + d] = weights.reduce((sum, w, p) => sum + w * half(data.values[p * kvDim + kv + d]), 0) / total;
+    }
+  }
+  assert.ok(tokenAttentionOff(exact, data, dims) < 1e-6, "the right answer is off by rounding to float32 only");
+  const wrong = Float32Array.from(exact);
+  wrong[5] += 0.5;
+  assert.ok(tokenAttentionOff(wrong, data, dims) > 1e-2, "a value off by 0.5 is seen");
+  const withNaN = (from, to) => Float32Array.from(exact).fill(NaN, from, to);
+  for (const [where, got] of [["the first value", withNaN(0, 1)], ["all of head 0", withNaN(0, 8)], ["head 1's middle", withNaN(10, 12)],
+    ["the first values of the last head", withNaN(24, 28)], ["the last value", withNaN(31, 32)]]) {
+    assert.ok(Number.isNaN(tokenAttentionOff(got, data, dims)), `a NaN in ${where} stays`);
+  }
 }
 console.log("ok");
