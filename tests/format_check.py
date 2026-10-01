@@ -70,7 +70,11 @@ KNOWN = {
     "hf-swallow-ms-7b-instruct": {"why": "NFKC of tokenizer.model, and the turn stripped as a whole (T138)",
                                   "text": lambda text, prompt: unicodedata.normalize("NFKC", trimmed(text, prompt))},
     # T249: the same of EuroLLM. Its vocabulary has no full-width letters: the real tokenizer.json spells them as
-    # bytes, the page (tokenizer.model's NFKC) writes the half-width ones
+    # bytes, the page (tokenizer.model's NFKC) writes the half-width ones. The page is the real sentencepiece's (the
+    # review: tokenizer.model's normalizer_spec is nfkc with a charsmap of 237,562 bytes, and its ids are the page's for
+    # 71,648 sentences "a" + one character + "b" and 3,000 random ones of mixed scripts, 0 apart), the conversion to
+    # tokenizer.json keeps only a Prepend and a Replace of " " by "▁": which of the two the model was trained on is the
+    # sentencepiece model's, the one its authors trained
     "hf-eurollm-1.7b-instruct": {"why": "NFKC of tokenizer.model (T249)",
                                  "text": lambda text, prompt: unicodedata.normalize("NFKC", text)},
 }
