@@ -729,6 +729,7 @@ def load_kernels(path, without_relaxed=False):
                           attention=[p, p, p, p, p, i32, i32, i32, i32, i32, i32],
                           attention_f16=[p, p, p, p, p, i32, i32, i32, i32, i32, i32], to_f16=[p, p, i32], from_f16=[p, p, i32], finite_f16=[p, i32],
                           swiglu=[p, p, p, i32], add_inplace=[p, p, i32],
+                          rotate=[p, p, p, i32, i32], unrotate=[p, p, p, i32, i32],
                           add_columns=[p, p, p, i32, i32],
                           layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32],
                           penalize=[p, p, i32, ctypes.c_float], widen_bf16=[p, p, i32], widen_q8_0=[p, p, i32],
@@ -1371,7 +1372,9 @@ class Llama:
             scale = np.float32(1.0 / math.sqrt(self.rotated["block"]))
             derived.update({f"signs.{width}": (signs * scale).tobytes() for width, signs in self.rotated["signs"].items()})
         channels = []
-        if int8:
+        # (T237: not in a rotated basis, where the classifier reads R of its input: the rotation spreads a channel
+        # over its block, and a column of the stored matrix is no channel's)
+        if int8 and self.rotated is None:
             final = self.rms_final_weight
             raw = external.read(final.offset, self.dim * 4)
             weight = np.frombuffer(bytes(raw.to_py() if hasattr(raw, "to_py") else raw), dtype=np.float32)

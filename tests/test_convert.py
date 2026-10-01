@@ -43,8 +43,9 @@ def hugging_face(config, weights, shared):
     return tensors, published
 
 
-def safetensors_file(tensors, stored="F32"):
-    header, data = {"__metadata__": {"format": "pt"}}, b""
+def safetensors_file(tensors, stored="F32", metadata=None):
+    """metadata: more of the header's __metadata__ (T237: a rotated basis, as gguf_model() says one)."""
+    header, data = {"__metadata__": {"format": "pt", **(metadata or {})}}, b""
     for name, tensor in tensors.items():
         if stored == "BF16":  # the upper half of the float32: what bfloat16 is
             raw = (np.ascontiguousarray(tensor, dtype=np.float32).view(np.uint32) >> 16).astype(np.uint16).tobytes()

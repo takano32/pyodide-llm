@@ -944,3 +944,66 @@ export function sample(logits: usize, n: i32, temperature: f32, topp: f32, rando
   }
   return load<i32>(index + (<usize>last << 2));
 }
+
+// T237: the rotated basis (llama2_numpy.py has the definition, above hadamard()). The normalized Walsh-Hadamard
+// transform of a block of values in place, after its values were multiplied by 1 / sqrt(block): sums and differences
+// of values 1, 2, 4, ... apart, the order of llama2_numpy.hadamard() and of the fork's ggml_compute_forward_fwht
+// (ggml/src/ggml-cpu/ops.cpp at 88c4bc60; the order, no line of it). Every number is one float32 sum or difference,
+// so the result is NumPy's to the bit. block: a power of two. Values 1 and 2 apart are one pass over fours of values
+// (the two sums and differences of a four), the rest four values a step.
+// @ts-ignore: decorator
+@inline function butterflies(p: usize, block: i32): void {
+  if (block == 2) {
+    const a = load<f32>(p), b = load<f32>(p + 4);
+    store<f32>(p, a + b);
+    store<f32>(p + 4, a - b);
+    return;
+  }
+  for (let i = 0; i + 4 <= block; i += 4) {
+    const o = p + (<usize>i << 2);
+    const a = load<f32>(o), b = load<f32>(o + 4), c = load<f32>(o + 8), d = load<f32>(o + 12);
+    const ab = a + b, a_b = a - b, cd = c + d, c_d = c - d;
+    store<f32>(o, ab + cd);
+    store<f32>(o + 4, a_b + c_d);
+    store<f32>(o + 8, ab - cd);
+    store<f32>(o + 12, a_b - c_d);
+  }
+  for (let half = 4; half < block; half <<= 1) {
+    for (let i = 0; i < block; i += 2 * half) {
+      for (let j = 0; j < half; j += 4) {
+        const u = p + (<usize>(i + j) << 2), v = u + (<usize>half << 2);
+        const a = v128.load(u), b = v128.load(v);
+        v128.store(u, f32x4.add(a, b));
+        v128.store(v, f32x4.sub(a, b));
+      }
+    }
+  }
+}
+// out = R x: n values of x (whole blocks) times their signs, then the transform of every block. signs: +1 or -1 for
+// every value, times 1 / sqrt(block) (x times that is (x times the sign) times 1 / sqrt(block) to the bit: the sign
+// changes no digit). out may be x.
+export function rotate(out: usize, x: usize, signs: usize, n: i32, block: i32): void {
+  let j = 0;
+  for (; j + 4 <= n; j += 4) {
+    const o = <usize>j << 2;
+    v128.store(out + o, f32x4.mul(v128.load(x + o), v128.load(signs + o)));
+  }
+  for (; j < n; j++) { const o = <usize>j << 2; store<f32>(out + o, load<f32>(x + o) * load<f32>(signs + o)); }
+  if (block > 1) for (let b = 0; b < n; b += block) butterflies(out + (<usize>b << 2), block);
+}
+// out = R^-1 z: the transform of every block of n values of z, then their signs (a row of the embedding as the model
+// reads it). The same signs as rotate(): their magnitude is the transform's 1 / sqrt(block), multiplied in first as
+// NumPy does, and their sign bit flips the result's.
+export function unrotate(out: usize, z: usize, signs: usize, n: i32, block: i32): void {
+  let j = 0;
+  for (; j + 4 <= n; j += 4) {
+    const o = <usize>j << 2;
+    v128.store(out + o, f32x4.mul(v128.load(z + o), f32x4.abs(v128.load(signs + o))));
+  }
+  for (; j < n; j++) { const o = <usize>j << 2; store<f32>(out + o, load<f32>(z + o) * abs<f32>(load<f32>(signs + o))); }
+  if (block > 1) for (let b = 0; b < n; b += block) butterflies(out + (<usize>b << 2), block);
+  for (j = 0; j < n; j++) {
+    const o = <usize>j << 2;
+    store<u32>(out + o, load<u32>(out + o) ^ (load<u32>(signs + o) & 0x80000000));
+  }
+}

@@ -278,14 +278,20 @@ const linearStateBytes = (layers, linear) => {
 // T229, a Qwen3.5: the gate of a full-attention layer's output; of a linear-attention layer q, k and v before and
 // after the convolution, z, and the delta rule's work (beta and decay of every value head, then its delta); xb holds
 // what the delta rule reads (as wide as v)
-const frameArrays = (dim, hidden, kvDim, qDim = dim, linear = null) => {
+// T237, a model in a rotated basis: xr, what a matrix reads of its input (the widest of them)
+const frameArrays = (dim, hidden, kvDim, qDim = dim, linear = null, rotated = null) => {
   const { mixed = 0, read = 0 } = linear ? linearWidths(linear) : {};
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QD = Math.max(dim, qDim, read) * 4, XQ = Math.max(dim, hidden, qDim, read);
   return [["x", D], ["xb", QD], ["xb2", D], ["q", qDim * 4], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD],
     ["hb2", HD], ["xq", XQ], ["xs", Math.ceil(XQ / 32) * 4],
     ...(linear ? [["gate", qDim * 4], ["mixed", mixed * 4], ["conv", mixed * 4], ["z", read * 4],
-      ["work", (2 * linear.value_heads + read) * 4]] : [])];
+      ["work", (2 * linear.value_heads + read) * 4]] : []),
+    ...(rotated ? [["xr", XQ * 4]] : [])];
 };
+/** T237: the widths of what a model's matrices read (llama2_numpy.rotated_widths): the residual stream, an
+ * attention's output (and a linear-attention layer's), the FFN's inside. A rotated basis has signs for each. */
+const rotatedWidths = (dim, hidden, qDim, linear) =>
+  [...new Set([dim, qDim, hidden, ...(linear ? [linearWidths(linear).read] : [])])];
 const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(bytes), 0);
 
 /** T115: the most bytes the forward pass puts after a checkpoint of size bytes: at the end of its whole context,
@@ -300,9 +306,10 @@ const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(b
  * size of a head where it is not dim / heads (T124), 0 where it is. gpu (T135): the page asked for the prompt on the
  * GPU, whose keys and values of a block come back through a place of their own. direct (T156, T210): a model on the
  * GPU alone, whose matrices, tables and keys and values are all there. linear (T229): the form's, the
- * linear-attention layers of a Qwen3.5, which keep a state of a fixed size and no keys and values. */
+ * linear-attention layers of a Qwen3.5, which keep a state of a fixed size and no keys and values. rotated (T237):
+ * the form's, a rotated basis (its signs for every width, and a place in the frame for a rotated input). */
 export function footprint(header, size, { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false,
-  shared = false, outliers = 8, head_dim = 0, gpu = false, direct = false, linear = null } = {}) {
+  shared = false, outliers = 8, head_dim = 0, gpu = false, direct = false, linear = null, rotated = null } = {}) {
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
   const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads, kvDim = kvHeads * headSize, qDim = heads * headSize;
   const quantized = dtype === "int8" || dtype === "int6", six = dtype === "int6";
@@ -327,7 +334,9 @@ export function footprint(header, size, { dtype = "float32", arch = "llama", int
   if (quantized || arch === "gpt2") bytes += seqLen * headSize * 4;
   // the frames of BATCH tokens, their attention scores, the logits; the keys and values of a block from the GPU (in
   // float16) and its rows
-  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, linear)) + align(seqLen * heads * 4)) + vocab * 4;
+  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, linear, rotated)) + align(seqLen * heads * 4)) + vocab * 4;
+  // T237: the signs of a rotated basis, a float32 for every value of every width
+  if (rotated) bytes += rotatedWidths(dim, hidden, qDim, linear).reduce((sum, width) => sum + align(width * 4), 0);
   if (gpu) bytes += 2 * layers * GPU_BLOCK * kvDim * 2 + GPU_BLOCK * dim * 4;
   // T229: the state of the linear-attention layers, whatever the context; keys and values of the others alone
   if (linear) bytes += linearStateBytes(layers, linear);
@@ -471,12 +480,13 @@ const BINDS_AT = 256;
 // T219: what a model on the GPU alone says where the GPU sampled an id outside the vocabulary (its logits were not
 // finite numbers, most likely: the words of T195's NOT_FINITE, llama2_numpy.py), since no CPU can take the step again
 export const OUTSIDE_VOCABULARY = "The model computed logits on the GPU that are not finite numbers (NaN or infinity), so no token can be drawn: its weights are broken or its numbers overflowed.";
-export function gpuOnlyUnfit(header, dtype, { arch = "llama", head_dim = 0 } = {}, adapter, force = {}) {
+export function gpuOnlyUnfit(header, dtype, { arch = "llama", head_dim = 0, rotated = null } = {}, adapter, force = {}) {
   const [dim, hidden, , heads, kvHeads] = header;
   const headSize = head_dim || dim / heads, qDim = heads * headSize, kvDim = kvHeads * headSize;
   if (!adapter) return "no GPU adapter here";
   if (adapter.fallback && !force.fallback) return "a fallback adapter";
   if (arch !== "llama") return "GPT-2 and GPT-NeoX are not placed on the GPU alone";
+  if (rotated) return "a rotated basis is not on the GPU yet";  // T237
   if (dtype !== "int8") return `${dtype} weights stay on the CPU`;
   if (headSize % 4) return "heads of a size that is no multiple of 4";
   const { maxStorageBufferBindingSize, maxBufferSize } = adapter.limits;
@@ -677,6 +687,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T229: a Qwen3.5's linear-attention layers (null: none), which layers they are, and each layer's place among the
   // layers of its kind (the layer itself where all attend); attending: the layers with keys and values
   const linear = plan.linear ?? null, slots = layerSlots(layers, linear);
+  // T237: the block of a rotated basis (0: the model's own basis). llama2_numpy.py has the definition above hadamard()
+  const rotated = plan.rotated || 0;
   const lines = slots.map(([kind]) => kind), placeOf = slots.map(([, a]) => a), attending = attendingLayers(layers, linear);
   const imports = { env: { memory } };
   const wide = Boolean(kernels.wide);  // T101: a 64-bit memory, whose kernels take their addresses as BigInt
@@ -790,11 +802,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // KV: the bytes of one position's keys in the cache; KF: in float32.
   const halfKV = Boolean(plan.half_kv) && (halfKeys ?? (sharedMemory && kvHeads >= heads));
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QF = qDim * 4, KV = kvDim * (halfKV ? 2 : 4);
-  const inFrame = frameArrays(dim, hidden, kvDim, qDim, linear), S = frameBytes(inFrame);
+  const inFrame = frameArrays(dim, hidden, kvDim, qDim, linear, rotated), S = frameBytes(inFrame);
   const frames = alloc(BATCH * S), at = {};
   inFrame.reduce((offset, [name, bytes]) => { at[name] = frames + offset; return offset + align(bytes); }, 0);
   // kNow, vNow: this token's key and value in float32, before they go into the cache
-  const { x, xb, xb2, q, kNow, vNow, before, hb, hb2, xq, xs, gate, mixed, conv, z, work } = at;
+  const { x, xb, xb2, q, kNow, vNow, before, hb, hb2, xq, xs, gate, mixed, conv, z, work, xr } = at;
   const A = seqLen * heads * 4;  // the scores of one token's attention
   const att = alloc(BATCH * A), logits = alloc(vocab * 4);
   const wq = matrix("wq"), wk = matrix("wk"), wv = matrix("wv"), wo = matrix("wo");
@@ -831,6 +843,12 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     F.fill(1 / keyDim, qUnit / 4, qUnit / 4 + keyDim);
     F.fill(1 / Math.sqrt(keyDim), kUnit / 4, kUnit / 4 + keyDim);
   }
+
+  // T237: the signs of a rotated basis for every width a matrix reads (Python's, each times 1 / sqrt(block))
+  const signs = rotated ? Object.fromEntries(rotatedWidths(dim, hidden, qDim, linear).map((width) => {
+    if (!(`signs.${width}` in derived)) throw new Error(`The rotated basis has no signs for an input ${width} wide.`);
+    return [width, floats(`signs.${width}`)];
+  })) : null;
 
   // the outlier channels of the classifier's input (T92): their columns in float32, multiplied apart (T210: not of a
   // classifier on the GPU alone, which is not here; T226: the GPU multiplies a float classifier for a model with them,
@@ -988,7 +1006,14 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     }
   }
   // matmuls of one input (count tokens of it, a frame apart): [matrix, output, output stride, layer] each
+  // T237: in a rotated basis the matrices read R of the input, turned here once for all of them (a kernel on this
+  // thread: 5 blocks of 1024 take a few microseconds, a thousandth of the rows they are multiplied by)
   function matmuls(input, count, list) {
+    if (rotated) {
+      const n = list[0][0].n;
+      for (let t = 0; t < count; t++) k.rotate(xr + t * S, input + t * S, signs[n], n, rotated);
+      input = xr;
+    }
     if (list[0][0].int8) {
       for (let t = 0; t < count; t++) k.quantize_x(xq + t * S, xs + t * S, input + t * S, list[0][0].n, bias);
     }
@@ -1009,6 +1034,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         F.copyWithin(to, from / 4 + row, from / 4 + row + dim);
       }
       if (positions) k.add_inplace(rows + t * stride, positions + (pos0 + t) * D, dim);
+      // T237: the table of a rotated basis holds rotated rows
+      if (rotated) k.unrotate(rows + t * stride, rows + t * stride, signs[dim], dim, rotated);
     }
   }
   // T147: a token's key and value in float16 (the GPU's) into the cache at keyAt and valueAt. T160: a float32 cache
@@ -1391,6 +1418,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // (T155: int6 weights too, widened to int8 on the GPU, and a model in a 64-bit memory: gpu.js)
   function gpuUnfit() {
     if (linear) return "linear-attention layers are not on the GPU yet";  // T229
+    if (rotated) return "a rotated basis is not on the GPU yet";  // T237
     if (!sharedMemory) return "the page is not cross-origin isolated";
     if (headSize % 4) return "heads of a size that is no multiple of 4 are not on the GPU";
     if (!Object.values(gpuMatrices()).every((m) => m.int8 && m.group === 32)) return "float32 weights are not on the GPU yet";
