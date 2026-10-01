@@ -896,6 +896,9 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
         chat.scrollTop = chat.scrollHeight;
       }
     } else if (data.type === "done") {
+      // (T223's review: the search checks the count remembered from an earlier visit on the first generation and may change
+      // it, 4 to 2 on the owner's Android: the line says the count in use as the answer's line below does)
+      if (readyLine) readyLine.threads = data.threads;
       showStatus(data.gpu);  // T148: the prompts timed on either side may have moved the GPU's verdict
       // T156: how the page is used, for a model on the GPU alone
       try {

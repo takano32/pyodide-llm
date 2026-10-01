@@ -62,13 +62,18 @@ def number(char):
     return unicodedata.category(char)[0] == "N"
 
 
+def mark(char):
+    return unicodedata.category(char)[0] == "M"
+
+
 class CharClasses(dict):
     r"""What the pre-tokenizer's patterns tell apart, one character for each character (T200): the ASCII letters,
     the apostrophe, the space, \r and \n as they are (the contractions and the line breaks name them) and ſ (U+017F,
-    which (?i:'s) takes for s), any other whitespace "\t", any other letter (\p{L}) "a", a number (\p{N}) "0",
+    which (?i:'s) takes for s), any other whitespace "\t", any other letter (\p{L}) "a", a number (\p{N}) "0", a
+    combining mark (\p{M}) "~" (T229: Qwen3.5's pattern takes one into a word, the others take it for anything else),
     anything else "!". A text goes through str.translate() with it, and the standard re module runs the patterns on
-    what comes out: \p{L} and \p{N}, which re has not, become [A-Za-zſ] and 0. A character is classed the first time
-    it is seen.
+    what comes out: \p{L}, \p{N} and \p{M}, which re has not, become [A-Za-zſ], 0 and ~. A character is classed the
+    first time it is seen.
 
     Whitespace is what the real tokenizers' regex (Oniguruma) calls \s (T206): str.isspace less \x1c to \x1f, which
     Oniguruma takes for neither whitespace nor a letter nor a number."""
@@ -83,6 +88,8 @@ class CharClasses(dict):
             kind = "a"
         elif number(char):
             kind = "0"
+        elif mark(char):
+            kind = "~"
         else:
             kind = "!"
         self[code] = kind
@@ -90,14 +97,16 @@ class CharClasses(dict):
 
 
 CHAR_CLASSES = CharClasses()
-# pretokenize()'s patterns on the classes: \p{L} is [A-Za-zſ], \p{N} is 0, \s is [ \t\r\n], anything else ['!].
+# pretokenize()'s patterns on the classes: \p{L} is [A-Za-zſ], \p{N} is 0, \s is [ \t\r\n], \p{M} is ~, anything
+# else ['!] (['!~] where the pattern does not name the marks).
 # Under (?i) re takes ſ for s, as Oniguruma does; GPT-2's case-sensitive 's does not.
 CONTRACTED = "'s|'t|'re|'ve|'m|'ll|'d"
 SPACES = r"[ \t\r\n]+(?![^ \t\r\n])|[ \t\r\n]+"
 PATTERNS = {
-    "gpt2": re.compile(CONTRACTED + r"| ?[A-Za-zſ]+| ?0+| ?['!]+|" + SPACES),
-    "qwen": re.compile(f"(?i:{CONTRACTED})" + r"|[^\r\nA-Za-zſ0]?[A-Za-zſ]+|0| ?['!]+[\r\n]*|[ \t\r\n]*[\r\n]+|" + SPACES),
-    "llama3": re.compile(f"(?i:{CONTRACTED})" + r"|[^\r\nA-Za-zſ0]?[A-Za-zſ]+|0{1,3}| ?['!]+[\r\n]*|[ \t\r\n]*[\r\n]+|" + SPACES),
+    "gpt2": re.compile(CONTRACTED + r"| ?[A-Za-zſ]+| ?0+| ?['!~]+|" + SPACES),
+    "qwen": re.compile(f"(?i:{CONTRACTED})" + r"|[^\r\nA-Za-zſ0]?[A-Za-zſ]+|0| ?['!~]+[\r\n]*|[ \t\r\n]*[\r\n]+|" + SPACES),
+    "llama3": re.compile(f"(?i:{CONTRACTED})" + r"|[^\r\nA-Za-zſ0]?[A-Za-zſ]+|0{1,3}| ?['!~]+[\r\n]*|[ \t\r\n]*[\r\n]+|" + SPACES),
+    "qwen35": re.compile(f"(?i:{CONTRACTED})" + r"|[^\r\nA-Za-zſ0]?[A-Za-zſ~]+|0| ?['!]+[\r\n]*|[ \t\r\n]*[\r\n]+|" + SPACES),
 }
 DIGITS = re.compile("0|[^0]+")  # Digits(individual_digits) on the classes: every number a piece of its own
 
@@ -116,7 +125,9 @@ def pretokenize(text, pattern):
     and a piece of anything-but-a-line-break may lead a word):
         (?i:'s|…)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
     "llama3" is Llama 3's, which is Qwen's with the digits taken up to three at a time (\p{N}{1,3}).
-    All four are checked against the real patterns in tests/test_bytebpe.py and tests/test_llama3.py.
+    "qwen35" is Qwen3.5's (T229), which is Qwen's with the combining marks (\p{M}) taken into the word they follow:
+        (?i:'s|…)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+
+    All five are checked against the real patterns in tests/test_bytebpe.py and tests/test_llama3.py.
     """
     classes = text.translate(CHAR_CLASSES)
     if pattern == "gpt2-digits":
@@ -442,6 +453,105 @@ def gelu(x):
     return x * (1.0 / (1.0 + np.exp(-2.0 * inner)))
 
 
+# ------------------------------------------------------------------------ Qwen3.5's hybrid attention (T229)
+# Qwen3.5 and Qwen3.8 (config.json's model_type qwen3_5; arch="qwen35" here) mix two kinds of layers: every "every"-th
+# layer (layer l where (l + 1) % every == 0; every is 4) attends over all positions as a Qwen3 does, and the others
+# are Gated DeltaNet layers ("linear attention"), which keep a state of a fixed size instead of keys and values.
+# The computation is taken from transformers' modeling code (Apache-2.0; the formulas, no line of it):
+# https://github.com/huggingface/transformers/blob/7fb5bcd1d4b8a5c225a2c33429b2e9e023dd61ae/src/transformers/models/qwen3_5/modeling_qwen3_5.py
+# (Qwen3_5GatedDeltaNet and torch_recurrent_gated_delta_rule, lines 437 to 662; Qwen3_5Attention, 748 to 820;
+# Qwen3_5RMSNorm, 840 to 854; Qwen3_5RMSNormGated, 217 to 233), with the numbers of
+# https://huggingface.co/Qwen/Qwen3.5-0.8B/blob/2fc06364715b967f1860aea9cf38778875588b17/config.json
+#
+# Both kinds: x += mixer(norm(x)), then x += w2(silu(w1(norm(x))) * w3(norm(x))), a Llama's. RMSNorm multiplies by
+# 1 + weight there; the converter adds the 1, so the file holds what rmsnorm() multiplies by.
+#
+# A Gated DeltaNet layer, one token (xb = norm(x); K key heads of key_dim, V value heads of value_dim, V a multiple of
+# K; the state S of every value head is a matrix (key_dim, value_dim), zero before the first token):
+#   mixed = wqkv xb                      2 K key_dim + V value_dim values: q, k and v, one after another
+#   z = wz xb, b = wb xb, a = wa xb      V value_dim, V and V values
+#   c = silu(sum over j of conv[j] * mixed of (conv - 1 - j) tokens ago)
+#                                        a causal convolution of each channel with its own conv taps over this token
+#                                        and the conv - 1 before it (zeros before the first token), then SiLU
+#   q, k, v = c cut at 2 K key_dim       q and k in K heads, v in V heads
+#   q = q / sqrt(sum(q * q) + 1e-6) / sqrt(key_dim), k = k / sqrt(sum(k * k) + 1e-6), head by head
+#   value head h uses key head h // (V / K) (repeat_interleave)
+#   beta = sigmoid(b), g = decay * softplus(a + dt_bias)      decay is -exp(A_log), which the converter computes
+#   for every value head h:
+#     S = S * exp(g[h])
+#     delta = (v[h] - k[h] S) * beta[h]                       k[h] S: the sum over i of k[h][i] * S[i, :]
+#     S = S + k[h] (outer) delta
+#     o[h] = q[h] S
+#   o[h] = delta_norm * o[h] / sqrt(mean(o[h] * o[h]) + eps) * silu(z[h])      delta_norm: value_dim weights, as stored
+#   the layer's output is wout o
+# transformers runs a prompt through a chunked form of the same rule (torch_chunk_gated_delta_rule); token by token it
+# is this (tests/reference_qwen35.py compares the two on the real model).
+#
+# A full-attention layer is a Qwen3's (heads of head_dim, each head of q and k normalized, grouped keys and values)
+# with two differences. RoPE turns only the first rotary values of every head (64 of 256, theta 1e7: text has the
+# same position on all three axes of the model's 3D RoPE, which is then the ordinary one). And q's matrix has twice
+# the rows: each head's q, then as many values of a gate; the attention's output is multiplied by sigmoid(gate)
+# before wo. The converter cuts the matrix into wq and wg.
+LINEAR = ("every", "key_heads", "value_heads", "key_dim", "value_dim", "conv")
+
+
+def linear_form(linear):
+    """The numbers of a hybrid model's linear-attention layers, FORM's "linear", as a dict of ints (LINEAR's keys:
+    every "every"-th layer is a full-attention one, the heads and their sizes, the taps of the convolution), from a
+    dict of Python or of JavaScript. None for a model without such layers."""
+    if linear is None:
+        return None
+    linear = linear.to_py() if hasattr(linear, "to_py") else linear
+    numbers = {key: int(linear[key]) for key in LINEAR}
+    if min(numbers.values()) < 1 or numbers["every"] < 2 or numbers["value_heads"] % numbers["key_heads"]:
+        raise ValueError(f"These are not the numbers of linear-attention layers: {numbers}.")
+    return numbers
+
+
+def linear_widths(linear):
+    """(the values the convolution runs over: q, k and v; those of q or of k; those of v) of a linear-attention layer."""
+    keys, values = linear["key_heads"] * linear["key_dim"], linear["value_heads"] * linear["value_dim"]
+    return 2 * keys + values, keys, values
+
+
+def layer_slots(n_layers, linear):
+    """For every layer: (whether it is a linear-attention layer, its place among the layers of its kind), which is
+    where its tensors are in the file's stacks: a model without linear layers has (False, l) for layer l."""
+    if linear is None:
+        return [(False, l) for l in range(n_layers)]
+    every, slots, counts = linear["every"], [], [0, 0]
+    for l in range(n_layers):
+        kind = (l + 1) % every != 0
+        slots.append((kind, counts[kind]))
+        counts[kind] += 1
+    return slots
+
+
+def silu(x):
+    return x / (1.0 + np.exp(-x))
+
+
+def softplus(x):
+    """log(1 + exp(x)), and x itself past 20: torch's softplus as Qwen3.5 calls it."""
+    return np.where(x > 20.0, x, np.log1p(np.exp(np.minimum(x, 20.0)))).astype(np.float32)
+
+
+def l2_heads(x, heads):
+    """Each of heads rows of x over its length: x / sqrt(sum(x * x) + 1e-6), the l2norm of the gated delta rule."""
+    rows = x.reshape(heads, -1)
+    return rows / np.sqrt((rows * rows).sum(axis=1, keepdims=True) + np.float32(1e-6))
+
+
+def delta_rule(state, q, k, v, beta, decay):
+    """One token of the gated delta rule: state (value heads, key_dim, value_dim) is updated in place, and what q reads
+    of it is returned (value heads, value_dim). q and k: (value heads, key_dim), v: (value heads, value_dim), beta and
+    decay (exp(g)): one of each a head."""
+    state *= decay[:, None, None]
+    delta = (v - (k[:, None, :] @ state)[:, 0]) * beta[:, None]
+    state += k[:, :, None] * delta[:, None, :]
+    return (q[:, None, :] @ state)[:, 0]
+
+
 def rope(x, cos, sin):
     # Rotate each pair (x[2i], x[2i+1]) of every head by the angle for this position
     pairs = x.reshape(-1, cos.size, 2)
@@ -721,7 +831,8 @@ def external_tensors(header, dtype, form=None):
 # the attributes of Llama that are tensors of the file, in no particular order
 TENSOR_NAMES = ("token_embedding_table", "rms_att_weight", "wq", "wk", "wv", "wo", "rms_ffn_weight", "w1", "w2", "w3",
                 "rms_final_weight", "freq_cis_real", "freq_cis_imag", "wcls", "bq", "bk", "bv", "positions",
-                "ln_att_bias", "ln_ffn_bias", "ln_final_bias", "bo", "b1", "b2", "q_norm", "k_norm")
+                "ln_att_bias", "ln_ffn_bias", "ln_final_bias", "bo", "b1", "b2", "q_norm", "k_norm",
+                "wg", "wqkv", "wz", "wb", "wa", "conv", "dt_bias", "decay", "delta_norm", "wout")
 
 
 def outlier_channels(weight, count=OUTLIER_CHANNELS, ratio=OUTLIER_RATIO):
@@ -747,7 +858,8 @@ def outlier_columns(classifier, channels):
 # them into the options, and one dict of these names goes to everything that lays the file out or sizes it
 # (llama2_convert.layout(), checkpoint_size() and Writer, checkpoint_dtype() below, forward.js's footprint()), so
 # that another one is added where it is used, not along the way (T144).
-FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0}
+# linear (T229): the linear-attention layers of arch "qwen35", see linear_form(); None where there are none.
+FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None}
 
 
 def form_of(options=None):
@@ -785,6 +897,23 @@ def checkpoint_dtype(header, size, form=None):
             rope = 0
         # LayerNorm weights and biases (two per layer, one at the end), the biases of q, k, v, o and the FFN
         vectors = n_layers * (4 * dim + 3 * dim + dim + hidden_dim + dim) + 2 * dim
+    elif arch == "qwen35":
+        # the same tensors in the same order as qwen35_tensors() and llama2_convert.layout(arch=): the full-attention
+        # layers' (q, its gate, k, v, o), the linear-attention layers' (q, k and v in one, z, the output), the FFN
+        linear = linear_form(form["linear"])
+        if linear is None or n_layers < linear["every"]:
+            raise ValueError("This is not a llama2.c checkpoint: a hybrid model has to say its linear layers.")
+        mixed, _, read = linear_widths(linear)
+        full = n_layers // linear["every"]
+        lines = n_layers - full
+        matrices = [(abs(vocab_size), dim), (full * q_dim, dim), (full * q_dim, dim), (full * kv_dim, dim),
+                    (full * kv_dim, dim), (full * dim, q_dim), (lines * mixed, dim), (lines * read, dim),
+                    (lines * dim, read), (n_layers * hidden_dim, dim), (n_layers * dim, hidden_dim),
+                    (n_layers * hidden_dim, dim)]
+        # the norms of the layers and of the heads of q and k, and of a linear layer: the two small matrices of its
+        # gates (float32 whatever the file), the taps, dt_bias, decay and the norm of a value head
+        vectors = 2 * n_layers * dim + dim + 2 * full * head_size \
+            + lines * (2 * linear["value_heads"] * dim + linear["conv"] * mixed + 2 * linear["value_heads"] + linear["value_dim"])
     else:
         # the same tensors in the same order as llama_tensors() and quantize.py: (rows, row length) of the matrices
         matrices = [(abs(vocab_size), dim), (n_layers * q_dim, dim), (n_layers * kv_dim, dim), (n_layers * kv_dim, dim),
@@ -859,7 +988,7 @@ class Llama:
                  tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, collapse=False,
-                 unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS):
+                 unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py), and
@@ -867,6 +996,11 @@ class Llama:
         arch="neox": GPT-NeoX, which is arch="gpt2" with RoPE over the first rotary values of every head
         (rotary=0 means all of them) and, when parallel_residual is on, the attention and the FFN both reading
         the same x instead of one after the other.
+        arch="qwen35" (T229): Qwen3.5's hybrid attention, see the comment above linear_form(): a Qwen3 of whose layers
+        all but every linear["every"]-th are Gated DeltaNet layers with a state in place of keys and values, and whose
+        full-attention layers gate their output. linear: the numbers of those layers (FORM's, the file cannot say
+        them); rotary and head_dim as below. The state follows the positions: a run begins at position 0, which
+        clears it, and goes on one position after the other (forward() refuses any other).
         arch="gpt2": LayerNorm instead of RMSNorm, GELU instead of SwiGLU (and no gate matrix), a learned table
         of positions instead of RoPE, and a bias after every projection. The tensors of the file differ with it,
         so it is llama2_convert.layout(arch=) that says what is there.
@@ -917,7 +1051,10 @@ class Llama:
         dtype = np.dtype(np.int8 if six else dtype)
         offset = 28
         # The int8 kernels work on groups of 32 only
-        suitable = dtype != np.int8 or (dim % 32 == 0 and self.q_dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0)
+        self.linear = linear_form(linear)
+        # (T229: and a linear-attention layer's output matrix, whose rows are as long as its value heads together)
+        suitable = dtype != np.int8 or (dim % 32 == 0 and self.q_dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0
+                                        and (self.linear is None or linear_widths(self.linear)[2] % 32 == 0))
         kernels = load_kernels(kernels, "relaxed" in disable) if kernels and "kernels" not in disable and \
             (suitable or external is not None) else None
         # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
@@ -962,7 +1099,11 @@ class Llama:
         # how many values of each head RoPE turns: all of them unless the model says otherwise
         self.rotary = int(rotary) if rotary else self.head_size
         self.positions = None
-        self.q_norm = self.k_norm = None
+        self.q_norm = self.k_norm = self.wg = None
+        if (arch == "qwen35") != (self.linear is not None) or (self.linear and n_layers < self.linear["every"]):
+            raise ValueError("A hybrid model (qwen35) and the numbers of its linear layers go together.")
+        # for every layer: (is it a linear-attention one, its place in the stacks of its kind's tensors)
+        self.slots = layer_slots(n_layers, self.linear)
         self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
         self.bo = self.b1 = self.b2 = None
         # a dict from Python, or a JavaScript object from the worker
@@ -971,6 +1112,8 @@ class Llama:
         self.rope_magnitude = rope_magnitude(rope_scaling)
         if arch in ("gpt2", "neox"):
             self.gpt2_tensors(take, shared_weights, keep_int8, kv_dim, dtype, frequencies)
+        elif arch == "qwen35":
+            self.qwen35_tensors(take, shared_weights, keep_int8, kv_dim, dtype, frequencies)
         else:
             self.llama_tensors(take, shared_weights, keep_int8, kv_dim, bias, dtype, frequencies, qk_norm)
         self.backend = "NumPy"
@@ -983,8 +1126,17 @@ class Llama:
                 self.penalize, self.sample = self.kernel_sampler(kernels)
         else:
             # NumPy's forward pass; the forward pass on the kernels is forward.js's (external), since T93
-            self.key_cache = np.zeros((n_layers, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
+            attending = sum(not lines for lines, _ in self.slots)  # the linear-attention layers have no keys and values
+            self.key_cache = np.zeros((attending, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
             self.value_cache = np.zeros_like(self.key_cache)
+            if self.linear is not None:
+                # their state, of a size the context does not change: a matrix for every value head, and the last
+                # conv - 1 tokens' q, k and v before the convolution (the oldest first). state_at: the next position
+                lines, mixed = n_layers - attending, linear_widths(self.linear)[0]
+                self.delta_state = np.zeros((lines, self.linear["value_heads"], self.linear["key_dim"],
+                                             self.linear["value_dim"]), dtype=np.float32)
+                self.conv_state = np.zeros((lines, self.linear["conv"] - 1, mixed), dtype=np.float32)
+                self.state_at = 0
             if kernels and "sampler" not in disable:
                 self.penalize, self.sample = self.kernel_sampler(kernels)
         if (kernels or external is not None) and "sampler" in disable:
@@ -1034,6 +1186,50 @@ class Llama:
             self.freq_cis_real, self.freq_cis_imag = ((turn(angles) * self.rope_magnitude).astype(np.float32)
                                                       for turn in (np.cos, np.sin))
 
+    def qwen35_tensors(self, take, shared_weights, keep_int8, kv_dim, dtype, frequencies):
+        """The tensors of a Qwen3.5 (T229), in the order llama2_convert.layout() writes them: the stacks of the
+        full-attention layers (q, its gate, k, v, o and the norms of the heads of q and k), those of the
+        linear-attention layers, then the FFN of every layer as a Llama has it. The two small matrices of a linear
+        layer's gates (wb, wa) are float32 in every file, like the norms: they feed a sigmoid and an exp."""
+        dim, hidden_dim, n_layers = self.dim, self.hidden_dim, self.n_layers
+        linear = self.linear
+        mixed, _, read = linear_widths(linear)
+        full = n_layers // linear["every"]
+        lines = n_layers - full
+        matrix = lambda *shape: take(*shape, widen=not keep_int8)
+        vector = lambda *shape: take(*shape, matrix=False)
+        self.token_embedding_table = take(self.vocab_size, dim, widen=shared_weights and not keep_int8)
+        self.rms_att_weight = vector(n_layers, dim)
+        self.wq, self.wg = matrix(full, self.q_dim, dim), matrix(full, self.q_dim, dim)
+        self.wk, self.wv = matrix(full, kv_dim, dim), matrix(full, kv_dim, dim)
+        self.wo = matrix(full, dim, self.q_dim)
+        self.q_norm, self.k_norm = vector(full, self.head_size), vector(full, self.head_size)
+        self.bq = self.bk = self.bv = None
+        self.wqkv, self.wz = matrix(lines, mixed, dim), matrix(lines, read, dim)
+        self.wb, self.wa = vector(lines, linear["value_heads"], dim), vector(lines, linear["value_heads"], dim)
+        self.conv = vector(lines, linear["conv"], mixed)
+        self.dt_bias, self.decay = vector(lines, linear["value_heads"]), vector(lines, linear["value_heads"])
+        self.delta_norm = vector(lines, linear["value_dim"])
+        self.wout = matrix(lines, dim, read)
+        self.rms_ffn_weight = vector(n_layers, dim)
+        self.w1, self.w2, self.w3 = matrix(n_layers, hidden_dim, dim), matrix(n_layers, dim, hidden_dim), matrix(n_layers, hidden_dim, dim)
+        self.rms_final_weight = vector(dim)
+        if dtype != np.int8:
+            self.freq_cis_real = vector(self.seq_len, self.head_size // 2)
+            self.freq_cis_imag = vector(self.seq_len, self.head_size // 2)
+        self.wcls = self.token_embedding_table if shared_weights else matrix(self.vocab_size, dim)
+        if dtype != np.float32:
+            self.freq_cis_real, self.freq_cis_imag = self.partial_tables(frequencies)
+
+    def partial_tables(self, frequencies):
+        """The RoPE tables of a model that turns the first rotary values of a head only: the angles of that part, in
+        tables of the shape the file has (the rest is never read)."""
+        angles = np.arange(self.seq_len)[:, None] * frequencies(self.rotary)
+        tables = [np.zeros((self.seq_len, self.head_size // 2), dtype=np.float32) for _ in range(2)]
+        for table, values in zip(tables, (np.cos(angles), np.sin(angles))):
+            table[:, :self.rotary // 2] = values
+        return tables
+
     def gpt2_tensors(self, take, shared_weights, keep_int8, kv_dim, dtype, frequencies):
         """The tensors of a GPT-2 or a GPT-NeoX, in the order llama2_convert.layout() writes them. The two
         differ in one place: GPT-2 has a learned table of positions, GPT-NeoX the RoPE tables (left out of an
@@ -1067,12 +1263,7 @@ class Llama:
             # no rotation: the position is a row of a learned table, added to the embedding
             self.freq_cis_real = self.freq_cis_imag = np.zeros((self.seq_len, self.head_size // 2), dtype=np.float32)
         elif dtype != np.float32:
-            # the angles of the rotated part only, in a table of the same shape (the rest is never read)
-            angles = np.arange(self.seq_len)[:, None] * frequencies(self.rotary)
-            tables = [np.zeros((self.seq_len, self.head_size // 2), dtype=np.float32) for _ in range(2)]
-            for table, values in zip(tables, (np.cos(angles), np.sin(angles))):
-                table[:, :self.rotary // 2] = values
-            self.freq_cis_real, self.freq_cis_imag = tables
+            self.freq_cis_real, self.freq_cis_imag = self.partial_tables(frequencies)
 
     def embedding(self, token):
         if isinstance(self.token_embedding_table, tuple):
@@ -1099,6 +1290,8 @@ class Llama:
                 "parallel_residual": bool(self.parallel_residual), "kv_start": KV_START, "rms_norm_eps": self.rms_norm_eps,
                 "shared_classifier": self.wcls is self.token_embedding_table, "int8": bool(int8),
                 "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels,
+                # T229: a Qwen3.5's linear-attention layers (None: none)
+                "linear": self.linear,
                 # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
                 "half_kv": bool(int8) and "kv16" not in disable}
         engine = external.start(plan)
@@ -1155,12 +1348,14 @@ class Llama:
         cos, sin = self.freq_cis_real[pos], self.freq_cis_imag[pos]
         neox, gpt2 = self.arch == "neox", self.arch == "gpt2"
         layer_norm = neox or gpt2
+        if self.linear is not None:
+            self.follow(pos)
         # GPT-2 and GPT-NeoX normalize by the mean as well, and have a bias on every projection
         eps = self.rms_norm_eps
         norm = (lambda v, w, b: layernorm(v, w, b)) if layer_norm else (lambda v, w, b: rmsnorm(v, w, eps))
         if gpt2:
             turn = lambda v, c, s: v.reshape(-1, head_size)
-        elif neox:
+        elif neox or self.linear is not None:
             # only the first self.rotary of every head are rotated, the rest go through untouched
             turn = lambda v, c, s: partial_rope(v.reshape(-1, head_size), c, s, self.rotary)
         else:
@@ -1172,28 +1367,35 @@ class Llama:
             x = x + self.positions[pos]
 
         # Forward all the layers
-        for l in range(self.n_layers):
-            # QKV matmuls for this position, RoPE on q and k, k and v go to the kv cache
+        for l, (lines, a) in enumerate(self.slots):
             xb = norm(x, self.rms_att_weight[l], self.ln_att_bias[l] if layer_norm else None)
-            qv, kv, vv = self.wq[l] @ xb, self.wk[l] @ xb, self.wv[l] @ xb
-            if self.bq is not None:  # Qwen2 and GPT-2 add a bias to q, k and v
-                qv, kv, vv = qv + self.bq[l], kv + self.bk[l], vv + self.bv[l]
-            if self.q_norm is not None:  # Qwen3 normalizes every head of q and k
-                qv, kv = head_norm(qv, self.q_norm[l], eps), head_norm(kv, self.k_norm[l], eps)
-            q = turn(qv, cos, sin).reshape(n_kv_heads, kv_mul, head_size)
-            self.key_cache[l, :, pos] = turn(kv, cos, sin)
-            self.value_cache[l, :, pos] = vv.reshape(n_kv_heads, head_size)
+            if lines:  # T229: a linear-attention layer, the a-th of them
+                attended = self.linear_attention(a, xb)
+            else:
+                # QKV matmuls for this position, RoPE on q and k, k and v go to the kv cache (a: the layer's place
+                # among the attending layers, which is l where all of them attend)
+                qv, kv, vv = self.wq[a] @ xb, self.wk[a] @ xb, self.wv[a] @ xb
+                if self.bq is not None:  # Qwen2 and GPT-2 add a bias to q, k and v
+                    qv, kv, vv = qv + self.bq[a], kv + self.bk[a], vv + self.bv[a]
+                if self.q_norm is not None:  # Qwen3 normalizes every head of q and k
+                    qv, kv = head_norm(qv, self.q_norm[a], eps), head_norm(kv, self.k_norm[a], eps)
+                q = turn(qv, cos, sin).reshape(n_kv_heads, kv_mul, head_size)
+                self.key_cache[a, :, pos] = turn(kv, cos, sin)
+                self.value_cache[a, :, pos] = vv.reshape(n_kv_heads, head_size)
 
-            # Multihead attention over all timesteps so far, all heads at once
-            keys = self.key_cache[l, :, :pos + 1]      # (n_kv_heads, pos + 1, head_size)
-            values = self.value_cache[l, :, :pos + 1]
-            att = (q @ keys.transpose(0, 2, 1)) * scale  # (n_kv_heads, kv_mul, pos + 1)
-            att = np.exp(att - att.max(axis=-1, keepdims=True))
-            att /= att.sum(axis=-1, keepdims=True)
-            # Output projection and residual connection
-            attended = self.wo[l] @ (att @ values).reshape(self.q_dim)
-            if layer_norm:
-                attended = attended + self.bo[l]
+                # Multihead attention over all timesteps so far, all heads at once
+                keys = self.key_cache[a, :, :pos + 1]      # (n_kv_heads, pos + 1, head_size)
+                values = self.value_cache[a, :, :pos + 1]
+                att = (q @ keys.transpose(0, 2, 1)) * scale  # (n_kv_heads, kv_mul, pos + 1)
+                att = np.exp(att - att.max(axis=-1, keepdims=True))
+                att /= att.sum(axis=-1, keepdims=True)
+                attended = (att @ values).reshape(self.q_dim)
+                if self.wg is not None:  # Qwen3.5 gates what the attention read
+                    attended = attended / (1.0 + np.exp(-(self.wg[a] @ xb)))
+                # Output projection and residual connection
+                attended = self.wo[a] @ attended
+                if layer_norm:
+                    attended = attended + self.bo[a]
             # GPT-NeoX with use_parallel_residual: both branches read the x this layer began with
             before = x
             x = x + attended
@@ -1212,6 +1414,40 @@ class Llama:
             return None
         # Final norm, then the classifier into logits (60% of all the multiply-adds of stories15M)
         return self.wcls @ norm(x, self.rms_final_weight, self.ln_final_bias)
+
+    def follow(self, pos):
+        """T229: the linear-attention layers' state is what the tokens before this position left, so position 0 clears
+        it and every other position has to be the one after the last. Keys and values could be written again at any
+        position; a state cannot, and a token out of turn would compute on the wrong one without a word."""
+        if pos == 0:
+            self.delta_state.fill(0.0)
+            self.conv_state.fill(0.0)
+        elif pos != self.state_at:
+            raise ValueError(f"This model keeps a state from token to token: position {self.state_at} comes next "
+                             f"(or 0, to begin again), not {pos}.")
+        self.state_at = pos + 1
+
+    def linear_attention(self, a, xb):
+        """One token through the a-th Gated DeltaNet layer (the comment above linear_form() has the rule): what the
+        layer adds to x, with the layer's state moved on by this token."""
+        linear, eps = self.linear, np.float32(self.rms_norm_eps)
+        key_heads, value_heads, key_dim = linear["key_heads"], linear["value_heads"], linear["key_dim"]
+        _, keys, _ = linear_widths(linear)
+        mixed = self.wqkv[a] @ xb
+        # the convolution over this token and the conv - 1 before it, each channel with its own taps
+        taps, before = self.conv[a], self.conv_state[a]
+        convolved = silu((taps[:-1] * before).sum(axis=0) + taps[-1] * mixed)
+        before[:-1] = before[1:]
+        before[-1] = mixed
+        # every value head reads the key head it belongs to
+        q = np.repeat(l2_heads(convolved[:keys], key_heads) * np.float32(1.0 / math.sqrt(key_dim)), value_heads // key_heads, axis=0)
+        k = np.repeat(l2_heads(convolved[keys:2 * keys], key_heads), value_heads // key_heads, axis=0)
+        v = convolved[2 * keys:].reshape(value_heads, -1)
+        beta = 1.0 / (1.0 + np.exp(-(self.wb[a] @ xb)))
+        decay = np.exp(self.decay[a] * softplus(self.wa[a] @ xb + self.dt_bias[a]))
+        read = delta_rule(self.delta_state[a], q, k, v, beta.astype(np.float32), decay.astype(np.float32))
+        read = self.delta_norm[a] * read / np.sqrt((read * read).mean(axis=1, keepdims=True) + eps)
+        return self.wout[a] @ (read * silu((self.wz[a] @ xb).reshape(value_heads, -1))).reshape(-1)
 
 
     def kernel_sampler(self, kernels):
