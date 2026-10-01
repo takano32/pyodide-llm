@@ -450,8 +450,27 @@ if blocks:
 else:
     for pos, token in enumerate(fed[:-1]):
         many.forward(token, pos, need_logits=False)
-same = np.array_equal(one.forward(fed[-1], len(fed) - 1), many.forward(fed[-1], len(fed) - 1))
-ok = ok and same
+# T229's review: a model that keeps a state from token to token (a Qwen3.5) refuses a position out of turn in forward.js, and
+# the refusal changes nothing (the unit tests have NumPy's own); and a second run from position 0 begins with no state: it
+# makes the logits the first run made (the unit tests cannot see forward.js's clearing, nor can the comparison above, which
+# runs each engine once)
+kept = one.linear is not None
+refused = True
+if kept:
+    try:
+        many.forward(fed[0], 3)
+        refused = False
+    except Exception as error:
+        refused = f"position {len(fed) - 1} comes next" in str(error)
+first = np.array(one.forward(fed[-1], len(fed) - 1)) if kept else None
+same = np.array_equal(first if kept else one.forward(fed[-1], len(fed) - 1), many.forward(fed[-1], len(fed) - 1))
+if kept:
+    for pos, token in enumerate(fed[:-1]):
+        one.forward(token, pos, need_logits=False)
+    again = np.array_equal(first, one.forward(fed[-1], len(fed) - 1))
+else:
+    again = True
+ok = ok and same and refused and again
 one.release(); many.release(); del one, many
 def run(llama, positions):
     token, began = llama.bos, time.perf_counter()
@@ -461,7 +480,8 @@ def run(llama, positions):
 (ok, f"{page.backend}: " + (f"most likely token the same at {agreement * 100:.1f}%, perplexity {change * 100:+.2f}% against NumPy"
      + (f", the logits {relative:.3f} of NumPy's apart (the line of a made-up model: ${MADE_UP_LINE})" if ${entry.madeUp ? "True" : "False"} else "")
      if int8 else f"most likely token the same at {agreement * 100:.1f}%, largest logit difference {largest:.2e} against NumPy")
-     + (f"; the prompt in blocks {'the same to the bit' if same else 'DIFFERENT'}" if blocks else "; no blocks (NumPy)"))
+     + (f"; the prompt in blocks {'the same to the bit' if same else 'DIFFERENT'}" if blocks else "; no blocks (NumPy)")
+     + (f"; a position out of turn {'refused, and nothing changed' if refused else 'NOT REFUSED (or changed something)'}, a second run from 0 {'the first one again' if again else 'DIFFERS from the first (a state left behind)'}" if kept else ""))
 `).toJs();
   const [ok, line] = verdict;
   const times = { numpy: [], page: [] };

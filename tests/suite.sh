@@ -58,6 +58,14 @@ part "smoke test" node tests/smoke.mjs
 part "the delta rule's kernels" node tests/delta-check.mjs
 # T230, T231: the kernels of the ternary weights against the same arithmetic in JavaScript, to the bit (under a second)
 part "the ternary weights' kernels" node tests/ternary-check.mjs
+# T229 (the review): a Qwen3.5 is not put on a GPU where an adapter is there: forward.js's gpuUnfit says so first, and no
+# adapter of CI's reaches that line (a few seconds)
+hybrid_stays_on_the_cpu() {
+  mkdir -p .tmp
+  python tests/make_qwen35.py .tmp/made-up-qwen35-int8 int8
+  node tests/gpu-hybrid-check.mjs .tmp/made-up-qwen35-int8
+}
+part "a Qwen3.5 where a GPU adapter is" hybrid_stays_on_the_cpu
 # T217 (the review of T201): attention's softmax where its largest score decides something (two positions far above
 # the rest): a largest that leaves positions out, which forward-check's line cannot see (under a second)
 part "attention's largest score" node tests/attention-check.mjs
@@ -73,14 +81,24 @@ if [ "$suite" = full ]; then
   # T229: a made-up Qwen3.5 (hybrid attention; no real one is small enough for the build): float32 to NumPy's numbers,
   # int8 within the line of a made-up model, one with a state as large as a real model's for the memory after the
   # checkpoint against footprint(); on a shared memory, a plain one and a 64-bit one
+  # (the review: and the float16 and six-bit files, which the page opens too: a Safari keeps a 4B in six bits)
   made_up_qwen35() {
     mkdir -p .tmp
     python tests/make_qwen35.py .tmp/made-up-qwen35-float32 float32
+    python tests/make_qwen35.py .tmp/made-up-qwen35-float16 float16
     python tests/make_qwen35.py .tmp/made-up-qwen35-int8 int8
+    python tests/make_qwen35.py .tmp/made-up-qwen35-int6 int6
     python tests/make_qwen35.py .tmp/made-up-qwen35-state int8 state
+    # heads of 256, as every real Qwen3.5 has (the others' are 32 and 64); a plain memory with float16 keys and values too, which
+    # a 4B or a 9B keeps past 4 GiB: the attention kernels on heads that wide
+    python tests/make_qwen35.py .tmp/made-up-qwen35-wide-float32 float32 wide
+    python tests/make_qwen35.py .tmp/made-up-qwen35-wide-int8 int8 wide
     for memory in "" --plain --wide; do
-      node tests/forward-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-state --rounds 1 --positions 128 $memory
+      node tests/forward-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-float16 .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-int6 .tmp/made-up-qwen35-state .tmp/made-up-qwen35-wide-float32 .tmp/made-up-qwen35-wide-int8 --rounds 1 --positions 128 $memory
     done
+    node tests/forward-check.mjs .tmp/made-up-qwen35-wide-int8 --rounds 1 --positions 128 --plain --half-keys
+    # Safari's path, with no relaxed SIMD (8-bit activations: matmul_q8 and matmul_q6), where a 4B is held in six bits
+    node tests/forward-check.mjs .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-int6 .tmp/made-up-qwen35-state --without relaxed --rounds 1 --positions 128
   }
   part "forward.js against NumPy, a made-up Qwen3.5" made_up_qwen35
   # T230, T231: made-up ternary models (the real ones are too large for the build): the shape of Ternary Bonsai 1.7B,
@@ -97,8 +115,11 @@ if [ "$suite" = full ]; then
   # T148: the default choice of the GPU or the CPU for a prompt's blocks, with a made-up GPU's worker
   part "the GPU or the CPU by default" node tests/gpu-default-check.mjs
   part "the software threads" node tests/threads-check.mjs
-  # T229: the value heads of a linear-attention layer's delta rule shared out among the threads, to the bit
-  part "the software threads, a made-up Qwen3.5" node tests/threads-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-int8 --rounds 1
+  # T229: the value heads of a linear-attention layer's delta rule shared out among the threads, to the bit, and a thread
+  # that stops in the middle of one (the review: its state is written beside the old one, so the phase can be run again)
+  part "the software threads, a made-up Qwen3.5" node tests/threads-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-state --rounds 1
+  # and with every address above 4 GiB (--wide --high), where a Qwen3.5 4B or 9B keeps its states and its tensors of the linear layers
+  part "the software threads, a made-up Qwen3.5 above 4 GiB" node tests/threads-check.mjs .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-state --wide --high --rounds 1 --positions 24
   part "the software threads, made-up ternary models" node tests/threads-check.mjs .tmp/made-up-ternary-qwen3 .tmp/made-up-ternary-hybrid --rounds 1
   # T206: the pre-tokenizers against the real ones at every code point (about 90 s, too long for the deploy)
   part "the pre-tokenizers at every code point" env EVERY_CODE_POINT=1 python -m pytest tests/test_bytebpe.py -q -k every_character

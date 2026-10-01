@@ -11,7 +11,9 @@
 //       context, and a close one (the megabyte it adds for alignment, and the page the memory grows by): for every kind
 //       of model (a key for every head and grouped-query, biases, heads of another size than dim / heads, GPT-2, GPT-NeoX),
 //       int8, six bits, float16 and float32, with and without relaxed SIMD, on a shared memory (its base, and the type of
-//       the keys and values keysInHalf says) and on a plain one. The worker sizes the memory by footprint(); an engine
+//       the keys and values keysInHalf says) and on a plain one. T229's review: and a Qwen3.5's hybrid attention, whose
+//       linear layers keep a state (twice) and no keys and values (a small one with a state that outweighs the rest, the
+//       0.8B whole, four layers of the 27B's shape). The worker sizes the memory by footprint(); an engine
 //       that put more after the checkpoint than it counted runs out of memory near the end of its context.
 //   (3) the memory of a cache that doubles never holds more than the whole context's: it has the size footprint() counts
 //       when the last doubling is done (a memory does not shrink, so what it held at its largest is what it holds). The cache
@@ -56,12 +58,21 @@ def plan_of(header, form, dtype):
     kv_dim = probe.n_kv_heads * probe.head_size
     probe.arch, probe.rotary = form["arch"], probe.head_size
     probe.rope_magnitude = 1.0  # the places, not the values (as external_tensors() sets it)
-    # the engine's own condition for keeping int8: the int8 kernels work on groups of 32 only
-    keep = npdtype == np.int8 and all(n % 32 == 0 for n in (probe.dim, probe.q_dim, kv_dim, probe.hidden_dim))
+    # T229: a Qwen3.5's linear-attention layers, and RoPE over a quarter of a head
+    probe.linear = L.linear_form(form["linear"])
+    if probe.linear is not None:
+        probe.slots = L.layer_slots(probe.n_layers, probe.linear)
+        probe.rotary = probe.head_size // 4
+    # the engine's own condition for keeping int8: the int8 kernels work on groups of 32 only (T229: and the rows of a
+    # linear-attention layer's output matrix, its value heads together)
+    keep = npdtype == np.int8 and all(n % 32 == 0 for n in (probe.dim, probe.q_dim, kv_dim, probe.hidden_dim)) \
+        and (probe.linear is None or L.linear_widths(probe.linear)[2] % 32 == 0)
     places = L.Places(npdtype, packing)
     freq = lambda width: np.zeros(width // 2)
     if form["arch"] in ("gpt2", "neox"):
         probe.gpt2_tensors(places.take, vocab > 0, keep, kv_dim, places.dtype, freq)
+    elif form["arch"] == "qwen35":
+        probe.qwen35_tensors(places.take, vocab > 0, keep, kv_dim, places.dtype, freq)
     else:
         probe.llama_tensors(places.take, vocab > 0, keep, kv_dim, form["bias"], places.dtype, freq, form["qk_norm"])
     tensors = {name: getattr(probe, name).plan() for name in L.TENSOR_NAMES if isinstance(getattr(probe, name, None), L.Tensor)}
@@ -75,7 +86,11 @@ print(json.dumps([plan_of(**s) for s in json.loads(sys.stdin.read())]))
 `;
 const plansOf = (shapes) => JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c", python],
   { cwd: fileURLToPath(root), input: JSON.stringify(shapes), maxBuffer: 1 << 28 }).toString());
-const FORM = { bias: false, arch: "llama", qk_norm: false, head_dim: 0 };
+const FORM = { bias: false, arch: "llama", qk_norm: false, head_dim: 0, linear: null };
+// T229: the linear-attention layers of the Qwen3.5 shapes below (llama2_numpy.linear_form())
+const LINEAR_SMALL = { every: 4, key_heads: 8, value_heads: 16, key_dim: 128, value_dim: 128, conv: 4 };
+const LINEAR_08B = { every: 4, key_heads: 16, value_heads: 16, key_dim: 128, value_dim: 128, conv: 4 };
+const LINEAR_27B = { every: 4, key_heads: 16, value_heads: 48, key_dim: 128, value_dim: 128, conv: 4 };
 
 // what createForward is handed, from a plan of Python's: kv_start where the cache starts, and the outlier channels of the
 // final norm there are (footprint() counts the most there can be for every int8 model: the second part asks for them)
@@ -84,7 +99,8 @@ function planOf(p, { relaxed = true, kvStart = p.header[6], outliers = 0 } = {})
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = p.header;
   return {
     arch: p.form.arch, dim, hidden_dim: hidden, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: p.head_size,
-    vocab_size: Math.abs(signedVocab), seq_len: seqLen, rotary: p.head_size, parallel_residual: p.form.arch === "neox",
+    vocab_size: Math.abs(signedVocab), seq_len: seqLen, rotary: p.form.linear ? p.head_size / 4 : p.head_size, linear: p.form.linear,
+    parallel_residual: p.form.arch === "neox",
     kv_start: kvStart, rms_norm_eps: 1e-5, shared_classifier: signedVocab > 0, int8: p.keep_int8, relaxed, tensors: p.tensors,
     derived: Object.fromEntries(Object.entries(p.derived).map(([name, bytes]) => [name, new Uint8Array(bytes)])),
     outliers: p.keep_int8 ? Array.from({ length: Math.min(outliers, dim) }, (_, c) => c) : [], half_kv: p.keep_int8,
@@ -195,7 +211,26 @@ function halfToFloat(h) {
     // groups are of 8, which footprint() takes for 32 (the scales then cost a quarter, not an eighth): more counted, never
     // less, so only the bound is held
     ...big("int8 kernels cannot run (dim 200)", [200, 400, 8, 4, 4, 1000, 4096], {}, ["int8"], true),
+    // T229, the review: Qwen3.5's hybrid attention. A linear-attention layer keeps a state of a size the context does not
+    // change (twice: the delta rule reads one and writes the other), and no keys and values; only the full-attention layers do.
+    // One whose state (12.6 MB) and keys and values (2 of 8 layers) outweigh the rest, in every dtype:
+    ...big("qwen3.5, a state of 12.6 MB", [256, 512, 8, 4, 2, 20000, 4096], { arch: "qwen35", head_dim: 64, linear: LINEAR_SMALL },
+      ["int8", "int6", "float32", "float16"]),
+    // and the real shapes: the 0.8B whole (24 layers, a classifier the embedding of 248320 words), and four layers of the 27B's (3
+    // linear and 1 full, three value heads to a key head, 24 heads of 256 that do not fill a dim of 5120). The two small
+    // matrices of a linear layer's gates, its taps and its other vectors are float32 in every file (2 MB a layer of the 27B's),
+    // which footprint() counts as int8 weights, and so for their relaxed corrections, a ninth of them: over by that much more
+    // than the megabyte (hybridOver()), 0.5 MiB for the 0.8B, 12 MiB of the 27B's 28 GB, never under
+    ...big("qwen3.5 0.8B", [1024, 3584, 24, 8, 2, 248320, 4096], { arch: "qwen35", head_dim: 256, linear: LINEAR_08B }, ["int8"]),
+    ...big("qwen3.5 27B's layers, 4 of 64", [5120, 17408, 4, 24, 4, 1000, 4096], { arch: "qwen35", head_dim: 256, linear: LINEAR_27B }, ["int8"]),
   ];
+  // the float32 vectors of the linear layers of a hybrid model, whose relaxed corrections (a ninth of a float32's bytes) footprint() counts
+  const hybridOver = (p) => {
+    if (!p.form.linear) return 0;
+    const { every, key_heads: K, value_heads: V, key_dim, value_dim, conv } = p.form.linear, [dim, , layers] = p.header;
+    const lines = layers - Math.floor(layers / every), mixed = 2 * K * key_dim + V * value_dim;
+    return (lines * (2 * V * dim + conv * mixed + 2 * V + value_dim) * 4) / 8;
+  };
   let engines = 0, tightest = Infinity, loosest = 0;
   const plans = plansOf(shapes.map(({ name, loose, ...shape }) => shape));
   plans.forEach((p, n) => {
@@ -215,7 +250,8 @@ function halfToFloat(h) {
         engines++;
         if (shapes[n].loose) continue;
         // close: the megabyte it allows for alignment less what it did not count (nothing, or a page), and no more
-        assert.ok(bound - used <= 1.2 * MiB, `${where}: footprint() counted ${((bound - used) / MiB).toFixed(2)} MiB more than createForward put there`);
+        const over = relaxed && p.keep_int8 ? hybridOver(p) : 0;
+        assert.ok(bound - used <= 1.2 * MiB + over, `${where}: footprint() counted ${((bound - used) / MiB).toFixed(2)} MiB more than createForward put there`);
         assert.ok(bound - used >= 0.9 * MiB, `${where}: footprint() left ${((bound - used) / MiB).toFixed(2)} MiB over what createForward put there, of the megabyte it allows for alignment`);
         tightest = Math.min(tightest, bound - used);
         loosest = Math.max(loosest, bound - used);
@@ -237,7 +273,7 @@ function halfToFloat(h) {
       engine.release();
       return;
     }
-    if (!p.keep_int8 || shapes[n].loose) return;
+    if (!p.keep_int8 || shapes[n].loose || p.form.linear) return;  // (T229: a Qwen3.5 is not on the GPU: forward.js's gpuUnfit)
     for (const relaxed of [true, false]) {
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: true, outliers: 8, gpu: true, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
@@ -251,7 +287,7 @@ function halfToFloat(h) {
       withGpu++;
     }
   });
-  console.log(`ok: footprint() holds what createForward allocates and no more than a megabyte over (${engines} engines: ${plans.length} models and dtypes, ` +
+  console.log(`ok: footprint() holds what createForward allocates and no more than a megabyte over (and, for a hybrid model, the corrections of its float32 gates) (${engines} engines: ${plans.length} models and dtypes, ` +
     `with and without relaxed SIMD, on a shared and a plain memory; ${(tightest / MiB).toFixed(2)} to ${(loosest / MiB).toFixed(2)} MiB over; ` +
     `and ${withGpu} with the GPU asked for; ${seconds()})`);
 }
