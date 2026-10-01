@@ -486,10 +486,12 @@ def test_a_gguf_whose_yarn_is_not_the_originals_is_refused(theirs):
             llama2_convert.gguf_weights(plain, json.dumps(published))
 
 
-@pytest.mark.parametrize("key, name", [("attn_factor", "attention_factor"), ("yarn_log_mul", "mscale_all_dim")])
+@pytest.mark.parametrize("key, name", [("attn_factor", "attention_factor"), ("yarn_log_multiplier", "mscale_all_dim")])
 def test_a_gguf_whose_yarn_says_more_than_the_tables_know_is_refused(key, name):
-    """llama.cpp scales the turned values by a GGUF's attn_factor, or by its yarn_log_mul's: read under config.json's
-    names, so that neither is dropped without a word, alone or with an original that does not say it."""
+    """llama.cpp scales the turned values by a GGUF's attn_factor, or by its yarn_log_multiplier's: read under
+    config.json's names, so that neither is dropped without a word, alone or with an original that does not say it.
+    The keys are spelled as the fork's src/llama-arch.cpp spells them (the review of T235: the first version of this
+    test and of the converter said yarn_log_mul, which no GGUF has, and so tested nothing real)."""
     config, published, file, _ = bonsai_gguf(also=[(f"qwen3.rope.scaling.{key}", 6, 0.5)])
     with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {name}"):
         fed(file, "int8")

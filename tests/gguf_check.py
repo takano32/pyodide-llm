@@ -548,7 +548,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
     theirs = yarn(config)
     if said or theirs is not None:
         names = {"factor": "factor", "original_context_length": "original_max_position_embeddings",
-                 "attn_factor": "attention_factor", "yarn_log_mul": "mscale_all_dim"}
+                 "attn_factor": "attention_factor", "yarn_log_multiplier": "mscale_all_dim"}
         ours = {name: metadata[f"{arch}.rope.scaling.{key}"] for key, name in names.items()
                 if metadata.get(f"{arch}.rope.scaling.{key}") is not None} if said else None
         same = ours is not None and theirs is not None and set(ours) == set(theirs) \
