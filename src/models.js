@@ -95,12 +95,14 @@ function thinkingAndNot(id, name, source, download, sizes, chat = {}, formats = 
 // the entry's replaces the converter's (T221): so all of the converter's are here (the added tokens tokenizer.json
 // does not call special, T143) with <|im_start|> and <|im_end|>, in the converter's order (the longest first).
 // The BOS: the real tokenizer begins a text with none (bos_token null), and the page begins every text with one, the
-// converter's being <|endoftext|> (248044, T229). That one costs this model much (on 299 tokens of Wikipedia the
-// perplexity is 46% higher in English and 95% in Japanese with it in front: its linear-attention layers keep what they
-// read in a state, where a Qwen3's attention looks past it, T131's ±3%). So the BOS here is the format's own first
-// token, <|im_start|> (248045), and the formats begin after it: the page then sends the very IDs the real template
-// makes, none more. The answer stops at <|im_end|> (248046), at <|endoftext|> (all that config.json names) and at the
-// mark of a new turn
+// converter's being <|endoftext|> (248044, T229). That one costs this model much on plain text (on 299 tokens of
+// Wikipedia the perplexity is 46% higher in English and 95% in Japanese with it in front, and 20% to 65% on four texts
+// of 512 tokens in the review, lasting to the end: its linear-attention layers keep what they read in a state, where a
+// Qwen3's attention looks past it, T131's ±3%). In chat form it costs nothing measurable (24 answers written by hand,
+// tests/chat_nll.py: -0.8%, worse on 12 of 24). So the BOS here is the format's own first token, <|im_start|> (248045),
+// and the formats begin after it: the page then sends the very IDs the real template makes, none more (an entry
+// opened with ?hf= has no format and the converter's BOS). The answer stops at <|im_end|> (248046), at <|endoftext|>
+// (all that config.json names) and at the mark of a new turn
 const QWEN35_THINKING = "user\n{prompt:trim}<|im_end|>\n<|im_start|>assistant\n<think>\n";
 const QWEN35_AT_ONCE = `${QWEN35_THINKING}\n</think>\n\n`;
 const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
