@@ -3,7 +3,7 @@
 # The forward pass itself runs in JavaScript: tests/smoke.mjs checks it against the NumPy one.
 import numpy as np
 import pytest
-from conftest import pack_tokenizer, synthetic_weights, tiny_vocab
+from conftest import pack_tokenizer, qwen35_model, synthetic_weights, tiny_vocab
 from test_bias import qwen2
 from test_convert import converted, hugging_face, reader, safetensors_file
 from test_gpt2 import VOCAB as GPT2_VOCAB
@@ -12,7 +12,7 @@ from test_neox import VOCAB as NEOX_VOCAB
 from test_neox import neox_model
 
 from llama2_convert import Safetensors, normalize, rotary_dim
-from llama2_numpy import OUTLIER_CHANNELS, Llama, external_tensors, outlier_channels
+from llama2_numpy import OUTLIER_CHANNELS, Llama, external_tensors, linear_widths, outlier_channels
 
 
 class Outside:
@@ -49,6 +49,11 @@ def models():
     tensors, published = neox_model(0.25, True)
     yield "neox", tensors, published, NEOX_VOCAB, {"arch": "neox", "rotary": rotary_dim(normalize(published)),
                                                    "parallel_residual": True}
+    # T229: a Qwen3.5, with rows of whole groups of 32 (value heads that make 32 values) and without
+    from test_qwen35 import options_of
+    for name, shape in (("qwen35", dict(value_dim=8)), ("qwen35, rows of 24", dict(shared=False))):
+        tensors, published = qwen35_model(**shape)
+        yield name, tensors, published, 320, options_of(published)
 
 
 def widened(checkpoint, tensor):
@@ -72,8 +77,11 @@ def test_the_plan_points_at_what_the_numpy_engine_reads(name, tensors, published
     engine = Llama(None, tokenizer, dtype=dtype, external=outside, **options)
     plan = outside.plan
     # int8 stays int8 only where every row is whole groups of 32 (the kernels' groups); else forward.js widens it
-    whole = all(n % 32 == 0 for n in (reference.dim, reference.hidden_dim, reference.n_kv_heads * reference.head_size))
+    # (T229: and a Qwen3.5's value heads together, the rows of a linear-attention layer's output matrix)
+    whole = all(n % 32 == 0 for n in (reference.dim, reference.hidden_dim, reference.n_kv_heads * reference.head_size,
+                                      reference.q_dim, linear_widths(reference.linear)[2] if reference.linear else 32))
     assert plan["arch"] == options.get("arch", "llama") and plan["int8"] is (dtype == "int8" and whole)
+    assert plan["linear"] == options.get("linear") and plan["rotary"] == options.get("rotary", reference.head_size)
     for attribute, tensor in plan["tensors"].items():
         want = getattr(reference, attribute)
         if isinstance(want, tuple):  # an int8 table the NumPy engine keeps as it is (a classifier of its own)

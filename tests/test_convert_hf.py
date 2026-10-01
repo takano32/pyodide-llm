@@ -31,9 +31,14 @@ def qwen3_model():
     return qwen3(config, weights, True)
 
 
+def qwen35_model():
+    from conftest import qwen35_model as hybrid
+    return hybrid()
+
+
 # all four architectures (Fable's review: the Llama path was the one that worked, and a change to it should say so)
-@pytest.mark.parametrize("model", [llama_model, qwen2_model, qwen3_model, gpt2_model, neox_model],
-                         ids=["llama", "qwen2", "qwen3", "gpt2", "neox"])
+@pytest.mark.parametrize("model", [llama_model, qwen2_model, qwen3_model, gpt2_model, neox_model, qwen35_model],
+                         ids=["llama", "qwen2", "qwen3", "gpt2", "neox", "qwen35"])
 @pytest.mark.parametrize("dtype", ["float32", "int8"])
 def test_convert_hf_writes_what_the_page_writes(tmp_path, model, dtype):
     tensors, config = model()
