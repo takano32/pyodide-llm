@@ -99,6 +99,10 @@ int8's size (1.94 GB) and not at the file's: it has no ternary kernel. The GGUF 
 safetensors of the same weights: no tensor is further than 8.7e-5 from it (a few blocks of 128 have two
 magnitudes there, 0.5% apart, and one in the GGUF).
 
+Ternary Bonsai 4B and 8B come the same way (1.07 GB and 2.18 GB of PQ2_0, widened to 4.5 GB and 9.2 GB of int8, on
+a 64-bit memory). Compared with their float16 safetensors, no tensor of the 4B is further than 8.5e-5 from them, and
+the 8B's are the same values.
+
 Qwen3.5 0.8B's Q8_0 GGUF holds some tensors otherwise than the original does: llama.cpp writes the norms with the 1
 the model adds to them and `A_log` as −exp(A_log), and it quantizes the two small matrices of the gates of each
 linear-attention layer (16 × 1024), which the page keeps in float32. The page takes the first two as they come (4 of

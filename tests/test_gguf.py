@@ -51,6 +51,17 @@ def pq2_0_blocks(values):
         ((codes - 1).astype(np.float32) * d.astype(np.float32)[:, None]).reshape(values.shape)
 
 
+def metadata_value(kind, value):
+    """A GGUF metadata value of a ggml kind: 4 a uint32, 5 an int32, 6 a float32, 7 a bool, 8 a string, and 9 an array,
+    given as (the kind of its items, the items)."""
+    if kind == 8:
+        return struct.pack("<Q", len(value.encode())) + value.encode()
+    if kind == 9:
+        item, values = value
+        return struct.pack("<IQ", item, len(values)) + b"".join(metadata_value(item, one) for one in values)
+    return struct.pack({4: "<I", 5: "<i", 6: "<f", 7: "<?"}[kind], value)
+
+
 def turn(w, heads):
     """What llama.cpp's convert does to q and k of a Llama."""
     rows = w.shape[0] // heads
@@ -86,7 +97,7 @@ def gguf_file(tensors, published, vocab_size, arch="llama", pre="gpt-2", theta=1
     out = [b"GGUF", struct.pack("<IQQ", 3, len(tensors) + len(extra or {}), len(metadata) + 3)]
     for key, kind, value in metadata:
         out.append(string(key) + struct.pack("<I", kind))
-        out.append(string(value) if kind == 8 else struct.pack({4: "<I", 6: "<f"}[kind], value))
+        out.append(metadata_value(kind, value))
     out.append(string("tokenizer.ggml.tokens") + struct.pack("<IIQ", 9, 8, len(tokens)) + b"".join(map(string, tokens)))
     out.append(string("tokenizer.ggml.token_type") + struct.pack("<IIQ", 9, 5, len(tokens)) + struct.pack(f"<{len(tokens)}i", *[1] * len(tokens)))
     out.append(string("tokenizer.ggml.merges") + struct.pack("<IIQ", 9, 8, 0))
@@ -695,7 +706,7 @@ def tiled_places(what, text):
     return axis, np.concatenate([np.arange(first), first + heads])
 
 
-def qwen35_gguf(more=(), bos=1, eos=2, change=None, tile=True, **shape):
+def qwen35_gguf(more=(), bos=1, eos=2, change=None, fold=None, matrices=None, tile=True, **shape):
     """A GGUF v3 of a small Qwen3.5 the way llama.cpp writes one (as unsloth's Qwen3.5-0.8B Q8_0 is, T236): the
     language model's tensors alone, the norms with the 1 the model adds to them (not a linear-attention layer's own),
     A_log as -exp(A_log) and named ssm_a, dt_bias named ssm_dt.bias, the convolution without its axis of one, q with
@@ -703,9 +714,14 @@ def qwen35_gguf(more=(), bos=1, eos=2, change=None, tile=True, **shape):
     the value heads tiled (tiled_places(); tile: False leaves them as Hugging Face has them, which llama.cpp does not);
     Q8_0 matrices (the two small ones of the gates too), F32 vectors and convolution. Returns the config.json, the file, and under the Hugging Face names the values it stands for: the
     matrices as Q8_0 rounds them, everything else as the original has it.
-    more: further metadata; change(stored): alters what is written, {GGUF name: [bytes, ggml type, shape]}."""
+    more: further metadata; change(stored): alters what is written, {GGUF name: [bytes, ggml type, shape]}.
+    fold(tensors): the Hugging Face tensors as the file is to hold them (T237: in a rotated basis); matrices: what
+    makes a matrix's blocks and their ggml type, where not Q8_0 (as gguf_file's)."""
     from conftest import qwen35_model
     tensors, config = qwen35_model(**{**QWEN35, **shape})
+    if fold:
+        tensors = fold(tensors)
+    blocks, block_type = matrices or (q8_0_blocks, 8)
     text = config["text_config"]
     prefix = "model.language_model." if "model.language_model.embed_tokens.weight" in tensors else "model."
     stored, same = {}, {}
@@ -732,12 +748,12 @@ def qwen35_gguf(more=(), bos=1, eos=2, change=None, tile=True, **shape):
         if places:
             value = value.take(places[1], axis=places[0])
         if value.ndim == 2 and not name.endswith(".conv1d.weight"):
-            blob, held = q8_0_blocks(np.ascontiguousarray(value))
+            blob, held = blocks(np.ascontiguousarray(value))
             if places:  # the values Q8_0 rounds them to, back at the places Hugging Face has them at
                 back = np.empty_like(held)
                 back[(slice(None),) * places[0] + (places[1],)] = held
                 held = back
-            stored[gguf], same[name] = [blob, 8, value.shape], held
+            stored[gguf], same[name] = [blob, block_type, value.shape], held
         else:
             stored[gguf], same[name] = [np.ascontiguousarray(value, np.float32).tobytes(), 0, value.shape], tensor
     if change:
@@ -767,7 +783,7 @@ def qwen35_gguf(more=(), bos=1, eos=2, change=None, tile=True, **shape):
     out = [b"GGUF", struct.pack("<IQQ", 3, len(stored), len(metadata) + 3)]
     for key, kind, value in metadata:
         out.append(string(key) + struct.pack("<I", kind))
-        out.append(string(value) if kind == 8 else struct.pack({4: "<I", 6: "<f"}[kind], value))
+        out.append(metadata_value(kind, value))
     out.append(string("tokenizer.ggml.tokens") + struct.pack("<IIQ", 9, 8, len(tokens)) + b"".join(map(string, tokens)))
     out.append(string("tokenizer.ggml.token_type") + struct.pack("<IIQ", 9, 5, len(tokens)) + struct.pack(f"<{len(tokens)}i", *[1] * len(tokens)))
     out.append(string("tokenizer.ggml.merges") + struct.pack("<IIQ", 9, 8, 0))
