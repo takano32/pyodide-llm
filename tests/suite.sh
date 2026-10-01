@@ -58,6 +58,10 @@ part "smoke test" node tests/smoke.mjs
 part "the delta rule's kernels" node tests/delta-check.mjs
 # T237: the kernels of the rotated basis against the same arithmetic in JavaScript, to the bit (under a second)
 part "the rotated basis's kernels" node tests/rotate-check.mjs
+# T243 (the review): the look at the GPU's float16 keys and values, finite_f16, on the four builds of the kernels forward.js
+# instantiates: every half at every place of a 16-byte line, the rest after the eights (no engine's kvDim leaves one), a bad
+# half just outside the run, an address above 4 GiB (a few seconds)
+part "the finite look at float16" node tests/finite-check.mjs
 # T229 (the review): a Qwen3.5 is not put on a GPU where an adapter is there: forward.js's gpuUnfit says so first, and no
 # adapter of CI's reaches that line (a few seconds)
 hybrid_stays_on_the_cpu() {
