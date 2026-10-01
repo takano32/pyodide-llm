@@ -218,6 +218,8 @@ def naive_logits(config, weights, tokens):
     cos, sin = weights["freq_cis_real"], weights["freq_cis_imag"]
 
     eps = config.get("eps", 1e-5)  # config.json's rms_norm_eps (T124)
+    # what the scores are multiplied by: a Granite's attention_multiplier (T253), else one over the root of a head
+    score_scale = config.get("attention_multiplier", 1.0 / math.sqrt(head_size))
 
     def rmsnorm(vector, weight):
         return weight * vector / math.sqrt(sum(float(v) * float(v) for v in vector) / len(vector) + eps)
@@ -252,7 +254,7 @@ def naive_logits(config, weights, tokens):
             for h in range(n_heads):
                 kv = h // kv_mul
                 q = queries[pos][h * head_size:(h + 1) * head_size]
-                scores = np.array([float(q @ keys[t][kv * head_size:(kv + 1) * head_size]) / math.sqrt(head_size)
+                scores = np.array([float(q @ keys[t][kv * head_size:(kv + 1) * head_size]) * score_scale
                                    for t in range(pos + 1)])
                 scores = np.exp(scores - scores.max())
                 scores /= scores.sum()

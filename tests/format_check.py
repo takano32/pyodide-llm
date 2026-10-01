@@ -77,8 +77,9 @@ KNOWN = {
 # T236 (its review): the entries whose BOS is the format's own first token (<|im_start|>), so that the page sends the
 # real template's ids exactly, none before them. Everywhere else a BOS of the page's in front of the real ids is let
 # by (the first BOS may differ, T131): that let the design of before T236, <|endoftext|> in front of <|im_start|>
-# (which costs a Qwen3.5 much, TODO.md's T236), pass for these two as well.
-STRICT = {"hf-qwen3.5-0.8b", "hf-qwen3.5-0.8b-thinking"}
+# (which costs a Qwen3.5 much, TODO.md's T236), pass for these two as well. T253's Granite 4.2 are made the same way.
+STRICT = {"hf-qwen3.5-0.8b", "hf-qwen3.5-0.8b-thinking", "hf-granite-4.2-3b", "hf-granite-4.2-3b-thinking",
+          "hf-granite-4.2-8b", "hf-granite-4.2-8b-thinking"}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
 # (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
 ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9a775",

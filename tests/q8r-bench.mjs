@@ -26,8 +26,12 @@ const work = root + ".tmp/q8r-bench/";
 // main's kernels (CI checks out one commit: fetch main's)
 try { execFileSync("git", ["fetch", "--depth=1", "origin", "+main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" }); } catch {}
 const forms = { main: {}, tree: {} };
-for (const file of ["kernel.ts", "kernel_relaxed.ts", "six.ts"]) {
-  forms.main[file] = execFileSync("git", ["show", `origin/main:kernels/${file}`], { cwd: root, encoding: "utf8" });
+for (const file of ["kernel.ts", "kernel_relaxed.ts", "six.ts", "ternary.ts"]) {
+  try {
+    forms.main[file] = execFileSync("git", ["show", `origin/main:kernels/${file}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  } catch (error) {
+    if (file !== "ternary.ts") throw error;  // a main before T231 has no ternary.ts, and its kernels import none
+  }
   forms.tree[file] = fs.readFileSync(`${root}kernels/${file}`, "utf8");
 }
 

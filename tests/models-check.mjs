@@ -60,6 +60,16 @@ assert.equal(weightsFor(qwen, undefined, 8), undefined, "1.7 GB fits in half of 
 assert.equal(weightsFor(qwen, undefined, 2), "int6", "not in half of 2 GB");
 assert.equal(weightsFor({ hf: {}, note: "int8 4.2 GB" }, undefined, undefined), undefined, "past a 32-bit memory: the worker, which knows the header, chooses");
 assert.equal(modelBytes({ ...qwen, conversion: { dtype: "int6" } }), modelBytes(qwen) * SIX_OF_EIGHT);
+// T230: a ternary model is converted to the ternary dtype, its weights as they are, on any device and whatever fits;
+// ?bits=8 and ?bits=6 widen them (to compare), and the memory is then four times as much (and 7/9 of that)
+const bonsai = byId("hf-ternary-bonsai-1.7b");
+for (const deviceMemory of [undefined, 1, 2, 8]) assert.equal(weightsFor(bonsai, undefined, deviceMemory), "ternary");
+assert.equal(weightsFor(bonsai, "8", 8), "int8", "?bits=8 of a ternary model");
+assert.equal(weightsFor(bonsai, "6", 8), "int6", "?bits=6 of a ternary model");
+assert.equal(modelBytes(bonsai), 484e6);
+assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "ternary" } }), 484e6);
+assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "int8" } }), 484e6 * 4);
+assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "int6" } }), 484e6 * 4 * SIX_OF_EIGHT);
 // T133: Chromium says at most 8 GB: a device at the cap may have any more, so six bits are not asked for there, and
 // only a model past 8 GB is warned of
 const seven = { name: "7B", hf: {}, note: "int8 9.2 GB" }, three = { name: "3B", hf: {}, note: "int8 3.6 GB" };

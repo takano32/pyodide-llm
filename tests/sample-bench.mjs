@@ -60,7 +60,13 @@ const kernels = {};
 for (const [name, read] of Object.entries(forms)) {
   const dir = `${work}${name}/`;
   fs.mkdirSync(dir, { recursive: true });
-  for (const file of ["kernel.ts", "six.ts"]) fs.writeFileSync(dir + file, read(file));
+  for (const file of ["kernel.ts", "six.ts", "ternary.ts"]) {
+    try {
+      fs.writeFileSync(dir + file, read(file));
+    } catch (error) {
+      if (file !== "ternary.ts") throw error;  // a commit before T231 has no ternary.ts, and its kernel.ts imports none
+    }
+  }
   execFileSync("npx", ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1",
     dir + "kernel.ts", "-o", dir + "plain.wasm", "--enable", "simd"], { cwd: root, stdio: "inherit" });
   kernels[name] = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(dir + "plain.wasm")), { env: { memory } }).exports;
