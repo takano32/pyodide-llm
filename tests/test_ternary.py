@@ -14,6 +14,7 @@ from test_convert import converted, hugging_face, reader, safetensors_file, stre
 from test_external import Outside
 from test_gguf import bonsai_gguf, pq2_0_blocks, unigram, with_original
 
+import gguf_check
 import llama2_convert
 from llama2_convert import Arrays, Conversion, Safetensors, checkpoint_size, gguf_read
 from llama2_numpy import (NOT_TERNARY, TERNARY_GROUP, Llama, checkpoint_dtype, external_tensors, pack_ternary, ternary,
@@ -100,6 +101,10 @@ def test_ptq1_0_reads_every_byte_as_the_fork_does():
         expected.append([(value - 1) * np.float32(d) for value in values])
     got = llama2_convert.ptq1_0(b"".join(blocks))
     assert np.array_equal(got.view(np.uint32), np.array(expected, dtype=np.float32).reshape(-1).view(np.uint32))
+    # and the reference reader of tests/gguf_check.py (the digits by division), which tests/ternary_rows.py holds the
+    # converter's to on the real file
+    reference = gguf_check.widen_ptq1_0(np.frombuffer(b"".join(blocks), dtype=np.uint8))
+    assert np.array_equal(reference.reshape(-1).view(np.uint32), got.view(np.uint32))
     # and what the test's own writer makes of ternary values comes back as them, in their order
     values = np.random.default_rng(3).integers(-1, 2, (4, 256)).astype(np.float32) * np.float32(0.0625)
     blob, held = ptq1_0_blocks(values)
