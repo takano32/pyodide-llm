@@ -46,7 +46,7 @@ const LAYER_LINE = "LAYER_LINE = 1e-3", NO_LINE = "LAYER_LINE = 1e-12";
 let [site = "https://takano32.github.io/pyodide-llm/", ...engines] = dist ? [undefined, ...args] : args;
 let server;
 if (dist) {
-  const base = "/pyodide-llm/", root = new URL("../dist/", import.meta.url).pathname;
+  const base = "/pyodide-llm/", root = fileURLToPath(new URL("../dist/", import.meta.url));  // (T242: on Windows too, as PROFILES)
   const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css",
     ".py": "text/plain", ".wasm": "application/wasm" };
   server = http.createServer((req, res) => {
