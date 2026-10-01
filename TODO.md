@@ -86,7 +86,8 @@
 
 **いまの状態（2026-10-01、再開した回）**: 2026-09-28 に止めた 4 つ（T129・T130・T219 の (2)・T224）は全部本線に入れた（反映済み、レビューは Sonnet max が後で）。本線は T129 105bb4a、T130 89a24e9（持ち主の判断の 1 行つき: 共有でないメモリで float16 にしても 64 ビットが要るモデルは KV を float32 のまま）、T219 の (2) b76cd65。止めた頃の経緯は `git show 1a0cc1d:TODO.md` のこの段にある。
 - **CI**: 本線（T129 と T130 の後）の tests.yml の全部の組は成功（run 36864748112、EPYC 7763、383 秒）。T219 のブランチ（T224 と合わせた後）の gpu-prompt.yml の全部の組は成功、FAILED 0（run 36864349281、13.9 分）。本番の確かめ（T130: `models.yml` の `long=850` で Qwen2.5 3B（`coi=off` も）・llm-jp-3.1 1.8B・SmolLM2 1.7B、T129: `slow.yml` の slow と stall、2 回目の訪問とモデルの切り替え、T219: `gpuTest=on`）は回している途中で、結果は各項に足す。
-- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: T225 `t225-nvidia-layer-check`、T226 `t226-steps-all-archs`、T227 `t227-report-warnings`、T228 `t228-bonsai-survey`（調べだけ）、T224 のレビュー `t224-review`（Sonnet max）。終わったものから本会話が本線に入れる。
+- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: T225 `t225-nvidia-layer-check`、T226 `t226-steps-all-archs`、T228 `t228-bonsai-survey`（調べだけ）、T224 のレビュー `t224-review`（Sonnet max）。終わったものから本会話が本線に入れる。
+- **T227 も本線に入れた（4623fb3、反映済み）**: 報告の頭と要約に「#### Warnings」の一覧。見出しと切り詰めの文（「… and N more, in the whole report below」）は実装が選んだ仮の文で、持ち主が変えてよい。本物の端末の WRONG の行はまだ見ていない（CI の代わりのアダプタは全部 ok）。
 - **残してあるブランチ**: レビューが使う調べと壊し方の捨てのブランチ（`t129-probe`、`t219-review-probe`、`t224-review-probe`、`t224-review-t210`）、T224 の前の版の写し（`t224-attn-vec`、`t224-attn-vec-fable`）とレビューの書きかけ（`t224-opus-review`）。T224 のレビューが済んだら消す。
 - **レビュー待ち（Sonnet max、別の会話で）**: T129、T130、T219 の (1)(2) と T220、T223、T224（始めた）。
 - **持ち主の端末で見てもらうもの**: T129（iPhone の Safari・Android の Chrome・PC で、初めての訪問・HF のモデル・取得の途中の選び直し・2 回目の訪問が今までどおりか。おかしければ T129 の 1 つを戻す）、T223（llm-jp-3 150M が 2 本を選ぶか）、T173（iPhone と Android の Page memory）、T210（Llama 3.2 3B を GPU だけで、8B が入るか）、T156 の (c)（ベンチの CPU の節の後に 3B を 2 回開いて CPU に倒れるか）、T219 の (2)（Android の「the sampling alone」が前より 1.1 倍を越えて遅くないか）。
