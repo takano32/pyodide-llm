@@ -26,8 +26,10 @@
 # rounding of the activations is (0.07 to 0.19 in a logit on the four texts; its own batch and token-at-a-time paths are
 # that far from each other). The runs of this file with a rounding of their own measure it: "float32" (the engine as the page
 # will run it without its own rounding of the activations), "as the fork rounds" (the same activations rounded the fork's way
-# before every matrix), "as the page rounds" (7 bits, relaxed SIMD) and "as Safari rounds" (8 bits, none), "bfloat16 gates"
-# (float32 but for the two small matrices).
+# before every matrix), "as 7 bits round" (the page's int8 weights with relaxed SIMD: matmul_q8r) and "as 8 bits round" (its
+# int8 weights without relaxed SIMD: Safari's; and, since T231, its ternary weights in every browser: the ternary kernels take
+# the activations signed, in all 8 bits, so this is the run that stands for the 27B on the page), "bfloat16 gates" (float32
+# but for the two small matrices).
 # Against the fork as it is, the line is three times what that rounding moves the engine (T238). It cannot see an error
 # that moves the logits by less, and a few errors of this kind do (one sign of 17408 values moves them by 0.43), so
 # (T237's review) the fork is also run with float32 activations (tests/reference_27b_patch.py, REPLAY of the tokens of
@@ -37,8 +39,8 @@
 # value heads read in the GGUF's order, no signs, no rotation, the embedding's rows not turned back, q and k read as if no
 # part of a head were stored in halves (T238's five), and weaker ones: a sign or a few, a block of signs, signs of another
 # width, a normalization twice, one layer that reads the model's own basis, the gates that read the rotated one.
-# SAVE_LOGITS=<a directory> writes the logits of the runs that stand for the page (float32, as the page rounds, as Safari
-# rounds): the comparison of forward.js's own numbers with them needs no pass over the file again (T233).
+# SAVE_LOGITS=<a directory> writes the logits of the runs that stand for the page (float32, as 7 bits round, as 8 bits
+# round): the comparison of forward.js's own numbers with them needs no pass over the file again (T233).
 import json
 import math
 import os
@@ -248,8 +250,9 @@ def as_bf16(x):
 
 def as_page(qmax):
     """x as the page's kernels round the input of a matrix (kernels/kernel.ts quantize_x: blocks of 32, the scale
-    max |x| / qmax kept as a float32, q = round(x * (1 / scale)) half to even; the values q * scale): qmax 63 with relaxed
-    SIMD (7 bits: matmul_q8r), 127 without it (Safari: matmul_q8). The product the kernels then take is exact in the
+    max |x| / qmax kept as a float32, q = round(x * (1 / scale)) half to even; the values q * scale): qmax 63 for int8
+    weights with relaxed SIMD (7 bits: matmul_q8r), 127 for int8 weights without it (Safari: matmul_q8) and for ternary
+    weights (matmul_t2r and matmul_t2 take the activations signed). The product the kernels then take is exact in the
     integers, so a float32 matrix times these values is what they compute but for the order of the sums."""
     def rounded(x):
         blocks = np.ascontiguousarray(x, dtype=np.float32).reshape(-1, 32)
@@ -263,7 +266,7 @@ def as_page(qmax):
 # the roundings a run can have, by name: what every large matrix reads, and what the two small ones of a linear layer's
 # gates read (the fork rounds those to bfloat16; the page leaves them in float32, as its matmul_f32 does)
 ROUNDINGS = {"float32": (None, None), "as the fork rounds": (as_q8_0, as_bf16), "bfloat16 gates": (None, as_bf16),
-             "as the page rounds": (as_page(63), None), "as Safari rounds": (as_page(127), None)}
+             "as 7 bits round": (as_page(63), None), "as 8 bits round": (as_page(127), None)}
 
 
 # ------------------------------------------------------------------------------------------- the model
@@ -603,14 +606,14 @@ def main():
         logits[(index, name)] = results[at:at + count]
         at += count
     del results
-    # SAVE_LOGITS=<a directory>: the logits of the runs that stand for the page (float32, and as the page rounds with relaxed
-    # SIMD and as Safari does without it), a row for every position of every text, for the comparison of the page's own forward
+    # SAVE_LOGITS=<a directory>: the logits of the runs that stand for the page (float32, and as 7 bits round with relaxed
+    # SIMD, and as 8 bits round: Safari's and the ternary kernels'), a row for every position of every text, for the comparison of the page's own forward
     # pass (forward.js, T233) with them without the pass over the file again: engine-<text>-<the run's name>.logits, float32
     if os.environ.get("SAVE_LOGITS"):
         saved = Path(os.environ["SAVE_LOGITS"])
         saved.mkdir(parents=True, exist_ok=True)
         for (index, name), rows in logits.items():
-            if name in ("float32", "as the page rounds", "as Safari rounds"):
+            if name in ("float32", "as 7 bits round", "as 8 bits round"):
                 np.asarray(rows, dtype=np.float32).tofile(saved / f"engine-{index}-{name.replace(' ', '-')}.logits")
         print(f"reference: the logits of the runs for the page are in {saved}", flush=True)
 
@@ -645,7 +648,7 @@ def main():
             if text["f32 batch"] is not None:
                 compare(f"text {index}, the float32 fork's batch against the float32 fork a token at a time", text["f32 batch"], text["f32"])
             compare(f"text {index}, the float32 fork against the fork (the rounding of the activations)", text["f32"], fork)
-            for name in ("float32", "bfloat16 gates", "as the page rounds", "as Safari rounds"):
+            for name in ("float32", "bfloat16 gates", "as 7 bits round", "as 8 bits round"):
                 compare(f"text {index}, {name} against the float32 fork", logits[(index, name)], text["f32"])
             near = Distance(ours, text["f32"])
             tight_ok = near.worst <= TIGHT_LINE and near.same == near.count and near.kl_worst <= TIGHT_KL

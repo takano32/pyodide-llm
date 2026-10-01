@@ -260,5 +260,5 @@ def test_a_break_of_the_reference_changes_the_logits_where_it_applies(tmp_path):
         else:
             assert not np.allclose(got, base, rtol=1e-3, atol=1e-3), f"{name} changes nothing"
     # the roundings of the page are not float32, and the page's 7 bits are not Safari's 8
-    seven, eight = (streamed_logits(path, tokens, rounding=name)[-1] for name in ("as the page rounds", "as Safari rounds"))
+    seven, eight = (streamed_logits(path, tokens, rounding=name)[-1] for name in ("as 7 bits round", "as 8 bits round"))
     assert not np.allclose(seven, base, rtol=1e-3, atol=1e-3) and not np.array_equal(seven, eight)
