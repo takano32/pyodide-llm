@@ -212,3 +212,24 @@ def test_a_llama_gguf_is_no_granites_weights_and_a_granite_gguf_of_other_multipl
     _, _, file, _ = granite_gguf(scales={"embedding_scale": 12.0})
     with pytest.raises(ValueError, match="embedding_multiplier is 12.0"):
         fed(file, "int8")
+
+
+@pytest.mark.parametrize("wrong", [None, "attention_multiplier", "embedding_multiplier", "a layer's q"])
+def test_gguf_check_holds_a_granite_gguf_to_its_original_and_its_multipliers(tmp_path, capsys, wrong):
+    """tests/gguf_check.py tensors (gguf.yml's candidates), the separate reference a GGUF is held to before the list
+    takes it: a Granite's passes against its original with q found turned, and one whose metadata says another
+    multiplier than config.json, or whose q is other values, does not."""
+    import gguf_check
+    settings, published, file, same = granite_gguf()
+    original = {name: tensor.copy() for name, tensor in same.items()}
+    if wrong == "a layer's q":
+        original["model.layers.1.self_attn.q_proj.weight"] = original["model.layers.1.self_attn.q_proj.weight"][::-1].copy()
+    elif wrong:
+        published = {**published, wrong: 0.5}
+    (tmp_path / "model.gguf").write_bytes(file)
+    (tmp_path / "model.safetensors").write_bytes(safetensors_file(original))
+    (tmp_path / "config.json").write_text(json.dumps(published))
+    assert gguf_check.check_tensors(tmp_path / "model.gguf", tmp_path) is (wrong is None)
+    out = capsys.readouterr().out
+    assert (json.loads(out.strip().splitlines()[-1])["mismatches"] == 0) is (wrong is None)
+    assert "| granite.attention.scale | 0.0625 | attention_multiplier = " in out and "turned (llama2.c order)" in out

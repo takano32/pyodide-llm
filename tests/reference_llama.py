@@ -161,7 +161,7 @@ def made_up(name, settings, positions=80):
 
     failed = False
     floor = differences(stepped, whole)[0]
-    line = max(2e-3, 10 * floor)
+    line = max(1e-3, 10 * floor)
     say(f"made-up ({name}), transformers token by token against transformers at once: largest difference {floor:.2e}")
     for what, reference in (("transformers at once", whole), ("transformers token by token", stepped)):
         largest, mean, same, margin = differences(ours, reference)
@@ -351,10 +351,11 @@ def real(entry, directory, positions):
     floor = differences(stepped, whole[:len(stepped)])[0]
     say(f"{id}: transformers token by token against transformers at once ({len(stepped)} positions): largest difference "
         f"{floor:.2e} (what float32 leaves between two right computations)")
-    # the line: ten times what transformers' own two computations differ by, and no less than 2e-2 (logits of the
-    # order of 10 through dozens of layers in float32); the most likely token the same wherever the reference's best
-    # two are further apart than twice the difference
-    line = max(2e-2, 10 * floor)
+    # the line: ten times what transformers' own two computations differ by (which changes with the CPU), and no less
+    # than 1e-3 (tests/reference_qwen35.py's, after the review of T229 found 2e-2 let a fault by: the right computation
+    # is 7e-5 off here); the most likely token the same wherever the reference's best two are further apart than twice
+    # the difference. A NaN is past the line (largest <= line is false)
+    line = max(1e-3, 10 * floor)
     for what, reference_logits, mine_logits in (("transformers at once", whole, ours),
                                                 ("transformers token by token", stepped, ours[:len(stepped)])):
         largest, mean, same, margin = differences(mine_logits, reference_logits)
