@@ -227,6 +227,12 @@ def main():
         ("token_embd.weight", "embed_tokens.weight", [(0, 48), (100000, 48), (248000, 48)], None, "the embedding's rows"),
         ("output.weight", "lm_head.weight", [(0, 48), (100000, 48)], None, "the classifier"),
     ]
+    # more rows of the inputs 6144 and 17408 wide from other layers (a width's signs are one vector for every matrix that reads
+    # it: the pooled evidence below is over all of them), for their signs are the least sure of what 96 rows say
+    more = [(f"blk.{layer}.attn_output.weight", f"layers.{layer}.self_attn.o_proj.weight", [(500 + 97 * layer, 48)]) for layer in (11, 27, 63)]
+    more += [(f"blk.{layer}.ssm_out.weight", f"layers.{layer}.linear_attn.out_proj.weight", [(300 + 131 * layer, 48)]) for layer in (1, 20, 40, 62)]
+    more += [(f"blk.{layer}.ffn_down.weight", f"layers.{layer}.mlp.down_proj.weight", [(700 + 53 * layer, 48)]) for layer in (11, 20, 40, 63)]
+    pooled = {}
     failed = []
     for gguf_name, name, places, mapping, what in cases:
         original_name = name if name == "lm_head.weight" else PREFIX + name
@@ -247,6 +253,7 @@ def main():
             s = signs[width]
             unfolded = llama2_numpy.unrotate(mine, s, block)  # a matrix's row is W's row R^-1 of it; so is the embedding's
             right.append((unfolded, theirs))
+            pooled.setdefault(width, []).append((unfolded, theirs))
             # other readings of the same stored rows
             others = {
                 "signs before the transform": llama2_numpy.rotate(mine, s, block),
@@ -288,6 +295,18 @@ def main():
             failed.append(what)
         if len(unfolded) >= 40 and (t < 0).sum() > 0:
             failed.append(f"{what}: signs the wrong way")
+    for gguf_name, name, places in more:
+        for first, count in places:
+            theirs, _ = original.rows(PREFIX + name, first, count)
+            mine = stored.rows(gguf_name, first, count)
+            pooled.setdefault(mine.shape[1], []).append((llama2_numpy.unrotate(mine, signs[mine.shape[1]], block), theirs))
+    for width, parts in sorted(pooled.items()):
+        t = evidence(np.concatenate([a for a, _ in parts]), np.concatenate([b for _, b in parts]))
+        rows = sum(len(a) for a, _ in parts)
+        print(f"unfold: the {width} signs of an input {width} wide, all {rows} rows of {len(parts)} runs of rows pooled: {int((t < 0).sum())} the "
+              f"wrong way, the lowest t {t.min():.1f}, {int((t < 3).sum())} under 3", flush=True)
+        if (t < 0).sum() > 0:
+            failed.append(f"signs of {width} the wrong way")
     for label, right, wrong, count in small_tensors(stored, original):
         print(f"unfold: {label}: {right:.3f} of the original's size away as the engine reads it, {wrong:.3f} the other way ({count} values)", flush=True)
         if not (right <= 0.35 and wrong >= 2 * right):
