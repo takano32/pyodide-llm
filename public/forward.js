@@ -584,8 +584,9 @@ export function growMemory(memory, pages, wide) {
  * maximum (pages): what to ask for first; else what this model needs (after: what the forward pass puts after the
  * checkpoint, footprint(); three times the file where it is not said) and a gigabyte more. The worker keeps the
  * memory for the models that fit under that maximum (T96): a browser reserves address space for each WebAssembly
- * memory whatever its maximum, and Chromium refused the third one of a page. */
-export function weightsMemory(size, { shared = false, maximum, wide = false, after = 3 * size } = {}) {
+ * memory whatever its maximum, and Chromium refused the third one of a page. spare (bytes): what is asked for besides
+ * the model, the gigabyte for the next one unless it is said (T242: no model follows in /benchmark/'s worker). */
+export function weightsMemory(size, { shared = false, maximum, wide = false, after = 3 * size, spare = 2 ** 30 } = {}) {
   const base = shared ? CONTROL_BYTES : 64;
   const initial = Math.ceil((base + size) / PAGE) + 1;
   // a 64-bit memory (T101) says its sizes in BigInt
@@ -593,7 +594,7 @@ export function weightsMemory(size, { shared = false, maximum, wide = false, aft
     : { initial, ...(pages ? { maximum: pages } : {}) });
   if (!shared) return { memory: new WebAssembly.Memory(describe()), base };
   // what the model needs, and a gigabyte for the next one to fit as well (T96); less if the browser refuses
-  const most = maximum ?? Math.min(wide ? PAGES_64 : PAGES_32, Math.ceil((base + size + after + 2 ** 30) / PAGE));
+  const most = maximum ?? Math.min(wide ? PAGES_64 : PAGES_32, Math.ceil((base + size + after + spare) / PAGE));
   for (const pages of [most, initial + 16384, initial + 4096]) {
     try {
       const memory = new WebAssembly.Memory({ ...describe(Math.max(pages, initial)), shared: true });
