@@ -189,11 +189,13 @@ def rotated_qwen35_gguf(tmp_path, shape):
 
 
 def streamed_logits(path, tokens, rounding="float32", broken=""):
+    from unittest import mock
+
     import llama2_numpy
     from reference_27b import Source, Streamed
-    llama2_numpy.Tokenizer = lambda *arguments, **named: None  # (forward() needs none)
     conductor = Conductor()
-    model = Streamed(Source(path, positions=len(tokens) + 1), conductor, rounding=rounding, broken=broken)
+    with mock.patch.object(llama2_numpy, "Tokenizer", lambda *arguments, **named: None):  # (forward() needs none; and no other test is left without one)
+        model = Streamed(Source(path, positions=len(tokens) + 1), conductor, rounding=rounding, broken=broken)
     return conductor.run([(lambda token=token, position=position: np.array(model.forward(token, position)))
                           for position, token in enumerate(tokens)])
 
