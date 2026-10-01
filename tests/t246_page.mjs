@@ -40,6 +40,11 @@ if (isMainThread) {
   const entry = MODELS.find((model) => model.id === id);
   // what the worker merges: the conversion's options, then the entry's (bos, stop_tokens)
   const options = { ...JSON.parse(fs.readFileSync(`${out}.json`, "utf8")), ...entry.options };
+  // tests/perplexity_prepare.py hands the converter no chat template, so its specials lack the special tokens the
+  // template writes, which the page's conversion names (the first run of this probe spelt <|im_start|> out in six
+  // tokens): the two of the template, in the converter's order (the longest first, then by their characters)
+  options.specials = [...new Set([...(options.specials ?? []), "<|im_start|>", "<|im_end|>"])]
+    .sort((a, b) => b.length - a.length || (a < b ? -1 : a > b ? 1 : 0));
   const file = path.resolve(`${out}.bin`), size = fs.statSync(file).size;
   const head = new Int32Array(7), handle = fs.openSync(file, "r");
   fs.readSync(handle, new Uint8Array(head.buffer), 0, 28, 0);
@@ -170,6 +175,7 @@ out.decode("utf-8", errors="replace")`);
     for (const passage of passages) {
       const began = performance.now();
       let total = 0;
+      const prefixes = [];
       for (let pos = 0; pos < passage.ids.length - 1; pos++) {
         engine.forward(passage.ids[pos], pos, true);
         const logits = engine.logits();
@@ -178,9 +184,11 @@ out.decode("utf-8", errors="replace")`);
         let sum = 0;
         for (let i = 0; i < logits.length; i++) sum += Math.exp(logits[i] - most);
         total -= logits[passage.ids[pos + 1]] - most - Math.log(sum);
+        if ([256, 512, 1024, 1536].includes(pos + 1) && pos + 1 < passage.ids.length - 1) prefixes.push(`${pos + 1}: ${Math.exp(total / (pos + 1)).toFixed(4)}`);
       }
       const count = passage.ids.length - 1;
-      say(`PPLENGINE ${passage.name} ${name}: ${Math.exp(total / count).toFixed(4)} over ${count} targets (${fastest} threads, ${((performance.now() - began) / 1000).toFixed(0)} s)`);
+      say(`PPLENGINE ${passage.name} ${name}: ${Math.exp(total / count).toFixed(4)} over ${count} targets (${fastest} threads, ${((performance.now() - began) / 1000).toFixed(0)} s)` +
+        (prefixes.length ? `; prefixes ${prefixes.join(", ")}` : ""));
     }
   }
   engine.stopThreads();

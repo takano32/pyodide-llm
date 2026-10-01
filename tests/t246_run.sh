@@ -2,7 +2,7 @@
 # t246_run.sh (T246, a probe for CI, not for main): tests.yml's extra= for a Ternary Bonsai.
 #
 #   bash tests/t246_run.sh engine <model id> [tokens of each Wikipedia text]     the page's forward pass (tests/t246_page.mjs)
-#   bash tests/t246_run.sh reference <1.7B | 4B> <revision of the -unpacked repo>  transformers (tests/t246_reference.py)
+#   bash tests/t246_run.sh reference <1.7B | 4B | 8B> <revision of the -unpacked repo> [by-layer]  transformers (tests/t246_reference.py)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 kind=$1
@@ -31,7 +31,9 @@ else
   size=$2 revision=$3
   pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
   pip install --quiet transformers==4.57.6
-  python3 tests/t246_reference.py /mnt/t246 "$size" "$revision" --greedy 24 /mnt/t246/ja-fuji.txt:1024 /mnt/t246/ja-soseki.txt:1024 \
+  mode=()
+  if [ "${4:-}" = by-layer ]; then mode=(--by-layer); fi
+  python3 tests/t246_reference.py /mnt/t246 "$size" "$revision" "${mode[@]}" --greedy 24 /mnt/t246/ja-fuji.txt:1024 /mnt/t246/ja-soseki.txt:1024 \
     /mnt/t246/en-3.txt:1024 tests/fixtures/t235/text.txt:256
   free -m | sed 's/^/T246 memory after: /'
 fi
