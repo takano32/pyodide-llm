@@ -661,17 +661,17 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   let token = id.y;
   if (g >= quantize.n / ${GROUP}u || token >= step.tokens) { return; }
   let at = (token * quantize.xStride) / 4u + g * 8u;
-  var magnitude = 0u;
+  var largest = 0.0;
   for (var k = 0u; k < 8u; k++) {
-    let v = bitcast<vec4<u32>>(x[at + k]) & vec4<u32>(FLOAT_MAGNITUDE);
-    magnitude = max(magnitude, max(max(v.x, v.y), max(v.z, v.w)));
+    let v = abs(x[at + k]);
+    largest = max(largest, max(max(v.x, v.y), max(v.z, v.w)));
   }
-  let scale = bitcast<f32>(magnitude) / 127.0;
+  let scale = largest / 127.0;
   let inverse = select(0.0, 1.0 / scale, scale > 0.0);
   for (var k = 0u; k < 8u; k++) {
     xq[at + k] = packed(clamp(vec4<i32>(round(x[at + k] * inverse)), vec4<i32>(-127), vec4<i32>(127)));
   }
-  xs[token * (quantize.xStride / ${GROUP}u) + g] = scale_word(magnitude, scale);
+  xs[token * (quantize.xStride / ${GROUP}u) + g] = bitcast<u32>(scale);
 }`;
 
 // ---- T155: int6 weights (T98) on the GPU. The model's GPU worker widens every int6 matrix once, as it puts it on the
