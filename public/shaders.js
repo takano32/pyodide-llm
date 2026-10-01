@@ -602,35 +602,76 @@ ${dp4aLines(false)}`}
 // ±127, four to a u32 with the first in the lowest byte. ORT's dp4a_quantize is not taken: its pack4x8snorm rounds
 // as ⌊0.5 + 127 × value⌋ (half up, not the CPU's half to even), and its groups are 128. One thread a group; the tokens are the dispatch's y. x holds
 // the tokens xStride floats apart, xq the same bytes apart and xs the scales xStride / 32 floats apart.
+//
+// ---- T241: a group with a value that is no finite number (a NaN, an infinity) gets a NaN for its scale, so that the
+// 8 bits do not hide it. WGSL lets an implementation take NaN and infinities as absent (§15.7): on lavapipe max(NaN, v)
+// is v whatever the order, i32(NaN) is the least integer and the clamp makes it -127, so the float max these quantizers
+// had turned a NaN of the keys and values into finite numbers, the logits stayed finite, T219's flag of the sampler saw
+// nothing, and the DP4A forms returned ids where the float forms refused the step (the review of T219, run
+// 36876165803). The CPU's quantize_x keeps a NaN (f32x4.max), and stops by T195's rule.
+// No public implementation has this part (ORT's dp4a_quantize, vLLM's per-token scales and llama.cpp's quantizers
+// take the largest with a float max and say nothing of a NaN), so it is written apart, with what it is given:
+//   magnitude: u32   the largest of bitcast<u32>(value) & FLOAT_MAGNITUDE over the group's 32 values: their bits
+//                    without the sign, taken with the integer max
+//   scale: f32       bitcast<f32>(magnitude) / 127.0, the group's scale where every value is finite
+//   scale_word(magnitude, scale) -> u32   the word the quantizer stores for the group in xs (declared array<u32> in
+//                    the quantizers; the matrix reads the same buffer as array<f32>): bitcast<u32>(scale) where
+//                    magnitude < 0x7f800000 (every value finite), else magnitude | 0x00400000, a NaN (the exponent
+//                    all ones, a bit of the fraction set: 0x7fc00000 for an infinity, the NaN's own bits with that
+//                    bit for a NaN)
+// Why so. (1) The bits of floats that are not negative are in the order of their values, so the integer max of the
+// magnitudes is the bits of the float max of the |values| for every finite input (-0 is 0, a denormal its own bits):
+// the scale and the values of a finite group are what they were, to the bit. An infinity's magnitude (0x7f800000) is
+// over every finite one's and a NaN's over that (isnan's form of TensorFlow.js, T219's: its notice is above
+// SAMPLER_COMMON), and an integer max drops neither. (2) What carries it on is the scale itself, no flag: the matrix
+// (the tiles' and fusedDp4aMatVec's SDP8AI) multiplies each group's integer dot by scale_a × scale_b and adds the
+// groups of a row, so every row of its output is a NaN, whatever the integers of that group are; the residual stream
+// is a NaN from there, each quantizer after it finds it again by its bits (NORM_QUANTIZE's values are weight × (s × x),
+// a NaN where x or the sum of x² is one), and the classifier's logits are NaN, which T219's flag refuses by their
+// bits. A multiplication and an addition by a NaN are the hardware's own; no max, min, clamp, select or comparison of
+// floats, which may drop one, is on the way. A flag word would need a binding in every quantizer, a place in the State
+// and a reader in gpu.js and forward.js for what the logits already say. (3) An infinity becomes a NaN too: a scale of
+// infinity makes a row +inf or -inf by the sign of its dot (and NaN where the dot is 0), and logits of -inf alone are
+// not refused (tokens that cannot be drawn, T195). (4) The word is chosen by a comparison of integers and stored as an
+// integer: no float of the device's is asked whether it is a NaN. In a prompt's block (the same QUANTIZE) the keys
+// and values written back are NaN then, which the next step finds (the CPU's by T195, the GPU's by the above).
+// The cost: a value's AND and integer max where its abs and float max were (none more), and a comparison, an OR and
+// a select a group of 32.
+const SCALE_WORD = /* wgsl */ `
+const FLOAT_MAGNITUDE = 0x7fffffffu;
+fn scale_word(magnitude: u32, scale: f32) -> u32 {
+  return select(bitcast<u32>(scale), magnitude | 0x00400000u, magnitude >= 0x7f800000u);
+}`;
 export const QUANTIZE = /* wgsl */ `
 struct Quantize { n: u32, xStride: u32, unused0: u32, unused1: u32 }
 ${STEP}
 @group(0) @binding(0) var<storage, read> x: array<vec4<f32>>;
 @group(0) @binding(1) var<storage, read_write> xq: array<u32>;
-@group(0) @binding(2) var<storage, read_write> xs: array<f32>;
+@group(0) @binding(2) var<storage, read_write> xs: array<u32>;       // a scale's bits (scale_word, T241)
 @group(0) @binding(3) var<uniform> quantize: Quantize;
 @group(0) @binding(4) var<uniform> step: Step;
 fn packed(v: vec4<i32>) -> u32 {
   let b = bitcast<vec4<u32>>(v) & vec4<u32>(0xffu);
   return b.x | (b.y << 8u) | (b.z << 16u) | (b.w << 24u);
 }
+${SCALE_WORD}
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id: vec3u) {
   let g = id.x;
   let token = id.y;
   if (g >= quantize.n / ${GROUP}u || token >= step.tokens) { return; }
   let at = (token * quantize.xStride) / 4u + g * 8u;
-  var largest = 0.0;
+  var magnitude = 0u;
   for (var k = 0u; k < 8u; k++) {
-    let v = abs(x[at + k]);
-    largest = max(largest, max(max(v.x, v.y), max(v.z, v.w)));
+    let v = bitcast<vec4<u32>>(x[at + k]) & vec4<u32>(FLOAT_MAGNITUDE);
+    magnitude = max(magnitude, max(max(v.x, v.y), max(v.z, v.w)));
   }
-  let scale = largest / 127.0;
+  let scale = bitcast<f32>(magnitude) / 127.0;
   let inverse = select(0.0, 1.0 / scale, scale > 0.0);
   for (var k = 0u; k < 8u; k++) {
     xq[at + k] = packed(clamp(vec4<i32>(round(x[at + k] * inverse)), vec4<i32>(-127), vec4<i32>(127)));
   }
-  xs[token * (quantize.xStride / ${GROUP}u) + g] = scale;
+  xs[token * (quantize.xStride / ${GROUP}u) + g] = scale_word(magnitude, scale);
 }`;
 
 // ---- T155: int6 weights (T98) on the GPU. The model's GPU worker widens every int6 matrix once, as it puts it on the
@@ -2656,14 +2697,17 @@ ${fusedWrite(output)}
 // with layernorm_utils.cuh, https://github.com/vllm-project/vllm, commit 24c9772d, Apache-2.0): the row's rms in one
 // block, then each group's scale from its normed values, then the values normed and quantized (compute_rms,
 // compute_dynamic_per_token_scales, norm_and_quant). No lines are taken from it: these are RMSNORM's and QUANTIZE's
-// in one workgroup (vLLM's block reduction, fp8 and residual paths are not here).
+// in one workgroup (vLLM's block reduction, fp8 and residual paths are not here). T241: the group's largest by the
+// bits and its scale's word as QUANTIZE's (scale_word, above QUANTIZE: a NaN where a value of the group is no finite
+// number; here a value is weight × (s × x), so a NaN of x, of the sum of x² or of the weight, and an infinity of x,
+// whose s is 0 and 0 × inf a NaN).
 export const NORM_QUANTIZE = /* wgsl */ `
 struct Norm { size: u32, at: u32, eps: f32, unused: u32 }
 ${STEP}
 @group(0) @binding(0) var<storage, read> x: array<f32>;
 @group(0) @binding(1) var<storage, read> weight: array<f32>;
 @group(0) @binding(2) var<storage, read_write> xq: array<u32>;
-@group(0) @binding(3) var<storage, read_write> xs: array<f32>;
+@group(0) @binding(3) var<storage, read_write> xs: array<u32>;       // a scale's bits (scale_word, T241)
 @group(0) @binding(4) var<uniform> norm: Norm;
 @group(0) @binding(5) var<uniform> step: Step;
 var<workgroup> partial: array<f32, 64>;
@@ -2671,6 +2715,7 @@ fn packed(v: vec4<i32>) -> u32 {
   let b = bitcast<vec4<u32>>(v) & vec4<u32>(0xffu);
   return b.x | (b.y << 8u) | (b.z << 16u) | (b.w << 24u);
 }
+${SCALE_WORD}
 @compute @workgroup_size(64)
 fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u32) {
   let token = id.x;
@@ -2687,9 +2732,11 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
   let s = 1.0 / sqrt(partial[0] / f32(norm.size) + norm.eps);
   for (var g = t; g < norm.size / ${GROUP}u; g += 64u) {
     let at = g * ${GROUP}u;
-    var largest = 0.0;
-    for (var i = 0u; i < ${GROUP}u; i++) { largest = max(largest, abs(weight[norm.at + at + i] * (s * x[row + at + i]))); }
-    let scale = largest / 127.0;
+    var magnitude = 0u;
+    for (var i = 0u; i < ${GROUP}u; i++) {
+      magnitude = max(magnitude, bitcast<u32>(weight[norm.at + at + i] * (s * x[row + at + i])) & FLOAT_MAGNITUDE);
+    }
+    let scale = bitcast<f32>(magnitude) / 127.0;
     let inverse = select(0.0, 1.0 / scale, scale > 0.0);
     for (var k = 0u; k < ${GROUP / 4}u; k++) {
       let i = at + 4u * k;
@@ -2697,7 +2744,7 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
                         weight[norm.at + i + 2u] * (s * x[row + i + 2u]), weight[norm.at + i + 3u] * (s * x[row + i + 3u]));
       xq[(row + i) / 4u] = packed(clamp(vec4<i32>(round(v * inverse)), vec4<i32>(-127), vec4<i32>(127)));
     }
-    xs[token * (norm.size / ${GROUP}u) + g] = scale;
+    xs[token * (norm.size / ${GROUP}u) + g] = scale_word(magnitude, scale);
   }
 }`;
 

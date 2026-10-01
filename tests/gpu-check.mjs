@@ -399,6 +399,8 @@ const b64 = (floats) => {
   return btoa(text);
 };
 const openGpu = () => new Worker("/public/gpu.js" + search, { type: "module" });
+// T241: the numbers of the requests the harness itself sends the GPU's worker (forward.js counts its own from 1)
+let ownSerial = 0x40000000;
 // T147: every tiled shader of the matrices this adapter can make (each forced in a run of its own), and the one the
 // GPU's worker chooses by timing them (the first run)
 const wgsl = await import("/public/shaders.js" + search);
@@ -506,9 +508,113 @@ try {
       const taken = engine.generateMany(tokens[n], n, tokens.slice(-64), tokens.length, 4, 0, 0.9, 1, [], []);
       return { taken: taken ?? null, status: engine.gpuStatus };
     };
+    // T241: the GPU's worker as forward.js is given it, with what forward.js posts seen on the way (seen.plan: the
+    // start's plan, where the rows of a prompt's block and the ids of a step are; seen.tokens: the last request for
+    // steps, where the CPU's cache is; seen.worker: the worker itself) and a block of a prompt changed before it goes
+    // (seen.block), for the rounds below. gpu.js has no message that puts a number into what it holds: these rounds
+    // change what forward.js hands it, in the shared memory
+    const watched = (open, seen) => () => {
+      const inner = open();
+      seen.worker = inner;
+      return { postMessage: (data, ...rest) => {
+        if (data.type === "start") seen.plan = data.plan;
+        if (data.type === "tokens") seen.tokens = data;
+        if (data.type === "prompt") seen.block?.(data);
+        inner.postMessage(data, ...rest);
+      }, terminate: () => inner.terminate(), set onmessage(f) { inner.onmessage = f; }, set onerror(f) { inner.onerror = f; } };
+    };
+    // T241: a block of a prompt with a row (the embedding of one token, which forward.js hands the GPU) that holds a
+    // NaN, or an infinity: the stream of that token is no finite number from the first norm on, and its keys and
+    // values of every layer are to come back so (the next step then finds them: the CPU's by T195, the GPU's by
+    // T219's flag). A packed form quantizes the normed stream (QUANTIZE), whose float max and i32() made zeros and
+    // finite numbers of it before T241, on lavapipe; with an infinity the norm's scale is 0 and the row holds one NaN
+    // (0 x inf) among zeros
+    const brokenRows = (engine, seen) => {
+      if (!seen.plan?.rows) return { skipped: "no rows of a prompt's block in the shared memory" };
+      const cases = [];
+      for (const [value, t, j] of [[NaN, 3, 5], [Infinity, 15, plan.dim - 1]]) {
+        engine.newGeneration();
+        seen.block = () => { new Float32Array(memory.buffer, seen.plan.rows + (t * plan.dim + j) * 4, 1)[0] = value; };
+        engine.forwardMany(tokens.slice(0, 16), 0);
+        seen.block = null;
+        const { keys, values } = engine.keysAndValues(t, 1);
+        cases.push({ value: String(value), token: t, at: j, gpuTokens: engine.gpuTokens,
+          finite: [...keys, ...values].filter((x) => Number.isFinite(x)).length, of: keys.length + values.length });
+      }
+      return { cases };
+    };
+    // T241: a step over keys and values of which one value is a NaN, or an infinity: of the first layer and of the
+    // last, the first column of the first position and the last column of the last (the attention's output then has
+    // it in its first group and in its last: what the DP4A forms quantize before o). The prompt goes through the CPU
+    // and one step through forward.js (which shows where the CPU's cache is: the request it posted); then the requests
+    // are this harness's own, past forward.js (which stops the GPU at the first refusal): the value changed in the
+    // CPU's cache, the positions sent up again from 0, one step, the answer read where gpu.js writes it (the ids and
+    // after them T219's word), the value put back. Every form is to refuse every one (sampled 0, the word 1)
+    const brokenValues = (engine, seen) => {
+      engine.newGeneration();
+      engine.gpuSide = "cpu";
+      engine.forwardMany(tokens.slice(0, -1), 0);
+      engine.gpuSide = null;
+      const clean = engine.generateMany(tokens[n], n, tokens.slice(-64), tokens.length, 1, 0, 0.9, 1, [], []);
+      const request = seen.tokens, cache = request?.cache, most = seen.plan?.tokens?.most;
+      if (!clean || !cache) return { skipped: "no step on the GPU over the CPU's keys and values (" + JSON.stringify(clean ?? null) + ")" };
+      const words = new Int32Array(memory.buffer, 0, GPU_WANTED + 1), ids = new Int32Array(memory.buffer, seen.plan.tokens.ids, 2 + most);
+      const width = cache.half ? 2 : 4, columns = cache.row / width, cases = [];
+      for (const [value, half] of [[NaN, 0x7e00], [Infinity, 0x7c00]]) {
+        for (const layer of [0, plan.n_layers - 1]) {
+          for (const [position, column] of [[0, 0], [n - 1, columns - 1]]) {
+            const at = cache.values + (layer * cache.capacity + position) * cache.row + column * width;
+            const cell = cache.half ? new Uint16Array(memory.buffer, at, 1) : new Float32Array(memory.buffer, at, 1), kept = cell[0];
+            cell[0] = cache.half ? half : value;
+            const serial = ownSerial++;
+            ids.fill(-2);
+            Atomics.store(words, GPU_WANTED, serial);
+            seen.worker.postMessage({ ...request, serial, count: 1, pos: n, from: 0 });
+            const until = performance.now() + 120000;
+            for (let done = Atomics.load(words, GPU_DONE); done !== serial && performance.now() < until; done = Atomics.load(words, GPU_DONE)) {
+              Atomics.wait(words, GPU_DONE, done, 1000);
+            }
+            cell[0] = kept;
+            cases.push({ value: String(value), layer, position, column, answered: Atomics.load(words, GPU_DONE) === serial,
+              failed: Atomics.load(words, GPU_FAILED), sampled: ids[0], id: ids[1], notFinite: ids[1 + most] });
+          }
+        }
+      }
+      return { cases };
+    };
+    // T241: a step on a GPU that holds a weight that is no finite number, in the last layer (the GPU's worker checks
+    // the first layer and the head against JavaScript on the same weights as it gets ready, and would refuse the form:
+    // a weight of those cannot be changed so): a weight of the attention's norm (the normed stream then has it, which
+    // the DP4A forms quantize before q, k and v), of the FFN's norm (before gate and up), a scale of w1 (a row of the
+    // gate, and so the activation's output, quantized before down). The weight is changed in the shared memory before
+    // the engine starts (the GPU copies the weights as it gets ready) and put back once the GPU is ready; the prompt
+    // goes through the CPU, the step through forward.js, which is to refuse it (the status line says the logits were
+    // not finite). An engine a case: the GPU stops at a refusal
+    const brokenPlaces = () => {
+      const T = plan.tensors, last = plan.n_layers - 1, w1 = T.w1, [rows, wide] = w1?.shape.slice(-2) ?? [], groups = wide / w1?.group;
+      const float = (t, i) => (t?.kind === "f32" ? base + t.offset + (last * plan.dim + i) * 4 : 0);
+      return [["a weight of the attention's norm (before q, k and v)", float(T.rms_att_weight, 7)],
+        ["a weight of the FFN's norm (before gate and up)", float(T.rms_ffn_weight, plan.dim - 1)],
+        ["a scale of w1 (before down)", w1?.scales ? base + w1.scales + ((last * rows + 3) * groups + 1) * 4 : 0]].filter(([, address]) => last > 0 && address);
+    };
+    const brokenWeight = async (form, [name, address], value, force) => {
+      const cell = new Float32Array(memory.buffer, address, 1), kept = cell[0];
+      cell[0] = value;
+      const engine = createForward({ memory, base, size, kernels, plan, gpu: openGpu, gpuForce: { ...TESTS, ...force, tokens: form } });
+      const note = await engine.gpu;
+      cell[0] = kept;
+      engine.gpuSide = "cpu";
+      engine.forwardMany(tokens.slice(0, -1), 0);
+      engine.gpuSide = null;
+      const asked = Boolean(engine.tokenBlock);
+      const taken = asked ? engine.generateMany(tokens[n], n, tokens.slice(-64), tokens.length, 1, 0, 0.9, 1, [], []) : undefined;
+      const out = { form, name, value: String(value), note, asked, why: engine.gpuTokensWhyNot, taken: taken ?? null, status: engine.gpuStatus };
+      await engine.release();
+      return out;
+    };
     const run = async (gpu, gpuForce, gpuRemembered, steps = false) => {
-      const started = performance.now();
-      const engine = createForward({ memory, base, size, kernels, plan, gpu, gpuForce: { ...TESTS, ...gpuForce }, gpuRemembered });
+      const started = performance.now(), seen = {};
+      const engine = createForward({ memory, base, size, kernels, plan, gpu: gpu && watched(gpu, seen), gpuForce: { ...TESTS, ...gpuForce }, gpuRemembered });
       const note = gpu ? await engine.gpu : undefined;
       const readySeconds = (performance.now() - started) / 1000;
       const ready = engine.gpuReady;
@@ -534,8 +640,12 @@ try {
         engine.newGeneration();
         engine.forwardMany(tokens.slice(0, 2), n + 1);
         out.past = { gpuTokens: engine.gpuTokens };
+        out.brokenRows = brokenRows(engine, seen);
       }
-      if (gpu && steps && out.steps && !out.steps.why) out.steps.nanLogits = refusal(engine);
+      if (gpu && steps && out.steps && !out.steps.why) {
+        out.steps.brokenValues = brokenValues(engine, seen);
+        out.steps.nanLogits = refusal(engine);
+      }
       // T205: the GPU's worker says it let go of its device before the next model is read (false: not within 5 s)
       out.ended = await engine.release();
       // T183: the seconds of the run, and of those until the GPU's worker said it was ready (its shaders compiled)
@@ -627,6 +737,15 @@ try {
         gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: tokenForms[0], tokenAttention: attention, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
       }
     }
+    // T241: the DP4A forms on a GPU with a weight of the last layer that is no finite number (brokenWeight), on three
+    // of the made-up models (Llama's form, Qwen3's norms of the heads, GPT-2's LayerNorm and GELU: an engine a case)
+    const broken = [];
+    if (gpu[0].steps?.planned !== false && ["synthetic", "synthetic-qwen3", "synthetic-gpt2"].includes(c.id)) {
+      const force = { matrices: forms[0], quick: true, pieceBytes: Infinity };
+      for (const form of tokenForms.filter((name) => /DP4A/.test(name) && (c.arch === "llama" || name !== "DP4A, fused (T175)"))) {
+        for (const place of brokenPlaces()) for (const value of [NaN, Infinity]) broken.push(await brokenWeight(form, place, value, force));
+      }
+    }
     // the attention without subgroups or f16 (the lanes of the workgroup stand for a subgroup), where the adapter
     // has them and so chose the other
     if (forms.length) gpu.push(await run(openGpu, { matrices: forms[0], attention: "llama.cpp flash attention tiles", quick: true }));
@@ -656,7 +775,7 @@ try {
         ...(synthetic ? { cpuFaster: await direct({ ...force, quick: false }, { GBps: 1e9, promptGMACs: 1e9 }), key: adapter && wgsl.deviceKey(adapter) } : {}),
         keys: tokenRun.keys, values: tokenRun.values, first: tokenRun.steps.first };
     }
-    results.push({ id: c.id, cpu, gpu, late: lateRun, refused, remembered, alone });
+    results.push({ id: c.id, cpu, gpu, late: lateRun, refused, remembered, alone, broken });
   }
   postMessage({ results, forms });
 } catch (error) {
@@ -818,7 +937,7 @@ function scaleOff(got, want) {
 // (T152: "prompts and answers on WebGPU", or "prompts on WebGPU, answers on the CPU")
 const promptsOnGpu = (note) => /^prompts (and answers )?on WebGPU($|, )/.test(note ?? "");
 let failed = false;
-for (const { id, cpu, gpu: runs, late, refused, remembered, alone } of outcome.results) {
+for (const { id, cpu, gpu: runs, late, refused, remembered, alone, broken } of outcome.results) {
   const c = cases.find((entry) => entry.id === id), ref = c.reference, n = ref.tokens.length - 1;
   const [dim, , layers, heads, kvHeads] = ref.header, kvDim = (c.headDim || dim / heads) * kvHeads;
   const exact = { keys: ref.keys, values: ref.values };
@@ -931,21 +1050,47 @@ for (const { id, cpu, gpu: runs, late, refused, remembered, alone } of outcome.r
     }
     const gpuLogits = logits(gpu.logits), againLogits = logits(gpu.again.logits);
     if (!near(gpuLogits.token) || !near(againLogits.token)) failures.push(`another most likely token (${gpuLogits.token}, ${againLogits.token}) than NumPy's ${top}, and not a near tie`);
+    // T241: a block whose row held a NaN, or an infinity: the GPU took it, and none of that token's keys and values
+    // of any layer came back a finite number (the harness's brokenRows)
+    for (const b of gpu.brokenRows?.cases ?? []) {
+      if (b.gpuTokens !== 16 || b.finite !== 0) {
+        failures.push(`a block with ${b.value} in the row of token ${b.token} (at ${b.at}): the GPU took ${b.gpuTokens} of 16 tokens, and ${b.finite} of that token's ${b.of} keys and values are finite numbers (none is to be)`);
+      }
+    }
+    const rowsSaid = gpu.brokenRows?.skipped ? `not tried (${gpu.brokenRows.skipped})`
+      : (gpu.brokenRows?.cases ?? []).map((b) => `${b.value} ${b.finite} of ${b.of} finite`).join(", ");
     console.log(`  ${gpu.form ?? "no form"}, ${gpu.attention ?? "no attention"}: keys and values ${gpuKv.toExponential(2)} (all at once ${againKv.toExponential(2)}, ` +
       `the first layer ${gpuFirst.toExponential(2)} from ${name}, the CPU's ${firstKv(cpu).toExponential(2)}; ${(gpuKv / e16).toFixed(1)} E16, ${(gpuKv / q8).toFixed(2)} Q8; ` +
       `layer ${at} ${ratios[at].toFixed(2)} of its line), ` +
       `the first layer's scale ${gpuScale.toExponential(1)} (${againScale.toExponential(1)}), logits KL ${gpuLogits.kl.toExponential(2)} (${againLogits.kl.toExponential(2)}), ` +
-      `the prompt ${(gpu.promptMs / n).toFixed(2)} ms a token (${gpu.note})` +
+      `the prompt ${(gpu.promptMs / n).toFixed(2)} ms a token (${gpu.note}), the keys and values of a token whose row held ${rowsSaid}` +
       (failures.length ? ` — FAILED\n    - ${failures.join("\n    - ")}` : ""));
     failed ||= failures.length > 0;
     // (evaluated, and said, whatever came before)
     const stepsFine = gpu.steps ? stepsRight(c, gpu.steps, { e16s, q8s, kvDim, prompt: gpuLayers }) : true;
     failed ||= !stepsFine;
   }
+  // T241: a weight of the last layer that is no finite number on the GPU (the harness's brokenWeight): the step was
+  // asked of the GPU and refused whole, the status line saying that the logits were not finite; a line a form
+  for (const form of [...new Set((broken ?? []).map((b) => b.form))]) {
+    const failures = [], said = [];
+    for (const b of broken.filter((x) => x.form === form)) {
+      const refusedStep = b.asked && b.taken === null && NOT_FINITE_STATUS.test(b.status ?? "");
+      if (!refusedStep) {
+        failures.push(`${b.name} ${b.value}: ${b.asked ? `the step gave ${JSON.stringify(b.taken)} and the status line "${b.status}"` : `the step was not asked of the GPU (${b.why}; "${b.note}")`}, where it is to be refused whole and say the logits were not finite`);
+      }
+      said.push(`${b.name} ${b.value} ${refusedStep ? "refused" : "NOT refused"}`);
+    }
+    console.log(`  a token by ${form}, the GPU holding in its last layer: ${said.join(", ")}${failures.length ? ` — FAILED\n    - ${failures.join("\n    - ")}` : ""}`);
+    failed ||= failures.length > 0;
+  }
   layerTables(c, cpu, runs, measures);
 }
 await flushed();
 process.exit(failed ? 1 : 0);
+
+// T219: the status line of a step refused for its logits (forward.js's generateMany)
+const NOT_FINITE_STATUS = /^prompts on the CPU \(the GPU computed logits that are not finite numbers/;
 
 // T213: the first matrix a token's layer would bind inside a joined buffer (q, k and v as one, gate and up as one,
 // in gpu.js's tokensLayout's order; each after the ones before it) whose values or scales would not start where a device binds a buffer, or null where every
@@ -1062,22 +1207,32 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
     failures.push(`sampled at 0.02 and 0.98: ${low?.[0]} and ${high?.[0]}, of NumPy's nucleus of ${walk.tokens.length}, which are to differ`);
   }
   said.push(`sampled ${low?.[0]} and ${high?.[0]}${peaked ? ` (NumPy's first token has ${(walk.cumulative[0] / walk.mass).toFixed(3)} of its nucleus)` : ""}`);
+  // T241: one value of the keys and values a NaN, or an infinity (the harness's brokenValues: the first layer and the
+  // last, the first column and the last): every request answered and refused (nothing sampled, T219's word set)
+  if (steps.brokenValues?.cases) {
+    const hidden = steps.brokenValues.cases.filter((b) => !(b.answered && !b.failed && b.sampled === 0 && b.notFinite === 1));
+    for (const b of hidden) {
+      failures.push(`${b.value} in the values of layer ${b.layer} (position ${b.position}, column ${b.column}): ` +
+        (b.answered && !b.failed ? `the step sampled ${b.sampled} (id ${b.id}) and its word of logits that are not finite is ${b.notFinite}` : `the request ${b.answered ? "failed" : "was not answered"}`) +
+        ", where it is to be refused");
+    }
+    said.push(`a NaN or an infinity among the values refused in ${steps.brokenValues.cases.length - hidden.length} of ${steps.brokenValues.cases.length}`);
+  } else if (steps.brokenValues?.skipped) said.push(`a NaN among the values not tried (${steps.brokenValues.skipped})`);
   // T219 (2): the GPU's logits made NaN (the harness's refusal()): the request refused whole (nothing of it taken), the GPU
   // stopped, and the status line says the logits were not finite (the word gpu.js passes on, not an id outside the
   // vocabulary or too few sampled: those are what a sampler that did not refuse, or a word that did not arrive, leaves).
-  // The DP4A forms quantize the attention's output to 8 bits (QUANTIZE: the group's largest is a max, and the value then
-  // an integer, both of which a device does as it likes for a NaN), which can hide a NaN of the keys and values: on
-  // lavapipe max drops a NaN, i32(NaN) is the least integer and clamps to -127, so the NaN becomes a finite number, the
-  // logits stay finite, the sampler sees nothing and the ids are taken (found by this check on lavapipe and SwiftShader,
-  // whose DP4A forms took 4 ids where the float forms refused; the CPU's activations are quantized by a max that keeps
-  // a NaN). Said, not failed, there; a request that gave nothing but did not say the logits were not finite fails anywhere
+  // T241: the DP4A forms too. Their quantizers (QUANTIZE, NORM_QUANTIZE) took a group's largest with a float max and
+  // made its values integers, both of which a device does as it likes for a NaN: on lavapipe and SwiftShader the NaN of
+  // the keys and values became finite numbers, the logits stayed finite and 4 ids were taken where the float forms
+  // refused (this check said "hidden by DP4A's 8-bit quantizer" then, and did not fail). The quantizers now give such a
+  // group a NaN for its scale, by the bits (shaders.js, above QUANTIZE)
   if (steps.nanLogits && !steps.nanLogits.skipped) {
-    const { taken, status } = steps.nanLogits, hides = /DP4A/.test(steps.form ?? "");
-    const refused = taken === null && /^prompts on the CPU \(the GPU computed logits that are not finite numbers/.test(status ?? "");
-    if (!refused && !(hides && taken !== null)) {
+    const { taken, status } = steps.nanLogits;
+    const refused = taken === null && NOT_FINITE_STATUS.test(status ?? "");
+    if (!refused) {
       failures.push(`logits made NaN: the request gave ${JSON.stringify(taken)} and the status line "${status}", where it is to be refused whole and say the logits were not finite`);
     }
-    said.push(refused ? "NaN logits refused" : `NaN logits taken as ${JSON.stringify(taken)}${hides ? " (hidden by DP4A's 8-bit quantizer)" : ""}`);
+    said.push(refused ? "NaN logits refused" : `NaN logits taken as ${JSON.stringify(taken)}`);
   } else if (steps.nanLogits?.skipped) said.push(`NaN logits not tried (${steps.nanLogits.skipped})`);
   // T209: the tables were cut where the run asked for it (a vocabulary of 192 rows or more is 3 pieces of 64)
   if (steps.cut && !(steps.pieces > 1)) failures.push(`the tables in ${steps.pieces} piece, not cut`);
