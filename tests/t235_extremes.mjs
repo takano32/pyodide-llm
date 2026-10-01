@@ -39,21 +39,35 @@ for (const n of [4096, 6144, 2048 + 32 * 3]) {  // long rows; the last has three
       const sign = name === "all +127 against -" ? -1 : name === "alternating blocks of 32" ? (((j >> 5) & 1) ? -1 : 1) : 1;
       F[x / 4 + j] = name.startsWith("random") ? random() * 2 - 1 : sign * 1.0;
     }
-    for (const [kernel, bias] of [["matmul_q8", 0], ["matmul_q8r", 64]]) {
-      if (kernel === "matmul_q8r" && !relaxed) continue;
+    // the same weights in six bits (Safari's path): quantize6_x of ±magnitude and 0, every nonzero ±31, the kernels read ±124
+    const wf = take(rows * n * 4), w6 = take(rows * ng * 24), ws6 = take(rows * ng * 4), wc6 = take(rows * ng * 4);
+    for (let r = 0; r < rows; r++) for (let j = 0; j < n; j++) F[wf / 4 + r * n + j] = Math.fround((I[wq + r * n + j] / 127) * 0.01 * (1 + ((r * ng + (j >> 5)) % 5)));
+    plain.quantize6_x(w6, ws6, wf, rows * n);
+    plain.six_sums(wc6, w6, rows * ng);
+    for (const [kernel, bias] of [["matmul_q8", 0], ["matmul_q8r", 64], ["matmul_q6", 0], ["matmul_q6r", 64]]) {
+      if (kernel.endsWith("r") && !relaxed) continue;
+      const six = kernel.startsWith("matmul_q6");
       plain.quantize_x(xq, xs, x, n, bias);
-      if (bias) plain.int8_sums(wc, wq, rows * ng);
+      if (bias && !six) plain.int8_sums(wc, wq, rows * ng);
       F.fill(NaN, out / 4, out / 4 + rows);
       const k = bias ? relaxed : plain;
-      if (bias) k.matmul_q8r(out, xq, xs, wq, ws, wc, n, 0, rows); else k.matmul_q8(out, xq, xs, wq, ws, n, 0, rows);
+      if (kernel === "matmul_q8r") k.matmul_q8r(out, xq, xs, wq, ws, wc, n, 0, rows);
+      else if (kernel === "matmul_q8") k.matmul_q8(out, xq, xs, wq, ws, n, 0, rows);
+      else if (kernel === "matmul_q6r") k.matmul_q6r(out, xq, xs, w6, ws6, wc6, n, 0, rows);
+      else k.matmul_q6(out, xq, xs, w6, ws6, n, 0, rows);
       for (let r = 0; r < rows; r++) {
-        // float64 from the integers the kernel read: sum over groups of (w · (xq - bias)) × ws × xs
+        // float64: sum over groups of (w · (xq - bias)) × scale × xs. The int8 weights are the integers the kernel read; the
+        // six-bit ones are the floats they were made of (±magnitude and 0 are what the six bits hold, to float32's rounding)
         let want = 0, mag = 0;
         for (let g = 0; g < ng; g++) {
           let dot = 0;
-          for (let j = 0; j < GS; j++) dot += I[wq + r * n + g * GS + j] * ((bias ? U[xq + g * GS + j] : I[xq + g * GS + j]) - bias);
-          want += dot * F[ws / 4 + r * ng + g] * F[xs / 4 + g];
-          mag += Math.abs(dot) * F[ws / 4 + r * ng + g] * F[xs / 4 + g];
+          for (let j = 0; j < GS; j++) {
+            const a = (bias ? U[xq + g * GS + j] : I[xq + g * GS + j]) - bias;
+            dot += six ? F[wf / 4 + r * n + g * GS + j] * a : I[wq + r * n + g * GS + j] * a;
+          }
+          const scale = six ? F[xs / 4 + g] : F[ws / 4 + r * ng + g] * F[xs / 4 + g];
+          want += dot * scale;
+          mag += Math.abs(dot) * scale;
         }
         const got = F[out / 4 + r];
         const off = Math.abs(got - want) / Math.max(mag, 1e-30);  // against what the terms add up to, not what they cancel to
