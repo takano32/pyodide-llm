@@ -91,7 +91,11 @@ function watchStages() {
       const name = box.closest("section").dataset.section;
       if (box.hidden || !text) continue;
       const list = (seen[name] ??= []);
-      if (list.at(-1) !== text) list.push(text);
+      if (list.at(-1) !== text) {
+        list.push(text);
+        // T242: and to the console as it comes, so that a page that went down says how far it had got
+        console.info(`stage of ${name}: ${text}`);
+      }
     }
   };
   document.addEventListener("DOMContentLoaded", () => {
