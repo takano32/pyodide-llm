@@ -73,7 +73,7 @@ def convert(directory, out_path, dtype, max_seq_len):
     out = np.memmap(out_path, dtype=np.uint8, mode="w+", shape=(size,))
     convert_weights(source, config, dtype, max_seq_len, out)
     out.flush()
-    return config["vocab_size"]
+    return normalize(config)["vocab_size"]  # a Qwen3.5 has it one level down (T229)
 
 
 def convert_tokenizer(directory, out_path, vocab_size):

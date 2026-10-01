@@ -246,12 +246,45 @@ export function memory64() {
   }
 }
 
+// T229: a Qwen3.5's layers (llama2_numpy.py has the computation, above linear_form()). linear: the numbers of its
+// linear-attention layers (FORM's "linear": every, key_heads, value_heads, key_dim, value_dim, conv), null for the
+// models without them.
+/** for every layer [whether it is a linear-attention one, its place among the layers of its kind]: where its tensors
+ * are in the file's stacks, and its keys and values or its state here (llama2_numpy.layer_slots) */
+const layerSlots = (layers, linear) => {
+  const counts = [0, 0];
+  return Array.from({ length: layers }, (_, l) => {
+    const kind = linear && (l + 1) % linear.every !== 0 ? 1 : 0;
+    return [kind === 1, counts[kind]++];
+  });
+};
+/** the layers that attend over all positions (and keep keys and values): all of them without linear ones */
+const attendingLayers = (layers, linear) => (linear ? Math.floor(layers / linear.every) : layers);
+/** of a linear-attention layer: the values the convolution runs over (q, k and v), those of q or of k, those of v */
+const linearWidths = (linear) => {
+  const keys = linear.key_heads * linear.key_dim, read = linear.value_heads * linear.value_dim;
+  return { mixed: 2 * keys + read, keys, read };
+};
+/** the bytes of the state of the linear-attention layers: a matrix (key_dim, value_dim) a value head, twice (the
+ * delta rule reads one and writes the other, so that a phase run again computes the same, T120), and the last conv
+ * tokens' q, k and v before the convolution; and the two weights the l2 norm of a head of q and of k is taken with */
+const linearStateBytes = (layers, linear) => {
+  const lines = layers - attendingLayers(layers, linear), { mixed } = linearWidths(linear);
+  return lines * (2 * linear.value_heads * linear.key_dim * linear.value_dim + linear.conv * mixed) * 4 + 2 * align(linear.key_dim * 4);
+};
+
 // The arrays of one token's frame (see createForward), in their order, and the bytes of each. qDim: the width of q
-// and of the attention's output (into xb), heads times the head size: dim, except where a head has another size (T124)
-const frameArrays = (dim, hidden, kvDim, qDim = dim) => {
-  const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QD = Math.max(dim, qDim) * 4, XQ = Math.max(dim, hidden, qDim);
+// and of the attention's output (into xb), heads times the head size: dim, except where a head has another size (T124).
+// T229, a Qwen3.5: the gate of a full-attention layer's output; of a linear-attention layer q, k and v before and
+// after the convolution, z, and the delta rule's work (beta and decay of every value head, then its delta); xb holds
+// what the delta rule reads (as wide as v)
+const frameArrays = (dim, hidden, kvDim, qDim = dim, linear = null) => {
+  const { mixed = 0, read = 0 } = linear ? linearWidths(linear) : {};
+  const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QD = Math.max(dim, qDim, read) * 4, XQ = Math.max(dim, hidden, qDim, read);
   return [["x", D], ["xb", QD], ["xb2", D], ["q", qDim * 4], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD],
-    ["hb2", HD], ["xq", XQ], ["xs", Math.ceil(XQ / 32) * 4]];
+    ["hb2", HD], ["xq", XQ], ["xs", Math.ceil(XQ / 32) * 4],
+    ...(linear ? [["gate", qDim * 4], ["mixed", mixed * 4], ["conv", mixed * 4], ["z", read * 4],
+      ["work", (2 * linear.value_heads + read) * 4]] : [])];
 };
 const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(bytes), 0);
 
@@ -266,14 +299,16 @@ const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(b
  * (llama2_numpy.FORM, which a model's options carry: the caller passes them in as they are, T144): head_dim is the
  * size of a head where it is not dim / heads (T124), 0 where it is. gpu (T135): the page asked for the prompt on the
  * GPU, whose keys and values of a block come back through a place of their own. direct (T156, T210): a model on the
- * GPU alone, whose matrices, tables and keys and values are all there. */
+ * GPU alone, whose matrices, tables and keys and values are all there. linear (T229): the form's, the
+ * linear-attention layers of a Qwen3.5, which keep a state of a fixed size and no keys and values. */
 export function footprint(header, size, { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false,
-  shared = false, outliers = 8, head_dim = 0, gpu = false, direct = false } = {}) {
+  shared = false, outliers = 8, head_dim = 0, gpu = false, direct = false, linear = null } = {}) {
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
   const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads, kvDim = kvHeads * headSize, qDim = heads * headSize;
   const quantized = dtype === "int8" || dtype === "int6", six = dtype === "int6";
   // the int8 kernels take rows of whole groups of 32 (llama2_numpy widens the others)
-  const onInt8 = int8 && dim % 32 === 0 && qDim % 32 === 0 && kvDim % 32 === 0 && hidden % 32 === 0;
+  const onInt8 = int8 && dim % 32 === 0 && qDim % 32 === 0 && kvDim % 32 === 0 && hidden % 32 === 0 &&
+    (!linear || linearWidths(linear).read % 32 === 0);
   let bytes = 0;
   // what the file holds in another form, for its matrices (not the tables that are no matrix multiplied: an
   // embedding apart from the classifier, GPT-2's positions): the corrections of relaxed SIMD, one int32 a group,
@@ -292,13 +327,15 @@ export function footprint(header, size, { dtype = "float32", arch = "llama", int
   if (quantized || arch === "gpt2") bytes += seqLen * headSize * 4;
   // the frames of BATCH tokens, their attention scores, the logits; the keys and values of a block from the GPU (in
   // float16) and its rows
-  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim)) + align(seqLen * heads * 4)) + vocab * 4;
+  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, linear)) + align(seqLen * heads * 4)) + vocab * 4;
   if (gpu) bytes += 2 * layers * GPU_BLOCK * kvDim * 2 + GPU_BLOCK * dim * 4;
+  // T229: the state of the linear-attention layers, whatever the context; keys and values of the others alone
+  if (linear) bytes += linearStateBytes(layers, linear);
   // the KV cache, doubled in place up to the whole context (T130: createForward's grow() moves the blocks up into the
   // room it adds; before, the smaller blocks were still there next to the larger ones at each step, 1.5 times the
   // context at the last), and a megabyte for the alignment of every array (T210, direct: the keys and values are the
   // GPU's alone)
-  const others = Math.ceil(bytes) + 2 ** 20, keys = direct ? 0 : seqLen * layers * 2 * kvDim;
+  const others = Math.ceil(bytes) + 2 ** 20, keys = direct ? 0 : seqLen * attendingLayers(layers, linear) * 2 * kvDim;
   // The type of the keys and values: float16 on a shared memory where every head has keys of its own (T110: several
   // threads wait on the memory, and read half of it). T160: a grouped-query model's are widened for every head of
   // their group, g = heads / kvHeads times, which float16 saves nothing of (Qwen2.5 0.5B, g = 7: float32 1.42 to 1.44
@@ -637,6 +674,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     seq_len: seqLen, rotary, arch } = plan;
   const hidden = plan.hidden_dim, kvDim = kvHeads * headSize, qDim = heads * headSize;
   const gpt2 = arch === "gpt2", layerNorm = arch === "gpt2" || arch === "neox", parallel = plan.parallel_residual;
+  // T229: a Qwen3.5's linear-attention layers (null: none), which layers they are, and each layer's place among the
+  // layers of its kind (the layer itself where all attend); attending: the layers with keys and values
+  const linear = plan.linear ?? null, slots = layerSlots(layers, linear);
+  const lines = slots.map(([kind]) => kind), placeOf = slots.map(([, a]) => a), attending = attendingLayers(layers, linear);
   const imports = { env: { memory } };
   const wide = Boolean(kernels.wide);  // T101: a 64-bit memory, whose kernels take their addresses as BigInt
   // a page that is not cross-origin isolated has no SharedArrayBuffer to ask about: its memory is not shared
@@ -749,11 +790,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // KV: the bytes of one position's keys in the cache; KF: in float32.
   const halfKV = Boolean(plan.half_kv) && (halfKeys ?? (sharedMemory && kvHeads >= heads));
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QF = qDim * 4, KV = kvDim * (halfKV ? 2 : 4);
-  const inFrame = frameArrays(dim, hidden, kvDim, qDim), S = frameBytes(inFrame);
+  const inFrame = frameArrays(dim, hidden, kvDim, qDim, linear), S = frameBytes(inFrame);
   const frames = alloc(BATCH * S), at = {};
   inFrame.reduce((offset, [name, bytes]) => { at[name] = frames + offset; return offset + align(bytes); }, 0);
   // kNow, vNow: this token's key and value in float32, before they go into the cache
-  const { x, xb, xb2, q, kNow, vNow, before, hb, hb2, xq, xs } = at;
+  const { x, xb, xb2, q, kNow, vNow, before, hb, hb2, xq, xs, gate, mixed, conv, z, work } = at;
   const A = seqLen * heads * 4;  // the scores of one token's attention
   const att = alloc(BATCH * A), logits = alloc(vocab * 4);
   const wq = matrix("wq"), wk = matrix("wk"), wv = matrix("wv"), wo = matrix("wo");
@@ -767,6 +808,29 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const positions = gpt2 ? floats("positions") : 0;
   const embedding = T.token_embedding_table;
   const embeddingRows = embedding.kind === "f16" ? floats("token_embedding_table") : 0;
+  // T229: a Qwen3.5's gate of a full-attention layer's output, and its linear-attention layers' tensors: q, k and v
+  // in one matrix, z, the output; in float32 the two small matrices of the gates, the taps of the convolution,
+  // dt_bias, the decay and the norm of a value head
+  const wg = matrix("wg"), wqkv = matrix("wqkv"), wz = matrix("wz"), wout = matrix("wout");
+  const wb = floats("wb"), wa = floats("wa"), taps = floats("conv"), dtBias = floats("dt_bias"), decays = floats("decay");
+  const deltaNorm = floats("delta_norm");
+  // their state (linearStateBytes): for each such layer a matrix (keyDim, valueDim) a value head, twice (flips: which
+  // of the two holds the state now; the delta rule writes the other; position 0 clears both), and the last conv tokens' q, k and v before the
+  // convolution (the oldest first, the token under way last). stateAt: the position that comes next, -1 once a run
+  // stopped half way. And the two weights rmsnorm takes the l2 norm of a head with: x / sqrt(sum(x * x) + 1e-6) is
+  // rmsnorm's w * x / sqrt(mean(x * x) + eps) with w = 1 / sqrt(n) and eps = 1e-6 / n; q is divided by sqrt(n) more
+  const keyHeads = linear?.key_heads, valueHeads = linear?.value_heads, keyDim = linear?.key_dim, valueDim = linear?.value_dim;
+  const { mixed: mixedWidth = 0, read: readWidth = 0 } = linear ? linearWidths(linear) : {};
+  const stateBytes = linear ? valueHeads * keyDim * valueDim * 4 : 0, convBytes = linear ? linear.conv * mixedWidth * 4 : 0;
+  const lineCount = layers - attending;
+  const states = linear ? alloc(2 * lineCount * stateBytes) : 0, convRows = linear ? alloc(lineCount * convBytes) : 0;
+  const qUnit = linear ? alloc(keyDim * 4) : 0, kUnit = linear ? alloc(keyDim * 4) : 0;
+  const flips = new Uint8Array(lineCount);
+  let stateAt = 0;
+  if (linear) {
+    F.fill(1 / keyDim, qUnit / 4, qUnit / 4 + keyDim);
+    F.fill(1 / Math.sqrt(keyDim), kUnit / 4, kUnit / 4 + keyDim);
+  }
 
   // the outlier channels of the classifier's input (T92): their columns in float32, multiplied apart (T210: not of a
   // classifier on the GPU alone, which is not here: a model with them does not stay there, tokensUnfit)
@@ -807,14 +871,15 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // none on the GPU alone, whose keys and values are the GPU's alone (no step runs here, and one that fails is loaded
   // again on the CPU)
   let capacity = direct ? 0 : Math.min(plan.kv_start, seqLen);
-  let keys = alloc(2 * layers * capacity * KV), values = keys + layers * capacity * KV;
+  // (T229: of the layers that attend; a Qwen3.5's linear-attention layers have none)
+  let keys = alloc(2 * attending * capacity * KV), values = keys + attending * capacity * KV;
   function grow(pos) {
     const larger = Math.min(Math.max(2 * capacity, pos + 1), seqLen);
     const oldLayer = capacity * KV, newLayer = larger * KV;
-    alloc(2 * layers * (newLayer - oldLayer));
-    const newValues = keys + layers * newLayer;
-    for (let l = layers - 1; l >= 0; l--) U.copyWithin(newValues + l * newLayer, values + l * oldLayer, values + (l + 1) * oldLayer);
-    for (let l = layers - 1; l > 0; l--) U.copyWithin(keys + l * newLayer, keys + l * oldLayer, keys + (l + 1) * oldLayer);
+    alloc(2 * attending * (newLayer - oldLayer));
+    const newValues = keys + attending * newLayer;
+    for (let l = attending - 1; l >= 0; l--) U.copyWithin(newValues + l * newLayer, values + l * oldLayer, values + (l + 1) * oldLayer);
+    for (let l = attending - 1; l > 0; l--) U.copyWithin(keys + l * newLayer, keys + l * oldLayer, keys + (l + 1) * oldLayer);
     values = newValues;
     capacity = larger;
   }
@@ -992,39 +1057,49 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     if (pos0 + count - 1 >= capacity) grow(pos0 + count - 1);
     views();
     gpuEnd = Math.min(gpuEnd, pos0);  // T135: from here on the cache holds what the GPU does not
+    if (linear) follow(pos0);
     embed(tokens, pos0);
     for (let l = 0; l < layers; l++) {
-      const layerKeys = keys + l * capacity * KV, layerValues = values + l * capacity * KV;
-      const kp = layerKeys + pos0 * KV, vp = layerValues + pos0 * KV;
+      // (a: the layer's place among the layers of its kind, T229: the layer itself where all attend)
+      const a = placeOf[l];
       for (let t = 0; t < count; t++) {
         if (layerNorm) k.layernorm(xb + t * S, x + t * S, attW + l * D, attB + l * D, dim);
         else k.rmsnorm(xb + t * S, x + t * S, attW + l * D, dim, eps);
         if (parallel) F.copyWithin((before + t * S) / 4, (x + t * S) / 4, (x + t * S) / 4 + dim);  // GPT-NeoX reads this layer's input twice
       }
-      matmuls(xb, count, [[wq, q, S, l], [wk, kNow, S, l], [wv, vNow, S, l]]);
-      for (let t = 0; t < count; t++) {
-        const qt = q + t * S, kt = kNow + t * S, vt = vNow + t * S, pos = pos0 + t;
-        if (bq) {
-          k.add_inplace(qt, bq + l * QF, qDim);
-          k.add_inplace(kt, bk + l * KF, kvDim);
-          k.add_inplace(vt, bv + l * KF, kvDim);
+      if (lines[l]) {
+        linearAttention(a, count);
+      } else {
+        const layerKeys = keys + a * capacity * KV, layerValues = values + a * capacity * KV;
+        const kp = layerKeys + pos0 * KV, vp = layerValues + pos0 * KV;
+        // (a Qwen3.5's gate of the attention's output is one more matrix of the same input)
+        matmuls(xb, count, wg ? [[wq, q, S, a], [wk, kNow, S, a], [wv, vNow, S, a], [wg, gate, S, a]]
+          : [[wq, q, S, a], [wk, kNow, S, a], [wv, vNow, S, a]]);
+        for (let t = 0; t < count; t++) {
+          const qt = q + t * S, kt = kNow + t * S, vt = vNow + t * S, pos = pos0 + t;
+          if (bq) {
+            k.add_inplace(qt, bq + a * QF, qDim);
+            k.add_inplace(kt, bk + a * KF, kvDim);
+            k.add_inplace(vt, bv + a * KF, kvDim);
+          }
+          if (qNorm) {
+            const HS = headSize * 4;
+            for (let h = 0; h < heads; h++) k.rmsnorm(qt + h * HS, qt + h * HS, qNorm + a * HS, headSize, eps);
+            for (let h = 0; h < kvHeads; h++) k.rmsnorm(kt + h * HS, kt + h * HS, kNorm + a * HS, headSize, eps);
+          }
+          if (!gpt2) {
+            const cos = cosTable + pos * (headSize / 2) * 4, sin = sinTable + pos * (headSize / 2) * 4;
+            k.rope(qt, cos, sin, heads, headSize, rotary);
+            k.rope(kt, cos, sin, kvHeads, headSize, rotary);
+          }
+          cache(kp + t * KV, vp + t * KV, kt, vt);  // into the cache, at this token's position
         }
-        if (qNorm) {
-          const HS = headSize * 4;
-          for (let h = 0; h < heads; h++) k.rmsnorm(qt + h * HS, qt + h * HS, qNorm + l * HS, headSize, eps);
-          for (let h = 0; h < kvHeads; h++) k.rmsnorm(kt + h * HS, kt + h * HS, kNorm + l * HS, headSize, eps);
-        }
-        if (!gpt2) {
-          const cos = cosTable + pos * (headSize / 2) * 4, sin = sinTable + pos * (headSize / 2) * 4;
-          k.rope(qt, cos, sin, heads, headSize, rotary);
-          k.rope(kt, cos, sin, kvHeads, headSize, rotary);
-        }
-        cache(kp + t * KV, vp + t * KV, kt, vt);  // into the cache, at this token's position
+        // the keys and values of positions up to each token's are all there now: its own and the ones before it.
+        // The heads of every token go out as one phase (T109).
+        phase(tokens.map((_, t) => attentionJob(t, pos0 + t, layerKeys, layerValues)));
+        if (wg) for (let t = 0; t < count; t++) k.gate(xb + t * S, xb + t * S, gate + t * S, qDim);
+        matmuls(xb, count, [[wo, xb2, S, a]]);
       }
-      // the keys and values of positions up to each token's are all there now: its own and the ones before it.
-      // The heads of every token go out as one phase (T109).
-      phase(tokens.map((_, t) => attentionJob(t, pos0 + t, layerKeys, layerValues)));
-      matmuls(xb, count, [[wo, xb2, S, l]]);
       for (let t = 0; t < count; t++) k.add_inplace(x + t * S, xb2 + t * S, dim);
       if (layerNorm) {
         for (let t = 0; t < count; t++) {
@@ -1046,6 +1121,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       matmuls(hb, count, [[w2, xb2, S, l]]);
       for (let t = 0; t < count; t++) k.add_inplace(x + t * S, xb2 + t * S, dim);
     }
+    if (linear) stateAt = pos0 + count;
     if (!needLogits) return;
     const last = x + (count - 1) * S;
     if (layerNorm) k.layernorm(xb, last, finalW, finalB, dim);
@@ -1058,6 +1134,58 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     if (channels.length) k.add_columns(logits, columns, picked, channels.length, vocab);
   }
   const forward = (token, pos, needLogits) => run([token], pos, needLogits);
+
+  // T229: the linear-attention layers' state is what the tokens before this position left: position 0 clears it, and
+  // any other has to be the one that comes next (llama2_numpy's follow()). Keys and values could be written again at
+  // any position; a state cannot, and tokens out of turn would compute on the wrong one without a word. A run that
+  // stopped half way leaves it no token's: only position 0 goes on from there.
+  function follow(pos) {
+    if (pos === 0) {
+      F.fill(0, states / 4, (states + 2 * lineCount * stateBytes) / 4);
+      F.fill(0, convRows / 4, (convRows + lineCount * convBytes) / 4);
+    } else if (pos !== stateAt) {
+      throw new Error(`This model keeps a state from token to token: position ${stateAt < 0 ? 0 : stateAt} comes next ` +
+        `(or 0, to begin again), not ${pos}.`);
+    }
+    stateAt = -1;
+  }
+  // T229: count tokens through the a-th Gated DeltaNet layer, from xb (the norm of x) into xb2, as the output
+  // projection of an attending layer leaves it (llama2_numpy's linear_attention() has the rule). The matrices go out
+  // once for all the tokens, as an attending layer's; the rest is a token at a time, for the state after a token is
+  // what the next one reads. The value heads of a token are one phase, shared out as the heads of an attention.
+  function linearAttention(a, count) {
+    const C = mixedWidth * 4, rows = convRows + a * convBytes, newest = rows + (linear.conv - 1) * C;
+    const KD = keyDim * 4, VD = valueDim * 4, l2 = 1e-6 / keyDim;
+    matmuls(xb, count, [[wqkv, mixed, S, a], [wz, z, S, a]]);
+    for (let t = 0; t < count; t++) {
+      const xt = xb + t * S, ct = conv + t * S, wt = work + t * S;
+      // beta = sigmoid(wb x) and decay = exp(decay * softplus(wa x + dt_bias)), one of each a value head, before
+      // what the layer reads goes where its input is. A few numbers a layer: JavaScript's own exp and log
+      k.matmul_f32(wt, xt, wb + a * valueHeads * D, dim, 0, valueHeads);
+      k.matmul_f32(wt + valueHeads * 4, xt, wa + a * valueHeads * D, dim, 0, valueHeads);
+      for (let h = 0; h < valueHeads; h++) {
+        const b = wt / 4 + h, g = b + valueHeads, at = a * valueHeads + h;
+        const step = F[g] + F[dtBias / 4 + at];
+        F[b] = 1 / (1 + Math.exp(-F[b]));
+        F[g] = Math.exp(F[decays / 4 + at] * (step > 20 ? step : Math.log1p(Math.exp(step))));
+      }
+      // this token's q, k and v behind those of the conv - 1 tokens before it, and the convolution over them
+      F.copyWithin(rows / 4, (rows + C) / 4, (rows + convBytes) / 4);
+      F.copyWithin(newest / 4, (mixed + t * S) / 4, (mixed + t * S + C) / 4);
+      k.convolve(ct, taps + a * convBytes, rows, mixedWidth, linear.conv);
+      for (let h = 0; h < keyHeads; h++) {
+        k.rmsnorm(ct + h * KD, ct + h * KD, qUnit, keyDim, l2);
+        k.rmsnorm(ct + (keyHeads + h) * KD, ct + (keyHeads + h) * KD, kUnit, keyDim, l2);
+      }
+      const now = states + (2 * a + flips[a]) * stateBytes, next = states + (2 * a + 1 - flips[a]) * stateBytes;
+      phase([[7, xt, now, next, ct, wt, keyHeads, keyDim, valueDim, valueHeads, 1, 0, 0, 0]]);
+      flips[a] ^= 1;
+      // the norm of every value head, and z's gate
+      for (let h = 0; h < valueHeads; h++) k.rmsnorm(xt + h * VD, xt + h * VD, deltaNorm + a * VD, valueDim, eps);
+      k.swiglu(xt, z + t * S, xt, readWidth);
+    }
+    matmuls(xb, count, [[wout, xb2, S, a]]);
+  }
 
   // ---- the number of threads (stage 2b): found by measuring, never written down. The search starts from a hint
   // (navigator.hardwareConcurrency, which counts the little cores of a big.LITTLE phone too) and compares the best
@@ -1234,6 +1362,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   }
   // (T155: int6 weights too, widened to int8 on the GPU, and a model in a 64-bit memory: gpu.js)
   function gpuUnfit() {
+    if (linear) return "linear-attention layers are not on the GPU yet";  // T229
     if (!sharedMemory) return "the page is not cross-origin isolated";
     if (headSize % 4) return "heads of a size that is no multiple of 4 are not on the GPU";
     if (!Object.values(gpuMatrices()).every((m) => m.int8 && m.group === 32)) return "float32 weights are not on the GPU yet";
@@ -1790,14 +1919,15 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     /** the logits in this memory, for callers without Python (tests) */
     logits: () => new Float32Array(memory.buffer, logits, vocab),
     /** the keys and values in the cache at positions from .. from + count - 1, in float32, [layers][count][kvDim] each
+     * (T229: the layers that attend)
      * (tests: T135 holds what the GPU wrote back to what the CPU computes). T210: on the GPU alone, the GPU's own, read
      * back from it (GPU_BLOCK positions a request) */
     keysAndValues(from, count) {
       if (direct) return gpuKeysAndValues(from, count);
       views();
       const read = (block) => {
-        const out = new Float32Array(layers * count * kvDim);
-        for (let l = 0; l < layers; l++) {
+        const out = new Float32Array(attending * count * kvDim);
+        for (let l = 0; l < attending; l++) {
           for (let t = 0; t < count; t++) {
             const at = block + l * capacity * KV + (from + t) * KV;
             for (let i = 0; i < kvDim; i++) out[(l * count + t) * kvDim + i] = halfKV ? halfToFloat(H[at / 2 + i]) : F[at / 4 + i];

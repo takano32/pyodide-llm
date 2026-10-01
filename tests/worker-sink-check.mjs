@@ -19,7 +19,8 @@ const root = new URL("..", import.meta.url);
 const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
   "import json, sys; sys.path.insert(0, 'public'); import llama2_numpy; print(json.dumps(llama2_numpy.FORM))"],
 { cwd: fileURLToPath(root) }).toString());
-assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "head_dim", "qk_norm"],
+// T229: "linear", the linear-attention layers of a Qwen3.5 (null where there are none)
+assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "head_dim", "linear", "qk_norm"],
   "FORM has other keys now: say here which of them footprint() reads");
 
 // (7) footprint()'s defaults are FORM's: a form without arch or head_dim (the options of a model converted before

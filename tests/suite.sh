@@ -52,6 +52,8 @@ part "unit tests of the page's modules" page_modules
 # the page resolves the latest Pyodide release when it is opened, so test against that one
 part "the latest Pyodide" npm install --no-save pyodide@latest
 part "smoke test" node tests/smoke.mjs
+# T229: the kernels of Qwen3.5's linear attention against the same arithmetic in JavaScript (under a second)
+part "the delta rule's kernels" node tests/delta-check.mjs
 # T217 (the review of T201): attention's softmax where its largest score decides something (two positions far above
 # the rest): a largest that leaves positions out, which forward-check's line cannot see (under a second)
 part "attention's largest score" node tests/attention-check.mjs
@@ -64,9 +66,24 @@ if [ "$suite" = full ]; then
   part "forward.js against NumPy, float16 on a plain memory" node tests/forward-check.mjs tiny-lm llm-jp-3-150m --rounds 1 --positions 128 --plain --half-keys
   # T101: the 64-bit memory and its kernels
   part "forward.js against NumPy, 64-bit" node tests/forward-check.mjs stories260K tiny-lm --rounds 1 --positions 128 --wide
+  # T229: a made-up Qwen3.5 (hybrid attention; no real one is small enough for the build): float32 to NumPy's numbers,
+  # int8 within the line of a made-up model, one with a state as large as a real model's for the memory after the
+  # checkpoint against footprint(); on a shared memory, a plain one and a 64-bit one
+  made_up_qwen35() {
+    mkdir -p .tmp
+    python tests/make_qwen35.py .tmp/made-up-qwen35-float32 float32
+    python tests/make_qwen35.py .tmp/made-up-qwen35-int8 int8
+    python tests/make_qwen35.py .tmp/made-up-qwen35-state int8 state
+    for memory in "" --plain --wide; do
+      node tests/forward-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-state --rounds 1 --positions 128 $memory
+    done
+  }
+  part "forward.js against NumPy, a made-up Qwen3.5" made_up_qwen35
   # T148: the default choice of the GPU or the CPU for a prompt's blocks, with a made-up GPU's worker
   part "the GPU or the CPU by default" node tests/gpu-default-check.mjs
   part "the software threads" node tests/threads-check.mjs
+  # T229: the value heads of a linear-attention layer's delta rule shared out among the threads, to the bit
+  part "the software threads, a made-up Qwen3.5" node tests/threads-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-int8 --rounds 1
   # T206: the pre-tokenizers against the real ones at every code point (about 90 s, too long for the deploy)
   part "the pre-tokenizers at every code point" env EVERY_CODE_POINT=1 python -m pytest tests/test_bytebpe.py -q -k every_character
 fi

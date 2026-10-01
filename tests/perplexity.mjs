@@ -6,6 +6,10 @@
 // The model id may instead be the <out> of tests/perplexity_prepare.py (a Hugging Face model converted here, with
 // <out>.bin, <out>.tokenizer.bin and the options in <out>.json).
 //
+// --file (T229): the checkpoint is read from its file straight into forward.js's memory, never into Pyodide's, and
+// the NumPy row is left out (a model whose weights widened to float32 pass Pyodide's 4 GiB: tests/perplexity_native.py
+// has that row). --numpy=<its perplexity>: what the rows are held against then.
+//
 // Without a text file the text is fetched from Japanese Wikipedia (plain-text extracts; nothing of it is stored in
 // this repository). The NumPy row takes minutes: it runs at a tenth of the speed.
 import fs from "node:fs";
@@ -16,7 +20,9 @@ import { ARTICLES, wikipediaText } from "./wikipedia.mjs";
 import { MODELS } from "../src/models.js";
 
 const root = new URL("../", import.meta.url).pathname;
-const [id = "llm-jp-3-150m", count = "1500", ...sources] = process.argv.slice(2);
+const flags = process.argv.slice(2).filter((arg) => arg.startsWith("--"));
+const [id = "llm-jp-3-150m", count = "1500", ...sources] = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
+const fromFile = flags.includes("--file"), numpy = Number(flags.find((flag) => flag.startsWith("--numpy="))?.split("=")[1]);
 const model = MODELS.find((entry) => entry.id === id) ?? (fs.existsSync(`${id}.json`) &&
   { id: path.basename(id), checkpoint: path.resolve(`${id}.bin`), tokenizer: path.resolve(`${id}.tokenizer.bin`),
     options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")) });
@@ -30,22 +36,24 @@ for (const source of titles) {
 }
 
 const { pyodide } = await pyodideWithEngine();
-for (const file of [model.checkpoint, model.tokenizer]) {
+for (const file of fromFile ? [model.tokenizer] : [model.checkpoint, model.tokenizer]) {
   pyodide.FS.writeFile(path.basename(file), fs.readFileSync(local(file)));
 }
 const name = (file) => path.basename(file);
-pyodide.globals.set("MODEL", pyodide.toPy({ checkpoint: name(model.checkpoint), tokenizer: name(model.tokenizer), options: model.options }));
+pyodide.globals.set("MODEL", pyodide.toPy({ checkpoint: name(model.checkpoint), tokenizer: name(model.tokenizer), options: model.options,
+  ...(fromFile ? { file: local(model.checkpoint) } : {}) }));
 pyodide.globals.set("TEXT", text);
 pyodide.globals.set("TOKENS", Number(count));
 pyodide.globals.set("WINDOW", 512);
 pyodide.runPython(fs.readFileSync(`${root}tests/perplexity.py`, "utf8"));
 const results = JSON.parse(pyodide.globals.get("RESULT"));
 
-const reference = results.at(-1).perplexity;
+const reference = fromFile ? numpy : results.at(-1).perplexity;  // (NaN with --file and no --numpy: no change said)
 console.log(`### Perplexity of ${model.id}, ${results[0].tokens} tokens of ${titles.join(", ")} (Pyodide ${version} in Node)\n`);
 console.log("| computation | perplexity | against NumPy | time |");
 console.log("|---|---:|---:|---:|");
 for (const row of results) {
   const change = (row.perplexity / reference - 1) * 100;
-  console.log(`| ${row.variant} | ${row.perplexity.toFixed(3)} | ${change < 0 ? "-" : "+"}${Math.abs(change).toFixed(2)}% | ${row.seconds.toFixed(0)} s |`);
+  const against = Number.isFinite(change) ? `${change < 0 ? "-" : "+"}${Math.abs(change).toFixed(2)}%` : "";
+  console.log(`| ${row.variant} | ${row.perplexity.toFixed(3)} | ${against} | ${row.seconds.toFixed(0)} s |`);
 }

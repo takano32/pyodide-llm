@@ -265,3 +265,147 @@ def naive_logits(config, weights, tokens):
             h1 = h1 / (1.0 + np.exp(-h1)) * (weights["w3"][l] @ xb)
             x[pos] = x[pos] + weights["w2"][l] @ h1
     return [weights["wcls"] @ rmsnorm(vector, weights["rms_final_weight"]) for vector in x]
+
+
+# ------------------------------------------------------------------------------------- Qwen3.5 (T229)
+
+def qwen35_model(dim=32, hidden_dim=64, n_layers=4, every=2, n_heads=4, n_kv_heads=2, head_dim=16, rotary=0.25,
+                 key_heads=2, value_heads=4, key_dim=8, value_dim=6, conv=4, vocab_size=320, seq_len=24, shared=True,
+                 prefix="model.language_model.", seed=0, eps=1e-6):
+    """Random Hugging Face tensors of a tiny Qwen3.5 (hybrid attention), with the names and shapes of
+    Qwen/Qwen3.5-0.8B's model.safetensors, and its config.json (the language model's under text_config, as there)."""
+    rng = np.random.default_rng(seed)
+    normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
+    keys, values = key_heads * key_dim, value_heads * value_dim
+    kinds = ["linear_attention" if (layer + 1) % every else "full_attention" for layer in range(n_layers)]
+    tensors = {prefix + "embed_tokens.weight": normal(vocab_size, dim), prefix + "norm.weight": normal(dim)}
+    for layer, kind in enumerate(kinds):
+        p = f"{prefix}layers.{layer}."
+        tensors[p + "input_layernorm.weight"] = normal(dim)  # around zero: the model multiplies by 1 + weight
+        tensors[p + "post_attention_layernorm.weight"] = normal(dim)
+        if kind == "full_attention":
+            tensors[p + "self_attn.q_proj.weight"] = normal(2 * n_heads * head_dim, dim)
+            tensors[p + "self_attn.k_proj.weight"] = normal(n_kv_heads * head_dim, dim)
+            tensors[p + "self_attn.v_proj.weight"] = normal(n_kv_heads * head_dim, dim)
+            tensors[p + "self_attn.o_proj.weight"] = normal(dim, n_heads * head_dim)
+            tensors[p + "self_attn.q_norm.weight"] = normal(head_dim)
+            tensors[p + "self_attn.k_norm.weight"] = normal(head_dim)
+        else:
+            tensors[p + "linear_attn.in_proj_qkv.weight"] = normal(2 * keys + values, dim)
+            tensors[p + "linear_attn.in_proj_z.weight"] = normal(values, dim)
+            tensors[p + "linear_attn.in_proj_b.weight"] = normal(value_heads, dim)
+            tensors[p + "linear_attn.in_proj_a.weight"] = normal(value_heads, dim)
+            tensors[p + "linear_attn.conv1d.weight"] = normal(2 * keys + values, 1, conv)
+            tensors[p + "linear_attn.dt_bias"] = normal(value_heads)
+            tensors[p + "linear_attn.A_log"] = normal(value_heads)
+            tensors[p + "linear_attn.norm.weight"] = (1.0 + normal(value_dim)).astype(np.float32)
+            tensors[p + "linear_attn.out_proj.weight"] = normal(dim, values)
+        tensors[p + "mlp.gate_proj.weight"] = normal(hidden_dim, dim)
+        tensors[p + "mlp.up_proj.weight"] = normal(hidden_dim, dim)
+        tensors[p + "mlp.down_proj.weight"] = normal(dim, hidden_dim)
+    if not shared:
+        tensors["lm_head.weight"] = normal(vocab_size, dim)
+    # what transformers leaves unread: the vision model and the look-ahead head
+    tensors["model.visual.patch_embed.proj.bias"] = normal(8)
+    tensors["mtp.norm.weight"] = normal(dim)
+    text = dict(model_type="qwen3_5_text", hidden_size=dim, intermediate_size=hidden_dim, num_hidden_layers=n_layers,
+                num_attention_heads=n_heads, num_key_value_heads=n_kv_heads, head_dim=head_dim, hidden_act="silu",
+                layer_types=kinds, full_attention_interval=every, linear_conv_kernel_dim=conv,
+                linear_key_head_dim=key_dim, linear_value_head_dim=value_dim, linear_num_key_heads=key_heads,
+                linear_num_value_heads=value_heads, max_position_embeddings=seq_len, rms_norm_eps=eps,
+                vocab_size=vocab_size, tie_word_embeddings=shared, eos_token_id=7, attn_output_gate=True,
+                mlp_only_layers=[],
+                rope_parameters={"rope_type": "default", "rope_theta": 10000000, "partial_rotary_factor": rotary,
+                                 "mrope_interleaved": True, "mrope_section": [11, 11, 10]})
+    return tensors, dict(model_type="qwen3_5", text_config=text, tie_word_embeddings=shared)
+
+
+def naive_qwen35_logits(tensors, config, tokens):
+    """transformers' Qwen3_5 (modeling_qwen3_5.py at 7fb5bcd1: Qwen3_5DecoderLayer, Qwen3_5Attention,
+    Qwen3_5GatedDeltaNet with torch_recurrent_gated_delta_rule, Qwen3_5RMSNorm and Qwen3_5RMSNormGated), written out
+    from the Hugging Face tensors in float64, token by token: the reference the converter and the engine are held to
+    together (tests/reference_qwen35.py holds it to transformers itself, in CI)."""
+    text = config["text_config"]
+    prefix = "model.language_model." if "model.language_model.embed_tokens.weight" in tensors else "model."
+    wide = {name: np.asarray(tensor, dtype=np.float64) for name, tensor in tensors.items()}
+    eps = text["rms_norm_eps"]
+    heads, kv_heads, head_dim = text["num_attention_heads"], text["num_key_value_heads"], text["head_dim"]
+    key_heads, value_heads = text["linear_num_key_heads"], text["linear_num_value_heads"]
+    key_dim, value_dim, taps = text["linear_key_head_dim"], text["linear_value_head_dim"], text["linear_conv_kernel_dim"]
+    keys = key_heads * key_dim
+    rot = int(head_dim * text["rope_parameters"]["partial_rotary_factor"])
+    inverse = 1.0 / text["rope_parameters"]["rope_theta"] ** (np.arange(0, rot, 2, dtype=np.float64) / rot)
+    sigmoid = lambda v: 1.0 / (1.0 + np.exp(-v))
+    silu = lambda v: v * sigmoid(v)
+    norm = lambda v, weight: v / math.sqrt(float(v @ v) / len(v) + eps) * (1.0 + weight)  # Qwen3_5RMSNorm
+
+    def rotate(head, pos):
+        """apply_rotary_pos_emb on one head: its first rot values turn, as rotate_half pairs them."""
+        cos, sin = np.cos(pos * inverse), np.sin(pos * inverse)
+        cos, sin = np.concatenate([cos, cos]), np.concatenate([sin, sin])
+        turned = head[:rot]
+        half = np.concatenate([-turned[rot // 2:], turned[:rot // 2]])
+        return np.concatenate([turned * cos + half * sin, head[rot:]])
+
+    x = [wide[prefix + "embed_tokens.weight"][token] for token in tokens]
+    for layer, kind in enumerate(text["layer_types"]):
+        p = f"{prefix}layers.{layer}."
+        normed = [norm(v, wide[p + "input_layernorm.weight"]) for v in x]
+        mixed = []
+        if kind == "full_attention":
+            a = p + "self_attn."
+            queries, gates, ks, vs = [], [], [], []
+            for pos, v in enumerate(normed):
+                both = (wide[a + "q_proj.weight"] @ v).reshape(heads, 2, head_dim)  # each head: q, then its gate
+                queries.append([rotate(norm(both[h, 0], wide[a + "q_norm.weight"]), pos) for h in range(heads)])
+                gates.append(both[:, 1].reshape(-1))
+                k = (wide[a + "k_proj.weight"] @ v).reshape(kv_heads, head_dim)
+                ks.append([rotate(norm(k[h], wide[a + "k_norm.weight"]), pos) for h in range(kv_heads)])
+                vs.append((wide[a + "v_proj.weight"] @ v).reshape(kv_heads, head_dim))
+            for pos in range(len(tokens)):
+                attended = np.zeros((heads, head_dim))
+                for h in range(heads):
+                    kv = h // (heads // kv_heads)
+                    scores = np.array([queries[pos][h] @ ks[t][kv] / math.sqrt(head_dim) for t in range(pos + 1)])
+                    scores = np.exp(scores - scores.max())
+                    scores /= scores.sum()
+                    attended[h] = sum(scores[t] * vs[t][kv] for t in range(pos + 1))
+                mixed.append(wide[a + "o_proj.weight"] @ (attended.reshape(-1) * sigmoid(gates[pos])))
+        else:
+            a = p + "linear_attn."
+            state = np.zeros((value_heads, key_dim, value_dim))
+            projected = [wide[a + "in_proj_qkv.weight"] @ v for v in normed]
+            weight = wide[a + "conv1d.weight"][:, 0, :]  # (channels, taps): the last tap is this token's
+            for pos, v in enumerate(normed):
+                convolved = np.zeros(len(weight))
+                for j in range(taps):
+                    at = pos - (taps - 1) + j
+                    if at >= 0:
+                        convolved += weight[:, j] * projected[at]
+                convolved = silu(convolved)
+                q = convolved[:keys].reshape(key_heads, key_dim)
+                k = convolved[keys:2 * keys].reshape(key_heads, key_dim)
+                value = convolved[2 * keys:].reshape(value_heads, value_dim)
+                z = (wide[a + "in_proj_z.weight"] @ v).reshape(value_heads, value_dim)
+                beta = sigmoid(wide[a + "in_proj_b.weight"] @ v)
+                softplus = np.log1p(np.exp(wide[a + "in_proj_a.weight"] @ v + wide[a + "dt_bias"]))
+                g = -np.exp(wide[a + "A_log"]) * softplus
+                out = np.zeros((value_heads, value_dim))
+                for h in range(value_heads):
+                    of = h // (value_heads // key_heads)  # repeat_interleave: the key head this value head reads
+                    q_h = q[of] / math.sqrt(float(q[of] @ q[of]) + 1e-6) / math.sqrt(key_dim)
+                    k_h = k[of] / math.sqrt(float(k[of] @ k[of]) + 1e-6)
+                    state[h] *= math.exp(g[h])
+                    delta = (value[h] - k_h @ state[h]) * beta[h]
+                    state[h] += np.outer(k_h, delta)
+                    read = q_h @ state[h]
+                    # Qwen3_5RMSNormGated: the weight as it is (no 1 +), then the gate
+                    out[h] = wide[a + "norm.weight"] * read / math.sqrt(float(read @ read) / value_dim + eps) * silu(z[h])
+                mixed.append(wide[a + "out_proj.weight"] @ out.reshape(-1))
+        for pos in range(len(tokens)):
+            x[pos] = x[pos] + mixed[pos]
+            v = norm(x[pos], wide[p + "post_attention_layernorm.weight"])
+            x[pos] = x[pos] + wide[p + "mlp.down_proj.weight"] @ (silu(wide[p + "mlp.gate_proj.weight"] @ v)
+                                                                   * (wide[p + "mlp.up_proj.weight"] @ v))
+    classifier = wide["lm_head.weight"] if "lm_head.weight" in wide else wide[prefix + "embed_tokens.weight"]
+    return [classifier @ norm(v, wide[prefix + "norm.weight"]) for v in x]
