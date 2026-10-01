@@ -609,8 +609,9 @@ ${dp4aLines(false)}`}
 // had turned a NaN of the keys and values into finite numbers, the logits stayed finite, T219's flag of the sampler saw
 // nothing, and the DP4A forms returned ids where the float forms refused the step (the review of T219, run
 // 36876165803). The CPU's quantize_x keeps a NaN (f32x4.max), and stops by T195's rule.
-// No public implementation has this part (ORT's dp4a_quantize, vLLM's per-token scales and llama.cpp's quantizers
-// take the largest with a float max and say nothing of a NaN), so it is written apart, with what it is given:
+// No public implementation was found to take this part from (the forms of these quantizers are ORT's dp4a_quantize's
+// and vLLM's per-token scales', which take a largest of floats; their sources were not read again for a NaN's fate),
+// so it is written apart, with what it is given:
 //   magnitude: u32   the largest of bitcast<u32>(value) & FLOAT_MAGNITUDE over the group's 32 values: their bits
 //                    without the sign, taken with the integer max
 //   scale: f32       bitcast<f32>(magnitude) / 127.0, the group's scale where every value is finite
