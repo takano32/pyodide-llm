@@ -25,11 +25,12 @@
 # the made-up models gpu-check gives a browser for "made-up", and Dawn with every made-up model and the site's three.
 # models= and real= choose the models in either; full= still chooses the browsers. An empty full= is the default,
 # light (T192).
-# T241's review (the full suite took more than 80 minutes on the Chromium job: SwiftShader compiles a model's shaders in
-# each of its 14 runs, 5 to 7 s, and Chromium, Chrome and Edge run the same SwiftShader): "made-up" is every made-up model
-# on Dawn; on Chromium all but those that only change the numbers a form is held to (gpu-check's DAWN_ONLY); on Chrome and
-# Edge the three whose shaders differ (Llama's, Qwen3's, GPT-2's). The rounds with a NaN or an infinity run on Dawn's made-up
-# models and Chromium's three: the input nan= (gpu-check's --nan) chooses otherwise.
+# T241's review (the full suite took 38 minutes on Chrome and 42 on Edge in main's run 36902097346, 23 on Edge before T241:
+# SwiftShader compiles a model's shaders in each of its 14 runs, 5 to 7 s, and Chromium, Chrome and Edge run the same
+# SwiftShader): "made-up" is every made-up model on Dawn; on Chromium all but those that only change the numbers a form is
+# held to (gpu-check's DAWN_ONLY); on Chrome and Edge the three whose shaders differ (Llama's, Qwen3's, GPT-2's). The rounds
+# with a NaN or an infinity run on Dawn's made-up models and Chromium's three: the input nan= (gpu-check's --nan) chooses
+# otherwise. Chrome and Edge now take 8 to 9 minutes, Chromium 16 to 27 (the runners differ), Dawn 14 (run 36913812366).
 #
 #   node tests/ci.mjs run gpu-prompt.yml full=true --ref <branch>
 #
@@ -94,9 +95,15 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
+      # T241's review: this step is about 2 to 5 minutes. Run 36902097346 of main (the full suite) had its Chromium job stay in
+      # `npx playwright-core install --with-deps chromium`, in the apt it runs (the last line of the log was a "Get:" of
+      # archive.ubuntu.com's noble-security InRelease), until the job's 120 minutes were over: the tests never began. apt gets
+      # time-outs and retries here, and the step a limit of 20 minutes, so that a stuck download fails the job in minutes
       - name: Download and convert the models, compile the kernels, install the browser
+        timeout-minutes: 20
         shell: bash
         run: |
+          printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\n' | sudo tee /etc/apt/apt.conf.d/99-ci-timeouts > /dev/null
           pip install numpy tokenizers regex
           npm ci
           make models kernels
@@ -148,9 +155,12 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
+      # (the same time-outs as the browsers' jobs' step above, T241's review)
       - name: Download and convert the models, compile the kernels, install Dawn and lavapipe
+        timeout-minutes: 20
         shell: bash
         run: |
+          printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\n' | sudo tee /etc/apt/apt.conf.d/99-ci-timeouts > /dev/null
           pip install numpy tokenizers regex
           npm ci
           make models kernels
