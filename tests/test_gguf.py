@@ -486,10 +486,12 @@ def test_a_gguf_whose_yarn_is_not_the_originals_is_refused(theirs):
             llama2_convert.gguf_weights(plain, json.dumps(published))
 
 
-@pytest.mark.parametrize("key, name", [("attn_factor", "attention_factor"), ("yarn_log_mul", "mscale_all_dim")])
+@pytest.mark.parametrize("key, name", [("attn_factor", "attention_factor"), ("yarn_log_multiplier", "mscale_all_dim")])
 def test_a_gguf_whose_yarn_says_more_than_the_tables_know_is_refused(key, name):
-    """llama.cpp scales the turned values by a GGUF's attn_factor, or by its yarn_log_mul's: read under config.json's
-    names, so that neither is dropped without a word, alone or with an original that does not say it."""
+    """llama.cpp scales the turned values by a GGUF's attn_factor, or by its yarn_log_multiplier's: read under
+    config.json's names, so that neither is dropped without a word, alone or with an original that does not say it.
+    The keys are spelled as the fork's src/llama-arch.cpp spells them (the review of T235: the first version of this
+    test and of the converter said yarn_log_mul, which no GGUF has, and so tested nothing real)."""
     config, published, file, _ = bonsai_gguf(also=[(f"qwen3.rope.scaling.{key}", 6, 0.5)])
     with pytest.raises(ValueError, match=f"yarn RoPE scaling sets {name}"):
         fed(file, "int8")
@@ -658,3 +660,181 @@ def test_the_padding_of_a_gguf_vocabulary_is_empty_as_the_safetensors_path_pads(
     assert data == llama2_convert.gguf_tokenizer(metadata(20), 22)[0]
     vocabulary = Tokenizer(data, 22, kind="bytebpe")
     assert vocabulary.vocab[20:] == [b"", b""] and vocabulary.vocab[19] == b"<think>"
+
+
+# ---- T236: a Qwen3.5 (T229's hybrid attention), as llama.cpp's conversion/qwen.py writes one
+QWEN35_NAMES = {"embed_tokens.weight": "token_embd.weight", "norm.weight": "output_norm.weight"}
+QWEN35_LAYER = {**LAYER, "post_attention_layernorm": "post_attention_norm",
+                "linear_attn.in_proj_qkv": "attn_qkv", "linear_attn.in_proj_z": "attn_gate",
+                "linear_attn.in_proj_a": "ssm_alpha", "linear_attn.in_proj_b": "ssm_beta",
+                "linear_attn.conv1d": "ssm_conv1d", "linear_attn.norm": "ssm_norm", "linear_attn.out_proj": "ssm_out"}
+QWEN35_WHOLE = {"linear_attn.A_log": "ssm_a", "linear_attn.dt_bias": "ssm_dt.bias"}
+# rows of whole groups of 32 (Q8_0), a value head to each key head (the real 0.8B and 2B), heads that do not fill dim
+QWEN35 = dict(dim=64, hidden_dim=128, n_heads=4, n_kv_heads=2, head_dim=32, key_heads=2, value_heads=2, key_dim=16,
+              value_dim=16, vocab_size=40)
+
+
+def qwen35_gguf(more=(), bos=1, eos=2, change=None, **shape):
+    """A GGUF v3 of a small Qwen3.5 the way llama.cpp writes one (as unsloth's Qwen3.5-0.8B Q8_0 is, T236): the
+    language model's tensors alone, the norms with the 1 the model adds to them (not a linear-attention layer's own),
+    A_log as -exp(A_log) and named ssm_a, dt_bias named ssm_dt.bias, the convolution without its axis of one, q with
+    its gate and k as Hugging Face holds them; Q8_0 matrices (the two small ones of the gates too), F32 vectors and
+    convolution. Returns the config.json, the file, and under the Hugging Face names the values it stands for: the
+    matrices as Q8_0 rounds them, everything else as the original has it.
+    more: further metadata; change(stored): alters what is written, {GGUF name: [bytes, ggml type, shape]}."""
+    from conftest import qwen35_model
+    tensors, config = qwen35_model(**{**QWEN35, **shape})
+    text = config["text_config"]
+    prefix = "model.language_model." if "model.language_model.embed_tokens.weight" in tensors else "model."
+    stored, same = {}, {}
+    for name, tensor in tensors.items():
+        if name == "lm_head.weight":
+            gguf = "output.weight"
+        elif name.startswith(prefix) and not name.startswith("model.visual."):
+            short = name[len(prefix):]
+            _, layer, *rest = short.split(".")
+            what = ".".join(rest)
+            gguf = QWEN35_NAMES.get(short) or (f"blk.{layer}.{QWEN35_WHOLE[what]}" if what in QWEN35_WHOLE else
+                                               f"blk.{layer}.{QWEN35_LAYER['.'.join(rest[:-1])]}.{rest[-1]}")
+        else:
+            same[name] = tensor  # the vision model and the look-ahead head: in the original, not in this GGUF
+            continue
+        value = tensor
+        if name.endswith(".A_log"):
+            value = -np.exp(tensor.astype(np.float32))
+        elif name.endswith(".conv1d.weight"):
+            value = tensor.reshape(tensor.shape[0], tensor.shape[-1])
+        elif name.endswith("norm.weight") and not name.endswith("linear_attn.norm.weight"):
+            value = tensor.astype(np.float32) + np.float32(1)
+        if value.ndim == 2 and not name.endswith(".conv1d.weight"):
+            blob, held = q8_0_blocks(np.ascontiguousarray(value))
+            stored[gguf], same[name] = [blob, 8, value.shape], held
+        else:
+            stored[gguf], same[name] = [np.ascontiguousarray(value, np.float32).tobytes(), 0, value.shape], tensor
+    if change:
+        change(stored)
+    arch, rope = "qwen35", text["rope_parameters"]
+    metadata = [("general.architecture", 8, arch), (f"{arch}.block_count", 4, text["num_hidden_layers"]),
+                (f"{arch}.context_length", 4, text["max_position_embeddings"]),
+                (f"{arch}.embedding_length", 4, text["hidden_size"]),
+                (f"{arch}.feed_forward_length", 4, text["intermediate_size"]),
+                (f"{arch}.attention.head_count", 4, text["num_attention_heads"]),
+                (f"{arch}.attention.head_count_kv", 4, text["num_key_value_heads"]),
+                (f"{arch}.attention.key_length", 4, text["head_dim"]),
+                (f"{arch}.attention.layer_norm_rms_epsilon", 6, text["rms_norm_eps"]),
+                (f"{arch}.rope.freq_base", 6, float(rope["rope_theta"])),
+                (f"{arch}.rope.dimension_count", 4, int(text["head_dim"] * rope["partial_rotary_factor"])),
+                (f"{arch}.ssm.conv_kernel", 4, text["linear_conv_kernel_dim"]),
+                (f"{arch}.ssm.state_size", 4, text["linear_key_head_dim"]),
+                (f"{arch}.ssm.group_count", 4, text["linear_num_key_heads"]),
+                (f"{arch}.ssm.time_step_rank", 4, text["linear_num_value_heads"]),
+                (f"{arch}.ssm.inner_size", 4, text["linear_value_head_dim"] * text["linear_num_value_heads"]),
+                (f"{arch}.full_attention_interval", 4, text["full_attention_interval"]),
+                ("tokenizer.ggml.model", 8, "gpt2"), ("tokenizer.ggml.pre", 8, "qwen35"),
+                *[(f"tokenizer.ggml.{key}_token_id", 4, id) for key, id in (("bos", bos), ("eos", eos)) if id is not None],
+                *more]
+    string = lambda text: struct.pack("<Q", len(text.encode())) + text.encode()
+    tokens = [f"w{i}" for i in range(text["vocab_size"])]
+    out = [b"GGUF", struct.pack("<IQQ", 3, len(stored), len(metadata) + 3)]
+    for key, kind, value in metadata:
+        out.append(string(key) + struct.pack("<I", kind))
+        out.append(string(value) if kind == 8 else struct.pack({4: "<I", 6: "<f"}[kind], value))
+    out.append(string("tokenizer.ggml.tokens") + struct.pack("<IIQ", 9, 8, len(tokens)) + b"".join(map(string, tokens)))
+    out.append(string("tokenizer.ggml.token_type") + struct.pack("<IIQ", 9, 5, len(tokens)) + struct.pack(f"<{len(tokens)}i", *[1] * len(tokens)))
+    out.append(string("tokenizer.ggml.merges") + struct.pack("<IIQ", 9, 8, 0))
+    blobs, offset = [], 0
+    for gguf, (blob, type_, shape) in stored.items():
+        out.append(string(gguf) + struct.pack("<I", len(shape)) + struct.pack(f"<{len(shape)}Q", *reversed(shape))
+                   + struct.pack("<IQ", type_, offset))
+        blobs.append(blob + b"\0" * (-len(blob) % 32))
+        offset += len(blobs[-1])
+    head = b"".join(out)
+    head += b"\0" * (-len(head) % 32)
+    return config, head + b"".join(blobs), same
+
+
+def safetensors_conversion(same, config, vocabulary, dtype):
+    safetensors = safetensors_file(same)
+    size = struct.unpack("<Q", safetensors[:8])[0]
+    expected = Conversion(safetensors[8:8 + size].decode(), 8 + size, json.dumps(config), vocabulary, "tokenizer.json",
+                          dtype=dtype, max_seq_len=1 << 20)
+    expected.feed(safetensors)
+    expected.finish()
+    return expected
+
+
+QWEN35_SHAPES = {"every second": dict(), "every fourth, the language model alone": dict(n_layers=8, every=4, prefix="model."),
+                 "a classifier of its own, whole heads turn": dict(shared=False, rotary=1.0, n_kv_heads=4, conv=2)}
+
+
+@pytest.mark.parametrize("dtype", ["int8", "float32", "float16", "int6"])
+@pytest.mark.parametrize("shape", QWEN35_SHAPES)
+def test_a_qwen35_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype):
+    """The list's way in: the checkpoint, tokenizer.bin and options of the safetensors of the same values, to the byte.
+    The norms come with their 1 and A_log as -exp(A_log), which the conversion must not do to them again (and could not
+    undo to the bit), the convolution comes without its axis of one, and two tensors under names of their own. Fed
+    4096 bytes at a time."""
+    config, file, same = qwen35_gguf(**QWEN35_SHAPES[shape])
+    vocabulary = unigram(config["text_config"]["vocab_size"])
+    got = with_original(file, config, vocabulary, "tokenizer.json", dtype)
+    expected = safetensors_conversion(same, config, vocabulary, dtype)
+    assert bytes(got.checkpoint) == bytes(expected.checkpoint)
+    assert bytes(got.tokenizer) == bytes(expected.tokenizer)
+    assert got.options == expected.options
+    assert got.options["arch"] == "qwen35" and got.options["linear"]["every"] == config["text_config"]["full_attention_interval"]
+
+
+def test_a_qwen35_gguf_alone_converts_to_the_checkpoint_of_the_same_values():
+    """Such a GGUF alone, were it to name a BOS (unsloth's names none and is refused, as T203 has it): the layers, the
+    heads and the turned part of a head come from its own metadata, by config.json's names, and its pre-tokenizer is
+    the one of a Qwen3.5's tokenizer.json, which normalizes to NFC."""
+    config, file, same = qwen35_gguf()
+    conversion = fed(file, "int8")
+    expected = safetensors_conversion(same, config, unigram(config["text_config"]["vocab_size"]), "int8")
+    assert bytes(conversion.checkpoint) == bytes(expected.checkpoint)
+    for key in ("arch", "linear", "head_dim", "rotary", "rms_norm_eps", "rope_theta"):
+        assert conversion.options[key] == expected.options[key], key
+    assert conversion.options["pretokenizer"] == "qwen35" and conversion.options["nfc"] is True
+    with pytest.raises(ValueError, match="names no BOS token"):
+        fed(qwen35_gguf(bos=None)[1], "int8")
+
+
+@pytest.mark.parametrize("change, what", [
+    (dict(full_attention_interval=4, layer_types=None), "linear-attention layers"),
+    (dict(linear_num_key_heads=1, linear_num_value_heads=1, linear_key_head_dim=32, linear_value_head_dim=32), "linear-attention layers"),
+    (dict(linear_num_key_heads=1, linear_key_head_dim=32), "linear-attention layers"),
+    (dict(rope_parameters={"rope_type": "default", "rope_theta": 10000000, "partial_rotary_factor": 0.5}), "rotated values"),
+    (dict(rope_parameters={"rope_type": "default", "rope_theta": 10000, "partial_rotary_factor": 0.25}), "RoPE theta"),
+    (dict(head_dim=16, num_attention_heads=8, num_key_value_heads=4), "number of heads"),
+    (dict(rms_norm_eps=1e-5), "RMSNorm epsilon"),
+    (dict(model_type="qwen3"), "architecture"),
+])
+def test_a_qwen35_gguf_that_is_not_the_originals_is_refused(change, what):
+    """What the tensors do not say: which layers attend over all positions, heads of the same product, how much of a
+    head turns."""
+    config, file, _ = qwen35_gguf(n_layers=8)
+    llama2_convert.gguf_weights(file, json.dumps(config))  # its own config goes through
+    text = {**config["text_config"], **change}
+    # another model's config.json has no text_config
+    other = text if change.get("model_type") else {**config, "text_config": text}
+    with pytest.raises(ValueError, match=what):
+        llama2_convert.gguf_weights(file, json.dumps(other))
+
+
+def test_a_qwen35_gguf_of_more_value_heads_than_key_heads_is_refused():
+    """llama.cpp stores the value heads of such a model (Qwen3.5 4B and up) tiled, every key head's first and then
+    every key head's second: read as they are, the heads would be other heads, without a word."""
+    config, file, _ = qwen35_gguf(value_heads=4)
+    with pytest.raises(ValueError, match="more value heads than key heads"):
+        llama2_convert.gguf_weights(file, json.dumps(config))
+
+
+def test_a_step_done_that_the_plan_has_not_is_refused():
+    """A GGUF's tensor that comes with a step of the plan done (T236) is taken without it, and one said to come with a
+    step its plan has not is refused: the 1 would be added to, or left off, a tensor the name table got wrong."""
+    assert llama2_convert.left_to_do(("one",), None) == ("one",) and llama2_convert.left_to_do(None, None) is None
+    assert llama2_convert.left_to_do(("one",), "one") is None
+    assert llama2_convert.left_to_do((("heads", 1, 0, 1, 8), ("one",)), "one") == (("heads", 1, 0, 1, 8),)
+    for transform in (None, ("decay",), (("heads", 1, 0, 1, 8),)):
+        with pytest.raises(ValueError, match="comes with the step 'one' done"):
+            llama2_convert.left_to_do(transform, "one")

@@ -7,8 +7,8 @@ GPU today, how the page chooses, and what has been measured.
 ## What runs on the GPU today
 
 **The blocks of a prompt**, up to 64 tokens at a time, and **the tokens the model writes**, 4 at a time (the
-forward pass and the sampling of each on the GPU, the ids read back once), for models of Llama's shape. Each goes to
-the GPU only where the device measures it faster than the CPU.
+forward pass and the sampling of each on the GPU, the ids read back once), for Llama, Qwen2, Qwen3, GPT-2 and
+GPT-NeoX models. Each goes to the GPU only where the device measures it faster than the CPU.
 
 The reason is the first measurement (2026-09-26, on the owner's three devices): moving the generation of one token
 to the GPU as it was on the CPU was slower everywhere. For Llama 3.2 1B, the GPU's speed divided by the CPU's was
@@ -130,6 +130,7 @@ The shapes are taken from public implementations, and each file keeps their noti
 | One token's matrix × vector (benchmark only) | llama.cpp's `mul_mat_vec`, ONNX Runtime's MatMulNBits (MIT) |
 | The sampling split over chunks of the vocabulary, in 4 dispatches (benchmark only) | MLC LLM's two-stage softmax (`chunk_lse`, `softmax_with_chunked_sum`; Apache-2.0) and llama.cpp's `argmax`, `soft_max` and `cumsum` (MIT). The order across chunks, the penalty applied only by the chunk that holds the token, and the draw in two stages without the nucleus are ours. |
 | One token's layer in 5 dispatches instead of 14 | built on llama.cpp's `mul_mat_vec` |
+| One token's RoPE and write into the cache, where a bias or a norm of a head comes first (Qwen2, Qwen3, GPT-2, GPT-NeoX: 7, 8 and 13 dispatches a layer) | ours: the lines of the fused write above, as a dispatch of their own (`TOKEN_ROPE`); the dispatches around it are the prompt's (the rows above), on one token's vectors |
 | One token's layer on packed int8 dot products, the vector quantized before each matrix | ONNX Runtime's DP4A MatMulNBits for small M (MIT), with the fused writes of the line above. The norm and its quantizing in one dispatch take their form from vLLM's `rms_norm_per_block_quant` (Apache-2.0; no lines copied). |
 | 6-bit weights widened to int8 as they are uploaded | ours (the packing is this project's); four values a 32-bit word by byte masks and shifts, the form of llama.cpp's Q6_K in CUDA and Metal (MIT; no lines copied) |
 | The device's ceilings (benchmark only) | the loops of clpeak (GPL-3.0): the shapes only, no lines copied |
@@ -176,7 +177,9 @@ the attention on any real GPU. The numbers from CI and from the development mach
 - It then writes 8 tokens greedy on the GPU (4, one on the CPU, 3 more) and checks the ids against NumPy's
   (or a near tie), the keys and values written back, a stop token and a sampled token.
 - Deliberately broken shaders (a wrong causal mask, a RoPE sign, a GQA head mapping, a missing quantization step
-  and others) fail these checks.
+  and others) fail these checks. So does a bias or a norm's weights read from another layer, on the packed shaders
+  too, because two of the made-up models (GPT-2 and Qwen with small matrices) are drawn so that 8-bit rounding does
+  not grow from layer to layer and their lines are tight.
 - The sampling on the GPU picks the token the CPU's sampling picks for the same logits and random number (or, where
   a float32 sum moves a border, one next to it: within 1e-4 of the probability mass), in the benchmark's check; the JavaScript it
   is held to is held to the CPU's kernel in `tests/smoke.mjs`.
