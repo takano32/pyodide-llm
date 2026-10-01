@@ -125,6 +125,18 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
   if (unsaid) await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "deviceMemory", { get: () => undefined, configurable: true }));
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error.message)));
+  // T242: what the page and its workers said and which requests failed, printed where a section failed or the page
+  // went down ("[object Object]" and "Load failed" alone did not say which fetch, of which worker, nor why)
+  const heard = [];
+  const hear = (line) => heard.push(`${((Date.now() - opened) / 1000).toFixed(1)} s ${line}`.slice(0, 600));
+  const opened = Date.now();
+  page.on("console", (message) => {
+    if (["error", "warning", "info"].includes(message.type())) hear(`console ${message.type()}: ${message.text()}`);
+  });
+  page.on("requestfailed", (request) => hear(`request failed: ${request.method()} ${request.url()} (${request.failure()?.errorText ?? "no reason given"})`));
+  page.on("crash", () => hear("the page crashed"));
+  page.on("close", () => hear("the page closed"));
+  let wentWrong = false;
   try {
     await page.goto(`${site}benchmark/?run=${sections}&model=${model}&size=${size}${query ? `&${query}` : ""}`);
     // the first visit reloads once, when the service worker takes the page over (T93): the wait starts again
@@ -143,7 +155,7 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     console.log(`sections: ${statuses.join(", ")}`);
     for (const [name, result] of Object.entries(results)) {
       // (--wrong: the GPU section is meant to be WRONG, and is checked below that it is, and what its report says)
-      if ((result.status === "wrong" && !(wrong && name === "gpu")) || (result.status === "error" && OURS.includes(name))) failed = true;
+      if ((result.status === "wrong" && !(wrong && name === "gpu")) || (result.status === "error" && OURS.includes(name))) failed = wentWrong = true;
     }
     if (wrong) {
       // T227's review: the verdicts every layer form gave, WRONG, are in the report's warnings, the worst first, before the
@@ -232,9 +244,10 @@ for (const engine of engines.length ? engines : ["chromium", "firefox", "webkit"
     }
   } catch (error) {
     console.log(`failed: ${String(error.message).split("\n")[0]}`);
-    failed = true;
+    failed = wentWrong = true;
   }
   if (errors.length) console.log(`page errors: ${errors.join(" / ")}`);
+  if (wentWrong || errors.length) for (const line of heard.slice(-60)) console.log(`heard: ${line}`);
   console.log("");
   // T141: Windows' WebKit sometimes never returns from close(), and each browser waits for the one before it (bench.yml's
   // Windows job sat 55 minutes after WebKit's report, 2026-09-27): give it 15 seconds and go on
