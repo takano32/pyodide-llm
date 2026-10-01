@@ -112,11 +112,11 @@ def llama_cpp_yarn(n_dims, base, factor, n_ctx_orig):
 
 
 def test_the_yarn_frequencies_and_magnitude_are_those_of_transformers_and_llama_cpp_on_a_grid():
-    """The review of T235: not one head of 128 and one of 8 (the test above) but 500 combinations of head size, theta,
+    """The review of T235: not one head of 128 and one of 8 (the test above) but 600 combinations of head size, theta,
     factor and original context, against the two code bases' own formulas: the same range of pairs (low, high), the
     same angle of every pair to 1e-12 (float64 against float64), and the same magnitude."""
     for head, base, factor, original in ((h, b, f, o) for h in (8, 64, 96, 128, 256) for b in (1e4, 5e5, 1e6, 1e7)
-                                         for f in (1.5, 2.0, 4.0, 8.0, 32.0) for o in (64, 2048, 8192, 32768, 131072)):
+                                         for f in (1.5, 2.0, 4.0, 8.0, 32.0) for o in (64, 2048, 8192, 16384, 32768, 131072)):
         scaling = {"rope_type": "yarn", "factor": factor, "original_max_position_embeddings": original}
         from_transformers, magnitude, dims = transformers_yarn(head, base, factor, original)
         from_llama_cpp, scale, same_dims = llama_cpp_yarn(head, base, factor, original)
