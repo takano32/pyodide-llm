@@ -29,6 +29,9 @@ MODELS = {
     "every third": dict(n_layers=7, every=3, prefix="model."),
     "every fourth": dict(n_layers=8, every=4, n_kv_heads=4, head_dim=8, rotary=0.5),
     "whole heads turn": dict(rotary=1.0, conv=2, n_kv_heads=1),
+    # (the review) heads of 256 with a quarter of them turned, as every real Qwen3.5 has: 64 of 256, and q's matrix of
+    # 1024 rows in a dim of 32
+    "heads of 256": dict(n_heads=2, n_kv_heads=1, head_dim=256, rotary=0.25, key_heads=2, value_heads=4, key_dim=32, value_dim=32),
 }
 
 

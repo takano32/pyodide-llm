@@ -215,6 +215,11 @@ MADE_UP = {
     "every second layer, whole heads turn": dict(linear_num_key_heads=1, linear_num_value_heads=2, linear_key_head_dim=16,
                                                   linear_value_head_dim=4, num_hidden_layers=4, full_attention_interval=2,
                                                   partial_rotary_factor=1.0, linear_conv_kernel_dim=3),
+    # (the review) heads of 256 with RoPE over 64 of them, as every real Qwen3.5 has (the others' heads are 16): the
+    # rotated count and its interleaving on heads that wide, the attention kernels' scale of 1/16
+    "heads of 256, a quarter turned": dict(linear_num_key_heads=2, linear_num_value_heads=4, linear_key_head_dim=32,
+                                           linear_value_head_dim=32, num_hidden_layers=4, head_dim=256, num_attention_heads=2,
+                                           num_key_value_heads=1, intermediate_size=64),
 }
 
 
@@ -226,8 +231,10 @@ def made_up(name, settings, positions=80):
     settings = dict(settings)
     every, layers = settings.pop("full_attention_interval", 4), settings["num_hidden_layers"]
     rotary = settings.pop("partial_rotary_factor", 0.25)
+    shape = dict(intermediate_size=64, num_attention_heads=4, num_key_value_heads=2, head_dim=16)
+    shape.update({key: settings.pop(key) for key in tuple(shape) if key in settings})
     config = Qwen3_5TextConfig(
-        vocab_size=320, hidden_size=32, intermediate_size=64, num_attention_heads=4, num_key_value_heads=2, head_dim=16,
+        vocab_size=320, hidden_size=32, **shape,
         max_position_embeddings=256, eos_token_id=7,
         layer_types=["linear_attention" if (layer + 1) % every else "full_attention" for layer in range(layers)],
         rope_parameters={"rope_type": "default", "rope_theta": 10000000.0, "partial_rotary_factor": rotary,
