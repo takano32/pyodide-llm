@@ -46,8 +46,8 @@ sys.path.insert(0, "public")
 import llama2_convert, llama2_numpy as L
 
 def plan_of(header, form, dtype):
-    six = dtype == "int6"
-    npdtype = np.dtype(np.int8 if dtype in ("int8", "int6") else dtype)
+    packing = dtype if dtype in L.PACKED else None
+    npdtype = np.dtype(np.int8 if dtype == "int8" or packing else dtype)
     probe = L.Llama.__new__(L.Llama)
     (probe.dim, probe.hidden_dim, probe.n_layers, probe.n_heads, probe.n_kv_heads, vocab, probe.seq_len) = header
     probe.vocab_size = abs(vocab)
@@ -58,7 +58,7 @@ def plan_of(header, form, dtype):
     probe.rope_magnitude = 1.0  # the places, not the values (as external_tensors() sets it)
     # the engine's own condition for keeping int8: the int8 kernels work on groups of 32 only
     keep = npdtype == np.int8 and all(n % 32 == 0 for n in (probe.dim, probe.q_dim, kv_dim, probe.hidden_dim))
-    places = L.Places(npdtype, six)
+    places = L.Places(npdtype, packing)
     freq = lambda width: np.zeros(width // 2)
     if form["arch"] in ("gpt2", "neox"):
         probe.gpt2_tensors(places.take, vocab > 0, keep, kv_dim, places.dtype, freq)
@@ -185,6 +185,9 @@ function halfToFloat(h) {
     ...big("llama, grouped-query, the classifier the embedding", [256, 512, 8, 8, 2, 20000, 4096]),
     ...big("qwen2, biases and grouped-query", [256, 512, 8, 8, 2, 20000, 4096], { bias: true }),
     ...big("qwen3, normalized heads of 64 in a dim of 256", [256, 512, 8, 8, 4, 20000, 4096], { qk_norm: true, head_dim: 64 }),
+    // T230: ternary weights (rows of whole groups of 128): no corrections, and the activations' sums after their scales
+    ...big("ternary qwen3, grouped-query", [256, 512, 8, 8, 4, 20000, 4096], { qk_norm: true, head_dim: 64 }, ["ternary"]),
+    ...big("ternary, a key for every head, a classifier of its own", [256, 768, 8, 8, 8, -20000, 4096], {}, ["ternary"]),
     ...big("gpt2", [256, 1024, 4, 8, 8, 20000, 1024], { arch: "gpt2" }, ["int8", "int6", "float32"]),
     ...big("gpt-neox, a classifier of its own", [256, 1024, 4, 8, 8, -20000, 2048], { arch: "neox" }),
     // rows that are no whole groups of 32: the int8 kernels do not run, the weights are widened to float32, and the keys and
@@ -196,7 +199,7 @@ function halfToFloat(h) {
   let engines = 0, tightest = Infinity, loosest = 0;
   const plans = plansOf(shapes.map(({ name, loose, ...shape }) => shape));
   plans.forEach((p, n) => {
-    const quantized = p.dtype === "int8" || p.dtype === "int6";
+    const quantized = ["int8", "int6", "ternary"].includes(p.dtype);
     for (const relaxed of [true, false]) {
       for (const shared of [true, false]) {
         // (the worker's options: whether the int8 kernels run is footprint()'s to say)
@@ -223,7 +226,7 @@ function halfToFloat(h) {
   // of a block come back through, and its rows), for every model the GPU takes: int8 and six bits of whole groups
   let withGpu = 0;
   plans.forEach((p, n) => {
-    if (!p.keep_int8 || shapes[n].loose) return;
+    if (!p.keep_int8 || shapes[n].loose || p.dtype === "ternary") return;  // (T231: ternary weights stay on the CPU, T232 is the GPU's)
     for (const relaxed of [true, false]) {
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: true, outliers: 8, gpu: true, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
@@ -289,6 +292,12 @@ function halfToFloat(h) {
     ["japanese-gpt-neox small", [768, 3072, 12, 12, 12, -44416, 2048], 172787740, { arch: "neox" }, "int8"],
     ["Pythia 12B (?hf=)", [5120, 20480, 36, 40, 40, -50688, 2048], 13333749788, { arch: "neox" }, "int8"],
     ["Llama 2 13B (?hf=)", [5120, 13824, 40, 40, 40, -32000, 4096], 11390177308, {}, "int6"],
+    // T230: the ternary models there are, as ternary (Ternary Bonsai 1.7B, 4B, 8B: Qwen3s; Ternary Bonsai 2 27B: a Qwen3.5)
+    ["Ternary Bonsai 1.7B", [2048, 6144, 28, 16, 8, 151936, 4096], 484372508, { qk_norm: true, head_dim: 128 }, "ternary"],
+    ["Ternary Bonsai 4B", [2560, 9728, 36, 32, 8, 151936, 4096], 1132048412, { qk_norm: true, head_dim: 128 }, "ternary"],
+    ["Ternary Bonsai 8B", [4096, 12288, 36, 32, 8, 151936, 4096], 2129760284, { qk_norm: true, head_dim: 128 }, "ternary"],
+    ["Ternary Bonsai 2 27B", [5120, 17408, 64, 24, 4, -248320, 4096], 7662073884,
+      { arch: "qwen35", head_dim: 256, linear: { every: 4, key_heads: 16, value_heads: 48, key_dim: 128, value_dim: 128, conv: 4 } }, "ternary"],
   ];
   let cases = 0, atTheEdge = 0;
   for (const [name, header, size, form, dtype] of listed) {

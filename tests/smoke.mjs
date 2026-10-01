@@ -370,10 +370,10 @@ ties = values.copy()
 ties[5, :32] = np.arange(32, dtype=np.float32) - 15.5  # halves: with the largest 31 the scale is 1, and they all tie
 ties[5, 31] = 31.0
 assert np.array_equal(np.rint(ties[5, :31]), np.rint(ties[5, :31] / 1.0)) and np.any(np.rint(ties[5, :31]) % 2 == 0)
-packed, scales = quantize_rows(values, six=True)
+packed, scales = quantize_rows(values, "int6")
 sixes, quarter = llama2_numpy.quantize6(values)
 assert np.array_equal(packed.reshape(-1), llama2_numpy.pack6(sixes).reshape(-1)) and np.array_equal(scales, quarter), "quantize6_x is not quantize6()"
-packed, scales = quantize_rows(ties, six=True)
+packed, scales = quantize_rows(ties, "int6")
 sixes, quarter = llama2_numpy.quantize6(ties)
 assert np.array_equal(packed.reshape(-1), llama2_numpy.pack6(sixes).reshape(-1)) and np.array_equal(scales, quarter), "quantize6_x rounds otherwise"
 for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensors, neox_config, "neox")):
@@ -382,6 +382,44 @@ for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensor
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int6", positions, numpy_six)
     llama2_convert.convert_weights(llama2_convert.Arrays(tensors_of), config_of, "int6", positions, kernel_six, quantize_rows=quantize_rows)
     assert numpy_six == kernel_six, f"the kernels' quantizer changed the int6 {arch} checkpoint"
+# T230: and the ternary dtype: ternary_x is ternary() to the byte (a group of zeros, scales of every size), refuses
+# what ternary() refuses, and a whole conversion of PQ2_0 tensors is the same bytes with it as without
+signs = np.random.default_rng(13).integers(-1, 2, (96, 256)).astype(np.float32)
+trits = (signs.reshape(-1, 128) * (np.abs(np.random.default_rng(14).standard_normal((192, 1))) * 0.02).astype(np.float16).astype(np.float32)).reshape(96, 256)
+trits[2, 128:] = 0.0
+packed, scales = quantize_rows(trits, "ternary")
+theirs = llama2_numpy.ternary(trits)
+assert packed.shape == theirs[0].shape and np.array_equal(packed, theirs[0]) and np.array_equal(scales, theirs[1]), "ternary_x is not ternary()"
+for spoiled in (0.5, 2.0, float("nan")):
+    wrong = trits.copy()
+    wrong[40, 3] = spoiled * np.abs(trits[40, :128]).max()
+    for pack in (llama2_numpy.ternary, lambda rows: quantize_rows(rows, "ternary")):
+        try:
+            pack(wrong)
+            raise AssertionError(f"a value of {spoiled} times its group's scale passed as ternary")
+        except ValueError as error:
+            assert str(error) == llama2_numpy.NOT_TERNARY
+pq_tensors, pq_config = qwen3_model(128, 4, 2, 32, hidden=256)
+pq_header, pq_file = {}, bytearray()
+for name, tensor in pq_tensors.items():
+    if tensor.ndim == 2:
+        count = tensor.size // 128
+        data = np.empty((count, 34), dtype=np.uint8)
+        data[:, :2] = (np.abs(rng.standard_normal(count)) * 0.01).astype(np.float16).view(np.uint8).reshape(-1, 2)
+        data[:, 2:] = llama2_numpy.pack_ternary(rng.integers(-1, 2, (count, 128))).reshape(count, 32)
+        data, kind = data.tobytes(), "PQ2_0"
+    else:
+        data, kind = tensor.tobytes(), "F32"
+    pq_header[name] = {"dtype": kind, "shape": list(tensor.shape), "data_offsets": [len(pq_file), len(pq_file) + len(data)]}
+    pq_file += data
+outs = []
+for quantizer in (None, quantize_rows):
+    stream = llama2_convert.Stream(pq_header, 0, pq_config, "ternary", 24, quantize_rows=quantizer)
+    for at in range(0, len(pq_file), 1000):
+        stream.feed(bytes(pq_file[at:at + 1000]))
+    stream.finish()
+    outs.append(bytes(stream.out))
+assert outs[0] == outs[1], "ternary_x changed the ternary checkpoint"
 # T110: float32 to float16 as NumPy rounds it, and attention over a float16 cache the same to the bit as over the
 # float32 values it stands for (every head alone, and heads in two ranges)
 kernel = llama2_numpy.load_kernels("simdkernel.so")

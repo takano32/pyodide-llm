@@ -54,6 +54,8 @@ part "the latest Pyodide" npm install --no-save pyodide@latest
 part "smoke test" node tests/smoke.mjs
 # T229: the kernels of Qwen3.5's linear attention against the same arithmetic in JavaScript (under a second)
 part "the delta rule's kernels" node tests/delta-check.mjs
+# T230, T231: the kernels of the ternary weights against the same arithmetic in JavaScript, to the bit (under a second)
+part "the ternary weights' kernels" node tests/ternary-check.mjs
 # T217 (the review of T201): attention's softmax where its largest score decides something (two positions far above
 # the rest): a largest that leaves positions out, which forward-check's line cannot see (under a second)
 part "attention's largest score" node tests/attention-check.mjs
@@ -79,11 +81,23 @@ if [ "$suite" = full ]; then
     done
   }
   part "forward.js against NumPy, a made-up Qwen3.5" made_up_qwen35
+  # T230, T231: made-up ternary models (the real ones are too large for the build): the shape of Ternary Bonsai 1.7B,
+  # the same with a classifier of its own and outlier channels, and a hybrid one as Ternary Bonsai 2 27B is; on a
+  # shared memory, a plain one and a 64-bit one, and without relaxed SIMD (matmul_t2, the same numbers to the bit)
+  made_up_ternary() {
+    mkdir -p .tmp
+    for kind in qwen3 own hybrid; do python tests/make_ternary.py .tmp/made-up-ternary-$kind ternary $kind; done
+    for memory in "" --plain --wide "--without relaxed"; do
+      node tests/forward-check.mjs .tmp/made-up-ternary-qwen3 .tmp/made-up-ternary-own .tmp/made-up-ternary-hybrid --rounds 1 --positions 128 $memory
+    done
+  }
+  part "forward.js against NumPy, made-up ternary models" made_up_ternary
   # T148: the default choice of the GPU or the CPU for a prompt's blocks, with a made-up GPU's worker
   part "the GPU or the CPU by default" node tests/gpu-default-check.mjs
   part "the software threads" node tests/threads-check.mjs
   # T229: the value heads of a linear-attention layer's delta rule shared out among the threads, to the bit
   part "the software threads, a made-up Qwen3.5" node tests/threads-check.mjs .tmp/made-up-qwen35-float32 .tmp/made-up-qwen35-int8 --rounds 1
+  part "the software threads, made-up ternary models" node tests/threads-check.mjs .tmp/made-up-ternary-qwen3 .tmp/made-up-ternary-hybrid --rounds 1
   # T206: the pre-tokenizers against the real ones at every code point (about 90 s, too long for the deploy)
   part "the pre-tokenizers at every code point" env EVERY_CODE_POINT=1 python -m pytest tests/test_bytebpe.py -q -k every_character
 fi
