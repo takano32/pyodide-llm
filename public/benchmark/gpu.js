@@ -2306,10 +2306,10 @@ async function checkSampling(kind = "one") {
   }
   // T219: logits the sampler must refuse (T195's rule: a NaN anywhere, +inf anywhere, or all -inf: the State's
   // not_finite word set, stopped set, nothing sampled) and ones it must not (UNREFUSED: a few -inf, which the CPU never
-  // draws either, and the review's: denormals and -0, one finite logit among -inf): a NaN or
-  // +inf at the first token, the last (a thread's last, the vocabulary's last chunk's) and in the middle, with a nucleus
-  // and without, at temperature 0 too; the review's: NaNs of other bits, every logit NaN, +inf beside -inf, and a NaN or
-  // +inf on the penalty's last token (which the penalty multiplies or divides)
+  // draws either, and the review's: denormals and -0, one finite logit among -inf): a NaN or +inf at the first token,
+  // the last (a thread's last, the vocabulary's last chunk's) and in the middle, with a nucleus and without, at
+  // temperature 0 too; the review's: NaNs of other bits, every logit NaN, +inf beside -inf, and a NaN or +inf on the
+  // penalty's last token (which the penalty multiplies or divides)
   for (const vocab of [1003, 128256]) {
     const places = [["nan", 0], ["nan", vocab - 1], ["nan", (vocab / 2 | 0) + 1], ["+inf", vocab - 1], ["+inf", 777], ["-inf all", 0],
       ["nan, the sign set", 3], ["nan, signaling", vocab - 2], ["nan, all ones", 500], ["nan all", 0], ["+inf and -inf", 600],
