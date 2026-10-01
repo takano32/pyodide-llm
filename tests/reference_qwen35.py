@@ -216,9 +216,11 @@ MADE_UP = {
                                                   linear_value_head_dim=4, num_hidden_layers=4, full_attention_interval=2,
                                                   partial_rotary_factor=1.0, linear_conv_kernel_dim=3),
     # (the review) heads of 256 with RoPE over 64 of them, as every real Qwen3.5 has (the others' heads are 16): the
-    # rotated count and its interleaving on heads that wide, the attention kernels' scale of 1/16
+    # rotated count and its interleaving on heads that wide, the attention kernels' scale of 1/16. Eight layers, two of them
+    # full: the converter takes a stacked kind of exactly one layer for a tensor of its own (a 1-layer Llama has no better
+    # luck: "(32,), not (1, 32)"), which no real model has
     "heads of 256, a quarter turned": dict(linear_num_key_heads=2, linear_num_value_heads=4, linear_key_head_dim=32,
-                                           linear_value_head_dim=32, num_hidden_layers=4, head_dim=256, num_attention_heads=2,
+                                           linear_value_head_dim=32, num_hidden_layers=8, head_dim=256, num_attention_heads=2,
                                            num_key_value_heads=1, intermediate_size=64),
 }
 
