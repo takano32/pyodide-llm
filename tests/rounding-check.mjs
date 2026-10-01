@@ -56,12 +56,13 @@ for (const how of hows) {
         if (!all) why.push("the verdicts do not say how the keys and values were rounded");
         else if (holds.far) why.push(`${holds.far} keys and values farther than a neighbour (a float16 off)`);
         else if (how === "nearest") {
-          if (holds.inward || holds.outward) why.push("rounded the other way on a device of the nearest");
+          if (share(holds.inward + holds.outward) > 0.01) why.push(`${holds.inward + holds.outward} keys and values rounded the other way on a device of the nearest`);
         } else {
           const [wanted, other] = how === "away" ? [holds.outward, holds.inward] : [holds.inward, holds.outward];
-          // about half of the values of a random row are not floats16 already and lie nearer the far neighbour than the near
+          // about half of the keys and values (those the nearest float16 lies on the far side of) come out the way asked
           if (!(share(wanted) > 0.35 && share(wanted) < 0.65)) why.push(`${(100 * share(wanted)).toFixed(0)}% rounded ${how}, where about half were to (the rounding did not take?)`);
-          if (other) why.push(`${other} keys and values rounded the other way as well`);
+          // (a float32 sum in the GPU's order falls on the other side of a rounding boundary in 1 of a few thousand)
+          if (share(other) > 0.01) why.push(`${other} keys and values rounded the other way as well`);
         }
         said = `${seconds} s; layers ${layers.filter(([, verdict]) => verdict.ok).length}/${layers.length} ok, tokens ${tokens?.ok ? "ok" : "not ok"}${said}`;
       }
