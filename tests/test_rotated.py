@@ -356,6 +356,35 @@ def prism_metadata(config, block, signs, tensors):
 
 
 @pytest.mark.parametrize("dtype", ["float32", "int8"])
+@pytest.mark.parametrize("shape", ["two value heads to a key head", "three value heads to a key head (the 27B)", "three to one, every fourth"])
+def test_a_rotated_gguf_of_more_value_heads_than_key_heads_has_every_head_back_but_its_output_columns(shape, dtype, monkeypatch):
+    """T245's reader and T237's together, on the 27B's own kind of file: llama.cpp tiles the value heads of the rows of
+    q-k-v, z, the two gates' matrices, A and dt_bias and the convolution, and where the output matrix is folded into the
+    rotated basis it leaves its columns in Hugging Face's order (prism.hadamard.gdn_v_grouped: a column moved after the
+    fold would be another matrix). So the reader puts every head back but those columns, and the converted checkpoint is
+    the one of the model folded by hand. (The review of T237 ran it on T245's branch merged in: it passes there, and fails
+    for every shape and dtype where gguf_model() does not drop the "tiled" mark of linear_attn.out_proj.weight.)"""
+    import test_gguf
+    if not hasattr(test_gguf, "QWEN35_VALUE_HEADS"):
+        pytest.skip("T245's reader of value heads that llama.cpp tiled (test_gguf.QWEN35_VALUE_HEADS) is not in this tree yet")
+    monkeypatch.delitem(test_gguf.QWEN35_VALUE_HEADS, "linear_attn.out_proj.weight")  # the file's columns are left alone
+    shape = {**test_gguf.QWEN35, **test_gguf.QWEN35_SHAPES[shape], "shared": False}
+    tensors, config = qwen35_model(**shape)
+    said, signs = basis(16, widths_of(config))
+    kinds = [test_gguf.QWEN35_LAYER[kind.rsplit(".", 1)[0]] for kind in FOLDED if kind.rsplit(".", 1)[0] in test_gguf.QWEN35_LAYER]
+    layers, types = config["text_config"]["num_hidden_layers"], config["text_config"]["layer_types"]
+    names = [f"blk.{layer}.{kind}.weight" for layer in range(layers) for kind in kinds
+             if (kind in ("attn_qkv", "attn_gate", "ssm_out")) == (types[layer] == "linear_attention") or kind.startswith("ffn")]
+    config_, file, same = qwen35_gguf(more=prism_metadata(config, 16, dict(signs), names + ["output.weight"]),
+                                      fold=lambda t: folded(t, 16, signs), **shape)
+    vocabulary = unigram(config["text_config"]["vocab_size"])
+    expected = safetensors_conversion(same, config, vocabulary, dtype)
+    for got in (with_original(file, config, vocabulary, "tokenizer.json", dtype), fed(file, dtype)):
+        assert got.options["rotated"] == said
+        assert bytes(got.checkpoint) == bytes(expected.checkpoint)
+
+
+@pytest.mark.parametrize("dtype", ["float32", "int8"])
 def test_a_rotated_gguf_converts_as_the_safetensors_of_the_same_values_that_says_the_same(dtype):
     """Both ways the page takes a GGUF (alone, and with its original's vocabulary and config.json): the basis of
     prism.hadamard.* is in the options, and the checkpoint is the one of the values the GGUF holds."""
