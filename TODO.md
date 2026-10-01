@@ -1441,6 +1441,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T233 [追加][Bonsai] 一覧に Bonsai 2 を足す — 状態: 未着手（T229〜T231 と、回した基底 T237・27B の参照 T238 の後、GPU は T232 の後でもよい。規模 中）
 - `src/models.js` の項目（PTQ1_0 か PQ2_0、語彙と config は原本 Qwen3.8 から T136 の段 ② の形で、書式、思考の形の 2 つ）、`LICENSES`、`gguf.yml` の突き合わせ、固定値、format_check。大きさの警告（64 ビットのメモリ、Chrome と Firefox のみ、iPhone は不可の見込み）。本番の `models.yml` で答えること。
 - T228 から（2026-10-01）: 規模を中に上げた。**原本の Qwen3.8 は 3 値でない**ので、段 ② の形で原本から取るのは語彙・config・書式だけで、`gguf.yml` の突き合わせの相手は F16 の GGUF。書式はマクロを呼ぶので手で書く（ChatML。考える形の既定は `reasoning_effort: xhigh` で、システム文が無くてもシステムのターンが入る。すぐ答える形は `<think>\n\n</think>\n\n`）。BOS は本物では置かない（`add_bos_token: false`）。止まりは 248046 と 248044。文脈は 262144 だが 16 GiB に入るのは約 16 万位置まで（PTQ1_0）で、切る値は持ち主に聞く。出典は Prism ML と Qwen の両方（NOTICE.txt）。勧めの設定の top_k・min_p・presence_penalty はエンジンに無い。Safari は不可（重みだけで 5.53 GiB）。
+- T237・T238 から（2026-10-01）: (1) **項目に手で書くものは無い**: 変換器が GGUF の `prism.hadamard.*` から `rotated`（塊 1024 と幅 5120・6144・17408 の符号）を options に載せる。(2) **T245 の読み手（value head の並び）と合わせるとき、回した基底の GGUF では `ssm_out` の列を並べ替えない**（`gdn_v_grouped`: GGUF は Hugging Face の並びのまま持つ）。`gguf_model()` の最後に、回した基底の見出しから `out_proj.weight` の `tiled` を外す行を入れてあるが、T245 の読み手がこの枝に無いので試験は書けていない: T245 が本線に入った後に、value head が key head の 2 倍か 3 倍の回した作り物の GGUF の試験を足す。(3) **3 値の型（T230・T231）との合わせ**: `forward.js` の `matmuls()` は量子化の前に入力を回すので、3 値のカーネルはそのまま回した入力を読む見込み（合わせた後に「3 値で回した基底」の作り物を forward-check に）。`frameArrays()` と `footprint()` の引数は T230・T231 の枝と同じ行を触っていて、merge でぶつかる。(4) **正しさの確かめは `tests/reference_27b.sh`**: fork の ID と logits（3 つの文、78 位置）がそこにある。ページの forward（3 値のカーネル、7 ビットの活性値）の 27B を同じ文で fork と比べる。線は T238 のもの（fork の 2 つの道の差の 3 倍）。(5) **書式**: すぐ答える形は T236 の Qwen3.5 と同じ ID の列（`<|im_start|>` を BOS にして `user\n{prompt:trim}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n`）。fork が切った ID もこれ。GGUF の書式を jinja2 で描くと、既定はシステムのターンつきの考える形（xhigh）、`reasoning_effort: medium` が T236 の考える形と同じ文。(6) **速さの目安**: fork の CPU が CI の 4 論理コアで 0.61〜0.72 tok/s。(7) GPU は回した基底を断る（T232 で変換のシェーダが要る）。
 
 ### T234 [文書][Bonsai] Bonsai 2 の結果を docs と gist に — 状態: 未着手（T233 の後。規模 小）
 - 速さ・メモリ・品質（perplexity か固定値）を記録のあるものだけで。
@@ -1777,11 +1778,80 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **持ち主に決めてもらうこと**: (1) 名前「Qwen3.5 0.8B (thinking)」「Qwen3.5 0.8B (no thinking)」と note「thinks before it answers · 日本語 / English · fetches 812 MB (GGUF) → int8 850 MB · desktop only」「answers at once · 日本語 / English · fetches 812 MB (GGUF) → int8 850 MB · desktop only」（Qwen3 の並びと同じ形。絵も読むモデルで、ページは文だけ）。(2) BOS（上の表。本物の ID にしてある）。(3) 考える形の項目を置くか（カードの注意。書式が考える形を持つので Qwen3 にならって置いた）。(4) 生成の設定（上）。(5) 文脈を 4096 より伸ばすか。(6) ページの「開けるモデル」の文（`src/pages/index.astro` の 2 か所、変えていない）: 「A Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX model published as safetensors …」と「Other repository… — any Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX」。案は Qwen3 の後に「Qwen3.5」を足す。ただし `?hf=` の Qwen3.5 は書式を読めず（素の続き書き、`&template=` で渡せる）、頭に `<|endoftext|>` が付く。
 - **未計測・未確認**: 本番の `models.yml`（準備完了の秒、tok/s、ヒープ。本線に入れた後に本会話が回す）。実ブラウザ。ブラウザの中の変換の秒。Safari の 6 ビットの道（Qwen3.5 の int6 は forward.js で回していない、T229）。持ち主の端末。考える形の答えの質と、考えが回り続ける頻度（考える形は 1 問の頭の 32 トークンを読んだだけ）。日本語の文の質（数問の頭を読んだだけ）。`browsers.yml` の huggingface ジョブ（週 1 回）。`?hf=Qwen/Qwen3.5-0.8B`。BOS の損がどこから来るか（状態に残るという見立てだけ）。チャットの形の BOS の差は 6 問の greedy で、数は少ない。
 
-### T237 [追加][Bonsai] 回した基底（符号と Walsh–Hadamard 変換）を forward に — 状態: 未着手（T230・T231 の後。規模 中）
+### T237 [追加][Bonsai] 回した基底（符号と Walsh–Hadamard 変換）を forward に — 状態: 実装済み（2026-10-01、ブランチ `t237-t238-rotated-basis`、本線に入れる前、レビュー前。Opus medium。規模 中）
 - Bonsai 2 の 27B の重みは Hadamard で回した基底にある（F16 の GGUF も）: 3 値の行列の前に活性値の符号の反転と塊ごと（1024）の Walsh–Hadamard 変換、埋め込みを引いた後にその逆。CPU の費用は積和の約 0.1%（見積もり）。触る所は NumPy の forward・`forward.js`・カーネル 1 つ・シェーダ。
+- **定義（固定した版の出どころで確かめた）**: R = H S。S は入力の値ごとの符号（±1）、H は塊ごとの正規化した Walsh–Hadamard 変換（Sylvester の並び: (i, j) の成分は (−1)^popcount(i & j) / √塊）。H は対称で自分が逆。ファイルは W の代わりに W R⁻¹ = W S H を持ち、forward は R x に掛ける。埋め込みの行は R e で入っていて、引いた行を e = S (H z) で戻す。
+  - **どの行列か**: forward が活性値に掛ける行列の全部（full の層の q と gate・k・v・o、linear の層の qkv・z・out、FFN の 3 つ、分類器）。GGUF の `prism.hadamard.weight_names` の 401 個がちょうどこれで、`inverse_weight_names` は `token_embd.weight` だけ。**回さないもの**: linear の層の gate の小さな行列 2 つ（`ssm_alpha`・`ssm_beta`、BF16）、norm、畳み込み、`ssm_a`、`ssm_dt.bias`。norm は回す前の基底で掛かり（norm の後で回す）、状態と KV は行列の出力なので元の基底にある。
+  - **符号の出どころ**: GGUF のメタデータ（`sign_mode = explicit`、`sign_widths = [5120, 6144, 17408]`、`sign_values` は 28,672 個の ±1 を幅の順に）。乱数の種ではない。fork は符号を**入力の幅**で引くので、幅 6144 の `attn_output` と `ssm_out` は同じ符号。
+  - **正規化**: 1/√塊 を変換の頭で 1 回掛ける（分けない）。塊 1024 では 1/32 で、float32 で正確。
+  - **塊と余り**: 塊 1024 は 5120（5 塊）・6144（6 塊）・17408（17 塊）をどれも割り切る。**余りは無い**。fork は塊が幅を割り切らないファイルを読み込みで断る（頼みの「5120 は 1024 の倍数でない」は誤り）。
+  - **value head の並び**: linear の層の `ssm_out` の入力だけ、fork は活性値を llama.cpp の並びから Hugging Face の並びに戻してから符号と変換を掛ける（`gdn_v_grouped = true`。回した後の列は並べ替えられないので、GGUF は `ssm_out` を Hugging Face の並びのまま持つ）。エンジンは Hugging Face の並びで計算するので、何もしなくてよい。
+  - **メタデータ**（実物の頭から）: `prism.hadamard.version = 1`、`block_size = 1024`、`transform = normalized-sylvester-walsh-hadamard`、`axis = input-last-dimension`、`sign_mode = explicit`、`sign_widths`、`sign_values`、`weight_names`、`inverse_weight_names`、`gdn_v_grouped = true`。3 つのファイル（PTQ1_0・PQ2_0・F16）で同じ。version 2 は埋め込みが分類器を兼ねる形（`tied_output`、`output.weight` なし）。
+  - **出どころ**（https://github.com/PrismML-Eng/llama.cpp の `88c4bc60b9c9578f134385be9535e853f2db9b9f`、MIT。式だけを取り、行は写していない）: `src/llama-graph.cpp` 1546〜1576 行（`build_lora_mm`: 行列を引いて、並べ替え・符号・変換を、同じ入力には 1 回だけ）、2398〜2410 行（`build_embd_rows`: h = s × (H z)）、`src/llama-graph.h` 20〜32 行、`src/llama-impl.h` 57〜74 行（変換は「回す行列との積」の形で頼み、CPU は蝶の計算に替える）、`src/llama-model.cpp` 1196〜1355 行（メタデータの読みと断り）・2054〜2065 行（H の成分）・2122〜2131 行（`ssm_out` の並べ替え）、`ggml/src/ggml-cpu/ops.cpp` 12066〜12140 行（1/√n を掛けてから、幅 1・2・4・… の和と差）、`src/models/qwen35.cpp`（どの行列が `build_lora_mm` を通るか）、`conversion/qwen.py` 446〜632 行（value head の並び）。白書（Bonsai-demo の `bfaea577…` の `bonsai-2-27b-whitepaper.pdf`）2.2 節・2.4 節（R = (1/√n) H_n S、n = 1024、f(x) = W(Rx)）・付録 A.2。カード（`b072e1d3…`）の 64・75 行。
+- **設計**:
+  - **`FORM` に `rotated` を 1 つ足した**（T229 の `linear` と同じ形）。`{"block": 塊, "signs": {幅: 符号のビットを 16 進にした文}}`、無いモデルは None で options に載らない。符号は 28,672 個で、16 進で 7,168 字（manifest の JSON にそのまま入る）。**ファイルの並びは 1 バイトも動かない**（同じテンソルが別の基底で入っているだけ）ので、`layout()` は受け取るが使わない。
+  - **NumPy**（`llama2_numpy.py` の `hadamard()`・`rotate()`・`unrotate()`・`rotated_form()`）: `Llama(rotated=)`。forward は行列の前で `turned()`（回さないモデルは素通し）、埋め込みの後で `unrotate()`。Python の分岐は「埋め込みの後に戻すか」の 1 つ。GPT-2 と GPT-NeoX では断る（fork の許す一覧に無い）。Llama・Qwen2・Qwen3・Qwen3.5 で動く。
+  - **畳めた所**: 同じ入力を読む行列は 1 回の変換を使い回す（q・gate・k・v、linear の層の qkv と z、FFN の gate と up）。1 トークンに 64 層 × 33 塊 + 埋め込み 5 + 分類器 5 = 2,122 塊。**畳めない所**: 変換を重みの側に畳む（ファイルを元の基底に戻す）と W S H R = W になり、3 値でなくなる（float32 で 107 GB）。norm の重みは値ごとなので変換と入れ替えられない。
+  - **カーネル**（`kernels/kernel.ts` の `rotate`・`unrotate`）: 符号に 1/√塊 を掛けたものを Python が渡し、カーネルは掛けてから蝶をその場で回す（幅 1 と 2 は 4 値ずつのスカラー、幅 4 からは v128 の 4 値ずつ）。どの数も float32 の積・和・差 1 回なので NumPy とビット単位で同じ。`unrotate` は同じ符号の大きさ（1/√塊）を先に掛け、最後に符号のビットを XOR する。静的なデータは無い。64 ビットのメモリのカーネルも同じ。
+  - **`forward.js`**: `matmuls()` の頭で、入力をフレームの新しい置き場 `xr` に回してから量子化と行列積（プロンプトのブロックはトークンごと）。`embed()` の最後で行を戻す。**スレッドの仕事にはしていない**（取りまとめ役が回す。時間は下の CI の値）。linear の層の gate の小さな行列は `xb` をそのまま読む。
+  - **外れ値の列（T92）は回した基底では使わない**（分類器は R x を読むので、保存された行列の列はチャネルではない）。Python が外れ値のチャネルを渡さない。
+  - **`footprint()`**: 符号（幅ごとに float32）とフレームの `xr`（いちばん広い幅 × 4 バイト × 16 フレーム）を数える。27B なら符号 115 KB と `xr` 1.1 MB。
+  - **GPU には載せない**（`gpuUnfit()` と `gpuOnlyUnfit()` に 1 行ずつ。T232）。
+  - **変換器**: `gguf_rotated()` が `prism.hadamard.*` を読んで `rotated` にし、`gguf_model()` が見出しの `__metadata__` に書き（`header_rotated()`）、`checkpoint_form()` がそこから取る。GGUF だけの道（`from_gguf`）でも、原本の config と合わせる道（`gguf_weights`）でも options に載る。**原本の config.json には回した基底の項目が無い**ので `gguf_agrees()` で比べるものは無く、代わりに GGUF のメタデータをモデルの形と突き合わせる: 回す行列の一覧がエンジンの回す行列とちょうど同じ、戻すのは埋め込みだけ、塊が 2 の累乗で全部の幅を割り切る、全部の幅に ±1 の符号がある、value head が key head より多いなら `gdn_v_grouped`。合わなければ断る（断らないと、動いて壊れた文を書く）。
+- **今あるモデルは変わらない**: main と枝の変換器で、作り物の 136 通り（safetensors の Llama・Qwen2・Qwen3・Qwen3.5・GPT-2・NeoX、GGUF の Llama・Qwen2・Qwen3・PQ2_0・GPT-2・NeoX・Qwen3.5 を、GGUF だけと原本つきで、4 つの dtype）のチェックポイント・tokenizer.bin・options のハッシュが同じ（2 つは両方で同じ文で断る。`.tmp/t237/same_bytes.py`）。**`CONVERTER` は上げていない**。
+- **試験**:
+  - `tests/test_rotated.py`（71 件）: 変換は行列の定義（成分ごと）と同じ・自分が逆・長さを保つ（塊 1〜1024）。**手で回した基底に畳んだモデルは、畳む前と同じ logits**（Qwen3.5 の 5 つ: 塊 1・2・4・8・16、value head が key head の 2 倍と 3 倍、分類器が別と共有。Llama と Qwen3 の 4 つ）。参照は transformers の計算を float64 のループで書いたもの（`naive_qwen35_logits`）と素朴な Llama。回した基底はチェックポイントのバイトも、ほかの options も動かさない（4 つの dtype）。行列を 1 種類だけ畳み忘れると違う数になる（11 種類）。GGUF の道（メタデータつきの作り物の Qwen3.5 の GGUF）は safetensors の道と同じチェックポイントで、options に同じ `rotated`。断り（GGUF のメタデータの 27 通り、符号と塊の 6 通り、ファイルの 4 通り、GPT-2）。
+  - `tests/rotate-check.mjs`（軽い組）: カーネルが、同じ順の JavaScript の float32 の計算とビット単位で同じ（塊 1〜4096、1・2・3・5 塊、4 の倍数でない長さ、その場と別の置き場、32 ビットと 64 ビットのメモリ、448 回）。`tests/smoke.mjs`: カーネルが NumPy の `rotate()`・`unrotate()` とビット単位で同じ（Pyodide）。
+  - `tests/forward-check.mjs` と `threads-check.mjs`（全部の組）: `tests/make_qwen35.py … rotated` の作り物（塊 16、符号は乱数）で forward.js を NumPy と比べる（float32・int8・状態の大きいもの、共有・共有なし・64 ビット）。
+  - `tests/reference_27b.py`（T238）: 実物の 27B で fork と。
+- **わざと壊す**: 45 通りが全部落ちた（`.tmp/t237/mutate.py`、git に入らない）。NumPy の 19（符号なし、正規化なし、塊を半分に、変換の最後の段を抜く、塊の倍数でない幅を通す、埋め込みを戻さない・入力と同じ向きに回す、q・k・v / gate / o / FFN の gate と up / FFN の down / 分類器 / linear の qkv と z / z だけ / out が元の基底を読む、linear の gate の行列が回した入力を読む、符号を下のビットから読む、GPT-2 を通す）、変換器の 13（options に載せない、見出しの基底を忘れる、幅と突き合わせない、GGUF の基底を見出しに書かない、回す行列の一覧・戻す行列・value head の並び・変換の名前・version・符号の値・幅を見ない、符号の切り出しの位置、符号なしを −1 に）、カーネルの 6（`rotate-check.mjs`: 符号を掛けない、蝶の最後の段を抜く、幅 1 と 2 の差の順、`unrotate` の符号なし・符号を先に、最初の塊だけ）、`forward.js` の 7（forward-check の作り物: 回さない、ブロックの最初のトークンだけ回す、どの幅にも残差の幅の符号、塊を 2 倍、埋め込みを戻さない・逆に回す、linear の gate の行列に回した入力）。頼みにあった「余りを処理しない」は余りの道が無いので、「塊の倍数でない幅を断らない」に替えた。
+- **CI**: `tests.yml` の全部の組 run 36916431014（成功、AMD EPYC 9V74、503 秒。pytest・ページの単体・smoke・カーネルの検査・forward-check の全部・gpu-default-check・threads-check）。作り物の回した Qwen3.5 は、float32 が NumPy と最大 1.99e-4 の差で最尤トークンは 128 位置とも同じ（共有・共有なし・64 ビット）、int8 は logits の相対の差 0.231（状態の大きい作り物は 0.087、線は 0.5）、プロンプトのブロックはビット単位で同じ、スレッド 1・2・4・8 本でビット単位で同じ。後ろの大きさは 1.4〜1.6 MiB に見積もり 2.4〜2.6 MiB、状態の大きい作り物は 25.6 MiB に 26.6 MiB。27B の参照（T238）は run 36913721685。その前の 2 回（36915151147・36915538016）は自分の試験の誤りで落ちた: 1 回の通しの単体試験の線が 1e-5 で x86 の BLAS の丸めを越えた、smoke.mjs に足した検査が後ろの検査の変数 `values` を書き換えた（関数に入れて直した）。手元: pytest 893 件、`rotate-check.mjs`、`gpu-choice-check.mjs`・`worker-sink-check.mjs`・`memory-check.mjs`、作り物の forward-check。
+- **費用**: カーネル `rotate` は 5 塊（5120 値）で 5.5 µs、1 塊 1,097 ns（CI の EPYC 9V74、run 36916431014 の `rotate-check.mjs`、1 本）。27B の 1 トークンは 2,122 塊なので 2.3 ms（掛け算: 見積もり）。同じ種類の CPU で fork が 1 トークンに 1,397 ms かけている（T238）ので、その 0.17%。エンジン自身の 27B の 1 トークンの時間は未計測（T231 の後）。スレッドに分けるほどの量ではない。
+- **未確認**: 実物の 27B を `forward.js` で（3 値の型とカーネルが要る: T230・T231）。7 ビットと 8 ビットの活性値で 27B の質が保たれるか（T238 の「丸めた版」は Q8_0 の活性値で最尤トークンが 78 位置とも同じだった。7 ビットは未計測）。持ち主の端末。GPU（T232）。version 2（埋め込みが分類器を兼ねる回した基底）の実物（作り物だけ）。
 
-### T238 [試験][Bonsai] 27B の参照 — 状態: 未着手（T237 と一緒に。規模 中）
+### T238 [試験][Bonsai] 27B の参照 — 状態: 実装済み（2026-10-01、ブランチ `t237-t238-rotated-basis`、本線に入れる前、レビュー前。Opus medium。規模 中）
 - float32 に広げると 107 GB で NumPy の参照に載らない。案: CI で Prism の fork（MIT、`88c4bc60`）を建てて greedy の固定値を取る、または行列を 1 つずつ広げる NumPy の参照。原本の Qwen3.8 の safetensors は 3 値でないので、重みは F16 の GGUF としか比べられない。
+- **結果（2026-10-01）: エンジンの NumPy の forward（`llama2_numpy.py` の `Llama.forward` そのもの、T237 の回した基底つき）は、実物の 27B を fork と同じに計算する。** 2 つの参照を両方作り、CI で比べた（run 36913721685、Xeon 6973P-C の 4 論理コア、メモリ 15 GB、9.5 分）。3 つの文の 78 位置で、最尤トークンは全部同じ、greedy の 16 トークンは 3 つとも fork と同じ、logits の差の最大は 0.095・0.149・0.099。
+- **道具**: `bash tests/reference_27b.sh`（CI だけ。開発機では走らせない: 5.95 GB を取る）。`node tests/ci.mjs run tests.yml only_extra=true minutes=150 extra="bash tests/reference_27b.sh" --grep "^(fork|reference|runner):" --minutes 160 --ref <ブランチ>`。`STAGES=fork` か `STAGES=numpy` で片方だけ。
+  - **(1) fork**: `PrismML-Eng/llama.cpp` の `88c4bc60…`（LICENSE は MIT、`Copyright (c) 2023-2026 The ggml authors`）をランナーで CPU 向けに建て（ライブラリだけ、82〜92 秒）、`tests/reference_27b_fork.cpp`（fork の `include/llama.h` の公開の API だけ。fork の行は写していない）をそのライブラリに付けて走らせる。出すもの: fork が切ったプロンプトの ID、greedy の 16 トークン、全位置の logits（float32 のファイル）、プロンプトを 1 トークンずつ通した logits、1 回ごとの秒。
+  - **(2) NumPy**: `tests/reference_27b.py`。GGUF をメモリマップで読み、行列を 256 MB ずつ float32 に広げて掛けて捨てる。計算はエンジンの `Llama.forward` そのもの（`Llama` を継いで、テンソルを置く所 `qwen35_tensors` だけを GGUF から取る形に替えた）。**全部の位置を 1 回の通しで**: 各位置の forward を 1 本ずつのスレッドにし、保存された行列を掛ける所で止め、全部のスレッドが同じ行列で止まったら 1 回広げて全部のベクトルに掛ける。スレッドは位置の順に 1 本ずつ動くので、状態と KV は前の位置のものが先に書かれる。
+- **ランナー**: ubuntu-latest は 4 論理コア、メモリ 15 GB、ディスクは 145 GB のうち 86 GB 空き（PTQ1_0 の 5.95 GB は余裕で入る）。取得は 36 秒と 233 秒（2 回）。
+- **fork の速さ（CPU、4 本、1 トークンずつ、78 回）**: **0.716 tok/s**（AMD EPYC 9V74、run 36903127061）と **0.608 tok/s**（Intel Xeon 6973P-C、run 36913721685）。プロンプトをまとめて通すと 0.74 と 0.68 tok/s でほぼ同じ。読み込みは 0.5〜0.7 秒。CPU だけの 27B の数字はカードにも無いので、これが今ある唯一の値。
+- **fork が切った ID と書いた文**（2 回の run で同じ）:
+
+  | 文 | プロンプトの ID | 書いた 16 トークン |
+  |---|---|---|
+  | `The capital of Japan is` | 760 6511 314 6124 369 | ` Tokyo.\nThe capital of France is Paris.\nThe capital of Germany is` |
+  | `日本でいちばん高い山は` | 232066 196849 158477 155380 96144 14876 | `富士山です。富士山は日本を代表する山で、日本国内` |
+  | すぐ答える形の「What is 17 times 24?」 | 248045 846 198 3710 369 220 16 22 2942 220 17 19 30 248046 198 248045 74455 198 248068 271 248069 271 | `To calculate 17 times 24, you can break it down as` |
+
+  **エンジンのトークナイザ**（変換器が GGUF の語彙から作る tokenizer.bin、前分割 `qwen35`、NFC）は 3 つとも fork と同じ ID を出した。
+- **比べ**（run 36913721685。logits の差の最大、括弧は最尤トークンが同じ位置の数）:
+
+  | 文（位置の数） | fork のまとめてと 1 トークンずつ | float32 と丸めた版 | 丸めた版と fork | **float32 と fork** | greedy |
+  |---|---:|---:|---:|---:|---:|
+  | 英語（20） | 0.0973（5 / 5） | 0.1095（20 / 20） | 0.1161（20 / 20） | **0.0952（20 / 20）** | 16 / 16 |
+  | 日本語（21） | 0.1342（6 / 6） | 0.2837（21 / 21） | 0.4231（21 / 21） | **0.1491（21 / 21）** | 16 / 16 |
+  | チャット（37） | 0.1252（22 / 22） | 0.0962（37 / 37） | 0.1414（37 / 37） | **0.0991（37 / 37）** | 16 / 16 |
+
+  「float32」はエンジンをそのまま、「丸めた版」は行列に入るベクトルを fork と同じに丸めたもの（3 値の行列の前は Q8_0: 32 個ごとに float16 のスケールと int8、`ssm_alpha`・`ssm_beta` の前は bfloat16）。
+- **線と理由**: **float32 の丸めの大きさでは合わない。fork の CPU は float32 の参照ではないから**。fork は 3 値の行列を Q8_0 に丸めた活性値と掛け（ggml の `vec_dot_type`）、自分の 2 つの道（プロンプトをまとめて・1 トークンずつ）の間でも logits が 0.10〜0.13 違う。だから線は「float32 と fork の差が、丸めの動かす大きさと fork の 2 つの道の差の大きいほうの 3 倍以下」と「最尤トークンが違う位置では fork の上位 2 つの差が、その差の 2 倍以下」（T229 の「transformers の 2 つの道の差の 10 倍」と同じ考え）。測った値は線の 0.18〜0.29 倍（0.0952 対 0.3285、0.1491 対 0.8511、0.0991 対 0.3755）。エンジンと fork の差（0.095〜0.149）は fork 自身の 2 つの道の差（0.097〜0.134）と同じ大きさ。
+- **わざと壊した版**（同じ通しの中で、英語の文の 20 位置）:
+
+  | 壊し方 | fork との差の最大 | 最尤トークンが同じ位置 | 壊さない版の何倍 |
+  |---|---:|---:|---:|
+  | value head を GGUF の並びのまま読む | 20.27 | 0 / 20 | 213 |
+  | 符号なし | 18.42 | 0 / 20 | 193 |
+  | 回さない | 19.53 | 0 / 20 | 205 |
+  | 埋め込みの行を戻さない | 18.15 | 0 / 20 | 191 |
+  | q と k の回す部分を前半・後半に分けて読まない | 3.32 | 20 / 20 | 35 |
+
+  最後の 1 つは最尤トークンが変わらないので、文だけを比べる固定値では見えない。logits を比べて見える。
+- **1 回の通しの時間**（run 36913721685）: 11 個の走り（3 つの文 × 2 つの形 + 壊した 5 つ）の 256 位置で 257 秒。広げに 157 秒（26.6 G 個、毎秒 170 M 個）、掛け算に 41 秒（毎秒 165 G 積和）。走る前の見積もりは広げ 4〜5 分・掛け算 2〜4 分だった。1 トークンだけでも広げは同じだけ要る（1 位置ずつ回すと 1 位置に広げの 157 秒がかかる計算で、測ってはいない）。
+- **GGUF の読み**: PTQ1_0 の広げ（`widen_ptq1_0`）は fork の詰め方を逆にたどる単体試験（`tests/test_reference_27b.py`）と、実物の 7 つのテンソルの 200 行を PTQ1_0・PQ2_0・F16 の 3 つのファイルから Range で取った比べ（3 つともビット単位で同じ、`.tmp/t237/sample.py`、取ったのは 3.1 MB）で確かめた。
+- **value head の並び（T245 が照らし合わせる用）**: Hugging Face の並びの head g（key head k の j 番目、g = k × (V / K) + j）は、GGUF の head j × K + k にある（`tests/reference_27b.py` の `grouped()`）。並べ替えるのは `attn_qkv` の v の行、`attn_gate` の行、`ssm_alpha`・`ssm_beta` の行、`ssm_conv1d` の v のチャネル、`ssm_dt.bias`、`ssm_a`。**`ssm_out` の列は並べ替えない**（回した基底の GGUF は Hugging Face の並びのまま持つ: `prism.hadamard.gdn_v_grouped`）。
+- **CI の落とし穴**: 新しいワークフローのファイルは、既定のブランチに無いと dispatch できない。だから `tests.yml` に入力を 2 つ足した: `only_extra=true`（モデルも試験もビルドもせず `extra` だけ）と `minutes=`（ジョブの時間の上限、既定 90）。
+- **未確認**: PQ2_0 のファイルでの同じ比べ（読み手はあるが走らせていない）。arm64 のランナーでの fork の速さ。考える形（既定）の長い答え。fork の 2 つの道がなぜ違うか（読んでいない）。4096 より長い文脈。ページの forward（`forward.js` と 3 値のカーネル）で 27B を動かすことは T230・T231 の後（今のエンジンは 27B をどの形でも持てない）。
 
 ### T199 [性能][CPU] スレッドの本数の検索を、1 塊の乱れに強くする — 状態: **完了（本線に入れた 48f8ee5、レビュー済み T217）**（2026-09-27、T190 のレビューの「あれば良い」。ブランチ `t199-search`、Opus medium。規模 小）
 - CI で 2 回、2 本のほうが 1.24〜1.34 倍速いのに 1 本を選んだ（8 つの時間を 4 つずつ 2 塊から取る上側の中央値なので、1 塊が乱れると判定が返る）。検索の判定を 1 塊の乱れに強い形にする。偽の時計の試験（gpu-default-check の形）で、乱れた 1 塊があっても正しく選ぶことを見る。持ち主の Android（的の端末）で 4 本を選ぶことは変えない。

@@ -1839,6 +1839,12 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
     rotated = gguf_rotated(metadata, tensors, more)
     if rotated is not None:
         header["__metadata__"] = {ROTATED: json.dumps(rotated)}
+        # A rotated GGUF holds the columns of a linear-attention layer's output matrix in Hugging Face's order of value
+        # heads (gdn_v_grouped: columns moved after the fold would be another matrix), where llama.cpp otherwise
+        # stores them in its own. So the reader of that order (T245's "tiled", once it is here) must leave them be
+        for target, entry in header.items():
+            if target.endswith("linear_attn.out_proj.weight"):
+                entry.pop("tiled", None)
     return header, config
 
 
