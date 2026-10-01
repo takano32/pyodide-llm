@@ -165,6 +165,13 @@ jobs:
             models: >-
               hf-qwen3-0.6b-thinking hf-qwen3-0.6b hf-qwen3-1.7b hf-qwen3-4b hf-qwen3-4b-instruct-2507
               hf-qwen3-4b-thinking-2507 hf-qwen3-8b hf-qwen3-swallow-8b-thinking hf-qwen3.5-0.8b
+          # T253 and T254 (2026-10-01): Granite 4.2 (13 GB of downloads; the 8B on a 64-bit memory) and MiniCPM5 (4 GB).
+          # Both forms of the smallest of each, one of the others
+          - size: granite
+            timeout: 3000
+            models: >-
+              hf-granite-4.2-3b-thinking hf-granite-4.2-3b hf-granite-4.2-8b
+              hf-minicpm5-1b-thinking hf-minicpm5-1b hf-minicpm5-2b
     steps:
       - name: Checkout
         uses: actions/checkout@v7
