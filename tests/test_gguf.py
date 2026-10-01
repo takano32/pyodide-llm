@@ -683,17 +683,39 @@ QWEN35_LAYER = {**LAYER, "post_attention_layernorm": "post_attention_norm",
                 "linear_attn.in_proj_a": "ssm_alpha", "linear_attn.in_proj_b": "ssm_beta",
                 "linear_attn.conv1d": "ssm_conv1d", "linear_attn.norm": "ssm_norm", "linear_attn.out_proj": "ssm_out"}
 QWEN35_WHOLE = {"linear_attn.A_log": "ssm_a", "linear_attn.dt_bias": "ssm_dt.bias"}
+# T245: where the value heads of a linear-attention layer stand in a tensor, as (after q and k, entries to a head: all
+# of value_dim or one, the axis): what llama.cpp's _LinearAttentionVReorderBase.modify_tensors reorders
+QWEN35_VALUE_HEADS = {"linear_attn.in_proj_qkv.weight": (True, True, 0), "linear_attn.in_proj_z.weight": (False, True, 0),
+                      "linear_attn.in_proj_a.weight": (False, False, 0), "linear_attn.in_proj_b.weight": (False, False, 0),
+                      "linear_attn.dt_bias": (False, False, 0), "linear_attn.A_log": (False, False, 0),
+                      "linear_attn.conv1d.weight": (True, True, 0), "linear_attn.out_proj.weight": (False, True, 1)}
 # rows of whole groups of 32 (Q8_0), a value head to each key head (the real 0.8B and 2B), heads that do not fill dim
 QWEN35 = dict(dim=64, hidden_dim=128, n_heads=4, n_kv_heads=2, head_dim=32, key_heads=2, value_heads=2, key_dim=16,
               value_dim=16, vocab_size=40)
 
 
-def qwen35_gguf(more=(), bos=1, eos=2, change=None, fold=None, matrices=None, **shape):
+def tiled_places(what, text):
+    """(the axis, for each place along it the place Hugging Face has that entry at) where llama.cpp writes a tensor of
+    a linear-attention layer with its value heads tiled (T245: more value heads than key heads), else None. Hugging
+    Face holds the value heads of key head 0, then those of key head 1; llama.cpp every key head's first, then every
+    key head's second (conversion/qwen.py's _reorder_v_heads builds the same index for a LoRA's tensors)."""
+    keys, values = text["linear_num_key_heads"], text["linear_num_value_heads"]
+    if what not in QWEN35_VALUE_HEADS or values == keys:
+        return None
+    after_keys, of_a_head, axis = QWEN35_VALUE_HEADS[what]
+    first = 2 * keys * text["linear_key_head_dim"] if after_keys else 0
+    size = text["linear_value_head_dim"] if of_a_head else 1
+    heads = np.arange(values * size).reshape(keys, values // keys, size).transpose(1, 0, 2).reshape(-1)
+    return axis, np.concatenate([np.arange(first), first + heads])
+
+
+def qwen35_gguf(more=(), bos=1, eos=2, change=None, fold=None, matrices=None, tile=True, **shape):
     """A GGUF v3 of a small Qwen3.5 the way llama.cpp writes one (as unsloth's Qwen3.5-0.8B Q8_0 is, T236): the
     language model's tensors alone, the norms with the 1 the model adds to them (not a linear-attention layer's own),
     A_log as -exp(A_log) and named ssm_a, dt_bias named ssm_dt.bias, the convolution without its axis of one, q with
-    its gate and k as Hugging Face holds them; Q8_0 matrices (the two small ones of the gates too), F32 vectors and
-    convolution. Returns the config.json, the file, and under the Hugging Face names the values it stands for: the
+    its gate and k as Hugging Face holds them, and where a key head has more value heads than one (the 4B and up, T245)
+    the value heads tiled (tiled_places(); tile: False leaves them as Hugging Face has them, which llama.cpp does not);
+    Q8_0 matrices (the two small ones of the gates too), F32 vectors and convolution. Returns the config.json, the file, and under the Hugging Face names the values it stands for: the
     matrices as Q8_0 rounds them, everything else as the original has it.
     more: further metadata; change(stored): alters what is written, {GGUF name: [bytes, ggml type, shape]}.
     fold(tensors): the Hugging Face tensors as the file is to hold them (T237: in a rotated basis); matrices: what
@@ -725,8 +747,15 @@ def qwen35_gguf(more=(), bos=1, eos=2, change=None, fold=None, matrices=None, **
             value = tensor.reshape(tensor.shape[0], tensor.shape[-1])
         elif name.endswith("norm.weight") and not name.endswith("linear_attn.norm.weight"):
             value = tensor.astype(np.float32) + np.float32(1)
+        places = tiled_places(what, text) if tile and name.startswith(prefix + "layers.") else None
+        if places:
+            value = value.take(places[1], axis=places[0])
         if value.ndim == 2 and not name.endswith(".conv1d.weight"):
             blob, held = blocks(np.ascontiguousarray(value))
+            if places:  # the values Q8_0 rounds them to, back at the places Hugging Face has them at
+                back = np.empty_like(held)
+                back[(slice(None),) * places[0] + (places[1],)] = held
+                held = back
             stored[gguf], same[name] = [blob, block_type, value.shape], held
         else:
             stored[gguf], same[name] = [np.ascontiguousarray(value, np.float32).tobytes(), 0, value.shape], tensor
@@ -783,16 +812,24 @@ def safetensors_conversion(same, config, vocabulary, dtype):
 
 
 QWEN35_SHAPES = {"every second": dict(), "every fourth, the language model alone": dict(n_layers=8, every=4, prefix="model."),
-                 "a classifier of its own, whole heads turn": dict(shared=False, rotary=1.0, n_kv_heads=4, conv=2)}
+                 "a classifier of its own, whole heads turn": dict(shared=False, rotary=1.0, n_kv_heads=4, conv=2),
+                 # T245: more value heads than key heads, which llama.cpp tiles. A value head of whole groups of 32, so
+                 # that the columns of the output's matrix move as whole Q8_0 blocks and the int8 is the same too
+                 "two value heads to a key head": dict(key_heads=4, value_heads=8, key_dim=8, value_dim=32, n_layers=4),
+                 "three value heads to a key head (the 27B)": dict(value_heads=6, value_dim=32, key_dim=16),
+                 "three to one, every fourth": dict(value_heads=6, value_dim=32, n_layers=8, every=4, conv=3, prefix="model.")}
+TILED_SHAPES = [name for name in QWEN35_SHAPES if "to a key head" in name or "to one" in name]
 
 
 @pytest.mark.parametrize("dtype", ["int8", "float32", "float16", "int6"])
 @pytest.mark.parametrize("shape", QWEN35_SHAPES)
-def test_a_qwen35_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype):
+def test_a_qwen35_gguf_with_the_originals_files_is_the_safetensors_conversion(shape, dtype, monkeypatch):
     """The list's way in: the checkpoint, tokenizer.bin and options of the safetensors of the same values, to the byte.
     The norms come with their 1 and A_log as -exp(A_log), which the conversion must not do to them again (and could not
-    undo to the bit), the convolution comes without its axis of one, and two tensors under names of their own. Fed
-    4096 bytes at a time."""
+    undo to the bit), the convolution comes without its axis of one, and two tensors under names of their own. T245:
+    and the value heads tiled where a key head has two or three, put back whole. Fed 4096 bytes at a time, in pieces
+    of a few rows (a matrix whose heads are to be put back must not go piece by piece)."""
+    monkeypatch.setattr(llama2_convert, "PIECE", 700)
     config, file, same = qwen35_gguf(**QWEN35_SHAPES[shape])
     vocabulary = unigram(config["text_config"]["vocab_size"])
     got = with_original(file, config, vocabulary, "tokenizer.json", dtype)
@@ -840,12 +877,57 @@ def test_a_qwen35_gguf_that_is_not_the_originals_is_refused(change, what):
         llama2_convert.gguf_weights(file, json.dumps(other))
 
 
-def test_a_qwen35_gguf_of_more_value_heads_than_key_heads_is_refused():
-    """llama.cpp stores the value heads of such a model (Qwen3.5 4B and up) tiled, every key head's first and then
-    every key head's second: read as they are, the heads would be other heads, without a word."""
-    config, file, _ = qwen35_gguf(value_heads=4)
-    with pytest.raises(ValueError, match="more value heads than key heads"):
+@pytest.mark.parametrize("dtype", ["float32", "float16"])
+def test_value_heads_that_split_a_q8_0_block_come_back_to_their_places(dtype):
+    """T245: value heads of 16, two to a Q8_0 block of the output's matrix, whose columns llama.cpp tiles before it
+    quantizes: the values are the same as the safetensors', at Hugging Face's places (an int8 made of them has other
+    groups of 32 than the GGUF's blocks, and is not asked to be the same)."""
+    config, file, same = qwen35_gguf(value_heads=6, value_dim=16, key_dim=8)
+    vocabulary = unigram(config["text_config"]["vocab_size"])
+    got = with_original(file, config, vocabulary, "tokenizer.json", dtype)
+    expected = safetensors_conversion(same, config, vocabulary, dtype)
+    assert bytes(got.checkpoint) == bytes(expected.checkpoint) and got.options == expected.options
+
+
+@pytest.mark.parametrize("shape", TILED_SHAPES)
+def test_value_heads_left_as_hugging_face_has_them_are_not_the_same_model(shape):
+    """llama.cpp tiles the value heads, so the reader puts them back: a GGUF that has them in Hugging Face's order (no
+    llama.cpp writes one, and none would run it right) converts to another checkpoint. What tells such a file apart
+    is tests/gguf_check.py, before it is listed."""
+    config, file, same = qwen35_gguf(tile=False, **QWEN35_SHAPES[shape])
+    vocabulary = unigram(config["text_config"]["vocab_size"])
+    got = with_original(file, config, vocabulary, "tokenizer.json", "float32")
+    expected = safetensors_conversion(same, config, vocabulary, "float32")
+    assert len(got.checkpoint) == len(expected.checkpoint) and bytes(got.checkpoint) != bytes(expected.checkpoint)
+
+
+def test_value_heads_that_are_not_as_many_to_each_key_head_are_refused():
+    """3 value heads to 2 key heads: no order of llama.cpp's stands for that."""
+    config, file, _ = qwen35_gguf(value_heads=3, value_dim=32, tile=False)
+    with pytest.raises(ValueError, match="not as many to each"):
         llama2_convert.gguf_weights(file, json.dumps(config))
+
+
+def test_untiled_is_the_inverse_of_llama_cpps_order():
+    """The value head at place j * key_heads + h of a GGUF is Hugging Face's h * per + j, along either axis, after
+    what stands before the heads; and a tensor of another size is refused."""
+    rows = np.arange(4 + 6 * 2)  # 4 of q and k, then 2 key heads of 3 value heads of 2
+    tiled = np.concatenate([rows[:4], 4 + np.array([0, 1, 6, 7, 2, 3, 8, 9, 4, 5, 10, 11])])
+    assert llama2_convert.untiled(tiled, 4, 2, 3, 2).tolist() == rows.tolist()
+    matrix = np.arange(5)[:, None] * 100 + tiled[None, :]
+    assert (llama2_convert.untiled(matrix, 4, 2, 3, 2, axis=1) == np.arange(5)[:, None] * 100 + rows[None, :]).all()
+    for shape in TILED_SHAPES:
+        text = qwen35_gguf(**QWEN35_SHAPES[shape])[0]["text_config"]
+        keys, values = text["linear_num_key_heads"], text["linear_num_value_heads"]
+        axis, places = tiled_places("linear_attn.in_proj_qkv.weight", text)
+        # the entry Hugging Face has at place i is at the GGUF's place where places says i
+        first = 2 * keys * text["linear_key_head_dim"]
+        gguf = np.empty(len(places), dtype=np.int64)
+        gguf[np.arange(len(places))] = places
+        back = llama2_convert.untiled(gguf, first, keys, values // keys, text["linear_value_head_dim"])
+        assert back.tolist() == list(range(len(places)))
+    with pytest.raises(ValueError, match="value heads"):
+        llama2_convert.untiled(rows[:-1], 4, 2, 3, 2)
 
 
 def test_a_step_done_that_the_plan_has_not_is_refused():

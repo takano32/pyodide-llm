@@ -141,6 +141,20 @@ the 288 −exp(A_log) are one unit in the last place from NumPy's) and keeps the
 against 25.056 for the float32 original and 25.034 for the page's own int8 of it; on the kernels, 25.398 with 7-bit
 activations and 25.086 with 8-bit ones (CI's x86-64 runner).
 
+The larger Qwen3.5 (4B and 9B) have two value heads to each key head in their linear-attention layers, and llama.cpp
+writes those value heads into the GGUF in another order than Hugging Face keeps them: every key head's first value
+head, then every key head's second. The page puts them back as it converts (eight tensors of each such layer; it
+moves values and changes none). Held to the originals, the two GGUFs are llama.cpp's Q8_0 of them to 1e-7, in that
+order. For the 4B, whose float32 is 17 GB, the engine's logits on the original's weights are within 1.4e-4 of
+transformers' at 96 positions, and its perplexity on 192 tokens the same (7.873); on the GGUF's weights it is 7.574,
+lower than the original's. On 1,500 tokens of English Wikipedia (the kernels, one CI runner each):
+
+| model | float32 original | GGUF's weights, NumPy | 8-bit activations | 7-bit activations |
+|---|---:|---:|---:|---:|
+| Qwen3.5 2B | not measured | 16.589 | 16.608 | 16.873 |
+| Qwen3.5 4B | 14.834 (transformers) | not measured | 14.492 | 14.710 |
+| Qwen3.5 9B | not measured | not measured | 11.707 | 11.806 |
+
 ## Other small effects
 
 - A BOS token at the start: the page always starts with one, while some models are used without it. The
