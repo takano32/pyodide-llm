@@ -38,5 +38,21 @@
   "hf-qwen3.5-0.8b-safetensors": {
     "prompt": "これからの流行りを3つ挙げてください。",
     "text": "2024 年（令和 6 年）は、世界"
+  },
+  "hf-qwen3.5-2b": {
+    "prompt": "これからの流行りを3つ挙げてください。",
+    "text": "AI 技術の進化に伴い、今後 3 年〜5 "
+  },
+  "hf-qwen3.5-2b-safetensors": {
+    "prompt": "これからの流行りを3つ挙げてください。",
+    "text": "AI 技術の進化、特に生成 AI（大規模言語モデルなど）"
+  },
+  "hf-granite-4.2-3b": {
+    "prompt": "これからの流行りを3つ挙げてください。",
+    "text": "もちろんです。以下は、2024年～2025年"
+  },
+  "hf-minicpm5-1b": {
+    "prompt": "What will be popular next? Name three things.",
+    "text": "Since I don't have access to real-time data or current trends, I cannot"
   }
 }

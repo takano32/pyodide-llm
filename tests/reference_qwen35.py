@@ -6,10 +6,12 @@
 #   pip install safetensors "transformers @ git+https://github.com/huggingface/transformers@7fb5bcd1d4b8a5c225a2c33429b2e9e023dd61ae"
 #   python tests/reference_qwen35.py <directory for the download> [--only=made-up|real|fetch] [--positions=96]
 #   (--only=fetch: the real model's files into the directory and no more, for tests/page_qwen35.sh)
+#   python tests/reference_qwen35.py <directory> --model=4B [--from=gguf] [--text=<file>] [--minutes=40]
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/reference_qwen35.sh" --ref <branch> --grep "qwen35"
+#   node tests/ci.mjs run tests.yml extra="bash tests/reference_qwen35.sh --model=4B" --ref <branch> --grep "qwen35"
 #
-# Two parts, every line of the log beginning with "qwen35:".
+# Two parts, and a third by itself, every line of the log beginning with "qwen35:".
 #   made-up: tiny random models of transformers' own class (Qwen3_5ForCausalLM), which hold what the real 0.8B does
 #     not: three value heads to a key head (the 27B's), key and value heads of two sizes, a classifier of its own.
 #     transformers' logits, over the whole text at once (its chunked delta rule) and token by token with its cache
@@ -21,10 +23,24 @@
 #     engine (NumPy): the largest difference of the logits, how often the most likely token is the same, the states
 #     after them, 16 greedy tokens of each for the chat prompt, and then 1024 positions of a longer text (the cache of
 #     the full-attention layers doubling twice, a thousand tokens for the state to drift in).
+#   --model=2B (T247): the real part on Qwen/Qwen3.5-2B (7.5 GB as float32, which a runner holds), before its greedy
+#     text is fixed in tests/fixed_outputs.py: the same lines, and what transformers writes for that prompt in the
+#     list's format, from the format's own first token.
+#   --model=4B (T245): Qwen/Qwen3.5-4B, the smallest real model with more value heads than key heads (two to one), and
+#     17 GB as float32, more than a runner's 16 GB of memory holds: see large(). The engine (NumPy, float32, the
+#     original's safetensors converted the way the page converts) against transformers over the whole text at once.
+#     --from=gguf: the engine on the list's GGUF instead (unsloth's Q8_0, whose value heads llama.cpp tiled), its
+#     float32 checkpoint held to the safetensors' tensor by tensor, and its logits to transformers' of the original.
+#     --text: transformers' perplexity of the original on 1500 tokens of that text too, as tests/perplexity.py counts.
+#     --first=192: and the engine's on the first so many of them, token by token, against transformers' on the same
+#     (what the weights of a GGUF cost, which the 1500 tokens are hours of for the engine here).
 # The lines it holds the engine to are at the end of each part; anything past them is exit 1.
 import gc
 import json
+import math
+import os
 import struct
+import subprocess
 import sys
 import time
 import urllib.request
@@ -59,14 +75,14 @@ CHUNK = 8 << 20
 say = lambda *parts: print("qwen35:", *parts, flush=True)
 
 
-def fetch(name, directory):
+def fetch(name, directory, repo=REPO, revision=REVISION):
     target = directory / name
     if not target.exists():
         directory.mkdir(parents=True, exist_ok=True)
         partial = target.with_suffix(target.suffix + ".part")
         for attempt in range(3):
             try:
-                with urllib.request.urlopen(f"https://huggingface.co/{REPO}/resolve/{REVISION}/{name}", timeout=60) as response, \
+                with urllib.request.urlopen(f"https://huggingface.co/{repo}/resolve/{revision}/{name}", timeout=60) as response, \
                         open(partial, "wb") as out:
                     while block := response.read(CHUNK):
                         out.write(block)
@@ -309,15 +325,22 @@ def made_up(name, settings, positions=80):
 
 
 # ------------------------------------------------------------------------------------------------- the real model
-def real(directory, positions):
+# the other models the real part runs on (--model=): one file of weights under a shard's name, as the 0.8B's
+OTHERS = {"2B": ("Qwen/Qwen3.5-2B", "15852e8c16360a2fea060d615a32b45270f8a8fc")}
+# tests/fixed_outputs.py's prompt in the list's format without thinking (src/models.js's QWEN35_AT_ONCE after its BOS,
+# <|im_start|>): the ids the page sends, with no <|endoftext|> in front
+LISTED = "<|im_start|>user\nこれからの流行りを3つ挙げてください。<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+
+
+def real(directory, positions, repo=REPO, revision=REVISION):
     import tokenizers
     import torch
     import transformers
     from transformers import Qwen3_5ForConditionalGeneration
 
-    say(f"real: {REPO}@{REVISION}, transformers {transformers.__version__}, torch {torch.__version__}, numpy {np.__version__}")
+    say(f"real: {repo}@{revision}, transformers {transformers.__version__}, torch {torch.__version__}, numpy {np.__version__}")
     for name in FILES:
-        fetch(name, directory)
+        fetch(name, directory, repo, revision)
     tokenizer = tokenizers.Tokenizer.from_file(str(directory / "tokenizer.json"))
 
     # the conversion, the way the page does it: the file in its own order, float32
@@ -367,7 +390,11 @@ def real(directory, positions):
             past = out.past_key_values
             stepped.append(out.logits[0, -1].float().numpy())
         generated = model.generate(torch.tensor([[BOS] + chat_ids]), max_new_tokens=NEW_TOKENS, do_sample=False)[0].tolist()
+        listed = tokenizer.encode(LISTED, add_special_tokens=False).ids
+        as_listed = model.generate(torch.tensor([listed]), max_new_tokens=NEW_TOKENS, do_sample=False)[0].tolist()[len(listed):]
     theirs = generated[1 + len(chat_ids):]
+    say(f"real: transformers wrote for the list's prompt, from the format's first token: "
+        f"{json.dumps(tokenizer.decode(as_listed, skip_special_tokens=False), ensure_ascii=False)} {as_listed}")
     stepped_states = model_states(past, len(ids))
     del model, out
     gc.collect()
@@ -414,11 +441,254 @@ def real(directory, positions):
     return failed
 
 
+# ------------------------------------------------------------------------- a model past the runner's memory (T245)
+LARGE = {"4B": {"repo": "Qwen/Qwen3.5-4B", "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+                "gguf": ("unsloth/Qwen3.5-4B-GGUF", "e87f176479d0855a907a41277aca2f8ee7a09523", "Qwen3.5-4B-Q8_0.gguf")}}
+WINDOW, TOKENS = 512, 1500  # tests/perplexity.mjs's
+
+
+def prepared(source, out):
+    """tests/perplexity_prepare.py in a process of its own: the page's conversion to float32 into <out>.bin (a memory
+    map: 17 GB), and the options it gives Llama()."""
+    began = time.perf_counter()
+    run = subprocess.run([sys.executable, str(HERE / "perplexity_prepare.py"), str(source), str(out), "float32"],
+                         capture_output=True, text=True)
+    if run.returncode:
+        raise RuntimeError(f"perplexity_prepare.py: {run.stderr[-2000:]}")
+    options = json.loads(Path(f"{out}.json").read_text())
+    shown = {key: (value if key != "specials" else f"{len(value)} of them") for key, value in options.items()}
+    say(f"large: {source.name} converted in {time.perf_counter() - began:.0f} s, {Path(f'{out}.bin').stat().st_size} bytes, "
+        f"options {json.dumps(shown)}")
+    return options
+
+
+def pinned(data, spare=3 << 29):
+    """Keeps the end of a memory-mapped checkpoint in memory (mlock), all but spare bytes of what is free. The engine
+    reads every weight for every token, and where the file is larger than the memory the page cache would drop each
+    page just before it is wanted again (the whole file from the disk for every token); pinned, only the part that
+    does not fit is read again. Returns the bytes pinned (0 where the system refuses)."""
+    import ctypes
+    import resource
+
+    available = next(int(line.split()[1]) for line in open("/proc/meminfo") if line.startswith("MemAvailable:")) * 1024
+    page = os.sysconf("SC_PAGE_SIZE")
+    length = min(len(data), max(0, available - spare)) // page * page
+    first = (len(data) - length + page - 1) // page * page
+    try:
+        resource.setrlimit(resource.RLIMIT_MEMLOCK, (resource.RLIM_INFINITY, resource.RLIM_INFINITY))
+    except (ValueError, OSError):
+        pass  # as much as the limit allows (reference_qwen35.sh lifts it)
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.mlock.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+    if first >= len(data) or libc.mlock(data.ctypes.data + first, len(data) - first):
+        say(f"large: nothing pinned (errno {ctypes.get_errno()}, {available} bytes available)")
+        return 0
+    return len(data) - first
+
+
+def theirs(directory, ids_file):
+    """transformers on the float32 of the original, in a process of its own (so that what it took is given back
+    before the engine runs): the logits of the text's positions, and with --text the negative log likelihoods of the
+    windows of tests/perplexity.py, all rows in one forward pass (the weights are 18 GB of float32 in 16 GB of memory:
+    a pass goes through the layers once, and what does not fit goes to the swap once)."""
+    import torch
+    import transformers
+    from transformers import Qwen3_5ForConditionalGeneration
+
+    rows = json.loads(Path(ids_file).read_text())
+    began = time.perf_counter()
+    model = Qwen3_5ForConditionalGeneration.from_pretrained(str(directory), dtype=torch.float32).eval()
+    say(f"large: transformers {transformers.__version__}, torch {torch.__version__}, loaded as float32 in "
+        f"{time.perf_counter() - began:.0f} s")
+    width = max(len(row) for row in rows)
+    ids = torch.full((len(rows), width), BOS, dtype=torch.long)
+    mask = torch.zeros((len(rows), width), dtype=torch.long)
+    for at, row in enumerate(rows):
+        ids[at, :len(row)] = torch.tensor(row)
+        mask[at, :len(row)] = 1
+    began = time.perf_counter()
+    with torch.no_grad():
+        logits = model(input_ids=ids, attention_mask=mask).logits
+    say(f"large: transformers, {len(rows)} rows of up to {width} positions at once in {time.perf_counter() - began:.0f} s")
+    np.save(directory / "theirs.npy", logits[0, :len(rows[0])].float().numpy())
+    total, count, first = 0.0, 0, []
+    for at, row in enumerate(rows[1:], 1):
+        logs = torch.log_softmax(logits[at, :len(row) - 1].double(), dim=-1)
+        each = -logs.gather(1, torch.tensor(row[1:])[:, None])[:, 0]
+        if at == 1:
+            first = each.tolist()  # the first window, token by token: large() holds the engine's to it
+        total += float(each.sum())
+        count += len(row) - 1
+    (directory / "theirs.json").write_text(json.dumps({"total": total, "count": count, "first": first}))
+
+
+def tensors_apart(ours, other, options):
+    """Two float32 checkpoints of one header, tensor by tensor of llama2_convert.layout(): [(index, shape, relative
+    difference, the same to the bit)], read a piece at a time."""
+    from llama2_numpy import form_of
+
+    a, b = (np.memmap(path, dtype=np.uint8, mode="r") for path in (ours, other))
+    header = struct.unpack("<7i", bytes(a[:28]))
+    failed = bytes(a[:28]) != bytes(b[:28]) or len(a) != len(b)
+    out, offset = [], 28
+    for index, (shape, _) in enumerate(llama2_convert.layout(*header, **form_of(options))):
+        size = 4 * math.prod(shape)
+        difference = norm = 0.0
+        same = True
+        for start in range(offset, offset + size, 1 << 28):
+            stop = min(start + (1 << 28), offset + size)
+            x, y = (np.frombuffer(data[start:stop], dtype=np.float32) for data in (a, b))
+            same &= bool(np.array_equal(x, y))
+            wide = y.astype(np.float64)
+            difference += float(((x - wide) ** 2).sum())
+            norm += float((wide ** 2).sum())
+        out.append((index, shape, math.sqrt(difference / max(norm, 1e-300)), same))
+        offset += size
+    return out, failed or offset != len(a)
+
+
+def large(directory, positions, name, source, text_file, minutes, first=0):
+    """A real model whose float32 is more than the runner's memory (T245: the 4B, 16.8 GB). What the 0.8B's part does
+    not do here: transformers token by token and its generate() (each a pass over all the weights, through the swap),
+    so the line is the 0.8B's 2e-2 with no floor measured, and the greedy text is left to tests/fixed_outputs.py's
+    smaller models. The engine's checkpoint is a memory map with most of it pinned (pinned()), and stops after
+    `minutes` if it has 64 positions by then."""
+    import tokenizers
+
+    model = LARGE[name]
+    repo, revision = model["repo"], model["revision"]
+    say(f"large: {repo}@{revision}, the engine on {'the GGUF ' + '@'.join(model['gguf'][:2]) if source == 'gguf' else 'its safetensors'}")
+    for file in ("config.json", "tokenizer.json", "tokenizer_config.json", "model.safetensors.index.json"):
+        fetch(file, directory, repo, revision)
+    index = json.loads((directory / "model.safetensors.index.json").read_text())
+    for shard in sorted(set(index["weight_map"].values())):
+        fetch(shard, directory, repo, revision)
+    options = prepared(directory, directory / "float32")
+    if source == "gguf":
+        # the list's way in: the GGUF's weights with the original's config.json and vocabulary (a directory of its own
+        # for perplexity_prepare.py, which takes a GGUF where it finds one)
+        folder = directory / "gguf"
+        folder.mkdir(exist_ok=True)
+        for file in ("config.json", "tokenizer.json", "tokenizer_config.json"):
+            if not (folder / file).exists():
+                (folder / file).symlink_to((directory / file).resolve())
+        fetch(model["gguf"][2], folder, model["gguf"][0], model["gguf"][1])
+        from_gguf = prepared(folder, directory / "gguf-float32")
+        failed = from_gguf != options
+        say(f"large: the options of the GGUF's conversion are {'the same' if not failed else 'OTHER OPTIONS — FAILED'}")
+        apart, wrong = tensors_apart(directory / "gguf-float32.bin", directory / "float32.bin", options)
+        failed |= wrong
+        # the line: Q8_0's rounding is 6e-3 of a matrix (T236: 5.7e-3 to 6.7e-3); value heads at other places are 1.4
+        worst = max(apart, key=lambda entry: entry[2])
+        for index, shape, relative, same in apart:
+            say(f"large: tensor {index} {list(shape)}: {'the same to the bit' if same else f'{relative:.2e} apart'}"
+                f"{' — FAILED' if relative > 2e-2 else ''}")
+        failed |= worst[2] > 2e-2
+        say(f"large: the float32 checkpoint from the GGUF against the one from the safetensors: {sum(e[3] for e in apart)} "
+            f"of {len(apart)} tensors the same to the bit, the furthest {worst[2]:.2e} apart (tensor {worst[0]}; the line: "
+            f"2e-2){' — FAILED' if failed else ''}")
+        (directory / "float32.bin").unlink()
+        checkpoint = directory / "gguf-float32"
+    else:
+        failed, checkpoint = False, directory / "float32"
+
+    data = np.memmap(f"{checkpoint}.bin", dtype=np.uint8, mode="r")
+    llama = Llama(data, Path(f"{checkpoint}.tokenizer.bin").read_bytes(), kernels=None,
+                  **{**options, "specials": SPECIALS, "stop_tokens": [248044, 248046]})
+    tokenizer = tokenizers.Tokenizer.from_file(str(directory / "tokenizer.json"))
+    ids = [BOS] + tokenizer.encode(TEXT, add_special_tokens=False).ids
+    same = [BOS] + llama.tokenizer.encode(TEXT, llama.specials) == ids
+    rows = [ids[:positions]]
+    if text_file:
+        text = Path(text_file).read_text()
+        tokens = tokenizer.encode(text, add_special_tokens=False).ids[:TOKENS]
+        same &= llama.tokenizer.encode(text)[:TOKENS] == tokens
+        rows += [[llama.bos] + tokens[start:start + WINDOW - 1] for start in range(0, len(tokens), WINDOW - 1)]
+    failed |= not same
+    say(f"large: {len(ids)} tokens of text{f' and {len(tokens)} of {Path(text_file).name}' if text_file else ''}, the "
+        f"engine's tokenizer gives {'the same ids' if same else 'OTHER IDS — FAILED'}")
+    ids = ids[:positions]
+    (directory / "ids.json").write_text(json.dumps(rows))
+    subprocess.run([sys.executable, __file__, str(directory), "--only=theirs"], check=True)
+    whole = np.load(directory / "theirs.npy")
+    if text_file:
+        nll = json.loads((directory / "theirs.json").read_text())
+        say(f"large: perplexity of the float32 original, transformers: {math.exp(nll['total'] / nll['count']):.3f} "
+            f"({nll['count']} tokens of {Path(text_file).name}, windows of {WINDOW} from the page's BOS)")
+
+    began = time.perf_counter()
+    held = pinned(data)
+    say(f"large: {held} of the checkpoint's {len(data)} bytes pinned in {time.perf_counter() - began:.0f} s")
+    began, ours = time.perf_counter(), []
+    for pos, token in enumerate(ids):
+        ours.append(llama.forward(token, pos).copy())
+        elapsed = time.perf_counter() - began
+        if pos % 8 == 7:
+            say(f"large: the engine at position {pos + 1}, {elapsed:.0f} s")
+        if elapsed > 60 * minutes and len(ours) >= 64:
+            break
+    say(f"large: the engine (NumPy, float32), {len(ours)} positions in {time.perf_counter() - began:.0f} s")
+    if len(ours) < min(64, len(ids)):
+        failed = True
+        say(f"large: fewer than 64 positions — FAILED")
+    whole = whole[:len(ours)]
+    for what, logits in (("transformers", whole), ("the engine", ours)):
+        logits = np.asarray(logits)
+        say(f"large: logits of {what}: min {logits.min():.3f}, max {logits.max():.3f}, mean {logits.mean():.4f}, "
+            f"std {logits.std():.4f}")
+    largest, mean, agree, margin = differences(ours, whole)
+    if source == "gguf":
+        # the GGUF's values are Q8_0's rounding of the original's: no logits within a line of float32's, but the most
+        # likely token of the original at 85% of the positions (forward-check's line for int8 against float32)
+        ok = agree >= 0.85 * len(ours)
+        line = "the same most likely token at 85% of the positions"
+    else:
+        ok = largest <= 2e-2 and (agree == len(ours) or margin <= 2 * largest)
+        line = "2e-2"
+    failed |= not ok
+    say(f"large: the engine on {'the GGUF' if source == 'gguf' else 'the safetensors'} against transformers at once: "
+        f"largest difference {largest:.2e}, mean {mean:.2e}, the same most likely token at {agree} of {len(ours)} "
+        f"positions (the largest gap between the reference's best two where it is not: {margin:.2e})"
+        f"{'' if ok else f' — FAILED (the line: {line})'}")
+    if text_file and first:
+        # the same on the first tokens of the perplexity's text: the negative log likelihood of each, as
+        # tests/perplexity.py counts it (float64, from the page's BOS)
+        row, began, mine = rows[1][:first + 1], time.perf_counter(), []
+        for pos in range(len(row) - 1):
+            logits = np.asarray(llama.forward(row[pos], pos), dtype=np.float64)
+            logits -= logits.max()
+            mine.append(-(logits[row[pos + 1]] - math.log(np.exp(logits).sum())))
+        reference = nll["first"][:len(mine)]
+        furthest = max(abs(a - b) for a, b in zip(mine, reference))
+        ours_value, theirs_value = (math.exp(sum(values) / len(values)) for values in (mine, reference))
+        say(f"large: perplexity of the first {len(mine)} tokens of {Path(text_file).name}: transformers on the float32 "
+            f"original {theirs_value:.3f}, the engine (NumPy, float32) on {'the GGUF' if source == 'gguf' else 'the safetensors'} "
+            f"{ours_value:.3f} ({(ours_value / theirs_value - 1) * 100:+.2f}%; a token's negative log likelihood at most "
+            f"{furthest:.2e} apart; {time.perf_counter() - began:.0f} s)")
+        if source != "gguf" and abs(ours_value / theirs_value - 1) > 1e-3:
+            failed = True
+            say("large: the engine's perplexity on the original's weights is not transformers' — FAILED")
+    return failed
+
+
 def main():
     directory = Path(sys.argv[1])
     only = next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--only=")), None)
     positions = int(next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--positions=")), 96))
+    option = lambda name, default=None: next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith(f"--{name}=")), default)
     failed = False
+    if only == "theirs":
+        theirs(directory, directory / "ids.json")
+        return
+    if option("model") in OTHERS:
+        failed = real(directory / option("model"), positions, *OTHERS[option("model")])
+        say("FAILED" if failed else "the engine computes what transformers computes")
+        sys.exit(1 if failed else 0)
+    if option("model") in LARGE:
+        failed = large(directory, positions, option("model"), option("from", "safetensors"), option("text"),
+                       float(option("minutes", 40)), int(option("first", 0)))
+        say("FAILED" if failed else "the engine computes what transformers computes")
+        sys.exit(1 if failed else 0)
     if only == "fetch":
         for name in FILES:
             fetch(name, directory)

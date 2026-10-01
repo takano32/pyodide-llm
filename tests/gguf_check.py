@@ -27,8 +27,9 @@
 #       T236: a Qwen3.5 (hybrid attention), whose linear-attention layers llama.cpp names after a state-space model's
 #       (ssm_*) and some of whose tensors it changes as it writes them: the norms with the 1 the model adds to them,
 #       A_log as -exp(A_log), the convolution without its axis of one (as_llama_cpp_writes()); its metadata's heads,
-#       interval and turned part of a head against config.json's. One whose value heads llama.cpp tiles (more value
-#       heads than key heads: the 4B and up) is not passed: that order is not read here.
+#       interval and turned part of a head against config.json's. T245: one with more value heads than key heads (the
+#       4B and up) must hold its value heads tiled, as llama.cpp writes them (tiled()) and the page reads them: the
+#       order found is said for each such tensor, and Hugging Face's order there is a mismatch.
 #   python3 tests/gguf_check.py logits <out A> <out B> <text file> [tokens = 300]
 #       Two converted checkpoints (the <out> of tests/perplexity_prepare.py) on the same text: the largest logit
 #       difference, how often the most likely token agrees, and the perplexity of each. The acceptance of T74 is
@@ -58,11 +59,13 @@ F32, F16, Q8_0, BF16 = 0, 1, 8, 30
 Q4_0, Q4_1, Q5_0, Q4_K, Q6_K = 2, 3, 6, 12, 14
 # T235: the ternary type of Prism ML's fork of llama.cpp (Ternary-Bonsai), which the page reads (llama2_convert.pq2_0)
 PQ2_0 = 142
+# T230: its other ternary type, five values a byte in base 3 (Ternary Bonsai 2's smaller GGUF; llama2_convert.ptq1_0)
+PTQ1_0 = 143
 TYPE_NAMES = {F32: "F32", F16: "F16", Q8_0: "Q8_0", BF16: "BF16", Q4_0: "Q4_0", Q4_1: "Q4_1", Q5_0: "Q5_0",
-              Q4_K: "Q4_K", Q6_K: "Q6_K", PQ2_0: "PQ2_0"}
-# bytes per value: a block of 32 values (or a super-block of 256, or PQ2_0's block of 128) and its scales
+              Q4_K: "Q4_K", Q6_K: "Q6_K", PQ2_0: "PQ2_0", PTQ1_0: "PTQ1_0"}
+# bytes per value: a block of 32 values (or a super-block of 256, or PQ2_0's and PTQ1_0's block of 128) and its scales
 BYTES = {F32: 4, F16: 2, BF16: 2, Q8_0: 34 / 32, Q4_0: 18 / 32, Q4_1: 20 / 32, Q5_0: 22 / 32, Q4_K: 144 / 256, Q6_K: 210 / 256,
-         PQ2_0: 34 / 128}
+         PQ2_0: 34 / 128, PTQ1_0: 28 / 128}
 
 
 def half(raw):
@@ -128,8 +131,25 @@ def widen_pq2_0(raw):
     return (codes.reshape(-1, 128).astype(np.float32) - 1) * half(blocks[:, :2])
 
 
+def widen_ptq1_0(raw):
+    """Blocks of 128 in 28 bytes (ggml-common.h's block_ptq1_0 of the fork): 24 bytes of five ternary values each, 2
+    bytes of four, then a float16 d. A byte is ceil(256 v / 243) of the number v whose base 3 digits its values are
+    (the first the most significant), so v is the byte times 243 over 256, rounded down, and its digits come out by
+    division: another way to the same values than the converter's (which takes the high byte of three times the
+    byte, digit after digit, as the fork does). The values of a block are not in the order of its bytes: the n-th
+    digits of the first 16 bytes are values 16 n .. 16 n + 15, those of the next 8 values 80 + 8 n .., those of the
+    last 2 values 120 + 2 n .. (four digits there, the fifth is nothing). (digit - 1) * d."""
+    blocks = raw.reshape(-1, 28)
+    numbers = (blocks[:, :26].astype(np.int64) * 243) >> 8
+    digits = np.stack([numbers // 3 ** (4 - place) % 3 for place in range(5)], axis=1)  # (blocks, digit, byte)
+    values = np.concatenate([digits[:, :, :16].reshape(-1, 80), digits[:, :, 16:24].reshape(-1, 40),
+                             digits[:, :4, 24:26].reshape(-1, 8)], axis=1)
+    return (values.astype(np.float32) - 1) * half(blocks[:, 26:])
+
+
 WIDEN = {Q4_0: (32, 18, widen_q4_0), Q4_1: (32, 20, widen_q4_1), Q5_0: (32, 22, widen_q5_0),
-         Q4_K: (256, 144, widen_q4_k), Q6_K: (256, 210, widen_q6_k), PQ2_0: (128, 34, widen_pq2_0)}
+         Q4_K: (256, 144, widen_q4_k), Q6_K: (256, 210, widen_q6_k), PQ2_0: (128, 34, widen_pq2_0),
+         PTQ1_0: (128, 28, widen_ptq1_0)}
 
 
 class Reader:
@@ -276,6 +296,42 @@ def as_llama_cpp_writes(target, original, arch):
     if target.endswith("norm.weight") and not target.endswith("linear_attn.norm.weight"):
         return original.astype(np.float32) + np.float32(1), "1 + weight"
     return original, ""
+
+
+# T245: where a Qwen3.5's linear-attention layer has the value heads along an axis of a tensor, by the GGUF's name:
+# (whether q and k stand before them, whether a head has linear_value_head_dim entries there or one, the axis). From
+# llama.cpp's conversion/qwen.py at dcd387a4, _LinearAttentionVReorderBase.modify_tensors (lines 584 to 633): the rows
+# of in_proj_qkv after q and k, the rows of in_proj_z, of in_proj_a and in_proj_b (one to a head), the entries of
+# A_log and dt_bias, the convolution's channels after q's and k's, and the columns of out_proj. Not the norm of a value
+# head (ssm_norm: one for all the heads). The newest conversion/qwen.py (e358d591, 2026-10-01) is the same file
+VALUE_HEADS = {"attn_qkv.weight": (True, True, 0), "attn_gate.weight": (False, True, 0),
+               "ssm_alpha.weight": (False, False, 0), "ssm_beta.weight": (False, False, 0),
+               "ssm_dt.bias": (False, False, 0), "ssm_a": (False, False, 0),
+               "ssm_conv1d.weight": (True, True, 0), "ssm_out.weight": (False, True, 1)}
+TILED, UNTILED = "value heads tiled (llama.cpp's order)", "value heads as Hugging Face (not llama.cpp's order)"
+
+
+def value_heads(name, config):
+    """(first, key heads, value heads to a key head, entries to a head, axis) of the value heads in this GGUF tensor
+    of a Qwen3.5 with more value heads than key heads, else None (T245)."""
+    keys, values = config.get("linear_num_key_heads", 16), config.get("linear_num_value_heads", 32)
+    part = name.split(".", 2)[-1] if name.startswith("blk.") else None
+    if part not in VALUE_HEADS or values == keys:
+        return None
+    after_keys, of_a_head, axis = VALUE_HEADS[part]
+    return (2 * keys * config.get("linear_key_head_dim", 128) if after_keys else 0, keys, values // keys,
+            config.get("linear_value_head_dim", 128) if of_a_head else 1, axis)
+
+
+def tiled(w, first, keys, per, size, axis):
+    """What llama.cpp's converter does to the value heads of a Qwen3.5 whose key heads have per value heads each
+    (_reorder_v_heads): Hugging Face holds them grouped, the per value heads of key head 0, then those of key head 1;
+    the GGUF holds every key head's first value head, then every key head's second, ... What stands before first along
+    the axis (q and k) stays. Written out here rather than taken from llama2_convert.untiled, which is what is being
+    checked."""
+    w = np.moveaxis(w, axis, 0)
+    heads = w[first:].reshape(keys, per, size, *w.shape[1:]).swapaxes(0, 1).reshape(w.shape[0] - first, *w.shape[1:])
+    return np.ascontiguousarray(np.moveaxis(np.concatenate([w[:first], heads]), 0, axis))
 
 
 def turned(w, heads):
@@ -453,12 +509,15 @@ def row_check(parts):
              for i in rounded[:64]])
 
 
-def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, split_heads=0):
+def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, split_heads=0, tile=None):
     """relative error, the error against the nearest reference (squares()) and int8 equality of a large matrix, a
     block of rows at a time; by_row: also the error of each row (row_check()). head_rows: q or k, whose heads of head_rows rows the GGUF may hold turned: the
     blocks are whole heads, and the order is the one of the first block (the order found is returned too).
     split_heads: GPT-NeoX's query_key_value of that many heads, which the GGUF may hold split (split()): the blocks
-    are one head's q, k or v, and the original's rows of it are fetched from where Hugging Face keeps them."""
+    are one head's q, k or v, and the original's rows of it are fetched from where Hugging Face keeps them.
+    tile: value_heads() of a Qwen3.5's tensor (T245), which the GGUF may hold tiled: along the rows the blocks after q
+    and k are one value head's, fetched from where Hugging Face keeps that head; along the columns each block's are
+    moved."""
     rows = max(1, BLOCK // math.prod(shape[1:]))
     if head_rows:
         rows = max(head_rows, rows // head_rows * head_rows)
@@ -468,10 +527,29 @@ def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, sp
     difference = total = same = count = 0.0
     parts, sums = [], None
     order = ""
-    for first in range(0, shape[0], rows):
-        last = min(first + rows, shape[0])
+    blocks = [(first, min(first + rows, shape[0])) for first in range(0, shape[0], rows)]
+    if tile and tile[4] == 0:
+        begin, keys, per, head, _ = tile
+        blocks = [(first, min(first + rows, begin)) for first in range(0, begin, rows)] \
+            + [(first, first + head) for first in range(begin, shape[0], head)]
+    for first, last in blocks:
         values, raw = tensor(info, data, base, first, last)
         original = hf.rows(target, first, last).reshape(last - first, *shape[1:]).astype(np.float32)
+        if tile and tile[4] == 0 and first >= begin:
+            # the GGUF's value head j * keys + h is Hugging Face's h * per + j
+            j, h = divmod((first - begin) // head, keys)
+            source = begin + (h * per + j) * head
+            moved = hf.rows(target, source, source + head).reshape(head, *shape[1:]).astype(np.float32)
+            if not order and source != first:  # the first and the last head are where they are in either order
+                order = TILED if relative(values, moved) < relative(values, original) else UNTILED
+            if order == TILED:
+                original = moved
+        if tile and tile[4] == 1:
+            moved = tiled(original, *tile)
+            if not order:
+                order = TILED if relative(values, moved) < relative(values, original) else UNTILED
+            if order == TILED:
+                original = moved
         if split_heads:
             part, head = divmod(first // size, split_heads)
             source = (head * 3 + part) * size
@@ -534,6 +612,12 @@ def config_pairs(config, arch="llama"):
              ("rope.freq_base", "rope_theta", config.get("rope_theta", 10000.0), True),
              ("attention.layer_norm_rms_epsilon", "rms_norm_eps", config.get("rms_norm_eps"), True),
              ("context_length", "max_position_embeddings", config.get("max_position_embeddings"), False)]
+    if arch == "granite":
+        # T253: a Granite's four multipliers, which are no tensor (llama.cpp multiplies at run time, and the page's
+        # converter puts the scores' into q). transformers' default where config.json names none is 1
+        pairs += [(key, name, config.get(name, 1.0), True) for key, name in (
+            ("attention.scale", "attention_multiplier"), ("embedding_scale", "embedding_multiplier"),
+            ("residual_scale", "residual_multiplier"), ("logit_scale", "logits_scaling"))]
     if arch == "qwen35":
         # T236: which layers attend over all positions, the heads of the others and the taps of their convolution (the
         # tensors show only the products of heads and sizes), and how much of a head turns. The defaults are those of
@@ -613,11 +697,10 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
                                ("classifier shared with the embedding", tied, bool(config.get("tie_word_embeddings", False)))):
         mismatched += ours != theirs
         print(f"| {what} | {ours} | {theirs}{'' if ours == theirs else ' **differs**'} |")
-    if arch == "qwen35" and config.get("linear_num_value_heads", 32) != config.get("linear_num_key_heads", 16):
-        # T236: llama.cpp stores the value heads of such a model tiled (every key head's first, then every key head's
-        # second: conversion/qwen.py's _reorder_v_heads), which this does not put back: nothing below would mean much
+    if arch == "qwen35" and config.get("linear_num_value_heads", 32) % config.get("linear_num_key_heads", 16):
+        # T245: llama.cpp stores the value heads tiled where a key head has more than one: as many to each, or no order
         mismatched += 1
-        print("| order of the value heads | tiled by llama.cpp | not read here **differs** |")
+        print("| value heads to a key head | | not a whole number **differs** |")
 
     vocab_diffs = {}
     originals = original_vocabularies(directory)
@@ -667,13 +750,22 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
                 head_rows = shape[0] // (heads if "attn_q" in name else kv_heads)
             split_heads = heads if arch == "gptneox" and name.endswith("attn_qkv.weight") else 0
             error, near, equal, rowwise, order = large(info, data, base, hf, target, shape, quantize, by_row, head_rows,
-                                                       split_heads)
+                                                       split_heads, value_heads(name, config) if arch == "qwen35" else None)
             if order:
                 orders.add(order)
         else:
             values, raw = tensor(info, data, base)
             original = hf.rows(target, 0, shape[0]).reshape(shape).astype(np.float32)
             original, order = as_llama_cpp_writes(target, original, arch)
+            tile = value_heads(name, config) if arch == "qwen35" else None
+            if tile and values.shape == original.shape:
+                # T245: and the value heads tiled, where a key head has more than one
+                moved = tiled(original, *tile)
+                way = TILED if relative(values, moved) < relative(values, original) else UNTILED
+                order = f"{order}, {way}" if order else way
+                orders.add(way)
+                if way == TILED:
+                    original = moved
             if name.endswith(("attn_q.weight", "attn_k.weight", "attn_q.bias", "attn_k.bias")):
                 n = heads if "attn_q" in name else kv_heads
                 as_is, turn = relative(values, original), relative(values, turned(original, n))
@@ -721,6 +813,11 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             mismatched += rowwise[0]
             rows_note = (f"{rowwise[0]} ({rowwise[1]:.4f} at row {rowwise[2]}){' **differs**' if rowwise[0] else ''}"
                          + (f"; {rowwise[4]} more only as Q8_0's float16 scale rounds them" if rowwise[4] else ""))
+        if UNTILED in order:
+            # T245: the page puts the value heads back from llama.cpp's order (as llama.cpp itself reads them): a file
+            # that has them as Hugging Face does would be read with other heads, however near its values are
+            mismatched += 1
+            order += " **differs**"
         print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | {error:.5f} | {near_note} | {order} | {equal} | {rows_note} |")
     if any(rounded_detail.values()):
         # T145: what passes only against a Q8_0 of the original, to be read: an unused piece of a small norm, or not.

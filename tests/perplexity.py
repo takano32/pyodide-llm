@@ -6,7 +6,7 @@
 # Input: the globals MODEL ({"checkpoint", "tokenizer", "options"}), TEXT, TOKENS and WINDOW. Output: a JSON string.
 # MODEL["file"] (T229): the checkpoint as a file of this machine, read straight into forward.js's memory
 # (tests/engine.mjs's kernel_llama_file), for a model whose weights widened to float32 pass Pyodide's 4 GiB: the
-# kernels' rows alone, and NumPy's from tests/perplexity_native.py.
+# kernels' rows alone, and NumPy's from tests/perplexity_native.py. MODEL["rows"] (T247): which of the rows, by number.
 # tests/perplexity_native.py imports perplexity() from here, for the float32 originals that Pyodide cannot hold.
 import gc
 import json
@@ -43,8 +43,18 @@ def main():
                 ("kernels, 7-bit activations, keys and values in float32", "simdkernel.so", ("kv16",)),
                 ("kernels, 8-bit activations (matmul_q8)", "simdkernel.so", ("relaxed",)),
                 ("NumPy, activations not quantized", None, ())]
+    if MODEL["options"].get("dtype") == "ternary":  # noqa: F821
+        # T231: ternary weights meet the activations in all 8 bits with relaxed SIMD and without, the same numbers to
+        # the bit (matmul_t2r, matmul_t2)
+        variants = [("kernels, 8-bit activations (matmul_t2r)", "simdkernel.so", ()),
+                    ("kernels, 8-bit activations, without relaxed SIMD (matmul_t2)", "simdkernel.so", ("relaxed",)),
+                    variants[-1]]
     if file:
         variants = [variant for variant in variants if variant[1]]
+    if MODEL.get("rows") is not None:  # noqa: F821
+        # T247: some of the rows only, a process each: two memories of a 10 GB model at once are more than a runner has,
+        # and the first is not given back before the second is made
+        variants = [variants[row] for row in MODEL["rows"]]  # noqa: F821
     tokens = None
     for label, kernels, disable in variants:
         # the kernels' rows run the forward pass of forward.js, as the page does (tests/engine.mjs, T93)

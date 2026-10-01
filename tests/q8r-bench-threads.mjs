@@ -43,9 +43,13 @@ if (!isMainThread) {
   for (const name of ["main", "tree"]) {
     const dir = `${work}${name}/`;
     fs.mkdirSync(dir, { recursive: true });
-    for (const file of ["kernel.ts", "kernel_relaxed.ts", "six.ts"]) {
-      fs.writeFileSync(dir + file, name === "main" ? execFileSync("git", ["show", `origin/main:kernels/${file}`], { cwd: root, encoding: "utf8" })
-        : fs.readFileSync(`${root}kernels/${file}`, "utf8"));
+    for (const file of ["kernel.ts", "kernel_relaxed.ts", "six.ts", "ternary.ts"]) {
+      try {
+        fs.writeFileSync(dir + file, name === "main" ? execFileSync("git", ["show", `origin/main:kernels/${file}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+          : fs.readFileSync(`${root}kernels/${file}`, "utf8"));
+      } catch (error) {
+        if (file !== "ternary.ts") throw error;  // a main before T231 has no ternary.ts, and its kernels import none
+      }
     }
     execFileSync("npx", [...asc, dir + "kernel_relaxed.ts", "-o", dir + "relaxed.wasm", "--enable", "simd,relaxed-simd,threads"], { cwd: root, stdio: "inherit" });
     files.push(dir + "relaxed.wasm");

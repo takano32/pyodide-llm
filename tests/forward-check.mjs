@@ -334,7 +334,7 @@ const halfKeys = args.includes("--half-keys");
 if (halfKeys && shared) throw new Error("--half-keys is for a plain memory: add --plain");
 py.globals.set("HALF_KEYS", halfKeys || undefined);
 const memoryOptions = (options) => {
-  const quantized = ["int8", "int6"].includes(options.dtype), int8 = !without.includes("int8");
+  const quantized = ["int8", "int6", "ternary"].includes(options.dtype), int8 = !without.includes("int8");
   return { ...options, int8, relaxed: Boolean(kernels.relaxed) && !without.includes("relaxed"),
     halfKV: quantized && int8 && !without.includes("kv16"), shared: shared || halfKeys };
 };
@@ -423,7 +423,7 @@ llama.release(); del llama; gc.collect()
   const verdict = py.runPython(`
 page = kernel_llama(data, vocabulary, **OPTIONS)
 numpy = Llama(data, vocabulary, **{k: v for k, v in OPTIONS.items() if k not in ("disable", "half_keys")})
-int8 = "int8" in page.backend or "int6" in page.backend  # both quantize the activations (T98)
+int8 = any(name in page.backend for name in ("int8", "int6", "ternary"))  # they all quantize the activations (T98, T231)
 sequence, agree, largest, nll, apart, size = [page.bos], 0, 0.0, [0.0, 0.0], 0.0, 0.0
 for pos in range(${positions}):
     a, b = page.forward(sequence[pos], pos).astype(np.float64), numpy.forward(sequence[pos], pos).astype(np.float64)
