@@ -16,6 +16,14 @@ for (const entry of MODELS.filter((entry) => entry.hf?.vocabulary)) {
   // T136: the repository its vocabulary and config.json come from is a source too
   assert.ok(LICENSES[entry.hf.vocabulary.repo], `${entry.id}: no license for ${entry.hf.vocabulary.repo} in LICENSES`);
 }
+// every Hugging Face entry pins what it fetches by a full commit hash (AGENTS.md: so that nothing changes under the
+// page), the repository its vocabulary comes from as well. The review of T235 found all 54 entries so, with no check
+// that said it must be: a branch name left in an entry would pass every test and let its files change
+for (const entry of MODELS.filter((entry) => entry.hf)) {
+  for (const { revision } of [entry.hf, entry.hf.vocabulary].filter(Boolean)) {
+    assert.match(revision, /^[0-9a-f]{40}$/, `${entry.id}: a revision is a full commit hash, not ${revision}`);
+  }
+}
 const used = new Set(MODELS.flatMap((entry) => [sourceOf(entry), entry.original, entry.hf?.vocabulary?.repo].filter(Boolean)));
 for (const repo of Object.keys(LICENSES)) assert.ok(used.has(repo), `LICENSES names ${repo}, which no model uses`);
 const listed = sources();
