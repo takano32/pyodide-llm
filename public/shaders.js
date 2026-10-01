@@ -3033,8 +3033,9 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
 // What SAMPLE and the stages of the sampling in chunks (T191, below) share: the constants, the workgroup's memory of
 // the reductions, and cumsum.wgsl's scan.
 // T219: is_nan_magnitude() below takes the form of isnan() in TensorFlow.js, tfjs-backend-webgpu/src/webgpu_program.ts
-// (https://github.com/tensorflow/tfjs, 2026-09-28: `(floatToUint & 0x7fffffffu) > 0x7f800000u` of the bitcast<u32>
-// of the value). Copyright 2022 Google LLC. All Rights Reserved.
+// (https://github.com/tensorflow/tfjs, master of 2026-09-28, the file's last commit d45c6af3 of 2023-07-17, which has
+// no NOTICE file: `(floatToUint & 0x7fffffffu) > 0x7f800000u` of the bitcast<u32> of the value; the review of T219
+// read it there, and its header is this one's). Copyright 2022 Google LLC. All Rights Reserved.
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
 // the License. You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 // Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
