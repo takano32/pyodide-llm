@@ -103,7 +103,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 const ids = (args.length ? args : ["made-up", "stories15M", "tiny-lm", "llm-jp-3-150m"])
   .flatMap((id) => (id === "made-up" ? Object.keys(SYNTHETIC) : [id]));
 // T147: 150 tokens, so that the GPU's blocks of 64 are two and a part (the tiles' ends), and the caches grow to 256
-const COUNT = 150, KV_START = 8;
+const COUNT = Number(process.env.T224_COUNT ?? 150), KV_START = 8;
 // T152: the greedy steps NumPy takes after the prompt
 const GEN = 8;
 // The worst row of the keys and values against NumPy's, by what the matrices' shader computes in (T147, measured on
@@ -319,7 +319,7 @@ for (const id of ids) {
     // GB, which with the file's copies went past Pyodide's 4 GB and a 7.5 GB scope of the development machine
     const prefix = id.slice(0, -".json".length);
     options = JSON.parse(fs.readFileSync(id, "utf8"));
-    text = TEXTS.english.repeat(3);
+    text = TEXTS.english.repeat(Number(process.env.T224_REPEAT ?? 3));
     const native = spawnSync(process.env.PYTHON ?? "python3", ["-c", `import sys, json\nsys.path.insert(0, ${JSON.stringify(path.join(root, "public"))})\n${PYTHON}
 data, vocabulary = open(sys.argv[1] + ".bin", "rb").read(), open(sys.argv[1] + ".tokenizer.bin", "rb").read()
 print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open(sys.argv[1] + ".json")))))`, prefix, text],
