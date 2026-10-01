@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { aloneHolds, BOTH_ON_8, aloneVerdict, gpuBytes, gpuLine, gpuOnlyPlan, gpuOnlyUnfit, gpuOnlyWeights, gpuHoles, layerWeightsOf, placer, PROMPTS_CPU,
   PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes, USAGE_UNKNOWN, weightsPlace } from "../public/forward.js";
-import { deviceKey, halvesOf } from "../public/shaders.js";
+import { deviceKey, halvesOf, tokenAttentionData, tokenAttentionOff } from "../public/shaders.js";
 import { usedAfter } from "../src/bench.js";
 
 // a GPU with a fixed cost of 40 ms a block and 0.5 ms a token (16 tokens 48 ms, 64 tokens 72 ms)
@@ -143,8 +143,8 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // were and 3B and larger go on the GPU alone. The second review of T156, the list's configs with footprint() and
   // gpuBytes(), 4096 positions: sarashina2.2 1B 2.81 + 1.94 GB (4.42 GiB) and llm-jp-3.1 1.8B 3.543 + 2.910 GB (6.010
   // GiB, no GQA: its keys and values are 0.8 GB on either side; 11 MB past the first line of 6 GiB) both as before;
-  // Qwen2.5 3B 4.10 + 3.63 GB (7.20 GiB, not eligible: its biases) the CPU with its layers past the room left;
-  // Llama 3.2 3B 8.83 GB the GPU alone)
+  // Qwen2.5 3B 4.10 + 3.63 GB (7.20 GiB; until T226 not eligible for its biases: the CPU with its layers past the
+  // room left; with its steps on the GPU, the GPU alone); Llama 3.2 3B 8.83 GB the GPU alone)
   assert.equal(BOTH_ON_8, 6.5 * GB, "the line of both on a device that says 8");
   assert.deepEqual(weightsPlace({ cpu: 1.5 * GB, gpu: 1.4 * GB, deviceMemory: 8 }), { mode: "both", gpuRoom: 5 * GB }, "Llama 3.2 1B on 8: both");
   assert.equal(weightsPlace({ cpu: 2.812e9, gpuOnly: 0.98e9, gpu: 1.939e9, deviceMemory: 8, eligible: true }).mode, "both", "sarashina2.2 1B on 8: both");
@@ -152,7 +152,8 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(weightsPlace({ cpu: 3.25 * GB, gpuOnly: 0.6 * GB, gpu: 3.25 * GB, deviceMemory: 8, eligible: true }).mode, "both", "6.5 GiB: both");
   assert.equal(weightsPlace({ cpu: 3.3 * GB, gpuOnly: 0.6 * GB, gpu: 3.3 * GB, deviceMemory: 8, eligible: true }).mode, "gpu", "6.6 GiB: the GPU alone");
   const qwen3B = weightsPlace({ cpu: 4.103e9, gpu: 3.627e9, deviceMemory: 8 });
-  assert.ok(qwen3B.mode === "cpu" && qwen3B.gpuRoom < 3.273e9, "Qwen2.5 3B on 8: the CPU, its layers (3.27 GB) past the room left");
+  assert.ok(qwen3B.mode === "cpu" && qwen3B.gpuRoom < 3.273e9, "Qwen2.5 3B on 8 where it is not eligible: the CPU, its layers (3.27 GB) past the room left");
+  assert.equal(weightsPlace({ cpu: 4.103e9, gpuOnly: 1.2e9, gpu: 3.627e9, deviceMemory: 8, eligible: true }).mode, "gpu", "T226: Qwen2.5 3B on 8, eligible: the GPU alone");
   assert.equal(weightsPlace({ cpu: 4.9e9, gpuOnly: 1.3e9, gpu: 3.93e9, deviceMemory: 8, eligible: true }).mode, "gpu", "Llama 3.2 3B on 8: the GPU alone");
   assert.equal(weightsPlace({ cpu: 4.4 * GB, gpuOnly: 1.2 * GB, gpu: 4.1 * GB, deviceMemory: 8, eligible: true }).mode, "gpu", "3B on 8: the GPU alone");
   assert.equal(weightsPlace({ cpu: 9.2 * GB, gpuOnly: 1.5 * GB, gpu: 8 * GB, deviceMemory: 8, eligible: true }).mode, "gpu", "7B on 8: no limit");
@@ -177,8 +178,14 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.match(gpuOnlyUnfit(oneB, "int8", {}, undefined), /no GPU adapter/);
   assert.match(gpuOnlyUnfit(oneB, "int8", {}, { ...adapter, fallback: true }), /fallback/);
   assert.equal(gpuOnlyUnfit(oneB, "int8", {}, { ...adapter, fallback: true }, { fallback: true }), null, "the tests' leave");
-  assert.match(gpuOnlyUnfit(oneB, "int8", { bias: true }, adapter), /steps/);
-  assert.match(gpuOnlyUnfit(oneB, "int8", { arch: "gpt2" }, adapter), /steps/);
+  // T226: Qwen2 (biases) and Qwen3 (norms of the heads, heads of another size) as well: Qwen2.5 3B's and Qwen3 4B's
+  // shapes (the owner's NVIDIA PC: "Qwen3 4B ですら GPU 使われないんだが？"); not GPT-2 or GPT-NeoX
+  assert.equal(gpuOnlyUnfit(oneB, "int8", { bias: true }, adapter), null);
+  assert.equal(gpuOnlyUnfit([2048, 11008, 36, 16, 2, 151936, 4096], "int8", { bias: true }, adapter), null, "Qwen2.5 3B");
+  assert.equal(gpuOnlyUnfit([2560, 9728, 36, 32, 8, 151936, 4096], "int8", { qk_norm: true, head_dim: 128 }, adapter), null, "Qwen3 4B");
+  assert.equal(gpuOnlyUnfit([4096, 12288, 36, 32, 8, 151936, 4096], "int8", { qk_norm: true, head_dim: 128 }, adapter), null, "Qwen3 8B");
+  assert.match(gpuOnlyUnfit(oneB, "int8", { arch: "gpt2" }, adapter), /GPT-2 and GPT-NeoX/);
+  assert.match(gpuOnlyUnfit(oneB, "int8", { arch: "neox" }, adapter), /GPT-2 and GPT-NeoX/);
   assert.match(gpuOnlyUnfit(oneB, "int6", {}, adapter), /int6/);
   // stories15M (dim 288, 6 heads): k starts at 288 × 288 weights, no multiple of 2048 (T152)
   assert.match(gpuOnlyUnfit([288, 768, 6, 6, 6, 32000, 256], "int8", {}, adapter), /would not start/);
@@ -281,5 +288,36 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(aloneHolds(alone, key, { ...cpu, GBps: 30.1 }), false, "/benchmark/'s CPU measured again");
   assert.equal(aloneHolds(alone, key, undefined), false, "no /benchmark/ now");
   assert.equal(aloneHolds(undefined, key, cpu), false);
+}
+// T224's review: shaders.js's tokenAttentionOff (how far a token's attention from the GPU is from JavaScript's, the check
+// of the engine and of /benchmark/) keeps a NaN. `if (!(off <= worst)) worst = off` let the next value take its place,
+// and a NaN in one head, or in the first values of the last, was a pass (a reduce that wrote NaN for head 0 only: 4e-8)
+{
+  const dims = { heads: 4, kvHeads: 2, size: 8, positions: 40 };
+  const data = tokenAttentionData({ ...dims, steep: [3] });
+  // the answer in float64, apart from the function's: the weights of a head over its positions, then their values
+  const half = (h) => (h & 0x8000 ? -1 : 1) * ((h >> 10) & 31 ? 2 ** (((h >> 10) & 31) - 15) * (1 + (h & 1023) / 1024) : 2 ** -14 * ((h & 1023) / 1024));
+  const exact = new Float32Array(dims.heads * dims.size), kvDim = dims.kvHeads * dims.size;
+  for (let h = 0; h < dims.heads; h++) {
+    const kv = Math.floor(h / (dims.heads / dims.kvHeads)) * dims.size;
+    const scores = Array.from({ length: dims.positions }, (_, p) => {
+      let sum = 0;
+      for (let d = 0; d < dims.size; d++) sum += data.q[h * dims.size + d] * half(data.keys[p * kvDim + kv + d]);
+      return sum / Math.sqrt(dims.size);
+    });
+    const top = Math.max(...scores), weights = scores.map((s) => Math.exp(s - top)), total = weights.reduce((a, b) => a + b, 0);
+    for (let d = 0; d < dims.size; d++) {
+      exact[h * dims.size + d] = weights.reduce((sum, w, p) => sum + w * half(data.values[p * kvDim + kv + d]), 0) / total;
+    }
+  }
+  assert.ok(tokenAttentionOff(exact, data, dims) < 1e-6, "the right answer is off by rounding to float32 only");
+  const wrong = Float32Array.from(exact);
+  wrong[5] += 0.5;
+  assert.ok(tokenAttentionOff(wrong, data, dims) > 1e-2, "a value off by 0.5 is seen");
+  const withNaN = (from, to) => Float32Array.from(exact).fill(NaN, from, to);
+  for (const [where, got] of [["the first value", withNaN(0, 1)], ["all of head 0", withNaN(0, 8)], ["head 1's middle", withNaN(10, 12)],
+    ["the first values of the last head", withNaN(24, 28)], ["the last value", withNaN(31, 32)]]) {
+    assert.ok(Number.isNaN(tokenAttentionOff(got, data, dims)), `a NaN in ${where} stays`);
+  }
 }
 console.log("ok");

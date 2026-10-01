@@ -1470,7 +1470,8 @@ async function checkTokenAttentions() {
             return new Float32Array(await readBack(encoder, v.att, heads * size * 4));
           });
           const off = WGSL.tokenAttentionOff(got, data, { heads, kvHeads, size, positions });
-          if (!(off <= verdict.worstRelative)) Object.assign(verdict, { worstRelative: off, at: { headSize: size, positions } });
+          // (a NaN stays the worst: `!(off <= NaN)` is true, and the next size's number would take its place: T224's review)
+          if (!Number.isNaN(verdict.worstRelative) && !(off <= verdict.worstRelative)) Object.assign(verdict, { worstRelative: off, at: { headSize: size, positions } });
         }
         postMessage({ alive: true });
       }
@@ -1747,7 +1748,8 @@ async function attentionLengths(shape) {
         postMessage({ alive: true });
       });
     }
-    return { positions: ATTENTION_LENGTHS, rows, base, MB };
+    // (bytes: the keys and values of a length, read once: float16, two of them; src/bench.js turns the time into GB/s)
+    return { positions: ATTENTION_LENGTHS, rows, base, MB, bytes: ATTENTION_LENGTHS.map((positions) => positions * kvDim * 2 * 2) };
   } catch (error) {
     return { error: String(error?.message ?? error) };
   }
