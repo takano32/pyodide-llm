@@ -15,10 +15,13 @@ const spec = JSON.parse(process.argv[2]);
 const entry = MODELS.find((model) => model.id === spec.id);
 if (!entry) throw new Error(`no entry ${spec.id}`);
 // spec.tiny: a made-up model of tests/make_qwen35.py (the entry's tokens do not exist in it), only to run this script's calls
-const options = { ...JSON.parse(fs.readFileSync(`${spec.out}.json`, "utf8")), ...(spec.tiny ? {} : entry.options) };
-const sampling = { ...(spec.tiny ? { steps: 30, temperature: 0.7, topp: 0.8, repetition_penalty: 1.0 } : entry.generation),
+// spec.page: what tests/write_options.py makes for the entry (the page's options under the entry's own, the format the
+// page sends, the entry's sampling), for an entry whose format the converter reads out of the model's files
+const page = spec.page ? JSON.parse(fs.readFileSync(spec.page, "utf8")) : null;
+const options = { ...JSON.parse(fs.readFileSync(`${spec.out}.json`, "utf8")), ...(spec.tiny ? {} : page ? page.options : entry.options) };
+const sampling = { ...(spec.tiny ? { steps: 30, temperature: 0.7, topp: 0.8, repetition_penalty: 1.0 } : page ? page.generation : entry.generation),
   ...(spec.penalty ? { repetition_penalty: spec.penalty } : {}) };
-const template = spec.tiny ? "{prompt}" : entry.template;
+const template = spec.tiny ? "{prompt}" : page ? page.template : entry.template;
 console.log(`T236LOOPS ${spec.id}: sampling ${JSON.stringify(sampling)}, options ${JSON.stringify({ ...options, specials: `${options.specials?.length} of them` })}, template ${JSON.stringify(template)}`);
 const { pyodide } = await pyodideWithEngine();
 pyodide.FS.writeFile("tokenizer.bin", fs.readFileSync(`${spec.out}.tokenizer.bin`));

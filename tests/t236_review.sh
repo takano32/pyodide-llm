@@ -11,6 +11,7 @@
 #   rows            tests/t236_rows.mjs and tests/t236_numpy_rows.py: the kernel rows and the NumPy row of the GGUF's path and the
 #                   original's, on 3 English and 3 Japanese articles
 #   loops <id> <penalty|none>   tests/t236_loops.mjs: 12 prompts through the page's engine, to the end of the context
+#   loops-entry <id> <penalty|none>   the same for any entry of the list (its options, format and sampling as tests/write_options.py makes them)
 #   scan <4B|8B> <revision>     tests/t246_scan.py: blocks with two magnitudes in the -unpacked originals
 #   yarn <size> <revision> [by-layer]   tests/t246_chat_reference.py: yarn against a plain RoPE on texts and chat turns
 set -euo pipefail
@@ -144,6 +145,20 @@ case "$stage" in
       const [out, id, penalty] = process.argv.slice(1);
       console.log(JSON.stringify({ out, id, prompts: JSON.parse(fs.readFileSync("tests/t236_prompts.json", "utf8")), seed: 1000,
         penalty: penalty === "none" ? null : Number(penalty) }));' "$dir/g8" "$id" "$penalty")
+    node tests/t236_loops.mjs "$spec"
+    ;;
+  loops-entry)  # any entry of the list, as the page opens it: its options, its format and its sampling (write_options.py)
+    id=${1:?an entry id}
+    penalty=${2:-none}
+    page_tools
+    model=$(python tests/hf_fetch.py "$id" "$dir/hf" | tail -1)
+    prepare "$model" g8 int8
+    python tests/write_options.py "$id" "$dir/small" > "$dir/page.json"
+    spec=$(node -e '
+      const fs = require("node:fs");
+      const [out, id, penalty, page] = process.argv.slice(1);
+      console.log(JSON.stringify({ out, id, page, prompts: JSON.parse(fs.readFileSync("tests/t236_prompts.json", "utf8")), seed: 1000,
+        penalty: penalty === "none" ? null : Number(penalty) }));' "$dir/g8" "$id" "$penalty" "$dir/page.json")
     node tests/t236_loops.mjs "$spec"
     ;;
   scan)
