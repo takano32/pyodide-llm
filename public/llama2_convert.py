@@ -5,6 +5,7 @@
 # lets the same code run when the site is built (convert_hf.py, quantize.py) and inside the browser, where the
 # WebAssembly memory has 32 bits and never shrinks.
 import json
+import math
 import re
 import struct
 import time
@@ -12,7 +13,8 @@ import time
 import numpy as np
 
 # the RoPE angles are the engine's, which computes them itself when a file leaves the tables out (int8)
-from llama2_numpy import CHARSMAP, FORM, RMS_EPS, form_of, pack6, quantize6, rope_frequencies
+from llama2_numpy import (CHARSMAP, FORM, RMS_EPS, form_of, layer_slots, linear_form, linear_widths, pack6, quantize6,
+                          rope_frequencies, rope_magnitude)
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
 # peak is the output plus 14 MB with this, plus 52 MB with pieces four times as large, at the same speed.
@@ -28,7 +30,7 @@ def group_size(row_length):
 
 
 def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, bias=False, arch="llama", qk_norm=False,
-           head_dim=0):
+           head_dim=0, linear=None):
     """(shape, is a matrix) of every tensor, in file order. llama2_numpy.py reads the same order.
 
     is a matrix: True for what int8 quantizes, False for the norm weights, None for the RoPE tables.
@@ -38,9 +40,33 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, 
     per layer go after the biases, for the same reason.
     head_dim: the size of a head where it is not dim / n_heads (0: it is). Then q and the attention's output are
     n_heads * head_dim wide, not dim (Qwen3 0.6B: 16 heads of 128 in a dim of 1024, T124).
+    linear: the linear-attention layers of arch "qwen35" (T229, llama2_numpy.linear_form()). Its tensors are stacked
+    by the kind of the layer: those of the full-attention layers (q, its gate, k, v, o, the norms of the heads of q
+    and k), those of the linear-attention layers (q, k and v in one matrix, z, the two small matrices of the gates,
+    which are never quantized, the taps of the convolution, dt_bias, the decay, the norm of a value head, the output),
+    and the FFN of every layer.
     """
     head_size = head_dim or dim // n_heads
     q_dim, kv_dim = n_heads * head_size, n_kv_heads * head_size
+    if arch == "qwen35":
+        linear = linear_form(linear)
+        mixed, _, read = linear_widths(linear)
+        full = n_layers // linear["every"]
+        lines, values = n_layers - full, linear["value_heads"]
+        tensors = [((abs(vocab_size), dim), True), ((n_layers, dim), False),
+                   ((full, q_dim, dim), True), ((full, q_dim, dim), True),
+                   ((full, kv_dim, dim), True), ((full, kv_dim, dim), True), ((full, dim, q_dim), True),
+                   ((full, head_size), False), ((full, head_size), False),
+                   ((lines, mixed, dim), True), ((lines, read, dim), True),
+                   ((lines, values, dim), False), ((lines, values, dim), False),
+                   ((lines, linear["conv"], mixed), False), ((lines, values), False), ((lines, values), False),
+                   ((lines, linear["value_dim"]), False), ((lines, dim, read), True),
+                   ((n_layers, dim), False),
+                   ((n_layers, hidden_dim, dim), True), ((n_layers, dim, hidden_dim), True), ((n_layers, hidden_dim, dim), True),
+                   ((dim,), False), ((seq_len, head_size // 2), None), ((seq_len, head_size // 2), None)]
+        if vocab_size < 0:
+            tensors.append(((abs(vocab_size), dim), True))
+        return tensors
     if arch in ("gpt2", "neox"):
         # GPT-2: LayerNorm (a weight and a bias), a bias after every projection, learned positions instead of
         # RoPE, and an FFN of two matrices instead of three (no gate). Same attention.
@@ -90,7 +116,7 @@ def check_dtype(dtype):
 
 def tensor_bytes(shape, is_matrix, dtype):
     """How many bytes a tensor of layout() takes in a checkpoint of that dtype."""
-    count, dtype = int(np.prod(shape)), dtype_name(dtype)
+    count, dtype = math.prod(shape), dtype_name(dtype)
     if dtype not in QUANTIZED:
         return count * np.dtype(dtype).itemsize
     if is_matrix is None:
@@ -166,12 +192,12 @@ class Writer:
                 quantized, scales = quantize6(rows)
                 packed = pack6(quantized)
             self.put(offset + first * 3 // 4, packed)
-            self.put(offset + int(np.prod(shape)) * 3 // 4 + 4 * (first // 32), scales)
+            self.put(offset + math.prod(shape) * 3 // 4 + 4 * (first // 32), scales)
         elif is_matrix:
             fast = self.quantize_rows is not None and shape[-1] % 32 == 0
             quantized, scales = (self.quantize_rows if fast else quantize)(np.asarray(values, dtype=np.float32).reshape(-1, shape[-1]))
             self.put(offset + first, quantized)
-            self.put(offset + int(np.prod(shape)) + 4 * (first // group_size(shape[-1])), scales)
+            self.put(offset + math.prod(shape) + 4 * (first // group_size(shape[-1])), scales)
         elif is_matrix is False:
             self.put(offset + 4 * first, np.asarray(values, dtype=np.float32))
 
@@ -784,10 +810,33 @@ def q8_0(raw):
     return (values * scales).reshape(-1)
 
 
-# bytes per value (Q8_0: 34 bytes for 32 of them), and how to read them
+# the four values of each byte of PQ2_0, the lowest two bits first, as one little-endian word of four int8
+PQ2_0_CODES = ((np.arange(256)[:, None] >> (0, 2, 4, 6) & 3) - 1).astype(np.int8).view("<u4").reshape(256)
+
+
+def pq2_0(raw):
+    """Prism ML's PQ2_0 (T235: Ternary-Bonsai's GGUFs, ggml type 142): blocks of 128 values, each a float16 scale d
+    and 32 bytes of two bits a value, the first value in the lowest bits of the first byte. A value is (code - 1) * d:
+    -d, 0 or +d in a ternary model, whose files leave the code 3 (+2 d) unused. The form is that of block_pq2_0 and
+    dequantize_row_pq2_0() of the fork of llama.cpp that reads these files (MIT; no line of it is copied):
+    https://github.com/PrismML-Eng/llama.cpp/blob/88c4bc60b9c9578f134385be9535e853f2db9b9f/ggml/src/ggml-common.h#L199-L207
+    and ggml/src/ggml-quants.c#L494-L511 there.
+
+    The engine's int8 holds a ternary block without loss of its values: quantize() makes every group of 32 of them
+    -127, 0 and 127 and a scale of float32(d / 127), so what the forward pass multiplies is 127 * float32(d / 127)
+    where the file says d, at most 6e-8 of d away (tests/test_gguf.py tries every float16 scale)."""
+    blocks = np.frombuffer(raw, dtype=np.uint8).reshape(-1, 34)
+    scales = np.ascontiguousarray(blocks[:, :2]).view(np.float16).astype(np.float32)
+    values = PQ2_0_CODES[blocks[:, 2:]].view(np.int8)
+    return (values * scales).reshape(-1)
+
+
+# bytes per value (Q8_0: 34 bytes for 32 of them, PQ2_0: 34 for 128), and how to read them
 READERS = {"F32": (4, lambda raw: np.frombuffer(raw, dtype=np.float32)),
            "F16": (2, lambda raw: np.frombuffer(raw, dtype=np.float16)), "BF16": (2, bfloat16),
-           "Q8_0": (34 / 32, q8_0)}
+           "Q8_0": (34 / 32, q8_0), "PQ2_0": (34 / 128, pq2_0)}
+# how many values a block of a GGUF's type holds: a row is whole blocks
+BLOCKS = {"Q8_0": 32, "PQ2_0": 128}
 
 
 class Safetensors:
@@ -817,7 +866,7 @@ class Safetensors:
             raise ValueError(f"{name} is stored as {info['dtype']}: only float32, float16 and bfloat16 are supported.")
         itemsize, reader = READERS[info["dtype"]]
         shape = self.shape(name)
-        row = int(np.prod(shape[1:]))
+        row = math.prod(shape[1:])
         begin = self.base + info["data_offsets"][0] + int(start * row * itemsize)
         return reader(self.read(begin, int((stop - start) * row * itemsize))).reshape(stop - start, *shape[1:])
 
@@ -887,8 +936,9 @@ class Arrays:
 
 def architecture(config):
     """Which set of tensors and which forward: "llama" (Qwen2 is a Llama with biases), "gpt2", or "neox"
-    (GPT-NeoX: a GPT-2 with RoPE over part of each head, and optionally the two branches in parallel)."""
-    return {"gpt2": "gpt2", "gpt_neox": "neox"}.get(config.get("model_type"), "llama")
+    (GPT-NeoX: a GPT-2 with RoPE over part of each head, and optionally the two branches in parallel), or "qwen35"
+    (T229: Qwen3.5 and Qwen3.8, a Qwen3 most of whose layers are linear-attention ones)."""
+    return {"gpt2": "gpt2", "gpt_neox": "neox", "qwen3_5": "qwen35", "qwen3_5_text": "qwen35"}.get(config.get("model_type"), "llama")
 
 
 def head_size(config):
@@ -898,13 +948,60 @@ def head_size(config):
 
 
 def rotary_dim(config):
-    """How many of each head's values GPT-NeoX rotates (rotary_pct of them, an even number)."""
-    head_size = config["hidden_size"] // config["num_attention_heads"]
-    return int(head_size * float(config.get("rotary_pct", 1.0))) // 2 * 2
+    """How many of each head's values GPT-NeoX rotates (rotary_pct of them, an even number), and Qwen3.5 (T229: its
+    partial_rotary_factor, which normalize() gives the same name)."""
+    return int(head_size(config) * float(config.get("rotary_pct", 1.0))) // 2 * 2
+
+
+# the architectures that turn part of each head only: the options say how much (rotary)
+PARTLY_TURNED = ("neox", "qwen35")
+# transformers' Qwen3_5TextConfig, where config.json leaves one out
+LINEAR_DEFAULTS = {"linear_num_key_heads": 16, "linear_num_value_heads": 32, "linear_key_head_dim": 128,
+                   "linear_value_head_dim": 128, "linear_conv_kernel_dim": 4}
+
+
+def linear_layers(config):
+    """FORM's "linear" from a Qwen3.5's (normalized) config.json: which layers attend over all positions, and the
+    heads and the convolution of the others (T229). layer_types is every full_attention_interval-th layer a
+    full-attention one in every published model; any other order is refused, for the file is laid out by that one
+    number. None for the other architectures."""
+    if architecture(config) != "qwen35":
+        return None
+    kinds, layers = config.get("layer_types"), config.get("num_hidden_layers")
+    every = config.get("full_attention_interval")
+    if every is None:
+        every = kinds.index("full_attention") + 1 if isinstance(kinds, list) and "full_attention" in kinds else 4
+    numbers = {key: config.get(key, default) for key, default in LINEAR_DEFAULTS.items()}
+    if not all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in [every, *numbers.values()]) or every < 2:
+        raise ValueError("This model cannot be converted: its config.json has no usable linear-attention layers.")
+    if kinds is not None and kinds != ["linear_attention" if (l + 1) % every else "full_attention" for l in range(layers)]:
+        raise ValueError(f"This model cannot be converted: its layers are not every {every}th a full-attention one.")
+    return {"every": every, "key_heads": numbers["linear_num_key_heads"], "value_heads": numbers["linear_num_value_heads"],
+            "key_dim": numbers["linear_key_head_dim"], "value_dim": numbers["linear_value_head_dim"],
+            "conv": numbers["linear_conv_kernel_dim"]}
+
+
+def yarn(config):
+    """What a config.json whose RoPE scaling is yarn says of it besides its kind (T235), else None."""
+    scaling = config.get("rope_scaling") or {}
+    if scaling.get("rope_type", scaling.get("type")) != "yarn":
+        return None
+    return {key: value for key, value in scaling.items() if key not in ("rope_type", "type") and value is not None}
 
 
 def normalize(config):
     """GPT-2 spells its config.json differently: give it the names the rest of this file uses."""
+    if config.get("model_type") == "qwen3_5" and isinstance(config.get("text_config"), dict):
+        # T229: Qwen3.5 is a vision-language model, and the language model's config is one level down (the vision
+        # model's is not read: text alone). It names no BOS: every text here begins with one (T131), and that is the
+        # end-of-text token, as the config.json of Qwen3.8-27B says (bos_token_id 248044, its eos_token_id) and as a
+        # Qwen2.5's and a Qwen3's do
+        text = config["text_config"]
+        config = {**text, "model_type": "qwen3_5_text"}
+        end = text.get("eos_token_id")
+        end = end[0] if isinstance(end, list) and end else end
+        if config.get("bos_token_id") is None and isinstance(end, int):
+            config["bos_token_id"] = end
     rope = config.get("rope_parameters")
     if isinstance(rope, dict):
         # transformers 5 writes rope_theta, rope_scaling and GPT-NeoX's rotary_pct as one rope_parameters. Unread,
@@ -946,9 +1043,10 @@ def check_config(config):
     # qwen2 is a Llama with a bias on q, k and v: the converter writes those three vectors per layer, the engine
     # adds them after the projections (T64). Everything else about it is the same. qwen3 is a Llama that normalizes
     # every head of q and k (T124): two vectors per layer, the same way.
-    if config.get("model_type") not in ("llama", "qwen2", "qwen3", "gpt2", "gpt_neox"):
+    # qwen3_5 (T229) is a Qwen3 most of whose layers are linear-attention ones (normalize() lifted its text_config).
+    if config.get("model_type") not in ("llama", "qwen2", "qwen3", "gpt2", "gpt_neox", "qwen3_5_text"):
         refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Mistral, Qwen2, Qwen3, "
-               f"GPT-2 and GPT-NeoX models are supported")
+               f"Qwen3.5, GPT-2 and GPT-NeoX models are supported")
     for key in ("hidden_size", "intermediate_size", "num_hidden_layers", "num_attention_heads", "vocab_size",
                 "max_position_embeddings"):
         if not isinstance(config.get(key), int) or config[key] <= 0:
@@ -960,12 +1058,22 @@ def check_config(config):
     # GPT-2's c_attn and GPT-NeoX's query_key_value are cut into heads of dim / n_heads
     divides = not dim % n_heads and size == dim // n_heads
     if not isinstance(size, int) or size <= 0 or size % 2 or n_heads % n_kv_heads \
-            or not (divides or (config.get("head_dim") and architecture(config) == "llama")):
+            or not (divides or (config.get("head_dim") and architecture(config) in ("llama", "qwen35"))):
         refuse("its attention heads do not divide the hidden size the way llama2.c expects")
     scaling = config.get("rope_scaling")
-    if scaling and (architecture(config) != "llama" or scaling.get("rope_type", scaling.get("type")) not in ("llama3", "linear")):
-        # Llama 3's and the linear one are the kinds the RoPE tables know (llama2_numpy.rope_frequencies)
+    if scaling and (architecture(config) != "llama"
+                    or scaling.get("rope_type", scaling.get("type")) not in ("llama3", "linear", "yarn")):
+        # Llama 3's, the linear one and yarn are the kinds the RoPE tables know (llama2_numpy.rope_frequencies)
         refuse(f"it uses RoPE scaling of the {scaling.get('rope_type', scaling.get('type'))} kind")
+    said = yarn(config)
+    if said is not None:
+        # T235: yarn as Ternary-Bonsai's config.json says it, a factor and the original context. What else transformers
+        # reads of a yarn (attention_factor, mscale, mscale_all_dim, beta_fast, beta_slow, truncate) changes the angles
+        # or how much the turned values are scaled, and the tables know none of it
+        for key in sorted(set(said) - {"factor", "original_max_position_embeddings"}):
+            refuse(f"its yarn RoPE scaling sets {key}, which the engine does not read")
+        if not all(isinstance(said.get(key), (int, float)) and said[key] > 0 for key in ("factor", "original_max_position_embeddings")):
+            refuse("its yarn RoPE scaling names no factor or no original context")
     if architecture(config) == "neox":
         if config.get("hidden_act", "gelu") not in ("gelu", "gelu_new", "gelu_fast", "gelu_pytorch_tanh"):
             refuse(f"its activation is {config['hidden_act']}, and only GELU is supported")
@@ -988,6 +1096,15 @@ def check_config(config):
         refuse("its layers have biases")
     if config.get("use_sliding_window"):
         refuse("it uses a sliding window of attention")
+    if architecture(config) == "qwen35":
+        linear = linear_form(linear_layers(config))
+        if config["num_hidden_layers"] < linear["every"]:
+            refuse("it has no full-attention layer")
+        if rotary_dim(config) < 2:
+            refuse("it rotates none of each head")
+        if config.get("mlp_only_layers") or config.get("attn_output_gate") is False:
+            # what transformers' Qwen3_5 does not read either: a model that says so is another model
+            refuse("its layers are not the ones of a Qwen3.5")
 
 
 def checkpoint_header(config, source, max_seq_len):
@@ -1012,18 +1129,29 @@ def transformed(values, transform, head_size):
     None: nothing (the rows go straight through, as they arrive). ("permute", heads): the head interleaving of
     wq and wk. ("transpose",): GPT-2 stores its matrices the other way round (Conv1D). ("part", i, n): one of
     the n stacked matrices of GPT-2's c_attn, transposed with it; ("row", i, n) the same for its bias.
+    ("heads", parts, i, heads, rot): the i-th of the parts each head's rows are stacked in, with the halves of its
+    first rot rows interleaved (GPT-NeoX's query_key_value: 3 parts; Qwen3.5's q_proj: q and its gate; 1 part: a k
+    or a norm of which RoPE turns part). T229, Qwen3.5: ("one",) is a norm's weight stored around zero, ("decay",)
+    A_log as the engine multiplies it, ("taps",) the convolution's taps, a row for each. A tuple of transforms is
+    one after the other.
     """
     if transform is None:
+        return values
+    if isinstance(transform[0], tuple):
+        for step in transform:
+            values = transformed(values, step, head_size)
         return values
     if transform[0] == "permute":
         return permute_heads(values, transform[1], head_size)
     if transform[0] == "transpose":
         return values.T
-    if transform[0] == "neox":
-        # query_key_value holds (heads, 3, head_size, dim) or (heads, 3, head_size): take one of the three, and
-        # interleave the halves of the part that RoPE rotates (Hugging Face stores it as rotate_half does)
-        index, heads, rot = transform[1], transform[2], transform[3]
-        taken = values.reshape(heads, 3, values.shape[0] // heads // 3, -1)[:, index]
+    if transform[0] == "heads":
+        # GPT-NeoX's query_key_value holds (heads, 3, head_size, dim) or (heads, 3, head_size): take one of the
+        # three, and interleave the halves of the part that RoPE rotates (Hugging Face stores it as rotate_half does)
+        parts, index, heads, rot = transform[1:]
+        if values.shape[0] % (heads * parts) or rot > values.shape[0] // heads // parts:
+            raise ValueError(f"{values.shape[0]} rows are not {heads} heads of {parts} parts that turn {rot} rows.")
+        taken = values.reshape(heads, parts, values.shape[0] // heads // parts, -1)[:, index]
         if rot:
             rotated = taken[:, :rot].reshape(heads, 2, rot // 2, -1).transpose(0, 2, 1, 3).reshape(heads, rot, -1)
             taken = np.concatenate([rotated, taken[:, rot:]], axis=1)
@@ -1036,16 +1164,31 @@ def transformed(values, transform, head_size):
         index, parts = transform[1], transform[2]
         length = values.shape[0] // parts
         return values[index * length:(index + 1) * length]
+    if transform[0] == "one":
+        # Qwen3.5's RMSNorm multiplies by 1 + weight: the file holds what the engine's rmsnorm multiplies by
+        return np.asarray(values, dtype=np.float32) + np.float32(1.0)
+    if transform[0] == "decay":
+        # g = -exp(A_log) * softplus(...): the factor, as llama.cpp's GGUF holds it too (ssm_a)
+        return -np.exp(np.asarray(values, dtype=np.float32))
+    if transform[0] == "taps":
+        # conv1d.weight is (channels, 1, taps): a row of all the channels for each tap, the oldest token's first
+        return np.asarray(values).reshape(values.shape[0], -1).T
     # a name nobody wrote must not quietly take a slice of rows (T77)
     raise ValueError(f"there is no transform called {transform[0]!r}")
 
 
 def source_shape(shape, transform):
     """The shape the Hugging Face tensor must have to become a tensor of this shape."""
-    if transform is None or transform[0] == "permute":
+    if transform is None or transform[0] in ("permute", "one", "decay"):
         return tuple(shape)
-    if transform[0] == "neox":  # one of the three stacked parts, and the rows of all three are one tensor
-        return (shape[0] * 3, shape[1]) if len(shape) > 1 else (shape[0] * 3,)
+    if isinstance(transform[0], tuple):
+        for step in reversed(transform):
+            shape = source_shape(shape, step)
+        return tuple(shape)
+    if transform[0] == "heads":  # one of the stacked parts, and the rows of all of them are one tensor
+        return (shape[0] * transform[1], *shape[1:])
+    if transform[0] == "taps":
+        return (shape[1], 1, shape[0])
     if transform[0] == "transpose":
         return tuple(reversed(shape))
     if transform[0] == "part":
@@ -1070,6 +1213,14 @@ def gpt2_prefix(source):
     return "" if "wte.weight" in source else "transformer."
 
 
+def name_prefix(source, arch):
+    """What stands in front of the tensors' names: a GPT-2's "transformer." or nothing, and a Qwen3.5's (T229)
+    "model.language_model." (the vision-language checkpoint) or "model." (the language model saved alone)."""
+    if arch == "qwen35":
+        return "model.language_model." if "model.language_model.embed_tokens.weight" in source else "model."
+    return gpt2_prefix(source)
+
+
 def has_bias(source):
     """Whether this checkpoint has the q, k and v biases of Qwen2 (o and the FFN never have one)."""
     return "model.layers.0.self_attn.q_proj.bias" in source
@@ -1087,7 +1238,8 @@ def checkpoint_form(config, source):
     config = normalize(config)
     size = head_size(config)
     return {"bias": has_bias(source), "arch": architecture(config), "qk_norm": has_qk_norm(source),
-            "head_dim": 0 if size * config["num_attention_heads"] == config["hidden_size"] else size}
+            "head_dim": 0 if size * config["num_attention_heads"] == config["hidden_size"] else size,
+            "linear": linear_layers(config)}
 
 
 def conversion_plan(header, form=None, prefix="transformer.", rotary=0):
@@ -1097,6 +1249,32 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0):
     form = form_of(form)
     arch, shapes = form["arch"], [shape for shape, _ in layout(*header, **form)]
 
+    if arch == "qwen35":
+        # T229: the stacks of layout(), each from the layers of its kind. RoPE turns the first rotary rows of each
+        # head of q and k (and so of the norms of their heads); the gate's rows are taken as they are
+        slots = layer_slots(n_layers, linear_form(form["linear"]))
+        every = range(n_layers)
+        full, lines = ([layer for layer in every if slots[layer][0] == kind] for kind in (False, True))
+        of = lambda which, name, transform=None: [(f"{prefix}layers.{layer}.{name}", transform) for layer in which]
+        one, head_norm = ("one",), (("heads", 1, 0, 1, rotary), ("one",))
+        plan = [[(prefix + "embed_tokens.weight", None)], of(every, "input_layernorm.weight", one),
+                of(full, "self_attn.q_proj.weight", ("heads", 2, 0, n_heads, rotary)),
+                of(full, "self_attn.q_proj.weight", ("heads", 2, 1, n_heads, 0)),
+                of(full, "self_attn.k_proj.weight", ("heads", 1, 0, n_kv_heads, rotary)),
+                of(full, "self_attn.v_proj.weight"), of(full, "self_attn.o_proj.weight"),
+                of(full, "self_attn.q_norm.weight", head_norm), of(full, "self_attn.k_norm.weight", head_norm),
+                of(lines, "linear_attn.in_proj_qkv.weight"), of(lines, "linear_attn.in_proj_z.weight"),
+                of(lines, "linear_attn.in_proj_b.weight"), of(lines, "linear_attn.in_proj_a.weight"),
+                of(lines, "linear_attn.conv1d.weight", ("taps",)), of(lines, "linear_attn.dt_bias"),
+                of(lines, "linear_attn.A_log", ("decay",)), of(lines, "linear_attn.norm.weight"),
+                of(lines, "linear_attn.out_proj.weight"),
+                of(every, "post_attention_layernorm.weight", one),
+                of(every, "mlp.gate_proj.weight"), of(every, "mlp.down_proj.weight"), of(every, "mlp.up_proj.weight"),
+                [(prefix + "norm.weight", one)], None, None]
+        if vocab_size < 0:
+            plan.append([("lm_head.weight", None)])
+        return plan, shapes
+
     if arch == "neox":
         rot = rotary  # how many of each head RoPE turns, from the config
         def h(name, transform=None):
@@ -1104,9 +1282,9 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0):
 
         # only q and k are rotated, so only they are interleaved; v is taken as it is
         fused = lambda i: [(f"gpt_neox.layers.{layer}.attention.query_key_value.weight",
-                            ("neox", i, n_heads, rot if i < 2 else 0)) for layer in range(n_layers)]
+                            ("heads", 3, i, n_heads, rot if i < 2 else 0)) for layer in range(n_layers)]
         fused_bias = lambda i: [(f"gpt_neox.layers.{layer}.attention.query_key_value.bias",
-                                 ("neox", i, n_heads, rot if i < 2 else 0)) for layer in range(n_layers)]
+                                 ("heads", 3, i, n_heads, rot if i < 2 else 0)) for layer in range(n_layers)]
         plan = [[("gpt_neox.embed_in.weight", None)], None, None,
                 h("input_layernorm.weight"), h("input_layernorm.bias"),
                 fused(0), fused(1), fused(2),
@@ -1161,14 +1339,14 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0):
 def rope_table(config, header, which):
     """The cos (which = 0) or sin (1) table of the legacy format, for float32 and float16 checkpoints.
 
-    GPT-NeoX rotates only rotary_pct of each head, and the angles follow that width. The table keeps the shape
+    GPT-NeoX rotates only rotary_pct of each head (and Qwen3.5), and the angles follow that width. The table keeps the shape
     the layout gives it (head_size // 2 columns); the columns past the rotated part are never read.
     """
     size, seq_len = head_size(config), header[6]
-    width = rotary_dim(config) if architecture(config) == "neox" else size
+    width = rotary_dim(config) if architecture(config) in PARTLY_TURNED else size
     positions = np.arange(seq_len, dtype=np.float64)[:, None]
     frequencies = rope_frequencies(width, config.get("rope_theta", 10000.0), config.get("rope_scaling"))
-    table = (np.cos if which == 0 else np.sin)(positions * frequencies)
+    table = (np.cos if which == 0 else np.sin)(positions * frequencies) * rope_magnitude(config.get("rope_scaling"))
     if width == size:
         return table
     full = np.zeros((seq_len, size // 2), dtype=np.float64)
@@ -1198,14 +1376,15 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
     form = checkpoint_form(config, source)
     writer = Writer(out, header, dtype, form, quantize_rows=quantize_rows)
 
-    plan, shapes = conversion_plan(header, form, gpt2_prefix(source), rotary_dim(config) if form["arch"] == "neox" else 0)
-    total, done = sum(int(np.prod(shape)) for shape in shapes), 0
+    plan, shapes = conversion_plan(header, form, name_prefix(source, form["arch"]),
+                                   rotary_dim(config) if form["arch"] in PARTLY_TURNED else 0)
+    total, done = sum(math.prod(shape) for shape in shapes), 0
 
     for index, (parts, shape) in enumerate(zip(plan, shapes)):
         if parts is None:
             # the RoPE tables (left out of an int8 checkpoint): cos, then sin
             writer.write(index, 0, rope_table(config, header, plan[:index].count(None)))
-            done += int(np.prod(shape))
+            done += math.prod(shape)
             yield done, total
             continue
         first = 0
@@ -1215,7 +1394,7 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
             if found != expected:
                 raise ValueError(f"This model cannot be converted: {name} is {found or 'missing'}, not {expected}.")
             rows = found[0] if len(found) > 1 else 1
-            row = int(np.prod(found)) // rows
+            row = math.prod(found) // rows
             # a transform needs the whole tensor (a small one); everything else goes piece by piece
             step = rows if transform or len(found) == 1 else max(1, PIECE // row)
             for start in range(0, rows, step):
@@ -1226,7 +1405,7 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
                 first += values.size
                 done += values.size
                 yield done, total
-        assert first == int(np.prod(shape)), name
+        assert first == math.prod(shape), name
 
 
 class Stream:
@@ -1263,14 +1442,14 @@ class Stream:
             out = bytearray(self.size(dtype))
         self.out = out  # None when the checkpoint goes to sink
         self.writer = Writer(self.out, self.header, dtype, self.form, sink=sink, quantize_rows=quantize_rows)
-        plan, shapes = conversion_plan(self.header, self.form, gpt2_prefix(self),
-                                       rotary_dim(config) if self.form["arch"] == "neox" else 0)
-        self.total, self.done = sum(int(np.prod(shape)) for shape in shapes), 0
+        plan, shapes = conversion_plan(self.header, self.form, name_prefix(self, self.form["arch"]),
+                                       rotary_dim(config) if self.form["arch"] in PARTLY_TURNED else 0)
+        self.total, self.done = sum(math.prod(shape) for shape in shapes), 0
         wanted = {}
         for index, (parts, shape) in enumerate(zip(plan, shapes)):
             if parts is None:
                 self.writer.write(index, 0, rope_table(config, self.header, plan[:index].count(None)))
-                self.done += int(np.prod(shape))
+                self.done += math.prod(shape)
                 continue
             first = 0
             for name, transform in parts:
@@ -1282,7 +1461,7 @@ class Stream:
                     raise ValueError(f"{name} is stored as {self.tensors[name]['dtype']}: only float32, float16 and bfloat16 are supported.")
                 # GPT-2's c_attn holds q, k and v in one matrix, so one tensor of the file can feed several
                 wanted.setdefault(name, []).append((index, first, transform))
-                first += int(np.prod(shape[1:] if len(parts) > 1 else shape))
+                first += math.prod(shape[1:] if len(parts) > 1 else shape)
         # what to do with each stretch of the file, in the order of the file
         self.steps = []
         for name, info in sorted(self.tensors.items(), key=lambda item: item[1]["data_offsets"][0]):
@@ -1334,7 +1513,7 @@ class Stream:
         shape = tuple(info["shape"])
         # T136's third stage: a GPT-2's Conv1D matrix, which the GGUF holds as (out, in), is read in that shape
         stored = tuple(reversed(shape)) if info.get("transposed") else shape
-        row = int((int(np.prod(stored[1:])) if len(stored) > 1 else int(stored[0])) * itemsize)
+        row = int((math.prod(stored[1:]) if len(stored) > 1 else int(stored[0])) * itemsize)
         # the head permutation needs its whole matrix (a small one); everything else goes row by row, as it comes.
         # A GGUF's tensor held in another order than Hugging Face's is put back whole too
         again = info.get("turned") or info.get("split") or info.get("transposed")
@@ -1381,14 +1560,15 @@ def unsplit(w, heads):
 
 
 # ------------------------------------------------------------------------------------------------- GGUF (T74)
-# A GGUF file holds what config.json, tokenizer.json and model.safetensors hold, in one. Only what a Q8_0 or F16
+# A GGUF file holds what config.json, tokenizer.json and model.safetensors hold, in one. Only what a Q8_0, PQ2_0 or F16
 # Llama, Qwen2, Qwen3, GPT-2 or GPT-NeoX needs is read; tests/gguf_check.py is the separate reference this is held to.
 class Incomplete(Exception):
     """The GGUF header goes on past the bytes given: fetch more and try again."""
 
 
 GGUF_VALUES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
-GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0"}  # ggml's types; the K-quants and the rest are refused
+# ggml's types; the K-quants and the rest are refused. 142 is PQ2_0 of Prism ML's fork of llama.cpp (T235, pq2_0())
+GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0", 142: "PQ2_0"}
 # llama.cpp's names of the pre-tokenizers, as the engine knows them (llama2_numpy.pretokenize)
 GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen", "llama-bpe": "llama3"}
 GGUF_LAYER = {"attn_norm": "input_layernorm", "ffn_norm": "post_attention_layernorm", "attn_q": "self_attn.q_proj",
@@ -1510,6 +1690,15 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
                   **common}
         if key("rope.scaling.type", "none") not in ("none", None):
             config["rope_scaling"] = {"type": key("rope.scaling.type"), "factor": key("rope.scaling.factor", 1.0)}
+            if key("rope.scaling.type") == "yarn":
+                # T235: yarn's other numbers, by config.json's names. llama.cpp takes the trained context where the
+                # GGUF names no original one; what else a GGUF may say of yarn, check_config() refuses by these names
+                # and gguf_agrees() where the original's config.json has it not
+                config["rope_scaling"]["original_max_position_embeddings"] = \
+                    key("rope.scaling.original_context_length", key("context_length"))
+                for name, ours in (("attn_factor", "attention_factor"), ("yarn_log_mul", "mscale_all_dim")):
+                    if key(f"rope.scaling.{name}") is not None:
+                        config["rope_scaling"][ours] = key(f"rope.scaling.{name}")
     header = {}
     if "rope_freqs.weight" in tensors:
         # llama.cpp writes Llama 3's RoPE scaling as a table of divisors instead of the rope_scaling of config.json
@@ -1518,15 +1707,15 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
         info = tensors["rope_freqs.weight"]
         if info["type"] != 0:
             raise ValueError(f"rope_freqs.weight is stored as ggml type {info['type']}, not F32.")
-        size = 4 * int(np.prod(info["shape"]))
+        size = 4 * math.prod(info["shape"])
         header["rope_freqs.weight"] = {"dtype": "F32", "shape": info["shape"], "rope_freqs": True,
                                        "data_offsets": [info["offset"], info["offset"] + size]}
     names, layer, layers = GGUF_ARCHITECTURES[arch]
     turns = {"attn_q": heads, "attn_k": config.get("num_key_value_heads")}
     for name, info in tensors.items():
         if info["type"] not in GGUF_TENSORS:
-            raise ValueError(f"{name} is stored as ggml type {info['type']}: only F32, F16 and Q8_0 GGUF files are "
-                             f"supported (not the K-quants).")
+            raise ValueError(f"{name} is stored as ggml type {info['type']}: only F32, F16, Q8_0 and PQ2_0 GGUF files "
+                             f"are supported (not the K-quants).")
         parts = name.split(".")
         if name in names:
             target = names[name]
@@ -1535,10 +1724,11 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
         else:
             continue  # nothing the engine reads
         dtype = GGUF_TENSORS[info["type"]]
-        if dtype == "Q8_0" and info["shape"][-1] % 32:
+        if info["shape"][-1] % BLOCKS.get(dtype, 1):
             # ggml itself requires it; a file that breaks it would be read at the wrong offsets and write nonsense
-            raise ValueError(f"{name} is Q8_0 with rows of {info['shape'][-1]}, which is not a multiple of 32.")
-        size = int(int(np.prod(info["shape"])) * READERS[dtype][0])
+            raise ValueError(f"{name} is {dtype} with rows of {info['shape'][-1]}, which is not a multiple of "
+                             f"{BLOCKS[dtype]}.")
+        size = int(math.prod(info["shape"]) * READERS[dtype][0])
         entry = {"dtype": dtype, "shape": info["shape"], "data_offsets": [info["offset"], info["offset"] + size]}
         kind = parts[2] if len(parts) == 4 else None
         if arch == "llama" and kind in turns:
@@ -1585,13 +1775,16 @@ def gguf_agrees(own, config):
     Both are normalize()d. GPT-NeoX's (T136's third stage): also how much of each head turns and whether the two
     branches run in parallel, which the options say (no tensor does)."""
     f32 = lambda value: float(np.float32(value))
+    scaled = lambda c: yarn(c) and {key: f32(value) for key, value in yarn(c).items()}
     heads = config.get("num_attention_heads")
     pairs = [("architecture", own["model_type"], config.get("model_type")),
              ("number of layers", own["num_hidden_layers"], config.get("num_hidden_layers")),
              ("number of heads", own["num_attention_heads"], heads),
              ("number of key-value heads", own.get("num_key_value_heads", own["num_attention_heads"]),
               config.get("num_key_value_heads", heads)),
-             ("RoPE theta", f32(own.get("rope_theta", 10000.0)), f32(config.get("rope_theta", 10000.0)))]
+             ("RoPE theta", f32(own.get("rope_theta", 10000.0)), f32(config.get("rope_theta", 10000.0))),
+             # T235: what a yarn says (None: no yarn), which changes every angle and is no tensor
+             ("yarn RoPE scaling", scaled(own), scaled(config))]
     if own.get("head_dim") and config.get("hidden_size") and heads:
         pairs.append(("size of a head", own["head_dim"], head_size(config)))
     if own.get("rms_norm_eps") is not None and config.get("rms_norm_eps") is not None:
@@ -1754,6 +1947,8 @@ def tokenizer_json_charsmap(tokenizer):
 PRETOKENIZERS = {
     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+": "llama3",
     r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?\p{L}+|\p{N}| ?[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+": "qwen",
+    # T229: Qwen3.5's takes the combining marks into the word
+    r"(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}\p{M}]+|\p{N}| ?[^\s\p{L}\p{M}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+": "qwen35",
 }
 
 
@@ -1993,16 +2188,18 @@ class Conversion:
         eps = self.config.get("rms_norm_eps")
         # a GGUF says it in float32 (1e-5 is 9.99999974e-06 there): six digits are what config.json writes
         eps = float(f"{eps:.6g}") if isinstance(eps, (int, float)) and eps > 0 else RMS_EPS
-        if self.stream.form["arch"] == "llama" and eps != RMS_EPS:
+        if self.stream.form["arch"] in ("llama", "qwen35") and eps != RMS_EPS:
             # T124: the epsilon of RMSNorm, where it is not the engine's 1e-5 (Qwen2.5 and Qwen3: 1e-6, which moved
             # Qwen3 0.6B's perplexity by 0.12%). Only where it differs, like qk_norm and head_dim
             self.options["rms_norm_eps"] = float(eps)
         if self.config.get("rope_scaling"):
             # the int8 file has no RoPE tables: the engine makes them, and needs the scaling for that (Llama 3)
             self.options["rope_scaling"] = dict(self.config["rope_scaling"])
-        if self.stream.form["arch"] == "neox":
-            # GPT-NeoX turns part of every head, and may run its two branches in parallel: the file says neither
+        if self.stream.form["arch"] in PARTLY_TURNED:
+            # GPT-NeoX and Qwen3.5 turn part of every head: the file does not say how much
             self.options["rotary"] = rotary_dim(self.config)
+        if self.stream.form["arch"] == "neox":
+            # and GPT-NeoX may run its two branches in parallel
             self.options["parallel_residual"] = bool(self.config.get("use_parallel_residual", True))
         self.checkpoint = self.stream.out
 

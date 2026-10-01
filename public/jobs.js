@@ -41,11 +41,13 @@ if (JOB_TABLE <= JOBS * 4 || JOB_TABLE % 8 || JOB_TABLE + BATCH * JOB * 8 > SCRA
 //   4 attention_f16  the same over a cache of float16 (T110)
 //   5 matmul_q6r     as 0, on int6 weights (T98)
 //   6 matmul_q6      as 1, on int6 weights
+//   7 delta_rule     out, state, next, q k and v, work, key heads, key size, value size   rows: the value heads (T229)
 // count > 1 (T108): the same rows for count tokens, whose out, a and b are that many bytes apart. The rows then go in
 // blocks small enough to stay in the cache while every token uses them: each (row, token) is the one kernel call it
 // is for a single token, so the numbers are the same as one token at a time. Kind 0 takes the count tokens in one
 // call instead (T159: matmul_q8r_tile, four rows by four tokens, each number matmul_q8r's to the bit; a and b are
-// then one frame apart, the same stride). Attention is always one token a job.
+// then one frame apart, the same stride). Attention is always one token a job, and so is the delta rule (a Gated
+// DeltaNet layer's state after a token is what the next token reads).
 export const ROWS = 9, COUNT = 10, SIZE = 14, FIRST = 15;
 const BLOCK_BYTES = 16384;
 export const blockRows = (kind, n) => Math.max(1, Math.floor(BLOCK_BYTES / (kind === 2 ? 4 * n : n)));
@@ -56,6 +58,7 @@ export const ADDRESSES = {
   matmul_f32: [0, 1, 2], quantize_x: [0, 1, 2], quantize6_x: [0, 1, 2], six_sums: [0, 1], int8_sums: [0, 1], widen_bf16: [0, 1], widen_q8_0: [0, 1], matmul_q8: [0, 1, 2, 3, 4],
   matmul_q6: [0, 1, 2, 3, 4], rmsnorm: [0, 1, 2], rope: [0, 1, 2], attention: [0, 1, 2, 3, 4], attention_f16: [0, 1, 2, 3, 4],
   to_f16: [0, 1], from_f16: [0, 1], layernorm: [0, 1, 2, 3], gelu: [0, 1, 2], swiglu: [0, 1, 2], add_columns: [0, 1, 2], add_inplace: [0, 1],
+  gate: [0, 1, 2], convolve: [0, 1, 2], delta_rule: [0, 1, 2, 3, 4],
   argmax: [0], penalize: [0, 1], sample: [0, 5, 6], matmul_q8r: [0, 1, 2, 3, 4, 5], matmul_q6r: [0, 1, 2, 3, 4, 5],
   matmul_q8r_tile: [0, 1, 2, 3, 4, 5],
 };
@@ -86,7 +89,8 @@ export function runner(k, r) {
     else if (kind === 6) k.matmul_q6(out, a, b, a4, a5, a7, r0, r1);
     else if (kind === 2) k.matmul_f32(out, a, a4, a7, r0, r1);
     else if (kind === 3) k.attention(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
-    else k.attention_f16(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
+    else if (kind === 4) k.attention_f16(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
+    else k.delta_rule(out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
   };
   return (job, r0, r1) => {
     const [kind, out, a, b, a4, a5, a6, a7, a8, rows, count, os, as, bs] = job;
@@ -115,5 +119,6 @@ export function warmUp(k, r) {
     }
     k.attention(out, xq, w, w, c, 0, 1, 1, 4, 0, 1);  // one head of 4 at position 0
     k.attention_f16(out, xq, w, w, c, 0, 1, 1, 4, 0, 1);
+    k.delta_rule(out, w, s, xq, c, 1, 4, 4, 1, 0, 1);  // T229: one value head, a state of 4 by 4 (c: its work, 6 floats)
   }
 }

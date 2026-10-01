@@ -81,9 +81,10 @@ The model list has three groups:
   [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project (260K to 42M parameters), in int8 (the small
   ones in float32). They are built into the site when it is deployed.
 - **Unquantized originals** of some of them (float16 or float32), to compare with int8.
-- **From Hugging Face, converted in this browser** (53 entries, from Pythia 70M to 8B models: Llama, Mistral,
+- **From Hugging Face, converted in this browser** (54 entries, from Pythia 70M to 8B models: Llama, Mistral,
   Qwen2.5, Qwen3, llm-jp, sarashina, Swallow, GPT-2, GPT-NeoX and others). The page fetches the weights from
-  huggingface.co (for 47 of them a Q8_0 GGUF, read with the original repository's vocabulary and configuration),
+  huggingface.co (for 48 of them a GGUF: Q8_0, and for Ternary Bonsai its two-bit PQ2_0, read with the original
+  repository's vocabulary and configuration),
   converts them to int8 in your browser with the same Python code that
   builds the site's models, and keeps the result for the next visit. About lists what is kept and deletes it. A
   download of more than 500 MB asks first.
@@ -93,10 +94,10 @@ The model list has three groups:
 ### A model that is not in the list
 
 - `?hf=<owner>/<repository>` (optionally `&revision=` and `&template=` with `{prompt}` in it) converts a Hugging
-  Face repository, and says in words what it cannot run. What it reads: the Llama architecture (with Llama 3 and
-  linear RoPE scaling; Mistral is read as Llama), Qwen2, Qwen3, GPT-2 and GPT-NeoX, in safetensors (one file or
+  Face repository, and says in words what it cannot run. What it reads: the Llama architecture (with Llama 3,
+  linear and yarn RoPE scaling; Mistral is read as Llama), Qwen2, Qwen3, GPT-2 and GPT-NeoX, in safetensors (one file or
   several shards), with a Unigram or byte-level BPE `tokenizer.json` or a sentencepiece model. It does not open a
-  repository that has only GGUF files: the Q8_0 GGUFs of the list are read together with the vocabulary and
+  repository that has only GGUF files: the GGUFs of the list are read together with the vocabulary and
   configuration of their original repository. Instruction models get what you type inside their chat template,
   for one turn; the page keeps no conversation.
 - `?checkpoint=<url>&tokenizer=<url>` reads files in llama2.c's format from any server that answers cross-origin

@@ -342,3 +342,30 @@ def test_a_qwen3_gguf_is_held_to_its_norms_of_q_and_k(tmp_path, capsys, norm):
     assert gguf_check.check_tensors(tmp_path / "model.gguf", tmp_path) is (norm is None)
     result = summary(capsys)
     assert (result["mismatches"] == 0) is (norm is None)
+
+
+@pytest.mark.parametrize("wrong", [None, "a value", "the factor", "no yarn"])
+def test_a_pq2_0_gguf_is_held_to_its_ternary_original_and_its_yarn(tmp_path, capsys, wrong):
+    """T235: Ternary-Bonsai's PQ2_0 blocks against the safetensors of the same ternary weights (0 off: a block holds
+    them as they are), read by this file's own reader. One value that is another of the three is past the line (a
+    reader that took the bits in another order would move them all), and so is a yarn that is not config.json's."""
+    from test_gguf import bonsai_gguf
+    config, published, file, same = bonsai_gguf()
+    original = {name: tensor.copy() for name, tensor in same.items()}
+    if wrong == "a value":
+        row = original["model.layers.1.self_attn.v_proj.weight"][3]
+        step = np.abs(row[:128]).max()
+        row[5] += -step if row[5] > 0 else step
+    if wrong == "the factor":
+        published = {**published, "rope_scaling": {**published["rope_scaling"], "factor": 2.0}}
+    if wrong == "no yarn":
+        published = {key: value for key, value in published.items() if key != "rope_scaling"}
+    (tmp_path / "model.gguf").write_bytes(file)
+    (tmp_path / "model.safetensors").write_bytes(safetensors_file(original))
+    (tmp_path / "config.json").write_text(json.dumps(published))
+    assert gguf_check.check_tensors(tmp_path / "model.gguf", tmp_path) is (wrong is None)
+    result = summary(capsys)
+    assert result["mismatches"] == (0 if wrong is None else 1)
+    if wrong is None:
+        assert result["worst"] == 0 and result["nearest"] == 0
+    assert list(result["past_tight"]) == (["blk.1.attn_v.weight"] if wrong == "a value" else [])

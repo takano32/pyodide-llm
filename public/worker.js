@@ -21,10 +21,13 @@
 const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
 
 // the latest release on npm (the "latest" tag never points at an alpha), or ?pyodide=<version> to force one.
-// T129 (1): its answer is a hundred bytes, so the only way it takes QUIET_SECONDS is none at all: a connection that
-// opened and never answered left "Loading Pyodide" for ever (the review of T118). It is given up then like a step
-// of Pyodide's (the page may try again without the service worker). Not a step under watchArrivals(): that would
-// count every part of the model, which downloads meanwhile, and find a stop of Pyodide only after the model's end.
+// T129 (1): its answer is a hundred bytes, so a connection that opened and never answered left "Loading Pyodide" for
+// ever (the review of T118). It is given up after QUIET_SECONDS like a step of Pyodide's (the page may try again
+// without the service worker). Not a step under watchArrivals(): that would count every part of the model, which
+// downloads meanwhile, and find a stop of Pyodide only after the model's end. But it is not always quick on a line the
+// model's parts fill: the first bytes of a new connection wait behind them (slow.yml, the review of T129: 20.5 s behind
+// a 1 MB model at 0.4 Mbps with the oldest connection served first, 14.2 s through one queue of 256 KB at 0.4 Mbps,
+// 0.8 s with the line shared by turns), so 30 seconds is little more than such a line's queue.
 async function resolvePyodideVersion(search) {
   const forced = new URLSearchParams(search).get("pyodide");
   if (PYODIDE_VERSION_PATTERN.test(forced)) {
@@ -192,13 +195,15 @@ function download(model, signal, load) {
         // a chunk that was already on its way when the load was cancelled: its buffer is gone
         inner.signal.throwIfAborted();
         if (sink) {
-          // T129 (3): a write the memory refused (gone, or too small) is not cured by fetching the part again
+          // T129 (3): a write the memory refused (gone, or too small) is not cured by fetching the part again, nor is a
+          // GPU's worker that takes no more of the weights (T156: a model on the GPU alone, its worker no more than
+          // FLOW_BYTES behind; it gives up after FLOW_STALL_MS, and three more tries would wait that long each)
           try {
             sink(offset, value);
+            await weightsRoom();
           } catch (error) {
             throw Object.assign(error, { final: true });
           }
-          await weightsRoom();  // (T156: a model on the GPU alone, its worker no more than FLOW_BYTES behind)
         } else {
           queue.push([offset, value]);
         }
@@ -470,16 +475,18 @@ function watchArrivals() {
     self.fetch = plain;
     observer?.disconnect();
   };
-  /** { promise, cancel }: the promise settles once nothing has arrived for seconds */
+  /** { promise, cancel }: the promise settles once nothing has arrived for seconds. The silence is counted in the
+   * ticks that ran (one a second), not in the clock's seconds: a page that a phone froze while another app was in front,
+   * or a worker busy for a long while, runs no tick, and a clock that jumped over it would call that a line that
+   * stopped (T129's review; the same lesson as the software threads', T120) */
   watch.quiet = (seconds) => {
     let timer;
     const promise = new Promise((resolve) => {
-      let seen = -1, since = 0;
+      let seen = -1, silent = 0;
       timer = setInterval(() => {
-        const now = performance.now();
         if (watch.arrived !== seen) {
-          [seen, since] = [watch.arrived, now];
-        } else if (now - since >= seconds * 1000) {
+          [seen, silent] = [watch.arrived, 0];
+        } else if (++silent >= seconds) {
           clearInterval(timer);
           resolve();
         }
@@ -648,6 +655,15 @@ function pooledWeights(size, after, shared, wide) {
         ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, wide, after }));
       } catch {
         memory = undefined;  // no shared memory here: one thread
+      }
+      // (T130's review) a shared memory the browser gave at a lowered maximum (weightsMemory's second and third try: the
+      // checkpoint and a gigabyte, or a quarter of one) that the forward pass does not fit would run out of memory when
+      // the cache grows, or at once where the corrections do not fit, after the whole checkpoint was read: a plain memory
+      // grows as far as the browser allows. One thread, but the model reaches the end of its context
+      if (memory?.limited && memory.maximum < pages(base + size + after) + 1) {
+        console.info(`memory: the browser gave a shared memory of ${Math.round(memory.maximum * 65536 / 2 ** 20)} MiB, and this model needs ` +
+          `${Math.round(pages(base + size + after) * 65536 / 2 ** 20)} MiB: a memory that is not shared, and one thread`);
+        memory = undefined;
       }
     }
     if (!memory) ({ memory, base } = forwardModule.weightsMemory(size, { wide }));
@@ -1514,20 +1530,22 @@ async function load(model, signal, id) {
       return res.arrayBuffer();
     });
   tokenizerBytes.catch(() => {});
-  await initialized;
-  signal.throwIfAborted();
-  if (model.file) {
-    head = new Uint8Array(await model.file.slice(0, HEADER_BYTES).arrayBuffer());
-  }
-  const options = model.file || model.url ? await localOptions(model, new Uint8Array(await tokenizerBytes), head) : model.options;
-  head ??= await checkpoint.header;
-  signal.throwIfAborted();
-
-  let weights;
+  let options, weights;
   try {
+    await initialized;
+    signal.throwIfAborted();
+    if (model.file) {
+      head = new Uint8Array(await model.file.slice(0, HEADER_BYTES).arrayBuffer());
+    }
+    options = model.file || model.url ? await localOptions(model, new Uint8Array(await tokenizerBytes), head) : model.options;
+    head ??= await checkpoint.header;
+    signal.throwIfAborted();
     weights = weightsBuffer(model.bytes, headerInts(head), options);
   } catch (error) {
-    checkpoint.stop?.(error);  // T129 (3): no part of a model that will not load is fetched further
+    // T129 (3): a load that ends before its weights have a place (the runtime never came, the file is none the engine
+    // takes, the memory said no) fetches no more of the model, as a part that failed for good stops the others. What
+    // was queued for the memory goes with the download
+    checkpoint.stop?.(error);
     throw error;
   }
   let tokenizer;
