@@ -19,6 +19,10 @@
 #       counting it. The last line is the summary as JSON. T136's third stage: GPT-2 (its Conv1D matrices, which
 #       llama.cpp turns to (out, in), and its output.weight, a copy of the embedding) and GPT-NeoX (its
 #       query_key_value, which llama.cpp splits into all of q, k, then v); the order found is said as for q and k.
+#       T250's review: and the order found is a line of the check: a tensor in another order than the one the page's
+#       reader puts back (reads_as(): a Llama's q and k turned, GPT-NeoX's query_key_value split, GPT-2's matrices
+#       turned to (out, in), a Qwen's q and k as Hugging Face) is a mismatch, whatever its values (a GPT-NeoX GGUF of 2023
+#       passed with "as Hugging Face" and was read into nonsense).
 #       T235: a PQ2_0 GGUF (Prism ML's ternary blocks of 128) against the float16 safetensors of the same ternary
 #       weights (the reference is the original's values, as for an F16 tensor), and yarn's factor and original context
 #       against config.json's rope_scaling. Ternary-Bonsai 1.7B's is 8.7e-5 off at its worst tensor, not 0: a block here
@@ -291,6 +295,23 @@ def split(w, heads):
     head in turn, as Hugging Face keeps them, to all of q, then all of k, then all of v. Written out here rather than
     taken from llama2_convert.unsplit, which is what is being checked."""
     return w.reshape(heads, 3, w.shape[0] // heads // 3, *w.shape[1:]).swapaxes(0, 1).reshape(w.shape)
+
+
+def reads_as(arch, name, conv1d=False):
+    """The order the page's reader (llama2_convert.gguf_model) takes this tensor to be in, for the tensors whose order
+    GGUF files differ in; None for the others. llama.cpp's converter turns q and k of a Llama only (a Qwen2's and Qwen3's
+    stay as Hugging Face has them), splits GPT-NeoX's query_key_value into all of q, then k, then v, and turns GPT-2's
+    Conv1D matrices to (out, in); the reader puts back exactly those. A GGUF in the other order holds the very values
+    (T250's review: mmnga's 2023 GGUF of stockmark's GPT-NeoX keeps query_key_value as Hugging Face does, from before
+    llama.cpp split it, and passed every line of the table) and is read into nonsense without a word: a line of its own
+    here, not only a note of which order the check found."""
+    if name.endswith(("attn_q.weight", "attn_k.weight", "attn_q.bias", "attn_k.bias")):
+        return "turned (llama2.c order)" if arch == "llama" else "as Hugging Face"
+    if arch == "gptneox" and name.endswith(("attn_qkv.weight", "attn_qkv.bias")):
+        return "split (q, k, v)"
+    if conv1d:
+        return "transposed (out, in)"
+    return None
 
 
 def relative(a, b):
@@ -632,7 +653,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
     print(f"\n| tensor | type | shape | relative error | nearest reference (line {TIGHT}) | order | int8 equal to quantize() "
           f"| rows past {ROW_LINE} (worst) |\n|---|---|---|---:|---:|---|---:|---|")
     worst, orders, rope_difference, bad_rows, row_detail, rounded_rows = 0.0, set(), None, {}, {}, {}
-    near_worst, past_tight, rounded_detail = 0.0, {}, {}
+    near_worst, past_tight, rounded_detail, unread = 0.0, {}, {}, {}
     for name, info in infos.items():
         if name == "rope_freqs.weight":
             values, _ = tensor(info, data, base)
@@ -705,6 +726,14 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
                 equal = f"{(ours.reshape(-1) == raw[0].reshape(-1)).mean() * 100:.2f}%"
             if by_row and values.shape == original.shape:
                 rowwise = row_check(row_parts(values, original, raw is not None))
+        wanted = reads_as(arch, name, conv1d)
+        if wanted and order and order != wanted and near <= TIGHT:
+            # the values are the original's, in an order the reader does not put back (reads_as): not a GGUF to take.
+            # (Where they are not the original's in either order the order found means little, and the lines of the
+            # values say it: past TIGHT)
+            unread[name] = order
+            mismatched += 1
+            order += f" **the page's reader takes {wanted}**"
         worst = max(worst, error) if not math.isnan(error) else math.inf
         near_worst = max(near_worst, near) if not math.isnan(near) else math.inf
         near_note = f"{near:.2e}"
@@ -736,12 +765,16 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             if rounded_rows[name] > len(rows):
                 print(f"| {name} | and {rounded_rows[name] - len(rows)} more | | | | |")
     ok = mismatched == 0 and worst < 0.02
+    names = sorted(unread)
+    unread_note = (f"; {len(names)} tensors are in an order the page's reader does not read ({', '.join(names[:3])}"
+                   f"{', ...' if len(names) > 3 else ''})" if names else "")
     print(f"\nworst relative error {worst:.5f}; against the nearest reference {near_worst:.2e} ({len(past_tight)} "
-          f"past {TIGHT}); q and k are stored {' and '.join(sorted(orders)) or '(none)'}; {mismatched} mismatches")
+          f"past {TIGHT}); q and k are stored {' and '.join(sorted(orders)) or '(none)'}; {mismatched} mismatches"
+          + unread_note)
     print(json.dumps({"worst": worst, "nearest": near_worst, "past_tight": past_tight, "mismatches": mismatched,
                       "rows": bad_rows, "bad_rows": row_detail, "rounded_rows": rounded_rows,
-                      "rounded_detail": rounded_detail, "orders": sorted(orders), "rope_freqs_diff": rope_difference,
-                      "vocab_diffs": vocab_diffs, "ok": ok}, ensure_ascii=False))
+                      "rounded_detail": rounded_detail, "orders": sorted(orders), "unread_orders": unread,
+                      "rope_freqs_diff": rope_difference, "vocab_diffs": vocab_diffs, "ok": ok}, ensure_ascii=False))
     return ok
 
 

@@ -21,10 +21,11 @@ LLAMA3 = {"rope_type": "llama3", "factor": 8.0, "low_freq_factor": 1.0, "high_fr
 
 
 def model(tmp_path, vocab_size=320, dim=32, theta=10000.0, extra=None, change=None, original_change=None, shared=True,
-          n_kv_heads=4, **config):
+          n_kv_heads=4, turned=None, **config):
     """A GGUF and the directory of its original (config.json and model.safetensors); change(tensors) alters what
     the GGUF is written from, as a GGUF of other weights would be, and original_change(tensors) the original.
-    shared=False: a classifier of its own (output.weight, held row by row); n_kv_heads under 4: GQA (T145)."""
+    shared=False: a classifier of its own (output.weight, held row by row); n_kv_heads under 4: GQA (T145);
+    turned=False: q and k left as Hugging Face has them (T250's review)."""
     shape, weights = synthetic_weights(dim=dim, hidden_dim=2 * dim, vocab_size=vocab_size, seq_len=128,
                                        n_kv_heads=n_kv_heads, shared=shared)
     tensors, published = hugging_face(shape, weights, shared)
@@ -32,7 +33,7 @@ def model(tmp_path, vocab_size=320, dim=32, theta=10000.0, extra=None, change=No
     written = {name: tensor.copy() for name, tensor in tensors.items()}
     if change:
         change(written)
-    file, same = gguf_file(written, published, vocab_size, theta=theta, more=[EPS], extra=extra)
+    file, same = gguf_file(written, published, vocab_size, theta=theta, more=[EPS], extra=extra, turned=turned)
     # the original holds the values the GGUF stands for (Q8_0 rounds), except where change() made them differ
     original = {name: (same[name] if change is None or np.array_equal(written[name], tensors[name]) else tensors[name])
                 for name in tensors}
@@ -281,14 +282,14 @@ def test_rows_that_pass_only_against_a_q8_0_are_listed_with_their_piece(tmp_path
     assert result["past_tight"] == {} and result["mismatches"] == 0
 
 
-def other_model(tmp_path, model, change=None):
+def other_model(tmp_path, model, change=None, **order):
     """T136's third stage: a GPT-2 or GPT-NeoX GGUF as llama.cpp writes one (test_gguf.other_gguf) and its original;
-    change(tensors) alters what the GGUF is written from."""
+    change(tensors) alters what the GGUF is written from. order: split=False or transposed=False (T250's review)."""
     tensors, config = the_other(model)
     written = {name: tensor.copy() for name, tensor in tensors.items()}
     if change:
         change(written)
-    file, _ = other_gguf(written, config)
+    file, _ = other_gguf(written, config, **order)
     (tmp_path / "model.gguf").write_bytes(file)
     (tmp_path / "model.safetensors").write_bytes(safetensors_file(tensors))
     (tmp_path / "config.json").write_text(json.dumps(config))
@@ -325,6 +326,51 @@ def test_a_gpt2_or_neox_gguf_of_other_weights_does_not(tmp_path, capsys, monkeyp
 
     assert not gguf_check.check_tensors(*other_model(tmp_path, model, swap))
     assert summary(capsys)["mismatches"] >= 1
+
+
+@pytest.mark.parametrize("block", [gguf_check.BLOCK, 256])
+@pytest.mark.parametrize("model, order, unread", [
+    ("neox", dict(split=False), ".attn_qkv."),
+    ("neox-serial", dict(split=False), ".attn_qkv."),
+    ("gpt2", dict(transposed=False), ".weight")])
+def test_a_gguf_in_an_order_the_reader_does_not_read_is_refused(tmp_path, capsys, monkeypatch, block, model, order, unread):
+    """T250's review: mmnga's 2023 GGUF of stockmark's GPT-NeoX holds the original's very values with query_key_value
+    as Hugging Face has it (q, k and v of each head in turn: llama.cpp split it later), so every line of the table
+    passed ("as Hugging Face", 0 off the nearest reference) and the reader, which puts llama.cpp's split back, wrote
+    "ののの…". The order is a line of the check: refused, with the tensors named."""
+    monkeypatch.setattr(gguf_check, "BLOCK", block)
+    assert not gguf_check.check_tensors(*other_model(tmp_path, model, **order))
+    result = summary(capsys)
+    assert result["nearest"] <= gguf_check.TIGHT, "the values are the original's: only their order is not the reader's"
+    assert result["orders"] == ["as Hugging Face (in, out)" if model == "gpt2" else "as Hugging Face"]
+    assert result["unread_orders"] and result["mismatches"] == len(result["unread_orders"])
+    assert all(unread in name for name in result["unread_orders"])
+
+
+@pytest.mark.parametrize("block", [gguf_check.BLOCK, 128])
+def test_a_llama_gguf_whose_q_and_k_are_not_turned_is_refused(tmp_path, capsys, monkeypatch, block):
+    """The same for a Llama: the reader un-turns q and k, which llama.cpp turned (T74), so a Llama GGUF of the original's
+    order is read into other weights. Whole, and in blocks of one head."""
+    monkeypatch.setattr(gguf_check, "BLOCK", block)
+    assert not gguf_check.check_tensors(*model(tmp_path, turned=False))
+    result = summary(capsys)
+    assert result["orders"] == ["as Hugging Face"] and result["nearest"] <= gguf_check.TIGHT
+    assert result["unread_orders"] and result["mismatches"] == len(result["unread_orders"])
+    assert all(name.endswith(("attn_q.weight", "attn_k.weight")) for name in result["unread_orders"])
+
+
+def test_a_qwen3_gguf_with_q_and_k_turned_is_refused(tmp_path, capsys):
+    """And the other way round: the reader leaves a Qwen's q and k alone (llama.cpp does not turn them), so a Qwen GGUF
+    whose are turned is read into other weights."""
+    from test_gguf import qwen3_gguf
+    config, published, file, same = qwen3_gguf(16, turned=True)
+    (tmp_path / "model.gguf").write_bytes(file)
+    (tmp_path / "model.safetensors").write_bytes(safetensors_file({name: tensor.copy() for name, tensor in same.items()}))
+    (tmp_path / "config.json").write_text(json.dumps(published))
+    assert not gguf_check.check_tensors(tmp_path / "model.gguf", tmp_path)
+    result = summary(capsys)
+    assert result["orders"] == ["turned (llama2.c order)"] and result["unread_orders"]
+    assert all(name.endswith(("attn_q.weight", "attn_k.weight")) for name in result["unread_orders"])
 
 
 @pytest.mark.parametrize("norm", [None, "model.layers.1.self_attn.q_norm.weight", "model.layers.0.self_attn.k_norm.weight"])
