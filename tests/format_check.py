@@ -42,12 +42,13 @@ PROMPTS = ["これからの流行りを3つ挙げてください。", "What will
 LLM_JP_SYSTEM = "以下は、タスクを説明する指示です。要求を適切に満たす応答を書きなさい。"
 SYSTEM = {"hf-swallow-ms-7b-instruct": "あなたは誠実で優秀な日本人のアシスタントです。",
           **{id: LLM_JP_SYSTEM for id in ("hf-llm-jp-3-150m-instruct3", "hf-llm-jp-3-440m-instruct3",
-                                          "hf-llm-jp-3-980m-instruct3", "hf-llm-jp-3.1-1.8b-instruct4")}}
+                                          "hf-llm-jp-3-980m-instruct3", "hf-llm-jp-3.1-1.8b-instruct4",
+                                          "hf-llm-jp-3-1.8b-instruct3", "hf-llm-jp-3-3.7b-instruct3")}}
 # where transformers builds a slow tokenizer out of the tokenizer.model that is not the real one (2026-09-26,
 # transformers 5.16.1: sarashina's split "挙げてください" and "next", CAT-Translate's spell everything a character at a time
 # although they have a tokenizer.json): the real sentencepiece reads the real template's text instead (T144)
 SENTENCEPIECE = {"hf-sarashina2.2-0.5b-instruct", "hf-sarashina2.2-1b-instruct", "hf-sarashina2.2-3b-instruct",
-                 "hf-cat-translate-0.8b", "hf-cat-translate-1.4b"}
+                 "hf-cat-translate-0.8b", "hf-cat-translate-1.4b", "hf-cat-translate-3.3b"}
 # T145: the differences known, each with what it takes out of the comparison (the rest still counts, so a new break
 # in these models shows: two of them were 0/9 whatever else went wrong). One that no prompt needs any more is an error
 # too, to be taken out of here.
@@ -66,6 +67,10 @@ KNOWN = {
     # (the two prompts were taken out whole before)
     "hf-swallow-ms-7b-instruct": {"why": "NFKC of tokenizer.model, and the turn stripped as a whole (T138)",
                                   "text": lambda text, prompt: unicodedata.normalize("NFKC", trimmed(text, prompt))},
+    # T249: the same of EuroLLM. Its vocabulary has no full-width letters: the real tokenizer.json spells them as
+    # bytes, the page (tokenizer.model's NFKC) writes the half-width ones
+    "hf-eurollm-1.7b-instruct": {"why": "NFKC of tokenizer.model (T249)",
+                                 "text": lambda text, prompt: unicodedata.normalize("NFKC", text)},
 }
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
 # (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
