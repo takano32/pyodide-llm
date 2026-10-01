@@ -197,6 +197,22 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     "K and V 90 to the nearest float16, 102 toward zero, 0 away from it, 0 farther");
   assert.equal(farthest([1, 2.5], [1, 2]), 0.25);
   assert.ok(Number.isNaN(farthest([NaN, 1], [1, 2])), "a NaN is not within any line");
+  // the engine's own check of a form (public/gpu.js's checkTokens: the first layer's keys and values at position 1) takes
+  // the same rule on floats (heldFloats): the device's float16 where it is a neighbour, the nearest where not. Toward zero
+  // the stream of a float form on llm-jp-3 150M came to 3.2 times its line off the nearest's (CI, Dawn with every
+  // conversion cut toward zero), and the form was refused
+  {
+    const { heldFloats } = await import("../public/gpu.js");
+    const asked = (how) => Float64Array.from(values, (x) => toFloat(how(x)));
+    for (const how of [nearest, inwards, outwards]) assert.deepEqual([...heldFloats(values, asked(how))], [...asked(how)], `${how.name}: the device's own`);
+    const largest = values.reduce((most, x) => Math.max(most, Math.abs(x)), 0), top = [...values.keys()].filter((i) => Math.abs(values[i]) >= largest / 4);
+    const far = Float64Array.from(values, (x) => toFloat(Math.abs(x) >= largest / 4 ? inwards(x) - 1 : inwards(x)));
+    const held = heldFloats(values, far);
+    assert.ok(top.filter((i) => held[i] !== far[i]).length >= 0.85 * top.length, "one more float16 off: not taken, for all but the few within the slack");
+    for (const i of top) if (held[i] !== far[i]) assert.equal(held[i], toFloat(nearest(values[i])), `element ${i} (${values[i]}) is the nearest's`);
+    assert.deepEqual([...heldFloats(Float64Array.of(8, 2.5), Float64Array.of(8, NaN))], [8, 2.5], "a NaN: the nearest");
+    assert.deepEqual([...heldFloats(Float64Array.of(8, 2.5), Float64Array.of(8, Infinity))], [8, 2.5], "an infinity: the nearest");
+  }
 }
 // T152: the status line's words (the owner's, 2026-09-27): both on the GPU, before either is timed, the answers alone on
 // the CPU (faster here), and a reason for the answers (in the console alone)

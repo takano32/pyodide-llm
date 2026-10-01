@@ -36,8 +36,9 @@ Math.random = random;
 const { shape, pos, data } = draw;
 
 // float16 bits of x as a device may round it: "nearest" (ties to even), "zero" (toward zero), "away" (away from it);
-// "even" and "odd": toward zero in one lane of each pair and to the nearest in the other (what the first throwaway
-// wrapper in CI did, 1 in 4 of all); "twice": toward zero and one float16 lower still (an error)
+// "even": toward zero in the even lane of each pair and to the nearest in the other (a quarter of all values come out
+// toward zero: what the first throwaway wrapper in CI came to, for a reason not found); "twice": toward zero and one
+// float16 lower still (an error)
 function rounded(x, how, i) {
   const n = toHalf(x), v = fromHalf(n), down = Math.abs(v) > Math.abs(x) ? n - 1 : n;
   switch (how) {
