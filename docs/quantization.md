@@ -74,7 +74,7 @@ on 64-bit memory (Chromium in CI). `?bits=6` or `?bits=8` chooses by hand.
 
 ## Models from GGUF
 
-55 of the 66 Hugging Face models of the list are fetched as a Q8_0 GGUF (llama.cpp's int8 with a float16 scale
+58 of the 71 Hugging Face models of the list are fetched as a Q8_0 GGUF (llama.cpp's int8 with a float16 scale
 per 32 values), with the vocabulary and the configuration of the original repository. Q8_0 turns back into int8
 without loss. Each GGUF was compared with its original tensor by tensor before it went into the list
 (`tests/gguf_check.py`): every row had to be within a relative error of 0.05 of the original, of llama.cpp's Q8_0 of the original, or
@@ -98,6 +98,10 @@ within 5.3e-8 of the file's value, float32's rounding of d / 127). So the page r
 int8's size (1.94 GB) and not at the file's: it has no ternary kernel. The GGUF was compared with the float16
 safetensors of the same weights: no tensor is further than 8.7e-5 from it (a few blocks of 128 have two
 magnitudes there, 0.5% apart, and one in the GGUF).
+
+Ternary Bonsai 4B and 8B come the same way (1.07 GB and 2.18 GB of PQ2_0, widened to 4.5 GB and 9.2 GB of int8, on
+a 64-bit memory). Compared with their float16 safetensors, no tensor of the 4B is further than 8.5e-5 from them, and
+the 8B's are the same values.
 
 Qwen3.5 0.8B's Q8_0 GGUF holds some tensors otherwise than the original does: llama.cpp writes the norms with the 1
 the model adds to them and `A_log` as −exp(A_log), and it quantizes the two small matrices of the gates of each

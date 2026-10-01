@@ -33,6 +33,8 @@ echo "qwen35: perplexity of $what, NumPy: $(python tests/perplexity_native.py "$
 rm "$dir/float32.bin"
 numpy=$(python tests/perplexity_native.py "$dir/int8" 1500 "$dir/en.txt")
 echo "qwen35: perplexity of the int8 weights, NumPy: $numpy"
-node tests/perplexity.mjs "$dir/int8" 1500 "$dir/en.txt" --file "--numpy=$(node -p "JSON.parse(process.argv[1]).perplexity" "$numpy")"
+# (--max-change: the review of T229. 7 bits cost +1.86% on x86-64 and +2.29% on arm64, 8 bits -0.36% and -0.45%; a fault of the
+# int8 path is 10% or more)
+node tests/perplexity.mjs "$dir/int8" 1500 "$dir/en.txt" --file "--numpy=$(node -p "JSON.parse(process.argv[1]).perplexity" "$numpy")" --max-change=5
 echo "qwen35: the software threads"
 node tests/threads-check.mjs "$dir/int8" --rounds 1 --positions 32

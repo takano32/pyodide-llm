@@ -99,7 +99,7 @@ used, but not kept, and is run again once the GPU is ready.
 - Hugging Face models are fetched in parts of 8 or 16 MiB over 6 connections, in the order of the file, and each
   tensor is converted when it arrives. The download is never held as a whole: the peak is about the converted
   model.
-- 56 of the 66 Hugging Face models in the list are fetched as a GGUF (55 as Q8_0), with the vocabulary and the
+- 61 of the 71 Hugging Face models in the list are fetched as a GGUF (58 as Q8_0), with the vocabulary and the
   configuration of the original repository: about half the download, the same weights to within the rounding of
   the scales. Each GGUF was compared with its original tensor by tensor before it replaced it, one file at a time:
   two GGUFs from the same publisher can differ (Qwen's own GGUFs of Qwen3 0.6B and 1.7B did not match their
