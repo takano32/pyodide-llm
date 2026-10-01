@@ -629,4 +629,41 @@ const ok = (line) => {
   ok("a load that ends before its weights have a place stops what is fetched for it");
 }
 
+// ---- T242: what is thrown and is no Error is told in words, not as "[object Object]" (which /benchmark/ showed)
+{
+  const told = context.told;
+  assert.equal(told(new TypeError("Load failed")), "TypeError: Load failed");
+  assert.equal(told(run("new TypeError('Load failed')")), "TypeError: Load failed");  // the worker's own realm's
+  assert.equal(told(new DOMException("The operation was aborted.", "AbortError")), "AbortError: The operation was aborted.");
+  class ExitStatus {  // Emscripten's: no Error, a name and a message
+    name = "ExitStatus";
+    constructor(status) {
+      this.message = `Program terminated with exit(${status})`;
+      this.status = status;
+    }
+  }
+  assert.equal(told(new ExitStatus(1)), "ExitStatus: Program terminated with exit(1)");
+  assert.equal(told({ message: "no name" }), "no name");
+  assert.equal(told({ code: 7, why: "x" }), 'something that is not an error was thrown: {"code":7,"why":"x"}');
+  assert.equal(told({}), "something that is not an error was thrown");
+  const loop = {};
+  loop.self = loop;
+  assert.equal(told(loop), "something that is not an error was thrown");
+  assert.equal(told(new (class Odd {})()), "Odd was thrown");
+  assert.equal(told(undefined), "undefined");
+  assert.equal(told("a string"), "a string");
+  // and through the worker's own handler: a load whose runtime ended with such a value says it to the page
+  for (const [thrown, said] of [["{ name: 'ExitStatus', message: 'Program terminated with exit(1)', status: 1 }", "ExitStatus: Program terminated with exit(1)"],
+    ["{ code: 7 }", 'something that is not an error was thrown: {"code":7}'], ["undefined", "undefined"]]) {
+    fresh(() => new Response(new Uint8Array(64), { status: 200 }));
+    run(`initialized = Promise.reject(${thrown}); initialized.catch(() => {})`);
+    await context.onmessage({ data: { type: "load", load: 9, model: { id: "small", name: "Small", checkpoint: "small", tokenizer: "small.tokenizer.bin", bytes: 64, options: {} } } });
+    const error = messages.find((m) => m.type === "error");
+    assert.equal(error?.message, said);
+    assert.ok(!/\[object /.test(`${error.message} ${error.stack}`), error.stack);
+  }
+  run("initialized = undefined");
+  ok("a thrown value that is no Error is told by its name and message, or its fields");
+}
+
 console.log(`worker-check: ${passed} checks passed`);

@@ -17,6 +17,28 @@
 // load is a number the page counts up: a newer load cancels the one that is going on, and whatever this worker
 // reports about a load carries its number, so that the page can tell a late report of a cancelled one.
 
+// T242: a caught value in words. An Error reads as it always did ("TypeError: Load failed"). What is thrown is not always
+// one: Emscripten's ExitStatus (Pyodide's runtime ending) is an object with a name and a message, and String() of it, or
+// of any plain object, is "[object Object]", which is what /benchmark/ showed a visitor. Such a value is told by its name
+// and message, else by what kind of thing it is and its own fields
+function told(err) {
+  if (err instanceof Error || typeof err !== "object" || err === null) {
+    return String(err);
+  }
+  const text = (value) => (typeof value === "string" && value ? value : undefined);
+  const name = text(err.name) ?? text(err.constructor?.name === "Object" ? undefined : err.constructor?.name);
+  if (text(err.message)) {
+    return name ? `${name}: ${err.message}` : err.message;
+  }
+  let fields;
+  try {
+    fields = JSON.stringify(err);
+  } catch {
+    fields = undefined;  // it refers to itself
+  }
+  return `${name ?? "something that is not an error"} was thrown${fields && fields !== "{}" ? `: ${fields.slice(0, 300)}` : ""}`;
+}
+
 // the version becomes part of a CDN URL, so accept nothing but a plain version number
 const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
 
@@ -242,9 +264,9 @@ function download(model, signal, load) {
           }
           if (attempt === 2) {
             // T129 (4): which part, where the browser's words do not say ("TypeError: Error in input stream")
-            throw new Error(`Part ${part} of ${model.checkpoint} failed three times: ${error.message ?? error}`, { cause: error });
+            throw new Error(`Part ${part} of ${model.checkpoint} failed three times: ${error?.message ?? told(error)}`, { cause: error });
           }
-          console.warn(`part ${part} of ${model.checkpoint} broke off (${error.message ?? error}): fetched again`);
+          console.warn(`part ${part} of ${model.checkpoint} broke off (${error?.message ?? told(error)}): fetched again`);
           await forgetPart(partUrl(part), model);  // it may have come from the cache: the next try is the network's
         }
       }
@@ -1915,8 +1937,8 @@ self.onmessage = async ({ data }) => {
       const [, name = err?.name, text = err?.message] = err?.type === "JsException"
         ? /^pyodide\.ffi\.JsException: (\w+): (.*)$/.exec(err.message.trim().split("\n").pop()) ?? [] : [];
       // a ValueError of the engine is a message for the reader (wrong file, prompt too long): no traceback
-      const message = err.type === "ValueError" ? err.message.trim().split("\n").pop().replace(/^ValueError: /, "")
-        : name === "Error" ? text : String(err);
+      const message = err?.type === "ValueError" ? err.message.trim().split("\n").pop().replace(/^ValueError: /, "")
+        : name === "Error" ? text : told(err);
       // T90: the memory ran out, in Python (MemoryError: malloc could not grow the WebAssembly memory) or in
       // JavaScript (RangeError: an ArrayBuffer or WebAssembly.Memory.grow was refused). The page says so in words
       // a visitor understands, with how much memory the page had when it happened.
@@ -1925,7 +1947,7 @@ self.onmessage = async ({ data }) => {
         (name === "RangeError" && !/call stack/i.test(text ?? ""));
       // where it happened goes to the page's console (T96): tests/e2e.mjs keeps the console of a failed run
       postMessage({ type: "error", load: data.load, message: memory ? String(text ?? err).trim().split("\n").pop() : message,
-                    stack: String(err?.stack ?? err), weights: weightsNow?.buffer.byteLength ?? 0, pyodide: Boolean(err?.pyodide),
+                    stack: String(err?.stack ?? told(err)), weights: weightsNow?.buffer.byteLength ?? 0, pyodide: Boolean(err?.pyodide),
                     ...(memory && { memory: true, heap: heapBytes() }) });
     }
   }
