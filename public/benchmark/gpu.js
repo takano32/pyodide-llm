@@ -43,6 +43,11 @@
 // lost (T109); every step awaits it instead
 const shaders = import(new URL(`../shaders.js${new URL(import.meta.url).search}`, import.meta.url));
 let WGSL, GROUP, TILE;
+// (every step awaits this first; so do the tests that import the pure helpers below)
+async function load() {
+  WGSL ??= await shaders;
+  ({ GROUP, TILE } = WGSL);
+}
 
 // the shapes of the models in the list that the measurement stands for (legacy header: dim, hidden, layers, heads,
 // kv heads, vocab), and the int8 matrices of a layer, [rows, n]
@@ -1144,16 +1149,21 @@ function quantizedOff(x, xq, xs, line) {
 }
 // T225: the keys or values of a position as the GPU wrote them (got: float16 bits), against the reference's own (x,
 // float64). WGSL leaves to the implementation which of the two float16 next to a float32 a conversion gives (§15.7.6
-// "the result is either one or the other, and the choice is implementation-defined"; pack2x16float converts so), and
-// Direct3D rounds toward zero (the D3D11.3 functional specification, 3.2.2: "round-to-zero must be used during
-// conversion to another float format"), where JavaScript's toHalf() and Vulkan's and Metal's devices here round to the
-// nearest. A reference that rounds its own way is then off by up to a float16's ulp (2^-10 of the value) in every key
-// and value of the position, which the attention carries into its output: on the layer check's numbers, in JavaScript,
-// keys and values rounded toward zero move the scales of the attention's quantized output by 1.0e-3 to 5.9e-3
-// (QUANTIZED_SCALE_LINE is 1e-3) and the stream by 7.5e-4 to 1.4e-3 of what the layer added (LAYER_LINE is 1e-3), with
-// the cache at 6.9e-4 to 9.5e-4 of its largest (.tmp/t225/sim.mjs, 8 draws, 2026-10-01): what the owner's NVIDIA PC on
-// Windows reported twice (T225). So the reference takes the GPU's bits wherever they are a float16 next to its own
-// value: no farther from x than a float16's ulp at x and HALF_SLACK of the row's largest, for the GPU's float32 value
+// Floating Point Conversion: "WGSL does not specify whether the higher or lower representable value is chosen, and
+// different instances of such a conversion may choose differently"; §17.9.9: pack2x16float converts so), and Direct3D
+// rounds toward zero (the D3D11.3 functional specification, 3.2.2 Floating Point Conversion: "Round-to-zero must be
+// used during conversion to another float format"; 22.13.2: f32tof16 "Follows D3D rules for floating point
+// conversion", which is what Dawn's HLSL writer makes of pack2x16float), where JavaScript's toHalf() and the software
+// adapters here (lavapipe, SwiftShader) round to the nearest. A reference that rounds its own way is then off by up to
+// a float16's ulp (2^-10 of the value) in every key and value of the position, which the attention carries into its
+// output, the keys' shift of the scores the most (a score moves by up to 2^-10 × Σ|q·k| ÷ √head: 5e-2 to 1e-1 at the
+// largest head of the layer check, 7e-3 to 3e-2 as it falls out): on the layer check's numbers, in JavaScript, keys
+// and values rounded toward zero move the scales of the attention's quantized output by 5.7e-4 to 1.2e-2, in 97% of
+// 300 draws past QUANTIZED_SCALE_LINE (1e-3), and the stream by 3.4e-4 to 2.5e-3 of what the layer added, in 45% past
+// LAYER_LINE (1e-3), with the cache at 4.5e-4 to 9.7e-4 of its largest: what the owner's NVIDIA PC on Windows reported
+// twice (T225; the T225 review's 300 draws, 2026-10-01). So the reference takes the GPU's bits wherever they are a
+// float16 next to its own value: no farther from x than a float16's ulp at x and HALF_SLACK of the row's largest, for
+// the GPU's float32 value
 // is not x itself (a float32 sum of n products in another order is off by about sqrt(n) × 2^-24 of the terms' spread,
 // 2.7e-6 of it at n = 2112, about 1e-6 of the row's largest: the slack is ten times that, 1 to 2% of an ulp at the
 // largest). Any other value stays the reference's own nearest, and the check goes on as it did (a key or value read
@@ -1190,6 +1200,9 @@ const farthest = (got, want) => {
   });
   return off / largest;
 };
+// (these are pure: tests/gpu-choice-check.mjs holds the rounding of the cache to what a device may choose, and
+// tests/layer-check.mjs holds the layer check's judgement to devices that are JavaScript too)
+export { toHalf, fromHalf, heldHalves, halvesSaid, farthest, layerCheckData, judgeLayer, layerReference, load };
 // The layer in JavaScript (float64 sums), as the CPU's forward pass runs it: what every form is held to. d: the
 // check's weights ({w, s} of each matrix), h, norms, keys, values (float16 bits), angles and eps. inputs(point, x): the
 // vector a matrix takes where x comes in, at the points INPUTS names (T175: the DP4A forms' x quantized; else x itself).
@@ -1273,8 +1286,10 @@ function layerReference({ dim, hidden, heads, kvHeads, headSize, kvDim }, pos, d
 const LAYER_CHECK = { dim: 2112, hidden: 2080, heads: 33, kvHeads: 3 }, LAYER_CHECK_POS = 70, LAYER_LINE = 1e-3, CACHE_LINE = 2e-3;
 const NORMS_APART_ULPS = 4, NORMS_APART_STREAM = 1e-6;
 const LAYER_CHECK_OUTLIERS = Math.round((3 * LAYER_CHECK.dim) / 256), LAYER_CHECK_OUTLIER = 30, LAYER_CHECK_EPS = 1;
-async function checkLayer() {
-  const shape = layerShape(LAYER_CHECK), pos = LAYER_CHECK_POS, verdicts = {};
+// The check's data: the layer's shape, the position, the weights, the stream (about ±2 with the outlier channels), the norms'
+// weights, the cache before the position, the angles and eps (judgeLayer() and the tests take them as they are)
+function layerCheckData() {
+  const shape = layerShape(LAYER_CHECK), pos = LAYER_CHECK_POS;
   const data = { ...layerState(shape, pos), angles: layerAngles(shape.headSize, pos), eps: LAYER_CHECK_EPS };
   for (let i = 0; i < LAYER_CHECK_OUTLIERS; i++) {
     data.h[Math.floor((i + 0.5) * shape.dim / LAYER_CHECK_OUTLIERS)] = LAYER_CHECK_OUTLIER * (i % 2 ? -1 : 1);
@@ -1283,34 +1298,102 @@ async function checkLayer() {
   for (const [key, [rows, n]] of Object.entries(shape.matrices)) {
     data[key] = { w: new Uint8Array(rows * n).map(() => (Math.random() * 256) | 0), s: floats(rows * n / GROUP, 0.01 * Math.sqrt(256 / n)) };
   }
-  // what the DP4A fused form with the norms apart left, for the fused form to be held to (within a few ulp), by the
-  // attention (T224: the prompt's tiles or flash_attn_vec, whose sums go in another order)
-  const normsApart = {};
-  const sameBytes = (a, b) => {
-    const x = new Uint8Array(a.buffer, a.byteOffset, a.byteLength), y = new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
-    return x.length === y.length && x.every((byte, i) => byte === y[i]);
-  };
-  // { ok, bitForBit, ulps: the most a scale is apart, apart: the values off by 1, stream: the stream's difference over
-  // what the layer added (where every value is the same) }
-  const sameAs = (got, other, added) => {
-    let ulps = 0, apart = 0, far = false, values = 0;
-    got.quantized.forEach((q, i) => {
-      const bits = new Int32Array(q.xs.buffer, q.xs.byteOffset, q.xs.length), otherBits = new Int32Array(other.quantized[i].xs.buffer, other.quantized[i].xs.byteOffset, q.xs.length);
-      // the scales are 0 or more: their bits are in the order of their values
-      bits.forEach((b, g) => (ulps = Math.max(ulps, Math.abs(b - otherBits[g]))));
-      q.xq.forEach((value, k) => {
-        far ||= Math.abs(value - other.quantized[i].xq[k]) > 1;
-        apart += value !== other.quantized[i].xq[k];
-      });
-      values += q.xq.length;
+  return { shape, pos, data };
+}
+const sameBytes = (a, b) => {
+  const x = new Uint8Array(a.buffer, a.byteOffset, a.byteLength), y = new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
+  return x.length === y.length && x.every((byte, i) => byte === y[i]);
+};
+// { ok, bitForBit, ulps: the most a scale is apart, apart: the values off by 1, stream: the stream's difference over
+// what the layer added (where every value is the same) }
+const sameAs = (got, other, added) => {
+  let ulps = 0, apart = 0, far = false, values = 0;
+  got.quantized.forEach((q, i) => {
+    const bits = new Int32Array(q.xs.buffer, q.xs.byteOffset, q.xs.length), otherBits = new Int32Array(other.quantized[i].xs.buffer, other.quantized[i].xs.byteOffset, q.xs.length);
+    // the scales are 0 or more: their bits are in the order of their values
+    bits.forEach((b, g) => (ulps = Math.max(ulps, Math.abs(b - otherBits[g]))));
+    q.xq.forEach((value, k) => {
+      far ||= Math.abs(value - other.quantized[i].xq[k]) > 1;
+      apart += value !== other.quantized[i].xq[k];
     });
-    let stream = 0;
-    got.h.forEach((value, k) => (stream = Math.max(stream, Math.abs(value - other.h[k]) / added)));
-    const bitForBit = sameBytes(got.h, other.h) && sameBytes(got.keys, other.keys) && sameBytes(got.values, other.values)
-      && got.quantized.every((q, i) => sameBytes(q.xq, other.quantized[i].xq) && sameBytes(q.xs, other.quantized[i].xs));
-    const ok = ulps <= NORMS_APART_ULPS && !far && apart <= 0.01 * values && (apart > 0 || stream <= NORMS_APART_STREAM);
-    return { ok, bitForBit, ulps, apart, stream };
+    values += q.xq.length;
+  });
+  let stream = 0;
+  got.h.forEach((value, k) => (stream = Math.max(stream, Math.abs(value - other.h[k]) / added)));
+  const bitForBit = sameBytes(got.h, other.h) && sameBytes(got.keys, other.keys) && sameBytes(got.values, other.values)
+    && got.quantized.every((q, i) => sameBytes(q.xq, other.quantized[i].xq) && sameBytes(q.xs, other.quantized[i].xs));
+  const ok = ulps <= NORMS_APART_ULPS && !far && apart <= 0.01 * values && (apart > 0 || stream <= NORMS_APART_STREAM);
+  return { ok, bitForBit, ulps, apart, stream };
+};
+// What the check says of a form from what the GPU left of it (got: the stream h, the cache's keys and values as float16 bits,
+// on DP4A the quantized vectors, and the stages' q, att and g), in plain JavaScript: the reference, the lines and the
+// words (tests/layer-check.mjs gives it a device that is JavaScript too). normsApart: what the DP4A fused form with the
+// norms apart left, for the fused form to be held to (within a few ulp), by the attention (T224: the prompt's tiles or
+// flash_attn_vec, whose sums go in another order): the one with them apart puts what it left (got) there. Returns the verdict
+function judgeLayer(shape, pos, data, form, got, normsApart) {
+  // T175: on DP4A the reference takes the GPU's own quantized vectors (a value on a rounding's edge may go either
+  // way, and moves a layer's output by more than LAYER_LINE), and each of them is held to quantize_x of the
+  // reference's values where it was made (quantizedOff)
+  // T225: and the GPU's own keys and values of the position, where each is a float16 next to the reference's
+  // (heldHalves: which of the two is the device's choice); the cache's line stays against the reference's nearest
+  const made = [], rounded = {};
+  const row = (cache) => cache.subarray(pos * shape.kvDim, (pos + 1) * shape.kvDim);
+  const want = layerReference(shape, pos, data, form.dp4a ? (point, x) => {
+    const i = INPUTS.indexOf(point);
+    made[i] = x;
+    return dequantized(got.quantized[i].xq, got.quantized[i].xs);
+  } : undefined, (which, x) => (rounded[which] = heldHalves(x, row(got[which]))).bits);
+  const quantizing = form.dp4a ? INPUTS.map((point, i) => [point, quantizedOff(made[i], got.quantized[i].xq, got.quantized[i].xs, scaleLine(point))]) : [];
+  const wrongly = quantizing.filter(([, q]) => q.wrong);
+  let added = 0, largestKey = 0, largestValue = 0;
+  want.h.forEach((value, i) => (added = Math.max(added, Math.abs(value - data.h[i]))));
+  rounded.keys.nearest.forEach((bits) => (largestKey = Math.max(largestKey, Math.abs(fromHalf(bits)))));
+  rounded.values.nearest.forEach((bits) => (largestValue = Math.max(largestValue, Math.abs(fromHalf(bits)))));
+  let off = 0, keyOff = 0, valueOff = 0, touched = false;
+  got.h.forEach((value, i) => (off = Math.max(off, Math.abs(value - want.h[i]) / added)));
+  for (let p = 0; p <= pos; p++) {
+    for (let i = 0; i < shape.kvDim; i++) {
+      const at = p * shape.kvDim + i;
+      if (p === pos) {
+        keyOff = Math.max(keyOff, Math.abs(fromHalf(got.keys[at]) - fromHalf(rounded.keys.nearest[i])) / largestKey);
+        valueOff = Math.max(valueOff, Math.abs(fromHalf(got.values[at]) - fromHalf(rounded.values.nearest[i])) / largestValue);
+      } else touched ||= got.keys[at] !== data.keys[at] || got.values[at] !== data.values[at];
+    }
+  }
+  const cache = Math.max(keyOff, valueOff);
+  // the DP4A fused form against the one with the norms apart, within a few ulp (undefined where that one was not run)
+  let agreed;
+  if (form.dp4a && form.fused) {
+    const key = form.attention ?? "tiles";
+    if (form.normApart) normsApart[key] = got;
+    else if (normsApart[key]) agreed = sameAs(got, normsApart[key], added);
+  }
+  const ok = off < LAYER_LINE && cache < CACHE_LINE && !touched && !wrongly.length && agreed?.ok !== false;
+  // T225: the stages in the order the layer runs them, [name, what to say, whether it departed] (a float vector
+  // against the reference's, over its largest, departs past LAYER_LINE: no verdict, only where to look), in one
+  // line for the report: short where the form is ok, every stage and the first that departed where it is not
+  const quantizedAt = (point) => quantizing.filter(([at]) => at === point).map(([, q]) =>
+    [`${point}'s quantizing`, `${point} quantized: scales ${q.scale.toExponential(1)}, ${q.apart} of ${q.of} off by 1${q.more ? ` (${q.more} by more)` : ""}`, Boolean(q.wrong)]);
+  const float = (name, mine, theirs) => {
+    const apart = farthest(mine, theirs);
+    return [[name, `${name} ${apart.toExponential(1)}`, !(apart < LAYER_LINE)]];
   };
+  const halves = [rounded.keys, rounded.values];
+  const order = [...quantizedAt("qkv"), ...float("q", got.q, want.stages.q),
+    ["K and V", halvesSaid(halves), halves.some((h) => h.far > 0) || !(cache < CACHE_LINE)], ...float("attention", got.att, want.stages.att),
+    ...quantizedAt("o"), ...quantizedAt("ffn"), ...float("silu(gate) × up", got.g, want.stages.g), ...quantizedAt("down"),
+    ["the stream", `stream ${off.toExponential(1)}`, !(off < LAYER_LINE)], ...(touched ? [["the cache's other positions", "the cache's other positions written", true]] : [])];
+  const first = order.find(([, , departed]) => departed)?.[0] ?? (agreed?.ok === false ? "only against the norms apart" : "none");
+  const stages = ok ? `stages: ${order.filter(([name]) => !name.endsWith("quantizing") && name !== "the stream").map(([, said]) => said).join(", ")}`
+    : `stages: ${order.map(([, said]) => said).join(", ")}; cache ${cache.toExponential(1)}; first to depart: ${first}`;
+  // on DP4A, how each quantized vector held (for CI's logs): the worst scale apart and the values off by 1
+  return { worstRelative: Math.max(off, cache), ok, stages,
+    stream: off, cache, ...(touched ? { wroteOtherPositions: true } : {}), ...(agreed === undefined ? {} : { sameAsNormsApart: agreed }),
+    ...(quantizing.length ? { quantized: quantizing.map(([point, q]) => ({ point, ...q })) } : {}) };
+}
+async function checkLayer() {
+  const { shape, pos, data } = layerCheckData(), verdicts = {};
+  const normsApart = {};
   for (const form of layerForms()) {
     if (form.none) continue;
     try {
@@ -1337,65 +1420,7 @@ async function checkLayer() {
         return { h, keys: new Uint16Array(await back(parts.vectors.keys, cacheBytes)), values: new Uint16Array(await back(parts.vectors.values, cacheBytes)), quantized,
           q: await left(parts.vectors.q, shape.dim), att: await left(parts.vectors.att, shape.dim), g: await left(parts.vectors.g, shape.hidden) };
       });
-      // T175: on DP4A the reference takes the GPU's own quantized vectors (a value on a rounding's edge may go either
-      // way, and moves a layer's output by more than LAYER_LINE), and each of them is held to quantize_x of the
-      // reference's values where it was made (quantizedOff)
-      // T225: and the GPU's own keys and values of the position, where each is a float16 next to the reference's
-      // (heldHalves: which of the two is the device's choice); the cache's line stays against the reference's nearest
-      const made = [], rounded = {};
-      const row = (cache) => cache.subarray(pos * shape.kvDim, (pos + 1) * shape.kvDim);
-      const want = layerReference(shape, pos, data, form.dp4a ? (point, x) => {
-        const i = INPUTS.indexOf(point);
-        made[i] = x;
-        return dequantized(got.quantized[i].xq, got.quantized[i].xs);
-      } : undefined, (which, x) => (rounded[which] = heldHalves(x, row(got[which]))).bits);
-      const quantizing = form.dp4a ? INPUTS.map((point, i) => [point, quantizedOff(made[i], got.quantized[i].xq, got.quantized[i].xs, scaleLine(point))]) : [];
-      const wrongly = quantizing.filter(([, q]) => q.wrong);
-      let added = 0, largestKey = 0, largestValue = 0;
-      want.h.forEach((value, i) => (added = Math.max(added, Math.abs(value - data.h[i]))));
-      rounded.keys.nearest.forEach((bits) => (largestKey = Math.max(largestKey, Math.abs(fromHalf(bits)))));
-      rounded.values.nearest.forEach((bits) => (largestValue = Math.max(largestValue, Math.abs(fromHalf(bits)))));
-      let off = 0, keyOff = 0, valueOff = 0, touched = false;
-      got.h.forEach((value, i) => (off = Math.max(off, Math.abs(value - want.h[i]) / added)));
-      for (let p = 0; p <= pos; p++) {
-        for (let i = 0; i < shape.kvDim; i++) {
-          const at = p * shape.kvDim + i;
-          if (p === pos) {
-            keyOff = Math.max(keyOff, Math.abs(fromHalf(got.keys[at]) - fromHalf(rounded.keys.nearest[i])) / largestKey);
-            valueOff = Math.max(valueOff, Math.abs(fromHalf(got.values[at]) - fromHalf(rounded.values.nearest[i])) / largestValue);
-          } else touched ||= got.keys[at] !== data.keys[at] || got.values[at] !== data.values[at];
-        }
-      }
-      const cache = Math.max(keyOff, valueOff);
-      // the DP4A fused form against the one with the norms apart, within a few ulp (undefined where that one was not run)
-      let agreed;
-      if (form.dp4a && form.fused) {
-        const key = form.attention ?? "tiles";
-        if (form.normApart) normsApart[key] = got;
-        else if (normsApart[key]) agreed = sameAs(got, normsApart[key], added);
-      }
-      const ok = off < LAYER_LINE && cache < CACHE_LINE && !touched && !wrongly.length && agreed?.ok !== false;
-      // T225: the stages in the order the layer runs them, [name, what to say, whether it departed] (a float vector
-      // against the reference's, over its largest, departs past LAYER_LINE: no verdict, only where to look), in one
-      // line for the report: short where the form is ok, every stage and the first that departed where it is not
-      const quantizedAt = (point) => quantizing.filter(([at]) => at === point).map(([, q]) =>
-        [`${point}'s quantizing`, `${point} quantized: scales ${q.scale.toExponential(1)}, ${q.apart} of ${q.of} off by 1${q.more ? ` (${q.more} by more)` : ""}`, Boolean(q.wrong)]);
-      const float = (name, mine, theirs) => {
-        const apart = farthest(mine, theirs);
-        return [[name, `${name} ${apart.toExponential(1)}`, !(apart < LAYER_LINE)]];
-      };
-      const halves = [rounded.keys, rounded.values];
-      const order = [...quantizedAt("qkv"), ...float("q", got.q, want.stages.q),
-        ["K and V", halvesSaid(halves), halves.some((h) => h.far > 0) || !(cache < CACHE_LINE)], ...float("attention", got.att, want.stages.att),
-        ...quantizedAt("o"), ...quantizedAt("ffn"), ...float("silu(gate) × up", got.g, want.stages.g), ...quantizedAt("down"),
-        ["the stream", `stream ${off.toExponential(1)}`, !(off < LAYER_LINE)], ...(touched ? [["the cache's other positions", "the cache's other positions written", true]] : [])];
-      const first = order.find(([, , departed]) => departed)?.[0] ?? (agreed?.ok === false ? "only against the norms apart" : "none");
-      const stages = ok ? `stages: ${order.filter(([name]) => !name.endsWith("quantizing") && name !== "the stream").map(([, said]) => said).join(", ")}`
-        : `stages: ${order.map(([, said]) => said).join(", ")}; cache ${cache.toExponential(1)}; first to depart: ${first}`;
-      // on DP4A, how each quantized vector held (for CI's logs): the worst scale apart and the values off by 1
-      verdicts[layerCheck(form)] = { worstRelative: Math.max(off, cache), ok, stages,
-        stream: off, cache, ...(touched ? { wroteOtherPositions: true } : {}), ...(agreed === undefined ? {} : { sameAsNormsApart: agreed }),
-        ...(quantizing.length ? { quantized: quantizing.map(([point, q]) => ({ point, ...q })) } : {}) };
+      verdicts[layerCheck(form)] = judgeLayer(shape, pos, data, form, got, normsApart);
     } catch (error) {
       verdicts[layerCheck(form)] = { worstRelative: NaN, ok: false, error: String(error?.message ?? error) };
     } finally {
@@ -2887,8 +2912,7 @@ async function bridge(memory, rounds) {
 
 onmessage = async ({ data }) => {
   try {
-    WGSL ??= await shaders;
-    ({ GROUP, TILE } = WGSL);
+    await load();
     let result;
     if (data.step === "info") result = await info();
     else if (data.step === "check") result = await check();
