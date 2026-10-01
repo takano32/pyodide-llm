@@ -203,7 +203,7 @@ export const LICENSES = {
   // T250 (2026-10-01): the 8B ones
   "elyza/Llama-3-ELYZA-JP-8B": LLAMA_3, "mmnga/Llama-3-ELYZA-JP-8B-gguf": LLAMA_3,
   "shisa-ai/shisa-v2.1-qwen3-8b": APACHE, "mradermacher/shisa-v2.1-qwen3-8b-GGUF": APACHE,
-  "cyberagent/CAT-Thinking-8B": APACHE, "mradermacher/CAT-Thinking-8B-GGUF": APACHE,
+  "cyberagent/CAT-Thinking-8B": APACHE, "mmnga-o/CAT-Thinking-8B-gguf": APACHE,
   // T125
   "Rakuten/RakutenAI-2.0-mini-instruct": APACHE, "Rakuten/RakutenAI-7B-chat": APACHE,
   "tokyotech-llm/Swallow-MS-7b-instruct-v0.1": APACHE, "mistralai/Mistral-7B-Instruct-v0.2": APACHE,
@@ -490,7 +490,9 @@ const LISTED = [
   // config.json or its tokenizer (Qwen3's config.json does), and the converter would take token 1 ('"'): Qwen3's own,
   // <|endoftext|>, as every Qwen3 of the list begins, and the answer stops at it and at <|im_end|> (T235's Bonsai).
   // Shisa's sampling is its generation_config.json's; CAT-Thinking's is its card's (0.8 and 0.95, and "to mitigate the
-  // probability of repetition, we find repetition_penalty=1.05 or larger to be useful")
+  // probability of repetition, we find repetition_penalty=1.05 or larger to be useful"). CAT-Thinking's GGUF is
+  // mmnga-o's: mradermacher's Q8_0 has 256 tensors 0.1 to 0.4% from the nearest of the original's (tests/gguf_check.py
+  // tensors: other weights than the pinned original's), mmnga-o's is llama.cpp's Q8_0 of it
   { group: "hf", id: "hf-llama-3-elyza-jp-8b", name: "Llama-3-ELYZA-JP 8B", note: "answers instructions · 日本語 / English · fetches 8.5 GB (GGUF) → int8 9.0 GB · desktop only · Chrome and Firefox",
     ...ggufOf("mmnga/Llama-3-ELYZA-JP-8B-gguf", "1a5f8f625074ccb91568fa858402dc43c5170856", "Llama-3-ELYZA-JP-8B-Q8_0.gguf",
       "elyza/Llama-3-ELYZA-JP-8B", "e6c316496ee7d9a11710c50229e8cb39b6b0a4a3"), download: 8540770592,
@@ -502,8 +504,8 @@ const LISTED = [
     generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-cat-thinking-8b", name: "CAT-Thinking 8B", note: "thinks in Japanese before it answers · 日本語 / English · fetches 8.7 GB (GGUF) → int8 9.2 GB · desktop only · Chrome and Firefox",
-    ...ggufOf("mradermacher/CAT-Thinking-8B-GGUF", "bdc313f45827a80426b36b93df98b10cfe279fe6", "CAT-Thinking-8B.Q8_0.gguf",
-      "cyberagent/CAT-Thinking-8B", "0337f7bcf8d5e6dc08610e205bfe01d566e17669"), download: 8709519392,
+    ...ggufOf("mmnga-o/CAT-Thinking-8B-gguf", "d1747e658749aa7a67858914f0a60a2364172c2b", "CAT-Thinking-8B-Q8_0.gguf",
+      "cyberagent/CAT-Thinking-8B", "0337f7bcf8d5e6dc08610e205bfe01d566e17669"), download: 8709518944,
     conversion: {}, options: { bos: 151643, stop_tokens: [151643, 151645] },
     generation: { steps: 0, temperature: 0.8, topp: 0.95, repetition_penalty: 1.05 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
