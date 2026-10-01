@@ -881,6 +881,10 @@ for (const { id, cpu, gpu: runs, late, refused, remembered, alone } of outcome.r
   for (const gpu of runs) {
     const failures = [];
     if (!promptsOnGpu(gpu.note)) failures.push(`the GPU did not take it: ${gpu.note}`);
+    // T226: the status line of a run whose steps were asked for is the owner's words (forward.js's gpuLine): with the
+    // steps on the GPU, or with why they are not (the reason itself in the console alone)
+    const line = !gpu.steps ? gpu.note : gpu.steps.why ? "prompts on WebGPU, answers on the CPU" : "prompts and answers on WebGPU";
+    if (promptsOnGpu(gpu.note) && gpu.note !== line) failures.push(`the status line is "${gpu.note}", not "${line}"`);
     if (gpu.gpuTokens !== n || gpu.again?.gpuTokens !== n) failures.push(`the GPU took ${gpu.gpuTokens} and ${gpu.again?.gpuTokens} of ${n} tokens`);
     if (gpu.ended === false) failures.push("the GPU's worker did not say it ended within 5 s of the release (T205)");
     if (gpu.past?.gpuTokens !== 0) failures.push(`a block past the GPU's keys and values went to the GPU (${gpu.past?.gpuTokens} tokens)`);

@@ -1771,7 +1771,10 @@ async function checkTokens(m, form) {
       const { ids } = await runTokens(m, head, { count: 1, pos, state: wgsl.samplingState({ token, pos, history }), settings,
         randoms: new Float32Array([random]), extra: (encoder) => encoder.copyBufferToBuffer(g.logits, 0, readLogits, 0, vocab * 4) });
       await readLogits.mapAsync(MAP_READ);
-      const logits = new Float32Array(readLogits.getMappedRange().slice(0));
+      // (T226: the vocabulary's logits and no more. A buffer is made in whole 16 bytes, and GPT-2's 50257 logits left
+      // 3 zeros after them: where every logit of the made-up stream was negative, the check took one of those zeros
+      // for the largest, and refused a form that was right: CI's run 36869126011, 2 runs of 16)
+      const logits = new Float32Array(readLogits.getMappedRange().slice(0, vocab * 4));
       readLogits.unmap();
       return { id: ids[0], logits };
     };
