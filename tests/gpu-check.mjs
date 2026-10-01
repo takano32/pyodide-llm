@@ -528,18 +528,25 @@ try {
     // values of every layer are to come back so (the next step then finds them: the CPU's by T195, the GPU's by
     // T219's flag). A packed form quantizes the normed stream (QUANTIZE), whose float max and i32() made zeros and
     // finite numbers of it before T241, on lavapipe; with an infinity the norm's scale is 0 and the row holds one NaN
-    // (0 x inf) among zeros
+    // (0 x inf) among zeros. They are read as the GPU wrote them back, float16 in the staging place, by their bits:
+    // the CPU's kernels read a float16 NaN as a finite number (kernels/kernel.ts's halves4: 2^16 and more), so what
+    // the CPU's cache then holds, or reads, is only counted (cpuFinite), not held to anything
     const brokenRows = (engine, seen) => {
-      if (!seen.plan?.rows) return { skipped: "no rows of a prompt's block in the shared memory" };
-      const cases = [];
+      const P = seen.plan;
+      if (!P?.rows) return { skipped: "no rows of a prompt's block in the shared memory" };
+      const cases = [], row = P.kvHeads * P.headSize;
       for (const [value, t, j] of [[NaN, 3, 5], [Infinity, 15, plan.dim - 1]]) {
         engine.newGeneration();
-        seen.block = () => { new Float32Array(memory.buffer, seen.plan.rows + (t * plan.dim + j) * 4, 1)[0] = value; };
+        seen.block = () => { new Float32Array(memory.buffer, P.rows + (t * plan.dim + j) * 4, 1)[0] = value; };
         engine.forwardMany(tokens.slice(0, 16), 0);
         seen.block = null;
-        const { keys, values } = engine.keysAndValues(t, 1);
-        cases.push({ value: String(value), token: t, at: j, gpuTokens: engine.gpuTokens,
-          finite: [...keys, ...values].filter((x) => Number.isFinite(x)).length, of: keys.length + values.length });
+        let finite = 0;
+        for (let part = 0; part < 2 * P.layers; part++) {
+          for (const half of new Uint16Array(memory.buffer, P.staging + (part * P.batch + t) * row * 2, row)) finite += (half & 0x7c00) !== 0x7c00;
+        }
+        const cpu = engine.keysAndValues(t, 1);
+        cases.push({ value: String(value), token: t, at: j, gpuTokens: engine.gpuTokens, finite, of: 2 * P.layers * row,
+          cpuFinite: [...cpu.keys, ...cpu.values].filter((x) => Number.isFinite(x)).length });
       }
       return { cases };
     };
@@ -1058,7 +1065,7 @@ for (const { id, cpu, gpu: runs, late, refused, remembered, alone, broken } of o
       }
     }
     const rowsSaid = gpu.brokenRows?.skipped ? `not tried (${gpu.brokenRows.skipped})`
-      : (gpu.brokenRows?.cases ?? []).map((b) => `${b.value} ${b.finite} of ${b.of} finite`).join(", ");
+      : (gpu.brokenRows?.cases ?? []).map((b) => `${b.value} ${b.finite} of ${b.of} finite (the CPU's cache reads ${b.cpuFinite} of them as finite)`).join(", ");
     console.log(`  ${gpu.form ?? "no form"}, ${gpu.attention ?? "no attention"}: keys and values ${gpuKv.toExponential(2)} (all at once ${againKv.toExponential(2)}, ` +
       `the first layer ${gpuFirst.toExponential(2)} from ${name}, the CPU's ${firstKv(cpu).toExponential(2)}; ${(gpuKv / e16).toFixed(1)} E16, ${(gpuKv / q8).toFixed(2)} Q8; ` +
       `layer ${at} ${ratios[at].toFixed(2)} of its line), ` +
