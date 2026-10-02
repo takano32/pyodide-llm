@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { aloneHolds, BOTH_ON_8, aloneVerdict, cpuReadBytes, footprint, gpuBytes, gpuLine, gpuOnlyPlan, gpuOnlyUnfit, gpuOnlyWeights, gpuHoles, layerWeightsOf, placer, PROMPTS_CPU,
   PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes, USAGE_UNKNOWN, weightsPlace } from "../public/forward.js";
-import { deviceKey, halvesOf, tokenAttentionData, tokenAttentionOff } from "../public/shaders.js";
+import { deviceKey, halvesOf, quantizedLikeCpu, ternaryValues, tiledOff, tokenAttentionData, tokenAttentionOff } from "../public/shaders.js";
 import { usedAfter } from "../src/bench.js";
 
 // a GPU with a fixed cost of 40 ms a block and 0.5 ms a token (16 tokens 48 ms, 64 tokens 72 ms)
@@ -509,5 +509,41 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     ["the first values of the last head", withNaN(24, 28)], ["the last value", withNaN(31, 32)]]) {
     assert.ok(Number.isNaN(tokenAttentionOff(got, data, dims)), `a NaN in ${where} stays`);
   }
+}
+// T232: the check of a tiled shader against JavaScript (shaders.js's tiledOff, gpu.js's checkForm) on ternary weights:
+// their values are the codes less one, a scale covers 128 of them (four of the vector's groups of 32); and a product
+// that is no number is wrong (a NaN is neither over a line nor under it: the check passed every form, the int8 ones
+// too, while gpu.js handed it a group that was no number; CI's mutants of the ternary tiles found it)
+{
+  const rows = 9, n = 384, tokens = 3, group = 128;
+  let seed = 232;
+  const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const stored = new Uint8Array((rows * n) / 4).map(() => (random() * 256) | 0), w = ternaryValues(stored);
+  assert.deepEqual(Array.from(ternaryValues(new Uint8Array([0b11100100, 0b00000110]))), [-1, 0, 1, 2, 1, 0, -1, -1], "a byte's four codes, the lowest first, each less one");
+  const s = new Float32Array((rows * n) / group).map(() => random() * 0.01), x = new Float32Array(tokens * n).map(() => random() * 2 - 1);
+  const xq = new Int8Array(tokens * n), xs = new Float32Array(tokens * (n / 32));
+  for (let t = 0; t < tokens; t++) {
+    const q = quantizedLikeCpu(x.subarray(t * n, (t + 1) * n));
+    xq.set(q.xq, t * n);
+    xs.set(q.xs, t * (n / 32));
+  }
+  // the product twice (as the check adds it), by sign times the weights and the scale at scaleAt(row, group of 32)
+  const product = (sign, scaleAt) => Float32Array.from({ length: tokens * rows }, (_, at) => {
+    const t = Math.floor(at / rows), r = at % rows;
+    let sum = 0;
+    for (let g = 0; g < n / 32; g++) {
+      let part = 0;
+      for (let i = g * 32; i < (g + 1) * 32; i++) part += sign * w[r * n + i] * xq[t * n + i];
+      sum += part * s[scaleAt(r, g)] * xs[t * (n / 32) + g];
+    }
+    return 2 * sum;
+  });
+  const right = (r, g) => r * (n / group) + Math.floor(g / 4);
+  const off = (got, more = {}) => tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride: n, yStride: rows, half: false, group, ...more }).wrong;
+  assert.equal(off(product(1, right)), null, "the right products");
+  assert.match(off(product(-1, right)), /products/, "the codes' signs swapped");
+  assert.match(off(product(1, (r, g) => r * (n / group) + Math.min(Math.floor(g / 4) + 1, 2))), /products/, "the scale of the next group of 128");
+  assert.match(off(product(1, right).fill(NaN, 5, 6)), /products/, "one product that is no number");
+  assert.match(off(product(1, right), { group: () => 128 }), /products/, "a group that is no number makes every product NaN: wrong, not right");
 }
 console.log("ok");

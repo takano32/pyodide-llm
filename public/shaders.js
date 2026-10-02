@@ -932,7 +932,8 @@ export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStri
       }
       const off = Math.abs(got[t * yStride + r] / 2 - want);
       worst = Math.max(worst, off / size);
-      over ||= half ? off > size * (2 ** -9 + 2 ** -20 + (n + 1) * 2 ** -24) + small * 2 ** -24 : off >= TILED_LINE * size;
+      // (T232: a difference that is no number is wrong too: a NaN is neither over a line nor under it, and passed)
+      over ||= !(half ? off <= size * (2 ** -9 + 2 ** -20 + (n + 1) * 2 ** -24) + small * 2 ** -24 : off < TILED_LINE * size);
     }
   }
   const wrong = far ? "the quantized activations are far from quantize_x's" : apart > 0.01 * values
