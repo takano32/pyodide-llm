@@ -55,6 +55,7 @@ BOS = 1  # <|startoftext|>: what the real tokenizer puts first, and the page
 # which the converter's reader does not read: the list has it by hand)
 CHAT = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
 PROMPT = "What is the capital of Japan? Answer in one sentence."
+LISTED = "これからの流行りを3つ挙げてください。"  # the list's prompt, which tests/fixed_outputs.py fixes the answer to
 SPECIALS = ["<|im_start|>", "<|im_end|>"]
 STOPS = (BOS, 7)  # <|im_end|>
 NEW_TOKENS = 16
@@ -314,9 +315,13 @@ def real(directory, positions, name, with_faults):
     began = time.perf_counter()
     whole, at_once, stepped, stepped_states = both_ways(model, ids)
     say(f"real: transformers, {len(ids)} positions at once and token by token in {time.perf_counter() - began:.1f} s")
+    listed = CHAT.format(prompt=LISTED)
+    listed_ids = tokenizer.encode(listed, add_special_tokens=False).ids
     with torch.no_grad():
         generated = model.generate(torch.tensor([[BOS] + chat_ids]), max_new_tokens=NEW_TOKENS, do_sample=False,
                                    repetition_penalty=1.0)[0].tolist()
+        as_listed = model.generate(torch.tensor([[BOS] + listed_ids]), max_new_tokens=NEW_TOKENS, do_sample=False,
+                                   repetition_penalty=1.0)[0].tolist()[1 + len(listed_ids):]
     theirs = generated[1 + len(chat_ids):]
 
     began = time.perf_counter()
@@ -351,6 +356,13 @@ def real(directory, positions, name, with_faults):
     same = tokenizer.decode(theirs[:stop], skip_special_tokens=False) == text
     failed |= not same
     say(f"real: the two wrote {'the same' if same else 'OTHER TEXTS — FAILED'}")
+    # and for the list's prompt, the text tests/fixed_outputs.py fixes for the safetensors
+    text = "".join(llama.generate(listed, steps=len(listed_ids) + NEW_TOKENS, temperature=0.0, echo=False))
+    stop = next((at for at, token in enumerate(as_listed) if token in STOPS), len(as_listed))
+    same = tokenizer.decode(as_listed[:stop], skip_special_tokens=False) == text
+    failed |= not same
+    say(f"real: for the list's prompt transformers wrote {json.dumps(tokenizer.decode(as_listed, skip_special_tokens=False), ensure_ascii=False)} "
+        f"and the engine {json.dumps(text, ensure_ascii=False)}: {'the same' if same else 'OTHER TEXTS — FAILED'}")
     failed |= long_check(model, tokenizer, llama, line)
     del model
     gc.collect()

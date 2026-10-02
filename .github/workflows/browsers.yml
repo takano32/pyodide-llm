@@ -193,6 +193,11 @@ jobs:
             models: >-
               hf-granite-4.2-3b-thinking hf-granite-4.2-3b hf-granite-4.2-8b
               hf-minicpm5-1b-thinking hf-minicpm5-1b hf-minicpm5-2b
+          # T260 (2026-10-02): Liquid AI's LFM2 and LFM2.5 (convolution layers among attention layers), 3.9 GB of downloads
+          - size: lfm2
+            timeout: 1800
+            models: >-
+              hf-lfm2.5-230m hf-lfm2.5-350m hf-lfm2-700m hf-lfm2.5-1.2b-instruct hf-lfm2.5-1.2b-jp
     steps:
       - name: Checkout
         uses: actions/checkout@v7

@@ -159,6 +159,27 @@ function miniCpm5(id, name, source, download, sizes, sampling) {
  * tests/gguf_check.py tensors held them to (gguf.yml's candidates) */
 const ggufOf = (repo, revision, weights, original, originalRevision, tokenizer = "tokenizer.json") =>
   ({ original, hf: { repo, revision, weights, vocabulary: { repo: original, revision: originalRevision, tokenizer } } });
+// T260: Liquid AI's LFM2 and LFM2.5 (convolution layers among attention layers; the engine's arch "lfm2"). The real
+// tokenizer begins every text with <|startoftext|> (1), the converter's BOS, and the chat_template writes it first:
+// the page sends the very ids the real template makes. The templates of the 230M, the 350M and the 1.2B Instruct call
+// macros (parse_content, for the pictures and the tools of a message), which the converter's reader refuses, and the
+// 700M's is past it too: one turn by hand, ChatML, as the real Jinja writes it (tests/format_check.py). Without a
+// template the converter read, <|im_start|> and <|im_end|> are not in its specials, and a list of the entry's replaces
+// the converter's (T221): so all of the converter's are here (the added tokens tokenizer.json does not call special,
+// T143: "Mathias" and "python" are among them) with those two, in the converter's order (the longest first). The
+// 1.2B JP's template the converter reads, and its entry says nothing. The answer stops at <|im_end|> (7, the EOS) and
+// at the BOS. The cards: temperature 0.1 and a repetition penalty of 1.05 (and a top-k of 50, which the page's sampler
+// has not; no top-p), the 700M's 0.3 (and a min-p it has not either)
+const lfm25 = { specials: ["<|tool_call_start|>", "<|tool_call_end|>", "<|im_start|>", "<|im_end|>", "</think>", "<think>",
+  "Mathias", "python"] };
+const lfm2Old = { specials: ["<|im_start|>", "<|im_end|>", "Mathias", "python"] };
+/** an LFM2 of the list: the maker's own Q8_0 GGUF's weights with the vocabulary and config.json of its original */
+const lfm2 = (id, name, repo, revision, originalRevision, download, sizes, format = { options: lfm25, template: CHATML }, temperature = 0.1) => ({
+  group: "hf", id, name, note: `answers instructions · 日本語 / English · ${sizes}`,
+  ...ggufOf(`LiquidAI/${repo}-GGUF`, revision, `${repo}-Q8_0.gguf`, `LiquidAI/${repo}`, originalRevision), download,
+  conversion: {}, options: {}, ...format, generation: { steps: 0, temperature, topp: 1.0, repetition_penalty: 1.05 },
+  prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
+});
 // A Qwen3 whose config.json and tokenizer name no BOS (Ternary Bonsai, CAT-Thinking 8B; a Qwen3 of Qwen's own has
 // bos_token_id in config.json): the converter would take token 1, '"'. The BOS here is Qwen3's own, <|endoftext|>
 // (151643), as every Qwen3 of the list begins (the real tokenizer puts nothing in front: T131), and the answer stops at
@@ -240,6 +261,8 @@ const QWEN_RESEARCH = "Qwen Research License Agreement";
 const SWALLOW = "Meta Llama 3.1 Community License and Gemma Terms of Use";
 // T250: ELYZA's card says "Meta Llama 3 Community License" under License (its metadata: llama3)
 const LLAMA_3 = "Meta Llama 3 Community License";
+// T260: Liquid AI's own license, as the LICENSE file of every repository names itself (the cards say "other", lfm1.0)
+const LFM_OPEN = "LFM Open License v1.0";
 export const LICENSES = {
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
@@ -331,6 +354,12 @@ export const LICENSES = {
   // T254: the four cards say apache-2.0
   "openbmb/MiniCPM5-1B": APACHE, "openbmb/MiniCPM5-1B-GGUF": APACHE,
   "openbmb/MiniCPM5-2B": APACHE, "openbmb/MiniCPM5-2B-GGUF": APACHE,
+  // T260: the ten cards say license other, lfm1.0, and link the LICENSE file of their repository
+  "LiquidAI/LFM2.5-230M": LFM_OPEN, "LiquidAI/LFM2.5-230M-GGUF": LFM_OPEN,
+  "LiquidAI/LFM2.5-350M": LFM_OPEN, "LiquidAI/LFM2.5-350M-GGUF": LFM_OPEN,
+  "LiquidAI/LFM2-700M": LFM_OPEN, "LiquidAI/LFM2-700M-GGUF": LFM_OPEN,
+  "LiquidAI/LFM2.5-1.2B-Instruct": LFM_OPEN, "LiquidAI/LFM2.5-1.2B-Instruct-GGUF": LFM_OPEN,
+  "LiquidAI/LFM2.5-1.2B-JP-202606": LFM_OPEN, "LiquidAI/LFM2.5-1.2B-JP-202606-GGUF": LFM_OPEN,
 };
 /** The Hugging Face repository a model comes from. */
 export const sourceOf = (entry) => entry.hf?.repo ?? entry.source;
@@ -832,6 +861,20 @@ const LISTED = [
     ggufOf("openbmb/MiniCPM5-2B-GGUF", "2079a22f3beaa4e306449978533478fe0522f4b3", "MiniCPM5-2B-Q8_0.gguf",
       "openbmb/MiniCPM5-2B", "f97400052a43d642bbc6e9975e2397e3ae6a6b52"), 2679710688,
     "fetches 2.7 GB (GGUF) → int8 2.8 GB · desktop only", { thinking: 1.0, atOnce: 1.0 }),
+  // T260: Liquid AI's LFM2.5 (and the LFM2 700M), whose cards name Japanese among their languages; the 1.2B JP is
+  // their Japanese chat model. Liquid AI's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals.
+  // On the CPU alone (their convolution layers have no shader yet)
+  lfm2("hf-lfm2.5-230m", "LFM2.5 230M", "LFM2.5-230M", "03502067c64ce32ac4fe87b0cec0310a1a13d3e9",
+    "40cb2ad3b3044d5a41eee083a6103c8b523afa45", 246598496, "fetches 247 MB (GGUF) → int8 259 MB"),
+  lfm2("hf-lfm2.5-350m", "LFM2.5 350M", "LFM2.5-350M", "657e078c94084481950a2d555a941481f715536b",
+    "9e6c6ccf47cd318696e137d381a7ded8fe4df09f", 379217632, "fetches 379 MB (GGUF) → int8 399 MB"),
+  lfm2("hf-lfm2-700m", "LFM2 700M", "LFM2-700M", "fd39e80d7a5ac61494ffff577e61bbbfddbd0d02",
+    "86f49fc9a3800c3a325b7320bde179c318062583", 791565248, "fetches 792 MB (GGUF) → int8 836 MB · desktop only",
+    { options: lfm2Old, template: CHATML }, 0.3),
+  lfm2("hf-lfm2.5-1.2b-instruct", "LFM2.5 1.2B Instruct", "LFM2.5-1.2B-Instruct", "8ed288026e23958ad9dfa92d53ed773a8eee7125",
+    "0f604ada3f766f9f257460c4c9f0b5d6f69d431b", 1246253888, "fetches 1.2 GB (GGUF) → int8 1.3 GB · desktop only"),
+  lfm2("hf-lfm2.5-1.2b-jp", "LFM2.5 1.2B JP", "LFM2.5-1.2B-JP-202606", "448ba3f7d408c2f5c32cec8038612f7c1ed9f054",
+    "52b8b4475311a63bf839c6494f78f8ad59d13515", 1246253344, "fetches 1.2 GB (GGUF) → int8 1.3 GB · desktop only", {}),
 ];
 
 // T90: memory. A device that runs out of it kills the worker's WebAssembly memory, so the page warns before it

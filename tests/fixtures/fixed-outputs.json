@@ -54,5 +54,13 @@
   "hf-minicpm5-1b": {
     "prompt": "What will be popular next? Name three things.",
     "text": "Since I don't have access to real-time data or current trends, I cannot"
+  },
+  "hf-lfm2.5-350m": {
+    "prompt": "これからの流行りを3つ挙げてください。",
+    "text": "もちろんです。以下に、今後の流行を3つ挙げます："
+  },
+  "hf-lfm2.5-350m-safetensors": {
+    "prompt": "これからの流行りを3つ挙げてください。",
+    "text": "もちろんです。以下に、今後の流行を3つ挙げます："
   }
 }
