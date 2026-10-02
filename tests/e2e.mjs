@@ -333,11 +333,20 @@ if (process.env.E2E_TWICE && !failures.length) {
     const module = await import(new URL("kept.js", location.href).href);
     return (await module.keptModels()).map(({ where, manifest }) => `${manifest.name} in ${where}`);
   }).catch((error) => [`(could not list: ${error.message})`]);
+  console.log(`probe: ${((Date.now() - started) / 1000).toFixed(0)} s: the first answer is in; listing what is kept`);
   const kept = await listKept();
+  console.log(`probe: ${((Date.now() - started) / 1000).toFixed(0)} s: kept: ${kept.join(", ") || "nothing"}; reloading`);
   const reloaded = Date.now();
   await page.reload({ waitUntil: "load" });
+  console.log(`probe: ${((Date.now() - started) / 1000).toFixed(0)} s: reloaded`);
+  const watching = setInterval(async () => {
+    const text = await Promise.race([page.evaluate(() => document.getElementById("status-text")?.textContent ?? "").catch((error) => `(${error.message})`),
+      new Promise((resolve) => setTimeout(() => resolve("(no answer in 10 s)"), 10000))]);
+    console.log(`probe: second visit ${((Date.now() - reloaded) / 1000).toFixed(0)} s: ${String(text).slice(0, 200)}`);
+  }, 30000);
   // the new page's own report of ready: the old page's must not count
   await acrossReload(() => page.waitForFunction(() => window.__ready || document.querySelector(".error"), null, { timeout: 0 }));
+  clearInterval(watching);
   const ready = await page.evaluate(() => window.__ready ?? null).catch(() => null);
   again = { readySeconds: (Date.now() - reloaded) / 1000, fromCache: Boolean(ready?.fromCache), keptIn: ready?.keptIn ?? null,
     miss: ready?.keptMiss ?? null, kept, keptAfter: await listKept(),
