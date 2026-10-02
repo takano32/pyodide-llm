@@ -216,9 +216,9 @@ kernels, one CI runner each):
 | Qwen3.5 9B | 8.531 | 8.529 | 8.505 |
 
 On three Japanese Wikipedia articles of 1,022 tokens, 7-bit activations cost 0.1% to 1.1% against 8-bit ones on the
-0.8B (mean 0.7%), 0.0% to 0.7% on the 2B (mean 0.4%) and −0.1% to 0.1% on the 4B (mean 0.0%). Six bits (`?bits=6`,
-what a device that says it has 4 GB gets for the 2B and the 4B) cost the 2B 0.4% and the 4B 1.1% against their int8,
-and run at about half their speed.
+0.8B (mean 0.7%), 0.0% to 0.7% on the 2B (mean 0.4%), −0.1% to 0.1% on the 4B (mean 0.0%) and −0.2% to 0.4% on the 9B
+(mean 0.1%). Six bits (`?bits=6`, what a device that says it has 4 GB gets for the 2B and the 4B) cost the 2B 0.4%
+and the 4B 1.1% against their int8, and run at about half their speed.
 
 LFM2.5 (Liquid AI: convolution layers among attention layers) loses more to quantization than the other models, and
 not in the order of the bits. On 1,500 tokens of English and of Japanese Wikipedia (CI's runners; the percentages are
