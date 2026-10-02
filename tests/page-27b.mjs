@@ -76,7 +76,10 @@ const LINES = { logits: 0.35, kl: 2e-3, kv: 0.05 };
 // 9 seconds a token: 15 hours for 6,000) but the fork as it is, whose own batch and one-token paths are 0.1 apart: so the
 // floor is measured in the same run, on the first rows, and what is looked for is growth with the position. A row
 // past 127 positions may be as far as LOGITS, or GROWTH times the largest of the floor, whichever is more (KL likewise).
-const LONG_LINES = { logits: 0.5, kl: 4e-3, growth: 2 };
+// The lines of the first comparison (0.35 and 2e-3: tests/page-27b.mjs compare), which the long pass measured itself against in the
+// review of T233: 42 rows to position 6001 of a text of 5,987 tokens, 0.055 to 0.186 over the likely tokens and a KL of 1.0e-3 at most
+// (runs 36967190043, 36977437791 and 36980828635 print the same rows: the page's forward pass is deterministic, and equal on x86-64 and arm64 to four digits in the first comparison)
+const LONG_LINES = { logits: 0.35, kl: 2e-3, growth: 2 };
 // The long pass holds the largest difference of a row over the tokens the fork gives a probability of at least this (the T233 review:
 // over all 248,320 tokens, one of 42 rows had a tail token of a probability of 4e-8 move 0.79 where the row's KL was 7e-6, and the
 // 155 positions of the first comparison moved at most 0.19: the largest over a vocabulary has a tail; what no sampling reaches
