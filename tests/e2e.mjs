@@ -39,6 +39,11 @@
 //   E2E_THEN       model ids of the list, separated by spaces: after the answer they are chosen one after another
 //                  in the same page, as a visitor changes models, and each must answer too (the worker keeps one
 //                  memory from model to model, T96). They write what the page sets for them, not 256 tokens.
+//   E2E_QUOTA      a number of bytes (the review of T233; Chromium and the browsers of its channels): the quota of the site's
+//                  origin is set to that, through the DevTools protocol (Storage.overrideQuotaForOrigin), so that a
+//                  conversion larger than it must be refused where the page keeps it (T99: the origin private file
+//                  system, or the Cache API): the page must say it was not kept and go on to answer. With E2E_TWICE the
+//                  line "not kept for the second visit: <the reason the page gave>" says what the browser did.
 //   E2E_LONG       a number of words (T115): the prompt is the numbers 1 to it, in place of the model's own, so that
 //                  the keys and values grow to the end of a long context (a prompt past 2048 tokens takes the cache
 //                  of 4096 positions through its last doubling, where it needs the most memory), whatever token
@@ -178,7 +183,25 @@ const [repository, revision] = model.startsWith("hf:") ? model.slice(3).split("@
 const query = model === "url" ? `checkpoint=${encodeURIComponent(`${tinyllamas}/stories260K.bin`)}&tokenizer=${encodeURIComponent(`${tinyllamas}/tok512.bin`)}`
   : repository ? `hf=${encodeURIComponent(repository)}${revision ? `&revision=${encodeURIComponent(revision)}` : ""}`
   : `model=${opens ? "stories3_5M" : model}`;
+if (process.env.E2E_QUOTA) {
+  // (the quota is per origin and stays through the reload the first visit makes; the override is taken off when the page closes)
+  const protocol = await page.context().newCDPSession(page);
+  const origin = new URL(url).origin;
+  await protocol.send("Storage.overrideQuotaForOrigin", { origin, quotaSize: Number(process.env.E2E_QUOTA) });
+  console.log(`quota of ${origin} set to ${Number(process.env.E2E_QUOTA).toLocaleString("en")} bytes`);
+}
 await page.goto(`${url}?${query}${process.env.E2E_QUERY ? `&${process.env.E2E_QUERY}` : ""}`);
+if (process.env.E2E_QUOTA) {
+  // what the page itself is told of its quota (the reload of the first visit may interrupt the question: asked again)
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      console.log(`storage estimate in the page: ${JSON.stringify(await page.evaluate(() => navigator.storage.estimate()))}`);
+      break;
+    } catch {
+      await page.waitForTimeout(1000);
+    }
+  }
+}
 // T93: the first visit reloads once, under the service worker that makes the page cross-origin isolated (coi.js):
 // a wait that the reload interrupts starts again on the new page
 const acrossReload = async (wait) => {
