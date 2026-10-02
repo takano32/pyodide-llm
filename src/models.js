@@ -124,8 +124,9 @@ const QWEN35_AT_ONCE = `${QWEN35_THINKING}\n</think>\n\n`;
 const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
   specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>",
     "</tool_call>", "<|file_sep|>", "<|im_start|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
-// T253: IBM's Granite 4.2. Its chat_template defines a macro (tool_to_json), which the converter's reader refuses:
-// one turn by hand, as the real Jinja writes it with enable_thinking true (its default) and false, with the empty
+// T253: IBM's Granite 4.2. The converter's reader cannot read its chat_template (it stops at the inline `a if b else c` and
+// at the empty list `[]`; the macro the template defines, tool_to_json, it skips, as it skips any definition: the review of
+// T253 ran the reader on it): one turn by hand, as the real Jinja writes it with enable_thinking true (its default) and false, with the empty
 // system turn it always writes (the same IDs as transformers' apply_chat_template for tests/format_check.py's
 // prompts). As for a Qwen3.5 (T236): the real tokenizer begins a text with no BOS (its post-processor adds none, and
 // the template does not write the <s> config.json names), so the BOS here is the format's own first token,

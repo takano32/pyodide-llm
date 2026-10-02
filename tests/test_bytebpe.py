@@ -267,6 +267,9 @@ def test_refuses_what_the_engine_cannot_split():
                   [split(first, behavior="Removed"), split(second), byte_level],
                   [split(first), split(second, invert=True), byte_level],
                   [split(first), split(second), {**byte_level, "use_regex": True}],
+                  # (the review of T254: use_regex left out is the tokenizers' default, True, and the ByteLevel would split once
+                  # more: the line `is False` says so, and no test did until a mutant that read it as `not` went through)
+                  [split(first), split(second), {key: value for key, value in byte_level.items() if key != "use_regex"}],
                   [split(first), split(second), {**byte_level, "add_prefix_space": True}],
                   [split(first), byte_level, split(second)],
                   [split(first), split(second), byte_level, {"type": "Digits", "individual_digits": True}],

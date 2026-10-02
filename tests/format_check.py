@@ -89,9 +89,11 @@ KNOWN = {
 # ids is let by (same_ids; the first BOS may differ, T131): that let the design of before T236, <|endoftext|> in front
 # of <|im_start|> (which costs a Qwen3.5 much, TODO.md's T236), pass for a Qwen3.5 as well, and same_ids still does (the
 # extra token is not the one the real ids begin with). T253's Granite 4.2 are made the same way, and T247's other sizes
-# of Qwen3.5 (a family, not a list of entries: the six of T247 were not in the first one)
+# of Qwen3.5 (a family, not a list of entries: the six of T247 were not in the first one). T254's review: MiniCPM5's template
+# writes its BOS (<s>, bos_token) itself as its first token, and the page puts that one first and writes the format after it:
+# the same relation, so the same exactness (the lenient rule let a token of another kind in front of the real <s> pass).
 # T233: and Ternary Bonsai 2 27B, a Qwen3.8 with the Qwen3.5's format
-STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-ternary-bonsai-2-")
+STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-")
 # T233: what an entry's format is the real template's with, besides enable_thinking: Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T236's format of a Qwen3.5), not its default, "xhigh"
 TEMPLATE_SAYS = {"hf-ternary-bonsai-2-27b-thinking": {"reasoning_effort": "medium"}}
@@ -268,9 +270,12 @@ def main():
                                            **{key: value for key, value in options.items() if key in accepted})
         reference = AutoTokenizer.from_pretrained(folder)
         # T236: said either way. A Qwen3's template thinks unless told not to, a Qwen3.5 0.8B's only when told to
-        thinking = {"enable_thinking": False} if "(no thinking)" in entry["name"] else \
+        # (--hf, T253's review: what ?hf= gets is the template with nothing said of thinking, so the real one is asked with
+        # nothing said either: a "(no thinking)" entry was held to enable_thinking=False in this mode, a form of the list's
+        # own that the converter alone cannot know, and MiniCPM5's two sizes were 0/9 for that and nothing else)
+        thinking = {} if alone else {"enable_thinking": False} if "(no thinking)" in entry["name"] else \
             {"enable_thinking": True} if "(thinking)" in entry["name"] else {}
-        thinking = {**thinking, **TEMPLATE_SAYS.get(entry["id"], {})}
+        thinking = {**thinking, **({} if alone else TEMPLATE_SAYS.get(entry["id"], {}))}
         known = KNOWN.get(entry["id"], {})
         same, explained, diffs = 0, 0, []
         for prompt in prompts:
