@@ -129,7 +129,7 @@ class Probe:
             if spec.get("layers") is not None and layer not in spec["layers"]:
                 return a
             if spec.get("noise"):
-                rng = np.random.default_rng([spec.get("seed", 0), -1 if layer is None else layer, zlib.crc32(role.encode())])
+                rng = np.random.default_rng([spec.get("seed", 0), 99 if layer is None else layer, zlib.crc32(role.encode())])
                 return (a * (1.0 + spec["noise"] * rng.standard_normal(a.shape))).astype(np.float32)
             outliers = spec.get("outliers")
             if isinstance(outliers, dict):
