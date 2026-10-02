@@ -33,7 +33,7 @@
 #   speed      tokens a second by the count of threads, the logits the same to the bit, a prompt in blocks, the GPU refused
 #   memory     the whole context: what is placed after the checkpoint against footprint()
 #   write      the page's generate() for QUESTIONS (lines of a file, or the three here), with THINKING=1 the entry that
-#              thinks, at most TOKENS positions each
+#              thinks, at most TOKENS positions each, PICK="0,1" only these of them (from 0)
 #   long       (the review of T233: nothing in the default; a context past 4096, never computed on the real model) a text
 #              of 5,987 tokens (tests/fixtures/long-27b.txt) through the fork (reference_27b.sh's long stage: 1.5 to 2.7
 #              hours at its speed) and through the page's forward pass with a context of LONG_CONTEXT (8192: the header's
@@ -232,8 +232,15 @@ if has write; then
     questions="$work/questions.txt"
     printf '%s\n' "これからの流行りを3つ挙げてください。" "What is 17 times 24?" "日本でいちばん高い山と、その高さを教えてください。" > "$questions"
   fi
+  # PICK="0,1,2": only these (from 0) of the questions, so that the dozen of tests/fixtures/questions-12.txt (the review of T233: the
+  # six Japanese and six English of tests/answers.mjs) may be split over runs of a runner each; lines that begin with # are no questions
+  index=-1
   while IFS= read -r question; do
     [ -n "$question" ] || continue
+    case "$question" in \#*) continue ;; esac
+    index=$((index + 1))
+    if [ -n "${PICK:-}" ] && [[ ",$PICK," != *",$index,"* ]]; then continue; fi
+    echo "page: question $index"
     node tests/page-27b.mjs "$work/page" write "$question" --tokens "${TOKENS:-1500}" ${THINKING:+--entry "$id-thinking"} < /dev/null || status=1
   done < "$questions"
 fi
