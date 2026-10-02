@@ -7,7 +7,8 @@
 #   ... extra="STAGES='fork convert speed memory' bash tests/page_27b.sh" ...
 # On x86-64: the V8 of Node 24 on arm64 reads the ternary kernels' scales wrongly above 4 GiB (the review of T230 and
 # T231), and tests/page-27b.mjs refuses to run the model there. The fork and the conversion run on arm64 as well
-# (runner=ubuntu-24.04-arm with STAGES='fork convert').
+# (runner=ubuntu-24.04-arm with STAGES='fork convert'). ANYWAY=1 runs page and speed there all the same: the comparison
+# then says whether that engine computed the model.
 #
 # Run it when public/forward.js, the ternary kernels (kernels/ternary.ts), rotate and unrotate, the converter's reading
 # of a GGUF or the list's entry change in a way that could move what this model computes.
@@ -184,7 +185,7 @@ if has page; then
   # to 0.17, T238's review: less than the rounding of the activations moves the page's forward pass from the reference
   # it is compared with, 0.13 to 0.24, so this comparison does not see them (run 36952311034); the engine's NumPy forward
   # pass against the float32 fork does, tests/reference_27b.py, and the signs it reads are the ones the plan hands on)
-  node tests/page-27b.mjs "$work/page" compare "$work" \
+  node tests/page-27b.mjs "$work/page" compare "$work" ${ANYWAY:+--anyway} \
     --broken "${BROKEN:-embedding,sign-17408-17407,sign-5120-2560,sign-6144-all}" --weak "${WEAK:-sign-17408-0,sign-6144-0}" || status=1
 fi
 if has breaks; then
@@ -195,7 +196,7 @@ if has breaks; then
   done
 fi
 if has speed; then
-  node tests/page-27b.mjs "$work/page" speed --threads "${THREADS:-1,2,4}" || status=1
+  node tests/page-27b.mjs "$work/page" speed --threads "${THREADS:-1,2,4}" ${ANYWAY:+--anyway} || status=1
 fi
 if has memory; then
   node tests/page-27b.mjs "$work/page" memory || status=1

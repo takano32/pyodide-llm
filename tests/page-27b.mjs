@@ -124,11 +124,12 @@ if (isMainThread) {
   // The review of T230 and T231: the V8 of Node 24 (13.6) on arm64 reads v128.load32_splat of an address above 4 GiB at
   // its low 32 bits, and the ternary kernels take every scale so: there this model (7 GiB) is computed wrongly, and no
   // number of this tool is the model's (Chromium's V8 on arm64 is right). The canary is tests/ternary-check.mjs's
+  // (--anyway: run all the same, to see what such an engine makes of the model: the comparison says whether it is right)
   if (base4GiB(size + after) && !splatsRight()) {
-    console.log("page: this engine reads v128.load32_splat wrongly above 4 GiB (Node 24's V8 on arm64): what it would compute here is not this model — FAILED (run it on x86-64)");
-    process.exit(1);
-  }
-  if (base4GiB(size + after)) console.log(`page: Node ${process.version} (V8 ${process.versions.v8}, ${process.arch}) reads v128.load32_splat above 4 GiB where it is`);
+    console.log(`page: Node ${process.version} (V8 ${process.versions.v8}, ${process.arch}) reads v128.load32_splat wrongly above 4 GiB: what it would compute here ` +
+      `is not this model${args.includes("--anyway") ? " (run anyway, as asked)" : " — FAILED (run it on x86-64)"}`);
+    if (!args.includes("--anyway")) process.exit(1);
+  } else if (base4GiB(size + after)) console.log(`page: Node ${process.version} (V8 ${process.versions.v8}, ${process.arch}) reads v128.load32_splat above 4 GiB where it is`);
   const { memory, base } = weightsMemory(size, { shared: true, wide, after });
   let began = performance.now();
   for (let offset = 0; offset < size;) {
