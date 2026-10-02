@@ -19,8 +19,14 @@
 #      the likelihood of an independent text does not.
 #
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install transformers safetensors huggingface_hub
-#   python3 tests/chat_nll.py <the original's directory | owner/repository@revision> [<BOS> <end of a turn>]
-#   (the defaults are Qwen3.5's: 248044 and 248046; a Qwen3: 151643 and 151645)
+#   python3 tests/chat_nll.py <the original's directory | owner/repository@revision> [<BOS> <end of a turn>] [--stored]
+#                             [--thinking-arg] [--fidelity=N]
+#   (the defaults are Qwen3.5's: 248044 and 248046; a Qwen3: 151643 and 151645; Granite 4.2's <s> and <|im_end|>: 100283 and 100257)
+# --stored (T253's review): the weights are held as the original stores them (bfloat16) and every product is float32
+# (reference_llama.float32_arithmetic, the embeddings widened before they go in): Granite 4.2 3B is 14.6 GB as float32,
+# more than a runner of 16 GB has. --thinking-arg: the template is given enable_thinking (Qwen3.5 always is): False for the
+# answers written by hand and for the form that answers at once, True for the thinking form (Granite 4.2, MiniCPM5).
+# --fidelity=N: the model's own answers for the first N prompts only (a greedy token of a 3B is a second or two here).
 #
 # Qwen3.5 0.8B (CI's x86-64 runner, run 36935583881): 1. fluency A 2.0572, B 2.0494 nats a token over the 24 answers (B
 # 0.77% lower in perplexity, worse on 12 of 24, the pair's difference -0.0007 with a standard error of 0.027); 2. fidelity
@@ -40,8 +46,12 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, Qwen3_5ForConditio
 
 PAIRS = Path(__file__).resolve().parent / "fixtures" / "chat-answers.jsonl"
 TOKENS = 40
-target = sys.argv[1]
-bos, end = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (248044, 248046)
+flags = [argument for argument in sys.argv[1:] if argument.startswith("--")]
+arguments = [argument for argument in sys.argv[1:] if not argument.startswith("--")]
+target = arguments[0]
+bos, end = (int(arguments[1]), int(arguments[2])) if len(arguments) > 2 else (248044, 248046)
+stored = "--stored" in flags
+fidelity = int(next((flag.split("=", 1)[1] for flag in flags if flag.startswith("--fidelity=")), 1 << 30))
 if "@" in target:
     from huggingface_hub import snapshot_download
     repo, revision = target.split("@")
@@ -51,22 +61,36 @@ else:
 started = time.time()
 say = lambda *parts: print(f"chat_nll [{time.time() - started:5.0f} s]", *parts, flush=True)
 tokenizer = AutoTokenizer.from_pretrained(directory)
-hybrid = json.loads((directory / "config.json").read_text()).get("model_type", "").startswith("qwen3_5")
-model = (Qwen3_5ForConditionalGeneration if hybrid else AutoModelForCausalLM).from_pretrained(str(directory), dtype=torch.float32).eval()
-say(f"{target}: {type(model).__name__}, the BOS {bos}, the end of a turn {end}")
+configured = json.loads((directory / "config.json").read_text())
+hybrid = configured.get("model_type", "").startswith("qwen3_5")
+thinks = hybrid or "--thinking-arg" in flags
+if stored:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import reference_llama
+    reference_llama.float32_arithmetic()
+    kept = getattr(torch, configured.get("dtype") or configured.get("torch_dtype") or "float32")
+else:
+    kept = torch.float32
+model = (Qwen3_5ForConditionalGeneration if hybrid else AutoModelForCausalLM).from_pretrained(str(directory), dtype=kept).eval()
+say(f"{target}: {type(model).__name__}, the BOS {bos}, the end of a turn {end}, weights held as {kept}"
+    f"{', every product in float32' if stored else ''}{', enable_thinking said' if thinks else ''}")
 pairs = [json.loads(line) for line in PAIRS.read_text().splitlines()]
 
 
 def head_of(prompt, thinking):
     real = tokenizer.apply_chat_template([{"role": "user", "content": prompt}], add_generation_prompt=True, tokenize=True,
-                                         **({"enable_thinking": thinking} if hybrid else {}))
+                                         **({"enable_thinking": thinking} if thinks else {}))
     return [int(token) for token in (real["input_ids"] if hasattr(real, "keys") else real)]
 
 
 def log_probs(prefix, answer):
     """the log probabilities (len(answer), vocabulary) of the next token at every position of the answer"""
     with torch.no_grad():
-        logits = model(input_ids=torch.tensor([prefix + answer]), use_cache=False, logits_to_keep=len(answer) + 1).logits[0, :-1].double().numpy()
+        ids = torch.tensor([prefix + answer])
+        # (stored: the embeddings are float32 before the first layer, as reference_llama.py feeds them, or the norms of
+        # a bfloat16 model round their output to bfloat16)
+        given = {"inputs_embeds": model.get_input_embeddings()(ids).to(torch.float32)} if stored else {"input_ids": ids}
+        logits = model(**given, use_cache=False, logits_to_keep=len(answer) + 1).logits[0, :-1].double().numpy()
     logits -= logits.max(axis=-1, keepdims=True)
     return logits - np.log(np.exp(logits).sum(axis=-1, keepdims=True))
 
@@ -89,14 +113,19 @@ for language in ("ja", "en", None):
         f"{differences.mean():+.4f}, standard error {differences.std(ddof=1) / math.sqrt(len(part)):.4f}")
 
 # ---- 2. fidelity, on the model's own answers
-for form, thinking in (("at once", False), ("thinking", True)) if hybrid else (("at once", False),):
+for form, thinking in (("at once", False), ("thinking", True)) if thinks else (("at once", False),):
     own = []
-    for pair in pairs:
+    # (the prompts are the pairs' in order, 12 Japanese and then 12 English: --fidelity=N takes every other one of them
+    # up to N, so that both languages are in it)
+    for pair in (pairs if fidelity >= len(pairs) else pairs[::max(1, len(pairs) // fidelity)][:fidelity]):
         head = head_of(pair["prompt"], thinking)
-        inputs = torch.tensor([head])
-        with torch.no_grad():
-            written = model.generate(inputs, attention_mask=torch.ones_like(inputs), max_new_tokens=TOKENS, do_sample=False,
-                                     eos_token_id=[bos, end], pad_token_id=bos)[0, len(head):].tolist()
+        if stored:
+            written = reference_llama.greedy(model, head, TOKENS, {bos, end})
+        else:
+            inputs = torch.tensor([head])
+            with torch.no_grad():
+                written = model.generate(inputs, attention_mask=torch.ones_like(inputs), max_new_tokens=TOKENS, do_sample=False,
+                                         eos_token_id=[bos, end], pad_token_id=bos)[0, len(head):].tolist()
         a, b = log_probs(head, written), log_probs([bos] + head, written)
         own.append({"A": float(-a[np.arange(len(written)), written].mean()), "B": float(-b[np.arange(len(written)), written].mean()),
                     "kl": float((np.exp(a) * (a - b)).sum(axis=1).mean()), "top1": float((a.argmax(1) == b.argmax(1)).mean())})

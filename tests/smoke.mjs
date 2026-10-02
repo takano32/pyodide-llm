@@ -69,6 +69,36 @@ for big_dtype, big_bytes in (("int8", 36862578716), ("int6", 28671889436)):
         f"a 32B model in {big_dtype} is {sized.size} bytes, not {big_bytes} (NumPy's 32-bit integers?)"
     last_offset, last_shape, last_is_matrix = writer.tensors[-1]
     assert last_offset + llama2_convert.tensor_bytes(last_shape, last_is_matrix, big_dtype) == big_bytes, f"its tensors do not end at its size in {big_dtype}"
+# T233: Ternary Bonsai 2 27B as the ternary checkpoint the page makes of it, 7.66 GB on a 64-bit memory: its size, where
+# its tensors begin, and where the rows of the matrix that lies last in it are written (its values and its scales), all
+# past 2^32 and all Python's integers. The header and the form are the real model's (the rotated basis lays out nothing)
+import math
+class Placed(Sized):
+    def open(self, size, header, dtype, form):
+        self.size, self.writes = size, []
+
+    def write(self, offset, array):
+        self.writes.append((offset, array.size))
+bonsai, bonsai_bytes = [5120, 17408, 64, 24, 4, -248320, 4096], 7662073884
+bonsai_form = {"arch": "qwen35", "bias": False, "head_dim": 256,
+               "linear": {"every": 4, "key_heads": 16, "value_heads": 48, "key_dim": 128, "value_dim": 128, "conv": 4}}
+placed = Placed()
+writer = llama2_convert.Writer(None, bonsai, "ternary", bonsai_form, sink=placed)
+assert placed.size == bonsai_bytes == llama2_convert.checkpoint_size(bonsai, "ternary", bonsai_form), \\
+    f"the 27B as ternary is {placed.size} bytes, not {bonsai_bytes}"
+ends = [offset + llama2_convert.tensor_bytes(shape, is_matrix, "ternary") for offset, shape, is_matrix in writer.tensors]
+assert all(type(offset) is int for offset, _, _ in writer.tensors), "a tensor's place is no Python integer"
+assert [offset for offset, _, _ in writer.tensors][1:] == ends[:-1] and ends[-1] == bonsai_bytes, "the 27B's tensors do not follow one another to its size"
+last_matrix = max((i for i, (_, _, is_matrix) in enumerate(writer.tensors) if is_matrix), key=lambda i: writer.tensors[i][0])
+at, shape, _ = writer.tensors[last_matrix]
+count, width = math.prod(shape), shape[-1]
+assert at > 2 ** 32, f"the 27B's last matrix begins at {at}: not past 2^32, so this checks nothing"
+row = np.tile(np.array([0.5, 0.0, -0.5, 0.5], dtype=np.float32), width // 4)
+placed.writes.clear()
+writer.write(last_matrix, count - width, row)
+assert placed.writes == [(at + (count - width) // 4, width // 4), (at + count // 4 + 4 * ((count - width) // 128), 4 * (width // 128))], \\
+    f"the last row of the 27B's last matrix is written at {placed.writes}"
+assert placed.writes[1][0] + placed.writes[1][1] == ends[last_matrix], "its scales do not end where the matrix ends"
 dim, hidden, layers, heads, vocab, positions = 32, 64, 2, 4, 320, 16
 rng = np.random.default_rng(3)
 normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)

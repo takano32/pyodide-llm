@@ -54,7 +54,10 @@ export const outdated = (kept) => converterOf(kept.manifest) < CONVERTER;
  * whichever converted it (the review of T203: the other form's left its 9 GB behind). */
 export async function replaced(model) {
   if (model.id === "local") return [];
-  const names = [...keptNames(model), ...keptNames({ ...model, conversion: { ...model.conversion, dtype: undefined } })];
+  // its own conversions of every bits stay, whichever one is asked for: the ternary one too (the review of T230: a
+  // ?bits=8 visit of a ternary model deleted its ternary conversion, and the next plain visit fetched and converted it
+  // again, for each visit in turn)
+  const names = [...keptNames(model), ...["int8", "int6", "ternary"].map((dtype) => keptName({ ...model, conversion: { ...model.conversion, dtype } }))];
   const ids = model.shares ?? [model.id];
   return (await keptModels()).filter((kept) => ids.includes(kept.manifest.id) && !names.includes(kept.name));
 }

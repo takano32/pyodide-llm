@@ -95,10 +95,14 @@ timed on the owner's devices yet.
 | SwiGLU and GELU four values at a time | the second development machine, 1 thread | 4.12 / 4.24 |
 | one token's int8 kernel scales a group once, not four times | CI arm64 (Neoverse-N2) / x86-64 (EPYC 9V45) | 1.04-1.12 / 0.88-0.95 |
 | ternary weights multiplied as they are, against the same weights widened to int8 (2026-10-01) | CI arm64 (Neoverse-N2) / x86-64 (EPYC 7763) / x86-64 (Xeon 8573C), 1 and 4 threads | 1.26-1.30 / 1.00-1.05 / 1.52-1.99 |
+| the same, measured again by the review (2026-10-02) | CI x86-64 (EPYC 9V74) / (EPYC 9V45) / (Xeon 8370C), 1 and 4 threads | 1.17-1.24 / 2.31-2.84 / 1.33-1.56 |
 | a prompt on ternary weights, a row against four tokens at once | CI arm64 (Neoverse-N2) / x86-64 (Xeon 8573C) | 1.39-1.40 / 1.17-1.18 |
+| the same, measured again by the review | CI arm64 / x86-64 (Xeon 8370C) / (EPYC 9V45), 1 and 4 threads | 1.39 / 1.18-1.21 / 1.22-1.24 |
 
 The ternary rows are matrices read from memory, in billions of weights a second (20.2 on one thread and 78.0 on four
 on the arm64 runner); the Xeon's int8 kernel was held back by its memory, which the ternary one reads a quarter of.
+A form that keeps the sums of the products in 16 bits was 1.31 to 1.36 times as fast as the chosen one on AMD's Zen 3 and
+Zen 4 (EPYC 7763 and 9V74) and 0.60 times as fast on arm64, which the phones are; no form is chosen by the CPU yet.
 Keeping the file's smaller packing (PTQ1_0, 1.75 bits a weight) in memory was 0.30 to 0.36 times as fast, so the
 weights are held in 2 bits. [quantization.md](quantization.md) has the model's own numbers.
 
@@ -191,6 +195,11 @@ Chromium on CI's Linux runner, from the click to "ready" (download and conversio
 The first four rows were measured before the threads; the 3B to 8B rows with 4 threads. These runners have a fast
 line; from Japan, huggingface.co delivered 7 to 9 MB/s, so a 1B model takes about 5 minutes to fetch, and the
 conversion about 5 seconds.
+
+Ternary Bonsai 2 27B (ternary, 7.66 GB on a 64-bit memory) has not been run in a browser yet. In Node on CI's
+runners it writes 1.3 to 1.6 tok/s on 4 logical cores of x86-64 and 2.4 on arm64, about twice what Prism ML's
+fork of llama.cpp writes on the same runners' CPUs (see [quantization.md](quantization.md)). Its conversion takes
+216 s in Pyodide, which a fast line cannot go under; at 8 MB/s the 5.95 GB take about 12 minutes to fetch.
 
 ## Downloading
 

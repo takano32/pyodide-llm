@@ -199,13 +199,16 @@ def test_a_short_head_asks_for_more_and_other_files_are_refused():
         gguf_read(file[:200])
     with pytest.raises(ValueError, match="not a GGUF"):
         gguf_read(b"PK\x03\x04" + file[4:])
-    k_quant = bytearray(file)
     metadata, found, base = gguf_read(file)
-    # make the first matrix a Q4_K (type 12): its type is the u32 before its u64 offset in the tensor infos
+    # make the first matrix a Q4_K (type 12), or a type 42 (the Q2_0 of Prism's earlier Bonsai files: 2 bits, 64 or 128
+    # to a block): the type is the u32 before its u64 offset in the tensor infos. T230's review: a type 42 file must be
+    # refused with the types that are read, not read as a type 8 or 142 of the same block size
     at = file.index(b"token_embd.weight") + len(b"token_embd.weight") + 4 + 16
-    k_quant[at:at + 4] = struct.pack("<I", 12)
-    with pytest.raises(ValueError, match="K-quants"):
-        Conversion.from_gguf(bytes(k_quant))
+    for kind in (12, 42):
+        other = bytearray(file)
+        other[at:at + 4] = struct.pack("<I", kind)
+        with pytest.raises(ValueError, match=f"ggml type {kind}: only F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0"):
+            Conversion.from_gguf(bytes(other))
 
 
 def test_a_q8_0_tensor_whose_rows_are_not_groups_of_32_is_refused():
