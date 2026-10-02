@@ -56,6 +56,9 @@ part "the latest Pyodide" npm install --no-save pyodide@latest
 part "smoke test" node tests/smoke.mjs
 # T229: the kernels of Qwen3.5's linear attention against the same arithmetic in JavaScript (under a second)
 part "the delta rule's kernels" node tests/delta-check.mjs
+# T260: the kernel of an LFM2's convolution layer against the same arithmetic in JavaScript and in NumPy, to the bit
+# (under a second)
+part "the convolution layer's kernel" node tests/conv-check.mjs
 # T230, T231: the kernels of the ternary weights against the same arithmetic in JavaScript, to the bit (under a second)
 part "the ternary weights' kernels" node tests/ternary-check.mjs
 # T237: the kernels of the rotated basis against the same arithmetic in JavaScript, to the bit (under a second)
@@ -72,6 +75,12 @@ hybrid_stays_on_the_cpu() {
   node tests/gpu-hybrid-check.mjs .tmp/made-up-qwen35-int8
 }
 part "a Qwen3.5 where a GPU adapter is" hybrid_stays_on_the_cpu
+# T260: nor is an LFM2, whose convolution layers have no shader: the next line of gpuUnfit (a few seconds)
+lfm2_stays_on_the_cpu() {
+  python tests/make_lfm2.py .tmp/made-up-lfm2-int8 int8
+  node tests/gpu-hybrid-check.mjs .tmp/made-up-lfm2-int8
+}
+part "an LFM2 where a GPU adapter is" lfm2_stays_on_the_cpu
 # T217 (the review of T201): attention's softmax where its largest score decides something (two positions far above
 # the rest): a largest that leaves positions out, which forward-check's line cannot see (under a second)
 part "attention's largest score" node tests/attention-check.mjs
@@ -131,6 +140,24 @@ if [ "$suite" = full ]; then
     done
   }
   part "forward.js against NumPy, a made-up Qwen3.5 in a rotated basis" made_up_rotated
+  # T260: a made-up LFM2 (convolution layers among attention layers; no real one is small enough for the build): float32
+  # and float16 to NumPy's numbers, int8 and six bits within the line of a made-up model, the prompt in blocks to the
+  # bit, a position out of turn refused, the memory after the checkpoint against footprint(); the 350M's order of
+  # layers, the 230M's with a classifier of its own, and four taps; on a shared memory, a plain one and a 64-bit one,
+  # and without relaxed SIMD (Safari's path)
+  made_up_lfm2() {
+    mkdir -p .tmp
+    for dtype in float32 float16 int8 int6; do python tests/make_lfm2.py .tmp/made-up-lfm2-$dtype $dtype; done
+    for shape in own four; do
+      python tests/make_lfm2.py .tmp/made-up-lfm2-$shape-float32 float32 $shape
+      python tests/make_lfm2.py .tmp/made-up-lfm2-$shape-int8 int8 $shape
+    done
+    for memory in "" --plain --wide; do
+      node tests/forward-check.mjs .tmp/made-up-lfm2-float32 .tmp/made-up-lfm2-float16 .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-int6 .tmp/made-up-lfm2-own-float32 .tmp/made-up-lfm2-own-int8 .tmp/made-up-lfm2-four-float32 .tmp/made-up-lfm2-four-int8 --rounds 1 --positions 128 $memory
+    done
+    node tests/forward-check.mjs .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-int6 .tmp/made-up-lfm2-own-int8 .tmp/made-up-lfm2-four-int8 --without relaxed --rounds 1 --positions 128
+  }
+  part "forward.js against NumPy, a made-up LFM2" made_up_lfm2
   # T148: the default choice of the GPU or the CPU for a prompt's blocks, with a made-up GPU's worker
   part "the GPU or the CPU by default" node tests/gpu-default-check.mjs
   part "the software threads" node tests/threads-check.mjs
@@ -141,6 +168,10 @@ if [ "$suite" = full ]; then
   part "the software threads, a made-up Qwen3.5 above 4 GiB" node tests/threads-check.mjs .tmp/made-up-qwen35-int8 .tmp/made-up-qwen35-state --wide --high --rounds 1 --positions 24
   part "the software threads, made-up ternary models" node tests/threads-check.mjs .tmp/made-up-ternary-qwen3 .tmp/made-up-ternary-rotated --rounds 1
   part "the software threads, a made-up Qwen3.5 in a rotated basis" node tests/threads-check.mjs .tmp/made-up-rotated-float32 .tmp/made-up-rotated-int8 --rounds 1
+  # T260: an LFM2's matrices shared out among the threads, to the bit, a thread that stops in the middle of a phase (the
+  # convolution's rows are this thread's alone, outside every phase), and with every address above 4 GiB
+  part "the software threads, a made-up LFM2" node tests/threads-check.mjs .tmp/made-up-lfm2-float32 .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-four-int8 --rounds 1
+  part "the software threads, a made-up LFM2 above 4 GiB" node tests/threads-check.mjs .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-four-int8 --wide --high --rounds 1 --positions 24
   # T206: the pre-tokenizers against the real ones at every code point (about 90 s, too long for the deploy)
   part "the pre-tokenizers at every code point" env EVERY_CODE_POINT=1 python -m pytest tests/test_bytebpe.py -q -k every_character
 fi

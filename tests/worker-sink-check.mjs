@@ -20,8 +20,9 @@ const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
   "import json, sys; sys.path.insert(0, 'public'); import llama2_numpy; print(json.dumps(llama2_numpy.FORM))"],
 { cwd: fileURLToPath(root) }).toString());
 // T229: "linear", the linear-attention layers of a Qwen3.5 (null where there are none); T237: "rotated", the basis the
-// matrices are stored in (null: the model's own), whose signs and rotated inputs footprint() counts
-assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "head_dim", "linear", "qk_norm", "rotated"],
+// matrices are stored in (null: the model's own), whose signs and rotated inputs footprint() counts; T260: "convolution",
+// the convolution layers of an LFM2 (null where there are none), which keep a few rows and no keys and values
+assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "convolution", "head_dim", "linear", "qk_norm", "rotated"],
   "FORM has other keys now: say here which of them footprint() reads");
 
 // (7) footprint()'s defaults are FORM's: a form without arch or head_dim (the options of a model converted before
@@ -97,6 +98,16 @@ assert.ok(forward.footprint(QWEN3, 600e6, { ...qwen3, dtype: "int8" }) > 1.5 * f
 const rotated = { block: 1024, signs: { 1024: "00".repeat(128), 2048: "00".repeat(256), 3072: "00".repeat(384) } };
 assert.ok(forward.footprint(QWEN3, 600e6, { ...qwen3, rotated, dtype: "int8" }) - forward.footprint(QWEN3, 600e6, { ...qwen3, dtype: "int8" })
   >= (1024 + 2048 + 3072) * 4 + 16 * 3072 * 4, "footprint() does not count a rotated basis");
+// T260: an LFM2's convolution layers reach footprint() as the options carry them, and are counted: no keys and values
+// for the 10 convolution layers of the 350M's 16 (2 kv dim floats a position a layer less), and their rows
+const LFM2 = [1024, 4608, 16, 16, 8, 65536, 4096], lfm2 = { ...FORM, arch: "lfm2", convolution: { layers: "ccaccaccacacacac", taps: 3 } };
+opened(LFM2, lfm2);
+{
+  const some = forward.footprint(LFM2, 600e6, { ...lfm2, dtype: "int8" });
+  const all = forward.footprint(LFM2, 600e6, { ...lfm2, convolution: { layers: "a".repeat(16), taps: 3 }, dtype: "int8" });
+  // (16 frames of a matrix in's 3 dim floats and the rows of 10 layers more; the keys and values of 10 layers less)
+  assert.equal(all - some, 10 * 4096 * 2 * 512 * 4 - 10 * 3 * 1024 * 4, "footprint() does not count an LFM2's convolution layers");
+}
 opened(GPT2, { ...FORM, bias: true, arch: "gpt2" });
 assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "int8" }), forward.footprint(GPT2, 600e6, { ...FORM, dtype: "int8" }));
 

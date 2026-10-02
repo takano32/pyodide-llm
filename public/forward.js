@@ -249,17 +249,22 @@ export function memory64() {
 // T229: a Qwen3.5's layers (llama2_numpy.py has the computation, above linear_form()). linear: the numbers of its
 // linear-attention layers (FORM's "linear": every, key_heads, value_heads, key_dim, value_dim, conv), null for the
 // models without them.
-/** for every layer [whether it is a linear-attention one, its place among the layers of its kind]: where its tensors
- * are in the file's stacks, and its keys and values or its state here (llama2_numpy.layer_slots) */
-const layerSlots = (layers, linear) => {
+// T260: an LFM2's layers (llama2_numpy.py has the computation, above convolution_form()). convolution: its convolution
+// layers (FORM's "convolution": layers, a letter a layer, "c" for a convolution layer and "a" for one that attends, and
+// taps), null for the models without them.
+/** for every layer [whether it keeps a state in place of keys and values (a linear-attention layer, a convolution
+ * layer), its place among the layers of its kind]: where its tensors are in the file's stacks, and its keys and values
+ * or its state here (llama2_numpy.layer_slots) */
+const layerSlots = (layers, linear, convolution = null) => {
   const counts = [0, 0];
   return Array.from({ length: layers }, (_, l) => {
-    const kind = linear && (l + 1) % linear.every !== 0 ? 1 : 0;
+    const kind = (convolution ? convolution.layers[l] === "c" : linear && (l + 1) % linear.every !== 0) ? 1 : 0;
     return [kind === 1, counts[kind]++];
   });
 };
-/** the layers that attend over all positions (and keep keys and values): all of them without linear ones */
-const attendingLayers = (layers, linear) => (linear ? Math.floor(layers / linear.every) : layers);
+/** the layers that attend over all positions (and keep keys and values): all of them without linear or convolution ones */
+const attendingLayers = (layers, linear, convolution = null) =>
+  layerSlots(layers, linear, convolution).filter(([stateful]) => !stateful).length;
 /** of a linear-attention layer: the values the convolution runs over (q, k and v), those of q or of k, those of v */
 const linearWidths = (linear) => {
   const keys = linear.key_heads * linear.key_dim, read = linear.value_heads * linear.value_dim;
@@ -272,6 +277,10 @@ const linearStateBytes = (layers, linear) => {
   const lines = layers - attendingLayers(layers, linear), { mixed } = linearWidths(linear);
   return lines * (2 * linear.value_heads * linear.key_dim * linear.value_dim + linear.conv * mixed) * 4 + 2 * align(linear.key_dim * 4);
 };
+/** T260: the bytes of the state of an LFM2's convolution layers: the last taps tokens' values before the convolution
+ * (dim of them a token; the token under way is the last) */
+const convolutionStateBytes = (layers, dim, convolution) =>
+  (layers - attendingLayers(layers, null, convolution)) * convolution.taps * dim * 4;
 
 // The arrays of one token's frame (see createForward), in their order, and the bytes of each. qDim: the width of q
 // and of the attention's output (into xb), heads times the head size: dim, except where a head has another size (T124).
@@ -281,13 +290,15 @@ const linearStateBytes = (layers, linear) => {
 // T237, a model in a rotated basis: xr, what a matrix reads of its input (the widest of them)
 // ternary (T231): after the scales of the activations' groups of 32 (xs) come as many int32, minus each group's sum
 // (kernels' interleave)
-const frameArrays = (dim, hidden, kvDim, qDim = dim, linear = null, rotated = null, ternary = false) => {
+// T260, an LFM2: what a convolution layer's matrix in gives (mixed: the gates B and C and what B multiplies, 3 dim)
+const frameArrays = (dim, hidden, kvDim, qDim = dim, linear = null, rotated = null, ternary = false, convolution = null) => {
   const { mixed = 0, read = 0 } = linear ? linearWidths(linear) : {};
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QD = Math.max(dim, qDim, read) * 4, XQ = Math.max(dim, hidden, qDim, read);
   return [["x", D], ["xb", QD], ["xb2", D], ["q", qDim * 4], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD],
     ["hb2", HD], ["xq", XQ], ["xs", Math.ceil(XQ / 32) * (ternary ? 8 : 4)],
     ...(linear ? [["gate", qDim * 4], ["mixed", mixed * 4], ["conv", mixed * 4], ["z", read * 4],
       ["work", (2 * linear.value_heads + read) * 4]] : []),
+    ...(convolution ? [["mixed", 3 * dim * 4]] : []),
     ...(rotated ? [["xr", XQ * 4]] : [])];
 };
 /** T237: the widths of what a model's matrices read (llama2_numpy.rotated_widths): the residual stream, an
@@ -309,9 +320,11 @@ const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(b
  * GPU, whose keys and values of a block come back through a place of their own. direct (T156, T210): a model on the
  * GPU alone, whose matrices, tables and keys and values are all there. linear (T229): the form's, the
  * linear-attention layers of a Qwen3.5, which keep a state of a fixed size and no keys and values. rotated (T237):
- * the form's, a rotated basis (its signs for every width, and a place in the frame for a rotated input). */
+ * the form's, a rotated basis (its signs for every width, and a place in the frame for a rotated input). convolution
+ * (T260): the form's, the convolution layers of an LFM2, which keep the last taps tokens and no keys and values. */
 export function footprint(header, size, { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false,
-  shared = false, outliers = 8, head_dim = 0, gpu = false, direct = false, linear = null, rotated = null } = {}) {
+  shared = false, outliers = 8, head_dim = 0, gpu = false, direct = false, linear = null, rotated = null,
+  convolution = null } = {}) {
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
   const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads, kvDim = kvHeads * headSize, qDim = heads * headSize;
   const ternary = dtype === "ternary", quantized = dtype === "int8" || dtype === "int6" || ternary, six = dtype === "int6";
@@ -338,17 +351,18 @@ export function footprint(header, size, { dtype = "float32", arch = "llama", int
   if (quantized || arch === "gpt2") bytes += seqLen * headSize * 4;
   // the frames of BATCH tokens, their attention scores, the logits; the keys and values of a block from the GPU (in
   // float16) and its rows
-  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, linear, rotated, ternary)) + align(seqLen * heads * 4)) + vocab * 4;
+  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, linear, rotated, ternary, convolution)) + align(seqLen * heads * 4)) + vocab * 4;
   // T237: the signs of a rotated basis, a float32 for every value of every width
   if (rotated) bytes += rotatedWidths(dim, hidden, qDim, linear).reduce((sum, width) => sum + align(width * 4), 0);
   if (gpu) bytes += 2 * layers * GPU_BLOCK * kvDim * 2 + GPU_BLOCK * dim * 4;
   // T229: the state of the linear-attention layers, whatever the context; keys and values of the others alone
   if (linear) bytes += linearStateBytes(layers, linear);
+  if (convolution) bytes += convolutionStateBytes(layers, dim, convolution);  // T260
   // the KV cache, doubled in place up to the whole context (T130: createForward's grow() moves the blocks up into the
   // room it adds; before, the smaller blocks were still there next to the larger ones at each step, 1.5 times the
   // context at the last), and a megabyte for the alignment of every array (T210, direct: the keys and values are the
   // GPU's alone)
-  const others = Math.ceil(bytes) + 2 ** 20, keys = direct ? 0 : seqLen * attendingLayers(layers, linear) * 2 * kvDim;
+  const others = Math.ceil(bytes) + 2 ** 20, keys = direct ? 0 : seqLen * attendingLayers(layers, linear, convolution) * 2 * kvDim;
   // The type of the keys and values: float16 on a shared memory where every head has keys of its own (T110: several
   // threads wait on the memory, and read half of it). T160: a grouped-query model's are widened for every head of
   // their group, g = heads / kvHeads times, which float16 saves nothing of (Qwen2.5 0.5B, g = 7: float32 1.42 to 1.44
@@ -693,10 +707,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const gpt2 = arch === "gpt2", layerNorm = arch === "gpt2" || arch === "neox", parallel = plan.parallel_residual;
   // T229: a Qwen3.5's linear-attention layers (null: none), which layers they are, and each layer's place among the
   // layers of its kind (the layer itself where all attend); attending: the layers with keys and values
-  const linear = plan.linear ?? null, slots = layerSlots(layers, linear);
+  // T260: an LFM2's convolution layers (null: none), the same way
+  const linear = plan.linear ?? null, convolution = plan.convolution ?? null, slots = layerSlots(layers, linear, convolution);
   // T237: the block of a rotated basis (0: the model's own basis). llama2_numpy.py has the definition above hadamard()
   const rotated = plan.rotated || 0;
-  const lines = slots.map(([kind]) => kind), placeOf = slots.map(([, a]) => a), attending = attendingLayers(layers, linear);
+  const lines = slots.map(([kind]) => kind), placeOf = slots.map(([, a]) => a), attending = attendingLayers(layers, linear, convolution);
   const imports = { env: { memory } };
   const wide = Boolean(kernels.wide);  // T101: a 64-bit memory, whose kernels take their addresses as BigInt
   // a page that is not cross-origin isolated has no SharedArrayBuffer to ask about: its memory is not shared
@@ -811,7 +826,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // KV: the bytes of one position's keys in the cache; KF: in float32.
   const halfKV = Boolean(plan.half_kv) && (halfKeys ?? (sharedMemory && kvHeads >= heads));
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QF = qDim * 4, KV = kvDim * (halfKV ? 2 : 4);
-  const inFrame = frameArrays(dim, hidden, kvDim, qDim, linear, rotated, T.wo?.kind === "ternary"), S = frameBytes(inFrame);
+  const inFrame = frameArrays(dim, hidden, kvDim, qDim, linear, rotated, T.wo?.kind === "ternary", convolution), S = frameBytes(inFrame);
   const frames = alloc(BATCH * S), at = {};
   inFrame.reduce((offset, [name, bytes]) => { at[name] = frames + offset; return offset + align(bytes); }, 0);
   // kNow, vNow: this token's key and value in float32, before they go into the cache
@@ -842,9 +857,13 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // rmsnorm's w * x / sqrt(mean(x * x) + eps) with w = 1 / sqrt(n) and eps = 1e-6 / n; q is divided by sqrt(n) more
   const keyHeads = linear?.key_heads, valueHeads = linear?.value_heads, keyDim = linear?.key_dim, valueDim = linear?.value_dim;
   const { mixed: mixedWidth = 0, read: readWidth = 0 } = linear ? linearWidths(linear) : {};
-  const stateBytes = linear ? valueHeads * keyDim * valueDim * 4 : 0, convBytes = linear ? linear.conv * mixedWidth * 4 : 0;
+  // T260: an LFM2's convolution layers have a matrix in (win: 3 dim rows), their taps under the same name (conv) and
+  // a matrix out (wout); their state is the convolution's rows alone, taps of dim values a layer
+  const win = matrix("win");
+  const stateBytes = linear ? valueHeads * keyDim * valueDim * 4 : 0;
+  const convBytes = linear ? linear.conv * mixedWidth * 4 : convolution ? convolution.taps * dim * 4 : 0;
   const lineCount = layers - attending;
-  const states = linear ? alloc(2 * lineCount * stateBytes) : 0, convRows = linear ? alloc(lineCount * convBytes) : 0;
+  const states = linear ? alloc(2 * lineCount * stateBytes) : 0, convRows = convBytes ? alloc(lineCount * convBytes) : 0;
   const qUnit = linear ? alloc(keyDim * 4) : 0, kUnit = linear ? alloc(keyDim * 4) : 0;
   const flips = new Uint8Array(lineCount);
   let stateAt = 0;
@@ -1114,7 +1133,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     if (pos0 + count - 1 >= capacity) grow(pos0 + count - 1);
     views();
     gpuEnd = Math.min(gpuEnd, pos0);  // T135: from here on the cache holds what the GPU does not
-    if (linear) follow(pos0);
+    if (convBytes) follow(pos0);
     embed(tokens, pos0);
     for (let l = 0; l < layers; l++) {
       // (a: the layer's place among the layers of its kind, T229: the layer itself where all attend)
@@ -1125,7 +1144,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         if (parallel) F.copyWithin((before + t * S) / 4, (x + t * S) / 4, (x + t * S) / 4 + dim);  // GPT-NeoX reads this layer's input twice
       }
       if (lines[l]) {
-        linearAttention(a, count);
+        if (linear) linearAttention(a, count);
+        else shortConvolution(a, count);
       } else {
         const layerKeys = keys + a * capacity * KV, layerValues = values + a * capacity * KV;
         const kp = layerKeys + pos0 * KV, vp = layerValues + pos0 * KV;
@@ -1178,7 +1198,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       matmuls(hb, count, [[w2, xb2, S, l]]);
       for (let t = 0; t < count; t++) k.add_inplace(x + t * S, xb2 + t * S, dim);
     }
-    if (linear) stateAt = pos0 + count;
+    if (convBytes) stateAt = pos0 + count;
     if (!needLogits) return;
     const last = x + (count - 1) * S;
     if (layerNorm) k.layernorm(xb, last, finalW, finalB, dim);
@@ -1195,10 +1215,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T229: the linear-attention layers' state is what the tokens before this position left: position 0 clears it, and
   // any other has to be the one that comes next (llama2_numpy's follow()). Keys and values could be written again at
   // any position; a state cannot, and tokens out of turn would compute on the wrong one without a word. A run that
-  // stopped half way leaves it no token's: only position 0 goes on from there.
+  // stopped half way leaves it no token's: only position 0 goes on from there. T260: an LFM2's convolution layers' rows
+  // the same.
   function follow(pos) {
     if (pos === 0) {
-      F.fill(0, states / 4, (states + 2 * lineCount * stateBytes) / 4);
+      if (linear) F.fill(0, states / 4, (states + 2 * lineCount * stateBytes) / 4);
       F.fill(0, convRows / 4, (convRows + lineCount * convBytes) / 4);
     } else if (pos !== stateAt) {
       throw new Error(`This model keeps a state from token to token: position ${stateAt < 0 ? 0 : stateAt} comes next ` +
@@ -1240,6 +1261,20 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       // the norm of every value head, and z's gate
       for (let h = 0; h < valueHeads; h++) k.rmsnorm(xt + h * VD, xt + h * VD, deltaNorm + a * VD, valueDim, eps);
       k.swiglu(xt, z + t * S, xt, readWidth);
+    }
+    matmuls(xb, count, [[wout, xb2, S, a]]);
+  }
+  // T260: count tokens through the a-th convolution layer of an LFM2, from xb (the norm of x) into xb2
+  // (llama2_numpy's short_convolution() has the rule). The two matrices go out once for all the tokens, as an attending
+  // layer's; between them a token at a time, for the rows after a token are what the next one reads: the rows move up
+  // by one, and the kernel writes this token's (B * z) and the convolution times C over xb. Only this thread touches
+  // the rows, outside every phase: a phase that is run again (T120) reads what it read.
+  function shortConvolution(a, count) {
+    const rows = convRows + a * convBytes;
+    matmuls(xb, count, [[win, mixed, S, a]]);
+    for (let t = 0; t < count; t++) {
+      F.copyWithin(rows / 4, (rows + D) / 4, (rows + convBytes) / 4);
+      k.short_conv(xb + t * S, taps + a * convBytes, rows, mixed + t * S, dim, convolution.taps);
     }
     matmuls(xb, count, [[wout, xb2, S, a]]);
   }
@@ -1434,6 +1469,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // (T155: int6 weights too, widened to int8 on the GPU, and a model in a 64-bit memory: gpu.js)
   function gpuUnfit() {
     if (linear) return "linear-attention layers are not on the GPU yet";  // T229
+    if (convolution) return "convolution layers are not on the GPU yet";  // T260
     if (T.wo?.kind === "ternary") return "ternary weights are not on the GPU yet";  // T231 (T232 is the GPU's)
     if (rotated) return "a rotated basis is not on the GPU yet";  // T237
     if (!sharedMemory) return "the page is not cross-origin isolated";
