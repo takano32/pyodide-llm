@@ -242,6 +242,10 @@ const SWALLOW = "Meta Llama 3.1 Community License and Gemma Terms of Use";
 const LLAMA_3 = "Meta Llama 3 Community License";
 // T251: the cards of GPT-2's medium, large and XL: "License: Modified MIT License" (OpenAI's, github.com/openai/gpt-2)
 const MODIFIED_MIT = "Modified MIT License";
+// T252: the cards of unsloth's copy and of bartowski's GGUF say llama3.1 (the license's own title: "Llama 3.1 Community
+// License Agreement"), and DeepSeek's card says what its Llama distill was made from
+const LLAMA_31 = "Llama 3.1 Community License";
+const MIT_OF_LLAMA_31 = "MIT License (derived from Llama 3.1 8B, originally under the Llama 3.1 Community License)";
 export const LICENSES = {
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
@@ -289,6 +293,21 @@ export const LICENSES = {
   "EleutherAI/pythia-14m-deduped": APACHE, "mradermacher/pythia-14m-GGUF": APACHE,
   "EleutherAI/pythia-2.8b": APACHE, "mradermacher/pythia-2.8b-GGUF": APACHE,
   "EleutherAI/pythia-6.9b": APACHE, "mradermacher/pythia-6.9b-GGUF": APACHE,
+  // T252 (2026-10-02): well-known ones, and the Q8_0 GGUFs they are taken from. Qwen2.5-Coder-3B's card names the
+  // license of Qwen2.5-3B (license_name: qwen-research; its LICENSE: "Qwen RESEARCH LICENSE AGREEMENT"). Hermes 3's
+  // card says llama3 (its base model is Llama 3.2 3B). DeepSeek's card, under License: "the model weights are licensed
+  // under the MIT License ... DeepSeek-R1-Distill-Llama-8B is derived from Llama3.1-8B-Base and is originally licensed
+  // under llama3.1 license" (its metadata, and its GGUF's: mit)
+  "HuggingFaceTB/SmolLM2-135M": APACHE, "mradermacher/SmolLM2-135M-GGUF": APACHE,
+  "HuggingFaceTB/SmolLM2-360M": APACHE, "mradermacher/SmolLM2-360M-GGUF": APACHE,
+  "Qwen/Qwen2.5-Coder-1.5B-Instruct": APACHE, "bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF": APACHE,
+  "Qwen/Qwen2.5-Coder-3B-Instruct": QWEN_RESEARCH, "bartowski/Qwen2.5-Coder-3B-Instruct-GGUF": QWEN_RESEARCH,
+  "Qwen/Qwen2.5-Coder-7B-Instruct": APACHE, "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF": APACHE,
+  "NousResearch/Hermes-3-Llama-3.2-3B": LLAMA_3, "NousResearch/Hermes-3-Llama-3.2-3B-GGUF": LLAMA_3,
+  "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": MIT, "mradermacher/DeepSeek-R1-Distill-Qwen-7B-GGUF": MIT,
+  "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": MIT_OF_LLAMA_31, "mradermacher/DeepSeek-R1-Distill-Llama-8B-GGUF": MIT_OF_LLAMA_31,
+  "meta-llama/Llama-3.1-8B-Instruct": LLAMA_31, "unsloth/Meta-Llama-3.1-8B-Instruct": LLAMA_31,
+  "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF": LLAMA_31,
   // T125
   "Rakuten/RakutenAI-2.0-mini-instruct": APACHE, "Rakuten/RakutenAI-7B-chat": APACHE,
   "tokyotech-llm/Swallow-MS-7b-instruct-v0.1": APACHE, "mistralai/Mistral-7B-Instruct-v0.2": APACHE,
@@ -763,6 +782,57 @@ const LISTED = [
     original: "meta-llama/Llama-3.2-3B-Instruct",
     hf: { repo: "bartowski/Llama-3.2-3B-Instruct-GGUF", revision: "5ab33fa94d1d04e903623ae72c95d1696f09f9e8", weights: "Llama-3.2-3B-Instruct-Q8_0.gguf",
           vocabulary: { repo: "unsloth/Llama-3.2-3B-Instruct", revision: "006f5dcd1393c3add266de40994ba96225e9689d", tokenizer: "tokenizer.json" } }, download: 3421899296,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
+  // T252: well-known ones the engine opens as it is, each from a Q8_0 GGUF that tests/gguf_check.py tensors held to its
+  // original (gguf.yml's candidates), with the original's vocabulary, config.json and chat template.
+  // SmolLM2's base models (the Instruct ones are above)
+  { group: "hf", id: "hf-smollm2-135m", name: "SmolLM2 135M", note: "English · fetches 145 MB (GGUF) → int8 151 MB",
+    ...ggufOf("mradermacher/SmolLM2-135M-GGUF", "bf92313aa80eb55329ae75ccce3743101784c802", "SmolLM2-135M.Q8_0.gguf",
+      "HuggingFaceTB/SmolLM2-135M", "93efa2f097d58c2a74874c7e644dbc9b0cee75a2"), download: 144810944,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-smollm2-360m", name: "SmolLM2 360M", note: "English · fetches 386 MB (GGUF) → int8 407 MB",
+    ...ggufOf("mradermacher/SmolLM2-360M-GGUF", "630c4866d716e28f45a516ed00e2882149726c13", "SmolLM2-360M.Q8_0.gguf",
+      "HuggingFaceTB/SmolLM2-360M", "f8027fd0eaeea54caa13c31d31b9fdc459c38b49"), download: 386404864,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  // Qwen2.5 Coder above the 0.5B one
+  { group: "hf", id: "hf-qwen2.5-coder-1.5b-instruct", name: "Qwen2.5 Coder 1.5B Instruct", note: "writes code · English · fetches 1.6 GB (GGUF) → int8 1.7 GB · desktop only",
+    ...ggufOf("bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF", "1af47f78b1f9b0c242fabe43f7a365d5a67f3207", "Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf",
+      "Qwen/Qwen2.5-Coder-1.5B-Instruct", "2e1fd397ee46e1388853d2af2c993145b0f1098a"), download: 1646573344,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
+  { group: "hf", id: "hf-qwen2.5-coder-3b-instruct", name: "Qwen2.5 Coder 3B Instruct", note: "writes code · English · fetches 3.3 GB (GGUF) → int8 3.5 GB · desktop only",
+    ...ggufOf("bartowski/Qwen2.5-Coder-3B-Instruct-GGUF", "7c137640ef0332dfedb229f2504c58d83ed4307a", "Qwen2.5-Coder-3B-Instruct-Q8_0.gguf",
+      "Qwen/Qwen2.5-Coder-3B-Instruct", "488639f1ff808d1d3d0ba301aef8c11461451ec5"), download: 3285476608,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
+  { group: "hf", id: "hf-qwen2.5-coder-7b-instruct", name: "Qwen2.5 Coder 7B Instruct", note: "writes code · English · fetches 8.1 GB (GGUF) → int8 8.6 GB · desktop only · Chrome and Firefox",
+    ...ggufOf("bartowski/Qwen2.5-Coder-7B-Instruct-GGUF", "1f629da0c8bed16b9e50cee91c70693650e66c35", "Qwen2.5-Coder-7B-Instruct-Q8_0.gguf",
+      "Qwen/Qwen2.5-Coder-7B-Instruct", "c03e6d358207e414f1eca0bb1891e29f1db0e242"), download: 8098525984,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
+  // Hermes 3 (Nous Research) on Llama 3.2 3B, in ChatML: its own Q8_0 GGUF
+  { group: "hf", id: "hf-hermes-3-llama-3.2-3b", name: "Hermes 3 Llama 3.2 3B", note: "answers instructions · English · fetches 3.4 GB (GGUF) → int8 3.6 GB · desktop only",
+    ...ggufOf("NousResearch/Hermes-3-Llama-3.2-3B-GGUF", "3cd927095d8cbab12c743f932aa63b6f7bbfa141", "Hermes-3-Llama-3.2-3B.Q8_0.gguf",
+      "NousResearch/Hermes-3-Llama-3.2-3B", "7f1a6bec8cdce6551014fd5bbeb4cd8c0f1fbeab"), download: 3421895488,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
+  // DeepSeek-R1's larger distills, as the 1.5B above: the tokenizer's own BOS and the thought opened by the format
+  { group: "hf", id: "hf-deepseek-r1-qwen-7b", name: "DeepSeek-R1 Distill Qwen 7B", note: "thinks before it answers · English · fetches 8.1 GB (GGUF) → int8 8.6 GB · desktop only · Chrome and Firefox",
+    ...ggufOf("mradermacher/DeepSeek-R1-Distill-Qwen-7B-GGUF", "75e791d579161aa4082e642c8b84ea7814829698", "DeepSeek-R1-Distill-Qwen-7B.Q8_0.gguf",
+      "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "916b56a44061fd5cd7d6a8fb632557ed4f724f60"), download: 8098525344,
+    conversion: {}, options: {}, generation: thinking,
+    prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
+  { group: "hf", id: "hf-deepseek-r1-llama-8b", name: "DeepSeek-R1 Distill Llama 8B", note: "thinks before it answers · English · fetches 8.5 GB (GGUF) → int8 9.0 GB · desktop only · Chrome and Firefox",
+    ...ggufOf("mradermacher/DeepSeek-R1-Distill-Llama-8B-GGUF", "5c27c16fe2584d3a33b8633c8df944ce5f22a6b7", "DeepSeek-R1-Distill-Llama-8B.Q8_0.gguf",
+      "deepseek-ai/DeepSeek-R1-Distill-Llama-8B", "6a6f4aa4197940add57724a7707d069478df56b1"), download: 8540773376,
+    conversion: {}, options: {}, generation: thinking,
+    prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
+  // Llama 3.1 8B Instruct, as Llama 3.2 above: the original is gated, so the vocabulary and config.json of unsloth's copy
+  { group: "hf", id: "hf-llama-3.1-8b-instruct", name: "Llama 3.1 8B Instruct", note: "answers instructions · English · fetches 8.5 GB (GGUF) → int8 9.0 GB · desktop only · Chrome and Firefox",
+    original: "meta-llama/Llama-3.1-8B-Instruct",
+    hf: { repo: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF", revision: "bf5b95e96dac0462e2a09145ec66cae9a3f12067", weights: "Meta-Llama-3.1-8B-Instruct-Q8_0.gguf",
+          vocabulary: { repo: "unsloth/Meta-Llama-3.1-8B-Instruct", revision: "a2856192dd7c25b842431f39c179a6c2c2f627d1", tokenizer: "tokenizer.json" } }, download: 8540775840,
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   // T124: Qwen3, each twice (thinking and not), and Qwen3's 2507 4B, one of each form. T203: from Q8_0 GGUFs (Qwen's
