@@ -18,7 +18,8 @@
 #
 # STAGES (default "fork f32 numpy"): which of the three run; SECONDS_FOR_FORK, SECONDS_FOR_F32: after how long the fork
 # stops writing (the float32 one is slower: it widens every row it multiplies by); BATCH_F32=1: and the replayed tokens as
-# one batch too (the fork's other path, for how far it is from itself in float32).
+# one batch too (the fork's other path, for how far it is from itself in float32). TEXTS: how many of the four texts.
+# STAGES=none fetches the file and writes the texts, no more (T233: tests/page_27b.sh works in the same directory).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 fork_commit=88c4bc60b9c9578f134385be9535e853f2db9b9f
@@ -69,6 +70,9 @@ prompts=("The capital of Japan is"
          $'<|im_start|>user\nWhat is 17 times 24?<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n'
          $'<|im_start|>system\nReasoning effort is set to xhigh. Please think carefully through the task, validate key assumptions, consider plausible alternatives, and prioritize correctness, consistency, and clarity in the final answer.<|im_end|>\n<|im_start|>user\nWhat is 17 times 24?<|im_end|>\n<|im_start|>assistant\n<think>\n')
 
+# TEXTS (T233): the first so many of them alone (a run that needs the first text only: 20 positions instead of 155)
+prompts=("${prompts[@]:0:${TEXTS:-${#prompts[@]}}}")
+rm -f "$work"/prompt-*.txt
 for index in "${!prompts[@]}"; do printf '%s' "${prompts[$index]}" > "$work/prompt-$index.txt"; done
 
 case " $stages " in *" fork "*)

@@ -381,6 +381,10 @@ export const LICENSES = {
   "Qwen/Qwen3.5-2B": APACHE, "unsloth/Qwen3.5-2B-GGUF": APACHE,
   "Qwen/Qwen3.5-4B": APACHE, "unsloth/Qwen3.5-4B-GGUF": APACHE,
   "Qwen/Qwen3.5-9B": APACHE, "unsloth/Qwen3.5-9B-GGUF": APACHE,
+  // T233: both cards say apache-2.0. The GGUF's NOTICE.txt: "copyright 2026-present Prism ML, Inc. ... built from
+  // Qwen3.8-27B, Copyright 2026 Alibaba Cloud ... Apache 2.0", and asks for "Created using Bonsai by Prism ML." where
+  // it is deployed, as the smaller Ternary Bonsai's does
+  "prism-ml/Ternary-Bonsai-2-27B-gguf": APACHE, "Qwen/Qwen3.8-27B": APACHE,
   // T253: the four cards say apache-2.0
   "ibm-granite/granite-4.2-3b": APACHE, "ibm-granite/granite-4.2-3b-GGUF": APACHE,
   "ibm-granite/granite-4.2-8b": APACHE, "ibm-granite/granite-4.2-8b-GGUF": APACHE,
@@ -967,6 +971,29 @@ const LISTED = [
       "Qwen/Qwen3.5-9B", "c202236235762e1c871ad0ccb60c8ee5ba337b9a"), 9527502048,
     "fetches 9.5 GB (GGUF) → int8 10.1 GB · desktop only · Chrome and Firefox", { options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+  // T233: Prism ML's Ternary Bonsai 2 27B, a ternary Qwen3.8 27B (a Qwen3.5 in its form: hybrid attention, three
+  // value heads to a key head, T245), whose matrices are stored in a rotated basis (T237: the engine turns every
+  // matrix's input by signs and a Walsh-Hadamard transform). Kept ternary (T230, T231: 7.66 GB; as int8 it would be
+  // 30 GB), on a 64-bit memory (7.70 GiB with its forward pass at 4096 positions), on the CPU (a hybrid, ternary,
+  // rotated model has no GPU path yet). The PTQ1_0 file, the smaller of the two that hold the same weights (5.95 GB
+  // against PQ2_0's 7.21 GB; both convert to the same checkpoint, byte for byte): Pyodide converts it at 27 MB/s and
+  // PQ2_0 at 53, so on a line slower than 33 MB/s it is ready sooner, by the 1.26 GB less it fetches (TODO.md's T233).
+  // The vocabulary and config.json are those of the model it is built from, Qwen/Qwen3.8-27B, whose weights are not
+  // these (rebuilt: no check holds this GGUF's tensors to that repository's; tests/unfold_27b.py and
+  // tests/page_27b.sh hold them, to the base model in the turned-back basis and to Prism ML's fork of llama.cpp).
+  // Its chat_template calls a macro, as a Qwen3.5's: the two formats are the Qwen3.5's by hand, and the BOS is the
+  // format's own <|im_start|> (qwen35: this family is much worse with <|endoftext|> in front, T236). The one that
+  // answers at once is what the real template writes with enable_thinking false. The one that thinks is what it
+  // writes with reasoning_effort "medium" (no system turn), not the model's own default, "xhigh" (a system turn that
+  // asks for careful thought, for which its card leaves room for 16384 tokens: hours at the speed of a CPU, and past
+  // this context); with medium the thought ended after 59 to 267 tokens on three questions in CI. The sampling: the
+  // card's 0.7 and 0.8 without thinking; with thinking it names 1.0 and 0.95 with a top-k and a min-p, which the
+  // page's sampler has not, so Qwen3's 0.6 and 0.95 as for a Qwen3.5
+  ...thinkingAndNot("hf-ternary-bonsai-2-27b", "Ternary Bonsai 2 27B",
+    ggufOf("prism-ml/Ternary-Bonsai-2-27B-gguf", "b072e1d3b35a0a630cece372c2127528e0994386", "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+      "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 5946648928,
+    "ternary weights · fetches 5.9 GB (GGUF) → ternary 7.7 GB · desktop only · Chrome and Firefox",
+    { options: qwen35, weights: "ternary", rebuilt: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
   // T253: Granite 4.2 (IBM; Japanese is among the languages its card says it was tested in), a Llama whose attention
   // multiplies its scores by config.json's attention_multiplier, which the converter puts into q (llama2_convert's
   // query_scale()). IBM's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals. The 3B fits a
