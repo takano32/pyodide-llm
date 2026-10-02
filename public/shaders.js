@@ -443,6 +443,77 @@ fn main(@builtin(local_invocation_id) localId: vec3<u32>, @builtin(workgroup_id)
   }
 }`;
 
+// ---- T232: ternary weights (T230: Prism ML's Ternary Bonsai) on the GPU, as the checkpoint holds them: PQ2_0's
+// codes, two bits a weight (weight j of a row at bits 2 (j % 4) of byte j / 4: 0, 1, 2 for -1, 0, +1 times the scale
+// of its group of 128 along the row; 3, which no ternary file has, is +2, as forward.js's weightAt and
+// llama2_numpy.unpack_ternary read it), 16 weights a u32, and a float32 scale a group of 128 in a buffer of its own.
+// Nothing is widened as it goes up (the 8B is 2.3 GB so and 9.2 GB as int8): a row of n weights is n / 4 bytes and
+// n / 128 scales, which is the layout of an int8 row of n / 4 weights (32 bytes of values to a scale), so gpu.js's
+// buffers, pieces and joined matrices count bytes as they did.
+//
+// The form is the packed-integer one the engine has from ONNX Runtime (the tiles of dp4a above for a prompt's block,
+// fusedDp4aMatVec for a generated token: the activations quantized to int8 first by QUANTIZE or NORM_QUANTIZE, a scale
+// a group of 32), with the weights unpacked from their codes to packed int8 where ORT loads them: ternary_packed(), a
+// word of 16 codes to the vec4<u32> of 16 int8 that dot4I8Packed takes. Its first two lines are the fork's that Prism
+// ML ships the models with (unpack_pq2_0 of its Vulkan backend: a byte's four pairs of bits to the low bits of the four
+// bytes of a word), on the four bytes of the word at once. Then a code less one in every byte: the fork keeps the codes
+// as they are and takes the activations' sum off afterwards (its q8_1 blocks carry that sum: mul_q8_1), as this
+// project's CPU kernel does (kernels/ternary.ts, T231); here the activations have no sum beside them (QUANTIZE and
+// NORM_QUANTIZE are the int8 models' too, and their text is not to change: deviceKey()), so the codes are made signed,
+// two instructions a word of 16 weights more (an add and an xor of constants; see the count below), and every line
+// after the load is ORT's as it was, the scales' NaN of T241 with it (a group's dot times scale_a × scale_b).
+// The inner loop of a generated token, a thread's 32 weights of a row against a group of 32 of the vector:
+//   2 loads of codes; twice unpack4xU8, 2 shifts, 2 ors, 2 ands, an add and an xor on a vec4<u32> (18 instructions where
+//   a vec4 is one, 72 where it is four); 8 dot4I8Packed and 7 adds; a conversion, the two scales' product and the
+//   product; the store: about 40, or 95 where vectors are scalar (int8's DP4A: 2 loads of vec4, 8 dots, 7 adds and the
+//   same 4: 21, on four times the bytes). Kept unsigned with the sum taken off (the fork's and the CPU's form) it is 4
+//   vector instructions fewer and 2 reads of the workgroup's memory, an add and a subtraction more, with a sum made by
+//   each thread that loads the vector: fewer instructions where vectors are scalar, as many where they are not. Which
+//   is faster is a device's to say, and none has measured it (TODO.md's T232 has what would overturn this choice).
+// In the tiles the unpacking is in the load of the workgroup's memory, once a row for the tile's 64 tokens.
+// A device without the packed int8 dot (packed_4x8_integer_dot_product) keeps a ternary model on the CPU: the float
+// forms (llama.cpp's tiles, TensorFlow.js's) would unpack every weight to a float and multiply it, where the model's
+// point is that it need not.
+//
+// ternary_packed() is adapted from PrismML-Eng/llama.cpp, ggml/src/ggml-vulkan/vulkan-shaders/mul_mat_vecq_funcs.glsl
+// (unpack_pq2_0 and repack4; https://github.com/PrismML-Eng/llama.cpp, commit 88c4bc60), under the MIT License:
+//
+// Copyright (c) 2023-2026 The ggml authors
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+// Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+// WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+// COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+// Changed: the four bytes of a word at once (unpack4xU8 and vec4<u32>, where the fork calls it a byte at a time); the
+// codes made signed (the last line), which is this project's: 0x7f added to a byte of 0 to 3 carries nothing into the
+// next byte, and the top bit flipped leaves 0xff, 0x00, 0x01 (and 0x02): the code less one as an int8.
+const TERNARY_PACKED = /* wgsl */ `
+// T232: a word of 16 ternary codes (two bits each, the first in the lowest bits) as 16 int8 (the code less one), four
+// to a u32 with the first in the lowest byte
+fn ternary_packed(codes: u32) -> vec4<u32> {
+  // Move bit pairs [1:0], [3:2], [5:4], [7:6] to [1:0], [9:8], [17:16], [25:24].
+  var bits = unpack4xU8(codes);
+  bits = (bits | (bits << vec4<u32>(12u))) & vec4<u32>(0x000f000fu);
+  bits = (bits | (bits << vec4<u32>(6u))) & vec4<u32>(0x03030303u);
+  return (bits + vec4<u32>(0x7f7f7f7fu)) ^ vec4<u32>(0x80808080u);
+}`;
+/** JavaScript's unpacking (the checks' answer): the int8 values of ternary codes (a Uint8Array, four weights a byte),
+ * as llama2_numpy.unpack_ternary and forward.js's weightAt read them */
+export function ternaryValues(packed) {
+  const out = new Int8Array(packed.length * 4);
+  for (let i = 0; i < out.length; i++) out[i] = ((packed[i >> 2] >> (2 * (i & 3))) & 3) - 1;
+  return out;
+}
+
 // Adapted from ONNX Runtime, onnxruntime/contrib_ops/webgpu/quantization/dp4a_matmul.wgsl.template and
 // dp4a_matmul_common.wgsl.template (https://github.com/microsoft/onnxruntime, commit 3756d4dc, 2026-09-26), under the
 // MIT License:
@@ -479,18 +550,22 @@ fn SDP8AI(a1: vec4<u32>, b1: vec4<u32>, a2: vec4<u32>, b2: vec4<u32>, scale: f32
 const dp4aLines = (subgroup) => Array.from({ length: 16 }, (_, i) => `    lane_output${(i >> 2) + 1}[${i & 3}] += ` + (subgroup
   ? `SDP8AI(own_a0, subgroupShuffle(own_b0, ${i}u), own_a1, subgroupShuffle(own_b1, ${i}u), subgroupShuffle(own_scale_b, ${i}u) * own_scale_a);`
   : `SDP8AI(own_a0, tile_B[0][base_B + ${i}u], own_a1, tile_B[1][base_B + ${i}u], own_scale_a * scale_B[base_B + ${i}u]);`)).join("\n");
-export const dp4a = (subgroups) => /* wgsl */ `requires packed_4x8_integer_dot_product;
+// T232, ternary: the weights are PQ2_0's codes as the checkpoint holds them (TERNARY_PACKED below, and what is changed
+// for them there); the text without it is what it was, to the byte (deviceKey() hashes it: a device keeps the shader it
+// remembers)
+export const dp4a = (subgroups, ternary = false) => /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${subgroups ? "enable subgroups;\n" : ""}
 struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
 ${STEP}
-@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>
+${ternary ? "@group(0) @binding(0) var<storage, read> b: array<u32>;                  // the weights' codes, 16 of two bits to a u32"
+    : "@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>"}
 @group(0) @binding(1) var<storage, read> scales_b: array<f32>;
 @group(0) @binding(2) var<storage, read> a: array<vec4<u32>>;        // the quantized activations (QUANTIZE's xq)
 @group(0) @binding(3) var<storage, read_write> y: array<f32>;
 @group(0) @binding(4) var<uniform> shape: Shape;
 @group(0) @binding(5) var<uniform> step: Step;
 @group(0) @binding(6) var<storage, read> scales_a: array<f32>;       // QUANTIZE's xs: a scale a token and group of 32
-${sdp8ai}
+${sdp8ai}${ternary ? TERNARY_PACKED : ""}
 
 const tile_size = 64u;
 const subtile_size = 16u;
@@ -518,10 +593,15 @@ fn loadSHMB(b_global_base: u32, kidx_v: u32, row: u32, col: u32) {
   if (b_global >= shape.rows) {
     return;
   }
-  tile_B[col][row] = b[b_global * (shape.words / 4u) + kidx_v + col];
+${ternary ? `  // (a row of n weights is n / 16 words of codes, as many as an int8 row's vec4s: the same index)
+  tile_B[col][row] = ternary_packed(b[b_global * (shape.words / 4u) + kidx_v + col]);
+  if (col == 0u) {
+    // a scale a group of 128 weights: four of the activations' groups of 32
+    scale_B[row] = scales_b[b_global * (shape.perRow / 4u) + kidx_v / 8u];
+  }` : `  tile_B[col][row] = b[b_global * (shape.words / 4u) + kidx_v + col];
   if (col == 0u) {
     scale_B[row] = scales_b[b_global * shape.perRow + kidx_v / 2u];
-  }
+  }`}
 }
 
 @compute @workgroup_size(256)
@@ -772,9 +852,16 @@ export function sixValues(packed) {
 // checks each against JavaScript on a small matrix (tiledOff) and times the right ones on the model's own weights, and
 // takes the fastest: which is fastest differs from GPU to GPU (T146), and only the device can say. none: why a shape
 // is not made here (the device's threads or workgroup memory), as the benchmark says it (public/benchmark/gpu.js).
-export const promptForms = ({ half, subgroups, packed, memory, threads }) => {
+// T232, ternary: the forms of a model of ternary weights, ORT's DP4A alone with the weights unpacked from their codes
+// (dp4a's ternary: the float forms would widen every weight to a float); none where there is no packed int8 dot
+export const promptForms = ({ half, subgroups, packed, memory, threads, ternary = false }) => {
   const past = ({ threads: wanted }, bytes) => (wanted > threads ? `${wanted} threads, the device ${threads}`
     : bytes > memory ? `${bytes} bytes of workgroup memory, the device ${memory}` : undefined);
+  if (ternary) {
+    const none = packed ? past(DP4A_SHAPE, 4608) : "no packed int8 dot here";
+    return [false, ...(subgroups ? [true] : [])].map((lanes) => ({ name: `ORT DP4A 64×64${lanes ? ", subgroups" : ""}, ternary`,
+      tile: DP4A_SHAPE, packed: true, half: false, ternary: true, code: dp4a(lanes, true), none }));
+  }
   const forms = REG_TILES.map((tile) => {
     const shape = regTileShape(tile);
     return { name: `llama.cpp tiles ${shape.rows}×${shape.tokens}, ${half ? "f16" : "f32"}`, tile: shape, packed: false, half,
@@ -815,9 +902,10 @@ export function quantizedLikeCpu(x) {
 // Returns { worst, wrong, far, apart, values }: the worst difference over the sum of |products|, why it is wrong or
 // null, and of a packed form whether a quantized value is far from quantize_x's and how many of values differ by 1.
 // the f32 forms' line of tiledOff, a share of the sum of |products| (the matrix × vector checks of the benchmark hold theirs to it too)
+// T232: group, the weights a scale of s (32; 128 for ternary weights, w then their values of -1 to 2: ternaryValues)
 export const TILED_LINE = 1e-4;
-export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half }) {
-  const perRow = n / GROUP;
+export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half, group = GROUP }) {
+  const perRow = n / GROUP, scaleOf = (r, g) => s[r * (n / group) + Math.floor((g * GROUP) / group)];
   let worst = 0, over = false, far = false, apart = 0, values = 0;
   for (let t = 0; t < tokens; t++) {
     const at = t * xStride, groups = t * (xStride / GROUP);
@@ -833,10 +921,10 @@ export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStri
     for (let r = 0; r < rows; r++) {
       let want = 0, size = 0, small = 0;
       for (let g = 0; g < perRow; g++) {
-        const scale = s[r * perRow + g] * (mine ? xs[groups + g] : 1);
+        const scale = scaleOf(r, g) * (mine ? xs[groups + g] : 1);
         for (let i = g * GROUP; i < (g + 1) * GROUP; i++) {
-          const weight = Math.fround(w[r * n + i] * s[r * perRow + g]), value = x[at + i];
-          const product = mine ? w[r * n + i] * xq[at + i] * scale : half ? weight * value : w[r * n + i] * value * s[r * perRow + g];
+          const weight = Math.fround(w[r * n + i] * scaleOf(r, g)), value = x[at + i];
+          const product = mine ? w[r * n + i] * xq[at + i] * scale : half ? weight * value : w[r * n + i] * value * scaleOf(r, g);
           want += product;
           size += Math.abs(product);
           small += Math.abs(weight) + Math.abs(value);
@@ -2898,6 +2986,144 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
 ${fusedWrite(output)}
 }`;
 
+// ---- T232: fusedDp4aMatVec for ternary weights (see TERNARY_PACKED, above dp4a: the layout, the unpacking and why).
+// The same Params, bindings, dispatch and write; the weights at binding 0 are the codes, 16 to a u32, and a row's scales
+// one a group of 128 weights (params.perRow / 4, where perRow counts the vector's groups of 32). A thread's group of 32
+// is two words of codes, at the index its two vec4<u32> of int8 have in an int8 matrix (a row is n / 16 words either
+// way), unpacked to those two vec4<u32>; the scale is its group of 128's, the same for four threads of a row. Every
+// other line is fusedDp4aMatVec's: it is a function of its own only because deviceKey() hashes that one's text (a
+// device keeps the forms it remembers while it does not change); the two are to be one at the next change of it.
+//
+// Adapted from ONNX Runtime, onnxruntime/contrib_ops/webgpu/quantization/dp4a_matmul_small_m.wgsl.template (n_bits
+// 8) with the parameters dp4a_matmul_nbits.cc gives it (https://github.com/microsoft/onnxruntime, commit 3756d4dc,
+// 2026-09-26), under the MIT License:
+//
+// Copyright (c) Microsoft Corporation
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+// documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
+// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit
+// persons to whom the Software is furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+// Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+// WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+// COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+//
+// (ternary_packed: the notice of Prism ML's fork of llama.cpp is above TERNARY_PACKED.)
+export const ternaryMatVec = ({ output }) => /* wgsl */ `requires packed_4x8_integer_dot_product;
+${FUSED_PARAMS}
+${STEP}
+@group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' codes, 16 of two bits to a u32
+@group(0) @binding(1) var<storage, read> scales_b: array<f32>;       // a scale a group of 128 weights
+@group(0) @binding(2) var<storage, read> a: array<vec4<u32>>;        // the quantized vector (xq)
+@group(0) @binding(3) var<uniform> params: Params;
+@group(0) @binding(4) var<storage, read> scales_a: array<f32>;       // its scales (xs), one a group of 32
+${fusedOutputs(output)}
+${sdp8ai}${TERNARY_PACKED}
+
+const workgroup_size_x = 128u;
+const tile_size = ${ORT_DP4A_MATVEC_ROWS}u;
+const tile_size_k_vec = 32u;
+const sub_tile_count = workgroup_size_x / tile_size_k_vec;
+const MATRICES = ${output === "swiglu" ? 2 : 1}u;
+// fusedWrite's name for the rows of a workgroup
+const OUTPUTS_PER_WG = tile_size;
+
+const double_tile_size_k_vec = 2 * tile_size_k_vec;
+
+var<workgroup> inter_results: array<array<f32, tile_size_k_vec>, tile_size * MATRICES>;
+var<workgroup> tile_A : array<vec4<u32>, double_tile_size_k_vec>;
+const scale_a_size_in_tile_a = double_tile_size_k_vec / 2;
+var<workgroup> scale_A : array<f32, scale_a_size_in_tile_a>;
+// what the reduction leaves: each row's sum (up's rows' after gate's), for the write
+var<workgroup> totals: array<f32, tile_size * MATRICES>;
+
+fn loadSHMA(kidx_v: u32, col: u32)
+{
+    let K16 = params.words / 4u;
+    let k_offset = kidx_v + col;
+    if (k_offset >= K16) {
+    return;
+    }
+
+    tile_A[col] = a[k_offset];
+    if (col < scale_a_size_in_tile_a && kidx_v / 2u + col < params.perRow)
+    {
+    // kidx_v - covers 16 values of k in input_a
+    scale_A[col] = scales_a[kidx_v / 2u + col];
+    }
+}
+
+@compute @workgroup_size(workgroup_size_x)
+fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg: vec3<u32>,
+        @builtin(local_invocation_index) local_idx: u32) {
+    let workgroup_idx = wg_id.y * num_wg.x + wg_id.x;
+    let num_N_tile = (params.rows + tile_size - 1u) / tile_size;
+    if (workgroup_idx >= num_N_tile) {
+        return;
+    }
+    let K32 = params.perRow;
+    // the scales of a row of the weights: one a group of 128
+    let K128 = params.perRow / 4u;
+    let b_global_base = workgroup_idx * tile_size;
+    // Handle each workgroup threads as a block of [sub_tile_count][tile_size_k_vec]
+    let local_col = local_idx % tile_size_k_vec;
+    let local_row = local_idx / tile_size_k_vec;
+
+    for (var kidx_v:u32 = 0; kidx_v < K32; kidx_v += tile_size_k_vec)
+    {
+        // Load Phase: Populate shared memory for the workgroup.
+        if (local_idx < double_tile_size_k_vec)
+        {
+        loadSHMA(kidx_v * 2, local_idx);
+        }
+        workgroupBarrier();
+        var own_a: vec4<u32> = tile_A[local_col * 2];
+        var own_a1: vec4<u32> = tile_A[local_col * 2 + 1];
+        var own_scale_a = scale_A[local_col];
+        let k_offset = kidx_v + local_col;
+        // k_offset - covers 32 values of k in input_b: two words of codes
+        // calculate intermediate results into inter_results.
+        for (var row_offset = 0u; row_offset < tile_size; row_offset += sub_tile_count) {
+            let b_global = b_global_base + row_offset + local_row;
+            if (b_global < params.rows && k_offset < K32)
+            {
+                let b_offset = b_global * K32 + k_offset;
+                let own_scale_b = scales_b[b_global * K128 + k_offset / 4u];
+                let own_b = ternary_packed(b[b_offset * 2]);
+                let own_b1 = ternary_packed(b[b_offset * 2 + 1]);
+                inter_results[row_offset + local_row][local_col] += SDP8AI(own_a, own_b, own_a1, own_b1, own_scale_a * own_scale_b);${output === "swiglu" ? `
+                // up's row, params.second rows after gate's (mmvq.cu's vgate beside vx), with the same own_a
+                let up_global = b_global + params.second;
+                let up_offset = up_global * K32 + k_offset;
+                let up_scale_b = scales_b[up_global * K128 + k_offset / 4u];
+                inter_results[tile_size + row_offset + local_row][local_col] += SDP8AI(own_a, ternary_packed(b[up_offset * 2]), own_a1, ternary_packed(b[up_offset * 2 + 1]), own_scale_a * up_scale_b);` : ""}
+            }
+        }
+        workgroupBarrier();
+    }
+
+    if (local_idx < tile_size * MATRICES) {
+      // Do reduce sum to get final output.
+      var output_value = f32(0);
+      for (var b = 0u; b < tile_size_k_vec; b++) {
+        output_value += inter_results[local_idx][b];
+      }
+      totals[local_idx] = output_value;
+    }
+
+    workgroupBarrier();
+
+    let thread_id = local_idx;
+    let row_base = b_global_base;
+    let scale = 1.0;  // the norm is the quantizer's (NORM_QUANTIZE)
+${fusedWrite(output)}
+}`;
+
 // ---- T151: a run of generated tokens on the GPU, the ids read back once for all of them. Each token of the run is
 // one compute pass: EMBED (the token's row of the embedding into the residual stream), the layers (fusedMatVec, T150),
 // the final norm and the classifier (fusedMatVec, "write"), then SAMPLE (the repetition penalty, softmax, top-p and
@@ -3124,6 +3350,35 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
         }
     }
 }`;
+// T232: EMBED and EMBED_ROWS from a table of ternary weights (see TERNARY_PACKED, above dp4a): a word is 16 codes of
+// two bits and a scale covers 128 weights; a value is its code less one times the scale, one float32 product, as the
+// CPU's embed() has it (forward.js's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
+// a workgroup a token of ids; else EMBED's, the state's token). Their loop is llama.cpp's get_rows, as theirs
+const embedTernary = (block) => /* wgsl */ `${block ? "" : STATE}
+@group(0) @binding(0) var<storage, read> table: array<u32>;
+@group(0) @binding(1) var<storage, read> scales: array<f32>;
+@group(0) @binding(2) var<storage, read> ${block ? "ids: array<u32>" : "state: State"};
+@group(0) @binding(3) var<storage, read_write> dst: array<f32>;
+@group(0) @binding(4) var<uniform> shape: vec4<u32>;
+
+@compute @workgroup_size(256)
+fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
+    let n = shape.x;
+    let words = n / 16u;
+    let row = ${block ? "ids[wid.y]" : "state.token"} - shape.y;
+    if (shape.z != 0u && row >= shape.z) {
+        return;
+    }
+    let out = ${block ? "wid.y * n" : "0u"};
+    for (var word = lid.x; word < words; word += 256u) {
+        let codes = table[row * words + word];
+        let d = scales[(row * n + word * 16u) / 128u];
+        for (var k = 0u; k < 16u; k++) {
+            dst[out + word * 16u + k] = f32(i32((codes >> (2u * k)) & 3u) - 1) * d;
+        }
+    }
+}`;
+export const EMBED_TERNARY = embedTernary(false), EMBED_ROWS_TERNARY = embedTernary(true);
 
 // What SAMPLE and the stages of the sampling in chunks (T191, below) share: the constants, the workgroup's memory of
 // the reductions, and cumsum.wgsl's scan.
@@ -4003,18 +4258,23 @@ export function walkLikeCpu(logits, temperature, topp) {
 // hash (FNV-1a): a deployment whose shaders changed chooses anew. adapter's info; device: the device made of it, or the
 // adapter itself (the worker, before any device: gpu.js asks the device for the adapter's features and these limits,
 // so the two give the same key)
-/** the tiled shaders of T146 a device can make (promptForms) */
-export const devicePromptForms = (device) => promptForms({ half: device.features.has("shader-f16"), subgroups: device.features.has("subgroups"),
+/** the tiled shaders of T146 a device can make (promptForms; T232, ternary: those of a model of ternary weights) */
+export const devicePromptForms = (device, ternary = false) => promptForms({ half: device.features.has("shader-f16"), subgroups: device.features.has("subgroups"),
   packed: Boolean(globalThis.navigator?.gpu?.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")),
   memory: device.limits.maxComputeWorkgroupStorageSize,
-  threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX) });
-export function deviceKey(adapter, device = adapter) {
+  threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX), ternary });
+// T232, ternary: the key of a model of ternary weights, the same with the text of its own shaders hashed after the
+// others': the key of every other model is what it was (a device keeps what it remembers of them), and a deployment
+// that changes a ternary shader has the ternary models choose anew
+export function deviceKey(adapter, device = adapter, ternary = false) {
   const info = adapter.info ?? {};
   const named = [info.vendor, info.architecture, info.device, info.description, globalThis.navigator?.userAgent].map((part) => part ?? "").join("|");
   let hash = 0x811c9dc5;
   // (T152: and a token's)
   for (const text of [...devicePromptForms(device).map((form) => `${form.name}${form.code ?? form.none}`), RMSNORM, HEAD_NORM, ADD, ROPE,
-    SWIGLU, QUANTIZE, String(flashTile), LAYER_NORM, GELU, EMBED, SAMPLE, NORM_QUANTIZE, String(fusedMatVec), String(fusedDp4aMatVec)]) {
+    SWIGLU, QUANTIZE, String(flashTile), LAYER_NORM, GELU, EMBED, SAMPLE, NORM_QUANTIZE, String(fusedMatVec), String(fusedDp4aMatVec),
+    ...(ternary ? [...devicePromptForms(device, true).map((form) => `${form.name}${form.code ?? form.none}`), TERNARY_PACKED, String(ternaryMatVec),
+      EMBED_TERNARY, EMBED_ROWS_TERNARY] : [])]) {
     for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
   }
   return `${named}|${(hash >>> 0).toString(16)}`;

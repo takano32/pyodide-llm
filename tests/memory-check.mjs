@@ -243,6 +243,9 @@ function halfToFloat(h) {
     // the rotated input of a matrix, in one frame; every row of the 27B's matrices is whole groups of 128)
     ...big("ternary qwen3.5 27B's layers, 4 of 64, in a rotated basis", [5120, 17408, 4, 24, 4, 1000, 4096],
       { arch: "qwen35", head_dim: 256, linear: LINEAR_27B, rotated: ROTATED }, ["ternary"]),
+    // T232: and a ternary Llama in a rotated basis, which no model of the list is: what the GPU still refuses once it takes
+    // ternary weights, without the linear-attention layers that come first
+    ...big("ternary llama in a rotated basis", [256, 512, 8, 8, 2, 20000, 4096], { rotated: ROTATED_SMALL }, ["ternary"]),
   ];
   // the float32 vectors of the linear layers of a hybrid model, whose relaxed corrections (a ninth of a float32's bytes) footprint() counts
   const hybridOver = (p) => {
@@ -280,19 +283,22 @@ function halfToFloat(h) {
   });
   // and where the page asks for the GPU (the prompt's blocks on it, T135: the engine puts aside the place the keys and values
   // of a block come back through, and its rows), for every model the GPU takes: int8 and six bits of whole groups
-  let withGpu = 0;
+  let withGpu = 0, refused = 0;
   plans.forEach((p, n) => {
-    if (p.dtype === "ternary") {
-      // T231: ternary weights stay on the CPU (T232 is the GPU's): the engine says why, and puts nothing aside for a GPU
+    if (p.dtype === "ternary" && (p.form.linear || p.form.rotated)) {
+      // T232 (the review of T237): the GPU takes ternary weights now (the ternary Qwen3s below go on as the int8 models
+      // do), and what it does not take is still refused, each for its own reason, with nothing put aside for a GPU: a
+      // hybrid model for its linear-attention layers (the 27B, T233, which is in a rotated basis too: the first reason
+      // comes first), a Llama in a rotated basis for that
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: true, outliers: 8, gpu: false, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
       const engine = engineOn(p, planOf(p, { outliers: 8 }), { base: CONTROL_BYTES, memory: sharedMemory(p, bound), halfKeys, gpu: silentGpu });
       const used = engine.memoryBytes() - CONTROL_BYTES - p.size;
-      // (a hybrid model is refused for its linear-attention layers first: forward.js's gpuUnfit())
-      const why = p.form.linear ? "linear-attention layers are not on the GPU yet" : "ternary weights are not on the GPU yet";
-      assert.equal(engine.gpuWhyNot, why, `${shapes[n].name}: the GPU was not refused for ${p.form.linear ? "its linear-attention layers" : "its ternary weights"}`);
+      const why = p.form.linear ? "linear-attention layers are not on the GPU yet" : "a rotated basis is not on the GPU yet";
+      assert.equal(engine.gpuWhyNot, why, `${shapes[n].name}: the GPU was not refused for ${p.form.linear ? "its linear-attention layers" : "its rotated basis"}`);
       assert.ok(used <= bound, `${shapes[n].name}: a GPU asked for put ${(used / MiB).toFixed(2)} MiB after the checkpoint, the CPU alone counts ${(bound / MiB).toFixed(2)}`);
       engine.release();
+      refused++;
       return;
     }
     if (!p.keep_int8 || shapes[n].loose || p.form.linear) return;  // (T229: a Qwen3.5 is not on the GPU: forward.js's gpuUnfit)
@@ -302,6 +308,8 @@ function halfToFloat(h) {
       const engine = engineOn(p, planOf(p, { relaxed, outliers: 8 }), { base: CONTROL_BYTES, memory: sharedMemory(p, bound), halfKeys, gpu: silentGpu });
       const used = engine.memoryBytes() - CONTROL_BYTES - p.size;
       assert.ok(engine.gpu, "no GPU's worker was asked for");
+      // T232: and the model was taken, a ternary one as an int8 one (but one in a rotated basis, T237)
+      assert.equal(engine.gpuWhyNot, p.form.rotated ? "a rotated basis is not on the GPU yet" : null, `${shapes[n].name}, ${p.dtype}: the GPU's refusal is "${engine.gpuWhyNot}"`);
       engine.release();
       const where = `${shapes[n].name}, ${p.dtype}, ${relaxed ? "relaxed SIMD" : "no relaxed SIMD"}, a GPU asked for`;
       assert.ok(used <= bound && bound - used <= 1.2 * MiB && bound - used >= 0.9 * MiB,
@@ -311,7 +319,7 @@ function halfToFloat(h) {
   });
   console.log(`ok: footprint() holds what createForward allocates and no more than a megabyte over (and, for a hybrid model, the corrections of its float32 gates) (${engines} engines: ${plans.length} models and dtypes, ` +
     `with and without relaxed SIMD, on a shared and a plain memory; ${(tightest / MiB).toFixed(2)} to ${(loosest / MiB).toFixed(2)} MiB over; ` +
-    `and ${withGpu} with the GPU asked for; ${seconds()})`);
+    `and ${withGpu} with the GPU asked for, ${refused} ternary models that the GPU still refuses, each for its own reason; ${seconds()})`);
 }
 
 // ---- (3) the memory of a cache that doubles never holds more than the whole context's

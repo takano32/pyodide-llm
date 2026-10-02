@@ -87,6 +87,15 @@
 // to 1.17 (an RMSNorm model's packed shaders read the norm weights through a uniform of their own, g.u.norm, which
 // none of its float forms reads: the FFN's from layer 0 reads 0.36 and 0.57 on Qwen2 and Qwen3, 5.7 to 5.9 on the calm
 // Qwen; on GPT-2, whose LayerNorm every form runs apart, 0.85 and 6.8 on the packed shaders).
+// T232: "synthetic-ternary", ternary weights (T230: two bits a weight and a scale a group of 128, which the GPU takes
+// as they are and multiplies by its packed shaders alone: shaders.js's TERNARY_PACKED) in Ternary Bonsai's form, a
+// Qwen3 (the norms of the heads of q and k, 8 heads of 32 in a dim of 128: q and the attention's output 256 wide,
+// grouped-query attention, an epsilon of 0.5), every row whole groups of 128, three layers; "synthetic-ternary-calm",
+// the same calm (T226's review: its packed shaders' lines show a layer's weights or vectors read from another layer);
+// "synthetic-ternary-wide", the same in a 64-bit memory with the checkpoint 4 GiB up and the GPU's matrices in pieces
+// of 8192 bytes at most (w1 and w3 in two, the second short; w2 in two). NumPy's answer widens the ternary weights to
+// float32, and Q8 is the arithmetic of the ternary shaders as it is of ORT's DP4A: the matrices' inputs in 8 bits a
+// group of 32. Each is also put on the GPU alone (T156, T210), but for the one in pieces.
 //
 // T183: what a person reads to judge it, in the log of CI (the development machine does not run WebGPU's tests): E16,
 // how far NumPy's answer moves when nothing but its cache is rounded to float16 (answer(half=True), T153's review), and
@@ -130,6 +139,8 @@ const NAN_CHOICES = { all: { models: "all", weights: true }, "made-up": { models
 const nanRounds = NAN_CHOICES[option("--nan", { dawn: "made-up", chromium: "small" }[engine] ?? "none")] ?? NAN_CHOICES.none;
 // T153: the made-up models of another form (see above). Three layers: a layer's vectors are read at l × their size,
 // which a second layer alone would not tell from 0 + size
+const TERNARY = { dim: 128, hidden: 384, layers: 3, heads: 8, kv_heads: 4, qk_norm: true, head_dim: 32, ternary: true };
+const TERNARY_OPTIONS = { dtype: "ternary", qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 };
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
   "synthetic-qwen3": [{ layers: 3, qk_norm: true, head_dim: 32 }, { qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 }],
   // the review of T235: Qwen3 with yarn's RoPE (Ternary Bonsai's): the cos and sin of every pair are 1 + 0.1 ln 4 = 1.1386
@@ -146,7 +157,11 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   "synthetic-qwen-calm": [{ layers: 3, bias: true, qk_norm: true, head_dim: 32, calm: true }, { bias: true, qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 }],
   // T155: [form, options, the run's: the GPU's pieces, a 64-bit memory]
   "synthetic-6bit": [{ dim: 128, hidden: 320, layers: 3, six: true }, { dtype: "int6" }, { force: { pieceBytes: 20480 } }],
-  "synthetic-wide": [{ dim: 128, hidden: 320, layers: 3 }, {}, { force: { pieceBytes: 20480 }, wide: true }] };
+  "synthetic-wide": [{ dim: 128, hidden: 320, layers: 3 }, {}, { force: { pieceBytes: 20480 }, wide: true }],
+  // T232: ternary weights, in Ternary Bonsai's form (see above)
+  "synthetic-ternary": [TERNARY, TERNARY_OPTIONS],
+  "synthetic-ternary-calm": [{ ...TERNARY, calm: true }, TERNARY_OPTIONS],
+  "synthetic-ternary-wide": [TERNARY, TERNARY_OPTIONS, { force: { pieceBytes: 8192 }, wide: true }] };
 // the models to check: by default every made-up one and the site's three; "made-up" stands for every made-up one (T193:
 // gpu-prompt.yml's suites name them so, and a made-up model added above joins them)
 // T241's review (the full suite's time: Chrome 38 and Edge 42 minutes in main's run 36902097346, Edge 23 before T241): a run
@@ -156,7 +171,8 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // models' lines); on Chrome and Edge, which differ from Chromium by the build, the three whose shaders differ (NAN_MODELS:
 // Llama's fused layer, Qwen3's norms of the heads, GPT-2's LayerNorm and GELU). A model named is run wherever it is named.
 // TODO.md's T241 has the minutes (the review of 2026-10-01)
-const DAWN_ONLY = ["synthetic-yarn", "synthetic-gpt2-calm", "synthetic-qwen-calm"];
+// (T232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's)
+const DAWN_ONLY = ["synthetic-yarn", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide"];
 const madeUp = Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 const ids = (args.length ? args : ["made-up", "stories15M", "tiny-lm", "llm-jp-3-150m"])
   .flatMap((id) => (id === "made-up" ? madeUp : [id]));
@@ -249,13 +265,15 @@ const PYTHON = `
 import base64, gc, struct, numpy as np, llama2_numpy, llama2_convert
 from llama2_numpy import Llama, external_tensors
 
-def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, six=False, outliers=0, calm=False, **form):
+def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, six=False, outliers=0, calm=False, ternary=False, **form):
     """A made-up int8 checkpoint and its tokenizer.bin, as quantize.py writes one: grouped-query attention. form
     (T153): llama2_numpy.FORM's bias, qk_norm and head_dim, whose vectors are drawn as the norms' are. six (T155):
     int6 (T98), as llama2_convert's Writer writes it: every matrix's packed values, then its scales. outliers (T226):
     that many weights of the final norm are 12 (GPT-2's are 12 to 17 times the others, T92), so that the engine takes
     their channels apart in the classifier (llama2_numpy.outlier_channels). calm (T226's review): the layers' matrices
-    at 0.1 and the norms' weights 1 +- 0.3, see the head of this file"""
+    at 0.1 and the norms' weights 1 +- 0.3, see the head of this file. ternary (T232): ternary weights (T230), as
+    llama2_convert's Writer writes them: every group of 128 along a row of a matrix keeps the signs of its larger
+    values (about two thirds) times one scale of its own, the rest are 0 (tests/make_ternary.py's)"""
     rng = np.random.default_rng(seed)
     header = (dim, hidden, layers, heads, kv_heads, vocab, seq_len)
     out = [struct.pack("<7i", *header)]
@@ -280,6 +298,13 @@ def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_
             continue
         if calm and len(shape) == 3:
             values = values / 3  # a layer's matrix (the embedding, the positions and the classifier are 2-D: as they are)
+        if ternary:
+            groups = values.reshape(-1, 128)
+            cut = np.quantile(np.abs(groups), 1 / 3, axis=1, keepdims=True)
+            d = (np.abs(groups).mean(axis=1, keepdims=True) * rng.uniform(0.5, 1.5, (len(groups), 1))).astype(np.float32)
+            q, scales = llama2_numpy.ternary((np.sign(groups) * (np.abs(groups) > cut) * d).astype(np.float32))
+            out += [q.tobytes(), scales.tobytes()]
+            continue
         if six:
             q, scales = llama2_numpy.quantize6(values.reshape(-1, shape[-1]))
             out += [llama2_numpy.pack6(q).tobytes(), scales.tobytes()]
@@ -410,7 +435,7 @@ print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open
     options = entry.options;
     text = (/日本語/.test(entry.note) ? TEXTS.japanese : TEXTS.english).repeat(3);
   }
-  if (options.dtype !== "int8" && options.dtype !== "int6") throw new Error(`${id} is ${options.dtype}: the GPU takes int8 and int6 weights`);
+  if (!["int8", "int6", "ternary"].includes(options.dtype)) throw new Error(`${id} is ${options.dtype}: the GPU takes int8, int6 and ternary weights`);
   py.globals.set("OPTIONS", py.toPy(options));
   py.globals.set("TEXT", text ?? "");
   const reference = py.runPython(`answers(data, vocabulary, TEXT, ${COUNT}, OPTIONS)`).toJs({ dict_converter: Object.fromEntries });
@@ -434,9 +459,9 @@ function caseOf(id, options, reference, bytes) {
   py.runPython(`Llama(None, vocabulary, kernels="simdkernel.so", external=recorder, **OPTIONS).release()`);
   plan.kv_start = KV_START;
   // T156: a Llama of int8 whose steps the GPU takes goes on the GPU alone too: where its tensors are from its header
-  // (T226: Qwen2 and Qwen3 with it)
+  // (T226: Qwen2 and Qwen3 with it; T232: and of ternary weights)
   let places;
-  if ((options.arch ?? "llama") === "llama" && options.dtype === "int8") {
+  if ((options.arch ?? "llama") === "llama" && ["int8", "ternary"].includes(options.dtype)) {
     py.globals.set("HEADER", py.toPy([...new Int32Array(bytes.slice(0, 28).buffer)]));
     places = py.runPython(`external_tensors(HEADER, OPTIONS["dtype"], OPTIONS)`).toJs({ dict_converter: Object.fromEntries });
   }
@@ -469,15 +494,18 @@ let refusals = 0;
 // GPU's worker chooses by timing them (the first run)
 const wgsl = await import("/public/shaders.js" + search);
 const adapter = await navigator.gpu?.requestAdapter();
-const forms = !adapter ? [] : wgsl.promptForms({ half: adapter.features.has("shader-f16"), subgroups: adapter.features.has("subgroups"),
+// (T232, ternary: those of a model of ternary weights, the packed ones alone; --forms does not narrow them)
+const formsOf = (ternary) => (!adapter ? [] : wgsl.promptForms({ half: adapter.features.has("shader-f16"), subgroups: adapter.features.has("subgroups"),
   packed: navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product"),
-  memory: adapter.limits.maxComputeWorkgroupStorageSize, threads: adapter.limits.maxComputeInvocationsPerWorkgroup })
-  .filter((form) => !form.none).map((form) => form.name).filter((name) => !ONLY.length || ONLY.some((part) => name.includes(part)));
+  memory: adapter.limits.maxComputeWorkgroupStorageSize, threads: adapter.limits.maxComputeInvocationsPerWorkgroup, ternary })
+  .filter((form) => !form.none).map((form) => form.name).filter((name) => ternary || !ONLY.length || ONLY.some((part) => name.includes(part))));
 // T152: the forms of a token's layer this adapter can make (gpu.js's TOKEN_FORMS), each forced in a run of its own
 const features = navigator.gpu?.wgslLanguageFeatures;
-const tokenForms = !adapter ? [] : ["llama.cpp, fused (T150)",
-  ...(adapter.features.has("subgroups") && features?.has("subgroup_id") ? ["llama.cpp, fused (T150), subgroups"] : []),
-  ...(features?.has("packed_4x8_integer_dot_product") ? ["DP4A, fused (T175)", "DP4A, fused (T175), the norms apart"] : [])];
+const tokenFormsOf = (ternary) => (!adapter ? [] : ternary
+  ? (features?.has("packed_4x8_integer_dot_product") ? ["DP4A, fused (T175), ternary", "DP4A, fused (T175), ternary, the norms apart"] : [])
+  : ["llama.cpp, fused (T150)",
+    ...(adapter.features.has("subgroups") && features?.has("subgroup_id") ? ["llama.cpp, fused (T150), subgroups"] : []),
+    ...(features?.has("packed_4x8_integer_dot_product") ? ["DP4A, fused (T175)", "DP4A, fused (T175), the norms apart"] : [])]);
 // T224: the attentions of a token this adapter can make (gpu.js's chooseTokenAttention), each forced in a run of its own
 // with the first form of a token's layer
 const tokenAttentions = !adapter ? [] : [...(adapter.features.has("subgroups") && features?.has("subgroup_id") ? ["llama.cpp flash_attn_vec, subgroups"] : []),
@@ -577,7 +605,10 @@ try {
   const results = [];
   const quantizers = await quantizerProbe().catch((error) => ({ error: String(error?.stack ?? error) }));
   for (const c of await (await fetch("/cases.json")).json()) {
-    const plan = c.plan;
+    const plan = c.plan, ternary = c.dtype === "ternary";
+    const forms = formsOf(ternary), tokenForms = tokenFormsOf(ternary);
+    // T209: what a third of a table is in bytes on the GPU (T232: a ternary weight is a quarter of a byte)
+    const tablePieceBytes = Math.ceil((plan.vocab_size * plan.dim) / (ternary ? 4 : 1) / 3);
     for (const name of Object.keys(plan.derived)) plan.derived[name] = Uint8Array.from(atob(plan.derived[name]), (ch) => ch.charCodeAt(0));
     const checkpoint = await fetched(c.checkpoint), size = checkpoint.length, tokens = c.reference.tokens, n = tokens.length - 1;
     // T155: a 64-bit memory (c.wide) with its kernels, the checkpoint 4 GiB up as threads-check's --high puts it
@@ -933,7 +964,6 @@ try {
     // T209: the classifier and the embedding in pieces of about a third of the table (as a table past what the device
     // binds: Llama 3.2 3B's on the owner's Android), so that EMBED's and the classifier's pieces are what the steps read
     if (gpu[0].steps?.planned !== false) {
-      const tablePieceBytes = Math.ceil((plan.vocab_size * plan.dim) / 3);
       for (const form of tokenForms.filter((name) => c.arch === "llama" || name !== "DP4A, fused (T175)")) gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: form, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
       for (const attention of tokenAttentions) {
         gpu.push(await run(openGpu, { matrices: forms[0], quick: true, tokens: tokenForms[0], tokenAttention: attention, pieceBytes: Infinity, tablePieceBytes }, undefined, true));
@@ -942,7 +972,8 @@ try {
     // T241: the DP4A forms on a GPU with a weight of the last layer that is no finite number (brokenWeight), on three
     // of the made-up models (Llama's form, Qwen3's norms of the heads, GPT-2's LayerNorm and GELU: an engine a case)
     const broken = [];
-    if (NAN_ROUNDS.weights && gpu[0].steps?.planned !== false && ["synthetic", "synthetic-qwen3", "synthetic-gpt2"].includes(c.id)) {
+    // (T232: and the ternary one, whose matrices multiply the same quantized vectors: T241's NaN scales carry on there too)
+    if (NAN_ROUNDS.weights && gpu[0].steps?.planned !== false && ["synthetic", "synthetic-qwen3", "synthetic-gpt2", "synthetic-ternary"].includes(c.id)) {
       const force = { matrices: forms[0], quick: true, pieceBytes: Infinity }, weightsBegan = performance.now();
       for (const form of tokenForms.filter((name) => /DP4A/.test(name) && (c.arch === "llama" || name !== "DP4A, fused (T175)"))) {
         for (const place of brokenPlaces()) for (const value of [NaN, Infinity]) broken.push(await brokenWeight(form, place, value, force));
@@ -971,7 +1002,7 @@ try {
     let alone;
     const tokenRun = gpu.find((r) => r.steps?.forced === tokenForms[0] && r.steps?.first);
     if (c.places && tokenRun && !c.wide && !c.force) {
-      const force = { ...TESTS, matrices: forms[0], quick: true, tokens: tokenForms[0], pieceBytes: Infinity, tablePieceBytes: Math.ceil((plan.vocab_size * plan.dim) / 3) };
+      const force = { ...TESTS, matrices: forms[0], quick: true, tokens: tokenForms[0], pieceBytes: Infinity, tablePieceBytes };
       const synthetic = c.id === "synthetic";
       alone = { right: await direct(force, synthetic ? { GBps: 1e-6, promptGMACs: 1e-6 } : undefined), pieces: await direct({ ...force, pieceBytes: 4096 }),
         // (timed: the GPU's step and block are what the verdict weighs, which the tests' quick leaves untimed)
@@ -980,7 +1011,7 @@ try {
     }
     results.push({ id: c.id, cpu, gpu, late: lateRun, refused, remembered, alone, broken, nanSeconds });
   }
-  postMessage({ results, forms, quantizers });
+  postMessage({ results, forms: formsOf(false), quantizers });
 } catch (error) {
   postMessage({ error: String(error?.stack ?? error) });
 }
@@ -1343,11 +1374,15 @@ process.exit(failed ? 1 : 0);
 // one does (the model's steps then belong on the GPU). The device's alignment is WebGPU's default of 256 bytes
 // (gpu.js asks for no other), the scales 4 bytes a group of 32: stories15M's k starts at 288 × 288 weights, whose
 // scales, 10368 bytes, are not a multiple of 256 (T150's (b))
+// (T232: a ternary weight is a quarter of a byte, and a scale goes with every 32 bytes as well)
 function unbound(c) {
   const [dim, hidden, , heads, kvHeads] = c.reference.header, head = c.headDim || dim / heads, ALIGN = 256, GROUP = 32;
   // (T226: GPT-2's and GPT-NeoX's FFN has no gate: no w3, and w1 a buffer of its own)
   const joined = { wk: head * heads * dim, wv: head * (heads + kvHeads) * dim, ...(c.arch === "llama" ? { w3: hidden * dim } : {}) };
-  for (const [name, values] of Object.entries(joined)) if (values % ALIGN || (values / GROUP) * 4 % ALIGN) return name;
+  for (const [name, weights] of Object.entries(joined)) {
+    const values = c.dtype === "ternary" ? weights / 4 : weights;
+    if (values % ALIGN || (values / GROUP) * 4 % ALIGN) return name;
+  }
   return null;
 }
 
