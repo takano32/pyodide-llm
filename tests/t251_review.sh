@@ -108,6 +108,22 @@ PY
     done
     rm -rf "$room/$id".*
     ;;
+  loss)
+    # where a small model's loss against the original comes from: tests/perplexity.mjs's three rows on the same English text, the int8 weights
+    # with 8-bit activations (matmul_q8), with 7-bit ones (matmul_q8r, as the page runs them) and widened to float32 with float32 activations (NumPy)
+    page_tools
+    english
+    room=/mnt/t251/loss
+    mkdir -p "$room"
+    for id in "$@"; do
+      model=$(python3 tests/hf_fetch.py "$id" "$room/downloads" | tail -1)
+      python3 tests/perplexity_prepare.py "$model" "$room/$id" int8 | cut -c1-160
+      rm -rf "$room/downloads"
+      echo "t251_review: $id, three rows"
+      node tests/perplexity.mjs "$room/$id" 1024 "$dir/en.txt"
+      rm -rf "$room/$id".*
+    done
+    ;;
   think)
     id=${1:?a model id}; tokens=${2:-1800}
     page_tools
