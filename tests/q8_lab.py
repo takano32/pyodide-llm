@@ -403,6 +403,7 @@ def main():
         "one": [[bos_values["eot"]] + windows[0]],
     }
     pad = bos_values["eot"]
+    sentence = None if arguments.tiny else ([pad] + tokenizer.encode(ref.TEXT, add_special_tokens=False).ids)[:positions]
     indices = lambda rows, b: [i for i, row in enumerate(rows) if row[0] == bos_values[b]]
     results = {}
     for name, rounds, shift, misread, rowset in jobs_of(arguments.jobs):
@@ -437,6 +438,15 @@ def main():
         if arguments.save and name in ("v0", "v1"):
             np.save(f"{arguments.save}-{name}-logits.npy", logits)
             np.save(f"{arguments.save}-{name}-nll.npy", nlls[0][:first])
+        if sentence and name in ("v0", "v1"):
+            # the 96 positions of tests/reference_qwen35.py's text (the engine's comparison with transformers there), for
+            # the engine on the GGUF to be held to (tests/q8_compare.py)
+            _, here = run(text, classifier, lab, [sentence], pad, len(sentence))
+            results[f"{name}-sentence"] = here
+            if arguments.save:
+                np.save(f"{arguments.save}-{name}-sentence-logits.npy", here)
+            if name == "v1":
+                compare_logits("v1 against v0 on the engine's 96 positions", results["v0-sentence"], here)
         gc.collect()
     if arguments.tiny:
         a = results["v0"][2]

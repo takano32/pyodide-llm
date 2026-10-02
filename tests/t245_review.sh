@@ -64,6 +64,16 @@ case "$stage" in
     article en "$dir/en.txt"  # T85's three articles, as tests/page_qwen35.sh has them
     LLAMACPP_QWEN="$dir/qwen.py" python tests/q8_lab.py "$dir/orig" --text "$dir/en.txt" --jobs "${1:-all}" --save "$dir/lab"
     ;;
+  engine)  # the engine on the 4B's GGUF against transformers on the original, and on the original rounded to Q8_0
+    reference_tools
+    transformers_of_t229
+    swap
+    article en "$dir/en.txt"
+    python tests/q8_lab.py "$dir/orig" --text "$dir/en.txt" --jobs v0,v1 --save "$dir/lab"
+    df -h /mnt | sed 's/^/runner: /'
+    python tests/q8_engine.py "$dir/orig" --text "$dir/en.txt" --out "$dir/engine" --source gguf
+    python tests/q8_compare.py "$dir/lab" "$dir/engine"
+    ;;
   *)
     echo "no stage $stage"
     exit 2
