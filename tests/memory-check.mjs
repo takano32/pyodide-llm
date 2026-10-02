@@ -91,9 +91,10 @@ print(json.dumps([plan_of(**s) for s in json.loads(sys.stdin.read())]))
 const plansOf = (shapes) => JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c", python],
   { cwd: fileURLToPath(root), input: JSON.stringify(shapes), maxBuffer: 1 << 28 }).toString());
 const FORM = { bias: false, arch: "llama", qk_norm: false, head_dim: 0, linear: null, rotated: null, convolution: null };
-// T260: the convolution layers of the LFM2 shapes below (llama2_numpy.convolution_form()): the 350M's 16 layers, and
-// eight layers of four taps
+// T260: the convolution layers of the LFM2 shapes below (llama2_numpy.convolution_form()): the 350M's 16 layers (the 700M's and
+// the 1.2Bs' too), the 230M's 14, and eight layers of four taps
 const CONVOLUTION_350M = { layers: "ccaccaccacacacac", taps: 3 };
+const CONVOLUTION_230M = { layers: "ccacacacacacac", taps: 3 };
 const CONVOLUTION_SMALL = { layers: "ccaccaca", taps: 4 };
 // T229: the linear-attention layers of the Qwen3.5 shapes below (llama2_numpy.linear_form())
 const LINEAR_SMALL = { every: 4, key_heads: 8, value_heads: 16, key_dim: 128, value_dim: 128, conv: 4 };
@@ -254,6 +255,12 @@ function halfToFloat(h) {
     ...big("lfm2, eight layers of four taps", [256, 512, 8, 8, 2, -20000, 4096], { arch: "lfm2", convolution: CONVOLUTION_SMALL },
       ["int8", "int6", "float32", "float16"]),
     ...big("lfm2 350M", [1024, 4608, 16, 16, 8, 65536, 4096], { arch: "lfm2", convolution: CONVOLUTION_350M }, ["int8", "int6"]),
+    // (the review) and the other published shapes (the headers of the list's converted files: the FFN's inside after Lfm2MLP's
+    // rule): the 230M's (14 layers, an FFN of 2560 as its config says it), the 700M's (24 heads in a dim of 1536) and the 1.2Bs'
+    // (32 heads in a dim of 2048)
+    ...big("lfm2 230M", [1024, 2560, 14, 16, 8, 65536, 4096], { arch: "lfm2", convolution: CONVOLUTION_230M }, ["int8", "int6"]),
+    ...big("lfm2 700M", [1536, 6912, 16, 24, 8, 65536, 4096], { arch: "lfm2", convolution: CONVOLUTION_350M }, ["int8", "int6"]),
+    ...big("lfm2 1.2B", [2048, 8192, 16, 32, 8, 65536, 4096], { arch: "lfm2", convolution: CONVOLUTION_350M }, ["int8", "int6"]),
     // and ternary in a rotated basis, as Ternary Bonsai 2 27B is (T231's frame: the activations' scales and their sums, and T237's:
     // the rotated input of a matrix, in one frame; every row of the 27B's matrices is whole groups of 128)
     ...big("ternary qwen3.5 27B's layers, 4 of 64, in a rotated basis", [5120, 17408, 4, 24, 4, 1000, 4096],
