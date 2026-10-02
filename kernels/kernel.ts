@@ -268,10 +268,22 @@ export function matmul_q8(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
   const quads = i32x4.extadd_pairwise_i16x8_s(i16x8.add(i16x8.extadd_pairwise_i8x16_s(a), i16x8.extadd_pairwise_i8x16_s(b)));
   return i32x4.extract_lane(quads, 0) + i32x4.extract_lane(quads, 1) + i32x4.extract_lane(quads, 2) + i32x4.extract_lane(quads, 3);
 }
-// every fourth byte of v, four times: lane r holds bytes r, r + 4, r + 8, r + 12
+// Plane r of a block of 64: byte r of every dword of the four 16-byte vectors (activations 4 c + r for c = 0..15), a byte of
+// every dword shifted down and masked to 0..255, then narrowed from 32 bits to 16 and to 8 (the values pass the narrowing
+// unchanged): the four vectors' four dwords each are the sixteen bytes in order.
+// With no shuffle in it, on purpose. This was a transpose of byte, dword and qword shuffles (a byte shuffle of each
+// vector, then dwords of two, then qwords of two), and JavaScriptCore's optimizing tier on x86-64 (WebKit on Linux, Safari on
+// an Intel Mac), which a function reaches after about 2000 calls, folded those three wrongly: three quarters of the bytes
+// came out wrong, and a ternary model wrote nonsense (T230's review; tests/kernels-in-browser.mjs finds it). Every piece of
+// it alone and a swizzle in place of the first shuffle were right, and this costs 5 to 8 ns more a block of 64 bytes
+// (V8 on CI's runners: 3.6 to 10.5 on an EPYC 9V74, 4.8 to 9.9 on a 7763, 4.5 to 12.4 on arm64): of the 5,400 blocks of a
+// token of the 1.7B, 0.04 ms of its 60 to 90.
 // @ts-ignore: decorator
-@inline function fourths(v: v128): v128 {
-  return i8x16.shuffle(v, v, 0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15);
+@inline function plane(v0: v128, v1: v128, v2: v128, v3: v128, r: i32): v128 {
+  const low = i32x4.splat(255);
+  return i8x16.narrow_i16x8_u(
+    i16x8.narrow_i32x4_u(v128.and(i32x4.shr_u(v0, 8 * r), low), v128.and(i32x4.shr_u(v1, 8 * r), low)),
+    i16x8.narrow_i32x4_u(v128.and(i32x4.shr_u(v2, 8 * r), low), v128.and(i32x4.shr_u(v3, 8 * r), low)));
 }
 export function interleave(xq: usize, xs: usize, n: i32): void {
   const sums = xs + (<usize>(n >> 5) << 2);
@@ -280,14 +292,10 @@ export function interleave(xq: usize, xs: usize, n: i32): void {
     const v0 = v128.load(p), v1 = v128.load(p, 16), v2 = v128.load(p, 32), v3 = v128.load(p, 48);
     store<i32>(at, -sumOf32(v0, v1));
     store<i32>(at, -sumOf32(v2, v3), 4);
-    // plane r is lane r of each of the four: a transpose
-    const s0 = fourths(v0), s1 = fourths(v1), s2 = fourths(v2), s3 = fourths(v3);
-    const a01 = v128.shuffle<i32>(s0, s1, 0, 4, 1, 5), a23 = v128.shuffle<i32>(s2, s3, 0, 4, 1, 5);
-    const b01 = v128.shuffle<i32>(s0, s1, 2, 6, 3, 7), b23 = v128.shuffle<i32>(s2, s3, 2, 6, 3, 7);
-    v128.store(p, v128.shuffle<i64>(a01, a23, 0, 2));
-    v128.store(p, v128.shuffle<i64>(a01, a23, 1, 3), 16);
-    v128.store(p, v128.shuffle<i64>(b01, b23, 0, 2), 32);
-    v128.store(p, v128.shuffle<i64>(b01, b23, 1, 3), 48);
+    v128.store(p, plane(v0, v1, v2, v3, 0));
+    v128.store(p, plane(v0, v1, v2, v3, 1), 16);
+    v128.store(p, plane(v0, v1, v2, v3, 2), 32);
+    v128.store(p, plane(v0, v1, v2, v3, 3), 48);
   }
 }
 
