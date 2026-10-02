@@ -46,8 +46,8 @@ const modelOf = (id) => MODELS.find((m) => m.id === id) ?? { name: path.basename
   tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")),
   madeUp: path.basename(id).startsWith("made-up"), line: madeUpLine(path.basename(id)) };
 // T229: the relative distance of a made-up int8 model's logits from NumPy's. T233's review: a made-up ternary model in a
-// rotated basis (tests/make_ternary.py) is 0.06 from NumPy's (0.058 and 0.064 on CI's x86-64; the integer sums of the
-// kernels are exact, so another CPU is as far), and forward.js alone reading one sign of a width wrong moves it to 0.18 to
+// rotated basis (tests/make_ternary.py) is 0.06 from NumPy's (0.058 to 0.066 on CI's x86-64 and arm64, whichever memory),
+// and forward.js alone reading one sign of a width wrong moves it to 0.18 to
 // 0.46 at a width of 256 or 384 (0.65 to 0.81 at 128, which the line of 0.5 sees): its line is 0.12, 1.9 times the right
 // value and 0.67 of the weakest fault.
 const MADE_UP_LINE = 0.5;
