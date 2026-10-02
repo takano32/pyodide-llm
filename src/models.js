@@ -785,8 +785,11 @@ const LISTED = [
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   // T252: well-known ones the engine opens as it is, each from a Q8_0 GGUF that tests/gguf_check.py tensors held to its
-  // original (gguf.yml's candidates), with the original's vocabulary, config.json and chat template.
-  // SmolLM2's base models (the Instruct ones are above)
+  // original (gguf.yml's candidates), with the original's vocabulary, config.json and chat template: the formats and
+  // the special tokens are the converter's reading, the same IDs as the real template's for tests/format_check.py's
+  // prompts. What the page puts in front was measured for each (tests/start_check.mjs, tests/answer_check.mjs: T250's
+  // review found a Qwen3 8B 178% worse for it).
+  // SmolLM2's base models (the Instruct ones are above): <|endoftext|> in front is 1 to 1.5% better than nothing
   { group: "hf", id: "hf-smollm2-135m", name: "SmolLM2 135M", note: "English · fetches 145 MB (GGUF) → int8 151 MB",
     ...ggufOf("mradermacher/SmolLM2-135M-GGUF", "bf92313aa80eb55329ae75ccce3743101784c802", "SmolLM2-135M.Q8_0.gguf",
       "HuggingFaceTB/SmolLM2-135M", "93efa2f097d58c2a74874c7e644dbc9b0cee75a2"), download: 144810944,
@@ -795,7 +798,11 @@ const LISTED = [
     ...ggufOf("mradermacher/SmolLM2-360M-GGUF", "630c4866d716e28f45a516ed00e2882149726c13", "SmolLM2-360M.Q8_0.gguf",
       "HuggingFaceTB/SmolLM2-360M", "f8027fd0eaeea54caa13c31d31b9fdc459c38b49"), download: 386404864,
     conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
-  // Qwen2.5 Coder above the 0.5B one
+  // Qwen2.5 Coder above the 0.5B one. The real tokenizer puts nothing in front of a text and the format begins with
+  // <|im_start|>; the page begins with the converter's BOS, <|endoftext|>, as the Qwen2.5 of the list do: with it the
+  // 1.5B's, the 3B's and the 7B's own answers to five questions are 0.5, 0.4 and 0.2% higher in perplexity, the
+  // likeliest next token the same at 97.6, 98.4 and 99.6% of the positions (a Qwen2.5 is no Qwen3 8B), so it stays.
+  // The 3B's license is Qwen2.5-3B's, for research
   { group: "hf", id: "hf-qwen2.5-coder-1.5b-instruct", name: "Qwen2.5 Coder 1.5B Instruct", note: "writes code · English · fetches 1.6 GB (GGUF) → int8 1.7 GB · desktop only",
     ...ggufOf("bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF", "1af47f78b1f9b0c242fabe43f7a365d5a67f3207", "Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf",
       "Qwen/Qwen2.5-Coder-1.5B-Instruct", "2e1fd397ee46e1388853d2af2c993145b0f1098a"), download: 1646573344,
@@ -811,13 +818,20 @@ const LISTED = [
       "Qwen/Qwen2.5-Coder-7B-Instruct", "c03e6d358207e414f1eca0bb1891e29f1db0e242"), download: 8098525984,
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
-  // Hermes 3 (Nous Research) on Llama 3.2 3B, in ChatML: its own Q8_0 GGUF
+  // Hermes 3 (Nous Research) on Llama 3.2 3B, in ChatML: its own Q8_0 GGUF. Its card's code tokenizes the ChatML text,
+  // which puts <|begin_of_text|> in front (tokenizer.json's post-processor, and llama.cpp does the same), where
+  // apply_chat_template puts none: the page's is the former. With it in front the model's own answers are 0.9% higher
+  // in perplexity (the likeliest token the same at 89%), plain text 5% lower. It stops at <|im_end|> (config.json's EOS)
   { group: "hf", id: "hf-hermes-3-llama-3.2-3b", name: "Hermes 3 Llama 3.2 3B", note: "answers instructions · English · fetches 3.4 GB (GGUF) → int8 3.6 GB · desktop only",
     ...ggufOf("NousResearch/Hermes-3-Llama-3.2-3B-GGUF", "3cd927095d8cbab12c743f932aa63b6f7bbfa141", "Hermes-3-Llama-3.2-3B.Q8_0.gguf",
       "NousResearch/Hermes-3-Llama-3.2-3B", "7f1a6bec8cdce6551014fd5bbeb4cd8c0f1fbeab"), download: 3421895488,
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
-  // DeepSeek-R1's larger distills, as the 1.5B above: the tokenizer's own BOS and the thought opened by the format
+  // DeepSeek-R1's larger distills, as the 1.5B above: the tokenizer's own BOS, <｜begin▁of▁sentence｜> (which the
+  // real template writes first), and the thought opened by the format. The converter reads both itself now (T143: the
+  // BOS tokenizer_config.json names, the template and its special tokens), so these have no options of their own. On
+  // plain text the Qwen 7B is 6% worse with that BOS than with nothing in front and 26% worse with config.json's
+  // (151643, the end of a sentence); the Llama 8B, a Llama 3.1 with DeepSeek's names for its tokens, 4% better
   { group: "hf", id: "hf-deepseek-r1-qwen-7b", name: "DeepSeek-R1 Distill Qwen 7B", note: "thinks before it answers · English · fetches 8.1 GB (GGUF) → int8 8.6 GB · desktop only · Chrome and Firefox",
     ...ggufOf("mradermacher/DeepSeek-R1-Distill-Qwen-7B-GGUF", "75e791d579161aa4082e642c8b84ea7814829698", "DeepSeek-R1-Distill-Qwen-7B.Q8_0.gguf",
       "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "916b56a44061fd5cd7d6a8fb632557ed4f724f60"), download: 8098525344,
@@ -828,7 +842,8 @@ const LISTED = [
       "deepseek-ai/DeepSeek-R1-Distill-Llama-8B", "6a6f4aa4197940add57724a7707d069478df56b1"), download: 8540773376,
     conversion: {}, options: {}, generation: thinking,
     prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
-  // Llama 3.1 8B Instruct, as Llama 3.2 above: the original is gated, so the vocabulary and config.json of unsloth's copy
+  // Llama 3.1 8B Instruct, as Llama 3.2 above: the original is gated, so the vocabulary and config.json of unsloth's
+  // copy. Its template's system turn says "Today Date: 26 Jul 2024" unless a date is passed (Llama 3.2's asks the clock)
   { group: "hf", id: "hf-llama-3.1-8b-instruct", name: "Llama 3.1 8B Instruct", note: "answers instructions · English · fetches 8.5 GB (GGUF) → int8 9.0 GB · desktop only · Chrome and Firefox",
     original: "meta-llama/Llama-3.1-8B-Instruct",
     hf: { repo: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF", revision: "bf5b95e96dac0462e2a09145ec66cae9a3f12067", weights: "Meta-Llama-3.1-8B-Instruct-Q8_0.gguf",
