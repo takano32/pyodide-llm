@@ -37,6 +37,8 @@ def chosen_rows(rows, T):
         return list(range(1, T))
     if rows == "first":
         return [0]
+    if rows == "rest4":  # all but the first four positions: the BOS and the chat format's <|im_start|>, user, newline
+        return list(range(4, T))
     return list(rows)
 
 
@@ -460,24 +462,36 @@ def main():
                 answers.append((question, ids, written))
                 text_out = b"".join(bytes(llama.tokenizer.decode(a, b, llama.bos)) for a, b in zip([ids[-1]] + written[:-1], written)).decode("utf-8", "replace")
                 say(experiment="answers", question=question, prompt_tokens=len(ids), answer_tokens=len(written), seconds=round(time.time() - began, 1), answer=text_out)
+            # the float-activation path's log probabilities along each answer, to read every variant against: how much the written
+            # tokens' log probabilities move on average (and how coherently: mean / standard error), and the KL of the whole distribution
+            base_lp = [log_softmax(probe.window(ids + written))[len(ids) - 1: len(ids) - 1 + len(written)] for _, ids, written in answers]
             variants = [("8-bit, every input", quant_all(127)), ("7-bit, every input", quant_all(63)),
                         ("8-bit, every input but the first position's", quant_all(127, rows="rest")),
                         ("7-bit, every input but the first position's", quant_all(63, rows="rest")),
+                        ("8-bit, every input but the first four positions' (the BOS and the format's three tokens)", quant_all(127, rows="rest4")),
+                        ("7-bit, every input but the first four positions' (the BOS and the format's three tokens)", quant_all(63, rows="rest4")),
                         ("8-bit, every input, groups shifted by 3", quant_all(127, shift=3)), ("8-bit, every input, groups shifted by 21", quant_all(127, shift=21)),
                         ("8-bit, every input, groups shifted by 29", quant_all(127, shift=29)), ("7-bit, every input, groups shifted by 11", quant_all(63, shift=11)),
                         ("7-bit, every input, groups shifted by 21", quant_all(63, shift=21))]
             for name, quant in variants:
                 firsts, agree, total = [], 0, 0
-                for question, ids, written in answers:
+                deltas, kls = [], []
+                for (question, ids, written), blp in zip(answers, base_lp):
                     logits = probe.window(ids + written, quant)
-                    best = logits[len(ids) - 1: len(ids) - 1 + len(written)].argmax(axis=1)
+                    rows_here = logits[len(ids) - 1: len(ids) - 1 + len(written)]
+                    best = rows_here.argmax(axis=1)
                     wrong = [i for i, (a, b) in enumerate(zip(best, written)) if a != b]
                     firsts.append(wrong[0] if wrong else None)
                     agree += len(written) - len(wrong)
                     total += len(written)
+                    vlp = log_softmax(rows_here)
+                    deltas.append(vlp[np.arange(len(written)), np.asarray(written)] - blp[np.arange(len(written)), np.asarray(written)])
+                    kls.append((np.exp(blp) * (blp - vlp)).sum(axis=1))
                 same = sum(f is None for f in firsts)
+                delta, kl = np.concatenate(deltas), np.concatenate(kls)
                 say(experiment="answers", variant=name, tokens_agreeing_with_the_float_activation_answer=f"{agree}/{total}", answers_identical=f"{same}/{len(firsts)}",
-                    first_difference=[f for f in firsts])
+                    first_difference=[f for f in firsts], mean_dlogp_of_the_written_tokens=float(delta.mean()),
+                    coherence_z=float(delta.mean() / (delta.std() / math.sqrt(len(delta)) + 1e-12)), kl=float(kl.mean()))
         elif experiment == "knob":
             # the first attention layer's values of the first position as a knob: the perplexity as their scale moves, and the
             # rounding error of the input they are made of, split into a part along them and the rest (and each part applied alone)
