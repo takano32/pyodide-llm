@@ -60,6 +60,10 @@ part "the delta rule's kernels" node tests/delta-check.mjs
 part "the ternary weights' kernels" node tests/ternary-check.mjs
 # T237: the kernels of the rotated basis against the same arithmetic in JavaScript, to the bit (under a second)
 part "the rotated basis's kernels" node tests/rotate-check.mjs
+# T243 (the review): the look at the GPU's float16 keys and values, finite_f16, on the four builds of the kernels forward.js
+# instantiates: every half at every place of a 16-byte line, the rest after the eights (no engine's kvDim leaves one), a bad
+# half just outside the run, an address above 4 GiB (a few seconds)
+part "the finite look at float16" node tests/finite-check.mjs
 # T229 (the review): a Qwen3.5 is not put on a GPU where an adapter is there: forward.js's gpuUnfit says so first, and no
 # adapter of CI's reaches that line (a few seconds)
 hybrid_stays_on_the_cpu() {
@@ -105,13 +109,14 @@ if [ "$suite" = full ]; then
   part "forward.js against NumPy, a made-up Qwen3.5" made_up_qwen35
   # T230, T231: made-up ternary models (the real ones are too large for the build): the shape of Ternary Bonsai 1.7B,
   # the same with a classifier of its own and outlier channels, a hybrid one as Ternary Bonsai 2 27B is, and that one
-  # in a rotated basis (T237), as the 27B's file is; on a
+  # in a rotated basis (T237), as the 27B's file is, and that with the embedding as the classifier (version 2 of the
+  # basis: the review of T237); on a
   # shared memory, a plain one and a 64-bit one, and without relaxed SIMD (matmul_t2, the same numbers to the bit)
   made_up_ternary() {
     mkdir -p .tmp
-    for kind in qwen3 own hybrid rotated; do python tests/make_ternary.py .tmp/made-up-ternary-$kind ternary $kind; done
+    for kind in qwen3 own hybrid rotated rotated-tied; do python tests/make_ternary.py .tmp/made-up-ternary-$kind ternary $kind; done
     for memory in "" --plain --wide "--without relaxed"; do
-      node tests/forward-check.mjs .tmp/made-up-ternary-qwen3 .tmp/made-up-ternary-own .tmp/made-up-ternary-hybrid .tmp/made-up-ternary-rotated --rounds 1 --positions 128 $memory
+      node tests/forward-check.mjs .tmp/made-up-ternary-qwen3 .tmp/made-up-ternary-own .tmp/made-up-ternary-hybrid .tmp/made-up-ternary-rotated .tmp/made-up-ternary-rotated-tied --rounds 1 --positions 128 $memory
     done
   }
   part "forward.js against NumPy, made-up ternary models" made_up_ternary

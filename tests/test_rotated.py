@@ -12,12 +12,14 @@ import numpy as np
 import pytest
 from conftest import FOLDED, basis, folded, naive_logits, naive_qwen35_logits, qwen35_model, synthetic_weights
 from test_convert import converted, hugging_face, reader, safetensors_file
+from test_external import Outside
 from test_gguf import fed, qwen35_gguf, safetensors_conversion, unigram, with_original
 from test_qwen3 import qwen3
 
 import llama2_convert
 from llama2_convert import ROTATED, Conversion, Safetensors, checkpoint_form, gguf_rotated, normalize
-from llama2_numpy import FORM, Llama, form_of, hadamard, rotate, rotated_form, rotated_widths, sign_bits, unrotate
+from llama2_numpy import (FORM, OUTLIER_CHANNELS, Llama, form_of, hadamard, rotate, rotated_form, rotated_widths, sign_bits,
+                          unrotate)
 
 TOKENS = [1, 5, 7, 9, 11, 5, 5, 300, 2]
 
@@ -257,6 +259,35 @@ def test_a_gpt2_in_a_rotated_basis_is_refused():
         Llama(struct.pack("<7i", 64, 64, 2, 4, 4, 100, 32), None, arch="gpt2", rotated=Source.rotated)
 
 
+# ------------------------------------------------------------------------------------------- what forward.js is handed
+def test_the_plan_hands_forward_js_the_basis_and_no_outlier_channels():
+    """T237 (the review): forward.js rotates by what Python's plan says: the block, and the signs of every width with
+    the transform's 1 / sqrt(block) in them (what the kernel multiplies by). And it keeps no outlier channels apart
+    (T92) in a rotated basis, where the classifier reads R of its input and a column of its stored matrix is no
+    channel's: so a final norm that has outliers gives none (the 27B's has none: its largest is 1.39 times its median,
+    and the real file never reaches this line), where the same norm in a model's own basis gives them."""
+    tensors, config = qwen35_model(value_dim=8)  # every row whole groups of 32: the int8 stays int8 (the plan keeps outliers apart)
+    vocab_size = config["text_config"]["vocab_size"]
+    tensors["model.language_model.norm.weight"][[3, 11]] = 20.0
+    said, signs = basis(8, widths_of(config))
+    plans = {}
+    for name, there, basis_said in (("rotated", folded(tensors, 8, signs), said), ("own basis", tensors, None)):
+        made = conversion(there, config, basis_said, "int8", vocab_size)
+        options = {key: value for key, value in made.options.items() if key != "template"}
+        outside = Outside(bytes(made.checkpoint))
+        Llama(None, made.tokenizer, external=outside, **options)  # (the options say the dtype)
+        plans[name] = outside.plan
+    kept = plans["own basis"]["outliers"]  # the OUTLIER_CHANNELS largest, in order, once the largest is 4 times the median
+    assert plans["own basis"]["int8"] and len(kept) == OUTLIER_CHANNELS and {3, 11} <= set(kept) and kept == sorted(kept)
+    assert plans["own basis"]["rotated"] == 0 and not any(key.startswith("signs.") for key in plans["own basis"]["derived"])
+    plan = plans["rotated"]
+    assert plan["int8"] and plan["outliers"] == [] and plan["rotated"] == 8
+    scale = np.float32(1.0 / np.sqrt(8))
+    assert {key for key in plan["derived"] if key.startswith("signs.")} == {f"signs.{width}" for width in signs}
+    for width, values in signs.items():
+        assert np.array_equal(np.frombuffer(plan["derived"][f"signs.{width}"], dtype=np.float32), values * scale), width
+
+
 # ------------------------------------------------------------------------------------------- a GGUF's metadata
 def tensors_of(lines=(0, 1), full=(2,), own_classifier=True, dim=64, wide=96, hidden=128, vocab=40):
     """The table of a small Qwen3.5 GGUF (names, shapes outermost first), as gguf_read() gives it."""
@@ -353,6 +384,35 @@ def prism_metadata(config, block, signs, tensors):
             ("prism.hadamard.weight_names", 9, (8, names)), ("prism.hadamard.sign_widths", 9, (5, widths)),
             ("prism.hadamard.sign_values", 9, (5, [int(v) for width in widths for v in signs[width]])),
             ("prism.hadamard.inverse_weight_names", 9, (8, ["token_embd.weight"])), ("prism.hadamard.gdn_v_grouped", 7, True)]
+
+
+@pytest.mark.parametrize("dtype", ["float32", "int8"])
+@pytest.mark.parametrize("shape", ["two value heads to a key head", "three value heads to a key head (the 27B)", "three to one, every fourth"])
+def test_a_rotated_gguf_of_more_value_heads_than_key_heads_has_every_head_back_but_its_output_columns(shape, dtype, monkeypatch):
+    """T245's reader and T237's together, on the 27B's own kind of file: llama.cpp tiles the value heads of the rows of
+    q-k-v, z, the two gates' matrices, A and dt_bias and the convolution, and where the output matrix is folded into the
+    rotated basis it leaves its columns in Hugging Face's order (prism.hadamard.gdn_v_grouped: a column moved after the
+    fold would be another matrix). So the reader puts every head back but those columns, and the converted checkpoint is
+    the one of the model folded by hand. (The review of T237 ran it on T245's branch merged in: it passes there, and fails
+    for every shape and dtype where gguf_model() does not drop the "tiled" mark of linear_attn.out_proj.weight.)"""
+    import test_gguf
+    if not hasattr(test_gguf, "QWEN35_VALUE_HEADS"):
+        pytest.skip("T245's reader of value heads that llama.cpp tiled (test_gguf.QWEN35_VALUE_HEADS) is not in this tree yet")
+    monkeypatch.delitem(test_gguf.QWEN35_VALUE_HEADS, "linear_attn.out_proj.weight")  # the file's columns are left alone
+    shape = {**test_gguf.QWEN35, **test_gguf.QWEN35_SHAPES[shape], "shared": False}
+    tensors, config = qwen35_model(**shape)
+    said, signs = basis(16, widths_of(config))
+    kinds = [test_gguf.QWEN35_LAYER[kind.rsplit(".", 1)[0]] for kind in FOLDED if kind.rsplit(".", 1)[0] in test_gguf.QWEN35_LAYER]
+    layers, types = config["text_config"]["num_hidden_layers"], config["text_config"]["layer_types"]
+    names = [f"blk.{layer}.{kind}.weight" for layer in range(layers) for kind in kinds
+             if (kind in ("attn_qkv", "attn_gate", "ssm_out")) == (types[layer] == "linear_attention") or kind.startswith("ffn")]
+    config_, file, same = qwen35_gguf(more=prism_metadata(config, 16, dict(signs), names + ["output.weight"]),
+                                      fold=lambda t: folded(t, 16, signs), **shape)
+    vocabulary = unigram(config["text_config"]["vocab_size"])
+    expected = safetensors_conversion(same, config, vocabulary, dtype)
+    for got in (with_original(file, config, vocabulary, "tokenizer.json", dtype), fed(file, dtype)):
+        assert got.options["rotated"] == said
+        assert bytes(got.checkpoint) == bytes(expected.checkpoint)
 
 
 @pytest.mark.parametrize("dtype", ["float32", "int8"])

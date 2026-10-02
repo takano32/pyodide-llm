@@ -11,7 +11,8 @@
 # left out. A difference known for the list's format is then no error when it is gone.
 #
 # Needs the reference tools, which the page never uses: a venv with tests/requirements-reference.txt (docs/notes/dev-setup.md).
-# The first BOS may differ (the page always starts with it, T131). The other differences known are in KNOWN, each
+# The first BOS may differ (the page always starts with it, T131), unless it is the token the real IDs begin with
+# (same_ids). The other differences known are in KNOWN, each
 # taking out only its own difference, and anything else makes the exit status 1 (T145). What a card always passes besides the prompt
 # (Swallow-MS's and llm-jp's system message) is in SYSTEM. Models with a sentencepiece tokenizer.model are compared
 # through transformers' slow tokenizer, which is not the real one for every model: for those of SENTENCEPIECE the
@@ -70,15 +71,20 @@ KNOWN = {
     "hf-swallow-ms-7b-instruct": {"why": "NFKC of tokenizer.model, and the turn stripped as a whole (T138)",
                                   "text": lambda text, prompt: unicodedata.normalize("NFKC", trimmed(text, prompt))},
     # T249: the same of EuroLLM. Its vocabulary has no full-width letters: the real tokenizer.json spells them as
-    # bytes, the page (tokenizer.model's NFKC) writes the half-width ones
+    # bytes, the page (tokenizer.model's NFKC) writes the half-width ones. The page is the real sentencepiece's (the
+    # review: tokenizer.model's normalizer_spec is nfkc with a charsmap of 237,562 bytes, and its ids are the page's for
+    # 71,648 sentences "a" + one character + "b" and 3,000 random ones of mixed scripts, 0 apart), the conversion to
+    # tokenizer.json keeps only a Prepend and a Replace of " " by "▁": which of the two the model was trained on is the
+    # sentencepiece model's, the one its authors trained
     "hf-eurollm-1.7b-instruct": {"why": "NFKC of tokenizer.model (T249)",
                                  "text": lambda text, prompt: unicodedata.normalize("NFKC", text)},
 }
 # T236 (its review): the families whose entries have the BOS be the format's own first token (<|im_start|>), so that the
 # page sends the real template's ids exactly, none before them. Everywhere else a BOS of the page's in front of the real
-# ids is let by (the first BOS may differ, T131): that let the design of before T236, <|endoftext|> in front of
-# <|im_start|> (which costs a Qwen3.5 much, TODO.md's T236), pass for a Qwen3.5 as well. T253's Granite 4.2 are made the
-# same way, and T247's other sizes of Qwen3.5 (a family, not a list of entries: the six of T247 were not in the first one)
+# ids is let by (same_ids; the first BOS may differ, T131): that let the design of before T236, <|endoftext|> in front
+# of <|im_start|> (which costs a Qwen3.5 much, TODO.md's T236), pass for a Qwen3.5 as well, and same_ids still does (the
+# extra token is not the one the real ids begin with). T253's Granite 4.2 are made the same way, and T247's other sizes
+# of Qwen3.5 (a family, not a list of entries: the six of T247 were not in the first one)
 STRICT = ("hf-qwen3.5-", "hf-granite-4.2-")
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
 # (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
@@ -264,7 +270,7 @@ def main():
                 encoded = lambda text: list(reference(text, add_special_tokens=False)["input_ids"])
                 real = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, **thinking)
                 real = list(real["input_ids"] if hasattr(real, "keys") else real)
-            matches = (lambda real: page == real) if entry["id"].startswith(STRICT) else (lambda real: page == real or page[1:] == real)
+            matches = (lambda real: page == real) if entry["id"].startswith(STRICT) else (lambda real: same_ids(page, real))
             if matches(real):
                 same += 1
             elif "text" in known and matches(encoded(known["text"](text, prompt))):
@@ -298,6 +304,14 @@ def trimmed(text, prompt):
         if typed and typed in text:
             return text.replace(typed, prompt.strip(), 1)
     return text
+
+
+def same_ids(page, real):
+    """Whether the page's IDs are the real ones: the same, or with one more token in front, the BOS the page always
+    starts with (T131). Not when that token is the one the real IDs begin with: then the format writes the BOS it was
+    given again, as Llama 3's <|begin_of_text|> was written twice before T106, and a BOS set to the format's own first
+    token (T236's <|im_start|>) with the format left beginning with it (T250's review: the lenient rule passed it)."""
+    return page == real or (page[1:] == real and page[:1] != real[:1])
 
 
 def first_piece(page, real):
