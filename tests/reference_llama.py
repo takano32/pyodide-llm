@@ -4,14 +4,17 @@
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/reference_llama.sh hf-granite-4.2-3b" --ref <branch> --grep "reference:"
 #   python tests/reference_llama.py <directory for the downloads> [--only=made-up] [<id of the list> ...] [--positions=96]
-#                                   [--weak] [--layers=N]
+#                                   [--weak] [--layers=N] [--gguf]
 #
 # --weak (the review of T253): after the right engine has been held to transformers, weak faults are put into its weights
 # (q of every layer 0.1%, 0.01% and 0.001% off, one head's 1% and 10%, one layer's q left unmultiplied, one key head's 1%)
 # and each is held the same way, to say what the check sees: by the logits (the line below) and by the states of every layer
 # (the keys and values each layer wrote, relative to the layer's largest: the right engine is a few 1e-6 from transformers',
 # a fault of one head of one layer is far more of them than of the logits, which come after 24 to 42 layers). --layers=N:
-# only the first N layers of a real model, on both sides, for a model whose float32 a runner has not room for.
+# only the first N layers of a real model, on both sides, for a model whose float32 a runner has not room for. --gguf: the
+# engine's weights from the entry's GGUF (Q8_0, the original's vocabulary and config.json), as the page reads the list's
+# models, against transformers on the original's weights: the route the visitors take, held to a line that Q8_0's rounding
+# allows (GGUF_LINE below), which sees a fault that changes the model and none of the weak ones.
 #
 # Two parts, every line of the log beginning with "reference:".
 #   made-up: tiny random Granites of transformers' own class (GraniteForCausalLM), whose attention multiplies its
@@ -61,6 +64,12 @@ CHUNK = 8 << 20
 # --weak: faults put into the engine's weights, to see what the check sees (weak_errors); the made-up Granites' take seconds,
 # the real model's about as long as its own forward pass, 96 positions, each
 WEAK = "--weak" in sys.argv
+# --gguf: the real model's weights from the list's GGUF, as the page reads them (Q8_0), against transformers on the original's.
+# Q8_0 rounds every weight (about half a step of 1/127 of its group's largest: 0.3 to 0.7% of a typical weight), so the lines are
+# of another kind than the float32 ones: a fault that changes the model (q scaled twice or not at all, q left turned) is a logit or
+# several, the rounding some hundredths (a logit of 36 at most here), and the keys and values of a layer differ by about a percent
+GGUF = "--gguf" in sys.argv
+GGUF_LINE, GGUF_STATE_LINE = 1.0, 0.1
 
 say = lambda *parts: print("reference:", *parts, flush=True)
 
@@ -394,17 +403,36 @@ def real(entry, directory, positions, layers=0):
 
     # the conversion, the way the page does it: the shards joined, each file in its own order, float32
     shards = []
-    for name in names:
-        shard = np.memmap(folder / name, dtype=np.uint8, mode="r")
-        size = struct.unpack("<Q", bytes(shard[:8]))[0]
-        shards.append((shard, bytes(shard[8:8 + size]).decode(), 8 + size))
-    if len(shards) == 1:
-        header, base = shards[0][1], shards[0][2]
-        pieces = [(shards[0][0], base, len(shards[0][0]))]
+    if GGUF:
+        # the route the list's entries take (T136's second stage): the entry's own GGUF (Q8_0) as the weights, the original's
+        # vocabulary and config.json. transformers still has the original's weights, so the two differ by what Q8_0 rounds
+        # (about 0.5% of a weight): a line of a different kind, below
+        weights = entry["hf"]["weights"]
+        if not weights.endswith(".gguf"):
+            sys.exit(f"reference: {id} is not a GGUF entry")
+        gguf = fetch(entry["hf"]["repo"], entry["hf"]["revision"], weights, directory / "gguf" / entry["hf"]["revision"])
+        data = np.memmap(gguf, dtype=np.uint8, mode="r")
+        size = 1 << 20
+        while True:
+            try:
+                header, base = llama2_convert.gguf_weights(bytes(data[:size]), config)
+                break
+            except llama2_convert.Incomplete:
+                size *= 2
+        pieces = [(data, base, len(data))]
+        say(f"{id}: weights from {entry['hf']['repo']}'s {weights} ({len(data)} bytes), the vocabulary and config.json of the original")
     else:
-        header, lengths = joined_shards([text for _, text, _ in shards])
-        base = 0
-        pieces = [(shard, begin, begin + length) for (shard, _, begin), length in zip(shards, lengths)]
+        for name in names:
+            shard = np.memmap(folder / name, dtype=np.uint8, mode="r")
+            size = struct.unpack("<Q", bytes(shard[:8]))[0]
+            shards.append((shard, bytes(shard[8:8 + size]).decode(), 8 + size))
+        if len(shards) == 1:
+            header, base = shards[0][1], shards[0][2]
+            pieces = [(shards[0][0], base, len(shards[0][0]))]
+        else:
+            header, lengths = joined_shards([text for _, text, _ in shards])
+            base = 0
+            pieces = [(shard, begin, begin + length) for (shard, _, begin), length in zip(shards, lengths)]
     read = lambda name: (folder / name).read_text() if (folder / name).exists() else None
     tokenizer_config = read("tokenizer_config.json") or ""
     has_template = bool(json.loads(tokenizer_config).get("chat_template")) if tokenizer_config else False
@@ -494,6 +522,8 @@ def real(entry, directory, positions, layers=0):
     # is 7e-5 off here); the most likely token the same wherever the reference's best two are further apart than twice
     # the difference. A NaN is past the line (largest <= line is false)
     line = max(1e-3, 10 * floor)
+    if GGUF:
+        line = GGUF_LINE  # (Q8_0 rounds every weight: the engine and transformers hold different weights)
     for what, reference_logits, mine_logits in (("transformers at once", whole, ours),
                                                 ("transformers token by token", stepped, ours[:len(stepped)])):
         largest, mean, same, margin = differences(mine_logits, reference_logits)
@@ -506,7 +536,7 @@ def real(entry, directory, positions, layers=0):
     # the states: the keys and values of every layer (see state_gap), against transformers' whole pass and against the floor of
     # its own two (the stepped positions of the cache against the same of the whole pass)
     floors, _ = state_gap(cache_stepped, [(k[:, :len(stepped)], v[:, :len(stepped)]) for k, v in cache_whole])
-    lined = state_line({kind: gap for kind, (gap, _) in floors.items()})
+    lined = GGUF_STATE_LINE if GGUF else state_line({kind: gap for kind, (gap, _) in floors.items()})
     gaps, top = state_gap(states, cache_whole)
     ok = max(gaps["keys"][0], gaps["values"][0]) <= lined
     failed |= not ok
@@ -515,7 +545,7 @@ def real(entry, directory, positions, layers=0):
         f"transformers' own two: keys {floors['keys'][0]:.2e}, values {floors['values'][0]:.2e}; the line {lined:.1e}"
         f"{'' if ok else ' — FAILED'}")
     say(f"{id}: the largest key {top['keys']:.4g} and the largest value {top['values']:.4g} of any layer (a float16 holds 65504)")
-    if WEAK:
+    if WEAK and not GGUF:
         missed = weak_errors(id, llama, ids, whole, cache_whole, line, lined, llama2_convert.query_scale(llama2_convert.normalize(json.loads(config))))
         failed |= bool(missed)
         say(f"{id}: weak faults the check must see and did not: {missed or 'none'}")
@@ -525,8 +555,9 @@ def real(entry, directory, positions, layers=0):
     wrote = reference.decode(theirs, skip_special_tokens=False)
     say(f"{id}: transformers wrote {json.dumps(wrote, ensure_ascii=False)} {theirs}")
     say(f"{id}: the engine wrote {json.dumps(text, ensure_ascii=False)}")
-    failed |= wrote != text
-    say(f"{id}: the two wrote {'the same' if wrote == text else 'OTHER TEXTS — FAILED'}")
+    # (from the GGUF, Q8_0 may turn a close second into the likeliest token a few tokens in: the texts are shown, not held)
+    failed |= wrote != text and not GGUF
+    say(f"{id}: the two wrote {'the same' if wrote == text else 'other texts' + ('' if GGUF else ' — FAILED')}")
     del llama
     gc.collect()
     sink.path.unlink()
