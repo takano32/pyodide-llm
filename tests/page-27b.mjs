@@ -125,6 +125,7 @@ if (isMainThread) {
     console.log("page: this engine reads v128.load32_splat wrongly above 4 GiB (Node 24's V8 on arm64): what it would compute here is not this model — FAILED (run it on x86-64)");
     process.exit(1);
   }
+  if (base4GiB(size + after)) console.log(`page: Node ${process.version} (V8 ${process.versions.v8}, ${process.arch}) reads v128.load32_splat above 4 GiB where it is`);
   const { memory, base } = weightsMemory(size, { shared: true, wide, after });
   let began = performance.now();
   for (let offset = 0; offset < size;) {
