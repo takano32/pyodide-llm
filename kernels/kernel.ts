@@ -278,7 +278,7 @@ export function matmul_q8(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
 // came out wrong, and a ternary model wrote nonsense (T230's review; tests/kernels-in-browser.mjs finds it). Every piece of
 // it alone and a swizzle in place of the first shuffle were right, and this costs 5 to 8 ns more a block of 64 bytes
 // (V8 on CI's runners: 3.6 to 10.5 on an EPYC 9V74, 4.8 to 9.9 on a 7763, 4.5 to 12.4 on arm64): of the 5,400 blocks of a
-// token of the 1.7B, 0.03 to 0.04 ms, on one thread (the others only wait for it) of a token of 30 ms (arm64, 4 threads) to 90 ms (1 thread).
+// token of the 1.7B, 0.03 to 0.04 ms (the other threads wait for it), against a token of 30 ms (arm64, 4 threads) to 90 ms (1 thread).
 // @ts-ignore: decorator
 @inline function plane(v0: v128, v1: v128, v2: v128, v3: v128, r: i32): v128 {
   const low = i32x4.splat(255);
