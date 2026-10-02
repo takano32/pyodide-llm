@@ -117,6 +117,25 @@ export function matmul_bx(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
   }
 }
 
+// ---- bxa (T230's review): bx with the mask of 3 an argument of the kernel, as matmul_t2r's is (V8 makes a constant written in the
+// loop again at every use: bx's constant mask against t2r's argument was not a fair race)
+export function matmul_bxa(xout: usize, xq: usize, xs: usize, wq: usize, ws: usize, n: i32, r0: i32, r1: i32, three: i32): void {
+  const blocks = n >> 7, mask = i8x16.splat(<i8>three);
+  const xa = xs + (<usize>(n >> 5) << 2);
+  for (let i = r0; i < r1; i++) {
+    const row = wq + <usize>i * <usize>(n >> 2);
+    const srow = ws + ((<usize>i * <usize>blocks) << 2);
+    let facc = f32x4.splat(0);
+    for (let b = 0; b < blocks; b++) {
+      const w = row + (<usize>b << 5), x = xq + (<usize>b << 7), at = <usize>b << 4;
+      const lo = dot64x(w, x, mask), hi = dot64x(w + 16, x + 64, mask);
+      const sums = i32x4.add(i32x4.add(v128.shuffle<i32>(lo, hi, 0, 2, 4, 6), v128.shuffle<i32>(lo, hi, 1, 3, 5, 7)), v128.load(xa + at));
+      facc = f32x4.add(facc, f32x4.mul(f32x4.mul(f32x4.convert_i32x4_s(sums), v128.load(xs + at)), v128.load32_splat(srow + (<usize>b << 2))));
+    }
+    store<f32>(xout + (<usize>i << 2), hsum(facc));
+  }
+}
+
 // ---- c: widened to the signed int8 the int8 dot takes (matmul_q8r's activations and corrections)
 // @ts-ignore: decorator
 @inline function signed(v: v128, shift: i32, three: v128, one: v128): v128 {

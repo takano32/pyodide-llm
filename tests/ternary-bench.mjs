@@ -45,6 +45,8 @@ const FORMS = {
     run: (k, c, w, r0, r1) => k.matmul_bs(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1) },
   bx: { module: "forms", bytes: [32, 4, 0], activations: "interleaved",
     run: (k, c, w, r0, r1) => k.matmul_bx(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1) },
+  bxa: { module: "forms", bytes: [32, 4, 0], activations: "interleaved",
+    run: (k, c, w, r0, r1) => k.matmul_bxa(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, c[N], r0, r1, 3) },
   c: { module: "forms", bytes: [32, 4, 16], activations: "seven",
     run: (k, c, w, r0, r1) => k.matmul_c(c[OUT], c[XQ], c[XS], w, w + g128(c) * 32, w + g128(c) * 36, c[N], r0, r1) },
   a: { module: "forms", bytes: [28, 4, 0], activations: "base3",
@@ -208,7 +210,7 @@ for (const [rows, n] of shapes) {
       }
     },
   };
-  writers.t2 = writers.bc = writers.bs = writers.bx = writers.t2r;
+  writers.t2 = writers.bc = writers.bs = writers.bx = writers.bxa = writers.t2r;
   writers.q8 = writers.q8r;
   const copies = {};
   for (const form of NAMES) {
@@ -283,7 +285,7 @@ for (const [rows, n] of shapes) {
   };
   const whole = (scale) => scale, over127 = (scale) => Math.fround(scale / 127);
   const references = { t2r: reference(eight, whole, 1), c: reference(seven, whole, 1), q8r: reference(seven, over127, 127), q8: reference(eight, over127, 127) };
-  references.t2 = references.bc = references.bs = references.bx = references.a = references.t2r;
+  references.t2 = references.bc = references.bs = references.bx = references.bxa = references.a = references.t2r;
   Object.assign(c, { [N]: n, [ROWS]: rows });
   const set = (form) => Object.assign(c, { [FORM]: NAMES.indexOf(form), [FIRST]: firsts[form], [STRIDE]: bytesOf(form, rows, n),
     [COPIES]: copies[form], [XQ]: places[FORMS[form].activations].xq, [XS]: places[FORMS[form].activations].xs, [COUNT]: 1 });
