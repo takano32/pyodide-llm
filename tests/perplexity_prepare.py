@@ -37,7 +37,8 @@ dtype = arguments[2] if len(arguments) > 2 else "int8"
 
 def entry_options(entry_id):
     """What the list gives the engine for this entry besides what the converter makes (src/models.js's options)."""
-    script = f"import('./src/models.js').then(({{ MODELS }}) => console.log(JSON.stringify(MODELS.find((m) => m.id === {json.dumps(entry_id)})?.options ?? null)))"
+    script = (f"import('./src/models.js').then(({{ MODELS }}) => {{ const m = MODELS.find((m) => m.id === {json.dumps(entry_id)}); "
+              "console.log(JSON.stringify(m ? m.options ?? {} : null)); })")
     options = json.loads(subprocess.check_output(["node", "-e", script], cwd=Path(__file__).resolve().parent.parent))
     if options is None:
         raise SystemExit(f"{entry_id} is no entry of src/models.js")
