@@ -1586,8 +1586,27 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T267 [バグ][モデル] japanese-gpt2 xsmall が `<unk>` を書く — 状態: 候補（2026-10-01、T249 のレビューから。持ち主の判断）
 - ページの既定のサンプリングで 192 の答えの 37（19%）に `<unk>`（small は 4、medium は 2、tiny-lm は 0）。引くときに `<unk>` を除くと 0。レビューの案 3 つは T249 の項。
 
-### T262 [運用][遠隔試験] ほかの 7 つのワークフローにも、ブラウザの入れる手順の期限と apt の time-out を — 状態: 未着手（2026-10-01、T239〜T241 のレビューから。規模 小）
+### T262 [運用][遠隔試験] ほかの 7 つのワークフローにも、ブラウザの入れる手順の期限と apt の time-out を — 状態: **反映済み**（2026-10-02、本線に入れるのは本会話。レビュー前。Opus medium、ブランチ `t262-install-timeouts`。2026-10-01、T239〜T241 のレビューから。規模 小）
 - 本線の gpu-prompt.yml の run 36902097346 の Chromium のジョブは、試験が遅かったのではなく `npx playwright-core install --with-deps chromium` の apt が止まって、ジョブの期限 120 分まで始まらなかった。gpu-prompt.yml には手順の `timeout-minutes: 20` と apt の time-out（30 秒・3 回）を付けた。同じ install を持つ bench・browsers・coi・fetch・models・preview・slow は未対応で、同じ止まり方をしうる。
+- **やったこと（2026-10-02）**: apt の設定は `tests/apt-timeouts.sh` の 1 か所に置いた（GitHub の Linux のランナーでだけ書く。Windows・macOS・開発機では何もしない）。apt を走らせる手順はどれもそれを先に呼び、`timeout-minutes: 20` を持つ。入れるものは変えていない。
+  - bench.yml・coi.yml・models.yml・fetch.yml・slow.yml: ブラウザを入れる手順に 2 つとも。
+  - browsers.yml: system のジョブの「Install the browsers」と huggingface のジョブの手順に 2 つとも。
+  - preview.yml: 建てる手順に 2 つとも。オフラインの Firefox と WebKit の入れは試験の手順から分けて自分の手順にした（期限が入れだけに掛かるように）。
+  - gpu-prompt.yml: 2 つのジョブの printf の行を同じスクリプトの呼び出しに替えた（設定は同じ）。
+  - `tests/rounding-check.sh`（tests.yml の `extra=` から apt を走らせる）も先に呼ぶ。
+  - ジョブの期限が無かった 2 つに付けた: deploy.yml の deploy に 30 分（ふだん 3〜4 分）、gguf.yml の plan に 10 分。ほかのジョブの期限はそのまま。tests.yml・threads.yml・draft.yml・int4.yml・gguf.yml のほかのジョブに apt もブラウザの入れも無い。
+- **形を選んだ訳**: composite action にはしなかった。手順の期限は composite action の中には書けず（GitHub の文書の読み。試していない）、呼ぶ側の手順に書くことになる。入れる手順の中身はワークフローごとに違う（ブラウザの組、`npm ci` や建てると同じ手順、browsers.yml の chrome と msedge の枝）ので、1 か所にできるのは apt の設定だけで、それは 1 行で呼べるスクリプトで足りる。YAML に足すのは手順ごとに 2 行。
+- **CI（ブランチ、ff1b98b）**: 入れる手順はどれも通った（ふだん 0.5〜3 分）。
+  - models.yml `models=stories260K`: run 36949839742 success。
+  - bench.yml `os=ubuntu-latest browsers=chromium times=1`: run 36949839724 success。
+  - slow.yml `scenario=slow`: run 36949839987 success。
+  - fetch.yml `rounds=1`: run 36949840198 success（2 つのジョブ）。
+  - gpu-prompt.yml（軽い組）: run 36949840163 success（Chromium と Dawn）。
+  - tests.yml `only_extra=true extra="bash tests/rounding-check.sh nearest"`: run 36949840616 success。
+  - coi.yml: 1 回目の run 36949839728 は **Linux のジョブが手順の期限 20 分で止まった**（Windows と macOS は success）。apt の鏡（azure.archive.ubuntu.com）が遅く、20 分で 187 個（125 MB）のうち 96 個しか届かなかった。止まった取得ではないので apt の time-out は効かず、期限が止めた。2 回目の run 36952377133 は 3 つの OS とも success（Linux のジョブ 3.1 分）。
+  - preview.yml `offline=true`: run 36949839628 は failure。入れる手順は 2 つとも通り（建てる手順 41 秒、Firefox と WebKit 23 秒）、落ちたのは「Offline (T111)」の WebKit（`page.reload: WebKit encountered an internal error`）。**本線でも同じ所で落ちる**（run 36950503412、main、同じ文）ので、この変更のものではない。採番していない（本会話に報告した）。
+- **走らせていないもの**: browsers.yml（1 つの小さいジョブに絞る入力が無い。15 ジョブで HF から数百 GB）、deploy.yml（ブランチから走らせるとデプロイになる。足したのはジョブの期限の 1 行）、gguf.yml の plan、preview.yml の `offline=false`（建てる手順は上の run が通った）。browsers.yml の変更は次の週 1 回の run で確かめる。
+- **残る穴**: apt の time-out は遅い鏡を速くしない。そのときは手順の期限で落ちるので 1 回走らせ直す（AGENTS.md の落とし穴）。Windows と macOS のブラウザの取得には手順の期限だけ。
 
 ### T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 状態: 候補（2026-10-01、T241 のレビューの案。持ち主の判断。規模 小）
 - 本物の GPU（Mali・D3D12・Metal）の `exp(NaN)`・half の NaN・`max` の NaN は CI（lavapipe・SwiftShader）では分からない。T241・T219 の印が実機で届くかを、端末の報告で読めるようにする案。
