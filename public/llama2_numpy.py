@@ -522,14 +522,16 @@ def linear_widths(linear):
     return 2 * keys + values, keys, values
 
 
-def layer_slots(n_layers, linear):
-    """For every layer: (whether it is a linear-attention layer, its place among the layers of its kind), which is
-    where its tensors are in the file's stacks: a model without linear layers has (False, l) for layer l."""
-    if linear is None:
-        return [(False, l) for l in range(n_layers)]
-    every, slots, counts = linear["every"], [], [0, 0]
-    for l in range(n_layers):
-        kind = (l + 1) % every != 0
+def layer_slots(n_layers, linear, convolution=None):
+    """For every layer: (whether it keeps a state in place of keys and values: a Qwen3.5's linear-attention layer or an
+    LFM2's convolution layer, its place among the layers of its kind), which is where its tensors are in the file's
+    stacks: a model whose layers all attend has (False, l) for layer l."""
+    if convolution is not None:
+        kinds = [kind == "c" for kind in convolution["layers"]]
+    else:
+        kinds = [linear is not None and (l + 1) % linear["every"] != 0 for l in range(n_layers)]
+    slots, counts = [], [0, 0]
+    for kind in kinds:
         slots.append((kind, counts[kind]))
         counts[kind] += 1
     return slots
@@ -558,6 +560,54 @@ def delta_rule(state, q, k, v, beta, decay):
     delta = (v - (k[:, None, :] @ state)[:, 0]) * beta[:, None]
     state += k[:, :, None] * delta[:, None, :]
     return (q[:, None, :] @ state)[:, 0]
+
+
+# ------------------------------------------------------------------------ LFM2's convolution layers (T260)
+# Liquid AI's LFM2 and LFM2.5 (config.json's model_type lfm2; arch="lfm2" here) mix two kinds of layers in an order
+# the config.json lists (layer_types; LFM2.5-350M: conv, conv, full_attention, conv, conv, full_attention, ...):
+# layers that attend over all positions, and convolution layers, which look at this token and the two before it.
+# The computation is taken from transformers' modeling code (Apache-2.0; the formulas, no line of it):
+# https://github.com/huggingface/transformers/blob/7cd73d9df0c14b151c684b708a9f27d8d0349dfe/src/transformers/models/lfm2/modeling_lfm2.py
+# (Lfm2ShortConv with causal_conv1d_update and causal_conv1d_fn, lines 280 to 389; Lfm2Attention, 209 to 265; Lfm2MLP,
+# 119 to 136; Lfm2DecoderLayer, 392 to 434; Lfm2Model.forward, 477 to 533), with the numbers of
+# https://huggingface.co/LiquidAI/LFM2.5-350M/blob/9e6c6ccf47cd318696e137d381a7ded8fe4df09f/config.json
+# and llama.cpp's graph of the same model, which computes the same (src/models/lfm2.cpp, build_shortconv_block, at
+# f1cee9941b0e843ea260bf8dd9a090fbd9711b6a).
+#
+# One token (x: the token's row of the embedding as it is; RMSNorm multiplies by its weight as stored, eps 1e-5):
+#   for every layer:
+#     xb = operator_norm(x)
+#     an attention layer:   x += wo attention(q, k, v)       a Qwen3's: q, k, v = wq xb, wk xb, wv xb, every head of q
+#                                                            and of k normalized (weights of one head's size), RoPE
+#                                                            over the whole head (theta 1e6), grouped keys and values,
+#                                                            scores divided by sqrt(head), no bias anywhere
+#     a convolution layer:  B, C, z = win xb cut in three    win has 3 dim rows: dim values each, one after another
+#                           h = B * z                        value by value
+#                           c = sum over j of conv[j] * h of (taps - 1 - j) tokens ago
+#                                                            a causal convolution of each channel with its own taps
+#                                                            over this token and the taps - 1 before it (zeros before
+#                                                            the first token); taps is 3 (conv_L_cache). No activation
+#                           x += wout (C * c)
+#     x += w2(silu(w1 xn) * w3 xn), xn = ffn_norm(x)         a Llama's FFN
+#   logits = embedding (the same table) times embedding_norm(x)       the last norm is called so; it is the last
+# A convolution layer keeps no keys and values: its state is the h of the last taps - 1 tokens (2 dim numbers a layer).
+# transformers pads a whole sequence with taps - 1 zeros in front (causal_conv1d_fn), and token by token keeps those
+# values in its cache (causal_conv1d_update): the same numbers.
+CONVOLUTION = ("layers", "taps")
+
+
+def convolution_form(convolution, n_layers=None):
+    """The convolution layers of an LFM2, FORM's "convolution", as {"layers": a letter for every layer, "c" for a
+    convolution layer and "a" for one that attends, "taps": how many tokens the convolution reads}, from a dict of
+    Python or of JavaScript. None for a model without such layers. n_layers: the header's, which the letters have to be
+    as many as."""
+    if convolution is None:
+        return None
+    convolution = convolution.to_py() if hasattr(convolution, "to_py") else convolution
+    layers, taps = str(convolution["layers"]), int(convolution["taps"])
+    if not layers or set(layers) - set("ac") or taps < 2 or (n_layers is not None and len(layers) != n_layers):
+        raise ValueError(f"These are not the convolution layers of a model: {layers!r} with {taps} taps.")
+    return {"layers": layers, "taps": taps}
 
 
 # ------------------------------------------------------------------------ the rotated basis (T237)
@@ -981,7 +1031,7 @@ def external_tensors(header, dtype, form=None):
 TENSOR_NAMES = ("token_embedding_table", "rms_att_weight", "wq", "wk", "wv", "wo", "rms_ffn_weight", "w1", "w2", "w3",
                 "rms_final_weight", "freq_cis_real", "freq_cis_imag", "wcls", "bq", "bk", "bv", "positions",
                 "ln_att_bias", "ln_ffn_bias", "ln_final_bias", "bo", "b1", "b2", "q_norm", "k_norm",
-                "wg", "wqkv", "wz", "wb", "wa", "conv", "dt_bias", "decay", "delta_norm", "wout")
+                "wg", "wqkv", "wz", "wb", "wa", "conv", "dt_bias", "decay", "delta_norm", "wout", "win")
 
 
 def outlier_channels(weight, count=OUTLIER_CHANNELS, ratio=OUTLIER_RATIO):
@@ -1008,7 +1058,9 @@ def outlier_columns(classifier, channels):
 # (llama2_convert.layout(), checkpoint_size() and Writer, checkpoint_dtype() below, forward.js's footprint()), so
 # that another one is added where it is used, not along the way (T144).
 # linear (T229): the linear-attention layers of arch "qwen35", see linear_form(); None where there are none.
-FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None, "rotated": None}
+# convolution (T260): the convolution layers of arch "lfm2", see convolution_form(); None where there are none.
+FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None, "rotated": None,
+        "convolution": None}
 
 
 def form_of(options=None):
@@ -1064,6 +1116,19 @@ def checkpoint_dtype(header, size, form=None):
         # gates (float32 whatever the file), the taps, dt_bias, decay and the norm of a value head
         vectors = 2 * n_layers * dim + dim + 2 * full * head_size \
             + lines * (2 * linear["value_heads"] * dim + linear["conv"] * mixed + 2 * linear["value_heads"] + linear["value_dim"])
+    elif arch == "lfm2":
+        # the same tensors in the same order as lfm2_tensors() and llama2_convert.layout(arch=): the attention
+        # layers' (q, k, v, o), the convolution layers' (the matrix in, the matrix out), the FFN
+        convolution = convolution_form(form["convolution"])
+        if convolution is None or len(convolution["layers"]) != n_layers:
+            raise ValueError("This is not a llama2.c checkpoint: an LFM2 has to say its convolution layers.")
+        short = convolution["layers"].count("c")
+        full = n_layers - short
+        matrices = [(abs(vocab_size), dim), (full * q_dim, dim), (full * kv_dim, dim), (full * kv_dim, dim),
+                    (full * dim, q_dim), (short * 3 * dim, dim), (short * dim, dim), (n_layers * hidden_dim, dim),
+                    (n_layers * dim, hidden_dim), (n_layers * hidden_dim, dim)]
+        # the norms of the layers and of the heads of q and k, and a convolution layer's taps
+        vectors = 2 * n_layers * dim + dim + 2 * full * head_size + short * convolution["taps"] * dim
     else:
         # the same tensors in the same order as llama_tensors() and quantize.py: (rows, row length) of the matrices
         matrices = [(abs(vocab_size), dim), (n_layers * q_dim, dim), (n_layers * kv_dim, dim), (n_layers * kv_dim, dim),
@@ -1144,7 +1209,8 @@ class Llama:
                  tokenizer_kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", bias=False, arch="llama",
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, collapse=False,
-                 unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None, rotated=None):
+                 unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None, rotated=None,
+                 convolution=None):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py),
@@ -1158,6 +1224,10 @@ class Llama:
         full-attention layers gate their output. linear: the numbers of those layers (FORM's, the file cannot say
         them); rotary and head_dim as below. The state follows the positions: a run begins at position 0, which
         clears it, and goes on one position after the other (forward() refuses any other).
+        arch="lfm2" (T260): Liquid AI's LFM2, see the comment above convolution_form(): a Qwen3 some of whose layers
+        are convolution layers, which keep the last taps - 1 tokens' values in place of keys and values.
+        convolution: which layers those are and their taps (FORM's, the file cannot say them). The state follows the
+        positions as a Qwen3.5's does.
         arch="gpt2": LayerNorm instead of RMSNorm, GELU instead of SwiGLU (and no gate matrix), a learned table
         of positions instead of RoPE, and a bias after every projection. The tensors of the file differ with it,
         so it is llama2_convert.layout(arch=) that says what is there.
@@ -1256,8 +1326,8 @@ class Llama:
         self.arch, self.parallel_residual = arch, parallel_residual
         # T237: a rotated basis turns what every matrix reads (turned), and the embedding's row back
         self.rotated = rotated_form(rotated, rotated_widths(dim, self.q_dim, hidden_dim, self.linear))
-        if self.rotated is not None and arch in ("gpt2", "neox"):
-            raise ValueError("A rotated basis is a Llama's, a Qwen's or a Qwen3.5's: no GPT-2 or GPT-NeoX has one.")
+        if self.rotated is not None and arch in ("gpt2", "neox", "lfm2"):
+            raise ValueError("A rotated basis is a Llama's, a Qwen's or a Qwen3.5's: no GPT-2, GPT-NeoX or LFM2 has one.")
         block = self.rotated and self.rotated["block"]
         self.turned = (lambda v: v) if self.rotated is None else (lambda v: rotate(v, self.rotated["signs"][v.size], block))
         self.rms_norm_eps = float(rms_norm_eps)
@@ -1267,8 +1337,13 @@ class Llama:
         self.q_norm = self.k_norm = self.wg = None
         if (arch == "qwen35") != (self.linear is not None) or (self.linear and n_layers < self.linear["every"]):
             raise ValueError("A hybrid model (qwen35) and the numbers of its linear layers go together.")
-        # for every layer: (is it a linear-attention one, its place in the stacks of its kind's tensors)
-        self.slots = layer_slots(n_layers, self.linear)
+        # T260: an LFM2's convolution layers
+        self.convolution = convolution_form(convolution, n_layers)
+        if (arch == "lfm2") != (self.convolution is not None):
+            raise ValueError("An LFM2 (lfm2) and its convolution layers go together.")
+        # for every layer: (does it keep a state: a linear-attention layer or a convolution one, its place in the stacks
+        # of its kind's tensors)
+        self.slots = layer_slots(n_layers, self.linear, self.convolution)
         self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
         self.bo = self.b1 = self.b2 = None
         # a dict from Python, or a JavaScript object from the worker
@@ -1279,6 +1354,8 @@ class Llama:
             self.gpt2_tensors(take, shared_weights, keep_int8, kv_dim, dtype, frequencies)
         elif arch == "qwen35":
             self.qwen35_tensors(take, shared_weights, keep_int8, kv_dim, dtype, frequencies)
+        elif arch == "lfm2":
+            self.lfm2_tensors(take, shared_weights, keep_int8, kv_dim, dtype, frequencies)
         else:
             self.llama_tensors(take, shared_weights, keep_int8, kv_dim, bias, dtype, frequencies, qk_norm)
         self.backend = "NumPy"
@@ -1291,7 +1368,8 @@ class Llama:
                 self.penalize, self.sample = self.kernel_sampler(kernels)
         else:
             # NumPy's forward pass; the forward pass on the kernels is forward.js's (external), since T93
-            attending = sum(not lines for lines, _ in self.slots)  # the linear-attention layers have no keys and values
+            # (the linear-attention layers and the convolution layers have no keys and values)
+            attending = sum(not lines for lines, _ in self.slots)
             self.key_cache = np.zeros((attending, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
             self.value_cache = np.zeros_like(self.key_cache)
             if self.linear is not None:
@@ -1301,6 +1379,10 @@ class Llama:
                 self.delta_state = np.zeros((lines, self.linear["value_heads"], self.linear["key_dim"],
                                              self.linear["value_dim"]), dtype=np.float32)
                 self.conv_state = np.zeros((lines, self.linear["conv"] - 1, mixed), dtype=np.float32)
+                self.state_at = 0
+            if self.convolution is not None:
+                # T260: theirs is the last taps - 1 tokens' values before the convolution alone (the oldest first)
+                self.conv_state = np.zeros((n_layers - attending, self.convolution["taps"] - 1, dim), dtype=np.float32)
                 self.state_at = 0
             if kernels and "sampler" not in disable:
                 self.penalize, self.sample = self.kernel_sampler(kernels)
@@ -1386,6 +1468,36 @@ class Llama:
         if dtype != np.float32:
             self.freq_cis_real, self.freq_cis_imag = self.partial_tables(frequencies)
 
+    def lfm2_tensors(self, take, shared_weights, keep_int8, kv_dim, dtype, frequencies):
+        """The tensors of an LFM2 (T260), in the order llama2_convert.layout() writes them: the stacks of the attention
+        layers (q, k, v, o and the norms of the heads of q and k), those of the convolution layers (the matrix in,
+        whose 3 dim rows are B, C and what B multiplies; the taps; the matrix out), then the FFN of every layer as a
+        Llama has it."""
+        dim, hidden_dim, n_layers = self.dim, self.hidden_dim, self.n_layers
+        short = self.convolution["layers"].count("c")
+        full = n_layers - short
+        matrix = lambda *shape: take(*shape, widen=not keep_int8)
+        vector = lambda *shape: take(*shape, matrix=False)
+        self.token_embedding_table = take(self.vocab_size, dim, widen=shared_weights and not keep_int8)
+        self.rms_att_weight = vector(n_layers, dim)
+        self.wq, self.wk, self.wv = matrix(full, self.q_dim, dim), matrix(full, kv_dim, dim), matrix(full, kv_dim, dim)
+        self.wo = matrix(full, dim, self.q_dim)
+        self.q_norm, self.k_norm = vector(full, self.head_size), vector(full, self.head_size)
+        self.bq = self.bk = self.bv = None
+        self.win = matrix(short, 3 * dim, dim)
+        self.conv = vector(short, self.convolution["taps"], dim)
+        self.wout = matrix(short, dim, dim)
+        self.rms_ffn_weight = vector(n_layers, dim)
+        self.w1, self.w2, self.w3 = matrix(n_layers, hidden_dim, dim), matrix(n_layers, dim, hidden_dim), matrix(n_layers, hidden_dim, dim)
+        self.rms_final_weight = vector(dim)
+        if dtype != np.int8:
+            self.freq_cis_real = vector(self.seq_len, self.head_size // 2)
+            self.freq_cis_imag = vector(self.seq_len, self.head_size // 2)
+        self.wcls = self.token_embedding_table if shared_weights else matrix(self.vocab_size, dim)
+        if dtype != np.float32:
+            angles = np.arange(self.seq_len)[:, None] * frequencies(self.head_size)
+            self.freq_cis_real, self.freq_cis_imag = (turn(angles).astype(np.float32) for turn in (np.cos, np.sin))
+
     def partial_tables(self, frequencies):
         """The RoPE tables of a model that turns the first rotary values of a head only: the angles of that part, in
         tables of the shape the file has (the rest is never read)."""
@@ -1463,6 +1575,8 @@ class Llama:
                 "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels,
                 # T229: a Qwen3.5's linear-attention layers (None: none)
                 "linear": self.linear,
+                # T260: an LFM2's convolution layers (None: none)
+                "convolution": self.convolution,
                 # T237: the block of a rotated basis (0: the model's own basis); its signs are in derived
                 "rotated": self.rotated["block"] if self.rotated else 0,
                 # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
@@ -1521,7 +1635,7 @@ class Llama:
         cos, sin = self.freq_cis_real[pos], self.freq_cis_imag[pos]
         neox, gpt2 = self.arch == "neox", self.arch == "gpt2"
         layer_norm = neox or gpt2
-        if self.linear is not None:
+        if self.linear is not None or self.convolution is not None:
             self.follow(pos)
         # GPT-2 and GPT-NeoX normalize by the mean as well, and have a bias on every projection
         eps = self.rms_norm_eps
@@ -1545,8 +1659,8 @@ class Llama:
         # Forward all the layers
         for l, (lines, a) in enumerate(self.slots):
             xb = norm(x, self.rms_att_weight[l], self.ln_att_bias[l] if layer_norm else None)
-            if lines:  # T229: a linear-attention layer, the a-th of them
-                attended = self.linear_attention(a, xb)
+            if lines:  # T229: a linear-attention layer, the a-th of them; T260: or an LFM2's convolution layer
+                attended = self.linear_attention(a, xb) if self.linear is not None else self.short_convolution(a, xb)
             else:
                 # QKV matmuls for this position, RoPE on q and k, k and v go to the kv cache (a: the layer's place
                 # among the attending layers, which is l where all of them attend)
@@ -1597,9 +1711,11 @@ class Llama:
     def follow(self, pos):
         """T229: the linear-attention layers' state is what the tokens before this position left, so position 0 clears
         it and every other position has to be the one after the last. Keys and values could be written again at any
-        position; a state cannot, and a token out of turn would compute on the wrong one without a word."""
+        position; a state cannot, and a token out of turn would compute on the wrong one without a word. T260: an
+        LFM2's convolution layers' state the same."""
         if pos == 0:
-            self.delta_state.fill(0.0)
+            if self.linear is not None:
+                self.delta_state.fill(0.0)
             self.conv_state.fill(0.0)
         elif pos != self.state_at:
             raise ValueError(f"This model keeps a state from token to token: position {self.state_at} comes next "
@@ -1613,12 +1729,7 @@ class Llama:
         key_heads, value_heads, key_dim = linear["key_heads"], linear["value_heads"], linear["key_dim"]
         _, keys, _ = linear_widths(linear)
         xr = self.turned(xb)  # T237: what the two large matrices read (the gates' small ones read xb itself)
-        mixed = self.wqkv[a] @ xr
-        # the convolution over this token and the conv - 1 before it, each channel with its own taps
-        taps, before = self.conv[a], self.conv_state[a]
-        convolved = silu((taps[:-1] * before).sum(axis=0) + taps[-1] * mixed)
-        before[:-1] = before[1:]
-        before[-1] = mixed
+        convolved = silu(self.convolved(a, self.wqkv[a] @ xr))
         # every value head reads the key head it belongs to
         q = np.repeat(l2_heads(convolved[:keys], key_heads) * np.float32(1.0 / math.sqrt(key_dim)), value_heads // key_heads, axis=0)
         k = np.repeat(l2_heads(convolved[keys:2 * keys], key_heads), value_heads // key_heads, axis=0)
@@ -1629,6 +1740,22 @@ class Llama:
         read = self.delta_norm[a] * read / np.sqrt((read * read).mean(axis=1, keepdims=True) + eps)
         return self.wout[a] @ self.turned((read * silu((self.wz[a] @ xr).reshape(value_heads, -1))).reshape(-1))
 
+    def convolved(self, a, values):
+        """The causal convolution of the a-th layer that has one (a linear-attention layer's, an LFM2's convolution
+        layer's): each channel of values with its own taps over this token and the taps - 1 before it, the oldest tap
+        first, and the layer's state moved on by this token."""
+        taps, before = self.conv[a], self.conv_state[a]
+        out = (taps[:-1] * before).sum(axis=0) + taps[-1] * values
+        before[:-1] = before[1:]
+        before[-1] = values
+        return out
+
+    def short_convolution(self, a, xb):
+        """One token through the a-th convolution layer of an LFM2 (the comment above convolution_form() has the rule):
+        what the layer adds to x, with the layer's state moved on by this token."""
+        dim = self.dim
+        mixed = self.win[a] @ xb  # B, C and what B multiplies, dim values each
+        return self.wout[a] @ (mixed[dim:2 * dim] * self.convolved(a, mixed[:dim] * mixed[2 * dim:]))
 
     def kernel_sampler(self, kernels):
         """penalize() and sample() on the kernels: the same as the methods below, which stay for NumPy alone.
