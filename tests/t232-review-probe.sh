@@ -29,6 +29,25 @@ experiment() {  # a name, then the command; its log in .tmp/probe-<name>.log
 }
 check() { node tests/gpu-check.mjs "$@" --nan none --engine dawn --webgpu $DAWN; }
 
+# R. the rounding emulation of tests/rounding.mjs (the fixed text; then the old one, the NaN lines taken out, which must
+# fail), the benchmark's checks under it, and gpu-check under "everything" (only the first layer's scale line may fail: it
+# is the line of a device that rounds to the nearest, T187), with the count of the NaN-logits failures that were 3
+if [ "$only" = round ]; then
+  echo "=================== rounding-self, the fixed emulation"
+  node tests/rounding-self.mjs $DAWN toward-zero away 2>&1 | tail -20
+  echo "=================== rounding-self, the old text (the lines of a NaN and an infinity taken out): must FAIL"
+  sed -i '/if (e == 143)/d' tests/rounding.mjs
+  node tests/rounding-self.mjs $DAWN toward-zero away 2>&1 | tail -30
+  git checkout -q -- tests/rounding.mjs
+  echo "=================== rounding-check, the benchmark's checks under the fixed emulation"
+  node tests/rounding-check.mjs $DAWN toward-zero away everything 2>&1 | tail -30
+  GPU_ROUNDING=everything experiment round-everything check synthetic-ternary synthetic-ternary-untied synthetic
+  echo "NaN-logits failures under everything: $(grep -c 'logits made NaN' .tmp/probe-round-everything.log)"
+  echo "other failure lines under everything:"
+  grep -E '^ *- ' .tmp/probe-round-everything.log | grep -v 'scaled by' | cut -c1-300 | sort | uniq -c | head -10
+  exit 0
+fi
+
 # 0. the new model on the branch as it is
 [ "$only" = other ] || experiment untied check synthetic-ternary-untied
 
