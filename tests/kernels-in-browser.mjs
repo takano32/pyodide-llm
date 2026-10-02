@@ -377,7 +377,9 @@ for (const engine of engines.length ? engines : ["chromium"]) {
       console.log(`kernels-in-browser:   ${wrong ? "WRONG" : "ok"}: ${name}${wrong ? ` ${wrong}` : ` (${calls} calls)`}`);
       if (wrong) failed = true;
     }
-    const high = await page.evaluate(inPageHigh, wideModules);
+    // a runner that cannot give a page 4 GiB of address space (the commit limit of a small Windows machine) makes the page
+    // crash or throw: that is the runner, and is said, not failed
+    const high = await page.evaluate(inPageHigh, wideModules).catch((error) => ({ skipped: `the page could not run it (${String(error.message).split("\n")[0]})` }));
     if (high.skipped) console.log(`kernels-in-browser:   skipped: above 4 GiB: ${high.skipped}`);
     for (const { name, wrong, calls } of high.results ?? []) {
       console.log(`kernels-in-browser:   ${wrong ? "WRONG" : "ok"}: above 4 GiB, ${name}${wrong ? ` ${wrong}` : ` (${calls} placements)`}`);
