@@ -5,10 +5,13 @@
 #   node tests/ci.mjs run tests.yml only_extra=true minutes=180 extra="bash tests/page_27b.sh" \
 #     --grep "^(fork|f32|reference|runner|page|pyodide):" --minutes 190 --ref <branch>
 #   ... extra="STAGES='fork convert speed memory' bash tests/page_27b.sh" ...
-# On x86-64: the V8 of Node 24 on arm64 reads the ternary kernels' scales wrongly above 4 GiB (the review of T230 and
-# T231), and tests/page-27b.mjs refuses to run the model there. The fork and the conversion run on arm64 as well
-# (runner=ubuntu-24.04-arm with STAGES='fork convert'). ANYWAY=1 runs page and speed there all the same: the comparison
-# then says whether that engine computed the model.
+# On x86-64 or arm64 (runner=ubuntu-24.04-arm: twice as fast for the fork and the page). Liftoff, the first compiler of the
+# V8 of Node 24 (13.6) on arm64, reads v128.load32_splat above 4 GiB at the address's low 32 bits (the review of T230 and
+# T231; fixed in V8 14.3, Chrome 143): where tests/page-27b.mjs's canary says so it sets --no-liftoff, and what it then
+# computes is the model's (the numbers equal x86-64's to four digits: the review of T233); where the canary says so even
+# then, it refuses, and ANYWAY=1 runs page and speed all the same: the comparison then says whether that engine computed
+# the model. LONG_TOKENS=600 (with LONG_ROWS below 600) makes a short pass through the whole of a stage, a check of the
+# tool and not of the model.
 #
 # Run it when public/forward.js, the ternary kernels (kernels/ternary.ts), rotate and unrotate, the converter's reading
 # of a GGUF or the list's entry change in a way that could move what this model computes.
@@ -221,11 +224,11 @@ if has speed; then
   node tests/page-27b.mjs "$work/page" speed --threads "${THREADS:-1,2,4}" ${ANYWAY:+--anyway} || status=1
 fi
 if has memory; then
-  node tests/page-27b.mjs "$work/page" memory || status=1
+  node tests/page-27b.mjs "$work/page" memory ${ANYWAY:+--anyway} || status=1
 fi
 if has long || has long-page; then
   # (the context is the header's 4 bytes: the checkpoint made for 4096 serves; no second conversion of 7.66 GB)
-  node tests/page-27b.mjs "$work/page" long "$work" --context "${LONG_CONTEXT:-8192}" ${LONG_LINES:+--lines "$LONG_LINES"} || status=1
+  node tests/page-27b.mjs "$work/page" long "$work" --context "${LONG_CONTEXT:-8192}" ${LONG_LINES:+--lines "$LONG_LINES"} ${LONG_TOKENS:+--prefix} ${ANYWAY:+--anyway} || status=1
 fi
 if has write; then
   questions=${QUESTIONS:-}
@@ -242,7 +245,7 @@ if has write; then
     index=$((index + 1))
     if [ -n "${PICK:-}" ] && [[ ",$PICK," != *",$index,"* ]]; then continue; fi
     echo "page: question $index"
-    node tests/page-27b.mjs "$work/page" write "$question" --tokens "${TOKENS:-1500}" ${THINKING:+--entry "$id-thinking"} < /dev/null || status=1
+    node tests/page-27b.mjs "$work/page" write "$question" --tokens "${TOKENS:-1500}" ${THINKING:+--entry "$id-thinking"} ${ANYWAY:+--anyway} < /dev/null || status=1
   done < "$questions"
 fi
 exit $status

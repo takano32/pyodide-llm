@@ -241,9 +241,12 @@ if (isMainThread) {
     if (fs.existsSync(textFile)) {
       py.globals.set("TEXT", fs.readFileSync(textFile, "utf8"));
       const ids = Array.from(py.runPython("llama.tokenizer.encode(TEXT, llama.specials)").toJs());
-      const first = ids.findIndex((id, i) => id !== prompt[i]);
-      const same = ids.length === prompt.length && first < 0;
-      console.log(`page: the tokenizer gives ${same ? `the fork's ${ids.length} ids` : `${ids.length} ids, the fork ${prompt.length}; the first that differs is at ${first} — FAILED`}`);
+      const first = ids.findIndex((id, i) => i < prompt.length && id !== prompt[i]);
+      // --prefix: the fork took only the first LONG_TOKENS of the text (a short pass through the whole pipeline, which cannot
+      // say anything about the rest of the ids); without it the fork took the whole text and the lengths must be equal
+      const prefix = args.includes("--prefix") && prompt.length < ids.length;
+      const same = first < 0 && (prefix || ids.length === prompt.length);
+      console.log(`page: the tokenizer gives ${same ? (prefix ? `the fork's ${prompt.length} ids as the first of its ${ids.length} (--prefix: the rest is not compared)` : `the fork's ${ids.length} ids`) : `${ids.length} ids, the fork ${prompt.length}; the first that differs is at ${first < 0 ? prompt.length : first} — FAILED`}`);
       job.tokenizerFailed ||= !same;
     }
   }
@@ -561,8 +564,11 @@ if (isMainThread) {
       failed ||= Boolean(lines) && (mustFail ? !reasons.length : reasons.length > 0);
       if (!name) {
         const placed = engine.memoryBytes() - base - size, bound = footprint(header, size, forwardOptions);
-        const close = placed <= bound && bound - placed <= 0.05 * bound + 6 * MiB;
-        say(`${label}: after ${stop} positions of a context of ${seqLen}: ${(placed / MiB).toFixed(1)} MiB placed after the checkpoint, footprint() counts ${(bound / MiB).toFixed(1)} MiB${close ? "" : " — FAILED"}; ` +
+        // footprint() counts the whole context: the cache has grown to it only once a position past half of it was reached (it
+        // doubles from 256; a pass of 600 positions of 8192 holds a cache of 1024 and is judged only to be under the bound)
+        const whole = stop > seqLen / 2;
+        const close = placed <= bound && (!whole || bound - placed <= 0.05 * bound + 6 * MiB);
+        say(`${label}: after ${stop} positions of a context of ${seqLen}: ${(placed / MiB).toFixed(1)} MiB placed after the checkpoint, footprint() counts ${(bound / MiB).toFixed(1)} MiB${whole ? "" : " (the run ended before the cache's last doubling: held under it only)"}${close ? "" : " — FAILED"}; ` +
           `in all ${((base + size + placed) / GiB).toFixed(3)} GiB`);
         failed ||= !close;
       }
