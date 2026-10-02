@@ -10,6 +10,9 @@
 // with --site) in a blank page, and each kernel is called in batches (1, 400, 4000 and 30000 calls, a pause after each for
 // the background compile to land) with its result held to the same arithmetic written out in JavaScript after every batch.
 // The relaxed kernels are checked where the engine has relaxed SIMD (the others are not run there, as in the page).
+// T233's review: and rotate and unrotate (the rotated basis of Ternary Bonsai 2 27B, T237: a token turns 2,122 blocks of
+// 1024 with them, thousands of calls an answer), which only V8 had seen, a few calls at a time (tests/rotate-check.mjs):
+// Chrome and Firefox, the engines this model runs in, tier them up too.
 // Then the 64-bit builds on a memory of more than 4 GiB (what a 27B model runs on, in Chrome and Firefox): every address
 // argument low or high in every combination, the result held to the all-low one. The V8 of Node 24 on arm64 fails this
 // (it reads v128.load32_splat above 4 GiB at the low 32 bits); WebKit has no such memory and is skipped.
@@ -145,6 +148,51 @@ async function inPage({ plain, relaxed }) {
       }
       return bad ? `${bad} bytes wrong` : null;
     });
+  }
+
+  // ---- rotate and unrotate (T237; the review of T233): the same float32 arithmetic written out here, to the bit, with the signs
+  // as forward.js hands them over (a sign times 1 / sqrt(block): rotate multiplies by them, unrotate by their size and
+  // flips the result's sign bit by theirs)
+  {
+    const at = extra + 2097152, x = at, signs = at + 16384, out = at + 32768;
+    const butterflies = (v, from, block) => {
+      for (let half = 1; half < block; half *= 2) {
+        for (let i = 0; i < block; i += 2 * half) {
+          for (let j = 0; j < half; j++) {
+            const p = v[from + i + j], q = v[from + i + half + j];
+            v[from + i + j] = f(p + q);
+            v[from + i + half + j] = f(p - q);
+          }
+        }
+      }
+    };
+    for (const [block, count] of [[1024, 2], [128, 3]]) {
+      const len = block * count, scale = f(1 / Math.sqrt(block));
+      const input = Float32Array.from({ length: len }, () => f((next() % 20001) / 10000 - 1));
+      const given = Float32Array.from({ length: len }, () => f((next() & 1 ? 1 : -1) * scale));
+      const rotatedOf = () => {
+        const o = Float32Array.from(input, (v, i) => f(v * given[i]));
+        for (let b = 0; b < len; b += block) butterflies(o, b, block);
+        return o;
+      };
+      const unrotatedOf = () => {
+        const o = Float32Array.from(input, (v, i) => f(v * Math.abs(given[i])));
+        for (let b = 0; b < len; b += block) butterflies(o, b, block);
+        return o.map((v, i) => (given[i] < 0 ? -v : v));
+      };
+      for (const [name, kernel, wanted] of [["rotate", k.rotate, rotatedOf], ["unrotate", k.unrotate, unrotatedOf]]) {
+        const call = () => { F.set(input, x / 4); F.set(given, signs / 4); kernel(out, x, signs, len, block); };
+        await check(`${name} (${count} blocks of ${block})`, call, () => {
+          F.fill(-7, out / 4, out / 4 + len + 4);
+          call();
+          const want = new Uint32Array(wanted().buffer), got = new Uint32Array(memory.buffer, out, len);
+          let bad = 0;
+          for (let i = 0; i < len; i++) if (got[i] !== want[i]) bad++;
+          for (let i = len; i < len + 4; i++) if (F[out / 4 + i] !== -7) bad++;
+          return bad ? `${bad} of ${len} values wrong` : null;
+        });
+      }
+    }
   }
 
   // ---- what every model runs, as a control: quantize_x (8 bits and 7 with a bias), matmul_q8 and matmul_q8r against float64 sums
@@ -325,7 +373,14 @@ async function inPageHigh({ plain, relaxed, addresses }) {
       for (let g = 0; g < 4; g++) F[(p.xs + t * 1024) / 4 + g] = 1;
     }
   };
+  // rotate and unrotate (T237; the review of T233): 128 values of a block of 128, x and signs up or down, the result of the
+  // first value (a sum of all of them) the all-low one
+  const turn = (p) => {
+    for (let j = 0; j < 128; j++) { F[p.x / 4 + j] = (j % 7) - 3.25; F[p.signs / 4 + j] = (j % 3 ? 1 : -1) * 0.08838835; }
+  };
   const cases = [
+    { name: "rotate", args: ["out", "x", "signs"], want: null, setup: turn, call: (p) => k.rotate(p.out, p.x, p.signs, 128, 128) },
+    { name: "unrotate", args: ["out", "x", "signs"], want: null, setup: turn, call: (p) => k.unrotate(p.out, p.x, p.signs, 128, 128) },
     { name: "matmul_q8", args: ["out", "xq", "xs", "w", "ws"], want: 768, setup: (p) => int8(p, 1, 0), call: (p) => k.matmul_q8(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1) },
     { name: "matmul_q6", args: ["out", "xq", "xs", "w", "ws"], want: null,
       setup: (p) => {  // 4 groups of 32 values of 2, packed as pack6 does (the low nibbles in bytes 0..15, the top bits 0 in 16..23)
