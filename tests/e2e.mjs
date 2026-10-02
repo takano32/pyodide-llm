@@ -280,6 +280,10 @@ if (errors.length) failures.push(`console errors: ${errors.join(" | ")}`);
 if (!/tok\/s/.test(result.meta)) failures.push("no speed line under the answer");
 if (result.pageScrolls) failures.push("the page itself scrolls");
 if (expected[model] && !result.text.startsWith(expected[model])) failures.push(`unexpected text: ${result.text.slice(0, 120)}`);
+// T231's review: no check above says an answer is a real one. JavaScriptCore on x86-64 wrote "edListedlyedlyedList..." with a
+// ternary model and the run passed: an answer, a speed line, no error. 160 characters of any language have a dozen different
+// ones at the least (that one has 8); where fewer, the engine has gone wrong, or the model has fallen into a loop
+if (result.text.length >= 100 && new Set(result.text.slice(0, 160)).size < 10) failures.push(`the answer looks like nonsense: ${result.text.slice(0, 80)}`);
 if (gpuTest && !/on WebGPU/.test(result.prompt)) failures.push(`the prompt did not go through the GPU (${result.prompt || "no prompt line"}; ${result.status})`);
 // T152: where the status says the GPU takes the answers (a model it takes them of), they went through it
 if (gpuTest && /answers on WebGPU/.test(result.status) && !/on WebGPU/.test(result.generated)) {
