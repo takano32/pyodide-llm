@@ -12,8 +12,10 @@
 // tokens with the entry's sampling (until a stop token, as the page does) and counts what a reader sees come apart:
 //   unk     the answer has <unk> in it (the model wrote the piece that stands for what its vocabulary lacks)
 //   loop    more than half of its 5-character windows are ones it wrote before (it repeats itself)
-//   other   less than half of its letters are Japanese (kana, kanji, full-width) where the prompt is Japanese
-// and the lines it prints are `degenerate <id>: <prompt> ...` for each prompt and a total (ci.mjs's --grep "degenerate").
+//   other   less than half of its letters are in the prompt's script: Japanese (kana, kanji, full-width) where the prompt has any,
+//           else Latin (T251's review: it was Japanese whatever the prompt, so every answer of an English model came out "other")
+// and the line has the mean share of repeated 5-character windows besides (the loop's measure as a number, for models that loop
+// less than all the way). The lines it prints are `degenerate <id>: <prompt> ...` for each prompt and a total (ci.mjs's --grep "degenerate").
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { footprint, needsWide } from "../public/forward.js";
@@ -62,15 +64,18 @@ if banned:
         return logits
     llama.forward = forward
 JAPANESE =re.compile(r"[\\u3040-\\u30ff\\u3400-\\u9fff\\uff00-\\uffef]")
+LATIN = re.compile(r"[A-Za-z]")
 LETTERS = re.compile(r"[^\\W\\d_]", re.UNICODE)
 
-def judge(answer):
+def judge(answer, japanese):
     letters = LETTERS.findall(answer)
     windows = [answer[i:i + 5] for i in range(max(0, len(answer) - 4))]
+    repeated = 1 - len(set(windows)) / len(windows) if windows else 0.0
+    script = JAPANESE if japanese else LATIN  # the script of the prompt (T251's review: the check was Japanese whatever the prompt)
     return {"unk": "<unk>" in answer,
-            "loop": len(windows) >= 20 and 1 - len(set(windows)) / len(windows) > 0.5,
-            "other": len(letters) >= 10 and sum(1 for c in letters if JAPANESE.match(c)) / len(letters) < 0.5,
-            "chars": len(answer), "unks": answer.count("<unk>")}
+            "loop": len(windows) >= 20 and repeated > 0.5,
+            "other": len(letters) >= 10 and sum(1 for c in letters if script.match(c)) / len(letters) < 0.5,
+            "repeated": repeated, "chars": len(answer), "unks": answer.count("<unk>")}
 
 rows = []
 began = time.perf_counter()
@@ -78,7 +83,7 @@ for p, text in enumerate(TEXTS):
     ids = llama.tokenizer.encode(text, llama.specials)
     for seed in SEEDS:
         answer = "".join(llama.generate(text, steps=len(ids) + COUNT, seed=seed, echo=False, **SAMPLING))
-        rows.append({"prompt": p, "seed": seed, "answer": answer, "tokens": llama.stats.get("sampled", 0), **judge(answer)})
+        rows.append({"prompt": p, "seed": seed, "answer": answer, "tokens": llama.stats.get("sampled", 0), **judge(answer, bool(JAPANESE.search(text)))})
 json.dumps({"rows": rows, "seconds": time.perf_counter() - began, "bos": llama.bos, "stops": sorted(llama.stop_tokens)})
 `));
 const id = page.id;
@@ -86,7 +91,8 @@ console.log(`degenerate ${id}: ${seeds.length} seeds x ${prompts.length} opening
   `penalty ${repetition_penalty}, bos ${result.bos}, stops ${result.stops.join(" ")}, ${result.seconds.toFixed(0)} s`);
 const share = (rows, key) => `${rows.filter((row) => row[key]).length}/${rows.length}`;
 const line = (name, rows) => console.log(`degenerate ${id}: ${name}: <unk> in ${share(rows, "unk")}, loop in ${share(rows, "loop")}, ` +
-  `less than half Japanese in ${share(rows, "other")}, any of the three in ${rows.filter((row) => row.unk || row.loop || row.other).length}/${rows.length}; ` +
+  `less than half in the prompt's script in ${share(rows, "other")}, any of the three in ${rows.filter((row) => row.unk || row.loop || row.other).length}/${rows.length}; ` +
+  `${(rows.reduce((sum, row) => sum + row.repeated, 0) / rows.length * 100).toFixed(1)}% of the 5-character windows repeated on average, ` +
   `${(rows.reduce((sum, row) => sum + row.unks, 0) / rows.reduce((sum, row) => sum + Math.max(1, row.tokens), 0) * 100).toFixed(2)} <unk> a 100 tokens, ` +
   `${(rows.reduce((sum, row) => sum + row.tokens, 0) / rows.length).toFixed(0)} tokens written on average`);
 prompts.forEach((prompt, p) => line(JSON.stringify(prompt), result.rows.filter((row) => row.prompt === p)));

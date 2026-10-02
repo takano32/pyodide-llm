@@ -35,8 +35,10 @@ def test_the_families_whose_bos_is_the_formats_first_token_take_nothing_in_front
     # format's own first token (it costs the model much on plain text and moves its own answers). same_ids lets that by
     # (the extra token is not the real first one), the families of STRICT do not
     real, old_design = [IM_START, USER, NEWLINE], [ENDOFTEXT, IM_START, USER, NEWLINE]
-    # (T254's review: and MiniCPM5, whose template writes its BOS <s> itself first, as the page does)
-    for model_id in ("hf-qwen3.5-0.8b", "hf-qwen3.5-9b-thinking", "hf-granite-4.2-3b", "hf-minicpm5-1b-thinking", "hf-ternary-bonsai-2-27b"):
+    # (T254's review: and MiniCPM5, whose template writes its BOS <s> itself first, as the page does. T252's review: and
+    # Hermes 3, whose <|begin_of_text|> in front of its ChatML cost its English answers 13 to 15%)
+    for model_id in ("hf-qwen3.5-0.8b", "hf-qwen3.5-9b-thinking", "hf-granite-4.2-3b", "hf-minicpm5-1b-thinking", "hf-ternary-bonsai-2-27b",
+                     "hf-hermes-3-llama-3.2-3b"):
         assert format_check.ids_match(model_id, real, real)
         assert not format_check.ids_match(model_id, old_design, real)
     # elsewhere the page's BOS in front is let by (T131), and the doubled one is not
