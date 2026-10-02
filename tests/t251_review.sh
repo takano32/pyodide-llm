@@ -28,11 +28,13 @@ echo "t251_review: runner $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- |
 df -h / /mnt | sed 's/^/t251_review: /'
 pip install --quiet numpy pytest tokenizers regex sentencepiece
 
-reference_tools() {  # as tests/reference_llama.sh does
+reference_tools() {  # as tests/reference_llama.sh does (once in a run that has several stages)
+  python -c "import torch, transformers" 2> /dev/null && return 0
   pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
   pip install --quiet safetensors jinja2 protobuf "transformers @ https://github.com/huggingface/transformers/archive/7cd73d9df0c14b151c684b708a9f27d8d0349dfe.tar.gz"
 }
 page_tools() {
+  [ -f public/simdkernel.so ] && return 0
   npm ci --silent
   make kernels > /dev/null
 }
