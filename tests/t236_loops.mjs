@@ -23,7 +23,7 @@ const sampling = { ...(spec.tiny ? { steps: 30, temperature: 0.7, topp: 0.8, rep
   ...(spec.penalty ? { repetition_penalty: spec.penalty } : {}), ...(spec.temperature ? { temperature: spec.temperature } : {}) };
 const template = spec.tiny ? "{prompt}" : page ? page.template : entry.template;
 console.log(`T236LOOPS ${spec.id}: sampling ${JSON.stringify(sampling)}, options ${JSON.stringify({ ...options, specials: `${options.specials?.length} of them` })}, template ${JSON.stringify(template)}`);
-const { pyodide } = await pyodideWithEngine();
+const { pyodide } = await pyodideWithEngine({ wide: Boolean(spec.wide) });  // (T247's review: a 64-bit memory for the 4B and the 9B)
 pyodide.FS.writeFile("tokenizer.bin", fs.readFileSync(`${spec.out}.tokenizer.bin`));
 pyodide.globals.set("SPEC", JSON.stringify({ file: path.resolve(`${spec.out}.bin`), options, sampling, seed: spec.seed ?? 1000,
   prompts: spec.prompts.map((prompt) => filled(template, prompt)), asked: spec.prompts, id: spec.id, presence: spec.presence ?? 0 }));

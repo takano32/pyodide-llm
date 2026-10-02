@@ -9,7 +9,7 @@ import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
 
 const spec = JSON.parse(process.argv[2]);
-const { pyodide } = await pyodideWithEngine();
+const { pyodide } = await pyodideWithEngine({ wide: Boolean(spec.wide) });  // (T247's review: a 64-bit memory for the 4B and the 9B)
 pyodide.FS.writeFile("perplexity.py", fs.readFileSync(new URL("./perplexity.py", import.meta.url)));
 spec.texts.forEach((file, i) => pyodide.FS.writeFile(`text${i}.txt`, fs.readFileSync(file)));
 spec.paths.forEach((p, i) => pyodide.FS.writeFile(`tokenizer${i}.bin`, fs.readFileSync(`${p.out}.tokenizer.bin`)));
@@ -24,6 +24,8 @@ spec = json.loads(SPEC)
 for i, p in enumerate(spec["paths"]):
     vocabulary = open(f"tokenizer{i}.bin", "rb").read()
     for label, disable in (("7-bit", ()), ("8-bit", ("relaxed",))):
+        if label not in spec.get("labels", ["7-bit", "8-bit"]):
+            continue
         llama = kernel_llama_file(spec["files"][i], vocabulary, **dict(spec["options"][i], disable=disable))
         for j, name in enumerate(spec["names"]):
             tokens = llama.tokenizer.encode(open(f"text{j}.txt").read())[:spec["count"]]
