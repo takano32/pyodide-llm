@@ -6,12 +6,12 @@
 #
 #   python tests/t272_probe.py <prefix of tests/perplexity_prepare.py's output> <text file> <tokens> <experiment> ...
 #
-# experiments: stats, eps, all, roles, leave, positions, layers, split, mitigate (see below). A throwaway of the review:
-# it holds nothing the repository keeps.
+# A throwaway of the review: it holds nothing the repository keeps.
 import json
 import math
 import sys
 import time
+import zlib
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +22,7 @@ from llama2_numpy import Llama, rope_frequencies  # noqa: E402
 
 ROLES = ("qkv", "o", "win", "wout", "gate_up", "down", "cls")
 say = lambda **fields: print("t272: " + json.dumps(fields, default=float), flush=True)
+qmax_of = lambda bits: 2 ** (bits - 1) - 1
 
 
 def load(prefix):
@@ -29,17 +30,31 @@ def load(prefix):
     return Llama(Path(f"{prefix}.bin").read_bytes(), Path(f"{prefix}.tokenizer.bin").read_bytes(), kernels=None, **options)
 
 
-def fake_quantize(a, qmax, rows=None, group=32, outliers=None, top=0):
-    """a: (T, n) float32, every row's groups rounded as quantize_x does. rows: only these rows (the others as they are).
-    outliers: channels (static) and top: how many of the largest of a row (dynamic) that are taken out of the groups and
-    kept as they are (the way T92's outlier channels are multiplied apart)."""
+def chosen_rows(rows, T):
+    if rows is None:
+        return None
+    if rows == "rest":
+        return list(range(1, T))
+    if rows == "first":
+        return [0]
+    return list(rows)
+
+
+def fake_quantize(a, qmax, rows=None, group=32, outliers=None, top=0, shift=0):
+    """a: (T, n) float32, every row's groups rounded as quantize_x does. rows: only these rows (the others as they are; "first"
+    and "rest": the first position of a window, and the others). outliers: channels (static) and top: how many of the
+    largest of a row (dynamic) that are taken out of the groups and kept as they are (the way T92's outlier channels are
+    multiplied apart). shift: the groups begin that many values on (the same rounding at another place)."""
     a = np.asarray(a, dtype=np.float32)
     T, n = a.shape
+    original = a
+    if shift:
+        a = np.roll(a, -shift, axis=1)
     work = a
     kept = None
     if outliers is not None and len(outliers):
         kept = np.zeros(a.shape, dtype=bool)
-        kept[:, list(outliers)] = True
+        kept[:, [(c - shift) % n for c in outliers]] = True
     if top:
         biggest = np.argsort(-np.abs(a), axis=1)[:, :top]
         dynamic = np.zeros(a.shape, dtype=bool)
@@ -54,10 +69,13 @@ def fake_quantize(a, qmax, rows=None, group=32, outliers=None, top=0):
     out = (np.rint(g * inv) * scale).reshape(T, n).astype(np.float32)
     if kept is not None:
         out = np.where(kept, a, out)
-    if rows is not None:
+    if shift:
+        out = np.roll(out, shift, axis=1)
+    picked = chosen_rows(rows, T)
+    if picked is not None:
         keep = np.ones(T, dtype=bool)
-        keep[list(rows)] = False
-        out[keep] = a[keep]
+        keep[picked] = False
+        out[keep] = original[keep]
     return out
 
 
@@ -87,7 +105,6 @@ class Probe:
         self.cos, self.sin = np.cos(angles).astype(np.float32), np.sin(angles).astype(np.float32)
         self.taps = llama.convolution["taps"]
         self.eps = {"op": 1e-5, "ffn": 1e-5, "q": 1e-5, "k": 1e-5, "final": 1e-5}
-        self.seen = {}
 
     def rope_rows(self, x):
         T, h, hs = x.shape
@@ -100,7 +117,7 @@ class Probe:
         return out.reshape(T, h, hs)
 
     def window(self, ids, quant=None, record=None):
-        """logits (T, vocab). quant: {role: dict(qmax=, rows=, layers=, group=, outliers=, top=)}"""
+        """logits (T, vocab). quant: {role: dict(qmax=, rows=, layers=, group=, outliers=, top=, shift=, noise=, seed=)}"""
         L = self.l
         quant = quant or {}
         T = len(ids)
@@ -111,8 +128,13 @@ class Probe:
                 return a
             if spec.get("layers") is not None and layer not in spec["layers"]:
                 return a
-            return fake_quantize(a, spec["qmax"], spec.get("rows"), spec.get("group", 32), spec.get("outliers", {}).get(layer)
-                                 if isinstance(spec.get("outliers"), dict) else spec.get("outliers"), spec.get("top", 0))
+            if spec.get("noise"):
+                rng = np.random.default_rng([spec.get("seed", 0), -1 if layer is None else layer, zlib.crc32(role.encode())])
+                return (a * (1.0 + spec["noise"] * rng.standard_normal(a.shape))).astype(np.float32)
+            outliers = spec.get("outliers")
+            if isinstance(outliers, dict):
+                outliers = outliers.get(layer)
+            return fake_quantize(a, spec["qmax"], spec.get("rows"), spec.get("group", 32), outliers, spec.get("top", 0), spec.get("shift", 0))
 
         x = np.asarray(L.token_embedding_table[np.asarray(ids)], dtype=np.float32)
         for l, (short, a) in enumerate(L.slots):
@@ -127,6 +149,7 @@ class Probe:
                 if record is not None:
                     record.setdefault("q_raw", {})[l] = q
                     record.setdefault("k_raw", {})[l] = k
+                    record.setdefault("v_raw", {})[l] = v
                 q = self.rope_rows(head_norm_rows(q, L.q_norm[a], self.heads, self.eps["q"]))
                 k = self.rope_rows(head_norm_rows(k, L.k_norm[a], self.kv, self.eps["k"]))
                 v = v.reshape(T, self.kv, self.hs)
@@ -138,6 +161,8 @@ class Probe:
                 att = softmax_rows(scores).astype(np.float32)
                 if record is not None:
                     record.setdefault("att", {})[l] = att
+                    record.setdefault("k_final", {})[l] = k
+                    record.setdefault("v_final", {})[l] = v
                 out = Q((att @ vv).transpose(1, 0, 2).reshape(T, -1), "o", l) @ L.wo[a].T
             else:
                 mixed = Q(xb, "win", l) @ L.win[a].T
@@ -152,6 +177,8 @@ class Probe:
                         conv[shift:] += L.conv[a][j] * h[:-shift]
                 out = Q((C * conv).astype(np.float32), "wout", l) @ L.wout[a].T
             x = (x + out).astype(np.float32)
+            if record is not None:
+                record.setdefault("x", {})[l] = x
             xn = rms_rows(x, L.rms_ffn_weight[l], self.eps["ffn"])
             xin = Q(xn, "gate_up", l)
             g, u = xin @ L.w1[l].T, xin @ L.w3[l].T
@@ -178,22 +205,26 @@ class Runner:
         self.count = sum(len(w) - 1 for w in windows)
         began = time.time()
         self.base_lp = [log_softmax(probe.window(ids)) for ids in windows]
-        self.base = self.nll(self.base_lp)
+        self.base_target = np.concatenate([lp[np.arange(len(ids) - 1), np.asarray(ids[1:])] for lp, ids in zip(self.base_lp, windows)])
+        self.base = float(-self.base_target.mean())
         say(experiment="base", ppl=math.exp(self.base), tokens=self.count, seconds=round(time.time() - began, 1))
-
-    def nll(self, lps):
-        return sum(-lp[np.arange(len(ids) - 1), np.asarray(ids[1:])].sum() for lp, ids in zip(lps, self.windows)) / self.count
 
     def run(self, name, quant=None, setup=None):
         began = time.time()
         if setup:
             setup(self.probe)
         lps = [log_softmax(self.probe.window(ids, quant)) for ids in self.windows]
+        target = np.concatenate([lp[np.arange(len(ids) - 1), np.asarray(ids[1:])] for lp, ids in zip(lps, self.windows)])
         kls = np.concatenate([(np.exp(b) * (b - lp)).sum(axis=1)[:-1] for b, lp in zip(self.base_lp, lps)])
         diff = max(float(np.abs(b - lp).max()) for b, lp in zip(self.base_lp, lps))
         within = np.concatenate([np.arange(len(ids) - 1) for ids in self.windows])
-        row = {"variant": name, "ppl": math.exp(self.nll(lps)), "change_vs_base_pct": 100 * (math.exp(self.nll(lps) - self.base) - 1),
-               "kl": float(kls.mean()), "max_logprob_diff": diff, "seconds": round(time.time() - began, 1)}
+        delta = target - self.base_target  # the change of every position's log probability of the token that came
+        nll = float(-target.mean())
+        row = {"variant": name, "ppl": math.exp(nll), "change_vs_base_pct": 100 * (math.exp(nll - self.base) - 1),
+               "kl": float(kls.mean()), "max_logprob_diff": diff,
+               # how common to all positions the change is: its mean over its spread / sqrt(positions) (independent noise: about 1)
+               "coherence_z": float(delta.mean() / (delta.std() / math.sqrt(len(delta)) + 1e-12)), "mean_dlogp": float(delta.mean()),
+               "std_dlogp": float(delta.std()), "seconds": round(time.time() - began, 1)}
         for label, low, high in BUCKETS:
             picked = (within >= low) & (within < high)
             row[f"kl@{label}"] = float(kls[picked].mean()) if picked.any() else None
@@ -213,36 +244,67 @@ def main():
     probe = Probe(llama)
     say(experiment="start", windows=[len(w) for w in windows], layers=llama.convolution["layers"], first=windows[0][:6])
     run = Runner(probe, windows)
-    rest = lambda: list(range(1, len(windows[0])))
     attention = [l for l, (short, _) in enumerate(llama.slots) if not short]
     for experiment in experiments:
         say(experiment=experiment, begins=True)
         if experiment == "all":
-            for bits, qmax in ((8, 127), (7, 63)):
-                run.run(f"{bits}-bit, every input", quant_all(qmax))
+            for bits in (8, 7):
+                run.run(f"{bits}-bit, every input", quant_all(qmax_of(bits)))
         elif experiment == "roles":
-            for bits, qmax in ((8, 127), (7, 63)):
+            for bits in (8, 7):
                 for role in ROLES:
-                    run.run(f"{bits}-bit, {role} only", {role: dict(qmax=qmax)})
+                    run.run(f"{bits}-bit, {role} only", {role: dict(qmax=qmax_of(bits))})
         elif experiment == "leave":
-            for bits, qmax in ((8, 127), (7, 63)):
+            for bits in (8, 7):
                 for role in ROLES:
-                    run.run(f"{bits}-bit, every input but {role}", {r: dict(qmax=qmax) for r in ROLES if r != role})
+                    run.run(f"{bits}-bit, every input but {role}", {r: dict(qmax=qmax_of(bits)) for r in ROLES if r != role})
         elif experiment == "positions":
-            for bits, qmax in ((8, 127), (7, 63)):
-                run.run(f"{bits}-bit, qkv, position 0 only", {"qkv": dict(qmax=qmax, rows=[0])})
-                run.run(f"{bits}-bit, qkv, positions 1.. only", {"qkv": dict(qmax=qmax, rows=rest())})
-                run.run(f"{bits}-bit, every input, position 0 only", quant_all(qmax, rows=[0]))
-                run.run(f"{bits}-bit, every input, positions 1.. only", quant_all(qmax, rows=rest()))
+            for bits in (8, 7):
+                qmax = qmax_of(bits)
+                run.run(f"{bits}-bit, qkv, position 0 only", {"qkv": dict(qmax=qmax, rows="first")})
+                run.run(f"{bits}-bit, qkv, positions 1.. only", {"qkv": dict(qmax=qmax, rows="rest")})
+                run.run(f"{bits}-bit, every input, position 0 only", quant_all(qmax, rows="first"))
+                run.run(f"{bits}-bit, every input, positions 1.. only", quant_all(qmax, rows="rest"))
         elif experiment == "layers":
             for layer in attention:
-                run.run(f"8-bit, qkv, position 0 only, layer {layer} only", {"qkv": dict(qmax=127, rows=[0], layers={layer})})
+                run.run(f"8-bit, qkv, position 0 only, layer {layer} only", {"qkv": dict(qmax=127, rows="first", layers={layer})})
             for layer in attention:
                 run.run(f"8-bit, qkv, every position, layer {layer} only", {"qkv": dict(qmax=127, layers={layer})})
         elif experiment == "split":
             for role in ("q_in", "k_in", "v_in"):
                 run.run(f"8-bit, {role}, every position", {role: dict(qmax=127)})
-                run.run(f"8-bit, {role}, position 0 only", {role: dict(qmax=127, rows=[0])})
+                run.run(f"8-bit, {role}, position 0 only", {role: dict(qmax=127, rows="first")})
+        elif experiment == "bos":
+            # what the first position's rounding alone does, by the bits it is rounded to
+            for bits in (5, 6, 7, 8, 9, 10, 11, 12, 14, 16):
+                run.run(f"{bits}-bit, qkv, position 0 only", {"qkv": dict(qmax=qmax_of(bits), rows="first")})
+            for bits in (6, 7, 8, 9, 10, 12):
+                run.run(f"{bits}-bit, every input, position 0 only", quant_all(qmax_of(bits), rows="first"))
+            for bits in (7, 8, 10):
+                run.run(f"{bits}-bit, every input but the first position's", quant_all(qmax_of(bits), rows="rest"))
+        elif experiment == "bosparts":
+            for bits in (8, 7):
+                for layer in attention:
+                    for part in ("q_in", "k_in", "v_in"):
+                        run.run(f"{bits}-bit, {part}, position 0 only, layer {layer}", {part: dict(qmax=qmax_of(bits), rows="first", layers={layer})})
+        elif experiment == "shifts":
+            # the same rounding with the groups beginning elsewhere: other draws of the same width
+            for bits in (8, 7):
+                for shift in (0, 3, 7, 11, 16, 21, 25, 29):
+                    run.run(f"{bits}-bit, every input, groups shifted by {shift}", quant_all(qmax_of(bits), shift=shift))
+            for bits in (8, 7):
+                for shift in (0, 3, 7, 11, 16, 21, 25, 29):
+                    run.run(f"{bits}-bit, qkv, position 0 only, groups shifted by {shift}", {"qkv": dict(qmax=qmax_of(bits), rows="first", shift=shift)})
+        elif experiment == "bits":
+            for bits in (6, 7, 8, 9, 10, 12, 14, 16):
+                run.run(f"{bits}-bit, every input", quant_all(qmax_of(bits)))
+        elif experiment == "noise":
+            for noise in (1e-4, 3e-4, 1e-3, 3e-3):
+                for seed in (1, 2, 3, 4):
+                    run.run(f"relative noise {noise} on every input, seed {seed}", {r: dict(noise=noise, seed=seed) for r in ROLES})
+            for noise in (1e-3, 1e-2):
+                for seed in (1, 2, 3, 4):
+                    run.run(f"relative noise {noise} on qkv, seed {seed}", {"qkv": dict(noise=noise, seed=seed)})
         elif experiment == "eps":
             for kind in ("op", "ffn", "q", "k", "final"):
                 for value in (1e-6, 1e-4):
@@ -252,25 +314,23 @@ def main():
                     run.run(f"epsilon of the {kind} norm {value}", None, setup)
             probe.eps = {"op": 1e-5, "ffn": 1e-5, "q": 1e-5, "k": 1e-5, "final": 1e-5}
         elif experiment == "mitigate":
-            for bits, qmax in ((8, 127), (7, 63)):
+            for bits in (8, 7):
+                qmax = qmax_of(bits)
                 every = quant_all(qmax)
-                # the input of q, k and v not rounded (the attention layers' input in float32)
                 run.run(f"{bits}-bit, every input but qkv", {r: dict(qmax=qmax) for r in ROLES if r != "qkv"})
-                # the BOS position's inputs not rounded at all
-                run.run(f"{bits}-bit, every input, position 0 not rounded", quant_all(qmax, rows=rest()))
-                # static outlier channels of the norm weights of the attention layers (the 8 largest, T92's way), and dynamic ones
+                run.run(f"{bits}-bit, every input, the first position not rounded", quant_all(qmax, rows="rest"))
+                run.run(f"{bits}-bit, every input, the qkv input of the first position not rounded", {**every, "qkv": dict(qmax=qmax, rows="rest")})
                 static = {l: np.argsort(-np.abs(llama.rms_att_weight[l]))[:8] for l in attention}
                 for top in (1, 2, 4, 8):
-                    run.run(f"{bits}-bit, every input, the {top} largest channels of a row taken out of qkv's groups",
-                            {**every, "qkv": dict(qmax=qmax, top=top)})
+                    run.run(f"{bits}-bit, every input, the {top} largest channels of a row taken out of qkv's groups", {**every, "qkv": dict(qmax=qmax, top=top)})
                 run.run(f"{bits}-bit, every input, the 8 largest norm weights taken out of qkv's groups", {**every, "qkv": dict(qmax=qmax, outliers=static)})
-                run.run(f"{bits}-bit, every input, groups of 16 for qkv", {**every, "qkv": dict(qmax=qmax, group=16)})
-                run.run(f"{bits}-bit, every input, groups of 8 for qkv", {**every, "qkv": dict(qmax=qmax, group=8)})
-                run.run(f"{bits}-bit, every input, groups of 4 for qkv", {**every, "qkv": dict(qmax=qmax, group=4)})
+                for group in (16, 8, 4):
+                    run.run(f"{bits}-bit, every input, groups of {group} for qkv", {**every, "qkv": dict(qmax=qmax, group=group)})
         elif experiment == "stats":
-            record = {"keep": True}
             rec = {}
             probe.window(windows[0], None, rec)
+            x0 = np.asarray(llama.token_embedding_table[np.asarray(windows[0])], dtype=np.float32)
+            say(experiment="stats", what="embedding rows", bos_rms=float(np.sqrt((x0[0] ** 2).mean())), others_rms_median=float(np.median(np.sqrt((x0[1:] ** 2).mean(axis=1)))))
             for l in attention:
                 xb, qr, kr = rec["xb"][l], rec["q_raw"][l], rec["k_raw"][l]
                 peak = np.abs(xb).max(axis=1) / np.sqrt((xb * xb).mean(axis=1))
@@ -278,18 +338,25 @@ def main():
                 amax = np.abs(g).max(axis=2, keepdims=True)
                 zero8 = (np.rint(g / np.where(amax > 0, amax / 127, 1)) == 0).mean(axis=(1, 2))
                 zero7 = (np.rint(g / np.where(amax > 0, amax / 63, 1)) == 0).mean(axis=(1, 2))
-                qh = qr.reshape(qr.shape[0], probe.heads, -1)
-                kh = kr.reshape(kr.shape[0], probe.kv, -1)
+                qh, kh = qr.reshape(qr.shape[0], probe.heads, -1), kr.reshape(kr.shape[0], probe.kv, -1)
                 qms, kms = (qh * qh).mean(axis=2), (kh * kh).mean(axis=2)
                 w = np.abs(llama.rms_att_weight[l])
                 att = rec["att"][l]
+                top = np.argsort(-np.abs(xb[0]))[:3]
                 say(experiment="stats", layer=l, norm_weight_max_over_median=float(w.max() / np.median(w)),
                     peak_over_rms_pos0=float(peak[0]), peak_over_rms_rest_mean=float(peak[1:].mean()), peak_over_rms_rest_max=float(peak[1:].max()),
+                    biggest_channels_pos0=[int(c) for c in top], biggest_values_pos0=[float(xb[0][c]) for c in top],
                     zero8_pos0=float(zero8[0]), zero8_rest=float(zero8[1:].mean()), zero7_pos0=float(zero7[0]), zero7_rest=float(zero7[1:].mean()),
                     q_ms_min=float(qms.min()), q_ms_median=float(np.median(qms)), k_ms_min=float(kms.min()), k_ms_median=float(np.median(kms)),
                     q_heads_ms_below_10eps=float((qms < 1e-4).mean()), k_heads_ms_below_10eps=float((kms < 1e-4).mean()),
                     q_ms_pos0_min=float(qms[0].min()), k_ms_pos0_min=float(kms[0].min()),
-                    attention_on_pos0_mean=float(att[:, 1:, 0].mean()), attention_on_pos0_max=float(att[:, 1:, 0].max()))
+                    attention_on_pos0_mean=float(att[:, 1:, 0].mean()), attention_on_pos0_max=float(att[:, 1:, 0].max()),
+                    v_pos0_rms=float(np.sqrt((rec["v_raw"][l][0] ** 2).mean())), v_rest_rms=float(np.sqrt((rec["v_raw"][l][1:] ** 2).mean())),
+                    k_pos0_rms_raw=float(np.sqrt(kms[0].mean())), k_rest_rms_raw=float(np.sqrt(kms[1:].mean())))
+            for l in range(len(llama.slots)):
+                x = rec["x"][l]
+                say(experiment="stats", residual_after_layer=l, pos0_rms=float(np.sqrt((x[0] ** 2).mean())), pos0_peak=float(np.abs(x[0]).max()),
+                    rest_rms_median=float(np.median(np.sqrt((x[1:] ** 2).mean(axis=1)))))
         else:
             say(experiment=experiment, unknown=True)
 
