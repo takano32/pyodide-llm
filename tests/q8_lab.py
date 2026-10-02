@@ -260,19 +260,28 @@ def selftest(lab):
     assert q8_0(torch.tensor(w), 16).shape == w.shape
     say("selftest: Q8_0 is tests/gguf_check.py's q8_0_of to the bit on random values")
 
-    def sample(gguf):
-        first, keys, per, size, axis = lab.spec(gguf)
-        shape = [3, 5]
-        shape.insert(axis, first + keys * per * size)
-        return torch.tensor(rng.standard_normal(shape).astype(np.float32)), (first, keys, per, size, axis)
+    # the shapes of the real models (key heads, value heads, key size, value size: the 4B and the 9B 16 : 32 of 128, the
+    # 27B 16 : 48) and of odd ones (five to a key head, 3 key heads, entries to a head of 1)
+    shapes = [(lab.keys, lab.values, lab.key_dim, lab.value_dim), (16, 32, 128, 128), (16, 48, 128, 128), (3, 15, 8, 4),
+              (2, 8, 16, 32), (5, 5, 8, 8)]
 
-    for gguf in EIGHT:
-        x, spec = sample(gguf)
-        once = tile(x, *spec)
-        back = llama2_convert.untiled(once.numpy(), *spec)
-        assert np.array_equal(back, x.numpy()), f"{gguf}: the converter's untiled is not tile's inverse"
-        assert not np.array_equal(once.numpy(), x.numpy())
-    say("selftest: llama2_convert.untiled puts back what tile does, for the eight tensors")
+    def sample(gguf, shape_of):
+        keys, values, key_dim, value_dim = shape_of
+        after, of_a_head, axis = EIGHT[gguf]
+        spec = (2 * keys * key_dim if after else 0, keys, values // keys, value_dim if of_a_head else 1, axis)
+        shape = [3, 5]
+        shape.insert(axis, spec[0] + keys * (values // keys) * spec[3])
+        return torch.tensor(rng.standard_normal(shape).astype(np.float32)), spec
+
+    for shape_of in shapes:
+        for gguf in EIGHT:
+            x, spec = sample(gguf, shape_of)
+            once = tile(x, *spec)
+            back = llama2_convert.untiled(once.numpy(), *spec)
+            assert np.array_equal(back, x.numpy()), f"{gguf} {shape_of}: the converter's untiled is not tile's inverse"
+            if shape_of[0] != shape_of[1] and shape_of[0] > 2:
+                assert not np.array_equal(once.numpy(), x.numpy())
+    say(f"selftest: llama2_convert.untiled puts back what tile does, for the eight tensors of {len(shapes)} shapes")
     path = os.environ.get("LLAMACPP_QWEN")
     if path:
         import ast
@@ -287,13 +296,15 @@ def selftest(lab):
                         exec(compile(ast.Module([item], []), path, "exec"), namespace)
                         theirs = namespace["_reorder_v_heads"]
         assert theirs, "no _reorder_v_heads in the file"
-        for gguf in EIGHT:
-            x, (first, keys, per, size, axis) = sample(gguf)
-            # llama.cpp applies it to the value part only (modify_tensors cuts q and k off first)
-            part = x.narrow(axis, first, x.shape[axis] - first)
-            llama_cpp = torch.cat([x.narrow(axis, 0, first), theirs(part, axis, keys, per, size)], dim=axis)
-            assert torch.equal(llama_cpp, tile(x, first, keys, per, size, axis)), f"{gguf}: llama.cpp's own function differs"
-        say(f"selftest: llama.cpp's own _reorder_v_heads ({path}) is tile() for the eight tensors")
+        for shape_of in shapes:
+            for gguf in EIGHT:
+                x, (first, keys, per, size, axis) = sample(gguf, shape_of)
+                # llama.cpp applies it to the value part only (modify_tensors cuts q and k off first)
+                part = x.narrow(axis, first, x.shape[axis] - first)
+                llama_cpp = torch.cat([x.narrow(axis, 0, first), theirs(part, axis, keys, per, size)], dim=axis)
+                assert torch.equal(llama_cpp, tile(x, first, keys, per, size, axis)), f"{gguf} {shape_of}: llama.cpp's own function differs"
+        say(f"selftest: llama.cpp's own _reorder_v_heads ({path}) is tile() for the eight tensors of {len(shapes)} shapes, "
+            f"two to one and three to one among them")
 
 
 # ------------------------------------------------------------------------------------------------------- the jobs
