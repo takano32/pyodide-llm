@@ -21,5 +21,9 @@ if [ -n "${T272_ORIGINAL:-}" ]; then
   python3 tests/perplexity_prepare.py "$source" .tmp/real/original float32 2>&1 | tail -1 | cut -c1-200 | sed 's/^/t272: /'
   export T272_ORIGINAL=.tmp/real/original
 fi
-node tests/wikipedia.mjs "$language" ".tmp/t272/$language.txt"
-python tests/t272_probe.py ".tmp/real/$model" ".tmp/t272/$language.txt" "$tokens" "$@"
+# $1 may name several languages (en,ja): the model is fetched once and the probe runs for each
+for one in ${language//,/ }; do
+  echo "t272: language $one"
+  node tests/wikipedia.mjs "$one" ".tmp/t272/$one.txt"
+  python tests/t272_probe.py ".tmp/real/$model" ".tmp/t272/$one.txt" "$tokens" "$@"
+done
