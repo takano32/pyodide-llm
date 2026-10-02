@@ -81,7 +81,11 @@ assert.equal(modelBytes(largest), 7.7e9);
 assert.match(memoryWarning(largest, 4), /needs about 8,000 MB of memory, and this device has 4 GB:/);
 assert.equal(memoryWarning(largest, 8), "");
 assert.ok(largest.rebuilt && largest.original === largest.hf.vocabulary.repo && largest.download === 5946648928);
-assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id), ["hf-ternary-bonsai-2-27b"], "rebuilt is for a GGUF no check can hold to its original");
+assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id), ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"],
+  "rebuilt is for a GGUF no check can hold to its original");
+// its two forms share one conversion (kept.js's replaced() takes both ids), and both are kept ternary
+assert.deepEqual(byId("hf-ternary-bonsai-2-27b-thinking").shares, ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]);
+assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8), "ternary");
 // T133: Chromium says at most 8 GB: a device at the cap may have any more, so six bits are not asked for there, and
 // only a model past 8 GB is warned of
 const seven = { name: "7B", hf: {}, note: "int8 9.2 GB" }, three = { name: "3B", hf: {}, note: "int8 3.6 GB" };

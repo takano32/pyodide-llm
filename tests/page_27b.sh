@@ -32,7 +32,7 @@
 #              PTQ1_0 block read in the order of its bytes), each through the comparison of the first text: it must fail
 #   speed      tokens a second by the count of threads, the logits the same to the bit, a prompt in blocks, the GPU refused
 #   memory     the whole context: what is placed after the checkpoint against footprint()
-#   write      the page's generate() for QUESTIONS (lines of a file, or the two here), with THINKING=1 in the form that
+#   write      the page's generate() for QUESTIONS (lines of a file, or the three here), with THINKING=1 the entry that
 #              thinks, at most TOKENS positions each
 # The stages after convert use its checkpoint; page and breaks use the reference's files: of the reference stage of
 # the same run, or of an earlier run that ran it (REFERENCES=<its id>: tests.yml keeps them a week).
@@ -205,11 +205,11 @@ if has write; then
   questions=${QUESTIONS:-}
   if [ -z "$questions" ]; then
     questions="$work/questions.txt"
-    printf '%s\n' "これからの流行りを3つ挙げてください。" "What is 17 times 24?" > "$questions"
+    printf '%s\n' "これからの流行りを3つ挙げてください。" "What is 17 times 24?" "日本でいちばん高い山と、その高さを教えてください。" > "$questions"
   fi
   while IFS= read -r question; do
     [ -n "$question" ] || continue
-    node tests/page-27b.mjs "$work/page" write "$question" --tokens "${TOKENS:-1500}" ${THINKING:+--thinking} < /dev/null || status=1
+    node tests/page-27b.mjs "$work/page" write "$question" --tokens "${TOKENS:-1500}" ${THINKING:+--entry "$id-thinking"} < /dev/null || status=1
   done < "$questions"
 fi
 exit $status

@@ -7,7 +7,7 @@
 //                                                        [--threads 4] [--lines none | <logits>,<kl>,<kv>]
 //   node tests/page-27b.mjs <out> speed [--threads 1,2,4] [--positions 12] [--rounds 2]
 //   node tests/page-27b.mjs <out> memory [--threads 4]
-//   node tests/page-27b.mjs <out> write <prompt> [--tokens 1500] [--thinking] [--seed 1] [--threads 4]
+//   node tests/page-27b.mjs <out> write <prompt> [--tokens 1500] [--seed 1] [--threads 4]
 //   node tests/page-27b.mjs <out> convert <folder with config.json, the tokenizer and the GGUF> [--context 4096]
 //
 // <out>: what tests/page_27b.py convert (or tests/perplexity_prepare.py) wrote, <out>.bin, <out>.tokenizer.bin and
@@ -35,8 +35,8 @@
 // memory: the whole context in blocks of 16, as a long prompt goes: what forward.js has placed after the checkpoint
 //   at its end against footprint(), which the worker sizes the memory by, and the tokens a second on the way.
 // write: the page's generate() (Python's loop, the sampling kernels, the entry's sampling and format) for a prompt:
-//   how many tokens until it stops, how long, and the text. --thinking: the format that thinks (T236's, which is this
-//   model's reasoning_effort medium: no system turn).
+//   how many tokens until it stops, how long, and the text (--entry hf-ternary-bonsai-2-27b-thinking: the entry that
+//   thinks, its format and its sampling).
 // convert: the page's conversion (Pyodide, NumPy with 32-bit integers, the kernels' quantizer) of the GGUF into a
 //   64-bit shared memory through a sink, as the worker's checkpointSink has it, fed 16 MiB at a time; the time, the
 //   megabytes a second, Pyodide's heap at the end, and the sha256 of the checkpoint (page_27b.sh holds it to the
@@ -192,11 +192,8 @@ if (isMainThread) {
   if (mode === "write") {
     // generate() is Python's loop: Pyodide and the forward pass in one worker, as on the page
     if (!entry?.template) throw new Error("write needs an entry of the list with a format");
-    const thinking = args.includes("--thinking");
-    Object.assign(job, { prompt: third, thinking, tokens: Number(option("--tokens", 1500)), seed: Number(option("--seed", 1)), sampling: entry.generation, options,
-      // T236's two formats: the one that thinks is the one that answers at once without its empty thought
-      template: thinking ? entry.template.replace(/\n<\/think>\n\n$/, "") : entry.template,
-      tokenizer: fs.readFileSync(`${out}.tokenizer.bin`) });
+    Object.assign(job, { prompt: third, thinking: entry.template.endsWith("<think>\n"), entry: entry.id, tokens: Number(option("--tokens", 1500)),
+      seed: Number(option("--seed", 1)), sampling: entry.generation, options, template: entry.template, tokenizer: fs.readFileSync(`${out}.tokenizer.bin`) });
     job.text = filled(job.template, third);
   }
   const worker = new Worker(new URL(import.meta.url), { workerData: { memory, base, size, plan, wide, halfKeys, header, forwardOptions, job } });
@@ -438,14 +435,16 @@ if (isMainThread) {
     const { sampling } = job;
     py.globals.set("PROMPT", job.text);
     py.globals.set("SETTINGS", py.toPy({ steps: job.tokens, temperature: sampling.temperature, topp: sampling.topp, repetition_penalty: sampling.repetition_penalty, seed: job.seed }));
-    say(`writing with ${JSON.stringify(sampling)} and the seed ${job.seed}, ${live.engine.threads} threads, at most ${job.tokens} positions, the format ${JSON.stringify(job.template)}`);
+    say(`${job.entry}: writing with ${JSON.stringify(sampling)} and the seed ${job.seed}, ${live.engine.threads} threads, at most ${job.tokens} positions, the format ${JSON.stringify(job.template)}`);
     const began = performance.now();
     const text = py.runPython(`"".join(llama.generate(PROMPT, echo=False, **SETTINGS))`);
     const seconds = (performance.now() - began) / 1000;
     const stats = py.runPython("llama.stats").toJs({ dict_converter: Object.fromEntries });
     const closed = text.indexOf("</think>");
+    py.globals.set("THOUGHT", text.slice(0, Math.max(closed, 0)));
+    const thought = py.runPython("len(llama.tokenizer.encode(THOUGHT, llama.specials))");
     say(`${JSON.stringify(job.prompt)}${job.thinking ? " (thinking)" : ""}: ${seconds.toFixed(0)} s, ${JSON.stringify(stats)}, ${cpu}; ` +
-      (job.thinking ? (closed < 0 ? "the thought did not end; " : `the thought ended after ${closed} characters; `) : "") + `it wrote ${JSON.stringify(text)}`);
+      (job.thinking ? (closed < 0 ? "the thought did not end; " : `the thought ended after ${thought} tokens (${closed} characters); `) : "") + `it wrote ${JSON.stringify(text)}`);
     await live.engine.release();
   }
   parentPort.postMessage({ failed });

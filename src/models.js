@@ -815,23 +815,24 @@ const LISTED = [
   // matrix's input by signs and a Walsh-Hadamard transform). Kept ternary (T230, T231: 7.66 GB; as int8 it would be
   // 30 GB), on a 64-bit memory (7.70 GiB with its forward pass at 4096 positions), on the CPU (a hybrid, ternary,
   // rotated model has no GPU path yet). The PTQ1_0 file, the smaller of the two that hold the same weights (5.95 GB
-  // against PQ2_0's 7.21 GB; both convert to the same checkpoint, byte for byte): on a line slower than what the
-  // conversion keeps up with it is ready sooner, by the 1.26 GB less it fetches (TODO.md's T233 has the numbers).
+  // against PQ2_0's 7.21 GB; both convert to the same checkpoint, byte for byte): Pyodide converts it at 27 MB/s and
+  // PQ2_0 at 53, so on a line slower than 33 MB/s it is ready sooner, by the 1.26 GB less it fetches (TODO.md's T233).
   // The vocabulary and config.json are those of the model it is built from, Qwen/Qwen3.8-27B, whose weights are not
   // these (rebuilt: no check holds this GGUF's tensors to that repository's; tests/unfold_27b.py and
   // tests/page_27b.sh hold them, to the base model in the turned-back basis and to Prism ML's fork of llama.cpp).
-  // Its chat_template calls a macro, as a Qwen3.5's: the format is the Qwen3.5's by hand, which is what the real
-  // template writes with enable_thinking false, and the BOS is the format's own <|im_start|> (qwen35: this family is
-  // much worse with <|endoftext|> in front, T236). One entry, the form that answers at once: the model thinks by
-  // default (reasoning effort xhigh, for which its card leaves room for 16384 tokens), hours at the speed of a CPU.
-  // The sampling is the card's for that form (temperature 0.7, top-p 0.8; its top-k and presence penalty the page's
-  // sampler has not)
-  { group: "hf", id: "hf-ternary-bonsai-2-27b", name: "Ternary Bonsai 2 27B (no thinking)",
-    note: "answers at once · 日本語 / English · ternary weights · fetches 5.9 GB (GGUF) → ternary 7.7 GB · desktop only · Chrome and Firefox",
-    ...ggufOf("prism-ml/Ternary-Bonsai-2-27B-gguf", "b072e1d3b35a0a630cece372c2127528e0994386", "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
-      "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), download: 5946648928, rebuilt: true,
-    weights: "ternary", conversion: {}, options: qwen35, template: QWEN35_AT_ONCE, generation: atOnce,
-    prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+  // Its chat_template calls a macro, as a Qwen3.5's: the two formats are the Qwen3.5's by hand, and the BOS is the
+  // format's own <|im_start|> (qwen35: this family is much worse with <|endoftext|> in front, T236). The one that
+  // answers at once is what the real template writes with enable_thinking false. The one that thinks is what it
+  // writes with reasoning_effort "medium" (no system turn), not the model's own default, "xhigh" (a system turn that
+  // asks for careful thought, for which its card leaves room for 16384 tokens: hours at the speed of a CPU, and past
+  // this context); with medium the thought ended after 74 and 608 tokens on two questions in CI. The sampling: the
+  // card's 0.7 and 0.8 without thinking; with thinking it names 1.0 and 0.95 with a top-k and a min-p, which the
+  // page's sampler has not, so Qwen3's 0.6 and 0.95 as for a Qwen3.5
+  ...thinkingAndNot("hf-ternary-bonsai-2-27b", "Ternary Bonsai 2 27B",
+    ggufOf("prism-ml/Ternary-Bonsai-2-27B-gguf", "b072e1d3b35a0a630cece372c2127528e0994386", "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
+      "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 5946648928,
+    "ternary weights · fetches 5.9 GB (GGUF) → ternary 7.7 GB · desktop only · Chrome and Firefox",
+    { options: qwen35, weights: "ternary", rebuilt: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
   // T253: Granite 4.2 (IBM; Japanese is among the languages its card says it was tested in), a Llama whose attention
   // multiplies its scores by config.json's attention_multiplier, which the converter puts into q (llama2_convert's
   // query_scale()). IBM's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals. The 3B fits a

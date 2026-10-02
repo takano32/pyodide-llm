@@ -87,6 +87,9 @@ KNOWN = {
 # of Qwen3.5 (a family, not a list of entries: the six of T247 were not in the first one)
 # T233: and Ternary Bonsai 2 27B, a Qwen3.8 with the Qwen3.5's format
 STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-ternary-bonsai-2-")
+# T233: what an entry's format is the real template's with, besides enable_thinking: Ternary Bonsai 2 27B's entry that
+# thinks is its reasoning_effort "medium" (no system turn: T236's format of a Qwen3.5), not its default, "xhigh"
+TEMPLATE_SAYS = {"hf-ternary-bonsai-2-27b-thinking": {"reasoning_effort": "medium"}}
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
 # (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
 ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9a775",
@@ -256,6 +259,7 @@ def main():
         # T236: said either way. A Qwen3's template thinks unless told not to, a Qwen3.5 0.8B's only when told to
         thinking = {"enable_thinking": False} if "(no thinking)" in entry["name"] else \
             {"enable_thinking": True} if "(thinking)" in entry["name"] else {}
+        thinking = {**thinking, **TEMPLATE_SAYS.get(entry["id"], {})}
         known = KNOWN.get(entry["id"], {})
         same, explained, diffs = 0, 0, []
         for prompt in prompts:
