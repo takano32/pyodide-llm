@@ -69,6 +69,7 @@ env:
 
 jobs:
   gpu:
+    if: false  # (t232-broken: the mutants run on Dawn alone)
     name: ${{ matrix.os }} ${{ matrix.engine }}
     runs-on: ${{ matrix.os }}
     # T147: the made-up model's every tiled shader on SwiftShader; gpu-check waits for the page 90 minutes at most
@@ -188,10 +189,25 @@ jobs:
           for id in $REAL; do ids="$ids .tmp/real/$id.json"; done
           # T193: the suite's models when none are given: every made-up one (light), and the site's three too (full:
           # gpu-check's default)
-          [ "$SUITE" = full ] && suite="" || suite=made-up
-          echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-${suite:-made-up and the site models}}"
-          node tests/gpu-check.mjs ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} --engine dawn --webgpu .tmp/dawn/node_modules/webgpu 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
-          exit "${PIPESTATUS[0]}"
+          # t232-broken: the ternary GPU path broken on purpose, a mutant at a time (tests/t232-mutants.mjs): the first round
+          # is the branch as it is and must pass, every mutant must fail
+          status=0
+          for mutant in none $(node tests/t232-mutants.mjs); do
+            git checkout -q -- public
+            [ "$mutant" = none ] || node tests/t232-mutants.mjs "$mutant"
+            set +e
+            node tests/gpu-check.mjs synthetic-ternary synthetic-ternary-calm synthetic-ternary-wide --nan none --engine dawn --webgpu .tmp/dawn/node_modules/webgpu > .tmp/mutant.log 2>&1
+            code=$?
+            set -e
+            echo "## mutant $mutant: gpu-check exit $code" | tee -a "$GITHUB_STEP_SUMMARY"
+            grep -E "FAILED|^    - |wrong:|unusable|on the CPU \\(" .tmp/mutant.log | cut -c1-700 | head -60 | sed 's/^/  - /' | tee -a "$GITHUB_STEP_SUMMARY" || true
+            if [ "$mutant" = none ]; then
+              [ "$code" -eq 0 ] || { echo "  - THE BRANCH ITSELF FAILED"; tail -40 .tmp/mutant.log; status=1; }
+            else
+              [ "$code" -ne 0 ] || { echo "  - MUTANT PASSED: $mutant — FAILED"; status=1; }
+            fi
+          done
+          exit $status
 
       # T225's review: /benchmark/'s layer and token checks on devices that round a float32 to a float16 the other ways WGSL
       # lets a device (§15.7.6): Direct3D, which Chrome on Windows runs, rounds toward zero, where lavapipe's own is the
