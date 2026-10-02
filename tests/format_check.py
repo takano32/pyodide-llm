@@ -89,8 +89,10 @@ KNOWN = {
 # ids is let by (same_ids; the first BOS may differ, T131): that let the design of before T236, <|endoftext|> in front
 # of <|im_start|> (which costs a Qwen3.5 much, TODO.md's T236), pass for a Qwen3.5 as well, and same_ids still does (the
 # extra token is not the one the real ids begin with). T253's Granite 4.2 are made the same way, and T247's other sizes
-# of Qwen3.5 (a family, not a list of entries: the six of T247 were not in the first one)
-STRICT = ("hf-qwen3.5-", "hf-granite-4.2-")
+# of Qwen3.5 (a family, not a list of entries: the six of T247 were not in the first one). T254's review: MiniCPM5's template
+# writes its BOS (<s>, bos_token) itself as its first token, and the page puts that one first and writes the format after it:
+# the same relation, so the same exactness (the lenient rule let a token of another kind in front of the real <s> pass)
+STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-")
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
 # (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
 ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9a775",
@@ -264,7 +266,10 @@ def main():
                                            **{key: value for key, value in options.items() if key in accepted})
         reference = AutoTokenizer.from_pretrained(folder)
         # T236: said either way. A Qwen3's template thinks unless told not to, a Qwen3.5 0.8B's only when told to
-        thinking = {"enable_thinking": False} if "(no thinking)" in entry["name"] else \
+        # (--hf, T253's review: what ?hf= gets is the template with nothing said of thinking, so the real one is asked with
+        # nothing said either: a "(no thinking)" entry was held to enable_thinking=False in this mode, a form of the list's
+        # own that the converter alone cannot know, and MiniCPM5's two sizes were 0/9 for that and nothing else)
+        thinking = {} if alone else {"enable_thinking": False} if "(no thinking)" in entry["name"] else \
             {"enable_thinking": True} if "(thinking)" in entry["name"] else {}
         known = KNOWN.get(entry["id"], {})
         same, explained, diffs = 0, 0, []
