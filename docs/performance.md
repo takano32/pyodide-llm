@@ -203,7 +203,10 @@ conversion about 5 seconds.
 
 Ternary Bonsai 2 27B (ternary, 7.66 GB on a 64-bit memory), in Chromium on CI's runners (the deployed page, 4
 threads): ready in 291 s and 1.2 tok/s on x86-64, ready in 235 s and 2.2 tok/s on arm64, and a second visit opens
-the 7.66 GB it kept (OPFS) in 26 s. In Node it writes 1.3 to 1.6 tok/s on 4 logical cores of x86-64 and 2.4 on
+the 7.66 GB it kept (OPFS) in 26 s. On a Windows runner Chromium was ready in 397 s (1.1 tok/s) and the second
+visit took 67 s (its disk reads the 7.66 GB at about 135 MB/s), and Firefox 156 (the installed one on Linux x86-64,
+driven by Selenium) was ready in 222 s and wrote 1.1 tok/s with a 64-bit memory of 7.7 GiB shared by 4 threads.
+Browsers with no 64-bit memory (Safari, and Playwright's WebKit) refuse the model after about 20 s. In Node it writes 1.3 to 1.6 tok/s on 4 logical cores of x86-64 and 2.4 on
 arm64, about twice what Prism ML's fork of llama.cpp writes on the same runners' CPUs (see
 [quantization.md](quantization.md)). Its conversion takes 216 s in Pyodide, which a fast line cannot go under; at 8
 MB/s the 5.95 GB take about 12 minutes to fetch. Not measured on any device.
