@@ -10,7 +10,7 @@
 //
 // PROMPTS: a JSON list (else QUESTIONS below, six Japanese and six English; PICK="0,1,3": only these of them). SEEDS: the seeds of
 // the sampled answers, as the entry's own sampling writes them (else "1"). GREEDY=1: and the greedy answer of each question first.
-// BOS=<token id>: begin every text with that token, and NOFORMAT=1: and no format, the bare question (what ?hf=<repository> gives a
+// TEMPERATURE=<number>: instead of the entry's. BOS=<token id>: begin every text with that token, and NOFORMAT=1: and no format, the bare question (what ?hf=<repository> gives a
 // model whose chat template this converter cannot read: Granite 4.2's, which has an inline if and an empty list in it).
 // The lines are `answers <id>: …` (ci.mjs's --grep answers).
 import fs from "node:fs";
@@ -35,7 +35,9 @@ pyodide.FS.writeFile("tokenizer.bin", fs.readFileSync(`${out}.tokenizer.bin`));
 const prompts = process.env.PROMPTS ? JSON.parse(process.env.PROMPTS)
   : process.env.PICK ? process.env.PICK.split(",").map((at) => QUESTIONS[Number(at)]) : QUESTIONS;
 const seeds = (process.env.SEEDS ?? "1").split(/\s+/).filter(Boolean).map(Number);
-const { temperature, topp, repetition_penalty } = page.generation;
+const { topp, repetition_penalty } = page.generation;
+// TEMPERATURE=0.7: the entry's temperature replaced (what a lower temperature does to the same questions and seeds)
+const temperature = process.env.TEMPERATURE ? Number(process.env.TEMPERATURE) : page.generation.temperature;
 const bare = Boolean(process.env.NOFORMAT);
 pyodide.globals.set("CHECKPOINT", `${out}.bin`);
 pyodide.globals.set("OPTIONS", pyodide.toPy({ ...page.options, ...(process.env.BOS ? { bos: Number(process.env.BOS) } : {}) }));
