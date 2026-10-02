@@ -236,6 +236,10 @@ class Runner:
         if setup:
             setup(self.probe)
         lps = [log_softmax(self.probe.window(ids, quant, **window)) for ids in self.windows]
+        return self.row(name, lps, began)
+
+    def row(self, name, lps, began):
+        """The row of a run whose log probabilities (one array per window) are lps, against this runner's base."""
         target = np.concatenate([lp[np.arange(len(ids) - 1), np.asarray(ids[1:])] for lp, ids in zip(lps, self.windows)])
         kls = np.concatenate([(np.exp(b) * (b - lp)).sum(axis=1)[:-1] for b, lp in zip(self.base_lp, lps)])
         diff = max(float(np.abs(b - lp).max()) for b, lp in zip(self.base_lp, lps))
@@ -384,6 +388,50 @@ def main():
             for eps in (0.003, 0.01, 0.03):
                 for seed in (1, 2, 3, 4):
                     orun.run(f"the float32 original, the first attention layer's values of the first position moved by {eps} (seed {seed})", None, perturb={(attention[0], "v"): (eps, seed)})
+        elif experiment == "weights":
+            # the Q8_0 weights' own loss against the float32 original: is it noise at each position (z about 1) or a shift every position
+            # shares (z large), and how much is KL; then the same with the activations rounded (the original is the base)
+            import os
+            original = load(os.environ["T272_ORIGINAL"])
+            orun = Runner(Probe(original), windows)
+            say(experiment="weights", original_float32_ppl=math.exp(orun.base), int8_weights_ppl=math.exp(run.base))
+            began = time.time()
+            orun.row("the int8 weights against the float32 original", run.base_lp, began)
+            for bits in (8, 7):
+                for rows in (None, "rest"):
+                    label = "" if rows is None else " but the first position's"
+                    began = time.time()
+                    lps = [log_softmax(probe.window(ids, quant_all(qmax_of(bits), rows=rows))) for ids in windows]
+                    orun.row(f"the int8 weights with {bits}-bit, every input{label}, against the float32 original", lps, began)
+        elif experiment == "heads":
+            # which of the eight heads of the first attention layer's values (of the first position) carry the damage of the rounding
+            # error of their input: the error of v (all of it) kept in one head at a time
+            layer, a = attention[0], 0
+            rec = {}
+            probe.window(windows[0], None, rec)
+            xb0 = rec["xb"][layer][:1]
+            v0 = (xb0 @ llama.wv[a].T)[0]
+            for bits in (8, 7):
+                xq = fake_quantize(xb0, qmax_of(bits))
+                dv = ((xq - xb0) @ llama.wv[a].T)[0]
+                for h in range(llama.n_kv_heads):
+                    part = np.zeros_like(dv)
+                    part[h * llama.head_size:(h + 1) * llama.head_size] = dv[h * llama.head_size:(h + 1) * llama.head_size]
+                    say(experiment="heads", bits=bits, head=h, error_norm_over_values_norm=float(np.linalg.norm(part) / np.linalg.norm(v0)),
+                        head_values_norm_over_values_norm=float(np.linalg.norm(v0[h * llama.head_size:(h + 1) * llama.head_size]) / np.linalg.norm(v0)))
+                    run.run(f"{bits}-bit rounding error of the first position's values at the first attention layer, head {h} only", None, add={(layer, "v"): part})
+        elif experiment == "lottery":
+            # the damage of the rounding of the one vector at many (equally valid) places of the groups: its distribution
+            layer = attention[0]
+            for bits, shifts in ((8, range(32)), (7, range(32)), (9, range(0, 32, 4)), (10, range(0, 32, 4)), (6, range(0, 32, 4))):
+                changes = []
+                for shift in shifts:
+                    row = run.run(f"{bits}-bit, the first position's input to the first attention layer's values only, groups shifted by {shift}",
+                                  {"v_in": dict(qmax=qmax_of(bits), rows="first", layers=[layer], shift=shift)})
+                    changes.append(row["change_vs_base_pct"])
+                changes = np.array(changes)
+                say(experiment="lottery", bits=bits, draws=len(changes), mean_pct=float(changes.mean()), sd_pct=float(changes.std()), min_pct=float(changes.min()),
+                    max_pct=float(changes.max()), positive=int((changes > 0).sum()), mean_abs_pct=float(np.abs(changes).mean()))
         elif experiment == "answers":
             import re
             questions = ["日本でいちばん高い山はどこですか？", "これからの流行りを3つ挙げてください。", "17 × 24 はいくつですか？途中の計算も書いてください。",
