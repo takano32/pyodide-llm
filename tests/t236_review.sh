@@ -185,6 +185,7 @@ case "$stage" in
     size=${1:?a size}
     revision=${2:?a revision}
     mode=${3:-}
+    if [ "${4:-}" = page-start ]; then export T246_BOS=151644 T246_CHAT_BOS=0; fi  # the page's 8B since T250's review
     reference_tools
     pip install --quiet transformers==4.57.6
     article ja "$dir/ja-tokyo.txt" 東京都

@@ -21,6 +21,7 @@
 import hashlib
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -35,7 +36,9 @@ from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
 sys.path.insert(0, "public")
 import llama2_numpy as N  # noqa: E402
 
-BOS, IM_END = 151643, 151645
+# T246_BOS: what stands before a text (the list's 8B has begun at <|im_start|>, 151644, since T250's review: the 8B is
+# 70% worse on plain text with <|endoftext|> in front); T246_CHAT_BOS=0: a chat turn is the real template's ids alone
+BOS, IM_END = int(os.environ.get("T246_BOS", 151643)), 151645
 started = time.time()
 
 
@@ -74,7 +77,7 @@ if chat_file:
         pair = json.loads(line)
         prompt = tokenizer.apply_chat_template([{"role": "user", "content": pair["prompt"]}], add_generation_prompt=True,
                                                tokenize=False)
-        head = [BOS] + tokenizer(prompt, add_special_tokens=False)["input_ids"]
+        head = ([BOS] if os.environ.get("T246_CHAT_BOS", "1") == "1" else []) + tokenizer(prompt, add_special_tokens=False)["input_ids"]
         answer = tokenizer(pair["answer"], add_special_tokens=False)["input_ids"] + [IM_END]
         language = "ja" if any(ord(c) > 0x2E80 for c in pair["prompt"]) else "en"
         items.append((f"chat-{number}-{language}", head + answer, len(head)))
