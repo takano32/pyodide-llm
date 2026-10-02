@@ -382,7 +382,12 @@ def main():
         import reference_qwen35 as ref
 
         directory = Path(arguments.directory)
-        entry = ref.LARGE[arguments.model]
+        if arguments.model in ref.LARGE:
+            entry = ref.LARGE[arguments.model]
+        elif arguments.model in ref.OTHERS:
+            entry = dict(zip(("repo", "revision"), ref.OTHERS[arguments.model]))
+        else:  # the 0.8B
+            entry = {"repo": ref.REPO, "revision": ref.REVISION}
         for name in ("config.json", "tokenizer.json", "tokenizer_config.json", "model.safetensors.index.json"):
             ref.fetch(name, directory, entry["repo"], entry["revision"])
         for shard in sorted(set(json.loads((directory / "model.safetensors.index.json").read_text())["weight_map"].values())):

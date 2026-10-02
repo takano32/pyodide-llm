@@ -79,6 +79,13 @@ case "$stage" in
     article en "$dir/en.txt"  # T85's three articles, as tests/page_qwen35.sh has them
     LLAMACPP_QWEN="$dir/qwen.py" python tests/q8_lab.py "$dir/orig" --text "$dir/en.txt" --jobs "${1:-all}" --save "$dir/lab"
     ;;
+  lab-model)  # lab-model <0.8B|2B> [jobs]: the same on a model whose value heads are not tiled (as many to a key head)
+    reference_tools
+    transformers_of_t229
+    swap
+    article en "$dir/en.txt"
+    python tests/q8_lab.py "$dir/orig" --text "$dir/en.txt" --model "${1:?a size}" --jobs "${2:-v0,v1,only-,all-but-}" --save "$dir/lab"
+    ;;
   engine)  # the engine on the 4B's GGUF against transformers on the original, and on the original rounded to Q8_0
     reference_tools
     transformers_of_t229
