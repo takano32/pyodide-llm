@@ -92,8 +92,15 @@ def fetch(entry, name, directory):
         for attempt in range(3):  # huggingface.co drops a connection now and then: three tries, a minute each
             try:
                 with urllib.request.urlopen(url, timeout=60) as response, open(partial, "wb") as out:
+                    expected, written = response.headers.get("Content-Length"), 0
                     while block := response.read(CHUNK):
                         out.write(block)
+                        written += len(block)
+                # http.client's read(amount) returns what came when the connection closes early, without a word: a
+                # GGUF that stopped short came out as "The file ended before all of its tensors were read." (the
+                # review of T247, a 4.5 GB file on a runner), a minute into its conversion
+                if expected is not None and written != int(expected):
+                    raise OSError(f"{url}: {written:,} of {int(expected):,} bytes came")
                 break
             except urllib.error.HTTPError as error:
                 if error.code < 500 or attempt == 2:
