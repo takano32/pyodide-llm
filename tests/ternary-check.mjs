@@ -19,6 +19,7 @@
 //   ternary_x: the bytes and scales of llama2_numpy.ternary() (the sign + 1 of value j at bits 2 (j & 3) of byte
 //     j >> 2, the largest |value| of a group), and its refusal of a value that is neither 0 nor of that size.
 import fs from "node:fs";
+import v8 from "node:v8";
 import { addressed } from "../public/jobs.js";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -32,18 +33,25 @@ const HIGH = 4 * 2 ** 30 + 2 * 65536;
 // an address above 4 GiB at its low 32 bits, so that every kernel that takes a scale so (the ternary ones' weights' scales, the
 // int8 tile's) reads the wrong number there (Chromium 148's V8 on arm64 reads them right: T230's review). A module of its own
 // (written out here: a 64-bit memory it imports, splat(address) = v128.load32_splat of it, lane 0) says whether this engine
-// does: where it does, the config above 4 GiB is no check of the kernels and is left out, saying why.
+// does. T233's review found that it is V8's Liftoff alone (arm64; fixed in V8 14.3, Chrome 143: ff9dbb26c2), whose code a
+// function leaves for TurboFan's within milliseconds of its first call, and whose first call the canary is: so where it
+// fails, Liftoff is turned off for what is compiled from here (the kernels below) and the canary asked again, and the
+// kernels above 4 GiB are checked as TurboFan has them. Where it still fails, the config is left out, saying why.
+// (The canary asked again, and the kernels loaded after it, are the same modules with a custom section the engine
+// ignores: V8 keeps the compiled code of a module by its bytes, and the same bytes would hand back the functions Liftoff
+// compiled for the first question and for the 64-bit kernels of the config before, which read the splats wrongly.)
 const CANARY = Uint8Array.from([0, 97, 115, 109, 1, 0, 0, 0, 1, 6, 1, 96, 1, 126, 1, 125, 2, 15, 1, 3, 101, 110, 118, 6, 109, 101, 109, 111, 114, 121, 2, 4, 1,
   3, 2, 1, 0, 7, 9, 1, 5, 115, 112, 108, 97, 116, 0, 0, 10, 13, 1, 11, 0, 32, 0, 253, 9, 2, 0, 253, 31, 0, 11]);
-function splatsRight(memory) {
-  const splat = new WebAssembly.Instance(new WebAssembly.Module(CANARY), { env: { memory } }).exports.splat;
+function splatsRight(memory, again = false) {
+  const bytes = again ? Uint8Array.from([...CANARY, 0, 2, 1, 97]) : CANARY;
+  const splat = new WebAssembly.Instance(new WebAssembly.Module(bytes), { env: { memory } }).exports.splat;
   const F = new Float32Array(memory.buffer), at = HIGH + 4096;
   F[at / 4] = 1.5;
   F[(at - 2 ** 32) / 4] = 2.5;  // where an address that lost its upper 32 bits would read
   return splat(BigInt(at)) === 1.5;
 }
 for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
-  let memory;
+  let memory, liftoffOff = false;
   try {
     memory = wide ? new WebAssembly.Memory({ initial: BigInt(Math.ceil((base + 4 * 2 ** 20) / 65536)), address: "i64" }) : new WebAssembly.Memory({ initial: 64 });
   } catch (error) {
@@ -51,11 +59,19 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
     continue;
   }
   if (base && !splatsRight(memory)) {
-    console.log("ternary-check: this engine reads v128.load32_splat above 4 GiB at the low 32 bits of the address (V8 13.6 on arm64, Node 24): the kernels above 4 GiB cannot be checked here, skipped");
-    continue;
+    v8.setFlagsFromString("--no-liftoff");
+    liftoffOff = true;
+    if (!splatsRight(memory, true)) {
+      console.log("ternary-check: this engine reads v128.load32_splat above 4 GiB at the low 32 bits of the address even with --no-liftoff: the kernels above 4 GiB cannot be checked here, skipped");
+      continue;
+    }
+    console.log("ternary-check: Liftoff reads v128.load32_splat above 4 GiB at the low 32 bits of the address (V8 13.6 on arm64, Node 24; fixed in V8 14.3): --no-liftoff is set, the kernels above 4 GiB are TurboFan's here");
   }
-  const load = (name) => addressed(new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/${name}${wide ? "64" : ""}.wasm`)),
-    { env: { memory } }).exports, wide);
+  const bytesOf = (name) => {
+    const bytes = fs.readFileSync(`${root}public/${name}${wide ? "64" : ""}.wasm`);
+    return liftoffOff ? Uint8Array.from([...bytes, 0, 2, 1, 98]) : bytes;
+  };
+  const load = (name) => addressed(new WebAssembly.Instance(new WebAssembly.Module(bytesOf(name)), { env: { memory } }).exports, wide);
   const k = load("simdkernel_plain"), r = load("simdkernel_relaxed_plain");
   const I = new Int8Array(memory.buffer), U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer), N = new Int32Array(memory.buffer);
   let seed = 231;

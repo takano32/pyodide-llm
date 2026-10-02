@@ -96,9 +96,12 @@ const spawn = (data) => new Promise((resolve) => {
 const base4GiB = (bytes) => bytes > 4 * GiB;
 /** whether this engine reads v128.load32_splat of an address above 4 GiB where it is (tests/ternary-check.mjs's canary:
  * a module of a 64-bit memory it imports, splat(address) = lane 0 of v128.load32_splat) */
-function splatsRight() {
+function splatsRight(again = false) {
+  // asked again (after --no-liftoff), the module has a custom section the engine ignores: V8 keeps the compiled code of a
+  // module by its bytes, and the same bytes would hand back the function Liftoff compiled for the first question (T233's
+  // review: the second question got the right answer here only because a new 4 GiB memory had made the engine collect it)
   const canary = Uint8Array.from([0, 97, 115, 109, 1, 0, 0, 0, 1, 6, 1, 96, 1, 126, 1, 125, 2, 15, 1, 3, 101, 110, 118, 6, 109, 101, 109, 111, 114, 121, 2, 4, 1,
-    3, 2, 1, 0, 7, 9, 1, 5, 115, 112, 108, 97, 116, 0, 0, 10, 13, 1, 11, 0, 32, 0, 253, 9, 2, 0, 253, 31, 0, 11]);
+    3, 2, 1, 0, 7, 9, 1, 5, 115, 112, 108, 97, 116, 0, 0, 10, 13, 1, 11, 0, 32, 0, 253, 9, 2, 0, 253, 31, 0, 11, ...(again ? [0, 2, 1, 97] : [])]);
   const high = 4 * GiB + 2 * 65536, at = high + 4096;
   const memory = new WebAssembly.Memory({ initial: BigInt(Math.ceil((high + 4 * MiB) / 65536)), address: "i64" });
   const splat = new WebAssembly.Instance(new WebAssembly.Module(canary), { env: { memory } }).exports.splat;
@@ -157,7 +160,7 @@ if (isMainThread) {
   // model's, as on an engine that reads it right. --anyway: run all the same where it still reads wrongly
   if (base4GiB(size + after) && !splatsRight()) {
     v8.setFlagsFromString("--no-liftoff");
-    const right = splatsRight();
+    const right = splatsRight(true);
     console.log(`page: Node ${process.version} (V8 ${process.versions.v8}, ${process.arch}) reads v128.load32_splat wrongly above 4 GiB in Liftoff's code: ` +
       (right ? "--no-liftoff is set, and TurboFan's code reads it where it is (what is computed here is this model)"
         : `and with --no-liftoff too: what it would compute here is not this model${args.includes("--anyway") ? " (run anyway, as asked)" : " — FAILED (run it on x86-64)"}`));
