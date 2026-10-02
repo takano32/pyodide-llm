@@ -85,7 +85,8 @@ KNOWN = {
 # of <|im_start|> (which costs a Qwen3.5 much, TODO.md's T236), pass for a Qwen3.5 as well, and same_ids still does (the
 # extra token is not the one the real ids begin with). T253's Granite 4.2 are made the same way, and T247's other sizes
 # of Qwen3.5 (a family, not a list of entries: the six of T247 were not in the first one)
-STRICT = ("hf-qwen3.5-", "hf-granite-4.2-")
+# T233: and Ternary Bonsai 2 27B, a Qwen3.8 with the Qwen3.5's format
+STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-ternary-bonsai-2-")
 # The reference of a GGUF that has its own vocabulary: the original at the revision the list had before the GGUF
 # (T136's first stage; T144). A GGUF with the original's vocabulary (hf.vocabulary, T136's second stage) says its own.
 ORIGINALS = {"Qwen/Qwen2.5-0.5B-Instruct": "7ae557604adf67be50417f59c2c2f167def9a775",

@@ -135,7 +135,9 @@ jobs:
             });
             // T145: the list itself, each GGUF against the original its vocabulary comes from
             if (process.env.LISTED === "true") {
-              for (const { id, hf } of MODELS.filter((model) => model.hf?.vocabulary && model.hf.weights?.endsWith(".gguf"))) {
+              // (not a GGUF whose weights are not its original's, T233: Ternary Bonsai 2 27B takes the vocabulary of the
+              // model it is built from; tests/unfold_27b.py and tests/page_27b.sh hold its tensors)
+              for (const { id, hf } of MODELS.filter((model) => model.hf?.vocabulary && model.hf.weights?.endsWith(".gguf") && !model.rebuilt)) {
                 const gguf = `${hf.repo}@${hf.revision}/${hf.weights}`;
                 // a Qwen3 is in the list twice (thinking and not, T124) with one GGUF: checked once (the review of T203)
                 if (jobs.some((job) => job.id === id || job.gguf === gguf)) continue;
