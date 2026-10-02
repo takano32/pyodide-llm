@@ -52,6 +52,11 @@ SYSTEM = {"hf-swallow-ms-7b-instruct": "あなたは誠実で優秀な日本人�
 # although they have a tokenizer.json): the real sentencepiece reads the real template's text instead (T144)
 SENTENCEPIECE = {"hf-sarashina2.2-0.5b-instruct", "hf-sarashina2.2-1b-instruct", "hf-sarashina2.2-3b-instruct",
                  "hf-cat-translate-0.8b", "hf-cat-translate-1.4b", "hf-cat-translate-3.3b"}
+# T252: where transformers (5.16.1) builds a tokenizer of sentencepiece's kind (a Metaspace pre-tokenizer: "Hello world" is
+# "H", "elloworld", Japanese is dropped) for a tokenizer_class LlamaTokenizerFast whose tokenizer.json is byte-level
+# (Llama 3's vocabulary under DeepSeek's names): the real template's text through the tokenizers library on
+# tokenizer.json itself, which is what a LlamaTokenizerFast was when the model came out
+TOKENIZERS = {"hf-deepseek-r1-llama-8b"}
 # T145: the differences known, each with what it takes out of the comparison (the rest still counts, so a new break
 # in these models shows: two of them were 0/9 whatever else went wrong). One that no prompt needs any more is an error
 # too, to be taken out of here.
@@ -192,6 +197,12 @@ def sentencepiece_ids(model_file, text):
     return ids + (model.encode(text[at:]) if at < len(text) else [])
 
 
+def tokenizers_ids(tokenizer_file, text):
+    """text as the tokenizers library reads it with tokenizer.json alone (nothing added: the template wrote the BOS)"""
+    import tokenizers
+    return tokenizers.Tokenizer.from_file(str(tokenizer_file)).encode(text, add_special_tokens=False).ids
+
+
 def filled(template, prompt):
     """src/models.js's filled(), for today"""
     template = re.sub(r"\{date(?::([^}]*))?\}", lambda found: time.strftime(found.group(1) or "%Y-%m-%d"), template)
@@ -269,6 +280,9 @@ def main():
             text = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=False, **thinking)
             if entry["id"] in SENTENCEPIECE:
                 encoded = lambda text: sentencepiece_ids(folder / "tokenizer.model", text)
+                real = encoded(text)
+            elif entry["id"] in TOKENIZERS:
+                encoded = lambda text: tokenizers_ids(folder / "tokenizer.json", text)
                 real = encoded(text)
             else:
                 # a text of KNOWN's as apply_chat_template(tokenize=True) encodes the text it renders
