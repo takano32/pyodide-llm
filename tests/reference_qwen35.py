@@ -58,7 +58,13 @@ from llama2_numpy import Llama  # noqa: E402
 REPO, REVISION = "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"
 WEIGHTS = "model.safetensors-00001-of-00001.safetensors"
 FILES = ["config.json", "tokenizer.json", "tokenizer_config.json", "model.safetensors.index.json", WEIGHTS]
-BOS = 248044  # <|endoftext|>: what the page begins every text with (llama2_convert.normalize)
+# <|endoftext|>: what the converter begins every text with (llama2_convert.normalize), and so what ?hf= opens. NOT what the
+# list's entries begin with: <|im_start|>, 248045 (T236). The engine agrees with transformers on the same ids whichever
+# the first token is, but a perplexity read here is of this other way: a Qwen3.5 reads a text 18% (2B) to 45% (4B) worse
+# after it, and its perplexity then moves by about +-3% under a rounding of its weights, so a Q8_0 GGUF's can read LOWER
+# than the original's (the review of T245: 7.574 against 7.873 on 192 tokens, 4B; with <|im_start|> it is 4.215 against
+# 4.217). tests/perplexity_prepare.py --entry <id> measures the list's way.
+BOS = 248044
 # a text of more than 64 tokens (transformers' chunk of the delta rule), English and Japanese
 TEXT = ("Mount Fuji is the highest mountain in Japan, standing 3,776 metres above sea level on the island of Honshu. "
         "It is an active stratovolcano that last erupted from 1707 to 1708, and on clear days it can be seen from "
