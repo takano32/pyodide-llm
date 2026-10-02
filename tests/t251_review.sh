@@ -82,6 +82,32 @@ case "$stage" in
       SEEDS="$seeds" PROMPTS="$prompts" WRITER=degenerate.mjs TOKENS=200 bash tests/write.sh "$id"
     done
     ;;
+  bits)
+    # what the 7-bit activations of the relaxed kernels cost a model whose final norm is near the outlier gate (3.0 to 3.8 against the gate's 4.0):
+    # the same English text and targets on the page's engine, once as the page runs it (relaxed: 7 bits) and once with matmul_q8 (8 bits: what
+    # Safari runs, ?without=relaxed). Only the activations differ: the weights are the same int8
+    id=${1:?a model id}; tokens=${2:?tokens}; window=${3:?window}; bos=${4:?the BOS}
+    page_tools
+    english
+    room=/mnt/t251/bits
+    mkdir -p "$room"
+    model=$(python3 tests/hf_fetch.py "$id" "$room/downloads" | tail -1)
+    python3 tests/perplexity_prepare.py "$model" "$room/$id" int8 | cut -c1-160
+    python3 tests/write_options.py "$id" "$room/small" > "$room/$id.page.json"
+    rm -rf "$room/downloads"
+    python3 - "$room/$id.page.json" <<'PY'
+import json, sys
+page = json.load(open(sys.argv[1]))
+json.dump(page, open(sys.argv[1].replace(".page.json", ".7bit.json"), "w"))
+page["options"]["disable"] = ["relaxed"]
+json.dump(page, open(sys.argv[1].replace(".page.json", ".8bit.json"), "w"))
+PY
+    for variant in 7bit 8bit; do
+      echo "t251_review: $id, activations of the $variant variant"
+      node tests/start_check.mjs "$room/$id" "$room/$id.$variant.json" "$tokens" --starts "$bos" --window "$window" --text "$dir/en.txt"
+    done
+    rm -rf "$room/$id".*
+    ;;
   think)
     id=${1:?a model id}; tokens=${2:-1800}
     page_tools
