@@ -201,10 +201,12 @@ The first four rows were measured before the threads; the 3B to 8B rows with 4 t
 line; from Japan, huggingface.co delivered 7 to 9 MB/s, so a 1B model takes about 5 minutes to fetch, and the
 conversion about 5 seconds.
 
-Ternary Bonsai 2 27B (ternary, 7.66 GB on a 64-bit memory) has not been run in a browser yet. In Node on CI's
-runners it writes 1.3 to 1.6 tok/s on 4 logical cores of x86-64 and 2.4 on arm64, about twice what Prism ML's
-fork of llama.cpp writes on the same runners' CPUs (see [quantization.md](quantization.md)). Its conversion takes
-216 s in Pyodide, which a fast line cannot go under; at 8 MB/s the 5.95 GB take about 12 minutes to fetch.
+Ternary Bonsai 2 27B (ternary, 7.66 GB on a 64-bit memory), in Chromium on CI's runners (the deployed page, 4
+threads): ready in 291 s and 1.2 tok/s on x86-64, ready in 235 s and 2.2 tok/s on arm64, and a second visit opens
+the 7.66 GB it kept (OPFS) in 26 s. In Node it writes 1.3 to 1.6 tok/s on 4 logical cores of x86-64 and 2.4 on
+arm64, about twice what Prism ML's fork of llama.cpp writes on the same runners' CPUs (see
+[quantization.md](quantization.md)). Its conversion takes 216 s in Pyodide, which a fast line cannot go under; at 8
+MB/s the 5.95 GB take about 12 minutes to fetch. Not measured on any device.
 
 ## Downloading
 
