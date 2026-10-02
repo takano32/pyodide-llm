@@ -169,6 +169,11 @@ bandwidth is full:
   x86-64 and arm64), unless float32 would not fit a 32-bit memory (Qwen2.5 3B) or the model needs a 64-bit memory
   anyway (Llama 3.2 3B, the 7B and 8B models): those keep float16, and so does a model with a key for every head.
 
+- LFM2.5 (int8, CI's runners of 4 logical cores, 64 positions; tokens per second at 1, 2 and 4 threads): the 350M
+  63.3, 88.2, 88.9 on x86-64 (AMD EPYC 9V45) and 43.1, 68.5, 105.4 on arm64; the 1.2B JP 12.0, 21.1, 22.7 on x86-64
+  (AMD EPYC 9V74) and 13.5, 23.7, 41.2 on arm64. Its convolution layers keep no keys and values, so their cost does
+  not grow with the position.
+
 The owner's Android (`/benchmark/`): one thread reads 12.9 to 18.9 GB/s for a token, 4 threads 27.6 to 28.7 GB/s;
 a prompt on 4 threads reaches 30.8 to 43.9 G multiply-adds per second.
 

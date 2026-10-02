@@ -201,6 +201,23 @@ lower than the original's. On 1,500 tokens of English Wikipedia (the kernels, on
 | Qwen3.5 4B | 14.834 (transformers) | not measured | 14.492 | 14.710 |
 | Qwen3.5 9B | not measured | not measured | 11.707 | 11.806 |
 
+LFM2.5 (Liquid AI: convolution layers among attention layers) loses more to quantization than the other models, and
+not in the order of the bits. On 1,500 tokens of English and of Japanese Wikipedia (CI's runners; the percentages are
+against the float32 original):
+
+| model | text | float32 original | the Q8_0 GGUF's values, NumPy | 8-bit activations (Safari) | 7-bit activations |
+|---|---|---:|---:|---:|---:|
+| LFM2.5 350M | English | 70.511 | 73.093 (+3.66%) | 76.562 (+8.58%) | 72.464 (+2.77%) |
+| LFM2.5 350M | Japanese | 34.362 | 34.662 (+0.87%) | 35.693 (+3.87%) | 35.283 (+2.68%) |
+| LFM2.5 1.2B JP | English | 18.255 | 18.229 (−0.14%) | 18.427 (+0.94%) | 18.962 (+3.87%) |
+| LFM2.5 1.2B JP | Japanese | 16.829 | 16.785 (−0.26%) | 17.025 (+1.17%) | 17.491 (+3.94%) |
+
+The second column is llama.cpp's own Q8_0 multiplied in float32, with none of this project's kernels: the 350M loses
+3.66% to it on the English text. The page's int8 of a Q8_0 file is those same values. Of what 8-bit activations cost
+the 350M, nine tenths is in the input of the query, key and value matrices of its attention layers (a NumPy copy of
+the rounding, 300 tokens), and that part does not shrink with more bits; why is not settled. The same model moves its
+logits by 17 when the norms' epsilon is 1e-6 instead of 1e-5. The answers it writes are not broken on either path.
+
 ## Other small effects
 
 - A BOS token at the start: the page always starts with one, while some models are used without it. The

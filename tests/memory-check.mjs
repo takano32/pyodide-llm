@@ -63,6 +63,8 @@ def plan_of(header, form, dtype):
     if probe.linear is not None:
         probe.slots = L.layer_slots(probe.n_layers, probe.linear)
         probe.rotary = probe.head_size // 4
+    # T260: an LFM2's convolution layers
+    probe.convolution = L.convolution_form(form["convolution"], probe.n_layers)
     # the engine's own condition for keeping int8: the int8 kernels work on groups of 32 only (T229: and the rows of a
     # linear-attention layer's output matrix, its value heads together)
     keep = npdtype == np.int8 and all(n % 32 == 0 for n in (probe.dim, probe.q_dim, kv_dim, probe.hidden_dim)) \
@@ -73,6 +75,8 @@ def plan_of(header, form, dtype):
         probe.gpt2_tensors(places.take, vocab > 0, keep, kv_dim, places.dtype, freq)
     elif form["arch"] == "qwen35":
         probe.qwen35_tensors(places.take, vocab > 0, keep, kv_dim, places.dtype, freq)
+    elif form["arch"] == "lfm2":
+        probe.lfm2_tensors(places.take, vocab > 0, keep, kv_dim, places.dtype, freq)
     else:
         probe.llama_tensors(places.take, vocab > 0, keep, kv_dim, form["bias"], places.dtype, freq, form["qk_norm"])
     tensors = {name: getattr(probe, name).plan() for name in L.TENSOR_NAMES if isinstance(getattr(probe, name, None), L.Tensor)}
@@ -86,7 +90,11 @@ print(json.dumps([plan_of(**s) for s in json.loads(sys.stdin.read())]))
 `;
 const plansOf = (shapes) => JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c", python],
   { cwd: fileURLToPath(root), input: JSON.stringify(shapes), maxBuffer: 1 << 28 }).toString());
-const FORM = { bias: false, arch: "llama", qk_norm: false, head_dim: 0, linear: null, rotated: null };
+const FORM = { bias: false, arch: "llama", qk_norm: false, head_dim: 0, linear: null, rotated: null, convolution: null };
+// T260: the convolution layers of the LFM2 shapes below (llama2_numpy.convolution_form()): the 350M's 16 layers, and
+// eight layers of four taps
+const CONVOLUTION_350M = { layers: "ccaccaccacacacac", taps: 3 };
+const CONVOLUTION_SMALL = { layers: "ccaccaca", taps: 4 };
 // T229: the linear-attention layers of the Qwen3.5 shapes below (llama2_numpy.linear_form())
 const LINEAR_SMALL = { every: 4, key_heads: 8, value_heads: 16, key_dim: 128, value_dim: 128, conv: 4 };
 const LINEAR_08B = { every: 4, key_heads: 16, value_heads: 16, key_dim: 128, value_dim: 128, conv: 4 };
@@ -108,6 +116,7 @@ function planOf(p, { relaxed = true, kvStart = p.header[6], outliers = 0 } = {})
   return {
     arch: p.form.arch, dim, hidden_dim: hidden, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: p.head_size,
     vocab_size: Math.abs(signedVocab), seq_len: seqLen, rotary: p.form.linear ? p.head_size / 4 : p.head_size, linear: p.form.linear,
+    convolution: p.form.convolution,
     parallel_residual: p.form.arch === "neox", rotated,
     kv_start: kvStart, rms_norm_eps: 1e-5, shared_classifier: signedVocab > 0, int8: p.keep_int8, relaxed, tensors: p.tensors,
     derived: Object.fromEntries([...Object.entries(p.derived).map(([name, bytes]) => [name, new Uint8Array(bytes)]),
@@ -239,6 +248,12 @@ function halfToFloat(h) {
     ...big("qwen3.5, a state of 12.6 MB, in a rotated basis", [256, 512, 8, 4, 2, 20000, 4096],
       { arch: "qwen35", head_dim: 64, linear: LINEAR_SMALL, rotated: ROTATED_SMALL }, ["int8", "float32"]),
     ...big("llama in a rotated basis", [256, 512, 8, 8, 2, 20000, 4096], { rotated: ROTATED_SMALL }, ["int8", "int6"]),
+    // T260: an LFM2. A convolution layer keeps its last taps tokens' values (taps rows of dim floats) and no keys and
+    // values; only the attention layers do. A small one in every dtype (three attention layers of eight), with a
+    // classifier of its own, and the real 350M whole (6 attention layers of 16, a vocabulary of 65536)
+    ...big("lfm2, eight layers of four taps", [256, 512, 8, 8, 2, -20000, 4096], { arch: "lfm2", convolution: CONVOLUTION_SMALL },
+      ["int8", "int6", "float32", "float16"]),
+    ...big("lfm2 350M", [1024, 4608, 16, 16, 8, 65536, 4096], { arch: "lfm2", convolution: CONVOLUTION_350M }, ["int8", "int6"]),
     // and ternary in a rotated basis, as Ternary Bonsai 2 27B is (T231's frame: the activations' scales and their sums, and T237's:
     // the rotated input of a matrix, in one frame; every row of the 27B's matrices is whole groups of 128)
     ...big("ternary qwen3.5 27B's layers, 4 of 64, in a rotated basis", [5120, 17408, 4, 24, 4, 1000, 4096],
@@ -283,7 +298,7 @@ function halfToFloat(h) {
   });
   // and where the page asks for the GPU (the prompt's blocks on it, T135: the engine puts aside the place the keys and values
   // of a block come back through, and its rows), for every model the GPU takes: int8 and six bits of whole groups
-  let withGpu = 0, refused = 0;
+  let withGpu = 0, refused = 0, convolutional = 0;
   plans.forEach((p, n) => {
     if (p.dtype === "ternary" && (p.form.linear || p.form.rotated)) {
       // T232 (the review of T237): the GPU takes ternary weights now (the ternary Qwen3s below go on as the int8 models
@@ -299,6 +314,21 @@ function halfToFloat(h) {
       assert.ok(used <= bound, `${shapes[n].name}: a GPU asked for put ${(used / MiB).toFixed(2)} MiB after the checkpoint, the CPU alone counts ${(bound / MiB).toFixed(2)}`);
       engine.release();
       refused++;
+      return;
+    }
+    if (p.form.convolution) {
+      // T260: an LFM2 stays on the CPU: the engine says why, starts no GPU's worker and puts nothing aside for one
+      const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: p.dtype !== "float32" && p.dtype !== "float16", outliers: 8, gpu: false, shared: true };
+      const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);
+      let asked = 0;
+      const engine = engineOn(p, planOf(p, { outliers: 8 }), { base: CONTROL_BYTES, memory: sharedMemory(p, bound), halfKeys,
+        gpu: () => { asked++; return silentGpu(); } });
+      const used = engine.memoryBytes() - CONTROL_BYTES - p.size;
+      assert.equal(engine.gpuWhyNot, "convolution layers are not on the GPU yet", `${shapes[n].name}: the GPU was not refused for its convolution layers`);
+      assert.equal(asked, 0, `${shapes[n].name}: a GPU's worker was started for an LFM2`);
+      assert.ok(used <= bound, `${shapes[n].name}: a GPU asked for put ${(used / MiB).toFixed(2)} MiB after the checkpoint, the CPU alone counts ${(bound / MiB).toFixed(2)}`);
+      engine.release();
+      convolutional++;
       return;
     }
     if (!p.keep_int8 || shapes[n].loose || p.form.linear) return;  // (T229: a Qwen3.5 is not on the GPU: forward.js's gpuUnfit)
@@ -319,7 +349,7 @@ function halfToFloat(h) {
   });
   console.log(`ok: footprint() holds what createForward allocates and no more than a megabyte over (and, for a hybrid model, the corrections of its float32 gates) (${engines} engines: ${plans.length} models and dtypes, ` +
     `with and without relaxed SIMD, on a shared and a plain memory; ${(tightest / MiB).toFixed(2)} to ${(loosest / MiB).toFixed(2)} MiB over; ` +
-    `and ${withGpu} with the GPU asked for, ${refused} ternary models that the GPU still refuses, each for its own reason; ${seconds()})`);
+    `and ${withGpu} with the GPU asked for, ${refused} ternary models that the GPU still refuses, each for its own reason, ${convolutional} of an LFM2 refused it; ${seconds()})`);
 }
 
 // ---- (3) the memory of a cache that doubles never holds more than the whole context's

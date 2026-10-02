@@ -66,7 +66,7 @@ export const ADDRESSES = {
   matmul_t2: [0, 1, 2, 3, 4], matmul_t2r: [0, 1, 2, 3, 4], six_sums: [0, 1], int8_sums: [0, 1], widen_bf16: [0, 1], widen_q8_0: [0, 1], matmul_q8: [0, 1, 2, 3, 4],
   matmul_q6: [0, 1, 2, 3, 4], rmsnorm: [0, 1, 2], rope: [0, 1, 2], attention: [0, 1, 2, 3, 4], attention_f16: [0, 1, 2, 3, 4],
   to_f16: [0, 1], from_f16: [0, 1], finite_f16: [0], layernorm: [0, 1, 2, 3], gelu: [0, 1, 2], swiglu: [0, 1, 2], add_columns: [0, 1, 2], add_inplace: [0, 1],
-  gate: [0, 1, 2], convolve: [0, 1, 2], delta_rule: [0, 1, 2, 3, 4], rotate: [0, 1, 2], unrotate: [0, 1, 2],
+  gate: [0, 1, 2], convolve: [0, 1, 2], short_conv: [0, 1, 2, 3], delta_rule: [0, 1, 2, 3, 4], rotate: [0, 1, 2], unrotate: [0, 1, 2],
   argmax: [0], penalize: [0, 1], sample: [0, 5, 6], matmul_q8r: [0, 1, 2, 3, 4, 5], matmul_q6r: [0, 1, 2, 3, 4, 5],
   matmul_q8r_tile: [0, 1, 2, 3, 4, 5], matmul_t2r_tile: [0, 1, 2, 3, 4],
 };

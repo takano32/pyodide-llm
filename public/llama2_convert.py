@@ -13,9 +13,9 @@ import time
 import numpy as np
 
 # the RoPE angles are the engine's, which computes them itself when a file leaves the tables out (int8)
-from llama2_numpy import (CHARSMAP, FORM, RMS_EPS, TERNARY_GROUP, TERNARY_VALUES, form_of, layer_slots, linear_form,
-                          linear_widths, pack6, quantize6, rope_frequencies, rope_magnitude, rotated_form, rotated_widths,
-                          sign_bits, ternary)
+from llama2_numpy import (CHARSMAP, FORM, RMS_EPS, TERNARY_GROUP, TERNARY_VALUES, convolution_form, form_of, layer_slots,
+                          linear_form, linear_widths, pack6, quantize6, rope_frequencies, rope_magnitude, rotated_form,
+                          rotated_widths, sign_bits, ternary)
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
 # peak is the output plus 14 MB with this, plus 52 MB with pieces four times as large, at the same speed.
@@ -31,7 +31,7 @@ def group_size(row_length):
 
 
 def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, bias=False, arch="llama", qk_norm=False,
-           head_dim=0, linear=None, rotated=None):
+           head_dim=0, linear=None, rotated=None, convolution=None):
     """(shape, is a matrix) of every tensor, in file order. llama2_numpy.py reads the same order.
 
     is a matrix: True for what int8 quantizes, False for the norm weights, None for the RoPE tables.
@@ -47,9 +47,27 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, 
     which are never quantized, the taps of the convolution, dt_bias, the decay, the norm of a value head, the output),
     and the FFN of every layer.
     rotated: the form's rotated basis (T237), which moves no tensor: the same ones are stored in another basis.
+    convolution: the convolution layers of arch "lfm2" (T260, llama2_numpy.convolution_form()). Its tensors are stacked
+    by the kind of the layer too: those of the attention layers (q, k, v, o, the norms of the heads of q and k), those
+    of the convolution layers (the matrix in, of 3 dim rows; the taps, which are never quantized; the matrix out),
+    and the FFN of every layer.
     """
     head_size = head_dim or dim // n_heads
     q_dim, kv_dim = n_heads * head_size, n_kv_heads * head_size
+    if arch == "lfm2":
+        convolution = convolution_form(convolution, n_layers)
+        short = convolution["layers"].count("c")
+        full = n_layers - short
+        tensors = [((abs(vocab_size), dim), True), ((n_layers, dim), False),
+                   ((full, q_dim, dim), True), ((full, kv_dim, dim), True), ((full, kv_dim, dim), True),
+                   ((full, dim, q_dim), True), ((full, head_size), False), ((full, head_size), False),
+                   ((short, 3 * dim, dim), True), ((short, convolution["taps"], dim), False), ((short, dim, dim), True),
+                   ((n_layers, dim), False),
+                   ((n_layers, hidden_dim, dim), True), ((n_layers, dim, hidden_dim), True), ((n_layers, hidden_dim, dim), True),
+                   ((dim,), False), ((seq_len, head_size // 2), None), ((seq_len, head_size // 2), None)]
+        if vocab_size < 0:
+            tensors.append(((abs(vocab_size), dim), True))
+        return tensors
     if arch == "qwen35":
         linear = linear_form(linear)
         mixed, _, read = linear_widths(linear)
@@ -1003,8 +1021,10 @@ class Arrays:
 def architecture(config):
     """Which set of tensors and which forward: "llama" (Qwen2 is a Llama with biases), "gpt2", or "neox"
     (GPT-NeoX: a GPT-2 with RoPE over part of each head, and optionally the two branches in parallel), or "qwen35"
-    (T229: Qwen3.5 and Qwen3.8, a Qwen3 most of whose layers are linear-attention ones)."""
-    return {"gpt2": "gpt2", "gpt_neox": "neox", "qwen3_5": "qwen35", "qwen3_5_text": "qwen35"}.get(config.get("model_type"), "llama")
+    (T229: Qwen3.5 and Qwen3.8, a Qwen3 most of whose layers are linear-attention ones), or "lfm2" (T260: Liquid AI's
+    LFM2 and LFM2.5, a Qwen3 some of whose layers are convolution layers)."""
+    return {"gpt2": "gpt2", "gpt_neox": "neox", "qwen3_5": "qwen35", "qwen3_5_text": "qwen35",
+            "lfm2": "lfm2"}.get(config.get("model_type"), "llama")
 
 
 def head_size(config):
@@ -1069,6 +1089,50 @@ def linear_layers(config):
             "conv": numbers["linear_conv_kernel_dim"]}
 
 
+def lfm2_config(config):
+    """T260: an LFM2's config.json by the names the rest of this file reads, as transformers' Lfm2Config and Lfm2MLP
+    read it (7cd73d9d: configuration_lfm2.py, lines 81 to 92; modeling_lfm2.py, 119 to 133). layer_types, or every
+    layer of full_attn_idxs an attention layer and the others convolution layers. The FFN's inside: block_ff_dim where
+    there is one, else intermediate_size; with block_auto_adjust_ff_dim (on unless said off) two thirds of it, times
+    block_ffn_dim_multiplier, up to a multiple of block_multiple_of (LFM2.5-350M: 6656 becomes 4608). tie_embedding
+    wins over tie_word_embeddings, the epsilon of every RMSNorm is norm_eps, and theta is 1e6 where none is said.
+    Twice is once: what it writes it reads back as it is."""
+    layers, kinds = config.get("num_hidden_layers"), config.get("layer_types")
+    if kinds is None and isinstance(layers, int):
+        attending = config.get("full_attn_idxs")
+        attending = range(layers) if attending is None else attending
+        kinds = ["full_attention" if layer in attending else "conv" for layer in range(layers)]
+    hidden = config.get("block_ff_dim", config.get("intermediate_size"))
+    if config.get("block_auto_adjust_ff_dim", True) and isinstance(hidden, int):
+        hidden = int(2 * hidden / 3)
+        multiplier, multiple = config.get("block_ffn_dim_multiplier", 1.0), config.get("block_multiple_of", 256)
+        if multiplier is not None:
+            hidden = int(multiplier * hidden)
+            hidden = multiple * ((hidden + multiple - 1) // multiple)
+    rope = config.get("rope_parameters") if isinstance(config.get("rope_parameters"), dict) else {}
+    rest = {key: value for key, value in config.items() if key not in ("block_ff_dim", "full_attn_idxs")}
+    return {**rest, "layer_types": kinds, "intermediate_size": hidden, "block_auto_adjust_ff_dim": False,
+            "rope_theta": rope.get("rope_theta", config.get("rope_theta", 1000000.0)),
+            "rms_norm_eps": config.get("norm_eps", config.get("rms_norm_eps", 1e-5)),
+            "tie_word_embeddings": config.get("tie_embedding", config.get("tie_word_embeddings", True))}
+
+
+def convolution_layers(config):
+    """FORM's "convolution" from an LFM2's (normalized) config.json: a letter for every layer, "c" for a convolution
+    layer and "a" for one that attends, and the taps of the convolution (conv_L_cache, 3 where none is said, as
+    transformers' Lfm2Config has it). None for the other architectures."""
+    if architecture(config) != "lfm2":
+        return None
+    kinds = config.get("layer_types")
+    if not isinstance(kinds, list) or len(kinds) != config.get("num_hidden_layers") or set(kinds) - {"conv", "full_attention"}:
+        raise ValueError("This model cannot be converted: its layers are not convolution layers and attention layers, "
+                         "one kind for every layer.")
+    taps = config.get("conv_L_cache", 3)
+    if not isinstance(taps, int) or isinstance(taps, bool) or taps < 2:
+        raise ValueError("This model cannot be converted: its config.json has no usable conv_L_cache.")
+    return {"layers": "".join("c" if kind == "conv" else "a" for kind in kinds), "taps": taps}
+
+
 def yarn(config):
     """What a config.json whose RoPE scaling is yarn says of it besides its kind (T235), else None."""
     scaling = config.get("rope_scaling") or {}
@@ -1090,6 +1154,8 @@ def normalize(config):
         end = end[0] if isinstance(end, list) and end else end
         if config.get("bos_token_id") is None and isinstance(end, int):
             config["bos_token_id"] = end
+    if config.get("model_type") == "lfm2":
+        config = lfm2_config(config)  # T260
     rope = config.get("rope_parameters")
     if isinstance(rope, dict):
         # transformers 5 writes rope_theta, rope_scaling and GPT-NeoX's rotary_pct as one rope_parameters. Unread,
@@ -1141,9 +1207,10 @@ def check_config(config):
     # every head of q and k (T124): two vectors per layer, the same way.
     # qwen3_5 (T229) is a Qwen3 most of whose layers are linear-attention ones (normalize() lifted its text_config).
     # granite (T253) is a Llama whose scores are scaled otherwise, which the conversion puts into q (query_scale()).
-    if config.get("model_type") not in ("llama", "qwen2", "qwen3", "gpt2", "gpt_neox", "qwen3_5_text", "granite"):
+    # lfm2 (T260) is a Qwen3 some of whose layers are convolution layers (normalize() gave it the Llama's names).
+    if config.get("model_type") not in ("llama", "qwen2", "qwen3", "gpt2", "gpt_neox", "qwen3_5_text", "granite", "lfm2"):
         refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Mistral, Granite, Qwen2, "
-               f"Qwen3, Qwen3.5, GPT-2 and GPT-NeoX models are supported")
+               f"Qwen3, Qwen3.5, LFM2, GPT-2 and GPT-NeoX models are supported")
     for key in ("hidden_size", "intermediate_size", "num_hidden_layers", "num_attention_heads", "vocab_size",
                 "max_position_embeddings"):
         if not isinstance(config.get(key), int) or config[key] <= 0:
@@ -1204,6 +1271,15 @@ def check_config(config):
             refuse("its config.json has no usable attention_multiplier")
         if not divides:
             refuse("its attention heads do not divide the hidden size the way a Granite's do")
+    if architecture(config) == "lfm2":
+        # T260: what transformers' Lfm2 has and the engine has not (a bias in the convolution layers: conv_bias, which
+        # no published model sets), and what conversion_plan() cannot tell apart (a single layer of a kind is one
+        # tensor to it, as the only layer of a Llama is: the review of T229)
+        layers = convolution_layers(config)["layers"]
+        if config.get("conv_bias"):
+            refuse("its convolution layers have biases")
+        if min(layers.count("c"), layers.count("a")) < 2:
+            refuse("it has fewer than two convolution layers or fewer than two attention layers")
     if architecture(config) == "qwen35":
         linear = linear_form(linear_layers(config))
         if config["num_hidden_layers"] < linear["every"]:
@@ -1354,12 +1430,13 @@ def checkpoint_form(config, source):
     size = head_size(config)
     form = {"bias": has_bias(source), "arch": architecture(config), "qk_norm": has_qk_norm(source),
             "head_dim": 0 if size * config["num_attention_heads"] == config["hidden_size"] else size,
-            "linear": linear_layers(config), "rotated": getattr(source, "rotated", None)}
+            "linear": linear_layers(config), "rotated": getattr(source, "rotated", None),
+            "convolution": convolution_layers(config)}
     if form["rotated"] is not None:
         # T237: a rotated basis is no tensor and no number of config.json: the source says it (a GGUF's metadata).
         # Held to the model here: signs for every width its matrices read, in whole blocks, and no GPT-2's
-        if form["arch"] in ("gpt2", "neox"):
-            raise ValueError("This model cannot be converted: a GPT-2 or a GPT-NeoX in a rotated basis.")
+        if form["arch"] in ("gpt2", "neox", "lfm2"):
+            raise ValueError("This model cannot be converted: a GPT-2, a GPT-NeoX or an LFM2 in a rotated basis.")
         rotated_form(form["rotated"], rotated_widths(config["hidden_size"], size * config["num_attention_heads"],
                                                      config["intermediate_size"], linear_form(form["linear"])))
     return form
@@ -1400,6 +1477,25 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.
                 of(every, "post_attention_layernorm.weight", one),
                 of(every, "mlp.gate_proj.weight"), of(every, "mlp.down_proj.weight"), of(every, "mlp.up_proj.weight"),
                 [(prefix + "norm.weight", one)], None, None]
+        if vocab_size < 0:
+            plan.append([("lm_head.weight", None)])
+        return plan, shapes
+
+    if arch == "lfm2":
+        # T260: the stacks of layout(), each from the layers of its kind, by transformers' names of an Lfm2. q and k
+        # (and the norms of their heads) are turned as a Qwen3's; the taps as a Qwen3.5's convolution's
+        slots = layer_slots(n_layers, None, convolution_form(form["convolution"], n_layers))
+        every = range(n_layers)
+        full, short = ([layer for layer in every if slots[layer][0] == kind] for kind in (False, True))
+        of = lambda which, name, transform=None: [(f"model.layers.{layer}.{name}.weight", transform) for layer in which]
+        plan = [[("model.embed_tokens.weight", None)], of(every, "operator_norm"),
+                of(full, "self_attn.q_proj", ("permute", n_heads)), of(full, "self_attn.k_proj", ("permute", n_kv_heads)),
+                of(full, "self_attn.v_proj"), of(full, "self_attn.out_proj"),
+                of(full, "self_attn.q_layernorm", ("permute", 1)), of(full, "self_attn.k_layernorm", ("permute", 1)),
+                of(short, "conv.in_proj"), of(short, "conv.conv", ("taps",)), of(short, "conv.out_proj"),
+                of(every, "ffn_norm"),
+                of(every, "feed_forward.w1"), of(every, "feed_forward.w2"), of(every, "feed_forward.w3"),
+                [("model.embedding_norm.weight", None)], None, None]
         if vocab_size < 0:
             plan.append([("lm_head.weight", None)])
         return plan, shapes
@@ -1736,8 +1832,11 @@ GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0", 30: "BF16", 142: "PQ2_0", 143: "P
 # (granite-docling, T253: what llama.cpp calls a Granite 4.2's ByteLevel with its regex, and splits by GPT-2's pattern.
 # minicpm5, T254: llama.cpp's two patterns of that name are tokenizer.json's but for the contractions, written out by
 # case, which leaves a 's after U+017F unmatched; openbmb's own GGUFs of 2026-09 still say llama-bpe)
+# (lfm2, T260: llama.cpp splits an LFM2's text as a Llama 3's, which is the pattern of its tokenizer.json; it also
+    # takes a piece that is in the vocabulary whole, which that tokenizer.json does not: ignore_merges is false there,
+    # and gguf_tokenizer() says it of llama-bpe alone)
 GGUF_PRETOKENIZERS = {"gpt-2": "gpt2", "gpt2": "gpt2", "smollm": "gpt2-digits", "qwen2": "qwen", "llama-bpe": "llama3",
-                      "qwen35": "qwen35", "granite-docling": "gpt2", "minicpm5": "minicpm5"}
+                      "qwen35": "qwen35", "granite-docling": "gpt2", "minicpm5": "minicpm5", "lfm2": "llama3"}
 # the ones whose tokenizer.json normalizes to NFC, which a GGUF does not say (Qwen's)
 GGUF_NFC = ("qwen2", "qwen35")
 # T245: the tensors of a Qwen3.5's linear-attention layer that have the value heads along an axis, as (whether q and k
@@ -1775,6 +1874,16 @@ GGUF_ARCHITECTURES = {
                 "attn_gate": "linear_attn.in_proj_z", "ssm_alpha": "linear_attn.in_proj_a",
                 "ssm_beta": "linear_attn.in_proj_b", "ssm_conv1d": "linear_attn.conv1d", "ssm_norm": "linear_attn.norm",
                 "ssm_out": "linear_attn.out_proj", "ssm_dt.bias": "linear_attn.dt_bias", "ssm_a": "linear_attn.A_log"}),
+    # T260: an LFM2, by transformers' names of it. llama.cpp calls the last norm token_embd_norm (the model's own name
+    # for it is embedding_norm), the convolution layer's three tensors shortconv.*, and writes q and k in Hugging
+    # Face's order, as a Qwen3's (its converter is no child of the Llama's: conversion/lfm2.py at f1cee994)
+    "lfm2": ({"token_embd.weight": "model.embed_tokens.weight", "token_embd_norm.weight": "model.embedding_norm.weight",
+              "output.weight": "lm_head.weight"}, "model.layers.{}.",
+             {"attn_norm": "operator_norm", "ffn_norm": "ffn_norm", "attn_q": "self_attn.q_proj", "attn_k": "self_attn.k_proj",
+              "attn_v": "self_attn.v_proj", "attn_output": "self_attn.out_proj", "attn_q_norm": "self_attn.q_layernorm",
+              "attn_k_norm": "self_attn.k_layernorm", "ffn_gate": "feed_forward.w1", "ffn_up": "feed_forward.w3",
+              "ffn_down": "feed_forward.w2", "shortconv.in_proj.weight": "conv.in_proj.weight",
+              "shortconv.conv.weight": "conv.conv.weight", "shortconv.out_proj.weight": "conv.out_proj.weight"}),
     "gpt2": ({"token_embd.weight": "wte.weight", "position_embd.weight": "wpe.weight", "output_norm.weight": "ln_f.weight",
               "output_norm.bias": "ln_f.bias", "output.weight": "lm_head.weight"}, "h.{}.",
              {"attn_norm": "ln_1", "attn_qkv": "attn.c_attn", "attn_output": "attn.c_proj", "ffn_norm": "ln_2",
@@ -1846,7 +1955,7 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
     rope_scaling as it streams past (gguf_weights, T136), instead of refusing it."""
     arch = metadata.get("general.architecture")
     if arch not in GGUF_ARCHITECTURES:
-        raise ValueError(f"This GGUF holds a {arch}: only Llama, Granite, Qwen2, Qwen3, Qwen3.5, GPT-2 and GPT-NeoX ones are supported.")
+        raise ValueError(f"This GGUF holds a {arch}: only Llama, Granite, Qwen2, Qwen3, Qwen3.5, LFM2, GPT-2 and GPT-NeoX ones are supported.")
     key = lambda name, default=None: metadata.get(f"{arch}.{name}", default)
     common = {"vocab_size": tensors["token_embd.weight"]["shape"][0] if "token_embd.weight" in tensors else None,
               "bos_token_id": metadata.get("tokenizer.ggml.bos_token_id", 1),
@@ -1902,6 +2011,20 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
             for name, ours in (("embedding_scale", "embedding_multiplier"), ("residual_scale", "residual_multiplier"),
                                ("logit_scale", "logits_scaling")):
                 config[ours] = key(name) or 1.0
+        if arch == "lfm2":
+            # T260: llama.cpp says an LFM2's layers by their key-value heads, one number a layer and 0 for a convolution
+            # layer (conversion/lfm2.py's set_gguf_parameters at f1cee994), the taps as shortconv.l_cache, and the FFN's
+            # inside as it is (no two thirds left to take). By config.json's names, for lfm2_config()
+            groups = key("attention.head_count_kv")
+            groups = groups if isinstance(groups, list) else [groups] * (key("block_count") or 0)
+            attending = sorted({count for count in groups if count})
+            if len(attending) != 1 or not all(isinstance(count, int) for count in groups):
+                raise ValueError(f"This GGUF holds an LFM2 whose attention layers have {attending or 'no'} key-value "
+                                 f"heads, not one number for all of them.")
+            config.update(num_key_value_heads=attending[0], block_auto_adjust_ff_dim=False,
+                          layer_types=["full_attention" if count else "conv" for count in groups],
+                          norm_eps=config["rms_norm_eps"], rope_theta=float(key("rope.freq_base", 1000000.0)),
+                          **({"conv_L_cache": key("shortconv.l_cache")} if key("shortconv.l_cache") is not None else {}))
         if arch == "qwen35":
             # T236: what config.json's text_config says of the linear-attention layers, by its names (llama.cpp's are a
             # state-space model's: the state is a key head, the groups the key heads, the rank the value heads), and
@@ -1984,6 +2107,10 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
                 after_keys, of_a_head, axis = QWEN35_TILED[part]
                 entry["tiled"] = (2 * linear["key_heads"] * linear["key_dim"] if after_keys else 0, linear["key_heads"],
                                   per, linear["value_dim"] if of_a_head else 1, axis)
+        if arch == "lfm2" and target.endswith("conv.conv.weight") and len(info["shape"]) == 2:
+            # T260: an LFM2's convolution comes without its axis of one too, (channels, taps) for Hugging Face's
+            # (channels, 1, taps); nothing else of an LFM2 is stored another way than the original has it
+            entry["shape"] = [info["shape"][0], 1, info["shape"][1]]
         header[target] = entry
     # T237: a rotated basis is the header's to say (header_rotated), next to the tensors it is about
     more = arch == "qwen35" and linear["value_heads"] != linear["key_heads"]
@@ -2122,6 +2249,11 @@ def gguf_agrees(own, config):
         # (the tensors show the products only: 16 key heads of 128 are 8 of 256 to them)
         pairs += [("number of rotated values of a head", rotary_dim(own), rotary_dim(config)),
                   ("linear-attention layers", linear_layers(own), linear_layers(config))]
+    if architecture(own) == "lfm2" and architecture(config) == "lfm2":
+        # T260: which layers are convolution layers and their taps, and the FFN's inside as the config's rule makes it
+        # (the tensors' sizes would show it too, but only once they stream past)
+        pairs += [("convolution layers", convolution_layers(own), convolution_layers(config)),
+                  ("size of the FFN", own.get("intermediate_size"), config.get("intermediate_size"))]
     for what, here, there in pairs:
         if here != there:
             raise ValueError(f"This GGUF does not belong with the original's config.json: its {what} is {here} here "
@@ -2531,7 +2663,7 @@ class Conversion:
         eps = self.config.get("rms_norm_eps")
         # a GGUF says it in float32 (1e-5 is 9.99999974e-06 there): six digits are what config.json writes
         eps = float(f"{eps:.6g}") if isinstance(eps, (int, float)) and eps > 0 else RMS_EPS
-        if self.stream.form["arch"] in ("llama", "qwen35") and eps != RMS_EPS:
+        if self.stream.form["arch"] in ("llama", "qwen35", "lfm2") and eps != RMS_EPS:
             # T124: the epsilon of RMSNorm, where it is not the engine's 1e-5 (Qwen2.5 and Qwen3: 1e-6, which moved
             # Qwen3 0.6B's perplexity by 0.12%). Only where it differs, like qk_norm and head_dim
             self.options["rms_norm_eps"] = float(eps)

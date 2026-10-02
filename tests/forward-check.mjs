@@ -345,7 +345,7 @@ def to_the_end(llama):
     """forward() at every position where the KV cache doubles, then at the last one, so that the cache has grown step
     by step as a generation grows it, to the whole context. T229: a model that keeps a state from token to token takes
     its positions in turn: the whole context, in blocks."""
-    if llama.linear is not None:
+    if any(stateful for stateful, _ in llama.slots):  # (T260: an LFM2 with its convolution layers the same)
         for at in range(0, llama.seq_len, 16):
             llama.forward_many([llama.bos] * min(16, llama.seq_len - at), at)
         return
@@ -454,7 +454,7 @@ else:
 # the refusal changes nothing (the unit tests have NumPy's own); and a second run from position 0 begins with no state: it
 # makes the logits the first run made (the unit tests cannot see forward.js's clearing, nor can the comparison above, which
 # runs each engine once)
-kept = one.linear is not None
+kept = any(stateful for stateful, _ in one.slots)  # (T260: or an LFM2)
 refused = True
 if kept:
     try:

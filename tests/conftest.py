@@ -433,3 +433,118 @@ def naive_qwen35_logits(tensors, config, tokens):
                                                                    * (wide[p + "mlp.up_proj.weight"] @ v))
     classifier = wide["lm_head.weight"] if "lm_head.weight" in wide else wide[prefix + "embed_tokens.weight"]
     return [classifier @ norm(v, wide[prefix + "norm.weight"]) for v in x]
+
+
+# ------------------------------------------------------------------------------------- LFM2 (T260)
+
+def lfm2_model(dim=32, block_ff_dim=96, kinds="ccaccaca", n_heads=4, n_kv_heads=2, taps=3, vocab_size=320, seq_len=24,
+               shared=True, seed=0, eps=1e-5, adjust=True):
+    """Random Hugging Face tensors of a tiny LFM2 (convolution layers among attention layers), with the names and
+    shapes of LiquidAI/LFM2.5-350M's model.safetensors, and its config.json. kinds: a letter a layer, c for a
+    convolution layer and a for an attention layer. block_ff_dim is what the config says; the FFN's inside is what
+    transformers' Lfm2MLP makes of it (two thirds, up to a multiple of block_multiple_of: 96 becomes 64)."""
+    rng = np.random.default_rng(seed)
+    normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
+    weight = lambda n: (1.0 + normal(n)).astype(np.float32)  # a norm's, as stored: the model multiplies by it
+    multiple = 32
+    hidden_dim = multiple * ((int(2 * block_ff_dim / 3) + multiple - 1) // multiple) if adjust else block_ff_dim
+    head_dim = dim // n_heads
+    tensors = {"model.embed_tokens.weight": normal(vocab_size, dim), "model.embedding_norm.weight": weight(dim)}
+    for layer, kind in enumerate(kinds):
+        p = f"model.layers.{layer}."
+        tensors[p + "operator_norm.weight"] = weight(dim)
+        tensors[p + "ffn_norm.weight"] = weight(dim)
+        if kind == "a":
+            tensors[p + "self_attn.q_proj.weight"] = normal(n_heads * head_dim, dim)
+            tensors[p + "self_attn.k_proj.weight"] = normal(n_kv_heads * head_dim, dim)
+            tensors[p + "self_attn.v_proj.weight"] = normal(n_kv_heads * head_dim, dim)
+            tensors[p + "self_attn.out_proj.weight"] = normal(dim, n_heads * head_dim)
+            tensors[p + "self_attn.q_layernorm.weight"] = weight(head_dim)
+            tensors[p + "self_attn.k_layernorm.weight"] = weight(head_dim)
+        else:
+            tensors[p + "conv.in_proj.weight"] = normal(3 * dim, dim)
+            tensors[p + "conv.conv.weight"] = normal(dim, 1, taps)
+            tensors[p + "conv.out_proj.weight"] = normal(dim, dim)
+        tensors[p + "feed_forward.w1.weight"] = normal(hidden_dim, dim)
+        tensors[p + "feed_forward.w3.weight"] = normal(hidden_dim, dim)
+        tensors[p + "feed_forward.w2.weight"] = normal(dim, hidden_dim)
+    if not shared:
+        tensors["lm_head.weight"] = normal(vocab_size, dim)
+    config = dict(model_type="lfm2", architectures=["Lfm2ForCausalLM"], hidden_size=dim, block_dim=dim, conv_dim=dim,
+                  block_ff_dim=block_ff_dim, intermediate_size=block_ff_dim, block_auto_adjust_ff_dim=adjust,
+                  block_ffn_dim_multiplier=1.0, block_multiple_of=multiple, num_hidden_layers=len(kinds),
+                  num_attention_heads=n_heads, num_heads=n_heads, num_key_value_heads=n_kv_heads,
+                  layer_types=["conv" if kind == "c" else "full_attention" for kind in kinds], conv_L_cache=taps,
+                  conv_bias=False, norm_eps=eps, block_norm_eps=eps, max_position_embeddings=seq_len, vocab_size=vocab_size,
+                  bos_token_id=1, eos_token_id=7, pad_token_id=0, tie_embedding=shared, use_pos_enc=True,
+                  rope_parameters={"rope_theta": 1000000.0, "rope_type": "default"})
+    return tensors, config
+
+
+def naive_lfm2_logits(tensors, config, tokens, states=None):
+    """transformers' Lfm2 (modeling_lfm2.py at 7cd73d9d: Lfm2DecoderLayer, Lfm2ShortConv with causal_conv1d_fn,
+    Lfm2Attention, Lfm2MLP, Lfm2RMSNorm), written out from the Hugging Face tensors in float64, the whole sequence at
+    once as its forward of a prompt computes: the reference the converter and the engine are held to together
+    (tests/reference_lfm2.py holds it to transformers itself, in CI). states: a list that gets, for every layer, what
+    the layer added to x at every position (the output of its attention or of its convolution)."""
+    wide = {name: np.asarray(tensor, dtype=np.float64) for name, tensor in tensors.items()}
+    eps = config["norm_eps"]
+    dim, heads, kv_heads = config["hidden_size"], config["num_attention_heads"], config["num_key_value_heads"]
+    head_dim, taps = dim // heads, config["conv_L_cache"]
+    inverse = 1.0 / config["rope_parameters"]["rope_theta"] ** (np.arange(0, head_dim, 2, dtype=np.float64) / head_dim)
+    silu = lambda v: v / (1.0 + np.exp(-v))
+    norm = lambda v, weight: v / math.sqrt(float(v @ v) / len(v) + eps) * weight  # Lfm2RMSNorm
+
+    def rotate(head, pos):
+        """apply_rotary_pos_emb on one head, as rotate_half pairs its values"""
+        cos, sin = np.cos(pos * inverse), np.sin(pos * inverse)
+        cos, sin = np.concatenate([cos, cos]), np.concatenate([sin, sin])
+        return head * cos + np.concatenate([-head[head_dim // 2:], head[:head_dim // 2]]) * sin
+
+    x = [wide["model.embed_tokens.weight"][token] for token in tokens]
+    for layer, kind in enumerate(config["layer_types"]):
+        p = f"model.layers.{layer}."
+        normed = [norm(v, wide[p + "operator_norm.weight"]) for v in x]
+        mixed = []
+        if kind == "full_attention":
+            a = p + "self_attn."
+            queries, ks, vs = [], [], []
+            for pos, v in enumerate(normed):
+                q = (wide[a + "q_proj.weight"] @ v).reshape(heads, head_dim)
+                k = (wide[a + "k_proj.weight"] @ v).reshape(kv_heads, head_dim)
+                queries.append([rotate(norm(q[h], wide[a + "q_layernorm.weight"]), pos) for h in range(heads)])
+                ks.append([rotate(norm(k[h], wide[a + "k_layernorm.weight"]), pos) for h in range(kv_heads)])
+                vs.append((wide[a + "v_proj.weight"] @ v).reshape(kv_heads, head_dim))
+            for pos in range(len(tokens)):
+                attended = np.zeros((heads, head_dim))
+                for h in range(heads):
+                    kv = h // (heads // kv_heads)
+                    scores = np.array([queries[pos][h] @ ks[t][kv] / math.sqrt(head_dim) for t in range(pos + 1)])
+                    scores = np.exp(scores - scores.max())
+                    scores /= scores.sum()
+                    attended[h] = sum(scores[t] * vs[t][kv] for t in range(pos + 1))
+                mixed.append(wide[a + "out_proj.weight"] @ attended.reshape(-1))
+        else:
+            a = p + "conv."
+            weight = wide[a + "conv.weight"][:, 0, :]  # (channels, taps): the last tap is this token's
+            gated, passed = [], []
+            for v in normed:
+                b, c, z = (wide[a + "in_proj.weight"] @ v).reshape(3, dim)  # BCx.chunk(3)
+                gated.append(b * z)
+                passed.append(c)
+            for pos in range(len(tokens)):
+                convolved = np.zeros(dim)
+                for j in range(taps):
+                    at = pos - (taps - 1) + j  # zeros in front of the sequence (padding = taps - 1)
+                    if at >= 0:
+                        convolved += weight[:, j] * gated[at]
+                mixed.append(wide[a + "out_proj.weight"] @ (passed[pos] * convolved))
+        if states is not None:
+            states.append(mixed)
+        for pos in range(len(tokens)):
+            x[pos] = x[pos] + mixed[pos]
+            v = norm(x[pos], wide[p + "ffn_norm.weight"])
+            x[pos] = x[pos] + wide[p + "feed_forward.w2.weight"] @ (silu(wide[p + "feed_forward.w1.weight"] @ v)
+                                                                   * (wide[p + "feed_forward.w3.weight"] @ v))
+    classifier = wide["lm_head.weight"] if "lm_head.weight" in wide else wide["model.embed_tokens.weight"]
+    return [classifier @ norm(v, wide["model.embedding_norm.weight"]) for v in x]

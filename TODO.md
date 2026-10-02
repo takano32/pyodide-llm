@@ -2490,9 +2490,70 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 **新しいアーキテクチャ**
 
 ```
-### T260 [追加][CPU] LFM2.5（畳み込みの層と attention の層）を CPU で: 350M と 1.2B-JP を一覧に — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
+### T260 [追加][CPU] LFM2.5（畳み込みの層と attention の層）を CPU で: 350M と 1.2B-JP を一覧に — 状態: **反映済み**（2026-10-02、本線に入れるのは本会話。レビュー前。Opus medium。ブランチ `t260-lfm2`）
 ```
 - 層の種類の並び、畳み込みの層の forward と状態、GGUF の `lfm2`。規模 中。日本語の使える 0.26〜0.40 GB のモデルが増える。GPU は別のタスク（畳み込みのシェーダ）。
+- 決定と落とし穴は AGENTS.md の「LFM2・LFM2.5（T260）」。調べ（T248）は config と見出しだけを読んでいたので、式・config・重み・ライセンスを一次の資料から読み直した。調べと違っていたことは下。
+- **式の出どころ**: transformers の `src/transformers/models/lfm2/modeling_lfm2.py`（コミット `7cd73d9df0c14b151c684b708a9f27d8d0349dfe`、Apache-2.0、行は写していない）: `Lfm2ShortConv`（324〜389 行）と `causal_conv1d_update`・`causal_conv1d_fn`（281〜320 行）、`Lfm2Attention`（210〜265 行）、`Lfm2MLP`（119〜136 行）、`Lfm2DecoderLayer`（392〜434 行）、`Lfm2Model.forward`（477〜533 行）、`configuration_lfm2.py`（81〜92 行）。llama.cpp（`f1cee9941b0e843ea260bf8dd9a090fbd9711b6a`、MIT、行は写していない）の `src/models/lfm2.cpp`（`build_shortconv_block`）・`conversion/lfm2.py`・`gguf-py/gguf/tensor_mapping.py`・`src/llama-vocab.cpp` も同じ計算と名前。1 トークンの漸化式は `llama2_numpy.py` の `convolution_form()` の上のコメントに全部書いた。
+  - 層: `x += 演算(operator_norm(x))`、`x += w2(silu(w1 xn) * w3 xn)`（xn = ffn_norm(x)）。最後の norm は `embedding_norm` という名前（埋め込みの後ではなく最後に掛かる）。分類器は埋め込みと同じ表。
+  - attention の層は Qwen3 の計算そのもの: head ごとの q・k の RMSNorm（重みは head の大きさ、1 を足さない）、head 全体の RoPE（theta 1e6）、GQA、bias なし、score は √head で割る。
+  - 畳み込みの層: `in_proj`（3 dim × dim）の出力を B・C・z に 3 つに割り、h = B × z。h にチャンネルごとの 3 タップの因果の畳み込み（タップ 0 が 2 トークン前、2 が今。最初の位置の前は 0）。活性化は無い。C を掛けて `out_proj`（dim × dim）。状態は直前の 2 トークンの h だけ。
+- **実物の config**（リビジョンは一覧と同じ。どれも語彙 65536・`max_position_embeddings` 128000・eps 1e-5・`conv_L_cache` 3・`conv_bias` false・bos 1・eos 7）:
+
+  | モデル | dim | 層（c: 畳み込み、a: attention） | heads / kv | FFN の中（config の値 → 規則の後） |
+  |---|---:|---|---|---|
+  | LFM2.5-230M | 1024 | `ccacacacacacac`（14） | 16 / 8 | 2560 → 2560（`block_auto_adjust_ff_dim` が false） |
+  | LFM2.5-350M | 1024 | `ccaccaccacacacac`（16） | 16 / 8 | 6656 → 4608 |
+  | LFM2-700M | 1536 | 同じ 16（`full_attn_idxs` で言う） | 24 / 8 | 10240 → 6912 |
+  | LFM2.5-1.2B-Instruct・1.2B-JP-202606 | 2048 | 同じ 16 | 32 / 8 | 12288 → 8192 |
+  | LFM2.5-2.6B（一覧に入れていない） | 2048 | 30 層 | 32 / 8 | 10752 → 10752、語彙 128000、theta 1e7 |
+
+- **調べ（T248）と違っていたこと**: (1) 層の並びはモデルごとに違い、規則が無い（1 つの数では言えない）。(2) FFN の大きさは config の値そのままではなく、transformers の `Lfm2MLP` が 2/3 にして 256 の倍数に切り上げる（350M は 6656 → 4608）。(3) 350M の書式が読めないのはマクロを呼ぶから（230M・1.2B-Instruct も。700M も読めない）。読めるのは 1.2B-JP-202606 だけ。(4) 230M の GGUF は原本の bfloat16 より精度の高い重みから作られていて、今の `gguf_check.py` を通らない（下）。(5) ライセンスの条文を読んだ（下）。(6) 畳み込みはチャンネルごと（`groups = dim`）なので行列積に書けない。小さなカーネルが 1 つ要る（調べの見立てどおり）。規模は中のまま。
+- **形**（T229 と同じ作り）: クラスを分けず `Llama(arch="lfm2", convolution={"layers": "ccaccaccacacacac", "taps": 3})`。`FORM` に足したのは `convolution` の 1 つ。見出しは 7 個の int のまま。テンソルは層の種類ごとに積む（全層の operator_norm、attention の束 wq・wk・wv・wo・q と k の head の norm、畳み込みの束 win・タップ・wout、全層の ffn_norm と w1・w2・w3、最後の norm、RoPE の表、別の分類器）。タップは int8 のファイルでも float32。並びの 3 か所（`lfm2_tensors()`・`checkpoint_dtype()`・`layout()`）は pytest が大きさと置き場で突き合わせる。状態は KV と別に持ち、位置 0 で消し、順番の違う位置は断る（NumPy も forward.js も）。
+- **今ある変換は変わらない**: 作り物の 84 通り（Llama 5 つ・Qwen2 2 つ・Qwen3 3 つ・Granite・GPT-2 2 つ・NeoX 2 つ・Qwen3.5 3 つの 4 つの dtype と、GGUF の道の 12 通り）で、チェックポイントと tokenizer.bin のハッシュと options が本線の変換器と同じ（`.tmp/t260/same_conversions.py`、前の版との比べなのでリポジトリには入れない）。`CONVERTER` は上げていない。**forward.js の今あるモデルの道も変わらない**: 何もしないカーネルで 228 通りのエンジン（14 種類 37 の形と dtype を relaxed の有無・共有か・float16 の鍵かで組んだもの）の全カーネルの呼び出し 992,932 回とメモリの大きさが、本線の forward.js と同じ（T229 のレビューの方法、`.tmp/t260/same_calls.mjs`）。
+- **transformers との一致**（CI、x86-64、float32、torch 2.14.1 の CPU、`tests/reference_lfm2.py`。run 36954469487、最初の回は 36952413896）:
+
+  | 実物（原本の safetensors） | logits の差の最大（まとめて / 1 トークンずつ） | transformers 自身の 2 つの道の差 | 最尤トークン | 状態（畳み込みの行 / 鍵 / 値） | 1024 位置 |
+  |---|---|---:|---|---|---:|
+  | LFM2.5-350M | 4.48e-5 / 5.25e-5 | 8.39e-5 | 96 / 96 | 1.1e-6 / 1.2e-6 / 1.8e-6 | 4.01e-5 |
+  | LFM2.5-230M | 3.72e-5 / 4.58e-5 | 5.36e-5 | 96 / 96 | 1.3e-6 / 8.7e-7 / 1.4e-6 | 2.29e-5 |
+  | LFM2-700M | 3.81e-5 / 3.86e-5 | 3.50e-5 | 96 / 96 | 1.2e-6 / 1.1e-6 / 1.6e-6 | 3.96e-5 |
+  | LFM2.5-1.2B-Instruct | 4.39e-5 / 4.67e-5 | 4.86e-5 | 96 / 96 | 1.5e-6 / 1.1e-6 / 1.8e-6 | 4.39e-5 |
+  | LFM2.5-1.2B-JP-202606 | 3.15e-5 / 4.43e-5 | 4.02e-5 | 96 / 96 | 1.2e-6 / 9.7e-7 / 1.6e-6 | 2.10e-5 |
+
+  線は logits が max(1e-3, transformers 自身の差の 10 倍)、状態が max(1e-4, 同 10 倍)。greedy の 16 トークンも 5 つとも同じ文（英語の問いと一覧のプロンプトの 2 つずつ）。本物のトークナイザと ID が同じで、本物の書式は「`<|startoftext|>` + 一覧の書式」。作り物の 4 つ（別の分類器と 4 タップ、FFN をそのまま言う config、`full_attn_idxs` と 2 タップと eps 1e-6）は 1.1e-5〜4.1e-5、状態 6.8e-7〜4.9e-6。
+- **壊し方 19 通り**（実物の 350M のエンジンに 1 つずつ。線は logits 1e-3、状態 1e-4。数字は transformers からの logits の差の最大 / 状態の最大 / 最尤トークンが同じ位置の数）: タップの逆順 34.4 / 1.3 / 1、次の層のタップ 37.6 / 1.7 / 0、**いちばん古いタップを落とす 5.39 / 0.27 / 84**（いちばん弱い。それでも線の 5392 倍）、畳み込みの後の SiLU（Qwen3.5 のもの）35.8 / 1.2 / 8、gate B の sigmoid 31.6 / 1.8 / 3、B と C の入れ替え 24.4 / 2.2 / 8、**1 トークン遅れの畳み込み（詰めの 1 ずれ）34.6 / 1.3 / 0**、全層で 1 つの状態 28.0 / 1.5 / 3、位置 0 で消さない 20.6 / 0.79 / 41、**norm の eps 1e-6 17.7 / 0.36 / 75**、eps 1e-4 23.2 / 0.92 / 13、eps 0 19.1 / 0.40 / 73、**層の種類の入れ替え 26.2 / 無限大 / 6**、q と k の head の norm の入れ替え 5.42 / 0.35 / 90、k の head の norm なし 9.91 / 0.47 / 73、operator_norm と ffn_norm の入れ替え 35.2 / 4.1 / 0、w1 と w3 の入れ替え 25.2 / 2.6 / 8、theta 1e7 2.64 / 0.57 / 91（logits ではいちばん小さい: 線の 2643 倍）、theta 1e4 11.1 / 0.86 / 69。19 通りとも線を越える（道具は越えないものがあれば exit 1）。**このモデルは誤りに敏感**（eps を 1 桁変えるだけで logits が 17 動く）ので、線は余裕で足りる。forward.js の 10 通り（状態を消さない・行をずらさない・位置を飛ばして通す・状態を層で分けない・層 0 のタップ・層 0 の win・層 0 の wout・footprint の 2 つ・GPU の断りの行）も、forward-check・threads-check・memory-check・gpu-hybrid-check のどれかが落とす（手元、`.tmp/t260/break_run.py`）。
+- **ページの forward**（`forward.js`）: 畳み込みの層の行列 2 つは今の段の仕事（`matmul_q8r` とタイル）。その間はカーネル `short_conv`（`kernels/kernel.ts`、静的なデータなし）を取りまとめ役が 1 トークンずつ呼ぶ: 状態の行を 1 つ上へずらし、最後の行に h を書き、畳み込みに C を掛ける。**NumPy とビット単位で同じ**（`tests/conv-check.mjs`: JavaScript の同じ順の計算と 40 通り、`Llama.short_convolution()` と 29 トークン）。**スレッド**: 状態に触るのは取りまとめ役だけで段の外なので、段をやり直しても同じ数を読む。T229 の「2 枚持ち」は要らなかった。仕事の種類も足していない。1・2・4・8 本でビット単位で同じ、段の途中で止まるスレッドの後も同じ文（作り物と実物の 350M・1.2B JP、x86-64 と arm64）。`footprint()` は状態（層ごとに taps × dim 個）と attention の層だけの KV を数える（`tests/memory-check.mjs`: 実物の 350M の形と作り物、上回りは 1 MiB 前後）。共有・共有でないメモリ・64 ビット・relaxed なし（Safari の道）・float16・6 ビット・プロンプトのブロックは全部の組が見る。
+- **メモリ**（`footprint()`、文脈 4096、int8）: 230M 259 MB + 後ろ 133 MiB、350M 399 MB + 148 MiB（全部の層が attention なら 308 MiB）、700M 836 MB + 197 MiB、1.2B 1.32 GB + 250 MiB。どれも 32 ビットのメモリに入る。KV は GQA なので float32。
+- **GPU には置かない**: `gpuUnfit()` の 1 行（「convolution layers are not on the GPU yet」）。`tests/gpu-hybrid-check.mjs`（偽の GPU の Worker が呼ばれないこと）と memory-check が見る。その行を消すと両方落ちる。`gpuOnlyUnfit()` は Llama 以外を断る今の行のまま。
+- **品質**（CI、1500 トークン、英語と日本語の Wikipedia の 3 記事。% は原本の float32 に対して。x86-64 と arm64 で同じ数。run は下）:
+
+  | モデル | 文 | float32（原本） | float32（GGUF の値）= int8 + NumPy | + 8 ビットの活性値（Safari の道） | + 7 ビットの活性値（ページ） |
+  |---|---|---:|---:|---:|---:|
+  | LFM2.5 350M | 英語 | 70.511 | 73.093（+3.66%） | 76.562（+8.58%） | 72.464（+2.77%） |
+  | LFM2.5 350M | 日本語 | 34.362 | 34.662（+0.87%） | 35.693（+3.87%） | 35.283（+2.68%） |
+  | LFM2.5 1.2B JP | 英語 | 18.255 | 18.229（−0.14%） | 18.427（+0.94%） | 18.962（+3.87%） |
+  | LFM2.5 1.2B JP | 日本語 | 16.829 | 16.785（−0.26%） | 17.025（+1.17%） | 17.491（+3.94%） |
+
+  Q8_0 から作る int8 は Q8_0 の値そのもの（損なし: 2 つの列は同じ数）。**350M は量子化に弱い**: llama.cpp の Q8_0 の値を float32 の NumPy で掛けるだけで英語が +3.66%（うちのカーネルを通らない数）。原本から自分で量子化した int8（`?hf=` の道）も英語で 73.010（+3.54%）で、その上の 7 ビットは 71.230、**8 ビットは 78.006（原本から +10.6%）**（run 36960739473。この回は道具の「NumPy の int8 から 6% 以内」の線を 8 ビットが 6.84% で越えて失敗で終わった: 日本語の行は取れていない）。**活性値のビット数の順に並ばない**（350M は 8 ビットのほうが悪く、1.2B JP は 7 ビットのほうが悪い）。手元の調べ（350M、英語の 300 トークン、NumPy で行列の入力を同じ規則で量子化）: 8 ビットの KL 0.0018 のうち **0.0016 が attention の層の q・k・v の入力**で、ここは 7 ビットにしても 0.0020 にしか増えない（ほかの入力は 4 倍になる）。丸めを 1e-6 ずらすだけで logits が 0.03〜0.17 動く（カーネルの道と NumPy の写しの差と同じ大きさ）ので、カーネルの誤りではない。見立て（未確認）: q か k がほぼ 0 の head があり、head の norm がその雑音を拡大する（eps に敏感なのと同じ所）。書く文は 5 つとも崩れていない（下）。**持ち主の判断**: ページの道（7 ビット）は原本から +2.7〜3.9% で T98 の線（+3〜5%）の中。Safari の道の 350M の英語 +8.6% は線の外。直すなら attention の層の q・k・v の入力を量子化しない形（別のタスク、採番は本会話）。
+- **速さ**（CI、`threads-check.mjs`、int8、64 位置、4 論理コアのランナー。tok/s）: 350M は x86-64（EPYC 9V45）で 1 本 63.3・2 本 88.2・4 本 88.9・8 本 85.0、arm64（Neoverse、名前は unknown）で 43.1・68.5・105.4・93.6。1.2B JP は x86-64（EPYC 9V74）で 12.0・21.1・22.7・22.2、arm64 で 13.5・23.7・41.2・37.3。プロンプトの 16 トークンの塊は 350M が x86-64 の 4 本 350・arm64 の 4 本 276、1.2B JP が 36・85。検索はどの回も 4 本を選んだ。
+- **GGUF の道**: 作り手（LiquidAI）の Q8_0。llama.cpp は層の種類を層ごとの KV head の数（畳み込みは 0）で、最後の norm を `token_embd_norm`、畳み込みの 3 つを `shortconv.*` と書く。q・k は HF の並びのまま、畳み込みの重みは 1 の軸が無い (dim, taps)。ほかは原本のまま。`gguf_check.py` に lfm2 の名前と config の行を足した（単体試験 24 件: 原本と違うもの 7 通り・config の違い 3 通り・q を Llama のように回したもの）。**`gguf.yml` の candidates（run 36954251209）**: 350M・700M・1.2B-Instruct・1.2B-JP は不一致 0、いちばん近い参照から 0.00（原本に llama.cpp の Q8_0 をかけた値そのもの）、テンソルの相対誤差の最大 0.0064〜0.0066、語彙の違い 0（GGUF の後ろ 1134 個は詰め物）。**230M は落ちた**（132 のテンソルが線の外、F32 の norm が 1.5e-3）。手元で確かめた訳: GGUF の F32 のテンソル 49 個（norm とタップ）を bfloat16 に丸めると 49 個とも原本とビット単位で同じ。つまり GGUF は原本より精度の高い重みから作られている。別のモデルではないが、今の道具にその参照が無いので、**230M は原本の safetensors から取る**（取得 459 MB）。GGUF に替える（247 MB）なら `gguf_check.py` に「原本は GGUF の値の bfloat16」の参照を足す（別のタスク）。
+- **一覧に足した 5 つ**（どれも「answers instructions · 日本語 / English」。プロンプトは「これからの流行りを3つ挙げてください。」）:
+
+  | ID | 名前 | note の続き | 取得元 |
+  |---|---|---|---|
+  | `hf-lfm2.5-230m` | LFM2.5 230M | fetches 459 MB → int8 259 MB | 原本の safetensors |
+  | `hf-lfm2.5-350m` | LFM2.5 350M | fetches 379 MB (GGUF) → int8 399 MB | Q8_0 |
+  | `hf-lfm2-700m` | LFM2 700M | fetches 792 MB (GGUF) → int8 836 MB · desktop only | Q8_0 |
+  | `hf-lfm2.5-1.2b-instruct` | LFM2.5 1.2B Instruct | fetches 1.2 GB (GGUF) → int8 1.3 GB · desktop only | Q8_0 |
+  | `hf-lfm2.5-1.2b-jp` | LFM2.5 1.2B JP | fetches 1.2 GB (GGUF) → int8 1.3 GB · desktop only | Q8_0（`LFM2.5-1.2B-JP-202606`） |
+
+  書式は ChatML（`<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n`）。1.2B JP は変換器が本物の書式を読む。ほかの 4 つは手書きで、specials に変換器のもの（special でない追加のトークン。「Mathias」「python」もある）と `<|im_start|>`・`<|im_end|>` を変換器の順に並べた。**`format_check.py` は 5 つとも 9/9**（手元、transformers 5.16.1）。生成の設定はカードの temperature 0.1（700M は 0.3）・繰り返しの罰 1.05。カードの top-k 50 と min-p はページに無いので top-p 1（nucleus なし）。止まりは BOS と `<|im_end|>`（7）。`browsers.yml` に組 `lfm2` を足した。
+- **最初のトークン**（T250 のレビューの決まり: 測る）: 本物のトークナイザは文の頭に `<|startoftext|>`（1）を置き、書式もそれから始まる。変換器の BOS も 1 なので、ページの送る ID は本物の書式の ID そのもの。`tests/start_check.py`（原本、float32、日本語の Wikipedia の 1500 トークン、run 36954469487）: 350M は BOS あり 35.94・なし 532.1・`<|im_end|>` 239.7・`<|pad|>` 608.7。1.2B JP は BOS あり 18.84・なし 20.64・`<|pad|>` 31.52、**`<|im_end|>` を頭に置くと 13.34**（BOS より 29% 低い）。素の文を続ける使い方は一覧に無く（5 つとも書式つき）、本物の書式は BOS なので BOS のまま。`tests/chat_nll.py` は回していない（A と B が同じ ID の列になる: 比べるものが無い）。
+- **書いた文**（CI の x86-64、ページのエンジン int8・7 ビットの活性値、greedy の 32 トークン。run 36955478431、230M は原本から 36958042464）: 230M「もちろんです！以下に、2023年以降の流行を3つ挙げます。各テーマは現在のトレンドや文化的変化を」、350M「もちろんです。以下に、今後の流行を3つ挙げます：\n\n1. **AI技術の進化**  \n   人工知能」、700M「1. ウェルネスとマインドフルネスの重視：健康と幸福への関心が高まっているため、ヨガ、瞑」、1.2B Instruct「2023年現在の流行を3つ挙げます。\n\n\n1. インフルエンサー\n\nSNSでフォロワーが増え」、1.2B JP「これからの流行りを3つ挙げます。\n\n1. サステナブルファッション\n環境に配慮した素材や製法を用いた」。項目の設定（temperature 0.1）でも崩れない。**固定値**（`tests/fixed_outputs.py`）: 350M の GGUF の道と safetensors の道の 2 つで「もちろんです。以下に、今後の流行を3つ挙げます：」。transformers の `generate()` も同じ ID に同じ文を書く。
+- **CI**（失敗と書いた 2 つのほかは成功）: 本線（T232・T233 まで）を入れた後の全部の組 run 36962344536（`d0e2432`、EPYC 7763、944 秒）。その前の全部の組 x86-64 run 36953598843（EPYC 9V74、958 秒）、arm64 run 36956492068（860 秒）。transformers の参照 36952413896・36954469487。GGUF 36954251209（230M のジョブだけ失敗: 上）。ページの計測 36955478431（350M、x86-64）・36956492068（350M、arm64）・36958042464（1.2B JP、x86-64）・36959597548（1.2B JP、arm64）・36960739473（350M の原本。8 ビットの線で失敗: 上）・36961360444（1.2B JP の原本）（原本の float32）。手元: pytest 1335 件、`conv-check`・`memory-check`・`worker-sink-check`・`gpu-hybrid-check`・`models-check`、作り物の forward-check（共有・共有でない・64 ビット・relaxed なし）と threads-check、実物の 350M の変換と文（NumPy の float32 と forward.js の int8）。
+- **未計測・未確認**: 実ブラウザ（本番の `models.yml`。本線に入れた後に本会話が回す）。持ち主の端末（速さ、選ばれる本数、iPhone で開くか）。Safari の道の実物（8 ビットの活性値は CI の Node で測った。350M の英語で +4.75%）。6 ビットの実物の perplexity。230M と 700M と 1.2B Instruct の perplexity と tok/s。文脈 4096 より先（カードの文脈は 32,768、config は 128,000。ページは今までどおり 4096 で切る）。`?hf=` で開いたときの実ブラウザ（書式が読めない 4 つは書式なしで開く）。q・k・v の入力の量子化が効く訳（見立てだけ）。LFM2.5-2.6B（語彙 128000 で `tokenizer.json` が別。変換器が読めるかは見ていない）と MoE の 8B-A1B は対象外。1 つの種類の層が 1 層だけのモデルは変換器が断る（T229 のレビューの (11) と同じ。実物は 6 層以上）。
+- **持ち主に決めてもらうこと**: (1) 一覧の名前と note（上の表）と、ステータス行の文「prompts on the CPU (convolution layers are not on the GPU yet)」。(2) 量子化の損（上の表: ページの道は原本から +2.7〜3.9%、Safari の道の 350M の英語は +8.6%）をそのままにして一覧に置くか、q・k・v の入力を量子化しない形を先に作るか。(3) 230M を GGUF（247 MB）に替えるために `gguf_check.py` に bfloat16 の参照を足すか。(4) ライセンス **LFM Open License v1.0**（カードは `other`・`lfm1.0`。条文は Apache-2.0 の形に第 5 条「Commercial Use Limitation」を足したもの: 年間の収入が 1000 万ドル以上の法人の商用の利用は許されない。非営利の研究はその限りでない。再配布は許諾文の写しを渡すことなどが条件）。ページは重みを配らず、訪問者のブラウザが Hugging Face から取る。方針 8（ライセンスで外さない）のとおり一覧に入れ、名前は LICENSE の題から写した。(5) モデルのページの「Other repository…」の説明文（Llama, Mistral, Qwen2, Qwen3, GPT-2 or GPT-NeoX）は Qwen3.5・Granite のときから直していない。LFM2 も足すかは文面の判断なので触っていない。(6) 700M（古い LFM2 の世代）を一覧に残すか。
 
 ```
 ### T261 [追加][CPU][WebGPU] Gemma 3 の 270M と 1B（norm 4 つ・GeGLU・512 の窓・2 つの RoPE） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）

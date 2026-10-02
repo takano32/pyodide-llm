@@ -229,6 +229,11 @@ jobs:
             timeout: 3000
             models: >-
               hf-qwen2.5-coder-7b-instruct hf-deepseek-r1-qwen-7b hf-deepseek-r1-llama-8b hf-llama-3.1-8b-instruct
+          # T260 (2026-10-02): Liquid AI's LFM2 and LFM2.5 (convolution layers among attention layers), 3.9 GB of downloads
+          - size: lfm2
+            timeout: 1800
+            models: >-
+              hf-lfm2.5-230m hf-lfm2.5-350m hf-lfm2-700m hf-lfm2.5-1.2b-instruct hf-lfm2.5-1.2b-jp
     steps:
       - name: Checkout
         uses: actions/checkout@v7

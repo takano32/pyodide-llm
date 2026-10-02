@@ -30,7 +30,7 @@ flowchart TD
 | `src/pages/index.astro` | The chat page. It draws what the worker reports; the URL holds the state (`?model=`, `?hf=`, `?bits=`, `?without=` and others). |
 | `src/models.js` | The model list: files, sizes, engine options, generation settings, chat templates. The first entry is the default. |
 | `public/worker.js` | Loads Pyodide and NumPy, downloads the model in parts while Pyodide loads, and runs `generate()`. |
-| `public/llama2_numpy.py` | The engine. Reads llama2.c's legacy format (float32, float16, int8, 6 bits, ternary), the tokenizers (llama2.c's BPE, sentencepiece Unigram, byte-level BPE), the architectures (Llama, Qwen2, Qwen3, Qwen3.5, GPT-2, GPT-NeoX), and samples. Without the kernels, NumPy does the arithmetic. |
+| `public/llama2_numpy.py` | The engine. Reads llama2.c's legacy format (float32, float16, int8, 6 bits, ternary), the tokenizers (llama2.c's BPE, sentencepiece Unigram, byte-level BPE), the architectures (Llama, Qwen2, Qwen3, Qwen3.5, LFM2, GPT-2, GPT-NeoX), and samples. Without the kernels, NumPy does the arithmetic. |
 | `public/llama2_convert.py` | Converts a Hugging Face model (or a GGUF: Q8_0, or the ternary PQ2_0 and PTQ1_0) as its file arrives, and writes it into the model's memory. The same code builds the site's models (`convert_hf.py`, `quantize.py`) and converts in the browser. It also reads a model's chat template (a small part of Jinja). |
 | `public/forward.js` | One token's forward pass, and a block of prompt tokens, in JavaScript. It calls the same kernels in the same order as the Python engine would, and chooses for each block and each few tokens whether the CPU or the GPU runs them. |
 | `kernels/` | The SIMD kernels: int8 and float32 matrix products, activation quantization, RMSNorm, LayerNorm, RoPE, attention, SwiGLU, GELU, and the sampling (repetition penalty, softmax, top-p). |
@@ -89,6 +89,15 @@ used, but not kept, and is run again once the GPU is ready.
   The matrices are held twice (a step reads one copy and writes the other, so that it can be repeated if a thread
   stops in the middle of it): 38 MB for Qwen3.5 0.8B. Such a model takes its tokens in order from position 0, and
   its layers run on the CPU only.
+- An LFM2 or LFM2.5 (Liquid AI) has convolution layers among its attention layers, in an order its `config.json`
+  lists (10 of the 16 layers of LFM2.5 350M). A convolution layer multiplies two parts of a matrix's output with each
+  other, runs a three-tap convolution along the tokens over each channel of the result, multiplies that by a third
+  part, and applies a second matrix. It keeps no keys and values, only the last two tokens' values (8 KB a layer for
+  the 350M), so the memory after the weights is about half of what the same model would take with attention in
+  every layer (148 MiB against 308 MiB for the 350M at 4096 positions). The two matrices go to the threads like any
+  other; the step between them is one small kernel on the coordinating thread, which alone touches the kept values,
+  so a matrix product that has to be repeated reads what it read before. Such a model also takes its tokens in order
+  from position 0, and runs on the CPU only (there is no shader for the convolution yet).
 - The model's WebAssembly memory is reused when another model is chosen: Chromium would not create a third
   WebAssembly memory on one page. Before the next model loads, the page also waits (up to 5 seconds) for the GPU
   worker of the last one to let go of its buffers and its device.
