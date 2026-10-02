@@ -91,7 +91,7 @@ def build(name, shape, directory, seed):
 def convert(llama_cpp, directory, outtype):
     out = directory / f"tiny-{outtype}.gguf"
     run = subprocess.run([sys.executable, str(llama_cpp / "convert_hf_to_gguf.py"), str(directory), "--outfile", str(out),
-                          "--outtype", outtype], capture_output=True, text=True, cwd=llama_cpp)
+                          "--outtype", outtype, "--no-mtp"], capture_output=True, text=True, cwd=llama_cpp)
     if run.returncode:
         say(f"llama.cpp's converter failed: {run.stderr[-3000:]}")
         raise SystemExit(1)
