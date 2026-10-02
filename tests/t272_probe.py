@@ -116,8 +116,11 @@ class Probe:
         out[..., 1] = x0 * s + x1 * c
         return out.reshape(T, h, hs)
 
-    def window(self, ids, quant=None, record=None):
-        """logits (T, vocab). quant: {role: dict(qmax=, rows=, layers=, group=, outliers=, top=, shift=, noise=, seed=)}"""
+    def window(self, ids, quant=None, record=None, inject=None, perturb=None):
+        """logits (T, vocab). quant: {role: dict(qmax=, rows=, layers=, group=, outliers=, top=, shift=, noise=, seed=)}.
+        inject: {"k": {layer: the first position's keys}, "v": {...}, "h": {conv layer: its h}}: what position 0 gives the
+        later positions, taken from another computation of it. perturb: {(layer, "k" | "v"): (relative noise, seed)}: the
+        first position's keys or values of that layer moved by it."""
         L = self.l
         quant = quant or {}
         T = len(ids)
@@ -153,6 +156,13 @@ class Probe:
                 q = self.rope_rows(head_norm_rows(q, L.q_norm[a], self.heads, self.eps["q"]))
                 k = self.rope_rows(head_norm_rows(k, L.k_norm[a], self.kv, self.eps["k"]))
                 v = v.reshape(T, self.kv, self.hs)
+                if inject:
+                    k, v = k.copy(), v.copy()
+                    k[0], v[0] = inject["k"][l], inject["v"][l]
+                for part, array in (("k", k), ("v", v)):
+                    if perturb and (l, part) in perturb:
+                        eps, seed = perturb[(l, part)]
+                        array[0] = array[0] * (1.0 + eps * np.random.default_rng([seed, l]).standard_normal(array[0].shape)).astype(np.float32)
                 mul = self.heads // self.kv
                 kk = np.repeat(k, mul, axis=1).transpose(1, 2, 0)  # (heads, head, T)
                 vv = np.repeat(v, mul, axis=1).transpose(1, 0, 2)  # (heads, T, head)
@@ -168,6 +178,11 @@ class Probe:
                 mixed = Q(xb, "win", l) @ L.win[a].T
                 B, C, z = mixed[:, :L.dim], mixed[:, L.dim:2 * L.dim], mixed[:, 2 * L.dim:]
                 h = B * z
+                if inject:
+                    h = h.copy()
+                    h[0] = inject["h"][l]
+                if record is not None:
+                    record.setdefault("h", {})[l] = h
                 conv = np.zeros_like(h)
                 for j in range(self.taps):
                     shift = self.taps - 1 - j
@@ -209,11 +224,11 @@ class Runner:
         self.base = float(-self.base_target.mean())
         say(experiment="base", ppl=math.exp(self.base), tokens=self.count, seconds=round(time.time() - began, 1))
 
-    def run(self, name, quant=None, setup=None):
+    def run(self, name, quant=None, setup=None, **window):
         began = time.time()
         if setup:
             setup(self.probe)
-        lps = [log_softmax(self.probe.window(ids, quant)) for ids in self.windows]
+        lps = [log_softmax(self.probe.window(ids, quant, **window)) for ids in self.windows]
         target = np.concatenate([lp[np.arange(len(ids) - 1), np.asarray(ids[1:])] for lp, ids in zip(lps, self.windows)])
         kls = np.concatenate([(np.exp(b) * (b - lp)).sum(axis=1)[:-1] for b, lp in zip(self.base_lp, lps)])
         diff = max(float(np.abs(b - lp).max()) for b, lp in zip(self.base_lp, lps))
@@ -334,6 +349,80 @@ def main():
                 run.run(f"{bits}-bit, every input, the 8 largest norm weights taken out of qkv's groups", {**every, "qkv": dict(qmax=qmax, outliers=static)})
                 for group in (16, 8, 4):
                     run.run(f"{bits}-bit, every input, groups of {group} for qkv", {**every, "qkv": dict(qmax=qmax, group=group)})
+        elif experiment == "hybrid":
+            # the first position's state from the float32 original (T272_ORIGINAL: the prefix of its conversion), the others from the
+            # int8 weights: what is left of the Q8_0 weights' loss when the first position is not theirs
+            import os
+            original = load(os.environ["T272_ORIGINAL"])
+            oprobe = Probe(original)
+            orun = Runner(oprobe, windows)
+            say(experiment="hybrid", original_float32_ppl=math.exp(orun.base), int8_weights_ppl=math.exp(run.base))
+            rec = {}
+            oprobe.window([windows[0][0]], None, rec)
+            inject = {"k": {l: rec["k_final"][l][0] for l in attention}, "v": {l: rec["v_final"][l][0] for l in attention},
+                      "h": {l: rec["h"][l][0] for l, (short, _) in enumerate(llama.slots) if short}}
+            qrec = {}
+            probe.window([windows[0][0]], None, qrec)
+            for l in attention:
+                kv, kv0 = qrec["v_final"][l][0], inject["v"][l]
+                kk, kk0 = qrec["k_final"][l][0], inject["k"][l]
+                say(experiment="hybrid", layer=l, first_position_v_relative_distance_int8_from_original=float(np.linalg.norm(kv - kv0) / np.linalg.norm(kv0)),
+                    first_position_k_relative_distance_int8_from_original=float(np.linalg.norm(kk - kk0) / np.linalg.norm(kk0)))
+            run.run("the int8 weights with the first position's state from the float32 original", None, inject=inject)
+            for bits in (8, 7):
+                run.run(f"{bits}-bit, every input, the first position's state from the float32 original", quant_all(qmax_of(bits)), inject=inject)
+                run.run(f"{bits}-bit, every input but the first position's, its state from the float32 original", quant_all(qmax_of(bits), rows="rest"), inject=inject)
+            # the float32 original with the first position's values of the first attention layer moved by relative noise: how much
+            # one vector of 512 numbers moves the perplexity, in random directions
+            for eps in (0.003, 0.01, 0.03):
+                for seed in (1, 2, 3, 4):
+                    orun.run(f"the float32 original, the first attention layer's values of the first position moved by {eps} (seed {seed})", None, perturb={(attention[0], "v"): (eps, seed)})
+        elif experiment == "answers":
+            import re
+            questions = ["日本でいちばん高い山はどこですか？", "これからの流行りを3つ挙げてください。", "17 × 24 はいくつですか？途中の計算も書いてください。",
+                         "次の文を英語に訳してください。「今日は天気がいいので、散歩に行きます。」", "光合成とは何ですか？やさしく説明してください。",
+                         "夏目漱石の代表作を 2 つ挙げ、一言ずつ説明してください。", "What is the capital of Japan? Answer in one sentence.",
+                         "Give me three tips for sleeping better.", "What is 17 times 24? Show the steps.",
+                         "Translate into French: \"The weather is nice today, so I will go for a walk.\"", "Explain photosynthesis to a ten-year-old.",
+                         "Write a Python function that returns the n-th Fibonacci number, and say how it works in one sentence."]
+            import os
+            new_tokens = int(os.environ.get("T272_NEW_TOKENS", "48"))
+            used = int(os.environ.get("T272_QUESTIONS", len(questions)))
+            specials = sorted(set(llama.specials) | {"<|im_start|>", "<|im_end|>"}, key=lambda t: (-len(t), t))
+            stops = set(llama.stop_tokens)
+            answers = []
+            for question in questions[:used]:
+                text = f"<|im_start|>user\n{question}<|im_end|>\n<|im_start|>assistant\n"
+                ids = [llama.bos] + llama.tokenizer.encode(text, specials)
+                began = time.time()
+                written = []
+                while len(written) < new_tokens:
+                    logits = probe.window(ids + written)[-1]
+                    token = int(np.argmax(logits))
+                    written.append(token)
+                    if token in stops:
+                        break
+                answers.append((question, ids, written))
+                text_out = b"".join(bytes(llama.tokenizer.decode(a, b, llama.bos)) for a, b in zip([ids[-1]] + written[:-1], written)).decode("utf-8", "replace")
+                say(experiment="answers", question=question, prompt_tokens=len(ids), answer_tokens=len(written), seconds=round(time.time() - began, 1), answer=text_out)
+            variants = [("8-bit, every input", quant_all(127)), ("7-bit, every input", quant_all(63)),
+                        ("8-bit, every input but the first position's", quant_all(127, rows="rest")),
+                        ("7-bit, every input but the first position's", quant_all(63, rows="rest")),
+                        ("8-bit, every input, groups shifted by 3", quant_all(127, shift=3)), ("8-bit, every input, groups shifted by 21", quant_all(127, shift=21)),
+                        ("8-bit, every input, groups shifted by 29", quant_all(127, shift=29)), ("7-bit, every input, groups shifted by 11", quant_all(63, shift=11)),
+                        ("7-bit, every input, groups shifted by 21", quant_all(63, shift=21))]
+            for name, quant in variants:
+                firsts, agree, total = [], 0, 0
+                for question, ids, written in answers:
+                    logits = probe.window(ids + written, quant)
+                    best = logits[len(ids) - 1: len(ids) - 1 + len(written)].argmax(axis=1)
+                    wrong = [i for i, (a, b) in enumerate(zip(best, written)) if a != b]
+                    firsts.append(wrong[0] if wrong else None)
+                    agree += len(written) - len(wrong)
+                    total += len(written)
+                same = sum(f is None for f in firsts)
+                say(experiment="answers", variant=name, tokens_agreeing_with_the_float_activation_answer=f"{agree}/{total}", answers_identical=f"{same}/{len(firsts)}",
+                    first_difference=[f for f in firsts])
         elif experiment == "profile":
             for bits in (8, 7):
                 run.run(f"PROFILE {bits}-bit, every input", quant_all(qmax_of(bits)))
