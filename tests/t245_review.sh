@@ -143,6 +143,15 @@ case "$stage" in
         penalty: penalty === "none" ? null : Number(penalty) }));' "$dir/g8" "$id" "$penalty" "$dir/page.json" "$picked" "$wide")
     node tests/t236_loops.mjs "$spec"
     ;;
+  llamacpp)  # llama.cpp's own converter on made-up Qwen3.5 models of two and three value heads to a key head
+    reference_tools
+    transformers_of_t229
+    pip install --quiet tqdm pyyaml requests sentencepiece protobuf
+    sha=dcd387a412ca54e172a8d60eb71ef6753850c8ca
+    curl -sSL -f --retry 5 -o "$dir/llama.cpp.tar.gz" "https://github.com/ggml-org/llama.cpp/archive/$sha.tar.gz"
+    tar -xzf "$dir/llama.cpp.tar.gz" -C "$dir"
+    python tests/llamacpp_tiny.py "$dir/llama.cpp-$sha" "$dir/tiny" --outtypes "${1:-f32,q8_0}"
+    ;;
   formats)  # the Qwen3.5 entries' formats against transformers' own, for every prompt, strictly
     pip install --quiet "transformers==5.16.1" "tokenizers==0.23.1" "jinja2==3.1.6" "sentencepiece==0.2.2" protobuf
     python tests/format_check.py --prompt "<think>" --prompt "<|im_start|>assistant" "$dir/formats" \
