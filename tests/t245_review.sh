@@ -150,6 +150,27 @@ case "$stage" in
         penalty: penalty === "none" ? null : Number(penalty) }));' "$dir/g8" "$id" "$penalty" "$dir/page.json" "$picked" "$wide")
     node tests/t236_loops.mjs "$spec"
     ;;
+  layerwise)  # layerwise <size> <entry id> [check]: transformers a layer at a time against the page's forward pass on the GGUF as int8
+    size=${1:?a size}
+    id=${2:?an entry id}
+    reference_tools
+    transformers_of_t229
+    page_tools
+    article en "$dir/en.txt"
+    python tests/layerwise_qwen35.py "$dir/orig" --model "$size" --out "$dir/lw" --text "$dir/en.txt" ${3:+--check}
+    df -h /mnt | sed 's/^/runner: /'
+    model=$(python tests/hf_fetch.py "$id" "$dir/hf" | tail -1)
+    prepare "$model" g8 int8
+    wide=$(big "$dir/g8.bin")
+    for label in 7-bit 8-bit; do
+      node tests/q8_page_logits.mjs "{\"out\": \"$dir/g8\", \"ids\": $(cat "$dir/lw-sentence-ids.json"), \"labels\": [\"$label\"], \"save\": \"$dir/page\", \"wide\": $wide}"
+    done
+    python tests/q8_page_compare.py "$dir/lw" "$dir/page"
+    wideflag=; if [ "$wide" = true ]; then wideflag=--wide; fi
+    echo "T245 layerwise: the page's perplexity rows (8-bit, then 7-bit) on the same 1500 tokens"
+    node tests/perplexity.mjs "$dir/g8" 1500 "$dir/en.txt" --file $wideflag --rows=2
+    node tests/perplexity.mjs "$dir/g8" 1500 "$dir/en.txt" --file $wideflag --rows=0
+    ;;
   llamacpp)  # llama.cpp's own converter on made-up Qwen3.5 models of two and three value heads to a key head
     reference_tools
     transformers_of_t229
