@@ -108,6 +108,11 @@ PY
     done
     rm -rf "$room/$id".*
     ;;
+  write)
+    # what an entry writes through the page's options (tests/write.sh: greedy, and the entry's sampling for SEEDS), page_tools first
+    page_tools
+    bash tests/write.sh "$@"
+    ;;
   loss)
     # where a small model's loss against the original comes from: tests/perplexity.mjs's three rows on the same English text, the int8 weights
     # with 8-bit activations (matmul_q8), with 7-bit ones (matmul_q8r, as the page runs them) and widened to float32 with float32 activations (NumPy)
