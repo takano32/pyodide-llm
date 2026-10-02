@@ -66,9 +66,10 @@ def named_tokens(folder, tokenizer):
     return found
 
 
-def score(model, windows, starts):
+def score(model, windows, starts, stored=False):
     """({start: the sum of the negative log likelihoods of the targets}, how many targets): every window of ids scored
-    from its second token under each start (a token or None), the model's logits through transformers"""
+    from its second token under each start (a token or None), the model's logits through transformers. stored: the
+    weights are held as stored and every product is float32 (--stored), the embeddings float32 before the first layer"""
     import torch
     totals, scored = {label: 0.0 for label in starts}, 0
     with torch.no_grad():
@@ -76,7 +77,9 @@ def score(model, windows, starts):
             scored += len(targets) - 1
             for label, start in starts.items():
                 row = ([] if start is None else [start]) + targets
-                logprobs = torch.log_softmax(model(torch.tensor([row])).logits[0, :-1].float(), -1)
+                given = ({"inputs_embeds": model.get_input_embeddings()(torch.tensor([row])).to(torch.float32)} if stored
+                         else {"input_ids": torch.tensor([row])})
+                logprobs = torch.log_softmax(model(**given).logits[0, :-1].float(), -1)
                 picked = logprobs[torch.arange(len(row) - 1), torch.tensor(row[1:])]
                 # row[1:] is every target but the first with no start; with one, the first target is row[1]: scored
                 # from the second, the same targets
@@ -93,6 +96,9 @@ def main():
     parser.add_argument("--window", type=int, default=512)
     parser.add_argument("--text")
     parser.add_argument("--directory", default=str(HERE.parent / ".tmp" / "start-check"))
+    # T253's review: a model whose float32 is more than a runner has (Granite 4.2 3B: 14.6 GB) is held as the original
+    # stores it (bfloat16), every product in float32 (reference_llama.float32_arithmetic: the same float32 arithmetic)
+    parser.add_argument("--stored", action="store_true")
     args = parser.parse_args()
     directory = Path(args.directory)
     entry = next(entry for entry in format_check.entries() if entry["id"] == args.model)
@@ -113,10 +119,16 @@ def main():
                                              str(directory / "weights")], text=True).splitlines()[-1])
     import torch
     from transformers import AutoModelForCausalLM
+    held = torch.float32
+    if args.stored:
+        import reference_llama
+        reference_llama.float32_arithmetic()
+        said = json.loads((Path(original) / "config.json").read_text())
+        held = getattr(torch, said.get("dtype") or said.get("torch_dtype") or "float32")
     try:
-        model = AutoModelForCausalLM.from_pretrained(original, dtype=torch.float32).eval()
+        model = AutoModelForCausalLM.from_pretrained(original, dtype=held).eval()
     except TypeError:  # transformers before 4.56 calls it torch_dtype
-        model = AutoModelForCausalLM.from_pretrained(original, torch_dtype=torch.float32).eval()
+        model = AutoModelForCausalLM.from_pretrained(original, torch_dtype=held).eval()
     limit = getattr(model.config, "n_positions", None) or getattr(model.config, "max_position_embeddings", 2048)
     window = min(args.window, limit - 1)  # (a start takes one place of the model's)
 
@@ -127,10 +139,11 @@ def main():
             starts[f"{why} {token}"] = token
     piece = lambda token: tokenizer.vocab[token].decode("utf-8", "replace") if token is not None else ""
     print(f"start_check {args.model}: {len(ids)} tokens of about {characters:.0f} characters, windows of {window}, "
-          f"{type(model).__name__} in float32 from {source['repo']}@{source['revision'][:8]}; the page's BOS {bos} {piece(bos)!r}, "
+          f"{type(model).__name__} {'held as ' + str(held) + ', every product' if args.stored else ''} in float32 from "
+          f"{source['repo']}@{source['revision'][:8]}; the page's BOS {bos} {piece(bos)!r}, "
           f"stops {options.get('stop_tokens')}", flush=True)
     windows = [window_ids for window_ids in (ids[i:i + window] for i in range(0, len(ids), window)) if len(window_ids) >= 64]
-    totals, scored = score(model, windows, starts)
+    totals, scored = score(model, windows, starts, stored=args.stored)
     per_character = characters * scored / len(ids)  # the characters the scored targets stand for
     page_total = totals[f"the page's BOS {bos}"]
     print("\n| start | token | perplexity | against none | against the page's BOS | nats per character |\n|---|---|---:|---:|---:|---:|")
