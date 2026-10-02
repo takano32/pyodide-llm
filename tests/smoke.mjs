@@ -89,16 +89,24 @@ assert placed.size == bonsai_bytes == llama2_convert.checkpoint_size(bonsai, "te
 ends = [offset + llama2_convert.tensor_bytes(shape, is_matrix, "ternary") for offset, shape, is_matrix in writer.tensors]
 assert all(type(offset) is int for offset, _, _ in writer.tensors), "a tensor's place is no Python integer"
 assert [offset for offset, _, _ in writer.tensors][1:] == ends[:-1] and ends[-1] == bonsai_bytes, "the 27B's tensors do not follow one another to its size"
-last_matrix = max((i for i, (_, _, is_matrix) in enumerate(writer.tensors) if is_matrix), key=lambda i: writer.tensors[i][0])
-at, shape, _ = writer.tensors[last_matrix]
-count, width = math.prod(shape), shape[-1]
-assert at > 2 ** 32, f"the 27B's last matrix begins at {at}: not past 2^32, so this checks nothing"
-row = np.tile(np.array([0.5, 0.0, -0.5, 0.5], dtype=np.float32), width // 4)
-placed.writes.clear()
-writer.write(last_matrix, count - width, row)
-assert placed.writes == [(at + (count - width) // 4, width // 4), (at + count // 4 + 4 * ((count - width) // 128), 4 * (width // 128))], \\
-    f"the last row of the 27B's last matrix is written at {placed.writes}"
-assert placed.writes[1][0] + placed.writes[1][1] == ends[last_matrix], "its scales do not end where the matrix ends"
+# two matrices: the one that lies last (the classifier: 1.27e9 values, below 2^31) and the one with the most values (a stack of the
+# FFN's matrices of the 64 layers: 5.7e9, past 2^31, which is where NumPy's 32-bit integers in Pyodide wrapped: T233's review put
+# np.prod back into the place of a ternary matrix's scales and the classifier alone passed, so this matrix is the check of that line)
+matrices = [i for i, (_, _, is_matrix) in enumerate(writer.tensors) if is_matrix]
+last_matrix = max(matrices, key=lambda i: writer.tensors[i][0])
+largest = max(matrices, key=lambda i: (math.prod(writer.tensors[i][1]), writer.tensors[i][0]))  # (of two the same size, the later)
+assert math.prod(writer.tensors[largest][1]) > 2 ** 31, "the 27B has no matrix of more than 2^31 values: this checks nothing"
+for which, index in (("last", last_matrix), ("largest", largest)):
+    at, shape, _ = writer.tensors[index]
+    count, width = math.prod(shape), shape[-1]
+    assert at > 2 ** 32 or which == "largest", f"the 27B's last matrix begins at {at}: not past 2^32, so this checks nothing"
+    row = np.tile(np.array([0.5, 0.0, -0.5, 0.5], dtype=np.float32), width // 4)
+    placed.writes.clear()
+    writer.write(index, count - width, row)
+    assert placed.writes == [(at + (count - width) // 4, width // 4), (at + count // 4 + 4 * ((count - width) // 128), 4 * (width // 128))], \\
+        f"the last row of the 27B's {which} matrix is written at {placed.writes}"
+    assert placed.writes[1][0] + placed.writes[1][1] == ends[index], f"the scales of its {which} matrix do not end where the matrix ends"
+    assert placed.writes[1][0] > 2 ** 32, f"the scales of its {which} matrix are written at {placed.writes[1][0]}: not past 2^32"
 dim, hidden, layers, heads, vocab, positions = 32, 64, 2, 4, 320, 16
 rng = np.random.default_rng(3)
 normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
