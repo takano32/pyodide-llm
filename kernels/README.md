@@ -299,7 +299,9 @@ Two things the review of 2026-10-02 found, which no test in Node can see:
 - On a 64-bit memory, the V8 of Node 24 (13.6) on arm64 reads `v128.load32_splat` and `v128.load32_lane` at the low 32 bits
   of an address above 4 GiB. Every kernel that takes a scale so reads a wrong one there: the ternary kernels' weights'
   scales and the int8 tile's. Chromium 148 on arm64, Firefox 150 and V8 on x86-64 read them right.
-  `tests/ternary-check.mjs` has a canary module for it and leaves its above-4 GiB config out where it fires.
+  `tests/ternary-check.mjs` has a canary module for it and leaves its above-4 GiB config out where it fires, and
+  `tests/kernels-in-browser.mjs` runs every kernel above 4 GiB in each browser that has such a memory (the 27B model
+  runs there).
 
 ## Rules that are easy to break
 

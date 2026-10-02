@@ -9,12 +9,16 @@
 // with --site) in a blank page, and each kernel is called in batches (1, 400, 4000 and 30000 calls, a pause after each for
 // the background compile to land) with its result held to the same arithmetic written out in JavaScript after every batch.
 // The relaxed kernels are checked where the engine has relaxed SIMD (the others are not run there, as in the page).
+// Then the 64-bit builds on a memory of more than 4 GiB (what a 27B model runs on, in Chrome and Firefox): every address
+// argument low or high in every combination, the result held to the all-low one. The V8 of Node 24 on arm64 fails this
+// (it reads v128.load32_splat above 4 GiB at the low 32 bits); WebKit has no such memory and is skipped.
 //
 //   node tests/kernels-in-browser.mjs [--site https://takano32.github.io/pyodide-llm/] [chromium firefox webkit chrome msedge]
 // Exit 1 where a result is wrong. Needs playwright-core's browsers installed (the workflows' own step).
 import fs from "node:fs";
 import os from "node:os";
 import * as playwright from "playwright-core";
+import { ADDRESSES } from "../public/jobs.js";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
@@ -30,6 +34,7 @@ async function wasm(name) {
   return Buffer.from(await response.arrayBuffer()).toString("base64");
 }
 const modules = { plain: await wasm("simdkernel_plain"), relaxed: await wasm("simdkernel_relaxed_plain") };
+const wideModules = { plain: await wasm("simdkernel_plain64"), relaxed: await wasm("simdkernel_relaxed_plain64"), addresses: ADDRESSES };
 
 // runs in the page: [{ name, wrong }]: wrong is null or the first batch's mismatch
 async function inPage({ plain, relaxed }) {
@@ -267,6 +272,98 @@ async function inPage({ plain, relaxed }) {
   return { relaxed: Boolean(r), results };
 }
 
+// runs in the page, on a 64-bit memory (what a model past 4 GiB runs on: the 64-bit builds, their addresses BigInt, as
+// jobs.js's addressed() passes them): each kernel's address arguments sit low or above 4 GiB in every combination, and
+// the result must be the all-low one. The V8 of Node 24 (13.6) on arm64 read v128.load32_splat and load32_lane at the low
+// 32 bits of such an address, which loses the weights' scales of the ternary kernels and the int8 tile's; Chromium 148
+// does not. An engine that cannot make a memory this size (WebKit) is skipped.
+async function inPageHigh({ plain, relaxed, addresses }) {
+  const bytes = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const HIGH = 4 * 2 ** 30 + 2 * 65536;
+  const pages = BigInt(Math.ceil((HIGH + 8 * 2 ** 20) / 65536));
+  let memory;
+  try {
+    memory = new WebAssembly.Memory({ initial: pages, address: "i64" });
+  } catch (error) {
+    try { memory = new WebAssembly.Memory({ initial: pages, index: "i64" }); } catch (second) { return { skipped: `no 64-bit memory (${error.message})` }; }
+  }
+  const wrap = (exports) => {
+    const out = { ...exports };
+    for (const [name, at] of Object.entries(addresses)) {
+      const kernel = exports[name];
+      if (kernel) out[name] = (...args) => { for (const i of at) args[i] = BigInt(args[i]); return kernel(...args); };
+    }
+    return out;
+  };
+  let k, r = null;
+  try {
+    k = wrap(new WebAssembly.Instance(new WebAssembly.Module(bytes(plain)), { env: { memory } }).exports);
+  } catch (error) {
+    return { skipped: `the 64-bit kernels do not instantiate (${error.message})` };
+  }
+  try { r = wrap(new WebAssembly.Instance(new WebAssembly.Module(bytes(relaxed)), { env: { memory } }).exports); } catch (error) { r = null; }
+  const U = new Uint8Array(memory.buffer), I = new Int8Array(memory.buffer), F = new Float32Array(memory.buffer), N = new Int32Array(memory.buffer);
+  const LOW = 65536, UP = HIGH + 65536, SPREAD = [0, 8192, 16384, 24576, 40960, 49152, 57344];
+  // every case: the names of its address arguments, setup(p) writing the inputs at p, call(p), and the result it must give
+  // (null: whatever it gives with every argument low)
+  const ternary = (p, tokens) => {
+    U.fill(0, p.w, p.w + 32);
+    for (let j = 0; j < 128; j++) U[p.w + (j >> 2)] |= 2 << (2 * (j & 3));  // 128 weights of +1
+    F[p.ws / 4] = 1;
+    for (let t = 0; t < tokens; t++) {
+      for (let j = 0; j < 128; j++) I[p.xq + t * 1024 + j] = 3;
+      for (let g = 0; g < 4; g++) F[(p.xs + t * 1024) / 4 + g] = 1;
+      k.interleave(p.xq + t * 1024, p.xs + t * 1024, 128);
+    }
+  };
+  const int8 = (p, tokens, bias) => {
+    for (let i = 0; i < 128 * tokens; i++) I[p.w + i] = 2;
+    for (let g = 0; g < 4 * tokens; g++) { F[p.ws / 4 + g] = 1; if (p.wc !== undefined) N[p.wc / 4 + g] = -64 * 2 * 32; }
+    for (let t = 0; t < 4; t++) {
+      for (let j = 0; j < 128; j++) I[p.xq + t * 1024 + j] = 3 + bias;
+      for (let g = 0; g < 4; g++) F[(p.xs + t * 1024) / 4 + g] = 1;
+    }
+  };
+  const cases = [
+    { name: "matmul_q8", args: ["out", "xq", "xs", "w", "ws"], want: 768, setup: (p) => int8(p, 1, 0), call: (p) => k.matmul_q8(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1) },
+    { name: "matmul_q6", args: ["out", "xq", "xs", "w", "ws"], want: null,
+      setup: (p) => {  // 4 groups of 32 values of 2, packed as pack6 does (the low nibbles in bytes 0..15, the top bits 0 in 16..23)
+        U.fill(0, p.w, p.w + 96);
+        for (let g = 0; g < 4; g++) U.fill(0x22, p.w + g * 24, p.w + g * 24 + 16);
+        for (let g = 0; g < 4; g++) { F[p.ws / 4 + g] = 1; F[p.xs / 4 + g] = 1; }
+        for (let j = 0; j < 128; j++) I[p.xq + j] = 3;
+      },
+      call: (p) => k.matmul_q6(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1) },
+    { name: "matmul_t2", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => ternary(p, 1), call: (p) => k.matmul_t2(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 3) },
+    r && { name: "matmul_q8r", args: ["out", "xq", "xs", "w", "ws", "wc"], want: 768, setup: (p) => int8(p, 1, 64),
+      call: (p) => r.matmul_q8r(p.out, p.xq, p.xs, p.w, p.ws, p.wc, 128, 0, 1) },
+    r && { name: "matmul_q8r_tile", args: ["out", "xq", "xs", "w", "ws", "wc"], want: 768, setup: (p) => int8(p, 4, 64),
+      call: (p) => r.matmul_q8r_tile(p.out, p.xq, p.xs, p.w, p.ws, p.wc, 128, 0, 4, 4, 64, 1024) },
+    r && { name: "matmul_t2r", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => ternary(p, 1), call: (p) => r.matmul_t2r(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 3) },
+    r && { name: "matmul_t2r_tile", args: ["out", "xq", "xs", "w", "ws"], want: 384, setup: (p) => ternary(p, 4),
+      call: (p) => r.matmul_t2r_tile(p.out, p.xq, p.xs, p.w, p.ws, 128, 0, 1, 4, 64, 1024, 3) },
+  ].filter(Boolean);
+  const results = [];
+  for (const c of cases) {
+    let reference = c.want, wrong = null;
+    const bad = [];
+    for (let mask = 0; mask < 2 ** c.args.length; mask++) {
+      const p = Object.fromEntries(c.args.map((arg, i) => [arg, (mask >> i & 1 ? UP : LOW) + SPREAD[i]]));
+      c.setup(p);
+      F.fill(-7, p.out / 4, p.out / 4 + 40);
+      c.call(p);
+      const got = F[p.out / 4];
+      if (mask === 0 && reference === null) reference = got;
+      if (got !== reference) bad.push(mask);
+    }
+    // the arguments that break it alone: only that one above 4 GiB
+    const alone = c.args.filter((_, i) => bad.includes(1 << i));
+    if (bad.length) wrong = `${bad.length} of ${2 ** c.args.length} placements wrong; above 4 GiB alone: ${alone.join(", ") || "only together"}`;
+    results.push({ name: c.name, wrong, calls: 2 ** c.args.length });
+  }
+  return { relaxed: Boolean(r), results };
+}
+
 let failed = false;
 for (const engine of engines.length ? engines : ["chromium"]) {
   const browser = await (channels[engine] ? playwright.chromium.launch({ channel: channels[engine] }) : playwright[engine].launch());
@@ -277,6 +374,12 @@ for (const engine of engines.length ? engines : ["chromium"]) {
     console.log(`kernels-in-browser: ${engine} ${browser.version()} on ${os.cpus()[0].model} (${process.arch}), ${relaxed ? "with" : "without"} relaxed SIMD`);
     for (const { name, wrong, calls } of results) {
       console.log(`kernels-in-browser:   ${wrong ? "WRONG" : "ok"}: ${name}${wrong ? ` ${wrong}` : ` (${calls} calls)`}`);
+      if (wrong) failed = true;
+    }
+    const high = await page.evaluate(inPageHigh, wideModules);
+    if (high.skipped) console.log(`kernels-in-browser:   skipped: above 4 GiB: ${high.skipped}`);
+    for (const { name, wrong, calls } of high.results ?? []) {
+      console.log(`kernels-in-browser:   ${wrong ? "WRONG" : "ok"}: above 4 GiB, ${name}${wrong ? ` ${wrong}` : ` (${calls} placements)`}`);
       if (wrong) failed = true;
     }
   } finally {
