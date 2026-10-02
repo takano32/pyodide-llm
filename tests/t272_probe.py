@@ -228,6 +228,14 @@ class Runner:
         for label, low, high in BUCKETS:
             picked = (within >= low) & (within < high)
             row[f"kl@{label}"] = float(kls[picked].mean()) if picked.any() else None
+        if name.startswith("PROFILE"):
+            # how much of the change of the log probabilities of all the vocabulary is the same at every position: the share of
+            # the squared change that lies along the change's mean over the positions
+            changes = [(lp - b)[:-1] for b, lp in zip(self.base_lp, lps)]
+            mean = sum(c.sum(axis=0, dtype=np.float64) for c in changes) / sum(len(c) for c in changes)
+            along = sum(float(((c @ mean) ** 2).sum()) for c in changes) / float(mean @ mean)
+            total = sum(float((c.astype(np.float64) ** 2).sum()) for c in changes)
+            row["common_fraction"] = along / total
         say(**row)
         return row
 
@@ -326,6 +334,36 @@ def main():
                 run.run(f"{bits}-bit, every input, the 8 largest norm weights taken out of qkv's groups", {**every, "qkv": dict(qmax=qmax, outliers=static)})
                 for group in (16, 8, 4):
                     run.run(f"{bits}-bit, every input, groups of {group} for qkv", {**every, "qkv": dict(qmax=qmax, group=group)})
+        elif experiment == "profile":
+            for bits in (8, 7):
+                run.run(f"PROFILE {bits}-bit, every input", quant_all(qmax_of(bits)))
+                run.run(f"PROFILE {bits}-bit, qkv, position 0 only, layer {attention[0]} only", {"qkv": dict(qmax=qmax_of(bits), rows="first", layers={attention[0]})})
+                run.run(f"PROFILE {bits}-bit, every input but the first position's", quant_all(qmax_of(bits), rows="rest"))
+            for seed in (1, 2):
+                run.run(f"PROFILE relative noise 1e-3 on every input, seed {seed}", {r: dict(noise=1e-3, seed=seed) for r in ROLES})
+        elif experiment == "bosdetail":
+            # the first attention layer's q, k and v of the first position and of the others: their size, how much of what a
+            # matrix could make of the input cancels, and how far the rounding of the input moves them
+            layer = attention[0]
+            a = 0
+            rec = {}
+            probe.window(windows[0], None, rec)
+            xb = rec["xb"][layer]
+            for part, matrix in (("q_raw", llama.wq[a]), ("k_raw", llama.wk[a]), ("v_raw", llama.wv[a])):
+                base = rec[part][layer]
+                rms = np.sqrt((base * base).mean(axis=1))
+                typical = np.linalg.norm(matrix) / math.sqrt(matrix.shape[1])  # the gain of a matrix on a random input, per unit of its rms
+                gain = rms / np.sqrt((xb * xb).mean(axis=1))
+                say(experiment="bosdetail", layer=layer, part=part, rms_pos0=float(rms[0]), rms_rest_median=float(np.median(rms[1:])),
+                    cancellation_pos0=float(gain[0] / typical), cancellation_rest_median=float(np.median(gain[1:] / typical)))
+                for bits in (8, 7, 10, 12):
+                    hit = {}
+                    probe.window(windows[0], {"qkv": dict(qmax=qmax_of(bits), layers={layer})}, hit)
+                    err = np.linalg.norm(hit[part][layer] - base, axis=1) / np.linalg.norm(base, axis=1)
+                    say(experiment="bosdetail", layer=layer, part=part, bits=bits, relative_error_pos0=float(err[0]), relative_error_rest_median=float(np.median(err[1:])))
+            att = rec["att"][layer]
+            say(experiment="bosdetail", layer=layer, attention_on_first_position_mean=float(att[:, 1:, 0].mean()),
+                attention_on_first_position_by_head=[float(v) for v in att[:, 1:, 0].mean(axis=1)])
         elif experiment == "stats":
             rec = {}
             probe.window(windows[0], None, rec)
