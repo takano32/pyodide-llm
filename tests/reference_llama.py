@@ -130,7 +130,9 @@ class ByLayer:
     each layer of the original are read from the safetensors in turn (bfloat16 to float32 is exact: the arithmetic is the
     float32 model's); the embedding, the rotary embedding, the layer, the last norm and the classifier are transformers'
     own modules, and the loop over the layers, the causal mask and what a Granite's model does outside its layers (the
-    embedding multiplier before the first, the logits' scaling after the classifier) are this class's."""
+    embedding multiplier before the first, the logits' scaling after the classifier) are this class's. Only for a model
+    whose layers are all of one kind: a hybrid (Qwen3.5's linear and full layers) fails at the strict load of a layer of
+    the other kind, loudly."""
 
     def __init__(self, directory):
         import torch
