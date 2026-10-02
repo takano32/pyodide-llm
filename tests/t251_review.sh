@@ -108,6 +108,30 @@ PY
     done
     rm -rf "$room/$id".*
     ;;
+  lossf32)
+    # the page's engine on the original's float32 weights (converted from its safetensors: no quantization at all) and on the list's GGUF as int8
+    # (and 7-bit activations): the same English text and targets as tests/start_check.py's, which holds the original in transformers. The first is
+    # the engine against transformers (it must agree), the second against the first is what int8 costs this model
+    page_tools
+    english
+    room=/mnt/t251/lossf32
+    mkdir -p "$room"
+    for id in "$@"; do
+      original=$(node -e "import('./src/models.js').then(({ MODELS }) => { const m = MODELS.find((e) => e.id === '$id'); const v = m.hf.vocabulary; console.log('hf:' + v.repo + '@' + v.revision); })")
+      model=$(python3 tests/hf_fetch.py "$original" "$room/downloads" | tail -1)
+      python3 tests/perplexity_prepare.py "$model" "$room/$id.f32" float32 | cut -c1-160
+      rm -rf "$room/downloads"
+      echo "t251_review: $id, the original's float32 weights on the page's engine"
+      node tests/start_check.mjs "$room/$id.f32" --starts none --window 512 --text "$dir/en.txt" --tokens 1024
+      rm -rf "$room/$id.f32".*
+      model=$(python3 tests/hf_fetch.py "$id" "$room/downloads" | tail -1)
+      python3 tests/perplexity_prepare.py "$model" "$room/$id" int8 | cut -c1-160
+      rm -rf "$room/downloads"
+      echo "t251_review: $id, the list's GGUF as int8 on the page's engine"
+      node tests/start_check.mjs "$room/$id" --starts none --window 512 --text "$dir/en.txt" --tokens 1024
+      rm -rf "$room/$id".*
+    done
+    ;;
   write)
     # what an entry writes through the page's options (tests/write.sh: greedy, and the entry's sampling for SEEDS), page_tools first
     page_tools
