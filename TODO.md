@@ -1942,7 +1942,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T311 [運用][計測実行] 持ち主の端末でまとめて見る手順を 1 枚に — 状態: 未着手（2026-10-02 の洗い出しで採番。実装が止まったときに。規模 小）
 - 「持ち主の端末でまとめて見るもの」の一覧が長くなった。PC・Android・iPhone ごとに、開くページ・押すもの・貼るものを 1 回で済む順に書き直す（2026-10-01 の持ち主の決まり）。
 
-### T262 [運用][遠隔試験] ほかの 7 つのワークフローにも、ブラウザの入れる手順の期限と apt の time-out を — 状態: **反映済み**（2026-10-02、本線に入れた、レビュー前。Opus medium、ブランチ `t262-install-timeouts`。2026-10-01、T239〜T241 のレビューから。規模 小）
+### T262 [運用][遠隔試験] ほかの 7 つのワークフローにも、ブラウザの入れる手順の期限と apt の time-out を — 状態: **完了**（2026-10-02、本線に入れた。レビュー済み、2026-10-02: Sonnet max、直しはブランチ `t251-t252-t262-review` で、本会話が本線に merge する。Opus medium、ブランチ `t262-install-timeouts`。2026-10-01、T239〜T241 のレビューから。規模 小）
 - 本線の gpu-prompt.yml の run 36902097346 の Chromium のジョブは、試験が遅かったのではなく `npx playwright-core install --with-deps chromium` の apt が止まって、ジョブの期限 120 分まで始まらなかった。gpu-prompt.yml には手順の `timeout-minutes: 20` と apt の time-out（30 秒・3 回）を付けた。同じ install を持つ bench・browsers・coi・fetch・models・preview・slow は未対応で、同じ止まり方をしうる。
 - **やったこと（2026-10-02）**: apt の設定は `tests/apt-timeouts.sh` の 1 か所に置いた（GitHub の Linux のランナーでだけ書く。Windows・macOS・開発機では何もしない）。apt を走らせる手順はどれもそれを先に呼び、`timeout-minutes: 20` を持つ。入れるものは変えていない。
   - bench.yml・coi.yml・models.yml・fetch.yml・slow.yml: ブラウザを入れる手順に 2 つとも。
@@ -1963,6 +1963,17 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - preview.yml `offline=true`: run 36949839628 は failure。入れる手順は 2 つとも通り（建てる手順 41 秒、Firefox と WebKit 23 秒）、落ちたのは「Offline (T111)」の WebKit（`page.reload: WebKit encountered an internal error`）。**本線でも同じ所で落ちる**（run 36950503412、main、同じ文）ので、この変更のものではない。採番していない（本会話に報告した）。
 - **走らせていないもの**: browsers.yml（1 つの小さいジョブに絞る入力が無い。15 ジョブで HF から数百 GB）、deploy.yml（ブランチから走らせるとデプロイになる。足したのはジョブの期限の 1 行）、gguf.yml の plan、preview.yml の `offline=false`（建てる手順は上の run が通った）。browsers.yml の変更は次の週 1 回の run で確かめる。
 - **残る穴**: apt の time-out は遅い鏡を速くしない。そのときは手順の期限で落ちるので 1 回走らせ直す（AGENTS.md の落とし穴）。Windows と macOS のブラウザの取得には手順の期限だけ。
+- **レビュー（Sonnet max、2026-10-02）: OK。must-fix 0、should 1（直した）。** ブランチ `t251-t252-t262-review`（本線へは本会話が merge。T251・T252 と同じ回）。
+  - **確かめて問題なし**:
+    - **(a) 手順を全部見た**（`.tmp` の道具で 14 のワークフローを YAML で読んだ）: ブラウザを入れる・apt を走らせる手順は 8 つのワークフローの 11（bench・browsers の 2・coi・fetch・gpu-prompt の 2・models・preview の 2・slow）で、どれも `timeout-minutes: 20` を持ち、同じ手順で apt の前に `bash tests/apt-timeouts.sh` を呼ぶ（preview の 2 つ目の入れる手順だけは、同じジョブの前の手順が呼ぶ。分けても同じ順に走る）。ジョブの期限はどのジョブにもある。入れ方は前のコミットと同じで、足したのは期限とスクリプトの呼びだけ。gpu-prompt の `printf` の 1 行は、スクリプトの 3 行と同じ設定。
+    - **(b) スクリプトは Linux のランナーの外では何もしない**: `sudo` と `uname` の代わりを置いて 6 通りに当てた。Actions の Linux だけが `sudo tee /etc/apt/apt.conf.d/99-ci-timeouts` に 3 行（`Acquire::http::Timeout "30"`・`https`・`Retries "3"`）を渡し、Actions の macOS・Windows の Git Bash（`MINGW64_NT-…`）・Actions の外の Linux・`GITHUB_ACTIONS=false`・`True` は `sudo` を呼ばない。実際にも coi.yml の run 36952377133 は 3 つの OS とも通っている。
+    - **(c) deploy の 30 分は安全**: 数えたのは **ジョブの動いた時間**で、run の長さではない（`timeout-minutes` は動いている間だけ数える）。デプロイの run 300 件のうち成功 250、取り消し 49、失敗 0。ジョブを読んだ 117（5 分を越える run の全部と、残りの 4 つに 1 つ）で、動いた時間は中央値 215 秒・p90 281 秒・最大 455 秒（7.6 分）、**`make models` の手順は最大 72 秒**（キャッシュを使わないので毎回冷たい。コールドキャッシュで長くなる形は無い）。**run の最長 24.6 分（36955563832）は待ち**: ジョブは作られてから 15.5 分たって始まり、動いたのは 4 分だった（`pages` の待ちとランナーの待ち）。30 分は最長の動いた時間の 3.9 倍。覆す条件: `make models` が 20 分を越える（今の最大は 72 秒）。期限に殺された deploy が Pages をどんな状態に残すかは未確認（記録に起きた回は無い）。
+    - **(d) composite action**: 記録の読みは GitHub の文書と合う（`runs.steps` の鍵の一覧は `run`・`shell`・`if`・`name`・`id`・`env`・`working-directory`・`uses`・`with`・`continue-on-error` で、`timeout-minutes` は無い）。呼ぶ側の `uses:` の手順（ワークフローの `steps[*].timeout-minutes`）には書けるので、composite にできない訳ではなく、入れる中身がワークフローごとに違うので 1 か所にできるのは apt の設定だけ、という訳のほうが本当。
+    - **(e) 遅い鏡の記録**（run 36949839728 の Linux のジョブのログ）: apt は 187 個のうち 96 個を 20 分で取り、`Get:` の間が最長 4 分 51 秒（7.4 MB の 1 個）。30 秒の time-out は「30 秒何も届かない」を切るので、少しずつ届く取得には鳴らず、手順の期限が止めた。記録のとおり。
+    - **(f) `preview.yml` の `offline=true`**（run 36966830651、この枝）: 入れる 2 つの手順は通り、WebKit の offline だけが落ちた（T268）。
+  - **見つけたこと（should・直した）**: **この決まりは AGENTS.md の文だけで、試験が無かった**。新しいワークフローが期限を付け忘れても、何も落ちない。`tests/workflows-check.mjs` を足した（依存なし。字下げで読む）: どのジョブにも期限、入れる手順のどれにも手順の期限、apt の前にスクリプト。作り物のファイルと、本物のファイルを 8 通りに壊したもの（手順の期限を抜く・スクリプトを抜く・後ろに置く・期限の無い apt を足す・ジョブの期限を抜く・Windows の形の入れ方の期限を抜く）で、**8 通りとも落ちる**ことを見た。全部の組（毎晩と `full=true`）で走り、デプロイの軽い組には入れていない（付け忘れはページを壊さない: T193）。
+  - **持ち主の判断・候補（足していない）**: 遅い鏡は 2 回で、10 月 1〜2 日の 2 日（gpu-prompt の 120 分止まりと coi の 20 分止まり）。入れる手順を 1 回だけ自分で取り直す形（期限の半分で諦めて、もう 1 回）は足していない: 頻度の数字が足りず（apt を走らせた run の数は未計測）、遅い鏡は 2 回目も遅いかもしれない。**覆す条件**: 手順の期限で落ちる run が 100 回に 3 回を越えたら足す。
+  - **未確認**: browsers.yml の入れる手順（system の 5 つの OS と huggingface の組）は、この回も走らせていない（足した期限と呼びは coi.yml・bench.yml と同じ形で、coi.yml の 3 つの OS は通った）。次の週 1 回の run で見る。
 
 ### T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 状態: 候補（2026-10-01、T241 のレビューの案。持ち主の判断。規模 小）
 - 本物の GPU（Mali・D3D12・Metal）の `exp(NaN)`・half の NaN・`max` の NaN は CI（lavapipe・SwiftShader）では分からない。T241・T219 の印が実機で届くかを、端末の報告で読めるようにする案。
