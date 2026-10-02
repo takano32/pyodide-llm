@@ -786,6 +786,15 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       if (!widened.has(name)) {
         const bytes = derived[name], at = alloc(bytes.length);
         U.set(bytes, at);
+        // T233 review probe (a throwaway branch, never merged): flip one sign of the rotated basis in forward.js alone
+        if (name.startsWith("signs.") && typeof process !== "undefined" && process.env.T233_FLIP !== undefined) {
+          const n = bytes.length >> 2, [which, where] = process.env.T233_FLIP.split(":");
+          if (which === "all" || which === String(n)) {
+            const i = where === "last" ? n - 1 : where === "mid" ? n >> 1 : Number(where);
+            U[at + 4 * i + 3] ^= 0x80;
+            console.error(`T233 probe: flipped the sign at ${i} of signs.${n}`);
+          }
+        }
         widened.set(name, at);
       }
       return widened.get(name);
