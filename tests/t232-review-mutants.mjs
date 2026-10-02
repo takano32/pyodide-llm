@@ -20,6 +20,9 @@ const MUTANTS = {
   "embed-flag": [[FORWARD, "ternary: embedding.kind === \"ternary\", at: [base + embedding.offset, base + embedding.scales] },", "ternary: false, at: [base + embedding.offset, base + embedding.scales] },"]],
   // the outlier channels taken from the first four channels' words only (the second vec4 of the Outliers read as the first)
   "take-first-four": [[SHADERS, "    let channel = outliers.channels[k / 4u][k % 4u];\n    picked[k] = x[channel];", "    let channel = outliers.channels[0u][k % 4u];\n    picked[k] = x[channel];"]],
+  // a token's matrix: the scale of the group of 128 by the thread's own column, not by the pass's (the same in the first
+  // pass of 32 groups, and a row of more than 32 groups has a second)
+  "token-scale-local": [[SHADERS, "                let own_scale_b = scales_b[b_global * K128 + k_offset / 4u];", "                let own_scale_b = scales_b[b_global * K128 + local_col / 4u];"]],
   // the last of the outlier channels left out of the columns
   "columns-last-dropped": [[SHADERS, "    for (var k = 0u; k < outliers.count; k++) {\n        let channel = outliers.channels[k / 4u][k % 4u];", "    for (var k = 0u; k + 1u < outliers.count; k++) {\n        let channel = outliers.channels[k / 4u][k % 4u];"]],
 };

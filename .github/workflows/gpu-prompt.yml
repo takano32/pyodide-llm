@@ -185,7 +185,7 @@ jobs:
           NAN: ${{ inputs.nan }}
         run: |
           # t232-review-probe: the review's experiments in place of the suite
-          bash tests/t232-review-probe.sh 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
+          bash tests/t232-review-probe.sh "${MODELS:-all}" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
 
       # T225's review: /benchmark/'s layer and token checks on devices that round a float32 to a float16 the other ways WGSL
