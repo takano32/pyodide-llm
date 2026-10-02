@@ -10,9 +10,13 @@ OLD="synthetic-ternary synthetic-ternary-calm synthetic-ternary-wide"
 only=${1:-all}
 echo "cpu: $(node -p 'require("os").cpus()[0].model'), icd $VK_ICD_FILENAMES, commit $(git rev-parse --short HEAD), $only"
 
-# what a run says: the engine's own choices and checks ("gpu:" lines), the runs' lines, the failures
+# what a run says: the first two of the engine's own choices ("gpu:" lines), each model's line, the runs' lines and the
+# lines of every failure (the other "gpu:" lines of the engine are the same again and again: they filled the 70 lines
+# of the first round)
 summary() {
-  grep -E '^suite|^synthetic[a-z0-9-]* \(|gpu: (the matrices|a token)|wrong:|did not take|unusable|packed|FAILED|NOT |^- [A-I]:|on the GPU alone|^ok|^FAILED' "$1" | cut -c1-520 | head -${2:-60}
+  { grep -m2 -E '^\[log\] gpu: (the matrices|a token)' "$1"
+    grep -v -E '^\[log\] gpu: (the matrices|a token)' "$1" | grep -E '^suite|^synthetic[a-z0-9-]* \(|wrong:|did not take|unusable|FAILED|^ *- |NOT |on the GPU alone|a GPU that|a token by|a token:|^ok|Error|error'
+  } | cut -c1-430 | head -${2:-90}
 }
 experiment() {  # a name, then the command; its log in .tmp/probe-<name>.log
   local name=$1; shift
@@ -26,9 +30,9 @@ experiment() {  # a name, then the command; its log in .tmp/probe-<name>.log
 check() { node tests/gpu-check.mjs "$@" --nan none --engine dawn --webgpu $DAWN; }
 
 # 0. the new model on the branch as it is
-experiment untied check synthetic-ternary-untied
+[ "$only" = other ] || experiment untied check synthetic-ternary-untied
 
-if [ "$only" = all ]; then
+if [ "$only" = all ] || [ "$only" = other ]; then
   # 1. subgroup size: what lavapipe reports under LP_NATIVE_VECTOR_WIDTH, and the ternary and int8 models at 16
   for width in 128 256 512; do
     LP_NATIVE_VECTOR_WIDTH=$width node tests/t232-subgroup.mjs $DAWN
@@ -43,6 +47,8 @@ if [ "$only" = all ]; then
   # 3. a browser without the packed int8 dot (Safari, Firefox: unverified) and the int8 model beside it
   GPU_HIDE=packed_4x8_integer_dot_product experiment nopacked check synthetic-ternary synthetic-ternary-untied synthetic
 fi
+
+[ "$only" = other ] && exit 0
 
 # 4. mutants the dim 128 models could not see: the old three must pass them (a hole), the new one must not
 git checkout -q -- public
