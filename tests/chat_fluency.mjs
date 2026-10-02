@@ -12,7 +12,9 @@
 //   END=<id of the end of a turn> node tests/chat_fluency.mjs <out of tests/perplexity_prepare.py> <JSON of tests/write_options.py>
 //
 // END: <|im_end|> of a ChatML format (Qwen 151645, Hermes 128039), <|eot_id|> of Llama 3's (128009): the token the answer ends
-// with. START=<id>: the token in front in B (else the options' bos). PICK="0,3,5": only these pairs. FIXTURE=<file>: other pairs.
+// with. START=<id>: the token in front in B (else the options' bos). FIRST=<id>: for an entry whose BOS is its format's own first
+// token and whose template begins after it (a Qwen3 8B's, Hermes 3's since T252's review): A is then [FIRST] + the format, the real
+// ids, and START=<the BOS to compare, the converter's> goes in front of those in B. PICK="0,3,5": only these pairs. FIXTURE=<file>.
 // For a byte-level BPE vocabulary (an answer is encoded alone, as chat_nll.py does, and that is the same ids as after the format only
 // where the format ends in a newline). tests/write.sh runs it (WRITER=chat_fluency.mjs, its TOKENS unused).
 import fs from "node:fs";
@@ -36,6 +38,7 @@ pyodide.globals.set("CHECKPOINT", `${out}.bin`);
 pyodide.globals.set("OPTIONS", pyodide.toPy(page.options));
 pyodide.globals.set("PAIRS", pyodide.toPy(pairs.map((pair) => ({ text: filled(page.template, pair.prompt), answer: pair.answer }))));
 pyodide.globals.set("START", process.env.START ? Number(process.env.START) : -1);
+pyodide.globals.set("FIRST", pyodide.toPy(process.env.FIRST ? [Number(process.env.FIRST)] : []));
 pyodide.globals.set("END", Number(process.env.END));
 const result = JSON.parse(pyodide.runPython(`
 import json, math, time
@@ -58,7 +61,7 @@ def log_probs(prefix, answer):
 began = time.perf_counter()
 rows = []
 for number, pair in enumerate(PAIRS):
-    natural = llama.tokenizer.encode(pair["text"], llama.specials)
+    natural = list(FIRST) + llama.tokenizer.encode(pair["text"], llama.specials)
     answer = llama.tokenizer.encode(pair["answer"], ()) + [END]
     a = log_probs(natural, answer)
     b = log_probs([start] + natural, answer)
@@ -67,7 +70,7 @@ for number, pair in enumerate(PAIRS):
 json.dumps({"rows": rows, "bos": start, "seconds": time.perf_counter() - began})
 `));
 const id = page.id;
-console.log(`chat_fluency ${id}: ${result.rows.length} answers written by hand, A the real format with nothing in front, B with ${result.bos} in front, ` +
+console.log(`chat_fluency ${id}: ${result.rows.length} answers written by hand, A the real format${process.env.FIRST ? ` (it begins with ${process.env.FIRST})` : " with nothing in front"}, B with ${result.bos} in front, ` +
   `the end of a turn ${process.env.END}, ${result.seconds.toFixed(0)} s`);
 const report = (name, rows) => {
   if (!rows.length) return;

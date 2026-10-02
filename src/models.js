@@ -19,8 +19,8 @@ const LLM_JP_INSTRUCT = "以下は、タスクを説明する指示です。要�
 const ASK_JAPANESE = "質問や指示を入力（例: 日本の首都は？）";
 // ChatML. <|im_start|> and <|im_end|> are tokens of their own, so the engine is told to read them as such
 const CHATML = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
-// the same for a model whose BOS is <|im_start|> itself, which the page begins every text with (SmolLM2's, and a Qwen3's
-// QWEN3_FROM_IM_START): the format begins after it (T250's review)
+// the same for a model whose BOS is <|im_start|> itself, which the page begins every text with (SmolLM2's, a Qwen3's
+// QWEN3_FROM_IM_START and Hermes 3's, T252's review): the format begins after it (T250's review)
 const CHATML_AFTER_START = "user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
 const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [0, 2] };
 // sarashina2.2's chat_template (and CAT-Translate's, made from it) uses selectattr, which this project's template
@@ -854,14 +854,20 @@ const LISTED = [
       "Qwen/Qwen2.5-Coder-7B-Instruct", "c03e6d358207e414f1eca0bb1891e29f1db0e242"), download: 8098525984,
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
-  // Hermes 3 (Nous Research) on Llama 3.2 3B, in ChatML: its own Q8_0 GGUF. Its card's code tokenizes the ChatML text,
-  // which puts <|begin_of_text|> in front (tokenizer.json's post-processor, and llama.cpp does the same), where
-  // apply_chat_template puts none: the page's is the former. With it in front the model's own answers are 0.9% higher
-  // in perplexity (the likeliest token the same at 89%), plain text 5% lower. It stops at <|im_end|> (config.json's EOS)
+  // Hermes 3 (Nous Research) on Llama 3.2 3B, in ChatML: its own Q8_0 GGUF. The real template (apply_chat_template, which
+  // the chat servers use) puts nothing in front and begins with <|im_start|>; its card's example code tokenizes a ChatML
+  // string, which puts <|begin_of_text|> in front (tokenizer.json's post-processor, and llama.cpp does the same), and the
+  // page began with that until T252's review measured what it does to a chat: on 24 answers written by hand it is 6 to 7%
+  // higher in perplexity, 13 to 15% for the 13 English ones (four standard errors, with transformers' float32 products and
+  // with this engine alike; tests/chat_nll.py, tests/chat_fluency.mjs), and the model's own answers move (KL 0.05 nats a
+  // token, the likeliest token the same at 94%), where plain text is 5% better with it. So the BOS is the format's own first
+  // token, <|im_start|> (128040), and the format begins after it: the ids are the real template's (a Qwen3 8B's
+  // QWEN3_FROM_IM_START, T250's review). It stops at <|im_end|> (config.json's EOS), at <|begin_of_text|> and at the mark
+  // of a new turn
   { group: "hf", id: "hf-hermes-3-llama-3.2-3b", name: "Hermes 3 Llama 3.2 3B", note: "answers instructions · English · fetches 3.4 GB (GGUF) → int8 3.6 GB · desktop only",
     ...ggufOf("NousResearch/Hermes-3-Llama-3.2-3B-GGUF", "3cd927095d8cbab12c743f932aa63b6f7bbfa141", "Hermes-3-Llama-3.2-3B.Q8_0.gguf",
       "NousResearch/Hermes-3-Llama-3.2-3B", "7f1a6bec8cdce6551014fd5bbeb4cd8c0f1fbeab"), download: 3421895488,
-    conversion: {}, options: {}, generation: sampled(1.1),
+    conversion: {}, options: { bos: 128040, stop_tokens: [128000, 128039, 128040] }, template: CHATML_AFTER_START, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   // DeepSeek-R1's larger distills, as the 1.5B above: the tokenizer's own BOS, <｜begin▁of▁sentence｜> (which the
   // real template writes first), and the thought opened by the format. The converter reads both itself now (T143: the
