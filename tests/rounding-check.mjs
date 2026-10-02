@@ -7,7 +7,8 @@
 // nearest, at most 1% the other way (a float32 sum in the GPU's order falls across a rounding boundary now and then),
 // none farther than a neighbour.
 //   node tests/rounding-check.mjs <the webgpu package's directory> [toward-zero] [away] [everything] [nearest]
-// (about 30 s a rounding and width; gpu-prompt.yml's Dawn job runs it; tests.yml's extra= can: bash tests/rounding-check.sh)
+// (about 30 s a rounding and width, and the emulation's own check first, tests/rounding-self.mjs, a second or two;
+// gpu-prompt.yml's Dawn job runs it; tests.yml's extra= can: bash tests/rounding-check.sh)
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 
@@ -32,6 +33,17 @@ const counted = (text) => {
 };
 
 let failures = 0;
+// T232's review: the emulation itself first, a second or two (tests/rounding-self.mjs: a NaN, an infinity and an overflow
+// went through it as the largest finite float16, and nothing said so). "everything" rounds as toward zero does
+const modes = [...new Set(hows.filter((how) => how !== "nearest").map((how) => (how === "everything" ? "toward-zero" : how)))];
+if (modes.length) {
+  const self = spawnSync(process.execPath, ["tests/rounding-self.mjs", webgpu, ...modes], { env: { ...process.env, VK_ICD_FILENAMES: icd }, encoding: "utf8", timeout: 300000 });
+  process.stdout.write(self.stdout ?? "");
+  if (self.status !== 0) {
+    failures++;
+    if (!self.stdout) console.log(`rounding emulation: FAILED (${(self.stderr ?? "").trim().split("\n").slice(-2).join(" / ").slice(0, 300)})`);
+  }
+}
 for (const how of hows) {
   for (const width of [128, 512]) {
     const label = `${how}, subgroups of ${width / 32}`;
