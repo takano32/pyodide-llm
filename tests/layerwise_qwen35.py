@@ -114,7 +114,7 @@ def main():
         layer.register_forward_hook(after)
 
     tokenizer = tokenizers.Tokenizer.from_file(str(directory / "tokenizer.json"))
-    bos = ref.BOS
+    bos = int(__import__("os").environ.get("BOS", ref.BOS))  # BOS=248045: the first token the list's entries begin with
     sentence = ([bos] + tokenizer.encode(ref.TEXT, add_special_tokens=False).ids)[:arguments.positions]
     rows = [sentence]
     Path(f"{arguments.out}-sentence-ids.json").write_text(json.dumps(sentence))

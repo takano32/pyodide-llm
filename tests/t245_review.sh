@@ -40,8 +40,12 @@ page_tools() {
   npm ci --silent
   make kernels > /dev/null
 }
-prepare() {  # <source> <out name> <dtype>
+prepare() {  # <source> <out name> <dtype>; BOS=248045 in the environment: the first token the list's entries begin with
   python tests/perplexity_prepare.py "$1" "$dir/$2" "$3" 2>&1 | tail -1 | cut -c1-300
+  if [ -n "${BOS:-}" ]; then
+    node -e 'const fs = require("node:fs"); const file = process.argv[1]; const options = JSON.parse(fs.readFileSync(file, "utf8")); options.bos = Number(process.argv[2]); fs.writeFileSync(file, JSON.stringify(options));' "$dir/$2.json" "$BOS"
+    echo "T245 bos: $2 begins with $BOS"
+  fi
 }
 article() {  # <language> <out> [title]: Wikipedia's API timed out from a runner once, so more than once
   local attempt
@@ -113,6 +117,19 @@ case "$stage" in
     node tests/perplexity.mjs "$dir/i6" "$tokens" "$dir/en.txt" --file $wide6 --rows=0,2
     echo "T245 bits: the software threads on the six bits"
     node tests/threads-check.mjs "$dir/i6" --rounds 1 --positions 32 $wide6
+    ;;
+  rows-en)  # rows-en <id> [tokens]: the kernel rows (8-bit, 7-bit) on 1500 tokens of English Wikipedia (BOS=... in the environment)
+    id=${1:?an entry id}
+    tokens=${2:-1500}
+    page_tools
+    model=$(python tests/hf_fetch.py "$id" "$dir/hf" | tail -1)
+    article en "$dir/en.txt"
+    prepare "$model" g8 int8
+    wide=$(big "$dir/g8.bin")
+    wideflag=; if [ "$wide" = true ]; then wideflag=--wide; fi
+    echo "T245 rows-en: $id, BOS ${BOS:-the converter's}, 8-bit then 7-bit"
+    node tests/perplexity.mjs "$dir/g8" "$tokens" "$dir/en.txt" --file $wideflag --rows=2
+    node tests/perplexity.mjs "$dir/g8" "$tokens" "$dir/en.txt" --file $wideflag --rows=0
     ;;
   ja-rows)  # ja-rows <id> <articles, e.g. 1,2,3> [labels, e.g. 7-bit,8-bit]
     id=${1:?an entry id}
