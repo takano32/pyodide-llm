@@ -270,7 +270,7 @@ def main():
                 encoded = lambda text: list(reference(text, add_special_tokens=False)["input_ids"])
                 real = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, **thinking)
                 real = list(real["input_ids"] if hasattr(real, "keys") else real)
-            matches = (lambda real: page == real) if entry["id"].startswith(STRICT) else (lambda real: same_ids(page, real))
+            matches = lambda real: ids_match(entry["id"], page, real)
             if matches(real):
                 same += 1
             elif "text" in known and matches(encoded(known["text"](text, prompt))):
@@ -312,6 +312,12 @@ def same_ids(page, real):
     given again, as Llama 3's <|begin_of_text|> was written twice before T106, and a BOS set to the format's own first
     token (T236's <|im_start|>) with the format left beginning with it (T250's review: the lenient rule passed it)."""
     return page == real or (page[1:] == real and page[:1] != real[:1])
+
+
+def ids_match(model_id, page, real):
+    """Whether the page's IDs are the real ones for this entry: exactly for the families of STRICT (their BOS is the
+    format's own first token: nothing may stand in front), else as same_ids() says."""
+    return page == real if model_id.startswith(STRICT) else same_ids(page, real)
 
 
 def first_piece(page, real):
