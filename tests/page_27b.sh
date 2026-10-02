@@ -42,7 +42,8 @@ pq2_file=Ternary-Bonsai-2-27B-PQ2_0.gguf
 pq2_bytes=7206168928
 pq2_sha256=3907dc1658db1f78a9826bf8d5bcb8dc65db0d466388937af57f2294fae62ec1
 
-echo "page: stages \"$stages\" on $(node -p 'require("os").cpus()[0].model') ($(uname -m)), $(nproc) logical cores, $(free -g | awk '/Mem:/{print $2}') GB of memory"
+# (Node says "unknown" for an arm64 runner's CPU; lscpu names it)
+echo "page: stages \"$stages\" on $(lscpu | sed -n 's/^Model name: *//p' | head -1) ($(uname -m)), $(nproc) logical cores, $(free -g | awk '/Mem:/{print $2}') GB of memory"
 python -m pip install -q numpy
 # the kernels and Pyodide, for every stage that runs forward.js (only_extra builds neither)
 if has dry || has pyodide || has page || has breaks || has speed || has memory || has write; then
