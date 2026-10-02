@@ -48,13 +48,16 @@ const result = JSON.parse(pyodide.runPython(`
 import json, re, time
 llama = kernel_llama_file(CHECKPOINT, open("tokenizer.bin", "rb").read(), **OPTIONS)
 JAPANESE = re.compile(r"[\\u3040-\\u30ff\\u3400-\\u9fff\\uff00-\\uffef]")
+KANA = re.compile(r"[\\u3040-\\u30ff]")
 LETTERS = re.compile(r"[^\\W\\d_]", re.UNICODE)
 
 def judge(answer, text):
     letters = LETTERS.findall(answer)
     windows = [answer[i:i + 5] for i in range(max(0, len(answer) - 4))]
     return {"loop": len(windows) >= 20 and 1 - len(set(windows)) / len(windows) > 0.5,
-            "japanese": sum(1 for c in letters if JAPANESE.match(c)) / len(letters) if letters else 0.0,
+            # the share of kana, not of kanji: a Chinese answer to a Japanese question is all kanji and counts as Japanese by them
+            # (MiniCPM5's, in the review of T254), and a Japanese one is half kana
+            "japanese": sum(1 for c in letters if KANA.match(c)) / len(letters) if letters else 0.0,
             # asked in Japanese: four letters of kana or kanji in what was typed (the format's own words are English)
             "asked_in_japanese": sum(1 for c in text if JAPANESE.match(c)) >= 4, "unk": "<unk>" in answer,
             "thought": "</think>" in answer, "thinks": text.rstrip().endswith("<think>") or "<think>" in answer}
@@ -84,11 +87,11 @@ console.log(`answers ${id}: ${prompts.length} questions x ${seeds.length} seeds$
 for (const row of result.rows) {
   console.log(`answers ${id}: [${row.kind}] ${JSON.stringify(prompts[row.prompt])} -> ${row.tokens} tokens in ${row.seconds.toFixed(0)} s, ` +
     `${row.stopped ? "STOPPED (a stop token)" : `CUT at the budget of ${count}`}, ${row.thought ? "thought finished (</think>)" : row.thinks ? "thought not finished" : "no thought"}, ` +
-    `${row.asked_in_japanese ? `${(row.japanese * 100).toFixed(0)}% of its letters Japanese` : "asked in English"}${row.loop ? ", LOOPS" : ""}${row.unk ? ", <unk>" : ""}`);
+    `${row.asked_in_japanese ? `${(row.japanese * 100).toFixed(0)}% of its letters kana (Japanese is about half, Chinese none)` : "asked in English"}${row.loop ? ", LOOPS" : ""}${row.unk ? ", <unk>" : ""}`);
   console.log(`answers ${id}: [${row.kind}] answer ${JSON.stringify(row.answer)}`);
 }
 const share = (key) => `${sampled.filter((row) => row[key]).length}/${sampled.length}`;
 console.log(`answers ${id}: all: stopped ${share("stopped")}, thought finished ${share("thought")}, loops ${share("loop")}, <unk> ${share("unk")}, ` +
-  `a Japanese question answered mostly in Japanese ${sampled.filter((row) => row.asked_in_japanese && row.japanese >= 0.5).length}/${sampled.filter((row) => row.asked_in_japanese).length}, ` +
+  `a Japanese question answered in Japanese (a fifth of its letters kana) ${sampled.filter((row) => row.asked_in_japanese && row.japanese >= 0.2).length}/${sampled.filter((row) => row.asked_in_japanese).length}, ` +
   `${(sampled.reduce((sum, row) => sum + row.tokens, 0) / Math.max(1, sampled.length)).toFixed(0)} tokens written on average`);
 process.exit(0);
