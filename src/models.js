@@ -173,10 +173,12 @@ const ggufOf = (repo, revision, weights, original, originalRevision, tokenizer =
 const lfm25 = { specials: ["<|tool_call_start|>", "<|tool_call_end|>", "<|im_start|>", "<|im_end|>", "</think>", "<think>",
   "Mathias", "python"] };
 const lfm2Old = { specials: ["<|im_start|>", "<|im_end|>", "Mathias", "python"] };
-/** an LFM2 of the list: the maker's own Q8_0 GGUF's weights with the vocabulary and config.json of its original */
+/** an LFM2 of the list: the maker's own Q8_0 GGUF's weights with the vocabulary and config.json of its original, or
+ * (no revision of a GGUF: null) the original's safetensors */
 const lfm2 = (id, name, repo, revision, originalRevision, download, sizes, format = { options: lfm25, template: CHATML }, temperature = 0.1) => ({
   group: "hf", id, name, note: `answers instructions · 日本語 / English · ${sizes}`,
-  ...ggufOf(`LiquidAI/${repo}-GGUF`, revision, `${repo}-Q8_0.gguf`, `LiquidAI/${repo}`, originalRevision), download,
+  ...(revision ? ggufOf(`LiquidAI/${repo}-GGUF`, revision, `${repo}-Q8_0.gguf`, `LiquidAI/${repo}`, originalRevision)
+    : { hf: hf(`LiquidAI/${repo}`, originalRevision) }), download,
   conversion: {}, options: {}, ...format, generation: { steps: 0, temperature, topp: 1.0, repetition_penalty: 1.05 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE,
 });
@@ -354,8 +356,8 @@ export const LICENSES = {
   // T254: the four cards say apache-2.0
   "openbmb/MiniCPM5-1B": APACHE, "openbmb/MiniCPM5-1B-GGUF": APACHE,
   "openbmb/MiniCPM5-2B": APACHE, "openbmb/MiniCPM5-2B-GGUF": APACHE,
-  // T260: the ten cards say license other, lfm1.0, and link the LICENSE file of their repository
-  "LiquidAI/LFM2.5-230M": LFM_OPEN, "LiquidAI/LFM2.5-230M-GGUF": LFM_OPEN,
+  // T260: the nine cards say license other, lfm1.0, and link the LICENSE file of their repository
+  "LiquidAI/LFM2.5-230M": LFM_OPEN,
   "LiquidAI/LFM2.5-350M": LFM_OPEN, "LiquidAI/LFM2.5-350M-GGUF": LFM_OPEN,
   "LiquidAI/LFM2-700M": LFM_OPEN, "LiquidAI/LFM2-700M-GGUF": LFM_OPEN,
   "LiquidAI/LFM2.5-1.2B-Instruct": LFM_OPEN, "LiquidAI/LFM2.5-1.2B-Instruct-GGUF": LFM_OPEN,
@@ -863,9 +865,12 @@ const LISTED = [
     "fetches 2.7 GB (GGUF) → int8 2.8 GB · desktop only", { thinking: 1.0, atOnce: 1.0 }),
   // T260: Liquid AI's LFM2.5 (and the LFM2 700M), whose cards name Japanese among their languages; the 1.2B JP is
   // their Japanese chat model. Liquid AI's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals.
-  // On the CPU alone (their convolution layers have no shader yet)
-  lfm2("hf-lfm2.5-230m", "LFM2.5 230M", "LFM2.5-230M", "03502067c64ce32ac4fe87b0cec0310a1a13d3e9",
-    "40cb2ad3b3044d5a41eee083a6103c8b523afa45", 246598496, "fetches 247 MB (GGUF) → int8 259 MB"),
+  // On the CPU alone (their convolution layers have no shader yet). The 230M comes from its original's safetensors:
+  // its GGUF (247 MB) does not pass that check, for it holds weights of a fuller precision than the bfloat16 the
+  // original publishes (its float32 norms and taps round to the original's bfloat16 to the bit, 49 tensors of 49;
+  // 1.5e-3 from them where the check allows 1e-3), which the check has no reference for
+  lfm2("hf-lfm2.5-230m", "LFM2.5 230M", "LFM2.5-230M", null,
+    "40cb2ad3b3044d5a41eee083a6103c8b523afa45", 459401112, "fetches 459 MB → int8 259 MB"),
   lfm2("hf-lfm2.5-350m", "LFM2.5 350M", "LFM2.5-350M", "657e078c94084481950a2d555a941481f715536b",
     "9e6c6ccf47cd318696e137d381a7ded8fe4df09f", 379217632, "fetches 379 MB (GGUF) → int8 399 MB"),
   lfm2("hf-lfm2-700m", "LFM2 700M", "LFM2-700M", "fd39e80d7a5ac61494ffff577e61bbbfddbd0d02",
