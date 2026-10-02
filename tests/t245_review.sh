@@ -127,7 +127,7 @@ case "$stage" in
     prepare "$model" g8 int8
     wide=$(big "$dir/g8.bin")
     wideflag=; if [ "$wide" = true ]; then wideflag=--wide; fi
-    echo "T245 rows-en: $id, BOS ${BOS:-the converter's}, 8-bit then 7-bit"
+    echo "T245 rows-en: $id, BOS ${BOS:-converter}, 8-bit then 7-bit"
     node tests/perplexity.mjs "$dir/g8" "$tokens" "$dir/en.txt" --file $wideflag --rows=2
     node tests/perplexity.mjs "$dir/g8" "$tokens" "$dir/en.txt" --file $wideflag --rows=0
     ;;
