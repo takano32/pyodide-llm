@@ -122,6 +122,77 @@ def logits_of(model, ids, stepped=0, states=False):
     return (whole, steps, kept, cache_arrays(past) if states and past is not None else None) if states else (whole, steps)
 
 
+# ------------------------------------------------------------------------------------------------ a layer at a time
+class ByLayer:
+    """transformers' model of the original in a directory, a layer at a time: for a model whose weights a runner has not
+    room for even as stored (Granite 4.2 8B is 16.8 GB in bfloat16 and a runner of 16 GB cannot load it), as the review of
+    T246 held a Ternary Bonsai 8B to transformers. A model of the same config with ONE layer, into which the weights of
+    each layer of the original are read from the safetensors in turn (bfloat16 to float32 is exact: the arithmetic is the
+    float32 model's); the embedding, the rotary embedding, the layer, the last norm and the classifier are transformers'
+    own modules, and the loop over the layers, the causal mask and what a Granite's model does outside its layers (the
+    embedding multiplier before the first, the logits' scaling after the classifier) are this class's."""
+
+    def __init__(self, directory):
+        import torch
+        from safetensors import safe_open
+        from transformers import AutoConfig, AutoModelForCausalLM
+        directory = Path(directory)
+        config = AutoConfig.from_pretrained(directory)
+        self.config, self.layers, config.num_hidden_layers = config, config.num_hidden_layers, 1
+        if getattr(config, "layer_types", None):
+            config.layer_types = config.layer_types[:1]
+        try:
+            self.model = AutoModelForCausalLM.from_config(config, dtype=torch.float32).eval()
+        except TypeError:  # transformers before 4.56 calls it torch_dtype
+            self.model = AutoModelForCausalLM.from_config(config, torch_dtype=torch.float32).eval()
+        index = directory / "model.safetensors.index.json"
+        names = sorted(set(json.loads(index.read_text())["weight_map"].values())) if index.exists() else ["model.safetensors"]
+        self.where = {key: file for file in [safe_open(directory / name, "pt") for name in names] for key in file.keys()}
+        self.embedding = float(getattr(config, "embedding_multiplier", 1.0))
+        self.scaling = float(getattr(config, "logits_scaling", 1.0))
+        self.put(self.model.model.embed_tokens, "model.embed_tokens.")
+        self.put(self.model.model.norm, "model.norm.")
+        if "lm_head.weight" in self.where:
+            self.put(self.model.lm_head, "lm_head.")
+        else:
+            self.model.lm_head.weight = self.model.model.embed_tokens.weight
+        say(f"by layer: {self.layers} layers from {len(names)} file(s), {len(self.where)} tensors; the classifier is "
+            f"{'its own' if 'lm_head.weight' in self.where else 'the embedding'}")
+
+    def put(self, module, prefix):
+        """read the weights of `module` from the tensors named by `prefix` (as float32)"""
+        import torch
+        module.load_state_dict({key: self.where[prefix + key].get_tensor(prefix + key).to(torch.float32)
+                                for key in module.state_dict()}, strict=True)
+
+    def hidden(self, rows):
+        """The hidden states after the last norm of each of these lists of ids, all through each layer together (one
+        reading of the layer's weights): a list of tensors (positions, width). A shorter list is padded on the right with
+        its own last token, which no earlier position sees."""
+        import torch
+        longest = max(len(row) for row in rows)
+        ids = torch.tensor([row + [row[-1]] * (longest - len(row)) for row in rows])
+        positions = torch.arange(longest)[None]
+        model = self.model.model
+        with torch.no_grad():
+            hidden = model.embed_tokens(ids) * self.embedding
+            embeddings = model.rotary_emb(hidden, positions)
+            mask = torch.full((longest, longest), torch.finfo(hidden.dtype).min).triu(1)[None, None]
+            layer = model.layers[0]
+            for number in range(self.layers):
+                self.put(layer, f"model.layers.{number}.")
+                out = layer(hidden, attention_mask=mask, position_ids=positions, position_embeddings=embeddings)
+                hidden = out[0] if isinstance(out, tuple) else out
+            hidden = model.norm(hidden)
+        return [hidden[at, :len(row)] for at, row in enumerate(rows)]
+
+    def logits(self, hidden):
+        """the logits of hidden states (positions, width) from `hidden()`"""
+        import torch
+        with torch.no_grad():
+            return self.model.lm_head(hidden.to(torch.float32)) / self.scaling
+
+
 # ------------------------------------------------------------------------------------------ the states of every layer
 # The logits are the end of 24 to 42 layers' work, and a fault of one head of one layer is a few ten-thousandths of
 # them (a 1% fault of one head's scale of Granite 4.2 3B: 3e-4 of a logit, the line is 1e-3). The keys and values every
