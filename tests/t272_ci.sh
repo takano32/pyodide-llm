@@ -17,7 +17,7 @@ free -m | sed 's/^/t272: /'
 bash tests/gpu-real.sh "$model" 2>&1 | tail -2 | cut -c1-200 | sed 's/^/t272: /'
 if [ -n "${T272_ORIGINAL:-}" ]; then
   # the float32 original of the 350M, as ?hf= would convert its safetensors
-  source=$(python3 tests/hf_fetch.py "hf:LiquidAI/LFM2.5-350M@9e6c6ccf47cd318696e137d381a7ded8fe4df09f" .tmp/downloads | tail -1)
+  source=$(python3 tests/hf_fetch.py "hf:LiquidAI/LFM2.5-350M@9e6c6ccf47cd318696e137d381a7ded8fe4df09f" .tmp/downloads-original | tail -1)
   python3 tests/perplexity_prepare.py "$source" .tmp/real/original float32 2>&1 | tail -1 | cut -c1-200 | sed 's/^/t272: /'
   export T272_ORIGINAL=.tmp/real/original
 fi
