@@ -351,7 +351,15 @@ let offline = null;
 if (process.env.E2E_OFFLINE && !failures.length) {
   await page.context().setOffline(true);
   const reloaded = Date.now();
-  await page.reload({ waitUntil: "load" }).catch((error) => failures.push(`offline, the page did not load: ${error.message}`));
+  if (engine === "webkit") {
+    // T268 (a probe, not for main): Playwright's WebKit answers page.reload() offline with "WebKit encountered an internal error" where a
+    // service worker controls the page (microsoft/playwright#42775); the same navigation started from inside the page
+    const loaded = page.waitForEvent("load", { timeout: 120000 });
+    await page.evaluate(() => { setTimeout(() => location.reload(), 0); });
+    await loaded.catch((error) => failures.push(`offline, the page did not load: ${error.message}`));
+  } else {
+    await page.reload({ waitUntil: "load" }).catch((error) => failures.push(`offline, the page did not load: ${error.message}`));
+  }
   if (!failures.length) {
     // the new page's own report of ready (the button may be enabled before the page's script disables it)
     await acrossReload(() => page.waitForFunction(() => window.__ready || document.querySelector(".error"), null, { timeout: 0 }));
