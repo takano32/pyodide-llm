@@ -180,10 +180,12 @@ fi
 
 status=0
 if has page; then
-  # (the widths the 27B's matrices read: 5120, 6144 and 17408; T238's review: the first sign of the 17408 is the weakest
-  # error it made, 0.11 in a logit)
+  # (the widths the 27B's matrices read: 5120, 6144 and 17408. One sign of the 17408 or of the 6144 moves a logit by 0.11
+  # to 0.17, T238's review: less than the rounding of the activations moves the page's forward pass from the reference
+  # it is compared with, 0.13 to 0.24, so this comparison does not see them (run 36952311034); the engine's NumPy forward
+  # pass against the float32 fork does, tests/reference_27b.py, and the signs it reads are the ones the plan hands on)
   node tests/page-27b.mjs "$work/page" compare "$work" \
-    --broken "${BROKEN:-embedding,sign-17408-0,sign-17408-17407,sign-6144-0,sign-5120-2560,sign-6144-all}" || status=1
+    --broken "${BROKEN:-embedding,sign-17408-17407,sign-5120-2560,sign-6144-all}" --weak "${WEAK:-sign-17408-0,sign-6144-0}" || status=1
 fi
 if has breaks; then
   for broken in tiled order; do

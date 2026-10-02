@@ -2,7 +2,8 @@
 // rotated basis, a 64-bit shared memory, software threads), in Node, for CI: the model is 7.66 GB as the ternary
 // checkpoint, so the development machine runs none of this (tests/page_27b.sh has the stages and fetches the files).
 //
-//   node tests/page-27b.mjs <out> compare <references> [--texts 0,1,2,3] [--broken <name>,...] [--expect-failure]
+//   node tests/page-27b.mjs <out> compare <references> [--texts 0,1,2,3] [--broken <name>,...] [--weak <name>,...]
+//                                                        [--expect-failure]
 //                                                        [--threads 4] [--lines none | <logits>,<kl>,<kv>]
 //   node tests/page-27b.mjs <out> speed [--threads 1,2,4] [--positions 12] [--rounds 2]
 //   node tests/page-27b.mjs <out> memory [--threads 4]
@@ -25,7 +26,9 @@
 //     the 16 tokens the fork wrote: the most likely token after the prompt and after each of them.
 //   The lines are LINES below. --broken: the engine broken on purpose in ways that need no other checkpoint (a sign of
 //   the rotated basis the other way round, the embedding's rows not turned back), each on the first text: it must
-//   fail. --expect-failure: the checkpoint itself is a broken conversion (tests/page_27b.py --broken): the same.
+//   fail. --weak: the same for errors smaller than what the rounding of the activations moves this comparison by (one
+//   sign of the 17408 or of the 6144 values): what is seen of them is said, and it fails nothing.
+//   --expect-failure: the checkpoint itself is a broken conversion (tests/page_27b.py --broken): it must fail.
 // speed: tokens a second with each count of threads (the counts in turn, --rounds times, the median), the logits the
 //   same to the bit with every count, a prompt in blocks (forwardMany) of 4 and 16 tokens and its last logits the same
 //   to the bit, what is placed after the checkpoint against footprint(), and that no GPU is started (with why).
@@ -89,7 +92,7 @@ const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 if (isMainThread) {
   const args = process.argv.slice(2);
   const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
-  const VALUED = ["--texts", "--broken", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context"];
+  const VALUED = ["--texts", "--broken", "--weak", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context"];
   const positional = args.filter((a, i) => !a.startsWith("--") && !VALUED.includes(args[i - 1]));
   const [out, mode, third] = positional;
   if (!out || !["compare", "speed", "memory", "write", "convert"].includes(mode)) {
@@ -153,6 +156,8 @@ if (isMainThread) {
     const linesAsked = option("--lines", "");  // none, or logits,kl,kv (a made-up model's own)
     job.lines = linesAsked === "none" ? null : linesAsked ? Object.fromEntries(linesAsked.split(",").map((value, i) => [["logits", "kl", "kv"][i], Number(value)])) : LINES;
     job.broken = option("--broken", "").split(",").filter(Boolean);
+    job.weak = option("--weak", "").split(",").filter(Boolean);
+    job.weak.forEach(breakOf);
     job.expectFailure = args.includes("--expect-failure");
     job.broken.forEach(breakOf);  // (a name that is none is said before anything runs)
     job.texts = [];
@@ -268,17 +273,20 @@ if (isMainThread) {
       const layers = ours.length / count / (plan.n_kv_heads * plan.head_size), row = count * plan.n_kv_heads * plan.head_size;
       const each = [];
       for (let layer = 0; layer < layers; layer++) {
-        let worst = 0, largest = 0;
+        let worst = 0, largest = 0, apart = 0, size = 0;
         for (let i = layer * row; i < (layer + 1) * row; i++) {
           const want = halfKeys ? Math.f16round(theirs[i]) : theirs[i];
           worst = Math.max(worst, Math.abs(ours[i] - want));
           largest = Math.max(largest, Math.abs(want));
+          apart += (ours[i] - want) ** 2;
+          size += want ** 2;
         }
-        each.push({ worst, largest, part: worst / largest });
+        each.push({ worst, largest, part: worst / largest, rms: Math.sqrt(apart / size) });
       }
-      return { each, part: Math.max(...each.map((layer) => layer.part)), worst: Math.max(...each.map((layer) => layer.worst)) };
+      return { each, part: Math.max(...each.map((layer) => layer.part)), worst: Math.max(...each.map((layer) => layer.worst)),
+        rms: Math.max(...each.map((layer) => layer.rms)) };
     };
-    const runs = [null, ...job.broken];
+    const runs = [null, ...job.broken, ...job.weak];
     for (const name of runs) {
       const engine = engineOf(name ? breakOf(name) : null);
       await engine.setThreads(job.threads[0]);
@@ -301,7 +309,8 @@ if (isMainThread) {
           const found = cached(kv[kind], floats(`${stem}.${kind}`), ids.length);
           parts[kind] = found;
           say(`${label}: the ${kind} against "as 8 bits round" in ${halfKeys ? "float16" : "float32"}: at most ${found.part.toExponential(2)} of a layer's largest ` +
-            `(${found.worst.toExponential(2)}); by layer ${found.each.map((layer) => layer.part.toExponential(1)).join(" ")}`);
+            `(${found.worst.toExponential(2)}); by layer ${found.each.map((layer) => layer.part.toExponential(1)).join(" ")}; ` +
+            `the root of the mean square of a layer's differences over that of its ${kind}, at most ${found.rms.toExponential(2)}: ${found.each.map((layer) => layer.rms.toExponential(1)).join(" ")}`);
           if (lines && found.part > lines.kv) reasons.push(`the ${kind} are ${found.part.toExponential(2)} of a layer's largest off, past ${lines.kv}`);
         }
         const rounded = distance(rows, floats(`${stem}.logits`));
@@ -322,11 +331,12 @@ if (isMainThread) {
         say(`${label}: greedy: ${greedy.filter(Boolean).length} of ${text.wrote.length} tokens the fork's` +
           (other.length ? ` (${other.map(({ position, gap }) => `position ${position}: the float32 fork's first two are ${gap.toFixed(4)} apart`).join("; ")})` : ""));
         if (lines && other.some(({ gap }) => gap > 2 * fork.worst)) reasons.push("a greedy token is another where the margin does not allow it");
-        const mustFail = Boolean(name) || job.expectFailure;
+        const mustFail = job.broken.includes(name) || job.expectFailure;
         if (!lines) say(`${label}: no lines asked for`);
+        else if (job.weak.includes(name)) say(`${label}: ${reasons.length ? `seen: ${reasons.join("; ")}` : "not seen: under what the rounding of the activations moves this comparison by"}`);
         else if (mustFail) say(`${label}: ${reasons.length ? `caught: ${reasons.join("; ")}` : "NOT CAUGHT — FAILED"}`);
         else say(`${label}: ${reasons.length ? `FAILED: ${reasons.join("; ")}` : `ok: the keys and values within ${lines.kv} of a layer's largest, the logits within ${lines.logits} and KL ${lines.kl} of the float32 fork's`}`);
-        failed ||= Boolean(lines) && (mustFail ? !reasons.length : reasons.length > 0);
+        failed ||= Boolean(lines) && !job.weak.includes(name) && (mustFail ? !reasons.length : reasons.length > 0);
       }
       engine.stopThreads();
       await engine.release();
