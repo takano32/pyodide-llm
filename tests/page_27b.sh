@@ -5,10 +5,13 @@
 #   node tests/ci.mjs run tests.yml only_extra=true minutes=180 extra="bash tests/page_27b.sh" \
 #     --grep "^(fork|f32|reference|runner|page|pyodide):" --minutes 190 --ref <branch>
 #   ... extra="STAGES='fork convert speed memory' bash tests/page_27b.sh" ...
-# On x86-64: the V8 of Node 24 on arm64 reads the ternary kernels' scales wrongly above 4 GiB (the review of T230 and
-# T231), and tests/page-27b.mjs refuses to run the model there. The fork and the conversion run on arm64 as well
-# (runner=ubuntu-24.04-arm with STAGES='fork convert'). ANYWAY=1 runs page and speed there all the same: the comparison
-# then says whether that engine computed the model.
+# On x86-64 or arm64 (runner=ubuntu-24.04-arm: twice as fast for the fork and the page). Liftoff, the first compiler of the
+# V8 of Node 24 (13.6) on arm64, reads v128.load32_splat above 4 GiB at the address's low 32 bits (the review of T230 and
+# T231; fixed in V8 14.3, Chrome 143): where tests/page-27b.mjs's canary says so it sets --no-liftoff, and what it then
+# computes is the model's (the numbers equal x86-64's to four digits: the review of T233); where the canary says so even
+# then, it refuses, and ANYWAY=1 runs page and speed all the same: the comparison then says whether that engine computed
+# the model. LONG_TOKENS=600 (with LONG_ROWS below 600) makes a short pass through the whole of a stage, a check of the
+# tool and not of the model.
 #
 # Run it when public/forward.js, the ternary kernels (kernels/ternary.ts), rotate and unrotate, the converter's reading
 # of a GGUF or the list's entry change in a way that could move what this model computes.
@@ -33,7 +36,15 @@
 #   speed      tokens a second by the count of threads, the logits the same to the bit, a prompt in blocks, the GPU refused
 #   memory     the whole context: what is placed after the checkpoint against footprint()
 #   write      the page's generate() for QUESTIONS (lines of a file, or the three here), with THINKING=1 the entry that
-#              thinks, at most TOKENS positions each
+#              thinks, at most TOKENS positions each, PICK="0,1" only these of them (from 0)
+#   long       (the review of T233: nothing in the default; a context past 4096, never computed on the real model) a text
+#              of 5,987 tokens (tests/fixtures/long-27b.txt) through the fork (reference_27b.sh's long stage: 1.5 to 2.7
+#              hours at its speed) and through the page's forward pass with a context of LONG_CONTEXT (8192: the header's
+#              4 bytes), the logits of some 40 positions held to the fork's and the growth over the floor of the first ones
+#              looked at (page-27b.mjs's long mode, which has the lines); the memory after the checkpoint against
+#              footprint() at that context, and the tokens a second as the prompt grows. long-fork and long-page are its
+#              two halves (LONG_REFERENCES=<a run's id>: the fork's rows an earlier run kept, tests.yml keeps them a week).
+#              The page's half on arm64 too: page-27b.mjs turns Liftoff off where V8 reads load32_splat wrongly
 # The stages after convert use its checkpoint; page and breaks use the reference's files: of the reference stage of
 # the same run, or of an earlier run that ran it (REFERENCES=<its id>: tests.yml keeps them a week).
 set -euo pipefail
@@ -50,7 +61,7 @@ pq2_sha256=3907dc1658db1f78a9826bf8d5bcb8dc65db0d466388937af57f2294fae62ec1
 echo "page: stages \"$stages\" on $(lscpu | sed -n 's/^Model name: *//p' | head -1) ($(uname -m)), $(nproc) logical cores, $(free -g | awk '/Mem:/{print $2}') GB of memory"
 python -m pip install -q numpy
 # the kernels and Pyodide, for every stage that runs forward.js (only_extra builds neither)
-if has dry || has pyodide || has page || has breaks || has speed || has memory || has write; then
+if has dry || has pyodide || has page || has breaks || has speed || has memory || has write || has long || has long-page; then
   began=$SECONDS
   [ -d node_modules/pyodide ] || npm ci > /dev/null
   make kernels > /dev/null
@@ -65,6 +76,11 @@ if has dry; then
   # (the widths of the made-up model's signs are 128, 256 and 384)
   node tests/page-27b.mjs "$dry/page" compare "$dry" --entry none --wide --threads 2 --lines none --broken embedding,sign-128-5,sign-384-all
   node tests/page-27b.mjs "$dry/page" compare "$dry" --entry none --wide --threads 2 --lines 100,100,100 --broken embedding --texts 1 || echo "page: dry: lines of 100 let the broken engine through, as they must (exit 1)"
+  # (the long mode on the made-up model's own context: the same files as the fork's, made by the engine's NumPy forward pass, and
+  # the engine broken on purpose, which must be caught by lines the right one passes)
+  node tests/page-27b.mjs "$dry/page" long "$dry" --entry none --wide --threads 2 --lines none --broken embedding
+  # (with a context the header does not say: the 4 bytes changed in memory, as the 27B's run changes them to 8192)
+  node tests/page-27b.mjs "$dry/page" long "$dry" --entry none --wide --threads 2 --context 2048 --lines "${DRY_LONG_LINES:-3,1,2}" --broken embedding,sign-128-all
   node tests/page-27b.mjs "$dry/page" speed --entry none --wide
   node tests/page-27b.mjs "$dry/page" memory --entry none --wide
   rm -rf "$dry"
@@ -101,15 +117,31 @@ if has reference; then
   cp "$work"/saved/engine-*-as-8-bits-round.* "$keep/saved/"
   echo "page: the references are kept with this run: $(du -sh "$keep" | cut -f1) (REFERENCES=<this run's id> takes them)"
 fi
-if [ -n "${REFERENCES:-}" ]; then
-  # the references an earlier run kept, in place of the reference stage
-  gh run download "$REFERENCES" --repo "${GITHUB_REPOSITORY:-takano32/pyodide-llm}" --name kept --dir .tmp/kept
-  cp -r .tmp/kept/reference-27b/. "$work/"
+if [ -n "${REFERENCES:-}" ] || [ -n "${LONG_REFERENCES:-}" ]; then
+  # the references earlier runs kept, in place of the reference stage and the long one: REFERENCES is the run that kept the
+  # ordinary ones (reference-27b), LONG_REFERENCES the run that kept the long text's (reference-27b-long); one is enough
+  # where a run kept both, and each directory is taken only where the run has it (a run of the long stage alone keeps no
+  # ordinary ones: the review of T233's short pass found cp failing on the missing directory)
+  regular_run=${REFERENCES:-$LONG_REFERENCES}
+  long_run=${LONG_REFERENCES:-$REFERENCES}
+  for run in $(printf '%s\n' "$regular_run" "$long_run" | sort -u); do
+    gh run download "$run" --repo "${GITHUB_REPOSITORY:-takano32/pyodide-llm}" --name kept --dir ".tmp/kept/$run"
+  done
+  [ -d ".tmp/kept/$regular_run/reference-27b" ] && cp -r ".tmp/kept/$regular_run/reference-27b/." "$work/"
+  [ -d ".tmp/kept/$long_run/reference-27b-long" ] && cp -r ".tmp/kept/$long_run/reference-27b-long/." "$work/"
   rm -rf .tmp/kept
-  echo "page: the references of run $REFERENCES: $(ls "$work"/fork-*.ids | wc -l) texts"
+  echo "page: the references of run $regular_run, the long text's of run $long_run: $(ls "$work"/fork-*.ids 2>/dev/null | wc -l) ids files"
 fi
 if has fork; then
   STAGES=fork bash tests/reference_27b.sh
+fi
+if has long || has long-fork; then
+  # the fork on the long text, which the page's half reads; kept with the run like the other references (60 MB)
+  STAGES=long bash tests/reference_27b.sh
+  keep=.tmp/keep/reference-27b-long
+  mkdir -p "$keep"
+  cp "$work"/fork-long.ids "$work"/fork-long.rows "$work"/fork-long.logits "$work"/long.txt "$keep/"
+  echo "page: the long references are kept with this run: $(du -sh "$keep" | cut -f1) (LONG_REFERENCES=<this run's id> takes them)"
 fi
 
 # the original's config.json and tokenizer, and the GGUF beside them (tests/hf_fetch.py finds the file where it would put it)
@@ -199,7 +231,11 @@ if has speed; then
   node tests/page-27b.mjs "$work/page" speed --threads "${THREADS:-1,2,4}" ${ANYWAY:+--anyway} || status=1
 fi
 if has memory; then
-  node tests/page-27b.mjs "$work/page" memory || status=1
+  node tests/page-27b.mjs "$work/page" memory ${ANYWAY:+--anyway} || status=1
+fi
+if has long || has long-page; then
+  # (the context is the header's 4 bytes: the checkpoint made for 4096 serves; no second conversion of 7.66 GB)
+  node tests/page-27b.mjs "$work/page" long "$work" --context "${LONG_CONTEXT:-8192}" ${LONG_LINES:+--lines "$LONG_LINES"} ${LONG_TOKENS:+--prefix} ${ANYWAY:+--anyway} || status=1
 fi
 if has write; then
   questions=${QUESTIONS:-}
@@ -207,9 +243,16 @@ if has write; then
     questions="$work/questions.txt"
     printf '%s\n' "これからの流行りを3つ挙げてください。" "What is 17 times 24?" "日本でいちばん高い山と、その高さを教えてください。" > "$questions"
   fi
+  # PICK="0,1,2": only these (from 0) of the questions, so that the dozen of tests/fixtures/questions-12.txt (the review of T233: the
+  # six Japanese and six English of tests/answers.mjs) may be split over runs of a runner each; lines that begin with # are no questions
+  index=-1
   while IFS= read -r question; do
     [ -n "$question" ] || continue
-    node tests/page-27b.mjs "$work/page" write "$question" --tokens "${TOKENS:-1500}" ${THINKING:+--entry "$id-thinking"} < /dev/null || status=1
+    case "$question" in \#*) continue ;; esac
+    index=$((index + 1))
+    if [ -n "${PICK:-}" ] && [[ ",$PICK," != *",$index,"* ]]; then continue; fi
+    echo "page: question $index"
+    node tests/page-27b.mjs "$work/page" write "$question" --tokens "${TOKENS:-1500}" ${THINKING:+--entry "$id-thinking"} ${ANYWAY:+--anyway} < /dev/null || status=1
   done < "$questions"
 fi
 exit $status

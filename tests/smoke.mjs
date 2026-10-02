@@ -55,12 +55,13 @@ import llama2_convert
 # T129's review: NumPy's integers are 32 bits in Pyodide (wasm32): np.prod((64, 27648, 5120)) wrapped to 469762048, so the
 # converter sized a Qwen2.5 32B as 7.87 GB instead of 36.86 GB, the page began a 65 GB download and stopped at 7.8 GB,
 # and the refusal of a model past a 64-bit memory (T129 (7)) was never given the size. Sizes and places are Python ints
+import math
 class Sized:
     def open(self, size, header, dtype, form):
-        self.size = size
+        self.size, self.writes = size, []
 
     def write(self, offset, array):
-        pass
+        self.writes.append((offset, array.size))
 big, big_form = [5120, 27648, 64, 40, 8, -152064, 4096], {"arch": "llama", "bias": True}
 for big_dtype, big_bytes in (("int8", 36862578716), ("int6", 28671889436)):
     sized = Sized()
@@ -69,6 +70,18 @@ for big_dtype, big_bytes in (("int8", 36862578716), ("int6", 28671889436)):
         f"a 32B model in {big_dtype} is {sized.size} bytes, not {big_bytes} (NumPy's 32-bit integers?)"
     last_offset, last_shape, last_is_matrix = writer.tensors[-1]
     assert last_offset + llama2_convert.tensor_bytes(last_shape, last_is_matrix, big_dtype) == big_bytes, f"its tensors do not end at its size in {big_dtype}"
+    # (T233's review: and where the last row of its largest matrix, 9.06e9 values, is written, values and scales: the places the
+    # converter's writer computes from the shape, which np.prod put back wrapped and the sizes above did not see)
+    largest = max((i for i, (_, _, is_matrix) in enumerate(writer.tensors) if is_matrix), key=lambda i: math.prod(writer.tensors[i][1]))
+    at, shape, _ = writer.tensors[largest]
+    count, width = math.prod(shape), shape[-1]
+    assert count > 2 ** 31, "the 32B has no matrix of more than 2^31 values: this checks nothing"
+    sized.writes.clear()
+    writer.write(largest, count - width, np.random.default_rng(1).standard_normal(width).astype(np.float32))
+    group = 32 if big_dtype == "int6" else llama2_convert.group_size(width)
+    wanted = ([(at + (count - width) * 3 // 4, width * 3 // 4), (at + count * 3 // 4 + 4 * ((count - width) // 32), 4 * (width // 32))] if big_dtype == "int6"
+              else [(at + count - width, width), (at + count + 4 * ((count - width) // group), 4 * (width // group))])
+    assert sized.writes == wanted, f"the last row of the 32B's largest matrix in {big_dtype} is written at {sized.writes}, not {wanted}"
 # T233: Ternary Bonsai 2 27B as the ternary checkpoint the page makes of it, 7.66 GB on a 64-bit memory: its size, where
 # its tensors begin, and where the rows of the matrix that lies last in it are written (its values and its scales), all
 # past 2^32 and all Python's integers. The header and the form are the real model's (the rotated basis lays out nothing)
@@ -89,16 +102,24 @@ assert placed.size == bonsai_bytes == llama2_convert.checkpoint_size(bonsai, "te
 ends = [offset + llama2_convert.tensor_bytes(shape, is_matrix, "ternary") for offset, shape, is_matrix in writer.tensors]
 assert all(type(offset) is int for offset, _, _ in writer.tensors), "a tensor's place is no Python integer"
 assert [offset for offset, _, _ in writer.tensors][1:] == ends[:-1] and ends[-1] == bonsai_bytes, "the 27B's tensors do not follow one another to its size"
-last_matrix = max((i for i, (_, _, is_matrix) in enumerate(writer.tensors) if is_matrix), key=lambda i: writer.tensors[i][0])
-at, shape, _ = writer.tensors[last_matrix]
-count, width = math.prod(shape), shape[-1]
-assert at > 2 ** 32, f"the 27B's last matrix begins at {at}: not past 2^32, so this checks nothing"
-row = np.tile(np.array([0.5, 0.0, -0.5, 0.5], dtype=np.float32), width // 4)
-placed.writes.clear()
-writer.write(last_matrix, count - width, row)
-assert placed.writes == [(at + (count - width) // 4, width // 4), (at + count // 4 + 4 * ((count - width) // 128), 4 * (width // 128))], \\
-    f"the last row of the 27B's last matrix is written at {placed.writes}"
-assert placed.writes[1][0] + placed.writes[1][1] == ends[last_matrix], "its scales do not end where the matrix ends"
+# two matrices: the one that lies last (the classifier: 1.27e9 values, below 2^31) and the one with the most values (a stack of the
+# FFN's matrices of the 64 layers: 5.7e9, past 2^31, which is where NumPy's 32-bit integers in Pyodide wrapped: T233's review put
+# np.prod back into the place of a ternary matrix's scales and the classifier alone passed, so this matrix is the check of that line)
+matrices = [i for i, (_, _, is_matrix) in enumerate(writer.tensors) if is_matrix]
+last_matrix = max(matrices, key=lambda i: writer.tensors[i][0])
+largest = max(matrices, key=lambda i: (math.prod(writer.tensors[i][1]), writer.tensors[i][0]))  # (of two the same size, the later)
+assert math.prod(writer.tensors[largest][1]) > 2 ** 31, "the 27B has no matrix of more than 2^31 values: this checks nothing"
+for which, index in (("last", last_matrix), ("largest", largest)):
+    at, shape, _ = writer.tensors[index]
+    count, width = math.prod(shape), shape[-1]
+    assert at > 2 ** 32 or which == "largest", f"the 27B's last matrix begins at {at}: not past 2^32, so this checks nothing"
+    row = np.tile(np.array([0.5, 0.0, -0.5, 0.5], dtype=np.float32), width // 4)
+    placed.writes.clear()
+    writer.write(index, count - width, row)
+    assert placed.writes == [(at + (count - width) // 4, width // 4), (at + count // 4 + 4 * ((count - width) // 128), 4 * (width // 128))], \\
+        f"the last row of the 27B's {which} matrix is written at {placed.writes}"
+    assert placed.writes[1][0] + placed.writes[1][1] == ends[index], f"the scales of its {which} matrix do not end where the matrix ends"
+    assert placed.writes[1][0] > 2 ** 32, f"the scales of its {which} matrix are written at {placed.writes[1][0]}: not past 2^32"
 dim, hidden, layers, heads, vocab, positions = 32, 64, 2, 4, 320, 16
 rng = np.random.default_rng(3)
 normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)

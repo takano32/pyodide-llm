@@ -1,0 +1,12 @@
+日本でいちばん高い山はどこですか？
+これからの流行りを3つ挙げてください。
+17 × 24 はいくつですか？途中の計算も書いてください。
+次の文を英語に訳してください。「今日は天気がいいので、散歩に行きます。」
+光合成とは何ですか？やさしく説明してください。
+夏目漱石の代表作を 2 つ挙げ、一言ずつ説明してください。
+What is the capital of Japan? Answer in one sentence.
+Give me three tips for sleeping better.
+What is 17 times 24? Show the steps.
+Translate into French: "The weather is nice today, so I will go for a walk."
+Explain photosynthesis to a ten-year-old.
+Write a Python function that returns the n-th Fibonacci number, and say how it works in one sentence.

@@ -234,6 +234,14 @@ jobs:
             timeout: 1800
             models: >-
               hf-lfm2.5-230m hf-lfm2.5-350m hf-lfm2-700m hf-lfm2.5-1.2b-instruct hf-lfm2.5-1.2b-jp
+          # T233's review (2026-10-02): Ternary Bonsai 2 27B, which nothing on a schedule ran on its real weights (gguf.yml
+          # skips it: its weights are not those of the repository its vocabulary comes from; tests/page_27b.sh is on demand).
+          # 5.95 GB of download, 7.66 GB converted on a 64-bit memory of 7.7 GiB: ready in about 5 minutes and 1.2 tokens a
+          # second, so a 256-token answer takes 4 minutes (production, run 36962265758)
+          - size: ternary-27b
+            timeout: 3000
+            models: >-
+              hf-ternary-bonsai-2-27b
     steps:
       - name: Checkout
         uses: actions/checkout@v7

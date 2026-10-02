@@ -143,6 +143,23 @@ def made_up(directory):
         np.asarray(rows, dtype=np.float32).tofile(directory / "f32" / f"fork-{index}.single")
         save_run(directory / "saved", index, "as 8 bits round", model, rows)
         print(f"page: made-up text {index}: {len(prompt)} tokens of a prompt, {len(wrote)} written, {len(rows)} positions")
+    # a long text for page-27b.mjs's long mode (the review of T233), in the files the fork's long run leaves: the ids (the
+    # prompt's, the tokens written), the positions whose rows are kept, the rows of those and then of each token written
+    # but the last. The made-up model's own context is 1024 positions: 700 of them are the prompt
+    long_prompt = np.random.default_rng(7).integers(1, 380, 700).tolist()
+    wanted = [10, 20, 40, 100, 300, 500, 600, len(long_prompt) - 1]
+    ids, kept, wrote = list(long_prompt), [], []
+    for position in range(len(long_prompt) + 5):
+        row = np.array(model.forward(ids[position], position))
+        if position in wanted or position >= len(long_prompt):
+            kept.append(row)
+        if position >= len(long_prompt) - 1:
+            wrote.append(int(row.argmax()))
+            ids.append(wrote[-1])
+    (directory / "fork-long.ids").write_text(" ".join(map(str, long_prompt)) + "\n" + " ".join(map(str, wrote)) + "\n")
+    (directory / "fork-long.rows").write_text(" ".join(map(str, wanted)) + "\n")
+    np.asarray(kept, dtype=np.float32).tofile(directory / "fork-long.logits")
+    print(f"page: made-up long text: {len(long_prompt)} tokens, rows of {len(wanted)} positions of it and of {len(wrote) - 1} written after it")
 
 
 if __name__ == "__main__":

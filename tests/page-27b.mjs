@@ -8,6 +8,7 @@
 //   node tests/page-27b.mjs <out> speed [--threads 1,2,4] [--positions 12] [--rounds 2]
 //   node tests/page-27b.mjs <out> memory [--threads 4]
 //   node tests/page-27b.mjs <out> write <prompt> [--tokens 1500] [--seed 1] [--threads 4]
+//   node tests/page-27b.mjs <out> long <references> [--context 8192] [--threads 4] [--lines none | <logits>,<kl>,<growth>] [--broken <name>,...]
 //   node tests/page-27b.mjs <out> convert <folder with config.json, the tokenizer and the GGUF> [--context 4096]
 //
 // <out>: what tests/page_27b.py convert (or tests/perplexity_prepare.py) wrote, <out>.bin, <out>.tokenizer.bin and
@@ -37,6 +38,19 @@
 // write: the page's generate() (Python's loop, the sampling kernels, the entry's sampling and format) for a prompt:
 //   how many tokens until it stops, how long, and the text (--entry hf-ternary-bonsai-2-27b-thinking: the entry that
 //   thinks, its format and its sampling).
+// long (the review of T233): a prompt past the 4096 positions the list's context is, through the page's way of a prompt
+//   (forwardMany in blocks, a token with its logits where the reference has a row), against what the fork of llama.cpp
+//   computes for the same ids (tests/reference_27b.sh's `long` stage: <references>/fork-long.{ids,rows,logits} and
+//   long.txt). --context 8192: the checkpoint's header says that many positions (the 4 bytes of it are all that differs
+//   between the contexts of a ternary checkpoint, so the file made for 4096 serves: the memory is sized by that header
+//   and the engine reads it from there, as it would from a file converted with max_seq_len 8192). What it says: the
+//   difference of the logits row by row (the largest, the KL, the most likely token) in bands of positions, and
+//   whether it grows past the floor of the first rows (under 128 positions: the rounding of the activations, the
+//   fork's own batch path and the keys in float16, which no context length touches), the 16 tokens the fork wrote after
+//   the prompt, the tokens a second by 500 positions, and what is placed after the checkpoint against footprint()
+//   at that context. The lines: the largest difference of a row past 127 positions at most LOGITS or GROWTH times the
+//   floor's largest, whichever is more; the KL likewise; a most likely token that differs only where the fork's own first
+//   two are no more than twice the row's largest difference apart. --lines none: the numbers alone.
 // convert: the page's conversion (Pyodide, NumPy with 32-bit integers, the kernels' quantizer) of the GGUF into a
 //   64-bit shared memory through a sink, as the worker's checkpointSink has it, fed 16 MiB at a time; the time, the
 //   megabytes a second, Pyodide's heap at the end, and the sha256 of the checkpoint (page_27b.sh holds it to the
@@ -44,6 +58,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import v8 from "node:v8";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { compileKernels, createForward, footprint, keysInHalf, needsWide, weightsMemory } from "../public/forward.js";
 
@@ -57,6 +72,20 @@ const GiB = 2 ** 30, MiB = 2 ** 20;
 // noise is float32's order of sums and the rounding steps it tips, not the step itself. kv: the largest difference of
 // a key or a value, as a part of the largest key or value of its layer (TODO.md's T233 has what was measured).
 const LINES = { logits: 0.35, kl: 2e-3, kv: 0.05 };
+// The lines of long (the review of T233): not the fork with float32 activations (it widens every row it multiplies by,
+// 9 seconds a token: 15 hours for 6,000) but the fork as it is, whose own batch and one-token paths are 0.1 apart: so the
+// floor is measured in the same run, on the first rows, and what is looked for is growth with the position. A row
+// past 127 positions may be as far as LOGITS, or GROWTH times the largest of the floor, whichever is more (KL likewise).
+// The lines of the first comparison (0.35 and 2e-3: tests/page-27b.mjs compare), which the long pass measured itself against in the
+// review of T233: 42 rows to position 6001 of a text of 5,987 tokens, 0.055 to 0.186 over the likely tokens and a KL of 1.0e-3 at most
+// (runs 36967190043, 36977437791 and 36980828635 print the same rows: the page's forward pass is deterministic, and equal on x86-64 and arm64 to four digits in the first comparison)
+const LONG_LINES = { logits: 0.35, kl: 2e-3, growth: 2 };
+// The long pass holds the largest difference of a row over the tokens the fork gives a probability of at least this (the T233 review:
+// over all 248,320 tokens, one of 42 rows had a tail token of a probability of 4e-8 move 0.79 where the row's KL was 7e-6, and the
+// 155 positions of the first comparison moved at most 0.19: the largest over a vocabulary has a tail; what no sampling reaches
+// is not a logit anyone reads). The largest over all of them is told all the same
+const LIKELY = 1e-6;
+const FLOOR_BELOW = 128;
 // the engine broken on purpose, by what the plan hands forward.js (a sign of the rotated basis: sign-<the width>-<the
 // place, or all>) or by a kernel that does nothing (embedding: the rows of the embedding are not turned back)
 const breakOf = (name) => {
@@ -75,9 +104,12 @@ const spawn = (data) => new Promise((resolve) => {
 const base4GiB = (bytes) => bytes > 4 * GiB;
 /** whether this engine reads v128.load32_splat of an address above 4 GiB where it is (tests/ternary-check.mjs's canary:
  * a module of a 64-bit memory it imports, splat(address) = lane 0 of v128.load32_splat) */
-function splatsRight() {
+function splatsRight(again = false) {
+  // asked again (after --no-liftoff), the module has a custom section the engine ignores: V8 keeps the compiled code of a
+  // module by its bytes, and the same bytes would hand back the function Liftoff compiled for the first question (T233's
+  // review: the second question got the right answer here only because a new 4 GiB memory had made the engine collect it)
   const canary = Uint8Array.from([0, 97, 115, 109, 1, 0, 0, 0, 1, 6, 1, 96, 1, 126, 1, 125, 2, 15, 1, 3, 101, 110, 118, 6, 109, 101, 109, 111, 114, 121, 2, 4, 1,
-    3, 2, 1, 0, 7, 9, 1, 5, 115, 112, 108, 97, 116, 0, 0, 10, 13, 1, 11, 0, 32, 0, 253, 9, 2, 0, 253, 31, 0, 11]);
+    3, 2, 1, 0, 7, 9, 1, 5, 115, 112, 108, 97, 116, 0, 0, 10, 13, 1, 11, 0, 32, 0, 253, 9, 2, 0, 253, 31, 0, 11, ...(again ? [0, 2, 1, 97] : [])]);
   const high = 4 * GiB + 2 * 65536, at = high + 4096;
   const memory = new WebAssembly.Memory({ initial: BigInt(Math.ceil((high + 4 * MiB) / 65536)), address: "i64" });
   const splat = new WebAssembly.Instance(new WebAssembly.Module(canary), { env: { memory } }).exports.splat;
@@ -95,8 +127,8 @@ if (isMainThread) {
   const VALUED = ["--texts", "--broken", "--weak", "--threads", "--lines", "--positions", "--rounds", "--tokens", "--seed", "--entry", "--context"];
   const positional = args.filter((a, i) => !a.startsWith("--") && !VALUED.includes(args[i - 1]));
   const [out, mode, third] = positional;
-  if (!out || !["compare", "speed", "memory", "write", "convert"].includes(mode)) {
-    console.error("usage: node tests/page-27b.mjs <out> compare <references> | speed | memory | write <prompt> | convert <folder>");
+  if (!out || !["compare", "speed", "memory", "write", "long", "convert"].includes(mode)) {
+    console.error("usage: node tests/page-27b.mjs <out> compare <references> | speed | memory | write <prompt> | long <references> | convert <folder>");
     process.exit(2);
   }
   const { pyodideWithEngine } = await import("./engine.mjs");
@@ -116,19 +148,31 @@ if (isMainThread) {
   const head = Buffer.alloc(28);
   fs.readSync(fd, head, 0, 28, 0);
   const header = Array.from({ length: 7 }, (_, i) => head.readInt32LE(4 * i));
+  // --context: the header says another number of positions (the review of T233: a ternary checkpoint of another context
+  // is this file with those 4 bytes changed; the memory is made for it and the engine reads it from there)
+  const asksContext = args.includes("--context") && Number(option("--context", 0)) !== header[6];
+  if (asksContext) header[6] = Number(option("--context", 0));
   // what the worker asks footprint() with (worker.js's forwardOptions): on a shared memory, with relaxed SIMD (Node has it)
   const forwardOptions = { ...options, int8: true, relaxed: true, halfKV: ["int8", "int6", "ternary"].includes(options.dtype), shared: true, outliers: 8, gpu: false };
   const after = footprint(header, size, forwardOptions), wide = needsWide(size, after) || args.includes("--wide"), halfKeys = keysInHalf(header, size, forwardOptions);
   console.log(`page: ${path.basename(file)} is ${size} bytes (${(size / GiB).toFixed(3)} GiB), header ${JSON.stringify(header)}; footprint() counts ` +
     `${(after / GiB).toFixed(3)} GiB after it (${((size + after) / GiB).toFixed(2)} GiB in all), a ${wide ? "64" : "32"}-bit memory, keys and values in ${halfKeys ? "float16" : "float32"}`);
   // The review of T230 and T231: the V8 of Node 24 (13.6) on arm64 reads v128.load32_splat of an address above 4 GiB at
-  // its low 32 bits, and the ternary kernels take every scale so: there this model (7 GiB) is computed wrongly, and no
-  // number of this tool is the model's (Chromium's V8 on arm64 is right). The canary is tests/ternary-check.mjs's
-  // (--anyway: run all the same, to see what such an engine makes of the model: the comparison says whether it is right)
+  // its low 32 bits, and the ternary kernels take every scale so. The review of T233 found where: in Liftoff, V8's baseline
+  // compiler (a function runs as Liftoff's code until its budget runs out and TurboFan's replaces it, within a few
+  // milliseconds of a kernel's first call: so a kernel whose first call is above 4 GiB is computed wrongly, and one that
+  // begins below, as every kernel of this model does, is not: the 27B's numbers on arm64 agreed with x86-64's); TurboFan's
+  // code reads it right; V8 fixed Liftoff in 14.3 (Chrome 143: commit ff9dbb26c2, "[wasm][arm64] Fix splat on memory64").
+  // So where the canary (tests/ternary-check.mjs's) fails, Liftoff is turned off for everything compiled from here on
+  // (the kernels in the worker too: V8's flags are the process's) and the canary asked again: the numbers are then the
+  // model's, as on an engine that reads it right. --anyway: run all the same where it still reads wrongly
   if (base4GiB(size + after) && !splatsRight()) {
-    console.log(`page: Node ${process.version} (V8 ${process.versions.v8}, ${process.arch}) reads v128.load32_splat wrongly above 4 GiB: what it would compute here ` +
-      `is not this model${args.includes("--anyway") ? " (run anyway, as asked)" : " — FAILED (run it on x86-64)"}`);
-    if (!args.includes("--anyway")) process.exit(1);
+    v8.setFlagsFromString("--no-liftoff");
+    const right = splatsRight(true);
+    console.log(`page: Node ${process.version} (V8 ${process.versions.v8}, ${process.arch}) reads v128.load32_splat wrongly above 4 GiB in Liftoff's code: ` +
+      (right ? "--no-liftoff is set, and TurboFan's code reads it where it is (what is computed here is this model)"
+        : `and with --no-liftoff too: what it would compute here is not this model${args.includes("--anyway") ? " (run anyway, as asked)" : " — FAILED (run it on x86-64)"}`));
+    if (!right && !args.includes("--anyway")) process.exit(1);
   } else if (base4GiB(size + after)) console.log(`page: Node ${process.version} (V8 ${process.versions.v8}, ${process.arch}) reads v128.load32_splat above 4 GiB where it is`);
   const { memory, base } = weightsMemory(size, { shared: true, wide, after });
   let began = performance.now();
@@ -137,7 +181,8 @@ if (isMainThread) {
     offset += fs.readSync(fd, new Uint8Array(memory.buffer, base + offset, length), 0, length, offset);
   }
   fs.closeSync(fd);
-  console.log(`page: read into the memory in ${((performance.now() - began) / 1000).toFixed(0)} s`);
+  if (asksContext) new Int32Array(memory.buffer, base + 24, 1)[0] = header[6];
+  console.log(`page: read into the memory in ${((performance.now() - began) / 1000).toFixed(0)} s${asksContext ? `; its header now says ${header[6]} positions` : ""}`);
   const { pyodide: py } = await pyodideWithEngine({ shared: true, wide });
   py.FS.writeFile("tokenizer.bin", fs.readFileSync(`${out}.tokenizer.bin`));
   let plan;
@@ -188,6 +233,31 @@ if (isMainThread) {
     }
     if (!job.texts.length) throw new Error(`no fork-<i>.ids in ${references}`);
   }
+  if (mode === "long") {
+    const references = path.resolve(third);
+    const linesAsked = option("--lines", "");  // none, or logits,kl,growth
+    job.lines = linesAsked === "none" ? null : linesAsked ? Object.fromEntries(linesAsked.split(",").map((value, i) => [["logits", "kl", "growth"][i], Number(value)])) : LONG_LINES;
+    job.references = references;
+    job.broken = option("--broken", "").split(",").filter(Boolean);
+    job.broken.forEach(breakOf);
+    const [prompt, wrote = []] = fs.readFileSync(`${references}/fork-long.ids`, "utf8").split("\n").slice(0, 2).map((line) => line.trim().split(/\s+/).filter(Boolean).map(Number));
+    const rows = fs.readFileSync(`${references}/fork-long.rows`, "utf8").trim().split(/\s+/).map(Number);
+    job.long = { prompt, wrote, rows };
+    console.log(`page: the fork's prompt is ${prompt.length} tokens, it wrote ${wrote.length} after it, and kept the logits of ${rows.length} positions of the prompt (${rows[0]} to ${rows.at(-1)})`);
+    // the engine's tokenizer against the fork's ids for the text, which the fork took whole
+    const textFile = `${references}/long.txt`;
+    if (fs.existsSync(textFile)) {
+      py.globals.set("TEXT", fs.readFileSync(textFile, "utf8"));
+      const ids = Array.from(py.runPython("llama.tokenizer.encode(TEXT, llama.specials)").toJs());
+      const first = ids.findIndex((id, i) => i < prompt.length && id !== prompt[i]);
+      // --prefix: the fork took only the first LONG_TOKENS of the text (a short pass through the whole pipeline, which cannot
+      // say anything about the rest of the ids); without it the fork took the whole text and the lengths must be equal
+      const prefix = args.includes("--prefix") && prompt.length < ids.length;
+      const same = first < 0 && (prefix || ids.length === prompt.length);
+      console.log(`page: the tokenizer gives ${same ? (prefix ? `the fork's ${prompt.length} ids as the first of its ${ids.length} (--prefix: the rest is not compared)` : `the fork's ${ids.length} ids`) : `${ids.length} ids, the fork ${prompt.length}; the first that differs is at ${first < 0 ? prompt.length : first} — FAILED`}`);
+      job.tokenizerFailed ||= !same;
+    }
+  }
   if (mode === "speed") Object.assign(job, { positions: Number(option("--positions", 12)), rounds: Number(option("--rounds", 2)) });
   if (mode === "write") {
     // generate() is Python's loop: Pyodide and the forward pass in one worker, as on the page
@@ -224,43 +294,50 @@ if (isMainThread) {
     const data = fs.readFileSync(file);
     return new Float32Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
   };
+  const vocab = plan.vocab_size;
+  const logSoftmax = (row) => {
+    let top = -Infinity;
+    for (let i = 0; i < row.length; i++) if (row[i] > top) top = row[i];
+    let sum = 0;
+    for (let i = 0; i < row.length; i++) sum += Math.exp(row[i] - top);
+    const shift = top + Math.log(sum), out = new Float64Array(row.length);
+    for (let i = 0; i < row.length; i++) out[i] = row[i] - shift;
+    return out;
+  };
+  /** our rows against theirs (flat, [positions][vocab]): the largest difference, the KL(theirs || ours) of every
+   * position, where the most likely token differs and how far apart their own first two are there */
+  const distance = (ours, theirs) => {
+    const count = Math.min(ours.length, theirs.length / vocab);
+    const found = { count, worst: 0, where: 0, klWorst: 0, klSum: 0, same: 0, gaps: [], token: -1, probability: 0, likely: 0 };
+    for (let position = 0; position < count; position++) {
+      const a = ours[position], b = theirs.subarray(position * vocab, (position + 1) * vocab);
+      let worst = 0, token = 0;
+      for (let i = 0; i < vocab; i++) {
+        const apart = Math.abs(a[i] - b[i]);
+        if (apart > worst) [worst, token] = [apart, i];
+      }
+      const la = logSoftmax(a), lb = logSoftmax(b);
+      // (the token the largest difference is at, with what each says of it and the probability the reference gives it:
+      // the review of T233 found a row past the line whose KL was 7e-6: a token of no probability)
+      if (worst > found.worst) Object.assign(found, { worst, where: position, token, ours: a[token], theirs: b[token], probability: Math.exp(lb[token]) });
+      for (let i = 0; i < vocab; i++) if (lb[i] >= Math.log(LIKELY)) found.likely = Math.max(found.likely, Math.abs(a[i] - b[i]));
+      let kl = 0;
+      for (let i = 0; i < vocab; i++) kl += Math.exp(lb[i]) * (lb[i] - la[i]);
+      found.klSum += kl;
+      found.klWorst = Math.max(found.klWorst, kl);
+      const top = argmax(b);
+      if (argmax(a) === top) found.same += 1;
+      else {
+        let second = -Infinity;
+        for (let i = 0; i < vocab; i++) if (i !== top && b[i] > second) second = b[i];
+        found.gaps.push({ position, gap: b[top] - second });
+      }
+    }
+    return found;
+  };
   let failed = false;
   if (job.mode === "compare") {
-    const { references, lines } = job, vocab = plan.vocab_size;
-    const logSoftmax = (row) => {
-      let top = -Infinity;
-      for (let i = 0; i < row.length; i++) if (row[i] > top) top = row[i];
-      let sum = 0;
-      for (let i = 0; i < row.length; i++) sum += Math.exp(row[i] - top);
-      const shift = top + Math.log(sum), out = new Float64Array(row.length);
-      for (let i = 0; i < row.length; i++) out[i] = row[i] - shift;
-      return out;
-    };
-    /** our rows against theirs (flat, [positions][vocab]): the largest difference, the KL(theirs || ours) of every
-     * position, where the most likely token differs and how far apart their own first two are there */
-    const distance = (ours, theirs) => {
-      const count = Math.min(ours.length, theirs.length / vocab);
-      const found = { count, worst: 0, where: 0, klWorst: 0, klSum: 0, same: 0, gaps: [] };
-      for (let position = 0; position < count; position++) {
-        const a = ours[position], b = theirs.subarray(position * vocab, (position + 1) * vocab);
-        let worst = 0;
-        for (let i = 0; i < vocab; i++) worst = Math.max(worst, Math.abs(a[i] - b[i]));
-        if (worst > found.worst) [found.worst, found.where] = [worst, position];
-        const la = logSoftmax(a), lb = logSoftmax(b);
-        let kl = 0;
-        for (let i = 0; i < vocab; i++) kl += Math.exp(lb[i]) * (lb[i] - la[i]);
-        found.klSum += kl;
-        found.klWorst = Math.max(found.klWorst, kl);
-        const top = argmax(b);
-        if (argmax(a) === top) found.same += 1;
-        else {
-          let second = -Infinity;
-          for (let i = 0; i < vocab; i++) if (i !== top && b[i] > second) second = b[i];
-          found.gaps.push({ position, gap: b[top] - second });
-        }
-      }
-      return found;
-    };
+    const { references, lines } = job;
     const told = (d) => `largest difference ${d.worst.toFixed(4)} (at position ${d.where}), KL ${(d.klSum / d.count).toExponential(2)} on average and ` +
       `${d.klWorst.toExponential(2)} at most, the same most likely token at ${d.same} of ${d.count} positions` +
       (d.gaps.length ? ` (${d.gaps.slice(0, 4).map(({ position, gap }) => `position ${position}: the other's first two are ${gap.toFixed(4)} apart`).join("; ")})` : "");
@@ -421,6 +498,100 @@ if (isMainThread) {
     failed ||= !close;
     engine.stopThreads();
     await engine.release();
+  }
+  if (job.mode === "long") {
+    const { references, lines } = job, { prompt, wrote, rows } = job.long, seqLen = plan.seq_len;
+    // the fork's rows: those of the prompt's positions listed in fork-long.rows, then one for each token it wrote but the last
+    // (decoded one at a time): a fork that ran out of time wrote fewer than the list says
+    const kept = floats(`${references}/fork-long.logits`);
+    const positions = [...rows, ...Array.from({ length: Math.max(0, wrote.length - 1) }, (_, i) => prompt.length + i)];
+    const have = Math.min(positions.length, Math.floor(kept.length / vocab));
+    const wanted = new Set(positions.slice(0, have)), stop = Math.max(...wanted) + 1;
+    const ids = [...prompt, ...wrote.slice(0, -1)];
+    if (stop > seqLen) throw new Error(`the fork's rows go to position ${stop - 1}, the engine's context is ${seqLen} positions: --context ${stop} or more`);
+    let limits = null;  // (the right engine's lines, which a broken one is held to)
+    for (const name of [null, ...job.broken]) {
+      const engine = engineOf(name ? breakOf(name) : null);
+      await engine.setThreads(job.threads[0]);
+      const label = name ? `broken (${breakOf(name).what})` : "the page's forward pass";
+      const got = new Map(), bands = [];
+      const began = performance.now();
+      let bandBegan = began, bandFrom = 0;
+      for (let at = 0; at < stop;) {
+        if (wanted.has(at)) {
+          engine.forward(ids[at], at, true);
+          got.set(at, engine.logits().slice());
+          at += 1;
+        } else {
+          // (a run of positions the reference has no row for: a prompt in blocks, as the page's generate() hands one over)
+          let next = at;
+          while (next < stop && !wanted.has(next)) next++;
+          engine.forwardMany(ids.slice(at, next), at);
+          at = next;
+        }
+        if (at - bandFrom >= 500 || at === stop) {
+          const now = performance.now();
+          bands.push({ from: bandFrom, to: at, rate: (at - bandFrom) * 1000 / (now - bandBegan) });
+          if (!name) say(`positions ${bandFrom} to ${at}: ${bands.at(-1).rate.toFixed(2)} tok/s on ${engine.threads} threads, ${((engine.memoryBytes() - base - size) / MiB).toFixed(0)} MiB after the checkpoint`);
+          [bandBegan, bandFrom] = [now, at];
+        }
+      }
+      const seconds = (performance.now() - began) / 1000;
+      // the rows, one by one, against the fork's
+      const found = [];
+      for (let k = 0; k < have; k++) {
+        const position = positions[k], d = distance([got.get(position)], kept.subarray(k * vocab, (k + 1) * vocab));
+        found.push({ position, worst: d.worst, likely: d.likely, kl: d.klWorst, same: d.same === 1, gap: d.gaps[0]?.gap, token: d.token, ours: d.ours, theirs: d.theirs, probability: d.probability });
+      }
+      const band = (from, to) => found.filter(({ position }) => position >= from && position < to);
+      const tell = (list) => list.length ? `${list.length} rows, largest difference ${Math.max(...list.map((r) => r.worst)).toFixed(4)}, KL ${Math.max(...list.map((r) => r.kl)).toExponential(2)} at most, ` +
+        `the same most likely token at ${list.filter((r) => r.same).length}` : "no rows";
+      const edges = [FLOOR_BELOW, 1024, 2048, 4096, Infinity];
+      say(`${label}: ${stop} positions in ${seconds.toFixed(0)} s (${(stop / seconds).toFixed(2)} tok/s, ${cpu}), ${engine.backend}`);
+      if (!name) say(`${label}: by band of positions (the first, under ${FLOOR_BELOW}, is the floor): ` + edges.map((to, i) => {
+        const from = i ? edges[i - 1] : 0;
+        return `${from} to ${to === Infinity ? "the end" : to}: ${tell(band(from, to))}`;
+      }).join("; "));
+      say(`${label}: the rows (the largest difference over the tokens the fork gives a probability of ${LIKELY} or more / over all, KL): ` +
+        found.map((r) => `${r.position}: ${r.likely.toFixed(3)}/${r.worst.toFixed(3)}/${r.kl.toExponential(1)}${r.same ? "" : " (another most likely token)"}`).join(", "));
+      say(`${label}: the five rows furthest from the fork's: ` + [...found].sort((x, y) => y.worst - x.worst).slice(0, 5)
+        .map((r) => `${r.position}: ${r.worst.toFixed(3)} at token ${r.token} (the fork's ${r.theirs.toFixed(2)}, the page's ${r.ours.toFixed(2)}, a probability of ${r.probability.toExponential(0)})`).join("; "));
+      // what is looked for: a difference that grows with the position, past the floor the first rows measure. A broken engine is
+      // held to the lines of the right one (its own first rows are as wrong as the rest): every row of it is looked at
+      const floor = band(0, FLOOR_BELOW), past = found.filter(({ position }) => position >= FLOOR_BELOW);
+      const reasons = [];
+      if (lines) {
+        if (!name) {
+          const floorWorst = Math.max(0, ...floor.map((r) => r.likely)), floorKl = Math.max(0, ...floor.map((r) => r.kl));
+          limits = { floorWorst, floorKl, worst: Math.max(lines.logits, lines.growth * floorWorst), kl: Math.max(lines.kl, lines.growth * floorKl) };
+          say(`${label}: the floor (under ${FLOOR_BELOW} positions) is ${floorWorst.toFixed(4)} and KL ${floorKl.toExponential(2)}; the lines past it: ${limits.worst.toFixed(4)} and ${limits.kl.toExponential(2)}`);
+        }
+        for (const r of name ? found : past) {
+          if (r.likely > limits.worst) reasons.push(`position ${r.position}: ${r.likely.toFixed(4)} from the fork's over the tokens it gives a probability, past ${limits.worst.toFixed(4)}`);
+          if (r.kl > limits.kl) reasons.push(`position ${r.position}: KL ${r.kl.toExponential(2)}, past ${limits.kl.toExponential(2)}`);
+          if (!r.same && r.gap > 2 * r.likely) reasons.push(`position ${r.position}: another most likely token where the fork's first two are ${r.gap.toFixed(4)} apart (more than twice ${r.likely.toFixed(4)})`);
+        }
+      }
+      const greedy = wrote.map((token, i) => (got.has(prompt.length - 1 + i) ? argmax(got.get(prompt.length - 1 + i)) === token : null));
+      say(`${label}: greedy: ${greedy.filter((same) => same).length} of the ${greedy.filter((same) => same !== null).length} tokens the fork wrote after the prompt are the most likely ones after it`);
+      const mustFail = Boolean(name);
+      if (!lines) say(`${label}: no lines asked for`);
+      else if (mustFail) say(`${label}: ${reasons.length ? `caught (${reasons.length} rows): ${reasons[0]}` : "NOT CAUGHT — FAILED"}`);
+      else say(`${label}: ${reasons.length ? `FAILED: ${reasons.slice(0, 6).join("; ")}` : "ok: no row past the floor's lines"}`);
+      failed ||= Boolean(lines) && (mustFail ? !reasons.length : reasons.length > 0);
+      if (!name) {
+        const placed = engine.memoryBytes() - base - size, bound = footprint(header, size, forwardOptions);
+        // footprint() counts the whole context: the cache has grown to it only once a position past half of it was reached (it
+        // doubles from 256; a pass of 600 positions of 8192 holds a cache of 1024 and is judged only to be under the bound)
+        const whole = stop > seqLen / 2;
+        const close = placed <= bound && (!whole || bound - placed <= 0.05 * bound + 6 * MiB);
+        say(`${label}: after ${stop} positions of a context of ${seqLen}: ${(placed / MiB).toFixed(1)} MiB placed after the checkpoint, footprint() counts ${(bound / MiB).toFixed(1)} MiB${whole ? "" : " (the run ended before the cache's last doubling: held under it only)"}${close ? "" : " — FAILED"}; ` +
+          `in all ${((base + size + placed) / GiB).toFixed(3)} GiB`);
+        failed ||= !close;
+      }
+      engine.stopThreads();
+      await engine.release();
+    }
   }
   if (job.mode === "write") {
     const { pyodideWithEngine } = await import("./engine.mjs");

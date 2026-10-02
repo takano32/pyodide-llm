@@ -173,8 +173,8 @@ Measured in CI (2026-10-02), on the real model:
 
 in tok/s, in Node on runners of 4 logical cores (the x86-64 ones are 2 cores). The fork's own CPU path wrote 0.70
 and 1.13 tok/s on 4 threads of the same runners. A prompt goes through at 1.8 (x86-64) and 3.4 tok/s (arm64). At
-the end of the context the forward pass holds 570 MB after the checkpoint. Not measured in a browser yet, nor on
-any device.
+the end of the context the forward pass holds 570 MB after the checkpoint. In Chromium on CI's runners (the deployed
+page) it was ready in 291 s on x86-64 and 235 s on arm64 and wrote 1.2 and 2.2 tok/s; not measured on any device.
 
 It has two entries: one that answers at once, and one that thinks first with the template's reasoning effort
 "medium". The model's own default, "xhigh", plans for thousands of thinking tokens, hours at this speed.

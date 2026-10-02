@@ -44,8 +44,16 @@ const ids = args.filter((a, i) => !a.startsWith("--") && !(args[i - 1] ?? "").st
 const without = args.includes("--without") ? args[args.indexOf("--without") + 1].split(",") : [];
 const modelOf = (id) => MODELS.find((m) => m.id === id) ?? { name: path.basename(id), checkpoint: path.resolve(`${id}.bin`),
   tokenizer: path.resolve(`${id}.tokenizer.bin`), options: JSON.parse(fs.readFileSync(`${id}.json`, "utf8")),
-  madeUp: path.basename(id).startsWith("made-up") };
-const MADE_UP_LINE = 0.5;  // T229: the relative distance of a made-up int8 model's logits from NumPy's
+  madeUp: path.basename(id).startsWith("made-up"), line: madeUpLine(path.basename(id)) };
+// T229: the relative distance of a made-up int8 model's logits from NumPy's. T233's review: a made-up ternary model in a
+// rotated basis (tests/make_ternary.py) is 0.06 from NumPy's (0.058 to 0.066 on CI's x86-64 and arm64, whichever memory),
+// and forward.js alone reading one sign of a width wrong moves it to 0.18 to
+// 0.46 at a width of 256 or 384 (0.65 to 0.81 at 128, which the line of 0.5 sees): its line is 0.12, 1.9 times the right
+// value and 0.67 of the weakest fault.
+const MADE_UP_LINE = 0.5;
+function madeUpLine(name) {
+  return name.startsWith("made-up-ternary-rotated") ? 0.12 : MADE_UP_LINE;
+}
 const file = (f) => (path.isAbsolute(f) ? f : root + f);
 
 // T98: six_sums (the corrections of int6 weights for matmul_q6r) against the sums of the int8 values the layout of
@@ -436,7 +444,7 @@ for pos in range(${positions}):
         nll[i] -= shifted[following] - math.log(np.exp(shifted).sum())
     sequence.append(following)
 agreement, change, relative = agree / ${positions}, math.exp((nll[0] - nll[1]) / ${positions}) - 1, math.sqrt(apart / size)
-ok = (agree == ${positions} and largest <= 1e-3) if not int8 else relative <= ${MADE_UP_LINE} if ${entry.madeUp ? "True" : "False"} else (agreement >= 0.85 and abs(change) <= 0.05)
+ok = (agree == ${positions} and largest <= 1e-3) if not int8 else relative <= ${entry.line ?? MADE_UP_LINE} if ${entry.madeUp ? "True" : "False"} else (agreement >= 0.85 and abs(change) <= 0.05)
 kv_start, llama2_numpy.KV_START = llama2_numpy.KV_START, 8
 one, many = kernel_llama(data, vocabulary, **OPTIONS), kernel_llama(data, vocabulary, **OPTIONS)
 llama2_numpy.KV_START = kv_start
@@ -478,7 +486,7 @@ def run(llama, positions):
         token = int(np.argmax(llama.forward(token, pos)))
     return time.perf_counter() - began
 (ok, f"{page.backend}: " + (f"most likely token the same at {agreement * 100:.1f}%, perplexity {change * 100:+.2f}% against NumPy"
-     + (f", the logits {relative:.3f} of NumPy's apart (the line of a made-up model: ${MADE_UP_LINE})" if ${entry.madeUp ? "True" : "False"} else "")
+     + (f", the logits {relative:.3f} of NumPy's apart (the line of a made-up model: ${entry.line ?? MADE_UP_LINE})" if ${entry.madeUp ? "True" : "False"} else "")
      if int8 else f"most likely token the same at {agreement * 100:.1f}%, largest logit difference {largest:.2e} against NumPy")
      + (f"; the prompt in blocks {'the same to the bit' if same else 'DIFFERENT'}" if blocks else "; no blocks (NumPy)")
      + (f"; a position out of turn {'refused, and nothing changed' if refused else 'NOT REFUSED (or changed something)'}, a second run from 0 {'the first one again' if again else 'DIFFERS from the first (a state left behind)'}" if kept else ""))
