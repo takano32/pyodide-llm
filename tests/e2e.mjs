@@ -164,13 +164,20 @@ function record(entry) {
   const file = process.env.E2E_RESULTS;
   if (!file) return;
   const extra = process.env.E2E_QUERY ? { query: process.env.E2E_QUERY } : {};
+  // (T233's review: a results file in a folder that was not there threw here, in the very handler that records what threw: the
+  // handler ran again and again, 15,694 lines of "FAILED" in a log)
+  fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.appendFileSync(file, JSON.stringify({ engine, browserVersion, model, os: `${os.platform()} ${os.arch()}`, ...extra, ...entry }) + "\n");
 }
 
 // Anything that throws (a navigation that fails, a closed page) is a failed run too, and must be recorded as one
 process.on("uncaughtException", async (error) => {
   console.error(`FAILED\n- ${error.message ?? error}`);
-  record({ ok: false, timedOut: false, failures: [String(error.message ?? error)] });
+  try {
+    record({ ok: false, timedOut: false, failures: [String(error.message ?? error)] });
+  } catch (recording) {
+    console.error(`(the run could not be recorded: ${recording.message ?? recording})`);
+  }
   if (page) await keepArtifacts(String(error.message ?? error));
   process.exit(1);
 });
