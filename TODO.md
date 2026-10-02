@@ -86,8 +86,9 @@
 
 **いまの状態（2026-10-01、再開した回）**: 2026-09-28 に止めた 4 つ（T129・T130・T219 の (2)・T224）は全部本線に入れた（反映済み、レビューは Sonnet max が後で）。本線は T129 105bb4a、T130 89a24e9（持ち主の判断の 1 行つき: 共有でないメモリで float16 にしても 64 ビットが要るモデルは KV を float32 のまま）、T219 の (2) b76cd65。止めた頃の経緯は `git show 1a0cc1d:TODO.md` のこの段にある。
 - **CI**: 本線（T129 と T130 の後）の tests.yml の全部の組は成功（run 36864748112、EPYC 7763、383 秒）。T219 のブランチ（T224 と合わせた後）の gpu-prompt.yml の全部の組は成功、FAILED 0（run 36864349281、13.9 分）。本番の確かめは T130（`long=850` の 3B 級と `coi=off`）と T129（`slow.yml` の slow と stall、モデルの切り替え、2 回目の訪問）が通った（数字は各項）。T219 の後の本線の gpu-prompt.yml の軽い組は成功（run 36866412202）、`gpuTest=on` の本番の回（run 36866409090、SwiftShader）は tiny-lm が「prompts and answers on WebGPU (gpuTest)」で 66 トークンを GPU で書いた（467 秒）。同じ回の llm-jp-3 150M は 1800 秒の持ち時間で打ち切り（SwiftShader で生成の歩を回す e2e は遅い、AGENTS.md の T156 の記録のとおり。壊れではない: 大きいモデルを `gpuTest=on` で書かせない）。
-- **持ち主の指示（2026-10-02）: 実装とレビューを再開**（2026-10-01 の夜は「いったん落ち着こう。新しい実装とレビューをせずに現在の実行を完了させよう」で止め、同じ夜に「レビューを再開」）。同時に動かす担当は 7 本前後までにする（9〜10 本で使用量の上限に当たった）。
-- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: 実装は T233 `t233-bonsai-27b`（27B を一覧に）、T251・T252 `t251-t252-listings`、T260 `t260-lfm2`、T262 `t262-install-timeouts`。レビュー（Sonnet max）は T230・T231 `t230-t231-review`、T253・T254 `t253-t254-review`、T245・T247 `t245-t247-review`。**次に始めるもの（担当が空いたら）**: T255（SmolLM3、T260 の後: 同じエンジンのファイル）、T264 と変換器の待ちの直し（`CONVERTER` を上げる 1 回にまとめる）、T256・T257・T258（トークナイザと Phi）、T261（Gemma 3）、T232（3 値の GPU）、T244、T234。
+- **持ち主の指示（2026-10-02、2 つ目）: 現在の実行を完了させる**（「現在の実行を完了させよう」。その前に「実装とレビューを再開」で下の 7 本を始めた）。**新しい実装もレビューも始めない**: 動いている担当が報告したら本線に入れて本番を確かめるだけ。出てきた次の仕事は採番して台帳に書くだけにする。再開は持ち主の言葉の後。
+- **持ち主の指示（2026-10-02、3 つ目）: Bonsai を優先する**（「Bonsai は優先して取り組みたい」）。本線に入れる順も、次に始める順も Bonsai が先: T233（27B を一覧に、動いている）→ そのレビュー → T232（3 値の GPU）→ T234（記録）。Bonsai の持ち主の判断待ち: yarn か素の RoPE か（レビュー 2 本の勧めは素）、「Created using Bonsai by Prism ML.」の表示、3 値の項目の note の文面、27B の文脈の長さと考える形（T233 の報告の後）。
+- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: 実装は T233 `t233-bonsai-27b`（27B を一覧に）、T232 `t232-ternary-gpu`（3 値の GPU、持ち主「T232 はじめる」2026-10-02）、T251・T252 `t251-t252-listings`、T260 `t260-lfm2`。レビュー（Sonnet max）は T230・T231 `t230-t231-review`、T253・T254 `t253-t254-review`、T245・T247 `t245-t247-review`。**持ち主が言ったら始めるもの**: T255（SmolLM3、T260 の後: 同じエンジンのファイル）、T264 と変換器の待ちの直し（`CONVERTER` を上げる 1 回にまとめる）、T256・T257・T258（トークナイザと Phi）、T261（Gemma 3）、T232（3 値の GPU）、T244、T234。
 - **T227 も本線に入れた（4623fb3）。レビュー済み（Sonnet max、2026-10-01、ブランチ `t227-review`）**: 報告の頭と要約に「#### Warnings」の一覧。レビューの直し（must-fix 1・should 5。装置のエラーの改行が警告を壊す件が must-fix。並びは重い順に、経路の止まりも載せる、など）はこのブランチ。見出しと切り詰めの文（「… and N more, in the whole report below」）は実装が選んだ仮の文のまま、持ち主が決める（勧めは T227 の項）。WRONG の報告は本物の Chromium で見た（`bench-check.mjs --wrong`: 層の検査の線を 1e-12 にして配る。本物の端末の WRONG の行はまだ見ていない）。
 - **T228 の調べも本線に入れた**（docs/notes/t228-bonsai-2-2026-10-01.md。前の仕事を T235〜T238 に採番した。勧めは小さいモデルから、持ち主の判断待ち）。
 - **lishogi.org の WebGPU（2026-10-01、持ち主の問い）**: 使っていない。ソース（WandererXII/lishogi、master 5394fc3、2026-09-10）にも本番の解析ページの JS にも `navigator.gpu`・WGSL は無い。ブラウザの解析は YaneuraOu の K-P の NNUE と Fairy-Stockfish の NNUE の WASM（SIMD と pthreads、共有メモリ）で、隔離はサーバのヘッダ（COEP は `credentialless` が使えるブラウザではそれ、ほかは `require-corp`）。取り込む GPU の手法は無い。
@@ -1586,8 +1587,30 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T267 [バグ][モデル] japanese-gpt2 xsmall が `<unk>` を書く — 状態: 候補（2026-10-01、T249 のレビューから。持ち主の判断）
 - ページの既定のサンプリングで 192 の答えの 37（19%）に `<unk>`（small は 4、medium は 2、tiny-lm は 0）。引くときに `<unk>` を除くと 0。レビューの案 3 つは T249 の項。
 
-### T262 [運用][遠隔試験] ほかの 7 つのワークフローにも、ブラウザの入れる手順の期限と apt の time-out を — 状態: 未着手（2026-10-01、T239〜T241 のレビューから。規模 小）
+### T268 [バグ][遠隔試験] preview.yml の「Offline (T111)」が WebKit で落ちる（本線でも） — 状態: 未着手（2026-10-02、T262 から。規模 小）
+- `offline=true` の手順が WebKit で `page.reload: WebKit encountered an internal error`。本線でも同じ（run 36950503412）。T262 の変更のせいではない。いつからか、Playwright の WebKit の版か本線の変更かは未確認。
+
+### T262 [運用][遠隔試験] ほかの 7 つのワークフローにも、ブラウザの入れる手順の期限と apt の time-out を — 状態: **反映済み**（2026-10-02、本線に入れた、レビュー前。Opus medium、ブランチ `t262-install-timeouts`。2026-10-01、T239〜T241 のレビューから。規模 小）
 - 本線の gpu-prompt.yml の run 36902097346 の Chromium のジョブは、試験が遅かったのではなく `npx playwright-core install --with-deps chromium` の apt が止まって、ジョブの期限 120 分まで始まらなかった。gpu-prompt.yml には手順の `timeout-minutes: 20` と apt の time-out（30 秒・3 回）を付けた。同じ install を持つ bench・browsers・coi・fetch・models・preview・slow は未対応で、同じ止まり方をしうる。
+- **やったこと（2026-10-02）**: apt の設定は `tests/apt-timeouts.sh` の 1 か所に置いた（GitHub の Linux のランナーでだけ書く。Windows・macOS・開発機では何もしない）。apt を走らせる手順はどれもそれを先に呼び、`timeout-minutes: 20` を持つ。入れるものは変えていない。
+  - bench.yml・coi.yml・models.yml・fetch.yml・slow.yml: ブラウザを入れる手順に 2 つとも。
+  - browsers.yml: system のジョブの「Install the browsers」と huggingface のジョブの手順に 2 つとも。
+  - preview.yml: 建てる手順に 2 つとも。オフラインの Firefox と WebKit の入れは試験の手順から分けて自分の手順にした（期限が入れだけに掛かるように）。
+  - gpu-prompt.yml: 2 つのジョブの printf の行を同じスクリプトの呼び出しに替えた（設定は同じ）。
+  - `tests/rounding-check.sh`（tests.yml の `extra=` から apt を走らせる）も先に呼ぶ。
+  - ジョブの期限が無かった 2 つに付けた: deploy.yml の deploy に 30 分（ふだん 3〜4 分）、gguf.yml の plan に 10 分。ほかのジョブの期限はそのまま。tests.yml・threads.yml・draft.yml・int4.yml・gguf.yml のほかのジョブに apt もブラウザの入れも無い。
+- **形を選んだ訳**: composite action にはしなかった。手順の期限は composite action の中には書けず（GitHub の文書の読み。試していない）、呼ぶ側の手順に書くことになる。入れる手順の中身はワークフローごとに違う（ブラウザの組、`npm ci` や建てると同じ手順、browsers.yml の chrome と msedge の枝）ので、1 か所にできるのは apt の設定だけで、それは 1 行で呼べるスクリプトで足りる。YAML に足すのは手順ごとに 2 行。
+- **CI（ブランチ、ff1b98b）**: 入れる手順はどれも通った（ふだん 0.5〜3 分）。
+  - models.yml `models=stories260K`: run 36949839742 success。
+  - bench.yml `os=ubuntu-latest browsers=chromium times=1`: run 36949839724 success。
+  - slow.yml `scenario=slow`: run 36949839987 success。
+  - fetch.yml `rounds=1`: run 36949840198 success（2 つのジョブ）。
+  - gpu-prompt.yml（軽い組）: run 36949840163 success（Chromium と Dawn）。
+  - tests.yml `only_extra=true extra="bash tests/rounding-check.sh nearest"`: run 36949840616 success。
+  - coi.yml: 1 回目の run 36949839728 は **Linux のジョブが手順の期限 20 分で止まった**（Windows と macOS は success）。apt の鏡（azure.archive.ubuntu.com）が遅く、20 分で 187 個（125 MB）のうち 96 個しか届かなかった。止まった取得ではないので apt の time-out は効かず、期限が止めた。2 回目の run 36952377133 は 3 つの OS とも success（Linux のジョブ 3.1 分）。
+  - preview.yml `offline=true`: run 36949839628 は failure。入れる手順は 2 つとも通り（建てる手順 41 秒、Firefox と WebKit 23 秒）、落ちたのは「Offline (T111)」の WebKit（`page.reload: WebKit encountered an internal error`）。**本線でも同じ所で落ちる**（run 36950503412、main、同じ文）ので、この変更のものではない。採番していない（本会話に報告した）。
+- **走らせていないもの**: browsers.yml（1 つの小さいジョブに絞る入力が無い。15 ジョブで HF から数百 GB）、deploy.yml（ブランチから走らせるとデプロイになる。足したのはジョブの期限の 1 行）、gguf.yml の plan、preview.yml の `offline=false`（建てる手順は上の run が通った）。browsers.yml の変更は次の週 1 回の run で確かめる。
+- **残る穴**: apt の time-out は遅い鏡を速くしない。そのときは手順の期限で落ちるので 1 回走らせ直す（AGENTS.md の落とし穴）。Windows と macOS のブラウザの取得には手順の期限だけ。
 
 ### T263 [計測][WebGPU] /benchmark/ の GPU の節に「この端末は NaN を運ぶか」の検査 — 状態: 候補（2026-10-01、T241 のレビューの案。持ち主の判断。規模 小）
 - 本物の GPU（Mali・D3D12・Metal）の `exp(NaN)`・half の NaN・`max` の NaN は CI（lavapipe・SwiftShader）では分からない。T241・T219 の印が実機で届くかを、端末の報告で読めるようにする案。

@@ -22,6 +22,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    # T262: a deploy is 3 to 4 minutes; without a limit of its own a stuck step held the queue for GitHub's 360
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7
