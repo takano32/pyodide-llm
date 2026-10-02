@@ -4,7 +4,7 @@
 #
 #   pip install numpy tokenizers torch --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple
 #   pip install safetensors "transformers @ git+https://github.com/huggingface/transformers@7cd73d9df0c14b151c684b708a9f27d8d0349dfe"
-#   python tests/reference_lfm2.py <directory for the download> [--only=made-up|real|fetch] [--model=350M] [--positions=96]
+#   python tests/reference_lfm2.py <directory for the download> [--only=made-up|real|fetch] [--model=350M[,230M,...]] [--positions=96]
 #   (--only=fetch: the real model's files into the directory and no more)
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/reference_lfm2.sh" --ref <branch> --grep "lfm2:"
@@ -545,17 +545,20 @@ def faults(make, ids, whole, states, line, state_floor):
 def main():
     directory = Path(sys.argv[1])
     option = lambda name, default=None: next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith(f"--{name}=")), default)
-    only, name, positions = option("only"), option("model", "350M"), int(option("positions", 96))
+    only, names, positions = option("only"), option("model", "350M").split(","), int(option("positions", 96))
     if only == "fetch":
-        for file in FILES:
-            fetch(file, directory / name, *MODELS[name])
+        for name in names:
+            for file in FILES:
+                fetch(file, directory / name, *MODELS[name])
         return
     failed = False
     if only in (None, "made-up"):
         for label, settings in MADE_UP.items():
             failed |= made_up(label, settings)
     if only in (None, "real"):
-        failed |= real(directory / name, positions, name, "--no-faults" not in sys.argv)
+        # several models, one after another (--model=350M,230M,...): the faults on the first alone
+        for name in names:
+            failed |= real(directory / name, positions, name, name == names[0] and "--no-faults" not in sys.argv)
     say("FAILED" if failed else "the engine computes what transformers computes")
     sys.exit(1 if failed else 0)
 

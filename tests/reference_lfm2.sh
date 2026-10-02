@@ -3,7 +3,7 @@
 # the development machine has no PyTorch):
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/reference_lfm2.sh" --ref <branch> --grep "lfm2:"
-#   node tests/ci.mjs run tests.yml extra="bash tests/reference_lfm2.sh --only=real --model=1.2B-JP" --ref <branch> --grep "lfm2:"
+#   node tests/ci.mjs run tests.yml only_extra=true extra="bash tests/reference_lfm2.sh --only=real --model=350M,1.2B-JP" --ref <branch> --grep "lfm2:"
 #
 # With only_extra=true it runs alone (no models of the site, no kernels, no suite): it installs what it needs.
 # transformers at the commit the engine's formulas were read from (llama2_numpy.py, above convolution_form()), and

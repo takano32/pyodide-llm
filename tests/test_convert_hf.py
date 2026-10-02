@@ -37,8 +37,14 @@ def qwen35_model():
 
 
 # all four architectures (Fable's review: the Llama path was the one that worked, and a change to it should say so)
-@pytest.mark.parametrize("model", [llama_model, qwen2_model, qwen3_model, gpt2_model, neox_model, qwen35_model],
-                         ids=["llama", "qwen2", "qwen3", "gpt2", "neox", "qwen35"])
+def lfm2_model():
+    # T260: the FFN's inside is not config.json's intermediate_size but what normalize() makes of it (96 becomes 64)
+    from conftest import lfm2_model as mixed
+    return mixed()
+
+
+@pytest.mark.parametrize("model", [llama_model, qwen2_model, qwen3_model, gpt2_model, neox_model, qwen35_model, lfm2_model],
+                         ids=["llama", "qwen2", "qwen3", "gpt2", "neox", "qwen35", "lfm2"])
 @pytest.mark.parametrize("dtype", ["float32", "int8"])
 def test_convert_hf_writes_what_the_page_writes(tmp_path, model, dtype):
     tensors, config = model()
