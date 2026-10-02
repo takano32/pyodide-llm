@@ -13,6 +13,8 @@ const MUTANTS = {
   "codes-unsigned": [[SHADERS, "  return (bits + vec4<u32>(0x7f7f7f7fu)) ^ vec4<u32>(0x80808080u);", "  return bits;"]],
   // the tiles' scale of the wrong group (the int8 index: the activations' group of 32)
   "tile-scale": [[SHADERS, "    scale_B[row] = scales_b[b_global * (shape.perRow / 4u) + kidx_v / 8u];", "    scale_B[row] = scales_b[b_global * (shape.perRow / 4u) + kidx_v / 2u];"]],
+  // the tiles' second word of a step read from the first (weights 16 to 31 of a group of 32 are 0 to 15 again)
+  "tile-word": [[SHADERS, "  tile_B[col][row] = ternary_packed(b[b_global * (shape.words / 4u) + kidx_v + col]);", "  tile_B[col][row] = ternary_packed(b[b_global * (shape.words / 4u) + kidx_v]);"]],
   // a token's matrix: the scale of the group before (but the first)
   "token-scale": [[SHADERS, "                let own_scale_b = scales_b[b_global * K128 + k_offset / 4u];", "                let own_scale_b = scales_b[b_global * K128 + max(k_offset / 4u, 1u) - 1u];"]],
   // up's rows take gate's scales (SwiGLU's second matrix)
