@@ -910,9 +910,9 @@ function multiply(m, pass, form, group, rows, count) {
 // (shaders.js's ternaryValues)
 async function checkForm(m, form) {
   const { device, wgsl } = m, rows = 300, ternary = Boolean(form.ternary), n = ternary ? 640 : 544, perRow = n / wgsl.GROUP;
-  const group = ternary ? 4 * wgsl.GROUP : wgsl.GROUP;
+  const scaled = ternary ? 4 * wgsl.GROUP : wgsl.GROUP;  // the weights a scale
   const stored = ternary ? new Uint8Array((rows * n) / 4).map(() => (Math.random() * 256) | 0) : new Int8Array(rows * n).map(() => (Math.random() * 256) | 0);
-  const w = ternary ? wgsl.ternaryValues(stored) : stored, s = new Float32Array((rows * n) / group).map(() => Math.random() * 0.01);
+  const w = ternary ? wgsl.ternaryValues(stored) : stored, s = new Float32Array((rows * n) / scaled).map(() => Math.random() * 0.01);
   for (const { tokens, wider } of [{ tokens: 11, wider: 0 }, { tokens: 70, wider: 0 }, { tokens: 11, wider: 64 }]) {
     const xStride = n + wider, yStride = rows + (wider ? 20 : 0), owned = [];
     const x = new Float32Array(tokens * xStride).map(() => (Math.random() - 0.5) * 2);
@@ -939,7 +939,7 @@ async function checkForm(m, form) {
       const got = new Float32Array(await readBack(m, y, tokens * yStride * 4));
       const xq = form.packed ? new Int8Array(await readBack(m, io.xq, tokens * xStride)) : null;
       const xs = form.packed ? new Float32Array(await readBack(m, io.xs, tokens * (xStride / wgsl.GROUP) * 4)) : null;
-      const { wrong } = wgsl.tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: form.half, group });
+      const { wrong } = wgsl.tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: form.half, group: scaled });
       if (wrong) return `${wrong} (${tokens} tokens${wider ? ", wider x and y" : ""})`;
     } finally {
       owned.forEach((b) => b.destroy());
