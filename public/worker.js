@@ -409,11 +409,15 @@ let gpuAdapter = null;
 const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.requestAdapter().then(async (adapter) => {
   if (!adapter) return;
   const { maxStorageBufferBindingSize, maxBufferSize } = adapter.limits;
+  // (T232, packed: WGSL's packed int8 dot, which ternary weights are multiplied with on the GPU)
   gpuAdapter = { fallback: Boolean(adapter.info?.isFallbackAdapter ?? adapter.isFallbackAdapter),
-    limits: { maxStorageBufferBindingSize, maxBufferSize } };
+    limits: { maxStorageBufferBindingSize, maxBufferSize },
+    packed: Boolean(navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) };
   try {
     const wgsl = await import(new URL(`shaders.js${self.location.search}`, import.meta.url));
     gpuAdapter.key = wgsl.deviceKey(adapter);
+    // (T232: a model of ternary weights has a key of its own, with its shaders: gpu.js says that one)
+    gpuAdapter.ternaryKey = wgsl.deviceKey(adapter, adapter, true);
   } catch {
     // no key: nothing the page kept of this device holds (a model on the GPU alone is weighed again)
   }
@@ -841,19 +845,24 @@ function weightsBuffer(size, header, options, keep) {
 // the int8 kernels, an adapter that is no fallback (but for the tests), and no failure of the GPU under this model before
 // (cpuOnly). convert() asks it too before it opens a file to keep a conversion in as it comes (the review of T156)
 // (the owner, 2026-09-27: and no verdict the page kept that the CPU is faster here: then the CPU at once)
-const gpuOnlyPossible = () => gpuOnlyAllowed() && !aloneKept();
+const gpuOnlyPossible = (dtype) => gpuOnlyAllowed() && !aloneKept(dtype);
 const gpuOnlyAllowed = () => hasWebGpu && self.navigator?.deviceMemory !== undefined && !benchPage && !benching && sharedWanted() &&
   Boolean(wideKernels?.shared) && !disabled.includes("int8") && !cpuOnly.has(loadingKey) &&
   Boolean(gpuAdapter) && (!gpuAdapter.fallback || Boolean(gpuForce.fallback));
 // T156: whether the page kept that the CPU was faster here than this model on the GPU alone (forward.js's aloneHolds)
-const aloneKept = () => Boolean(gpuAdapter) && forwardModule.aloneHolds(gpuRequest?.remembered?.alone, gpuAdapter.key, gpuRequest?.cpu);
+// (dtype, T232: the key is the one gpu.js gave the verdict, a ternary model's its own)
+const aloneKept = (dtype) => Boolean(gpuAdapter) &&
+  forwardModule.aloneHolds(gpuRequest?.remembered?.alone, dtype === "ternary" ? gpuAdapter.ternaryKey : gpuAdapter.key, gpuRequest?.cpu);
 // T156: where a model goes ({ mode: "both" | "gpu" | "cpu", gpuRoom }, forward.js's weightsPlace): the GPU alone only
-// for a Llama of int8 the GPU's steps take (gpuOnlyUnfit), where the page and the device may (gpuOnlyPossible)
+// for a Llama of int8 (T232: or of ternary weights) the GPU's steps take (gpuOnlyUnfit), where the page and the device
+// may (gpuOnlyPossible)
 function gpuOnlyWeightsFor(size, header, options, after, deviceMemory) {
   const { dtype = "float32" } = options, form = { arch: options.arch, bias: options.bias, qk_norm: options.qk_norm, head_dim: options.head_dim };
-  const cpu = size + after, gpu = forwardModule.gpuBytes(header, form);
-  const fit = gpuOnlyAllowed() && !forwardModule.gpuOnlyUnfit(header, dtype, form, gpuAdapter, gpuForce);
-  const eligible = fit && !aloneKept();
+  const cpu = size + after, gpu = forwardModule.gpuBytes(header, { ...form, dtype });
+  // (T232: with the form's rotated basis, which the GPU does not turn the inputs for (T237): the worker did not hand it
+  // on, and a Llama in a rotated basis would have gone on the GPU alone to be loaded again on the CPU once built)
+  const fit = gpuOnlyAllowed() && !forwardModule.gpuOnlyUnfit(header, dtype, { ...form, rotated: options.rotated }, gpuAdapter, gpuForce);
+  const eligible = fit && !aloneKept(dtype);
   // (the second review of T156: the status line then says only the memory's reason where the layers do not fit beside
   // the CPU's copy; the console says the kept verdict, and what asks again)
   if (fit && !eligible) {
@@ -1276,9 +1285,11 @@ async function convert(model, signal, id) {
   };
   let first, size, base, conversion, shards;
   // T156: a model that goes on the GPU alone is kept as it comes (nothing holds its weights whole afterwards): a file
-  // opened for its int8 conversion where it may (the choice is the sink's, once the header is known), let go otherwise
-  const mayKeep = remote && gpuOnlyPossible() && (model.conversion?.dtype ?? "int8") === "int8";
-  let keep = mayKeep ? await keptModule.keeper({ ...model, conversion: { ...model.conversion, dtype: "int8" } }).catch(() => undefined) : undefined;
+  // opened for its int8 conversion (T232: or its ternary one, where the page asked for that) where it may (the choice
+  // is the sink's, once the header is known), let go otherwise
+  const keptDtype = model.conversion?.dtype ?? "int8";
+  const mayKeep = remote && ["int8", "ternary"].includes(keptDtype) && gpuOnlyPossible(keptDtype);
+  let keep = mayKeep ? await keptModule.keeper({ ...model, conversion: { ...model.conversion, dtype: keptDtype } }).catch(() => undefined) : undefined;
   const into = checkpointSink(keep), { sink } = into;
   let keptAsItCame = false;  // keep went to keepConverted, which keeps it or lets it go
   // T115: no bits asked for (weightsFor() in src/models.js asks for six only where the device says it has too little

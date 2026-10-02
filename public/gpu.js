@@ -49,6 +49,9 @@
 // for the packed shaders, as the CPU's matmul_q8 takes them), the weights int8 widened or multiplied as int8. T155:
 // int6 weights (T98) are widened to int8 once, as they go onto the GPU; a model in a 64-bit memory (T101) goes as
 // one in a 32-bit memory (its addresses are Numbers); a matrix larger than a buffer the device binds, in pieces of rows.
+// T232: ternary weights (T230) go up as the checkpoint holds them, two bits a weight and a scale a group of 128, and
+// are multiplied by the packed shaders alone (shaders.js's TERNARY_PACKED: the codes unpacked to int8 where the
+// shader loads them); a device without the packed int8 dot keeps such a model on the CPU.
 //
 // The first message is claimed before anything is awaited (a module worker's port opens at its first await, and a
 // message that comes before onmessage is set is lost: T109).
@@ -68,6 +71,13 @@ const CHUNK = 8 << 20;
 // warms up or is loaded meanwhile falls on all of them alike: T168's review), the median of each shader's pairs. On a
 // fallback adapter (the CPU in the GPU's place: its times are no GPU's) one pair of one pass
 const TIMED_MS = 20, MOST_PASSES = 256, PAIRS = 5;
+
+// T232: the bytes of a row of a matrix or a table ({ n, ternary }) on the GPU: a byte a weight (int8, and int6 widened),
+// or two bits (ternary: the codes as the checkpoint holds them, 16 weights a u32). A float32 scale goes with every
+// wgsl.GROUP (32) bytes of a row either way: an int8 group of 32 weights, a ternary group of 128
+const rowBytes = ({ n, ternary }) => (ternary ? n / 4 : n);
+// (whether the model's weights are ternary: its layers' matrices are all of one kind, llama2_numpy's dtype)
+const ternaryPlan = (plan) => Object.values(plan.matrices).some((matrix) => matrix.ternary);
 
 let model = null;  // what is on the GPU for the model: the device, the plan, the buffers, the pipelines, the cache
 let starting = false, stopping = false, lost = null;
@@ -115,6 +125,11 @@ async function openDevice(plan, say = unusable) {
     const info = adapter.info ?? {};
     const fallback = Boolean(info.isFallbackAdapter ?? adapter.isFallbackAdapter);
     if (fallback && !plan.force.fallback) return say("a fallback adapter: the CPU in the GPU's place");
+    // T232: ternary weights are multiplied as packed int8 alone (shaders.js's TERNARY_PACKED): said before anything goes up
+    const ternary = ternaryPlan(plan);
+    if (ternary && !navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) {
+      return say("ternary weights need the packed int8 dot product of WGSL, which this browser lacks");
+    }
     // the largest buffer the device binds (T155: a matrix larger than it goes in pieces, piecesOf)
     const limit = Math.min(adapter.limits.maxStorageBufferBindingSize, adapter.limits.maxBufferSize);
     // shader-f16 and subgroups where the adapter has them (a device refuses a feature it lacks), and the adapter's
@@ -128,9 +143,10 @@ async function openDevice(plan, say = unusable) {
     device.lost.then((info) => { lost = `the GPU was lost (${info.reason}${info.message ? `: ${info.message}` : ""})`; });
     // T148: what the page keeps of an earlier visit counts only for the same adapter and browser
     // (and the shaders of this deployment: a site whose shaders changed chooses anew, the review of T148)
-    const key = wgsl.deviceKey(adapter, device);
+    // (T232: a ternary model's key holds its own shaders too)
+    const key = wgsl.deviceKey(adapter, device, ternary);
     const remembered = plan.remembered?.key === key ? plan.remembered : null;
-    model = { device, plan, wgsl, owned: [], limit, info, fallback, remembered, adapter, key };
+    model = { device, plan, wgsl, owned: [], limit, info, fallback, remembered, adapter, key, ternary };
     if (stopping) return end();
     // a buffer the device cannot give fails quietly, as an error of these scopes
     device.pushErrorScope("out-of-memory");
@@ -294,7 +310,7 @@ function describe(adapter) {
 // T148: the adapter and the browser whose shaders the page remembers: another GPU, driver architecture or browser
 // version chooses anew (the user agent carries the browser's version)
 // the tiled shaders of T146 this device can make (shaders.js's promptForms)
-const candidates = ({ device, wgsl }) => wgsl.devicePromptForms(device);
+const candidates = ({ device, wgsl, ternary }) => wgsl.devicePromptForms(device, ternary);
 
 function unusable(reason) {
   postMessage({ type: "unusable", reason });
@@ -393,7 +409,8 @@ function dispatch(pass, pipeline, group, x, y = 1, z = 1) {
 // the shared memory and its floats a layer). T155: a matrix in pieces of whole rows (piecesOf), a buffer of values and
 // one of scales each; int6 (plan.matrices' six) widened to int8 on the way (widener), its scales as they are (the
 // quarter of an int6 group's is already the int8 values' scale, T98). The addresses are Numbers in a 64-bit memory too
-// (exact to 2^53; the views and copies take them as they are)
+// (exact to 2^53; the views and copies take them as they are). T232: ternary (plan.matrices' ternary) as it is, a row
+// of n weights n / 4 bytes (rowBytes)
 // T152: where a token goes on the GPU too (plan.tokens), q, k and v are one matrix a layer, and gate and up one (the
 // layer of a token reads them so: shaders.js's fusedMatVec and fusedDp4aMatVec, T150 and T175), each a range of it for
 // the prompt's tiled shaders (tokensLayout), and the classifier, the embedding, the final norm and RoPE's table go up
@@ -414,8 +431,8 @@ async function upload(m) {
 async function uploadLayers(m) {
   const { plan } = m, group = m.wgsl.GROUP;
   let bytes = 0;
-  m.matrices = Object.fromEntries(Object.entries(plan.matrices).map(([name, { rows, n }]) =>
-    [name, { rows, n, pieces: piecesOf(m, rows, n).map(([first, count]) => ({ first, rows: count, layers: [] })) }]));
+  m.matrices = Object.fromEntries(Object.entries(plan.matrices).map(([name, { rows, n, ternary }]) =>
+    [name, { rows, n, ternary, pieces: piecesOf(m, rows, rowBytes({ n, ternary })).map(([first, count]) => ({ first, rows: count, layers: [] })) }]));
   const together = plan.tokens ? tokensLayout(m) : null;
   m.together = together;
   // (a model on the GPU alone opens before its tables are placed, and is int8: T156)
@@ -432,16 +449,16 @@ async function uploadLayers(m) {
     if (joined) (m.joined ??= []).push(joined);
     for (const [name, matrix] of Object.entries(plan.matrices)) {
       const [valuesAt, scalesAt] = matrix.layers[l];
-      const home = together?.homes[name];
+      const home = together?.homes[name], row = rowBytes(matrix);
       for (const piece of m.matrices[name].pieces) {
-        const valueBytes = piece.rows * matrix.n, scaleBytes = (valueBytes / group) * 4;
+        const valueBytes = piece.rows * row, scaleBytes = (valueBytes / group) * 4;
         // its own buffers, or its range of the layer's joined ones
         const [values, scales] = home
           ? joined[home.joined].map((b, i) => ({ buffer: b, offset: home.at[i], size: i ? scaleBytes : valueBytes }))
           : [buffer(m, valueBytes, usage), buffer(m, scaleBytes, usage)];
-        const from = [valuesAt + piece.first * matrix.n, scalesAt + (piece.first * matrix.n / group) * 4];
+        const from = [valuesAt + piece.first * row, scalesAt + (piece.first * row / group) * 4];
         if (m.direct) {
-          // (T156: int8 alone, whose bytes are the buffer's as they come)
+          // (T156: int8 alone, and T232 ternary, whose bytes are the buffer's as they come)
           m.direct.routes.push([from[0], from[0] + valueBytes, values.buffer ?? values, values.offset ?? 0],
             [from[1], from[1] + scaleBytes, scales.buffer ?? scales, scales.offset ?? 0]);
         } else {
@@ -476,7 +493,7 @@ async function uploadRest(m) {
   return bytes;
 }
 
-// T155: the pieces of a matrix of rows × n, [first row, rows] each: whole rows, no more bytes than a buffer the device
+// T155: the pieces of a matrix of rows of n bytes (rowBytes), [first row, rows] each: whole rows, no more bytes than a buffer the device
 // binds (m.limit, or plan.force.pieceBytes in the tests), each piece's first row where its part of the output may be
 // bound (a multiple of minStorageBufferOffsetAlignment over the 4 bytes of a float32). One piece where the matrix
 // fits, as every matrix of the models of the list does at WebGPU's least limit of 128 MiB (the largest, Qwen2.5 7B's
@@ -500,9 +517,9 @@ function tablesOf(plan, make = (spec) => spec) {
 }
 // T209: a table ({ rows, n }) in pieces of rows where it is past what the device binds (piecesOf), a buffer of values
 // and one of scales each, [{ first, rows, values, scales }]; fill(piece, valueBytes, scaleBytes) puts its bytes there
-function tablePieces(m, { rows, n }, fill, usage = STORAGE | COPY_DST) {
-  return piecesOf(m, rows, n, m.plan.force.tablePieceBytes ?? m.plan.force.pieceBytes).map(([first, count]) => {
-    const valueBytes = count * n, scaleBytes = (valueBytes / m.wgsl.GROUP) * 4;
+function tablePieces(m, spec, fill, usage = STORAGE | COPY_DST) {
+  return piecesOf(m, spec.rows, rowBytes(spec), m.plan.force.tablePieceBytes ?? m.plan.force.pieceBytes).map(([first, count]) => {
+    const valueBytes = count * rowBytes(spec), scaleBytes = (valueBytes / m.wgsl.GROUP) * 4;
     const piece = { first, rows: count, values: buffer(m, valueBytes, usage), scales: buffer(m, scaleBytes, usage) };
     fill(piece, valueBytes, scaleBytes);
     return piece;
@@ -515,7 +532,7 @@ function tablesOn(m) {
   const group = m.wgsl.GROUP;
   let bytes = 0;
   m.tables = tablesOf(m.plan, (spec) => tablePieces(m, spec, ({ first, values, scales }, valueBytes, scaleBytes) => {
-    const [valuesAt, scalesAt] = spec.at, from = [valuesAt + first * spec.n, scalesAt + (first * spec.n / group) * 4];
+    const [valuesAt, scalesAt] = spec.at, from = [valuesAt + first * rowBytes(spec), scalesAt + (first * rowBytes(spec) / group) * 4];
     m.direct.routes.push([from[0], from[0] + valueBytes, values, 0], [from[1], from[1] + scaleBytes, scales, 0]);
     bytes += valueBytes + scaleBytes;
   }, STORAGE | COPY_DST | COPY_SRC));
@@ -526,7 +543,7 @@ function tablesOn(m) {
 // and each matrix's range of them (homes: its offsets in bytes), which the prompt's tiled shaders bind as a matrix of
 // its own. A range must start where the device binds a buffer (minStorageBufferOffsetAlignment: a matrix of a
 // multiple of 2048 weights, the values and the scales alike at 256; stories15M's k starts at 82944 weights, T150's
-// (b)), and a matrix a token reads must be one piece (T155). The tables may be in pieces (T209: uploadTokens). null
+// (b); T232: of 8192 ternary weights, whose scales are a byte to 32 weights), and a matrix a token reads must be one piece (T155). The tables may be in pieces (T209: uploadTokens). null
 // where it cannot, and why in m.tokensWhy: the prompts go on the GPU as before, the tokens stay on the CPU
 function tokensLayout(m) {
   const { plan } = m, align = m.device.limits.minStorageBufferOffsetAlignment, group = m.wgsl.GROUP;
@@ -547,8 +564,8 @@ function tokensLayout(m) {
         return why(`${name} would not start where this GPU binds a buffer`);
       }
       homes[name] = { joined, at: [values, scales] };
-      values += matrix.rows * matrix.n;
-      scales += (matrix.rows * matrix.n / group) * 4;
+      values += matrix.rows * rowBytes(matrix);
+      scales += (matrix.rows * rowBytes(matrix) / group) * 4;
     }
     if (values > m.limit) return why(`${names.join(" and ")} together are past a buffer of this GPU`);
     sizes[joined] = [values, scales];
@@ -569,8 +586,8 @@ async function uploadTokens(m, widen) {
   m.tables ??= tablesOf(plan, (spec) => tablePieces(m, spec, (piece, valueBytes, scaleBytes) => {
     const { first, values, scales } = piece, { n, six, at: [valuesAt, scalesAt] } = spec;
     if (six) widen.into(values, valuesAt + (first * n * 3) / 4, valueBytes / group);
-    else copyIn(m, values, valuesAt + first * n, valueBytes);
-    copyIn(m, scales, scalesAt + (first * n / group) * 4, scaleBytes);
+    else copyIn(m, values, valuesAt + first * rowBytes(spec), valueBytes);
+    copyIn(m, scales, scalesAt + (first * rowBytes(spec) / group) * 4, scaleBytes);
     bytes += valueBytes + scaleBytes;
   }));
   // (T226: the final LayerNorm's bias, and GPT-2's learned positions, a row a position as the CPU widened them: a
@@ -699,7 +716,9 @@ async function prepare(m) {
   // T210: a model on the GPU alone embeds a block's tokens here (the CPU holds no embedding): EMBED_ROWS a piece of
   // the table (T209), from the block's ids into x
   if (plan.direct) {
-    m.embedRows = await within(validated(m, () => pipelineOf(m, wgsl.EMBED_ROWS)), "compiling the embedding's rows");
+    // (T232: from a table of ternary weights, EMBED_ROWS_TERNARY)
+    const rowsCode = tablesOf(plan).embedding.ternary ? wgsl.EMBED_ROWS_TERNARY : wgsl.EMBED_ROWS;
+    m.embedRows = await within(validated(m, () => pipelineOf(m, rowsCode)), "compiling the embedding's rows");
     m.ids = buffer(m, B * 4, STORAGE | COPY_DST);
     m.embedGroups = m.tables.embedding.map((piece) => bind(m, m.embedRows,
       [piece.values, piece.scales, m.ids, m.x, uniform(m, new Uint32Array([plan.dim, piece.first, piece.rows, 0]))]));
@@ -885,9 +904,15 @@ function multiply(m, pass, form, group, rows, count) {
 // of rows everywhere), 11 and 70 tokens (a part of a tile of tokens; two or one and a part), and 11 tokens whose x and
 // y are wider than the product (xStride 608, yStride 320), each product twice into the same y (the second added:
 // shape.add) against JavaScript's (shaders.js's tiledOff). The reason it is wrong, or null
+// T232, a ternary form: rows of 640 weights (5 groups of 128 with a scale each, 20 of the activations' groups of 32:
+// a weight's scale holds for four steps of the width, and the next is another), the weights random bytes of codes (all
+// four codes, the one no file has too: every bit of a word matters), against JavaScript's on the codes' values
+// (shaders.js's ternaryValues)
 async function checkForm(m, form) {
-  const { device, wgsl } = m, rows = 300, n = 544, perRow = n / wgsl.GROUP;
-  const w = new Int8Array(rows * n).map(() => (Math.random() * 256) | 0), s = new Float32Array(rows * perRow).map(() => Math.random() * 0.01);
+  const { device, wgsl } = m, rows = 300, ternary = Boolean(form.ternary), n = ternary ? 640 : 544, perRow = n / wgsl.GROUP;
+  const scaled = ternary ? 4 * wgsl.GROUP : wgsl.GROUP;  // the weights a scale
+  const stored = ternary ? new Uint8Array((rows * n) / 4).map(() => (Math.random() * 256) | 0) : new Int8Array(rows * n).map(() => (Math.random() * 256) | 0);
+  const w = ternary ? wgsl.ternaryValues(stored) : stored, s = new Float32Array((rows * n) / scaled).map(() => Math.random() * 0.01);
   for (const { tokens, wider } of [{ tokens: 11, wider: 0 }, { tokens: 70, wider: 0 }, { tokens: 11, wider: 64 }]) {
     const xStride = n + wider, yStride = rows + (wider ? 20 : 0), owned = [];
     const x = new Float32Array(tokens * xStride).map(() => (Math.random() - 0.5) * 2);
@@ -899,7 +924,7 @@ async function checkForm(m, form) {
     try {
       const io = { xq: buffer(m, tokens * xStride, STORAGE | COPY_SRC, owned), xs: buffer(m, tokens * (xStride / wgsl.GROUP) * 4, STORAGE | COPY_SRC, owned),
         step: uniform(m, new Uint32Array([tokens, 0, 0, 0]), owned) };
-      const wb = make(w), sb = make(s), xb = make(x), y = make(new Float32Array(tokens * yStride));
+      const wb = make(stored), sb = make(s), xb = make(x), y = make(new Float32Array(tokens * yStride));
       const shape = (add) => uniform(m, new Uint32Array([rows, n / 4, perRow, 0, xStride, yStride, add ? 1 : 0, 0]), owned);
       const group = (add) => bind(m, form.pipeline, [wb, sb, form.packed ? io.xq : xb, y, shape(add), io.step, ...(form.packed ? [io.xs] : [])]);
       const groups = await validated(m, () => [group(false), group(true)]);
@@ -914,7 +939,7 @@ async function checkForm(m, form) {
       const got = new Float32Array(await readBack(m, y, tokens * yStride * 4));
       const xq = form.packed ? new Int8Array(await readBack(m, io.xq, tokens * xStride)) : null;
       const xs = form.packed ? new Float32Array(await readBack(m, io.xs, tokens * (xStride / wgsl.GROUP) * 4)) : null;
-      const { wrong } = wgsl.tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: form.half });
+      const { wrong } = wgsl.tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: form.half, group: scaled });
       if (wrong) return `${wrong} (${tokens} tokens${wider ? ", wider x and y" : ""})`;
     } finally {
       owned.forEach((b) => b.destroy());
@@ -1098,14 +1123,19 @@ async function timeBlocks(m) {
 const TOKEN_FORMS = [{ name: "llama.cpp, fused (T150)", dp4a: false, subgroups: false },
   { name: "llama.cpp, fused (T150), subgroups", dp4a: false, subgroups: true },
   { name: "DP4A, fused (T175)", dp4a: true, subgroups: false },
-  { name: "DP4A, fused (T175), the norms apart", dp4a: true, subgroups: false, normApart: true }];
+  { name: "DP4A, fused (T175), the norms apart", dp4a: true, subgroups: false, normApart: true },
+  // T232: the same two on ternary weights (shaders.js's ternaryMatVec), which a model of ternary weights alone takes,
+  // and takes no other
+  { name: "DP4A, fused (T175), ternary", dp4a: true, subgroups: false, ternary: true },
+  { name: "DP4A, fused (T175), ternary, the norms apart", dp4a: true, subgroups: false, ternary: true, normApart: true }];
 function tokenCandidates(m) {
   const features = navigator.gpu.wgslLanguageFeatures;
   const subgroups = m.device.features.has("subgroups") && Boolean(features?.has("subgroup_id"));
   const packed = Boolean(features?.has("packed_4x8_integer_dot_product"));
   // (T226: NORM_QUANTIZE is RMSNorm's: a model with LayerNorm has its norms apart, and the form with them fused is
   // the same as the one with them apart)
-  return TOKEN_FORMS.filter((form) => (!form.subgroups || subgroups) && (!form.dp4a || packed) && (!m.plan.layerNorm || !form.dp4a || form.normApart));
+  return TOKEN_FORMS.filter((form) => Boolean(form.ternary) === m.ternary && (!form.subgroups || subgroups) && (!form.dp4a || packed) &&
+    (!m.plan.layerNorm || !form.dp4a || form.normApart));
 }
 // T226: what of the model's form shapes a token's dispatches: apart, q, k and v are written as they are for what comes
 // before RoPE (the biases, the norms of the heads); gated, the FFN has a gate (SwiGLU on the write of gate and up; else
@@ -1113,13 +1143,16 @@ function tokenCandidates(m) {
 // (T92's outlier channels: a few of the final norm's weights are 12 to 17 times the others (GPT-2), and a group of 32
 // quantized to 8 bits with one of them loses the other 31; the CPU multiplies their columns apart, and the GPU has
 // T150's matrix of floats, which needs no such thing)
-const tokenShape = (m) => ({ apart: Boolean(m.gen.qkv), gated: Boolean(m.matrices.w3), layerNorm: m.plan.layerNorm, floatHead: m.plan.tokens.outliers });
+// (T232: a ternary classifier is no matrix of floats: its outlier channels are taken apart as the CPU takes them,
+// shaders.js's TAKE_OUTLIERS and TERNARY_COLUMNS)
+const floatHead = (m) => Boolean(m.plan.tokens.outliers) && !m.ternary;
+const tokenShape = (m) => ({ apart: Boolean(m.gen.qkv), gated: Boolean(m.matrices.w3), layerNorm: m.plan.layerNorm, floatHead: floatHead(m) });
 // a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers); the same code
 // under two keys is compiled once (chooseTokens). The norm is on the read of T150's matrices where it is RMSNorm
 // (LayerNorm takes the mean out first, which no sum of the matrix's rows gives: a dispatch of its own before them)
-const tokenCodes = (wgsl, { dp4a, subgroups, normApart }, { apart, gated, layerNorm, floatHead }) => {
+const tokenCodes = (wgsl, { dp4a, subgroups, normApart, ternary }, { apart, gated, layerNorm, floatHead }) => {
   const floats = (output) => wgsl.fusedMatVec({ input: layerNorm ? "plain" : "norm", output, subgroups });
-  const matrix = dp4a ? (output) => wgsl.fusedDp4aMatVec({ output }) : floats;
+  const matrix = dp4a ? (output) => (ternary ? wgsl.ternaryMatVec : wgsl.fusedDp4aMatVec)({ output }) : floats;
   return [...(dp4a && !normApart ? [["normQuantize", wgsl.NORM_QUANTIZE]] : []), ["qkv", matrix(apart ? "write" : "rope")],
     ["add", dp4a ? matrix("add") : wgsl.fusedMatVec({ input: "plain", output: "add", subgroups })], ["glu", matrix(gated ? "swiglu" : "write")],
     ["classifier", (floatHead ? floats : matrix)("write")]];
@@ -1139,7 +1172,9 @@ async function tokenBuffers(m) {
   const { plan, wgsl } = m, most = plan.tokens.most, vocab = plan.tokens.classifier.rows;
   const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, widest = Math.max(plan.dim, qDim, plan.hidden);
   // (one at a time: each in an error scope of its own)
-  const embed = await within(validated(m, () => pipelineOf(m, wgsl.EMBED)), "compiling the embedding's row");
+  // (T232: from a table of ternary weights, EMBED_TERNARY)
+  const embedCode = tablesOf(plan).embedding.ternary ? wgsl.EMBED_TERNARY : wgsl.EMBED;
+  const embed = await within(validated(m, () => pipelineOf(m, embedCode)), "compiling the embedding's row");
   const sample = await within(validated(m, () => pipelineOf(m, wgsl.SAMPLE)), "compiling the sampling");
   const out = STORAGE | COPY_SRC;
   const g = { embed, sample, most, vocab, h: buffer(m, plan.dim * 4, out | COPY_DST), q: buffer(m, qDim * 4), att: buffer(m, qDim * 4),
@@ -1200,6 +1235,16 @@ async function tokenBuffers(m) {
   if (bo) g.u.biases = layers.map((_, l) => Object.fromEntries([["bo", bo], ["b1", b1], ["b2", b2]].map(([name, { size }]) =>
     [name, uniform(m, new Uint32Array([size, l * size, 0, 0]))])));
   if (m.positions) g.u.positions = uniform(m, new Uint32Array([plan.dim, 0, plan.dim, 0]));
+  // T232: a ternary classifier's outlier channels (plan.tokens.channels, T92): the two dispatches around its matrix
+  // (shaders.js's TAKE_OUTLIERS and TERNARY_COLUMNS), the values taken, and the Outliers of every piece of the table
+  const channels = m.ternary ? plan.tokens.channels ?? [] : [];
+  if (channels.length) {
+    g.take = await within(validated(m, () => pipelineOf(m, wgsl.TAKE_OUTLIERS)), "compiling the outlier channels' taking");
+    g.columns = await within(validated(m, () => pipelineOf(m, wgsl.TERNARY_COLUMNS)), "compiling the outlier channels' columns");
+    g.picked = buffer(m, wgsl.OUTLIERS_MOST * 4);
+    g.u.take = uniform(m, wgsl.outliersOf(channels));
+    g.u.columns = m.tables.classifier.map((piece) => uniform(m, wgsl.outliersOf(channels, piece.rows, plan.dim)));
+  }
   g.u.hidden = uniform(m, new Uint32Array([plan.hidden, 0, 0, 0]));
   return g;
 }
@@ -1224,10 +1269,12 @@ function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed =
   // too) or of DP4A: RMSNorm on the read of T150's matrices, or with DP4A's quantizer (NORM_QUANTIZE); else a dispatch
   // of its own into xb (the prompt's RMSNORM, T175's form with the norms apart; T226: the prompt's LAYER_NORM with its
   // bias, T154), which the matrix reads as it is or quantized
-  const normed = (weights, bias, params, floats = !form.dp4a) => {
-    const apart = () => [[m.norm, bind(m, m.norm, plan.layerNorm ? [g.h, weights, bias, g.xb, params, g.step] : [g.h, weights, g.xb, params, g.step]), 1, 1]];
+  // (T232, taken: what changes the normed stream before it is quantized, a ternary classifier's outlier channels
+  // taken out of it: the norm is then a dispatch of its own whatever the form)
+  const normed = (weights, bias, params, floats = !form.dp4a, taken = null) => {
+    const apart = () => [[m.norm, bind(m, m.norm, plan.layerNorm ? [g.h, weights, bias, g.xb, params, g.step] : [g.h, weights, g.xb, params, g.step]), 1, 1], ...(taken ?? [])];
     if (floats) return plan.layerNorm ? { norm: apart(), quantize: [], input: [[2, g.xb]] } : { norm: [], quantize: [], input: [[2, g.h], [4, weights]] };
-    if (!form.normApart && !plan.layerNorm) {
+    if (!form.normApart && !plan.layerNorm && !taken) {
       return { norm: [[P.normQuantize, bindAt(m, P.normQuantize, [[0, g.h], [1, weights], [2, g.xq], [3, g.xs], [4, params], [5, g.step]]), 1, 1]],
         quantize: [], input: [[2, g.xq], [4, g.xs]] };
     }
@@ -1272,11 +1319,15 @@ function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed =
       ...activated.quantize, matrix(P.add, down.layers[l], activated.input, g.u.down, plan.dim, [[5, g.h]]), ...biased(g.h, "b2", l));
   }
   if (head) {
-    const final = normed(m.finalNorm, m.finalBias, g.u.final, !form.dp4a || plan.tokens.outliers);
+    // T232: a ternary classifier's outlier channels go out of the normed stream before it is quantized (TAKE_OUTLIERS),
+    // and their columns are added to the piece's logits after its matrix (TERNARY_COLUMNS), as the CPU has them
+    const take = g.take ? [[g.take, bind(m, g.take, [g.xb, g.picked, g.u.take]), 1, 1]] : null;
+    const final = normed(m.finalNorm, m.finalBias, g.u.final, !form.dp4a || floatHead(m), take);
+    const logitsOf = (piece) => ({ buffer: g.logits, offset: piece.first * 4, size: piece.rows * 4 });
     list.push(...final.norm, ...final.quantize,
       // (T209: a piece at a time into its range of the logits: its first row is where the device binds, piecesOf)
-      ...m.tables.classifier.map((piece, i) => matrix(P.classifier, [piece.values, piece.scales], final.input, g.u.classifier[i], piece.rows,
-        [[5, { buffer: g.logits, offset: piece.first * 4, size: piece.rows * 4 }]])),
+      ...m.tables.classifier.flatMap((piece, i) => [matrix(P.classifier, [piece.values, piece.scales], final.input, g.u.classifier[i], piece.rows, [[5, logitsOf(piece)]]),
+        ...(take ? [[g.columns, bind(m, g.columns, [piece.values, piece.scales, g.picked, logitsOf(piece), g.u.columns[i]]), ...spread(m, piece.rows, 256)]] : [])]),
       [g.sample, bindAt(m, g.sample, [[0, g.logits], [1, g.probs], [2, g.order], [3, g.state], [4, g.chosen], [5, g.randoms], [6, g.settings]]), 1, 1]);
   }
   return list;
@@ -1612,17 +1663,17 @@ function heldFloats(x, got) {
   return x.map((value, i) => (Math.abs(got[i] - value) <= 2 ** (Math.max(Math.floor(Math.log2(Math.abs(value))), -14) - 10) + slack ? got[i] : round16(value)));
 }
 export { heldFloats };  // (tests/gpu-choice-check.mjs)
-// T156: the first layer's matrices, { name: [values, scales] } as an Int8Array and a Float32Array each, read back from
-// their buffers (a piece after another: the rows in order)
+// T156: the first layer's matrices, { name: [values, scales] } as the bytes of their rows (rowBytes: int8, or T232
+// ternary codes) and a Float32Array each, read back from their buffers (a piece after another: the rows in order)
 async function firstLayer(m) {
   const group = m.wgsl.GROUP, out = {};
-  for (const [name, { n, pieces }] of Object.entries(m.matrices)) {
-    const rows = pieces.reduce((sum, piece) => sum + piece.rows, 0);
-    const values = new Int8Array(rows * n), scales = new Float32Array((rows * n) / group);
-    for (const piece of pieces) {
-      const [v, s] = piece.layers[0], valueBytes = piece.rows * n, scaleBytes = (valueBytes / group) * 4;
-      values.set(new Int8Array(await readBack(m, v.buffer ?? v, valueBytes, v.offset ?? 0)), piece.first * n);
-      scales.set(new Float32Array(await readBack(m, s.buffer ?? s, scaleBytes, s.offset ?? 0)), (piece.first * n) / group);
+  for (const [name, matrix] of Object.entries(m.matrices)) {
+    const row = rowBytes(matrix), rows = matrix.pieces.reduce((sum, piece) => sum + piece.rows, 0);
+    const values = new Uint8Array(rows * row), scales = new Float32Array((rows * row) / group);
+    for (const piece of matrix.pieces) {
+      const [v, s] = piece.layers[0], valueBytes = piece.rows * row, scaleBytes = (valueBytes / group) * 4;
+      values.set(new Uint8Array(await readBack(m, v.buffer ?? v, valueBytes, v.offset ?? 0)), piece.first * row);
+      scales.set(new Float32Array(await readBack(m, s.buffer ?? s, scaleBytes, s.offset ?? 0)), (piece.first * row) / group);
     }
     out[name] = [values, scales];
   }
@@ -1633,10 +1684,12 @@ async function firstLayer(m) {
 const checkCandidates = (vocab) => [...Array(64).keys()].map((i) => vocab - 1 - Math.floor((i * vocab) / 128));
 const checkRows = (vocab) => [...new Set([...[...Array(Math.ceil(vocab / 256)).keys()].map((i) => i * 256), vocab - 1])];
 // T210: those rows of the tables of a model on the GPU alone, which are there only: { embedding, classifier }, Maps of
-// a row to [its int8 values, its scales], read back in one copy each (a row of a piece at a time)
+// a row to [the bytes of its values (rowBytes: int8, or T232 ternary codes), its scales], read back in one copy each
+// (a row of a piece at a time)
 async function tableRows(m) {
-  const n = m.plan.dim, perRow = (n / m.wgsl.GROUP) * 4, vocab = m.plan.tokens.classifier.rows;
-  const read = async (pieces, rows) => {
+  const vocab = m.plan.tokens.classifier.rows, specs = tablesOf(m.plan);
+  const read = async (pieces, spec, rows) => {
+    const n = rowBytes(spec), perRow = (n / m.wgsl.GROUP) * 4;
     const target = m.device.createBuffer({ size: rows.length * (n + perRow), usage: MAP_READ | COPY_DST });
     try {
       const encoder = m.device.createCommandEncoder();
@@ -1648,36 +1701,46 @@ async function tableRows(m) {
       m.device.queue.submit([encoder.finish()]);
       await target.mapAsync(MAP_READ);
       const bytes = target.getMappedRange().slice(0);
-      return new Map(rows.map((r, j) => [r, [new Int8Array(bytes, j * n, n), new Float32Array(bytes, rows.length * n + j * perRow, perRow / 4)]]));
+      return new Map(rows.map((r, j) => [r, [new Uint8Array(bytes, j * n, n), new Float32Array(bytes, rows.length * n + j * perRow, perRow / 4)]]));
     } finally {
       target.destroy();
     }
   };
-  return { embedding: await read(m.tables.embedding, checkCandidates(vocab)), classifier: await read(m.tables.classifier, checkRows(vocab)) };
+  return { embedding: await read(m.tables.embedding, specs.embedding, checkCandidates(vocab)),
+    classifier: await read(m.tables.classifier, specs.classifier, checkRows(vocab)) };
 }
 async function checkTokens(m, form) {
   const { plan, wgsl, gen: g, device } = m, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize, half = headSize / 2;
   const qDim = plan.heads * headSize, kvDim = plan.kvHeads * headSize, line = form.dp4a ? DP4A_LINE : LAYER_LINE;
   const floats = (address, n) => Float64Array.from(new Float32Array(m.memory.buffer, address, n));
-  // row r of a matrix or a table ({ n, six }, its values and scales at [valuesAt, scalesAt] in the shared memory):
-  // [its int8 values, its scales]; (T156) of a matrix read back from the GPU (firstLayer: [values, scales]); (T210) of
-  // a table's rows read back (tableRows)
-  const inMemory = ({ n, six }, [valuesAt, scalesAt]) => (r) => [
-    six ? wgsl.sixValues(new Uint8Array(m.memory.buffer, valuesAt + (r * n * 3) / 4, (n * 3) / 4)) : new Int8Array(m.memory.buffer, valuesAt + r * n, n),
-    new Float32Array(m.memory.buffer, scalesAt + r * (n / wgsl.GROUP) * 4, n / wgsl.GROUP)];
-  const readBackRows = (n, [values, scales]) => (r) => [values.subarray(r * n, (r + 1) * n), scales.subarray(r * (n / wgsl.GROUP), (r + 1) * (n / wgsl.GROUP))];
+  // row r of a matrix or a table ({ n, six, ternary }, its values and scales at [valuesAt, scalesAt] in the shared
+  // memory): [its int8 values, its scales (one a group of 32 weights; T232, ternary: of 128)]; (T156) of a matrix read
+  // back from the GPU (firstLayer: [values, scales]); (T210) of a table's rows read back (tableRows)
+  const stored = (spec) => (spec.six ? (spec.n * 3) / 4 : rowBytes(spec)), scalesOf = (spec) => rowBytes(spec) / wgsl.GROUP;
+  // the bytes of a row as its int8 values: int6 widened, ternary codes less one, int8 as they are
+  const valuesOf = (spec, bytes) => (spec.six ? wgsl.sixValues(bytes) : spec.ternary ? wgsl.ternaryValues(bytes)
+    : new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length));
+  const inMemory = (spec, [valuesAt, scalesAt]) => (r) => [
+    valuesOf(spec, new Uint8Array(m.memory.buffer, valuesAt + r * stored(spec), stored(spec))),
+    new Float32Array(m.memory.buffer, scalesAt + r * scalesOf(spec) * 4, scalesOf(spec))];
+  const readBackRows = (spec, [values, scales]) => (r) => [valuesOf(spec, values.subarray(r * stored(spec), (r + 1) * stored(spec))),
+    scales.subarray(r * scalesOf(spec), (r + 1) * scalesOf(spec))];
   const tableSpec = (name) => (name === "embedding" ? plan.tokens.embedding ?? plan.tokens.classifier : plan.tokens.classifier);
-  const tableRow = (name) => (m.tableRows ? (r) => m.tableRows[name].get(r) : inMemory(tableSpec(name), tableSpec(name).at));
-  // a matrix's rows (n weights each, rowOf(r): [values, scales]) times x, the rows given (packed: x quantized first)
+  const tableRow = (name) => (m.tableRows ? (r) => {
+    const [bytes, scales] = m.tableRows[name].get(r);
+    return [valuesOf(tableSpec(name), bytes), scales];
+  } : inMemory(tableSpec(name), tableSpec(name).at));
+  // a matrix's rows (n weights each, rowOf(r): [values, scales]) times x, the rows given (packed: x quantized first).
+  // The vector's groups are of 32; a row's scales cover as many of them each as they are fewer (one; T232, ternary: four)
   const product = (n, rowOf, x, rows, packed = form.dp4a) => {
     const q = packed ? wgsl.quantizedLikeCpu(Float32Array.from(x)) : null, perRow = n / wgsl.GROUP;
     return Float64Array.from(rows, (r) => {
-      const [w, s] = rowOf(r);
+      const [w, s] = rowOf(r), each = perRow / s.length;
       let sum = 0;
       for (let b = 0; b < perRow; b++) {
         let part = 0;
         for (let i = b * wgsl.GROUP; i < (b + 1) * wgsl.GROUP; i++) part += w[i] * (q ? q.xq[i] : x[i]);
-        sum += part * s[b] * (q ? q.xs[b] : 1);
+        sum += part * s[Math.floor(b / each)] * (q ? q.xs[b] : 1);
       }
       return sum;
     });
@@ -1685,7 +1748,7 @@ async function checkTokens(m, form) {
   const all = (n) => [...Array(n).keys()];
   const matmul = (name, x) => {
     const matrix = plan.matrices[name];
-    return product(matrix.n, m.firstLayer ? readBackRows(matrix.n, m.firstLayer[name]) : inMemory(matrix, matrix.layers[0]), x, all(matrix.rows));
+    return product(matrix.n, m.firstLayer ? readBackRows(matrix, m.firstLayer[name]) : inMemory(matrix, matrix.layers[0]), x, all(matrix.rows));
   };
   const rms = (x, weights) => {
     const s = 1 / Math.sqrt(x.reduce((sum, v) => sum + v * v, 0) / x.length + plan.eps);
@@ -1730,7 +1793,7 @@ async function checkTokens(m, form) {
     // JavaScript's layer
     const [eRow, eScales] = embeddingRow(token);
     // (T226: with GPT-2's learned position of pos, as the CPU's embed() adds it)
-    const x0 = Float64Array.from(eRow, (v, i) => v * eScales[(i / wgsl.GROUP) | 0]);
+    const x0 = Float64Array.from(eRow, (v, i) => v * eScales[Math.floor((i * eScales.length) / eRow.length)]);
     if (plan.tokens.positions) floats(plan.tokens.positions + pos * dim * 4, dim).forEach((p, i) => { x0[i] += p; });
     const xn = norm(x0, vectorOf("attention"), vectorOf("attentionBias"));
     // T226: as the CPU has it (forward.js), the biases (Qwen2's; T154's), then the norms of the heads of q and k
@@ -1798,9 +1861,20 @@ async function checkTokens(m, form) {
     };
     const greedy = await run(wgsl.samplingSettings({ vocab, temperature: 0, topp: 0.9 }), [token], 0);
     // (T226: a classifier of floats on DP4A too where the model has outlier channels: tokenShape's floatHead)
-    const packedHead = form.dp4a && !plan.tokens.outliers;
-    const want = product(dim, tableRow("classifier"), norm(Float64Array.from(stream2), floats(plan.tokens.final, dim),
-      plan.tokens.finalBias && floats(plan.tokens.finalBias, dim)), rows, packedHead);
+    const packedHead = form.dp4a && !floatHead(m);
+    const normedStream = norm(Float64Array.from(stream2), floats(plan.tokens.final, dim), plan.tokens.finalBias && floats(plan.tokens.finalBias, dim));
+    // T232: a ternary classifier's outlier channels as the CPU has them (forward.js's picked): taken out of the normed
+    // stream before it is quantized, and their columns of the table multiplied apart, in floats
+    const taken = g.take ? plan.tokens.channels.map((c) => {
+      const value = normedStream[c];
+      normedStream[c] = 0;
+      return [c, value];
+    }) : [];
+    const want = product(dim, tableRow("classifier"), normedStream, rows, packedHead);
+    rows.forEach((r, j) => {
+      const [w, s] = tableRow("classifier")(r);
+      for (const [c, value] of taken) want[j] += value * w[c] * s[Math.floor((c * s.length) / w.length)];
+    });
     const logitsOff = off(rows.map((r) => greedy.logits[r]), want) / largest(want), logitsLine = packedHead ? DP4A_LINE : LOGITS_LINE;
     if (!(logitsOff <= logitsLine)) return `the logits are ${logitsOff.toExponential(2)} of their largest from JavaScript's (line ${logitsLine})`;
     if (greedy.id !== wgsl.argmaxLikeCpu(greedy.logits)) return `the greedy token is ${greedy.id}, the largest logit's ${wgsl.argmaxLikeCpu(greedy.logits)}`;

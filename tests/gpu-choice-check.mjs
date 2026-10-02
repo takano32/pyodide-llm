@@ -2,9 +2,9 @@
 //   node tests/gpu-choice-check.mjs
 // Made-up times: the CPU's ms a token of its blocks, gpu.js's two blocks timed as it starts, the blocks the GPU then ran.
 import assert from "node:assert/strict";
-import { aloneHolds, BOTH_ON_8, aloneVerdict, gpuBytes, gpuLine, gpuOnlyPlan, gpuOnlyUnfit, gpuOnlyWeights, gpuHoles, layerWeightsOf, placer, PROMPTS_CPU,
+import { aloneHolds, BOTH_ON_8, aloneVerdict, cpuReadBytes, footprint, gpuBytes, gpuLine, gpuOnlyPlan, gpuOnlyUnfit, gpuOnlyWeights, gpuHoles, layerWeightsOf, placer, PROMPTS_CPU,
   PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes, USAGE_UNKNOWN, weightsPlace } from "../public/forward.js";
-import { deviceKey, halvesOf, tokenAttentionData, tokenAttentionOff } from "../public/shaders.js";
+import { deviceKey, halvesOf, quantizedLikeCpu, ternaryValues, tiledOff, tokenAttentionData, tokenAttentionOff } from "../public/shaders.js";
 import { usedAfter } from "../src/bench.js";
 
 // a GPU with a fixed cost of 40 ms a block and 0.5 ms a token (16 tokens 48 ms, 64 tokens 72 ms)
@@ -288,6 +288,35 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     128256 * 2048 * 1.125 + 4096 * 64 * 4 + 3 * 128256 * 4;
   assert.ok(Math.abs(oneB - want) < 1, `gpuBytes ${oneB} against ${want}`);
   assert.ok(gpuBytes([64, 128, 2, 4, 2, 320, 256], { arch: "gpt2" }) < gpuBytes([64, 128, 2, 4, 2, 320, 256]), "no gate on GPT-2");
+  // T232: ternary weights go up as they are, two bits a weight and a float32 scale a group of 128 (0.28125 bytes a
+  // weight). Ternary Bonsai 1.7B (a Qwen3: dim 2048, hidden 6144, 28 layers, 16 heads of 128 on 8 of keys and values)
+  const bonsai = [2048, 6144, 28, 16, 8, 151936, 4096], form = { qk_norm: true, head_dim: 128 };
+  const ternary = 28 * (2 * 2048 * 2048 + 2 * 1024 * 2048 + 3 * 6144 * 2048) * 0.28125 + 28 * 2 * 2048 * 4 + 2 * 28 * 4096 * 1024 * 2 +
+    151936 * 2048 * 0.28125 + 4096 * 128 * 4 + 3 * 151936 * 4;
+  assert.ok(Math.abs(gpuBytes(bonsai, { ...form, dtype: "ternary" }) - ternary) < 1, `gpuBytes of ternary weights ${gpuBytes(bonsai, { ...form, dtype: "ternary" })} against ${ternary}`);
+  assert.ok(gpuBytes(bonsai, { ...form, dtype: "ternary" }) < gpuBytes(bonsai, form) / 2, "the keys and values are the same, the weights a quarter");
+  // where the three listed models go (their checkpoints' bytes; the worker's options; 4096 positions), by what the
+  // device says it has: 8, both and measured (2.24, 3.83 and 6.01 GiB of 6.5); 4, the 1.7B and the 4B on the GPU alone
+  // (0.91 and 1.64 GiB of 2) and the 8B on the CPU (2.74); a browser that does not say (4, and never on the GPU alone,
+  // T205): the CPU, and not even the prompts on the GPU (the layers with their keys and values past the room left)
+  const adapter = { fallback: false, packed: true, limits: { maxStorageBufferBindingSize: 128 * 2 ** 20, maxBufferSize: 256 * 2 ** 20 } };
+  const listed = [["1.7B", bonsai, 484372508, form, "both", "gpu"], ["4B", [2560, 9728, 36, 32, 8, 151936, 4096], 1132048412, form, "both", "gpu"],
+    ["8B", [4096, 12288, 36, 32, 8, -151936, 4096], 2304790556, { qk_norm: true }, "both", "cpu"]];
+  for (const [name, header, size, shape, on8, on4] of listed) {
+    const options = { ...shape, dtype: "ternary", int8: true, relaxed: true, halfKV: true, shared: true, outliers: 8, gpu: true };
+    const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header, headSize = shape.head_dim || dim / heads;
+    const layerWeights = layers * (2 * heads * headSize * dim + 2 * kvHeads * headSize * dim + 3 * hidden * dim);
+    const stored = size - (layerWeights + Math.abs(signedVocab) * dim * (signedVocab > 0 ? 1 : 2)) * 0.28125;
+    const cpu = size + footprint(header, size, options), gpu = gpuBytes(header, { ...shape, dtype: "ternary" });
+    const gpuOnly = stored + footprint(header, stored, { ...options, direct: true });
+    assert.equal(gpuOnlyUnfit(header, "ternary", shape, adapter), null, `Ternary Bonsai ${name} may go on the GPU alone`);
+    assert.ok(stored > 0 && stored < 2e6, `Ternary Bonsai ${name}: ${stored} bytes besides the matrices`);
+    assert.equal(weightsPlace({ cpu, gpuOnly, gpu, deviceMemory: 8, eligible: true }).mode, on8, `Ternary Bonsai ${name} on 8: ${((cpu + gpu) / GB).toFixed(2)} GiB`);
+    assert.equal(weightsPlace({ cpu, gpuOnly, gpu, deviceMemory: 4, eligible: true }).mode, on4, `Ternary Bonsai ${name} on 4: ${((gpuOnly + gpu) / GB).toFixed(2)} GiB on the GPU alone`);
+    const unsaid = weightsPlace({ cpu, gpu, deviceMemory: 4 });
+    const onGpu = layerWeights * 0.28125 + 2 * layers * seqLen * kvHeads * headSize * 2;
+    assert.ok(unsaid.mode === "cpu" && onGpu > unsaid.gpuRoom, `Ternary Bonsai ${name} where the browser does not say: the CPU, the layers past the room left`);
+  }
 }
 // T156: why a model cannot go on the GPU alone
 {
@@ -318,12 +347,27 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(gpuOnlyUnfit(oneB, "int8", {}, loose), null);
   // Qwen2.5 7B's shape (no biases here): gate and up are 135.8 MB (T152's (d)), past 128 MiB
   assert.match(gpuOnlyUnfit([3584, 18944, 28, 28, 4, 152064, 4096], "int8", {}, adapter), /past a buffer/);
+  // T232: ternary weights too, where the browser's WGSL has the packed int8 dot (the worker's adapter.packed); a
+  // quarter of the bytes, so the same shape's gate and up are within a buffer, and a matrix starts where the device
+  // binds where its weights are a multiple of 8192 (a byte of scales to 32 weights)
+  const packed = { ...adapter, packed: true }, bonsai = { qk_norm: true, head_dim: 128 };
+  assert.equal(gpuOnlyUnfit([2048, 6144, 28, 16, 8, 151936, 4096], "ternary", bonsai, packed), null, "Ternary Bonsai 1.7B");
+  assert.match(gpuOnlyUnfit([2048, 6144, 28, 16, 8, 151936, 4096], "ternary", bonsai, adapter), /packed int8 dot/, "no packed int8 dot: the CPU");
+  assert.equal(gpuOnlyUnfit([3584, 18944, 28, 28, 4, 152064, 4096], "ternary", {}, packed), null, "a quarter of the bytes: within a buffer");
+  // (q of one head of 32 in a dim of 128: 4096 weights, 1024 bytes of codes and 128 of scales, where k would start)
+  assert.match(gpuOnlyUnfit([128, 384, 2, 1, 1, 320, 256], "ternary", { head_dim: 32 }, packed), /would not start/);
+  assert.equal(gpuOnlyUnfit([128, 384, 2, 8, 4, 320, 256], "ternary", { qk_norm: true, head_dim: 32 }, packed), null, "gpu-check's made-up ternary model");
+  // (the review of T237) with the refusal of ternary weights gone, the others still stand, each with its own reason:
+  // the 27B is ternary, in a rotated basis, with linear-attention layers (a Qwen3.5)
+  assert.match(gpuOnlyUnfit([5120, 17408, 64, 24, 4, 248320, 4096], "ternary", { arch: "qwen35", head_dim: 256, rotated: { block: 1024, signs: {} } }, packed), /Qwen3\.5/);
+  assert.match(gpuOnlyUnfit([2048, 6144, 28, 16, 8, 151936, 4096], "ternary", { ...bonsai, rotated: { block: 1024, signs: {} } }, packed), /rotated basis/);
 }
 // T156: the checkpoint's stretches: the layers' matrices to the GPU's worker, the rest packed into memory, whatever the
 // stretches it comes in; each byte posted once, and the writer waits on flow
 {
-  const tensor = (offset, shape, int8) => ({ kind: int8 ? "int8" : "f32", offset, shape, group: int8 ? 32 : 0,
-    scales: int8 ? offset + shape.reduce((a, b) => a * b, 1) : 0 });
+  // (T232, ternary: the matrices two bits a weight, a scale a group of 128)
+  const tensor = (offset, shape, int8, ternary = false) => ({ kind: !int8 ? "f32" : ternary ? "ternary" : "int8", offset, shape, group: !int8 ? 0 : ternary ? 128 : 32,
+    scales: int8 ? offset + shape.reduce((a, b) => a * b, 1) / (ternary ? 4 : 1) : 0 });
   // a made-up Llama: 2 layers, dim 64, hidden 96, the tensors in file order
   let end = 28;
   const tensors = {};
@@ -369,10 +413,26 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.deepEqual(plan.matrices.w2.layers[1], [tensors.w2.offset + 64 * 96, tensors.w2.scales + (64 * 96 / 32) * 4]);
   // T210: and the tables, where they start in the checkpoint (the embedding null where the classifier is it)
   const e = tensors.token_embedding_table;
-  assert.deepEqual(plan.tables, { classifier: { rows: 100, n: 64, at: [e.offset, e.scales] }, embedding: null });
+  assert.deepEqual(plan.tables, { classifier: { rows: 100, n: 64, ternary: false, at: [e.offset, e.scales] }, embedding: null });
   const apart = gpuOnlyPlan([64, 96, 2, 4, 2, 100, 32], { ...tensors, wcls: tensor(end, [100, 64], true) });
-  assert.deepEqual(apart.tables, { classifier: { rows: 100, n: 64, at: [end, end + 6400] }, embedding: { rows: 100, n: 64, at: [e.offset, e.scales] } });
+  assert.deepEqual(apart.tables, { classifier: { rows: 100, n: 64, ternary: false, at: [end, end + 6400] }, embedding: { rows: 100, n: 64, ternary: false, at: [e.offset, e.scales] } });
   assert.equal(gpuHoles({ ...tensors, wcls: tensor(end, [100, 64], true) }).length, 9, "a classifier of its own is a stretch of its own");
+  // T232: a ternary model's: a layer of a matrix is a quarter of a byte a weight on, and its scales one a group of 128
+  let at = 28;
+  const codes = {};
+  for (const [name, shape, matrix] of [["token_embedding_table", [100, 128], true], ["rms_att_weight", [2, 128], false], ["wq", [2, 128, 128], true],
+    ["wk", [2, 64, 128], true], ["wv", [2, 64, 128], true], ["wo", [2, 128, 128], true], ["rms_ffn_weight", [2, 128], false], ["w1", [2, 256, 128], true],
+    ["w2", [2, 128, 256], true], ["w3", [2, 256, 128], true], ["rms_final_weight", [128], false]]) {
+    codes[name] = tensor(at, shape, matrix, true);
+    const count = shape.reduce((a, b) => a * b, 1);
+    at += matrix ? count / 4 + count / 32 : count * 4;
+  }
+  const ternary = gpuOnlyPlan([128, 256, 2, 4, 2, 100, 32], codes);
+  assert.deepEqual(ternary.matrices.w2, { rows: 128, n: 256, ternary: true, layers: [[codes.w2.offset, codes.w2.scales],
+    [codes.w2.offset + 128 * 256 / 4, codes.w2.scales + (128 * 256 / 128) * 4]] });
+  assert.deepEqual(ternary.tables, { classifier: { rows: 100, n: 128, ternary: true, at: [codes.token_embedding_table.offset, codes.token_embedding_table.scales] }, embedding: null });
+  // (its stretches: every matrix's codes and then its scales, to where the next tensor begins)
+  assert.deepEqual(gpuHoles(codes).find(([start]) => start === codes.w1.offset), [codes.w1.offset, codes.w2.offset]);
 }
 
 // T156 (the owner, 2026-09-27): a model on the GPU alone weighed on the prompts too, by the page's use, and the verdict
@@ -393,6 +453,10 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(aloneVerdict({ size, layerWeights: weights, cpu, gpu: slowStep, usage: { prompt: 1, written: 10 } }).cpuFaster, true, "writing: the CPU");
   // nothing known of the CPU: the GPU stays
   assert.equal(aloneVerdict({ size, layerWeights: weights, cpu: {}, gpu: slowStep }).cpuFaster, false, "no /benchmark/: the GPU");
+  // T232: the CPU's token of a ternary model is read as the same weights of int8 (four times the checkpoint's bytes:
+  // its kernel is bound by its arithmetic, at about the int8 kernel's weights a second, T231)
+  assert.equal(cpuReadBytes(1e9, "ternary"), 4e9);
+  assert.equal(cpuReadBytes(1e9, "int8"), 1e9);
   // the use kept: each generation's added to four fifths of what was there
   assert.deepEqual(usedAfter(usedAfter(undefined, 100, 50), 20, 200), { prompt: 100 * 0.8 + 20, written: 50 * 0.8 + 200 });
   // the key: the adapter as the device made of it (the same features and limits), another description another key;
@@ -402,6 +466,10 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   const device = { features: new Set(adapter.features), limits: { ...adapter.limits } };
   const key = deviceKey(adapter);
   assert.equal(deviceKey(adapter, device), key, "the worker's key is gpu.js's");
+  // T232: a model of ternary weights has a key of its own (its shaders' text after the others'), the worker's and
+  // gpu.js's the same
+  assert.notEqual(deviceKey(adapter, device, true), key, "a ternary model's key is not the others'");
+  assert.equal(deviceKey(adapter, adapter, true), deviceKey(adapter, device, true), "the worker's ternary key is gpu.js's");
   assert.notEqual(deviceKey({ ...adapter, info: { ...adapter.info, description: "Mali-G715" } }), key, "another GPU");
   assert.notEqual(deviceKey({ ...adapter, features: new Set(["subgroups"]) }), key, "other shaders");
   const alone = { key, cpu };
@@ -441,5 +509,41 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     ["the first values of the last head", withNaN(24, 28)], ["the last value", withNaN(31, 32)]]) {
     assert.ok(Number.isNaN(tokenAttentionOff(got, data, dims)), `a NaN in ${where} stays`);
   }
+}
+// T232: the check of a tiled shader against JavaScript (shaders.js's tiledOff, gpu.js's checkForm) on ternary weights:
+// their values are the codes less one, a scale covers 128 of them (four of the vector's groups of 32); and a product
+// that is no number is wrong (a NaN is neither over a line nor under it: the check passed every form, the int8 ones
+// too, while gpu.js handed it a group that was no number; CI's mutants of the ternary tiles found it)
+{
+  const rows = 9, n = 384, tokens = 3, group = 128;
+  let seed = 232;
+  const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296);
+  const stored = new Uint8Array((rows * n) / 4).map(() => (random() * 256) | 0), w = ternaryValues(stored);
+  assert.deepEqual(Array.from(ternaryValues(new Uint8Array([0b11100100, 0b00000110]))), [-1, 0, 1, 2, 1, 0, -1, -1], "a byte's four codes, the lowest first, each less one");
+  const s = new Float32Array((rows * n) / group).map(() => random() * 0.01), x = new Float32Array(tokens * n).map(() => random() * 2 - 1);
+  const xq = new Int8Array(tokens * n), xs = new Float32Array(tokens * (n / 32));
+  for (let t = 0; t < tokens; t++) {
+    const q = quantizedLikeCpu(x.subarray(t * n, (t + 1) * n));
+    xq.set(q.xq, t * n);
+    xs.set(q.xs, t * (n / 32));
+  }
+  // the product twice (as the check adds it), by sign times the weights and the scale at scaleAt(row, group of 32)
+  const product = (sign, scaleAt) => Float32Array.from({ length: tokens * rows }, (_, at) => {
+    const t = Math.floor(at / rows), r = at % rows;
+    let sum = 0;
+    for (let g = 0; g < n / 32; g++) {
+      let part = 0;
+      for (let i = g * 32; i < (g + 1) * 32; i++) part += sign * w[r * n + i] * xq[t * n + i];
+      sum += part * s[scaleAt(r, g)] * xs[t * (n / 32) + g];
+    }
+    return 2 * sum;
+  });
+  const right = (r, g) => r * (n / group) + Math.floor(g / 4);
+  const off = (got, more = {}) => tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride: n, yStride: rows, half: false, group, ...more }).wrong;
+  assert.equal(off(product(1, right)), null, "the right products");
+  assert.match(off(product(-1, right)), /products/, "the codes' signs swapped");
+  assert.match(off(product(1, (r, g) => r * (n / group) + Math.min(Math.floor(g / 4) + 1, 2))), /products/, "the scale of the next group of 128");
+  assert.match(off(product(1, right).fill(NaN, 5, 6)), /products/, "one product that is no number");
+  assert.match(off(product(1, right), { group: () => 128 }), /products/, "a group that is no number makes every product NaN: wrong, not right");
 }
 console.log("ok");
