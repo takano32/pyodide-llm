@@ -172,6 +172,11 @@ if [ "$suite" = full ]; then
   # convolution's rows are this thread's alone, outside every phase), and with every address above 4 GiB
   part "the software threads, a made-up LFM2" node tests/threads-check.mjs .tmp/made-up-lfm2-float32 .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-four-int8 --rounds 1
   part "the software threads, a made-up LFM2 above 4 GiB" node tests/threads-check.mjs .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-four-int8 --wide --high --rounds 1 --positions 24
+  # T233's review: the tool that holds Ternary Bonsai 2 27B to its references (tests/page_27b.sh) is run when the model's
+  # computation may have changed, which is seldom, and a tool that is seldom run goes out of step with forward.js unseen. Its
+  # dry stage runs a made-up model of the 27B's kind through the comparison, the long prompt, the speed and the memory, the
+  # engine broken on purpose where it must be caught (a minute, no download)
+  part "the 27B's tool, on a made-up model" env STAGES=dry bash tests/page_27b.sh
   # T206: the pre-tokenizers against the real ones at every code point (about 90 s, too long for the deploy)
   part "the pre-tokenizers at every code point" env EVERY_CODE_POINT=1 python -m pytest tests/test_bytebpe.py -q -k every_character
 fi
