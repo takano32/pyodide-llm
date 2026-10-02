@@ -1104,9 +1104,9 @@ async function inDawn() {
   // engine's own checks of its forms by the "gpu:" lines of the log)
   const prelude = `import { parentPort, Worker as NodeWorker } from "node:worker_threads";
 import { create, globals } from ${JSON.stringify(pathToFileURL(path.resolve(webgpu, "index.js")).href)};
-import { roundedGpu } from ${JSON.stringify(pathToFileURL(path.join(root, "tests", "rounding.mjs")).href)};
+import { roundedGpu, hiddenGpu } from ${JSON.stringify(pathToFileURL(path.join(root, "tests", "rounding.mjs")).href)};
 Object.assign(globalThis, globals);
-Object.defineProperty(globalThis, "navigator", { value: { gpu: roundedGpu(create([]), process.env.GPU_ROUNDING) }, configurable: true });
+Object.defineProperty(globalThis, "navigator", { value: { gpu: roundedGpu(hiddenGpu(create([]), process.env.GPU_HIDE), process.env.GPU_ROUNDING) }, configurable: true });
 globalThis.self = globalThis;
 globalThis.postMessage = (data) => parentPort.postMessage(data);
 const origin = "http://localhost:${server.address().port}", nativeFetch = fetch;

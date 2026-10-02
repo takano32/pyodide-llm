@@ -69,6 +69,7 @@ env:
 
 jobs:
   gpu:
+    if: false  # (t232-review-probe: Dawn's job only)
     name: ${{ matrix.os }} ${{ matrix.engine }}
     runs-on: ${{ matrix.os }}
     # T147: the made-up model's every tiled shader on SwiftShader; gpu-check waits for the page 90 minutes at most
@@ -183,22 +184,15 @@ jobs:
           FORMS: ${{ inputs.forms }}
           NAN: ${{ inputs.nan }}
         run: |
-          export VK_ICD_FILENAMES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)
-          echo "## ubuntu-latest dawn ($VK_ICD_FILENAMES)" >> "$GITHUB_STEP_SUMMARY"
-          ids="$MODELS"
-          for id in $REAL; do ids="$ids .tmp/real/$id.json"; done
-          # T193: the suite's models when none are given: every made-up one (light), and the site's three too (full:
-          # gpu-check's default)
-          [ "$SUITE" = full ] && suite="" || suite=made-up
-          echo "suite: $SUITE, by ${{ github.event_name }}: ${ids:-${suite:-made-up and the site models}}"
-          node tests/gpu-check.mjs ${ids:-$suite} ${FORMS:+--forms "$FORMS"} ${NAN:+--nan "$NAN"} --engine dawn --webgpu .tmp/dawn/node_modules/webgpu 2>&1 | grep -v "^async function _createPyodideModule" | tee -a "$GITHUB_STEP_SUMMARY"
+          # t232-review-probe: the review's experiments in place of the suite
+          bash tests/t232-review-probe.sh 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
           exit "${PIPESTATUS[0]}"
 
       # T225's review: /benchmark/'s layer and token checks on devices that round a float32 to a float16 the other ways WGSL
       # lets a device (§15.7.6): Direct3D, which Chrome on Windows runs, rounds toward zero, where lavapipe's own is the
       # nearest (tests/rounding.mjs). About half a minute a rounding and subgroup width; with the models of the default only
       - name: The benchmark's checks on devices that round to a float16 toward zero and away from it, on Dawn
-        if: inputs.models == '' && inputs.real == ''
+        if: false
         shell: bash
         run: |
           export VK_ICD_FILENAMES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1)

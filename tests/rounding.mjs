@@ -93,3 +93,23 @@ export function roundedGpu(gpu, how) {
     } : own(target, key)),
   });
 }
+
+/** T232's review (throwaway): a GPU that lacks the features named (GPU_HIDE=a,b: WGSL language features such as
+ * packed_4x8_integer_dot_product or subgroup_id, adapter features such as subgroups or shader-f16), as a browser whose
+ * WebGPU lacks them: what CI's lavapipe and SwiftShader have, and Safari and Firefox may not */
+export function hiddenGpu(gpu, hide) {
+  const names = (hide ?? "").split(",").filter(Boolean);
+  if (!names.length) return gpu;
+  const own = (target, key) => {
+    const value = Reflect.get(target, key);
+    return typeof value === "function" ? value.bind(target) : value;
+  };
+  const without = (set) => new Set([...set].filter((feature) => !names.includes(feature)));
+  const adapter = (real) => new Proxy(real, { get: (target, key) => (key === "features" ? without(target.features) : own(target, key)) });
+  return new Proxy(gpu, {
+    get: (target, key) => (key === "wgslLanguageFeatures" ? without(target.wgslLanguageFeatures) : key === "requestAdapter" ? async (...args) => {
+      const found = await target.requestAdapter(...args);
+      return found && adapter(found);
+    } : own(target, key)),
+  });
+}
