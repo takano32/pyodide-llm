@@ -4,7 +4,10 @@
 #
 #   node tests/ci.mjs run tests.yml only_extra=true minutes=180 extra="bash tests/page_27b.sh" \
 #     --grep "^(fork|f32|reference|runner|page|pyodide):" --minutes 190 --ref <branch>
-#   ... extra="STAGES='fork convert speed memory' bash tests/page_27b.sh" runner=ubuntu-24.04-arm ...
+#   ... extra="STAGES='fork convert speed memory' bash tests/page_27b.sh" ...
+# On x86-64: the V8 of Node 24 on arm64 reads the ternary kernels' scales wrongly above 4 GiB (the review of T230 and
+# T231), and tests/page-27b.mjs refuses to run the model there. The fork and the conversion run on arm64 as well
+# (runner=ubuntu-24.04-arm with STAGES='fork convert').
 #
 # Run it when public/forward.js, the ternary kernels (kernels/ternary.ts), rotate and unrotate, the converter's reading
 # of a GGUF or the list's entry change in a way that could move what this model computes.

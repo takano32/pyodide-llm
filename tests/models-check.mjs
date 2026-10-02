@@ -71,8 +71,10 @@ assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "ternary" } }), 484e6)
 assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "int8" } }), 484e6 * 4);
 assert.equal(modelBytes({ ...bonsai, conversion: { dtype: "int6" } }), 484e6 * 4 * SIX_OF_EIGHT);
 // T233: Ternary Bonsai 2 27B, ternary on any device (as int8 it is past every browser's memory). A device that says
-// less than 8 GB is warned; one at the cap (8 GB or more) is not, by the page's rule (T133): 7.7 GB and the page's 0.3
-// are under 8 GiB. Its original is the model it is built from, whose weights are other ones (rebuilt: gguf.yml skips it)
+// less than 8 GB is warned; one at the cap (8 GB or more) is not, by the page's rule (T133: the note's 7.7 GB and the
+// page's 0.3 are under 8 GiB), although the checkpoint with its forward pass and the page is about 8.6 GB, which a
+// device of exactly 8 GB does not hold: what to tell such a device is the owner's to word (TODO.md's T233).
+// Its original is the model it is built from, whose weights are other ones (rebuilt: gguf.yml skips it)
 const largest = byId("hf-ternary-bonsai-2-27b");
 for (const deviceMemory of [undefined, 4, 8]) assert.equal(weightsFor(largest, undefined, deviceMemory), "ternary");
 assert.equal(modelBytes(largest), 7.7e9);

@@ -69,6 +69,20 @@ const spawn = (data) => new Promise((resolve) => {
   worker.once("message", () => resolve({ terminate: () => worker.terminate() }));
   worker.postMessage(data);
 });
+const base4GiB = (bytes) => bytes > 4 * GiB;
+/** whether this engine reads v128.load32_splat of an address above 4 GiB where it is (tests/ternary-check.mjs's canary:
+ * a module of a 64-bit memory it imports, splat(address) = lane 0 of v128.load32_splat) */
+function splatsRight() {
+  const canary = Uint8Array.from([0, 97, 115, 109, 1, 0, 0, 0, 1, 6, 1, 96, 1, 126, 1, 125, 2, 15, 1, 3, 101, 110, 118, 6, 109, 101, 109, 111, 114, 121, 2, 4, 1,
+    3, 2, 1, 0, 7, 9, 1, 5, 115, 112, 108, 97, 116, 0, 0, 10, 13, 1, 11, 0, 32, 0, 253, 9, 2, 0, 253, 31, 0, 11]);
+  const high = 4 * GiB + 2 * 65536, at = high + 4096;
+  const memory = new WebAssembly.Memory({ initial: BigInt(Math.ceil((high + 4 * MiB) / 65536)), address: "i64" });
+  const splat = new WebAssembly.Instance(new WebAssembly.Module(canary), { env: { memory } }).exports.splat;
+  const F = new Float32Array(memory.buffer);
+  F[at / 4] = 1.5;
+  F[(at - 2 ** 32) / 4] = 2.5;  // where an address that lost its upper 32 bits would read
+  return splat(BigInt(at)) === 1.5;
+}
 const argmax = (row) => { let at = 0; for (let i = 1; i < row.length; i++) if (row[i] > row[at]) at = i; return at; };
 const median = (xs) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
 
@@ -104,6 +118,13 @@ if (isMainThread) {
   const after = footprint(header, size, forwardOptions), wide = needsWide(size, after) || args.includes("--wide"), halfKeys = keysInHalf(header, size, forwardOptions);
   console.log(`page: ${path.basename(file)} is ${size} bytes (${(size / GiB).toFixed(3)} GiB), header ${JSON.stringify(header)}; footprint() counts ` +
     `${(after / GiB).toFixed(3)} GiB after it (${((size + after) / GiB).toFixed(2)} GiB in all), a ${wide ? "64" : "32"}-bit memory, keys and values in ${halfKeys ? "float16" : "float32"}`);
+  // The review of T230 and T231: the V8 of Node 24 (13.6) on arm64 reads v128.load32_splat of an address above 4 GiB at
+  // its low 32 bits, and the ternary kernels take every scale so: there this model (7 GiB) is computed wrongly, and no
+  // number of this tool is the model's (Chromium's V8 on arm64 is right). The canary is tests/ternary-check.mjs's
+  if (base4GiB(size + after) && !splatsRight()) {
+    console.log("page: this engine reads v128.load32_splat wrongly above 4 GiB (Node 24's V8 on arm64): what it would compute here is not this model — FAILED (run it on x86-64)");
+    process.exit(1);
+  }
   const { memory, base } = weightsMemory(size, { shared: true, wide, after });
   let began = performance.now();
   for (let offset = 0; offset < size;) {
