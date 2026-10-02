@@ -51,9 +51,12 @@ jobs:
         run: npm ci
 
       # chrome and msedge are what the runner has installed; when it has not, Playwright installs them
+      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the browsers
+        timeout-minutes: 20
         shell: bash
         run: |
+          bash tests/apt-timeouts.sh
           for browser in ${{ matrix.browsers }}; do
             case "$browser" in
               chrome|msedge) node -e 'require("playwright-core").chromium.launch({ channel: process.argv[1] }).then((b) => b.close())' "$browser" || npx playwright-core install "$browser" ;;
@@ -216,8 +219,11 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
+      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the test tools and Chromium
+        timeout-minutes: 20
         run: |
+          bash tests/apt-timeouts.sh
           npm ci
           npx playwright-core install --with-deps chromium ${{ matrix.size == 'small' && 'webkit' || '' }}
 
