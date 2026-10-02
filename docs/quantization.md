@@ -131,7 +131,9 @@ It runs on the CPU only for now (no GPU path), and has not been measured on a ph
 
 Ternary Bonsai 4B and 8B come the same way (1.07 GB and 2.18 GB of PQ2_0, held as 1.1 GB and 2.3 GB of ternary
 weights; widened to int8 they were 4.5 GB and 9.2 GB, on a 64-bit memory). Their speed has not been measured. Compared with their float16 safetensors, no tensor of the 4B is further than 8.5e-5 from them, and
-the 8B's are the same values.
+the 8B's are the same values. The difference is in the originals: the 1.7B's and the 4B's float16 files hold a few blocks of 128
+(about 5 in 100,000: 740 and 1,643) with two scales one bfloat16 step (0.78%) apart, of which the GGUF keeps the larger
+for the whole block, and the 8B's hold none (64 million blocks, counted).
 
 Qwen3.5 0.8B's Q8_0 GGUF holds some tensors otherwise than the original does: llama.cpp writes the norms with the 1
 the model adds to them and `A_log` as −exp(A_log), and it quantizes the two small matrices of the gates of each
@@ -158,8 +160,19 @@ lower than the original's. On 1,500 tokens of English Wikipedia (the kernels, on
 ## Other small effects
 
 - A BOS token at the start: the page always starts with one, while some models are used without it. The
-  difference was within ±3%, in either direction depending on the text, so it was kept. One model broke without
-  the right BOS (DeepSeek-R1 Distill Qwen 1.5B), and its entry now names it.
+  difference was within ±3% on plain text, in either direction depending on the text, so it was kept. Two models
+  were different. DeepSeek-R1 Distill Qwen 1.5B broke without the right BOS, and its entry now names it. Qwen3.5
+  0.8B, whose layers mostly keep a state, is 20% to 65% worse on 512 tokens of plain text with the converter's
+  `<|endoftext|>` in front (four Wikipedia texts, English and Japanese; the damage lasts: 5% to 30% still at tokens 256
+  to 512), 1% to 4% worse with `<|im_start|>` and 0% to 1% with a newline. Its entries begin with the chat format's
+  own first token, `<|im_start|>`, so the page sends the ids the real template writes. In chat form the
+  first token does not change how likely an answer written by hand is (24 answers, `tests/chat_nll.py`: −0.8% in
+  perplexity with `<|endoftext|>` in front, worse on 12 of 24), but it changes what the model writes: along the
+  model's own answers the next-token distributions move by 0.12 nats a token (0.18 when it thinks), and the most
+  likely token changes at 13% (9%) of the positions. The page's engine agrees with transformers on the most likely
+  token at 98.9% (99.6%) of the positions with the entry's way of beginning, and at 86.7% (91.4%) with the old one.
+  What `?hf=Qwen/Qwen3.5-0.8B` still loses is plain text, where there is no chat format and the converter's BOS
+  comes first.
 - RMSNorm's epsilon: 1e-5 for all models until Qwen3 0.6B showed +0.12% with it; the converter now passes the
   model's own value.
 - The order of rounding inside the int8 kernels changed twice on 2026-09-27 (one scaling per group instead of

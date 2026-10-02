@@ -437,32 +437,43 @@ def test_int8_holds_a_ternary_block_under_every_scale():
     assert np.array_equal(sixes.reshape(-1, 128), 4 * 31 * ternary * sign[some])
 
 
-def bonsai_gguf(yarn=YARN, head_size=0, bos=1, eos=2, also=(), matrices=(pq2_0_blocks, 142)):
+def bonsai_gguf(yarn=YARN, head_size=0, bos=1, eos=2, also=(), matrices=(pq2_0_blocks, 142), shared=True, theta=1000000.0):
     """A small Qwen3 as Ternary-Bonsai's GGUF has one: PQ2_0 matrices (rows of 128 and 256), F32 norms, and yarn.
-    also: further metadata. matrices: the blocks and ggml type of the matrices (T230: tests/test_ternary.py's PTQ1_0)."""
+    also: further metadata. matrices: the blocks and ggml type of the matrices (T230: tests/test_ternary.py's PTQ1_0).
+    shared: the classifier is the embedding (the 1.7B and the 4B), or a matrix of its own (the 8B)."""
     from test_qwen3 import qwen3
-    config, weights = synthetic_weights(dim=128, hidden_dim=256, n_kv_heads=2, vocab_size=40, head_size=head_size)
-    tensors, published = qwen3(config, weights, True)
-    published = {**published, "rms_norm_eps": 1e-6, "rope_theta": 1000000.0, "max_position_embeddings": 32768}
+    config, weights = synthetic_weights(dim=128, hidden_dim=256, n_kv_heads=2, vocab_size=40, head_size=head_size, shared=shared)
+    tensors, published = qwen3(config, weights, shared)
+    published = {**published, "rms_norm_eps": 1e-6, "rope_theta": theta, "max_position_embeddings": 32768}
     more = [("qwen3.attention.key_length", 4, config["head_size"]), ("qwen3.attention.layer_norm_rms_epsilon", 6, 1e-6),
             *also]
     if yarn:
         published["rope_scaling"] = yarn
         more += [("qwen3.rope.scaling.type", 8, "yarn"), ("qwen3.rope.scaling.factor", 6, yarn["factor"]),
                  ("qwen3.rope.scaling.original_context_length", 4, yarn["original_max_position_embeddings"])]
-    file, same = gguf_file(tensors, published, config["vocab_size"], "qwen3", pre="qwen2", theta=1000000.0, more=more,
+    file, same = gguf_file(tensors, published, config["vocab_size"], "qwen3", pre="qwen2", theta=theta, more=more,
                            bos=bos, eos=eos, matrices=matrices)
     return config, published, file, same
 
 
+# the three sizes of the list, by what differs between them (the review of T246: only the 1.7B's shape was tried; the 4B's
+# heads are wider than dim / heads and its theta is 5e6, the 8B has a classifier of its own and a yarn from 16384)
+BONSAI_SIZES = {"the 1.7B's": dict(),
+                "the 4B's: heads wider than dim / heads, theta 5e6": dict(head_size=64, theta=5e6),
+                "the 8B's: a classifier of its own, yarn from 16384":
+                    dict(shared=False, yarn={**YARN, "original_max_position_embeddings": 16384})}
+
+
 @pytest.mark.parametrize("dtype", ["int8", "float32", "int6"])
-def test_a_pq2_0_gguf_with_the_originals_files_is_the_safetensors_conversion(dtype):
+@pytest.mark.parametrize("shape", BONSAI_SIZES)
+def test_a_pq2_0_gguf_with_the_originals_files_is_the_safetensors_conversion(dtype, shape):
     """The list's way in (the GGUF's weights, the original's config.json and vocabulary): the checkpoint, tokenizer.bin
     and options of a safetensors file of the values the blocks stand for, yarn in the options for the engine's tables.
     Fed 4096 bytes at a time: a chunk ends within a block and within a row."""
-    config, published, file, same = bonsai_gguf()
+    config, published, file, same = bonsai_gguf(**BONSAI_SIZES[shape])
     metadata, found, _ = gguf_read(file)
     assert {info["type"] for name, info in found.items() if len(info["shape"]) == 2} == {142}
+    assert ("output.weight" in found) == ("lm_head.weight" in same) == (not config["shared"])
     vocabulary = unigram(config["vocab_size"])
     got = with_original(file, published, vocabulary, "tokenizer.json", dtype)
     safetensors = safetensors_file(same)
@@ -474,7 +485,8 @@ def test_a_pq2_0_gguf_with_the_originals_files_is_the_safetensors_conversion(dty
     assert bytes(got.checkpoint) == bytes(expected.checkpoint)
     assert bytes(got.tokenizer) == bytes(expected.tokenizer)
     assert got.options == expected.options
-    assert got.options["qk_norm"] is True and got.options["rope_scaling"] == YARN
+    assert got.options["qk_norm"] is True and got.options["rope_scaling"] == published["rope_scaling"]
+    assert got.options["rope_theta"] == published["rope_theta"] and got.options.get("head_dim") == (64 if "heads wider" in shape else None)
 
 
 def test_a_pq2_0_gguf_alone_converts_to_the_checkpoint_of_the_same_values():

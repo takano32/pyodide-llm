@@ -28,3 +28,16 @@ def test_another_format_is_not_the_same():
     assert not format_check.same_ids([ENDOFTEXT, IM_START, USER], [IM_START, USER, NEWLINE])
     assert not format_check.same_ids([IM_START, USER], [IM_START, USER, NEWLINE])
     assert not format_check.same_ids([], [IM_START])
+
+
+def test_the_families_whose_bos_is_the_formats_first_token_take_nothing_in_front():
+    # T236's review: <|endoftext|> in front of <|im_start|> is what a Qwen3.5 was sent before its entries began at the
+    # format's own first token (it costs the model much on plain text and moves its own answers). same_ids lets that by
+    # (the extra token is not the real first one), the families of STRICT do not
+    real, old_design = [IM_START, USER, NEWLINE], [ENDOFTEXT, IM_START, USER, NEWLINE]
+    for model_id in ("hf-qwen3.5-0.8b", "hf-qwen3.5-9b-thinking", "hf-granite-4.2-3b"):
+        assert format_check.ids_match(model_id, real, real)
+        assert not format_check.ids_match(model_id, old_design, real)
+    # elsewhere the page's BOS in front is let by (T131), and the doubled one is not
+    assert format_check.ids_match("hf-qwen3-4b", old_design, real)
+    assert not format_check.ids_match("hf-qwen3-4b", [IM_START, IM_START, USER, NEWLINE], real)
