@@ -118,12 +118,19 @@ if has reference; then
   echo "page: the references are kept with this run: $(du -sh "$keep" | cut -f1) (REFERENCES=<this run's id> takes them)"
 fi
 if [ -n "${REFERENCES:-}" ] || [ -n "${LONG_REFERENCES:-}" ]; then
-  # the references an earlier run kept, in place of the reference stage
-  gh run download "${REFERENCES:-$LONG_REFERENCES}" --repo "${GITHUB_REPOSITORY:-takano32/pyodide-llm}" --name kept --dir .tmp/kept
-  cp -r .tmp/kept/reference-27b/. "$work/"
-  [ -d .tmp/kept/reference-27b-long ] && cp -r .tmp/kept/reference-27b-long/. "$work/"
+  # the references earlier runs kept, in place of the reference stage and the long one: REFERENCES is the run that kept the
+  # ordinary ones (reference-27b), LONG_REFERENCES the run that kept the long text's (reference-27b-long); one is enough
+  # where a run kept both, and each directory is taken only where the run has it (a run of the long stage alone keeps no
+  # ordinary ones: the review of T233's short pass found cp failing on the missing directory)
+  regular_run=${REFERENCES:-$LONG_REFERENCES}
+  long_run=${LONG_REFERENCES:-$REFERENCES}
+  for run in $(printf '%s\n' "$regular_run" "$long_run" | sort -u); do
+    gh run download "$run" --repo "${GITHUB_REPOSITORY:-takano32/pyodide-llm}" --name kept --dir ".tmp/kept/$run"
+  done
+  [ -d ".tmp/kept/$regular_run/reference-27b" ] && cp -r ".tmp/kept/$regular_run/reference-27b/." "$work/"
+  [ -d ".tmp/kept/$long_run/reference-27b-long" ] && cp -r ".tmp/kept/$long_run/reference-27b-long/." "$work/"
   rm -rf .tmp/kept
-  echo "page: the references of run ${REFERENCES:-$LONG_REFERENCES}: $(ls "$work"/fork-*.ids | wc -l) ids files"
+  echo "page: the references of run $regular_run, the long text's of run $long_run: $(ls "$work"/fork-*.ids 2>/dev/null | wc -l) ids files"
 fi
 if has fork; then
   STAGES=fork bash tests/reference_27b.sh
