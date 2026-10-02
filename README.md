@@ -81,10 +81,9 @@ The model list has three groups:
   [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project (260K to 42M parameters), in int8 (the small
   ones in float32). They are built into the site when it is deployed.
 - **Unquantized originals** of some of them (float16 or float32), to compare with int8.
-- **From Hugging Face, converted in this browser** (87 entries, from a 42 MB japanese-gpt2 to 9B models and one ternary
-  27B: Llama, Mistral,
+- **From Hugging Face, converted in this browser** (103 entries, from a 16 MB Pythia to 9B models and one ternary 27B: Llama, Mistral,
   Qwen2.5, Qwen3, Qwen3.5, Granite 4.2, MiniCPM5, llm-jp, sarashina, Swallow, GPT-2, GPT-NeoX and others). The page fetches the weights from
-  huggingface.co (for 77 of them a GGUF: Q8_0, and for the Ternary Bonsai models their ternary files, PQ2_0 or PTQ1_0, read with the original
+  huggingface.co (for 93 of them a GGUF: Q8_0, and for the Ternary Bonsai models their ternary files, PQ2_0 or PTQ1_0, read with the original
   repository's vocabulary and configuration),
   converts them to int8 in your browser (Ternary Bonsai stays in its 2 bits) with the same Python code that
   builds the site's models, and keeps the result for the next visit. About lists what is kept and deletes it. A
