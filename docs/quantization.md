@@ -232,10 +232,30 @@ against the float32 original):
 | LFM2.5 1.2B JP | Japanese | 16.829 | 16.785 (−0.26%) | 17.025 (+1.17%) | 17.491 (+3.94%) |
 
 The second column is llama.cpp's own Q8_0 multiplied in float32, with none of this project's kernels: the 350M loses
-3.66% to it on the English text. The page's int8 of a Q8_0 file is those same values. Of what 8-bit activations cost
-the 350M, nine tenths is in the input of the query, key and value matrices of its attention layers (a NumPy copy of
-the rounding, 300 tokens), and that part does not shrink with more bits; why is not settled. The same model moves its
-logits by 17 when the norms' epsilon is 1e-6 instead of 1e-5. The answers it writes are not broken on either path.
+3.66% to it on the English text. The page's int8 of a Q8_0 file is those same values. That is a KL divergence of 0.003
+nats from the original, which is little: on this model a perplexity moves about ten times as many nats as the
+distributions do, and all positions move together (the mean change is 12 standard errors from zero).
+
+What 8-bit activations add to the 350M is the rounding of one vector (a NumPy copy of the kernels' rounding, 1,500
+tokens; it agrees with the kernels to 0.1%: 76.643 against 76.562). The first token of every text is the same BOS, so
+its state is one constant in every text, and every later token reads it: the first attention layer's query head 13
+puts 0.55 of its attention on it. Rounding only that token's input to that layer's value matrix moves the English
+perplexity by +7.6% at 8 bits (the 32 places the groups of 32 can begin at give +3.8% to +12.4%), by −1.2% at 7 bits
+(−8.8% to +3.8%), −1.7% at 9 bits and +1.2% at 10, and by 0.1% or less from 11 bits on. The sign changes with the bit
+width and the size does not fall in order, so more bits do not help until about eleven. What does it is not the
+vector's scale (scaling the whole vector by 1% moves the perplexity by 0.6%) but the rest of the error, 5.2 of the 8.9
+points of it in one of the eight value heads (head 6): an error of 0.7% of the vector's norm there does what 9% would
+do along the vector. Random noise does not do it: 3% of relative noise on the same values moves the float32 original
+by 0.6% to 1.5%. Leaving that token's inputs unrounded costs +0.4% against the Q8_0 values at both 8 and 7 bits, which
+is +4.1% against the original: the 8-bit number above carries one draw of that constant, the 7-bit one another. On the
+1.2B JP the same token costs the page's 7-bit path 2.4% to 3.7% of the 3.0% to 4.5% it loses; the 230M, the 700M and
+the 1.2B Instruct do not have it (that token moves their perplexity by 0.5% at most, and 8-bit or 7-bit activations
+cost them 0.5% at most in all). The answers are not broken on either path: along the 12 answers the model itself
+writes, its most likely token is the float-activation path's at 395 of 398 positions with 8-bit activations and 393 of
+398 with 7-bit ones, and the written tokens' log probabilities move by +0.000 and −0.005 on average: in the chat
+format the constant does not show. The same model moves its logits by 17 when the norms' epsilon is 1e-6 instead of
+1e-5, because its residual stream is small (an rms of 0.006 to 0.03), so that epsilon is 6% to 28% of the mean square
+the norms divide by in its early layers.
 
 ## Other small effects
 

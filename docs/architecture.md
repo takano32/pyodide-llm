@@ -93,8 +93,9 @@ used, but not kept, and is run again once the GPU is ready.
   lists (10 of the 16 layers of LFM2.5 350M). A convolution layer multiplies two parts of a matrix's output with each
   other, runs a three-tap convolution along the tokens over each channel of the result, multiplies that by a third
   part, and applies a second matrix. It keeps no keys and values, only the last two tokens' values (8 KB a layer for
-  the 350M), so the memory after the weights is about half of what the same model would take with attention in
-  every layer (148 MiB against 308 MiB for the 350M at 4096 positions). The two matrices go to the threads like any
+  the 350M; forward.js holds a third row for the token under way, 12 KB), so the memory after the weights is about
+  half of what the same model would take with attention in every layer (148 MiB against 308 MiB for the 350M at
+  4096 positions). The two matrices go to the threads like any
   other; the step between them is one small kernel on the coordinating thread, which alone touches the kept values,
   so a matrix product that has to be repeated reads what it read before. Such a model also takes its tokens in order
   from position 0, and runs on the CPU only (there is no shader for the convolution yet).

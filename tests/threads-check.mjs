@@ -246,6 +246,55 @@ if (isMainThread) {
       : same ? "a thread that stops after writing a head of a delta rule is given up and the text is the same; "
         : "a thread that stops after writing a head of a delta rule DIFFERS; ";
   }
+  // T260's review: an LFM2's convolution layer is two matrix phases with a step of this thread's between them, which writes
+  // the layer's state (outside every phase: forward.js's short_conv). The first helper above stops in the very first
+  // phase, the matrix in of layer 0, before any state was written. A helper that stops in a later phase (after `skip` of
+  // them came and went with no chunk taken for it: skip 1 is the matrix out of layer 0, after the state of position 0 was
+  // written; the others in the layers and positions after) must leave the logits of one thread as well: the phase is run
+  // again from inputs it does not change, and the state is not written again. Where no helper got to the phase that
+  // many wakes in, nothing stopped and nothing is tested: the line says so.
+  let convolutionLine = "";
+  if (plan.convolution) {
+    const dyingAfter = (skip) => ({ memory: shared, share }) => new Promise((resolve) => {
+      const worker = new Worker(`
+        const { parentPort, workerData: { memory, share, skip, WAKE, COUNTER, ACTIVE, CONTROL_BYTES } } = require("node:worker_threads");
+        const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
+        parentPort.postMessage("ready");
+        let wakes = 0;
+        for (let gen = Atomics.load(ctl, WAKE + share); ; gen = Atomics.load(ctl, WAKE + share)) {
+          Atomics.wait(ctl, WAKE + share, gen);
+          if (Atomics.load(ctl, WAKE + share) & 1) continue;
+          Atomics.add(ctl, ACTIVE, 1);
+          if (wakes++ >= skip) {
+            Atomics.add(ctl, COUNTER, 1);  // a chunk taken, never done
+            process.exit(0);
+          }
+          if (Atomics.sub(ctl, ACTIVE, 1) === 1) Atomics.notify(ctl, ACTIVE);  // a phase it took no chunk of
+        }`, { eval: true, workerData: { memory: shared, share, skip, WAKE, COUNTER, ACTIVE, CONTROL_BYTES } });
+      worker.once("message", () => resolve({ terminate: () => worker.terminate() }));
+    });
+    const outcomes = [];
+    const quiet = console.warn;
+    for (const skip of [1, 2, 3, 5, 8, 13]) {
+      const e = createForward({ memory, base, size, kernels, plan, spawn: dyingAfter(skip), stalledMs: 500 });
+      await e.setThreads(2);
+      let same = true, tok = plan.bos ?? 1;
+      console.warn = () => {};
+      for (let pos = 0; pos < positions && same; pos++) {
+        e.forward(tok, pos, true);
+        const logits = e.logits();
+        same = logits.every((v, j) => Object.is(v, reference[pos][j]));
+        tok = logits.indexOf(Math.max(...logits));
+      }
+      console.warn = quiet;
+      outcomes.push({ skip, same, stopped: e.lostThreads });
+      e.stopThreads();
+    }
+    const differing = outcomes.filter((o) => !o.same).map((o) => o.skip), untested = outcomes.filter((o) => !o.stopped).map((o) => o.skip);
+    convolutionLine = differing.length ? `a thread that stops in a later phase of a convolution model (after ${differing.join(", ")} phases) DIFFERS; `
+      : untested.length === outcomes.length ? "no thread stopped in a later phase of a convolution model (nothing tested); "
+        : `a thread that stops in a later phase of a convolution model (after ${outcomes.filter((o) => o.stopped).map((o) => o.skip).join(", ")} phases) is given up and the text is the same; `;
+  }
   // T160: as chosen against float16, an engine of each in turn every round (each fills its cache up to from)
   let versusLine = "";
   if (versusHalf) {
@@ -269,7 +318,7 @@ if (isMainThread) {
       `${n}: ${median(speeds.chosen[n]).toFixed(1)} / ${median(speeds.half[n]).toFixed(1)} tok/s ` +
       `(${(median(speeds.chosen[n]) / median(speeds.half[n])).toFixed(2)}×)`).join(", ");
   }
-  parentPort.postMessage(`${went ? "a software thread that stops mid-chunk is given up and the text is the same; " : "a software thread that stops mid-chunk DIFFERS or hangs; "}${lateLine}` +
+  parentPort.postMessage(`${went ? "a software thread that stops mid-chunk is given up and the text is the same; " : "a software thread that stops mid-chunk DIFFERS or hangs; "}${lateLine}${convolutionLine}` +
     `${late ? "helpers that come up after a release are ended; " : "helpers that come up after a release are left alive (DIFFERS); "}` +
     `${reused ? "a second engine on the same memory runs the same; " : "a second engine on the same memory DIFFERS or hangs; "}${engine.backend}: ${differ.length ? `logits DIFFER with ${differ.join(", ")} threads` : `logits the same to the bit with ${counts.join(", ")} threads`}; ` +
     `${blocksDiffer.length ? `the prompt in blocks DIFFERS with ${blocksDiffer.join(", ")} threads` : "the prompt in blocks the same to the bit"}; ` +
