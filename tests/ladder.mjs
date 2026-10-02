@@ -1,15 +1,17 @@
-// T84: the Pythia ladder, one design at five sizes, from the JSON lines of the huggingface jobs of browsers.yml
-// (tests/e2e.mjs writes them; the small job has 70M to 410M, the large one 1B and 1.4B, so give both files).
+// T84: the Pythia ladder, one design at eight sizes, from the JSON lines of the huggingface jobs of browsers.yml
+// (tests/e2e.mjs writes them; the small job has 70M to 410M, the large one 1B and 1.4B, and the classics one T251's
+// 14M, 2.8B and 6.9B, so give the three files).
 // If tok/s is bound by memory, int8 megabytes × tok/s (the weights read per second) stays about the same up the
 // ladder; if it is bound by computing, it does too, since int8 is one multiply-add per byte (AGENTS.md). Where it
 // falls is where something else costs: the attention, the calls from Python, the memory of the machine.
 //
-//   node tests/ladder.mjs huggingface-small/results.jsonl huggingface-large/results.jsonl
+//   node tests/ladder.mjs huggingface-small/results.jsonl huggingface-large/results.jsonl huggingface-classics/results.jsonl
 import fs from "node:fs";
 import { MODELS, modelBytes } from "../src/models.js";
 import { readResults } from "./summary.mjs";
 
-export const LADDER = ["hf-pythia-70m", "hf-pythia-160m", "hf-pythia-410m", "hf-pythia-1b", "hf-pythia-1.4b"];
+export const LADDER = ["hf-pythia-14m", "hf-pythia-70m", "hf-pythia-160m", "hf-pythia-410m", "hf-pythia-1b", "hf-pythia-1.4b",
+  "hf-pythia-2.8b", "hf-pythia-6.9b"];
 
 const fixed = (value, digits = 1) => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "");
 

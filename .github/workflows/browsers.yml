@@ -64,6 +64,23 @@ jobs:
             esac
           done
 
+      # T231's review: the kernels' arithmetic in each browser's own wasm engine, called often enough for it to compile them
+      # again. JavaScriptCore on x86-64 got interleave() wrong only after about 2000 calls (a ternary model wrote nonsense in
+      # WebKit), and nothing below sees that: a run of a model asks for an answer to appear, not for it to be right, and
+      # the tests of the kernels in Node run them in V8. The kernels are those of the deployed site.
+      - name: The kernels in every browser's engine
+        shell: bash
+        timeout-minutes: 20  # five browsers of about a minute each; a stuck page must not hold the job (T262's rule)
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+        run: |
+          failed=0
+          echo "## the kernels in every browser's engine" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          node tests/kernels-in-browser.mjs --site "$SITE" ${{ matrix.browsers }} 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit $failed
+
       - name: Run the models in every browser
         shell: bash  # also on Windows, and with pipefail, so that a failed test is not hidden by tee
         env:
@@ -186,13 +203,32 @@ jobs:
             timeout: 3000
             models: >-
               hf-llama-3-elyza-jp-8b hf-shisa-v2.1-qwen3-8b hf-cat-thinking-8b
-          # T253 and T254 (2026-10-01): Granite 4.2 (13 GB of downloads; the 8B on a 64-bit memory) and MiniCPM5 (4 GB).
-          # Both forms of the smallest of each, one of the others
+          # T253 and T254 (2026-10-01): Granite 4.2 (17 GB of downloads: the 3B twice, each model in a browser of its own;
+          # the 8B on a 64-bit memory) and MiniCPM5 (5 GB). Both forms of the smallest of each, one of the others
           - size: granite
             timeout: 3000
             models: >-
               hf-granite-4.2-3b-thinking hf-granite-4.2-3b hf-granite-4.2-8b
               hf-minicpm5-1b-thinking hf-minicpm5-1b hf-minicpm5-2b
+          # T251 (2026-10-02): the English classics, 13 GB of downloads: GPT-2's other sizes with DistilGPT2, and the
+          # two ends of the Pythia ladder (tests/ladder.mjs reads this job's results with the small and the large one's);
+          # Pythia 6.9B on a 64-bit memory
+          - size: classics
+            timeout: 3000
+            models: >-
+              hf-pythia-14m hf-distilgpt2 hf-gpt2-medium hf-gpt2-large hf-gpt2-xl hf-pythia-2.8b hf-pythia-6.9b
+          # T252 (2026-10-02): well-known ones, in two jobs. Up to 3B: SmolLM2's base models, Qwen2.5 Coder 1.5B and
+          # 3B and Hermes 3 (9 GB of downloads)
+          - size: known
+            timeout: 3000
+            models: >-
+              hf-smollm2-135m hf-smollm2-360m hf-qwen2.5-coder-1.5b-instruct hf-qwen2.5-coder-3b-instruct
+              hf-hermes-3-llama-3.2-3b
+          # and the 7 to 8B ones, 33 GB of downloads, each on a 64-bit memory
+          - size: known-8b
+            timeout: 3000
+            models: >-
+              hf-qwen2.5-coder-7b-instruct hf-deepseek-r1-qwen-7b hf-deepseek-r1-llama-8b hf-llama-3.1-8b-instruct
           # T260 (2026-10-02): Liquid AI's LFM2 and LFM2.5 (convolution layers among attention layers), 3.9 GB of downloads
           - size: lfm2
             timeout: 1800
