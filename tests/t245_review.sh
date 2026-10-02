@@ -180,6 +180,11 @@ case "$stage" in
     tar -xzf "$dir/llama.cpp.tar.gz" -C "$dir"
     python tests/llamacpp_tiny.py "$dir/llama.cpp-$sha" "$dir/tiny" --outtypes "${1:-f32,q8_0}"
     ;;
+  chat-nll)  # chat-nll <owner/repository@revision>: tests/chat_nll.py (the first token in chat form, T236's review) on another size
+    reference_tools
+    transformers_of_t229
+    python tests/chat_nll.py "${1:?owner/repository@revision}" ${2:-} ${3:-}
+    ;;
   formats)  # the Qwen3.5 entries' formats against transformers' own, for every prompt, strictly
     pip install --quiet "transformers==5.16.1" "tokenizers==0.23.1" "jinja2==3.1.6" "sentencepiece==0.2.2" protobuf
     python tests/format_check.py --prompt "<think>" --prompt "<|im_start|>assistant" "$dir/formats" \
