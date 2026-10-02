@@ -470,6 +470,13 @@ fn main(@builtin(local_invocation_id) localId: vec3<u32>, @builtin(workgroup_id)
 //   vector instructions fewer and 2 reads of the workgroup's memory, an add and a subtraction more, with a sum made by
 //   each thread that loads the vector: fewer instructions where vectors are scalar, as many where they are not. Which
 //   is faster is a device's to say, and none has measured it (TODO.md's T232 has what would overturn this choice).
+// (The T232 review.) ONNX Runtime has these weights too: the n_bits == 2 path of its templates unpacks a word by a table
+// of 256 words in the workgroup's memory (dp4a_matmul_common.wgsl.template's DequantizedFrom2BitsTo8Bits and
+// LoadDequantizationTable; the quarter of its table with zero point 1 is the code less one, this project's mapping): 4
+// reads of the table a word of 16 codes where this is 9 vector instructions (36 where vectors are scalar). Not taken: the
+// fork's is the form for these files, and a wave reading a table at random meets its banks (simulated: 2.3 cycles a read
+// for 16 lanes, 3.2 for 32, on 32 banks); where an instruction is what bounds a device the table may be faster. Nothing
+// is measured: a device's to say, as T146's forms are (TODO.md's T232 review proposes giving it both).
 // In the tiles the unpacking is in the load of the workgroup's memory, once a row for the tile's 64 tokens.
 // A device without the packed int8 dot (packed_4x8_integer_dot_product) keeps a ternary model on the CPU: the float
 // forms (llama.cpp's tiles, TensorFlow.js's) would unpack every weight to a float and multiply it, where the model's
@@ -2993,11 +3000,16 @@ ${fusedWrite(output)}
 // is two words of codes, at the index its two vec4<u32> of int8 have in an int8 matrix (a row is n / 16 words either
 // way), unpacked to those two vec4<u32>; the scale is its group of 128's, the same for four threads of a row. Every
 // other line is fusedDp4aMatVec's: it is a function of its own only because deviceKey() hashes that one's text (a
-// device keeps the forms it remembers while it does not change); the two are to be one at the next change of it.
+// device keeps the forms it remembers while it does not change); the two are to be one at the next change of it
+// (tests/gpu-choice-check.mjs holds every line but those that read the weights the same in the two).
 //
 // Adapted from ONNX Runtime, onnxruntime/contrib_ops/webgpu/quantization/dp4a_matmul_small_m.wgsl.template (n_bits
-// 8) with the parameters dp4a_matmul_nbits.cc gives it (https://github.com/microsoft/onnxruntime, commit 3756d4dc,
-// 2026-09-26), under the MIT License:
+// 8: the loop fusedDp4aMatVec is. For 2-bit weights ORT has the same template's n_bits == 2 path, whose reads are this
+// one's: the two u32 of 16 codes a thread's 32 weights are (a vec2<u32> at b_global * K32 + k_offset, K32 counting 32
+// weights; the tiles' loadSHMB reads a u32 at b_global * K16 + kidx_v + col), the scale of block_idx = k_offset * 32 /
+// block_size, k_offset / 4 for blocks of 128; where this unpacks by ALU, TERNARY_PACKED, ORT's table lookup is the
+// other form, noted there) with the parameters dp4a_matmul_nbits.cc gives it (https://github.com/microsoft/onnxruntime,
+// commit 3756d4dc, 2026-09-26), under the MIT License:
 //
 // Copyright (c) Microsoft Corporation
 //
