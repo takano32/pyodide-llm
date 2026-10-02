@@ -39,9 +39,12 @@ jobs:
         with:
           python-version: '3.x'
 
+      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Build the site with its smallest model
+        timeout-minutes: 20
         shell: bash
         run: |
+          bash tests/apt-timeouts.sh
           npm ci
           python3 -m pip install --quiet numpy
           make kernels stories260K.bin tok512.bin
@@ -103,12 +106,18 @@ jobs:
           echo $$ | sudo tee /sys/fs/cgroup/page-memory/cgroup.procs
           node tests/page-memory-check.mjs --dist --ended 2048 | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # T262: a step of its own, so that the limit is the install's alone (apt's time-outs are set by the build's step)
+      - name: Install Firefox and WebKit for the offline runs
+        if: inputs.offline
+        timeout-minutes: 20
+        shell: bash
+        run: npx playwright-core install --with-deps firefox webkit
+
       # a change to the service worker is tried here, on the branch, before it goes out (AGENTS.md)
       - name: Offline (T111)
         if: inputs.offline
         shell: bash
         run: |
-          npx playwright-core install --with-deps firefox webkit
           failed=0
           for browser in chromium firefox webkit; do
             E2E_OFFLINE=1 E2E_ARTIFACTS=offline node tests/e2e.mjs stories260K "$browser" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1

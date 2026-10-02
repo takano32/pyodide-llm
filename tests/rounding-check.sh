@@ -4,6 +4,7 @@
 #   node tests/ci.mjs run tests.yml extra="bash tests/rounding-check.sh toward-zero away everything nearest" --ref <branch>
 set -euo pipefail
 if [ ! -d .tmp/dawn/node_modules/webgpu ]; then
+  bash tests/apt-timeouts.sh
   sudo apt-get update -qq > /dev/null && sudo apt-get install -y -qq mesa-vulkan-drivers > /dev/null
   mkdir -p .tmp/dawn && (cd .tmp/dawn && npm init -y > /dev/null && npm install webgpu@0.6.1 > /dev/null 2>&1)
 fi

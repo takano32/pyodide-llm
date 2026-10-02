@@ -51,15 +51,35 @@ jobs:
         run: npm ci
 
       # chrome and msedge are what the runner has installed; when it has not, Playwright installs them
+      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the browsers
+        timeout-minutes: 20
         shell: bash
         run: |
+          bash tests/apt-timeouts.sh
           for browser in ${{ matrix.browsers }}; do
             case "$browser" in
               chrome|msedge) node -e 'require("playwright-core").chromium.launch({ channel: process.argv[1] }).then((b) => b.close())' "$browser" || npx playwright-core install "$browser" ;;
               *) npx playwright-core install --with-deps "$browser" ;;
             esac
           done
+
+      # T231's review: the kernels' arithmetic in each browser's own wasm engine, called often enough for it to compile them
+      # again. JavaScriptCore on x86-64 got interleave() wrong only after about 2000 calls (a ternary model wrote nonsense in
+      # WebKit), and nothing below sees that: a run of a model asks for an answer to appear, not for it to be right, and
+      # the tests of the kernels in Node run them in V8. The kernels are those of the deployed site.
+      - name: The kernels in every browser's engine
+        shell: bash
+        timeout-minutes: 20  # five browsers of about a minute each; a stuck page must not hold the job (T262's rule)
+        env:
+          SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
+        run: |
+          failed=0
+          echo "## the kernels in every browser's engine" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          node tests/kernels-in-browser.mjs --site "$SITE" ${{ matrix.browsers }} 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || failed=1
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit $failed
 
       - name: Run the models in every browser
         shell: bash  # also on Windows, and with pipefail, so that a failed test is not hidden by tee
@@ -200,8 +220,11 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
+      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the test tools and Chromium
+        timeout-minutes: 20
         run: |
+          bash tests/apt-timeouts.sh
           npm ci
           npx playwright-core install --with-deps chromium ${{ matrix.size == 'small' && 'webkit' || '' }}
 

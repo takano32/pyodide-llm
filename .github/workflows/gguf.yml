@@ -108,6 +108,7 @@ jobs:
   plan:
     if: inputs.candidates != '' || inputs.listed
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
     steps:
