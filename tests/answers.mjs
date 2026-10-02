@@ -8,10 +8,11 @@
 //   SEEDS="1 2" PROMPTS='["…", "…"]' TOKENS=600 WRITER=answers.mjs bash tests/write.sh hf-granite-4.2-3b
 //   (or node tests/answers.mjs <out of tests/perplexity_prepare.py> <JSON of tests/write_options.py> [tokens = 400])
 //
-// PROMPTS: a JSON list (else QUESTIONS below, six Japanese and six English). SEEDS: the seeds of the sampled answers, as the
-// entry's own sampling writes them (else "1"). GREEDY=1: and the greedy answer of each question first. BOS=<token id>: begin every
-// text with that token, and NOFORMAT=1: and no format, the bare question (what ?hf=<repository> gives a model whose chat
-// template this converter cannot read: Granite 4.2's has a macro). The lines are `answers <id>: …` (ci.mjs's --grep answers).
+// PROMPTS: a JSON list (else QUESTIONS below, six Japanese and six English; PICK="0,1,3": only these of them). SEEDS: the seeds of
+// the sampled answers, as the entry's own sampling writes them (else "1"). GREEDY=1: and the greedy answer of each question first.
+// BOS=<token id>: begin every text with that token, and NOFORMAT=1: and no format, the bare question (what ?hf=<repository> gives a
+// model whose chat template this converter cannot read: Granite 4.2's, which has an inline if and an empty list in it).
+// The lines are `answers <id>: …` (ci.mjs's --grep answers).
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { footprint, needsWide } from "../public/forward.js";
@@ -30,7 +31,9 @@ const { arch, head_dim, dtype } = page.options;
 const wide = needsWide(size, footprint(page.header, size, { dtype, arch, head_dim, halfKV: true, shared: true }));
 const { pyodide } = await pyodideWithEngine({ wide });
 pyodide.FS.writeFile("tokenizer.bin", fs.readFileSync(`${out}.tokenizer.bin`));
-const prompts = process.env.PROMPTS ? JSON.parse(process.env.PROMPTS) : QUESTIONS;
+// PICK="0,1,3,6,7,9": only these of QUESTIONS (an 8B at one thread writes a token a second: a dozen answers are a long job)
+const prompts = process.env.PROMPTS ? JSON.parse(process.env.PROMPTS)
+  : process.env.PICK ? process.env.PICK.split(",").map((at) => QUESTIONS[Number(at)]) : QUESTIONS;
 const seeds = (process.env.SEEDS ?? "1").split(/\s+/).filter(Boolean).map(Number);
 const { temperature, topp, repetition_penalty } = page.generation;
 const bare = Boolean(process.env.NOFORMAT);
