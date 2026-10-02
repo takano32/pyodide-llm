@@ -76,7 +76,8 @@ if has dry; then
   # (the long mode on the made-up model's own context: the same files as the fork's, made by the engine's NumPy forward pass, and
   # the engine broken on purpose, which must be caught by lines the right one passes)
   node tests/page-27b.mjs "$dry/page" long "$dry" --entry none --wide --threads 2 --lines none --broken embedding
-  node tests/page-27b.mjs "$dry/page" long "$dry" --entry none --wide --threads 2 --lines "${DRY_LONG_LINES:-3,1,2}" --broken embedding,sign-128-all
+  # (with a context the header does not say: the 4 bytes changed in memory, as the 27B's run changes them to 8192)
+  node tests/page-27b.mjs "$dry/page" long "$dry" --entry none --wide --threads 2 --context 2048 --lines "${DRY_LONG_LINES:-3,1,2}" --broken embedding,sign-128-all
   node tests/page-27b.mjs "$dry/page" speed --entry none --wide
   node tests/page-27b.mjs "$dry/page" memory --entry none --wide
   rm -rf "$dry"
