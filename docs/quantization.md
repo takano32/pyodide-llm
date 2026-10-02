@@ -141,6 +141,44 @@ the 8B's are the same values. The difference is in the originals: the 1.7B's and
 (about 5 in 100,000: 740 and 1,643) with two scales one bfloat16 step (0.78%) apart, of which the GGUF keeps the larger
 for the whole block, and the 8B's hold none (64 million blocks, counted).
 
+### Ternary Bonsai 2 27B
+
+The largest model of the list is a ternary Qwen3.8 27B: 5.95 GB as its PTQ1_0 file, 7.66 GB as the page's ternary
+weights (as int8 it would be 30 GB, past what a browser gives a page), on a 64-bit memory of 7.7 GiB with its 4,096
+positions (Chrome and Firefox). Its matrices are stored in a rotated basis: every matrix reads its input after a
+change of signs and a Walsh-Hadamard transform over blocks of 1,024 values, which the engine applies as it goes
+(the weights turned back would not be ternary). Its attention is the hybrid one of Qwen3.5 (three layers of four
+keep a state of a fixed size, the fourth keeps keys and values).
+
+Measured in CI (2026-10-02), on the real model:
+
+- The PTQ1_0 and the PQ2_0 file convert to the same checkpoint, byte for byte, natively and in Pyodide (Pyodide:
+  216 s for PTQ1_0, 137 s for PQ2_0; its heap grows to 0.8 to 0.9 GB). The list takes PTQ1_0: 1.26 GB less to
+  fetch, which wins on any line slower than 33 MB/s.
+- The page's forward pass (`forward.js`, the ternary kernels, 4 threads) against Prism ML's fork of llama.cpp run
+  with float32 activations, over 155 positions of four texts: the logits differ by 0.07 to 0.19, which is what
+  rounding the activations to 8 bits moves them by (the engine's own NumPy forward pass without that rounding is
+  within 0.008 of the fork); the most likely token is the same at 154 positions (at the other the fork's own first
+  two are 0.004 apart), and the 16 tokens the fork writes greedily are the most likely ones for each text.
+- Conversions and readings broken on purpose (the value heads of the output matrices in llama.cpp's order, a PTQ1_0
+  block read in the order of its bytes, the embedding not turned back, the signs of one width reversed) move the
+  logits by 17 to 26. One reversed sign of the 17,408 moves them by 0.11 to 0.45: the weakest ones are under what
+  the rounding moves, and it is the NumPy comparison that sees them.
+
+| threads | CI x86-64 (AMD EPYC 9V74) | CI arm64 (Neoverse-N2) |
+|---:|---:|---:|
+| 1 | 0.77 | 0.72 |
+| 2 | 1.49 | 1.32 |
+| 4 | 1.56 | 2.42 |
+
+in tok/s, in Node on runners of 4 logical cores (the x86-64 ones are 2 cores). The fork's own CPU path wrote 0.70
+and 1.13 tok/s on 4 threads of the same runners. A prompt goes through at 1.8 (x86-64) and 3.4 tok/s (arm64). At
+the end of the context the forward pass holds 570 MB after the checkpoint. Not measured in a browser yet, nor on
+any device.
+
+It has two entries: one that answers at once, and one that thinks first with the template's reasoning effort
+"medium". The model's own default, "xhigh", plans for thousands of thinking tokens, hours at this speed.
+
 Qwen3.5 0.8B's Q8_0 GGUF holds some tensors otherwise than the original does: llama.cpp writes the norms with the 1
 the model adds to them and `A_log` as −exp(A_log), and it quantizes the two small matrices of the gates of each
 linear-attention layer (16 × 1024), which the page keeps in float32. The page takes the first two as they come (4 of
