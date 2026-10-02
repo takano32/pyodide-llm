@@ -3,12 +3,18 @@
 # for tests/perplexity.mjs and tests/perplexity_native.py (T85): <out>.bin, <out>.tokenizer.bin and <out>.json,
 # the options the page would give Llama(). convert_hf.py does not say those options; the page's path does.
 #
-#   python3 tests/perplexity_prepare.py <directory with config.json, model.safetensors and the tokenizer | a .gguf> <out> [int8|float32]
+#   python3 tests/perplexity_prepare.py <directory with config.json, model.safetensors and the tokenizer | a .gguf> <out> [int8|float32] [--entry <id>]
+#
+# --entry <id> (the review of T247): the options of that entry of src/models.js under the converter's, as the worker merges them
+# ({...engineOptions, ...model.options}), as tests/write_options.py makes them. Without it the options are the converter's alone,
+# which is what ?hf= opens: for a Qwen3.5 a BOS of <|endoftext|>, where the list's entries begin with <|im_start|> (T236) and
+# a text 18% to 45% likelier to read (2B, 4B) with it. A measurement of a model of the list is of the page's way with --entry.
 #
 # A directory with config.json, the tokenizer and a .gguf (tests/hf_fetch.py makes it for T136's second stage): the
 # GGUF's weights with the original's vocabulary and configuration, as the page reads them (llama2_convert.gguf_weights).
 import json
 import struct
+import subprocess
 import sys
 from pathlib import Path
 
@@ -19,8 +25,23 @@ from llama2_convert import Conversion, Incomplete, gguf_weights, joined_shards  
 
 CHUNK = 8 << 20
 
-directory, out = Path(sys.argv[1]), sys.argv[2]
-dtype = sys.argv[3] if len(sys.argv) > 3 else "int8"
+arguments = sys.argv[1:]
+entry_id = None
+if "--entry" in arguments:
+    at = arguments.index("--entry")
+    entry_id = arguments[at + 1]
+    del arguments[at:at + 2]
+directory, out = Path(arguments[0]), arguments[1]
+dtype = arguments[2] if len(arguments) > 2 else "int8"
+
+
+def entry_options(entry_id):
+    """What the list gives the engine for this entry besides what the converter makes (src/models.js's options)."""
+    script = f"import('./src/models.js').then(({{ MODELS }}) => console.log(JSON.stringify(MODELS.find((m) => m.id === {json.dumps(entry_id)})?.options ?? null)))"
+    options = json.loads(subprocess.check_output(["node", "-e", script], cwd=Path(__file__).resolve().parent.parent))
+    if options is None:
+        raise SystemExit(f"{entry_id} is no entry of src/models.js")
+    return options
 
 
 class File:
@@ -91,5 +112,7 @@ conversion.finish()
 sink.data.flush()
 Path(f"{out}.tokenizer.bin").write_bytes(conversion.tokenizer)
 options = {key: value for key, value in conversion.options.items() if key != "template"}
+if entry_id:
+    options = {**options, **entry_options(entry_id)}
 Path(f"{out}.json").write_text(json.dumps(options))
 print(f"{out}.bin: {Path(f'{out}.bin').stat().st_size:,} bytes, options {options}")
