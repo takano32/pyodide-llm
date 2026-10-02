@@ -22,12 +22,18 @@
 // with the value does not come out right in lavapipe's compiled code. So the number that did round the other way is
 // counted, and rounding-check.mjs asks for half.)
 
+// (The T232 review: an infinity and a NaN convert to themselves, a NaN with a bit of its fraction kept and the first of the
+// float16's set so that it is no infinity. They went to the largest finite float16, 65504, which is what an overflow of a
+// finite value does toward zero: a NaN written to the cache, or read into the tiles' workgroup memory, became a number,
+// and gpu-check's "logits made NaN ... refused" failed on the ternary models with "everything" for what was no fault of
+// theirs.)
 const TOWARD_ZERO = `
 fn rounded16(x: f32) -> u32 {
   let b = bitcast<u32>(x);
   let sign = (b >> 16u) & 0x8000u;
   let e = i32((b >> 23u) & 0xffu) - 112;
   let m = b & 0x7fffffu;
+  if (e == 143) { return sign | 0x7c00u | select(0u, 0x200u | (m >> 13u), m != 0u); }
   if (e >= 31) { return sign | 0x7bffu; }
   if (e <= 0) {
     if (e < -10) { return sign; }
@@ -41,6 +47,7 @@ fn toward16(x: f32) -> u32 {
   let sign = (b >> 16u) & 0x8000u;
   let e = i32((b >> 23u) & 0xffu) - 112;
   let m = b & 0x7fffffu;
+  if (e == 143) { return sign | 0x7c00u | select(0u, 0x200u | (m >> 13u), m != 0u); }
   if (e >= 31) { return sign | 0x7bffu; }
   if (e <= 0) {
     if (e < -10) { return sign; }
@@ -50,7 +57,9 @@ fn toward16(x: f32) -> u32 {
 }
 fn rounded16(x: f32) -> u32 {
   let h = toward16(x);
-  return select(h, h + 1u, unpack2x16float(h).x != x && h != 0x7bffu);
+  // (one more only where the magnitude is under the largest finite float16's: an infinity and a NaN stay, and so does
+  // a negative overflow, which the test of the positive 0x7bff alone let through to -infinity)
+  return select(h, h + 1u, (h & 0x7fffu) < 0x7bffu && unpack2x16float(h).x != x);
 }`;
 const PACK = `
 fn pack2x16float_rounded(v: vec2<f32>) -> u32 { return rounded16(v.x) | (rounded16(v.y) << 16u); }`;
