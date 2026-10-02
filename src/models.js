@@ -240,6 +240,8 @@ const QWEN_RESEARCH = "Qwen Research License Agreement";
 const SWALLOW = "Meta Llama 3.1 Community License and Gemma Terms of Use";
 // T250: ELYZA's card says "Meta Llama 3 Community License" under License (its metadata: llama3)
 const LLAMA_3 = "Meta Llama 3 Community License";
+// T251: the cards of GPT-2's medium, large and XL: "License: Modified MIT License" (OpenAI's, github.com/openai/gpt-2)
+const MODIFIED_MIT = "Modified MIT License";
 export const LICENSES = {
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
@@ -278,6 +280,15 @@ export const LICENSES = {
   "elyza/Llama-3-ELYZA-JP-8B": LLAMA_3, "mmnga/Llama-3-ELYZA-JP-8B-gguf": LLAMA_3,
   "shisa-ai/shisa-v2.1-qwen3-8b": APACHE, "mradermacher/shisa-v2.1-qwen3-8b-GGUF": APACHE,
   "cyberagent/CAT-Thinking-8B": APACHE, "mmnga-o/CAT-Thinking-8B-gguf": APACHE,
+  // T251 (2026-10-02): the English classics and the Q8_0 GGUFs they are taken from. The cards of GPT-2's medium, large
+  // and XL say "License: Modified MIT License" (their metadata, and their GGUFs': mit); DistilGPT2's and Pythia's Apache 2.0
+  "distilbert/distilgpt2": APACHE, "QuantFactory/distilgpt2-GGUF": APACHE,
+  "openai-community/gpt2-medium": MODIFIED_MIT, "mradermacher/gpt2-medium-GGUF": MODIFIED_MIT,
+  "openai-community/gpt2-large": MODIFIED_MIT, "mradermacher/gpt2-large-GGUF": MODIFIED_MIT,
+  "openai-community/gpt2-xl": MODIFIED_MIT, "mradermacher/gpt2-xl-GGUF": MODIFIED_MIT,
+  "EleutherAI/pythia-14m-deduped": APACHE, "mradermacher/pythia-14m-GGUF": APACHE,
+  "EleutherAI/pythia-2.8b": APACHE, "mradermacher/pythia-2.8b-GGUF": APACHE,
+  "EleutherAI/pythia-6.9b": APACHE, "mradermacher/pythia-6.9b-GGUF": APACHE,
   // T125
   "Rakuten/RakutenAI-2.0-mini-instruct": APACHE, "Rakuten/RakutenAI-7B-chat": APACHE,
   "tokyotech-llm/Swallow-MS-7b-instruct-v0.1": APACHE, "mistralai/Mistral-7B-Instruct-v0.2": APACHE,
@@ -696,6 +707,39 @@ const LISTED = [
     // its model card's sampling: temperature 0.6 and top-p 0.95, and no penalty (it names none): Qwen3's thinking (T144)
     generation: thinking, template: "<｜User｜>{prompt}<｜Assistant｜><think>\n",
     prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
+  // T251: the English classics, each a ladder of one design. GPT-2 below and above the 124M one (DistilGPT2 is its
+  // six-layer student), and Pythia's two ends (14M to 6.9B with the five above: T84's size against speed). Q8_0 GGUFs
+  // which tests/gguf_check.py tensors held to the originals (gguf.yml's candidates), with the originals' vocabulary.
+  // GPT-2's table of positions holds 1024, which is its context; Pythia's context is 2048. The 14M is the deduped one,
+  // as the 70M is (mradermacher's GGUF of that name is of pythia-14m-deduped, its card says)
+  { group: "hf", id: "hf-pythia-14m", name: "Pythia 14M", note: "English · fetches 17 MB (GGUF) → int8 16 MB",
+    ...ggufOf("mradermacher/pythia-14m-GGUF", "6e0b616b2d66b8f2c6bb6f80fc661350a19d1dcf", "pythia-14m.Q8_0.gguf",
+      "EleutherAI/pythia-14m-deduped", "7386d9a4ae45aef494a6e704910394def3037fc5"), download: 16750496,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-distilgpt2", name: "DistilGPT2 82M", note: "English · fetches 132 MB (GGUF) → int8 92 MB",
+    ...ggufOf("QuantFactory/distilgpt2-GGUF", "b41ee4e4e4949dba1b3bed4f89a87198b82f851b", "distilgpt2.Q8_0.gguf",
+      "distilbert/distilgpt2", "2290a62682d06624634c1f46a6ad5be0f47f38aa"), download: 132303872,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-gpt2-medium", name: "GPT-2 medium 355M", note: "English · fetches 437 MB (GGUF) → int8 400 MB",
+    ...ggufOf("mradermacher/gpt2-medium-GGUF", "3b9897d67a84e967fbcc8d7de3db4c797e386740", "gpt2-medium.Q8_0.gguf",
+      "openai-community/gpt2-medium", "6dcaa7a952f72f9298047fd5137cd6e4f05f41da"), download: 437487744,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-gpt2-large", name: "GPT-2 large 774M", note: "English · fetches 898 MB (GGUF) → int8 873 MB · desktop only",
+    ...ggufOf("mradermacher/gpt2-large-GGUF", "c83630987bcee4945f3e947b1977c70e6b2760a1", "gpt2-large.Q8_0.gguf",
+      "openai-community/gpt2-large", "32b71b12589c2f8d625668d2335a01cac3249519"), download: 898165824,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-gpt2-xl", name: "GPT-2 XL 1.5B", note: "English · fetches 1.7 GB (GGUF) → int8 1.8 GB · desktop only",
+    ...ggufOf("mradermacher/gpt2-xl-GGUF", "a6a1b25a992d7541b185b0cd1227b47311f4eab6", "gpt2-xl.Q8_0.gguf",
+      "openai-community/gpt2-xl", "15ea56dee5df4983c59b2538573817e1667135e2"), download: 1749953760,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-pythia-2.8b", name: "Pythia 2.8B", note: "English · fetches 3.0 GB (GGUF) → int8 3.1 GB · desktop only",
+    ...ggufOf("mradermacher/pythia-2.8b-GGUF", "147586a405b950ff991ba909a3193ffafa98b014", "pythia-2.8b.Q8_0.gguf",
+      "EleutherAI/pythia-2.8b", "2a259cdd96a4beb1cdf467512e3904197345f6a9"), download: 2953594016,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-pythia-6.9b", name: "Pythia 6.9B", note: "English · fetches 7.3 GB (GGUF) → int8 7.7 GB · desktop only · Chrome and Firefox",
+    ...ggufOf("mradermacher/pythia-6.9b-GGUF", "d8e5050a875b7bfd5de881d30b33abc3d492cb60", "pythia-6.9b.Q8_0.gguf",
+      "EleutherAI/pythia-6.9b", "c0e3eee36dc47af0c49f361c74cfe459c09f7f23"), download: 7292706720,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
   // T125: Mistral 7B, and zephyr made from it
   { group: "hf", id: "hf-mistral-7b-instruct-v0.2", name: "Mistral 7B Instruct v0.2", note: "answers instructions · English · fetches 7.7 GB (GGUF) → int8 8.2 GB · desktop only · Chrome and Firefox",
     original: "mistralai/Mistral-7B-Instruct-v0.2",
