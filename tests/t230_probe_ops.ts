@@ -97,3 +97,10 @@ export function blk_e(src: usize, dst: usize): void {
     for (let c: usize = 0; c < 16; c++) store<i8>(dst + 16 * p + c, load<i8>(src + 4 * c + p));
   }
 }
+
+// loops, for the timings (tests/t230_probe_ops_bench.mjs): count blocks
+export function loop_a(src: usize, dst: usize, count: i32): void { for (let i = 0; i < count; i++) blk_a(src, dst); }
+export function loop_b(src: usize, dst: usize, count: i32): void { for (let i = 0; i < count; i++) blk_b(src, dst); }
+export function loop_c(src: usize, dst: usize, count: i32): void { for (let i = 0; i < count; i++) blk_c(src, dst); }
+export function loop_d(src: usize, dst: usize, count: i32): void { for (let i = 0; i < count; i++) blk_d(src, dst); }
+export function loop_e(src: usize, dst: usize, count: i32): void { for (let i = 0; i < count; i++) blk_e(src, dst); }
