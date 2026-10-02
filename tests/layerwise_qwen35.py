@@ -101,9 +101,17 @@ def main():
                 parameter.copy_(weights.get(f"{prefix}layers.{name}.{key}").float())
         loading["seconds"] += time.perf_counter() - began
 
+    def before(name):
+        def hook(module, args, kwargs):  # (a hook that returns something replaces the call's arguments or its output)
+            load(module, name)
+        return hook
+
+    def after(module, args, output):
+        module.to("meta")
+
     for index, layer in enumerate(text.layers):
-        layer.register_forward_pre_hook(lambda module, args, kwargs, name=index: load(module, name) or None, with_kwargs=True)
-        layer.register_forward_hook(lambda module, args, output: module.to("meta") or None)
+        layer.register_forward_pre_hook(before(index), with_kwargs=True)
+        layer.register_forward_hook(after)
 
     tokenizer = tokenizers.Tokenizer.from_file(str(directory / "tokenizer.json"))
     bos = ref.BOS
