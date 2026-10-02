@@ -70,6 +70,7 @@ jobs:
       # the tests of the kernels in Node run them in V8. The kernels are those of the deployed site.
       - name: The kernels in every browser's engine
         shell: bash
+        timeout-minutes: 20  # five browsers of about a minute each; a stuck page must not hold the job (T262's rule)
         env:
           SITE: ${{ inputs.url || 'https://takano32.github.io/pyodide-llm/' }}
         run: |
