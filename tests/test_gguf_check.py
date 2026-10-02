@@ -595,3 +595,75 @@ def test_tiled_is_llama_cpps_order():
     assert gguf_check.value_heads("blk.0.ssm_a", text) == (0, 16, 3, 1, 0)
     assert gguf_check.value_heads("blk.0.ssm_norm.weight", text) is None  # one norm for all the heads
     assert gguf_check.value_heads("blk.0.attn_qkv.weight", {**text, "linear_num_value_heads": 16}) is None
+
+
+# ---- T260: an LFM2 (convolution layers among attention layers; the layers of the made-up one are ccaccaca)
+LFM2 = "model.layers."
+LFM2_WRONG = {
+    # what the original holds that is not what the GGUF was made of: {the name: the GGUF's tensors past the line}
+    "the taps the other way round": ["blk.0.shortconv.conv.weight"],
+    "B and C swapped in the matrix in": ["blk.1.shortconv.in_proj.weight"],
+    "the matrix out of another layer": ["blk.0.shortconv.out_proj.weight"],
+    "w1 and w3 swapped": ["blk.2.ffn_gate.weight", "blk.2.ffn_up.weight"],
+    "another last norm": ["token_embd_norm.weight"],
+    "the norms of q's and k's heads swapped": ["blk.2.attn_k_norm.weight", "blk.2.attn_q_norm.weight"],
+    "the operator's norm and the FFN's swapped": ["blk.3.attn_norm.weight", "blk.3.ffn_norm.weight"],
+}
+
+
+@pytest.mark.parametrize("block", [gguf_check.BLOCK, 512])  # the whole tensor at once, and a block of rows at a time
+@pytest.mark.parametrize("wrong", [None, *LFM2_WRONG, "other layers", "other taps", "another FFN", "q turned"])
+def test_an_lfm2_gguf_is_held_to_what_llama_cpp_makes_of_its_original(tmp_path, capsys, monkeypatch, block, wrong):
+    """T260: an LFM2's GGUF as llama.cpp writes one (test_lfm2.lfm2_gguf) passes against its original, 0 off: the
+    convolution without its axis of one, the last norm as token_embd_norm, the convolution layer's tensors as
+    shortconv.*, the FFN's w1, w3 and w2 as gate, up and down, q and k as Hugging Face has them, the key-value heads a
+    number a layer. An original that is not what the GGUF was made of is past the line at that tensor; a config.json of
+    other layers, other taps or another size of the FFN is a mismatch; q and k turned as a Llama's are an order the
+    page's reader does not read."""
+    from test_lfm2 import lfm2_gguf
+    monkeypatch.setattr(gguf_check, "BLOCK", block)
+    config, file, same = lfm2_gguf()
+    original = {name: tensor.copy() for name, tensor in same.items()}
+    dim = config["hidden_size"]
+
+    def swap(a, b):
+        original[LFM2 + a], original[LFM2 + b] = original[LFM2 + b], original[LFM2 + a]
+    if wrong == "the taps the other way round":
+        original[LFM2 + "0.conv.conv.weight"] = original[LFM2 + "0.conv.conv.weight"][:, :, ::-1].copy()
+    if wrong == "B and C swapped in the matrix in":
+        w = original[LFM2 + "1.conv.in_proj.weight"]
+        original[LFM2 + "1.conv.in_proj.weight"] = np.concatenate([w[dim:2 * dim], w[:dim], w[2 * dim:]])
+    if wrong == "the matrix out of another layer":
+        original[LFM2 + "0.conv.out_proj.weight"] = original[LFM2 + "1.conv.out_proj.weight"].copy()
+    if wrong == "w1 and w3 swapped":
+        swap("2.feed_forward.w1.weight", "2.feed_forward.w3.weight")
+    if wrong == "another last norm":
+        original["model.embedding_norm.weight"] = original[LFM2 + "0.ffn_norm.weight"].copy()
+    if wrong == "the norms of q's and k's heads swapped":
+        swap("2.self_attn.q_layernorm.weight", "2.self_attn.k_layernorm.weight")
+    if wrong == "the operator's norm and the FFN's swapped":
+        swap("3.operator_norm.weight", "3.ffn_norm.weight")
+    if wrong == "other layers":
+        config = {**config, "layer_types": ["conv", "full_attention"] * 4}
+    if wrong == "other taps":
+        config = {**config, "conv_L_cache": 4}
+    if wrong == "another FFN":
+        config = {**config, "block_auto_adjust_ff_dim": False}
+    if wrong == "q turned":
+        # the GGUF's q as Hugging Face has it is this original's q turned as llama.cpp turns a Llama's
+        name, heads = LFM2 + "2.self_attn.q_proj.weight", config["num_attention_heads"]
+        q = original[name]
+        original[name] = q.reshape(heads, -1, 2, q.shape[1]).swapaxes(1, 2).reshape(q.shape).copy()
+    (tmp_path / "model.gguf").write_bytes(file)
+    (tmp_path / "model.safetensors").write_bytes(safetensors_file(original))
+    (tmp_path / "config.json").write_text(json.dumps(config))
+    assert gguf_check.check_tensors(tmp_path / "model.gguf", tmp_path) is (wrong is None)
+    result = summary(capsys)
+    if wrong is None:
+        assert result["mismatches"] == 0 and result["nearest"] == 0 and result["orders"] == ["as Hugging Face"]
+    elif wrong in LFM2_WRONG:
+        assert sorted(result["past_tight"]) == sorted(LFM2_WRONG[wrong]) and result["mismatches"] == len(LFM2_WRONG[wrong])
+    elif wrong == "q turned":
+        assert result["unread_orders"] == {"blk.2.attn_q.weight": "turned (llama2.c order)"} and result["past_tight"] == {}
+    else:
+        assert result["mismatches"] >= 1 and result["past_tight"] == {}

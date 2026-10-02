@@ -54,14 +54,19 @@ CHUNK = 8 << 20
 # scores by config.json's attention_multiplier), from the list's GGUF, where the multiplier is metadata and q is turned
 # as a Llama's. Its float32 checkpoint is 14.6 GB. T254: MiniCPM5 1B, the model of the two-stage pre-tokenizer and the
 # first Llama from a GGUF whose heads are not dim / heads (128 in 1536).
+# T260: an LFM2 (convolution layers among attention layers), LFM2.5 350M, the same two ways: from the list's GGUF
+# (llama.cpp's names, the convolution without its axis of one, the layers said by their key-value heads) and from the
+# safetensors of the original (the revision tests/reference_lfm2.py holds the engine to transformers on, which writes
+# the same text for the same ids there). Each float32 checkpoint is 1.4 GB.
 # {the id here: (the list's entry, the file of the original's weights)}
 SAFETENSORS = {"hf-qwen3-0.6b-safetensors": ("hf-qwen3-0.6b", "model.safetensors"),
                "hf-qwen3.5-0.8b-safetensors": ("hf-qwen3.5-0.8b", "model.safetensors-00001-of-00001.safetensors"),
-               "hf-qwen3.5-2b-safetensors": ("hf-qwen3.5-2b", "model.safetensors-00001-of-00001.safetensors")}
+               "hf-qwen3.5-2b-safetensors": ("hf-qwen3.5-2b", "model.safetensors-00001-of-00001.safetensors"),
+               "hf-lfm2.5-350m-safetensors": ("hf-lfm2.5-350m", "model.safetensors")}
 MODELS = ["hf-pythia-70m", "hf-gpt2", "hf-japanese-gpt2-small", "hf-smollm2-135m-instruct", "hf-llm-jp-3-150m-instruct3",
           "hf-qwen3-0.6b", "hf-qwen3-0.6b-safetensors", "hf-ternary-bonsai-1.7b", "hf-qwen3.5-0.8b",
           "hf-qwen3.5-0.8b-safetensors", "hf-qwen3.5-2b", "hf-qwen3.5-2b-safetensors", "hf-granite-4.2-3b",
-          "hf-minicpm5-1b"]
+          "hf-minicpm5-1b", "hf-lfm2.5-350m", "hf-lfm2.5-350m-safetensors"]
 
 
 def entries():

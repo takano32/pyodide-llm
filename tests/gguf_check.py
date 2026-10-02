@@ -265,6 +265,16 @@ NAMES["qwen35"] = (NAMES["llama"][0], NAMES["llama"][1],
                     "ssm_conv1d": "linear_attn.conv1d", "ssm_norm": "linear_attn.norm", "ssm_out": "linear_attn.out_proj"})
 # and the two whose names llama.cpp changes whole: dt_bias is written as dt_proj.bias, A_log has no ".weight"
 WHOLE = {"qwen35": {"ssm_dt.bias": "linear_attn.dt_bias", "ssm_a": "linear_attn.A_log"}}
+# T260: an LFM2's (llama.cpp's conversion/lfm2.py and gguf-py's tensor_mapping.py at f1cee994): the last norm, which the
+# model calls embedding_norm, is token_embd_norm; a convolution layer's three tensors are shortconv.*; the FFN's w1, w3
+# and w2 are the gate, up and down
+NAMES["lfm2"] = ({"token_embd.weight": "model.embed_tokens.weight", "token_embd_norm.weight": "model.embedding_norm.weight",
+                  "output.weight": "lm_head.weight"}, "model.layers.{}.",
+                 {"attn_norm": "operator_norm", "ffn_norm": "ffn_norm", "attn_q": "self_attn.q_proj",
+                  "attn_k": "self_attn.k_proj", "attn_v": "self_attn.v_proj", "attn_output": "self_attn.out_proj",
+                  "attn_q_norm": "self_attn.q_layernorm", "attn_k_norm": "self_attn.k_layernorm",
+                  "ffn_gate": "feed_forward.w1", "ffn_up": "feed_forward.w3", "ffn_down": "feed_forward.w2",
+                  "shortconv.in_proj": "conv.in_proj", "shortconv.conv": "conv.conv", "shortconv.out_proj": "conv.out_proj"})
 
 
 def hugging_face_name(name, arch="llama"):
@@ -290,7 +300,11 @@ def as_llama_cpp_writes(target, original, arch):
     """What llama.cpp's converter makes of a Qwen3.5's tensor besides quantizing it (T236, conversion/qwen.py's
     Qwen3NextModel.modify_tensors at dcd387a4), and what it is called here: the norms with the 1 the model adds to them
     (all but a linear-attention layer's own), A_log as -exp(A_log), the convolution without its axis of one. Written
-    out here rather than taken from llama2_convert.transformed, which is what is being checked."""
+    out here rather than taken from llama2_convert.transformed, which is what is being checked. T260: an LFM2's
+    convolution comes without its axis of one too (conversion/lfm2.py's modify_tensors), and nothing else of it is
+    changed."""
+    if arch == "lfm2" and target.endswith(".conv.conv.weight"):
+        return original.reshape(original.shape[0], original.shape[-1]), "(channels, taps)"
     if arch != "qwen35":
         return original, ""
     if target.endswith(".A_log"):
@@ -655,6 +669,15 @@ def config_pairs(config, arch="llama"):
                   ("ssm.inner_size", "linear_value_head_dim * linear_num_value_heads",
                    config.get("linear_value_head_dim", 128) * value_heads, True),
                   ("rope.dimension_count", "partial_rotary_factor (as values)", rotary_dim(config), True)]
+    if arch == "lfm2":
+        # T260: which layers are convolution layers, which llama.cpp says by the key-value heads of every layer (0 for
+        # a convolution layer), and the taps. The FFN's size above is what transformers' Lfm2MLP makes of the config
+        # (normalize()), and the tensors' shapes hold it too
+        groups = config.get("num_key_value_heads", heads)
+        kinds = config.get("layer_types") or []
+        pairs[4] = ("attention.head_count_kv", "num_key_value_heads of the attention layers, 0 of the others",
+                    [groups if kind == "full_attention" else 0 for kind in kinds], True)
+        pairs.append(("shortconv.l_cache", "conv_L_cache", config.get("conv_L_cache", 3), True))
     return pairs, config
 
 
@@ -697,7 +720,10 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
         if ours is None and key == "attention.key_length":
             ours = metadata.get(f"{arch}.embedding_length", 0) // metadata.get(f"{arch}.attention.head_count", 1)
         # the GGUF writes floats as float32: 1e-6 of relative difference is its rounding
-        same = ours is not None and theirs is not None and math.isclose(float(ours), float(theirs), rel_tol=1e-6)
+        if isinstance(ours, list) or isinstance(theirs, list):
+            same = ours == theirs  # an LFM2's key-value heads, a number a layer (T260)
+        else:
+            same = ours is not None and theirs is not None and math.isclose(float(ours), float(theirs), rel_tol=1e-6)
         mismatched += counted and not same
         note = "" if same else " **differs**" if counted else " (differs, not counted)"
         print(f"| {arch}.{key} | {ours} | {name} = {theirs}{note} |")

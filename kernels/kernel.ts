@@ -824,6 +824,37 @@ export function convolve(out: usize, taps: usize, rows: usize, n: i32, count: i3
   }
 }
 
+// T260, an LFM2's convolution layer: what llama2_numpy.py's short_convolution() does between its two matmuls. b: what
+// the matrix in gave, 3 n values (the gate B, the gate C, and z, one after another). rows: the layer's state, count rows
+// of n values, the oldest token's first; the last is this token's and is written here, B * z. Then
+// out[c] = C[c] * (taps[0][c] * rows[0][c] + ... + taps[count - 1][c] * rows[count - 1][c]), added in that order as
+// NumPy adds them: the causal convolution of each channel with its own taps, and no activation (count is 2 or more)
+export function short_conv(out: usize, taps: usize, rows: usize, b: usize, n: i32, count: i32): void {
+  const stride = <usize>n << 2;
+  const newest = rows + <usize>(count - 1) * stride, gate = b + stride, z = gate + stride;
+  let c = 0;
+  for (; c + 4 <= n; c += 4) {
+    const o = <usize>c << 2;
+    v128.store(newest + o, f32x4.mul(v128.load(b + o), v128.load(z + o)));
+    let acc = f32x4.mul(v128.load(taps + o), v128.load(rows + o));
+    for (let j = 1; j < count; j++) {
+      const at = <usize>j * stride + o;
+      acc = f32x4.add(acc, f32x4.mul(v128.load(taps + at), v128.load(rows + at)));
+    }
+    v128.store(out + o, f32x4.mul(v128.load(gate + o), acc));
+  }
+  for (; c < n; c++) {
+    const o = <usize>c << 2;
+    store<f32>(newest + o, load<f32>(b + o) * load<f32>(z + o));
+    let acc = load<f32>(taps + o) * load<f32>(rows + o);
+    for (let j = 1; j < count; j++) {
+      const at = <usize>j * stride + o;
+      acc += load<f32>(taps + at) * load<f32>(rows + at);
+    }
+    store<f32>(out + o, load<f32>(gate + o) * acc);
+  }
+}
+
 // One token of the gated delta rule (llama2_numpy.delta_rule) for the value heads h0..h1 of vh: the software threads
 // take heads as they take rows of a matmul, and every head is computed alone, the same whatever the range.
 //   S' = S * decay, delta = (v - k S') * beta, next = S' + k (outer) delta, out = q next
