@@ -286,6 +286,21 @@ The mask of 3 is an argument of the kernels (`jobs.js` passes it): V8 makes a co
 again at every use. The form that keeps int16 sums is as fast or faster on x86-64 and half as fast on arm64; the
 phones this is for are arm64.
 
+Two things the review of 2026-10-02 found, which no test in Node can see:
+
+- `interleave` is shifts, masks and narrows, with no shuffle. It was a transpose of three chained shuffles (a byte shuffle
+  of each vector, then dwords, then qwords), and JavaScriptCore's optimizing tier on x86-64 (Playwright's WebKit on Linux,
+  Safari on an Intel Mac) folded them wrongly once the function had been called about 2000 times: three quarters of a block
+  came out wrong and the model wrote nonsense, with 1 thread and with 4. Each piece alone, a swizzle in place of the byte
+  shuffle, shifts and narrows, and a scalar loop were right on that engine; the narrows cost 5 to 8 ns more a block of 64
+  bytes in V8 (EPYC 9V74 3.6 to 10.5, EPYC 7763 4.8 to 9.9, arm64 4.5 to 12.4: 0.04 ms of a token of the 1.7B).
+  `tests/kernels-in-browser.mjs` runs the kernels in the engine of each browser, in batches up to 30000 calls, and says
+  WRONG on the old `interleave` in WebKit on x86-64.
+- On a 64-bit memory, the V8 of Node 24 (13.6) on arm64 reads `v128.load32_splat` and `v128.load32_lane` at the low 32 bits
+  of an address above 4 GiB. Every kernel that takes a scale so reads a wrong one there: the ternary kernels' weights'
+  scales and the int8 tile's. Chromium 148 on arm64, Firefox 150 and V8 on x86-64 read them right.
+  `tests/ternary-check.mjs` has a canary module for it and leaves its above-4 GiB config out where it fires.
+
 ## Rules that are easy to break
 
 - **No static data.** The side module has no relocations, so a data segment would be written over Pyodide's own
