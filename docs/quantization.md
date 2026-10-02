@@ -94,7 +94,7 @@ against 0.02308); on 1,500 tokens the perplexity could not tell the two apart.
 One more model comes from a GGUF of another kind: Ternary Bonsai 1.7B (Prism ML), whose every weight is −1, 0 or 1
 times a scale shared by 128 weights. Its GGUF holds two bits a weight (PQ2_0, a type of Prism ML's fork of
 llama.cpp; 463 MB). The GGUF was compared with the float16 safetensors of the same weights: no tensor is further
-than 8.7e-5 from it (a few blocks of 128 have two magnitudes there, 0.5% apart, and one in the GGUF). How the page
+than 8.7e-5 from it (a few blocks of 128 have two magnitudes there, 0.78% apart, and one in the GGUF). How the page
 holds such weights is the next section.
 
 ## Ternary weights: 2 bits
@@ -130,7 +130,10 @@ and its speed against the same weights widened to int8, in tok/s (ternary / int8
 It runs on the CPU only for now (no GPU path), and has not been measured on a phone.
 
 Ternary Bonsai 4B and 8B come the same way (1.07 GB and 2.18 GB of PQ2_0, held as 1.1 GB and 2.3 GB of ternary
-weights; widened to int8 they were 4.5 GB and 9.2 GB, on a 64-bit memory). Their speed has not been measured. Compared with their float16 safetensors, no tensor of the 4B is further than 8.5e-5 from them, and
+weights; widened to int8 they were 4.5 GB and 9.2 GB, on a 64-bit memory). On the site in Chromium on a CI x86-64 machine with four
+threads the 4B wrote 6.4 tok/s and the 8B 4.2 tok/s, in readable Japanese (2026-10-02). The three computations of the table above
+are within 0.09% of one another on the 4B too (English 16.863 ternary, 16.852 int8 with 7-bit activations; Japanese 35.248 and
+35.218). Compared with their float16 safetensors, no tensor of the 4B is further than 8.5e-5 from them, and
 the 8B's are the same values. The difference is in the originals: the 1.7B's and the 4B's float16 files hold a few blocks of 128
 (about 5 in 100,000: 740 and 1,643) with two scales one bfloat16 step (0.78%) apart, of which the GGUF keeps the larger
 for the whole block, and the 8B's hold none (64 million blocks, counted).
