@@ -954,7 +954,7 @@ const LISTED = [
   // answers at once is what the real template writes with enable_thinking false. The one that thinks is what it
   // writes with reasoning_effort "medium" (no system turn), not the model's own default, "xhigh" (a system turn that
   // asks for careful thought, for which its card leaves room for 16384 tokens: hours at the speed of a CPU, and past
-  // this context); with medium the thought ended after 74 and 608 tokens on two questions in CI. The sampling: the
+  // this context); with medium the thought ended after 59 to 267 tokens on three questions in CI. The sampling: the
   // card's 0.7 and 0.8 without thinking; with thinking it names 1.0 and 0.95 with a top-k and a min-p, which the
   // page's sampler has not, so Qwen3's 0.6 and 0.95 as for a Qwen3.5
   ...thinkingAndNot("hf-ternary-bonsai-2-27b", "Ternary Bonsai 2 27B",
