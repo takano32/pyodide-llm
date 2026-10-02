@@ -30,7 +30,8 @@
 #   memory     the whole context: what is placed after the checkpoint against footprint()
 #   write      the page's generate() for QUESTIONS (lines of a file, or the two here), with THINKING=1 in the form that
 #              thinks, at most TOKENS positions each
-# The stages after convert use its checkpoint; page and breaks use the reference's files.
+# The stages after convert use its checkpoint; page and breaks use the reference's files: of the reference stage of
+# the same run, or of an earlier run that ran it (REFERENCES=<its id>: tests.yml keeps them a week).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 cd "$here/.."
@@ -87,6 +88,20 @@ context=$(node --input-type=module -e 'const { MODELS } = await import("./src/mo
 
 if has reference; then
   STAGES="${REFERENCE_STAGES:-fork f32 numpy}" SAVE_LOGITS="$work/saved" bash tests/reference_27b.sh
+  # what the comparison reads, kept with the run (tests.yml keeps .tmp/keep): 0.3 GB, 50 minutes of a runner
+  keep=.tmp/keep/reference-27b
+  mkdir -p "$keep/f32" "$keep/saved"
+  cp "$work"/fork-*.ids "$work"/prompt-*.txt "$keep/"
+  cp "$work"/f32/fork-*.single "$keep/f32/"
+  cp "$work"/saved/engine-*-as-8-bits-round.* "$keep/saved/"
+  echo "page: the references are kept with this run: $(du -sh "$keep" | cut -f1) (REFERENCES=<this run's id> takes them)"
+fi
+if [ -n "${REFERENCES:-}" ]; then
+  # the references an earlier run kept, in place of the reference stage
+  gh run download "$REFERENCES" --repo "${GITHUB_REPOSITORY:-takano32/pyodide-llm}" --name kept --dir .tmp/kept
+  cp -r .tmp/kept/reference-27b/. "$work/"
+  rm -rf .tmp/kept
+  echo "page: the references of run $REFERENCES: $(ls "$work"/fork-*.ids | wc -l) texts"
 fi
 if has fork; then
   STAGES=fork bash tests/reference_27b.sh

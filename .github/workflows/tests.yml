@@ -16,6 +16,7 @@ name: Tests
 # T238: only_extra=true runs the `extra` commands alone (no models, no suite, no build: a job that needs none of them,
 # like tests/reference_27b.sh, which builds another program and fetches a model of its own), and minutes= is the job's
 # time limit (90 where it says nothing).
+# T233: what the extra commands leave in .tmp/keep is kept with the run (an artifact, a week).
 on:
   schedule:
     # every night at 03:17 in Japan (18:17 UTC; off the hour, when GitHub's schedules crowd), the full suite on main
@@ -47,6 +48,8 @@ on:
 
 permissions:
   contents: read
+  # T233: the extra commands may fetch what an earlier run kept (gh run download)
+  actions: read
 
 jobs:
   tests:
@@ -92,4 +95,16 @@ jobs:
         if: ${{ inputs.extra != '' }}
         env:
           EXTRA: ${{ inputs.extra }}
+          GH_TOKEN: ${{ github.token }}
         run: bash -c "$EXTRA"
+
+      # T233: what the extra commands put in .tmp/keep stays with the run for a week (tests/page_27b.sh: the references
+      # of the 27B, 50 minutes of a runner, which a later run takes with REFERENCES=<this run's id>)
+      - name: Keep what the extra commands left in .tmp/keep
+        if: ${{ always() && inputs.extra != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: kept
+          path: .tmp/keep/
+          if-no-files-found: ignore
+          retention-days: 7
