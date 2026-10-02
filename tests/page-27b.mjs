@@ -44,6 +44,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import v8 from "node:v8";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { compileKernels, createForward, footprint, keysInHalf, needsWide, weightsMemory } from "../public/forward.js";
 
@@ -122,13 +123,21 @@ if (isMainThread) {
   console.log(`page: ${path.basename(file)} is ${size} bytes (${(size / GiB).toFixed(3)} GiB), header ${JSON.stringify(header)}; footprint() counts ` +
     `${(after / GiB).toFixed(3)} GiB after it (${((size + after) / GiB).toFixed(2)} GiB in all), a ${wide ? "64" : "32"}-bit memory, keys and values in ${halfKeys ? "float16" : "float32"}`);
   // The review of T230 and T231: the V8 of Node 24 (13.6) on arm64 reads v128.load32_splat of an address above 4 GiB at
-  // its low 32 bits, and the ternary kernels take every scale so: there this model (7 GiB) is computed wrongly, and no
-  // number of this tool is the model's (Chromium's V8 on arm64 is right). The canary is tests/ternary-check.mjs's
-  // (--anyway: run all the same, to see what such an engine makes of the model: the comparison says whether it is right)
+  // its low 32 bits, and the ternary kernels take every scale so. The review of T233 found where: in Liftoff, V8's baseline
+  // compiler (a function runs as Liftoff's code until its budget runs out and TurboFan's replaces it, within a few
+  // milliseconds of a kernel's first call: so a kernel whose first call is above 4 GiB is computed wrongly, and one that
+  // begins below, as every kernel of this model does, is not: the 27B's numbers on arm64 agreed with x86-64's); TurboFan's
+  // code reads it right; V8 fixed Liftoff in 14.3 (Chrome 143: commit ff9dbb26c2, "[wasm][arm64] Fix splat on memory64").
+  // So where the canary (tests/ternary-check.mjs's) fails, Liftoff is turned off for everything compiled from here on
+  // (the kernels in the worker too: V8's flags are the process's) and the canary asked again: the numbers are then the
+  // model's, as on an engine that reads it right. --anyway: run all the same where it still reads wrongly
   if (base4GiB(size + after) && !splatsRight()) {
-    console.log(`page: Node ${process.version} (V8 ${process.versions.v8}, ${process.arch}) reads v128.load32_splat wrongly above 4 GiB: what it would compute here ` +
-      `is not this model${args.includes("--anyway") ? " (run anyway, as asked)" : " — FAILED (run it on x86-64)"}`);
-    if (!args.includes("--anyway")) process.exit(1);
+    v8.setFlagsFromString("--no-liftoff");
+    const right = splatsRight();
+    console.log(`page: Node ${process.version} (V8 ${process.versions.v8}, ${process.arch}) reads v128.load32_splat wrongly above 4 GiB in Liftoff's code: ` +
+      (right ? "--no-liftoff is set, and TurboFan's code reads it where it is (what is computed here is this model)"
+        : `and with --no-liftoff too: what it would compute here is not this model${args.includes("--anyway") ? " (run anyway, as asked)" : " — FAILED (run it on x86-64)"}`));
+    if (!right && !args.includes("--anyway")) process.exit(1);
   } else if (base4GiB(size + after)) console.log(`page: Node ${process.version} (V8 ${process.versions.v8}, ${process.arch}) reads v128.load32_splat above 4 GiB where it is`);
   const { memory, base } = weightsMemory(size, { shared: true, wide, after });
   let began = performance.now();
