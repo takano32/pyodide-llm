@@ -105,6 +105,20 @@ def test_only_a_granite_is_scaled():
     assert converted(source(), carried, "int8") == converted(source(), published, "int8")
 
 
+def test_a_granite_that_names_no_attention_multiplier_has_transformers_default_of_one():
+    """transformers' GraniteConfig leaves attention_multiplier 1.0 where config.json names none, so its scores are not divided
+    by the root of the head's size at all (the review of T253: a default of one over the root, a Llama's, passed every test):
+    q is multiplied by the whole root, as where config.json says 1.0 itself. llama.cpp writes no attention.scale then and
+    divides by the root: test_a_granite_gguf_that_names_no_scale_scores_as_a_llama refuses that pair."""
+    settings, weights = synthetic_weights()
+    tensors, published = granite(settings, weights, 1.0)
+    without = {key: value for key, value in published.items() if key != "attention_multiplier"}
+    assert query_scale(without) == query_scale(published) == pytest.approx(math.sqrt(settings["head_size"]))
+    check_config(without)
+    source = lambda: Safetensors(reader(safetensors_file(tensors)))
+    assert converted(source(), without, "float32") == converted(source(), published, "float32")
+
+
 @pytest.mark.parametrize("change, reason", [
     (dict(embedding_multiplier=12.0), "embedding_multiplier is 12.0"), (dict(residual_multiplier=0.22), "residual_multiplier is 0.22"),
     (dict(logits_scaling=10.0), "logits_scaling is 10.0"), (dict(logits_scaling=None), "logits_scaling is None"),

@@ -66,9 +66,12 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
+      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the test tools and the browser
+        timeout-minutes: 20
         shell: bash
         run: |
+          bash tests/apt-timeouts.sh
           npm ci
           case "${{ inputs.browser }}" in
             chrome|msedge) ;;

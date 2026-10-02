@@ -4,6 +4,17 @@
 #
 #   node tests/ci.mjs run tests.yml extra="bash tests/reference_llama.sh hf-granite-4.2-3b" --ref <branch> --grep "reference:"
 #   python tests/reference_llama.py <directory for the downloads> [--only=made-up] [<id of the list> ...] [--positions=96]
+#                                   [--weak] [--layers=N] [--gguf]
+#
+# --weak (the review of T253): after the right engine has been held to transformers, weak faults are put into its weights
+# (q of every layer 0.1%, 0.01% and 0.001% off, one head's 1% and 10%, one layer's q left unmultiplied, one key head's 1%)
+# and each is held the same way, to say what the check sees: by the logits (the line below) and by the states of every layer
+# (the keys and values each layer wrote, relative to the layer's largest: the right engine is a few 1e-6 from transformers',
+# a fault of one head of one layer is far more of them than of the logits, which come after 24 to 42 layers). --layers=N:
+# only the first N layers of a real model, on both sides, for a model whose float32 a runner has not room for. --gguf: the
+# engine's weights from the entry's GGUF (Q8_0, the original's vocabulary and config.json), as the page reads the list's
+# models, against transformers on the original's weights: the route the visitors take, held to a line that Q8_0's rounding
+# allows (GGUF_LINE below), which sees a fault that changes the model and none of the weak ones.
 #
 # Two parts, every line of the log beginning with "reference:".
 #   made-up: tiny random Granites of transformers' own class (GraniteForCausalLM), whose attention multiplies its
@@ -50,6 +61,15 @@ PROMPT = "What is the capital of Japan? Answer in one sentence."
 NEW_TOKENS = 16
 STEPPED = 32  # positions transformers also computes token by token with its cache, for the floor of the line
 CHUNK = 8 << 20
+# --weak: faults put into the engine's weights, to see what the check sees (weak_errors); the made-up Granites' take seconds,
+# the real model's about as long as its own forward pass, 96 positions, each
+WEAK = "--weak" in sys.argv
+# --gguf: the real model's weights from the list's GGUF, as the page reads them (Q8_0), against transformers on the original's.
+# Q8_0 rounds every weight (about half a step of 1/127 of its group's largest: 0.3 to 0.7% of a typical weight), so the lines are
+# of another kind than the float32 ones: a fault that changes the model (q scaled twice or not at all, q left turned) is a logit or
+# several, the rounding some hundredths (a logit of 36 at most here), and the keys and values of a layer differ by about a percent
+GGUF = "--gguf" in sys.argv
+GGUF_LINE, GGUF_STATE_LINE = 1.0, 0.1
 
 say = lambda *parts: print("reference:", *parts, flush=True)
 
@@ -76,18 +96,192 @@ def float32_arithmetic():
     torch.nn.Linear.forward = forward
 
 
-def logits_of(model, ids, stepped=0):
-    """transformers' logits for these ids at once, and for the first `stepped` of them token by token with its cache"""
+def cache_arrays(cache):
+    """[(keys, values)] of a transformers cache: float32 arrays (key-value heads, positions, head size), a pair for each
+    layer"""
+    import torch
+    layers = getattr(cache, "layers", None)
+    pairs = [(layer.keys, layer.values) for layer in layers] if layers is not None else list(zip(cache.key_cache, cache.value_cache))
+    return [(k[0].to(torch.float32).numpy(), v[0].to(torch.float32).numpy()) for k, v in pairs]
+
+
+def logits_of(model, ids, stepped=0, states=False):
+    """transformers' logits for these ids at once, and for the first `stepped` of them token by token with its cache.
+    states: and the keys and values of every layer, of the whole pass and of the stepped one (cache_arrays)"""
     import torch
     with torch.no_grad():
         embedded = model.get_input_embeddings()(torch.tensor([ids])).to(torch.float32)
-        whole = model(inputs_embeds=embedded).logits[0].to(torch.float32).numpy()
+        out = model(inputs_embeds=embedded, use_cache=states)
+        whole = out.logits[0].to(torch.float32).numpy()
+        kept = cache_arrays(out.past_key_values) if states else None
         past, steps = None, []
         for at in range(min(stepped, len(ids))):
-            out = model(inputs_embeds=embedded[:, at:at + 1], past_key_values=past, use_cache=True)
-            past = out.past_key_values
-            steps.append(out.logits[0, -1].to(torch.float32).numpy())
-    return whole, steps
+            step = model(inputs_embeds=embedded[:, at:at + 1], past_key_values=past, use_cache=True)
+            past = step.past_key_values
+            steps.append(step.logits[0, -1].to(torch.float32).numpy())
+    return (whole, steps, kept, cache_arrays(past) if states and past is not None else None) if states else (whole, steps)
+
+
+# ------------------------------------------------------------------------------------------------ a layer at a time
+class ByLayer:
+    """transformers' model of the original in a directory, a layer at a time: for a model whose weights a runner has not
+    room for even as stored (Granite 4.2 8B is 16.8 GB in bfloat16 and a runner of 16 GB cannot load it), as the review of
+    T246 held a Ternary Bonsai 8B to transformers. A model of the same config with ONE layer, into which the weights of
+    each layer of the original are read from the safetensors in turn (bfloat16 to float32 is exact: the arithmetic is the
+    float32 model's); the embedding, the rotary embedding, the layer, the last norm and the classifier are transformers'
+    own modules, and the loop over the layers, the causal mask and what a Granite's model does outside its layers (the
+    embedding multiplier before the first, the logits' scaling after the classifier) are this class's. Only for a model
+    whose layers are all of one kind: a hybrid (Qwen3.5's linear and full layers) fails at the strict load of a layer of
+    the other kind, loudly."""
+
+    def __init__(self, directory):
+        import torch
+        from safetensors import safe_open
+        from transformers import AutoConfig, AutoModelForCausalLM
+        directory = Path(directory)
+        config = AutoConfig.from_pretrained(directory)
+        self.config, self.layers, config.num_hidden_layers = config, config.num_hidden_layers, 1
+        if getattr(config, "layer_types", None):
+            config.layer_types = config.layer_types[:1]
+        try:
+            self.model = AutoModelForCausalLM.from_config(config, dtype=torch.float32).eval()
+        except TypeError:  # transformers before 4.56 calls it torch_dtype
+            self.model = AutoModelForCausalLM.from_config(config, torch_dtype=torch.float32).eval()
+        index = directory / "model.safetensors.index.json"
+        names = sorted(set(json.loads(index.read_text())["weight_map"].values())) if index.exists() else ["model.safetensors"]
+        self.where = {key: file for file in [safe_open(directory / name, "pt") for name in names] for key in file.keys()}
+        self.embedding = float(getattr(config, "embedding_multiplier", 1.0))
+        self.scaling = float(getattr(config, "logits_scaling", 1.0))
+        self.put(self.model.model.embed_tokens, "model.embed_tokens.")
+        self.put(self.model.model.norm, "model.norm.")
+        if "lm_head.weight" in self.where:
+            self.put(self.model.lm_head, "lm_head.")
+        else:
+            self.model.lm_head.weight = self.model.model.embed_tokens.weight
+        say(f"by layer: {self.layers} layers from {len(names)} file(s), {len(self.where)} tensors; the classifier is "
+            f"{'its own' if 'lm_head.weight' in self.where else 'the embedding'}")
+
+    def put(self, module, prefix):
+        """read the weights of `module` from the tensors named by `prefix` (as float32)"""
+        import torch
+        module.load_state_dict({key: self.where[prefix + key].get_tensor(prefix + key).to(torch.float32)
+                                for key in module.state_dict()}, strict=True)
+
+    def hidden(self, rows):
+        """The hidden states after the last norm of each of these lists of ids, all through each layer together (one
+        reading of the layer's weights): a list of tensors (positions, width). A shorter list is padded on the right with
+        its own last token, which no earlier position sees."""
+        import torch
+        longest = max(len(row) for row in rows)
+        ids = torch.tensor([row + [row[-1]] * (longest - len(row)) for row in rows])
+        positions = torch.arange(longest)[None]
+        model = self.model.model
+        with torch.no_grad():
+            hidden = model.embed_tokens(ids) * self.embedding
+            embeddings = model.rotary_emb(hidden, positions)
+            mask = torch.full((longest, longest), torch.finfo(hidden.dtype).min).triu(1)[None, None]
+            layer = model.layers[0]
+            for number in range(self.layers):
+                self.put(layer, f"model.layers.{number}.")
+                out = layer(hidden, attention_mask=mask, position_ids=positions, position_embeddings=embeddings)
+                hidden = out[0] if isinstance(out, tuple) else out
+            hidden = model.norm(hidden)
+        return [hidden[at, :len(row)] for at, row in enumerate(rows)]
+
+    def logits(self, hidden):
+        """the logits of hidden states (positions, width) from `hidden()`"""
+        import torch
+        with torch.no_grad():
+            return self.model.lm_head(hidden.to(torch.float32)) / self.scaling
+
+
+# ------------------------------------------------------------------------------------------ the states of every layer
+# The logits are the end of 24 to 42 layers' work, and a fault of one head of one layer is a few ten-thousandths of
+# them (a 1% fault of one head's scale of Granite 4.2 3B: 3e-4 of a logit, the line is 1e-3). The keys and values every
+# layer writes are what the next layer saw: a fault shows in them a layer sooner and not diluted by what comes after
+# (the review of T253; T229's review found the same of the states of a Qwen3.5's layers).
+def engine_cache(llama, count):
+    """The engine's keys and values of the first `count` positions as transformers holds them: for each layer, (key heads,
+    count, head size). The engine turns RoPE's pairs adjacent (the first of a pair is the first half of a head in
+    transformers' order and the second the second half), and the values it holds as they are."""
+    keys = llama.key_cache[:, :, :count]
+    layers, heads, positions, size = keys.shape
+    turned = keys.reshape(layers, heads, positions, size // 2, 2)
+    keys = np.concatenate([turned[..., 0], turned[..., 1]], axis=-1)
+    return [(keys[layer], llama.value_cache[layer, :, :count].copy()) for layer in range(layers)]
+
+
+def state_gap(ours, theirs):
+    """(the largest difference of the keys, of the values) over the layers, each layer's relative to its own largest
+    value of theirs: with the layer it is in, and the largest key and value of all. NaN is as far as can be."""
+    gaps = {"keys": [], "values": []}
+    top = {"keys": 0.0, "values": 0.0}
+    for (our_k, our_v), (their_k, their_v) in zip(ours, theirs):
+        for name, a, b in (("keys", our_k, their_k), ("values", our_v, their_v)):
+            largest = float(np.abs(b).max())
+            top[name] = max(top[name], largest)
+            gap = float(np.abs(np.asarray(a, dtype=np.float64) - np.asarray(b, dtype=np.float64)).max())
+            gaps[name].append(float("inf") if gap != gap else gap / largest if largest > 0 else gap)
+    worst = {name: max(range(len(values)), key=values.__getitem__) for name, values in gaps.items()}
+    return {name: (gaps[name][worst[name]], worst[name]) for name in gaps}, top
+
+
+def state_line(floor):
+    """What the engine's states may be from transformers': ten times what transformers' own two computations differ by
+    (relative, as state_gap), and no less than 1e-4"""
+    return max(1e-4, 10 * max(floor["keys"], floor["values"]))
+
+
+def scaled(llama, name, layers, rows, factor):
+    """A fault in the engine's weights: the rows of matrix `name` (wq or wk) in these layers times factor, in a copy that
+    stands in for the matrix. Returns what puts the matrix back."""
+    original = getattr(llama, name)
+    changed = np.array(original, dtype=np.float32)
+    for layer in layers:
+        changed[layer, rows] *= np.float32(factor)
+    setattr(llama, name, changed)
+    return lambda: setattr(llama, name, original)
+
+
+def weak_errors(label, llama, tokens, whole, theirs, line, lined, scale):
+    """The faults a conversion of a Granite could have that are weak (T253's review): what q was multiplied by 0.1%, 0.01%
+    and 0.001% off, one head's, one layer's q left as it was, one key head's scale 1% off. Each put into the engine's
+    weights and held to transformers' as the real engine is: by the logits and by the states of every layer. Returns the
+    faults the check did not see among those it must (the first, one head 10%, a layer unscaled, a key head 1% off)."""
+    layers, size = llama.wq.shape[0], llama.head_size
+    middle, head, key_head = layers // 2, max(llama.n_heads // 3, 0), llama.n_kv_heads // 2
+    rows = lambda at: slice(at * size, (at + 1) * size)
+    every = range(layers)
+    faults = [("q of every layer 0.1% off", lambda: scaled(llama, "wq", every, slice(None), 1.001), True),
+              ("q of every layer 0.01% off", lambda: scaled(llama, "wq", every, slice(None), 1.0001), False),
+              ("q of every layer 0.001% off", lambda: scaled(llama, "wq", every, slice(None), 1.00001), False),
+              (f"q of one head (head {head}, layer {middle}) 1% off", lambda: scaled(llama, "wq", [middle], rows(head), 1.01), False),
+              (f"q of one head (head {head}, layer {middle}) 10% off", lambda: scaled(llama, "wq", [middle], rows(head), 1.1), True),
+              (f"k of one key head (head {key_head}, layer {middle}) 1% off", lambda: scaled(llama, "wk", [middle], rows(key_head), 1.01), True)]
+    if scale != 1.0:
+        faults.insert(4, (f"q of layer {middle} left as it was (not multiplied by {scale:.6g})",
+                          lambda: scaled(llama, "wq", [middle], slice(None), 1 / scale), True))
+    missed = []
+    for what, put, must in faults:
+        restore = put()
+        try:
+            ours = [llama.forward(token, pos).copy() for pos, token in enumerate(tokens)]
+            states = engine_cache(llama, len(tokens))
+        finally:
+            restore()
+        largest, mean, same, margin = differences(ours, whole)
+        gaps, _ = state_gap(states, theirs)
+        by_logits = not (largest <= line and (same == len(tokens) or margin <= 2 * largest))
+        by_states = not (max(gaps["keys"][0], gaps["values"][0]) <= lined)
+        seen = by_logits or by_states
+        if must and not seen:
+            missed.append(what)
+        say(f"{label}: a fault, {what}: logits largest difference {largest:.2e} ({largest / line:.2g} of the line), the same most "
+            f"likely token at {same} of {len(tokens)}; states: keys {gaps['keys'][0]:.2e} (layer {gaps['keys'][1]}), values "
+            f"{gaps['values'][0]:.2e} (layer {gaps['values'][1]}), {max(gaps['keys'][0], gaps['values'][0]) / lined:.2g} of the line; "
+            f"seen by {'both' if by_logits and by_states else 'the logits' if by_logits else 'the states' if by_states else 'neither'}"
+            f"{'' if seen or not must else ' — FAILED'}")
+    return missed
 
 
 def greedy(model, ids, count, stops):
@@ -147,7 +341,7 @@ def made_up(name, settings, positions=80):
             parameter.copy_((1.0 if key.endswith("norm.weight") else 0.0) + scale * torch.randn_like(parameter))
     rng = np.random.default_rng(253)
     tokens = [int(token) for token in rng.integers(0, 320, positions)]
-    whole, stepped = logits_of(model, tokens, positions)
+    whole, stepped, cache_whole, cache_stepped = logits_of(model, tokens, positions, states=True)
     tensors = {key: value.detach().numpy() for key, value in model.state_dict().items()}
     if config.tie_word_embeddings:
         tensors.pop("lm_head.weight", None)
@@ -169,6 +363,18 @@ def made_up(name, settings, positions=80):
         failed |= not ok
         say(f"made-up ({name}), the engine against {what}: largest difference {largest:.2e}, mean {mean:.2e}, the same "
             f"most likely token at {same} of {positions} positions{'' if ok else f' — FAILED (the line: {line:.1e})'}")
+    # the states of every layer (the keys and values), against the whole pass and against the floor of transformers' own two
+    floors, _ = state_gap(cache_stepped, cache_whole)
+    lined = state_line({kind: gap for kind, (gap, _) in floors.items()})
+    theirs, top = state_gap(engine_cache(llama, positions), cache_whole)
+    ok = max(theirs["keys"][0], theirs["values"][0]) <= lined
+    failed |= not ok
+    say(f"made-up ({name}), states of every layer, the engine against transformers: keys {theirs['keys'][0]:.2e} (layer "
+        f"{theirs['keys'][1]}), values {theirs['values'][0]:.2e} (layer {theirs['values'][1]}), relative to each layer's largest "
+        f"(keys up to {top['keys']:.3g}, values {top['values']:.3g}); transformers' own two: keys {floors['keys'][0]:.2e}, values "
+        f"{floors['values'][0]:.2e}; the line {lined:.1e}{'' if ok else ' — FAILED'}")
+    if WEAK:
+        failed |= bool(weak_errors(f"made-up ({name})", llama, tokens, whole, cache_whole, line, lined, llama2_convert.query_scale(published)))
     largest, mean, same, _ = differences(as_a_llama, whole)
     seen = largest > 100 * line
     failed |= not seen
@@ -237,11 +443,14 @@ class File:
         self.data[offset:offset + raw.size] = raw
 
 
-def real(entry, directory, positions):
+def real(entry, directory, positions, layers=0):
+    """layers: only the first of the model's layers, the same on both sides (the model's own embedding, the norm and the
+    classifier; every weight of those layers as it is): for a model whose float32 does not fit a runner (Granite 4.2 8B is
+    35 GB), the multiplier and the real weights of its layers through the whole conversion, in float32 to the floor."""
     import torch
     import transformers
     from format_check import filled
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
     id = entry["id"]
     original = entry["hf"].get("vocabulary") or entry["hf"]
@@ -261,20 +470,42 @@ def real(entry, directory, positions):
         for name in names:
             fetch(repo, revision, name, folder)
     config = (folder / "config.json").read_text()
+    if layers:
+        config = json.dumps({**json.loads(config), "num_hidden_layers": layers})
+        say(f"{id}: only the first {layers} of the layers, on both sides")
 
     # the conversion, the way the page does it: the shards joined, each file in its own order, float32
     shards = []
-    for name in names:
-        shard = np.memmap(folder / name, dtype=np.uint8, mode="r")
-        size = struct.unpack("<Q", bytes(shard[:8]))[0]
-        shards.append((shard, bytes(shard[8:8 + size]).decode(), 8 + size))
-    if len(shards) == 1:
-        header, base = shards[0][1], shards[0][2]
-        pieces = [(shards[0][0], base, len(shards[0][0]))]
+    if GGUF:
+        # the route the list's entries take (T136's second stage): the entry's own GGUF (Q8_0) as the weights, the original's
+        # vocabulary and config.json. transformers still has the original's weights, so the two differ by what Q8_0 rounds
+        # (about 0.5% of a weight): a line of a different kind, below
+        weights = entry["hf"]["weights"]
+        if not weights.endswith(".gguf"):
+            sys.exit(f"reference: {id} is not a GGUF entry")
+        gguf = fetch(entry["hf"]["repo"], entry["hf"]["revision"], weights, directory / "gguf" / entry["hf"]["revision"])
+        data = np.memmap(gguf, dtype=np.uint8, mode="r")
+        size = 1 << 20
+        while True:
+            try:
+                header, base = llama2_convert.gguf_weights(bytes(data[:size]), config)
+                break
+            except llama2_convert.Incomplete:
+                size *= 2
+        pieces = [(data, base, len(data))]
+        say(f"{id}: weights from {entry['hf']['repo']}'s {weights} ({len(data)} bytes), the vocabulary and config.json of the original")
     else:
-        header, lengths = joined_shards([text for _, text, _ in shards])
-        base = 0
-        pieces = [(shard, begin, begin + length) for (shard, _, begin), length in zip(shards, lengths)]
+        for name in names:
+            shard = np.memmap(folder / name, dtype=np.uint8, mode="r")
+            size = struct.unpack("<Q", bytes(shard[:8]))[0]
+            shards.append((shard, bytes(shard[8:8 + size]).decode(), 8 + size))
+        if len(shards) == 1:
+            header, base = shards[0][1], shards[0][2]
+            pieces = [(shards[0][0], base, len(shards[0][0]))]
+        else:
+            header, lengths = joined_shards([text for _, text, _ in shards])
+            base = 0
+            pieces = [(shard, begin, begin + length) for (shard, _, begin), length in zip(shards, lengths)]
     read = lambda name: (folder / name).read_text() if (folder / name).exists() else None
     tokenizer_config = read("tokenizer_config.json") or ""
     has_template = bool(json.loads(tokenizer_config).get("chat_template")) if tokenizer_config else False
@@ -334,10 +565,16 @@ def real(entry, directory, positions):
 
     float32_arithmetic()
     stored = json.loads(config).get("dtype") or json.loads(config).get("torch_dtype") or "float32"
-    model = AutoModelForCausalLM.from_pretrained(str(folder), dtype=getattr(torch, stored)).eval()
-    say(f"{id}: transformers' {type(model).__name__}, weights held as {stored}, arithmetic in float32")
+    shorter = AutoConfig.from_pretrained(str(folder))
+    if layers:
+        shorter.num_hidden_layers = layers
+        if getattr(shorter, "layer_types", None):
+            shorter.layer_types = shorter.layer_types[:layers]
+    model = AutoModelForCausalLM.from_pretrained(str(folder), config=shorter, dtype=getattr(torch, stored)).eval()
+    say(f"{id}: transformers' {type(model).__name__}, weights held as {stored}, arithmetic in float32, "
+        f"{model.config.num_hidden_layers} layers")
     began = time.perf_counter()
-    whole, stepped = logits_of(model, ids, STEPPED)
+    whole, stepped, cache_whole, cache_stepped = logits_of(model, ids, STEPPED, states=True)
     say(f"{id}: transformers, {len(ids)} positions at once and {len(stepped)} token by token in {time.perf_counter() - began:.1f} s")
     theirs = greedy(model, chat, NEW_TOKENS, set(options["stop_tokens"]))
     del model
@@ -345,6 +582,7 @@ def real(entry, directory, positions):
 
     began = time.perf_counter()
     ours = [llama.forward(token, pos).copy() for pos, token in enumerate(ids)]
+    states = engine_cache(llama, len(ids))
     say(f"{id}: the engine (NumPy, float32), {len(ids)} positions in {time.perf_counter() - began:.1f} s")
     for what, logits in (("transformers", whole), ("the engine", ours)):
         logits = np.asarray(logits)
@@ -357,6 +595,8 @@ def real(entry, directory, positions):
     # is 7e-5 off here); the most likely token the same wherever the reference's best two are further apart than twice
     # the difference. A NaN is past the line (largest <= line is false)
     line = max(1e-3, 10 * floor)
+    if GGUF:
+        line = GGUF_LINE  # (Q8_0 rounds every weight: the engine and transformers hold different weights)
     for what, reference_logits, mine_logits in (("transformers at once", whole, ours),
                                                 ("transformers token by token", stepped, ours[:len(stepped)])):
         largest, mean, same, margin = differences(mine_logits, reference_logits)
@@ -366,13 +606,31 @@ def real(entry, directory, positions):
             f"token at {same} of {len(mine_logits)} positions (the largest gap between the reference's best two where "
             f"it is not: {margin:.2e}){'' if ok else f' — FAILED (the line: {line:.1e})'}")
 
+    # the states: the keys and values of every layer (see state_gap), against transformers' whole pass and against the floor of
+    # its own two (the stepped positions of the cache against the same of the whole pass)
+    floors, _ = state_gap(cache_stepped, [(k[:, :len(stepped)], v[:, :len(stepped)]) for k, v in cache_whole])
+    lined = GGUF_STATE_LINE if GGUF else state_line({kind: gap for kind, (gap, _) in floors.items()})
+    gaps, top = state_gap(states, cache_whole)
+    ok = max(gaps["keys"][0], gaps["values"][0]) <= lined
+    failed |= not ok
+    say(f"{id}: states of every layer, the engine against transformers' ({len(ids)} positions): keys {gaps['keys'][0]:.2e} "
+        f"(layer {gaps['keys'][1]}), values {gaps['values'][0]:.2e} (layer {gaps['values'][1]}), each layer's relative to its largest; "
+        f"transformers' own two: keys {floors['keys'][0]:.2e}, values {floors['values'][0]:.2e}; the line {lined:.1e}"
+        f"{'' if ok else ' — FAILED'}")
+    say(f"{id}: the largest key {top['keys']:.4g} and the largest value {top['values']:.4g} of any layer (a float16 holds 65504)")
+    if WEAK and not GGUF:
+        missed = weak_errors(id, llama, ids, whole, cache_whole, line, lined, llama2_convert.query_scale(llama2_convert.normalize(json.loads(config))))
+        failed |= bool(missed)
+        say(f"{id}: weak faults the check must see and did not: {missed or 'none'}")
+
     # 16 greedy tokens after the page's ids of the chat prompt, by transformers and by the engine's generate()
     text = "".join(llama.generate(typed, steps=len(chat) - 1 + NEW_TOKENS, temperature=0.0, echo=False))
     wrote = reference.decode(theirs, skip_special_tokens=False)
     say(f"{id}: transformers wrote {json.dumps(wrote, ensure_ascii=False)} {theirs}")
     say(f"{id}: the engine wrote {json.dumps(text, ensure_ascii=False)}")
-    failed |= wrote != text
-    say(f"{id}: the two wrote {'the same' if wrote == text else 'OTHER TEXTS — FAILED'}")
+    # (from the GGUF, Q8_0 may turn a close second into the likeliest token a few tokens in: the texts are shown, not held)
+    failed |= wrote != text and not GGUF
+    say(f"{id}: the two wrote {'the same' if wrote == text else 'other texts' + ('' if GGUF else ' — FAILED')}")
     del llama
     gc.collect()
     sink.path.unlink()
@@ -383,13 +641,14 @@ def main():
     directory = Path(sys.argv[1])
     only = next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--only=")), None)
     positions = int(next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--positions=")), 96))
+    layers = int(next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--layers=")), 0))
     ids = [arg for arg in sys.argv[2:] if not arg.startswith("--")]
     failed = False
     if only in (None, "made-up"):
         for name, settings in MADE_UP.items():
             failed |= made_up(name, settings)
     for entry in entries(ids) if only is None else []:
-        failed |= real(entry, directory, positions)
+        failed |= real(entry, directory, positions, layers)
     say("FAILED" if failed else "the engine computes what transformers computes")
     sys.exit(1 if failed else 0)
 

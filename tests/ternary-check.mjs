@@ -11,6 +11,11 @@
 //     (the weights of a row are 32 bytes a group, so a kernel that read a row at the wrong stride or took a group's
 //     scale from its neighbour fails at more than one group), ranges of rows that begin and end anywhere, and groups
 //     of all +1 against activations of 127 and of -128 (the largest sums: 2 x 128 a product before the sums are taken).
+//   the largest sums (T230's review): every row of one code against activations all at one end of int8 or alternating
+//     between the two, for every code (0, 1, 2 and PQ2_0's fourth, 3), the most a lane or a group can reach (16 products of
+//     128 x 3 a lane, 32 of them a group, and minus the group's sum): the relaxed dot product's pairs (x86's pmaddubsw adds
+//     two products with saturation to int16: 2 x 128 x 3 = 768, nowhere near 32767), the sums in int32, and float32 hold
+//     all of it exactly, and matmul_t2r, matmul_t2 and the tile are the same to the bit.
 //   ternary_x: the bytes and scales of llama2_numpy.ternary() (the sign + 1 of value j at bits 2 (j & 3) of byte
 //     j >> 2, the largest |value| of a group), and its refusal of a value that is neither 0 nor of that size.
 import fs from "node:fs";
@@ -20,19 +25,46 @@ const root = new URL("../", import.meta.url).pathname;
 const f = Math.fround;
 let checked = 0;
 
-for (const wide of [false, true]) {
-  const memory = wide ? new WebAssembly.Memory({ initial: 64n, address: "i64" }) : new WebAssembly.Memory({ initial: 64 });
+// where the weights of a model past 4 GiB lie: the kernels take a 64-bit address, and every product of a row, a scale and an
+// activation of this check is read from above the first 4 GiB (the memory is made, not touched: a few pages of it are)
+const HIGH = 4 * 2 ** 30 + 2 * 65536;
+// A canary for the engine, not the kernels: the V8 of Node 24 (13.6) on arm64 reads v128.load32_splat (and v128.load32_lane) of
+// an address above 4 GiB at its low 32 bits, so that every kernel that takes a scale so (the ternary ones' weights' scales, the
+// int8 tile's) reads the wrong number there (Chromium 148's V8 on arm64 reads them right: T230's review). A module of its own
+// (written out here: a 64-bit memory it imports, splat(address) = v128.load32_splat of it, lane 0) says whether this engine
+// does: where it does, the config above 4 GiB is no check of the kernels and is left out, saying why.
+const CANARY = Uint8Array.from([0, 97, 115, 109, 1, 0, 0, 0, 1, 6, 1, 96, 1, 126, 1, 125, 2, 15, 1, 3, 101, 110, 118, 6, 109, 101, 109, 111, 114, 121, 2, 4, 1,
+  3, 2, 1, 0, 7, 9, 1, 5, 115, 112, 108, 97, 116, 0, 0, 10, 13, 1, 11, 0, 32, 0, 253, 9, 2, 0, 253, 31, 0, 11]);
+function splatsRight(memory) {
+  const splat = new WebAssembly.Instance(new WebAssembly.Module(CANARY), { env: { memory } }).exports.splat;
+  const F = new Float32Array(memory.buffer), at = HIGH + 4096;
+  F[at / 4] = 1.5;
+  F[(at - 2 ** 32) / 4] = 2.5;  // where an address that lost its upper 32 bits would read
+  return splat(BigInt(at)) === 1.5;
+}
+for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
+  let memory;
+  try {
+    memory = wide ? new WebAssembly.Memory({ initial: BigInt(Math.ceil((base + 4 * 2 ** 20) / 65536)), address: "i64" }) : new WebAssembly.Memory({ initial: 64 });
+  } catch (error) {
+    console.log(`ternary-check: no 64-bit memory of ${(base / 2 ** 30).toFixed(1)} GiB and more in this Node: skipped (${error.message})`);
+    continue;
+  }
+  if (base && !splatsRight(memory)) {
+    console.log("ternary-check: this engine reads v128.load32_splat above 4 GiB at the low 32 bits of the address (V8 13.6 on arm64, Node 24): the kernels above 4 GiB cannot be checked here, skipped");
+    continue;
+  }
   const load = (name) => addressed(new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/${name}${wide ? "64" : ""}.wasm`)),
     { env: { memory } }).exports, wide);
   const k = load("simdkernel_plain"), r = load("simdkernel_relaxed_plain");
   const I = new Int8Array(memory.buffer), U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer), N = new Int32Array(memory.buffer);
   let seed = 231;
   const next = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 8;
-  const where = wide ? " (64-bit memory)" : "";
+  const where = wide ? (base ? " (64-bit memory, above 4 GiB)" : " (64-bit memory)") : "";
 
   // ---- interleave
   for (const n of [128, 256, 384, 640, 1152]) {
-    const xq = 4096, xs = xq + 2048, ng = n / 32;
+    const xq = base + 4096, xs = xq + 2048, ng = n / 32;
     const a = Int8Array.from({ length: n }, () => (next() & 255) - 128);
     a.fill(127, 0, 32);
     a.fill(-128, 32, 64);
@@ -56,7 +88,7 @@ for (const wide of [false, true]) {
 
   // ---- matmul_t2r and matmul_t2
   const rows = 13, most = 9;  // groups of 128 a row, at most
-  const w = 65536, ws = w + rows * most * 32, xq = ws + rows * most * 4, xs = xq + most * 128, out = xs + most * 4 * 8, end = out + rows * 4;
+  const w = base + 65536, ws = w + rows * most * 32, xq = ws + rows * most * 4, xs = xq + most * 128, out = xs + most * 4 * 8, end = out + rows * 4;
   if (end > memory.buffer.byteLength) throw new Error("ternary-check's memory is too small");
   for (const groups of [1, 2, 3, 4, 5, 7, most]) {
     const n = groups * 128, ng = n / 32;
@@ -129,9 +161,75 @@ for (const wide of [false, true]) {
     }
   }
 
+  // ---- the largest sums (T230's review): the rows of one code each (0, 1, 2, and 3, which a PQ2_0 file does not have but
+  // the mask lets through) against activations at one end of int8, at the other and alternating, so that every product of
+  // every lane is the largest it can be (|a| x code: 128 x 3 = 384, 16 a lane, 32 a group of 32 activations, and minus
+  // their sum, 4096): the relaxed dot product's pairs (pmaddubsw on x86 adds two products with saturation to int16: 768 of
+  // 32767) and sums (int32) take all of it, and so does float32. The three kernels give the exact sums' number to the bit.
+  {
+    const groups = most, n = groups * 128, ng = n / 32, count = 5, frame = 2048, outFrame = 64;
+    const patterns = [(j) => -128, (j) => 127, (j) => (j & 1 ? 127 : -128), (j) => (j & 32 ? -128 : 127), (j) => 0, (j) => -127];
+    U.fill(0, w, w + rows * groups * 32);
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < n; j++) U[w + (i * n + j >> 2)] |= (i & 3) << (2 * (j & 3));  // row i: every weight the code i & 3
+    }
+    for (let g = 0; g < rows * groups; g++) F[ws / 4 + g] = f(0.5 + 0.01 * g);
+    const frames = end + 4096, outs = frames + count * frame, alone = outs + count * outFrame;
+    if (alone + rows * 4 > memory.buffer.byteLength) throw new Error("ternary-check's memory is too small for the largest sums");
+    for (const [index, pattern] of patterns.entries()) {
+      for (let t = 0; t < count; t++) {
+        const at = frames + t * frame;  // five tokens: pattern, its negative where it is not 0, and the pattern again shifted
+        for (let j = 0; j < n; j++) I[at + j] = Math.max(-128, Math.min(127, t % 2 ? -pattern(j) : pattern(j + t)));
+        for (let g = 0; g < ng; g++) F[(at + most * 128) / 4 + g] = f(1e-2 * (1 + ((g + t) % 7)));
+        k.interleave(at, at + most * 128, n);
+      }
+      for (let t = 0; t < count; t++) {
+        const at = frames + t * frame;
+        // the activations as they were before interleave(), from the same rule
+        const a = Int8Array.from({ length: n }, (_, j) => Math.max(-128, Math.min(127, t % 2 ? -pattern(j) : pattern(j + t))));
+        const expected = Array.from({ length: rows }, (_, i) => {
+          const lanes = [0, 0, 0, 0];
+          for (let g = 0; g < groups; g++) {
+            for (let lane = 0; lane < 4; lane++) {
+              let sum = 0;
+              for (let j = g * 128 + lane * 32; j < g * 128 + lane * 32 + 32; j++) sum += ((i & 3) - 1) * a[j];
+              lanes[lane] = f(lanes[lane] + f(f(sum * F[(at + most * 128) / 4 + g * 4 + lane]) * F[ws / 4 + i * groups + g]));
+            }
+          }
+          return f(f(f(lanes[0] + lanes[1]) + lanes[2]) + lanes[3]);
+        });
+        for (const [name, kernel] of [["matmul_t2r", r.matmul_t2r], ["matmul_t2", k.matmul_t2]]) {
+          F.fill(-7, out / 4, out / 4 + rows);
+          kernel(out, at, at + most * 128, w, ws, n, 0, rows, 3);
+          for (let i = 0; i < rows; i++) {
+            if (!Object.is(F[out / 4 + i], expected[i])) {
+              throw new Error(`${name}${where}: the largest sums, pattern ${index}, token ${t}, row ${i} (code ${i & 3}): ${F[out / 4 + i]} against ${expected[i]}`);
+            }
+          }
+          checked += 1;
+        }
+        // the tile takes the five tokens whole (a four and the one left after it)
+        if (t === count - 1) {
+          F.fill(-7, outs / 4, (outs + count * outFrame) / 4);
+          r.matmul_t2r_tile(outs, frames, frames + most * 128, w, ws, n, 0, rows, count, outFrame, frame, 3);
+          for (let u = 0; u < count; u++) {
+            F.fill(-7, alone / 4, alone / 4 + rows);
+            r.matmul_t2r(alone, frames + u * frame, frames + u * frame + most * 128, w, ws, n, 0, rows, 3);
+            for (let i = 0; i < rows; i++) {
+              if (!Object.is(F[(outs + u * outFrame) / 4 + i], F[alone / 4 + i])) {
+                throw new Error(`matmul_t2r_tile${where}: the largest sums, pattern ${index}, token ${u}, row ${i}: ${F[(outs + u * outFrame) / 4 + i]} against ${F[alone / 4 + i]}`);
+              }
+            }
+          }
+          checked += 1;
+        }
+      }
+    }
+  }
+
   // ---- ternary_x
   {
-    const groups = 40, x = 65536, packed = x + groups * 512, scales = packed + groups * 32;
+    const groups = 40, x = base + 65536, packed = x + groups * 512, scales = packed + groups * 32;
     const make = () => {
       for (let g = 0; g < groups; g++) {
         // a scale of every size, a group of zeros, one of -0 alone

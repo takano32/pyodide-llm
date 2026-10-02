@@ -98,12 +98,13 @@ jobs:
       # T241's review: this step is about 2 to 5 minutes. Run 36902097346 of main (the full suite) had its Chromium job stay in
       # `npx playwright-core install --with-deps chromium`, in the apt it runs (the last line of the log was a "Get:" of
       # archive.ubuntu.com's noble-security InRelease), until the job's 120 minutes were over: the tests never began. apt gets
-      # time-outs and retries here, and the step a limit of 20 minutes, so that a stuck download fails the job in minutes
+      # time-outs and retries here (tests/apt-timeouts.sh, T262: the one place for every workflow), and the step a limit of
+      # 20 minutes, so that a stuck download fails the job in minutes
       - name: Download and convert the models, compile the kernels, install the browser
         timeout-minutes: 20
         shell: bash
         run: |
-          printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\n' | sudo tee /etc/apt/apt.conf.d/99-ci-timeouts > /dev/null
+          bash tests/apt-timeouts.sh
           pip install numpy tokenizers regex
           npm ci
           make models kernels
@@ -160,7 +161,7 @@ jobs:
         timeout-minutes: 20
         shell: bash
         run: |
-          printf 'Acquire::http::Timeout "30";\nAcquire::https::Timeout "30";\nAcquire::Retries "3";\n' | sudo tee /etc/apt/apt.conf.d/99-ci-timeouts > /dev/null
+          bash tests/apt-timeouts.sh
           pip install numpy tokenizers regex
           npm ci
           make models kernels

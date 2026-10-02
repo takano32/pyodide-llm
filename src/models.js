@@ -124,8 +124,9 @@ const QWEN35_AT_ONCE = `${QWEN35_THINKING}\n</think>\n\n`;
 const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
   specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>",
     "</tool_call>", "<|file_sep|>", "<|im_start|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
-// T253: IBM's Granite 4.2. Its chat_template defines a macro (tool_to_json), which the converter's reader refuses:
-// one turn by hand, as the real Jinja writes it with enable_thinking true (its default) and false, with the empty
+// T253: IBM's Granite 4.2. The converter's reader cannot read its chat_template (it stops at the inline `a if b else c` and
+// at the empty list `[]`; the macro the template defines, tool_to_json, it skips, as it skips any definition: the review of
+// T253 ran the reader on it): one turn by hand, as the real Jinja writes it with enable_thinking true (its default) and false, with the empty
 // system turn it always writes (the same IDs as transformers' apply_chat_template for tests/format_check.py's
 // prompts). As for a Qwen3.5 (T236): the real tokenizer begins a text with no BOS (its post-processor adds none, and
 // the template does not write the <s> config.json names), so the BOS here is the format's own first token,
@@ -240,6 +241,12 @@ const QWEN_RESEARCH = "Qwen Research License Agreement";
 const SWALLOW = "Meta Llama 3.1 Community License and Gemma Terms of Use";
 // T250: ELYZA's card says "Meta Llama 3 Community License" under License (its metadata: llama3)
 const LLAMA_3 = "Meta Llama 3 Community License";
+// T251: the cards of GPT-2's medium, large and XL: "License: Modified MIT License" (OpenAI's, github.com/openai/gpt-2)
+const MODIFIED_MIT = "Modified MIT License";
+// T252: the cards of unsloth's copy and of bartowski's GGUF say llama3.1 (the license's own title: "Llama 3.1 Community
+// License Agreement"), and DeepSeek's card says what its Llama distill was made from
+const LLAMA_31 = "Llama 3.1 Community License";
+const MIT_OF_LLAMA_31 = "MIT License (derived from Llama 3.1 8B, originally under the Llama 3.1 Community License)";
 export const LICENSES = {
   "sbintuitions/tiny-lm": MIT, "llm-jp/llm-jp-3-150m": APACHE, "karpathy/tinyllamas": MIT, "ellishg/tinyllamas": MIT,
   "llm-jp/llm-jp-3-150m-instruct3": APACHE, "llm-jp/llm-jp-3-440m": APACHE, "llm-jp/llm-jp-3-440m-instruct3": APACHE,
@@ -278,6 +285,30 @@ export const LICENSES = {
   "elyza/Llama-3-ELYZA-JP-8B": LLAMA_3, "mmnga/Llama-3-ELYZA-JP-8B-gguf": LLAMA_3,
   "shisa-ai/shisa-v2.1-qwen3-8b": APACHE, "mradermacher/shisa-v2.1-qwen3-8b-GGUF": APACHE,
   "cyberagent/CAT-Thinking-8B": APACHE, "mmnga-o/CAT-Thinking-8B-gguf": APACHE,
+  // T251 (2026-10-02): the English classics and the Q8_0 GGUFs they are taken from. The cards of GPT-2's medium, large
+  // and XL say "License: Modified MIT License" (their metadata, and their GGUFs': mit); DistilGPT2's and Pythia's Apache 2.0
+  "distilbert/distilgpt2": APACHE, "QuantFactory/distilgpt2-GGUF": APACHE,
+  "openai-community/gpt2-medium": MODIFIED_MIT, "mradermacher/gpt2-medium-GGUF": MODIFIED_MIT,
+  "openai-community/gpt2-large": MODIFIED_MIT, "mradermacher/gpt2-large-GGUF": MODIFIED_MIT,
+  "openai-community/gpt2-xl": MODIFIED_MIT, "mradermacher/gpt2-xl-GGUF": MODIFIED_MIT,
+  "EleutherAI/pythia-14m-deduped": APACHE, "mradermacher/pythia-14m-GGUF": APACHE,
+  "EleutherAI/pythia-2.8b": APACHE, "mradermacher/pythia-2.8b-GGUF": APACHE,
+  "EleutherAI/pythia-6.9b": APACHE, "mradermacher/pythia-6.9b-GGUF": APACHE,
+  // T252 (2026-10-02): well-known ones, and the Q8_0 GGUFs they are taken from. Qwen2.5-Coder-3B's card names the
+  // license of Qwen2.5-3B (license_name: qwen-research; its LICENSE: "Qwen RESEARCH LICENSE AGREEMENT"). Hermes 3's
+  // card says llama3 (its base model is Llama 3.2 3B). DeepSeek's card, under License: "the model weights are licensed
+  // under the MIT License ... DeepSeek-R1-Distill-Llama-8B is derived from Llama3.1-8B-Base and is originally licensed
+  // under llama3.1 license" (its metadata, and its GGUF's: mit)
+  "HuggingFaceTB/SmolLM2-135M": APACHE, "mradermacher/SmolLM2-135M-GGUF": APACHE,
+  "HuggingFaceTB/SmolLM2-360M": APACHE, "mradermacher/SmolLM2-360M-GGUF": APACHE,
+  "Qwen/Qwen2.5-Coder-1.5B-Instruct": APACHE, "bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF": APACHE,
+  "Qwen/Qwen2.5-Coder-3B-Instruct": QWEN_RESEARCH, "bartowski/Qwen2.5-Coder-3B-Instruct-GGUF": QWEN_RESEARCH,
+  "Qwen/Qwen2.5-Coder-7B-Instruct": APACHE, "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF": APACHE,
+  "NousResearch/Hermes-3-Llama-3.2-3B": LLAMA_3, "NousResearch/Hermes-3-Llama-3.2-3B-GGUF": LLAMA_3,
+  "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": MIT, "mradermacher/DeepSeek-R1-Distill-Qwen-7B-GGUF": MIT,
+  "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": MIT_OF_LLAMA_31, "mradermacher/DeepSeek-R1-Distill-Llama-8B-GGUF": MIT_OF_LLAMA_31,
+  "meta-llama/Llama-3.1-8B-Instruct": LLAMA_31, "unsloth/Meta-Llama-3.1-8B-Instruct": LLAMA_31,
+  "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF": LLAMA_31,
   // T125
   "Rakuten/RakutenAI-2.0-mini-instruct": APACHE, "Rakuten/RakutenAI-7B-chat": APACHE,
   "tokyotech-llm/Swallow-MS-7b-instruct-v0.1": APACHE, "mistralai/Mistral-7B-Instruct-v0.2": APACHE,
@@ -696,6 +727,39 @@ const LISTED = [
     // its model card's sampling: temperature 0.6 and top-p 0.95, and no penalty (it names none): Qwen3's thinking (T144)
     generation: thinking, template: "<｜User｜>{prompt}<｜Assistant｜><think>\n",
     prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
+  // T251: the English classics, each a ladder of one design. GPT-2 below and above the 124M one (DistilGPT2 is its
+  // six-layer student), and Pythia's two ends (14M to 6.9B with the five above: T84's size against speed). Q8_0 GGUFs
+  // which tests/gguf_check.py tensors held to the originals (gguf.yml's candidates), with the originals' vocabulary.
+  // GPT-2's table of positions holds 1024, which is its context; Pythia's context is 2048. The 14M is the deduped one,
+  // as the 70M is (mradermacher's GGUF of that name is of pythia-14m-deduped, its card says)
+  { group: "hf", id: "hf-pythia-14m", name: "Pythia 14M", note: "English · fetches 17 MB (GGUF) → int8 16 MB",
+    ...ggufOf("mradermacher/pythia-14m-GGUF", "6e0b616b2d66b8f2c6bb6f80fc661350a19d1dcf", "pythia-14m.Q8_0.gguf",
+      "EleutherAI/pythia-14m-deduped", "7386d9a4ae45aef494a6e704910394def3037fc5"), download: 16750496,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-distilgpt2", name: "DistilGPT2 82M", note: "English · fetches 132 MB (GGUF) → int8 92 MB",
+    ...ggufOf("QuantFactory/distilgpt2-GGUF", "b41ee4e4e4949dba1b3bed4f89a87198b82f851b", "distilgpt2.Q8_0.gguf",
+      "distilbert/distilgpt2", "2290a62682d06624634c1f46a6ad5be0f47f38aa"), download: 132303872,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-gpt2-medium", name: "GPT-2 medium 355M", note: "English · fetches 437 MB (GGUF) → int8 400 MB",
+    ...ggufOf("mradermacher/gpt2-medium-GGUF", "3b9897d67a84e967fbcc8d7de3db4c797e386740", "gpt2-medium.Q8_0.gguf",
+      "openai-community/gpt2-medium", "6dcaa7a952f72f9298047fd5137cd6e4f05f41da"), download: 437487744,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-gpt2-large", name: "GPT-2 large 774M", note: "English · fetches 898 MB (GGUF) → int8 873 MB · desktop only",
+    ...ggufOf("mradermacher/gpt2-large-GGUF", "c83630987bcee4945f3e947b1977c70e6b2760a1", "gpt2-large.Q8_0.gguf",
+      "openai-community/gpt2-large", "32b71b12589c2f8d625668d2335a01cac3249519"), download: 898165824,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-gpt2-xl", name: "GPT-2 XL 1.5B", note: "English · fetches 1.7 GB (GGUF) → int8 1.8 GB · desktop only",
+    ...ggufOf("mradermacher/gpt2-xl-GGUF", "a6a1b25a992d7541b185b0cd1227b47311f4eab6", "gpt2-xl.Q8_0.gguf",
+      "openai-community/gpt2-xl", "15ea56dee5df4983c59b2538573817e1667135e2"), download: 1749953760,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-pythia-2.8b", name: "Pythia 2.8B", note: "English · fetches 3.0 GB (GGUF) → int8 3.1 GB · desktop only",
+    ...ggufOf("mradermacher/pythia-2.8b-GGUF", "147586a405b950ff991ba909a3193ffafa98b014", "pythia-2.8b.Q8_0.gguf",
+      "EleutherAI/pythia-2.8b", "2a259cdd96a4beb1cdf467512e3904197345f6a9"), download: 2953594016,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-pythia-6.9b", name: "Pythia 6.9B", note: "English · fetches 7.3 GB (GGUF) → int8 7.7 GB · desktop only · Chrome and Firefox",
+    ...ggufOf("mradermacher/pythia-6.9b-GGUF", "d8e5050a875b7bfd5de881d30b33abc3d492cb60", "pythia-6.9b.Q8_0.gguf",
+      "EleutherAI/pythia-6.9b", "c0e3eee36dc47af0c49f361c74cfe459c09f7f23"), download: 7292706720,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
   // T125: Mistral 7B, and zephyr made from it
   { group: "hf", id: "hf-mistral-7b-instruct-v0.2", name: "Mistral 7B Instruct v0.2", note: "answers instructions · English · fetches 7.7 GB (GGUF) → int8 8.2 GB · desktop only · Chrome and Firefox",
     original: "mistralai/Mistral-7B-Instruct-v0.2",
@@ -719,6 +783,72 @@ const LISTED = [
     original: "meta-llama/Llama-3.2-3B-Instruct",
     hf: { repo: "bartowski/Llama-3.2-3B-Instruct-GGUF", revision: "5ab33fa94d1d04e903623ae72c95d1696f09f9e8", weights: "Llama-3.2-3B-Instruct-Q8_0.gguf",
           vocabulary: { repo: "unsloth/Llama-3.2-3B-Instruct", revision: "006f5dcd1393c3add266de40994ba96225e9689d", tokenizer: "tokenizer.json" } }, download: 3421899296,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
+  // T252: well-known ones the engine opens as it is, each from a Q8_0 GGUF that tests/gguf_check.py tensors held to its
+  // original (gguf.yml's candidates), with the original's vocabulary, config.json and chat template: the formats and
+  // the special tokens are the converter's reading, the same IDs as the real template's for tests/format_check.py's
+  // prompts. What the page puts in front was measured for each (tests/start_check.mjs, tests/answer_check.mjs: T250's
+  // review found a Qwen3 8B 178% worse for it).
+  // SmolLM2's base models (the Instruct ones are above): <|endoftext|> in front is 1 to 1.5% better than nothing
+  { group: "hf", id: "hf-smollm2-135m", name: "SmolLM2 135M", note: "English · fetches 145 MB (GGUF) → int8 151 MB",
+    ...ggufOf("mradermacher/SmolLM2-135M-GGUF", "bf92313aa80eb55329ae75ccce3743101784c802", "SmolLM2-135M.Q8_0.gguf",
+      "HuggingFaceTB/SmolLM2-135M", "93efa2f097d58c2a74874c7e644dbc9b0cee75a2"), download: 144810944,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  { group: "hf", id: "hf-smollm2-360m", name: "SmolLM2 360M", note: "English · fetches 386 MB (GGUF) → int8 407 MB",
+    ...ggufOf("mradermacher/SmolLM2-360M-GGUF", "630c4866d716e28f45a516ed00e2882149726c13", "SmolLM2-360M.Q8_0.gguf",
+      "HuggingFaceTB/SmolLM2-360M", "f8027fd0eaeea54caa13c31d31b9fdc459c38b49"), download: 386404864,
+    conversion: {}, options: {}, generation: sampled(1.1), prompt: "Once upon a time", placeholder: STORY },
+  // Qwen2.5 Coder above the 0.5B one. The real tokenizer puts nothing in front of a text and the format begins with
+  // <|im_start|>; the page begins with the converter's BOS, <|endoftext|>, as the Qwen2.5 of the list do: with it the
+  // 1.5B's, the 3B's and the 7B's own answers to five questions are 0.5, 0.4 and 0.2% higher in perplexity, the
+  // likeliest next token the same at 97.6, 98.4 and 99.6% of the positions (a Qwen2.5 is no Qwen3 8B), so it stays.
+  // The 3B's license is Qwen2.5-3B's, for research
+  { group: "hf", id: "hf-qwen2.5-coder-1.5b-instruct", name: "Qwen2.5 Coder 1.5B Instruct", note: "writes code · English · fetches 1.6 GB (GGUF) → int8 1.7 GB · desktop only",
+    ...ggufOf("bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF", "1af47f78b1f9b0c242fabe43f7a365d5a67f3207", "Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf",
+      "Qwen/Qwen2.5-Coder-1.5B-Instruct", "2e1fd397ee46e1388853d2af2c993145b0f1098a"), download: 1646573344,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
+  { group: "hf", id: "hf-qwen2.5-coder-3b-instruct", name: "Qwen2.5 Coder 3B Instruct", note: "writes code · English · fetches 3.3 GB (GGUF) → int8 3.5 GB · desktop only",
+    ...ggufOf("bartowski/Qwen2.5-Coder-3B-Instruct-GGUF", "7c137640ef0332dfedb229f2504c58d83ed4307a", "Qwen2.5-Coder-3B-Instruct-Q8_0.gguf",
+      "Qwen/Qwen2.5-Coder-3B-Instruct", "488639f1ff808d1d3d0ba301aef8c11461451ec5"), download: 3285476608,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
+  { group: "hf", id: "hf-qwen2.5-coder-7b-instruct", name: "Qwen2.5 Coder 7B Instruct", note: "writes code · English · fetches 8.1 GB (GGUF) → int8 8.6 GB · desktop only · Chrome and Firefox",
+    ...ggufOf("bartowski/Qwen2.5-Coder-7B-Instruct-GGUF", "1f629da0c8bed16b9e50cee91c70693650e66c35", "Qwen2.5-Coder-7B-Instruct-Q8_0.gguf",
+      "Qwen/Qwen2.5-Coder-7B-Instruct", "c03e6d358207e414f1eca0bb1891e29f1db0e242"), download: 8098525984,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
+  // Hermes 3 (Nous Research) on Llama 3.2 3B, in ChatML: its own Q8_0 GGUF. Its card's code tokenizes the ChatML text,
+  // which puts <|begin_of_text|> in front (tokenizer.json's post-processor, and llama.cpp does the same), where
+  // apply_chat_template puts none: the page's is the former. With it in front the model's own answers are 0.9% higher
+  // in perplexity (the likeliest token the same at 89%), plain text 5% lower. It stops at <|im_end|> (config.json's EOS)
+  { group: "hf", id: "hf-hermes-3-llama-3.2-3b", name: "Hermes 3 Llama 3.2 3B", note: "answers instructions · English · fetches 3.4 GB (GGUF) → int8 3.6 GB · desktop only",
+    ...ggufOf("NousResearch/Hermes-3-Llama-3.2-3B-GGUF", "3cd927095d8cbab12c743f932aa63b6f7bbfa141", "Hermes-3-Llama-3.2-3B.Q8_0.gguf",
+      "NousResearch/Hermes-3-Llama-3.2-3B", "7f1a6bec8cdce6551014fd5bbeb4cd8c0f1fbeab"), download: 3421895488,
+    conversion: {}, options: {}, generation: sampled(1.1),
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
+  // DeepSeek-R1's larger distills, as the 1.5B above: the tokenizer's own BOS, <｜begin▁of▁sentence｜> (which the
+  // real template writes first), and the thought opened by the format. The converter reads both itself now (T143: the
+  // BOS tokenizer_config.json names, the template and its special tokens), so these have no options of their own. On
+  // plain text the Qwen 7B is 6% worse with that BOS than with nothing in front and 26% worse with config.json's
+  // (151643, the end of a sentence); the Llama 8B, a Llama 3.1 with DeepSeek's names for its tokens, 4% better
+  { group: "hf", id: "hf-deepseek-r1-qwen-7b", name: "DeepSeek-R1 Distill Qwen 7B", note: "thinks before it answers · English · fetches 8.1 GB (GGUF) → int8 8.6 GB · desktop only · Chrome and Firefox",
+    ...ggufOf("mradermacher/DeepSeek-R1-Distill-Qwen-7B-GGUF", "75e791d579161aa4082e642c8b84ea7814829698", "DeepSeek-R1-Distill-Qwen-7B.Q8_0.gguf",
+      "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B", "916b56a44061fd5cd7d6a8fb632557ed4f724f60"), download: 8098525344,
+    conversion: {}, options: {}, generation: thinking,
+    prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
+  { group: "hf", id: "hf-deepseek-r1-llama-8b", name: "DeepSeek-R1 Distill Llama 8B", note: "thinks before it answers · English · fetches 8.5 GB (GGUF) → int8 9.0 GB · desktop only · Chrome and Firefox",
+    ...ggufOf("mradermacher/DeepSeek-R1-Distill-Llama-8B-GGUF", "5c27c16fe2584d3a33b8633c8df944ce5f22a6b7", "DeepSeek-R1-Distill-Llama-8B.Q8_0.gguf",
+      "deepseek-ai/DeepSeek-R1-Distill-Llama-8B", "6a6f4aa4197940add57724a7707d069478df56b1"), download: 8540773376,
+    conversion: {}, options: {}, generation: thinking,
+    prompt: "What is 17 times 24? Think first.", placeholder: "Ask something that needs thinking" },
+  // Llama 3.1 8B Instruct, as Llama 3.2 above: the original is gated, so the vocabulary and config.json of unsloth's
+  // copy. Its template's system turn says "Today Date: 26 Jul 2024" unless a date is passed (Llama 3.2's asks the clock)
+  { group: "hf", id: "hf-llama-3.1-8b-instruct", name: "Llama 3.1 8B Instruct", note: "answers instructions · English · fetches 8.5 GB (GGUF) → int8 9.0 GB · desktop only · Chrome and Firefox",
+    original: "meta-llama/Llama-3.1-8B-Instruct",
+    hf: { repo: "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF", revision: "bf5b95e96dac0462e2a09145ec66cae9a3f12067", weights: "Meta-Llama-3.1-8B-Instruct-Q8_0.gguf",
+          vocabulary: { repo: "unsloth/Meta-Llama-3.1-8B-Instruct", revision: "a2856192dd7c25b842431f39c179a6c2c2f627d1", tokenizer: "tokenizer.json" } }, download: 8540775840,
     conversion: {}, options: {}, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   // T124: Qwen3, each twice (thinking and not), and Qwen3's 2507 4B, one of each form. T203: from Q8_0 GGUFs (Qwen's
