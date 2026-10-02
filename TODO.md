@@ -2079,11 +2079,41 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **持ち主の判断**: (a) **上の直し 4 項目を入れるか。勧め: 入れる**（本物と同じ入力になる。Qwen3 8B は答えの perplexity が 2.8 倍だった）。**変換器に決めさせるか**（`?hf=` も直る。`CONVERTER` を上げる回に、T248 の調べの 7 節の 4 と一緒に）、**ほかの Qwen3（4B 以下・Swallow・CAT-Thinking）はそのままか**（勧め: そのまま。5% 以内で、4B 以下は `<|im_start|>` のほうが悪い）。(b) T250 の項の (1)〜(3)（llm-jp-4.1 8B thinking は GGUF が出るまで待つ・Shisa に考える形は足さない・CAT-Thinking にすぐ答える形は足さない。勧め: 足さない 2 つは足さず、llm-jp-4.1 は待つ）。(c) T249 の行の持ち主の判断 (b)（"Built with Llama" の表示。ELYZA は "Built with Meta Llama 3"）。(d) `format_check.py` を毎晩の全部の組に足すか（79 項目で 4.7 分。T249 の行の 4）。
   - **未確認**: Bonsai 8B のチャットの答え（plain text の +70.2% だけ）。8B の float32 での確かめ（上）。持ち主の端末（GPU だけの 9.15〜9.2 GiB のバッファが 8 GB のカードで通るか）。直した 5 項目（Qwen3 8B の 2 つ・Shisa・Bonsai 8B・SmolLM2 135M）の本番の `models.yml`（本線に入れた後に本会話が回す: 答えが本物の頭で始まるか）。Qwen3 8B の thinking の形の答え（ID は同じ形だが、答えを読んでいない）。
 
-### T251 [追加][モデル] 英語の古典の梯子を一覧に（GPT-2 medium・large・xl と distilgpt2、Pythia 14M・2.8B・6.9B） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
-```
-- GPT-2 と NeoX の GGUF の道（T136 の段 ③）のまま。実物の固定値に 1 つ足すかは任意。
+### T251 [追加][モデル] 英語の古典の梯子を一覧に（GPT-2 medium・large・xl と distilgpt2、Pythia 14M・2.8B・6.9B） — 状態: **反映済み**（2026-10-02、本線に入れるのは本会話。レビュー前。Opus medium、ブランチ `t251-t252-listings`。T248 の調べから）
 
-```
+**結果: 7 項目を足した。** 変換器・エンジン・`CONVERTER` は変えていない。どれも Q8_0 の GGUF の重みと原本の語彙（T136 の段 ③ の道）。書式の無い base モデルで、前からの GPT-2 124M と Pythia の 5 つと同じ形（サンプリング 0.7・0.9・罰 1.1、書き出し「Once upon a time」）。
+
+| モデル（ID） | 取り込み元と突き合わせ（最大の相対誤差・いちばん近い参照から・不一致・並び） | 取得 → int8 | 先頭のトークンと確かめ（perplexity、先頭なしとの比） | 一覧 |
+|---|---|---|---|---|
+| Pythia 14M（`hf-pythia-14m`） | mradermacher の Q8_0（pythia-14m-deduped のもの）: 0.0060・0・0・q, k, v に割った並び | 17 MB → 16 MB | `<\|endoftext\|>`（0）: 128.271、−0.25% | 入れた |
+| DistilGPT2 82M（`hf-distilgpt2`） | QuantFactory の Q8_0: 0.0067・3.1e-4・0・(out, in) | 132 MB → 92 MB | `<\|endoftext\|>`（50256）: 43.420、−2.73% | 入れた |
+| GPT-2 medium 355M（`hf-gpt2-medium`） | mradermacher の Q8_0: 0.0065・0・0・(out, in) | 437 MB → 400 MB | 同じ: 26.332、−1.69% | 入れた |
+| GPT-2 large 774M（`hf-gpt2-large`） | mradermacher の Q8_0: 0.0059・0・0・(out, in) | 898 MB → 873 MB | 同じ: 21.589、−1.68% | 入れた |
+| GPT-2 XL 1.5B（`hf-gpt2-xl`） | mradermacher の Q8_0: 0.0060・0・0・(out, in) | 1.7 GB → 1.8 GB | 同じ: 19.090、−1.93% | 入れた |
+| Pythia 2.8B（`hf-pythia-2.8b`） | mradermacher の Q8_0: 0.0058・0・0・q, k, v に割った並び | 3.0 GB → 3.1 GB | `<\|endoftext\|>`（0）: 8.774、−0.27% | 入れた |
+| Pythia 6.9B（`hf-pythia-6.9b`） | mradermacher の Q8_0: 0.0058・0・0・q, k, v に割った並び | 7.3 GB → 7.7 GB | 同じ: 7.446、−0.32% | 入れた（64 ビットのメモリ。Chrome と Firefox） |
+
+- **実物の config とトークナイザ**（固定したリビジョン、HTTP で読んだ）: GPT-2 の 4 つは `bos_token_id` と `eos_token_id` が 50256、文脈 1024（位置の表）、`gelu_new`。XL は 1600 ÷ 25 で head が 64。Pythia は `bos_token_id` 0、文脈 2048、`rotary_pct` 0.25、並列残差あり。6.9B だけ語彙が 50432。どの本物のトークナイザも文の前に何も置かない。ページは変換器の BOS（`<|endoftext|>`）から始める: 前からの GPT-2 と Pythia と同じ。
+- **Pythia 14M は deduped のほう**（`EleutherAI/pythia-14m-deduped`、float16 の safetensors 53 MB）。mradermacher の `pythia-14m-GGUF` はカードが「static quants of pythia-14m-deduped」と言い、突き合わせもその原本で通った。deduped でない `EleutherAI/pythia-14m` の Q8_0 は DevQuasar-3 のものだけで、そのカードはライセンスを書いていない（突き合わせていない）。前からの 70M も deduped。
+- **DistilGPT2 の GGUF は F32 のテンソルが float16 を通っている**: norm・bias・位置の表が原本から 1.7e-4〜3.1e-4（線 1e-3 の内）。Q8_0 のテンソルは原本の Q8_0 そのもの（0）。Q8_0 の GGUF はこの 1 つしか見つからなかった（safetensors なら取得 353 MB）。
+- **ライセンス**: GPT-2 の medium・large・XL のカードは本文に「License: Modified MIT License」と書く（メタデータは mit）。一覧はカードの本文の言葉にした（`MODIFIED_MIT`）。DistilGPT2 と Pythia は Apache 2.0。前からの GPT-2 124M のカードはメタデータの mit だけで本文に言葉が無いので、「MIT License」のまま。
+- **CI の run**: GGUF の突き合わせ 36951255093（`gguf.yml` の `candidates`、7 つとも exit 0、`unread_orders` は空）。書かせる 36952365894（小さい 5 つ。軽い組の試験も同じ run で通った）と 36952365778（Pythia 2.8B と 6.9B）。先頭のトークン 36954235138（`tests/start_check.mjs`、ページのエンジンの int8、英語版 Wikipedia の 3 記事。GPT-2 と 14M は 1022 の標的・窓 512、Pythia の大きい 2 つは 510 の標的・窓 256）。
+- **書いた文**（ページのエンジン、int8、1 本。greedy の 48 トークンと、項目のサンプリングの seed 1）:
+  - Pythia 14M: greedy は「 of the time of the time of the time…」とくり返す。サンプリングは「-making process to be the real estate agent, it’s known that many people have made up this kind of vision on how they can grow through their life.…」（英語の形だが意味は通らない。1400 万パラメータ）。
+  - DistilGPT2: greedy は「, the world was a place where people could live and work together.」をくり返す。サンプリングは「, this was not the case.\nIn fact, in 2013, after I wrote about it, "I've spent five years writing and editing various articles on feminism…」。
+  - GPT-2 medium: 「, the United States was a nation of immigrants.\n\nThe nation was founded by immigrants from Europe, and the country was founded on the principle of immigration.…」。サンプリングは「, all of humanity was living on the planet Earth. However as our civilization began to decline…」。
+  - GPT-2 large: 「, there was a man named John. He was a man of great wealth, and he had a wife named Mary. He had a son named John Jr.…」。サンプリングは「, it was widely believed that people who drank alcohol could be cured of cancer.…」。
+  - GPT-2 XL: 「, the world was a much simpler place.\n\nThe world was a place where people were free to do whatever they wanted.…」（greedy はくり返す）。サンプリングは「, you could see the moon on a clear night and see it come up in the sky. But the moon is much easier to see now that you have a telescope…」。
+  - Pythia 2.8B: 「, there was a little girl who lived in a small town in the middle of nowhere. She was a very happy little girl, and she loved her family very much.…」。サンプリングは「, we had some great movies to watch. We went to the cinema and sat down in our seats…」。
+  - Pythia 6.9B: 「, there was a little girl who loved to play with her dolls. She had a little doll house, and she loved to play with her dolls in it.…」。サンプリングは「, it was enough to have an impressive resume and be a good team player. But now, the market is flooded with smart, ambitious people…」。
+- **先頭なしの perplexity は大きさの順に下がる**（同じ英語の文、int8）: Pythia 14M 128.6、DistilGPT2 44.6、GPT-2 medium 26.8、large 22.0、XL 19.5、Pythia 2.8B 8.8、6.9B 7.5（Pythia の大きい 2 つは標的が 510 で、ほかと同じ文の前半だけ）。
+- **CI の 1 本の速さ**（Node、`tests/engine.mjs`、スレッドなし。ページの速さではない）: Pythia 14M 912、DistilGPT2 172、GPT-2 medium 42、large 19、XL 9.9、Pythia 2.8B 5.4、6.9B 2.1 tok/s。
+- **メモリの見積もり**（`footprint()`、文脈の終わりまで伸びたとき、共有メモリ）: GPT-2 XL は int8 で 2.12 GiB、Pythia 2.8B は 3.85 GiB（32 ビットに入る）、Pythia 6.9B は int8 で 8.98 GiB・6 ビットでも 7.38 GiB（64 ビットだけ: note に「Chrome and Firefox」）。
+- **ほかに直したもの**: `tests/ladder.mjs` の梯子を 8 段に（14M・2.8B・6.9B を足した）。`browsers.yml` の huggingface ジョブに classics の組（取得 13 GB）。`tests/start_check.mjs` の説明（`--starts` の既定は「先頭なし」だけで、BOS は名指しで渡す）。README の数。
+- **本番で回す ID**（本線に入れた後、`models.yml`）: `models="hf-pythia-14m hf-distilgpt2 hf-gpt2-medium hf-gpt2-large hf-gpt2-xl hf-pythia-2.8b"` と、`models="hf-pythia-6.9b" timeout=3000`。
+- **未計測**: ブラウザでは 1 つも動かしていない（本番の `models.yml` が最初の実行）。準備完了の秒、ヒープ、スレッドのある速さ、GPU の道、6 ビット、保存と 2 回目の訪問。T84 の梯子の表（8 段）。実物の固定値（`tests/fixed_outputs.py`）には足していない（GPT-2 と NeoX の GGUF の道は前からの 2 つが通る）。DevQuasar-3 の pythia-14m の GGUF の突き合わせ。
+- **持ち主に決めてもらうこと**: (1) Pythia 14M は deduped でよいか（70M と同じ。deduped でないほうは safetensors の 28 MB から取れる）。(2) Pythia 14M と DistilGPT2 を残すか（greedy ではくり返し、14M はサンプリングでも意味が通らない。梯子の端として入れた）。(3) GPT-2 の 3 つのライセンスの名前を、カードの本文の「Modified MIT License」にしたこと（124M はカードのとおり「MIT License」で、同じ OpenAI のライセンスに 2 つの名前が並ぶ）。
+
 ### T252 [追加][モデル] 名前の通った 7〜8B と Coder を一覧に（Qwen2.5 Coder 1.5B・7B、DeepSeek-R1 Distill Qwen 7B・Llama 8B、Llama 3.1 8B Instruct） — 状態: 未着手（2026-10-01、T248 の調べから。中身は docs/notes/t248-survey-2026-10-01.md）
 ```
 - どれも bartowski の Q8_0 がある。DeepSeek の 2 つは 1.5B の項目と同じ書式と BOS。

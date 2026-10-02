@@ -8,7 +8,7 @@
 //   node tests/start_check.mjs <the <out> of tests/perplexity_prepare.py, or the id of a model of this site>
 //        [<the JSON of tests/write_options.py>] [--starts none,1,151643] [--tokens 1500] [--window 512] [--text <file>]
 //
-// --starts: the token ids to begin a window with, "none" for no token (the default: none and the model's own BOS).
+// --starts: the token ids to begin a window with, "none" for no token (the default: none alone, so name the BOS too).
 // The JSON of write_options.py gives the options the page gives the model (the entry's over the converter's), where
 // an <out>'s own .json has the converter's alone. A prepared <out> is read from its file straight into forward.js's
 // memory (a model of gigabytes), on a 64-bit memory where it with its forward pass does not fit 4 GiB, as
