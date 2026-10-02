@@ -14,7 +14,11 @@
 #
 # T236: with an id of the list (bash tests/page_qwen35.sh hf-qwen3.5-0.8b), that entry as the page takes it instead of
 # the original's safetensors: the GGUF's weights with the original's vocabulary and config.json (tests/hf_fetch.py).
-# The float32 row is then the GGUF's values, as Q8_0 rounded them.
+# The float32 row is then the GGUF's values, as Q8_0 rounded them. T247's review: and with the entry's own options
+# (perplexity_prepare.py --entry), its BOS above all: <|im_start|>, where the converter's is <|endoftext|>. The rows of T229,
+# T236 and T247 before the review ran with <|endoftext|> in front of every window, a way the list's entries never run:
+# a Qwen3.5 reads a text 18% (2B) to 45% (4B) worse with it, and its perplexity then moves by up to 3% under any rounding
+# of its weights (docs/quantization.md).
 #
 # T247: a second word says which of the four parts to run, "float32 int8 kernels threads" when left out. NumPy's two
 # rows widen the weights to float32, which a runner's 16 GB holds for the 2B (7.5 GB) and not for the 4B (16.8 GB) or
@@ -40,11 +44,11 @@ else
 fi
 node tests/wikipedia.mjs en "$dir/en.txt"
 if has float32; then
-  python tests/perplexity_prepare.py "$model" "$dir/float32" float32 2>&1 | tail -1 | cut -c1-200
+  python tests/perplexity_prepare.py "$model" "$dir/float32" float32 ${1:+--entry "$1"} 2>&1 | tail -1 | cut -c1-200
   echo "qwen35: perplexity of $what, NumPy: $(python tests/perplexity_native.py "$dir/float32" "$tokens" "$dir/en.txt")"
   rm "$dir/float32.bin"
 fi
-python tests/perplexity_prepare.py "$model" "$dir/int8" int8 2>&1 | tail -1 | cut -c1-200
+python tests/perplexity_prepare.py "$model" "$dir/int8" int8 ${1:+--entry "$1"} 2>&1 | tail -1 | cut -c1-200
 # a 64-bit memory where the checkpoint and what forward.js puts after it pass 4 GiB (the 4B's 4.7 GB, the 9B's 10.1 GB)
 wide=
 if [ "$(stat -c %s "$dir/int8.bin")" -gt 3400000000 ]; then wide=--wide; fi
