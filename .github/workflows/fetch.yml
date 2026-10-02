@@ -33,8 +33,11 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
+      # T262: the step has a limit and apt its time-outs (tests/apt-timeouts.sh), so that a stuck download fails in minutes
       - name: Install the test tools and Chromium
+        timeout-minutes: 20
         run: |
+          bash tests/apt-timeouts.sh
           npm ci
           npx playwright-core install --with-deps chromium
 
