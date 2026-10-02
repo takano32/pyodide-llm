@@ -77,6 +77,11 @@ const LINES = { logits: 0.35, kl: 2e-3, kv: 0.05 };
 // floor is measured in the same run, on the first rows, and what is looked for is growth with the position. A row
 // past 127 positions may be as far as LOGITS, or GROWTH times the largest of the floor, whichever is more (KL likewise).
 const LONG_LINES = { logits: 0.5, kl: 4e-3, growth: 2 };
+// The long pass holds the largest difference of a row over the tokens the fork gives a probability of at least this (the T233 review:
+// over all 248,320 tokens, one of 42 rows had a tail token of a probability of 4e-8 move 0.79 where the row's KL was 7e-6, and the
+// 155 positions of the first comparison moved at most 0.19: the largest over a vocabulary has a tail; what no sampling reaches
+// is not a logit anyone reads). The largest over all of them is told all the same
+const LIKELY = 1e-6;
 const FLOOR_BELOW = 128;
 // the engine broken on purpose, by what the plan hands forward.js (a sign of the rotated basis: sign-<the width>-<the
 // place, or all>) or by a kernel that does nothing (embedding: the rows of the embedding are not turned back)
@@ -300,7 +305,7 @@ if (isMainThread) {
    * position, where the most likely token differs and how far apart their own first two are there */
   const distance = (ours, theirs) => {
     const count = Math.min(ours.length, theirs.length / vocab);
-    const found = { count, worst: 0, where: 0, klWorst: 0, klSum: 0, same: 0, gaps: [], token: -1, probability: 0 };
+    const found = { count, worst: 0, where: 0, klWorst: 0, klSum: 0, same: 0, gaps: [], token: -1, probability: 0, likely: 0 };
     for (let position = 0; position < count; position++) {
       const a = ours[position], b = theirs.subarray(position * vocab, (position + 1) * vocab);
       let worst = 0, token = 0;
@@ -312,6 +317,7 @@ if (isMainThread) {
       // (the token the largest difference is at, with what each says of it and the probability the reference gives it:
       // the review of T233 found a row past the line whose KL was 7e-6: a token of no probability)
       if (worst > found.worst) Object.assign(found, { worst, where: position, token, ours: a[token], theirs: b[token], probability: Math.exp(lb[token]) });
+      for (let i = 0; i < vocab; i++) if (lb[i] >= Math.log(LIKELY)) found.likely = Math.max(found.likely, Math.abs(a[i] - b[i]));
       let kl = 0;
       for (let i = 0; i < vocab; i++) kl += Math.exp(lb[i]) * (lb[i] - la[i]);
       found.klSum += kl;
@@ -532,7 +538,7 @@ if (isMainThread) {
       const found = [];
       for (let k = 0; k < have; k++) {
         const position = positions[k], d = distance([got.get(position)], kept.subarray(k * vocab, (k + 1) * vocab));
-        found.push({ position, worst: d.worst, kl: d.klWorst, same: d.same === 1, gap: d.gaps[0]?.gap, token: d.token, ours: d.ours, theirs: d.theirs, probability: d.probability });
+        found.push({ position, worst: d.worst, likely: d.likely, kl: d.klWorst, same: d.same === 1, gap: d.gaps[0]?.gap, token: d.token, ours: d.ours, theirs: d.theirs, probability: d.probability });
       }
       const band = (from, to) => found.filter(({ position }) => position >= from && position < to);
       const tell = (list) => list.length ? `${list.length} rows, largest difference ${Math.max(...list.map((r) => r.worst)).toFixed(4)}, KL ${Math.max(...list.map((r) => r.kl)).toExponential(2)} at most, ` +
@@ -543,7 +549,8 @@ if (isMainThread) {
         const from = i ? edges[i - 1] : 0;
         return `${from} to ${to === Infinity ? "the end" : to}: ${tell(band(from, to))}`;
       }).join("; "));
-      say(`${label}: the rows: ` + found.map((r) => `${r.position}: ${r.worst.toFixed(3)}/${r.kl.toExponential(1)}${r.same ? "" : " (another most likely token)"}`).join(", "));
+      say(`${label}: the rows (the largest difference over the tokens the fork gives a probability of ${LIKELY} or more / over all, KL): ` +
+        found.map((r) => `${r.position}: ${r.likely.toFixed(3)}/${r.worst.toFixed(3)}/${r.kl.toExponential(1)}${r.same ? "" : " (another most likely token)"}`).join(", "));
       say(`${label}: the five rows furthest from the fork's: ` + [...found].sort((x, y) => y.worst - x.worst).slice(0, 5)
         .map((r) => `${r.position}: ${r.worst.toFixed(3)} at token ${r.token} (the fork's ${r.theirs.toFixed(2)}, the page's ${r.ours.toFixed(2)}, a probability of ${r.probability.toExponential(0)})`).join("; "));
       // what is looked for: a difference that grows with the position, past the floor the first rows measure. A broken engine is
@@ -552,14 +559,14 @@ if (isMainThread) {
       const reasons = [];
       if (lines) {
         if (!name) {
-          const floorWorst = Math.max(0, ...floor.map((r) => r.worst)), floorKl = Math.max(0, ...floor.map((r) => r.kl));
+          const floorWorst = Math.max(0, ...floor.map((r) => r.likely)), floorKl = Math.max(0, ...floor.map((r) => r.kl));
           limits = { floorWorst, floorKl, worst: Math.max(lines.logits, lines.growth * floorWorst), kl: Math.max(lines.kl, lines.growth * floorKl) };
           say(`${label}: the floor (under ${FLOOR_BELOW} positions) is ${floorWorst.toFixed(4)} and KL ${floorKl.toExponential(2)}; the lines past it: ${limits.worst.toFixed(4)} and ${limits.kl.toExponential(2)}`);
         }
         for (const r of name ? found : past) {
-          if (r.worst > limits.worst) reasons.push(`position ${r.position}: ${r.worst.toFixed(4)} from the fork's, past ${limits.worst.toFixed(4)} (at token ${r.token}: the fork's ${r.theirs.toFixed(3)}, the page's ${r.ours.toFixed(3)}, the fork gives it a probability of ${r.probability.toExponential(1)})`);
+          if (r.likely > limits.worst) reasons.push(`position ${r.position}: ${r.likely.toFixed(4)} from the fork's over the tokens it gives a probability, past ${limits.worst.toFixed(4)}`);
           if (r.kl > limits.kl) reasons.push(`position ${r.position}: KL ${r.kl.toExponential(2)}, past ${limits.kl.toExponential(2)}`);
-          if (!r.same && r.gap > 2 * r.worst) reasons.push(`position ${r.position}: another most likely token where the fork's first two are ${r.gap.toFixed(4)} apart (more than twice ${r.worst.toFixed(4)})`);
+          if (!r.same && r.gap > 2 * r.likely) reasons.push(`position ${r.position}: another most likely token where the fork's first two are ${r.gap.toFixed(4)} apart (more than twice ${r.likely.toFixed(4)})`);
         }
       }
       const greedy = wrote.map((token, i) => (got.has(prompt.length - 1 + i) ? argmax(got.get(prompt.length - 1 + i)) === token : null));
