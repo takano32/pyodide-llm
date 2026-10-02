@@ -95,7 +95,9 @@
 // the classifier's input and adds their columns, shaders.js's TAKE_OUTLIERS and TERNARY_COLUMNS); "synthetic-ternary-calm",
 // the same without them (as the 4B) and calm (T226's review: its packed shaders' lines show a layer's weights or vectors read from another layer);
 // "synthetic-ternary-wide", the same in a 64-bit memory with the checkpoint 4 GiB up and the GPU's matrices in pieces
-// of 8192 bytes at most (w1 and w3 in two, the second short; w2 in two). NumPy's answer widens the ternary weights to
+// of 8192 bytes at most (w1 and w3 in two, the second short; w2 in two); and (the review) "synthetic-ternary-untied",
+// a dim of 256 (two groups of 128 a row), its classifier apart from the embedding (as the 8B's), outlier channels in both
+// groups, calm. NumPy's answer widens the ternary weights to
 // float32, and Q8 is the arithmetic of the ternary shaders as it is of ORT's DP4A: the matrices' inputs in 8 bits a
 // group of 32. Each is also put on the GPU alone (T156, T210), but for the one in pieces.
 //
@@ -163,7 +165,16 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // T232: ternary weights, in Ternary Bonsai's form (see above)
   "synthetic-ternary": [{ ...TERNARY, outliers: 8 }, TERNARY_OPTIONS],
   "synthetic-ternary-calm": [{ ...TERNARY, calm: true }, TERNARY_OPTIONS],
-  "synthetic-ternary-wide": [TERNARY, TERNARY_OPTIONS, { force: { pieceBytes: 8192 }, wide: true }] };
+  "synthetic-ternary-wide": [TERNARY, TERNARY_OPTIONS, { force: { pieceBytes: 8192 }, wide: true }],
+  // the review of T232: what the three above cannot tell. Their dim is 128, one group of 128 a row, so a table's or the
+  // classifier's scale of the wrong group of a row, or of a row's stride (n / 128 scales a row: 1 there), read the same
+  // scale as the right one (a mutant of TERNARY_COLUMNS' `channel / 128u` and of the embedding's group passed all three,
+  // which only the real 1.7B on Dawn, by hand, would have caught), and every model is tied: the 8B's embedding and
+  // classifier are two tables (a ternary one on EMBED_TERNARY, the other on the classifier's pieces). Here dim 256 (two
+  // groups a row; w2's 384 is three and wo's 256 two as before), the classifier apart (vocab -320), eight outlier channels
+  // at 0, 37, ... 259 mod 256 (some in each group), calm (T226's review) so that the packed lines also show a layer's
+  // weights read from another layer
+  "synthetic-ternary-untied": [{ ...TERNARY, dim: 256, vocab: -320, outliers: 8, spread: 37, calm: true }, TERNARY_OPTIONS] };
 // the models to check: by default every made-up one and the site's three; "made-up" stands for every made-up one (T193:
 // gpu-prompt.yml's suites name them so, and a made-up model added above joins them)
 // T241's review (the full suite's time: Chrome 38 and Edge 42 minutes in main's run 36902097346, Edge 23 before T241): a run
@@ -173,8 +184,9 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // models' lines); on Chrome and Edge, which differ from Chromium by the build, the three whose shaders differ (NAN_MODELS:
 // Llama's fused layer, Qwen3's norms of the heads, GPT-2's LayerNorm and GELU). A model named is run wherever it is named.
 // TODO.md's T241 has the minutes (the review of 2026-10-01)
-// (T232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's)
-const DAWN_ONLY = ["synthetic-yarn", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide"];
+// (T232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's;
+// the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
+const DAWN_ONLY = ["synthetic-yarn", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied"];
 const madeUp = Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 const ids = (args.length ? args : ["made-up", "stories15M", "tiny-lm", "llm-jp-3-150m"])
   .flatMap((id) => (id === "made-up" ? madeUp : [id]));
@@ -267,15 +279,17 @@ const PYTHON = `
 import base64, gc, struct, numpy as np, llama2_numpy, llama2_convert
 from llama2_numpy import Llama, external_tensors
 
-def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, six=False, outliers=0, calm=False, ternary=False, **form):
+def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, six=False, outliers=0, calm=False, ternary=False, spread=7, **form):
     """A made-up int8 checkpoint and its tokenizer.bin, as quantize.py writes one: grouped-query attention. form
     (T153): llama2_numpy.FORM's bias, qk_norm and head_dim, whose vectors are drawn as the norms' are. six (T155):
     int6 (T98), as llama2_convert's Writer writes it: every matrix's packed values, then its scales. outliers (T226):
     that many weights of the final norm are 12 (GPT-2's are 12 to 17 times the others, T92), so that the engine takes
-    their channels apart in the classifier (llama2_numpy.outlier_channels). calm (T226's review): the layers' matrices
-    at 0.1 and the norms' weights 1 +- 0.3, see the head of this file. ternary (T232): ternary weights (T230), as
-    llama2_convert's Writer writes them: every group of 128 along a row of a matrix keeps the signs of its larger
-    values (about two thirds) times one scale of its own, the rest are 0 (tests/make_ternary.py's)"""
+    their channels apart in the classifier (llama2_numpy.outlier_channels), at channels 0, spread, 2 spread, ... (mod dim:
+    the T232 review's spread of 37 puts some in every group of 128 of a dim of 256). calm (T226's review): the layers'
+    matrices at 0.1 and the norms' weights 1 +- 0.3, see the head of this file. ternary (T232): ternary weights (T230),
+    as llama2_convert's Writer writes them: every group of 128 along a row of a matrix keeps the signs of its larger
+    values (about two thirds) times one scale of its own, the rest are 0 (tests/make_ternary.py's). A negative vocab (the
+    header's own way of saying so): a classifier apart from the embedding (llama2_convert.layout)"""
     rng = np.random.default_rng(seed)
     header = (dim, hidden, layers, heads, kv_heads, vocab, seq_len)
     out = [struct.pack("<7i", *header)]
@@ -294,7 +308,7 @@ def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_
         if not is_matrix:
             values = values if is_bias(vectors) else 1.0 + values * (1.0 if calm else 0.1)
             if outliers and vectors == final:
-                values[np.arange(outliers) * 7 % dim] = 12.0
+                values[np.arange(outliers) * spread % dim] = 12.0
             vectors += 1
             out.append(values.astype(np.float32).tobytes())
             continue
@@ -313,7 +327,7 @@ def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_
             continue
         q, scales = llama2_convert.quantize(values.reshape(-1, shape[-1]))
         out += [q.tobytes(), scales.tobytes()]
-    pieces = [f"<{i}>".encode() for i in range(vocab)]
+    pieces = [f"<{i}>".encode() for i in range(abs(vocab))]
     tokenizer = struct.pack("<i", max(map(len, pieces))) + b"".join(struct.pack("<fi", 0.0, len(p)) + p for p in pieces)
     return b"".join(out), tokenizer
 
