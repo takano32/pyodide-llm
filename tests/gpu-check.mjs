@@ -90,8 +90,10 @@
 // T232: "synthetic-ternary", ternary weights (T230: two bits a weight and a scale a group of 128, which the GPU takes
 // as they are and multiplies by its packed shaders alone: shaders.js's TERNARY_PACKED) in Ternary Bonsai's form, a
 // Qwen3 (the norms of the heads of q and k, 8 heads of 32 in a dim of 128: q and the attention's output 256 wide,
-// grouped-query attention, an epsilon of 0.5), every row whole groups of 128, three layers; "synthetic-ternary-calm",
-// the same calm (T226's review: its packed shaders' lines show a layer's weights or vectors read from another layer);
+// grouped-query attention, an epsilon of 0.5), every row whole groups of 128, three layers, and eight weights of the
+// final norm at 12 (outlier channels, T92, as Ternary Bonsai 1.7B's and 8B's final norms have: the GPU takes them out of
+// the classifier's input and adds their columns, shaders.js's TAKE_OUTLIERS and TERNARY_COLUMNS); "synthetic-ternary-calm",
+// the same without them (as the 4B) and calm (T226's review: its packed shaders' lines show a layer's weights or vectors read from another layer);
 // "synthetic-ternary-wide", the same in a 64-bit memory with the checkpoint 4 GiB up and the GPU's matrices in pieces
 // of 8192 bytes at most (w1 and w3 in two, the second short; w2 in two). NumPy's answer widens the ternary weights to
 // float32, and Q8 is the arithmetic of the ternary shaders as it is of ORT's DP4A: the matrices' inputs in 8 bits a
@@ -159,7 +161,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   "synthetic-6bit": [{ dim: 128, hidden: 320, layers: 3, six: true }, { dtype: "int6" }, { force: { pieceBytes: 20480 } }],
   "synthetic-wide": [{ dim: 128, hidden: 320, layers: 3 }, {}, { force: { pieceBytes: 20480 }, wide: true }],
   // T232: ternary weights, in Ternary Bonsai's form (see above)
-  "synthetic-ternary": [TERNARY, TERNARY_OPTIONS],
+  "synthetic-ternary": [{ ...TERNARY, outliers: 8 }, TERNARY_OPTIONS],
   "synthetic-ternary-calm": [{ ...TERNARY, calm: true }, TERNARY_OPTIONS],
   "synthetic-ternary-wide": [TERNARY, TERNARY_OPTIONS, { force: { pieceBytes: 8192 }, wide: true }] };
 // the models to check: by default every made-up one and the site's three; "made-up" stands for every made-up one (T193:

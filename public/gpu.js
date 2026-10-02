@@ -1143,7 +1143,10 @@ function tokenCandidates(m) {
 // (T92's outlier channels: a few of the final norm's weights are 12 to 17 times the others (GPT-2), and a group of 32
 // quantized to 8 bits with one of them loses the other 31; the CPU multiplies their columns apart, and the GPU has
 // T150's matrix of floats, which needs no such thing)
-const tokenShape = (m) => ({ apart: Boolean(m.gen.qkv), gated: Boolean(m.matrices.w3), layerNorm: m.plan.layerNorm, floatHead: m.plan.tokens.outliers });
+// (T232: a ternary classifier is no matrix of floats: its outlier channels are taken apart as the CPU takes them,
+// shaders.js's TAKE_OUTLIERS and TERNARY_COLUMNS)
+const floatHead = (m) => Boolean(m.plan.tokens.outliers) && !m.ternary;
+const tokenShape = (m) => ({ apart: Boolean(m.gen.qkv), gated: Boolean(m.matrices.w3), layerNorm: m.plan.layerNorm, floatHead: floatHead(m) });
 // a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers); the same code
 // under two keys is compiled once (chooseTokens). The norm is on the read of T150's matrices where it is RMSNorm
 // (LayerNorm takes the mean out first, which no sum of the matrix's rows gives: a dispatch of its own before them)
@@ -1232,6 +1235,16 @@ async function tokenBuffers(m) {
   if (bo) g.u.biases = layers.map((_, l) => Object.fromEntries([["bo", bo], ["b1", b1], ["b2", b2]].map(([name, { size }]) =>
     [name, uniform(m, new Uint32Array([size, l * size, 0, 0]))])));
   if (m.positions) g.u.positions = uniform(m, new Uint32Array([plan.dim, 0, plan.dim, 0]));
+  // T232: a ternary classifier's outlier channels (plan.tokens.channels, T92): the two dispatches around its matrix
+  // (shaders.js's TAKE_OUTLIERS and TERNARY_COLUMNS), the values taken, and the Outliers of every piece of the table
+  const channels = m.ternary ? plan.tokens.channels ?? [] : [];
+  if (channels.length) {
+    g.take = await within(validated(m, () => pipelineOf(m, wgsl.TAKE_OUTLIERS)), "compiling the outlier channels' taking");
+    g.columns = await within(validated(m, () => pipelineOf(m, wgsl.TERNARY_COLUMNS)), "compiling the outlier channels' columns");
+    g.picked = buffer(m, wgsl.OUTLIERS_MOST * 4);
+    g.u.take = uniform(m, wgsl.outliersOf(channels));
+    g.u.columns = m.tables.classifier.map((piece) => uniform(m, wgsl.outliersOf(channels, piece.rows, plan.dim)));
+  }
   g.u.hidden = uniform(m, new Uint32Array([plan.hidden, 0, 0, 0]));
   return g;
 }
@@ -1256,10 +1269,12 @@ function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed =
   // too) or of DP4A: RMSNorm on the read of T150's matrices, or with DP4A's quantizer (NORM_QUANTIZE); else a dispatch
   // of its own into xb (the prompt's RMSNORM, T175's form with the norms apart; T226: the prompt's LAYER_NORM with its
   // bias, T154), which the matrix reads as it is or quantized
-  const normed = (weights, bias, params, floats = !form.dp4a) => {
-    const apart = () => [[m.norm, bind(m, m.norm, plan.layerNorm ? [g.h, weights, bias, g.xb, params, g.step] : [g.h, weights, g.xb, params, g.step]), 1, 1]];
+  // (T232, taken: what changes the normed stream before it is quantized, a ternary classifier's outlier channels
+  // taken out of it: the norm is then a dispatch of its own whatever the form)
+  const normed = (weights, bias, params, floats = !form.dp4a, taken = null) => {
+    const apart = () => [[m.norm, bind(m, m.norm, plan.layerNorm ? [g.h, weights, bias, g.xb, params, g.step] : [g.h, weights, g.xb, params, g.step]), 1, 1], ...(taken ?? [])];
     if (floats) return plan.layerNorm ? { norm: apart(), quantize: [], input: [[2, g.xb]] } : { norm: [], quantize: [], input: [[2, g.h], [4, weights]] };
-    if (!form.normApart && !plan.layerNorm) {
+    if (!form.normApart && !plan.layerNorm && !taken) {
       return { norm: [[P.normQuantize, bindAt(m, P.normQuantize, [[0, g.h], [1, weights], [2, g.xq], [3, g.xs], [4, params], [5, g.step]]), 1, 1]],
         quantize: [], input: [[2, g.xq], [4, g.xs]] };
     }
@@ -1304,11 +1319,15 @@ function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed =
       ...activated.quantize, matrix(P.add, down.layers[l], activated.input, g.u.down, plan.dim, [[5, g.h]]), ...biased(g.h, "b2", l));
   }
   if (head) {
-    const final = normed(m.finalNorm, m.finalBias, g.u.final, !form.dp4a || plan.tokens.outliers);
+    // T232: a ternary classifier's outlier channels go out of the normed stream before it is quantized (TAKE_OUTLIERS),
+    // and their columns are added to the piece's logits after its matrix (TERNARY_COLUMNS), as the CPU has them
+    const take = g.take ? [[g.take, bind(m, g.take, [g.xb, g.picked, g.u.take]), 1, 1]] : null;
+    const final = normed(m.finalNorm, m.finalBias, g.u.final, !form.dp4a || floatHead(m), take);
+    const logitsOf = (piece) => ({ buffer: g.logits, offset: piece.first * 4, size: piece.rows * 4 });
     list.push(...final.norm, ...final.quantize,
       // (T209: a piece at a time into its range of the logits: its first row is where the device binds, piecesOf)
-      ...m.tables.classifier.map((piece, i) => matrix(P.classifier, [piece.values, piece.scales], final.input, g.u.classifier[i], piece.rows,
-        [[5, { buffer: g.logits, offset: piece.first * 4, size: piece.rows * 4 }]])),
+      ...m.tables.classifier.flatMap((piece, i) => [matrix(P.classifier, [piece.values, piece.scales], final.input, g.u.classifier[i], piece.rows, [[5, logitsOf(piece)]]),
+        ...(take ? [[g.columns, bind(m, g.columns, [piece.values, piece.scales, g.picked, logitsOf(piece), g.u.columns[i]]), ...spread(m, piece.rows, 256)]] : [])]),
       [g.sample, bindAt(m, g.sample, [[0, g.logits], [1, g.probs], [2, g.order], [3, g.state], [4, g.chosen], [5, g.randoms], [6, g.settings]]), 1, 1]);
   }
   return list;
@@ -1842,9 +1861,20 @@ async function checkTokens(m, form) {
     };
     const greedy = await run(wgsl.samplingSettings({ vocab, temperature: 0, topp: 0.9 }), [token], 0);
     // (T226: a classifier of floats on DP4A too where the model has outlier channels: tokenShape's floatHead)
-    const packedHead = form.dp4a && !plan.tokens.outliers;
-    const want = product(dim, tableRow("classifier"), norm(Float64Array.from(stream2), floats(plan.tokens.final, dim),
-      plan.tokens.finalBias && floats(plan.tokens.finalBias, dim)), rows, packedHead);
+    const packedHead = form.dp4a && !floatHead(m);
+    const normedStream = norm(Float64Array.from(stream2), floats(plan.tokens.final, dim), plan.tokens.finalBias && floats(plan.tokens.finalBias, dim));
+    // T232: a ternary classifier's outlier channels as the CPU has them (forward.js's picked): taken out of the normed
+    // stream before it is quantized, and their columns of the table multiplied apart, in floats
+    const taken = g.take ? plan.tokens.channels.map((c) => {
+      const value = normedStream[c];
+      normedStream[c] = 0;
+      return [c, value];
+    }) : [];
+    const want = product(dim, tableRow("classifier"), normedStream, rows, packedHead);
+    rows.forEach((r, j) => {
+      const [w, s] = tableRow("classifier")(r);
+      for (const [c, value] of taken) want[j] += value * w[c] * s[Math.floor((c * s.length) / w.length)];
+    });
     const logitsOff = off(rows.map((r) => greedy.logits[r]), want) / largest(want), logitsLine = packedHead ? DP4A_LINE : LOGITS_LINE;
     if (!(logitsOff <= logitsLine)) return `the logits are ${logitsOff.toExponential(2)} of their largest from JavaScript's (line ${logitsLine})`;
     if (greedy.id !== wgsl.argmaxLikeCpu(greedy.logits)) return `the greedy token is ${greedy.id}, the largest logit's ${wgsl.argmaxLikeCpu(greedy.logits)}`;

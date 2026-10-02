@@ -3380,6 +3380,76 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
 }`;
 export const EMBED_TERNARY = embedTernary(false), EMBED_ROWS_TERNARY = embedTernary(true);
 
+// ---- T232: the outlier channels of a ternary classifier's input (T92: a few weights of the final norm are several
+// times the others (Ternary Bonsai 1.7B's largest is 5.6 times its median, the 8B's 5.2), and a group of 32 quantized
+// to 8 bits with one of them loses the other 31). The CPU takes them out of the normed stream before it quantizes it
+// and multiplies their columns of the classifier in float32 (forward.js's picked and the kernel add_columns); an int8
+// model's GPU multiplies a classifier of floats instead (T226: fusedMatVec), which reads int8 weights. For ternary
+// weights the GPU does what the CPU does, in two small dispatches around the classifier's matrix, the columns read
+// from the table of codes as it is. No public implementation has this (ONNX Runtime and llama.cpp quantize the input
+// as it comes), so it is written apart, with what gpu.js gives it:
+//   struct Outliers { count: u32, rows: u32, n: u32, unused: u32, channels: array<vec4<u32>, 2> }
+//                        count: the channels (OUTLIERS_MOST at most), channel k at channels[k / 4][k % 4], no two the
+//                        same; rows and n: the table's piece (TERNARY_COLUMNS alone)
+//   TAKE_OUTLIERS    0 x: the final norm's output, n float32 (read and written); 1 picked: count float32 (written);
+//                    2 the Outliers. One workgroup of OUTLIERS_MOST threads, thread k: picked[k] = x[channel k], then
+//                    x[channel k] = 0. Dispatched between the norm and QUANTIZE (the norm is apart for such a model).
+//   TERNARY_COLUMNS  0 the table's piece (codes, 16 to a u32, a row n / 16 words) and 1 its scales (n / 128 a row);
+//                    2 picked; 3 dst: the piece's rows of the logits, float32 (read and written); 4 the Outliers.
+//                    A thread a row, row (workgroup_id.y × num_workgroups.x + workgroup_id.x) × 256 +
+//                    local_invocation_index, those past rows doing nothing: dst[row] += the sum over k of picked[k] ×
+//                    ((the code of weight (row, channel k) less one) × the scale of its group of 128). Dispatched after
+//                    the classifier's matrix has written the piece's logits.
+// gpu.js checks the two with the classifier, on the model's own table and final norm, against JavaScript's (checkTokens:
+// the logits of rows of every piece).
+export const OUTLIERS_MOST = 8;
+const OUTLIERS = /* wgsl */ `struct Outliers { count: u32, rows: u32, n: u32, unused: u32, channels: array<vec4<u32>, 2> }`;
+export const TAKE_OUTLIERS = /* wgsl */ `
+${OUTLIERS}
+@group(0) @binding(0) var<storage, read_write> x: array<f32>;
+@group(0) @binding(1) var<storage, read_write> picked: array<f32>;
+@group(0) @binding(2) var<uniform> outliers: Outliers;
+
+@compute @workgroup_size(${OUTLIERS_MOST})
+fn main(@builtin(local_invocation_index) k: u32) {
+    if (k >= outliers.count) {
+        return;
+    }
+    let channel = outliers.channels[k / 4u][k % 4u];
+    picked[k] = x[channel];
+    x[channel] = 0.0;
+}`;
+export const TERNARY_COLUMNS = /* wgsl */ `
+${OUTLIERS}
+@group(0) @binding(0) var<storage, read> table: array<u32>;
+@group(0) @binding(1) var<storage, read> scales: array<f32>;
+@group(0) @binding(2) var<storage, read> picked: array<f32>;
+@group(0) @binding(3) var<storage, read_write> dst: array<f32>;
+@group(0) @binding(4) var<uniform> outliers: Outliers;
+
+@compute @workgroup_size(256)
+fn main(@builtin(workgroup_id) id: vec3<u32>, @builtin(num_workgroups) count: vec3<u32>, @builtin(local_invocation_index) t: u32) {
+    let row = (id.y * count.x + id.x) * 256u + t;
+    if (row >= outliers.rows) {
+        return;
+    }
+    let words = outliers.n / 16u;
+    var sum = 0.0;
+    for (var k = 0u; k < outliers.count; k++) {
+        let channel = outliers.channels[k / 4u][k % 4u];
+        let code = (table[row * words + channel / 16u] >> (2u * (channel % 16u))) & 3u;
+        sum += picked[k] * (f32(i32(code) - 1) * scales[row * (outliers.n / 128u) + channel / 128u]);
+    }
+    dst[row] = dst[row] + sum;
+}`;
+/** the Outliers of channels (OUTLIERS_MOST at most) for a piece of rows by n of the table, as bytes */
+export function outliersOf(channels, rows = 0, n = 0) {
+  const words = new Uint32Array(4 + OUTLIERS_MOST);
+  words.set([channels.length, rows, n, 0]);
+  words.set(channels, 4);
+  return words;
+}
+
 // What SAMPLE and the stages of the sampling in chunks (T191, below) share: the constants, the workgroup's memory of
 // the reductions, and cumsum.wgsl's scan.
 // T219: is_nan_magnitude() below takes the form of isnan() in TensorFlow.js, tfjs-backend-webgpu/src/webgpu_program.ts
@@ -4274,7 +4344,7 @@ export function deviceKey(adapter, device = adapter, ternary = false) {
   for (const text of [...devicePromptForms(device).map((form) => `${form.name}${form.code ?? form.none}`), RMSNORM, HEAD_NORM, ADD, ROPE,
     SWIGLU, QUANTIZE, String(flashTile), LAYER_NORM, GELU, EMBED, SAMPLE, NORM_QUANTIZE, String(fusedMatVec), String(fusedDp4aMatVec),
     ...(ternary ? [...devicePromptForms(device, true).map((form) => `${form.name}${form.code ?? form.none}`), TERNARY_PACKED, String(ternaryMatVec),
-      EMBED_TERNARY, EMBED_ROWS_TERNARY] : [])]) {
+      EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS] : [])]) {
     for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
   }
   return `${named}|${(hash >>> 0).toString(16)}`;

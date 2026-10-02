@@ -1479,16 +1479,14 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // outlier channels (the GPU's classifier multiplies floats for such a model, and needs no columns apart). The keys
   // and values are float16 as the GPU's, or float32 where the CPU keeps them so (T160, widened on the way back and
   // narrowed on the way up). What is left: a classifier
-  // and an embedding of int8 or int6 in groups of 32 (T232: or ternary in groups of 128, of a model whose final norm
-  // has no outlier channels: the GPU's classifier for those multiplies floats, T226, which ternary weights have no
-  // shader for); and the memory for the classifier, the embedding where it is
+  // and an embedding of int8 or int6 in groups of 32 (T232: or ternary in groups of 128; of a ternary classifier the
+  // GPU takes the outlier channels apart as this does, shaders.js's TAKE_OUTLIERS); and the memory for the classifier, the embedding where it is
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
     const embedding = T.token_embedding_table, group = wcls?.ternary ? 128 : 32;
     if (!wcls?.int8 || wcls.group !== group || !(wcls.ternary ? ["ternary"] : ["int8", "int6"]).includes(embedding.kind) || embedding.group !== group) {
       return "a classifier of float weights is not on the GPU's tokens";
     }
-    if (wcls.ternary && channels.length) return "a ternary classifier whose input has outlier channels is not on the GPU's tokens";
     // T205: the classifier and the embedding on the GPU as well (llm-jp-3 150M's 73 MB of layers came to 189 MB) where
     // the browser does not say what the device has: an iPhone's tab went down in /benchmark/'s model section. The
     // prompts' blocks still go (their layers alone)
@@ -1504,13 +1502,13 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T152: what gpu.js takes for a generation's steps: the classifier and (where it is another table) the embedding,
   // { rows, n, six, ternary (T232), at: [values, scales] }, the final norm's weights, where the ids go, and the steps a submission.
   // T226: the final LayerNorm's bias and GPT-2's positions (float32, a row a position), 0 where the model has none; and
-  // whether its classifier has outlier channels (T92)
+  // whether its classifier has outlier channels (T92), and (T232) which they are
   function gpuTokensPlan() {
     const embedding = T.token_embedding_table;
     return { classifier: { rows: wcls.rows, n: wcls.n, six: wcls.six, ternary: Boolean(wcls.ternary), at: wcls.layer(0).slice(0, 2) },
       embedding: plan.shared_classifier ? null
         : { rows: vocab, n: dim, six: embedding.kind === "int6", ternary: embedding.kind === "ternary", at: [base + embedding.offset, base + embedding.scales] },
-      final: finalW, finalBias: finalB, positions, outliers: channels.length > 0, ids: gpuIds, most: GPU_TOKENS };
+      final: finalW, finalBias: finalB, positions, outliers: channels.length > 0, channels, ids: gpuIds, most: GPU_TOKENS };
   }
   // the vectors of every layer the GPU reads (gpu.js's plan.vectors): the norms' weights; T153: Qwen2's biases of q,
   // k and v, Qwen3's norms of a head of q and of k; T154: GPT-2's and GPT-NeoX's biases of the two LayerNorms, of q,
