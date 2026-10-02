@@ -1,0 +1,279 @@
+# Pyodide LLM
+
+Language models that run in your browser, with the model code written in Python and run by
+[Pyodide](https://pyodide.org/) (Python compiled to WebAssembly). Nothing is sent to a server: the page downloads
+the model and runs it on your device. This is an experiment in how far Python on WebAssembly can go, not a product.
+(Until September 2026 the project was called pyodide-llama-py.)
+
+Python does the work around the model; the arithmetic of each token runs in small WebAssembly SIMD kernels, and in
+WebGPU where the device has it and it is faster there. See [How it works](docs/architecture.md).
+
+## Try it
+
+Open **https://takano32.github.io/pyodide-llm/** and write a prompt.
+
+- The default model is [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm) (29M parameters, a 33 MB download,
+  Japanese and English). It is the lightest model that writes Japanese, so that a phone does not fetch hundreds of
+  megabytes before you ask for it. Its text is not good; it is fast (about 280 tokens/s in Chromium on the
+  development machine).
+- [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m) (171 MB) writes much better Japanese and English
+  and is one click away. The page remembers the model you chose.
+- The first visit reloads the page once. A Service Worker adds the headers that let the page use threads, and it
+  keeps Pyodide and NumPy so that the page opens offline next time (`?offline=off` turns that off).
+- Every answer shows the temperature, the seed and the speed. The button left of the prompt changes them; the seed
+  under an answer is a button that fixes it, so two models can be compared on the same seed. The status line says
+  what ran: the kernels, int8, relaxed SIMD, how many threads, and whether the prompt and the answer ran on WebGPU.
+- While a text is being written, the send button stops it. Ctrl / Cmd + Enter sends; Enter alone breaks the line.
+- [/benchmark/](https://takano32.github.io/pyodide-llm/benchmark/) measures your device (the browser's features,
+  CPU, a model, GPU, storage, line, and on its own button how much memory a page can hold) and can open the result
+  as a GitHub issue.
+
+## Browsers
+
+The weekly CI runs the deployed site on Linux, Windows (x86-64 and ARM) and macOS, in Playwright's Chromium,
+Firefox and WebKit and in the installed Chrome and Edge: all 23 combinations run. What each browser adds:
+
+- Where a model does not fit in 32-bit memory and the browser has no 64-bit memory (Safari), the page stores the
+  weights in 6 bits instead of 8. The 7B to 9B models do not fit even then, so they need Chrome or Firefox.
+- The GPU is used by default where the browser has WebGPU. The page measures the GPU against the CPU on your device
+  and keeps the CPU where it is faster. A model whose weights would not fit twice in memory (once for the CPU, once
+  for the GPU; up to 2B on a device with 8 GB or more) goes on the GPU alone where it can (int8; Llama, Qwen2 and Qwen3). The
+  page then estimates the CPU from the device's run of `/benchmark/`, loads the model again on the CPU if that is
+  faster, and remembers it for the next visit. Other models too large to hold twice stay on the CPU.
+- A browser that does not say how much memory the device has (Safari, Firefox) keeps the answer on the CPU, and
+  `/benchmark/` skips its round without the kernels there (NumPy widens the weights to float32: for llm-jp-3-150m,
+  Pyodide grew to 958 MB in CI's Chromium).
+- For Safari, the only records are CI's WebKit (Playwright's build of Safari's engine) and the owner's iPhone.
+  Safari on a Mac has not been tried.
+
+Details and numbers: [docs/performance.md](docs/performance.md) and [docs/webgpu.md](docs/webgpu.md).
+
+## Models
+
+The model list has three groups:
+
+- **Models of this site**: tiny-lm, llm-jp-3-150m and the TinyStories models from the
+  [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) project (260K to 42M parameters), in int8 (the small
+  ones in float32). They are built into the site when it is deployed.
+- **Unquantized originals** of some of them (float16 or float32), to compare with int8.
+- **From Hugging Face, converted in this browser** (108 entries, from a 16 MB Pythia to 9B models and one ternary 27B: Llama, Mistral,
+  Qwen2.5, Qwen3, Qwen3.5, Granite 4.2, MiniCPM5, LFM2.5, llm-jp, sarashina, Swallow, GPT-2, GPT-NeoX and others). The page fetches the weights from
+  huggingface.co (for 97 of them a GGUF: Q8_0, and for the Ternary Bonsai models their ternary files, PQ2_0 or PTQ1_0, read with the original
+  repository's vocabulary and configuration),
+  converts them to int8 in your browser (Ternary Bonsai stays in its 2 bits) with the same Python code that
+  builds the site's models, and keeps the result for the next visit. About lists what is kept and deletes it. A
+  download of more than 500 MB asks first.
+
+`?model=<id>` opens a model of the list directly.
+
+### A model that is not in the list
+
+- `?hf=<owner>/<repository>` (optionally `&revision=` and `&template=` with `{prompt}` in it) converts a Hugging
+  Face repository, and says in words what it cannot run. What it reads: the Llama architecture (with Llama 3,
+  linear and yarn RoPE scaling, yarn only as a factor and an original context, nothing else it can set; Mistral is read
+  as Llama), Qwen2, Qwen3, GPT-2 and GPT-NeoX, in safetensors (one file or
+  several shards), with a Unigram or byte-level BPE `tokenizer.json` or a sentencepiece model. It does not open a
+  repository that has only GGUF files: the GGUFs of the list are read together with the vocabulary and
+  configuration of their original repository. Instruction models get what you type inside their chat template,
+  for one turn; the page keeps no conversation.
+- `?checkpoint=<url>&tokenizer=<url>` reads files in llama2.c's format from any server that answers cross-origin
+  range requests, for example
+  `?checkpoint=https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin&tokenizer=https://raw.githubusercontent.com/karpathy/llama2.c/master/tokenizer.bin`.
+
+### Your own model
+
+The folder button next to the model list (or dropping the files on the page) opens a model from your disk. The
+files are read where they are: nothing is uploaded. Choose the files together:
+
+- **The files Hugging Face publishes**: one `.safetensors` file (not several shards), `config.json` and
+  `tokenizer.json`, `tokenizer.model` or `spiece.model`. The page converts them to int8 in the browser, a few
+  megabytes at a time, with no more memory than the converted model. `tokenizer_config.json` or
+  `chat_template.jinja`, if you add them, give the chat template.
+- **A checkpoint in llama2.c's format** (for example `stories110M.bin`, or what `convert_hf.py` and `quantize.py`
+  write) and its `tokenizer.bin`. float32, float16 and int8 are told apart by the header and the file size.
+- Optionally a `.json` with what differs from llama2.c's conventions, shaped like an entry of `src/models.js`:
+
+For the Hugging Face files, the `.json` may also say `{"conversion": {"dtype": "float16", "max_seq_len": 1024}}`.
+A checkpoint of more than 1 GB asks first.
+
+## How it works
+
+1. The page resolves the latest Pyodide release when it loads (`?pyodide=<version>` forces one) and starts it in a
+   Web Worker. The model is downloaded at the same time, in parts over several connections.
+2. Python (`public/llama2_numpy.py`, `public/llama2_convert.py`) reads the model, converts a Hugging Face model to
+   int8 as its file arrives, and handles the tokenizer and the sampling.
+3. The forward pass of each token runs in JavaScript (`public/forward.js`), which calls WebAssembly SIMD kernels
+   (`kernels/`, written in AssemblyScript) on the model's own WebAssembly memory. With threads, software threads
+   (`public/helper.js`) share the rows of each matrix. The page measures how many threads are fastest on your
+   device.
+4. Where WebGPU is available, the blocks of a prompt and the tokens of the answer can run on the GPU
+   (`public/gpu.js`, `public/shaders.js`). The page checks each shader against JavaScript on your device, times them,
+   and uses the GPU only where it measured it faster than the CPU. The answer goes to the GPU 4 tokens at a time,
+   each sampled there with the random number the CPU drew for it.
+
+More:
+
+- [docs/architecture.md](docs/architecture.md): the parts and how they talk to each other
+- [docs/quantization.md](docs/quantization.md): int8, 6 bits, and what they cost in quality
+- [docs/performance.md](docs/performance.md): speed, threads and memory, with the numbers
+- [docs/webgpu.md](docs/webgpu.md): the GPU, what is done and what is measured
+- An overview in Japanese, and the survey the project started from, are in this
+  [gist](https://gist.github.com/takano32/196c6f93979ad44f98cee5712fdd3901).
+
+## Development
+
+Requirements: Node.js 24 LTS (`.nvmrc`; the page is built with [Astro](https://astro.build/)) and Python 3 with
+NumPy.
+
+Or with Docker: `docker build -t pyodide-llm . && docker run -p 8080:8080 pyodide-llm`.
+
+- `make models` downloads, converts, quantizes and splits the models into `public/models/`. No binary is
+  committed: the site's models are built when it is deployed.
+- `make kernels` compiles the SIMD kernels (no Emscripten needed; see [kernels/README.md](kernels/README.md)).
+- `npm run build` builds the site into `dist/`.
+
+Checks:
+
+- `python -m pytest tests -q`: the engine and the converter (native Python and NumPy).
+- `node tests/smoke.mjs`: the engine and the models in Node's Pyodide (after `make models`).
+- `node tests/forward-check.mjs`: the page's forward pass against NumPy.
+- `npm run build && node tests/e2e.mjs [model] [chromium|firefox]`: the page in a real browser (Playwright).
+
+Pushing to `main` deploys to GitHub Pages. [AGENTS.md](AGENTS.md) (in Japanese) holds the decisions, measurements
+and pitfalls, and [TODO.md](TODO.md) the tasks.
+
+## Acknowledgments
+
+- [Pyodide](https://pyodide.org/) for the Python WebAssembly runtime.
+- [llama2.py](https://github.com/tairov/llama2.py) by tairov for the pure Python Llama 2 implementation.
+- [llama2.c](https://github.com/karpathy/llama2.c) for the inspiration and the model format.
+- [tiny-lm](https://huggingface.co/sbintuitions/tiny-lm) by SB Intuitions (MIT License) for the default model; its
+  license is deployed next to the converted file.
+- [llm-jp-3-150m](https://huggingface.co/llm-jp/llm-jp-3-150m) by LLM-jp (Apache License 2.0).
+- [TinyLlamas](https://huggingface.co/karpathy/tinyllamas) by Andrej Karpathy and
+  [ellishg/tinyllamas](https://huggingface.co/ellishg/tinyllamas) for the TinyStories checkpoints.
+- [llama.cpp](https://github.com/ggml-org/llama.cpp), [ONNX Runtime](https://github.com/microsoft/onnxruntime),
+  [TensorFlow.js](https://github.com/tensorflow/tfjs) and [MLC LLM](https://github.com/mlc-ai/mlc-llm) for the
+  shapes of the WebGPU shaders.
+
+## License
+
+[Mozilla Public License 2.0](LICENSE), the same as Pyodide's. Some files carry code from other projects under their own licenses, and keep those notices where the code is: `public/llama2_numpy.py` (tairov/llama2.py and karpathy/llama2.c, MIT) and `public/shaders.js` (llama.cpp and ONNX Runtime, MIT; TensorFlow.js, MLC LLM and Apache TVM, Apache-2.0). The models are not in this repository and each keeps its own license (see the model list).
+
+# How it works
+
+This page describes the parts of the site and how they talk to each other. The decisions behind them, with dates
+and measurements, are in [AGENTS.md](../AGENTS.md) (in Japanese).
+
+## The parts
+
+## Why the forward pass is in JavaScript
+
+Until September 2026, Python ran the layers in order and called the kernels through `ctypes`, working in place on
+NumPy memory. Two things moved the loop out of Python:
+
+- Each `ctypes` call cost about 3 µs, and calls between layers added up (6% of a token of llm-jp-3-150m). Moving the
+  loop of layers to JavaScript made int8 models 1.15 to 1.26 times faster.
+- Pyodide does not expose its own `WebAssembly.Memory`, so JavaScript could not run the kernels on Python's
+  memory. The weights now live in a separate WebAssembly memory that `forward.js` owns, and Python only tells it
+  where each tensor is. A converted model is written straight into that memory.
+
+Python still does everything around the arithmetic: reading and converting models, the tokenizer, the chat
+template, the sampling (through a kernel), and the text that goes back to the page. NumPy remains the fallback
+when the kernels cannot be loaded (`?without=kernels`), and the reference that the tests compare with.
+
+## Threads
+
+A page on GitHub Pages cannot send the headers (COOP and COEP) that allow `SharedArrayBuffer`. The Service Worker
+(`public/coi.js`) adds them to every response, so after one reload the page is cross-origin isolated and can share
+memory between workers. Where that fails, the page runs on one thread.
+
+With shared memory, the forward pass is split among software threads: each matrix product is cut into chunks of
+rows that the threads take in turn, and attention is split by head. The page searches for the fastest number of
+threads on each device and writes its decision to the console (lines starting with `threads:`). The number is kept
+for the next visit, one for each model and device, and checked against its neighbours again on the first answer of
+every visit; a search that ran while the GPU was getting ready (its upload and its compiling use the CPU too) is
+used, but not kept, and is run again once the GPU is ready.
+
+## Memory
+
+- WebAssembly has 32-bit addresses (4 GB). Where the browser has 64-bit memory (Chrome and Firefox), a model that
+  does not fit runs on it, about 10% slower. Where it does not (Safari), the page stores the weights in 6 bits.
+- What the forward pass needs besides the weights (the KV cache for the whole context, the activations) is
+  computed from the header before the model is loaded (`footprint()` in `forward.js`). The cache starts at 256
+  positions and doubles in place, moving each layer's block up into the room it adds, so that at most the whole
+  context is held (before, the old blocks stayed next to the new ones while they were copied: 1.5 times the
+  context at the last step). The same place decides the type of the KV cache: float32 on one thread; float16 with
+  threads, except for a model with grouped-query attention, which keeps float32 unless that would push it out of
+  32-bit memory or it needs 64-bit memory anyway (see [performance.md](performance.md#threads)). Where the page asks
+  for a shared memory (for threads) and the browser refuses it, or the page is not cross-origin isolated, the model
+  runs on one thread with float32, except where float16 keeps it within 32-bit memory and float32 would not, or
+  float16 keeps it within a 64-bit memory's 16 GiB and float32 would not: there float16 is kept so that the model
+  still reaches the end of its context. (A shared memory the browser grants at a lowered maximum that the model does
+  not fit is made a memory that is not shared as well.)
+- A Qwen3.5 (hybrid attention) keeps keys and values only for its full-attention layers, one layer in four. The
+  others are Gated DeltaNet layers ("linear attention"), which keep a state whose size does not depend on the
+  context: a 128 by 128 matrix for each of their heads, and the last four tokens' inputs of a short convolution.
+  The matrices are held twice (a step reads one copy and writes the other, so that it can be repeated if a thread
+  stops in the middle of it): 38 MB for Qwen3.5 0.8B. Such a model takes its tokens in order from position 0, and
+  its layers run on the CPU only.
+- An LFM2 or LFM2.5 (Liquid AI) has convolution layers among its attention layers, in an order its `config.json`
+  lists (10 of the 16 layers of LFM2.5 350M). A convolution layer multiplies two parts of a matrix's output with each
+  other, runs a three-tap convolution along the tokens over each channel of the result, multiplies that by a third
+  part, and applies a second matrix. It keeps no keys and values, only the last two tokens' values (8 KB a layer for
+  the 350M), so the memory after the weights is about half of what the same model would take with attention in
+  every layer (148 MiB against 308 MiB for the 350M at 4096 positions). The two matrices go to the threads like any
+  other; the step between them is one small kernel on the coordinating thread, which alone touches the kept values,
+  so a matrix product that has to be repeated reads what it read before. Such a model also takes its tokens in order
+  from position 0, and runs on the CPU only (there is no shader for the convolution yet).
+- The model's WebAssembly memory is reused when another model is chosen: Chromium would not create a third
+  WebAssembly memory on one page. Before the next model loads, the page also waits (up to 5 seconds) for the GPU
+  worker of the last one to let go of its buffers and its device.
+
+## Downloading and converting
+
+# レビューを Fable から Opus xhigh に替えるときの懸念と、うまくいかせる決まり
+
+2026-09-25、持ち主の問い「いまは Opus medium が実装して Fable high がレビューしているが、節約のために Opus medium + Opus xhigh にしたい。何が懸念で、どうすればうまくいくか」への Fable の検討。根拠はこの日までの実例（TODO.md の T72・T77・T82・T93・T96・T98〜T100・T109・T110）。
+
+## 結論
+
+**できる。ただし「読むだけのレビュー」にしないこと。** この 1 日の実例で、レビューが実際に捕まえたものの大半は「読んで気づいた」のではなく「走らせて・境界値を入れて・CI の記録を読んで」見つかっている。同じモデルが実装と審査の両方をすると、読むだけのレビューは実装と同じ思い込みを共有して素通しになる。だから決まりは 3 つ:
+
+1. **レビューは別の会話で、実装の文脈を持たずに始める**（同じ会話の続きで「自分の書いたものを見直す」形にしない）。
+2. **OK と言う前に必ず動かす**（pytest・smoke・forward-check に加えて、ページや Worker を触る変更は **CI の実ブラウザで本番相当を 1 回**）。
+3. **設計の判定は「数字と式と、判定を覆す条件」を書く**（読めば持ち主が追える形にする）。
+
+Fable は残す。ただし呼ぶのは下の「Fable に回すもの」だけにする。
+
+## 懸念（実例つき）
+
+### 1. 同じモデルは同じ思い込みを共有する
+
+- T72（2026-09-21）: 変換器が `rotary` と `parallel_residual` をエンジンに渡していなかった。**テストは全部通り、ブラウザで「動くが文章が壊れる」形で出た。** テストが `Llama()` を直接呼んでいたので、実装した側の前提（設定はちゃんと渡る）を試験も共有していた。
+- T77・T85: `layout()` と engine に `bias` / `arch` を足したのに `checkpoint_dtype()` と `convert_hf.py` に足し忘れた。**「`arch` を受け取る関数を足したら呼び出し側を全部探す」**という機械的な確認で捕まる種類だが、実装した側は「足した」と思っているので探さない。
+- 今日の T109（Fable 自身の変更）: helper.js の先頭に本当に待つ `await import()` を置いたら、ブラウザは最初のメッセージを取りこぼしてページが止まった。**Node の試験は全部通った**（Node はメッセージを溜める）。捕まえたのは CI の画面撮りと本番確認で、レビューではない。Fable でも同じ思い込み（Node で通れば動く）を持った。
+
+**同じモデルにすると、この種の素通しが増える**と見るのが妥当。対策は「別の会話」「動かす」「機械的な確認の一覧」で、モデルの賢さで埋めない。
+
+### 2. 設計の判定は「読み方」に価値がある
+
+今日の判定で、Fable が足したものは次の 3 つ。Opus xhigh にもできるはずだが、**「書き方を決めておく」ことで質を保つ**。
+
+- T98: Opus の表は「llama.cpp の Q4_K_M は +3〜5%」で止まっていた。Fable はそれが名前に反して**大半 5 ビット + 一部 6 ビット**（dim が 256 の倍数でないため）だと読み、「4 ビットは届かない、5 ビットの一様な形式なら届く見込み」に変えた。表の数字ではなく、数字がどの条件から出たかを読んだ。
+- T100: Opus は受け入れ率と費用を測って報告した。Fable はそれを 1 つの式（1 回で進むトークン数 ÷（確かめる費用 + 下書きの費用））に入れ、いちばん有望な組でも 0.95 倍と出して「実装しない」と判定した。**測ることと、測った数字で決めることは別の仕事**。
+- T101: `asc` の CLI が 32 ビット固定でも、コンパイラの公開 API で `Target.Wasm64` を選べることを読んで、C への書き直しでなく「小さなドライバ」の道を書いた。
+
+**判定の書式を決める**: (a) 使う数字と出どころ、(b) 式、(c) 判定、(d) **判定を覆す条件**（「これが測れて X 以上なら逆」）。(d) があると、持ち主が判定を追えるし、次の回で見直せる。
+
+### 3. 「見た目」と「訪問者に見える文」の判断
+
+描画のタスク（T75・T76・T88）を Fable に寄せていたのは、見た目の判断のため。今日、**CI で画面を撮って持ち主が見る仕組み**（`preview.yml`・`tests/screenshots.mjs`）ができたので、これは Opus でよい。決まりはそのまま: コミットの前にスマホ幅と PC 幅の画面を撮って持ち主に見せる、訪問者に見える日本語は先に文面を出す。
+
+### 4. レビュー担当が「OK」を出しやすくなる
+
+同じモデルの xhigh は、実装した側の説明（TODO.md の記録）を読んで納得しやすい。今日のレビューで must-fix が出たのは 6 件中 3 件（T74・T82・T99）で、どれも**記録に書かれていないところ**（境界、失敗の経路、戻り値）を突いて出た。「記録を読んで確かめる」のではなく「記録に無いところを探す」のが役目。
+
+## うまくいかせる決まり
+
+### レビューの手順（OK と言う前に全部やる）

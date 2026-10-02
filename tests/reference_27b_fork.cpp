@@ -24,6 +24,21 @@
 //                       <dir>/fork-<i>.ids (its prompt's, then what it wrote but the last), one token at a time, into
 //                       <out>/fork-<i>.single (a row for each); the prompt arguments only count the prompts
 //   REPLAY_BATCH=1      and the same tokens as one batch, into <out>/fork-<i>.logits
+//
+// T233's review, a fourth switch (the environment), for a prompt past the 4096 positions the list's context has: what the
+// fork computes on a long text, with the logits of some positions only (a row is 1 MB: all of 6,000 would be 6 GB):
+//   LONG_TEXT=<a text file>   decode its tokens (the prompt arguments only count: one is needed, and is not used), in batches
+//                             of n_batch, asking for the logits of the positions of LONG_ROWS and of the last only; then
+//                             the tokens it writes greedily, one at a time as above. parse_special is off: a text of this
+//                             repository's documents has no "<|im_start|>", and a prompt of the page is cut the same way
+//   LONG_ROWS=<positions>     comma separated
+//   LONG_CTX=<positions>      the context (512 when it is not said)
+//   LONG_TOKENS=<n>           only the first n tokens of the text
+//   <out>/fork-long.ids       two lines of ids as fork-<i>.ids: the prompt's, the tokens written
+//   <out>/fork-long.rows      the positions of the prompt whose logits are kept, in order, on one line
+//   <out>/fork-long.logits    float32: a row of the vocabulary for each of those positions, then for each token written but
+//                             the last (row t is what follows token t, as for the other texts)
+// A run that runs out of <seconds> in the middle of the prompt keeps the rows it has and writes nothing after them.
 #include "llama.h"
 
 #include <algorithm>
@@ -96,6 +111,141 @@ static bool read_ids(const std::string & path, std::vector<llama_token> & prompt
     return !prompt.empty();
 }
 
+static std::string read_file(const std::string & path) {
+    std::ifstream in(path, std::ios::binary);
+    std::ostringstream all;
+    all << in.rdbuf();
+    return all.str();
+}
+
+// a batch of tokens at positions pos0, pos0 + 1, ..., asking for the logits of those with keep[i] set (the batch index
+// is what llama_get_logits_ith takes then)
+static bool decode_rows(llama_context * ctx, const std::vector<llama_token> & tokens, int pos0, const std::vector<char> & keep) {
+    llama_batch batch = llama_batch_init((int32_t) tokens.size(), 0, 1);
+    batch.n_tokens = (int32_t) tokens.size();
+    for (size_t i = 0; i < tokens.size(); i++) {
+        batch.token[i] = tokens[i];
+        batch.pos[i] = pos0 + (llama_pos) i;
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i] = keep[i] ? 1 : 0;
+    }
+    const int status = llama_decode(ctx, batch);
+    llama_batch_free(batch);
+    if (status != 0) fprintf(stderr, "llama_decode failed: %d\n", status);
+    return status == 0;
+}
+
+// T233's review: the long prompt (the switches LONG_* above)
+static int run_long(const llama_vocab * vocab, llama_context * ctx, int n_vocab, int n_batch, const std::string & out, int written,
+                    double began, double seconds) {
+    const std::string text = read_file(getenv("LONG_TEXT"));
+    const int all = -llama_tokenize(vocab, text.c_str(), (int32_t) text.size(), NULL, 0, false, false);
+    std::vector<llama_token> ids(all > 0 ? all : 0);
+    if (all <= 0 || llama_tokenize(vocab, text.c_str(), (int32_t) text.size(), ids.data(), all, false, false) < 0) {
+        fprintf(stderr, "the fork could not tokenize %s\n", getenv("LONG_TEXT"));
+        return 1;
+    }
+    if (getenv("LONG_TOKENS") != NULL) ids.resize(std::min<size_t>(ids.size(), (size_t) atoi(getenv("LONG_TOKENS"))));
+    const int n_prompt = (int) ids.size();
+    std::vector<char> keep(n_prompt, 0);
+    if (getenv("LONG_ROWS") != NULL) {
+        std::istringstream list(getenv("LONG_ROWS"));
+        std::string item;
+        while (std::getline(list, item, ',')) {
+            const int position = atoi(item.c_str());
+            if (position >= 0 && position < n_prompt) keep[position] = 1;
+        }
+    }
+    keep[n_prompt - 1] = 1;
+    printf("fork: long: %d tokens of %s, the logits of %d positions kept, a context of %d\n", n_prompt, getenv("LONG_TEXT"),
+           (int) std::count(keep.begin(), keep.end(), 1), (int) llama_n_ctx(ctx));
+    const std::string base = out + "/fork-long";
+    FILE * logits_file = fopen((base + ".logits").c_str(), "wb");
+    FILE * ids_file = fopen((base + ".ids").c_str(), "w");
+    if (!logits_file || !ids_file) {
+        fprintf(stderr, "cannot write into %s\n", out.c_str());
+        return 1;
+    }
+    for (int i = 0; i < n_prompt; i++) fprintf(ids_file, "%s%d", i ? " " : "", ids[i]);
+    fprintf(ids_file, "\n");
+    fflush(ids_file);
+
+    llama_memory_clear(llama_get_memory(ctx), true);
+    std::vector<int> rows;
+    std::vector<float> row;
+    int done = 0;
+    const double t0 = now();
+    double previous = t0;
+    for (int at = 0; at < n_prompt; at += n_batch) {
+        const int n = std::min(n_batch, n_prompt - at);
+        const std::vector<llama_token> chunk(ids.begin() + at, ids.begin() + at + n);
+        const std::vector<char> flags(keep.begin() + at, keep.begin() + at + n);
+        if (!decode_rows(ctx, chunk, at, flags)) return 1;
+        for (int i = 0; i < n; i++) {
+            if (!flags[i]) continue;
+            const float * logits = llama_get_logits_ith(ctx, i);
+            fwrite(logits, sizeof(float), n_vocab, logits_file);
+            rows.push_back(at + i);
+            if (at + i == n_prompt - 1) row.assign(logits, logits + n_vocab);
+        }
+        done = at + n;
+        const double t = now();
+        printf("fork: long: %d of %d tokens in %.0f s (%.3f tokens/s in the last %d)\n", done, n_prompt, t - t0, n / (t - previous), n);
+        fflush(stdout);
+        previous = t;
+        if (t - began > seconds && done < n_prompt) {
+            printf("fork: out of time after %d of the %d tokens of the long text\n", done, n_prompt);
+            break;
+        }
+    }
+    FILE * rows_file = fopen((base + ".rows").c_str(), "w");
+    if (!rows_file) {
+        fprintf(stderr, "cannot write into %s\n", out.c_str());
+        return 1;
+    }
+    for (size_t i = 0; i < rows.size(); i++) fprintf(rows_file, "%s%d", i ? " " : "", rows[i]);
+    fprintf(rows_file, "\n");
+    fclose(rows_file);
+    printf("fork: long: the prompt in %.0f s (%.3f tokens/s), the logits of %zu positions\n", now() - t0, done / (now() - t0), rows.size());
+
+    // the tokens it writes, one at a time (greedy, the first of equals), if the prompt was decoded whole
+    std::vector<llama_token> wrote;
+    std::string written_text;
+    if (done == n_prompt) {
+        for (int step = 0; step < written; step++) {
+            const llama_token next = largest(row.data(), n_vocab);
+            wrote.push_back(next);
+            written_text += piece(vocab, next);
+            std::vector<int> order(n_vocab);
+            for (int i = 0; i < n_vocab; i++) order[i] = i;
+            std::partial_sort(order.begin(), order.begin() + 5, order.end(),
+                              [&](int a, int b) { return row[a] > row[b] || (row[a] == row[b] && a < b); });
+            printf("fork: long position %d:", n_prompt - 1 + step);
+            for (int i = 0; i < 5; i++) printf(" %d [%s] %.4f", order[i], shown(piece(vocab, order[i])).c_str(), row[order[i]]);
+            printf("\n");
+            if (step == written - 1) break;
+            if (now() - began > seconds) {
+                printf("fork: out of time after %d tokens written\n", step + 1);
+                break;
+            }
+            const double t = now();
+            if (!decode(ctx, { next }, n_prompt + step)) return 1;
+            const float * logits = llama_get_logits_ith(ctx, 0);
+            fwrite(logits, sizeof(float), n_vocab, logits_file);
+            row.assign(logits, logits + n_vocab);
+            printf("fork: long: one token in %.2f s\n", now() - t);
+        }
+    }
+    for (size_t i = 0; i < wrote.size(); i++) fprintf(ids_file, "%s%d", i ? " " : "", wrote[i]);
+    fprintf(ids_file, "\n");
+    fclose(ids_file);
+    fclose(logits_file);
+    printf("fork: long: wrote: %s\n", shown(written_text).c_str());
+    fflush(stdout);
+    return 0;
+}
+
 int main(int argc, char ** argv) {
     std::setlocale(LC_NUMERIC, "C");
     if (argc < 7) {
@@ -121,7 +271,7 @@ int main(int argc, char ** argv) {
     printf("fork: loaded in %.1f s, a vocabulary of %d, %d threads\n", now() - began, n_vocab, threads);
 
     llama_context_params ctx_params = llama_context_default_params();
-    ctx_params.n_ctx = 512;
+    ctx_params.n_ctx = getenv("LONG_CTX") != NULL ? atoi(getenv("LONG_CTX")) : 512;  // (T233's review: a long text has its own)
     ctx_params.n_batch = 256;
     ctx_params.n_threads = threads;
     ctx_params.n_threads_batch = threads;
@@ -140,6 +290,14 @@ int main(int argc, char ** argv) {
     if (ctx == NULL) {
         fprintf(stderr, "the fork could not make a context\n");
         return 1;
+    }
+
+    if (getenv("LONG_TEXT") != NULL) {
+        const int status = run_long(vocab, ctx, n_vocab, (int) ctx_params.n_batch, out, written, began, seconds);
+        llama_perf_context_print(ctx);
+        llama_free(ctx);
+        llama_model_free(model);
+        return status;
     }
 
     double one_at_a_time = 0.0;

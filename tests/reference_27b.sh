@@ -20,6 +20,8 @@
 # stops writing (the float32 one is slower: it widens every row it multiplies by); BATCH_F32=1: and the replayed tokens as
 # one batch too (the fork's other path, for how far it is from itself in float32). TEXTS: how many of the four texts.
 # STAGES=none fetches the file and writes the texts, no more (T233: tests/page_27b.sh works in the same directory).
+# STAGES=long (T233's review): a text of 5,987 tokens through the fork, past the 4096 positions of the list's context:
+# the first of its own, see the comment at its stage (LONG_ROWS, LONG_CTX, LONG_TOKENS, SECONDS_FOR_LONG).
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 fork_commit=88c4bc60b9c9578f134385be9535e853f2db9b9f
@@ -75,7 +77,8 @@ prompts=("${prompts[@]:0:${TEXTS:-${#prompts[@]}}}")
 rm -f "$work"/prompt-*.txt
 for index in "${!prompts[@]}"; do printf '%s' "${prompts[$index]}" > "$work/prompt-$index.txt"; done
 
-case " $stages " in *" fork "*)
+# the fork, built here, for the stages that run it (T233: the long one too)
+case " $stages " in *" fork "*|*" long "*)
   began=$SECONDS
   if [ ! -d "$work/fork/.git" ]; then
     git init -q "$work/fork"
@@ -100,12 +103,37 @@ case " $stages " in *" fork "*)
   g++ -std=c++17 -O2 "$here/reference_27b_fork.cpp" -I "$work/fork/include" -I "$work/fork/ggml/include" \
     $libraries $rpath -o "$work/reference_27b_fork" \
     || { echo "fork: the driver did not build"; exit 1; }
+;; esac
+
+case " $stages " in *" fork "*)
   began=$SECONDS
   "$work/reference_27b_fork" "$work/$file" "$work" "$threads" "${SECONDS_FOR_FORK:-2400}" 16 "${prompts[@]}" \
     > "$work/fork.log" 2>&1 || { tail -60 "$work/fork.log"; echo "fork: the run failed"; exit 1; }
   grep -a -E '^fork:|eval time|load time|total time' "$work/fork.log" | sed 's/^\([^f]\)/fork: \1/'
   echo "fork: ran in $((SECONDS - began)) s"
   ls -la "$work"/fork-* | sed 's/^/fork: /'
+;; esac
+
+# T233's review: a text of about 6,000 tokens (tests/fixtures/long-27b.txt: English and Japanese prose of this repository's
+# documents, 5,987 tokens), past the 4096 positions the list's context has, through the fork in batches of 256 with a
+# context of LONG_CTX (8192): the logits of some positions only (LONG_ROWS: the first ones are the floor, a few are around
+# 4096, the last ones are the longest context) and the 16 tokens it writes after it. At the fork's speed on a CPU of the
+# runner (0.64 to 1.13 tokens a second) it takes 1.5 to 2.7 hours; SECONDS_FOR_LONG is when it stops (a prompt that is not
+# whole keeps its rows and writes no tokens). tests/page_27b.sh's `long` stage holds the page's forward pass to it
+case " $stages " in *" long "*)
+  began=$SECONDS
+  cp "$here/fixtures/long-27b.txt" "$work/long.txt"
+  rows=${LONG_ROWS:-20,40,60,80,100,127,200,400,700,1000,1400,1800,2200,2600,3000,3400,3800,4000,4080,4090,4094,4095,4100,4101,4104,4300,4500,4700,4900,5100,5300,5500,5700,5900,5970,5980,5981,5982,5983,5984,5985}
+  # (the lines come as the fork writes them, so that a run the job's limit ends has its progress in the log)
+  set +e
+  env LONG_TEXT="$work/long.txt" LONG_ROWS="$rows" LONG_CTX="${LONG_CTX:-8192}" ${LONG_TOKENS:+LONG_TOKENS=$LONG_TOKENS} \
+    "$work/reference_27b_fork" "$work/$file" "$work" "$threads" "${SECONDS_FOR_LONG:-18000}" 16 unused 2>&1 \
+    | tee "$work/fork-long.log" | grep -a --line-buffered -E '^fork: (CPU|loaded|keys|long|out of time)|eval time|load time|total time'
+  code=${PIPESTATUS[0]}
+  set -e
+  [ "$code" = 0 ] || { tail -40 "$work/fork-long.log"; echo "fork: the long run failed ($code)"; exit 1; }
+  echo "fork: the long text ran in $((SECONDS - began)) s"
+  ls -la "$work"/fork-long.* | sed 's/^/fork: /'
 ;; esac
 
 status=0
