@@ -190,6 +190,13 @@ jobs:
             models: >-
               hf-granite-4.2-3b-thinking hf-granite-4.2-3b hf-granite-4.2-8b
               hf-minicpm5-1b-thinking hf-minicpm5-1b hf-minicpm5-2b
+          # T251 (2026-10-02): the English classics, 13 GB of downloads: GPT-2's other sizes with DistilGPT2, and the
+          # two ends of the Pythia ladder (tests/ladder.mjs reads this job's results with the small and the large one's);
+          # Pythia 6.9B on a 64-bit memory
+          - size: classics
+            timeout: 3000
+            models: >-
+              hf-pythia-14m hf-distilgpt2 hf-gpt2-medium hf-gpt2-large hf-gpt2-xl hf-pythia-2.8b hf-pythia-6.9b
     steps:
       - name: Checkout
         uses: actions/checkout@v7
