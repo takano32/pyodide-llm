@@ -253,7 +253,10 @@ def main():
                                            **{key: value for key, value in options.items() if key in accepted})
         reference = AutoTokenizer.from_pretrained(folder)
         # T236: said either way. A Qwen3's template thinks unless told not to, a Qwen3.5 0.8B's only when told to
-        thinking = {"enable_thinking": False} if "(no thinking)" in entry["name"] else \
+        # (--hf, T253's review: what ?hf= gets is the template with nothing said of thinking, so the real one is asked with
+        # nothing said either: a "(no thinking)" entry was held to enable_thinking=False in this mode, a form of the list's
+        # own that the converter alone cannot know, and MiniCPM5's two sizes were 0/9 for that and nothing else)
+        thinking = {} if alone else {"enable_thinking": False} if "(no thinking)" in entry["name"] else \
             {"enable_thinking": True} if "(thinking)" in entry["name"] else {}
         known = KNOWN.get(entry["id"], {})
         same, explained, diffs = 0, 0, []
