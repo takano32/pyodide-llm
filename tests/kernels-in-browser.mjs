@@ -19,7 +19,7 @@ import * as playwright from "playwright-core";
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
 const siteAt = args.indexOf("--site");
-const site = siteAt >= 0 ? args[siteAt + 1] : null;
+const site = siteAt >= 0 ? args[siteAt + 1].replace(/\/?$/, "/") : null;
 const engines = args.filter((arg, i) => !arg.startsWith("--") && args[i - 1] !== "--site");
 const channels = { chrome: "chrome", msedge: "msedge" };
 
