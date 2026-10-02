@@ -187,12 +187,19 @@ the attention on any real GPU. The numbers from CI and from the development mach
   subgroups, in Chromium's SwiftShader and in Node with Dawn and Mesa's lavapipe.
 - It then writes 8 tokens greedy on the GPU (4, one on the CPU, 3 more) and checks the ids against NumPy's
   (or a near tie), the keys and values written back, a stop token and a sampled token.
-- For ternary weights: three made-up ternary models (one with outlier channels in its final norm, one in pieces
-  in 64-bit memory) and the real Ternary Bonsai 1.7B, on Dawn. The first layer's keys and values were within 9.4e-4
-  of NumPy's with 8-bit inputs (the line is 8e-3), every layer within 0.46 of its line, the written ids NumPy's, and
-  the model on the GPU alone gave the same bits. Twenty-one deliberate breaks of the ternary path (the code's
-  mapping, a scale of the wrong group, a dropped group, another layer's weights, the classifier's pieces, the
-  outlier columns) all failed, sixteen of them already in the check the page runs as it loads.
+- For ternary weights: four made-up ternary models (one with outlier channels in its final norm, one in pieces
+  in 64-bit memory, and, from the review, one whose rows are two groups of 128 and whose classifier is apart from its
+  embedding, as the 8B's, with outlier channels in both groups) and the real Ternary Bonsai 1.7B, on Dawn. The first
+  layer's keys and values were within 9.4e-4 of NumPy's with 8-bit inputs (the line is 8e-3), every layer within 0.46
+  of its line, the written ids NumPy's, and the model on the GPU alone gave the same bits. Twenty-one deliberate breaks
+  of the ternary path (the code's mapping, a scale of the wrong group, a dropped group, another layer's weights, the
+  classifier's pieces, the outlier columns) all failed, sixteen of them already in the check the page runs as it loads.
+  The review added nine breaks that the first three models cannot see, because their rows are one group of 128 and their
+  classifier is their embedding (a scale of the wrong group or row stride in the outlier columns or the embedding, the
+  embedding read from the classifier's pieces, its ternary flag lost, a token's matrix scaled by the thread's own
+  column, a dropped outlier): those three models passed seven of the nine, the fourth failed all nine, each of them in
+  the page's own check as it loads. That check runs on the real model's sizes, so on a device such a fault would send
+  the answers to the CPU; it is the made-up models of CI that would have let it by.
 - Deliberately broken shaders (a wrong causal mask, a RoPE sign, a GQA head mapping, a missing quantization step
   and others) fail these checks. So does a bias or a norm's weights read from another layer, on the packed shaders
   too, because two of the made-up models (GPT-2 and Qwen with small matrices) are drawn so that 8-bit rounding does

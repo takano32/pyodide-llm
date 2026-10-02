@@ -2,9 +2,11 @@
 //   node tests/gpu-choice-check.mjs
 // Made-up times: the CPU's ms a token of its blocks, gpu.js's two blocks timed as it starts, the blocks the GPU then ran.
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { aloneHolds, BOTH_ON_8, aloneVerdict, cpuReadBytes, footprint, gpuBytes, gpuLine, gpuOnlyPlan, gpuOnlyUnfit, gpuOnlyWeights, gpuHoles, layerWeightsOf, placer, PROMPTS_CPU,
   PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes, USAGE_UNKNOWN, weightsPlace } from "../public/forward.js";
-import { deviceKey, halvesOf, quantizedLikeCpu, ternaryValues, tiledOff, tokenAttentionData, tokenAttentionOff } from "../public/shaders.js";
+import { deviceKey, fusedDp4aMatVec, halvesOf, OUTLIERS_MOST, outliersOf, quantizedLikeCpu, ternaryMatVec, ternaryValues, tiledOff, tokenAttentionData,
+  tokenAttentionOff } from "../public/shaders.js";
 import { usedAfter } from "../src/bench.js";
 
 // a GPU with a fixed cost of 40 ms a block and 0.5 ms a token (16 tokens 48 ms, 64 tokens 72 ms)
@@ -357,6 +359,9 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // (q of one head of 32 in a dim of 128: 4096 weights, 1024 bytes of codes and 128 of scales, where k would start)
   assert.match(gpuOnlyUnfit([128, 384, 2, 1, 1, 320, 256], "ternary", { head_dim: 32 }, packed), /would not start/);
   assert.equal(gpuOnlyUnfit([128, 384, 2, 8, 4, 320, 256], "ternary", { qk_norm: true, head_dim: 32 }, packed), null, "gpu-check's made-up ternary model");
+  // (the review) and the untied one: a dim of 256 (two groups of 128 a row), a hidden size of 1152 (a second pass of a
+  // token's matrix), its classifier apart (a negative vocabulary)
+  assert.equal(gpuOnlyUnfit([256, 1152, 3, 8, 4, -320, 256], "ternary", { qk_norm: true, head_dim: 32 }, packed), null, "gpu-check's made-up untied ternary model");
   // (the review of T237) with the refusal of ternary weights gone, the others still stand, each with its own reason:
   // the 27B is ternary, in a rotated basis, with linear-attention layers (a Qwen3.5)
   assert.match(gpuOnlyUnfit([5120, 17408, 64, 24, 4, 248320, 4096], "ternary", { arch: "qwen35", head_dim: 256, rotated: { block: 1024, signs: {} } }, packed), /Qwen3\.5/);
@@ -433,6 +438,14 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.deepEqual(ternary.tables, { classifier: { rows: 100, n: 128, ternary: true, at: [codes.token_embedding_table.offset, codes.token_embedding_table.scales] }, embedding: null });
   // (its stretches: every matrix's codes and then its scales, to where the next tensor begins)
   assert.deepEqual(gpuHoles(codes).find(([start]) => start === codes.w1.offset), [codes.w1.offset, codes.w2.offset]);
+  // (the review of T232: a ternary classifier apart from the embedding, as the 8B's: two tables, each its own codes and
+  // scales, and a stretch of its own, its codes and then its scales; no gpu-check model was untied before)
+  const wcls = tensor(at, [100, 128], true, true);
+  const untied = gpuOnlyPlan([128, 256, 2, 4, 2, -100, 32], { ...codes, wcls });
+  assert.deepEqual(untied.tables, { classifier: { rows: 100, n: 128, ternary: true, at: [wcls.offset, wcls.scales] },
+    embedding: { rows: 100, n: 128, ternary: true, at: [codes.token_embedding_table.offset, codes.token_embedding_table.scales] } });
+  assert.equal(gpuHoles({ ...codes, wcls }).length, gpuHoles(codes).length + 1, "a ternary classifier of its own is a stretch of its own");
+  assert.deepEqual(gpuHoles({ ...codes, wcls }).at(-1), [wcls.offset, wcls.scales + ((100 * 128) / 128) * 4], "its codes, then its scales");
 }
 
 // T156 (the owner, 2026-09-27): a model on the GPU alone weighed on the prompts too, by the page's use, and the verdict
@@ -545,5 +558,67 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.match(off(product(1, (r, g) => r * (n / group) + Math.min(Math.floor(g / 4) + 1, 2))), /products/, "the scale of the next group of 128");
   assert.match(off(product(1, right).fill(NaN, 5, 6)), /products/, "one product that is no number");
   assert.match(off(product(1, right), { group: () => 128 }), /products/, "a group that is no number makes every product NaN: wrong, not right");
+}
+// T232's review: ternaryMatVec is fusedDp4aMatVec's text with the lines that read the weights and their scales changed (and
+// ternary_packed after SDP8AI), a copy because deviceKey() hashes fusedDp4aMatVec's text and an int8 model's remembered
+// forms hold while it does not change (the next change of it is to make the two one). A copy drifts: a line changed in
+// one and not the other is a shader of one kind of weights that is not the other's, and CI's runs of both go on being ok.
+// Every line but those that differ by design is the same in the two, for every output a layer writes
+{
+  const byDesign = [/var<storage, read> b: /, /var<storage, read> scales_b: /, /k_offset - covers 32 values of k in input_b/, /let block_idx = k_offset;/,
+    /let K128 = /, /the scales of a row of the weights: one a group of 128/, /let own_scale_b = /, /let own_b = /, /let own_b1 = /, /let up_scale_b = /,
+    /\+= SDP8AI\(own_a, (ternary_packed\()?b\[up_offset/];
+  const lines = (text) => text.replace(/\/\/ T232: a word of 16 ternary codes[\s\S]*?\n}\n/, "").split("\n");
+  const kept = (text) => lines(text).filter((line) => !byDesign.some((re) => re.test(line)));
+  const different = (text) => lines(text).length - kept(text).length;
+  // (what differs by design: 7 lines of the int8 text, 8 of the ternary one (the scales' K128 and its comment are two lines
+  // for the int8's block_idx one), and where SwiGLU reads up's rows 2 more in each)
+  for (const [output, int8, ternary] of [["write", 7, 8], ["rope", 7, 8], ["add", 7, 8], ["swiglu", 9, 10]]) {
+    assert.equal(different(fusedDp4aMatVec({ output })), int8, `${output}: the lines of fusedDp4aMatVec that read the weights`);
+    assert.equal(different(ternaryMatVec({ output })), ternary, `${output}: the lines of ternaryMatVec that read the weights`);
+    assert.deepEqual(kept(ternaryMatVec({ output })), kept(fusedDp4aMatVec({ output })),
+      `ternaryMatVec(${output}) drifted from fusedDp4aMatVec(${output}): a line changed in one is to be changed in the other (or the two made one)`);
+  }
+  // and what is not by design is seen: one other line changed in the copy is not the same text
+  const changed = ternaryMatVec({ output: "add" }).replace("var output_value = f32(0);", "var output_value = f32(1);");
+  assert.notDeepEqual(kept(changed), kept(fusedDp4aMatVec({ output: "add" })), "a changed line is a difference");
+}
+// T232's review: the outlier channels' two shaders take as many as OUTLIERS_MOST, and Python's OUTLIER_CHANNELS is that
+// many (a ninth channel past the Outliers' room would throw as the plan is made: the GPU then lost for a model that
+// has them): one number in two languages
+{
+  const python = fs.readFileSync(new URL("../public/llama2_numpy.py", import.meta.url), "utf8");
+  assert.equal(Number(/^OUTLIER_CHANNELS = (\d+)$/m.exec(python)?.[1]), OUTLIERS_MOST, "llama2_numpy.OUTLIER_CHANNELS is shaders.js's OUTLIERS_MOST");
+  const words = outliersOf([5, 70, 130, 255, 256, 300, 2047, 3], 151936, 2048);
+  assert.deepEqual(Array.from(words), [8, 151936, 2048, 0, 5, 70, 130, 255, 256, 300, 2047, 3], "count, rows, n, a word of nothing, then the channels: 48 bytes of the uniform");
+  assert.equal(outliersOf([1, 2]).length, 4 + OUTLIERS_MOST);
+  assert.throws(() => outliersOf(Array.from({ length: OUTLIERS_MOST + 1 }, (_, i) => i)), RangeError, "a ninth channel has no room");
+}
+// T232's review: the check of a tiled shader sees a quantized scale that is no number and a form that writes nothing but NaN
+{
+  const rows = 4, n = 256, tokens = 2, group = 128, s = new Float32Array((rows * n) / group).fill(0.01), w = new Int8Array(rows * n).map((_, i) => (i % 3) - 1);
+  const x = new Float32Array(tokens * n).map((_, i) => Math.sin(i)), xq = new Int8Array(tokens * n), xs = new Float32Array(tokens * (n / 32));
+  for (let t = 0; t < tokens; t++) {
+    const q = quantizedLikeCpu(x.subarray(t * n, (t + 1) * n));
+    xq.set(q.xq, t * n);
+    xs.set(q.xs, t * (n / 32));
+  }
+  const exact = Float32Array.from({ length: tokens * rows }, (_, at) => {
+    const t = Math.floor(at / rows), r = at % rows;
+    let sum = 0;
+    for (let g = 0; g < n / 32; g++) {
+      let part = 0;
+      for (let i = g * 32; i < (g + 1) * 32; i++) part += w[r * n + i] * xq[t * n + i];
+      sum += part * s[r * (n / group) + Math.floor(g / 4)] * xs[t * (n / 32) + g];
+    }
+    return 2 * sum;
+  });
+  const off = (got, more = {}) => tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride: n, yStride: rows, half: false, group, ...more }).wrong;
+  assert.equal(off(exact), null);
+  assert.match(off(new Float32Array(exact.length).fill(NaN)), /products/, "a form that writes only NaN is wrong, not right");
+  assert.match(off(exact, { xs: Float32Array.from(xs, (v, i) => (i === 3 ? NaN : v)) }), /products/, "a quantized scale that is a NaN is wrong");
+  assert.match(off(exact.map((v, i) => (i === 2 ? Infinity : v))), /products/, "an infinity is wrong");
+  // the f16 forms' line takes the same road
+  assert.match(off(new Float32Array(exact.length).fill(NaN), { half: true }), /products/, "an f16 form that writes only NaN is wrong");
 }
 console.log("ok");
