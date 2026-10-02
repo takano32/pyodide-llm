@@ -248,11 +248,14 @@ points of it in one of the eight value heads (head 6): an error of 0.7% of the v
 do along the vector. Random noise does not do it: 3% of relative noise on the same values moves the float32 original
 by 0.6% to 1.5%. Leaving that token's inputs unrounded costs +0.4% against the Q8_0 values at both 8 and 7 bits, which
 is +4.1% against the original: the 8-bit number above carries one draw of that constant, the 7-bit one another. On the
-1.2B JP the same token costs the page's 7-bit path 2.4% to 3.7% of the 3.0% to 4.5% it loses. The answers are not
-broken on either path: along the 12 answers the model itself writes, its most likely token is the float-activation
-path's at 395 of 398 positions with 8-bit activations and 393 of 398 with 7-bit ones. The same model moves its logits
-by 17 when the norms' epsilon is 1e-6 instead of 1e-5, because its residual stream is small (an rms of 0.006 to 0.03),
-so that epsilon is 6% to 28% of the mean square the norms divide by in its early layers.
+1.2B JP the same token costs the page's 7-bit path 2.4% to 3.7% of the 3.0% to 4.5% it loses; the 230M, the 700M and
+the 1.2B Instruct do not have it (that token moves their perplexity by 0.5% at most, and 8-bit or 7-bit activations
+cost them 0.5% at most in all). The answers are not broken on either path: along the 12 answers the model itself
+writes, its most likely token is the float-activation path's at 395 of 398 positions with 8-bit activations and 393 of
+398 with 7-bit ones, and the written tokens' log probabilities move by +0.000 and −0.005 on average: in the chat
+format the constant does not show. The same model moves its logits by 17 when the norms' epsilon is 1e-6 instead of
+1e-5, because its residual stream is small (an rms of 0.006 to 0.03), so that epsilon is 6% to 28% of the mean square
+the norms divide by in its early layers.
 
 ## Other small effects
 
