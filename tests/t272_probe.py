@@ -116,11 +116,12 @@ class Probe:
         out[..., 1] = x0 * s + x1 * c
         return out.reshape(T, h, hs)
 
-    def window(self, ids, quant=None, record=None, inject=None, perturb=None):
+    def window(self, ids, quant=None, record=None, inject=None, perturb=None, scale=None, add=None):
         """logits (T, vocab). quant: {role: dict(qmax=, rows=, layers=, group=, outliers=, top=, shift=, noise=, seed=)}.
         inject: {"k": {layer: the first position's keys}, "v": {...}, "h": {conv layer: its h}}: what position 0 gives the
         later positions, taken from another computation of it. perturb: {(layer, "k" | "v"): (relative noise, seed)}: the
-        first position's keys or values of that layer moved by it."""
+        first position's keys or values of that layer moved by it. scale: {(layer, "v"): d}: those values times 1 + d.
+        add: {(layer, "v"): a vector of kv_dim}: added to those values (before the keys' and values' heads are cut)."""
         L = self.l
         quant = quant or {}
         T = len(ids)
@@ -163,6 +164,12 @@ class Probe:
                     if perturb and (l, part) in perturb:
                         eps, seed = perturb[(l, part)]
                         array[0] = array[0] * (1.0 + eps * np.random.default_rng([seed, l]).standard_normal(array[0].shape)).astype(np.float32)
+                if scale and (l, "v") in scale:
+                    v = v.copy()
+                    v[0] = v[0] * np.float32(1.0 + scale[(l, "v")])
+                if add and (l, "v") in add:
+                    v = v.copy()
+                    v[0] = v[0] + np.asarray(add[(l, "v")], dtype=np.float32).reshape(v[0].shape)
                 mul = self.heads // self.kv
                 kk = np.repeat(k, mul, axis=1).transpose(1, 2, 0)  # (heads, head, T)
                 vv = np.repeat(v, mul, axis=1).transpose(1, 0, 2)  # (heads, T, head)
@@ -423,6 +430,27 @@ def main():
                 same = sum(f is None for f in firsts)
                 say(experiment="answers", variant=name, tokens_agreeing_with_the_float_activation_answer=f"{agree}/{total}", answers_identical=f"{same}/{len(firsts)}",
                     first_difference=[f for f in firsts])
+        elif experiment == "knob":
+            # the first attention layer's values of the first position as a knob: the perplexity as their scale moves, and the
+            # rounding error of the input they are made of, split into a part along them and the rest (and each part applied alone)
+            layer, a = attention[0], 0
+            for delta in (-0.05, -0.03, -0.02, -0.01, -0.005, 0.005, 0.01, 0.02, 0.03, 0.05):
+                run.run(f"the first attention layer's values of the first position times {1 + delta:.3f}", None, scale={(layer, "v"): delta})
+            rec = {}
+            probe.window(windows[0], None, rec)
+            xb0 = rec["xb"][layer][:1]
+            v0 = (xb0 @ llama.wv[a].T)[0]
+            for bits in (7, 8, 9, 10):
+                for shift in (0, 5, 13, 21):
+                    xq = fake_quantize(xb0, qmax_of(bits), shift=shift)
+                    dv = ((xq - xb0) @ llama.wv[a].T)[0]
+                    parallel = float(dv @ v0 / (v0 @ v0))
+                    rest = dv - parallel * v0
+                    say(experiment="knob", bits=bits, shift=shift, error_along_v=parallel, error_orthogonal_to_v=float(np.linalg.norm(rest) / np.linalg.norm(v0)))
+                    if shift == 0:
+                        run.run(f"{bits}-bit rounding error of that input, all of it, added to those values", None, add={(layer, "v"): dv})
+                        run.run(f"{bits}-bit rounding error of that input, its part along the values only", None, add={(layer, "v"): parallel * v0})
+                        run.run(f"{bits}-bit rounding error of that input, the rest only", None, add={(layer, "v"): rest})
         elif experiment == "profile":
             for bits in (8, 7):
                 run.run(f"PROFILE {bits}-bit, every input", quant_all(qmax_of(bits)))
