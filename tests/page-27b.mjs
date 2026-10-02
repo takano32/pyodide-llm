@@ -300,13 +300,18 @@ if (isMainThread) {
    * position, where the most likely token differs and how far apart their own first two are there */
   const distance = (ours, theirs) => {
     const count = Math.min(ours.length, theirs.length / vocab);
-    const found = { count, worst: 0, where: 0, klWorst: 0, klSum: 0, same: 0, gaps: [] };
+    const found = { count, worst: 0, where: 0, klWorst: 0, klSum: 0, same: 0, gaps: [], token: -1, probability: 0 };
     for (let position = 0; position < count; position++) {
       const a = ours[position], b = theirs.subarray(position * vocab, (position + 1) * vocab);
-      let worst = 0;
-      for (let i = 0; i < vocab; i++) worst = Math.max(worst, Math.abs(a[i] - b[i]));
-      if (worst > found.worst) [found.worst, found.where] = [worst, position];
+      let worst = 0, token = 0;
+      for (let i = 0; i < vocab; i++) {
+        const apart = Math.abs(a[i] - b[i]);
+        if (apart > worst) [worst, token] = [apart, i];
+      }
       const la = logSoftmax(a), lb = logSoftmax(b);
+      // (the token the largest difference is at, with what each says of it and the probability the reference gives it:
+      // the review of T233 found a row past the line whose KL was 7e-6: a token of no probability)
+      if (worst > found.worst) Object.assign(found, { worst, where: position, token, ours: a[token], theirs: b[token], probability: Math.exp(lb[token]) });
       let kl = 0;
       for (let i = 0; i < vocab; i++) kl += Math.exp(lb[i]) * (lb[i] - la[i]);
       found.klSum += kl;
@@ -527,7 +532,7 @@ if (isMainThread) {
       const found = [];
       for (let k = 0; k < have; k++) {
         const position = positions[k], d = distance([got.get(position)], kept.subarray(k * vocab, (k + 1) * vocab));
-        found.push({ position, worst: d.worst, kl: d.klWorst, same: d.same === 1, gap: d.gaps[0]?.gap });
+        found.push({ position, worst: d.worst, kl: d.klWorst, same: d.same === 1, gap: d.gaps[0]?.gap, token: d.token, ours: d.ours, theirs: d.theirs, probability: d.probability });
       }
       const band = (from, to) => found.filter(({ position }) => position >= from && position < to);
       const tell = (list) => list.length ? `${list.length} rows, largest difference ${Math.max(...list.map((r) => r.worst)).toFixed(4)}, KL ${Math.max(...list.map((r) => r.kl)).toExponential(2)} at most, ` +
@@ -539,6 +544,8 @@ if (isMainThread) {
         return `${from} to ${to === Infinity ? "the end" : to}: ${tell(band(from, to))}`;
       }).join("; "));
       say(`${label}: the rows: ` + found.map((r) => `${r.position}: ${r.worst.toFixed(3)}/${r.kl.toExponential(1)}${r.same ? "" : " (another most likely token)"}`).join(", "));
+      say(`${label}: the five rows furthest from the fork's: ` + [...found].sort((x, y) => y.worst - x.worst).slice(0, 5)
+        .map((r) => `${r.position}: ${r.worst.toFixed(3)} at token ${r.token} (the fork's ${r.theirs.toFixed(2)}, the page's ${r.ours.toFixed(2)}, a probability of ${r.probability.toExponential(0)})`).join("; "));
       // what is looked for: a difference that grows with the position, past the floor the first rows measure. A broken engine is
       // held to the lines of the right one (its own first rows are as wrong as the rest): every row of it is looked at
       const floor = band(0, FLOOR_BELOW), past = found.filter(({ position }) => position >= FLOOR_BELOW);
@@ -550,7 +557,7 @@ if (isMainThread) {
           say(`${label}: the floor (under ${FLOOR_BELOW} positions) is ${floorWorst.toFixed(4)} and KL ${floorKl.toExponential(2)}; the lines past it: ${limits.worst.toFixed(4)} and ${limits.kl.toExponential(2)}`);
         }
         for (const r of name ? found : past) {
-          if (r.worst > limits.worst) reasons.push(`position ${r.position}: ${r.worst.toFixed(4)} from the fork's, past ${limits.worst.toFixed(4)}`);
+          if (r.worst > limits.worst) reasons.push(`position ${r.position}: ${r.worst.toFixed(4)} from the fork's, past ${limits.worst.toFixed(4)} (at token ${r.token}: the fork's ${r.theirs.toFixed(3)}, the page's ${r.ours.toFixed(3)}, the fork gives it a probability of ${r.probability.toExponential(1)})`);
           if (r.kl > limits.kl) reasons.push(`position ${r.position}: KL ${r.kl.toExponential(2)}, past ${limits.kl.toExponential(2)}`);
           if (!r.same && r.gap > 2 * r.worst) reasons.push(`position ${r.position}: another most likely token where the fork's first two are ${r.gap.toFixed(4)} apart (more than twice ${r.worst.toFixed(4)})`);
         }
