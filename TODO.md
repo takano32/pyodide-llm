@@ -88,7 +88,7 @@
 - **CI**: 本線（T129 と T130 の後）の tests.yml の全部の組は成功（run 36864748112、EPYC 7763、383 秒）。T219 のブランチ（T224 と合わせた後）の gpu-prompt.yml の全部の組は成功、FAILED 0（run 36864349281、13.9 分）。本番の確かめは T130（`long=850` の 3B 級と `coi=off`）と T129（`slow.yml` の slow と stall、モデルの切り替え、2 回目の訪問）が通った（数字は各項）。T219 の後の本線の gpu-prompt.yml の軽い組は成功（run 36866412202）、`gpuTest=on` の本番の回（run 36866409090、SwiftShader）は tiny-lm が「prompts and answers on WebGPU (gpuTest)」で 66 トークンを GPU で書いた（467 秒）。同じ回の llm-jp-3 150M は 1800 秒の持ち時間で打ち切り（SwiftShader で生成の歩を回す e2e は遅い、AGENTS.md の T156 の記録のとおり。壊れではない: 大きいモデルを `gpuTest=on` で書かせない）。
 - **持ち主の指示（2026-10-02、2 つ目）: 現在の実行を完了させる**（「現在の実行を完了させよう」。その前に「実装とレビューを再開」で下の 7 本を始めた）。**新しい実装もレビューも始めない**: 動いている担当が報告したら本線に入れて本番を確かめるだけ。出てきた次の仕事は採番して台帳に書くだけにする。再開は持ち主の言葉の後。
 - **持ち主の指示（2026-10-02、3 つ目）: Bonsai を優先する**（「Bonsai は優先して取り組みたい」）。本線に入れる順も、次に始める順も Bonsai が先: T233（27B を一覧に、動いている）→ そのレビュー → T232（3 値の GPU）→ T234（記録）。Bonsai の持ち主の判断待ち: yarn か素の RoPE か（レビュー 2 本の勧めは素）、「Created using Bonsai by Prism ML.」の表示、3 値の項目の note の文面、27B の文脈の長さと考える形（T233 の報告の後）。
-- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: 実装は T233 `t233-bonsai-27b`（27B を一覧に）、T232 `t232-ternary-gpu`（3 値の GPU、持ち主「T232 はじめる」2026-10-02）、T251・T252 `t251-t252-listings`、T260 `t260-lfm2`。レビュー（Sonnet max）は T253・T254 `t253-t254-review`、T245・T247 `t245-t247-review`。**持ち主が言ったら始めるもの**: T255（SmolLM3、T260 の後: 同じエンジンのファイル）、T264 と変換器の待ちの直し（`CONVERTER` を上げる 1 回にまとめる）、T256・T257・T258（トークナイザと Phi）、T261（Gemma 3）、T232（3 値の GPU）、T244、T234。
+- **並行で進めているもの（別のワークツリー、ブランチは origin に）**: 実装は T233 `t233-bonsai-27b`（27B を一覧に）、T232 `t232-ternary-gpu`（3 値の GPU、持ち主「T232 はじめる」2026-10-02）、T260 `t260-lfm2`。レビュー（Sonnet max）は T253・T254 `t253-t254-review`、T245・T247 `t245-t247-review`。**持ち主が言ったら始めるもの**: T255（SmolLM3、T260 の後: 同じエンジンのファイル）、T264 と変換器の待ちの直し（`CONVERTER` を上げる 1 回にまとめる）、T256・T257・T258（トークナイザと Phi）、T261（Gemma 3）、T232（3 値の GPU）、T244、T234。
 - **T227 も本線に入れた（4623fb3）。レビュー済み（Sonnet max、2026-10-01、ブランチ `t227-review`）**: 報告の頭と要約に「#### Warnings」の一覧。レビューの直し（must-fix 1・should 5。装置のエラーの改行が警告を壊す件が must-fix。並びは重い順に、経路の止まりも載せる、など）はこのブランチ。見出しと切り詰めの文（「… and N more, in the whole report below」）は実装が選んだ仮の文のまま、持ち主が決める（勧めは T227 の項）。WRONG の報告は本物の Chromium で見た（`bench-check.mjs --wrong`: 層の検査の線を 1e-12 にして配る。本物の端末の WRONG の行はまだ見ていない）。
 - **T228 の調べも本線に入れた**（docs/notes/t228-bonsai-2-2026-10-01.md。前の仕事を T235〜T238 に採番した。勧めは小さいモデルから、持ち主の判断待ち）。
 - **lishogi.org の WebGPU（2026-10-01、持ち主の問い）**: 使っていない。ソース（WandererXII/lishogi、master 5394fc3、2026-09-10）にも本番の解析ページの JS にも `navigator.gpu`・WGSL は無い。ブラウザの解析は YaneuraOu の K-P の NNUE と Fairy-Stockfish の NNUE の WASM（SIMD と pthreads、共有メモリ）で、隔離はサーバのヘッダ（COEP は `credentialless` が使えるブラウザではそれ、ほかは `require-corp`）。取り込む GPU の手法は無い。
@@ -2141,7 +2141,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **持ち主の判断**: (a) **上の直し 4 項目を入れるか。勧め: 入れる**（本物と同じ入力になる。Qwen3 8B は答えの perplexity が 2.8 倍だった）。**変換器に決めさせるか**（`?hf=` も直る。`CONVERTER` を上げる回に、T248 の調べの 7 節の 4 と一緒に）、**ほかの Qwen3（4B 以下・Swallow・CAT-Thinking）はそのままか**（勧め: そのまま。5% 以内で、4B 以下は `<|im_start|>` のほうが悪い）。(b) T250 の項の (1)〜(3)（llm-jp-4.1 8B thinking は GGUF が出るまで待つ・Shisa に考える形は足さない・CAT-Thinking にすぐ答える形は足さない。勧め: 足さない 2 つは足さず、llm-jp-4.1 は待つ）。(c) T249 の行の持ち主の判断 (b)（"Built with Llama" の表示。ELYZA は "Built with Meta Llama 3"）。(d) `format_check.py` を毎晩の全部の組に足すか（79 項目で 4.7 分。T249 の行の 4）。
   - **未確認**: Bonsai 8B のチャットの答え（plain text の +70.2% だけ）。8B の float32 での確かめ（上）。持ち主の端末（GPU だけの 9.15〜9.2 GiB のバッファが 8 GB のカードで通るか）。直した 5 項目（Qwen3 8B の 2 つ・Shisa・Bonsai 8B・SmolLM2 135M）の本番の `models.yml`（本線に入れた後に本会話が回す: 答えが本物の頭で始まるか）。Qwen3 8B の thinking の形の答え（ID は同じ形だが、答えを読んでいない）。
 
-### T251 [追加][モデル] 英語の古典の梯子を一覧に（GPT-2 medium・large・xl と distilgpt2、Pythia 14M・2.8B・6.9B） — 状態: **反映済み**（2026-10-02、本線に入れるのは本会話。レビュー前。Opus medium、ブランチ `t251-t252-listings`。T248 の調べから）
+### T251 [追加][モデル] 英語の古典の梯子を一覧に（GPT-2 medium・large・xl と distilgpt2、Pythia 14M・2.8B・6.9B） — 状態: **反映済み**（2026-10-02、本線に入れた、レビュー前。Opus medium、ブランチ `t251-t252-listings`。T248 の調べから）
 
 **結果: 7 項目を足した。** 変換器・エンジン・`CONVERTER` は変えていない。どれも Q8_0 の GGUF の重みと原本の語彙（T136 の段 ③ の道）。書式の無い base モデルで、前からの GPT-2 124M と Pythia の 5 つと同じ形（サンプリング 0.7・0.9・罰 1.1、書き出し「Once upon a time」）。
 
@@ -2176,7 +2176,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **未計測**: ブラウザでは 1 つも動かしていない（本番の `models.yml` が最初の実行）。準備完了の秒、ヒープ、スレッドのある速さ、GPU の道、6 ビット、保存と 2 回目の訪問。T84 の梯子の表（8 段）。実物の固定値（`tests/fixed_outputs.py`）には足していない（GPT-2 と NeoX の GGUF の道は前からの 2 つが通る）。DevQuasar-3 の pythia-14m の GGUF の突き合わせ。
 - **持ち主に決めてもらうこと**: (1) Pythia 14M は deduped でよいか（70M と同じ。deduped でないほうは safetensors の 28 MB から取れる）。(2) Pythia 14M と DistilGPT2 を残すか（greedy ではくり返し、14M はサンプリングでも意味が通らない。梯子の端として入れた）。(3) GPT-2 の 3 つのライセンスの名前を、カードの本文の「Modified MIT License」にしたこと（124M はカードのとおり「MIT License」で、同じ OpenAI のライセンスに 2 つの名前が並ぶ）。
 
-### T252 [追加][モデル] 名前の通った 7〜8B と Coder を一覧に（Qwen2.5 Coder 1.5B・3B・7B、DeepSeek-R1 Distill Qwen 7B・Llama 8B、Llama 3.1 8B Instruct、Hermes 3、SmolLM2 の base） — 状態: **反映済み**（2026-10-02、本線に入れるのは本会話。レビュー前。Opus medium、ブランチ `t251-t252-listings`。T248 の調べから）
+### T252 [追加][モデル] 名前の通った 7〜8B と Coder を一覧に（Qwen2.5 Coder 1.5B・3B・7B、DeepSeek-R1 Distill Qwen 7B・Llama 8B、Llama 3.1 8B Instruct、Hermes 3、SmolLM2 の base） — 状態: **反映済み**（2026-10-02、本線に入れた、レビュー前。Opus medium、ブランチ `t251-t252-listings`。T248 の調べから）
 
 **結果: 9 項目を足し、h2o-danube3 の 2 つは入れなかった。** 変換器・エンジン・`CONVERTER` は変えていない。どれも Q8_0 の GGUF の重みと原本の語彙・config・書式（T136 の段 ② の形）。書式と特殊トークン・BOS・止まりは 9 つとも変換器の読みのままで、項目の options は空。
 
