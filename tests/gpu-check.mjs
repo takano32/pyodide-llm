@@ -96,8 +96,8 @@
 // the same without them (as the 4B) and calm (T226's review: its packed shaders' lines show a layer's weights or vectors read from another layer);
 // "synthetic-ternary-wide", the same in a 64-bit memory with the checkpoint 4 GiB up and the GPU's matrices in pieces
 // of 8192 bytes at most (w1 and w3 in two, the second short; w2 in two); and (the review) "synthetic-ternary-untied",
-// a dim of 256 (two groups of 128 a row), its classifier apart from the embedding (as the 8B's), outlier channels in both
-// groups, calm. NumPy's answer widens the ternary weights to
+// a dim of 256 (two groups of 128 a row) and a hidden size of 1152 (a token's matrix loops twice), its classifier apart from
+// the embedding (as the 8B's), outlier channels in both groups, calm. NumPy's answer widens the ternary weights to
 // float32, and Q8 is the arithmetic of the ternary shaders as it is of ORT's DP4A: the matrices' inputs in 8 bits a
 // group of 32. Each is also put on the GPU alone (T156, T210), but for the one in pieces.
 //
@@ -166,15 +166,17 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   "synthetic-ternary": [{ ...TERNARY, outliers: 8 }, TERNARY_OPTIONS],
   "synthetic-ternary-calm": [{ ...TERNARY, calm: true }, TERNARY_OPTIONS],
   "synthetic-ternary-wide": [TERNARY, TERNARY_OPTIONS, { force: { pieceBytes: 8192 }, wide: true }],
-  // the review of T232: what the three above cannot tell. Their dim is 128, one group of 128 a row, so a table's or the
-  // classifier's scale of the wrong group of a row, or of a row's stride (n / 128 scales a row: 1 there), read the same
-  // scale as the right one (a mutant of TERNARY_COLUMNS' `channel / 128u` and of the embedding's group passed all three,
-  // which only the real 1.7B on Dawn, by hand, would have caught), and every model is tied: the 8B's embedding and
-  // classifier are two tables (a ternary one on EMBED_TERNARY, the other on the classifier's pieces). Here dim 256 (two
-  // groups a row; w2's 384 is three and wo's 256 two as before), the classifier apart (vocab -320), eight outlier channels
-  // at 0, 37, ... 259 mod 256 (some in each group), calm (T226's review) so that the packed lines also show a layer's
-  // weights read from another layer
-  "synthetic-ternary-untied": [{ ...TERNARY, dim: 256, vocab: -320, outliers: 8, spread: 37, calm: true }, TERNARY_OPTIONS] };
+  // the review of T232: what the three above cannot tell. Their dim is 128, one group of 128 a row, so the scale of the
+  // wrong group of a row, or of a row's stride (n / 128 scales a row: 1 there), in the embedding's shaders and the outlier
+  // columns' read the same scale as the right one (mutants of TERNARY_COLUMNS' `channel / 128u` and of the embedding's group
+  // passed all three; only the real 1.7B on Dawn, by hand, would catch them); every model is tied, where the 8B's
+  // embedding and classifier are two tables (a ternary one each, the embedding on EMBED_TERNARY); and no row is more
+  // than 12 groups of the vector's 32, so a token's matrix loops once (32 groups a pass) where the real ones loop 2 to 6
+  // times, and a scale indexed by the thread's own column and not by the pass's reads the same. Here: dim 256 (two groups
+  // a row, as wo's 256), the classifier apart (vocab -320), eight outlier channels at 0, 37, ... 259 mod 256 (some in each
+  // group), a hidden size of 1152 (w2's rows are 9 groups of 128, 36 of 32: a second pass of 4), and calm (T226's review),
+  // so that the packed lines also show a layer's weights read from another layer
+  "synthetic-ternary-untied": [{ ...TERNARY, dim: 256, hidden: 1152, vocab: -320, outliers: 8, spread: 37, calm: true }, TERNARY_OPTIONS] };
 // the models to check: by default every made-up one and the site's three; "made-up" stands for every made-up one (T193:
 // gpu-prompt.yml's suites name them so, and a made-up model added above joins them)
 // T241's review (the full suite's time: Chrome 38 and Edge 42 minutes in main's run 36902097346, Edge 23 before T241): a run

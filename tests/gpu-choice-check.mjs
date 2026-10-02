@@ -359,8 +359,9 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // (q of one head of 32 in a dim of 128: 4096 weights, 1024 bytes of codes and 128 of scales, where k would start)
   assert.match(gpuOnlyUnfit([128, 384, 2, 1, 1, 320, 256], "ternary", { head_dim: 32 }, packed), /would not start/);
   assert.equal(gpuOnlyUnfit([128, 384, 2, 8, 4, 320, 256], "ternary", { qk_norm: true, head_dim: 32 }, packed), null, "gpu-check's made-up ternary model");
-  // (the review) and the untied one: a dim of 256 (two groups of 128 a row), its classifier apart (a negative vocabulary)
-  assert.equal(gpuOnlyUnfit([256, 384, 3, 8, 4, -320, 256], "ternary", { qk_norm: true, head_dim: 32 }, packed), null, "gpu-check's made-up untied ternary model");
+  // (the review) and the untied one: a dim of 256 (two groups of 128 a row), a hidden size of 1152 (a second pass of a
+  // token's matrix), its classifier apart (a negative vocabulary)
+  assert.equal(gpuOnlyUnfit([256, 1152, 3, 8, 4, -320, 256], "ternary", { qk_norm: true, head_dim: 32 }, packed), null, "gpu-check's made-up untied ternary model");
   // (the review of T237) with the refusal of ternary weights gone, the others still stand, each with its own reason:
   // the 27B is ternary, in a rotated basis, with linear-attention layers (a Qwen3.5)
   assert.match(gpuOnlyUnfit([5120, 17408, 64, 24, 4, 248320, 4096], "ternary", { arch: "qwen35", head_dim: 256, rotated: { block: 1024, signs: {} } }, packed), /Qwen3\.5/);
