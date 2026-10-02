@@ -1,8 +1,9 @@
 // kernels-in-browser.mjs (T230's review): the kernels' arithmetic in the engine of each browser, called often enough that
 // the engine compiles them again. tests/ternary-check.mjs and tests/smoke.mjs run the kernels in V8 (Node) alone, and a
-// browser's wasm engine is another compiler: JavaScriptCore on x86-64 (Playwright's WebKit on Linux, Safari on an Intel
-// Mac) wrote nonsense with a ternary model because its optimizing tier, which a function reaches after about 2000 calls
-// and a test of a few calls never does, folded the three shuffles of interleave() wrongly. Nothing else saw it: every
+// browser's wasm engine is another compiler: JavaScriptCore on x86-64 (Playwright's WebKit on Linux, on two AMD EPYCs;
+// Safari on an Intel Mac has the same compiler and was not tried) wrote nonsense with a ternary model because its
+// optimizing tier, which a function reaches after about 2000 calls and a test of a few calls never does, folded the
+// three shuffles of interleave() wrongly. Nothing else saw it: every
 // end-to-end run of a model asks for an answer to appear, not for it to be right.
 //
 // Each engine gets the compiled kernels (public/*.wasm of this checkout after `make kernels`, or those of a deployed site

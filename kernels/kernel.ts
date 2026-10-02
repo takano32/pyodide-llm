@@ -272,8 +272,9 @@ export function matmul_q8(xout: usize, xq: usize, xs: usize, wq: usize, ws: usiz
 // every dword shifted down and masked to 0..255, then narrowed from 32 bits to 16 and to 8 (the values pass the narrowing
 // unchanged): the four vectors' four dwords each are the sixteen bytes in order.
 // With no shuffle in it, on purpose. This was a transpose of byte, dword and qword shuffles (a byte shuffle of each
-// vector, then dwords of two, then qwords of two), and JavaScriptCore's optimizing tier on x86-64 (WebKit on Linux, Safari on
-// an Intel Mac), which a function reaches after about 2000 calls, folded those three wrongly: three quarters of the bytes
+// vector, then dwords of two, then qwords of two), and JavaScriptCore's optimizing tier on x86-64 (seen in WebKit on Linux, on
+// two AMD EPYCs; Safari on an Intel Mac has the same compiler and was not tried), which a function reaches after about 2000
+// calls, folded those three wrongly: three quarters of the bytes
 // came out wrong, and a ternary model wrote nonsense (T230's review; tests/kernels-in-browser.mjs finds it). Every piece of
 // it alone and a swizzle in place of the first shuffle were right, and this costs 5 to 8 ns more a block of 64 bytes
 // (V8 on CI's runners: 3.6 to 10.5 on an EPYC 9V74, 4.8 to 9.9 on a 7763, 4.5 to 12.4 on arm64): of the 5,400 blocks of a

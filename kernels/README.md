@@ -290,7 +290,8 @@ Two things the review of 2026-10-02 found, which no test in Node can see:
 
 - `interleave` is shifts, masks and narrows, with no shuffle. It was a transpose of three chained shuffles (a byte shuffle
   of each vector, then dwords, then qwords), and JavaScriptCore's optimizing tier on x86-64 (Playwright's WebKit on Linux,
-  Safari on an Intel Mac) folded them wrongly once the function had been called about 2000 times: three quarters of a block
+  on two AMD EPYCs; Safari on an Intel Mac has the same compiler and was not tried) folded them wrongly once the function
+  had been called about 2000 times: three quarters of a block
   came out wrong and the model wrote nonsense, with 1 thread and with 4. Each piece alone, a swizzle in place of the byte
   shuffle, shifts and narrows, and a scalar loop were right on that engine; the narrows cost 5 to 8 ns more a block of 64
   bytes in V8 (EPYC 9V74 3.6 to 10.5, EPYC 7763 4.8 to 9.9, arm64 4.5 to 12.4: 0.04 ms of a token of the 1.7B).
