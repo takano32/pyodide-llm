@@ -565,6 +565,24 @@ def test_a_tiled_gguf_with_two_value_heads_of_its_original_swapped_is_caught(tmp
     assert list(result["past_tight"]) == [past]
 
 
+def test_the_three_tables_of_the_eight_tensors_say_the_same():
+    """Which tensors of a linear-attention layer llama.cpp reorders, how much of an axis stands before the heads, how wide
+    a head is there and along which axis are written in three places (T245: apart, so that each holds the others): the
+    converter's, in Hugging Face's names; this check's, in llama.cpp's; and test_gguf's, which writes the GGUFs. One that
+    differs is a mistake in it."""
+    import llama2_convert
+    import test_gguf
+
+    names = {"in_proj_qkv.weight": "attn_qkv.weight", "in_proj_z.weight": "attn_gate.weight", "in_proj_a.weight": "ssm_alpha.weight",
+             "in_proj_b.weight": "ssm_beta.weight", "dt_bias": "ssm_dt.bias", "A_log": "ssm_a", "conv1d.weight": "ssm_conv1d.weight",
+             "out_proj.weight": "ssm_out.weight"}
+    converters = {names[name]: value for name, value in llama2_convert.QWEN35_TILED.items()}
+    assert converters == gguf_check.VALUE_HEADS
+    assert set(converters) == set(TILED_TENSORS)
+    writers = {names[name.rsplit("linear_attn.", 1)[-1]]: value for name, value in test_gguf.QWEN35_VALUE_HEADS.items()}
+    assert writers == converters
+
+
 def test_tiled_is_llama_cpps_order():
     """Hugging Face's value head h * per + j is at place j * keys + h of the GGUF, after what stands before the heads."""
     rows = np.arange(4 + 6 * 2)  # 4 of q and k, then 2 key heads of 3 value heads of 2

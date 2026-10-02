@@ -185,21 +185,40 @@ linear-attention layer (16 × 1024), which the page keeps in float32. The page t
 the 288 −exp(A_log) are one unit in the last place from NumPy's) and keeps the gates' matrices as Q8_0 rounded them
 (0.57% from the original's). On 1,500 tokens of English Wikipedia the GGUF's weights measure 25.055 with NumPy
 against 25.056 for the float32 original and 25.034 for the page's own int8 of it; on the kernels, 25.398 with 7-bit
-activations and 25.086 with 8-bit ones (CI's x86-64 runner).
+activations and 25.086 with 8-bit ones (CI's x86-64 runner). Those begin with the converter's `<|endoftext|>`, not
+the entries' `<|im_start|>`: the table below has the entries' way.
 
 The larger Qwen3.5 (4B and 9B) have two value heads to each key head in their linear-attention layers, and llama.cpp
 writes those value heads into the GGUF in another order than Hugging Face keeps them: every key head's first value
 head, then every key head's second. The page puts them back as it converts (eight tensors of each such layer; it
 moves values and changes none). Held to the originals, the two GGUFs are llama.cpp's Q8_0 of them to 1e-7, in that
-order. For the 4B, whose float32 is 17 GB, the engine's logits on the original's weights are within 1.4e-4 of
-transformers' at 96 positions, and its perplexity on 192 tokens the same (7.873); on the GGUF's weights it is 7.574,
-lower than the original's. On 1,500 tokens of English Wikipedia (the kernels, one CI runner each):
+order. For the 4B, whose float32 is 17 GB, the engine's logits on the GGUF's weights are within 1.5e-4 of
+transformers' on the original rounded to Q8_0 (in Hugging Face's order, with no help from the page's reader) at 96
+positions. Against the original itself they differ by what Q8_0 does to this model alone: the same most likely token
+at 93 of 96 positions, the three that differ being near ties (the best two 0.2, 0.08 and 0.01 apart). The 9B's float32
+is 36 GB, so transformers read it a layer at a time, and the page's forward pass agrees at 95 of 96 positions (94 with
+7-bit activations; the 0.8B's agreement in the same test is 94).
 
-| model | float32 original | GGUF's weights, NumPy | 8-bit activations | 7-bit activations |
-|---|---:|---:|---:|---:|
-| Qwen3.5 2B | not measured | 16.589 | 16.608 | 16.873 |
-| Qwen3.5 4B | 14.834 (transformers) | not measured | 14.492 | 14.710 |
-| Qwen3.5 9B | not measured | not measured | 11.707 | 11.806 |
+A perplexity depends on the first token more than on the weights. The entries begin with `<|im_start|>`. A
+measurement that begins with the converter's `<|endoftext|>` (which is what `?hf=` opens) reads the same text 45%
+worse on the 4B (14.834 against 10.227 on 1,500 tokens of English Wikipedia; 18% on the 2B, 30% on the 0.8B, and 37%
+on the 9B, by its 8-bit kernel rows: 11.707 against 8.529), and the 4B's reading then moves by about ±3% under any
+rounding of its weights: rounding the original to Q8_0 gave −3.8% on the first 192 tokens, three other roundings
++3.7%, +0.2% and −2.2%. That is how a GGUF once read lower than its original. With the entry's own first token the
+roundings moved it by 0.15% (−0.05% for Q8_0). On 1,500 tokens of English Wikipedia, with that first token (the
+kernels, one CI runner each):
+
+| model | float32 original (transformers) | 8-bit activations | 7-bit activations |
+|---|---:|---:|---:|
+| Qwen3.5 0.8B | 19.286 | 19.313 | 19.431 |
+| Qwen3.5 2B | 14.053 | 14.073 | 14.120 |
+| Qwen3.5 4B | 10.227 | 10.240 | 10.278 |
+| Qwen3.5 9B | 8.531 | 8.529 | 8.505 |
+
+On three Japanese Wikipedia articles of 1,022 tokens, 7-bit activations cost 0.1% to 1.1% against 8-bit ones on the
+0.8B (mean 0.7%), 0.0% to 0.7% on the 2B (mean 0.4%), −0.1% to 0.1% on the 4B (mean 0.0%) and −0.2% to 0.4% on the 9B
+(mean 0.1%). Six bits (`?bits=6`, what a device that says it has 4 GB gets for the 2B and the 4B) cost the 2B 0.4%
+and the 4B 1.1% against their int8, and run at about half their speed.
 
 LFM2.5 (Liquid AI: convolution layers among attention layers) loses more to quantization than the other models, and
 not in the order of the bits. On 1,500 tokens of English and of Japanese Wikipedia (CI's runners; the percentages are
@@ -233,7 +252,8 @@ logits by 17 when the norms' epsilon is 1e-6 instead of 1e-5. The answers it wri
   likely token changes at 13% (9%) of the positions. The page's engine agrees with transformers on the most likely
   token at 98.9% (99.6%) of the positions with the entry's way of beginning, and at 86.7% (91.4%) with the old one.
   What `?hf=Qwen/Qwen3.5-0.8B` still loses is plain text, where there is no chat format and the converter's BOS
-  comes first.
+  comes first. A measurement of a Qwen3.5 made with that first token is of that way too, not of the entries: it reads
+  the text 18% to 45% worse and moves by about 3% under a rounding of the weights.
 - RMSNorm's epsilon: 1e-5 for all models until Qwen3 0.6B showed +0.12% with it; the converter now passes the
   model's own value.
 - The order of rounding inside the int8 kernels changed twice on 2026-09-27 (one scaling per group instead of

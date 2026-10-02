@@ -838,7 +838,13 @@ QWEN35_SHAPES = {"every second": dict(), "every fourth, the language model alone
                  # that the columns of the output's matrix move as whole Q8_0 blocks and the int8 is the same too
                  "two value heads to a key head": dict(key_heads=4, value_heads=8, key_dim=8, value_dim=32, n_layers=4),
                  "three value heads to a key head (the 27B)": dict(value_heads=6, value_dim=32, key_dim=16),
-                 "three to one, every fourth": dict(value_heads=6, value_dim=32, n_layers=8, every=4, conv=3, prefix="model.")}
+                 "three to one, every fourth": dict(value_heads=6, value_dim=32, n_layers=8, every=4, conv=3, prefix="model."),
+                 # T245's review: the heads of the real models, the rest small. The 4B and the 9B have 16 key heads of 128 and 32
+                 # value heads of 128 (two to one), the 27B 48 (three to one): offsets of 4096 rows, heads of four Q8_0 blocks, a
+                 # convolution of 8192 and 10240 channels. (The two sizes of a head that differ in the other shapes are the same
+                 # here, as in every real model: 128 and 128.)
+                 "the 4B's heads, two to one (16 of 128 to 32)": dict(key_heads=16, value_heads=32, key_dim=128, value_dim=128, n_layers=4),
+                 "the 27B's heads, three to one (16 of 128 to 48)": dict(key_heads=16, value_heads=48, key_dim=128, value_dim=128, n_layers=4)}
 TILED_SHAPES = [name for name in QWEN35_SHAPES if "to a key head" in name or "to one" in name]
 
 
