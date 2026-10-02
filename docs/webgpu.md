@@ -10,6 +10,11 @@ GPU today, how the page chooses, and what has been measured.
 forward pass and the sampling of each on the GPU, the ids read back once), for Llama, Qwen2, Qwen3, GPT-2 and
 GPT-NeoX models. Each goes to the GPU only where the device measures it faster than the CPU.
 
+**Ternary weights** (Ternary Bonsai 1.7B, 4B and 8B, which are Qwen3 models) go to the GPU as they are: two bits a
+weight and one scale for every 128 weights, a quarter of the bytes of int8. The GPU multiplies them with packed
+int8 dot products only (below), so a browser whose WGSL lacks `dot4I8Packed` keeps such a model on the CPU and says
+so. No real GPU has run them yet: the numbers so far are correctness on CI's software adapters.
+
 The reason is the first measurement (2026-09-26, on the owner's three devices): moving the generation of one token
 to the GPU as it was on the CPU was slower everywhere. For Llama 3.2 1B, the GPU's speed divided by the CPU's was
 0.97 on the Android phone, 0.69 on the iPhone (Safari) and 0.53 on the ARM Chromebook. The phones' GPUs read large
@@ -98,7 +103,11 @@ and 0.02 GB on the CPU's side) against 4.7 GB on the CPU alone, and Llama 3.1 Sw
 - The adapter is a fallback that runs on the CPU (SwiftShader, lavapipe): it would never be faster, and compiling
   the shaders took 2 to 4 minutes.
 - The page is not cross-origin isolated (no shared memory between the workers).
-- The model's weights are float32 (not int8 or 6-bit). Qwen2's biases, Qwen3's per-head norms of q and k, and
+- The model's weights are float32 (not int8, 6-bit or ternary), or ternary in a browser without the packed int8 dot
+  product.
+- The model has linear-attention layers (Qwen3.5, and Ternary Bonsai 2 27B) or is stored in a rotated basis (the
+  27B): neither is on the GPU yet.
+- (For the int8 and 6-bit models:) Qwen2's biases, Qwen3's per-head norms of q and k, and
   GPT-2 and GPT-NeoX (LayerNorm, GELU, the biases, learned positions, partial RoPE, the parallel residual) run on
   the GPU as well. A model in 64-bit memory (over 4 GB) goes as one in 32-bit memory, and a matrix larger than a
   buffer the device binds goes in pieces of rows. 6-bit weights are widened to int8 on the GPU as they are
@@ -132,6 +141,8 @@ The shapes are taken from public implementations, and each file keeps their noti
 | One token's layer in 5 dispatches instead of 14 | built on llama.cpp's `mul_mat_vec` |
 | One token's RoPE and write into the cache, where a bias or a norm of a head comes first (Qwen2, Qwen3, GPT-2, GPT-NeoX: 7, 8 and 13 dispatches a layer) | ours: the lines of the fused write above, as a dispatch of their own (`TOKEN_ROPE`); the dispatches around it are the prompt's (the rows above), on one token's vectors |
 | One token's layer on packed int8 dot products, the vector quantized before each matrix | ONNX Runtime's DP4A MatMulNBits for small M (MIT), with the fused writes of the line above. The norm and its quantizing in one dispatch take their form from vLLM's `rms_norm_per_block_quant` (Apache-2.0; no lines copied). |
+| Ternary weights (two bits each) unpacked to packed int8 where a shader loads them, for the DP4A rows above | the Vulkan backend of Prism ML's fork of llama.cpp (`unpack_pq2_0`, MIT): a byte's four codes spread to the four bytes of a word. Making the codes signed there (one add and one xor a word of 16 weights) is ours; the fork keeps them unsigned and subtracts the activations' sum. The matrices around it are ONNX Runtime's DP4A as above. |
+| The outlier channels of a ternary classifier's input, taken out before the 8-bit quantizing and multiplied apart | ours, as the CPU engine does it (two small dispatches around the classifier) |
 | 6-bit weights widened to int8 as they are uploaded | ours (the packing is this project's); four values a 32-bit word by byte masks and shifts, the form of llama.cpp's Q6_K in CUDA and Metal (MIT; no lines copied) |
 | The device's ceilings (benchmark only) | the loops of clpeak (GPL-3.0): the shapes only, no lines copied |
 | Sampling on the GPU and several tokens a submission: the repetition penalty, softmax, top-p and the draw, the next token's row of the embedding | the penalty of MLC LLM (Apache-2.0); llama.cpp's `argmax`, `soft_max`, `cumsum` and `get_rows` (MIT); top-p without sorting from MLC LLM's `top_p_pivot` (Apache-2.0). Carrying the state from one token to the next, and the draw by the same pivots, are ours. |
@@ -176,6 +187,12 @@ the attention on any real GPU. The numbers from CI and from the development mach
   subgroups, in Chromium's SwiftShader and in Node with Dawn and Mesa's lavapipe.
 - It then writes 8 tokens greedy on the GPU (4, one on the CPU, 3 more) and checks the ids against NumPy's
   (or a near tie), the keys and values written back, a stop token and a sampled token.
+- For ternary weights: three made-up ternary models (one with outlier channels in its final norm, one in pieces
+  in 64-bit memory) and the real Ternary Bonsai 1.7B, on Dawn. The first layer's keys and values were within 9.4e-4
+  of NumPy's with 8-bit inputs (the line is 8e-3), every layer within 0.46 of its line, the written ids NumPy's, and
+  the model on the GPU alone gave the same bits. Twenty-one deliberate breaks of the ternary path (the code's
+  mapping, a scale of the wrong group, a dropped group, another layer's weights, the classifier's pieces, the
+  outlier columns) all failed, sixteen of them already in the check the page runs as it loads.
 - Deliberately broken shaders (a wrong causal mask, a RoPE sign, a GQA head mapping, a missing quantization step
   and others) fail these checks. So does a bias or a norm's weights read from another layer, on the packed shaders
   too, because two of the made-up models (GPT-2 and Qwen with small matrices) are drawn so that 8-bit rounding does
