@@ -96,6 +96,7 @@
 - **Gemma4（2026-10-05）**: T328（全体と順）、T329（層ごとの埋め込み）、T330（KV の共有）、T331（層の残り）、T332（12B、候補）、T333（E2B・E4B を一覧に）、T334（GPU）。前に T257 と T261。
 - **Neohorse（2026-10-05）**: T335（NeoHorse-1 4B・9B を一覧に: 形は一覧の Qwen3.5 と同じで、いちばん早く入る見込み）、T336（NeoHorse-Jev-4B、判断のモデル、候補: Clef と同じ種類）。
 - **Agents A1（2026-10-05）**: T337（Agents-A1-4B を一覧に。Agents-K1 も候補）、T338（35B-A3B の MoE、保留: 入らない）。
+- **Spark X（2026-10-05）**: T339（Spark-X2.5 の全体と順）、T340（前分割）、T341（窓と層ごとの RoPE: Gemma 3 と同じ部品）、T342（head ごとの gate・GELU の FFN・名前）、T343（1.7B・4B を一覧に）、T344（GPU）。
 - **モデルを増やす（T248 の調べから）**
   - 新しい形: T261（Gemma 3 の 270M・1B、中〜大）、T255（SmolLM3、小）、T258（Phi-3 mini・Phi-4 mini、中）
   - トークナイザと書式: T256（Mistral の新しいトークナイザと Phi-4 の前分割）、T257（sentencepiece 流の BPE: CAT-Translate 7B、Gemma 4 の前提）、T269（書式の読み手に 1 行式と `[]`）、T259（DeepSeek-R1-0528 の yarn の読み）
@@ -2147,6 +2148,28 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 状態: 保留（2026-10-05。規模 大。入らない）
 - `InternScience/Agents-A1` @`e4a30b76e439b5093ac4c14efa6017718781d48f`（`Qwen3_5MoeForConditionalGeneration`、40 層、幅 2048、専門家 256 のうち 8、全体 35.1B）。MoE の forward（ルータと専門家ごとの FFN）がエンジンに無く、int8 で約 35 GB は 64 ビットのメモリの 16 GiB を越える（3 値も無い）。動くのは、専門家を 4 ビット以下で持ち、要る専門家だけを読む形ができたときだけ（大きな設計）。
+
+### T339 [調査][Spark X] Spark-X2.5 を動かす: 全体と順 — 状態: 未着手（2026-10-05、持ち主「[Spark X] も追加できる？」。調べは HF の config・`modeling_spark.py`・GGUF の見出し）
+- **実物**: XHToken の `Spark-X2.5-1.7B` @`14d6e83c13c7add2b62a7c39b2131f4ed1cddcf8` と `Spark-X2.5-4B` @`0bcb35678590218655dff3765b9e61c83b35e9c4`（apache-2.0、ゲートなし、2026-08-24。GGUF の 4B は 48 万・1.7B は 21 万ダウンロード）。作り手の Q8_0 の GGUF（`Spark-X2.5-1.7B-GGUF` @`1f7fa33b…` 1,820,112,704 バイト、`-4B-GGUF` @`9826e0be…` 4,375,021,152 バイト）。言語は英語と中国語（カード）。日本語は未確認（前分割はかなの塊を切るので、日本語は読める見込み）。道具の呼び出しとエージェントに寄せた後訓練。
+- **形**（`model_type: spark2_5`、自前のコード `modeling_spark.py`）: 4B は 36 層・幅 2560・FFN 10240・head 16 / kv 4・head 256、1.7B は 28 層・幅 2048・FFN 6656・head 8 / kv 2。語彙 131,072、埋め込みと分類器は同じ表、RMSNorm（1 を足さない、eps 1e-6）。**Llama との違い**: (a) 4 層に 3 層が窓 512 の attention、(b) RoPE が層の種類で違う（窓の層は theta 1e4 で head 全部、全体の層は theta 5e6 で 4 分の 1）、(c) head ごとの出力の gate（`g_proj`: 幅 → head の数の小さな行列、sigmoid を head の出力に掛ける）、(d) FFN の活性化が `gelu`（transformers の正確な erf の GELU。SwiGLU の silu の代わり）、(e) q・k・v が 1 つの行列（`q_k_v_proj`）。q・k の norm は無い。文脈は config で 1,048,576（全体の層だけが全部の KV を持つので、文脈を伸ばしたときの KV は普通のモデルの 4 分の 1）。
+- **足りないもの**: T340（前分割）、T341（窓と層ごとの RoPE）、T342（gate と GELU の FFN と名前）、T343（一覧に）、T344（GPU）。
+- **順**: T340 → T341 → T342 → T343 → T344。T341 の窓は Gemma 3（T261）・Gemma 4 と同じ部品なので、どちらか先に作るほうで作る。
+- **見込み**（int8、未計測）: 1.7B 約 1.9 GB（32 ビットに入る）、4B 約 4.6 GB（64 ビット、Chrome と Firefox。Safari は 6 ビット）。
+
+### T340 [追加][Spark X][解析分割] Spark-X2.5 の前分割 — 状態: 未着手（2026-10-05。規模 小〜中）
+- tokenizer.json は byte-level BPE で、前分割は 3 段以上の Split（`\p{N}{1,3}` で数を 3 つずつ、`[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff]+` で漢字とかなの塊、その後に記号と字の型…: DeepSeek V3 系の形）。GGUF の名前は `spark2_5`。エンジンの `pretokenize()` は知らない形なので、T254（MiniCPM5）の段の形（`STAGED`）に足す。本物の tokenizers と全符号位置で比べる（`EVERY_CODE_POINT=1`）。T126 の deepseek-coder の前分割と同じ系統かを見る（同じなら両方が開く）。特殊トークンは `<｜start▁of▁sentence｜>`（0）など全角の縦棒と ▁ の名前（T143 の DeepSeek と同じ扱い）。
+
+### T341 [追加][Spark X] 窓つきの attention と層の種類ごとの RoPE — 状態: 未着手（2026-10-05。規模 中。T261 の Gemma 3 と同じ部品）
+- 窓の層は直前の 512 位置だけを見る（CPU は見始める位置をずらす。KV は窓の層だけ 512 位置で回す形にすれば小さくなる: 後で）。RoPE の表を層の種類で 2 つ（theta と回す幅が違う）。`FORM` か options に層の並び（Qwen3.5 の `linear` と同じ考え）。GGUF は `attention.sliding_window_pattern` と `rope.freq_base_swa`・`rope.dimension_count_swa` を読む。
+
+### T342 [追加][Spark X] head ごとの出力の gate、GELU の FFN、テンソルの名前 — 状態: 未着手（2026-10-05。規模 小〜中）
+- gate: `g_proj`（幅 → head の数）の出力に sigmoid、head の attention の出力に掛けてから `out_proj`（Qwen3.5 の full の層の gate は要素ごと: こちらは head ごとに 1 つ）。FFN: `down(gelu(gate x) * up x)` の gelu は erf の形（今のカーネルの GELU は tanh の近似: 正確な形のカーネルか、近似の損を測って決める）。名前: `model.embedding.weight`・`self_attn.q_k_v_proj`（変換で q・k・v に割る、q と k は回す並べ替え）・`out_proj`・`g_proj`。GGUF の `spark2_5` の名前の表。
+
+### T343 [追加][Spark X][モデル] Spark-X2.5 の 1.7B と 4B を一覧に — 状態: 未着手（2026-10-05。T340〜T342 の後。規模 小〜中）
+- GGUF の突き合わせ（`gguf.yml candidates`）、書式（`chat_template.jinja`、4,648 バイト: 読み手が読めるか、考える形があるか）、BOS（config は 0 の `<｜start▁of▁sentence｜>`: 本物が前に置くかを測る）、transformers との比べ（`trust_remote_code` の自前のコード）、12 の問い（日本語の質も）、本番。文脈は 4096 から（伸ばす費用は全体の層の KV だけ）。
+
+### T344 [性能][Spark X][WebGPU] Spark-X2.5 を GPU に — 状態: 未着手（2026-10-05。T343 の後。規模 中）
+- 窓つきの flash attention（下限）、層ごとの RoPE の表、head ごとの gate（小さな行列 1 つと掛け算）、GELU の FFN（シェーダの GELU は tanh の近似: T342 の決めに合わせる）。
 
 ### T262 [運用][遠隔試験] ほかの 7 つのワークフローにも、ブラウザの入れる手順の期限と apt の time-out を — 状態: **完了**（2026-10-02、本線に入れた。レビュー済み、2026-10-02: Sonnet max、直しはブランチ `t251-t252-t262-review` で、本会話が本線に merge する。Opus medium、ブランチ `t262-install-timeouts`。2026-10-01、T239〜T241 のレビューから。規模 小）
 - 本線の gpu-prompt.yml の run 36902097346 の Chromium のジョブは、試験が遅かったのではなく `npx playwright-core install --with-deps chromium` の apt が止まって、ジョブの期限 120 分まで始まらなかった。gpu-prompt.yml には手順の `timeout-minutes: 20` と apt の time-out（30 秒・3 回）を付けた。同じ install を持つ bench・browsers・coi・fetch・models・preview・slow は未対応で、同じ止まり方をしうる。
