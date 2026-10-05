@@ -93,6 +93,9 @@
   - 文書: T234（結果を docs と gist に）
   - 候補: T284（27B の画像の入力、大）
 - **MLX（Clef-Flash: 状態と問いから選択肢の確率を出すモデル。調べだけ済み、2026-10-02）**: T316（全体と決めること）、T317（MLX の 4 ビットの読み手）、T318（全位置の隠れ状態）、T319（頭）、T320（入力の組み立て）、T321（頭の重みの取得と保存）、T322（ページ）、T323（原本との比べ）、T324（画像と動画、保留）、T325（WebGPU で: linear の層を GPU に・GPU だけ・4 ビットのまま・隠れ状態の読み戻し。T271 と重なる）。順は T316 の項。
+- **Gemma4（2026-10-05）**: T328（全体と順）、T329（層ごとの埋め込み）、T330（KV の共有）、T331（層の残り）、T332（12B、候補）、T333（E2B・E4B を一覧に）、T334（GPU）。前に T257 と T261。
+- **Neohorse（2026-10-05）**: T335（NeoHorse-1 4B・9B を一覧に: 形は一覧の Qwen3.5 と同じで、いちばん早く入る見込み）、T336（NeoHorse-Jev-4B、判断のモデル、候補: Clef と同じ種類）。
+- **Agents A1（2026-10-05）**: T337（Agents-A1-4B を一覧に。Agents-K1 も候補）、T338（35B-A3B の MoE、保留: 入らない）。
 - **モデルを増やす（T248 の調べから）**
   - 新しい形: T261（Gemma 3 の 270M・1B、中〜大）、T255（SmolLM3、小）、T258（Phi-3 mini・Phi-4 mini、中）
   - トークナイザと書式: T256（Mistral の新しいトークナイザと Phi-4 の前分割）、T257（sentencepiece 流の BPE: CAT-Translate 7B、Gemma 4 の前提）、T269（書式の読み手に 1 行式と `[]`）、T259（DeepSeek-R1-0528 の yarn の読み）
@@ -2100,6 +2103,50 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 事実（T233 のレビュー、Node 24 の V8 13.6 の arm64 で実測。run 36967650777・36967730997）: **Liftoff（V8 の最初の速いコンパイラ）の arm64 だけ**が、`v128.load8/16/32/64_splat` と `load32_lane` を、4 GiB を越える番地を下の 32 ビットで読む（V8 のコミット `ff9dbb26c2`、V8 14.3 = Chrome 143 で直った）。TurboFan の arm64 と x86-64 の Liftoff・Firefox・WebKit は正しい。当たるのは Chrome 142 以前の arm64（Apple Silicon の Chrome、Windows on ARM、更新が止まった Chromebook）が 4 GiB を越える番地でスケールを読む 3 値のカーネルと int8 のタイル（`matmul_q8r_tile`）を使うとき: 27B と、64 ビットのメモリに置く 3B 以上の int8 のモデルのプロンプト（複数トークンの塊）。
 - 当たりにくい訳: 関数は呼ばれて数 ms で TurboFan の版に替わり、27B の最初の呼びは 2.3 GiB より下の行列で、4 GiB を越える行列は後で来る。最初の高い番地の呼びが正しかった割合は、前に低い番地の呼びが 3072 行で 20 / 20、1024 行で 6 / 20、256 行で 0 / 20（新しい process）。**時間の勝ちで保証ではない**。Node 24 の arm64 でページの経路を回した数は x86-64 と 4 桁まで同じだった（run 36958791867・36968778769）。
 - 案: (a) 何もしない（Chrome 143 以降は直っていて、自動更新で追いつく。持ち主の端末で当たる可能性があるのは Chromebook だけ。「持ち主の端末でまとめて見るもの」に Chrome のバージョンを足した）。(b) 4 GiB を越えるモデルを読む前に、76 バイトの wasm（`tests/ternary-check.mjs` の `CANARY`）を 4 GiB を越える番地で 1 回呼び、誤れば断る（「this browser reads memory above 4 GB wrongly: update it」）。その呼びは Liftoff の最初の呼びなので、当たるエンジンでは必ず誤る（実際のカーネルが運よく正しい場合も断る）。勧めは (a)。
+
+### T328 [調査][Gemma4] Gemma 4 を動かす: 全体と順 — 状態: 未着手（2026-10-05、持ち主「[Gemma4]・[Neohorse]・[Agents] で対応モデルを増やすタスクを積んでほしい」。調べは T248 の Gemma 4 の節と 2026-10-05 の HF の一覧）
+- **実物**（HF、2026-10-05 のダウンロード）: `google/gemma-4-E2B-it`（303 万、全体 5.12B）、`gemma-4-E4B-it`（442 万、8.00B）、`gemma-4-12B-it`（189 万、11.96B、別のクラス `gemma4_unified`）。どれも apache-2.0・ゲートなし・絵と音も受ける（ページは `text_config` の言語モデルだけを読む）。`gemma-4-26B-A4B-it`（1285 万）は MoE、`gemma-4-31B-it`（991 万）は int8 で 16 GiB を越えるので外す。
+- **前に要るもの**: T257（tokenizer.json の sentencepiece 流の BPE: Gemma 4 は tokenizer.json しか無い）と T261（Gemma 3 の部品: norm 4 つ・(1 + w) の norm・√hidden の倍率・GeGLU・512 の窓の attention・RoPE の表 2 つ）。
+- **Gemma 4 だけの部品**: T329（層ごとの埋め込み）、T330（KV の共有）、T331（層の残り）、T332（12B の unified）。項目は T333、GPU は T334。
+- **順**: T257 → T261 → T331 → T330 → T329 → T333（E2B・E4B）→ T332 → T334。
+- **見込み**（int8、未計測）: E2B は層ごとの埋め込みの表（262,144 × 256 × 35 = 23.5 億）が全体の半分近くで約 5.5 GB、E4B は約 8.6 GB で、どちらも 64 ビットのメモリ（Chrome と Firefox）。表を引くのは 1 トークンに 1 行なので、表は速さに効かず大きさだけに効く。
+
+### T329 [追加][Gemma4] 層ごとの埋め込み（per-layer input） — 状態: 未着手（2026-10-05。規模 中）
+- `hidden_size_per_layer_input`（E2B は 256）: 語彙 × 層 × 256 の表から、トークンごとに各層の 256 の入力を引き、層の中で射影して足す。transformers の `modeling_gemma4.py` の式を項ごとに写す（行は写さない）。表は 23.5 億の値で、int8 で約 2.6 GB。行を引くだけなので、6 ビットや 3 値と同じく「詰めた行を広げて引く」形にして小さくできるか（未検討）。`footprint()`・`FORM`・`checkpoint_dtype()` の 3 か所。
+
+### T330 [追加][Gemma4] KV の共有（後ろの層が前の層の K と V を使う） — 状態: 未着手（2026-10-05。規模 小〜中）
+- `num_kv_shared_layers`（E2B は 20）: 後ろの 20 層は自分の K と V を持たず、前の層のものを読む（どの層を読むかは窓の種類ごと: transformers のコードで確かめる）。KV の置き場が減る（`footprint()`）。CPU は読む層の番号を替えるだけ、GPU も同じ。
+
+### T331 [追加][Gemma4] 層の残り — 状態: 未着手（2026-10-05。規模 中。T261 の後）
+- v の norm、層ごとの倍率（`layer_scalar`）、`use_double_wide_mlp`（一部の層の FFN が倍の幅）、全体の層の head の大きさ 512（窓の層は 256: 層ごとに head の大きさが違う）、全体の層の RoPE の `proportional`（回す割合 0.25、theta 1e6）、`final_logit_softcapping: 30`（logits に tanh）。どれもファイルから分からない設定は `FORM` か options に（T144）。
+
+### T332 [追加][Gemma4] 12B（`gemma4_unified`） — 状態: 候補（2026-10-05。規模 中〜大）
+- 別のクラスで `attention_k_eq_v: true`（K と V が同じ）ほか。int8 と補正で約 15.0 GB で、64 ビットのメモリの 16 GiB に入るかは境界（T129 の `pastWide()`）。入らなければ 6 ビット（Chrome と Firefox）か外す。
+
+### T333 [追加][Gemma4][モデル] Gemma 4 の E2B と E4B を一覧に — 状態: 未着手（2026-10-05。T329〜T331 の後。規模 小〜中）
+- 取り込み元（原本の safetensors か Q8_0 の GGUF: `gguf.yml candidates` で）、書式（`<start_of_turn>` の形。読み手が読めなければ手書きで、`format_check.py` で本物と 9/9）、先頭のトークンを測る（`tests/start_check.*`・`chat_fluency.mjs`）、transformers との比べ（`tests/reference_*` の形で全層の K と V も）、固定値、本番の `models.yml`。ライセンスは apache-2.0。
+
+### T334 [性能][Gemma4][WebGPU] Gemma 4 を GPU に — 状態: 未着手（2026-10-05。規模 中〜大。T333 の後）
+- 窓つきの attention（flash attention に下限）、層ごとの head の大きさ、KV の共有、GeGLU、softcap、層ごとの埋め込み（GPU だけのときは表も GPU に）。いまの `gpuUnfit()` に当たる所を 1 つずつ外す。
+
+### T335 [追加][Neohorse][モデル] NeoHorse-1 の 4B と 9B を一覧に — 状態: 未着手（2026-10-05。規模 小〜中）
+- **何か**: TokenRhythm の NeoHorse-1（apache-2.0、ゲートなし）。Qwen3.5 の 4B と 9B を後訓練した文だけのモデル（`Qwen3_5ForCausalLM`・`qwen3_5_text`、絵の塔なし）で、道具の使い方・コード・推論に寄せた（タグ: agentic・tool-use・coding・reasoning）。`TokenRhythm/NeoHorse-1-4B` @`56f0584bb40578a2c33b1b40a08ccd17243ad710`（2.9 万ダウンロード）、`-9B` @`ba5b6e40d88a6ddf4591e176738254a3bc715765`（1.5 万）。作り手の Q8_0 の GGUF がある（`NeoHorse-1-4B-GGUF` @`3c5d58ca…` 4,482,403,072 バイト、`-9B-GGUF` @`ddcb4c93…` 9,527,501,632 バイト）。
+- **形は一覧の Qwen3.5 4B・9B（T247）と同じ**（32 層、幅 2560 / 4096、値の head 32 に鍵の head 16、4B は分類器が埋め込みと同じ）。違いはテンソルの名前の頭（`model.layers.…`: Qwen3.5 の原本は `model.language_model.…`）。エンジンと変換器はそのまま読める見込み（未確認: 変換器の名前の読みを通すこと）。
+- **やること**: `gguf.yml candidates` で GGUF を原本と（値の head が tiled か: T245）、書式（`chat_template.jinja` は Qwen3.5 と同じ 7756 バイト: 同じ文かを見る）と BOS（`STRICT` の `qwen35`: `<|im_start|>` から）、考える形とすぐ答える形のどちらを既定にするか、`tests/answers.mjs` で 12 の問い、本番の `models.yml`。9B は int8 で約 10 GB（64 ビット、Chrome と Firefox のデスクトップ）。
+- **道具の呼び出し**: ページは道具を持たないので、このモデルの得意（道具を呼ぶ）は使えない。チャットで答える形だけ。note にそう書くかは持ち主（T302）。
+- MLX の版（4 ビット・8 ビット）もあるが、取り込み元は GGUF か safetensors で足りる（T317 は要らない）。
+
+### T336 [追加][Neohorse][MLX] NeoHorse-Jev-4B（判断のモデル） — 状態: 候補（2026-10-05。規模 大。Clef-Flash（T316〜T323）と同じ種類）
+- `TokenRhythm/NeoHorse-Jev-4B`（-GGUF @`b1bc36970f69cef2bfea75aec8f820fd3d20b040`、Q8_0 5,168,327,744 バイト、apache-2.0）。文を書かず、状態と問いから選択肢の確率を出す（タグ: decision-model・non-generative。Clef のカードが言う「Jev / SystemOne」の API の名前）。背骨は 4B（Qwen3.5 の形の見込み、未確認）で、頭は `PointerHead`（決めの位置の隠れ状態と選択肢の位置の隠れ状態から点、幅 256）。付属の `runtime/support/neohorse_decision/_vendor/model.py` を読んだ範囲: 選択肢ごとに**枝の attention の mask**（`branch_mask`・`option_isolation`）と位置の番号を自分で付ける。**linear attention の層（状態を持つ層）に枝の mask をどう掛けるかは未確認**（読む前に決めない）。
+- 要るもの: T318（全位置の隠れ状態）・T320 と同じ入力の組み立て・枝の mask（エンジンに無い。大）・頭（小）。Clef の部品と分け合う。
+
+### T337 [追加][Agents A1][モデル] Agents-A1-4B を一覧に — 状態: 未着手（2026-10-05、持ち主「[Agents A1] かもしれない」。規模 小〜中）
+- **何か**: InternScience の Agents-A1-4B（apache-2.0、ゲートなし、27 万ダウンロード、2026-07-13）。絵も受ける Qwen3.5 4B の形（`Qwen3_5ForConditionalGeneration`、32 層、幅 2560、分類器は埋め込みと同じ）で、エージェントの仕事に寄せた後訓練。名前は `model.language_model.…`（一覧の Qwen3.5 と同じ）で絵の塔のテンソルが 297 ある（変換器は読み飛ばす: T229・T236 と同じ）。作り手の Q8_0 の GGUF（`InternScience/Agents-A1-4B-Q8_0-GGUF` @`a5d63881e0ca8eee3c0f14663a5fa2a2c55e1b54`、4,482,404,032 バイト。絵の `mmproj` は別のファイルで取らない）。
+- **やること**: T335 と同じ（GGUF の突き合わせ、書式（`chat_template.jinja` は 8,979 バイトで Qwen3.5 と違う: 読み手が読めるか、手書きか）、BOS を測る、12 の問い、本番）。int8 で約 4.75 GB（64 ビット）、Safari は 6 ビットで 32 ビットに入る見込み（T247 の 4B と同じ）。
+- **同じ作り手の Agents-K1**（`InternScience/Agents-K1` @`a62f75f305f1ea66753e01393e8b7beb8a42e8ac`、Qwen3 4B Instruct 2507 の後訓練、`Qwen3ForCausalLM`、4.41B）は今の Qwen3 の道で読める見込み。一緒に足すかは持ち主（GGUF の Q8_0 があるかは未確認）。
+
+### T338 [追加][Agents A1] Agents-A1（35B-A3B、MoE） — 状態: 保留（2026-10-05。規模 大。入らない）
+- `InternScience/Agents-A1` @`e4a30b76e439b5093ac4c14efa6017718781d48f`（`Qwen3_5MoeForConditionalGeneration`、40 層、幅 2048、専門家 256 のうち 8、全体 35.1B）。MoE の forward（ルータと専門家ごとの FFN）がエンジンに無く、int8 で約 35 GB は 64 ビットのメモリの 16 GiB を越える（3 値も無い）。動くのは、専門家を 4 ビット以下で持ち、要る専門家だけを読む形ができたときだけ（大きな設計）。
 
 ### T262 [運用][遠隔試験] ほかの 7 つのワークフローにも、ブラウザの入れる手順の期限と apt の time-out を — 状態: **完了**（2026-10-02、本線に入れた。レビュー済み、2026-10-02: Sonnet max、直しはブランチ `t251-t252-t262-review` で、本会話が本線に merge する。Opus medium、ブランチ `t262-install-timeouts`。2026-10-01、T239〜T241 のレビューから。規模 小）
 - 本線の gpu-prompt.yml の run 36902097346 の Chromium のジョブは、試験が遅かったのではなく `npx playwright-core install --with-deps chromium` の apt が止まって、ジョブの期限 120 分まで始まらなかった。gpu-prompt.yml には手順の `timeout-minutes: 20` と apt の time-out（30 秒・3 回）を付けた。同じ install を持つ bench・browsers・coi・fetch・models・preview・slow は未対応で、同じ止まり方をしうる。
