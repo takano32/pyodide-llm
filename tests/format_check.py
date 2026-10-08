@@ -97,8 +97,9 @@ KNOWN = {
 # answers 13 to 15% (tests/chat_nll.py, tests/chat_fluency.mjs): the lenient rule let the page's one more token pass for it
 # T335: and NeoHorse-1, Qwen3.5's 4B and 9B trained further, with the Qwen3.5's template and the same entries' options
 # T337: and Agents-A1, a Qwen3.5 4B trained further, whose template writes a system turn of its own first
+# T255: and SmolLM3, whose real tokenizer puts nothing in front and whose template begins with <|im_start|>, as Hermes 3's
 STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-", "hf-hermes-3-", "hf-neohorse-1-",
-          "hf-agents-a1-")
+          "hf-agents-a1-", "hf-smollm3-")
 # T233: what an entry's format is the real template's with, besides enable_thinking: Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T236's format of a Qwen3.5), not its default, "xhigh"
 TEMPLATE_SAYS = {"hf-ternary-bonsai-2-27b-thinking": {"reasoning_effort": "medium"}}

@@ -69,7 +69,9 @@ WEAK = "--weak" in sys.argv
 # of another kind than the float32 ones: a fault that changes the model (q scaled twice or not at all, q left turned) is a logit or
 # several, the rounding some hundredths (a logit of 36 at most here), and the keys and values of a layer differ by about a percent
 GGUF = "--gguf" in sys.argv
-GGUF_LINE, GGUF_STATE_LINE = 1.0, 0.1
+# (the logits' line was 1.0 until T255: SmolLM3 3B, 36 layers, is 1.37 at most and 9.4e-2 on average from a GGUF whose every
+# tensor is the original's Q8_0 to the bit, where its float32 is 1.2e-4. What the line is to see is in unturned_faults())
+GGUF_LINE, GGUF_STATE_LINE = 2.0, 0.1
 
 say = lambda *parts: print("reference:", *parts, flush=True)
 
@@ -281,6 +283,37 @@ def weak_errors(label, llama, tokens, whole, theirs, line, lined, scale):
             f"{gaps['values'][0]:.2e} (layer {gaps['values'][1]}), {max(gaps['keys'][0], gaps['values'][0]) / lined:.2g} of the line; "
             f"seen by {'both' if by_logits and by_states else 'the logits' if by_logits else 'the states' if by_states else 'neither'}"
             f"{'' if seen or not must else ' — FAILED'}")
+    return missed
+
+
+def unturned_faults(label, llama, tokens, whole, theirs, line, lined):
+    """The faults of a model with layers RoPE leaves alone (T255, SmolLM3): every layer turned (the model read as a
+    Llama), one of its layers turned, one layer more left alone. Each put into the engine and held to transformers' as the
+    real engine is; all three are another model, so the check must see each. Returns those it did not see."""
+    held, middle = llama.unturned, llama.unturned[len(llama.unturned) // 2]
+    spare = next(layer for layer in range(llama.n_layers) if layer not in held)
+    faults = [("every layer turned (read as a Llama)", ()),
+              (f"layer {middle} turned", tuple(layer for layer in held if layer != middle)),
+              (f"layer {spare} left alone too", tuple(sorted(held + (spare,))))]
+    missed = []
+    for what, unturned in faults:
+        llama.unturned = unturned
+        try:
+            ours = [llama.forward(token, pos).copy() for pos, token in enumerate(tokens)]
+            states = engine_cache(llama, len(tokens))
+        finally:
+            llama.unturned = held
+        largest, mean, same, margin = differences(ours, whole)
+        gaps, _ = state_gap(states, theirs)
+        by_logits = not (largest <= line and (same == len(tokens) or margin <= 2 * largest))
+        by_states = not (max(gaps["keys"][0], gaps["values"][0]) <= lined)
+        if not (by_logits or by_states):
+            missed.append(what)
+        say(f"{label}: a fault, {what}: logits largest difference {largest:.2e} ({largest / line:.2g} of the line), mean "
+            f"{mean:.2e}, the same most likely token at {same} of {len(tokens)}; states: keys {gaps['keys'][0]:.2e} (layer "
+            f"{gaps['keys'][1]}), values {gaps['values'][0]:.2e} (layer {gaps['values'][1]}), "
+            f"{max(gaps['keys'][0], gaps['values'][0]) / lined:.2g} of the line; seen by "
+            f"{'both' if by_logits and by_states else 'the logits' if by_logits else 'the states' if by_states else 'neither — FAILED'}")
     return missed
 
 
@@ -622,6 +655,10 @@ def real(entry, directory, positions, layers=0):
         missed = weak_errors(id, llama, ids, whole, cache_whole, line, lined, llama2_convert.query_scale(llama2_convert.normalize(json.loads(config))))
         failed |= bool(missed)
         say(f"{id}: weak faults the check must see and did not: {missed or 'none'}")
+    if llama.unturned:
+        missed = unturned_faults(id, llama, ids, whole, cache_whole, line, lined)
+        failed |= bool(missed)
+        say(f"{id}: faults in the layers RoPE leaves alone the check did not see: {missed or 'none'}")
 
     # 16 greedy tokens after the page's ids of the chat prompt, by transformers and by the engine's generate()
     text = "".join(llama.generate(typed, steps=len(chat) - 1 + NEW_TOKENS, temperature=0.0, echo=False))

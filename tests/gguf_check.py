@@ -367,7 +367,7 @@ def split(w, heads):
     return w.reshape(heads, 3, w.shape[0] // heads // 3, *w.shape[1:]).swapaxes(0, 1).reshape(w.shape)
 
 
-TURNED = ("llama", "granite")  # whose q and k llama.cpp's converter turns, and the reader (gguf_model) turns back
+TURNED = ("llama", "granite", "smollm3")  # (T255: a SmolLM3 is a Llama to llama.cpp's converter) whose q and k llama.cpp's converter turns, and the reader (gguf_model) turns back
 
 
 def reads_as(arch, name, conv1d=False):

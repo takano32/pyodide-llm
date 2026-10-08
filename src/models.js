@@ -124,6 +124,37 @@ const QWEN35_AT_ONCE = `${QWEN35_THINKING}\n</think>\n\n`;
 const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
   specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>",
     "</tool_call>", "<|file_sep|>", "<|im_start|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
+// T255: SmolLM3's chat_template is past the converter's reader (it asks whether a text is in a variable it may not have
+// set), so one turn by hand, as the real Jinja writes it with enable_thinking true and with false and no system turn
+// (tests/format_check.py, strict). It writes a system turn of its own first: the day (strftime_now: {date:…}, the
+// visitor's own), the mode, and one of two instructions, the long one where it thinks. That turn has no <|im_end|>
+// unless there are tools (the template closes it inside that branch only), and the page sends what the template does.
+// The real tokenizer begins a text with nothing (bos_token null) and the template with <|im_start|> (128011): that is
+// the BOS, and the formats begin after it (as Hermes 3's). It stops at <|im_end|> (config.json's EOS), at
+// <|begin_of_text|>, <|end_of_text|> and at the mark of a new turn. Without a template the converter read,
+// <|im_start|> and <|im_end|> are not in its specials, and a list of the entry's replaces the converter's (T221): all
+// of the converter's are here (the added tokens tokenizer.json does not call special, T143), in its order
+const SMOLLM3_THINKS =
+  "You are a helpful AI assistant named SmolLM, trained by Hugging Face. Your role as an assistant involves " +
+  "thoroughly exploring questions through a systematic thinking process before providing the final precise and " +
+  "accurate solutions. This requires engaging in a comprehensive cycle of analysis, summarizing, exploration, " +
+  "reassessment, reflection, backtracking, and iteration to develop well-considered thinking process. Please " +
+  "structure your response into two main sections: Thought and Solution using the specified format: <think> " +
+  "Thought section </think> Solution section. In the Thought section, detail your reasoning process in steps. " +
+  "Each step should include detailed considerations such as analysing questions, summarizing relevant findings, " +
+  "brainstorming new ideas, verifying the accuracy of the current steps, refining any errors, and revisiting " +
+  "previous steps. In the Solution section, based on various attempts, explorations, and reflections from the " +
+  "Thought section, systematically present the final solution that you deem correct. The Solution section " +
+  "should be logical, accurate, and concise and detail necessary steps needed to reach the conclusion.";
+const smollm3Format = (mode, instructions, answer) => "system\n## Metadata\n\nKnowledge Cutoff Date: June 2025\n" +
+  `Today Date: {date:%d %B %Y}\nReasoning Mode: ${mode}\n\n## Custom Instructions\n\n${instructions}\n\n` +
+  `<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n${answer}`;
+const SMOLLM3_THINKING = smollm3Format("/think", SMOLLM3_THINKS, "");
+const SMOLLM3_AT_ONCE = smollm3Format("/no_think", "You are a helpful AI assistant named SmolLM, trained by Hugging Face.",
+  "<think>\n\n</think>\n");
+const smollm3 = { bos: 128011, stop_tokens: [128000, 128001, 128011, 128012],
+  specials: ["</tool_response>", "<tool_response>", "</tool_call>", "<|im_start|>", "<tool_call>", "<|im_end|>", "</think>",
+    "</code>", "<think>", "<code>"] };
 // T337: Agents-A1-4B's chat_template is Qwen3.5's with one thing more: where the messages have no system turn it writes
 // this one (the template's own default: the card's recommended one is the same but names tavily_search and is dated
 // 2026-07-13. The date is fixed in the template). So the page sends it too,
@@ -310,7 +341,7 @@ export const LICENSES = {
   // T81 (2026-09-26)
   "SakanaAI/TinySwallow-1.5B-Instruct": APACHE_GEMMA, "llm-jp/llm-jp-3.1-1.8b-instruct4": APACHE,
   "sbintuitions/sarashina2.2-1b-instruct-v0.1": MIT, "cyberagent/CAT-Translate-0.8b": MIT, "cyberagent/CAT-Translate-1.4b": MIT,
-  "HuggingFaceTB/SmolLM2-1.7B-Instruct": APACHE,
+  "HuggingFaceTB/SmolLM2-1.7B-Instruct": APACHE, "HuggingFaceTB/SmolLM3-3B": APACHE, "ggml-org/SmolLM3-3B-GGUF": APACHE,
   // T132 (2026-09-26)
   "Qwen/Qwen2.5-3B-Instruct": QWEN_RESEARCH, "sbintuitions/sarashina2.2-3b-instruct-v0.1": MIT,
   "Qwen/Qwen2.5-7B-Instruct": APACHE, "tokyotech-llm/Llama-3.1-Swallow-8B-Instruct-v0.5": SWALLOW,
@@ -897,6 +928,18 @@ const LISTED = [
       "NousResearch/Hermes-3-Llama-3.2-3B", "7f1a6bec8cdce6551014fd5bbeb4cd8c0f1fbeab"), download: 3421895488,
     conversion: {}, options: { bos: 128040, stop_tokens: [128000, 128039, 128040] }, template: CHATML_AFTER_START, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
+  // T255: Hugging Face's SmolLM3 3B, a Llama every fourth layer of which RoPE leaves alone (the conversion's options
+  // name the layers: unturned). ggml-org's Q8_0 GGUF, which tests/gguf_check.py tensors held to the original
+  // (gguf.yml's candidates), with the original's vocabulary and config.json. Six languages, Japanese not among them.
+  // Twice, as a Qwen3 is: the two share their weights and a kept conversion. Its card's sampling for either form
+  ...[["hf-smollm3-3b-thinking", "SmolLM3 3B (thinking)", "thinks before it answers", SMOLLM3_THINKING],
+    ["hf-smollm3-3b", "SmolLM3 3B (no thinking)", "answers at once", SMOLLM3_AT_ONCE]].map(([id, name, what, template]) => ({
+    group: "hf", id, name, note: `${what} · English · fetches 3.3 GB (GGUF) → int8 3.5 GB · desktop only`,
+    ...ggufOf("ggml-org/SmolLM3-3B-GGUF", "4965cb60b150737b68a0408c36aeefb65078f894", "SmolLM3-Q8_0.gguf",
+      "HuggingFaceTB/SmolLM3-3B", "a07cc9a04f16550a088caea529712d1d335b0ac1"), download: 3275574624,
+    conversion: {}, options: smollm3, shares: ["hf-smollm3-3b-thinking", "hf-smollm3-3b"], template,
+    generation: { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 },
+    prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" })),
   // DeepSeek-R1's larger distills, as the 1.5B above: the tokenizer's own BOS, <｜begin▁of▁sentence｜> (which the
   // real template writes first), and the thought opened by the format. The converter reads both itself now (T143: the
   // BOS tokenizer_config.json names, the template and its special tokens), so these have no options of their own. On

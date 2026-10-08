@@ -53,3 +53,13 @@ def test_convert_hf_writes_what_the_page_writes(tmp_path, model, dtype):
     (tmp_path / "config.json").write_text(json.dumps(config))
     convert_hf.convert(tmp_path, tmp_path / "out.bin", np.dtype(dtype), 2048)
     assert (tmp_path / "out.bin").read_bytes() == converted(Safetensors(reader(file)), config, dtype, 2048)
+
+
+def test_a_smollm3_directory_is_told_to_carry_the_layers_in_its_options(tmp_path):
+    """T255 review: the file of a SmolLM3 is a Llama's; only options name the layers RoPE leaves alone (convert_hf prints them)."""
+    settings, weights = synthetic_weights(n_layers=4)
+    _, config = hugging_face(settings, weights, True)
+    (tmp_path / "config.json").write_text(json.dumps({**config, "model_type": "smollm3", "no_rope_layers": [1, 1, 1, 0]}))
+    assert "unturned [3]" in convert_hf.options_note(tmp_path)
+    (tmp_path / "config.json").write_text(json.dumps(config))
+    assert convert_hf.options_note(tmp_path) is None

@@ -153,6 +153,13 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // takes the table for a unit turn is wrong on this model only
   "synthetic-yarn": [{ layers: 3, qk_norm: true, head_dim: 32 },
     { qk_norm: true, head_dim: 32, rms_norm_eps: 0.5, rope_scaling: { rope_type: "yarn", factor: 4.0, original_max_position_embeddings: 32 } }],
+  // T255: a SmolLM3's layers that RoPE leaves alone (the second and the last of five: the first layer, which the
+  // loading's check computes, turns, as the published 3B's does, and its last, 35, leaves alone: the prompt stops at
+  // that layer's keys and values, the step goes on to the classifier from it): the shaders are the Llama's, and a
+  // layer's count of turned values is 0 there. A GPU that turns every layer, leaves the wrong ones alone, or treats
+  // the last differently, is far from NumPy's in those layers' keys (T255's review: with the second and the fourth
+  // alone, a GPU that turned the last layer anyway was as right as the one that left it, the fifth layer turning)
+  "synthetic-smollm3": [{ layers: 5 }, { unturned: [1, 4] }],
   "synthetic-gpt2": [{ layers: 3, kv_heads: 4, arch: "gpt2", outliers: 8 }, { arch: "gpt2" }],
   "synthetic-neox": [{ layers: 3, kv_heads: 4, arch: "neox" }, { arch: "neox", rotary: 4, parallel_residual: true }],
   "synthetic-neox-256": [{ dim: 512, hidden: 1024, layers: 3, heads: 2, kv_heads: 2, arch: "neox" }, { arch: "neox", rotary: 64, parallel_residual: true }],
@@ -188,7 +195,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // TODO.md's T241 has the minutes (the review of 2026-10-01)
 // (T232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's;
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
-const DAWN_ONLY = ["synthetic-yarn", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied"];
+const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied"];
 const madeUp = Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 const ids = (args.length ? args : ["made-up", "stories15M", "tiny-lm", "llm-jp-3-150m"])
   .flatMap((id) => (id === "made-up" ? madeUp : [id]));

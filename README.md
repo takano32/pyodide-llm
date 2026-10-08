@@ -82,7 +82,7 @@ The model list has three groups:
   ones in float32). They are built into the site when it is deployed.
 - **Unquantized originals** of some of them (float16 or float32), to compare with int8.
 - **From Hugging Face, converted in this browser** (108 entries, from a 16 MB Pythia to 9B models and one ternary 27B: Llama, Mistral,
-  Qwen2.5, Qwen3, Qwen3.5, Granite 4.2, MiniCPM5, LFM2.5, llm-jp, sarashina, Swallow, GPT-2, GPT-NeoX and others). The page fetches the weights from
+  Qwen2.5, Qwen3, Qwen3.5, Granite 4.2, SmolLM3, MiniCPM5, LFM2.5, llm-jp, sarashina, Swallow, GPT-2, GPT-NeoX and others). The page fetches the weights from
   huggingface.co (for 97 of them a GGUF: Q8_0, and for the Ternary Bonsai models their ternary files, PQ2_0 or PTQ1_0, read with the original
   repository's vocabulary and configuration),
   converts them to int8 in your browser (Ternary Bonsai stays in its 2 bits) with the same Python code that

@@ -22,7 +22,7 @@ LAYER = {"input_layernorm": "attn_norm", "post_attention_layernorm": "ffn_norm",
          "self_attn.q_norm": "attn_q_norm", "self_attn.k_norm": "attn_k_norm"}  # a Qwen3's (T203)
 
 
-TURNED = ("llama", "granite")  # the architectures whose q and k llama.cpp's convert turns (T253: a Granite's too)
+TURNED = ("llama", "granite", "smollm3")  # (T255: a SmolLM3's as well) the architectures whose q and k llama.cpp's convert turns (T253: a Granite's too)
 
 
 def q8_0_blocks(values):
