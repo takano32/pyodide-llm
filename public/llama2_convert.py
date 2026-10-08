@@ -243,7 +243,8 @@ class Writer:
 # messages, if / elif / else with the usual comparisons, set, string concatenation, the trim filter, and the
 # whitespace control of {%- -%}; since T127 also the filters length, list and selectattr, namespace() and the
 # setting of its attributes, integer arithmetic, the tests of "is", slices and string methods with arguments,
-# which Qwen3's, Mistral v0.3's and sarashina2.2's templates use. A macro is skipped where it is defined (the
+# which Qwen3's, Mistral v0.3's and sarashina2.2's templates use; since T269 also a if c else b and a list written
+# out ([a, b]), which Granite 4.2's uses. A macro is skipped where it is defined (the
 # templates define them for tools, which one turn has none of); calling one is Unsupported. Anything else raises
 # Unsupported, and then the caller keeps whatever format src/models.js has for that model. Chosen over a real
 # Jinja (jinja2 through micropip) to add no dependency.
@@ -302,6 +303,22 @@ def evaluate(expression, scope):
     expression = expression.strip()
     while expression.startswith("(") and expression.endswith(")") and balanced(expression[1:-1]):
         expression = expression[1:-1].strip()
+    # T269: a if condition else b, which binds loosest of all and reads only the side the condition picks (Granite 4.2's
+    # "enable_thinking if enable_thinking is defined else True"). The first " if " ends a, the first " else " after it
+    # the condition, and b may be another of the kind; without an else the other side is undefined, as in Jinja
+    parts = split_outside_quotes(expression, " if ")
+    if len(parts) > 1:
+        chosen, rest = parts[0], expression[len(parts[0]) + len(" if "):]
+        condition = split_outside_quotes(rest, " else ")[0]
+        otherwise = rest[len(condition) + len(" else "):]
+        if not chosen.strip() or not condition.strip() or (len(condition) < len(rest) and not otherwise.strip()):
+            raise Unsupported(f"the expression {expression!r}")
+        if len(split_outside_quotes(condition, " if ")) > 1:
+            # (the review of T269) a if b if c else d is (a if b) if c else d in Jinja, not a if (b if c) else d
+            raise Unsupported(f"the expression {expression!r}")
+        if truthy(evaluate(condition, scope)):
+            return evaluate(chosen, scope)
+        return evaluate(otherwise, scope) if otherwise else MISSING
     for joiner, decided in ((" or ", truthy), (" and ", lambda value: not truthy(value))):
         # as in Jinja, the operand that decides, not True or False ('x' or 'default' is 'x'), and what follows it
         # unread (the review of T127: (system_message or 'You are ...') wrote "True")
@@ -354,7 +371,7 @@ def is_test(value, test):
     the templates test them with "is defined" (T73 matched transformers on 23 templates so)."""
     tests = {"defined": lambda v: v is not MISSING and v is not None, "undefined": lambda v: v is MISSING or v is None,
              "none": lambda v: v is None or v is MISSING,
-             "string": lambda v: isinstance(v, str), "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+             "string": lambda v: isinstance(v, str), "number": lambda v: isinstance(v, (int, float)),  # (a bool is a number, as in Jinja)
              "mapping": lambda v: isinstance(v, (dict, Namespace)), "iterable": lambda v: isinstance(v, (str, list, tuple, dict)),
              "sequence": lambda v: isinstance(v, (str, list, tuple)), "true": lambda v: v is True, "false": lambda v: v is False}
     if test not in tests:
@@ -374,6 +391,12 @@ def compare(left, right, operator):
 def arithmetic(left, operator, right):
     """+ joins text (Jinja's templates add strings far more than numbers) and adds numbers; the others are integers'."""
     numbers = all(isinstance(v, int) and not isinstance(v, bool) for v in (left, right))
+    if any(isinstance(v, (list, tuple)) for v in (left, right)):
+        # (the review of T269) lists, now that [] can be written: [] + x is the lists joined, not their texts; a list and a
+        # text is a TypeError in Jinja, and the other operators on a list are not read
+        if operator == "+" and isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
+            return [*left, *right]
+        raise Unsupported(f"{left!r} {operator} {right!r}")
     if operator == "+":
         return left + right if numbers else as_text(left) + as_text(right)
     if not numbers:
@@ -395,6 +418,8 @@ def apply_filter(value, spec, scope):
     arguments = [evaluate(argument, scope) for argument in split_outside_quotes(rest[:-1], ",") if argument.strip()] if rest else []
     if name == "trim" and not arguments:
         return as_text(value).strip()
+    if name == "string" and not arguments:  # (T269) Jinja's: an undefined is "", anything else Python's str()
+        return "" if value is MISSING else str(value)
     if name in ("length", "count") and not arguments and isinstance(value, (str, list, tuple, dict)):
         return len(value)
     if name == "list" and not arguments and isinstance(value, (str, list, tuple)):
@@ -418,7 +443,14 @@ STRFTIME = object()   # so that "strftime_now is defined" is true, as it is in t
 DAY = "\x00day"  # in the scope: the day strftime_now() writes, instead of {date:format} (see one_turn())
 # two days that differ in every field strftime_now() may write, the first and the last of a year
 CHECK_DAYS = [time.strptime(day, "%Y-%m-%d %H:%M:%S") for day in ("2025-01-01 00:00:00", "2026-12-31 23:59:59")]
-MISSING = object()  # a name the template asks for and nothing set: Jinja calls it undefined, and it is false
+class Undefined:
+    """What a name nothing set is. Printed inside a list, Jinja writes Undefined (the review of T269)."""
+
+    def __repr__(self):
+        return "Undefined"
+
+
+MISSING = Undefined()  # a name the template asks for and nothing set: Jinja calls it undefined, and it is false
 
 
 def truthy(value):
@@ -495,6 +527,9 @@ class Namespace:
 
     def __init__(self, **values):
         self.__dict__.update(values)
+
+    def __repr__(self):  # as Jinja prints one, for {{ ns }} and ns | string (the review of T269)
+        return f"<Namespace {self.__dict__!r}>"
 
 
 def split_operators(expression, operators):
@@ -577,6 +612,9 @@ def value_of(expression, scope):
         return unescape(expression[1:-1])
     if expression.lstrip("-").isdigit():
         return int(expression)
+    if expression[0] == "[" and closing_bracket(expression, 0) == len(expression) - 1:
+        # T269: a list written out, as in {% set tools = [] %}
+        return [evaluate(item, scope) for item in split_outside_quotes(expression[1:-1], ",") if item.strip()]
     if expression.startswith("namespace(") and closing_bracket(expression, len("namespace")) == len(expression) - 1:
         positional, keyword = call_arguments(expression[len("namespace("):-1], scope)
         if positional:
@@ -606,7 +644,7 @@ def value_of(expression, scope):
         at = expression.find(cut)
         if at != -1 and at < len(name):
             name, rest = expression[:at], expression[at:]
-    if not name.replace("_", "").isalnum():
+    if not name.replace("_", "").isalnum() or name.isdigit():  # (a digit then a dot is a float, 1.5: not read)
         raise Unsupported(f"the expression {expression!r}")
     value = scope.get(name, MISSING)
     while rest:
@@ -678,18 +716,28 @@ def run(pieces, start, stop, scope, out):
             out.append(body)
             i += 1
         elif kind == "say":
-            out.append(as_text(evaluate(body, scope)))
+            value = evaluate(body, scope)
+            out.append("None" if value is None else as_text(value))  # Jinja writes None, and nothing for an undefined
             i += 1
         elif body.startswith("for "):
             end = matching(pieces, i, stop, "for ", "endfor")
             name, _, source = body[4:].partition(" in ")
             if "," in name:
                 raise Unsupported("a for over pairs")
+            if len(split_outside_quotes(source, " if ")) > 1:
+                # (T269) {% for x in xs if test %} keeps the xs that pass, which is not xs if test: not read
+                raise Unsupported("a for with a test")
             values = evaluate(source, scope)
             if not isinstance(values, (list, tuple)):
                 raise Unsupported(f"a for over {source.strip()!r}")
+            # {% for %} ... {% else %} ... {% endfor %}: the else is written when there was nothing to loop over
+            # (the review of T269: [] can be written now, and messages[1:] of one message was always empty)
+            at = next_branch(pieces, i, end)
+            body_end, otherwise = (at, at + 1) if pieces[at][1] == "else" else (end, end)
             for index, value in enumerate(values):
-                run(pieces, i + 1, end, {**scope, name.strip(): value, "loop": Loop(index, len(values))}, out)
+                run(pieces, i + 1, body_end, {**scope, name.strip(): value, "loop": Loop(index, len(values))}, out)
+            if not values:
+                run(pieces, otherwise, end, scope, out)
             i = end + 1
         elif body.startswith("if "):
             end = matching(pieces, i, stop, "if ", "endif")
@@ -786,7 +834,9 @@ def one_turn_template(tokenizer_config, chat_template=None):
     if not isinstance(template, str) or not template.strip():
         return None
     bos = config_token(config, "bos_token")
-    turn = one_turn(template, {"bos_token": bos, "eos_token": config_token(config, "eos_token")})
+    # the tokens transformers gives a template by their names (special_tokens_map): a template may write the pad token
+    names = ("bos_token", "eos_token", "unk_token", "pad_token", "sep_token", "cls_token", "mask_token")
+    turn = one_turn(template, {name: config_token(config, name) for name in names})
     # generate() starts every run with the BOS token already: one written by the template would be a second one
     return turn[len(bos):] if turn and bos and turn.startswith(bos) else turn
 
@@ -799,6 +849,7 @@ def one_turn(template, specials, mark="\x00prompt\x00"):
     """
     scope = {"messages": [{"role": "user", "content": mark}], "add_generation_prompt": True,
              "bos_token": specials.get("bos_token", ""), "eos_token": specials.get("eos_token", ""),
+             **{name: token for name, token in specials.items() if token and name not in ("bos_token", "eos_token")},
              "tools": None, "tools_json": None, "documents": None, "strftime_now": STRFTIME}
     try:
         text = render(template, dict(scope))

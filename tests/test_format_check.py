@@ -44,4 +44,8 @@ def test_the_families_whose_bos_is_the_formats_first_token_take_nothing_in_front
         assert not format_check.ids_match(model_id, old_design, real)
     # elsewhere the page's BOS in front is let by (T131), and the doubled one is not
     assert format_check.ids_match("hf-qwen3-4b", old_design, real)
+    # --hf (T269): the converter's BOS in front is what ?hf= sends for these families too
+    assert format_check.ids_match("hf-granite-4.2-3b-thinking", [1] + real, real, alone=True)
+    assert not format_check.ids_match("hf-granite-4.2-3b-thinking", [1] + real, real)
+    assert not format_check.ids_match("hf-granite-4.2-3b-thinking", [1, 2] + real, real, alone=True)
     assert not format_check.ids_match("hf-qwen3-4b", [IM_START, IM_START, USER, NEWLINE], real)
