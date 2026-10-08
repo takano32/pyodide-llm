@@ -19,7 +19,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent / "public"))
 from llama2_convert import (Arrays, Safetensors, Shards, bfloat16, checkpoint_form, checkpoint_header, checkpoint_size,  # noqa: E402
                             convert_weights, normalize, sentencepiece_charsmap, sentencepiece_pieces, tokenizer_bin,
-                            tokenizer_json_charsmap, tokenizer_json_options, tokenizer_json_pieces)
+                            tokenizer_json_charsmap, tokenizer_json_options, tokenizer_json_pieces, unturned_layers)
 
 
 # ------------------------------------------------------------------------------------------------ weights
@@ -89,6 +89,13 @@ def convert_tokenizer(directory, out_path, vocab_size):
     Path(out_path).write_bytes(vocabulary)
 
 
+def options_note(directory):
+    """T255: the file of a SmolLM3 is a Llama's, and only the options (src/models.js) say which layers RoPE leaves alone: a
+    model listed without them runs as a Llama, writes worse text and throws nothing. The line to say it, or None."""
+    left = unturned_layers(normalize(json.loads((directory / "config.json").read_text())))
+    return f"options: unturned {left} (to be given to the engine with the file: the file does not say it)" if left else None
+
+
 if __name__ == "__main__":
     directory, out = Path(sys.argv[1]), sys.argv[2]
     dtype = np.dtype(sys.argv[3] if len(sys.argv) > 3 else "float32")
@@ -96,3 +103,6 @@ if __name__ == "__main__":
     vocab_size = convert(directory, f"{out}.bin", dtype, max_seq_len)
     convert_tokenizer(directory, f"{out}.tokenizer.bin", vocab_size)
     print(f"{out}.bin: {Path(f'{out}.bin').stat().st_size:,} bytes ({dtype}), vocabulary {vocab_size}")
+    note = options_note(directory)
+    if note:
+        print(note)
