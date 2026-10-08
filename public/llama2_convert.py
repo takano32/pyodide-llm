@@ -243,7 +243,8 @@ class Writer:
 # messages, if / elif / else with the usual comparisons, set, string concatenation, the trim filter, and the
 # whitespace control of {%- -%}; since T127 also the filters length, list and selectattr, namespace() and the
 # setting of its attributes, integer arithmetic, the tests of "is", slices and string methods with arguments,
-# which Qwen3's, Mistral v0.3's and sarashina2.2's templates use. A macro is skipped where it is defined (the
+# which Qwen3's, Mistral v0.3's and sarashina2.2's templates use; since T269 also a if c else b and a list written
+# out ([a, b]), which Granite 4.2's uses. A macro is skipped where it is defined (the
 # templates define them for tools, which one turn has none of); calling one is Unsupported. Anything else raises
 # Unsupported, and then the caller keeps whatever format src/models.js has for that model. Chosen over a real
 # Jinja (jinja2 through micropip) to add no dependency.
@@ -302,6 +303,19 @@ def evaluate(expression, scope):
     expression = expression.strip()
     while expression.startswith("(") and expression.endswith(")") and balanced(expression[1:-1]):
         expression = expression[1:-1].strip()
+    # T269: a if condition else b, which binds loosest of all and reads only the side the condition picks (Granite 4.2's
+    # "enable_thinking if enable_thinking is defined else True"). The first " if " ends a, the first " else " after it
+    # the condition, and b may be another of the kind; without an else the other side is undefined, as in Jinja
+    parts = split_outside_quotes(expression, " if ")
+    if len(parts) > 1:
+        chosen, rest = parts[0], expression[len(parts[0]) + len(" if "):]
+        condition = split_outside_quotes(rest, " else ")[0]
+        otherwise = rest[len(condition) + len(" else "):]
+        if not chosen.strip() or not condition.strip() or (len(condition) < len(rest) and not otherwise.strip()):
+            raise Unsupported(f"the expression {expression!r}")
+        if truthy(evaluate(condition, scope)):
+            return evaluate(chosen, scope)
+        return evaluate(otherwise, scope) if otherwise else MISSING
     for joiner, decided in ((" or ", truthy), (" and ", lambda value: not truthy(value))):
         # as in Jinja, the operand that decides, not True or False ('x' or 'default' is 'x'), and what follows it
         # unread (the review of T127: (system_message or 'You are ...') wrote "True")
@@ -395,6 +409,8 @@ def apply_filter(value, spec, scope):
     arguments = [evaluate(argument, scope) for argument in split_outside_quotes(rest[:-1], ",") if argument.strip()] if rest else []
     if name == "trim" and not arguments:
         return as_text(value).strip()
+    if name == "string" and not arguments:  # (T269) Jinja's: an undefined is "", anything else Python's str()
+        return "" if value is MISSING else str(value)
     if name in ("length", "count") and not arguments and isinstance(value, (str, list, tuple, dict)):
         return len(value)
     if name == "list" and not arguments and isinstance(value, (str, list, tuple)):
@@ -577,6 +593,9 @@ def value_of(expression, scope):
         return unescape(expression[1:-1])
     if expression.lstrip("-").isdigit():
         return int(expression)
+    if expression[0] == "[" and closing_bracket(expression, 0) == len(expression) - 1:
+        # T269: a list written out, as in {% set tools = [] %}
+        return [evaluate(item, scope) for item in split_outside_quotes(expression[1:-1], ",") if item.strip()]
     if expression.startswith("namespace(") and closing_bracket(expression, len("namespace")) == len(expression) - 1:
         positional, keyword = call_arguments(expression[len("namespace("):-1], scope)
         if positional:
@@ -685,6 +704,9 @@ def run(pieces, start, stop, scope, out):
             name, _, source = body[4:].partition(" in ")
             if "," in name:
                 raise Unsupported("a for over pairs")
+            if len(split_outside_quotes(source, " if ")) > 1:
+                # (T269) {% for x in xs if test %} keeps the xs that pass, which is not xs if test: not read
+                raise Unsupported("a for with a test")
             values = evaluate(source, scope)
             if not isinstance(values, (list, tuple)):
                 raise Unsupported(f"a for over {source.strip()!r}")

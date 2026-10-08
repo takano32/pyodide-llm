@@ -90,6 +90,47 @@ def test_the_pieces_of_jinja_t127_adds():
     assert render("{% for m in messages %}\n  {% if m.role == 'user' %}\n{{ m.content }}\n  {% endif %}\n{% endfor %}", scope) == "X\n"
 
 
+def test_the_pieces_of_jinja_t269_adds():
+    """What Granite 4.2's template uses for one turn: a if c else b, a list written out, the filter string (each the
+    same as jinja2 writes with transformers' settings, on the development machine)."""
+    scope = {"messages": [{"role": "system", "content": "S"}, {"role": "user", "content": "X"}]}
+    for template, written in (
+            ("{% set t = t if t is defined else True %}{{ t }}", "True"),
+            ("{% set t = false %}{% set t = t if t is defined else True %}{{ t }}", "False"),
+            ("{{ 'a' if messages | length > 1 else 'b' }}|{{ 'a' if messages | length > 2 else 'b' }}", "a|b"),
+            # the else of one is another one; without an else the other side is undefined
+            ("{{ 'a' if false else 'b' if false else 'c' }}|{{ 'a' if false else 'b' if true else 'c' }}", "c|b"),
+            ("[{{ 'a' if false }}]{{ 'yes' if true }}", "[]yes"),
+            # it binds loosest: the + and the or belong to a side
+            ("{{ ('x' if false else 'y') + 'z' }}|{{ 'x' if false else 'y' + 'z' }}|{{ 'x' if true else 'y' + 'z' }}", "yz|yz|x"),
+            ("{{ 'a' or 'b' if false else 'c' }}", "c"),
+            ("{{ 'a' if messages[0].role == 'system' and messages[1].role == 'user' else 'b' }}", "a"),
+            # the words inside quotes are no words of it
+            ("{{ 'if' if ' if ' in ' if x else ' else ' else ' }}", "if"),
+            # only the side picked is read
+            ("{{ messages[0].content if messages[0].role == 'system' else '' }}{{ nothing.here if false else 'safe' }}", "Ssafe"),
+            ("{% set l = [] %}{{ l | length }}{% if l %}full{% else %}empty{% endif %}", "0empty"),
+            ("{% set l = ['a', 'b,c', messages[1].content] %}{{ l | length }}{{ l[1] }}{{ l[-1] }}"
+             "{% for i in l %}<{{ i }}>{% endfor %}", "3b,cX<a><b,c><X>"),
+            ("{% set l = [[1, 2], []] %}{{ l[0][1] }}{{ l[1] | length }}{{ 'b' in ['a', 'b'] }}{{ 'c' in ['a', 'b'] }}", "20TrueFalse"),
+            ("{% for m in [] %}never{% endfor %}ok", "ok"),
+            ("{{ messages[1].content | string }}|{{ 3 | string }}|{{ true | string }}|{{ none | string }}|[{{ nothing | string }}]",
+             "X|3|True|None|[]"),
+            ("{{ (messages | length | string) + '!' }}", "2!")):
+        assert render(template, dict(scope)) == written, template
+    # a for with a test keeps the items that pass, which the conditional would read as "all of them or nothing"
+    # (the second would read as "messages if true" and loop over them all, which is right by chance: not read either)
+    for filtered in ("{% for m in messages if m.role == 'user' %}{{ m.content }}{% endfor %}",
+                     "{% for m in messages if true %}{{ m.content }}{% endfor %}"):
+        with pytest.raises(Unsupported):
+            render(filtered, dict(scope))
+    for broken in ("{{ 'a' if }}", "{{ if true else 'b' }}", "{{ 'a' if true else }}", "{{ ['a', 'b' }}"):
+        with pytest.raises(Unsupported):
+            render(broken, dict(scope))
+    assert one_turn("{% set think = think if think is defined else True %}{% set tools = [] %}"
+                    "{{ messages[0].content }}{{ '<think>' if think else '' }}", {}) == "{prompt}<think>"
+
+
 def test_what_the_review_of_t127_found():
     """Each against transformers' Jinja on the development machine (the same snippets, the same outputs)"""
     scope = {"messages": [{"role": "user", "content": "X"}]}
