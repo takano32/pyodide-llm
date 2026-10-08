@@ -1068,7 +1068,7 @@ function grow(m, needed) {
   new Float32Array(params, 8, 1)[0] = 1 / Math.sqrt(plan.headSize);
   const attentionParams = uniform(m, params, cache.owned);
   for (let l = 0; l < plan.layers; l++) {
-    cache.rope.push(bind(m, m.rope, [m.q, m.k, m.v, cache.keys[l], cache.values[l], m.angles, turnedAt(plan, l) ? m.ropeShape : m.ropeAlone, m.step]));
+    cache.rope.push(bind(m, m.rope, [m.q, m.k, m.v, cache.keys[l], cache.values[l], m.angles, plan.unturned?.includes(l) ? m.ropeAlone : m.ropeShape, m.step]));
     cache.attention.push(bind(m, m.attention.pipeline, [m.q, cache.keys[l], cache.values[l], m.xb, attentionParams, m.step]));
   }
   m.cache = cache;
