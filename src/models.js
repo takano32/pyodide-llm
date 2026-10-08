@@ -124,6 +124,27 @@ const QWEN35_AT_ONCE = `${QWEN35_THINKING}\n</think>\n\n`;
 const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
   specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>",
     "</tool_call>", "<|file_sep|>", "<|im_start|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
+// T337: Agents-A1-4B's chat_template is Qwen3.5's with one thing more: where the messages have no system turn it writes
+// this one (the card's recommended system prompt, the date as the template has it, fixed). So the page sends it too,
+// and its IDs are the real template's (tests/format_check.py, strict). It speaks of tools, which the page has none of:
+// it also says to answer everyday questions directly
+const AGENTS_A1_SYSTEM =
+  "You are Intern-A1, a deep research assistant developed by InternAgent Team, Shanghai Artificial Intelligence Laboratory. 你是Intern-A1， 一个由上海人工智能实验室的InternAgent团队开发的深度研究人工智能助手。 You can have natural multi-turn conversations with users on any topic.\n" +
+  "\n" +
+  "## Daily Chat & Simple Questions\n" +
+  "For everyday conversations, greetings, opinions, coding help, factual lookups, definitions, calculations, explanations, and any question you can confidently answer from your knowledge — just respond directly and naturally in the user's language as Intern-A1. Do NOT use any tools for these.\n" +
+  "\n" +
+  "## Research & Search Questions\n" +
+  "Only when the user's question requires up-to-date information, in-depth investigation, multi-source verification, or involves recent events, niche topics, or anything you are uncertain about, use the available tools.\n" +
+  "\n" +
+  "Research strategy:\n" +
+  "- Start with a focused search query to get an overview.\n" +
+  "- If the initial search is insufficient, refine your query with more specific terms.\n" +
+  "- Stop searching once you have enough information to provide a comprehensive answer. Do not over-research.\n" +
+  "\n" +
+  "Current date: 2026-07-14";
+const AGENTS_A1_THINKING = `system\n${AGENTS_A1_SYSTEM}<|im_end|>\n<|im_start|>${QWEN35_THINKING}`;
+const AGENTS_A1_AT_ONCE = `${AGENTS_A1_THINKING}\n</think>\n\n`;
 // T253: IBM's Granite 4.2. The converter's reader cannot read its chat_template (it stops at the inline `a if b else c` and
 // at the empty list `[]`; the macro the template defines, tool_to_json, it skips, as it skips any definition: the review of
 // T253 ran the reader on it): one turn by hand, as the real Jinja writes it with enable_thinking true (its default) and false, with the empty
@@ -385,6 +406,8 @@ export const LICENSES = {
   // were trained from (config.json's modification_notice says what TokenRhythm changed)
   "TokenRhythm/NeoHorse-1-4B": APACHE, "TokenRhythm/NeoHorse-1-4B-GGUF": APACHE,
   "TokenRhythm/NeoHorse-1-9B": APACHE, "TokenRhythm/NeoHorse-1-9B-GGUF": APACHE,
+  // T337: both cards say apache-2.0
+  "InternScience/Agents-A1-4B": APACHE, "InternScience/Agents-A1-4B-Q8_0-GGUF": APACHE,
   // T233: both cards say apache-2.0. The GGUF's NOTICE.txt: "copyright 2026-present Prism ML, Inc. ... built from
   // Qwen3.8-27B, Copyright 2026 Alibaba Cloud ... Apache 2.0", and asks for "Created using Bonsai by Prism ML." where
   // it is deployed, as the smaller Ternary Bonsai's does
@@ -999,6 +1022,17 @@ const LISTED = [
       "TokenRhythm/NeoHorse-1-9B", "ba5b6e40d88a6ddf4591e176738254a3bc715765"), 9527501632,
     "fetches 9.5 GB (GGUF) → int8 10.1 GB · desktop only · Chrome and Firefox", { options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+  // T337: InternScience's Agents-A1-4B, a Qwen3.5 4B trained further for agents' work (the same config.json, the
+  // tensors named as Qwen3.5's, a vision tower the converter passes over). The maker's own Q8_0 GGUF (its mmproj, the
+  // pictures, is another file and is not fetched), the vocabulary and config.json of the original: tokenizer.json has
+  // Qwen3.5's vocabulary and merges and seven more special tokens (for sound). The formats are Qwen3.5's after the
+  // template's own system turn (AGENTS_A1_SYSTEM). The card's sampler (temperature 0.85, top-p 0.95, a top-k of 20
+  // and a presence penalty of 1.1) has two things the page's has not: Qwen3's two, as for a Qwen3.5
+  ...thinkingAndNot("hf-agents-a1-4b", "Agents-A1 4B",
+    ggufOf("InternScience/Agents-A1-4B-Q8_0-GGUF", "a5d63881e0ca8eee3c0f14663a5fa2a2c55e1b54", "Agents-A1-4B-Q8_0.gguf",
+      "InternScience/Agents-A1-4B", "945c40a4aa6f534d434a353207b8d42ecf7a5293"), 4482404032,
+    "fetches 4.5 GB (GGUF) → int8 4.7 GB · desktop only · Chrome and Firefox", { options: qwen35 },
+    { thinking: AGENTS_A1_THINKING, atOnce: AGENTS_A1_AT_ONCE }),
   // T233: Prism ML's Ternary Bonsai 2 27B, a ternary Qwen3.8 27B (a Qwen3.5 in its form: hybrid attention, three
   // value heads to a key head, T245), whose matrices are stored in a rotated basis (T237: the engine turns every
   // matrix's input by signs and a Walsh-Hadamard transform). Kept ternary (T230, T231: 7.66 GB; as int8 it would be
