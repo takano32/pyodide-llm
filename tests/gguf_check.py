@@ -497,12 +497,48 @@ def references(original, q8_0):
     return [original, q8_0_of(original), q8_0_of(original.astype(np.float16).astype(np.float32))]
 
 
-def squares(values, original, q8_0):
+def bfloat16_of(values):
+    """float32 values rounded to the nearest bfloat16 (ties to even), as float32: what a framework stores of them"""
+    bits = np.ascontiguousarray(values, dtype=np.float32).view(np.uint32)
+    return ((bits + np.uint32(0x7FFF) + ((bits >> np.uint32(16)) & np.uint32(1))) & np.uint32(0xFFFF0000)).view(np.float32)
+
+
+def outside_bfloat16(values, original, raw):
+    """T307: how many values of a GGUF tensor cannot have come from wider weights the original is the bfloat16 of
+    (LFM2.5 230M's GGUF was made from the float32 its maker has; the published safetensors is that rounded). For a
+    tensor kept whole (F32), a value whose bfloat16 is not the original's, bit for bit. For a Q8_0 one, a value further
+    from the original's than the two roundings allow: Q8_0's half step of its block's scale d (and what the float16 d
+    is off the float32 one the values were rounded with, 127 steps of 2^-10 d at most) plus bfloat16's half step at
+    the original's value (2^(e-9) where the value is m 2^e, m in [0.5, 1)). 0 for such a GGUF; weights of another
+    model are outside wherever they differ by more than bfloat16's own rounding and Q8_0 rounds the other way, which
+    a fine-tune 0.5% away is at thousands of values of every matrix (the unit tests)."""
+    if raw is None:
+        return int((bfloat16_of(values).view(np.uint32) != np.ascontiguousarray(original, dtype=np.float32).view(np.uint32)).sum())
+    theirs = original.astype(np.float64).reshape(-1, 32)
+    _, exponent = np.frexp(np.abs(theirs))
+    half = np.where(theirs != 0, np.ldexp(1.0, exponent - 9), 0.0)
+    step = np.abs(raw[1].astype(np.float64))[:, None]
+    off = np.abs(values.astype(np.float64).reshape(-1, 32) - theirs)
+    return int((~(off <= step * (0.5 + 127 / 1024) + half)).sum())  # (a NaN is outside)
+
+
+def squares(values, original, raw, stored=None):
     """[(the difference squared, the reference squared)] against each of references(), summed in float64, to be
-    summed further over the blocks of a large tensor."""
+    summed further over the blocks of a large tensor. raw: the int8 and the scales of a Q8_0 tensor, else None.
+    stored: the dtype the original is stored as; for "BF16" one more pair follows, (outside_bfloat16(), 0): no
+    distance, but nearest() makes it 0 where no value is outside and past any line where one is."""
     wide = values.astype(np.float64)
-    return [(float(((wide - reference) ** 2).sum()), float((reference.astype(np.float64) ** 2).sum()))
-            for reference in references(original, q8_0)]
+    sums = [(float(((wide - reference) ** 2).sum()), float((reference.astype(np.float64) ** 2).sum()))
+            for reference in references(original, raw is not None)]
+    if stored == "BF16":
+        sums.append((float(outside_bfloat16(values, original, raw)), 0.0))
+    return sums
+
+
+def from_wider(sums, stored=None):
+    """Whether a tensor is past TIGHT against what a GGUF made from the original holds and yet has no value outside
+    what wider weights of the same model give (outside_bfloat16())"""
+    return stored == "BF16" and sums[-1][0] == 0 and not nearest(sums[:-1]) <= TIGHT
 
 
 def nearest(sums):
@@ -548,7 +584,7 @@ def row_check(parts):
 
 
 def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, split_heads=0, tile=None):
-    """relative error, the error against the nearest reference (squares()) and int8 equality of a large matrix, a
+    """relative error, the error against the nearest reference (squares()), whether that is from_wider(), and int8 equality of a large matrix, a
     block of rows at a time; by_row: also the error of each row (row_check()). head_rows: q or k, whose heads of head_rows rows the GGUF may hold turned: the
     blocks are whole heads, and the order is the one of the first block (the order found is returned too).
     split_heads: GPT-NeoX's query_key_value of that many heads, which the GGUF may hold split (split()): the blocks
@@ -564,6 +600,7 @@ def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, sp
         rows = size
     difference = total = same = count = 0.0
     parts, sums = [], None
+    stored = hf.tensors[target]["dtype"]
     order = ""
     blocks = [(first, min(first + rows, shape[0])) for first in range(0, shape[0], rows)]
     if tile and tile[4] == 0:
@@ -604,7 +641,7 @@ def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, sp
                 original = turn
         difference += float(((values - original) ** 2).sum())
         total += float((original ** 2).sum())
-        block = squares(values, original, raw is not None)
+        block = squares(values, original, raw, stored)
         sums = block if sums is None else [(a + c, b + d) for (a, b), (c, d) in zip(sums, block)]
         if by_row:
             parts.append(row_parts(values, original, raw is not None))
@@ -615,8 +652,8 @@ def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, sp
     rowwise = None
     if by_row:
         rowwise = row_check([np.concatenate(column) for column in zip(*parts)])
-    return (math.sqrt(difference / max(total, 1e-30)), nearest(sums), f"{same / count * 100:.2f}%" if count else "",
-            rowwise, order)
+    return (math.sqrt(difference / max(total, 1e-30)), nearest(sums), from_wider(sums, stored),
+            f"{same / count * 100:.2f}%" if count else "", rowwise, order)
 
 
 def config_pairs(config, arch="llama"):
@@ -765,7 +802,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
     print(f"\n| tensor | type | shape | relative error | nearest reference (line {TIGHT}) | order | int8 equal to quantize() "
           f"| rows past {ROW_LINE} (worst) |\n|---|---|---|---:|---:|---|---:|---|")
     worst, orders, rope_difference, bad_rows, row_detail, rounded_rows = 0.0, set(), None, {}, {}, {}
-    near_worst, past_tight, rounded_detail, unread = 0.0, {}, {}, {}
+    near_worst, past_tight, rounded_detail, unread, widened = 0.0, {}, {}, {}, []
     for name, info in infos.items():
         if name == "rope_freqs.weight":
             values, _ = tensor(info, data, base)
@@ -799,7 +836,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             if name.endswith(("attn_q.weight", "attn_k.weight")):
                 head_rows = shape[0] // (heads if "attn_q" in name else kv_heads)
             split_heads = heads if arch == "gptneox" and name.endswith("attn_qkv.weight") else 0
-            error, near, equal, rowwise, order = large(info, data, base, hf, target, shape, quantize, by_row, head_rows,
+            error, near, wider, equal, rowwise, order = large(info, data, base, hf, target, shape, quantize, by_row, head_rows,
                                                        split_heads, value_heads(name, config) if arch == "qwen35" else None)
             if order:
                 orders.add(order)
@@ -840,7 +877,10 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
                 if turn < as_is:
                     original = transposed
             error = relative(values, original) if values.shape == original.shape else float("nan")
-            near = nearest(squares(values, original, raw is not None)) if values.shape == original.shape else float("nan")
+            near, wider = float("nan"), False
+            if values.shape == original.shape:
+                sums = squares(values, original, raw, hf.tensors[target]["dtype"])
+                near, wider = nearest(sums), from_wider(sums, hf.tensors[target]["dtype"])
             equal = ""
             if raw is not None and values.shape == original.shape:
                 ours, _ = quantize(original.reshape(-1, original.shape[-1]))
@@ -858,6 +898,10 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
         worst = max(worst, error) if not math.isnan(error) else math.inf
         near_worst = max(near_worst, near) if not math.isnan(near) else math.inf
         near_note = f"{near:.2e}"
+        if wider:
+            # T307: no value outside what wider weights give, of which the original is the bfloat16
+            widened.append(name)
+            near_note = "the original is its bfloat16"
         if not near <= TIGHT:
             past_tight[name] = near
             mismatched += 1
@@ -896,10 +940,10 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
                    f"{', ...' if len(names) > 3 else ''})" if names else "")
     print(f"\nworst relative error {worst:.5f}; against the nearest reference {near_worst:.2e} ({len(past_tight)} "
           f"past {TIGHT}); q and k are stored {' and '.join(sorted(orders)) or '(none)'}; {mismatched} mismatches"
-          + unread_note)
+          + unread_note + (f"; {len(widened)} tensors are from wider weights than the original's bfloat16" if widened else ""))
     print(json.dumps({"worst": worst, "nearest": near_worst, "past_tight": past_tight, "mismatches": mismatched,
                       "rows": bad_rows, "bad_rows": row_detail, "rounded_rows": rounded_rows,
-                      "rounded_detail": rounded_detail, "orders": sorted(orders), "unread_orders": unread,
+                      "rounded_detail": rounded_detail, "orders": sorted(orders), "unread_orders": unread, "from_wider": len(widened),
                       "rope_freqs_diff": rope_difference, "vocab_diffs": vocab_diffs, "ok": ok}, ensure_ascii=False))
     return ok
 

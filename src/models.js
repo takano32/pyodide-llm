@@ -451,7 +451,7 @@ export const LICENSES = {
   "openbmb/MiniCPM5-1B": APACHE, "openbmb/MiniCPM5-1B-GGUF": APACHE,
   "openbmb/MiniCPM5-2B": APACHE, "openbmb/MiniCPM5-2B-GGUF": APACHE,
   // T260: the nine cards say license other, lfm1.0, and link the LICENSE file of their repository
-  "LiquidAI/LFM2.5-230M": LFM_OPEN,
+  "LiquidAI/LFM2.5-230M": LFM_OPEN, "LiquidAI/LFM2.5-230M-GGUF": LFM_OPEN,
   "LiquidAI/LFM2.5-350M": LFM_OPEN, "LiquidAI/LFM2.5-350M-GGUF": LFM_OPEN,
   "LiquidAI/LFM2-700M": LFM_OPEN, "LiquidAI/LFM2-700M-GGUF": LFM_OPEN,
   "LiquidAI/LFM2.5-1.2B-Instruct": LFM_OPEN, "LiquidAI/LFM2.5-1.2B-Instruct-GGUF": LFM_OPEN,
@@ -1130,12 +1130,13 @@ const LISTED = [
     "fetches 2.7 GB (GGUF) → int8 2.8 GB · desktop only", { thinking: 1.0, atOnce: 1.0 }),
   // T260: Liquid AI's LFM2.5 (and the LFM2 700M), whose cards name Japanese among their languages; the 1.2B JP is
   // their Japanese chat model. Liquid AI's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals.
-  // On the CPU alone (their convolution layers have no shader yet). The 230M comes from its original's safetensors:
-  // its GGUF (247 MB) does not pass that check, for it holds weights of a fuller precision than the bfloat16 the
-  // original publishes (its float32 norms and taps round to the original's bfloat16 to the bit, 49 tensors of 49;
-  // 1.5e-3 from them where the check allows 1e-3), which the check has no reference for
-  lfm2("hf-lfm2.5-230m", "LFM2.5 230M", "LFM2.5-230M", null,
-    "40cb2ad3b3044d5a41eee083a6103c8b523afa45", 459401112, "fetches 459 MB → int8 259 MB"),
+  // On the CPU alone (their convolution layers have no shader yet). The 230M's GGUF holds weights of a fuller
+  // precision than the bfloat16 its original publishes (its float32 norms and taps round to the original's bfloat16
+  // to the bit, and its Q8_0 matrices were rounded from the float32 too: 1.5e-3 from the Q8_0 of the original, where
+  // the check allows 1e-3): since T307 the check holds every value of it to what such weights can give, and it is
+  // taken (until then the 230M came from the original's safetensors, 459 MB)
+  lfm2("hf-lfm2.5-230m", "LFM2.5 230M", "LFM2.5-230M", "03502067c64ce32ac4fe87b0cec0310a1a13d3e9",
+    "40cb2ad3b3044d5a41eee083a6103c8b523afa45", 246598496, "fetches 247 MB (GGUF) → int8 259 MB"),
   lfm2("hf-lfm2.5-350m", "LFM2.5 350M", "LFM2.5-350M", "657e078c94084481950a2d555a941481f715536b",
     "9e6c6ccf47cd318696e137d381a7ded8fe4df09f", 379217632, "fetches 379 MB (GGUF) → int8 399 MB"),
   lfm2("hf-lfm2-700m", "LFM2 700M", "LFM2-700M", "fd39e80d7a5ac61494ffff577e61bbbfddbd0d02",

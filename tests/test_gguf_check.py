@@ -667,3 +667,85 @@ def test_an_lfm2_gguf_is_held_to_what_llama_cpp_makes_of_its_original(tmp_path, 
         assert result["unread_orders"] == {"blk.2.attn_q.weight": "turned (llama2.c order)"} and result["past_tight"] == {}
     else:
         assert result["mismatches"] >= 1 and result["past_tight"] == {}
+
+
+# ------------------------------------------------------------------------------------------- T307
+def wider_model(tmp_path, change=None):
+    """A GGUF made from float32 weights and an original that is those weights rounded to bfloat16 (LFM2.5 230M's);
+    change(tensors) alters what the GGUF is written from"""
+    shape, weights = synthetic_weights(dim=32, hidden_dim=64, vocab_size=320, seq_len=128, n_kv_heads=4, shared=True)
+    tensors, published = hugging_face(shape, weights, True)
+    published = {**published, "rms_norm_eps": 1e-5, "rope_theta": 10000.0}
+    original = {name: gguf_check.bfloat16_of(tensor) for name, tensor in tensors.items()}
+    written = {name: tensor.copy() for name, tensor in tensors.items()}
+    if change:
+        change(written)
+    file, _ = gguf_file(written, published, 320, theta=10000.0, more=[EPS])
+    (tmp_path / "model.gguf").write_bytes(file)
+    (tmp_path / "model.safetensors").write_bytes(safetensors_file(original, stored="BF16"))
+    (tmp_path / "config.json").write_text(json.dumps(published))
+    return tmp_path / "model.gguf", tmp_path
+
+
+def test_a_gguf_of_wider_weights_than_the_bfloat16_original_passes(tmp_path, capsys):
+    """Its Q8_0 matrices are past TIGHT against the Q8_0 of the original (they were rounded from other values), its
+    float32 tensors are not the original's: both are what wider weights give, and none of their values is outside"""
+    assert gguf_check.check_tensors(*wider_model(tmp_path))
+    result = summary(capsys)
+    assert result["mismatches"] == 0 and result["from_wider"] > 10, result
+    assert len(result["past_tight"]) == 0
+
+
+def test_the_same_gguf_against_a_float32_original_does_not(tmp_path, capsys):
+    """Only a bfloat16 original has the rounding to allow for: stored as float32, the same values are the model's own"""
+    gguf, directory = wider_model(tmp_path)
+    from llama2_convert import Safetensors
+    data = (directory / "model.safetensors").read_bytes()
+    held = Safetensors(lambda offset, length: data[offset:offset + length])
+    tensors = {name: held.rows(name, 0, held.shape(name)[0]).reshape(held.shape(name)).astype(np.float32) for name in held.tensors}
+    (directory / "model.safetensors").write_bytes(safetensors_file(tensors))
+    assert not gguf_check.check_tensors(gguf, directory)
+    result = summary(capsys)
+    assert result["from_wider"] == 0 and len(result["past_tight"]) > 10
+
+
+@pytest.mark.parametrize("tensor", ["model.layers.1.post_attention_layernorm.weight", "model.layers.0.mlp.up_proj.weight"])
+@pytest.mark.parametrize("fault", ["scaled", "noise", "one"])
+def test_other_weights_are_outside_what_wider_weights_give(tmp_path, capsys, tensor, fault):
+    """A float32 norm and a Q8_0 matrix: 0.4% larger, with 0.5% of noise (a fine-tune), and with one value moved by a
+    quarter of the tensor's largest (a few of Q8_0's steps)"""
+    def change(tensors):
+        values = tensors[tensor]
+        if fault == "scaled":
+            values = values * np.float32(1.004)
+        elif fault == "noise":
+            values = values * (1 + 0.005 * np.random.default_rng(7).standard_normal(values.shape)).astype(np.float32)
+        else:
+            values = values.copy()
+            values.reshape(-1)[5] += np.float32(0.25) * np.abs(values).max()
+        tensors[tensor] = values
+
+    assert not gguf_check.check_tensors(*wider_model(tmp_path, change=change))
+    result = summary(capsys)
+    assert len(result["past_tight"]) == 1 and result["mismatches"] == 1, result
+    assert next(iter(result["past_tight"])).endswith(("ffn_up.weight", "ffn_norm.weight"))
+
+
+def test_what_is_outside_a_bfloat16s_rounding():
+    """outside_bfloat16() on values it can be reckoned for by hand"""
+    wide = np.float32([1.0 + 2 ** -9, 1.0 + 2 ** -8 + 2 ** -20, -3.0, 0.0] * 8)  # half a step under, just over half, exact
+    original = gguf_check.bfloat16_of(wide)
+    assert original[:4].tolist() == [1.0, 1.0 + 2 ** -7, -3.0, 0.0]
+    assert gguf_check.outside_bfloat16(wide, original, None) == 0
+    moved = wide.copy()
+    moved[0] = np.float32(1.0 + 2 ** -8 + 2 ** -20)  # rounds up now: no longer the original's 1.0
+    assert gguf_check.outside_bfloat16(moved, original, None) == 1
+    # Q8_0: a block's scale d and its values; half a step and bfloat16's half step are the room
+    d = np.float16(3.0 / 127)
+    codes = np.rint(wide / np.float32(d)).astype(np.int8).reshape(1, 32)
+    values = (codes * np.float32(d)).reshape(-1)
+    assert gguf_check.outside_bfloat16(values, original, (codes, np.array([d]))) == 0
+    off = values.copy()
+    off[1] += np.float32(d)  # one step more: 1.5 steps from where it was rounded
+    assert gguf_check.outside_bfloat16(off, original, (codes, np.array([d]))) == 1
+    assert gguf_check.outside_bfloat16(np.full(32, np.nan, np.float32), original, (codes, np.array([d]))) == 32
