@@ -249,8 +249,9 @@ const reported = await page.evaluate(() => window.__ready ?? null).catch(() => n
 // By default a model writes until its context is full (4096 tokens for llm-jp-3-150m). The test, and every tok/s in
 // the documents, is about 256 tokens: set that in the settings, as a visitor would. (Not with E2E_LONG: the 256
 // count the prompt too, and the long prompt is there to fill the context.) T337: Agents-A1's format alone is 241
-// tokens (the template's system turn), and a prompt of 259 does not fit in 256: 512 for it.
-const tokens = model.startsWith("hf-agents-a1-") ? "512" : "256";
+// tokens (the template's system turn), and a prompt of 259 does not fit in 256: 512 for it. T255: and for SmolLM3,
+// whose template's system turn is as long where it thinks.
+const tokens = /^hf-(agents-a1|smollm3)-/.test(model) ? "512" : "256";
 if (!process.env.E2E_LONG) await page.evaluate((tokens) => {
   const steps = document.getElementById("steps");
   steps.value = tokens;

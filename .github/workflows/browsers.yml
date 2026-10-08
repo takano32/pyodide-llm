@@ -224,12 +224,12 @@ jobs:
             models: >-
               hf-pythia-14m hf-distilgpt2 hf-gpt2-medium hf-gpt2-large hf-gpt2-xl hf-pythia-2.8b hf-pythia-6.9b
           # T252 (2026-10-02): well-known ones, in two jobs. Up to 3B: SmolLM2's base models, Qwen2.5 Coder 1.5B and
-          # 3B and Hermes 3 (9 GB of downloads)
+          # 3B and Hermes 3 (9 GB of downloads). T255: and SmolLM3 3B (some layers without RoPE), both forms (7 GB more)
           - size: known
             timeout: 3000
             models: >-
               hf-smollm2-135m hf-smollm2-360m hf-qwen2.5-coder-1.5b-instruct hf-qwen2.5-coder-3b-instruct
-              hf-hermes-3-llama-3.2-3b
+              hf-hermes-3-llama-3.2-3b hf-smollm3-3b-thinking hf-smollm3-3b
           # and the 7 to 8B ones, 33 GB of downloads, each on a 64-bit memory
           - size: known-8b
             timeout: 3000

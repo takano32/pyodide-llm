@@ -246,8 +246,10 @@ def naive_logits(config, weights, tokens):
             xb = rmsnorm(x[pos], weights["rms_att_weight"][l])
             # Qwen2 adds a bias to q, k and v before the rotation
             bias = lambda name: weights[name][l] if name in weights else 0.0
-            queries.append(rope(head_norm(weights["wq"][l] @ xb + bias("bq"), "q_norm", l), pos, n_heads))
-            keys.append(rope(head_norm(weights["wk"][l] @ xb + bias("bk"), "k_norm", l), pos, n_kv_heads))
+            # (T255: a SmolLM3 turns the q and k of some layers only)
+            turn = (lambda vector, pos, heads: vector) if l in config.get("unturned", ()) else rope
+            queries.append(turn(head_norm(weights["wq"][l] @ xb + bias("bq"), "q_norm", l), pos, n_heads))
+            keys.append(turn(head_norm(weights["wk"][l] @ xb + bias("bk"), "k_norm", l), pos, n_kv_heads))
             values.append(weights["wv"][l] @ xb + bias("bv"))
         for pos in range(len(tokens)):
             attended = np.zeros(n_heads * head_size, dtype=np.float64)

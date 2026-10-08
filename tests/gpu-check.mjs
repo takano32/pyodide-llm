@@ -153,6 +153,10 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // takes the table for a unit turn is wrong on this model only
   "synthetic-yarn": [{ layers: 3, qk_norm: true, head_dim: 32 },
     { qk_norm: true, head_dim: 32, rms_norm_eps: 0.5, rope_scaling: { rope_type: "yarn", factor: 4.0, original_max_position_embeddings: 32 } }],
+  // T255: a SmolLM3's layers that RoPE leaves alone (the second and the fourth of five: the first layer, which the
+  // loading's check computes, turns): the shaders are the Llama's, and a layer's count of turned values is 0 there. A
+  // GPU that turns every layer, or leaves the wrong ones alone, is far from NumPy's in those layers' keys
+  "synthetic-smollm3": [{ layers: 5 }, { unturned: [1, 3] }],
   "synthetic-gpt2": [{ layers: 3, kv_heads: 4, arch: "gpt2", outliers: 8 }, { arch: "gpt2" }],
   "synthetic-neox": [{ layers: 3, kv_heads: 4, arch: "neox" }, { arch: "neox", rotary: 4, parallel_residual: true }],
   "synthetic-neox-256": [{ dim: 512, hidden: 1024, layers: 3, heads: 2, kv_heads: 2, arch: "neox" }, { arch: "neox", rotary: 64, parallel_residual: true }],
@@ -188,7 +192,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // TODO.md's T241 has the minutes (the review of 2026-10-01)
 // (T232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's;
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
-const DAWN_ONLY = ["synthetic-yarn", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied"];
+const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied"];
 const madeUp = Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
 const ids = (args.length ? args : ["made-up", "stories15M", "tiny-lm", "llm-jp-3-150m"])
   .flatMap((id) => (id === "made-up" ? madeUp : [id]));

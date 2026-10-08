@@ -721,6 +721,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     seq_len: seqLen, rotary, arch } = plan;
   const hidden = plan.hidden_dim, kvDim = kvHeads * headSize, qDim = heads * headSize;
   const gpt2 = arch === "gpt2", layerNorm = arch === "gpt2" || arch === "neox", parallel = plan.parallel_residual;
+  // T255: which layers RoPE turns q and k of: none of a GPT-2's, and not the ones a SmolLM3 leaves alone
+  const unturned = Array.from(plan.unturned || []);
+  const turns = Array.from({ length: layers }, (_, l) => !gpt2 && !unturned.includes(l));
   // T229: a Qwen3.5's linear-attention layers (null: none), which layers they are, and each layer's place among the
   // layers of its kind (the layer itself where all attend); attending: the layers with keys and values
   // T260: an LFM2's convolution layers (null: none), the same way
@@ -1181,7 +1184,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
             for (let h = 0; h < heads; h++) k.rmsnorm(qt + h * HS, qt + h * HS, qNorm + a * HS, headSize, eps);
             for (let h = 0; h < kvHeads; h++) k.rmsnorm(kt + h * HS, kt + h * HS, kNorm + a * HS, headSize, eps);
           }
-          if (!gpt2) {
+          if (turns[l]) {
             const cos = cosTable + pos * (headSize / 2) * 4, sin = sinTable + pos * (headSize / 2) * 4;
             k.rope(qt, cos, sin, heads, headSize, rotary);
             k.rope(kt, cos, sin, kvHeads, headSize, rotary);
@@ -1636,7 +1639,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     listen();
     // T154: LayerNorm's epsilon is the CPU's layernorm kernel's and NumPy's, 1e-5 (GPT-2's and GPT-NeoX's
     // layer_norm_epsilon); parallel: GPT-NeoX's parallel residual
-    worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, seqLen,
+    worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, unturned, seqLen,
       kvStart: plan.kv_start, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), batch: GPU_BLOCK, matrices,
       vectors: gpuVectors(), rows: gpuRows, tokens: gpuIds ? gpuTokensPlan() : null,
       cos: cosTable, sin: sinTable, staging, force: gpuForce, remembered: gpuRemembered, direct: Boolean(direct),

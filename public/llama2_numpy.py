@@ -1210,7 +1210,7 @@ class Llama:
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, collapse=False,
                  unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None, rotated=None,
-                 convolution=None):
+                 convolution=None, unturned=()):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py),
@@ -1241,6 +1241,7 @@ class Llama:
         rotated (T237): the matrices are in a rotated basis (the comment above hadamard()): its block and the signs
         of every width (FORM's, the file cannot say them). The same tensors in the same places: only what they are
         multiplied by changes, and the row of the embedding is turned back.
+        unturned (T255): the layers whose q and k RoPE does not turn (SmolLM3: every fourth), where there are any.
         rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
         rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
         whole (Llama 3).
@@ -1333,6 +1334,11 @@ class Llama:
         self.rms_norm_eps = float(rms_norm_eps)
         # how many values of each head RoPE turns: all of them unless the model says otherwise
         self.rotary = int(rotary) if rotary else self.head_size
+        # T255: the layers whose q and k go into the scores as their matrices (and norms) leave them
+        unturned = unturned.to_py() if hasattr(unturned, "to_py") else unturned
+        self.unturned = tuple(sorted({int(layer) for layer in unturned or ()}))
+        if self.unturned and (arch != "llama" or not 0 <= self.unturned[0] <= self.unturned[-1] < self.n_layers):
+            raise ValueError("The layers RoPE leaves alone are layers of a Llama, and none of another architecture.")
         self.positions = None
         self.q_norm = self.k_norm = self.wg = None
         if (arch == "qwen35") != (self.linear is not None) or (self.linear and n_layers < self.linear["every"]):
@@ -1575,6 +1581,8 @@ class Llama:
                 "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels,
                 # T229: a Qwen3.5's linear-attention layers (None: none)
                 "linear": self.linear,
+                # T255: the layers RoPE leaves alone
+                "unturned": list(self.unturned),
                 # T260: an LFM2's convolution layers (None: none)
                 "convolution": self.convolution,
                 # T237: the block of a rotated basis (0: the model's own basis); its signs are in derived
@@ -1640,13 +1648,16 @@ class Llama:
         # GPT-2 and GPT-NeoX normalize by the mean as well, and have a bias on every projection
         eps = self.rms_norm_eps
         norm = (lambda v, w, b: layernorm(v, w, b)) if layer_norm else (lambda v, w, b: rmsnorm(v, w, eps))
+        heads_of = lambda v, c, s: v.reshape(-1, head_size)  # (q or k as they are)
         if gpt2:
-            turn = lambda v, c, s: v.reshape(-1, head_size)
+            turn = heads_of
         elif neox or self.linear is not None:
             # only the first self.rotary of every head are rotated, the rest go through untouched
             turn = lambda v, c, s: partial_rope(v.reshape(-1, head_size), c, s, self.rotary)
         else:
             turn = rope
+        # T255: a layer RoPE leaves alone, where the model has such
+        turns = [heads_of if l in self.unturned else turn for l in range(self.n_layers)] if self.unturned else None
 
         # Copy the token embedding into x, and (GPT-2) the row of this position
         x = self.embedding(token)
@@ -1671,6 +1682,8 @@ class Llama:
                     qv, kv, vv = qv + self.bq[a], kv + self.bk[a], vv + self.bv[a]
                 if self.q_norm is not None:  # Qwen3 normalizes every head of q and k
                     qv, kv = head_norm(qv, self.q_norm[a], eps), head_norm(kv, self.k_norm[a], eps)
+                if turns:
+                    turn = turns[l]
                 q = turn(qv, cos, sin).reshape(n_kv_heads, kv_mul, head_size)
                 self.key_cache[a, :, pos] = turn(kv, cos, sin)
                 self.value_cache[a, :, pos] = vv.reshape(n_kv_heads, head_size)

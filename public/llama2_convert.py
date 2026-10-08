@@ -1063,6 +1063,22 @@ def query_scale(config):
 
 # the architectures that turn part of each head only: the options say how much (rotary)
 PARTLY_TURNED = ("neox", "qwen35")
+
+
+def unturned_layers(config):
+    """T255: the layers of a SmolLM3 (transformers' model_type "smollm3", a Llama otherwise) whose q and k RoPE does not
+    turn, in order: where config.json's no_rope_layers has a 0 (the name is transformers': a 1 is a layer that has
+    RoPE), and where it has no such list every no_rope_layer_interval-th layer, as transformers' SmolLM3Config makes
+    the list (and llama.cpp, whose interval is always 4). The file is a Llama's and the same either way (turning the
+    rows of q and k into llama2.c's order changes no score of a layer that turns nothing): the options say it (unturned).
+    None of another model's."""
+    if config.get("model_type") != "smollm3":
+        return []
+    said = config.get("no_rope_layers")
+    if said is None:
+        interval = config.get("no_rope_layer_interval", 4)
+        said = [int((layer + 1) % interval != 0) for layer in range(config["num_hidden_layers"])]
+    return [layer for layer, turns in enumerate(said) if not turns]
 # transformers' Qwen3_5TextConfig, where config.json leaves one out
 LINEAR_DEFAULTS = {"linear_num_key_heads": 16, "linear_num_value_heads": 32, "linear_key_head_dim": 128,
                    "linear_value_head_dim": 128, "linear_conv_kernel_dim": 4}
@@ -1208,9 +1224,11 @@ def check_config(config):
     # qwen3_5 (T229) is a Qwen3 most of whose layers are linear-attention ones (normalize() lifted its text_config).
     # granite (T253) is a Llama whose scores are scaled otherwise, which the conversion puts into q (query_scale()).
     # lfm2 (T260) is a Qwen3 some of whose layers are convolution layers (normalize() gave it the Llama's names).
-    if config.get("model_type") not in ("llama", "qwen2", "qwen3", "gpt2", "gpt_neox", "qwen3_5_text", "granite", "lfm2"):
-        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Mistral, Granite, Qwen2, "
-               f"Qwen3, Qwen3.5, LFM2, GPT-2 and GPT-NeoX models are supported")
+    # smollm3 (T255) is a Llama some of whose layers RoPE leaves alone (unturned_layers()).
+    if config.get("model_type") not in ("llama", "qwen2", "qwen3", "gpt2", "gpt_neox", "qwen3_5_text", "granite", "lfm2",
+                                        "smollm3"):
+        refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only Llama, Mistral, Granite, SmolLM3, "
+               f"Qwen2, Qwen3, Qwen3.5, LFM2, GPT-2 and GPT-NeoX models are supported")
     for key in ("hidden_size", "intermediate_size", "num_hidden_layers", "num_attention_heads", "vocab_size",
                 "max_position_embeddings"):
         if not isinstance(config.get(key), int) or config[key] <= 0:
@@ -1260,6 +1278,13 @@ def check_config(config):
         refuse("its layers have biases")
     if config.get("use_sliding_window"):
         refuse("it uses a sliding window of attention")
+    if config.get("model_type") == "smollm3":
+        # T255: a list of another length than the layers, or an interval that is no number, names no layers
+        said, interval = config.get("no_rope_layers"), config.get("no_rope_layer_interval", 4)
+        if said is None and (not isinstance(interval, int) or isinstance(interval, bool) or interval <= 0):
+            refuse("its config.json has no usable no_rope_layer_interval")
+        if said is not None and (not isinstance(said, list) or len(said) != config["num_hidden_layers"]):
+            refuse("its no_rope_layers does not name every layer")
     if config.get("model_type") == "granite":
         # T253: what the engine has not (see GRANITE_ONES), and a multiplier of the scores that is no number to scale
         # q by. transformers' Granite has heads of dim / heads only (its config has no head_dim)
@@ -1857,6 +1882,9 @@ GGUF_NAMES = {"token_embd.weight": "model.embed_tokens.weight", "output_norm.wei
 GGUF_ARCHITECTURES = {
     "llama": (GGUF_NAMES, "model.layers.{}.", GGUF_LAYER),
     "qwen2": (GGUF_NAMES, "model.layers.{}.", GGUF_LAYER),
+    # T255: a SmolLM3, a Llama to the name of every tensor (llama.cpp's SmolLM3Model is its LlamaModel by another name,
+    # and turns q and k as that does; conversion/llama.py at 71ad0590)
+    "smollm3": (GGUF_NAMES, "model.layers.{}.", GGUF_LAYER),
     # T253: a Granite, a Llama to the name of every tensor (llama.cpp's GraniteModel is its LlamaModel with four numbers
     # more in the metadata, and turns q and k as that does)
     "granite": (GGUF_NAMES, "model.layers.{}.", GGUF_LAYER),
@@ -1955,7 +1983,7 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
     rope_scaling as it streams past (gguf_weights, T136), instead of refusing it."""
     arch = metadata.get("general.architecture")
     if arch not in GGUF_ARCHITECTURES:
-        raise ValueError(f"This GGUF holds a {arch}: only Llama, Granite, Qwen2, Qwen3, Qwen3.5, LFM2, GPT-2 and GPT-NeoX ones are supported.")
+        raise ValueError(f"This GGUF holds a {arch}: only Llama, Granite, SmolLM3, Qwen2, Qwen3, Qwen3.5, LFM2, GPT-2 and GPT-NeoX ones are supported.")
     key = lambda name, default=None: metadata.get(f"{arch}.{name}", default)
     common = {"vocab_size": tensors["token_embd.weight"]["shape"][0] if "token_embd.weight" in tensors else None,
               "bos_token_id": metadata.get("tokenizer.ggml.bos_token_id", 1),
@@ -2000,6 +2028,11 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
                 for name, ours in (("attn_factor", "attention_factor"), ("yarn_log_multiplier", "mscale_all_dim")):
                     if key(f"rope.scaling.{name}") is not None:
                         config["rope_scaling"][ours] = key(f"rope.scaling.{name}")
+        if arch == "smollm3":
+            # T255: llama.cpp leaves every fourth layer's q and k unturned, whatever the GGUF says (it says nothing:
+            # src/models/smollm3.cpp at 71ad0590 sets n_no_rope_layer_step to 4), which is what config.json's
+            # interval of 4 says. gguf_agrees() compares the layers with the original's
+            config["no_rope_layer_interval"] = 4
         if arch == "granite":
             # T253: a Granite's four multipliers by config.json's names. llama.cpp keeps the scores' in the metadata
             # (attention.scale) and multiplies at run time: q is not scaled in the file, and the conversion scales it
@@ -2074,10 +2107,10 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
         size = int(math.prod(info["shape"]) * READERS[dtype][0])
         entry = {"dtype": dtype, "shape": info["shape"], "data_offsets": [info["offset"], info["offset"] + size]}
         kind = parts[2] if len(parts) == 4 else None
-        if arch in ("llama", "granite") and kind in turns:
+        if arch in ("llama", "granite", "smollm3") and kind in turns:
             # llama.cpp turns q and k of a Llama (and their biases) into llama2.c's order; a Qwen2 it leaves alone
             # (it rotates the other way at run time). tests/gguf_check.py found SmolLM2's turned. A Granite's as a
-            # Llama's (T253: its converter is the Llama's).
+            # Llama's (T253: its converter is the Llama's), and a SmolLM3's (T255).
             entry["turned"] = turns[kind]
         if arch == "gpt2" and parts[-1] == "weight" and kind in ("attn_qkv", "attn_output", "ffn_up", "ffn_down"):
             # GPT-2's matrices are Conv1D, (in, out): llama.cpp stores them the other way round, as every other
@@ -2231,6 +2264,9 @@ def gguf_agrees(own, config):
         pairs.append(("size of a head", own["head_dim"], head_size(config)))
     if own.get("rms_norm_eps") is not None and config.get("rms_norm_eps") is not None:
         pairs.append(("RMSNorm epsilon", f32(own["rms_norm_eps"]), f32(config["rms_norm_eps"])))
+    if "smollm3" in (own["model_type"], config.get("model_type")):
+        # T255: the layers RoPE leaves alone, which are no tensor (llama.cpp's are every fourth, always)
+        pairs.append(("layers without RoPE", unturned_layers(own), unturned_layers(config)))
     if "granite" in (own["model_type"], config.get("model_type")):
         # T253: a Granite's multipliers, which are no tensor: the scores' goes into q from config.json's (a GGUF that
         # says another would be scaled by the wrong one), and the three the engine has not must be 1 in both
@@ -2670,6 +2706,9 @@ class Conversion:
         if self.config.get("rope_scaling"):
             # the int8 file has no RoPE tables: the engine makes them, and needs the scaling for that (Llama 3)
             self.options["rope_scaling"] = dict(self.config["rope_scaling"])
+        if unturned_layers(self.config):
+            # T255: a SmolLM3's layers that RoPE leaves alone: the file does not say which (only where there are any)
+            self.options["unturned"] = unturned_layers(self.config)
         if self.stream.form["arch"] in PARTLY_TURNED:
             # GPT-NeoX and Qwen3.5 turn part of every head: the file does not say how much
             self.options["rotary"] = rotary_dim(self.config)

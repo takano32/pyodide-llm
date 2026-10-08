@@ -162,6 +162,18 @@ if [ "$suite" = full ]; then
     node tests/forward-check.mjs .tmp/made-up-lfm2-int8 .tmp/made-up-lfm2-int6 .tmp/made-up-lfm2-own-int8 .tmp/made-up-lfm2-four-int8 --without relaxed --rounds 1 --positions 128
   }
   part "forward.js against NumPy, a made-up LFM2" made_up_lfm2
+  # T255: a made-up SmolLM3 (every fourth layer's q and k not turned by RoPE; the real one is too large for the build):
+  # float32 and float16 to NumPy's numbers, int8 and six bits within the line of a made-up model, the prompt in blocks
+  # to the bit; on a shared memory, a plain one and a 64-bit one, and without relaxed SIMD (Safari's path)
+  made_up_smollm3() {
+    mkdir -p .tmp
+    for dtype in float32 float16 int8 int6; do python tests/make_smollm3.py .tmp/made-up-smollm3-$dtype $dtype; done
+    for memory in "" --plain --wide; do
+      node tests/forward-check.mjs .tmp/made-up-smollm3-float32 .tmp/made-up-smollm3-float16 .tmp/made-up-smollm3-int8 .tmp/made-up-smollm3-int6 --rounds 1 --positions 128 $memory
+    done
+    node tests/forward-check.mjs .tmp/made-up-smollm3-int8 .tmp/made-up-smollm3-int6 --without relaxed --rounds 1 --positions 128
+  }
+  part "forward.js against NumPy, a made-up SmolLM3" made_up_smollm3
   # T148: the default choice of the GPU or the CPU for a prompt's blocks, with a made-up GPU's worker
   part "the GPU or the CPU by default" node tests/gpu-default-check.mjs
   part "the software threads" node tests/threads-check.mjs

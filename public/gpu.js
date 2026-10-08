@@ -78,6 +78,9 @@ const TIMED_MS = 20, MOST_PASSES = 256, PAIRS = 5;
 const rowBytes = ({ n, ternary }) => (ternary ? n / 4 : n);
 // (whether the model's weights are ternary: its layers' matrices are all of one kind, llama2_numpy's dtype)
 const ternaryPlan = (plan) => Object.values(plan.matrices).some((matrix) => matrix.ternary);
+// T255: how many values of a head RoPE turns in a layer: plan.turned, but none where the model leaves the layer's q
+// and k alone (a SmolLM3's every fourth; the shaders take the number as GPT-2's 0)
+const turnedAt = (plan, l) => (plan.unturned?.includes(l) ? 0 : plan.turned);
 
 let model = null;  // what is on the GPU for the model: the device, the plan, the buffers, the pipelines, the cache
 let starting = false, stopping = false, lost = null;
@@ -702,7 +705,10 @@ async function prepare(m) {
   // what a request writes into them, from the shared memory
   m.rows = new Float32Array(B * plan.dim);
   m.turns = new Float32Array(B * plan.headSize);
-  m.ropeShape = uniform(m, new Uint32Array([plan.heads, plan.kvHeads, plan.headSize, plan.turned]));
+  // (T255: a layer RoPE leaves alone turns none of a head, as every layer of a GPT-2)
+  const ropeShape = (turned) => uniform(m, new Uint32Array([plan.heads, plan.kvHeads, plan.headSize, turned]));
+  m.ropeShape = ropeShape(plan.turned);
+  m.ropeAlone = plan.unturned?.length ? ropeShape(0) : null;
   const hidden = uniform(m, new Uint32Array([plan.hidden, 0, 0, 0]));
   m.activationGroup = bind(m, m.activation, gated ? [m.gate, m.up, hidden, m.step] : [m.gate, hidden, m.step]);
   // QUANTIZE of the inputs the matrices read: xb (the norm's, dim wide; the attention's, heads × headSize wide, which
@@ -1062,7 +1068,7 @@ function grow(m, needed) {
   new Float32Array(params, 8, 1)[0] = 1 / Math.sqrt(plan.headSize);
   const attentionParams = uniform(m, params, cache.owned);
   for (let l = 0; l < plan.layers; l++) {
-    cache.rope.push(bind(m, m.rope, [m.q, m.k, m.v, cache.keys[l], cache.values[l], m.angles, m.ropeShape, m.step]));
+    cache.rope.push(bind(m, m.rope, [m.q, m.k, m.v, cache.keys[l], cache.values[l], m.angles, turnedAt(plan, l) ? m.ropeShape : m.ropeAlone, m.step]));
     cache.attention.push(bind(m, m.attention.pipeline, [m.q, cache.keys[l], cache.values[l], m.xb, attentionParams, m.step]));
   }
   m.cache = cache;
@@ -1184,9 +1190,9 @@ async function tokenBuffers(m) {
     xq: buffer(m, widest), xs: buffer(m, (widest / wgsl.GROUP) * 4), xb: buffer(m, plan.dim * 4),
     readback: buffer(m, most * 4 + wgsl.STATE_BYTES + 2 * plan.layers * most * kvDim * 2, MAP_READ | COPY_DST) };
   // fusedMatVec's Params: rows, words, perRow, second, eps, normAt, qRows, kvRows, headSize, turned
-  const params = (rows, n, second = 0, normAt = 0) => {
+  const params = (rows, n, second = 0, normAt = 0, turned = plan.turned) => {
     const bytes = new ArrayBuffer(48);
-    new Uint32Array(bytes).set([rows, n / 4, n / wgsl.GROUP, second, 0, normAt, qDim, kvDim, plan.headSize, plan.turned, 0, 0]);
+    new Uint32Array(bytes).set([rows, n / 4, n / wgsl.GROUP, second, 0, normAt, qDim, kvDim, plan.headSize, turned, 0, 0]);
     new Float32Array(bytes, 16, 1)[0] = plan.eps;
     return uniform(m, bytes);
   };
@@ -1202,7 +1208,7 @@ async function tokenBuffers(m) {
   new Float32Array(flash, 8, 1)[0] = 1 / Math.sqrt(plan.headSize);
   const layers = [...Array(plan.layers)].map((_, l) => l * plan.dim), qkvRows = qDim + 2 * kvDim;
   g.u = { embed: m.tables.embedding.map((piece) => uniform(m, new Uint32Array([plan.dim, piece.first, piece.rows, 0]))), flash: uniform(m, flash), o: params(plan.dim, qDim), down: params(plan.dim, plan.hidden),
-    qkv: layers.map((at) => params(qkvRows, plan.dim, 0, at)), gateUp: layers.map((at) => params(plan.hidden, plan.dim, plan.hidden, at)),
+    qkv: layers.map((at, l) => params(qkvRows, plan.dim, 0, at, turnedAt(plan, l))), gateUp: layers.map((at) => params(plan.hidden, plan.dim, plan.hidden, at)),
     norm: layers.map((at) => norm(at)), final: norm(0), classifier: m.tables.classifier.map((piece) => params(piece.rows, plan.dim)),
     // QUANTIZE's (n, xStride): the attention's output, SwiGLU's
     quantizeAttention: uniform(m, new Uint32Array([qDim, qDim, 0, 0])), quantizeGate: uniform(m, new Uint32Array([plan.hidden, plan.hidden, 0, 0])),
@@ -1808,7 +1814,7 @@ async function checkTokens(m, form) {
     const turn = (vector) => {
       for (let at = 0; at < vector.length; at += 2) {
         const i = (at % headSize) / 2;
-        if (at % headSize >= plan.turned) continue;
+        if (at % headSize >= turnedAt(plan, 0)) continue;
         const [a, b] = [vector[at], vector[at + 1]];
         vector[at] = a * cos[i] - b * sin[i];
         vector[at + 1] = a * sin[i] + b * cos[i];
