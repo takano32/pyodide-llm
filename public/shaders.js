@@ -4250,21 +4250,21 @@ export const SAMPLER_STAGES = [
 // The CPU's sampling in JavaScript (kernels/kernel.ts's penalize() and sample(), as the engine's generate() calls
 // them): what SAMPLE is held to (/benchmark/'s check), and itself held to the kernel (tests/smoke.mjs). logits: a
 // Float32Array, changed in place by the penalty as the kernel changes them. history: BOS, the prompt and the sampled
-// tokens, the token fed last.
-export function penalizeLikeCpu(logits, history, penalty) {
-  if (penalty === 1) return;
-  const f = Math.fround, p = f(penalty);
+// tokens, the token fed last. T274: presence, the kernel's presence penalty (taken off each after the penalty).
+export function penalizeLikeCpu(logits, history, penalty, presence = 0) {
+  if (penalty === 1 && !(presence > 0)) return;
+  const f = Math.fround, p = f(penalty), less = presence > 0 ? f(presence) : 0;
   for (const token of new Set(history.slice(-REPETITION_WINDOW))) {
     const value = logits[token];
-    logits[token] = value > 0 ? f(value / p) : f(value * p);
+    logits[token] = f((value > 0 ? f(value / p) : f(value * p)) - less);
   }
 }
 /** The token kernel.ts's sample() draws for random (in [0, 1)): float32 probabilities, float64 sums; the nucleus
  * sorted from the most probable, equal ones in the order of their index (the kernel's quicksort takes them in no set
  * order: either is its distribution). temperature 0: the first index of the largest logit (NumPy's argmax). */
-export function sampleLikeCpu(logits, temperature, topp, random) {
+export function sampleLikeCpu(logits, temperature, topp, random, topk = 0, minp = 0) {
   if (temperature === 0) return argmaxLikeCpu(finiteLikeCpu(logits));
-  const { tokens, cumulative, mass } = walkLikeCpu(logits, temperature, topp);
+  const { tokens, cumulative, mass } = walkLikeCpu(logits, temperature, topp, topk, minp);
   const goal = random * mass;
   for (let k = 0; k < tokens.length; k++) if (cumulative[k] > goal) return tokens[k];
   return tokens[tokens.length - 1];
@@ -4290,8 +4290,10 @@ export function finiteLikeCpu(logits) {
   return logits;
 }
 /** The tokens kernel.ts's sample() walks for a random number, in its order (the nucleus's, sorted; else the index's),
- * the running sum after each (float64) and the mass the random number is a share of. */
-export function walkLikeCpu(logits, temperature, topp) {
+ * the running sum after each (float64) and the mass the random number is a share of. T274: the kernel's top-k (the
+ * topk most probable, whose nucleus it is then, walked from the most probable also without a nucleus) and min-p (what
+ * is less than minp times as probable as the most probable is left out, last). */
+export function walkLikeCpu(logits, temperature, topp, topk = 0, minp = 0) {
   const f = Math.fround, n = logits.length, best = logits[argmaxLikeCpu(finiteLikeCpu(logits))];
   const nucleus = topp > 0 && topp < 1;
   // without a nucleus the kernel's floor is -f32.MAX_VALUE (and SAMPLE's -3.4e38): a -inf logit is left out, not
@@ -4310,12 +4312,21 @@ export function walkLikeCpu(logits, temperature, topp) {
   probs.forEach((x, k) => (probs[k] = x < -87 ? (k < simd ? f(Math.exp(-87)) : 0) : f(Math.exp(x))));
   let total = 0, top = 0;
   for (const p of probs) (total += p), (top = Math.max(top, p));
-  let order = probs.map((_, k) => k), last = probs.length - 1;
-  if (nucleus) {
+  const fromTheMost = (a, b) => probs[b] - probs[a] || index[a] - index[b];
+  let order = probs.map((_, k) => k);
+  const narrowed = topk > 0 && topk < probs.length;
+  if (narrowed) {
+    order = order.sort(fromTheMost).slice(0, topk);
+    total = 0;
+    for (const k of order) total += probs[k];
+  }
+  const least = minp > 0 ? f(Math.min(f(minp), 1) * top) : 0;
+  let last = order.length - 1;
+  if (nucleus || narrowed) {
     // the most probable token always stays (kernel.ts, T178)
-    const cutoff = Math.min(((1 - f(topp)) / (probs.length > 1 ? probs.length - 1 : 1)) * total, top);
-    order = order.filter((k) => probs[k] >= cutoff).sort((a, b) => probs[b] - probs[a] || index[a] - index[b]);
-    const limit = f(topp) * total;
+    const cutoff = nucleus ? Math.min(((1 - f(topp)) / (order.length > 1 ? order.length - 1 : 1)) * total, top) : 0;
+    order = order.filter((k) => probs[k] >= cutoff && probs[k] >= least).sort(fromTheMost);
+    const limit = nucleus ? f(topp) * total : Infinity;
     let sum = 0;
     last = order.length - 1;
     for (let k = 0; k < order.length; k++) {
@@ -4325,6 +4336,10 @@ export function walkLikeCpu(logits, temperature, topp) {
         break;
       }
     }
+  }
+  if (!nucleus && !narrowed && minp > 0) {
+    order = order.filter((k) => probs[k] >= least);
+    last = order.length - 1;
   }
   const tokens = [], cumulative = [];
   let sum = 0;

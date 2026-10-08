@@ -122,3 +122,77 @@ def test_some_minus_infinity_is_no_fault(llama):
         drawn = {llama.sample(logits, 1.0, topp, FixedRng([u])) for u in np.linspace(0.0, 1.0, 51)[:-1]}
         assert all(np.isfinite(logits[token]) for token in drawn)
     assert llama.sample(logits, 0.0, 0.9, FixedRng([])) == int(np.argmax(logits))
+
+
+def reference_narrowed(logits, temperature, topp, top_k, min_p):
+    """T274: the tokens left by a top-k, then a nucleus of those, then a min-p: each step on the probabilities the one
+    before left, adding up to one again (llama.cpp's sampler chain, transformers' logits warpers), written plainly."""
+    probabilities = softmax(logits.astype(np.float64), temperature)
+    order = np.argsort(-probabilities, kind="stable")
+    if top_k > 0:
+        order = order[:top_k]
+    left = probabilities[order] / probabilities[order].sum()
+    if 0.0 < topp < 1.0:
+        order = order[:int(np.searchsorted(np.cumsum(left), topp)) + 1]
+        left = probabilities[order] / probabilities[order].sum()
+    if min_p > 0.0:
+        order = order[left >= min_p * left.max()]
+    return order
+
+
+@pytest.mark.parametrize("top_k", [1, 2, 20, 199, 200, 500])
+@pytest.mark.parametrize("topp", [1.0, 0.95, 0.5])
+@pytest.mark.parametrize("min_p", [0.0, 0.05, 0.5, 1.0])
+def test_top_k_then_the_nucleus_then_min_p(llama, top_k, topp, min_p):
+    logits = (np.random.default_rng(top_k).standard_normal(200) * 2.0).astype(np.float32)
+    for temperature in (0.6, 1.0):
+        left = reference_narrowed(logits, temperature, topp, top_k, min_p)
+        draws = [llama.sample(logits, temperature, topp, FixedRng([u]), top_k, min_p) for u in np.linspace(0.0, 1.0, 2001)[:-1]]
+        # each as often as its share of what is left, and none that is not left (the least likely of 200 fall
+        # between the 2000 numbers tried)
+        share = softmax(logits.astype(np.float64), temperature)[left]
+        share /= share.sum()
+        assert set(draws) <= set(left.tolist()), (temperature, sorted(set(draws)), sorted(left.tolist()))
+        assert set(draws) >= set(left[share > 1e-3].tolist()), (temperature, sorted(set(draws)), sorted(left.tolist()))
+        counts = np.array([draws.count(int(token)) for token in left]) / len(draws)
+        assert np.abs(counts - share).max() < 2e-3, (temperature, counts, share)
+
+
+def test_min_p_alone_keeps_the_order_of_the_index(llama):
+    logits = np.array([0.0, 3.0, -9.0, 2.9, 1.0], dtype=np.float32)
+    # 0.5 of the most probable: tokens 1 and 3, token 1 first (the walk is the index's without a top-k or a nucleus)
+    assert [llama.sample(logits, 1.0, 1.0, FixedRng([u]), 0, 0.5) for u in (0.0, 0.4, 0.6, 0.999)] == [1, 1, 3, 3]
+
+
+def test_greedy_ignores_top_k_and_min_p(llama):
+    logits = np.random.default_rng(5).standard_normal(200).astype(np.float32)
+    assert llama.sample(logits, 0.0, 0.9, FixedRng([]), 3, 0.5) == int(np.argmax(logits))
+
+
+def test_a_presence_penalty_is_taken_off_once(llama):
+    logits = np.array([2.0, -2.0, 5.0, -5.0], dtype=np.float32)
+    llama.penalize(logits, [0, 1, 1, 1], 1.0, 1.5)
+    assert logits == pytest.approx([0.5, -3.5, 5.0, -5.0])
+    llama.penalize(logits, [0], 2.0, 1.5)  # after the repetition penalty
+    assert logits == pytest.approx([-1.25, -3.5, 5.0, -5.0])
+    llama.penalize(logits, [3] + [2] * REPETITION_WINDOW, 1.0, 1.0)  # token 3 fell out of the window
+    assert logits == pytest.approx([-1.25, -3.5, 4.0, -5.0])
+
+
+@pytest.mark.parametrize("settings", [dict(top_k=-1), dict(min_p=1.5), dict(min_p=-0.1), dict(presence_penalty=-1.0)])
+def test_generate_refuses_settings_out_of_range(llama, settings):
+    with pytest.raises(ValueError):
+        list(llama.generate("a", steps=4, temperature=1.0, **settings))
+
+
+def test_generate_with_the_three_reproduces_and_differs(llama):
+    """T274: a seed reproduces with them, a top-k of 1 is greedy's text, and a presence penalty changes a greedy one."""
+    def text(**settings):
+        return "".join(llama.generate("a", steps=24, seed=7, **settings))
+    narrowed = dict(temperature=1.0, topp=0.95, top_k=20, min_p=0.05, presence_penalty=1.5)
+    assert text(**narrowed) == text(**narrowed)
+    assert text(temperature=1.0, topp=1.0, top_k=1) == text(temperature=0.0)
+    assert text(temperature=0.0, presence_penalty=100.0) != text(temperature=0.0)
+    # (greedy with a large presence penalty writes no token of the last 64 twice)
+    ids = llama.tokenizer.encode(text(temperature=0.0, presence_penalty=100.0), llama.specials)
+    assert len(ids) > 4

@@ -481,19 +481,22 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   // The generation settings. They start as the model's own and go back to them with every change of model, except
   // the seed: "tap the seed of an answer, change the model, send" is how int8 is compared with the original.
   // steps: 0 stands for as many tokens as the model's context holds, which is the default of every model
-  type Settings = { steps: number; temperature: number; topp: number; repetition_penalty: number; seed?: number };
+  // T274: top_k, min_p and presence_penalty have no field: a model's own (its card's) or the link's
+  type Settings = { steps: number; temperature: number; topp: number; repetition_penalty: number; seed?: number;
+                    top_k?: number; min_p?: number; presence_penalty?: number };
   const defaults = (current: typeof model): Settings => ({ topp: 0.9, repetition_penalty: 1.0, ...(current.generation as any) });
   // The URL may set any of them (T43), so that a link reproduces an answer: ?temperature=0.7&seed=1234&steps=128
-  // (&topp= and &repetition_penalty= too). A value that is not a number, or outside what the field allows, is
+  // (&topp= and &repetition_penalty= too, and &top_k=, &min_p= and &presence_penalty=). A value that is not a number, or outside what the field allows, is
   // ignored. They survive a change of model, like the seed: the link said what to run with.
   const LIMITS: Record<string, [number, number]> = { temperature: [0, 1.5], topp: [0.05, 1], steps: [0, 1 << 20],
-                                                     repetition_penalty: [1, 2], seed: [0, 0xffffffff] };
+                                                     repetition_penalty: [1, 2], seed: [0, 0xffffffff],
+                                                     top_k: [0, 1 << 20], min_p: [0, 1], presence_penalty: [0, 2] };
   const fromLink: Partial<Settings> = {};
   for (const [name, [low, high]] of Object.entries(LIMITS)) {
     const given = parameters.get(name);
     const value = given === null ? NaN : Number(given);
     if (given !== null && Number.isFinite(value) && value >= low && value <= high) {
-      (fromLink as any)[name] = name === "steps" || name === "seed" ? Math.round(value) : value;
+      (fromLink as any)[name] = ["steps", "seed", "top_k"].includes(name) ? Math.round(value) : value;
     }
   }
   const defaultsWithLink = (current: typeof model): Settings => ({ ...defaults(current), ...fromLink });

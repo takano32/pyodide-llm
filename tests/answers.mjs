@@ -35,7 +35,7 @@ pyodide.FS.writeFile("tokenizer.bin", fs.readFileSync(`${out}.tokenizer.bin`));
 const prompts = process.env.PROMPTS ? JSON.parse(process.env.PROMPTS)
   : process.env.PICK ? process.env.PICK.split(",").map((at) => QUESTIONS[Number(at)]) : QUESTIONS;
 const seeds = (process.env.SEEDS ?? "1").split(/\s+/).filter(Boolean).map(Number);
-const { topp, repetition_penalty } = page.generation;
+const { topp, repetition_penalty, top_k, min_p, presence_penalty } = page.generation;
 // TEMPERATURE=0.7: the entry's temperature replaced (what a lower temperature does to the same questions and seeds)
 const temperature = process.env.TEMPERATURE ? Number(process.env.TEMPERATURE) : page.generation.temperature;
 const bare = Boolean(process.env.NOFORMAT);
@@ -45,7 +45,11 @@ pyodide.globals.set("TEXTS", pyodide.toPy(prompts.map((prompt) => (page.template
 pyodide.globals.set("COUNT", Number(count));
 pyodide.globals.set("SEEDS", pyodide.toPy(seeds));
 pyodide.globals.set("GREEDY", Boolean(process.env.GREEDY));
-pyodide.globals.set("SAMPLING", pyodide.toPy(Object.fromEntries(Object.entries({ temperature, topp, repetition_penalty }).filter(([, v]) => v !== undefined))));
+// SAMPLING='{"temperature":0.6,"topp":0.95,"top_k":0,"presence_penalty":0}': settings over the entry's (T274: the same
+// questions and seeds with another sampler)
+const sampling = { ...Object.fromEntries(Object.entries({ temperature, topp, repetition_penalty, top_k, min_p, presence_penalty }).filter(([, v]) => v !== undefined)),
+  ...JSON.parse(process.env.SAMPLING ?? "{}") };
+pyodide.globals.set("SAMPLING", pyodide.toPy(sampling));
 const result = JSON.parse(pyodide.runPython(`
 import json, re, time
 llama = kernel_llama_file(CHECKPOINT, open("tokenizer.bin", "rb").read(), **OPTIONS)
@@ -84,7 +88,7 @@ json.dumps({"rows": rows, "bos": llama.bos, "stops": sorted(llama.stop_tokens)})
 const id = page.id;
 const sampled = result.rows.filter((row) => row.kind !== "greedy");
 console.log(`answers ${id}: ${prompts.length} questions x ${seeds.length} seeds${process.env.GREEDY ? " and greedy" : ""}, up to ${count} tokens, temperature ${temperature}, ` +
-  `top-p ${topp}, penalty ${repetition_penalty}, bos ${result.bos}, stops ${result.stops.join(" ")}, ${wide ? "a 64-bit" : "a 32-bit"} memory, int8 ${(size / 1e9).toFixed(2)} GB` +
+  `sampling ${JSON.stringify(sampling)}, bos ${result.bos}, stops ${result.stops.join(" ")}, ${wide ? "a 64-bit" : "a 32-bit"} memory, int8 ${(size / 1e9).toFixed(2)} GB` +
   `${bare ? ", NO FORMAT (the bare question)" : ""}`);
 for (const row of result.rows) {
   console.log(`answers ${id}: [${row.kind}] ${JSON.stringify(prompts[row.prompt])} -> ${row.tokens} tokens in ${row.seconds.toFixed(0)} s, ` +
