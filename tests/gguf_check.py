@@ -503,12 +503,19 @@ def bfloat16_of(values):
     return ((bits + np.uint32(0x7FFF) + ((bits >> np.uint32(16)) & np.uint32(1))) & np.uint32(0xFFFF0000)).view(np.float32)
 
 
+# float16 has no step under 2^-24, so a scale under 2^-14 (blocks whose largest value is under 0.0077) is off the float32
+# one by up to 2^-25 absolute, not 2^-11 of itself: 127 of them, at the largest value of the block (T307's review: a
+# matrix of weights 0.001 wide was 19 values outside, one 0.0001 wide 17%, from nothing but this)
+SMALLEST_STEP = 127 * 2.0 ** -25
+
+
 def outside_bfloat16(values, original, raw):
     """T307: how many values of a GGUF tensor cannot have come from wider weights the original is the bfloat16 of
     (LFM2.5 230M's GGUF was made from the float32 its maker has; the published safetensors is that rounded). For a
     tensor kept whole (F32), a value whose bfloat16 is not the original's, bit for bit. For a Q8_0 one, a value further
     from the original's than the two roundings allow: Q8_0's half step of its block's scale d (and what the float16 d
-    is off the float32 one the values were rounded with, 127 steps of 2^-10 d at most) plus bfloat16's half step at
+    is off the float32 one the values were rounded with: 127 steps of it at most, 2^-11 d each, so the 127 / 1024 d
+    taken is twice what a normal d needs, and SMALLEST_STEP covers a d under float16's normal range) plus bfloat16's half step at
     the original's value (2^(e-9) where the value is m 2^e, m in [0.5, 1)). 0 for such a GGUF; weights of another
     model are outside wherever they differ by more than bfloat16's own rounding and Q8_0 rounds the other way, which
     a fine-tune 0.5% away is at thousands of values of every matrix (the unit tests)."""
@@ -519,26 +526,52 @@ def outside_bfloat16(values, original, raw):
     half = np.where(theirs != 0, np.ldexp(1.0, exponent - 9), 0.0)
     step = np.abs(raw[1].astype(np.float64))[:, None]
     off = np.abs(values.astype(np.float64).reshape(-1, 32) - theirs)
-    return int((~(off <= step * (0.5 + 127 / 1024) + half)).sum())  # (a NaN is outside)
+    return int((~(off <= step * (0.5 + 127 / 1024) + SMALLEST_STEP + half)).sum())  # (a NaN is outside)
 
 
-def squares(values, original, raw, stored=None):
+def squares(values, original, raw):
     """[(the difference squared, the reference squared)] against each of references(), summed in float64, to be
-    summed further over the blocks of a large tensor. raw: the int8 and the scales of a Q8_0 tensor, else None.
-    stored: the dtype the original is stored as; for "BF16" one more pair follows, (outside_bfloat16(), 0): no
-    distance, but nearest() makes it 0 where no value is outside and past any line where one is."""
+    summed further over the blocks of a large tensor. raw: the int8 and the scales of a Q8_0 tensor, else None."""
     wide = values.astype(np.float64)
-    sums = [(float(((wide - reference) ** 2).sum()), float((reference.astype(np.float64) ** 2).sum()))
+    return [(float(((wide - reference) ** 2).sum()), float((reference.astype(np.float64) ** 2).sum()))
             for reference in references(original, raw is not None)]
-    if stored == "BF16":
-        sums.append((float(outside_bfloat16(values, original, raw)), 0.0))
-    return sums
 
 
-def from_wider(sums, stored=None):
-    """Whether a tensor is past TIGHT against what a GGUF made from the original holds and yet has no value outside
-    what wider weights of the same model give (outside_bfloat16())"""
-    return stored == "BF16" and sums[-1][0] == 0 and not nearest(sums[:-1]) <= TIGHT
+def from_wider(near, outside, stored):
+    """T307: whether a tensor is past TIGHT against what a GGUF made from the original holds, and yet has no value
+    outside what wider weights of the same model give (outside_bfloat16(), summed over the blocks). Only an original
+    stored as bfloat16 has a rounding to allow for. The distance near (nearest()) stays what it is: the line of
+    TIGHT is not moved, the tensor is let through by a reading of its own."""
+    return stored == "BF16" and outside == 0 and not near <= TIGHT
+
+
+def original_name(name, arch, hf):
+    """The name in the original's safetensors of a GGUF tensor, or None (hugging_face_name() and the spellings of the
+    models that have the others)"""
+    target = hugging_face_name(name, arch)
+    if target is not None and target not in hf and f"transformer.{target}" in hf:
+        target = f"transformer.{target}"  # a GPT-2 of the other spelling (rinna's)
+    if target is not None and target not in hf and target.replace("model.", "model.language_model.", 1) in hf:
+        target = target.replace("model.", "model.language_model.", 1)  # a Qwen3.5 with its vision model (T236)
+    return target if target in hf else None
+
+
+def made_from_wider(infos, data, base, hf, arch):
+    """T307: whether the GGUF shows it was made from weights wider than the bfloat16 its original is stored in: one
+    tensor it keeps whole (F32) that is not the original's but rounds to it, bit for bit. Only then does a Q8_0 tensor
+    get the per-value reading of outside_bfloat16() beside the line of TIGHT; a GGUF without such a tensor (every
+    other one of the list: made of the bfloat16 itself, its F32 tensors the original's) is held to TIGHT alone, where
+    the reading would let a scale 1.003 or a bias of a tenth of a step through a Q8_0 matrix (the review)."""
+    for name, info in infos.items():
+        target = original_name(name, arch, hf) if info["type"] == F32 else None
+        if target is None or hf.tensors[target]["dtype"] != "BF16" or math.prod(info["shape"]) > BLOCK:
+            continue
+        values, _ = tensor(info, data, base)
+        original, _ = as_llama_cpp_writes(target, hf.rows(target, 0, hf.shape(target)[0]).astype(np.float32), arch)
+        if values.shape == original.shape and not np.array_equal(values, original) \
+                and outside_bfloat16(values, original, None) == 0:
+            return True
+    return False
 
 
 def nearest(sums):
@@ -583,7 +616,7 @@ def row_check(parts):
              for i in rounded[:64]])
 
 
-def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, split_heads=0, tile=None):
+def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, split_heads=0, tile=None, wider=False):
     """relative error, the error against the nearest reference (squares()), whether that is from_wider(), and int8 equality of a large matrix, a
     block of rows at a time; by_row: also the error of each row (row_check()). head_rows: q or k, whose heads of head_rows rows the GGUF may hold turned: the
     blocks are whole heads, and the order is the one of the first block (the order found is returned too).
@@ -598,9 +631,9 @@ def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, sp
     size = shape[0] // 3 // split_heads if split_heads else 0
     if split_heads:
         rows = size
-    difference = total = same = count = 0.0
+    difference = total = same = count = outside = 0
     parts, sums = [], None
-    stored = hf.tensors[target]["dtype"]
+    stored = hf.tensors[target]["dtype"] if wider else None  # (made_from_wider())
     order = ""
     blocks = [(first, min(first + rows, shape[0])) for first in range(0, shape[0], rows)]
     if tile and tile[4] == 0:
@@ -641,7 +674,9 @@ def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, sp
                 original = turn
         difference += float(((values - original) ** 2).sum())
         total += float((original ** 2).sum())
-        block = squares(values, original, raw, stored)
+        block = squares(values, original, raw)
+        if stored == "BF16":
+            outside += outside_bfloat16(values, original, raw)
         sums = block if sums is None else [(a + c, b + d) for (a, b), (c, d) in zip(sums, block)]
         if by_row:
             parts.append(row_parts(values, original, raw is not None))
@@ -652,7 +687,8 @@ def large(info, data, base, hf, target, shape, quantize, by_row, head_rows=0, sp
     rowwise = None
     if by_row:
         rowwise = row_check([np.concatenate(column) for column in zip(*parts)])
-    return (math.sqrt(difference / max(total, 1e-30)), nearest(sums), from_wider(sums, stored),
+    near = nearest(sums)
+    return (math.sqrt(difference / max(total, 1e-30)), near, from_wider(near, outside, stored),
             f"{same / count * 100:.2f}%" if count else "", rowwise, order)
 
 
@@ -803,6 +839,10 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
           f"| rows past {ROW_LINE} (worst) |\n|---|---|---|---:|---:|---|---:|---|")
     worst, orders, rope_difference, bad_rows, row_detail, rounded_rows = 0.0, set(), None, {}, {}, {}
     near_worst, past_tight, rounded_detail, unread, widened = 0.0, {}, {}, {}, []
+    wider_source = made_from_wider(infos, data, base, hf, arch)
+    if wider_source:
+        print("(a tensor it keeps whole is not the original's but rounds to it: made from weights wider than the "
+              "bfloat16 the original is stored in, so the tensors are also read value by value, T307)")
     for name, info in infos.items():
         if name == "rope_freqs.weight":
             values, _ = tensor(info, data, base)
@@ -813,12 +853,9 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | {rope_difference:.2e} against "
                   f"rope_frequencies() of rope_scaling = {config.get('rope_scaling')}{' **differs**' if counted else ''} | | | | |")
             continue
-        target = hugging_face_name(name, arch)
-        if target is not None and target not in hf and f"transformer.{target}" in hf:
-            target = f"transformer.{target}"  # a GPT-2 of the other spelling (rinna's)
-        if target is not None and target not in hf and target.replace("model.", "model.language_model.", 1) in hf:
-            target = target.replace("model.", "model.language_model.", 1)  # a Qwen3.5 with its vision model (T236)
-        if target is None or target not in hf:
+        target = original_name(name, arch, hf)
+        if target is None:
+            target = hugging_face_name(name, arch)
             print(f"| {name} | {TYPE_NAMES.get(info['type'])} | {info['shape']} | | | no {target} in safetensors | | |")
             mismatched += 1
             continue
@@ -837,7 +874,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
                 head_rows = shape[0] // (heads if "attn_q" in name else kv_heads)
             split_heads = heads if arch == "gptneox" and name.endswith("attn_qkv.weight") else 0
             error, near, wider, equal, rowwise, order = large(info, data, base, hf, target, shape, quantize, by_row, head_rows,
-                                                       split_heads, value_heads(name, config) if arch == "qwen35" else None)
+                                                       split_heads, value_heads(name, config) if arch == "qwen35" else None, wider_source)
             if order:
                 orders.add(order)
         else:
@@ -879,8 +916,9 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             error = relative(values, original) if values.shape == original.shape else float("nan")
             near, wider = float("nan"), False
             if values.shape == original.shape:
-                sums = squares(values, original, raw, hf.tensors[target]["dtype"])
-                near, wider = nearest(sums), from_wider(sums, hf.tensors[target]["dtype"])
+                near = nearest(squares(values, original, raw))
+                stored = hf.tensors[target]["dtype"]
+                wider = wider_source and from_wider(near, outside_bfloat16(values, original, raw), stored)
             equal = ""
             if raw is not None and values.shape == original.shape:
                 ours, _ = quantize(original.reshape(-1, original.shape[-1]))
@@ -888,7 +926,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             if by_row and values.shape == original.shape:
                 rowwise = row_check(row_parts(values, original, raw is not None))
         wanted = reads_as(arch, name, conv1d)
-        if wanted and order and order != wanted and near <= TIGHT:
+        if wanted and order and order != wanted and (near <= TIGHT or wider):
             # the values are the original's, in an order the reader does not put back (reads_as): not a GGUF to take.
             # (Where they are not the original's in either order the order found means little, and the lines of the
             # values say it: past TIGHT)
@@ -896,13 +934,15 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
             mismatched += 1
             order += f" **the page's reader takes {wanted}**"
         worst = max(worst, error) if not math.isnan(error) else math.inf
-        near_worst = max(near_worst, near) if not math.isnan(near) else math.inf
         near_note = f"{near:.2e}"
         if wider:
-            # T307: no value outside what wider weights give, of which the original is the bfloat16
+            # T307: no value outside what wider weights give, of which the original is the bfloat16. The distance is
+            # shown, and left out of the worst one (that line says how near the others are)
             widened.append(name)
-            near_note = "the original is its bfloat16"
-        if not near <= TIGHT:
+            near_note += " (wider than its bfloat16 original)"
+        else:
+            near_worst = max(near_worst, near) if not math.isnan(near) else math.inf
+        if not (near <= TIGHT or wider):
             past_tight[name] = near
             mismatched += 1
             near_note += " **past**"
@@ -943,7 +983,7 @@ def check_tensors(gguf_path, directory, original_vocabulary=False):
           + unread_note + (f"; {len(widened)} tensors are from wider weights than the original's bfloat16" if widened else ""))
     print(json.dumps({"worst": worst, "nearest": near_worst, "past_tight": past_tight, "mismatches": mismatched,
                       "rows": bad_rows, "bad_rows": row_detail, "rounded_rows": rounded_rows,
-                      "rounded_detail": rounded_detail, "orders": sorted(orders), "unread_orders": unread, "from_wider": len(widened),
+                      "rounded_detail": rounded_detail, "orders": sorted(orders), "unread_orders": unread, "wider_source": wider_source, "from_wider": len(widened),
                       "rope_freqs_diff": rope_difference, "vocab_diffs": vocab_diffs, "ok": ok}, ensure_ascii=False))
     return ok
 

@@ -670,9 +670,9 @@ def test_an_lfm2_gguf_is_held_to_what_llama_cpp_makes_of_its_original(tmp_path, 
 
 
 # ------------------------------------------------------------------------------------------- T307
-def wider_model(tmp_path, change=None):
+def wider_model(tmp_path, change=None, **gguf):
     """A GGUF made from float32 weights and an original that is those weights rounded to bfloat16 (LFM2.5 230M's);
-    change(tensors) alters what the GGUF is written from"""
+    change(tensors) alters what the GGUF is written from; gguf: more for gguf_file()"""
     shape, weights = synthetic_weights(dim=32, hidden_dim=64, vocab_size=320, seq_len=128, n_kv_heads=4, shared=True)
     tensors, published = hugging_face(shape, weights, True)
     published = {**published, "rms_norm_eps": 1e-5, "rope_theta": 10000.0}
@@ -680,20 +680,59 @@ def wider_model(tmp_path, change=None):
     written = {name: tensor.copy() for name, tensor in tensors.items()}
     if change:
         change(written)
-    file, _ = gguf_file(written, published, 320, theta=10000.0, more=[EPS])
+    file, _ = gguf_file(written, published, 320, theta=10000.0, more=[EPS], **gguf)
     (tmp_path / "model.gguf").write_bytes(file)
     (tmp_path / "model.safetensors").write_bytes(safetensors_file(original, stored="BF16"))
     (tmp_path / "config.json").write_text(json.dumps(published))
     return tmp_path / "model.gguf", tmp_path
 
 
-def test_a_gguf_of_wider_weights_than_the_bfloat16_original_passes(tmp_path, capsys):
+@pytest.mark.parametrize("block", [None, 1024])
+def test_a_gguf_of_wider_weights_than_the_bfloat16_original_passes(tmp_path, capsys, monkeypatch, block):
     """Its Q8_0 matrices are past TIGHT against the Q8_0 of the original (they were rounded from other values), its
-    float32 tensors are not the original's: both are what wider weights give, and none of their values is outside"""
+    float32 tensors are not the original's: both are what wider weights give, and none of their values is outside.
+    (block: the matrices a block of rows at a time, as the real ones are)"""
+    if block:
+        monkeypatch.setattr(gguf_check, "BLOCK", block)
     assert gguf_check.check_tensors(*wider_model(tmp_path))
     result = summary(capsys)
     assert result["mismatches"] == 0 and result["from_wider"] > 10, result
     assert len(result["past_tight"]) == 0
+
+
+def test_a_wider_gguf_shows_its_distance_and_keeps_it_out_of_the_worst(tmp_path, capsys):
+    """The line of TIGHT is not moved: the distance of each tensor is still printed (it is what the table is read
+    for), a tensor let through by the reading is marked, and the worst distance is of the tensors that were not"""
+    assert gguf_check.check_tensors(*wider_model(tmp_path))
+    out = capsys.readouterr().out
+    result = json.loads(out.strip().splitlines()[-1])
+    distances = [float(line.split("|")[5].split()[0]) for line in out.splitlines() if "(wider than its bfloat16 original)" in line]
+    assert len(distances) == result["from_wider"] > 10 and max(distances) > gguf_check.TIGHT
+    assert result["nearest"] <= gguf_check.TIGHT
+
+
+def test_an_ordinary_gguf_of_a_bfloat16_original_is_not_from_wider(tmp_path, capsys):
+    """Q8_0 of the bfloat16 values themselves: within TIGHT of a reference as always, and nothing is counted"""
+    shape, weights = synthetic_weights(dim=32, hidden_dim=64, vocab_size=320, seq_len=128, n_kv_heads=4, shared=True)
+    tensors, published = hugging_face(shape, weights, True)
+    published = {**published, "rms_norm_eps": 1e-5, "rope_theta": 10000.0}
+    original = {name: gguf_check.bfloat16_of(tensor) for name, tensor in tensors.items()}
+    file, _ = gguf_file(original, published, 320, theta=10000.0, more=[EPS])
+    (tmp_path / "model.gguf").write_bytes(file)
+    (tmp_path / "model.safetensors").write_bytes(safetensors_file(original, stored="BF16"))
+    (tmp_path / "config.json").write_text(json.dumps(published))
+    assert gguf_check.check_tensors(tmp_path / "model.gguf", tmp_path)
+    result = summary(capsys)
+    assert result["from_wider"] == 0 and result["mismatches"] == 0 and result["nearest"] <= gguf_check.TIGHT
+
+
+def test_a_wider_gguf_in_an_order_the_reader_does_not_read_is_still_unread(tmp_path, capsys):
+    """q and k left as Hugging Face has them are not what the page reads of a Llama, however near their values are:
+    the reading that lets wider values through must not let their order through"""
+    assert not gguf_check.check_tensors(*wider_model(tmp_path, turned=False))
+    result = summary(capsys)
+    assert sorted(result["unread_orders"]) == sorted(name for name in result["unread_orders"] if name.endswith(("attn_q.weight", "attn_k.weight")))
+    assert len(result["unread_orders"]) == 4 and result["past_tight"] == {}
 
 
 def test_the_same_gguf_against_a_float32_original_does_not(tmp_path, capsys):
@@ -709,9 +748,10 @@ def test_the_same_gguf_against_a_float32_original_does_not(tmp_path, capsys):
     assert result["from_wider"] == 0 and len(result["past_tight"]) > 10
 
 
+@pytest.mark.parametrize("block", [None, 1024])
 @pytest.mark.parametrize("tensor", ["model.layers.1.post_attention_layernorm.weight", "model.layers.0.mlp.up_proj.weight"])
 @pytest.mark.parametrize("fault", ["scaled", "noise", "one"])
-def test_other_weights_are_outside_what_wider_weights_give(tmp_path, capsys, tensor, fault):
+def test_other_weights_are_outside_what_wider_weights_give(tmp_path, capsys, monkeypatch, tensor, fault, block):
     """A float32 norm and a Q8_0 matrix: 0.4% larger, with 0.5% of noise (a fine-tune), and with one value moved by a
     quarter of the tensor's largest (a few of Q8_0's steps)"""
     def change(tensors):
@@ -725,6 +765,8 @@ def test_other_weights_are_outside_what_wider_weights_give(tmp_path, capsys, ten
             values.reshape(-1)[5] += np.float32(0.25) * np.abs(values).max()
         tensors[tensor] = values
 
+    if block:
+        monkeypatch.setattr(gguf_check, "BLOCK", block)
     assert not gguf_check.check_tensors(*wider_model(tmp_path, change=change))
     result = summary(capsys)
     assert len(result["past_tight"]) == 1 and result["mismatches"] == 1, result
@@ -749,3 +791,66 @@ def test_what_is_outside_a_bfloat16s_rounding():
     off[1] += np.float32(d)  # one step more: 1.5 steps from where it was rounded
     assert gguf_check.outside_bfloat16(off, original, (codes, np.array([d]))) == 1
     assert gguf_check.outside_bfloat16(np.full(32, np.nan, np.float32), original, (codes, np.array([d]))) == 32
+
+
+@pytest.mark.parametrize("width", [0.03, 0.001, 0.0001])
+def test_wider_weights_of_any_width_are_not_outside(width):
+    """llama.cpp's Q8_0 of float32 weights against the bfloat16 original, with a scale under float16's normal range
+    for the narrow ones (T307's review: a matrix 0.001 wide had values outside from float16's smallest step alone)"""
+    wide = (np.random.default_rng(3).standard_normal((64, 128)) * width).astype(np.float32)
+    groups = wide.reshape(-1, 32)
+    d = np.abs(groups).max(axis=1) / 127
+    scaled = groups / d[:, None]
+    codes = (np.sign(scaled) * np.floor(np.abs(scaled) + 0.5)).astype(np.int8)
+    scales = d.astype(np.float16)
+    values = (codes * scales.astype(np.float32)[:, None]).reshape(wide.shape)
+    assert gguf_check.outside_bfloat16(values, gguf_check.bfloat16_of(wide), (codes, scales)) == 0
+
+
+def ordinary_model(tmp_path, change=None):
+    """A GGUF made from the bfloat16 original itself (what a maker who has only that publishes), the original stored
+    as bfloat16; change(tensors) alters what the GGUF is written from"""
+    shape, weights = synthetic_weights(dim=32, hidden_dim=64, vocab_size=320, seq_len=128, n_kv_heads=4, shared=True)
+    tensors, published = hugging_face(shape, weights, True)
+    published = {**published, "rms_norm_eps": 1e-5, "rope_theta": 10000.0}
+    original = {name: gguf_check.bfloat16_of(tensor) for name, tensor in tensors.items()}
+    written = {name: tensor.copy() for name, tensor in original.items()}
+    if change:
+        change(written)
+    file, _ = gguf_file(written, published, 320, theta=10000.0, more=[EPS])
+    (tmp_path / "model.gguf").write_bytes(file)
+    (tmp_path / "model.safetensors").write_bytes(safetensors_file(original, stored="BF16"))
+    (tmp_path / "config.json").write_text(json.dumps(published))
+    return tmp_path / "model.gguf", tmp_path
+
+
+@pytest.mark.parametrize("scale", [1.002, 1.003])
+def test_an_ordinary_gguf_is_held_to_tight_alone(tmp_path, capsys, scale):
+    """The per-value reading is for a GGUF that shows it was made of wider weights (made_from_wider()): a Q8_0 matrix
+    of an ordinary one that is 0.2% too large is 2e-3 off, past TIGHT, and every one of its values is within the
+    room that reading leaves (the review: a scale up to 1.003 and a bias of a tenth of a step went through it)"""
+    def change(tensors):
+        tensors["model.layers.0.mlp.up_proj.weight"] = tensors["model.layers.0.mlp.up_proj.weight"] * np.float32(scale)
+
+    assert not gguf_check.check_tensors(*ordinary_model(tmp_path, change))
+    result = summary(capsys)
+    assert result["wider_source"] is False and result["from_wider"] == 0
+    assert list(result["past_tight"]) == ["blk.0.ffn_up.weight"]
+
+
+def test_what_shows_a_gguf_was_made_from_wider_weights(tmp_path, capsys):
+    """A tensor kept whole that is not the original's but rounds to it. The wider model has them; an ordinary one's
+    are the original's; a norm 0.4% off is not the bfloat16 of anything near the original's"""
+    (tmp_path / "wider").mkdir()
+    assert gguf_check.check_tensors(*wider_model(tmp_path / "wider"))
+    assert summary(capsys)["wider_source"] is True
+    (tmp_path / "ordinary").mkdir()
+    assert gguf_check.check_tensors(*ordinary_model(tmp_path / "ordinary"))
+    assert summary(capsys)["wider_source"] is False
+    (tmp_path / "off").mkdir()
+    def change(tensors):
+        for name, values in tensors.items():
+            if name.endswith("norm.weight"):
+                tensors[name] = values * np.float32(1.004)
+    assert not gguf_check.check_tensors(*wider_model(tmp_path / "off", change=change))
+    assert summary(capsys)["wider_source"] is False
