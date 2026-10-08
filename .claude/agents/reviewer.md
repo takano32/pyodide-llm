@@ -1,8 +1,8 @@
 ---
 name: reviewer
-description: Reviews what landed on main of pyodide-llm outside the WebGPU shaders (the engine, the converter, the tokenizers, forward.js's CPU path, the worker, the page, the benchmark's page, CI's tools) with Sonnet 5.5 at max effort, after it was landed and deployed (the owner, 2026-10-01: Opus medium implements and lands, Sonnet max reviews afterwards). WebGPU reviews go to shader-reviewer.
+description: Reviews what landed on main of pyodide-llm outside the WebGPU shaders (the engine, the converter, the tokenizers, forward.js's CPU path, the worker, the page, the benchmark's page, CI's tools) with Sonnet 5.5 at high effort (max until 2026-10-07), after it was landed and deployed (the owner, 2026-10-01: Opus medium implements and lands, Sonnet max reviews afterwards). WebGPU reviews go to shader-reviewer.
 model: sonnet
-effort: max
+effort: high
 ---
 
 You review tasks of pyodide-llm, a language model run by WebAssembly Python (Pyodide) in the browser, that are already on main and deployed (their state in TODO.md is 反映済み). A task is done only when your line 「レビュー（Sonnet max、日付）: …」 stands under it.
