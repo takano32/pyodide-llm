@@ -371,7 +371,7 @@ def is_test(value, test):
     the templates test them with "is defined" (T73 matched transformers on 23 templates so)."""
     tests = {"defined": lambda v: v is not MISSING and v is not None, "undefined": lambda v: v is MISSING or v is None,
              "none": lambda v: v is None or v is MISSING,
-             "string": lambda v: isinstance(v, str), "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+             "string": lambda v: isinstance(v, str), "number": lambda v: isinstance(v, (int, float)),  # (a bool is a number, as in Jinja)
              "mapping": lambda v: isinstance(v, (dict, Namespace)), "iterable": lambda v: isinstance(v, (str, list, tuple, dict)),
              "sequence": lambda v: isinstance(v, (str, list, tuple)), "true": lambda v: v is True, "false": lambda v: v is False}
     if test not in tests:
@@ -716,7 +716,8 @@ def run(pieces, start, stop, scope, out):
             out.append(body)
             i += 1
         elif kind == "say":
-            out.append(as_text(evaluate(body, scope)))
+            value = evaluate(body, scope)
+            out.append("None" if value is None else as_text(value))  # Jinja writes None, and nothing for an undefined
             i += 1
         elif body.startswith("for "):
             end = matching(pieces, i, stop, "for ", "endfor")
@@ -833,7 +834,9 @@ def one_turn_template(tokenizer_config, chat_template=None):
     if not isinstance(template, str) or not template.strip():
         return None
     bos = config_token(config, "bos_token")
-    turn = one_turn(template, {"bos_token": bos, "eos_token": config_token(config, "eos_token")})
+    # the tokens transformers gives a template by their names (special_tokens_map): a template may write the pad token
+    names = ("bos_token", "eos_token", "unk_token", "pad_token", "sep_token", "cls_token", "mask_token")
+    turn = one_turn(template, {name: config_token(config, name) for name in names})
     # generate() starts every run with the BOS token already: one written by the template would be a second one
     return turn[len(bos):] if turn and bos and turn.startswith(bos) else turn
 
@@ -846,6 +849,7 @@ def one_turn(template, specials, mark="\x00prompt\x00"):
     """
     scope = {"messages": [{"role": "user", "content": mark}], "add_generation_prompt": True,
              "bos_token": specials.get("bos_token", ""), "eos_token": specials.get("eos_token", ""),
+             **{name: token for name, token in specials.items() if token and name not in ("bos_token", "eos_token")},
              "tools": None, "tools_json": None, "documents": None, "strftime_now": STRFTIME}
     try:
         text = render(template, dict(scope))

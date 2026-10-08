@@ -144,7 +144,7 @@ def real_turn(template, config):
 def by_reader(module, template, config, in_file):
     """The reader's one turn with its {date:format} filled with DAY, or None where it refuses"""
     import re
-    tokens = {name: config[name] for name in ("bos_token", "eos_token") if name in config}
+    tokens = {name: config[name] for name in TOKENS if name in config}
     if in_file:
         turn = module.one_turn_template(json.dumps(tokens), template)
     else:
