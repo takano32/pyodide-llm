@@ -381,6 +381,10 @@ export const LICENSES = {
   "Qwen/Qwen3.5-2B": APACHE, "unsloth/Qwen3.5-2B-GGUF": APACHE,
   "Qwen/Qwen3.5-4B": APACHE, "unsloth/Qwen3.5-4B-GGUF": APACHE,
   "Qwen/Qwen3.5-9B": APACHE, "unsloth/Qwen3.5-9B-GGUF": APACHE,
+  // T335: the four cards say apache-2.0, and their LICENSE keeps "Copyright 2026 Alibaba Cloud" of the Qwen3.5 they
+  // were trained from (config.json's modification_notice says what TokenRhythm changed)
+  "TokenRhythm/NeoHorse-1-4B": APACHE, "TokenRhythm/NeoHorse-1-4B-GGUF": APACHE,
+  "TokenRhythm/NeoHorse-1-9B": APACHE, "TokenRhythm/NeoHorse-1-9B-GGUF": APACHE,
   // T233: both cards say apache-2.0. The GGUF's NOTICE.txt: "copyright 2026-present Prism ML, Inc. ... built from
   // Qwen3.8-27B, Copyright 2026 Alibaba Cloud ... Apache 2.0", and asks for "Created using Bonsai by Prism ML." where
   // it is deployed, as the smaller Ternary Bonsai's does
@@ -975,6 +979,24 @@ const LISTED = [
   ...thinkingAndNot("hf-qwen3.5-9b", "Qwen3.5 9B",
     ggufOf("unsloth/Qwen3.5-9B-GGUF", "3885219b6810b007914f3a7950a8d1b469d598a5", "Qwen3.5-9B-Q8_0.gguf",
       "Qwen/Qwen3.5-9B", "c202236235762e1c871ad0ccb60c8ee5ba337b9a"), 9527502048,
+    "fetches 9.5 GB (GGUF) → int8 10.1 GB · desktop only · Chrome and Firefox", { options: qwen35 },
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+  // T335: TokenRhythm's NeoHorse-1, the Qwen3.5 4B and 9B trained further for tools, code and instructions (text
+  // only: the language model saved alone, its tensors named "model.layers…" where Qwen3.5's are
+  // "model.language_model.layers…", which the converter reads either way). The maker's own Q8_0 GGUFs, the vocabulary
+  // and config.json of the originals. Their chat_template.jinja, tokenizer.json and tokenizer_config.json are
+  // Qwen3.5's byte for byte: so the same two formats by hand, BOS, stops and specials (qwen35). The card measured with
+  // thinking on, temperature 1.0, top-p 0.95, a top-k of 20 and a presence penalty of 1.5, the last two of which the
+  // page's sampler has not: Qwen3's two, as for a Qwen3.5. The page has no tools, so what this model was trained for
+  // most (calling them) it cannot do here: it answers in chat form only
+  ...thinkingAndNot("hf-neohorse-1-4b", "NeoHorse-1 4B",
+    ggufOf("TokenRhythm/NeoHorse-1-4B-GGUF", "3c5d58ca82e580b5b0b3ce6eeffd34ac7d0fd95a", "NeoHorse-1-4B-Q8_0.gguf",
+      "TokenRhythm/NeoHorse-1-4B", "56f0584bb40578a2c33b1b40a08ccd17243ad710"), 4482403072,
+    "fetches 4.5 GB (GGUF) → int8 4.7 GB · desktop only · Chrome and Firefox", { options: qwen35 },
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+  ...thinkingAndNot("hf-neohorse-1-9b", "NeoHorse-1 9B",
+    ggufOf("TokenRhythm/NeoHorse-1-9B-GGUF", "ddcb4c939b5392c86a9d2733c7c0ed30db2554fd", "NeoHorse-1-9B-Q8_0.gguf",
+      "TokenRhythm/NeoHorse-1-9B", "ba5b6e40d88a6ddf4591e176738254a3bc715765"), 9527501632,
     "fetches 9.5 GB (GGUF) → int8 10.1 GB · desktop only · Chrome and Firefox", { options: qwen35 },
     { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
   // T233: Prism ML's Ternary Bonsai 2 27B, a ternary Qwen3.8 27B (a Qwen3.5 in its form: hybrid attention, three

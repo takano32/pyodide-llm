@@ -95,7 +95,8 @@ KNOWN = {
 # T233: and Ternary Bonsai 2 27B, a Qwen3.8 with the Qwen3.5's format. T252's review: and Hermes 3, whose real template puts
 # nothing in front where the converter's BOS (<|begin_of_text|>, which its card's example code puts there) cost its English
 # answers 13 to 15% (tests/chat_nll.py, tests/chat_fluency.mjs): the lenient rule let the page's one more token pass for it
-STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-", "hf-hermes-3-")
+# T335: and NeoHorse-1, Qwen3.5's 4B and 9B trained further, with the Qwen3.5's template and the same entries' options
+STRICT = ("hf-qwen3.5-", "hf-granite-4.2-", "hf-minicpm5-", "hf-ternary-bonsai-2-", "hf-hermes-3-", "hf-neohorse-1-")
 # T233: what an entry's format is the real template's with, besides enable_thinking: Ternary Bonsai 2 27B's entry that
 # thinks is its reasoning_effort "medium" (no system turn: T236's format of a Qwen3.5), not its default, "xhigh"
 TEMPLATE_SAYS = {"hf-ternary-bonsai-2-27b-thinking": {"reasoning_effort": "medium"}}
