@@ -1886,7 +1886,13 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **試した回避策**（捨てのブランチ `t268-probe`、run 36966831090）: ページの中から `location.reload()` して `page.waitForEvent("load")` で待つ形は、120 秒たっても load が来ずに落ちた（別のリポジトリが使う回避策だが、この WebKit では通らない）。issue が挙げる回避策（`setOffline` の代わりに配信元のサーバを止める）は、jsDelivr（Pyodide と NumPy）が届いたままになり、T111 が見たい「Service Worker の写しから Pyodide が出る」を試せなくなるので、試していない。
   - **勧め**: 直る版の Playwright が出るまで、`preview.yml` の offline の手順の `for browser in chromium firefox webkit` を chromium と firefox だけにする（1 行。WebKit の理由を issue の番号つきで comment に）。WebKit のオフラインは持ち主の iPhone で（T129 のレビューの (b)）。Playwright を上げたら WebKit を戻して通るか見る。**覆す条件**: PR #42894 の入った Playwright の WebKit で `page.reload()` が通ったとき（そのとき WebKit を戻す）。T262 の `preview.yml` の変更（入れる手順を分けた）は、この run 36966830651 で入れる 2 つの手順とも通った。
 
-### T269 [追加][変換] 書式の読み手に 1 行式（`a if … else b`）と `[]` を足す — 状態: 未着手（2026-10-02、T253 のレビューから。規模 小〜中）
+### T269 [追加][変換] 書式の読み手に 1 行式（`a if … else b`）と `[]` を足す — 状態: 進行中（2026-10-08、ブランチ `t269-inline-if`、CI は通った、レビュー前。Opus medium。2026-10-02、T253 のレビューから。規模 小〜中）
+- **結果（2026-10-08）**: 読み手（`llama2_convert.evaluate()`・`value_of()`・`apply_filter()`）に 1 行式（`a if c else b`、else なしは未定義、else の側にもう 1 つ続く形も）・書き下したリスト（`[a, b]`）・フィルタ `string` を足した（`string` は Granite の書式が次に断る所だった）。条件つきの `for … if` は読まずに断る（1 行式として読むと「全部か無し」になる）。Granite 4.2 の本物の書式が読め、jinja2 と同じ文（`<|im_start|>system\n<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n`。固定値 `tests/fixtures/chat-templates.json` に足した）。`CONVERTER` は上げていない（理由は AGENTS.md の chat_template の項）。
+  - **本物のテンプレートとの比べ**（新しい道具 `tests/template_corpus.py`、run 37831995452 の extra）: Hub のダウンロード上位のゲートなし 963 件、テンプレートなし 430、**224 種類**のうち同じ 140・断る 84・違う 0。main の読み手との前後: 変わったのは 19 で、全部「断る → 同じ」（Granite 4.2、Nemotron 3 の 6 つ、Qwen3-Coder の 4 つ、unsloth の Qwen3 8B・0.6B と gemma-3 の 270m・1b など）。T127 のレビューの「約 480 件」は残っていない道具の数字で、こちらは上位 1000 件の別の集まり。
+  - **この比べの強さ**（手元、同じ 224 種類）: 1 行式の両側を入れ替えると 5 つが「違う」で落ちる。else なしの側を誤る・リストをいつも空に・`string` の未定義・`or` より強く結ぶ、の 4 通りは通る（どのテンプレートも踏まない）。その 4 通りと `for … if` の断りを外す 1 通りは単体試験（jinja2 と突き合わせた 16 の断片と断りの 6 つ）が落とす。
+  - 全部の組: 成功（同じ run、24.6 分）。一覧の全項目の `format_check.py`: 成功（run 37831998476。既知の違い 5 つのまま）。
+  - **`?hf=` の形**（`format_check.py --hf`、run 37835207610）: Granite 4.2 の 3B・8B は 9/9（読んだ書式 + 変換器の BOS）。**最初の run 37832002006 は落ちた**: 書式は同じで、前に変換器の BOS `<s>` が 1 つ付く（本物は何も置かない）。`STRICT` の家族に `--hf` でも完全一致を求めていたためで、`--hf` では前の BOS 1 つを許す形にした（`?hf=` は項目の BOS を持てない。Qwen3.5 の `?hf=` と同じ性質）。`<s>` が Granite の答えにどれだけ効くかは未計測。
+- **持ち主の判断待ち**: ページの「開けるモデル」の文に Granite を足すか（訪問者に見える文。`?hf=` の Granite は考える形だけで、前に `<s>` が付く）。
 - Granite 4.2 の本物の書式を読み手が断るのは、マクロではなく 1 行式 `enable_thinking if … else True` と、その次の `[]`（T253 の記録の「マクロを定義するので読めない」は誤り）。足せば `?hf=` で開いた Granite に書式が付き、ページの「開けるモデル」の文に Granite を足せる。T127 の読み手の変更なので、本物のテンプレート約 480 件との比べが要る。
 
 ### T273 [性能][Bonsai][変換] 3 値の GGUF の変換をカーネルで（PTQ1_0・PQ2_0 → 3 値） — 状態: 未着手（2026-10-02 に採番。規模 小〜中）
