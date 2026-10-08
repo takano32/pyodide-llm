@@ -99,6 +99,11 @@ used, but not kept, and is run again once the GPU is ready.
   other; the step between them is one small kernel on the coordinating thread, which alone touches the kept values,
   so a matrix product that has to be repeated reads what it read before. Such a model also takes its tokens in order
   from position 0, and runs on the CPU only (there is no shader for the convolution yet).
+- A SmolLM3 is a Llama in which every fourth layer (3, 7, ... 35 of the 36 of the 3B) does not turn q and k by RoPE
+  at all; its `config.json` lists which. The file is a Llama's byte for byte and the conversion's options name the
+  layers (`unturned`), so a reader that ignored them would run it as a Llama and write worse text without an error.
+  The CPU skips the rotation in those layers; the GPU shaders are the Llama's, given 0 as the number of values a head
+  turns there (as GPT-2 has everywhere).
 - The model's WebAssembly memory is reused when another model is chosen: Chromium would not create a third
   WebAssembly memory on one page. Before the next model loads, the page also waits (up to 5 seconds) for the GPU
   worker of the last one to let go of its buffers and its device.
