@@ -313,6 +313,9 @@ def evaluate(expression, scope):
         otherwise = rest[len(condition) + len(" else "):]
         if not chosen.strip() or not condition.strip() or (len(condition) < len(rest) and not otherwise.strip()):
             raise Unsupported(f"the expression {expression!r}")
+        if len(split_outside_quotes(condition, " if ")) > 1:
+            # (the review of T269) a if b if c else d is (a if b) if c else d in Jinja, not a if (b if c) else d
+            raise Unsupported(f"the expression {expression!r}")
         if truthy(evaluate(condition, scope)):
             return evaluate(chosen, scope)
         return evaluate(otherwise, scope) if otherwise else MISSING
@@ -388,6 +391,12 @@ def compare(left, right, operator):
 def arithmetic(left, operator, right):
     """+ joins text (Jinja's templates add strings far more than numbers) and adds numbers; the others are integers'."""
     numbers = all(isinstance(v, int) and not isinstance(v, bool) for v in (left, right))
+    if any(isinstance(v, (list, tuple)) for v in (left, right)):
+        # (the review of T269) lists, now that [] can be written: [] + x is the lists joined, not their texts; a list and a
+        # text is a TypeError in Jinja, and the other operators on a list are not read
+        if operator == "+" and isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
+            return [*left, *right]
+        raise Unsupported(f"{left!r} {operator} {right!r}")
     if operator == "+":
         return left + right if numbers else as_text(left) + as_text(right)
     if not numbers:
@@ -434,7 +443,14 @@ STRFTIME = object()   # so that "strftime_now is defined" is true, as it is in t
 DAY = "\x00day"  # in the scope: the day strftime_now() writes, instead of {date:format} (see one_turn())
 # two days that differ in every field strftime_now() may write, the first and the last of a year
 CHECK_DAYS = [time.strptime(day, "%Y-%m-%d %H:%M:%S") for day in ("2025-01-01 00:00:00", "2026-12-31 23:59:59")]
-MISSING = object()  # a name the template asks for and nothing set: Jinja calls it undefined, and it is false
+class Undefined:
+    """What a name nothing set is. Printed inside a list, Jinja writes Undefined (the review of T269)."""
+
+    def __repr__(self):
+        return "Undefined"
+
+
+MISSING = Undefined()  # a name the template asks for and nothing set: Jinja calls it undefined, and it is false
 
 
 def truthy(value):
@@ -511,6 +527,9 @@ class Namespace:
 
     def __init__(self, **values):
         self.__dict__.update(values)
+
+    def __repr__(self):  # as Jinja prints one, for {{ ns }} and ns | string (the review of T269)
+        return f"<Namespace {self.__dict__!r}>"
 
 
 def split_operators(expression, operators):
@@ -625,7 +644,7 @@ def value_of(expression, scope):
         at = expression.find(cut)
         if at != -1 and at < len(name):
             name, rest = expression[:at], expression[at:]
-    if not name.replace("_", "").isalnum():
+    if not name.replace("_", "").isalnum() or name.isdigit():  # (a digit then a dot is a float, 1.5: not read)
         raise Unsupported(f"the expression {expression!r}")
     value = scope.get(name, MISSING)
     while rest:
@@ -710,8 +729,14 @@ def run(pieces, start, stop, scope, out):
             values = evaluate(source, scope)
             if not isinstance(values, (list, tuple)):
                 raise Unsupported(f"a for over {source.strip()!r}")
+            # {% for %} ... {% else %} ... {% endfor %}: the else is written when there was nothing to loop over
+            # (the review of T269: [] can be written now, and messages[1:] of one message was always empty)
+            at = next_branch(pieces, i, end)
+            body_end, otherwise = (at, at + 1) if pieces[at][1] == "else" else (end, end)
             for index, value in enumerate(values):
-                run(pieces, i + 1, end, {**scope, name.strip(): value, "loop": Loop(index, len(values))}, out)
+                run(pieces, i + 1, body_end, {**scope, name.strip(): value, "loop": Loop(index, len(values))}, out)
+            if not values:
+                run(pieces, otherwise, end, scope, out)
             i = end + 1
         elif body.startswith("if "):
             end = matching(pieces, i, stop, "if ", "endif")

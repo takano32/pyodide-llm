@@ -131,6 +131,31 @@ def test_the_pieces_of_jinja_t269_adds():
                     "{{ messages[0].content }}{{ '<think>' if think else '' }}", {}) == "{prompt}<think>"
 
 
+def test_what_the_review_of_t269_found():
+    """Each against jinja2 with transformers' settings (the same snippets, the same outputs), on the development machine"""
+    scope = {"messages": [{"role": "system", "content": "S"}, {"role": "user", "content": "X"}]}
+    for template, written in (
+            # lists are joined as lists (they were joined as their texts: "[][1]"), whichever side is the empty one
+            ("{% set x = [] %}{% set x = x + [1, 2] %}{{ x | length }}{{ [] + [] }}{{ [3] + x }}", "2[][3, 1, 2]"),
+            # {% for %} ... {% else %}: the else when there was nothing to loop over, and only then
+            ("{% for i in [] %}{{ i }}{% else %}none{% endfor %}|{% for i in [1] %}{{ i }}{% else %}none{% endfor %}", "none|1"),
+            ("{% for m in messages[2:] %}x{% else %}{% for i in [1, 2] %}{{ i }}{% endfor %}{% endfor %}", "12"),
+            ("{% for i in [1] %}{% if i == 2 %}a{% else %}b{% endif %}{% else %}none{% endfor %}", "b"),
+            # what Jinja writes of an undefined and of a namespace inside a list or on its own
+            ("{{ [nothing, 1] }}", "[Undefined, 1]"),
+            # without an else the other side is undefined, not an empty text
+            ("{% set a = 1 if false %}{{ 'D' if a is defined else 'U' }}{% set b = 1 if true %}{{ b }}", "U1"),
+            ("{% set ns = namespace(a=1) %}{{ ns | string }}", "<Namespace {'a': 1}>")):
+        assert render(template, dict(scope)) == written, template
+    # Jinja reads a if b if c else d as (a if b) if c else d, and the reader does not take it for a if (b if c) else d;
+    # a float is no name with an attribute; a list and a text, or a list and a number, are no sum
+    for not_read in ("{{ 'a' if false if true else 'b' }}", "{{ 1.5 }}", "{{ [1.5] }}", "{{ [1] + 'x' }}", "{{ 'x' + [1] }}",
+                     "{{ [1] * 2 }}", "{{ [1] - [1] }}",
+                     "{{ [1, 2][0] }}", "{{ ['a', 'b'][1:] }}", "{{ (1, 2) }}"):
+        with pytest.raises(Unsupported):
+            render(not_read, dict(scope))
+
+
 def test_what_the_review_of_t127_found():
     """Each against transformers' Jinja on the development machine (the same snippets, the same outputs)"""
     scope = {"messages": [{"role": "user", "content": "X"}]}
