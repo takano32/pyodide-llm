@@ -248,12 +248,14 @@ if (swiftShader && kind === playwright.chromium) {
 const reported = await page.evaluate(() => window.__ready ?? null).catch(() => null);
 // By default a model writes until its context is full (4096 tokens for llm-jp-3-150m). The test, and every tok/s in
 // the documents, is about 256 tokens: set that in the settings, as a visitor would. (Not with E2E_LONG: the 256
-// count the prompt too, and the long prompt is there to fill the context.)
-if (!process.env.E2E_LONG) await page.evaluate(() => {
+// count the prompt too, and the long prompt is there to fill the context.) T337: Agents-A1's format alone is 241
+// tokens (the template's system turn), and a prompt of 259 does not fit in 256: 512 for it.
+const tokens = model.startsWith("hf-agents-a1-") ? "512" : "256";
+if (!process.env.E2E_LONG) await page.evaluate((tokens) => {
   const steps = document.getElementById("steps");
-  steps.value = "256";
+  steps.value = tokens;
   steps.dispatchEvent(new Event("input"));
-});
+}, tokens);
 if (process.env.E2E_LONG) {
   await page.fill("#prompt", Array.from({ length: Number(process.env.E2E_LONG) }, (_, i) => i + 1).join(" "));
 }
