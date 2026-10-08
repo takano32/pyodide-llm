@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 from conftest import naive_logits, pack_tokenizer, synthetic_weights, tiny_vocab
 from test_convert import hugging_face, safetensors_file
+from test_external import Outside
 from test_gguf import fed, gguf_file, unigram, with_original
 
 import llama2_convert
@@ -112,6 +113,22 @@ def test_the_engine_refuses_layers_it_has_not_and_other_architectures():
     for layers in ([4], [-1], [0, 9]):
         with pytest.raises(ValueError, match="layers RoPE leaves alone"):
             Llama(checkpoint, tokenizer, unturned=layers)
+    # (T255 review: no other architecture takes the layers, which it would otherwise read without turning anything)
+    for arch in ("gpt2", "neox", "qwen35", "lfm2"):
+        with pytest.raises(ValueError, match="layers RoPE leaves alone"):
+            Llama(checkpoint, tokenizer, arch=arch, unturned=[3])
+
+
+def test_the_plan_forward_js_gets_names_the_layers_and_a_llamas_names_none():
+    """T255 review: forward.js (and through it the GPU) learns the layers from the plan Python hands over; a plan without
+    them is a Llama's, which turns every layer: no error, worse text. Only forward-check (CI's full set) saw it before."""
+    settings, weights = synthetic_weights(n_layers=8)
+    for said, want in ((dict(no_rope_layer_interval=4), [3, 7]), (dict(no_rope_layers=[1] * 8), [])):
+        tensors, published = smollm3(settings, weights, **said)
+        made = conversion(tensors, published)
+        outside = Outside(bytes(made.checkpoint))
+        Llama(None, made.tokenizer, external=outside, **{key: value for key, value in made.options.items() if key != "template"})
+        assert outside.plan["unturned"] == want
 
 
 # ---- a SmolLM3's GGUF: llama.cpp's converter is its Llama's (q and k turned), and its model leaves every fourth
