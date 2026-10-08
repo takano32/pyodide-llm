@@ -191,11 +191,12 @@ jobs:
             timeout: 3000
             models: >-
               hf-qwen3.5-2b hf-qwen3.5-4b hf-qwen3.5-9b-thinking
-          # T335: NeoHorse-1, the Qwen3.5 4B and 9B trained further (14 GB of downloads), one of each form
+          # T335: NeoHorse-1, the Qwen3.5 4B and 9B trained further, one of each form. T337: and Agents-A1-4B, answering
+          # at once (18.5 GB of downloads)
           - size: neohorse
             timeout: 3000
             models: >-
-              hf-neohorse-1-4b-thinking hf-neohorse-1-9b
+              hf-neohorse-1-4b-thinking hf-neohorse-1-9b hf-agents-a1-4b
           # T249 (2026-10-01): ten more Japanese ones, from 42 MB to 4.3 GB of int8, 26 GB of downloads
           - size: japanese
             timeout: 3000
