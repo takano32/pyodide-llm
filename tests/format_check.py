@@ -300,7 +300,7 @@ def main():
                 encoded = lambda text: list(reference(text, add_special_tokens=False)["input_ids"])
                 real = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, **thinking)
                 real = list(real["input_ids"] if hasattr(real, "keys") else real)
-            matches = lambda real: ids_match(entry["id"], page, real)
+            matches = lambda real: ids_match(entry["id"], page, real, alone)
             if matches(real):
                 same += 1
             elif "text" in known and matches(encoded(known["text"](text, prompt))):
@@ -344,10 +344,12 @@ def same_ids(page, real):
     return page == real or (page[1:] == real and page[:1] != real[:1])
 
 
-def ids_match(model_id, page, real):
+def ids_match(model_id, page, real, alone=False):
     """Whether the page's IDs are the real ones for this entry: exactly for the families of STRICT (their BOS is the
-    format's own first token: nothing may stand in front), else as same_ids() says."""
-    return page == real if model_id.startswith(STRICT) else same_ids(page, real)
+    format's own first token: nothing may stand in front), else as same_ids() says. alone (--hf, T269): what ?hf=
+    sends has the converter's BOS in front, never the entry's, so there same_ids() is all that can be asked (a Granite
+    4.2 opened so sends <s> and then the real IDs)."""
+    return page == real if model_id.startswith(STRICT) and not alone else same_ids(page, real)
 
 
 def first_piece(page, real):
