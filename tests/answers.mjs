@@ -45,10 +45,10 @@ pyodide.globals.set("TEXTS", pyodide.toPy(prompts.map((prompt) => (page.template
 pyodide.globals.set("COUNT", Number(count));
 pyodide.globals.set("SEEDS", pyodide.toPy(seeds));
 pyodide.globals.set("GREEDY", Boolean(process.env.GREEDY));
-// SAMPLING='{"temperature":0.6,"topp":0.95,"top_k":0,"presence_penalty":0}': settings over the entry's (T274: the same
+// SAMPLING=temperature=0.6,topp=0.95,top_k=0,presence_penalty=0: settings over the entry's (T274: the same
 // questions and seeds with another sampler)
 const sampling = { ...Object.fromEntries(Object.entries({ temperature, topp, repetition_penalty, top_k, min_p, presence_penalty }).filter(([, v]) => v !== undefined)),
-  ...JSON.parse(process.env.SAMPLING ?? "{}") };
+  ...Object.fromEntries((process.env.SAMPLING ?? "").split(",").filter(Boolean).map((pair) => [pair.split("=")[0], Number(pair.split("=")[1])])) };
 pyodide.globals.set("SAMPLING", pyodide.toPy(sampling));
 const result = JSON.parse(pyodide.runPython(`
 import json, re, time
