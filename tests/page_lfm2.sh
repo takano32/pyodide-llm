@@ -30,7 +30,7 @@ if [ -n "${RUNNER_TEMP:-}" ] && [ -d /mnt ]; then
 fi
 mkdir -p "$dir"
 echo "lfm2: $id on $(node -p 'require("os").cpus()[0].model') ($(nproc) logical cores)"
-if has original; then
+if has --original; then
   # the repository and revision the entry's vocabulary comes from: its safetensors, as ?hf= opens it
   source=$(node -e "import('./src/models.js').then(({ MODELS }) => { const { repo, revision } = MODELS.find((m) => m.id === '$id').hf.vocabulary; console.log('hf:' + repo + '@' + revision); })")
   model=$(python tests/hf_fetch.py "$source" "$dir" | tail -1)
