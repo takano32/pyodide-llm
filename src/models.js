@@ -125,7 +125,8 @@ const qwen35 = { bos: 248045, stop_tokens: [248044, 248045, 248046],
   specials: ["</tool_response>", "<tool_response>", "<|fim_middle|>", "<|fim_prefix|>", "<|fim_suffix|>", "<|repo_name|>",
     "</tool_call>", "<|file_sep|>", "<|im_start|>", "<tool_call>", "<|fim_pad|>", "<|im_end|>", "</think>", "<think>"] };
 // T337: Agents-A1-4B's chat_template is Qwen3.5's with one thing more: where the messages have no system turn it writes
-// this one (the card's recommended system prompt, the date as the template has it, fixed). So the page sends it too,
+// this one (the template's own default: the card's recommended one is the same but names tavily_search and is dated
+// 2026-07-13. The date is fixed in the template). So the page sends it too,
 // and its IDs are the real template's (tests/format_check.py, strict). It speaks of tools, which the page has none of:
 // it also says to answer everyday questions directly
 const AGENTS_A1_SYSTEM =
@@ -1026,8 +1027,10 @@ const LISTED = [
   // tensors named as Qwen3.5's, a vision tower the converter passes over). The maker's own Q8_0 GGUF (its mmproj, the
   // pictures, is another file and is not fetched), the vocabulary and config.json of the original: tokenizer.json has
   // Qwen3.5's vocabulary and merges and seven more special tokens (for sound). The formats are Qwen3.5's after the
-  // template's own system turn (AGENTS_A1_SYSTEM). The card's sampler (temperature 0.85, top-p 0.95, a top-k of 20
-  // and a presence penalty of 1.1) has two things the page's has not: Qwen3's two, as for a Qwen3.5
+  // template's own system turn (AGENTS_A1_SYSTEM): 241 tokens the page reads before every answer. The card's sampler
+  // (temperature 0.85, top-p 0.95, top-k 20, presence penalty 1.1) has a top-k and a presence penalty, which the
+  // page's has not (T274), so Qwen3.5's two sets as for the other Qwen3.5 entries. After a change to the system
+  // text, run tests/format_check.py: nothing that runs by itself compares it with the real template
   ...thinkingAndNot("hf-agents-a1-4b", "Agents-A1 4B",
     ggufOf("InternScience/Agents-A1-4B-Q8_0-GGUF", "a5d63881e0ca8eee3c0f14663a5fa2a2c55e1b54", "Agents-A1-4B-Q8_0.gguf",
       "InternScience/Agents-A1-4B", "945c40a4aa6f534d434a353207b8d42ecf7a5293"), 4482404032,
