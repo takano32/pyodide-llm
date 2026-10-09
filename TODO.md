@@ -119,7 +119,7 @@
 - **持ち主の指示（2026-10-02、3 つ目）: Bonsai を優先する**（「Bonsai は優先して取り組みたい」）。本線に入れる順も、次に始める順も Bonsai が先: T233（27B を一覧に、動いている）→ そのレビュー → T232（3 値の GPU）→ T234（記録）。Bonsai の持ち主の判断待ち: yarn か素の RoPE か（レビュー 2 本の勧めは素）、「Created using Bonsai by Prism ML.」の表示、3 値の項目の note の文面、27B の文脈の長さと考える形（T233 の報告の後）。
 - **持ち主の指示（2026-10-02、4 つ目）: 「Bonsai やろうぜ」のすぐ後に「うそ、中止」**。Bonsai の新しい実装とレビューは 1 つも始めていない（T273〜T275 は採番だけで未着手、T270・T271 も未着手）。「現在の実行を完了させる」のまま: 新しい実装もレビューも、持ち主が言うまで始めない。
 - **持ち主の指示（2026-10-02、5 つ目）: 「タスクを洗い出して採番してくれや。レビューが終わったらしばらく実装やめだ」**。T276〜T311 を採番し、上に一覧を置いた。まだのレビュー（T232・T233・T260。T251・T252・T262 は済み、2026-10-02）を始めて、全部のレビューが済んだら止める。レビューの直しは本線に入れる（新しい実装ではない）。
-- **進め方が替わった（2026-10-08、持ち主）**: Opus 5.5 medium で実装 → CI で動作確認 → CI の結果を元に Sonnet high でレビュー → 本線。直列に、同期的に（1 つずつ。並べない）。決まりは AGENTS.md の「進め方」。**順は費用対効果の高い順**（2026-10-08、持ち主「費用対効果の高い順に着手することにしよう」）: T335 → T337 → T255 → T269 → T304・T307 → T274 → T268 → T273。Spark X・Gemma 4・MLX は後（中〜大）。T335・T337・T255・T269・T307 は完了（2026-10-08）。T304 は公式の GGUF に Q8_0 が無く持ち主の判断待ちで飛ばした。T274 も完了（2026-10-09）。T268 も完了（2026-10-09）。T273 も完了（2026-10-09）。T345 も完了（2026-10-09）。**持ち主の決めた順（T335 〜 T273）は一巡した。次の順は持ち主に聞く**（残りは Spark X・Gemma 4・MLX と、持ち主の判断待ちの項目）。
+- **進め方が替わった（2026-10-08、持ち主）**: Opus 5.5 medium で実装 → CI で動作確認 → CI の結果を元に Sonnet high でレビュー → 本線。直列に、同期的に（1 つずつ。並べない）。決まりは AGENTS.md の「進め方」。**順は費用対効果の高い順**（2026-10-08、持ち主「費用対効果の高い順に着手することにしよう」）: T335 → T337 → T255 → T269 → T304・T307 → T274 → T268 → T273。Spark X・Gemma 4・MLX は後（中〜大）。T335・T337・T255・T269・T307 は完了（2026-10-08）。T304 は公式の GGUF に Q8_0 が無く持ち主の判断待ちで飛ばした。T274 も完了（2026-10-09）。T268 も完了（2026-10-09）。T273 も完了（2026-10-09）。T345 も完了（2026-10-09）。持ち主の決めた順（T335 〜 T273）は一巡した。**次はリファクタリングの組（T346〜T357、2026-10-09、持ち主「ここでいったん、リファクタリングをしたい」）**: 採番だけ済み、着手は持ち主の返事（目安の大きさと順）を待つ。Spark X・Gemma 4・MLX はその後。
 - **T227 も本線に入れた（4623fb3）。レビュー済み（Sonnet max、2026-10-01、ブランチ `t227-review`）**: 報告の頭と要約に「#### Warnings」の一覧。レビューの直し（must-fix 1・should 5。装置のエラーの改行が警告を壊す件が must-fix。並びは重い順に、経路の止まりも載せる、など）はこのブランチ。見出しと切り詰めの文（「… and N more, in the whole report below」）は実装が選んだ仮の文のまま、持ち主が決める（勧めは T227 の項）。WRONG の報告は本物の Chromium で見た（`bench-check.mjs --wrong`: 層の検査の線を 1e-12 にして配る。本物の端末の WRONG の行はまだ見ていない）。
 - **T228 の調べも本線に入れた**（docs/notes/t228-bonsai-2-2026-10-01.md。前の仕事を T235〜T238 に採番した。勧めは小さいモデルから、持ち主の判断待ち）。
 - **lishogi.org の WebGPU（2026-10-01、持ち主の問い）**: 使っていない。ソース（WandererXII/lishogi、master 5394fc3、2026-09-10）にも本番の解析ページの JS にも `navigator.gpu`・WGSL は無い。ブラウザの解析は YaneuraOu の K-P の NNUE と Fairy-Stockfish の NNUE の WASM（SIMD と pthreads、共有メモリ）で、隔離はサーバのヘッダ（COEP は `credentialless` が使えるブラウザではそれ、ほかは `require-corp`）。取り込む GPU の手法は無い。
@@ -1890,6 +1890,48 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **証拠**: (1) この手順（`offline=true`）を走らせた最初の run（36153206636、2026-09-25、master、WebKit 26.4 = Playwright の webkit v2287）が、同じ文で落ちていた。直近 70 回の preview.yml の run のうち offline を走らせたのはこの 3 回（36153206636・36949839628・36950503412）だけで、どれも WebKit だけが同じ文で落ち、Chromium と Firefox は通った。T262 の枝の run 36966830651 も同じ。**この手順の WebKit は 1 度も通ったことがない**。(2) 落ちるのは、オンラインの 1 回目の読み込みと答え（準備完了 7.6〜9.6 秒、252 トークン）の後の、`setOffline(true)` の次の `page.reload()`（「waiting for navigation until "load"」）。
   - **試した回避策**（捨てのブランチ `t268-probe`、run 36966831090）: ページの中から `location.reload()` して `page.waitForEvent("load")` で待つ形は、120 秒たっても load が来ずに落ちた（別のリポジトリが使う回避策だが、この WebKit では通らない）。issue が挙げる回避策（`setOffline` の代わりに配信元のサーバを止める）は、jsDelivr（Pyodide と NumPy）が届いたままになり、T111 が見たい「Service Worker の写しから Pyodide が出る」を試せなくなるので、試していない。
   - **勧め**: 直る版の Playwright が出るまで、`preview.yml` の offline の手順の `for browser in chromium firefox webkit` を chromium と firefox だけにする（1 行。WebKit の理由を issue の番号つきで comment に）。WebKit のオフラインは持ち主の iPhone で（T129 のレビューの (b)）。Playwright を上げたら WebKit を戻して通るか見る。**覆す条件**: PR #42894 の入った Playwright の WebKit で `page.reload()` が通ったとき（そのとき WebKit を戻す）。T262 の `preview.yml` の変更（入れる手順を分けた）は、この run 36966830651 で入れる 2 つの手順とも通った。
+
+### リファクタリングの組（T346〜T357、2026-10-09 に採番。持ち主「デザインパターンを活用して抽象化と責務の分割でファイルが扱いやすいサイズになることを重視したい」）
+- **ねらい**: 大きいファイルを責務ごとに分け、1 つを読めば 1 つのことが分かる形にする。いまの大きさ（2026-10-09）: `public/shaders.js` 233 KB・4379 行、`public/benchmark/gpu.js` 196 KB、`public/llama2_convert.py` 168 KB、`public/forward.js` 137 KB、`public/gpu.js` 134 KB、`tests/gpu-check.mjs` 127 KB、`src/models.js` 125 KB、`public/llama2_numpy.py` 124 KB、`public/worker.js` 111 KB、`src/pages/index.astro` 75 KB、`kernels/kernel.ts` 68 KB。
+- **どの組にも共通の決まり（案。T346 で確定する）**: (1) **動きは 1 つも変えない**: 変換の出力は 1 バイトも変えず `CONVERTER` を上げない、WGSL と `deviceKey()` の入力はバイト単位で同じ（端末の覚えた形を捨てさせない）、カーネルの呼び出しの列は前と同じ、一覧の `MODELS` は前と深く等しい。(2) 分けるだけの回と、形を替える回（パターンの導入）を別のコミットにする。(3) 1 タスク 1 ファイル（とその試験）で、進め方は今までどおり（実装 → CI → レビュー → 本線、直列）。(4) 外から見える名前（`llama2_numpy.Llama`、`shaders.js` の export など）は窓口（Facade）のファイルに残し、試験と道具の import を一度に書き換えない。(5) 目安の大きさは 1 ファイル 50 KB・800 行以下（**持ち主の判断**）。
+- **勧める順**（危なさの低い順、GPU は最後）: T346 → T354 → T347 → T348 → T350 → T349 → T356 → T355 → T353 → T351 → T352 → T357。
+
+### T346 [設計][文書] リファクタリングの決まりと守りの網 — 状態: 未着手（2026-10-09。規模 小〜中。ほかの 11 の前に要る）
+- 決めること: 目安の大きさ、`public/` の下のフォルダの切り方（Pyodide に読ませる Python を複数のファイルにする形: worker が `?v=` つきで取って仮想のファイルシステムに置く一覧、Service Worker の写し、`make models`・pytest・smoke の import の道）、パターンの語彙（下の各タスクの案）と「使わない所」（1 か所しか実装の無い抽象は作らない）。
+- 守りの網を先に作る: (a) 変換の出力のハッシュを本線と比べる道具（作り物の全系統 × 全 dtype。T229・T260 のレビューが手で回したものを常設に）、(b) 何もしないカーネルでのカーネルの呼び出しの列を本線と比べる道具（T260 のレビューの形）、(c) `shaders.js` の export の文と `deviceKey()` を本線と比べる道具（T274 のレビューの `.tmp/t274r/compare.mjs` の形）、(d) `MODELS` を JSON にして本線と比べる道具、(e) ファイルの大きさの表を出して目安を越えたものを言う道具（落とさない。全部の組に 1 行）。
+
+### T354 [整理][モデル] `src/models.js`（125 KB）を家族ごとに — 状態: 未着手（2026-10-09。規模 中。最初にやる: データだけで危なさがいちばん低い）
+- 分け方の案: 書式と止まりの定数（`formats`）、標本抽出の組（`sampling`）、家族ごとの項目（Qwen3・Qwen3.5 と後訓練・Bonsai・LFM2・Granite・日本語・英語の古典…）、項目を組む関数（`thinkingAndNot()`・`ternaryBonsai()` など: **Builder**）、`LICENSES`、並べ替えと `modelBytes()`・`weightsFor()`。`src/models.js` は窓口として残す。確かめ: (d) の JSON が前と同じ、`models-check.mjs`、`format_check.py`。
+
+### T347 [整理][変換] `public/llama2_convert.py`（168 KB）をパッケージに — 状態: 未着手（2026-10-09。規模 大）
+- 分け方の案: チェックポイントの形（`layout()`・`Writer`・量子化）、書式の読み手（Jinja の一部: 約 640 行、**Interpreter**）、重みの読み手（`READERS`: 型 → 読み手の **Registry / Strategy**。T273 の `readers` もここへ）、取り込み元（`Safetensors`・`Shards`・`Arrays`・GGUF: 同じ見出しに見せる **Adapter**）、アーキテクチャごとの計画（Llama・Qwen2/3・Qwen3.5・LFM2・GPT-2・NeoX・Granite・SmolLM3: **Strategy**。`normalize()`・`check_config()`・`gguf_agrees()` の分岐を 1 つの表に）、`Stream`、トークナイザの変換、`Conversion`（**Facade**）。確かめ: (a)、`test_gguf.py`・`test_convert*.py`、`fixed_outputs.py`、`template_corpus.py`、27B の sha256（`page_27b.sh` の convert）。
+
+### T348 [整理][CPU] `public/llama2_numpy.py`（124 KB）をパッケージに — 状態: 未着手（2026-10-09。規模 大）
+- 分け方の案: トークナイザ（`Tokenizer`・`Charsmap`・`CharClasses`・前分割。種類ごとの encode は **Strategy**）、dtype の詰め方（float32・float16・int8・int6・ternary: `PACKED`・`stored_bytes()`・`checkpoint_dtype()` を 1 つの **Registry** に）、形（`FORM`・`linear_form()`・`convolution_form()`・回した基底）、カーネルの読み込みと包み（`load_kernels()`・`kernel_*`）、`Llama`（組み立てと NumPy の forward。アーキテクチャごとの層は **Strategy**、共通の流れは **Template Method**）、標本抽出と `generate()`。「テンソルの並びは 3 か所」（AGENTS.md の落とし穴）を 1 か所の表に寄せられるかをここで見る。確かめ: (a)(b)、pytest の全部、`reference_*.py`、forward-check。
+
+### T350 [整理][その他] `public/worker.js`（111 KB）を役割ごとに — 状態: 未着手（2026-10-09。規模 大）
+- 分け方の案: 取得（サイトの部品・HF の Range・取り直し・中止）、Pyodide の読み込みと見張り、重みの置き場（`weightsBuffer()`・`pooledWeights()`・GPU だけの置き場）、変換の進行、保存（`kept.js` は今も別）、生成、ページとの知らせ（**含む一覧**の決まりを持つ 1 つの配り手。読み込みの段は **State**）。確かめ: `worker-check.mjs`・`worker-sink-check.mjs`、e2e、`models.yml`（HF・保存・2 回目の訪問）、`slow.yml`。
+
+### T349 [整理][CPU] `public/forward.js`（137 KB）を役割ごとに — 状態: 未着手（2026-10-09。規模 大）
+- 分け方の案: メモリの見積もり（`footprint()`・KV の型）、スレッドの本数の検索、GPU と CPU の選び方（`promptTimes()`・`tokenTimes()`・`weightsPlace()`: **Strategy**）、段の仕事の組み立て（`jobOf`）、アーキテクチャごとの層（Llama 系・GPT-2/NeoX・Qwen3.5 の linear・LFM2 の畳み込み）、`createForward()`（**Facade**）。確かめ: (b)、forward-check、threads-check、memory-check、thread-search-check、gpu-default-check、`kernels-in-browser.mjs`。
+
+### T356 [整理][CPU] `kernels/kernel.ts`（68 KB）を種類ごとに — 状態: 未着手（2026-10-09。規模 中）
+- 分け方の案: 行列積、attention、norm と活性化、状態を持つ層（gate・convolve・delta_rule・short_conv）、変換（quantize・widen・ternary_x）、標本抽出。**出る wasm が前とバイト単位で同じか**を先に見る（同じなら確かめはそれで済む。違えば全部の組と `kernels-in-browser.mjs` と速さの前後）。Makefile の依存を足す（落とし穴: 書き忘れると古いカーネルで試験が走る）。
+
+### T355 [整理][その他] `src/pages/index.astro`（75 KB）のスクリプトをモジュールに — 状態: 未着手（2026-10-09。規模 中）
+- 分け方の案: URL と設定（`LIMITS`）、`localStorage` に覚えるもの、Worker の知らせの受け手、描画（吹き出し・ステータス行・進捗）、設定のシート、Service Worker の登録。見た目は変えない（`preview.yml` で前後の画面を比べる）。
+
+### T353 [整理][計測実行] `/benchmark/`（`public/benchmark/gpu.js` 196 KB・`sections.js`・`src/bench.js`・`benchmark.astro`）を節ごとに — 状態: 未着手（2026-10-09。規模 大）
+- 分け方の案: 節 1 つを「測る・検査する・報告の行を作る」の同じ口にそろえる（**Template Method**）、GPU の節は上限・行列 × ベクトル・層・標本抽出を別のファイルに。確かめ: `tests/bench.mjs`、`bench-check.mjs`（`--wrong`・`--unsaid`）、`bench.yml`、報告の Markdown が前と同じ形。
+
+### T351 [整理][WebGPU] `public/shaders.js`（233 KB）を系統ごとに — 状態: 未着手（2026-10-09。規模 大。レビューは `shader-reviewer`）
+- 分け方の案: プロンプトの行列積のタイル、attention、歩の融合した層、標本抽出、量子化、ベンチだけのもの、CPU の標本抽出の JavaScript の模型（シェーダではない: 別のファイルへ）。`shaders.js` は全部を再 export する窓口に。**WGSL の文とシェーダを作る関数の文（`String(fn)` が鍵に入るものがある）を 1 字も変えない**: (c) が全 export と `deviceKey()` の一致を見る。動かすだけで、関数の中は触らない。
+
+### T352 [整理][WebGPU] `public/gpu.js`（134 KB）を役割ごとに — 状態: 未着手（2026-10-09。規模 大。レビューは `shader-reviewer`）
+- 分け方の案: 装置を開く（アダプタ・断り）、バッファと重みの置き場、形の検査と計測と選び方、プロンプトのブロック、生成の歩、知らせの受け手。確かめ: `gpu-prompt.yml` の `full=true`（E16・Q8 の表と各回の行が前と同じ数字）、gpu-choice-check、gpu-default-check、gpu-hybrid-check、`rounding-check.mjs`。
+
+### T357 [整理][遠隔試験] 試験の道具の重なりを寄せる（`tests/gpu-check.mjs` 127 KB、作り物のモデル、取得） — 状態: 未着手（2026-10-09。規模 中〜大。最後に）
+- 作り物のモデルを作る関数が smoke・conftest・`make_*.py`・gpu-check に重なっている。取得（`fetch()`・取り直し）、「出し切ってから終える」終わり方（T274 のレビュー: `answers.mjs` だけ直した。`degenerate.mjs`・`start_check.mjs`・`chat_fluency.mjs` が残る）、参照の道具 3 つ（`reference_llama`・`_qwen35`・`_lfm2`）の共通の骨組みを 1 か所に。製品のコードを分け終えてから（試験が守りの網なので、同時に動かさない）。
 
 ### T345 [バグ][遠隔試験] SmolLM2 135M Instruct の固定値が今の項目と合わない — 状態: 完了（2026-10-09、レビュー済み: Sonnet low。2026-10-09、T268 の本番の確かめから。規模 小）
 - **結果（2026-10-09）**: 見立てのとおり。項目の書式を T252 のレビューの前の形（`CHATML`: BOS の `<|im_start|>` が 2 つ）に戻すと、手元の `fixed_outputs.py` が古い固定値の文「1. The new smartphone model: …」をそのまま書いて ok になる。今の書式（`CHATML_AFTER_START`、本物の `apply_chat_template` と同じ ID の列）では「The next popular item is a new type of smartwatch that combines the benefits of」（読める英語）。**固定値をこの文に替えただけ**で、エンジンも項目も触っていない。transformers との突き合わせは回せなかった（`reference_llama.sh` は safetensors か、語彙を原本から取る GGUF の項目だけ: この項目は GGUF だけの項目で 404、run 37887493509）。代わりの根拠は「古い書式 → 古い文、今の書式 → 今の文」の 2 つと、`format_check.py` の ID の一致（T252 のレビュー）。
