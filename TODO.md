@@ -1930,6 +1930,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **形を替える回は T359 に分けた**（下）。
 
 ### T359 [整理][変換] 変換器のアーキテクチャごとの分岐を 1 つの表に（Strategy） — 状態: 未着手（2026-10-09、T347 から。規模 中〜大）
+- **順（2026-10-09、持ち主）**: 抽象化は分ける回が全部済んでから、まとめてやる（「あとでやることになってるなら、それでもいい」「まとめてやった方が漏れないかもしれないしね」）。ここまでの T354・T347・T348 は分けただけで、抽象化はしていない。まとめてやる中身: アーキテクチャを Strategy に（変換器とエンジンの両方）、dtype を Registry に（大きさ・詰め方・読み方）、`Llama` の 3 つの土台クラス（置き場所で分けただけ）の見直し、worker の読み込みの段（State）。**設計の案を先に持ち主に見せてから実装する。**
 - `convert/config.py` の `normalize()`・`check_config()`・`checkpoint_form()` と `convert/plan.py` の `conversion_plan()`、`convert/gguf.py` の `gguf_model()`・`gguf_agrees()` は、アーキテクチャ（Llama・Qwen2/3・Qwen3.5・LFM2・GPT-2・NeoX・Granite・SmolLM3）ごとの分岐を関数の中に持つ。新しい系統を足すと 6 つの関数に手が入る（T255・T260 がそうだった）。アーキテクチャ 1 つを 1 つのまとまり（config の読み・断り・形・計画・GGUF の名前と値）にして表から引く形にできるかを見る。**動きは変えない**（網の `python` が全系統の変換を比べる）。分けるだけの回（T347）の後に、別のコミットで。同じ形の仕事がエンジンの側にもある（T348 の後: `llama_tensors()`・`gpt2_tensors()`・`qwen35_tensors()`・`lfm2_tensors()` と forward）。
 - 分け方の案: チェックポイントの形（`layout()`・`Writer`・量子化）、書式の読み手（Jinja の一部: 約 640 行、**Interpreter**）、重みの読み手（`READERS`: 型 → 読み手の **Registry / Strategy**。T273 の `readers` もここへ）、取り込み元（`Safetensors`・`Shards`・`Arrays`・GGUF: 同じ見出しに見せる **Adapter**）、アーキテクチャごとの計画（Llama・Qwen2/3・Qwen3.5・LFM2・GPT-2・NeoX・Granite・SmolLM3: **Strategy**。`normalize()`・`check_config()`・`gguf_agrees()` の分岐を 1 つの表に）、`Stream`、トークナイザの変換、`Conversion`（**Facade**）。確かめ: (a)、`test_gguf.py`・`test_convert*.py`、`fixed_outputs.py`、`template_corpus.py`、27B の sha256（`page_27b.sh` の convert）。
 
