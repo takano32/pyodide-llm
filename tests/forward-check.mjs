@@ -267,6 +267,11 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
     const only = (a, b) => a.filter((name) => !b.includes(name)).join(", ") || "nothing";
     throw new Error(`kernels/kernel.ts does not name the kernels of kernels/kernel/: only the window has ${only(named, written)}; only the files have ${only(written, named)}`);
   }
+  // (and the Makefile's rule names every one of those files: make kernels does not see a file change that it does not
+  // name, and every check then runs the kernels of before)
+  const makefile = fs.readFileSync(`${root}Makefile`, "utf8");
+  const unnamed = parts.filter((part) => !makefile.includes(`kernels/kernel/${part}`));
+  if (unnamed.length) throw new Error(`the Makefile's rule for the kernels does not name kernels/kernel/${unnamed.join(", kernels/kernel/")}`);
   if (JSON.stringify(Object.keys(source).sort().map((n) => [n, source[n]])) !== JSON.stringify(Object.keys(ADDRESSES).sort().map((n) => [n, ADDRESSES[n]]))) {
     throw new Error("jobs.js's ADDRESSES is not the kernels' usize parameters");
   }
