@@ -224,3 +224,30 @@ def test_only_a_step_without_the_three_may_go_to_the_gpu(llama, monkeypatch, set
     monkeypatch.setattr(llama, "generate_many", offered)
     list(llama.generate("a", steps=12, **{"temperature": 1.0, "seed": 3, **settings}))
     assert bool(asked) == on_the_gpu, (settings, asked)
+
+
+def test_the_presence_penalty_counts_the_sampled_tokens_alone(llama, monkeypatch):
+    """T274 (the review): the prompt's tokens are not penalized for being there (a chat format ends its turn with the
+    token that stops the answer, and that one would lose the penalty for the first 64 steps), and the repetition
+    penalty still sees the prompt."""
+    calls = []
+    penalize = llama.penalize
+
+    def spy(logits, history, penalty, presence=0.0):
+        calls.append((list(history), penalty, presence))
+        penalize(logits, history, penalty, presence)
+
+    monkeypatch.setattr(llama, "penalize", spy)
+    prompt = llama.tokenizer.encode(" a b", llama.specials)
+    text = "".join(llama.generate("a b", steps=len(prompt) + 6, seed=3, temperature=1.0, topp=0.95,
+                                  repetition_penalty=1.3, presence_penalty=1.5))
+    assert text
+    with_presence = [call for call in calls if call[2] != 0.0]
+    with_repetition = [call for call in calls if call[1] != 1.0]
+    assert with_presence and all(call[1] == 1.0 and call[2] == 1.5 for call in with_presence)
+    assert all(call[2] == 0.0 for call in with_repetition)
+    # the first sampled step has nothing written yet; after it, exactly what was sampled
+    assert [len(call[0]) for call in with_presence] == list(range(1, len(with_presence) + 1))
+    assert all(call[0] == with_presence[-1][0][:len(call[0])] for call in with_presence)
+    assert len(with_repetition) == len(with_presence) + 1 and len(with_repetition[0][0]) > 1
+    assert with_repetition[-1][0][-len(with_presence[-1][0]):] == with_presence[-1][0]

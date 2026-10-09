@@ -1820,7 +1820,8 @@ class Llama:
 
     def penalize(self, logits, history, penalty, presence=0.0):
         """Make the tokens of the last steps less likely: tiny models love to loop. T274: presence is taken off the
-        logit of each after that (a presence penalty: llama.cpp's and OpenAI's, the same however often a token came)."""
+        logit of each after that (a presence penalty, the same however often a token came; generate() gives it the
+        sampled tokens alone, with a penalty of 1)."""
         recent = np.unique(history[-REPETITION_WINDOW:])
         logits[recent] = (np.where(logits[recent] > 0, logits[recent] / penalty, logits[recent] * penalty)
                           - np.float32(max(presence, 0.0)))
@@ -1912,6 +1913,7 @@ class Llama:
         run = self._run
         token, count, sampled, forced = self.bos, 0, 0, 0
         history = [self.bos]
+        written = []  # what was sampled: the presence penalty counts these, not the prompt's (T274, as OpenAI's does)
         start = sampling_start = time.perf_counter()
         first_token = None
         first = 0
@@ -1960,8 +1962,11 @@ class Llama:
                                                     randoms, stops)
                     if chosen is None:
                         logits = self.forward(token, pos)
-                        if repetition_penalty != 1.0 or presence_penalty != 0.0:
-                            self.penalize(logits, history, repetition_penalty, presence_penalty)
+                        if repetition_penalty != 1.0:
+                            self.penalize(logits, history, repetition_penalty)
+                        if presence_penalty != 0.0 and written:
+                            # (with the prompt's tokens in it, the format's own stop token would lose it too)
+                            self.penalize(logits, written, 1.0, presence_penalty)
                         chosen = [self.sample(logits, temperature, topp, rng, *narrow)]
                 ended = False
                 for next_token in chosen:
@@ -1976,6 +1981,8 @@ class Llama:
                     text = utf8.decode(self.tokenizer.decode(token, next_token, self.bos))
                     token = next_token
                     history.append(token)
+                    if pos >= len(prompt_tokens):
+                        written.append(token)
                     count += 1
                     if text and (echo or pos >= len(prompt_tokens)):
                         yield text
