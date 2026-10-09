@@ -37,7 +37,7 @@ flowchart TD
 | `public/helper.js`, `public/jobs.js` | Software threads, and the work they share. |
 | `public/gpu.js`, `public/shaders.js` | The GPU worker and all WGSL shaders. |
 | `public/coi.js` | The Service Worker: adds the headers for threads, keeps Pyodide and NumPy for offline use. |
-| `public/benchmark/`, `src/pages/benchmark.astro` | `/benchmark/`, the measurements of one device in one report. |
+| `public/benchmark/`, `src/pages/benchmark.astro`, `src/benchmark/`, `src/bench/` | `/benchmark/`, the measurements of one device in one report: the sections' workers, the page and its script's modules, and the modules that write the tables and the report (`src/bench.js` is their window). |
 
 ## Why the forward pass is in JavaScript
 
