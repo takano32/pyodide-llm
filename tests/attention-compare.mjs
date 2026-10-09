@@ -12,19 +12,13 @@
 //   node tests/attention-compare.mjs FETCH_HEAD [rounds] --exact
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { kernelSources } from "./other-tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const exact = process.argv.includes("--exact");
 const [ref = "origin/main", rounds = "3"] = process.argv.slice(2).filter((a) => a !== "--exact");
 const dir = `${root}.tmp/attention-compare/`;
-fs.mkdirSync(dir, { recursive: true });
-for (const file of ["kernel.ts", "six.ts", "ternary.ts"]) {
-  try {
-    fs.writeFileSync(dir + file, execFileSync("git", ["show", `${ref}:kernels/${file}`], { cwd: root, stdio: ["ignore", "pipe", "ignore"] }));
-  } catch (error) {
-    if (file !== "ternary.ts") throw error;  // a commit before T231 has no ternary.ts, and its kernel.ts imports none
-  }
-}
+kernelSources(ref, dir);  // (T356: that commit's kernels/ whole, from its tree: one file before T356, a window and kernel/ after)
 execFileSync("npx", ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1",
   `${dir}kernel.ts`, "-o", `${dir}old.wasm`, "--enable", "simd"], { cwd: root, stdio: "inherit" });
 

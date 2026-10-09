@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { kernelSources } from "./other-tree.mjs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { MODELS } from "../src/models.js";
 
@@ -33,40 +34,39 @@ const ids = args.filter((a, i) => !a.startsWith("--") && !["--rounds", "--tokens
 const work = root + ".tmp/sample-bench/";
 
 // main's kernels (CI checks out one commit: fetch main's, and the commits asked for)
-const git = (...a) => execFileSync("git", a, { cwd: root, encoding: "utf8" });
 try { execFileSync("git", ["fetch", "--depth=1", "origin", "+main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" }); } catch {}
 for (const sha of commits) { try { execFileSync("git", ["fetch", "--depth=1", "origin", sha], { cwd: root, stdio: "inherit" }); } catch {} }
-const forms = { main: (file) => git("show", `origin/main:kernels/${file}`) };
-for (const sha of commits) forms[sha.slice(0, 7)] = (file) => git("show", `${sha}:kernels/${file}`);
-forms.tree = (file) => fs.readFileSync(`${root}kernels/${file}`, "utf8");
+// (T356: each form's kernels/ whole, from its tree: kernel.ts is one file in a commit of before T356, a window over
+// kernel/*.ts after it. A form is what kernelSources() takes, and what is done to its copy before it is compiled)
+const forms = { main: { from: "origin/main" } };
+for (const sha of commits) forms[sha.slice(0, 7)] = { from: sha };
+forms.tree = { from: "tree" };
 // --stages: the tree's sample() made to return after each of its steps (stop_at(s)), to see what each step costs
 const STAGES = ["the best", "the floor", "exp()", "the total", "the cutoff", "the sort"];
 const ANCHORS = ["  const nucleus = topp > 0 && topp < 1;", "  const inverse = f32x4.splat(<f32>1.0 / temperature);", "  let total: f64 = 0;",
   "  let last = count - 1;", "    // the most probable tokens whose probabilities add up to topp", "  const target: f64 = random * mass;"];
 if (staged) {
-  forms.stages = (file) => {
-    let text = forms.tree(file);
-    if (file !== "kernel.ts") return text;
-    ANCHORS.forEach((anchor, s) => {
-      if (text.split(anchor).length !== 2) throw new Error(`--stages: kernel.ts's sample() has no single ${JSON.stringify(anchor)}`);
-      text = text.replace(anchor, `  if (stopAt == ${s}) return ${s};\n${anchor}`);
-    });
-    return text + "\nlet stopAt: i32 = -1;\nexport function stop_at(s: i32): void { stopAt = s; }\n";
+  forms.stages = {
+    from: "tree",
+    // sample() is in kernel/sample.ts, and the module exports what the window kernel.ts names
+    edit: (dir) => {
+      let text = fs.readFileSync(dir + "kernel/sample.ts", "utf8");
+      ANCHORS.forEach((anchor, s) => {
+        if (text.split(anchor).length !== 2) throw new Error(`--stages: kernel/sample.ts's sample() has no single ${JSON.stringify(anchor)}`);
+        text = text.replace(anchor, `  if (stopAt == ${s}) return ${s};\n${anchor}`);
+      });
+      fs.writeFileSync(dir + "kernel/sample.ts", text + "\nlet stopAt: i32 = -1;\nexport function stop_at(s: i32): void { stopAt = s; }\n");
+      fs.appendFileSync(dir + "kernel.ts", 'export { stop_at } from "./kernel/sample";\n');
+    },
   };
 }
 
 const memory = new WebAssembly.Memory({ initial: 1, maximum: 16384 });
 const kernels = {};
-for (const [name, read] of Object.entries(forms)) {
+for (const [name, form] of Object.entries(forms)) {
   const dir = `${work}${name}/`;
-  fs.mkdirSync(dir, { recursive: true });
-  for (const file of ["kernel.ts", "six.ts", "ternary.ts"]) {
-    try {
-      fs.writeFileSync(dir + file, read(file));
-    } catch (error) {
-      if (file !== "ternary.ts") throw error;  // a commit before T231 has no ternary.ts, and its kernel.ts imports none
-    }
-  }
+  kernelSources(form.from, dir);
+  form.edit?.(dir);
   execFileSync("npx", ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1",
     dir + "kernel.ts", "-o", dir + "plain.wasm", "--enable", "simd"], { cwd: root, stdio: "inherit" });
   kernels[name] = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(dir + "plain.wasm")), { env: { memory } }).exports;

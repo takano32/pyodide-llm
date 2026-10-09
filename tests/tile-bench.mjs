@@ -22,6 +22,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Worker, isMainThread, workerData } from "node:worker_threads";
+import { kernelSources } from "./other-tree.mjs";
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..") + "/";
 const work = root + ".tmp/tile-bench/";
@@ -79,15 +80,7 @@ const rounds = option("--rounds", 2), turns = option("--turns", 5), megabytes = 
 try { execFileSync("git", ["fetch", "--depth=1", "origin", "+main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" }); } catch {}
 for (const form of FORMS) {
   const dir = `${work}${form}/`;
-  fs.mkdirSync(dir, { recursive: true });
-  for (const file of ["kernel_relaxed.ts", "six.ts", "ternary.ts"]) {
-    try {
-      fs.writeFileSync(dir + file, form === "main" ? execFileSync("git", ["show", `origin/main:kernels/${file}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
-        : fs.readFileSync(`${root}kernels/${file}`, "utf8"));
-    } catch (error) {
-      if (file !== "ternary.ts") throw error;  // a main before T231 has no ternary.ts, and its kernels import none
-    }
-  }
+  kernelSources(form === "main" ? "origin/main" : "tree", dir);  // (T356: the side's kernels/ whole, from its tree)
   execFileSync("npx", ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1",
     "--sharedMemory", "--maximumMemory", "32768", dir + "kernel_relaxed.ts", "-o", dir + "relaxed-shared.wasm",
     "--enable", "simd,relaxed-simd,threads"], { cwd: root, stdio: "inherit" });
