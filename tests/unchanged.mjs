@@ -21,6 +21,7 @@
 //            string, number and regular expression, every operator, every `.name` and object key, every kind of statement and
 //            expression. A moved statement counts the same wherever it is; a branch dropped, a key spelled otherwise, a limit
 //            changed or `===` turned to `!==` is a count that differs. (No test outside CI's browsers runs the page's script.)
+//            (T353) and the same of /benchmark/'s script (src/pages/benchmark.astro's <script> and src/benchmark/*.ts)
 //   sizes    the files past the size a file should have (50 KB or 800 lines): said, never failed
 //
 // The other tree is tests/other-tree.mjs's: `git archive` of the commit under .tmp/unchanged/<its hash> (made once).
@@ -150,12 +151,13 @@ async function exports(other) {
   return said("exports, the Python windows", differences(python_(other), python_(root))) && ok;
 }
 
-// the parts of the model page's script, counted (T355): the script of index.astro and every .ts of src/page/ of a tree
-function pageShape(tree) {
+// the parts of a page's script, counted (T355): the script of index.astro and every .ts of src/page/ of a tree (T353: and
+// of benchmark.astro and src/benchmark/)
+function pageShape(tree, astro = "index.astro", modules = "page") {
   const sources = [];
-  const page = path.join(tree, "src/pages/index.astro");
+  const page = path.join(tree, "src/pages", astro);
   sources.push(/<script>\n([\s\S]*?)<\/script>/.exec(fs.readFileSync(page, "utf8"))[1]);
-  const folder = path.join(tree, "src/page");
+  const folder = path.join(tree, "src", modules);
   if (fs.existsSync(folder)) for (const file of fs.readdirSync(folder).sort()) sources.push(fs.readFileSync(path.join(folder, file), "utf8"));
   const found = {};
   const add = (key) => { found[key] = (found[key] ?? 0) + 1; };
@@ -185,8 +187,12 @@ function pageShape(tree) {
   return found;
 }
 function page(other) {
-  const was = pageShape(other), now = pageShape(root);
-  return said("the model page's script", differences(was, now), ` (${Object.values(now).reduce((sum, count) => sum + count, 0)} parts)`);
+  let ok = true;
+  for (const [what, astro, modules] of [["the model page's script", "index.astro", "page"], ["/benchmark/'s script", "benchmark.astro", "benchmark"]]) {
+    const was = pageShape(other, astro, modules), now = pageShape(root, astro, modules);
+    ok = said(what, differences(was, now), ` (${Object.values(now).reduce((sum, count) => sum + count, 0)} parts)`) && ok;
+  }
+  return ok;
 }
 
 function sizes() {
