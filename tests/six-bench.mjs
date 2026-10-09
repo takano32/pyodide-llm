@@ -20,8 +20,7 @@ const option = (name, value) => (args.includes(name) ? Number(args[args.indexOf(
 const rounds = option("--rounds", 3), turns = option("--turns", 7);
 const work = root + ".tmp/six-bench/";
 
-// main's kernels (CI checks out one commit: fetch main's)
-try { execFileSync("git", ["fetch", "--depth=1", "origin", "+main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" }); } catch {}
+// main's kernels (CI checks out one commit: kernelSources() fetches main's alone; the ref origin/main is never written)
 // (T356: each side's kernels/ whole, from its tree: kernel.ts alone is a window over kernel/*.ts now)
 const forms = { main: "origin/main", tree: "tree" };
 

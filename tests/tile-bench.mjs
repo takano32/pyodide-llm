@@ -76,8 +76,7 @@ if (!isMainThread) {
 const args = process.argv.slice(2);
 const option = (name, value) => (args.includes(name) ? Number(args[args.indexOf(name) + 1]) : value);
 const rounds = option("--rounds", 2), turns = option("--turns", 5), megabytes = option("--megabytes", 512);
-// main's kernels (CI checks out one commit: fetch main's)
-try { execFileSync("git", ["fetch", "--depth=1", "origin", "+main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" }); } catch {}
+// main's kernels (CI checks out one commit: kernelSources() fetches main's alone; the ref origin/main is never written)
 for (const form of FORMS) {
   const dir = `${work}${form}/`;
   kernelSources(form === "main" ? "origin/main" : "tree", dir);  // (T356: the side's kernels/ whole, from its tree)

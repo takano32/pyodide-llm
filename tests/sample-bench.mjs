@@ -33,9 +33,7 @@ const staged = args.includes("--stages");
 const ids = args.filter((a, i) => !a.startsWith("--") && !["--rounds", "--tokens", "--commits"].includes(args[i - 1]));
 const work = root + ".tmp/sample-bench/";
 
-// main's kernels (CI checks out one commit: fetch main's, and the commits asked for)
-try { execFileSync("git", ["fetch", "--depth=1", "origin", "+main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" }); } catch {}
-for (const sha of commits) { try { execFileSync("git", ["fetch", "--depth=1", "origin", sha], { cwd: root, stdio: "inherit" }); } catch {} }
+// main's kernels and the commits asked for (CI checks out one commit: kernelSources() fetches each alone; no ref is written)
 // (T356: each form's kernels/ whole, from its tree: kernel.ts is one file in a commit of before T356, a window over
 // kernel/*.ts after it. A form is what kernelSources() takes, and what is done to its copy before it is compiled)
 const forms = { main: { from: "origin/main" } };

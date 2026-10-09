@@ -37,7 +37,6 @@ if (!isMainThread) {
   const option = (name, value) => (args.includes(name) ? Number(args[args.indexOf(name) + 1]) : value);
   const rounds = option("--rounds", 3), turns = option("--turns", 7);
   const work = root + ".tmp/q8r-bench-threads/";
-  try { execFileSync("git", ["fetch", "--depth=1", "origin", "+main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" }); } catch {}
   const asc = ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1",
     "--sharedMemory", "--maximumMemory", "65536"];
   const files = [];

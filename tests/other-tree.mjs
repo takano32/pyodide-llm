@@ -17,8 +17,10 @@ const git = (...command) => execFileSync("git", command, { cwd: root, maxBuffer:
 export function otherTree(before = "origin/main") {
   let commit;
   try { commit = git("rev-parse", "--verify", `${before}^{commit}`).toString().trim(); } catch {
-    // (a shallow clone, as CI's: the commit is fetched alone)
-    git("fetch", "--depth", "1", "origin", before.replace(/^origin\//, ""));
+    // (the commit is fetched alone, into FETCH_HEAD: no ref is written. --depth only in a shallow clone, as CI's: in a
+    // whole one it would make the fetched commit a shallow boundary and cut the history behind it)
+    const shallow = git("rev-parse", "--is-shallow-repository").toString().trim() === "true";
+    git("fetch", ...(shallow ? ["--depth", "1"] : []), "origin", before.replace(/^origin\//, ""));
     commit = git("rev-parse", "--verify", "FETCH_HEAD^{commit}").toString().trim();
   }
   const folder = path.join(root, ".tmp", "unchanged", commit);
