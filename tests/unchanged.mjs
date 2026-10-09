@@ -27,7 +27,8 @@
 //            (T353) and the same of /benchmark/'s script (src/pages/benchmark.astro's <script> and src/benchmark/*.ts)
 //   bench    (T353 review) every call tests/bench.mjs makes to src/bench.js, written down (tests/unchanged-bench.mjs), in both trees:
 //            the arguments and the Markdown or numbers that come back. The tables' words, cells and warnings, read by nothing else
-//   gpuworker (T353 review) the statements of /benchmark/'s GPU worker (public/benchmark/gpu.js and public/benchmark/gpu/*.js), each
+//   gpuworker (T353 review) the statements of /benchmark/'s GPU worker (public/benchmark/gpu.js and public/benchmark/gpu/*.js), and (T352)
+//            of the model's (public/gpu.js and public/gpu/*.js, whose modules share `common` where the benchmark's share `shared`), each
 //            function and constant as its syntax tree: `shared.<x>` (the fields the modules share) read as the `let` it was, the
 //            ../ of a URL dropped, positions and comments dropped. A field taken for another (`shared.fallback` for `shared.packed`:
 //            a device that is not a fallback and has the packed dot product tells them apart, one that is neither or both does not),
@@ -242,10 +243,11 @@ function bench(other) {
 
 // the statements of /benchmark/'s GPU worker (T353 review), as syntax trees. What the division adds is told apart from what it moves:
 // imports, the window's loading and early queue, the `shared` object, the destructuring of what a module takes from another
-function gpuWorker(tree, fields) {
-  const files = ["public/benchmark/gpu.js"];
-  const folder = path.join(tree, "public/benchmark/gpu");
-  if (fs.existsSync(folder)) for (const file of fs.readdirSync(folder).sort()) files.push(`public/benchmark/gpu/${file}`);
+// (T352: of the model's GPU worker too. worker: { window: the file a worker starts from, object: the name of the object its modules share })
+function gpuWorker(tree, fields, worker) {
+  const files = [worker.window], inFolder = worker.window.replace(/\.js$/, "");
+  const folder = path.join(tree, inFolder);
+  if (fs.existsSync(folder)) for (const file of fs.readdirSync(folder).sort()) files.push(`${inFolder}/${file}`);
   const asts = files.map((file) => parse(fs.readFileSync(path.join(tree, file), "utf8"), { sourceType: "module" }).program);
   const declared = (statement) => {
     const names = [];
@@ -258,7 +260,7 @@ function gpuWorker(tree, fields) {
   const norm = (node) => {
     if (Array.isArray(node)) return node.map(norm);
     if (!node || typeof node !== "object") return node;
-    if (node.type === "MemberExpression" && !node.computed && node.object.type === "Identifier" && node.object.name === "shared" && fields.has(node.property.name)) return { type: "Identifier", name: node.property.name };
+    if (node.type === "MemberExpression" && !node.computed && node.object.type === "Identifier" && node.object.name === worker.object && fields.has(node.property.name)) return { type: "Identifier", name: node.property.name };
     const out = {};
     for (const key of Object.keys(node)) {
       if (["loc", "start", "end", "extra", "range", "leadingComments", "trailingComments", "innerComments", "shorthand"].includes(key)) continue;
@@ -283,13 +285,20 @@ function gpuWorker(tree, fields) {
     let key;
     if (statement.type === "FunctionDeclaration") key = `function ${statement.id.name}`;
     else if (statement.type === "VariableDeclaration") {
+      // (not moved: the `let`s that became fields (T352: where a `let` declared one of them with others, the others are what is
+      // compared), `shared`, the window's `modules` and `early`, what a module takes from another)
+      if (statement.kind === "let" && statement.declarations.some((d) => fields.has(d.id.name))) {
+        statement = { ...statement, declarations: statement.declarations.filter((d) => !fields.has(d.id.name)) };
+        if (!statement.declarations.length) continue;
+      }
       const names = declared(statement);
-      // (not moved: the `let`s that became fields, `shared`, the window's `modules` and `early`, what a module takes from another)
-      if (statement.kind === "let" && names.every((name) => fields.has(name))) continue;
-      if (names.some((name) => ["shared", "modules", "early"].includes(name)) || statement.declarations.some((d) => d.init && importsAModule(d.init) && d.id.type === "ObjectPattern")) continue;
+      if (names.some((name) => [worker.object, "modules", "early"].includes(name)) || statement.declarations.some((d) => d.init && importsAModule(d.init) && d.id.type === "ObjectPattern")) continue;
       key = `${statement.kind === "let" ? "let" : "const"} ${names.join(",")}`;
     } else if (statement.type === "ExpressionStatement" && statement.expression.type === "AssignmentExpression" && statement.expression.left.name === "onmessage") {
-      if (statement.expression.right.async) key = "onmessage = async"; else continue;   // (the early queue is the division's)
+      // (the early queue is the division's; T352: the model's worker's receiver is no async function)
+      const right = statement.expression.right, queue = right.body.type === "CallExpression" && right.body.callee.object?.name === "early";
+      if (queue) continue;
+      key = right.async ? "onmessage = async" : "onmessage =";
     } else continue;   // (the replay of the early queue)
     if (key in found) throw new Error(`${key} twice in the GPU worker`);
     found[key] = JSON.stringify(norm(statement));
@@ -297,18 +306,25 @@ function gpuWorker(tree, fields) {
   return found;
 }
 // the keys of the `shared` object a tree's modules hold between them (none before the division)
-function sharedFields(tree) {
-  const file = path.join(tree, "public/benchmark/gpu/device.js");
+function sharedFields(tree, worker) {
+  const file = path.join(tree, worker.window.replace(/\.js$/, "/device.js"));
   if (!fs.existsSync(file)) return new Set();
   const program = parse(fs.readFileSync(file, "utf8"), { sourceType: "module" }).program;
-  const shared = program.body.find((s) => s.type === "VariableDeclaration" && s.declarations[0].id.name === "shared");
+  const shared = program.body.find((s) => s.type === "VariableDeclaration" && s.declarations[0].id.name === worker.object);
   return new Set(shared.declarations[0].init.properties.map((p) => p.key.name));
 }
+// (T352: the model's GPU worker, public/gpu.js and public/gpu/*.js, whose modules share `common`: open() has a parameter named shared)
+const GPU_WORKERS = [{ window: "public/benchmark/gpu.js", object: "shared", name: "/benchmark/'s GPU worker" },
+  { window: "public/gpu.js", object: "common", name: "the model's GPU worker" }];
 function gpuworker(other) {
-  const fields = sharedFields(root);
-  const was = gpuWorker(other, fields), now = gpuWorker(root, fields);
-  if (!fields.size && !fs.existsSync(path.join(root, "public/benchmark/gpu/device.js"))) console.log("unchanged: gpuworker: the worker is one file in the working tree");
-  return said("/benchmark/'s GPU worker, statement by statement", differences(was, now));
+  let same = true;
+  for (const worker of GPU_WORKERS) {
+    const fields = sharedFields(root, worker);
+    const was = gpuWorker(other, fields, worker), now = gpuWorker(root, fields, worker);
+    if (!fields.size) console.log(`unchanged: gpuworker: ${worker.name} is one file in the working tree`);
+    same = said(`${worker.name}, statement by statement`, differences(was, now)) && same;
+  }
+  return same;
 }
 
 function sizes() {
