@@ -27,7 +27,7 @@
 //                                    T152: count steps of a generation from token at pos (the forward pass and the
 //                                    sampling of each, SAMPLE's), after the keys and values of positions from to pos - 1
 //                                    went up from forward.js's cache; the ids into plan.tokens.ids and the keys and
-//                                    values of their positions into plan.staging (see generate() below). The answer is
+//                                    values of their positions into plan.staging (gpu/requests.js's generate()). The answer is
 //                                    in the control area as a prompt's. Where plan.tokens asks for it, "ready" says
 //                                    tokens ({ form, ms, forms, remembered, attention, attentions }: the layer of a
 //                                    token chosen here and its ms a step, T224: the attention of a token chosen here

@@ -23,7 +23,7 @@ const ternaryPlan = (plan) => Object.values(plan.matrices).some((matrix) => matr
 const turnedAt = (plan, l) => (plan.unturned?.includes(l) ? 0 : plan.turned);
 
 // T352: what the parts of this worker share and one of them sets (a module's `let` cannot be assigned from another
-// module): the fields were this file's `let`s of the same names
+// module): the fields were gpu.js's `let`s of the same names
 const common = {
   model: null,  // what is on the GPU for the model: the device, the plan, the buffers, the pipelines, the cache
   stopping: false,  // a stop was asked: start() ends at its next step
