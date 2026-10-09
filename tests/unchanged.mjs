@@ -19,11 +19,13 @@
 //            (tests/unchanged_exports.py): the tests reach only the names they use, a facade that forgets one breaks the page
 //   sizes    the files past the size a file should have (50 KB or 800 lines): said, never failed
 //
-// The other tree is `git archive` of the commit under .tmp/unchanged/<its hash> (made once). Exit 1 if anything differs.
+// The other tree is tests/other-tree.mjs's: `git archive` of the commit under .tmp/unchanged/<its hash> (made once).
+// Exit 1 if anything differs.
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { otherTree } from "./other-tree.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
@@ -33,30 +35,6 @@ const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "ex
 const git = (...command) => execFileSync("git", command, { cwd: root, maxBuffer: 1 << 28 });
 const python = process.env.PYTHON ?? "python3";
 const LIMIT_BYTES = 50 * 1024, LIMIT_LINES = 800;
-
-function otherTree() {
-  let commit;
-  try { commit = git("rev-parse", "--verify", `${before}^{commit}`).toString().trim(); } catch {
-    // (a shallow clone, as CI's: the commit is fetched alone)
-    git("fetch", "--depth", "1", "origin", before.replace(/^origin\//, ""));
-    commit = git("rev-parse", "--verify", "FETCH_HEAD^{commit}").toString().trim();
-  }
-  const folder = path.join(root, ".tmp", "unchanged", commit);
-  if (!fs.existsSync(path.join(folder, "done"))) {
-    fs.rmSync(folder, { recursive: true, force: true });
-    fs.mkdirSync(folder, { recursive: true });
-    execFileSync("tar", ["-x", "-C", folder], { input: git("archive", commit) });
-    fs.writeFileSync(path.join(folder, "done"), "");
-  }
-  // what `make models` built here is in no commit (the models' files at the root and in public/models): the other tree
-  // reads this one's. Without them its tests that need a model of the site are skipped, and compared with nothing.
-  // (Not the built kernels: no check here runs them, and they are the working tree's.)
-  const built = git("ls-files", "--others", "--ignored", "--exclude-standard", "--directory").toString().trim().split("\n")
-    .map((name) => name.replace(/\/$/, "")).filter((name) => name === "public/models" || (!name.includes("/") && !name.startsWith(".") &&
-      !["node_modules", "dist", "__pycache__"].includes(name)));
-  for (const name of built) if (!fs.existsSync(path.join(folder, name))) fs.symlinkSync(path.join(root, name), path.join(folder, name));
-  return { commit, folder };
-}
 
 const text = (value) => (typeof value === "function" ? String(value) : typeof value === "string" ? value : JSON.stringify(value));
 // the differences of two objects of texts, by name
@@ -177,7 +155,7 @@ function sizes() {
   return true;
 }
 
-const { commit, folder } = kinds.some((kind) => kind !== "sizes") ? otherTree() : {};
+const { commit, folder } = kinds.some((kind) => kind !== "sizes") ? otherTree(before) : {};
 if (commit) console.log(`unchanged: the working tree against ${before} (${commit.slice(0, 7)})`);
 const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), choices: () => choices(folder), exports: () => exports(folder), python: () => pythonTests(folder), sizes };
 let ok = true;

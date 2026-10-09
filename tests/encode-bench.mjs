@@ -19,8 +19,11 @@
 //   node tests/encode-bench.mjs [--ref origin/main] [--rounds 7]
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { loadPyodide } from "pyodide";
 import { MODELS } from "../src/models.js";
+import { otherTree } from "./other-tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
@@ -34,9 +37,9 @@ const old = source("public/llama2_numpy.py");
 // the old converter, on the old engine
 const oldConvert = source("public/llama2_convert.py").toString().replace(/^from llama2_numpy import/m, "from old_numpy import");
 // the old list's options for the site's tokenizer.bin files (tiny-lm's nfkc, before T216)
+// (from the other commit's whole tree: the list is a window over src/models/ since T354)
 fs.mkdirSync(`${root}.tmp/t200/`, { recursive: true });
-fs.writeFileSync(`${root}.tmp/t200/models-old.mjs`, source("src/models.js"));
-const { MODELS: OLD_MODELS } = await import(`${root}.tmp/t200/models-old.mjs`);
+const { MODELS: OLD_MODELS } = await import(pathToFileURL(path.join(otherTree(ref).folder, "src/models.js")));
 
 // tokenizer files of Hugging Face at the revisions src/models.js pins, kept in .tmp/t200/
 const cache = `${root}.tmp/t200/hf/`;
