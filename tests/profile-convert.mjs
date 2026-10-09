@@ -18,6 +18,8 @@ const quantizeRows = py.pyimport("llama2_numpy").kernel_quantizer("simdkernel.so
 const bfloat16 = process.argv.includes("--numpy") ? undefined : py.pyimport("llama2_numpy").kernel_widener("simdkernel.so");
 // T136: and of GGUF's Q8_0
 const q8_0 = process.argv.includes("--numpy") ? undefined : py.pyimport("llama2_numpy").kernel_q8_0("simdkernel.so");
+// T273: and of the two ternary types
+const readers = process.argv.includes("--numpy") ? undefined : py.pyimport("llama2_numpy").kernel_ternary_readers("simdkernel.so");
 const gguf = dir.endsWith(".gguf");
 const withVocabulary = !gguf && fs.readdirSync(dir).filter((name) => name.endsWith(".gguf")).sort()[0];
 const weights = gguf ? dir : withVocabulary ? `${dir}/${withVocabulary}` : `${dir}/model.safetensors`;
@@ -26,7 +28,7 @@ const range = (b, e) => { const x = new Uint8Array(e - b); fs.readSync(fd, x, 0,
 let conversion, first;
 if (gguf) {
   // the header (the vocabulary) is a few megabytes: all of it is in the first 16 MiB
-  conversion = convert.Conversion.from_gguf.callKwargs(range(0, 16 << 20), { dtype, quantize_rows: quantizeRows, bfloat16, q8_0 });
+  conversion = convert.Conversion.from_gguf.callKwargs(range(0, 16 << 20), { dtype, quantize_rows: quantizeRows, bfloat16, q8_0, readers });
   first = conversion.base;
 } else {
   const tokName = ["tokenizer.json", "spiece.model", "tokenizer.model"].find((n) => fs.existsSync(`${dir}/${n}`));
@@ -42,7 +44,7 @@ if (gguf) {
     [header, first] = [new TextDecoder().decode(range(8, 8 + headerBytes)), 8 + headerBytes];
   }
   conversion = convert.Conversion.callKwargs(header, first, config, new Uint8Array(fs.readFileSync(`${dir}/${tokName}`)),
-    tokName, { dtype, start: first, quantize_rows: quantizeRows, bfloat16, q8_0 });
+    tokName, { dtype, start: first, quantize_rows: quantizeRows, bfloat16, q8_0, readers });
 }
 py.globals.set("conversion", conversion);
 py.runPython("import cProfile, pstats, io, time; profiler = cProfile.Profile(); began = time.perf_counter(); profiler.enable()");

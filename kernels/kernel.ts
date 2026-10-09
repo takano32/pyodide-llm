@@ -126,6 +126,63 @@ export function widen_q8_0(out: usize, raw: usize, n: i32): void {
   }
 }
 
+// T273: n blocks of Prism ML's PQ2_0 (raw, 34 bytes each: a float16 scale d and 32 bytes of two bits a value, the
+// first value in the lowest bits of the first byte) to 128 n float32 (out), (code - 1) * d each: exactly the
+// converter's NumPy pq2_0(). A byte's four codes are its products with 64, 16, 4 and 1, shifted down by six.
+export function widen_pq2_0(out: usize, raw: usize, n: i32): void {
+  const places = i32x4(64, 16, 4, 1), three = i32x4.splat(3), one = i32x4.splat(1);
+  for (let b = 0; b < n; b++) {
+    const block = raw + <usize>b * 34, to = out + (<usize>b << 9);
+    const scale = f32x4.splat(halfToFloat(<u32>load<u16>(block)));
+    for (let i = 0; i < 32; i++) {
+      const codes = v128.and(i32x4.shr_u(i32x4.mul(i32x4.splat(<i32>load<u8>(block + 2 + <usize>i)), places), 6), three);
+      v128.store(to + (<usize>i << 4), f32x4.mul(f32x4.convert_i32x4_s(i32x4.sub(codes, one)), scale));
+    }
+  }
+}
+
+// eight base 3 digits (0, 1 or 2, in 16-bit lanes) as eight float32, (digit - 1) * d each
+// @ts-ignore: decorator
+@inline function storeDigits(to: usize, digits: v128, scale: v128, one: v128): void {
+  v128.store(to, f32x4.mul(f32x4.convert_i32x4_s(i32x4.sub(i32x4.extend_low_i16x8_u(digits), one)), scale));
+  v128.store(to, f32x4.mul(f32x4.convert_i32x4_s(i32x4.sub(i32x4.extend_high_i16x8_u(digits), one)), scale), 16);
+}
+
+// T273: n blocks of Prism ML's PTQ1_0 (raw, 28 bytes each: 24 bytes of five base 3 digits, 2 bytes of four, and a
+// float16 scale d) to 128 n float32 (out), (digit - 1) * d each: exactly the converter's NumPy ptq1_0() and base3().
+// A digit is the high byte of three times the byte, and the low byte goes on to the next digit. The values are
+// digit by digit, not byte by byte: 16 n + m for digit n of byte m of the first 16 bytes, 80 + 8 n + m of the next
+// 8, 120 + 2 n + m of the 2. So a digit of 8 bytes at once is 8 values next to each other.
+export function widen_ptq1_0(out: usize, raw: usize, n: i32): void {
+  const low = i16x8.splat(255), thrice = i16x8.splat(3), one = i32x4.splat(1);
+  for (let b = 0; b < n; b++) {
+    const block = raw + <usize>b * 28, to = out + (<usize>b << 9);
+    const d = halfToFloat(<u32>load<u16>(block, 26)), scale = f32x4.splat(d);
+    const bytes = v128.load(block);
+    let first = i16x8.extend_low_i8x16_u(bytes), second = i16x8.extend_high_i8x16_u(bytes);
+    let third = i16x8.extend_low_i8x16_u(v128.load64_zero(block, 16));
+    for (let digit = 0; digit < 5; digit++) {
+      first = i16x8.mul(first, thrice);
+      second = i16x8.mul(second, thrice);
+      third = i16x8.mul(third, thrice);
+      storeDigits(to + (<usize>digit << 6), i16x8.shr_u(first, 8), scale, one);
+      storeDigits(to + (<usize>digit << 6) + 32, i16x8.shr_u(second, 8), scale, one);
+      storeDigits(to + 320 + (<usize>digit << 5), i16x8.shr_u(third, 8), scale, one);
+      first = v128.and(first, low);
+      second = v128.and(second, low);
+      third = v128.and(third, low);
+    }
+    for (let m = 0; m < 2; m++) {
+      let left = <u32>load<u8>(block + 24 + <usize>m);
+      for (let digit = 0; digit < 4; digit++) {
+        left *= 3;
+        store<f32>(to + (<usize>(120 + 2 * digit + m) << 2), <f32>(<i32>(left >> 8) - 1) * d);
+        left &= 255;
+      }
+    }
+  }
+}
+
 // bias = 0: signed int8 in [-127,127];  bias = 64: 7-bit unsigned, real value = (q - 64) * scale (for kernel_relaxed.ts)
 export function quantize_x(xq: usize, xs: usize, x: usize, n: i32, bias: i32): void {
   // SIMD, 32 values (one group) at a time. Every step is the scalar one lane by lane (abs, max, the division, the

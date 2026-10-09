@@ -103,6 +103,38 @@ async function inPage({ plain, relaxed }) {
     return bad ? `${bad} of ${n} bytes and ${ng} sums wrong` : null;
   });
 
+  // ---- T273: the converter's readers of the two ternary types of a GGUF (24 blocks each, high in the memory)
+  const blocksOf = 24, raw = 7 << 20, wide = raw + 4096;
+  const scaleBits = Array.from({ length: blocksOf }, () => ((1 + next() % 29) << 10) | (next() % 1024));  // normal, positive
+  const scaleOf = (bits) => f(2 ** ((bits >> 10) - 15) * (1 + (bits & 1023) / 1024));
+  for (const [name, size, scaleAt, valueOf] of [
+    // PQ2_0: value j of a block is the j-th two bits of its 32 bytes (after the scale), less one
+    ["widen_pq2_0", 34, 0, (block, j) => ((block[2 + (j >> 2)] >> (2 * (j & 3))) & 3) - 1],
+    // PTQ1_0: digit n of byte m in base 3, the first the most significant (the byte is ceil(256 v / 243))
+    ["widen_ptq1_0", 28, 26, (block, j) => {
+      const [byte, digit, digits] = j < 80 ? [j % 16, j >> 4, 5] : j < 120 ? [16 + (j - 80) % 8, (j - 80) >> 3, 5] : [24 + (j - 120) % 2, (j - 120) >> 1, 4];
+      let left = block[byte], found = 0;
+      for (let d = 0; d <= digit; d++) { left *= 3; found = left >> 8; left &= 255; }
+      return found - 1;
+    }],
+  ]) {
+    const data = Uint8Array.from({ length: blocksOf * size }, (_, at) => at < 256 ? at : next() & 255);
+    scaleBits.forEach((bits, b) => { data[b * size + scaleAt] = bits & 255; data[b * size + scaleAt + 1] = bits >> 8; });
+    const call = () => { U.set(data, raw); k[name](wide, raw, blocksOf); };
+    await check(name, call, () => {
+      F.fill(-7, wide / 4, wide / 4 + blocksOf * 128);
+      call();
+      for (let b = 0; b < blocksOf; b++) {
+        const block = data.subarray(b * size, b * size + size), d = scaleOf(scaleBits[b]);
+        for (let j = 0; j < 128; j++) {
+          const expected = f(valueOf(block, j) * d), got = F[wide / 4 + b * 128 + j];
+          if (!Object.is(got, expected)) return `block ${b}, value ${j}: ${got} not ${expected}`;
+        }
+      }
+      return null;
+    });
+  }
+
   // ---- the ternary matrix products, to the bit
   const expected = want(a, sx);
   const product = (name, call) => check(name, call, () => {

@@ -468,6 +468,57 @@ for dtype in ("int8", "float32"):
         stream.finish()
         outs.append(bytes(stream.out))
     assert outs[0] == outs[1], f"widen_q8_0 changed the {dtype} checkpoint"
+# T273: the two ternary types widened on the kernels are NumPy's pq2_0() and ptq1_0() to the bit: every float16 scale
+# once, every byte in every place of a block (the code 3 of PQ2_0 and the bytes past 242 of PTQ1_0, which no file
+# holds, included), in odd numbers of blocks
+ternary_readers = llama2_numpy.kernel_ternary_readers("simdkernel.so")
+for kind, size, numpy_reader in (("PQ2_0", 34, llama2_convert.pq2_0), ("PTQ1_0", 28, llama2_convert.ptq1_0)):
+    scale_at = 0 if kind == "PQ2_0" else 26
+    data_at = [at for at in range(size) if not scale_at <= at < scale_at + 2]
+    blocks = np.empty((65536 + 3, size), dtype=np.uint8)
+    blocks[:, data_at] = rng.integers(0, 256, (65536 + 3, size - 2), dtype=np.uint8)
+    for place, at in enumerate(data_at):
+        blocks[:256, at] = (np.arange(256) + 7 * place) % 256
+    blocks[:, scale_at:scale_at + 2] = np.arange(65536 + 3, dtype=np.uint32).astype(np.uint16).view(np.uint8).reshape(-1, 2)
+    for count in (0, 1, 3, 65536 + 3):
+        raw = blocks[:count].tobytes()
+        widened, expected = ternary_readers[kind](raw), numpy_reader(raw)
+        assert widened.dtype == expected.dtype and widened.shape == expected.shape, f"{kind}: the kernel's shape"
+        assert np.array_equal(widened.view(np.uint32), expected.view(np.uint32)), f"widen_{kind.lower()} is not NumPy's ({count} blocks)"
+    try:
+        ternary_readers[kind](bytes(size + 1))
+        raise AssertionError(f"{kind}: a block cut short was read")
+    except ValueError:
+        pass
+# and a whole conversion of ternary tensors (Stream, fed in odd pieces) writes the same bytes with them as without
+t3_tensors, t3_config = qwen3_model(128, 2, 2, 64, hidden=256)
+for kind, size in (("PQ2_0", 34), ("PTQ1_0", 28)):
+    t3_header, t3_file = {}, bytearray()
+    for name, tensor in t3_tensors.items():
+        if tensor.ndim == 2:
+            count = tensor.size // 128
+            data = np.empty((count, size), dtype=np.uint8)
+            scale = (0.01 + np.abs(rng.standard_normal(count)) * 0.01).astype(np.float16).view(np.uint8).reshape(-1, 2)
+            if kind == "PQ2_0":
+                codes = rng.integers(0, 3, (count, 32, 4), dtype=np.uint8)  # (no code 3: a ternary file has none)
+                data[:, :2], data[:, 2:] = scale, codes[..., 0] | codes[..., 1] << 2 | codes[..., 2] << 4 | codes[..., 3] << 6
+            else:
+                data[:, 26:], data[:, :26] = scale, rng.integers(0, 243, (count, 26), dtype=np.uint8)
+            data = data.tobytes()
+        else:
+            data, kind_of = tensor.tobytes(), "F32"
+        t3_header[name] = {"dtype": kind if tensor.ndim == 2 else "F32", "shape": list(tensor.shape),
+                           "data_offsets": [len(t3_file), len(t3_file) + len(data)]}
+        t3_file += data
+    for dtype in ("ternary", "int8", "float32"):
+        outs = []
+        for readers in (None, ternary_readers):
+            stream = llama2_convert.Stream(t3_header, 0, t3_config, dtype, 24, readers=readers)
+            for at in range(0, len(t3_file), 1000):
+                stream.feed(bytes(t3_file[at:at + 1000]))
+            stream.finish()
+            outs.append(bytes(stream.out))
+        assert outs[0] == outs[1] and len(outs[0]) > 100000, f"the kernels' {kind} changed the {dtype} checkpoint"
 # T98: the six bits too: quantize6_x is quantize6() and pack6() to the byte (a group of zeros, ties that round to
 # even, the largest value, and a whole conversion)
 ties = values.copy()

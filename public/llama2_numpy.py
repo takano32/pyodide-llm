@@ -792,6 +792,7 @@ def load_kernels(path, without_relaxed=False):
                           add_columns=[p, p, p, i32, i32],
                           layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32],
                           penalize=[p, p, i32, ctypes.c_float, ctypes.c_float], widen_bf16=[p, p, i32], widen_q8_0=[p, p, i32],
+                          widen_pq2_0=[p, p, i32], widen_ptq1_0=[p, p, i32],
                           sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p, i32, ctypes.c_float])
         kernels = {}
         for name, argtypes in signatures.items():
@@ -878,6 +879,29 @@ def kernel_q8_0(path):
         return out
 
     return q8_0
+
+
+def kernel_ternary_readers(path):
+    """llama2_convert.pq2_0() and ptq1_0() on the SIMD kernels (T273): the blocks of Prism ML's two ternary types
+    widened to the same float32, many times faster than NumPy's passes (most of the time of converting Ternary
+    Bonsai 2 27B in the page). For the converter's readers, by the GGUF's type; None where the kernels cannot be
+    loaded."""
+    kernels = load_kernels(path) if path else None
+    if not kernels:
+        return None
+
+    def reader(kind, widen, size):
+        def read(raw):
+            blocks = np.frombuffer(raw, dtype=np.uint8)
+            if blocks.size % size:
+                raise ValueError(f"{kind} data is not whole blocks of {size} bytes.")
+            out = np.empty(blocks.size // size * 128, dtype=np.float32)
+            widen(out.ctypes.data, blocks.ctypes.data, blocks.size // size)
+            return out
+
+        return read
+
+    return {"PQ2_0": reader("PQ2_0", kernels["widen_pq2_0"], 34), "PTQ1_0": reader("PTQ1_0", kernels["widen_ptq1_0"], 28)}
 
 
 # T98: int6, six bits a weight. An int6 group is an int8 group whose values are multiples of 4 (-128..124: six
