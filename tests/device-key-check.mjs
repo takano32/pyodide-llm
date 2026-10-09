@@ -136,9 +136,17 @@ const isShader = (name) => typeof real[name] === "string"
 // any destructuring, a subscript that is a string. (A match for `wgsl.<name>` found a name taken any other way as no shader
 // of gpu.js: a destructured shader was in no key and this check said ok.) A name that is also something else in gpu.js
 // (a property of the same spelling) is taken for a shader and must then reach the hash: it fails loudly, never quietly.
-const gpuSource = read("gpu.js"), gpuTree = parse(gpuSource, { sourceType: "module" }).program;
+// T352: gpu.js is a window over the modules of public/gpu/ now, and the worker is all of those files: each is read, and
+// what is said of "gpu.js" below is said of them together (a shader named or compiled in any of them). Every file of the
+// folder is read, whether or not the window asks for it (that it asks for them all is tests/gpu-modules-check.mjs's).
+const gpuFiles = ["gpu.js", ...fs.readdirSync(new URL("../public/gpu/", import.meta.url)).filter((name) => name.endsWith(".js")).sort().map((name) => `gpu/${name}`)];
+assert.ok(gpuFiles.length > 1, "public/gpu/ holds the worker's modules");
+const gpuNodes = gpuFiles.flatMap((file) => {
+  const text = read(file);
+  return [...under(parse(text, { sourceType: "module" }).program)].map((n) => ({ n, file, text }));
+});
 const taken = new Set();
-for (const n of under(gpuTree)) {
+for (const { n } of gpuNodes) {
   if ((n.type === "MemberExpression" || n.type === "OptionalMemberExpression") && !n.computed) taken.add(n.property.name);
   if ((n.type === "MemberExpression" || n.type === "OptionalMemberExpression") && n.computed && n.property.type === "StringLiteral") taken.add(n.property.value);
   if (n.type === "ObjectPattern") for (const property of n.properties) if (property.type === "ObjectProperty" && !property.computed) taken.add(property.key.name ?? property.key.value);
@@ -146,8 +154,13 @@ for (const n of under(gpuTree)) {
 const used = [...taken].filter((name) => name in real).sort();
 // gpu.js compiles a shader in one place (pipelineOf) and hands it the code at the calls below. A new call, or one whose code
 // comes from somewhere else, is looked at here: every shader it can compile must be one of those the key hashes
-const compiled = [...under(gpuTree)].filter((n) => n.type === "CallExpression" && n.callee.name === "pipelineOf").map((n) => gpuSource.slice(n.arguments[1].start, n.arguments[1].end));
-assert.equal([...under(gpuTree)].filter((n) => n.type === "Identifier" && n.name === "createShaderModule").length, 1, "gpu.js makes shader modules in one place");
+const compiled = gpuNodes.filter(({ n }) => n.type === "CallExpression" && n.callee.name === "pipelineOf").map(({ n, text }) => text.slice(n.arguments[1].start, n.arguments[1].end));
+assert.equal(gpuNodes.filter(({ n }) => n.type === "Identifier" && n.name === "createShaderModule").length, 1, "gpu.js makes shader modules in one place");
+// (T352: and under that one name: a module that took pipelineOf as another name, or made a pipeline itself, would compile unseen)
+assert.equal(gpuNodes.filter(({ n }) => n.type === "Identifier" && /^createComputePipeline(Async)?$/.test(n.name)).length, 1, "gpu.js makes pipelines in one place");
+for (const { n, file } of gpuNodes) {
+  if (n.type === "ObjectProperty" && !n.computed && (n.key.name ?? n.key.value) === "pipelineOf") assert.ok(n.shorthand, `${file} takes pipelineOf under another name`);
+}
 assert.deepEqual([...new Set(compiled)].sort(), [
   "code",  // the small steps' (RMSNORM or LAYER_NORM, HEAD_NORM, ADD, ROPE, SWIGLU or GELU, QUANTIZE) and a token's layer, tokenCodes' (the fused matrices, NORM_QUANTIZE)
   "embedCode",  // EMBED or EMBED_TERNARY
@@ -157,9 +170,9 @@ assert.deepEqual([...new Set(compiled)].sort(), [
   "wgsl.SAMPLE", "wgsl.TAKE_OUTLIERS", "wgsl.TERNARY_COLUMNS", "wgsl.TOKEN_ROPE", "wgsl.WIDEN_SIX",
   "wgsl.flashTile(shape)", "wgsl.flashVec(a.shape)", "wgsl.flashVecReduce(a.shape)",
 ].sort(), "a place where gpu.js compiles a shader that this check does not know: is every shader it can compile in the key (engineShaders(), ternaryShaders(), the tiles)?");
-for (const n of under(gpuTree)) {
+for (const { n, file } of gpuNodes) {
   const text = n.type === "TemplateElement" ? n.value.raw : n.type === "StringLiteral" ? n.value : "";
-  assert.ok(!/@compute|@workgroup_size|\bfn main\b|@group\(/.test(text), `gpu.js writes WGSL itself (at ${n.start}): the key hashes the texts of shaders.js alone`);
+  assert.ok(!/@compute|@workgroup_size|\bfn main\b|@group\(/.test(text), `${file} writes WGSL itself (at ${n.start}): the key hashes the texts of shaders.js alone`);
 }
 const shaders = [...new Set([...used.filter((name) => ![...KEY_ITSELF, ...FORMS].includes(name) && isShader(name)), ...TILES])];
 assert.ok(shaders.length >= 27, `the shaders gpu.js runs: ${shaders.length} found (27 when this was written)`);
