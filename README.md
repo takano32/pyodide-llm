@@ -194,4 +194,4 @@ and pitfalls, and [TODO.md](TODO.md) the tasks.
 
 ## License
 
-[Mozilla Public License 2.0](LICENSE), the same as Pyodide's. Some files carry code from other projects under their own licenses, and keep those notices where the code is: `public/llama2_numpy.py` (tairov/llama2.py and karpathy/llama2.c, MIT) and `public/shaders.js` (llama.cpp and ONNX Runtime, MIT; TensorFlow.js, MLC LLM and Apache TVM, Apache-2.0). The models are not in this repository and each keeps its own license (see the model list).
+[Mozilla Public License 2.0](LICENSE), the same as Pyodide's. Some files carry code from other projects under their own licenses, and keep those notices where the code is: `public/llama2_numpy.py` (tairov/llama2.py and karpathy/llama2.c, MIT) and the files of `public/shaders/` (`public/shaders.js` is their window; llama.cpp and ONNX Runtime, MIT; TensorFlow.js, MLC LLM and Apache TVM, Apache-2.0). The models are not in this repository and each keeps its own license (see the model list).

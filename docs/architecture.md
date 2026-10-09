@@ -14,7 +14,7 @@ flowchart TD
   forward["public/forward.js<br/>the forward pass, on its own WebAssembly memory"]
   kernels["kernels/: WebAssembly SIMD kernels"]
   helper["public/helper.js: software threads"]
-  gpu["public/gpu.js and public/shaders.js: the GPU worker and its WGSL shaders"]
+  gpu["public/gpu.js and public/shaders.js (a window over public/shaders/): the GPU worker and its WGSL shaders"]
   page -- "the model, the prompt, the settings" --> worker
   worker -- "each piece of text" --> page
   worker --> engine
@@ -35,7 +35,7 @@ flowchart TD
 | `public/forward.js` and `public/forward/` | One token's forward pass, and a block of prompt tokens, in JavaScript. It calls the same kernels in the same order as the Python engine would, and chooses for each block and each few tokens whether the CPU or the GPU runs them. `forward.js` is the window; the engine (`engine.js`), its software threads (`threads.js`), its GPU side (`gpuside.js`), the choice between the two (`choice.js`) and the memory a model takes (`memory.js`, `alone.js`) are the modules of `forward/`. |
 | `kernels/` | The SIMD kernels: int8 and float32 matrix products, activation quantization, RMSNorm, LayerNorm, RoPE, attention, SwiGLU, GELU, and the sampling (repetition penalty, softmax, top-p). |
 | `public/helper.js`, `public/jobs.js` | Software threads, and the work they share. |
-| `public/gpu.js`, `public/shaders.js` | The GPU worker and all WGSL shaders. |
+| `public/gpu.js`, `public/shaders.js`, `public/shaders/` | The GPU worker and all WGSL shaders (`shaders.js` is the window over the twelve files of `shaders/`, which hold the shaders by family and the sources' notices). |
 | `public/coi.js` | The Service Worker: adds the headers for threads, keeps Pyodide and NumPy for offline use. |
 | `public/benchmark/`, `src/pages/benchmark.astro`, `src/benchmark/`, `src/bench/` | `/benchmark/`, the measurements of one device in one report: the sections' workers, the page and its script's modules, and the modules that write the tables and the report (`src/bench.js` is their window). |
 
