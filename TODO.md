@@ -2301,6 +2301,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **レビュー（シェーダと GPU の隅、Sonnet high、2026-10-09）: OK、must 0。** 変わったのは `public/shaders.js` の `penalizeLikeCpu`・`sampleLikeCpu`・`walkLikeCpu` だけで、export 102 個のうち残り 99 個（WGSL とシェーダを作る関数の全部）は main とバイト単位で同じ。`deviceKey()` は偽のアダプタ 192 通りで新旧同じ（端末の覚えた形と「CPU が速い」の判定は残る）。新しい引数が無いときの 3 関数は、乱数の 18,000 回（歩く・引く・罰が 6000 ずつ、同値の山・−inf・NaN の topp を含む）で前とビット単位で同じ。GPU の側の呼び（`gpu.js`・`benchmark/gpu.js`・`gpu-check.mjs`）は 3〜4 引数のまま。`generateMany` を呼ぶのは `generate()` の 1 か所で、`on_cpu` なら頼まない。**GPU だけに置いたモデルに URL で `&top_k=` を足すと**（読んだだけ、実走なし）: 最初の歩で `run()` が「the GPU did not take a block or a step」で止め、worker が CPU で読み直す。生成は続かず、もう一度 Run を押すと CPU で書く。次の訪問には残らない。守りは足さない（一覧に当たる項目が無い。覆す条件: この 3 つを持つ GPU に載るモデルが一覧に入ったとき）。`gpu-prompt.yml` は回していない（WGSL と鍵が同じなので）。(c) **GPU だけに置いたモデルが URL で `&top_k=` などを受けると**、コードを読んだ限りでは `generate()` が CPU の歩を踏み、`forward.js` の `run()` が「The GPU stopped (the GPU did not take a block or a step)」で投げ、worker が CPU で読み直す（その訪問の間はそのモデルは CPU のまま）。**実走はしていない**（GPU が要る）。今の一覧でこの 3 つを持つのは GPU に載らない Qwen3.5 の家族だけ。
   - **ほかに確かめたこと**: 選び分け `selectTop` は sortNucleus の分割の写しで、`until` が元の `lo` から数えた絶対位置であること、`until <= j`・`until > i`・中ほどの同値で戻ること、`i`・`j` が必ず進むことを読んで確かめ、15 の壊し方（境の 3 つ）が全部 smoke で落ちる。top-k のあとの top-p の cutoff は top-k の数 n で数える（NumPy と JavaScript も同じ）。`presence` が NaN・負のとき `penalize` は 0 を引く。ページ: `used = {...settings}` が `top_k`・`min_p`・`presence_penalty` を `generate.callKwargs` まで運ぶ（モデルの欄に無い鍵は付かない）。**直したもの**: `tests/answers.mjs`（出力を出し切る）、`tests/test_sample.py`（GPU に渡さない試験）、`tests/smoke.mjs`（min-p 1 と repetition 1 + presence）、`tests/models-check.mjs`（`generation` の鍵と範囲）。
 
+- **設定の欄の文面（2026-10-09、持ち主「推奨でお願いします」。未実装: T278・T277 と同じ回に）**: 設定のシートの「More」の中、Repetition penalty の下に 3 つ。ラベルは今の欄と同じ英語で「Top-k」（0〜100、1 刻み）・「Min-p」（0〜0.5、0.01 刻み）・「Presence penalty」（0〜2、0.1 刻み）。0 のときの値の表示は「off」。答えの下の行には足さない（行が長くなる。値は設定のシートと URL で分かる）。
 ### T275 [性能][Bonsai][CPU] Safari の 3 値のカーネル（`matmul_t2`）を速く — 状態: 未着手（2026-10-02 に採番。規模 小〜中）
 - relaxed SIMD の無いブラウザ（Safari）の 3 値のカーネルは、relaxed の形の約 0.6 倍（T231 の表: arm64 で 12.1 対 20.2 G 重み / 秒）。本番の WebKit は 1.7B で 7.6 tok/s、Chromium は 16.9。iPhone と Mac の Safari に効く。
 
@@ -2334,10 +2335,12 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
 - モデルの NOTICE.txt が求めている。Bonsai の 5 項目（1.7B・4B・8B・27B の 2 つ）。
 
+- **文面と置き場（2026-10-09、持ち主「推奨でお願いします」。未実装）**: T278 の行の次に 1 行「Created using Bonsai by Prism ML.」（NOTICE の文のまま）。
 ### T278 [描画][モデル] 「Built with Llama」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。レビューの勧めは About に 1 行。規模 小）
 - Llama 3・3.1・3.2 のライセンスが求める。当たる項目: Llama 3.2 の 2 つ、Swallow 8B、ELYZA 8B、Shisa 3B、Llama 3.1 8B、DeepSeek-R1 Distill Llama 8B、Hermes 3。
 - **確かめた（T252 のレビュー、2026-10-02）**: この一覧は全部（一覧にほかの Llama の派生は無い）。Llama 3.1 の §1.b.i の原文: 「Llama の材料（その派生物、それを含む製品・サービス〔別の AI モデルも〕）を配るか使えるようにするなら、(A) 写しと (B) 「Built with Llama」を、関連のサイト・UI・ブログ・about・文書に目立つように」。ページは重みを配らず（HF から取った変換を訪問者のブラウザが作る）、「使えるようにする」に当たるかは読み方による。**勧めどおり About に 1 行が安全**。Qwen の research（Coder 3B・Qwen2.5 3B）は「Built with Qwen」を、出力で別のモデルを作るときだけ求める（§4b）ので、ページは要らない。
 
+- **文面と置き場（2026-10-09、持ち主「推奨でお願いします」。未実装）**: About（「このプロジェクトについて」）のモデルとライセンスの一覧のすぐ下に 1 行「Built with Llama: 」に続けて、当たる項目の名前を一覧から作って並べる（手書きの一覧にしない: Llama の派生を足したら自分で入る）。
 ### T279 [調査][Bonsai] Ternary Bonsai 1.7B をスマホで（484 MB） — 状態: 未着手（2026-10-02 の洗い出しで採番。端末の数字が要る。規模 小）
 - 3 値にして 484 MB になったので大きさは入る見込み。変換の間のメモリの峰、警告の出方、note の「desktop only」を外せるか。
 
