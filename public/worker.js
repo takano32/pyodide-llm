@@ -383,6 +383,16 @@ async function localOptions(model, vocabulary, head) {
   }
 }
 
+// T350: what the parts of this worker (worker/*.js) read and set together. A module cannot assign a variable of
+// another, so what more than one of them sets is a field of this one object.
+const HF_CONNECTIONS = 6;
+const state = {
+  // T156: the model on the GPU alone that is loading or loaded now (what gpuOnlyBuffer() made), or undefined
+  gpuOnlyNow: undefined,
+  // T107: ?hfParts=<MiB>&hfConnections=<N> fix the two, to measure; the page offers no way to them
+  hfPartBytes: 0, hfConnections: HF_CONNECTIONS,  // 0: not fixed, decided per file from its first part
+};
+
 let pyodide, llama2_numpy, llama2_convert, llama, kernels;
 // the models kept from earlier conversions (kept.js, T99), imported when the first conversion comes
 let keptModule;
@@ -580,8 +590,8 @@ async function init(search) {
   const started = performance.now();
   const asked = new URLSearchParams(search);
   const parts = Number(asked.get("hfParts")), connections = Number(asked.get("hfConnections"));
-  if (parts >= 1 && parts <= 64) hfPartBytes = Math.round(parts * 1024 * 1024);
-  if (connections >= 1 && connections <= 32) hfConnections = Math.floor(connections);
+  if (parts >= 1 && parts <= 64) state.hfPartBytes = Math.round(parts * 1024 * 1024);
+  if (connections >= 1 && connections <= 32) state.hfConnections = Math.floor(connections);
   forceWide = asked.get("wide") === "on";
   // (T156: ?gpuTest=only, the tests' too: a model the GPU can take on the GPU alone, whatever its size)
   gpuForce = ["on", "only"].includes(asked.get("gpuTest")) ? { fallback: true, always: true, quick: true, only: asked.get("gpuTest") === "only" } : {};
@@ -893,7 +903,6 @@ function placesOf(header, dtype, form) {
 }
 // T156: the weights of a model on the GPU alone: the layers' matrices to the GPU's worker as they come (forward.js's
 // gpuOnlyWeights), the rest into a memory of their size, and every byte to keep's file where the conversion is kept
-let gpuOnlyNow;
 function gpuOnlyBuffer(size, header, options, { tensors, stored, gpuOnly }, keep) {
   const after = gpuOnly - stored, wide = forwardModule.needsWide(stored, after);
   const { memory, base, shared } = pooledWeights(stored, after, true, wide);
@@ -919,7 +928,7 @@ function gpuOnlyBuffer(size, header, options, { tensors, stored, gpuOnly }, keep
   worker.postMessage({ type: "open", plan: forwardModule.gpuOnlyPlan(header, tensors, gpuForce, gpuRequest?.remembered), flow: weights.flow });
   // (T156: the checkpoint's size, its layers' multiply-adds, /benchmark/'s CPU reading and the page's use, for the
   // estimate the GPU is held against: forward.js's aloneVerdict)
-  const direct = gpuOnlyNow = { worker, lost: null, stored, size, place: weights.place,
+  const direct = state.gpuOnlyNow = { worker, lost: null, stored, size, place: weights.place,
     layerWeights: forwardModule.layerWeightsOf(header, options), cpu: gpuRequest?.cpu, usage: gpuRequest?.usage ?? forwardModule.USAGE_UNKNOWN,
     room: weights.room, drained: weights.drained, onLost: (why) => { direct.lost = why; }, end };
   weightsNow = memory;
@@ -953,12 +962,12 @@ function gpuOnlyBuffer(size, header, options, { tensors, stored, gpuOnly }, keep
 let gpuOnlyEnding = Promise.resolve();
 // T156: where the loops that write the weights can wait for the GPU's worker of a model on the GPU alone (room), and
 // before its engine is built (drained)
-const weightsRoom = () => gpuOnlyNow?.room?.();
-const weightsDrained = () => gpuOnlyNow?.drained?.();
+const weightsRoom = () => state.gpuOnlyNow?.room?.();
+const weightsDrained = () => state.gpuOnlyNow?.drained?.();
 // T156: after a model on the GPU alone is built: its GPU ready (true), or failed (false: the worker let go of it, and
 // the model goes on the CPU from now on this visit)
 async function gpuOnlyReady(model, id) {
-  const direct = gpuOnlyNow;
+  const direct = state.gpuOnlyNow;
   if (!direct || outsideNow?.engine === undefined) return true;
   await outsideNow.engine.gpu;
   if (!direct.lost) return true;
@@ -972,7 +981,7 @@ async function gpuOnlyReady(model, id) {
   // model whose GPU forward.js gave up as the engine was built, before start(): its release() has no "ended" to wait
   // for then. The review of T156: the load on the CPU begins after it, T205)
   await direct.end();
-  gpuOnlyNow = undefined;
+  state.gpuOnlyNow = undefined;
   return false;
 }
 // the key of the model being loaded (cpuOnly)
@@ -1025,10 +1034,7 @@ function checkpointSink(keep) {
 const HF_PART_BYTES = 16 * 1024 * 1024;
 const HF_SMALL_PART_BYTES = 8 * 1024 * 1024;
 const HF_FAST_BYTES_PER_SECOND = 4e6;
-const HF_CONNECTIONS = 6;
 const HF_HEADER_BYTES = 512 * 1024;  // the JSON header of a safetensors file is a few dozen kilobytes
-// T107: ?hfParts=<MiB>&hfConnections=<N> fix the two, to measure; the page offers no way to them
-let hfPartBytes = 0, hfConnections = HF_CONNECTIONS;  // 0: not fixed, decided per file from its first part
 
 // The size of a file, for the few places that need it (the whole of a model: how many parts to ask for). A range
 // response says it in Content-Range, but that header is not one CORS shows by default: huggingface.co exposes it by
@@ -1127,7 +1133,7 @@ async function fetchRange(url, begin, end, signal, arriving) {
 // nothing looks stuck).
 async function inOrder(url, start, size, feed, outer, arriving = () => {}) {
   const small = navigator.deviceMemory !== undefined && navigator.deviceMemory <= 4;
-  let partBytes = hfPartBytes || HF_SMALL_PART_BYTES;
+  let partBytes = state.hfPartBytes || HF_SMALL_PART_BYTES;
   const ranges = [];  // [begin, end] of every part asked for so far, in the order of the file
   const arrived = new Map();
   let scheduled = start, fed = 0, waiting = [], received = start;
@@ -1138,7 +1144,7 @@ async function inOrder(url, start, size, feed, outer, arriving = () => {}) {
   const connection = async () => {
     for (;;) {
       // no more than two parts per connection wait in memory for an earlier one
-      while (ranges.length - fed >= 2 * hfConnections) {
+      while (ranges.length - fed >= 2 * state.hfConnections) {
         await new Promise((resolve) => waiting.push(resolve));
       }
       if (scheduled >= size) {
@@ -1155,7 +1161,7 @@ async function inOrder(url, start, size, feed, outer, arriving = () => {}) {
         throw new Error(`${url} gave ${bytes.length} of the ${end - begin} bytes asked for at ${begin}`);
       }
       arrived.set(part, bytes);
-      if (part === 0 && !hfPartBytes) {
+      if (part === 0 && !state.hfPartBytes) {
         const rate = (end - begin) / ((performance.now() - began) / 1000);
         partBytes = rate >= HF_FAST_BYTES_PER_SECOND && !small ? HF_PART_BYTES : HF_SMALL_PART_BYTES;
       }
@@ -1171,7 +1177,7 @@ async function inOrder(url, start, size, feed, outer, arriving = () => {}) {
     }
   };
   try {
-    await Promise.all(Array.from({ length: hfConnections }, connection));
+    await Promise.all(Array.from({ length: state.hfConnections }, connection));
   } catch (error) {
     inner.abort(error);
     throw error;
@@ -1555,7 +1561,7 @@ async function convert(model, signal, id) {
 async function load(model, signal, id) {
   signal.throwIfAborted();
   loadingKey = modelKey(model);
-  gpuOnlyNow = undefined;
+  state.gpuOnlyNow = undefined;
   await adapterAsked;  // (T156: before any weights are placed)
   await gpuOnlyEnding;  // (the review of T156: the GPU's worker of a model on the GPU alone let go before it was built)
   // let go of the previous model first, so that two never have to fit in memory
@@ -1968,7 +1974,7 @@ self.onmessage = async ({ data }) => {
         await generating;
       } catch (err) {
         // T156: the GPU stopped under a model on it alone: said, and the model loaded again on the CPU
-        const lost = gpuOnlyNow?.lost;
+        const lost = state.gpuOnlyNow?.lost;
         if (!lost) throw err;
         cpuOnly.add(modelKey(lastLoad.model));
         postMessage({ type: "error", load: lastLoad.load, reloading: true,

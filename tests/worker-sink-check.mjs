@@ -293,7 +293,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     into.release();
     assert.deepEqual(worker.told, ["open"], "a built model on the GPU alone lost its GPU's worker");
     gpuContext.lost = lost;
-    vm.runInContext("gpuOnlyNow.lost = lost", gpuContext);
+    vm.runInContext("state.gpuOnlyNow.lost = lost", gpuContext);
     const ready = await vm.runInContext("gpuOnlyReady({ id: 'probe' })", gpuContext);
     assert.equal(ready, !lost);
     assert.equal(vm.runInContext("cpuOnly.has('probe')", gpuContext), Boolean(lost));
@@ -312,7 +312,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     gpuContext.postMessage = (data) => said.push(JSON.parse(JSON.stringify(data)));
     gpuContext.console = { ...console, info: (line) => told.push(line) };
     gpuContext.verdict = { key: "arm|valhall||Mali-G615|a browser|0", cpu: { GBps: 28.7, threads: 4, promptGMACs: 40 } };
-    vm.runInContext("gpuOnlyNow.lost = 'the CPU as /benchmark/ measured it'; gpuOnlyNow.verdict = verdict", gpuContext);
+    vm.runInContext("state.gpuOnlyNow.lost = 'the CPU as /benchmark/ measured it'; state.gpuOnlyNow.verdict = verdict", gpuContext);
     assert.equal(await vm.runInContext("gpuOnlyReady({ id: 'kept' }, 7)", gpuContext), false);
     assert.deepEqual(said.filter((data) => data.type === "gpu-alone"), [{ type: "gpu-alone", load: 7, alone: gpuContext.verdict }],
       "the verdict went to the page without its load's id");
