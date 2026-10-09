@@ -135,6 +135,16 @@ parentPort.on("message", (data) => {
     for (let i = 0; i < sampled; i++) ids[1 + i] = outside && i === data.count - 1 ? line.outsideId : data.token + 1 + i;
     ids[1 + most] = refuse ? 1 : 0;
     writeBack("tokens", sampled);
+    // T349's review: where the request says the engine's cache is (keys, values, capacity: forward/gpuside.js reads them off
+    // forward/engine.js's held at the moment), and whether the halves the earlier blocks wrote back are there: a cache
+    // that grew moves its values and changes its capacity, and an old address would read the wrong ones (or nothing)
+    if (line.kv?.probe && data.cache) {
+      const H = new Uint16Array(memory.buffer), row = data.cache.half ? data.cache.row / 2 : NaN, last = data.pos - 1, L = plan.layers;
+      const at = (base, l, p, i) => base / 2 + (l * data.cache.capacity + p) * row + i;
+      const right = [[0, 0], [L - 1, last], [L - 1, 256]].every(([l, p]) => [0, 1, row - 1].every((i) =>
+        H[at(data.cache.keys, l, p, i)] === madeUpHalf(l, p % 64, i) && H[at(data.cache.values, l, p, i)] === madeUpHalf(L + l, p % 64, i)));
+      parentPort.postMessage({ type: "probe", right, capacity: data.cache.capacity });
+    }
     Atomics.store(ctl, words.failed, fail ? 1 : 0);
     Atomics.store(ctl, words.done, data.serial);
     Atomics.notify(ctl, words.done);
@@ -636,6 +646,28 @@ if (isMainThread) {
     expect(`${outsideId} on the GPU alone: stopped with words, not loaded again on the CPU, the GPU still taking the steps`,
       [thrown === OUTSIDE_VOCABULARY, lost, second], [true, null, [101, 102, 103, 104]]);
     await engine.release();
+  }
+  // T349's review: a cache that has grown (a prompt past the 256 positions it starts with), and the steps asked of the GPU
+  // after it: the request names the cache's keys, values and capacity as they are now, and the halves the blocks wrote are
+  // at them. (forward/engine.js hands forward/gpuside.js `held`, whose getters read the engine's variables each time: a
+  // copy made once would name the cache as it was, and nothing else here grows the cache and then asks for steps)
+  {
+    const probes = [], FED = 300;
+    const gpu = () => {
+      const fake = new Worker(FAKE, { eval: true, workerData: { fixed: 10 * perToken, perToken: 0.05 * perToken, step: 0.2 * cpuStep, kv: { stale: 0x7e00, probe: true } } });
+      fake.on("message", (data) => { if (data.type === "probe") probes.push(data); });
+      return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
+        set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
+    };
+    const engine = createForward({ memory, base, size, kernels, plan, spawn, gpu });
+    await engine.setThreads(1);
+    await engine.gpu;
+    engine.gpuSide = "gpu";
+    const [, onGpu] = feed(engine, FED);
+    const ids = engine.generateMany(100, FED, [...prompt(FED), 100].slice(-64), FED + 1, 4, 0, 0.9, 1, [], []) ?? null;
+    await engine.release();
+    expect("T349: a prompt of 300 on the GPU, then steps asked after the cache grew: taken, with the cache's keys, values and capacity as they are",
+      [onGpu, ids, probes.map((p) => p.right), probes.map((p) => p.capacity >= FED + 4)], [FED, [101, 102, 103, 104], [true], [true]]);
   }
   // T243: a made-up GPU that writes keys and values back (madeUpHalf), one of them no finite number. In a cache kept in
   // float16 (this model's on a shared memory) and in a float32 one (halfKeys false: a grouped-query model's, T160, into
