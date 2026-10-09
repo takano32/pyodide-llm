@@ -77,7 +77,7 @@ CONFIGS = [dict(n_kv_heads=4), dict(n_kv_heads=2), dict(n_kv_heads=1, shared=Fal
 
 @pytest.mark.parametrize("config", CONFIGS)
 def test_float32_is_the_checkpoint_the_weights_came_from(config, monkeypatch):
-    monkeypatch.setattr(llama2_convert, "PIECE", 700)  # several pieces per tensor, and not a multiple of a row
+    monkeypatch.setattr("convert.stream.PIECE", 700)  # several pieces per tensor, and not a multiple of a row
     shared = config.get("shared", True)
     config, weights = synthetic_weights(**config)
     tensors, published = hugging_face(config, weights, shared)
@@ -88,7 +88,7 @@ def test_float32_is_the_checkpoint_the_weights_came_from(config, monkeypatch):
 
 @pytest.mark.parametrize("config", CONFIGS)
 def test_int8_is_what_quantize_makes_of_float32(tmp_path, config, monkeypatch):
-    monkeypatch.setattr(llama2_convert, "PIECE", 700)
+    monkeypatch.setattr("convert.stream.PIECE", 700)
     shared = config.get("shared", True)
     config, weights = synthetic_weights(**config)
     tensors, published = hugging_face(config, weights, shared)
@@ -114,7 +114,7 @@ def test_half_precision_sources_and_targets():
 
 
 def test_it_reads_pieces_and_never_the_whole_file(monkeypatch):
-    monkeypatch.setattr(llama2_convert, "PIECE", 2048)
+    monkeypatch.setattr("convert.stream.PIECE", 2048)
     config, weights = synthetic_weights(vocab_size=1000)
     tensors, published = hugging_face(config, weights, True)
     file, log, progress = safetensors_file(tensors), [], []
@@ -241,7 +241,7 @@ def streamed(file, published, dtype, chunk, max_seq_len=1 << 20):
 @pytest.mark.parametrize("config", CONFIGS)
 @pytest.mark.parametrize("dtype, stored, chunk", [("float32", "F32", 1000), ("int8", "BF16", 4096), ("float16", "F16", 7), ("int8", "F32", 1 << 20)])
 def test_the_file_in_its_own_order_gives_the_same_checkpoint(config, dtype, stored, chunk, monkeypatch):
-    monkeypatch.setattr(llama2_convert, "PIECE", 700)
+    monkeypatch.setattr("convert.stream.PIECE", 700)
     shared = config.get("shared", True)
     config, weights = synthetic_weights(**config)
     tensors, published = hugging_face(config, weights, shared)

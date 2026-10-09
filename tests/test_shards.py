@@ -52,7 +52,7 @@ def models():
 @pytest.mark.parametrize("dtype, chunk", [("float32", 1000), ("int8", 777)])
 @pytest.mark.parametrize("name, tensors, published", list(models()), ids=[m[0] for m in models()])
 def test_shards_give_the_checkpoint_of_one_file(name, tensors, published, pieces, dtype, chunk, monkeypatch):
-    monkeypatch.setattr(llama2_convert, "PIECE", 700)  # several pieces per tensor, and not a multiple of a row
+    monkeypatch.setattr("convert.stream.PIECE", 700)  # several pieces per tensor, and not a multiple of a row
     expected = converted(Safetensors(reader(safetensors_file(tensors))), published, dtype)
     # in the order the tensors come, and backwards (the classifier and the last layers first)
     for order in (list(tensors), list(reversed(tensors))):

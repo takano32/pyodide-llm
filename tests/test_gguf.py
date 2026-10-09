@@ -856,7 +856,7 @@ def test_a_qwen35_gguf_with_the_originals_files_is_the_safetensors_conversion(sh
     undo to the bit), the convolution comes without its axis of one, and two tensors under names of their own. T245:
     and the value heads tiled where a key head has two or three, put back whole. Fed 4096 bytes at a time, in pieces
     of a few rows (a matrix whose heads are to be put back must not go piece by piece)."""
-    monkeypatch.setattr(llama2_convert, "PIECE", 700)
+    monkeypatch.setattr("convert.stream.PIECE", 700)
     config, file, same = qwen35_gguf(**QWEN35_SHAPES[shape])
     vocabulary = unigram(config["text_config"]["vocab_size"])
     got = with_original(file, config, vocabulary, "tokenizer.json", dtype)

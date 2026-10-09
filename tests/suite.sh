@@ -35,6 +35,8 @@ page_modules() {
   node tests/wake.mjs
   node tests/summary-check.mjs
   node tests/models-check.mjs
+  # T347: the list of the Python files the worker gives Pyodide is what public/ holds
+  node tests/python-files-check.mjs
   node tests/ladder-check.mjs
   node tests/kept-check.mjs
   node tests/coi-js-check.mjs

@@ -27,6 +27,15 @@ def signature(function):
         return "(no signature)"
 
 
+# a window's own names are the ones defined in it or in the parts of its package (T347: llama2_convert is a window over
+# convert/): a class moved to a part is the window's class as before, one imported from elsewhere is not
+PARTS = {"llama2_convert": "convert"}
+
+
+def own(value, module_name):
+    return value.__module__ == module_name or value.__module__.startswith(PARTS.get(module_name, "\0") + ".")
+
+
 for module_name in ("llama2_convert", "llama2_numpy"):
     module = importlib.import_module(module_name)
     for name in sorted(vars(module)):
@@ -34,7 +43,7 @@ for module_name in ("llama2_convert", "llama2_numpy"):
         if inspect.ismodule(value) or (name.startswith("__") and name.endswith("__")):
             continue
         key = f"{module_name}.{name}"
-        if inspect.isclass(value) and value.__module__ == module_name:
+        if inspect.isclass(value) and own(value, module_name):
             found[key] = "class" + signature(value)
             for member, raw in sorted(vars(value).items()):
                 if member.startswith("__") and member != "__init__":
@@ -42,7 +51,7 @@ for module_name in ("llama2_convert", "llama2_numpy"):
                 kind = type(raw).__name__
                 target = raw.__func__ if isinstance(raw, (staticmethod, classmethod)) else raw
                 found[f"{key}.{member}"] = f"{kind}{signature(target)}" if callable(target) else f"{kind} {short(raw)}"
-        elif inspect.isfunction(value) and value.__module__ == module_name:
+        elif inspect.isfunction(value) and own(value, module_name):
             found[key] = "function" + signature(value)
         elif not (inspect.isfunction(value) or inspect.isclass(value) or inspect.isbuiltin(value)) and not hasattr(value, "__call__"):
             found[key] = "value " + short(value if not hasattr(value, "tobytes") else value.tobytes())

@@ -46,6 +46,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
+import { PYTHON, placeFile } from "../public/python.js";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
@@ -837,8 +838,8 @@ if (isMainThread) {
     const { loadPyodide } = await import("pyodide");
     const py = await loadPyodide();
     await py.loadPackage("numpy", { messageCallback: () => {} });
-    for (const name of ["llama2_numpy.py", "llama2_convert.py", "simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
-      py.FS.writeFile(name, fs.readFileSync(path.join(root, "public", name)));
+    for (const name of [...PYTHON.llama2_numpy, ...PYTHON.llama2_convert, "simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
+      placeFile(py, name, fs.readFileSync(path.join(root, "public", name)));
     }
     py.FS.writeFile("tokenizer.bin", fs.readFileSync(tokenizer));
     const line = { fixed: 60 * perToken, perToken: 2 * perToken, step: 0.2 * cpuStep };

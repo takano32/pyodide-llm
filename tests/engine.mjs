@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import { loadPyodide } from "pyodide";
 import { compileKernels, external, weightsMemory } from "../public/forward.js";
+import { PYTHON, placeFile } from "../public/python.js";
 
 const root = new URL("../", import.meta.url).pathname;
 
@@ -22,8 +23,8 @@ const root = new URL("../", import.meta.url).pathname;
 export async function pyodideWithEngine({ shared = true, wide = false } = {}) {
   const pyodide = await loadPyodide();
   await pyodide.loadPackage("numpy", { messageCallback: () => {} });
-  for (const name of ["llama2_numpy.py", "llama2_convert.py", "simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
-    pyodide.FS.writeFile(name, fs.readFileSync(`${root}public/${name}`));
+  for (const name of [...PYTHON.llama2_numpy, ...PYTHON.llama2_convert, "simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
+    placeFile(pyodide, name, fs.readFileSync(`${root}public/${name}`));
   }
   // a shared memory, as the page has where it is cross-origin isolated (since T93 stage 3, the usual case), so that
   // what these tests run is what the page runs: forward.js keeps an int8 model's keys and values in float16 there

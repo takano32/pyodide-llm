@@ -163,7 +163,7 @@ def test_the_state_has_a_size_the_context_does_not_change():
 
 @pytest.mark.parametrize("dtype", ["float32", "float16", "int8", "int6"])
 def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, monkeypatch):
-    monkeypatch.setattr(llama2_convert, "PIECE", 700)  # several pieces per tensor, and not a multiple of a row
+    monkeypatch.setattr("convert.stream.PIECE", 700)  # several pieces per tensor, and not a multiple of a row
     # int6 needs rows of whole groups of 32: value heads that make 32 values
     tensors, config = qwen35_model(value_dim=8, shared=False)
     file = safetensors_file(tensors)

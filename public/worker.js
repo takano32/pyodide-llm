@@ -1267,11 +1267,15 @@ async function convert(model, signal, id) {
   const keptMiss = kept?.miss;
   if (!llama2_convert) {
     // fetched when it is first needed: most visitors never convert anything
-    const res = await fetch(new URL(`llama2_convert.py${self.location.search}`, import.meta.url), { signal });
-    if (!res.ok) {
-      throw new Error(`Could not fetch llama2_convert.py: ${res.status}`);
-    }
-    pyodide.FS.writeFile("llama2_convert.py", await res.text());
+    // (T347: the converter is a window and its parts, python.js's list; each with this worker's ?v=<build>)
+    const { placePython } = await import(new URL(`python.js${self.location.search}`, import.meta.url));
+    await placePython(pyodide, "llama2_convert", async (name) => {
+      const res = await fetch(new URL(`${name}${self.location.search}`, import.meta.url), { signal });
+      if (!res.ok) {
+        throw new Error(`Could not fetch ${name}: ${res.status}`);
+      }
+      return res.text();
+    });
     llama2_convert = pyodide.pyimport("llama2_convert");
   }
   const started = performance.now();
