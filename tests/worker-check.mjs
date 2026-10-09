@@ -18,9 +18,9 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import fs from "node:fs";
-import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import * as forward from "../public/forward.js";
+import { runWorker } from "./worker-source.mjs";
 
 const SCALE = 100;  // the worker's milliseconds per real millisecond
 // a check that waits for ever (a fix undone: the version asked for ever) fails rather than hangs
@@ -87,9 +87,9 @@ function fetchStandIn(input, init = {}) {
   });
 }
 
-// worker.js in a vm context whose global is its self, as in a worker
+// worker.js and its modules (T350: tests/worker-source.mjs makes scripts of them) in a vm context whose global is its
+// self, as in a worker
 const at = new URL("../public/worker.js", import.meta.url);
-const source = fs.readFileSync(at, "utf8").replaceAll("import.meta.url", JSON.stringify(at.href));
 const messages = [];
 const navigatorStandIn = { deviceMemory: 8 };
 const context = vm.createContext({
@@ -107,7 +107,7 @@ const context = vm.createContext({
   fetch: fetchStandIn, postMessage: (message) => messages.push(message),
 });
 context.self = context;
-vm.runInContext(source, context, { filename: fileURLToPath(at) });
+runWorker(context);
 const run = (code) => vm.runInContext(code, context);
 const quiet = run("QUIET_SECONDS");
 

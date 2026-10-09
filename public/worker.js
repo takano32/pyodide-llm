@@ -18,82 +18,23 @@
 // load is a number the page counts up: a newer load cancels the one that is going on, and whatever this worker
 // reports about a load carries its number, so that the page can tell a late report of a cancelled one.
 
-// T242: a caught value in words. An Error reads as it always did ("TypeError: Load failed"). What is thrown is not always
-// one: Emscripten's ExitStatus (Pyodide's runtime ending) is an object with a name and a message, and String() of it, or
-// of any plain object, is "[object Object]", which is what /benchmark/ showed a visitor. Such a value is told by its name
-// and message, else by what kind of thing it is and its own fields
-const isError = (err) => err instanceof Error || Object.prototype.toString.call(err) === "[object Error]";
-function told(err) {
-  if (isError(err) || typeof err !== "object" || err === null) {
-    return String(err);
-  }
-  const text = (value) => (typeof value === "string" && value ? value : undefined);
-  const name = text(err.name) ?? text(err.constructor?.name === "Object" ? undefined : err.constructor?.name);
-  if (text(err.message)) {
-    return name ? `${name}: ${err.message}` : err.message;
-  }
-  let fields;
-  try {
-    fields = JSON.stringify(err);
-  } catch {
-    fields = undefined;  // it refers to itself
-  }
-  return `${name ?? "something that is not an error"} was thrown${fields && fields !== "{}" ? `: ${fields.slice(0, 300)}` : ""}`;
-}
-
-// the version becomes part of a CDN URL, so accept nothing but a plain version number
-const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
-
-// the latest release on npm (the "latest" tag never points at an alpha), or ?pyodide=<version> to force one.
-// T129 (1): its answer is a hundred bytes, so a connection that opened and never answered left "Loading Pyodide" for
-// ever (the review of T118). It is given up after QUIET_SECONDS like a step of Pyodide's (the page may try again
-// without the service worker). Not a step under watchArrivals(): that would count every part of the model, which
-// downloads meanwhile, and find a stop of Pyodide only after the model's end. But it is not always quick on a line the
-// model's parts fill: the first bytes of a new connection wait behind them (slow.yml, the review of T129: 20.5 s behind
-// a 1 MB model at 0.4 Mbps with the oldest connection served first, 14.2 s through one queue of 256 KB at 0.4 Mbps,
-// 0.8 s with the line shared by turns), so 30 seconds is little more than such a line's queue.
-async function resolvePyodideVersion(search) {
-  const forced = new URLSearchParams(search).get("pyodide");
-  if (PYODIDE_VERSION_PATTERN.test(forced)) {
-    return forced;
-  }
-  const given = new AbortController();
-  const timer = setTimeout(() => given.abort(), QUIET_SECONDS * 1000);
-  let version;
-  try {
-    const res = await fetch("https://data.jsdelivr.com/v1/packages/npm/pyodide/resolved?specifier=latest", { signal: given.signal });
-    version = (await res.json()).version;
-  } catch (error) {
-    if (!given.signal.aborted) throw error;
-    throw Object.assign(new Error(`The latest version of Pyodide: data.jsdelivr.com did not answer in ${QUIET_SECONDS} seconds`), { pyodide: true });
-  } finally {
-    clearTimeout(timer);
-  }
-  if (!PYODIDE_VERSION_PATTERN.test(version)) {
-    throw new Error(`Unexpected Pyodide version: ${version}`);
-  }
-  return version;
-}
-
-// Pyodide asks for the NumPy wheel only once it has started, several seconds after its own files: until then it
-// does not know the name. That name is in pyodide-lock.json, which Pyodide fetches anyway, so this reads the lock
-// as well and puts the wheel into the HTTP cache while Pyodide is still coming up. Nothing is written down here:
-// the version is the one resolved at run time, the file name comes from the lock. Anything unexpected (another
-// shape of the lock, a CDN that says no) only means no head start, so every error is dropped.
-async function prefetchNumpy(base) {
-  try {
-    const lock = await (await fetch(`${base}pyodide-lock.json`)).json();
-    const name = lock.packages?.numpy?.file_name;
-    if (typeof name !== "string" || !/^[A-Za-z0-9._+-]+\.whl$/.test(name)) {
-      return;
-    }
-    const wheel = await fetch(base + name);
-    // read it to the end so that the browser keeps it, and drop every chunk: this copy is never used
-    await (wheel.body ? wheel.body.pipeTo(new WritableStream()) : wheel.arrayBuffer());
-  } catch {
-    // no head start
-  }
-}
+// T350: this file is the window of the worker and its core (init, where the weights go, converting, loading,
+// generating, the messages); what holds none of the worker's state is in the modules of worker/, each asked for with
+// this worker's ?v=<build> so that all come from one deployment (as forward.js reads jobs.js). They are asked for at
+// once: one after another's end would add a round trip for each to the first load. The page's first message may come
+// while they are fetched, and a module worker's port opens at the module's first await, where a message that finds
+// no onmessage is lost (helper.js, T109): so the messages are kept until the handler at the end of this file is set,
+// which then takes them in the order they came.
+const early = [];
+self.onmessage = (event) => early.push(event);
+const modules = Object.fromEntries(["told", "clock", "state", "pyodide", "ranges", "sources"].map((name) =>
+  [name, import(new URL(`worker/${name}.js${self.location.search}`, import.meta.url))]));
+const { state, weightsRoom, weightsDrained } = await modules.state;
+const { since, breathe } = await modules.clock;
+const { HF_HEADER_BYTES, sized, refused, fetchRange, inOrder } = await modules.ranges;
+const { told } = await modules.told;
+const { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } = await modules.sources;
+const { resolvePyodideVersion, pyodideSteps } = await modules.pyodide;
 
 // A model without a model.safetensors is split over several files (model-00001-of-00002.safetensors, ...), or
 // published under the name of a shard even when there is only one (T78). model.safetensors.index.json says which
@@ -106,265 +47,6 @@ function shardsOf(index) {
     return [];
   }
 }
-
-// Checkpoints are deployed in parts of 8 MiB (see the Makefile). Several parts download at once, which is
-// about twice as fast as one stream, and the download runs while Pyodide is still loading: until the Python
-// buffer exists the chunks wait in a queue, after that every chunk is written straight into it.
-const PART_BYTES = 8 * 1024 * 1024;
-const CONNECTIONS = 8;
-
-// GitHub Pages lets the browser keep a file for ten minutes only, so the parts also go into the Cache API: the
-// next visit starts without downloading the model again. The size is part of the key, so a rebuilt model of
-// another size is fetched anew. Without the Cache API (some private modes) this is a plain fetch.
-// v2: llm-jp-3-150m got its whole context of 4096 tokens, which changed its header and not its size
-const MODEL_CACHE = "models-v2";
-
-// what an earlier version of this page stored
-globalThis.caches?.delete("models-v1").catch(() => {});
-
-// A part's bytes: PART_BYTES, the last one less
-const partBytes = (model, part) => Math.min(PART_BYTES, model.bytes - part * PART_BYTES);
-const partKey = (url, model) => `${url}?bytes=${model.bytes}`;
-
-async function fetchPart(url, model, part, signal) {
-  const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
-  const key = partKey(url, model);
-  // a Cache API that fails here (T117 met it in the service worker) leaves the network to answer
-  const cached = await cache?.match(key).catch(() => undefined);
-  if (cached) {
-    return cached;
-  }
-  const res = await fetch(url, { signal });
-  if (res.ok && cache) {
-    // stored while the other copy streams into Python; a full disk must not stop the download. A part that is
-    // cancelled half way is not stored at all, the finished ones stay for the next time. Nor is one whose body
-    // ends short without an error (the review of T97): it would come back from here on every visit
-    const expected = partBytes(model, part);
-    let count = 0;
-    const whole = new TransformStream({
-      transform(chunk, out) {
-        count += chunk.byteLength;
-        out.enqueue(chunk);
-      },
-      flush() {
-        if (count !== expected) throw new Error(`part ${part}: ${count} of ${expected} bytes`);
-      },
-    });
-    cache.put(key, new Response(res.clone().body.pipeThrough(whole))).catch(() => {});
-  }
-  return res;
-}
-// a part that broke is not read from the cache again: the next try asks the network
-async function forgetPart(url, model) {
-  const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
-  await cache?.delete(partKey(url, model)).catch(() => {});
-}
-
-// parts of this checkpoint that were cached for another size are of no use any more
-async function dropStaleParts(model) {
-  const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
-  for (const request of (await cache?.keys().catch(() => undefined)) ?? []) {
-    const url = new URL(request.url);
-    if (url.pathname.includes(`/models/${model.checkpoint}.`) && url.searchParams.get("bytes") !== String(model.bytes)) {
-      cache.delete(request).catch(() => {});
-    }
-  }
-}
-
-// T129 (3): an AbortController of one download or fetch in order, which also stops where signal (the load's) does.
-// A part that failed for good ends the download: the other connections stop with it rather than fetching the rest of
-// the model until the next load cancels this one (the review of T97). done() lets go of the load's signal.
-function innerAbort(signal) {
-  const inner = new AbortController();
-  const outer = () => inner.abort(signal.reason);
-  if (signal.aborted) outer();
-  else signal.addEventListener("abort", outer, { once: true });
-  inner.done = () => signal.removeEventListener("abort", outer);
-  return inner;
-}
-// T129 (4, 5): the statuses another try may cure: the server's own failures (5xx) and 408 (it gave up waiting). The
-// rest of 4xx is answered the same the next time; 429 is huggingface.co's limit on the requests of an address, which
-// a try within the second only adds to (refused() says to wait).
-const worthRetrying = (status) => status >= 500 || status === 408;
-
-function download(model, signal, load) {
-  const parts = Math.ceil(model.bytes / PART_BYTES);
-  const queue = [];
-  const started = performance.now();
-  const inner = innerAbort(signal);
-  let sink, next = 0, received = 0, reported = -1;
-  // T115: the checkpoint's first bytes (its header), as soon as the first part brings them
-  let head = new Uint8Array(0), tell;
-  const header = new Promise((resolve) => { tell = resolve; });
-  // T97: Firefox on Windows breaks the body of a part now and then ("Error in input stream", 1 load in 12 on the CI
-  // runners, with the service worker and without it alike): the part is fetched again, twice at most. Its chunks go
-  // to the same offsets, so what arrived before the break is written over with the same bytes. T129 (4): so is a
-  // part the server failed (5xx, 408), as a fetch from huggingface.co is.
-  const partUrl = (part) => new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, import.meta.url).href;
-  const fetchOnce = async (part) => {
-    const res = await fetchPart(partUrl(part), model, part, inner.signal);
-    if (!res.ok) {
-      throw Object.assign(new Error(`Could not fetch part ${part} of ${model.checkpoint}: ${res.status}`), { final: !worthRetrying(res.status) });
-    }
-    const reader = res.body.getReader();
-    let got = 0;
-    try {
-      for (let offset = part * PART_BYTES; ;) {
-        const { done, value } = await reader.read();
-        if (done) {
-          // a body that ends short without an error is a break too (the review of T97)
-          if (got !== partBytes(model, part)) throw new Error(`part ${part} of ${model.checkpoint} ended after ${got} of ${partBytes(model, part)} bytes`);
-          return;
-        }
-        // a chunk that was already on its way when the load was cancelled: its buffer is gone
-        inner.signal.throwIfAborted();
-        if (sink) {
-          // T129 (3): a write the memory refused (gone, or too small) is not cured by fetching the part again, nor is a
-          // GPU's worker that takes no more of the weights (T156: a model on the GPU alone, its worker no more than
-          // FLOW_BYTES behind; it gives up after FLOW_STALL_MS, and three more tries would wait that long each)
-          try {
-            sink(offset, value);
-            await weightsRoom();
-          } catch (error) {
-            throw Object.assign(error, { final: true });
-          }
-        } else {
-          queue.push([offset, value]);
-        }
-        // the header's bytes that this chunk brings (a part fetched again brings some a second time)
-        if (head.length < HEADER_BYTES && offset <= head.length && offset + value.length > head.length) {
-          head = new Uint8Array([...head, ...value.subarray(head.length - offset, HEADER_BYTES - offset)]);
-          if (head.length === HEADER_BYTES) tell(head);
-        }
-        offset += value.length;
-        got += value.length;
-        received += value.length;
-        // one message per percent is plenty; none that goes back (T129 (4): a part fetched again takes back what its
-        // broken body had brought, and the page showed the bar going back for a moment)
-        const percent = Math.floor((received / model.bytes) * 100);
-        if (percent > reported) {
-          reported = percent;
-          postMessage({ type: "progress", load, received, total: model.bytes });
-        }
-      }
-    } catch (error) {
-      received -= got;  // counted again when the part comes again
-      reader.cancel().catch(() => {});
-      throw error;
-    }
-  };
-  const connection = async () => {
-    while (next < parts) {
-      const part = next++;
-      for (let attempt = 0; ; attempt++) {
-        try {
-          await fetchOnce(part);
-          break;
-        } catch (error) {
-          if (inner.signal.aborted || error.final) {
-            throw error;
-          }
-          if (attempt === 2) {
-            // T129 (4): which part, where the browser's words do not say ("TypeError: Error in input stream")
-            throw new Error(`Part ${part} of ${model.checkpoint} failed three times: ${error?.message ?? told(error)}`, { cause: error });
-          }
-          console.warn(`part ${part} of ${model.checkpoint} broke off (${error?.message ?? told(error)}): fetched again`);
-          await forgetPart(partUrl(part), model);  // it may have come from the cache: the next try is the network's
-        }
-      }
-    }
-  };
-  // The download runs while Pyodide loads, so it usually ends long before into() can write anything into Python.
-  // Its own seconds are the time until the last byte arrived, not the time until the waiting was over as well.
-  const source = { overlapped: true };
-  const finished = Promise.all(Array.from({ length: Math.min(CONNECTIONS, parts) }, connection))
-    .then(() => { source.seconds = since(started); }, (error) => {
-      inner.abort(error);  // T129 (3): the other connections stop with the part that failed for good
-      throw error;
-    })
-    .finally(() => inner.done());
-  // a load that is cancelled while Pyodide still loads never gets to into(): that is no unhandled rejection
-  finished.catch(() => {});
-  // a download that fails before the header came fails the wait for it
-  source.header = Promise.race([header, finished.then(() => head)]);
-  source.header.catch(() => {});
-  // write(offset, chunk) receives everything queued so far, and every later chunk
-  // T129 (3): the load stops the download where it failed without it (the memory refused the queued chunks, or the
-  // checkpoint before into(): weightsBuffer() said no)
-  source.stop = (why) => inner.abort(why);
-  source.into = async (write) => {
-    sink = write;
-    try {
-      queue.splice(0).forEach(([offset, chunk]) => write(offset, chunk));
-    } catch (error) {
-      source.stop(error);
-      throw error;
-    }
-    await finished;
-    if (received !== model.bytes) {
-      throw new Error(`${model.checkpoint}: got ${received} bytes instead of ${model.bytes}`);
-    }
-  };
-  return source;
-}
-
-// The same for a file of the visitor's own disk: read in chunks straight into the Python buffer, never as a whole.
-function readFile(model, signal, load) {
-  // a file is read only once there is somewhere to put it, so these seconds begin here and not at the choice
-  const source = {
-    async into(write) {
-      const started = performance.now();
-      const reader = model.file.stream().getReader();
-      let reported = -1;
-      for (let offset = 0; ;) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        if (signal.aborted) {
-          reader.cancel();
-          signal.throwIfAborted();
-        }
-        write(offset, value);
-        await weightsRoom();  // (T156)
-        offset += value.length;
-        const percent = Math.floor((offset / model.bytes) * 100);
-        if (percent !== reported) {
-          reported = percent;
-          postMessage({ type: "progress", load, received: offset, total: model.bytes });
-        }
-      }
-      source.seconds = since(started);
-    },
-  };
-  return source;
-}
-
-// A llama2.c checkpoint at a URL (?checkpoint=&tokenizer=): range requests in parallel, written where they belong
-function readUrl(model, signal, load) {
-  const source = {
-    async into(write) {
-      const started = performance.now();
-      let offset = 0, reported = -1;
-      await inOrder(model.url.checkpoint, 0, model.bytes, (bytes) => {
-        write(offset, bytes);
-        offset += bytes.length;
-        const percent = Math.floor((offset / model.bytes) * 100);
-        if (percent !== reported) {
-          reported = percent;
-          postMessage({ type: "progress", load, received: offset, total: model.bytes });
-        }
-      }, signal);
-      source.seconds = since(started);
-    },
-  };
-  return source;
-}
-
-// The header of the legacy format: 7 ints, the shape of the model. T115: they also say what the forward pass puts
-// after the checkpoint (forward.js's footprint()), which the memory is chosen by.
-const HEADER_BYTES = 28;
-const headerInts = (bytes) => [...new Int32Array(bytes.slice(0, HEADER_BYTES).buffer)];
 
 // The legacy format carries no metadata, but its header fixes the size of a float32, a float16 and an int8 file.
 // A file that is none of them is refused before it is read, and so is a tokenizer.bin of another vocabulary.
@@ -382,16 +64,6 @@ async function localOptions(model, vocabulary, head) {
     pieces.destroy();
   }
 }
-
-// T350: what the parts of this worker (worker/*.js) read and set together. A module cannot assign a variable of
-// another, so what more than one of them sets is a field of this one object.
-const HF_CONNECTIONS = 6;
-const state = {
-  // T156: the model on the GPU alone that is loading or loaded now (what gpuOnlyBuffer() made), or undefined
-  gpuOnlyNow: undefined,
-  // T107: ?hfParts=<MiB>&hfConnections=<N> fix the two, to measure; the page offers no way to them
-  hfPartBytes: 0, hfConnections: HF_CONNECTIONS,  // 0: not fixed, decided per file from its first part
-};
 
 let pyodide, llama2_numpy, llama2_convert, llama, kernels;
 // the models kept from earlier conversions (kept.js, T99), imported when the first conversion comes
@@ -465,126 +137,6 @@ let loading, unloaded = Promise.resolve();
 const loadSeconds = {};
 // when Pyodide became usable, to tell that first model from the ones chosen afterwards
 let pyodideAt = 0;
-const since = (started) => (performance.now() - started) / 1000;
-
-// T118: whether Pyodide's loading still moves. Its large files (pyodide.asm.wasm 3.4 MB, the standard library 2.5 MB,
-// NumPy's wheel 2.9 MB) come by this worker's fetch, which, while Pyodide loads, hands out responses whose bodies are
-// counted as they arrive; a file that is finished (the two imports too) counts as well. A step is given up when
-// nothing has arrived for QUIET_SECONDS, not when it takes long: on a line of 128 kbps to 1 Mbps (a phone's plan past
-// its limit) the 9 MB took longer than T113's limits of 60 to 90 seconds, and a sound load fell back to no service
-// worker, then timed out again. Nothing arriving for this long is a stop, not a slow line (128 kbps is 16 kB a second).
-const QUIET_SECONDS = 30;
-function watchArrivals() {
-  const watch = { arrived: 0 };
-  const plain = self.fetch;
-  // T129 (6): a browser that would not make a Response of a stream piped through a TransformStream gets its responses
-  // as they came, each counted once as it arrives (the three engines of the CI make them; a throw in the wrapper
-  // failed every fetch of the load). Tried once on an empty stream, before a response's body is touched
-  const wraps = (() => {
-    try {
-      new Response(new ReadableStream().pipeThrough(new TransformStream()));
-      return true;
-    } catch {
-      return false;
-    }
-  })();
-  self.fetch = async (...args) => {
-    const res = await plain(...args);
-    watch.arrived += 1;
-    if (!wraps || !res.body || [101, 204, 205, 304].includes(res.status)) {
-      return res;
-    }
-    const counted = res.body.pipeThrough(new TransformStream({
-      transform(chunk, out) {
-        watch.arrived += chunk.byteLength;
-        out.enqueue(chunk);
-      },
-    }));
-    return new Response(counted, { status: res.status, statusText: res.statusText, headers: res.headers });
-  };
-  let observer;
-  try {
-    observer = new PerformanceObserver((list) => { watch.arrived += list.getEntries().length; });
-    observer.observe({ type: "resource" });
-  } catch {
-    observer = undefined;  // no PerformanceObserver here: the fetches alone
-  }
-  watch.stop = () => {
-    self.fetch = plain;
-    observer?.disconnect();
-  };
-  /** { promise, cancel }: the promise settles once nothing has arrived for seconds. The silence is counted in the
-   * ticks that ran (one a second), not in the clock's seconds: a page that a phone froze while another app was in front,
-   * or a worker busy for a long while, runs no tick, and a clock that jumped over it would call that a line that
-   * stopped (T129's review; the same lesson as the software threads', T120) */
-  watch.quiet = (seconds) => {
-    let timer;
-    const promise = new Promise((resolve) => {
-      let seen = -1, silent = 0;
-      timer = setInterval(() => {
-        if (watch.arrived !== seen) {
-          [seen, silent] = [watch.arrived, 0];
-        } else if (++silent >= seconds) {
-          clearInterval(timer);
-          resolve();
-        }
-      }, 1000);
-    });
-    return { promise, cancel: () => clearInterval(timer) };
-  };
-  return watch;
-}
-
-// Loads Pyodide and NumPy of version in named steps. Each step says its name, and ends in an error rather than
-// never: loadPyodide() does not fail when a fetch of its files fails, it waits for ever (AGENTS.md), and a phone that
-// stopped at "Loading Pyodide" said nothing else. It ends when nothing has arrived for QUIET_SECONDS (T118), however
-// long it takes while bytes keep coming. importer(url) imports pyodide.mjs (tests/worker-check.mjs gives its own).
-// T129 (2), the owner's choice (2026-09-28): loadPackage fetches NumPy's wheel without integrity (checkIntegrity:
-// false). A fetch with integrity settles only once its whole body is in, so watchArrivals() counted none of the wheel
-// until its end, and where the prefetch had not put it in the HTTP cache (no lock, another shape of it, a CDN that said
-// no, a cache that did not keep it) a line below 0.8 Mbps gave NumPy up after QUIET_SECONDS while it was arriving. The
-// check of the wheel's hash (SRI) goes; the wheel comes from the same CDN and version as the rest of Pyodide.
-async function pyodideSteps(version, importer) {
-  const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
-  const watch = watchArrivals();
-  const stop = (name, why) => {
-    const error = new Error(`Pyodide ${version}: "${name}" ${why}`);
-    error.pyodide = true;  // the page may try again without the service worker (isolation made this hang on iOS)
-    return error;
-  };
-  const step = async (name, promise) => {
-    postMessage({ type: "status", text: `Loading Pyodide ${version}: ${name}...` });
-    const quiet = watch.quiet(QUIET_SECONDS);
-    const stalled = quiet.promise.then(() => { throw stop(name, `got nothing from the network for ${QUIET_SECONDS} seconds`); });
-    try {
-      return await Promise.race([promise, stalled]);
-    } catch (error) {
-      // T242: loadPyodide() goes on without a standard library whose fetch failed (it writes that to the console), and
-      // Python then ends as it starts: the promise rejects with Emscripten's ExitStatus, which is no Error and said
-      // "[object Object]" (bench.yml's Windows WebKit, 2026-10-01: its fetches of jsDelivr failed together now and then).
-      // Told as a step of Pyodide's that stopped, as one whose file never came is
-      if (isError(error)) throw error;
-      throw stop(name, `ended as it started (${told(error)}): one of its files may not have arrived`);
-    } finally {
-      quiet.cancel();
-    }
-  };
-  try {
-    // while Pyodide starts, not after: loadPackage("numpy") below finds the wheel in the HTTP cache
-    const numpy = prefetchNumpy(base);
-    const { loadPyodide } = await step("the loader", importer(`${base}pyodide.mjs`));
-    const loaded = await step("the runtime", loadPyodide());
-    // a prefetch that is still running would otherwise be raced by loadPackage, and the wheel fetched twice. One
-    // that stopped is not waited for past a quiet spell (T118): loadPackage then fetches the wheel itself
-    const quiet = watch.quiet(QUIET_SECONDS);
-    await Promise.race([numpy, quiet.promise]);
-    quiet.cancel();
-    await step("NumPy", loaded.loadPackage("numpy", { checkIntegrity: false }));
-    return loaded;
-  } finally {
-    watch.stop();
-  }
-}
 
 async function init(search) {
   const started = performance.now();
@@ -960,10 +512,6 @@ function gpuOnlyBuffer(size, header, options, { tensors, stored, gpuOnly }, keep
 // the GPU's worker of a model on the GPU alone let go before its engine was built (destroy() above): the next load
 // waits for it, as release() waits for a built one's (T205)
 let gpuOnlyEnding = Promise.resolve();
-// T156: where the loops that write the weights can wait for the GPU's worker of a model on the GPU alone (room), and
-// before its engine is built (drained)
-const weightsRoom = () => state.gpuOnlyNow?.room?.();
-const weightsDrained = () => state.gpuOnlyNow?.drained?.();
 // T156: after a model on the GPU alone is built: its GPU ready (true), or failed (false: the worker let go of it, and
 // the model goes on the CPU from now on this visit)
 async function gpuOnlyReady(model, id) {
@@ -1016,174 +564,6 @@ function checkpointSink(keep) {
     },
   };
   return into;
-}
-
-// Every await in here may end with the AbortError of signal: a newer load has taken over, and this one must
-// leave nothing behind, least of all a Python buffer as large as its model.
-// A Hugging Face model, from the visitor's disk ({weights, config, tokenizer} are Files) or from huggingface.co
-// ({repo, revision, weights, config, tokenizer} are names): model.safetensors arrives in the order of the file, a few
-// megabytes at a time, and the Python code that builds the models of this site converts every tensor as it comes and
-// writes it to its place in a buffer of the final size. Reading in the order of the output instead would mean
-// hundreds of range requests, and each one takes a second.
-// 16 MiB over 6 connections (T107, measured in CI against huggingface.co): parts of 8 MiB took 1.36 times as long
-// for Qwen2.5 0.5B, of 4 MiB 2.8 times; more connections gained 6% at most. But the first bytes then come late on a
-// slow line, and a phone has less room for what waits in the queue (two parts per connection: 192 MB at 16 MiB),
-// so the first part is 8 MiB wherever the size is not fixed by the URL, and the rest follow what it measured
-// (the owner's ask, 2026-09-25): 16 MiB where that part came in at 4 MB/s or more and the device says nothing of a
-// small memory, 8 MiB otherwise.
-const HF_PART_BYTES = 16 * 1024 * 1024;
-const HF_SMALL_PART_BYTES = 8 * 1024 * 1024;
-const HF_FAST_BYTES_PER_SECOND = 4e6;
-const HF_HEADER_BYTES = 512 * 1024;  // the JSON header of a safetensors file is a few dozen kilobytes
-
-// The size of a file, for the few places that need it (the whole of a model: how many parts to ask for). A range
-// response says it in Content-Range, but that header is not one CORS shows by default: huggingface.co exposes it by
-// name, its CDN by "*", and a browser that does not honour "*" (WebKit; T112) sees none and the fetch never began
-// ("The file ended before all of its tensors were read"). Content-Length of a HEAD is always shown.
-async function fileSize(url, signal) {
-  const res = await fetch(url, { method: "HEAD", signal });
-  const length = Number(res.headers.get("Content-Length"));
-  if (!res.ok || !Number.isFinite(length) || length <= 0) {
-    throw new Error(`Could not learn the size of ${url}: ${res.status}`);
-  }
-  return length;
-}
-// the size a range response reported, or the file's size asked for separately when it did not
-const sized = async (url, result, signal) => (Number.isFinite(result.total) && result.total > 0 ? result : { ...result, total: await fileSize(url, signal) });
-
-// Bytes from..to of a response's body, taken as they stream past and no further: the rest is cancelled.
-// arriving(count) is told of every stretch kept. Fewer bytes than asked for when the body ends first.
-async function bodyBetween(res, from, to, arriving) {
-  const bytes = new Uint8Array(to - from);
-  let at = 0, kept = 0;  // at: where in the body the next chunk begins
-  const reader = res.body.getReader();
-  try {
-    while (at < to) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const start = Math.max(from - at, 0), stop = Math.min(to - at, value.length);
-      if (stop > start) {
-        bytes.set(value.subarray(start, stop), at + start - from);
-        kept += stop - start;
-        arriving?.(stop - start);
-      }
-      at += value.length;
-    }
-  } finally {
-    reader.cancel().catch(() => {});
-  }
-  return bytes.subarray(0, kept);
-}
-
-// arriving(count): told of every stretch of the body as it comes, for a progress line before a whole part is in
-// A fetch that huggingface.co refused, in the visitor's words (T119). The status alone does not tell: a gated
-// repository and one that is not there (or private) both answer 401; X-Error-Code (which CORS shows) says which.
-// Such an answer is the same the next time: it is not asked again (status says so).
-function refused(url, res) {
-  const [, repository, revision, file] = /^https:\/\/huggingface\.co\/(.+?)\/resolve\/([^/]+)\/(.+)$/.exec(url) ?? [];
-  const code = res.headers.get("X-Error-Code");
-  const error = new Error(!repository ? `Could not fetch ${url}: ${res.status}`
-    : code === "GatedRepo" ? `${repository} is gated on huggingface.co: its owner lets it be fetched only after a login and an accepted license, which this page cannot do. A copy of it that someone else published openly may work.`
-    : code === "RevisionNotFound" ? `${repository} has no revision ${revision} on huggingface.co.`
-    : code === "EntryNotFound" ? `${repository} has no ${file} at ${revision} on huggingface.co` +
-      // a commit that does not exist is answered so too (only a branch or tag that does not is RevisionNotFound)
-      (/^[0-9a-f]{40}$/.test(revision) ? `, or has no commit ${revision}.` : ".")
-    : res.status === 401 || res.status === 404 ? `huggingface.co has no public repository ${repository}: check its name.`
-    // T129 (5): its limit on the requests of one address, which another try at once only adds to
-    : res.status === 429 ? `huggingface.co asks this address to make fewer requests for a while. Wait a few minutes, then choose ${repository} again.`
-    : `huggingface.co answered ${res.status} for ${file} of ${repository}.`);
-  error.status = res.status;
-  return error;
-}
-
-async function fetchRange(url, begin, end, signal, arriving) {
-  for (let attempt = 0; ; attempt++) {
-    // the bytes of a body that broke come again with the next try: they are taken back (the review of T119)
-    let counted = 0;
-    const counting = arriving && ((count) => { counted += count; arriving(count); });
-    try {
-      const res = await fetch(url, { headers: { Range: `bytes=${begin}-${end - 1}` }, signal });
-      if (res.status !== 206 && res.status !== 200) {
-        throw refused(url, res);
-      }
-      // 200: the server ignored the range and sends the whole file (T112: a browser whose stack does this is one to
-      // know about). What was asked for is cut out as it streams past, and the rest is never fetched: taking the
-      // whole file for every part fetched SmolLM2's 145 MB ten times over, and held it whole for each (the review)
-      const whole = res.status === 200;
-      if (whole) {
-        console.warn(`${url} answered a range request with the whole file`);
-      }
-      const bytes = await bodyBetween(res, whole ? begin : 0, whole ? end : end - begin, counting);
-      const total = Number(whole ? res.headers.get("Content-Length") : (res.headers.get("Content-Range") ?? "").split("/")[1]);
-      return { bytes, total };
-    } catch (error) {
-      if (counted) arriving(-counted);
-      // (T129 (5): the rest of 4xx is answered the same the next time; 408 and 5xx not)
-      if (signal.aborted || attempt === 2 || (error.status >= 400 && !worthRetrying(error.status))) {
-        throw error;
-      }
-    }
-  }
-}
-
-// feed(bytes) gets the file from position start to its end, in order, although the parts arrive as they like.
-// The parts are cut as they are asked for: the first small, the rest by what the first one measured (see above).
-// arriving(bytes): how much of the file is in so far, told as it comes (the page shows it until the conversion of
-// the first part gives it percentages: on a slow line the first part alone takes a while, and a line that says
-// nothing looks stuck).
-async function inOrder(url, start, size, feed, outer, arriving = () => {}) {
-  const small = navigator.deviceMemory !== undefined && navigator.deviceMemory <= 4;
-  let partBytes = state.hfPartBytes || HF_SMALL_PART_BYTES;
-  const ranges = [];  // [begin, end] of every part asked for so far, in the order of the file
-  const arrived = new Map();
-  let scheduled = start, fed = 0, waiting = [], received = start;
-  // T129 (3): a part that failed for good (or a feed the converter refused) stops the other connections rather than
-  // fetching the rest of the file until the next load cancels this one. (One that waits for room is never woken, and
-  // goes with the rest of this call.)
-  const inner = innerAbort(outer), signal = inner.signal;
-  const connection = async () => {
-    for (;;) {
-      // no more than two parts per connection wait in memory for an earlier one
-      while (ranges.length - fed >= 2 * state.hfConnections) {
-        await new Promise((resolve) => waiting.push(resolve));
-      }
-      if (scheduled >= size) {
-        return;
-      }
-      const part = ranges.length, begin = scheduled, end = Math.min(begin + partBytes, size);
-      ranges.push([begin, end]);
-      scheduled = end;
-      const began = performance.now();
-      const { bytes } = await fetchRange(url, begin, end, signal, (count) => { received += count; arriving(received); });
-      // every part lies inside the file: a short one would feed the converter a file with a hole in it, which it
-      // would convert without a word (the review of T112; the header's fetches may ask past the end, these not)
-      if (bytes.length !== end - begin) {
-        throw new Error(`${url} gave ${bytes.length} of the ${end - begin} bytes asked for at ${begin}`);
-      }
-      arrived.set(part, bytes);
-      if (part === 0 && !state.hfPartBytes) {
-        const rate = (end - begin) / ((performance.now() - began) / 1000);
-        partBytes = rate >= HF_FAST_BYTES_PER_SECOND && !small ? HF_PART_BYTES : HF_SMALL_PART_BYTES;
-      }
-      while (arrived.has(fed)) {
-        signal.throwIfAborted();
-        feed(arrived.get(fed));
-        arrived.delete(fed++);
-        // the conversion of a part takes a moment: let messages in (T156: and the GPU's worker catch up)
-        await breathe();
-        await weightsRoom();
-      }
-      waiting.splice(0).forEach((resolve) => resolve());
-    }
-  };
-  try {
-    await Promise.all(Array.from({ length: state.hfConnections }, connection));
-  } catch (error) {
-    inner.abort(error);
-    throw error;
-  } finally {
-    inner.done();
-  }
 }
 
 // What a conversion made is kept for the next visit (kept.js): in the origin private file system where there is one
@@ -1843,16 +1223,6 @@ let lastLoad;  // the load message of the model now (T156)
 let benching = false;  // the benchmark's rounds are running (T45); see the bench message
 let pathing = false;  // T184: the benchmark's page path is being timed; see the paths message
 
-// Hand the event loop a turn, so that a message sent meanwhile is delivered. setTimeout would cost 4ms per
-// call (the browsers clamp it), a MessageChannel comes back in the same millisecond.
-function breathe() {
-  return new Promise((resolve) => {
-    const channel = new MessageChannel();
-    channel.port1.onmessage = () => resolve();
-    channel.port2.postMessage(0);
-  });
-}
-
 async function generate({ type, prompt, ...options }) {
   outsideNow?.engine?.newGeneration?.();  // now and then the remembered number of threads is checked again
   // a Python generator: every step of the iteration runs one forward pass and hands over one piece of text
@@ -2013,3 +1383,5 @@ self.onmessage = async ({ data }) => {
     }
   }
 };
+// (T350) what came while the modules were fetched
+early.splice(0).forEach((event) => self.onmessage(event));

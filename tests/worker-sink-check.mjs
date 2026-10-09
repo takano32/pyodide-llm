@@ -10,10 +10,10 @@
 // only declares, and its functions are what is called.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import * as forward from "../public/forward.js";
+import { runWorker } from "./worker-source.mjs";
 
 const root = new URL("..", import.meta.url);
 const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
@@ -41,15 +41,13 @@ for (const header of [QWEN3, GPT2, [288, 768, 6, 6, 6, 32000, 256]]) {
 }
 
 // (8) sink.open() -> weightsBuffer() -> footprint()
-const at = new URL("public/worker.js", root);
-const source = fs.readFileSync(at, "utf8").replaceAll("import.meta.url", JSON.stringify(at.href));
 const context = vm.createContext({
   self: { navigator: {}, location: { search: "" }, crossOriginIsolated: false },
   console, performance, URL, TextDecoder, TextEncoder, setTimeout, clearTimeout, WebAssembly, Atomics, postMessage() {},
   // (this realm's, which the memories below are made in: worker.js asks whether a memory is shared with instanceof)
   SharedArrayBuffer,
 });
-vm.runInContext(source, context, { filename: fileURLToPath(at) });
+runWorker(context);
 const counted = [];
 let destroyed = 0;
 context.stand = {
@@ -246,7 +244,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     console, performance, URL, TextDecoder, TextEncoder, setTimeout, clearTimeout, WebAssembly, Atomics, SharedArrayBuffer, Worker,
     postMessage() {},
   });
-  vm.runInContext(source, gpuContext, { filename: fileURLToPath(at) });
+  runWorker(gpuContext);
   let engineGpu;
   gpuContext.stand = {
     forward: {
