@@ -77,7 +77,7 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/master/install.sh | bash
 nvm install    # .nvmrc の版
 ```
 
-- **ブラウザ**: Playwright 1.60 は Ubuntu 26.04 の arm64 を扱わない（`npx playwright-core install --with-deps chromium` は「Cannot install dependencies for ubuntu26.04-arm64」、`--with-deps` なしでも「does not support chromium on ubuntu26.04-arm64」で止まる）。24.04 の版を取らせれば入る:
+- **ブラウザ**: （2026-10-09 から `playwright-core` は 1.64.0。下は 1.60 で確かめた手順で、1.64 で同じかは未確認。上げた後はブラウザを入れ直す。）Playwright 1.60 は Ubuntu 26.04 の arm64 を扱わない（`npx playwright-core install --with-deps chromium` は「Cannot install dependencies for ubuntu26.04-arm64」、`--with-deps` なしでも「does not support chromium on ubuntu26.04-arm64」で止まる）。24.04 の版を取らせれば入る:
 
 ```sh
 PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-arm64 npx playwright-core install chromium
