@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Worker, isMainThread, workerData } from "node:worker_threads";
+import { kernelSources } from "./other-tree.mjs";
 
 const CONTROL = 16;  // int32s: 0 go, 1 done, 2 form, 3 n, 4..7 addresses (out, x, xs, w8), 8 ws, 9 main's wc8, 10 rows, 11 threads,
 // 12 the tree's wc8 (T197 changed the corrections: each form reads its own)
@@ -36,21 +37,12 @@ if (!isMainThread) {
   const option = (name, value) => (args.includes(name) ? Number(args[args.indexOf(name) + 1]) : value);
   const rounds = option("--rounds", 3), turns = option("--turns", 7);
   const work = root + ".tmp/q8r-bench-threads/";
-  try { execFileSync("git", ["fetch", "--depth=1", "origin", "+main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" }); } catch {}
   const asc = ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1",
     "--sharedMemory", "--maximumMemory", "65536"];
   const files = [];
   for (const name of ["main", "tree"]) {
     const dir = `${work}${name}/`;
-    fs.mkdirSync(dir, { recursive: true });
-    for (const file of ["kernel.ts", "kernel_relaxed.ts", "six.ts", "ternary.ts"]) {
-      try {
-        fs.writeFileSync(dir + file, name === "main" ? execFileSync("git", ["show", `origin/main:kernels/${file}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
-          : fs.readFileSync(`${root}kernels/${file}`, "utf8"));
-      } catch (error) {
-        if (file !== "ternary.ts") throw error;  // a main before T231 has no ternary.ts, and its kernels import none
-      }
-    }
+    kernelSources(name === "main" ? "origin/main" : "tree", dir);  // (T356: the side's kernels/ whole, from its tree)
     execFileSync("npx", [...asc, dir + "kernel_relaxed.ts", "-o", dir + "relaxed.wasm", "--enable", "simd,relaxed-simd,threads"], { cwd: root, stdio: "inherit" });
     files.push(dir + "relaxed.wasm");
   }

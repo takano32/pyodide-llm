@@ -12,6 +12,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { kernelSources } from "./other-tree.mjs";
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..") + "/";
 const args = process.argv.slice(2);
@@ -19,25 +20,16 @@ const option = (name, value) => (args.includes(name) ? Number(args[args.indexOf(
 const rounds = option("--rounds", 3), turns = option("--turns", 7);
 const work = root + ".tmp/six-bench/";
 
-// main's kernels (CI checks out one commit: fetch main's)
-try { execFileSync("git", ["fetch", "--depth=1", "origin", "+main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" }); } catch {}
-const forms = { main: {}, tree: {} };
-for (const file of ["kernel.ts", "kernel_relaxed.ts", "six.ts", "ternary.ts"]) {
-  try {
-    forms.main[file] = execFileSync("git", ["show", `origin/main:kernels/${file}`], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-  } catch (error) {
-    if (file !== "ternary.ts") throw error;  // a main before T231 has no ternary.ts, and its kernels import none
-  }
-  forms.tree[file] = fs.readFileSync(`${root}kernels/${file}`, "utf8");
-}
+// main's kernels (CI checks out one commit: kernelSources() fetches main's alone; the ref origin/main is never written)
+// (T356: each side's kernels/ whole, from its tree: kernel.ts alone is a window over kernel/*.ts now)
+const forms = { main: "origin/main", tree: "tree" };
 
 const asc = ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importMemory", "--noExportMemory", "--initialMemory", "1"];
 const memory = new WebAssembly.Memory({ initial: 1, maximum: 4096 });
 const kernels = {};
-for (const [name, files] of Object.entries(forms)) {
+for (const [name, form] of Object.entries(forms)) {
   const dir = `${work}${name}/`;
-  fs.mkdirSync(dir, { recursive: true });
-  for (const [file, text] of Object.entries(files)) fs.writeFileSync(dir + file, text);
+  kernelSources(form, dir);
   execFileSync("npx", [...asc, dir + "kernel.ts", "-o", dir + "plain.wasm", "--enable", "simd"], { cwd: root, stdio: "inherit" });
   execFileSync("npx", [...asc, dir + "kernel_relaxed.ts", "-o", dir + "relaxed.wasm", "--enable", "simd,relaxed-simd"], { cwd: root, stdio: "inherit" });
   const instance = (file) => new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(dir + file)), { env: { memory } }).exports;

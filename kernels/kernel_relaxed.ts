@@ -8,7 +8,7 @@ import { codes, fourSums } from "./ternary";
 const GS: i32 = 32;
 
 // T167: the four int32 lanes of each of four groups' dot products added up into one lane per group: [sum d0, sum d1,
-// sum d2, sum d3] (a transpose by shuffles and two adds, as sums4 in kernel.ts for float32; integers, so the order of
+// sum d2, sum d3] (a transpose by shuffles and two adds, as sums4 in kernel/attention.ts for float32; integers, so the order of
 // the adds does not matter). A group's sum is at most 32 × 128 × 127 = 520192, within float32's exact integers.
 // @ts-ignore: decorator
 @inline function groupSums(d0: v128, d1: v128, d2: v128, d3: v128): v128 {
@@ -219,7 +219,7 @@ export function matmul_q6r(xout: usize, xq: usize, xs: usize, wq: usize, ws: usi
 }
 
 // T231: ternary weights (ternary.ts: 32 bytes a group of 128, a float32 scale a group) against the activations
-// interleave() left (kernel.ts: int8 in all 8 bits, the planes of a block of 64, and after their scales minus the sum
+// interleave() left (kernel/matmul.ts: int8 in all 8 bits, the planes of a block of 64, and after their scales minus the sum
 // of each group of 32). 64 weights a step: their sixteen bytes loaded once, four planes of codes, four dot products
 // into one accumulator whose lanes 0 and 1 are of the first group of 32 activations and 2 and 3 of the second.
 // A code times an activation is at most 2 x 128, two of them an int16 (x86's pmaddubsw adds pairs with saturation).

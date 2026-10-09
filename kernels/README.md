@@ -8,6 +8,30 @@ them with `ctypes.CDLL` (`load_kernels`) and drives them from Python (`Llama.ker
 sequencing the layers, NumPy keeps owning the memory, the kernels get addresses and work in place. Nothing is
 copied and there is no JavaScript glue. When they cannot be loaded, NumPy does the math as before.
 
+`kernel.ts` is a window (T356): the kernels are in `kernel/`, by what they are, and `kernel.ts` names every one of
+them in the order of the module's exports. `kernel_relaxed.ts` is one file. `six.ts` and `ternary.ts` are what both
+import (the widening of an int6 group and of a ternary one).
+
+| file | what is in it |
+|---|---|
+| `kernel/matmul.ts` | the matrix products without relaxed SIMD (`matmul_f32`, `matmul_q8`, `matmul_q6`, `matmul_t2`) and what they take beside the weights: `int8_sums` and `six_sums` (the corrections of the relaxed products), `interleave` (the activations as the ternary products read them), `add_columns` (the classifier's outlier columns) |
+| `kernel/quantize.ts` | numbers from one form to another: `widen_bf16`, `widen_q8_0`, `widen_pq2_0`, `widen_ptq1_0` (a checkpoint's stored forms to float32), `quantize_x` (the converter's int8, and the activations of every int8 product), `quantize6_x`, `ternary_x` |
+| `kernel/attention.ts` | `rope`, `attention`, `attention_f16` |
+| `kernel/halves.ts` | float16: `to_f16`, `from_f16`, `finite_f16`, and the widening `attention_f16` reads the cache with |
+| `kernel/activations.ts` | one vector between the matrix products: `rmsnorm`, `layernorm`, `gelu`, `swiglu`, `add_inplace`, `rotate` and `unrotate` (the rotated basis) |
+| `kernel/stateful.ts` | the layers with a state: `gate`, `convolve`, `delta_rule` (Qwen3.5), `short_conv` (LFM2) |
+| `kernel/sample.ts` | `argmax`, `penalize`, `sample` |
+| `kernel/math.ts` | what several kinds use, and no kernel: the group's size, a vector's sum, `fexp` and `vexp`, the largest of floats |
+
+A new kernel goes into the file of its kind and into a line of `kernel.ts` (`tests/forward-check.mjs` fails when the
+window and the files disagree, and when `public/jobs.js` does not say which of its arguments are addresses). **A new
+file goes into the Makefile's rule too** (`KERNEL_PARTS`): `make kernels` sees only the files named there, and the
+checks then test the old kernels (`tests/forward-check.mjs` fails when a file of `kernel/` is not named there). `node tests/kernels-same.mjs [--before <commit>]` builds this tree's kernels and
+another commit's and says for every built file whether it is the same bytes, the same functions in another order,
+or different, and whether `public/`'s are this tree's. (The division itself changed the order of the functions in the
+five builds of `kernel.ts`, and nothing else: Binaryen sorts the functions that are used equally often by their
+names, and AssemblyScript's name of a function begins with its file.)
+
 `make kernels` compiles them into `public/simdkernel.so` and `public/simdkernel_relaxed.wasmlib` (a few KB, not
 committed). `build.py` needs no Emscripten: it compiles with AssemblyScript and prepends the `dylink.0` section
 that makes a module an Emscripten side module. Verified to load in Pyodide 0.29.4 and 314.0.7.
@@ -308,7 +332,7 @@ Two things the review of 2026-10-02 found, which no test in Node can see:
 
 - **No static data.** The side module has no relocations, so a data segment would be written over Pyodide's own
   memory. That rules out AssemblyScript's std math (`Mathf.exp` uses tables), strings and asserts; `build.py`
-  refuses a module with a data section. `fexp` in `kernel.ts` is the table-free replacement.
+  refuses a module with a data section. `fexp` in `kernel/math.ts` is the table-free replacement.
 - **Keep every array alive whose address a kernel gets.** The kernels only know numbers: a scratch array that
   no Python object refers to any more is freed, and the kernel then writes into whatever lives there next. It
   shows up as a rare `memory access out of bounds` (`_kernel_buffers`, `_sampler_buffers` in the engine).

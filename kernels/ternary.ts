@@ -1,11 +1,11 @@
-// ternary.ts (T231): the weights of a ternary model, two bits each, as the dot products take them. kernel.ts
+// ternary.ts (T231): the weights of a ternary model, two bits each, as the dot products take them. kernel/matmul.ts
 // (matmul_t2) and kernel_relaxed.ts (matmul_t2r) import it. The layout is llama2_numpy.pack_ternary's, which is
 // Prism ML's PQ2_0's: a group of 128 weights in 32 bytes, weight j as its code (the weight + 1: 0, 1 or 2) in byte
 // j >> 2 at bits 2 (j & 3), and one float32 scale a group.
 //
 // Nothing is widened. Sixteen bytes hold 64 weights, and a shift of all sixteen by 2 p bits and a mask leave the codes
 // of every fourth weight in the bytes: plane p is weights 4 c + p, c = 0..15. The activations are laid out the same
-// way once a token (kernel.ts's interleave: byte 16 p + c of a block of 64 is activation 4 c + p), so that a plane of
+// way once a token (kernel/matmul.ts's interleave: byte 16 p + c of a block of 64 is activation 4 c + p), so that a plane of
 // codes meets its sixteen activations as they are loaded. The codes are not negative: they are the 7-bit side of a
 // relaxed dot product and the activations its signed side, in all their 8 bits, with no bias to take out of a row's
 // sums: dot(a, w + 1) = dot(a, w) + sum(a), and interleave leaves minus the sum of each group of 32 activations after

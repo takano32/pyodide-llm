@@ -251,12 +251,27 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
 // usize parameters of the kernels' source, every exported one
 {
   const { ADDRESSES } = await import("../public/jobs.js");
-  const source = {};
-  for (const file of ["kernels/kernel.ts", "kernels/kernel_relaxed.ts"]) {
+  // (T356: kernel.ts is the window over kernel/*.ts. The kernels are the functions those files export, and the window
+  // must name every one of them and nothing else, from the file it is in: what the window leaves out is in no module.)
+  const source = {}, parts = fs.readdirSync(`${root}kernels/kernel`).filter((file) => file.endsWith(".ts")).sort(), written = [];
+  for (const file of [...parts.map((part) => `kernels/kernel/${part}`), "kernels/kernel_relaxed.ts"]) {
     for (const [, name, parameters] of fs.readFileSync(root + file, "utf8").matchAll(/export function (\w+)\(([^)]*)\)/g)) {
+      if (name in source) throw new Error(`the kernel ${name} is written twice (${file})`);
       source[name] = parameters.split(",").map((p, i) => [i, p.split(":")[1].trim()]).filter(([, type]) => type === "usize").map(([i]) => i);
+      if (file.startsWith("kernels/kernel/")) written.push(`${name} of ${file.slice(15, -3)}`);
     }
   }
+  const named = [...fs.readFileSync(`${root}kernels/kernel.ts`, "utf8").matchAll(/^export \{([^}]*)\} from "\.\/kernel\/(\w+)";$/gm)]
+    .flatMap(([, names, part]) => names.split(",").map((name) => `${name.trim()} of ${part}`));
+  if (JSON.stringify(named.slice().sort()) !== JSON.stringify(written.sort())) {
+    const only = (a, b) => a.filter((name) => !b.includes(name)).join(", ") || "nothing";
+    throw new Error(`kernels/kernel.ts does not name the kernels of kernels/kernel/: only the window has ${only(named, written)}; only the files have ${only(written, named)}`);
+  }
+  // (and the Makefile's rule names every one of those files: make kernels does not see a file change that it does not
+  // name, and every check then runs the kernels of before)
+  const makefile = fs.readFileSync(`${root}Makefile`, "utf8");
+  const unnamed = parts.filter((part) => !makefile.includes(`kernels/kernel/${part}`));
+  if (unnamed.length) throw new Error(`the Makefile's rule for the kernels does not name kernels/kernel/${unnamed.join(", kernels/kernel/")}`);
   if (JSON.stringify(Object.keys(source).sort().map((n) => [n, source[n]])) !== JSON.stringify(Object.keys(ADDRESSES).sort().map((n) => [n, ADDRESSES[n]]))) {
     throw new Error("jobs.js's ADDRESSES is not the kernels' usize parameters");
   }

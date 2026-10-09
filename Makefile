@@ -30,7 +30,11 @@ public/models/.done:	$(CHECKPOINTS) $(TOKENIZERS)
 # The WASM SIMD kernels that llama2_numpy.py loads with ctypes, compiled by AssemblyScript (no binary is committed)
 kernels:	public/simdkernel.so
 
-public/simdkernel.so:	kernels/kernel.ts kernels/kernel_relaxed.ts kernels/six.ts kernels/ternary.ts kernels/ceilings.ts kernels/ceilings_relaxed.ts kernels/wasm64.mjs kernels/build.py node_modules
+# (every source is named here: one that is not leaves the old kernels in public/ when it changes, and the checks then
+# test those. kernel.ts is the window over kernel/*.ts, T356)
+KERNEL_PARTS = kernels/kernel/matmul.ts kernels/kernel/quantize.ts kernels/kernel/attention.ts kernels/kernel/halves.ts \
+	kernels/kernel/activations.ts kernels/kernel/stateful.ts kernels/kernel/sample.ts kernels/kernel/math.ts
+public/simdkernel.so:	kernels/kernel.ts $(KERNEL_PARTS) kernels/kernel_relaxed.ts kernels/six.ts kernels/ternary.ts kernels/ceilings.ts kernels/ceilings_relaxed.ts kernels/wasm64.mjs kernels/build.py node_modules
 	python3 kernels/build.py public
 
 # int8, 3.5x smaller than float32 (quantize.py)
