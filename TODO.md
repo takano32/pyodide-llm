@@ -2029,8 +2029,49 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - レビュー（Sonnet max、2026-10-09）: 動きは変わっていない。**形の回の参照を構文木で全部数えた**（`@babel/parser` の上に自前の scope 解析。本線の `createForward()` の最上位の名前 252 個について、読み・書き・読み書き（`+=`・`++`・`||=`・分割代入・for-of の左・閉包の中）の数を、新しい 4 つの関数（engine・threads・gpuFit・gpuSide）で、`pool.`・`gpuPart.`・`held.` 越しの参照と合算して比べた）: 食い違い 11 は全部説明がつく（getter の中の `return keys;` など 4、`gpuFit` の戻りを分割で受ける 4 の書き込み、`generateMany` がメソッドから関数になった読み 1、モジュールの関数 `halfToFloat` の読み 1、`gpuGettingReady` を包む矢印 1）。**足りない参照も、別の名前に化けた参照も無い**（影に隠れた局所の名前を書き換えた所も無い: 数が合うので）。本線と新しい文を最上位の文ごとに（`pool.` などを外して）比べると 138 / 139 が同じで、残りは `generateMany` を外した `return`。**取り出した名前は全部、関数か再代入のない const**（`pool` から 11、`gpuPart` から 13 を調べた。書き込み 0）。**部品に値で渡した 102 の名前に、最初の宣言のあとの書き込みは 0**（`let` の写しが古くなる形は無い）。宣言より前に読む文は 4 つのファイルとも 0。最上位の呼び出しのある文の順が変わったのは 13 組で、全部が矢印の const の定義と `ctl?.fill(0)` の前後（`runner()` は `ctl` を読まない）。`this` は無い。**わざと壊した 12 通りの落ち方**: 渡す名前を 1 つ減らす（`halfKV`）は forward-modules-check、setter を落とす（`gpuEnd`・`generations`）は ES モジュールが strict なので代入が TypeError で落ちる（gpu-default-check、thread-search-check、threads-check）、`get lost` を偽に固定は threads-check、`get chosen` を 0 に固定は thread-search-check。**穴が 1 つ**: `held` の 4 つの getter（`H`・`capacity`・`keys`・`values`）を最初の値に固定しても gpu-default-check・memory-check・forward-check は通った（キャッシュが育つのは 256 位置からで、GPU の歩の頼みは育ったあとのキャッシュの番地（`values` は育つと動く）を GPU の Worker に渡すが、作り物の GPU は見ていなかった）。作り物の GPU が頼みの `cache` の番地でさっきのブロックの書いたものを探す検査を足した（`tests/gpu-default-check.mjs`、300 位置の プロンプトのあとの歩）。固定 3 通り（全部・`values` だけ・`capacity` だけ）が落ちる。**効かなかった壊し方**（本線にもある性質）: `giveUp()` から `search = null; chosen = 1;` を消しても threads-check が通る（見切ったあとの `countForToken()` が 1 を返し、`finish()` が同じ状態にするので、数トークン遅れるだけ）。1 トークンあたりの足した費用: 探索も GPU も無い道で getter 3（`pool.unchecked`・`pool.search`・`gpuPart.tokensOn`）と `run()` の `gpuPart.gpuEnd` の読み書き 1 組、合わせて 5 回ほど。1 回数 ns と置いて 0.03 µs 前後で、tiny-lm の 1 トークン 1.6 ms の 0.002%（見積もり）。`phase()` は `threads` を自分のクロージャの変数で読み、モジュールをまたぐ参照が 1 つも増えていない。CI の比（0.976〜1.029）は同じ版の回ごとの揺れの内で、見積もりを覆す値ではない。**ブラウザと GPU の実物は CI の結果を読んだのみ**（手元は偽の GPU の Worker まで）。`tests/compare-engines.mjs` は `forward.js` を data: URL で読むので `forward/` と `jobs.js` の相対 import が解けない（`jobs.js` の import は T349 の前からあったので、この道具は前から動かないはず: 確かめていない。T348 の断りで先に止まる）。
 
   - **本番（2026-10-09、デプロイ run 37938356487）**: Chromium の 2 回の訪問とオフライン（tiny-lm・llm-jp-3 150M・SmolLM2 135M Instruct・Qwen3.5 0.8B・LFM2.5 350M・Ternary Bonsai 1.7B）run 37938805897、WebKit の 2 回の訪問 run 37938809236、Firefox の 2 回の訪問とオフライン run 37938812656、モデルの切り替え run 37938816566、ベンチ run 37938820069、`gpuTest=on`（SwiftShader、24 トークン）run 37938824575、Ternary Bonsai 2 27B（準備完了 99.0 秒、1.2 tok/s）run 37938828465: どれも成功。
-### T356 [整理][CPU] `kernels/kernel.ts`（68 KB）を種類ごとに — 状態: 未着手（2026-10-09。規模 中）
+### T356 [整理][CPU] `kernels/kernel.ts`（68 KB）を種類ごとに — 状態: 進行中（2026-10-09、ブランチ `t356-kernels`、手元の確かめまで。CI 待ち。規模 中）
 - 分け方の案: 行列積、attention、norm と活性化、状態を持つ層（gate・convolve・delta_rule・short_conv）、変換（quantize・widen・ternary_x）、標本抽出。**出る wasm が前とバイト単位で同じか**を先に見る（同じなら確かめはそれで済む。違えば全部の組と `kernels-in-browser.mjs` と速さの前後）。Makefile の依存を足す（落とし穴: 書き忘れると古いカーネルで試験が走る）。
+- **結果（2026-10-09、手元の確かめまで）**: `kernels/kernel.ts` は 69.3 KB・1266 行 → **2.7 KB・35 行の窓口**（頭のコメントと、モジュールの export を元の順に名指しする 15 行の `export { … } from "./kernel/…";`）と `kernels/kernel/` の 8 つ。ビルドの入口は今までどおり `kernel.ts`（`build.py` は変えていない）。
+  - `matmul.ts` 13.4 KB・219 行: relaxed SIMD を使わない行列積（`matmul_f32`・`matmul_q8`・`matmul_q6`・`matmul_t2`）と、重みの隣で要るもの（`int8_sums`・`six_sums`・`interleave`・`add_columns`）。`six.ts`・`ternary.ts` を読むのはここだけ。
+  - `quantize.ts` 14.2 KB・219 行: 数の形を替えるもの。保存の型を float32 に広げる 4 つ（`widen_bf16`・`widen_q8_0`・`widen_pq2_0`・`widen_ptq1_0`）と、float32 を int8・6 ビット・3 値にする 3 つ（`quantize_x`・`quantize6_x`・`ternary_x`）。`quantize_x` は変換器のものでもあり、毎トークンの活性値のものでもある（だからファイルの名前は「変換」にしなかった）。
+  - `attention.ts` 9.3 KB・180 行: `rope`・`attention`・`attention_f16`。
+  - `halves.ts` 4.7 KB・83 行: float16（`to_f16`・`from_f16`・`finite_f16` と、attention が読む `halves4`・`half`）。
+  - `activations.ts` 6.9 KB・146 行: 行列積の間で 1 本のベクトルにすること（`rmsnorm`・`layernorm`・`gelu`・`swiglu`・`add_inplace`・`rotate`・`unrotate`）。
+  - `stateful.ts` 7.5 KB・146 行: 状態を持つ層（`gate`・`convolve`・`delta_rule`・`short_conv`）。
+  - `sample.ts` 11.6 KB・235 行: `argmax`・`penalize`・`sample`（とその 3 つのグローバル）。
+  - `math.ts` 3.9 KB・75 行: 2 つ以上の種類が使うもの（`GS`・`hsum`・`fexp`・`vexp`・`largest`）。カーネルは無い。
+  - `kernel_relaxed.ts`（21 KB）・`six.ts`・`ternary.ts`・`ceilings*.ts` は動かしていない。`kernel_relaxed.ts` は自分の `GS` を持ったまま（寄せるのは形を替える回）。
+- **分けるだけ**: 最上位の文を、上のコメントと一緒に 1 字も変えずに移した（`.tmp/t356/split.mjs`。前の空でない 1211 行のうち、消えたのは `six`・`ternary` の import の 2 行だけ。足したのは 65 行: 頭のコメント、import 9 行、窓口の 15 行、`math.ts` と `halves.ts` の末尾の `export { … };` の 2 行）。ほかのファイルが使う共通の関数は、文を変えずに末尾の 1 行で出す。
+- **ビルドはバイト単位では同じにならなかった。同じなのは関数で、違うのは並びだけ。** 14 のビルドのうち、`kernel_relaxed.ts` の 5 つと `ceilings` の 4 つは前とバイト単位で同じ。`kernel.ts` の 5 つは大きさが同じで sha256 が違う:
+
+  | ファイル | 前（本線 `d7142b9` の `make kernels`） | 後 | |
+  |---|---|---|---|
+  | `simdkernel.so`（22921 バイト） | `ddc9a3edd2ea9695…` | `6009d6073860af03…` | 関数は同じ、順が違う |
+  | `simdkernel_plain.wasm`（22904） | `c5364b93239f69eb…` | `a9b723d7888ce821…` | 同上 |
+  | `simdkernel_plain64.wasm`（23313） | `1a84e7ae0d105715…` | `4c4cd652332b37e8…` | 同上 |
+  | `simdkernel_shared.wasm`（22907） | `c45797b01037605e…` | `88fd13e3dd4e3f30…` | 同上 |
+  | `simdkernel_shared64.wasm`（23316） | `4c7396910edcf26d…` | `129b352939772a15…` | 同上 |
+  | `simdkernel_relaxed.wasmlib` | `71cb358effb7e4a8…` | 同じ | バイト単位で同じ |
+  | `simdkernel_relaxed_plain.wasm` | `d6d0a7c3db920fe3…` | 同じ | 同上 |
+  | `simdkernel_relaxed_plain64.wasm` | `bd86f9fe7cc8d55a…` | 同じ | 同上 |
+  | `simdkernel_relaxed_shared.wasm` | `26946e489c078c29…` | 同じ | 同上 |
+  | `simdkernel_relaxed_shared64.wasm` | `f1dac3604b22bb42…` | 同じ | 同上 |
+  | `ceilings_plain.wasm` | `8428b7fc3c7e154e…` | 同じ | 同上 |
+  | `ceilings_relaxed_plain.wasm` | `d8b929822e529b2c…` | 同じ | 同上 |
+  | `ceilings_relaxed_shared.wasm` | `cfdebea409df5e20…` | 同じ | 同上 |
+  | `ceilings_shared.wasm` | `5ae890e8235c24af…` | 同じ | 同上 |
+
+  - **訳**: Binaryen は同じ回数使われる関数を名前の順に並べ、AssemblyScript の関数の内部の名前はファイルのパスで始まる。前は 35 の export が関数の名前の逆順に並んでいて（`widen_q8_0` が 1 番、`add_columns` が 35 番）、後はファイルの名前の逆順が先に効く。型の節の並びも同じ訳で 7 つ入れ替わる。窓口の export の並びで合わせられるのは export の節だけで、関数の並びは 1 関数 1 ファイルにでもしない限り合わない（種類ごとに分ける、と両立しない）。
+  - **証明は `node tests/kernels-same.mjs`**（足した道具）: 両方の木を各自の `build.py` で作り、wasm を Binaryen の文にして、export ごとに関数の命令を比べる（呼び先は export の名前で、export の無い関数は中身で、型は中身で読む）。5 つとも「36 の関数・35 の export、関数は同じで順だけ違う」: export の順、型の集まり、import、グローバル 3 つ、各 export の命令、export の無い 1 つ（自分を呼ぶ関数。`sortNucleus` と見ている）が同じ。`public/` のカーネルが今の木のビルドと同じかも見る。
+  - **だから要る確かめ（上の案のとおり）**: 全部の組（`tests.yml full=true`）と `kernels-in-browser.mjs`（WebKit・Chromium・Firefox、x86-64 と arm64）と、同じランナーでの速さの前後。関数の命令は同じなので、速さが変わるとすれば置き場所だけ（見立て。未計測）。
+- **Makefile**: `KERNEL_PARTS` に 8 つを名指しして `public/simdkernel.so` の依存に足した。`kernel.ts` と 8 つのそれぞれを `touch` して、9 回とも作り直すのを見た（9 回作り直した後の 14 のハッシュは同じ: ビルドは決まった答えを出す）。
+- **試験と道具**:
+  - `tests/forward-check.mjs` の「`jobs.js` の `ADDRESSES` はカーネルの usize の引数」は `kernels/kernel.ts` を文として読んでいた。`kernels/kernel/*.ts` を読むようにし、窓口が名指しする名前とファイルが、部品の `export function` と合うことも見る（窓口が落とした名前はどのモジュールにも入らない）。Makefile が `kernel/` の全部のファイルを名指ししていることも見る。
+  - 別のコミットのカーネルを `git show <コミット>:kernels/kernel.ts` で 1 ファイルずつ取っていた 6 つ（`attention-compare`・`q8r-bench`・`q8r-bench-threads`・`sample-bench`・`six-bench`・`tile-bench`）は、`tests/other-tree.mjs` に足した `kernelSources()` で相手の木の `kernels/` を丸ごと写す。分ける前のコミット（本線）と今の木を並べて、6 つとも手元で終わりまで走った（速さの数字は読んでいない）。分けた後のコミットを相手にする形は `attention-compare.mjs HEAD --exact` と `sample-bench.mjs --edges --commits HEAD` で見た。`sample-bench --stages` は `kernel/sample.ts` に手を入れて窓口に `stop_at` を足す形にした。`ternary-bench.mjs` は今の木だけをコンパイルするのでそのまま。
+- **コメント**（別のコミット、ビルドは 14 とも同じ）: 「no kernel above」、`kernel_relaxed.ts`・`six.ts`・`ternary.ts` が名指しする `sums4`・`interleave`・`matmul_q6` の居場所、`forward.js's stagingFinite` → `public/forward/engine.js`。
+- **手元の確かめ**: `make kernels`、`smoke.mjs`、`forward-check.mjs`（サイトの 4 モデル）、`threads-check.mjs`、`ternary-check`（945 通り）・`delta-check`・`conv-check`・`rotate-check`・`attention-check`・`finite-check`、`unchanged.mjs`（「unchanged: ok」）、`npm run build`。
+- **わざと壊した**: (1) `kernel/activations.ts` の `rotate` の 1 行（入力の絶対値を取る）: `kernels-same.mjs` は 5 つのビルドで「DIFFERENT: the code of rotate」と、作り直す前の `public/` が今の木のものでないことを言い、作り直すと `rotate-check.mjs` が落ちた（`forward-check.mjs` の既定のモデルは `rotate` を呼ばないので通る）。(2) 窓口から `add_inplace` を落とす: `forward-check.mjs` が「kernels/kernel.ts does not name the kernels of kernels/kernel/」で落ちた。(3) Makefile の依存から `kernel/sample.ts` を落とす: `forward-check.mjs` が「the Makefile's rule for the kernels does not name kernels/kernel/sample.ts」で落ちた。(1) は戻して作り直し、ハッシュが表の「後」に戻るのを見た。
+- **見ていないもの**: 実ブラウザ（`kernels-in-browser.mjs`・e2e）、WebGPU、全部の組、arm64 以外の Node、速さ（どれも CI で）。`tests/page_27b.sh` と実物のモデルの道具。本線が分けた後の形になってからの「本線対今の木」の 4 つの道具（相手が新しい形のときの `kernelSources()` は上の 2 つで見た）。`kernels-same.mjs` は Binaryen の `wasm-dis` の文に頼る（呼び出しと型の参照の書き方が変われば読み直しが要る）。
 
 ### T355 [整理][その他] `src/pages/index.astro`（75 KB）のスクリプトをモジュールに — 状態: 未着手（2026-10-09。規模 中）
 - 分け方の案: URL と設定（`LIMITS`）、`localStorage` に覚えるもの、Worker の知らせの受け手、描画（吹き出し・ステータス行・進捗）、設定のシート、Service Worker の登録。見た目は変えない（`preview.yml` で前後の画面を比べる）。
