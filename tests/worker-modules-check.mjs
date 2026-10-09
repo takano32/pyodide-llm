@@ -127,7 +127,9 @@ export function namesOf(source) {
       case "BreakStatement": case "ContinueStatement": case "MetaProperty": case "ImportDeclaration":
         return;
       case "ExportNamedDeclaration":
-        assert.ok(node.declaration, "an export without a declaration: this check knows `export const` and `export function`");
+        // (T349: `export { a, b };` uses the file's own a and b, tests/forward-modules-check.mjs)
+        if (!node.declaration && !node.source) return node.specifiers.forEach((specifier) => walk(specifier.local));
+        assert.ok(node.declaration, "an export from another file: this check knows `export const`, `export function` and `export { a }`");
         return walk(node.declaration);
       default:
         for (const [key, value] of Object.entries(node)) {

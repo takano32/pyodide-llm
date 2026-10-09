@@ -49,6 +49,10 @@ page_modules() {
   # T350: the names the worker and its modules (public/worker/) use: declared, imported, or the worker's globals (the two
   # checks above run them as scripts of one context, where a missing import does not show)
   node tests/worker-modules-check.mjs
+  # T349: the names forward.js and its modules (public/forward/) hand one another: what a file takes from another is
+  # exported there, what createForward() hands a part is what the part takes, and every pool.<name>, gpuPart.<name> and
+  # held.<name> is a member of that object (none of these is a variable: a wrong name is undefined without a word)
+  node tests/forward-modules-check.mjs
   # T130's review, on forward.js's createForward() with kernels that do nothing: the KV cache grows in place without losing a
   # byte, and footprint() holds what is allocated (a few seconds); T223's: the search for the software threads on noisy times
   node tests/memory-check.mjs
