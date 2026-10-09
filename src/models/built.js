@@ -1,4 +1,7 @@
 // The models built with the site (`make models`) and their unquantized originals.
+// Every file of these two groups is fetched when the site is built (see the Makefile): llm-jp-3 and tiny-lm are
+// converted from their Hugging Face checkpoints by convert_hf.py, and the larger models are quantized to int8. bytes
+// is the checkpoint size: it sizes the download buffer and the progress bar.
 import { JAPANESE, STORY, unigram } from "./formats.js";
 import { greedy, sampled } from "./sampling.js";
 

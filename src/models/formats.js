@@ -1,13 +1,6 @@
 // The formats the list's entries send their prompts in, and the engine's options that go with them (the tokens a
 // format writes, where an answer stops): one turn of each model's chat template, as the real one renders it.
 
-// The first model is the default: tiny-lm, the lightest one that writes Japanese. A public page should not make a
-// phone fetch 171 MB unasked, and it is ready soonest; llm-jp-3 writes far better Japanese and is one choice away.
-// Within each group the order is the ones that write Japanese from light to heavy, then the English-only ones from
-// light to heavy (T128): MODELS is sorted so at the end of this file, so a model added anywhere takes its place.
-// ?model=<id> picks another one. Every file of the first two groups is fetched when the site is built (see the
-// Makefile): llm-jp-3 and tiny-lm are converted from their Hugging Face checkpoints by convert_hf.py, and the larger
-// models are quantized to int8. bytes is the checkpoint size: it sizes the download buffer and the progress bar.
 export const JAPANESE = "文章の書き出しを入力（例: 富士山は、）";
 export const STORY = "Type the beginning of a story (e.g. Lily and Tom went to the park.)";
 export const unigram = { tokenizer_kind: "unigram" };

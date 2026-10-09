@@ -35,6 +35,11 @@ export function sources(models = MODELS) {
 // group: "site" (built with the site, the default), "original" or "hf"
 export const GROUPS = { site: "Models of this site", original: "Unquantized originals", hf: "From Hugging Face, converted in this browser" };
 
+// The first model is the default: tiny-lm, the lightest one that writes Japanese. A public page should not make a
+// phone fetch 171 MB unasked, and it is ready soonest; llm-jp-3 writes far better Japanese and is one choice away.
+// Within each group the order is the ones that write Japanese from light to heavy, then the English-only ones from
+// light to heavy (T128): MODELS is sorted so below, so a model added to any part takes its place.
+// ?model=<id> picks another one.
 // in the order they were added, more or less; MODELS below is the order of the list
 const LISTED = [...BUILT, ...HF_JAPANESE, ...HF_CLASSICS, ...HF_FAMILIES];
 
