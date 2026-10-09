@@ -5,8 +5,11 @@
 //   node tests/unchanged.mjs [--before <a commit, default origin/main>] [shaders models calls python page bench gpuworker sizes]
 //   (PYTHON=.venv/bin/python; in CI: tests.yml's extra="node tests/unchanged.mjs")
 //
-//   shaders  every export of public/shaders.js (a text as it is, a function as its text) and deviceKey() for 192
-//            made-up adapters: a device forgets the forms it measured when the key changes (AGENTS.md)
+//   shaders  every export of public/shaders.js (a text as it is; T366: a maker of WGSL as the texts it makes, for every
+//            choice its text branches on; another function as its source) and deviceKey() for 192 made-up adapters: a
+//            device forgets the forms it measured when the key changes (AGENTS.md). The key holds the WGSL a device is
+//            given and no function's source (tests/device-key-check.mjs holds that every piece of the engine's shaders
+//            reaches it), so a maker may be formatted, moved or given a parameter and this still says "the same"
 //   models   every export of src/models.js: the data as JSON, and what every exported function answers for every
 //            entry of the list (a builder moved to another file leaves both as they were)
 //   calls    tests/unchanged-calls.mjs: the plan Python hands forward.js and every call of a kernel, 150 hashes
@@ -65,9 +68,27 @@ function said(what, { count, differ, gone, added }, more = "") {
   return wrong === 0;
 }
 
+// T366: the makers of WGSL among public/shaders.js's exports, and the arguments that walk every branch of each one's
+// text (a number is written into the text and chooses nothing). The engine's makers are held by deviceKey() as well
+// (below); the benchmark's (fmaCeiling, mulMatVec) by this table alone: a branch added to one of those is to be added here
+const EITHER = [false, true], OUTPUTS = ["rope", "add", "swiglu", "write"];
+const MAKERS = {
+  regTile: EITHER.map((half) => [half]),
+  dp4a: EITHER.flatMap((subgroups) => EITHER.map((ternary) => [subgroups, ternary])),
+  flashTile: EITHER.flatMap((half) => EITHER.map((subgroups) => [{ headSize: 64, half, subgroups, wgSize: 32, kvTile: 8, minSubgroup: 4 }])),
+  flashVec: EITHER.map((subgroups) => [{ headSize: 64, subgroups, wgSize: 32, kvTile: 32, dSplit: 16 }]),
+  flashVecReduce: EITHER.map((subgroups) => [{ headSize: 64, subgroups, reduceSize: 32 }]),
+  fmaCeiling: EITHER.flatMap((half) => ["square", "affine"].map((shape) => [half, shape])),
+  mulMatVec: EITHER.flatMap((packed) => EITHER.map((subgroups) => [{ packed, subgroups }])),
+  fusedMatVec: ["norm", "plain"].flatMap((input) => OUTPUTS.flatMap((output) => EITHER.map((subgroups) => [{ input, output, subgroups }]))),
+  fusedDp4aMatVec: OUTPUTS.map((output) => [{ output }]),
+  ternaryMatVec: OUTPUTS.map((output) => [{ output }]),
+};
+
 async function shaders(other) {
   const [was, now] = await Promise.all([other, root].map((tree) => import(pathToFileURL(path.join(tree, "public/shaders.js")))));
-  const texts = (module) => Object.fromEntries(Object.entries(module).map(([name, value]) => [name, text(value)]));
+  const texts = (module) => Object.fromEntries(Object.entries(module).map(([name, value]) =>
+    [name, typeof value === "function" && MAKERS[name] ? MAKERS[name].map((given) => value(...given)).join("\n----\n") : text(value)]));
   let ok = said("shaders, the exports", differences(texts(was), texts(now)));
   const keys = { was: {}, now: {} };
   for (const packed of [false, true]) {

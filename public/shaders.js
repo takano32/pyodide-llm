@@ -4352,27 +4352,40 @@ export function walkLikeCpu(logits, temperature, topp, topk = 0, minp = 0) {
 }
 
 // ---- T148: the key of what the page remembers of a device (the shaders it chose, T156: that the CPU was faster than a
-// model on the GPU alone): the adapter and the browser, and the text of the shaders this device can make as a short
-// hash (FNV-1a): a deployment whose shaders changed chooses anew. adapter's info; device: the device made of it, or the
-// adapter itself (the worker, before any device: gpu.js asks the device for the adapter's features and these limits,
-// so the two give the same key)
+// model on the GPU alone): the adapter and the browser, and the text of the engine's shaders as a short hash (FNV-1a):
+// a deployment whose shaders changed chooses anew. adapter's info; device: the device made of it, or the adapter itself
+// (the worker, before any device: gpu.js asks the device for the adapter's features and these limits, so the two give
+// the same key).
+// T366: what is hashed is WGSL as a device is given it, and nothing of this file's JavaScript: a maker counts by the
+// texts it makes, never by its own source (String(maker), until T366: a formatter, a bundler or a new parameter changed
+// every device's key). A maker's texts are those of every choice its text branches on (a form, a feature), with one
+// set of numbers: a number is written into the text and chooses nothing of it. tests/device-key-check.mjs holds that
+// every piece of text of the shaders gpu.js runs reaches the hash, and that the key does not move with the source.
+const EITHER = [false, true], OUTPUTS = ["rope", "add", "swiglu", "write"];
+/** the WGSL of every model's shaders in gpu.js, but for the prompt's tiles (devicePromptForms: those the device can make) */
+const engineShaders = () => [RMSNORM, HEAD_NORM, ADD, ROPE, SWIGLU, QUANTIZE, LAYER_NORM, GELU, EMBED, EMBED_ROWS, SAMPLE, NORM_QUANTIZE, TOKEN_ROPE, WIDEN_SIX,
+  ...EITHER.flatMap((subgroups) => [
+    ...EITHER.map((half) => flashTile({ headSize: 64, half, subgroups, wgSize: 32, kvTile: 8, minSubgroup: 4 })),
+    flashVec({ headSize: 64, subgroups, wgSize: 32, kvTile: 32, dSplit: 16 }), flashVecReduce({ headSize: 64, subgroups, reduceSize: 32 }),
+    ...["norm", "plain"].flatMap((input) => OUTPUTS.map((output) => fusedMatVec({ input, output, subgroups })))]),
+  ...OUTPUTS.map((output) => fusedDp4aMatVec({ output }))];
+/** T232: and those of a model of ternary weights alone (its tiles: devicePromptForms' ternary) */
+const ternaryShaders = () => [TERNARY_PACKED, ...OUTPUTS.map((output) => ternaryMatVec({ output })), EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS];
 /** the tiled shaders of T146 a device can make (promptForms; T232, ternary: those of a model of ternary weights) */
 export const devicePromptForms = (device, ternary = false) => promptForms({ half: device.features.has("shader-f16"), subgroups: device.features.has("subgroups"),
   packed: Boolean(globalThis.navigator?.gpu?.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")),
   memory: device.limits.maxComputeWorkgroupStorageSize,
   threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX), ternary });
 // T232, ternary: the key of a model of ternary weights, the same with the text of its own shaders hashed after the
-// others': the key of every other model is what it was (a device keeps what it remembers of them), and a deployment
-// that changes a ternary shader has the ternary models choose anew
+// others': the key of every other model does not hold them (a device keeps what it remembers of those), and a
+// deployment that changes a ternary shader has the ternary models choose anew
 export function deviceKey(adapter, device = adapter, ternary = false) {
   const info = adapter.info ?? {};
   const named = [info.vendor, info.architecture, info.device, info.description, globalThis.navigator?.userAgent].map((part) => part ?? "").join("|");
+  const tiles = (forms) => forms.map((form) => `${form.name}${form.code}`);
   let hash = 0x811c9dc5;
-  // (T152: and a token's)
-  for (const text of [...devicePromptForms(device).map((form) => `${form.name}${form.code ?? form.none}`), RMSNORM, HEAD_NORM, ADD, ROPE,
-    SWIGLU, QUANTIZE, String(flashTile), LAYER_NORM, GELU, EMBED, SAMPLE, NORM_QUANTIZE, String(fusedMatVec), String(fusedDp4aMatVec),
-    ...(ternary ? [...devicePromptForms(device, true).map((form) => `${form.name}${form.code ?? form.none}`), TERNARY_PACKED, String(ternaryMatVec),
-      EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS] : [])]) {
+  for (const text of [...tiles(devicePromptForms(device)), ...engineShaders(),
+    ...(ternary ? [...tiles(devicePromptForms(device, true)), ...ternaryShaders()] : [])]) {
     for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
   }
   return `${named}|${(hash >>> 0).toString(16)}`;

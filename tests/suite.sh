@@ -41,6 +41,9 @@ page_modules() {
   node tests/kept-check.mjs
   node tests/coi-js-check.mjs
   node tests/gpu-choice-check.mjs
+  # T366: the device's key holds the WGSL a device is given and no function's source: one character more in any piece of
+  # the engine's shaders moves it, and a formatter's, a minifier's or a bundler's way with the file does not (about 15 s)
+  node tests/device-key-check.mjs
   # T225's review: /benchmark/'s layer check against devices that round the cache's float16 as WGSL lets them (about 10 s)
   node tests/layer-check.mjs
   node tests/worker-sink-check.mjs
