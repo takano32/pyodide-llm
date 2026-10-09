@@ -41,7 +41,7 @@ if (wrong && !dist) {
   console.log("--wrong changes a file the page is served, so it needs --dist");
   process.exit(1);
 }
-// the layer check's line in public/benchmark/gpu.js: a stream off by more than it is WRONG
+// the layer check's line in public/benchmark/gpu/layercheck.js (T353: in gpu.js before): a stream off by more than it is WRONG
 const LAYER_LINE = "LAYER_LINE = 1e-3", NO_LINE = "LAYER_LINE = 1e-12";
 let [site = "https://takano32.github.io/pyodide-llm/", ...engines] = dist ? [undefined, ...args] : args;
 let server;
@@ -58,10 +58,10 @@ if (dist) {
       return res.end();
     }
     // --wrong: the GPU section's worker with no line left for the layer check to hold (a rename of it fails here, loudly)
-    if (wrong && pathname.endsWith("/benchmark/gpu.js")) {
+    if (wrong && pathname.endsWith("/benchmark/gpu/layercheck.js")) {
       const text = fs.readFileSync(file, "utf8");
       if (!text.includes(LAYER_LINE)) {
-        console.log(`--wrong: ${LAYER_LINE} is not in benchmark/gpu.js any more: change this test with it`);
+        console.log(`--wrong: ${LAYER_LINE} is not in benchmark/gpu/layercheck.js any more: change this test with it`);
         process.exit(1);
       }
       res.writeHead(200, { "Content-Type": types[".js"] });
