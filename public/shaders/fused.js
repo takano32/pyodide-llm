@@ -2,7 +2,7 @@
 // the norm on its read and RoPE, the residual add or SwiGLU on its write, the same on ONNX Runtime's DP4A (T175, with
 // NORM_QUANTIZE) and on ternary weights (T232).
 // A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The lines are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
+// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
 // (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
 const { GROUP, STEP } = await import(new URL(`common.js${new URL(import.meta.url).search}`, import.meta.url));
 const { TERNARY_PACKED, sdp8ai } = await import(new URL(`prompt.js${new URL(import.meta.url).search}`, import.meta.url));
@@ -29,13 +29,13 @@ const { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } = await import(new URL(`matvec.
 //   - q, k and v (and gate and up) as one matrix: MLC LLM's Llama (qkv_proj and gate_up_proj, Apache-2.0)
 //   - RoPE and the cache on the write: llama.cpp's CUDA fuses rope and set_rows (ggml-cuda.cu, rope_set_rows_ops) into
 //     one kernel after the matrix; here into the matrix's own write, since a workgroup's 4 rows hold whole pairs (the
-//     neighbours RoPE turns together, and the pairs of float16 the cache holds a u32). The turning is ROPE's above.
+//     neighbours RoPE turns together, and the pairs of float16 the cache holds a u32). The turning is ROPE's (steps.js).
 //   - RMSNorm on the read: the norm's scale 1 / sqrt(mean(x²) + eps) is one number for the whole row, so it comes out of
 //     the sum: W·(g ⊙ x·s) = s × W·(g ⊙ x). Every workgroup reads all of x once anyway, and adds up x² beside the rows'
 //     sums in the same reduction (FlashNorm, Graef et al. 2024, arXiv 2407.09577: the scale deferred past the matrix).
 //     No public WGSL does this (llama.cpp's WebGPU fuses the norm with its weight only, rms_norm_mul.wgsl): the lines
 //     are this project's, written as llama.cpp's rms_norm_mul computes it (eps inside the sqrt with the mean, as the
-//     engine's rmsnorm and RMSNORM above). Checked (T150, Fable): the deferred scale rounds once at the end where the
+//     engine's rmsnorm and steps.js's RMSNORM). Checked (T150, Fable): the deferred scale rounds once at the end where the
 //     separate form rounds every x·s, so both are within a few float32 ulp of float64 (4e-7 of the largest row at
 //     worst, with channels at 1000× the rest too: the sum of x² adds the small terms among themselves before the tree
 //     meets a large one). What it costs a workgroup: reading g (4·dim bytes from the cache, beside x) and 2·dim more
@@ -339,7 +339,7 @@ ${fusedWrite(output)}
 // block, then each group's scale from its normed values, then the values normed and quantized (compute_rms,
 // compute_dynamic_per_token_scales, norm_and_quant). No lines are taken from it: these are RMSNORM's and QUANTIZE's
 // in one workgroup (vLLM's block reduction, fp8 and residual paths are not here). T241: the group's largest by the
-// bits and its scale's word as QUANTIZE's (scale_word, above QUANTIZE: a NaN where a value of the group is no finite
+// bits and its scale's word as QUANTIZE's (scale_word, above steps.js's QUANTIZE: a NaN where a value of the group is no finite
 // number; here a value is weight × (s × x), so a NaN of x, of the sum of x² or of the weight, and an infinity of x,
 // whose s is 0 and 0 × inf a NaN).
 export const NORM_QUANTIZE = /* wgsl */ `
@@ -527,7 +527,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
 ${fusedWrite(output)}
 }`;
 
-// ---- T232: fusedDp4aMatVec for ternary weights (see TERNARY_PACKED, above dp4a: the layout, the unpacking and why).
+// ---- T232: fusedDp4aMatVec for ternary weights (see prompt.js's TERNARY_PACKED, above dp4a: the layout, the unpacking and why).
 // The same Params, bindings, dispatch and write; the weights at binding 0 are the codes, 16 to a u32, and a row's scales
 // one a group of 128 weights (params.perRow / 4, where perRow counts the vector's groups of 32). A thread's group of 32
 // is two words of codes, at the index its two vec4<u32> of int8 have in an int8 matrix (a row is n / 16 words either
@@ -560,7 +560,7 @@ ${fusedWrite(output)}
 // COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
-// (ternary_packed: the notice of Prism ML's fork of llama.cpp is above TERNARY_PACKED.)
+// (ternary_packed: the notice of Prism ML's fork of llama.cpp is above prompt.js's TERNARY_PACKED.)
 export const ternaryMatVec = ({ output }) => /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${FUSED_PARAMS}
 ${STEP}

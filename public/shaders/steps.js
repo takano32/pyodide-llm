@@ -2,7 +2,7 @@
 // scale word, which fused.js's NORM_QUANTIZE takes too), int6 weights widened (T155), and RMSNorm, LayerNorm, the
 // residual add, RoPE, SwiGLU and GELU for the tokens of a prompt.
 // A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The lines are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
+// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
 // (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
 //
 // The notice of what T241's scale_word() takes its test of a float's bits from (isnan() of TensorFlow.js,
@@ -42,7 +42,7 @@ const { GROUP, STEP } = await import(new URL(`common.js${new URL(import.meta.url
 // Why so. (1) The bits of floats that are not negative are in the order of their values, so the integer max of the
 // magnitudes is the bits of the float max of the |values| for every finite input (-0 is 0, a denormal its own bits):
 // the scale and the values of a finite group are what they were, to the bit. An infinity's magnitude (0x7f800000) is
-// over every finite one's and a NaN's over that (isnan's form of TensorFlow.js, T219's: its notice is above
+// over every finite one's and a NaN's over that (isnan's form of TensorFlow.js, T219's: its notice is at the head of this file and above sample.js's
 // SAMPLER_COMMON), and an integer max drops neither. (2) What carries it on is the scale itself, no flag: the matrix
 // (the tiles' and fusedDp4aMatVec's SDP8AI) multiplies each group's integer dot by scale_a × scale_b and adds the
 // groups of a row, so every row of its output is a NaN, whatever the integers of that group are; the residual stream

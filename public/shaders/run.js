@@ -2,7 +2,7 @@
 // pass hands the next and the settings of the sampling (with the JavaScript that writes them), the embedding of a token
 // or of a prompt's rows, and the outlier channels of a ternary classifier (T232).
 // A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The lines are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
+// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
 // (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
 
 // ---- T151: a run of generated tokens on the GPU, the ids read back once for all of them. Each token of the run is
@@ -15,14 +15,14 @@
 //
 // What the GPU does is the CPU's sampling (kernels/kernel.ts's penalize() and sample(), the engine's generate()),
 // token for token: the same random number (the CPU draws them, in order, one a sampled token: randoms[sampled]) picks
-// the same token but where a float32 sum in another order moves a border (sampleLikeCpu below is that CPU in
+// the same token but where a float32 sum in another order moves a border (likecpu.js's sampleLikeCpu is that CPU in
 // JavaScript; tests/smoke.mjs holds it to the kernel, /benchmark/'s check holds SAMPLE to it). Their forms:
 //   - the penalty: MLC LLM's apply_penalty_inplace (a thread a token of the window, the logit divided where positive
 //     and multiplied where not; mlc_llm/compiler_pass/attach_logit_processor.py, Apache-2.0), with the CPU's window
 //     (the latest REPETITION_WINDOW tokens of the history, the prompt and BOS in it) and its once for each distinct
 //     token, where MLC counts them (its presence and frequency penalties are not the engine's)
 //   - the largest logit and its first index, and softmax: llama.cpp's WebGPU argmax.wgsl (the pairs reduced in the
-//     workgroup's memory; here the smaller index of two equal, as NumPy's argmax and ARGMAX above) and soft_max.wgsl
+//     workgroup's memory; here the smaller index of two equal, as NumPy's argmax and bench.js's ARGMAX) and soft_max.wgsl
 //     (exp(value - max), summed by the workgroup's tree), with kernel.ts's temperature and its floor of the nucleus
 //     (a token under a ten millionth of the best one's probability is left out before exp())
 //   - top-p without sorting: MLC LLM's top_p_pivot (mlc_llm/op/top_p_pivot.py, Apache-2.0): pivots between a bound
@@ -67,7 +67,7 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 // Adapted from MLC LLM, python/mlc_llm/op/top_p_pivot.py and python/mlc_llm/compiler_pass/attach_logit_processor.py
-// (and, for T191's sampling in chunks below, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
+// (and, for T191's sampling in chunks in stages.js, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
 // (https://github.com/mlc-ai/mlc-llm, commit 9fa644f5, 2026-08-17), and from the sampling of WebLLM
 // (https://github.com/mlc-ai/web-llm, src/llm_chat.ts) and Apache TVM (python/tvm/relax/frontend/nn/op.py,
 // https://github.com/apache/tvm, commit e0ed4aad), under the Apache License, Version 2.0. Changed as described above.
@@ -231,7 +231,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
         }
     }
 }`;
-// T232: EMBED and EMBED_ROWS from a table of ternary weights (see TERNARY_PACKED, above dp4a): a word is 16 codes of
+// T232: EMBED and EMBED_ROWS from a table of ternary weights (see prompt.js's TERNARY_PACKED, above dp4a): a word is 16 codes of
 // two bits and a scale covers 128 weights; a value is its code less one times the scale, one float32 product, as the
 // CPU's embed() has it (public/forward/engine.js's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
 // a workgroup a token of ids; else EMBED's, the state's token). Their loop is llama.cpp's get_rows, as theirs

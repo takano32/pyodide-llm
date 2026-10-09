@@ -1,7 +1,7 @@
 // shaders/stages.js (T351): the sampling in chunks of the vocabulary, many workgroups (T191's SAMPLER_STAGES).
 // /benchmark/'s GPU section alone runs them.
 // A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The lines are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
+// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
 // (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
 //
 // The notices of what the stages are adapted from (the forms and what was changed are described at the head of
@@ -26,7 +26,7 @@
 // OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 // Adapted from MLC LLM, python/mlc_llm/op/top_p_pivot.py and python/mlc_llm/compiler_pass/attach_logit_processor.py
-// (and, for T191's sampling in chunks below, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
+// (and, for T191's sampling in chunks in stages.js, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
 // (https://github.com/mlc-ai/mlc-llm, commit 9fa644f5, 2026-08-17), and from the sampling of WebLLM
 // (https://github.com/mlc-ai/web-llm, src/llm_chat.ts) and Apache TVM (python/tvm/relax/frontend/nn/op.py,
 // https://github.com/apache/tvm, commit e0ed4aad), under the Apache License, Version 2.0. Changed as described above.
@@ -56,7 +56,7 @@ const { SAMPLER_COMMON, SAMPLER_DRAW } = await import(new URL(`sample.js${new UR
 // the same token as SAMPLE and the CPU (sampleLikeCpu) but where a float32 sum in another order moves a border.
 // Their forms:
 //   - the chunks, and each workgroup reducing all the chunks' partial results again before its own chunk: MLC LLM's
-//     two-stage softmax (mlc_llm/compiler_pass/attach_softmax_with_temperature.py, Apache-2.0, above: chunk_lse, the
+//     two-stage softmax (mlc_llm/compiler_pass/attach_softmax_with_temperature.py, Apache-2.0, its notice at the head of this file: chunk_lse, the
 //     max and sum of each chunk of 4096, and softmax_with_chunked_sum, which merges the chunks' in every block), here
 //     with the max of the vocabulary merged before the sums (SAMPLE's exp(value - max) and floor, whose max is the
 //     vocabulary's) where MLC merges the sums' log-sum-exp

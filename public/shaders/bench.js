@@ -2,7 +2,7 @@
 // (matvec.js) and the sampling in chunks (stages.js): T135's first matrix products (WIDEN, PACKED, BATCHED), the argmax,
 // the empty and the small dispatch, and T168's ceilings of the device (clpeak's method; no line of it is copied).
 // A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The lines are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
+// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
 // (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
 const { STEP } = await import(new URL(`common.js${new URL(import.meta.url).search}`, import.meta.url));
 
