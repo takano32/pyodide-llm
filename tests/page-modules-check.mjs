@@ -1,5 +1,5 @@
 // tests/page-modules-check.mjs (T355): the names that the model page's script uses, in src/pages/index.astro and in its
-// modules (src/page/*.ts).
+// modules (src/page/*.ts); and (T353) the same of /benchmark/'s script, in src/pages/benchmark.astro and src/benchmark/*.ts.
 //
 // The build takes the types off and bundles: it does not say that a name is declared nowhere (a ReferenceError in the
 // browser, at the moment the line runs), and no test opens the page outside CI's browsers. So this reads the script
@@ -24,28 +24,31 @@ import { parse } from "@babel/parser";
 import { namesOf } from "./worker-modules-check.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const PAGE = "src/pages/index.astro", FOLDER = "src/page";
+// [the page, the folder of its script's modules]
+const PAGES = [["src/pages/index.astro", "src/page"], ["src/pages/benchmark.astro", "src/benchmark"]];
 
 // what a page has without declaring it, as far as these files use it (__BUILD__: astro.config.mjs defines it)
 const GLOBALS = new Set(("Boolean Error Event JSON Math NaN Number Object Option Promise Set String URL URLSearchParams Uint32Array Worker __BUILD__ confirm console " +
-  "crypto document history innerHeight innerWidth localStorage location navigator self sessionStorage setTimeout undefined window").split(" "));
+  "crypto document history innerHeight innerWidth localStorage location navigator self sessionStorage setTimeout undefined window " +
+  // (/benchmark/'s)
+  "SharedArrayBuffer addEventListener clearInterval getSelection performance removeEventListener setInterval").split(" "));
 
 /** The page's own script: what is between <script> and </script>, which Astro reads as a TypeScript module. */
-export function scriptOf(text) {
+export function scriptOf(text, PAGE = PAGES[0][0]) {
   const found = /<script>\n([\s\S]*?)<\/script>/.exec(text);
   assert.ok(found && text.split("<script").length === 2, `${PAGE} has one <script>, without attributes`);
   return found[1];
 }
 
 /** name (a path from the root) → { text, code (the types taken off, the imports kept), imports: [{ from, names }] } */
-export function pageSources() {
+export function pageSources([PAGE, FOLDER] = PAGES[0]) {
   const files = new Map();
   const folder = path.join(root, FOLDER);
   const names = [PAGE, ...(fs.existsSync(folder) ? fs.readdirSync(folder).sort().map((file) => `${FOLDER}/${file}`) : [])];
   for (const name of names) {
     if (name !== PAGE) assert.ok(name.endsWith(".ts"), `${name}: the modules of the page are .ts files`);
     const whole = fs.readFileSync(path.join(root, name), "utf8");
-    const text = name === PAGE ? scriptOf(whole) : whole;
+    const text = name === PAGE ? scriptOf(whole, PAGE) : whole;
     const { code } = transformSync(text, { loader: "ts", sourcefile: name, tsconfigRaw: { compilerOptions: { verbatimModuleSyntax: true } } });
     const program = parse(code, { sourceType: "module" }).program;
     const imports = program.body.filter((statement) => statement.type === "ImportDeclaration").map((statement) => {
@@ -66,8 +69,9 @@ export function pageSources() {
   return files;
 }
 
-if (import.meta.url === new URL(process.argv[1], "file:").href) {
-  const files = pageSources();
+if (import.meta.url === new URL(process.argv[1], "file:").href) for (const [PAGE, FOLDER] of PAGES) {
+  const files = pageSources([PAGE, FOLDER]);
+  assert.ok(files.size > 1, `${FOLDER}/ has the modules of ${PAGE}'s script`);
 
   // ---- 1. the names
   let count = 0;
@@ -79,7 +83,7 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
       "which it neither declares nor imports: a ReferenceError in a browser");
     count += free.size;
   }
-  console.log(`page-modules-check: ${files.size} file${files.size > 1 ? "s" : ""} of the page's script use ${count} names of a page's globals, and nothing they do not declare or import`);
+  console.log(`page-modules-check: ${PAGE}: ${files.size} file${files.size > 1 ? "s" : ""} of the page's script use ${count} names of a page's globals, and nothing they do not declare or import`);
 
   // ---- 2. what is imported is exported there
   const outside = new Map();

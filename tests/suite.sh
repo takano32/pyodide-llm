@@ -57,6 +57,10 @@ page_modules() {
   # exported, or a page's globals, and every page.<name> a field of the one object the parts share (the build does not
   # say a name that is nowhere, and nothing opens the page outside CI's browsers)
   node tests/page-modules-check.mjs
+  # T353: the names /benchmark/'s GPU worker (public/benchmark/gpu.js) and its modules hand one another, every shared.<name>
+  # a field of the object the steps share, a message at the window's first await answered once, and the names the tables'
+  # modules (src/bench/) use (the worker's steps run only where there is a GPU: nothing else outside CI reads them)
+  node tests/bench-modules-check.mjs
   # T130's review, on forward.js's createForward() with kernels that do nothing: the KV cache grows in place without losing a
   # byte, and footprint() holds what is allocated (a few seconds); T223's: the search for the software threads on noisy times
   node tests/memory-check.mjs

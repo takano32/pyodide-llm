@@ -63,11 +63,14 @@ assert.equal(reportsTable([{ number: 11, url: "u", body: reportBody(iphone) }]).
 // a reason with a | in it stays one cell
 assert.equal(parseReport(benchMarkdown([{ name: "x", skip: "a | b" }], environmentOf({}, {}))).rows[0].skip, "a | b");
 // both pages ask for the rounds through roundsHere() with the browser's own deviceMemory, and the worker writes the row
-// (T355: the model page's script is index.astro's and the modules of src/page/: a page's text is all of them)
-const pageText = (page) => [new URL(`../src/pages/${page}`, import.meta.url), ...(page === "index.astro" ?
-  fs.readdirSync(new URL("../src/page/", import.meta.url)).sort().map((file) => new URL(`../src/page/${file}`, import.meta.url)) : [])]
+// (T355: the model page's script is index.astro's and the modules of src/page/: a page's text is all of them; T353:
+// and /benchmark/'s is benchmark.astro's and the modules of src/benchmark/)
+const PAGE_MODULES = { "index.astro": "page", "benchmark.astro": "benchmark" };
+const pageText = (page) => [new URL(`../src/pages/${page}`, import.meta.url),
+  ...fs.readdirSync(new URL(`../src/${PAGE_MODULES[page]}/`, import.meta.url)).sort().map((file) => new URL(`../src/${PAGE_MODULES[page]}/${file}`, import.meta.url))]
   .map((url) => fs.readFileSync(url, "utf8")).join("\n");
 assert.ok(pageText("index.astro").length > fs.readFileSync(new URL("../src/pages/index.astro", import.meta.url), "utf8").length + 40000, "src/page/ has the model page's script");
+assert.ok(pageText("benchmark.astro").length > fs.readFileSync(new URL("../src/pages/benchmark.astro", import.meta.url), "utf8").length + 40000, "src/benchmark/ has /benchmark/'s script");
 for (const page of ["index.astro", "benchmark.astro"]) {
   assert.ok(/roundsHere\(.*\(navigator as any\)\.deviceMemory\)/.test(pageText(page)),
     `${page} asks for the rounds through roundsHere()`);
@@ -850,7 +853,7 @@ assert.deepEqual(warnings([{ title: "Storage", status: "wrong", markdown: ["| wr
 // the page's wiring of the warnings, which only a browser runs (and no runner makes anything WRONG: the --wrong of
 // tests/bench-check.mjs, a step of preview.yml, does): what each section says itself reaches warnings() as said, the GPU
 // section's Markdown and said are written again together after the CPU section, and the summary is cut to the link
-const benchmarkPage = fs.readFileSync(new URL("../src/pages/benchmark.astro", import.meta.url), "utf8");
+const benchmarkPage = pageText("benchmark.astro");
 for (const [what, pattern] of [
   ["the CPU section hands over what it says", /return \{ status: said\.length \? "wrong" : "ok", data: r, markdown: lines\.join\("\\n"\), said \};/],
   ["the GPU section spreads its Markdown and what it says", /\.\.\.gpuMarkdown\(steps, bridge, lost\) \};/],
