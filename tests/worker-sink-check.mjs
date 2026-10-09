@@ -1,5 +1,5 @@
 // T145, (7) and (8) of the review of T144 (2026-09-26): what lays out a checkpoint besides its header (its form,
-// llama2_numpy.FORM: bias, arch, qk_norm, head_dim) goes from the converter's sink.open() through worker.js's
+// llama2_numpy.FORM: bias, arch, qk_norm, head_dim) goes from the converter's sink.open() through worker/weights.js's
 // weightsBuffer() to forward.js's footprint(), under the same names and with the same defaults. A name changed on
 // one side only (head_dim, headDim) raises nothing: footprint() counts dim / heads, and a Qwen3 0.6B's keys and values
 // come out 45% short (T124). Node only, with the native Python for FORM (numpy):
@@ -10,10 +10,10 @@
 // only declares, and its functions are what is called.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import * as forward from "../public/forward.js";
+import { runWorker } from "./worker-source.mjs";
 
 const root = new URL("..", import.meta.url);
 const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
@@ -41,15 +41,13 @@ for (const header of [QWEN3, GPT2, [288, 768, 6, 6, 6, 32000, 256]]) {
 }
 
 // (8) sink.open() -> weightsBuffer() -> footprint()
-const at = new URL("public/worker.js", root);
-const source = fs.readFileSync(at, "utf8").replaceAll("import.meta.url", JSON.stringify(at.href));
 const context = vm.createContext({
   self: { navigator: {}, location: { search: "" }, crossOriginIsolated: false },
   console, performance, URL, TextDecoder, TextEncoder, setTimeout, clearTimeout, WebAssembly, Atomics, postMessage() {},
   // (this realm's, which the memories below are made in: worker.js asks whether a memory is shared with instanceof)
   SharedArrayBuffer,
 });
-vm.runInContext(source, context, { filename: fileURLToPath(at) });
+runWorker(context);
 const counted = [];
 let destroyed = 0;
 context.stand = {
@@ -74,8 +72,8 @@ context.stand = {
   // with ?without=kernels: the checkpoint in a Python bytearray
   pyodide: { globals: { get: () => () => ({ destroy: () => destroyed++, getBuffer: () => ({ data: new Uint8Array(8), release() {} }) }) } },
 };
-vm.runInContext("forwardModule = stand.forward; pyodide = stand.pyodide; jsKernels = { relaxed: true }; " +
-  "llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }; disabled = [];", context);
+vm.runInContext("state.forwardModule = stand.forward; state.pyodide = stand.pyodide; state.jsKernels = { relaxed: true }; " +
+  "state.llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }; state.disabled = [];", context);
 const proxy = (value) => ({ toJs: () => value, destroy() {} });
 const opened = (header, form, dtype = "int8") => {
   counted.length = 0;
@@ -125,8 +123,8 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
     handed.push(args.halfKeys);
     return {};
   };
-  vm.runInContext("disabled = []; sharedKernels = {}; wideKernels = { plain: {}, shared: {} }; threadsRequest = undefined; " +
-    "llama2_numpy.Llama = { callKwargs: () => ({}) };", context);
+  vm.runInContext("state.disabled = []; state.sharedKernels = {}; state.wideKernels = { plain: {}, shared: {} }; state.threadsRequest = undefined; " +
+    "state.llama2_numpy.Llama = { callKwargs: () => ({}) };", context);
   const cases = [["llm-jp-3 150M", [512, 2048, 12, 8, 8, 99584, 4096], 160e6, {}, true],
     ["Qwen2.5 0.5B", [896, 4864, 24, 14, 2, 151936, 4096], 555992604, { bias: true }, false],
     ["Qwen2.5 3B", [2048, 11008, 36, 16, 2, 151936, 4096], 3472375836, { bias: true }, false],
@@ -153,13 +151,13 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
   for (const [isolated, refused] of [[true, false], [false, false], [true, true]]) {
     context.self.crossOriginIsolated = isolated;
     context.refuseShared = refused;
-    vm.runInContext("weightsPool = undefined", context);  // a new memory for every case: the refusal is when one is made
+    vm.runInContext("state.weightsPool = undefined", context);  // a new memory for every case: the refusal is when one is made
     for (const [name, header, size, form, half, dtype = "int8"] of cases) {
       const want = isolated && !refused ? half : plain[name];
       const where = `${name}${isolated ? refused ? " (a shared memory refused)" : "" : " (not isolated)"}`;
       assert.equal(handedFor(header, size, form, dtype), want,
         `${where}: the worker hands the engine ${want ? "float16" : "float32"} keys and values`);
-      vm.runInContext("weightsPool = undefined", context);
+      vm.runInContext("state.weightsPool = undefined", context);
     }
   }
   // (the review of T130) a shared memory the browser gave at a lowered maximum: where the forward pass does not fit it, the
@@ -174,7 +172,7 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
     for (const [maximum, shared] of [[need - 1, false], [need, true], [need + GiB, true]]) {
       context.sharedMaximum = maximum;
       context.made = [];
-      vm.runInContext("weightsPool = undefined", context);
+      vm.runInContext("state.weightsPool = undefined", context);
       const want = shared ? half : plain[name], where = `${name}, a shared memory of ${maximum} pages where ${need} are needed`;
       assert.equal(handedFor(header, size, form, dtype), want, `${where}: the worker hands the engine ${want ? "float16" : "float32"} keys and values`);
       assert.deepEqual(context.made, shared ? ["shared"] : ["shared", "plain"], `${where}: ${shared ? "kept" : "a plain memory made instead"}`);
@@ -184,12 +182,12 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
   context.sharedMaximum = undefined;
   context.self.crossOriginIsolated = false;
   context.refuseShared = false;
-  vm.runInContext("sharedKernels = undefined; wideKernels = undefined; delete llama2_numpy.Llama;", context);
+  vm.runInContext("state.sharedKernels = undefined; state.wideKernels = undefined; delete state.llama2_numpy.Llama;", context);
   console.log("ok: the worker hands the engine the type of keys and values it sized the memory for");
 }
 
 // the Python buffer of ?without=kernels: let go once, by another open() (another tokenizer) or by release()
-vm.runInContext('disabled = ["kernels"];', context);
+vm.runInContext('state.disabled = ["kernels"];', context);
 const into = vm.runInContext("checkpointSink()", context);
 into.sink.open(600e6, proxy(QWEN3), "int8", proxy(qwen3));
 assert.equal(destroyed, 0);
@@ -246,7 +244,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     console, performance, URL, TextDecoder, TextEncoder, setTimeout, clearTimeout, WebAssembly, Atomics, SharedArrayBuffer, Worker,
     postMessage() {},
   });
-  vm.runInContext(source, gpuContext, { filename: fileURLToPath(at) });
+  runWorker(gpuContext);
   let engineGpu;
   gpuContext.stand = {
     forward: {
@@ -258,8 +256,8 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     llama2_numpy: { KV_START: 256, OUTLIER_CHANNELS: 8, external_tensors: () => ({ toJs: () => tensors, destroy() {} }),
       Llama: { callKwargs: () => ({}) } },
   };
-  vm.runInContext("forwardModule = stand.forward; llama2_numpy = stand.llama2_numpy; jsKernels = { relaxed: true }; " +
-    "sharedKernels = {}; wideKernels = { plain: {}, shared: {} }; disabled = [];", gpuContext);
+  vm.runInContext("state.forwardModule = stand.forward; state.llama2_numpy = stand.llama2_numpy; state.jsKernels = { relaxed: true }; " +
+    "state.sharedKernels = {}; state.wideKernels = { plain: {}, shared: {} }; state.disabled = [];", gpuContext);
   await vm.runInContext("adapterAsked", gpuContext);
   const opened = () => {
     const into = vm.runInContext("checkpointSink()", gpuContext);
@@ -274,7 +272,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     const { into, worker } = opened();
     into.release();
     assert.deepEqual(worker.told, ["open", "stop"], "a model on the GPU alone let go before it was built kept its GPU's worker");
-    await vm.runInContext("gpuOnlyEnding", gpuContext);
+    await vm.runInContext("state.gpuOnlyEnding", gpuContext);
     assert.ok(worker.terminated, "the next load did not wait for the GPU's worker to end");
   }
   // (2) another try of the converter (sink.open() again) lets go of the first one's worker
@@ -283,7 +281,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     into.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
     assert.deepEqual(worker.told, ["open", "stop"], "a second sink.open() kept the first GPU's worker");
     into.release();
-    await vm.runInContext("gpuOnlyEnding", gpuContext);
+    await vm.runInContext("state.gpuOnlyEnding", gpuContext);
   }
   // (3) built, its GPU ready: kept (destroy() lets nothing go); then its GPU fails: let go before the load on the CPU
   for (const lost of [null, "the GPU was lost (a test)"]) {
@@ -293,7 +291,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     into.release();
     assert.deepEqual(worker.told, ["open"], "a built model on the GPU alone lost its GPU's worker");
     gpuContext.lost = lost;
-    vm.runInContext("gpuOnlyNow.lost = lost", gpuContext);
+    vm.runInContext("state.gpuOnlyNow.lost = lost", gpuContext);
     const ready = await vm.runInContext("gpuOnlyReady({ id: 'probe' })", gpuContext);
     assert.equal(ready, !lost);
     assert.equal(vm.runInContext("cpuOnly.has('probe')", gpuContext), Boolean(lost));
@@ -312,13 +310,13 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     gpuContext.postMessage = (data) => said.push(JSON.parse(JSON.stringify(data)));
     gpuContext.console = { ...console, info: (line) => told.push(line) };
     gpuContext.verdict = { key: "arm|valhall||Mali-G615|a browser|0", cpu: { GBps: 28.7, threads: 4, promptGMACs: 40 } };
-    vm.runInContext("gpuOnlyNow.lost = 'the CPU as /benchmark/ measured it'; gpuOnlyNow.verdict = verdict", gpuContext);
+    vm.runInContext("state.gpuOnlyNow.lost = 'the CPU as /benchmark/ measured it'; state.gpuOnlyNow.verdict = verdict", gpuContext);
     assert.equal(await vm.runInContext("gpuOnlyReady({ id: 'kept' }, 7)", gpuContext), false);
     assert.deepEqual(said.filter((data) => data.type === "gpu-alone"), [{ type: "gpu-alone", load: 7, alone: gpuContext.verdict }],
       "the verdict went to the page without its load's id");
     const placed = (cpu) => {
       gpuContext.cpu = cpu;
-      vm.runInContext("gpuAdapter.key = verdict.key; gpuRequest = { remembered: { alone: verdict }, cpu }", gpuContext);
+      vm.runInContext("state.gpuAdapter.key = verdict.key; state.gpuRequest = { remembered: { alone: verdict }, cpu }", gpuContext);
       const sunk = vm.runInContext("checkpointSink()", gpuContext);
       sunk.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
       const direct = Boolean(sunk.weights.direct);
@@ -328,7 +326,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     assert.equal(placed({ GBps: 28.7, threads: 4, promptGMACs: 40 }), false, "a verdict the page kept left the model on the GPU alone");
     assert.ok(told.some((line) => /as the page kept it/.test(line)), "the console did not say the verdict it kept");
     assert.equal(placed({ GBps: 30.1, threads: 4, promptGMACs: 40 }), true, "/benchmark/'s CPU measured again did not weigh the two again");
-    await vm.runInContext("gpuOnlyEnding", gpuContext);
+    await vm.runInContext("state.gpuOnlyEnding", gpuContext);
     gpuContext.console = console;
   }
   console.log("ok: a model on the GPU alone lets go of its GPU's worker where its load ends without it (T156's review)");

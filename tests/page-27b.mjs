@@ -152,7 +152,7 @@ if (isMainThread) {
   // is this file with those 4 bytes changed; the memory is made for it and the engine reads it from there)
   const asksContext = args.includes("--context") && Number(option("--context", 0)) !== header[6];
   if (asksContext) header[6] = Number(option("--context", 0));
-  // what the worker asks footprint() with (worker.js's forwardOptions): on a shared memory, with relaxed SIMD (Node has it)
+  // what the worker asks footprint() with (worker/weights.js's forwardOptions): on a shared memory, with relaxed SIMD (Node has it)
   const forwardOptions = { ...options, int8: true, relaxed: true, halfKV: ["int8", "int6", "ternary"].includes(options.dtype), shared: true, outliers: 8, gpu: false };
   const after = footprint(header, size, forwardOptions), wide = needsWide(size, after) || args.includes("--wide"), halfKeys = keysInHalf(header, size, forwardOptions);
   console.log(`page: ${path.basename(file)} is ${size} bytes (${(size / GiB).toFixed(3)} GiB), header ${JSON.stringify(header)}; footprint() counts ` +
@@ -621,7 +621,7 @@ if (isMainThread) {
   parentPort.postMessage({ failed });
 }
 
-/** The page's conversion in Pyodide, into a memory of forward.js through a sink (worker.js's checkpointSink) */
+/** The page's conversion in Pyodide, into a memory of forward.js through a sink (worker/weights.js's checkpointSink) */
 async function convert(out, folder, context, pyodideWithEngine) {
   const { pyodide: py } = await pyodideWithEngine({ shared: true, wide: true });
   const convert = py.pyimport("llama2_convert"), numpy = py.pyimport("llama2_numpy");

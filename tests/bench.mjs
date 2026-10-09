@@ -547,7 +547,7 @@ assert.ok(headOf({ searched: [[8, 4, 4], [4, 2, 4]] }).includes("4 software thre
 assert.ok(headOf({ unfinished: 120 }).includes("4 software threads: the search had not ended after 120 s ·"));
 assert.ok(headOf({ alone: "no shared memory here" }, 1).includes("1 software thread: no shared memory here ·"));
 assert.ok(headOf({ searched: [] }).includes("4 software threads ·"), "no search: nothing more");
-// T190's review: a software thread that stopped says so (worker.js reads engine.lostThreads: found is 1 then, and the
+// T190's review: a software thread that stopped says so (worker/timing.js reads engine.lostThreads: found is 1 then, and the
 // search's verdicts would name another count); one that stopped after the count was found, too
 assert.ok(headOf({ alone: "a software thread stopped" }, 1).includes("1 software thread: a software thread stopped ·"));
 assert.ok(headOf({ remembered: true, stopped: true }).includes("4 software threads, as the model page remembers; a software thread stopped while timed, and one thread went on ·"));
