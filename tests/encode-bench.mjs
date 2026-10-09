@@ -81,7 +81,7 @@ const tokenizers = [
 
 const py = await loadPyodide();
 await py.loadPackage("numpy", { messageCallback: () => {} });
-py.FS.writeFile("llama2_numpy.py", fs.readFileSync(`${root}public/llama2_numpy.py`));
+for (const name of PYTHON.llama2_numpy) placeFile(py, name, fs.readFileSync(`${root}public/${name}`));  // (T348: the window and its parts)
 py.FS.writeFile("old_numpy.py", old);
 for (const name of PYTHON.llama2_convert) placeFile(py, name, fs.readFileSync(`${root}public/${name}`));
 py.FS.writeFile("old_convert.py", oldConvert);
