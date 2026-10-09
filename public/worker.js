@@ -31,6 +31,9 @@ const early = [];
 self.onmessage = (event) => early.push(event);
 const modules = Object.fromEntries(["state", "told", "clock", "pyodide", "weights", "ranges", "sources", "convert", "load", "timing"].map((name) =>
   [name, import(new URL(`worker/${name}.js${self.location.search}`, import.meta.url))]));
+// (the list of the engine's Python files, with the worker's modules and not after them: init() reads the files by it)
+const python = import(new URL(`python.js${self.location.search}`, import.meta.url));
+python.catch(() => {});  // (init() awaits it: until then a failure is nobody's)
 const { state, cpuOnly, modelKey, loadSeconds } = await modules.state;
 const { told } = await modules.told;
 const { resolvePyodideVersion, pyodideSteps } = await modules.pyodide;
@@ -62,7 +65,6 @@ async function init(search) {
   // come from the same deployment. They are small and of this site, so they are asked for now, beside Pyodide, and
   // are there when it is ready (one file was fetched after it before; eleven, one after another's list, would add to
   // the time to ready).
-  const python = import(new URL(`python.js${self.location.search}`, import.meta.url));
   const engine = python.then(({ readPython }) => readPython("llama2_numpy", async (name) => {
     const res = await fetch(new URL(`${name}${self.location.search}`, import.meta.url));
     if (!res.ok) {
