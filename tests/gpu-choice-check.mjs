@@ -587,7 +587,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
 // many (a ninth channel past the Outliers' room would throw as the plan is made: the GPU then lost for a model that
 // has them): one number in two languages
 {
-  const python = fs.readFileSync(new URL("../public/llama2_numpy.py", import.meta.url), "utf8");
+  const python = fs.readFileSync(new URL("../public/engine/checkpoint.py", import.meta.url), "utf8");
   assert.equal(Number(/^OUTLIER_CHANNELS = (\d+)$/m.exec(python)?.[1]), OUTLIERS_MOST, "llama2_numpy.OUTLIER_CHANNELS is shaders.js's OUTLIERS_MOST");
   const words = outliersOf([5, 70, 130, 255, 256, 300, 2047, 3], 151936, 2048);
   assert.deepEqual(Array.from(words), [8, 151936, 2048, 0, 5, 70, 130, 255, 256, 300, 2047, 3], "count, rows, n, a word of nothing, then the channels: 48 bytes of the uniform");

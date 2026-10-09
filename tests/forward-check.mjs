@@ -265,7 +265,7 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
 const shared = !args.includes("--plain");
 const { pyodide: py, kernels } = await pyodideWithEngine({ shared, wide: args.includes("--wide") });
 // (T130: the cache starts at 16 positions, so that it grows in place within every comparison below)
-py.runPython("import time, gc, math, numpy as np, llama2_numpy\nfrom llama2_numpy import Llama\nllama2_numpy.KV_START = 16");
+py.runPython("import time, gc, math, numpy as np, llama2_numpy, engine.model\nfrom llama2_numpy import Llama\nengine.model.KV_START = 16");
 let failed = false;
 // T133: the bits of a model converted with none asked for. Llama-3.2-3B's int8 (3614847004 bytes, its header from
 // config.json) does not fit a 32-bit memory with its forward pass (T115: 4.41 GiB shared): int8 on a 64-bit memory
@@ -357,7 +357,7 @@ def to_the_end(llama):
         for at in range(0, llama.seq_len, 16):
             llama.forward_many([llama.bos] * min(16, llama.seq_len - at), at)
         return
-    capacity = llama2_numpy.KV_START
+    capacity = engine.model.KV_START
     while capacity < llama.seq_len:
         llama.forward(llama.bos, capacity, need_logits=False)
         capacity *= 2
@@ -445,9 +445,9 @@ for pos in range(${positions}):
     sequence.append(following)
 agreement, change, relative = agree / ${positions}, math.exp((nll[0] - nll[1]) / ${positions}) - 1, math.sqrt(apart / size)
 ok = (agree == ${positions} and largest <= 1e-3) if not int8 else relative <= ${entry.line ?? MADE_UP_LINE} if ${entry.madeUp ? "True" : "False"} else (agreement >= 0.85 and abs(change) <= 0.05)
-kv_start, llama2_numpy.KV_START = llama2_numpy.KV_START, 8
+kv_start, engine.model.KV_START = engine.model.KV_START, 8
 one, many = kernel_llama(data, vocabulary, **OPTIONS), kernel_llama(data, vocabulary, **OPTIONS)
-llama2_numpy.KV_START = kv_start
+engine.model.KV_START = kv_start
 fed = sequence[:${positions}]
 for pos, token in enumerate(fed[:-1]):
     one.forward(token, pos, need_logits=False)

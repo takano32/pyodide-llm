@@ -74,7 +74,7 @@ if (isMainThread) {
       start: (p) => { plan = p.toJs({ dict_converter: Object.fromEntries }); return { backend: "", bind() {}, forward() {}, release() {} }; } };
     py.globals.set("OUTSIDE", outside);
     py.globals.set("OPTIONS", py.toPy(entry.options));
-    py.runPython(`import llama2_numpy\nfrom llama2_numpy import Llama\nllama2_numpy.KV_START = ${kvStart}\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, disable=${JSON.stringify(without)}, **OPTIONS)`);
+    py.runPython(`import llama2_numpy, engine.model\nfrom llama2_numpy import Llama\nengine.model.KV_START = ${kvStart}\nLlama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so", external=OUTSIDE, disable=${JSON.stringify(without)}, **OPTIONS)`);
     const worker = new Worker(new URL(import.meta.url), { workerData: { memory, base, size, plan, counts, rounds, positions, from, wide, versusHalf } });
     const result = await new Promise((resolve, reject) => { worker.once("message", resolve); worker.once("error", reject); });
     console.log(`${entry.name}: ${result}`);
