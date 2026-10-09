@@ -560,8 +560,8 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.match(off(product(1, right), { group: () => 128 }), /products/, "a group that is no number makes every product NaN: wrong, not right");
 }
 // T232's review: ternaryMatVec is fusedDp4aMatVec's text with the lines that read the weights and their scales changed (and
-// ternary_packed after SDP8AI), a copy because deviceKey() hashes fusedDp4aMatVec's text and an int8 model's remembered
-// forms hold while it does not change (the next change of it is to make the two one). A copy drifts: a line changed in
+// ternary_packed after SDP8AI), a copy because deviceKey() hashed fusedDp4aMatVec's source (until T366: the key holds
+// the text a maker makes now, and the two may be made one maker without moving an int8 model's key). A copy drifts: a line changed in
 // one and not the other is a shader of one kind of weights that is not the other's, and CI's runs of both go on being ok.
 // Every line but those that differ by design is the same in the two, for every output a layer writes
 {

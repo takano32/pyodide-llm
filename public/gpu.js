@@ -158,7 +158,7 @@ async function openDevice(plan, say = unusable) {
 }
 
 // ---- T156: a model on the GPU alone. open() makes the device and every buffer of the layers' matrices before a byte
-// of them comes (plan: forward.js's gpuOnlyPlan(): each matrix's rows and length, and where a layer's values and scales
+// of them comes (plan: public/forward/alone.js's gpuOnlyPlan(): each matrix's rows and length, and where a layer's values and scales
 // start in the checkpoint; the layers are joined for a token, as a model on the GPU alone always runs its steps here),
 // and take() writes each stretch of them to its buffer as the worker posts it (routes: [start, end) in the checkpoint,
 // the buffer and the offset in it). flow[0] counts the bytes on the GPU (the worker waits on it: a disk read faster
@@ -324,7 +324,7 @@ function stop() {
   if (!starting) end();  // else start() ends at its next step
 }
 // every buffer and the device let go (T94: a model changed for another leaves nothing on the GPU), and this worker ends.
-// T205: it says { type: "ended" } first, for forward.js's release() to read the next model after it. Every way out of
+// T205: it says { type: "ended" } first, for public/forward/engine.js's release() to read the next model after it. Every way out of
 // start() comes here (a stop in the middle of it at its next step), and a stop before or after start() at once
 function end() {
   if (model) {
@@ -906,7 +906,7 @@ function multiply(m, pass, form, group, rows, count) {
   dispatch(pass, form.pipeline, group, across, Math.ceil(tiles / across));
 }
 
-// T146's check (public/benchmark/gpu.js's checkTiled) of a form: 300 rows of 544 (17 groups of 32: a part of a tile
+// T146's check (public/benchmark/gpu/check.js's checkTiled) of a form: 300 rows of 544 (17 groups of 32: a part of a tile
 // of rows everywhere), 11 and 70 tokens (a part of a tile of tokens; two or one and a part), and 11 tokens whose x and
 // y are wider than the product (xStride 608, yStride 320), each product twice into the same y (the second added:
 // shape.add) against JavaScript's (shaders.js's tiledOff). The reason it is wrong, or null
@@ -1116,7 +1116,7 @@ async function timeBlocks(m) {
 // each in turn: the fastest is taken (T150's and T175's tables left which is fastest to the device: the owner's
 // Android read a layer at 18.5% of its buffer's reads with mul_mat_vec and a matrix at 96.8% with DP4A). The attention
 // (T224, chooseTokenAttention) is llama.cpp's decode form, flash_attn_vec, split over the positions and reduced, or the
-// prompt's tiles, whichever is right and faster here, on this pass's q. Where it came from: the run of T151 (public/benchmark/gpu.js's generate()), whose
+// prompt's tiles, whichever is right and faster here, on this pass's q. Where it came from: the run of T151 (public/benchmark/gpu/generate.js's generate()), whose
 // form is WebLLM's decode loop without its sync of every token (web-llm, src/llm_chat.ts; no line taken) and llama.cpp's
 // WebGPU graph of a token, one command encoder for all of it (ggml-webgpu.cpp, commit 2145525a, MIT; no line taken).
 // T226: Qwen2's and Qwen3's steps too. What they have between the matrix of q, k and v and RoPE (T153: a bias of each,
@@ -1659,7 +1659,7 @@ const LAYER_LINE = 2e-3, LOGITS_LINE = 1e-3, DP4A_LINE = 2e-2;
 // keys and values the GPU writes are then 1 float16 spacing from the nearest's on about half of their numbers, and the
 // stream computed from the nearest's was up to 3.2 times the line off the GPU's (CI, Dawn on lavapipe with every
 // conversion cut toward zero: a llama.cpp form on llm-jp-3 150M 6.5e-3 at the line 2e-3; with the GPU's own keys and
-// values 2.3e-6, as public/benchmark/gpu.js's heldHalves takes them: T225). So the reference takes the device's own
+// values 2.3e-6, as public/benchmark/gpu/halves.js's heldHalves takes them: T225). So the reference takes the device's own
 // float16 (got, as floats) of a value where it is within a float16 spacing of the value and the float32 sums' noise
 // (HALF_SLACK of the largest: about 10 times a sum of 2112 products's), and the nearest where it is not: a wrong key
 // or value is as far from the line as before, and the keys' and values' lines below are unchanged.
@@ -1869,7 +1869,7 @@ async function checkTokens(m, form) {
     // (T226: a classifier of floats on DP4A too where the model has outlier channels: tokenShape's floatHead)
     const packedHead = form.dp4a && !floatHead(m);
     const normedStream = norm(Float64Array.from(stream2), floats(plan.tokens.final, dim), plan.tokens.finalBias && floats(plan.tokens.finalBias, dim));
-    // T232: a ternary classifier's outlier channels as the CPU has them (forward.js's picked): taken out of the normed
+    // T232: a ternary classifier's outlier channels as the CPU has them (public/forward/engine.js's picked): taken out of the normed
     // stream before it is quantized, and their columns of the table multiplied apart, in floats
     const taken = g.take ? plan.tokens.channels.map((c) => {
       const value = normedStream[c];
@@ -1899,7 +1899,7 @@ async function checkTokens(m, form) {
   }
 }
 
-// A request for count steps from token at pos (forward.js's generateMany): the keys and values of positions from to
+// A request for count steps from token at pos (public/forward/gpuside.js's generateMany): the keys and values of positions from to
 // pos - 1 up from forward.js's cache first (cache: its addresses of the keys and the values, its capacity and the
 // bytes of a position; half: float16 as here, else float32, narrowed on the way up: T160, a grouped-query model's),
 // the state (token, pos, the end of the history and its length), the settings and a random number a step; the ids into
@@ -2061,7 +2061,7 @@ async function keysBack(m, wanted) {
 }
 // T210: the GPU's own keys and values of count positions (plan.batch at most) from pos into plan.staging, as a block
 // writes them back: a model on the GPU alone keeps none in the shared memory, and the tests read them so
-// (forward.js's keysAndValues)
+// (public/forward/engine.js's keysAndValues)
 function keysOf({ serial, count, pos }) {
   serve(serial, async (wanted) => {
     const encoder = model.device.createCommandEncoder();

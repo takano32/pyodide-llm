@@ -445,7 +445,7 @@ fn main(@builtin(local_invocation_id) localId: vec3<u32>, @builtin(workgroup_id)
 
 // ---- T232: ternary weights (T230: Prism ML's Ternary Bonsai) on the GPU, as the checkpoint holds them: PQ2_0's
 // codes, two bits a weight (weight j of a row at bits 2 (j % 4) of byte j / 4: 0, 1, 2 for -1, 0, +1 times the scale
-// of its group of 128 along the row; 3, which no ternary file has, is +2, as forward.js's weightAt and
+// of its group of 128 along the row; 3, which no ternary file has, is +2, as public/forward/engine.js's weightAt and
 // llama2_numpy.unpack_ternary read it), 16 weights a u32, and a float32 scale a group of 128 in a buffer of its own.
 // Nothing is widened as it goes up (the 8B is 2.3 GB so and 9.2 GB as int8): a row of n weights is n / 4 bytes and
 // n / 128 scales, which is the layout of an int8 row of n / 4 weights (32 bytes of values to a scale), so gpu.js's
@@ -514,7 +514,7 @@ fn ternary_packed(codes: u32) -> vec4<u32> {
   return (bits + vec4<u32>(0x7f7f7f7fu)) ^ vec4<u32>(0x80808080u);
 }`;
 /** JavaScript's unpacking (the checks' answer): the int8 values of ternary codes (a Uint8Array, four weights a byte),
- * as llama2_numpy.unpack_ternary and forward.js's weightAt read them */
+ * as llama2_numpy.unpack_ternary and public/forward/engine.js's weightAt read them */
 export function ternaryValues(packed) {
   const out = new Int8Array(packed.length * 4);
   for (let i = 0; i < out.length; i++) out[i] = ((packed[i >> 2] >> (2 * (i & 3))) & 3) - 1;
@@ -842,7 +842,7 @@ export const sixDispatch = (groups, most) => {
   return [Math.max(1, x), Math.ceil(workgroups / Math.max(1, x))];
 };
 /** JavaScript's widening (the check's answer): the int8 values of groups of 24 packed bytes (a Uint8Array), as
- * llama2_numpy.unpack6 and forward.js's weightAt read them */
+ * llama2_numpy.unpack6 and public/forward/engine.js's weightAt read them */
 export function sixValues(packed) {
   const groups = packed.length / 24, out = new Int8Array(groups * 32);
   for (let g = 0; g < groups; g++) {
@@ -898,7 +898,7 @@ export function quantizedLikeCpu(x) {
 }
 
 // How far a tiled shader's products (got: y after the product twice, the second added: 2 × W·x) are from
-// JavaScript's, the check of T146's review (public/benchmark/gpu.js's checkTiled): w, int8 [rows][n] with the float32
+// JavaScript's, the check of T146's review (public/benchmark/gpu/check.js's checkTiled): w, int8 [rows][n] with the float32
 // scales s [rows][n / 32]; x, the tokens xStride apart; got, yStride apart. A packed form multiplies what the GPU
 // quantized (xq, xs, xStride apart), held to JavaScript's quantize_x first: a scale may differ in its last bits (WGSL's
 // division is not rounded exactly) and a value then by 1, a wrong index by far more. f32 forms: no more than 1e-4 of
@@ -2999,9 +2999,10 @@ ${fusedWrite(output)}
 // one a group of 128 weights (params.perRow / 4, where perRow counts the vector's groups of 32). A thread's group of 32
 // is two words of codes, at the index its two vec4<u32> of int8 have in an int8 matrix (a row is n / 16 words either
 // way), unpacked to those two vec4<u32>; the scale is its group of 128's, the same for four threads of a row. Every
-// other line is fusedDp4aMatVec's: it is a function of its own only because deviceKey() hashes that one's text (a
-// device keeps the forms it remembers while it does not change); the two are to be one at the next change of it
-// (tests/gpu-choice-check.mjs holds every line but those that read the weights the same in the two).
+// other line is fusedDp4aMatVec's: it became a function of its own because deviceKey() hashed that one's source (until
+// T366: a parameter more changed every device's key). The key holds the text a maker makes now, so the two may be one
+// maker whose int8 text stays what it is (tests/gpu-choice-check.mjs holds every line but those that read the weights
+// the same in the two meanwhile).
 //
 // Adapted from ONNX Runtime, onnxruntime/contrib_ops/webgpu/quantization/dp4a_matmul_small_m.wgsl.template (n_bits
 // 8: the loop fusedDp4aMatVec is. For 2-bit weights ORT has the same template's n_bits == 2 path, whose reads are this
@@ -3365,7 +3366,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
 }`;
 // T232: EMBED and EMBED_ROWS from a table of ternary weights (see TERNARY_PACKED, above dp4a): a word is 16 codes of
 // two bits and a scale covers 128 weights; a value is its code less one times the scale, one float32 product, as the
-// CPU's embed() has it (forward.js's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
+// CPU's embed() has it (public/forward/engine.js's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
 // a workgroup a token of ids; else EMBED's, the state's token). Their loop is llama.cpp's get_rows, as theirs
 const embedTernary = (block) => /* wgsl */ `${block ? "" : STATE}
 @group(0) @binding(0) var<storage, read> table: array<u32>;
@@ -3396,7 +3397,7 @@ export const EMBED_TERNARY = embedTernary(false), EMBED_ROWS_TERNARY = embedTern
 // ---- T232: the outlier channels of a ternary classifier's input (T92: a few weights of the final norm are several
 // times the others (Ternary Bonsai 1.7B's largest is 5.6 times its median, the 8B's 5.2), and a group of 32 quantized
 // to 8 bits with one of them loses the other 31). The CPU takes them out of the normed stream before it quantizes it
-// and multiplies their columns of the classifier in float32 (forward.js's picked and the kernel add_columns); an int8
+// and multiplies their columns of the classifier in float32 (public/forward/engine.js's picked and the kernel add_columns); an int8
 // model's GPU multiplies a classifier of floats instead (T226: fusedMatVec), which reads int8 weights. For ternary
 // weights the GPU does what the CPU does, in two small dispatches around the classifier's matrix, the columns read
 // from the table of codes as it is. No public implementation has this (ONNX Runtime and llama.cpp quantize the input
