@@ -445,7 +445,7 @@ fn main(@builtin(local_invocation_id) localId: vec3<u32>, @builtin(workgroup_id)
 
 // ---- T232: ternary weights (T230: Prism ML's Ternary Bonsai) on the GPU, as the checkpoint holds them: PQ2_0's
 // codes, two bits a weight (weight j of a row at bits 2 (j % 4) of byte j / 4: 0, 1, 2 for -1, 0, +1 times the scale
-// of its group of 128 along the row; 3, which no ternary file has, is +2, as forward.js's weightAt and
+// of its group of 128 along the row; 3, which no ternary file has, is +2, as public/forward/engine.js's weightAt and
 // llama2_numpy.unpack_ternary read it), 16 weights a u32, and a float32 scale a group of 128 in a buffer of its own.
 // Nothing is widened as it goes up (the 8B is 2.3 GB so and 9.2 GB as int8): a row of n weights is n / 4 bytes and
 // n / 128 scales, which is the layout of an int8 row of n / 4 weights (32 bytes of values to a scale), so gpu.js's
@@ -514,7 +514,7 @@ fn ternary_packed(codes: u32) -> vec4<u32> {
   return (bits + vec4<u32>(0x7f7f7f7fu)) ^ vec4<u32>(0x80808080u);
 }`;
 /** JavaScript's unpacking (the checks' answer): the int8 values of ternary codes (a Uint8Array, four weights a byte),
- * as llama2_numpy.unpack_ternary and forward.js's weightAt read them */
+ * as llama2_numpy.unpack_ternary and public/forward/engine.js's weightAt read them */
 export function ternaryValues(packed) {
   const out = new Int8Array(packed.length * 4);
   for (let i = 0; i < out.length; i++) out[i] = ((packed[i >> 2] >> (2 * (i & 3))) & 3) - 1;
@@ -842,7 +842,7 @@ export const sixDispatch = (groups, most) => {
   return [Math.max(1, x), Math.ceil(workgroups / Math.max(1, x))];
 };
 /** JavaScript's widening (the check's answer): the int8 values of groups of 24 packed bytes (a Uint8Array), as
- * llama2_numpy.unpack6 and forward.js's weightAt read them */
+ * llama2_numpy.unpack6 and public/forward/engine.js's weightAt read them */
 export function sixValues(packed) {
   const groups = packed.length / 24, out = new Int8Array(groups * 32);
   for (let g = 0; g < groups; g++) {
@@ -898,7 +898,7 @@ export function quantizedLikeCpu(x) {
 }
 
 // How far a tiled shader's products (got: y after the product twice, the second added: 2 × W·x) are from
-// JavaScript's, the check of T146's review (public/benchmark/gpu.js's checkTiled): w, int8 [rows][n] with the float32
+// JavaScript's, the check of T146's review (public/benchmark/gpu/check.js's checkTiled): w, int8 [rows][n] with the float32
 // scales s [rows][n / 32]; x, the tokens xStride apart; got, yStride apart. A packed form multiplies what the GPU
 // quantized (xq, xs, xStride apart), held to JavaScript's quantize_x first: a scale may differ in its last bits (WGSL's
 // division is not rounded exactly) and a value then by 1, a wrong index by far more. f32 forms: no more than 1e-4 of
@@ -2999,9 +2999,10 @@ ${fusedWrite(output)}
 // one a group of 128 weights (params.perRow / 4, where perRow counts the vector's groups of 32). A thread's group of 32
 // is two words of codes, at the index its two vec4<u32> of int8 have in an int8 matrix (a row is n / 16 words either
 // way), unpacked to those two vec4<u32>; the scale is its group of 128's, the same for four threads of a row. Every
-// other line is fusedDp4aMatVec's: it is a function of its own only because deviceKey() hashes that one's text (a
-// device keeps the forms it remembers while it does not change); the two are to be one at the next change of it
-// (tests/gpu-choice-check.mjs holds every line but those that read the weights the same in the two).
+// other line is fusedDp4aMatVec's: it became a function of its own because deviceKey() hashed that one's source (until
+// T366: a parameter more changed every device's key). The key holds the text a maker makes now, so the two may be one
+// maker whose int8 text stays what it is (tests/gpu-choice-check.mjs holds every line but those that read the weights
+// the same in the two meanwhile).
 //
 // Adapted from ONNX Runtime, onnxruntime/contrib_ops/webgpu/quantization/dp4a_matmul_small_m.wgsl.template (n_bits
 // 8: the loop fusedDp4aMatVec is. For 2-bit weights ORT has the same template's n_bits == 2 path, whose reads are this
@@ -3365,7 +3366,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
 }`;
 // T232: EMBED and EMBED_ROWS from a table of ternary weights (see TERNARY_PACKED, above dp4a): a word is 16 codes of
 // two bits and a scale covers 128 weights; a value is its code less one times the scale, one float32 product, as the
-// CPU's embed() has it (forward.js's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
+// CPU's embed() has it (public/forward/engine.js's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
 // a workgroup a token of ids; else EMBED's, the state's token). Their loop is llama.cpp's get_rows, as theirs
 const embedTernary = (block) => /* wgsl */ `${block ? "" : STATE}
 @group(0) @binding(0) var<storage, read> table: array<u32>;
@@ -3396,7 +3397,7 @@ export const EMBED_TERNARY = embedTernary(false), EMBED_ROWS_TERNARY = embedTern
 // ---- T232: the outlier channels of a ternary classifier's input (T92: a few weights of the final norm are several
 // times the others (Ternary Bonsai 1.7B's largest is 5.6 times its median, the 8B's 5.2), and a group of 32 quantized
 // to 8 bits with one of them loses the other 31). The CPU takes them out of the normed stream before it quantizes it
-// and multiplies their columns of the classifier in float32 (forward.js's picked and the kernel add_columns); an int8
+// and multiplies their columns of the classifier in float32 (public/forward/engine.js's picked and the kernel add_columns); an int8
 // model's GPU multiplies a classifier of floats instead (T226: fusedMatVec), which reads int8 weights. For ternary
 // weights the GPU does what the CPU does, in two small dispatches around the classifier's matrix, the columns read
 // from the table of codes as it is. No public implementation has this (ONNX Runtime and llama.cpp quantize the input
@@ -4352,28 +4353,50 @@ export function walkLikeCpu(logits, temperature, topp, topk = 0, minp = 0) {
 }
 
 // ---- T148: the key of what the page remembers of a device (the shaders it chose, T156: that the CPU was faster than a
-// model on the GPU alone): the adapter and the browser, and the text of the shaders this device can make as a short
-// hash (FNV-1a): a deployment whose shaders changed chooses anew. adapter's info; device: the device made of it, or the
-// adapter itself (the worker, before any device: gpu.js asks the device for the adapter's features and these limits,
-// so the two give the same key)
+// model on the GPU alone): the adapter and the browser, and the text of the engine's shaders as a short hash (FNV-1a):
+// a deployment whose shaders changed chooses anew. adapter's info; device: the device made of it, or the adapter itself
+// (the worker, before any device: gpu.js asks the device for the adapter's features and these limits, so the two give
+// the same key).
+// T366: what is hashed is WGSL as a device is given it, and nothing of this file's JavaScript: a maker counts by the
+// texts it makes, never by its own source (String(maker), until T366: a formatter, a bundler or a new parameter changed
+// every device's key). A maker's texts are those of every choice its text branches on (a form, a feature), with one
+// set of numbers: a number is written into the text and chooses nothing of it. tests/device-key-check.mjs holds that
+// every piece of text of the shaders gpu.js runs reaches the hash, and that the key does not move with the source.
+const EITHER = [false, true], OUTPUTS = ["rope", "add", "swiglu", "write"];
+/** the WGSL of every model's shaders in gpu.js, but for the prompt's tiles (devicePromptForms: those the device can make) */
+const engineShaders = () => [RMSNORM, HEAD_NORM, ADD, ROPE, SWIGLU, QUANTIZE, LAYER_NORM, GELU, EMBED, EMBED_ROWS, SAMPLE, NORM_QUANTIZE, TOKEN_ROPE, WIDEN_SIX,
+  ...EITHER.flatMap((subgroups) => [
+    ...EITHER.map((half) => flashTile({ headSize: 64, half, subgroups, wgSize: 32, kvTile: 8, minSubgroup: 4 })),
+    flashVec({ headSize: 64, subgroups, wgSize: 32, kvTile: 32, dSplit: 16 }), flashVecReduce({ headSize: 64, subgroups, reduceSize: 32 }),
+    ...["norm", "plain"].flatMap((input) => OUTPUTS.map((output) => fusedMatVec({ input, output, subgroups })))]),
+  ...OUTPUTS.map((output) => fusedDp4aMatVec({ output }))];
+/** T232: and those of a model of ternary weights alone (its tiles: devicePromptForms' ternary) */
+const ternaryShaders = () => [TERNARY_PACKED, ...OUTPUTS.map((output) => ternaryMatVec({ output })), EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS];
 /** the tiled shaders of T146 a device can make (promptForms; T232, ternary: those of a model of ternary weights) */
 export const devicePromptForms = (device, ternary = false) => promptForms({ half: device.features.has("shader-f16"), subgroups: device.features.has("subgroups"),
   packed: Boolean(globalThis.navigator?.gpu?.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")),
   memory: device.limits.maxComputeWorkgroupStorageSize,
   threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX), ternary });
 // T232, ternary: the key of a model of ternary weights, the same with the text of its own shaders hashed after the
-// others': the key of every other model is what it was (a device keeps what it remembers of them), and a deployment
-// that changes a ternary shader has the ternary models choose anew
+// others': the key of every other model does not hold them (a device keeps what it remembers of those), and a
+// deployment that changes a ternary shader has the ternary models choose anew.
+// T366's review: the browser's two WGSL language features that choose which of the shaders a device makes (packed int8
+// dot: the DP4A forms; subgroup_id: the flash attention and the fused matrices with subgroups) are named in the key as the
+// user agent is (a flag turned on under the same user agent chooses anew), and the texts are hashed with a mark between
+// them, so that a character moved from the end of one text to the start of the next, or one shader cut in two, moves it.
+// The device's limits are not in it: they size the tiles (none) and nothing in the text, and the worker's key (the adapter's)
+// must be gpu.js's (the device's)
 export function deviceKey(adapter, device = adapter, ternary = false) {
   const info = adapter.info ?? {};
-  const named = [info.vendor, info.architecture, info.device, info.description, globalThis.navigator?.userAgent].map((part) => part ?? "").join("|");
+  const language = globalThis.navigator?.gpu?.wgslLanguageFeatures;
+  const named = [info.vendor, info.architecture, info.device, info.description, globalThis.navigator?.userAgent,
+    language?.has("packed_4x8_integer_dot_product") ? "packed" : "", language?.has("subgroup_id") ? "subgroup_id" : ""].map((part) => part ?? "").join("|");
+  const tiles = (forms) => forms.flatMap((form) => [form.name, form.code]);
   let hash = 0x811c9dc5;
-  // (T152: and a token's)
-  for (const text of [...devicePromptForms(device).map((form) => `${form.name}${form.code ?? form.none}`), RMSNORM, HEAD_NORM, ADD, ROPE,
-    SWIGLU, QUANTIZE, String(flashTile), LAYER_NORM, GELU, EMBED, SAMPLE, NORM_QUANTIZE, String(fusedMatVec), String(fusedDp4aMatVec),
-    ...(ternary ? [...devicePromptForms(device, true).map((form) => `${form.name}${form.code ?? form.none}`), TERNARY_PACKED, String(ternaryMatVec),
-      EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS] : [])]) {
+  for (const text of [...tiles(devicePromptForms(device)), ...engineShaders(),
+    ...(ternary ? [...tiles(devicePromptForms(device, true)), ...ternaryShaders()] : [])]) {
     for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
+    hash = Math.imul(hash ^ 0x1f, 0x01000193);  // (the unit separator: in no WGSL)
   }
   return `${named}|${(hash >>> 0).toString(16)}`;
 }
