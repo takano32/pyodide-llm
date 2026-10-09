@@ -32,6 +32,12 @@
 //                                    tokens ({ form, ms, forms, remembered, attention, attentions }: the layer of a
 //                                    token chosen here and its ms a step, T224: the attention of a token chosen here
 //                                    and what each came to) or tokensWhy (why they stay on the CPU)
+//   { type: "open", plan, flow }     T156 (a model on the GPU alone): the device and a buffer for every piece of every layer's
+//                                    matrices before a byte of them has come; { type: "weights", offset, bytes } then writes
+//                                    each stretch of the checkpoint to its buffer, and flow[0] counts the bytes on the GPU
+//   { type: "keys", serial, count, pos }
+//                                    T210: the GPU's own keys and values of count positions into plan.staging (the tests read
+//                                    them so: a model on the GPU alone keeps none in the shared memory); answered as a prompt is
 //   { type: "stop" }                 every buffer and the device let go, and the worker ends; T205: it says
 //                                    { type: "ended" } as it does (so does a start that ends as "unusable")
 //

@@ -14,8 +14,6 @@ const { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack, 
 // fallback adapter (the CPU in the GPU's place: its times are no GPU's) one pair of one pass
 const TIMED_MS = 20, MOST_PASSES = 256, PAIRS = 5;
 
-// T148: the adapter and the browser whose shaders the page remembers: another GPU, driver architecture or browser
-// version chooses anew (the user agent carries the browser's version)
 // the tiled shaders of T146 this device can make (shaders.js's promptForms)
 const candidates = ({ device, wgsl, ternary }) => wgsl.devicePromptForms(device, ternary);
 
