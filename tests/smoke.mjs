@@ -659,17 +659,19 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min
   for (const spread of [2, 6]) {
     for (const topk of [0, 20, 64]) {
       for (const topp of [1, 0.5]) {
-        for (const minp of [0, 0.05]) {
-          for (const presence of [0, 1.5]) {
+        // (a min-p of 1 keeps the most probable alone: a comparison that leaves out the equal fails there; a repetition
+        // penalty of 1 with a presence penalty is a penalty still)
+        for (const minp of [0, 0.05, 1]) {
+          for (const [presence, repetition] of [[0, 1.1], [1.5, 1.1], [1.5, 1]]) {
             for (const value of [0, Math.random(), 1 - 1e-12]) {
               const logits = new Float32Array(vocab).map(() => spread * Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random()));
               const ranked = [...logits.keys()].sort((a, b) => logits[b] - logits[a]);
               const history = [...ranked.slice(0, 40), ranked[3], ranked.at(-1)];
-              const result = pick(new Uint8Array(logits.buffer), 0.7, topp, value, history, 1.1, topk, minp, presence);
+              const result = pick(new Uint8Array(logits.buffer), 0.7, topp, value, history, repetition, topk, minp, presence);
               const [theirs, penalized] = result.toJs();
               result.destroy();
               const ours = Float32Array.from(logits);
-              penalizeLikeCpu(ours, history, 1.1, presence);
+              penalizeLikeCpu(ours, history, repetition, presence);
               if (!ours.every((v, i) => v === new Float32Array(penalized.buffer, penalized.byteOffset, vocab)[i])) {
                 throw new Error(`T274: penalizeLikeCpu is not the kernel's penalize (presence ${presence})`);
               }
