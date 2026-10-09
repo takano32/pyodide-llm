@@ -1124,12 +1124,16 @@ console.log = console.info = console.warn = (...parts) => parentPort.postMessage
 `;
   const gpuFile = path.join(dir, "gpu-worker.mjs"), harnessFile = path.join(dir, "harness.mjs");
   // the GPU's worker: its messages wait until gpu.js has set onmessage (a module worker's port opens at its first await)
+  // (T352: until gpu.js is through, not until it first sets onmessage: the window sets one of its own while its modules
+  // load and plays what that one kept when they have; a message taken here before it and played after would overtake)
   fs.writeFileSync(gpuFile, `${prelude}
 const waiting = [];
+let through = false;
 globalThis.onmessage = null;  // gpu.js sets it, a module's plain assignment
-parentPort.on("message", (data) => (globalThis.onmessage ? globalThis.onmessage({ data }) : waiting.push(data)));
+parentPort.on("message", (data) => (through ? globalThis.onmessage({ data }) : waiting.push(data)));
 globalThis.close = () => process.exit(0);
 await import(${JSON.stringify(pathToFileURL(path.join(root, "public", "gpu.js")).href + "?v=gpu-check")});
+through = true;
 waiting.splice(0).forEach((data) => globalThis.onmessage({ data }));
 `);
   fs.writeFileSync(harnessFile, `${prelude}
