@@ -1,4 +1,4 @@
-// six.ts (T98): the 32 values of one int6 group, widened to the int8 the dot products take. kernel.ts (matmul_q6,
+// six.ts (T98): the 32 values of one int6 group, widened to the int8 the dot products take. kernel/matmul.ts (matmul_q6,
 // six_sums) and kernel_relaxed.ts (matmul_q6r) import it. The layout is llama2_numpy.pack6's: an int6 value is an
 // int8 with its two low bits zero, so a group widens straight into int8 with no offset. 24 bytes a group: the four
 // low bits of the six of value j and of value j + 16 in byte j (0..15), the top two bits of values k, k + 8, k + 16,

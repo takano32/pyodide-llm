@@ -66,7 +66,7 @@ export function from_f16(out: usize, x: usize, n: i32): void {
 
 // T243: whether n float16 values are all finite numbers: 1, or 0 where one has every bit of its exponent set (a NaN or
 // an infinity, which halves4 above reads as a finite number: 65536 and more). The keys and values a GPU wrote back,
-// looked at once before they go into the cache (forward.js's stagingFinite), eight a step: the attention's loops, which
+// looked at once before they go into the cache (stagingFinite of public/forward/engine.js), eight a step: the attention's loops, which
 // read the cache at every token, stay as they are
 export function finite_f16(x: usize, n: i32): i32 {
   const exponent = i16x8.splat(0x7c00);

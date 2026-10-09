@@ -4,8 +4,8 @@
 import { fexp, vexp } from "./math";
 
 // ------------------------------------------------------------------------ Qwen3.5's hybrid attention (T229)
-// The three things of llama2_numpy.py's linear_attention() and of its gated full attention that no kernel above
-// does. Everything else of those layers is a matmul, rmsnorm (the l2 norm of the heads of q and k too: forward.js),
+// The three things of llama2_numpy.py's linear_attention() and of its gated full attention that no kernel of the
+// other files does. Everything else of those layers is a matmul, rmsnorm (the l2 norm of the heads of q and k too: public/forward/engine.js),
 // swiglu (the norm's gate) or add_inplace.
 
 // out[j] = x[j] * sigmoid(g[j]): what a full-attention layer read, through its gate
