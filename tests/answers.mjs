@@ -100,4 +100,7 @@ const share = (key) => `${sampled.filter((row) => row[key]).length}/${sampled.le
 console.log(`answers ${id}: all: stopped ${share("stopped")}, thought finished ${share("thought")}, loops ${share("loop")}, <unk> ${share("unk")}, ` +
   `a Japanese question answered in Japanese (a fifth of its letters kana) ${sampled.filter((row) => row.asked_in_japanese && row.japanese >= 0.2).length}/${sampled.filter((row) => row.asked_in_japanese).length}, ` +
   `${(sampled.reduce((sum, row) => sum + row.tokens, 0) / Math.max(1, sampled.length)).toFixed(0)} tokens written on average`);
+// T274's review: 4096-token answers of 12 questions are far more than the 64 KiB of a pipe, and exit() throws away what
+// the pipe has not taken (run 37866973619 printed 7 rows of 12 and no summary, and still ended well): leave when it has
+await Promise.all([process.stdout, process.stderr].map((stream) => new Promise((resolve) => stream.write("", resolve))));
 process.exit(0);
