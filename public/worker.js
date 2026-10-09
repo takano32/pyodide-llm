@@ -51,13 +51,13 @@ function shardsOf(index) {
 // The legacy format carries no metadata, but its header fixes the size of a float32, a float16 and an int8 file.
 // A file that is none of them is refused before it is read, and so is a tokenizer.bin of another vocabulary.
 async function localOptions(model, vocabulary, head) {
-  const header = pyodide.toPy(headerInts(head));
-  const pieces = pyodide.toPy(vocabulary);
+  const header = state.pyodide.toPy(headerInts(head));
+  const pieces = state.pyodide.toPy(vocabulary);
   try {
     // what the file cannot say and the settings may: a Qwen2 has biases, a GPT-2 or GPT-NeoX another set of tensors,
     // a Qwen3 the norms of q and k and maybe heads of another size than dim / heads (T124): the form of the options
-    const dtype = llama2_numpy.checkpoint_dtype(header, model.bytes, model.options ?? {});
-    llama2_numpy.check_tokenizer(pieces, header);
+    const dtype = state.llama2_numpy.checkpoint_dtype(header, model.bytes, model.options ?? {});
+    state.llama2_numpy.check_tokenizer(pieces, header);
     return { ...model.options, dtype };
   } finally {
     header.destroy();
@@ -65,41 +65,25 @@ async function localOptions(model, vocabulary, head) {
   }
 }
 
-let pyodide, llama2_numpy, llama2_convert, llama, kernels;
-// the models kept from earlier conversions (kept.js, T99), imported when the first conversion comes
-let keptModule;
-// T93: the forward pass in JavaScript (forward.js) and its kernels, compiled once; the memory of the model loaded now
-let forwardModule, jsKernels, weightsNow;
-// T93 stage 2: the kernels for a shared memory (only where the page is cross-origin isolated), what the page asked
-// about the number of threads ({ fixed, remembered, hint }), and the forward pass of the model loaded now
-let sharedKernels, threadsRequest, outsideNow;
-// T101: the kernels for a 64-bit memory, for a model past 4 GiB ({ plain, shared }), where the browser has Memory64
-let wideKernels;
-// ?wide=on: a 64-bit memory for every model, to try that path on a small one (measuring, tests), as ?offline=on says
-let forceWide = false;
 // T148: a prompt's tokens through the layers on the GPU (gpu.js) by default, wherever this worker has WebGPU and
 // forward.js can put the model there, and the GPU is faster than the CPU here (AGENTS.md's policy 9: no option).
 // ?gpuTest=on, for the tests only: a fallback adapter (SwiftShader, the only WebGPU of CI) taken as a GPU, and every
 // block of a prompt it can take given to it (its speed is no GPU's: the tests look at its numbers, not at its time),
 // and the first right shader of the matrices taken untimed (SwiftShader timed Llama 3.2 1B's past gpu.js's 180 s)
 const hasWebGpu = Boolean(self.navigator?.gpu);
-let gpuForce = {};
-// T156: the adapter, asked for before a model is loaded ({ fallback, limits } or null): whether a model the device
-// cannot hold twice goes on the GPU alone is decided before its bytes come (forward.js's weightsPlace, gpuOnlyUnfit)
-let gpuAdapter = null;
 // (and its key, T148's: what the page kept of the model on this device holds only for the same, shaders.js's deviceKey)
 const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.requestAdapter().then(async (adapter) => {
   if (!adapter) return;
   const { maxStorageBufferBindingSize, maxBufferSize } = adapter.limits;
   // (T232, packed: WGSL's packed int8 dot, which ternary weights are multiplied with on the GPU)
-  gpuAdapter = { fallback: Boolean(adapter.info?.isFallbackAdapter ?? adapter.isFallbackAdapter),
+  state.gpuAdapter = { fallback: Boolean(adapter.info?.isFallbackAdapter ?? adapter.isFallbackAdapter),
     limits: { maxStorageBufferBindingSize, maxBufferSize },
     packed: Boolean(navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) };
   try {
     const wgsl = await import(new URL(`shaders.js${self.location.search}`, import.meta.url));
-    gpuAdapter.key = wgsl.deviceKey(adapter);
+    state.gpuAdapter.key = wgsl.deviceKey(adapter);
     // (T232: a model of ternary weights has a key of its own, with its shaders: gpu.js says that one)
-    gpuAdapter.ternaryKey = wgsl.deviceKey(adapter, adapter, true);
+    state.gpuAdapter.ternaryKey = wgsl.deviceKey(adapter, adapter, true);
   } catch {
     // no key: nothing the page kept of this device holds (a model on the GPU alone is weighed again)
   }
@@ -107,14 +91,6 @@ const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.requestAdapt
 // T156: the models whose GPU failed while they were on it alone, loaded again on the CPU from then on (this visit)
 const cpuOnly = new Set();
 const modelKey = (model) => model.hf ? `hf:${model.hf.repo}@${model.hf.revision}` : model.id ?? model.name;
-// ?bench= (T45): the page measures the CPU's combinations, and no GPU starts beside them
-let benchPage = false;
-// what the page kept of the GPU's shaders for the model asked for ({ remembered }), as threadsRequest
-let gpuRequest;
-// the optimizations this session leaves out (T52): ?without=relaxed,sampler, and ?kernel=off as it always was
-let disabled = [];
-// what the page's own URL said, to come back to after a benchmark has tried other combinations (T77)
-let pageSwitches = [];
 
 // Only what the engine has a fallback for. A name it does not know is refused there, and the page says so.
 function switchesOf(search) {
@@ -125,18 +101,12 @@ function switchesOf(search) {
   }
   return names;
 }
-// init() as a promise: every load waits for it, also the one that replaces the first
-let initialized;
-// the AbortController of the load that is going on, and a promise that settles once it has cleaned up
-let loading, unloaded = Promise.resolve();
 
 // how long the load took, in seconds: Pyodide once per session, the other two per model. The download of a model
 // of this site runs while Pyodide loads and usually ends first, so its seconds are counted until the last byte
 // arrives (not until the bytes reach Python, which has to wait for Pyodide). The page says that the two overlap
 // instead of adding them up, but only for the model that was loaded while Pyodide was still coming.
 const loadSeconds = {};
-// when Pyodide became usable, to tell that first model from the ones chosen afterwards
-let pyodideAt = 0;
 
 async function init(search) {
   const started = performance.now();
@@ -144,10 +114,10 @@ async function init(search) {
   const parts = Number(asked.get("hfParts")), connections = Number(asked.get("hfConnections"));
   if (parts >= 1 && parts <= 64) state.hfPartBytes = Math.round(parts * 1024 * 1024);
   if (connections >= 1 && connections <= 32) state.hfConnections = Math.floor(connections);
-  forceWide = asked.get("wide") === "on";
+  state.forceWide = asked.get("wide") === "on";
   // (T156: ?gpuTest=only, the tests' too: a model the GPU can take on the GPU alone, whatever its size)
-  gpuForce = ["on", "only"].includes(asked.get("gpuTest")) ? { fallback: true, always: true, quick: true, only: asked.get("gpuTest") === "only" } : {};
-  benchPage = asked.has("bench");
+  state.gpuForce = ["on", "only"].includes(asked.get("gpuTest")) ? { fallback: true, always: true, quick: true, only: asked.get("gpuTest") === "only" } : {};
+  state.benchPage = asked.has("bench");
   // T348: the engine is a window and its parts (python.js's list), each with the ?v=<build> of this worker, so that all
   // come from the same deployment. They are small and of this site, so they are asked for now, beside Pyodide, and
   // are there when it is ready (one file was fetched after it before; eleven, one after another's list, would add to
@@ -162,54 +132,54 @@ async function init(search) {
   }));
   engine.catch(() => {});  // (it is awaited below: a load that ends before that leaves no unhandled rejection)
   const version = await resolvePyodideVersion(search);
-  pyodide = await pyodideSteps(version, (url) => import(url));
+  state.pyodide = await pyodideSteps(version, (url) => import(url));
 
-  await (await python).placePython(pyodide, "llama2_numpy", null, engine);
-  llama2_numpy = pyodide.pyimport("llama2_numpy");
+  await (await python).placePython(state.pyodide, "llama2_numpy", null, engine);
+  state.llama2_numpy = state.pyodide.pyimport("llama2_numpy");
 
   // The WASM SIMD kernels (kernels/*.ts), which llama2_numpy.py loads with ctypes. They are optional: without
   // them, or with ?kernel=off, NumPy does the math, several times slower. They are read even with ?kernel=off: the
   // switches say what is used (disabled), and the benchmark's rounds with the kernels need them there (T119: its
   // "everything" round sampled on NumPy after the page's switch had turned them off, and said nothing).
-  disabled = pageSwitches = switchesOf(search);
+  state.disabled = state.pageSwitches = switchesOf(search);
   for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
     const kernel = await fetch(new URL(`${name}${self.location.search}`, import.meta.url)).catch(() => undefined);
     if (kernel?.ok) {
-      pyodide.FS.writeFile(`/home/pyodide/${name}`, new Uint8Array(await kernel.arrayBuffer()));
-      kernels = "/home/pyodide/simdkernel.so";
+      state.pyodide.FS.writeFile(`/home/pyodide/${name}`, new Uint8Array(await kernel.arrayBuffer()));
+      state.kernels = "/home/pyodide/simdkernel.so";
     }
   }
   // T93: the forward pass runs in forward.js, on the plain build of the same kernels (simdkernel.so stays for the
   // sampling, which works on Python's logits). Without them (no WebAssembly SIMD) the engine runs NumPy.
   try {
-    forwardModule = await import(new URL(`forward.js${self.location.search}`, import.meta.url));
+    state.forwardModule = await import(new URL(`forward.js${self.location.search}`, import.meta.url));
     // one build of the kernels: simdkernel_<kind>.wasm and simdkernel_relaxed_<kind>.wasm, or null
     const build = async (kind, wide = false) => {
       const [plain, relaxed] = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
         fetch(new URL(`${name}${self.location.search}`, import.meta.url)).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
-      return plain ? forwardModule.compileKernels(plain, relaxed, wide) : null;
+      return plain ? state.forwardModule.compileKernels(plain, relaxed, wide) : null;
     };
-    jsKernels = await build("plain");
-    if (jsKernels && self.crossOriginIsolated) sharedKernels = await build("shared");
+    state.jsKernels = await build("plain");
+    if (state.jsKernels && self.crossOriginIsolated) state.sharedKernels = await build("shared");
     // T101: on their own, so that a browser that says it makes 64-bit memories and then cannot compile their kernels
     // (Playwright's WebKit did, 2026-09-25) keeps the 32-bit ones: in the same try it lost every kernel and ran NumPy
-    if (jsKernels && forwardModule.memory64()) {
+    if (state.jsKernels && state.forwardModule.memory64()) {
       try {
-        wideKernels = { plain: await build("plain64", true), shared: self.crossOriginIsolated ? await build("shared64", true) : null };
+        state.wideKernels = { plain: await build("plain64", true), shared: self.crossOriginIsolated ? await build("shared64", true) : null };
       } catch {
-        wideKernels = undefined;
+        state.wideKernels = undefined;
       }
     }
   } catch {
-    jsKernels = null;
+    state.jsKernels = null;
   }
   loadSeconds.pyodide = since(started);
-  pyodideAt = performance.now();
+  state.pyodideAt = performance.now();
 }
 
 // a Python bytearray that JavaScript fills in place
 function pythonBuffer(size) {
-  const buffer = pyodide.globals.get("bytearray")(size);
+  const buffer = state.pyodide.globals.get("bytearray")(size);
   const write = (offset, chunk) => {
     // the view is taken anew every time: it dies when the WebAssembly memory grows
     const view = buffer.getBuffer("u8");
@@ -246,7 +216,6 @@ const openGpu = () => new Worker(new URL(`gpu.js${self.location.search}`, import
 // (the browser gave less than it asked for, or it is not shared and grows as far as any would), the checkpoint
 // fitting is enough. shared is what was asked for, not what the browser gave: a device without shared memories
 // made one for every model.
-let weightsPool;
 // T242: the switches (?without=) of each load the page says will follow on the model of its init, and no other model
 // ({ ahead: [[...], ...] }: /benchmark/'s model section, whose worker loads one model, for the page's path and again
 // for each round). The shared memory is then made for the largest of those loads and no more: the gigabyte that
@@ -255,22 +224,21 @@ let weightsPool;
 // maximum (1.07 GiB for tiny-lm) in about one run in four, once the CPU section's worker, ended before, had had a
 // shared memory of its own; with the maximum of the model alone (45 MB) it never did (0 of 39 runs), and neither
 // section alone ends it. undefined on the model page: any model may follow.
-let loadsAhead;
 // ahead: what the forward pass of the largest of loadsAhead puts after the checkpoint, or undefined
 function pooledWeights(size, after, shared, wide, ahead) {
   const pages = (bytes) => Math.ceil(bytes / 65536);
-  const needs = (base) => pages(base + size + (weightsPool.limited ? 0 : after)) + 1;
+  const needs = (base) => pages(base + size + (state.weightsPool.limited ? 0 : after)) + 1;
   // what a memory made now is for: the load going on, and the largest of those that follow it where the page said which do
   const largest = ahead === undefined ? after : Math.max(after, ahead);
-  const fits = weightsPool && weightsPool.asked === shared && weightsPool.wide === wide && needs(weightsPool.base) <= weightsPool.maximum;
+  const fits = state.weightsPool && state.weightsPool.asked === shared && state.weightsPool.wide === wide && needs(state.weightsPool.base) <= state.weightsPool.maximum;
   if (!fits) {
     // nothing may hold the old memory while the new one is made (T96: Chromium refused a page's third)
-    weightsPool = weightsNow = undefined;
+    state.weightsPool = state.weightsNow = undefined;
     let memory, base;
     if (shared) {
       try {
         // (a page more where nothing follows, as needs() counts one past what the model takes)
-        ({ memory, base } = forwardModule.weightsMemory(size, { shared: true, wide, after: largest, ...(ahead !== undefined && { spare: 65536 }) }));
+        ({ memory, base } = state.forwardModule.weightsMemory(size, { shared: true, wide, after: largest, ...(ahead !== undefined && { spare: 65536 }) }));
       } catch {
         memory = undefined;  // no shared memory here: one thread
       }
@@ -285,17 +253,17 @@ function pooledWeights(size, after, shared, wide, ahead) {
         memory = undefined;
       }
     }
-    if (!memory) ({ memory, base } = forwardModule.weightsMemory(size, { wide }));
+    if (!memory) ({ memory, base } = state.forwardModule.weightsMemory(size, { wide }));
     const isShared = shared && memory.buffer instanceof SharedArrayBuffer;
     // a memory without a maximum (not shared) grows as far as the browser allows: 4 GB of pages, 16 GB when wide
     const most = wide ? 262144 : 65536;
-    weightsPool = { memory, base, wide, asked: shared, shared: isShared, maximum: isShared ? memory.maximum ?? most : most,
+    state.weightsPool = { memory, base, wide, asked: shared, shared: isShared, maximum: isShared ? memory.maximum ?? most : most,
                     limited: !isShared || Boolean(memory.limited) };
   }
-  const { memory, base } = weightsPool;
+  const { memory, base } = state.weightsPool;
   const more = pages(base + size) + 1 - memory.buffer.byteLength / 65536;
-  if (more > 0) forwardModule.growMemory(memory, more, wide);
-  return weightsPool;
+  if (more > 0) state.forwardModule.growMemory(memory, more, wide);
+  return state.weightsPool;
 }
 
 // T115: what the forward pass of a checkpoint of size bytes puts after it, at most (forward.js's footprint()): from
@@ -304,18 +272,18 @@ function pooledWeights(size, after, shared, wide, ahead) {
 // model's keys and values may be float16; forward.js's keysInHalf says whether they are, T160, T130).
 // What footprint() takes (the worker asks keysInHalf the same).
 // without: the switches of the load (those of the load going on, or of one that follows: loadsAhead, T242).
-function forwardOptions(options, shared, without = disabled) {
+function forwardOptions(options, shared, without = state.disabled) {
   const { dtype = "float32" } = options;
   const int8 = !without.includes("int8"), quantized = ["int8", "int6", "ternary"].includes(dtype);
   return {
-    ...options, dtype, int8, relaxed: Boolean(jsKernels?.relaxed) && !without.includes("relaxed"),
+    ...options, dtype, int8, relaxed: Boolean(state.jsKernels?.relaxed) && !without.includes("relaxed"),
     halfKV: quantized && int8 && !without.includes("kv16"), shared,
-    outliers: llama2_numpy.OUTLIER_CHANNELS, gpu: hasWebGpu,
+    outliers: state.llama2_numpy.OUTLIER_CHANNELS, gpu: hasWebGpu,
   };
 }
-const afterCheckpoint = (header, size, options, shared, without) => forwardModule.footprint(header, size, forwardOptions(options, shared, without));
+const afterCheckpoint = (header, size, options, shared, without) => state.forwardModule.footprint(header, size, forwardOptions(options, shared, without));
 // the page cross-origin isolated (stage 3), shared memories to be had, and not ?threads=1: the memory is shared
-const sharedWanted = () => Boolean(sharedKernels && self.crossOriginIsolated && threadsRequest?.fixed !== 1);
+const sharedWanted = () => Boolean(state.sharedKernels && self.crossOriginIsolated && state.threadsRequest?.fixed !== 1);
 
 // T115: the bits of a model converted with none asked for (weightsFor() in src/models.js asks for six bits where the
 // device says it has too little memory): int8 unless its forward pass does not fit a 32-bit memory and this browser
@@ -328,17 +296,17 @@ function automaticBits(header, form, sizes) {
   header.destroy();
   sizes.destroy();
   form.destroy();
-  if (!forwardModule) return "int8";  // no forward.js (no WebAssembly SIMD): NumPy widens every weight anyway
+  if (!state.forwardModule) return "int8";  // no forward.js (no WebAssembly SIMD): NumPy widens every weight anyway
   const shared = sharedWanted();
-  return forwardModule.automaticDtype(int8, afterCheckpoint(ints, int8, { ...given, dtype: "int8" }, shared),
-    Boolean(wideKernels?.plain));
+  return state.forwardModule.automaticDtype(int8, afterCheckpoint(ints, int8, { ...given, dtype: "int8" }, shared),
+    Boolean(state.wideKernels?.plain));
 }
 
 // header: the checkpoint's 7 ints, options: what it is loaded with (its dtype and arch): what the forward pass puts
 // after the checkpoint follows from them (T115). T156, keep: where a conversion is kept as it comes (kept.js's
 // keeper()), for a model on the GPU alone, whose weights nothing holds whole to keep afterwards
 function weightsBuffer(size, header, options, keep) {
-  if (jsKernels && !disabled.includes("kernels")) {
+  if (state.jsKernels && !state.disabled.includes("kernels")) {
     // a shared memory where the page is cross-origin isolated (stage 3), unless ?threads=1; else one thread
     const wanted = sharedWanted();
     // T101: a model past 4 GiB with its forward pass goes on a 64-bit memory (about a tenth slower: only when it has
@@ -348,7 +316,7 @@ function weightsBuffer(size, header, options, keep) {
     const after = afterCheckpoint(header, size, options, wanted);
     // T129 (7): a model past even a 64-bit memory is refused here, before its weights are fetched (a Qwen2.5 32B of
     // ?hf=, about 37 GB as int8, began a 65 GB download and failed at 7.8 GB). The words are the owner's (2026-09-28)
-    if (forwardModule.pastWide(size, after)) {
+    if (state.forwardModule.pastWide(size, after)) {
       throw new Error(`This model is too large for a web page: it needs about ${Math.ceil((size + after) / 1e9)} GB of ` +
         "memory, and a browser gives a page 16 GB at most.");
     }
@@ -364,21 +332,21 @@ function weightsBuffer(size, header, options, keep) {
     const onGpu = gpuOnlyWeightsFor(size, header, options, after, deviceMemory);
     if (onGpu.mode === "gpu") return gpuOnlyBuffer(size, header, options, onGpu, keep);
     const gpuRoom = onGpu.gpuRoom;
-    const wide = forceWide || forwardModule.needsWide(size, after);
-    if (wide && !wideKernels?.plain) {
+    const wide = state.forceWide || state.forwardModule.needsWide(size, after);
+    if (wide && !state.wideKernels?.plain) {
       throw new Error("This model needs more than 4 GB of memory, which this browser cannot give a web page (no 64-bit " +
         "WebAssembly memory: Safari has none yet). Chrome and Firefox can.");
     }
     // T242: where the page said which loads follow on this model, the memory is made for the largest of them (a load
     // without the kernels takes none: NumPy's weights are Python's)
-    const ahead = loadsAhead && Math.max(0, ...loadsAhead.filter((without) => !without.includes("kernels"))
+    const ahead = state.loadsAhead && Math.max(0, ...state.loadsAhead.filter((without) => !without.includes("kernels"))
       .map((without) => afterCheckpoint(header, size, options, wanted, without)));
-    const { memory, base, shared } = pooledWeights(size, after, wanted && (!wide || Boolean(wideKernels.shared)), wide, ahead);
+    const { memory, base, shared } = pooledWeights(size, after, wanted && (!wide || Boolean(state.wideKernels.shared)), wide, ahead);
     // T160: the type of the keys and values that after counts, T130: on the memory the browser gave
-    const halfKeys = forwardModule.keysInHalf(header, size, forwardOptions(options, shared));
-    const kernels = wide ? (shared ? wideKernels.shared : wideKernels.plain) : (shared ? sharedKernels : jsKernels);
+    const halfKeys = state.forwardModule.keysInHalf(header, size, forwardOptions(options, shared));
+    const kernels = wide ? (shared ? state.wideKernels.shared : state.wideKernels.plain) : (shared ? state.sharedKernels : state.jsKernels);
     const spawn = shared ? spawnThread : undefined;
-    weightsNow = memory;
+    state.weightsNow = memory;
     return {
       write: (offset, chunk) => new Uint8Array(memory.buffer, base + offset, chunk.length).set(chunk),
       slice: (begin, end) => new Uint8Array(memory.buffer, base + begin, end - begin).slice(),
@@ -387,15 +355,15 @@ function weightsBuffer(size, header, options, keep) {
         // them would slow down with its upload and compilation; its first load is one of them)
         // (nor under the rounds of /benchmark/'s model section, T184: the same; its page path, timed on the first load
         // before the rounds, has the GPU, and T205: the rounds' loads wait for that GPU to let go of its device)
-        outsideNow = forwardModule.external({ memory, base, size, kernels, spawn, gpu: hasWebGpu && !benchPage && !benching ? openGpu : undefined, gpuRoom, memoryUnsaid,
-          gpuRemembered: gpuRequest?.remembered, gpuForce, halfKeys });
-        return llama2_numpy.Llama.callKwargs(null, tokenizer, { ...options, external: outsideNow });
+        state.outsideNow = state.forwardModule.external({ memory, base, size, kernels, spawn, gpu: hasWebGpu && !state.benchPage && !state.benching ? openGpu : undefined, gpuRoom, memoryUnsaid,
+          gpuRemembered: state.gpuRequest?.remembered, gpuForce: state.gpuForce, halfKeys });
+        return state.llama2_numpy.Llama.callKwargs(null, tokenizer, { ...options, external: state.outsideNow });
       },
       destroy() {},
     };
   }
-  weightsNow = undefined;
-  outsideNow = undefined;
+  state.weightsNow = undefined;
+  state.outsideNow = undefined;
   const { buffer, write } = pythonBuffer(size);
   return {
     write,
@@ -405,7 +373,7 @@ function weightsBuffer(size, header, options, keep) {
       view.release();
       return copy;
     },
-    llama: (tokenizer, options) => llama2_numpy.Llama.callKwargs(buffer, tokenizer, options),
+    llama: (tokenizer, options) => state.llama2_numpy.Llama.callKwargs(buffer, tokenizer, options),
     destroy: () => buffer.destroy(),
   };
 }
@@ -416,22 +384,22 @@ function weightsBuffer(size, header, options, keep) {
 // (cpuOnly). convert() asks it too before it opens a file to keep a conversion in as it comes (the review of T156)
 // (the owner, 2026-09-27: and no verdict the page kept that the CPU is faster here: then the CPU at once)
 const gpuOnlyPossible = (dtype) => gpuOnlyAllowed() && !aloneKept(dtype);
-const gpuOnlyAllowed = () => hasWebGpu && self.navigator?.deviceMemory !== undefined && !benchPage && !benching && sharedWanted() &&
-  Boolean(wideKernels?.shared) && !disabled.includes("int8") && !cpuOnly.has(loadingKey) &&
-  Boolean(gpuAdapter) && (!gpuAdapter.fallback || Boolean(gpuForce.fallback));
+const gpuOnlyAllowed = () => hasWebGpu && self.navigator?.deviceMemory !== undefined && !state.benchPage && !state.benching && sharedWanted() &&
+  Boolean(state.wideKernels?.shared) && !state.disabled.includes("int8") && !cpuOnly.has(state.loadingKey) &&
+  Boolean(state.gpuAdapter) && (!state.gpuAdapter.fallback || Boolean(state.gpuForce.fallback));
 // T156: whether the page kept that the CPU was faster here than this model on the GPU alone (forward.js's aloneHolds)
 // (dtype, T232: the key is the one gpu.js gave the verdict, a ternary model's its own)
-const aloneKept = (dtype) => Boolean(gpuAdapter) &&
-  forwardModule.aloneHolds(gpuRequest?.remembered?.alone, dtype === "ternary" ? gpuAdapter.ternaryKey : gpuAdapter.key, gpuRequest?.cpu);
+const aloneKept = (dtype) => Boolean(state.gpuAdapter) &&
+  state.forwardModule.aloneHolds(state.gpuRequest?.remembered?.alone, dtype === "ternary" ? state.gpuAdapter.ternaryKey : state.gpuAdapter.key, state.gpuRequest?.cpu);
 // T156: where a model goes ({ mode: "both" | "gpu" | "cpu", gpuRoom }, forward.js's weightsPlace): the GPU alone only
 // for a Llama of int8 (T232: or of ternary weights) the GPU's steps take (gpuOnlyUnfit), where the page and the device
 // may (gpuOnlyPossible)
 function gpuOnlyWeightsFor(size, header, options, after, deviceMemory) {
   const { dtype = "float32" } = options, form = { arch: options.arch, bias: options.bias, qk_norm: options.qk_norm, head_dim: options.head_dim };
-  const cpu = size + after, gpu = forwardModule.gpuBytes(header, { ...form, dtype });
+  const cpu = size + after, gpu = state.forwardModule.gpuBytes(header, { ...form, dtype });
   // (T232: with the form's rotated basis, which the GPU does not turn the inputs for (T237): the worker did not hand it
   // on, and a Llama in a rotated basis would have gone on the GPU alone to be loaded again on the CPU once built)
-  const fit = gpuOnlyAllowed() && !forwardModule.gpuOnlyUnfit(header, dtype, { ...form, rotated: options.rotated }, gpuAdapter, gpuForce);
+  const fit = gpuOnlyAllowed() && !state.forwardModule.gpuOnlyUnfit(header, dtype, { ...form, rotated: options.rotated }, state.gpuAdapter, state.gpuForce);
   const eligible = fit && !aloneKept(dtype);
   // (the second review of T156: the status line then says only the memory's reason where the layers do not fit beside
   // the CPU's copy; the console says the kept verdict, and what asks again)
@@ -439,14 +407,14 @@ function gpuOnlyWeightsFor(size, header, options, after, deviceMemory) {
     console.info("gpu: the CPU as /benchmark/ measured it was faster here than this model on the GPU alone, as the page kept it: " +
       "on the CPU (a new run of /benchmark/'s CPU section, another browser version or new shaders weigh the two again)");
   }
-  if (!eligible) return forwardModule.weightsPlace({ cpu, gpu, deviceMemory });
-  const tensors = placesOf(header, dtype, form), stored = size - forwardModule.gpuHoles(tensors).reduce((sum, [a, b]) => sum + b - a, 0);
+  if (!eligible) return state.forwardModule.weightsPlace({ cpu, gpu, deviceMemory });
+  const tensors = placesOf(header, dtype, form), stored = size - state.forwardModule.gpuHoles(tensors).reduce((sum, [a, b]) => sum + b - a, 0);
   const gpuOnly = stored + afterCheckpoint(header, stored, { ...options, direct: true }, true);
-  return { ...forwardModule.weightsPlace({ cpu, gpuOnly, gpu, deviceMemory, eligible, forced: gpuForce.only }), tensors, stored, gpuOnly };
+  return { ...state.forwardModule.weightsPlace({ cpu, gpuOnly, gpu, deviceMemory, eligible, forced: state.gpuForce.only }), tensors, stored, gpuOnly };
 }
 // llama2_numpy.external_tensors(): where every tensor of the checkpoint is, from its header alone
 function placesOf(header, dtype, form) {
-  const proxy = llama2_numpy.external_tensors(header, dtype, form);
+  const proxy = state.llama2_numpy.external_tensors(header, dtype, form);
   try {
     return proxy.toJs({ dict_converter: Object.fromEntries });
   } finally {
@@ -456,7 +424,7 @@ function placesOf(header, dtype, form) {
 // T156: the weights of a model on the GPU alone: the layers' matrices to the GPU's worker as they come (forward.js's
 // gpuOnlyWeights), the rest into a memory of their size, and every byte to keep's file where the conversion is kept
 function gpuOnlyBuffer(size, header, options, { tensors, stored, gpuOnly }, keep) {
-  const after = gpuOnly - stored, wide = forwardModule.needsWide(stored, after);
+  const after = gpuOnly - stored, wide = state.forwardModule.needsWide(stored, after);
   const { memory, base, shared } = pooledWeights(stored, after, true, wide);
   if (!shared) throw new Error("This browser gave no shared memory for a model on the GPU alone.");
   const worker = openGpu();
@@ -470,21 +438,21 @@ function gpuOnlyBuffer(size, header, options, { tensors, stored, gpuOnly }, keep
   const end = () => {
     worker.postMessage({ type: "stop" });
     let timer;
-    const late = new Promise((resolve) => { timer = setTimeout(resolve, forwardModule.GPU_END_MS); });
+    const late = new Promise((resolve) => { timer = setTimeout(resolve, state.forwardModule.GPU_END_MS); });
     return Promise.race([ending, late]).then(() => {
       clearTimeout(timer);
       worker.terminate();
     });
   };
-  const weights = forwardModule.gpuOnlyWeights({ memory, base, size, tensors, worker });
-  worker.postMessage({ type: "open", plan: forwardModule.gpuOnlyPlan(header, tensors, gpuForce, gpuRequest?.remembered), flow: weights.flow });
+  const weights = state.forwardModule.gpuOnlyWeights({ memory, base, size, tensors, worker });
+  worker.postMessage({ type: "open", plan: state.forwardModule.gpuOnlyPlan(header, tensors, state.gpuForce, state.gpuRequest?.remembered), flow: weights.flow });
   // (T156: the checkpoint's size, its layers' multiply-adds, /benchmark/'s CPU reading and the page's use, for the
   // estimate the GPU is held against: forward.js's aloneVerdict)
   const direct = state.gpuOnlyNow = { worker, lost: null, stored, size, place: weights.place,
-    layerWeights: forwardModule.layerWeightsOf(header, options), cpu: gpuRequest?.cpu, usage: gpuRequest?.usage ?? forwardModule.USAGE_UNKNOWN,
+    layerWeights: state.forwardModule.layerWeightsOf(header, options), cpu: state.gpuRequest?.cpu, usage: state.gpuRequest?.usage ?? state.forwardModule.USAGE_UNKNOWN,
     room: weights.room, drained: weights.drained, onLost: (why) => { direct.lost = why; }, end };
-  weightsNow = memory;
-  const kernels = wide ? wideKernels.shared : sharedKernels;
+  state.weightsNow = memory;
+  const kernels = wide ? state.wideKernels.shared : state.sharedKernels;
   let built = false;
   return {
     direct,
@@ -495,9 +463,9 @@ function gpuOnlyBuffer(size, header, options, { tensors, stored, gpuOnly }, keep
     room: weights.room,
     drained: weights.drained,  // every byte of the layers on the GPU (or the GPU failed: start() says so)
     llama: (tokenizer, engineOptions) => {
-      outsideNow = forwardModule.external({ memory, base, size, kernels, spawn: spawnThread, gpu: () => worker, gpuForce, halfKeys: true, direct,
-        gpuRemembered: gpuRequest?.remembered });
-      const made = llama2_numpy.Llama.callKwargs(null, tokenizer, { ...engineOptions, external: outsideNow });
+      state.outsideNow = state.forwardModule.external({ memory, base, size, kernels, spawn: spawnThread, gpu: () => worker, gpuForce: state.gpuForce, halfKeys: true, direct,
+        gpuRemembered: state.gpuRequest?.remembered });
+      const made = state.llama2_numpy.Llama.callKwargs(null, tokenizer, { ...engineOptions, external: state.outsideNow });
       built = true;
       return made;
     },
@@ -505,19 +473,16 @@ function gpuOnlyBuffer(size, header, options, { tensors, stored, gpuOnly }, keep
     // (sink.open() again), let go of the GPU's worker: nothing else would, and it held the device and a buffer for
     // every layer's matrices, 4.1 GB for Llama 3.2 3B, for the rest of the visit. The next load waits for it)
     destroy() {
-      if (!built) gpuOnlyEnding = end();
+      if (!built) state.gpuOnlyEnding = end();
     },
   };
 }
-// the GPU's worker of a model on the GPU alone let go before its engine was built (destroy() above): the next load
-// waits for it, as release() waits for a built one's (T205)
-let gpuOnlyEnding = Promise.resolve();
 // T156: after a model on the GPU alone is built: its GPU ready (true), or failed (false: the worker let go of it, and
 // the model goes on the CPU from now on this visit)
 async function gpuOnlyReady(model, id) {
   const direct = state.gpuOnlyNow;
-  if (!direct || outsideNow?.engine === undefined) return true;
-  await outsideNow.engine.gpu;
+  if (!direct || state.outsideNow?.engine === undefined) return true;
+  await state.outsideNow.engine.gpu;
   if (!direct.lost) return true;
   console.warn(`gpu: ${direct.lost}: the model was on the GPU alone, and is loaded again on the CPU`);
   cpuOnly.add(modelKey(model));
@@ -532,8 +497,6 @@ async function gpuOnlyReady(model, id) {
   state.gpuOnlyNow = undefined;
   return false;
 }
-// the key of the model being loaded (cpuOnly)
-let loadingKey;
 
 // T93: where the converter writes the checkpoint, piece by piece, straight into where the engine will read it (a
 // Python buffer on the way would stay: Pyodide's memory never shrinks). sink is what the converter calls
@@ -574,7 +537,7 @@ async function loadConverted(model, signal, id) {
   let kept;
   try {
     // under the bits asked for, or either the worker may choose (T115), by this converter (T116)
-    kept = await keptModule.openKept(model);
+    kept = await state.keptModule.openKept(model);
   } catch (error) {
     return { miss: `could not open what is kept: ${error.message ?? error}` };
   }
@@ -624,7 +587,7 @@ async function loadConverted(model, signal, id) {
     const engineOptions = { ...manifest.options };
     delete engineOptions.template;
     await weightsDrained();  // (T156: a model on the GPU alone: every byte of its layers there)
-    llama = weights.llama(tokenizer.buffer, { kernels, disable: disabled, ...engineOptions, ...model.options });
+    state.llama = weights.llama(tokenizer.buffer, { kernels: state.kernels, disable: state.disabled, ...engineOptions, ...model.options });
     loadSeconds.construct = since(constructStarted);
     return { template: manifest.options.template, keptIn: kept.where };
   } finally {
@@ -644,33 +607,33 @@ async function keepConverted(model, checkpoint, bytes, tokenizer, options, signa
   // under the bits it was converted to, which the worker may have chosen (T115)
   const converted = { ...model, conversion: { ...model.conversion, dtype: options.dtype } };
   // T136: what this model was kept as before its source changed is never used again, and takes the room it needs
-  for (const old of await keptModule.replaced(model).catch(() => [])) await keptModule.forget(old).catch(() => {});
+  for (const old of await state.keptModule.replaced(model).catch(() => [])) await state.keptModule.forget(old).catch(() => {});
   // slice() copies: the memory it comes from may grow (and so move) while an await waits
   if (checkpoint.direct) return kept ? kept.finish(manifest, vocabulary) : "the weights went to the GPU alone, and there is no file system here to keep them in as they came";
-  return keptModule.keep(converted, manifest, (begin, end) => checkpoint.slice(begin, end), vocabulary, signal);
+  return state.keptModule.keep(converted, manifest, (begin, end) => checkpoint.slice(begin, end), vocabulary, signal);
 }
 
 async function convert(model, signal, id) {
   const remote = typeof model.hf.repo === "string";
   // with the ?v=<build> of this worker, like every file it reads (AGENTS.md)
-  keptModule ??= await import(new URL(`kept.js${self.location.search}`, import.meta.url));
+  state.keptModule ??= await import(new URL(`kept.js${self.location.search}`, import.meta.url));
   const kept = remote ? await loadConverted(model, signal, id) : undefined;
   if (kept && !kept.miss) {
     return { fromCache: true, keptIn: kept.keptIn, template: kept.template };
   }
   const keptMiss = kept?.miss;
-  if (!llama2_convert) {
+  if (!state.llama2_convert) {
     // fetched when it is first needed: most visitors never convert anything
     // (T347: the converter is a window and its parts, python.js's list; each with this worker's ?v=<build>)
     const { placePython } = await import(new URL(`python.js${self.location.search}`, import.meta.url));
-    await placePython(pyodide, "llama2_convert", async (name) => {
+    await placePython(state.pyodide, "llama2_convert", async (name) => {
       const res = await fetch(new URL(`${name}${self.location.search}`, import.meta.url), { signal });
       if (!res.ok) {
         throw new Error(`Could not fetch ${name}: ${res.status}`);
       }
       return res.text();
     });
-    llama2_convert = pyodide.pyimport("llama2_convert");
+    state.llama2_convert = state.pyodide.pyimport("llama2_convert");
   }
   const started = performance.now();
   const at = (name) => `https://huggingface.co/${model.hf.repo}/resolve/${model.hf.revision}/${name}`;
@@ -687,7 +650,7 @@ async function convert(model, signal, id) {
   // is the sink's, once the header is known), let go otherwise
   const keptDtype = model.conversion?.dtype ?? "int8";
   const mayKeep = remote && ["int8", "ternary"].includes(keptDtype) && gpuOnlyPossible(keptDtype);
-  let keep = mayKeep ? await keptModule.keeper({ ...model, conversion: { ...model.conversion, dtype: keptDtype } }).catch(() => undefined) : undefined;
+  let keep = mayKeep ? await state.keptModule.keeper({ ...model, conversion: { ...model.conversion, dtype: keptDtype } }).catch(() => undefined) : undefined;
   const into = checkpointSink(keep), { sink } = into;
   let keptAsItCame = false;  // keep went to keepConverted, which keeps it or lets it go
   // T115: no bits asked for (weightsFor() in src/models.js asks for six only where the device says it has too little
@@ -697,11 +660,11 @@ async function convert(model, signal, id) {
   // T89: quantize() on the SIMD kernels, the same bytes six times faster (none with ?without=kernels); T123: the
   // widening of bfloat16 too, the same float32 three times faster; T136: and of GGUF's Q8_0; T273: and of the two
   // ternary types (PQ2_0, PTQ1_0)
-  const onKernels = kernels && !disabled.includes("kernels");
-  const quantizeRows = onKernels ? llama2_numpy.kernel_quantizer(kernels) : undefined;
-  const bfloat16 = onKernels ? llama2_numpy.kernel_widener(kernels) : undefined;
-  const q8_0 = onKernels ? llama2_numpy.kernel_q8_0(kernels) : undefined;
-  const readers = onKernels ? llama2_numpy.kernel_ternary_readers(kernels) : undefined;
+  const onKernels = state.kernels && !state.disabled.includes("kernels");
+  const quantizeRows = onKernels ? state.llama2_numpy.kernel_quantizer(state.kernels) : undefined;
+  const bfloat16 = onKernels ? state.llama2_numpy.kernel_widener(state.kernels) : undefined;
+  const q8_0 = onKernels ? state.llama2_numpy.kernel_q8_0(state.kernels) : undefined;
+  const readers = onKernels ? state.llama2_numpy.kernel_ternary_readers(state.kernels) : undefined;
   // T136: a GGUF's weights with the vocabulary and config.json of the original repository (a sentencepiece vocabulary
   // in a GGUF says neither its kind nor its normalization): those files come from there, the weights from the GGUF
   const vocabulary = remote ? model.hf.vocabulary : undefined;
@@ -713,7 +676,7 @@ async function convert(model, signal, id) {
     for (let bytes = 4 * HF_HEADER_BYTES; ; bytes *= 4) {
       ({ bytes: first, total: size } = await sized(at(model.hf.weights), await fetchRange(at(model.hf.weights), 0, bytes, signal), signal));
       try {
-        conversion = llama2_convert.Conversion.from_gguf.callKwargs(first, { ...converting, sink, quantize_rows: quantizeRows, bfloat16, q8_0, readers });
+        conversion = state.llama2_convert.Conversion.from_gguf.callKwargs(first, { ...converting, sink, quantize_rows: quantizeRows, bfloat16, q8_0, readers });
         break;
       } catch (error) {
         if (error.type !== "Incomplete" || bytes >= size) {
@@ -746,7 +709,7 @@ async function convert(model, signal, id) {
       for (let bytes = 4 * HF_HEADER_BYTES; ; bytes *= 4) {
         ({ bytes: first, total: size } = await sized(at(model.hf.weights), await fetchRange(at(model.hf.weights), 0, bytes, signal), signal));
         try {
-          const made = llama2_convert.gguf_weights(first, config);
+          const made = state.llama2_convert.gguf_weights(first, config);
           [header, base] = made.toJs();
           made.destroy();
           break;
@@ -780,7 +743,7 @@ async function convert(model, signal, id) {
           for (const name of files) {
             shards.push(await head(name));
           }
-          const joined = llama2_convert.joined_shards(shards.map((shard) => shard.header));
+          const joined = state.llama2_convert.joined_shards(shards.map((shard) => shard.header));
           let lengths;
           [header, lengths] = joined.toJs();
           joined.destroy();
@@ -824,7 +787,7 @@ async function convert(model, signal, id) {
       }
       signal.throwIfAborted();
       try {
-        conversion = llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, remote ? candidate : candidate.name,
+        conversion = state.llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, remote ? candidate : candidate.name,
           { start: base, tokenizer_config: tokenizerConfig, chat_template: chatTemplate || null, ...converting, sink,
             quantize_rows: quantizeRows, bfloat16, q8_0, readers });
         break;
@@ -906,7 +869,7 @@ async function convert(model, signal, id) {
       const engineOptions = { ...options };
       delete engineOptions.template;
       await weightsDrained();  // (T156)
-      llama = into.weights.llama(proxies[1], { kernels, disable: disabled, ...engineOptions, ...model.options });
+      state.llama = into.weights.llama(proxies[1], { kernels: state.kernels, disable: state.disabled, ...engineOptions, ...model.options });
       loadSeconds.construct = since(constructStarted);
       // (the review of T156: a model not on the GPU alone is kept from its memory, as before (keep()): the file opened
       // for it as it came goes first. Its open handle refused keep()'s, and its drop() in the finally below removed what
@@ -940,33 +903,33 @@ async function convert(model, signal, id) {
 
 async function load(model, signal, id) {
   signal.throwIfAborted();
-  loadingKey = modelKey(model);
+  state.loadingKey = modelKey(model);
   state.gpuOnlyNow = undefined;
   await adapterAsked;  // (T156: before any weights are placed)
-  await gpuOnlyEnding;  // (the review of T156: the GPU's worker of a model on the GPU alone let go before it was built)
+  await state.gpuOnlyEnding;  // (the review of T156: the GPU's worker of a model on the GPU alone let go before it was built)
   // let go of the previous model first, so that two never have to fit in memory
-  if (llama) {
+  if (state.llama) {
     // what forward.js holds of Python's, and its software threads (T93); T205: and the GPU's worker, whose buffers and
     // device the next model waits for (up to forward.js's GPU_END_MS): an iPhone's tab went down in /benchmark/'s rounds
     // where the one before still held them as the next came from the cache
-    const released = llama.release?.();
-    llama.destroy();
-    llama = undefined;
-    outsideNow = undefined;  // the engine goes; the memory stays for the next model (T96)
+    const released = state.llama.release?.();
+    state.llama.destroy();
+    state.llama = undefined;
+    state.outsideNow = undefined;  // the engine goes; the memory stays for the next model (T96)
     // the engine's closures and the model refer to each other, so only the cycle collector frees the weights
-    pyodide.runPython("import gc; gc.collect()");
+    state.pyodide.runPython("import gc; gc.collect()");
     await released;
     signal.throwIfAborted();
   }
   if (model.hf) {
     postMessage({ type: "status", load: id, text: `${model.name}: ${model.hf.repo ? "fetching from Hugging Face and converting" : "converting"}...` });
-    await initialized;
+    await state.initialized;
     signal.throwIfAborted();
     const converted = await convert(model, signal, id);
     if (!(await gpuOnlyReady(model, id))) return load(model, signal, id);  // T156: the GPU failed on it alone
     await startThreads(model);
     postMessage({
-      type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seq_len: llama.seq_len,
+      type: "ready", load: id, pyodide: state.pyodide.version, backend: state.llama.backend, seq_len: state.llama.seq_len,
       seconds: { ...loadSeconds }, heap: heapBytes(), threads: threadsNow(), gpu: watchGpu(id), ...converted,
     });
     return;
@@ -994,7 +957,7 @@ async function load(model, signal, id) {
   tokenizerBytes.catch(() => {});
   let options, weights;
   try {
-    await initialized;
+    await state.initialized;
     signal.throwIfAborted();
     if (model.file) {
       head = new Uint8Array(await model.file.slice(0, HEADER_BYTES).arrayBuffer());
@@ -1024,7 +987,7 @@ async function load(model, signal, id) {
     tokenizer = pythonBuffer(vocabulary.length);
     tokenizer.write(0, vocabulary);
     try {
-      llama = weights.llama(tokenizer.buffer, { kernels, disable: disabled, ...options });
+      state.llama = weights.llama(tokenizer.buffer, { kernels: state.kernels, disable: state.disabled, ...options });
     } catch (err) {
       if (!model.file) {
         throw err;
@@ -1041,9 +1004,9 @@ async function load(model, signal, id) {
   if (!(await gpuOnlyReady(model, id))) return load(model, signal, id);  // T156: the GPU failed on it alone
   await startThreads(model);
   postMessage({
-    type: "ready", load: id, pyodide: pyodide.version, backend: llama.backend, seq_len: llama.seq_len,
+    type: "ready", load: id, pyodide: state.pyodide.version, backend: state.llama.backend, seq_len: state.llama.seq_len,
     seconds: { ...loadSeconds }, heap: heapBytes(), threads: threadsNow(), gpu: watchGpu(id),
-    overlapped: checkpoint.overlapped === true && pyodideAt > downloadStarted,
+    overlapped: checkpoint.overlapped === true && state.pyodideAt > downloadStarted,
   });
   if (!model.file && !model.url) {
     dropStaleParts(model);
@@ -1055,11 +1018,11 @@ async function load(model, signal, id) {
 // number of logical cores, and the page is told the answer to remember. The software threads of the starting count
 // are started and warmed here, before the model is ready.
 async function startThreads(model) {
-  const engine = outsideNow?.engine;
+  const engine = state.outsideNow?.engine;
   if (!engine?.findThreads) {
     return 1;
   }
-  const { fixed = 0, remembered = 0, hint = 1 } = threadsRequest ?? {};
+  const { fixed = 0, remembered = 0, hint = 1 } = state.threadsRequest ?? {};
   try {
     if (fixed) {
       return await engine.setThreads(fixed);
@@ -1072,7 +1035,7 @@ async function startThreads(model) {
     return 1;
   }
 }
-const threadsNow = () => outsideNow?.engine?.threads ?? 1;
+const threadsNow = () => state.outsideNow?.engine?.threads ?? 1;
 
 // T135, T148: what the status line says of the GPU as the model is ready (nothing waits for the GPU: the model runs on
 // the CPU until the GPU is ready, and the prompts go where they are faster from then on, forward.js). Once the layers
@@ -1080,10 +1043,10 @@ const threadsNow = () => outsideNow?.engine?.threads ?? 1;
 // chose, and how long it took: the page shows it and remembers the shaders for the next visit). A load let go of
 // meanwhile says it too; the page drops what is not of its latest load.
 function watchGpu(id) {
-  const engine = outsideNow?.engine;
+  const engine = state.outsideNow?.engine;
   if (!engine) return "prompts on the CPU (the NumPy engine runs this model)";
-  if (!engine.gpu) return `prompts on the CPU (${benchPage ? "the benchmark times the CPU" : "no WebGPU in a worker here"})`;
-  engine.gpu.then((note) => outsideNow?.engine === engine && postMessage({ type: "gpu", load: id, note, ...(engine.gpuReady ?? {}) }));
+  if (!engine.gpu) return `prompts on the CPU (${state.benchPage ? "the benchmark times the CPU" : "no WebGPU in a worker here"})`;
+  engine.gpu.then((note) => state.outsideNow?.engine === engine && postMessage({ type: "gpu", load: id, note, ...(engine.gpuReady ?? {}) }));
   return engine.gpuStatus;
 }
 
@@ -1092,7 +1055,7 @@ function watchGpu(id) {
 function timedGeneration(prompt, steps) {
   warmUp(prompt);
   const begin = performance.now();
-  const pieces = llama.generate.callKwargs(prompt, { steps, temperature: 0, echo: false });
+  const pieces = state.llama.generate.callKwargs(prompt, { steps, temperature: 0, echo: false });
   let tokens = 0;
   try {
     while (!pieces.next().done) tokens += 1;
@@ -1102,7 +1065,7 @@ function timedGeneration(prompt, steps) {
   return { tokens, speed: tokens / ((performance.now() - begin) / 1000) };
 }
 function warmUp(prompt) {
-  const pieces = llama.generate.callKwargs(prompt, { steps: 8, temperature: 0, echo: false });
+  const pieces = state.llama.generate.callKwargs(prompt, { steps: 8, temperature: 0, echo: false });
   try {
     while (!pieces.next().done);
   } finally {
@@ -1120,8 +1083,8 @@ function warmUp(prompt) {
 // GPU only (engine.gpuSide), the sides in turn, a run each after the warm-up.
 const GPU_WAIT_S = 240, WRITING_RUNS = 3;
 async function timedPaths({ prompt, counts, sampled }) {
-  const engine = outsideNow?.engine;
-  if (!engine) return { error: `${llama.backend} runs this model here: the page's path is the NumPy engine's` };
+  const engine = state.outsideNow?.engine;
+  if (!engine) return { error: `${state.llama.backend} runs this model here: the page's path is the NumPy engine's` };
   if (engine.gpu && !engine.gpuReady) {
     postMessage({ type: "status", text: "the GPU gets ready" });
     let timer;
@@ -1132,24 +1095,24 @@ async function timedPaths({ prompt, counts, sampled }) {
   const gpu = chosen ? { seconds: chosen.seconds, matrices: chosen.matrices, attention: chosen.attention }
     : { why: engine.gpuWhyNot ?? `not ready after ${GPU_WAIT_S} s` };
   postMessage({ type: "status", text: "the software threads" });
-  const { threads, found, ended } = await forwardModule.endSearch(engine, () => timedGeneration(prompt, 64));
+  const { threads, found, ended } = await state.forwardModule.endSearch(engine, () => timedGeneration(prompt, 64));
   // how the count came about, for the table's head (T190): src/bench.js's pathTable() says it. A software thread that
   // stopped (T120: the engine gave its helpers up and runs on one) is said first: found is 1 then, and the search's
   // verdicts or the remembered count would name another count (T190's review)
-  const remembered = threadsRequest?.remembered || 0;
-  const how = !weightsPool?.shared ? { alone: "no shared memory here" }
+  const remembered = state.threadsRequest?.remembered || 0;
+  const how = !state.weightsPool?.shared ? { alone: "no shared memory here" }
     : engine.lostThreads ? { alone: "a software thread stopped" }
     : threads < found ? { alone: `not the ${found} asked for: its software threads did not start` }
-    : !ended ? { unfinished: forwardModule.SEARCH_SECONDS }
+    : !ended ? { unfinished: state.forwardModule.SEARCH_SECONDS }
     : remembered && threads !== remembered ? { alone: `not the ${remembered} the model page remembers: its software threads did not start` }
     : remembered ? { remembered: true }
     : { searched: engine.searchLog.map(({ best, candidate, faster }) => [best, candidate, faster ? candidate : best]) };
-  const encoded = llama.tokenizer.encode(prompt);
+  const encoded = state.llama.tokenizer.encode(prompt);
   const words = encoded.toJs();
   encoded.destroy();
   postMessage({ type: "status", text: `prompts of ${counts.join(" and ")} tokens` });
-  const rows = forwardModule.timePrompts(engine, { words: words.length ? words : [llama.bos], counts: counts.filter((n) => n <= llama.seq_len) });
-  const writes = Math.min(sampled, llama.seq_len - words.length);  // steps counts the prompt's positions too
+  const rows = state.forwardModule.timePrompts(engine, { words: words.length ? words : [state.llama.bos], counts: counts.filter((n) => n <= state.llama.seq_len) });
+  const writes = Math.min(sampled, state.llama.seq_len - words.length);  // steps counts the prompt's positions too
   postMessage({ type: "status", text: `writing ${writes} tokens` });
   warmUp(prompt);
   let fewest = writes;  // a stop token may end a run first: its tok/s stands, and the row says the fewest
@@ -1158,13 +1121,13 @@ async function timedPaths({ prompt, counts, sampled }) {
     engine.gpuSide = side;
     const before = engine.gpuSampled;
     try {
-      const pieces = llama.generate.callKwargs(prompt, { steps: words.length + writes, temperature: 0, echo: false });
+      const pieces = state.llama.generate.callKwargs(prompt, { steps: words.length + writes, temperature: 0, echo: false });
       try {
         while (!pieces.next().done);
       } finally {
         pieces.destroy();
       }
-      const stats = llama.stats.toJs({ dict_converter: Object.fromEntries });
+      const stats = state.llama.stats.toJs({ dict_converter: Object.fromEntries });
       fewest = Math.min(fewest, stats.sampled);
       const whole = engine.gpuSampled - before >= stats.sampled;
       // as if each had written them all, at its tok/s
@@ -1180,8 +1143,8 @@ async function timedPaths({ prompt, counts, sampled }) {
   for (let run = 0; run < WRITING_RUNS; run++) {
     for (const [name, side] of Object.entries(sides)) runs[name].push(written(side));
   }
-  const row = { what: "generation", tokens: fewest, chosen: tokens ? forwardModule.timedCell(runs.chosen, writes) : { same: "cpu" },
-    cpu: forwardModule.timedCell(runs.cpu, writes), gpu: tokens ? forwardModule.timedCell(runs.gpu, writes) : { skip: chosen ? engine.gpuTokensWhyNot ?? "not on the GPU" : gpu.why } };
+  const row = { what: "generation", tokens: fewest, chosen: tokens ? state.forwardModule.timedCell(runs.chosen, writes) : { same: "cpu" },
+    cpu: state.forwardModule.timedCell(runs.cpu, writes), gpu: tokens ? state.forwardModule.timedCell(runs.gpu, writes) : { skip: chosen ? engine.gpuTokensWhyNot ?? "not on the GPU" : gpu.why } };
   // a GPU side the GPU did not take whole (it failed, or was lost, on the way: its time is the CPU's)
   if (tokens && runs.gpu.some((run) => run.gpuTokens < writes)) row.gpu = { skip: engine.gpuTokensWhyNot ?? "the GPU did not take every step" };
   rows.push(row);
@@ -1189,10 +1152,10 @@ async function timedPaths({ prompt, counts, sampled }) {
   // and the page's), in turn: the page's count against the others on this very model. A count the model page remembers
   // is not searched here, and the CPU section's made-up model (2 layers: 11 waits between phases a token) says little
   // of a model like llm-jp-3 150M (12 layers: 61 waits, most on a phase of about 1 MB)
-  const hint = Math.max(1, threadsRequest?.hint || 1);
+  const hint = Math.max(1, state.threadsRequest?.hint || 1);
   const tried = [...new Set([1, ...Array.from({ length: Math.floor(Math.log2(hint)) }, (_, i) => 2 ** (i + 1)), hint, threads])].sort((a, b) => a - b);
   const byCount = new Map(tried.map((n) => [n, []]));
-  if (weightsPool?.shared && !engine.lostThreads && tried.length > 1) {
+  if (state.weightsPool?.shared && !engine.lostThreads && tried.length > 1) {
     for (let run = 0; run < WRITING_RUNS; run++) {
       for (const n of tried.filter((c) => byCount.has(c))) {
         postMessage({ type: "status", text: `writing on ${n} software thread${n === 1 ? "" : "s"}` });
@@ -1207,29 +1170,24 @@ async function timedPaths({ prompt, counts, sampled }) {
     }
     await engine.setThreads(threads);
   }
-  const perCount = engine.lostThreads ? [] : [...byCount].filter(([, list]) => list.length).map(([n, list]) => ({ threads: n, ...forwardModule.timedCell(list, writes) }));
+  const perCount = engine.lostThreads ? [] : [...byCount].filter(([, list]) => list.length).map(([n, list]) => ({ threads: n, ...state.forwardModule.timedCell(list, writes) }));
   // a software thread that stopped while the sides were timed: the times after it are one thread's
   if (engine.lostThreads && !how.alone) how.stopped = true;
   // the rounds (T45) that follow load the model again: on this count too, not searching again while they are timed
-  if (weightsPool?.shared && !engine.lostThreads) threadsRequest = { ...threadsRequest, remembered: threads };
+  if (state.weightsPool?.shared && !engine.lostThreads) state.threadsRequest = { ...state.threadsRequest, remembered: threads };
   // whatever stopped the GPU while the sides were timed (a failure, a lost device): its cells are empty (timePrompts)
   if (chosen && engine.gpuWhyNot) gpu.lost = engine.gpuWhyNot;
   return { threads, how, perCount, gpu, status: engine.gpuStatus, rows };
 }
 
-// the run that is going on, and whether the page asked it to stop
-let generating, stopped = false;
-let lastLoad;  // the load message of the model now (T156)
-let benching = false;  // the benchmark's rounds are running (T45); see the bench message
-let pathing = false;  // T184: the benchmark's page path is being timed; see the paths message
 
 async function generate({ type, prompt, ...options }) {
-  outsideNow?.engine?.newGeneration?.();  // now and then the remembered number of threads is checked again
+  state.outsideNow?.engine?.newGeneration?.();  // now and then the remembered number of threads is checked again
   // a Python generator: every step of the iteration runs one forward pass and hands over one piece of text
-  const pieces = llama.generate.callKwargs(prompt, options);
+  const pieces = state.llama.generate.callKwargs(prompt, options);
   try {
     let breathed = performance.now();
-    while (!stopped) {
+    while (!state.stopped) {
       const { done, value } = pieces.next();
       if (done) {
         break;
@@ -1247,50 +1205,50 @@ async function generate({ type, prompt, ...options }) {
   } finally {
     pieces.destroy();
   }
-  postMessage({ type: "done", threads: threadsNow(), gpuTokens: outsideNow?.engine?.gpuTokens ?? 0, gpuSampled: outsideNow?.engine?.gpuSampled ?? 0,
-                gpu: outsideNow?.engine?.gpuStatus,
-                ...llama.stats.toJs({ dict_converter: Object.fromEntries }) });
+  postMessage({ type: "done", threads: threadsNow(), gpuTokens: state.outsideNow?.engine?.gpuTokens ?? 0, gpuSampled: state.outsideNow?.engine?.gpuSampled ?? 0,
+                gpu: state.outsideNow?.engine?.gpuStatus,
+                ...state.llama.stats.toJs({ dict_converter: Object.fromEntries }) });
 }
 
 /** The size of Pyodide's WebAssembly memory, which only grows; undefined before Pyodide is there. */
 function heapBytes() {
-  const python = pyodide?._module?.HEAPU8?.length;
+  const python = state.pyodide?._module?.HEAPU8?.length;
   // T93: the weights and the forward pass have a memory of their own, outside Pyodide's
-  return python === undefined ? undefined : python + (weightsNow?.buffer.byteLength ?? 0);
+  return python === undefined ? undefined : python + (state.weightsNow?.buffer.byteLength ?? 0);
 }
 
 self.onmessage = async ({ data }) => {
   let signal;
   try {
     if (data.type === "init" || data.type === "load") {
-      lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
-      threadsRequest = data.threads;
-      gpuRequest = data.gpu;
-      loadsAhead = Array.isArray(data.ahead) ? data.ahead : undefined;  // (T242; a load of the model page says none)
+      state.lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
+      state.threadsRequest = data.threads;
+      state.gpuRequest = data.gpu;
+      state.loadsAhead = Array.isArray(data.ahead) ? data.ahead : undefined;  // (T242; a load of the model page says none)
       // The latest choice wins: the download that is going on stops, and its parts that are complete stay in
       // the cache. Pyodide is loaded once, whatever happens to the model that was asked for first.
-      loading?.abort();
-      loading = new AbortController();
-      signal = loading.signal;
+      state.loading?.abort();
+      state.loading = new AbortController();
+      signal = state.loading.signal;
       // the model downloads while Pyodide loads
-      initialized ??= init(data.search);
+      state.initialized ??= init(data.search);
       // never take the model away from a run that is going on
-      stopped = generating !== undefined;
+      state.stopped = state.generating !== undefined;
       // The cancelled load frees its buffer a few turns of the event loop after the abort. Without waiting for
       // that the next buffer is allocated first, and the WebAssembly memory, which never shrinks, grows by a
       // whole model with every change of mind (587 MB after four of them).
-      const previous = unloaded;
-      const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
-      unloaded = current.catch(() => {});
+      const previous = state.unloaded;
+      const current = previous.then(() => state.generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+      state.unloaded = current.catch(() => {});
       await current;
     } else if (data.type === "bench") {
       // T45: the same model, measured again for every combination of switches the page asked for. The model is
       // built once per round from the checkpoint that is already in the Cache API, so only the engine changes.
       // One at a time: a second request while the rounds run would end a round's threads under its coordinator
-      if (benching) {
+      if (state.benching) {
         return;
       }
-      benching = true;
+      state.benching = true;
       const rows = [];
       try {
         for (const round of data.rounds) {
@@ -1301,62 +1259,62 @@ self.onmessage = async ({ data }) => {
             continue;
           }
           // every round is a load of its own, and it cancels whatever went before, exactly like a change of model
-          loading?.abort();
-          loading = new AbortController();
-          signal = loading.signal;
-          disabled = round.without;
+          state.loading?.abort();
+          state.loading = new AbortController();
+          signal = state.loading.signal;
+          state.disabled = round.without;
           const started = performance.now();
-          const previous = unloaded;
-          const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
-          unloaded = current.catch(() => {});
+          const previous = state.unloaded;
+          const current = previous.then(() => state.generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+          state.unloaded = current.catch(() => {});
           await current;
           const ready = since(started);
           const { tokens, speed } = timedGeneration(data.prompt, data.steps);
-          rows.push({ name: round.name, without: round.without, tokens, speed, backend: llama.backend, seconds: ready });
+          rows.push({ name: round.name, without: round.without, tokens, speed, backend: state.llama.backend, seconds: ready });
         }
       } finally {
         // also when a round failed or a change of model cancelled it (the review of T76): the next model must not
         // load with a round's switches off while the panel shows them on
-        disabled = pageSwitches;  // not self.location.search: that is the worker's own URL (?v=hash)
-        benching = false;
+        state.disabled = state.pageSwitches;  // not self.location.search: that is the worker's own URL (?v=hash)
+        state.benching = false;
       }
-      postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version });
+      postMessage({ type: "bench", load: data.load, rows, pyodide: state.pyodide.version });
     } else if (data.type === "paths") {
       // T184: the model page's own path, on the model as the first load left it (the GPU too), before the rounds:
       // its prompts and its writing as the page chooses, on the CPU only and on the GPU only
-      if (benching || pathing || !llama) {
+      if (state.benching || state.pathing || !state.llama) {
         return;
       }
-      pathing = true;
+      state.pathing = true;
       try {
         postMessage({ type: "paths", load: data.load, ...(await timedPaths(data)) });
       } finally {
-        pathing = false;
+        state.pathing = false;
       }
     } else if (data.type === "generate") {
-      if (!llama) {
+      if (!state.llama) {
         throw new Error("The model is not ready.");
       }
       // messages keep arriving while this runs, hence the promise the other branches look at
-      stopped = false;
-      generating = generate(data);
+      state.stopped = false;
+      state.generating = generate(data);
       try {
-        await generating;
+        await state.generating;
       } catch (err) {
         // T156: the GPU stopped under a model on it alone: said, and the model loaded again on the CPU
         const lost = state.gpuOnlyNow?.lost;
         if (!lost) throw err;
-        cpuOnly.add(modelKey(lastLoad.model));
-        postMessage({ type: "error", load: lastLoad.load, reloading: true,
+        cpuOnly.add(modelKey(state.lastLoad.model));
+        postMessage({ type: "error", load: state.lastLoad.load, reloading: true,
           message: `The GPU stopped (${lost}). This model was on the GPU alone, and is loaded again on the CPU.` });
-        generating = undefined;
-        self.onmessage({ data: lastLoad });
+        state.generating = undefined;
+        self.onmessage({ data: state.lastLoad });
       } finally {
-        generating = undefined;
+        state.generating = undefined;
       }
     } else if (data.type === "stop") {
       // a stop that arrives before a run starts, or after it ended, must not cut the next one short
-      stopped = generating !== undefined;
+      state.stopped = state.generating !== undefined;
     }
   } catch (err) {
     // a cancelled load has nothing to report: the one that replaced it speaks for itself
@@ -1378,7 +1336,7 @@ self.onmessage = async ({ data }) => {
         (name === "RangeError" && !/call stack/i.test(text ?? ""));
       // where it happened goes to the page's console (T96): tests/e2e.mjs keeps the console of a failed run
       postMessage({ type: "error", load: data.load, message: memory ? String(text ?? err).trim().split("\n").pop() : message,
-                    stack: String(err?.stack ?? told(err)), weights: weightsNow?.buffer.byteLength ?? 0, pyodide: Boolean(err?.pyodide),
+                    stack: String(err?.stack ?? told(err)), weights: state.weightsNow?.buffer.byteLength ?? 0, pyodide: Boolean(err?.pyodide),
                     ...(memory && { memory: true, heap: heapBytes() }) });
     }
   }

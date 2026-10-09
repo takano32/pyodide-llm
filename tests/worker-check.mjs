@@ -593,8 +593,8 @@ const ok = (line) => {
       growMemory() {},
     },
   };
-  run("forwardModule = stand.forward; jsKernels = { relaxed: true }; wideKernels = { plain: {}, shared: null }; " +
-    "llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }; disabled = [];");
+  run("state.forwardModule = stand.forward; state.jsKernels = { relaxed: true }; state.wideKernels = { plain: {}, shared: null }; " +
+    "state.llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }; state.disabled = [];");
   const QWEN32B = [5120, 27648, 64, 40, 8, 152064, 32768];
   const refused = await failure(Promise.resolve().then(() => context.weightsBuffer(34.8e9, QWEN32B, { dtype: "int8", bias: true })));
   assert.match(refused?.error.message ?? "", /too large for a web page: it needs about \d+ GB of memory, and a browser gives a page 16 GB at most\./);
@@ -614,8 +614,8 @@ const ok = (line) => {
     : new Response(body(partOf(url) * PART, (partOf(url) + 1) * PART, { signal: init.signal, delay: 100, head: partOf(url) === 0 ? HEADER : undefined }), { status: 200 }));
   const partRequests = () => requests.filter((r) => /\.\d{3}$/.test(r.url));
   for (const [name, why, init] of [
-    ["the memory said no", /too large for a web page/, "initialized = undefined"],
-    ["the runtime never came", /Pyodide did not come/, "initialized = Promise.reject(new Error('Pyodide did not come')); initialized.catch(() => {})"],
+    ["the memory said no", /too large for a web page/, "state.initialized = undefined"],
+    ["the runtime never came", /Pyodide did not come/, "state.initialized = Promise.reject(new Error('Pyodide did not come')); state.initialized.catch(() => {})"],
   ]) {
     fresh(slowly);
     run(init);
@@ -625,7 +625,7 @@ const ok = (line) => {
     assert.deepEqual(partRequests().filter((r) => r.at > failed.at).map((r) => partOf(r.url)), [], `${name}: parts were fetched after the load ended`);
     assert.ok(partRequests().length >= 1 && partRequests().every((r) => r.signal.aborted), `${name}: the parts in flight were not aborted`);
   }
-  run("initialized = undefined");
+  run("state.initialized = undefined");
   ok("a load that ends before its weights have a place stops what is fetched for it");
 }
 
@@ -634,7 +634,7 @@ const ok = (line) => {
 {
   const PAGE = 65536, pagesOf = (bytes) => Math.ceil(bytes / PAGE);
   context.stand.real = forward;
-  const again = () => run("forwardModule = stand.real; weightsPool = weightsNow = undefined; loadsAhead = undefined");
+  const again = () => run("state.forwardModule = stand.real; state.weightsPool = state.weightsNow = undefined; state.loadsAhead = undefined");
   again();
   const size = 32891932, after = 12537888, widest = 150e6;
   const usual = context.pooledWeights(size, after, true, false);
@@ -652,8 +652,8 @@ const ok = (line) => {
   again();
   const HEADER = [288, 768, 6, 6, 6, 32000, 256], OPTIONS = { dtype: "int8" };
   const rounds = [[], ["kernels"], ["int8", "relaxed", "sampler", "kv16"], ["relaxed", "sampler", "kv16"]];
-  run("sharedKernels = {}; jsKernels = { relaxed: true }; wideKernels = undefined; disabled = []; threadsRequest = undefined; " +
-    "llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }");
+  run("state.sharedKernels = {}; state.jsKernels = { relaxed: true }; state.wideKernels = undefined; state.disabled = []; state.threadsRequest = undefined; " +
+    "state.llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }");
   context.crossOriginIsolated = true;
   try {
     const footprintOf = (without) => forward.footprint(HEADER, size, { ...OPTIONS, int8: !without.includes("int8"), relaxed: !without.includes("relaxed"),
@@ -661,17 +661,17 @@ const ok = (line) => {
     const widened = footprintOf(rounds[2]);
     assert.ok(widened > footprintOf([]) && widened > footprintOf(rounds[3]), "the round with int8 widened is not the largest");
     context.rounds = rounds;
-    run("loadsAhead = rounds");
+    run("state.loadsAhead = rounds");
     context.weightsBuffer(size, HEADER, OPTIONS);
-    const pool = run("weightsPool");
+    const pool = run("state.weightsPool");
     assert.equal(pool.maximum, pagesOf(pool.base + size + widened) + 1);
     // the model page's init says none: the gigabyte is there again (a larger model makes its own memory)
     again();
     context.weightsBuffer(size, HEADER, OPTIONS);
-    assert.ok(run("weightsPool").maximum * PAGE >= size + 2 ** 30);
+    assert.ok(run("state.weightsPool").maximum * PAGE >= size + 2 ** 30);
   } finally {
     context.crossOriginIsolated = false;
-    run("sharedKernels = undefined; forwardModule = stand.forward; weightsPool = weightsNow = undefined; loadsAhead = undefined");
+    run("state.sharedKernels = undefined; state.forwardModule = stand.forward; state.weightsPool = state.weightsNow = undefined; state.loadsAhead = undefined");
   }
   ok("a worker told the loads that follow on its one model makes its shared memory for the largest of them");
 }
@@ -684,10 +684,10 @@ const ok = (line) => {
   const small = { id: "small", name: "Small", checkpoint: "small", tokenizer: "small.tokenizer.bin", bytes: 64, options: {} };
   const said = async (data) => {
     fresh(() => new Response(new Uint8Array(64), { status: 200 }));
-    run("initialized = Promise.reject(new Error('no runtime in this check')); initialized.catch(() => {})");
+    run("state.initialized = Promise.reject(new Error('no runtime in this check')); state.initialized.catch(() => {})");
     await context.onmessage({ data: { type: "load", load: 9, model: small, ...data } });
-    run("initialized = undefined");
-    return run("loadsAhead");
+    run("state.initialized = undefined");
+    return run("state.loadsAhead");
   };
   assert.deepEqual(await said({ ahead: [[], ["kernels"], ["int8", "relaxed"]] }), [[], ["kernels"], ["int8", "relaxed"]]);
   assert.equal(await said({}), undefined, "a load that says none left the last one's loads ahead");
@@ -728,7 +728,7 @@ const ok = (line) => {
     context.stand.real = forward;
     const widest = 600e6;  // past what the lesser tries hold: a quarter of a gigabyte over the checkpoint
     for (const [limit, ahead, shared] of [[Infinity, widest, true], [5000, widest, false], [5000, 100e6, true], [5000, undefined, true]]) {
-      run("forwardModule = stand.real; weightsPool = weightsNow = undefined; loadsAhead = undefined");
+      run("state.forwardModule = stand.real; state.weightsPool = state.weightsNow = undefined; state.loadsAhead = undefined");
       refusing(limit);
       const pool = context.pooledWeights(size, after, true, false, ahead);
       assert.equal(pool.shared, shared, `a browser that gives ${limit} pages, the loads ahead ${ahead}: ${pool.shared ? `a shared memory of ${pool.maximum} pages` : "a plain one"}`);
@@ -737,7 +737,7 @@ const ok = (line) => {
   } finally {
     WebAssembly.Memory = RealMemory;
     console.info = info;
-    run("forwardModule = stand.forward; weightsPool = weightsNow = undefined; loadsAhead = undefined");
+    run("state.forwardModule = stand.forward; state.weightsPool = state.weightsNow = undefined; state.loadsAhead = undefined");
   }
   ok("a browser that refuses the memory is asked for less and never for more, and a lowered one must hold the loads ahead too");
 }
@@ -767,24 +767,24 @@ const ok = (line) => {
     context.crossOriginIsolated = true;
     let loads = 0;
     try {
-      run("sharedKernels = {}; jsKernels = { relaxed: true }; wideKernels = undefined; threadsRequest = undefined; " +
-        "llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }");
+      run("state.sharedKernels = {}; state.jsKernels = { relaxed: true }; state.wideKernels = undefined; state.threadsRequest = undefined; " +
+        "state.llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }");
       for (const [at, entry] of sited.entries()) {
         const header = headers[at], options = { dtype: "float32", ...entry.options };
         if (!header) continue;
         for (const asked of [ROUNDS, FULL_ROUNDS]) {
           for (const deviceMemory of [8, undefined]) {
             const rounds = roundsHere(asked, deviceMemory).filter((round) => round.skip === undefined);
-            run("forwardModule = stand.real; weightsPool = weightsNow = undefined");
+            run("state.forwardModule = stand.real; state.weightsPool = state.weightsNow = undefined");
             context.rounds = rounds.map((round) => round.without);
-            run("loadsAhead = rounds");
+            run("state.loadsAhead = rounds");
             const memories = new Set(), what = `${entry.id}, ${asked === ROUNDS ? "the two rounds" : "every step"}, memory ${deviceMemory ?? "not said"}`;
             for (const without of [[], ...rounds.map((round) => round.without)]) {
               if (without.includes("kernels")) continue;  // (NumPy's weights are Python's: no memory of the worker's)
               context.without = without;
-              run("disabled = without");
+              run("state.disabled = without");
               context.weightsBuffer(entry.bytes, header, options);
-              const pool = run("weightsPool"), int8 = !without.includes("int8"), quantized = ["int8", "int6", "ternary"].includes(options.dtype);
+              const pool = run("state.weightsPool"), int8 = !without.includes("int8"), quantized = ["int8", "int6", "ternary"].includes(options.dtype);
               const needs = pool.base + entry.bytes + forward.footprint(header, entry.bytes, { ...options, int8, relaxed: !without.includes("relaxed"),
                 halfKV: quantized && int8 && !without.includes("kv16"), shared: true, outliers: 8, gpu: false });
               assert.ok(pool.maximum * PAGE >= needs, `${what}, without ${without.join("+") || "nothing"}: a memory of ${pool.maximum} pages for a load that needs ${needs} bytes`);
@@ -797,7 +797,7 @@ const ok = (line) => {
       }
     } finally {
       context.crossOriginIsolated = false;
-      run("sharedKernels = undefined; forwardModule = stand.forward; weightsPool = weightsNow = undefined; loadsAhead = undefined; disabled = []");
+      run("state.sharedKernels = undefined; state.forwardModule = stand.forward; state.weightsPool = state.weightsNow = undefined; state.loadsAhead = undefined; state.disabled = []");
     }
     ok(`every load of the benchmark's model section fits the one memory made for it (${sited.length} models, ${loads} loads)`);
   }
@@ -830,13 +830,13 @@ const ok = (line) => {
   for (const [thrown, said] of [["{ name: 'ExitStatus', message: 'Program terminated with exit(1)', status: 1 }", "ExitStatus: Program terminated with exit(1)"],
     ["{ code: 7 }", 'something that is not an error was thrown: {"code":7}'], ["undefined", "undefined"]]) {
     fresh(() => new Response(new Uint8Array(64), { status: 200 }));
-    run(`initialized = Promise.reject(${thrown}); initialized.catch(() => {})`);
+    run(`state.initialized = Promise.reject(${thrown}); state.initialized.catch(() => {})`);
     await context.onmessage({ data: { type: "load", load: 9, model: { id: "small", name: "Small", checkpoint: "small", tokenizer: "small.tokenizer.bin", bytes: 64, options: {} } } });
     const error = messages.find((m) => m.type === "error");
     assert.equal(error?.message, said);
     assert.ok(!/\[object /.test(`${error.message} ${error.stack}`), error.stack);
   }
-  run("initialized = undefined");
+  run("state.initialized = undefined");
   ok("a thrown value that is no Error is told by its name and message, or its fields");
 
   // Pyodide's runtime that ends as it starts (its standard library did not arrive: loadPyodide() goes on without it, and
