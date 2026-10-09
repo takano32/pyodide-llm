@@ -586,19 +586,23 @@ async function init(search) {
   // (T156: ?gpuTest=only, the tests' too: a model the GPU can take on the GPU alone, whatever its size)
   gpuForce = ["on", "only"].includes(asked.get("gpuTest")) ? { fallback: true, always: true, quick: true, only: asked.get("gpuTest") === "only" } : {};
   benchPage = asked.has("bench");
-  const version = await resolvePyodideVersion(search);
-  pyodide = await pyodideSteps(version, (url) => import(url));
-
-  // with the ?v=<build> of this worker, so that both always come from the same deployment
-  // (T348: the engine is a window and its parts, python.js's list)
-  const { placePython } = await import(new URL(`python.js${self.location.search}`, import.meta.url));
-  await placePython(pyodide, "llama2_numpy", async (name) => {
+  // T348: the engine is a window and its parts (python.js's list), each with the ?v=<build> of this worker, so that all
+  // come from the same deployment. They are small and of this site, so they are asked for now, beside Pyodide, and
+  // are there when it is ready (one file was fetched after it before; eleven, one after another's list, would add to
+  // the time to ready).
+  const python = import(new URL(`python.js${self.location.search}`, import.meta.url));
+  const engine = python.then(({ readPython }) => readPython("llama2_numpy", async (name) => {
     const res = await fetch(new URL(`${name}${self.location.search}`, import.meta.url));
     if (!res.ok) {
       throw new Error(`Could not fetch ${name}: ${res.status}`);
     }
     return res.text();
-  });
+  }));
+  engine.catch(() => {});  // (it is awaited below: a load that ends before that leaves no unhandled rejection)
+  const version = await resolvePyodideVersion(search);
+  pyodide = await pyodideSteps(version, (url) => import(url));
+
+  await (await python).placePython(pyodide, "llama2_numpy", null, engine);
   llama2_numpy = pyodide.pyimport("llama2_numpy");
 
   // The WASM SIMD kernels (kernels/*.ts), which llama2_numpy.py loads with ctypes. They are optional: without

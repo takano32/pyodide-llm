@@ -16,9 +16,12 @@ export function placeFile(pyodide, name, content) {
   pyodide.FS.writeFile(name, content);
 }
 
-/** Puts a module's files into Pyodide's file system, where `import` finds them. read(name) gives a file's text or
- * bytes (a promise of them): all are read before any is written, so a file that fails leaves nothing half placed. */
-export async function placePython(pyodide, module, read) {
-  const files = await Promise.all(PYTHON[module].map(async (name) => [name, await read(name)]));
-  for (const [name, content] of files) placeFile(pyodide, name, content);
+/** A module's files as [name, content] pairs, all of them read (read(name): a file's text or bytes, or a promise). */
+export const readPython = (module, read) => Promise.all(PYTHON[module].map(async (name) => [name, await read(name)]));
+
+/** Puts a module's files into Pyodide's file system, where `import` finds them. All are read before any is
+ * written (readPython), so a file that fails leaves nothing half placed. files: what readPython() gave, where the
+ * reading was begun earlier. */
+export async function placePython(pyodide, module, read, files = readPython(module, read)) {
+  for (const [name, content] of await files) placeFile(pyodide, name, content);
 }
