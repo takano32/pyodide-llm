@@ -89,7 +89,7 @@ assert.equal(ended.size, files.size, "the window takes from every module, or a m
 // the shaders: gpu/device.js's import of them, and the window's at once, which must be the same module (one URL)
 const SHADERS = (to) => `import(new URL(\`${to}shaders.js\${new URL(import.meta.url).search}\`, import.meta.url))`;
 assert.ok(files.get("gpu/device.js").includes(`const shaders = ${SHADERS("../")};`), "gpu/device.js imports ../shaders.js with its own ?v=");
-assert.ok(files.get("gpu.js").includes(`\n${SHADERS("")};\n`), "gpu.js asks for shaders.js at once, with its own ?v=");
+assert.ok(files.get("gpu.js").includes(`\n${SHADERS("")}.catch(() => {});\n`), "gpu.js asks for shaders.js at once, with its own ?v= (a failure is device.js's to say)");
 assert.equal([...files.values()].join("\n").split("shaders.js${").length - 1, 2, "the shaders are imported in those two places");
 console.log(`gpu-modules-check: the GPU worker's ${programs.size} files use nothing they do not declare or take from another, the ${taken} names they take are exported, and none waits for itself`);
 

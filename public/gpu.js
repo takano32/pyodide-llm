@@ -64,8 +64,9 @@ const modules = Object.fromEntries(["device", "weights", "forms", "block", "toke
   "requests", "start"].map((name) =>
   [name, import(new URL(`gpu/${name}.js${new URL(import.meta.url).search}`, import.meta.url))]));
 // (the shaders too, as this file asked for them where it began before it was divided: gpu/device.js's own import of
-// them is this one, and does not wait for device.js to come)
-import(new URL(`shaders.js${new URL(import.meta.url).search}`, import.meta.url));
+// them is this one, and does not wait for device.js to come. Where they do not come, device.js's says so, as a start's
+// "unusable")
+import(new URL(`shaders.js${new URL(import.meta.url).search}`, import.meta.url)).catch(() => {});
 // A module worker's port opens at its first await, and a message that comes before onmessage is set is lost (T109):
 // what comes while the modules do is kept here, and handed to the receiver in order at the end of this file
 const early = [];
