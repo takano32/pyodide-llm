@@ -2,7 +2,7 @@
 // The net under a refactoring: what the working tree does, held to what another commit does (main, by default).
 // Nothing here knows how the files are divided; it asks both trees the same questions and compares the answers.
 //
-//   node tests/unchanged.mjs [--before <a commit, default origin/main>] [shaders models calls python sizes]
+//   node tests/unchanged.mjs [--before <a commit, default origin/main>] [shaders models calls python page bench sizes]
 //   (PYTHON=.venv/bin/python; in CI: tests.yml's extra="node tests/unchanged.mjs")
 //
 //   shaders  every export of public/shaders.js (a text as it is, a function as its text) and deviceKey() for 192
@@ -22,6 +22,8 @@
 //            expression. A moved statement counts the same wherever it is; a branch dropped, a key spelled otherwise, a limit
 //            changed or `===` turned to `!==` is a count that differs. (No test outside CI's browsers runs the page's script.)
 //            (T353) and the same of /benchmark/'s script (src/pages/benchmark.astro's <script> and src/benchmark/*.ts)
+//   bench    (T353 review) every call tests/bench.mjs makes to src/bench.js, written down (tests/unchanged-bench.mjs), in both trees:
+//            the arguments and the Markdown or numbers that come back. The tables' words, cells and warnings, read by nothing else
 //   sizes    the files past the size a file should have (50 KB or 800 lines): said, never failed
 //
 // The other tree is tests/other-tree.mjs's: `git archive` of the commit under .tmp/unchanged/<its hash> (made once).
@@ -38,7 +40,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const flag = (name, otherwise) => (args.includes(name) ? args.splice(args.indexOf(name), 2)[1] : otherwise);
 const before = flag("--before", "origin/main");
-const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "exports", "python", "page", "sizes"];
+const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "exports", "python", "page", "bench", "sizes"];
 const git = (...command) => execFileSync("git", command, { cwd: root, maxBuffer: 1 << 28 });
 const python = process.env.PYTHON ?? "python3";
 const LIMIT_BYTES = 50 * 1024, LIMIT_LINES = 800;
@@ -195,6 +197,22 @@ function page(other) {
   return ok;
 }
 
+function bench(other) {
+  const run = (tree) => {
+    const record = path.join(root, ".tmp", "unchanged", `bench-${path.basename(tree)}.json`);
+    fs.rmSync(record, { force: true });
+    const ran = spawnSync("node", ["--import", path.join(root, "tests/unchanged-bench.mjs"), path.join(tree, "tests/bench.mjs")], { cwd: tree, maxBuffer: 1 << 28,
+      env: { ...process.env, UNCHANGED_RECORD: record } });
+    if (ran.status !== 0 || !fs.existsSync(record)) throw new Error(`tests/bench.mjs did not finish in ${tree}: ${ran.stderr.toString().slice(-2000)}`);
+    const flat = {};
+    JSON.parse(fs.readFileSync(record, "utf8")).forEach(([name, args, answer], index) => { flat[`${String(index).padStart(4, "0")} ${name}`] = `${args} => ${answer}`; });
+    return flat;
+  };
+  const was = run(other), now = run(root);
+  if (Object.keys(now).length < 100) throw new Error(`only ${Object.keys(now).length} calls were written down: the preload does not reach src/bench.js`);
+  return said("src/bench.js, the calls tests/bench.mjs makes", differences(was, now));
+}
+
 function sizes() {
   const files = git("ls-files", "public", "src", "kernels", "tests", "*.py", "*.mjs").toString().trim().split("\n")
     .filter((file) => /\.(js|mjs|py|ts|astro)$/.test(file) && !file.startsWith("tests/fixtures/") && fs.existsSync(path.join(root, file)));
@@ -208,7 +226,7 @@ function sizes() {
 
 const { commit, folder } = kinds.some((kind) => kind !== "sizes") ? otherTree(before) : {};
 if (commit) console.log(`unchanged: the working tree against ${before} (${commit.slice(0, 7)})`);
-const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), choices: () => choices(folder), exports: () => exports(folder), python: () => pythonTests(folder), page: () => page(folder), sizes };
+const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), choices: () => choices(folder), exports: () => exports(folder), python: () => pythonTests(folder), page: () => page(folder), bench: () => bench(folder), sizes };
 let ok = true;
 for (const kind of kinds) {
   if (!checks[kind]) throw new Error(`no check "${kind}": ${Object.keys(checks).join(", ")}`);
