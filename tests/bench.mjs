@@ -63,8 +63,13 @@ assert.equal(reportsTable([{ number: 11, url: "u", body: reportBody(iphone) }]).
 // a reason with a | in it stays one cell
 assert.equal(parseReport(benchMarkdown([{ name: "x", skip: "a | b" }], environmentOf({}, {}))).rows[0].skip, "a | b");
 // both pages ask for the rounds through roundsHere() with the browser's own deviceMemory, and the worker writes the row
+// (T355: the model page's script is index.astro's and the modules of src/page/: a page's text is all of them)
+const pageText = (page) => [new URL(`../src/pages/${page}`, import.meta.url), ...(page === "index.astro" ?
+  fs.readdirSync(new URL("../src/page/", import.meta.url)).sort().map((file) => new URL(`../src/page/${file}`, import.meta.url)) : [])]
+  .map((url) => fs.readFileSync(url, "utf8")).join("\n");
+assert.ok(pageText("index.astro").length > fs.readFileSync(new URL("../src/pages/index.astro", import.meta.url), "utf8").length + 40000, "src/page/ has the model page's script");
 for (const page of ["index.astro", "benchmark.astro"]) {
-  assert.ok(/roundsHere\(.*\(navigator as any\)\.deviceMemory\)/.test(fs.readFileSync(new URL(`../src/pages/${page}`, import.meta.url), "utf8")),
+  assert.ok(/roundsHere\(.*\(navigator as any\)\.deviceMemory\)/.test(pageText(page)),
     `${page} asks for the rounds through roundsHere()`);
 }
 assert.ok(/if \(round\.skip !== undefined\) \{\s*rows\.push\(\{ name: round\.name, without: round\.without, skip: round\.skip \}\);\s*continue;/
@@ -538,7 +543,7 @@ const nav = { hardwareConcurrency: 8, deviceMemory: 8, userAgent: "Mozilla/5.0 (
 assert.equal(threadsKey("llm-jp-3-150m", nav), "threads:llm-jp-3-150m:8:8:Mozilla/5.0 (Linux; Android 15)");
 assert.equal(threadsKey("x", { hardwareConcurrency: 4, userAgent: "u" }), "threads:x:4::u", "no deviceMemory (Safari, Firefox)");
 for (const page of ["index.astro", "benchmark.astro"]) {
-  assert.ok(/threadsKey as sharedThreadsKey|threadsKey\(entry\.id, navigator\)/.test(fs.readFileSync(new URL(`../src/pages/${page}`, import.meta.url), "utf8")),
+  assert.ok(/threadsKey as sharedThreadsKey|threadsKey\(entry\.id, navigator\)/.test(pageText(page)),
     `${page} keys the remembered threads with src/bench.js's threadsKey`);
 }
 const headOf = (how, threads = 4) => pathTable({ ...real, threads, how }).split("\n")[0];
@@ -859,7 +864,7 @@ for (const [what, pattern] of [
   ["the model section tells its worker the rounds that follow", /type: "init"[^}]*\}[^;]*ahead: rounds\.map\(\(round\) => round\.without\)/],
 ]) assert.ok(pattern.test(benchmarkPage), `benchmark.astro: ${what}`);
 // ... and the model page, whose visitor may choose a next model, tells none: its memory keeps that gigabyte (T96)
-assert.ok(!/\bahead\b/.test(fs.readFileSync(new URL("../src/pages/index.astro", import.meta.url), "utf8")), "index.astro tells its worker no loads ahead (T242)");
+assert.ok(/type: "init"/.test(pageText("index.astro")) && !/\bahead\b/.test(pageText("index.astro")), "index.astro tells its worker no loads ahead (T242)");
 // the CPU section's ceilings that could not be measured at all say so in that word, as the GPU section's steps do (T227's own
 // change left this one at "Not measured:")
 const noCeilings = cpuTable({ ...aCpu, ceilings: { error: "out of memory\nsecond | line" } });
