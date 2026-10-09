@@ -140,7 +140,7 @@ export function softwareThreads({ memory, kernels, plan, spawn, stalledMs, wide,
   // faster; none more where it is 1 or 2. Not on the way up: a visit that remembers 2 would time 8 threads every time
   // (the owner's Android: 0.23 s), and no device's report has a dip above its count (TODO.md's T239 has the table).
   // T240: the search the count in use is owed (unchecked) does not wait for the next generation where the GPU is ready
-  // inside one: it begins at the first token after that (forward() below), so that a long first answer is not written
+  // inside one: it begins at the first token after that (engine.js's forward()), so that a long first answer is not written
   // to its end on a count timed beside the GPU's getting ready. Only where the page began a generation: /benchmark/
   // begins none and takes the count the model page remembers as it is (T190).
   const BLOCK = 4;

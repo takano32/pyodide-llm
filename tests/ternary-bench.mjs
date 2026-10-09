@@ -75,7 +75,7 @@ const NAMES = Object.keys(FORMS), ALL = { ...FORMS, ...PROMPTS }, EVERY = Object
 const modules = { forms: "forms.wasm", tree: "relaxed.wasm", plain: "plain.wasm" };
 const instances = (memory) => Object.fromEntries(Object.entries(modules).map(([name, file]) =>
   [name, new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(work + file)), { env: { memory } }).exports]));
-// forward.js's phase(): chunks of a quarter of a thread's share (T93), taken in turn; one thread the whole matrix
+// forward/threads.js's phase(): chunks of a quarter of a thread's share (T93), taken in turn; one thread the whole matrix
 // (a prompt's chunks in fours of rows, as phase() cuts them for the tiles)
 const chunkOf = (rows, threads, quad = 1) => (threads === 1 ? rows : quad * Math.ceil(rows / (threads * 4 * quad)));
 function runCalls(kernels, sync, c, index) {

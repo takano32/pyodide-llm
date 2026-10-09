@@ -1,5 +1,5 @@
 // gpu-hybrid-check.mjs (T229's review): a Qwen3.5 (hybrid attention) is not put on the GPU, whatever adapter the browser has.
-// forward.js's gpuUnfit() says so in its first line, and nothing ran that line: CI has no real adapter (a fallback one is
+// forward/gpuside.js's gpuUnfit() says so in its first line, and nothing ran that line: CI has no real adapter (a fallback one is
 // refused before it), and the made-up GPU of gpu-default-check.mjs is given llm-jp-3's Llama layers. Without that line a
 // visitor with a GPU would have a linear-attention layer's matrices read as a full-attention layer's (a Qwen3.5 has no wq,
 // wk, wv in a Gated DeltaNet layer), and the owner's PC and Android are such visitors once T236 lists the model.
@@ -28,7 +28,7 @@ const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf(
 const { compileKernels, external, weightsMemory } = await import(forwardFile);
 
 const options = JSON.parse(fs.readFileSync(`${prefix}.json`, "utf8"));
-// the kind of layer that keeps it off the GPU, as forward.js's gpuUnfit() says it
+// the kind of layer that keeps it off the GPU, as forward/gpuside.js's gpuUnfit() says it
 const REASONS = { qwen35: ["a Qwen3.5", "linear", /linear-attention layers are not on the GPU/],
   lfm2: ["an LFM2", "convolution", /convolution layers are not on the GPU/] };
 assert.ok(options.arch in REASONS, `${prefix} is neither a Qwen3.5 nor an LFM2`);

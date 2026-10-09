@@ -113,7 +113,7 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
   // goes to the CPU; run() ends it where the CPU writes).
   // T148: by default (AGENTS.md's policy 9), and without waiting for it: the model is ready on the CPU at once, and the
   // GPU takes the blocks of a prompt from the first one after it is ready (a block past gpuEnd stays on the CPU, so a
-  // GPU that is ready in the middle of a prompt changes nothing of it). Which blocks it takes: promptTimes above.
+  // GPU that is ready in the middle of a prompt changes nothing of it). Which blocks it takes: promptTimes (choice.js).
   // T205: gpuEnded, settled once the last GPU's worker made has let go of its buffers and its device (or never began)
   let gpuEnded = Promise.resolve(), gpuLast = null, quietTimer;
   let gpuWorker = null, gpuOn = false, gpuEnd = 0, gpuSerial = 0, gpuTokens = 0, settleGpu = null, gpuChosen = null;

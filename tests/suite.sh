@@ -76,7 +76,7 @@ part "the rotated basis's kernels" node tests/rotate-check.mjs
 # instantiates: every half at every place of a 16-byte line, the rest after the eights (no engine's kvDim leaves one), a bad
 # half just outside the run, an address above 4 GiB (a few seconds)
 part "the finite look at float16" node tests/finite-check.mjs
-# T229 (the review): a Qwen3.5 is not put on a GPU where an adapter is there: forward.js's gpuUnfit says so first, and no
+# T229 (the review): a Qwen3.5 is not put on a GPU where an adapter is there: forward/gpuside.js's gpuUnfit says so first, and no
 # adapter of CI's reaches that line (a few seconds)
 hybrid_stays_on_the_cpu() {
   mkdir -p .tmp

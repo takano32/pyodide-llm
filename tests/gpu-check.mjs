@@ -206,7 +206,7 @@ const COUNT = 150, KV_START = 8;
 const GEN = 8;
 // T219: the status line of a step refused for its logits (forward.js's generateMany)
 const NOT_FINITE_STATUS = /^prompts on the CPU \(the GPU computed logits that are not finite numbers/;
-// T243: and of a block of a prompt refused for its keys and values (forward.js's promptOnGpu)
+// T243: and of a block of a prompt refused for its keys and values (forward/gpuside.js's promptOnGpu)
 const NOT_FINITE_KV_STATUS = /^prompts on the CPU \(the GPU computed keys or values that are not finite numbers \(NaN or infinity\) in a block of the prompt at position 0\)/;
 // The worst row of the keys and values against NumPy's, by what the matrices' shader computes in (T147, measured on
 // Dawn's lavapipe and this machine's SwiftShader, 149 tokens: two blocks of 64 and a part). The CPU's forward.js: 4.1e-2

@@ -1,8 +1,7 @@
 // forward/engine.js (T349): createForward(), one model's forward pass: its memory after the checkpoint, its tensors,
 // the frames of the activations, the cache of the keys and values, the layers of every architecture, and the object
-// Python and the worker call. The software threads are forward/threads.js's and the GPU's side forward/gpuside.js's;
-// each is handed what it reads of this function and gives back what this one calls of it.
-// A module of public/forward.js, asked for with its ?v=<build>; it reads jobs.js and its neighbours the same way.
+// Python and the worker call. The software threads are threads.js's and the GPU's side gpuside.js's: each is handed
+// what it reads of this function. A module of public/forward.js, which asks for it with its own ?v=<build>.
 
 const { BATCH, addressed, runner } = await import(new URL(`../jobs.js${new URL(import.meta.url).search}`, import.meta.url));
 const { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK } = await import(new URL(`choice.js${new URL(import.meta.url).search}`, import.meta.url));
@@ -292,6 +291,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     values = newValues;
     capacity = larger;
   }
+  // the job (jobs.js) of a matrix by count tokens of an input, and of a token's attention: what phase() shares out
   const jobOf = (m, out, outStride, input, l, count) => {
     const [w, s, c] = m.layer(l);
     if (!m.int8) return [2, out, input, 0, w, 0, 0, m.n, 0, m.rows, count, outStride, S, 0];
@@ -583,7 +583,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       pool.threads = Math.max(1, n);
       return pool.threads;
     },
-    /** Find the number of threads while generating (see above): from a hint, or from a count remembered from an
+    /** Find the number of threads while generating (see threads.js): from a hint, or from a count remembered from an
      * earlier visit, which is then only checked against its neighbours now and then (every recheck generations).
      * chose(count) is told the answer, compared(verdict) every comparison on the way. The helpers of the starting count are started (and warmed) before this
      * resolves, so the first tokens do not wait for them. */
@@ -650,7 +650,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       bound = array.copy ? array.copy() : array;
     },
     /** T108: tokens of a prompt at positions pos, pos + 1, ...: the same as forward() for each of them in turn without
-     * logits, BATCH at a time through the layers. T135: on the GPU where it is on (see above), GPU_BLOCK at a time */
+     * logits, BATCH at a time through the layers. T135: on the GPU where it is on (see gpuside.js), GPU_BLOCK at a time */
     forwardMany(tokens, pos) {
       const list = tokens.toJs ? tokens.toJs() : [...tokens];
       for (let at = 0; at < list.length;) {
@@ -727,7 +727,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     get tokenBlock() {
       return gpuSteps() ? GPU_TOKENS : 0;
     },
-    /** T152: count steps of generate() on the GPU, or undefined where it did not take them (generateMany above) */
+    /** T152: count steps of generate() on the GPU, or undefined where it did not take them (gpuside.js's generateMany) */
     generateMany,
     forward(token, pos, needLogits = true) {
       if (pool.unchecked && pool.generations && mayRecheck()) beginSearch(pool.chosen);  // T240
