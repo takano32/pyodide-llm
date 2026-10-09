@@ -27,7 +27,7 @@ flowchart TD
 
 | Part | What it does |
 |---|---|
-| `src/pages/index.astro` | The chat page. It draws what the worker reports; the URL holds the state (`?model=`, `?hf=`, `?bits=`, `?without=` and others). |
+| `src/pages/index.astro` and `src/page/` | The chat page and the modules of its script. It draws what the worker reports; the URL holds the state (`?model=`, `?hf=`, `?bits=`, `?without=` and others). |
 | `src/models.js` | The model list: files, sizes, engine options, generation settings, chat templates. The first entry is the default. |
 | `public/worker.js` and `public/worker/` | The worker's window (`init()`, `generate()`, the messages) and its parts: Pyodide's loading, where the weights go, the fetching of a model's parts (this site's and Hugging Face's), the conversion, and what `/benchmark/` times. It loads Pyodide and NumPy, downloads the model in parts while Pyodide loads, and runs `generate()`. |
 | `public/llama2_numpy.py` | The engine. Reads llama2.c's legacy format (float32, float16, int8, 6 bits, ternary), the tokenizers (llama2.c's BPE, sentencepiece Unigram, byte-level BPE), the architectures (Llama, Qwen2, Qwen3, Qwen3.5, LFM2, GPT-2, GPT-NeoX), and samples. Without the kernels, NumPy does the arithmetic. |

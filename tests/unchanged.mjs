@@ -17,6 +17,10 @@
 //   exports  (review) the names a window keeps: every export of forward.js, jobs.js, kept.js, gpu.js and src/bench.js (a function by its
 //            arity, a constant as JSON), and every public name of llama2_convert and llama2_numpy with its signature, a class's methods too
 //            (tests/unchanged_exports.py): the tests reach only the names they use, a facade that forgets one breaks the page
+//   page     (T355 review) the model page's script (src/pages/index.astro's <script> and src/page/*.ts): what it is made of, counted: every
+//            string, number and regular expression, every operator, every `.name` and object key, every kind of statement and
+//            expression. A moved statement counts the same wherever it is; a branch dropped, a key spelled otherwise, a limit
+//            changed or `===` turned to `!==` is a count that differs. (No test outside CI's browsers runs the page's script.)
 //   sizes    the files past the size a file should have (50 KB or 800 lines): said, never failed
 //
 // The other tree is tests/other-tree.mjs's: `git archive` of the commit under .tmp/unchanged/<its hash> (made once).
@@ -25,13 +29,15 @@ import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { transformSync } from "esbuild";
+import { parse } from "@babel/parser";
 import { otherTree } from "./other-tree.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const flag = (name, otherwise) => (args.includes(name) ? args.splice(args.indexOf(name), 2)[1] : otherwise);
 const before = flag("--before", "origin/main");
-const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "exports", "python", "sizes"];
+const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "exports", "python", "page", "sizes"];
 const git = (...command) => execFileSync("git", command, { cwd: root, maxBuffer: 1 << 28 });
 const python = process.env.PYTHON ?? "python3";
 const LIMIT_BYTES = 50 * 1024, LIMIT_LINES = 800;
@@ -144,6 +150,45 @@ async function exports(other) {
   return said("exports, the Python windows", differences(python_(other), python_(root))) && ok;
 }
 
+// the parts of the model page's script, counted (T355): the script of index.astro and every .ts of src/page/ of a tree
+function pageShape(tree) {
+  const sources = [];
+  const page = path.join(tree, "src/pages/index.astro");
+  sources.push(/<script>\n([\s\S]*?)<\/script>/.exec(fs.readFileSync(page, "utf8"))[1]);
+  const folder = path.join(tree, "src/page");
+  if (fs.existsSync(folder)) for (const file of fs.readdirSync(folder).sort()) sources.push(fs.readFileSync(path.join(folder, file), "utf8"));
+  const found = {};
+  const add = (key) => { found[key] = (found[key] ?? 0) + 1; };
+  // (what the division itself changes: imports and exports, `page.x` for a `let x`, the shape of declarations, comments, `undefined` for `let x;`)
+  const SKIPPED = /^(Identifier|MemberExpression|OptionalMemberExpression|ImportDeclaration|ExportNamedDeclaration|CommentLine|CommentBlock|Program|File|VariableDeclaration|VariableDeclarator|ObjectProperty|ObjectExpression)$/;
+  const visit = (node) => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) { node.forEach(visit); return; }
+    if (!node.type || node.type === "ImportDeclaration") return;
+    if (node.type === "UnaryExpression" && node.operator === "void") return;  // (`void 0`: esbuild's `undefined`)
+    const type = node.type;
+    // (the one object the parts share: the names of its fields were the names of the `let`s)
+    if (type === "VariableDeclarator" && node.id.name === "page" && node.init?.type === "ObjectExpression") { node.init.properties.forEach((property) => visit(property.value)); return; }
+    if (!SKIPPED.test(type)) add(`node ${type}`);
+    if (type === "StringLiteral" || type === "NumericLiteral" || type === "BooleanLiteral") add(`literal ${JSON.stringify(node.value)}`);
+    if (type === "RegExpLiteral") add(`regular expression /${node.pattern}/${node.flags}`);
+    if (type === "TemplateElement") add(`template ${JSON.stringify(node.value.cooked)}`);
+    if (/^(Binary|Logical|Assignment|Unary|Update)Expression$/.test(type)) add(`operator ${type} ${node.operator}`);
+    if ((type === "MemberExpression" || type === "OptionalMemberExpression") && !node.computed && !(node.object.type === "Identifier" && node.object.name === "page")) add(`property .${node.property.name}${node.optional ? "?" : ""}`);
+    if (type === "ObjectProperty" && !node.computed && node.key.type === "Identifier" && node.key.name !== "id") add(`key ${node.key.name}`);
+    for (const key of Object.keys(node)) if (key !== "loc" && key !== "extra") visit(node[key]);
+  };
+  for (const text of sources) {
+    const { code } = transformSync(text, { loader: "ts", tsconfigRaw: { compilerOptions: { verbatimModuleSyntax: true } } });
+    visit(parse(code, { sourceType: "module" }).program);
+  }
+  return found;
+}
+function page(other) {
+  const was = pageShape(other), now = pageShape(root);
+  return said("the model page's script", differences(was, now), ` (${Object.values(now).reduce((sum, count) => sum + count, 0)} parts)`);
+}
+
 function sizes() {
   const files = git("ls-files", "public", "src", "kernels", "tests", "*.py", "*.mjs").toString().trim().split("\n")
     .filter((file) => /\.(js|mjs|py|ts|astro)$/.test(file) && !file.startsWith("tests/fixtures/") && fs.existsSync(path.join(root, file)));
@@ -157,7 +202,7 @@ function sizes() {
 
 const { commit, folder } = kinds.some((kind) => kind !== "sizes") ? otherTree(before) : {};
 if (commit) console.log(`unchanged: the working tree against ${before} (${commit.slice(0, 7)})`);
-const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), choices: () => choices(folder), exports: () => exports(folder), python: () => pythonTests(folder), sizes };
+const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), choices: () => choices(folder), exports: () => exports(folder), python: () => pythonTests(folder), page: () => page(folder), sizes };
 let ok = true;
 for (const kind of kinds) {
   if (!checks[kind]) throw new Error(`no check "${kind}": ${Object.keys(checks).join(", ")}`);
