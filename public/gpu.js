@@ -82,8 +82,14 @@ const ternaryPlan = (plan) => Object.values(plan.matrices).some((matrix) => matr
 // and k alone (a SmolLM3's every fourth; the shaders take the number as GPT-2's 0)
 const turnedAt = (plan, l) => (plan.unturned?.includes(l) ? 0 : plan.turned);
 
-let model = null;  // what is on the GPU for the model: the device, the plan, the buffers, the pipelines, the cache
-let starting = false, stopping = false, lost = null;
+// T352: what the parts of this worker share and one of them sets (a module's `let` cannot be assigned from another
+// module): the fields were this file's `let`s of the same names
+const common = {
+  model: null,  // what is on the GPU for the model: the device, the plan, the buffers, the pipelines, the cache
+  stopping: false,  // a stop was asked: start() ends at its next step
+  lost: null,  // why the device was lost, once it is
+};
+let starting = false;
 
 onmessage = ({ data }) => {
   if (data.type === "open") open(data.plan, data.flow);
@@ -120,7 +126,7 @@ async function openDevice(plan, say = unusable) {
     // the browser's own adapter (T148, the review: "high-performance" would keep a laptop's second GPU awake for the
     // whole visit, for prompts that are mostly short; the device measures whichever it gets against its CPU anyway)
     const adapter = await navigator.gpu.requestAdapter();
-    if (stopping) return end();
+    if (common.stopping) return end();
     if (!adapter) return say("no GPU adapter here");
     // T148: a fallback adapter is the CPU doing the GPU's work (SwiftShader, lavapipe): never faster than the CPU's
     // own kernels, and its compilation of the shaders alone took 2 to 4 minutes (T147). Refused before anything is
@@ -143,18 +149,18 @@ async function openDevice(plan, say = unusable) {
       requiredFeatures: ["shader-f16", "subgroups"].filter((name) => adapter.features.has(name)),
       requiredLimits: { maxStorageBufferBindingSize, maxBufferSize, maxComputeWorkgroupStorageSize, maxComputeInvocationsPerWorkgroup,
         maxComputeWorkgroupSizeX } });
-    device.lost.then((info) => { lost = `the GPU was lost (${info.reason}${info.message ? `: ${info.message}` : ""})`; });
+    device.lost.then((info) => { common.lost = `the GPU was lost (${info.reason}${info.message ? `: ${info.message}` : ""})`; });
     // T148: what the page keeps of an earlier visit counts only for the same adapter and browser
     // (and the shaders of this deployment: a site whose shaders changed chooses anew, the review of T148)
     // (T232: a ternary model's key holds its own shaders too)
     const key = wgsl.deviceKey(adapter, device, ternary);
     const remembered = plan.remembered?.key === key ? plan.remembered : null;
-    model = { device, plan, wgsl, owned: [], limit, info, fallback, remembered, adapter, key, ternary };
-    if (stopping) return end();
+    common.model = { device, plan, wgsl, owned: [], limit, info, fallback, remembered, adapter, key, ternary };
+    if (common.stopping) return end();
     // a buffer the device cannot give fails quietly, as an error of these scopes
     device.pushErrorScope("out-of-memory");
     device.pushErrorScope("validation");
-    return model;
+    return common.model;
 }
 
 // ---- T156: a model on the GPU alone. open() makes the device and every buffer of the layers' matrices before a byte
@@ -175,19 +181,19 @@ function open(plan, shared) {
         failure ??= "the GPU's worker was stopped";
         return;
       }
-      model.direct = { routes: [], partial: new Map(), bytes: 0 };
-      model.direct.bytes = await uploadLayers(model);
+      common.model.direct = { routes: [], partial: new Map(), bytes: 0 };
+      common.model.direct.bytes = await uploadLayers(common.model);
       // T210: the tables too, which nothing holds in the shared memory either
-      model.direct.bytes += tablesOn(model);
-      model.direct.routes.sort((a, b) => a[0] - b[0]);
-      if (stopping) failure ??= "the GPU's worker was stopped";
+      common.model.direct.bytes += tablesOn(common.model);
+      common.model.direct.routes.sort((a, b) => a[0] - b[0]);
+      if (common.stopping) failure ??= "the GPU's worker was stopped";
     } catch (error) {
       failure = String(error?.message ?? error);
     } finally {
       opened = true;
       starting = startAsked;  // (a start() waiting on this is still starting)
       for (const data of backlog.splice(0)) take(data);
-      if (stopping) end();
+      if (common.stopping) end();
     }
   })();
 }
@@ -199,7 +205,7 @@ function take(data) {
   const { offset, bytes } = data;
   if (!failure) {
     try {
-      const { routes } = model.direct, end = offset + bytes.length;
+      const { routes } = common.model.direct, end = offset + bytes.length;
       let lo = 0, hi = routes.length;
       while (lo < hi) {
         const mid = (lo + hi) >> 1;
@@ -212,7 +218,7 @@ function take(data) {
         const b = Math.min(stop, end) - offset;
         for (; a < b && here % 4; a++, here++) partialByte(target, here, bytes[a]);
         const whole = (b - a) & ~3;
-        if (whole) model.device.queue.writeBuffer(target, here, bytes, a, whole);
+        if (whole) common.model.device.queue.writeBuffer(target, here, bytes, a, whole);
         for (let k = a + whole; k < b; k++) partialByte(target, here + (k - a), bytes[k]);
       }
     } catch (error) {
@@ -224,18 +230,18 @@ function take(data) {
     Atomics.notify(flow, 0);
   };
   if (failure) done();
-  else model.device.queue.onSubmittedWorkDone().then(done, done);
+  else common.model.device.queue.onSubmittedWorkDone().then(done, done);
 }
 // a byte of target at the byte offset at, the word it is in written once all four of its bytes are there
 function partialByte(target, at, value) {
-  const { partial } = model.direct, word = at - (at % 4);
+  const { partial } = common.model.direct, word = at - (at % 4);
   if (!partial.has(target)) partial.set(target, new Map());
   const words = partial.get(target);
   if (!words.has(word)) words.set(word, { bytes: new Uint8Array(4), count: 0 });
   const held = words.get(word);
   held.bytes[at % 4] = value;
   if (++held.count < 4) return;
-  model.device.queue.writeBuffer(target, word, held.bytes);
+  common.model.device.queue.writeBuffer(target, word, held.bytes);
   words.delete(word);
   if (!words.size) partial.delete(target);
 }
@@ -249,55 +255,55 @@ async function start(memory, plan) {
     if (plan.direct) {
       // T156: opened before the checkpoint came, its layers written as they came (the worker waited for the last)
       await opening;
-      if (failure && !stopping) return unusable(`the layers did not go up to the GPU (${failure})`);
-      if (stopping || !model) return end();
-      if (model.direct.partial.size) return unusable("the layers' bytes did not all come to the GPU");
-      model.memory = memory;
-      model.plan = plan;
-      bytes = model.direct.bytes + (await uploadRest(model));
+      if (failure && !common.stopping) return unusable(`the layers did not go up to the GPU (${failure})`);
+      if (common.stopping || !common.model) return end();
+      if (common.model.direct.partial.size) return unusable("the layers' bytes did not all come to the GPU");
+      common.model.memory = memory;
+      common.model.plan = plan;
+      bytes = common.model.direct.bytes + (await uploadRest(common.model));
     } else {
       if (!(await openDevice(plan))) return;
-      model.memory = memory;
-      bytes = await upload(model);
+      common.model.memory = memory;
+      bytes = await upload(common.model);
     }
-    const { device, adapter, key } = model;
-    if (stopping) return end();
-    await prepare(model);
-    await chooseAttention(model);
-    if (stopping) return end();
-    await chooseMatrices(model);
-    if (stopping) return end();
-    bindLayers(model);
-    grow(model, Math.max(Math.min(plan.kvStart, plan.seqLen), Math.min(plan.batch, plan.seqLen)));
+    const { device, adapter, key } = common.model;
+    if (common.stopping) return end();
+    await prepare(common.model);
+    await chooseAttention(common.model);
+    if (common.stopping) return end();
+    await chooseMatrices(common.model);
+    if (common.stopping) return end();
+    bindLayers(common.model);
+    grow(common.model, Math.max(Math.min(plan.kvStart, plan.seqLen), Math.min(plan.batch, plan.seqLen)));
     await within(device.queue.onSubmittedWorkDone(), "the GPU's work");
     const invalid = await device.popErrorScope(), full = await device.popErrorScope();
-    if (stopping) return end();
+    if (common.stopping) return end();
     if (invalid || full) return unusable(`the GPU did not take the layers (${(invalid ?? full).message})`);
     // (not for the page's tests: SwiftShader took more than STEP_MS to time Llama 3.2 1B's shaders, T147 in CI)
-    const blocks = plan.force.quick ? [] : await within(timeBlocks(model), "timing a block");
-    if (stopping) return end();
+    const blocks = plan.force.quick ? [] : await within(timeBlocks(common.model), "timing a block");
+    if (common.stopping) return end();
     // T152: a token and the ones after it, where the model's layers were put up for them (tokensLayout). What fails
     // here leaves the tokens on the CPU and the prompts on the GPU
-    if (plan.tokens && !model.tokensWhy) {
+    if (plan.tokens && !common.model.tokensWhy) {
       try {
-        await chooseTokens(model);
+        await chooseTokens(common.model);
       } catch (error) {
-        model.tokensWhy = String(error?.message ?? error);
-        model.gen = null;
+        common.model.tokensWhy = String(error?.message ?? error);
+        common.model.gen = null;
       } finally {
         // (the review of T156: the first layer read back for the checks of a model on the GPU alone goes with them: it
         // stayed in this worker for the whole visit, 113 MB of Llama 3.2 3B, 245 MB of Llama 3.1 Swallow 8B)
-        model.firstLayer = model.tableRows = undefined;
+        common.model.firstLayer = common.model.tableRows = undefined;
       }
-      if (stopping) return end();
+      if (common.stopping) return end();
     }
-    if (lost) return unusable(lost);
-    const g = model.gen;
+    if (common.lost) return unusable(common.lost);
+    const g = common.model.gen;
     postMessage({ type: "ready", adapter: describe(adapter), key, bytes, seconds: (performance.now() - began) / 1000,
-      form: model.form.name, attention: model.attention.name, forms: model.forms, remembered: Boolean(model.form.remembered), blocks,
-      tokens: g?.form ? { form: g.form.name, ms: g.ms, forms: g.forms, remembered: g.forms.some((f) => f.remembered), pieces: model.tables.classifier.length,
+      form: common.model.form.name, attention: common.model.attention.name, forms: common.model.forms, remembered: Boolean(common.model.form.remembered), blocks,
+      tokens: g?.form ? { form: g.form.name, ms: g.ms, forms: g.forms, remembered: g.forms.some((f) => f.remembered), pieces: common.model.tables.classifier.length,
         attention: g.attention.name, attentions: g.attentions } : null,
-      tokensWhy: plan.tokens ? model.tokensWhy ?? null : undefined });
+      tokensWhy: plan.tokens ? common.model.tokensWhy ?? null : undefined });
   } catch (error) {
     unusable(String(error?.message ?? error));
   } finally {
@@ -320,18 +326,18 @@ function unusable(reason) {
   end();
 }
 function stop() {
-  stopping = true;
+  common.stopping = true;
   if (!starting) end();  // else start() ends at its next step
 }
 // every buffer and the device let go (T94: a model changed for another leaves nothing on the GPU), and this worker ends.
 // T205: it says { type: "ended" } first, for public/forward/engine.js's release() to read the next model after it. Every way out of
 // start() comes here (a stop in the middle of it at its next step), and a stop before or after start() at once
 function end() {
-  if (model) {
-    model.owned.forEach((buffer) => buffer.destroy());
-    model.cache?.owned.forEach((buffer) => buffer.destroy());
-    model.device.destroy();
-    model = null;
+  if (common.model) {
+    common.model.owned.forEach((buffer) => buffer.destroy());
+    common.model.cache?.owned.forEach((buffer) => buffer.destroy());
+    common.model.device.destroy();
+    common.model = null;
   }
   postMessage({ type: "ended" });
   self.close();
@@ -425,7 +431,7 @@ function dispatch(pass, pipeline, group, x, y = 1, z = 1) {
 async function upload(m) {
   try {
     const bytes = await uploadLayers(m);
-    if (stopping) return bytes;
+    if (common.stopping) return bytes;
     return bytes + (await uploadRest(m));
   } finally {
     m.widen?.done();
@@ -477,7 +483,7 @@ async function uploadLayers(m) {
     if (m.direct) continue;
     // what was written waits in memory until the GPU takes it: let it, before more comes
     await within(m.device.queue.onSubmittedWorkDone(), `layer ${l + 1}'s weights`);
-    if (stopping) return bytes;
+    if (common.stopping) return bytes;
   }
   return bytes;
 }
@@ -859,7 +865,7 @@ async function chooseMatrices(m) {
       if (error?.late) throw error;
       m.forms.push({ name: kept.name, none: `remembered, but ${error?.message ?? error}` });
     }
-    if (stopping) return;
+    if (common.stopping) return;
   }
   const right = [];
   for (const form of forms) {
@@ -879,7 +885,7 @@ async function chooseMatrices(m) {
       if (error?.late) throw error;
       m.forms.push({ name: form.name, none: String(error?.message ?? error) });
     }
-    if (stopping) return;
+    if (common.stopping) return;
   }
   if (!right.length) throw new Error(`no tiled shader is right on this GPU (${m.forms.map((f) => `${f.name}: ${f.none}`).join("; ") || `none named ${plan.force.matrices}`})`);
   const ms = right.length > 1 ? await within(timeForms(m, right), "timing the tiled shaders") : [0];
@@ -1092,7 +1098,7 @@ async function timeBlocks(m) {
   for (let round = 0; round < (m.fallback ? 1 : BLOCK_ROUNDS); round++) {
     for (let i = 0; i < counts.length; i++) {
       times[i].push(await timed(counts[i]));
-      if (stopping) return [];
+      if (common.stopping) return [];
     }
   }
   return counts.map((count, i) => ({ count, ms: times[i].sort((a, b) => a - b)[times[i].length >> 1] }));
@@ -1409,7 +1415,7 @@ async function chooseTokens(m) {
   if (plan.parallel && !plan.layerNorm) throw new Error("a parallel residual without LayerNorm is not on the GPU's tokens");
   m.gen = await tokenBuffers(m);
   await chooseTokenAttention(m);
-  if (stopping) return;
+  if (common.stopping) return;
   // T156: the first layer's matrices of a model on the GPU alone are not in the shared memory: checkTokens reads them
   // back from the GPU (T210: and the rows of the tables it reads)
   if (m.direct) {
@@ -1437,7 +1443,7 @@ async function chooseTokens(m) {
       if (error?.late) throw error;
       tried.push({ name: form.name, none: String(error?.message ?? error) });
     }
-    if (stopping) return;
+    if (common.stopping) return;
   }
   if (!right.length) {
     throw new Error(`no layer of a token is right on this GPU (${tried.map((f) => `${f.name}: ${f.none}`).join("; ") || `none named ${plan.force.tokens}`})`);
@@ -1468,7 +1474,7 @@ async function timeTokens(m, forms) {
   const times = forms.map(() => []);
   for (let round = 0; round < (m.fallback ? 1 : BLOCK_ROUNDS); round++) {
     for (let i = 0; i < forms.length; i++) times[i].push(await timed(forms[i]));
-    if (stopping) break;
+    if (common.stopping) break;
   }
   return times.map((list) => list.sort((a, b) => a - b)[list.length >> 1] / most);
 }
@@ -1510,7 +1516,7 @@ async function chooseTokenAttention(m) {
       if (error?.late) throw error;
       g.attentions.push({ name: a.name, none: String(error?.message ?? error) });
     }
-    if (stopping) return;
+    if (common.stopping) return;
   }
   if (!right.length) {
     throw new Error(`no attention of a token is right on this GPU (${g.attentions.map((a) => `${a.name}: ${a.none}`).join("; ") || `none named ${plan.force.tokenAttention}`})`);
@@ -1623,7 +1629,7 @@ async function timeTokenAttention(m, right) {
         const once = await submission(item, counts[i]), twice = await submission(item, 2 * counts[i]);
         differences[i].push((twice - once) / counts[i]);
       }
-      if (stopping) break;
+      if (common.stopping) break;
     }
     const ms = differences.map((d) => d.sort((x, y) => x - y)[d.length >> 1] * plan.layers);
     return right.map((a) => items.reduce((sum, item, i) => (item.a === a ? sum + ms[i] : sum), 0));
@@ -1910,7 +1916,7 @@ async function checkTokens(m, form) {
 // GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back
 function generate({ serial, count, pos, from, token, history, length, cache, settings, randoms }) {
   serve(serial, async (wanted) => {
-    const m = model, { plan, wgsl, gen: g } = m, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
+    const m = common.model, { plan, wgsl, gen: g } = m, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
     if (!g?.form) throw new Error("no tokens on this GPU");
     if (pos + count > m.cache.capacity) grow(m, pos + count);
     const at = (block, l, p) => block + l * cache.capacity * cache.row + p * cache.row;
@@ -1939,22 +1945,22 @@ function generate({ serial, count, pos, from, token, history, length, cache, set
 
 // ---- a block of a prompt (T210: tokens, the ids of a model on the GPU alone, which embeds them here)
 function prompt({ serial, count, pos, tokens }) {
-  serve(serial, (wanted) => block(model, count, pos, wanted, false, tokens));
+  serve(serial, (wanted) => block(common.model, count, pos, wanted, false, tokens));
 }
 // The answer to a request (a block of a prompt, T152: the steps of a generation), in the control area: work(wanted)
 // runs while words.beat counts up, then words.failed and words.done = serial, where forward.js still waits for this
 // request (wanted: T147, it gave up, and the memory may soon be another model's)
 async function serve(serial, work) {
-  const { memory, plan } = model;
+  const { memory, plan } = common.model;
   const words = new Int32Array(memory.buffer, 0, Math.max(...Object.values(plan.words)) + 1);
   // the model's worker waits: this says that the work goes on, however long the GPU takes (a software adapter)
   const beat = setInterval(() => Atomics.add(words, plan.words.beat, 1), 250);
   const wanted = () => Atomics.load(words, plan.words.wanted) === serial;
   let failed = 1;
   try {
-    if (lost) throw new Error(lost);
+    if (common.lost) throw new Error(common.lost);
     await work(wanted);
-    if (lost) throw new Error(lost);
+    if (common.lost) throw new Error(common.lost);
     failed = 0;
   } catch (error) {
     postMessage({ type: "failed", reason: String(error?.message ?? error) });
@@ -2064,9 +2070,9 @@ async function keysBack(m, wanted) {
 // (public/forward/engine.js's keysAndValues)
 function keysOf({ serial, count, pos }) {
   serve(serial, async (wanted) => {
-    const encoder = model.device.createCommandEncoder();
-    keysOut(model, encoder, pos, count);
-    model.device.queue.submit([encoder.finish()]);
-    await keysBack(model, wanted);
+    const encoder = common.model.device.createCommandEncoder();
+    keysOut(common.model, encoder, pos, count);
+    common.model.device.queue.submit([encoder.finish()]);
+    await keysBack(common.model, wanted);
   });
 }
