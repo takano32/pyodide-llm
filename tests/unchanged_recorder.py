@@ -66,6 +66,34 @@ def pytest_collection_finish(session):
     def encoded(tokenizer, result, args):
         note("ids", repr(list(result)).encode())
 
+    def decoded(tokenizer, result, args):
+        note("decoded", as_bytes(result))
+
+    def sampled(llama, result, args):
+        note("sampled", repr(int(result)).encode())
+
+    def penalized(llama, result, args):  # in place: the logits are the first argument
+        note("penalized", np.ascontiguousarray(args[0]).tobytes())
+
+    # (review) generate() draws its tokens by closures of its own, not by Llama.sample, so what it writes is recorded
+    # at the generator: the pieces of text it yields, and the exception it ends in
+    generate = llama2_numpy.Llama.generate
+
+    def generating(self, *args, **kwargs):
+        try:
+            for piece in generate(self, *args, **kwargs):
+                note("generated", repr(piece).encode())
+                yield piece
+        except GeneratorExit:
+            raise
+        except Exception as error:
+            note("generated", f"raises {type(error).__name__}: {error}".encode())
+            raise
+
+    llama2_numpy.Llama.generate = generating
+    after(llama2_numpy.Tokenizer, "decode", decoded)
+    after(llama2_numpy.Llama, "sample", sampled)
+    after(llama2_numpy.Llama, "penalize", penalized)
     after(llama2_convert.Stream, "finish", finished)
     after(llama2_convert.Conversion, "start", started)
     after(llama2_numpy.Llama, "forward", went)

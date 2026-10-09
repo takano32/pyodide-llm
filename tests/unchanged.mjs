@@ -12,6 +12,11 @@
 //   calls    tests/unchanged-calls.mjs: the plan Python hands forward.js and every call of a kernel, 150 hashes
 //   python   the unit tests under tests/unchanged_recorder.py: the checkpoints, options and tokenizers of every
 //            conversion the tests make, the logits of every forward pass, the ids of every encode (two runs of pytest)
+//   choices  (review) tests/unchanged-choices.mjs: what forward.js decides without a browser over a grid of made-up numbers (GPU or CPU for
+//            a block and a step, where the weights go, the memory a model needs): the constants that choose a device are in no other check
+//   exports  (review) the names a window keeps: every export of forward.js, jobs.js, kept.js, gpu.js and src/bench.js (a function by its
+//            arity, a constant as JSON), and every public name of llama2_convert and llama2_numpy with its signature, a class's methods too
+//            (tests/unchanged_exports.py): the tests reach only the names they use, a facade that forgets one breaks the page
 //   sizes    the files past the size a file should have (50 KB or 800 lines): said, never failed
 //
 // The other tree is `git archive` of the commit under .tmp/unchanged/<its hash> (made once). Exit 1 if anything differs.
@@ -24,7 +29,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const flag = (name, otherwise) => (args.includes(name) ? args.splice(args.indexOf(name), 2)[1] : otherwise);
 const before = flag("--before", "origin/main");
-const kinds = args.length ? args : ["shaders", "models", "calls", "python", "sizes"];
+const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "exports", "python", "sizes"];
 const git = (...command) => execFileSync("git", command, { cwd: root, maxBuffer: 1 << 28 });
 const python = process.env.PYTHON ?? "python3";
 const LIMIT_BYTES = 50 * 1024, LIMIT_LINES = 800;
@@ -131,7 +136,34 @@ function pythonTests(other) {
   const was = run(other, "before"), now = run(root, "now");
   console.log(`unchanged: pytest before: ${was.last}`);
   console.log(`unchanged: pytest now: ${now.last}`);
-  return said("what the unit tests convert and compute", differences(was.flat, now.flat)) && now.status === 0;
+  // (review) a test that ran in one tree and was skipped in the other is compared with nothing: the counts must be the same
+  const counts = (line) => line.replace(/ in [\d.]+s.*$/, "").replace(/^=+\s*|\s*=+$/g, "");
+  const same = counts(was.last) === counts(now.last);
+  if (!same) console.log(`unchanged: pytest ran different tests (before: ${counts(was.last)}; now: ${counts(now.last)}): CHANGED`);
+  return said("what the unit tests convert and compute", differences(was.flat, now.flat)) && now.status === 0 && same;
+}
+
+function choices(other) {
+  const run = (tree) => JSON.parse(execFileSync("node", [path.join(root, "tests/unchanged-choices.mjs"), tree], { maxBuffer: 1 << 28 }));
+  return said("forward.js's choices", differences(run(other), run(root)));
+}
+
+async function exports(other) {
+  let ok = true;
+  const [was, now] = await Promise.all([other, root].map(async (tree) => {
+    const found = {};
+    for (const file of ["public/forward.js", "public/jobs.js", "public/kept.js", "public/gpu.js", "src/bench.js"]) {
+      let module;
+      try { module = await import(pathToFileURL(path.join(tree, file))); } catch (error) { found[`${file}: import`] = `throws ${error.message}`; continue; }
+      for (const [name, value] of Object.entries(module)) {
+        found[`${file}: ${name}`] = typeof value === "function" ? `${/^class\b/.test(String(value)) ? "class" : "function"}/${value.length}` : JSON.stringify(value) ?? String(value);
+      }
+    }
+    return found;
+  }));
+  ok = said("exports, the JavaScript windows", differences(was, now)) && ok;
+  const python_ = (tree) => JSON.parse(execFileSync(python, [path.join(root, "tests/unchanged_exports.py"), tree], { maxBuffer: 1 << 28, env: { ...process.env, PYTHONHASHSEED: "0" } }));
+  return said("exports, the Python windows", differences(python_(other), python_(root))) && ok;
 }
 
 function sizes() {
@@ -147,7 +179,7 @@ function sizes() {
 
 const { commit, folder } = kinds.some((kind) => kind !== "sizes") ? otherTree() : {};
 if (commit) console.log(`unchanged: the working tree against ${before} (${commit.slice(0, 7)})`);
-const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), python: () => pythonTests(folder), sizes };
+const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), choices: () => choices(folder), exports: () => exports(folder), python: () => pythonTests(folder), sizes };
 let ok = true;
 for (const kind of kinds) {
   if (!checks[kind]) throw new Error(`no check "${kind}": ${Object.keys(checks).join(", ")}`);
