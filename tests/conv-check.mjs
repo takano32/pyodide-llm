@@ -91,7 +91,7 @@ let againstNumpy = 0;
     F.set(floats(c.weights), taps / 4);
     F.fill(0, rows / 4, b / 4);  // position 0: no token before it
     c.mixed.forEach((mixed, t) => {
-      // forward.js's shortConvolution(): the rows move up by one, the kernel writes this token's
+      // forward/engine.js's shortConvolution(): the rows move up by one, the kernel writes this token's
       F.copyWithin(rows / 4, (rows + n * 4) / 4, b / 4);
       F.set(floats(mixed), b / 4);
       k.short_conv(out, taps, rows, b, n, c.taps);

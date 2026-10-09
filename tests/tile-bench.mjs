@@ -1,6 +1,6 @@
 // T159: a prompt's int8 matrix product, matmul_q8r_tile (four rows by four tokens), of main and of this tree, in one
 // process, taking turns (AGENTS.md: the old and the new side by side), at 2 to 16 tokens, on 1 and 4 threads of one
-// shared memory, the rows in chunks taken in turn as forward.js's phase() cuts them. (Before T197 it set the tile
+// shared memory, the rows in chunks taken in turn as forward/threads.js's phase() cuts them. (Before T197 it set the tile
 // against jobs.js's form before T159, blocks of 16 KB with matmul_q8r for each token: that is in TODO.md's T159.)
 //
 // T197 changed the corrections (float32 scale × sum → int32 −64 × sum, added to each group's integer sum), so the two
@@ -36,7 +36,7 @@ const tiles = (k, c, w, r0, r1) => {
   const n = c[N], rows = c[ROWS], ng = n / 32;
   k.matmul_q8r_tile(c[OUT], c[FRAMES], c[FRAMES] + n, w, w + rows * n, w + rows * n + (1 + c[FORM]) * rows * ng * 4, n, r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME]);
 };
-// forward.js's phase(): chunks of a quarter of a thread's share (T93), in fours of rows for a prompt (T159), taken in
+// forward/threads.js's phase(): chunks of a quarter of a thread's share (T93), in fours of rows for a prompt (T159), taken in
 // turn; one thread runs the whole matrix in one call
 const chunkOf = (rows, threads) => (threads === 1 ? rows : 4 * Math.ceil(rows / (threads * 16)));
 function runCalls(k, c, index) {

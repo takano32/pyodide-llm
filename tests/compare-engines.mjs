@@ -13,7 +13,8 @@ const [model, rounds = "3"] = process.argv.slice(2);
 const root = new URL("../", import.meta.url).pathname;
 // T348: the engine is a window over the package engine/, and this tool loads the committed engine and the working
 // one as two single files in one Pyodide. Until it takes two trees (T357: tests/other-tree.mjs and a Pyodide each), it
-// says so and stops, rather than compare the working parts with themselves.
+// says so and stops, rather than compare the working parts with themselves. (T349: forward.js is a window over
+// forward/ as well, whose modules a data: URL of it would not find.)
 if (fs.existsSync(root + "public/engine")) {
   console.log("compare-engines: the engine is a package (T348): this tool compares single files (T357 makes it take two trees)");
   process.exit(3);

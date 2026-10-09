@@ -24,7 +24,7 @@
 //       memory wherever the shared one did, and a 64-bit memory (16 GiB) wherever pastWide(), asked with the shared size, let
 //       it pass (T130: the type of the keys and values on the plain memory, in footprint()).
 //   node tests/memory-check.mjs [--forward <another forward.js, to see a broken one fail>]     (PYTHON=.venv/bin/python)
-// A forward.js of another place needs jobs.js beside it (it imports it by its own address).
+// A forward.js of another place needs jobs.js and its modules (forward/) beside it (it imports them by its own address).
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -266,7 +266,7 @@ function halfToFloat(h) {
       convolutional++;
       return;
     }
-    if (!p.keep_int8 || shapes[n].loose || p.form.linear) return;  // (T229: a Qwen3.5 is not on the GPU: forward.js's gpuUnfit)
+    if (!p.keep_int8 || shapes[n].loose || p.form.linear) return;  // (T229: a Qwen3.5 is not on the GPU: forward/gpuside.js's gpuUnfit)
     for (const relaxed of [true, false]) {
       const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: true, outliers: 8, gpu: true, shared: true };
       const bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);

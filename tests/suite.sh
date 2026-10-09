@@ -49,6 +49,10 @@ page_modules() {
   # T350: the names the worker and its modules (public/worker/) use: declared, imported, or the worker's globals (the two
   # checks above run them as scripts of one context, where a missing import does not show)
   node tests/worker-modules-check.mjs
+  # T349: the names forward.js and its modules (public/forward/) hand one another: what a file takes from another is
+  # exported there, what createForward() hands a part is what the part takes, and every pool.<name>, gpuPart.<name> and
+  # held.<name> is a member of that object (none of these is a variable: a wrong name is undefined without a word)
+  node tests/forward-modules-check.mjs
   # T130's review, on forward.js's createForward() with kernels that do nothing: the KV cache grows in place without losing a
   # byte, and footprint() holds what is allocated (a few seconds); T223's: the search for the software threads on noisy times
   node tests/memory-check.mjs
@@ -72,7 +76,7 @@ part "the rotated basis's kernels" node tests/rotate-check.mjs
 # instantiates: every half at every place of a 16-byte line, the rest after the eights (no engine's kvDim leaves one), a bad
 # half just outside the run, an address above 4 GiB (a few seconds)
 part "the finite look at float16" node tests/finite-check.mjs
-# T229 (the review): a Qwen3.5 is not put on a GPU where an adapter is there: forward.js's gpuUnfit says so first, and no
+# T229 (the review): a Qwen3.5 is not put on a GPU where an adapter is there: forward/gpuside.js's gpuUnfit says so first, and no
 # adapter of CI's reaches that line (a few seconds)
 hybrid_stays_on_the_cpu() {
   mkdir -p .tmp
