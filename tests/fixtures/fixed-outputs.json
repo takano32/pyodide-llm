@@ -13,7 +13,7 @@
   },
   "hf-smollm2-135m-instruct": {
     "prompt": "What will be popular next? Name three things.",
-    "text": "1. The new smartphone model: This is a significant development in the smartphone market"
+    "text": "The next popular item is a new type of smartwatch that combines the benefits of"
   },
   "hf-llm-jp-3-150m-instruct3": {
     "prompt": "これからの流行りを3つ挙げてください。",
