@@ -90,6 +90,8 @@ if [ "$suite" = full ]; then
   # apt's time-outs set first): the rule that was a sentence in AGENTS.md. Not the deploy's: a missing limit cannot break the
   # page, and the deploy's suite is what keeps a broken page off the site (T193); the next full suite says it (under a second)
   part "the workflows' time limits" node tests/workflows-check.mjs
+  # T346: the files past the size a file should have, said every night (never a failure)
+  part "the sizes of the files" node tests/unchanged.mjs sizes
   # T93: the forward pass of public/forward.js against NumPy's, on the site's models (the line is for 128 positions)
   part "forward.js against NumPy" node tests/forward-check.mjs --rounds 1 --positions 128
   part "forward.js against NumPy, not shared" node tests/forward-check.mjs stories260K tiny-lm --rounds 1 --positions 128 --plain
