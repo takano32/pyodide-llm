@@ -89,12 +89,13 @@ const QWEN3_AT_ONCE_AFTER_START = `${QWEN3_THINKING_AFTER_START}<think>\n\n</thi
 const thinking = { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 };
 const atOnce = { steps: 0, temperature: 0.7, topp: 0.8, repetition_penalty: 1.0 };
 // T274: the sampling of the cards of the Qwen3.5 family, whose models are on the CPU (hybrid attention has no GPU path):
-// a top-k of 20 and a presence penalty with all of them. general: the 4B's and the 9B's, and NeoHorse-1's (its card
-// measured with the thinking set). small: the 0.8B's and the 2B's, which name another set without thinking "for text"
-// (the 0.7 and 0.8 are theirs "for VL tasks"). Agents-A1's card has one set, Bonsai 2's a min-p where it thinks
+// a top-k of 20 and a presence penalty with all of them. QWEN35_SAMPLING: the 4B's and the 9B's for general tasks, and
+// NeoHorse-1's (its card measured with the thinking set). The 0.8B's and the 2B's cards name the same set with
+// thinking; without, 1.0, top-p 1.0 and a presence penalty of 2.0 "for text" and these 0.7 and 0.8 "for VL tasks":
+// the 0.8B wrote worse with the former (TODO.md's T274: a French sentence that means nothing, where it translated
+// rightly with 0.7 and 0.8), so the latter. Agents-A1's card has one set, Bonsai 2's a min-p where it thinks
 const sampling35 = (temperature, topp, more) => ({ steps: 0, temperature, topp, repetition_penalty: 1.0, top_k: 20, ...more });
 const QWEN35_SAMPLING = { thinking: sampling35(1.0, 0.95, { presence_penalty: 1.5 }), atOnce: sampling35(0.7, 0.8, { presence_penalty: 1.5 }) };
-const QWEN35_SMALL_SAMPLING = { thinking: QWEN35_SAMPLING.thinking, atOnce: sampling35(1.0, 1.0, { presence_penalty: 2.0 }) };
 const AGENTS_A1_SAMPLING = { thinking: sampling35(0.85, 0.95, { presence_penalty: 1.1 }), atOnce: sampling35(0.85, 0.95, { presence_penalty: 1.1 }) };
 const BONSAI_2_SAMPLING = { thinking: sampling35(1.0, 0.95, { min_p: 0.05 }), atOnce: QWEN35_SAMPLING.atOnce };
 /** A Qwen3 twice (T124, the owner's "両方を別々に用意できないのか"): thinking first, and answering at once. The two
@@ -1029,25 +1030,26 @@ const LISTED = [
   // F32 one the original's values). Its card: thinking is off unless asked for (the 0.8B "is more prone to entering
   // thinking loops"), and for the sampling without thinking it names temperature 1.0, top-p 1.0, top-k 20 and a
   // presence penalty of 2.0 for text, and 0.7, 0.8, 20 and 1.5 for pictures and in its benchmarks; with thinking 1.0,
-  // 0.95, 20 and 1.5, or 0.6, 0.95, 20 and no penalty "for precise coding". Since T274 the page samples with the
-  // card's sets for text (QWEN35_SMALL_SAMPLING; until then Qwen3's two, without a top-k or a presence penalty)
+  // 0.95, 20 and 1.5, or 0.6, 0.95, 20 and no penalty "for precise coding". Since T274 the page samples with
+  // QWEN35_SAMPLING (the card's set with thinking, and its 0.7 and 0.8 without; until then Qwen3's two, without a top-k
+  // or a presence penalty)
   ...thinkingAndNot("hf-qwen3.5-0.8b", "Qwen3.5 0.8B",
     ggufOf("unsloth/Qwen3.5-0.8B-GGUF", "6ab461498e2023f6e3c1baea90a8f0fe38ab64d0", "Qwen3.5-0.8B-Q8_0.gguf",
       "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"), 811843840,
     "fetches 812 MB (GGUF) → int8 850 MB · desktop only", { options: qwen35 },
-    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SMALL_SAMPLING),
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   // T247: the other sizes of Qwen3.5 whose int8 a 64-bit memory of 16 GiB holds (the 27B's Q8_0 is 28.6 GB, and the
   // larger ones are mixtures of experts, which the engine has not). The same vocabulary, format and form as the 0.8B.
   // The 4B and the 9B have two value heads to a key head in their linear-attention layers, which llama.cpp writes in
   // another order than Hugging Face (T245: the converter puts them back), and they think unless told not to (the 0.8B
   // and the 2B only when told to): either form is written out here, so the two entries are the same two. The sampling
-  // is their cards' for general tasks (T274: QWEN35_SAMPLING, the 2B's as the 0.8B's). The 4B and the 9B are past a
+  // is their cards' for general tasks (T274: QWEN35_SAMPLING, and the 2B's as the 0.8B's). The 4B and the 9B are past a
   // 32-bit memory as int8
   ...thinkingAndNot("hf-qwen3.5-2b", "Qwen3.5 2B",
     ggufOf("unsloth/Qwen3.5-2B-GGUF", "f6d5376be1edb4d416d56da11e5397a961aca8ae", "Qwen3.5-2B-Q8_0.gguf",
       "Qwen/Qwen3.5-2B", "15852e8c16360a2fea060d615a32b45270f8a8fc"), 2012012800,
     "fetches 2.0 GB (GGUF) → int8 2.1 GB · desktop only", { options: qwen35 },
-    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SMALL_SAMPLING),
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   ...thinkingAndNot("hf-qwen3.5-4b", "Qwen3.5 4B",
     ggufOf("unsloth/Qwen3.5-4B-GGUF", "e87f176479d0855a907a41277aca2f8ee7a09523", "Qwen3.5-4B-Q8_0.gguf",
       "Qwen/Qwen3.5-4B", "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"), 4482403488,
