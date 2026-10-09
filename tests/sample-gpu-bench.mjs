@@ -15,8 +15,8 @@
 //   node tests/sample-gpu-bench.mjs <the webgpu package's directory> [--against <ref>] [--rounds 9] [--seed 1]
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { otherTree } from "./other-tree.mjs";
 
 const args = process.argv.slice(2), OPTIONS = ["--against", "--rounds", "--seed"];
 const webgpu = args.find((a, i) => !a.startsWith("--") && !OPTIONS.includes(args[i - 1]));
@@ -38,25 +38,24 @@ if (!webgpu) {
   process.exit(2);
 }
 const root = new URL("../", import.meta.url).pathname;
-// the two versions of shaders.js: the working tree's and the ref's, written under .tmp (shaders.js imports nothing)
+// the two versions of the shaders: the working tree's and the ref's. (T351: shaders.js is a window over public/shaders/, so
+// a version is a tree's public/shaders.js with what it imports beside it, never the one file: the ref's whole tree is
+// tests/other-tree.mjs's, which holds either form)
 const scratch = path.join(root, ".tmp", "sample-gpu-bench");
 fs.mkdirSync(scratch, { recursive: true });
-const old = path.join(scratch, `shaders-${against.replace(/[^\w.-]/g, "_")}.js`);
-const shown = (ref) => execFileSync("git", ["show", `${ref}:public/shaders.js`], { cwd: root, maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "ignore"] });
-let text;
-try {
-  text = shown(against);
-} catch {
-  // (the CI's checkout holds the branch alone: the ref fetched, shallow)
-  execFileSync("git", ["fetch", "--depth", "1", "origin", against.replace(/^origin\//, "")], { cwd: root, stdio: "ignore" });
-  text = shown("FETCH_HEAD");
-}
-fs.writeFileSync(old, text);
-// (the working tree's text again, a copy: a module is imported once by its address)
-const again = path.join(scratch, "shaders-working-tree-again.js");
-fs.copyFileSync(path.join(root, "public", "shaders.js"), again);
+const old = path.join(otherTree(against).folder, "public", "shaders.js");
+// (the working tree's text again, a copy: a module is imported once by its address, and so are the modules it asks for)
+const again = path.join(scratch, "working-tree-again");
+fs.rmSync(again, { recursive: true, force: true });
+fs.mkdirSync(again, { recursive: true });
+fs.copyFileSync(path.join(root, "public", "shaders.js"), path.join(again, "shaders.js"));
+fs.cpSync(path.join(root, "public", "shaders"), path.join(again, "shaders"), { recursive: true });
 const versions = [{ name: against, wgsl: await import(pathToFileURL(old).href) }, { name: "working tree", wgsl: await import(pathToFileURL(path.join(root, "public", "shaders.js")).href) },
-  { name: "working tree again", wgsl: await import(pathToFileURL(again).href) }];
+  { name: "working tree again", wgsl: await import(pathToFileURL(path.join(again, "shaders.js")).href) }];
+// (three versions of the text, each its own module: the ref's is not the tree's, and the copy is not the tree's object)
+if (versions[0].wgsl === versions[1].wgsl || versions[1].wgsl === versions[2].wgsl || versions[1].wgsl.SAMPLE !== versions[2].wgsl.SAMPLE) {
+  throw new Error("the versions of the shaders are not three modules, or the copy of the working tree's is another text");
+}
 
 const { create, globals } = await import(pathToFileURL(path.resolve(webgpu, "index.js")).href);
 Object.assign(globalThis, globals);

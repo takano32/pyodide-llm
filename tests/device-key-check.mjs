@@ -7,8 +7,14 @@
 //
 //   node tests/device-key-check.mjs
 //
+// T351: shaders.js is a window over the modules of public/shaders/ now. What is read, changed and run here is those
+// modules as the one module they were (tests/shaders-source.mjs's oneSource(): their statements in the window's order,
+// without the lines that hand names from one to another), and "the file" below is that text. That it is the modules'
+// own behaviour is held where the check starts: run as it is, it gives the keys of the window imported for real.
+// (Whether each module takes the names it uses is tests/shaders-modules-check.mjs's.)
+//
 // (1) Every piece of text of the engine's shaders reaches the hash. A piece is a string, a number or a run of a
-//     template's text in the source of public/shaders.js; the engine's shaders are every text and maker that
+//     template's text in the source of public/shaders.js's modules; the engine's shaders are every text and maker that
 //     public/gpu.js names (wgsl.<name>) and the prompt's tiles, with all they are made of (the names their source
 //     reaches). Each piece is changed by one character, one at a time, the changed file run, and the key of one of
 //     eight made-up devices must differ: so every branch of every maker is walked by what deviceKey() makes of it.
@@ -29,9 +35,10 @@ import fs from "node:fs";
 import { parse } from "@babel/parser";
 import { transformSync } from "esbuild";
 import { rolldown } from "rolldown";
+import { oneSource } from "./shaders-source.mjs";
 
 const read = (file) => fs.readFileSync(new URL(`../public/${file}`, import.meta.url), "utf8");
-const source = read("shaders.js");
+const source = oneSource();
 const program = parse(source, { sourceType: "module" }).program;
 
 // ---- the made-up devices: the features that choose the prompt's tiles, and whether the model is of ternary weights
@@ -110,7 +117,7 @@ function run(text, places = exportWords) {
 }
 const real = (await import("../public/shaders.js"));
 const KEYS = { plain: keysOf(real.deviceKey, false), ternary: keysOf(real.deviceKey, true) };
-assert.deepEqual(keysOf(run(source), false), KEYS.plain, "the file run as a function's body gives the module's keys");
+assert.deepEqual(keysOf(run(source), false), KEYS.plain, "the modules run as one function's body give the keys of shaders.js imported");
 assert.equal(new Set([...KEYS.plain, ...KEYS.ternary]).size, 2 * DEVICES.length, "a key for each device, and for its ternary models");
 
 // ---- (1) what the engine runs, and that each piece of it reaches the hash
