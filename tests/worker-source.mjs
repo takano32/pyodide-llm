@@ -21,7 +21,7 @@ import vm from "node:vm";
 const WORKER = new URL("../public/worker.js", import.meta.url);
 const FOLDER = new URL("../public/worker/", import.meta.url);
 // a module reads a neighbour:   const { a, b } = await import(new URL(`x.js${new URL(import.meta.url).search}`, import.meta.url));
-const NEIGHBOUR = /^const \{([^}]*)\} = await import\(new URL\(`([\w-]+)\.js\$\{new URL\(import\.meta\.url\)\.search\}`, import\.meta\.url\)\);\n/gm;
+const NEIGHBOUR = /^const \{([^}]*)\} =\s+await import\(new URL\(`([\w-]+)\.js\$\{new URL\(import\.meta\.url\)\.search\}`, import\.meta\.url\)\);\n/gm;
 // the worker asks for all of them at once, then takes each one's names:   const { a, b } = await modules.x;
 const ASKED = /^const modules = Object\.fromEntries\(\[([^\]]*)\]\.map\(\(name\) =>\n  \[name, import\(new URL\(`worker\/\$\{name\}\.js\$\{self\.location\.search\}`, import\.meta\.url\)\)\]\)\);\n/m;
 const TAKEN = /^const \{([^}]*)\} = await modules\.([\w-]+);\n/gm;

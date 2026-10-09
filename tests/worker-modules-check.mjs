@@ -9,6 +9,7 @@
 //   node tests/worker-modules-check.mjs
 //
 // The parser is @babel/parser, which Astro's packages bring (npm ci installs it; this repository does not name it).
+// It also holds every state.<name> to a field of worker/state.js's object.
 // And it imports worker.js for real (Node links the modules), and plays a message that comes at its first await.
 // What it does not see: a browser's own way with a module worker's first message (the browsers do: tests/e2e.mjs).
 import assert from "node:assert/strict";
@@ -152,6 +153,28 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
   }
   // (an import of a name the other file does not export, and a module of the folder nobody asks for: workerScripts() threw)
   console.log(`worker-modules-check: ${files.size} files of the worker use ${count} names of the worker's globals, and nothing they do not declare or import`);
+
+  // ---- the fields of the one object the modules share (worker/state.js): state.<name> is no variable, and a name
+  // that is not a field reads undefined and is set without a word. Every one used is a field, and every field is used
+  const texts = workerScripts().map(({ name, url }) => [name, fs.readFileSync(url, "utf8")]);
+  const fields = /^export const state = \{\n([\s\S]*?)^\};$/m.exec(texts.find(([name]) => name === "state")[1])[1]
+    .split("\n").filter((line) => !line.trim().startsWith("//")).flatMap((line) => [...line.matchAll(/(?:^  |, )(\w+): /g)].map((match) => match[1]));
+  assert.equal(new Set(fields).size, fields.length, "a field of state twice");
+  const used = new Set();
+  for (const [name, text] of texts) {
+    for (const [, field] of text.matchAll(/\bstate\.(?!js\b)(\w+)/g)) {
+      assert.ok(fields.includes(field), `${name} says state.${field}, which is no field of worker/state.js's object`);
+      used.add(field);
+    }
+  }
+  assert.deepEqual(fields.filter((field) => !used.has(field)), [], "fields of state that nothing reads or sets");
+  // (and what the two checks that run the worker set in its context: a name that is no field would set nothing the worker reads)
+  for (const check of ["worker-check.mjs", "worker-sink-check.mjs"]) {
+    for (const [, field] of fs.readFileSync(new URL(check, import.meta.url), "utf8").matchAll(/\bstate\.(\w+)/g)) {
+      assert.ok(fields.includes(field), `tests/${check} says state.${field}, which is no field of worker/state.js's object`);
+    }
+  }
+  console.log(`worker-modules-check: the ${fields.length} fields of state are the ones the modules use`);
 
   // ---- the files as the modules they are, linked by Node: worker.js waits for its modules at its top level, and a
   // message that comes meanwhile is handled once they are there. A module worker's port opens at the module's first

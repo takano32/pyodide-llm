@@ -3,10 +3,10 @@
 // whose into(write) writes every byte where it belongs.
 // A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
 
-const { weightsRoom } = await import(new URL(`state.js${new URL(import.meta.url).search}`, import.meta.url));
-const { since } = await import(new URL(`clock.js${new URL(import.meta.url).search}`, import.meta.url));
-const { innerAbort, worthRetrying, inOrder } = await import(new URL(`ranges.js${new URL(import.meta.url).search}`, import.meta.url));
 const { told } = await import(new URL(`told.js${new URL(import.meta.url).search}`, import.meta.url));
+const { since } = await import(new URL(`clock.js${new URL(import.meta.url).search}`, import.meta.url));
+const { weightsRoom } = await import(new URL(`weights.js${new URL(import.meta.url).search}`, import.meta.url));
+const { innerAbort, worthRetrying, inOrder } = await import(new URL(`ranges.js${new URL(import.meta.url).search}`, import.meta.url));
 
 // Checkpoints are deployed in parts of 8 MiB (see the Makefile). Several parts download at once, which is
 // about twice as fast as one stream, and the download runs while Pyodide is still loading: until the Python
