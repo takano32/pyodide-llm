@@ -2074,6 +2074,8 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **気づき（直していない。採番するなら）**: (a) 本線と並べて測る 5 つの道具は頭で `git fetch --depth=1 origin +main:…` を打つので、開発機で回すと `origin/main` の履歴がそこで切れる（この回で踏んだ: ブランチとの共通の祖先が無くなった。`git fetch --deepen=31 origin main` で戻した。AGENTS.md の落とし穴に書いた）。(b) `make clean` は `public/simdkernel*` を消すが `public/ceilings*.wasm` は消さない。(c) `kernel_relaxed.ts` は `GS` を自分で持つ（`kernel/math.ts` と 2 か所）。(d) `forward-check.mjs` の既定のモデルは `rotate`・`unrotate` を呼ばない（壊しても通る。落とすのは `rotate-check.mjs` と作り物の回した基底）。
 - **見ていないもの**: 実ブラウザ（`kernels-in-browser.mjs`・e2e）、WebGPU、全部の組、arm64 以外の Node、速さ（どれも CI で）。`tests/page_27b.sh` と実物のモデルの道具。本線が分けた後の形になってからの「本線対今の木」の 4 つの道具（相手が新しい形のときの `kernelSources()` は上の 2 つで見た）。`kernels-same.mjs` は Binaryen の `wasm-dis` の文に頼る（呼び出しと型の参照の書き方が変われば読み直しが要る）。
 
+  - **CI（2026-10-09、どれも成功）**: 全部の組と網 run 37943312185（網は全部同じ）。`kernels-in-browser.mjs` を WebKit 27.2・Chromium 156・Firefox 157 で、x86-64 run 37943315611 と arm64 run 37943318897。`kernels-same.mjs` は 2 つの CPU の CI でも「14 個: 9 個は同じバイト、5 個は同じ関数が別の順」（x86-64 run 37943321988、arm64 run 37943325635）。
+  - **速さの前後（同じプロセスで本線のビルドと交互、同じ 2 つの run）**: `q8r-bench.mjs` は 3 つの大きさ × 3 巡で、本線と行ごとにビット単位で同じ。比は x86-64（Xeon Platinum 8370C）0.97〜1.01、arm64 0.93〜1.05（8192 × 8192 の 3 巡が 1.02・1.05・0.93 で、巡ごとに向きが変わる: 揺れ）。`sample-bench.mjs` は 0.99〜1.00（引いたトークンは全部同じ）。`attention-compare.mjs` は 1.00（出力は一致）。**関数の並ぶ順が変わっても速さは変わらない**。持ち主の端末は未計測。
 ### T355 [整理][その他] `src/pages/index.astro`（75 KB）のスクリプトをモジュールに — 状態: 未着手（2026-10-09。規模 中）
 - 分け方の案: URL と設定（`LIMITS`）、`localStorage` に覚えるもの、Worker の知らせの受け手、描画（吹き出し・ステータス行・進捗）、設定のシート、Service Worker の登録。見た目は変えない（`preview.yml` で前後の画面を比べる）。
 
