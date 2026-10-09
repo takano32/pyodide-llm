@@ -167,7 +167,7 @@ def test_the_state_has_a_size_the_context_does_not_change():
 @pytest.mark.parametrize("dtype", ["float32", "float16", "int8", "int6"])
 @pytest.mark.parametrize("shared", [True, False])
 def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, shared, monkeypatch):
-    monkeypatch.setattr(llama2_convert, "PIECE", 700)  # several pieces per tensor, and not a multiple of a row
+    monkeypatch.setattr("convert.stream.PIECE", 700)  # several pieces per tensor, and not a multiple of a row
     tensors, config = lfm2_model(shared=shared)
     file = safetensors_file(tensors)
     expected = converted(Safetensors(reader(file)), config, dtype)
@@ -526,7 +526,7 @@ def test_an_lfm2_gguf_with_the_originals_files_is_the_safetensors_conversion(sha
     """The list's way in: the checkpoint, tokenizer.bin and options of the safetensors of the same values, to the byte.
     The convolution comes without its axis of one, the last norm and the convolution's tensors under llama.cpp's
     names, and nothing in another order. Fed 4096 bytes at a time, in pieces of a few rows."""
-    monkeypatch.setattr(llama2_convert, "PIECE", 700)
+    monkeypatch.setattr("convert.stream.PIECE", 700)
     config, file, same = lfm2_gguf(**LFM2_SHAPES[shape])
     vocabulary = unigram(config["vocab_size"])
     got = with_original(file, config, vocabulary, "tokenizer.json", dtype)

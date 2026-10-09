@@ -24,6 +24,7 @@ import { pathToFileURL } from "node:url";
 import { loadPyodide } from "pyodide";
 import { MODELS } from "../src/models.js";
 import { otherTree } from "./other-tree.mjs";
+import { PYTHON, placeFile } from "../public/python.js";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
@@ -33,6 +34,13 @@ if (ref === "origin/main") {
   try { execFileSync("git", ["fetch", "-q", "--depth=1", "origin", "+main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" }); } catch {}
 }
 const source = (path) => execFileSync("git", ["show", `${ref}:${path}`], { cwd: root });
+// T347: this bench takes the other commit's converter as one file beside this tree's. A commit whose converter is a
+// window over a package cannot be had that way (its parts would be this tree's): until the bench takes two trees
+// (T357), it says so and stops.
+if (fs.existsSync(path.join(otherTree(ref).folder, "public/convert"))) {
+  console.log(`encode-bench: the converter of ${ref} is a package (T347): this bench compares single files (T357 makes it take two trees)`);
+  process.exit(3);
+}
 const old = source("public/llama2_numpy.py");
 // the old converter, on the old engine
 const oldConvert = source("public/llama2_convert.py").toString().replace(/^from llama2_numpy import/m, "from old_numpy import");
@@ -75,7 +83,7 @@ const py = await loadPyodide();
 await py.loadPackage("numpy", { messageCallback: () => {} });
 py.FS.writeFile("llama2_numpy.py", fs.readFileSync(`${root}public/llama2_numpy.py`));
 py.FS.writeFile("old_numpy.py", old);
-py.FS.writeFile("llama2_convert.py", fs.readFileSync(`${root}public/llama2_convert.py`));
+for (const name of PYTHON.llama2_convert) placeFile(py, name, fs.readFileSync(`${root}public/${name}`));
 py.FS.writeFile("old_convert.py", oldConvert);
 // every prompt and template of the list, with a prompt of both languages in it
 const templates = [...new Set(MODELS.flatMap((m) => [m.prompt, m.template]).filter((t) => typeof t === "string"))];
