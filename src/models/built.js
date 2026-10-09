@@ -1,0 +1,44 @@
+// The models built with the site (`make models`) and their unquantized originals.
+// Every file of these two groups is fetched when the site is built (see the Makefile): llm-jp-3 and tiny-lm are
+// converted from their Hugging Face checkpoints by convert_hf.py, and the larger models are quantized to int8. bytes
+// is the checkpoint size: it sizes the download buffer and the progress bar.
+import { JAPANESE, STORY, unigram } from "./formats.js";
+import { greedy, sampled } from "./sampling.js";
+
+export const BUILT = [
+  { id: "tiny-lm", name: "tiny-lm 29M", note: "日本語 / English · int8 · 33 MB",
+    source: "sbintuitions/tiny-lm", checkpoint: "tiny-lm.bin", bytes: 32891932, tokenizer: "tiny-lm.tokenizer.bin",
+    options: { dtype: "int8", ...unigram, stop_tokens: [1, 2] },
+    generation: sampled(1.3), prompt: "これからの流行りは", placeholder: JAPANESE },
+  { id: "llm-jp-3-150m", name: "llm-jp-3 150M", note: "日本語 / English · int8 · 171 MB",
+    source: "llm-jp/llm-jp-3-150m", checkpoint: "llm-jp-3-150m.bin", bytes: 171395100, tokenizer: "llm-jp-3-150m.tokenizer.bin",
+    options: { dtype: "int8", ...unigram, stop_tokens: [1, 2, 7] },
+    generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  { id: "stories260K", name: "TinyStories 260K", note: "English · float32 · 1 MB · tiny",
+    source: "karpathy/tinyllamas", checkpoint: "stories260K.bin", bytes: 1056540, tokenizer: "tok512.bin", options: {},
+    generation: greedy, prompt: "Once upon a time", placeholder: STORY },
+  { id: "stories3_5M", name: "TinyStories 3.5M", note: "English · float32 · 15 MB · fast",
+    source: "ellishg/tinyllamas", checkpoint: "stories3_5M-v4k.bin", bytes: 14887004, tokenizer: "tok4096.bin", options: {},
+    generation: greedy, prompt: "Once upon a time", placeholder: STORY },
+  { id: "stories15M", name: "TinyStories 15M", note: "English · int8 · 17 MB",
+    source: "karpathy/tinyllamas", checkpoint: "stories15M.bin", bytes: 17101468, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
+    generation: greedy, prompt: "Once upon a time", placeholder: STORY },
+  { id: "stories42M", name: "TinyStories 42M", note: "English · int8 · 47 MB · desktop only",
+    source: "karpathy/tinyllamas", checkpoint: "stories42M.bin", bytes: 46925852, tokenizer: "tokenizer.bin", options: { dtype: "int8" },
+    generation: greedy, prompt: "Once upon a time", placeholder: STORY },
+  // the unquantized originals, to compare with int8
+  { group: "original", id: "tiny-lm-f16", name: "tiny-lm 29M (original)", note: "日本語 / English · float16 · 59 MB",
+    source: "sbintuitions/tiny-lm", checkpoint: "tiny-lm.f16", bytes: 58724892, tokenizer: "tiny-lm.tokenizer.bin",
+    options: { dtype: "float16", ...unigram, stop_tokens: [1, 2] },
+    generation: sampled(1.3), prompt: "これからの流行りは", placeholder: JAPANESE },
+  { group: "original", id: "llm-jp-3-150m-f16", name: "llm-jp-3 150M (original)", note: "日本語 / English · float16 · 305 MB · desktop only",
+    source: "llm-jp/llm-jp-3-150m", checkpoint: "llm-jp-3-150m.f16", bytes: 305161244, tokenizer: "llm-jp-3-150m.tokenizer.bin",
+    options: { dtype: "float16", ...unigram, stop_tokens: [1, 2, 7] },
+    generation: sampled(1.1), prompt: "これからの流行りは", placeholder: JAPANESE },
+  { group: "original", id: "stories15M-f32", name: "TinyStories 15M (original)", note: "English · float32 · 61 MB",
+    source: "karpathy/tinyllamas", checkpoint: "stories15M.f32", bytes: 60816028, tokenizer: "tokenizer.bin", options: {},
+    generation: greedy, prompt: "Once upon a time", placeholder: STORY },
+  { group: "original", id: "stories42M-f32", name: "TinyStories 42M (original)", note: "English · float32 · 167 MB · desktop only",
+    source: "karpathy/tinyllamas", checkpoint: "stories42M.f32", bytes: 167020572, tokenizer: "tokenizer.bin", options: {},
+    generation: greedy, prompt: "Once upon a time", placeholder: STORY },
+];
