@@ -84,21 +84,33 @@ const QWEN3_AT_ONCE = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assista
 const QWEN3_FROM_IM_START = { bos: 151644, stop_tokens: [151643, 151644, 151645] };
 const QWEN3_THINKING_AFTER_START = CHATML_AFTER_START;
 const QWEN3_AT_ONCE_AFTER_START = `${QWEN3_THINKING_AFTER_START}<think>\n\n</think>\n\n`;
-// the sampling of Qwen3's model card for either form (its top-k and presence penalty the page's sampler has not)
+// the sampling of Qwen3's model card for either form, without its top-k of 20: the engine has one since T274, on the
+// CPU alone, and these models' answers are the GPU's where it is faster (and the GPU's alone from 3B up)
 const thinking = { steps: 0, temperature: 0.6, topp: 0.95, repetition_penalty: 1.0 };
 const atOnce = { steps: 0, temperature: 0.7, topp: 0.8, repetition_penalty: 1.0 };
+// T274: the sampling of the cards of the Qwen3.5 family, whose models are on the CPU (hybrid attention has no GPU path):
+// a top-k of 20 and a presence penalty with all of them. QWEN35_SAMPLING: the 4B's and the 9B's for general tasks, and
+// NeoHorse-1's (its card measured with the thinking set). The 0.8B's and the 2B's cards name the same set with
+// thinking; without, 1.0, top-p 1.0 and a presence penalty of 2.0 "for text" and these 0.7 and 0.8 "for VL tasks":
+// the 0.8B wrote worse with the former (TODO.md's T274: a French sentence that means nothing, where it translated
+// rightly with 0.7 and 0.8), so the latter. Agents-A1's card has one set, Bonsai 2's a min-p where it thinks
+const sampling35 = (temperature, topp, more) => ({ steps: 0, temperature, topp, repetition_penalty: 1.0, top_k: 20, ...more });
+const QWEN35_SAMPLING = { thinking: sampling35(1.0, 0.95, { presence_penalty: 1.5 }), atOnce: sampling35(0.7, 0.8, { presence_penalty: 1.5 }) };
+const AGENTS_A1_SAMPLING = { thinking: sampling35(0.85, 0.95, { presence_penalty: 1.1 }), atOnce: sampling35(0.85, 0.95, { presence_penalty: 1.1 }) };
+const BONSAI_2_SAMPLING = { thinking: sampling35(1.0, 0.95, { min_p: 0.05 }), atOnce: QWEN35_SAMPLING.atOnce };
 /** A Qwen3 twice (T124, the owner's "両方を別々に用意できないのか"): thinking first, and answering at once. The two
  * share their weights, and so a conversion kept in the browser; only the format differs. shares: both ids, for
- * kept.js's replaced() (what either kept before its source changed goes, whichever form is opened first) */
-function thinkingAndNot(id, name, source, download, sizes, chat = {}, formats = {}) {
+ * kept.js's replaced() (what either kept before its source changed goes, whichever form is opened first). sampling:
+ * the two forms' generation settings where they are not Qwen3's */
+function thinkingAndNot(id, name, source, download, sizes, chat = {}, formats = {}, sampling = {}) {
   const common = { group: "hf", ...source, download, conversion: {}, options: {}, shares: [`${id}-thinking`, id],
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE, ...chat };
   return [
     // formats.thinking: where the converter cannot read the model's chat_template (T236), else what it reads
     { ...common, id: `${id}-thinking`, name: `${name} (thinking)`, note: `thinks before it answers · 日本語 / English · ${sizes}`,
-      generation: thinking, ...(formats.thinking ? { template: formats.thinking } : {}) },
+      generation: sampling.thinking ?? thinking, ...(formats.thinking ? { template: formats.thinking } : {}) },
     { ...common, id, name: `${name} (no thinking)`, note: `answers at once · 日本語 / English · ${sizes}`,
-      generation: chat.generation ?? atOnce, template: formats.atOnce ?? QWEN3_AT_ONCE },
+      generation: sampling.atOnce ?? chat.generation ?? atOnce, template: formats.atOnce ?? QWEN3_AT_ONCE },
   ];
 }
 // T236: Qwen3.5's chat_template calls a macro (render_content, for the pictures of a message), which the converter's
@@ -1018,67 +1030,67 @@ const LISTED = [
   // F32 one the original's values). Its card: thinking is off unless asked for (the 0.8B "is more prone to entering
   // thinking loops"), and for the sampling without thinking it names temperature 1.0, top-p 1.0, top-k 20 and a
   // presence penalty of 2.0 for text, and 0.7, 0.8, 20 and 1.5 for pictures and in its benchmarks; with thinking 1.0,
-  // 0.95, 20 and 1.5, or 0.6, 0.95, 20 and no penalty "for precise coding". The page's sampler has neither top-k nor a
-  // presence penalty, and temperature 1.0 over the whole vocabulary leans on the top-k: so Qwen3's two, which are the
-  // card's 0.7 and 0.8 without thinking and its 0.6 and 0.95 with
+  // 0.95, 20 and 1.5, or 0.6, 0.95, 20 and no penalty "for precise coding". Since T274 the page samples with
+  // QWEN35_SAMPLING (the card's set with thinking, and its 0.7 and 0.8 without; until then Qwen3's two, without a top-k
+  // or a presence penalty)
   ...thinkingAndNot("hf-qwen3.5-0.8b", "Qwen3.5 0.8B",
     ggufOf("unsloth/Qwen3.5-0.8B-GGUF", "6ab461498e2023f6e3c1baea90a8f0fe38ab64d0", "Qwen3.5-0.8B-Q8_0.gguf",
       "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"), 811843840,
     "fetches 812 MB (GGUF) → int8 850 MB · desktop only", { options: qwen35 },
-    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   // T247: the other sizes of Qwen3.5 whose int8 a 64-bit memory of 16 GiB holds (the 27B's Q8_0 is 28.6 GB, and the
   // larger ones are mixtures of experts, which the engine has not). The same vocabulary, format and form as the 0.8B.
   // The 4B and the 9B have two value heads to a key head in their linear-attention layers, which llama.cpp writes in
   // another order than Hugging Face (T245: the converter puts them back), and they think unless told not to (the 0.8B
-  // and the 2B only when told to): either form is written out here, so the two entries are the same two. Their cards
-  // name 0.7 and 0.8 without thinking and 0.6 and 0.95 "for precise coding" with (and 1.0 and 0.95 with a top-k and a
-  // presence penalty, which the page's sampler has not). The 4B and the 9B are past a 32-bit memory as int8
+  // and the 2B only when told to): either form is written out here, so the two entries are the same two. The sampling
+  // is their cards' for general tasks (T274: QWEN35_SAMPLING, and the 2B's as the 0.8B's). The 4B and the 9B are past a
+  // 32-bit memory as int8
   ...thinkingAndNot("hf-qwen3.5-2b", "Qwen3.5 2B",
     ggufOf("unsloth/Qwen3.5-2B-GGUF", "f6d5376be1edb4d416d56da11e5397a961aca8ae", "Qwen3.5-2B-Q8_0.gguf",
       "Qwen/Qwen3.5-2B", "15852e8c16360a2fea060d615a32b45270f8a8fc"), 2012012800,
     "fetches 2.0 GB (GGUF) → int8 2.1 GB · desktop only", { options: qwen35 },
-    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   ...thinkingAndNot("hf-qwen3.5-4b", "Qwen3.5 4B",
     ggufOf("unsloth/Qwen3.5-4B-GGUF", "e87f176479d0855a907a41277aca2f8ee7a09523", "Qwen3.5-4B-Q8_0.gguf",
       "Qwen/Qwen3.5-4B", "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"), 4482403488,
     "fetches 4.5 GB (GGUF) → int8 4.7 GB · desktop only · Chrome and Firefox", { options: qwen35 },
-    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   ...thinkingAndNot("hf-qwen3.5-9b", "Qwen3.5 9B",
     ggufOf("unsloth/Qwen3.5-9B-GGUF", "3885219b6810b007914f3a7950a8d1b469d598a5", "Qwen3.5-9B-Q8_0.gguf",
       "Qwen/Qwen3.5-9B", "c202236235762e1c871ad0ccb60c8ee5ba337b9a"), 9527502048,
     "fetches 9.5 GB (GGUF) → int8 10.1 GB · desktop only · Chrome and Firefox", { options: qwen35 },
-    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   // T335: TokenRhythm's NeoHorse-1, the Qwen3.5 4B and 9B trained further for tools, code and instructions (text
   // only: the language model saved alone, its tensors named "model.layers…" where Qwen3.5's are
   // "model.language_model.layers…", which the converter reads either way). The maker's own Q8_0 GGUFs, the vocabulary
   // and config.json of the originals. Their chat_template.jinja, tokenizer.json and tokenizer_config.json are
   // Qwen3.5's byte for byte: so the same two formats by hand, BOS, stops and specials (qwen35). The card measured with
-  // thinking on, temperature 1.0, top-p 0.95, a top-k of 20 and a presence penalty of 1.5, the last two of which the
-  // page's sampler has not: Qwen3's two, as for a Qwen3.5. The page has no tools, so what this model was trained for
+  // thinking on, temperature 1.0, top-p 0.95, a top-k of 20 and a presence penalty of 1.5: Qwen3.5's sets (T274). The
+  // page has no tools, so what this model was trained for
   // most (calling them) it cannot do here: it answers in chat form only
   ...thinkingAndNot("hf-neohorse-1-4b", "NeoHorse-1 4B",
     ggufOf("TokenRhythm/NeoHorse-1-4B-GGUF", "3c5d58ca82e580b5b0b3ce6eeffd34ac7d0fd95a", "NeoHorse-1-4B-Q8_0.gguf",
       "TokenRhythm/NeoHorse-1-4B", "56f0584bb40578a2c33b1b40a08ccd17243ad710"), 4482403072,
     "fetches 4.5 GB (GGUF) → int8 4.7 GB · desktop only · Chrome and Firefox", { options: qwen35 },
-    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   ...thinkingAndNot("hf-neohorse-1-9b", "NeoHorse-1 9B",
     ggufOf("TokenRhythm/NeoHorse-1-9B-GGUF", "ddcb4c939b5392c86a9d2733c7c0ed30db2554fd", "NeoHorse-1-9B-Q8_0.gguf",
       "TokenRhythm/NeoHorse-1-9B", "ba5b6e40d88a6ddf4591e176738254a3bc715765"), 9527501632,
     "fetches 9.5 GB (GGUF) → int8 10.1 GB · desktop only · Chrome and Firefox", { options: qwen35 },
-    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+    { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, QWEN35_SAMPLING),
   // T337: InternScience's Agents-A1-4B, a Qwen3.5 4B trained further for agents' work (the same config.json, the
   // tensors named as Qwen3.5's, a vision tower the converter passes over). The maker's own Q8_0 GGUF (its mmproj, the
   // pictures, is another file and is not fetched), the vocabulary and config.json of the original: tokenizer.json has
   // Qwen3.5's vocabulary and merges and seven more special tokens (for sound). The formats are Qwen3.5's after the
   // template's own system turn (AGENTS_A1_SYSTEM): 241 tokens the page reads before every answer. The card's sampler
-  // (temperature 0.85, top-p 0.95, top-k 20, presence penalty 1.1) has a top-k and a presence penalty, which the
-  // page's has not (T274), so Qwen3.5's two sets as for the other Qwen3.5 entries. After a change to the system
+  // (temperature 0.85, top-p 0.95, top-k 20, presence penalty 1.1) is the page's for both forms since T274
+  // (AGENTS_A1_SAMPLING). After a change to the system
   // text, run tests/format_check.py: nothing that runs by itself compares it with the real template
   ...thinkingAndNot("hf-agents-a1-4b", "Agents-A1 4B",
     ggufOf("InternScience/Agents-A1-4B-Q8_0-GGUF", "a5d63881e0ca8eee3c0f14663a5fa2a2c55e1b54", "Agents-A1-4B-Q8_0.gguf",
       "InternScience/Agents-A1-4B", "945c40a4aa6f534d434a353207b8d42ecf7a5293"), 4482404032,
     "fetches 4.5 GB (GGUF) → int8 4.7 GB · desktop only · Chrome and Firefox", { options: qwen35 },
-    { thinking: AGENTS_A1_THINKING, atOnce: AGENTS_A1_AT_ONCE }),
+    { thinking: AGENTS_A1_THINKING, atOnce: AGENTS_A1_AT_ONCE }, AGENTS_A1_SAMPLING),
   // T233: Prism ML's Ternary Bonsai 2 27B, a ternary Qwen3.8 27B (a Qwen3.5 in its form: hybrid attention, three
   // value heads to a key head, T245), whose matrices are stored in a rotated basis (T237: the engine turns every
   // matrix's input by signs and a Walsh-Hadamard transform). Kept ternary (T230, T231: 7.66 GB; as int8 it would be
@@ -1094,14 +1106,14 @@ const LISTED = [
   // answers at once is what the real template writes with enable_thinking false. The one that thinks is what it
   // writes with reasoning_effort "medium" (no system turn), not the model's own default, "xhigh" (a system turn that
   // asks for careful thought, for which its card leaves room for 16384 tokens: hours at the speed of a CPU, and past
-  // this context); with medium the thought ended after 59 to 267 tokens on three questions in CI. The sampling: the
-  // card's 0.7 and 0.8 without thinking; with thinking it names 1.0 and 0.95 with a top-k and a min-p, which the
-  // page's sampler has not, so Qwen3's 0.6 and 0.95 as for a Qwen3.5
+  // this context); with medium the thought ended after 59 to 267 tokens on three questions in CI. The sampling is the
+  // card's (T274, BONSAI_2_SAMPLING): 0.7, 0.8, a top-k of 20 and a presence penalty of 1.5 without thinking; 1.0,
+  // 0.95, the top-k and a min-p of 0.05 with
   ...thinkingAndNot("hf-ternary-bonsai-2-27b", "Ternary Bonsai 2 27B",
     ggufOf("prism-ml/Ternary-Bonsai-2-27B-gguf", "b072e1d3b35a0a630cece372c2127528e0994386", "Ternary-Bonsai-2-27B-PTQ1_0.gguf",
       "Qwen/Qwen3.8-27B", "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0"), 5946648928,
     "ternary weights · fetches 5.9 GB (GGUF) → ternary 7.7 GB · desktop only · Chrome and Firefox",
-    { options: qwen35, weights: "ternary", rebuilt: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }),
+    { options: qwen35, weights: "ternary", rebuilt: true }, { thinking: QWEN35_THINKING, atOnce: QWEN35_AT_ONCE }, BONSAI_2_SAMPLING),
   // T253: Granite 4.2 (IBM; Japanese is among the languages its card says it was tested in), a Llama whose attention
   // multiplies its scores by config.json's attention_multiplier, which the converter puts into q (llama2_convert's
   // query_scale()). IBM's own Q8_0 GGUFs, which tests/gguf_check.py tensors held to the originals. The 3B fits a

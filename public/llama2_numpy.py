@@ -791,8 +791,8 @@ def load_kernels(path, without_relaxed=False):
                           rotate=[p, p, p, i32, i32], unrotate=[p, p, p, i32, i32],
                           add_columns=[p, p, p, i32, i32],
                           layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32],
-                          penalize=[p, p, i32, ctypes.c_float], widen_bf16=[p, p, i32], widen_q8_0=[p, p, i32],
-                          sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p])
+                          penalize=[p, p, i32, ctypes.c_float, ctypes.c_float], widen_bf16=[p, p, i32], widen_q8_0=[p, p, i32],
+                          sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p, i32, ctypes.c_float])
         kernels = {}
         for name, argtypes in signatures.items():
             kernels[name] = getattr(lib, name)
@@ -1794,7 +1794,7 @@ class Llama:
 
         seen = [None, 0]  # the list that recent[] mirrors, and its length then
 
-        def penalize(logits, history, penalty):
+        def penalize(logits, history, penalty, presence=0.0):
             # recent[] is a ring of the latest tokens. generate() appends one token per step, and then one number
             # is written here: copying 64 of them from a list costs more than the kernel takes
             size = len(history)
@@ -1804,23 +1804,27 @@ class Llama:
                 for position in range(max(size - REPETITION_WINDOW, 0), size):
                     recent[position % REPETITION_WINDOW] = history[position]
             seen[0], seen[1] = history, size
-            kernel_penalize(address(logits), recent_p, min(size, REPETITION_WINDOW), penalty)
+            kernel_penalize(address(logits), recent_p, min(size, REPETITION_WINDOW), penalty, presence)
 
-        def sample(logits, temperature, topp, rng):
+        def sample(logits, temperature, topp, rng, top_k=0, min_p=0.0):
             if temperature == 0.0:
                 return Llama.greedy(logits)
             # the random number is drawn here, so that a seed gives the same text again
-            token = kernel_sample(address(logits), logits.size, temperature, topp, rng.random(), probabilities_p, order_p)
+            token = kernel_sample(address(logits), logits.size, temperature, topp, rng.random(), probabilities_p, order_p,
+                                  top_k, min_p)
             if token < 0:
                 raise ValueError(NOT_FINITE)
             return token
 
         return penalize, sample
 
-    def penalize(self, logits, history, penalty):
-        """Make the tokens of the last steps less likely: tiny models love to loop."""
+    def penalize(self, logits, history, penalty, presence=0.0):
+        """Make the tokens of the last steps less likely: tiny models love to loop. T274: presence is taken off the
+        logit of each after that (a presence penalty, the same however often a token came; generate() gives it the
+        sampled tokens alone, with a penalty of 1)."""
         recent = np.unique(history[-REPETITION_WINDOW:])
-        logits[recent] = np.where(logits[recent] > 0, logits[recent] / penalty, logits[recent] * penalty)
+        logits[recent] = (np.where(logits[recent] > 0, logits[recent] / penalty, logits[recent] * penalty)
+                          - np.float32(max(presence, 0.0)))
 
     @staticmethod
     def greedy(logits):
@@ -1831,7 +1835,10 @@ class Llama:
             raise ValueError(NOT_FINITE)
         return token
 
-    def sample(self, logits, temperature, topp, rng):
+    def sample(self, logits, temperature, topp, rng, top_k=0, min_p=0.0):
+        """A token of softmax(logits / temperature). T274: of its top_k most probable where top_k > 0, then of their
+        nucleus (0 < topp < 1: their probabilities add up to one again), then without what is less than min_p times
+        as probable as the most probable: the order of llama.cpp's samplers and of transformers'."""
         if temperature == 0.0:
             return self.greedy(logits)
         # max() keeps a NaN (T195)
@@ -1849,6 +1856,14 @@ class Llama:
             candidates = np.arange(logits.size)
             probabilities = np.exp((logits - best) / temperature).astype(np.float64)
         probabilities /= probabilities.sum()
+        least = min(min_p, 1.0) * probabilities.max() if min_p > 0.0 else 0.0  # (the same share after a top-k)
+        narrowed = 0 < top_k < probabilities.size
+        if narrowed:
+            # walked from the most probable then, as a nucleus is
+            likely = np.argsort(-probabilities, kind="stable")[:top_k]
+            candidates, probabilities = candidates[likely], probabilities[likely]
+            probabilities /= probabilities.sum()
+            least = min(min_p, 1.0) * probabilities[0] if min_p > 0.0 else 0.0
         if nucleus:
             # Top-p (nucleus) sampling: only the most probable tokens whose probabilities add up to topp.
             # Tokens below (1 - topp) / (n - 1) cannot be part of that set (llama2.c), so they need not be sorted.
@@ -1861,15 +1876,29 @@ class Llama:
             candidates, probabilities = candidates[likely], probabilities[likely]
             cumulative = np.cumsum(probabilities)
             cumulative = cumulative[:np.searchsorted(cumulative, topp) + 1]
+            if least:
+                cumulative = cumulative[:max(int(np.count_nonzero(probabilities[:cumulative.size] >= least)), 1)]
         else:
+            if least:
+                stay = np.flatnonzero(probabilities >= least)
+                candidates, probabilities = candidates[stay], probabilities[stay]
             cumulative = np.cumsum(probabilities)
         # one random number on the cumulative distribution; Generator.choice() would cost a third of a millisecond
         chosen = np.searchsorted(cumulative, rng.random() * cumulative[-1], side="right")
         return int(candidates[min(chosen, cumulative.size - 1)])
 
-    def generate(self, prompt="", steps=256, temperature=0.0, topp=0.9, repetition_penalty=1.0, seed=None, echo=True):
+    def generate(self, prompt="", steps=256, temperature=0.0, topp=0.9, repetition_penalty=1.0, seed=None, echo=True,
+                 top_k=0, min_p=0.0, presence_penalty=0.0):
         """Yield the text piece by piece, as it is generated. echo=False leaves the prompt out of it (an instruction
-        wrapped in a template, which nobody wants to read back)."""
+        wrapped in a template, which nobody wants to read back). T274: top_k (0: none), min_p (0: none) and
+        presence_penalty (0: none) as sample() and penalize() tell; a step with any of them is the CPU's (the GPU's
+        sampler has none of the three)."""
+        top_k = int(top_k)
+        if top_k < 0 or not 0.0 <= min_p <= 1.0 or presence_penalty < 0.0:
+            raise ValueError("top_k and presence_penalty are 0 or more, and min_p is from 0 to 1.")
+        # greedy takes the largest logit, which a top-k and a min-p leave in
+        narrow = (top_k, min_p) if temperature != 0.0 else (0, 0.0)
+        on_cpu = narrow != (0, 0.0) or presence_penalty != 0.0
         prompt_tokens = self.tokenizer.encode(prompt, self.specials) if prompt else []
         # Right now we cannot run for more than seq_len steps
         if steps <= 0 or steps > self.seq_len:
@@ -1884,6 +1913,7 @@ class Llama:
         run = self._run
         token, count, sampled, forced = self.bos, 0, 0, 0
         history = [self.bos]
+        written = []  # what was sampled: the presence penalty counts these, not the prompt's (T274, as OpenAI's does)
         start = sampling_start = time.perf_counter()
         first_token = None
         first = 0
@@ -1923,7 +1953,7 @@ class Llama:
                     sampling_start = time.perf_counter()
                 else:
                     chosen = None
-                    many = min(self.token_block(), steps - pos)
+                    many = 0 if on_cpu else min(self.token_block(), steps - pos)
                     if many > 0:
                         # a number for every step, drawn in the order the CPU draws them (none where greedy);
                         # those of the steps after a stop token go unused
@@ -1934,7 +1964,10 @@ class Llama:
                         logits = self.forward(token, pos)
                         if repetition_penalty != 1.0:
                             self.penalize(logits, history, repetition_penalty)
-                        chosen = [self.sample(logits, temperature, topp, rng)]
+                        if presence_penalty != 0.0 and written:
+                            # (with the prompt's tokens in it, the format's own stop token would lose it too)
+                            self.penalize(logits, written, 1.0, presence_penalty)
+                        chosen = [self.sample(logits, temperature, topp, rng, *narrow)]
                 ended = False
                 for next_token in chosen:
                     if pos >= len(prompt_tokens):
@@ -1948,6 +1981,8 @@ class Llama:
                     text = utf8.decode(self.tokenizer.decode(token, next_token, self.bos))
                     token = next_token
                     history.append(token)
+                    if pos >= len(prompt_tokens):
+                        written.append(token)
                     count += 1
                     if text and (echo or pos >= len(prompt_tokens)):
                         yield text

@@ -24,6 +24,19 @@ for (const entry of MODELS.filter((entry) => entry.hf)) {
     assert.match(revision, /^[0-9a-f]{40}$/, `${entry.id}: a revision is a full commit hash, not ${revision}`);
   }
 }
+// T274's review: an entry's generation reaches Llama.generate() as keyword arguments, so a misspelt key (topk for top_k)
+// is a TypeError at the first answer, in the browser only, and a value outside what generate() accepts is a ValueError
+// there. Only the keys the page and the engine know, in the ranges they take
+{
+  const ranges = { steps: [0, Infinity], temperature: [0, 1.5], topp: [0.05, 1], repetition_penalty: [1, 2], top_k: [0, Infinity],
+    min_p: [0, 1], presence_penalty: [0, 2] };
+  for (const entry of MODELS) {
+    for (const [key, value] of Object.entries(entry.generation ?? {})) {
+      assert.ok(ranges[key], `${entry.id}: generation.${key} is no setting of the page`);
+      assert.ok(Number.isFinite(value) && value >= ranges[key][0] && value <= ranges[key][1], `${entry.id}: generation.${key} = ${value} is out of ${ranges[key]}`);
+    }
+  }
+}
 const used = new Set(MODELS.flatMap((entry) => [sourceOf(entry), entry.original, entry.hf?.vocabulary?.repo].filter(Boolean)));
 for (const repo of Object.keys(LICENSES)) assert.ok(used.has(repo), `LICENSES names ${repo}, which no model uses`);
 const listed = sources();

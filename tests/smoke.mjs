@@ -338,6 +338,36 @@ ours, theirs = logits.copy(), logits.copy()
 fast.penalize(ours, history, 1.3)
 llama2_numpy.Llama.penalize(fast, theirs, history, 1.3)
 assert np.allclose(ours, theirs, rtol=1e-6) and not np.array_equal(ours, logits), "the penalty of the kernels is off"
+# T274: a top-k, a min-p and a presence penalty on the kernels are NumPy's: the same token for the same random number
+# (or a neighbour of about the same logit where rounding moves a border), over a vocabulary that ends on the tail too
+for size in (fast.vocab_size, fast.vocab_size - 3):
+    for spread in (2.0, 6.0):
+        narrowing = (generator.standard_normal(size) * spread).astype(np.float32)
+        for top_k in (0, 1, 20, 64, size - 1, size + 5):
+            for topp in (1.0, 0.5):
+                for min_p in (0.0, 0.05, 1.0):
+                    for value in (0.0, generator.random(), 1.0 - 1e-12):
+                        ours = fast.sample(narrowing, 0.7, topp, Fixed(value), top_k, min_p)
+                        theirs = numpy_sample(narrowing, 0.7, topp, Fixed(value), top_k, min_p)
+                        # (or, for the random number just under 1 and a top-k of thousands, two of the tokens past
+                        # where the float64 sum stops growing: each less than 1e-11 of the most probable, exp(-25))
+                        faint = max(narrowing[ours], narrowing[theirs]) < narrowing.max() - 0.7 * 25
+                        assert ours == theirs or abs(narrowing[ours] - narrowing[theirs]) < 1e-3 or faint, (size, spread, top_k, topp, min_p, value, ours, theirs)
+# equal logits at the border of a top-k: any of them (the kernel's partition and NumPy's sort take them in their own order)
+tied = np.full(fast.vocab_size, -30.0, dtype=np.float32)
+tied[[5, 50, 500, 1000, 1500]] = 4.0
+for top_k in (1, 3, 5, 7):
+    for value in (0.0, 0.3, 0.7, 1.0 - 1e-12):
+        assert tied[fast.sample(tied, 1.0, 1.0, Fixed(value), top_k, 0.0)] == 4.0, (top_k, value)
+ours, theirs = logits.copy(), logits.copy()
+fast.penalize(ours, history, 1.3, 1.5)
+llama2_numpy.Llama.penalize(fast, theirs, history, 1.3, 1.5)
+plain = logits.copy()
+fast.penalize(plain, history, 1.3)
+window = history[-llama2_numpy.REPETITION_WINDOW:]
+assert np.allclose(ours, theirs, rtol=1e-6) and np.allclose(ours[window], plain[window] - 1.5, rtol=1e-6), "the presence penalty of the kernels is off"
+settings = dict(steps=40, temperature=1.0, topp=0.95, top_k=20, min_p=0.05, presence_penalty=1.5, seed=1)
+assert "".join(fast.generate("これからの流行りは", **settings)) == "".join(fast.generate("これからの流行りは", **settings)), "a seed must reproduce with a top-k"
 settings = dict(steps=40, temperature=0.7, repetition_penalty=1.3, seed=1)
 assert "".join(fast.generate("これからの流行りは", **settings)) == "".join(fast.generate("これからの流行りは", **settings)), "a seed must reproduce on the kernels"
 # grouped-query attention, and a head size that is no multiple of 4 (stories3_5M: 26)
@@ -588,11 +618,11 @@ llama2_convert.checkpoint_size([64, 96, 2, 4, 2, 320, 24], "int8", {"qk_norm": T
 {
   const { penalizeLikeCpu, sampleLikeCpu } = await import("../public/shaders.js");
   pyodide.runPython(`
-def kernel_pick(buffer, temperature, topp, value, history, penalty):
+def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min_p=0.0, presence=0.0):
     logits = np.frombuffer(buffer.to_bytes(), dtype=np.float32).copy()
-    if penalty != 1.0:
-        fast.penalize(logits, [int(token) for token in history], penalty)
-    return fast.sample(logits, temperature, topp, Fixed(value)), logits.tobytes()
+    if penalty != 1.0 or presence != 0.0:
+        fast.penalize(logits, [int(token) for token in history], penalty, presence)
+    return fast.sample(logits, temperature, topp, Fixed(value), top_k, min_p), logits.tobytes()
 `);
   const pick = pyodide.globals.get("kernel_pick"), vocab = pyodide.globals.get("fast").vocab_size;
   let cases = 0, same = 0;
@@ -624,6 +654,41 @@ def kernel_pick(buffer, temperature, topp, value, history, penalty):
       }
     }
   }
+  // T274: with a top-k, a min-p and a presence penalty too
+  let narrowedCases = 0, narrowedSame = 0;
+  for (const spread of [2, 6]) {
+    for (const topk of [0, 20, 64]) {
+      for (const topp of [1, 0.5]) {
+        // (a min-p of 1 keeps the most probable alone: a comparison that leaves out the equal fails there; a repetition
+        // penalty of 1 with a presence penalty is a penalty still)
+        for (const minp of [0, 0.05, 1]) {
+          for (const [presence, repetition] of [[0, 1.1], [1.5, 1.1], [1.5, 1]]) {
+            for (const value of [0, Math.random(), 1 - 1e-12]) {
+              const logits = new Float32Array(vocab).map(() => spread * Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random()));
+              const ranked = [...logits.keys()].sort((a, b) => logits[b] - logits[a]);
+              const history = [...ranked.slice(0, 40), ranked[3], ranked.at(-1)];
+              const result = pick(new Uint8Array(logits.buffer), 0.7, topp, value, history, repetition, topk, minp, presence);
+              const [theirs, penalized] = result.toJs();
+              result.destroy();
+              const ours = Float32Array.from(logits);
+              penalizeLikeCpu(ours, history, repetition, presence);
+              if (!ours.every((v, i) => v === new Float32Array(penalized.buffer, penalized.byteOffset, vocab)[i])) {
+                throw new Error(`T274: penalizeLikeCpu is not the kernel's penalize (presence ${presence})`);
+              }
+              const token = sampleLikeCpu(ours, 0.7, topp, value, topk, minp);
+              if (token !== theirs && !(Math.abs(ours[token] - ours[theirs]) < 1e-3)) {
+                throw new Error(`T274: sampleLikeCpu picked ${token}, the kernel ${theirs} (spread ${spread}, top-k ${topk}, top-p ${topp}, min-p ${minp}, r ${value})`);
+              }
+              narrowedCases++;
+              narrowedSame += token === theirs;
+            }
+          }
+        }
+      }
+    }
+  }
+  if (narrowedSame < 0.95 * narrowedCases) throw new Error(`T274: sampleLikeCpu picked the kernel's token in ${narrowedSame} of ${narrowedCases} cases only`);
+  console.log(`T274: sampleLikeCpu picked the kernel's token in ${narrowedSame} of ${narrowedCases} cases with a top-k, a min-p and a presence penalty`);
   // T178: the few tokens above the floor under a low top-p, as the kernel's check above: the most probable one alone
   for (const above of [2, 3, 5]) {
     const logits = new Float32Array(vocab).fill(-100);
