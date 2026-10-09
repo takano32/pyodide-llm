@@ -60,6 +60,7 @@ sys.path.insert(0, str(HERE))
 import gguf_check  # noqa: E402
 import llama2_convert  # noqa: E402
 import llama2_numpy  # noqa: E402
+import engine.model  # noqa: E402
 from llama2_convert import gguf_rotated, gguf_tokenizer, transformed  # noqa: E402
 from llama2_numpy import Llama, rotate  # noqa: E402
 
@@ -599,7 +600,7 @@ def main():
             text["tokens"] = ids == text["prompt"]
     print(f"reference: the tokenizer in {time.perf_counter() - began:.1f} s", flush=True)
     # every run's Llama takes this tokenizer (building 248320 pieces once is enough)
-    llama2_numpy.Tokenizer = lambda *arguments, **named: tokenizer
+    engine.model.Tokenizer = lambda *arguments, **named: tokenizer
 
     conductor = Conductor()
     roundings = list(ROUNDINGS) if float32_fork else [name for name in ROUNDINGS if name != "bfloat16 gates"]

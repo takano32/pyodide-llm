@@ -18,7 +18,7 @@ for (const file of ["stories260K.bin", "tok512.bin", "stories3_5M-v4k.bin", "tok
 const started = Date.now();
 const report = pyodide.runPython(`
 import sys
-import llama2_numpy
+import llama2_numpy, engine.model
 
 def read(name):
     with open(name, "rb") as f:
@@ -372,7 +372,7 @@ settings = dict(steps=40, temperature=0.7, repetition_penalty=1.3, seed=1)
 assert "".join(fast.generate("これからの流行りは", **settings)) == "".join(fast.generate("これからの流行りは", **settings)), "a seed must reproduce on the kernels"
 # grouped-query attention, and a head size that is no multiple of 4 (stories3_5M: 26)
 # ... and a KV cache that has to grow three times on the way (it starts small and doubles), in both engines
-llama2_numpy.KV_START = 8
+engine.model.KV_START = 8
 for checkpoint, vocabulary in [("stories260K.bin", "tok512.bin"), ("stories3_5M-v4k.bin", "tok4096.bin")]:
     plain = llama2_numpy.Llama(read(checkpoint), read(vocabulary))
     grouped = kernel_llama(read(checkpoint), read(vocabulary))

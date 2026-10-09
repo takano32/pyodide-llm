@@ -72,7 +72,7 @@ def test_the_cache_grows_without_changing_a_logit(monkeypatch):
     config, weights = synthetic_weights(n_kv_heads=2, seq_len=24)
     checkpoint, tokenizer = pack_checkpoint(config, weights), pack_tokenizer(tiny_vocab(config["vocab_size"]))
     roomy = Llama(checkpoint, tokenizer)
-    monkeypatch.setattr(llama2_numpy, "KV_START", 3)
+    monkeypatch.setattr("engine.model.KV_START", 3)
     tight = Llama(checkpoint, tokenizer)
     assert tight.key_cache.shape[2] == 3
     for pos in range(config["seq_len"]):

@@ -29,7 +29,7 @@ def signature(function):
 
 # a window's own names are the ones defined in it or in the parts of its package (T347: llama2_convert is a window over
 # convert/): a class moved to a part is the window's class as before, one imported from elsewhere is not
-PARTS = {"llama2_convert": "convert"}
+PARTS = {"llama2_convert": "convert", "llama2_numpy": "engine"}
 
 
 def own(value, module_name):
@@ -45,7 +45,11 @@ for module_name in ("llama2_convert", "llama2_numpy"):
         key = f"{module_name}.{name}"
         if inspect.isclass(value) and own(value, module_name):
             found[key] = "class" + signature(value)
-            for member, raw in sorted(vars(value).items()):
+            # (T348: a class's methods may be in base classes of its own package; the nearest one wins, as Python's)
+            members = {}
+            for base in reversed([base for base in value.__mro__ if base is not object and own(base, module_name)]):
+                members.update(vars(base))
+            for member, raw in sorted(members.items()):
                 if member.startswith("__") and member != "__init__":
                     continue
                 kind = type(raw).__name__

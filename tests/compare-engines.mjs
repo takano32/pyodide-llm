@@ -11,6 +11,13 @@ import { loadPyodide } from "pyodide";
 
 const [model, rounds = "3"] = process.argv.slice(2);
 const root = new URL("../", import.meta.url).pathname;
+// T348: the engine is a window over the package engine/, and this tool loads the committed engine and the working
+// one as two single files in one Pyodide. Until it takes two trees (T357: tests/other-tree.mjs and a Pyodide each), it
+// says so and stops, rather than compare the working parts with themselves.
+if (fs.existsSync(root + "public/engine")) {
+  console.log("compare-engines: the engine is a package (T348): this tool compares single files (T357 makes it take two trees)");
+  process.exit(3);
+}
 const { MODELS } = await import(root + "src/models.js");
 const entry = MODELS.find((m) => m.id === model) ?? { id: model, checkpoint: path.resolve(model + ".bin"), tokenizer: path.resolve(model + ".tokenizer.bin"),
   options: JSON.parse(fs.readFileSync(model + ".json", "utf8")), prompt: "Once upon a time" };

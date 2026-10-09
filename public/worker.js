@@ -590,11 +590,15 @@ async function init(search) {
   pyodide = await pyodideSteps(version, (url) => import(url));
 
   // with the ?v=<build> of this worker, so that both always come from the same deployment
-  const res = await fetch(new URL(`llama2_numpy.py${self.location.search}`, import.meta.url));
-  if (!res.ok) {
-    throw new Error(`Could not fetch llama2_numpy.py: ${res.status}`);
-  }
-  pyodide.FS.writeFile("llama2_numpy.py", await res.text());
+  // (T348: the engine is a window and its parts, python.js's list)
+  const { placePython } = await import(new URL(`python.js${self.location.search}`, import.meta.url));
+  await placePython(pyodide, "llama2_numpy", async (name) => {
+    const res = await fetch(new URL(`${name}${self.location.search}`, import.meta.url));
+    if (!res.ok) {
+      throw new Error(`Could not fetch ${name}: ${res.status}`);
+    }
+    return res.text();
+  });
   llama2_numpy = pyodide.pyimport("llama2_numpy");
 
   // The WASM SIMD kernels (kernels/*.ts), which llama2_numpy.py loads with ctypes. They are optional: without
