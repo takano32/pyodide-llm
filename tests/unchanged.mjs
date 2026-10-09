@@ -2,7 +2,7 @@
 // The net under a refactoring: what the working tree does, held to what another commit does (main, by default).
 // Nothing here knows how the files are divided; it asks both trees the same questions and compares the answers.
 //
-//   node tests/unchanged.mjs [--before <a commit, default origin/main>] [shaders models calls python page bench sizes]
+//   node tests/unchanged.mjs [--before <a commit, default origin/main>] [shaders models calls python page bench gpuworker sizes]
 //   (PYTHON=.venv/bin/python; in CI: tests.yml's extra="node tests/unchanged.mjs")
 //
 //   shaders  every export of public/shaders.js (a text as it is, a function as its text) and deviceKey() for 192
@@ -24,6 +24,12 @@
 //            (T353) and the same of /benchmark/'s script (src/pages/benchmark.astro's <script> and src/benchmark/*.ts)
 //   bench    (T353 review) every call tests/bench.mjs makes to src/bench.js, written down (tests/unchanged-bench.mjs), in both trees:
 //            the arguments and the Markdown or numbers that come back. The tables' words, cells and warnings, read by nothing else
+//   gpuworker (T353 review) the statements of /benchmark/'s GPU worker (public/benchmark/gpu.js and public/benchmark/gpu/*.js), each
+//            function and constant as its syntax tree: `shared.<x>` (the fields the modules share) read as the `let` it was, the
+//            ../ of a URL dropped, positions and comments dropped. A field taken for another (`shared.fallback` for `shared.packed`:
+//            a device that is not a fallback and has the packed dot product tells them apart, one that is neither or both does not),
+//            a condition, a number or a name changed in a moved statement is a statement that differs. The worker runs nowhere but in CI's
+//            GPU jobs; this is the one check that reads every line of it, against the commit it was divided from
 //   sizes    the files past the size a file should have (50 KB or 800 lines): said, never failed
 //
 // The other tree is tests/other-tree.mjs's: `git archive` of the commit under .tmp/unchanged/<its hash> (made once).
@@ -40,7 +46,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const flag = (name, otherwise) => (args.includes(name) ? args.splice(args.indexOf(name), 2)[1] : otherwise);
 const before = flag("--before", "origin/main");
-const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "exports", "python", "page", "bench", "sizes"];
+const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "exports", "python", "page", "bench", "gpuworker", "sizes"];
 const git = (...command) => execFileSync("git", command, { cwd: root, maxBuffer: 1 << 28 });
 const python = process.env.PYTHON ?? "python3";
 const LIMIT_BYTES = 50 * 1024, LIMIT_LINES = 800;
@@ -213,6 +219,77 @@ function bench(other) {
   return said("src/bench.js, the calls tests/bench.mjs makes", differences(was, now));
 }
 
+// the statements of /benchmark/'s GPU worker (T353 review), as syntax trees. What the division adds is told apart from what it moves:
+// imports, the window's loading and early queue, the `shared` object, the destructuring of what a module takes from another
+function gpuWorker(tree, fields) {
+  const files = ["public/benchmark/gpu.js"];
+  const folder = path.join(tree, "public/benchmark/gpu");
+  if (fs.existsSync(folder)) for (const file of fs.readdirSync(folder).sort()) files.push(`public/benchmark/gpu/${file}`);
+  const asts = files.map((file) => parse(fs.readFileSync(path.join(tree, file), "utf8"), { sourceType: "module" }).program);
+  const declared = (statement) => {
+    const names = [];
+    const pattern = (node) => { if (!node) return; if (node.type === "Identifier") names.push(node.name); else if (node.type === "ObjectPattern") node.properties.forEach((p) => pattern(p.type === "RestElement" ? p.argument : p.value)); else if (node.type === "ArrayPattern") node.elements.forEach(pattern); else if (node.type === "AssignmentPattern") pattern(node.left); };
+    statement.declarations.forEach((d) => pattern(d.id));
+    return names;
+  };
+  // (fields: the names the modules share, the keys of the `shared` object of the tree being checked, and the `let`s of a tree before
+  // the division that these became)
+  const norm = (node) => {
+    if (Array.isArray(node)) return node.map(norm);
+    if (!node || typeof node !== "object") return node;
+    if (node.type === "MemberExpression" && !node.computed && node.object.type === "Identifier" && node.object.name === "shared" && fields.has(node.property.name)) return { type: "Identifier", name: node.property.name };
+    const out = {};
+    for (const key of Object.keys(node)) {
+      if (["loc", "start", "end", "extra", "range", "leadingComments", "trailingComments", "innerComments", "shorthand"].includes(key)) continue;
+      out[key] = norm(node[key]);
+    }
+    if (node.type === "TemplateElement") out.value = { raw: node.value.raw.replace(/^(\.\.\/)+/, ""), cooked: node.value.cooked.replace(/^(\.\.\/)+/, "") };
+    return out;
+  };
+  // (`await import(…)` of a module's, or `await modules.x` of the window's)
+  const importsAModule = (init) => JSON.stringify(init, (key, v) => (key === "loc" ? undefined : v)).includes('"type":"Import"') ||
+    (init.type === "AwaitExpression" && init.argument.type === "MemberExpression" && init.argument.object.name === "modules");
+  const found = {};
+  for (const [index, program] of asts.entries()) for (let statement of program.body) {
+    const wrapped = statement.type === "ExportNamedDeclaration";
+    if (wrapped && statement.declaration) statement = statement.declaration;
+    if (statement.type === "ImportDeclaration") continue;
+    if (wrapped && !statement.declarations && !statement.id) {
+      // (the window's names, as the tests import them; what a module exports to its neighbours is the division's)
+      if (index === 0) found["export { }"] = JSON.stringify(statement.specifiers.map((s) => s.exported.name).sort());
+      continue;
+    }
+    let key;
+    if (statement.type === "FunctionDeclaration") key = `function ${statement.id.name}`;
+    else if (statement.type === "VariableDeclaration") {
+      const names = declared(statement);
+      // (not moved: the `let`s that became fields, `shared`, the window's `modules` and `early`, what a module takes from another)
+      if (statement.kind === "let" && names.every((name) => fields.has(name))) continue;
+      if (names.some((name) => ["shared", "modules", "early"].includes(name)) || statement.declarations.some((d) => d.init && importsAModule(d.init) && d.id.type === "ObjectPattern")) continue;
+      key = `${statement.kind === "let" ? "let" : "const"} ${names.join(",")}`;
+    } else if (statement.type === "ExpressionStatement" && statement.expression.type === "AssignmentExpression" && statement.expression.left.name === "onmessage") {
+      if (statement.expression.right.async) key = "onmessage = async"; else continue;   // (the early queue is the division's)
+    } else continue;   // (the replay of the early queue)
+    if (key in found) throw new Error(`${key} twice in the GPU worker`);
+    found[key] = JSON.stringify(norm(statement));
+  }
+  return found;
+}
+// the keys of the `shared` object a tree's modules hold between them (none before the division)
+function sharedFields(tree) {
+  const file = path.join(tree, "public/benchmark/gpu/device.js");
+  if (!fs.existsSync(file)) return new Set();
+  const program = parse(fs.readFileSync(file, "utf8"), { sourceType: "module" }).program;
+  const shared = program.body.find((s) => s.type === "VariableDeclaration" && s.declarations[0].id.name === "shared");
+  return new Set(shared.declarations[0].init.properties.map((p) => p.key.name));
+}
+function gpuworker(other) {
+  const fields = sharedFields(root);
+  const was = gpuWorker(other, fields), now = gpuWorker(root, fields);
+  if (!fields.size && !fs.existsSync(path.join(root, "public/benchmark/gpu/device.js"))) console.log("unchanged: gpuworker: the worker is one file in the working tree");
+  return said("/benchmark/'s GPU worker, statement by statement", differences(was, now));
+}
+
 function sizes() {
   const files = git("ls-files", "public", "src", "kernels", "tests", "*.py", "*.mjs").toString().trim().split("\n")
     .filter((file) => /\.(js|mjs|py|ts|astro)$/.test(file) && !file.startsWith("tests/fixtures/") && fs.existsSync(path.join(root, file)));
@@ -226,7 +303,7 @@ function sizes() {
 
 const { commit, folder } = kinds.some((kind) => kind !== "sizes") ? otherTree(before) : {};
 if (commit) console.log(`unchanged: the working tree against ${before} (${commit.slice(0, 7)})`);
-const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), choices: () => choices(folder), exports: () => exports(folder), python: () => pythonTests(folder), page: () => page(folder), bench: () => bench(folder), sizes };
+const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), choices: () => choices(folder), exports: () => exports(folder), python: () => pythonTests(folder), page: () => page(folder), bench: () => bench(folder), gpuworker: () => gpuworker(folder), sizes };
 let ok = true;
 for (const kind of kinds) {
   if (!checks[kind]) throw new Error(`no check "${kind}": ${Object.keys(checks).join(", ")}`);
