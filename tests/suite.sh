@@ -44,6 +44,10 @@ page_modules() {
   # T366: the device's key holds the WGSL a device is given and no function's source: one character more in any piece of
   # the engine's shaders moves it, and a formatter's, a minifier's or a bundler's way with the file does not (about 15 s)
   node tests/device-key-check.mjs
+  # T351: the names shaders.js (the window) and its modules (public/shaders/) hand one another: what a file takes of another
+  # is exported there, each module comes after those it takes from, and the window exports every name the modules export
+  # where they are declared (a name that is nowhere is "undefined" in a shader's text, which only a GPU refuses)
+  node tests/shaders-modules-check.mjs
   # T225's review: /benchmark/'s layer check against devices that round the cache's float16 as WGSL lets them (about 10 s)
   node tests/layer-check.mjs
   node tests/worker-sink-check.mjs

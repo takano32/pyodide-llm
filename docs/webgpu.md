@@ -123,7 +123,7 @@ and 0.02 GB on the CPU's side) against 4.7 GB on the CPU alone, and Llama 3.1 Sw
 
 ## The shaders and where they come from
 
-The shapes are taken from public implementations, and each file keeps their notices (`public/shaders.js`):
+The shapes are taken from public implementations, and each file keeps their notices (the files of `public/shaders/`, which `public/shaders.js` ties together):
 
 | What | Source |
 |---|---|
