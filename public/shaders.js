@@ -4379,15 +4379,24 @@ export const devicePromptForms = (device, ternary = false) => promptForms({ half
   threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX), ternary });
 // T232, ternary: the key of a model of ternary weights, the same with the text of its own shaders hashed after the
 // others': the key of every other model does not hold them (a device keeps what it remembers of those), and a
-// deployment that changes a ternary shader has the ternary models choose anew
+// deployment that changes a ternary shader has the ternary models choose anew.
+// T366's review: the browser's two WGSL language features that choose which of the shaders a device makes (packed int8
+// dot: the DP4A forms; subgroup_id: the flash attention and the fused matrices with subgroups) are named in the key as the
+// user agent is (a flag turned on under the same user agent chooses anew), and the texts are hashed with a mark between
+// them, so that a character moved from the end of one text to the start of the next, or one shader cut in two, moves it.
+// The device's limits are not in it: they size the tiles (none) and nothing in the text, and the worker's key (the adapter's)
+// must be gpu.js's (the device's)
 export function deviceKey(adapter, device = adapter, ternary = false) {
   const info = adapter.info ?? {};
-  const named = [info.vendor, info.architecture, info.device, info.description, globalThis.navigator?.userAgent].map((part) => part ?? "").join("|");
-  const tiles = (forms) => forms.map((form) => `${form.name}${form.code}`);
+  const language = globalThis.navigator?.gpu?.wgslLanguageFeatures;
+  const named = [info.vendor, info.architecture, info.device, info.description, globalThis.navigator?.userAgent,
+    language?.has("packed_4x8_integer_dot_product") ? "packed" : "", language?.has("subgroup_id") ? "subgroup_id" : ""].map((part) => part ?? "").join("|");
+  const tiles = (forms) => forms.flatMap((form) => [form.name, form.code]);
   let hash = 0x811c9dc5;
   for (const text of [...tiles(devicePromptForms(device)), ...engineShaders(),
     ...(ternary ? [...tiles(devicePromptForms(device, true)), ...ternaryShaders()] : [])]) {
     for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
+    hash = Math.imul(hash ^ 0x1f, 0x01000193);  // (the unit separator: in no WGSL)
   }
   return `${named}|${(hash >>> 0).toString(16)}`;
 }

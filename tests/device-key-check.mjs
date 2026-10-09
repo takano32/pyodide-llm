@@ -14,15 +14,21 @@
 //     eight made-up devices must differ: so every branch of every maker is walked by what deviceKey() makes of it.
 //     A piece of a ternary model's shaders must leave the key of every other model alone (T232); a piece of anything
 //     else in the file (the benchmark's shaders, the JavaScript the checks compare with) must leave every key alone.
+//     (The review: what gpu.js runs is found by name from its syntax tree, whatever the object is called and however the
+//     name is taken (a property, a destructuring), and every place gpu.js compiles a shader is listed, so that a new one
+//     is looked at; and what a maker's numbers may do is held by its syntax tree: a number is written into the text and
+//     nothing else, since the key walks one set of them.)
 // (2) The key is the same when the source is not: esbuild's reprint, its minifier (white space, names, syntax), its
-//     wrapping as another format of module, a comment in every function, a parameter more for every function, every
-//     maker renamed. A copy of the file that hashes one maker's source as well (what the key did) is the control:
-//     every one of these changes moves that copy's key.
-// The parser is @babel/parser and the minifier esbuild, both of which Astro's packages bring.
+//     wrapping as another format of module, rolldown's bundle (Vite 8's, the site's), a comment in every function, a
+//     parameter more for every function, every maker renamed. A copy of the file that hashes one maker's source as well
+//     (what the key did) is the control: every one of these changes moves that copy's key.
+// (3) The key moves with what the texts are cut at, and with the two language features of the browser that choose shaders.
+// The parser is @babel/parser, the minifier esbuild and the bundler rolldown, all of which Astro's packages bring.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { parse } from "@babel/parser";
 import { transformSync } from "esbuild";
+import { rolldown } from "rolldown";
 
 const read = (file) => fs.readFileSync(new URL(`../public/${file}`, import.meta.url), "utf8");
 const source = read("shaders.js");
@@ -119,10 +125,37 @@ const TERNARY = ["ternaryMatVec", "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_O
 const TERNARY_BRANCHES = ["dp4a", "TERNARY_PACKED"];
 const isShader = (name) => typeof real[name] === "string"
   || (typeof real[name] === "function" && [...reached([name])].some((part) => pieces(part).some((piece) => typeof piece.says === "string" && piece.says.includes("@compute"))));
-const used = [...new Set([...read("gpu.js").matchAll(/\bwgsl\.([A-Za-z_][A-Za-z_0-9]*)/g)].map((match) => match[1]))].sort();
-for (const name of used) assert.ok(name in real, `gpu.js names wgsl.${name}, which shaders.js does not export`);
-const shaders = [...used.filter((name) => ![...KEY_ITSELF, ...FORMS].includes(name) && isShader(name)), ...TILES];
-assert.ok(shaders.length >= 26, `the shaders gpu.js runs: ${shaders.length} found (27 when this was written: a pattern that no longer finds them?)`);
+// What gpu.js takes of shaders.js, by name and not by what it calls the module: the property of any member access, the key of
+// any destructuring, a subscript that is a string. (A match for `wgsl.<name>` found a name taken any other way as no shader
+// of gpu.js: a destructured shader was in no key and this check said ok.) A name that is also something else in gpu.js
+// (a property of the same spelling) is taken for a shader and must then reach the hash: it fails loudly, never quietly.
+const gpuSource = read("gpu.js"), gpuTree = parse(gpuSource, { sourceType: "module" }).program;
+const taken = new Set();
+for (const n of under(gpuTree)) {
+  if ((n.type === "MemberExpression" || n.type === "OptionalMemberExpression") && !n.computed) taken.add(n.property.name);
+  if ((n.type === "MemberExpression" || n.type === "OptionalMemberExpression") && n.computed && n.property.type === "StringLiteral") taken.add(n.property.value);
+  if (n.type === "ObjectPattern") for (const property of n.properties) if (property.type === "ObjectProperty" && !property.computed) taken.add(property.key.name ?? property.key.value);
+}
+const used = [...taken].filter((name) => name in real).sort();
+// gpu.js compiles a shader in one place (pipelineOf) and hands it the code at the calls below. A new call, or one whose code
+// comes from somewhere else, is looked at here: every shader it can compile must be one of those the key hashes
+const compiled = [...under(gpuTree)].filter((n) => n.type === "CallExpression" && n.callee.name === "pipelineOf").map((n) => gpuSource.slice(n.arguments[1].start, n.arguments[1].end));
+assert.equal([...under(gpuTree)].filter((n) => n.type === "Identifier" && n.name === "createShaderModule").length, 1, "gpu.js makes shader modules in one place");
+assert.deepEqual([...new Set(compiled)].sort(), [
+  "code",  // the small steps' (RMSNORM or LAYER_NORM, HEAD_NORM, ADD, ROPE, SWIGLU or GELU, QUANTIZE) and a token's layer, tokenCodes' (the fused matrices, NORM_QUANTIZE)
+  "embedCode",  // EMBED or EMBED_TERNARY
+  "form.code",  // a prompt's tile (devicePromptForms)
+  "kept.code",  // the same, the remembered one
+  "rowsCode",  // EMBED_ROWS or EMBED_ROWS_TERNARY
+  "wgsl.SAMPLE", "wgsl.TAKE_OUTLIERS", "wgsl.TERNARY_COLUMNS", "wgsl.TOKEN_ROPE", "wgsl.WIDEN_SIX",
+  "wgsl.flashTile(shape)", "wgsl.flashVec(a.shape)", "wgsl.flashVecReduce(a.shape)",
+].sort(), "a place where gpu.js compiles a shader that this check does not know: is every shader it can compile in the key (engineShaders(), ternaryShaders(), the tiles)?");
+for (const n of under(gpuTree)) {
+  const text = n.type === "TemplateElement" ? n.value.raw : n.type === "StringLiteral" ? n.value : "";
+  assert.ok(!/@compute|@workgroup_size|\bfn main\b|@group\(/.test(text), `gpu.js writes WGSL itself (at ${n.start}): the key hashes the texts of shaders.js alone`);
+}
+const shaders = [...new Set([...used.filter((name) => ![...KEY_ITSELF, ...FORMS].includes(name) && isShader(name)), ...TILES])];
+assert.ok(shaders.length >= 27, `the shaders gpu.js runs: ${shaders.length} found (27 when this was written)`);
 for (const name of TERNARY) assert.ok(shaders.includes(name), `${name} is no shader of gpu.js any more`);
 const others = shaders.filter((name) => !TERNARY.includes(name));
 const engine = reached(shaders), general = reached(others);
@@ -168,14 +201,76 @@ console.log(`device-key-check: one character more in each of ${counted.engine + 
   `(${counted.numbers} of the pieces are numbers; ${counted.ternary} pieces of the ternary shaders and ${counted.branches} of the branches for ternary weights moved a ternary model's alone), ` +
   `and one more in all ${counted.apart.length} pieces of the rest of the file did not`);
 
+// ---- (1b) the arguments of the makers: the key walks every choice a text branches on and one set of numbers. A piece of
+// text that only some arguments reach is found above (it did not move the key); what is not text is found here.
+// (a) the key calls each maker with the arguments the maker reads, no fewer: a parameter added to a maker and not to
+// engineShaders() or ternaryShaders() is an argument the key does not walk. (b) The numbers the key gives (a literal in its
+// call) are only written into a text: each use of one in the maker is inside a template's ${}, in a sum or a product at
+// most, or is an argument to a function that does the same with it. A number that is compared, branched on or looked up
+// chooses a text the key may not make (`${wgSize > kvTile ? STEP : ""}` has no piece of text of its own to move the key).
+const functionOf = (name) => { const d = declared.get(name); return d?.type === "FunctionDeclaration" ? d : d?.init; };
+const paramsOf = (fn) => fn.params.map((p) => (p.type === "ObjectPattern" ? p.properties.map((q) => q.key.name) : p.type === "AssignmentPattern" ? p.left.name : p.name));
+function* withParents(node, parents = []) {
+  if (!node || typeof node.type !== "string") return;
+  yield [node, parents];
+  for (const [key, value] of Object.entries(node)) {
+    if (key === "loc" || /Comments$/.test(key)) continue;
+    for (const child of Array.isArray(value) ? value : [value]) if (child && typeof child === "object") yield* withParents(child, [...parents, node]);
+  }
+}
+/** whether a parameter is only written into a text: every use of its name in the function is in a template's ${} (through
+ * + - * / % only) or an argument at a position another declared function treats the same way */
+function onlyWritten(fn, param, seen = new Set()) {
+  for (const [node, parents] of withParents(fn.body)) {
+    if (node.type !== "Identifier" || node.name !== param) continue;
+    const up = parents.at(-1);
+    if ((up.type === "MemberExpression" && up.property === node && !up.computed) || (up.type === "ObjectProperty" && up.key === node && !up.shorthand)) continue;
+    let at = parents.length - 1, child = node;
+    while (at >= 0 && parents[at].type === "BinaryExpression" && "+-*/%".includes(parents[at].operator) || parents[at]?.type === "ParenthesizedExpression") child = parents[at--];
+    const parent = parents[at];
+    if (parent?.type === "TemplateLiteral" && parent.expressions.includes(child)) continue;
+    if (parent?.type === "CallExpression" && parent.callee.type === "Identifier" && functionOf(parent.callee.name) && parent.arguments.includes(child)) {
+      const callee = functionOf(parent.callee.name), position = parent.arguments.indexOf(child), name = paramsOf(callee)[position];
+      const key = `${parent.callee.name}:${position}`;
+      if (typeof name === "string" && !seen.has(key) && onlyWritten(callee, name, new Set([...seen, key]))) continue;
+    }
+    return false;
+  }
+  return true;
+}
+const walked = new Map();  // maker -> the properties of the object the key gives it
+for (const given of ["engineShaders", "ternaryShaders"]) {
+  for (const [call] of withParents(declared.get(given))) {
+    if (call.type !== "CallExpression" || call.callee.type !== "Identifier" || !functionOf(call.callee.name) || !/Function/.test(functionOf(call.callee.name).type)) continue;
+    const maker = functionOf(call.callee.name), name = call.callee.name;
+    const first = call.arguments[0];
+    if (first?.type !== "ObjectExpression") { assert.fail(`the key calls ${name} with something other than an object of arguments: this check reads those`); }
+    const kept = new Map(first.properties.map((p) => [p.key.name, p.shorthand || p.value.type !== "NumericLiteral" ? "choice" : "number"]));
+    assert.deepEqual([...kept.keys()].sort(), paramsOf(maker)[0].slice().sort(), `${name}'s parameters are not the arguments the key gives it`);
+    for (const [property, kind] of kept) if (kind === "number") assert.ok(onlyWritten(maker, property), `${name}'s ${property}: a number the key gives once, used for more than writing (a comparison or a branch chooses a text the key does not make)`);
+    walked.set(name, kept);
+  }
+}
+assert.ok(walked.size >= 6, `the makers the key calls: ${[...walked.keys()]}`);
+console.log(`device-key-check: the key gives ${[...walked].map(([name, kept]) => `${name}(${[...kept].map(([k, v]) => v === "number" ? `${k}#` : k).join(", ")})`).join("; ")} (# a number, only written)`);
+
 // ---- (2) the same key from another source
 const functions = (tree) => [...under(tree)].filter((n) => n.type === "ArrowFunctionExpression" || n.type === "FunctionDeclaration" || n.type === "FunctionExpression");
 const makers = [...declared].filter(([name, d]) => name !== "deviceKey" && (d.type === "FunctionDeclaration" || /Function/.test(d.init?.type ?? ""))).map(([name]) => name);
+async function rolldownOf(text, minify) {
+  const bundle = await rolldown({ input: "virtual:shaders", treeshake: true, logLevel: "silent",
+    plugins: [{ name: "virtual", resolveId: (id) => (id === "virtual:shaders" ? "\0shaders" : null), load: (id) => (id === "\0shaders" ? text : null) }] });
+  const { output } = await bundle.generate({ format: "esm", minify });
+  return output[0].code;
+}
 const CHANGES = {
   // a printer's own white space, quotes and line breaks
   "reprinted by esbuild": (text) => transformSync(text, { format: "esm" }).code,
   "minified by esbuild (white space, names, syntax)": (text) => transformSync(text, { format: "esm", minify: true }).code,
   "wrapped as another format of module (esbuild's cjs, minified)": (text) => transformSync(text, { format: "cjs", minify: true }).code,
+  // what the site's build does (Vite 8 bundles with rolldown and minifies with oxc, not esbuild): the file as a module of its own
+  "bundled and minified by rolldown (Vite 8's)": (text) => rolldownOf(text, true),
+  "bundled by rolldown, not minified": (text) => rolldownOf(text, false),
   "a comment in every function": (text, tree) => withInserts(text, functions(tree).map((f) => [f.body.start + (f.body.type === "BlockStatement" ? 1 : 0), "/* a comment a tool left */ "])),
   "a parameter more for every function": (text, tree) => withInserts(text, functions(tree).flatMap((f) => {
     if (f.params.some((p) => p.type === "RestElement")) return [];
@@ -207,19 +302,39 @@ const controlTree = parse(control, { sourceType: "module" }).program;
 const controlKeys = keysOf(runAny(control), false);
 assert.notDeepEqual(controlKeys, KEYS.plain, "the control hashes more");
 for (const [name, change] of Object.entries(CHANGES)) {
-  const changed = change(source, program);
+  const changed = await change(source, program);
   assert.notEqual(changed, source, `${name}: the source is another`);
   const deviceKey = runAny(changed);
   assert.deepEqual(keysOf(deviceKey, false), KEYS.plain, `${name}: the key moved`);
   assert.deepEqual(keysOf(deviceKey, true), KEYS.ternary, `${name}: a ternary model's key moved`);
-  assert.notDeepEqual(keysOf(runAny(change(control, controlTree)), false), controlKeys, `${name}: the control's key did not move (the change does nothing a function's text shows?)`);
+  assert.notDeepEqual(keysOf(runAny(await change(control, controlTree)), false), controlKeys, `${name}: the control's key did not move (the change does nothing a function's text shows?)`);
 }
 // and all of them at once, each on the last one's text
 let all = source;
-for (const name of ["a comment in every function", "a parameter more for every function", "every maker renamed", "minified by esbuild (white space, names, syntax)"]) {
-  all = CHANGES[name](all, parse(all, { sourceType: "module" }).program);
+for (const name of ["a comment in every function", "a parameter more for every function", "every maker renamed", "minified by esbuild (white space, names, syntax)", "bundled and minified by rolldown (Vite 8's)"]) {
+  all = await CHANGES[name](all, parse(all, { sourceType: "module" }).program);
 }
 assert.deepEqual(keysOf(runAny(all), true), KEYS.ternary, "all the changes at once: the key moved");
 console.log(`device-key-check: the key is the same with the source ${Object.keys(CHANGES).join("; ")}; and all at once (${source.length} characters to ${all.length}). ` +
   "A copy that hashes a maker's own source moved with every one of them");
+
+// ---- (3) what the key is cut at, and the browser's language features
+// a character moved from the end of one text to the start of the next leaves the concatenation as it was
+const moved = source.replace("[RMSNORM, HEAD_NORM, ADD,", "[RMSNORM.slice(0, -1), RMSNORM.slice(-1) + HEAD_NORM, ADD,");
+assert.notEqual(moved, source, "the engine's list of texts starts as this check expects");
+assert.notDeepEqual(keysOf(runAny(moved), false), KEYS.plain, "a character moved from one text to the next did not move the key");
+// the two features of the browser's WGSL that choose which shaders a device makes (packed int8 dot, subgroup_id)
+{
+  const was = globalThis.navigator;
+  const features = (...names) => Object.defineProperty(globalThis, "navigator", { configurable: true, value: { ...was, gpu: { wgslLanguageFeatures: new Set(names) } } });
+  const keys = [[], ["packed_4x8_integer_dot_product"], ["subgroup_id"], ["packed_4x8_integer_dot_product", "subgroup_id"], ["a_feature_no_shader_reads"]].map((names) => {
+    features(...names);
+    return [keysOf(real.deviceKey, false)[0], keysOf(real.deviceKey, true)[0]];
+  });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: was });
+  assert.equal(new Set(keys.map(([plain]) => plain)).size, 4, "packed and subgroup_id each move the key (a feature that no shader reads is the same as none)");
+  assert.equal(keys[0][0], keys[4][0], "a language feature no shader reads moved the key");
+  assert.equal(new Set(keys.map(([, ternary]) => ternary)).size, 4, "a ternary model's key too");
+}
+console.log("device-key-check: a character moved from one text to the next moves the key; so do packed int8 dot and subgroup_id");
 console.log("device-key-check: ok");
