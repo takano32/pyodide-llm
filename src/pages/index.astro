@@ -339,8 +339,8 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       remove.textContent = "delete";
       remove.onclick = async () => {
         await kept.forget(one);
-        if (model.id === one.manifest.id) {
-          remember(model, false);
+        if (page.model.id === one.manifest.id) {
+          remember(page.model, false);
         }
         showKept();
       };
@@ -348,9 +348,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       $("kept-list").append(item);
     }
   }
-  // the format of one turn the conversion read from the model's own chat_template, when there was one
-  let fromTemplate: string | undefined;
-  const loadedHow = (data: any) => ((model as any).hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : (model as any).file ? "read" : "download");
+  const loadedHow = (data: any) => ((page.model as any).hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : (page.model as any).file ? "read" : "download");
 
   // The intro is written twice; a phone has no room for both. Japanese for a browser set to Japanese, English for
   // everyone else.
@@ -376,7 +374,6 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   const requested = parameters.get("model");
   // ?bench=1 measures this model with and without the kernels, ?bench=full every step of T52 (T45)
   const benchmark = parameters.get("bench");
-  let benchmarking = false;  // the rounds are running: the run button stays off (the worker is busy loading)
   let benchAsked = false;  // the benchmark is asked for once a page, whatever becomes of it
   // T93: the number of threads. ?threads=N fixes it (for measuring); else the worker finds it for this device and
   // model and this page remembers the answer, so that the next visit starts with it.
@@ -458,16 +455,30 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     } catch {}
   }
   const recalled = fromUrl || MODELS.some(({ id }) => id === requested) ? undefined : remembered();
-  let model = fromUrl ?? MODELS.find(({ id }) => id === requested) ?? recalled ?? MODELS[0];
-  let ready = false;
-  let answer: HTMLElement | null = null; // the bubble that is being written
-  let used: Record<string, any> = {}; // the generation settings of that run, for the line under it
+  // What the page is doing now: what more than one part of this script reads or sets. A field is no variable, and a
+  // wrong name reads undefined without a word: tests/page-modules-check.mjs holds every page.<name> to this list.
+  const page = {
+    model: fromUrl ?? MODELS.find(({ id }) => id === requested) ?? recalled ?? MODELS[0],
+    ready: false,
+    answer: null as HTMLElement | null, // the bubble that is being written
+    used: {} as Record<string, any>, // the generation settings of that run, for the line under it
+    // the format of one turn the conversion read from the model's own chat_template, when there was one
+    fromTemplate: undefined as string | undefined,
+    benchmarking: false,  // the rounds are running: the run button stays off (the worker is busy loading)
+    generating: false,
+    longest: 256, // the context of the model, known once it is ready
+    // the status line of a ready model: how it runs, and (T148) what the GPU takes of its prompts now
+    readyLine: undefined as { backend: string; threads: number; pyodide: string } | undefined,
+    gpuNote: undefined as string | undefined,
+    // The model can be changed while one is loading: the worker cancels that download and starts the new one.
+    // loads numbers them, and the worker's reports carry the number.
+    loads: 1,
+  };
 
   // The round button is the only control: an arrow that sends, a square that stops the run that is going on.
   const RUN_ICON = "M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z", STOP_ICON = "M7 7h10v10H7z";
-  let generating = false;
   function setGenerating(current: boolean) {
-    generating = current;
+    page.generating = current;
     run.querySelector("path")!.setAttribute("d", current ? STOP_ICON : RUN_ICON);
     run.setAttribute("aria-label", current ? "Stop" : "Run");
   }
@@ -484,7 +495,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   // T274: top_k, min_p and presence_penalty have no field: a model's own (its card's) or the link's
   type Settings = { steps: number; temperature: number; topp: number; repetition_penalty: number; seed?: number;
                     top_k?: number; min_p?: number; presence_penalty?: number };
-  const defaults = (current: typeof model): Settings => ({ topp: 0.9, repetition_penalty: 1.0, ...(current.generation as any) });
+  const defaults = (current: typeof page.model): Settings => ({ topp: 0.9, repetition_penalty: 1.0, ...(current.generation as any) });
   // The URL may set any of them (T43), so that a link reproduces an answer: ?temperature=0.7&seed=1234&steps=128
   // (&topp= and &repetition_penalty= too, and &top_k=, &min_p= and &presence_penalty=). A value that is not a number, or outside what the field allows, is
   // ignored. They survive a change of model, like the seed: the link said what to run with.
@@ -499,14 +510,13 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       (fromLink as any)[name] = ["steps", "seed", "top_k"].includes(name) ? Math.round(value) : value;
     }
   }
-  const defaultsWithLink = (current: typeof model): Settings => ({ ...defaults(current), ...fromLink });
-  let settings = defaultsWithLink(model);
-  let longest = 256; // the context of the model, known once it is ready
+  const defaultsWithLink = (current: typeof page.model): Settings => ({ ...defaults(current), ...fromLink });
+  let settings = defaultsWithLink(page.model);
   const field = (id: string) => $(id) as HTMLInputElement;
   function showSettings() {
-    field("steps").max = String(longest);
+    field("steps").max = String(page.longest);
     field("temperature").value = String(settings.temperature);
-    const steps = settings.steps > 0 ? Math.min(settings.steps, longest) : longest;
+    const steps = settings.steps > 0 ? Math.min(settings.steps, page.longest) : page.longest;
     field("steps").value = String(steps);
     field("topp").value = String(settings.topp);
     field("penalty").value = String(settings.repetition_penalty);
@@ -517,9 +527,9 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     $("steps-value").textContent = String(steps);
     $("topp-value").textContent = settings.topp.toFixed(2);
     $("penalty-value").textContent = settings.repetition_penalty.toFixed(2);
-    const usual = defaults(model);
+    const usual = defaults(page.model);
     // "all of the context" is the same setting whether it is written as 0 or as the length of the context
-    const whole = (count: number) => (count <= 0 || count >= longest ? 0 : count);
+    const whole = (count: number) => (count <= 0 || count >= page.longest ? 0 : count);
     const changed = (Object.keys({ ...usual, ...settings }) as (keyof Settings)[])
       .some((key) => (key === "steps" ? whole(settings.steps) !== whole(usual.steps) : settings[key] !== usual[key]));
     $("settings-open").classList.toggle("changed", changed);
@@ -531,7 +541,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   for (const [id, key] of [["temperature", "temperature"], ["steps", "steps"], ["topp", "topp"], ["penalty", "repetition_penalty"]] as const) {
     field(id).oninput = () => {
       const value = Number(field(id).value);
-      settings[key] = key === "steps" && value >= longest ? 0 : value;
+      settings[key] = key === "steps" && value >= page.longest ? 0 : value;
       showSettings();
     };
   }
@@ -547,7 +557,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     showSettings();
   };
   $("settings-reset").onclick = () => {
-    settings = defaults(model);
+    settings = defaults(page.model);
     showSettings();
   };
   // T75: the engine's switches. They are read from the URL (?without=, and ?kernel=off as it always was) and written
@@ -570,8 +580,8 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
                      ...[...without].filter((each) => !switches.some((box) => box.dataset.switch === each))];
       names.length ? url.searchParams.set("without", names.join(",")) : url.searchParams.delete("without");
       url.searchParams.delete("bench");  // T119: the reload is to run with the switches, not to measure again
-      if (model.id !== "local") {
-        url.searchParams.set("model", model.id);
+      if (page.model.id !== "local") {
+        url.searchParams.set("model", page.model.id);
       }
       location.assign(url);
     };
@@ -584,8 +594,8 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       const url = new URL(location.href);
       choice.value ? url.searchParams.set("bits", choice.value) : url.searchParams.delete("bits");
       url.searchParams.delete("bench");
-      if (model.id !== "local") {
-        url.searchParams.set("model", model.id);
+      if (page.model.id !== "local") {
+        url.searchParams.set("model", page.model.id);
       }
       location.assign(url);
     };
@@ -604,7 +614,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     panel.style.maxHeight = `${button.top - 26}px`;
   });
 
-  function show(current: typeof model) {
+  function show(current: typeof page.model) {
     settings = { ...defaultsWithLink(current), ...(settings.seed === undefined ? {} : { seed: settings.seed }) };
     showSettings();
     select.value = current.id;
@@ -612,7 +622,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     fit();
     prompt.placeholder = current.placeholder;
   }
-  show(model);
+  show(page.model);
 
   function message(kind: string, text = "") {
     const element = document.createElement("div");
@@ -708,18 +718,16 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     chat.scrollTop = chat.scrollHeight;
   }
   const seconds = (value: number) => `${value.toFixed(value < 10 ? 2 : 1)} s`;
-  // the status line of a ready model: how it runs, and (T148) what the GPU takes of its prompts now
-  let readyLine: { backend: string; threads: number; pyodide: string } | undefined, gpuNote: string | undefined;
   // T156: the worker's verdict that the CPU is faster here than a model on the GPU alone, until its load on the CPU is ready
   let aloneOnReady: { load: number; alone: unknown } | undefined;
   function showStatus(note?: string) {
-    if (note && note !== gpuNote) console.info(`gpu: ${note}`);
-    gpuNote = note ?? gpuNote;
-    if (!readyLine || benchmarking) return;
-    const { backend, threads, pyodide } = readyLine;
+    if (note && note !== page.gpuNote) console.info(`gpu: ${note}`);
+    page.gpuNote = note ?? page.gpuNote;
+    if (!page.readyLine || page.benchmarking) return;
+    const { backend, threads, pyodide } = page.readyLine;
     // (?gpuTest=on, the tests' flag, says so as ?without= does)
-    const tested = gpuNote && parameters.get("gpuTest") === "on" ? " (gpuTest)" : "";
-    statusText.textContent = `${model.name} · ${backend}${threads > 1 ? `, ${threads} threads` : ""}${gpuNote ? `, ${gpuNote}${tested}` : ""} · Pyodide ${pyodide}`;
+    const tested = page.gpuNote && parameters.get("gpuTest") === "on" ? " (gpuTest)" : "";
+    statusText.textContent = `${page.model.name} · ${backend}${threads > 1 ? `, ${threads} threads` : ""}${page.gpuNote ? `, ${page.gpuNote}${tested}` : ""} · Pyodide ${pyodide}`;
   }
   // T135: how many of the prompt's tokens went through the GPU (the ones counted as the prompt: the one after them
   // makes the first logits, on the CPU)
@@ -783,7 +791,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   const worker = new Worker(`${import.meta.env.BASE_URL}worker.js?v=${__BUILD__}`, { type: "module" });
   worker.onmessage = ({ data }) => {
     // a late report about a load that another choice of model has cancelled
-    if (data.load !== undefined && data.load !== loads) {
+    if (data.load !== undefined && data.load !== page.loads) {
       return;
     }
     if (data.type === "status") {
@@ -797,25 +805,25 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       // the visitor's own disk has nothing to fetch: the share alone
       const converted = data.converted === undefined ? "" : `${Math.floor(data.converted * 100)} % converted`;
       progress.value = data.received || (data.converted ?? 0) * data.total;
-      statusText.textContent = !data.received && converted ? `${model.name}: ${converted}`
-        : `${model.name}: ${megabytes(data.received)} / ${megabytes(data.total)} MB` +
+      statusText.textContent = !data.received && converted ? `${page.model.name}: ${converted}`
+        : `${page.model.name}: ${megabytes(data.received)} / ${megabytes(data.total)} MB` +
           (data.perSecond ? ` · ${megabytes(data.perSecond)} MB/s` : "") + (converted ? ` · ${converted}` : "");
     } else if (data.type === "bench") {
       // T45 measured, T76 shows it: one bubble with the table, and under it the Markdown to copy or to report
-      const environment = environmentOf(navigator, { model: model.name, pyodide: data.pyodide, build: __BUILD__, site: location.origin + location.pathname });
+      const environment = environmentOf(navigator, { model: page.model.name, pyodide: data.pyodide, build: __BUILD__, site: location.origin + location.pathname });
       const markdown = benchMarkdown(data.rows, environment);
       (window as any).__bench = { rows: data.rows, environment, markdown };
-      benchmarking = false;
+      page.benchmarking = false;
       console.log(markdown);
       showBench(data.rows, environment, markdown);
-      statusText.textContent = `${model.name} · benchmark done`;
+      statusText.textContent = `${page.model.name} · benchmark done`;
       run.disabled = false;
     } else if (data.type === "ready") {
-      ready = true;
+      page.ready = true;
       if (aloneOnReady?.load === data.load) {
         try {
-          const kept = JSON.parse(localStorage.getItem(gpuKey(model)) ?? "null") ?? {};
-          localStorage.setItem(gpuKey(model), JSON.stringify({ ...kept, alone: aloneOnReady.alone }));
+          const kept = JSON.parse(localStorage.getItem(gpuKey(page.model)) ?? "null") ?? {};
+          localStorage.setItem(gpuKey(page.model), JSON.stringify({ ...kept, alone: aloneOnReady.alone }));
         } catch {
           // no storage here: the next visit weighs the two again
         }
@@ -823,23 +831,23 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       aloneOnReady = undefined;
       // for tests/e2e.mjs: how long each part of the load took, and the WebAssembly memory then (T84). Not shown
       (window as any).__ready = data;
-      fromTemplate = typeof data.template === "string" ? data.template : undefined;
+      page.fromTemplate = typeof data.template === "string" ? data.template : undefined;
       // once: every round of the benchmark loads the model again and reports ready too (T96: the second request
       // ended the first round's threads under its coordinator, which then waited for ever)
       if (benchmark && !benchAsked) {
-        statusText.textContent = `${model.name} · benchmarking...`;
-        benchAsked = benchmarking = true;
-        worker.postMessage({ type: "bench", model: weighed(model), load: loads,
+        statusText.textContent = `${page.model.name} · benchmarking...`;
+        benchAsked = page.benchmarking = true;
+        worker.postMessage({ type: "bench", model: weighed(page.model), load: page.loads,
           // T214: where the browser does not say its memory, the round without the kernels is a row that says why
-          rounds: roundsHere(benchmark === "full" ? FULL_ROUNDS : ROUNDS, (navigator as any).deviceMemory), prompt: model.prompt || "Once upon a time", steps: 64 });
+          rounds: roundsHere(benchmark === "full" ? FULL_ROUNDS : ROUNDS, (navigator as any).deviceMemory), prompt: page.model.prompt || "Once upon a time", steps: 64 });
       }
-      longest = data.seq_len;
+      page.longest = data.seq_len;
       showSettings();
       // the model is in the Cache API now: ask the browser not to evict it (only a page may ask, not a worker)
       navigator.storage?.persist?.();
       // T135, T148: whether the prompts go through the GPU, or why not (and the same line in the console); it changes
       // as the GPU gets ready and as the prompts are timed (the "gpu" and "done" messages)
-      readyLine = { backend: data.backend, threads: data.threads, pyodide: data.pyodide };
+      page.readyLine = { backend: data.backend, threads: data.threads, pyodide: data.pyodide };
       showStatus(data.gpu);
       const load = $("load-stats");
       load.textContent = "";
@@ -850,7 +858,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       ]);
       $("load").classList.add("measured");
       showKept();
-      remember(model, (model as any).hf && !data.notKept);
+      remember(page.model, (page.model as any).hf && !data.notKept);
     } else if (data.type === "gpu") {
       // T148: the GPU is ready (or will not be): the status line says so, the load's breakdown says what it chose and
       // how long it took, and what it chose is kept for the next visit on this device
@@ -863,8 +871,8 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
         try {
           // (T152: and the layer of a token)
           // (T156: with what it kept of a model on the GPU alone: its own key says when it no longer holds)
-          const alone = JSON.parse(localStorage.getItem(gpuKey(model)) ?? "null")?.alone;
-          localStorage.setItem(gpuKey(model), JSON.stringify({ key: data.key, matrices: data.matrices, attention: data.attention, tokens: data.tokens, alone }));
+          const alone = JSON.parse(localStorage.getItem(gpuKey(page.model)) ?? "null")?.alone;
+          localStorage.setItem(gpuKey(page.model), JSON.stringify({ key: data.key, matrices: data.matrices, attention: data.attention, tokens: data.tokens, alone }));
         } catch {
           // no storage here: the next visit times them again
         }
@@ -894,14 +902,14 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     } else if (data.type === "token") {
       // stick to the bottom only while the reader is there
       const pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
-      answer!.firstElementChild!.textContent += data.text;
+      page.answer!.firstElementChild!.textContent += data.text;
       if (pinned) {
         chat.scrollTop = chat.scrollHeight;
       }
     } else if (data.type === "done") {
       // (T223's review: the search checks the count remembered from an earlier visit on the first generation and may change
       // it, 4 to 2 on the owner's Android: the line says the count in use as the answer's line below does)
-      if (readyLine) readyLine.threads = data.threads;
+      if (page.readyLine) page.readyLine.threads = data.threads;
       showStatus(data.gpu);  // T148: the prompts timed on either side may have moved the GPU's verdict
       // T156: how the page is used, for a model on the GPU alone
       try {
@@ -911,12 +919,12 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
         // no storage here: the tokens are weighed as many
       }
       // the settings this very answer was written with: with the seed the same text can be asked for again
-      const how = used.temperature ? `temp ${used.temperature}` : "greedy";
-      meta(answer!, `${model.name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s${data.threads > 1 ? ` · ${data.threads} threads` : ""} · ${how}`, [
+      const how = page.used.temperature ? `temp ${page.used.temperature}` : "greedy";
+      meta(page.answer!, `${page.model.name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s${data.threads > 1 ? ` · ${data.threads} threads` : ""} · ${how}`, [
         `first token ${seconds(data.first_token_seconds)}`,
         `prompt ${data.prompt_tokens} tokens${onGpu(data)} · ${data.prompt_tokens_per_second.toFixed(1)} tok/s`,
         `generated ${data.tokens - data.prompt_tokens} tokens${onGpuSampled(data)} · ${data.tokens_per_second.toFixed(1)} tok/s · ${seconds(data.seconds)} in all`,
-      ], used.temperature ? used.seed : undefined);
+      ], page.used.temperature ? page.used.seed : undefined);
     } else if (data.type === "error") {
       aloneOnReady = undefined;  // (T156: the load on the CPU did not come to ready)
       // the console keeps where it happened, for a failed run's record (T82's artifacts, T96)
@@ -924,7 +932,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       // and has no memory or stack to say: tests/e2e.mjs counted it as a console error)
       if (data.reloading) console.warn(data.message);
       else console.error(`worker error (weights memory ${data.weights} bytes):`, data.stack);
-      benchmarking = false;  // a round that failed ends the benchmark: the run button must not stay off (the review of T76)
+      page.benchmarking = false;  // a round that failed ends the benchmark: the run button must not stay off (the review of T76)
       // Pyodide that never finishes loading under the service worker (iOS Safari, 2026-09-25: its NumPy step): once,
       // the page goes on without the worker, which is the one-core version the site runs on anyway (policy 6)
       let fallback = false;
@@ -946,10 +954,10 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
         });
         return;
       }
-      message("model error", data.memory ? memoryFailure(model, data.heap, data.message) : data.message);
+      message("model error", data.memory ? memoryFailure(page.model, data.heap, data.message) : data.message);
       // T156: the worker loads the model again on the CPU (its GPU stopped while it was on the GPU alone)
-      if (data.reloading) ready = false;
-      statusText.textContent = data.reloading ? `${model.name}: loading again on the CPU...` : ready ? `${model.name}` : `Could not load ${model.name}`;
+      if (data.reloading) page.ready = false;
+      statusText.textContent = data.reloading ? `${page.model.name}: loading again on the CPU...` : page.ready ? `${page.model.name}` : `Could not load ${page.model.name}`;
     }
     // T172: only the messages that end a piece of the worker's work mean it is idle again (a load: ready, the
     // benchmark: bench, a text: done, any of them: error). The others come in the middle of one: status, progress
@@ -958,16 +966,13 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     if (["ready", "bench", "done", "error"].includes(data.type)) {
       progress.hidden = true;
       setGenerating(false);
-      run.disabled = !ready || benchmarking;  // a prompt sent during the benchmark would find no model ready
+      run.disabled = !page.ready || page.benchmarking;  // a prompt sent during the benchmark would find no model ready
       select.disabled = files.disabled = false;
     }
   };
   worker.onerror = (event) => {
     message("model error", `Failed to start the worker: ${event.message}`);
   };
-  // The model can be changed while one is loading: the worker cancels that download and starts the new one.
-  // loads numbers them, and the worker's reports carry the number.
-  let loads = 1;
   // T116: a remembered model that would be fetched anew starts unasked only because it was kept (remembered()): it
   // must still be kept as it would be loaded now (its bits, this converter), or the first of the list starts instead
   async function stillKept(entry: any) {
@@ -978,13 +983,13 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   }
   // (A model chosen while this looks has started the worker itself, and wins: the review of T116)
   (async () => {
-    if (model === recalled && !(await stillKept(model)) && loads === 1) {
-      model = MODELS[0];
+    if (page.model === recalled && !(await stillKept(page.model)) && page.loads === 1) {
+      page.model = MODELS[0];
       remember(undefined);
-      show(model);
+      show(page.model);
     }
-    if (loads === 1) {
-      worker.postMessage({ type: "init", search: location.search, model: weighed(model), load: loads, threads: threadsFor(model), gpu: gpuFor(model) });
+    if (page.loads === 1) {
+      worker.postMessage({ type: "init", search: location.search, model: weighed(page.model), load: page.loads, threads: threadsFor(page.model), gpu: gpuFor(page.model) });
     }
   })();
 
@@ -992,7 +997,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   // nothing about itself, so whatever differs from llama2.c's conventions comes as a third file: .json, shaped
   // like an entry of src/models.js ({options, generation, prompt, placeholder}).
   const files = $("files") as HTMLInputElement;
-  let local: typeof model | undefined = fromUrl;
+  let local: typeof page.model | undefined = fromUrl;
   // The files Hugging Face publishes: model.safetensors, config.json and a tokenizer (tokenizer.json, or a
   // sentencepiece tokenizer.model / spiece.model). The worker converts them in the browser, to int8 and with a
   // context of 512 tokens unless the settings say otherwise ({"conversion": {"dtype": ..., "max_seq_len": ...}}).
@@ -1089,7 +1094,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   // (every switch of the panel reloads) or a shared link opens that model and no other (the review of T75 and T88:
   // after ?hf=, choosing a model of the list and then a switch reloaded the Hugging Face model). A file of the disk
   // has no address: its URL names nothing, and a reload opens the model remembered before it.
-  function nameInUrl(current: typeof model) {
+  function nameInUrl(current: typeof page.model) {
     const url = new URL(location.href);
     for (const name of ["model", "hf", "revision", "checkpoint", "tokenizer", "template", "prompt"]) {
       url.searchParams.delete(name);
@@ -1156,7 +1161,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
 
   select.onchange = () => {
     if (select.value === "hf-other") {
-      select.value = model.id === "local" && !select.querySelector('option[value="local"]') ? MODELS[0].id : model.id;
+      select.value = page.model.id === "local" && !select.querySelector('option[value="local"]') ? MODELS[0].id : page.model.id;
       repositorySheet.showPopover();
       return;
     }
@@ -1167,22 +1172,22 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
     const asks = [download > 500e6 && `${chosen.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser.`,
                   memoryWarning(weighed(chosen), (navigator as any).deviceMemory)].filter(Boolean);
     if (asks.length && !confirm(`${asks.join(" ")} Go on?`)) {
-      select.value = model.id;
+      select.value = page.model.id;
       return;
     }
-    model = chosen;
-    nameInUrl(model);
-    benchmarking = false;  // the worker cancels the benchmark's round for the new model, and never reports it
-    show(model);
-    ready = false;
-    readyLine = gpuNote = undefined;  // T148: the status line waits for the new model's
+    page.model = chosen;
+    nameInUrl(page.model);
+    page.benchmarking = false;  // the worker cancels the benchmark's round for the new model, and never reports it
+    show(page.model);
+    page.ready = false;
+    page.readyLine = page.gpuNote = undefined;  // T148: the status line waits for the new model's
     run.disabled = true;
     progress.hidden = true;
     // the timings of the previous load
     $("load").classList.remove("measured");
     ($("load") as HTMLDetailsElement).open = false;
     // search: this may reach the worker before init does, while the page looks at what is kept (T116)
-    worker.postMessage({ type: "load", search: location.search, model: weighed(model), load: ++loads, threads: threadsFor(model), gpu: gpuFor(model) });
+    worker.postMessage({ type: "load", search: location.search, model: weighed(page.model), load: ++page.loads, threads: threadsFor(page.model), gpu: gpuFor(page.model) });
   };
 
   // Enter breaks the line and Shift + Enter does too; Ctrl + Enter or Cmd + Enter sends. A phone has neither key
@@ -1202,7 +1207,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   run.onclick = (event) => {
     // While generating the button stops the run instead of submitting the form. A textarea never submits a form
     // implicitly, so nothing but a press of the button itself arrives here.
-    if (generating) {
+    if (page.generating) {
       event.preventDefault();
       worker.postMessage({ type: "stop" });
     }
@@ -1211,24 +1216,24 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   $("composer").onsubmit = (event) => {
     event.preventDefault();
     // Ctrl + Enter asks for this even while the button is disabled or a run is going on
-    if (run.disabled || generating) {
+    if (run.disabled || page.generating) {
       return;
     }
     setGenerating(true);
     select.disabled = files.disabled = true;
     message("user", prompt.value);
-    answer = message("model");
+    page.answer = message("model");
     // A run that samples draws its seed here rather than in the engine, so that the answer can say which seed
     // wrote it. Greedy models ignore it, and showing one would suggest it mattered.
-    used = { ...settings, steps: settings.steps > 0 ? Math.min(settings.steps, longest) : 0 };
-    if (used.temperature) {
-      used.seed ??= crypto.getRandomValues(new Uint32Array(1))[0];
+    page.used = { ...settings, steps: settings.steps > 0 ? Math.min(settings.steps, page.longest) : 0 };
+    if (page.used.temperature) {
+      page.used.seed ??= crypto.getRandomValues(new Uint32Array(1))[0];
     } else {
-      delete used.seed;
+      delete page.used.seed;
     }
     // an instruction-tuned model gets what was typed inside the form it was trained on; the bubble shows what was typed
     // what src/models.js says for this model, or what its own chat_template gave (T73)
-    const template = ((model as any).template ?? fromTemplate) as string | undefined;
-    worker.postMessage({ type: "generate", prompt: template ? filled(template, prompt.value) : prompt.value, echo: !template, ...used });
+    const template = ((page.model as any).template ?? page.fromTemplate) as string | undefined;
+    worker.postMessage({ type: "generate", prompt: template ? filled(template, prompt.value) : prompt.value, echo: !template, ...page.used });
   };
 </script>
