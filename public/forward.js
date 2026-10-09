@@ -24,7 +24,7 @@ const STALLED_MS = 10000;
 // worker quiet for longer than that is one the browser ended
 const GPU_QUIET_MS = 200000;
 // T205: the most release() waits for the GPU's worker to say it let go of its buffers and its device ("ended"), before
-// the next model is read; one that says nothing by then (a compilation that does not return) is terminated (worker.js
+// the next model is read; one that says nothing by then (a compilation that does not return) is terminated (worker/weights.js
 // waits as long for the GPU's worker of a model on the GPU alone let go before its engine was built, T156)
 export const GPU_END_MS = 5000;
 // T147: the most tokens of a prompt the GPU takes at once: the tokens of the largest tile (T146's 64 × 64), whose
@@ -158,7 +158,7 @@ export function gpuLine(prompts, answers) {
   return `${prompts}, ${ANSWERS[answers]}`;
 }
 
-// T184: the model page's own path on /benchmark/ (worker.js's timedPaths, src/bench.js's pathTable): prompts of counts
+// T184: the model page's own path on /benchmark/ (worker/timing.js's timedPaths, src/bench.js's pathTable): prompts of counts
 // tokens through forwardMany() at position 0 as the page chooses (T148), on the CPU only and on the GPU only
 // (engine.gpuSide). The sides take turns, a warm-up round and then PATH_ROUNDS, so that a device that heats up or is
 // busy for a while slows all of them alike; each cell is the median with the slowest and the fastest, unsteady where

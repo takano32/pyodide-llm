@@ -136,7 +136,7 @@ function fillWeights(memory, base, { plan }) {
   }
 }
 
-// a software thread of forward.js, as the model's worker starts one (public/worker.js's spawnThread)
+// a software thread of forward.js, as the model's worker starts one (public/worker/weights.js's spawnThread)
 const spawn = (data) => new Promise((resolve, reject) => {
   const worker = new Worker(at("helper.js"), { type: "module" });
   worker.onmessage = () => resolve({ terminate: () => worker.terminate() });

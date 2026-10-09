@@ -770,13 +770,13 @@ export const threadsKey = (id, nav) => `threads:${id}:${nav.hardwareConcurrency}
 
 // the words of the page path's first line for what stopped, which pathTable() writes and pathWarnings() lists (T227's
 // review): software threads that stopped after the count was found, a search that did not end, the GPU stopped while the
-// sides were timed; and (public/worker.js) why a page that is not isolated has one thread, which is no failure
+// sides were timed; and (public/worker/timing.js) why a page that is not isolated has one thread, which is no failure
 const STOPPED_WHILE_TIMED = "a software thread stopped while timed, and one thread went on";
 const searchNotEnded = (how) => `the search had not ended after ${how.unfinished} s`;
 const gpuStopped = (gpu) => `WebGPU stopped while timed: ${tableCell(gpu.lost)}`;
 const NO_SHARED_MEMORY = "no shared memory here";
 
-/** T190: how the page path's number of threads came about (worker.js's timedPaths), in a few words */
+/** T190: how the page path's number of threads came about (worker/timing.js's timedPaths), in a few words */
 export function threadsHow(how) {
   if (!how) return "";
   if (how.alone) return `: ${how.alone}`;
@@ -788,7 +788,7 @@ export function threadsHow(how) {
   return `${verdicts.length ? `, searched here (${verdicts.join(", ")})` : ""}${stopped}`;
 }
 
-/** T190's review: the writing on each number of software threads (worker.js's timedPaths: in turn, CPU only), the page's
+/** T190's review: the writing on each number of software threads (worker/timing.js's timedPaths: in turn, CPU only), the page's
  * marked; "" where there is one count or none. perCount: [{ threads, speed, low, high, unsteady }] */
 export function threadsLine(perCount = [], page) {
   if (perCount.length < 2) return "";
@@ -813,7 +813,7 @@ export function gpuSkipped(why = "") {
 }
 
 /** T184: the model page's own path on this device, as one table (the model section times it on its first load,
- * worker.js's timedPaths and forward.js's timePrompts): prompts as the page chooses between the GPU and the CPU (T148),
+ * worker/timing.js's timedPaths and forward.js's timePrompts): prompts as the page chooses between the GPU and the CPU (T148),
  * on the CPU only and on the GPU only, how many times faster the GPU is, and the writing after a prompt. paths:
  * { threads, how (threadsHow()), perCount (threadsLine()), gpu: { seconds, matrices, attention, lost? } or { why },
  * status (the status line's words of the GPU),

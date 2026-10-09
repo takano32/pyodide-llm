@@ -1,5 +1,5 @@
 // T145, (7) and (8) of the review of T144 (2026-09-26): what lays out a checkpoint besides its header (its form,
-// llama2_numpy.FORM: bias, arch, qk_norm, head_dim) goes from the converter's sink.open() through worker.js's
+// llama2_numpy.FORM: bias, arch, qk_norm, head_dim) goes from the converter's sink.open() through worker/weights.js's
 // weightsBuffer() to forward.js's footprint(), under the same names and with the same defaults. A name changed on
 // one side only (head_dim, headDim) raises nothing: footprint() counts dim / heads, and a Qwen3 0.6B's keys and values
 // come out 45% short (T124). Node only, with the native Python for FORM (numpy):

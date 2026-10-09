@@ -258,7 +258,7 @@ if (isMainThread) {
     expect("the check: the last 32 tokens on the CPU", seen[8][1], PROMPT - 38);
     if (!(check <= 1.5 * normal)) failures.push(`the check took ${check.toFixed(0)} ms, the others ${normal.toFixed(0)} (more than 1.5 times)`);
   }
-  // T184: the page path of /benchmark/, as worker.js's timedPaths times it (2 rounds here), and its table
+  // T184: the page path of /benchmark/, as worker/timing.js's timedPaths times it (2 rounds here), and its table
   const paths = (engine) => {
     const ready = engine.gpuReady;  // as timedPaths: what the GPU was before the sides were timed
     const rows = timePrompts(engine, { words: [100, 101, 102, 103, 104], counts: [64, 256], rounds: 2 });
@@ -861,7 +861,7 @@ if (isMainThread) {
       const stats = py.runPython("llama.stats").toJs({ dict_converter: Object.fromEntries });
       written.push({ sampled: stats.sampled, gpu: outside.engine.gpuSampled, prompt: stats.prompt_tokens, text: py.globals.get("text").length });
     }
-    // T205's review: the release as the page's worker makes it (worker.js's load()): Llama.release() called from
+    // T205's review: the release as the page's worker makes it (worker/load.js's load()): Llama.release() called from
     // JavaScript hands forward.js's promise back through Python, and the next model is read once it settles. An await
     // of anything else (None, a PyProxy) waits for nothing, and every other test here would still pass
     const pythonLlama = py.globals.get("llama");
