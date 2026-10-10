@@ -129,7 +129,7 @@
   "requests": [
    "GET owner/model@0123456 config.json",
    "GET owner/model@0123456 model.safetensors bytes=0-524287",
-   "GET owner/model@0123456 model.safetensors bytes=0-700007",
+   "GET owner/model@0123456 model.safetensors bytes=524288-700007",
    "GET owner/model@0123456 tokenizer_config.json",
    "GET owner/model@0123456 tokenizer.json",
    "GET owner/model@0123456 model.safetensors bytes=700008-2797159"
@@ -207,10 +207,9 @@
  "a GGUF alone (a head of 3 MiB)": {
   "requests": [
    "GET owner/model@0123456 model.Q8_0.gguf bytes=0-2097151",
-   "GET owner/model@0123456 model.Q8_0.gguf bytes=0-8388607",
-   "GET owner/model@0123456 model.Q8_0.gguf bytes=3145728-11534335",
-   "GET owner/model@0123456 model.Q8_0.gguf bytes=11534336-19922943",
-   "GET owner/model@0123456 model.Q8_0.gguf bytes=19922944-24117247"
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=2097152-8388607",
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=8388608-16777215",
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=16777216-24117247"
   ],
   "converter": [
    "Conversion.from_gguf(the first 2097152 bytes): not all of the head yet",
@@ -222,28 +221,24 @@
  },
  "a GGUF alone, a small head": {
   "requests": [
-   "GET owner/model@0123456 model.Q8_0.gguf bytes=0-2097151",
-   "GET owner/model@0123456 model.Q8_0.gguf bytes=1000-1049575"
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=0-2097151"
   ],
   "converter": [
    "Conversion.from_gguf(the first 1049576 bytes), dtype the worker's choice",
    "fed 1048576 bytes in 1 pieces; finish()",
    "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
   ],
-  "ended": "converted; progress was told"
+  "ended": "converted; NO progress was told"
  },
  "a GGUF with the vocabulary of another repository": {
   "requests": [
    "GET owner/model@7654321 config.json",
    "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=0-2097151",
-   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=0-8388607",
-   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=0-33554431",
+   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=2097152-8388607",
+   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=8388608-33554431",
    "GET owner/model@7654321 tokenizer_config.json",
    "GET owner/model@7654321 chat_template.jinja",
-   "GET owner/model@7654321 tokenizer.model",
-   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=9437184-17825791",
-   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=17825792-26214399",
-   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=26214400-30408703"
+   "GET owner/model@7654321 tokenizer.model"
   ],
   "converter": [
    "gguf_weights(the first 2097152 bytes): not all of the head yet",
@@ -252,6 +247,24 @@
    "Conversion(a header of 11 characters, base 9437184, start 9437184, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.model of 21 bytes, tokenizer_config \"{\\\"bos_token\\\":\\\"<s>\\\"}\", chat_template \"a template\"), dtype the worker's choice",
    "fed 20971520 bytes in 3 pieces; finish()",
    "kept as int8: maker/model-GGUF@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; NO progress was told"
+ },
+ "a GGUF whose head takes three pieces, and a stream after them": {
+  "requests": [
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=0-2097151",
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=2097152-8388607",
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=8388608-33554431",
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=33554432-41943039",
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=41943040-50331647",
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=50331648-51380223"
+  ],
+  "converter": [
+   "Conversion.from_gguf(the first 2097152 bytes): not all of the head yet",
+   "Conversion.from_gguf(the first 8388608 bytes): not all of the head yet",
+   "Conversion.from_gguf(the first 33554432 bytes), dtype the worker's choice",
+   "fed 41943040 bytes in 6 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
   ],
   "ended": "converted; progress was told"
  },
@@ -369,7 +382,7 @@
   "requests": [
    "text config.json",
    "range model.safetensors bytes=0-524287",
-   "range model.safetensors bytes=0-700007",
+   "range model.safetensors bytes=524288-700007",
    "text tokenizer_config.json",
    "bytes tokenizer.json",
    "stream model.safetensors bytes=700008-2797159"

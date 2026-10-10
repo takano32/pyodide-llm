@@ -284,6 +284,23 @@
   }
  },
  {
+  "name": "a GGUF whose head takes three pieces, and a stream after them",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.Q8_0.gguf"
+  },
+  "line": {},
+  "files": {
+   "owner/model/model.Q8_0.gguf": {
+    "gguf": {
+     "base": 9437184,
+     "data": 41943040
+    }
+   }
+  }
+ },
+ {
   "name": "a sentencepiece model (no tokenizer.json)",
   "hf": {
    "repo": "owner/model",

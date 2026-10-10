@@ -22,7 +22,9 @@
 #                                            answerer likes: each part goes to feed(part), which returns the share
 #                                            converted so far. Answered (with None) once the last part is fed.
 #                                            before and total are for whoever tells of the progress: of total bytes,
-#                                            before are in when this stream begins
+#                                            before are in when this stream begins. Asked for even where nothing is
+#                                            left to stream (begin = end): whether there is anything to fetch is the
+#                                            answerer's to see
 #   ("done", conversion)                     the end: the conversion, finished (its checkpoint or what its sink took,
 #                                            its options and its tokenizer)
 #   ("missing", where, name)                 the other end: a file the conversion cannot do without is not there
@@ -36,6 +38,10 @@
 # itself, and what comes out goes to the sink. Nothing of the conduct runs for a part (T374.2.1: a part costs what
 # it did before there was a conduct, by the same call), and nothing is known here of how the parts are cut, tried
 # again, kept or cancelled.
+#
+# No byte of the weights is asked for twice (T374.3): a head that is not all there is asked for from where the bytes in
+# hand end, and joined here; and the tensors that came with a GGUF's head (its first request is 2 MiB, its head often
+# less) are fed to the conversion from here, in a few pieces, before the stream is asked for from where they end.
 import json
 from typing import Any, Callable, NamedTuple
 
@@ -47,6 +53,12 @@ from convert.sources import joined_shards
 HEAD = 512 * 1024
 # a GGUF's head holds its vocabulary, a few megabytes: asked for in pieces that grow until the converter reads all of it
 GGUF_HEAD, GGUF_GROWS = 4 * HEAD, 4
+# and no more pieces than this (the last would end past any file: the bound is for an answerer that says a size its
+# file has not)
+GGUF_PIECES = 16
+# the tensors that came with a head go to the conversion in pieces no larger than the first part of a stream (the
+# worker's is 8 MiB): what converting a piece takes of the memory is what a part takes
+AHEAD = 16 * HEAD
 # The tokenizers of a model that names none, in the order they are tried: the first that is there and that the
 # converter can read. The one list of them (T374.2.3): a repository nobody has looked at (?hf=), a folder of the
 # visitor's disk and the build's directories (convert_hf.py) all name none and get these. Only the page's look into a
@@ -71,13 +83,16 @@ class Another(Exception):
 class Weights(NamedTuple):
     """What a row of SOURCES found: the safetensors-like header (text) and where its tensors begin, as Conversion()
     takes them; the streams to feed, one after another: (name, begin, end); before and total: see "stream" above.
-    conversion: made already, where the head held the configuration and the vocabulary as well (a GGUF alone)."""
+    conversion: made already, where the head held the configuration and the vocabulary as well (a GGUF alone).
+    ahead: the bytes of the file from base on that are in hand already (T374.3: they came with the head), which the
+    conversion is fed before any stream; the first stream begins where they end, and before counts them."""
     header: Any
     base: int
     streams: list
     before: int
     total: int
     conversion: Any = None
+    ahead: Any = b""
 
 
 def vocabulary_of(hf):
@@ -109,8 +124,13 @@ def beginning(where, name, end):
     return data, int(size)
 
 
+def joined(data, more):
+    """data with more after it. (more: an answer's bytes, JavaScript's in Pyodide: copied once on the way)"""
+    return b"".join((data, more.to_py() if hasattr(more, "to_py") else more))
+
+
 def whole(data):
-    return bytes(data.to_py() if hasattr(data, "to_py") else data)
+    return joined(b"", data)
 
 
 def safetensors_head(name):
@@ -122,37 +142,51 @@ def safetensors_head(name):
     if not 2 <= length <= 100e6:
         raise ValueError("This is not a safetensors file.")
     base = 8 + length
-    if base > len(data):
-        # (from the file's first byte again, as the worker asked: T381 is T374.3's)
-        data = whole((yield from needed(("range", "weights", name, 0, base)))[0])
+    if len(data) < min(base, size):
+        # T374.3: the rest of the header alone. (Nothing of a file that ended before the header it says it has: a
+        # range that begins past the end is no answer but a refusal, and what the converter says of the header is why)
+        data = joined(data, (yield from needed(("range", "weights", name, len(data), base)))[0])
     return data[8:base].decode("utf-8", "replace"), base, size
 
 
 def gguf_head(name, read):
-    """(read(head) of a GGUF's beginning, the size of the file): asked for in growing pieces until read() has all of
-    the head (Incomplete until then; and for good where the file ends first)."""
+    """(read(head) of a GGUF's beginning, that beginning, the size of the file): asked for in pieces that end ever
+    further (2 MiB, 8, 32, ...) until read() has all of the head (Incomplete until then; and for good where a piece
+    ended at the file's end or past it). Each piece is asked for from where the bytes in hand end (T374.3), and the
+    beginning returned is all of them: the head, and what of the tensors came with it."""
     want = GGUF_HEAD
-    while True:
-        # (from the file's first byte every time, as the worker asked: T381 is T374.3's)
-        data, size = yield from beginning("weights", name, want)
+    data, size = yield from beginning("weights", name, want)
+    data = whole(data)
+    for _ in range(GGUF_PIECES):
         try:
-            return read(data), size
+            return read(data), data, size
         except Incomplete:
             if want >= size:
                 raise
         want *= GGUF_GROWS
+        # (the size was said with the first piece)
+        data = joined(data, (yield from needed(("range", "weights", name, len(data), want)))[0])
+    raise Incomplete()
+
+
+def after(name, header, base, data, size, conversion=None):
+    """The Weights of one GGUF whose beginning (data) is in hand: what follows its head there is fed from here, and
+    the rest of the file streamed. (The head may be read whole from fewer bytes than base: the tensors begin at a
+    multiple of 32, and what stands before that is padding. Nothing is in hand then, and the stream begins at base.)"""
+    at = max(len(data), base)
+    return Weights(header, base, [(name, at, size)], at, size, conversion, memoryview(data)[base:])
 
 
 def gguf_alone(hf, config, make):
     """T74: a GGUF holds the configuration and the vocabulary before its tensors: no config.json and no tokenizer."""
-    conversion, size = yield from gguf_head(hf["weights"], lambda head: Conversion.from_gguf(head, **make))
-    return Weights(None, conversion.base, [(hf["weights"], conversion.base, size)], conversion.base, size, conversion)
+    conversion, data, size = yield from gguf_head(hf["weights"], lambda head: Conversion.from_gguf(head, **make))
+    return after(hf["weights"], None, conversion.base, data, size, conversion)
 
 
 def gguf_with_vocabulary(hf, config, make):
     """T136: the GGUF's header as a safetensors one, once the original's config.json agrees with it."""
-    (header, base), size = yield from gguf_head(hf["weights"], lambda head: gguf_weights(head, config))
-    return Weights(header, base, [(hf["weights"], base, size)], base, size)
+    (header, base), data, size = yield from gguf_head(hf["weights"], lambda head: gguf_weights(head, config))
+    return after(hf["weights"], header, base, data, size)
 
 
 def one_file(hf, config, make):
@@ -261,7 +295,8 @@ def tokenized(hf, weights, config, make):
 
 
 def opened(hf, make):
-    """The conversion of a model, ready to be fed, and its Weights: by the first row of SOURCES that takes it."""
+    """(the conversion of a model, fed what is in hand of its tensors; the streams to feed it next; before and total,
+    see Weights): by the first row of SOURCES that takes it."""
     rows = [row for row in SOURCES if row.takes(hf)]
     config = None if rows[0].alone else (yield from needed(("text", place_of(hf), hf.get("config") or "config.json")))
     reason = None
@@ -273,7 +308,12 @@ def opened(hf, make):
             reason = reason or other.reason
     else:
         raise reason
-    return weights.conversion or (yield from tokenized(hf, weights, config, make)), weights
+    conversion = weights.conversion or (yield from tokenized(hf, weights, config, make))
+    # T374.3: what came with the head, a few pieces at most (not a stream's parts: nothing here runs for those), and
+    # then let go of
+    for at in range(0, len(weights.ahead), AHEAD):
+        conversion.feed(weights.ahead[at:at + AHEAD])
+    return conversion, weights.streams, weights.before, weights.total
 
 
 def conduct(hf, **make):
@@ -283,13 +323,12 @@ def conduct(hf, **make):
     Names only: where the files are (a repository, a folder) is the answerer's to know.
     make: what Conversion() takes besides the files (dtype, max_seq_len, sink, quantize_rows, readers)."""
     try:
-        conversion, weights = yield from opened(hf, make)
+        conversion, streams, before, total = yield from opened(hf, make)
     except Lost as lost:
         yield ("missing", *lost.args)
         return
-    before = weights.before
-    for name, begin, end in weights.streams:
-        yield ("stream", "weights", name, begin, end, before, weights.total, conversion.feed)
+    for name, begin, end in streams:
+        yield ("stream", "weights", name, begin, end, before, total, conversion.feed)
         before += end - begin
     conversion.finish()
     yield ("done", conversion)

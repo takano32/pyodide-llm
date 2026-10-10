@@ -196,6 +196,8 @@ const CASES = [
     vocabulary: { repo: "owner/model", revision: REVISION.split("").reverse().join(""), tokenizer: "tokenizer.model" } }),
   { ...repo("maker/model-GGUF", { "model.Q8_0.gguf": gguf(9 * MiB, 20 * MiB), "config.json": "{\"the\":\"maker's, never asked for\"}" }),
     ...repo("owner/model", { "config.json": CONFIG, "tokenizer_config.json": PLAIN, "chat_template.jinja": "a template", "tokenizer.model": "a sentencepiece model" }) }],
+  // (T374.3: the one above comes whole with the third piece of its head, which ends past the file; this one goes on after it)
+  ["a GGUF whose head takes three pieces, and a stream after them", hf({ weights: "model.Q8_0.gguf", tokenizer: undefined }), repo("owner/model", { "model.Q8_0.gguf": gguf(9 * MiB, 40 * MiB) })],
   ["a sentencepiece model (no tokenizer.json)", unlisted(), repo("owner/model", { ...left(whole(small), "tokenizer.json"), "tokenizer.model": "a sentencepiece model" })],
   ["a tokenizer.json the converter refuses, then spiece.model", unlisted(), repo("owner/model", whole(small, { "tokenizer.json": "unreadable", "spiece.model": "a sentencepiece model" }))],
   ["no tokenizer at all", unlisted(), repo("owner/model", left(whole(small), "tokenizer.json"))],
