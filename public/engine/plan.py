@@ -27,24 +27,49 @@
 # SOFTWARE.
 import math
 
+from typing import Any, NamedTuple
+
 import numpy as np
 
 from engine.checkpoint import OUTLIER_CHANNELS, SEVERAL_KINDS, outlier_channels, outside
 from engine.layers import RMS_EPS, rotated_widths
-from engine.layout import TABLE, linear_widths
+from engine.layout import TABLE, linear_widths, unturned_layers
 
 # the kind of a layer that attends over all the positions (and keeps keys and values); a layer that keeps a state in
-# their place is of the kind its layout says (engine/layout.py's STATEFUL_KINDS: "linear", "convolution")
+# their place is of the kind its architecture has (engine/layout.py's Stateful, by its name: "linear", "convolution")
 ATTENTION = "attention"
 
 
-def layer_facts(dims, unturned=()):
+class Settings(NamedTuple):
+    """What a plan is made of besides the file (forward_plan()), as one value: a setting that is added is a field
+    here and a line where it is read, and no argument of the functions in between.
+    How the model is run: int8 (the matrices stay int8: the kernels compute on them), kv_start (the positions the keys
+    and values begin with room for) and disable (T52's switches, of which "relaxed" and "kv16" are the plan's).
+    What the file cannot say, the model's options: rotary (how many values of a head RoPE turns; 0: all),
+    parallel_residual, rms_norm_eps, unturned (T255: the layers RoPE leaves alone), rotated (T237: rotated_form()'s
+    {"block", "signs"}, None for a model in its own basis) and tables (the RoPE tables (cos, sin) of a file that has
+    none of its own: rope_tables()'s; None where the file has them)."""
+    int8: bool
+    kv_start: int
+    disable: tuple = ()
+    rotary: int = 0
+    parallel_residual: bool = False
+    rms_norm_eps: float = RMS_EPS
+    unturned: tuple = ()
+    rotated: Any = None
+    tables: Any = None
+
+
+def layer_facts(dims, settings):
     """For every layer, what an engine has to know of it: {"kind": ATTENTION, or the layout's kind of a layer that
     keeps a state, "place": its place among the layers of its kind, which is where its tensors are in the file's stacks
     and its keys and values or its state in the engine, "rope": whether RoPE turns its q and k}. All of it is the
     layout's: the slots and the kind are the Dims', a model has RoPE where its file has (or leaves out) the tables,
-    and only a layer that attends is turned; unturned: the layers of T255, which RoPE leaves alone.
-    A fact of a layer that an engine needs goes here, as another key of every layer's dict."""
+    and only a layer that attends is turned, but the layers the settings say RoPE leaves alone (T255: the Dims refuses
+    those that are none of this model's).
+    A fact of a layer that an engine needs goes here, as another key of every layer's dict (and where it is a model's
+    option, as another field of Settings)."""
+    unturned = unturned_layers(dims.arch, dims.n_layers, settings.unturned)
     turning = any(row.role == TABLE for row in dims.rows())
     return [{"kind": dims.stateful_kind if state else ATTENTION, "place": place,
              "rope": turning and not state and layer not in unturned}
@@ -61,26 +86,23 @@ def plan_widths(dims):
             "rotated": rotated_widths(dims.dim, dims.q_dim, dims.hidden_dim, dims.linear)}
 
 
-def forward_plan(dims, dtype, read, *, int8, disable=(), kv_start, rotary=0, parallel_residual=False,
-                 rms_norm_eps=RMS_EPS, unturned=(), rotated=None, tables=None):
+def forward_plan(dims, dtype, read, settings=None, **said):
     """The plan of a model for an engine outside Python (forward.js's createForward()), a dict.
 
     What the file is: dims (engine/layout.py's Dims: the header and the form), dtype (a name of DTYPES), and read(offset,
     length), the bytes of the file, of which the final norm's weight is looked at for its outlier channels (T92).
-    What the file cannot say, the model's options: rotary (how many values of a head RoPE turns; 0: all), parallel_residual,
-    rms_norm_eps, unturned (T255: the layers RoPE leaves alone), rotated (T237: rotated_form()'s {"block", "signs"},
-    None for a model in its own basis) and tables (the RoPE tables (cos, sin) of a file that has none of its own:
-    rope_tables()'s; None where the file has them).
-    How it is run: int8 (the matrices stay int8: the kernels compute on them), disable (T52's switches, of which
-    "relaxed" and "kv16" are the plan's) and kv_start (the positions the keys and values begin with room for).
+    Everything else, the model's options and how it is run: settings (a Settings), or its fields by their names.
 
     The keys: the header's numbers; "tensors", where every row of the file is ({name: Tensor.plan()}, the classifier of
     a model without one of its own under both names); "derived", the bytes of the few arrays Python computes (the RoPE
     tables, the signs of a rotated basis); "outliers"; the form's "linear" and "convolution"; and, from T359.5,
     "layers" (layer_facts()) and "widths" (plan_widths()), so that an engine need not work out again which layer is of
     which kind (forward.js reads them from T375)."""
+    settings = Settings(**said) if settings is None else settings
+    int8, disable, rotated, tables = settings.int8, settings.disable, settings.rotated, settings.tables
     if dims.kinds is not None:
         raise ValueError(SEVERAL_KINDS)
+    layers = layer_facts(dims, settings)
     held = outside(dims.rows(), dtype)
     # (the classifier of a model that has no other is its embedding, under both names)
     held.setdefault("wcls", held["token_embedding_table"])
@@ -100,17 +122,17 @@ def forward_plan(dims, dtype, read, *, int8, disable=(), kv_start, rotary=0, par
         raw = read(held["rms_final_weight"].offset, dims.dim * 4)
         weight = np.frombuffer(bytes(raw.to_py() if hasattr(raw, "to_py") else raw), dtype=np.float32)
         channels = [int(c) for c in outlier_channels(weight, min(OUTLIER_CHANNELS, dims.dim))]
-    unturned = tuple(unturned)
     return {"arch": dims.arch, "dim": dims.dim, "hidden_dim": dims.hidden_dim, "n_layers": dims.n_layers,
             "n_heads": dims.n_heads, "n_kv_heads": dims.n_kv_heads, "head_size": dims.head_size,
-            "vocab_size": dims.vocab_size, "seq_len": dims.seq_len, "rotary": int(rotary) or dims.head_size,
-            "parallel_residual": bool(parallel_residual), "kv_start": kv_start, "rms_norm_eps": rms_norm_eps,
+            "vocab_size": dims.vocab_size, "seq_len": dims.seq_len, "rotary": int(settings.rotary) or dims.head_size,
+            "parallel_residual": bool(settings.parallel_residual), "kv_start": settings.kv_start,
+            "rms_norm_eps": settings.rms_norm_eps,
             "shared_classifier": dims.shared, "int8": bool(int8),
             "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels,
             # T229: a Qwen3.5's linear-attention layers (None: none)
             "linear": dims.linear,
             # T255: the layers RoPE leaves alone
-            "unturned": list(unturned),
+            "unturned": list(unturned_layers(dims.arch, dims.n_layers, settings.unturned)),
             # T260: an LFM2's convolution layers (None: none)
             "convolution": dims.convolution,
             # T237: the block of a rotated basis (0: the model's own basis); its signs are in derived
@@ -118,4 +140,4 @@ def forward_plan(dims, dtype, read, *, int8, disable=(), kv_start, rotary=0, par
             # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
             "half_kv": bool(int8) and "kv16" not in disable,
             # T359.5: every layer's kind, its place among its kind and whether RoPE turns it; and the widths
-            "layers": layer_facts(dims, unturned), "widths": plan_widths(dims)}
+            "layers": layers, "widths": plan_widths(dims)}

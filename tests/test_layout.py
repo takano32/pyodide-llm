@@ -102,9 +102,9 @@ def test_a_layout_is_made_of_another_and_a_row_without_a_source_is_refused(monke
     header, form = [256, 768, 4, 8, 4, 2048, 320], {"arch": "twice normed"}
 
     def twice_normed(d):
-        return after(llama2_numpy.LAYOUTS["llama"](d), "wo", d.stack("post_norm", VECTOR, EVERY, d.dim))
+        return after(llama2_numpy.LAYOUTS["llama"].rows(d), "wo", d.stack("post_norm", VECTOR, EVERY, d.dim))
 
-    monkeypatch.setitem(llama2_numpy.LAYOUTS, "twice normed", twice_normed)
+    monkeypatch.setitem(llama2_numpy.LAYOUTS, "twice normed", llama2_numpy.LAYOUTS["llama"]._replace(rows=twice_normed))
     rows = tensor_rows(header, form)
     assert [row.name for row in rows][5:7] == ["wo", "post_norm"] and rows[6] == Row("post_norm", VECTOR, (4, 256), EVERY)
     assert [row for row in rows if row.name != "post_norm"] == tensor_rows(header)

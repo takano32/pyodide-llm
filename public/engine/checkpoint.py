@@ -29,7 +29,7 @@ import numpy as np
 
 from engine.tokenizer import CHARSMAP
 from engine.dtypes import DTYPES, PACKED, dtype_of
-from engine.layout import (TABLE, check_suited, convolution_form, file_size, form_of, linear_form, placed, suited,
+from engine.layout import (TABLE, check_suited, file_size, form_of, layout_of, placed, stateful_form, suited,
                            tensor_rows)
 
 # The classifier's input has a few channels that the final norm's weight blows up (openai-community/gpt2: 12 to 17
@@ -116,19 +116,19 @@ def checkpoint_dtype(header, size, form=None):
     form: what the file cannot say either (FORM, taken out of a model's options): the tensors differ with it.
     """
     form = form_of(form)
-    arch = form["arch"]
     dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = (int(value) for value in header)
     head_size = int(form["head_dim"]) or (dim // n_heads if n_heads and dim % n_heads == 0 else 0)
     limit = 1 << 24
     if not (0 < dim < limit and 0 < hidden_dim < limit and 0 < n_layers < 4096 and 0 < n_kv_heads <= n_heads <= dim
             and 0 < abs(vocab_size) < limit and 0 < seq_len < limit and 0 < head_size < limit and n_heads % n_kv_heads == 0):
         raise ValueError("This is not a llama2.c checkpoint: the header makes no sense.")
-    linear = linear_form(form["linear"]) if arch == "qwen35" else None
-    if arch == "qwen35" and (linear is None or n_layers < linear["every"]):
-        raise ValueError("This is not a llama2.c checkpoint: a hybrid model has to say its linear layers.")
-    convolution = convolution_form(form["convolution"]) if arch == "lfm2" else None
-    if arch == "lfm2" and (convolution is None or len(convolution["layers"]) != n_layers):
-        raise ValueError("This is not a llama2.c checkpoint: an LFM2 has to say its convolution layers.")
+    layout_of(form["arch"])  # (a name that is no architecture's is refused as everywhere)
+    try:
+        # (the layers that keep a state, which the form has to say as its architecture has them: the rows' own
+        # check, with what this function says of a file that is none of the engine's in front)
+        stateful_form(form["arch"], form, n_layers)
+    except ValueError as refusal:
+        raise ValueError(f"This is not a llama2.c checkpoint: {refusal}") from None
     rows = tensor_rows(header, form)
     # quantize.py: int8 values and a float32 scale per group; the vectors stay float32, the RoPE tables are left out
     sizes = {file_size(rows, name): name for name in DTYPES if name not in PACKED}

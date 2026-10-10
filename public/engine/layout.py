@@ -4,6 +4,8 @@
 # and Writer, checkpoint_dtype(), the engine's attributes, external_tensors(), and conversion_plan() by the rows' names.
 # What a kind of storage is (its bytes, its groups) is engine/dtypes.py's, which this file reads, and nothing else of
 # the engine or of the converter: both read it.
+# The architectures are one table here too (LAYOUTS, T359.6): what the file of each holds and what its forward pass is,
+# as facts that every part of the engine reads in place of comparing the architecture's name.
 #
 # This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and it is
 # derived from two works under the MIT License, whose notice follows: tairov/llama2.py
@@ -28,7 +30,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 import math
-from typing import NamedTuple
+from typing import Callable, NamedTuple, Optional
 
 from engine.dtypes import DTYPES, QUANTIZED, dtype_of
 
@@ -38,9 +40,12 @@ from engine.dtypes import DTYPES, QUANTIZED, dtype_of
 # them into the options, and one dict of these names goes to everything that lays the file out or sizes it
 # (tensor_rows() below and what reads it, forward.js's footprint()), so that another one is added where it is used,
 # not along the way (T144).
+# arch: the architecture, a name of LAYOUTS (below).
 # linear (T229): the linear-attention layers of arch "qwen35", see linear_form(); None where there are none.
 # rotated (T237): a rotated basis, which moves no tensor: the same ones are stored in another basis.
 # convolution (T260): the convolution layers of arch "lfm2", see convolution_form(); None where there are none.
+# (linear and convolution are the kinds of layers that keep a state: each such kind has its numbers under its own
+# name here, Stateful below, and stateful_form() holds them to the architecture)
 # kinds (T359): the rows that are not stored the way the file's dtype stores a row of their role, see kinds_form();
 # None where every row is, which is every file a conversion writes today.
 FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None, "rotated": None,
@@ -60,16 +65,19 @@ def form_of(options=None):
 LINEAR = ("every", "key_heads", "value_heads", "key_dim", "value_dim", "conv")
 
 
-def linear_form(linear):
+def linear_form(linear, n_layers=None):
     """The numbers of a hybrid model's linear-attention layers, FORM's "linear", as a dict of ints (LINEAR's keys:
     every "every"-th layer is a full-attention one, the heads and their sizes, the taps of the convolution), from a
-    dict of Python or of JavaScript. None for a model without such layers."""
+    dict of Python or of JavaScript. None for a model without such layers. n_layers: the header's, which have to be
+    enough for one full-attention layer."""
     if linear is None:
         return None
     linear = linear.to_py() if hasattr(linear, "to_py") else linear
     numbers = {key: int(linear[key]) for key in LINEAR}
     if min(numbers.values()) < 1 or numbers["every"] < 2 or numbers["value_heads"] % numbers["key_heads"]:
         raise ValueError(f"These are not the numbers of linear-attention layers: {numbers}.")
+    if n_layers is not None and n_layers < numbers["every"]:
+        raise ValueError(f"A model of {n_layers} layers has no full-attention layer where every {numbers['every']}th is one.")
     return numbers
 
 
@@ -105,19 +113,40 @@ def kinds_form(kinds):
     return {str(name): dtype_of(kind) for name, kind in kinds.items()} if kinds else None
 
 
-def layer_slots(n_layers, linear, convolution=None):
-    """For every layer: (whether it keeps a state in place of keys and values: a Qwen3.5's linear-attention layer or an
-    LFM2's convolution layer, its place among the layers of its kind), which is where its tensors are in the file's
-    stacks: a model whose layers all attend has (False, l) for layer l."""
-    if convolution is not None:
-        kinds = [kind == "c" for kind in convolution["layers"]]
-    else:
-        kinds = [linear is not None and (l + 1) % linear["every"] != 0 for l in range(n_layers)]
+class Stateful(NamedTuple):
+    """A kind of layer that keeps a state in place of keys and values, as a layout has it (Layout's stateful): the
+    rows of STATEFUL are its tensors. What such a layer computes is the forward pass's own (engine/model.py has
+    NumPy's, by this name)."""
+    # what a plan calls a layer of this kind (engine/plan.py's layer_facts()), and the key of its numbers in the form
+    # (FORM's), which the Dims of a layout that has it holds under this name too
+    name: str
+    # (the form's value, the header's layers) -> the numbers as the layouts read them, None for None, and a ValueError
+    # for what are no numbers of such layers, or of none a model of that many layers can have
+    parse: Callable
+    # (the numbers, the header's layers) -> for every layer, whether it is of this kind
+    layers: Callable
+
+
+GATED_DELTA = Stateful("linear", linear_form, lambda linear, n_layers: [(l + 1) % linear["every"] != 0 for l in range(n_layers)])
+SHORT_CONVOLUTION = Stateful("convolution", convolution_form, lambda convolution, n_layers: [kind == "c" for kind in convolution["layers"]])
+
+
+def slots_of(stateful):
+    """For every layer: (whether it keeps a state in place of keys and values, its place among the layers of its
+    kind), which is where its tensors are in the file's stacks, from whether each layer keeps a state: a model whose
+    layers all attend has (False, l) for layer l."""
     slots, counts = [], [0, 0]
-    for kind in kinds:
+    for kind in stateful:
         slots.append((kind, counts[kind]))
         counts[kind] += 1
     return slots
+
+
+def layer_slots(n_layers, linear, convolution=None):
+    """slots_of() for the numbers of a Qwen3.5's linear-attention layers or of an LFM2's convolution layers (None and
+    None: every layer attends), for whoever has those two and no Dims (a Dims has its slots)."""
+    kind, numbers = (SHORT_CONVOLUTION, convolution) if convolution is not None else (GATED_DELTA, linear)
+    return slots_of(kind.layers(numbers, n_layers) if numbers is not None else [False] * n_layers)
 
 
 # ---- the rows
@@ -158,23 +187,24 @@ class Dims:
          self.seq_len) = (int(value) for value in header)
         # (a negative vocabulary in the header: the classifier is a tensor of its own)
         self.vocab_size, self.shared = abs(vocab_size), vocab_size > 0
-        self.arch = form["arch"]
+        self.arch, self.layout = form["arch"], layout_of(form["arch"])
         # the size of a head where it is not dim / n_heads (T124: Qwen3 0.6B has 16 heads of 128 in a dim of 1024);
         # q and the attention's output are n_heads * head_size wide
         self.head_size = int(form["head_dim"]) or self.dim // self.n_heads
         self.q_dim, self.kv_dim = self.n_heads * self.head_size, self.n_kv_heads * self.head_size
-        self.linear = linear_form(form["linear"]) if self.arch == "qwen35" else None
-        self.convolution = convolution_form(form["convolution"], self.n_layers) if self.arch == "lfm2" else None
-        if (self.arch == "qwen35" and self.linear is None) or (self.arch == "lfm2" and self.convolution is None):
-            raise ValueError("A hybrid model (qwen35) has to say its linear layers, and an LFM2 its convolution layers.")
-        self.slots = layer_slots(self.n_layers, self.linear, self.convolution)
-        self.stateful_kind = STATEFUL_KINDS.get(self.arch)
+        # the layers that keep a state, where the layout has such: their numbers under the kind's name (linear,
+        # convolution: None in a model of another kind, or of none), and the kind's name, None where every layer attends
+        kind, numbers = self.layout.stateful, stateful_form(self.arch, form, self.n_layers)
+        for name in stateful_kinds():
+            setattr(self, name, numbers if kind is not None and name == kind.name else None)
+        self.stateful_kind = kind and kind.name
+        self.slots = slots_of(kind.layers(numbers, self.n_layers) if kind is not None else [False] * self.n_layers)
         self.kinds = kinds_form(form["kinds"])
 
     def rows(self):
         """The tensors of the checkpoint, as rows in file order: its architecture's layout, each with the kind the
         form gives it where it gives one."""
-        rows = LAYOUTS.get(self.arch, llama)(self)
+        rows = self.layout.rows(self)
         if self.kinds is None:
             return rows
         unknown = sorted(set(self.kinds) - {row.name for row in rows})
@@ -275,7 +305,7 @@ def gpt2(d):
     in place of the table of positions)."""
     vector = lambda name, width=d.dim: d.stack(name, VECTOR, EVERY, width)
     q, k, v, o = attention(d, d.dim, d.dim)
-    return [*embedding(d), *(rope_tables(d) if d.arch == "neox" else [Row("positions", POSITIONS, (d.seq_len, d.dim))]),
+    return [*embedding(d), *(rope_tables(d) if d.layout.rope else [Row("positions", POSITIONS, (d.seq_len, d.dim))]),
             vector("rms_att_weight"), vector("ln_att_bias"), q, k, v, vector("bq"), vector("bk"), vector("bv"),
             o, vector("bo"),
             vector("rms_ffn_weight"), vector("ln_ffn_bias"),
@@ -284,11 +314,84 @@ def gpt2(d):
             Row("rms_final_weight", VECTOR, (d.dim,)), Row("ln_final_bias", VECTOR, (d.dim,)), *classifier(d)]
 
 
-# the layout of an architecture (FORM's "arch"); any other name is read as a Llama, as the forward pass does
-LAYOUTS = {"llama": llama, "gpt2": gpt2, "neox": gpt2, "qwen35": qwen35, "lfm2": lfm2}
-# what the layers that keep a state in place of keys and values are (STATEFUL's), of the layouts that have such layers:
-# the kind a plan names them by (engine/plan.py's layer_facts(); a layer that attends is "attention" there)
-STATEFUL_KINDS = {"qwen35": "linear", "lfm2": "convolution"}
+# ---- the architectures
+# How much of a head RoPE turns (Layout's rope; None: none of it, the model has a learned table of positions)
+WHOLE, PARTLY = "whole", "partly"
+
+
+class Layout(NamedTuple):
+    """An architecture: the layout of its file, and what of its forward pass is not the same in all of them, as
+    facts. Whatever in the engine differs by the architecture reads one of these, and nothing compares the name: a
+    new architecture is a record of LAYOUTS, the function of its rows where no other's are its own, and, where its
+    layers are of a new kind, that kind (a Stateful, and its steps in the forward passes). One that is another but
+    for a fact is that one's record with the fact replaced (LAYOUTS["llama"]._replace(...)).
+    What the rows already say is no fact here: a bias is added where the file has one (bq, bo), the heads of q and k
+    are normalized where it has those norms, a position's row is added where it has the table."""
+    # (the Dims) -> the tensors of the file as rows, in file order
+    rows: Callable
+    # the kind of its layers that keep a state in place of keys and values, where it has such layers
+    stateful: Optional[Stateful] = None
+    # how much of each head of q and k RoPE turns: WHOLE, PARTLY (the options say how many values: "rotary"), or None
+    rope: Optional[str] = WHOLE
+    # yarn's magnitude is in the RoPE tables the engine makes for a file that has none (rope_magnitude())
+    yarn_magnitude: bool = False
+    # its norms are LayerNorms, of a weight and a bias (RMSNorms, of a weight, otherwise)
+    layer_norm: bool = False
+    # its FFN is gated: three matrices, w2(silu(w1 x) * w3 x) (otherwise GPT-2's: two and their biases, with a GELU)
+    gated_ffn: bool = True
+    # its matrices may be in a rotated basis (T237)
+    rotatable: bool = False
+    # some of its layers may be ones RoPE leaves alone (T255)
+    unturned: bool = False
+
+
+# by the architecture's name (FORM's "arch")
+LAYOUTS = {
+    "llama": Layout(llama, yarn_magnitude=True, rotatable=True, unturned=True),
+    "gpt2": Layout(gpt2, rope=None, layer_norm=True, gated_ffn=False),
+    "neox": Layout(gpt2, rope=PARTLY, layer_norm=True, gated_ffn=False),
+    "qwen35": Layout(qwen35, stateful=GATED_DELTA, rope=PARTLY, rotatable=True),
+    "lfm2": Layout(lfm2, stateful=SHORT_CONVOLUTION),
+}
+
+
+def layout_of(arch):
+    """The architecture of this name (FORM's "arch"), and a ValueError for a name that is none's: a mistyped one was
+    read as a Llama until T359.6, and ran as another model without a word."""
+    layout = LAYOUTS.get(arch) if isinstance(arch, str) else None
+    if layout is None:
+        raise ValueError(f"There is no architecture called {arch!r}: {', '.join(LAYOUTS)}.")
+    return layout
+
+
+def unturned_layers(arch, n_layers, layers):
+    """The layers RoPE leaves alone (T255) of a model of this architecture with n_layers layers, in order, from what
+    its options say of them (a list of Python's or of JavaScript's, or nothing): a ValueError for an architecture
+    that has no such layers, or for a layer the model has not."""
+    layers = layers.to_py() if hasattr(layers, "to_py") else layers
+    layers = tuple(sorted({int(layer) for layer in layers or ()}))
+    if layers and (not layout_of(arch).unturned or not 0 <= layers[0] <= layers[-1] < n_layers):
+        raise ValueError("The layers RoPE leaves alone are layers of a Llama, and none of another architecture.")
+    return layers
+
+
+def stateful_kinds():
+    """The kinds of layers that keep a state, of all the architectures, by name."""
+    return {layout.stateful.name: layout.stateful for layout in LAYOUTS.values() if layout.stateful is not None}
+
+
+def stateful_form(arch, form, n_layers):
+    """The numbers of the layers that keep a state of a model of this architecture and form (FORM, as form_of() gives
+    it) with n_layers layers, as the kind's parse() reads them; None for an architecture whose layers all attend.
+    The one place that holds a form to its architecture: a ValueError where the form does not say the layers the
+    architecture has, says layers of a kind it has not, or says what are no numbers of them."""
+    kind = layout_of(arch).stateful
+    said = [name for name in stateful_kinds() if form[name] is not None]
+    if said != ([kind.name] if kind is not None else []):
+        raise ValueError(f"The architecture {arch!r} and the layers of its form go together: it has "
+                         f"{kind.name if kind is not None else 'none'} that keep a state, and the form says "
+                         f"{', '.join(said) or 'none'}.")
+    return kind.parse(form[kind.name], n_layers) if kind is not None else None
 
 
 def tensor_rows(header, form=None):

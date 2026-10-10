@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 
 import engine.model
-from engine.layout import STATEFUL_KINDS
-from engine.plan import ATTENTION
+from engine.layout import stateful_kinds
+from engine.plan import ATTENTION, Settings
 from engine.tensors import rope_tables
 from llama2_numpy import (ATTENDING, EVERY, OUTLIER_CHANNELS, QUANTIZED, SEVERAL_KINDS, STATEFUL, TABLE, Dims, Llama,
                           external_tensors, file_size, forward_plan, layer_facts, linear_widths, outlier_channels,
@@ -83,7 +83,7 @@ def test_a_plan_is_made_of_a_header_a_form_and_a_dtype(name, header, form, more,
 def test_the_layers_of_a_plan_are_the_layouts(name, header, form, more):
     dims, rows = Dims(header, form), tensor_rows(header, form)
     layers = forward_plan(dims, "int8", no_bytes, int8=False, kv_start=64, **more)["layers"]
-    assert layers == layer_facts(dims, more.get("unturned", ())) and len(layers) == header[2]
+    assert layers == layer_facts(dims, Settings(False, 64, unturned=more.get("unturned", ()))) and len(layers) == header[2]
     assert all(set(layer) == {"kind", "place", "rope"} for layer in layers)
     # a layer's kind is the stack its tensors are in, and its place is its place in that stack
     attending, stateful = dims.layers(ATTENDING), dims.layers(STATEFUL)
@@ -101,7 +101,7 @@ def test_the_layers_of_a_plan_are_the_layouts(name, header, form, more):
     names = {row.name for row in rows}
     assert {layer["kind"] for layer in layers} - {ATTENTION} == \
         ({"linear"} if "wqkv" in names else {"convolution"} if "win" in names else set())
-    assert ATTENTION not in STATEFUL_KINDS.values() and dims.stateful_kind == STATEFUL_KINDS.get(dims.arch)
+    assert ATTENTION not in stateful_kinds() and dims.stateful_kind == (dims.layout.stateful and dims.layout.stateful.name)
     # RoPE turns the layers that attend, of a model whose file has (or leaves out) the tables, but those left alone
     turning = any(row.role == TABLE for row in rows)
     assert [layer["rope"] for layer in layers] == \
@@ -110,7 +110,7 @@ def test_the_layers_of_a_plan_are_the_layouts(name, header, form, more):
 
 def test_which_layers_are_of_which_kind_and_which_rope_turns():
     def facts(header, form, unturned=()):
-        return [(layer["kind"][0], layer["place"], layer["rope"]) for layer in layer_facts(Dims(header, form), unturned)]
+        return [(layer["kind"][0], layer["place"], layer["rope"]) for layer in layer_facts(Dims(header, form), Settings(False, 64, unturned=unturned))]
 
     header = [256, 768, 5, 8, 4, 2048, 320]
     assert facts(header, {}) == [("a", l, True) for l in range(5)]
