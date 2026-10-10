@@ -2351,6 +2351,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **CI で見るもの**: 全部の組、網（`extra="node tests/unchanged.mjs"`）、`gpu-check.mjs`（終わり方を替えた。手元では `node --check` だけ）、参照の道具 3 つ（手元では import と、小さいファイルの取得 1 回ずつだけ）、`answers`・`degenerate`・`start_check`・`chat_fluency`・`write`・`logits`・`answer_check`（`node --check` だけ）、`tile-bench` と `encode-bench` を x86-64 と arm64 のランナーで。
 - **この回でやらなかったこと（T357b へ）**: 下の項目。`tests/gpu-check.mjs`（127 KB）と `tests/bench.mjs`（94 KB）は大きさのためだけには切らなかった（責務の切れ目で安く切れる所が見つからなかった。gpu-check は作り物のモデルの作り方と一緒に動かすのがよい）。
 
+- **CI（2026-10-10、ブランチで、どれも成功）**: 全部の組と網（`layouts` も「同じ」）と `tile-bench`・`encode-bench`（x86-64）run 38010464342。同じ 2 つの道具を arm64 で run 38010466173。`gpu-prompt.yml`（Chromium と Dawn、`gpu-check.mjs` の終わり方を替えた所）run 38010467804。`tile-bench` の本線の側の誤差は全部の形でこの木と同じ（8.52e-8 など）。
 ### T357b [整理][遠隔試験] 作り物のモデルをレイアウトの表から作る、参照の道具の骨組み — 状態: 未着手（2026-10-10 に T357 から分けた。T359 の 3 歩目の後。規模 中〜大）
 - **作り物のモデル**: 作る関数が smoke・conftest・`make_lfm2.py`・`make_qwen35.py`・`make_smollm3.py`・`make_ternary.py`・`make_ptq1_0.py`・`make_hf_fixture.py`・gpu-check に重なっている（見出しの 7 個の int の文が 9 つの試験ファイルにある）。設計の案は、T359 が作る家族ごとの表を歩いて形の合う乱数のテンソルを書く `make(family, dims, dtype)` の 1 つにする。**T359 の前にやると 2 度手間**なので残した。`tests/gpu-check.mjs` を分けるのもこの回に。
 - **参照の道具 3 つ**（`reference_llama.py`・`reference_qwen35.py`・`reference_lfm2.py`）の共通の骨組み: 取得は T357a で寄せた。残りは変換して float32 のファイルに置く所・transformers の 2 つの道・線の決め方・弱い誤りの入れ方。CI でしか走らない（1 回 10〜50 分）ので、手元で確かめられる T357a には入れなかった。
