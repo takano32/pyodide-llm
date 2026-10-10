@@ -44,7 +44,7 @@ export const HF_HEADER_BYTES = 512 * 1024;  // the JSON header of a safetensors 
 // response says it in Content-Range, but that header is not one CORS shows by default: huggingface.co exposes it by
 // name, its CDN by "*", and a browser that does not honour "*" (WebKit; T112) sees none and the fetch never began
 // ("The file ended before all of its tensors were read"). Content-Length of a HEAD is always shown.
-async function fileSize(url, signal) {
+export async function fileSize(url, signal) {
   const res = await fetch(url, { method: "HEAD", signal });
   const length = Number(res.headers.get("Content-Length"));
   if (!res.ok || !Number.isFinite(length) || length <= 0) {
