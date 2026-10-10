@@ -84,3 +84,19 @@ def test_a_whole_download_and_one_that_names_no_length_are_taken_as_they_come(tm
     serving(monkeypatch, [Whole(b"r" * 3), Whole(b"r" * 3)])
     with pytest.raises(OSError, match="3 bytes of 8"):
         fetching.ranged("https://huggingface.co/x", 16, 8, tries=2)
+
+
+def test_a_body_that_closed_before_its_length_is_asked_for_again(monkeypatch):
+    # T357's review: read() with no amount raises http.client.IncompleteRead there, which is no OSError (a real server
+    # closing early, tried by hand: the first version of ranged() let it through unasked-again)
+    import http.client
+
+    class Closed(Response):
+        def read(self, amount=None):
+            raise http.client.IncompleteRead(b"abc", 5)
+
+    class Whole(Response):
+        def read(self, amount=None):
+            return self.stream.read()
+    asked = serving(monkeypatch, [Closed(b""), Whole(b"s" * 8)])
+    assert fetching.ranged("https://huggingface.co/x", 0, 8) == b"s" * 8 and len(asked) == 2

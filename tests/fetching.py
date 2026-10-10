@@ -5,6 +5,7 @@
 # tensors were read." a minute into its conversion, a failure that named the converter (the review of T247; AGENTS.md).
 # tests/fixed_outputs.py had the check; the reference tools' copies of the same loop (reference_llama.py,
 # reference_qwen35.py, and reference_lfm2.py through it) did not.
+import http.client
 import time
 import urllib.error
 import urllib.request
@@ -36,7 +37,7 @@ def download(url, target, tries=3, timeout=60, optional=False):
                 return None
             if error.code < 500 or attempt == tries - 1:
                 raise  # (T192: a split model's 404 is how its index is found)
-        except OSError:
+        except (OSError, http.client.HTTPException):  # (a chunked body that ends early: IncompleteRead is no OSError)
             if attempt == tries - 1:
                 raise
     partial.rename(target)
@@ -55,7 +56,8 @@ def ranged(url, start, length, tries=4, timeout=120, wait=0, said=None):
             if len(data) != length:
                 raise OSError(f"{len(data)} bytes of {length}")
             return data
-        except OSError as error:  # (urllib.error.URLError and HTTPError are OSErrors)
+        except (OSError, http.client.HTTPException) as error:  # (URLError and HTTPError are OSErrors; read() of a body that
+            # closed before its Content-Length raises IncompleteRead, which is not: T357's review)
             if attempt == tries - 1:
                 raise
             if said:
