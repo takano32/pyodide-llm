@@ -15,14 +15,14 @@ CHATML = "{% for m in messages %}<|im_start|>{{ m.role }}\n{{ m.content }}<|im_e
 def test_a_template_that_begins_with_another_token_than_the_bos_begins_the_text():
     """A Qwen's, a Hermes 3's: the tokenizer names a BOS (or config.json does), the template writes <|im_start|> first
     and no BOS. The engine's BOS is <|im_start|> then, the format what follows it, and the ids are those of the
-    template's text, none in front. The answer stops at the mark of a new turn and still at the BOS and the EOS."""
+    template's text, none in front. The answer stops at the BOS and the EOS as it did, not at <|im_start|>."""
     tokenizer, ids = byte_level(["<|endoftext|>", "<|im_start|>", "<|im_end|>"])
     for named in ({"bos_token": "<|endoftext|>"}, {"bos_token": {"content": "<|endoftext|>"}}, {"bos_token": None}):
         options, engine = converted(tokenizer, config={"bos_token_id": ids["<|endoftext|>"], "eos_token_id": ids["<|im_end|>"]},
                                     chat_template=CHATML, **named)
         assert options["bos"] == ids["<|im_start|>"]
         assert options["template"] == "user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
-        assert options["stop_tokens"] == [ids["<|im_start|>"], ids["<|endoftext|>"], ids["<|im_end|>"]]
+        assert options["stop_tokens"] == [ids["<|endoftext|>"], ids["<|im_end|>"]]
         assert options["specials"] == ["<|im_start|>", "<|im_end|>"]
         whole = engine.encode("<|im_start|>user\nhi there<|im_end|>\n<|im_start|>assistant\n", ("<|im_start|>", "<|im_end|>"))
         assert sent(options, engine, "hi there") == whole and whole[0] == ids["<|im_start|>"]
@@ -46,7 +46,7 @@ def test_a_bos_the_template_spells_out_is_not_sent_twice():
     options, engine = converted(tokenizer, config={"bos_token_id": ids["<s>"], "eos_token_id": ids["<|im_end|>"]},
                                 chat_template="<s>[INST]{{ messages[0].content }}[/INST]")
     assert options["bos"] == ids["<s>"] and options["template"] == "[INST]{prompt}[/INST]"
-    assert options["stop_tokens"] == [ids["<s>"], ids["<s>"], ids["<|im_end|>"]]
+    assert options["stop_tokens"] == [ids["<s>"], ids["<|im_end|>"]]
     assert sent(options, engine, "x").count(ids["<s>"]) == 1
 
 
@@ -99,8 +99,8 @@ def test_a_bos_that_nothing_names_is_no_stop_token_once_the_template_says_where_
                                                     json.dumps(tokenizer).encode(), "tokenizer.json", dtype="float32",
                                                     max_seq_len=settings["seq_len"], tokenizer_config=json.dumps(more)).options
     options = made(chat_template=CHATML)
-    assert options["bos"] == ids["<|im_start|>"] and options["stop_tokens"] == [ids["<|im_start|>"], ids["<|im_end|>"]]
-    assert made(chat_template=CHATML, bos_token="<|endoftext|>")["stop_tokens"] == [ids["<|im_start|>"], ids["<|endoftext|>"], ids["<|im_end|>"]]
+    assert options["bos"] == ids["<|im_start|>"] and options["stop_tokens"] == [ids["<|im_end|>"]]
+    assert made(chat_template=CHATML, bos_token="<|endoftext|>")["stop_tokens"] == [ids["<|endoftext|>"], ids["<|im_end|>"]]
     # without a template the guess is the BOS, as it was
     assert made()["bos"] == 1 and made()["stop_tokens"] == [1, ids["<|im_end|>"]]
 
@@ -124,7 +124,7 @@ def test_a_sentencepiece_template_keeps_its_bos_where_the_rest_would_be_read_oth
     eurollm = "<|user|>hello\n{{ messages[0].content }}</s><|assistant|>"
     options, engine = converted(data, "tokenizer.model", config, chat_template=eurollm, tokenizer_class="LlamaTokenizer")
     assert options["bos"] == ids["<|user|>"] and options["template"] == "hello\n{prompt}</s><|assistant|>"
-    assert options["stop_tokens"] == [ids["<|user|>"], ids["<s>"], ids["</s>"]]
+    assert options["stop_tokens"] == [ids["<s>"], ids["</s>"]]
     assert sent(options, engine, "world") == engine.encode("<|user|>hello\nworld</s><|assistant|>", marks)
     assert sent(options, engine, "world")[:2] == [ids["<|user|>"], ids["▁hello"]]
     # legacy, and the template's own text follows the token with a space: "wanting" leaves that stretch as it is, and the
@@ -154,7 +154,7 @@ def test_a_unigram_tokenizer_json_that_prefixes_every_text_begins_with_the_templ
     template = "<|start|>{{ messages[0].content }}<|end|><|start|>"
     options, engine = converted(tokenizer, config={"bos_token_id": 1, "eos_token_id": 3}, chat_template=template, bos_token="<s>")
     assert options["prefixed"] == "every" and options["bos"] == 2 and options["template"] == "{prompt}<|end|><|start|>"
-    assert options["stop_tokens"] == [2, 1, 3]
+    assert options["stop_tokens"] == [1, 3]
     for typed in ("hello", " hello"):
         assert sent(options, engine, typed) == engine.encode(f"<|start|>{typed}<|end|><|start|>", ("<|start|>", "<|end|>"))
     # the same without that normalizer: the BOS stays in front
@@ -174,10 +174,11 @@ def test_the_answer_stops_at_the_eos_the_tokenizer_names_too():
     # named and another, as text or as {"content": ...}; with a template and without
     assert stops(eos_token="<|im_end|>") == [*as_it_was, ids["<|im_end|>"]]
     assert stops(eos_token={"content": "<|im_end|>"}) == [*as_it_was, ids["<|im_end|>"]]
-    assert stops(eos_token="<|im_end|>", chat_template=CHATML) == [ids["<|im_start|>"], *as_it_was, ids["<|im_end|>"]]
+    assert stops(eos_token="<|im_end|>", chat_template=CHATML) == [*as_it_was, ids["<|im_end|>"]]
     # the same as config.json's, or one the template's first token already is: said once
     assert stops(eos_token="<|endoftext|>") == as_it_was
-    assert stops(eos_token="<|im_start|>", chat_template=CHATML) == [ids["<|im_start|>"], *as_it_was]
+    # (one that is the template's first token too is a stop because the tokenizer names it, not because it is first)
+    assert stops(eos_token="<|im_start|>", chat_template=CHATML) == [*as_it_was, ids["<|im_start|>"]]
     # named, but no piece of the vocabulary (its letters are): no token to stop at
     assert stops(eos_token="<|end|>") == as_it_was
     assert stops(eos_token="user<|im_end|>") == as_it_was
@@ -192,3 +193,34 @@ def test_the_answer_stops_at_the_eos_the_tokenizer_names_too():
     data, pieces = sentencepiece()
     options, _ = converted(data, "tokenizer.model", {"bos_token_id": pieces["<s>"], "eos_token_id": pieces["</s>"]}, eos_token="<|assistant|>")
     assert options["stop_tokens"] == [pieces["<s>"], pieces["</s>"], pieces["<|assistant|>"]]
+
+
+def test_the_token_a_template_begins_with_does_not_stop_the_answer():
+    """The review of T369: the template's first token is the engine's BOS, and no stop token for that. It says where a
+    message begins: a harmony model (llm-jp-4) writes <|end|><|start|>assistant<|channel|>final<|message|> between its
+    analysis and its answer, and a page that stopped at <|start|> never showed the answer. An answer ends at what the
+    model's files name: the BOS and the EOS of config.json and of the tokenizer."""
+    tokenizer, ids = byte_level(["<|startoftext|>", "<|return|>", "<|start|>", "<|message|>", "<|end|>", "<|channel|>"])
+    harmony = "{% for m in messages %}<|start|>{{ m.role }}<|message|>{{ m.content }}<|end|>{% endfor %}<|start|>assistant"
+    options, engine = converted(tokenizer, config={"bos_token_id": ids["<|startoftext|>"], "eos_token_id": ids["<|return|>"]},
+                                chat_template=harmony, bos_token="<|startoftext|>", eos_token="<|return|>")
+    assert options["bos"] == ids["<|start|>"] and options["template"] == "user<|message|>{prompt}<|end|><|start|>assistant"
+    assert options["stop_tokens"] == [ids["<|startoftext|>"], ids["<|return|>"]]
+    assert ids["<|start|>"] not in options["stop_tokens"] and ids["<|end|>"] not in options["stop_tokens"]
+    # a ChatML one: the EOSes its files name, and not <|im_start|>
+    tokenizer, ids = byte_level(["<|endoftext|>", "<|im_start|>", "<|im_end|>"])
+    options, _ = converted(tokenizer, config={"bos_token_id": ids["<|endoftext|>"], "eos_token_id": ids["<|endoftext|>"]},
+                           chat_template=CHATML, eos_token="<|im_end|>")
+    assert options["bos"] == ids["<|im_start|>"]
+    assert options["stop_tokens"] == [ids["<|endoftext|>"], ids["<|endoftext|>"], ids["<|im_end|>"]]
+
+
+def test_a_sentencepiece_template_that_writes_the_bos_first_loses_it_whatever_follows():
+    """The BOS the tokenizer names is taken off the format as it always was (T106), also where what was typed follows
+    it at once: the engine begins with it, and the text after it is the first text as it was before T264."""
+    data, ids = sentencepiece()
+    options, engine = converted(data, "tokenizer.model", {"bos_token_id": ids["<s>"], "eos_token_id": ids["</s>"]},
+                                chat_template="{{ bos_token }}{{ messages[0].content }}</s>", bos_token="<s>",
+                                tokenizer_class="LlamaTokenizer", legacy=False)
+    assert options["bos"] == ids["<s>"] and options["template"] == "{prompt}</s>" and options["specials"] == ["</s>"]
+    assert sent(options, engine, "hello") == [ids["<s>"], ids["▁hello"], ids["</s>"]]

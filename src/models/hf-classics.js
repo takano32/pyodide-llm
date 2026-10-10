@@ -203,12 +203,13 @@ export const HF_CLASSICS = [
   // token, the likeliest token the same at 94%), where plain text is 5% better with it. So the BOS is the format's own first
   // token, <|im_start|> (128040), and the format begins after it: the ids are the real template's (a Qwen3 8B's
   // QWEN3_FROM_IM_START, T250's review). It stops at <|im_end|> (config.json's EOS), at <|begin_of_text|> and at the mark
-  // of a new turn. T369: all of that is what the converter says of it now (T264: a model whose template it read begins
-  // with the template's own first token), so the entry says none of it
+  // of a new turn. T369: the BOS and the format are what the converter says of it now (T264: a model whose template it read
+  // begins with the template's own first token), so the entry says neither. The stop tokens it says: the converter's
+  // are the BOS and the EOS the model's files name, and not the mark of a new turn (the review of T369)
   { group: "hf", id: "hf-hermes-3-llama-3.2-3b", name: "Hermes 3 Llama 3.2 3B", note: "answers instructions · English · fetches 3.4 GB (GGUF) → int8 3.6 GB · desktop only",
     ...ggufOf("NousResearch/Hermes-3-Llama-3.2-3B-GGUF", "3cd927095d8cbab12c743f932aa63b6f7bbfa141", "Hermes-3-Llama-3.2-3B.Q8_0.gguf",
       "NousResearch/Hermes-3-Llama-3.2-3B", "7f1a6bec8cdce6551014fd5bbeb4cd8c0f1fbeab"), download: 3421895488,
-    conversion: {}, options: {}, generation: sampled(1.1),
+    conversion: {}, options: { stop_tokens: [128000, 128039, 128040] }, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   // T255: Hugging Face's SmolLM3 3B, a Llama every fourth layer of which RoPE leaves alone (the conversion's options
   // name the layers: unturned). ggml-org's Q8_0 GGUF, which tests/gguf_check.py tensors held to the original

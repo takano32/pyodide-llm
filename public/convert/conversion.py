@@ -120,13 +120,15 @@ class Conversion:
         ids = piece_ids(self.tokenizer, self.config["vocab_size"])
         template, head, mark = self.beginning(*model_turn(described(tokenizer_config), chat_template), [*specials, *added],
                                               options, ids)
-        # the answer stops at the BOS, and at config.json's where that is another (T143); and at the token the
-        # template begins with, where that is the one every text begins with here (T264: the mark of a new turn)
+        # the answer stops at the BOS, and at config.json's where that is another (T143). Not at the token the template
+        # begins with (T264's head), though it is the engine's BOS then: it says where a message begins, not where the
+        # answer ends. A harmony model (llm-jp-4) writes <|end|><|start|>assistant<|channel|>final<|message|> after its
+        # analysis, and stopped there before its answer (the review of T369); what ends an answer is what the model's own
+        # files name, the EOSes.
         # A BOS that nothing names and the template does not begin with is no token of this model's to stop at: token 1
         # of a byte-level vocabulary is '"' (NeoHorse-1's config.json has no bos_token_id, and its answers ended at
         # their first quotation mark through ?hf=)
-        stop = [token for token in [*([head] if head is not None else []),
-                                    *([bos, *([own] if own != bos else [])] if head is None else said),
+        stop = [token for token in [*([bos, *([own] if own != bos else [])] if head is None else said),
                                     *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
         # And at the EOS the tokenizer names, where that is a token of its own and another than config.json's (T369): a
         # Qwen3.5's config.json says <|endoftext|> and its tokenizer <|im_end|>, which is what ends a turn of its chat
