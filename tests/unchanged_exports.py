@@ -22,7 +22,8 @@ def short(value):
 
 def signature(function):
     try:
-        return str(inspect.signature(function))
+        # (a default that is a function prints its address, which differs from run to run: T388)
+        return re.sub(r" at 0x[0-9a-f]+", "", str(inspect.signature(function)))
     except (TypeError, ValueError):
         return "(no signature)"
 
