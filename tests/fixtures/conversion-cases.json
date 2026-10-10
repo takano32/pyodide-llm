@@ -289,11 +289,7 @@
    "repo": "owner/model",
    "revision": "0123456789abcdef0123456789abcdef01234567",
    "weights": "model.safetensors",
-   "tokenizer": [
-    "tokenizer.json",
-    "tokenizer.model",
-    "spiece.model"
-   ]
+   "config": "config.json"
   },
   "line": {},
   "files": {
@@ -314,11 +310,7 @@
    "repo": "owner/model",
    "revision": "0123456789abcdef0123456789abcdef01234567",
    "weights": "model.safetensors",
-   "tokenizer": [
-    "tokenizer.json",
-    "tokenizer.model",
-    "spiece.model"
-   ]
+   "config": "config.json"
   },
   "line": {},
   "files": {
@@ -340,11 +332,7 @@
    "repo": "owner/model",
    "revision": "0123456789abcdef0123456789abcdef01234567",
    "weights": "model.safetensors",
-   "tokenizer": [
-    "tokenizer.json",
-    "tokenizer.model",
-    "spiece.model"
-   ]
+   "config": "config.json"
   },
   "line": {},
   "files": {

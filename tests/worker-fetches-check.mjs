@@ -22,7 +22,10 @@ import fs from "node:fs";
 import { loadPyodide } from "pyodide";
 import { PYTHON, placeFile } from "../public/python.js";
 import { workerHarness } from "./worker-harness.mjs";
-import { openHuggingFace } from "../src/page/folder.ts";
+import { openHuggingFace, TOKENIZERS } from "../src/page/folder.ts";
+// (the page's module reads its address where it is loaded: there is none here)
+globalThis.location ??= { search: "" };
+const { hfEntry } = await import("../src/page/address.ts");
 
 const FIXTURE = new URL("fixtures/conversion-fetches.json", import.meta.url);
 // T374.1: the cases themselves (the model as it is listed, what the made-up hub has, the line), written down beside
@@ -168,7 +171,9 @@ const hf = (more = {}) => ({ repo: "owner/model", revision: REVISION, weights: "
 const left = (files, ...names) => Object.fromEntries(Object.entries(files).filter(([file]) => !names.includes(file)));
 const shards = { "model-00001-of-00002.safetensors": safetensors(9 * MiB), "model-00002-of-00002.safetensors": safetensors(2 * MiB + 7, { header: 500 }) };
 const index = (names) => JSON.stringify({ weight_map: Object.fromEntries(names.map((name, i) => [`tensor.${i}`, name])) });
-const ANY = ["tokenizer.json", "tokenizer.model", "spiece.model"];  // (what ?hf= asks for: src/page/address.ts)
+// a repository nobody has looked at (?hf=, the sheet): the model as the page's own function lists it (src/page/address.ts),
+// so that what the page hands the worker of such a repository and what is then asked of it are held together
+const unlisted = () => hfEntry("owner/model", REVISION).hf;
 const CASES = [
   // (six connections take a MiB each in turn: the first part's 8 MiB take 48 delays of the clock. 20 ms: 8.7 MB/s, past
   // the 4 MB/s that make the later parts 16 MiB; 1000 ms: 0.17 MB/s)
@@ -191,9 +196,9 @@ const CASES = [
     vocabulary: { repo: "owner/model", revision: REVISION.split("").reverse().join(""), tokenizer: "tokenizer.model" } }),
   { ...repo("maker/model-GGUF", { "model.Q8_0.gguf": gguf(9 * MiB, 20 * MiB), "config.json": "{\"the\":\"maker's, never asked for\"}" }),
     ...repo("owner/model", { "config.json": CONFIG, "tokenizer_config.json": PLAIN, "chat_template.jinja": "a template", "tokenizer.model": "a sentencepiece model" }) }],
-  ["a sentencepiece model (no tokenizer.json)", hf({ tokenizer: ANY }), repo("owner/model", { ...left(whole(small), "tokenizer.json"), "tokenizer.model": "a sentencepiece model" })],
-  ["a tokenizer.json the converter refuses, then spiece.model", hf({ tokenizer: ANY }), repo("owner/model", whole(small, { "tokenizer.json": "unreadable", "spiece.model": "a sentencepiece model" }))],
-  ["no tokenizer at all", hf({ tokenizer: ANY }), repo("owner/model", left(whole(small), "tokenizer.json"))],
+  ["a sentencepiece model (no tokenizer.json)", unlisted(), repo("owner/model", { ...left(whole(small), "tokenizer.json"), "tokenizer.model": "a sentencepiece model" })],
+  ["a tokenizer.json the converter refuses, then spiece.model", unlisted(), repo("owner/model", whole(small, { "tokenizer.json": "unreadable", "spiece.model": "a sentencepiece model" }))],
+  ["no tokenizer at all", unlisted(), repo("owner/model", left(whole(small), "tokenizer.json"))],
   ["no tokenizer_config.json (an optional file) and no chat_template.jinja", hf(), repo("owner/model", left(whole(small), "tokenizer_config.json"))],
   ["a chat_template.jinja beside a tokenizer_config.json without a template", hf(), repo("owner/model", whole(small, { "tokenizer_config.json": PLAIN, "chat_template.jinja": "a template" }))],
   ["a config.json under another name, int6 asked for", { ...hf({ config: "configs/text.json" }), dtype: "int6" }, repo("owner/model", { ...left(whole(small), "config.json"), "configs/text.json": CONFIG })],
@@ -212,6 +217,21 @@ const CASES = [
     whole("not a model", { "model.safetensors.index.json": index(["model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors"]) })],
 ];
 
+// ---- T374.2.3: the candidates for a tokenizer are in one place, Python's (TOKENIZERS of public/convert/conduct.py). The
+// page names none for a repository nobody has looked at, and keeps one list of its own, for the folder it must look
+// into before there is a Pyodide to ask: that list is held to Python's here
+{
+  const proxy = pyodide.runPython("list(convert.conduct.TOKENIZERS)"), candidates = proxy.toJs();
+  proxy.destroy();
+  assert.deepEqual(TOKENIZERS, candidates, `the tokenizers the page looks for in a folder (TOKENIZERS of src/page/folder.ts: ${TOKENIZERS.join(", ")}) are not ` +
+    `the candidates of a conversion (TOKENIZERS of public/convert/conduct.py: ${candidates.join(", ")}). The list is Python's: edit src/page/folder.ts to say ` +
+    "the same names in the same order (its sentence for a folder without a tokenizer is made of them, and a visitor reads it)");
+  const entry = hfEntry("owner/model", REVISION, { template: "{prompt}" });
+  assert.deepEqual(entry.hf, { repo: "owner/model", revision: REVISION, weights: "model.safetensors", config: "config.json" },
+    "the page names more of a repository nobody has looked at than its weights and its config.json: the candidates for its tokenizer are the conduct's to name");
+  console.log(`ok: the candidates for a tokenizer are Python's (${candidates.join(", ")}): the page names none for ?hf=, and looks for the same in a folder`);
+}
+
 // ---- the page's side of a folder (src/page/folder.ts): what it hands the worker, and what it asks for before it does
 {
   const picked = (...names) => names.map((name) => diskFile(name, name.endsWith(".safetensors") ? small : "{}"));
@@ -223,6 +243,12 @@ const CASES = [
   for (const names of [["config.json", "tokenizer.json"], ["a.safetensors", "b.safetensors", "config.json", "tokenizer.json"], ["model.safetensors", "tokenizer.json"], ["model.safetensors", "config.json"]]) {
     await assert.rejects(openHuggingFace(picked(...names)), /^Error: A Hugging Face model needs three files together: /, `the page took a folder of ${names.join(", ")}`);
   }
+  // the sentence a visitor reads, whole: it names the candidates, and a change of it is the owner's to see first
+  await assert.rejects(openHuggingFace(picked("model.safetensors", "config.json")), { message: "A Hugging Face model needs three files together: one .safetensors file " +
+    "(a model in several shards is not supported), config.json, and tokenizer.json, tokenizer.model or spiece.model." }, "the page's sentence for a folder without a tokenizer changed");
+  // any one of the candidates will do, and a file of another name will not
+  for (const name of TOKENIZERS) assert.equal((await openHuggingFace(picked("model.safetensors", "config.json", name))).hf.weights, "model.safetensors", `the page refused a folder whose tokenizer is ${name}`);
+  await assert.rejects(openHuggingFace(picked("model.safetensors", "config.json", "vocab.txt")), /needs three files together/, "the page took a folder whose only tokenizer is vocab.txt");
   for (const [name, , files] of CASES.filter(([, source]) => !source.repo)) {
     assert.equal((await chosen(files)).weights.toLowerCase(), CASES.find(([title]) => title === name)[1].weights.toLowerCase(), `${name}: the page takes another file for the weights than the case says`);
   }

@@ -9,10 +9,10 @@
 #              case of its letters, which writes down what is read of each file as worker-fetches-check.mjs's Files do
 #              ("range model.safetensors bytes=0-524287"). The disk's is how a stream is cut: a MiB at a time
 #   answered   the loop that answers a conduct from a hub or a folder: the worker's side (public/worker/conduct.js)
-#   today      the worker's ladder as it was before T374.2.1 (public/worker/convert.js of a610edb, lines 135 to 352)
-#              in Python, call for call, on the same hub: what a conduct is compared with where there is no fixture
-#              (real files, made-up repositories by the hundred). The worker's own went with T374.2.1 for the models of
-#              huggingface.co; this copy goes with T374.2.3
+#   direct     a conversion with no conduct in it (T374.2.3): the files read whole, a Conversion made of them and fed
+#              in one piece. What a conduct's conversion is compared with on real files, since the worker's old ladder
+#              (and today(), its copy in Python, which this took the place of) is gone
+#   sound      what the requests of any conduct must be, whatever the repository: what needs no second opinion to say
 #   StandIn    the converter's stand-in of worker-fetches-check.mjs in Python: it reads the made-up files as far as the
 #              conduct depends on it and writes down what it is handed
 import json
@@ -104,6 +104,11 @@ class Hub:
         found = self.found("HEAD", where, name)
         return found.size if isinstance(found, File) else len(found)
 
+    def whole(self, where, name):
+        """The bytes of a file, or None, for a test's own reading: nothing is written down as asked."""
+        found = self.files.get(f"{self.at(where)[0]}/{name}")
+        return found if found is None else found.encode() if isinstance(found, str) else bytes(found[:])
+
     def parts(self, where, name, begin, end):
         at, part = begin, 0
         while at < end:
@@ -152,6 +157,11 @@ class Folder:
     def size(self, where, name):
         return self.files[name.lower()][1].size
 
+    def whole(self, where, name):
+        """The bytes of a file, or None, for a test's own reading: nothing is written down as read."""
+        file = self.files.get(name.lower(), (None, None))[1]
+        return file if file is None else bytes(file[:])
+
     def parts(self, where, name, begin, end):
         file = self.found("stream", name, (begin, end))
         for at in range(begin, end, self.chunk):
@@ -179,135 +189,159 @@ def answered(hub, steps, told=None):
     return request
 
 
-class NotThere(Exception):
-    """The worker's error of a fetch that was answered 404."""
+class Absent(Exception):
+    """A file direct() cannot do without is not there: (where, name)."""
 
 
-def truthy(value):
-    """As JavaScript's Boolean() of a value JSON.parse() gave"""
-    return not (value is None or value is False or value == 0 or value == "")
+def direct(whole, hf, candidates, **making):
+    """The conversion of a model with no conduct in it (T374.2.3): every file read whole and at once by whole(where,
+    name) (its bytes, or None), a Conversion made of them straight away, and all the bytes of the tensors fed in one
+    piece. What a conduct's conversion is compared with on real files: nothing is asked for here, no head is grown and
+    no part is cut, so what the two agree on (the checkpoint, the options, the tokenizer.bin) is neither's habit.
+    candidates: the tokenizers to try where the model names none. Raises Absent, or what the converter refuses with."""
+    from convert.conversion import Conversion
+    from convert.gguf import gguf_weights
+    from convert.sources import joined_shards
 
+    def needed(where, name):
+        data = whole(where, name)
+        if data is None:
+            raise Absent(where, name)
+        return data
 
-def parsed(text):
-    """JSON.parse()"""
-    def refuse(constant):
-        raise ValueError(constant)
-    return json.loads(text, parse_constant=refuse)
-
-
-def today(hub, hf, converter, head=512 * 1024, **converting):
-    """convert() of public/worker/convert.js for a model of huggingface.co, from where it begins to ask (line 135) to
-    conversion.finish(): the same calls in the same order, on the hub. Returns the conversion; raises what the worker
-    throws (NotThere for a refused fetch)."""
-    def fetched(method, where, name, *more):
-        found = getattr(hub, method)(where, name, *more)
-        if found is None:
-            raise NotThere(hub.refusal(where, name))
-        return found
-
-    def sized(name, result):
-        data, total = result
-        return data, total if total else hub.size("weights", name)
+    def header_of(data):
+        """(the JSON header of a safetensors file, where its tensors begin), or None of a file that is none."""
+        length = int.from_bytes(data[:8], "little") if len(data) >= 8 else -1
+        return (data[8:8 + length].decode(), 8 + length) if 2 <= length <= 100e6 else None
 
     weights, vocabulary = hf["weights"], hf.get("vocabulary")
     place = "vocabulary" if vocabulary else "weights"
-    shards = None
     if weights.endswith(".gguf") and not vocabulary:
-        want = 4 * head
-        while True:
-            first, size = sized(weights, fetched("range", "weights", weights, 0, want))
-            try:
-                conversion = converter.Conversion.from_gguf(first, **converting)
-                break
-            except Incomplete:
-                if want >= size:
-                    raise
-            want *= 4
-        base = conversion.base
+        data = needed("weights", weights)
+        conversion = Conversion.from_gguf(data, **making)
+        conversion.feed(data[conversion.base:])
+        conversion.finish()
+        return conversion
+    config = needed(place, hf.get("config") or "config.json").decode()
+    if vocabulary:
+        data = needed("weights", weights)
+        header, base = gguf_weights(data, config)
+        tensors = [data[base:]]
     else:
-        def head_of(name):
-            data, total = sized(name, fetched("range", "weights", name, 0, head))
-            length = int.from_bytes(data[:8], "little") if len(data) >= 8 else -1
-            if not 2 <= length <= 100e6:
+        data = whole("weights", weights)
+        heads = [header_of(data)] if data is not None else [None]
+        files = [data]
+        if heads[0] is None:
+            # the index beside it says which files the model is in; where it says none, the one file is what is wrong
+            index = whole("weights", f"{weights}.index.json")
+            try:
+                names = sorted(set(json.loads(index)["weight_map"].values()))
+            except (TypeError, ValueError, KeyError, AttributeError):
+                names = []
+            if not names and data is None:
+                raise Absent("weights", weights)
+            if not names:
                 raise ValueError("This is not a safetensors file.")
-            start = 8 + length
-            if start > len(data):
-                data = fetched("range", "weights", name, 0, start)[0]
-            return name, data[8:start].decode("utf-8", "replace"), start, total
-
-        config = fetched("text", place, hf.get("config") or "config.json")
-        if vocabulary:
-            want = 4 * head
-            while True:
-                first, size = sized(weights, fetched("range", "weights", weights, 0, want))
-                try:
-                    header, base = converter.gguf_weights(first, config)
-                    break
-                except Incomplete:
-                    if want >= size:
-                        raise
-                want *= 4
+            files = [needed("weights", name) for name in names]
+            heads = [header_of(file) for file in files]
+        if len(files) == 1:
+            (header, base), tensors = heads[0], [files[0][heads[0][1]:]]
         else:
-            try:
-                _, header, base, size = head_of(weights)
-            except Exception as error:
-                try:
-                    index = fetched("text", "weights", f"{weights}.index.json")
-                except Exception:
-                    raise error from None
-                try:
-                    files = sorted(set((parsed(index).get("weight_map") or {}).values()), key=lambda name: name.encode("utf-16-be"))
-                except Exception:
-                    files = []
-                if not files:
-                    raise error from None
-                if len(files) == 1:
-                    weights = files[0]
-                    _, header, base, size = head_of(weights)
-                else:
-                    shards = [head_of(name) for name in files]
-                    header, lengths = converter.joined_shards([shard[1] for shard in shards])
-                    base, size = 0, sum(lengths)
+            header, lengths = joined_shards([head[0] for head in heads])
+            base, tensors = 0, [file[head[1]:head[1] + int(length)] for file, head, length in zip(files, heads, lengths)]
+    tokenizer_config = (whole(place, "tokenizer_config.json") or b"").decode()
+    try:
+        templated = bool(json.loads(tokenizer_config).get("chat_template"))
+    except (ValueError, AttributeError):
+        templated = False
+    chat_template = None if templated else (whole(place, "chat_template.jinja") or b"").decode() or None
+    named = (vocabulary or {}).get("tokenizer") or hf.get("tokenizer") or candidates
+    refusal = missing = None
+    for candidate in [named] if isinstance(named, str) else named:
+        tokenizer = whole(place, candidate)
+        if tokenizer is None:
+            missing = missing or Absent(place, candidate)
+            continue
         try:
-            tokenizer_config = fetched("text", place, "tokenizer_config.json")
-        except Exception:
-            tokenizer_config = ""
-        try:
-            has_template = truthy(parsed(tokenizer_config)["chat_template"])
-        except Exception:
-            has_template = False
-        chat_template = ""
-        if not has_template:
-            try:
-                chat_template = fetched("text", place, "chat_template.jinja")
-            except Exception:
-                pass
-        refusal = missing = conversion = None
-        named = (vocabulary or {}).get("tokenizer") or hf.get("tokenizer")
-        for candidate in named if isinstance(named, list) else [named]:
-            try:
-                tokenizer = fetched("bytes", place, candidate)
-            except NotThere as error:
-                missing = missing or error
-                continue
-            try:
-                conversion = converter.Conversion(header, base, config, tokenizer, candidate, start=base,
-                                                  tokenizer_config=tokenizer_config, chat_template=chat_template or None,
-                                                  **converting)
-                break
-            except Exception as error:
-                refusal = refusal or error
-        if not conversion:
-            raise refusal or missing
-    if shards:
-        for (name, _, start, _), length in zip(shards, lengths):
-            for part in hub.parts("weights", name, start, start + length):
-                conversion.feed(part)
+            conversion = Conversion(header, base, config, tokenizer, candidate, start=base, tokenizer_config=tokenizer_config,
+                                    chat_template=chat_template, **making)
+            break
+        except Exception as error:
+            refusal = refusal or error
     else:
-        for part in hub.parts("weights", weights, base, size):
-            conversion.feed(part)
+        raise refusal or missing
+    for data in tensors:
+        conversion.feed(data)
     conversion.finish()
     return conversion
+
+
+# The candidates for a tokenizer once more, as the tests know them: the second copy of convert.conduct's TOKENIZERS
+# (tests/test_conduct.py holds that to this). direct() and sound() use these, so that they have nothing of the conduct's
+THREE = ("tokenizer.json", "tokenizer.model", "spiece.model")
+
+
+def sound(told, conversion, ended, hf, hub):
+    """told: the requests of one conduct as they came (answered()'s), conversion: what it ended with (None where it
+    ended otherwise), ended: how it ended in the words of the fixture's "ended". Each line below is a thing no conversion may do."""
+    vocabulary = hf.get("vocabulary")
+    place = "vocabulary" if vocabulary else "weights"
+    named = (vocabulary or {}).get("tokenizer") or hf.get("tokenizer") or THREE
+    candidates = [named] if isinstance(named, str) else list(named)
+    alone = hf["weights"].endswith(".gguf") and not vocabulary
+    assert {request[0] for request in told} <= {"text", "bytes", "range", "size", "stream"}
+    assert {request[1] for request in told} <= ({"weights", "vocabulary"} if vocabulary else {"weights"})
+    # nothing but the weights is asked of a GGUF that holds everything; of any other model, config.json comes first
+    if alone:
+        assert {request[2] for request in told} <= {hf["weights"]}
+    else:
+        assert told[0] == ("text", place, hf.get("config") or "config.json")
+    # a file asked for whole is asked for once
+    wholes = [request for request in told if request[0] in ("text", "bytes")]
+    assert len(set(wholes)) == len(wholes)
+    # the tokenizers: the model's candidates or the three, in their order, each once, none skipped, where the vocabulary is
+    tried = [request for request in told if request[0] == "bytes"]
+    assert tried == [("bytes", place, candidate) for candidate in candidates[:len(tried)]]
+    # and it gives up on them only once every one was tried; the one it takes is the last it asked for, and is there
+    if tried and conversion is None:
+        assert len(tried) == len(candidates)
+    if tried and conversion is not None:
+        assert hub.whole(*tried[-1][1:]) is not None
+    # the templates: where the tokenizer is, tokenizer_config.json before chat_template.jinja before any tokenizer
+    late = [request[2] for request in told if request[1:3] in ((place, "tokenizer_config.json"), (place, "chat_template.jinja")) or request[0] == "bytes"]
+    assert late[:1] in ([], ["tokenizer_config.json"]) and late.count("chat_template.jinja") <= 1
+    assert "chat_template.jinja" not in late or late.index("chat_template.jinja") == 1
+    # a head is asked for from the first byte of its file, in pieces that grow, and nothing of the weights elsewhere
+    heads = {}
+    for at, request in enumerate(told):
+        if request[0] == "range":
+            assert request[1] == "weights" and request[3] == 0 and request[4] > heads.get(request[2], 0)
+            heads[request[2]] = request[4]
+        if request[0] == "size":
+            # only of a file whose range was just answered (without its size)
+            assert told[at - 1][:3] == ("range", *request[1:])
+    # the streams come last, each of a file whose head was read, one after another: the progress counts across them
+    streams = [request for request in told if request[0] == "stream"]
+    assert told[len(told) - len(streams):] == streams and len({request[2] for request in streams}) == len(streams)
+    before = streams[0][5] if streams else 0
+    for _, where, name, begin, end, was, total in streams:
+        assert where == "weights" and name in heads and 0 < begin <= end and was == before and total == streams[0][6]
+        before += end - begin
+    assert not streams or before == streams[0][6]
+    if len(streams) == 1:
+        # one file: everything after its head, to its last byte; the head counts as arrived
+        _, _, name, begin, end, was, total = streams[0]
+        assert was == begin and end == total == len(hub.whole("weights", name))
+    # the ends: the streams are asked for only by a conversion that was made, and all of them before it is done
+    if ended == "converted":
+        assert conversion is not None and streams
+    else:
+        assert conversion is None
+    # a file said to be missing was asked for, and is not there
+    lost = [request for request in told if ended == f"failed: {hub.refusal(*request[1:3])}"]
+    assert all(hub.whole(*request[1:3]) is None for request in lost)
+    if "has no " in ended or "which is not there" in ended:
+        assert lost and not streams
 
 
 class StandIn:

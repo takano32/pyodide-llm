@@ -47,8 +47,12 @@ from convert.sources import joined_shards
 HEAD = 512 * 1024
 # a GGUF's head holds its vocabulary, a few megabytes: asked for in pieces that grow until the converter reads all of it
 GGUF_HEAD, GGUF_GROWS = 4 * HEAD, 4
-# the tokenizers of a repository nobody has looked at, in the order they are tried: the first that is there and that
-# the converter can read
+# The tokenizers of a model that names none, in the order they are tried: the first that is there and that the
+# converter can read. The one list of them (T374.2.3): a repository nobody has looked at (?hf=), a folder of the
+# visitor's disk and the build's directories (convert_hf.py) all name none and get these. Only the page's look into a
+# folder, which comes before there is a Pyodide to ask, keeps the names as well (TOKENIZERS of src/page/folder.ts):
+# tests/worker-fetches-check.mjs holds that list to this one. A name that ends in .json is read as a tokenizer.json,
+# any other as a sentencepiece model (Conversion)
 TOKENIZERS = ("tokenizer.json", "tokenizer.model", "spiece.model")
 
 

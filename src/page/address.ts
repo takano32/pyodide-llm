@@ -16,11 +16,13 @@ export const weighed = (entry: any) => {
 };
 export const REPOSITORY = /^[\w.-]+\/[\w.-]+$/, REVISION = /^[\w.-]+$/;
 // a repository nobody has looked at, as an entry of the list: the same for ?hf= and for the sheet (T88). The
-// template and prompt of a link belong to the repository the link names, not to one opened later in the sheet
+// template and prompt of a link belong to the repository the link names, not to one opened later in the sheet.
+// T374.2.3: it names no tokenizer. Which files are tried, and in which order, is the conduct's of the conversion to
+// say (TOKENIZERS of public/convert/conduct.py)
 export function hfEntry(repository: string, revision: string, link: { template?: string; prompt?: string } = {}): typeof MODELS[number] {
   const common = { id: "local", options: {}, prompt: link.prompt ?? "", placeholder: "", template: link.template };
   return { ...common, name: repository, note: revision === "main" ? "Hugging Face" : `Hugging Face · ${revision.slice(0, 12)}`,
-    hf: { repo: repository, revision, weights: "model.safetensors", config: "config.json", tokenizer: ["tokenizer.json", "tokenizer.model", "spiece.model"] },
+    hf: { repo: repository, revision, weights: "model.safetensors", config: "config.json" },
     conversion: {}, generation: { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 } } as any;
 }
 function named(): typeof MODELS[number] | undefined {
