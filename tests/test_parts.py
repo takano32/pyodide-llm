@@ -275,7 +275,15 @@ def test_release_lets_go_of_the_engine_once():
 
 
 # -------------------------------------------------------------------------------- how a model is given its parts
+def unwrapped():
+    """tests/unchanged_recorder.py puts its own functions around the class's names to write down what they return: what
+    these two tests look at (which function a name is, whose frame calls it) is then the recorder's."""
+    if Llama.generate is not generation.generate or Llama.sample is not NumpySampler.sample:
+        pytest.skip("the names of the class are wrapped (the recorder of tests/unchanged.mjs)")
+
+
 def test_the_class_has_the_reference_and_a_model_is_given_its_parts_once(monkeypatch):
+    unwrapped()
     checkpoint, tokenizer = files()
     assert Llama.penalize is NumpySampler.penalize and Llama.sample is NumpySampler.sample
     assert Llama.generate is generation.generate and Llama.greedy is greedy
@@ -300,6 +308,7 @@ def test_a_step_of_generate_calls_the_parts_themselves(monkeypatch, outside, ker
     part and what it runs (forward.js's engine, a kernel): the page runs these once a token, and a call that only hands
     on to another is a cost for every token it writes. Each part is called by generate()'s own frame, and the engine
     and the kernels by a frame that generate() called."""
+    unwrapped()
     checkpoint, tokenizer = files()
     kernels_made = []
     monkeypatch.setattr(engine.model, "load_kernels",
