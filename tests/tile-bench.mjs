@@ -3,10 +3,14 @@
 // shared memory, the rows in chunks taken in turn as forward/threads.js's phase() cuts them. (Before T197 it set the tile
 // against jobs.js's form before T159, blocks of 16 KB with matmul_q8r for each token: that is in TODO.md's T159.)
 //
-// T197 changed the corrections (float32 scale × sum → int32 −64 × sum, added to each group's integer sum), so the two
-// forms' numbers differ: each is held to the float64 sums of the same integers and scales (the largest error over the
-// rows of 4 tokens, relative to the largest |output|), and each to itself on 1 and 4 threads, to the bit. Each form
-// reads its own corrections (the copies hold both).
+// Each side is held to the float64 sums of the same integers and scales (the largest error over the rows of 4 tokens,
+// relative to the largest |output|: over LINE, the bench fails before it times anything of that shape), and to itself on
+// 1 and 4 threads, to the bit.
+// T357: both sides read the corrections the kernel has taken since T197 (int32 −64 × sum, added to each group's integer
+// sum). While main was the form before T197 its side read float32 corrections (scale × sum) from a second table; main
+// took T197's form and the bench went on handing it the old table, so "main: against float64" said 2e+4 where the tree
+// said 9e-8 (the kernel read floats as integers; the times were of the same instructions). A change of what the kernel
+// is handed has to be made here for the side that has it, and this check says when it was not.
 //
 // T159's review: the matrices are read from memory, as a model's are (each read once a block): copies of each past
 // every cache (--megabytes, default 512), a call on each in turn. One matrix timed again and again stays in the caches
@@ -23,6 +27,7 @@ import os from "node:os";
 import path from "node:path";
 import { Worker, isMainThread, workerData } from "node:worker_threads";
 import { kernelSources } from "./other-tree.mjs";
+import { leave } from "./leave.mjs";
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..") + "/";
 const work = root + ".tmp/tile-bench/";
@@ -32,10 +37,11 @@ const FORMS = ["main", "tree"];
 // 15 copies, 16 the copy to start at
 const GO = 0, DONE = 1, NEXT = 2, FORM = 3, FIRST = 4, N = 5, ROWS = 6, COUNT = 7, THREADS = 8, OUT = 9, FRAMES = 10,
   FRAME = 11, OUT_FRAME = 12, CALLS = 13, STRIDE = 14, COPIES = 15, START = 16;
-// a copy: the int8 weights, their scales, main's corrections, the tree's corrections
+// a copy: the int8 weights, their scales, their corrections
+const LINE = 1e-5;  // the largest error against float64 a side may have, relative to the largest |output| (float32's own is about 1e-7)
 const tiles = (k, c, w, r0, r1) => {
   const n = c[N], rows = c[ROWS], ng = n / 32;
-  k.matmul_q8r_tile(c[OUT], c[FRAMES], c[FRAMES] + n, w, w + rows * n, w + rows * n + (1 + c[FORM]) * rows * ng * 4, n, r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME]);
+  k.matmul_q8r_tile(c[OUT], c[FRAMES], c[FRAMES] + n, w, w + rows * n, w + rows * n + rows * ng * 4, n, r0, r1, c[COUNT], c[OUT_FRAME], c[FRAME]);
 };
 // forward/threads.js's phase(): chunks of a quarter of a thread's share (T93), in fours of rows for a prompt (T159), taken in
 // turn; one thread runs the whole matrix in one call
@@ -115,19 +121,18 @@ for (const [rows, n] of shapes) {
   const ng = n / 32, frame = Math.ceil((n + ng * 4) / 64) * 64, outFrame = Math.ceil(rows * 4 / 64) * 64;
   const frames = 65536, outs = [frames + 16 * frame, frames + 16 * frame + 16 * outFrame, frames + 16 * frame + 32 * outFrame];
   const first = Math.ceil((outs[2] + 16 * outFrame) / 65536) * 65536;
-  const stride = Math.ceil((rows * n + 3 * rows * ng * 4) / 4096) * 4096;
+  const stride = Math.ceil((rows * n + 2 * rows * ng * 4) / 4096) * 4096;
   const copies = megabytes ? Math.max(2, Math.floor((memory.buffer.byteLength - first) / stride)) : 1;
   const I = new Int8Array(memory.buffer), F = new Float32Array(memory.buffer), N32 = new Int32Array(memory.buffer), U = new Uint8Array(memory.buffer);
   let seed = 5;
   const next = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 8;
-  const scales = first + rows * n, mainSums = scales + rows * ng * 4, treeSums = mainSums + rows * ng * 4;
+  const scales = first + rows * n, sums = scales + rows * ng * 4;
   for (let i = 0; i < rows * n; i++) I[first + i] = (next() & 255) - 128;
   for (let i = 0; i < rows * ng; i++) {
     F[scales / 4 + i] = Math.fround(1e-3 * (1 + (next() % 1000)));
     let sum = 0;
     for (let j = 0; j < 32; j++) sum += I[first + i * 32 + j];
-    F[mainSums / 4 + i] = Math.fround(F[scales / 4 + i] * sum);  // before T197: float32 scale × sum
-    N32[treeSums / 4 + i] = -64 * sum;  // from T197: int32 −64 × sum
+    N32[sums / 4 + i] = -64 * sum;  // (T197: int32 −64 × sum)
   }
   for (let copy = 1; copy < copies && first + (copy + 1) * stride <= memory.buffer.byteLength; copy++) U.copyWithin(first + copy * stride, first, first + stride);
   for (let t = 0; t < 16; t++) {
@@ -175,6 +180,11 @@ for (const [rows, n] of shapes) {
           for (let i = 0; i < rows; i++) worst = Math.max(worst, Math.abs(F[(outs[0] + t * outFrame) / 4 + i] - reference[t * rows + i]));
         }
         errors[FORMS[form]].push(worst / largest);
+        // (not timed: a side that computes something else is no side to compare a speed with. `!(… <= …)`: a NaN too)
+        if (!(worst / largest <= LINE)) {
+          throw new Error(`${rows} x ${n}, ${FORMS[form]}: ${(worst / largest).toExponential(2)} from the float64 sums, past ${LINE}: ` +
+            "this side's kernel is handed something it does not take (see the head of this file)");
+        }
         lines.push(`${rows} x ${n}, ${FORMS[form]}: against float64 ${(worst / largest).toExponential(2)} (of the largest |output| ${largest.toExponential(2)})`);
       }
     }
@@ -209,4 +219,4 @@ for (const [key, list] of Object.entries(summary)) console.log(`${key}: the tree
 for (const [form, list] of Object.entries(errors)) console.log(`${form}: against float64 (4 tokens), largest over the shapes ${Math.max(...list).toExponential(2)}, geometric mean ${geo(list).toExponential(2)}`);
 Atomics.store(c, GO, -1);
 Atomics.notify(c, GO);
-process.exit(0);
+await leave(0);
