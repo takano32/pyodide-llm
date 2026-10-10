@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+    # the ledger and the notes are not on the site: a push of nothing else does not deploy (the owner, 2026-10-10)
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
