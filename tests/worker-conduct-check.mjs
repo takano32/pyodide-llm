@@ -558,10 +558,13 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     got.nothing = yield ["size", "weights", "empty.txt"];
     w.opened(make);
     w.run("state.gpuOnlyNow = stand.direct");  // (a place whose room is waited for: T156)
+    // (a stream that ends before its file does, as a shard's: what is read is to the end asked for)
+    got.middle = [];
+    yield ["stream", "weights", "tokenizer.model", 10, 50, 0, 40, w.feeding((part) => { got.middle.push(part.slice()); return 0.5; })];
     let at = BASE;
     got.after = yield ["stream", "weights", "Model.safetensors", BASE, SIZE, BASE, SIZE, w.feeding((part) => {
       // (the room is waited for after each part, before the next is read)
-      assert.equal(rooms, fed.length, "a part was fed before the room for the one before it was waited for");
+      assert.equal(rooms, 1 + fed.length, "a part was fed before the room for the one before it was waited for");
       fed.push([at, part.slice()]);
       at += part.length;
       return (at - BASE) / (SIZE - BASE);
@@ -593,9 +596,11 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     end = at + part.length;
   }
   assert.equal(end, SIZE, "the stream did not end at the end asked for");
-  assert.equal(rooms, 5, "the room of the weights is waited for once a part (T156)");
+  assert.equal(rooms, 6, "the room of the weights is waited for once a part (T156)");
+  assert.equal(got.middle.length, 1);
+  equalBytes(got.middle[0], bytesOf(10, 50), "a stream that ends before its file is the bytes to the end asked for");
   assert.deepEqual(reads, ["text Config.JSON", "text Config.JSON", "bytes tokenizer.model", "range Model.safetensors 0-100", `range Model.safetensors ${SIZE - 10}-${SIZE}`,
-    `stream Model.safetensors ${BASE}-${SIZE}`, `stream Model.safetensors ${SIZE}-${SIZE}`], "what was read of the folder, in order: nothing of a file nobody asked for, and nothing twice");
+    "stream tokenizer.model 10-50", `stream Model.safetensors ${BASE}-${SIZE}`, `stream Model.safetensors ${SIZE}-${SIZE}`], "what was read of the folder, in order: nothing of a file nobody asked for, and nothing twice");
   assert.deepEqual(requests, [], "a folder asked the network for something");
   assert.deepEqual(cancelled, [], "a stream that ended was cancelled");
   // the model as it is listed for Python: the names, and nothing of the Files
@@ -603,12 +608,13 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   // the progress: nothing arrives from a disk (0 of the size of the file, as before T374.2.2), the share converted is the conduct's
   const progress = messages.filter((m) => m.type === "progress");
   assert.ok(progress.length >= 1, "no progress was told of a folder");
-  assert.ok(progress.every((m) => m.received === 0 && m.total === SIZE && m.perSecond === undefined), `a folder's progress: ${JSON.stringify(progress[0])}`);
+  assert.ok(progress.every((m) => m.received === 0 && [40, SIZE].includes(m.total) && m.perSecond === undefined), `a folder's progress: ${JSON.stringify(progress[0])}`);
+  assert.equal(progress.at(-1).total, SIZE, "the total is the one the stream's request says");
   assert.equal(progress.at(-1).converted, 1);
   // the end: as huggingface.co's, but that nothing is kept of a folder
   const [steps] = w.played.steps;
   assert.equal(steps.returned, 1);
-  assert.equal(steps.answers.length, 13, "the conduct was sent something for a part: the parts go to the feed of their stream alone");
+  assert.equal(steps.answers.length, 14, "the conduct was sent something for a part: the parts go to the feed of their stream alone");
   w.allDestroyed();
   assert.equal(got.conversion.destroyed, 1);
   assert.equal(w.kept.keeps.length, 0, "a folder's conversion was kept");

@@ -22,6 +22,7 @@ import fs from "node:fs";
 import { loadPyodide } from "pyodide";
 import { PYTHON, placeFile } from "../public/python.js";
 import { workerHarness } from "./worker-harness.mjs";
+import { openHuggingFace } from "../src/page/folder.ts";
 
 const FIXTURE = new URL("fixtures/conversion-fetches.json", import.meta.url);
 // T374.1: the cases themselves (the model as it is listed, what the made-up hub has, the line), written down beside
@@ -108,9 +109,9 @@ function diskFile(name, value) {
     },
   };
 }
-// the model the page makes of the files chosen (openHuggingFace() of src/page/choose.ts): the folder, and the name of
-// its weights
-const chosen = (source, files) => ({ ...source, files: Object.entries(files).map(([name, value]) => diskFile(name, value)) });
+// the model the page makes of the files chosen: by the page's own function (src/page/folder.ts), so that what the
+// page hands the worker of a folder and what the worker reads of it are held together
+const chosen = async (files) => (await openHuggingFace(Object.entries(files).map(([name, value]) => diskFile(name, value)))).hf;
 
 // ---- the conduct is the real one (public/convert/conduct.py, in Pyodide, as the worker has it) and the worker's loop
 // answers it (public/worker/conduct.js): the requests below are what the two make together. The converter is a
@@ -211,6 +212,23 @@ const CASES = [
     whole("not a model", { "model.safetensors.index.json": index(["model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors"]) })],
 ];
 
+// ---- the page's side of a folder (src/page/folder.ts): what it hands the worker, and what it asks for before it does
+{
+  const picked = (...names) => names.map((name) => diskFile(name, name.endsWith(".safetensors") ? small : "{}"));
+  const model = await openHuggingFace(picked("README.md", "Model.safetensors", "config.json", "spiece.model", "tokenizer_config.json"));
+  assert.equal(model.hf.weights, "Model.safetensors", "the page names the weights of a folder by the file's name");
+  assert.deepEqual(model.hf.files.map(({ name }) => name), ["README.md", "Model.safetensors", "config.json", "spiece.model", "tokenizer_config.json"], "the page hands the worker the folder as it was chosen");
+  assert.deepEqual(Object.keys(model.hf), ["files", "weights"], "the page names more of a folder than its weights: the conduct asks for the rest by the names it knows");
+  assert.deepEqual(reads, [], "the page read a file of a folder that has no settings");
+  for (const names of [["config.json", "tokenizer.json"], ["a.safetensors", "b.safetensors", "config.json", "tokenizer.json"], ["model.safetensors", "tokenizer.json"], ["model.safetensors", "config.json"]]) {
+    await assert.rejects(openHuggingFace(picked(...names)), /^Error: A Hugging Face model needs three files together: /, `the page took a folder of ${names.join(", ")}`);
+  }
+  for (const [name, , files] of CASES.filter(([, source]) => !source.repo)) {
+    assert.equal((await chosen(files)).weights.toLowerCase(), CASES.find(([title]) => title === name)[1].weights.toLowerCase(), `${name}: the page takes another file for the weights than the case says`);
+  }
+  console.log("ok: the page hands the worker a folder as it was chosen and the name of its weights, and asks for one .safetensors file, config.json and a tokenizer first");
+}
+
 const shortUrl = (url) => url.replace(/^https:\/\/huggingface\.co\/(.+?)\/resolve\/([0-9a-f]{7})[0-9a-f]{33}\//, "$1@$2 ");
 const found = {};
 for (const [name, { dtype, ...source }, files, line = {}] of CASES) {
@@ -220,7 +238,7 @@ for (const [name, { dtype, ...source }, files, line = {}] of CASES) {
   fresh(hub(files, line));
   const folder = !source.repo;
   reads.length = 0;
-  const model = { id: "made-up", name: "Made up", hf: folder ? chosen(source, files) : source, ...(dtype ? { conversion: { dtype } } : {}) };
+  const model = { id: "made-up", name: "Made up", hf: folder ? await chosen(files) : source, ...(dtype ? { conversion: { dtype } } : {}) };
   const failed = await failure(context.convert(model, new AbortController().signal, 1));
   await sleep(0);
   // (a failure of Python's is told by its last line, as the worker tells a ValueError)
