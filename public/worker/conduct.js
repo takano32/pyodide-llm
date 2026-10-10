@@ -49,8 +49,8 @@ function requestOf(step) {
 //
 // progress: of(total) once the size of what is streamed is known, arriving(bytes in so far), converting(feed): feed()
 // hands a part to the conversion and returns the share converted (the time it takes is the converter's, T84).
-// A stream's parts go from here to the conversion's own feed, which the request brings: a request and an answer for
-// every part were slower than the worker's own steps (one to two percent of a conversion, in CI).
+// A stream's parts go from here to the conversion's own feed, which the request brings: the call the worker's own
+// steps made for a part, and nothing more.
 export async function answered(steps, hf, signal, progress) {
   const places = { weights: hf, vocabulary: hf.vocabulary };
   const at = (where, name) => `https://huggingface.co/${places[where].repo}/resolve/${places[where].revision}/${name}`;

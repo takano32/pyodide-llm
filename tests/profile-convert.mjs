@@ -14,6 +14,13 @@ import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
 const [dir, dtype = "int8"] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const { pyodide: py } = await pyodideWithEngine();
+// LAYOUT=<bytes>,<bytes> (T374.2.1): two buffers of those sizes made and held in Python, one before anything of the
+// conversion and one once the conversion is made, before it is fed. Where the conversion's buffers lie beside one
+// another is the same in every run of one tool, and another tool (or tree) lays them out otherwise: two tools that fed
+// the same converter the same parts differed by one to three percent in CI, always the same way, until each run had
+// its own layout (tests/abba-convert.sh gives every run two sizes of its own)
+const [layoutBefore = 0, layoutBeside = 0] = (process.env.LAYOUT ?? "").split(",").map(Number);
+py.runPython(`layout_before = bytes(${layoutBefore})`);
 const convert = py.pyimport("llama2_convert");
 const quantizeRows = py.pyimport("llama2_numpy").kernel_quantizer("simdkernel.so");
 // the stored types' readers on the kernels, as the page does (T123: bfloat16; T136: GGUF's Q8_0; T273: the two ternary
@@ -55,6 +62,7 @@ const answers = {
   stream(name, begin, end, before, total, feed) {
     // the clock (and the profiler) from the first part on: the head, the tokenizer and the template are read before
     if (!timed) {
+      py.runPython(`layout_beside = bytes(${layoutBeside})`);
       py.runPython("import cProfile, pstats, io, time; profiler = cProfile.Profile(); began = time.perf_counter()");
       // PROFILE=0: the time alone (cProfile counts every call, which makes a change in the number of calls look larger)
       py.runPython(process.env.PROFILE === "0" ? "profiler.enable(); profiler.disable(); began = time.perf_counter()" : "profiler.enable()");

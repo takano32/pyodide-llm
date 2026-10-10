@@ -33,9 +33,9 @@
 # converter's, as it was.
 #
 # The large bytes pass as they did, and not through here: the answerer hands each part to the conversion's feed()
-# itself (T374.2.1: a request and an answer for every part cost a conversion one to two percent in CI, for a tuple
-# made and let go beside megabytes that come and go), and what comes out goes to the sink. Nothing is known here of
-# how the parts are cut, tried again, kept or cancelled.
+# itself, and what comes out goes to the sink. Nothing of the conduct runs for a part (T374.2.1: a part costs what
+# it did before there was a conduct, by the same call), and nothing is known here of how the parts are cut, tried
+# again, kept or cancelled.
 import json
 from typing import Any, Callable, NamedTuple
 
