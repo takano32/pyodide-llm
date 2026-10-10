@@ -663,17 +663,25 @@ def one_turn_template(tokenizer_config, chat_template=None):
         if not chat_template:
             return None
         config = {}
+    turn, bos = model_turn(config, chat_template)
+    # generate() starts every run with the BOS token already: one written by the template would be a second one
+    return turn[len(bos):] if turn and bos and turn.startswith(bos) else turn
+
+
+def model_turn(config, chat_template=None):
+    """(one user turn of a model's own template, whole: with the BOS where the template writes it; the text of the BOS
+    its tokenizer names, "" for none). The turn is None where there is no template this can read. config: a
+    tokenizer_config.json, read (a dict; anything else is one that says nothing)."""
+    config = config if isinstance(config, dict) else {}
+    bos = config_token(config, "bos_token")
     template = chat_template or config.get("chat_template")
     if isinstance(template, list):  # some models publish several; the first is the chat one
         template = template[0].get("template") if template and isinstance(template[0], dict) else None
     if not isinstance(template, str) or not template.strip():
-        return None
-    bos = config_token(config, "bos_token")
+        return None, bos
     # the tokens transformers gives a template by their names (special_tokens_map): a template may write the pad token
     names = ("bos_token", "eos_token", "unk_token", "pad_token", "sep_token", "cls_token", "mask_token")
-    turn = one_turn(template, {name: config_token(config, name) for name in names})
-    # generate() starts every run with the BOS token already: one written by the template would be a second one
-    return turn[len(bos):] if turn and bos and turn.startswith(bos) else turn
+    return one_turn(template, {name: config_token(config, name) for name in names}), bos
 
 
 def one_turn(template, specials, mark="\x00prompt\x00"):

@@ -122,6 +122,17 @@ def described_options(config):
     return {**({"lowercase": True} if config.get("do_lower_case") is True else {}), **({"prefixed": "wanting"} if legacy else {})}
 
 
+def piece_ids(tokenizer, vocab_size):
+    """{a piece's text as the engine has it (bytes): its id, the first of equal pieces} of a tokenizer.bin: what
+    Tokenizer.encode() looks a special token up in."""
+    ids, offset = {}, 4
+    for id in range(vocab_size):
+        (length,) = struct.unpack_from("<i", tokenizer, offset + 4)
+        ids.setdefault(bytes(tokenizer[offset + 8:offset + 8 + length]), id)
+        offset += 8 + length
+    return ids
+
+
 def tokenizer_json_charsmap(tokenizer):
     """The precompiled_charsmap of a tokenizer.json's "Precompiled" normalizer (sentencepiece's, T216), or b""."""
     import base64

@@ -2,8 +2,8 @@
 // once (Qwen3, Qwen3.5 and its fine-tunes, Granite, SmolLM3), MiniCPM5, LFM2 and Ternary Bonsai.
 import {
   AGENTS_A1_AT_ONCE, AGENTS_A1_THINKING, ASK_JAPANESE, CHATML, GRANITE_AT_ONCE, GRANITE_THINKING, QWEN35_AT_ONCE,
-  QWEN35_THINKING, QWEN3_AT_ONCE_AFTER_START, QWEN3_FROM_IM_START, QWEN3_THINKING_AFTER_START, granite, lfm2Old,
-  qwen35,
+  QWEN35_THINKING, QWEN3_AT_ONCE_AFTER_START, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, QWEN3_THINKING_2507,
+  QWEN3_THINKING_AFTER_START, granite, lfm2Old, qwen35,
 } from "./formats.js";
 import {
   AGENTS_A1_SAMPLING, BONSAI_2_SAMPLING, QWEN35_SAMPLING, atOnce, graniteSampling, thinking,
@@ -28,12 +28,12 @@ export const HF_FAMILIES = [
   { group: "hf", id: "hf-qwen3-4b-instruct-2507", name: "Qwen3 4B Instruct 2507", note: "answers instructions · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB · desktop only · Chrome and Firefox",
     ...ggufOf("unsloth/Qwen3-4B-Instruct-2507-GGUF", "a06e946bb6b655725eafa393f4a9745d460374c9", "Qwen3-4B-Instruct-2507-Q8_0.gguf",
       "Qwen/Qwen3-4B-Instruct-2507", "cdbee75f17c01a7cc42f958dc650907174af0554"), download: 4280405600,
-    conversion: {}, options: {}, generation: atOnce, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+    conversion: {}, options: QWEN3_OWN_BOS, template: CHATML, generation: atOnce, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // its chat_template begins the answer with <think> itself
   { group: "hf", id: "hf-qwen3-4b-thinking-2507", name: "Qwen3 4B Thinking 2507", note: "thinks before it answers · 日本語 / English · fetches 4.3 GB (GGUF) → int8 4.5 GB · desktop only · Chrome and Firefox",
     ...ggufOf("unsloth/Qwen3-4B-Thinking-2507-GGUF", "f40adb104d4d44aee52f398b60597c5866a973a3", "Qwen3-4B-Thinking-2507-Q8_0.gguf",
       "Qwen/Qwen3-4B-Thinking-2507", "768f209d9ea81521153ed38c47d515654e938aea"), download: 4280405632,
-    conversion: {}, options: {}, generation: thinking, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN3_THINKING_2507, generation: thinking, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T235: Prism ML's ternary Qwen3 1.7B, every weight -1, 0 or 1 times a scale of its 128. Its PQ2_0 GGUF holds two
   // bits a weight, which the converter keeps as they are (T230: the ternary dtype, a quarter of int8's bytes, on kernels
   // of its own, T231; ?bits=8 widens them to int8 without loss of the values, as T235 did), with the vocabulary, config.json and

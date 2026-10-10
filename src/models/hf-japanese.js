@@ -1,7 +1,8 @@
 // From Hugging Face, converted in the browser: the models that write Japanese (the first that were added).
 import {
-  ASK_JAPANESE, ELYZA, EUROLLM, HARMONY, JAPANESE, LLM_JP_INSTRUCT, QWEN3_AT_ONCE_AFTER_START, QWEN3_FROM_IM_START,
-  QWEN3_OWN_BOS, RAKUTEN, SARASHINA, SWALLOW_MS, TRANSLATE, harmony, llmJp, sarashina,
+  ASK_JAPANESE, CHATML, ELYZA, EUROLLM, HARMONY, JAPANESE, LLM_JP_INSTRUCT, QWEN25, QWEN3_AT_ONCE_AFTER_START,
+  QWEN3_FROM_IM_START, QWEN3_OWN_BOS, RAKUTEN, SARASHINA, SWALLOW_MS, TINYSWALLOW, TRANSLATE, eurollm, harmony, llmJp,
+  sarashina,
 } from "./formats.js";
 import { greedy, sampled } from "./sampling.js";
 import { ggufOf, hf } from "./builders.js";
@@ -28,7 +29,7 @@ export const HF_JAPANESE = [
   { group: "hf", id: "hf-qwen2.5-0.5b-instruct", name: "Qwen2.5 0.5B Instruct", note: "answers instructions · 日本語 / English · fetches 531 MB (GGUF) → int8 545 MB",
     original: "Qwen/Qwen2.5-0.5B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-0.5B-Instruct-GGUF", revision: "41ba88dbac95fed2528c92514c131d73eb5a174b", weights: "Qwen2.5-0.5B-Instruct-Q8_0.gguf" }, download: 531068480,
-    conversion: {}, options: {}, generation: sampled(1.1),
+    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-llm-jp-3-440m", name: "llm-jp-3 440M", note: "日本語 / English · fetches 0.9 GB → int8 503 MB",
     hf: hf("llm-jp/llm-jp-3-440m", "0bfbf24efdcc5e4c57327e9c52e8cd832637adc2"), download: 894519624, conversion: {}, options: llmJp,
@@ -105,7 +106,7 @@ export const HF_JAPANESE = [
   { group: "hf", id: "hf-eurollm-1.7b-instruct", name: "EuroLLM 1.7B Instruct", note: "answers instructions · 日本語 / English and 33 more languages · fetches 1.8 GB (GGUF) → int8 1.9 GB · desktop only",
     ...ggufOf("mradermacher/EuroLLM-1.7B-Instruct-GGUF", "2951f08f66429c934c8b01a94347161362430808", "EuroLLM-1.7B-Instruct.Q8_0.gguf",
       "utter-project/EuroLLM-1.7B-Instruct", "a25c7fa65fc2a644e6270b8940dbe295b51da681", "tokenizer.model"), download: 1763775712,
-    conversion: {}, options: {}, generation: sampled(1.1), template: EUROLLM, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+    conversion: {}, options: eurollm, generation: sampled(1.1), template: EUROLLM, prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-llm-jp-3-1.8b-instruct3", name: "llm-jp-3 1.8B instruct3", note: "answers instructions · 日本語 · fetches 2.0 GB (GGUF) → int8 2.1 GB · desktop only",
     ...ggufOf("mmnga/llm-jp-3-1.8b-instruct3-gguf", "d908906be3bed7681e4d7269f5c441ea91d2fd56", "llm-jp-3-1.8b-instruct3-Q8_0.gguf",
       "llm-jp/llm-jp-3-1.8b-instruct3", "6b9b0bf051699e7ecffaa5e1166aa5008aa6534f"), download: 1987023136,
@@ -113,7 +114,7 @@ export const HF_JAPANESE = [
   { group: "hf", id: "hf-tinyswallow-1.5b-instruct", name: "TinySwallow 1.5B Instruct", note: "answers instructions · 日本語 · fetches 1.6 GB (GGUF) → int8 1.7 GB · desktop only",
     original: "SakanaAI/TinySwallow-1.5B-Instruct",
     hf: { repo: "SakanaAI/TinySwallow-1.5B-Instruct-GGUF", revision: "38c003aaf8be9d17af11dece1fbabeb873c567fa", weights: "tinyswallow-1.5b-instruct-q8_0.gguf" }, download: 1646573920,
-    conversion: {}, options: {}, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
+    conversion: {}, options: QWEN3_OWN_BOS, template: TINYSWALLOW, generation: sampled(1.1), prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T125: a Mistral (a Llama by another name) of 1.5B, Japanese and English; its sliding window of 8192 is past the
   // context of 4096 the page gives it
   { group: "hf", id: "hf-rakutenai-2.0-mini-instruct", name: "RakutenAI 2.0 mini instruct", note: "answers instructions · 日本語 / English · fetches 1.6 GB (GGUF) → int8 1.7 GB · desktop only",
@@ -132,7 +133,7 @@ export const HF_JAPANESE = [
   { group: "hf", id: "hf-qwen2.5-3b-instruct", name: "Qwen2.5 3B Instruct", note: "answers instructions · 日本語 / English · fetches 3.3 GB (GGUF) → int8 3.5 GB · desktop only",
     original: "Qwen/Qwen2.5-3B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-3B-Instruct-GGUF", revision: "f302c64a2269a69fb27b2f9473b362f5bb8e78d8", weights: "Qwen2.5-3B-Instruct-Q8_0.gguf" }, download: 3285476512,
-    conversion: {}, options: {}, generation: sampled(1.1),
+    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-sarashina2.2-3b-instruct", name: "sarashina2.2 3B Instruct", note: "answers instructions · 日本語 · fetches 3.6 GB (GGUF) → int8 3.8 GB · desktop only",
     original: "sbintuitions/sarashina2.2-3b-instruct-v0.1",
@@ -159,7 +160,7 @@ export const HF_JAPANESE = [
   { group: "hf", id: "hf-qwen2.5-7b-instruct", name: "Qwen2.5 7B Instruct", note: "answers instructions · 日本語 / English · fetches 8.1 GB (GGUF) → int8 8.6 GB · desktop only · Chrome and Firefox",
     original: "Qwen/Qwen2.5-7B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-7B-Instruct-GGUF", revision: "8911e8a47f92bac19d6f5c64a2e2095bd2f7d031", weights: "Qwen2.5-7B-Instruct-Q8_0.gguf" }, download: 8098525888,
-    conversion: {}, options: {}, generation: sampled(1.1),
+    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   // T125: Mistral 7B's of Japanese, whose sliding window of 4096 is the page's context
   { group: "hf", id: "hf-rakutenai-7b-chat", name: "RakutenAI 7B chat", note: "answers instructions · 日本語 / English · fetches 7.8 GB (GGUF) → int8 8.3 GB · desktop only · Chrome and Firefox",
@@ -214,7 +215,7 @@ export const HF_JAPANESE = [
   { group: "hf", id: "hf-cat-thinking-8b", name: "CAT-Thinking 8B", note: "thinks in Japanese before it answers · 日本語 / English · fetches 8.7 GB (GGUF) → int8 9.2 GB · desktop only · Chrome and Firefox",
     ...ggufOf("mmnga-o/CAT-Thinking-8B-gguf", "d1747e658749aa7a67858914f0a60a2364172c2b", "CAT-Thinking-8B-Q8_0.gguf",
       "cyberagent/CAT-Thinking-8B", "0337f7bcf8d5e6dc08610e205bfe01d566e17669"), download: 8709518944,
-    conversion: {}, options: QWEN3_OWN_BOS,
+    conversion: {}, options: QWEN3_OWN_BOS, template: CHATML,
     generation: { steps: 0, temperature: 0.8, topp: 0.95, repetition_penalty: 1.05 },
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
 ];
