@@ -2,7 +2,7 @@
 # types) to float32, by its name.
 import numpy as np
 
-from llama2_numpy import TERNARY_VALUES
+from engine.packing import TERNARY_VALUES
 
 
 def bfloat16(raw):

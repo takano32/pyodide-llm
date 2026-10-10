@@ -6,7 +6,7 @@ import struct
 
 import numpy as np
 
-from llama2_numpy import rope_frequencies, sign_bits
+from engine.layers import rope_frequencies, sign_bits
 from convert.readers import BLOCKS, READERS
 from convert.sources import ROTATED
 from convert.config import (GRANITE_ONES, architecture, convolution_layers, head_size, linear_layers, normalize,

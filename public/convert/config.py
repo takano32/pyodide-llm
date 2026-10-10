@@ -2,7 +2,7 @@
 # is for each (what the file itself does not say).
 import math
 
-from llama2_numpy import linear_form
+from engine.layout import linear_form
 
 
 def architecture(config):

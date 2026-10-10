@@ -188,7 +188,7 @@ def test_the_file_in_its_own_order_gives_the_same_checkpoint(dtype, shared, monk
 def test_the_engine_reads_the_tensors_where_the_layout_puts_them():
     """Places (what forward.js gets, external=) against layout(): the same shapes in the same order at the same
     offsets, for every dtype."""
-    from llama2_numpy import Places, TENSOR_NAMES
+    from llama2_numpy import tensor_rows
     from llama2_convert import tensor_bytes
     tensors, config = lfm2_model(shared=False)
     form = checkpoint_form(normalize(config), {})
@@ -218,7 +218,7 @@ def test_the_engine_reads_the_tensors_where_the_layout_puts_them():
         placed = sorted({(t["offset"], tuple(t["shape"])) for t in External.plan["tensors"].values()})
         assert placed == expected, dtype
         assert External.plan["convolution"] == form["convolution"] and External.plan["arch"] == "lfm2"
-        assert set(External.plan["tensors"]) <= set(TENSOR_NAMES)
+        assert set(External.plan["tensors"]) <= {row.name for row in tensor_rows(header, form)}
 
 
 def test_bfloat16_is_read_as_the_real_file_stores_it():

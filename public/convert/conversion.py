@@ -1,7 +1,8 @@
 # The conversion as the page and the build drive it: config.json, the tokenizer and the stream of weights together.
 import json
 
-from llama2_numpy import FORM, RMS_EPS
+from engine.layout import FORM
+from engine.layers import RMS_EPS
 from convert.checkpoint import check_dtype
 from convert.template import config_token, one_turn_template
 from convert.readers import bfloat16, q8_0

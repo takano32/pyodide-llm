@@ -27,6 +27,8 @@ import math
 
 import numpy as np
 
+from engine.layout import linear_widths
+
 
 def partial_rope(heads, cos, sin, rotary):
     """GPT-NeoX rotates the first rotary values of every head and leaves the rest alone."""
@@ -98,41 +100,7 @@ def gelu(x):
 # same position on all three axes of the model's 3D RoPE, which is then the ordinary one). And q's matrix has twice
 # the rows: each head's q, then as many values of a gate; the attention's output is multiplied by sigmoid(gate)
 # before wo. The converter cuts the matrix into wq and wg.
-LINEAR = ("every", "key_heads", "value_heads", "key_dim", "value_dim", "conv")
-
-
-def linear_form(linear):
-    """The numbers of a hybrid model's linear-attention layers, FORM's "linear", as a dict of ints (LINEAR's keys:
-    every "every"-th layer is a full-attention one, the heads and their sizes, the taps of the convolution), from a
-    dict of Python or of JavaScript. None for a model without such layers."""
-    if linear is None:
-        return None
-    linear = linear.to_py() if hasattr(linear, "to_py") else linear
-    numbers = {key: int(linear[key]) for key in LINEAR}
-    if min(numbers.values()) < 1 or numbers["every"] < 2 or numbers["value_heads"] % numbers["key_heads"]:
-        raise ValueError(f"These are not the numbers of linear-attention layers: {numbers}.")
-    return numbers
-
-
-def linear_widths(linear):
-    """(the values the convolution runs over: q, k and v; those of q or of k; those of v) of a linear-attention layer."""
-    keys, values = linear["key_heads"] * linear["key_dim"], linear["value_heads"] * linear["value_dim"]
-    return 2 * keys + values, keys, values
-
-
-def layer_slots(n_layers, linear, convolution=None):
-    """For every layer: (whether it keeps a state in place of keys and values: a Qwen3.5's linear-attention layer or an
-    LFM2's convolution layer, its place among the layers of its kind), which is where its tensors are in the file's
-    stacks: a model whose layers all attend has (False, l) for layer l."""
-    if convolution is not None:
-        kinds = [kind == "c" for kind in convolution["layers"]]
-    else:
-        kinds = [linear is not None and (l + 1) % linear["every"] != 0 for l in range(n_layers)]
-    slots, counts = [], [0, 0]
-    for kind in kinds:
-        slots.append((kind, counts[kind]))
-        counts[kind] += 1
-    return slots
+# (the numbers of these layers, FORM's "linear", are read by linear_form() in engine/layout.py)
 
 
 def silu(x):
@@ -190,21 +158,7 @@ def delta_rule(state, q, k, v, beta, decay):
 # A convolution layer keeps no keys and values: its state is the h of the last taps - 1 tokens (2 dim numbers a layer).
 # transformers pads a whole sequence with taps - 1 zeros in front (causal_conv1d_fn), and token by token keeps those
 # values in its cache (causal_conv1d_update): the same numbers.
-CONVOLUTION = ("layers", "taps")
-
-
-def convolution_form(convolution, n_layers=None):
-    """The convolution layers of an LFM2, FORM's "convolution", as {"layers": a letter for every layer, "c" for a
-    convolution layer and "a" for one that attends, "taps": how many tokens the convolution reads}, from a dict of
-    Python or of JavaScript. None for a model without such layers. n_layers: the header's, which the letters have to be
-    as many as."""
-    if convolution is None:
-        return None
-    convolution = convolution.to_py() if hasattr(convolution, "to_py") else convolution
-    layers, taps = str(convolution["layers"]), int(convolution["taps"])
-    if not layers or set(layers) - set("ac") or taps < 2 or (n_layers is not None and len(layers) != n_layers):
-        raise ValueError(f"These are not the convolution layers of a model: {layers!r} with {taps} taps.")
-    return {"layers": layers, "taps": taps}
+# (which layers those are and their taps, FORM's "convolution", are read by convolution_form() in engine/layout.py)
 
 
 # Ternary Bonsai 2 27B (prism-ml/Ternary-Bonsai-2-27B-gguf) stores its matrices in a rotated basis. With R = H S,

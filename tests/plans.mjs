@@ -1,12 +1,12 @@
 // plans.mjs
 // What createForward() is handed for a made-up header, without Pyodide and without built kernels: the plan Python
-// makes (llama2_numpy's own Places and tensor order, by the native Python) and kernels that do nothing. For the checks
+// makes (llama2_numpy's external_tensors(), by the native Python) and kernels that do nothing. For the checks
 // that run forward.js on its own: tests/memory-check.mjs (T130) and tests/unchanged-calls.mjs (T346).
 //   const { plansOf, planOf, FORM, empty, nothing } = plans(<the repository's root, a URL or a path>)
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-// the plan Python hands createForward (llama2_numpy's own Places and tensor order), for a header, a form and a dtype:
+// the plan Python hands createForward (llama2_numpy's external_tensors()), for a header, a form and a dtype:
 // where every tensor is, and the bytes of the RoPE tables Python computes (the checkpoint's size is where the places end)
 const python = `
 import json, sys
@@ -14,7 +14,18 @@ import numpy as np
 sys.path.insert(0, "public")
 import llama2_convert, llama2_numpy as L
 
-def plan_of(header, form, dtype):
+def keeps_int8(header, form, dtype):
+    # the engine's own condition for keeping int8: the int8 kernels work on groups of 32 only (T229: and the rows of a
+    # linear-attention layer's output matrix, its value heads together)
+    dim, hidden, _, heads, kv_heads = header[:5]
+    head = form["head_dim"] or dim // heads
+    linear = L.linear_form(form["linear"])
+    return dtype in ("int8", *L.PACKED) and all(n % 32 == 0 for n in (dim, heads * head, kv_heads * head, hidden)) \
+        and (linear is None or L.linear_widths(linear)[2] % 32 == 0)
+
+def tensors_before(header, form, dtype):
+    # a tree from before T359, whose order of the tensors is Llama's own *_tensors() over Places (tests/unchanged.mjs
+    # asks this script of the commit it compares with; once that commit has engine/layout.py this function goes)
     packing = dtype if dtype in L.PACKED else None
     npdtype = np.dtype(np.int8 if dtype == "int8" or packing else dtype)
     probe = L.Llama.__new__(L.Llama)
@@ -32,10 +43,7 @@ def plan_of(header, form, dtype):
         probe.rotary = probe.head_size // 4
     # T260: an LFM2's convolution layers
     probe.convolution = L.convolution_form(form["convolution"], probe.n_layers)
-    # the engine's own condition for keeping int8: the int8 kernels work on groups of 32 only (T229: and the rows of a
-    # linear-attention layer's output matrix, its value heads together)
-    keep = npdtype == np.int8 and all(n % 32 == 0 for n in (probe.dim, probe.q_dim, kv_dim, probe.hidden_dim)) \
-        and (probe.linear is None or L.linear_widths(probe.linear)[2] % 32 == 0)
+    keep = keeps_int8(header, form, dtype)
     places = L.Places(npdtype, packing)
     freq = lambda width: np.zeros(width // 2)
     if form["arch"] in ("gpt2", "neox"):
@@ -46,12 +54,18 @@ def plan_of(header, form, dtype):
         probe.lfm2_tensors(places.take, vocab > 0, keep, kv_dim, places.dtype, freq)
     else:
         probe.llama_tensors(places.take, vocab > 0, keep, kv_dim, form["bias"], places.dtype, freq, form["qk_norm"])
-    tensors = {name: getattr(probe, name).plan() for name in L.TENSOR_NAMES if isinstance(getattr(probe, name, None), L.Tensor)}
-    table = probe.seq_len * (probe.head_size // 2) * 4
-    derived = {"freq_cis_real": table, "freq_cis_imag": table} if form["arch"] == "gpt2" or npdtype != np.float32 else {}
     assert places.offset == llama2_convert.checkpoint_size(header, dtype, form), "the places do not end where the file does"
-    return {"header": header, "form": form, "dtype": dtype, "size": places.offset, "tensors": tensors, "derived": derived,
-            "keep_int8": bool(keep), "head_size": probe.head_size}
+    return {name: getattr(probe, name).plan() for name in L.TENSOR_NAMES if isinstance(getattr(probe, name, None), L.Tensor)}
+
+def plan_of(header, form, dtype):
+    # where every tensor is: external_tensors(), the rows of engine/layout.py placed (T359)
+    tensors = L.external_tensors(header, dtype, form) if hasattr(L, "tensor_rows") else tensors_before(header, form, dtype)
+    head_size = form["head_dim"] or header[0] // header[3]
+    table = header[6] * (head_size // 2) * 4
+    derived = {"freq_cis_real": table, "freq_cis_imag": table} if form["arch"] == "gpt2" or dtype != "float32" else {}
+    # (the tensors by name: the order of a dict is not what the plan says, and tests/unchanged-calls.mjs hashes this whole)
+    return {"header": header, "form": form, "dtype": dtype, "size": llama2_convert.checkpoint_size(header, dtype, form),
+            "tensors": dict(sorted(tensors.items())), "derived": derived, "keep_int8": bool(keeps_int8(header, form, dtype)), "head_size": head_size}
 
 print(json.dumps([plan_of(**s) for s in json.loads(sys.stdin.read())]))
 `;

@@ -1,5 +1,5 @@
-# A checkpoint's tensors: where each is (Tensor, Places), the form a file does not say (FORM), the dtype read from
-# its size, and the outlier channels of the final norm.
+# A checkpoint's tensors where the weights live outside Python (Tensor, outside(), external_tensors()), the dtype read
+# from its size, and the outlier channels of the final norm. What the file holds is engine/layout.py's.
 #
 # This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and it is
 # derived from two works under the MIT License, whose notice follows: tairov/llama2.py
@@ -23,14 +23,14 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-import math
 import struct
 
 import numpy as np
 
 from engine.tokenizer import CHARSMAP
-from engine.layers import convolution_form, linear_form, linear_widths, rope
-from engine.packing import TERNARY_GROUP, group_of, stored_bytes
+from engine.layout import (TABLE, check_suited, convolution_form, file_size, form_of, linear_form, placed, suited,
+                           tensor_rows)
+from engine.packing import PACKED
 
 # The classifier's input has a few channels that the final norm's weight blows up (openai-community/gpt2: 12 to 17
 # times, 316 against a median of 0.3). With the int8 kernels the activations are quantized in groups of 32, so one
@@ -61,31 +61,33 @@ class Tensor:
                 "scales": self.scales}
 
 
-class Places:
-    """Where the tensors of a checkpoint are, taken in file order (Llama's take() with external=, T93): a Tensor for
-    each, from the header's 28 bytes on. dtype: the checkpoint's as numpy has it (int6 and ternary are int8 with that
-    packing, PACKED)."""
-
-    def __init__(self, dtype, packing=None):
-        self.dtype, self.packing, self.offset = np.dtype(dtype), packing, 28
-
-    def take(self, *shape, matrix=True, widen=True):
-        count = math.prod(shape)
-        if self.dtype == np.int8 and matrix:
-            group, stored = group_of(shape[-1], self.packing), stored_bytes(count, self.packing)
-            tensor = Tensor(self.packing or "int8", self.offset, shape, group, self.offset + stored)
-            self.offset += stored + 4 * (count // group)
-            return tensor
-        tensor = Tensor("f16" if self.dtype == np.float16 else "f32", self.offset, shape)
-        self.offset += count * (2 if self.dtype == np.float16 else 4)
-        return tensor
+# what forward.js calls the two kinds that are not quantized (Tensor's kind)
+SHORT = {"float32": "f32", "float16": "f16"}
 
 
-# the attributes of Llama that are tensors of the file, in no particular order
-TENSOR_NAMES = ("token_embedding_table", "rms_att_weight", "wq", "wk", "wv", "wo", "rms_ffn_weight", "w1", "w2", "w3",
-                "rms_final_weight", "freq_cis_real", "freq_cis_imag", "wcls", "bq", "bk", "bv", "positions",
-                "ln_att_bias", "ln_ffn_bias", "ln_final_bias", "bo", "b1", "b2", "q_norm", "k_norm",
-                "wg", "wqkv", "wz", "wb", "wa", "conv", "dt_bias", "decay", "delta_norm", "wout", "win")
+def dtype_of(dtype):
+    """A checkpoint's dtype by its name, from a name or a NumPy dtype (NumPy has neither int6 nor ternary)."""
+    return str(dtype) if str(dtype) in PACKED else np.dtype(dtype).name
+
+
+def outside(rows, dtype):
+    """{name: Tensor} of the rows of a checkpoint of this dtype (by name) that the engine reads from the file: where
+    Llama(external=) says they are. The RoPE tables are the file's in float32 alone (half precision is too coarse for
+    the angles, and a quantized file leaves them out): the engine computes the others. ValueError where no file of
+    this dtype can hold these rows."""
+    check_suited(rows, dtype)
+    return {place.row.name: Tensor(SHORT.get(place.kind, place.kind), place.offset, place.row.shape, place.group, place.scales)
+            for place in placed(rows, dtype) if place.kind is not None and (place.row.role != TABLE or dtype == "float32")}
+
+
+def external_tensors(header, dtype, form=None):
+    """Where every tensor of a checkpoint with this header, dtype and form (FORM) is, {name: Tensor.plan()}, as
+    Llama(external=) hands them to public/forward.js, before any of its bytes are there (T156: the worker sends the
+    layers' matrices to the GPU as they come, and keeps the rest). A model whose embedding is its classifier has it
+    under both names."""
+    tensors = outside(tensor_rows(header, form), dtype_of(dtype))
+    tensors.setdefault("wcls", tensors["token_embedding_table"])
+    return {name: tensor.plan() for name, tensor in tensors.items()}
 
 
 def outlier_channels(weight, count=OUTLIER_CHANNELS, ratio=OUTLIER_RATIO):
@@ -106,26 +108,6 @@ def outlier_columns(classifier, channels):
     return np.ascontiguousarray(columns)
 
 
-# The form of a checkpoint: what sets its tensors and sizes its forward pass besides the 7 ints of the header, which
-# the legacy file cannot say (see Llama.__init__), with the value of a file that says nothing. The converter writes
-# them into the options, and one dict of these names goes to everything that lays the file out or sizes it
-# (llama2_convert.layout(), checkpoint_size() and Writer, checkpoint_dtype() below, forward.js's footprint()), so
-# that another one is added where it is used, not along the way (T144).
-# linear (T229): the linear-attention layers of arch "qwen35", see linear_form(); None where there are none.
-# convolution (T260): the convolution layers of arch "lfm2", see convolution_form(); None where there are none.
-FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None, "rotated": None,
-        "convolution": None}
-
-
-def form_of(options=None):
-    """The form (FORM's keys, each with its default where options has none) out of options, a dict with those and
-    any others (the options of a model, a manifest's). Dicts from JavaScript are read too (a JsProxy). A key given as
-    None (a JSON null, or JavaScript's undefined) says nothing, as head_size() reads "head_dim": null: it had
-    checkpoint_dtype() fail on int(None) while footprint() counted dim / heads (the review of T144)."""
-    options = options.to_py() if hasattr(options, "to_py") else (options or {})
-    return {key: default if options.get(key) is None else options[key] for key, default in FORM.items()}
-
-
 def checkpoint_dtype(header, size, form=None):
     """"float32", "float16", "int8", "int6" or "ternary": what a checkpoint file of size bytes with this header (7
     ints) holds.
@@ -142,79 +124,27 @@ def checkpoint_dtype(header, size, form=None):
     if not (0 < dim < limit and 0 < hidden_dim < limit and 0 < n_layers < 4096 and 0 < n_kv_heads <= n_heads <= dim
             and 0 < abs(vocab_size) < limit and 0 < seq_len < limit and 0 < head_size < limit and n_heads % n_kv_heads == 0):
         raise ValueError("This is not a llama2.c checkpoint: the header makes no sense.")
-    q_dim, kv_dim = n_heads * head_size, n_kv_heads * head_size
-    rope = 2 * seq_len * (head_size // 2)
-    if arch in ("gpt2", "neox"):
-        # the same tensors in the same order as gpt2_tensors() and llama2_convert.layout(arch=): q, k, v, o, the two
-        # FFN matrices (no gate), and for GPT-2 the table of positions in place of the RoPE tables
-        matrices = [(abs(vocab_size), dim)] + [(n_layers * dim, dim)] * 4 + [(n_layers * hidden_dim, dim), (n_layers * dim, hidden_dim)]
-        if arch == "gpt2":
-            matrices.append((seq_len, dim))
-            rope = 0
-        # LayerNorm weights and biases (two per layer, one at the end), the biases of q, k, v, o and the FFN
-        vectors = n_layers * (4 * dim + 3 * dim + dim + hidden_dim + dim) + 2 * dim
-    elif arch == "qwen35":
-        # the same tensors in the same order as qwen35_tensors() and llama2_convert.layout(arch=): the full-attention
-        # layers' (q, its gate, k, v, o), the linear-attention layers' (q, k and v in one, z, the output), the FFN
-        linear = linear_form(form["linear"])
-        if linear is None or n_layers < linear["every"]:
-            raise ValueError("This is not a llama2.c checkpoint: a hybrid model has to say its linear layers.")
-        mixed, _, read = linear_widths(linear)
-        full = n_layers // linear["every"]
-        lines = n_layers - full
-        matrices = [(abs(vocab_size), dim), (full * q_dim, dim), (full * q_dim, dim), (full * kv_dim, dim),
-                    (full * kv_dim, dim), (full * dim, q_dim), (lines * mixed, dim), (lines * read, dim),
-                    (lines * dim, read), (n_layers * hidden_dim, dim), (n_layers * dim, hidden_dim),
-                    (n_layers * hidden_dim, dim)]
-        # the norms of the layers and of the heads of q and k, and of a linear layer: the two small matrices of its
-        # gates (float32 whatever the file), the taps, dt_bias, decay and the norm of a value head
-        vectors = 2 * n_layers * dim + dim + 2 * full * head_size \
-            + lines * (2 * linear["value_heads"] * dim + linear["conv"] * mixed + 2 * linear["value_heads"] + linear["value_dim"])
-    elif arch == "lfm2":
-        # the same tensors in the same order as lfm2_tensors() and llama2_convert.layout(arch=): the attention
-        # layers' (q, k, v, o), the convolution layers' (the matrix in, the matrix out), the FFN
-        convolution = convolution_form(form["convolution"])
-        if convolution is None or len(convolution["layers"]) != n_layers:
-            raise ValueError("This is not a llama2.c checkpoint: an LFM2 has to say its convolution layers.")
-        short = convolution["layers"].count("c")
-        full = n_layers - short
-        matrices = [(abs(vocab_size), dim), (full * q_dim, dim), (full * kv_dim, dim), (full * kv_dim, dim),
-                    (full * dim, q_dim), (short * 3 * dim, dim), (short * dim, dim), (n_layers * hidden_dim, dim),
-                    (n_layers * dim, hidden_dim), (n_layers * hidden_dim, dim)]
-        # the norms of the layers and of the heads of q and k, and a convolution layer's taps
-        vectors = 2 * n_layers * dim + dim + 2 * full * head_size + short * convolution["taps"] * dim
-    else:
-        # the same tensors in the same order as llama_tensors() and quantize.py: (rows, row length) of the matrices
-        matrices = [(abs(vocab_size), dim), (n_layers * q_dim, dim), (n_layers * kv_dim, dim), (n_layers * kv_dim, dim),
-                    (n_layers * dim, q_dim), (n_layers * hidden_dim, dim), (n_layers * dim, hidden_dim),
-                    (n_layers * hidden_dim, dim)]
-        vectors = 2 * n_layers * dim + dim + (n_layers * (q_dim + 2 * kv_dim) if form["bias"] else 0) \
-            + (2 * n_layers * head_size if form["qk_norm"] else 0)
-    if vocab_size < 0:
-        matrices.append((abs(vocab_size), dim))
-    floats = sum(rows * length for rows, length in matrices) + vectors + rope
-
-    def group(length):
-        size = 32
-        while length % size:
-            size //= 2
-        return size
-
+    linear = linear_form(form["linear"]) if arch == "qwen35" else None
+    if arch == "qwen35" and (linear is None or n_layers < linear["every"]):
+        raise ValueError("This is not a llama2.c checkpoint: a hybrid model has to say its linear layers.")
+    convolution = convolution_form(form["convolution"]) if arch == "lfm2" else None
+    if arch == "lfm2" and (convolution is None or len(convolution["layers"]) != n_layers):
+        raise ValueError("This is not a llama2.c checkpoint: an LFM2 has to say its convolution layers.")
+    rows = tensor_rows(header, form)
     # quantize.py: int8 values and a float32 scale per group; the vectors stay float32, the RoPE tables are left out
-    int8 = sum(rows * length + 4 * (rows * length // group(length)) for rows, length in matrices) + 4 * vectors
-    sizes = {28 + 4 * floats: "float32", 28 + 2 * floats: "float16", 28 + int8: "int8"}
-    if all(length % 32 == 0 for _, length in matrices):
-        # T98: 24 bytes and a float32 scale per group of 32 (only rows of whole groups can be int6)
-        sizes.setdefault(28 + sum(rows * length // 32 * 28 for rows, length in matrices) + 4 * vectors, "int6")
-    if all(length % TERNARY_GROUP == 0 for _, length in matrices):
+    sizes = {file_size(rows, name): name for name in ("float32", "float16", "int8")}
+    for name in PACKED:
+        # T98: 24 bytes and a float32 scale per group of 32 (only rows of whole groups can be int6).
         # T230: 32 bytes and a float32 scale per group of 128 (only rows of whole groups can be ternary). No other
         # dtype of the same header has this size: with M values in the matrices and V in the vectors it is 0.28125 M
         # + 4 V, int6 0.875 M + 4 V, int8 1.125 M + 4 V, float32 more than 4 M + 4 V, and float16 (2 M + 2 V and the
         # RoPE tables) would need 2 V > 1.7 M, vectors as large as the matrices (tests/test_ternary.py tries shapes)
-        sizes.setdefault(28 + sum(rows * length // TERNARY_GROUP * 36 for rows, length in matrices) + 4 * vectors, "ternary")
+        if suited(rows, name):
+            sizes.setdefault(file_size(rows, name), name)
     if size not in sizes:
-        raise ValueError(f"This is not a llama2.c checkpoint: its header asks for {28 + 4 * floats} bytes as float32, "
-                         f"{28 + 2 * floats} as float16 or {28 + int8} as int8, and the file has {size}.")
+        raise ValueError(f"This is not a llama2.c checkpoint: its header asks for {file_size(rows, 'float32')} bytes as "
+                         f"float32, {file_size(rows, 'float16')} as float16 or {file_size(rows, 'int8')} as int8, and "
+                         f"the file has {size}.")
     return sizes[size]
 
 
