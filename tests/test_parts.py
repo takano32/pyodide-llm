@@ -294,19 +294,24 @@ def test_the_class_has_the_reference_and_a_model_is_given_its_parts_once(monkeyp
 
 @pytest.mark.parametrize("outside, kernels", [(False, False), (False, True), (True, False), (True, True)])
 def test_a_step_of_generate_calls_the_parts_themselves(monkeypatch, outside, kernels):
-    """T359: nothing is called between generate() and a part (the forward pass, penalize(), sample()): the page runs
-    these once a token, and a call that only hands on to another is a cost for every token it writes. Each part is
-    called by generate()'s own frame, and is itself the function the part made (no wrapper around it)."""
+    """T359: nothing is called between generate() and a part (the forward pass, penalize(), sample()), nor between a
+    part and what it runs (forward.js's engine, a kernel): the page runs these once a token, and a call that only hands
+    on to another is a cost for every token it writes. Each part is called by generate()'s own frame, and the engine
+    and the kernels by a frame that generate() called."""
     checkpoint, tokenizer = files()
-    monkeypatch.setattr(engine.model, "load_kernels", lambda path, relaxed: kernels_in_numpy(vocab=MODEL_VOCAB))
-    llama = Llama(None if outside else checkpoint, tokenizer, external=Outside(checkpoint) if outside else None,
-                  kernels="simdkernel.so" if kernels else None)
+    kernels_made = []
+    monkeypatch.setattr(engine.model, "load_kernels",
+                        lambda path, relaxed: kernels_made.append(kernels_in_numpy(vocab=MODEL_VOCAB)) or kernels_made[-1])
+    started = Outside(checkpoint) if outside else None
+    outside_engine = started and started.engine
+    llama = Llama(None if outside else checkpoint, tokenizer, external=started, kernels="simdkernel.so" if kernels else None)
     llama.stop_tokens = {-1}
     calls = []
 
     def profile(frame, event, arg):
         if event == "call":
-            calls.append((frame.f_code, frame.f_back.f_code if frame.f_back else None))
+            caller = frame.f_back
+            calls.append((frame.f_code, caller.f_code if caller else None, caller.f_back.f_code if caller and caller.f_back else None))
 
     generator = llama.generate("", steps=6, temperature=0.8, repetition_penalty=1.2, seed=1)
     sys.setprofile(profile)
@@ -319,10 +324,17 @@ def test_a_step_of_generate_calls_the_parts_themselves(monkeypatch, outside, ker
              "penalize": llama.sampler.penalize if kernels else NumpySampler.penalize,
              "sample": llama.sampler.sample if kernels else NumpySampler.sample}
     for name, part in parts.items():
-        callers = [caller for code, caller in calls if code is part.__code__]
+        callers = [caller for code, caller, _ in calls if code is part.__code__]
         assert callers and all(caller is written for caller in callers), name
+    # what the parts run: the engine outside one call below generate(), a kernel one below too (the stand-ins of both
+    # are Python's here, so they are seen)
+    below = ([outside_engine.forward.__code__] if outside else []) + \
+        ([kernel.__code__ for kernel in kernels_made[-1].values()] if kernels else [])
+    for code in below:
+        through = [(caller, further) for called, caller, further in calls if called is code]
+        assert through and all(further is written for _, further in through), code.co_qualname
     # and generate() calls nothing of the engine's but those, the tokenizer and what the model says of its blocks
-    ours = {code.co_qualname for code, caller in calls if caller is written and "/engine/" in code.co_filename}
+    ours = {code.co_qualname for code, caller, _ in calls if caller is written and "/engine/" in code.co_filename}
     assert ours == {parts["forward"].__qualname__, parts["penalize"].__qualname__, parts["sample"].__qualname__,
                     "Tokenizer.decode", "Llama.<lambda>"}, ours
 
