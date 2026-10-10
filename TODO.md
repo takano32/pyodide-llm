@@ -2143,6 +2143,18 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 歩: **T397.1** jinja2 があれば jinja2 で、無ければ自前の読み手で描く（worker が変換器の前に `loadPackage("jinja2")`。失敗しても変換は続く）。`deploy.yml` の pip に jinja2。訪問者: `?hf=` で書式なしだったモデルに書式が付く（options に `template` が増える: T269 と同じ扱いで `CONVERTER` は上げないか、T369 に寄せる）。一覧の項目は自分の `template` が勝つので変わらない。**T397.2** 本番で 1 回り見てから、自前の読み手とその試験（`tests/test_chat_template.py` の 268 行の大半）を消す。
 - 覆す条件: ブラウザでの import が変換の 5% を越える。lock から jinja2 が消える。
 
+### T399 [調査][変換] T369 で固定した 21 項目を、測ってから本物の ID に寄せるか決める — 状態: 未着手（2026-10-10、T369 から。規模 中）
+- T369 は、頭のトークンか書式を変換器に任せていた一覧の 21 項目（Qwen2.5 の 8 つ・TinySwallow・Qwen3 の 4B 以下の 8 つ・Qwen3 Swallow 8B の 2 つ・EuroLLM・llm-jp-4）と Hermes 3 の止まりを、前の値に手で固定した（送る ID を動かさないため）。手書きの `bos` を持つ項目は 32 → 52、書式は 63 → 80 に増えた。固定を外せば変換器の答え（本物の `apply_chat_template` と同じ ID）になり、手書きが減る。**外す前に測る**: 項目ごとに、素の文・手書きの答え・モデル自身の答えの 3 つ（AGENTS.md の「頭のトークンの効きは…」）。Qwen3 の 4B 以下は `<|im_start|>` のほうが 8〜10% 悪かった記録がある（T250）。外した項目は固定値（`fixed-outputs.json`）を書き直す。`CONVERTER` は上げなくてよい（項目の options を消すだけ）。CAT-Thinking と Bonsai 1.7B・4B も同じ表で。
+
+### T400 [バグ][変換] トークナイザの言うことで、変換器がまだ読んでいないもの — 状態: 未着手（2026-10-10、T369 から。次に `CONVERTER` を上げる回に。規模 小〜中）
+- (1) tokenizer.json の `Lowercase` の normalizer（T265 は sentencepiece の道の `do_lower_case` だけ）。(2) エンジンは「最初の文にダミーの空白を付けない」を言えない: sarashina と CAT-Translate は `?hf=` で頭の BOS が残る。(3) 最初の文が空白で始まっていてもダミーの空白を付ける（Metaspace は付けない）。(4) `T5Tokenizer` の legacy の空白（比べる参照が無い）。(5) `bos_token_id` の鍵が無く書式も読めないモデルは、当て推量の BOS 1 が止まりに残る。
+
+### T401 [試験][変換] 変換の始まりを見る試験と道具が足りない — 状態: 未着手（2026-10-10、T369 から。規模 小）
+- (1) 項目の `bos` と書式が組として合っているかを見る自動の試験が無い（`format_check.py` は手で回す: T266 と一緒に）。(2) 変換の始まり（トークナイザ・書式・jinja2 の import）を測る道具が無い（`abba-convert.sh` は `Stream.feed` から測る）。(3) e2e の `hf` の作り物に書式が無い（jinja2 が描く道をブラウザで踏むのは実物のモデルだけ）。(4) `tests/template_corpus.py` が jinja2 の環境の 2 つ目の写しを持つ（T391 の候補にも）。(5) 入れ子のループや文字列の掛け算で CPU を使い続ける書式は、sandbox の range の上限（100000）でしか止まらない（transformers と同じ。固まるのは worker だけで、読み込み直せば戻る）。
+
+### T402 [文書][変換] docs/quantization.md の `?hf=Qwen/Qwen3.5-0.8B` の 1 文が古い — 状態: 未着手（2026-10-10、T369 から。文面は持ち主に見せる。規模 小）
+- いまの文:「What `?hf=Qwen/Qwen3.5-0.8B` still loses is plain text, where there is no chat format and the converter's BOS comes first.」T369 から変換器が書式を読むので合わない。案:「Opened with `?hf=`, a Qwen3.5 gets the same beginning since the converter reads its template (2026-10).」
+
 ### T398 [速度][CPU] GPU が歩を取らない間も、1 トークンごとに `tokenBlock` を読む — 状態: 未着手（2026-10-10、T370 の数えから。T152 からある。規模 小）
 - `engine/generation.py` の歩の輪は、`gpu_steps` があれば毎歩 `model.token_block()`（JavaScript の `engine.tokenBlock` の読み）を呼ぶ。GPU が無いか歩を取らないとき（0 が返る）も同じで、Python から JavaScript への 1 回が 1 トークンごとに余分にある（数えた: tiny-lm で引いた語 33 に `forward()` 33・`tokenBlock` 33）。1 回は 1.3〜1.7 µs（T164 の記録）で、tiny-lm の 1 トークン 1.6 ms の約 0.1%。この調べでは時間は測っていない。
 - 歩の途中で GPU の準備ができることがあるので、読みをやめるだけでは済まない（準備ができたことを別の道で知らせる形が要る）。小さいので、T375 でエンジンの窓口に触る回に一緒に。
