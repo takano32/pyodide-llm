@@ -17,37 +17,33 @@
 // spends its time (cProfile, tottime a call).
 //
 //   node tests/encode-bench.mjs [--ref origin/main] [--rounds 7]
-import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadPyodide } from "pyodide";
 import { MODELS } from "../src/models.js";
 import { otherTree } from "./other-tree.mjs";
-import { PYTHON, placeFile } from "../public/python.js";
+import { leave } from "./leave.mjs";
+import { placeFile } from "../public/python.js";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
 const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
 const ref = option("--ref", "origin/main"), rounds = Number(option("--rounds", 7));
-if (ref === "origin/main") {
-  try { execFileSync("git", ["fetch", "-q", "--depth=1", "origin", "+main:refs/remotes/origin/main"], { cwd: root, stdio: "inherit" }); } catch {}
+// T357: the other commit's whole tree (tests/other-tree.mjs), not single files of it: the engine and the converter are
+// windows over packages since T347 and T348, and a commit before them is one file each. (And no `git fetch --depth=1
+// origin +main:...` here any more: in a shallow clone that several worktrees share it cut the history behind main, T356.)
+const other = otherTree(ref).folder;
+// the Python files of a tree, by the module: its own list where it has one (public/python.js, T347), else the one file
+async function pythonOf(tree) {
+  const list = path.join(tree, "public/python.js");
+  const { PYTHON: files } = fs.existsSync(list) ? await import(pathToFileURL(list)) : { PYTHON: {} };
+  return ["llama2_numpy", "llama2_convert"].flatMap((module) => (files[module] ?? [`${module}.py`]).map((name) => [name, fs.readFileSync(path.join(tree, "public", name))]));
 }
-const source = (path) => execFileSync("git", ["show", `${ref}:${path}`], { cwd: root });
-// T347: this bench takes the other commit's converter as one file beside this tree's. A commit whose converter is a
-// window over a package cannot be had that way (its parts would be this tree's): until the bench takes two trees
-// (T357), it says so and stops.
-if (fs.existsSync(path.join(otherTree(ref).folder, "public/convert"))) {
-  console.log(`encode-bench: the converter of ${ref} is a package (T347): this bench compares single files (T357 makes it take two trees)`);
-  process.exit(3);
-}
-const old = source("public/llama2_numpy.py");
-// the old converter, on the old engine
-const oldConvert = source("public/llama2_convert.py").toString().replace(/^from llama2_numpy import/m, "from old_numpy import");
 // the old list's options for the site's tokenizer.bin files (tiny-lm's nfkc, before T216)
 // (from the other commit's whole tree: the list is a window over src/models/ since T354)
 fs.mkdirSync(`${root}.tmp/t200/`, { recursive: true });
-const { MODELS: OLD_MODELS } = await import(pathToFileURL(path.join(otherTree(ref).folder, "src/models.js")));
+const { MODELS: OLD_MODELS } = await import(pathToFileURL(path.join(other, "src/models.js")));
 
 // tokenizer files of Hugging Face at the revisions src/models.js pins, kept in .tmp/t200/
 const cache = `${root}.tmp/t200/hf/`;
@@ -81,17 +77,35 @@ const tokenizers = [
 
 const py = await loadPyodide();
 await py.loadPackage("numpy", { messageCallback: () => {} });
-for (const name of PYTHON.llama2_numpy) placeFile(py, name, fs.readFileSync(`${root}public/${name}`));  // (T348: the window and its parts)
-py.FS.writeFile("old_numpy.py", old);
-for (const name of PYTHON.llama2_convert) placeFile(py, name, fs.readFileSync(`${root}public/${name}`));
-py.FS.writeFile("old_convert.py", oldConvert);
+// each tree's engine and converter in a folder of its own: the two have packages of the same names (engine, convert)
+for (const [folder, tree] of [["/trees/old", other], ["/trees/new", root]]) {
+  for (const [name, content] of await pythonOf(tree)) placeFile(py, `${folder}/${name}`, content);
+}
 // every prompt and template of the list, with a prompt of both languages in it
 const templates = [...new Set(MODELS.flatMap((m) => [m.prompt, m.template]).filter((t) => typeof t === "string"))];
 py.globals.set("TEMPLATES", py.toPy(templates));
 py.globals.set("ROUNDS", rounds);
 py.runPython(`
-import cProfile, inspect, pstats, io, json, random, statistics, struct, time
-import llama2_numpy, old_numpy, llama2_convert as convert, old_convert
+import cProfile, inspect, pstats, io, json, random, statistics, struct, sys, time
+def loaded(folder):
+    """(llama2_numpy, llama2_convert) of the tree in folder. Each tree is imported with none of the other's modules
+    loaded and taken out again: a second would else get the first one's parts and be compared with itself (AGENTS.md,
+    T347). The modules go on working: nothing in them imports later."""
+    ours = lambda: [key for key in sys.modules if key.split(".")[0] in ("llama2_numpy", "llama2_convert", "engine", "convert")]
+    aside = {key: sys.modules.pop(key) for key in ours()}
+    sys.path.insert(0, folder)
+    try:
+        import llama2_numpy, llama2_convert
+        return llama2_numpy, llama2_convert
+    finally:
+        sys.path.remove(folder)
+        for key in ours():
+            del sys.modules[key]
+        sys.modules.update(aside)
+old_numpy, old_convert = loaded("/trees/old")
+llama2_numpy, convert = loaded("/trees/new")
+assert old_numpy.__file__.startswith("/trees/old/") and llama2_numpy.__file__.startswith("/trees/new/")
+assert old_numpy.Tokenizer is not llama2_numpy.Tokenizer and old_convert.tokenizer_bin is not convert.tokenizer_bin, "the two trees share a module"
 clock = time.perf_counter
 ENGLISH = ("Lily and Tom went to the park. They saw a big red ball near the old tree, and Tom said, \\"Let's play!\\" "
            "It's 3:45 in the afternoon; the sun was warm, and 12 birds sang in the trees. They'll remember it.\\n\\n")
@@ -234,4 +248,4 @@ console.log("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
 for (const row of rows) console.log(row);
 for (const note of notes) console.log(note);
 console.log(`load after: ${os.loadavg().map((l) => l.toFixed(2)).join(" ")}`);
-process.exit(0);
+await leave(0);
