@@ -16,7 +16,7 @@ import struct
 from pathlib import Path
 
 import pytest
-from conduct_hub import Absent, File, Folder, Hub, MiB, StandIn, answer, answered, cut, direct, gguf, made, safetensors
+from conduct_hub import THREE, Absent, File, Folder, Hub, MiB, StandIn, answer, answered, cut, direct, gguf, made, safetensors, sound
 from conftest import synthetic_weights
 from test_convert import hugging_face, safetensors_file
 from test_gguf import EPS, gguf_file, sentencepiece, unigram
@@ -60,11 +60,6 @@ def conducted(hub, hf, making, told=None):
     except Exception as error:
         return ending(hub, error=error), None
     return ending(hub, last), last[1] if last[0] == "done" else None
-
-
-# (the candidates once more, as this file knows them: the second copy of TOKENIZERS, which test_the_candidates_are_...
-# holds to it. direct() tries these, so that it has nothing of the conduct's)
-THREE = ("tokenizer.json", "tokenizer.model", "spiece.model")
 
 
 def directly(hub, hf, making):
@@ -285,70 +280,6 @@ def test_a_folder_finds_a_file_whatever_the_case_of_its_name_and_the_first_of_tw
     folder = Folder({"Config.JSON": "the first", "config.json": "the second"})
     assert folder.text("weights", "config.json") == "the first" and folder.asked == ["text Config.JSON"]
     assert folder.text("weights", "tokenizer_config.json") is None and len(folder.asked) == 1
-
-
-# ---- what the requests of any conduct must be, whatever the repository: no second opinion is needed to say these
-def sound(told, conversion, ended, hf, hub):
-    """told: the requests of one conduct as they came (answered()'s), conversion: what it ended with (None where it
-    ended otherwise), ended: how it ended in ending()'s words. Each line below is a thing no conversion may do."""
-    vocabulary = hf.get("vocabulary")
-    place = "vocabulary" if vocabulary else "weights"
-    named = (vocabulary or {}).get("tokenizer") or hf.get("tokenizer") or THREE
-    candidates = [named] if isinstance(named, str) else list(named)
-    alone = hf["weights"].endswith(".gguf") and not vocabulary
-    assert {request[0] for request in told} <= {"text", "bytes", "range", "size", "stream"}
-    assert {request[1] for request in told} <= ({"weights", "vocabulary"} if vocabulary else {"weights"})
-    # nothing but the weights is asked of a GGUF that holds everything; of any other model, config.json comes first
-    if alone:
-        assert {request[2] for request in told} <= {hf["weights"]}
-    else:
-        assert told[0] == ("text", place, hf.get("config") or "config.json")
-    # a file asked for whole is asked for once
-    wholes = [request for request in told if request[0] in ("text", "bytes")]
-    assert len(set(wholes)) == len(wholes)
-    # the tokenizers: the model's candidates or the three, in their order, each once, none skipped, where the vocabulary is
-    tried = [request for request in told if request[0] == "bytes"]
-    assert tried == [("bytes", place, candidate) for candidate in candidates[:len(tried)]]
-    # and it gives up on them only once every one was tried; the one it takes is the last it asked for, and is there
-    if tried and conversion is None:
-        assert len(tried) == len(candidates)
-    if tried and conversion is not None:
-        assert hub.whole(*tried[-1][1:]) is not None
-    # the templates: where the tokenizer is, tokenizer_config.json before chat_template.jinja before any tokenizer
-    late = [request[2] for request in told if request[1:3] in ((place, "tokenizer_config.json"), (place, "chat_template.jinja")) or request[0] == "bytes"]
-    assert late[:1] in ([], ["tokenizer_config.json"]) and late.count("chat_template.jinja") <= 1
-    assert "chat_template.jinja" not in late or late.index("chat_template.jinja") == 1
-    # a head is asked for from the first byte of its file, in pieces that grow, and nothing of the weights elsewhere
-    heads = {}
-    for at, request in enumerate(told):
-        if request[0] == "range":
-            assert request[1] == "weights" and request[3] == 0 and request[4] > heads.get(request[2], 0)
-            heads[request[2]] = request[4]
-        if request[0] == "size":
-            # only of a file whose range was just answered (without its size)
-            assert told[at - 1][:3] == ("range", *request[1:])
-    # the streams come last, each of a file whose head was read, one after another: the progress counts across them
-    streams = [request for request in told if request[0] == "stream"]
-    assert told[len(told) - len(streams):] == streams and len({request[2] for request in streams}) == len(streams)
-    before = streams[0][5] if streams else 0
-    for _, where, name, begin, end, was, total in streams:
-        assert where == "weights" and name in heads and 0 < begin <= end and was == before and total == streams[0][6]
-        before += end - begin
-    assert not streams or before == streams[0][6]
-    if len(streams) == 1:
-        # one file: everything after its head, to its last byte; the head counts as arrived
-        _, _, name, begin, end, was, total = streams[0]
-        assert was == begin and end == total == len(hub.whole("weights", name))
-    # the ends: the streams are asked for only by a conversion that was made, and all of them before it is done
-    if ended == "converted":
-        assert conversion is not None and streams
-    else:
-        assert conversion is None
-    # a file said to be missing was asked for, and is not there
-    lost = [request for request in told if ended == f"failed: {hub.refusal(*request[1:3])}"]
-    assert all(hub.whole(*request[1:3]) is None for request in lost)
-    if "has no " in ended or "which is not there" in ended:
-        assert lost and not streams
 
 
 # ---- made-up repositories by the hundred
