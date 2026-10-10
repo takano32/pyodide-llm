@@ -320,8 +320,7 @@ def test_the_requests_of_one_safetensors_file(monkeypatch):
                     ("text", "weights", "tokenizer_config.json"),
                     ("bytes", "weights", "tokenizer.json"),
                     # before and total: the header counts as arrived, of the whole file
-                    ("stream", "weights", "model.safetensors", 308, 1308, 308, 1308),
-                    ("more", 0.4), ("more", 0.8), ("more", 1.0)]
+                    ("stream", "weights", "model.safetensors", 308, 1308, 308, 1308)]
     assert last[0] == "done" and last[1].feeds == 3
     assert stand_in.handed[-1] == "fed 1000 bytes in 3 pieces; finish()"
 
@@ -359,9 +358,9 @@ def test_the_parts_go_to_the_converter_as_they_were_answered(monkeypatch):
         request = steps.send(getattr(hub, request[0])(*request[1:]))
     parts = [bytearray(b"a"), memoryview(b"bc"), b"", b"def"]
     for count, part in enumerate(parts, 1):
-        request = steps.send(part)
-        assert request == ("more", count / 4) and fed[-1] is part
-    assert fed == parts  # finish() only once the answerer says there is no more
+        # (the answerer feeds: the share converted comes back to it, and nothing of the conduct runs for a part)
+        assert request[7](part) == count / 4 and fed[-1] is part
+    assert fed == parts  # finish() only once the answerer says the stream is fed
     request = steps.send(None)
     assert fed[-1] == "finish" and request[0] == "done" and isinstance(request[1], Fed)
 
@@ -511,13 +510,13 @@ def test_the_size_is_asked_for_where_a_range_did_not_say_it_and_only_there(monke
         assert steps.send(318.0)[0] == "text"  # (a JavaScript number comes as a float)
         steps.send(None), steps.send(None)
         stream = steps.send(b"a tokenizer")
-        assert stream == ("stream", "weights", "model.safetensors", 308, 318, 308, 318)
-        assert all(type(value) is int for value in stream[3:])  # (and goes back as an integer: a place in a file)
+        assert stream[:7] == ("stream", "weights", "model.safetensors", 308, 318, 308, 318) and callable(stream[7])
+        assert all(type(value) is int for value in stream[3:7])  # (and goes back as an integer: a place in a file)
     # a GGUF's head: after every piece, as the worker asked (T381 is T374.3's)
     hf = {**HF, "weights": "model.gguf"}
     hub, told = Hub(repository({"model.gguf": gguf(3 * MiB, 100)}), hf, unsaid=True), []
     answered(hub, conduct(hf), told)
-    assert [request[0] for request in told] == ["range", "size", "range", "size", "stream", "more"]
+    assert [request[0] for request in told] == ["range", "size", "range", "size", "stream"]
 
 
 def test_shards_are_fed_one_after_another_and_the_progress_counts_across_them(monkeypatch):
@@ -543,7 +542,7 @@ def test_one_shard_named_by_the_index_is_that_file(monkeypatch):
     index = json.dumps({"weight_map": {"a": "model-00001-of-00001.safetensors", "b": "model-00001-of-00001.safetensors"}})
     files = repository({"model.safetensors.index.json": index, "model-00001-of-00001.safetensors": safetensors(900)}, without=["model.safetensors"])
     told, last, stand_in = requests_of(files, monkeypatch=monkeypatch)
-    assert told[-4] == ("stream", "weights", "model-00001-of-00001.safetensors", 308, 1208, 308, 1208)
+    assert told[-1] == ("stream", "weights", "model-00001-of-00001.safetensors", 308, 1208, 308, 1208)
     assert not any("joined_shards" in line for line in stand_in.handed) and "base 308, start 308" in stand_in.handed[0]
     del files["owner/model/model-00001-of-00001.safetensors"]
     assert requests_of(files, monkeypatch=monkeypatch)[1] == ("missing", "weights", "model-00001-of-00001.safetensors")
@@ -650,11 +649,12 @@ def test_the_rows_of_the_table_take_a_model_by_how_it_is_listed():
 
 def test_a_conduct_that_is_closed_leaves_nothing_running(monkeypatch):
     StandIn().into(monkeypatch)
-    for stop in range(8):
-        steps, hub, streams = conduct(HF), Hub(repository(), HF, first=400, rest=400), []
+    for stop in range(6):  # (before the first request is answered, ..., after the stream is: "done" stands)
+        steps, hub = conduct(HF), Hub(repository(), HF, first=400, rest=400)
         request = next(steps)
         for _ in range(stop):
-            request = steps.send(answer(hub, request, streams))
+            request = steps.send(answer(hub, request))
+        assert (request[0] == "done") == (stop == 5)
         steps.close()
         with pytest.raises(StopIteration):
             next(steps)
@@ -665,9 +665,9 @@ def test_what_the_answerer_fails_with_is_not_the_conducts_to_take(monkeypatch):
     neither and asks for nothing more."""
     StandIn().into(monkeypatch)
     for stop in range(5):
-        steps, hub, streams = conduct(HF), Hub(repository(), HF), []
+        steps, hub = conduct(HF), Hub(repository(), HF)
         request = next(steps)
         for _ in range(stop):
-            request = steps.send(answer(hub, request, streams))
+            request = steps.send(answer(hub, request))
         with pytest.raises(ConnectionError):
             steps.throw(ConnectionError("the line"))

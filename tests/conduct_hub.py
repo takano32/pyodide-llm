@@ -109,23 +109,24 @@ class Hub:
             at, part = stop, part + 1
 
 
-def answer(hub, request, streams):
+def answer(hub, request):
     kind = request[0]
     if kind in ("text", "bytes", "range", "size"):
         return getattr(hub, kind)(*request[1:])
-    if kind == "stream":
-        streams[:] = [hub.parts(*request[1:5])]
-    return next(streams[0], None)
+    # a stream: every part to the conduct's feed, in the order of the file; answered once the last one is fed
+    for part in hub.parts(*request[1:5]):
+        request[7](part)
+    return None
 
 
 def answered(hub, steps, told=None):
     """Answers a conduct from the hub until it ends: its last request, ("done", conversion) or ("missing", where,
-    name). told: a list for the requests as they came."""
-    streams, request = [], next(steps)
+    name). told: a list for the requests as they came (a stream's without its feed)."""
+    request = next(steps)
     while request[0] not in ("done", "missing"):
         if told is not None:
-            told.append(request)
-        request = steps.send(answer(hub, request, streams))
+            told.append(request[:7])
+        request = steps.send(answer(hub, request))
     return request
 
 

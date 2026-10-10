@@ -26,9 +26,9 @@ const tokenizer = ["tokenizer.json", "spiece.model", "tokenizer.model"].find((n)
 // the model as the page lists it: the folder stands for its repository (and for the original's, T136's second stage)
 const hf = gguf ? { weights: path.basename(dir) } : withVocabulary ? { weights: withVocabulary, vocabulary: { tokenizer } } : { weights: "model.safetensors", tokenizer };
 // T374.2.1: by the conduct of a conversion (public/convert/conduct.py), answered from the folder as the worker answers
-// it from huggingface.co (public/worker/conduct.js): a request and an answer for every file and every part, each a
-// proxy made and let go. (Before, this called the converter itself and fed it; tests/abba-convert.sh against a tree
-// of before T374.2.1 therefore times what the conduct adds to a conversion.)
+// it from huggingface.co (public/worker/conduct.js): a request and an answer for every file, and the parts to the
+// conversion's own feed, which the request of a stream brings. (Before, this called the converter itself and fed it;
+// tests/abba-convert.sh against a tree of before T374.2.1 therefore times what the conduct adds to a conversion.)
 const opened = new Map();  // a file is opened once: a part costs one read, as it did
 const open = (name) => {
   if (!opened.has(name)) {
@@ -44,23 +44,15 @@ const range = (name, begin, end) => {
   return bytes;
 };
 const there = (name, read) => (fs.existsSync(`${folder}/${name}`) ? read() : undefined);
-let js = 0, parts, timed = false;
+let js = 0, timed = false;
 const size = sizeOf(hf.weights);
-// the parts of a stream, 8 MiB each as the worker's first
-function* pieces(name, begin, end) {
-  for (let at = begin; at < end; at += 8 << 20) {
-    const t = performance.now();
-    const chunk = range(name, at, Math.min(at + (8 << 20), end));
-    js += performance.now() - t;
-    yield chunk;
-  }
-}
 const answers = {
   text: (name) => there(name, () => fs.readFileSync(`${folder}/${name}`, "utf8")),
   bytes: (name) => there(name, () => new Uint8Array(fs.readFileSync(`${folder}/${name}`))),
   range: (name, begin, end) => there(name, () => [range(name, begin, end), sizeOf(name)]),
   size: sizeOf,
-  stream(name, begin, end) {
+  // the parts of a stream, 8 MiB each as the worker's first, to the conversion's own feed as the worker hands them
+  stream(name, begin, end, before, total, feed) {
     // the clock (and the profiler) from the first part on: the head, the tokenizer and the template are read before
     if (!timed) {
       py.runPython("import cProfile, pstats, io, time; profiler = cProfile.Profile(); began = time.perf_counter()");
@@ -68,8 +60,13 @@ const answers = {
       py.runPython(process.env.PROFILE === "0" ? "profiler.enable(); profiler.disable(); began = time.perf_counter()" : "profiler.enable()");
       timed = true;
     }
-    parts = pieces(name, begin, end);
-    return parts.next().value;
+    for (let at = begin; at < end; at += 8 << 20) {
+      const t = performance.now();
+      const chunk = range(name, at, Math.min(at + (8 << 20), end));
+      js += performance.now() - t;
+      feed(chunk);
+    }
+    feed.destroy();
   },
 };
 const module = py.pyimport("convert.conduct"), listed = py.toPy(hf);
@@ -83,7 +80,7 @@ let request = taken(steps.next());
 while (request[0] !== "done") {
   const [kind, , name, ...rest] = request;
   if (kind === "missing") throw new Error(`${folder} has no ${name}`);
-  request = taken(steps.next(kind === "more" ? parts.next().value : answers[kind](name, ...rest)));
+  request = taken(steps.next(answers[kind](name, ...rest)));
 }
 // (the conduct finished the conversion before it said so)
 console.log(py.runPython(`

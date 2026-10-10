@@ -17,12 +17,12 @@
 #                                            whole file, or None where the answer does not know it), or None where
 #                                            the file is not there
 #   ("size", where, name)                    the size of the whole file (asked only after a range that did not say it)
-#   ("stream", where, name, begin, end, before, total)
-#                                            the first part of the bytes [begin, end), in the order of the file, cut
-#                                            as the answerer likes; None where there is nothing. before and total are
-#                                            for whoever tells of the progress: of total bytes, before are in when
-#                                            this stream begins
-#   ("more", share)                          the next part, or None after the last one. share: how much is converted
+#   ("stream", where, name, begin, end, before, total, feed)
+#                                            the bytes [begin, end), in the order of the file, cut into parts as the
+#                                            answerer likes: each part goes to feed(part), which returns the share
+#                                            converted so far. Answered (with None) once the last part is fed.
+#                                            before and total are for whoever tells of the progress: of total bytes,
+#                                            before are in when this stream begins
 #   ("done", conversion)                     the end: the conversion, finished (its checkpoint or what its sink took,
 #                                            its options and its tokenizer)
 #   ("missing", where, name)                 the other end: a file the conversion cannot do without is not there
@@ -32,8 +32,10 @@
 # answerer's, who stops asking: close() the generator. A file the converter cannot read is an exception of the
 # converter's, as it was.
 #
-# The large bytes pass as they did: a part goes to the conversion's feed() as it was answered, and what comes out goes
-# to the sink. Nothing is known here of how the parts are cut, tried again, kept or cancelled.
+# The large bytes pass as they did, and not through here: the answerer hands each part to the conversion's feed()
+# itself (T374.2.1: a request and an answer for every part cost a conversion one to two percent in CI, for a tuple
+# made and let go beside megabytes that come and go), and what comes out goes to the sink. Nothing is known here of
+# how the parts are cut, tried again, kept or cancelled.
 import json
 from typing import Any, Callable, NamedTuple
 
@@ -282,12 +284,7 @@ def conduct(hf, **make):
         return
     before = weights.before
     for name, begin, end in weights.streams:
-        part = yield ("stream", "weights", name, begin, end, before, weights.total)
-        while part is not None:
-            # (the part is let go before the next one is asked for: megabytes that nothing but this name would hold
-            # while the answerer fetches the next)
-            share, part = conversion.feed(part), None
-            part = yield ("more", share)
+        yield ("stream", "weights", name, begin, end, before, weights.total, conversion.feed)
         before += end - begin
     conversion.finish()
     yield ("done", conversion)

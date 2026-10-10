@@ -4,9 +4,9 @@
 #   bash tests/abba-convert.sh <model directory> [rounds] [dtypes...]
 # The base tree is made on the runner's own clone (git worktree add .tmp/base FETCH_HEAD), with this tree's node_modules
 # and kernels. PROFILE=0 times both without cProfile.
-# T374.2.1: this tree's tool converts by the conduct of a conversion (a request and an answer for every part, as the
-# worker's loop), and a base of before T374.2.1 feeds the converter itself: against such a base, the difference is what
-# the conduct adds to a conversion's parts. Prints one "base|now <dtype> <MB/s>" line per run and the medians and ranges at the end.
+# T374.2.1: this tree's tool converts by the conduct of a conversion (as the worker's loop: the parts to the feed the
+# request of a stream brings), and a base of before T374.2.1 calls the converter itself: against such a base, the
+# difference is what the conduct adds to a conversion's parts. Prints one "base|now <dtype> <MB/s>" line per run and the medians and ranges at the end.
 set -u
 dir=$1; rounds=${2:-8}; shift 2 || true; dtypes=${*:-int8 float32}
 if [ ! -d .tmp/base ]; then

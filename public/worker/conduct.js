@@ -25,7 +25,7 @@ export function conductOf(hf, make) {
 }
 
 // What next() of the generator gave, as an array, its proxy let go. The conversion of ("done", conversion) stays a
-// proxy (depth 1), which whoever asked for it destroys.
+// proxy (depth 1), which whoever asked for it destroys; and so does the feed of a stream, which its answer destroys.
 function requestOf(step) {
   if (step.done) {
     throw new Error("The conduct of the conversion ended without a word.");
@@ -49,6 +49,8 @@ function requestOf(step) {
 //
 // progress: of(total) once the size of what is streamed is known, arriving(bytes in so far), converting(feed): feed()
 // hands a part to the conversion and returns the share converted (the time it takes is the converter's, T84).
+// A stream's parts go from here to the conversion's own feed, which the request brings: a request and an answer for
+// every part were slower than the worker's own steps (one to two percent of a conversion, in CI).
 export async function answered(steps, hf, signal, progress) {
   const places = { weights: hf, vocabulary: hf.vocabulary };
   const at = (where, name) => `https://huggingface.co/${places[where].repo}/resolve/${places[where].revision}/${name}`;
@@ -81,18 +83,18 @@ export async function answered(steps, hf, signal, progress) {
       return [bytes, Number.isFinite(total) && total > 0 ? total : undefined];
     }),
     size: (url) => fileSize(url, signal),
-    // the parts go to the conduct as inOrder() has them in the order of the file, each answered by ("more", share);
-    // what is answered here is the end of the stream. Of total bytes, before were in when this stream began (the
-    // shards count one after another: the review of T119)
-    stream: async (url, begin, end, before, total) => {
-      progress.of(total);
-      await inOrder(url, begin, end, (part) => progress.converting(() => {
-        const [kind, share] = requestOf(steps.next(part));
-        if (kind !== "more") {
-          throw new Error(`The conduct of the conversion asked for ${kind} in the middle of a file.`);
-        }
-        return share;
-      }), signal, (received) => progress.arriving(before + received - begin));
+    // the parts go to the conversion itself (feed, a proxy to let go of) as inOrder() has them in the order of the
+    // file: nothing of the conduct runs for a part, which costs what it did. What is answered is the end of the
+    // stream. Of total bytes, before were in when this stream began (the shards count one after another: the review
+    // of T119)
+    stream: async (url, begin, end, before, total, feed) => {
+      try {
+        progress.of(total);
+        await inOrder(url, begin, end, (part) => progress.converting(() => feed(part)), signal,
+          (received) => progress.arriving(before + received - begin));
+      } finally {
+        feed.destroy();
+      }
       return undefined;
     },
   };

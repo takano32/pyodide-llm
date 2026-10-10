@@ -4,8 +4,8 @@
 // Pyodide gives a Python one: next(answer) and return(), each request a proxy to be destroyed), the network is
 // tests/worker-harness.mjs's, and there is no Pyodide. What is seen: every kind of request answered with what it asks
 // for, a file that is not there answered with undefined (never null), the 404 of the file a conduct ends on thrown in
-// its own words, every other failure and a cancelled load ending the loop with the generator closed and nothing left
-// open, every proxy destroyed once, and (T403) the file opened to keep the conversion in let go whatever ended it.
+// its own words, a stream's parts fed to the conversion itself, every other failure and a cancelled load ending the
+// loop with the generator closed and nothing left open, every proxy destroyed once, and (T403) the file opened to keep the conversion in let go whatever ended it.
 //
 //   node tests/worker-conduct-check.mjs
 //
@@ -102,6 +102,18 @@ function world({ gpu = false } = {}) {
   };
   run("state.llama2_convert = stand.converter; state.keptModule = stand.kept; state.pyodide = stand.pyodide; state.llama2_numpy = stand.numpy; " +
     "state.forwardModule = stand.forward; state.jsKernels = undefined; state.kernels = undefined; state.disabled = [];");
+  // the feed a stream's request brings (the conversion's own, a proxy): feed(part) returns the share converted
+  const feeding = (feed) => {
+    const made = (part) => {
+      assert.equal(made.destroyed, 0, "a part was fed after the stream's feed was destroyed");
+      assert.ok(ArrayBuffer.isView(part) && part.BYTES_PER_ELEMENT === 1, "what is fed is a part's bytes");
+      return feed(part);
+    };
+    Object.defineProperty(made, "name", { value: "the feed of a stream" });
+    Object.assign(made, { destroyed: 0, destroy() { made.destroyed++; } });
+    proxies.push(made);
+    return made;
+  };
   // what a conversion does as it is made: the place of the weights opened through the sink, as Writer opens it
   const opened = (make) => make.sink.open(1000, readable("the header", HEADER), "int8", readable("the form", FORM));
   // the conversion a conduct ends with, as the worker gets it: a proxy
@@ -118,7 +130,7 @@ function world({ gpu = false } = {}) {
     for (const made of proxies) assert.equal(made.destroyed, 1, `${made.name} was destroyed ${made.destroyed} times`);
     return proxies.length;
   };
-  return { ...harness, MiB, proxies, proxy, played, buffers, kept, opened, conversion, convert, allDestroyed };
+  return { ...harness, MiB, proxies, proxy, played, buffers, kept, opened, conversion, feeding, convert, allDestroyed };
 }
 const hf = (more = {}) => ({ repo: "owner/model", revision: REVISION, weights: "model.safetensors", tokenizer: "tokenizer.json", ...more });
 const url = (repository, revision, name) => `https://huggingface.co/${repository}/resolve/${revision}/${name}`;
@@ -160,14 +172,14 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     w.opened(make);
     for (const [name, begin, end, before] of [["model.safetensors", BASE, SIZE, 0], ["second.safetensors", 3, SECOND, SIZE - BASE]]) {
       let at = begin;
-      for (let part = yield ["stream", "weights", name, begin, end, before, SIZE - BASE + SECOND - 3]; part !== undefined; ) {
+      got[`after ${name}`] = yield ["stream", "weights", name, begin, end, before, SIZE - BASE + SECOND - 3, w.feeding((part) => {
         fed.push([name, at, part.slice()]);
         at += part.length;
-        part = yield ["more", (before + at - begin) / (SIZE - BASE + SECOND - 3)];
-      }
+        return (before + at - begin) / (SIZE - BASE + SECOND - 3);
+      })];
       got[name] = at;
     }
-    got.empty = yield ["stream", "weights", "second.safetensors", 7, 7, 0, 0];
+    got.empty = yield ["stream", "weights", "second.safetensors", 7, 7, 0, 0, w.feeding(() => assert.fail("a stream of nothing was fed"))];
     got.conversion = w.conversion();
     yield ["done", got.conversion];
     assert.fail("the conduct was asked on after its end");
@@ -189,6 +201,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   assert.equal(got["model.safetensors"], SIZE, "the first stream did not end at the end asked for");
   assert.equal(got["second.safetensors"], SECOND, "the second stream did not end at the end asked for");
   assert.equal(got.empty, undefined, "a stream of nothing is answered with undefined at once");
+  assert.ok("after model.safetensors" in got && got["after model.safetensors"] === undefined && got["after second.safetensors"] === undefined, "a stream is answered with undefined once it is fed");
   for (const [name, at, part] of fed) equalBytes(part, bytesOf(at, at + part.length), `a part of ${name} at ${at} is not the file's bytes there`);
   assert.ok(fed.filter(([name]) => name === "model.safetensors").length >= 3, "the stream came in one piece");
   // what was asked of the network, and where
@@ -228,6 +241,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   assert.equal(steps.returned, 1, "the generator was not closed after its end");
   assert.equal(steps.afterReturn, 0);
   assert.equal(steps.answers[0], undefined, "the first next() sends nothing");
+  assert.equal(steps.answers.length, 12, "the conduct was sent something for a part: the parts go to the feed of their stream alone");
   assert.ok(w.allDestroyed() >= 20, "fewer proxies than the requests alone make");
   assert.equal(got.conversion.destroyed, 1);
   assert.equal(w.kept.keeps.length, 1, "the conversion was not kept");
@@ -305,7 +319,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     const parts = [];
     const failed = await w.convert(hf(), function* (make) {
       w.opened(make);
-      for (let part = yield ["stream", "weights", "model.safetensors", 0, 20 * MiB, 0, 20 * MiB]; part !== undefined; part = yield ["more", 0.5]) parts.push(part.length);
+      yield ["stream", "weights", "model.safetensors", 0, 20 * MiB, 0, 20 * MiB, w.feeding((part) => { parts.push(part.length); return 0.5; })];
       assert.fail("a stream with a hole in it was ended as a whole one");
     });
     assert.match(failed.error.message, /answered 403 for model\.safetensors/);
@@ -328,18 +342,35 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     assert.equal(w.played.steps.at(-1).returned, 1);
     w.allDestroyed();
     assert.equal(w.buffers.at(-1).destroyed, 1);
-    // a request nothing answers, a conduct that ends without a word, another request in the middle of a stream
+    // a request nothing answers, and a conduct that ends without a word
     for (const [play, words] of [
       [function* () { yield ["folder", "weights", "x"]; }, /asked for folder/],
       [function* () { yield ["text", "weights", "config.json"]; }, /ended without a word/],
-      [function* () { yield ["stream", "weights", "model.safetensors", 0, 10, 0, 10]; yield ["text", "weights", "config.json"]; }, /in the middle of a file/],
     ]) {
-      fresh((address, init) => (init.headers?.Range ? new Response(body(0, 10), { status: 206 }) : new Response("{}")));
+      fresh(() => new Response("{}"));
       const wrong = await w.convert(hf(), play);
       assert.match(wrong.error.message, words);
       assert.equal(w.played.steps.at(-1).returned, 1);
       w.allDestroyed();
     }
+    // a part the converter refuses: thrown from the feed, the other connections stopped, the generator closed
+    fresh((address, init) => new Response(body(...(/bytes=(\d+)-(\d+)/.exec(init.headers.Range).slice(1).map(Number).map((n, i) => n + i))), { status: 206 }));
+    const fedParts = [];
+    const refusedPart = await w.convert(hf(), function* (make) {
+      w.opened(make);
+      yield ["stream", "weights", "model.safetensors", 0, 30 * MiB, 0, 30 * MiB, w.feeding((part) => {
+        fedParts.push(part[0]);
+        if (fedParts.length >= 2) throw Object.assign(new Error("Traceback\nValueError: The file ended before all of its tensors were read."), { type: "ValueError" });
+        return 0.3;
+      })];
+      assert.fail("a stream the converter refused a part of was ended as a whole one");
+    });
+    assert.equal(refusedPart.error.type, "ValueError");
+    // (inOrder() may hand the refused part to the converter once more, from another connection, before the refusal
+    // stops them all: as before T374.2.1, and to be numbered. No later part goes to it)
+    assert.ok(fedParts.length >= 2 && fedParts.slice(1).every((first) => first === fedParts[1]), "a later part went to the converter after the one it refused");
+    assert.equal(w.played.steps.at(-1).returned, 1);
+    w.allDestroyed();
     ok("a failure of the conduct's own is thrown as it came, and a conduct that asks what nothing answers is refused; the generator is closed all the same");
   }
 
@@ -350,13 +381,14 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     let parts = 0;
     const failed = await w.convert(hf(), function* (make) {
       w.opened(make);
-      for (let part = yield ["stream", "weights", "model.safetensors", 0, 40 * MiB, 0, 40 * MiB]; part !== undefined; part = yield ["more", 0.1]) {
+      yield ["stream", "weights", "model.safetensors", 0, 40 * MiB, 0, 40 * MiB, w.feeding(() => {
         if (++parts === 2) cancel.abort();
-      }
+        return 0.1;
+      })];
       assert.fail("a cancelled stream was ended as a whole one");
     }, { signal: cancel.signal });
     assert.equal(failed.error.name, "AbortError");
-    assert.equal(parts, 2, "a part went to the conduct after the load was cancelled");
+    assert.equal(parts, 2, "a part went to the converter after the load was cancelled");
     const steps = w.played.steps.at(-1);
     assert.equal(steps.returned, 1, "the generator of a cancelled load was not closed");
     assert.equal(steps.afterReturn, 0);
@@ -365,7 +397,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     const asked = requests.length;
     await w.sleep(1000);
     assert.equal(requests.length, asked, "a cancelled load went on asking");
-    assert.equal(steps.afterReturn, 0, "a part went to the generator after it was closed");
+    assert.equal(parts, 2, "a part went to the converter after the generator was closed");
   }
   for (const [name, route, when] of [
     ["while an answer waits", () => "hang", (cancel) => setImmediate(() => cancel.abort())],
