@@ -131,3 +131,28 @@ def test_a_packed_dtype_needs_rows_of_whole_groups_wherever_it_is_asked():
         with pytest.raises(ValueError, match="not a llama2.c checkpoint"):
             checkpoint_dtype(header, checkpoint_size(header, dtype))
     assert any(row.role == MATRIX for row in rows) and llama2_convert.tensor_bytes((4, 64), True, "int6") == 8 * 28
+
+
+# The order of each layout's file, written down a second time on purpose: every reader takes the order from the rows,
+# so a row moved by mistake still converts and reads back and no other unit test notices, while the files visitors
+# kept and the site's own models are in this order. A change here is a change of the format (kept.js's CONVERTER).
+ORDER = {
+    "llama": "token_embedding_table rms_att_weight wq wk wv wo rms_ffn_weight w1 w2 w3 rms_final_weight freq_cis_real freq_cis_imag",
+    "llama, its own classifier": "token_embedding_table rms_att_weight wq wk wv wo rms_ffn_weight w1 w2 w3 rms_final_weight "
+                                 "freq_cis_real freq_cis_imag wcls",
+    "qwen2 and qwen3 at once": "token_embedding_table rms_att_weight wq wk wv wo rms_ffn_weight w1 w2 w3 rms_final_weight "
+                               "freq_cis_real freq_cis_imag bq bk bv q_norm k_norm",
+    "gpt2": "token_embedding_table positions rms_att_weight ln_att_bias wq wk wv bq bk bv wo bo rms_ffn_weight ln_ffn_bias "
+            "w1 b1 w2 b2 rms_final_weight ln_final_bias wcls",
+    "neox": "token_embedding_table freq_cis_real freq_cis_imag rms_att_weight ln_att_bias wq wk wv bq bk bv wo bo "
+            "rms_ffn_weight ln_ffn_bias w1 b1 w2 b2 rms_final_weight ln_final_bias",
+    "qwen35": "token_embedding_table rms_att_weight wq wg wk wv wo q_norm k_norm wqkv wz wb wa conv dt_bias decay delta_norm "
+              "wout rms_ffn_weight w1 w2 w3 rms_final_weight freq_cis_real freq_cis_imag wcls",
+    "lfm2": "token_embedding_table rms_att_weight wq wk wv wo q_norm k_norm win conv wout rms_ffn_weight w1 w2 w3 "
+            "rms_final_weight freq_cis_real freq_cis_imag",
+}
+
+
+@cases
+def test_the_file_is_in_the_order_it_always_was(name, header, form, more):
+    assert " ".join(row.name for row in tensor_rows(header, form)) == ORDER[name]
