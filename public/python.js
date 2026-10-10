@@ -8,7 +8,7 @@ export const PYTHON = {
   llama2_convert: ["llama2_convert.py", "convert/__init__.py", "convert/checkpoint.py", "convert/template.py", "convert/readers.py",
     "convert/sources.py", "convert/families/__init__.py", "convert/families/family.py", "convert/families/llama.py",
     "convert/families/gpt2.py", "convert/families/qwen35.py", "convert/families/lfm2.py", "convert/config.py", "convert/plan.py", "convert/stream.py", "convert/gguf.py", "convert/tokenizer.py",
-    "convert/conversion.py"],
+    "convert/conversion.py", "convert/conduct.py"],
 };
 
 /** One file into Pyodide's file system, its folder made first */

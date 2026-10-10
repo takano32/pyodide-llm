@@ -20,6 +20,10 @@ import fs from "node:fs";
 import { workerHarness } from "./worker-harness.mjs";
 
 const FIXTURE = new URL("fixtures/conversion-fetches.json", import.meta.url);
+// T374.1: the cases themselves (the model as it is listed, what the made-up hub has, the line), written down beside
+// what they ask for: tests/test_conduct.py reads them, so that the Python that conducts a conversion is held to the
+// requests of the very repositories this check makes. This file is where a case is written; that one is its record
+const CASES_FIXTURE = new URL("fixtures/conversion-cases.json", import.meta.url);
 const { MiB, sleep, requests, messages, navigatorStandIn, context, run, failure, fresh } = workerHarness({ told: true });
 setTimeout(() => {
   console.error("worker-fetches-check: still waiting after 120 s");
@@ -34,13 +38,13 @@ function safetensors(data, { header = 300 } = {}) {
   const head = new Uint8Array(8 + json.length);
   new DataView(head.buffer).setBigUint64(0, BigInt(json.length), true);
   head.set(json, 8);
-  return { head, size: head.length + data };
+  return { head, size: head.length + data, made: { safetensors: { data, header } } };
 }
 function gguf(base, data) {
   const head = new Uint8Array(12);
   head.set(text("GGUF"));
   new DataView(head.buffer).setBigUint64(4, BigInt(base), true);
-  return { head, size: base + data };
+  return { head, size: base + data, made: { gguf: { base, data } } };
 }
 // a body of a file's bytes [from, to): its head, then zeros, a MiB at a time, each after `delay` ms of the worker's clock;
 // held: its first MiB comes only after 300 turns of the event loop (everything else that can come has come by then)
@@ -219,8 +223,12 @@ for (const [name, { dtype, ...source }, files, line = {}] of CASES) {
 }
 
 const written = `${JSON.stringify(found, null, 1)}\n`;
+// (a made-up file as what it was made of: the hub's files are made again from that in Python)
+const cases = `${JSON.stringify(CASES.map(([name, hf, files, line = {}]) => ({ name, hf, line,
+  files: Object.fromEntries(Object.entries(files).map(([file, value]) => [file, typeof value === "string" ? value : value.made])) })), null, 1)}\n`;
 if (process.argv.includes("--write")) {
   fs.writeFileSync(FIXTURE, written);
+  fs.writeFileSync(CASES_FIXTURE, cases);
   console.log(`worker-fetches-check: wrote ${Object.keys(found).length} cases, ${Object.values(found).reduce((sum, c) => sum + c.requests.length, 0)} requests, to ${FIXTURE.pathname}`);
   process.exit(0);
 }
@@ -241,6 +249,10 @@ for (const name of new Set([...Object.keys(expected), ...Object.keys(found)])) {
     const first = at === -1 && b.length > a.length ? a.length : at;
     if (first !== -1) console.log(`    ${part}, line ${first + 1} of ${a.length} (now ${b.length}):\n      was ${a[first] ?? "(nothing more)"}\n      now ${b[first] ?? "(nothing more)"}`);
   }
+}
+if (cases !== fs.readFileSync(CASES_FIXTURE, "utf8")) {
+  differ++;
+  console.log(`DIFFERENT: the cases are not the ones ${CASES_FIXTURE.pathname} records (--write, and read what tests/test_conduct.py then says)`);
 }
 console.log(differ ? `worker-fetches-check: FAILED: ${differ} cases ask for something else than tests/fixtures/conversion-fetches.json says (--write after reading why)`
   : `worker-fetches-check: ${Object.keys(found).length} cases ask for what the fixture says`);

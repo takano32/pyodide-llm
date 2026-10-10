@@ -1,0 +1,426 @@
+[
+ {
+  "name": "one safetensors file, a fast line (16 MiB parts after the first)",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json"
+  },
+  "line": {
+   "delay": 20
+  },
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 104857600,
+     "header": 300
+    }
+   }
+  }
+ },
+ {
+  "name": "one safetensors file, a slow line (8 MiB parts)",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json"
+  },
+  "line": {
+   "delay": 1000
+  },
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 104857600,
+     "header": 300
+    }
+   }
+  }
+ },
+ {
+  "name": "one safetensors file, its first part the last to come (the others wait for it)",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json"
+  },
+  "line": {
+   "delay": 10,
+   "held": 308
+  },
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 209715200,
+     "header": 300
+    }
+   }
+  }
+ },
+ {
+  "name": "one safetensors file, a device of 4 GB (8 MiB parts)",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json"
+  },
+  "line": {
+   "deviceMemory": 4
+  },
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 104857600,
+     "header": 300
+    }
+   }
+  }
+ },
+ {
+  "name": "one safetensors file, a small one",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json"
+  },
+  "line": {},
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   }
+  }
+ },
+ {
+  "name": "one safetensors file, a header past the first 512 KiB",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json"
+  },
+  "line": {},
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 2097152,
+     "header": 700000
+    }
+   }
+  }
+ },
+ {
+  "name": "one safetensors file, a server that does not show Content-Range",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json"
+  },
+  "line": {
+   "unsaid": true
+  },
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   }
+  }
+ },
+ {
+  "name": "shards with an index",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json"
+  },
+  "line": {},
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model-00001-of-00002.safetensors": {
+    "safetensors": {
+     "data": 9437184,
+     "header": 300
+    }
+   },
+   "owner/model/model-00002-of-00002.safetensors": {
+    "safetensors": {
+     "data": 2097159,
+     "header": 500
+    }
+   },
+   "owner/model/model.safetensors.index.json": "{\"weight_map\":{\"tensor.0\":\"model-00002-of-00002.safetensors\",\"tensor.1\":\"model-00001-of-00002.safetensors\",\"tensor.2\":\"model-00001-of-00002.safetensors\"}}"
+  }
+ },
+ {
+  "name": "one shard named by the index",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json"
+  },
+  "line": {},
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model-00001-of-00001.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   },
+   "owner/model/model.safetensors.index.json": "{\"weight_map\":{\"tensor.0\":\"model-00001-of-00001.safetensors\"}}"
+  }
+ },
+ {
+  "name": "no weights and no index",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json"
+  },
+  "line": {},
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "a tokenizer"
+  }
+ },
+ {
+  "name": "a GGUF alone (a head of 3 MiB)",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.Q8_0.gguf"
+  },
+  "line": {},
+  "files": {
+   "owner/model/model.Q8_0.gguf": {
+    "gguf": {
+     "base": 3145728,
+     "data": 20971520
+    }
+   }
+  }
+ },
+ {
+  "name": "a GGUF alone, a small head",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.Q8_0.gguf"
+  },
+  "line": {},
+  "files": {
+   "owner/model/model.Q8_0.gguf": {
+    "gguf": {
+     "base": 1000,
+     "data": 1048576
+    }
+   }
+  }
+ },
+ {
+  "name": "a GGUF with the vocabulary of another repository",
+  "hf": {
+   "repo": "maker/model-GGUF",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.Q8_0.gguf",
+   "vocabulary": {
+    "repo": "owner/model",
+    "revision": "76543210fedcba9876543210fedcba9876543210",
+    "tokenizer": "tokenizer.model"
+   }
+  },
+  "line": {},
+  "files": {
+   "maker/model-GGUF/model.Q8_0.gguf": {
+    "gguf": {
+     "base": 9437184,
+     "data": 20971520
+    }
+   },
+   "maker/model-GGUF/config.json": "{\"the\":\"maker's, never asked for\"}",
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"bos_token\":\"<s>\"}",
+   "owner/model/chat_template.jinja": "a template",
+   "owner/model/tokenizer.model": "a sentencepiece model"
+  }
+ },
+ {
+  "name": "a sentencepiece model (no tokenizer.json)",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": [
+    "tokenizer.json",
+    "tokenizer.model",
+    "spiece.model"
+   ]
+  },
+  "line": {},
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   },
+   "owner/model/tokenizer.model": "a sentencepiece model"
+  }
+ },
+ {
+  "name": "a tokenizer.json the converter refuses, then spiece.model",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": [
+    "tokenizer.json",
+    "tokenizer.model",
+    "spiece.model"
+   ]
+  },
+  "line": {},
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "unreadable",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   },
+   "owner/model/spiece.model": "a sentencepiece model"
+  }
+ },
+ {
+  "name": "no tokenizer at all",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": [
+    "tokenizer.json",
+    "tokenizer.model",
+    "spiece.model"
+   ]
+  },
+  "line": {},
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   }
+  }
+ },
+ {
+  "name": "no tokenizer_config.json (an optional file) and no chat_template.jinja",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json"
+  },
+  "line": {},
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   }
+  }
+ },
+ {
+  "name": "a chat_template.jinja beside a tokenizer_config.json without a template",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json"
+  },
+  "line": {},
+  "files": {
+   "owner/model/config.json": "{\"model_type\":\"llama\"}",
+   "owner/model/tokenizer_config.json": "{\"bos_token\":\"<s>\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   },
+   "owner/model/chat_template.jinja": "a template"
+  }
+ },
+ {
+  "name": "a config.json under another name, int6 asked for",
+  "hf": {
+   "repo": "owner/model",
+   "revision": "0123456789abcdef0123456789abcdef01234567",
+   "weights": "model.safetensors",
+   "tokenizer": "tokenizer.json",
+   "config": "configs/text.json",
+   "dtype": "int6"
+  },
+  "line": {},
+  "files": {
+   "owner/model/tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "owner/model/tokenizer.json": "a tokenizer",
+   "owner/model/model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   },
+   "owner/model/configs/text.json": "{\"model_type\":\"llama\"}"
+  }
+ }
+]
