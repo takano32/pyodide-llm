@@ -1,6 +1,6 @@
 # The conduct of a conversion (T374.1, public/convert/conduct.py): a generator that asks for a model's files in the
 # order the worker asks for them today, driven here by a dictionary (tests/conduct_hub.py's Hub): no browser, no
-# worker, no Pyodide.
+# worker, no Pyodide. And (T374.2.2) by a folder of the visitor's disk (Folder), which the same conduct converts.
 #
 # Held to three things. The requests of the worker itself, for the 19 repositories of tests/worker-fetches-check.mjs
 # (tests/fixtures/conversion-cases.json is that check's record of them, conversion-fetches.json what the worker asked):
@@ -14,7 +14,7 @@ import struct
 from pathlib import Path
 
 import pytest
-from conduct_hub import File, Hub, MiB, StandIn, answer, answered, cut, gguf, made, safetensors, today
+from conduct_hub import File, Folder, Hub, MiB, StandIn, answer, answered, cut, gguf, made, safetensors, today
 from conftest import synthetic_weights
 from test_convert import hugging_face, safetensors_file
 from test_gguf import EPS, gguf_file, sentencepiece, unigram
@@ -25,8 +25,11 @@ from convert.conduct import SOURCES, TOKENIZERS, conduct, says_a_template, shard
 from convert.gguf import Incomplete
 
 FIXTURES = Path(__file__).parent / "fixtures"
-CASES = json.loads((FIXTURES / "conversion-cases.json").read_text())
+EVERY_CASE = json.loads((FIXTURES / "conversion-cases.json").read_text())
 FETCHES = json.loads((FIXTURES / "conversion-fetches.json").read_text())
+# the models of huggingface.co; the others are folders of the visitor's disk (T374.2.2), which name no repository
+CASES = [case for case in EVERY_CASE if "repo" in case["hf"]]
+FOLDERS = [case for case in EVERY_CASE if "repo" not in case["hf"]]
 NAMES = [case["name"] for case in CASES]
 REVISION = "0123456789abcdef0123456789abcdef01234567"
 
@@ -66,8 +69,8 @@ def as_today(hub, hf, converter, making, **more):
 
 # ---- the worker's requests, line by line
 def test_the_cases_are_the_ones_the_worker_was_asked_for():
-    assert NAMES == list(FETCHES) and len(NAMES) == 19
-    assert sum(len(fetches["requests"]) for fetches in FETCHES.values()) == 161
+    assert [case["name"] for case in EVERY_CASE] == list(FETCHES) and len(NAMES) == 19
+    assert sum(len(FETCHES[name]["requests"]) for name in NAMES) == 161
 
 
 def expected_of(name):
@@ -127,8 +130,10 @@ def real_files(case):
     shards = sorted(name for name in case["files"] if "-of-" in name)
     files = {}
     for name, value in case["files"].items():
-        file = name.split("/")[-1]
-        if file == "model.safetensors.index.json":
+        file = name.split("/")[-1].lower()
+        if value == "not a model" or file.endswith(".md"):
+            files[name] = value
+        elif file == "model.safetensors.index.json":
             # (the first shard has the later tensors, the second the earlier ones: the order of the names is the order fed)
             cuts = [names[i * len(names) // len(shards):(i + 1) * len(names) // len(shards)] for i in range(len(shards))]
             files[name] = json.dumps({"weight_map": {tensor: shard.split("/")[-1] for shard, mine in zip(shards, reversed(cuts)) for tensor in mine}})
@@ -147,7 +152,7 @@ def real_files(case):
         elif file == "tokenizer.json":
             files[name] = value if value == "unreadable" else unigram(vocab_size)
         elif file in ("tokenizer.model", "spiece.model"):
-            files[name] = sentencepiece(vocab_size)
+            files[name] = value if value.startswith("unreadable") else sentencepiece(vocab_size)
         elif "maker's" in value:
             files[name] = value
         else:
@@ -156,9 +161,10 @@ def real_files(case):
     return files
 
 
-def in_turn(requests):
-    """The files asked for, each once for as long as it is asked for again and again (its head's pieces, its parts)."""
-    files = [" ".join(line.split()[1:3]) for line in requests]
+def in_turn(requests, words=slice(1, 3)):
+    """The files asked for, each once for as long as it is asked for again and again (its head's pieces, its parts).
+    words: where a line names its file (a folder's: what is read and the file, slice(0, 2))."""
+    files = [" ".join(line.split()[words]) for line in requests]
     return [file for i, file in enumerate(files) if i == 0 or file != files[i - 1]]
 
 
@@ -210,6 +216,78 @@ def test_a_conduct_converts_what_the_worker_converts(case, monkeypatch):
         assert asked.count("model.safetensors bytes=0-") == 2
     if weights:
         assert asked.count(".gguf bytes=0-") == (1 if "small head" in name else 2 if "alone" in name else 3)
+
+
+# ---- a folder of the visitor's disk (T374.2.2): the same conduct, answered from the folder's files by their names
+FOLDER_NAMES = [case["name"] for case in FOLDERS]
+
+
+def test_the_folders_are_the_ones_the_worker_was_handed():
+    assert len(FOLDERS) == 10 and all(set(case["hf"]) == {"weights"} for case in FOLDERS)
+    assert sum(len(FETCHES[name]["requests"]) for name in FOLDER_NAMES) == 47
+
+
+@pytest.mark.parametrize("case", FOLDERS, ids=FOLDER_NAMES)
+def test_a_conduct_reads_of_a_folder_what_the_worker_reads(case, monkeypatch):
+    """The folders of worker-fetches-check.mjs, whose record began as what the worker's own steps for a folder read
+    (before T374.2.2 gave the folder to the conduct): the same files and ranges in the same order, the same things
+    handed to the converter, the same end. All the conduct is handed of a folder is the name of its weights."""
+    stand_in = StandIn().into(monkeypatch)
+    hf, making = listed(case)
+    folder = Folder(made(case["files"]))
+    ended, _ = conducted(folder, hf, making)
+    requests, handed, end = expected_of(case["name"])
+    assert folder.asked == requests
+    assert stand_in.handed == handed
+    assert ended == end
+
+
+@pytest.mark.parametrize("case", FOLDERS, ids=FOLDER_NAMES)
+def test_a_folder_is_converted_as_the_repository_of_the_same_files(case, monkeypatch):
+    """The real converter and real files: what a folder converts to (the checkpoint, the options, the tokenizer.bin)
+    is what the same files convert to as a repository of huggingface.co, whose conduct is held to the worker's ladder
+    above; and the folder's files are read in the order of the fixture."""
+    name, files = case["name"], real_files(case)
+    hf, making = dict(case["hf"]), {"dtype": "int8"}
+    monkeypatch.setattr(conducting, "HEAD", 128 if "past the first 512 KiB" in name else 512 * 1024)
+    folder = Folder(files, chunk=2048)
+    end, got = conducted(folder, hf, making)
+    # (the same files under the names a repository has them by: in small letters)
+    listed_there = {"repo": "owner/model", "revision": REVISION, "weights": hf["weights"].lower(), "tokenizer": list(TOKENIZERS)}
+    hub = Hub({f"owner/model/{file.lower()}": value for file, value in files.items()}, listed_there, **cut({}, unit=2048))
+    ended, expected = conducted(hub, listed_there, making)
+    assert in_turn(folder.asked, slice(0, 2)) == in_turn(FETCHES[name]["requests"], slice(0, 2))
+    assert (end == "converted") == (expected_of(name)[2] == "converted")
+    if got is None:
+        # (a folder says of a missing file what the loop says, a repository what huggingface.co's 404 is told with)
+        assert expected is None and (end == ended or "which is not there" in end)
+        return
+    assert bytes(got.checkpoint) == bytes(expected.checkpoint) and len(got.checkpoint) > 20000
+    assert got.options == expected.options
+    assert bytes(got.tokenizer) == bytes(expected.tokenizer)
+    assert len([line for line in folder.asked if line.startswith("stream ")]) == 1
+    if "past the first" in name:
+        assert len([line for line in folder.asked if line.startswith("range ")]) == 2
+
+
+def test_a_folder_is_asked_by_names_alone_and_never_for_a_size(monkeypatch):
+    """What crosses to the answerer of a folder: the six kinds there are, each with a name; a disk says the size of a
+    file with its first range, so none is asked for; the candidates are the conduct's own three, in their order."""
+    StandIn().into(monkeypatch)
+    told = []
+    folder = Folder({"config.json": CONFIG, "spiece.model": "a sentencepiece model", "model.safetensors": safetensors(3 * MiB)})
+    last = answered(folder, conduct({"weights": "model.safetensors"}, dtype="int8"), told)
+    assert last[0] == "done"
+    assert [request[:3] for request in told] == [("text", "weights", "config.json"), ("range", "weights", "model.safetensors"),
+        ("text", "weights", "tokenizer_config.json"), ("text", "weights", "chat_template.jinja"), *[("bytes", "weights", name) for name in TOKENIZERS],
+        ("stream", "weights", "model.safetensors")]
+    assert folder.asked == ["text config.json", "range model.safetensors bytes=0-524287", "bytes spiece.model", "stream model.safetensors bytes=308-3146035"]
+
+
+def test_a_folder_finds_a_file_whatever_the_case_of_its_name_and_the_first_of_two():
+    folder = Folder({"Config.JSON": "the first", "config.json": "the second"})
+    assert folder.text("weights", "config.json") == "the first" and folder.asked == ["text Config.JSON"]
+    assert folder.text("weights", "tokenizer_config.json") is None and len(folder.asked) == 1
 
 
 # ---- made-up repositories by the hundred: the conduct against the ladder

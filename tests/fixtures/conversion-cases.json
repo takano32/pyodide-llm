@@ -422,5 +422,179 @@
    },
    "owner/model/configs/text.json": "{\"model_type\":\"llama\"}"
   }
+ },
+ {
+  "name": "a folder: one safetensors file, as the disk gives it",
+  "hf": {
+   "weights": "model.safetensors"
+  },
+  "line": {},
+  "files": {
+   "config.json": "{\"model_type\":\"llama\"}",
+   "tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "tokenizer.json": "a tokenizer",
+   "model.safetensors": {
+    "safetensors": {
+     "data": 20971525,
+     "header": 300
+    }
+   }
+  }
+ },
+ {
+  "name": "a folder: a header past the first 512 KiB",
+  "hf": {
+   "weights": "model.safetensors"
+  },
+  "line": {},
+  "files": {
+   "config.json": "{\"model_type\":\"llama\"}",
+   "tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "tokenizer.json": "a tokenizer",
+   "model.safetensors": {
+    "safetensors": {
+     "data": 2097152,
+     "header": 700000
+    }
+   }
+  }
+ },
+ {
+  "name": "a folder: a tokenizer.json the converter refuses, then spiece.model",
+  "hf": {
+   "weights": "model.safetensors"
+  },
+  "line": {},
+  "files": {
+   "config.json": "{\"model_type\":\"llama\"}",
+   "tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "tokenizer.json": "unreadable",
+   "model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   },
+   "spiece.model": "a sentencepiece model"
+  }
+ },
+ {
+  "name": "a folder: every tokenizer of it refused",
+  "hf": {
+   "weights": "model.safetensors"
+  },
+  "line": {},
+  "files": {
+   "config.json": "{\"model_type\":\"llama\"}",
+   "tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "tokenizer.json": "unreadable",
+   "model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   },
+   "tokenizer.model": "unreadable too"
+  }
+ },
+ {
+  "name": "a folder: no tokenizer_config.json, a chat_template.jinja",
+  "hf": {
+   "weights": "model.safetensors"
+  },
+  "line": {},
+  "files": {
+   "config.json": "{\"model_type\":\"llama\"}",
+   "tokenizer.json": "a tokenizer",
+   "model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   },
+   "chat_template.jinja": "a template"
+  }
+ },
+ {
+  "name": "a folder: a chat_template.jinja beside a tokenizer_config.json without a template",
+  "hf": {
+   "weights": "model.safetensors"
+  },
+  "line": {},
+  "files": {
+   "config.json": "{\"model_type\":\"llama\"}",
+   "tokenizer_config.json": "{\"bos_token\":\"<s>\"}",
+   "tokenizer.json": "a tokenizer",
+   "model.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   },
+   "chat_template.jinja": "a template"
+  }
+ },
+ {
+  "name": "a folder: neither a tokenizer_config.json nor a chat_template.jinja, a sentencepiece model",
+  "hf": {
+   "weights": "weights.safetensors"
+  },
+  "line": {},
+  "files": {
+   "config.json": "{\"model_type\":\"llama\"}",
+   "tokenizer.model": "a sentencepiece model",
+   "weights.safetensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   },
+   "README.md": "never read"
+  }
+ },
+ {
+  "name": "a folder: names in capital letters",
+  "hf": {
+   "weights": "Model.SafeTensors"
+  },
+  "line": {},
+  "files": {
+   "Config.JSON": "{\"model_type\":\"llama\"}",
+   "Tokenizer_Config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "Tokenizer.JSON": "a tokenizer",
+   "Model.SafeTensors": {
+    "safetensors": {
+     "data": 3145828,
+     "header": 300
+    }
+   }
+  }
+ },
+ {
+  "name": "a folder: a file that is no safetensors file",
+  "hf": {
+   "weights": "model.safetensors"
+  },
+  "line": {},
+  "files": {
+   "config.json": "{\"model_type\":\"llama\"}",
+   "tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "tokenizer.json": "a tokenizer",
+   "model.safetensors": "not a model"
+  }
+ },
+ {
+  "name": "a folder: a file that is no safetensors file, and an index beside it that names shards",
+  "hf": {
+   "weights": "model.safetensors"
+  },
+  "line": {},
+  "files": {
+   "config.json": "{\"model_type\":\"llama\"}",
+   "tokenizer_config.json": "{\"chat_template\":\"{{ messages }}\"}",
+   "tokenizer.json": "a tokenizer",
+   "model.safetensors": "not a model",
+   "model.safetensors.index.json": "{\"weight_map\":{\"tensor.0\":\"model-00001-of-00002.safetensors\",\"tensor.1\":\"model-00002-of-00002.safetensors\"}}"
+  }
  }
 ]

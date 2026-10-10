@@ -9,7 +9,7 @@
 #       request = steps.send(answer_to(request))
 #
 # What is asked (where: "weights", the repository of the weights, or "vocabulary", the original's, which is asked
-# only of a model that names one):
+# only of a model that names one; a folder of the visitor's disk is one place, asked by the same names, T374.2.2):
 #
 #   ("text", where, name)                    the file's text, or None where the file is not there
 #   ("bytes", where, name)                   the file's bytes, or None
@@ -276,6 +276,7 @@ def conduct(hf, **make):
     """The whole conversion of one model, as a generator of requests (see the top of the file).
     hf: {"weights": the name of the file, "config": config.json's name (or none), "tokenizer": a name or the names to
     try (or none: TOKENIZERS), "vocabulary": {"tokenizer": ...} where the vocabulary is another repository's (T136)}.
+    Names only: where the files are (a repository, a folder) is the answerer's to know.
     make: what Conversion() takes besides the files (dtype, max_seq_len, sink, quantize_rows, readers)."""
     try:
         conversion, weights = yield from opened(hf, make)

@@ -8,37 +8,12 @@ import { page } from "./state.ts";
 import { show } from "./settings.ts";
 import { message } from "./draw.ts";
 import { worker } from "./receiver.ts";
+import { openHuggingFace } from "./folder.ts";
 
 // A model of the visitor's own disk, from the folder button or dropped on the page. The legacy format knows
 // nothing about itself, so whatever differs from llama2.c's conventions comes as a third file: .json, shaped
 // like an entry of src/models.js ({options, generation, prompt, placeholder}).
 let local: typeof page.model | undefined = fromUrl;
-// The files Hugging Face publishes: model.safetensors, config.json and a tokenizer (tokenizer.json, or a
-// sentencepiece tokenizer.model / spiece.model). The worker converts them in the browser, to int8 and with a
-// context of 512 tokens unless the settings say otherwise ({"conversion": {"dtype": ..., "max_seq_len": ...}}).
-const HF_IGNORED = ["tokenizer_config.json", "generation_config.json", "special_tokens_map.json", "model.safetensors.index.json"];
-async function openHuggingFace(chosen: File[]) {
-  const named = (...names: string[]) => chosen.find(({ name }) => names.includes(name.toLowerCase()));
-  const weights = chosen.filter(({ name }) => name.toLowerCase().endsWith(".safetensors"));
-  // every tokenizer the folder has, in the order the worker tries them (T138: a folder with both, as RakutenAI 2.0
-  // mini publishes, stopped at the tokenizer.json the converter refuses)
-  const config = named("config.json"), tokenizers = [named("tokenizer.json"), named("tokenizer.model"), named("spiece.model")].filter(Boolean);
-  const settings = chosen.find(({ name }) => name.toLowerCase().endsWith(".json") && name !== config?.name && !tokenizers.some((file) => file!.name === name) && !HF_IGNORED.includes(name.toLowerCase()));
-  if (weights.length !== 1 || !config || !tokenizers.length) {
-    throw new Error("A Hugging Face model needs three files together: one .safetensors file (a model in several shards is not supported), config.json, and tokenizer.json, tokenizer.model or spiece.model.");
-  }
-  const given = settings ? JSON.parse(await settings.text()) : {};
-  return {
-    id: "local", name: given.name ?? weights[0].name, note: `local · Hugging Face · ${(weights[0].size / 1e6).toFixed(0)} MB`,
-    // the chat template, where the folder has it: tokenizer_config.json, or chat_template.jinja (T127)
-    hf: { weights: weights[0], config, tokenizer: tokenizers, tokenizerConfig: named("tokenizer_config.json"), chatTemplate: named("chat_template.jinja") },
-    conversion: given.conversion ?? {}, options: given.options ?? {},
-    // a model nobody has tuned this page for: sample, as such models loop when they decode greedily
-    generation: given.generation ?? { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 },
-    prompt: given.prompt ?? "", placeholder: given.placeholder ?? "",
-  };
-}
-
 async function open(chosen: File[]) {
   if (chosen.some(({ name }) => name.toLowerCase().endsWith(".safetensors"))) {
     try {

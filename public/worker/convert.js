@@ -1,15 +1,14 @@
 // worker/convert.js (T350): a Hugging Face model converted in here as it arrives (public/llama2_convert.py), and what
 // a conversion made kept for the next visit and read back (kept.js).
-// T374.2.1: a model of huggingface.co is conducted by Python (public/convert/conduct.py) and answered by conduct.js;
-// a folder of the visitor's disk still by the steps written out here (folderOpened, folderFed), until T374.2.2.
+// T374.2.1: the conversion is conducted by Python (public/convert/conduct.py) and answered by conduct.js: a model of
+// huggingface.co from there, and (T374.2.2) a folder of the visitor's disk from its Files.
 // A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
 
 const { state, loadSeconds } = await import(new URL(`state.js${new URL(import.meta.url).search}`, import.meta.url));
 const { since } = await import(new URL(`clock.js${new URL(import.meta.url).search}`, import.meta.url));
 const { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom, weightsDrained, checkpointSink } =
   await import(new URL(`weights.js${new URL(import.meta.url).search}`, import.meta.url));
-const { HF_HEADER_BYTES } = await import(new URL(`ranges.js${new URL(import.meta.url).search}`, import.meta.url));
-const { conductOf, answered } = await import(new URL(`conduct.js${new URL(import.meta.url).search}`, import.meta.url));
+const { conductOf, answered, fromHub, fromFolder } = await import(new URL(`conduct.js${new URL(import.meta.url).search}`, import.meta.url));
 const { HEADER_BYTES, headerInts } = await import(new URL(`sources.js${new URL(import.meta.url).search}`, import.meta.url));
 const { templatePackage } = await import(new URL(`pyodide.js${new URL(import.meta.url).search}`, import.meta.url));
 
@@ -97,72 +96,6 @@ async function keepConverted(model, checkpoint, bytes, tokenizer, options, signa
   return state.keptModule.keep(converted, manifest, (begin, end) => checkpoint.slice(begin, end), vocabulary, signal);
 }
 
-// ---- A folder of the visitor's disk ({ weights, config, tokenizer, tokenizerConfig, chatTemplate } are Files): one
-// safetensors file, read by the steps the worker had for every source before T374.2.1. T374.2.2 takes these two
-// functions away: the folder is then answered from its Files by the conduct that asks huggingface.co's.
-
-// The conversion of a folder, ready to be fed, and where its tensors begin.
-async function folderOpened(hf, make, signal) {
-  const config = await hf.config.text();
-  // the beginning of the file: 8 bytes that say how long the JSON header is, then the header
-  let bytes = new Uint8Array(await hf.weights.slice(0, HF_HEADER_BYTES).arrayBuffer());
-  const headerBytes = bytes.length >= 8 ? Number(new DataView(bytes.buffer, bytes.byteOffset).getBigUint64(0, true)) : -1;
-  if (!(headerBytes >= 2 && headerBytes <= 100e6)) {
-    throw new Error("This is not a safetensors file.");
-  }
-  const base = 8 + headerBytes;
-  if (base > bytes.length) {
-    bytes = new Uint8Array(await hf.weights.slice(0, base).arrayBuffer());
-  }
-  const header = new TextDecoder().decode(bytes.subarray(8, base));
-  // The format of one turn, when the model publishes a chat_template (T73). It is small, and a model without
-  // one (or with one the converter cannot read) simply keeps the format src/models.js has for it.
-  const tokenizerConfig = await (hf.tokenizerConfig?.text() ?? Promise.resolve("")).catch(() => "");
-  // T127: newer repositories keep the template in chat_template.jinja instead
-  const hasTemplate = (() => {
-    try {
-      return Boolean(JSON.parse(tokenizerConfig).chat_template);
-    } catch {
-      return false;
-    }
-  })();
-  const chatTemplate = hasTemplate ? "" : await (hf.chatTemplate?.text() ?? Promise.resolve("")).catch(() => "");
-  // the tokenizer is whichever of the folder's the converter can read; where none will do, its refusal of the first
-  // says why (T144)
-  let refusal;
-  for (const candidate of [].concat(hf.tokenizer)) {
-    const tokenizer = new Uint8Array(await candidate.arrayBuffer());
-    signal.throwIfAborted();
-    try {
-      const conversion = state.llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, candidate.name,
-        { start: base, tokenizer_config: tokenizerConfig, chat_template: chatTemplate || null, ...make });
-      return { conversion, base };
-    } catch (error) {
-      refusal ??= error;
-    }
-  }
-  throw refusal;
-}
-
-// The tensors of the folder's file, from base on, to the conversion as the disk gives them.
-async function folderFed(conversion, weights, base, signal, progress) {
-  progress.of(weights.size);
-  const reader = weights.slice(base).stream().getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-    if (signal.aborted) {
-      reader.cancel();
-      signal.throwIfAborted();
-    }
-    progress.converting(() => conversion.feed(value));
-    await weightsRoom();  // (T156)
-  }
-  conversion.finish();
-}
-
 export async function convert(model, signal, id) {
   const remote = typeof model.hf.repo === "string";
   // with the ?v=<build> of this worker, like every file it reads (AGENTS.md)
@@ -197,7 +130,7 @@ export async function convert(model, signal, id) {
   let keep = mayKeep ? await state.keptModule.keeper({ ...model, conversion: { ...model.conversion, dtype: keptDtype } }).catch(() => undefined) : undefined;
   const into = checkpointSink(keep), { sink } = into;
   let keptAsItCame = false;  // keep went to keepConverted, which keeps it or lets it go
-  let steps, conversion, quantizeRows, readers;
+  let steps, conversion, quantizeRows, readers, failed;
   // T403: whatever ends the conversion (its end, a file that is not there, the line, a refusal of the converter's, a
   // load cancelled at any moment), the one finally below lets go of the file opened to keep it in and of what the
   // converter holds. The file's handle is the only one its file can have: left open, the next conversion of the
@@ -246,16 +179,11 @@ export async function convert(model, signal, id) {
         tell();
       },
     };
-    if (remote) {
-      // T374.2.1: Python conducts (public/convert/conduct.py), the worker answers (conduct.js)
-      steps = conductOf(model.hf, make);
-      conversion = await answered(steps, model.hf, signal, progress);
-    } else {
-      // (T374.2.2 takes this over: the folder answered from its Files, by the same conduct)
-      let base;
-      ({ conversion, base } = await folderOpened(model.hf, make, signal));
-      await folderFed(conversion, model.hf.weights, base, signal, progress);
-    }
+    // T374.2.1: Python conducts (public/convert/conduct.py), the worker answers (conduct.js): from huggingface.co, or
+    // (T374.2.2) from the Files of a folder of the visitor's disk, which the model has beside the names of its files
+    const { files, ...listed } = model.hf;
+    steps = conductOf(listed, make);
+    conversion = await answered(steps, remote ? fromHub(model.hf, signal, progress) : fromFolder(files, signal, progress), signal);
     loadSeconds.download = since(started);
     loadSeconds.convert = spent / 1000;
 
@@ -289,20 +217,27 @@ export async function convert(model, signal, id) {
       proxies.forEach((proxy) => proxy.destroy());
     }
     return { fromCache: false, notKept: kept, keptMiss, template };
+  } catch (error) {
+    failed = { error };
+    throw error;
   } finally {
-    try {
-      // (T156: the file kept as it came is let go where it was not the one kept)
-      if (!keptAsItCame) await keep?.drop();
-    } finally {
-      // the engine keeps what it needs of the checkpoint alive, the rest goes with this; and a feed that failed (the
-      // line, a refusal on the way) leaves no Python buffer of the model's size behind (T145)
-      into.release();
-      // the conduct where it stands, closed (it holds the conversion it was making), then its proxy
-      steps?.return();
-      steps?.destroy();
-      conversion?.destroy();
-      quantizeRows?.destroy();
-      readers?.destroy();
+    // T407: every one of these, whatever the others throw (the file kept as it came, T156, where it was not the one
+    // kept; the place of the weights: the engine keeps what it needs of the checkpoint alive, the rest goes with it,
+    // and a feed that failed leaves no Python buffer of the model's size behind, T145; the conduct where it stands,
+    // closed (it holds the conversion it was making), then its proxy; the conversion; the kernels' two). What the
+    // conversion itself failed with is what is thrown, and never what letting go failed with after it (a cancelled
+    // load stays one); after a conversion that ended well, the first of those failures is
+    let wrong;
+    for (const release of [() => (keptAsItCame ? undefined : keep?.drop()), () => into.release(), () => steps?.return(), () => steps?.destroy(),
+      () => conversion?.destroy(), () => quantizeRows?.destroy(), () => readers?.destroy()]) {
+      try {
+        await release();
+      } catch (error) {
+        wrong ??= { error };
+      }
+    }
+    if (wrong && !failed) {
+      throw wrong.error;
     }
   }
 }

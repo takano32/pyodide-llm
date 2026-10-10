@@ -347,5 +347,161 @@
    "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
   ],
   "ended": "converted; progress was told"
+ },
+ "a folder: one safetensors file, as the disk gives it": {
+  "requests": [
+   "text config.json",
+   "range model.safetensors bytes=0-524287",
+   "text tokenizer_config.json",
+   "bytes tokenizer.json",
+   "stream model.safetensors bytes=308-20971832"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 20971525 bytes in 21 pieces; finish()"
+  ],
+  "ended": "converted; progress was told",
+  "progress": [
+   "0 of 20971833"
+  ]
+ },
+ "a folder: a header past the first 512 KiB": {
+  "requests": [
+   "text config.json",
+   "range model.safetensors bytes=0-524287",
+   "range model.safetensors bytes=0-700007",
+   "text tokenizer_config.json",
+   "bytes tokenizer.json",
+   "stream model.safetensors bytes=700008-2797159"
+  ],
+  "converter": [
+   "Conversion(a header of 700000 characters, base 700008, start 700008, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 2097152 bytes in 2 pieces; finish()"
+  ],
+  "ended": "converted; progress was told",
+  "progress": [
+   "0 of 2797160"
+  ]
+ },
+ "a folder: a tokenizer.json the converter refuses, then spiece.model": {
+  "requests": [
+   "text config.json",
+   "range model.safetensors bytes=0-524287",
+   "text tokenizer_config.json",
+   "bytes tokenizer.json",
+   "bytes spiece.model",
+   "stream model.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 10 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null): refused",
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", spiece.model of 21 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 3145828 bytes in 4 pieces; finish()"
+  ],
+  "ended": "converted; progress was told",
+  "progress": [
+   "0 of 3146136"
+  ]
+ },
+ "a folder: every tokenizer of it refused": {
+  "requests": [
+   "text config.json",
+   "range model.safetensors bytes=0-524287",
+   "text tokenizer_config.json",
+   "bytes tokenizer.json",
+   "bytes tokenizer.model"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 10 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null): refused",
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.model of 14 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null): refused"
+  ],
+  "ended": "failed: This model cannot be converted: tokenizer.json is of a kind the engine does not read.",
+  "progress": []
+ },
+ "a folder: no tokenizer_config.json, a chat_template.jinja": {
+  "requests": [
+   "text config.json",
+   "range model.safetensors bytes=0-524287",
+   "text chat_template.jinja",
+   "bytes tokenizer.json",
+   "stream model.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"\", chat_template \"a template\"), dtype the worker's choice",
+   "fed 3145828 bytes in 4 pieces; finish()"
+  ],
+  "ended": "converted; progress was told",
+  "progress": [
+   "0 of 3146136"
+  ]
+ },
+ "a folder: a chat_template.jinja beside a tokenizer_config.json without a template": {
+  "requests": [
+   "text config.json",
+   "range model.safetensors bytes=0-524287",
+   "text tokenizer_config.json",
+   "text chat_template.jinja",
+   "bytes tokenizer.json",
+   "stream model.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"bos_token\\\":\\\"<s>\\\"}\", chat_template \"a template\"), dtype the worker's choice",
+   "fed 3145828 bytes in 4 pieces; finish()"
+  ],
+  "ended": "converted; progress was told",
+  "progress": [
+   "0 of 3146136"
+  ]
+ },
+ "a folder: neither a tokenizer_config.json nor a chat_template.jinja, a sentencepiece model": {
+  "requests": [
+   "text config.json",
+   "range weights.safetensors bytes=0-524287",
+   "bytes tokenizer.model",
+   "stream weights.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.model of 21 bytes, tokenizer_config \"\", chat_template null), dtype the worker's choice",
+   "fed 3145828 bytes in 4 pieces; finish()"
+  ],
+  "ended": "converted; progress was told",
+  "progress": [
+   "0 of 3146136"
+  ]
+ },
+ "a folder: names in capital letters": {
+  "requests": [
+   "text Config.JSON",
+   "range Model.SafeTensors bytes=0-524287",
+   "text Tokenizer_Config.json",
+   "bytes Tokenizer.JSON",
+   "stream Model.SafeTensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 3145828 bytes in 4 pieces; finish()"
+  ],
+  "ended": "converted; progress was told",
+  "progress": [
+   "0 of 3146136"
+  ]
+ },
+ "a folder: a file that is no safetensors file": {
+  "requests": [
+   "text config.json",
+   "range model.safetensors bytes=0-10"
+  ],
+  "converter": [],
+  "ended": "failed: This is not a safetensors file.",
+  "progress": []
+ },
+ "a folder: a file that is no safetensors file, and an index beside it that names shards": {
+  "requests": [
+   "text config.json",
+   "range model.safetensors bytes=0-10",
+   "text model.safetensors.index.json"
+  ],
+  "converter": [],
+  "ended": "failed: The conversion needs model-00001-of-00002.safetensors, which is not there.",
+  "progress": []
  }
 }

@@ -24,8 +24,8 @@ export const worthRetrying = (status) => status >= 500 || status === 408;
 
 // Every await in here may end with the AbortError of signal: a newer load has taken over, and this one must
 // leave nothing behind, least of all a Python buffer as large as its model.
-// A Hugging Face model, from the visitor's disk ({weights, config, tokenizer} are Files) or from huggingface.co
-// ({repo, revision, weights, config, tokenizer} are names): model.safetensors arrives in the order of the file, a few
+// A Hugging Face model of huggingface.co ({repo, revision, weights, config, tokenizer} are names; one of the visitor's
+// disk is read as the disk gives it, conduct.js): model.safetensors arrives in the order of the file, a few
 // megabytes at a time, and the Python code that builds the models of this site converts every tensor as it comes and
 // writes it to its place in a buffer of the final size. Reading in the order of the output instead would mean
 // hundreds of range requests, and each one takes a second.
@@ -38,7 +38,6 @@ export const worthRetrying = (status) => status >= 500 || status === 408;
 const HF_PART_BYTES = 16 * 1024 * 1024;
 const HF_SMALL_PART_BYTES = 8 * 1024 * 1024;
 const HF_FAST_BYTES_PER_SECOND = 4e6;
-export const HF_HEADER_BYTES = 512 * 1024;  // the JSON header of a safetensors file is a few dozen kilobytes
 
 // The size of a file, for the few places that need it (the whole of a model: how many parts to ask for). A range
 // response says it in Content-Range, but that header is not one CORS shows by default: huggingface.co exposes it by
