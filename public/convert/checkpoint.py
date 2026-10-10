@@ -5,7 +5,7 @@ import struct
 
 import numpy as np
 
-from engine.layout import MATRIX, QUANTIZED, TABLE, VECTOR, Row, check_suited, file_size, form_of, placed, tensor_rows
+from engine.layout import FORM, MATRIX, QUANTIZED, TABLE, VECTOR, Row, check_suited, file_size, form_of, placed, tensor_rows
 from engine.packing import TERNARY_GROUP, pack6, quantize6, ternary
 
 
@@ -26,6 +26,9 @@ def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, 
 
     is a matrix: True for what int8 quantizes, False for the norm weights, None for the RoPE tables.
     """
+    if set(form) - set(FORM):
+        # (as when the form was keyword arguments: a key that is misspelt is no form, and form_of() would drop it unheard)
+        raise TypeError(f"layout() got an unexpected keyword argument {sorted(set(form) - set(FORM))[0]!r}")
     header = (dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len)
     return [(row.shape, IS_MATRIX.get(row.role, True)) for row in tensor_rows(header, form)]
 

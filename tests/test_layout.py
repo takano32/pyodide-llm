@@ -156,3 +156,10 @@ ORDER = {
 @cases
 def test_the_file_is_in_the_order_it_always_was(name, header, form, more):
     assert " ".join(row.name for row in tensor_rows(header, form)) == ORDER[name]
+
+
+def test_layout_refuses_a_key_that_is_no_part_of_the_form():
+    # (T359 review: layout() took keyword arguments, so a misspelt key was a TypeError; the form is a dict now, which
+    # form_of() reads by FORM's keys alone)
+    with pytest.raises(TypeError, match="bais"):
+        layout(64, 128, 2, 4, 4, 100, 16, bais=True)
