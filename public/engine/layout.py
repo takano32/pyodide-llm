@@ -168,6 +168,7 @@ class Dims:
         if (self.arch == "qwen35" and self.linear is None) or (self.arch == "lfm2" and self.convolution is None):
             raise ValueError("A hybrid model (qwen35) has to say its linear layers, and an LFM2 its convolution layers.")
         self.slots = layer_slots(self.n_layers, self.linear, self.convolution)
+        self.stateful_kind = STATEFUL_KINDS.get(self.arch)
         self.kinds = kinds_form(form["kinds"])
 
     def rows(self):
@@ -285,6 +286,9 @@ def gpt2(d):
 
 # the layout of an architecture (FORM's "arch"); any other name is read as a Llama, as the forward pass does
 LAYOUTS = {"llama": llama, "gpt2": gpt2, "neox": gpt2, "qwen35": qwen35, "lfm2": lfm2}
+# what the layers that keep a state in place of keys and values are (STATEFUL's), of the layouts that have such layers:
+# the kind a plan names them by (engine/plan.py's layer_facts(); a layer that attends is "attention" there)
+STATEFUL_KINDS = {"qwen35": "linear", "lfm2": "convolution"}
 
 
 def tensor_rows(header, form=None):

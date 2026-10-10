@@ -143,7 +143,11 @@ const returned = (fn) => {
       if (node.type === "TemplateLiteral" && node.quasis[0].value.cooked === "signs.") readDerived.add("signs.<width>");
     });
   }
-  held("the plan's keys, Python to forward.js", keys, readKeys);
+  // T359.5: every layer's facts and the widths, which engine/plan.py writes from the layout so that forward.js need not
+  // work them out again from arch, linear and convolution; forward.js reads them from T375 (and planOf() has them once
+  // it is Python's own plan, T357.7): until then they are written and read by nobody
+  const ahead = { layers: "forward.js reads the layers' facts from T375", widths: "forward.js reads the widths from T375" };
+  held("the plan's keys, Python to forward.js", keys, readKeys, ahead);
   // (a name forward.js asks for that no model of these has is a tensor of no architecture: floats() answers 0 for it)
   held("the tensors' names, Python to forward.js", tensors, readTensors);
   // (what else is read off those names: a table kept under `embedding` is also the GPU's plan's, { rows, n, ... })
@@ -154,7 +158,7 @@ const returned = (fn) => {
   // tests/plans.mjs's planOf(): the plan memory-check and the net's calls hand createForward(), written by hand
   const standIn = planOf({ header: cases[0].header, form: { arch: "llama", linear: null, convolution: null, rotated: null }, dtype: "int8", head_size: 32,
     tensors: {}, derived: {}, keep_int8: true });
-  held("the plan's keys, Python to tests/plans.mjs's planOf()", keys, new Set(Object.keys(standIn)));
+  held("the plan's keys, Python to tests/plans.mjs's planOf()", keys, new Set(Object.keys(standIn)), ahead);
 }
 
 // ---- 2. forward.js -> the GPU's worker
