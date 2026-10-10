@@ -245,4 +245,7 @@ for (const name of new Set([...Object.keys(expected), ...Object.keys(found)])) {
 console.log(differ ? `worker-fetches-check: FAILED: ${differ} cases ask for something else than tests/fixtures/conversion-fetches.json says (--write after reading why)`
   : `worker-fetches-check: ${Object.keys(found).length} cases ask for what the fixture says`);
 // (a ReadableStream left unread keeps nothing alive here; the harness's timers are let go of with the process)
-process.stdout.write("", () => process.exit(differ ? 1 : 0));
+// T384: not at once. An exit right after the last case stood still for good about once in 70 runs on the development
+// machine (and twice in CI, to the job's limit): the main thread and one of V8's own threads both asleep on a futex,
+// inside Node's leaving (24.20; nodejs/node 54918 tells of one like it). With this pause, 0 of 400.
+setTimeout(() => process.stdout.write("", () => process.exit(differ ? 1 : 0)), 200);
