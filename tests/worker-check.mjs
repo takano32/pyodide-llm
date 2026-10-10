@@ -2,7 +2,8 @@
 // and a clock that goes a hundred times as fast: the parts of this site's models (download()), the ranges of
 // huggingface.co (fetchRange(), inOrder(), refused()), the count of what arrives while Pyodide loads (watchArrivals()),
 // the version of Pyodide and its steps (resolvePyodideVersion(), pyodideSteps()), and a model past even a 64-bit memory
-// (weightsBuffer()), and load() as far as the place of the weights (what it stops where it ends before it). The review
+// (weightsBuffer()), and load() as far as the place of the weights (what it stops where it ends before it), and (T357) a
+// stop that arrives while a made-up model writes (generate() and the stop message). The review
 // of T97, T118 and T119 (2026-09-26) had a bench like this and did not keep it; what it found is T129's (1) to (7).
 // Node only, no Pyodide, a few seconds:
 //
@@ -754,6 +755,49 @@ const ok = (line) => {
   assert.equal(String(broke?.error), "TypeError: Importing a module script failed.");
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
   ok("a runtime of Pyodide's that ended as it started is told as a step that stopped");
+}
+
+// ---- T357: a stop that arrives during a run stops it. Nothing ran generate() outside a browser: `state.stopped` spelled
+// otherwise in its loop is undefined, the loop writes to the end of the context, and both checks of the worker passed (T350)
+{
+  // a model that writes for ever (or `limit` pieces): to the worker, generate() is a Python generator (next, return, destroy)
+  let written = 0, limit = Infinity, closed = 0, destroyed = 0;
+  context.stand = { llama: {
+    generate: { callKwargs: () => ({ next: () => (written < limit ? { done: false, value: `piece ${written++}` } : { done: true }), return: () => { closed++; }, destroy: () => { destroyed++; } }) },
+    stats: { toJs: () => ({ tokens: written }) },
+  } };
+  run("state.llama = stand.llama; state.outsideNow = undefined; state.gpuOnlyNow = undefined; state.stopped = false; state.generating = undefined;");
+  const of = (type) => messages.filter((message) => message.type === type);
+  fresh(() => new Response("", { status: 404 }));
+  const running = context.onmessage({ data: { type: "generate", prompt: "a prompt" } });
+  await sleep(2000);
+  assert.ok(of("token").length > 0 && of("done").length === 0, "the run wrote nothing, or ended by itself");
+  context.onmessage({ data: { type: "stop" } });
+  const stopped = await Promise.race([running.then(() => true), sleep(30000).then(() => false)]);
+  if (!stopped) {
+    // (let the run end, so that this fails in words and not at the 180 s)
+    limit = 0;
+    await running;
+  }
+  assert.ok(stopped, "a stop that arrived during a run did not stop it: it wrote on for 30 s of the worker's clock");
+  const tokens = of("token").length;
+  assert.deepEqual([of("done").length, of("error").length, closed, destroyed], [1, 0, 1, 1], "a stopped run did not end as a run does (done once, no error, the generator closed and let go of)");
+  assert.equal(of("done")[0].tokens, written, "the page was not told the stopped run's statistics");
+  await sleep(1000);
+  assert.equal(of("token").length, tokens, "a stopped run wrote on");
+  assert.equal(run("state.generating"), undefined);
+  ok("a stop that arrives during a run stops it, and the page is told it is done");
+
+  // the next run is not cut short: neither by the stop that ended the last one, nor by one that came while nothing ran
+  for (const [name, before] of [["after a run that was stopped", () => {}], ["after a stop that came while nothing ran", () => context.onmessage({ data: { type: "stop" } })]]) {
+    await before();
+    fresh(() => new Response("", { status: 404 }));
+    limit = written + 5;
+    await context.onmessage({ data: { type: "generate", prompt: "another" } });
+    assert.deepEqual([of("token").length, of("done").length, of("error").length], [5, 1, 0], `a run ${name} did not write its five pieces`);
+  }
+  ok("a run after a stop writes to its own end");
+  run("state.llama = undefined");
 }
 
 console.log(`worker-check: ${passed} checks passed`);
