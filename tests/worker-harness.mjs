@@ -24,16 +24,32 @@ export function workerHarness({ told = false } = {}) {
   const SCALE = 100;  // the worker's milliseconds per real millisecond
   const MiB = 1024 * 1024, PART = 8 * MiB;
   const realNow = () => performance.now();
+  // A timer that never fires before its time by performance.now(), as a browser's never does. Node's may: of 400
+  // setTimeout(30) one or two fired after 28.2 to 29.9 ms on the development machine. A hundred times as fast, that
+  // millisecond is a tenth of the worker's second, and "given up after 30 seconds" was measured as 29.9 (T386: a
+  // run of CI fell on it). A timer that comes early waits for the rest.
+  function timer(f, ms, args = [], again = false) {
+    const handle = { real: null, due: realNow() + ms };
+    const fire = () => {
+      const left = handle.due - realNow();
+      if (left > 0) { handle.real = setTimeout(fire, Math.ceil(left)); return; }
+      if (again) { handle.due = Math.max(handle.due + ms, realNow()); handle.real = setTimeout(fire, handle.due - realNow()); }
+      f(...args);
+    };
+    handle.real = setTimeout(fire, ms);
+    return handle;
+  }
+  const clear = (handle) => clearTimeout(handle?.real ?? handle);
   // ms of the worker's clock (told: the clock is moved on by that much and a turn of the event loop goes by)
   let toldNow = 0;
   const sleep = told ? (ms) => new Promise((resolve) => { toldNow += ms; setImmediate(resolve); })
-    : (ms) => new Promise((resolve) => setTimeout(resolve, ms / SCALE));
+    : (ms) => new Promise((resolve) => timer(resolve, ms / SCALE));
 
   // the worker's clock and timers: a hundred times as fast, or (told) a clock that moves only when a sleep() moves it
   const clock = {
     now: told ? () => toldNow : () => realNow() * SCALE,
-    setTimeout: (f, ms = 0, ...args) => setTimeout(f, ms / SCALE, ...args),
-    setInterval: (f, ms = 0, ...args) => setInterval(f, ms / SCALE, ...args),
+    setTimeout: (f, ms = 0, ...args) => timer(f, ms / SCALE, args),
+    setInterval: (f, ms = 0, ...args) => timer(f, Math.max(ms / SCALE, 1), args, true),
   };
 
   // the bytes of a made-up file at [from, to): the same at every offset, whichever request brings them
@@ -91,7 +107,7 @@ export function workerHarness({ told = false } = {}) {
   const context = vm.createContext({
     console, URL, URLSearchParams, TextDecoder, TextEncoder, AbortController, DOMException, Response, Headers,
     ReadableStream, WritableStream, TransformStream, WebAssembly, Atomics, SharedArrayBuffer,
-    performance: { now: clock.now }, setTimeout: clock.setTimeout, clearTimeout, setInterval: clock.setInterval, clearInterval,
+    performance: { now: clock.now }, setTimeout: clock.setTimeout, clearTimeout: clear, setInterval: clock.setInterval, clearInterval: clear,
     // (breathe(): a turn of the event loop; Node's MessageChannel would keep the process alive)
     MessageChannel: class {
       constructor() {
