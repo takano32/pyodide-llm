@@ -77,6 +77,7 @@ def test_jinja2_renders_where_it_is_there_and_the_reader_where_it_is_not(monkeyp
     only_jinja = [
         ("{% macro text(m) %}{{ m.content }}{% endmacro %}<u>{{ text(messages[0]) }}</u>", "<u>{prompt}</u>"),
         ("{{ {'a': 1} | tojson }}{{ messages[0].content }}", '{"a": 1}{prompt}'),
+        ("{{ {'a': 'あ'} | tojson }}{{ messages[0].content }}", '{"a": "あ"}{prompt}'),  # (transformers' tojson keeps non-ASCII)
         ("{% for m in messages if m.role == 'user' %}[{{ m.content }}]{% endfor %}", "[{prompt}]"),
         ("{% for m in messages %}{{ m.content }}{% break %}{% endfor %}", "{prompt}"),
         ("{{ messages[0].content }}{% generation %}<a>{% endgeneration %}", "{prompt}<a>"),
