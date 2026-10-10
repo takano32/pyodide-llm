@@ -18,114 +18,18 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import fs from "node:fs";
-import vm from "node:vm";
 import * as forward from "../public/forward.js";
-import { runWorker } from "./worker-source.mjs";
+import { workerHarness } from "./worker-harness.mjs";
 
-const SCALE = 100;  // the worker's milliseconds per real millisecond
+// the made-up network, clock, messages and context (tests/worker-harness.mjs, T357: the conversion's fetch list uses them too)
+const { SCALE, MiB, PART, realNow, sleep, clock, bytesOf, body, requests, messages, fetchStandIn, navigatorStandIn, context, run, failure, fresh, partOf } = workerHarness();
+const at = new URL("../public/worker.js", import.meta.url);
 // a check that waits for ever (a fix undone: the version asked for ever) fails rather than hangs
 setTimeout(() => {
   console.error("worker-check: still waiting after 180 s");
   process.exit(1);
 }, 180000).unref();
-const MiB = 1024 * 1024, PART = 8 * MiB;
-const realNow = () => performance.now();
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms / SCALE));  // ms of the worker's clock
-
-// the worker's clock and timers: a hundred times as fast
-const clock = {
-  now: () => realNow() * SCALE,
-  setTimeout: (f, ms = 0, ...args) => setTimeout(f, ms / SCALE, ...args),
-  setInterval: (f, ms = 0, ...args) => setInterval(f, ms / SCALE, ...args),
-};
-
-// the bytes of a made-up file at [from, to): the same at every offset, whichever request brings them
-function bytesOf(from, to) {
-  const bytes = new Uint8Array(to - from);
-  for (let i = 0; i < bytes.length; i++) bytes[i] = Math.imul(from + i, 2654435761) >>> 24;
-  return bytes;
-}
-const abortError = (signal) => signal.reason ?? new DOMException("aborted", "AbortError");
-
-// a body of the file's bytes [from, to), chunk by chunk, each after delay ms of the worker's; breakAt: it breaks there;
-// head: the bytes that begin it instead of the made-up ones (a header); cancelled(): told when its reader lets go of it
-function body(from, to, { chunk = MiB, delay = 0, breakAt, signal, stall, head, cancelled } = {}) {
-  let at = from;
-  return new ReadableStream({
-    async pull(controller) {
-      if (delay) await sleep(delay);
-      if (stall) await new Promise((resolve) => signal?.addEventListener("abort", resolve, { once: true }));
-      if (signal?.aborted) return controller.error(abortError(signal));
-      if (breakAt !== undefined && at >= breakAt) return controller.error(new TypeError("Error in input stream"));
-      if (at >= to) return controller.close();
-      const end = Math.min(to, at + chunk, breakAt ?? Infinity);
-      const bytes = bytesOf(at, end);
-      if (head && at === from) bytes.set(head.subarray(0, bytes.length));
-      controller.enqueue(bytes);
-      at = end;
-    },
-    cancel() {
-      cancelled?.();
-    },
-  }, { highWaterMark: 0 });
-}
-
-// the made-up network: route(url, init, n) answers the n-th request of that URL (0 first) with a Response, a promise of
-// one, or "hang" (no answer until the request is aborted). Every request is written down.
-const requests = [];
-let route = () => new Response("", { status: 404 });
-function fetchStandIn(input, init = {}) {
-  const url = String(input?.url ?? input);
-  const n = requests.filter((r) => r.url === url).length;
-  const request = { url, at: clock.now(), signal: init.signal, range: init.headers?.Range, method: init.method ?? "GET" };
-  requests.push(request);
-  return new Promise((resolve, reject) => {
-    const signal = init.signal;
-    if (signal?.aborted) return reject(abortError(signal));
-    signal?.addEventListener("abort", () => reject(abortError(signal)), { once: true });
-    Promise.resolve(route(url, init, n)).then((answer) => (answer === "hang" ? undefined : resolve(answer)), reject);
-  });
-}
-
-// worker.js and its modules (T350: tests/worker-source.mjs makes scripts of them) in a vm context whose global is its
-// self, as in a worker
-const at = new URL("../public/worker.js", import.meta.url);
-const messages = [];
-const navigatorStandIn = { deviceMemory: 8 };
-const context = vm.createContext({
-  console, URL, URLSearchParams, TextDecoder, TextEncoder, AbortController, DOMException, Response, Headers,
-  ReadableStream, WritableStream, TransformStream, WebAssembly, Atomics, SharedArrayBuffer,
-  performance: { now: clock.now }, setTimeout: clock.setTimeout, clearTimeout, setInterval: clock.setInterval, clearInterval,
-  // (breathe(): a turn of the event loop; Node's MessageChannel would keep the process alive)
-  MessageChannel: class {
-    constructor() {
-      this.port1 = {};
-      this.port2 = { postMessage: () => setImmediate(() => this.port1.onmessage?.()) };
-    }
-  },
-  navigator: navigatorStandIn, location: { search: "" }, crossOriginIsolated: false,
-  fetch: fetchStandIn, postMessage: (message) => messages.push(message),
-});
-context.self = context;
-runWorker(context);
-const run = (code) => vm.runInContext(code, context);
 const quiet = run("QUIET_SECONDS");
-
-// the error a promise rejects with, and when (on the worker's clock); undefined when it resolved
-async function failure(promise) {
-  try {
-    await promise;
-    return undefined;
-  } catch (error) {
-    return { error, at: clock.now() };
-  }
-}
-const fresh = (routing) => {
-  requests.length = 0;
-  messages.length = 0;
-  route = routing;
-};
-const partOf = (url) => Number(/\.(\d{3})$/.exec(url)?.[1]);
 let passed = 0;
 const ok = (line) => {
   passed++;
