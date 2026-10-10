@@ -155,6 +155,26 @@ const returned = (fn) => {
   held("a tensor's keys, Python to forward.js", entryKeys, entryRead);
   held("the derived tables' names, Python to forward.js", derived, new Set([...readDerived].filter((name) => derived.has(name) || !tensors.has(name))));
 
+  // T359.5: until forward.js reads them, the layers' facts and the widths are held here to what forward.js works out
+  // for itself from the same plan (public/forward/memory.js's layerSlots(), linearWidths() and rotatedWidths(), and
+  // engine.js's turns: no layer of a GPT-2, and not the ones left alone), so that T375 swaps like for like
+  const { layerSlots, linearWidths, rotatedWidths } = await import(new URL("../public/forward/memory.js", import.meta.url));
+  plans.forEach((plan, index) => {
+    const which = `${cases[index].name}, ${cases[index].dtype}`;
+    const slots = layerSlots(plan.n_layers, plan.linear, plan.convolution);
+    assert.equal(plan.layers.length, plan.n_layers, `${which}: a fact for every layer`);
+    plan.layers.forEach((layer, l) => {
+      assert.deepEqual([layer.kind !== "attention", layer.place], slots[l], `${which}: layer ${l} is ${JSON.stringify(layer)}, and forward.js's layerSlots() says ${JSON.stringify(slots[l])}`);
+      assert.equal(layer.kind, !slots[l][0] ? "attention" : plan.linear ? "linear" : "convolution", `${which}: the kind of layer ${l}`);
+      // (forward.js asks whether RoPE turns a layer of the ones that attend alone)
+      assert.equal(layer.rope, !slots[l][0] && plan.arch !== "gpt2" && !plan.unturned.includes(l), `${which}: whether RoPE turns layer ${l}`);
+    });
+    const qDim = plan.n_heads * plan.head_size;
+    assert.deepEqual(plan.widths, { q: qDim, kv: plan.n_kv_heads * plan.head_size, linear: plan.linear ? linearWidths(plan.linear) : null,
+      rotated: rotatedWidths(plan.dim, plan.hidden_dim, qDim, plan.linear).sort((a, b) => a - b) }, `${which}: the widths`);
+  });
+  ok(`the layers' facts and the widths of ${plans.length} plans are what forward.js works out itself today (layerSlots, turns, linearWidths, rotatedWidths)`);
+
   // tests/plans.mjs's planOf(): the plan memory-check and the net's calls hand createForward(), written by hand
   const standIn = planOf({ header: cases[0].header, form: { arch: "llama", linear: null, convolution: null, rotated: null }, dtype: "int8", head_size: 32,
     tensors: {}, derived: {}, keep_int8: true });
