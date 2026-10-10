@@ -5,16 +5,20 @@
 // The files Hugging Face publishes: model.safetensors, config.json and a tokenizer (tokenizer.json, or a
 // sentencepiece tokenizer.model / spiece.model). The worker converts them in the browser, to int8 and with a
 // context of 512 tokens unless the settings say otherwise ({"conversion": {"dtype": ..., "max_seq_len": ...}}).
+// The tokenizers a folder may come with. The conversion's own list is Python's (TOKENIZERS of
+// public/convert/conduct.py: which are tried, and in which order); this page asks for one of them before Pyodide is
+// there to say, so it keeps the names too, and tests/worker-fetches-check.mjs holds the two lists to each other
+export const TOKENIZERS = ["tokenizer.json", "tokenizer.model", "spiece.model"];
 const HF_IGNORED = ["tokenizer_config.json", "generation_config.json", "special_tokens_map.json", "model.safetensors.index.json"];
 export async function openHuggingFace(chosen: File[]) {
   const named = (...names: string[]) => chosen.find(({ name }) => names.includes(name.toLowerCase()));
   const weights = chosen.filter(({ name }) => name.toLowerCase().endsWith(".safetensors"));
-  // the tokenizers the folder has, of the three the conversion tries (T138: a folder with both, as RakutenAI 2.0 mini
+  // the tokenizers the folder has, of those the conversion tries (T138: a folder with both, as RakutenAI 2.0 mini
   // publishes, stopped at the tokenizer.json the converter refuses). The page asks for one of them, and reads none
-  const config = named("config.json"), tokenizers = [named("tokenizer.json"), named("tokenizer.model"), named("spiece.model")].filter(Boolean);
+  const config = named("config.json"), tokenizers = TOKENIZERS.map((name) => named(name)).filter(Boolean);
   const settings = chosen.find(({ name }) => name.toLowerCase().endsWith(".json") && name !== config?.name && !tokenizers.some((file) => file!.name === name) && !HF_IGNORED.includes(name.toLowerCase()));
   if (weights.length !== 1 || !config || !tokenizers.length) {
-    throw new Error("A Hugging Face model needs three files together: one .safetensors file (a model in several shards is not supported), config.json, and tokenizer.json, tokenizer.model or spiece.model.");
+    throw new Error(`A Hugging Face model needs three files together: one .safetensors file (a model in several shards is not supported), config.json, and ${TOKENIZERS.slice(0, -1).join(", ")} or ${TOKENIZERS[TOKENIZERS.length - 1]}.`);
   }
   const given = settings ? JSON.parse(await settings.text()) : {};
   return {

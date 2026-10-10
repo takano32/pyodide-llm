@@ -7,7 +7,7 @@
 # directory and PyTorch's pickle format.
 #
 #   python3 convert_hf.py <directory with config.json, pytorch_model.bin | model.safetensors | shards with an index,
-#                          spiece.model | tokenizer.model | tokenizer.json> <out> [float32|float16|int8] [max seq_len]
+#                          tokenizer.json | tokenizer.model | spiece.model> <out> [float32|float16|int8] [max seq_len]
 import json
 import pickle
 import sys
@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "public"))
 from llama2_convert import (Arrays, Safetensors, Shards, bfloat16, checkpoint_form, checkpoint_header, checkpoint_size,  # noqa: E402
                             convert_weights, normalize, sentencepiece_charsmap, sentencepiece_pieces, tokenizer_bin,
                             tokenizer_json_charsmap, tokenizer_json_options, tokenizer_json_pieces, unturned_layers)
+from convert.conduct import TOKENIZERS  # noqa: E402 (a part, read as the parts read one another: the window does not hand it out)
 
 
 # ------------------------------------------------------------------------------------------------ weights
@@ -76,16 +77,30 @@ def convert(directory, out_path, dtype, max_seq_len):
     return normalize(config)["vocab_size"]  # a Qwen3.5 has it one level down (T229)
 
 
+def tokenizer_of(name, data, vocab_size):
+    """tokenizer.bin of one candidate's bytes: by its name, as the page's conversion reads it (llama2_convert.Conversion)."""
+    if not name.lower().endswith(".json"):
+        return tokenizer_bin(sentencepiece_pieces(data), vocab_size, charsmap=sentencepiece_charsmap(data))
+    parsed = json.loads(data)
+    return tokenizer_bin(tokenizer_json_pieces(parsed), vocab_size, charsmap=tokenizer_json_charsmap(parsed),
+                         spaces=tokenizer_json_options(parsed)["tokenizer_kind"] != "bytebpe")
+
+
 def convert_tokenizer(directory, out_path, vocab_size):
-    model = next((p for p in (directory / "spiece.model", directory / "tokenizer.model") if p.exists()), None)
-    if model:
-        data = model.read_bytes()
-        vocabulary = tokenizer_bin(sentencepiece_pieces(data), vocab_size, charsmap=sentencepiece_charsmap(data))
+    """The tokenizer of the directory: of the candidates the page tries, in its order (T374.2.3: convert.conduct's
+    TOKENIZERS, the one list), the first that is there and that the converter reads. Where none will do, the refusal
+    of one that is there says why."""
+    refusal = None
+    for name in TOKENIZERS:
+        if not (directory / name).exists():
+            continue
+        try:
+            vocabulary = tokenizer_of(name, (directory / name).read_bytes(), vocab_size)
+            break
+        except Exception as error:  # (whatever it was refused with: the next candidate may do)
+            refusal = refusal or error
     else:
-        # the page's conversion writes these the same (llama2_convert.Conversion)
-        parsed = json.loads((directory / "tokenizer.json").read_text())
-        vocabulary = tokenizer_bin(tokenizer_json_pieces(parsed), vocab_size, charsmap=tokenizer_json_charsmap(parsed),
-                                   spaces=tokenizer_json_options(parsed)["tokenizer_kind"] != "bytebpe")
+        raise refusal or FileNotFoundError(f"{directory} has no tokenizer: none of {', '.join(TOKENIZERS)}")
     Path(out_path).write_bytes(vocabulary)
 
 
