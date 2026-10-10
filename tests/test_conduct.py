@@ -62,7 +62,8 @@ def conducted(hub, hf, making, told=None):
     return ending(hub, last), last[1] if last[0] == "done" else None
 
 
-# (the candidates once more, as this file knows them: test_the_candidates_are_... holds TOKENIZERS to the same three)
+# (the candidates once more, as this file knows them: the second copy of TOKENIZERS, which test_the_candidates_are_...
+# holds to it. direct() tries these, so that it has nothing of the conduct's)
 THREE = ("tokenizer.json", "tokenizer.model", "spiece.model")
 
 
@@ -308,6 +309,11 @@ def sound(told, conversion, ended, hf, hub):
     # the tokenizers: the model's candidates or the three, in their order, each once, none skipped, where the vocabulary is
     tried = [request for request in told if request[0] == "bytes"]
     assert tried == [("bytes", place, candidate) for candidate in candidates[:len(tried)]]
+    # and it gives up on them only once every one was tried; the one it takes is the last it asked for, and is there
+    if tried and conversion is None:
+        assert len(tried) == len(candidates)
+    if tried and conversion is not None:
+        assert hub.whole(*tried[-1][1:]) is not None
     # the templates: where the tokenizer is, tokenizer_config.json before chat_template.jinja before any tokenizer
     late = [request[2] for request in told if request[1:3] in ((place, "tokenizer_config.json"), (place, "chat_template.jinja")) or request[0] == "bytes"]
     assert late[:1] in ([], ["tokenizer_config.json"]) and late.count("chat_template.jinja") <= 1
@@ -593,7 +599,7 @@ def test_the_candidates_are_the_models_or_the_three_of_a_repository_nobody_looke
     def asked(hf):
         told, _, _ = requests_of(repository(without=["tokenizer.json"]), hf, monkeypatch)
         return [request[2] for request in told if request[0] == "bytes"]
-    assert TOKENIZERS == ("tokenizer.json", "tokenizer.model", "spiece.model")
+    assert TOKENIZERS == THREE
     assert asked({**HF, "tokenizer": "spiece.model"}) == ["spiece.model"]
     assert asked({**HF, "tokenizer": ["spiece.model", "tokenizer.json"]}) == ["spiece.model", "tokenizer.json"]
     for nothing in ({}, {"tokenizer": None}, {"tokenizer": []}):
