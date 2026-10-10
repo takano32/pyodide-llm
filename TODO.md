@@ -2320,6 +2320,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 分け方の案: 装置を開く（アダプタ・断り）、バッファと重みの置き場、形の検査と計測と選び方、プロンプトのブロック、生成の歩、知らせの受け手。確かめ: `gpu-prompt.yml` の `full=true`（E16・Q8 の表と各回の行が前と同じ数字）、gpu-choice-check、gpu-default-check、gpu-hybrid-check、`rounding-check.mjs`。
 
 - **CI（2026-10-09、ブランチで）**: 全部の組と網 run 37997060411（成功、網は全部同じ）。`gpu-prompt.yml full=true`（Chromium・Chrome・Edge の SwiftShader と Dawn）run 37997062664（成功: Dawn の台の溜め方を替えた所もここで通った）。3 つのブラウザでの読み込みと GPU の道（フォールバックの断り、`gpuTest=on` の 2 回の訪問、llm-jp-3 150M、`gpuTest=only` の 2 回の訪問、モデルの切り替え）run 37997067431（成功）。`preview.yml offline=true` run 37997069859（成功）。**実物のモデル（Qwen2.5 0.5B・Qwen3 0.6B）run 37997065220: Dawn の job は成功（59.3 分）、Chromium（SwiftShader）の job は 90 分の待ちの期限で落ちた**。これは頼み方の誤りで、分けたことの落ちではない: AGENTS.md の検証手順 4 が「SwiftShader は 360M 以上が形を選ぶ計測で時間を越えるので Dawn の job を読む」と言っている大きさを SwiftShader にも回した。
+- **本番（2026-10-10、デプロイ run 38006842331。全部の run の終わりを待ってから書いた）**: Chromium の 2 回の訪問（tiny-lm・llm-jp-3 150M・Qwen3.5 0.8B）run 38007282727、`gpuTest=on` の 2 回の訪問 run 38007284723、`gpuTest=only` run 38007286474、WebKit の 2 回の訪問 run 38007288063、Firefox run 38007289975: どれも成功。
 ### T357 [整理][遠隔試験] 試験の道具の重なりを寄せる（`tests/gpu-check.mjs` 127 KB、作り物のモデル、取得） — 状態: 未着手（2026-10-09。規模 中〜大。最後に）
 - 作り物のモデルを作る関数が smoke・conftest・`make_*.py`・gpu-check に重なっている。取得（`fetch()`・取り直し）、「出し切ってから終える」終わり方（T274 のレビュー: `answers.mjs` だけ直した。`degenerate.mjs`・`start_check.mjs`・`chat_fluency.mjs` が残る）、参照の道具 3 つ（`reference_llama`・`_qwen35`・`_lfm2`）の共通の骨組みを 1 か所に。製品のコードを分け終えてから（試験が守りの網なので、同時に動かさない）。
 
