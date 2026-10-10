@@ -63,7 +63,8 @@ def normalize(config):
 
 def check_config(config):
     """ValueError, in words for the visitor, unless this config.json describes a model the engine can run."""
-    family = FAMILIES.get(config.get("model_type"))
+    model_type = config.get("model_type")
+    family = FAMILIES.get(model_type) if isinstance(model_type, str) else None  # (a list or a dict is no name)
     if family is None or family.renamed:
         refuse(f"it is a {config.get('model_type', 'model of unknown type')}, and only {named(FAMILIES.values())} "
                f"models are supported")

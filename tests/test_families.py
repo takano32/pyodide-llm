@@ -263,3 +263,21 @@ def test_a_family_put_into_the_table_reads_its_gguf(made_up):
         llama2_convert.gguf_weights(file, json.dumps({**published, "q_multiplier": 0.25}))
     with pytest.raises(ValueError, match="its architecture is twice here and llama there"):
         llama2_convert.gguf_weights(file, json.dumps({**published, "model_type": "llama"}))
+
+
+def test_a_model_type_that_is_no_name_is_refused_as_an_unknown_one():
+    """A list or a dict as model_type is hashable by no table: the refusal, not a TypeError from the lookup."""
+    for model_type in (["llama"], {"a": 1}):
+        config = {**BASE, "model_type": model_type}
+        assert family_of(config) is LLAMA and architecture(config) == "llama"
+        assert normalize(config)["model_type"] == model_type
+        with pytest.raises(ValueError, match="only Llama, Mistral"):
+            check_config(config)
+
+
+def test_two_families_with_one_gguf_name_are_refused_at_the_table():
+    """A family that is another's _replace() has that one's GGUF name unless it says its own: the later would win in
+    the table GGUF is made from, and the earlier would be unreachable without a word."""
+    with pytest.raises(ValueError, match="both the GGUF architecture granite"):
+        families.by_gguf({"granite": GRANITE, "granite_again": GRANITE._replace(title="Again")})
+    assert families.by_gguf({"llama": LLAMA, "mistral": MISTRAL}) == {"llama": ("llama", LLAMA)}
