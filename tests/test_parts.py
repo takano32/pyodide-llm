@@ -4,7 +4,9 @@
 import ctypes
 import gc
 import sys
+import types
 import weakref
+from unittest import mock
 
 import numpy as np
 import pytest
@@ -388,3 +390,97 @@ def test_a_dropped_model_is_freed_without_a_collection(monkeypatch, kind):
         assert [ref() for ref in gone] == [None] * len(gone)
     finally:
         gc.enable()
+
+
+# ------------------------------------------------------------------------- each part alone, with stand-ins for the rest
+class Letters:
+    """A tokenizer's stand-in: a token a character, by its code."""
+
+    def encode(self, text, specials=()):
+        return [ord(character) for character in text]
+
+    def decode(self, previous, token, bos=1):
+        return chr(token).encode()
+
+
+def stand_in_model(log, answers, stop_tokens=(0,), **more):
+    """What generate() writes with, each part a stand-in that says it was called: no Llama, no weights, no kernels.
+    answers: the token sample() gives at each step."""
+    answers = list(answers)
+
+    def forward(token, pos, need_logits=True):
+        log.append(("forward", token, pos, need_logits))
+        return np.full(4, float(pos), dtype=np.float32) if need_logits else None
+
+    def penalize(logits, history, penalty, presence=0.0):
+        log.append(("penalize", list(history), penalty, presence))
+
+    def sample(logits, temperature, topp, rng, top_k=0, min_p=0.0):
+        log.append(("sample", float(logits[0]), temperature, topp, type(rng).__name__, top_k, min_p))
+        return answers.pop(0)
+
+    return types.SimpleNamespace(**{**dict(
+        tokenizer=Letters(), specials=(), bos=1, stop_tokens=set(stop_tokens), seq_len=64, stats={}, _run=0, forward=forward,
+        penalize=penalize, sample=sample, forward_many=None, prompt_block=lambda: 16, generate_many=None, token_block=lambda: 0), **more})
+
+
+def test_generate_writes_with_stand_ins_for_every_part():
+    """generate() alone: the prompt forced without logits, then forward, the two penalties and sample a step, in
+    that order and with what each is owed, until a stop token."""
+    log = []
+    model = stand_in_model(log, [ord("x"), ord("y"), 0, ord("z")])
+    pieces = list(generation.generate(model, "ab", steps=20, temperature=0.5, topp=0.8, repetition_penalty=1.2, seed=4,
+                                      top_k=3, min_p=0.1, presence_penalty=0.5))
+    a, b, x, y = ord("a"), ord("b"), ord("x"), ord("y")
+    assert "".join(pieces) == "abxy" and list(generation.generate(stand_in_model([], [x, 0]), "ab", echo=False, temperature=1.0)) == ["x"]
+    assert log == [
+        ("forward", 1, 0, False), ("forward", a, 1, False),
+        ("forward", b, 2, True), ("penalize", [1, a, b], 1.2, 0.0), ("sample", 2.0, 0.5, 0.8, "Generator", 3, 0.1),
+        ("forward", x, 3, True), ("penalize", [1, a, b, x], 1.2, 0.0), ("penalize", [x], 1.0, 0.5), ("sample", 3.0, 0.5, 0.8, "Generator", 3, 0.1),
+        ("forward", y, 4, True), ("penalize", [1, a, b, x, y], 1.2, 0.0), ("penalize", [x, y], 1.0, 0.5), ("sample", 4.0, 0.5, 0.8, "Generator", 3, 0.1)]
+    assert (model.stats["tokens"], model.stats["sampled"], model.stats["prompt_tokens"]) == (4, 3, 2)
+    with pytest.raises(ValueError, match="only 1 fit"):
+        list(generation.generate(stand_in_model([], []), "ab", steps=2))
+    with pytest.raises(ValueError, match="top_k"):
+        list(generation.generate(stand_in_model([], []), "ab", min_p=2.0))
+
+
+def test_generate_hands_blocks_and_steps_to_stand_ins():
+    """generate() alone, with a forward pass that takes the prompt in blocks and steps several at a time: the blocks
+    at their positions, the random numbers of a block of steps drawn before it, a block given back taken by forward
+    and sample, a stop token inside a block ending the run."""
+    log = []
+    answers = iter([[ord("p"), ord("q")], None, [ord("r"), 0, ord("s")]])
+
+    def many(tokens, pos):
+        log.append(("many", list(tokens), pos))
+
+    def steps(token, pos, history, count, temperature, topp, penalty, randoms, stops):
+        log.append(("steps", token, pos, list(history), count, len(randoms), list(stops)))
+        return next(answers)
+
+    model = stand_in_model(log, [ord("c")], stop_tokens=(0, 7), forward_many=many, prompt_block=lambda: 2,
+                           generate_many=steps, token_block=lambda: 2)
+    assert "".join(generation.generate(model, "abc", steps=30, temperature=0.9, seed=1)) == "abcpqcr"
+    a, b, c, p, q, r = (ord(letter) for letter in "abcpqr")
+    assert log == [
+        ("many", [1, a], 0), ("many", [b], 2),
+        ("steps", c, 3, [1, a, b, c], 2, 2, [0, 7]),
+        ("steps", q, 5, [1, a, b, c, p, q], 2, 2, [0, 7]),  # given back:
+        ("forward", q, 5, True), ("sample", 5.0, 0.9, 0.9, "Generator", 0, 0.0),
+        ("steps", c, 6, [1, a, b, c, p, q, c], 2, 2, [0, 7])]
+    assert model.stats["sampled"] == 5 and model.stats["prompt_tokens"] == 3
+
+
+def test_the_numpy_forward_alone_computes_the_reference():
+    """The forward pass in NumPy with no tokenizer and no sampler: a Llama made with a stand-in where it makes its
+    tokenizer (Llama makes that itself, from its bytes: what the forward pass is still tied to)."""
+    from conftest import naive_logits
+    config, weights = synthetic_weights()
+    with mock.patch.object(engine.model, "Tokenizer", lambda *arguments, **named: None):
+        llama = Llama(pack_checkpoint(config, weights), None)
+    assert llama.tokenizer is None
+    tokens = [1, 5, 9, 5, 7]
+    expected = naive_logits(config, weights, tokens)
+    for pos, token in enumerate(tokens):
+        assert np.allclose(llama.forward(token, pos), expected[pos], rtol=1e-4, atol=1e-4), pos
