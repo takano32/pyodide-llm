@@ -18,6 +18,7 @@ import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { footprint, needsWide } from "../public/forward.js";
 import { filled } from "../src/models.js";
+import { leave } from "./leave.mjs";
 
 const [out, pageFile, count = "60"] = process.argv.slice(2);
 const page = JSON.parse(fs.readFileSync(pageFile, "utf8"));
@@ -116,4 +117,5 @@ result.answers.forEach((row, k) => {
 console.log(`answer_check ${id}: all: ${tokens} tokens, perplexity ${Math.exp(natural / tokens).toFixed(3)} natural, ${Math.exp(paged / tokens).toFixed(3)} with ${result.bos} in front ` +
   `(${(Math.exp((paged - natural) / tokens) * 100 - 100).toFixed(1)}%), likeliest token the same ${agree}/${tokens} (${(agree / tokens * 100).toFixed(1)}%), KL ${(kl / tokens).toFixed(4)} a token; ` +
   `${differ} of ${result.answers.length} answers written again differ, the same for ${same} of ${tokens} tokens`);
-process.exit(0);
+// (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
+await leave(0);

@@ -17,6 +17,7 @@ import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { footprint, needsWide } from "../public/forward.js";
 import { filled } from "../src/models.js";
+import { leave } from "./leave.mjs";
 
 const QUESTIONS = ["日本でいちばん高い山はどこですか？", "これからの流行りを3つ挙げてください。", "17 × 24 はいくつですか？途中の計算も書いてください。",
   "次の文を英語に訳してください。「今日は天気がいいので、散歩に行きます。」", "光合成とは何ですか？やさしく説明してください。", "夏目漱石の代表作を 2 つ挙げ、一言ずつ説明してください。",
@@ -102,5 +103,4 @@ console.log(`answers ${id}: all: stopped ${share("stopped")}, thought finished $
   `${(sampled.reduce((sum, row) => sum + row.tokens, 0) / Math.max(1, sampled.length)).toFixed(0)} tokens written on average`);
 // T274's review: 4096-token answers of 12 questions are far more than the 64 KiB of a pipe, and exit() throws away what
 // the pipe has not taken (run 37866973619 printed 7 rows of 12 and no summary, and still ended well): leave when it has
-await Promise.all([process.stdout, process.stderr].map((stream) => new Promise((resolve) => stream.write("", resolve))));
-process.exit(0);
+await leave(0);  // (tests/leave.mjs)

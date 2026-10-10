@@ -23,6 +23,7 @@ import { pyodideWithEngine } from "./engine.mjs";
 import { footprint, needsWide } from "../public/forward.js";
 import { ARTICLES, wikipediaText } from "./wikipedia.mjs";
 import { MODELS } from "../src/models.js";
+import { leave } from "./leave.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 // the model (and a JSON), then the flags: each with the value that follows
@@ -111,4 +112,5 @@ result.labels.forEach((label, k) => {
     `${Number.isFinite(none) ? `${((Math.exp((total - none) / result.scored) - 1) * 100).toFixed(2)}%` : ""} | ${(total / perCharacter).toFixed(4)} |`);
 });
 console.log(`start_check ${name}: scored ${result.scored} targets in ${result.windows} windows`);
-process.exit(0);
+// (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
+await leave(0);

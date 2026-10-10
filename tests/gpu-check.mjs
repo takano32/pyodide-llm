@@ -117,6 +117,7 @@ import { spawnSync } from "node:child_process";
 import { pyodideWithEngine } from "./engine.mjs";
 import { MODELS } from "../src/models.js";
 import * as wgsl from "../public/shaders.js";
+import { leave } from "./leave.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
@@ -1077,11 +1078,10 @@ if (lines.length) console.log(lines.join("\n"));
 if (!outcome.error && !outcome.forms?.length) outcome.error = "no tiled shader to force: the harness got no GPU adapter (run it again)";
 // (T226: an exit once what was printed has gone out. An exit at once cut the log of CI's Dawn job in the middle of a
 // line of the console, before the error: run 36867483459 failed, and nothing said why)
-const flushed = () => Promise.all([process.stdout, process.stderr].map((stream) => new Promise((resolve) => stream.write("", resolve))));
+// (tests/leave.mjs, T357: the one place for it)
 if (outcome.error) {
   console.error(`FAILED\n- ${outcome.error}`);
-  await flushed();
-  process.exit(1);
+  await leave(1);
 }
 
 async function inBrowser() {
@@ -1395,8 +1395,7 @@ for (const { id, cpu, gpu: runs, late, refused, remembered, alone, broken, nanSe
     console.log(`seconds of the NaN rounds of ${id}: ${Object.entries(nanSeconds).map(([round, s]) => `${round} ${s.toFixed(1)}`).join(", ")}`);
   }
 }
-await flushed();
-process.exit(failed ? 1 : 0);
+await leave(failed ? 1 : 0);
 
 // T213: the first matrix a token's layer would bind inside a joined buffer (q, k and v as one, gate and up as one,
 // in gpu.js's tokensLayout's order; each after the ones before it) whose values or scales would not start where a device binds a buffer, or null where every

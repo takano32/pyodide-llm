@@ -20,6 +20,7 @@ import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { footprint, needsWide } from "../public/forward.js";
 import { MODELS, filled } from "../src/models.js";
+import { leave } from "./leave.mjs";
 
 // <out> and the JSON as tests/write.sh gives them; or the id of a model of this site (tiny-lm: the baseline of a model of
 // the list), whose checkpoint is in the repository's folder after `make models`
@@ -101,4 +102,5 @@ line("all", result.rows);
 const shown = (row) => `degenerate ${id}: ${JSON.stringify(prompts[row.prompt])} seed ${row.seed}: ${JSON.stringify(row.answer.slice(0, 160))}`;
 for (const row of result.rows.filter((row) => row.unk || row.loop || row.other).slice(0, 3)) console.log(shown(row));
 for (const row of result.rows.filter((row) => !row.unk && !row.loop && !row.other).slice(0, 2)) console.log(shown(row) + " (fine)");
-process.exit(0);
+// (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
+await leave(0);
