@@ -33,8 +33,12 @@ export function keptName(model) {
  * 8: {prompt:trim} for a template that trims what was typed (T138: Llama 3.1 and 3.2, Swallow 8B); 9: the batch the
  * owner held for one version (2026-09-28): the added tokens that are not special as specials, the BOS the tokenizer
  * names, a GGUF's padding as empty pieces, a byte-level tokenizer.bin's own U+2581 (T143), and a sentencepiece
- * model's charsmap after the pieces in place of the nfkc and nmt options (T216). */
-export const CONVERTER = 9;
+ * model's charsmap after the pieces in place of the nfkc and nmt options (T216). 10: the round of T369 (2026-10-10): the
+ * token a text begins with where the model's chat template was read (T264: the template's own first token, so that the
+ * page sends the ids of apply_chat_template), lower case for a sentencepiece model that asks for it (T265), the dummy
+ * prefix after a special token (T308), the templates jinja2 reads and the reader did not (T397, and T269's), and
+ * qk_norm said by a Llama's file alone. */
+export const CONVERTER = 10;
 const converterOf = (manifest) => manifest.converter ?? 1;
 /** The names a model's conversion may be kept under: its bits, or with none asked for, either of the two the worker
  * may choose (T115) */
