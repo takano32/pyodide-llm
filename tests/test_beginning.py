@@ -156,3 +156,34 @@ def test_a_unigram_tokenizer_json_that_prefixes_every_text_begins_with_the_templ
     del tokenizer["normalizer"]
     options, _ = converted(tokenizer, config={"bos_token_id": 1, "eos_token_id": 3}, chat_template=template, bos_token="<s>")
     assert "prefixed" not in options and options["bos"] == 1 and options["template"] == "<|start|>{prompt}<|end|><|start|>"
+
+
+def test_the_answer_stops_at_the_eos_the_tokenizer_names_too():
+    """T369: config.json's eos_token_id and the tokenizer's eos_token may be two tokens (a Qwen3.5's: <|endoftext|> and
+    <|im_end|>, which ends a turn of its template), and transformers' generate() stops at either. The tokenizer's is a
+    stop token where it names one that is a piece of its own and not one already."""
+    tokenizer, ids = byte_level(["<|endoftext|>", "<|im_start|>", "<|im_end|>"])
+    config = {"bos_token_id": ids["<|endoftext|>"], "eos_token_id": ids["<|endoftext|>"]}
+    stops = lambda **described: converted(tokenizer, config=config, **described)[0]["stop_tokens"]
+    as_it_was = [ids["<|endoftext|>"], ids["<|endoftext|>"]]
+    # named and another, as text or as {"content": ...}; with a template and without
+    assert stops(eos_token="<|im_end|>") == [*as_it_was, ids["<|im_end|>"]]
+    assert stops(eos_token={"content": "<|im_end|>"}) == [*as_it_was, ids["<|im_end|>"]]
+    assert stops(eos_token="<|im_end|>", chat_template=CHATML) == [ids["<|im_start|>"], *as_it_was, ids["<|im_end|>"]]
+    # the same as config.json's, or one the template's first token already is: said once
+    assert stops(eos_token="<|endoftext|>") == as_it_was
+    assert stops(eos_token="<|im_start|>", chat_template=CHATML) == [ids["<|im_start|>"], *as_it_was]
+    # named, but no piece of the vocabulary (its letters are): no token to stop at
+    assert stops(eos_token="<|end|>") == as_it_was
+    assert stops(eos_token="user<|im_end|>") == as_it_was
+    # none named: nothing, and not the empty pieces a vocabulary is padded with
+    for nothing in ({}, {"eos_token": None}, {"eos_token": ""}, {"eos_token": {"content": None}}, {"eos_token": 7}):
+        assert stops(bos_token="<|endoftext|>", **nothing) == as_it_was, nothing
+    short, at = byte_level(["<|endoftext|>", "<|im_end|>"], size=316)  # (four pieces of padding, each empty: ids 316 to 319)
+    for nothing in ({}, {"eos_token": ""}):
+        assert converted(short, config={"bos_token_id": at["<|endoftext|>"], "eos_token_id": at["<|endoftext|>"]},
+                         **nothing)[0]["stop_tokens"] == [at["<|endoftext|>"]] * 2
+    # a sentencepiece model's control piece
+    data, pieces = sentencepiece()
+    options, _ = converted(data, "tokenizer.model", {"bos_token_id": pieces["<s>"], "eos_token_id": pieces["</s>"]}, eos_token="<|assistant|>")
+    assert options["stop_tokens"] == [pieces["<s>"], pieces["</s>"], pieces["<|assistant|>"]]

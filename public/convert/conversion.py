@@ -117,8 +117,9 @@ class Conversion:
         bos = bos if isinstance(bos, int) else own
         eos = self.config.get("eos_token_id", 2)
         # the format of one turn, from the model's own chat_template (T73). src/models.js wins when it has one
+        ids = piece_ids(self.tokenizer, self.config["vocab_size"])
         template, head, mark = self.beginning(*model_turn(described(tokenizer_config), chat_template), [*specials, *added],
-                                              options)
+                                              options, ids)
         # the answer stops at the BOS, and at config.json's where that is another (T143); and at the token the
         # template begins with, where that is the one every text begins with here (T264: the mark of a new turn)
         # A BOS that nothing names and the template does not begin with is no token of this model's to stop at: token 1
@@ -127,6 +128,14 @@ class Conversion:
         stop = [token for token in [*([head] if head is not None else []),
                                     *([bos, *([own] if own != bos else [])] if head is None else said),
                                     *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
+        # And at the EOS the tokenizer names, where that is a token of its own and another than config.json's (T369): a
+        # Qwen3.5's config.json says <|endoftext|> and its tokenizer <|im_end|>, which is what ends a turn of its chat
+        # template; transformers' generate() stops at either. Without it an answer went on past <|im_end|> to the mark
+        # of the next turn
+        ending = config_token(described(tokenizer_config), "eos_token")
+        ending = ids.get(ending.encode("utf-8")) if ending else None  # (no name is no piece: the padding's are empty)
+        if ending is not None and ending not in stop:
+            stop.append(ending)
         bos = bos if head is None else head
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start), sink=sink,
@@ -165,7 +174,7 @@ class Conversion:
         self.options.update(family.options(self.config))
         self.checkpoint = self.stream.out
 
-    def beginning(self, turn, named, tokens, options):
+    def beginning(self, turn, named, tokens, options, ids):
         """T264: (the format of one turn as the engine takes it, the id of the token every text then begins with, or
         None where that stays the BOS, and that token's text) of a model's own turn (model_turn()'s), so that the page
         sends the ids of transformers' apply_chat_template for it, which puts nothing in front of what the template
@@ -180,12 +189,12 @@ class Conversion:
         tokenizer puts its dummy prefix before the first text and not before the text after a special token, so text
         that followed the token would be read as the first. Unless that is no other reading: every stretch is
         prefixed ("every"), or every one that does not begin with a space ("wanting") and what follows the token is
-        the template's own text, which does not. options: the tokenizer's, as the engine gets them."""
+        the template's own text, which does not. options: the tokenizer's, as the engine gets them. ids: piece_ids() of
+        the tokenizer.bin."""
         if not turn:
             return turn, None, None
         if named and turn.startswith(named):
             return turn[len(named):], None, None
-        ids = piece_ids(self.tokenizer, self.config["vocab_size"])
         heads = [token for token in tokens if token and turn.startswith(token) and token.encode("utf-8") in ids]
         if not heads:
             return turn, None, None
