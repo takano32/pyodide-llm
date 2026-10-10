@@ -23,11 +23,8 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-import math
-
 import numpy as np
 
-from engine.checkpoint import OUTLIER_CHANNELS, Tensor, outlier_channels
 from engine.sampler import REPETITION_WINDOW
 
 # what an ExternalForward may have for a Llama to run by, in place of the NumPy forward pass and of what a Llama
@@ -36,53 +33,21 @@ STEPS = ("forward", "forward_many", "prompt_block", "generate_many", "token_bloc
 
 
 class ExternalForward:
-    """forward() in public/forward.js (T93): Python hands over where every tensor is, and the few small
-    arrays it computes itself (the RoPE tables of a checkpoint that leaves them out, the outlier channels of
-    T92), and gets the logits back into one array of its own, which the sampling kernels then read.
+    """forward() in public/forward.js (T93): the engine is made from a plan (engine/plan.py: where every tensor is, and
+    the few small arrays Python computes itself), and it writes the logits into one array of Python's, which the
+    sampling kernels then read.
 
     It keeps the JavaScript engine and that array (engine, logits) until release(), and has, of STEPS, forward()
     and whatever else the engine offers. They are closures made here, not methods: a step is one Python call and
     then JavaScript's (it is on the path of every token the page writes)."""
 
-    def __init__(self, model, external, int8, disable, kv_start):
-        """model: the Llama whose tensors are outside (read here for the plan, and not kept); external: forward.js's
-        (Llama's argument); int8: the matrices stay int8; disable: T52's switches; kv_start: KV_START."""
-        # (the classifier of a model that has no other is its embedding, under both names)
-        held = {name: getattr(model, name) for name in (*(row.name for row in model.rows), "wcls")}
-        tensors = {name: tensor.plan() for name, tensor in held.items() if isinstance(tensor, Tensor)}
-        derived = {name: np.ascontiguousarray(getattr(model, name), dtype=np.float32).tobytes()
-                   for name in ("freq_cis_real", "freq_cis_imag") if isinstance(getattr(model, name), np.ndarray)}
-        if model.rotated is not None:
-            # T237: the signs of every width, with the transform's 1 / sqrt(block) in them (what the kernel multiplies by)
-            scale = np.float32(1.0 / math.sqrt(model.rotated["block"]))
-            derived.update({f"signs.{width}": (signs * scale).tobytes() for width, signs in model.rotated["signs"].items()})
-        channels = []
-        # (T237: not in a rotated basis, where the classifier reads R of its input: the rotation spreads a channel
-        # over its block, and a column of the stored matrix is no channel's)
-        if int8 and model.rotated is None:
-            final = model.rms_final_weight
-            raw = external.read(final.offset, model.dim * 4)
-            weight = np.frombuffer(bytes(raw.to_py() if hasattr(raw, "to_py") else raw), dtype=np.float32)
-            channels = [int(c) for c in outlier_channels(weight, min(OUTLIER_CHANNELS, model.dim))]
-        plan = {"arch": model.arch, "dim": model.dim, "hidden_dim": model.hidden_dim, "n_layers": model.n_layers,
-                "n_heads": model.n_heads, "n_kv_heads": model.n_kv_heads, "head_size": model.head_size,
-                "vocab_size": model.vocab_size, "seq_len": model.seq_len, "rotary": model.rotary,
-                "parallel_residual": bool(model.parallel_residual), "kv_start": kv_start, "rms_norm_eps": model.rms_norm_eps,
-                "shared_classifier": model.wcls is model.token_embedding_table, "int8": bool(int8),
-                "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels,
-                # T229: a Qwen3.5's linear-attention layers (None: none)
-                "linear": model.linear,
-                # T255: the layers RoPE leaves alone
-                "unturned": list(model.unturned),
-                # T260: an LFM2's convolution layers (None: none)
-                "convolution": model.convolution,
-                # T237: the block of a rotated basis (0: the model's own basis); its signs are in derived
-                "rotated": model.rotated["block"] if model.rotated else 0,
-                # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
-                "half_kv": bool(int8) and "kv16" not in disable}
+    def __init__(self, plan, external):
+        """plan: forward_plan()'s, which is handed on and not kept (the bytes of its tables would stay in Python for as
+        long as the model); external: forward.js's (Llama's argument), of which start(plan) makes the engine. Nothing
+        of a model is read here: a plan and a stand-in for the engine are enough to make one."""
         engine = external.start(plan)
         self.backend = str(engine.backend)
-        logits = np.zeros(model.vocab_size, dtype=np.float32)
+        logits = np.zeros(plan["vocab_size"], dtype=np.float32)
         engine.bind(logits)
         self.engine, self.logits = engine, logits  # keep both alive: JS writes into the array
         run = engine.forward

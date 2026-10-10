@@ -40,15 +40,17 @@ def short(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
-def said(name, ask, whole=False):
-    """What ask() answers, or the class of its refusal; a long answer as a hash and its length."""
+def said(name, ask, whole=False, without=()):
+    """What ask() answers, or the class of its refusal; a long answer as a hash and its length. without: the keys of the
+    answer (a dict) that are not written down here."""
     try:
         answer = ask()
     except Exception as error:  # a refusal is an answer too: which one (its words are not compared)
         found[name] = f"raises {type(error).__name__}"
         return None
-    text = json.dumps(answer, sort_keys=True, default=str)
-    found[name] = text if whole or len(text) <= 200 else f"{short(answer)} ({len(text)} characters)"
+    kept = {key: value for key, value in answer.items() if key not in without} if without else answer
+    text = json.dumps(kept, sort_keys=True, default=str)
+    found[name] = text if whole or len(text) <= 200 else f"{short(kept)} ({len(text)} characters)"
     return answer
 
 
@@ -103,6 +105,8 @@ FAMILIES = [
     ("lfm2, four taps", "lfm2", {"arch": "lfm2", "convolution": {"layers": "acaccacc", "taps": 4}}, {}, {}),
 ]
 DTYPES = ("float32", "float16", "int8", "int6", "ternary")
+# the keys of the plan that T359.5 added: every layer's facts, and the widths
+AHEAD = {"layers", "widths"}
 
 
 for name, headers, form, engine, source in FAMILIES:
@@ -125,7 +129,11 @@ for name, headers, form, engine, source in FAMILIES:
                 None, header, dtype, whole, sink=type("Sink", (), {"open": lambda *_: None, "write": lambda *_: None})())))
             said(f"{case}, {dtype}: dtype", lambda: L.checkpoint_dtype(header, size, whole))
             if engine is not None:
-                said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size))
+                # (T359.5's keys are a record of their own, so that the plan as it was before them is still compared
+                # with a tree that has none)
+                plan = said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size), without=AHEAD)
+                if plan is not None and AHEAD & set(plan):
+                    said(f"{case}, {dtype}: engine's layers and widths", lambda: {key: plan[key] for key in sorted(AHEAD)})
                 if not engine:
                     said(f"{case}, {dtype}: external", lambda: L.external_tensors(header, dtype, whole))
 

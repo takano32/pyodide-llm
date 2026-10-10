@@ -38,6 +38,7 @@ from engine.checkpoint import SEVERAL_KINDS
 from engine.tensors import read_rows, rope_tables
 from engine.sampler import KernelSampler, NumpySampler, greedy
 from engine.external import STEPS, ExternalForward
+from engine.plan import forward_plan
 from engine import generation
 
 # The KV cache starts with room for this many positions and doubles when a run gets there: a context of 4096
@@ -231,7 +232,11 @@ class Llama:
                 raise ValueError(f"The checkpoint has {int(external.size)} bytes, and its header asks for "
                                  f"{file_size(self.rows, stored)} as {stored}.")
             # forward.js's forward pass, and what else its engine offers, in the reference's places
-            outside = self.external_forward = ExternalForward(self, external, keep_int8, disable, KV_START)
+            # (the plan is made here and handed over: nothing in Python keeps it)
+            outside = self.external_forward = ExternalForward(forward_plan(
+                dims, stored, external.read, int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,
+                parallel_residual=parallel_residual, rms_norm_eps=self.rms_norm_eps, unturned=self.unturned,
+                rotated=self.rotated, tables=tables), external)
             self.backend, self._external = outside.backend, (outside.engine, outside.logits)
             for name in STEPS:
                 if hasattr(outside, name):
