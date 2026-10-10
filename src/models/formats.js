@@ -25,12 +25,12 @@ export const TRANSLATE = "Translate the following Japanese text into English.\n\
 // and the date ({date}: filled() writes today's). The template ends at "<|start|>assistant" and leaves the channel to
 // the model; this one asks for the final channel, the answer, and so skips the analysis a harmony model may write
 // first. Its tokenizer.json puts a "▁" before the text after each special token (a normalizer that replaces the start
-// of every piece with it), which the engine does not: the space after each special token here makes the same tokens
-// (the same IDs as the real Jinja and tokenizers for four prompts, T132). A turn ends with <|return|> (2), <|end|>
-// (11) or <|call|> (13), and a new message would start with <|start|> (10)
-export const HARMONY = "<|start|> system<|message|> You are LLM-jp-4, a large language model trained by LLM-jp.\nKnowledge cutoff: " +
+// of every piece with it): the converter says so to the engine (prefixed, T308; until T369 a space after each special
+// token here made the same tokens: the same IDs as the real Jinja and tokenizers for four prompts, T132). A turn ends
+// with <|return|> (2), <|end|> (11) or <|call|> (13), and a new message would start with <|start|> (10)
+export const HARMONY = "<|start|>system<|message|>You are LLM-jp-4, a large language model trained by LLM-jp.\nKnowledge cutoff: " +
   "2025-12\nCurrent date: {date}\n\n# Valid channels: analysis, commentary, final. Channel must be included for every " +
-  "message.<|end|><|start|> user<|message|> {prompt}<|end|><|start|> assistant<|channel|> final<|message|>";
+  "message.<|end|><|start|>user<|message|>{prompt}<|end|><|start|>assistant<|channel|>final<|message|>";
 // T125: Mistral's formats, one turn as the real Jinja writes it (the same IDs as the real Jinja and tokenizers for
 // four prompts, where the prompt has no space at either end: some templates trim it, the page does not). These
 // models come with a sentencepiece tokenizer.model, which the engine reads (their tokenizer.json is a BPE of
@@ -46,14 +46,14 @@ export const RAKUTEN = "A chat between a curious user and an artificial intellig
 // strips the whole turn, which trims what was typed at its end only (filled() trims both ends: a prompt that begins
 // with spaces differs)
 export const SWALLOW_MS = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST] ";
-// zephyr's tokenizer.json puts a "▁" before the text after </s> (a legacy Llama tokenizer), which the engine does
-// not: the space after </s> makes the same tokens
-export const ZEPHYR = "<|user|>\n{prompt}</s> \n<|assistant|>\n";
+// zephyr's tokenizer puts a "▁" before the text after </s> (a legacy Llama tokenizer): the converter says so to the
+// engine (prefixed, T308; until T369 a space after </s> here made the same tokens)
+export const ZEPHYR = "<|user|>\n{prompt}</s>\n<|assistant|>\n";
 // T249: EuroLLM's chat_template is ChatML with a system turn that is empty unless one is given. Its tokenizer (a legacy
-// Llama tokenizer, as zephyr's) puts a "▁" before the text after <|im_start|> and <|im_end|>, which the engine does
-// not: the space after each makes the same tokens (the same IDs as the real Jinja and tokenizers for
-// tests/format_check.py's prompts; the converter's own reading of the template, without the spaces, made none the same)
-export const EUROLLM = "<|im_start|> system\n<|im_end|> \n<|im_start|> user\n{prompt}<|im_end|> \n<|im_start|> assistant\n";
+// Llama tokenizer, as zephyr's) puts a "▁" before the text after <|im_start|> and <|im_end|>: the converter says so to
+// the engine (prefixed, T308; until T369 a space after each here made the same tokens: the same IDs as the real Jinja
+// and tokenizers for tests/format_check.py's prompts)
+export const EUROLLM = "<|im_start|>system\n<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
 // T250: Llama-3-ELYZA-JP's template is Llama 3's (no date, the turns trimmed), and its card always passes this system
 // message, as Swallow-MS's does: one turn of it as the real Jinja writes it with that message
 export const ELYZA = "<|start_header_id|>system<|end_header_id|>\n\nあなたは誠実で優秀な日本人のアシスタントです。特に指示が無い場合は、" +

@@ -69,7 +69,7 @@ class Conversion:
         else:
             pieces = list(sentencepiece_pieces(tokenizer))
             self.tokenizer = tokenizer_bin(pieces, vocab_size, charsmap=sentencepiece_charsmap(tokenizer))
-            # (T265) and what only tokenizer_config.json says of a sentencepiece model
+            # (T265, T308) and what only tokenizer_config.json says of a sentencepiece model
             options = {**sentencepiece_options(tokenizer), **described_options(described(tokenizer_config))}
             specials, added = sentencepiece_specials(tokenizer), []
         # T143: the BOS is the token the tokenizer names, which transformers begins a text with, where config.json says

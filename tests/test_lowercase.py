@@ -24,7 +24,8 @@ def test_do_lower_case_is_not_read_for_a_tokenizer_json():
 
 
 def test_the_model_reads_as_its_options_say():
-    """The options go to Llama() as the worker spreads them, and the model's own tokenizer reads by them."""
+    """The options go to Llama() as the worker spreads them, and the model's own tokenizer reads by them: lower case
+    (T265) and the dummy prefix after a special token (T308)."""
     import json
     import llama2_convert
     from llama2_numpy import Llama
@@ -32,10 +33,12 @@ def test_the_model_reads_as_its_options_say():
     data, ids = sentencepiece()
     settings, published, header, base = model()
     conversion = llama2_convert.Conversion(header, base, json.dumps(published), data, "spiece.model", dtype="float32",
-                                           max_seq_len=settings["seq_len"], tokenizer_config=json.dumps({"do_lower_case": True}))
+                                           max_seq_len=settings["seq_len"],
+                                           tokenizer_config=json.dumps({"do_lower_case": True, "tokenizer_class": "LlamaTokenizer"}))
     options = conversion.options
-    assert options["lowercase"] is True
+    assert options["lowercase"] is True and options["prefixed"] == "wanting"
     llama = Llama(conversion.checkpoint, conversion.tokenizer, **options)
-    assert llama.tokenizer.encode("HELLO</s>World", ("</s>",)) == [ids["▁hello"], ids["</s>"], ids["world"]]
-    plain = Llama(conversion.checkpoint, conversion.tokenizer, **{key: value for key, value in options.items() if key != "lowercase"})
+    assert llama.tokenizer.encode("HELLO</s>World", ("</s>",)) == [ids["▁hello"], ids["</s>"], ids["▁world"]]
+    plain = Llama(conversion.checkpoint, conversion.tokenizer, **{key: value for key, value in options.items() if key not in ("lowercase", "prefixed")})
+    assert plain.tokenizer.encode("hello</s>world", ("</s>",)) == [ids["▁hello"], ids["</s>"], ids["world"]]
     assert ids["▁hello"] not in plain.tokenizer.encode("HELLO")

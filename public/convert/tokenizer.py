@@ -81,18 +81,45 @@ def tokenizer_json_options(tokenizer):
     normalizers = json.dumps(tokenizer.get("normalizer") or {})
     nfkc = '"NFKC"' in normalizers
     if tokenizer_kind_of(tokenizer) != "BPE":
-        return {"tokenizer_kind": "unigram", "nfkc": nfkc}
+        prefixed = prefixed_texts(tokenizer)
+        return {"tokenizer_kind": "unigram", "nfkc": nfkc, **({"prefixed": prefixed} if prefixed else {})}
     return {"tokenizer_kind": "bytebpe", "nfkc": nfkc, "nfc": '"NFC"' in normalizers,
             "pretokenizer": pretokenizer_name(tokenizer.get("pre_tokenizer")),
             "ignore_merges": bool(tokenizer["model"].get("ignore_merges"))}
+
+
+def prefixed_texts(tokenizer):
+    """T308: which stretches of text this tokenizer.json puts sentencepiece's "▁" before, besides the first: the text
+    after a special token too (the tokenizers library normalizes and pre-tokenizes each stretch between two added
+    tokens on its own). "every": a normalizer that prepends it (Prepend) or replaces the start of the text with it (a
+    Replace of a pattern that ends in ^: llm-jp's "(?<!\n)^"). "wanting": a Metaspace pre-tokenizer that always
+    prepends, which leaves a stretch that begins with a space as it is. False: neither. Said to the engine as
+    Llama(prefixed=), only where it is one of the two (each as the tokenizers library does it: tests/test_prefixed.py)."""
+    steps, found = [tokenizer.get("normalizer") or {}, tokenizer.get("pre_tokenizer") or {}], set()
+    while steps:
+        step = steps.pop()
+        steps += [*(step.get("normalizers") or []), *(step.get("pretokenizers") or [])]
+        kind, pattern = step.get("type"), step.get("pattern") or {}
+        if (kind == "Prepend" and step.get("prepend") == "▁") or \
+                (kind == "Replace" and step.get("content") == "▁" and str(pattern.get("Regex", "")).endswith("^")):
+            found.add("every")
+        # (before prepend_scheme the key was add_prefix_space, which prepended to every stretch as "always" does)
+        if kind == "Metaspace" and step.get("prepend_scheme", "always" if step.get("add_prefix_space", True) else "never") == "always":
+            found.add("wanting")
+    return "every" if "every" in found else "wanting" if found else False
 
 
 def described_options(config):
     """What a sentencepiece model's tokenizer_config.json says of how its text is read, which the model's own file does
     not (config: read, a dict), as Llama()'s options and only where it is so.
     lowercase (T265): do_lower_case, which transformers' slow tokenizers apply before sentencepiece sees the text
-    (rinna's japanese-gpt2: a vocabulary without capital Latin letters)."""
-    return {"lowercase": True} if config.get("do_lower_case") is True else {}
+    (rinna's japanese-gpt2: a vocabulary without capital Latin letters).
+    prefixed (T308): a Llama tokenizer that is legacy (said, or not said: transformers' default) puts the dummy prefix
+    before the text after a special token as well, unless that text begins with a space ("wanting": transformers
+    makes a Metaspace that always prepends of it, and tests/format_check.py holds the list's two to that); with legacy
+    false, before the first text only."""
+    legacy = str(config.get("tokenizer_class", "")).startswith("LlamaTokenizer") and config.get("legacy", True) is not False
+    return {**({"lowercase": True} if config.get("do_lower_case") is True else {}), **({"prefixed": "wanting"} if legacy else {})}
 
 
 def tokenizer_json_charsmap(tokenizer):
