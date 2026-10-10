@@ -133,15 +133,16 @@ class Row(NamedTuple):
 
 
 class Dims:
-    """The numbers the rows' shapes are made of: the header's 7 ints, and what the form (FORM) adds to them."""
+    """The numbers the rows' shapes are made of: the header's 7 ints, and what the form (FORM) adds to them. form: the
+    form whole, for what a layout alone reads of it."""
 
     def __init__(self, header, form=None):
-        form = form_of(form)
+        self.form = form = form_of(form)
         (self.dim, self.hidden_dim, self.n_layers, self.n_heads, self.n_kv_heads, vocab_size,
          self.seq_len) = (int(value) for value in header)
         # (a negative vocabulary in the header: the classifier is a tensor of its own)
         self.vocab_size, self.shared = abs(vocab_size), vocab_size > 0
-        self.arch, self.bias, self.qk_norm = form["arch"], bool(form["bias"]), bool(form["qk_norm"])
+        self.arch = form["arch"]
         # the size of a head where it is not dim / n_heads (T124: Qwen3 0.6B has 16 heads of 128 in a dim of 1024);
         # q and the attention's output are n_heads * head_size wide
         self.head_size = int(form["head_dim"]) or self.dim // self.n_heads
@@ -151,6 +152,10 @@ class Dims:
         if (self.arch == "qwen35" and self.linear is None) or (self.arch == "lfm2" and self.convolution is None):
             raise ValueError("A hybrid model (qwen35) has to say its linear layers, and an LFM2 its convolution layers.")
         self.slots = layer_slots(self.n_layers, self.linear, self.convolution)
+
+    def rows(self):
+        """The tensors of the checkpoint, as rows in file order: its architecture's layout."""
+        return LAYOUTS.get(self.arch, llama)(self)
 
     def layers(self, per):
         """The layers a stack covers, in the order of the stack."""
@@ -205,10 +210,10 @@ def llama(d):
     was: the q, k and v biases of a Qwen2, then the norms of the heads of q and k of a Qwen3."""
     rows = [*embedding(d), d.stack("rms_att_weight", VECTOR, EVERY, d.dim), *attention(d), *gated_ffn(d),
             Row("rms_final_weight", VECTOR, (d.dim,)), *rope_tables(d), *classifier(d)]
-    if d.bias:
+    if d.form["bias"]:
         rows += [d.stack("bq", VECTOR, ATTENDING, d.q_dim), d.stack("bk", VECTOR, ATTENDING, d.kv_dim),
                  d.stack("bv", VECTOR, ATTENDING, d.kv_dim)]
-    return rows + head_norms(d) if d.qk_norm else rows
+    return rows + head_norms(d) if d.form["qk_norm"] else rows
 
 
 def qwen35(d):
@@ -260,8 +265,7 @@ LAYOUTS = {"llama": llama, "gpt2": gpt2, "neox": gpt2, "qwen35": qwen35, "lfm2":
 
 def tensor_rows(header, form=None):
     """The tensors of a checkpoint with this header (7 ints) and form (FORM), as rows in file order."""
-    d = Dims(header, form)
-    return LAYOUTS.get(d.arch, llama)(d)
+    return Dims(header, form).rows()
 
 
 # ---- how a row is stored, and where

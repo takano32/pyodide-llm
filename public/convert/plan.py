@@ -1,7 +1,7 @@
 # The plan of a conversion: which tensor of the source goes where in the checkpoint, and what is done to it on the way.
 import numpy as np
 
-from engine.layout import TABLE, Dims, form_of, linear_form, tensor_rows
+from engine.layout import TABLE, Dims, form_of, linear_form
 from engine.layers import rope_frequencies, rope_magnitude, rotated_form, rotated_widths
 from convert.config import (PARTLY_TURNED, architecture, convolution_layers, head_size, linear_layers, normalize,
                             rotary_dim)
@@ -144,7 +144,8 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.
     And the shapes of the rows. scale: what q is multiplied by (query_scale(), T253), for a Llama without biases and
     without norms of its heads."""
     form = form_of(form)
-    arch, rows, d = form["arch"], tensor_rows(header, form), Dims(header, form)
+    arch, d = form["arch"], Dims(header, form)
+    rows = d.rows()
     if scale != 1.0 and (arch != "llama" or form["bias"] or form["qk_norm"]):
         # a norm of q's heads undoes whatever q was multiplied by, and a bias of q would have to be multiplied too:
         # no Granite has either, and one that had would go through as another model without a word

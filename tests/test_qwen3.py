@@ -154,9 +154,11 @@ def test_heads_that_do_not_fill_dim_are_said_where_dim_over_heads_rounds_to_them
 def test_the_form_has_one_set_of_defaults():
     """T144: FORM is what the file cannot say, with the value of a form that says nothing. Everything that takes it by
     its names must mean the same by nothing, or a model whose options leave one out is laid out two ways."""
-    for function in (llama2_convert.layout, Llama.__init__):
-        parameters = inspect.signature(function).parameters
-        assert {key: parameters[key].default for key in FORM} == FORM, function.__qualname__
+    # (T359: layout() takes the form as it comes and reads it as everything else does, by form_of(); Llama names the keys)
+    parameters = inspect.signature(Llama.__init__).parameters
+    assert {key: parameters[key].default for key in FORM} == FORM
+    header = (64, 128, 2, 4, 2, 100, 32)
+    assert llama2_convert.layout(*header) == llama2_convert.layout(*header, **FORM)
     assert form_of(None) == form_of({"tokenizer_kind": "bpe"}) == FORM
     # a key given as None (JSON's null, JavaScript's undefined) says nothing either (the review of T144)
     assert form_of({key: None for key in FORM}) == FORM

@@ -20,15 +20,12 @@ def group_size(row_length):
 IS_MATRIX = {VECTOR: False, TABLE: None}
 
 
-def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, bias=False, arch="llama", qk_norm=False,
-           head_dim=0, linear=None, rotated=None, convolution=None):
+def layout(dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len, **form):
     """(shape, is a matrix) of every tensor, in file order: the rows of engine/layout.py (tensor_rows(), which says
-    what each is and takes the same header and form), as the pairs quantize.py and the tests read.
+    what each is and takes the same header and form, FORM's keys), as the pairs quantize.py and the tests read.
 
     is a matrix: True for what int8 quantizes, False for the norm weights, None for the RoPE tables.
     """
-    form = {"bias": bias, "arch": arch, "qk_norm": qk_norm, "head_dim": head_dim, "linear": linear, "rotated": rotated,
-            "convolution": convolution}
     header = (dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len)
     return [(row.shape, IS_MATRIX.get(row.role, True)) for row in tensor_rows(header, form)]
 

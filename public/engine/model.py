@@ -28,7 +28,7 @@ import struct
 import numpy as np
 
 from engine.tokenizer import BOS, Tokenizer
-from engine.layout import convolution_form, file_size, layer_slots, linear_form, linear_widths, tensor_rows
+from engine.layout import Dims, convolution_form, file_size, linear_form, linear_widths
 from engine.layers import (RMS_EPS, delta_rule, gelu, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
                            unrotate)
@@ -175,9 +175,12 @@ class Llama(TensorOrder, Sampling, Generation):
         self.convolution = convolution_form(convolution, n_layers)
         if (arch == "lfm2") != (self.convolution is not None):
             raise ValueError("An LFM2 (lfm2) and its convolution layers go together.")
-        # for every layer: (does it keep a state: a linear-attention layer or a convolution one, its place in the stacks
-        # of its kind's tensors)
-        self.slots = layer_slots(n_layers, self.linear, self.convolution)
+        # what the file holds (engine/layout.py): its rows, and for every layer (does it keep a state: a linear-attention
+        # layer or a convolution one, its place in the stacks of its kind's tensors)
+        dims = Dims((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len),
+                    {"arch": arch, "bias": bias, "qk_norm": qk_norm, "head_dim": head_dim, "linear": self.linear,
+                     "convolution": self.convolution})
+        self.slots, self.rows = dims.slots, dims.rows()
         self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
         self.bq = self.bk = self.bv = self.bo = self.b1 = self.b2 = None
         self.w3 = None
@@ -185,12 +188,9 @@ class Llama(TensorOrder, Sampling, Generation):
         rope_scaling = rope_scaling.to_py() if hasattr(rope_scaling, "to_py") else rope_scaling
         frequencies = lambda width: rope_frequencies(width, rope_theta, rope_scaling)
         self.rope_magnitude = rope_magnitude(rope_scaling)
-        # what the file holds (engine/layout.py), each row as an attribute of its name: where it is, with the weights
-        # outside Python (public/forward.js reads them, and widens what has to be widened, itself), or an array
+        # each row as an attribute of its name: where it is, with the weights outside Python (public/forward.js reads
+        # them, and widens what has to be widened, itself), or an array
         stored = packing or dtype.name
-        self.rows = tensor_rows((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len),
-                                {"arch": arch, "bias": bias, "qk_norm": qk_norm, "head_dim": head_dim, "linear": self.linear,
-                                 "convolution": self.convolution})
         self.file_tensors(checkpoint, self.rows, stored, shared_weights, external is not None)
         self.rope_tables(stored, frequencies)
         self.backend = "NumPy"
