@@ -29,7 +29,10 @@ from engine.sampler import REPETITION_WINDOW
 
 # what an ExternalForward may have for a Llama to run by, in place of the NumPy forward pass and of what a Llama
 # has where there is no engine outside (no blocks of a prompt, no steps on the GPU)
-STEPS = ("forward", "forward_many", "prompt_block", "generate_many", "token_block")
+STEPS = ("forward", "forward_many", "prompt_block", "gpu_steps", "token_block")
+# the settings forward.js's generateMany() takes, which are all the GPU's sampler has (shaders/sample.js): a
+# generation with any other (Sampling.beyond()) is the CPU's, step by step
+ON_GPU = ("temperature", "topp", "repetition_penalty")
 
 
 class ExternalForward:
@@ -60,12 +63,25 @@ class ExternalForward:
         # T152: the steps of generate() on the GPU, where forward.js offers that
         on_gpu = getattr(engine, "generateMany", None)
         if on_gpu is not None:
-            def generate_many(token, pos, history, count, temperature, topp, penalty, randoms, stops):
-                ids = on_gpu(token, pos, list(history[-REPETITION_WINDOW:]), len(history), count, temperature, topp,
-                            penalty, list(randoms), list(stops))
-                return None if ids is None else [int(i) for i in ids]
+            def gpu_steps(sampling, rng):
+                """many(token, pos, history, count, stops) for one generation: count steps of it on the GPU, by
+                sampling and the random numbers of rng, as the tokens sampled (a stop token last) or None where the
+                GPU did not take them. None in place of it where the GPU's sampler cannot draw as sampling says."""
+                if sampling.beyond(ON_GPU):
+                    return None
+                temperature, topp, penalty = sampling.temperature, sampling.topp, sampling.repetition_penalty
 
-            self.generate_many = generate_many
+                def many(token, pos, history, count, stops):
+                    # a number for every step, drawn in the order the CPU draws them (none where greedy);
+                    # those of the steps after a stop token go unused
+                    randoms = [rng.random() for _ in range(count)] if temperature != 0.0 else []
+                    ids = on_gpu(token, pos, list(history[-REPETITION_WINDOW:]), len(history), count, temperature, topp,
+                                penalty, randoms, list(stops))
+                    return None if ids is None else [int(i) for i in ids]
+
+                return many
+
+            self.gpu_steps = gpu_steps
             self.token_block = lambda: int(engine.tokenBlock)
 
         def forward(token, pos, need_logits=True):

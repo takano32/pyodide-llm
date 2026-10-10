@@ -15,7 +15,7 @@ import engine.model
 from conftest import pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
 from engine import generation
 from llama2_numpy import (NOT_FINITE, REPETITION_WINDOW, SEVERAL_KINDS, ExternalForward, KernelSampler, Llama,
-                          NumpySampler, greedy)
+                          NumpySampler, Sampling, greedy)
 
 VOCAB = 300
 
@@ -43,15 +43,20 @@ def kernels_in_numpy(calls=None, vocab=VOCAB):
     reference = NumpySampler()
 
     def penalize(logits, recent, count, penalty, presence):
-        if calls is not None:
-            calls.append(sorted(at(recent, REPETITION_WINDOW, ctypes.c_int32)[:count].tolist()))
         # (the ring holds the latest tokens in no order of time, and the penalty asks for none)
-        reference.penalize(at(logits, vocab, ctypes.c_float), at(recent, REPETITION_WINDOW, ctypes.c_int32)[:count].tolist(),
-                           penalty, presence)
+        tokens = at(recent, REPETITION_WINDOW, ctypes.c_int32)[:count].tolist()
+        if calls is not None:
+            calls.append(sorted(tokens))
+        penalties = reference.drawing(Sampling(repetition_penalty=penalty, presence_penalty=presence), None)
+        try:
+            penalties(at(logits, vocab, ctypes.c_float), tokens, tokens)
+        except ValueError:  # (greedy's, after the penalties: the kernel draws nothing)
+            pass
 
     def sample(logits, size, temperature, topp, random, probabilities, order, top_k, min_p):
+        settings = Sampling(temperature=temperature, topp=topp, top_k=top_k, min_p=min_p)
         try:
-            return reference.sample(at(logits, size, ctypes.c_float), temperature, topp, Numbers([random]), top_k, min_p)
+            return reference.drawing(settings, Numbers([random]))(at(logits, size, ctypes.c_float), [], [])
         except ValueError:
             return -1
 
@@ -73,13 +78,9 @@ def test_the_two_samplers_draw_the_same_token_from_the_same_numbers(settings):
     drawn = []
     for sampler in (in_numpy, on_kernels):
         rng, history, written, tokens = Numbers(numbers), [1, 5, 9], [], []
+        draw = sampler.drawing(Sampling(repetition_penalty=1.3, presence_penalty=1.5, **settings), rng)
         for step in range(2 * REPETITION_WINDOW + 5):
-            logits = some_logits(step)
-            sampler.penalize(logits, history, 1.3)
-            if written:
-                sampler.penalize(logits, written, 1.0, 1.5)
-            token = sampler.sample(logits, settings["temperature"], settings.get("topp", 0.9), rng,
-                                   settings.get("top_k", 0), settings.get("min_p", 0.0))
+            token = draw(some_logits(step), history, written)
             tokens.append(token)
             history.append(token)
             written.append(token)
@@ -97,19 +98,20 @@ def test_the_kernel_sampler_penalizes_the_latest_tokens_whatever_the_history_was
     logits = some_logits(0)
     history = list(range(10))
     histories = [history]
-    sampler.penalize(logits, history, 1.2)
+    draw = sampler.drawing(Sampling(repetition_penalty=1.2), None)
+    draw(logits, history, [])
     for token in range(10, 10 + REPETITION_WINDOW + 3):  # one more a step, past the window
         history.append(token)
-        sampler.penalize(logits, history, 1.2)
+        draw(logits, history, [])
         histories.append(list(history))
     history.extend([200, 201])  # two at once
-    sampler.penalize(logits, history, 1.2)
+    draw(logits, history, [])
     histories.append(list(history))
     other = [7, 8, 9]  # another list, shorter
-    sampler.penalize(logits, other, 1.2)
+    draw(logits, other, [])
     histories.append(other)
     same_length = list(range(100, 100 + len(history)))  # another list as long as the last but one
-    sampler.penalize(logits, same_length, 1.2)
+    draw(logits, same_length, [])
     histories.append(same_length)
     assert calls == [sorted(h[-REPETITION_WINDOW:]) for h in [list(range(10))] + histories[1:]]
 
@@ -120,19 +122,20 @@ def test_the_kernel_sampler_refuses_what_the_kernel_refuses_and_what_it_cannot_a
     bad[17] = np.nan
     for temperature in (0.0, 0.8):
         with pytest.raises(ValueError) as refused:
-            sampler.sample(bad, temperature, 0.9, Numbers([0.5]))
+            sampler.drawing(Sampling(temperature=temperature), Numbers([0.5]))(bad, [], [])
         assert str(refused.value) == NOT_FINITE
     with pytest.raises(ValueError) as refused:
         greedy(bad)
     assert str(refused.value) == NOT_FINITE
     with pytest.raises(TypeError, match="contiguous float32"):
-        sampler.sample(some_logits(2).astype(np.float64), 0.8, 0.9, Numbers([0.5]))
+        sampler.drawing(Sampling(temperature=0.8), Numbers([0.5]))(some_logits(2).astype(np.float64), [], [])
     with pytest.raises(TypeError, match="contiguous float32"):
-        sampler.penalize(some_logits(2)[::2], [1, 2], 1.3)
+        sampler.drawing(Sampling(repetition_penalty=1.3), None)(some_logits(2)[::2], [1, 2], [])
     # another array of logits after one is addressed anew (forward() returns the same one every time, a test may not)
     first, second = some_logits(3), some_logits(4)
-    assert sampler.sample(first, 0.0, 0.9, Numbers([])) == int(np.argmax(first))
-    assert sampler.sample(second, 0.8, 0.9, Numbers([0.3])) == NumpySampler().sample(second, 0.8, 0.9, Numbers([0.3]))
+    assert sampler.drawing(Sampling(), Numbers([]))(first, [], []) == int(np.argmax(first))
+    warm = Sampling(temperature=0.8)
+    assert sampler.drawing(warm, Numbers([0.3]))(second, [], []) == NumpySampler().drawing(warm, Numbers([0.3]))(second, [], [])
 
 
 # ---------------------------------------------------------------------------------------- the forward pass outside
@@ -201,14 +204,14 @@ def files():
 def test_a_model_outside_runs_by_what_its_engine_offers():
     checkpoint, tokenizer = files()
     reference = Llama(checkpoint, tokenizer)
-    assert reference.external_forward is None and reference.forward_many is None and reference.generate_many is None
+    assert reference.external_forward is None and reference.forward_many is None and reference.gpu_steps is None
     assert reference.prompt_block() == engine.model.PROMPT_BLOCK and reference.token_block() == 0
     # an engine that offers the forward pass alone
     outside = Outside(checkpoint)
     llama = Llama(None, tokenizer, external=outside)
     part = llama.external_forward
     assert isinstance(part, ExternalForward) and part.engine is outside.engine and llama.backend == "outside"
-    assert vars(llama)["forward"] is part.forward and llama.forward_many is None and llama.generate_many is None
+    assert vars(llama)["forward"] is part.forward and llama.forward_many is None and llama.gpu_steps is None
     assert llama.prompt_block() == engine.model.PROMPT_BLOCK and llama.token_block() == 0
     logits = llama.forward(5, 3)
     assert logits is part.logits is outside.engine.logits and logits[8] == 1.0 and logits.dtype == np.float32
@@ -227,7 +230,8 @@ def test_a_model_outside_runs_by_what_its_engine_offers():
     assert llama.token_block() == 4 and llama.forward_many is None
     history = list(range(100))
     outside.engine.answer = np.array([4, 5, 6], dtype=np.int32)
-    ids = llama.generate_many(99, 100, history, 4, 0.8, 0.9, 1.2, (0.1, 0.2, 0.3, 0.4), [1, 2])
+    steps = llama.gpu_steps(Sampling(temperature=0.8, topp=0.9, repetition_penalty=1.2), Numbers([0.1, 0.2, 0.3, 0.4]))
+    ids = steps(99, 100, history, 4, [1, 2])
     assert ids == [4, 5, 6] and all(type(i) is int for i in ids)
     assert outside.engine.asked == [("steps", 99, 100, history[-REPETITION_WINDOW:], 100, 4, 0.8, 0.9, 1.2,
                                      [0.1, 0.2, 0.3, 0.4], [1, 2])]
@@ -240,7 +244,7 @@ def test_a_step_the_gpu_gives_back_is_none_and_the_cpu_takes_it():
     outside = Outside(checkpoint, ("steps",))
     llama = Llama(None, tokenizer, external=outside)
     llama.stop_tokens = {-1}
-    assert llama.generate_many(1, 0, [1], 4, 0.0, 0.9, 1.0, (), [1]) is None
+    assert llama.gpu_steps(Sampling(), None)(1, 0, [1], 4, [1]) is None
     outside.engine.asked.clear()
     list(llama.generate("", steps=3, temperature=0.0))
     kinds = [asked[0] for asked in outside.engine.asked]
@@ -278,33 +282,32 @@ def test_release_lets_go_of_the_engine_once():
 def unwrapped():
     """tests/unchanged_recorder.py puts its own functions around the class's names to write down what they return: what
     these two tests look at (which function a name is, whose frame calls it) is then the recorder's."""
-    if Llama.generate is not generation.generate or Llama.sample is not NumpySampler.sample:
+    if Llama.generate is not generation.generate:
         pytest.skip("the names of the class are wrapped (the recorder of tests/unchanged.mjs)")
 
 
 def test_the_class_has_the_reference_and_a_model_is_given_its_parts_once(monkeypatch):
     unwrapped()
     checkpoint, tokenizer = files()
-    assert Llama.penalize is NumpySampler.penalize and Llama.sample is NumpySampler.sample
+    assert isinstance(Llama.sampler, NumpySampler)
     assert Llama.generate is generation.generate and Llama.greedy is greedy
     reference = Llama(checkpoint, tokenizer)
-    assert isinstance(reference.sampler, NumpySampler)
-    assert not {"forward", "penalize", "sample", "generate", "forward_many", "generate_many"} & set(vars(reference))
-    # with the kernels: their sampler's two functions, on the model itself
+    assert reference.sampler is Llama.sampler
+    assert not {"forward", "sampler", "generate", "forward_many", "gpu_steps"} & set(vars(reference))
+    # with the kernels: their sampler, on the model itself
     monkeypatch.setattr(engine.model, "load_kernels", lambda path, relaxed: kernels_in_numpy(vocab=MODEL_VOCAB))
     for external in (None, Outside(checkpoint)):
         llama = Llama(None if external else checkpoint, tokenizer, kernels="simdkernel.so", external=external)
-        assert isinstance(llama.sampler, KernelSampler)
-        assert vars(llama)["penalize"] is llama.sampler.penalize and vars(llama)["sample"] is llama.sampler.sample
+        assert isinstance(vars(llama)["sampler"], KernelSampler)
         without = Llama(None if external else checkpoint, tokenizer, kernels="simdkernel.so", disable=("sampler",),
                         external=Outside(checkpoint) if external else None)
-        assert isinstance(without.sampler, NumpySampler) and "sample" not in vars(without)
+        assert without.sampler is Llama.sampler and "sampler" not in vars(without)
         assert "NumPy sampling" in without.backend
 
 
 @pytest.mark.parametrize("outside, kernels", [(False, False), (False, True), (True, False), (True, True)])
 def test_a_step_of_generate_calls_the_parts_themselves(monkeypatch, outside, kernels):
-    """T359: nothing is called between generate() and a part (the forward pass, penalize(), sample()), nor between a
+    """T359: nothing is called between generate() and a part (the forward pass, the sampler's draw), nor between a
     part and what it runs (forward.js's engine, a kernel): the page runs these once a token, and a call that only hands
     on to another is a cost for every token it writes. Each part is called by generate()'s own frame, and the engine
     and the kernels by a frame that generate() called."""
@@ -331,9 +334,9 @@ def test_a_step_of_generate_calls_the_parts_themselves(monkeypatch, outside, ker
     finally:
         sys.setprofile(None)
     written = generation.generate.__code__
+    # (every draw a sampler makes is one function's: its code is what a step runs)
     parts = {"forward": llama.external_forward.forward if outside else Llama.forward,
-             "penalize": llama.sampler.penalize if kernels else NumpySampler.penalize,
-             "sample": llama.sampler.sample if kernels else NumpySampler.sample}
+             "draw": llama.sampler.drawing(Sampling(), None)}
     for name, part in parts.items():
         callers = [caller for code, caller, _ in calls if code is part.__code__]
         assert callers and all(caller is written for caller in callers), name
@@ -344,10 +347,11 @@ def test_a_step_of_generate_calls_the_parts_themselves(monkeypatch, outside, ker
     for code in below:
         through = [(caller, further) for called, caller, further in calls if called is code]
         assert through and all(further is written for _, further in through), code.co_qualname
-    # and generate() calls nothing of the engine's but those, the tokenizer and what the model says of its blocks
+    # and generate() calls nothing of the engine's but those, the tokenizer, and the sampler once for how it draws
     ours = {code.co_qualname for code, caller, _ in calls if caller is written and "/engine/" in code.co_filename}
-    assert ours == {parts["forward"].__qualname__, parts["penalize"].__qualname__, parts["sample"].__qualname__,
-                    "Tokenizer.decode", "Llama.<lambda>"}, ours
+    assert ours == {parts["forward"].__qualname__, parts["draw"].__qualname__, llama.sampler.drawing.__qualname__,
+                    "Tokenizer.decode"}, ours
+    assert [code for code, caller, _ in calls if caller is written].count(llama.sampler.drawing.__code__) == 1
 
 
 # ------------------------------------------------------------------------------------- a dropped model is gone
@@ -414,39 +418,42 @@ class Letters:
 
 def stand_in_model(log, answers, stop_tokens=(0,), **more):
     """What generate() writes with, each part a stand-in that says it was called: no Llama, no weights, no kernels.
-    answers: the token sample() gives at each step."""
+    answers: the token the sampler draws at each step."""
     answers = list(answers)
 
     def forward(token, pos, need_logits=True):
         log.append(("forward", token, pos, need_logits))
         return np.full(4, float(pos), dtype=np.float32) if need_logits else None
 
-    def penalize(logits, history, penalty, presence=0.0):
-        log.append(("penalize", list(history), penalty, presence))
+    def drawing(sampling, rng):
+        log.append(("drawing", sampling, type(rng).__name__))
 
-    def sample(logits, temperature, topp, rng, top_k=0, min_p=0.0):
-        log.append(("sample", float(logits[0]), temperature, topp, type(rng).__name__, top_k, min_p))
-        return answers.pop(0)
+        def draw(logits, history, written):
+            log.append(("draw", float(logits[0]), list(history), list(written)))
+            return answers.pop(0)
+
+        return draw
 
     return types.SimpleNamespace(**{**dict(
         tokenizer=Letters(), specials=(), bos=1, stop_tokens=set(stop_tokens), seq_len=64, stats={}, _run=0, forward=forward,
-        penalize=penalize, sample=sample, forward_many=None, prompt_block=lambda: 16, generate_many=None, token_block=lambda: 0), **more})
+        sampler=types.SimpleNamespace(drawing=drawing), forward_many=None, prompt_block=lambda: 16, gpu_steps=None,
+        token_block=lambda: 0), **more})
 
 
 def test_generate_writes_with_stand_ins_for_every_part():
-    """generate() alone: the prompt forced without logits, then forward, the two penalties and sample a step, in
-    that order and with what each is owed, until a stop token."""
+    """generate() alone: the sampler asked once how it draws, by the settings as one value; the prompt forced without
+    logits, then forward and a draw a step, with every token so far and the sampled ones, until a stop token."""
     log = []
     model = stand_in_model(log, [ord("x"), ord("y"), 0, ord("z")])
-    pieces = list(generation.generate(model, "ab", steps=20, temperature=0.5, topp=0.8, repetition_penalty=1.2, seed=4,
-                                      top_k=3, min_p=0.1, presence_penalty=0.5))
+    settings = dict(temperature=0.5, topp=0.8, repetition_penalty=1.2, top_k=3, min_p=0.1, presence_penalty=0.5)
+    pieces = list(generation.generate(model, "ab", steps=20, seed=4, **settings))
     a, b, x, y = ord("a"), ord("b"), ord("x"), ord("y")
     assert "".join(pieces) == "abxy" and list(generation.generate(stand_in_model([], [x, 0]), "ab", echo=False, temperature=1.0)) == ["x"]
     assert log == [
-        ("forward", 1, 0, False), ("forward", a, 1, False),
-        ("forward", b, 2, True), ("penalize", [1, a, b], 1.2, 0.0), ("sample", 2.0, 0.5, 0.8, "Generator", 3, 0.1),
-        ("forward", x, 3, True), ("penalize", [1, a, b, x], 1.2, 0.0), ("penalize", [x], 1.0, 0.5), ("sample", 3.0, 0.5, 0.8, "Generator", 3, 0.1),
-        ("forward", y, 4, True), ("penalize", [1, a, b, x, y], 1.2, 0.0), ("penalize", [x, y], 1.0, 0.5), ("sample", 4.0, 0.5, 0.8, "Generator", 3, 0.1)]
+        ("drawing", Sampling(**settings), "Generator"), ("forward", 1, 0, False), ("forward", a, 1, False),
+        ("forward", b, 2, True), ("draw", 2.0, [1, a, b], []),
+        ("forward", x, 3, True), ("draw", 3.0, [1, a, b, x], [x]),
+        ("forward", y, 4, True), ("draw", 4.0, [1, a, b, x, y], [x, y])]
     assert (model.stats["tokens"], model.stats["sampled"], model.stats["prompt_tokens"]) == (4, 3, 2)
     with pytest.raises(ValueError, match="only 1 fit"):
         list(generation.generate(stand_in_model([], []), "ab", steps=2))
@@ -456,29 +463,56 @@ def test_generate_writes_with_stand_ins_for_every_part():
 
 def test_generate_hands_blocks_and_steps_to_stand_ins():
     """generate() alone, with a forward pass that takes the prompt in blocks and steps several at a time: the blocks
-    at their positions, the random numbers of a block of steps drawn before it, a block given back taken by forward
-    and sample, a stop token inside a block ending the run."""
+    at their positions, the steps asked once for the settings and the random numbers, a block given back taken by
+    forward and the sampler's draw, a stop token inside a block ending the run."""
     log = []
     answers = iter([[ord("p"), ord("q")], None, [ord("r"), 0, ord("s")]])
 
     def many(tokens, pos):
         log.append(("many", list(tokens), pos))
 
-    def steps(token, pos, history, count, temperature, topp, penalty, randoms, stops):
-        log.append(("steps", token, pos, list(history), count, len(randoms), list(stops)))
-        return next(answers)
+    def gpu_steps(sampling, rng):
+        log.append(("gpu steps", sampling, type(rng).__name__))
+
+        def steps(token, pos, history, count, stops):
+            log.append(("steps", token, pos, list(history), count, list(stops)))
+            return next(answers)
+
+        return steps
 
     model = stand_in_model(log, [ord("c")], stop_tokens=(0, 7), forward_many=many, prompt_block=lambda: 2,
-                           generate_many=steps, token_block=lambda: 2)
+                           gpu_steps=gpu_steps, token_block=lambda: 2)
     assert "".join(generation.generate(model, "abc", steps=30, temperature=0.9, seed=1)) == "abcpqcr"
     a, b, c, p, q, r = (ord(letter) for letter in "abcpqr")
     assert log == [
         ("many", [1, a], 0), ("many", [b], 2),
-        ("steps", c, 3, [1, a, b, c], 2, 2, [0, 7]),
-        ("steps", q, 5, [1, a, b, c, p, q], 2, 2, [0, 7]),  # given back:
-        ("forward", q, 5, True), ("sample", 5.0, 0.9, 0.9, "Generator", 0, 0.0),
-        ("steps", c, 6, [1, a, b, c, p, q, c], 2, 2, [0, 7])]
+        ("drawing", Sampling(temperature=0.9), "Generator"), ("gpu steps", Sampling(temperature=0.9), "Generator"),
+        ("steps", c, 3, [1, a, b, c], 2, [0, 7]),
+        ("steps", q, 5, [1, a, b, c, p, q], 2, [0, 7]),  # given back:
+        ("forward", q, 5, True), ("draw", 5.0, [1, a, b, c, p, q], [p, q]),
+        ("steps", c, 6, [1, a, b, c, p, q, c], 2, [0, 7])]
     assert model.stats["sampled"] == 5 and model.stats["prompt_tokens"] == 3
+
+
+@pytest.mark.parametrize("nothing", [[], (), None])
+def test_steps_that_answer_no_tokens_are_the_cpus(nothing):
+    """T390: an empty answer of the GPU's steps is no token to go on from, and generate() asked for the same step
+    again, for ever. It is "not taken", as None is: the CPU takes the step."""
+    log = []
+
+    def gpu_steps(sampling, rng):
+        def steps(token, pos, history, count, stops):
+            log.append(("steps", pos, count))
+            assert len(log) < 40, "generate() asks for the same step again and again"
+            return nothing
+
+        return steps
+
+    model = stand_in_model(log, [ord("x"), ord("y"), 0], gpu_steps=gpu_steps, token_block=lambda: 4)
+    assert "".join(generation.generate(model, "a", steps=20, temperature=0.9, seed=1)) == "axy"
+    assert model.stats["sampled"] == 3
+    assert [entry[:2] for entry in log if entry[0] in ("steps", "draw")] == [
+        ("steps", 1), ("draw", 1.0), ("steps", 2), ("draw", 2.0), ("steps", 3), ("draw", 3.0)]
 
 
 def test_the_numpy_forward_alone_computes_the_reference():

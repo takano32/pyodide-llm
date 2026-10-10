@@ -27,25 +27,21 @@ import time
 
 import numpy as np
 
+from engine.sampler import Sampling
 
-def generate(model, prompt="", steps=256, temperature=0.0, topp=0.9, repetition_penalty=1.0, seed=None, echo=True,
-             top_k=0, min_p=0.0, presence_penalty=0.0):
+
+def generate(model, prompt="", steps=256, seed=None, echo=True, **settings):
     """Yield the text piece by piece, as it is generated. echo=False leaves the prompt out of it (an instruction
-    wrapped in a template, which nobody wants to read back). T274: top_k (0: none), min_p (0: none) and
-    presence_penalty (0: none) as sample() and penalize() tell; a step with any of them is the CPU's (the GPU's
-    sampler has none of the three).
+    wrapped in a template, which nobody wants to read back). settings: how the tokens are drawn, Sampling's by their
+    names (temperature, topp, repetition_penalty, top_k, min_p, presence_penalty), which says what each is and
+    refuses what it cannot be. None of them is read here: the samplers have them.
 
     model: who writes, a Llama (whose generate() this is). Its parts are read off it as a run needs them and not
     handed over once, since a test or a tool may have put another in a part's place after the model was made: the
     tokenizer (with specials, bos, stop_tokens and seq_len), the forward pass (forward(); forward_many() and
-    prompt_block() for a prompt's blocks, generate_many() and token_block() for steps on the GPU, where there are)
-    and the sampler (penalize(), sample()). What the run took is left in its stats."""
-    top_k = int(top_k)
-    if top_k < 0 or not 0.0 <= min_p <= 1.0 or presence_penalty < 0.0:
-        raise ValueError("top_k and presence_penalty are 0 or more, and min_p is from 0 to 1.")
-    # greedy takes the largest logit, which a top-k and a min-p leave in
-    narrow = (top_k, min_p) if temperature != 0.0 else (0, 0.0)
-    on_cpu = narrow != (0, 0.0) or presence_penalty != 0.0
+    prompt_block() for a prompt's blocks, gpu_steps() and token_block() for steps on the GPU, where there are)
+    and the sampler (its drawing()). What the run took is left in its stats."""
+    sampling = Sampling(**settings)
     prompt_tokens = model.tokenizer.encode(prompt, model.specials) if prompt else []
     # Right now we cannot run for more than seq_len steps
     if steps <= 0 or steps > model.seq_len:
@@ -60,7 +56,7 @@ def generate(model, prompt="", steps=256, temperature=0.0, topp=0.9, repetition_
     run = model._run
     token, count, sampled, forced = model.bos, 0, 0, 0
     history = [model.bos]
-    written = []  # what was sampled: the presence penalty counts these, not the prompt's (T274, as OpenAI's does)
+    written = []  # what was sampled: the presence penalty counts these, not the prompt's (T274)
     start = sampling_start = time.perf_counter()
     first_token = None
     first = 0
@@ -87,8 +83,11 @@ def generate(model, prompt="", steps=256, temperature=0.0, topp=0.9, repetition_
                 at += len(block)
             first = len(fed)
             sampling_start = time.perf_counter()
-        # T152: a step on the GPU (generate_many) samples there with the random numbers drawn here, several at
-        # once (token_block()); a step on the CPU is the forward pass and the sampling here
+        # T152: a step on the GPU (gpu_steps()'s) samples there with the random numbers drawn here, several at
+        # once (token_block()), where the GPU's sampler has all these settings; a step on the CPU is the forward
+        # pass and the sampler's draw here. Both are made once, by the settings: no step reads one
+        draw = model.sampler.drawing(sampling, rng)
+        on_gpu = model.gpu_steps(sampling, rng) if model.gpu_steps is not None else None
         stops = sorted(model.stop_tokens)
         pos = first
         while pos < steps:
@@ -100,21 +99,13 @@ def generate(model, prompt="", steps=256, temperature=0.0, topp=0.9, repetition_
                 sampling_start = time.perf_counter()
             else:
                 chosen = None
-                many = 0 if on_cpu else min(model.token_block(), steps - pos)
-                if many > 0:
-                    # a number for every step, drawn in the order the CPU draws them (none where greedy);
-                    # those of the steps after a stop token go unused
-                    randoms = [rng.random() for _ in range(many)] if temperature != 0.0 else []
-                    chosen = model.generate_many(token, pos, history, many, temperature, topp, repetition_penalty,
-                                                randoms, stops)
-                if chosen is None:
-                    logits = model.forward(token, pos)
-                    if repetition_penalty != 1.0:
-                        model.penalize(logits, history, repetition_penalty)
-                    if presence_penalty != 0.0 and written:
-                        # (with the prompt's tokens in it, the format's own stop token would lose it too)
-                        model.penalize(logits, written, 1.0, presence_penalty)
-                    chosen = [model.sample(logits, temperature, topp, rng, *narrow)]
+                if on_gpu is not None:
+                    many = min(model.token_block(), steps - pos)
+                    if many > 0:
+                        chosen = on_gpu(token, pos, history, many, stops)
+                # (T390: no tokens are no answer either: the loop would ask for the same step for ever)
+                if not chosen:
+                    chosen = [draw(model.forward(token, pos), history, written)]
             ended = False
             for next_token in chosen:
                 if pos >= len(prompt_tokens):

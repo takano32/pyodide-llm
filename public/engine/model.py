@@ -84,26 +84,28 @@ class Llama:
     (engine/external.py, with external: what the page runs). The sampler is one of two as well (engine/sampler.py):
     NumPy's or the kernels'. generate() (engine/generation.py) writes with whichever the model has.
 
-    The names of the parts' steps are attributes here, and that is how the parts are chosen: the class has the
-    reference's (forward, penalize, sample, and no blocks or GPU steps), and an instance that was given a faster part
-    has that part's own functions under the same names, set once when it is made. A step of generate() then calls the
-    part itself, with no call in between. Tests and tools put their own in these places, on a model or on the class.
+    The names of the forward pass's steps are attributes here, and that is how it is chosen: the class has the
+    reference's (forward, and no blocks or GPU steps), and an instance whose weights are outside has that part's own
+    functions under the same names, set once when it is made. The sampler is one attribute, sampler: the class's is
+    the reference, an instance with the kernels has its own. A step of generate() then calls the part itself, with no
+    call in between. Tests and tools put their own in these places, on a model or on the class.
     """
     # how a model writes (engine/generation.py)
     generate = generation.generate
-    # the reference sampler, NumPy's (it keeps nothing, so its two functions are the class's as they are): an instance
-    # with the kernels has a KernelSampler, and that one's two in their place
+    # the reference sampler, NumPy's (it keeps nothing, so one is every model's): an instance with the kernels has a
+    # KernelSampler in its place. A generation asks it once how it draws (drawing(), by the settings: a Sampling)
     sampler = NumpySampler()
-    penalize, sample, greedy = NumpySampler.penalize, NumpySampler.sample, staticmethod(greedy)
+    greedy = staticmethod(greedy)
     external_forward = None  # the ExternalForward of a model whose weights are outside Python
     _external = None  # (its engine and the array it fills, until release(): tools read the engine off it)
     forward_many = None  # T108: forward.js's forwardMany(tokens, pos) for a prompt, where there is one
     prompt_block = staticmethod(lambda: PROMPT_BLOCK)  # T147: how many tokens forward_many() takes at once, now
-    # T152: forward.js's generateMany(token, pos, history, count, temperature, topp, penalty, randoms, stops), which
-    # runs count steps of generate() on the GPU (the forward pass and the sampling, with the random numbers drawn here)
-    # and returns the tokens it sampled (a stop token last), or None where it did not (the CPU then takes the step);
-    # token_block(): how many steps it takes at once now, 0 where the CPU is faster (or there is no GPU)
-    generate_many = None
+    # T152: gpu_steps(sampling, rng) is, for one generation, what runs count steps of it on forward.js's generateMany()
+    # (the forward pass and the sampling on the GPU, with the random numbers drawn here) and returns the tokens it
+    # sampled (a stop token last), or None where it did not (the CPU then takes the step); None itself where the GPU's
+    # sampler has not all the settings. token_block(): how many steps it takes at once now, 0 where the CPU is
+    # faster (or there is no GPU)
+    gpu_steps = None
     token_block = staticmethod(lambda: 0)
 
     def __init__(self, checkpoint, tokenizer, dtype="float32", rope_theta=10000.0,
@@ -284,10 +286,9 @@ class Llama:
                 for name, state in states.items():
                     setattr(self, name, state)
                 self.state_at = 0
-        # the sampler: the kernels' where there are kernels, its two in the reference's places
+        # the sampler: the kernels' where there are kernels, in the reference's place
         if kernels and "sampler" not in disable:
             self.sampler = KernelSampler(kernels, self.vocab_size)
-            self.penalize, self.sample = self.sampler.penalize, self.sampler.sample
         if (kernels or external is not None) and "sampler" in disable:
             self.backend += ", NumPy sampling"
         if disable:

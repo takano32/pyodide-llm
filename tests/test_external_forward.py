@@ -2,13 +2,14 @@
 Llama, no checkpoint and no tokenizer is made in this file: the part is handed a plan and what makes the engine, and
 that is all it reads."""
 import gc
+import types
 import weakref
 
 import numpy as np
 import pytest
 
 from engine.external import STEPS
-from llama2_numpy import REPETITION_WINDOW, ExternalForward
+from llama2_numpy import REPETITION_WINDOW, ExternalForward, Sampling
 
 
 class Engine:
@@ -127,23 +128,28 @@ def test_a_prompts_blocks_where_the_engine_takes_them():
 def test_steps_on_the_gpu_return_ids_or_none():
     outside = Outside(Steps)
     part = ExternalForward({"vocab_size": 16}, outside)
-    assert [name for name in STEPS if hasattr(part, name)] == ["forward", "generate_many", "token_block"]
+    assert [name for name in STEPS if hasattr(part, name)] == ["forward", "gpu_steps", "token_block"]
     assert part.token_block() == 4 and type(part.token_block()) is int
     history = list(range(100))
+    # the steps of one generation: its settings, and where its random numbers come from (one for every step, drawn
+    # before the GPU is asked)
+    numbers = iter((0.1, 0.2, 0.3, 0.4) * 2)
+    steps = part.gpu_steps(Sampling(temperature=0.8, topp=0.9, repetition_penalty=1.2), types.SimpleNamespace(random=lambda: next(numbers)))
     # T152: the GPU did not take the steps: None, and the CPU takes them
-    assert part.generate_many(99, 100, history, 4, 0.8, 0.9, 1.2, (0.1, 0.2, 0.3, 0.4), {1}) is None
+    assert steps(99, 100, history, 4, {1}) is None
     # the ids it sampled, as Python's integers
     outside.engine.answer = np.array([4, 5, 6], dtype=np.int32)
-    ids = part.generate_many(99, 100, history, 4, 0.8, 0.9, 1.2, iter((0.1, 0.2, 0.3, 0.4)), (1, 2))
-    assert ids == [4, 5, 6] and all(type(i) is int for i in ids)
+    ids = steps(99, 100, history, 4, (1, 2))
+    assert ids == [4, 5, 6] and all(type(i) is int for i in ids) and next(numbers, None) is None
     # the engine is handed the window of the history and its whole length, and lists
     assert outside.engine.asked[1:] == [
         ("steps", 99, 100, history[-REPETITION_WINDOW:], 100, 4, 0.8, 0.9, 1.2, [0.1, 0.2, 0.3, 0.4], [1]),
         ("steps", 99, 100, history[-REPETITION_WINDOW:], 100, 4, 0.8, 0.9, 1.2, [0.1, 0.2, 0.3, 0.4], [1, 2])]
     assert len(outside.engine.asked[1][3]) == REPETITION_WINDOW
     # (a history shorter than the window is handed whole)
-    part.generate_many(1, 2, [7, 8], 1, 0.0, 1.0, 1.0, (), ())
-    assert outside.engine.asked[-1][3:5] == ([7, 8], 2)
+    # (a history shorter than the window is handed whole; greedy draws no number)
+    part.gpu_steps(Sampling(temperature=0.0, topp=1.0), None)(1, 2, [7, 8], 1, ())
+    assert outside.engine.asked[-1][3:5] == ([7, 8], 2) and outside.engine.asked[-1][6:] == (0.0, 1.0, 1.0, [], [])
     outside.engine.tokenBlock = 0  # (the CPU is faster now)
     assert part.token_block() == 0
 

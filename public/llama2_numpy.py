@@ -58,7 +58,7 @@ from engine.kernels import kernel_quantizer, kernel_wideners, load_kernels  # no
 from engine.checkpoint import (OUTLIER_CHANNELS, OUTLIER_RATIO, SEVERAL_KINDS, Tensor,  # noqa: F401
                                check_tokenizer, checkpoint_dtype, external_tensors, outlier_channels,
                                outlier_columns)
-from engine.sampler import NOT_FINITE, REPETITION_WINDOW, KernelSampler, NumpySampler, greedy  # noqa: F401
+from engine.sampler import NOT_FINITE, REPETITION_WINDOW, KernelSampler, NumpySampler, Sampling, greedy  # noqa: F401
 from engine.external import ExternalForward  # noqa: F401
 from engine.plan import Settings, forward_plan, layer_facts, plan_widths  # noqa: F401
 from engine.model import KV_START, Llama, PROMPT_BLOCK, SWITCHES  # noqa: F401

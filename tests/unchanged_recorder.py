@@ -6,7 +6,8 @@
 #   UNCHANGED_RECORD=<a .json file> PYTHONPATH=<this directory> python -m pytest <a tree>/tests -q -p unchanged_recorder
 #
 # For every test, a count and a hash of: the checkpoints its conversions finish (Stream.finish: the bytes), the options
-# and the tokenizer.bin of each Conversion, the logits of every Llama.forward, the ids of every Tokenizer.encode.
+# and the tokenizer.bin of each Conversion, the logits of every Llama.forward, the ids of every Tokenizer.encode, the
+# tokens the reference sampler draws and the logits it penalized.
 # tests/unchanged.mjs runs it on the working tree and on another commit's tree and compares the two files. The names
 # it wraps are the ones a refactoring keeps where they are (the windows llama2_convert and llama2_numpy).
 import hashlib
@@ -75,7 +76,7 @@ def pytest_collection_finish(session):
     def penalized(llama, result, args):  # in place: the logits are the first argument
         note("penalized", np.ascontiguousarray(args[0]).tobytes())
 
-    # (review) generate() draws its tokens by closures of its own, not by Llama.sample, so what it writes is recorded
+    # (review) generate() draws its tokens by closures of its own (a model with the kernels: not the reference), so what it writes is recorded
     # at the generator: the pieces of text it yields, and the exception it ends in
     generate = llama2_numpy.Llama.generate
 
@@ -91,9 +92,33 @@ def pytest_collection_finish(session):
             raise
 
     llama2_numpy.Llama.generate = generating
+    # T359.7: the reference sampler draws by its settings as one value, the penalties and the token in one call
+    # (NumpySampler.drawing()'s draw). What is written down is what was before, so that a tree of each kind compares:
+    # the token of every draw, and the logits after the penalties of a draw that has any (a tree before wrote them
+    # down after each of the two penalties: a test with both, on tokens it sampled, differs in "penalized")
+    drawing = getattr(llama2_numpy.NumpySampler, "drawing", None)
+
+    def drawing_told(self, sampling, rng):
+        draw = drawing(self, sampling, rng)
+        repeated, present = sampling.repetition_penalty != 1.0, sampling.presence_penalty != 0.0
+
+        def told(logits, history, written):
+            token = draw(logits, history, written)
+            if repeated:
+                note("penalized", np.ascontiguousarray(logits).tobytes())
+            if present and written:
+                note("penalized", np.ascontiguousarray(logits).tobytes())
+            note("sampled", repr(int(token)).encode())
+            return token
+
+        return told
+
     after(llama2_numpy.Tokenizer, "decode", decoded)
-    after(llama2_numpy.Llama, "sample", sampled)
-    after(llama2_numpy.Llama, "penalize", penalized)
+    if drawing is None:
+        after(llama2_numpy.Llama, "sample", sampled)
+        after(llama2_numpy.Llama, "penalize", penalized)
+    else:
+        llama2_numpy.NumpySampler.drawing = drawing_told
     after(llama2_convert.Stream, "finish", finished)
     after(llama2_convert.Conversion, "start", started)
     after(llama2_numpy.Llama, "forward", went)

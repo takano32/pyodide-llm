@@ -338,7 +338,7 @@ Two things the review of 2026-10-02 found, which no test in Node can see:
   shows up as a rare `memory access out of bounds` (`_kernel_buffers`, `KernelSampler.buffers` in the engine).
 - Mutable globals are fine (they are no data segment): `sample` keeps the state of its partial sort in three.
 - `sample` sorts only as far as the nucleus reaches and gets its random number from Python, so a seed gives the
-  same text again. With the same random number it picks the token that `Llama.sample` (NumPy) picks.
+  same text again. With the same random number it picks the token that `NumpySampler` (the reference, in NumPy) draws.
 - The relaxed module must not be named `*.so` if it ever ships inside a wheel: Pyodide pre-loads every `.so`.
 - `attention` needs a scratch of `heads * (pos + 1)` floats (the engine allocates `heads * seq_len`), since T54.
 - `attention` expects the KV cache as `[seq][kv_heads * head_size]` per layer (the NumPy forward uses another

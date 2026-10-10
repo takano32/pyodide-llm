@@ -249,16 +249,28 @@ generator = np.random.default_rng(0)
 class Fixed:
     def __init__(self, value): self.value = value
     def random(self): return self.value
+# (T359.7) a sampler draws by a Sampling, for a generation at a time: one token of the kernels' and of NumPy's by these
+# settings, and their penalties alone (greedy after them, which draws no number)
+def sample_with(sampler):
+    def sample(logits, temperature, topp, rng, top_k=0, min_p=0.0):
+        return sampler.drawing(llama2_numpy.Sampling(temperature=temperature, topp=topp, top_k=top_k, min_p=min_p), rng)(logits, [], [])
+    return sample
+def penalize_with(sampler):
+    def penalize(logits, history, penalty, presence=0.0):
+        sampler.drawing(llama2_numpy.Sampling(repetition_penalty=penalty, presence_penalty=presence), None)(logits, history, history)
+    return penalize
+kernel_sample, numpy_sample = sample_with(fast.sampler), sample_with(llama2_numpy.NumpySampler())
+kernel_penalize, numpy_penalize = penalize_with(fast.sampler), penalize_with(llama2_numpy.NumpySampler())
 for spread in (0.5, 2.0, 6.0, 12.0):
     for topp in (0.9, 0.5, 1.0):
         logits = (generator.standard_normal(fast.vocab_size) * spread).astype(np.float32)
         for value in (0.0, generator.random(), 1.0 - 1e-12):
-            ours, theirs = fast.sample(logits, 0.7, topp, Fixed(value)), llama2_numpy.Llama.sample(fast, logits, 0.7, topp, Fixed(value))
+            ours, theirs = kernel_sample(logits, 0.7, topp, Fixed(value)), numpy_sample(logits, 0.7, topp, Fixed(value))
             # rounding may move the border of the nucleus to a neighbour that is just as probable
             assert ours == theirs or abs(logits[ours] - logits[theirs]) < 1e-3, (spread, topp, value, ours, theirs)
 lonely = np.full(fast.vocab_size, -100.0, dtype=np.float32)
 lonely[123] = 50.0
-assert fast.sample(lonely, 0.7, 0.9, generator) == 123 and 0 <= fast.sample(np.zeros_like(lonely), 0.7, 0.9, generator) < lonely.size
+assert kernel_sample(lonely, 0.7, 0.9, generator) == 123 and 0 <= kernel_sample(np.zeros_like(lonely), 0.7, 0.9, generator) < lonely.size
 # T189: the kernel takes the logits four at a time; a vocabulary that is no multiple of 4 ends on the tail, where the
 # best token is put
 for size in (fast.vocab_size - 1, fast.vocab_size - 3):
@@ -267,14 +279,14 @@ for size in (fast.vocab_size - 1, fast.vocab_size - 3):
         logits[-1] = logits.max() + 0.5
         for topp in (0.9, 1.0):
             for value in (0.0, generator.random(), 1.0 - 1e-12):
-                ours, theirs = fast.sample(logits, 0.7, topp, Fixed(value)), llama2_numpy.Llama.sample(fast, logits, 0.7, topp, Fixed(value))
+                ours, theirs = kernel_sample(logits, 0.7, topp, Fixed(value)), numpy_sample(logits, 0.7, topp, Fixed(value))
                 assert ours == theirs or abs(logits[ours] - logits[theirs]) < 1e-3, (size, spread, topp, value, ours, theirs)
 # ... and the best logit (the one past the floor) in each lane of each of its four maxima, and in the tail
 for size in (fast.vocab_size, fast.vocab_size - 3):
     for where in list(range(40)) + [size - 1 - k for k in range(20)]:
         single = np.full(size, -100.0, dtype=np.float32)
         single[where] = 5.0
-        assert fast.sample(single, 0.7, 0.9, generator) == where, (size, where)
+        assert kernel_sample(single, 0.7, 0.9, generator) == where, (size, where)
 # a maximum left out shows only where exp() overflows (softmax does not care what is taken away from all the logits):
 # two tokens far above the rest, drawn with two random numbers that both land on the more probable one (its share is
 # 1 / (1 + 1/e) = 0.73). Left out, the two are as probable and 0.6 lands on the second. They are put in every part of
@@ -289,7 +301,7 @@ for size in (fast.vocab_size, fast.vocab_size - 1, fast.vocab_size - 3):
             pair = np.zeros(size, dtype=np.float32)
             pair[first], pair[first + gap] = 300.0, 299.0
             for value in (0.3, 0.6):
-                assert fast.sample(pair, 1.0, 0.9, Fixed(value)) == first, (size, first, gap, value)
+                assert kernel_sample(pair, 1.0, 0.9, Fixed(value)) == first, (size, first, gap, value)
 # T178: a few tokens above the floor and a low top-p (count * topp < 1): llama2.c's cutoff (1 - topp) / (count - 1)
 # was above all of them, and the kernel drew a word from outside the vocabulary, NumPy an IndexError. The nucleus is
 # the most probable token alone (the others add up to less than 1 - topp)
@@ -301,8 +313,8 @@ for above in (2, 3, 5):
     for topp in (0.05, 0.1, 0.2):
         for temperature in (0.1, 1.0):
             for value in (0.0, 0.5, 1.0 - 1e-12):
-                picks = (fast.sample(few(above), temperature, topp, Fixed(value)),
-                         llama2_numpy.Llama.sample(fast, few(above), temperature, topp, Fixed(value)))
+                picks = (kernel_sample(few(above), temperature, topp, Fixed(value)),
+                         numpy_sample(few(above), temperature, topp, Fixed(value)))
                 assert picks == (above - 1, above - 1), (above, topp, temperature, value, picks)
 # T195: logits whose largest is no finite number (a NaN anywhere, +inf anywhere, all -inf): the kernel drew index[-1]
 # (a word outside the vocabulary, or the last one), NumPy raised an error of its own or drew a token. Both stop with the
@@ -315,8 +327,6 @@ def refuses(draw, broken, temperature, topp):
     except ValueError as error:
         return str(error) == llama2_numpy.NOT_FINITE
     return False
-def numpy_sample(*arguments):
-    return llama2_numpy.Llama.sample(fast, *arguments)
 for size in (fast.vocab_size, fast.vocab_size - 1, fast.vocab_size - 3):
     cases = []
     for where in (0, 3, 4, 21, size - 5, size - 1):
@@ -327,33 +337,35 @@ for size in (fast.vocab_size, fast.vocab_size - 1, fast.vocab_size - 3):
     cases.append(("all -inf", np.full(size, -np.inf, dtype=np.float32)))
     for name, broken in cases:
         for temperature, topp in ((0.7, 0.9), (0.7, 1.0), (1.3, 0.05), (0.0, 0.9)):
-            for draw in (fast.sample, numpy_sample):
+            for draw in (kernel_sample, numpy_sample):
                 assert refuses(draw, broken, temperature, topp), (size, name, temperature, topp, draw)
     masked = (generator.standard_normal(size) * 2.0).astype(np.float32)
     masked[::7] = -np.inf
     for topp in (0.9, 1.0):
         for value in (0.0, 0.5, 1.0 - 1e-12):
-            ours, theirs = fast.sample(masked, 0.7, topp, Fixed(value)), numpy_sample(masked, 0.7, topp, Fixed(value))
+            ours, theirs = kernel_sample(masked, 0.7, topp, Fixed(value)), numpy_sample(masked, 0.7, topp, Fixed(value))
             assert np.isfinite(masked[ours]) and (ours == theirs or abs(masked[ours] - masked[theirs]) < 1e-3), (size, topp, value, ours, theirs)
 history = [int(token) for token in generator.integers(0, fast.vocab_size, 100)] + [5, 5, 5]
 ours, theirs = logits.copy(), logits.copy()
-fast.penalize(ours, history, 1.3)
-llama2_numpy.Llama.penalize(fast, theirs, history, 1.3)
+kernel_penalize(ours, history, 1.3)
+numpy_penalize(theirs, history, 1.3)
 assert np.allclose(ours, theirs, rtol=1e-6) and not np.array_equal(ours, logits), "the penalty of the kernels is off"
 # T359: the two samplers as the parts they are. The model with the kernels has theirs in the reference's places, and
 # the kernels' sampler follows a history that grows by a token a step past its window (its ring of the latest tokens,
 # written one number a step) as NumPy's does, which reads the history's end every time
-assert isinstance(fast.sampler, llama2_numpy.KernelSampler) and vars(fast)["sample"] is fast.sampler.sample and vars(fast)["penalize"] is fast.sampler.penalize
-assert llama2_numpy.Llama.sample is llama2_numpy.NumpySampler.sample and llama2_numpy.Llama.penalize is llama2_numpy.NumpySampler.penalize
+assert isinstance(vars(fast)["sampler"], llama2_numpy.KernelSampler) and isinstance(llama2_numpy.Llama.sampler, llama2_numpy.NumpySampler)
 in_numpy, on_kernels = llama2_numpy.NumpySampler(), llama2_numpy.KernelSampler(llama2_numpy.load_kernels("simdkernel.so", False), fast.vocab_size)
-grown = [1]
-for step in range(3 * llama2_numpy.REPETITION_WINDOW):
-    ours, theirs = logits.copy(), logits.copy()
-    on_kernels.penalize(ours, grown, 1.3, 0.5)
-    in_numpy.penalize(theirs, grown, 1.3, 0.5)
-    assert np.allclose(ours, theirs, rtol=1e-6) and not np.array_equal(ours, logits), f"the kernels' sampler lost the history at step {step}"
-    assert on_kernels.sample(ours, 0.0, 0.9, None) == in_numpy.sample(theirs, 0.0, 0.9, None) == int(np.argmax(theirs))
-    grown.append(int(generator.integers(0, fast.vocab_size)))
+# (the repetition penalty alone: the ring follows the one list; then with a presence penalty over the sampled tokens,
+# a second list, as generate() hands the two)
+for settings in (llama2_numpy.Sampling(repetition_penalty=1.3), llama2_numpy.Sampling(repetition_penalty=1.3, presence_penalty=0.5)):
+    kernels_draw, numpy_draw = on_kernels.drawing(settings, None), in_numpy.drawing(settings, None)
+    grown, written = [1], []
+    for step in range(3 * llama2_numpy.REPETITION_WINDOW):
+        ours, theirs = logits.copy(), logits.copy()
+        assert kernels_draw(ours, grown, written) == numpy_draw(theirs, grown, written) == int(np.argmax(theirs))
+        assert np.allclose(ours, theirs, rtol=1e-6) and not np.array_equal(ours, logits), f"the kernels' sampler lost the history at step {step}"
+        grown.append(int(generator.integers(0, fast.vocab_size)))
+        written.append(grown[-1])
 # T274: a top-k, a min-p and a presence penalty on the kernels are NumPy's: the same token for the same random number
 # (or a neighbour of about the same logit where rounding moves a border), over a vocabulary that ends on the tail too
 for size in (fast.vocab_size, fast.vocab_size - 3):
@@ -363,7 +375,7 @@ for size in (fast.vocab_size, fast.vocab_size - 3):
             for topp in (1.0, 0.5):
                 for min_p in (0.0, 0.05, 1.0):
                     for value in (0.0, generator.random(), 1.0 - 1e-12):
-                        ours = fast.sample(narrowing, 0.7, topp, Fixed(value), top_k, min_p)
+                        ours = kernel_sample(narrowing, 0.7, topp, Fixed(value), top_k, min_p)
                         theirs = numpy_sample(narrowing, 0.7, topp, Fixed(value), top_k, min_p)
                         # (or, for the random number just under 1 and a top-k of thousands, two of the tokens past
                         # where the float64 sum stops growing: each less than 1e-11 of the most probable, exp(-25))
@@ -374,12 +386,12 @@ tied = np.full(fast.vocab_size, -30.0, dtype=np.float32)
 tied[[5, 50, 500, 1000, 1500]] = 4.0
 for top_k in (1, 3, 5, 7):
     for value in (0.0, 0.3, 0.7, 1.0 - 1e-12):
-        assert tied[fast.sample(tied, 1.0, 1.0, Fixed(value), top_k, 0.0)] == 4.0, (top_k, value)
+        assert tied[kernel_sample(tied, 1.0, 1.0, Fixed(value), top_k, 0.0)] == 4.0, (top_k, value)
 ours, theirs = logits.copy(), logits.copy()
-fast.penalize(ours, history, 1.3, 1.5)
-llama2_numpy.Llama.penalize(fast, theirs, history, 1.3, 1.5)
+kernel_penalize(ours, history, 1.3, 1.5)
+numpy_penalize(theirs, history, 1.3, 1.5)
 plain = logits.copy()
-fast.penalize(plain, history, 1.3)
+kernel_penalize(plain, history, 1.3)
 window = history[-llama2_numpy.REPETITION_WINDOW:]
 assert np.allclose(ours, theirs, rtol=1e-6) and np.allclose(ours[window], plain[window] - 1.5, rtol=1e-6), "the presence penalty of the kernels is off"
 settings = dict(steps=40, temperature=1.0, topp=0.95, top_k=20, min_p=0.05, presence_penalty=1.5, seed=1)
@@ -710,8 +722,8 @@ llama2_convert.checkpoint_size([64, 96, 2, 4, 2, 320, 24], "int8", {"qk_norm": T
 def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min_p=0.0, presence=0.0):
     logits = np.frombuffer(buffer.to_bytes(), dtype=np.float32).copy()
     if penalty != 1.0 or presence != 0.0:
-        fast.penalize(logits, [int(token) for token in history], penalty, presence)
-    return fast.sample(logits, temperature, topp, Fixed(value), top_k, min_p), logits.tobytes()
+        kernel_penalize(logits, [int(token) for token in history], penalty, presence)
+    return kernel_sample(logits, temperature, topp, Fixed(value), top_k, min_p), logits.tobytes()
 `);
   const pick = pyodide.globals.get("kernel_pick"), vocab = pyodide.globals.get("fast").vocab_size;
   let cases = 0, same = 0;

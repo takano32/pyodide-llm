@@ -1,5 +1,5 @@
 // kernel/sample.ts (T356): from the logits to a token: the greedy choice, the penalties, and the sampling
-// (temperature, top-k, min-p, top-p) as Llama.sample() does it in NumPy.
+// (temperature, top-k, min-p, top-p) as NumpySampler (engine/sampler.py) does it in NumPy.
 
 import { fexp, vexp, largest } from "./math";
 
@@ -10,7 +10,7 @@ export function argmax(x: usize, n: i32): i32 {
 }
 
 // ---------------------------------------------------------------------------------------------- sampling
-// What Llama.sample() does in NumPy, without walking a vocabulary of 50000 or 100000 tokens several times.
+// What NumpySampler does in NumPy, without walking a vocabulary of 50000 or 100000 tokens several times.
 
 // tokens: the recently generated ones; each is made less likely once, however often it occurs. T274: presence is taken
 // off the logit of each after that (a presence penalty: llama.cpp's and OpenAI's, the same for one occurrence and for
