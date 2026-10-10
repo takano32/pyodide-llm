@@ -16,9 +16,9 @@ const [dir, dtype = "int8"] = process.argv.slice(2).filter((a) => !a.startsWith(
 const { pyodide: py } = await pyodideWithEngine();
 // LAYOUT=<bytes>,<bytes> (T374.2.1): two buffers of those sizes made and held in Python, one before anything of the
 // conversion and one once the conversion is made, before it is fed. Where the conversion's buffers lie beside one
-// another is the same in every run of one tool, and another tool (or tree) lays them out otherwise: two tools that fed
-// the same converter the same parts differed by one to three percent in CI, always the same way, until each run had
-// its own layout (tests/abba-convert.sh gives every run two sizes of its own)
+// another is the same in every run of one tool, and another tool (or tree) lays them out otherwise: with sizes of its
+// own for every run (tests/abba-convert.sh), that is not taken for a difference of work. (It is not all there is to
+// it: see TODO.md's T374.2.1 for what the runs of CI said with it.)
 const [layoutBefore = 0, layoutBeside = 0] = (process.env.LAYOUT ?? "").split(",").map(Number);
 py.runPython(`layout_before = bytes(${layoutBefore})`);
 const convert = py.pyimport("llama2_convert");

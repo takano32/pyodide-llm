@@ -13,9 +13,10 @@ if [ ! -d .tmp/base ]; then
   git fetch -q --depth 1 origin main && git worktree add -q .tmp/base FETCH_HEAD
   cp -r node_modules .tmp/base/ && cp public/simdkernel* .tmp/base/public/
 fi
-# T374.2.1: every run gets a layout of its own (LAYOUT: see tests/profile-convert.mjs). Without it the two trees' tools
-# differed by one to three percent though they fed the same converter the same parts: where the buffers lie is the
-# same in every run of one tool. A base tree whose tool does not know LAYOUT (before T374.2.1) is given the two lines.
+# T374.2.1: every run gets a layout of its own (LAYOUT: see tests/profile-convert.mjs): where the buffers lie is the
+# same in every run of one tool, and differs between two tools or trees. A base tree whose tool does not know LAYOUT
+# (before T374.2.1) is given the two lines. The last lines say now against base with one standard error of the runs of
+# this job; between jobs the same comparison moved by more than that (TODO.md's T374.2.1): one job is not a verdict.
 if ! grep -q LAYOUT .tmp/base/tests/profile-convert.mjs; then
   sed -i -e 's|^const convert = py.pyimport("llama2_convert");$|py.runPython(`layout_before = bytes(${Number((process.env.LAYOUT ?? "0,0").split(",")[0])})`);\n&|' \
     -e 's|^py.globals.set("conversion", conversion);$|py.runPython(`layout_beside = bytes(${Number((process.env.LAYOUT ?? "0,0").split(",")[1])})`);\n&|' .tmp/base/tests/profile-convert.mjs
@@ -39,7 +40,7 @@ for (const key of new Set(rows.map((r) => r[0] + " " + r[1]))) {
   const v = rows.filter((r) => r[0] + " " + r[1] === key).map((r) => +r[2]).sort((a, b) => a - b);
   console.log(key, "median", v[v.length >> 1], "min", v[0], "max", v[v.length - 1], "n", v.length);
 }
-// now against base, by the means, with one standard error of the difference: inside it, the two are not told apart
+// now against base, by the means, with one standard error of the difference within this job
 for (const d of new Set(rows.map((r) => r[1]))) {
   const stat = (name) => { const v = rows.filter((r) => r[0] === name && r[1] === d).map((r) => +r[2]), m = v.reduce((a, b) => a + b, 0) / v.length; return [m, v.reduce((a, b) => a + (b - m) ** 2, 0) / (v.length - 1) / v.length]; };
   const [bm, bv] = stat("base"), [nm, nv] = stat("now");
