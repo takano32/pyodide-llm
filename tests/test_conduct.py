@@ -1,20 +1,22 @@
 # The conduct of a conversion (T374.1, public/convert/conduct.py): a generator that asks for a model's files in the
-# order the worker asks for them today, driven here by a dictionary (tests/conduct_hub.py's Hub): no browser, no
-# worker, no Pyodide. And (T374.2.2) by a folder of the visitor's disk (Folder), which the same conduct converts.
+# order the worker asks for them, driven here by a dictionary (tests/conduct_hub.py's Hub): no browser, no worker, no
+# Pyodide. And (T374.2.2) by a folder of the visitor's disk (Folder), which the same conduct converts.
 #
-# Held to three things. The requests of the worker itself, for the 19 repositories of tests/worker-fetches-check.mjs
-# (tests/fixtures/conversion-cases.json is that check's record of them, conversion-fetches.json what the worker asked):
-# line by line, with the converter's stand-in of that check. The worker's ladder written out in Python (today(), itself
-# held to the same fixture), wherever there is no fixture: the real converter on real files of the same 19 kinds (the
-# checkpoint, the options and the tokenizer.bin as well), and made-up repositories by the hundred. And what the
-# requests are, one at a time, with a stand-in that converts nothing.
+# Held to four things. The requests of the worker itself, for the 19 repositories and the 10 folders of
+# tests/worker-fetches-check.mjs (tests/fixtures/conversion-cases.json is that check's record of them,
+# conversion-fetches.json what was asked): line by line, with the converter's stand-in of that check. A conversion made
+# with no conduct at all (direct(): the files read whole, a Conversion fed in one piece), for the real converter on real
+# files of the same 29 kinds: the checkpoint, the options and the tokenizer.bin. What every conduct's requests must be
+# whatever the repository (sound()), for made-up repositories by the hundred: there is no second opinion on the order
+# of their requests since T374.2.3 (the worker's old ladder, written out in Python as today(), went with it). And what
+# the requests are, one at a time, with a stand-in that converts nothing.
 import json
 import random
 import struct
 from pathlib import Path
 
 import pytest
-from conduct_hub import File, Folder, Hub, MiB, StandIn, answer, answered, cut, gguf, made, safetensors, today
+from conduct_hub import Absent, File, Folder, Hub, MiB, StandIn, answer, answered, cut, direct, gguf, made, safetensors
 from conftest import synthetic_weights
 from test_convert import hugging_face, safetensors_file
 from test_gguf import EPS, gguf_file, sentencepiece, unigram
@@ -51,18 +53,25 @@ def ending(hub, last=None, error=None):
     return "converted" if last[0] == "done" else f"failed: {hub.refusal(*last[1:])}"
 
 
-def conducted(hub, hf, making):
-    """A conduct answered from the hub to its end: (how it ended, the conversion or None)."""
+def conducted(hub, hf, making, told=None):
+    """A conduct answered from the hub to its end: (how it ended, the conversion or None). told: see answered()."""
     try:
-        last = answered(hub, conduct(hf, **making))
+        last = answered(hub, conduct(hf, **making), told)
     except Exception as error:
         return ending(hub, error=error), None
     return ending(hub, last), last[1] if last[0] == "done" else None
 
 
-def as_today(hub, hf, converter, making, **more):
+# (the candidates once more, as this file knows them: test_the_candidates_are_... holds TOKENIZERS to the same three)
+THREE = ("tokenizer.json", "tokenizer.model", "spiece.model")
+
+
+def directly(hub, hf, making):
+    """The same model converted with no conduct (conduct_hub.direct), from the same files: (how it ended, the conversion)."""
     try:
-        return "converted", today(hub, hf, converter, **more, **making)
+        return "converted", direct(hub.whole, hf, THREE, **making)
+    except Absent as absent:
+        return f"failed: {hub.refusal(*absent.args)}", None
     except Exception as error:
         return ending(hub, error=error), None
 
@@ -92,17 +101,6 @@ def test_a_conduct_asks_what_the_worker_asks(case, monkeypatch):
     assert hub.asked == requests
     assert stand_in.handed == handed
     assert ended == end
-
-
-@pytest.mark.parametrize("case", CASES, ids=NAMES)
-def test_the_ladder_written_out_in_python_is_the_workers(case):
-    """today() is what a conduct is compared with below: it must be the worker's ladder, by the same fixture."""
-    stand_in = StandIn()
-    hf, making = listed(case)
-    hub = Hub(made(case["files"]), hf, unsaid=case["line"].get("unsaid", False), **cut(case["line"]))
-    ended, _ = as_today(hub, hf, stand_in, making)
-    requests, handed, end = expected_of(case["name"])
-    assert (hub.asked, stand_in.handed, ended) == (requests, handed, end)
 
 
 # ---- the real converter, on real files of the same 19 kinds
@@ -174,10 +172,11 @@ def gguf_base(file):
 
 @pytest.mark.parametrize("case", CASES, ids=NAMES)
 def test_a_conduct_converts_what_the_worker_converts(case, monkeypatch):
-    """The real converter and real files: the requests are today's ladder's, one for one, and so are the checkpoint,
-    the options and the tokenizer.bin. Scaled to files of a few hundred kilobytes: the parts of the line are cut by
-    2 KiB where the worker's are cut by a MiB, and the first piece of a head is as short as the case needs (a header
-    past it; a GGUF's head read at the second try, and at the third)."""
+    """The real converter and real files: the checkpoint, the options and the tokenizer.bin are those of a conversion
+    made with no conduct (direct(): the files whole, fed in one piece), and it ends as that one ends; the files are
+    asked for in the order of the fixture, and the requests are sound(). Scaled to files of a few hundred kilobytes:
+    the parts of the line are cut by 2 KiB where the worker's are cut by a MiB, and the first piece of a head is as
+    short as the case needs (a header past it; a GGUF's head read at the second try, and at the third)."""
     name, files = case["name"], real_files(case)
     hf, making = listed(case)
     making["dtype"] = making["dtype"] if isinstance(making["dtype"], str) else "int8"
@@ -187,11 +186,11 @@ def test_a_conduct_converts_what_the_worker_converts(case, monkeypatch):
     monkeypatch.setattr(conducting, "HEAD", head)
     monkeypatch.setattr(conducting, "GGUF_HEAD", 4 * head)
     line = dict(unsaid=case["line"].get("unsaid", False), **cut(case["line"], unit=2048))
-    theirs, mine = Hub(files, hf, **line), Hub(files, hf, **line)
-    ended, expected = as_today(theirs, hf, llama2_convert, making, head=head)
-    end, got = conducted(mine, hf, making)
-    assert mine.asked == theirs.asked
+    mine, told = Hub(files, hf, **line), []
+    ended, expected = directly(mine, hf, making)
+    end, got = conducted(mine, hf, making, told)
     assert end == ended and (ended == "converted") == (expected_of(name)[2] == "converted")
+    sound(told, got, end, hf, mine)
     # and they are the fixture's but for the sizes: the same files of the same repositories, one after another
     assert in_turn(mine.asked) == in_turn(FETCHES[name]["requests"])
     if expected is None:
@@ -245,22 +244,19 @@ def test_a_conduct_reads_of_a_folder_what_the_worker_reads(case, monkeypatch):
 @pytest.mark.parametrize("case", FOLDERS, ids=FOLDER_NAMES)
 def test_a_folder_is_converted_as_the_repository_of_the_same_files(case, monkeypatch):
     """The real converter and real files: what a folder converts to (the checkpoint, the options, the tokenizer.bin)
-    is what the same files convert to as a repository of huggingface.co, whose conduct is held to the worker's ladder
-    above; and the folder's files are read in the order of the fixture."""
+    is what a conversion made with no conduct makes of the same files (direct()), and it ends as that one ends; the
+    folder's files are read in the order of the fixture, and the requests are sound()."""
     name, files = case["name"], real_files(case)
     hf, making = dict(case["hf"]), {"dtype": "int8"}
     monkeypatch.setattr(conducting, "HEAD", 128 if "past the first 512 KiB" in name else 512 * 1024)
-    folder = Folder(files, chunk=2048)
-    end, got = conducted(folder, hf, making)
-    # (the same files under the names a repository has them by: in small letters)
-    listed_there = {"repo": "owner/model", "revision": REVISION, "weights": hf["weights"].lower(), "tokenizer": list(TOKENIZERS)}
-    hub = Hub({f"owner/model/{file.lower()}": value for file, value in files.items()}, listed_there, **cut({}, unit=2048))
-    ended, expected = conducted(hub, listed_there, making)
+    folder, told = Folder(files, chunk=2048), []
+    ended, expected = directly(folder, hf, making)
+    end, got = conducted(folder, hf, making, told)
     assert in_turn(folder.asked, slice(0, 2)) == in_turn(FETCHES[name]["requests"], slice(0, 2))
-    assert (end == "converted") == (expected_of(name)[2] == "converted")
+    assert end == ended and (end == "converted") == (expected_of(name)[2] == "converted")
+    sound(told, got, end, hf, folder)
     if got is None:
-        # (a folder says of a missing file what the loop says, a repository what huggingface.co's 404 is told with)
-        assert expected is None and (end == ended or "which is not there" in end)
+        assert expected is None
         return
     assert bytes(got.checkpoint) == bytes(expected.checkpoint) and len(got.checkpoint) > 20000
     assert got.options == expected.options
@@ -290,7 +286,66 @@ def test_a_folder_finds_a_file_whatever_the_case_of_its_name_and_the_first_of_tw
     assert folder.text("weights", "tokenizer_config.json") is None and len(folder.asked) == 1
 
 
-# ---- made-up repositories by the hundred: the conduct against the ladder
+# ---- what the requests of any conduct must be, whatever the repository: no second opinion is needed to say these
+def sound(told, conversion, ended, hf, hub):
+    """told: the requests of one conduct as they came (answered()'s), conversion: what it ended with (None where it
+    ended otherwise), ended: how it ended in ending()'s words. Each line below is a thing no conversion may do."""
+    vocabulary = hf.get("vocabulary")
+    place = "vocabulary" if vocabulary else "weights"
+    named = (vocabulary or {}).get("tokenizer") or hf.get("tokenizer") or THREE
+    candidates = [named] if isinstance(named, str) else list(named)
+    alone = hf["weights"].endswith(".gguf") and not vocabulary
+    assert {request[0] for request in told} <= {"text", "bytes", "range", "size", "stream"}
+    assert {request[1] for request in told} <= ({"weights", "vocabulary"} if vocabulary else {"weights"})
+    # nothing but the weights is asked of a GGUF that holds everything; of any other model, config.json comes first
+    if alone:
+        assert {request[2] for request in told} <= {hf["weights"]}
+    else:
+        assert told[0] == ("text", place, hf.get("config") or "config.json")
+    # a file asked for whole is asked for once
+    wholes = [request for request in told if request[0] in ("text", "bytes")]
+    assert len(set(wholes)) == len(wholes)
+    # the tokenizers: the model's candidates or the three, in their order, each once, none skipped, where the vocabulary is
+    tried = [request for request in told if request[0] == "bytes"]
+    assert tried == [("bytes", place, candidate) for candidate in candidates[:len(tried)]]
+    # the templates: where the tokenizer is, tokenizer_config.json before chat_template.jinja before any tokenizer
+    late = [request[2] for request in told if request[1:3] in ((place, "tokenizer_config.json"), (place, "chat_template.jinja")) or request[0] == "bytes"]
+    assert late[:1] in ([], ["tokenizer_config.json"]) and late.count("chat_template.jinja") <= 1
+    assert "chat_template.jinja" not in late or late.index("chat_template.jinja") == 1
+    # a head is asked for from the first byte of its file, in pieces that grow, and nothing of the weights elsewhere
+    heads = {}
+    for at, request in enumerate(told):
+        if request[0] == "range":
+            assert request[1] == "weights" and request[3] == 0 and request[4] > heads.get(request[2], 0)
+            heads[request[2]] = request[4]
+        if request[0] == "size":
+            # only of a file whose range was just answered (without its size)
+            assert told[at - 1][:3] == ("range", *request[1:])
+    # the streams come last, each of a file whose head was read, one after another: the progress counts across them
+    streams = [request for request in told if request[0] == "stream"]
+    assert told[len(told) - len(streams):] == streams and len({request[2] for request in streams}) == len(streams)
+    before = streams[0][5] if streams else 0
+    for _, where, name, begin, end, was, total in streams:
+        assert where == "weights" and name in heads and 0 < begin <= end and was == before and total == streams[0][6]
+        before += end - begin
+    assert not streams or before == streams[0][6]
+    if len(streams) == 1:
+        # one file: everything after its head, to its last byte; the head counts as arrived
+        _, _, name, begin, end, was, total = streams[0]
+        assert was == begin and end == total == len(hub.whole("weights", name))
+    # the ends: the streams are asked for only by a conversion that was made, and all of them before it is done
+    if ended == "converted":
+        assert conversion is not None and streams
+    else:
+        assert conversion is None
+    # a file said to be missing was asked for, and is not there
+    lost = [request for request in told if ended == f"failed: {hub.refusal(*request[1:3])}"]
+    assert all(hub.whole(*request[1:3]) is None for request in lost)
+    if "has no " in ended or "which is not there" in ended:
+        assert lost and not streams
+
+
+# ---- made-up repositories by the hundred
 def made_up(rng):
     """A repository nobody would publish, the model as it might be listed for it, and the line."""
     head = rng.choice([40, 64, 300])
@@ -337,6 +392,8 @@ def made_up(rng):
     for candidate in TOKENIZERS:
         files[f"{place}/{candidate}"] = rng.choice([None, None, "unreadable", "a tokenizer", "a tokenizer"])
     (hf["vocabulary"] if kind == "vocabulary" and rng.random() < 0.8 else hf)["tokenizer"] = candidates[0] if len(candidates) == 1 and rng.random() < 0.5 else candidates
+    if kind != "vocabulary" and rng.random() < 0.2:
+        del hf["tokenizer"]  # (a repository nobody has looked at, ?hf=: the candidates are the conduct's own)
     if kind == "vocabulary":
         hf.setdefault("tokenizer", "tokenizer.json")  # (which the vocabulary's own comes before)
         hf["vocabulary"].setdefault("tokenizer", None)
@@ -346,25 +403,41 @@ def made_up(rng):
     return head, hf, files, line
 
 
-def test_made_up_repositories_are_asked_as_the_worker_asks_them(monkeypatch):
+def test_the_requests_of_made_up_repositories_are_sound(monkeypatch):
     """Files that are not there, heads that are no heads, indexes that say nothing, tokenizers the converter refuses,
-    templates of every kind of JSON, a GGUF that ends before its head does: for 1500 of them, the conduct asks what
-    the ladder asks, hands the converter what the ladder hands it, and ends as it ends. (Only a file that is not there
-    fails here: another failure is the answerer's, who stops asking.)"""
+    templates of every kind of JSON, a GGUF that ends before its head does: for 1500 of them, the requests are sound(),
+    the converter's stand-in is fed every byte the streams name, and after its end the conduct asks for nothing.
+    (Until T374.2.3 each was compared, request for request, with the worker's old ladder written out in Python: that
+    second opinion on the order of the requests is gone with the ladder. The 29 cases of the fixture and the tests of
+    one request at a time below are what holds the order now.)"""
     rng = random.Random(374)
     ends = {}
     for _ in range(1500):
         head, hf, files, line = made_up(rng)
         monkeypatch.setattr(conducting, "HEAD", head)
         monkeypatch.setattr(conducting, "GGUF_HEAD", 4 * head)
-        theirs, mine = Hub(files, hf, **line), Hub(files, hf, **line)
-        ladder, stand_in = StandIn(), StandIn().into(monkeypatch)
-        expected = as_today(theirs, hf, ladder, {"dtype": choice}, head=head)[0]
-        got = conducted(mine, hf, {"dtype": choice})[0]
-        told = (hf, sorted(files), line, head)
-        assert mine.asked == theirs.asked, told
-        assert stand_in.handed == ladder.handed, told
-        assert got == expected, told
+        hub, told, stand_in = Hub(files, hf, **line), [], StandIn().into(monkeypatch)
+        steps = conduct(hf, dtype=choice)
+        try:
+            last = answered(hub, steps, told)
+            got, conversion = ending(hub, last), last[1] if last[0] == "done" else None
+        except Exception as error:
+            got, conversion = ending(hub, error=error), None
+        said = (hf, sorted(files), line, head)
+        try:
+            sound(told, conversion, got, hf, hub)
+        except AssertionError as wrong:
+            raise AssertionError(f"{said}\n{told}\n{got}") from wrong
+        # after its end, whichever it was, nothing more is asked
+        with pytest.raises(StopIteration):
+            steps.send(None)
+        streamed = sum(end - begin for _, _, _, begin, end, _, _ in (request for request in told if request[0] == "stream"))
+        if conversion is not None:
+            # every byte the streams name went to the converter, and they are the bytes of its tensors
+            assert stand_in.handed[-1].startswith(f"fed {streamed} bytes in ") and stand_in.handed[-1].endswith("; finish()"), said
+            assert "NOT" not in stand_in.handed[-1], said
+        else:
+            assert not any("finish()" in line for line in stand_in.handed), said
         kind = "converted" if got == "converted" else "a file is not there" if "has no" in got else "refused" if "cannot be converted" in got \
             else "no safetensors file" if "not a safetensors" in got else "the head of a GGUF never ends" if got == "failed: " else got
         ends[kind] = ends.get(kind, 0) + 1
