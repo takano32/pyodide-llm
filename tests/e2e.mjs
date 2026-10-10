@@ -136,10 +136,18 @@ page.on("pageerror", (error) => {
   errors.push(String(error));
   remember(`[pageerror] ${error}`);
 });
+// T389: the parts of a model the worker said broke off and were fetched again (worker/sources.js). Firefox on Windows
+// breaks a body off now and then ("Error in input stream", T97) and says so on the console in its own words too; with
+// the worker's line beside it that is a break the page recovered from, and not a failure of the page.
+let refetched = 0;
+// (Firefox words it as `[JavaScript Error: "Failed to read data from the ReadableStream: “TypeError: Error in input stream”."]`,
+// as run 38046609290 printed it: not at the start of the text)
+const BROKEN_STREAM = /Failed to read data from the ReadableStream: /;
 let threadReports = 0;  // T172: the page's lines about the worker's search for the number of threads
 page.on("console", (message) => {
   if (message.type() === "error") errors.push(message.text());
   if (/^threads: /.test(message.text())) threadReports++;
+  if (/ broke off \(.*\): fetched again$/.test(message.text())) refetched++;
   remember(`[${message.type()}] ${message.text()}`);
 });
 
@@ -309,7 +317,10 @@ const result = await page.evaluate(() => ({
   isolated: self.crossOriginIsolated,
 }));
 if (result.error) failures.push(`the page reported: ${result.error}`);
-if (errors.length) failures.push(`console errors: ${errors.join(" | ")}`);
+const recovered = errors.filter((text) => BROKEN_STREAM.test(text)).slice(0, refetched);
+if (recovered.length) console.log(`parts that broke off and were fetched again: ${refetched} (the browser's ${recovered.length} lines about them are no failure)`);
+const unexplained = errors.filter((text) => !recovered.includes(text) || (recovered.splice(recovered.indexOf(text), 1), false));
+if (unexplained.length) failures.push(`console errors: ${unexplained.join(" | ")}`);
 if (!/tok\/s/.test(result.meta)) failures.push("no speed line under the answer");
 if (result.pageScrolls) failures.push("the page itself scrolls");
 if (expected[model] && !result.text.startsWith(expected[model])) failures.push(`unexpected text: ${result.text.slice(0, 120)}`);

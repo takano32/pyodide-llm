@@ -33,56 +33,18 @@ REPETITION_WINDOW = 64  # the repetition penalty looks at this many of the lates
 NOT_FINITE = "The model computed logits that are not finite numbers (NaN or infinity), so no token can be drawn: its weights are broken or its numbers overflowed."
 
 
-class Sampling:
-    """How Llama draws a token from its logits."""
+def greedy(logits):
+    """Greedy argmax sampling: take the token with the highest probability. NumPy's argmax takes a NaN for the
+    largest, so the logit it picks is finite exactly when the largest one is (T195)."""
+    token = int(np.argmax(logits))
+    if not math.isfinite(logits[token]):
+        raise ValueError(NOT_FINITE)
+    return token
 
-    def kernel_sampler(self, kernels):
-        """penalize() and sample() on the kernels: the same as the methods below, which stay for NumPy alone.
 
-        Sorting the candidates of the nucleus was most of the time of a step for a small model with a large
-        vocabulary, and a repetition penalty, which flattens the distribution, made it worse.
-        """
-        probabilities, order = np.empty(self.vocab_size, dtype=np.float32), np.empty(self.vocab_size, dtype=np.int32)
-        recent = np.empty(REPETITION_WINDOW, dtype=np.int32)
-        probabilities_p, order_p, recent_p = probabilities.ctypes.data, order.ctypes.data, recent.ctypes.data
-        self._sampler_buffers = (probabilities, order, recent)  # keep them alive: the kernels only know addresses
-        kernel_penalize, kernel_sample = kernels["penalize"], kernels["sample"]
-        known = {}  # id(logits) -> (logits, address): forward() returns the same array every time
-
-        def address(logits):
-            entry = known.get(id(logits))
-            if entry is None or entry[0] is not logits:
-                if logits.dtype != np.float32 or not logits.flags.c_contiguous:
-                    raise TypeError("the kernels need contiguous float32 logits")
-                known.clear()
-                entry = known[id(logits)] = (logits, logits.ctypes.data)
-            return entry[1]
-
-        seen = [None, 0]  # the list that recent[] mirrors, and its length then
-
-        def penalize(logits, history, penalty, presence=0.0):
-            # recent[] is a ring of the latest tokens. generate() appends one token per step, and then one number
-            # is written here: copying 64 of them from a list costs more than the kernel takes
-            size = len(history)
-            if seen[0] is history and size == seen[1] + 1:
-                recent[(size - 1) % REPETITION_WINDOW] = history[-1]
-            else:
-                for position in range(max(size - REPETITION_WINDOW, 0), size):
-                    recent[position % REPETITION_WINDOW] = history[position]
-            seen[0], seen[1] = history, size
-            kernel_penalize(address(logits), recent_p, min(size, REPETITION_WINDOW), penalty, presence)
-
-        def sample(logits, temperature, topp, rng, top_k=0, min_p=0.0):
-            if temperature == 0.0:
-                return self.greedy(logits)
-            # the random number is drawn here, so that a seed gives the same text again
-            token = kernel_sample(address(logits), logits.size, temperature, topp, rng.random(), probabilities_p, order_p,
-                                  top_k, min_p)
-            if token < 0:
-                raise ValueError(NOT_FINITE)
-            return token
-
-        return penalize, sample
+class NumpySampler:
+    """penalize() and sample() in NumPy: the reference, and what draws where there are no kernels (or without them,
+    T52's "sampler"). It keeps nothing from step to step."""
 
     def penalize(self, logits, history, penalty, presence=0.0):
         """Make the tokens of the last steps less likely: tiny models love to loop. T274: presence is taken off the
@@ -92,21 +54,12 @@ class Sampling:
         logits[recent] = (np.where(logits[recent] > 0, logits[recent] / penalty, logits[recent] * penalty)
                           - np.float32(max(presence, 0.0)))
 
-    @staticmethod
-    def greedy(logits):
-        """Greedy argmax sampling: take the token with the highest probability. NumPy's argmax takes a NaN for the
-        largest, so the logit it picks is finite exactly when the largest one is (T195)."""
-        token = int(np.argmax(logits))
-        if not math.isfinite(logits[token]):
-            raise ValueError(NOT_FINITE)
-        return token
-
     def sample(self, logits, temperature, topp, rng, top_k=0, min_p=0.0):
         """A token of softmax(logits / temperature). T274: of its top_k most probable where top_k > 0, then of their
         nucleus (0 < topp < 1: their probabilities add up to one again), then without what is less than min_p times
         as probable as the most probable: the order of llama.cpp's samplers and of transformers'."""
         if temperature == 0.0:
-            return self.greedy(logits)
+            return greedy(logits)
         # max() keeps a NaN (T195)
         best = logits.max()
         if not math.isfinite(best):
@@ -152,3 +105,57 @@ class Sampling:
         # one random number on the cumulative distribution; Generator.choice() would cost a third of a millisecond
         chosen = np.searchsorted(cumulative, rng.random() * cumulative[-1], side="right")
         return int(candidates[min(chosen, cumulative.size - 1)])
+
+
+class KernelSampler:
+    """penalize() and sample() on the kernels (simdkernel.so's): what NumpySampler's draw, from the same random numbers.
+
+    Sorting the candidates of the nucleus was most of the time of a step for a small model with a large
+    vocabulary, and a repetition penalty, which flattens the distribution, made it worse.
+
+    The two are closures made here, not methods: a step then reads the buffers, their addresses and the kernels as
+    local names (it is on the path of every token the page writes).
+    """
+
+    def __init__(self, kernels, vocab_size):
+        probabilities, order = np.empty(vocab_size, dtype=np.float32), np.empty(vocab_size, dtype=np.int32)
+        recent = np.empty(REPETITION_WINDOW, dtype=np.int32)
+        probabilities_p, order_p, recent_p = probabilities.ctypes.data, order.ctypes.data, recent.ctypes.data
+        self.buffers = (probabilities, order, recent)  # keep them alive: the kernels only know addresses
+        kernel_penalize, kernel_sample = kernels["penalize"], kernels["sample"]
+        known = {}  # id(logits) -> (logits, address): forward() returns the same array every time
+
+        def address(logits):
+            entry = known.get(id(logits))
+            if entry is None or entry[0] is not logits:
+                if logits.dtype != np.float32 or not logits.flags.c_contiguous:
+                    raise TypeError("the kernels need contiguous float32 logits")
+                known.clear()
+                entry = known[id(logits)] = (logits, logits.ctypes.data)
+            return entry[1]
+
+        seen = [None, 0]  # the list that recent[] mirrors, and its length then
+
+        def penalize(logits, history, penalty, presence=0.0):
+            # recent[] is a ring of the latest tokens. generate() appends one token per step, and then one number
+            # is written here: copying 64 of them from a list costs more than the kernel takes
+            size = len(history)
+            if seen[0] is history and size == seen[1] + 1:
+                recent[(size - 1) % REPETITION_WINDOW] = history[-1]
+            else:
+                for position in range(max(size - REPETITION_WINDOW, 0), size):
+                    recent[position % REPETITION_WINDOW] = history[position]
+            seen[0], seen[1] = history, size
+            kernel_penalize(address(logits), recent_p, min(size, REPETITION_WINDOW), penalty, presence)
+
+        def sample(logits, temperature, topp, rng, top_k=0, min_p=0.0):
+            if temperature == 0.0:
+                return greedy(logits)
+            # the random number is drawn here, so that a seed gives the same text again
+            token = kernel_sample(address(logits), logits.size, temperature, topp, rng.random(), probabilities_p, order_p,
+                                  top_k, min_p)
+            if token < 0:
+                raise ValueError(NOT_FINITE)
+            return token
+
+        self.penalize, self.sample = penalize, sample

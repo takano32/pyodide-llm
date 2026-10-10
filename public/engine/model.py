@@ -34,10 +34,11 @@ from engine.layers import (RMS_EPS, delta_rule, gelu, head_norm, l2_heads, layer
                            unrotate)
 from engine.kernels import load_kernels
 from engine.dtypes import QUANTIZED, dtype_of
-from engine.checkpoint import OUTLIER_CHANNELS, SEVERAL_KINDS, Tensor, outlier_channels
-from engine.tensors import TensorOrder
-from engine.sampling import REPETITION_WINDOW, Sampling
-from engine.generation import Generation
+from engine.checkpoint import SEVERAL_KINDS
+from engine.tensors import read_rows, rope_tables
+from engine.sampler import KernelSampler, NumpySampler, greedy
+from engine.external import STEPS, ExternalForward
+from engine import generation
 
 # The KV cache starts with room for this many positions and doubles when a run gets there: a context of 4096
 # tokens is 200 MB of cache for llm-jp-3-150m, which a short text should not have to pay for (and WebAssembly
@@ -55,7 +56,26 @@ SWITCHES = ("kernels", "int8", "relaxed", "sampler", "kv16")
 PROMPT_BLOCK = 16
 
 
-class Llama(TensorOrder, Sampling, Generation):
+class Llama:
+    """A model: what its checkpoint holds, each row an attribute of its name, the tokenizer, and the parts it writes
+    with. The forward pass is one of two: the reference in NumPy, which is this class's own (forward() and the
+    methods after it, over the rows as arrays and the keys, values and states kept here), or public/forward.js's
+    (engine/external.py, with external: what the page runs). The sampler is one of two as well (engine/sampler.py):
+    NumPy's or the kernels'. generate() (engine/generation.py) writes with whichever the model has.
+
+    The names of the parts' steps are attributes here, and that is how the parts are chosen: the class has the
+    reference's (forward, penalize, sample, and no blocks or GPU steps), and an instance that was given a faster part
+    has that part's own functions under the same names, set once when it is made. A step of generate() then calls the
+    part itself, with no call in between. Tests and tools put their own in these places, on a model or on the class.
+    """
+    # how a model writes (engine/generation.py)
+    generate = generation.generate
+    # the reference sampler, NumPy's (it keeps nothing, so its two functions are the class's as they are): an instance
+    # with the kernels has a KernelSampler, and that one's two in their place
+    sampler = NumpySampler()
+    penalize, sample, greedy = NumpySampler.penalize, NumpySampler.sample, staticmethod(greedy)
+    external_forward = None  # the ExternalForward of a model whose weights are outside Python
+    _external = None  # (its engine and the array it fills, until release(): tools read the engine off it)
     forward_many = None  # T108: forward.js's forwardMany(tokens, pos) for a prompt, where there is one
     prompt_block = staticmethod(lambda: PROMPT_BLOCK)  # T147: how many tokens forward_many() takes at once, now
     # T152: forward.js's generateMany(token, pos, history, count, temperature, topp, penalty, randoms, stops), which
@@ -121,6 +141,9 @@ class Llama(TensorOrder, Sampling, Generation):
         object with forward(token, pos, need_logits, logits) and backend. Python keeps the tokenizer, generate()
         and the sampling. The NumPy forward cannot run on weights it does not have: disable "kernels" without it.
         """
+        # how the text is read: the tokenizer's own settings (the tokenizer is made last, below)
+        reading = dict(kind=tokenizer_kind, nfkc=nfkc, nfc=nfc, pretokenizer=pretokenizer, ignore_merges=ignore_merges,
+                       collapse=collapse, unknown=unknown)
         if external is not None:
             head = external.read(0, 28)
             checkpoint = bytes(head.to_py() if hasattr(head, "to_py") else head)
@@ -160,8 +183,10 @@ class Llama(TensorOrder, Sampling, Generation):
         self.rotated = rotated_form(rotated, rotated_widths(dim, self.q_dim, hidden_dim, self.linear))
         if self.rotated is not None and arch in ("gpt2", "neox", "lfm2"):
             raise ValueError("A rotated basis is a Llama's, a Qwen's or a Qwen3.5's: no GPT-2, GPT-NeoX or LFM2 has one.")
-        block = self.rotated and self.rotated["block"]
-        self.turned = (lambda v: v) if self.rotated is None else (lambda v: rotate(v, self.rotated["signs"][v.size], block))
+        # (the signs and the block themselves, not this model: a function that held the model would be a cycle of
+        # references, and the weights would then stay until a collection)
+        signs, block = (self.rotated["signs"], self.rotated["block"]) if self.rotated else (None, None)
+        self.turned = (lambda v: v) if self.rotated is None else (lambda v: rotate(v, signs[v.size], block))
         self.rms_norm_eps = float(rms_norm_eps)
         # how many values of each head RoPE turns: all of them unless the model says otherwise
         self.rotary = int(rotary) if rotary else self.head_size
@@ -178,11 +203,12 @@ class Llama(TensorOrder, Sampling, Generation):
         self.convolution = convolution_form(convolution, n_layers)
         if (arch == "lfm2") != (self.convolution is not None):
             raise ValueError("An LFM2 (lfm2) and its convolution layers go together.")
-        # what the file holds (engine/layout.py): its rows, and for every layer (does it keep a state: a linear-attention
-        # layer or a convolution one, its place in the stacks of its kind's tensors)
-        dims = Dims((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len),
-                    {"arch": arch, "bias": bias, "qk_norm": qk_norm, "head_dim": head_dim, "linear": self.linear,
-                     "convolution": self.convolution, "kinds": kinds})
+        # what the file cannot say of itself (engine/layout.py's FORM; the rotated basis moves no tensor), and with it
+        # what the file holds: its rows, and for every layer (does it keep a state: a linear-attention layer or a
+        # convolution one, its place in the stacks of its kind's tensors)
+        form = {"arch": arch, "bias": bias, "qk_norm": qk_norm, "head_dim": head_dim, "linear": self.linear,
+                "convolution": self.convolution, "kinds": kinds}
+        dims = Dims((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len), form)
         self.slots, self.rows = dims.slots, dims.rows()
         if external is not None and dims.kinds is not None:
             raise ValueError(SEVERAL_KINDS)
@@ -196,15 +222,20 @@ class Llama(TensorOrder, Sampling, Generation):
         # each row as an attribute of its name: where it is, with the weights outside Python (public/forward.js reads
         # them, and widens what has to be widened, itself), or an array
         self.file_tensors(checkpoint, self.rows, stored, shared_weights, external is not None)
-        self.rope_tables(stored, frequencies)
+        tables = rope_tables(arch, self.seq_len, self.head_size, self.rotary, self.rope_magnitude, stored, frequencies)
+        if tables is not None:
+            self.freq_cis_real, self.freq_cis_imag = tables
         self.backend = "NumPy"
         if external is not None:
             if file_size(self.rows, stored) != int(external.size):
                 raise ValueError(f"The checkpoint has {int(external.size)} bytes, and its header asks for "
                                  f"{file_size(self.rows, stored)} as {stored}.")
-            self.forward = self.external_forward(external, keep_int8, disable)
-            if kernels and "sampler" not in disable:
-                self.penalize, self.sample = self.kernel_sampler(kernels)
+            # forward.js's forward pass, and what else its engine offers, in the reference's places
+            outside = self.external_forward = ExternalForward(self, external, keep_int8, disable, KV_START)
+            self.backend, self._external = outside.backend, (outside.engine, outside.logits)
+            for name in STEPS:
+                if hasattr(outside, name):
+                    setattr(self, name, getattr(outside, name))
         else:
             # NumPy's forward pass; the forward pass on the kernels is forward.js's (external), since T93
             # (the linear-attention layers and the convolution layers have no keys and values)
@@ -223,16 +254,16 @@ class Llama(TensorOrder, Sampling, Generation):
                 # T260: theirs is the last taps - 1 tokens' values before the convolution alone (the oldest first)
                 self.conv_state = np.zeros((n_layers - attending, self.convolution["taps"] - 1, dim), dtype=np.float32)
                 self.state_at = 0
-            if kernels and "sampler" not in disable:
-                self.penalize, self.sample = self.kernel_sampler(kernels)
+        # the sampler: the kernels' where there are kernels, its two in the reference's places
+        if kernels and "sampler" not in disable:
+            self.sampler = KernelSampler(kernels, self.vocab_size)
+            self.penalize, self.sample = self.sampler.penalize, self.sampler.sample
         if (kernels or external is not None) and "sampler" in disable:
             self.backend += ", NumPy sampling"
         if disable:
             # the line has to say what the numbers are the numbers of
             self.backend += " (without " + ", ".join(name for name in SWITCHES if name in disable) + ")"
-        self.tokenizer = Tokenizer(tokenizer, self.vocab_size, kind=tokenizer_kind, nfkc=nfkc, nfc=nfc,
-                                   pretokenizer=pretokenizer, ignore_merges=ignore_merges, collapse=collapse,
-                                   unknown=unknown)
+        self.tokenizer = Tokenizer(tokenizer, self.vocab_size, **reading)
         self.bos, self.stop_tokens = bos, {int(token) for token in stop_tokens}
         self.specials = tuple(str(special) for special in specials)  # see Tokenizer.encode()
         self.stats = {}
@@ -244,83 +275,23 @@ class Llama(TensorOrder, Sampling, Generation):
             return (values[token] * scales[token]).reshape(self.dim)
         return self.token_embedding_table[token].astype(np.float32)
 
-    def external_forward(self, external, int8, disable):
-        """forward() in public/forward.js (T93): Python hands over where every tensor is, and the few small
-        arrays it computes itself (the RoPE tables of a checkpoint that leaves them out, the outlier channels of
-        T92), and gets the logits back into one array of its own, which the sampling kernels then read."""
-        # (the classifier of a model that has no other is its embedding, under both names)
-        held = {name: getattr(self, name) for name in (*(row.name for row in self.rows), "wcls")}
-        tensors = {name: tensor.plan() for name, tensor in held.items() if isinstance(tensor, Tensor)}
-        derived = {name: np.ascontiguousarray(getattr(self, name), dtype=np.float32).tobytes()
-                   for name in ("freq_cis_real", "freq_cis_imag") if isinstance(getattr(self, name), np.ndarray)}
-        if self.rotated is not None:
-            # T237: the signs of every width, with the transform's 1 / sqrt(block) in them (what the kernel multiplies by)
-            scale = np.float32(1.0 / math.sqrt(self.rotated["block"]))
-            derived.update({f"signs.{width}": (signs * scale).tobytes() for width, signs in self.rotated["signs"].items()})
-        channels = []
-        # (T237: not in a rotated basis, where the classifier reads R of its input: the rotation spreads a channel
-        # over its block, and a column of the stored matrix is no channel's)
-        if int8 and self.rotated is None:
-            final = self.rms_final_weight
-            raw = external.read(final.offset, self.dim * 4)
-            weight = np.frombuffer(bytes(raw.to_py() if hasattr(raw, "to_py") else raw), dtype=np.float32)
-            channels = [int(c) for c in outlier_channels(weight, min(OUTLIER_CHANNELS, self.dim))]
-        plan = {"arch": self.arch, "dim": self.dim, "hidden_dim": self.hidden_dim, "n_layers": self.n_layers,
-                "n_heads": self.n_heads, "n_kv_heads": self.n_kv_heads, "head_size": self.head_size,
-                "vocab_size": self.vocab_size, "seq_len": self.seq_len, "rotary": self.rotary,
-                "parallel_residual": bool(self.parallel_residual), "kv_start": KV_START, "rms_norm_eps": self.rms_norm_eps,
-                "shared_classifier": self.wcls is self.token_embedding_table, "int8": bool(int8),
-                "relaxed": "relaxed" not in disable, "tensors": tensors, "derived": derived, "outliers": channels,
-                # T229: a Qwen3.5's linear-attention layers (None: none)
-                "linear": self.linear,
-                # T255: the layers RoPE leaves alone
-                "unturned": list(self.unturned),
-                # T260: an LFM2's convolution layers (None: none)
-                "convolution": self.convolution,
-                # T237: the block of a rotated basis (0: the model's own basis); its signs are in derived
-                "rotated": self.rotated["block"] if self.rotated else 0,
-                # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
-                "half_kv": bool(int8) and "kv16" not in disable}
-        engine = external.start(plan)
-        self.backend = str(engine.backend)
-        logits = np.zeros(self.vocab_size, dtype=np.float32)
-        engine.bind(logits)
-        self._external = (engine, logits)  # keep both alive: JS writes into the array
-        run = engine.forward
-        # T108: a prompt's tokens go through the layers several at a time, when forward.js offers that
-        many = getattr(engine, "forwardMany", None)
-        if many is not None:
-            self.forward_many = lambda tokens, pos: many(list(tokens), pos)
-            if getattr(engine, "promptBlock", None) is not None:
-                self.prompt_block = lambda: int(engine.promptBlock)
-        # T152: the steps of generate() on the GPU, where forward.js offers that
-        on_gpu = getattr(engine, "generateMany", None)
-        if on_gpu is not None:
-            def generate_many(token, pos, history, count, temperature, topp, penalty, randoms, stops):
-                ids = on_gpu(token, pos, list(history[-REPETITION_WINDOW:]), len(history), count, temperature, topp,
-                            penalty, list(randoms), list(stops))
-                return None if ids is None else [int(i) for i in ids]
-
-            self.generate_many = generate_many
-            self.token_block = lambda: int(engine.tokenBlock)
-
-        def forward(token, pos, need_logits=True):
-            run(token, pos, need_logits)
-            return logits if need_logits else None
-
-        return forward
+    def file_tensors(self, checkpoint, rows, dtype, shared_weights, external):
+        """Takes every row of a file of this dtype as an attribute of its name (engine/tensors.py's read_rows()). A
+        method, for a model that has its rows from somewhere else to put its own here (tests/reference_27b.py's, over
+        a GGUF)."""
+        for name, tensor in read_rows(checkpoint, rows, dtype, shared_weights, external).items():
+            setattr(self, name, tensor)
 
     def release(self):
         """Let go of what JavaScript holds for this engine (the forward pass of forward.js and the array it fills).
         The worker calls it before it drops a model (T93). T205: what forward.js answers (a promise, settled once the
         GPU's worker let go of the device), for the worker to wait on before it reads the next model; else None."""
-        external = getattr(self, "_external", None)
-        if external is None:
-            return None
         self._external = None
-        return external[0].release()
+        return None if self.external_forward is None else self.external_forward.release()
 
     def forward(self, token, pos, need_logits=True):
+        """The forward pass in NumPy, the reference: the logits after this token at this position (None where they
+        are not needed), with its keys and values, or its layers' states, kept for the tokens after it."""
         n_kv_heads, head_size = self.n_kv_heads, self.head_size
         kv_mul = self.n_heads // n_kv_heads  # >1 with grouped-query attention
         if pos >= self.key_cache.shape[2]:

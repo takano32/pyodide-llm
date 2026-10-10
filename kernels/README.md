@@ -335,7 +335,7 @@ Two things the review of 2026-10-02 found, which no test in Node can see:
   refuses a module with a data section. `fexp` in `kernel/math.ts` is the table-free replacement.
 - **Keep every array alive whose address a kernel gets.** The kernels only know numbers: a scratch array that
   no Python object refers to any more is freed, and the kernel then writes into whatever lives there next. It
-  shows up as a rare `memory access out of bounds` (`_kernel_buffers`, `_sampler_buffers` in the engine).
+  shows up as a rare `memory access out of bounds` (`_kernel_buffers`, `KernelSampler.buffers` in the engine).
 - Mutable globals are fine (they are no data segment): `sample` keeps the state of its partial sort in three.
 - `sample` sorts only as far as the nucleus reaches and gets its random number from Python, so a seed gives the
   same text again. With the same random number it picks the token that `Llama.sample` (NumPy) picks.

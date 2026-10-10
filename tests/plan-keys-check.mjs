@@ -4,7 +4,7 @@
 // without a word (`plan.rotary` spelled otherwise turns whole heads), and the tests that run forward.js alone are
 // handed a plan written by hand (tests/plans.mjs's planOf(), held to Python's keys here too).
 //
-//   1. Python -> forward.js: the plan Llama(external=) hands start() (public/engine/model.py's external_forward()), as
+//   1. Python -> forward.js: the plan Llama(external=) hands start() (public/engine/external.py's ExternalForward), as
 //      Python builds it for one made-up model of every layout and dtype (tests/engine_plans.py, the native Python):
 //      its keys, the names of its tensors, each tensor's keys, the names of its derived tables. Against what
 //      public/forward.js and public/forward/*.js read, by their syntax trees: `plan.<key>` and what is taken out of

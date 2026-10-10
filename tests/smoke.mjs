@@ -340,6 +340,20 @@ ours, theirs = logits.copy(), logits.copy()
 fast.penalize(ours, history, 1.3)
 llama2_numpy.Llama.penalize(fast, theirs, history, 1.3)
 assert np.allclose(ours, theirs, rtol=1e-6) and not np.array_equal(ours, logits), "the penalty of the kernels is off"
+# T359: the two samplers as the parts they are. The model with the kernels has theirs in the reference's places, and
+# the kernels' sampler follows a history that grows by a token a step past its window (its ring of the latest tokens,
+# written one number a step) as NumPy's does, which reads the history's end every time
+assert isinstance(fast.sampler, llama2_numpy.KernelSampler) and vars(fast)["sample"] is fast.sampler.sample and vars(fast)["penalize"] is fast.sampler.penalize
+assert llama2_numpy.Llama.sample is llama2_numpy.NumpySampler.sample and llama2_numpy.Llama.penalize is llama2_numpy.NumpySampler.penalize
+in_numpy, on_kernels = llama2_numpy.NumpySampler(), llama2_numpy.KernelSampler(llama2_numpy.load_kernels("simdkernel.so", False), fast.vocab_size)
+grown = [1]
+for step in range(3 * llama2_numpy.REPETITION_WINDOW):
+    ours, theirs = logits.copy(), logits.copy()
+    on_kernels.penalize(ours, grown, 1.3, 0.5)
+    in_numpy.penalize(theirs, grown, 1.3, 0.5)
+    assert np.allclose(ours, theirs, rtol=1e-6) and not np.array_equal(ours, logits), f"the kernels' sampler lost the history at step {step}"
+    assert on_kernels.sample(ours, 0.0, 0.9, None) == in_numpy.sample(theirs, 0.0, 0.9, None) == int(np.argmax(theirs))
+    grown.append(int(generator.integers(0, fast.vocab_size)))
 # T274: a top-k, a min-p and a presence penalty on the kernels are NumPy's: the same token for the same random number
 # (or a neighbour of about the same logit where rounding moves a border), over a vocabulary that ends on the tail too
 for size in (fast.vocab_size, fast.vocab_size - 3):
