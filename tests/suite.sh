@@ -53,6 +53,10 @@ page_modules() {
   node tests/worker-sink-check.mjs
   # T129: where fetching and loading meet in worker.js, on made-up fetches and a fast clock (a few seconds)
   node tests/worker-check.mjs
+  # T357: what a conversion asks of huggingface.co, in order, for every kind of source the page converts (one file, shards, a
+  # GGUF alone and with another repository's vocabulary, the tokenizer's candidates, the optional files), on a made-up hub
+  # and a converter's stand-in, against tests/fixtures/conversion-fetches.json (under a second)
+  node tests/worker-fetches-check.mjs
   # T350: the names the worker and its modules (public/worker/) use: declared, imported, or the worker's globals (the two
   # checks above run them as scripts of one context, where a missing import does not show)
   node tests/worker-modules-check.mjs

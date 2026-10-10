@@ -1,0 +1,351 @@
+{
+ "one safetensors file, a fast line (16 MiB parts after the first)": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model.safetensors bytes=308-8388915",
+   "GET owner/model@0123456 model.safetensors bytes=8388916-16777523",
+   "GET owner/model@0123456 model.safetensors bytes=16777524-25166131",
+   "GET owner/model@0123456 model.safetensors bytes=25166132-33554739",
+   "GET owner/model@0123456 model.safetensors bytes=33554740-41943347",
+   "GET owner/model@0123456 model.safetensors bytes=41943348-50331955",
+   "GET owner/model@0123456 model.safetensors bytes=50331956-67109171",
+   "GET owner/model@0123456 model.safetensors bytes=67109172-83886387",
+   "GET owner/model@0123456 model.safetensors bytes=83886388-100663603",
+   "GET owner/model@0123456 model.safetensors bytes=100663604-104857907"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 104857600 bytes in 10 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "one safetensors file, a slow line (8 MiB parts)": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model.safetensors bytes=308-8388915",
+   "GET owner/model@0123456 model.safetensors bytes=8388916-16777523",
+   "GET owner/model@0123456 model.safetensors bytes=16777524-25166131",
+   "GET owner/model@0123456 model.safetensors bytes=25166132-33554739",
+   "GET owner/model@0123456 model.safetensors bytes=33554740-41943347",
+   "GET owner/model@0123456 model.safetensors bytes=41943348-50331955",
+   "GET owner/model@0123456 model.safetensors bytes=50331956-58720563",
+   "GET owner/model@0123456 model.safetensors bytes=58720564-67109171",
+   "GET owner/model@0123456 model.safetensors bytes=67109172-75497779",
+   "GET owner/model@0123456 model.safetensors bytes=75497780-83886387",
+   "GET owner/model@0123456 model.safetensors bytes=83886388-92274995",
+   "GET owner/model@0123456 model.safetensors bytes=92274996-100663603",
+   "GET owner/model@0123456 model.safetensors bytes=100663604-104857907"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 104857600 bytes in 13 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "one safetensors file, its first part the last to come (the others wait for it)": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model.safetensors bytes=308-8388915",
+   "GET owner/model@0123456 model.safetensors bytes=8388916-16777523",
+   "GET owner/model@0123456 model.safetensors bytes=16777524-25166131",
+   "GET owner/model@0123456 model.safetensors bytes=25166132-33554739",
+   "GET owner/model@0123456 model.safetensors bytes=33554740-41943347",
+   "GET owner/model@0123456 model.safetensors bytes=41943348-50331955",
+   "GET owner/model@0123456 model.safetensors bytes=50331956-58720563",
+   "GET owner/model@0123456 model.safetensors bytes=58720564-67109171",
+   "GET owner/model@0123456 model.safetensors bytes=67109172-75497779",
+   "GET owner/model@0123456 model.safetensors bytes=75497780-83886387",
+   "GET owner/model@0123456 model.safetensors bytes=83886388-92274995",
+   "GET owner/model@0123456 model.safetensors bytes=92274996-100663603",
+   "GET owner/model@0123456 model.safetensors bytes=100663604-117440819",
+   "GET owner/model@0123456 model.safetensors bytes=117440820-134218035",
+   "GET owner/model@0123456 model.safetensors bytes=134218036-150995251",
+   "GET owner/model@0123456 model.safetensors bytes=150995252-167772467",
+   "GET owner/model@0123456 model.safetensors bytes=167772468-184549683",
+   "GET owner/model@0123456 model.safetensors bytes=184549684-201326899",
+   "GET owner/model@0123456 model.safetensors bytes=201326900-209715507"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 209715200 bytes in 19 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "one safetensors file, a device of 4 GB (8 MiB parts)": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model.safetensors bytes=308-8388915",
+   "GET owner/model@0123456 model.safetensors bytes=8388916-16777523",
+   "GET owner/model@0123456 model.safetensors bytes=16777524-25166131",
+   "GET owner/model@0123456 model.safetensors bytes=25166132-33554739",
+   "GET owner/model@0123456 model.safetensors bytes=33554740-41943347",
+   "GET owner/model@0123456 model.safetensors bytes=41943348-50331955",
+   "GET owner/model@0123456 model.safetensors bytes=50331956-58720563",
+   "GET owner/model@0123456 model.safetensors bytes=58720564-67109171",
+   "GET owner/model@0123456 model.safetensors bytes=67109172-75497779",
+   "GET owner/model@0123456 model.safetensors bytes=75497780-83886387",
+   "GET owner/model@0123456 model.safetensors bytes=83886388-92274995",
+   "GET owner/model@0123456 model.safetensors bytes=92274996-100663603",
+   "GET owner/model@0123456 model.safetensors bytes=100663604-104857907"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 104857600 bytes in 13 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "one safetensors file, a small one": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 3145828 bytes in 1 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "one safetensors file, a header past the first 512 KiB": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 model.safetensors bytes=0-700007",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model.safetensors bytes=700008-2797159"
+  ],
+  "converter": [
+   "Conversion(a header of 700000 characters, base 700008, start 700008, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 2097152 bytes in 1 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "one safetensors file, a server that does not show Content-Range": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "HEAD owner/model@0123456 model.safetensors",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 3145828 bytes in 1 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "shards with an index": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 model.safetensors.index.json",
+   "GET owner/model@0123456 model-00001-of-00002.safetensors bytes=0-524287",
+   "GET owner/model@0123456 model-00002-of-00002.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model-00001-of-00002.safetensors bytes=308-8388915",
+   "GET owner/model@0123456 model-00001-of-00002.safetensors bytes=8388916-9437491",
+   "GET owner/model@0123456 model-00002-of-00002.safetensors bytes=508-2097666"
+  ],
+  "converter": [
+   "joined_shards(2 headers)",
+   "Conversion(a header of 17 characters, base 0, start 0, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 11534343 bytes in 3 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "one shard named by the index": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 model.safetensors.index.json",
+   "GET owner/model@0123456 model-00001-of-00001.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model-00001-of-00001.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 3145828 bytes in 1 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "no weights and no index": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 model.safetensors.index.json"
+  ],
+  "converter": [],
+  "ended": "failed: owner/model has no model.safetensors at 0123456789abcdef0123456789abcdef01234567 on huggingface.co, or has no commit 0123456789abcdef0123456789abcdef01234567."
+ },
+ "a GGUF alone (a head of 3 MiB)": {
+  "requests": [
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=0-2097151",
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=0-8388607",
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=3145728-11534335",
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=11534336-19922943",
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=19922944-24117247"
+  ],
+  "converter": [
+   "Conversion.from_gguf(the first 2097152 bytes): not all of the head yet",
+   "Conversion.from_gguf(the first 8388608 bytes), dtype the worker's choice",
+   "fed 20971520 bytes in 3 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "a GGUF alone, a small head": {
+  "requests": [
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=0-2097151",
+   "GET owner/model@0123456 model.Q8_0.gguf bytes=1000-1049575"
+  ],
+  "converter": [
+   "Conversion.from_gguf(the first 1049576 bytes), dtype the worker's choice",
+   "fed 1048576 bytes in 1 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "a GGUF with the vocabulary of another repository": {
+  "requests": [
+   "GET owner/model@7654321 config.json",
+   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=0-2097151",
+   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=0-8388607",
+   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=0-33554431",
+   "GET owner/model@7654321 tokenizer_config.json",
+   "GET owner/model@7654321 chat_template.jinja",
+   "GET owner/model@7654321 tokenizer.model",
+   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=9437184-17825791",
+   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=17825792-26214399",
+   "GET maker/model-GGUF@0123456 model.Q8_0.gguf bytes=26214400-30408703"
+  ],
+  "converter": [
+   "gguf_weights(the first 2097152 bytes): not all of the head yet",
+   "gguf_weights(the first 8388608 bytes): not all of the head yet",
+   "gguf_weights(the first 30408704 bytes, the config \"{\\\"model_type\\\":\\\"llama\\\"}\")",
+   "Conversion(a header of 11 characters, base 9437184, start 9437184, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.model of 21 bytes, tokenizer_config \"{\\\"bos_token\\\":\\\"<s>\\\"}\", chat_template \"a template\"), dtype the worker's choice",
+   "fed 20971520 bytes in 3 pieces; finish()",
+   "kept as int8: maker/model-GGUF@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "a sentencepiece model (no tokenizer.json)": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 tokenizer.model",
+   "GET owner/model@0123456 model.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.model of 21 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 3145828 bytes in 1 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "a tokenizer.json the converter refuses, then spiece.model": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 tokenizer.model",
+   "GET owner/model@0123456 spiece.model",
+   "GET owner/model@0123456 model.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 10 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null): refused",
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", spiece.model of 21 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "fed 3145828 bytes in 1 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "no tokenizer at all": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 tokenizer.model",
+   "GET owner/model@0123456 spiece.model"
+  ],
+  "converter": [],
+  "ended": "failed: owner/model has no tokenizer.json at 0123456789abcdef0123456789abcdef01234567 on huggingface.co, or has no commit 0123456789abcdef0123456789abcdef01234567."
+ },
+ "no tokenizer_config.json (an optional file) and no chat_template.jinja": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 chat_template.jinja",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"\", chat_template null), dtype the worker's choice",
+   "fed 3145828 bytes in 1 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "a chat_template.jinja beside a tokenizer_config.json without a template": {
+  "requests": [
+   "GET owner/model@0123456 config.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 chat_template.jinja",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"bos_token\\\":\\\"<s>\\\"}\", chat_template \"a template\"), dtype the worker's choice",
+   "fed 3145828 bytes in 1 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ },
+ "a config.json under another name, int6 asked for": {
+  "requests": [
+   "GET owner/model@0123456 configs/text.json",
+   "GET owner/model@0123456 model.safetensors bytes=0-524287",
+   "GET owner/model@0123456 tokenizer_config.json",
+   "GET owner/model@0123456 tokenizer.json",
+   "GET owner/model@0123456 model.safetensors bytes=308-3146135"
+  ],
+  "converter": [
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype int6",
+   "fed 3145828 bytes in 1 pieces; finish()",
+   "kept as int8: owner/model@0123456, 1000 bytes, options {\"dtype\":\"int8\",\"bos\":1}"
+  ],
+  "ended": "converted; progress was told"
+ }
+}
