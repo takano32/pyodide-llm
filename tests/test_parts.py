@@ -494,6 +494,27 @@ def test_generate_hands_blocks_and_steps_to_stand_ins():
     assert model.stats["sampled"] == 5 and model.stats["prompt_tokens"] == 3
 
 
+@pytest.mark.parametrize("nothing", [[], (), None])
+def test_steps_that_answer_no_tokens_are_the_cpus(nothing):
+    """T390: an empty answer of the GPU's steps is no token to go on from, and generate() asked for the same step
+    again, for ever. It is "not taken", as None is: the CPU takes the step."""
+    log = []
+
+    def gpu_steps(sampling, rng):
+        def steps(token, pos, history, count, stops):
+            log.append(("steps", pos, count))
+            assert len(log) < 40, "generate() asks for the same step again and again"
+            return nothing
+
+        return steps
+
+    model = stand_in_model(log, [ord("x"), ord("y"), 0], gpu_steps=gpu_steps, token_block=lambda: 4)
+    assert "".join(generation.generate(model, "a", steps=20, temperature=0.9, seed=1)) == "axy"
+    assert model.stats["sampled"] == 3
+    assert [entry[:2] for entry in log if entry[0] in ("steps", "draw")] == [
+        ("steps", 1), ("draw", 1.0), ("steps", 2), ("draw", 2.0), ("steps", 3), ("draw", 3.0)]
+
+
 def test_the_numpy_forward_alone_computes_the_reference():
     """The forward pass in NumPy with no tokenizer and no sampler: a Llama made with a stand-in where it makes its
     tokenizer (Llama makes that itself, from its bytes: what the forward pass is still tied to)."""
