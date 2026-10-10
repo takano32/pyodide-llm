@@ -625,8 +625,8 @@ if (isMainThread) {
 async function convert(out, folder, context, pyodideWithEngine) {
   const { pyodide: py } = await pyodideWithEngine({ shared: true, wide: true });
   const convert = py.pyimport("llama2_convert"), numpy = py.pyimport("llama2_numpy");
-  const quantizeRows = numpy.kernel_quantizer("simdkernel.so"), bfloat16 = numpy.kernel_widener("simdkernel.so"), q8_0 = numpy.kernel_q8_0("simdkernel.so");
-  const readers = numpy.kernel_ternary_readers("simdkernel.so");  // T273: the two ternary types on the kernels, as the page
+  const quantizeRows = numpy.kernel_quantizer("simdkernel.so");
+  const readers = convert.kernel_readers("simdkernel.so");  // the stored types on the kernels, as the page (T273: the two ternary ones)
   const gguf = fs.readdirSync(folder).filter((name) => name.endsWith(".gguf")).sort()[0];
   const tokenizer = ["tokenizer.json", "spiece.model", "tokenizer.model"].find((name) => fs.existsSync(`${folder}/${name}`));
   const fd = fs.openSync(`${folder}/${gguf}`, "r"), size = fs.fstatSync(fd).size;
@@ -662,7 +662,7 @@ async function convert(out, folder, context, pyodideWithEngine) {
     },
   };
   const conversion = convert.Conversion.callKwargs(header, first, config, new Uint8Array(fs.readFileSync(`${folder}/${tokenizer}`)), tokenizer,
-    { start: first, tokenizer_config: tokenizerConfig, dtype: "ternary", max_seq_len: context, sink, quantize_rows: quantizeRows, bfloat16, q8_0, readers });
+    { start: first, tokenizer_config: tokenizerConfig, dtype: "ternary", max_seq_len: context, sink, quantize_rows: quantizeRows, readers });
   console.log(`pyodide: ${gguf} (${size} bytes) to ${into.bytes} bytes of ternary checkpoint, header ${JSON.stringify(into.ints)}, on a ${into.wide ? "64" : "32"}-bit shared memory ` +
     `(footprint() counts ${(into.after / GiB).toFixed(3)} GiB after it); Pyodide's heap is ${(py._module.HEAPU8.length / MiB).toFixed(0)} MiB before the weights`);
   const began = performance.now();

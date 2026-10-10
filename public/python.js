@@ -3,7 +3,7 @@
 // beside it. One list for the worker and for the tests that run the engine in Node; tests/python-files-check.mjs holds
 // it to what is in public/.
 export const PYTHON = {
-  llama2_numpy: ["llama2_numpy.py", "engine/__init__.py", "engine/layout.py", "engine/tokenizer.py", "engine/layers.py", "engine/kernels.py", "engine/packing.py",
+  llama2_numpy: ["llama2_numpy.py", "engine/__init__.py", "engine/packing.py", "engine/dtypes.py", "engine/layout.py", "engine/tokenizer.py", "engine/layers.py", "engine/kernels.py",
     "engine/checkpoint.py", "engine/tensors.py", "engine/sampling.py", "engine/generation.py", "engine/model.py"],
   llama2_convert: ["llama2_convert.py", "convert/__init__.py", "convert/checkpoint.py", "convert/template.py", "convert/readers.py",
     "convert/sources.py", "convert/config.py", "convert/plan.py", "convert/stream.py", "convert/gguf.py", "convert/tokenizer.py",

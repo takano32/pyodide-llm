@@ -73,7 +73,7 @@ def test_the_engine_holds_every_row_where_the_writer_puts_it(name, header, form,
     rows = tensor_rows(header, form)
     for dtype in DTYPES:
         sink = type("Sink", (), {"open": lambda *_: None, "write": lambda *_: None})()
-        written = {row.name: (offset, tuple(shape)) for row, (offset, shape, _) in zip(rows, Writer(None, header, dtype, form, sink=sink).tensors)}
+        written = {row.name: (offset, tuple(shape)) for row, (offset, shape) in zip(rows, ((place.offset, place.row.shape) for place in Writer(None, header, dtype, form, sink=sink).places))}
         plan = engine_plan(llama2_numpy, header, dtype, form, more, checkpoint_size(header, dtype, form))
         held = {name: (tensor["offset"], tuple(tensor["shape"])) for name, tensor in plan["tensors"].items()}
         # the engine's tables are the file's in float32 alone; a model with no classifier of its own has its embedding twice

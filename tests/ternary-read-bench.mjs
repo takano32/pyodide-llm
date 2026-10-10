@@ -13,7 +13,7 @@ import time
 import numpy as np
 import llama2_convert, llama2_numpy
 
-readers = llama2_numpy.kernel_ternary_readers("simdkernel.so")
+readers = llama2_convert.kernel_readers("simdkernel.so")
 rng = np.random.default_rng(3)
 lines = []
 for kind, size, by_numpy in (("PQ2_0", 34, llama2_convert.pq2_0), ("PTQ1_0", 28, llama2_convert.ptq1_0)):

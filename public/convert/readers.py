@@ -1,7 +1,12 @@
-# How the weights of a file are read: a stored type (float32, float16, bfloat16, GGUF's Q8_0 and the two ternary
-# types) to float32, by its name.
+# How the weights of a file are read: the types a file stores a tensor in (float32, float16, bfloat16, GGUF's Q8_0 and
+# the two ternary types), one entry for each (SOURCES), to float32. A new one is a reader here and its entry (T359):
+# the GGUF's type id, the size of its blocks, the refusal that lists what is read, and its reader on the kernels come
+# from the entry.
+from typing import Callable, NamedTuple
+
 import numpy as np
 
+from engine.kernels import kernel_wideners
 from engine.packing import TERNARY_VALUES
 
 
@@ -71,9 +76,61 @@ def ptq1_0(raw):
     return ((digits.view(np.int8) - np.int8(1)) * scales).reshape(-1)
 
 
-# bytes per value (Q8_0: 34 bytes for 32 of them, PQ2_0: 34 for 128, PTQ1_0: 28 for 128), and how to read them
-READERS = {"F32": (4, lambda raw: np.frombuffer(raw, dtype=np.float32)),
-           "F16": (2, lambda raw: np.frombuffer(raw, dtype=np.float16)), "BF16": (2, bfloat16),
-           "Q8_0": (34 / 32, q8_0), "PQ2_0": (34 / 128, pq2_0), "PTQ1_0": (28 / 128, ptq1_0)}
-# how many values a block of a GGUF's type holds: a row is whole blocks
-BLOCKS = {"Q8_0": 32, "PQ2_0": 128, "PTQ1_0": 128}
+def float32(raw):
+    return np.frombuffer(raw, dtype=np.float32)
+
+
+def float16(raw):
+    return np.frombuffer(raw, dtype=np.float16)
+
+
+class Source(NamedTuple):
+    """A type a file stores a tensor in. name: what a safetensors file calls it, and gguf_model() a GGUF's. ggml: the
+    type's id in a GGUF. A tensor is whole blocks of values values in size bytes (a row is whole blocks too). read(the
+    bytes of whole blocks) -> the values, float32 or float16: NumPy's. kernel: the export of the SIMD kernels that
+    reads it to the same float32 (kernel(float32 out, blocks in, how many blocks); kernel_readers()), where there is
+    one."""
+    name: str
+    ggml: int
+    values: int
+    size: int
+    read: Callable
+    kernel: str = None
+
+    def bytes(self, count):
+        """The bytes count values take (whole blocks of them)."""
+        return count // self.values * self.size
+
+
+# (30 is BF16: Ternary Bonsai 2's two small matrices of the gates. 142 and 143 are PQ2_0 and PTQ1_0 of Prism ML's fork
+# of llama.cpp. ggml's other types, the K-quants among them, are refused)
+SOURCES = {source.name: source for source in (
+    Source("F32", 0, 1, 4, float32),
+    Source("F16", 1, 1, 2, float16),
+    Source("BF16", 30, 1, 2, bfloat16, "widen_bf16"),
+    Source("Q8_0", 8, 32, 34, q8_0, "widen_q8_0"),
+    Source("PQ2_0", 142, 128, 34, pq2_0, "widen_pq2_0"),
+    Source("PTQ1_0", 143, 128, 28, ptq1_0, "widen_ptq1_0"),
+)}
+# a GGUF's type id -> the name
+GGUF_TENSORS = {source.ggml: name for name, source in SOURCES.items()}
+
+
+def read_types():
+    """The types that are read, as a refusal lists them."""
+    names = list(SOURCES)
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def source_of(name, dtype):
+    """The entry of the type a tensor called name is stored in, or the refusal that says which types are read."""
+    if dtype not in SOURCES:
+        raise ValueError(f"{name} is stored as {dtype}: only {read_types()} are read.")
+    return SOURCES[dtype]
+
+
+def kernel_readers(path):
+    """The readers of SOURCES that have a kernel, on the SIMD kernels at path (simdkernel.so): {the type's name:
+    read}, the same float32 several times faster, for Stream's readers. None where the kernels cannot be loaded."""
+    return kernel_wideners(path, [(name, source.kernel, source.values, source.size) for name, source in SOURCES.items()
+                                  if source.kernel])

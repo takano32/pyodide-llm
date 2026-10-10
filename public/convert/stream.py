@@ -3,8 +3,9 @@ import math
 
 import numpy as np
 
-from convert.checkpoint import EITHER, Writer, check_dtype, checkpoint_size, dtype_name
-from convert.readers import READERS, bfloat16, q8_0
+from engine.dtypes import EITHER, dtype_of
+from convert.checkpoint import Writer, checkpoint_size
+from convert.readers import SOURCES, source_of
 from convert.sources import header_rotated
 from convert.config import (PARTLY_TURNED, check_config, checkpoint_header, head_size, normalize, query_scale,
                             rotary_dim)
@@ -77,17 +78,15 @@ class Stream:
 
     header: the JSON of the file (its first 8 bytes say how long it is), base: where the tensors begin, start: the
     position in the file of the first byte that feed() will get. out: a buffer of checkpoint_size() bytes, or None
-    to have one made (self.out). sink and quantize_rows: see Writer. bfloat16: the widening of bfloat16 on the SIMD
-    kernels (llama2_numpy.kernel_widener, T123), the same float32 as this file's bfloat16(). q8_0: the widening of
-    GGUF's Q8_0 on the kernels (llama2_numpy.kernel_q8_0, T136), the same float32 as this file's q8_0(). readers:
-    more of READERS on the kernels, by the GGUF's type (llama2_numpy.kernel_ternary_readers, T273: PQ2_0 and PTQ1_0),
-    the same float32 as this file's.
+    to have one made (self.out). sink and quantize_rows: see Writer. readers: the readers of the stored types on
+    the SIMD kernels, by the type's name (convert/readers.py's kernel_readers(): bfloat16, T123; GGUF's Q8_0, T136; the
+    two ternary types, T273), the same float32 as SOURCES' own, which read whatever type has none here.
     """
 
     def __init__(self, header, base, config, dtype, max_seq_len, out=None, start=0, sink=None, quantize_rows=None,
-                 bfloat16=None, q8_0=None, readers=None):
+                 readers=None):
         config = normalize(config)
-        self.bfloat16, self.q8_0, self.readers = bfloat16, q8_0, readers or {}
+        self.readers = readers or {}
         check_config(config)
         self.tensors = {name: info for name, info in header.items() if name != "__metadata__"}
         self.rotated = header_rotated(header)  # T237: what checkpoint_form() asks
@@ -101,8 +100,7 @@ class Stream:
             # automatic choice: int8 where the forward pass fits a 32-bit memory, six bits where it does not)
             sizes = {name: self.size(name) for name in EITHER}
             dtype = str(dtype(list(self.header), self.form, sizes))
-        check_dtype(dtype)
-        self.dtype = dtype_name(dtype)
+        self.dtype = dtype_of(dtype)
         if out is None and sink is None:
             out = bytearray(self.size(dtype))
         self.out = out  # None when the checkpoint goes to sink
@@ -122,8 +120,7 @@ class Stream:
                 expected = source_shape(shape[1:] if len(parts) > 1 else shape, transform)
                 if found != expected:
                     raise ValueError(f"This model cannot be converted: {name} is {found or 'missing'}, not {expected}.")
-                if self.tensors[name]["dtype"] not in READERS:
-                    raise ValueError(f"{name} is stored as {self.tensors[name]['dtype']}: only float32, float16 and bfloat16 are supported.")
+                source_of(name, self.tensors[name]["dtype"])
                 # GPT-2's c_attn holds q, k and v in one matrix, so one tensor of the file can feed several
                 wanted.setdefault(name, []).append((index, first, transform))
                 first += math.prod(shape[1:] if len(parts) > 1 else shape)
@@ -170,16 +167,12 @@ class Stream:
 
     def convert(self, name, targets, last):
         info = self.tensors[name]
-        itemsize, reader = READERS[info["dtype"]]
-        if info["dtype"] == "BF16" and self.bfloat16 is not None:
-            reader = self.bfloat16
-        if info["dtype"] == "Q8_0" and self.q8_0 is not None:
-            reader = self.q8_0
-        reader = self.readers.get(info["dtype"]) or reader
+        source = SOURCES[info["dtype"]]
+        reader = self.readers.get(source.name) or source.read
         shape = tuple(info["shape"])
         # T136's third stage: a GPT-2's Conv1D matrix, which the GGUF holds as (out, in), is read in that shape
         stored = tuple(reversed(shape)) if info.get("transposed") else shape
-        row = int((math.prod(stored[1:]) if len(stored) > 1 else int(stored[0])) * itemsize)
+        row = source.bytes(math.prod(stored[1:]) if len(stored) > 1 else int(stored[0]))
         # the head permutation needs its whole matrix (a small one); everything else goes row by row, as it comes.
         # A GGUF's tensor held in another order than Hugging Face's is put back whole too
         again = info.get("turned") or info.get("split") or info.get("transposed") or info.get("tiled")

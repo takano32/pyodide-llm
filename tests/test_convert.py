@@ -303,7 +303,7 @@ def test_a_sink_gets_the_very_checkpoint(dtype, head_size):
     stream.finish()
     assert bytes(sink.data) == expected
     assert sink.opened == (list(stream.header), dtype, {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": head_size,
-                                                           "linear": None, "rotated": None, "convolution": None})
+                                                           "linear": None, "rotated": None, "convolution": None, "kinds": None})
 
 
 def test_a_dtype_chosen_from_the_header_is_the_one_converted_to():
@@ -340,7 +340,8 @@ def test_a_quantizer_of_rows_is_used_for_whole_groups_of_32_only():
     size = struct.unpack("<Q", file[:8])[0]
     seen = []
 
-    def quantize_rows(values):
+    def quantize_rows(values, dtype):  # (the Writer says which dtype's packing it asks for, T359)
+        assert dtype == "int8"
         seen.append(values.shape[-1])
         return llama2_convert.quantize(values)
 

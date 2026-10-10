@@ -95,7 +95,7 @@ def convert(folder, out, context, broken):
         header = json.dumps(header)
     if broken == "order":
         assert gguf.name.endswith("PTQ1_0.gguf"), "the order of a PTQ1_0 block is broken on the PTQ1_0 file"
-        llama2_convert.READERS["PTQ1_0"] = (llama2_convert.READERS["PTQ1_0"][0], bytes_first)
+        llama2_convert.SOURCES["PTQ1_0"] = llama2_convert.SOURCES["PTQ1_0"]._replace(read=bytes_first)
         print("page: broken on purpose: a PTQ1_0 block's values are read in the order of its bytes")
     sink = File(f"{out}.bin")
     began, peak = time.perf_counter(), own_memory()

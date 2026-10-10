@@ -7,7 +7,7 @@ import struct
 import numpy as np
 
 from engine.layers import rope_frequencies, sign_bits
-from convert.readers import BLOCKS, READERS
+from convert.readers import GGUF_TENSORS, SOURCES, read_types
 from convert.sources import ROTATED
 from convert.config import (GRANITE_ONES, architecture, convolution_layers, head_size, linear_layers, normalize,
                             rotary_dim, unturned_layers, yarn)
@@ -22,9 +22,7 @@ class Incomplete(Exception):
 
 
 GGUF_VALUES = {0: "<B", 1: "<b", 2: "<H", 3: "<h", 4: "<I", 5: "<i", 6: "<f", 7: "<?", 10: "<Q", 11: "<q", 12: "<d"}
-# ggml's types; the K-quants and the rest are refused. 142 and 143 are PQ2_0 and PTQ1_0 of Prism ML's fork of
-# llama.cpp (T235's pq2_0(), T230's ptq1_0()); 30 is BF16 (Ternary Bonsai 2's two small matrices of the gates)
-GGUF_TENSORS = {0: "F32", 1: "F16", 8: "Q8_0", 30: "BF16", 142: "PQ2_0", 143: "PTQ1_0"}
+# (ggml's types of tensors, and which of them are read: convert/readers.py's SOURCES)
 # llama.cpp's names of the pre-tokenizers, as the engine knows them (llama2_numpy.pretokenize)
 # (granite-docling, T253: what llama.cpp calls a Granite 4.2's ByteLevel with its regex, and splits by GPT-2's pattern.
 # minicpm5, T254: llama.cpp's two patterns of that name are tokenizer.json's but for the contractions, written out by
@@ -260,7 +258,7 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
     turns = {"attn_q": heads, "attn_k": config.get("num_key_value_heads")}
     for name, info in tensors.items():
         if info["type"] not in GGUF_TENSORS:
-            raise ValueError(f"{name} is stored as ggml type {info['type']}: only F32, F16, BF16, Q8_0, PQ2_0 and PTQ1_0 "
+            raise ValueError(f"{name} is stored as ggml type {info['type']}: only {read_types()} "
                              f"GGUF files are supported (not the K-quants).")
         parts = name.split(".")
         if name in names:
@@ -272,11 +270,11 @@ def gguf_model(metadata, tensors, base, rope_freqs=False):
         else:
             continue  # nothing the engine reads
         dtype = GGUF_TENSORS[info["type"]]
-        if info["shape"][-1] % BLOCKS.get(dtype, 1):
+        if info["shape"][-1] % SOURCES[dtype].values:
             # ggml itself requires it; a file that breaks it would be read at the wrong offsets and write nonsense
             raise ValueError(f"{name} is {dtype} with rows of {info['shape'][-1]}, which is not a multiple of "
-                             f"{BLOCKS[dtype]}.")
-        size = int(math.prod(info["shape"]) * READERS[dtype][0])
+                             f"{SOURCES[dtype].values}.")
+        size = SOURCES[dtype].bytes(math.prod(info["shape"]))
         entry = {"dtype": dtype, "shape": info["shape"], "data_offsets": [info["offset"], info["offset"] + size]}
         kind = parts[2] if len(parts) == 4 else None
         if arch in ("llama", "granite", "smollm3") and kind in turns:

@@ -28,8 +28,8 @@ import math
 import numpy as np
 
 from engine.checkpoint import outside
-from engine.layout import EMBEDDING, QUANTIZED, TABLE, check_suited, placed
-from engine.packing import unpack6, unpack_ternary
+from engine.dtypes import DTYPES, QUANTIZED
+from engine.layout import EMBEDDING, TABLE, check_suited, placed
 
 
 def read_tensor(checkpoint, place, whole=True, copy=False):
@@ -38,18 +38,16 @@ def read_tensor(checkpoint, place, whole=True, copy=False):
     only ever read a row at a time: a quarter or half of the memory, and whoever reads a row widens it.
     A float32 row is a view into the checkpoint buffer unless copy says otherwise (the float32 vectors of a quantized
     file: everything else of such a file is a copy already, and the buffer can then be freed)."""
-    shape, count = place.row.shape, math.prod(place.row.shape)
-    if place.kind in QUANTIZED:
+    shape, count, kind = place.row.shape, math.prod(place.row.shape), DTYPES[place.kind]
+    if kind.bits:
         # quantize.py: int8 values (or their packing), then one float32 scale per group
-        raw = np.frombuffer(checkpoint, dtype=np.uint8, count=place.scales - place.offset, offset=place.offset)
-        values = unpack_ternary(raw) if place.kind == "ternary" else unpack6(raw).reshape(-1) if place.kind == "int6" \
-            else raw.view(np.int8)
+        values = kind.unpack(np.frombuffer(checkpoint, dtype=np.uint8, count=place.scales - place.offset, offset=place.offset))
         scales = np.frombuffer(checkpoint, dtype=np.float32, count=count // place.group, offset=place.scales)
         if not whole:
             return values.reshape(*shape[:-1], -1, place.group).copy(), scales.reshape(*shape[:-1], -1, 1).copy()
         return (values.reshape(-1, place.group).astype(np.float32) * scales[:, None]).reshape(shape)
-    array = np.frombuffer(checkpoint, dtype=place.kind, count=count, offset=place.offset)
-    if place.kind == "float16" and not whole:
+    array = np.frombuffer(checkpoint, dtype=kind.name, count=count, offset=place.offset)
+    if kind.name != "float32" and not whole:
         return array.reshape(shape).copy()
     return array.astype(np.float32, copy=copy).reshape(shape)
 

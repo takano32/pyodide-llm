@@ -28,9 +28,9 @@ import struct
 import numpy as np
 
 from engine.tokenizer import CHARSMAP
+from engine.dtypes import DTYPES, PACKED, dtype_of
 from engine.layout import (TABLE, check_suited, convolution_form, file_size, form_of, linear_form, placed, suited,
                            tensor_rows)
-from engine.packing import PACKED
 
 # The classifier's input has a few channels that the final norm's weight blows up (openai-community/gpt2: 12 to 17
 # times, 316 against a median of 0.3). With the int8 kernels the activations are quantized in groups of 32, so one
@@ -61,13 +61,10 @@ class Tensor:
                 "scales": self.scales}
 
 
-# what forward.js calls the two kinds that are not quantized (Tensor's kind)
-SHORT = {"float32": "f32", "float16": "f16"}
-
-
-def dtype_of(dtype):
-    """A checkpoint's dtype by its name, from a name or a NumPy dtype (NumPy has neither int6 nor ternary)."""
-    return str(dtype) if str(dtype) in PACKED else np.dtype(dtype).name
+# forward.js takes one dtype for a file (T375 has its kernels chosen by the tensor): a file whose rows are of several
+# kinds (the form's "kinds") is the NumPy engine's alone until then
+SEVERAL_KINDS = ("This checkpoint holds its tensors in several kinds, which only the engine in NumPy reads yet: forward.js "
+                 "takes one dtype for a file.")
 
 
 def outside(rows, dtype):
@@ -76,7 +73,7 @@ def outside(rows, dtype):
     the angles, and a quantized file leaves them out): the engine computes the others. ValueError where no file of
     this dtype can hold these rows."""
     check_suited(rows, dtype)
-    return {place.row.name: Tensor(SHORT.get(place.kind, place.kind), place.offset, place.row.shape, place.group, place.scales)
+    return {place.row.name: Tensor(DTYPES[place.kind].short, place.offset, place.row.shape, place.group, place.scales)
             for place in placed(rows, dtype) if place.kind is not None and (place.row.role != TABLE or dtype == "float32")}
 
 
@@ -84,7 +81,9 @@ def external_tensors(header, dtype, form=None):
     """Where every tensor of a checkpoint with this header, dtype and form (FORM) is, {name: Tensor.plan()}, as
     Llama(external=) hands them to public/forward.js, before any of its bytes are there (T156: the worker sends the
     layers' matrices to the GPU as they come, and keeps the rest). A model whose embedding is its classifier has it
-    under both names."""
+    under both names. ValueError for a file of several kinds (SEVERAL_KINDS)."""
+    if form_of(form)["kinds"]:
+        raise ValueError(SEVERAL_KINDS)
     tensors = outside(tensor_rows(header, form), dtype_of(dtype))
     tensors.setdefault("wcls", tensors["token_embedding_table"])
     return {name: tensor.plan() for name, tensor in tensors.items()}
@@ -132,7 +131,7 @@ def checkpoint_dtype(header, size, form=None):
         raise ValueError("This is not a llama2.c checkpoint: an LFM2 has to say its convolution layers.")
     rows = tensor_rows(header, form)
     # quantize.py: int8 values and a float32 scale per group; the vectors stay float32, the RoPE tables are left out
-    sizes = {file_size(rows, name): name for name in ("float32", "float16", "int8")}
+    sizes = {file_size(rows, name): name for name in DTYPES if name not in PACKED}
     for name in PACKED:
         # T98: 24 bytes and a float32 scale per group of 32 (only rows of whole groups can be int6).
         # T230: 32 bytes and a float32 scale per group of 128 (only rows of whole groups can be ternary). No other

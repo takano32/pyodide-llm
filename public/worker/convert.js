@@ -150,14 +150,13 @@ export async function convert(model, signal, id) {
   // memory): int8 where its forward pass fits a 32-bit memory or the browser has a 64-bit one, six bits where neither
   // (T133), once the header is known
   const converting = { ...model.conversion, dtype: model.conversion?.dtype ?? automaticBits };
-  // T89: quantize() on the SIMD kernels, the same bytes six times faster (none with ?without=kernels); T123: the
-  // widening of bfloat16 too, the same float32 three times faster; T136: and of GGUF's Q8_0; T273: and of the two
-  // ternary types (PQ2_0, PTQ1_0)
+  // T89: quantize() on the SIMD kernels, the same bytes six times faster (none with ?without=kernels); and the
+  // readers of the types a file stores its tensors in, the same float32 several times faster: whichever of them has
+  // a kernel, by the type's name (the converter's table of them says which. T123: bfloat16; T136: GGUF's Q8_0;
+  // T273: the two ternary types, PQ2_0 and PTQ1_0)
   const onKernels = state.kernels && !state.disabled.includes("kernels");
   const quantizeRows = onKernels ? state.llama2_numpy.kernel_quantizer(state.kernels) : undefined;
-  const bfloat16 = onKernels ? state.llama2_numpy.kernel_widener(state.kernels) : undefined;
-  const q8_0 = onKernels ? state.llama2_numpy.kernel_q8_0(state.kernels) : undefined;
-  const readers = onKernels ? state.llama2_numpy.kernel_ternary_readers(state.kernels) : undefined;
+  const readers = onKernels ? state.llama2_convert.kernel_readers(state.kernels) : undefined;
   // T136: a GGUF's weights with the vocabulary and config.json of the original repository (a sentencepiece vocabulary
   // in a GGUF says neither its kind nor its normalization): those files come from there, the weights from the GGUF
   const vocabulary = remote ? model.hf.vocabulary : undefined;
@@ -169,7 +168,7 @@ export async function convert(model, signal, id) {
     for (let bytes = 4 * HF_HEADER_BYTES; ; bytes *= 4) {
       ({ bytes: first, total: size } = await sized(at(model.hf.weights), await fetchRange(at(model.hf.weights), 0, bytes, signal), signal));
       try {
-        conversion = state.llama2_convert.Conversion.from_gguf.callKwargs(first, { ...converting, sink, quantize_rows: quantizeRows, bfloat16, q8_0, readers });
+        conversion = state.llama2_convert.Conversion.from_gguf.callKwargs(first, { ...converting, sink, quantize_rows: quantizeRows, readers });
         break;
       } catch (error) {
         if (error.type !== "Incomplete" || bytes >= size) {
@@ -282,7 +281,7 @@ export async function convert(model, signal, id) {
       try {
         conversion = state.llama2_convert.Conversion.callKwargs(header, base, config, tokenizer, remote ? candidate : candidate.name,
           { start: base, tokenizer_config: tokenizerConfig, chat_template: chatTemplate || null, ...converting, sink,
-            quantize_rows: quantizeRows, bfloat16, q8_0, readers });
+            quantize_rows: quantizeRows, readers });
         break;
       } catch (error) {
         refusal ??= error;
@@ -388,8 +387,6 @@ export async function convert(model, signal, id) {
     into.release();
     conversion.destroy();
     quantizeRows?.destroy();
-    bfloat16?.destroy();
-    q8_0?.destroy();
     readers?.destroy();
   }
 }
