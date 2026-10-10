@@ -30,8 +30,10 @@ async function openHuggingFace(chosen: File[]) {
   const given = settings ? JSON.parse(await settings.text()) : {};
   return {
     id: "local", name: given.name ?? weights[0].name, note: `local · Hugging Face · ${(weights[0].size / 1e6).toFixed(0)} MB`,
-    // the chat template, where the folder has it: tokenizer_config.json, or chat_template.jinja (T127)
-    hf: { weights: weights[0], config, tokenizer: tokenizers, tokenizerConfig: named("tokenizer_config.json"), chatTemplate: named("chat_template.jinja") },
+    // T374.2.2: the folder as it was chosen, and which of it is the weights. What else of it is read (config.json, the
+    // chat template where it has one, T127, the first tokenizer the converter can read, T138) is asked for by name
+    // by the conduct of the conversion (public/convert/conduct.py), and answered from these Files by the worker
+    hf: { files: chosen, weights: weights[0].name },
     conversion: given.conversion ?? {}, options: given.options ?? {},
     // a model nobody has tuned this page for: sample, as such models loop when they decode greedily
     generation: given.generation ?? { steps: 0, temperature: 0.7, topp: 0.9, repetition_penalty: 1.1 },

@@ -477,7 +477,7 @@
    "stream Model.SafeTensors bytes=308-3146135"
   ],
   "converter": [
-   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", Tokenizer.JSON of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
+   "Conversion(a header of 300 characters, base 308, start 308, the config \"{\\\"model_type\\\":\\\"llama\\\"}\", tokenizer.json of 11 bytes, tokenizer_config \"{\\\"chat_template\\\":\\\"{{ messages }}\\\"}\", chat_template null), dtype the worker's choice",
    "fed 3145828 bytes in 4 pieces; finish()"
   ],
   "ended": "converted; progress was told",
@@ -497,10 +497,11 @@
  "a folder: a file that is no safetensors file, and an index beside it that names shards": {
   "requests": [
    "text config.json",
-   "range model.safetensors bytes=0-10"
+   "range model.safetensors bytes=0-10",
+   "text model.safetensors.index.json"
   ],
   "converter": [],
-  "ended": "failed: This is not a safetensors file.",
+  "ended": "failed: The conversion needs model-00001-of-00002.safetensors, which is not there.",
   "progress": []
  }
 }

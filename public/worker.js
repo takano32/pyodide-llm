@@ -1,8 +1,8 @@
 // Pyodide lives in this worker, so the page stays responsive while the model is loading and generating.
 // model is an entry of src/models.js, or one with {file, tokenizerFile}: two files of the visitor's own disk,
 // which are read where they are and go nowhere. Or one with {hf: {weights, config, tokenizer}}: a Hugging Face
-// model, of that disk (Files) or of huggingface.co ({repo, revision} and file names), which
-// public/llama2_convert.py converts in here as it arrives.
+// model by the names of its files, of huggingface.co ({repo, revision}) or of that disk ({files}: the Files of a
+// folder, T374.2.2), which public/llama2_convert.py converts in here as it arrives.
 // The page sends   {type: "init", search, model, load},  {type: "load", search, model, load},
 //                  {type: "generate", prompt, ...options}  and  {type: "stop"}; /benchmark/'s model section also
 //                  ahead in its init (T242: the switches of each load that follows on the same model, see loadsAhead),
@@ -21,7 +21,7 @@
 // T350: this file is the window of the worker: its URL, init(), generate() and the messages. The rest is in the modules
 // of worker/: state.js (the variables they share, in one object), told.js, clock.js, pyodide.js (the runtime's
 // loading), weights.js (where a model's weights go), ranges.js and sources.js (the fetching), conduct.js (T374.2.1: what
-// answers the conduct of a conversion, which is Python's), convert.js (a Hugging Face model), load.js and timing.js (what /benchmark/ times). Each is asked for with this worker's ?v=<build>, so
+// answers the conduct of a conversion, which is Python's, from huggingface.co or from a folder), convert.js (a Hugging Face model), load.js and timing.js (what /benchmark/ times). Each is asked for with this worker's ?v=<build>, so
 // that all come from one deployment (as forward.js reads jobs.js), and all at once: one after another's end would add
 // a round trip for each to the first load. The page's first message may come while they are fetched, and a module
 // worker's port opens at the module's first await, where a message that finds no onmessage is lost (helper.js, T109):

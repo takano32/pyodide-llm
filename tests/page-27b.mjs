@@ -633,7 +633,7 @@ async function convert(out, folder, context, pyodideWithEngine) {
   const range = (begin, end) => { const bytes = new Uint8Array(end - begin); fs.readSync(fd, bytes, 0, end - begin, begin); return bytes; };
   const config = fs.readFileSync(`${folder}/config.json`, "utf8");
   const tokenizerConfig = fs.existsSync(`${folder}/tokenizer_config.json`) ? fs.readFileSync(`${folder}/tokenizer_config.json`, "utf8") : "";
-  // the GGUF's header in growing pieces, as the worker fetches it (4 x HF_HEADER_BYTES, then four times as much)
+  // the GGUF's header in growing pieces, as the worker fetches it (four times the 512 KiB of a safetensors file's head, then four times as much)
   let header, first;
   for (let bytes = 4 * 512 * 1024; ; bytes *= 4) {
     try {

@@ -108,14 +108,9 @@ function diskFile(name, value) {
     },
   };
 }
-// the model the page makes of the files chosen (openHuggingFace() of src/page/choose.ts, which finds each by its name
-// in small letters)
-function chosen(source, files) {
-  const disk = Object.entries(files).map(([name, value]) => diskFile(name, value));
-  const named = (...names) => disk.find(({ name }) => names.includes(name.toLowerCase()));
-  return { weights: named(source.weights.toLowerCase()), config: named("config.json"), tokenizer: ANY.map((name) => named(name)).filter(Boolean),
-    tokenizerConfig: named("tokenizer_config.json"), chatTemplate: named("chat_template.jinja") };
-}
+// the model the page makes of the files chosen (openHuggingFace() of src/page/choose.ts): the folder, and the name of
+// its weights
+const chosen = (source, files) => ({ ...source, files: Object.entries(files).map(([name, value]) => diskFile(name, value)) });
 
 // ---- the conduct is the real one (public/convert/conduct.py, in Pyodide, as the worker has it) and the worker's loop
 // answers it (public/worker/conduct.js): the requests below are what the two make together. The converter is a
@@ -150,8 +145,8 @@ const handedSoFar = () => {
 };
 let kept = [];
 context.stand = {
-  // (the folder's steps alone call the converter's window: the stand-in's conversion, as the conduct has it)
-  converter: { Conversion: pyodide.globals.get("convert").conduct.Conversion },
+  // (nothing of the converter's window is called from JavaScript but the kernels' readers, and there are no kernels here)
+  converter: {},
   kept: {
     openKept: async () => null, replaced: async () => [], forget: async () => {}, keeper: async () => undefined,
     keep: async (model, manifest) => { kept.push(`kept as ${model.conversion.dtype}: ${manifest.repo}@${manifest.revision.slice(0, 7)}, ${manifest.bytes} bytes, options ${JSON.stringify(manifest.options)}`); },

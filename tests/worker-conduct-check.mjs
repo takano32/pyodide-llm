@@ -2,7 +2,8 @@
 // The worker's side of a conversion's conduct (public/worker/conduct.js, and convert() of public/worker/convert.js
 // around it), alone: the conduct is a stand-in that plays a list of requests (a JavaScript generator behind the face
 // Pyodide gives a Python one: next(answer) and return(), each request a proxy to be destroyed), the network is
-// tests/worker-harness.mjs's, and there is no Pyodide. What is seen: every kind of request answered with what it asks
+// tests/worker-harness.mjs's, a folder of the visitor's disk is stand-in Files that write down what is read of them
+// (T374.2.2), and there is no Pyodide. What is seen of both answerers (huggingface.co's and a folder's): every kind of request answered with what it asks
 // for, a file that is not there answered with undefined (never null), the 404 of the file a conduct ends on thrown in
 // its own words, a stream's parts fed to the conversion itself, every other failure and a cancelled load ending the
 // loop with the generator closed and nothing left open, every proxy destroyed once, and (T403) the file opened to keep the conversion in let go whatever ended it.
@@ -58,7 +59,10 @@ function world({ gpu = false } = {}) {
       return() {
         assert.equal(steps.destroyed, 0, "return() of a generator that was destroyed");
         steps.returned++;
-        return running.return();
+        running.return();
+        // (T407: a finally of the conduct's that throws as it is closed)
+        if (played.returnFails) throw new Error("the conduct would not be closed");
+        return { done: true, value: undefined };
       } });
     played.steps.push(steps);
     played.made.push(make);
@@ -344,7 +348,8 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     assert.equal(w.buffers.at(-1).destroyed, 1);
     // a request nothing answers, and a conduct that ends without a word
     for (const [play, words] of [
-      [function* () { yield ["folder", "weights", "x"]; }, /asked for folder/],
+      // (T407: what such a request brings is let go of all the same: a feed is a proxy of the conversion's)
+      [function* () { yield ["folder", "weights", "x", 0, 1, 0, 1, w.feeding(() => assert.fail("a request nothing answers was fed"))]; }, /asked for folder/],
       [function* () { yield ["text", "weights", "config.json"]; }, /ended without a word/],
     ]) {
       fresh(() => new Response("{}"));
@@ -459,15 +464,245 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   assert.equal(w.kept.open, 0, "a load cancelled before its weights came left the file to keep it in open");
   assert.equal(w.kept.refused, 0, "a conversion found the file of an earlier one still open");
   assert.equal(w.kept.opened, endings.length + 1);
-  // and where letting go of that file fails, the rest is let go all the same
+  // and where letting go of that file fails, the rest is let go all the same; what is thrown is what the conversion
+  // itself failed with (T407)
   w.kept.dropFails = true;
   w.fresh(() => new Response("", { status: 503 }));
   const failed = await w.convert(hf(), function* (make) { w.opened(make); yield ["text", "weights", "config.json"]; });
-  assert.match(failed.error.message, /let go of nothing/);
+  assert.match(failed.error.message, /answered 503/, "what letting go failed with was thrown in place of the conversion's own failure");
+  assert.equal(w.kept.dropped, endings.length + 2, "the file to keep the conversion in was not let go of");
   assert.equal(w.played.steps.at(-1).returned, 1, "the generator was left open where the kept file could not be let go");
   w.allDestroyed();
   assert.equal(w.buffers.at(-1).destroyed, 1, "the place of the weights was left behind where the kept file could not be let go");
   ok("T403: a conversion that ends before its weights come (a file that is not there, a refusal, a cancelled load) lets go of the file opened to keep it in: the next one opens it");
+}
+
+// ---- T407: a conduct that throws as it is closed. Everything after it is let go of all the same, and what is thrown
+// is what the conversion failed with; after a conversion that ended well, what closing it failed with
+{
+  const w = world();
+  w.played.returnFails = true;
+  const cancel = new AbortController();
+  const endings = [
+    ["a refusal of the server", () => new Response("", { status: 503 }), function* (make) { w.opened(make); yield ["text", "weights", "config.json"]; }, (error) => /answered 503/.test(error.message)],
+    ["a file that is not there", () => notFound(), function* (make) { w.opened(make); yield ["text", "weights", "config.json"]; yield ["missing", "weights", "config.json"]; }, (error) => /has no config\.json/.test(error.message)],
+    ["a cancelled load", () => { cancel.abort(); return new Response("{}"); }, function* (make) { w.opened(make); yield ["text", "weights", "config.json"]; }, (error) => error.name === "AbortError", cancel.signal],
+    ["a conversion that ended well", () => new Response("{}"), function* (make) { w.opened(make); yield ["text", "weights", "config.json"]; yield ["done", w.conversion()]; }, (error) => /would not be closed/.test(error.message)],
+  ];
+  for (const [name, route, play, right, signal] of endings) {
+    w.fresh(route);
+    const failed = await w.convert(hf(), play, { signal });
+    assert.ok(failed && right(failed.error), `${name}, and a conduct that throws as it is closed: ${failed?.error?.message} was thrown`);
+    const steps = w.played.steps.at(-1);
+    assert.equal(steps.returned, 1, name);
+    assert.equal(steps.destroyed, 1, `${name}: the generator's proxy was left behind after its return() threw`);
+    w.allDestroyed();
+    assert.equal(w.buffers.at(-1).destroyed, 1, `${name}: the place of the weights was left behind`);
+  }
+  ok("T407: a conduct that throws as it is closed: its proxy, the conversion and the kernels' two are let go of all the same, and the conversion's own failure (a cancelled load too) is what is thrown");
+}
+
+// ---- T374.2.2: a folder of the visitor's disk answers the same conduct from its Files
+{
+  const w = world();
+  const { MiB, bytesOf, requests, messages, fresh } = w;
+  // a File that writes down what is read of it; the disk gives a stream `chunk` bytes at a time
+  const reads = [], cancelled = [];
+  const disk = (name, size, { chunk = MiB, fails } = {}) => {
+    const bytes = (from, to) => bytesOf(from, to);
+    const failing = () => { throw new DOMException("A requested file or directory could not be found at the time an operation was processed.", "NotFoundError"); };
+    return {
+      name, size,
+      text: async () => { reads.push(`text ${name}`); if (fails) failing(); return new TextDecoder("latin1").decode(bytes(0, size)); },
+      arrayBuffer: async () => { reads.push(`bytes ${name}`); if (fails) failing(); return bytes(0, size).slice().buffer; },
+      slice(begin = 0, end = size) {
+        const from = Math.min(begin, size), to = Math.max(from, Math.min(end, size));
+        return {
+          size: to - from,
+          arrayBuffer: async () => { reads.push(`range ${name} ${from}-${to}`); if (fails) failing(); return bytes(from, to).slice().buffer; },
+          stream() {
+            reads.push(`stream ${name} ${from}-${to}`);
+            let at = from;
+            return { getReader: () => ({
+              read: async () => {
+                if (fails && at > from) failing();
+                if (at >= to) return { done: true, value: undefined };
+                const value = bytes(at, Math.min(to, at + chunk)).slice();
+                at += value.length;
+                return { done: false, value };
+              },
+              cancel: () => { cancelled.push(name); },
+            }) };
+          },
+        };
+      },
+    };
+  };
+  const SIZE = 5 * MiB + 17, BASE = 1000;
+  const folder = (more = []) => ({ weights: "Model.safetensors", files: [disk("Config.JSON", 40), disk("tokenizer.model", 77), disk("Model.safetensors", SIZE),
+    disk("config.json", 9), disk("empty.txt", 0), ...more] });
+  fresh(() => assert.fail("a folder asked the network for something"));
+  const got = {}, fed = [];
+  let rooms = 0;
+  w.context.stand.direct = { room: async () => { rooms++; } };
+  const failed = await w.convert(folder(), function* (make) {
+    got.config = yield ["text", "weights", "config.json"];
+    got.optional = yield ["text", "weights", "tokenizer_config.json"];
+    got.elsewhere = yield ["text", "vocabulary", "config.json"];
+    got.tokenizer = yield ["bytes", "weights", "tokenizer.model"];
+    got.noBytes = yield ["bytes", "weights", "tokenizer.json"];
+    got.head = yield ["range", "weights", "Model.safetensors", 0, 100];
+    got.past = yield ["range", "weights", "model.safetensors", SIZE - 10, SIZE + 10];
+    got.noRange = yield ["range", "weights", "model.safetensors.index.json", 0, 100];
+    got.size = yield ["size", "weights", "MODEL.SAFETENSORS"];
+    got.nothing = yield ["size", "weights", "empty.txt"];
+    w.opened(make);
+    w.run("state.gpuOnlyNow = stand.direct");  // (a place whose room is waited for: T156)
+    let at = BASE;
+    got.after = yield ["stream", "weights", "Model.safetensors", BASE, SIZE, BASE, SIZE, w.feeding((part) => {
+      // (the room is waited for after each part, before the next is read)
+      assert.equal(rooms, fed.length, "a part was fed before the room for the one before it was waited for");
+      fed.push([at, part.slice()]);
+      at += part.length;
+      return (at - BASE) / (SIZE - BASE);
+    })];
+    got.empty = yield ["stream", "weights", "Model.safetensors", SIZE, SIZE, SIZE, SIZE, w.feeding(() => assert.fail("a stream of nothing was fed"))];
+    w.run("state.gpuOnlyNow = undefined");
+    got.conversion = w.conversion();
+    yield ["done", got.conversion];
+  });
+  assert.equal(failed, undefined, `the conversion of a folder failed: ${failed?.error?.stack}`);
+  assert.equal(got.config.length, 40, "a text is the text of the file of that name, whatever the case of its letters: of two such, the first");
+  assert.equal(got.optional, undefined, "a text the folder does not have is undefined (None in Python; null is not)");
+  assert.equal(got.elsewhere.length, 40, "a folder is one place: whatever place is asked, the file is the folder's");
+  equalBytes(got.tokenizer, bytesOf(0, 77), "bytes are the file's bytes");
+  assert.ok(ArrayBuffer.isView(got.tokenizer) && got.tokenizer.BYTES_PER_ELEMENT === 1, "bytes are a Uint8Array (a buffer for Python)");
+  assert.equal(got.noBytes, undefined, "bytes the folder does not have are undefined");
+  equalBytes(got.head[0], bytesOf(0, 100), "a range is the bytes asked for");
+  assert.equal(got.head[1], SIZE, "a range's answer says the size of the whole file: a disk knows it");
+  equalBytes(got.past[0], bytesOf(SIZE - 10, SIZE), "a range past the end of the file is what there is of it");
+  assert.equal(got.noRange, undefined, "a range of a file the folder does not have is undefined");
+  assert.equal(got.size, SIZE);
+  assert.equal(got.nothing, 0);
+  assert.ok("after" in got && got.after === undefined && got.empty === undefined, "a stream is answered with undefined once it is fed");
+  assert.equal(fed.length, 5, "the parts are the disk's: each goes to the conversion as it was read, by one call");
+  let end = BASE;
+  for (const [at, part] of fed) {
+    assert.equal(at, end, "the parts of a stream are not one after another");
+    equalBytes(part, bytesOf(at, at + part.length), `a part at ${at} is not the file's bytes there`);
+    end = at + part.length;
+  }
+  assert.equal(end, SIZE, "the stream did not end at the end asked for");
+  assert.equal(rooms, 5, "the room of the weights is waited for once a part (T156)");
+  assert.deepEqual(reads, ["text Config.JSON", "text Config.JSON", "bytes tokenizer.model", "range Model.safetensors 0-100", `range Model.safetensors ${SIZE - 10}-${SIZE}`,
+    `stream Model.safetensors ${BASE}-${SIZE}`, `stream Model.safetensors ${SIZE}-${SIZE}`], "what was read of the folder, in order: nothing of a file nobody asked for, and nothing twice");
+  assert.deepEqual(requests, [], "a folder asked the network for something");
+  assert.deepEqual(cancelled, [], "a stream that ended was cancelled");
+  // the model as it is listed for Python: the names, and nothing of the Files
+  assert.equal(JSON.stringify(w.played.listed), JSON.stringify([{ weights: "Model.safetensors" }]), "what Python is handed of a folder is the name of its weights");
+  // the progress: nothing arrives from a disk (0 of the size of the file, as before T374.2.2), the share converted is the conduct's
+  const progress = messages.filter((m) => m.type === "progress");
+  assert.ok(progress.length >= 1, "no progress was told of a folder");
+  assert.ok(progress.every((m) => m.received === 0 && m.total === SIZE && m.perSecond === undefined), `a folder's progress: ${JSON.stringify(progress[0])}`);
+  assert.equal(progress.at(-1).converted, 1);
+  // the end: as huggingface.co's, but that nothing is kept of a folder
+  const [steps] = w.played.steps;
+  assert.equal(steps.returned, 1);
+  assert.equal(steps.answers.length, 13, "the conduct was sent something for a part: the parts go to the feed of their stream alone");
+  w.allDestroyed();
+  assert.equal(got.conversion.destroyed, 1);
+  assert.equal(w.kept.keeps.length, 0, "a folder's conversion was kept");
+  assert.equal(w.kept.opened, 0, "a file was opened to keep a folder's conversion in");
+  assert.equal(w.run("state.llama !== undefined"), true, "no engine was made of the folder's conversion");
+  ok("a folder answers every kind of request from its Files: by name whatever the case, a name it does not have with undefined, a range with the size, a stream as the disk gives it, a part a call, the room waited for after each");
+  ok("a folder's progress says what it said (0 arrived of the file's size, the share converted), nothing is asked of the network, nothing is kept, Python is handed names alone");
+
+  // ---- a conduct that ends for want of a file: the loop's own words (a folder has none for it)
+  {
+    reads.length = 0;
+    const lost = await w.convert(folder(), function* (make) {
+      w.opened(make);
+      assert.equal(yield ["text", "weights", "model-00001-of-00002.safetensors"], undefined);
+      yield ["missing", "weights", "model-00001-of-00002.safetensors"];
+      assert.fail("the conduct was asked on after a file was missing");
+    });
+    assert.equal(lost.error.message, "The conversion needs model-00001-of-00002.safetensors, which is not there.");
+    assert.equal(w.played.steps.at(-1).returned, 1);
+    w.allDestroyed();
+    assert.equal(w.buffers.at(-1).destroyed, 1);
+    ok("a folder's conduct that ends on a missing file: said in the loop's words, the generator closed, nothing left open");
+  }
+
+  // ---- a file that is there and cannot be read is a failure, never the answer "not there"
+  for (const request of [["text", "weights", "tokenizer_config.json"], ["bytes", "weights", "tokenizer_config.json"], ["range", "weights", "tokenizer_config.json", 0, 10]]) {
+    let resumed = false;
+    const failed = await w.convert(folder([disk("tokenizer_config.json", 50, { fails: true })]), function* (make) {
+      w.opened(make);
+      yield request;
+      resumed = true;
+    });
+    assert.equal(failed.error.name, "NotFoundError", `${request[0]}: ${failed.error.message}`);
+    assert.equal(resumed, false, `${request[0]}: a file that could not be read was answered to the conduct`);
+    assert.equal(w.played.steps.at(-1).returned, 1);
+    w.allDestroyed();
+    assert.equal(w.buffers.at(-1).destroyed, 1);
+  }
+  {
+    // (a disk that fails in the middle of a stream)
+    const parts = [];
+    const failed = await w.convert({ weights: "broken.safetensors", files: [disk("broken.safetensors", 3 * MiB, { fails: true })] }, function* (make) {
+      w.opened(make);
+      yield ["stream", "weights", "broken.safetensors", 0, 3 * MiB, 0, 3 * MiB, w.feeding((part) => { parts.push(part.length); return 0.3; })];
+      assert.fail("a stream the disk failed in was ended as a whole one");
+    });
+    assert.equal(failed.error.name, "NotFoundError");
+    assert.deepEqual(parts, [MiB], "a part went to the conversion after the disk failed");
+    w.allDestroyed();
+  }
+  ok("a file of a folder that cannot be read (its text, its bytes, a range, the middle of a stream) is thrown as the browser says it, and is not answered");
+
+  // ---- a part the converter refuses, and a load cancelled in the middle of a stream and as an answer comes
+  {
+    const refusedPart = await w.convert(folder(), function* (make) {
+      w.opened(make);
+      yield ["stream", "weights", "Model.safetensors", 0, SIZE, 0, SIZE, w.feeding(() => { throw Object.assign(new Error("Traceback\nValueError: The file ended before all of its tensors were read."), { type: "ValueError" }); })];
+      assert.fail("a stream the converter refused a part of was ended as a whole one");
+    });
+    assert.equal(refusedPart.error.type, "ValueError");
+    w.allDestroyed();
+    const cancel = new AbortController();
+    let parts = 0;
+    cancelled.length = 0;
+    const failed = await w.convert(folder(), function* (make) {
+      w.opened(make);
+      yield ["stream", "weights", "Model.safetensors", 0, SIZE, 0, SIZE, w.feeding(() => {
+        if (++parts === 2) cancel.abort();
+        return 0.1;
+      })];
+      assert.fail("a cancelled stream was ended as a whole one");
+    }, { signal: cancel.signal });
+    assert.equal(failed.error.name, "AbortError");
+    assert.equal(parts, 2, "a part went to the converter after the load was cancelled");
+    assert.deepEqual(cancelled, ["Model.safetensors"], "the file's reader was not cancelled with the load");
+    assert.equal(w.played.steps.at(-1).returned, 1);
+    w.allDestroyed();
+    assert.equal(w.buffers.at(-1).destroyed, 1);
+    // (the read itself ended well: the loop's own look at the signal keeps the answer from the conduct)
+    const early = new AbortController();
+    let resumed = false;
+    const slow = disk("config.json", 9);
+    const text = slow.text;
+    slow.text = async () => { early.abort(); return text(); };
+    const stopped = await w.convert({ weights: "x.safetensors", files: [slow] }, function* (make) {
+      w.opened(make);
+      yield ["text", "weights", "config.json"];
+      resumed = true;
+    }, { signal: early.signal });
+    assert.equal(stopped.error.name, "AbortError");
+    assert.equal(resumed, false, "a cancelled load of a folder was answered");
+    w.allDestroyed();
+    ok("a folder's stream: a part the converter refuses ends it, a cancelled load cancels the file's reader and feeds nothing more; a load cancelled as an answer comes is not answered");
+  }
 }
 
 console.log(`worker-conduct-check: ${passed} checks passed`);

@@ -5,7 +5,10 @@
 #              asked and writes each request down as tests/worker-fetches-check.mjs writes the worker's
 #              ("GET owner/model@0123456 model.safetensors bytes=0-524287"). What only the answerer decides is the
 #              hub's: how a stream is cut into parts (see parts()), and whether a range's answer says the file's size
-#   answered   the loop that answers a conduct from a hub: what the worker's side becomes in T374.2
+#   Folder     the same for a folder of the visitor's disk (T374.2.2): {"<name>": ...}, found by its name whatever the
+#              case of its letters, which writes down what is read of each file as worker-fetches-check.mjs's Files do
+#              ("range model.safetensors bytes=0-524287"). The disk's is how a stream is cut: a MiB at a time
+#   answered   the loop that answers a conduct from a hub or a folder: the worker's side (public/worker/conduct.js)
 #   today      the worker's ladder as it was before T374.2.1 (public/worker/convert.js of a610edb, lines 135 to 352)
 #              in Python, call for call, on the same hub: what a conduct is compared with where there is no fixture
 #              (real files, made-up repositories by the hundred). The worker's own went with T374.2.1 for the models of
@@ -107,6 +110,52 @@ class Hub:
             stop = min(at + (self.first if part < self.ahead else self.rest), end)
             yield self.found("GET", where, name, (at, stop))[at:stop]
             at, part = stop, part + 1
+
+
+class Folder:
+    """files: {"<name>": a text, bytes or a File}. chunk: how much of a stream the disk gives at a time."""
+
+    def __init__(self, files, chunk=MiB):
+        self.files, self.chunk, self.asked = {}, chunk, []
+        for name, value in files.items():
+            value = File(value.encode()) if isinstance(value, str) else File(value) if isinstance(value, bytes) else value
+            self.files.setdefault(name.lower(), (name, value))  # (of two names that differ in their case alone, the first)
+
+    def found(self, kind, name, range=None):
+        """The file of that name, what is read of it written down; None, and nothing written, where there is none."""
+        name, file = self.files.get(name.lower(), (None, None))
+        if file is None:
+            return None
+        if range:
+            begin = min(range[0], file.size)
+            end = max(begin, min(range[1], file.size))
+            range = (begin, end)
+        self.asked.append(f"{kind} {name}" + (f" bytes={range[0]}-{range[1] - 1 if range[0] < range[1] else ''}" if range else ""))
+        return file
+
+    def refusal(self, where, name):
+        """What the worker's loop says of a file a folder's conduct ends for want of (conduct.js's answered())."""
+        return f"The conversion needs {name}, which is not there."
+
+    def text(self, where, name):
+        found = self.found("text", name)
+        return found if found is None else found[:].decode()
+
+    def bytes(self, where, name):
+        found = self.found("bytes", name)
+        return found if found is None else found[:]
+
+    def range(self, where, name, begin, end):
+        found = self.found("range", name, (begin, end))
+        return found if found is None else (found[begin:end], found.size)
+
+    def size(self, where, name):
+        return self.files[name.lower()][1].size
+
+    def parts(self, where, name, begin, end):
+        file = self.found("stream", name, (begin, end))
+        for at in range(begin, end, self.chunk):
+            yield file[at:min(at + self.chunk, end)]
 
 
 def answer(hub, request):
