@@ -72,6 +72,8 @@ export function planOf(p, { relaxed = true, kvStart = p.header[6], outliers = 0 
     arch: p.form.arch, dim, hidden_dim: hidden, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: p.head_size,
     vocab_size: Math.abs(signedVocab), seq_len: seqLen, rotary: p.form.linear ? p.head_size / 4 : p.head_size, linear: p.form.linear,
     convolution: p.form.convolution,
+    // (T255: the layers RoPE leaves alone; none of these made-up models has any. tests/plan-keys-check.mjs holds these keys to Python's)
+    unturned: [],
     parallel_residual: p.form.arch === "neox", rotated,
     kv_start: kvStart, rms_norm_eps: 1e-5, shared_classifier: signedVocab > 0, int8: p.keep_int8, relaxed, tensors: p.tensors,
     derived: Object.fromEntries([...Object.entries(p.derived).map(([name, bytes]) => [name, new Uint8Array(bytes)]),

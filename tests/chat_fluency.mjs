@@ -21,6 +21,7 @@ import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { footprint, needsWide } from "../public/forward.js";
 import { filled } from "../src/models.js";
+import { leave } from "./leave.mjs";
 
 const [out, pageFile] = process.argv.slice(2);
 const page = JSON.parse(fs.readFileSync(pageFile, "utf8"));
@@ -86,4 +87,5 @@ const report = (name, rows) => {
 report("ja", result.rows.filter((row) => row.japanese));
 report("en", result.rows.filter((row) => !row.japanese));
 report("all", result.rows);
-process.exit(0);
+// (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
+await leave(0);

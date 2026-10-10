@@ -16,7 +16,6 @@
 import math
 import struct
 import sys
-import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +26,7 @@ sys.path.insert(0, str(HERE))
 import gguf_check  # noqa: E402
 import llama2_convert  # noqa: E402
 from llama2_numpy import ternary, unpack_ternary  # noqa: E402
+from fetching import ranged  # noqa: E402
 
 REPO = "prism-ml/Ternary-Bonsai-2-27B-gguf@b072e1d3b35a0a630cece372c2127528e0994386"
 FILES = {"PTQ1_0": "Ternary-Bonsai-2-27B-PTQ1_0.gguf", "PQ2_0": "Ternary-Bonsai-2-27B-PQ2_0.gguf", "F16": "Ternary-Bonsai-2-27B-F16.gguf"}
@@ -38,18 +38,7 @@ BLOCK_BYTES = {gguf_check.PTQ1_0: 28, gguf_check.PQ2_0: 34}
 
 
 def fetch(url, start, length):
-    request = urllib.request.Request(url, headers={"Range": f"bytes={start}-{start + length - 1}"})
-    for attempt in range(4):
-        try:
-            with urllib.request.urlopen(request, timeout=120) as response:
-                data = response.read()
-            if len(data) != length:
-                raise OSError(f"{len(data)} bytes of {length}")
-            return data
-        except OSError as error:
-            if attempt == 3:
-                raise
-            print(f"  again ({error})", flush=True)
+    return ranged(url, start, length, said=lambda error: print(f"  again ({error})", flush=True))  # (tests/fetching.py, T357)
 
 
 def head(url):

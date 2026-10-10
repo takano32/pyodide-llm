@@ -25,7 +25,6 @@ import argparse
 import json
 import struct
 import sys
-import time
 import urllib.request
 from pathlib import Path
 
@@ -37,6 +36,7 @@ sys.path.insert(0, str(HERE))
 import llama2_convert  # noqa: E402
 import llama2_numpy  # noqa: E402
 from reference_27b import grouped, widen_ptq1_0  # noqa: E402
+from fetching import ranged  # noqa: E402
 
 ORIGINAL = "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/"
 BONSAI = ("https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf/resolve/b072e1d3b35a0a630cece372c2127528e0994386/"
@@ -48,19 +48,10 @@ KEY_HEADS, VALUE_HEADS, VALUE_DIM = 16, 48, 128
 
 def fetch(url, start, length, tries=5):
     """length bytes of a file from start, by a Range request (the redirect to the CDN is followed)."""
-    last = None
-    for attempt in range(tries):
-        try:
-            request = urllib.request.Request(url, headers={"Range": f"bytes={start}-{start + length - 1}"})
-            with urllib.request.urlopen(request, timeout=120) as response:
-                data = response.read()
-            if len(data) != length:
-                raise OSError(f"{len(data)} bytes of {length}")
-            return data
-        except OSError as error:  # urllib.error.URLError and HTTPError are OSErrors
-            last = error
-            time.sleep(2 * (attempt + 1))
-    raise SystemExit(f"unfold: {url} from {start}: {last}")
+    try:
+        return ranged(url, start, length, tries=tries, wait=2)  # (tests/fetching.py, T357)
+    except OSError as error:
+        raise SystemExit(f"unfold: {url} from {start}: {error}")
 
 
 class Original:

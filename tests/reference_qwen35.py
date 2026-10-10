@@ -43,7 +43,6 @@ import struct
 import subprocess
 import sys
 import time
-import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -54,6 +53,7 @@ sys.path.insert(0, str(HERE))
 import llama2_convert  # noqa: E402
 from llama2_convert import Conversion  # noqa: E402
 from llama2_numpy import Llama  # noqa: E402
+from fetching import download  # noqa: E402
 
 REPO, REVISION = "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"
 WEIGHTS = "model.safetensors-00001-of-00001.safetensors"
@@ -82,22 +82,9 @@ say = lambda *parts: print("qwen35:", *parts, flush=True)
 
 
 def fetch(name, directory, repo=REPO, revision=REVISION):
-    target = directory / name
-    if not target.exists():
-        directory.mkdir(parents=True, exist_ok=True)
-        partial = target.with_suffix(target.suffix + ".part")
-        for attempt in range(3):
-            try:
-                with urllib.request.urlopen(f"https://huggingface.co/{repo}/resolve/{revision}/{name}", timeout=60) as response, \
-                        open(partial, "wb") as out:
-                    while block := response.read(CHUNK):
-                        out.write(block)
-                break
-            except OSError:
-                if attempt == 2:
-                    raise
-        partial.rename(target)
-    return target
+    # (tests/fetching.py, T357: a download that stopped short is asked for again, which this copy of the loop did not see,
+    # and a file the repository does not have is refused at once: this copy asked three times)
+    return download(f"https://huggingface.co/{repo}/resolve/{revision}/{name}", directory / name)
 
 
 class File:

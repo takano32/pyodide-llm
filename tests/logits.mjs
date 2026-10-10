@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { footprint, needsWide } from "../public/forward.js";
+import { leave } from "./leave.mjs";
 
 const [out, pageFile, count = "96"] = process.argv.slice(2);
 const page = JSON.parse(fs.readFileSync(pageFile, "utf8"));
@@ -43,4 +44,5 @@ fs.writeFileSync(`${saveTo}.logits.f32`, Buffer.from(pyodide.globals.get("LOGITS
 fs.writeFileSync(`${saveTo}.ids.json`, pyodide.globals.get("IDS"));
 console.log(`logits ${page.id}: ${JSON.parse(pyodide.globals.get("IDS")).length} positions of the page's engine (${wide ? "a 64-bit" : "a 32-bit"} memory, int8 ${(size / 1e9).toFixed(2)} GB) ` +
   `in ${pyodide.globals.get("SECONDS").toFixed(0)} s, saved as ${saveTo}.logits.f32 (float32, a row of the vocabulary for each position) and ${saveTo}.ids.json`);
-process.exit(0);
+// (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
+await leave(0);

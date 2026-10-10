@@ -2,7 +2,8 @@
 // and a clock that goes a hundred times as fast: the parts of this site's models (download()), the ranges of
 // huggingface.co (fetchRange(), inOrder(), refused()), the count of what arrives while Pyodide loads (watchArrivals()),
 // the version of Pyodide and its steps (resolvePyodideVersion(), pyodideSteps()), and a model past even a 64-bit memory
-// (weightsBuffer()), and load() as far as the place of the weights (what it stops where it ends before it). The review
+// (weightsBuffer()), and load() as far as the place of the weights (what it stops where it ends before it), and (T357) a
+// stop that arrives while a made-up model writes (generate() and the stop message). The review
 // of T97, T118 and T119 (2026-09-26) had a bench like this and did not keep it; what it found is T129's (1) to (7).
 // Node only, no Pyodide, a few seconds:
 //
@@ -18,114 +19,18 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import fs from "node:fs";
-import vm from "node:vm";
 import * as forward from "../public/forward.js";
-import { runWorker } from "./worker-source.mjs";
+import { workerHarness } from "./worker-harness.mjs";
 
-const SCALE = 100;  // the worker's milliseconds per real millisecond
+// the made-up network, clock, messages and context (tests/worker-harness.mjs, T357: the conversion's fetch list uses them too)
+const { SCALE, MiB, PART, realNow, sleep, clock, bytesOf, body, requests, messages, fetchStandIn, navigatorStandIn, context, run, failure, fresh, partOf } = workerHarness();
+const at = new URL("../public/worker.js", import.meta.url);
 // a check that waits for ever (a fix undone: the version asked for ever) fails rather than hangs
 setTimeout(() => {
   console.error("worker-check: still waiting after 180 s");
   process.exit(1);
 }, 180000).unref();
-const MiB = 1024 * 1024, PART = 8 * MiB;
-const realNow = () => performance.now();
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms / SCALE));  // ms of the worker's clock
-
-// the worker's clock and timers: a hundred times as fast
-const clock = {
-  now: () => realNow() * SCALE,
-  setTimeout: (f, ms = 0, ...args) => setTimeout(f, ms / SCALE, ...args),
-  setInterval: (f, ms = 0, ...args) => setInterval(f, ms / SCALE, ...args),
-};
-
-// the bytes of a made-up file at [from, to): the same at every offset, whichever request brings them
-function bytesOf(from, to) {
-  const bytes = new Uint8Array(to - from);
-  for (let i = 0; i < bytes.length; i++) bytes[i] = Math.imul(from + i, 2654435761) >>> 24;
-  return bytes;
-}
-const abortError = (signal) => signal.reason ?? new DOMException("aborted", "AbortError");
-
-// a body of the file's bytes [from, to), chunk by chunk, each after delay ms of the worker's; breakAt: it breaks there;
-// head: the bytes that begin it instead of the made-up ones (a header); cancelled(): told when its reader lets go of it
-function body(from, to, { chunk = MiB, delay = 0, breakAt, signal, stall, head, cancelled } = {}) {
-  let at = from;
-  return new ReadableStream({
-    async pull(controller) {
-      if (delay) await sleep(delay);
-      if (stall) await new Promise((resolve) => signal?.addEventListener("abort", resolve, { once: true }));
-      if (signal?.aborted) return controller.error(abortError(signal));
-      if (breakAt !== undefined && at >= breakAt) return controller.error(new TypeError("Error in input stream"));
-      if (at >= to) return controller.close();
-      const end = Math.min(to, at + chunk, breakAt ?? Infinity);
-      const bytes = bytesOf(at, end);
-      if (head && at === from) bytes.set(head.subarray(0, bytes.length));
-      controller.enqueue(bytes);
-      at = end;
-    },
-    cancel() {
-      cancelled?.();
-    },
-  }, { highWaterMark: 0 });
-}
-
-// the made-up network: route(url, init, n) answers the n-th request of that URL (0 first) with a Response, a promise of
-// one, or "hang" (no answer until the request is aborted). Every request is written down.
-const requests = [];
-let route = () => new Response("", { status: 404 });
-function fetchStandIn(input, init = {}) {
-  const url = String(input?.url ?? input);
-  const n = requests.filter((r) => r.url === url).length;
-  const request = { url, at: clock.now(), signal: init.signal, range: init.headers?.Range, method: init.method ?? "GET" };
-  requests.push(request);
-  return new Promise((resolve, reject) => {
-    const signal = init.signal;
-    if (signal?.aborted) return reject(abortError(signal));
-    signal?.addEventListener("abort", () => reject(abortError(signal)), { once: true });
-    Promise.resolve(route(url, init, n)).then((answer) => (answer === "hang" ? undefined : resolve(answer)), reject);
-  });
-}
-
-// worker.js and its modules (T350: tests/worker-source.mjs makes scripts of them) in a vm context whose global is its
-// self, as in a worker
-const at = new URL("../public/worker.js", import.meta.url);
-const messages = [];
-const navigatorStandIn = { deviceMemory: 8 };
-const context = vm.createContext({
-  console, URL, URLSearchParams, TextDecoder, TextEncoder, AbortController, DOMException, Response, Headers,
-  ReadableStream, WritableStream, TransformStream, WebAssembly, Atomics, SharedArrayBuffer,
-  performance: { now: clock.now }, setTimeout: clock.setTimeout, clearTimeout, setInterval: clock.setInterval, clearInterval,
-  // (breathe(): a turn of the event loop; Node's MessageChannel would keep the process alive)
-  MessageChannel: class {
-    constructor() {
-      this.port1 = {};
-      this.port2 = { postMessage: () => setImmediate(() => this.port1.onmessage?.()) };
-    }
-  },
-  navigator: navigatorStandIn, location: { search: "" }, crossOriginIsolated: false,
-  fetch: fetchStandIn, postMessage: (message) => messages.push(message),
-});
-context.self = context;
-runWorker(context);
-const run = (code) => vm.runInContext(code, context);
 const quiet = run("QUIET_SECONDS");
-
-// the error a promise rejects with, and when (on the worker's clock); undefined when it resolved
-async function failure(promise) {
-  try {
-    await promise;
-    return undefined;
-  } catch (error) {
-    return { error, at: clock.now() };
-  }
-}
-const fresh = (routing) => {
-  requests.length = 0;
-  messages.length = 0;
-  route = routing;
-};
-const partOf = (url) => Number(/\.(\d{3})$/.exec(url)?.[1]);
 let passed = 0;
 const ok = (line) => {
   passed++;
@@ -850,6 +755,49 @@ const ok = (line) => {
   assert.equal(String(broke?.error), "TypeError: Importing a module script failed.");
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
   ok("a runtime of Pyodide's that ended as it started is told as a step that stopped");
+}
+
+// ---- T357: a stop that arrives during a run stops it. Nothing ran generate() outside a browser: `state.stopped` spelled
+// otherwise in its loop is undefined, the loop writes to the end of the context, and both checks of the worker passed (T350)
+{
+  // a model that writes for ever (or `limit` pieces): to the worker, generate() is a Python generator (next, return, destroy)
+  let written = 0, limit = Infinity, closed = 0, destroyed = 0;
+  context.stand = { llama: {
+    generate: { callKwargs: () => ({ next: () => (written < limit ? { done: false, value: `piece ${written++}` } : { done: true }), return: () => { closed++; }, destroy: () => { destroyed++; } }) },
+    stats: { toJs: () => ({ tokens: written }) },
+  } };
+  run("state.llama = stand.llama; state.outsideNow = undefined; state.gpuOnlyNow = undefined; state.stopped = false; state.generating = undefined;");
+  const of = (type) => messages.filter((message) => message.type === type);
+  fresh(() => new Response("", { status: 404 }));
+  const running = context.onmessage({ data: { type: "generate", prompt: "a prompt" } });
+  await sleep(2000);
+  assert.ok(of("token").length > 0 && of("done").length === 0, "the run wrote nothing, or ended by itself");
+  context.onmessage({ data: { type: "stop" } });
+  const stopped = await Promise.race([running.then(() => true), sleep(30000).then(() => false)]);
+  if (!stopped) {
+    // (let the run end, so that this fails in words and not at the 180 s)
+    limit = 0;
+    await running;
+  }
+  assert.ok(stopped, "a stop that arrived during a run did not stop it: it wrote on for 30 s of the worker's clock");
+  const tokens = of("token").length;
+  assert.deepEqual([of("done").length, of("error").length, closed, destroyed], [1, 0, 1, 1], "a stopped run did not end as a run does (done once, no error, the generator closed and let go of)");
+  assert.equal(of("done")[0].tokens, written, "the page was not told the stopped run's statistics");
+  await sleep(1000);
+  assert.equal(of("token").length, tokens, "a stopped run wrote on");
+  assert.equal(run("state.generating"), undefined);
+  ok("a stop that arrives during a run stops it, and the page is told it is done");
+
+  // the next run is not cut short: neither by the stop that ended the last one, nor by one that came while nothing ran
+  for (const [name, before] of [["after a run that was stopped", () => {}], ["after a stop that came while nothing ran", () => context.onmessage({ data: { type: "stop" } })]]) {
+    await before();
+    fresh(() => new Response("", { status: 404 }));
+    limit = written + 5;
+    await context.onmessage({ data: { type: "generate", prompt: "another" } });
+    assert.deepEqual([of("token").length, of("done").length, of("error").length], [5, 1, 0], `a run ${name} did not write its five pieces`);
+  }
+  ok("a run after a stop writes to its own end");
+  run("state.llama = undefined");
 }
 
 console.log(`worker-check: ${passed} checks passed`);

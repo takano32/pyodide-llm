@@ -170,8 +170,8 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
     }
   }
   assert.deepEqual(fields.filter((field) => !used.has(field)), [], "fields of state that nothing reads or sets");
-  // (and what the two checks that run the worker set in its context: a name that is no field would set nothing the worker reads)
-  for (const check of ["worker-check.mjs", "worker-sink-check.mjs"]) {
+  // (and what the checks that run the worker set in its context: a name that is no field would set nothing the worker reads)
+  for (const check of ["worker-check.mjs", "worker-sink-check.mjs", "worker-fetches-check.mjs"]) {
     for (const [, field] of fs.readFileSync(new URL(check, import.meta.url), "utf8").matchAll(/\bstate\.(\w+)/g)) {
       assert.ok(fields.includes(field), `tests/${check} says state.${field}, which is no field of worker/state.js's object`);
     }

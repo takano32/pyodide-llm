@@ -13,6 +13,7 @@ import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
 import { footprint, needsWide } from "../public/forward.js";
 import { filled } from "../src/models.js";
+import { leave } from "./leave.mjs";
 
 const [out, pageFile, count = "32"] = process.argv.slice(2);
 const page = JSON.parse(fs.readFileSync(pageFile, "utf8"));
@@ -50,4 +51,5 @@ console.log(`written by ${page.id}: answer ${shown(result.written)}`);
 for (const [seed, answer] of result.others) {
   console.log(`written by ${page.id}: answer with temperature ${temperature}, top-p ${topp}, penalty ${repetition_penalty} and seed ${seed} ${shown(answer)}`);
 }
-process.exit(0);
+// (T357: what was written is out first: the answers of a long run are more than a pipe holds, tests/leave.mjs)
+await leave(0);

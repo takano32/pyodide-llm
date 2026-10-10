@@ -53,6 +53,10 @@ page_modules() {
   node tests/worker-sink-check.mjs
   # T129: where fetching and loading meet in worker.js, on made-up fetches and a fast clock (a few seconds)
   node tests/worker-check.mjs
+  # T357: what a conversion asks of huggingface.co, in order, for every kind of source the page converts (one file, shards, a
+  # GGUF alone and with another repository's vocabulary, the tokenizer's candidates, the optional files), on a made-up hub
+  # and a converter's stand-in, against tests/fixtures/conversion-fetches.json (under a second)
+  node tests/worker-fetches-check.mjs
   # T350: the names the worker and its modules (public/worker/) use: declared, imported, or the worker's globals (the two
   # checks above run them as scripts of one context, where a missing import does not show)
   node tests/worker-modules-check.mjs
@@ -60,6 +64,10 @@ page_modules() {
   # exported there, what createForward() hands a part is what the part takes, and every pool.<name>, gpuPart.<name> and
   # held.<name> is a member of that object (none of these is a variable: a wrong name is undefined without a word)
   node tests/forward-modules-check.mjs
+  # T357: the plan Python hands forward.js and the plan forward.js hands the GPU's worker, each held to both of its ends:
+  # a key written and read nowhere, or read and never written (undefined without a word), for one made-up model of every
+  # layout and dtype (under a second)
+  node tests/plan-keys-check.mjs
   # T355: the names the model page's script (src/pages/index.astro and src/page/) uses: declared, imported where they are
   # exported, or a page's globals, and every page.<name> a field of the one object the parts share (the build does not
   # say a name that is nowhere, and nothing opens the page outside CI's browsers)

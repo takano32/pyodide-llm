@@ -38,8 +38,6 @@ import struct
 import subprocess
 import sys
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -50,6 +48,7 @@ sys.path.insert(0, str(HERE))
 import llama2_convert  # noqa: E402
 from llama2_convert import Conversion, joined_shards  # noqa: E402
 from llama2_numpy import Llama  # noqa: E402
+from fetching import download  # noqa: E402
 
 # more than 64 tokens, English and Japanese, with numbers after one space and after several (T254: where MiniCPM5's
 # two-stage split is not Llama 3's), a number of more than three digits and a contraction
@@ -439,28 +438,8 @@ def entries(ids):
 
 
 def fetch(repo, revision, name, folder, optional=False):
-    target = folder / name
-    if target.exists():
-        return target
-    folder.mkdir(parents=True, exist_ok=True)
-    partial = target.with_suffix(target.suffix + ".part")
-    for attempt in range(3):
-        try:
-            with urllib.request.urlopen(f"https://huggingface.co/{repo}/resolve/{revision}/{name}", timeout=60) as response, \
-                    open(partial, "wb") as out:
-                while block := response.read(CHUNK):
-                    out.write(block)
-            break
-        except urllib.error.HTTPError as error:
-            if error.code < 500 and optional:
-                return None
-            if error.code < 500 or attempt == 2:
-                raise
-        except OSError:
-            if attempt == 2:
-                raise
-    partial.rename(target)
-    return target
+    # (tests/fetching.py, T357: and a download that stopped short is asked for again, which this copy of the loop did not see)
+    return download(f"https://huggingface.co/{repo}/resolve/{revision}/{name}", folder / name, optional=optional)
 
 
 class File:
