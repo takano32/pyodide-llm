@@ -7,9 +7,8 @@ from engine.dtypes import EITHER, dtype_of
 from convert.checkpoint import Writer, checkpoint_size
 from convert.readers import SOURCES, source_of
 from convert.sources import header_rotated
-from convert.config import (PARTLY_TURNED, check_config, checkpoint_header, head_size, normalize, query_scale,
-                            rotary_dim)
-from convert.plan import checkpoint_form, conversion_plan, name_prefix, rope_table, source_shape, transformed
+from convert.config import check_config, checkpoint_header, head_size, normalize
+from convert.plan import checkpoint_form, model_plan, rope_table, source_shape, transformed
 from convert.gguf import rope_freqs_agree
 
 # Pieces of at most this many values are converted at a time: 4 MB as float32. Measured on llm-jp-3-150m, the
@@ -39,8 +38,7 @@ def convert_pieces(source, config, dtype, max_seq_len, out, quantize_rows=None):
     form = checkpoint_form(config, source)
     writer = Writer(out, header, dtype, form, quantize_rows=quantize_rows)
 
-    plan, shapes = conversion_plan(header, form, name_prefix(source, form["arch"]),
-                                   rotary_dim(config) if form["arch"] in PARTLY_TURNED else 0, query_scale(config))
+    plan, shapes = model_plan(config, source, header, form)
     total, done = sum(math.prod(shape) for shape in shapes), 0
 
     for index, (parts, shape) in enumerate(zip(plan, shapes)):
@@ -105,8 +103,7 @@ class Stream:
             out = bytearray(self.size(dtype))
         self.out = out  # None when the checkpoint goes to sink
         self.writer = Writer(self.out, self.header, dtype, self.form, sink=sink, quantize_rows=quantize_rows)
-        plan, shapes = conversion_plan(self.header, self.form, name_prefix(self, self.form["arch"]),
-                                       rotary_dim(config) if self.form["arch"] in PARTLY_TURNED else 0, query_scale(config))
+        plan, shapes = model_plan(config, self, self.header, self.form)
         self.total, self.done = sum(math.prod(shape) for shape in shapes), 0
         wanted = {}
         for index, (parts, shape) in enumerate(zip(plan, shapes)):
