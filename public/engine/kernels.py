@@ -79,19 +79,25 @@ def kernel_quantizer(path):
     if not kernels:
         return None
 
-    def quantize_rows(values, dtype="int8"):
-        kind = DTYPES[dtype]
-        values = np.ascontiguousarray(values, dtype=np.float32)
-        group = kind.group(values.shape[-1])
-        stored, scaled = kind.stored_bytes(values.size, group)
-        # (int8 values are the bytes of an int8 file as they are: the array says so, as NumPy's quantize() does)
-        packed, scales = np.empty(stored, dtype=np.int8 if kind.bits == 8 else np.uint8), np.empty(scaled // 4, dtype=np.float32)
+    # chosen once, not for every piece: of each dtype its group, the bytes of a group, the array's type, the kernel
+    # and what it takes after the count (quantize_x is the activations' quantizer too, and takes their bias: none here)
+    def packing(kind):
         packer = kernels[kind.packer]
-        # (quantize_x is the activations' quantizer too, and takes their bias after the count: none here)
-        more = (0,) * (len(packer.argtypes) - 4)
+        # (int8 values are the bytes of an int8 file as they are: the array says so, as NumPy's quantize() does)
+        return (kind.group, kind.bits, np.int8 if kind.bits == 8 else np.uint8, packer,
+                (0,) * (len(packer.argtypes) - 4), kind.refusal)
+
+    packings = {name: packing(kind) for name, kind in DTYPES.items() if kind.packer in kernels}
+
+    def quantize_rows(values, dtype="int8"):
+        group_of, bits, stored_as, packer, more, refusal = packings[dtype]
+        values = np.ascontiguousarray(values, dtype=np.float32)
+        group = group_of(values.shape[-1])
+        groups = values.size // group
+        packed, scales = np.empty(groups * (group * bits // 8), dtype=stored_as), np.empty(groups, dtype=np.float32)
         if packer(packed.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size, *more):
-            raise ValueError(kind.refusal)
-        return packed.reshape(-1, stored // scales.size), scales
+            raise ValueError(refusal)
+        return packed.reshape(groups, -1), scales
 
     return quantize_rows
 

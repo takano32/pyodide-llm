@@ -3,13 +3,15 @@
 # every round (A B, B A, A B, ...), for each dtype: tests/profile-convert.mjs on the same model directory.
 #   bash tests/abba-convert.sh <model directory> [rounds] [dtypes...]
 # The base tree is made on the runner's own clone (git worktree add .tmp/base FETCH_HEAD), with this tree's node_modules
-# and kernels. Prints one "base|now <dtype> <MB/s>" line per run and the medians and ranges at the end.
+# and kernels. PROFILE=0 times both without cProfile. Prints one "base|now <dtype> <MB/s>" line per run and the medians and ranges at the end.
 set -u
 dir=$1; rounds=${2:-8}; shift 2 || true; dtypes=${*:-int8 float32}
 if [ ! -d .tmp/base ]; then
   git fetch -q --depth 1 origin main && git worktree add -q .tmp/base FETCH_HEAD
   cp -r node_modules .tmp/base/ && cp public/simdkernel* .tmp/base/public/
 fi
+# PROFILE=0 (the time without cProfile): the base tree's tool may not know it (run the profiled comparison first)
+if [ "${PROFILE:-}" = 0 ]; then sed -i 's/; profiler.enable()//' .tmp/base/tests/profile-convert.mjs; fi
 mkdir -p .tmp/abba; : > .tmp/abba/lines
 run() { # tree name dtype
   (cd "$1" && node tests/profile-convert.mjs "$OLDPWD/$dir" "$3" 2>&1 | sed -n 's/.*(\([0-9]*\) MB\/s).*/\1/p' | head -1 | sed "s|^|$2 $3 |") >> .tmp/abba/lines
