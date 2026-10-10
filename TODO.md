@@ -2176,6 +2176,11 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T402 [文書][変換] docs/quantization.md の `?hf=Qwen/Qwen3.5-0.8B` の 1 文が古い — 状態: 未着手（2026-10-10、T369 から。文面は持ち主に見せる。規模 小）
 - いまの文:「What `?hf=Qwen/Qwen3.5-0.8B` still loses is plain text, where there is no chat format and the converter's BOS comes first.」T369 から変換器が書式を読むので合わない。案:「Opened with `?hf=`, a Qwen3.5 gets the same beginning since the converter reads its template (2026-10).」
 
+### T403 [バグ][変換] 変換が途中で失敗すると、保存用に開いた OPFS のハンドルが閉じられない — 状態: 未着手（2026-10-10、T374.1 の実装とレビューが読んで見つけた。走らせてはいない。**T374.2 で直す**。規模 小）
+- `public/worker/convert.js`: `keeper()` が 150 行目で OPFS の同期のハンドルを開き、`drop()` は 299 行目からの `try` の `finally` にしか無い。168〜298 行で投げられると（config.json が無い・頭の取得の失敗・段取りの途中の取り消し・トークナイザが無い・GGUF の頭の断り）開いたまま残る。当たるのは GPU だけに置けるモデルのときだけ。その項目の次の `keeper()` は「Access Handles cannot be created」で断られ、GPU だけの変換が保存されない（読んだ限り。訪問者には、次の訪問で取り直しになるのが見える）。T374.2 で、ループ全体を包む 1 つの `finally` に `keep.drop()` と `into.release()` を置く。
+- **T374.2 で一緒に片付くもの（採番しない）**: 404 でない失敗の読み違い（tokenizer_config.json・chat_template.jinja の 5xx や回線の失敗を「書式なし」と読み、書式の無いまま保存する。safetensors の頭の 404 でない失敗が index を頼みにいく）は「失敗は境目をまたがない」で変わる（T374.2 の予定の違いに書く）。`shardsOf()` が壊れた `weight_map` の値をそのまま名前にするのは、`shardsOf()` ごと消える。トークナイザを名指ししない項目が `undefined` という名前のファイルを頼むのは、`conduct` が候補の一覧を使うので消える。
+- **T374.2 の設計に足すもの（レビュー）**: 手元のフォルダの道は fixture に無い。`candidates_of` は名前（文字列かその一覧）しか受けないが、フォルダの候補は `File`。いまの JavaScript は、フォルダでは頭の失敗をすぐ投げ直して index を試さない。`conduct` にその行は無い。
+
 ### T398 [速度][CPU] GPU が歩を取らない間も、1 トークンごとに `tokenBlock` を読む — 状態: 未着手（2026-10-10、T370 の数えから。T152 からある。規模 小）
 - `engine/generation.py` の歩の輪は、`gpu_steps` があれば毎歩 `model.token_block()`（JavaScript の `engine.tokenBlock` の読み）を呼ぶ。GPU が無いか歩を取らないとき（0 が返る）も同じで、Python から JavaScript への 1 回が 1 トークンごとに余分にある（数えた: tiny-lm で引いた語 33 に `forward()` 33・`tokenBlock` 33）。1 回は 1.3〜1.7 µs（T164 の記録）で、tiny-lm の 1 トークン 1.6 ms の約 0.1%。この調べでは時間は測っていない。
 - 歩の途中で GPU の準備ができることがあるので、読みをやめるだけでは済まない（準備ができたことを別の道で知らせる形が要る）。小さいので、T375 でエンジンの窓口に触る回に一緒に。
