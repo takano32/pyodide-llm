@@ -1933,16 +1933,31 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **最終形**: ソースは `.ts`（**型を消せば JS になる書き方だけ**: enum・namespace を使わない。Node 24 がビルド無しで読めるので、試験はソースを直接 import する）。ブラウザ向けは Vite が worker を束ねてハッシュ付きで出す。GPU の端末の鍵は出来上がる WGSL の文から作る。自作の名前の検査 2 つは型検査に置き換えて消す。
 - **順（2026-10-09、持ち主が承認「推奨順にしよう」）**: (1) 残りの分割（T356・T355・T353・T351・T352・T357）→ (2) **抽象化のうち Python の分**（T359: アーキテクチャの Strategy、dtype の Registry、`Llama` の土台クラスの見直し。TypeScript が効かない所で、守りの網がいちばん効くうちに）→ (3) TypeScript の組（T365 → T366 → T367 → T368）→ (4) **抽象化のうち TypeScript の分**（その時点では `.ts` になっている `forward/engine` の層をアーキテクチャごとの表に: 1 トークンごとに回る所なので、型に守られて替える。Strategy の口は型（interface）として書く）。Saluki（T361〜T364）はその後。**（2026-10-09 の後の直し: T366 を T351 の前に、T369 を Python の抽象化の後に入れた。上の「いまのうちに」の回の順が新しい。）**
 
-### T370 [設計][その他] Python と JavaScript の境目を決める（速さに効かない所は Python に） — 状態: 未着手（2026-10-09、持ち主「速度に影響しない範囲は Python にしたほうがよくない？エコシステムも優れてるし」「いいですよ」。規模 小〜中。**T365 と同じ時期に、T368 の前に**: Python に移すコードに先に型を付けない）
+### T370 [設計][その他] Python と JavaScript の境目を決める（速さに効かない所は Python に） — 状態: 設計を出した、持ち主の判断待ち（2026-10-10、Opus medium、ブランチ `t370-boundary`。設計は [docs/notes/t370-boundary-2026-10-10.md](docs/notes/t370-boundary-2026-10-10.md)。CI は回していない。訳: 記録と設計だけで、製品のコードに触っていない。2026-10-09、持ち主「速度に影響しない範囲は Python にしたほうがよくない？エコシステムも優れてるし」「いいですよ」。規模 小〜中。**T365 と同じ時期に、T368 の前に**: Python に移すコードに先に型を付けない）
 - **考え**: 速い道（1 トークンの計算）は Python の外に出ていて、いまの Python の役目はトークナイザ・標本抽出・生成の進行・変換。「WASM の Python でどこまでできるか」という目的に合わせ、**判断と進行は Python、内側のループとブラウザの機能に直に触る所は JavaScript と WASM** に線を引き直す。境目をまたぐ回数が減れば、境目で起きてきた落とし穴（PyProxy の壊し忘れ、`null` と `None`）も減る。
 - **調べること**: (1) いま境目を何回またいでいるか（読み込み・変換・生成のそれぞれで、どの関数がどちらから呼ばれるか）。(2) 移せるもの: 変換の進行（`public/worker/convert.js` の約 290 行）、読み込みの進行と置き場の判断（`worker/load.js`・`worker/weights.js`、`forward/choice.js`・`forward/memory.js` のうち読み込みの時にしか走らない計算）、書式の読み手（自作の Jinja の一部 → 本物の jinja2）、保存した変換の台帳。(3) **準備完了までの時間**がどう変わるか（Python のコードと依存が増える分の取得とコンパイル。jinja2 を入れる場合の秒。CI で前後を測る）。(4) Pyodide で使えるパッケージ（純粋な Python のものは使える。Rust などで書かれたもの、たとえば Hugging Face の `tokenizers` が Pyodide 用にあるか）。(5) Pyodide の用意した仕組みで自前のものを置き換えられるか: Python のファイルを wheel か zip で配る（T365 と一緒に）、ブラウザのファイルシステムを Python のファイルとして見せる仕組み、同期の Python から Promise を待つ仕組み（対応するブラウザと、Worker の中で使えるかを確かめる）。
 - **変えない線**: 大きなバイト列（取得した重み）を Python のメモリに通さない（Pyodide のメモリは 32 ビットで、伸びると縮まない: 進行は Python、バイトは JavaScript）。1 トークンの計算・ソフトウェアスレッド・GPU の Worker は JavaScript と WASM。Pyodide が無くても動く必要があるもの（`/benchmark/` の一部、Service Worker、ページの画面）は JavaScript。
 - **出すもの**: 境目の案と、移すものごとのタスク（採番する）。調べだけで、実装はしない。
+- **出した案（2026-10-10）**: 線は「何を頼むかは Python、どう取るか・どこに置くかは JavaScript」。
+  - **またぐ回数（数えた）**: 生成は 1 トークンに 3 回（Python → JS が `forward()` と `tokenBlock` の読みの 2、JS → Python が `next()` の 1。tiny-lm のプロンプト 5・引いた語 33 で 68 と 39）。読み込みはモデル 1 つに JS → Python 11〜15・Python → JS 6〜7 で、部品ごとは 0。変換は部品 1 つに 2、ファイル 1 MiB に約 4.4（作り物 81.8 MiB で `feed` 11・`sink.write` 112）。**移しても回数は減らない。減るのは種類**（worker が変換器に呼ぶ名前 11 → 7、`convert.js` の `destroy()` 8 か所と `remote` の分岐 16 か所）。
+  - **移す: 変換の段取り**（`worker/convert.js` の梯子 126 行と feed の分岐 25 行 → Python のジェネレータ）。使い捨て（100 行）を素の Python で本物の変換器と回し、頼みの順が今の worker と同じで、出力がバイト単位で同じことを見た（safetensors・候補の断り・シャード。GGUF の道は走らせていない）。同じ段取りの写しがいま 10 ファイルにある。取り込み元の種類を足すときに触る JavaScript は 2 ファイル → 0 の見込み（T374.2 で捨ての写しに足して数える）。
+  - **移さない（ここで閉じる）**: 読み込みの段取り（サイトのモデルの取得は Pyodide が届く前に始まる: T68。移すと取得が Pyodide の後になる）、置き場の判断（`footprint()` は `/benchmark/` が Pyodide なしで呼び、`promptTimes()`・`tokenTimes()` はブロックと歩ごと。Python から要るのは形の事実で、T375.5 がもう持つ）、保存の台帳（`kept.js` はページのメインスレッドも読む: `src/page/list.ts`）。
+  - **パッケージ（314.0.7 の lock、357 個）**: jinja2 3.1.6 はある（134,899 バイト、markupsafe 9,986）。**`tokenizers` は無い**。sentencepiece・protobuf・safetensors・regex はあるが要らない。
+  - **Pyodide の仕組み**: Python のファイルは zip と `unpackArchive()` が勧め（要求 33 → 2、置くのに 8〜13 ms。zipimport は import が 81 → 131 ms で遅い）: T365 に書いた。`mountNativeFS` は使わない（ファイルが Pyodide のメモリに写る）。`run_sync()`（JSPI）は使わない（ジェネレータが 21 µs / 頼みで、コルーチン 174〜180、`run_sync` 194〜198。`run_sync` は `callPromising()` で入ったときだけ動き、Safari と Firefox の安定版は未確認）。
+  - **準備完了**: サイトのモデルには何も足さない（足す Python は最初の変換のときだけ読む）。開発機で `import llama2_convert` 154〜157 ms、`import jinja2` 362〜364 ms。ブラウザは未計測（測る命令は設計の §3.2）。
+  - **持ち主の判断待ち**: (1) 書式の読み手を jinja2 に替えるか（T397。勧め: 替える。Hub の上位の別々のテンプレート 226 のうち、1 ターンを書けるのが 142 → 225）。(2) T381 を T374.2 と別の歩（T374.3）にすること。(3) `worker-fetches-check.mjs` が Pyodide を読むこと（軽い組が約 4 秒延びる）。(4) T396 をやるか。
+  - **採番**: T374.1〜.4、T396、T397、T398。
 
 
-### T374 [整理][その他] T370 で決めた分を Python に移す — 状態: 未着手（2026-10-09、持ち主「6 の番号ないの不自然では？」で採番。T370 の後、T367 の前。規模は T370 が決める）
+### T374 [整理][その他] T370 で決めた分を Python に移す — 状態: 未着手（歩は T370 が決めた: 下の「歩ごとの番号」。持ち主が T370 の案を承認してから。2026-10-09、持ち主「6 の番号ないの不自然では？」で採番。T370 の後、T367 の前。規模は T370 が決める）
 - 何を移すかは T370 の設計が決める。移すものが 2 つ以上のファイルに分かれるなら、T370 の終わりに 1 つずつ採番してここから指す（1 タスク 1 ファイルの決まり）。移すものが無いと決まったら、この番号は「やらない」で閉じる。
 - 守り: 動きを変えない（リファクタリングの決まり）。速さに効く所（forward・カーネルの呼び出し・GPU）は移さない。
+- **歩ごとの番号（2026-10-10、T370 の設計の §6。順に 1 つずつ CI・レビュー・デプロイ。どれも未着手。レビューは `reviewer`）**:
+  - **T374.1** `public/convert/conduct.py`: 変換の段取りをジェネレータに（頼みは `("text", 場所, 名前)`・`("bytes", …)`・`("range", 名前, 始め, 終わり)`・`("stream", …)` と続きの `("more", 割合)`・`("done", 変換)` の 5 種類。取り込み元の種類は表の 1 行ずつ: GGUF だけ・GGUF と別の語彙・safetensors とシャード）。pytest が辞書のハブで、本物の変換器と一緒に、fixture の 19 通りを Python の頼みの列として回す。`python.js` に 1 行。**worker はまだ呼ばない**。訪問者: 無し（最初の変換のときに取るファイルが 18 → 19）。物差し: (1) 素の Python だけで段取りと変換器を回せること。
+  - **T374.2** `worker/convert.js` の梯子（140〜294 行、126 行）と feed の分岐（322〜347 行、25 行）を、頼みに答える輪に。手元のフォルダも同じジェネレータで。トークナイザの候補の一覧（いま `src/page/address.ts`・`src/page/choose.ts`・`convert_hf.py` の 3 か所）を Python に。**予定の違い**: `tests/fixtures/conversion-fetches.json` の `requests`（161 の要求）は 1 行も変わらない。`converter` の欄は言い回しが変わる。断りの文と順は同じ。`worker-fetches-check.mjs` は Pyodide を読み、本物の `conduct` と、`convert.conduct` に差し替えた代役の `Conversion` で回す。**失敗は境目を渡さない**: 404 は答え（`None`）、ほかは JavaScript が輪を止める。中止は `return()` と `destroy()`。物差し: (1) JavaScript の輪を、頼みを並べる代役で回す試験、(2) 捨ての写しに取り込み元を 1 つ・候補を 1 つ本当に足して触るファイルを数える（見込み: JavaScript 0、候補は 2 ファイル）。速さ: `tests/abba-convert.sh` を CI で（道具を `conduct` を通す形にしてから）。実ブラウザ: 手元の Chrome で `?hf=` の作り物・フォルダ・保存からの 2 回目、デプロイの後に `models.yml` で Firefox と WebKit。
+  - **T374.3**（= **T381**）GGUF の頭を、足りない尻尾だけ頼む。頭に付いてきたテンソルのバイトを使う。`conduct.py` の中だけ。**予定の違い**: fixture の GGUF の 3 通りの要求が変わる（`--write`、差分を読む）。訪問者: GGUF の変換で取るバイトが減る。**T376 の案（T381 を移す回と同じに）から外した訳**: T374.2 の証明は「要求が 1 行も変わらない」で、わざと変える分を混ぜると読めなくなる。
+  - **T374.4** 段取りを写している道具 8 つ（`perplexity_prepare.py`・`fixed_outputs.py`・`format_check.py`・`reference_llama.py`・`reference_qwen35.py`・`page_27b.py`・`page-27b.mjs`・`profile-convert.mjs`）を `conduct` に。製品のコードは触らない。`convert_hf.py` は残す（ビルドは番地で読み、ページに無い取り込み元（PyTorch の pickle）を持つ）。T357.2〜.7 と同じ時期でよい。
+  - **移さないと決めたもの**: 読み込みの段取り・置き場の判断・保存の台帳（訳は T370 の項と設計の §4.2〜§4.4）。T374.2 までを T368（型）の前に。
 
 - **中身が決まった（2026-10-10、T376 の案）**: 変換の段取り（GGUF か、語彙が別の所か、1 つの safetensors か、シャードか、どのトークナイザの候補を試すか、書式はどこか）を Python のジェネレータに。Python が頼み（範囲・文・feed）、JavaScript は取って答えるだけ（`worker/convert.js` の約 190 行）。取得・取り直し・中止・Cache・`keeper()` は JavaScript のまま。**取る物と順は `tests/fixtures/conversion-fetches.json` と同じ**（T381 の直しの分だけ変える）。T370 が決めるまでは案。
 ### T375 [整理][その他] 抽象化（TypeScript の側）: エンジンのアーキテクチャごとの分岐を 1 つの表に — 状態: 未着手（2026-10-09、同じく採番。T368 の後。規模 中〜大）
@@ -1982,7 +1997,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T377 [バグ][WebGPU] GPU だけのモデルで GPU の Worker の部品が届かないと、重みを書く側が 60 秒ずつ待つ — 状態: 未着手（2026-10-09、T352 のレビューから。コードの読みだけで、走らせていない。規模 小。リファクタリングの後に）
 - GPU の Worker が `error` で終わると `stopGpu` が `direct.lost` を立てるが、重みを書く側の `room()`（`public/forward/alone.js` の `wait`）は `lost` を見ない。60 秒（`FLOW_STALL_MS`）進まなくて初めて投げ、`worker/sources.js` の取り直しでさらに最大 60 秒ずつ待つ。本線でも `gpu.js` 1 つが届かなければ同じだが、T352 で部品が 10 個になり起きる見込みが上がった。直す案: `onLost` で `room()` を止める。
 
-### T381 [バグ][変換] GGUF の頭を 3 回まで頭から取り直し、テンソルも頭の続きから取り直す — 状態: 未着手（2026-10-10、T357.1 の取得の列の記録とレビューから。規模 小。T374 で変換の段取りを Python に移すときに一緒に）
+### T381 [バグ][変換] GGUF の頭を 3 回まで頭から取り直し、テンソルも頭の続きから取り直す — 状態: 未着手（**T374.3 として**、T374.2 のすぐ後に: T370 の設計。2026-10-10、T357.1 の取得の列の記録とレビューから。規模 小。T374 で変換の段取りを Python に移すときに一緒に）
 - `public/worker/convert.js`（166〜180 行と 205〜215 行のあたり）: GGUF の頭を位置 0 から 2 MiB、足りなければ 8 MiB、32 MiB と頼み直し（前に取った分を捨てる）、頭の後ろに付いてきたテンソルのバイトも捨てて、テンソルを base から取り直す。作り物（頭 9 MiB、全体 30 MiB）では 20 MiB を 2 回取った。**実物の見積もり（未計測）**: Qwen3.5 の GGUF は頭が約 11〜12 MB（27B の 11.1 MB から）なので 3 回で約 42 MiB を頼み、約 30 MiB が無駄（4.75 GB の 0.3〜0.7%、8 MB/s で約 4 秒）。Llama 3 の頭は 8 MiB に入るかもしれない（未計測）。
 - 直す案: 足りない尻尾だけを頼む。頭の応答に付いてきたテンソルのバイトを使う。直すと `tests/fixtures/conversion-fetches.json` が変わる（`--write`）。
 
@@ -2032,6 +2047,21 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ### T395 [バグ][CPU] 温度・top-p・繰り返しの罰の値を検査していない — 状態: 未着手（2026-10-10、T359.7 から。前からある。規模 小）
 - 負の温度、範囲の外の top-p、0 以下の罰は断られずに標本抽出へ進む。T359.7 で検査の場所は 1 つ（`Sampling.__post_init__`）になった。断る文は訪問者に見える（URL で渡したとき）ので、文面は持ち主に見せてから。
 
+### T396 [速度][その他] 保存した変換の読み出しを Pyodide の読み込みと重ねる — 状態: 未着手（2026-10-10、T370 の調べから。前からある。規模 小〜中。T374 の後、急がない。持ち主の判断待ち）
+- `worker/load.js` は HF の項目で `await state.initialized`（Pyodide・NumPy・カーネル）の後に `convert()` → `loadConverted()` → `openKept()` を呼ぶ（53〜55 行）。サイトのモデルは取得を Pyodide の前に始める（T68）が、**保存した変換の読み出しは Pyodide を待ってから始まる**。T376 の設計は「重なっている」と書いていたが、コードはそうなっていない（コードの読み。走らせて秒を分けてはいない）。
+- 重ねるのに要るもの: 重みの置き場（`weightsBuffer()`）が Python に聞く 2 つ（`OUTLIER_CHANNELS` の定数と、GPU だけの候補のときの `external_tensors()`）と、`init()` の中で Pyodide の後に並んでいる forward.js とカーネルのコンパイル（Pyodide に依らない）。
+- **T396.1 先に測る**: 2 回目の訪問の準備完了のうち、Pyodide の秒と読み出しの秒（記録: llm-jp-3 440M は全部で 4.4 秒、27B は 26〜67 秒）。重ねて縮むのは短いほうの分まで。効きは未計測。**T396.2** 効くなら実装。
+
+### T397 [整理][変換] 書式の読み手を本物の jinja2 に — 状態: 未着手（2026-10-10、T370 の設計の §4.5。**持ち主の判断待ち**。規模 小〜中）
+- 替えるのは `convert/template.py` の `render()` とその下（645 行のうち約 560 行）だけ。`one_turn()` の「1 ターンを描いて `{prompt}`・`{prompt:trim}`・`{date:書式}` に戻す」は描く関数に依らない。環境は transformers と同じ（`tests/template_corpus.py` の `by_jinja()` の形）。
+- **測った（2026-10-10、`template_corpus.py` の道具で、Hub のダウンロード上位 961 リポジトリ・書式のある別々のテンプレート 226）**: 自前の読み手が 1 ターンを書けるのは 142、jinja2 は 225。Pyodide 314.0.7 の lock に jinja2 3.1.6 と markupsafe がある（合わせて 144,885 バイト）。開発機の Node の Pyodide で `import jinja2, jinja2.sandbox` は 362〜364 ms、ChatML の 1 ターンは jinja2 7.8〜7.9 ms・自前 6.6〜7.4 ms。ネイティブの CPython で 226 個の合計は jinja2 7.34 秒・自前 0.90 秒。ブラウザは未計測。
+- 歩: **T397.1** jinja2 があれば jinja2 で、無ければ自前の読み手で描く（worker が変換器の前に `loadPackage("jinja2")`。失敗しても変換は続く）。`deploy.yml` の pip に jinja2。訪問者: `?hf=` で書式なしだったモデルに書式が付く（options に `template` が増える: T269 と同じ扱いで `CONVERTER` は上げないか、T369 に寄せる）。一覧の項目は自分の `template` が勝つので変わらない。**T397.2** 本番で 1 回り見てから、自前の読み手とその試験（`tests/test_chat_template.py` の 268 行の大半）を消す。
+- 覆す条件: ブラウザでの import が変換の 5% を越える。lock から jinja2 が消える。
+
+### T398 [速度][CPU] GPU が歩を取らない間も、1 トークンごとに `tokenBlock` を読む — 状態: 未着手（2026-10-10、T370 の数えから。T152 からある。規模 小）
+- `engine/generation.py` の歩の輪は、`gpu_steps` があれば毎歩 `model.token_block()`（JavaScript の `engine.tokenBlock` の読み）を呼ぶ。GPU が無いか歩を取らないとき（0 が返る）も同じで、Python から JavaScript への 1 回が 1 トークンごとに余分にある（数えた: tiny-lm で引いた語 33 に `forward()` 33・`tokenBlock` 33）。1 回は 1.3〜1.7 µs（T164 の記録）で、tiny-lm の 1 トークン 1.6 ms の約 0.1%。この調べでは時間は測っていない。
+- 歩の途中で GPU の準備ができることがあるので、読みをやめるだけでは済まない（準備ができたことを別の道で知らせる形が要る）。小さいので、T375 でエンジンの窓口に触る回に一緒に。
+
 ### T387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 状態: 未着手（2026-10-10、T359 の 3 歩目のレビューから。規模 小）
 - GPT-2 の `n_inner` の既定（4 × dim）、NeoX の `tie_word_embeddings` の既定、NeoX の「head のどこも回さない」の断り。この歩の前から試験が無い行（実物の config は鍵を書くので当たらない）。小さな試験を 3 つ。
 ### T378 [整理][その他] 状態に持ち主を: 共有の入れ物をなくす — 状態: 未着手（2026-10-10、T376 の案から。T367 の後、T368 の前。規模 大だが 1 つずつは中）
@@ -2047,6 +2077,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **歩ごとの番号（2026-10-10）**: **T380.1** `Failure` と理由の文の表（訪問者に見える文は変えない）/ **T380.2** 黙った catch 22 個を 1 つずつ（残す・言う・投げ直す）/ **T380.3** 一緒に直す小さいもの（T371・T377・T382）。どれも未着手。
 - 8 通りの書き方（Python の ValueError、制御の例外、JS の Error、`Object.assign` の札 3 つ、「なぜ置かないか」の値、GPU の Worker の failed・unusable・ended、文の正規表現で分ける 1 つの catch、黙った catch 22）を 4 通りに: `public/failure.js` の `Failure`（`kind`: refused・memory・network・gpu-lost・cancelled、`retry`）、`failureOf(err)`、`fallBackToCpu(key, why)`、理由の文の表（1 つの訳に 1 つの文）。Python の「ValueError = 読む人への文」はそのまま。訪問者に見える文は変えない。細かい案は同じ文書の (g)。
 ### T365 [設計][その他] ビルドに載せる形と TypeScript の決まりを決める — 状態: 未着手（2026-10-09。規模 小〜中）
+- **T370 から（2026-10-10）: Python のファイルは zip にして `pyodide.unpackArchive()` で開く形が勧め**（設計の §5.1）。要求がエンジン 15 → 1・変換器 18 → 1。大きさは gzip の和 67,262 / 62,875 バイトに対して zip 68,758 / 64,744。置く時間は開発機で 1.7 ms → 8〜13 ms、import は同じ。zip を `sys.path` に置く形（zipimport）は import が 81 → 131 ms で遅く、wheel は名前と版の決まりが増えるだけ。zip はビルドで作る（方針 1）。**要求の数の効きはブラウザで未計測**: 入れる前後の本番で `slow.yml`（`rate=50000 model=stories260K queue=fair`）と `models.yml`（`models=tiny-lm twice=true` の `pyodide` の秒）。効かなければ、得は `python.js` の一覧と `tests/python-files-check.mjs` が要らなくなることだけ。Node の `Buffer` は `unpackArchive()` が断る（`new Uint8Array(…)` に包む）。
 - 調べて決めること: Astro（Vite）で、worker・その部品・`helper.js`（ソフトウェアスレッド）・`gpu.js`（GPU の Worker）・`forward.js` と部品・`shaders.js`・`/benchmark/` の Worker をどう束ねるか（Worker が Worker を作る所、動的な import、wasm のカーネルと Python のファイルと `python.js` の一覧の扱い）。Service Worker `coi.js` の写しの決まり（いまは `?v=` のある同じオリジンの URL を版ごとに持つ）をハッシュ付きの名前でどうするか。Node の試験がソースを直接読む形（`tests/worker-source.mjs` が worker を文として vm で走らせる作りをどうするか）。`tsconfig` の決まり（strict、型を消すだけの構文に限る）。GitHub Pages の 10 分のキャッシュと、デプロイの境目で古いページが新しいファイルを取る場合。
 
 ### T366 [整理][WebGPU] 端末の鍵を、関数の文でなく出来上がる WGSL の文から作る — 状態: 完了（2026-10-09、レビュー済み: Sonnet high。直しの後の CI は run 37977412583・37977415694・37977418938（成功）。2026-10-09、実装と手元の確かめまで。CI 待ち。ブランチ `t366-device-key`。T367 の前に要る。規模 小〜中。レビューは `shader-reviewer`）
