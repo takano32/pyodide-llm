@@ -1,6 +1,7 @@
 // Where the page's conversion spends its time (T89): converts a Hugging Face model directory inside Pyodide in Node,
-// fed in 8 MiB pieces as the worker feeds it, under cProfile. No download: the files are on disk, so this is the
-// converting alone, and the rest of a load in the browser is the fetching.
+// fed in 8 MiB pieces as the worker feeds it (by the conduct of a conversion, as the worker's is: T374.2.1), under
+// cProfile. No download: the files are on disk, so this is the converting alone, and the rest of a load in the browser
+// is the fetching.
 //
 //   node tests/profile-convert.mjs <directory with config.json, model.safetensors and the tokenizer> [int8|int6|float32] [--numpy]
 //   node tests/profile-convert.mjs <a Q8_0 .gguf file> [int8|int6|float32] [--numpy]
@@ -9,50 +10,87 @@
 //
 // int8 quantizes on the SIMD kernels, as the page does (T89: kernel_quantizer); int6 (T98) as the page does too.
 import fs from "node:fs";
+import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
 const [dir, dtype = "int8"] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const { pyodide: py } = await pyodideWithEngine();
+// LAYOUT=<bytes>,<bytes> (T374.2.1): two buffers of those sizes made and held in Python, one before anything of the
+// conversion and one once the conversion is made, before it is fed. Where the conversion's buffers lie beside one
+// another is the same in every run of one tool, and another tool (or tree) lays them out otherwise: with sizes of its
+// own for every run (tests/abba-convert.sh), that is not taken for a difference of work. (It is not all there is to
+// it: see TODO.md's T374.2.1 for what the runs of CI said with it.)
+const [layoutBefore = 0, layoutBeside = 0] = (process.env.LAYOUT ?? "").split(",").map(Number);
+py.runPython(`layout_before = bytes(${layoutBefore})`);
 const convert = py.pyimport("llama2_convert");
 const quantizeRows = py.pyimport("llama2_numpy").kernel_quantizer("simdkernel.so");
 // the stored types' readers on the kernels, as the page does (T123: bfloat16; T136: GGUF's Q8_0; T273: the two ternary
 // types); --numpy: NumPy's, to compare
 const readers = process.argv.includes("--numpy") ? undefined : convert.kernel_readers("simdkernel.so");
 const gguf = dir.endsWith(".gguf");
+const folder = gguf ? path.dirname(dir) : dir;
 const withVocabulary = !gguf && fs.readdirSync(dir).filter((name) => name.endsWith(".gguf")).sort()[0];
-const weights = gguf ? dir : withVocabulary ? `${dir}/${withVocabulary}` : `${dir}/model.safetensors`;
-const fd = fs.openSync(weights, "r"), size = fs.fstatSync(fd).size;
-const range = (b, e) => { const x = new Uint8Array(e - b); fs.readSync(fd, x, 0, e - b, b); return x; };
-let conversion, first;
-if (gguf) {
-  // the header (the vocabulary) is a few megabytes: all of it is in the first 16 MiB
-  conversion = convert.Conversion.from_gguf.callKwargs(range(0, 16 << 20), { dtype, quantize_rows: quantizeRows, readers });
-  first = conversion.base;
-} else {
-  const tokName = ["tokenizer.json", "spiece.model", "tokenizer.model"].find((n) => fs.existsSync(`${dir}/${n}`));
-  const config = fs.readFileSync(`${dir}/config.json`, "utf8");
-  let header;
-  if (withVocabulary) {
-    // the GGUF's header as a safetensors one, as the worker makes it (llama2_convert.gguf_weights)
-    const made = convert.gguf_weights(range(0, Math.min(64 << 20, size)), config);
-    [header, first] = made.toJs();
-    made.destroy();
-  } else {
-    const headerBytes = Number(new DataView(range(0, 8).buffer).getBigUint64(0, true));
-    [header, first] = [new TextDecoder().decode(range(8, 8 + headerBytes)), 8 + headerBytes];
+const tokenizer = ["tokenizer.json", "spiece.model", "tokenizer.model"].find((n) => fs.existsSync(`${folder}/${n}`));
+// the model as the page lists it: the folder stands for its repository (and for the original's, T136's second stage)
+const hf = gguf ? { weights: path.basename(dir) } : withVocabulary ? { weights: withVocabulary, vocabulary: { tokenizer } } : { weights: "model.safetensors", tokenizer };
+// T374.2.1: by the conduct of a conversion (public/convert/conduct.py), answered from the folder as the worker answers
+// it from huggingface.co (public/worker/conduct.js): a request and an answer for every file, and the parts to the
+// conversion's own feed, which the request of a stream brings. (Before, this called the converter itself and fed it;
+// tests/abba-convert.sh against a tree of before T374.2.1 therefore times what the conduct adds to a conversion.)
+const opened = new Map();  // a file is opened once: a part costs one read, as it did
+const open = (name) => {
+  if (!opened.has(name)) {
+    const fd = fs.openSync(`${folder}/${name}`, "r");
+    opened.set(name, { fd, size: fs.fstatSync(fd).size });
   }
-  conversion = convert.Conversion.callKwargs(header, first, config, new Uint8Array(fs.readFileSync(`${dir}/${tokName}`)),
-    tokName, { dtype, start: first, quantize_rows: quantizeRows, readers });
+  return opened.get(name);
+};
+const sizeOf = (name) => open(name).size;
+const range = (name, begin, end) => {
+  const { fd, size } = open(name), bytes = new Uint8Array(Math.min(end, size) - begin);
+  fs.readSync(fd, bytes, 0, bytes.length, begin);
+  return bytes;
+};
+const there = (name, read) => (fs.existsSync(`${folder}/${name}`) ? read() : undefined);
+let js = 0, timed = false;
+const size = sizeOf(hf.weights);
+const answers = {
+  text: (name) => there(name, () => fs.readFileSync(`${folder}/${name}`, "utf8")),
+  bytes: (name) => there(name, () => new Uint8Array(fs.readFileSync(`${folder}/${name}`))),
+  range: (name, begin, end) => there(name, () => [range(name, begin, end), sizeOf(name)]),
+  size: sizeOf,
+  // the parts of a stream, 8 MiB each as the worker's first, to the conversion's own feed as the worker hands them
+  stream(name, begin, end, before, total, feed) {
+    // the clock (and the profiler) from the first part on: the head, the tokenizer and the template are read before
+    if (!timed) {
+      py.runPython(`layout_beside = bytes(${layoutBeside})`);
+      py.runPython("import cProfile, pstats, io, time; profiler = cProfile.Profile(); began = time.perf_counter()");
+      // PROFILE=0: the time alone (cProfile counts every call, which makes a change in the number of calls look larger)
+      py.runPython(process.env.PROFILE === "0" ? "profiler.enable(); profiler.disable(); began = time.perf_counter()" : "profiler.enable()");
+      timed = true;
+    }
+    for (let at = begin; at < end; at += 8 << 20) {
+      const t = performance.now();
+      const chunk = range(name, at, Math.min(at + (8 << 20), end));
+      js += performance.now() - t;
+      feed(chunk);
+    }
+    feed.destroy();
+  },
+};
+const module = py.pyimport("convert.conduct"), listed = py.toPy(hf);
+const steps = module.conduct.callKwargs(listed, { dtype, quantize_rows: quantizeRows, readers });
+const taken = (step) => {
+  const request = step.value.toJs({ depth: 1 });
+  step.value.destroy();
+  return request;
+};
+let request = taken(steps.next());
+while (request[0] !== "done") {
+  const [kind, , name, ...rest] = request;
+  if (kind === "missing") throw new Error(`${folder} has no ${name}`);
+  request = taken(steps.next(answers[kind](name, ...rest)));
 }
-py.globals.set("conversion", conversion);
-py.runPython("import cProfile, pstats, io, time; profiler = cProfile.Profile(); began = time.perf_counter()");
-// PROFILE=0: the time alone (cProfile counts every call, which makes a change in the number of calls look larger)
-py.runPython(process.env.PROFILE === "0" ? "profiler.enable(); profiler.disable(); began = time.perf_counter()" : "profiler.enable()");
-let js = 0;
-for (let at = first; at < size; at += 8 << 20) {
-  const t = performance.now(); const chunk = range(at, Math.min(at + (8 << 20), size)); js += performance.now() - t;
-  conversion.feed(chunk);
-}
-conversion.finish();
+// (the conduct finished the conversion before it said so)
 console.log(py.runPython(`
 profiler.disable()
 total = time.perf_counter() - began

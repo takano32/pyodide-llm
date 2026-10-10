@@ -1,22 +1,26 @@
 // tests/worker-fetches-check.mjs (T357)
 // What a conversion asks of the network, in order, for every kind of source the page converts: the requests (the
-// file and its range) public/worker/convert.js makes for a made-up repository of huggingface.co, and what it hands the
-// converter on the way, held to tests/fixtures/conversion-fetches.json. The conduct of a conversion is the worker's
-// today (which file, how much of its head, which candidate next, the parts of the weights); if it moves (to Python, as
-// the design of T376 proposes), this is what shows that the same things are asked for in the same order, or says what
-// changed.
+// file and its range) made for a made-up repository of huggingface.co, and what the converter is handed on the way,
+// held to tests/fixtures/conversion-fetches.json. The conduct of a conversion (which file, how much of its head, which
+// candidate next) is Python's since T374.2.1 (public/convert/conduct.py), the answers (the fetches, the parts of the
+// weights) the worker's (public/worker/conduct.js): this ran the worker's own steps before, and the fixture is what
+// showed that the two together ask for the same things in the same order.
 //
 //   node tests/worker-fetches-check.mjs            compares; exit 1 where a case differs (the first lines that do are said)
 //   node tests/worker-fetches-check.mjs --write    writes the fixture (read the difference before it is committed)
 //
 // The worker runs in tests/worker-harness.mjs's context, on a clock that moves only where a made-up line is slow: the
-// same requests every run. The converter is a stand-in (no Pyodide): it reads the made-up files as far as the worker
-// depends on it (a GGUF's head that is not all there yet, the bytes of each shard, a tokenizer it refuses), opens the
-// place of the weights as Writer does and counts what it is fed. The kept models are a stand-in that keeps nothing.
+// same requests every run. The conduct is the real one, in Pyodide (Node's, with NumPy: about four seconds). The
+// converter is a stand-in (tests/conduct_hub.py's StandIn): it reads the made-up files as far as the conduct depends on
+// it (a GGUF's head that is not all there yet, the bytes of each shard, a tokenizer it refuses), opens the place of the
+// weights as Writer does and counts what it is fed. The kept models are a stand-in that keeps nothing.
 // What this does not see: the bytes themselves (the unit tests and the net's "python" hold what a conversion writes),
-// the Service Worker, a real line, and the files of this site (worker-check.mjs's download()).
+// the Service Worker, a real line, and the files of this site (worker-check.mjs's download()). The loop that answers
+// the conduct is seen alone, without Pyodide, by tests/worker-conduct-check.mjs.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { loadPyodide } from "pyodide";
+import { PYTHON, placeFile } from "../public/python.js";
 import { workerHarness } from "./worker-harness.mjs";
 
 const FIXTURE = new URL("fixtures/conversion-fetches.json", import.meta.url);
@@ -78,87 +82,47 @@ const hub = (files, line = {}) => (url, init) => {
   return new Response(stream(found, from, end, line.delay, line.held === from), { status: 206, headers: line.unsaid ? {} : { "Content-Range": `bytes ${from}-${end - 1}/${found.size}` } });
 };
 
-// ---- the converter's stand-in (llama2_convert, as convert.js calls it through Pyodide), which writes down what it is handed
-const HEADER = [64, 128, 2, 4, 4, 256, 128], FORM = { bias: false, arch: "llama", qk_norm: false, head_dim: 0, linear: null, rotated: null, convolution: null };
-const proxy = (value) => ({ toJs: () => value, destroy() {} });
-let handed = [];
-const incomplete = () => Object.assign(new Error("the head of the GGUF is not all there"), { type: "Incomplete" });
-// where a GGUF's tensors begin, once its head is all there
-const ggufBase = (first) => {
-  const base = Number(new DataView(first.buffer, first.byteOffset).getBigUint64(4, true));
-  if (first.length < base) throw incomplete();
-  return base;
-};
-function conversion(what, expected, { sink, dtype }) {
-  let fed = 0, feeds = 0;
-  sink.open(1000, proxy(HEADER), "int8", proxy(FORM));
-  handed.push(`${what}, dtype ${typeof dtype === "function" ? "the worker's choice" : dtype}`);
-  return {
-    feed(bytes) {
-      fed += bytes.length;
-      feeds++;
-      return expected ? fed / expected : 1;
-    },
-    finish() {
-      handed.push(`fed ${fed} bytes in ${feeds} pieces${expected === undefined || fed === expected ? "" : `, NOT the ${expected} of its tensors`}; finish()`);
-    },
-    options: proxy({ dtype: "int8", bos: 1 }),
-    tokenizer: { getBuffer: () => ({ data: new Uint8Array(4), release() {} }), destroy() {} },
-    destroy() {},
-  };
-}
-const dataOf = (header) => JSON.parse(header).__metadata__.data;
-const converter = {
-  Conversion: Object.assign({
-    callKwargs(header, base, config, tokenizer, name, kwargs) {
-      const start = `Conversion(a header of ${header.length} characters, base ${base}, start ${kwargs.start}, the config ${JSON.stringify(config)}, ${name} of ${tokenizer.length} bytes, ` +
-        `tokenizer_config ${JSON.stringify(kwargs.tokenizer_config)}, chat_template ${JSON.stringify(kwargs.chat_template)})`;
-      if (new TextDecoder().decode(tokenizer).startsWith("unreadable")) {
-        handed.push(`${start}: refused`);
-        throw new Error(`This model cannot be converted: ${name} is of a kind the engine does not read.`);
-      }
-      const joined = header.startsWith("[");
-      return conversion(start, joined ? JSON.parse(header).reduce((sum, data) => sum + data, 0) : header.startsWith("gguf") ? undefined : dataOf(header), kwargs);
-    },
-  }, {
-    from_gguf: {
-      callKwargs(first, kwargs) {
-        let base;
-        try {
-          base = ggufBase(first);
-        } catch (error) {
-          handed.push(`Conversion.from_gguf(the first ${first.length} bytes): not all of the head yet`);
-          throw error;
-        }
-        return Object.assign(conversion(`Conversion.from_gguf(the first ${first.length} bytes)`, undefined, kwargs), { base });
-      },
-    },
-  }),
-  gguf_weights(first, config) {
-    try {
-      const base = ggufBase(first);
-      handed.push(`gguf_weights(the first ${first.length} bytes, the config ${JSON.stringify(config)})`);
-      return proxy(["gguf header", base]);
-    } catch (error) {
-      handed.push(`gguf_weights(the first ${first.length} bytes): not all of the head yet`);
-      throw error;
-    }
-  },
-  joined_shards(headers) {
-    handed.push(`joined_shards(${headers.length} headers)`);
-    const lengths = headers.map(dataOf);
-    return proxy([JSON.stringify(lengths), lengths]);
-  },
+// ---- the conduct is the real one (public/convert/conduct.py, in Pyodide, as the worker has it) and the worker's loop
+// answers it (public/worker/conduct.js): the requests below are what the two make together. The converter is a
+// stand-in in the conduct's place of it (tests/conduct_hub.py's StandIn, T374.1), which writes down what it is handed;
+// here it also opens the place of the weights as Writer does, and has the options and the tokenizer a conversion ends with
+const pyodide = await loadPyodide();
+await pyodide.loadPackage("numpy", { messageCallback: () => {} });
+for (const name of [...PYTHON.llama2_numpy, ...PYTHON.llama2_convert]) placeFile(pyodide, name, fs.readFileSync(new URL(`../public/${name}`, import.meta.url)));
+placeFile(pyodide, "conduct_hub.py", fs.readFileSync(new URL("conduct_hub.py", import.meta.url)));
+pyodide.runPython(`
+import convert.conduct
+from conduct_hub import StandIn
+
+HEADER, FORM = [64, 128, 2, 4, 4, 256, 128], {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None, "rotated": None, "convolution": None}
+stand = StandIn()
+
+class Opened(stand.Conversion):
+    def __init__(self, *files, sink, **more):
+        # (a refused tokenizer opens nothing, as the converter's own)
+        super().__init__(*files, **more)
+        sink.open(1000, HEADER, "int8", FORM)
+        self.options, self.tokenizer = {"dtype": "int8", "bos": 1}, bytes(4)
+
+for name, value in dict(Conversion=Opened, gguf_weights=stand.gguf_weights, joined_shards=stand.joined_shards).items():
+    setattr(convert.conduct, name, value)
+`);
+// what the stand-in was handed since the last time this was asked
+const handedSoFar = () => {
+  const taken = pyodide.runPython("taken = list(stand.handed); stand.handed.clear(); taken"), handed = taken.toJs();
+  taken.destroy();
+  return handed;
 };
 let kept = [];
 context.stand = {
-  converter,
+  // (the folder's steps alone call the converter's window, and no case here is a folder)
+  converter: {},
   kept: {
     openKept: async () => null, replaced: async () => [], forget: async () => {}, keeper: async () => undefined,
     keep: async (model, manifest) => { kept.push(`kept as ${model.conversion.dtype}: ${manifest.repo}@${manifest.revision.slice(0, 7)}, ${manifest.bytes} bytes, options ${JSON.stringify(manifest.options)}`); },
   },
   // (no kernels: the checkpoint's place is a Python bytearray, as with ?without=kernels)
-  pyodide: { globals: { get: () => () => ({ destroy() {}, getBuffer: () => ({ data: new Uint8Array(1000), release() {} }) }) } },
+  pyodide,
   numpy: { Llama: { callKwargs: () => ({}) }, OUTLIER_CHANNELS: 8, KV_START: 256 },
 };
 run("state.llama2_convert = stand.converter; state.keptModule = stand.kept; state.pyodide = stand.pyodide; state.llama2_numpy = stand.numpy; " +
@@ -207,7 +171,7 @@ const CASES = [
 const shortUrl = (url) => url.replace(/^https:\/\/huggingface\.co\/(.+?)\/resolve\/([0-9a-f]{7})[0-9a-f]{33}\//, "$1@$2 ");
 const found = {};
 for (const [name, { dtype, ...source }, files, line = {}] of CASES) {
-  handed = [];
+  handedSoFar();
   kept = [];
   navigatorStandIn.deviceMemory = line.deviceMemory ?? 8;
   fresh(hub(files, line));
@@ -216,7 +180,7 @@ for (const [name, { dtype, ...source }, files, line = {}] of CASES) {
   await sleep(0);
   found[name] = {
     requests: requests.map((r) => `${r.method} ${shortUrl(r.url)}${r.range ? ` ${r.range}` : ""}`),
-    converter: [...handed, ...kept],
+    converter: [...handedSoFar(), ...kept],
     ended: failed ? `failed: ${failed.error.message}` : `converted; ${messages.filter((m) => m.type === "progress").length ? "progress was told" : "NO progress was told"}`,
   };
   run("state.llama = undefined");

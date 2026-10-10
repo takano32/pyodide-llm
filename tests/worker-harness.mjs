@@ -3,7 +3,7 @@
 // a clock of the test's: what the checks that run the worker in Node share (worker-check.mjs: where fetching and loading
 // meet; worker-fetches-check.mjs: what a conversion asks for).
 //
-//   const { context, run, requests, messages, fresh, body, bytesOf, sleep, clock, ... } = workerHarness({ told })
+//   const { context, run, requests, messages, fresh, body, bytesOf, sleep, clock, ... } = workerHarness({ told, gpu })
 //
 //   context, run(code)     the worker's global (its functions and `state` are its properties) and a line run in it
 //   fresh(route)           forgets the requests and the messages; route(url, init, n) answers the n-th request of that
@@ -20,7 +20,7 @@
 import vm from "node:vm";
 import { runWorker } from "./worker-source.mjs";
 
-export function workerHarness({ told = false } = {}) {
+export function workerHarness({ told = false, gpu = false } = {}) {
   const SCALE = 100;  // the worker's milliseconds per real millisecond
   const MiB = 1024 * 1024, PART = 8 * MiB;
   const realNow = () => performance.now();
@@ -103,7 +103,8 @@ export function workerHarness({ told = false } = {}) {
   // worker.js and its modules (T350: tests/worker-source.mjs makes scripts of them) in a vm context whose global is its
   // self, as in a worker
   const messages = [];
-  const navigatorStandIn = { deviceMemory: 8 };
+  // gpu: a WebGPU that gives no adapter (the worker asks for one as it begins: state.gpuAdapter is the check's to set)
+  const navigatorStandIn = { deviceMemory: 8, ...(gpu && { gpu: { requestAdapter: async () => null } }) };
   const context = vm.createContext({
     console, URL, URLSearchParams, TextDecoder, TextEncoder, AbortController, DOMException, Response, Headers,
     ReadableStream, WritableStream, TransformStream, WebAssembly, Atomics, SharedArrayBuffer,

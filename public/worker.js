@@ -20,8 +20,8 @@
 
 // T350: this file is the window of the worker: its URL, init(), generate() and the messages. The rest is in the modules
 // of worker/: state.js (the variables they share, in one object), told.js, clock.js, pyodide.js (the runtime's
-// loading), weights.js (where a model's weights go), ranges.js and sources.js (the fetching), convert.js (a Hugging
-// Face model), load.js and timing.js (what /benchmark/ times). Each is asked for with this worker's ?v=<build>, so
+// loading), weights.js (where a model's weights go), ranges.js and sources.js (the fetching), conduct.js (T374.2.1: what
+// answers the conduct of a conversion, which is Python's), convert.js (a Hugging Face model), load.js and timing.js (what /benchmark/ times). Each is asked for with this worker's ?v=<build>, so
 // that all come from one deployment (as forward.js reads jobs.js), and all at once: one after another's end would add
 // a round trip for each to the first load. The page's first message may come while they are fetched, and a module
 // worker's port opens at the module's first await, where a message that finds no onmessage is lost (helper.js, T109):
@@ -29,7 +29,7 @@
 // they came.
 const early = [];
 self.onmessage = (event) => early.push(event);
-const modules = Object.fromEntries(["state", "told", "clock", "pyodide", "weights", "ranges", "sources", "convert", "load", "timing"].map((name) =>
+const modules = Object.fromEntries(["state", "told", "clock", "pyodide", "weights", "ranges", "sources", "conduct", "convert", "load", "timing"].map((name) =>
   [name, import(new URL(`worker/${name}.js${self.location.search}`, import.meta.url))]));
 // (the list of the engine's Python files, with the worker's modules and not after them: init() reads the files by it)
 const python = import(new URL(`python.js${self.location.search}`, import.meta.url));
