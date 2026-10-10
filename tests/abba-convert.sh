@@ -11,7 +11,7 @@ if [ ! -d .tmp/base ]; then
   cp -r node_modules .tmp/base/ && cp public/simdkernel* .tmp/base/public/
 fi
 # PROFILE=0 (the time without cProfile): the base tree's tool may not know it (run the profiled comparison first)
-if [ "${PROFILE:-}" = 0 ]; then sed -i 's/; profiler.enable()//' .tmp/base/tests/profile-convert.mjs; fi
+if [ "${PROFILE:-}" = 0 ]; then sed -i 's/began = time.perf_counter(); profiler.enable()")/profiler.enable(); profiler.disable(); began = time.perf_counter()")/' .tmp/base/tests/profile-convert.mjs; fi
 mkdir -p .tmp/abba; : > .tmp/abba/lines
 run() { # tree name dtype
   (cd "$1" && node tests/profile-convert.mjs "$OLDPWD/$dir" "$3" 2>&1 | sed -n 's/.*(\([0-9]*\) MB\/s).*/\1/p' | head -1 | sed "s|^|$2 $3 |") >> .tmp/abba/lines

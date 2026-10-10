@@ -46,7 +46,7 @@ if (gguf) {
 py.globals.set("conversion", conversion);
 py.runPython("import cProfile, pstats, io, time; profiler = cProfile.Profile(); began = time.perf_counter()");
 // PROFILE=0: the time alone (cProfile counts every call, which makes a change in the number of calls look larger)
-if (process.env.PROFILE !== "0") py.runPython("profiler.enable()");
+py.runPython(process.env.PROFILE === "0" ? "profiler.enable(); profiler.disable(); began = time.perf_counter()" : "profiler.enable()");
 let js = 0;
 for (let at = first; at < size; at += 8 << 20) {
   const t = performance.now(); const chunk = range(at, Math.min(at + (8 << 20), size)); js += performance.now() - t;
