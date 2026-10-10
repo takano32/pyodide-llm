@@ -17,6 +17,13 @@ case "$suite" in
   *) echo "usage: bash tests/suite.sh light|full (not '$suite')" >&2; exit 2 ;;
 esac
 echo "suite: $suite, starting"
+# T384: no test waits forever. One run of the full suite stood still for 88 minutes after a test's last line with nothing
+# in the log to say where (run 38024999470). Every node of the suite has a limit (TEST_LIMIT seconds, 30 minutes: the
+# longest test takes about ten); at the limit tests/limited.mjs prints where the test stood and what kept it alive, and
+# kills it, which fails the suite.
+node() {
+  command node tests/limited.mjs "${TEST_LIMIT:-1800}" "$@"
+}
 # each part's name and seconds, for the log (tests/ci.mjs reads the lines that start with "suite:" and "--- ")
 part() {
   local name=$1 began=$SECONDS
