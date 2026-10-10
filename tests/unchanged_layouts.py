@@ -9,7 +9,7 @@
 #   layout    layout(): the shape and the kind of every tensor, in file order
 #   places    Writer's: where each of them begins, and the checkpoint's size (checkpoint_size()); a refusal's words
 #   dtype     checkpoint_dtype() of a file of that size
-#   engine    the plan Llama(external=) hands forward.js: where every tensor is by the engine's own order (the
+#   engine    the plan Llama(external=) hands forward.js (tests/engine_plans.py): where every tensor is by the engine's own order (the
 #             *_tensors() of the architecture), and every other key of the plan (the derived tables as a hash)
 #   external  external_tensors(): the places before the model is built (a Llama's; the others' refusal)
 #   source    conversion_plan(): the names of the Hugging Face tensors each one is made of and what is done to them
@@ -21,7 +21,6 @@
 #   python tests/unchanged_layouts.py <the root of a tree>        -> one JSON object {name: what was said}
 import hashlib
 import json
-import struct
 import sys
 
 import numpy as np
@@ -30,6 +29,7 @@ root = sys.argv[1] if len(sys.argv) > 1 else "."
 sys.path.insert(0, root + "/public")
 import llama2_convert as C  # noqa: E402
 import llama2_numpy as L  # noqa: E402
+from engine_plans import engine_plan  # noqa: E402  (tests/engine_plans.py: this script's neighbour, whichever tree is asked)
 
 found = {}
 
@@ -95,42 +95,6 @@ FAMILIES = [
 DTYPES = ("float32", "float16", "int8", "int6", "ternary")
 
 
-class Handed(Exception):
-    """The plan is in hand: nothing of the engine is built."""
-
-
-class External:
-    """What Llama(external=) asks of forward.js, as far as the plan: the header, the final norm's weight (with three
-    channels far above the rest where the case asks for outliers), and start(plan), which keeps the plan and ends."""
-
-    def __init__(self, header, size, outliers):
-        self.header, self.size, self.outliers, self.plan = header, size, outliers, None
-
-    def read(self, offset, length):
-        if offset == 0:
-            return struct.pack("<7i", *self.header)
-        weight = 1.0 + np.arange(length // 4, dtype=np.float32) / 1024
-        if self.outliers:
-            weight[[5, 77, 130]] = (50.0, 60.0, 70.0)
-        return weight.tobytes()
-
-    def start(self, plan):
-        self.plan = plan
-        raise Handed()
-
-
-def engine_plan(header, dtype, form, more, size):
-    external = External(header, size, more.get("outliers", False))
-    options = {key: value for key, value in more.items() if key != "outliers"}
-    try:
-        L.Llama(None, b"", dtype=dtype, external=external, **form, **options)
-    except Handed:
-        pass
-    plan = dict(external.plan)
-    plan["derived"] = {name: hashlib.sha256(bytes(value)).hexdigest()[:16] for name, value in plan["derived"].items()}
-    return plan
-
-
 for name, headers, form, engine, source in FAMILIES:
     for header in HEADERS[headers]:
         dim, hidden, n_layers, n_heads = header[:4]
@@ -151,7 +115,7 @@ for name, headers, form, engine, source in FAMILIES:
                 None, header, dtype, whole, sink=type("Sink", (), {"open": lambda *_: None, "write": lambda *_: None})()).tensors])
             said(f"{case}, {dtype}: dtype", lambda: L.checkpoint_dtype(header, size, whole))
             if engine is not None:
-                said(f"{case}, {dtype}: engine", lambda: engine_plan(header, dtype, form, engine, size))
+                said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size))
                 if not engine:
                     said(f"{case}, {dtype}: external", lambda: L.external_tensors(header, dtype, whole))
 

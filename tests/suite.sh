@@ -60,6 +60,10 @@ page_modules() {
   # exported there, what createForward() hands a part is what the part takes, and every pool.<name>, gpuPart.<name> and
   # held.<name> is a member of that object (none of these is a variable: a wrong name is undefined without a word)
   node tests/forward-modules-check.mjs
+  # T357: the plan Python hands forward.js and the plan forward.js hands the GPU's worker, each held to both of its ends:
+  # a key written and read nowhere, or read and never written (undefined without a word), for one made-up model of every
+  # layout and dtype (under a second)
+  node tests/plan-keys-check.mjs
   # T355: the names the model page's script (src/pages/index.astro and src/page/) uses: declared, imported where they are
   # exported, or a page's globals, and every page.<name> a field of the one object the parts share (the build does not
   # say a name that is nowhere, and nothing opens the page outside CI's browsers)
