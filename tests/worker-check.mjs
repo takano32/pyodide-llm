@@ -501,6 +501,18 @@ const ok = (line) => {
     assert.equal(calls[0][0], "jinja2");
     assert.notEqual(calls[0][1]?.checkIntegrity, false, "jinja2 was fetched without its integrity check");
     assert.equal(warned.length, 0);
+    // two asks for one Pyodide while the first is on its way share one load (watchArrivals() wraps fetch and puts back
+    // the one it found: two overlapping would leave the first's wrapper on every fetch), and a load that failed is tried again
+    const once = pyodide(async () => {});
+    const [first, second] = [context.templatePackage(once), context.templatePackage(once)];
+    assert.equal(first, second, "a second load of jinja2 beside the first");
+    assert.equal(await first, true);
+    assert.equal(calls.length, 2);
+    const failing = pyodide(() => Promise.reject(new Error("the CDN said no")));
+    assert.equal(await context.templatePackage(failing), false);
+    assert.equal(await context.templatePackage(failing), false);
+    assert.equal(calls.length, 4, "a load that failed was not tried again");
+    warned.length = 0;
     assert.equal(await context.templatePackage(pyodide(() => Promise.reject(new Error("the CDN said no")))), false);
     assert.match(warned.pop(), /jinja2 did not load \(.*the CDN said no.*\): chat templates are read by the converter's own reader/);
     // a package loadPackage says nothing about but that is not there (it writes its failures to the console only)

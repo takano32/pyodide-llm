@@ -182,7 +182,21 @@ export async function pyodideSteps(version, importer) {
 // conversion is first made: most visitors never convert anything. Whether it came: where it did not (the CDN said no,
 // nothing arrived for QUIET_SECONDS), the conversion goes on and the converter's own reader reads what it can, so
 // nothing is thrown and nothing is said to the visitor.
-export async function templatePackage(pyodide) {
+// One load at a time for a Pyodide: watchArrivals() wraps self.fetch and puts back the one it found, so two overlapping
+// ones (a conversion that was cancelled while jinja2 came, and the next one) would leave the first's wrapper on every
+// fetch for good (T369 review). A load that did not succeed is forgotten, and the next conversion tries again.
+const templatePackages = new WeakMap();
+export function templatePackage(pyodide) {
+  if (!templatePackages.has(pyodide)) {
+    templatePackages.set(pyodide, loadTemplatePackage(pyodide).then((came) => {
+      if (!came) templatePackages.delete(pyodide);
+      return came;
+    }));
+  }
+  return templatePackages.get(pyodide);
+}
+
+async function loadTemplatePackage(pyodide) {
   const watch = watchArrivals(), quiet = watch.quiet(QUIET_SECONDS);
   try {
     const stalled = quiet.promise.then(() => { throw new Error(`nothing arrived for ${QUIET_SECONDS} seconds`); });

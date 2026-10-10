@@ -19,7 +19,7 @@ import fs from "node:fs";
 
 // what a module worker has without declaring it, as far as these files use it
 const GLOBALS = new Set(("AbortController Array Boolean DataView Date Error Int32Array JSON Map Math MessageChannel Number Object " +
-  "PerformanceObserver Promise ReadableStream Response Set SharedArrayBuffer String Symbol TextDecoder TransformStream URL URLSearchParams " +
+  "PerformanceObserver Promise ReadableStream Response Set SharedArrayBuffer String Symbol TextDecoder TransformStream URL URLSearchParams WeakMap " +
   "Uint8Array Worker WritableStream clearInterval clearTimeout console fetch globalThis navigator performance postMessage self setInterval " +
   "setTimeout undefined").split(" "));
 
