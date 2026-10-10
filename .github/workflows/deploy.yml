@@ -52,7 +52,12 @@ jobs:
       # T193: the light suite only (what keeps a broken page off the site: pytest, the page's modules, smoke). The heavier
       # checks run in tests.yml, every night (its schedule) and on a branch with full=true: a commit on main that this
       # suite cannot tell apart is checked by the next full suite.
+      # T384: a test of this suite takes seconds (the longest about half a minute), and the job has 30 minutes: with the
+      # suite's own limit of 30 minutes a test that stood still was cut by the job before tests/limited.mjs could say
+      # where it stood (run 38055812702, the second time after worker-fetches-check's last line).
       - name: Tests (the light suite)
+        env:
+          TEST_LIMIT: 300
         run: |
           echo "suite: light, by ${{ github.event_name }}"
           bash tests/suite.sh light
