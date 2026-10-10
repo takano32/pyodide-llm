@@ -2,7 +2,7 @@
 // The net under a refactoring: what the working tree does, held to what another commit does (main, by default).
 // Nothing here knows how the files are divided; it asks both trees the same questions and compares the answers.
 //
-//   node tests/unchanged.mjs [--before <a commit, default origin/main>] [shaders models calls python page bench gpuworker sizes]
+//   node tests/unchanged.mjs [--before <a commit, default origin/main>] [shaders models calls choices exports layouts python page bench gpuworker sizes]
 //   (PYTHON=.venv/bin/python; in CI: tests.yml's extra="node tests/unchanged.mjs")
 //
 //   shaders  every export of public/shaders.js (a text as it is; T366: a maker of WGSL as the texts it makes, for every
@@ -13,6 +13,13 @@
 //   models   every export of src/models.js: the data as JSON, and what every exported function answers for every
 //            entry of the list (a builder moved to another file leaves both as they were)
 //   calls    tests/unchanged-calls.mjs: the plan Python hands forward.js and every call of a kernel, 150 hashes
+//   layouts  (T357) tests/unchanged_layouts.py: what a tree says of a checkpoint's file over a grid of made-up headers, forms
+//            and dtypes (18 families of the four layouts, five dtypes): layout(), Writer's places and checkpoint_size(),
+//            checkpoint_dtype(), the plan Llama(external=) hands forward.js (the engine's own order of the tensors),
+//            external_tensors() and conversion_plan(); what the converter reads of 23 made-up config.json files (the
+//            header, the form, an LFM2's FFN); and the repetition penalty's window. The order of a file's tensors is
+//            written in four places and the unit tests walk the branches of the few models they make: here all four
+//            answer for the same grid, and the next one to move them (T359) is shown what moved
 //   python   the unit tests under tests/unchanged_recorder.py: the checkpoints, options and tokenizers of every
 //            conversion the tests make, the logits of every forward pass, the ids of every encode (two runs of pytest)
 //   choices  (review) tests/unchanged-choices.mjs: what forward.js decides without a browser over a grid of made-up numbers (GPU or CPU for
@@ -50,7 +57,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const flag = (name, otherwise) => (args.includes(name) ? args.splice(args.indexOf(name), 2)[1] : otherwise);
 const before = flag("--before", "origin/main");
-const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "exports", "python", "page", "bench", "gpuworker", "sizes"];
+const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "exports", "layouts", "python", "page", "bench", "gpuworker", "sizes"];
 const git = (...command) => execFileSync("git", command, { cwd: root, maxBuffer: 1 << 28 });
 const python = process.env.PYTHON ?? "python3";
 const LIMIT_BYTES = 50 * 1024, LIMIT_LINES = 800;
@@ -133,6 +140,12 @@ async function models(other) {
 function calls(other) {
   const run = (tree) => JSON.parse(execFileSync("node", [path.join(root, "tests/unchanged-calls.mjs"), tree], { maxBuffer: 1 << 28, env: { ...process.env, PYTHON: python } }));
   return said("the plans and the kernels' calls", differences(run(other), run(root)));
+}
+
+// (T357) what both trees say of a checkpoint's file, a config.json and the penalty's window, over one grid
+function layouts(other) {
+  const run = (tree) => JSON.parse(execFileSync(python, [path.join(root, "tests/unchanged_layouts.py"), tree], { maxBuffer: 1 << 28, env: { ...process.env, PYTHONHASHSEED: "0" } }));
+  return said("the checkpoints' layouts", differences(run(other), run(root)));
 }
 
 function pythonTests(other) {
@@ -340,7 +353,7 @@ function sizes() {
 
 const { commit, folder } = kinds.some((kind) => kind !== "sizes") ? otherTree(before) : {};
 if (commit) console.log(`unchanged: the working tree against ${before} (${commit.slice(0, 7)})`);
-const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), choices: () => choices(folder), exports: () => exports(folder), python: () => pythonTests(folder), page: () => page(folder), bench: () => bench(folder), gpuworker: () => gpuworker(folder), sizes };
+const checks = { shaders: () => shaders(folder), models: () => models(folder), calls: () => calls(folder), choices: () => choices(folder), exports: () => exports(folder), layouts: () => layouts(folder), python: () => pythonTests(folder), page: () => page(folder), bench: () => bench(folder), gpuworker: () => gpuworker(folder), sizes };
 let ok = true;
 for (const kind of kinds) {
   if (!checks[kind]) throw new Error(`no check "${kind}": ${Object.keys(checks).join(", ")}`);
