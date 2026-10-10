@@ -7,7 +7,7 @@
 # the two windows (llama2_convert, llama2_numpy) and Llama itself, so that a part moved behind them is asked the same:
 #
 #   layout    layout(): the shape and the kind of every tensor, in file order
-#   places    Writer's: where each of them begins, and the checkpoint's size (checkpoint_size()); a refusal's words
+#   places    Writer's: where each of them begins, and the checkpoint's size (checkpoint_size())
 #   dtype     checkpoint_dtype() of a file of that size
 #   engine    the plan Llama(external=) hands forward.js (tests/engine_plans.py): where every tensor is by the engine's own order (the
 #             *_tensors() of the architecture), and every other key of the plan (the derived tables as a hash)
@@ -17,6 +17,8 @@
 #   config    normalize(), checkpoint_header(), checkpoint_form(), query_scale(), unturned_layers() and rotary_dim()
 #             of made-up config.json files of every family (an LFM2's FFN by block_multiple_of among them)
 #   window    which of a history's tokens penalize() reaches (the repetition penalty's window)
+# A refusal is an answer too, and it is compared by the class of its exception alone (the review of T357, T359): its
+# words are for whoever reads them, and a refactoring that says the same in other words has changed nothing here.
 #
 #   python tests/unchanged_layouts.py <the root of a tree>        -> one JSON object {name: what was said}
 import hashlib
@@ -39,11 +41,11 @@ def short(value):
 
 
 def said(name, ask, whole=False):
-    """What ask() answers, or the words of its refusal; a long answer as a hash and its length."""
+    """What ask() answers, or the class of its refusal; a long answer as a hash and its length."""
     try:
         answer = ask()
-    except Exception as error:  # a refusal is an answer too: which one, and in which words
-        found[name] = f"raises {type(error).__name__}: {error}"
+    except Exception as error:  # a refusal is an answer too: which one (its words are not compared)
+        found[name] = f"raises {type(error).__name__}"
         return None
     text = json.dumps(answer, sort_keys=True, default=str)
     found[name] = text if whole or len(text) <= 200 else f"{short(answer)} ({len(text)} characters)"
@@ -53,6 +55,14 @@ def said(name, ask, whole=False):
 def signs(widths, block):
     """A rotated basis for these widths: every seventh sign minus."""
     return {"block": block, "signs": {str(width): L.sign_bits(np.where(np.arange(width) % 7 == 3, -1.0, 1.0)) for width in widths}}
+
+
+def written(writer):
+    """[where it begins, its shape, layout()'s "is a matrix"] of every tensor a Writer places. (Until T359's second
+    step is on main the other tree's Writer says it as tensors; from then on the first branch goes.)"""
+    if hasattr(writer, "tensors"):
+        return [list(tensor) for tensor in writer.tensors]
+    return [[place.offset, place.row.shape, {L.VECTOR: False, L.TABLE: None}.get(place.row.role, True)] for place in writer.places]
 
 
 # ---- the grid. Every dimension of a header differs from the others (a tensor taken for another is another shape),
@@ -111,8 +121,8 @@ for name, headers, form, engine, source in FAMILIES:
             said(f"{case}: source", lambda: C.conversion_plan(header, whole, **source))
         for dtype in DTYPES:
             size = said(f"{case}, {dtype}: size", lambda: C.checkpoint_size(header, dtype, whole))
-            said(f"{case}, {dtype}: places", lambda: [list(tensor) for tensor in C.Writer(
-                None, header, dtype, whole, sink=type("Sink", (), {"open": lambda *_: None, "write": lambda *_: None})()).tensors])
+            said(f"{case}, {dtype}: places", lambda: written(C.Writer(
+                None, header, dtype, whole, sink=type("Sink", (), {"open": lambda *_: None, "write": lambda *_: None})())))
             said(f"{case}, {dtype}: dtype", lambda: L.checkpoint_dtype(header, size, whole))
             if engine is not None:
                 said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size))
