@@ -29,7 +29,7 @@ import numpy as np
 
 from engine.checkpoint import outside
 from engine.dtypes import DTYPES, QUANTIZED
-from engine.layout import EMBEDDING, TABLE, check_suited, placed
+from engine.layout import EMBEDDING, PARTLY, TABLE, check_suited, layout_of, placed
 
 
 def read_tensor(checkpoint, place, whole=True, copy=False):
@@ -75,17 +75,19 @@ def read_rows(checkpoint, rows, dtype, shared_weights, external):
 def rope_tables(arch, seq_len, head_size, rotary, magnitude, dtype, frequencies):
     """The RoPE tables (cos, sin) of a file that has none of its own: half precision is too coarse for the rotation
     angles, and a quantized file leaves the tables out. None where the file has them. frequencies(width): the angle
-    per position of each pair; rotary: how many values of a head are turned; magnitude: yarn's (rope_magnitude())."""
-    if arch == "gpt2":
+    per position of each pair; rotary: how many values of a head are turned; magnitude: yarn's (rope_magnitude()).
+    arch: the architecture's name, whose facts (engine/layout.py's Layout) say which tables these are."""
+    layout = layout_of(arch)
+    if layout.rope is None:
         # no rotation: the position is a row of a learned table, added to the embedding
         zeros = np.zeros((seq_len, head_size // 2), dtype=np.float32)
         return zeros, zeros
     if dtype == "float32":
         return None
-    if arch in ("neox", "qwen35"):
+    if layout.rope == PARTLY:
         return partial_tables(seq_len, head_size, rotary, frequencies)
     # (yarn's magnitude is in a Llama's tables alone, as it always was)
-    magnitude = 1.0 if arch == "lfm2" else magnitude
+    magnitude = magnitude if layout.yarn_magnitude else 1.0
     angles = np.arange(seq_len)[:, None] * frequencies(head_size)
     return tuple((turn(angles) * magnitude).astype(np.float32) for turn in (np.cos, np.sin))
 

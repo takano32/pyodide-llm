@@ -47,9 +47,10 @@ from engine.packing import (NOT_TERNARY, TERNARY_GROUP, TERNARY_VALUES, group32,
                             unpacked6)
 from engine.dtypes import DTYPES, EITHER, PACKED, QUANTIZED, Dtype, dtype_of  # noqa: F401
 from engine.layout import (ATTENDING, CLASSIFIER, CONVOLUTION, EMBEDDING, EVERY, FORM, LAYOUTS, LINEAR,  # noqa: F401
-                           MATRIX, POSITIONS, STATEFUL, TABLE, VECTOR, Dims, Place, Row, after,
-                           convolution_form, file_size, form_of, kind_of, kinds_form, layer_slots,
-                           linear_form, linear_widths, placed, suited, tensor_rows)
+                           MATRIX, PARTLY, POSITIONS, STATEFUL, TABLE, VECTOR, WHOLE, Dims, Layout, Place, Row,
+                           Stateful, after, convolution_form, file_size, form_of, kind_of, kinds_form,
+                           layer_slots, layout_of, linear_form, linear_widths, placed, slots_of,
+                           stateful_form, stateful_kinds, suited, tensor_rows, unturned_layers)
 from engine.layers import (RMS_EPS, delta_rule, gelu, hadamard, head_norm, l2_heads, layernorm,  # noqa: F401
                            partial_rope, rmsnorm, rope, rope_frequencies, rope_magnitude, rotate,
                            rotated_form, rotated_widths, sign_bits, silu, softplus, unrotate)
@@ -59,5 +60,5 @@ from engine.checkpoint import (OUTLIER_CHANNELS, OUTLIER_RATIO, SEVERAL_KINDS, T
                                outlier_columns)
 from engine.sampler import NOT_FINITE, REPETITION_WINDOW, KernelSampler, NumpySampler, greedy  # noqa: F401
 from engine.external import ExternalForward  # noqa: F401
-from engine.plan import forward_plan, layer_facts, plan_widths  # noqa: F401
+from engine.plan import Settings, forward_plan, layer_facts, plan_widths  # noqa: F401
 from engine.model import KV_START, Llama, PROMPT_BLOCK, SWITCHES  # noqa: F401

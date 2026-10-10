@@ -28,7 +28,8 @@ import struct
 import numpy as np
 
 from engine.tokenizer import BOS, Tokenizer
-from engine.layout import Dims, convolution_form, file_size, linear_form, linear_widths
+from engine.layout import (PARTLY, Dims, file_size, layout_of, linear_form, linear_widths, stateful_kinds,
+                           unturned_layers)
 from engine.layers import (RMS_EPS, delta_rule, gelu, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
                            unrotate)
@@ -38,7 +39,7 @@ from engine.checkpoint import SEVERAL_KINDS
 from engine.tensors import read_rows, rope_tables
 from engine.sampler import KernelSampler, NumpySampler, greedy
 from engine.external import STEPS, ExternalForward
-from engine.plan import forward_plan
+from engine.plan import Settings, forward_plan
 from engine import generation
 
 # The KV cache starts with room for this many positions and doubles when a run gets there: a context of 4096
@@ -55,6 +56,25 @@ SWITCHES = ("kernels", "int8", "relaxed", "sampler", "kv16")
 # message (stop, a new model) while one call runs, and a block of 16 keeps that under a second on a 1.5B model.
 # T147: forward.js says how many it takes (promptBlock: more where the GPU takes the prompt)
 PROMPT_BLOCK = 16
+
+
+# The NumPy forward pass's part of each kind of layer that keeps a state (engine/layout.py's Stateful, by its name):
+# the method of Llama that takes a token through one such layer, (a, xb) -> what the layer adds to x, and its states,
+# (the kind's numbers, how many such layers, dim) -> {the attribute: the array, zero before the first token}. A model
+# has them under those names, and follow() clears them at position 0.
+def linear_states(linear, layers, dim):
+    """A matrix for every value head, and the last conv - 1 tokens' q, k and v before the convolution (the oldest
+    first): of a size the context does not change."""
+    return {"delta_state": np.zeros((layers, linear["value_heads"], linear["key_dim"], linear["value_dim"]), dtype=np.float32),
+            "conv_state": np.zeros((layers, linear["conv"] - 1, linear_widths(linear)[0]), dtype=np.float32)}
+
+
+def convolution_states(convolution, layers, dim):
+    """T260: the last taps - 1 tokens' values before the convolution alone (the oldest first)."""
+    return {"conv_state": np.zeros((layers, convolution["taps"] - 1, dim), dtype=np.float32)}
+
+
+STATEFUL_LAYERS = {"linear": ("linear_attention", linear_states), "convolution": ("short_convolution", convolution_states)}
 
 
 class Llama:
@@ -168,7 +188,11 @@ class Llama:
         # packed: past where the bytes are read, a quantized file is int8
         stored = dtype_of(dtype)
         quantized = stored in QUANTIZED
+        # the architecture's facts (engine/layout.py's Layout), which is all of the architecture that is read below
+        layout = layout_of(arch)
         # The int8 kernels work on groups of 32 only
+        # (the numbers of linear-attention layers, read here for what is sized by them below: the Dims, further down,
+        # holds them to the architecture)
         self.linear = linear_form(linear)
         # (T229: and a linear-attention layer's output matrix, whose rows are as long as its value heads together)
         suitable = not quantized or (dim % 32 == 0 and self.q_dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0
@@ -182,7 +206,7 @@ class Llama:
         self.arch, self.parallel_residual = arch, parallel_residual
         # T237: a rotated basis turns what every matrix reads (turned), and the embedding's row back
         self.rotated = rotated_form(rotated, rotated_widths(dim, self.q_dim, hidden_dim, self.linear))
-        if self.rotated is not None and arch in ("gpt2", "neox", "lfm2"):
+        if self.rotated is not None and not layout.rotatable:
             raise ValueError("A rotated basis is a Llama's, a Qwen's or a Qwen3.5's: no GPT-2, GPT-NeoX or LFM2 has one.")
         # (the signs and the block themselves, not this model: a function that held the model would be a cycle of
         # references, and the weights would then stay until a collection)
@@ -192,25 +216,30 @@ class Llama:
         # how many values of each head RoPE turns: all of them unless the model says otherwise
         self.rotary = int(rotary) if rotary else self.head_size
         # T255: the layers whose q and k go into the scores as their matrices (and norms) leave them
-        unturned = unturned.to_py() if hasattr(unturned, "to_py") else unturned
-        self.unturned = tuple(sorted({int(layer) for layer in unturned or ()}))
-        if self.unturned and (arch != "llama" or not 0 <= self.unturned[0] <= self.unturned[-1] < self.n_layers):
-            raise ValueError("The layers RoPE leaves alone are layers of a Llama, and none of another architecture.")
+        self.unturned = unturned_layers(arch, n_layers, unturned)
+        # what the file cannot say of itself (engine/layout.py's FORM; the rotated basis moves no tensor), and with it
+        # for every layer (does it keep a state: a linear-attention layer or a convolution one, its place in the stacks
+        # of its kind's tensors). The form is held to its architecture there: one without the layers its architecture
+        # has, or with another's, is refused
+        form = {"arch": arch, "bias": bias, "qk_norm": qk_norm, "head_dim": head_dim, "linear": linear,
+                "convolution": convolution, "kinds": kinds}
+        dims = Dims((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len), form)
+        self.slots = dims.slots
+        # the numbers of its layers that keep a state, under their kind's name: linear (T229, a Qwen3.5's
+        # linear-attention layers), convolution (T260, an LFM2's convolution layers); None, of a model without
+        for kind in stateful_kinds():
+            setattr(self, kind, getattr(dims, kind))
+        # what of the forward pass differs by the architecture, as the reference reads it at every token: the kind of
+        # its norms and of its FFN, and whether RoPE turns the heads of q and k whole, in part or not at all
+        self.layer_norm, self.gated_ffn = layout.layer_norm, layout.gated_ffn
+        self.turning, self.partly = layout.rope is not None, layout.rope == PARTLY
+        # (and of its layers that keep a state: the name of the reference's step that is theirs, and of their states;
+        # none, unless NumPy computes such layers, below)
+        self.stateful, self.states = None, ()
         self.positions = None
         self.q_norm = self.k_norm = self.wg = None
-        if (arch == "qwen35") != (self.linear is not None) or (self.linear and n_layers < self.linear["every"]):
-            raise ValueError("A hybrid model (qwen35) and the numbers of its linear layers go together.")
-        # T260: an LFM2's convolution layers
-        self.convolution = convolution_form(convolution, n_layers)
-        if (arch == "lfm2") != (self.convolution is not None):
-            raise ValueError("An LFM2 (lfm2) and its convolution layers go together.")
-        # what the file cannot say of itself (engine/layout.py's FORM; the rotated basis moves no tensor), and with it
-        # what the file holds: its rows, and for every layer (does it keep a state: a linear-attention layer or a
-        # convolution one, its place in the stacks of its kind's tensors)
-        form = {"arch": arch, "bias": bias, "qk_norm": qk_norm, "head_dim": head_dim, "linear": self.linear,
-                "convolution": self.convolution, "kinds": kinds}
-        dims = Dims((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len), form)
-        self.slots, self.rows = dims.slots, dims.rows()
+        # what the file holds: its rows
+        self.rows = dims.rows()
         if external is not None and dims.kinds is not None:
             raise ValueError(SEVERAL_KINDS)
         self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
@@ -233,10 +262,10 @@ class Llama:
                                  f"{file_size(self.rows, stored)} as {stored}.")
             # forward.js's forward pass, and what else its engine offers, in the reference's places
             # (the plan is made here and handed over: nothing in Python keeps it)
-            outside = self.external_forward = ExternalForward(forward_plan(
-                dims, stored, external.read, int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,
+            outside = self.external_forward = ExternalForward(forward_plan(dims, stored, external.read, Settings(
+                int8=keep_int8, disable=disable, kv_start=KV_START, rotary=self.rotary,
                 parallel_residual=parallel_residual, rms_norm_eps=self.rms_norm_eps, unturned=self.unturned,
-                rotated=self.rotated, tables=tables), external)
+                rotated=self.rotated, tables=tables)), external)
             self.backend, self._external = outside.backend, (outside.engine, outside.logits)
             for name in STEPS:
                 if hasattr(outside, name):
@@ -247,17 +276,13 @@ class Llama:
             attending = sum(not lines for lines, _ in self.slots)
             self.key_cache = np.zeros((attending, self.n_kv_heads, min(KV_START, self.seq_len), self.head_size), dtype=np.float32)
             self.value_cache = np.zeros_like(self.key_cache)
-            if self.linear is not None:
-                # their state, of a size the context does not change: a matrix for every value head, and the last
-                # conv - 1 tokens' q, k and v before the convolution (the oldest first). state_at: the next position
-                lines, mixed = n_layers - attending, linear_widths(self.linear)[0]
-                self.delta_state = np.zeros((lines, self.linear["value_heads"], self.linear["key_dim"],
-                                             self.linear["value_dim"]), dtype=np.float32)
-                self.conv_state = np.zeros((lines, self.linear["conv"] - 1, mixed), dtype=np.float32)
-                self.state_at = 0
-            if self.convolution is not None:
-                # T260: theirs is the last taps - 1 tokens' values before the convolution alone (the oldest first)
-                self.conv_state = np.zeros((n_layers - attending, self.convolution["taps"] - 1, dim), dtype=np.float32)
+            if dims.stateful_kind is not None:
+                # their states (STATEFUL_LAYERS), each an attribute of its name. state_at: the next position
+                self.stateful, states = STATEFUL_LAYERS[dims.stateful_kind]
+                states = states(getattr(dims, dims.stateful_kind), n_layers - attending, dim)
+                self.states = tuple(states)
+                for name, state in states.items():
+                    setattr(self, name, state)
                 self.state_at = 0
         # the sampler: the kernels' where there are kernels, its two in the reference's places
         if kernels and "sampler" not in disable:
@@ -309,17 +334,21 @@ class Llama:
                 setattr(self, name, larger)
         scale = np.float32(1.0 / math.sqrt(head_size))
         cos, sin = self.freq_cis_real[pos], self.freq_cis_imag[pos]
-        neox, gpt2 = self.arch == "neox", self.arch == "gpt2"
-        layer_norm = neox or gpt2
-        if self.linear is not None or self.convolution is not None:
+        # (what the architecture is, as its Layout said when the model was made)
+        layer_norm, gated_ffn = self.layer_norm, self.gated_ffn
+        # the step of the layers that keep a state, where there are such (read off the model at every token, as a
+        # method is: a tool puts its own there)
+        stateful = None
+        if self.stateful is not None:
             self.follow(pos)
+            stateful = getattr(self, self.stateful)
         # GPT-2 and GPT-NeoX normalize by the mean as well, and have a bias on every projection
         eps = self.rms_norm_eps
         norm = (lambda v, w, b: layernorm(v, w, b)) if layer_norm else (lambda v, w, b: rmsnorm(v, w, eps))
         heads_of = lambda v, c, s: v.reshape(-1, head_size)  # (q or k as they are)
-        if gpt2:
+        if not self.turning:
             turn = heads_of
-        elif neox or self.linear is not None:
+        elif self.partly:
             # only the first self.rotary of every head are rotated, the rest go through untouched
             turn = lambda v, c, s: partial_rope(v.reshape(-1, head_size), c, s, self.rotary)
         else:
@@ -329,7 +358,7 @@ class Llama:
 
         # Copy the token embedding into x, and (GPT-2) the row of this position
         x = self.embedding(token)
-        if gpt2:
+        if self.positions is not None:
             x = x + self.positions[pos]
         turned = self.turned
         if self.rotated is not None:  # T237: the table holds rotated rows
@@ -339,7 +368,7 @@ class Llama:
         for l, (lines, a) in enumerate(self.slots):
             xb = norm(x, self.rms_att_weight[l], self.ln_att_bias[l] if layer_norm else None)
             if lines:  # T229: a linear-attention layer, the a-th of them; T260: or an LFM2's convolution layer
-                attended = self.linear_attention(a, xb) if self.linear is not None else self.short_convolution(a, xb)
+                attended = stateful(a, xb)
             else:
                 # QKV matmuls for this position, RoPE on q and k, k and v go to the kv cache (a: the layer's place
                 # among the attending layers, which is l where all of them attend)
@@ -367,7 +396,7 @@ class Llama:
                     attended = attended / (1.0 + np.exp(-(self.wg[a] @ xr)))
                 # Output projection and residual connection
                 attended = self.wo[a] @ turned(attended)
-                if layer_norm:
+                if self.bo is not None:  # GPT-2 and GPT-NeoX, after every projection
                     attended = attended + self.bo[a]
             # GPT-NeoX with use_parallel_residual: both branches read the x this layer began with
             before = x
@@ -378,11 +407,11 @@ class Llama:
                       self.ln_ffn_bias[l] if layer_norm else None)
             xr = turned(xb)
             hb = self.w1[l] @ xr
-            if layer_norm:
-                x = x + self.w2[l] @ gelu(hb + self.b1[l]) + self.b2[l]
-            else:
+            if gated_ffn:
                 hb = hb / (1.0 + np.exp(-hb)) * (self.w3[l] @ xr)
                 x = x + self.w2[l] @ turned(hb)
+            else:
+                x = x + self.w2[l] @ gelu(hb + self.b1[l]) + self.b2[l]
 
         if not need_logits:
             return None
@@ -395,9 +424,8 @@ class Llama:
         position; a state cannot, and a token out of turn would compute on the wrong one without a word. T260: an
         LFM2's convolution layers' state the same."""
         if pos == 0:
-            if self.linear is not None:
-                self.delta_state.fill(0.0)
-            self.conv_state.fill(0.0)
+            for name in self.states:
+                getattr(self, name).fill(0.0)
         elif pos != self.state_at:
             raise ValueError(f"This model keeps a state from token to token: position {self.state_at} comes next "
                              f"(or 0, to begin again), not {pos}.")
