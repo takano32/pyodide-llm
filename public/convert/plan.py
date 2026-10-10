@@ -3,8 +3,8 @@ import numpy as np
 
 from engine.layout import TABLE, Dims, form_of, linear_form
 from engine.layers import rope_frequencies, rope_magnitude, rotated_form, rotated_widths
-from convert.config import (PARTLY_TURNED, architecture, convolution_layers, head_size, linear_layers, normalize,
-                            rotary_dim)
+from convert.families import family_of, of_layout
+from convert.config import head_size, normalize, rotary_dim
 
 
 def transformed(values, transform, head_size):
@@ -94,18 +94,10 @@ def permute_heads(w, heads, head_size):
     return w.reshape(heads, 2, head_size // 2, -1).transpose(0, 2, 1, 3).reshape(w.shape)
 
 
-def gpt2_prefix(source):
-    """openai-community/gpt2 publishes its tensors as wte.weight and h.0...., other GPT-2 models put
-    transformer. in front of them. Both are the same model."""
-    return "" if "wte.weight" in source else "transformer."
-
-
 def name_prefix(source, arch):
-    """What stands in front of the tensors' names: a GPT-2's "transformer." or nothing, and a Qwen3.5's (T229)
-    "model.language_model." (the vision-language checkpoint) or "model." (the language model saved alone)."""
-    if arch == "qwen35":
-        return "model.language_model." if "model.language_model.embed_tokens.weight" in source else "model."
-    return gpt2_prefix(source)
+    """What stands in front of the tensors' names in this source, for the layouts whose sources ask (their family's
+    prefix()): a GPT-2's "transformer." or nothing, and a Qwen3.5's (T229) "model.language_model." or "model."."""
+    return of_layout(arch).prefix(source)
 
 
 def has_bias(source):
@@ -123,15 +115,15 @@ def checkpoint_form(config, source):
     not say. head_dim is 0 where the heads fill dim exactly, the way the engine reads a form without one (T144: not
     where dim // heads is the head's size, which a dim that heads do not divide would pass with narrower heads)."""
     config = normalize(config)
-    size = head_size(config)
-    form = {"bias": has_bias(source), "arch": architecture(config), "qk_norm": has_qk_norm(source),
+    family, size = family_of(config), head_size(config)
+    form = {"bias": has_bias(source), "arch": family.arch, "qk_norm": has_qk_norm(source),
             "head_dim": 0 if size * config["num_attention_heads"] == config["hidden_size"] else size,
-            "linear": linear_layers(config), "rotated": getattr(source, "rotated", None),
-            "convolution": convolution_layers(config)}
+            "linear": None, "rotated": getattr(source, "rotated", None), "convolution": None}
+    form.update({key: make(config) for key, make in family.form.items()})
     if form["rotated"] is not None:
         # T237: a rotated basis is no tensor and no number of config.json: the source says it (a GGUF's metadata).
         # Held to the model here: signs for every width its matrices read, in whole blocks, and no GPT-2's
-        if form["arch"] in ("gpt2", "neox", "lfm2"):
+        if not family.rotatable:
             raise ValueError("This model cannot be converted: a GPT-2, a GPT-NeoX or an LFM2 in a rotated basis.")
         rotated_form(form["rotated"], rotated_widths(config["hidden_size"], size * config["num_attention_heads"],
                                                      config["intermediate_size"], linear_form(form["linear"])))
@@ -141,17 +133,20 @@ def checkpoint_form(config, source):
 def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.0):
     """For every row of the checkpoint (engine/layout.py's tensor_rows()), in file order: the tensors of the Hugging
     Face checkpoint it is made of, in order, as (name, transform); None instead of a list stands for a RoPE table.
-    And the shapes of the rows. scale: what q is multiplied by (query_scale(), T253), for a Llama without biases and
-    without norms of its heads."""
+    And the shapes of the rows. The sources are the layout's family's, by the row's name (convert/families/). scale:
+    what q is multiplied by (query_scale(), T253), for a layout without biases and without norms of its heads."""
     form = form_of(form)
     arch, d = form["arch"], Dims(header, form)
     rows = d.rows()
-    if scale != 1.0 and (arch != "llama" or form["bias"] or form["qk_norm"]):
-        # a norm of q's heads undoes whatever q was multiplied by, and a bias of q would have to be multiplied too:
-        # no Granite has either, and one that had would go through as another model without a word
-        raise ValueError("This model cannot be converted: it scales its attention's scores, and has a bias or a "
-                         "norm on its queries.")
-    sources = SOURCES.get(arch, llama_sources)(d, prefix, rotary, scale)
+    sources = of_layout(arch).sources(d, prefix, rotary)
+    if scale != 1.0:
+        if {"bq", "q_norm"} & {row.name for row in rows}:
+            # a norm of q's heads undoes whatever q was multiplied by, and a bias of q would have to be multiplied too:
+            # no Granite has either, and one that had would go through as another model without a word
+            raise ValueError("This model cannot be converted: it scales its attention's scores, and has a bias or a "
+                             "norm on its queries.")
+        name, turn = sources["wq"]
+        sources["wq"] = (name, (turn, ("scale", scale)))
     plan = []
     for row in rows:
         if row.role == TABLE:
@@ -165,103 +160,12 @@ def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.
     return plan, [row.shape for row in rows]
 
 
-# What each row of a layout is made of, by the row's name (so that a row moved in the file takes its source with it):
-# (the Hugging Face tensor's name, with {} for the layer where the row is a stack; the transform). A source for a row
-# the model has not (a classifier of its own, a Qwen2's biases, a Qwen3's norms of the heads) is asked for by nothing.
-def llama_sources(d, prefix, rotary, scale):
-    layer = "model.layers.{}."
-    turn_q = ("permute", d.n_heads) if scale == 1.0 else (("permute", d.n_heads), ("scale", scale))
-    return {"token_embedding_table": ("model.embed_tokens.weight", None),
-            "rms_att_weight": (layer + "input_layernorm.weight", None),
-            "wq": (layer + "self_attn.q_proj.weight", turn_q),
-            "wk": (layer + "self_attn.k_proj.weight", ("permute", d.n_kv_heads)),
-            "wv": (layer + "self_attn.v_proj.weight", None), "wo": (layer + "self_attn.o_proj.weight", None),
-            "rms_ffn_weight": (layer + "post_attention_layernorm.weight", None),
-            "w1": (layer + "mlp.gate_proj.weight", None), "w2": (layer + "mlp.down_proj.weight", None),
-            "w3": (layer + "mlp.up_proj.weight", None),
-            "rms_final_weight": ("model.norm.weight", None), "wcls": ("lm_head.weight", None),
-            "bq": (layer + "self_attn.q_proj.bias", ("permute", d.n_heads)),
-            "bk": (layer + "self_attn.k_proj.bias", ("permute", d.n_kv_heads)),
-            "bv": (layer + "self_attn.v_proj.bias", None),
-            # one weight for every head, over the rows of a head: interleaved like the rows it multiplies
-            "q_norm": (layer + "self_attn.q_norm.weight", ("permute", 1)),
-            "k_norm": (layer + "self_attn.k_norm.weight", ("permute", 1))}
-
-
-def qwen35_sources(d, prefix, rotary, scale):
-    # T229: RoPE turns the first rotary rows of each head of q and k (and so of the norms of their heads); the
-    # gate's rows are taken as they are
-    layer = prefix + "layers.{}."
-    one, head_norm = ("one",), (("heads", 1, 0, 1, rotary), ("one",))
-    return {"token_embedding_table": (prefix + "embed_tokens.weight", None),
-            "rms_att_weight": (layer + "input_layernorm.weight", one),
-            "wq": (layer + "self_attn.q_proj.weight", ("heads", 2, 0, d.n_heads, rotary)),
-            "wg": (layer + "self_attn.q_proj.weight", ("heads", 2, 1, d.n_heads, 0)),
-            "wk": (layer + "self_attn.k_proj.weight", ("heads", 1, 0, d.n_kv_heads, rotary)),
-            "wv": (layer + "self_attn.v_proj.weight", None), "wo": (layer + "self_attn.o_proj.weight", None),
-            "q_norm": (layer + "self_attn.q_norm.weight", head_norm),
-            "k_norm": (layer + "self_attn.k_norm.weight", head_norm),
-            "wqkv": (layer + "linear_attn.in_proj_qkv.weight", None), "wz": (layer + "linear_attn.in_proj_z.weight", None),
-            "wb": (layer + "linear_attn.in_proj_b.weight", None), "wa": (layer + "linear_attn.in_proj_a.weight", None),
-            "conv": (layer + "linear_attn.conv1d.weight", ("taps",)), "dt_bias": (layer + "linear_attn.dt_bias", None),
-            "decay": (layer + "linear_attn.A_log", ("decay",)), "delta_norm": (layer + "linear_attn.norm.weight", None),
-            "wout": (layer + "linear_attn.out_proj.weight", None),
-            "rms_ffn_weight": (layer + "post_attention_layernorm.weight", one),
-            "w1": (layer + "mlp.gate_proj.weight", None), "w2": (layer + "mlp.down_proj.weight", None),
-            "w3": (layer + "mlp.up_proj.weight", None),
-            "rms_final_weight": (prefix + "norm.weight", one), "wcls": ("lm_head.weight", None)}
-
-
-def lfm2_sources(d, prefix, rotary, scale):
-    # T260: by transformers' names of an Lfm2. q and k (and the norms of their heads) are turned as a Qwen3's; the
-    # taps as a Qwen3.5's convolution's
-    of = lambda name, transform=None: ("model.layers.{}." + name + ".weight", transform)
-    return {"token_embedding_table": ("model.embed_tokens.weight", None), "rms_att_weight": of("operator_norm"),
-            "wq": of("self_attn.q_proj", ("permute", d.n_heads)), "wk": of("self_attn.k_proj", ("permute", d.n_kv_heads)),
-            "wv": of("self_attn.v_proj"), "wo": of("self_attn.out_proj"),
-            "q_norm": of("self_attn.q_layernorm", ("permute", 1)), "k_norm": of("self_attn.k_layernorm", ("permute", 1)),
-            "win": of("conv.in_proj"), "conv": of("conv.conv", ("taps",)), "wout": of("conv.out_proj"),
-            "rms_ffn_weight": of("ffn_norm"),
-            "w1": of("feed_forward.w1"), "w2": of("feed_forward.w2"), "w3": of("feed_forward.w3"),
-            "rms_final_weight": ("model.embedding_norm.weight", None), "wcls": ("lm_head.weight", None)}
-
-
-def neox_sources(d, prefix, rotary, scale):
-    of = lambda name, transform=None: ("gpt_neox.layers.{}." + name, transform)
-    # query_key_value holds q, k and v of every head: only q and k are rotated (rotary of each head, from the config),
-    # so only they are interleaved; v is taken as it is
-    fused = lambda what, i: of("attention.query_key_value." + what, ("heads", 3, i, d.n_heads, rotary if i < 2 else 0))
-    return {"token_embedding_table": ("gpt_neox.embed_in.weight", None),
-            "rms_att_weight": of("input_layernorm.weight"), "ln_att_bias": of("input_layernorm.bias"),
-            "wq": fused("weight", 0), "wk": fused("weight", 1), "wv": fused("weight", 2),
-            "bq": fused("bias", 0), "bk": fused("bias", 1), "bv": fused("bias", 2),
-            "wo": of("attention.dense.weight"), "bo": of("attention.dense.bias"),
-            "rms_ffn_weight": of("post_attention_layernorm.weight"), "ln_ffn_bias": of("post_attention_layernorm.bias"),
-            "w1": of("mlp.dense_h_to_4h.weight"), "b1": of("mlp.dense_h_to_4h.bias"),
-            "w2": of("mlp.dense_4h_to_h.weight"), "b2": of("mlp.dense_4h_to_h.bias"),
-            "rms_final_weight": ("gpt_neox.final_layer_norm.weight", None),
-            "ln_final_bias": ("gpt_neox.final_layer_norm.bias", None), "wcls": ("embed_out.weight", None)}
-
-
-def gpt2_sources(d, prefix, rotary, scale):
-    of = lambda name, transform=None: (prefix + "h.{}." + name, transform)
-    return {"token_embedding_table": (prefix + "wte.weight", None), "positions": (prefix + "wpe.weight", None),
-            "rms_att_weight": of("ln_1.weight"), "ln_att_bias": of("ln_1.bias"),
-            # c_attn holds q, k and v side by side, the other way round (Conv1D)
-            "wq": of("attn.c_attn.weight", ("part", 0, 3)), "wk": of("attn.c_attn.weight", ("part", 1, 3)),
-            "wv": of("attn.c_attn.weight", ("part", 2, 3)),
-            "bq": of("attn.c_attn.bias", ("row", 0, 3)), "bk": of("attn.c_attn.bias", ("row", 1, 3)),
-            "bv": of("attn.c_attn.bias", ("row", 2, 3)),
-            "wo": of("attn.c_proj.weight", ("transpose",)), "bo": of("attn.c_proj.bias"),
-            "rms_ffn_weight": of("ln_2.weight"), "ln_ffn_bias": of("ln_2.bias"),
-            "w1": of("mlp.c_fc.weight", ("transpose",)), "b1": of("mlp.c_fc.bias"),
-            "w2": of("mlp.c_proj.weight", ("transpose",)), "b2": of("mlp.c_proj.bias"),
-            "rms_final_weight": (prefix + "ln_f.weight", None), "ln_final_bias": (prefix + "ln_f.bias", None),
-            "wcls": ("lm_head.weight", None)}
-
-
-SOURCES = {"llama": llama_sources, "qwen35": qwen35_sources, "lfm2": lfm2_sources, "neox": neox_sources,
-           "gpt2": gpt2_sources}
+def model_plan(config, source, header, form):
+    """conversion_plan() of a model: what stands in front of its source's names, how much of a head RoPE turns and
+    what q is multiplied by are its family's to say."""
+    family = family_of(config)
+    return conversion_plan(header, form, name_prefix(source, form["arch"]),
+                           rotary_dim(config) if family.partly else 0, family.scale(config))
 
 
 def rope_table(config, header, which):
@@ -271,7 +175,7 @@ def rope_table(config, header, which):
     the layout gives it (head_size // 2 columns); the columns past the rotated part are never read.
     """
     size, seq_len = head_size(config), header[6]
-    width = rotary_dim(config) if architecture(config) in PARTLY_TURNED else size
+    width = rotary_dim(config) if family_of(config).partly else size
     positions = np.arange(seq_len, dtype=np.float64)[:, None]
     frequencies = rope_frequencies(width, config.get("rope_theta", 10000.0), config.get("rope_scaling"))
     table = (np.cos if which == 0 else np.sin)(positions * frequencies) * rope_magnitude(config.get("rope_scaling"))

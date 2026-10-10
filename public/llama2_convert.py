@@ -31,15 +31,20 @@ from convert.template import (CHECK_DAYS, DAY, Loop, METHODS, MISSING, Namespace
 from convert.readers import (GGUF_TENSORS, PQ2_0_CODES, SOURCES, Source, base3, bfloat16,  # noqa: F401
                              kernel_readers, pq2_0, ptq1_0, q8_0, read_types, source_of)
 from convert.sources import Arrays, ROTATED, Safetensors, Shards, header_rotated, joined_shards  # noqa: F401
-from convert.config import (GRANITE_ONES, LINEAR_DEFAULTS, PARTLY_TURNED, architecture, check_config,  # noqa: F401
-                            checkpoint_header, convolution_layers, head_size, lfm2_config,
-                            linear_layers, normalize, query_scale, rotary_dim, unturned_layers, yarn)
-from convert.plan import (checkpoint_form, conversion_plan, gpt2_prefix, has_bias, has_qk_norm,  # noqa: F401
-                          name_prefix, permute_heads, rope_table, source_shape, transformed)
+from convert.families import FAMILIES, family_of  # noqa: F401
+from convert.families.family import Family  # noqa: F401
+from convert.families.llama import GGUF_LAYER, GGUF_NAMES, GRANITE_ONES  # noqa: F401
+from convert.families.gpt2 import gpt2_prefix  # noqa: F401
+from convert.families.qwen35 import LINEAR_DEFAULTS, QWEN35_TILED  # noqa: F401
+from convert.families.lfm2 import lfm2_config  # noqa: F401
+from convert.config import (architecture, check_config, checkpoint_header, convolution_layers,  # noqa: F401
+                            head_size, linear_layers, normalize, query_scale, rotary_dim,
+                            unturned_layers, yarn)
+from convert.plan import (checkpoint_form, conversion_plan, has_bias, has_qk_norm, name_prefix,  # noqa: F401
+                          permute_heads, rope_table, source_shape, transformed)
 from convert.stream import (PIECE, Stream, convert_pieces, convert_weights, left_to_do, unsplit,  # noqa: F401
                             untiled, unturned)
-from convert.gguf import (GGUF_ARCHITECTURES, GGUF_LAYER, GGUF_NAMES, GGUF_NFC, GGUF_PRETOKENIZERS,  # noqa: F401
-                          GGUF_ROTATED, GGUF_VALUES, Incomplete, QWEN35_TILED,
+from convert.gguf import (GGUF_NFC, GGUF_PRETOKENIZERS, GGUF_ROTATED, GGUF_VALUES, Incomplete,  # noqa: F401
                           gguf_agrees, gguf_model, gguf_read, gguf_rotated, gguf_tokenizer,
                           gguf_weights, rope_freqs_agree)
 from convert.tokenizer import (PRETOKENIZERS, STAGED_PRETOKENIZERS, UNMATCHABLE, pretokenizer_name,  # noqa: F401

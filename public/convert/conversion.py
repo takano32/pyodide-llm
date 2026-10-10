@@ -5,7 +5,8 @@ from engine.layout import FORM
 from engine.layers import RMS_EPS
 from engine.dtypes import dtype_of
 from convert.template import config_token, one_turn_template
-from convert.config import PARTLY_TURNED, check_config, normalize, rotary_dim, unturned_layers
+from convert.families import family_of
+from convert.config import check_config, normalize, rotary_dim
 from convert.stream import Stream
 from convert.gguf import gguf_model, gguf_read, gguf_tokenizer
 from convert.tokenizer import (sentencepiece_charsmap, sentencepiece_options, sentencepiece_pieces,
@@ -131,22 +132,19 @@ class Conversion:
         eps = self.config.get("rms_norm_eps")
         # a GGUF says it in float32 (1e-5 is 9.99999974e-06 there): six digits are what config.json writes
         eps = float(f"{eps:.6g}") if isinstance(eps, (int, float)) and eps > 0 else RMS_EPS
-        if self.stream.form["arch"] in ("llama", "qwen35", "lfm2") and eps != RMS_EPS:
+        family = family_of(self.config)
+        if family.rms_norm and eps != RMS_EPS:
             # T124: the epsilon of RMSNorm, where it is not the engine's 1e-5 (Qwen2.5 and Qwen3: 1e-6, which moved
             # Qwen3 0.6B's perplexity by 0.12%). Only where it differs, like qk_norm and head_dim
             self.options["rms_norm_eps"] = float(eps)
         if self.config.get("rope_scaling"):
             # the int8 file has no RoPE tables: the engine makes them, and needs the scaling for that (Llama 3)
             self.options["rope_scaling"] = dict(self.config["rope_scaling"])
-        if unturned_layers(self.config):
-            # T255: a SmolLM3's layers that RoPE leaves alone: the file does not say which (only where there are any)
-            self.options["unturned"] = unturned_layers(self.config)
-        if self.stream.form["arch"] in PARTLY_TURNED:
+        if family.partly:
             # GPT-NeoX and Qwen3.5 turn part of every head: the file does not say how much
             self.options["rotary"] = rotary_dim(self.config)
-        if self.stream.form["arch"] == "neox":
-            # and GPT-NeoX may run its two branches in parallel
-            self.options["parallel_residual"] = bool(self.config.get("use_parallel_residual", True))
+        # and what only its family says (T255: a SmolLM3's layers that RoPE leaves alone; a GPT-NeoX's branches)
+        self.options.update(family.options(self.config))
         self.checkpoint = self.stream.out
 
     def feed(self, data):

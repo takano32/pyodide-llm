@@ -425,7 +425,8 @@ const ok = (line) => {
       sleep(120000).then(() => { throw new Error("still waiting for the version after 120 s"); })]));
     assert.equal(failed.error.pyodide, true, "the page would not try again without the service worker");
     assert.match(failed.error.message, /did not answer in 30 seconds/);
-    assert.ok(failed.at - began >= quiet * 1000 && failed.at - began < (quiet + 10) * 1000);
+    assert.ok(failed.at - began >= quiet * 1000 && failed.at - began < (quiet + 10) * 1000,
+      `the version was given up after ${(failed.at - began) / 1000} s, not ${quiet} to ${quiet + 10}`);
   }
   // (1) a network that fails at once is told as it is, not as a wait of 30 seconds
   fresh(() => Promise.reject(new TypeError("Failed to fetch")));
