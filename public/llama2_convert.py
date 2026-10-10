@@ -28,6 +28,7 @@ from convert.template import (CHECK_DAYS, DAY, Loop, METHODS, MISSING, Namespace
                               is_test, matching, next_branch, one_turn, one_turn_template, render, run,
                               split_operators, split_outside_quotes, string_end, tokenize_template,
                               truthy, unescape, value_of)
+from convert.template import date_format, jinja_environment, rendered  # noqa: F401
 from convert.readers import (GGUF_TENSORS, PQ2_0_CODES, SOURCES, Source, base3, bfloat16,  # noqa: F401
                              kernel_readers, pq2_0, ptq1_0, q8_0, read_types, source_of)
 from convert.sources import Arrays, ROTATED, Safetensors, Shards, header_rotated, joined_shards  # noqa: F401

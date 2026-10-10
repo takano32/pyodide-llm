@@ -144,9 +144,17 @@ let refetched = 0;
 // as run 38046609290 printed it: not at the start of the text)
 const BROKEN_STREAM = /Failed to read data from the ReadableStream: /;
 let threadReports = 0;  // T172: the page's lines about the worker's search for the number of threads
+// T397: the worker loads Pyodide's jinja2 before it first converts a model, for the model's chat template. What it
+// asked the CDN for (the wheel's name, as Pyodide's lock has it), and what it said where the package did not come
+let jinjaAsked, jinjaMissed;
+page.context().on("request", (request) => {
+  const wheel = /\/(jinja2-[^/?]+\.whl)/i.exec(request.url());
+  if (wheel) jinjaAsked ??= wheel[1];
+});
 page.on("console", (message) => {
   if (message.type() === "error") errors.push(message.text());
   if (/^threads: /.test(message.text())) threadReports++;
+  if (/^jinja2 did not load/.test(message.text())) jinjaMissed = message.text();
   if (/ broke off \(.*\): fetched again$/.test(message.text())) refetched++;
   remember(`[${message.type()}] ${message.text()}`);
 });
@@ -336,6 +344,12 @@ if (gpuTest && /answers on WebGPU/.test(result.status) && !/on WebGPU/.test(resu
 // (refused as a fallback adapter, or before that for another reason: a page that is not cross-origin isolated)
 if (swiftShader && !gpuTest && (!/prompts on the CPU \(/.test(gpuVerdict?.status ?? "") || /on WebGPU/.test(result.prompt))) {
   failures.push(`SwiftShader was not refused (${gpuVerdict?.status}; ${result.prompt})`);
+}
+// T397: a model converted in this visit (nothing is kept in a new profile) had jinja2 asked for; where it did not
+// come the conversion went on with the converter's own reader, which is said and is no failure
+if (/^hf([-:]|$)/.test(model)) {
+  if (!jinjaAsked) failures.push("the conversion did not ask Pyodide for jinja2");
+  console.log(jinjaMissed ?? `jinja2: ${jinjaAsked ?? "not asked for"}`);
 }
 console.log(`${engine} ${browserVersion}, ${model}: ready in ${readySeconds.toFixed(1)}s, ${result.meta}`);
 console.log(`status: ${result.status}${result.isolated ? "" : " (not cross-origin isolated)"}`);

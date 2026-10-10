@@ -176,3 +176,24 @@ export async function pyodideSteps(version, importer) {
     watch.stop();
   }
 }
+
+// T397: jinja2, with which the converter renders a model's own chat template as transformers does (convert/template.py).
+// Pyodide's package of the version that is loaded, by its lock (no version is written here), asked for when a
+// conversion is first made: most visitors never convert anything. Whether it came: where it did not (the CDN said no,
+// nothing arrived for QUIET_SECONDS), the conversion goes on and the converter's own reader reads what it can, so
+// nothing is thrown and nothing is said to the visitor.
+export async function templatePackage(pyodide) {
+  const watch = watchArrivals(), quiet = watch.quiet(QUIET_SECONDS);
+  try {
+    const stalled = quiet.promise.then(() => { throw new Error(`nothing arrived for ${QUIET_SECONDS} seconds`); });
+    await Promise.race([pyodide.loadPackage("jinja2", { messageCallback: () => {} }), stalled]);
+    pyodide.pyimport("jinja2").destroy();  // (a package that did not come is said by loadPackage in the console only)
+    return true;
+  } catch (error) {
+    console.warn(`jinja2 did not load (${told(error)}): chat templates are read by the converter's own reader`);
+    return false;
+  } finally {
+    quiet.cancel();
+    watch.stop();
+  }
+}
