@@ -29,11 +29,18 @@ const hf = gguf ? { weights: path.basename(dir) } : withVocabulary ? { weights: 
 // it from huggingface.co (public/worker/conduct.js): a request and an answer for every file and every part, each a
 // proxy made and let go. (Before, this called the converter itself and fed it; tests/abba-convert.sh against a tree
 // of before T374.2.1 therefore times what the conduct adds to a conversion.)
-const sizeOf = (name) => fs.statSync(`${folder}/${name}`).size;
+const opened = new Map();  // a file is opened once: a part costs one read, as it did
+const open = (name) => {
+  if (!opened.has(name)) {
+    const fd = fs.openSync(`${folder}/${name}`, "r");
+    opened.set(name, { fd, size: fs.fstatSync(fd).size });
+  }
+  return opened.get(name);
+};
+const sizeOf = (name) => open(name).size;
 const range = (name, begin, end) => {
-  const fd = fs.openSync(`${folder}/${name}`, "r"), bytes = new Uint8Array(Math.min(end, sizeOf(name)) - begin);
+  const { fd, size } = open(name), bytes = new Uint8Array(Math.min(end, size) - begin);
   fs.readSync(fd, bytes, 0, bytes.length, begin);
-  fs.closeSync(fd);
   return bytes;
 };
 const there = (name, read) => (fs.existsSync(`${folder}/${name}`) ? read() : undefined);

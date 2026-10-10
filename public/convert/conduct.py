@@ -284,7 +284,10 @@ def conduct(hf, **make):
     for name, begin, end in weights.streams:
         part = yield ("stream", "weights", name, begin, end, before, weights.total)
         while part is not None:
-            part = yield ("more", conversion.feed(part))
+            # (the part is let go before the next one is asked for: megabytes that nothing but this name would hold
+            # while the answerer fetches the next)
+            share, part = conversion.feed(part), None
+            part = yield ("more", share)
         before += end - begin
     conversion.finish()
     yield ("done", conversion)

@@ -370,6 +370,12 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   for (const [name, route, when] of [
     ["while an answer waits", () => "hang", (cancel) => setImmediate(() => cancel.abort())],
     ["as an answer comes", (cancel) => () => { const answer = new Response("{}"); cancel.abort(); return answer; }, () => {}],
+    // (the fetch itself ended well: nothing but the loop's own look at the signal keeps the answer from the conduct)
+    ["once an answer is all there", (cancel) => () => new Response(new ReadableStream({ pull(controller) {
+      cancel.abort();
+      controller.enqueue(new TextEncoder().encode("{}"));
+      controller.close();
+    } }, { highWaterMark: 0 })), () => {}],
   ]) {
     const cancel = new AbortController();
     fresh(typeof route() === "string" ? route : route(cancel));
@@ -387,7 +393,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     w.allDestroyed();
     assert.equal(w.buffers.at(-1).destroyed, 1, name);
   }
-  ok("a cancelled load (in the middle of a stream, while an answer waits, as an answer comes) sends the conduct nothing more, closes it and leaves nothing open");
+  ok("a cancelled load (in the middle of a stream, while an answer waits, as it comes, once it is all there) sends the conduct nothing more, closes it and leaves nothing open");
 }
 
 // ---- T403: the file opened to keep a conversion in as it comes (a model that may go on the GPU alone) is let go
