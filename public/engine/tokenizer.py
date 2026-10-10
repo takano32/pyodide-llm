@@ -218,8 +218,18 @@ class Tokenizer:
     UNMATCHABLE = -1e8  # convert_hf.py gives control and byte pieces a score below this
 
     def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", ignore_merges=False,
-                 collapse=False, unknown=None):
+                 collapse=False, unknown=None, lowercase=False, prefixed=False):
         self.kind, self.nfkc, self.nfc, self.pretokenizer = kind, nfkc, nfc, pretokenizer
+        # T265: the text is made lower case before anything else (rinna's japanese-gpt2: tokenizer_config.json's
+        # do_lower_case, with a vocabulary that has no capital Latin letter, each of which was <unk> without it)
+        self.lowercase = lowercase
+        # T308: sentencepiece's dummy prefix stands before the text after a special token too, not only before the
+        # first text. "every": before every such stretch (a tokenizer.json whose normalizer begins each with "▁":
+        # llm-jp-4's). "wanting": before every one that does not begin with a space already (a Metaspace that always
+        # prepends, which is what transformers makes of a legacy Llama tokenizer: zephyr's, EuroLLM's). False: none
+        if prefixed not in (False, "every", "wanting"):
+            raise ValueError(f"Unsupported prefixed: {prefixed!r} (the stretches of text the dummy prefix stands before: every or wanting)")
+        self.prefixed = prefixed
         self.collapse = collapse  # a sentencepiece model's remove_extra_whitespaces: see normalized()
         # a sentencepiece model without byte pieces (rinna's) writes a character it lacks as its unknown piece, a run
         # of them as one; the others spell it in bytes
@@ -279,8 +289,8 @@ class Tokenizer:
                     tokens += self.encode_bytebpe(part)
                 else:
                     # sentencepiece's dummy prefix: the model saw every text start with a space (but not the
-                    # text after a special token)
-                    part = " " + part if first else part
+                    # text after a special token, unless its tokenizer puts one there as well: prefixed, T308)
+                    part = " " + part if first or self.prefixed == "every" or (self.prefixed and not part.startswith(" ")) else part
                     tokens += self.encode_unigram(part) if self.kind == "unigram" else self.encode_bpe(part)
             first = False
         return tokens
@@ -290,7 +300,10 @@ class Tokenizer:
         tabs, newlines and a few more characters a space, and drops or keeps the other control characters, as each
         model's map says), NFKC or NFC (a tokenizer.json's), and collapse: sentencepiece's remove_extra_whitespaces,
         runs of spaces one and none at either end. Without them a newline was spelled with byte + 3 in a vocabulary
-        with no byte pieces: rinna's った (the review of T126)."""
+        with no byte pieces: rinna's った (the review of T126). lowercase (T265) comes first, as transformers' slow
+        tokenizers lower the text before sentencepiece sees it."""
+        if self.lowercase:
+            text = text.lower()
         if self.charsmap:
             text = self.charsmap.replaced(text)
         if self.nfkc:

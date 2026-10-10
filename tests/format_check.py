@@ -8,7 +8,8 @@
 #
 # --prompt: one more prompt after PROMPTS (T221: what a visitor types, such as Qwen3's <tool_call>), as often as given.
 # --hf: as ?hf= opens the repository, with what the converter makes alone (T143): the list's options and format are
-# left out. A difference known for the list's format is then no error when it is gone.
+# left out. A difference known for the list's format is then no error when it is gone. Each line then says for how many
+# prompts the ids are the real ones exactly, with no BOS of the page's in front (T264).
 #
 # Needs the reference tools, which the page never uses: a venv with tests/requirements-reference.txt (docs/notes/dev-setup.md).
 # The first BOS may differ (the page always starts with it, T131), unless it is the token the real IDs begin with
@@ -283,7 +284,7 @@ def main():
             {"enable_thinking": True} if "(thinking)" in entry["name"] else {}
         thinking = {**thinking, **({} if alone else TEMPLATE_SAYS.get(entry["id"], {}))}
         known = KNOWN.get(entry["id"], {})
-        same, explained, diffs = 0, 0, []
+        same, explained, diffs, exact = 0, 0, [], 0
         for prompt in prompts:
             page = [options["bos"]] + tokenizer.encode(filled(template, prompt), tuple(options.get("specials", ())))
             messages = ([{"role": "system", "content": SYSTEM[entry["id"]]}] if entry["id"] in SYSTEM else []) \
@@ -301,6 +302,7 @@ def main():
                 real = reference.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, **thinking)
                 real = list(real["input_ids"] if hasattr(real, "keys") else real)
             matches = lambda real: ids_match(entry["id"], page, real, alone)
+            exact += page == real
             if matches(real):
                 same += 1
             elif "text" in known and matches(encoded(known["text"](text, prompt))):
@@ -314,6 +316,9 @@ def main():
         where = "the list" if entry.get("template") and not alone else "the converter"
         verdict = "DIFF" if diffs else "known" if explained else "ok  "
         note = f", {explained} as known: {known['why']}" if explained else ""
+        # T264 (T369): what ?hf= sends for a template the converter read is the real ids, none in front, where the
+        # template begins with a token (said, not required: one that begins with text keeps the BOS in front)
+        note += f", {exact} of them the real ids exactly" if alone else ""
         print(f"{verdict} {entry['id']}: {same}/{len(prompts)}{note} (format of {where})", flush=True)
         for diff in diffs[:3]:
             print("  ", diff)

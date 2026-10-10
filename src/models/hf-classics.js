@@ -1,7 +1,7 @@
 // From Hugging Face, converted in the browser: the English classics and the well-known instruct models.
 import {
-  ASK_JAPANESE, CHATML_AFTER_START, MISTRAL, MISTRAL_V3, SMOLLM3_AT_ONCE, SMOLLM3_THINKING, STORY, ZEPHYR, chatml,
-  smollm3,
+  ASK_JAPANESE, CHATML_AFTER_START, MISTRAL, MISTRAL_V3, QWEN25, QWEN3_OWN_BOS, SMOLLM3_AT_ONCE, SMOLLM3_THINKING, STORY,
+  ZEPHYR, chatml, smollm3,
 } from "./formats.js";
 import { sampled, thinking } from "./sampling.js";
 import { ggufOf, thinkingAndNot } from "./builders.js";
@@ -51,7 +51,7 @@ export const HF_CLASSICS = [
   { group: "hf", id: "hf-qwen2.5-coder-0.5b-instruct", name: "Qwen2.5 Coder 0.5B Instruct", note: "writes code · English · fetches 531 MB (GGUF) → int8 545 MB",
     original: "Qwen/Qwen2.5-Coder-0.5B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-Coder-0.5B-Instruct-GGUF", revision: "69a2c192eed24297fb09a34d8ba948b8624cc3e2", weights: "Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf" }, download: 531068576,
-    conversion: {}, options: {}, generation: sampled(1.1),
+    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: sampled(1.1),
     prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
   { group: "hf", id: "hf-pythia-1b", name: "Pythia 1B", note: "English · fetches 1.1 GB (GGUF) → int8 1.1 GB · desktop only",
     original: "EleutherAI/pythia-1b",
@@ -83,7 +83,7 @@ export const HF_CLASSICS = [
   { group: "hf", id: "hf-qwen2.5-1.5b-instruct", name: "Qwen2.5 1.5B Instruct", note: "answers instructions · 日本語 / English · fetches 1.6 GB (GGUF) → int8 1.7 GB · desktop only",
     original: "Qwen/Qwen2.5-1.5B-Instruct",
     hf: { repo: "bartowski/Qwen2.5-1.5B-Instruct-GGUF", revision: "9eadc66189c7641e1ddd226b8267a9119b2ce2d4", weights: "Qwen2.5-1.5B-Instruct-Q8_0.gguf" }, download: 1646573312,
-    conversion: {}, options: {}, generation: sampled(1.1),
+    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: sampled(1.1),
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE },
   { group: "hf", id: "hf-smollm2-1.7b-instruct", name: "SmolLM2 1.7B Instruct", note: "answers instructions · English · fetches 1.8 GB (GGUF) → int8 1.9 GB · desktop only",
     original: "HuggingFaceTB/SmolLM2-1.7B-Instruct",
@@ -182,17 +182,17 @@ export const HF_CLASSICS = [
   { group: "hf", id: "hf-qwen2.5-coder-1.5b-instruct", name: "Qwen2.5 Coder 1.5B Instruct", note: "writes code · English · fetches 1.6 GB (GGUF) → int8 1.7 GB · desktop only",
     ...ggufOf("bartowski/Qwen2.5-Coder-1.5B-Instruct-GGUF", "1af47f78b1f9b0c242fabe43f7a365d5a67f3207", "Qwen2.5-Coder-1.5B-Instruct-Q8_0.gguf",
       "Qwen/Qwen2.5-Coder-1.5B-Instruct", "2e1fd397ee46e1388853d2af2c993145b0f1098a"), download: 1646573344,
-    conversion: {}, options: {}, generation: sampled(1.1),
+    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: sampled(1.1),
     prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
   { group: "hf", id: "hf-qwen2.5-coder-3b-instruct", name: "Qwen2.5 Coder 3B Instruct", note: "writes code · English · fetches 3.3 GB (GGUF) → int8 3.5 GB · desktop only",
     ...ggufOf("bartowski/Qwen2.5-Coder-3B-Instruct-GGUF", "7c137640ef0332dfedb229f2504c58d83ed4307a", "Qwen2.5-Coder-3B-Instruct-Q8_0.gguf",
       "Qwen/Qwen2.5-Coder-3B-Instruct", "488639f1ff808d1d3d0ba301aef8c11461451ec5"), download: 3285476608,
-    conversion: {}, options: {}, generation: sampled(1.1),
+    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: sampled(1.1),
     prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
   { group: "hf", id: "hf-qwen2.5-coder-7b-instruct", name: "Qwen2.5 Coder 7B Instruct", note: "writes code · English · fetches 8.1 GB (GGUF) → int8 8.6 GB · desktop only · Chrome and Firefox",
     ...ggufOf("bartowski/Qwen2.5-Coder-7B-Instruct-GGUF", "1f629da0c8bed16b9e50cee91c70693650e66c35", "Qwen2.5-Coder-7B-Instruct-Q8_0.gguf",
       "Qwen/Qwen2.5-Coder-7B-Instruct", "c03e6d358207e414f1eca0bb1891e29f1db0e242"), download: 8098525984,
-    conversion: {}, options: {}, generation: sampled(1.1),
+    conversion: {}, options: QWEN3_OWN_BOS, template: QWEN25, generation: sampled(1.1),
     prompt: "Write a Python function that reverses a string.", placeholder: "Ask for code (e.g. Write a Python function that sorts a list.)" },
   // Hermes 3 (Nous Research) on Llama 3.2 3B, in ChatML: its own Q8_0 GGUF. The real template (apply_chat_template, which
   // the chat servers use) puts nothing in front and begins with <|im_start|>; its card's example code tokenizes a ChatML
@@ -203,11 +203,13 @@ export const HF_CLASSICS = [
   // token, the likeliest token the same at 94%), where plain text is 5% better with it. So the BOS is the format's own first
   // token, <|im_start|> (128040), and the format begins after it: the ids are the real template's (a Qwen3 8B's
   // QWEN3_FROM_IM_START, T250's review). It stops at <|im_end|> (config.json's EOS), at <|begin_of_text|> and at the mark
-  // of a new turn
+  // of a new turn. T369: the BOS and the format are what the converter says of it now (T264: a model whose template it read
+  // begins with the template's own first token), so the entry says neither. The stop tokens it says: the converter's
+  // are the BOS and the EOS the model's files name, and not the mark of a new turn (the review of T369)
   { group: "hf", id: "hf-hermes-3-llama-3.2-3b", name: "Hermes 3 Llama 3.2 3B", note: "answers instructions · English · fetches 3.4 GB (GGUF) → int8 3.6 GB · desktop only",
     ...ggufOf("NousResearch/Hermes-3-Llama-3.2-3B-GGUF", "3cd927095d8cbab12c743f932aa63b6f7bbfa141", "Hermes-3-Llama-3.2-3B.Q8_0.gguf",
       "NousResearch/Hermes-3-Llama-3.2-3B", "7f1a6bec8cdce6551014fd5bbeb4cd8c0f1fbeab"), download: 3421895488,
-    conversion: {}, options: { bos: 128040, stop_tokens: [128000, 128039, 128040] }, template: CHATML_AFTER_START, generation: sampled(1.1),
+    conversion: {}, options: { stop_tokens: [128000, 128039, 128040] }, generation: sampled(1.1),
     prompt: "What will be popular next? Name three things.", placeholder: "Ask or instruct (e.g. What is the capital of Japan?)" },
   // T255: Hugging Face's SmolLM3 3B, a Llama every fourth layer of which RoPE leaves alone (the conversion's options
   // name the layers: unturned). ggml-org's Q8_0 GGUF, which tests/gguf_check.py tensors held to the original

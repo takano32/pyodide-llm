@@ -7,12 +7,14 @@ import { atOnce, sampled, thinking } from "./sampling.js";
  * kept.js's replaced() (what either kept before its source changed goes, whichever form is opened first). sampling:
  * the two forms' generation settings where they are not Qwen3's */
 export function thinkingAndNot(id, name, source, download, sizes, chat = {}, formats = {}, sampling = {}) {
-  const common = { group: "hf", ...source, download, conversion: {}, options: {}, shares: [`${id}-thinking`, id],
+  // T369: where nothing else is said, a Qwen3 as the list has had it: <|endoftext|> in front of ChatML (QWEN3_OWN_BOS and
+  // the whole format, formats.js's note on QWEN25). The converter alone would begin with the template's <|im_start|> now
+  const common = { group: "hf", ...source, download, conversion: {}, options: QWEN3_OWN_BOS, shares: [`${id}-thinking`, id],
     prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE, ...chat };
   return [
-    // formats.thinking: where the converter cannot read the model's chat_template (T236), else what it reads
+    // formats.thinking: where the model's format is not Qwen3's (T236)
     { ...common, id: `${id}-thinking`, name: `${name} (thinking)`, note: `thinks before it answers · 日本語 / English · ${sizes}`,
-      generation: sampling.thinking ?? thinking, ...(formats.thinking ? { template: formats.thinking } : {}) },
+      generation: sampling.thinking ?? thinking, template: formats.thinking ?? CHATML },
     { ...common, id, name: `${name} (no thinking)`, note: `answers at once · 日本語 / English · ${sizes}`,
       generation: sampling.atOnce ?? chat.generation ?? atOnce, template: formats.atOnce ?? QWEN3_AT_ONCE },
   ];
@@ -49,8 +51,9 @@ export const lfm2 = (id, name, repo, revision, originalRevision, download, sizes
  * vocabulary, config.json and chat template of its -unpacked original. What the sizes share is here alone, so that one
  * change covers them all (the owner's open choices of T235's review: config.json's yarn or a plain RoPE, which would
  * be rope_scaling: {} in these options; a word more in the note; Prism ML's attribution). The original's template
- * always begins the answer with an empty thought (Qwen3's enable_thinking=false): the model has one form, and the
- * converter reads it. It names no BOS (QWEN3_OWN_BOS, which the 1.7B and the 4B bear: 1.5% better than nothing in front
+ * always begins the answer with an empty thought (Qwen3's enable_thinking=false): the model has one form, which the
+ * converter reads; it is written here (QWEN3_AT_ONCE) since T369, for the entries keep <|endoftext|> in front of it
+ * (formats.js's note on QWEN25). It names no BOS (QWEN3_OWN_BOS, which the 1.7B and the 4B bear: 1.5% better than nothing in front
  * on plain text; the 8B does not: 70% worse, as a Qwen3 8B is, and begins at QWEN3_FROM_IM_START: `start`, T250's review).
  * The sampling is the originals' generation_config.json, the same file in the three (its top-k the page's sampler
  * has not) */
@@ -59,7 +62,7 @@ export const ternaryBonsai = (size, revision, originalRevision, download, sizes,
   note: `answers at once · 日本語 / English · ternary weights · ${sizes}`,
   ...ggufOf(`prism-ml/Ternary-Bonsai-${size}-gguf`, revision, `Ternary-Bonsai-${size}-PQ2_0.gguf`,
     `prism-ml/Ternary-Bonsai-${size}-unpacked`, originalRevision), download,
-  weights: "ternary", conversion: {}, options: QWEN3_OWN_BOS, ...start,
+  weights: "ternary", conversion: {}, options: QWEN3_OWN_BOS, template: QWEN3_AT_ONCE, ...start,
   generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE });
 // Models that huggingface.co serves and this page converts itself (public/llama2_convert.py, the code that builds

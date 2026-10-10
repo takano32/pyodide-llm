@@ -3,8 +3,9 @@
 # adds them after the projections (T64); everything else about it is the same. A Qwen3 is a Llama that normalizes every
 # head of q and k (T124): two vectors per layer, the same way. A Granite (T253) is a Llama whose scores are scaled
 # otherwise, which the conversion puts into q. A SmolLM3 (T255) is a Llama some of whose layers RoPE leaves alone.
-# Whether a file has the biases or the norms is the source's to say, not config.json's (convert/plan.py's has_bias()
-# and has_qk_norm()), so a Qwen2 and a Qwen3 differ from a Llama here by what is checked and how a GGUF holds them.
+# Whether a file has the biases or the norms is the source's to say, not config.json's (has_bias() and has_qk_norm()
+# here, the record's "found"), so a Qwen2 and a Qwen3 differ from a Llama here by what is checked and how a GGUF holds
+# them.
 import math
 
 from convert.families.family import Family, as_stored, f32, head_size, refuse
@@ -30,6 +31,24 @@ def llama_sources(d, prefix, rotary):
             # one weight for every head, over the rows of a head: interleaved like the rows it multiplies
             "q_norm": (layer + "self_attn.q_norm.weight", ("permute", 1)),
             "k_norm": (layer + "self_attn.k_norm.weight", ("permute", 1))}
+
+
+def has_bias(source):
+    """Whether this checkpoint has the q, k and v biases of Qwen2 (o and the FFN never have one)."""
+    return "model.layers.0.self_attn.q_proj.bias" in source
+
+
+def has_qk_norm(source):
+    """Whether this checkpoint normalizes every head of q and k before RoPE (Qwen3, T124)."""
+    return "model.layers.0.self_attn.q_norm.weight" in source
+
+
+def found(source):
+    """The rows a Llama's layout has only where the file has their tensors (engine/layout.py's llama()): FORM's "bias"
+    and "qk_norm". T369: asked of the Llamas alone. A Qwen3.5 saved as a language model has a tensor of the second
+    name too, and its options said qk_norm for that where those of one saved with its vision model did not; its layout
+    has the norms either way and reads no such key."""
+    return {"bias": has_bias(source), "qk_norm": has_qk_norm(source)}
 
 
 def check(config, biased=False):
@@ -101,7 +120,7 @@ def gguf_turned(config):
     return stored
 
 
-LLAMA = Family("Llama", "llama", llama_sources, check, free_heads=True, scaled=True, rotatable=True, rms_norm=True,
+LLAMA = Family("Llama", "llama", llama_sources, check, found=found, free_heads=True, scaled=True, rotatable=True, rms_norm=True,
                gguf="llama", gguf_names=(GGUF_NAMES, "model.layers.{}.", GGUF_LAYER), gguf_config=gguf_config,
                gguf_stored=gguf_turned)
 # (a Mistral's GGUF says "llama")

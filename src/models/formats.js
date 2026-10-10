@@ -14,6 +14,19 @@ export const CHATML = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assista
 // QWEN3_FROM_IM_START and Hermes 3's, T252's review): the format begins after it (T250's review)
 export const CHATML_AFTER_START = "user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
 export const chatml = { specials: ["<|im_start|>", "<|im_end|>"], stop_tokens: [0, 2] };
+// T369 (T264): the converter gives a model whose chat template it read the template's own first token as its BOS, and
+// the format from the next token on, so that the page sends the ids of transformers' apply_chat_template: a Qwen opened
+// with ?hf= begins with <|im_start|> and no <|endoftext|> in front. The entries of the list that had the converter's BOS
+// until then (<|endoftext|> in front of the template's <|im_start|>: Qwen2.5, TinySwallow, a Qwen3 of 4B or less and
+// those made from one) keep sending what they sent: a Qwen2.5 is within 3% either way and a Qwen3 of 4B or less 8 to 10%
+// worse on plain text with <|im_start|> first (T131, T250's review), and what they write was read with that BOS. So
+// they say it now: the BOS (QWEN3_OWN_BOS, below) and the whole format, as the converter read it before. Whether they
+// should begin as the real template does is a measurement to make (TODO.md's T369, its findings)
+export const QWEN25 = `<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n${CHATML}`;
+export const TINYSWALLOW = "<|im_start|>system\nあなたは、Sakana AI株式会社が開発したTinySwallowです。小型ながら、誠実で優秀なアシスタントです。" +
+  `<|im_end|>\n${CHATML}`;
+// Qwen3 4B Thinking 2507's chat_template begins the answer with <think> itself
+export const QWEN3_THINKING_2507 = `${CHATML}<think>\n`;
 // sarashina2.2's chat_template (and CAT-Translate's, made from it) uses selectattr, which this project's template
 // reader does not take (T73): one turn of it, as the real Jinja renders it, is this (T81; the 0.5B Instruct had
 // ChatML here until 2026-09-26, whose <|im_start|> its vocabulary does not have). <|user|> (9), <|assistant|> (8)
@@ -25,12 +38,14 @@ export const TRANSLATE = "Translate the following Japanese text into English.\n\
 // and the date ({date}: filled() writes today's). The template ends at "<|start|>assistant" and leaves the channel to
 // the model; this one asks for the final channel, the answer, and so skips the analysis a harmony model may write
 // first. Its tokenizer.json puts a "▁" before the text after each special token (a normalizer that replaces the start
-// of every piece with it), which the engine does not: the space after each special token here makes the same tokens
-// (the same IDs as the real Jinja and tokenizers for four prompts, T132). A turn ends with <|return|> (2), <|end|>
-// (11) or <|call|> (13), and a new message would start with <|start|> (10)
-export const HARMONY = "<|start|> system<|message|> You are LLM-jp-4, a large language model trained by LLM-jp.\nKnowledge cutoff: " +
+// of every piece with it): the converter says so to the engine (prefixed, T308; until T369 a space after each special
+// token here made the same tokens: the same IDs as the real Jinja and tokenizers for four prompts, T132). A turn ends
+// with <|return|> (2), <|end|> (11) or <|call|> (13), and a new message would start with <|start|> (10). The BOS is
+// <|startoftext|> (1), which the real tokenizer begins a text with and the template does not write: said here (harmony)
+// since T369, for the converter alone begins with the template's <|start|> now (T264)
+export const HARMONY = "<|start|>system<|message|>You are LLM-jp-4, a large language model trained by LLM-jp.\nKnowledge cutoff: " +
   "2025-12\nCurrent date: {date}\n\n# Valid channels: analysis, commentary, final. Channel must be included for every " +
-  "message.<|end|><|start|> user<|message|> {prompt}<|end|><|start|> assistant<|channel|> final<|message|>";
+  "message.<|end|><|start|>user<|message|>{prompt}<|end|><|start|>assistant<|channel|>final<|message|>";
 // T125: Mistral's formats, one turn as the real Jinja writes it (the same IDs as the real Jinja and tokenizers for
 // four prompts, where the prompt has no space at either end: some templates trim it, the page does not). These
 // models come with a sentencepiece tokenizer.model, which the engine reads (their tokenizer.json is a BPE of
@@ -46,14 +61,17 @@ export const RAKUTEN = "A chat between a curious user and an artificial intellig
 // strips the whole turn, which trims what was typed at its end only (filled() trims both ends: a prompt that begins
 // with spaces differs)
 export const SWALLOW_MS = "[INST] <<SYS>>\nあなたは誠実で優秀な日本人のアシスタントです。\n<</SYS>>\n\n{prompt:trim} [/INST] ";
-// zephyr's tokenizer.json puts a "▁" before the text after </s> (a legacy Llama tokenizer), which the engine does
-// not: the space after </s> makes the same tokens
-export const ZEPHYR = "<|user|>\n{prompt}</s> \n<|assistant|>\n";
+// zephyr's tokenizer puts a "▁" before the text after </s> (a legacy Llama tokenizer): the converter says so to the
+// engine (prefixed, T308; until T369 a space after </s> here made the same tokens)
+export const ZEPHYR = "<|user|>\n{prompt}</s>\n<|assistant|>\n";
 // T249: EuroLLM's chat_template is ChatML with a system turn that is empty unless one is given. Its tokenizer (a legacy
-// Llama tokenizer, as zephyr's) puts a "▁" before the text after <|im_start|> and <|im_end|>, which the engine does
-// not: the space after each makes the same tokens (the same IDs as the real Jinja and tokenizers for
-// tests/format_check.py's prompts; the converter's own reading of the template, without the spaces, made none the same)
-export const EUROLLM = "<|im_start|> system\n<|im_end|> \n<|im_start|> user\n{prompt}<|im_end|> \n<|im_start|> assistant\n";
+// Llama tokenizer, as zephyr's) puts a "▁" before the text after <|im_start|> and <|im_end|>: the converter says so to
+// the engine (prefixed, T308; until T369 a space after each here made the same tokens: the same IDs as the real Jinja
+// and tokenizers for tests/format_check.py's prompts). The BOS is <s> (1), in front of the template's <|im_start|> as
+// the list has had it, and the answer stops at it and at <|im_end|> (4): said here since T369, for the converter alone
+// begins with <|im_start|> now (T264)
+export const EUROLLM = "<|im_start|>system\n<|im_end|>\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n";
+export const eurollm = { bos: 1, stop_tokens: [1, 4] };
 // T250: Llama-3-ELYZA-JP's template is Llama 3's (no date, the turns trimmed), and its card always passes this system
 // message, as Swallow-MS's does: one turn of it as the real Jinja writes it with that message
 export const ELYZA = "<|start_header_id|>system<|end_header_id|>\n\nあなたは誠実で優秀な日本人のアシスタントです。特に指示が無い場合は、" +
@@ -183,10 +201,11 @@ export const lfm2Old = { specials: ["<|im_start|>", "<|im_end|>", "Mathias", "py
 // A Qwen3 whose config.json and tokenizer name no BOS (Ternary Bonsai, CAT-Thinking 8B; a Qwen3 of Qwen's own has
 // bos_token_id in config.json): the converter would take token 1, '"'. The BOS here is Qwen3's own, <|endoftext|>
 // (151643), as every Qwen3 of the list begins (the real tokenizer puts nothing in front: T131), and the answer stops at
-// it and at <|im_end|> (151645). The converter could say this itself (a BOS that is named nowhere, and <|endoftext|> in
-// the vocabulary: T248's survey, 7 (4)), at the next CONVERTER: then these lose their options. What it costs is the
+// it and at <|im_end|> (151645). Since T369 it is also what keeps <|endoftext|> in front of the entries that had the
+// converter's BOS until then (the note on QWEN25, above): the converter alone begins a Qwen with the template's
+// <|im_start|> now, as QWEN3_FROM_IM_START does by hand. What it costs is the
 // model's: QWEN3_FROM_IM_START (above) says which are worse for it. Where a model of this family is added,
 // tests/start_check.mjs and tests/answer_check.mjs say whether this BOS is one it can bear
 export const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] };
-export const harmony = { specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
+export const harmony = { bos: 1, specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
 export const llmJp = { stop_tokens: [1, 2, 7] };

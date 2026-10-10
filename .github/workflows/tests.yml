@@ -74,7 +74,7 @@ jobs:
       - name: Download and convert the models, compile the kernels
         if: ${{ !(inputs.only_extra == true || inputs.only_extra == 'true') }}
         run: |
-          pip install numpy pytest tokenizers regex sentencepiece
+          pip install numpy pytest tokenizers regex sentencepiece jinja2
           npm ci
           make models kernels
 

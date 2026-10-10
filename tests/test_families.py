@@ -281,3 +281,38 @@ def test_two_families_with_one_gguf_name_are_refused_at_the_table():
     with pytest.raises(ValueError, match="both the GGUF architecture granite"):
         families.by_gguf({"granite": GRANITE, "granite_again": GRANITE._replace(title="Again")})
     assert families.by_gguf({"llama": LLAMA, "mistral": MISTRAL}) == {"llama": ("llama", LLAMA)}
+
+
+BIASES, NORMS = "model.layers.0.self_attn.q_proj.bias", "model.layers.0.self_attn.q_norm.weight"
+
+
+@by_type
+def test_the_biases_and_the_norms_of_the_heads_are_said_by_the_llamas_alone(model_type):
+    """T369 (T359.3's finding): FORM's "bias" and "qk_norm" are rows a Llama's layout has where the file has their
+    tensors, and the form of no other layout reads them. They were asked of every source by a Llama's names: a Qwen3.5
+    saved as a language model has a tensor of the norm's name, and its options said qk_norm where those of the same
+    model saved with its vision model (the names begin otherwise) said nothing."""
+    family = FAMILIES[model_type]
+    for source in ({}, {BIASES: 1}, {NORMS: 1}, {BIASES: 1, NORMS: 1}, {f"model.language_model.{NORMS[6:]}": 1}):
+        found = family.found(source)
+        if family.arch == "llama":
+            assert found == {"bias": BIASES in source, "qk_norm": NORMS in source}
+        else:
+            assert found == {}
+    assert (family.found is LLAMA.found) == (family.arch == "llama")
+
+
+def test_the_form_of_a_qwen35_and_of_an_lfm2_says_no_qk_norm_whatever_the_names():
+    qwen35 = {**BASE, "model_type": "qwen3_5_text", "num_hidden_layers": 8, "num_key_value_heads": 2, "head_dim": 128}
+    lfm2 = {**BASE, "model_type": "lfm2", "num_hidden_layers": 8, "num_key_value_heads": 4, "layer_types": ["conv"] * 4 + ["full_attention"] * 4,
+            "block_ff_dim": 768, "block_auto_adjust_ff_dim": False}
+    for config in (qwen35, lfm2):
+        for source in ({}, {NORMS: 1, BIASES: 1}):
+            form = llama2_convert.checkpoint_form(normalize(config), source)
+            assert (form["bias"], form["qk_norm"]) == (False, False), (config["model_type"], source)
+    # and a Llama's is the source's, as it was
+    for source in ({}, {NORMS: 1}, {BIASES: 1}):
+        form = llama2_convert.checkpoint_form(normalize({**BASE, "model_type": "qwen3"}), source)
+        assert (form["bias"], form["qk_norm"]) == (BIASES in source, NORMS in source)
+    assert list(llama2_convert.checkpoint_form(normalize({**BASE, "model_type": "llama"}), {})) == \
+        ["bias", "arch", "qk_norm", "head_dim", "linear", "rotated", "convolution"]

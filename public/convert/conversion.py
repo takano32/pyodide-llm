@@ -4,14 +4,24 @@ import json
 from engine.layout import FORM
 from engine.layers import RMS_EPS
 from engine.dtypes import dtype_of
-from convert.template import config_token, one_turn_template
+from convert.template import config_token, model_turn
 from convert.families import family_of
 from convert.config import check_config, normalize, rotary_dim
 from convert.stream import Stream
 from convert.gguf import gguf_model, gguf_read, gguf_tokenizer
-from convert.tokenizer import (sentencepiece_charsmap, sentencepiece_options, sentencepiece_pieces,
-                               sentencepiece_specials, tokenizer_bin, tokenizer_json_charsmap,
+from convert.tokenizer import (described_options, piece_ids, sentencepiece_charsmap, sentencepiece_options,
+                               sentencepiece_pieces, sentencepiece_specials, tokenizer_bin, tokenizer_json_charsmap,
                                tokenizer_json_options, tokenizer_json_pieces)
+
+
+def described(tokenizer_config):
+    """A tokenizer_config.json, read: its text, its bytes or the dict itself. {} for none and for one that is no JSON
+    or no object."""
+    try:
+        config = json.loads(tokenizer_config) if isinstance(tokenizer_config, (str, bytes)) else tokenizer_config
+    except ValueError:
+        config = None
+    return config if isinstance(config, dict) else {}
 
 
 class Conversion:
@@ -58,16 +68,13 @@ class Conversion:
         else:
             pieces = list(sentencepiece_pieces(tokenizer))
             self.tokenizer = tokenizer_bin(pieces, vocab_size, charsmap=sentencepiece_charsmap(tokenizer))
-            options = sentencepiece_options(tokenizer)
+            # (T265, T308) and what only tokenizer_config.json says of a sentencepiece model
+            options = {**sentencepiece_options(tokenizer), **described_options(described(tokenizer_config))}
             specials, added = sentencepiece_specials(tokenizer), []
         # T143: the BOS is the token the tokenizer names, which transformers begins a text with, where config.json says
         # another: DeepSeek-R1's Distill says 151643 there, its end of a sentence, and <｜begin▁of▁sentence｜> (151646)
         # in tokenizer_config.json (T138's review: perplexity 2.5 to 2.7 times higher with the former)
-        try:
-            named = config_token(json.loads(tokenizer_config) if isinstance(tokenizer_config, (str, bytes)) else tokenizer_config,
-                                 "bos_token")
-        except ValueError:
-            named = ""
+        named = config_token(described(tokenizer_config), "bos_token")
         bos = next((id for id, (text, _, _) in enumerate(pieces) if named and text == named), None)
         self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink, quantize_rows, specials,
                    chat_template, added, bos, readers)
@@ -104,11 +111,34 @@ class Conversion:
         chat_template.jinja, where there is one (T127). added: the added tokens that are not special, one token
         wherever they are written (T143). bos: the id of the BOS the tokenizer names, where it names one (T143)."""
         own = self.config.get("bos_token_id", 1)
+        # (the BOS the tokenizer names and config.json's, where each says one: the 1 of a config.json that has no such
+        # key is a guess, T264)
+        said = [*([bos] if isinstance(bos, int) else []), *([own] if "bos_token_id" in self.config and own != bos else [])]
         bos = bos if isinstance(bos, int) else own
         eos = self.config.get("eos_token_id", 2)
-        # the answer stops at the BOS, and at config.json's where that is another (T143)
-        stop = [token for token in [bos, *([own] if own != bos else []), *(eos if isinstance(eos, list) else [eos])]
-                if isinstance(token, int)]
+        # the format of one turn, from the model's own chat_template (T73). src/models.js wins when it has one
+        ids = piece_ids(self.tokenizer, self.config["vocab_size"])
+        template, head, mark = self.beginning(*model_turn(described(tokenizer_config), chat_template), [*specials, *added],
+                                              options, ids)
+        # the answer stops at the BOS, and at config.json's where that is another (T143). Not at the token the template
+        # begins with (T264's head), though it is the engine's BOS then: it says where a message begins, not where the
+        # answer ends. A harmony model (llm-jp-4) writes <|end|><|start|>assistant<|channel|>final<|message|> after its
+        # analysis, and stopped there before its answer (the review of T369); what ends an answer is what the model's own
+        # files name, the EOSes.
+        # A BOS that nothing names and the template does not begin with is no token of this model's to stop at: token 1
+        # of a byte-level vocabulary is '"' (NeoHorse-1's config.json has no bos_token_id, and its answers ended at
+        # their first quotation mark through ?hf=)
+        stop = [token for token in [*([bos, *([own] if own != bos else [])] if head is None else said),
+                                    *(eos if isinstance(eos, list) else [eos])] if isinstance(token, int)]
+        # And at the EOS the tokenizer names, where that is a token of its own and another than config.json's (T369): a
+        # Qwen3.5's config.json says <|endoftext|> and its tokenizer <|im_end|>, which is what ends a turn of its chat
+        # template; transformers' generate() stops at either. Without it an answer went on past <|im_end|> to the mark
+        # of the next turn
+        ending = config_token(described(tokenizer_config), "eos_token")
+        ending = ids.get(ending.encode("utf-8")) if ending else None  # (no name is no piece: the padding's are empty)
+        if ending is not None and ending not in stop:
+            stop.append(ending)
+        bos = bos if head is None else head
         # a context longer than max_seq_len is cut: the RoPE tables and the scratch of the attention grow with it
         self.stream = Stream(header, int(base), self.config, dtype, int(max_seq_len), start=int(start), sink=sink,
                              quantize_rows=quantize_rows, readers=readers)
@@ -118,14 +148,13 @@ class Conversion:
         # the options of every model before T124 stay what they were (kept.js's CONVERTER)
         self.options.update({key: value for key, value in self.stream.form.items()
                              if key in ("bias", "arch") or value != FORM[key]})
-        # the format of one turn, from the model's own chat_template (T73). src/models.js wins when it has one
-        template = one_turn_template(tokenizer_config, chat_template)
         if template:
             self.options["template"] = template
         # the special tokens the template writes stand for their token; spelled out they would be a dozen tokens each.
         # The added tokens that are not special, wherever they are written (T143). The longest first, so that one that
         # begins another never cuts it short
-        written = {special for special in specials if special and template and special in template}
+        # (and the one the format began with, T264: it is the BOS now, and still one token where a visitor types it)
+        written = {special for special in specials if special and template and (special in template or special == mark)}
         written = sorted(written | {token for token in added if token}, key=lambda token: (-len(token), token))
         if written:
             self.options["specials"] = written
@@ -146,6 +175,38 @@ class Conversion:
         # and what only its family says (T255: a SmolLM3's layers that RoPE leaves alone; a GPT-NeoX's branches)
         self.options.update(family.options(self.config))
         self.checkpoint = self.stream.out
+
+    def beginning(self, turn, named, tokens, options, ids):
+        """T264: (the format of one turn as the engine takes it, the id of the token every text then begins with, or
+        None where that stays the BOS, and that token's text) of a model's own turn (model_turn()'s), so that the page
+        sends the ids of transformers' apply_chat_template for it, which puts nothing in front of what the template
+        writes. generate() begins every text with the engine's BOS, so where the turn begins with the BOS the
+        tokenizer names, the format is what follows it (as before T264). Where it begins with another of the tokens
+        the engine reads as one (tokens: the special ones and the added ones; a Qwen's or a Hermes 3's <|im_start|>),
+        that token is the engine's BOS for this model and the format is what follows it: none of the tokenizer's own
+        stands in front (a Qwen3 of 8 billion parameters was 178% worse with its <|endoftext|> there, a Hermes 3 13
+        to 15%). Where it begins with text, the BOS stays in front as it was: the engine begins with a token, and the
+        first one of a text is no fixed one.
+        And it stays as it was where taking the token off would change how the rest is read: a sentencepiece
+        tokenizer puts its dummy prefix before the first text and not before the text after a special token, so text
+        that followed the token would be read as the first. Unless that is no other reading: every stretch is
+        prefixed ("every"), or every one that does not begin with a space ("wanting") and what follows the token is
+        the template's own text, which does not. options: the tokenizer's, as the engine gets them. ids: piece_ids() of
+        the tokenizer.bin."""
+        if not turn:
+            return turn, None, None
+        if named and turn.startswith(named):
+            return turn[len(named):], None, None
+        heads = [token for token in tokens if token and turn.startswith(token) and token.encode("utf-8") in ids]
+        if not heads:
+            return turn, None, None
+        head = max(heads, key=len)
+        rest = turn[len(head):]
+        prefixed = options.get("prefixed")
+        read_the_same = options["tokenizer_kind"] == "bytebpe" or prefixed == "every" \
+            or (prefixed == "wanting" and rest[:1] not in ("", " ") and not rest.startswith("{prompt")) \
+            or any(rest.startswith(token) for token in tokens if token)
+        return (rest, ids[head.encode("utf-8")], head) if read_the_same else (turn, None, None)
 
     def feed(self, data):
         done, total = self.stream.feed(data)

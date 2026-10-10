@@ -10,6 +10,18 @@ import pytest
 
 from llama2_convert import Unsupported, one_turn, one_turn_template, render
 
+
+@pytest.fixture(params=["jinja2", "the reader"])
+def reads(request, monkeypatch):
+    """T397: what renders a template for one_turn(): jinja2 where it can be imported, else this project's own reader
+    (a browser whose fetch of the package failed). What both must do is tested with both. render() is the reader
+    itself, whichever of the two one_turn() takes."""
+    if request.param == "jinja2":
+        pytest.importorskip("jinja2")
+    else:
+        monkeypatch.setattr("convert.template.jinja_environment", lambda: None)
+    return request.param
+
 SMOLLM2 = ("{% for message in messages %}{% if loop.first and messages[0]['role'] != 'system' %}"
            "{{ '<|im_start|>system\nYou are a helpful AI assistant named SmolLM, trained by Hugging Face"
            "<|im_end|>\n' }}{% endif %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + "
@@ -37,14 +49,17 @@ QWEN = ("{%- if tools %}\n    {{- '<|im_start|>system\\n' }}\n{%- else %}\n    {
     (QWEN, "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n"
            "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"),
 ])
-def test_one_turn_is_what_transformers_writes(template, expected):
+def test_one_turn_is_what_transformers_writes(template, expected, reads):
     assert one_turn(template, {"bos_token": "<s>", "eos_token": "</s>"}) == expected
 
 
-def test_a_template_it_cannot_read_is_refused_quietly():
+def test_a_template_it_cannot_read_is_refused_quietly(reads):
     # the filters, calls and statements it does not know: the caller keeps the format it has
-    assert one_turn("{{ messages | tojson }}{{ messages[0].content }}", {}) is None
-    assert one_turn("{% macro m() %}x{% endmacro %}{{ m() }}{{ messages[0].content }}", {}) is None  # a macro called
+    assert one_turn("{{ messages | tojson }}{{ messages[0].content }}", {}) is None  # (jinja2: the prompt twice)
+    macro = one_turn("{% macro m() %}x{% endmacro %}{{ m() }}{{ messages[0].content }}", {})  # a macro called
+    assert macro == ("x{prompt}" if reads == "jinja2" else None)
+    assert one_turn("{{ undefined_function() }}{{ messages[0].content }}", {}) is None
+    assert one_turn("{{ raise_exception('only system and user') }}{{ messages[0].content }}", {}) is None
     assert one_turn("{% for message in messages %}{{ message['content'] }}", {}) is None  # never closed
     assert one_turn("{{ 'nothing about the prompt' }}", {}) is None  # no {prompt} in the result
     # T138: trimmed, on its own and between words of the template's (RakutenAI's), or cut on one side only
@@ -52,6 +67,50 @@ def test_a_template_it_cannot_read_is_refused_quietly():
     assert one_turn("USER: {{ messages[0].content | trim }} ASSISTANT:", {}) == "USER: {prompt:trim} ASSISTANT:"
     assert one_turn("USER: {{ messages[0].content }} ASSISTANT:", {}) == "USER: {prompt} ASSISTANT:"
     assert one_turn("[{{ messages[0].content.lstrip() }}]", {}) is None
+
+
+def test_jinja2_renders_where_it_is_there_and_the_reader_where_it_is_not(monkeypatch):
+    """T397: what only jinja2 reads has a format with it and none without (the page then keeps what the list has, or
+    sends what was typed as it is): a macro called (Qwen3.5's, LFM2's), tojson, a for with a test, loop controls,
+    {% generation %}, which transformers adds."""
+    pytest.importorskip("jinja2")
+    only_jinja = [
+        ("{% macro text(m) %}{{ m.content }}{% endmacro %}<u>{{ text(messages[0]) }}</u>", "<u>{prompt}</u>"),
+        ("{{ {'a': 1} | tojson }}{{ messages[0].content }}", '{"a": 1}{prompt}'),
+        ("{{ {'a': 'あ'} | tojson }}{{ messages[0].content }}", '{"a": "あ"}{prompt}'),  # (transformers' tojson keeps non-ASCII)
+        ("{% for m in messages if m.role == 'user' %}[{{ m.content }}]{% endfor %}", "[{prompt}]"),
+        ("{% for m in messages %}{{ m.content }}{% break %}{% endfor %}", "{prompt}"),
+        ("{{ messages[0].content }}{% generation %}<a>{% endgeneration %}", "{prompt}<a>"),
+        # the environment is transformers': a block's line leaves no newline and no indentation behind
+        ("{% if true %}\n  {% if true %}\n{{ messages[0].content }}\n  {% endif %}\n{% endif %}\n", "{prompt}\n"),
+        # a token the tokenizer does not name is not defined, as transformers passes only those it has
+        ("{% if bos_token is defined %}B{% endif %}{% if eos_token is defined %}E{% endif %}{{ messages[0].content }}", "E{prompt}"),
+    ]
+    for template, written in only_jinja[:5]:
+        assert one_turn(template, {}) == written, template
+    for template, written in only_jinja[5:]:
+        assert one_turn(template, {"bos_token": "", "eos_token": "</s>"}) == written, template
+    monkeypatch.setattr("convert.template.jinja_environment", lambda: None)
+    for template, _ in only_jinja[:5]:
+        assert one_turn(template, {}) is None, template
+
+
+def test_jinja2_is_imported_once_and_not_before_a_template_is_read():
+    """T397: importing the converter does not import jinja2 (a third of a second in Pyodide), and the environment
+    is transformers': sandboxed and immutable, so a template cannot reach into Python or change what it is given."""
+    import subprocess
+    import sys
+    from pathlib import Path
+    pytest.importorskip("jinja2")
+    public = Path(__file__).resolve().parent.parent / "public"
+    script = ("import sys; sys.path.insert(0, sys.argv[1]); import llama2_convert as c; print('jinja2' in sys.modules); "
+              "print(c.one_turn('{{ messages[0].content }}', {})); print('jinja2' in sys.modules)")
+    said = subprocess.check_output([sys.executable, "-c", script, str(public)], text=True).split()
+    assert said == ["False", "{prompt}", "True"]
+    from convert.template import jinja_environment
+    assert jinja_environment() is jinja_environment()
+    assert one_turn("{{ messages.append(1) }}{{ messages[0].content }}", {}) is None  # immutable
+    assert one_turn("{{ ''.__class__.__mro__ }}{{ messages[0].content }}", {}) is None  # sandboxed
 
 
 def test_the_pieces_of_jinja_it_does_read():
@@ -173,10 +232,15 @@ def test_what_the_review_of_t127_found():
     assert render("<s>\n{# The system prompt #}\n{%- if true %}[{{ messages[0].content }}]{% endif %}", dict(scope)) == "<s>\n[X]"
     # escapes, left to right as Python's unicode-escape (Jinja's lexer)
     assert render("{{ 'a\\\\nb' }}|{{ '\\x41' }}|{{ '\\u2581' }}|{{ 'it\\'s' }}|{{ '\\\\' }}", dict(scope)) == "a\\nb|A|\u2581|it's|\\"
+
+
+def test_the_date_of_a_template_is_the_day_the_prompt_is_sent(reads):
     # strftime_now() is the day the prompt is sent: filled() in src/models.js makes {date:format} of it
     assert one_turn("Today Date: {{ strftime_now('%d %b %Y') }}\n{{ messages[0].content }}", {}) == "Today Date: {date:%d %b %Y}\n{prompt}"
-    for unknown in ("strftime_now('%j')", "strftime_now(fmt)", "strftime_now('%d ' + '%b')"):
+    for unknown in ("strftime_now('%j')", "strftime_now(fmt)", "strftime_now('%d}')"):
         assert one_turn("{{ " + unknown + " }}{{ messages[0].content }}", {}) is None, unknown
+    # (a format put together is one jinja2 reads and the reader does not)
+    assert one_turn("{{ strftime_now('%d ' + '%b') }}{{ messages[0].content }}", {}) == ("{date:%d %b}{prompt}" if reads == "jinja2" else None)
     # a template that reckons with the date (an Unsloth copy of Mistral Small works out yesterday's) cannot be
     # filled later: checked on two real days, it gives up
     assert one_turn("{% set d = strftime_now('%d') %}{% if d == '01' %}first {% endif %}{{ d }} {{ messages[0].content }}", {}) is None
@@ -186,7 +250,7 @@ FIXTURES = json.load(open(__import__("pathlib").Path(__file__).parent / "fixture
 
 
 @pytest.mark.parametrize("fixture", FIXTURES, ids=[fixture["repo"] for fixture in FIXTURES])
-def test_real_templates_read_as_jinja_writes_them(fixture):
+def test_real_templates_read_as_jinja_writes_them(fixture, reads):
     """T127: real templates of the families this site takes (tokenizers/fixtures: the template of the pinned
     revision, and one turn of it rendered by jinja2 with transformers' settings, the BOS the template writes first
     left out). Two of them are in chat_template.jinja, which the converter is handed on its own."""
@@ -199,7 +263,7 @@ def test_real_templates_read_as_jinja_writes_them(fixture):
     assert got == fixture["one_turn"].replace("{prompt}", "{prompt:trim}" if fixture["trims"] else "{prompt}")
 
 
-def test_it_reads_a_tokenizer_config():
+def test_it_reads_a_tokenizer_config(reads):
     config = {"chat_template": SMOLLM2, "bos_token": {"content": "<s>"}, "eos_token": "</s>"}
     assert one_turn_template(json.dumps(config)).endswith("<|im_start|>assistant\n")
     assert one_turn_template(json.dumps({"chat_template": [{"name": "default", "template": LLM_JP}],

@@ -4,6 +4,12 @@ import json
 import re
 import time
 
+# T397: where jinja2 can be imported (the page's worker loads Pyodide's package before it converts; the build and the
+# tests have it installed) it renders the template, in the environment transformers' apply_chat_template makes
+# (rendered(), jinja_environment()). The reader below is what renders where it cannot: a browser whose fetch of the
+# package failed. What is made of the rendered turn (one_turn(): {prompt}, {prompt:trim}, {date:format}) is the same
+# whichever rendered it.
+#
 # A chat_template is Jinja. This reads the part of Jinja those templates actually use: a loop over the
 # messages, if / elif / else with the usual comparisons, set, string concatenation, the trim filter, and the
 # whitespace control of {%- -%}; since T127 also the filters length, list and selectattr, namespace() and the
@@ -398,10 +404,7 @@ def value_of(expression, scope):
         argument = expression[len("strftime_now("):-1].strip()
         if not argument or argument[0] not in "'\"" or string_end(argument) != len(argument) - 1:
             raise Unsupported(f"strftime_now of {argument!r}")
-        form = unescape(argument[1:-1])
-        directives = form.replace("%%", "").split("%")[1:]  # what follows each %: the ones filled() knows
-        if "}" in form or not all(directive[:1] and directive[0] in "dmYybBaAHMS" for directive in directives):
-            raise Unsupported(f"the date format {form!r}")
+        form = date_format(unescape(argument[1:-1]))
         day = scope.get(DAY)  # a day to write, when one_turn() checks the template against real dates
         return "{date:" + form + "}" if day is None else time.strftime(form, day)
     name, rest = expression, ""
@@ -465,8 +468,75 @@ class Loop:
         self.length = total
 
 
+def date_format(form):
+    """A format of strftime_now() that the page's filled() can write on the day the prompt is sent, or Unsupported."""
+    directives = form.replace("%%", "").split("%")[1:]  # what follows each %: the ones filled() knows
+    if "}" in form or not all(directive[:1] and directive[0] in "dmYybBaAHMS" for directive in directives):
+        raise Unsupported(f"the date format {form!r}")
+    return form
+
+
+JINJA = []  # jinja_environment()'s answer, once it was asked
+
+
+def jinja_environment():
+    """jinja2's environment as transformers makes it for apply_chat_template (utils/chat_template_utils.py: sandboxed
+    and immutable, trim_blocks and lstrip_blocks, the loop controls, {% generation %}, its tojson and
+    raise_exception), or None where jinja2 is not there to import. Asked once: the import is a third of a second
+    in Pyodide, and only a conversion with a template pays it."""
+    if JINJA:
+        return JINJA[0]
+    try:
+        import jinja2
+        from jinja2.ext import Extension, loopcontrols
+        from jinja2.sandbox import ImmutableSandboxedEnvironment
+    except ImportError:
+        JINJA.append(None)
+        return None
+
+    def raise_exception(message):
+        raise jinja2.exceptions.TemplateError(message)
+
+    def tojson(value, ensure_ascii=False, indent=None, separators=None, sort_keys=False):
+        return json.dumps(value, ensure_ascii=ensure_ascii, indent=indent, separators=separators, sort_keys=sort_keys)
+
+    class Generation(Extension):
+        """{% generation %} ... {% endgeneration %}, which transformers adds to mark what the assistant wrote: the
+        body as it is"""
+        tags = {"generation"}
+
+        def parse(self, parser):
+            line = next(parser.stream).lineno
+            body = parser.parse_statements(["name:endgeneration"], drop_needle=True)
+            return jinja2.nodes.CallBlock(self.call_method("_body"), [], [], body).set_lineno(line)
+
+        def _body(self, caller):
+            return caller()
+
+    environment = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True, extensions=[loopcontrols, Generation])
+    environment.filters["tojson"] = tojson
+    environment.globals["raise_exception"] = raise_exception
+    JINJA.append(environment)
+    return environment
+
+
+def rendered(template, scope):
+    """The template with the names of scope, by jinja2 where it is there (T397) and by render() where it is not.
+    scope is one_turn()'s: the tokens the tokenizer does not name are left out for jinja2, as transformers passes
+    only those it has (special_tokens_map), and strftime_now() writes {date:format} or the day under DAY."""
+    environment = jinja_environment()
+    if environment is None:
+        return render(template, scope)
+    day = scope.get(DAY)
+    names = {name: value for name, value in scope.items()
+             if name not in (DAY, "strftime_now") and not (name.endswith("_token") and value == "")}
+    now = lambda form: "{date:" + date_format(form) + "}" if day is None else time.strftime(date_format(form), day)
+    return environment.from_string(template).render(**names, strftime_now=now)
+
+
 def render(template, scope):
-    """The template, with the names of scope. Raises Unsupported for anything this reader does not know."""
+    """The template, with the names of scope, by this file's own reader. Raises Unsupported for anything it does not
+    know."""
     pieces = tokenize_template(template)
     out = []
     run(pieces, 0, len(pieces), scope, out)
@@ -593,17 +663,25 @@ def one_turn_template(tokenizer_config, chat_template=None):
         if not chat_template:
             return None
         config = {}
+    turn, bos = model_turn(config, chat_template)
+    # generate() starts every run with the BOS token already: one written by the template would be a second one
+    return turn[len(bos):] if turn and bos and turn.startswith(bos) else turn
+
+
+def model_turn(config, chat_template=None):
+    """(one user turn of a model's own template, whole: with the BOS where the template writes it; the text of the BOS
+    its tokenizer names, "" for none). The turn is None where there is no template this can read. config: a
+    tokenizer_config.json, read (a dict; anything else is one that says nothing)."""
+    config = config if isinstance(config, dict) else {}
+    bos = config_token(config, "bos_token")
     template = chat_template or config.get("chat_template")
     if isinstance(template, list):  # some models publish several; the first is the chat one
         template = template[0].get("template") if template and isinstance(template[0], dict) else None
     if not isinstance(template, str) or not template.strip():
-        return None
-    bos = config_token(config, "bos_token")
+        return None, bos
     # the tokens transformers gives a template by their names (special_tokens_map): a template may write the pad token
     names = ("bos_token", "eos_token", "unk_token", "pad_token", "sep_token", "cls_token", "mask_token")
-    turn = one_turn(template, {name: config_token(config, name) for name in names})
-    # generate() starts every run with the BOS token already: one written by the template would be a second one
-    return turn[len(bos):] if turn and bos and turn.startswith(bos) else turn
+    return one_turn(template, {name: config_token(config, name) for name in names}), bos
 
 
 def one_turn(template, specials, mark="\x00prompt\x00"):
@@ -617,13 +695,13 @@ def one_turn(template, specials, mark="\x00prompt\x00"):
              **{name: token for name, token in specials.items() if token and name not in ("bos_token", "eos_token")},
              "tools": None, "tools_json": None, "documents": None, "strftime_now": STRFTIME}
     try:
-        text = render(template, dict(scope))
+        text = rendered(template, dict(scope))
         # strftime_now() is written {date:format}, which the page fills with the day it sends the prompt. That holds
         # where the template only writes the date; one that reckons with it (yesterday's date from today's day of
         # the month) would come out otherwise, so the two are compared on two days, and it gives up where they differ
         days = CHECK_DAYS if "{date:" in text else []
         fill = lambda day: re.sub(r"\{date:([^}]*)\}", lambda found: time.strftime(found.group(1), day), text)
-        if any(fill(day) != render(template, {**scope, DAY: day}) for day in days):
+        if any(fill(day) != rendered(template, {**scope, DAY: day}) for day in days):
             return None
     except Unsupported:
         return None
@@ -635,7 +713,7 @@ def one_turn(template, specials, mark="\x00prompt\x00"):
     # page's filled() trims: rendered once more with spaces around the mark, it either keeps them or drops both.
     # (Whether the spaces are there is no test: RakutenAI's writes "USER: " and " ASSISTANT:" around a trimmed one)
     try:
-        spaced = render(template, {**scope, "messages": [{"role": "user", "content": f" {mark} "}]})
+        spaced = rendered(template, {**scope, "messages": [{"role": "user", "content": f" {mark} "}]})
     except Exception:
         return None
     if spaced == text.replace(mark, f" {mark} "):

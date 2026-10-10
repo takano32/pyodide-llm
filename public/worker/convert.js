@@ -9,6 +9,7 @@ const { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom
 const { HF_HEADER_BYTES, sized, refused, fetchRange, inOrder } =
   await import(new URL(`ranges.js${new URL(import.meta.url).search}`, import.meta.url));
 const { HEADER_BYTES, headerInts } = await import(new URL(`sources.js${new URL(import.meta.url).search}`, import.meta.url));
+const { templatePackage } = await import(new URL(`pyodide.js${new URL(import.meta.url).search}`, import.meta.url));
 
 // A model without a model.safetensors is split over several files (model-00001-of-00002.safetensors, ...), or
 // published under the name of a shard even when there is only one (T78). model.safetensors.index.json says which
@@ -119,6 +120,8 @@ export async function convert(model, signal, id) {
     // fetched when it is first needed: most visitors never convert anything
     // (T347: the converter is a window and its parts, python.js's list; each with this worker's ?v=<build>)
     const { placePython } = await import(new URL(`../python.js${self.location.search}`, import.meta.url));
+    // (T397) and jinja2 with it, for the model's chat template: the conversion goes on without it where it does not come
+    const jinja = templatePackage(state.pyodide);
     await placePython(state.pyodide, "llama2_convert", async (name) => {
       const res = await fetch(new URL(`../${name}${self.location.search}`, import.meta.url), { signal });
       if (!res.ok) {
@@ -126,6 +129,7 @@ export async function convert(model, signal, id) {
       }
       return res.text();
     });
+    await jinja;
     state.llama2_convert = state.pyodide.pyimport("llama2_convert");
   }
   const started = performance.now();
