@@ -62,8 +62,12 @@ page_modules() {
   node tests/worker-check.mjs
   # T357: what a conversion asks of huggingface.co, in order, for every kind of source the page converts (one file, shards, a
   # GGUF alone and with another repository's vocabulary, the tokenizer's candidates, the optional files), on a made-up hub
-  # and a converter's stand-in, against tests/fixtures/conversion-fetches.json (under a second)
+  # and a converter's stand-in, against tests/fixtures/conversion-fetches.json (T374.2.1: by the real conduct in Pyodide
+  # and the worker's loop that answers it: about five seconds)
   node tests/worker-fetches-check.mjs
+  # T374.2.1: the worker's loop that answers a conversion's conduct, alone (a stand-in generator, no Pyodide): every kind
+  # of request, a file that is not there, failures and cancelled loads, every proxy let go, and T403's file handle
+  node tests/worker-conduct-check.mjs
   # T350: the names the worker and its modules (public/worker/) use: declared, imported, or the worker's globals (the two
   # checks above run them as scripts of one context, where a missing import does not show)
   node tests/worker-modules-check.mjs

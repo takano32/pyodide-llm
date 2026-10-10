@@ -6,9 +6,10 @@
 #              ("GET owner/model@0123456 model.safetensors bytes=0-524287"). What only the answerer decides is the
 #              hub's: how a stream is cut into parts (see parts()), and whether a range's answer says the file's size
 #   answered   the loop that answers a conduct from a hub: what the worker's side becomes in T374.2
-#   today      the worker's ladder of today (public/worker/convert.js, lines 135 to 352) in Python, call for call, on
-#              the same hub: what a conduct is compared with where there is no fixture (real files, made-up
-#              repositories by the hundred). It goes when the worker's ladder goes (T374.2)
+#   today      the worker's ladder as it was before T374.2.1 (public/worker/convert.js of a610edb, lines 135 to 352)
+#              in Python, call for call, on the same hub: what a conduct is compared with where there is no fixture
+#              (real files, made-up repositories by the hundred). The worker's own went with T374.2.1 for the models of
+#              huggingface.co; this copy goes with T374.2.3
 #   StandIn    the converter's stand-in of worker-fetches-check.mjs in Python: it reads the made-up files as far as the
 #              conduct depends on it and writes down what it is handed
 import json
@@ -268,6 +269,8 @@ class StandIn:
         said = lambda text: json.dumps(text, ensure_ascii=False)
 
         def base_of(first):
+            # (the worker's answer is JavaScript's bytes in Pyodide: tests/worker-fetches-check.mjs)
+            first = first.to_py() if hasattr(first, "to_py") else first
             base = struct.unpack_from("<Q", bytes(first[:12]), 4)[0]
             if len(first) < base:
                 raise Incomplete()
