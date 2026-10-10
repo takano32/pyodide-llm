@@ -127,6 +127,11 @@ def test_a_sentencepiece_template_keeps_its_bos_where_the_rest_would_be_read_oth
     assert options["stop_tokens"] == [ids["<|user|>"], ids["<s>"], ids["</s>"]]
     assert sent(options, engine, "world") == engine.encode("<|user|>hello\nworld</s><|assistant|>", marks)
     assert sent(options, engine, "world")[:2] == [ids["<|user|>"], ids["▁hello"]]
+    # legacy, and the template's own text follows the token with a space: "wanting" leaves that stretch as it is, and the
+    # engine would put a second space on it as the first text, so the BOS stays in front and the format whole (T369 review)
+    spaced = "<|user|> hello\n{{ messages[0].content }}</s><|assistant|>"
+    options, engine = converted(data, "tokenizer.model", config, chat_template=spaced, tokenizer_class="LlamaTokenizer")
+    assert options["bos"] == ids["<s>"] and options["template"] == "<|user|> hello\n{prompt}</s><|assistant|>"
     # the same template, not legacy: "hello" after the token has no prefix, and would have one as the first text
     options, engine = converted(data, "tokenizer.model", config, chat_template=eurollm, tokenizer_class="LlamaTokenizer", legacy=False)
     assert options["bos"] == ids["<s>"] and options["template"] == "<|user|>hello\n{prompt}</s><|assistant|>"

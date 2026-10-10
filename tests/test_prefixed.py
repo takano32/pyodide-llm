@@ -49,6 +49,7 @@ DESCRIBED = [  # (what tokenizer.json says, which stretches of text are prefixed
     ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "prepend_scheme": "never", "split": False}}, False),
     ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": True}}, "wanting"),  # (before prepend_scheme)
     ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁", "add_prefix_space": False}}, False),
+    ({"pre_tokenizer": {"type": "Metaspace", "replacement": "▁"}}, "wanting"),  # (neither key: the tokenizers library's default is "always")
     ({"normalizer": {"type": "Prepend", "prepend": "_"}}, False),
     ({"normalizer": {"type": "Replace", "pattern": {"Regex": "^x"}, "content": "▁"}}, False),
     ({"normalizer": {"type": "Replace", "pattern": {"String": "^"}, "content": "▁"}}, False),
