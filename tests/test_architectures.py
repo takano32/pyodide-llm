@@ -293,6 +293,22 @@ def test_a_model_has_its_architectures_facts_from_the_time_it_is_made(arch):
             model(arch, unturned=[2])
 
 
+def test_a_step_a_tool_puts_on_a_model_is_the_one_the_forward_pass_takes():
+    """The reference tools (tests/reference_lfm2.py's faults) put their own short_convolution, convolved and follow
+    on a model after it is made: the forward pass reads the step of its layers that keep a state off the model at
+    every token, by its name, as it reads a method."""
+    llama = model("lfm2")
+    right = [llama.forward(token, pos) for pos, token in enumerate((1, 7))]
+    calls, step = [], llama.short_convolution
+    llama.short_convolution = lambda a, xb: calls.append(a) or 2 * step(a, xb)
+    wrong = [llama.forward(token, pos) for pos, token in enumerate((1, 7))]
+    assert calls == [0, 1, 2] * 2 and not np.allclose(right[1], wrong[1], atol=1e-5)
+    del llama.short_convolution
+    llama.follow = lambda pos: calls.append("follow")
+    assert np.array_equal(llama.forward(1, 0), right[0]) is False  # (the state was not cleared: follow was the tool's)
+    assert calls[-1] == "follow"
+
+
 # ---- adding to the table: a record and nothing in the parts that read it
 def test_an_architecture_that_is_anothers_record_but_for_a_fact(monkeypatch):
     """A made-up "plain": a Llama whose RoPE tables have no yarn magnitude. One record, and every part reads it."""
