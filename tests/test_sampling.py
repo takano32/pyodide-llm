@@ -120,6 +120,8 @@ def samplers(calls=None):
 @pytest.mark.parametrize("which", ["NumPy", "the kernels"])
 def test_a_sampler_reads_the_settings_once_a_generation(which):
     """Not at every token (T359.7): drawing() takes what it needs of the value, and the draws read none of it."""
+    if which == "NumPy" and NumpySampler.drawing.__module__ != "engine.sampler":
+        pytest.skip("NumpySampler.drawing is wrapped, and the wrapper reads two settings itself (the recorder of tests/unchanged.mjs)")
     sampling = Counted(temperature=0.8, topp=0.9, repetition_penalty=1.2, top_k=20, min_p=0.05, presence_penalty=0.5)
     draw = samplers()[which].drawing(sampling, np.random.default_rng(3))
     assert sorted(sampling.reads) == sorted(DEFAULTS)  # each once

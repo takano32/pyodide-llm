@@ -100,12 +100,13 @@ def pytest_collection_finish(session):
 
     def drawing_told(self, sampling, rng):
         draw = drawing(self, sampling, rng)
+        repeated, present = sampling.repetition_penalty != 1.0, sampling.presence_penalty != 0.0
 
         def told(logits, history, written):
             token = draw(logits, history, written)
-            if sampling.repetition_penalty != 1.0:
+            if repeated:
                 note("penalized", np.ascontiguousarray(logits).tobytes())
-            if sampling.presence_penalty != 0.0 and written:
+            if present and written:
                 note("penalized", np.ascontiguousarray(logits).tobytes())
             note("sampled", repr(int(token)).encode())
             return token
