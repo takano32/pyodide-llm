@@ -82,6 +82,41 @@ const hub = (files, line = {}) => (url, init) => {
   return new Response(stream(found, from, end, line.delay, line.held === from), { status: 206, headers: line.unsaid ? {} : { "Content-Range": `bytes ${from}-${end - 1}/${found.size}` } });
 };
 
+// ---- a folder of the visitor's disk: Files that write down what is read of them, as a request is written down
+// ("text config.json", "range model.safetensors bytes=0-524287", "stream model.safetensors bytes=308-3145835"). The
+// disk gives a stream a MiB at a time
+const reads = [];
+function diskFile(name, value) {
+  const file = typeof value === "string" ? { head: text(value), size: text(value).length } : value;
+  const bytes = (from, to) => {
+    const made = new Uint8Array(to - from);
+    if (from < file.head.length) made.set(file.head.subarray(from, Math.min(to, file.head.length)), 0);
+    return made;
+  };
+  const between = (from, to) => (from < to ? ` bytes=${from}-${to - 1}` : ` bytes=${from}-`);
+  return {
+    name, size: file.size,
+    text: async () => { reads.push(`text ${name}`); return new TextDecoder().decode(bytes(0, file.size)); },
+    arrayBuffer: async () => { reads.push(`bytes ${name}`); return bytes(0, file.size).buffer; },
+    slice(begin = 0, end = file.size) {
+      const from = Math.min(begin, file.size), to = Math.max(from, Math.min(end, file.size));
+      return {
+        size: to - from,
+        arrayBuffer: async () => { reads.push(`range ${name}${between(from, to)}`); return bytes(from, to).buffer; },
+        stream() { reads.push(`stream ${name}${between(from, to)}`); return stream(file, from, to); },
+      };
+    },
+  };
+}
+// the model the page makes of the files chosen (openHuggingFace() of src/page/choose.ts, which finds each by its name
+// in small letters)
+function chosen(source, files) {
+  const disk = Object.entries(files).map(([name, value]) => diskFile(name, value));
+  const named = (...names) => disk.find(({ name }) => names.includes(name.toLowerCase()));
+  return { weights: named(source.weights.toLowerCase()), config: named("config.json"), tokenizer: ANY.map((name) => named(name)).filter(Boolean),
+    tokenizerConfig: named("tokenizer_config.json"), chatTemplate: named("chat_template.jinja") };
+}
+
 // ---- the conduct is the real one (public/convert/conduct.py, in Pyodide, as the worker has it) and the worker's loop
 // answers it (public/worker/conduct.js): the requests below are what the two make together. The converter is a
 // stand-in in the conduct's place of it (tests/conduct_hub.py's StandIn, T374.1), which writes down what it is handed;
@@ -115,8 +150,8 @@ const handedSoFar = () => {
 };
 let kept = [];
 context.stand = {
-  // (the folder's steps alone call the converter's window, and no case here is a folder)
-  converter: {},
+  // (the folder's steps alone call the converter's window: the stand-in's conversion, as the conduct has it)
+  converter: { Conversion: pyodide.globals.get("convert").conduct.Conversion },
   kept: {
     openKept: async () => null, replaced: async () => [], forget: async () => {}, keeper: async () => undefined,
     keep: async (model, manifest) => { kept.push(`kept as ${model.conversion.dtype}: ${manifest.repo}@${manifest.revision.slice(0, 7)}, ${manifest.bytes} bytes, options ${JSON.stringify(manifest.options)}`); },
@@ -166,6 +201,19 @@ const CASES = [
   ["no tokenizer_config.json (an optional file) and no chat_template.jinja", hf(), repo("owner/model", left(whole(small), "tokenizer_config.json"))],
   ["a chat_template.jinja beside a tokenizer_config.json without a template", hf(), repo("owner/model", whole(small, { "tokenizer_config.json": PLAIN, "chat_template.jinja": "a template" }))],
   ["a config.json under another name, int6 asked for", { ...hf({ config: "configs/text.json" }), dtype: "int6" }, repo("owner/model", { ...left(whole(small), "config.json"), "configs/text.json": CONFIG })],
+  // ---- a folder of the visitor's disk (no repository: the files are the folder's, by their names)
+  ["a folder: one safetensors file, as the disk gives it", { weights: "model.safetensors" }, whole(safetensors(20 * MiB + 5))],
+  ["a folder: a header past the first 512 KiB", { weights: "model.safetensors" }, whole(safetensors(2 * MiB, { header: 700000 }))],
+  ["a folder: a tokenizer.json the converter refuses, then spiece.model", { weights: "model.safetensors" }, whole(small, { "tokenizer.json": "unreadable", "spiece.model": "a sentencepiece model" })],
+  ["a folder: every tokenizer of it refused", { weights: "model.safetensors" }, whole(small, { "tokenizer.json": "unreadable", "tokenizer.model": "unreadable too" })],
+  ["a folder: no tokenizer_config.json, a chat_template.jinja", { weights: "model.safetensors" }, { ...left(whole(small), "tokenizer_config.json"), "chat_template.jinja": "a template" }],
+  ["a folder: a chat_template.jinja beside a tokenizer_config.json without a template", { weights: "model.safetensors" }, whole(small, { "tokenizer_config.json": PLAIN, "chat_template.jinja": "a template" })],
+  ["a folder: neither a tokenizer_config.json nor a chat_template.jinja, a sentencepiece model", { weights: "weights.safetensors" },
+    { "config.json": CONFIG, "tokenizer.model": "a sentencepiece model", "weights.safetensors": small, "README.md": "never read" }],
+  ["a folder: names in capital letters", { weights: "Model.SafeTensors" }, { "Config.JSON": CONFIG, "Tokenizer_Config.json": TEMPLATED, "Tokenizer.JSON": "a tokenizer", "Model.SafeTensors": small }],
+  ["a folder: a file that is no safetensors file", { weights: "model.safetensors" }, whole("not a model")],
+  ["a folder: a file that is no safetensors file, and an index beside it that names shards", { weights: "model.safetensors" },
+    whole("not a model", { "model.safetensors.index.json": index(["model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors"]) })],
 ];
 
 const shortUrl = (url) => url.replace(/^https:\/\/huggingface\.co\/(.+?)\/resolve\/([0-9a-f]{7})[0-9a-f]{33}\//, "$1@$2 ");
@@ -175,13 +223,22 @@ for (const [name, { dtype, ...source }, files, line = {}] of CASES) {
   kept = [];
   navigatorStandIn.deviceMemory = line.deviceMemory ?? 8;
   fresh(hub(files, line));
-  const model = { id: "made-up", name: "Made up", hf: source, ...(dtype ? { conversion: { dtype } } : {}) };
+  const folder = !source.repo;
+  reads.length = 0;
+  const model = { id: "made-up", name: "Made up", hf: folder ? chosen(source, files) : source, ...(dtype ? { conversion: { dtype } } : {}) };
   const failed = await failure(context.convert(model, new AbortController().signal, 1));
   await sleep(0);
+  // (a failure of Python's is told by its last line, as the worker tells a ValueError)
+  const words = (error) => (error.type === "ValueError" ? error.message.trim().split("\n").pop().replace(/^ValueError: /, "") : error.message);
+  const progress = messages.filter((m) => m.type === "progress");
+  if (folder) assert.deepEqual(requests.map((r) => r.url), [], `${name}: a folder asked the network for something`);
+  else assert.deepEqual(reads, [], `${name}: a file of the disk was read for a model of huggingface.co`);
   found[name] = {
-    requests: requests.map((r) => `${r.method} ${shortUrl(r.url)}${r.range ? ` ${r.range}` : ""}`),
+    requests: folder ? [...reads] : requests.map((r) => `${r.method} ${shortUrl(r.url)}${r.range ? ` ${r.range}` : ""}`),
     converter: [...handedSoFar(), ...kept],
-    ended: failed ? `failed: ${failed.error.message}` : `converted; ${messages.filter((m) => m.type === "progress").length ? "progress was told" : "NO progress was told"}`,
+    ended: failed ? `failed: ${words(failed.error)}` : `converted; ${progress.length ? "progress was told" : "NO progress was told"}`,
+    // (what a folder's progress says has arrived, and of how much: the page shows the share converted)
+    ...(folder && { progress: [...new Set(progress.map((m) => `${m.received} of ${m.total}`))] }),
   };
   run("state.llama = undefined");
 }
@@ -207,7 +264,7 @@ for (const name of new Set([...Object.keys(expected), ...Object.keys(found)])) {
   differ++;
   console.log(`DIFFERENT: ${name}`);
   if (!was || !now) { console.log(`    ${was ? "the fixture has it and the check makes it no more" : "not in the fixture"}`); continue; }
-  for (const part of ["requests", "converter", "ended"]) {
+  for (const part of ["requests", "converter", "ended", "progress"]) {
     const a = [].concat(was[part]), b = [].concat(now[part]);
     const at = a.findIndex((line, i) => line !== b[i]);
     const first = at === -1 && b.length > a.length ? a.length : at;

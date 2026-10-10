@@ -25,8 +25,11 @@ from convert.conduct import SOURCES, TOKENIZERS, conduct, says_a_template, shard
 from convert.gguf import Incomplete
 
 FIXTURES = Path(__file__).parent / "fixtures"
-CASES = json.loads((FIXTURES / "conversion-cases.json").read_text())
+EVERY_CASE = json.loads((FIXTURES / "conversion-cases.json").read_text())
 FETCHES = json.loads((FIXTURES / "conversion-fetches.json").read_text())
+# the models of huggingface.co; the others are folders of the visitor's disk (T374.2.2), which name no repository
+CASES = [case for case in EVERY_CASE if "repo" in case["hf"]]
+FOLDERS = [case for case in EVERY_CASE if "repo" not in case["hf"]]
 NAMES = [case["name"] for case in CASES]
 REVISION = "0123456789abcdef0123456789abcdef01234567"
 
@@ -66,8 +69,8 @@ def as_today(hub, hf, converter, making, **more):
 
 # ---- the worker's requests, line by line
 def test_the_cases_are_the_ones_the_worker_was_asked_for():
-    assert NAMES == list(FETCHES) and len(NAMES) == 19
-    assert sum(len(fetches["requests"]) for fetches in FETCHES.values()) == 161
+    assert [case["name"] for case in EVERY_CASE] == list(FETCHES) and len(NAMES) == 19
+    assert sum(len(FETCHES[name]["requests"]) for name in NAMES) == 161
 
 
 def expected_of(name):
