@@ -1976,6 +1976,10 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **未確認**: 速さは 1 つも測っていない。「後」の数は見積もり。
 ### T377 [バグ][WebGPU] GPU だけのモデルで GPU の Worker の部品が届かないと、重みを書く側が 60 秒ずつ待つ — 状態: 未着手（2026-10-09、T352 のレビューから。コードの読みだけで、走らせていない。規模 小。リファクタリングの後に）
 - GPU の Worker が `error` で終わると `stopGpu` が `direct.lost` を立てるが、重みを書く側の `room()`（`public/forward/alone.js` の `wait`）は `lost` を見ない。60 秒（`FLOW_STALL_MS`）進まなくて初めて投げ、`worker/sources.js` の取り直しでさらに最大 60 秒ずつ待つ。本線でも `gpu.js` 1 つが届かなければ同じだが、T352 で部品が 10 個になり起きる見込みが上がった。直す案: `onLost` で `room()` を止める。
+
+### T381 [バグ][変換] GGUF の頭を 3 回まで頭から取り直し、テンソルも頭の続きから取り直す — 状態: 未着手（2026-10-10、T357a の取得の列の記録とレビューから。規模 小。T374 で変換の段取りを Python に移すときに一緒に）
+- `public/worker/convert.js`（166〜180 行と 205〜215 行のあたり）: GGUF の頭を位置 0 から 2 MiB、足りなければ 8 MiB、32 MiB と頼み直し（前に取った分を捨てる）、頭の後ろに付いてきたテンソルのバイトも捨てて、テンソルを base から取り直す。作り物（頭 9 MiB、全体 30 MiB）では 20 MiB を 2 回取った。**実物の見積もり（未計測）**: Qwen3.5 の GGUF は頭が約 11〜12 MB（27B の 11.1 MB から）なので 3 回で約 42 MiB を頼み、約 30 MiB が無駄（4.75 GB の 0.3〜0.7%、8 MB/s で約 4 秒）。Llama 3 の頭は 8 MiB に入るかもしれない（未計測）。
+- 直す案: 足りない尻尾だけを頼む。頭の応答に付いてきたテンソルのバイトを使う。直すと `tests/fixtures/conversion-fetches.json` が変わる（`--write`）。
 ### T365 [設計][その他] ビルドに載せる形と TypeScript の決まりを決める — 状態: 未着手（2026-10-09。規模 小〜中）
 - 調べて決めること: Astro（Vite）で、worker・その部品・`helper.js`（ソフトウェアスレッド）・`gpu.js`（GPU の Worker）・`forward.js` と部品・`shaders.js`・`/benchmark/` の Worker をどう束ねるか（Worker が Worker を作る所、動的な import、wasm のカーネルと Python のファイルと `python.js` の一覧の扱い）。Service Worker `coi.js` の写しの決まり（いまは `?v=` のある同じオリジンの URL を版ごとに持つ）をハッシュ付きの名前でどうするか。Node の試験がソースを直接読む形（`tests/worker-source.mjs` が worker を文として vm で走らせる作りをどうするか）。`tsconfig` の決まり（strict、型を消すだけの構文に限る）。GitHub Pages の 10 分のキャッシュと、デプロイの境目で古いページが新しいファイルを取る場合。
 
@@ -2330,7 +2334,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 - **CI（2026-10-09、ブランチで）**: 全部の組と網 run 37997060411（成功、網は全部同じ）。`gpu-prompt.yml full=true`（Chromium・Chrome・Edge の SwiftShader と Dawn）run 37997062664（成功: Dawn の台の溜め方を替えた所もここで通った）。3 つのブラウザでの読み込みと GPU の道（フォールバックの断り、`gpuTest=on` の 2 回の訪問、llm-jp-3 150M、`gpuTest=only` の 2 回の訪問、モデルの切り替え）run 37997067431（成功）。`preview.yml offline=true` run 37997069859（成功）。**実物のモデル（Qwen2.5 0.5B・Qwen3 0.6B）run 37997065220: Dawn の job は成功（59.3 分）、Chromium（SwiftShader）の job は 90 分の待ちの期限で落ちた**。これは頼み方の誤りで、分けたことの落ちではない: AGENTS.md の検証手順 4 が「SwiftShader は 360M 以上が形を選ぶ計測で時間を越えるので Dawn の job を読む」と言っている大きさを SwiftShader にも回した。
 - **本番（2026-10-10、デプロイ run 38006842331。全部の run の終わりを待ってから書いた）**: Chromium の 2 回の訪問（tiny-lm・llm-jp-3 150M・Qwen3.5 0.8B）run 38007282727、`gpuTest=on` の 2 回の訪問 run 38007284723、`gpuTest=only` run 38007286474、WebKit の 2 回の訪問 run 38007288063、Firefox run 38007289975: どれも成功。
-### T357a [整理][遠隔試験] 形を替える前に足す試験と、設計に依らない道具の片づけ — 状態: 進行中（2026-10-10、ブランチ `t357a-tests-first`、CI 待ち。Opus medium。T376 の設計の案が T357 を 2 つに分けた前の半分: 案の承認には依らない。規模 中）
+### T357a [整理][遠隔試験] 形を替える前に足す試験と、設計に依らない道具の片づけ — 状態: 完了（2026-10-10、レビュー済み: Sonnet low。必ず直すもの 0。2026-10-10、ブランチ `t357a-tests-first`、CI 待ち。Opus medium。T376 の設計の案が T357 を 2 つに分けた前の半分: 案の承認には依らない。規模 中）
 - **製品のコードには触っていない**（`public/`・`src/`・`kernels/` の差分は無い）。足したのは試験 4 つと道具の片づけで、どれも今の動きを書き留めるもの。
 - **(1) チェックポイントの配置の記録（守りの網の新しい種類 `layouts`）**: `tests/unchanged_layouts.py` が、木が言うことを作り物の格子で 1 つの JSON にする。4 つの配置の 18 の家族（llama・外れ値・granite の q の倍率・smollm3 の掛けない層・qwen2・qwen3・head の広い qwen3・bias と norm の両方・回した基底・gpt2 の接頭辞ありとなし・neox の一部と全部・qwen35 が 3 つ・lfm2 が 2 つ）× 見出し 2〜3 個 × 5 つの dtype で、`layout()`・`Writer` の置き場と `checkpoint_size()`・`checkpoint_dtype()`・`Llama(external=)` が渡す計画・`external_tensors()`・`conversion_plan()`。作り物の config.json 23 個から変換器が読む見出しと形、繰り返しの罰の窓も。**1267 個、木 1 つに 0.3 秒**。本線と同じ（ok）。
   - **網にした訳**: T359 は 4 か所のテンソルの順を 1 つの表にする回で、要るのは「前の木と同じことを言うか」の比べ。固定のファイルは計画の中の表（cos と sin）のハッシュが機械の libm で変わりうるので、2 つの木を同じ機械で回す形のほうが確か。
@@ -2352,6 +2356,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **この回でやらなかったこと（T357b へ）**: 下の項目。`tests/gpu-check.mjs`（127 KB）と `tests/bench.mjs`（94 KB）は大きさのためだけには切らなかった（責務の切れ目で安く切れる所が見つからなかった。gpu-check は作り物のモデルの作り方と一緒に動かすのがよい）。
 
 - **CI（2026-10-10、ブランチで、どれも成功）**: 全部の組と網（`layouts` も「同じ」）と `tile-bench`・`encode-bench`（x86-64）run 38010464342。同じ 2 つの道具を arm64 で run 38010466173。`gpu-prompt.yml`（Chromium と Dawn、`gpu-check.mjs` の終わり方を替えた所）run 38010467804。`tile-bench` の本線の側の誤差は全部の形でこの木と同じ（8.52e-8 など）。
+- **レビュー（Sonnet low、2026-10-10）**: 別の壊し方 13 通り（int6 と 3 値の大きさの式、Granite の q の倍率、SmolLM3 の間隔、計画の鍵の片側だけの改名 4 つ、止める旗の 3 通り、取得の順）は全部落ちた。取得の列は 6 回並べて回して同じ。**直したもの 1 つ**: `tests/fetching.py` は本文が Content-Length より先に閉じたときの `http.client.IncompleteRead`（OSError でない）を取り直していなかった（試験を 1 つ足した: 網の `python` は pytest の数が本線と 1 つ違うと言う。足した試験の分）。**残したもの**: レイアウトの記録 1267 件のうち 115 件は断りの文そのもの（「raises ValueError: …」）で、T359 で断りの文が変わると騒ぐ。T359 のその歩で、例外の種類だけを比べる形に替える。記録は `Writer(...).tensors`・`layout()`・`checkpoint_size()`・`conversion_plan()` を呼ぶので、T359 はこの名前を窓口に残すか、記録の側を同じコミットで直す。
 ### T357b [整理][遠隔試験] 作り物のモデルをレイアウトの表から作る、参照の道具の骨組み — 状態: 未着手（2026-10-10 に T357 から分けた。T359 の 3 歩目の後。規模 中〜大）
 - **作り物のモデル**: 作る関数が smoke・conftest・`make_lfm2.py`・`make_qwen35.py`・`make_smollm3.py`・`make_ternary.py`・`make_ptq1_0.py`・`make_hf_fixture.py`・gpu-check に重なっている（見出しの 7 個の int の文が 9 つの試験ファイルにある）。設計の案は、T359 が作る家族ごとの表を歩いて形の合う乱数のテンソルを書く `make(family, dims, dtype)` の 1 つにする。**T359 の前にやると 2 度手間**なので残した。`tests/gpu-check.mjs` を分けるのもこの回に。
 - **参照の道具 3 つ**（`reference_llama.py`・`reference_qwen35.py`・`reference_lfm2.py`）の共通の骨組み: 取得は T357a で寄せた。残りは変換して float32 のファイルに置く所・transformers の 2 つの道・線の決め方・弱い誤りの入れ方。CI でしか走らない（1 回 10〜50 分）ので、手元で確かめられる T357a には入れなかった。
