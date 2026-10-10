@@ -42,16 +42,18 @@ import numpy as np  # noqa: F401
 from engine.tokenizer import (BOS, BYTE_CHARS, CHARSMAP, CHAR_BYTES, CHAR_CLASSES, CONTRACTED,  # noqa: F401
                               CharClasses, Charsmap, DIGITS, PATTERNS, SPACES, STAGED, THREES,
                               Tokenizer, byte_chars, letter, mark, number, pretokenize)
-from engine.layers import (CONVOLUTION, LINEAR, RMS_EPS, convolution_form, delta_rule, gelu, hadamard,  # noqa: F401
-                           head_norm, l2_heads, layer_slots, layernorm, linear_form, linear_widths,
+from engine.layout import (ATTENDING, CLASSIFIER, CONVOLUTION, EMBEDDING, EVERY, FORM, LAYOUTS, LINEAR,  # noqa: F401
+                           MATRIX, POSITIONS, QUANTIZED, STATEFUL, TABLE, VECTOR, Dims, Place, Row, after,
+                           convolution_form, file_size, form_of, kind_of, layer_slots, linear_form,
+                           linear_widths, placed, suited, tensor_rows)
+from engine.layers import (RMS_EPS, delta_rule, gelu, hadamard, head_norm, l2_heads, layernorm,  # noqa: F401
                            partial_rope, rmsnorm, rope, rope_frequencies, rope_magnitude, rotate,
                            rotated_form, rotated_widths, sign_bits, silu, softplus, unrotate)
 from engine.kernels import (kernel_q8_0, kernel_quantizer, kernel_ternary_readers, kernel_widener,  # noqa: F401
                             load_kernels)
-from engine.packing import (NOT_TERNARY, PACKED, TERNARY_GROUP, TERNARY_VALUES, group_of, pack6,  # noqa: F401
-                            pack_ternary, quantize6, stored_bytes, ternary, unpack6, unpack_ternary)
-from engine.checkpoint import (FORM, OUTLIER_CHANNELS, OUTLIER_RATIO, Places, TENSOR_NAMES, Tensor,  # noqa: F401
-                               check_tokenizer, checkpoint_dtype, form_of, outlier_channels,
-                               outlier_columns)
+from engine.packing import (NOT_TERNARY, PACKED, TERNARY_GROUP, TERNARY_VALUES, pack6,  # noqa: F401
+                            pack_ternary, quantize6, ternary, unpack6, unpack_ternary)
+from engine.checkpoint import (OUTLIER_CHANNELS, OUTLIER_RATIO, Tensor, check_tokenizer,  # noqa: F401
+                               checkpoint_dtype, external_tensors, outlier_channels, outlier_columns)
 from engine.sampling import NOT_FINITE, REPETITION_WINDOW  # noqa: F401
-from engine.model import KV_START, Llama, PROMPT_BLOCK, SWITCHES, external_tensors  # noqa: F401
+from engine.model import KV_START, Llama, PROMPT_BLOCK, SWITCHES  # noqa: F401

@@ -383,15 +383,15 @@ class Streamed(Llama):
         rotated = broken_basis(gguf_rotated(metadata, source.infos, linear["value_heads"] != linear["key_heads"]), broken)
         header = struct.pack("<7i", key("embedding_length"), key("feed_forward_length"), key("block_count"), heads, kv_heads,
                              -len(metadata["tokenizer.ggml.tokens"]), source.positions)
-        # float16: the RoPE tables are the engine's own (partial_tables), not a file's
+        # float16: the RoPE tables are the engine's own (rope_tables()), not a file's
         super().__init__(header, None, dtype="float16", arch="qwen35", linear=linear, head_dim=head,
                          rotary=key("rope.dimension_count"), rope_theta=float(key("rope.freq_base")),
                          rms_norm_eps=1e-5 if broken == "epsilon 1e-5" else float(f"{key('attention.layer_norm_rms_epsilon'):.6g}"),
                          rotated=rotated,
                          bos=metadata["tokenizer.ggml.bos_token_id"])
 
-    def qwen35_tensors(self, take, shared_weights, keep_int8, kv_dim, dtype, frequencies):
-        """Llama.qwen35_tensors() from a GGUF: the same attributes, the large matrices behind the conductor."""
+    def file_tensors(self, checkpoint, rows, dtype, shared_weights, external):
+        """Llama.file_tensors() from a GGUF: the same attributes, the large matrices behind the conductor."""
         source, linear, broken = self.source, self.linear, self.broken
         heads, kv_heads, head, rot = self.n_heads, self.n_kv_heads, self.head_size, self.rotary
         key_heads, value_heads = linear["key_heads"], linear["value_heads"]
@@ -464,7 +464,6 @@ class Streamed(Llama):
         self.w1, self.w2, self.w3 = stack("ffn_gate", everything), stack("ffn_down", everything), stack("ffn_up", everything)
         self.rms_final_weight = source.small("output_norm.weight")
         self.wcls = Matrix(self.conductor, source.stored("output.weight"), None, prepare_for("output", 0))
-        self.freq_cis_real, self.freq_cis_imag = self.partial_tables(frequencies)
 
 
 class Source:

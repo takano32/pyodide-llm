@@ -1,9 +1,8 @@
 # The plan of a conversion: which tensor of the source goes where in the checkpoint, and what is done to it on the way.
 import numpy as np
 
-from llama2_numpy import (convolution_form, form_of, layer_slots, linear_form, rope_frequencies, rope_magnitude,
-                          rotated_form, rotated_widths)
-from convert.checkpoint import layout
+from engine.layout import TABLE, Dims, form_of, linear_form
+from engine.layers import rope_frequencies, rope_magnitude, rotated_form, rotated_widths
 from convert.config import (PARTLY_TURNED, architecture, convolution_layers, head_size, linear_layers, normalize,
                             rotary_dim)
 
@@ -140,123 +139,129 @@ def checkpoint_form(config, source):
 
 
 def conversion_plan(header, form=None, prefix="transformer.", rotary=0, scale=1.0):
-    """For every tensor of layout(): the tensors of the Hugging Face checkpoint it is made of, in order, as
-    (name, transform); None instead of a list stands for a RoPE table. And the shapes of layout(). scale: what q is
-    multiplied by (query_scale(), T253), for a Llama without biases and without norms of its heads."""
-    dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
+    """For every row of the checkpoint (engine/layout.py's tensor_rows()), in file order: the tensors of the Hugging
+    Face checkpoint it is made of, in order, as (name, transform); None instead of a list stands for a RoPE table.
+    And the shapes of the rows. scale: what q is multiplied by (query_scale(), T253), for a Llama without biases and
+    without norms of its heads."""
     form = form_of(form)
-    arch, shapes = form["arch"], [shape for shape, _ in layout(*header, **form)]
+    arch, d = form["arch"], Dims(header, form)
+    rows = d.rows()
     if scale != 1.0 and (arch != "llama" or form["bias"] or form["qk_norm"]):
         # a norm of q's heads undoes whatever q was multiplied by, and a bias of q would have to be multiplied too:
         # no Granite has either, and one that had would go through as another model without a word
         raise ValueError("This model cannot be converted: it scales its attention's scores, and has a bias or a "
                          "norm on its queries.")
+    sources = SOURCES.get(arch, llama_sources)(d, prefix, rotary, scale)
+    plan = []
+    for row in rows:
+        if row.role == TABLE:
+            plan.append(None)
+            continue
+        # {} in a name: the layer, for a row that stacks the tensors of the layers its "per" says
+        if row.name not in sources:
+            raise ValueError(f"The converter has no source for the row {row.name} of a {arch}'s checkpoint.")
+        name, transform = sources[row.name]
+        plan.append([(name.format(layer), transform) for layer in d.layers(row.per)] if row.per else [(name, transform)])
+    return plan, [row.shape for row in rows]
 
-    if arch == "qwen35":
-        # T229: the stacks of layout(), each from the layers of its kind. RoPE turns the first rotary rows of each
-        # head of q and k (and so of the norms of their heads); the gate's rows are taken as they are
-        slots = layer_slots(n_layers, linear_form(form["linear"]))
-        every = range(n_layers)
-        full, lines = ([layer for layer in every if slots[layer][0] == kind] for kind in (False, True))
-        of = lambda which, name, transform=None: [(f"{prefix}layers.{layer}.{name}", transform) for layer in which]
-        one, head_norm = ("one",), (("heads", 1, 0, 1, rotary), ("one",))
-        plan = [[(prefix + "embed_tokens.weight", None)], of(every, "input_layernorm.weight", one),
-                of(full, "self_attn.q_proj.weight", ("heads", 2, 0, n_heads, rotary)),
-                of(full, "self_attn.q_proj.weight", ("heads", 2, 1, n_heads, 0)),
-                of(full, "self_attn.k_proj.weight", ("heads", 1, 0, n_kv_heads, rotary)),
-                of(full, "self_attn.v_proj.weight"), of(full, "self_attn.o_proj.weight"),
-                of(full, "self_attn.q_norm.weight", head_norm), of(full, "self_attn.k_norm.weight", head_norm),
-                of(lines, "linear_attn.in_proj_qkv.weight"), of(lines, "linear_attn.in_proj_z.weight"),
-                of(lines, "linear_attn.in_proj_b.weight"), of(lines, "linear_attn.in_proj_a.weight"),
-                of(lines, "linear_attn.conv1d.weight", ("taps",)), of(lines, "linear_attn.dt_bias"),
-                of(lines, "linear_attn.A_log", ("decay",)), of(lines, "linear_attn.norm.weight"),
-                of(lines, "linear_attn.out_proj.weight"),
-                of(every, "post_attention_layernorm.weight", one),
-                of(every, "mlp.gate_proj.weight"), of(every, "mlp.down_proj.weight"), of(every, "mlp.up_proj.weight"),
-                [(prefix + "norm.weight", one)], None, None]
-        if vocab_size < 0:
-            plan.append([("lm_head.weight", None)])
-        return plan, shapes
 
-    if arch == "lfm2":
-        # T260: the stacks of layout(), each from the layers of its kind, by transformers' names of an Lfm2. q and k
-        # (and the norms of their heads) are turned as a Qwen3's; the taps as a Qwen3.5's convolution's
-        slots = layer_slots(n_layers, None, convolution_form(form["convolution"], n_layers))
-        every = range(n_layers)
-        full, short = ([layer for layer in every if slots[layer][0] == kind] for kind in (False, True))
-        of = lambda which, name, transform=None: [(f"model.layers.{layer}.{name}.weight", transform) for layer in which]
-        plan = [[("model.embed_tokens.weight", None)], of(every, "operator_norm"),
-                of(full, "self_attn.q_proj", ("permute", n_heads)), of(full, "self_attn.k_proj", ("permute", n_kv_heads)),
-                of(full, "self_attn.v_proj"), of(full, "self_attn.out_proj"),
-                of(full, "self_attn.q_layernorm", ("permute", 1)), of(full, "self_attn.k_layernorm", ("permute", 1)),
-                of(short, "conv.in_proj"), of(short, "conv.conv", ("taps",)), of(short, "conv.out_proj"),
-                of(every, "ffn_norm"),
-                of(every, "feed_forward.w1"), of(every, "feed_forward.w2"), of(every, "feed_forward.w3"),
-                [("model.embedding_norm.weight", None)], None, None]
-        if vocab_size < 0:
-            plan.append([("lm_head.weight", None)])
-        return plan, shapes
+# What each row of a layout is made of, by the row's name (so that a row moved in the file takes its source with it):
+# (the Hugging Face tensor's name, with {} for the layer where the row is a stack; the transform). A source for a row
+# the model has not (a classifier of its own, a Qwen2's biases, a Qwen3's norms of the heads) is asked for by nothing.
+def llama_sources(d, prefix, rotary, scale):
+    layer = "model.layers.{}."
+    turn_q = ("permute", d.n_heads) if scale == 1.0 else (("permute", d.n_heads), ("scale", scale))
+    return {"token_embedding_table": ("model.embed_tokens.weight", None),
+            "rms_att_weight": (layer + "input_layernorm.weight", None),
+            "wq": (layer + "self_attn.q_proj.weight", turn_q),
+            "wk": (layer + "self_attn.k_proj.weight", ("permute", d.n_kv_heads)),
+            "wv": (layer + "self_attn.v_proj.weight", None), "wo": (layer + "self_attn.o_proj.weight", None),
+            "rms_ffn_weight": (layer + "post_attention_layernorm.weight", None),
+            "w1": (layer + "mlp.gate_proj.weight", None), "w2": (layer + "mlp.down_proj.weight", None),
+            "w3": (layer + "mlp.up_proj.weight", None),
+            "rms_final_weight": ("model.norm.weight", None), "wcls": ("lm_head.weight", None),
+            "bq": (layer + "self_attn.q_proj.bias", ("permute", d.n_heads)),
+            "bk": (layer + "self_attn.k_proj.bias", ("permute", d.n_kv_heads)),
+            "bv": (layer + "self_attn.v_proj.bias", None),
+            # one weight for every head, over the rows of a head: interleaved like the rows it multiplies
+            "q_norm": (layer + "self_attn.q_norm.weight", ("permute", 1)),
+            "k_norm": (layer + "self_attn.k_norm.weight", ("permute", 1))}
 
-    if arch == "neox":
-        rot = rotary  # how many of each head RoPE turns, from the config
-        def h(name, transform=None):
-            return [(f"gpt_neox.layers.{layer}.{name}", transform) for layer in range(n_layers)]
 
-        # only q and k are rotated, so only they are interleaved; v is taken as it is
-        fused = lambda i: [(f"gpt_neox.layers.{layer}.attention.query_key_value.weight",
-                            ("heads", 3, i, n_heads, rot if i < 2 else 0)) for layer in range(n_layers)]
-        fused_bias = lambda i: [(f"gpt_neox.layers.{layer}.attention.query_key_value.bias",
-                                 ("heads", 3, i, n_heads, rot if i < 2 else 0)) for layer in range(n_layers)]
-        plan = [[("gpt_neox.embed_in.weight", None)], None, None,
-                h("input_layernorm.weight"), h("input_layernorm.bias"),
-                fused(0), fused(1), fused(2),
-                fused_bias(0), fused_bias(1), fused_bias(2),
-                h("attention.dense.weight"), h("attention.dense.bias"),
-                h("post_attention_layernorm.weight"), h("post_attention_layernorm.bias"),
-                h("mlp.dense_h_to_4h.weight"), h("mlp.dense_h_to_4h.bias"),
-                h("mlp.dense_4h_to_h.weight"), h("mlp.dense_4h_to_h.bias"),
-                [("gpt_neox.final_layer_norm.weight", None)], [("gpt_neox.final_layer_norm.bias", None)]]
-        if vocab_size < 0:
-            plan.append([("embed_out.weight", None)])
-        return plan, shapes
+def qwen35_sources(d, prefix, rotary, scale):
+    # T229: RoPE turns the first rotary rows of each head of q and k (and so of the norms of their heads); the
+    # gate's rows are taken as they are
+    layer = prefix + "layers.{}."
+    one, head_norm = ("one",), (("heads", 1, 0, 1, rotary), ("one",))
+    return {"token_embedding_table": (prefix + "embed_tokens.weight", None),
+            "rms_att_weight": (layer + "input_layernorm.weight", one),
+            "wq": (layer + "self_attn.q_proj.weight", ("heads", 2, 0, d.n_heads, rotary)),
+            "wg": (layer + "self_attn.q_proj.weight", ("heads", 2, 1, d.n_heads, 0)),
+            "wk": (layer + "self_attn.k_proj.weight", ("heads", 1, 0, d.n_kv_heads, rotary)),
+            "wv": (layer + "self_attn.v_proj.weight", None), "wo": (layer + "self_attn.o_proj.weight", None),
+            "q_norm": (layer + "self_attn.q_norm.weight", head_norm),
+            "k_norm": (layer + "self_attn.k_norm.weight", head_norm),
+            "wqkv": (layer + "linear_attn.in_proj_qkv.weight", None), "wz": (layer + "linear_attn.in_proj_z.weight", None),
+            "wb": (layer + "linear_attn.in_proj_b.weight", None), "wa": (layer + "linear_attn.in_proj_a.weight", None),
+            "conv": (layer + "linear_attn.conv1d.weight", ("taps",)), "dt_bias": (layer + "linear_attn.dt_bias", None),
+            "decay": (layer + "linear_attn.A_log", ("decay",)), "delta_norm": (layer + "linear_attn.norm.weight", None),
+            "wout": (layer + "linear_attn.out_proj.weight", None),
+            "rms_ffn_weight": (layer + "post_attention_layernorm.weight", one),
+            "w1": (layer + "mlp.gate_proj.weight", None), "w2": (layer + "mlp.down_proj.weight", None),
+            "w3": (layer + "mlp.up_proj.weight", None),
+            "rms_final_weight": (prefix + "norm.weight", one), "wcls": ("lm_head.weight", None)}
 
-    if arch == "gpt2":
-        def h(name, transform=None):
-            return [(f"{prefix}h.{layer}.{name}", transform) for layer in range(n_layers)]
 
-        third = lambda i: ("part", i, 3)
-        plan = [[(prefix + "wte.weight", None)], [(prefix + "wpe.weight", None)],
-                h("ln_1.weight"), h("ln_1.bias"),
-                h("attn.c_attn.weight", third(0)), h("attn.c_attn.weight", third(1)), h("attn.c_attn.weight", third(2)),
-                h("attn.c_attn.bias", ("row", 0, 3)), h("attn.c_attn.bias", ("row", 1, 3)), h("attn.c_attn.bias", ("row", 2, 3)),
-                h("attn.c_proj.weight", ("transpose",)), h("attn.c_proj.bias"),
-                h("ln_2.weight"), h("ln_2.bias"),
-                h("mlp.c_fc.weight", ("transpose",)), h("mlp.c_fc.bias"),
-                h("mlp.c_proj.weight", ("transpose",)), h("mlp.c_proj.bias"),
-                [(prefix + "ln_f.weight", None)], [(prefix + "ln_f.bias", None)]]
-        if vocab_size < 0:
-            plan.append([("lm_head.weight", None)])
-        return plan, shapes
+def lfm2_sources(d, prefix, rotary, scale):
+    # T260: by transformers' names of an Lfm2. q and k (and the norms of their heads) are turned as a Qwen3's; the
+    # taps as a Qwen3.5's convolution's
+    of = lambda name, transform=None: ("model.layers.{}." + name + ".weight", transform)
+    return {"token_embedding_table": ("model.embed_tokens.weight", None), "rms_att_weight": of("operator_norm"),
+            "wq": of("self_attn.q_proj", ("permute", d.n_heads)), "wk": of("self_attn.k_proj", ("permute", d.n_kv_heads)),
+            "wv": of("self_attn.v_proj"), "wo": of("self_attn.out_proj"),
+            "q_norm": of("self_attn.q_layernorm", ("permute", 1)), "k_norm": of("self_attn.k_layernorm", ("permute", 1)),
+            "win": of("conv.in_proj"), "conv": of("conv.conv", ("taps",)), "wout": of("conv.out_proj"),
+            "rms_ffn_weight": of("ffn_norm"),
+            "w1": of("feed_forward.w1"), "w2": of("feed_forward.w2"), "w3": of("feed_forward.w3"),
+            "rms_final_weight": ("model.embedding_norm.weight", None), "wcls": ("lm_head.weight", None)}
 
-    def layers(name, transform=None, what="weight"):
-        return [(f"model.layers.{layer}.{name}.{what}", transform) for layer in range(n_layers)]
 
-    turn_q = ("permute", n_heads) if scale == 1.0 else (("permute", n_heads), ("scale", scale))
-    plan = [[("model.embed_tokens.weight", None)], layers("input_layernorm"),
-            layers("self_attn.q_proj", turn_q), layers("self_attn.k_proj", ("permute", n_kv_heads)),
-            layers("self_attn.v_proj"),
-            layers("self_attn.o_proj"), layers("post_attention_layernorm"),
-            layers("mlp.gate_proj"), layers("mlp.down_proj"), layers("mlp.up_proj"), [("model.norm.weight", None)],
-            None, None]
-    if vocab_size < 0:
-        plan.append([("lm_head.weight", None)])
-    if form["bias"]:
-        plan += [layers("self_attn.q_proj", ("permute", n_heads), "bias"),
-                 layers("self_attn.k_proj", ("permute", n_kv_heads), "bias"), layers("self_attn.v_proj", None, "bias")]
-    if form["qk_norm"]:
-        # one weight for every head, over the rows of a head: interleaved like the rows it multiplies
-        plan += [layers("self_attn.q_norm", ("permute", 1)), layers("self_attn.k_norm", ("permute", 1))]
-    return plan, shapes
+def neox_sources(d, prefix, rotary, scale):
+    of = lambda name, transform=None: ("gpt_neox.layers.{}." + name, transform)
+    # query_key_value holds q, k and v of every head: only q and k are rotated (rotary of each head, from the config),
+    # so only they are interleaved; v is taken as it is
+    fused = lambda what, i: of("attention.query_key_value." + what, ("heads", 3, i, d.n_heads, rotary if i < 2 else 0))
+    return {"token_embedding_table": ("gpt_neox.embed_in.weight", None),
+            "rms_att_weight": of("input_layernorm.weight"), "ln_att_bias": of("input_layernorm.bias"),
+            "wq": fused("weight", 0), "wk": fused("weight", 1), "wv": fused("weight", 2),
+            "bq": fused("bias", 0), "bk": fused("bias", 1), "bv": fused("bias", 2),
+            "wo": of("attention.dense.weight"), "bo": of("attention.dense.bias"),
+            "rms_ffn_weight": of("post_attention_layernorm.weight"), "ln_ffn_bias": of("post_attention_layernorm.bias"),
+            "w1": of("mlp.dense_h_to_4h.weight"), "b1": of("mlp.dense_h_to_4h.bias"),
+            "w2": of("mlp.dense_4h_to_h.weight"), "b2": of("mlp.dense_4h_to_h.bias"),
+            "rms_final_weight": ("gpt_neox.final_layer_norm.weight", None),
+            "ln_final_bias": ("gpt_neox.final_layer_norm.bias", None), "wcls": ("embed_out.weight", None)}
+
+
+def gpt2_sources(d, prefix, rotary, scale):
+    of = lambda name, transform=None: (prefix + "h.{}." + name, transform)
+    return {"token_embedding_table": (prefix + "wte.weight", None), "positions": (prefix + "wpe.weight", None),
+            "rms_att_weight": of("ln_1.weight"), "ln_att_bias": of("ln_1.bias"),
+            # c_attn holds q, k and v side by side, the other way round (Conv1D)
+            "wq": of("attn.c_attn.weight", ("part", 0, 3)), "wk": of("attn.c_attn.weight", ("part", 1, 3)),
+            "wv": of("attn.c_attn.weight", ("part", 2, 3)),
+            "bq": of("attn.c_attn.bias", ("row", 0, 3)), "bk": of("attn.c_attn.bias", ("row", 1, 3)),
+            "bv": of("attn.c_attn.bias", ("row", 2, 3)),
+            "wo": of("attn.c_proj.weight", ("transpose",)), "bo": of("attn.c_proj.bias"),
+            "rms_ffn_weight": of("ln_2.weight"), "ln_ffn_bias": of("ln_2.bias"),
+            "w1": of("mlp.c_fc.weight", ("transpose",)), "b1": of("mlp.c_fc.bias"),
+            "w2": of("mlp.c_proj.weight", ("transpose",)), "b2": of("mlp.c_proj.bias"),
+            "rms_final_weight": (prefix + "ln_f.weight", None), "ln_final_bias": (prefix + "ln_f.bias", None),
+            "wcls": ("lm_head.weight", None)}
+
+
+SOURCES = {"llama": llama_sources, "qwen35": qwen35_sources, "lfm2": lfm2_sources, "neox": neox_sources,
+           "gpt2": gpt2_sources}
 
 
 def rope_table(config, header, which):

@@ -24,6 +24,8 @@
 # SOFTWARE.
 import numpy as np
 
+from engine.layout import PACKINGS
+
 # T98: int6, six bits a weight. An int6 group is an int8 group whose values are multiples of 4 (-128..124: six
 # significant bits) and whose scale is a quarter: the same products as six bits and a whole scale, to the bit (a
 # power of two), and everything past the packing is int8. So the kernels widen a group straight into the int8 their
@@ -65,7 +67,7 @@ def quantize6(values):
 # 1: 0, 1 or 2) in byte j // 4 at bits 2 (j % 4). The kernels multiply the codes as they are (kernels/ternary.ts): a
 # shift of sixteen bytes and a mask give every fourth weight of 64, so nothing is widened, and nothing is kept for a
 # row besides its weights and scales. The values are exactly the file's (int8 holds 127 times float32(d / 127)).
-TERNARY_GROUP = 128
+TERNARY_GROUP = PACKINGS["ternary"][1]  # 128
 # the four weights of every byte, the lowest two bits first
 TERNARY_VALUES = ((np.arange(256)[:, None] >> (0, 2, 4, 6) & 3) - 1).astype(np.int8)
 NOT_TERNARY = "These weights are not ternary: a value is neither 0 nor the largest of its group of 128, or its negative."
@@ -94,20 +96,6 @@ def ternary(values):
     return pack_ternary(signs.astype(np.int8)).reshape(-1, TERNARY_GROUP // 4), scales
 
 
-# the dtypes whose matrices are int8 values in another packing; what a packing does to a matrix: the bytes its count
-# values take, and the group of a row of that length (int8 and int6: 32, or for int8 the largest power of two below
-# it that divides the row)
+# the dtypes whose matrices are int8 values in another packing (the bytes its values take and the group of a row:
+# engine/layout.py's PACKINGS)
 PACKED = ("int6", "ternary")
-
-
-def stored_bytes(count, packing=None):
-    return count // 4 if packing == "ternary" else count * 3 // 4 if packing == "int6" else count
-
-
-def group_of(length, packing=None):
-    if packing == "ternary":
-        return TERNARY_GROUP
-    group = 32
-    while length % group:
-        group //= 2
-    return group

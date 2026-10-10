@@ -28,12 +28,13 @@ import struct
 import numpy as np
 
 from engine.tokenizer import BOS, Tokenizer
-from engine.layers import (RMS_EPS, convolution_form, delta_rule, gelu, head_norm, l2_heads, layer_slots, layernorm,
-                           linear_form, linear_widths, partial_rope, rmsnorm, rope, rope_frequencies, rope_magnitude,
-                           rotate, rotated_form, rotated_widths, silu, softplus, unrotate)
+from engine.layout import Dims, convolution_form, file_size, linear_form, linear_widths
+from engine.layers import (RMS_EPS, delta_rule, gelu, head_norm, l2_heads, layernorm, partial_rope, rmsnorm, rope,
+                           rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
+                           unrotate)
 from engine.kernels import load_kernels
-from engine.packing import PACKED, group_of, stored_bytes, unpack6, unpack_ternary
-from engine.checkpoint import OUTLIER_CHANNELS, Places, TENSOR_NAMES, Tensor, form_of, outlier_channels
+from engine.packing import PACKED
+from engine.checkpoint import OUTLIER_CHANNELS, Tensor, outlier_channels
 from engine.tensors import TensorOrder
 from engine.sampling import REPETITION_WINDOW, Sampling
 from engine.generation import Generation
@@ -46,27 +47,6 @@ KV_START = 256
 
 # what T52 can leave out, each of them something that already has a fallback
 SWITCHES = ("kernels", "int8", "relaxed", "sampler", "kv16")
-
-
-def external_tensors(header, dtype, form=None):
-    """Where every tensor of a Llama checkpoint with this header, dtype and form (FORM) is, {name: Tensor.plan()}, as
-    Llama(external=) hands them to public/forward.js, before any of its bytes are there (T156: the worker sends the
-    layers' matrices to the GPU as they come, and keeps the rest; llama_tensors() is the one order)."""
-    form = form_of(form)
-    if form["arch"] != "llama":
-        raise ValueError("Only a Llama's tensors are placed before the model is built.")
-    probe = Llama.__new__(Llama)
-    (probe.dim, probe.hidden_dim, probe.n_layers, probe.n_heads, probe.n_kv_heads, vocab_size,
-     probe.seq_len) = (int(value) for value in header)
-    probe.vocab_size = abs(vocab_size)
-    probe.head_size = int(form["head_dim"]) or probe.dim // probe.n_heads
-    probe.q_dim, kv_dim = probe.n_heads * probe.head_size, probe.n_kv_heads * probe.head_size
-    probe.rope_magnitude = 1.0  # the places, not the values
-    packing = str(dtype) if str(dtype) in PACKED else None
-    places = Places(np.int8 if packing else dtype, packing)
-    probe.llama_tensors(places.take, vocab_size > 0, True, kv_dim, form["bias"], places.dtype,
-                        lambda width: np.zeros(width // 2), form["qk_norm"])
-    return {name: getattr(probe, name).plan() for name in TENSOR_NAMES if isinstance(getattr(probe, name, None), Tensor)}
 
 
 # T108: how many tokens of a prompt forward_many() takes at once: forward.js's BATCH. The worker cannot answer a
@@ -99,18 +79,18 @@ class Llama(TensorOrder, Sampling, Generation):
         arch="neox": GPT-NeoX, which is arch="gpt2" with RoPE over the first rotary values of every head
         (rotary=0 means all of them) and, when parallel_residual is on, the attention and the FFN both reading
         the same x instead of one after the other.
-        arch="qwen35" (T229): Qwen3.5's hybrid attention, see the comment above linear_form(): a Qwen3 of whose layers
+        arch="qwen35" (T229): Qwen3.5's hybrid attention, see the comment on it in engine/layers.py: a Qwen3 of whose layers
         all but every linear["every"]-th are Gated DeltaNet layers with a state in place of keys and values, and whose
         full-attention layers gate their output. linear: the numbers of those layers (FORM's, the file cannot say
         them); rotary and head_dim as below. The state follows the positions: a run begins at position 0, which
         clears it, and goes on one position after the other (forward() refuses any other).
-        arch="lfm2" (T260): Liquid AI's LFM2, see the comment above convolution_form(): a Qwen3 some of whose layers
+        arch="lfm2" (T260): Liquid AI's LFM2, see the comment on it in engine/layers.py: a Qwen3 some of whose layers
         are convolution layers, which keep the last taps - 1 tokens' values in place of keys and values.
         convolution: which layers those are and their taps (FORM's, the file cannot say them). The state follows the
         positions as a Qwen3.5's does.
         arch="gpt2": LayerNorm instead of RMSNorm, GELU instead of SwiGLU (and no gate matrix), a learned table
         of positions instead of RoPE, and a bias after every projection. The tensors of the file differ with it,
-        so it is llama2_convert.layout(arch=) that says what is there.
+        so it is engine/layout.py that says what is there.
         bias=True: the checkpoint ends with a bias for q, k and v of every layer, which is added after those
         projections (Qwen2). The legacy header cannot say so, so the caller does, like the tokenizer settings.
         qk_norm=True (T124): after them come the RMSNorm weights of q and k (one head's size each, per layer), and
@@ -161,7 +141,6 @@ class Llama(TensorOrder, Sampling, Generation):
         # bytes are read
         packing = str(dtype) if str(dtype) in PACKED else None
         dtype = np.dtype(np.int8 if packing else dtype)
-        offset = 28
         # The int8 kernels work on groups of 32 only
         self.linear = linear_form(linear)
         # (T229: and a linear-attention layer's output matrix, whose rows are as long as its value heads together)
@@ -172,37 +151,6 @@ class Llama(TensorOrder, Sampling, Generation):
         # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
         # (only forward.js computes on them: the NumPy forward widens every matrix)
         keep_int8 = external is not None and suitable and dtype == np.int8 and "int8" not in disable
-
-        # only where it is: public/forward.js reads it (and widens what has to be widened) itself
-        places = Places(dtype, packing) if external is not None else None
-
-        def take(*shape, matrix=True, widen=True):
-            nonlocal offset
-            count = math.prod(shape)
-            if places is not None:
-                tensor = places.take(*shape, matrix=matrix)
-                offset = places.offset
-                return tensor
-            if dtype == np.int8 and matrix:
-                # quantize.py: int8 values (or their packing), then one float32 scale per group
-                group, stored = group_of(shape[-1], packing), stored_bytes(count, packing)
-                raw = np.frombuffer(checkpoint, dtype=np.uint8, count=stored, offset=offset)
-                values = unpack_ternary(raw) if packing == "ternary" else unpack6(raw).reshape(-1) if packing == "int6" \
-                    else raw.view(np.int8)
-                scales = np.frombuffer(checkpoint, dtype=np.float32, count=count // group, offset=offset + stored)
-                offset += stored + scales.nbytes
-                if not widen:
-                    values, scales = values.reshape(*shape[:-1], -1, group), scales.reshape(*shape[:-1], -1, 1)
-                    # With the kernels every tensor stays a view into the checkpoint buffer. Otherwise this is the
-                    # embedding table next to widened copies: copy it, so that the buffer can be freed.
-                    return (values, scales) if keep_int8 else (values.copy(), scales.copy())
-                return (values.reshape(-1, group).astype(np.float32) * scales[:, None]).reshape(shape)
-            # float32 weights are views into the checkpoint buffer: nothing is copied. float16 is widened.
-            array = np.frombuffer(checkpoint, dtype=np.float32 if dtype == np.int8 else dtype, count=count, offset=offset)
-            offset += array.nbytes
-            if dtype == np.float16 and not widen:
-                return array.reshape(shape).copy()
-            return array.astype(np.float32, copy=dtype == np.int8 and not keep_int8).reshape(shape)
 
         self.arch, self.parallel_residual = arch, parallel_residual
         # T237: a rotated basis turns what every matrix reads (turned), and the embedding's row back
@@ -227,28 +175,29 @@ class Llama(TensorOrder, Sampling, Generation):
         self.convolution = convolution_form(convolution, n_layers)
         if (arch == "lfm2") != (self.convolution is not None):
             raise ValueError("An LFM2 (lfm2) and its convolution layers go together.")
-        # for every layer: (does it keep a state: a linear-attention layer or a convolution one, its place in the stacks
-        # of its kind's tensors)
-        self.slots = layer_slots(n_layers, self.linear, self.convolution)
+        # what the file holds (engine/layout.py): its rows, and for every layer (does it keep a state: a linear-attention
+        # layer or a convolution one, its place in the stacks of its kind's tensors)
+        dims = Dims((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len),
+                    {"arch": arch, "bias": bias, "qk_norm": qk_norm, "head_dim": head_dim, "linear": self.linear,
+                     "convolution": self.convolution})
+        self.slots, self.rows = dims.slots, dims.rows()
         self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
-        self.bo = self.b1 = self.b2 = None
+        self.bq = self.bk = self.bv = self.bo = self.b1 = self.b2 = None
+        self.w3 = None
         # a dict from Python, or a JavaScript object from the worker
         rope_scaling = rope_scaling.to_py() if hasattr(rope_scaling, "to_py") else rope_scaling
         frequencies = lambda width: rope_frequencies(width, rope_theta, rope_scaling)
         self.rope_magnitude = rope_magnitude(rope_scaling)
-        if arch in ("gpt2", "neox"):
-            self.gpt2_tensors(take, shared_weights, keep_int8, kv_dim, dtype, frequencies)
-        elif arch == "qwen35":
-            self.qwen35_tensors(take, shared_weights, keep_int8, kv_dim, dtype, frequencies)
-        elif arch == "lfm2":
-            self.lfm2_tensors(take, shared_weights, keep_int8, kv_dim, dtype, frequencies)
-        else:
-            self.llama_tensors(take, shared_weights, keep_int8, kv_dim, bias, dtype, frequencies, qk_norm)
+        # each row as an attribute of its name: where it is, with the weights outside Python (public/forward.js reads
+        # them, and widens what has to be widened, itself), or an array
+        stored = packing or dtype.name
+        self.file_tensors(checkpoint, self.rows, stored, shared_weights, external is not None)
+        self.rope_tables(stored, frequencies)
         self.backend = "NumPy"
         if external is not None:
-            if offset != int(external.size):
-                raise ValueError(f"The checkpoint has {int(external.size)} bytes, and its header asks for {offset} "
-                                 f"as {dtype.name}.")
+            if file_size(self.rows, stored) != int(external.size):
+                raise ValueError(f"The checkpoint has {int(external.size)} bytes, and its header asks for "
+                                 f"{file_size(self.rows, stored)} as {dtype.name}.")
             self.forward = self.external_forward(external, keep_int8, disable)
             if kernels and "sampler" not in disable:
                 self.penalize, self.sample = self.kernel_sampler(kernels)
@@ -295,7 +244,9 @@ class Llama(TensorOrder, Sampling, Generation):
         """forward() in public/forward.js (T93): Python hands over where every tensor is, and the few small
         arrays it computes itself (the RoPE tables of a checkpoint that leaves them out, the outlier channels of
         T92), and gets the logits back into one array of its own, which the sampling kernels then read."""
-        tensors = {name: getattr(self, name).plan() for name in TENSOR_NAMES if isinstance(getattr(self, name, None), Tensor)}
+        # (the classifier of a model that has no other is its embedding, under both names)
+        held = {name: getattr(self, name) for name in (*(row.name for row in self.rows), "wcls")}
+        tensors = {name: tensor.plan() for name, tensor in held.items() if isinstance(tensor, Tensor)}
         derived = {name: np.ascontiguousarray(getattr(self, name), dtype=np.float32).tobytes()
                    for name in ("freq_cis_real", "freq_cis_imag") if isinstance(getattr(self, name), np.ndarray)}
         if self.rotated is not None:
@@ -473,7 +424,7 @@ class Llama(TensorOrder, Sampling, Generation):
         self.state_at = pos + 1
 
     def linear_attention(self, a, xb):
-        """One token through the a-th Gated DeltaNet layer (the comment above linear_form() has the rule): what the
+        """One token through the a-th Gated DeltaNet layer (the comment on Qwen3.5 in engine/layers.py has the rule): what the
         layer adds to x, with the layer's state moved on by this token."""
         linear, eps = self.linear, np.float32(self.rms_norm_eps)
         key_heads, value_heads, key_dim = linear["key_heads"], linear["value_heads"], linear["key_dim"]
@@ -501,7 +452,7 @@ class Llama(TensorOrder, Sampling, Generation):
         return out
 
     def short_convolution(self, a, xb):
-        """One token through the a-th convolution layer of an LFM2 (the comment above convolution_form() has the rule):
+        """One token through the a-th convolution layer of an LFM2 (the comment on LFM2 in engine/layers.py has the rule):
         what the layer adds to x, with the layer's state moved on by this token."""
         dim = self.dim
         mixed = self.win[a] @ xb  # B, C and what B multiplies, dim values each

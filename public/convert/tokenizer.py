@@ -3,7 +3,7 @@
 import json
 import struct
 
-from llama2_numpy import CHARSMAP
+from engine.tokenizer import CHARSMAP
 
 UNMATCHABLE = -1e9  # control, unknown and byte pieces must never match user text: llama2_numpy.py skips such scores
 
