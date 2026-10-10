@@ -9,9 +9,20 @@ from convert.families import family_of
 from convert.config import check_config, normalize, rotary_dim
 from convert.stream import Stream
 from convert.gguf import gguf_model, gguf_read, gguf_tokenizer
-from convert.tokenizer import (sentencepiece_charsmap, sentencepiece_options, sentencepiece_pieces,
-                               sentencepiece_specials, tokenizer_bin, tokenizer_json_charsmap,
+from convert.tokenizer import (described_options, sentencepiece_charsmap, sentencepiece_options,
+                               sentencepiece_pieces, sentencepiece_specials, tokenizer_bin, tokenizer_json_charsmap,
                                tokenizer_json_options, tokenizer_json_pieces)
+
+
+def described(tokenizer_config):
+    """A tokenizer_config.json, read: its text, its bytes or the dict itself. {} for none and for one that is no JSON
+    or no object."""
+    try:
+        config = json.loads(tokenizer_config) if isinstance(tokenizer_config, (str, bytes)) else tokenizer_config
+    except ValueError:
+        config = None
+    return config if isinstance(config, dict) else {}
+
 
 
 class Conversion:
@@ -58,16 +69,13 @@ class Conversion:
         else:
             pieces = list(sentencepiece_pieces(tokenizer))
             self.tokenizer = tokenizer_bin(pieces, vocab_size, charsmap=sentencepiece_charsmap(tokenizer))
-            options = sentencepiece_options(tokenizer)
+            # (T265) and what only tokenizer_config.json says of a sentencepiece model
+            options = {**sentencepiece_options(tokenizer), **described_options(described(tokenizer_config))}
             specials, added = sentencepiece_specials(tokenizer), []
         # T143: the BOS is the token the tokenizer names, which transformers begins a text with, where config.json says
         # another: DeepSeek-R1's Distill says 151643 there, its end of a sentence, and <｜begin▁of▁sentence｜> (151646)
         # in tokenizer_config.json (T138's review: perplexity 2.5 to 2.7 times higher with the former)
-        try:
-            named = config_token(json.loads(tokenizer_config) if isinstance(tokenizer_config, (str, bytes)) else tokenizer_config,
-                                 "bos_token")
-        except ValueError:
-            named = ""
+        named = config_token(described(tokenizer_config), "bos_token")
         bos = next((id for id, (text, _, _) in enumerate(pieces) if named and text == named), None)
         self.start(header, base, options, tokenizer_config, dtype, max_seq_len, start, sink, quantize_rows, specials,
                    chat_template, added, bos, readers)

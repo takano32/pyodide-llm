@@ -87,6 +87,14 @@ def tokenizer_json_options(tokenizer):
             "ignore_merges": bool(tokenizer["model"].get("ignore_merges"))}
 
 
+def described_options(config):
+    """What a sentencepiece model's tokenizer_config.json says of how its text is read, which the model's own file does
+    not (config: read, a dict), as Llama()'s options and only where it is so.
+    lowercase (T265): do_lower_case, which transformers' slow tokenizers apply before sentencepiece sees the text
+    (rinna's japanese-gpt2: a vocabulary without capital Latin letters)."""
+    return {"lowercase": True} if config.get("do_lower_case") is True else {}
+
+
 def tokenizer_json_charsmap(tokenizer):
     """The precompiled_charsmap of a tokenizer.json's "Precompiled" normalizer (sentencepiece's, T216), or b""."""
     import base64

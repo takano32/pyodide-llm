@@ -218,8 +218,11 @@ class Tokenizer:
     UNMATCHABLE = -1e8  # convert_hf.py gives control and byte pieces a score below this
 
     def __init__(self, data, vocab_size, kind="bpe", nfkc=False, nfc=False, pretokenizer="gpt2", ignore_merges=False,
-                 collapse=False, unknown=None):
+                 collapse=False, unknown=None, lowercase=False):
         self.kind, self.nfkc, self.nfc, self.pretokenizer = kind, nfkc, nfc, pretokenizer
+        # T265: the text is made lower case before anything else (rinna's japanese-gpt2: tokenizer_config.json's
+        # do_lower_case, with a vocabulary that has no capital Latin letter, each of which was <unk> without it)
+        self.lowercase = lowercase
         self.collapse = collapse  # a sentencepiece model's remove_extra_whitespaces: see normalized()
         # a sentencepiece model without byte pieces (rinna's) writes a character it lacks as its unknown piece, a run
         # of them as one; the others spell it in bytes
@@ -290,7 +293,10 @@ class Tokenizer:
         tabs, newlines and a few more characters a space, and drops or keeps the other control characters, as each
         model's map says), NFKC or NFC (a tokenizer.json's), and collapse: sentencepiece's remove_extra_whitespaces,
         runs of spaces one and none at either end. Without them a newline was spelled with byte + 3 in a vocabulary
-        with no byte pieces: rinna's った (the review of T126)."""
+        with no byte pieces: rinna's った (the review of T126). lowercase (T265) comes first, as transformers' slow
+        tokenizers lower the text before sentencepiece sees it."""
+        if self.lowercase:
+            text = text.lower()
         if self.charsmap:
             text = self.charsmap.replaced(text)
         if self.nfkc:

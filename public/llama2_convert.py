@@ -54,5 +54,6 @@ from convert.tokenizer import (PRETOKENIZERS, STAGED_PRETOKENIZERS, UNMATCHABLE,
                                sentencepiece_pieces, sentencepiece_specials, tokenizer_bin,
                                tokenizer_json_bpe_pieces, tokenizer_json_charsmap,
                                tokenizer_json_options, tokenizer_json_pieces, tokenizer_kind_of)
+from convert.tokenizer import described_options  # noqa: F401
 from convert.conversion import Conversion  # noqa: F401
-
+from convert.conversion import described  # noqa: F401
