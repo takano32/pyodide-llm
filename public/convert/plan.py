@@ -100,25 +100,17 @@ def name_prefix(source, arch):
     return of_layout(arch).prefix(source)
 
 
-def has_bias(source):
-    """Whether this checkpoint has the q, k and v biases of Qwen2 (o and the FFN never have one)."""
-    return "model.layers.0.self_attn.q_proj.bias" in source
-
-
-def has_qk_norm(source):
-    """Whether this checkpoint normalizes every head of q and k before RoPE (Qwen3, T124)."""
-    return "model.layers.0.self_attn.q_norm.weight" in source
-
-
 def checkpoint_form(config, source):
     """The form of the checkpoint converted from this config.json and source (llama2_numpy.FORM): what its file will
     not say. head_dim is 0 where the heads fill dim exactly, the way the engine reads a form without one (T144: not
     where dim // heads is the head's size, which a dim that heads do not divide would pass with narrower heads)."""
     config = normalize(config)
     family, size = family_of(config), head_size(config)
-    form = {"bias": has_bias(source), "arch": family.arch, "qk_norm": has_qk_norm(source),
+    form = {"bias": False, "arch": family.arch, "qk_norm": False,
             "head_dim": 0 if size * config["num_attention_heads"] == config["hidden_size"] else size,
             "linear": None, "rotated": getattr(source, "rotated", None), "convolution": None}
+    # what its tensors say (a Llama's biases and norms of its heads), and what its config.json says
+    form.update(family.found(source))
     form.update({key: make(config) for key, make in family.form.items()})
     if form["rotated"] is not None:
         # T237: a rotated basis is no tensor and no number of config.json: the source says it (a GGUF's metadata).

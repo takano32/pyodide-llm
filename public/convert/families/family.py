@@ -74,6 +74,10 @@ class Family(NamedTuple):
     # the keys of the checkpoint's form that only this family says (FORM's "linear", "convolution"), each with the
     # function of the config that makes it
     form: Any = MappingProxyType({})
+    # (source) -> the keys of the checkpoint's form that this family's file says by the tensors it has (T369: a Llama's
+    # "bias" and "qk_norm", rows its layout has or has not). A family whose layout always has them, or never, says
+    # nothing: its form keeps FORM's value, whatever names its source happens to hold
+    found: Callable = nothing
     # (config) -> the engine's options that only this family says, where it says any
     options: Callable = nothing
     # (source) -> what stands in front of its tensors' names, where that depends on the file

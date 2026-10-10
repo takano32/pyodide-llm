@@ -40,8 +40,9 @@ from convert.families.lfm2 import lfm2_config  # noqa: F401
 from convert.config import (architecture, check_config, checkpoint_header, convolution_layers,  # noqa: F401
                             head_size, linear_layers, normalize, query_scale, rotary_dim,
                             unturned_layers, yarn)
-from convert.plan import (checkpoint_form, conversion_plan, has_bias, has_qk_norm, name_prefix,  # noqa: F401
+from convert.plan import (checkpoint_form, conversion_plan, name_prefix,  # noqa: F401
                           permute_heads, rope_table, source_shape, transformed)
+from convert.families.llama import has_bias, has_qk_norm  # noqa: F401
 from convert.stream import (PIECE, Stream, convert_pieces, convert_weights, left_to_do, unsplit,  # noqa: F401
                             untiled, unturned)
 from convert.gguf import (GGUF_NFC, GGUF_PRETOKENIZERS, GGUF_ROTATED, GGUF_VALUES, Incomplete,  # noqa: F401
@@ -53,3 +54,4 @@ from convert.tokenizer import (PRETOKENIZERS, STAGED_PRETOKENIZERS, UNMATCHABLE,
                                tokenizer_json_bpe_pieces, tokenizer_json_charsmap,
                                tokenizer_json_options, tokenizer_json_pieces, tokenizer_kind_of)
 from convert.conversion import Conversion  # noqa: F401
+
