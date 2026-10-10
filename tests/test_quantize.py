@@ -8,7 +8,7 @@ import pytest
 
 import quantize
 from conftest import ROOT, TENSOR_ORDER, pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
-from llama2_numpy import Llama
+from llama2_numpy import Llama, group32
 
 MATRICES = ["token_embedding_table", "wq", "wk", "wv", "wo", "w1", "w2", "w3"]
 NORMS = ["rms_att_weight", "rms_ffn_weight", "rms_final_weight"]
@@ -37,7 +37,7 @@ def test_int8_weights_are_within_one_step_of_the_originals(tmp_path, name, overr
             values, scales = got
             got = (values * scales).reshape(original.shape)
         assert got.shape == original.shape, tensor
-        group = quantize.group_size(original.shape[-1])
+        group = group32(original.shape[-1])
         groups = original.reshape(-1, group)
         # one step of the quantization is max(|group|) / 127
         step = np.abs(groups).max(axis=1) / 127.0

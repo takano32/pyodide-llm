@@ -2,7 +2,8 @@
 # each of the layouts, in the order of the file; the form a file does not say (FORM); how each row is stored in a file
 # of a dtype, and where. Everything that needs the order of the tensors reads it here (T359): the converter's layout()
 # and Writer, checkpoint_dtype(), the engine's attributes, external_tensors(), and conversion_plan() by the rows' names.
-# This file imports nothing of the engine or of the converter: both read it.
+# What a kind of storage is (its bytes, its groups) is engine/dtypes.py's, which this file reads, and nothing else of
+# the engine or of the converter: both read it.
 #
 # This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and it is
 # derived from two works under the MIT License, whose notice follows: tairov/llama2.py
@@ -29,6 +30,8 @@
 import math
 from typing import NamedTuple
 
+from engine.dtypes import DTYPES, QUANTIZED, dtype_of
+
 # ---- the form
 # The form of a checkpoint: what sets its tensors and sizes its forward pass besides the 7 ints of the header, which
 # the legacy file cannot say (see Llama.__init__), with the value of a file that says nothing. The converter writes
@@ -38,8 +41,10 @@ from typing import NamedTuple
 # linear (T229): the linear-attention layers of arch "qwen35", see linear_form(); None where there are none.
 # rotated (T237): a rotated basis, which moves no tensor: the same ones are stored in another basis.
 # convolution (T260): the convolution layers of arch "lfm2", see convolution_form(); None where there are none.
+# kinds (T359): the rows that are not stored the way the file's dtype stores a row of their role, see kinds_form();
+# None where every row is, which is every file a conversion writes today.
 FORM = {"bias": False, "arch": "llama", "qk_norm": False, "head_dim": 0, "linear": None, "rotated": None,
-        "convolution": None}
+        "convolution": None, "kinds": None}
 
 
 def form_of(options=None):
@@ -92,6 +97,14 @@ def convolution_form(convolution, n_layers=None):
     return {"layers": layers, "taps": taps}
 
 
+def kinds_form(kinds):
+    """The rows of a file that are stored in a kind of their own, FORM's "kinds", as {the row's name: the kind's
+    (DTYPES')}, from a dict of Python or of JavaScript: a file whose tensors are of several kinds (T363) says here
+    which, since its size cannot. None where there are none."""
+    kinds = kinds.to_py() if hasattr(kinds, "to_py") else kinds
+    return {str(name): dtype_of(kind) for name, kind in kinds.items()} if kinds else None
+
+
 def layer_slots(n_layers, linear, convolution=None):
     """For every layer: (whether it keeps a state in place of keys and values: a Qwen3.5's linear-attention layer or an
     LFM2's convolution layer, its place among the layers of its kind), which is where its tensors are in the file's
@@ -125,11 +138,14 @@ EVERY, ATTENDING, STATEFUL = "every", "attending", "stateful"
 
 
 class Row(NamedTuple):
-    """A tensor of the file. name: the attribute the engine holds it as (and its key in the plan forward.js gets)."""
+    """A tensor of the file. name: the attribute the engine holds it as (and its key in the plan forward.js gets).
+    kind: how it is stored where that is not the file's way with a row of its role (the form's "kinds"), see
+    kind_of()."""
     name: str
     role: str
     shape: tuple
     per: str = None
+    kind: str = None
 
 
 class Dims:
@@ -152,10 +168,18 @@ class Dims:
         if (self.arch == "qwen35" and self.linear is None) or (self.arch == "lfm2" and self.convolution is None):
             raise ValueError("A hybrid model (qwen35) has to say its linear layers, and an LFM2 its convolution layers.")
         self.slots = layer_slots(self.n_layers, self.linear, self.convolution)
+        self.kinds = kinds_form(form["kinds"])
 
     def rows(self):
-        """The tensors of the checkpoint, as rows in file order: its architecture's layout."""
-        return LAYOUTS.get(self.arch, llama)(self)
+        """The tensors of the checkpoint, as rows in file order: its architecture's layout, each with the kind the
+        form gives it where it gives one."""
+        rows = LAYOUTS.get(self.arch, llama)(self)
+        if self.kinds is None:
+            return rows
+        unknown = sorted(set(self.kinds) - {row.name for row in rows})
+        if unknown:
+            raise ValueError(f"This model has no tensor called {unknown[0]!r} to store in a kind of its own.")
+        return [row._replace(kind=self.kinds.get(row.name)) for row in rows]
 
     def layers(self, per):
         """The layers a stack covers, in the order of the stack."""
@@ -269,33 +293,17 @@ def tensor_rows(header, form=None):
 
 
 # ---- how a row is stored, and where
-# A quantized dtype holds a matrix as values and one float32 scale for every group of a row: (the bits of a value, the
-# values of a group; 0: 32, or the largest power of two below it that divides the row). int6 is T98's (pack6), ternary
-# T230's (pack_ternary). (T359: the registry of the dtypes, step 2, takes these.)
-PACKINGS = {"int8": (8, 0), "int6": (6, 32), "ternary": (2, 128)}
-QUANTIZED = tuple(PACKINGS)
-UNSUITED = {"int6": "Six bits a weight needs rows of whole groups of 32, and this model has other rows.",
-            "ternary": "Ternary weights need rows of whole groups of 128, and this model has other rows."}
-
-
 def kind_of(row, dtype):
-    """How a row is stored in a file of this dtype ("float32", "float16", "int8", "int6", "ternary"), by the same
-    names; None: it is left out. Today a file has one dtype and a row follows it by its role: every matrix is the
-    file's, the vectors of a quantized file are float32 and it has no RoPE tables. This is the one place that chooses,
-    so that a file whose tensors are of several kinds (T363) changes this function and nothing that reads it."""
+    """How a row is stored in a file of this dtype, by a name of DTYPES; None: it is left out. The row's own kind
+    where the form gave it one (FORM's "kinds"). Otherwise it follows the file's dtype by its role: every matrix is
+    the file's, the vectors of a quantized file are float32 and it has no RoPE tables. This is the one place that
+    chooses: whatever writes, reads or sizes a row asks for its kind here and goes by that, not by the file's dtype, so
+    that a file whose tensors are of several kinds (T363) is the form's to say and nobody else's to know."""
+    if row.kind is not None:
+        return row.kind
     if dtype not in QUANTIZED:
         return dtype
     return "float32" if row.role == VECTOR else None if row.role == TABLE else dtype
-
-
-def group_of(length, kind):
-    """The values of a group of a row of this length, of a quantized kind."""
-    group = PACKINGS[kind][1]
-    if not group:
-        group = 32
-        while length % group:
-            group //= 2
-    return group
 
 
 class Place(NamedTuple):
@@ -314,12 +322,14 @@ def placed(rows, dtype, offset=28):
     places = []
     for row in rows:
         kind, count = kind_of(row, dtype), math.prod(row.shape)
-        if kind in QUANTIZED:
-            group = group_of(row.shape[-1], kind)
-            values = count // group * (group * PACKINGS[kind][0] // 8)
-            place = Place(row, kind, offset, values + 4 * (count // group), group, offset + values)
+        if kind is None:
+            place = Place(row, None, offset, 0)
+        elif DTYPES[kind].bits:
+            group = DTYPES[kind].group(row.shape[-1])
+            values, scales = DTYPES[kind].stored_bytes(count, group)
+            place = Place(row, kind, offset, values + scales, group, offset + values)
         else:
-            place = Place(row, kind, offset, 0 if kind is None else count * (2 if kind == "float16" else 4))
+            place = Place(row, kind, offset, count * DTYPES[kind].itemsize)
         places.append(place)
         offset += place.size
     return places
@@ -330,11 +340,16 @@ def file_size(rows, dtype):
     return 28 + sum(place.size for place in placed(rows, dtype))
 
 
+def unsuited(rows, dtype):
+    """The kinds of a file of this dtype that cannot hold their rows: a packed kind needs rows of whole groups."""
+    return [place.kind for place in placed(rows, dtype) if place.kind and not DTYPES[place.kind].suits(place.row.shape[-1])]
+
+
 def suited(rows, dtype):
-    """Whether a file of this dtype can hold these rows: a packed kind needs rows of whole groups."""
-    return all(row.shape[-1] % place.group == 0 for row, place in zip(rows, placed(rows, dtype)) if place.group)
+    """Whether a file of this dtype can hold these rows."""
+    return not unsuited(rows, dtype)
 
 
 def check_suited(rows, dtype):
-    if not suited(rows, dtype):
-        raise ValueError(UNSUITED[dtype])
+    for kind in unsuited(rows, dtype):
+        raise ValueError(DTYPES[kind].unsuited)

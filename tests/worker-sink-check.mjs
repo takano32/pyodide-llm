@@ -21,8 +21,10 @@ const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
 { cwd: fileURLToPath(root) }).toString());
 // T229: "linear", the linear-attention layers of a Qwen3.5 (null where there are none); T237: "rotated", the basis the
 // matrices are stored in (null: the model's own), whose signs and rotated inputs footprint() counts; T260: "convolution",
-// the convolution layers of an LFM2 (null where there are none), which keep a few rows and no keys and values
-assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "convolution", "head_dim", "linear", "qk_norm", "rotated"],
+// the convolution layers of an LFM2 (null where there are none), which keep a few rows and no keys and values; T359:
+// "kinds", the rows a file holds in a kind of their own (null where there are none, which is every model the worker
+// loads: Python refuses such a file where the weights are outside it, so footprint() never reads the key)
+assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "convolution", "head_dim", "kinds", "linear", "qk_norm", "rotated"],
   "FORM has other keys now: say here which of them footprint() reads");
 
 // (7) footprint()'s defaults are FORM's: a form without arch or head_dim (the options of a model converted before

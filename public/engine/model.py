@@ -33,8 +33,8 @@ from engine.layers import (RMS_EPS, delta_rule, gelu, head_norm, l2_heads, layer
                            rope_frequencies, rope_magnitude, rotate, rotated_form, rotated_widths, silu, softplus,
                            unrotate)
 from engine.kernels import load_kernels
-from engine.packing import PACKED
-from engine.checkpoint import OUTLIER_CHANNELS, Tensor, outlier_channels
+from engine.dtypes import QUANTIZED, dtype_of
+from engine.checkpoint import OUTLIER_CHANNELS, SEVERAL_KINDS, Tensor, outlier_channels
 from engine.tensors import TensorOrder
 from engine.sampling import REPETITION_WINDOW, Sampling
 from engine.generation import Generation
@@ -70,7 +70,7 @@ class Llama(TensorOrder, Sampling, Generation):
                  rotary=0, parallel_residual=False, bos=BOS, stop_tokens=(BOS,), kernels=None, specials=(),
                  disable=(), external=None, rope_scaling=None, ignore_merges=False, collapse=False,
                  unknown=None, qk_norm=False, head_dim=0, rms_norm_eps=RMS_EPS, linear=None, rotated=None,
-                 convolution=None, unturned=()):
+                 convolution=None, unturned=(), kinds=None):
         """checkpoint: llama2.c "legacy" format, a 7 int header then the weights.
 
         dtype="float16" and dtype="int8" are this project's smaller variants (convert_hf.py, quantize.py),
@@ -102,6 +102,9 @@ class Llama(TensorOrder, Sampling, Generation):
         of every width (FORM's, the file cannot say them). The same tensors in the same places: only what they are
         multiplied by changes, and the row of the embedding is turned back.
         unturned (T255): the layers whose q and k RoPE does not turn (SmolLM3: every fourth), where there are any.
+        kinds (T359): the rows the file holds in a kind of their own, {the row's name: "int6", ...} (FORM's, the file
+        cannot say them): every other row is stored the way dtype stores a row of its role. NumPy reads such a
+        file; with external it is refused, forward.js takes one dtype for a file.
         rope_scaling: config.json's, for the RoPE tables that are not in the file (int8, float16); see
         rope_frequencies(). ignore_merges: a byte-level BPE takes a pre-tokenized piece that is in the vocabulary
         whole (Llama 3).
@@ -137,20 +140,20 @@ class Llama(TensorOrder, Sampling, Generation):
         if unnamed:
             raise ValueError(f"There is no optimization called {unnamed[0]!r}: {', '.join(SWITCHES)}.")
         self.disabled = disable
-        # int6 (T98) and ternary (T230) are int8 with the values packed: from here on it is int8, except where the
-        # bytes are read
-        packing = str(dtype) if str(dtype) in PACKED else None
-        dtype = np.dtype(np.int8 if packing else dtype)
+        # the file's dtype by its name (engine/dtypes.py). int6 (T98) and ternary (T230) are int8 with the values
+        # packed: past where the bytes are read, a quantized file is int8
+        stored = dtype_of(dtype)
+        quantized = stored in QUANTIZED
         # The int8 kernels work on groups of 32 only
         self.linear = linear_form(linear)
         # (T229: and a linear-attention layer's output matrix, whose rows are as long as its value heads together)
-        suitable = dtype != np.int8 or (dim % 32 == 0 and self.q_dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0
+        suitable = not quantized or (dim % 32 == 0 and self.q_dim % 32 == 0 and kv_dim % 32 == 0 and hidden_dim % 32 == 0
                                         and (self.linear is None or linear_widths(self.linear)[2] % 32 == 0))
         kernels = load_kernels(kernels, "relaxed" in disable) if kernels and "kernels" not in disable and \
             (suitable or external is not None) else None
         # int8 kernels compute on the int8 weights directly: they are never widened, a quarter of the memory
         # (only forward.js computes on them: the NumPy forward widens every matrix)
-        keep_int8 = external is not None and suitable and dtype == np.int8 and "int8" not in disable
+        keep_int8 = external is not None and suitable and quantized and "int8" not in disable
 
         self.arch, self.parallel_residual = arch, parallel_residual
         # T237: a rotated basis turns what every matrix reads (turned), and the embedding's row back
@@ -179,8 +182,10 @@ class Llama(TensorOrder, Sampling, Generation):
         # layer or a convolution one, its place in the stacks of its kind's tensors)
         dims = Dims((dim, hidden_dim, n_layers, self.n_heads, self.n_kv_heads, vocab_size, self.seq_len),
                     {"arch": arch, "bias": bias, "qk_norm": qk_norm, "head_dim": head_dim, "linear": self.linear,
-                     "convolution": self.convolution})
+                     "convolution": self.convolution, "kinds": kinds})
         self.slots, self.rows = dims.slots, dims.rows()
+        if external is not None and dims.kinds is not None:
+            raise ValueError(SEVERAL_KINDS)
         self.ln_att_bias = self.ln_ffn_bias = self.ln_final_bias = None
         self.bq = self.bk = self.bv = self.bo = self.b1 = self.b2 = None
         self.w3 = None
@@ -190,14 +195,13 @@ class Llama(TensorOrder, Sampling, Generation):
         self.rope_magnitude = rope_magnitude(rope_scaling)
         # each row as an attribute of its name: where it is, with the weights outside Python (public/forward.js reads
         # them, and widens what has to be widened, itself), or an array
-        stored = packing or dtype.name
         self.file_tensors(checkpoint, self.rows, stored, shared_weights, external is not None)
         self.rope_tables(stored, frequencies)
         self.backend = "NumPy"
         if external is not None:
             if file_size(self.rows, stored) != int(external.size):
                 raise ValueError(f"The checkpoint has {int(external.size)} bytes, and its header asks for "
-                                 f"{file_size(self.rows, stored)} as {dtype.name}.")
+                                 f"{file_size(self.rows, stored)} as {stored}.")
             self.forward = self.external_forward(external, keep_int8, disable)
             if kernels and "sampler" not in disable:
                 self.penalize, self.sample = self.kernel_sampler(kernels)

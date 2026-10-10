@@ -17,19 +17,19 @@ import time  # noqa: F401
 import numpy as np  # noqa: F401
 
 # the RoPE angles are the engine's, which computes them itself when a file leaves the tables out (int8)
-from llama2_numpy import (CHARSMAP, FORM, RMS_EPS, TERNARY_GROUP, TERNARY_VALUES, convolution_form,  # noqa: F401
-                          form_of, layer_slots, linear_form, linear_widths, pack6, quantize6,
-                          rope_frequencies, rope_magnitude, rotated_form, rotated_widths, sign_bits,
-                          ternary)
-from convert.checkpoint import (EITHER, QUANTIZED, Writer, check_dtype, checkpoint_size, dtype_name,  # noqa: F401
-                                group_size, layout, quantize, tensor_bytes)
+from llama2_numpy import (CHARSMAP, DTYPES, EITHER, FORM, QUANTIZED, RMS_EPS, TERNARY_GROUP,  # noqa: F401
+                          TERNARY_VALUES, convolution_form, dtype_of, form_of, layer_slots, linear_form,
+                          linear_widths, pack6, quantize, quantize6, rope_frequencies, rope_magnitude,
+                          rotated_form, rotated_widths, sign_bits, ternary)
+from convert.checkpoint import IS_MATRIX, Writer, checkpoint_size, layout, tensor_bytes  # noqa: F401
 from convert.template import (CHECK_DAYS, DAY, Loop, METHODS, MISSING, Namespace, STRFTIME, Undefined,  # noqa: F401
                               Unsupported, apply_filter, arithmetic, as_text, balanced, call_arguments,
                               closing_bracket, compare, config_token, evaluate, find_outside_quotes,
                               is_test, matching, next_branch, one_turn, one_turn_template, render, run,
                               split_operators, split_outside_quotes, string_end, tokenize_template,
                               truthy, unescape, value_of)
-from convert.readers import BLOCKS, PQ2_0_CODES, READERS, base3, bfloat16, pq2_0, ptq1_0, q8_0  # noqa: F401
+from convert.readers import (GGUF_TENSORS, PQ2_0_CODES, SOURCES, Source, base3, bfloat16,  # noqa: F401
+                             kernel_readers, pq2_0, ptq1_0, q8_0, read_types, source_of)
 from convert.sources import Arrays, ROTATED, Safetensors, Shards, header_rotated, joined_shards  # noqa: F401
 from convert.config import (GRANITE_ONES, LINEAR_DEFAULTS, PARTLY_TURNED, architecture, check_config,  # noqa: F401
                             checkpoint_header, convolution_layers, head_size, lfm2_config,
@@ -39,7 +39,7 @@ from convert.plan import (checkpoint_form, conversion_plan, gpt2_prefix, has_bia
 from convert.stream import (PIECE, Stream, convert_pieces, convert_weights, left_to_do, unsplit,  # noqa: F401
                             untiled, unturned)
 from convert.gguf import (GGUF_ARCHITECTURES, GGUF_LAYER, GGUF_NAMES, GGUF_NFC, GGUF_PRETOKENIZERS,  # noqa: F401
-                          GGUF_ROTATED, GGUF_TENSORS, GGUF_VALUES, Incomplete, QWEN35_TILED,
+                          GGUF_ROTATED, GGUF_VALUES, Incomplete, QWEN35_TILED,
                           gguf_agrees, gguf_model, gguf_read, gguf_rotated, gguf_tokenizer,
                           gguf_weights, rope_freqs_agree)
 from convert.tokenizer import (PRETOKENIZERS, STAGED_PRETOKENIZERS, UNMATCHABLE, pretokenizer_name,  # noqa: F401

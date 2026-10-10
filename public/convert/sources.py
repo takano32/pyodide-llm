@@ -4,7 +4,7 @@ import json
 import math
 import struct
 
-from convert.readers import READERS
+from convert.readers import source_of
 
 ROTATED = "rotated"  # the key of a header's __metadata__ that says a rotated basis (T237)
 
@@ -48,13 +48,11 @@ class Safetensors:
     def rows(self, name, start, stop):
         """Rows start..stop of a tensor (all of a vector), as float32 or float16."""
         info = self.tensors[name]
-        if info["dtype"] not in READERS:
-            raise ValueError(f"{name} is stored as {info['dtype']}: only float32, float16 and bfloat16 are supported.")
-        itemsize, reader = READERS[info["dtype"]]
+        stored = source_of(name, info["dtype"])
         shape = self.shape(name)
         row = math.prod(shape[1:])
-        begin = self.base + info["data_offsets"][0] + int(start * row * itemsize)
-        return reader(self.read(begin, int((stop - start) * row * itemsize))).reshape(stop - start, *shape[1:])
+        begin = self.base + info["data_offsets"][0] + stored.bytes(start * row)
+        return stored.read(self.read(begin, stored.bytes((stop - start) * row))).reshape(stop - start, *shape[1:])
 
 
 class Shards:

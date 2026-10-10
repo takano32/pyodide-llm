@@ -62,23 +62,25 @@ class Sized:
 
     def write(self, offset, array):
         self.writes.append((offset, array.size))
+# (where it begins, its shape, layout()'s "is a matrix") of every tensor a Writer places
+tensors_placed = lambda writer: [(place.offset, place.row.shape, llama2_convert.IS_MATRIX.get(place.row.role, True)) for place in writer.places]
 big, big_form = [5120, 27648, 64, 40, 8, -152064, 4096], {"arch": "llama", "bias": True}
 for big_dtype, big_bytes in (("int8", 36862578716), ("int6", 28671889436)):
     sized = Sized()
     writer = llama2_convert.Writer(None, big, big_dtype, big_form, sink=sized)
     assert sized.size == big_bytes == llama2_convert.checkpoint_size(big, big_dtype, big_form), \\
         f"a 32B model in {big_dtype} is {sized.size} bytes, not {big_bytes} (NumPy's 32-bit integers?)"
-    last_offset, last_shape, last_is_matrix = writer.tensors[-1]
+    last_offset, last_shape, last_is_matrix = tensors_placed(writer)[-1]
     assert last_offset + llama2_convert.tensor_bytes(last_shape, last_is_matrix, big_dtype) == big_bytes, f"its tensors do not end at its size in {big_dtype}"
     # (T233's review: and where the last row of its largest matrix, 9.06e9 values, is written, values and scales: the places the
     # converter's writer computes from the shape, which np.prod put back wrapped and the sizes above did not see)
-    largest = max((i for i, (_, _, is_matrix) in enumerate(writer.tensors) if is_matrix), key=lambda i: math.prod(writer.tensors[i][1]))
-    at, shape, _ = writer.tensors[largest]
+    largest = max((i for i, (_, _, is_matrix) in enumerate(tensors_placed(writer)) if is_matrix), key=lambda i: math.prod(tensors_placed(writer)[i][1]))
+    at, shape, _ = tensors_placed(writer)[largest]
     count, width = math.prod(shape), shape[-1]
     assert count > 2 ** 31, "the 32B has no matrix of more than 2^31 values: this checks nothing"
     sized.writes.clear()
     writer.write(largest, count - width, np.random.default_rng(1).standard_normal(width).astype(np.float32))
-    group = 32 if big_dtype == "int6" else llama2_convert.group_size(width)
+    group = 32 if big_dtype == "int6" else llama2_numpy.group32(width)
     wanted = ([(at + (count - width) * 3 // 4, width * 3 // 4), (at + count * 3 // 4 + 4 * ((count - width) // 32), 4 * (width // 32))] if big_dtype == "int6"
               else [(at + count - width, width), (at + count + 4 * ((count - width) // group), 4 * (width // group))])
     assert sized.writes == wanted, f"the last row of the 32B's largest matrix in {big_dtype} is written at {sized.writes}, not {wanted}"
@@ -99,18 +101,18 @@ placed = Placed()
 writer = llama2_convert.Writer(None, bonsai, "ternary", bonsai_form, sink=placed)
 assert placed.size == bonsai_bytes == llama2_convert.checkpoint_size(bonsai, "ternary", bonsai_form), \\
     f"the 27B as ternary is {placed.size} bytes, not {bonsai_bytes}"
-ends = [offset + llama2_convert.tensor_bytes(shape, is_matrix, "ternary") for offset, shape, is_matrix in writer.tensors]
-assert all(type(offset) is int for offset, _, _ in writer.tensors), "a tensor's place is no Python integer"
-assert [offset for offset, _, _ in writer.tensors][1:] == ends[:-1] and ends[-1] == bonsai_bytes, "the 27B's tensors do not follow one another to its size"
+ends = [offset + llama2_convert.tensor_bytes(shape, is_matrix, "ternary") for offset, shape, is_matrix in tensors_placed(writer)]
+assert all(type(offset) is int for offset, _, _ in tensors_placed(writer)), "a tensor's place is no Python integer"
+assert [offset for offset, _, _ in tensors_placed(writer)][1:] == ends[:-1] and ends[-1] == bonsai_bytes, "the 27B's tensors do not follow one another to its size"
 # two matrices: the one that lies last (the classifier: 1.27e9 values, below 2^31) and the one with the most values (a stack of the
 # FFN's matrices of the 64 layers: 5.7e9, past 2^31, which is where NumPy's 32-bit integers in Pyodide wrapped: T233's review put
 # np.prod back into the place of a ternary matrix's scales and the classifier alone passed, so this matrix is the check of that line)
-matrices = [i for i, (_, _, is_matrix) in enumerate(writer.tensors) if is_matrix]
-last_matrix = max(matrices, key=lambda i: writer.tensors[i][0])
-largest = max(matrices, key=lambda i: (math.prod(writer.tensors[i][1]), writer.tensors[i][0]))  # (of two the same size, the later)
-assert math.prod(writer.tensors[largest][1]) > 2 ** 31, "the 27B has no matrix of more than 2^31 values: this checks nothing"
+matrices = [i for i, (_, _, is_matrix) in enumerate(tensors_placed(writer)) if is_matrix]
+last_matrix = max(matrices, key=lambda i: tensors_placed(writer)[i][0])
+largest = max(matrices, key=lambda i: (math.prod(tensors_placed(writer)[i][1]), tensors_placed(writer)[i][0]))  # (of two the same size, the later)
+assert math.prod(tensors_placed(writer)[largest][1]) > 2 ** 31, "the 27B has no matrix of more than 2^31 values: this checks nothing"
 for which, index in (("last", last_matrix), ("largest", largest)):
-    at, shape, _ = writer.tensors[index]
+    at, shape, _ = tensors_placed(writer)[index]
     count, width = math.prod(shape), shape[-1]
     assert at > 2 ** 32 or which == "largest", f"the 27B's last matrix begins at {at}: not past 2^32, so this checks nothing"
     row = np.tile(np.array([0.5, 0.0, -0.5, 0.5], dtype=np.float32), width // 4)
@@ -393,7 +395,29 @@ for tensors_of, config_of, arch in ((tensors, gpt2_config, "gpt2"), (neox_tensor
     assert numpy_int8 == kernel_int8, f"the kernels' quantizer changed the int8 {arch} checkpoint"
 # T123: bfloat16 widened on the kernels is NumPy's widening to the bit, every 16-bit pattern (NaNs, infinities,
 # subnormals, both zeros), in a length that leaves a tail after the groups of 8
-widen = llama2_numpy.kernel_widener("simdkernel.so")
+# (T359: the readers of every stored type that has a kernel come from one call, by the type's name)
+kernel_readers = llama2_convert.kernel_readers("simdkernel.so")
+assert set(kernel_readers) == {name for name, source in llama2_convert.SOURCES.items() if source.kernel} == {"BF16", "Q8_0", "PQ2_0", "PTQ1_0"}, \
+    f"the kernels read {sorted(kernel_readers)}, which are not the stored types that name a kernel"
+# and whatever type it is, its kernel reads what NumPy's reader reads, to the bit: every byte value in every place of a
+# block (the values no file holds too), in numbers of blocks that leave a tail, and a block cut short is refused
+for name, source in llama2_convert.SOURCES.items():
+    if source.kernel:
+        blocks = np.random.default_rng(source.ggml).integers(0, 256, (1024 + 3, source.size), dtype=np.uint8)
+        for place in range(source.size):
+            blocks[:256, place] = (np.arange(256) + 7 * place) % 256
+        for count in (0, 1, 3, 1024 + 3):
+            raw = blocks[:count].tobytes()
+            widened, expected = kernel_readers[name](raw), source.read(raw)
+            assert widened.dtype == expected.dtype == np.float32 and widened.shape == expected.shape == (count * source.values,), f"{name}: the kernel's shape"
+            assert np.array_equal(widened.view(np.uint32), expected.view(np.uint32)), f"{source.kernel} is not NumPy's reader of {name} ({count} blocks)"
+        if source.size > 1:
+            try:
+                kernel_readers[name](bytes(source.size + 1))
+                raise AssertionError(f"{name}: a block cut short was read")
+            except ValueError:
+                pass
+widen = kernel_readers["BF16"]
 patterns = np.arange(65536 + 5, dtype=np.uint32).astype(np.uint16).tobytes()
 assert np.array_equal(widen(patterns).view(np.uint32), llama2_convert.bfloat16(patterns).view(np.uint32)), "widen_bf16 is not bfloat16()"
 # T162: swiglu and gelu four at a time (vexp) are their scalar tails (fexp) to the bit, over both sides of exp's clamps
@@ -436,7 +460,7 @@ def rotated_kernels():
 rotated_kernels()
 # T136: GGUF's Q8_0 widened on the kernels is NumPy's q8_0() to the bit: every float16 scale (NaNs, infinities,
 # subnormals, both zeros) once, with every int8 (-128 and 127 included) across the blocks, in odd numbers of blocks
-q8_0 = llama2_numpy.kernel_q8_0("simdkernel.so")
+q8_0 = kernel_readers["Q8_0"]
 rng = np.random.default_rng(11)
 blocks = np.empty((65536 + 3, 34), dtype=np.uint8)
 blocks[:, :2] = np.arange(65536 + 3, dtype=np.uint32).astype(np.uint16).view(np.uint8).reshape(-1, 2)
@@ -462,7 +486,7 @@ for name, tensor in q8_tensors.items():
 for dtype in ("int8", "float32"):
     outs = []
     for widener in (None, q8_0):
-        stream = llama2_convert.Stream(q8_header, 0, q8_config, dtype, 24, q8_0=widener)
+        stream = llama2_convert.Stream(q8_header, 0, q8_config, dtype, 24, readers=widener and {"Q8_0": widener})
         for at in range(0, len(q8_file), 1000):
             stream.feed(bytes(q8_file[at:at + 1000]))
         stream.finish()
@@ -471,7 +495,7 @@ for dtype in ("int8", "float32"):
 # T273: the two ternary types widened on the kernels are NumPy's pq2_0() and ptq1_0() to the bit: every float16 scale
 # once, every byte in every place of a block (the code 3 of PQ2_0 and the bytes past 242 of PTQ1_0, which no file
 # holds, included), in odd numbers of blocks
-ternary_readers = llama2_numpy.kernel_ternary_readers("simdkernel.so")
+ternary_readers = kernel_readers
 for kind, size, numpy_reader in (("PQ2_0", 34, llama2_convert.pq2_0), ("PTQ1_0", 28, llama2_convert.ptq1_0)):
     scale_at = 0 if kind == "PQ2_0" else 26
     data_at = [at for at in range(size) if not scale_at <= at < scale_at + 2]

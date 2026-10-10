@@ -24,7 +24,7 @@
 # SOFTWARE.
 import numpy as np
 
-from engine.packing import NOT_TERNARY, TERNARY_GROUP
+from engine.dtypes import DTYPES
 
 
 def load_kernels(path, without_relaxed=False):
@@ -48,8 +48,7 @@ def load_kernels(path, without_relaxed=False):
                           rotate=[p, p, p, i32, i32], unrotate=[p, p, p, i32, i32],
                           add_columns=[p, p, p, i32, i32],
                           layernorm=[p, p, p, p, i32], gelu=[p, p, p, i32],
-                          penalize=[p, p, i32, ctypes.c_float, ctypes.c_float], widen_bf16=[p, p, i32], widen_q8_0=[p, p, i32],
-                          widen_pq2_0=[p, p, i32], widen_ptq1_0=[p, p, i32],
+                          penalize=[p, p, i32, ctypes.c_float, ctypes.c_float],
                           sample=[p, i32, ctypes.c_float, ctypes.c_float, ctypes.c_double, p, p, i32, ctypes.c_float])
         kernels = {}
         for name, argtypes in signatures.items():
@@ -70,92 +69,68 @@ def load_kernels(path, without_relaxed=False):
 
 
 def kernel_quantizer(path):
-    """llama2_convert.quantize() on the SIMD kernels (T89): int8 values in groups of 32 and one float32 scale per
-    group, the same bytes as NumPy's, six times faster (quantize_x with no bias: the activations' quantizer is the
-    same computation). For the converter's quantize_rows; None where the kernels cannot be loaded.
-    dtype "int6": quantize6() and pack6() in one pass on the kernel quantize6_x (T98), the same bytes: the packed
-    groups (24 bytes each) and their scales. dtype "ternary" (T230): ternary() on the kernel ternary_x, the same bytes
-    (32 a group of 128) and scales, and the same refusal of values that are not ternary."""
+    """The packing of every quantized dtype (DTYPES' pack) on the SIMD kernels, for the converter's Writer:
+    quantize_rows(float32 rows, the dtype's name) -> (the bytes of their values in rows of a group's, their float32
+    scales), the same bytes as NumPy's and several times faster (T89: int8, six times; T98: int6, quantized and packed
+    in one pass; T230: ternary, with the same refusal of values that are not ternary). Whole groups of 32 or more
+    only: an int8 row of smaller groups is NumPy's (the Writer sees to it). None where the kernels cannot be loaded.
+    Which kernel packs a dtype is its entry's packer."""
     kernels = load_kernels(path) if path else None
     if not kernels:
         return None
-    quantize_x, quantize6_x, ternary_x = kernels["quantize_x"], kernels["quantize6_x"], kernels["ternary_x"]
+
+    # chosen once, not for every piece: of each dtype its group, the bytes of a group, the array's type, the kernel
+    # and what it takes after the count (quantize_x is the activations' quantizer too, and takes their bias: none here)
+    def packing(kind):
+        packer = kernels[kind.packer]
+        # (int8 values are the bytes of an int8 file as they are: the array says so, as NumPy's quantize() does)
+        return (kind.group, kind.bits, np.int8 if kind.bits == 8 else np.uint8, packer,
+                (0,) * (len(packer.argtypes) - 4), kind.refusal)
+
+    packings = {name: packing(kind) for name, kind in DTYPES.items() if kind.packer in kernels}
 
     def quantize_rows(values, dtype="int8"):
+        group_of, bits, stored_as, packer, more, refusal = packings[dtype]
         values = np.ascontiguousarray(values, dtype=np.float32)
-        if dtype == "ternary":
-            packed = np.empty(values.size // 4, dtype=np.uint8)
-            scales = np.empty(values.size // TERNARY_GROUP, dtype=np.float32)
-            if ternary_x(packed.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size):
-                raise ValueError(NOT_TERNARY)
-            return packed.reshape(-1, TERNARY_GROUP // 4), scales
-        if dtype == "int6":
-            packed = np.empty(values.size // 32 * 24, dtype=np.uint8)
-            scales = np.empty(values.size // 32, dtype=np.float32)
-            quantize6_x(packed.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size)
-            return packed.reshape(-1, 24), scales
-        quantized = np.empty(values.size, dtype=np.int8)
-        scales = np.empty(values.size // 32, dtype=np.float32)
-        quantize_x(quantized.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size, 0)
-        return quantized.reshape(-1, 32), scales
+        group = group_of(values.shape[-1])
+        groups = values.size // group
+        packed, scales = np.empty(groups * (group * bits // 8), dtype=stored_as), np.empty(groups, dtype=np.float32)
+        if packer(packed.ctypes.data, scales.ctypes.data, values.ctypes.data, values.size, *more):
+            raise ValueError(refusal)
+        return packed.reshape(groups, -1), scales
 
     return quantize_rows
 
 
-def kernel_widener(path):
-    """llama2_convert.bfloat16() on the SIMD kernels (T123): the same float32, a shift of every 16 bits, several
-    times faster than NumPy's two passes. For the converter's bfloat16; None where the kernels cannot be loaded."""
-    kernels = load_kernels(path) if path else None
-    if not kernels:
-        return None
-    widen = kernels["widen_bf16"]
+def kernel_wideners(path, types):
+    """The converter's readers of the stored types that have a kernel (convert/readers.py's SOURCES, which calls this
+    with them), on the SIMD kernels: {the type's name: read(bytes) -> float32}, the same float32 as NumPy's readers
+    and several times faster (T123: bfloat16, a shift of every 16 bits; T136: GGUF's Q8_0; T273: Prism ML's two
+    ternary types, most of the time of converting Ternary Bonsai 2 27B in the page).
+    types: (the type's name, the kernel's export, the values of a block, the bytes of a block) of each. Every such
+    kernel is export(float32 out, blocks in, how many blocks). A type whose export this build of the kernels has not
+    is left out (NumPy reads it). None where the kernels cannot be loaded."""
+    try:
+        import ctypes
 
-    def bfloat16(raw):
-        halves = np.frombuffer(raw, dtype=np.uint16)
-        out = np.empty(halves.size, dtype=np.float32)
-        widen(out.ctypes.data, halves.ctypes.data, halves.size)
-        return out
-
-    return bfloat16
-
-
-def kernel_q8_0(path):
-    """llama2_convert.q8_0() on the SIMD kernels (T136): GGUF's Q8_0 blocks widened to the same float32, each int8
-    times its block's float16 scale. For the converter's q8_0; None where the kernels cannot be loaded."""
-    kernels = load_kernels(path) if path else None
-    if not kernels:
-        return None
-    widen = kernels["widen_q8_0"]
-
-    def q8_0(raw):
-        blocks = np.frombuffer(raw, dtype=np.uint8)
-        if blocks.size % 34:
-            raise ValueError("Q8_0 data is not whole blocks of 34 bytes.")
-        out = np.empty(blocks.size // 34 * 32, dtype=np.float32)
-        widen(out.ctypes.data, blocks.ctypes.data, blocks.size // 34)
-        return out
-
-    return q8_0
-
-
-def kernel_ternary_readers(path):
-    """llama2_convert.pq2_0() and ptq1_0() on the SIMD kernels (T273): the blocks of Prism ML's two ternary types
-    widened to the same float32, many times faster than NumPy's passes (most of the time of converting Ternary
-    Bonsai 2 27B in the page). For the converter's readers, by the GGUF's type; None where the kernels cannot be
-    loaded."""
-    kernels = load_kernels(path) if path else None
-    if not kernels:
+        lib = ctypes.CDLL(path) if path else None
+    except Exception:
+        lib = None
+    if lib is None:
         return None
 
-    def reader(kind, widen, size):
+    def reader(name, widen, values, size):
+        widen.argtypes, widen.restype = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int32], None
+
         def read(raw):
             blocks = np.frombuffer(raw, dtype=np.uint8)
             if blocks.size % size:
-                raise ValueError(f"{kind} data is not whole blocks of {size} bytes.")
-            out = np.empty(blocks.size // size * 128, dtype=np.float32)
+                raise ValueError(f"{name} data is not whole blocks of {size} bytes.")
+            out = np.empty(blocks.size // size * values, dtype=np.float32)
             widen(out.ctypes.data, blocks.ctypes.data, blocks.size // size)
             return out
 
         return read
 
-    return {"PQ2_0": reader("PQ2_0", kernels["widen_pq2_0"], 34), "PTQ1_0": reader("PTQ1_0", kernels["widen_ptq1_0"], 28)}
+    return {name: reader(name, getattr(lib, export), values, size) for name, export, values, size in types
+            if hasattr(lib, export)}

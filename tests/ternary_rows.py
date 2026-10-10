@@ -93,7 +93,7 @@ def main():
                     row = width // 128 * BLOCK_BYTES[info["type"]]
                     raw = fetch(urls[kind], base + info["offset"] + first * row, count * row)
                     reference = gguf_check.WIDEN[info["type"]][2](np.frombuffer(raw, np.uint8)).reshape(count, width)
-                    ours = llama2_convert.READERS[gguf_check.TYPE_NAMES[info["type"]]][1](raw).reshape(count, width)
+                    ours = llama2_convert.SOURCES[gguf_check.TYPE_NAMES[info["type"]]].read(raw).reshape(count, width)
                     if not np.array_equal(reference.view(np.uint32), ours.view(np.uint32)):
                         failed = True
                         print(f"{name} rows {first}..{first + count}: the converter's {kind} reader differs from the reference's — FAILED")

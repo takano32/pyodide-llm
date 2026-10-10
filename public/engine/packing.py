@@ -1,4 +1,6 @@
-# The weights smaller than int8: six bits and ternary, packed and unpacked, and how many bytes a tensor takes.
+# How the quantized dtypes pack a matrix's rows and unpack them, in NumPy: int8, six bits and ternary. What each of them
+# is to a file (its group, its bytes, which of these functions are its own) is engine/dtypes.py's; this file reads
+# nothing of the engine.
 #
 # This file is under the Mozilla Public License 2.0 (the LICENSE file at the top of the repository), and it is
 # derived from two works under the MIT License, whose notice follows: tairov/llama2.py
@@ -24,7 +26,24 @@
 # SOFTWARE.
 import numpy as np
 
-from engine.layout import PACKINGS
+
+# int8 (quantize.py's): a value is round(x / s) in -127..127 with s the largest |x| of its group over 127, one float32
+# scale for every group of a row: 32 values, or the largest power of two below it that divides the row.
+def group32(length):
+    """The values of a group of an int8 row of this length."""
+    size = 32
+    while length % size:
+        size //= 2
+    return size
+
+
+def quantize(values):
+    """float32 values, whole rows -> (int8 values, float32 scales), one scale per group of the row."""
+    groups = values.reshape(-1, group32(values.shape[-1]))
+    scales = (np.abs(groups).max(axis=1) / 127.0).astype(np.float32)
+    inverse = np.divide(1.0, scales, out=np.zeros_like(scales), where=scales > 0)
+    return np.rint(groups * inverse[:, None]).astype(np.int8), scales
+
 
 # T98: int6, six bits a weight. An int6 group is an int8 group whose values are multiples of 4 (-128..124: six
 # significant bits) and whose scale is a quarter: the same products as six bits and a whole scale, to the bit (a
@@ -61,13 +80,24 @@ def quantize6(values):
     return (six * 4).astype(np.int8), scales / np.float32(4)
 
 
+def six(values):
+    """float32 values, whole rows of groups of 32 -> (24 bytes a group, float32 scales): quantize6(), packed."""
+    quantized, scales = quantize6(values)
+    return pack6(quantized), scales
+
+
+def unpacked6(packed):
+    """The bytes of an int6 matrix -> its int8 values, one after the other."""
+    return unpack6(packed).reshape(-1)
+
+
 # T230: ternary, two bits a weight. Every weight is -1, 0 or +1 times the scale of its group of 128 along the row (a
 # float32): what Prism ML's Ternary Bonsai models are, and how their GGUFs hold them (PQ2_0: two bits a weight;
 # PTQ1_0: five weights a byte in base 3). A group takes 32 bytes, in PQ2_0's own order: weight j is the code (weight +
 # 1: 0, 1 or 2) in byte j // 4 at bits 2 (j % 4). The kernels multiply the codes as they are (kernels/ternary.ts): a
 # shift of sixteen bytes and a mask give every fourth weight of 64, so nothing is widened, and nothing is kept for a
 # row besides its weights and scales. The values are exactly the file's (int8 holds 127 times float32(d / 127)).
-TERNARY_GROUP = PACKINGS["ternary"][1]  # 128
+TERNARY_GROUP = 128
 # the four weights of every byte, the lowest two bits first
 TERNARY_VALUES = ((np.arange(256)[:, None] >> (0, 2, 4, 6) & 3) - 1).astype(np.int8)
 NOT_TERNARY = "These weights are not ternary: a value is neither 0 nor the largest of its group of 128, or its negative."
@@ -95,7 +125,3 @@ def ternary(values):
         raise ValueError(NOT_TERNARY)
     return pack_ternary(signs.astype(np.int8)).reshape(-1, TERNARY_GROUP // 4), scales
 
-
-# the dtypes whose matrices are int8 values in another packing (the bytes its values take and the group of a row:
-# engine/layout.py's PACKINGS)
-PACKED = ("int6", "ternary")
