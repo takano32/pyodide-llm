@@ -581,6 +581,16 @@ def test_a_gguf_whose_head_never_ends_is_the_converters_to_refuse(monkeypatch):
     assert answered(Hub({}, GGUF_HF), conduct(GGUF_HF)) == ("missing", "weights", "model.Q8_0.gguf")
 
 
+def test_a_ggufs_head_is_not_asked_for_again_where_the_file_is_as_long_as_the_piece(monkeypatch):
+    """The worker's end of the growing is "the piece asked for is as long as the file" (>=): a file of exactly 2 MiB
+    that is still incomplete is refused after one range, not asked for a second time."""
+    StandIn().into(monkeypatch)
+    hub = Hub({"maker/model-GGUF/model.Q8_0.gguf": File(b"GGUF" + struct.pack("<Q", 20 * MiB), 2 * MiB)}, GGUF_HF)
+    with pytest.raises(Incomplete):
+        answered(hub, conduct(GGUF_HF))
+    assert [line.split("bytes=")[1] for line in hub.asked] == ["0-2097151"]
+
+
 def test_what_the_converter_refuses_of_a_head_is_not_asked_for_again(monkeypatch):
     def refuse(*given, **more):
         raise ValueError("This GGUF names no BOS token")
