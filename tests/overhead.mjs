@@ -13,8 +13,11 @@
 // and what makes the outside up, each timed alone with Python's garbage collector off, µs a call. Right after a
 // forward pass, as generate() runs them (the pass has just streamed the weights through the caches):
 //   penalize, sample   the page's kernels on the real logits of each position; C is how many tokens pass the floor
-//                  (the best's 1e-7) that sample() keeps, the median of the positions
-//   argmax         sample() at temperature 0: the greedy models' choice (not in the sampled models' outside)
+//                  (the best's 1e-7) that the sampler keeps, the median of the positions. (T359.7: a sampler draws by
+//                  its settings as one value, the penalties and the token in one call, so the two are two draws
+//                  here: the penalty with greedy after it, which is the argmax of the next column on top of the
+//                  penalty, and then the token with no penalty)
+//   argmax         a draw at temperature 0: the greedy models' choice (not in the sampled models' outside)
 // and with the caches warm, to set beside each other:
 //   again          sample() once more on the same logits at once
 //   1 past         sample() in a loop on logits of which the best alone passes the floor: its walks over the whole
@@ -143,22 +146,27 @@ def generated(prompt, steps):
         llama.stop_tokens = stops
     return llama.stats, collecting[0] * 1000, collections() - before
 
+SAMPLED = llama2_numpy.Sampling(temperature=temperature, topp=topp)  # (the penalty is timed apart)
+greedy = llama.sampler.drawing(llama2_numpy.Sampling(), None)
+
 def sampling():
-    """generate()'s steps after each forward pass, timed apart from it: penalize() and sample() on the real logits
+    """generate()'s steps after each forward pass, timed apart from it: the penalty and the draw on the real logits
     (the same text as generate(): the same random numbers), sample() once more on them with the caches warm again
     (another generator), µs a call, and C"""
     rng, again, token, history = np.random.default_rng(1), np.random.default_rng(2), llama.bos, [llama.bos]
     spent = {"penalize": 0.0, "sample": 0.0, "again": 0.0}
+    penalize = llama.sampler.drawing(llama2_numpy.Sampling(repetition_penalty=penalty), None)
+    sample, once_more = (llama.sampler.drawing(SAMPLED, numbers) for numbers in (rng, again))
     past = []
     for pos in range(N):
         out = llama.forward(token, pos)
         began = clock()
         if penalty != 1.0:
-            llama.penalize(out, history, penalty)
+            penalize(out, history, ())
         penalized = clock()
-        token = llama.sample(out, temperature, topp, rng)
+        token = sample(out, history, ())
         sampled = clock()
-        llama.sample(out, temperature, topp, again)
+        once_more(out, history, ())
         spent["again"] += clock() - sampled
         spent["sample"] += sampled - penalized
         spent["penalize"] += penalized - began
@@ -193,10 +201,11 @@ for r in range(ROUNDS + 1):  # the first round warms up and is left out
         spent, got["past"] = sampling()
         got.update(spent)
         rng = np.random.default_rng(3)
-        got["argmax"] = after_forward(lambda out: llama.sample(out, 0.0, topp, rng))
+        got["argmax"] = after_forward(lambda out: greedy(out, (), ()))
         got["cold"] = after_forward(lambda out: add(address, address, 0))
-        got["alone"] = per_call(lambda i: llama.sample(alone, temperature, topp, rng))
-        got["artificial"] = per_call(lambda i: llama.sample(artificial, temperature, topp, rng))
+        sample = llama.sampler.drawing(SAMPLED, rng)
+        got["alone"] = per_call(lambda i: sample(alone, (), ()))
+        got["artificial"] = per_call(lambda i: sample(artificial, (), ()))
         got["crossing"] = per_call(lambda i: js_nothing(1, i, True))
         got["ctypes"] = per_call(lambda i: add(address, address, 0))
         got["encode"] = per_call(lambda i: llama.tokenizer.encode(prompt, llama.specials), 5) / 1000

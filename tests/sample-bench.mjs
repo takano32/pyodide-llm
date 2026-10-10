@@ -160,15 +160,19 @@ for (const id of ids.length ? ids : ["llm-jp-3-150m", "tiny-lm"]) {
   py.globals.set("GEN", py.toPy(entry.generation));
   const got = py.runPython(`
 import numpy as np
+import llama2_numpy
 llama = kernel_llama_file(CHECKPOINT, open("tokenizer.bin", "rb").read(), **OPTIONS)
 temperature, topp, penalty = GEN["temperature"], GEN.get("topp", 0.9), GEN.get("repetition_penalty", 1.0)
 rng, token, history, saved = np.random.default_rng(1), llama.bos, [llama.bos], []
+# (the logits as they are sampled, after the penalty: the penalty alone first, with greedy after it, and then the draw)
+penalize = llama.sampler.drawing(llama2_numpy.Sampling(repetition_penalty=penalty), None)
+sample = llama.sampler.drawing(llama2_numpy.Sampling(temperature=temperature, topp=topp), rng)
 for pos in range(${tokens}):
     out = llama.forward(token, pos)
     if penalty != 1.0:
-        llama.penalize(out, history, penalty)
+        penalize(out, history, ())
     saved.append(out.copy())
-    token = llama.sample(out, temperature, topp, rng)
+    token = sample(out, history, ())
     history.append(token)
 llama.release(); del llama
 (np.stack(saved).tobytes(), saved[0].size, temperature, topp)`);

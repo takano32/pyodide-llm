@@ -159,11 +159,11 @@ def test_a_prompt_goes_through_forward_many_and_writes_the_same():
 
 
 def test_steps_on_the_gpu_write_what_the_cpu_writes():
-    """T152: with generate_many, generate() hands token_block() steps at a time over (the forward pass and the
+    """T152: with gpu_steps, generate() hands token_block() steps at a time over (the forward pass and the
     sampling, with the random numbers drawn in the CPU's order), and the text, the counts and what follows are what
     they are one step at a time; a stop token in the middle of a block ends the run there, and a block the GPU gives
     back (None) goes to the CPU (tried greedy: a sampled one would have drawn its numbers already, and the seed's text
-    then goes on otherwise). generate_many here is NumPy's forward and sample, so any difference is generate()'s
+    then goes on otherwise). The steps here are NumPy's forward and sampler, so any difference is generate()'s
     bookkeeping."""
     config, weights = synthetic_weights()
     tensors, published = hugging_face(config, weights, True)
@@ -178,7 +178,7 @@ def test_steps_on_the_gpu_write_what_the_cpu_writes():
     stepped = Llama(checkpoint, tokenizer)
 
     class Numbers:
-        """the random numbers generate() drew for a block, handed out in order as the CPU's generator would"""
+        """the random numbers drawn for a block, handed out in order as the CPU's generator would"""
 
         def __init__(self, values):
             self.values = list(values)
@@ -186,23 +186,25 @@ def test_steps_on_the_gpu_write_what_the_cpu_writes():
         def random(self):
             return self.values.pop(0)
 
-    def many(token, pos, history, count, temperature, topp, penalty, randoms, stops):
-        calls.append((pos, count, len(randoms)))
-        if not randoms and len(calls) % 3 == 0:
-            return None  # the GPU gave the block back: the CPU takes the step (greedy: its numbers are unused then)
-        numbers, ids, history = Numbers(randoms), [], list(history)
-        for step in range(count):
-            logits = stepped.forward(token, pos + step)
-            if penalty != 1.0:
-                stepped.penalize(logits, history, penalty)
-            token = stepped.sample(logits, temperature, topp, numbers)
-            ids.append(token)
-            if token in stops:
-                break
-            history.append(token)
-        return ids
+    def gpu_steps(sampling, rng):
+        def many(token, pos, history, count, stops):
+            # (as ExternalForward's: a number for every step before the GPU is asked, none where greedy)
+            randoms = [rng.random() for _ in range(count)] if sampling.temperature != 0.0 else []
+            calls.append((pos, count, len(randoms)))
+            if not randoms and len(calls) % 3 == 0:
+                return None  # the GPU gave the block back: the CPU takes the step (greedy: its numbers are unused then)
+            draw, ids, history = stepped.sampler.drawing(sampling, Numbers(randoms)), [], list(history)
+            for step in range(count):
+                token = draw(stepped.forward(token, pos + step), history, [])
+                ids.append(token)
+                if token in stops:
+                    break
+                history.append(token)
+            return ids
 
-    stepped.generate_many = many
+        return many
+
+    stepped.gpu_steps = gpu_steps
     stepped.token_block = lambda: 3
     assert "".join(stepped.generate(prompt, **settings)) == expected
     for key in ("tokens", "sampled", "prompt_tokens"):

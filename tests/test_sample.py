@@ -1,9 +1,11 @@
 # The NumPy sampler: greedy, the nucleus, and the repetition penalty. (The kernels repeat these in WASM.)
+import types
+
 import numpy as np
 import pytest
 
 from conftest import pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
-from llama2_numpy import NOT_FINITE, REPETITION_WINDOW, Llama
+from llama2_numpy import NOT_FINITE, REPETITION_WINDOW, ExternalForward, Llama, Sampling
 
 
 @pytest.fixture(scope="module")
@@ -13,13 +15,24 @@ def llama():
 
 
 class FixedRng:
-    """Stands in for numpy's Generator: sample() draws exactly one number per call."""
+    """Stands in for numpy's Generator: a draw takes exactly one number."""
 
     def __init__(self, values):
         self.values = list(values)
 
     def random(self):
         return self.values.pop(0)
+
+
+def sample(llama, logits, temperature, topp, rng, top_k=0, min_p=0.0):
+    """one token of the model's sampler, by these settings and no penalty"""
+    draw = llama.sampler.drawing(Sampling(temperature=temperature, topp=topp, top_k=top_k, min_p=min_p), rng)
+    return draw(logits, [], [])
+
+
+def penalize(llama, logits, history, penalty, presence=0.0):
+    """the penalties of the model's sampler alone, on these tokens (greedy after them: no number is drawn)"""
+    llama.sampler.drawing(Sampling(repetition_penalty=penalty, presence_penalty=presence), None)(logits, history, history)
 
 
 def softmax(logits, temperature=1.0):
@@ -37,14 +50,14 @@ def reference_nucleus(logits, temperature, topp):
 
 def test_greedy_is_argmax(llama):
     logits = np.random.default_rng(0).standard_normal(200).astype(np.float32)
-    assert llama.sample(logits, 0.0, 0.9, FixedRng([])) == int(np.argmax(logits))
+    assert sample(llama, logits, 0.0, 0.9, FixedRng([])) == int(np.argmax(logits))
 
 
 def test_nucleus_is_exactly_the_top_p_set(llama):
     logits = (np.random.default_rng(1).standard_normal(200) * 3.0).astype(np.float32)
     temperature, topp = 1.0, 0.9
     # every random number in [0, 1) leads to one token: together they are the set that can be drawn
-    drawn = {llama.sample(logits, temperature, topp, FixedRng([u])) for u in np.linspace(0.0, 1.0, 1001)[:-1]}
+    drawn = {sample(llama, logits, temperature, topp, FixedRng([u])) for u in np.linspace(0.0, 1.0, 1001)[:-1]}
     assert drawn == reference_nucleus(logits, temperature, topp)
 
 
@@ -52,7 +65,7 @@ def test_a_peaked_distribution_leaves_one_candidate(llama):
     logits = np.full(200, -20.0, dtype=np.float32)
     logits[42] = 20.0
     assert reference_nucleus(logits, 1.0, 0.9) == {42}
-    assert {llama.sample(logits, 1.0, 0.9, FixedRng([u])) for u in (0.0, 0.5, 0.999)} == {42}
+    assert {sample(llama, logits, 1.0, 0.9, FixedRng([u])) for u in (0.0, 0.5, 0.999)} == {42}
 
 
 def test_frequencies_follow_the_distribution(llama):
@@ -60,27 +73,27 @@ def test_frequencies_follow_the_distribution(llama):
     expected = softmax(logits, 1.0)
     draws = 4000
     rng = np.random.default_rng(3)
-    counts = np.bincount([llama.sample(logits, 1.0, 1.0, rng) for _ in range(draws)], minlength=logits.size)
+    counts = np.bincount([sample(llama, logits, 1.0, 1.0, rng) for _ in range(draws)], minlength=logits.size)
     sigma = np.sqrt(draws * expected * (1 - expected))
     assert (np.abs(counts - draws * expected) < 5 * sigma).all(), counts
 
 
 def test_a_low_temperature_sharpens(llama):
     logits = np.array([2.0, 1.9, 0.0], dtype=np.float32)
-    cold = [llama.sample(logits, 0.01, 1.0, FixedRng([u])) for u in (0.1, 0.5, 0.9)]
+    cold = [sample(llama, logits, 0.01, 1.0, FixedRng([u])) for u in (0.1, 0.5, 0.9)]
     assert cold == [0, 0, 0]
 
 
 def test_penalize_divides_positive_and_multiplies_negative_logits(llama):
     logits = np.array([2.0, -2.0, 5.0, -5.0], dtype=np.float32)
-    llama.penalize(logits, [0, 1, 1], 2.0)
+    penalize(llama, logits, [0, 1, 1], 2.0)
     assert logits == pytest.approx([1.0, -4.0, 5.0, -5.0])
 
 
 def test_penalize_looks_only_at_the_last_tokens(llama):
     logits = np.ones(4, dtype=np.float32)
     history = [3] + [0] * REPETITION_WINDOW
-    llama.penalize(logits, history, 2.0)
+    penalize(llama, logits, history, 2.0)
     assert logits == pytest.approx([0.5, 1.0, 1.0, 1.0])  # token 3 fell out of the window
 
 
@@ -88,13 +101,13 @@ def test_penalize_looks_only_at_the_last_tokens(llama):
 @pytest.mark.parametrize("above", [1, 2, 3, 5])
 def test_a_low_top_p_over_few_likely_tokens(llama, topp, above):
     """T178: with a few tokens above the floor and n * topp < 1, llama2.c's cutoff (1 - topp) / (n - 1) was above all
-    of them, nothing was left and sample() read past the end (IndexError). The nucleus is still the top-p set."""
+    of them, nothing was left and the draw read past the end (IndexError). The nucleus is still the top-p set."""
     rng = np.random.default_rng(above)
     for spread in (0.0, 0.05, 0.5):
         logits = np.full(200, -100.0, dtype=np.float32)
         logits[rng.choice(200, above, replace=False)] = (5.0 + rng.standard_normal(above) * spread).astype(np.float32)
         for temperature in (0.1, 0.2, 1.0):
-            drawn = {llama.sample(logits, temperature, topp, FixedRng([u])) for u in np.linspace(0.0, 1.0, 101)[:-1]}
+            drawn = {sample(llama, logits, temperature, topp, FixedRng([u])) for u in np.linspace(0.0, 1.0, 101)[:-1]}
             nucleus = reference_nucleus(logits, temperature, topp)
             # equal logits: any of them is the most probable one (the sort decides which)
             assert drawn <= set(np.flatnonzero(logits == logits.max()).tolist()) if spread == 0.0 else drawn == nucleus
@@ -105,12 +118,12 @@ def test_a_low_top_p_over_few_likely_tokens(llama, topp, above):
 @pytest.mark.parametrize("temperature, topp", [(1.0, 0.9), (0.7, 1.0), (0.0, 0.9)])
 def test_logits_that_are_not_finite_stop(llama, where, bad, temperature, topp):
     """T195: a NaN or +inf anywhere (and all -inf) leaves no distribution to draw from: a broken model or an overflow.
-    sample() says so, as the kernel's does (tests/smoke.mjs), rather than draw a token."""
+    The sampler says so, as the kernels' does (tests/smoke.mjs), rather than draw a token."""
     logits = np.random.default_rng(where).standard_normal(200).astype(np.float32)
     logits[where] = bad
     for broken in (logits, np.full(200, -np.inf, dtype=np.float32)):
         with pytest.raises(ValueError) as refused:
-            llama.sample(broken, temperature, topp, FixedRng([0.5]))
+            sample(llama, broken, temperature, topp, FixedRng([0.5]))
         assert str(refused.value) == NOT_FINITE
 
 
@@ -119,9 +132,9 @@ def test_some_minus_infinity_is_no_fault(llama):
     logits = np.random.default_rng(3).standard_normal(200).astype(np.float32)
     logits[::3] = -np.inf
     for topp in (0.9, 1.0):
-        drawn = {llama.sample(logits, 1.0, topp, FixedRng([u])) for u in np.linspace(0.0, 1.0, 51)[:-1]}
+        drawn = {sample(llama, logits, 1.0, topp, FixedRng([u])) for u in np.linspace(0.0, 1.0, 51)[:-1]}
         assert all(np.isfinite(logits[token]) for token in drawn)
-    assert llama.sample(logits, 0.0, 0.9, FixedRng([])) == int(np.argmax(logits))
+    assert sample(llama, logits, 0.0, 0.9, FixedRng([])) == int(np.argmax(logits))
 
 
 def reference_narrowed(logits, temperature, topp, top_k, min_p):
@@ -147,7 +160,7 @@ def test_top_k_then_the_nucleus_then_min_p(llama, top_k, topp, min_p):
     logits = (np.random.default_rng(top_k).standard_normal(200) * 2.0).astype(np.float32)
     for temperature in (0.6, 1.0):
         left = reference_narrowed(logits, temperature, topp, top_k, min_p)
-        draws = [llama.sample(logits, temperature, topp, FixedRng([u]), top_k, min_p) for u in np.linspace(0.0, 1.0, 2001)[:-1]]
+        draws = [sample(llama, logits, temperature, topp, FixedRng([u]), top_k, min_p) for u in np.linspace(0.0, 1.0, 2001)[:-1]]
         # each as often as its share of what is left, and none that is not left (the least likely of 200 fall
         # between the 2000 numbers tried)
         share = softmax(logits.astype(np.float64), temperature)[left]
@@ -161,21 +174,21 @@ def test_top_k_then_the_nucleus_then_min_p(llama, top_k, topp, min_p):
 def test_min_p_alone_keeps_the_order_of_the_index(llama):
     logits = np.array([0.0, 3.0, -9.0, 2.9, 1.0], dtype=np.float32)
     # 0.5 of the most probable: tokens 1 and 3, token 1 first (the walk is the index's without a top-k or a nucleus)
-    assert [llama.sample(logits, 1.0, 1.0, FixedRng([u]), 0, 0.5) for u in (0.0, 0.4, 0.6, 0.999)] == [1, 1, 3, 3]
+    assert [sample(llama, logits, 1.0, 1.0, FixedRng([u]), 0, 0.5) for u in (0.0, 0.4, 0.6, 0.999)] == [1, 1, 3, 3]
 
 
 def test_greedy_ignores_top_k_and_min_p(llama):
     logits = np.random.default_rng(5).standard_normal(200).astype(np.float32)
-    assert llama.sample(logits, 0.0, 0.9, FixedRng([]), 3, 0.5) == int(np.argmax(logits))
+    assert sample(llama, logits, 0.0, 0.9, FixedRng([]), 3, 0.5) == int(np.argmax(logits))
 
 
 def test_a_presence_penalty_is_taken_off_once(llama):
     logits = np.array([2.0, -2.0, 5.0, -5.0], dtype=np.float32)
-    llama.penalize(logits, [0, 1, 1, 1], 1.0, 1.5)
+    penalize(llama, logits, [0, 1, 1, 1], 1.0, 1.5)
     assert logits == pytest.approx([0.5, -3.5, 5.0, -5.0])
-    llama.penalize(logits, [0], 2.0, 1.5)  # after the repetition penalty
+    penalize(llama, logits, [0], 2.0, 1.5)  # after the repetition penalty
     assert logits == pytest.approx([-1.25, -3.5, 5.0, -5.0])
-    llama.penalize(logits, [3] + [2] * REPETITION_WINDOW, 1.0, 1.0)  # token 3 fell out of the window
+    penalize(llama, logits, [3] + [2] * REPETITION_WINDOW, 1.0, 1.0)  # token 3 fell out of the window
     assert logits == pytest.approx([-1.25, -3.5, 4.0, -5.0])
 
 
@@ -213,15 +226,23 @@ def test_only_a_step_without_the_three_may_go_to_the_gpu(llama, monkeypatch, set
     """T274 (the review): the GPU's SAMPLE has no top-k, min-p or presence penalty, so a step with any of them must
     not be offered to it (it would draw without them, and nothing says so). Nothing else caught that: the GPU's steps
     are forward.js's, and pytest has no GPU (a presence penalty alone passed both pytest and smoke with on_cpu left
-    out of it)."""
+    out of it). T359.7: who says so is the part that hands the steps over (ExternalForward's gpu_steps(), by
+    Sampling.beyond()): here it is that part's, around a stand-in for forward.js's engine."""
     asked = []
 
-    def offered(token, pos, history, count, temperature, topp, penalty, randoms, stops):
-        asked.append(count)
-        return None  # "the CPU takes the step"
+    class Engine:
+        backend, tokenBlock, forward = "a stand-in", 4, None  # (the forward pass stays the model's own)
 
-    monkeypatch.setattr(llama, "token_block", lambda: 4)
-    monkeypatch.setattr(llama, "generate_many", offered)
+        def bind(self, logits):
+            pass
+
+        def generateMany(self, token, pos, recent, length, count, temperature, topp, penalty, randoms, stops):
+            asked.append(count)
+            return None  # "the CPU takes the step"
+
+    part = ExternalForward({"vocab_size": llama.vocab_size}, types.SimpleNamespace(start=lambda plan: Engine()))
+    monkeypatch.setattr(llama, "token_block", part.token_block, raising=False)
+    monkeypatch.setattr(llama, "gpu_steps", part.gpu_steps, raising=False)
     list(llama.generate("a", steps=12, **{"temperature": 1.0, "seed": 3, **settings}))
     assert bool(asked) == on_the_gpu, (settings, asked)
 
@@ -230,24 +251,27 @@ def test_the_presence_penalty_counts_the_sampled_tokens_alone(llama, monkeypatch
     """T274 (the review): the prompt's tokens are not penalized for being there (a chat format ends its turn with the
     token that stops the answer, and that one would lose the penalty for the first 64 steps), and the repetition
     penalty still sees the prompt."""
-    calls = []
-    penalize = llama.penalize
+    calls, sampler = [], llama.sampler
 
-    def spy(logits, history, penalty, presence=0.0):
-        calls.append((list(history), penalty, presence))
-        penalize(logits, history, penalty, presence)
+    class Spy:
+        """the model's sampler, and what generate() handed each of its draws"""
 
-    monkeypatch.setattr(llama, "penalize", spy)
+        def drawing(self, sampling, rng):
+            draw = sampler.drawing(sampling, rng)
+
+            def spied(logits, history, written):
+                calls.append((list(history), list(written)))
+                return draw(logits, history, written)
+
+            return spied
+
+    monkeypatch.setattr(llama, "sampler", Spy(), raising=False)
     prompt = llama.tokenizer.encode(" a b", llama.specials)
     text = "".join(llama.generate("a b", steps=len(prompt) + 6, seed=3, temperature=1.0, topp=0.95,
                                   repetition_penalty=1.3, presence_penalty=1.5))
-    assert text
-    with_presence = [call for call in calls if call[2] != 0.0]
-    with_repetition = [call for call in calls if call[1] != 1.0]
-    assert with_presence and all(call[1] == 1.0 and call[2] == 1.5 for call in with_presence)
-    assert all(call[2] == 0.0 for call in with_repetition)
+    assert text and len(calls) > 2
     # the first sampled step has nothing written yet; after it, exactly what was sampled
-    assert [len(call[0]) for call in with_presence] == list(range(1, len(with_presence) + 1))
-    assert all(call[0] == with_presence[-1][0][:len(call[0])] for call in with_presence)
-    assert len(with_repetition) == len(with_presence) + 1 and len(with_repetition[0][0]) > 1
-    assert with_repetition[-1][0][-len(with_presence[-1][0]):] == with_presence[-1][0]
+    assert [len(written) for _, written in calls] == list(range(len(calls)))
+    assert all(written == calls[-1][1][:len(written)] for _, written in calls)
+    # and the history is the prompt's tokens (after the BOS) and then those: the repetition penalty sees the prompt
+    assert len(calls[0][0]) > 1 and all(history == calls[0][0] + written for history, written in calls)

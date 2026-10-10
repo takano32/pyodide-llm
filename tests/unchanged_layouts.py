@@ -188,7 +188,10 @@ for name, (config, tensors) in CONFIGS.items():
 
 # ---- the repetition penalty's window: a history of 200 different tokens, and which of them the penalty reached
 logits = np.ones(256, dtype=np.float32)
-L.Llama.penalize(None, logits, list(range(200)), 2.0)
+if hasattr(L.Llama, "penalize"):  # (a tree before T359.7: the sampler's functions took the settings one by one)
+    L.Llama.penalize(None, logits, list(range(200)), 2.0)
+else:
+    L.Llama.sampler.drawing(L.Sampling(repetition_penalty=2.0), None)(logits, list(range(200)), [])
 reached = np.flatnonzero(logits != 1.0)
 said("window: the tokens of a history of 200 the penalty reaches", lambda: f"{len(reached)}, from {int(reached[0])} to {int(reached[-1])}")
 
