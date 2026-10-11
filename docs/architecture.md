@@ -8,12 +8,12 @@ and measurements, are in [AGENTS.md](../AGENTS.md) (in Japanese).
 ```mermaid
 flowchart TD
   page["the page: src/pages/index.astro"]
-  worker["Web Worker: src/runtime/worker.js<br/>resolves Pyodide, downloads and converts models, keeps them (src/runtime/kept.js)"]
+  worker["Web Worker: src/runtime/worker.js<br/>resolves Pyodide, downloads and converts models, keeps them (src/runtime/kept.ts)"]
   engine["the engine: src/python/llama2_numpy.py<br/>checkpoint, tokenizer, sampling, generate()"]
   convert["the converter: src/python/llama2_convert.py<br/>safetensors and GGUF to the llama2.c format, int8, 6 bits or ternary"]
   forward["src/runtime/forward.js<br/>the forward pass, on its own WebAssembly memory"]
   kernels["kernels/: WebAssembly SIMD kernels"]
-  helper["src/runtime/helper.js: software threads"]
+  helper["src/runtime/helper.ts: software threads"]
   gpu["src/runtime/gpu.js (a window over src/runtime/gpu/) and src/runtime/shaders.js (a window over src/runtime/shaders/): the GPU worker and its WGSL shaders"]
   page -- "the model, the prompt, the settings" --> worker
   worker -- "each piece of text" --> page
@@ -35,7 +35,7 @@ flowchart TD
 | `python_archive.py` | Packs the two at build time into `engine.zip` and `converter.zip`, which the worker fetches whole and unpacks in Pyodide: one request each (the converter's only when a model is first converted). The same sources give the same bytes. |
 | `src/runtime/forward.js` and `src/runtime/forward/` | One token's forward pass, and a block of prompt tokens, in JavaScript. It calls the same kernels in the same order as the Python engine would, and chooses for each block and each few tokens whether the CPU or the GPU runs them. `forward.js` is the window; the engine (`engine.js`), its software threads (`threads.js`), its GPU side (`gpuside.js`), the choice between the two (`choice.js`) and the memory a model takes (`memory.js`, `alone.js`) are the modules of `forward/`. |
 | `kernels/` | The SIMD kernels: int8 and float32 matrix products, activation quantization, RMSNorm, LayerNorm, RoPE, attention, SwiGLU, GELU, and the sampling (repetition penalty, softmax, top-p). |
-| `src/runtime/helper.js`, `src/runtime/jobs.js` | Software threads, and the work they share. |
+| `src/runtime/helper.ts`, `src/runtime/jobs.ts` | Software threads, and the work they share. |
 | `src/runtime/gpu.js`, `src/runtime/gpu/`, `src/runtime/shaders.js`, `src/runtime/shaders/` | The GPU worker and all WGSL shaders (`gpu.js` is the window the worker starts from, over the nine files of `gpu/`: the device, the weights, the forms checked and chosen, a prompt's block, a token's steps, the requests; the twelve files of `shaders/` hold the shaders by family and the sources' notices, and the worker's files import the ones they run from there; `shaders.js` is the window over all twelve, which the benchmark page's GPU worker and the tools read). |
 | `public/coi.js` | The Service Worker: adds the headers for threads, keeps Pyodide and NumPy for offline use. |
 | `src/runtime/built.js` and `src/runtime/built/` | What is built and not written: the kernels (`make kernels`) and the Python as two archives (`python_archive.py`), each named once in a table. |

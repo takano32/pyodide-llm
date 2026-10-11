@@ -24,7 +24,7 @@ import (the widening of an int6 group and of a ternary one).
 | `kernel/math.ts` | what several kinds use, and no kernel: the group's size, a vector's sum, `fexp` and `vexp`, the largest of floats |
 
 A new kernel goes into the file of its kind and into a line of `kernel.ts` (`tests/forward-check.mjs` fails when the
-window and the files disagree, and when `src/runtime/jobs.js` does not say which of its arguments are addresses). **A new
+window and the files disagree, and when `src/runtime/jobs.ts` does not say which of its arguments are addresses). **A new
 file goes into the Makefile's rule too** (`KERNEL_PARTS`): `make kernels` sees only the files named there, and the
 checks then test the old kernels (`tests/forward-check.mjs` fails when a file of `kernel/` is not named there). `node tests/kernels-same.mjs [--before <commit>]` builds this tree's kernels and
 another commit's and says for every built file whether it is the same bytes, the same functions in another order,
@@ -306,7 +306,7 @@ widened to int8):
 | PTQ1_0's base 3 kept as it is | 6.9 / 27.6 | 5.4 / 12.1 | 5.7 / 11.5 |
 | `matmul_q8r` on the weights widened to int8 | 16.1 / 59.9 | 17.8 / 35.6 | 8.0 / 21.7 |
 
-The mask of 3 is an argument of the kernels (`jobs.js` passes it): V8 makes a constant vector written in the loop
+The mask of 3 is an argument of the kernels (`jobs.ts` passes it): V8 makes a constant vector written in the loop
 again at every use. The form that keeps int16 sums is as fast or faster on x86-64 and half as fast on arm64; the
 phones this is for are arm64.
 
