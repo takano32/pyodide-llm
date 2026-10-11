@@ -262,9 +262,9 @@ const made = build(tree.python(), path.join(work, "tree"));
   const naming = (pattern) => Object.entries(sources).filter(([, source]) => pattern.test(source)).map(([name]) => name);
   const body = (source, head) => { const from = source.indexOf(head); assert.ok(from >= 0, `no ${head}`); return source.slice(from, source.indexOf("\n}\n", from)); };
   // (the names as the code says them, in quotes: the comments name them too)
-  assert.deepEqual(naming(/"engine\.zip"/), ["worker.js"]);
+  assert.deepEqual(naming(/"engine\.zip"/), ["runtime"]);
   assert.deepEqual(naming(/"converter\.zip"/), ["convert"]);
-  assert.match(body(sources["worker.js"], "async function init(search) {"), /built\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(state\.pyodide, engine, "engine\.zip"\);\s*state\.llama2_numpy = state\.pyodide\.pyimport\("llama2_numpy"\);/,
+  assert.match(body(sources.runtime, "async function init(search) {"), /built\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(state\.pyodide, engine, "engine\.zip"\);\s*state\.llama2_numpy = state\.pyodide\.pyimport\("llama2_numpy"\);/,
     "init() asks for the engine's archive before it waits for Pyodide, and places it before it imports the engine");
   assert.equal(Object.values(sources).join("\n").match(/"converter\.zip"/g).length, 1);
   assert.match(body(sources.convert, "async function converter(signal) {"), /"converter\.zip"/);

@@ -243,10 +243,10 @@ console.log("updated-check: the model's worker tells the page the sentence alone
 // unstarted() at its worker's error, and one the engine does without says why it is quiet.
 const root = new URL("../", import.meta.url);
 const LATER = {
-  "src/runtime/worker.js": [
+  "src/runtime/worker/runtime.js": [
     ['built("engine.zip").then((res) => res.arrayBuffer());', "said"],
     ["built(name).catch(() => undefined);", "quiet: without simdkernel.so the sampling runs on NumPy"],
-    ['import("./forward.js")', "quiet: without forward.js or its kernels the engine runs on NumPy"],
+    ['import("../forward.js")', "quiet: without forward.js or its kernels the engine runs on NumPy"],
     ["built(name).then((res) => res.arrayBuffer()).catch(() => null)));", "quiet: without the kernels the engine runs on NumPy"],
   ],
   "src/runtime/worker/convert.js": [

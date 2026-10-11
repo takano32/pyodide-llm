@@ -18,8 +18,8 @@
 // load is a number the page counts up: a newer load cancels the one that is going on, and whatever this worker
 // reports about a load carries its number, so that the page can tell a late report of a cancelled one.
 
-// T350: this file is the window of the worker: its URL, init(), generate() and the messages. The rest is in the modules
-// of worker/: state.js (the variables they share, in one object), told.js, clock.js, pyodide.js (the runtime's
+// T350: this file is the window of the worker: its URL, generate() and the messages. The rest is in the modules
+// of worker/: state.js (the variables they share, in one object), runtime.js (T378.3: init(), the runtime loaded once), told.js, clock.js, pyodide.js (the runtime's
 // loading), weights.js (where a model's weights go), ranges.js and sources.js (the fetching), conduct.js (T374.2.1: what
 // answers the conduct of a conversion, which is Python's, from huggingface.co or from a folder), convert.js (a Hugging Face model), load.js and timing.js (what /benchmark/ times).
 // T367.3: a bundler links them (static imports, src/runtime/): they are part of this worker's own file, whose name
@@ -32,83 +32,12 @@
 // Python's archives, kept.js at a first conversion) the visitor is told that the site was updated (updated.js); where
 // the engine goes on without the file (the kernels and forward.js: NumPy; a software thread; the GPU's worker; the
 // device's key) it goes on as it always did, and nothing is said: a model that answers is not interrupted.
-import { built } from "./built.js";
-import { state, cpuOnly, modelKey, loadSeconds } from "./worker/state.js";
+import { state, cpuOnly, modelKey } from "./worker/state.js";
+import { init } from "./worker/runtime.js";
 import { told } from "./worker/told.js";
-import { resolvePyodideVersion, pyodideSteps, placePython } from "./worker/pyodide.js";
 import { since, breathe } from "./worker/clock.js";
 import { load, threadsNow, heapBytes } from "./worker/load.js";
 import { timedGeneration, timedPaths } from "./worker/timing.js";
-
-// Only what the engine has a fallback for. A name it does not know is refused there, and the page says so.
-function switchesOf(search) {
-  const parameters = new URLSearchParams(search);
-  const names = (parameters.get("without") ?? "").split(",").map((name) => name.trim()).filter(Boolean);
-  if (parameters.get("kernel") === "off" && !names.includes("kernels")) {
-    names.push("kernels");
-  }
-  return names;
-}
-
-async function init(search) {
-  const started = performance.now();
-  const asked = new URLSearchParams(search);
-  const parts = Number(asked.get("hfParts")), connections = Number(asked.get("hfConnections"));
-  if (parts >= 1 && parts <= 64) state.hfPartBytes = Math.round(parts * 1024 * 1024);
-  if (connections >= 1 && connections <= 32) state.hfConnections = Math.floor(connections);
-  state.forceWide = asked.get("wide") === "on";
-  // (T156: ?gpuTest=only, the tests' too: a model the GPU can take on the GPU alone, whatever its size)
-  state.gpuForce = ["on", "only"].includes(asked.get("gpuTest")) ? { fallback: true, always: true, quick: true, only: asked.get("gpuTest") === "only" } : {};
-  state.benchPage = asked.has("bench");
-  // T367.2: the engine's Python (a window and its parts, T348) is one archive, engine.zip, of this worker's
-  // build (built.js). It is small and of this site, so it is asked for now, beside Pyodide, and is there when that is ready.
-  const engine = built("engine.zip").then((res) => res.arrayBuffer());
-  engine.catch(() => {});  // (it is awaited below: a load that ends before that leaves no unhandled rejection)
-  const version = await resolvePyodideVersion(search);
-  state.pyodide = await pyodideSteps(version, (url) => import(/* @vite-ignore */ url));
-
-  await placePython(state.pyodide, engine, "engine.zip");
-  state.llama2_numpy = state.pyodide.pyimport("llama2_numpy");
-
-  // The WASM SIMD kernels (kernels/*.ts), which llama2_numpy.py loads with ctypes. They are optional: without
-  // them, or with ?kernel=off, NumPy does the math, several times slower. They are read even with ?kernel=off: the
-  // switches say what is used (disabled), and the benchmark's rounds with the kernels need them there (T119: its
-  // "everything" round sampled on NumPy after the page's switch had turned them off, and said nothing).
-  state.disabled = state.pageSwitches = switchesOf(search);
-  for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
-    const kernel = await built(name).catch(() => undefined);  // (also where it is gone, T367.4: NumPy answers)
-    if (kernel) {
-      state.pyodide.FS.writeFile(`/home/pyodide/${name}`, new Uint8Array(await kernel.arrayBuffer()));
-      state.kernels = "/home/pyodide/simdkernel.so";
-    }
-  }
-  // T93: the forward pass runs in forward.js, on the plain build of the same kernels (simdkernel.so stays for the
-  // sampling, which works on Python's logits). Without them (no WebAssembly SIMD) the engine runs NumPy.
-  try {
-    state.forwardModule = await import("./forward.js");
-    // one build of the kernels: simdkernel_<kind>.wasm and simdkernel_relaxed_<kind>.wasm, or null
-    const build = async (kind, wide = false) => {
-      const [plain, relaxed] = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
-        built(name).then((res) => res.arrayBuffer()).catch(() => null)));
-      return plain ? state.forwardModule.compileKernels(plain, relaxed, wide) : null;
-    };
-    state.jsKernels = await build("plain");
-    if (state.jsKernels && self.crossOriginIsolated) state.sharedKernels = await build("shared");
-    // T101: on their own, so that a browser that says it makes 64-bit memories and then cannot compile their kernels
-    // (Playwright's WebKit did, 2026-09-25) keeps the 32-bit ones: in the same try it lost every kernel and ran NumPy
-    if (state.jsKernels && state.forwardModule.memory64()) {
-      try {
-        state.wideKernels = { plain: await build("plain64", true), shared: self.crossOriginIsolated ? await build("shared64", true) : null };
-      } catch {
-        state.wideKernels = undefined;
-      }
-    }
-  } catch {
-    state.jsKernels = null;
-  }
-  loadSeconds.pyodide = since(started);
-  state.pyodideAt = performance.now();
-}
 
 async function generate({ type, prompt, ...options }) {
   state.outsideNow?.engine?.newGeneration?.();  // now and then the remembered number of threads is checked again
