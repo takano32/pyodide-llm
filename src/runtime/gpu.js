@@ -65,10 +65,8 @@
 // tokenattention.js, tokens.js and tokenforms.js (a generated token's attention, its steps, and their forms checked,
 // timed and chosen), requests.js (what forward.js waits for in the control area) and start.js (the model going onto
 // the GPU and leaving it). Each is a static import: a bundler links them into this worker's file (T367.3),
-// and nothing is awaited before the receiver at the end of this file is set.
-// (the shaders are asked for here as gpu/device.js asks for them, a module of their own that comes after this file:
-// device.js's import of them is this one. Where they do not come, device.js's says so, as a start's "unusable")
-import("./shaders.js").catch(() => {});
+// and nothing is awaited before the receiver at the end of this file is set. The shaders are linked into it too
+// (T367.5): each module takes the names it uses from the parts of shaders/, and the worker fetches nothing after itself.
 import { heldFloats } from "./gpu/tokenforms.js";
 import { generate, prompt, keysOf } from "./gpu/requests.js";
 import { open, take, start, stop } from "./gpu/start.js";

@@ -7,13 +7,18 @@ import { halfToFloat } from "./forms.js";
 import { grow, BLOCK_ROUNDS } from "./block.js";
 import { chooseTokenAttention } from "./tokenattention.js";
 import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.js";
+import { GROUP } from "../shaders/common.js";
+import { ternaryValues, quantizedLikeCpu } from "../shaders/prompt.js";
+import { sixValues } from "../shaders/steps.js";
+import { samplingState, samplingSettings } from "../shaders/run.js";
+import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.js";
 
 // The forms of a token this device can make, compiled, checked and (where more than one is right) timed; the fastest
 // taken (m.gen.form), with what each came to (m.gen.forms) and its ms a step (m.gen.ms). plan.remembered.tokens: the
 // one the page kept for this adapter, alone where it is still right here. plan.force.tokens (tests): that form alone;
 // plan.force.quick: the first right one, untimed. Throws where none is right (the tokens then stay on the CPU)
 async function chooseTokens(m) {
-  const { plan, wgsl } = m;
+  const { plan } = m;
   // (tokenPass puts a parallel residual's second norm before o as a dispatch: LayerNorm's, GPT-NeoX's)
   if (plan.parallel && !plan.layerNorm) throw new Error("a parallel residual without LayerNorm is not on the GPU's tokens");
   m.gen = await tokenBuffers(m);
@@ -35,7 +40,7 @@ async function chooseTokens(m) {
     if ((plan.force.quick || (kept && right[0]?.name === kept.name)) && right.length) break;
     const form = { ...candidate, pipes: {} }, compiled = new Map();
     try {
-      for (const [key, code] of tokenCodes(wgsl, form, tokenShape(m))) {
+      for (const [key, code] of tokenCodes(form, tokenShape(m))) {
         if (!compiled.has(code)) compiled.set(code, await within(validated(m, () => pipelineOf(m, code)), `compiling ${form.name}`));
         form.pipes[key] = compiled.get(code);
       }
@@ -63,9 +68,9 @@ async function chooseTokens(m) {
 // a fallback adapter: its times are no GPU's), the median of each over its steps. The runs write the GPU's own keys
 // and values of those positions, which hold nothing of forward.js's yet (as timeBlocks)
 async function timeTokens(m, forms) {
-  const { wgsl, gen: g } = m, most = g.most;
-  const state = wgsl.samplingState({ token: 1, pos: 0, history: [1] });
-  const settings = wgsl.samplingSettings({ vocab: g.vocab, temperature: 0.7, topp: 0.9, penalty: 1.1 });
+  const { gen: g } = m, most = g.most;
+  const state = samplingState({ token: 1, pos: 0, history: [1] });
+  const settings = samplingSettings({ vocab: g.vocab, temperature: 0.7, topp: 0.9, penalty: 1.1 });
   const randoms = new Float32Array(most).map(() => Math.fround(Math.random()) % 1);
   if (most > m.cache.capacity) grow(m, most);
   const timed = async (form) => {
@@ -122,7 +127,7 @@ export { heldFloats };  // (tests/gpu-choice-check.mjs)
 // T156: the first layer's matrices, { name: [values, scales] } as the bytes of their rows (rowBytes: int8, or T232
 // ternary codes) and a Float32Array each, read back from their buffers (a piece after another: the rows in order)
 async function firstLayer(m) {
-  const group = m.wgsl.GROUP, out = {};
+  const group = GROUP, out = {};
   for (const [name, matrix] of Object.entries(m.matrices)) {
     const row = rowBytes(matrix), rows = matrix.pieces.reduce((sum, piece) => sum + piece.rows, 0);
     const values = new Uint8Array(rows * row), scales = new Float32Array((rows * row) / group);
@@ -145,7 +150,7 @@ const checkRows = (vocab) => [...new Set([...[...Array(Math.ceil(vocab / 256)).k
 async function tableRows(m) {
   const vocab = m.plan.tokens.classifier.rows, specs = tablesOf(m.plan);
   const read = async (pieces, spec, rows) => {
-    const n = rowBytes(spec), perRow = (n / m.wgsl.GROUP) * 4;
+    const n = rowBytes(spec), perRow = (n / GROUP) * 4;
     const target = m.device.createBuffer({ size: rows.length * (n + perRow), usage: MAP_READ | COPY_DST });
     try {
       const encoder = m.device.createCommandEncoder();
@@ -166,15 +171,15 @@ async function tableRows(m) {
     classifier: await read(m.tables.classifier, specs.classifier, checkRows(vocab)) };
 }
 async function checkTokens(m, form) {
-  const { plan, wgsl, gen: g, device } = m, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize, half = headSize / 2;
+  const { plan, gen: g, device } = m, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize, half = headSize / 2;
   const qDim = plan.heads * headSize, kvDim = plan.kvHeads * headSize, line = form.dp4a ? DP4A_LINE : LAYER_LINE;
   const floats = (address, n) => Float64Array.from(new Float32Array(m.memory.buffer, address, n));
   // row r of a matrix or a table ({ n, six, ternary }, its values and scales at [valuesAt, scalesAt] in the shared
   // memory): [its int8 values, its scales (one a group of 32 weights; T232, ternary: of 128)]; (T156) of a matrix read
   // back from the GPU (firstLayer: [values, scales]); (T210) of a table's rows read back (tableRows)
-  const stored = (spec) => (spec.six ? (spec.n * 3) / 4 : rowBytes(spec)), scalesOf = (spec) => rowBytes(spec) / wgsl.GROUP;
+  const stored = (spec) => (spec.six ? (spec.n * 3) / 4 : rowBytes(spec)), scalesOf = (spec) => rowBytes(spec) / GROUP;
   // the bytes of a row as its int8 values: int6 widened, ternary codes less one, int8 as they are
-  const valuesOf = (spec, bytes) => (spec.six ? wgsl.sixValues(bytes) : spec.ternary ? wgsl.ternaryValues(bytes)
+  const valuesOf = (spec, bytes) => (spec.six ? sixValues(bytes) : spec.ternary ? ternaryValues(bytes)
     : new Int8Array(bytes.buffer, bytes.byteOffset, bytes.length));
   const inMemory = (spec, [valuesAt, scalesAt]) => (r) => [
     valuesOf(spec, new Uint8Array(m.memory.buffer, valuesAt + r * stored(spec), stored(spec))),
@@ -189,13 +194,13 @@ async function checkTokens(m, form) {
   // a matrix's rows (n weights each, rowOf(r): [values, scales]) times x, the rows given (packed: x quantized first).
   // The vector's groups are of 32; a row's scales cover as many of them each as they are fewer (one; T232, ternary: four)
   const product = (n, rowOf, x, rows, packed = form.dp4a) => {
-    const q = packed ? wgsl.quantizedLikeCpu(Float32Array.from(x)) : null, perRow = n / wgsl.GROUP;
+    const q = packed ? quantizedLikeCpu(Float32Array.from(x)) : null, perRow = n / GROUP;
     return Float64Array.from(rows, (r) => {
       const [w, s] = rowOf(r), each = perRow / s.length;
       let sum = 0;
       for (let b = 0; b < perRow; b++) {
         let part = 0;
-        for (let i = b * wgsl.GROUP; i < (b + 1) * wgsl.GROUP; i++) part += w[i] * (q ? q.xq[i] : x[i]);
+        for (let i = b * GROUP; i < (b + 1) * GROUP; i++) part += w[i] * (q ? q.xq[i] : x[i]);
         sum += part * s[Math.floor(b / each)] * (q ? q.xs[b] : 1);
       }
       return sum;
@@ -241,7 +246,7 @@ async function checkTokens(m, form) {
     device.queue.writeBuffer(m.cache.values[0], 0, row0[1]);
     const readH = buffer(m, dim * 4, MAP_READ | COPY_DST, owned);
     const { kv } = await runTokens(m, tokenPass(m, form, { to: 1, head: false, positions: pos + 1 }), { count: 1, pos, keep: true,
-      state: wgsl.samplingState({ token, pos, history: [token] }), extra: (encoder) => encoder.copyBufferToBuffer(g.h, 0, readH, 0, dim * 4) });
+      state: samplingState({ token, pos, history: [token] }), extra: (encoder) => encoder.copyBufferToBuffer(g.h, 0, readH, 0, dim * 4) });
     await readH.mapAsync(MAP_READ);
     const h = new Float32Array(readH.getMappedRange().slice(0));
     readH.unmap();
@@ -305,7 +310,7 @@ async function checkTokens(m, form) {
     const head = tokenPass(m, form, { to: 0, embed: false });
     const run = async (settings, history, random) => {
       device.queue.writeBuffer(g.h, 0, stream2);
-      const { ids } = await runTokens(m, head, { count: 1, pos, state: wgsl.samplingState({ token, pos, history }), settings,
+      const { ids } = await runTokens(m, head, { count: 1, pos, state: samplingState({ token, pos, history }), settings,
         randoms: new Float32Array([random]), extra: (encoder) => encoder.copyBufferToBuffer(g.logits, 0, readLogits, 0, vocab * 4) });
       await readLogits.mapAsync(MAP_READ);
       // (T226: the vocabulary's logits and no more. A buffer is made in whole 16 bytes, and GPT-2's 50257 logits left
@@ -315,7 +320,7 @@ async function checkTokens(m, form) {
       readLogits.unmap();
       return { id: ids[0], logits };
     };
-    const greedy = await run(wgsl.samplingSettings({ vocab, temperature: 0, topp: 0.9 }), [token], 0);
+    const greedy = await run(samplingSettings({ vocab, temperature: 0, topp: 0.9 }), [token], 0);
     // (T226: a classifier of floats on DP4A too where the model has outlier channels: tokenShape's floatHead)
     const packedHead = form.dp4a && !floatHead(m);
     const normedStream = norm(Float64Array.from(stream2), floats(plan.tokens.final, dim), plan.tokens.finalBias && floats(plan.tokens.finalBias, dim));
@@ -333,14 +338,14 @@ async function checkTokens(m, form) {
     });
     const logitsOff = off(rows.map((r) => greedy.logits[r]), want) / largest(want), logitsLine = packedHead ? DP4A_LINE : LOGITS_LINE;
     if (!(logitsOff <= logitsLine)) return `the logits are ${logitsOff.toExponential(2)} of their largest from JavaScript's (line ${logitsLine})`;
-    if (greedy.id !== wgsl.argmaxLikeCpu(greedy.logits)) return `the greedy token is ${greedy.id}, the largest logit's ${wgsl.argmaxLikeCpu(greedy.logits)}`;
+    if (greedy.id !== argmaxLikeCpu(greedy.logits)) return `the greedy token is ${greedy.id}, the largest logit's ${argmaxLikeCpu(greedy.logits)}`;
     const sampled = { temperature: 0.8, topp: 0.9, penalty: 1.3 }, history = [token, greedy.id, 0, 1];
-    const drawn = await run(wgsl.samplingSettings({ vocab, ...sampled }), history, 0.7);
+    const drawn = await run(samplingSettings({ vocab, ...sampled }), history, 0.7);
     const penalized = greedy.logits.slice();
-    wgsl.penalizeLikeCpu(penalized, history, sampled.penalty);
+    penalizeLikeCpu(penalized, history, sampled.penalty);
     const penaltyOff = off(history.map((t) => drawn.logits[t]), history.map((t) => penalized[t])) / Math.max(largest(history.map((t) => penalized[t])), 1e-30);
     if (!(penaltyOff <= 1e-6)) return `the penalized logits are ${penaltyOff.toExponential(2)} from JavaScript's`;
-    const walk = wgsl.walkLikeCpu(drawn.logits, sampled.temperature, sampled.topp), goal = 0.7 * walk.mass, band = 1e-4 * walk.mass;
+    const walk = walkLikeCpu(drawn.logits, sampled.temperature, sampled.topp), goal = 0.7 * walk.mass, band = 1e-4 * walk.mass;
     const reached = walk.tokens.filter((_, j) => walk.cumulative[j] > goal - band && (j ? walk.cumulative[j - 1] : 0) <= goal + band);
     if (!reached.includes(drawn.id)) return `the sampled token is ${drawn.id}, the CPU's walk reaches ${reached.join(" or ")}`;
     return null;

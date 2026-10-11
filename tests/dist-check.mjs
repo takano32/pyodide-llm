@@ -22,7 +22,8 @@
 //      models), and nothing else: no source, no built file, no archive that nobody asks for.
 //   6. every copyright line and licence text of a source (a /*! … */ comment: a bundler drops every other) is in each
 //      file of dist/_astro/ that holds the source's code, whole; and no source keeps a copyright line in a // comment;
-//   7. the built key and shaders modules give the same deviceKey() as the sources, for 192 made-up devices.
+//   7. the built key module (the model's worker's), the built GPU worker and the built shaders module (/benchmark/'s)
+//      give the same deviceKey() as the sources, for 192 made-up devices.
 //   8. no file of dist/_astro/ asks for a module of Node's, or is the bundler's stand-in for one: the runtime is a
 //      browser's (T367.5: what Node's tests need of a worker is tests/helper-node.mjs's to give).
 // 3 to 8 are of a tree whose runtime a bundler links (tests/tree.mjs's tree.bundled). In a tree where each file is
@@ -164,19 +165,38 @@ export function keysOf(module) {
   return keys;
 }
 
-/** 7 (a bundled tree): the worker reads the device's key from one built module (key) and the GPU's worker from another
- * (shaders), each with its own copy of the shaders' texts: what the page remembers of a device under the one's key is
- * looked up under the other's, so the two and the sources must give the same key for every device. Lines, as distSaid(). */
+/** 7 (a bundled tree): the model's worker reads the device's key from one built module (key) and the GPU's worker
+ * computes it in its own file (gpu: T367.5, the shaders' parts linked into it), each with its own copy of the shaders'
+ * texts: what the page remembers of a device under the one's key is looked up under the other's, so the two and the
+ * sources must give the same key for every device. And shaders, /benchmark/'s module of all of them, as the sources.
+ * (gpu.<hash>.js is the worker itself, and a build keeps no export of a worker's entry: its text is imported here
+ * with one line after it, which exports the deviceKey of its copy of shaders/key.js. It sets its receiver as it
+ * loads and does nothing else.) Lines, as distSaid(). */
 export async function keysSaid(dist, tree = treeOf()) {
   if (!tree.bundled) return { said: [], looked: "" };
   const { builtModule } = await import("./bundle.mjs");
-  const [sources, key, shaders] = await Promise.all([tree.runtimeUrl("shaders.js"), builtModule("key", dist), builtModule("shaders", dist)].map(async (url) => keysOf(await import(url))));
-  const said = [];
-  for (const [name, built] of [["key", key], ["shaders", shaders]]) {
-    const differ = Object.keys(sources).filter((device) => built[device] !== sources[device]);
+  const said = [], NAMES = ["key", "gpu", "shaders"];
+  const sources = keysOf(await import(tree.runtimeUrl("shaders.js")));
+  // (a worker's global, which the worker's file assigns: a name Node does not have)
+  const had = Object.getOwnPropertyDescriptor(globalThis, "onmessage");
+  if (!had) Object.defineProperty(globalThis, "onmessage", { configurable: true, get: () => undefined, set() {} });
+  const worker = async (url) => {
+    const text = fs.readFileSync(url, "utf8"), region = /\/\/#region [^\n]*\/shaders\/key\.js\n([\s\S]*?)\n\/\/#endregion/.exec(text)?.[1];
+    const name = /^function (deviceKey(?:\$\d+)?)\(/m.exec(region ?? "")?.[1];
+    if (!name || /^\s*(import|export)\b/m.test(text)) return {};  // (no key.js in it, or a file that is not whole by itself)
+    return import(`data:text/javascript;base64,${Buffer.from(`${text}\nexport { ${name} as deviceKey };\n`).toString("base64")}`);
+  };
+  for (const name of NAMES) {
+    const url = builtModule(name, dist), module = await (name === "gpu" ? worker(url) : import(url));
+    if (typeof module.deviceKey !== "function") {
+      said.push(`_astro/${name}.<hash>.js has no deviceKey to ask: the key the built file gives a device cannot be held to the sources' (${name === "gpu" ? "the GPU's worker takes it from shaders/key.js, linked into its one file" : "an export of the module"})`);
+      continue;
+    }
+    const built = keysOf(module), differ = Object.keys(sources).filter((device) => built[device] !== sources[device]);
     if (differ.length) said.push(`_astro/${name}.<hash>.js gives another deviceKey() than the sources for ${differ.length} of ${Object.keys(sources).length} made-up devices (the first: ${differ[0]}: ${built[differ[0]]} for ${sources[differ[0]]})`);
   }
-  return { said, looked: `; the device's key the same from the built key and shaders modules and the sources, for ${Object.keys(sources).length} devices (${new Set(Object.values(sources)).size} keys)` };
+  if (!had) delete globalThis.onmessage;
+  return { said, looked: `; the device's key the same from the built ${NAMES.join(", ")} modules and the sources, for ${Object.keys(sources).length} devices (${new Set(Object.values(sources)).size} keys)` };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -15,13 +15,13 @@
 //
 // (1) Every piece of text of the engine's shaders reaches the hash. A piece is a string, a number or a run of a
 //     template's text in the source of src/runtime/shaders.js's modules; the engine's shaders are every text and maker that
-//     src/runtime/gpu.js names (wgsl.<name>) and the prompt's tiles, with all they are made of (the names their source
+//     src/runtime/gpu.js's modules import from the parts of shaders/ and the prompt's tiles, with all they are made of (the names their source
 //     reaches). Each piece is changed by one character, one at a time, the changed file run, and the key of one of
 //     eight made-up devices must differ: so every branch of every maker is walked by what deviceKey() makes of it.
 //     A piece of a ternary model's shaders must leave the key of every other model alone (T232); a piece of anything
 //     else in the file (the benchmark's shaders, the JavaScript the checks compare with) must leave every key alone.
-//     (The review: what gpu.js runs is found by name from its syntax tree, whatever the object is called and however the
-//     name is taken (a property, a destructuring), and every place gpu.js compiles a shader is listed, so that a new one
+//     (The review: what gpu.js runs is its modules' import lines (T367.5: each takes the names it uses from a part; no
+//     module is handed round), and every place gpu.js compiles a shader is listed, so that a new one
 //     is looked at; and what a maker's numbers may do is held by its syntax tree: a number is written into the text and
 //     nothing else, since the key walks one set of them.)
 // (2) The key is the same when the source is not: esbuild's reprint, its minifier (white space, names, syntax), its
@@ -133,10 +133,11 @@ const TERNARY = ["ternaryMatVec", "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_O
 const TERNARY_BRANCHES = ["dp4a", "TERNARY_PACKED"];
 const isShader = (name) => typeof real[name] === "string"
   || (typeof real[name] === "function" && [...reached([name])].some((part) => pieces(part).some((piece) => typeof piece.says === "string" && piece.says.includes("@compute"))));
-// What gpu.js takes of shaders.js, by name and not by what it calls the module: the property of any member access, the key of
-// any destructuring, a subscript that is a string. (A match for `wgsl.<name>` found a name taken any other way as no shader
-// of gpu.js: a destructured shader was in no key and this check said ok.) A name that is also something else in gpu.js
-// (a property of the same spelling) is taken for a shader and must then reach the hash: it fails loudly, never quietly.
+// What gpu.js takes of the shaders (T367.5): the names its modules import from the parts of shaders/, and nothing else.
+// A module takes each name it uses by an import of its own, so the import lines are the whole list: a namespace
+// (`import * as`), the window (shaders.js: every name, /benchmark/'s too) or a part imported when it is used
+// (`import("…")`) would hand names round that no line names, and is refused here. (Until T367.5 the worker handed the
+// window's module round as m.wgsl, and this check found the names by any property, destructuring or subscript.)
 // T352: gpu.js is a window over the modules of src/runtime/gpu/ now, and the worker is all of those files: each is read, and
 // what is said of "gpu.js" below is said of them together (a shader named or compiled in any of them). Every file of the
 // folder is read, whether or not the window asks for it (that it asks for them all is tests/gpu-modules-check.mjs's).
@@ -147,10 +148,16 @@ const gpuNodes = gpuFiles.flatMap((file) => {
   return [...under(parse(text, { sourceType: "module" }).program)].map((n) => ({ n, file, text }));
 });
 const taken = new Set();
-for (const { n } of gpuNodes) {
-  if ((n.type === "MemberExpression" || n.type === "OptionalMemberExpression") && !n.computed) taken.add(n.property.name);
-  if ((n.type === "MemberExpression" || n.type === "OptionalMemberExpression") && n.computed && n.property.type === "StringLiteral") taken.add(n.property.value);
-  if (n.type === "ObjectPattern") for (const property of n.properties) if (property.type === "ObjectProperty" && !property.computed) taken.add(property.key.name ?? property.key.value);
+for (const { n, file, text } of gpuNodes) {
+  const asked = n.type === "ImportDeclaration" ? n.source.value : n.type === "ImportExpression" ? text.slice(n.source.start, n.source.end)
+    : n.type === "CallExpression" && n.callee.type === "Import" ? text.slice(n.arguments[0].start, n.arguments[0].end) : null;
+  if (asked === null || !/shaders/.test(asked)) continue;
+  assert.ok(n.type === "ImportDeclaration" && /^\.\.?\/shaders\/\w+\.js$/.test(asked), `${file} asks for ${asked}: a module of the GPU's worker takes the shaders it uses by name, from the parts of shaders/ (import { NAME } from "../shaders/<part>.js")`);
+  for (const specifier of n.specifiers) {
+    assert.ok(specifier.type === "ImportSpecifier" && specifier.imported.name === specifier.local.name, `${file} takes ${text.slice(specifier.start, specifier.end)} of ${asked}: a plain name, under its own (a namespace would hand shaders round unseen)`);
+    assert.ok(specifier.imported.name in real, `${file} takes ${specifier.imported.name} of ${asked}, which shaders.js (the window) does not export`);
+    taken.add(specifier.imported.name);
+  }
 }
 const used = [...taken].filter((name) => name in real).sort();
 // gpu.js compiles a shader in one place (pipelineOf) and hands it the code at the calls below. A new call, or one whose code
@@ -168,8 +175,8 @@ assert.deepEqual([...new Set(compiled)].sort(), [
   "form.code",  // a prompt's tile (devicePromptForms)
   "kept.code",  // the same, the remembered one
   "rowsCode",  // EMBED_ROWS or EMBED_ROWS_TERNARY
-  "wgsl.SAMPLE", "wgsl.TAKE_OUTLIERS", "wgsl.TERNARY_COLUMNS", "wgsl.TOKEN_ROPE", "wgsl.WIDEN_SIX",
-  "wgsl.flashTile(shape)", "wgsl.flashVec(a.shape)", "wgsl.flashVecReduce(a.shape)",
+  "SAMPLE", "TAKE_OUTLIERS", "TERNARY_COLUMNS", "TOKEN_ROPE", "WIDEN_SIX",
+  "flashTile(shape)", "flashVec(a.shape)", "flashVecReduce(a.shape)",
 ].sort(), "a place where gpu.js compiles a shader that this check does not know: is every shader it can compile in the key (engineShaders(), ternaryShaders(), the tiles)?");
 for (const { n, file } of gpuNodes) {
   const text = n.type === "TemplateElement" ? n.value.raw : n.type === "StringLiteral" ? n.value : "";

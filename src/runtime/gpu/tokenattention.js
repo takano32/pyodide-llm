@@ -4,6 +4,8 @@
 
 import { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
 import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.js";
+import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, flashVec, flashVecReduce, tokenAttentionData,
+  tokenAttentionOff } from "../shaders/attention.js";
 
 // ---- T224: the attention of a generated token. The candidates: llama.cpp's decode form (shaders.js's flashVec and
 // flashVecReduce: the positions split over nwg workgroups a head, then reduced), with subgroups where there are (and
@@ -15,10 +17,10 @@ import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.js";
 // compiled, checked and timed at every start.
 const TOKEN_ATTENTION_VEC = "llama.cpp flash_attn_vec", TOKEN_ATTENTION_TILES = "the prompt's attention tiles";
 async function chooseTokenAttention(m) {
-  const { device, plan, wgsl, gen: g } = m;
+  const { device, plan, gen: g } = m;
   const subgroups = device.features.has("subgroups") && Boolean(navigator.gpu.wgslLanguageFeatures?.has("subgroup_id"));
   const vec = (withSubgroups) => ({ name: `${TOKEN_ATTENTION_VEC}${withSubgroups ? ", subgroups" : ""}`,
-    shape: wgsl.flashVecShape({ headSize: plan.headSize, subgroups: withSubgroups, threads: threadsOf(device),
+    shape: flashVecShape({ headSize: plan.headSize, subgroups: withSubgroups, threads: threadsOf(device),
       subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize }) });
   let candidates = [...(subgroups ? [vec(true)] : []), vec(false), { name: TOKEN_ATTENTION_TILES, tiles: true, pipeline: m.attention.pipeline }];
   if (plan.force.tokenAttention) candidates = candidates.filter((a) => a.name === plan.force.tokenAttention);
@@ -32,8 +34,8 @@ async function chooseTokenAttention(m) {
     }
     try {
       if (!a.tiles) {
-        a.pipeline = await within(validated(m, () => pipelineOf(m, wgsl.flashVec(a.shape))), `compiling ${a.name}`);
-        a.reduce = await within(validated(m, () => pipelineOf(m, wgsl.flashVecReduce(a.shape))), `compiling ${a.name}'s reduce`);
+        a.pipeline = await within(validated(m, () => pipelineOf(m, flashVec(a.shape))), `compiling ${a.name}`);
+        a.reduce = await within(validated(m, () => pipelineOf(m, flashVecReduce(a.shape))), `compiling ${a.name}'s reduce`);
       }
       const wrong = await within(checkTokenAttention(m, a), `checking ${a.name}`);
       if (wrong) g.attentions.push({ name: a.name, none: `wrong: ${wrong}` });
@@ -53,7 +55,7 @@ async function chooseTokenAttention(m) {
   g.attention = right[best];
   // the vec form's parts (every head's, nwg of the most) and its Params a count of parts, made as a run needs them
   if (!g.attention.tiles) {
-    g.parts = buffer(m, wgsl.flashVecPartsBytes(g.attention.shape, plan.heads));
+    g.parts = buffer(m, flashVecPartsBytes(g.attention.shape, plan.heads));
     g.params = paramsOf(m, g.attention.shape, plan.heads, plan.kvHeads, m.owned);
   }
 }
@@ -61,7 +63,7 @@ async function chooseTokenAttention(m) {
 function paramsOf(m, shape, heads, kvHeads, owned) {
   const made = new Map();
   return (nwg) => {
-    if (!made.has(nwg)) made.set(nwg, uniform(m, m.wgsl.flashVecParams(shape, heads, kvHeads, nwg), owned));
+    if (!made.has(nwg)) made.set(nwg, uniform(m, flashVecParams(shape, heads, kvHeads, nwg), owned));
     return made.get(nwg);
   };
 }
@@ -70,7 +72,7 @@ function paramsOf(m, shape, heads, kvHeads, owned) {
 // group, x, y] each: the tiles a workgroup a head; the vec form nwg a head, then (nwg more than 1) the reduce
 function attentionPasses(m, a, io, heads, positions) {
   if (a.tiles) return [[a.pipeline, bind(m, a.pipeline, [io.q, io.keys, io.values, io.out, io.flash, io.step]), heads, 1]];
-  const nwg = m.wgsl.flashVecSplits(a.shape, positions), params = io.params(nwg);
+  const nwg = flashVecSplits(a.shape, positions), params = io.params(nwg);
   return [[a.pipeline, bind(m, a.pipeline, [io.q, io.keys, io.values, io.parts, io.out, params, io.step]), heads * nwg, 1],
     ...(nwg > 1 ? [[a.reduce, bind(m, a.reduce, [io.parts, io.out, params]), heads, 1]] : [])];
 }
@@ -78,7 +80,7 @@ function attentionPasses(m, a, io, heads, positions) {
 // headSize; shaders.js's tokenAttentionData: steep, the heads whose q is steep), the output, the Step of the token at
 // positions - 1, the tiles' Params, and the vec form's parts and Params
 function attentionIo(m, a, { heads, kvHeads, positions, steep = [] }, owned) {
-  const size = m.plan.headSize, { q, keys, values } = m.wgsl.tokenAttentionData({ heads, kvHeads, size, positions, steep });
+  const size = m.plan.headSize, { q, keys, values } = tokenAttentionData({ heads, kvHeads, size, positions, steep });
   const make = (data) => {
     const made = buffer(m, data.byteLength, STORAGE | COPY_DST, owned);
     m.device.queue.writeBuffer(made, 0, data);
@@ -89,7 +91,7 @@ function attentionIo(m, a, { heads, kvHeads, positions, steep = [] }, owned) {
   new Float32Array(flash, 8, 1)[0] = 1 / Math.sqrt(size);
   return { data: { q, keys, values }, q: make(q), keys: make(keys), values: make(values), out: buffer(m, heads * size * 4, STORAGE | COPY_SRC, owned),
     step: uniform(m, new Uint32Array([1, positions - 1, 0, 0]), owned), flash: uniform(m, flash, owned),
-    ...(a.tiles ? {} : { parts: buffer(m, m.wgsl.flashVecPartsBytes(a.shape, heads), STORAGE, owned), params: paramsOf(m, a.shape, heads, kvHeads, owned) }) };
+    ...(a.tiles ? {} : { parts: buffer(m, flashVecPartsBytes(a.shape, heads), STORAGE, owned), params: paramsOf(m, a.shape, heads, kvHeads, owned) }) };
 }
 // The check of an attention of a token, on made-up numbers against JavaScript's (shaders.js's tokenAttentionData and
 // tokenAttentionOff): 4 heads of q on 2 of keys and values (each head of q to its own), a token that reads 40 positions
@@ -111,7 +113,7 @@ async function checkTokenAttention(m, a) {
       pass.end();
       m.device.queue.submit([encoder.finish()]);
       const got = new Float32Array(await readBack(m, io.out, heads * size * 4));
-      const worst = m.wgsl.tokenAttentionOff(got, io.data, { heads, kvHeads, size, positions });
+      const worst = tokenAttentionOff(got, io.data, { heads, kvHeads, size, positions });
       if (!(worst <= LINE)) return `its output is ${worst.toExponential(2)} of the largest value from JavaScript's at ${positions} positions (line ${LINE})`;
     } finally {
       owned.forEach((b) => b.destroy());

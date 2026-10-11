@@ -16,6 +16,11 @@
 // its state, the embedding, the outliers), sample.js (the sampling), stages.js (the sampling in chunks, the benchmark's),
 // likecpu.js (the CPU's sampling in JavaScript: no shader) and key.js (the device's key). Each is a static import (T367.3: a
 // bundler links them).
+// T367.5: who reads the window. /benchmark/'s GPU worker (benchmark/gpu/device.js), which measures with nearly all of
+// them and fetches this module when its section runs; and the tools (the net's shaders section, tests/gpu-check.mjs,
+// tests/smoke.mjs and others), to which shaders.js is the name of all the WGSL there is. The model's GPU worker does
+// not: its modules take the names they use from the parts (gpu/*.js), linked into the worker's own file without
+// /benchmark/'s shaders, and the model's worker takes the device's key from shaders/key.js.
 import { GROUP } from "./shaders/common.js";
 import { TILE, WIDEN, PACKED, BATCHED, ARGMAX, EMPTY, SMALL, CEILING_WORKGROUP, FMA_PER_LOOP, DOT4_PER_LOOP,
   SHARED_PER_LOOP, GLOBAL_PER_THREAD, FMA_SHAPES, fmaCeiling, DOT4_CEILING, SHARED_CEILING,

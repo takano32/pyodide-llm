@@ -6,14 +6,18 @@ import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, common, within, buffer,
   dispatch } from "./device.js";
 import { tablesOf } from "./weights.js";
 import { productGroups, multiply } from "./forms.js";
+import { GROUP } from "../shaders/common.js";
+import { QUANTIZE, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "../shaders/steps.js";
+import { FLASH_Q_TILE } from "../shaders/attention.js";
+import { EMBED_ROWS, EMBED_ROWS_TERNARY } from "../shaders/run.js";
 
 // the pipelines of a layer's small steps and the buffers of a block's activations
 async function prepare(m) {
-  const { plan, wgsl } = m, B = plan.batch, gated = Boolean(plan.matrices.w3);
+  const { plan } = m, B = plan.batch, gated = Boolean(plan.matrices.w3);
   const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, widest = Math.max(plan.dim, qDim, plan.hidden);
   // T154: LayerNorm and GELU where the model has them (GPT-2, GPT-NeoX), else RMSNorm and SwiGLU
-  [m.norm, m.headNorm, m.add, m.rope, m.activation, m.quantize] = await within(Promise.all([plan.layerNorm ? wgsl.LAYER_NORM : wgsl.RMSNORM,
-    wgsl.HEAD_NORM, wgsl.ADD, wgsl.ROPE, gated ? wgsl.SWIGLU : wgsl.GELU, wgsl.QUANTIZE].map((code) => pipelineOf(m, code))), "the small steps' shaders");
+  [m.norm, m.headNorm, m.add, m.rope, m.activation, m.quantize] = await within(Promise.all([plan.layerNorm ? LAYER_NORM : RMSNORM,
+    HEAD_NORM, ADD, ROPE, gated ? SWIGLU : GELU, QUANTIZE].map((code) => pipelineOf(m, code))), "the small steps' shaders");
   // a block's tokens, each array dense: token t's row at t times its width
   m.x = buffer(m, B * plan.dim * 4, STORAGE | COPY_DST);
   m.xb = buffer(m, B * Math.max(plan.dim, qDim) * 4, STORAGE | COPY_DST);
@@ -27,7 +31,7 @@ async function prepare(m) {
   m.ffnInput = plan.parallel ? buffer(m, B * plan.dim * 4) : m.xb;
   // the packed shaders' input: the activations of a matrix quantized, 8 bits a value and a float32 scale a group
   m.xq = buffer(m, B * widest);
-  m.xs = buffer(m, B * (widest / wgsl.GROUP) * 4);
+  m.xs = buffer(m, B * (widest / GROUP) * 4);
   m.angles = buffer(m, B * plan.headSize * 4, STORAGE | COPY_DST);
   m.step = buffer(m, 16, UNIFORM | COPY_DST);
   m.readback = buffer(m, 2 * plan.layers * B * kvDim * 2, MAP_READ | COPY_DST);
@@ -43,7 +47,7 @@ async function prepare(m) {
   // QUANTIZE of the inputs the matrices read: xb (the norm's, dim wide; the attention's, heads × headSize wide, which
   // is not dim where the heads are of another size, T153) and gate (SwiGLU's)
   const quantizing = (from, n) => ({ group: bind(m, m.quantize, [from, m.xq, m.xs, uniform(m, new Uint32Array([n, n, 0, 0])), m.step]),
-    x: Math.ceil(n / wgsl.GROUP / 64) });
+    x: Math.ceil(n / GROUP / 64) });
   m.quantizeXb = quantizing(m.xb, plan.dim);
   m.quantizeAttention = quantizing(m.xb, qDim);
   m.quantizeFfn = plan.parallel ? quantizing(m.ffnInput, plan.dim) : m.quantizeXb;
@@ -52,7 +56,7 @@ async function prepare(m) {
   // the table (T209), from the block's ids into x
   if (plan.direct) {
     // (T232: from a table of ternary weights, EMBED_ROWS_TERNARY)
-    const rowsCode = tablesOf(plan).embedding.ternary ? wgsl.EMBED_ROWS_TERNARY : wgsl.EMBED_ROWS;
+    const rowsCode = tablesOf(plan).embedding.ternary ? EMBED_ROWS_TERNARY : EMBED_ROWS;
     m.embedRows = await within(validated(m, () => pipelineOf(m, rowsCode)), "compiling the embedding's rows");
     m.ids = buffer(m, B * 4, STORAGE | COPY_DST);
     m.embedGroups = m.tables.embedding.map((piece) => bind(m, m.embedRows,
@@ -205,7 +209,7 @@ async function block(m, count, pos, wanted, timing = false, tokens) {
     if (l === plan.layers - 1) break;  // the keys and values are all a prompt's token leaves
     // T154: GPT-NeoX's parallel residual: the FFN's norm of the layer's input, before o adds to it
     if (plan.parallel) dispatch(pass, m.norm, layer.ffnNorm, 1, count);
-    dispatch(pass, flash.pipeline, m.cache.attention[l], plan.heads * Math.ceil(count / m.wgsl.FLASH_Q_TILE));
+    dispatch(pass, flash.pipeline, m.cache.attention[l], plan.heads * Math.ceil(count / FLASH_Q_TILE));
     quantize(m.quantizeAttention);
     multiplied(layer.o);
     biased(layer.oBias);
