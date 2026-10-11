@@ -869,6 +869,14 @@ for (const [what, pattern] of [
 ]) assert.ok(pattern.test(benchmarkPage), `benchmark.astro: ${what}`);
 // ... and the model page, whose visitor may choose a next model, tells none: its memory keeps that gigabyte (T96)
 assert.ok(/type: "init"/.test(pageText("index.astro")) && !/\bahead\b/.test(pageText("index.astro")), "index.astro tells its worker no loads ahead (T242)");
+// T367.3's review: the worker builds the URLs of models/ from the root the page hands it (state.root, set by the first init
+// or load that carries one): an init without it is a worker whose every model's parts are a TypeError. Every message that
+// starts a worker of the model (both pages' inits, and the loads) names it.
+for (const [page, text] of [["index.astro", pageText("index.astro")], ["benchmark.astro", benchmarkPage]]) {
+  const starts = [...text.matchAll(/type: "(init|load)"[^}]*?\}/g)];
+  assert.ok(starts.length > 0, `${page} starts a worker with an init or a load`);
+  for (const [message, kind] of starts) assert.ok(/\broot\b/.test(message), `${page}: its ${kind} message hands the worker the site's root (models/ is under it)`);
+}
 // the CPU section's ceilings that could not be measured at all say so in that word, as the GPU section's steps do (T227's own
 // change left this one at "Not measured:")
 const noCeilings = cpuTable({ ...aCpu, ceilings: { error: "out of memory\nsecond | line" } });
