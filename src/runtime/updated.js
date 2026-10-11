@@ -21,6 +21,10 @@
 /** The sentence, as the owner wrote it (T367's decision 4). Nothing is put before or after it. */
 export const UPDATED = "The site was updated while this page was open. Reload the page to go on.";
 
+/** T439: what the status line of a model says where it goes on without a file of its build that is gone, on a slower
+ * path (worker/outdated.js): the owner's too, as it is, small letters and no full stop. */
+export const SLOWER = "the site was updated: reload for full speed";
+
 /** The error that says so: an Error by name, so that whatever reports an error by its message says the sentence alone. */
 export const updated = (cause) => Object.assign(new Error(UPDATED, { cause }), { updated: true });
 export const isUpdated = (error) => error?.updated === true;

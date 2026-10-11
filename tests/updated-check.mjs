@@ -15,10 +15,12 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { workerHarness } from "./worker-harness.mjs";
-import { UPDATED, updated, isUpdated, saidOf, ofThisBuild, answeredGone, gone, named, unstarted } from "../src/runtime/updated.js";
+import { UPDATED, SLOWER, updated, isUpdated, saidOf, ofThisBuild, answeredGone, gone, named, unstarted } from "../src/runtime/updated.js";
 
 // ---- the sentence, whole (the owner's: T367's decision 4)
 assert.equal(UPDATED, "The site was updated while this page was open. Reload the page to go on.");
+// ... and the one a status line ends with where the model goes on, slower (T439: the owner's, 2026-10-11, as it is)
+assert.equal(SLOWER, "the site was updated: reload for full speed");
 {
   const cause = new TypeError("Failed to fetch dynamically imported module");
   const error = updated(cause);
@@ -237,26 +239,32 @@ console.log("updated-check: the model's worker tells the page the sentence alone
 
 // ---- the sources: every file that is asked for later, and what becomes of its failure.
 // said: the visitor is told the site was updated (the failure ends what was asked: a load, a conversion, a section).
-// quiet: the engine goes on without the file, as it always did, and nothing is said: a model that answers is not
-// interrupted, and the sentence ("Reload the page to go on") would not be true of it.
+// slower (T439): the engine goes on without the file, as it always did, on a slower path, and a model that answers is
+// not interrupted (the sentence, "Reload the page to go on", would not be true of it). Where the file is gone, and
+// only there, the worker tells the page once (worker/outdated.js: wentWithout(error[, import.meta.url]) where a fetch
+// or an import is caught, workerWentWithout(event, import.meta.url) at a worker's error), and the status line ends
+// with SLOWER. The reason says what is slower.
+// quiet: the engine goes on without the file and is no slower for it: nothing is said, and the reason says why.
 // A new line here is a decision: a file whose absence ends something is fetched by built(), named() or with
-// unstarted() at its worker's error, and one the engine does without says why it is quiet.
+// unstarted() at its worker's error; one the engine does without, slower, hands its failure to outdated.js; and one
+// that costs nothing says why it is quiet.
 const root = new URL("../", import.meta.url);
 const LATER = {
   "src/runtime/worker/runtime.js": [
     ['import("../shaders/key.js")', "quiet: without the device's key nothing kept of this device holds, and the GPU is weighed again"],
     ['built("engine.zip").then((res) => res.arrayBuffer());', "said"],
-    ["built(name).catch(() => undefined);", "quiet: without simdkernel.so the sampling runs on NumPy"],
-    ['import("../forward.js")', "quiet: without forward.js or its kernels the engine runs on NumPy"],
-    ["built(name).then((res) => res.arrayBuffer()).catch(() => null)));", "quiet: without the kernels the engine runs on NumPy"],
+    ["built(name).catch((error) => void wentWithout(error));", "slower: without simdkernel.so the sampling runs on NumPy"],
+    ['import("../forward.js")', "slower: without forward.js the engine runs on NumPy"],
+    ["built(name).then((res) => res.arrayBuffer()).catch((error) => {", "slower: without the kernels the engine runs on NumPy, without the relaxed ones on the plain, " +
+      "without the shared ones on one thread (the kernels of a 64-bit memory are not told: without them a model past 4 GB is refused)"],
   ],
   "src/runtime/worker/convert.js": [
     ["built(archive, signal).then((res) => res.arrayBuffer()), archive);", "said"],
     ['named(import.meta.url, () => import("../kept.ts"))', "said"],
   ],
   "src/runtime/worker/weights.js": [
-    ['new Worker(new URL("../helper.ts", import.meta.url)', "quiet: a software thread that does not start leaves fewer threads"],
-    ['new Worker(new URL("../gpu.js", import.meta.url)', "quiet: a GPU worker that does not start leaves the model on the CPU (forward/gpuside.js)"],
+    ['new Worker(new URL("../helper.ts", import.meta.url)', "slower: a software thread that does not start leaves fewer threads"],
+    ['new Worker(new URL("../gpu.js", import.meta.url)', "slower: a GPU worker that does not start leaves the model on the CPU (forward/gpuside.js)"],
   ],
   "src/runtime/benchmark/sections.js": [
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));", "said"],
@@ -295,7 +303,9 @@ const code = (name) => fs.readFileSync(new URL(name, root), "utf8").split("\n").
 // a fetch of a built file, a module asked for by a name of this site, a worker; with what is wrapped around each
 const later = /(?:named\(import\.meta\.url, \(\) => )?import\("\.[^"]*"\)\)?(?:\.catch\(\(\) => \{\}\))?|new Worker\(new URL\("[^"]*", import\.meta\.url\)|\bbuilt\((?:"[^"]*"|\w+(?:, \w+)?)\)[^\n]*/g;
 const tidy = (found) => found.replace(/\s*\/\/ .*$/, "");  // (a built file: the rest of its line, which is where its failure goes)
-let said = 0, quiet = 0;
+let said = 0, quiet = 0, slower = 0;
+// how often a file hands a failure to worker/outdated.js: as often as it has a fallback that is slower
+const handed = (text) => (text.match(/\b(?:wentWithout|workerWentWithout)\(/g) ?? []).length;
 for (const name of sources) {
   const text = code(name);
   if (name === "src/runtime/updated.js") continue;
@@ -308,16 +318,34 @@ for (const name of sources) {
   // a built file's address is fetched by built() alone, and its table is read nowhere else
   if (name !== "src/runtime/built.js") assert.ok(!/\bBUILT\b/.test(text), `${name} reads the table of built files itself: built() is how one is fetched (a 404 is the site's update)`);
   for (const [what, why] of listed) {
-    assert.ok(why === "said" || /^quiet: \S/.test(why), `${name}: ${what} is said, or quiet with a reason`);
-    why === "said" ? said++ : quiet++;
+    assert.ok(why === "said" || /^(quiet|slower): \S/.test(why), `${name}: ${what} is said, or slower or quiet with a reason`);
+    why === "said" ? said++ : why.startsWith("slower") ? slower++ : quiet++;
     // a worker whose failure is said: the module that names it asks for its own address at the worker's error
     if (why === "said" && what.startsWith("new Worker(")) {
       assert.ok(/\bunstarted\(event, import\.meta\.url, /.test(text), `${name} makes a worker and does not hold its error to unstarted(event, import.meta.url, …)`);
     }
     if (why === "said" && what.includes("import(")) assert.ok(what.startsWith("named(import.meta.url, "), `${name}: ${what} is said by named(import.meta.url, …)`);
-    if (why !== "said") assert.ok(!what.includes("named(") && !what.includes("unlessUpdated"), `${name}: ${what} is quiet`);
+    if (why !== "said") assert.ok(!what.includes("named(") && !what.includes("unlessUpdated"), `${name}: ${what} is no error`);
+    // a quiet one's failure goes nowhere; a slower one's goes to outdated.js, and nowhere else: a built file's by the
+    // catch on its line (its own answer says whether it is gone), a module's with the address of the module that names it
+    if (why.startsWith("quiet")) assert.ok(!/ithout\(/.test(what), `${name}: ${what} is quiet`);
+    if (why.startsWith("slower") && what.startsWith("built(")) assert.ok(/\.catch\(\(error\) => (void wentWithout\(error\)\);|\{)$/.test(what), `${name}: ${what} hands its failure to wentWithout(error)`);
+    if (why.startsWith("slower") && what.startsWith("import(")) {
+      assert.ok(text.includes(`${what}.catch((error) => {\n      void wentWithout(error, import.meta.url);\n      throw error;\n    });`), `${name}: ${what} hands its failure to wentWithout(error, import.meta.url), and fails as it did`);
+    }
     // a built file whose failure is said: nothing on its line swallows it (a catch there lets updated() through)
     if (why === "said" && what.startsWith("built(")) assert.ok(!what.includes(".catch(") || what.includes(".catch((error) => unlessUpdated(error) ?? null)"), `${name}: ${what} is said`);
+  }
+  // as many failures are handed to outdated.js as there are slower fallbacks (none where there is none), a worker's
+  // with its event and the address of the module that made it, and nothing waits for the answer (void)
+  const slowerHere = listed.filter(([, why]) => why.startsWith("slower"));
+  if (name !== "src/runtime/worker/outdated.js") {
+    assert.equal(handed(text), slowerHere.length, `${name}: ${handed(text)} failures are handed to worker/outdated.js, and ${slowerHere.length} of its files are listed as slower (LATER)`);
+    assert.equal((text.match(/void workerWentWithout\(event, import\.meta\.url\)/g) ?? []).length, slowerHere.filter(([what]) => what.startsWith("new Worker(")).length,
+      `${name}: each worker it goes on without hands its error event to workerWentWithout(event, import.meta.url)`);
+    assert.equal((text.match(/void wentWithout\(error(?:, import\.meta\.url)?\)/g) ?? []).length, slowerHere.filter(([what]) => !what.startsWith("new Worker(")).length,
+      `${name}: each file it goes on without hands what it caught to wentWithout(), and waits for nothing`);
+    assert.ok(!/await (?:wentWithout|workerWentWithout)\(/.test(text), `${name} waits for the answer of whether the site was updated before it falls back`);
   }
   // in the runtime every worker has an error handler of its own: as many are held to unstarted() as are said
   const workersSaid = listed.filter(([what, why]) => why === "said" && what.startsWith("new Worker(")).length;
@@ -334,7 +362,14 @@ for (const name of sources) {
     assert.ok(!new RegExp(`\\b(?:let|const|var|function|class)\\s+${one}\\b|\\(${one}\\) =>|\\b${one} = `).test(text), `${name} takes ${one} and declares or assigns a ${one} of its own`);
   }
 }
-// the quiet ones' files know nothing of updated.js: no fallback was turned into an error
+// the files that hold a fallback know nothing of updated.js: no fallback was turned into an error (what they know is
+// worker/outdated.js, which throws nothing, turns no failure into another, and posts one kind of message)
+{
+  const text = code("src/runtime/worker/outdated.js");
+  assert.ok(/import \{ gone, isUpdated \} from "\.\.\/updated\.js";/.test(text), "outdated.js takes gone() and isUpdated() of updated.js, and nothing that makes an error");
+  assert.ok(!/\bthrow\b|\bnew Error\b|\breject\b/.test(text), "outdated.js throws nothing");
+  assert.deepEqual(text.match(/postMessage\([^)]*\)/g), ['postMessage({ type: "updated" })'], "outdated.js posts the one word, and nothing else");
+}
 const knows = (name) => /updated\.js|\bunstarted\b|\bisUpdated\b|\bUPDATED\b/.test(code(name));
 for (const name of ["src/runtime/worker/weights.js", "src/runtime/gpu.js", "src/runtime/gpu/device.js"]) {
   assert.ok(!knows(name), `${name} holds a fallback (LATER) and now knows of updated.js`);
@@ -357,8 +392,18 @@ assert.ok(/worker\.onerror = async \(event\) => resolve\(\{ error: await workerF
   assert.equal((text.match(/\n {4}unlessUpdated\(error\);\n/g) ?? []).length, 2, "the ceilings' and an attempt's catch let an update through");
   assert.ok(!/\$\{error\?\.name \?\? "Error"\}/.test(text.replace(/const failed = [^\n]*/, "")), "no other place of sections.js puts a name before a caught value's words");
 }
-// the sentence is written once
-const writers = sources.filter((name) => fs.readFileSync(new URL(name, root), "utf8").includes("The site was updated"));
-assert.deepEqual(writers, ["src/runtime/updated.js"], "the sentence is written in one file");
-console.log(`updated-check: ${said} files asked for later say the update where they are gone, ${quiet} keep their fallback and say nothing; ${path_.length} files of the token's path know none of it`);
+// the kernels of a 64-bit memory are fetched on the same line as the others and are no slower path (without them a
+// model past 4 GB is refused, and a small one runs as fast as ever): their absence is not told
+assert.ok(code("src/runtime/worker/runtime.js").includes("built(name).then((res) => res.arrayBuffer()).catch((error) => {\n          if (!wide) void wentWithout(error);\n          return null;\n        })));"),
+  "runtime.js tells of the kernels that are gone, but for those of a 64-bit memory");
+// each sentence is written once, and the status line's is read by what draws the status line alone (as its last part)
+for (const words of ["The site was updated", "the site was updated: ", "reload for full speed", "for full speed"]) {
+  const writers = sources.filter((name) => fs.readFileSync(new URL(name, root), "utf8").includes(words));
+  assert.deepEqual(writers, ["src/runtime/updated.js"], `"${words}" is written in one file`);
+}
+assert.deepEqual(sources.filter((name) => /\bSLOWER\b/.test(code(name))), ["src/runtime/updated.js", "src/page/draw.ts"].sort((a, b) => sources.indexOf(a) - sources.indexOf(b)), "SLOWER is read by src/page/draw.ts alone");
+assert.ok(code("src/page/draw.ts").includes("statusText.textContent = `${model.name} · ${backend}${threads > 1 ? `, ${threads} threads` : \"\"}${gpuNote ? `, ${gpuNote}${tested}` : \"\"} · Pyodide ${pyodide}${outdated ? ` · ${SLOWER}` : \"\"}`;"), "the status line of a ready model ends with it where the page is an old one, after all it said before");
+// and the page takes the worker's word as it comes: the owner's event, then the line drawn again
+assert.ok(/\} else if \(data\.type === "updated"\) \{\n(?:\s*\/\/[^\n]*\n)*\s*siteUpdated\(\);\n\s*showStatus\(\);\n/.test(fs.readFileSync(new URL("src/page/receiver.ts", root), "utf8")), "receiver.ts says siteUpdated() and draws the status line at the worker's { type: \"updated\" }");
+console.log(`updated-check: ${said} files asked for later say the update where they are gone, ${slower} are done without on a slower path and tell the page so where they are gone, ${quiet} cost nothing and say nothing; ${path_.length} files of the token's path know none of it`);
 console.log("updated-check: ok");

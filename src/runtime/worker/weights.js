@@ -5,6 +5,7 @@
 import { pyodide, llama2_numpy, forwardModule, jsKernels, sharedKernels, wideKernels, forceWide, gpuForce, benchPage, gpuAdapter, hasWebGpu,
   adapterAsked } from "./runtime.js";
 import { threadsRequest, gpuRequest, loadsAhead, benching, switchesNow } from "./request.js";
+import { workerWentWithout } from "./outdated.js";
 
 // What this file alone holds (T378.3: they were fields of the object all the modules shared). The others say what
 // happened (loadBegan, onCpuFromNow) and ask (weightsBytes, memoryShared, gpuOnlyLost, weightsRoom, weightsDrained).
@@ -62,12 +63,20 @@ export function pythonBuffer(size) {
 const spawnThread = (data) => new Promise((resolve, reject) => {
   const worker = new Worker(new URL("../helper.ts", import.meta.url), { type: "module" });
   worker.onmessage = () => resolve({ terminate: () => worker.terminate() });
-  worker.onerror = (event) => reject(new Error(event.message ?? "a software thread did not start"));
+  worker.onerror = (event) => {
+    void workerWentWithout(event, import.meta.url);  // (T439: fewer threads, and the page is told where that is the site's update)
+    reject(new Error(event.message ?? "a software thread did not start"));
+  };
   worker.postMessage(data);
 });
 
 // T135: the GPU's worker of forward.js, a module worker of its own; forward.js starts it
-const openGpu = () => new Worker(new URL("../gpu.js", import.meta.url), { type: "module" });
+// (T439: forward.js holds its error, and the model stays on the CPU; beside that the page is told where it is the site's update)
+function openGpu() {
+  const worker = new Worker(new URL("../gpu.js", import.meta.url), { type: "module" });
+  worker.addEventListener("error", (event) => void workerWentWithout(event, import.meta.url));
+  return worker;
+}
 
 // T96: one memory of forward.js, kept from model to model. A browser reserves address space for every WebAssembly
 // memory, shared or not and whatever its maximum, and Chromium refused the third one of a page: the benchmark's

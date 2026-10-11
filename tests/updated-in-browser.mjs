@@ -10,8 +10,15 @@
 //   module of what is kept at a first conversion, the model's worker itself, a section's worker, a module and a kernel
 //   a section's worker asks for;
 // - the same file failing in any other way keeps the words it had: a 500, a dropped line, a browser that is offline;
-// - a model that goes on without a file (the kernels, a software thread: NumPy, fewer threads) goes on and says nothing.
-// It does not see: a GPU (its worker's fallback is tests/updated-check.mjs's reading of the sources), a real deployment.
+// - a model that goes on without a file (the kernels, forward.js, a software thread, the GPU's worker: NumPy, fewer
+//   threads, the CPU) goes on and answers, and (T439) where the file is gone its status line ends with "the site was
+//   updated: reload for full speed", after what it said before, and still does with the next model of the visit;
+//   where the file failed otherwise (a 500, a dropped line, gone alone with the module that names it there) the line
+//   is what it was; a visit where nothing fails says nothing and asks no HEAD.
+// It does not see: a GPU at work (its worker is asked for wherever the browser's workers have WebGPU, and that it
+// does not start is all this needs; where they have none the case says that it saw nothing), a real deployment.
+//
+// UPDATED_SHOTS=<folder>: a picture of the page for each case whose status line ends with the sentence (390 px wide).
 //
 // The model is stories260K (1 MB), and a conversion is the folder of tests/make_hf_fixture.py, as tests/e2e.mjs's hf.
 // Every case has a browser context of its own (its own service worker and copies). Pyodide comes from its CDN each time.
@@ -21,7 +28,7 @@ import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
 import * as playwright from "playwright-core";
-import { UPDATED } from "../src/runtime/updated.js";
+import { UPDATED, SLOWER } from "../src/runtime/updated.js";
 import { leave } from "./leave.mjs";
 
 const [engine = "chromium", ...only] = process.argv.slice(2);
@@ -76,9 +83,9 @@ const acrossReload = async (wait) => {
 const lastError = () => [...document.querySelectorAll(".error .bubble")].at(-1)?.textContent;
 
 // ---- the model page
-async function modelPage(context) {
+async function modelPage(context, model = "stories260K") {
   const page = await context.newPage();
-  await page.goto(`${site}?model=stories260K`);
+  await page.goto(`${site}?model=${model}`);
   return page;
 }
 const ready = (page) => acrossReload(() => page.waitForFunction(() => document.getElementById("run")?.disabled === false || document.querySelector(".error"), null, { timeout: 180000 }));
@@ -118,6 +125,38 @@ async function section(page, name) {
 const failures = [];
 const expect = (name, ok, what) => {
   if (!ok) failures.push(`${name}: ${what}`);
+};
+// T439: the status line of a model that goes on without a file: with the sentence as its last part, after the line it
+// would have been (the model's name, how it runs, Pyodide's version), or without a word of it
+const shots = process.env.UPDATED_SHOTS;
+async function saysSlower(name, page, status) {
+  expect(name, status.endsWith(` · ${SLOWER}`) && / · Pyodide [\d.]+ · /.test(status) && status.split(SLOWER).length === 2, `the status line does not end with the sentence, once, after what it said: ${JSON.stringify(status)}`);
+  // (a phone's width: the line wraps, and the page does not scroll sideways for it)
+  const [wide, inner] = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
+  expect(name, wide <= inner, `the page is ${wide} px wide in a window of ${inner}`);
+  if (shots) {
+    fs.mkdirSync(shots, { recursive: true });
+    await page.screenshot({ path: path.join(shots, `${engine}-${name.replace(/[^a-z0-9]+/gi, "-").slice(0, 80)}.png`) });
+  }
+}
+const saysNothing = (name, status) => expect(name, / · Pyodide [\d.]+$/.test(status) && !/updated|reload/i.test(status), `the status line says more than it did: ${JSON.stringify(status)}`);
+const wrote = (name, said) => {
+  expect(name, said.error === undefined, `an error was shown: ${said.error}`);
+  expect(name, said.text.startsWith("Once upon a time"), `the model wrote ${JSON.stringify(said.text.slice(0, 60))}`);
+};
+const KERNELS = ["simdkernel", "simdkernel_relaxed", "simdkernel_plain", "simdkernel_relaxed_plain", "simdkernel_shared", "simdkernel_relaxed_shared",
+  "simdkernel_plain64", "simdkernel_relaxed_plain64", "simdkernel_shared64", "simdkernel_relaxed_shared64"];
+// a model page whose files `fails` (names of _astro/) are answered `how` from the start; `head`: what a HEAD for a
+// file of the build is answered (404: the build is gone, as after a deployment; undefined: it is there)
+const goingOn = (fails, how, head, check, model) => async (context, name) => {
+  rule = (file, method) => (method === "HEAD" && built(file) ? head : family(...fails)(file) ? how : undefined);
+  const page = await modelPage(context, model);
+  await ready(page);
+  const said = await answered(page);
+  console.log(`  the page: ${JSON.stringify({ ...said, text: said.text.slice(0, 60) })}`);
+  wrote(name, said);
+  expect(name, requests.some((line) => fails.some((one) => line.startsWith(`GET _astro/${one}.`) && line.endsWith(` -> ${how}`))), `none of ${fails} was asked for: the case saw nothing`);
+  await check(name, page, said);
 };
 const isSentence = (name, said) => expect(name, said === UPDATED, `said ${JSON.stringify(said)}, and not the sentence alone`);
 const isNot = (name, said, pattern) => {
@@ -196,29 +235,75 @@ const CASES = {
     console.log(`  the page: ${JSON.stringify(said)}`);
     isNot(name, said, /^Failed to start the worker: /);
   },
-  // ---- what the engine goes on without: nothing is said, and the model answers
-  "model page, the kernels and the software threads gone from the start, and every HEAD answered 404": async (context, name) => {
-    rule = (file, method) => (family("simdkernel", "simdkernel_relaxed", "simdkernel_plain", "simdkernel_relaxed_plain", "simdkernel_shared", "simdkernel_relaxed_shared",
-      "simdkernel_plain64", "simdkernel_relaxed_plain64", "simdkernel_shared64", "simdkernel_relaxed_shared64", "helper")(file) || (built(file) && method === "HEAD") ? 404 : undefined);
-    const page = await modelPage(context);
-    await ready(page);
-    const said = await answered(page);
-    console.log(`  the page: ${JSON.stringify({ ...said, text: said.text.slice(0, 60) })}`);
-    expect(name, said.error === undefined, `an error was shown: ${said.error}`);
-    expect(name, said.text.startsWith("Once upon a time"), `the model wrote ${JSON.stringify(said.text.slice(0, 60))}`);
+  // ---- what the engine goes on without: the model answers, and where the file is gone the status line says why it is slow
+  "model page, the kernels gone from the start": goingOn(KERNELS, 404, 404, async (name, page, said) => {
     expect(name, /NumPy/.test(said.status), `the status line does not say NumPy: ${said.status}`);
-    expect(name, requests.some((line) => /^GET _astro\/simdkernel_plain\..* -> 404$/.test(line)), "no kernel was asked for: the case saw nothing");
-  },
-  "model page, a software thread gone from the start, and every HEAD answered 404": async (context, name) => {
-    rule = (file, method) => (family("helper")(file) || (built(file) && method === "HEAD") ? 404 : undefined);
+    await saysSlower(name, page, said.status);
+    // (a built file's own answer says it: nothing is asked beside)
+    expect(name, !requests.some((line) => line.startsWith("HEAD ")), `a HEAD was asked for: ${requests.filter((line) => line.startsWith("HEAD "))}`);
+    // and it is the page that is old, not the model: the next model of the visit says it too, though nothing fails now
+    rule = () => undefined;
+    await page.selectOption("#model", "tiny-lm");
+    await page.waitForFunction(() => /^tiny-lm .* · Pyodide /.test(document.getElementById("status-text").textContent) && document.getElementById("run")?.disabled === false, null, { timeout: 180000 });
+    await saysSlower(`${name} (the next model)`, page, await page.evaluate(() => document.getElementById("status-text").textContent));
+  }),
+  "model page, the kernels answered 500": goingOn(KERNELS, 500, 404, (name, page, said) => {
+    expect(name, /NumPy/.test(said.status), `the status line does not say NumPy: ${said.status}`);
+    saysNothing(name, said.status);
+  }),
+  "model page, the kernels drop the line": goingOn(KERNELS, "drop", 404, (name, page, said) => {
+    expect(name, /NumPy/.test(said.status), `the status line does not say NumPy: ${said.status}`);
+    saysNothing(name, said.status);
+  }),
+  "model page, the engine's module gone from the start, with the worker that names it": goingOn(["forward"], 404, 404, async (name, page, said) => {
+    expect(name, /NumPy/.test(said.status), `the status line does not say NumPy: ${said.status}`);
+    await saysSlower(name, page, said.status);
+  }),
+  "model page, the engine's module answered 500 (the worker is there)": goingOn(["forward"], 500, undefined, (name, page, said) => {
+    expect(name, /NumPy/.test(said.status), `the status line does not say NumPy: ${said.status}`);
+    saysNothing(name, said.status);
+  }),
+  "model page, the engine's module gone alone (the worker that names it is there: no deployment does that)": goingOn(["forward"], 404, undefined, (name, page, said) => {
+    expect(name, /NumPy/.test(said.status), `the status line does not say NumPy: ${said.status}`);
+    saysNothing(name, said.status);
+  }),
+  "model page, a software thread gone from the start, with the worker that names it": goingOn(["helper"], 404, 404, async (name, page, said) => {
+    expect(name, !/NumPy/.test(said.status) && !/threads/.test(said.status), `the status line says NumPy, or threads: ${said.status}`);
+    await saysSlower(name, page, said.status);
+  }),
+  "model page, a software thread answered 500 (the worker is there)": goingOn(["helper"], 500, undefined, (name, page, said) => {
+    expect(name, !/NumPy/.test(said.status) && !/threads/.test(said.status), `the status line says NumPy, or threads: ${said.status}`);
+    saysNothing(name, said.status);
+  }),
+  "model page, a software thread drops the line, as does every HEAD": goingOn(["helper"], "drop", "drop", (name, page, said) => saysNothing(name, said.status)),
+  // (tiny-lm: int8, which forward.js puts on a GPU; where the browser's workers have no WebGPU nothing asks for the worker)
+  ...Object.fromEntries([["gone from the start, with the worker that names it", 404, 404], ["answered 500 (the worker is there)", 500, undefined]].map(([what, how, head]) =>
+    [`model page, the GPU's worker ${what}`, async (context, name) => {
+      rule = (file, method) => (method === "HEAD" && built(file) ? head : family("gpu")(file) ? how : undefined);
+      const page = await modelPage(context, "tiny-lm");
+      await ready(page);
+      if (!requests.some((line) => line.startsWith("GET _astro/gpu."))) {
+        console.log(`  SAW NOTHING: this browser's workers asked for no GPU's worker (${await page.evaluate(() => document.getElementById("status-text").textContent)})`);
+        return;
+      }
+      // (forward.js hears the worker's error and says so; the word of the update comes after one HEAD)
+      await page.waitForFunction(() => /did not start/.test(document.getElementById("status-text").textContent), null, { timeout: 60000 });
+      if (how === 404) await page.waitForFunction((slower) => document.getElementById("status-text").textContent.endsWith(slower), SLOWER, { timeout: 30000 }).catch(() => {});
+      const said = await answered(page);
+      console.log(`  the page: ${JSON.stringify({ ...said, text: said.text.slice(0, 60) })}`);
+      expect(name, said.error === undefined && said.text.length > 0, `an error was shown, or nothing written: ${said.error}`);
+      expect(name, /prompts on the CPU \(the GPU's worker did not start/.test(said.status), `the status line does not say the GPU's worker did not start: ${said.status}`);
+      if (how === 404) await saysSlower(name, page, said.status);
+      else saysNothing(name, said.status);
+    }])),
+  "model page, nothing gone": async (context, name) => {
     const page = await modelPage(context);
     await ready(page);
     const said = await answered(page);
     console.log(`  the page: ${JSON.stringify({ ...said, text: said.text.slice(0, 60) })}`);
-    expect(name, said.error === undefined, `an error was shown: ${said.error}`);
-    expect(name, said.text.startsWith("Once upon a time"), `the model wrote ${JSON.stringify(said.text.slice(0, 60))}`);
-    expect(name, !/NumPy/.test(said.status), `the status line says NumPy: ${said.status}`);
-    expect(name, requests.some((line) => /^GET _astro\/helper\..* -> 404$/.test(line)), "no software thread was asked for: the case saw nothing");
+    wrote(name, said);
+    saysNothing(name, said.status);
+    expect(name, !requests.some((line) => line.startsWith("HEAD ")), `a HEAD was asked for on a visit where nothing failed: ${requests.filter((line) => line.startsWith("HEAD "))}`);
   },
   // ---- /benchmark/: a section's worker, and what the worker asks for
   "benchmark, a section after everything of the build was replaced": measuring("device", (name) => (built(name) ? 404 : undefined), sentenceOfSection),

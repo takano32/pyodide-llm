@@ -18,6 +18,9 @@ export let fromTemplate: string | undefined = undefined;
 export let readyLine: { backend: string; threads: number; pyodide: string } | undefined = undefined;
 export let gpuNote: string | undefined = undefined;
 export let benchmarking = false;  // the rounds are running: the run button stays off (the worker is busy loading)
+// T439: the worker runs on a slower path because a file of this page's build is gone from the site (it was deployed
+// again while the page was open). Of the page and not of a model: it holds for the rest of the visit
+export let outdated = false;
 
 /** The model the page opens with (the URL's, the one remembered). Once a model was chosen that one stays: false. */
 export function opensWith(entry: Model) {
@@ -62,6 +65,10 @@ export function gpuSaid(note?: string) {
 /** The threads in use, as an answer's end says (T223's review: the search may change the count remembered). */
 export function threadsNow(count: number) {
   if (readyLine) readyLine.threads = count;
+}
+/** The worker's word that it went on without a file of its build that is gone (T439). No choice of model undoes it. */
+export function siteUpdated() {
+  outdated = true;
 }
 /** Whether a prompt may be sent: one sent during the benchmark would find no model ready. */
 export const takesPrompts = () => ready && !benchmarking;

@@ -7,6 +7,7 @@
 import { built } from "../built.js";
 import { resolvePyodideVersion, pyodideSteps, placePython } from "./pyodide.js";
 import { since, took } from "./clock.js";
+import { wentWithout } from "./outdated.js";
 
 export let pyodide, llama2_numpy;
 // the WASM SIMD kernels that llama2_numpy.py loads with ctypes (the sampling, a conversion's quantizer and readers):
@@ -84,7 +85,8 @@ async function init(search) {
   // switches say what is used (request.js's switchesNow()), and the benchmark's rounds with the kernels need them there (T119: its
   // "everything" round sampled on NumPy after the page's switch had turned them off, and said nothing).
   for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
-    const kernel = await built(name).catch(() => undefined);  // (also where it is gone, T367.4: NumPy answers)
+    // (also where it is gone, T367.4: NumPy answers, and T439: the page is told why it is slower)
+    const kernel = await built(name).catch((error) => void wentWithout(error));
     if (kernel) {
       pyodide.FS.writeFile(`/home/pyodide/${name}`, new Uint8Array(await kernel.arrayBuffer()));
       pythonKernels = "/home/pyodide/simdkernel.so";
@@ -93,11 +95,19 @@ async function init(search) {
   // T93: the forward pass runs in forward.js, on the plain build of the same kernels (simdkernel.so stays for the
   // sampling, which works on Python's logits). Without them (no WebAssembly SIMD) the engine runs NumPy.
   try {
-    forwardModule = await import("../forward.js");
+    // (T439: a module's failure has no status: this module's own address is asked for, and nothing waits for it)
+    forwardModule = await import("../forward.js").catch((error) => {
+      void wentWithout(error, import.meta.url);
+      throw error;
+    });
     // one build of the kernels: simdkernel_<kind>.wasm and simdkernel_relaxed_<kind>.wasm, or null
     const build = async (kind, wide = false) => {
       const [plain, relaxed] = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
-        built(name).then((res) => res.arrayBuffer()).catch(() => null)));
+        built(name).then((res) => res.arrayBuffer()).catch((error) => {
+          // (T439: the kernels of a 64-bit memory are no slower path: without them a model past 4 GB is refused)
+          if (!wide) void wentWithout(error);
+          return null;
+        })));
       return plain ? forwardModule.compileKernels(plain, relaxed, wide) : null;
     };
     jsKernels = await build("plain");

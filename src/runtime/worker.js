@@ -8,7 +8,7 @@
 //                  ahead in its init (T242: the switches of each load that follows on the same model, see loadsAhead),
 //                  {type: "bench", model, load, rounds, prompt, steps} and (T184) {type: "paths", load, prompt, counts, sampled}
 // and receives     {type: "status" | "progress" | "ready" | "token" | "done" | "bench" | "paths" | "error"
-//                         | "threads" | "threads-compared" | "gpu", ...}
+//                         | "threads" | "threads-compared" | "gpu" | "gpu-alone" | "updated", ...}
 // Of these, only ready (a load, and each round of the benchmark), bench (the benchmark), paths (the page's path timed,
 // T184), done (a text, also one stopped) and error (any of them) end a piece of this worker's work: the page reads them, and nothing else, as the
 // worker being idle (T172). status and progress come during a load, token during a text, threads and
@@ -32,7 +32,8 @@
 // T367.4: a page left open across a deployment asks for such a file after it is gone. Where that ends a load (the
 // Python's archives, kept.js at a first conversion) the visitor is told that the site was updated (updated.js); where
 // the engine goes on without the file (the kernels and forward.js: NumPy; a software thread; the GPU's worker; the
-// device's key) it goes on as it always did, and nothing is said: a model that answers is not interrupted.
+// device's key) it goes on as it always did: a model that answers is not interrupted. T439: where that is slower
+// (all but the key) the page is told { type: "updated" } once, and its status line says so (worker/outdated.js).
 import { pyodide, runtimeAsked } from "./worker/runtime.js";
 import { loadAsked, benching, roundsBegan, roundBegan, roundsEnded } from "./worker/request.js";
 import { llama, engineNow } from "./worker/loaded.js";

@@ -47,7 +47,7 @@ const [first, second, third] = MODELS;
 // ---- src/page/model.ts
 {
   const m = await fresh("page/model.ts");
-  assert.deepEqual(held(m), { model: first, loads: 1, ready: false, longest: 256, fromTemplate: undefined, readyLine: undefined, gpuNote: undefined, benchmarking: false },
+  assert.deepEqual(held(m), { model: first, loads: 1, ready: false, longest: 256, fromTemplate: undefined, readyLine: undefined, gpuNote: undefined, benchmarking: false, outdated: false },
     "a visit starts with the first of the list, its first load, nothing ready");
   assert.equal(m.takesPrompts(), false, "a model that is not ready takes no prompt");
   unassignable(m, "model.ts");
@@ -122,7 +122,37 @@ const [first, second, third] = MODELS;
     cases += 1;
   }
 }
-console.log(`page-parts-check: model.ts by itself: what a visit opens with, a choice, ready, the GPU's word, the threads, the benchmark, an error; each changes what it says alone`);
+{
+  // T439: the worker's word that it runs slower for a file of this page's build that is gone. It is of the page, and of
+  // no model: whenever it comes (before a model is ready, during a benchmark, twice), and whatever comes after it
+  // (another model, its ready, an error, a model loaded again on the CPU), it holds for the rest of the visit
+  const m = await fresh("page/model.ts");
+  only(m, () => m.siteUpdated(), { outdated: true }, "the site was updated: that, and nothing of the model");
+  only(m, () => m.siteUpdated(), {}, "said again: the same");
+  m.becameReady({ seq_len: 1, backend: "NumPy", threads: 1, pyodide: "" });
+  assert.equal(m.outdated, true, "a ready model's page is still an old one");
+  assert.equal(m.takesPrompts(), true, "and the model takes prompts: nothing is stopped");
+  m.gpuSaid("prompts on the CPU");
+  m.threadsNow(2);
+  m.benchBegan();
+  m.benchEnded();
+  m.failed(false);
+  m.failed(true);
+  assert.equal(m.outdated, true, "whatever the worker says next");
+  m.chose(second);
+  assert.equal(m.outdated, true, "another model on the same page: the page is as old as it was");
+  m.becameReady({ seq_len: 1, backend: "NumPy", threads: 1, pyodide: "" });
+  assert.equal(m.outdated, true);
+  // ... and a page that was told nothing says nothing, whatever else happens to its model
+  const quiet = await fresh("page/model.ts");
+  quiet.becameReady({ seq_len: 1, backend: "NumPy", threads: 1, pyodide: "" });
+  quiet.gpuSaid("prompts on the CPU (the GPU's worker did not start (an error))");
+  quiet.failed(true);
+  quiet.chose(third);
+  assert.equal(quiet.outdated, false, "no event but the worker's word makes a page an old one");
+  cases += 2;
+}
+console.log(`page-parts-check: model.ts by itself: what a visit opens with, a choice, ready, the GPU's word, the threads, the benchmark, an error, the site's update; each changes what it says alone`);
 
 // ---- src/page/answer.ts
 {
