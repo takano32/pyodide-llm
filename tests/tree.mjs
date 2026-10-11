@@ -25,6 +25,10 @@
 //     alone: a folder called dist or docs deeper in the tree is looked into like any other (T429: it was passed over
 //     without a word);
 //   - a tree is walked once a process, and what is found is remembered.
+// T368.1, one name in two spellings: a file of the runtime is asked for as x.js or as x.ts, and what is found is the one
+// the tree has (tree.json's "either"; the anchor too). The runtime's files become TypeScript one at a time, the tools
+// read two trees (this one and another commit's, where the same file may be spelled the other way), and no tool is to
+// be touched each time a file's ending changes. Both spellings in one tree: an error that names both.
 //
 //   const tree = treeOf(folder)        (no folder: this tree)
 //   tree.runtime("forward.js")         a path; tree.runtimeUrl("forward.js") a file: URL, for import() and new Worker()
@@ -83,9 +87,14 @@ export function treeOf(root = HERE, rule = RULE) {
     return files;
   };
   /** the files whose path ends with name (a whole name, or the last names of a path) */
-  const ending = (name) => all().filter((file) => file === name || file.endsWith(`/${name}`)).sort();
-  const one = (name, what) => {
-    const found = ending(name);
+  const ending = (...names) => all().filter((file) => names.some((name) => file === name || file.endsWith(`/${name}`))).sort();
+  /** a name as a kind may spell it (T368.1): itself, then the same with the kind's other endings */
+  const spelled = (kind, name) => {
+    const endings = rule.either?.[kind] ?? [], has = endings.find((end) => name.endsWith(end) && !name.endsWith(`.d${end}`));
+    return has ? [name, ...endings.filter((end) => end !== has).map((end) => name.slice(0, -has.length) + end)] : [name];
+  };
+  const one = (names, what) => {
+    const found = ending(...names);
     if (found.length > 1) throw new Error(`${root}: ${what} is in ${found.length} places: ${found.join(" and ")}`);
     if (!found.length) throw new Error(`${root}: no ${what} anywhere in the tree (${looked})`);
     return found[0];
@@ -95,18 +104,21 @@ export function treeOf(root = HERE, rule = RULE) {
   const folder = (kind) => {
     if (kind in folders) return folders[kind];
     const anchor = rule.anchors[kind];
-    if (kind === "built" && !ending(anchor).length) {
+    if (kind === "built" && !ending(...spelled(kind, anchor)).length) {
       const made = fs.existsSync(path.join(root, "Makefile")) && new RegExp(`^(\\S*?)/?${anchor.replace(".", "\\.")}:`, "m").exec(fs.readFileSync(path.join(root, "Makefile"), "utf8"));
       if (!made) throw new Error(`${root}: no ${anchor} anywhere in the tree, and no rule of its Makefile makes one: where are the kernels built?`);
       return (folders[kind] = made[1]);
     }
-    return (folders[kind] = path.posix.dirname(one(anchor, `${anchor} (what says where the ${kind} files are)`)).replace(/^\.$/, ""));
+    return (folders[kind] = path.posix.dirname(one(spelled(kind, anchor), `${anchor} (what says where the ${kind} files are)`)).replace(/^\.$/, ""));
   };
   const at = (kind) => (name = "", { maybe = false } = {}) => {
-    const under = path.join(root, folder(kind), name);
-    if (!name || maybe || fs.existsSync(under)) return under;
+    const names = spelled(kind, name), under = names.map((spelling) => path.join(root, folder(kind), spelling));
+    if (!name || maybe) return under[0];
+    const there = under.filter((file) => fs.existsSync(file));
+    if (there.length > 1) throw new Error(`${root}: ${name} is in ${folder(kind) || "the root"}/ (the ${kind} files) in ${there.length} spellings: ${there.map((file) => path.basename(file)).join(" and ")}`);
+    if (there.length) return there[0];
     // not under the kind's folder: anywhere in the tree, by the end of its path
-    const found = ending(name.replace(/\/$/, ""));
+    const found = ending(...names.map((spelling) => spelling.replace(/\/$/, "")));
     if (found.length > 1) throw new Error(`${root}: ${name} is not in ${folder(kind) || "the root"}/ (the ${kind} files), and is in ${found.length} places: ${found.join(" and ")}`);
     if (!found.length) throw new Error(`${root}: no ${name} in ${folder(kind) || "the root"}/ (the ${kind} files) nor anywhere in the tree (${looked})`);
     return path.join(root, found[0]);

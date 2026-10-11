@@ -36,8 +36,15 @@ def _files(root):
     return _walked[root]
 
 
-def _ending(root, name):
-    return sorted(file for file in _files(root) if file == name or file.endswith("/" + name))
+def _ending(root, *names):
+    return sorted(file for file in _files(root) if any(file == name or file.endswith("/" + name) for name in names))
+
+
+def _spelled(kind, name):
+    """A name as a kind may spell it (T368.1, tree.json's "either"): itself, then the same with the kind's other endings."""
+    endings = RULE.get("either", {}).get(kind, [])
+    has = next((end for end in endings if name.endswith(end) and not name.endswith(".d" + end)), None)
+    return [name] + [name[:-len(has)] + end for end in endings if end != has] if has else [name]
 
 
 def _looked():
@@ -49,7 +56,7 @@ def _folder_of(root, kind):
     """A kind's folder, as the tree names it: where its anchor is (the built files' of a tree where nothing is
     built: where its Makefile builds them)."""
     anchor = RULE["anchors"][kind]
-    found = _ending(root, anchor)
+    found = _ending(root, *_spelled(kind, anchor))
     if kind == "built" and not found:
         makefile = os.path.join(root, "Makefile")
         made = os.path.exists(makefile) and re.search(rf"^(\S*?)/?{re.escape(anchor)}:", open(makefile, encoding="utf-8").read(), re.M)
@@ -74,10 +81,16 @@ def _folder(kind):
     def folder(root=None, name="", maybe=False):
         root = os.path.abspath(str(root or HERE))
         inside = _folder_of(root, kind)
-        under = os.path.normpath(os.path.join(root, inside, name))
-        if not name or maybe or os.path.exists(under):
-            return under
-        found = _ending(root, name.rstrip("/"))
+        names = _spelled(kind, name)
+        under = [os.path.normpath(os.path.join(root, inside, spelling)) for spelling in names]
+        if not name or maybe:
+            return under[0]
+        there = [file for file in under if os.path.exists(file)]
+        if len(there) > 1:
+            raise ValueError(f"{root}: {name} is in {inside or 'the root'}/ (the {kind} files) in {len(there)} spellings: {' and '.join(os.path.basename(file) for file in there)}")
+        if there:
+            return there[0]
+        found = _ending(root, *(spelling.rstrip("/") for spelling in names))
         if len(found) > 1:
             raise ValueError(f"{root}: {name} is not in {inside or 'the root'}/ (the {kind} files), and is in {len(found)} places: {' and '.join(found)}")
         if not found:

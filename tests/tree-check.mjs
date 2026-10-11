@@ -141,6 +141,45 @@ for (const [name, { files, folders, bundled }] of Object.entries(LAYOUTS)) {
   }
 }
 
+// ---- T368.1, one name in two spellings: a file of the runtime is found as x.js or x.ts, whichever is asked for
+{
+  const half = madeUp("half TypeScript", { "src/runtime/forward.ts": LINKED, "src/runtime/jobs.ts": "", "src/runtime/worker.js": "", "src/runtime/worker/part.ts": "", "src/runtime/types.d.ts": "",
+    "src/python/llama2_numpy.py": "", "src/runtime/built/simdkernel.so": "", "public/coi.js": "", "public/page.ts": "", "elsewhere/deep/lone.ts": "", "kernels/kernel.ts": "" });
+  const tree = treeOf(half);
+  assert.deepEqual(tree.folders, { runtime: "src/runtime", python: "src/python", built: "src/runtime/built", served: "public" }, "the anchor is found in its other spelling");
+  assert.equal(tree.bundled, true);
+  const both = (kind, name, file) => {
+    assert.equal(tree[kind](name), path.join(half, file), `${kind} ${name}`);
+    assert.equal(pythonOf("--root", half, kind, name).stdout.trim(), path.join(half, file), `tree.py, ${kind} ${name}`);
+    assert.equal(nodeOf("--root", half, kind, name).stdout.trim(), path.join(half, file), `the command line, ${kind} ${name}`);
+  };
+  for (const [name, file] of [["forward.js", "src/runtime/forward.ts"], ["forward.ts", "src/runtime/forward.ts"], ["jobs.js", "src/runtime/jobs.ts"], ["jobs.ts", "src/runtime/jobs.ts"],
+    ["worker.ts", "src/runtime/worker.js"], ["worker.js", "src/runtime/worker.js"], ["worker/part.js", "src/runtime/worker/part.ts"], ["lone.js", "elsewhere/deep/lone.ts"],
+    ["deep/lone.ts", "elsewhere/deep/lone.ts"]]) both("runtime", name, file);
+  assert.equal(tree.runtimeUrl("jobs.js").href, pathToFileURL(path.join(half, "src/runtime/jobs.ts")).href);
+  assert.equal(tree.runtime("jobs.js", { maybe: true }), path.join(half, "src/runtime/jobs.js"), "where a file would be: as it was asked for");
+  // the other kinds' names are one spelling each, and a declaration file is nobody's other spelling
+  const said = (kind, name, words) => {
+    assert.throws(() => tree[kind](name), words, `${kind} ${name}`);
+    assert.match(pythonOf("--root", half, kind, name).stderr, words, `tree.py, ${kind} ${name}`);
+  };
+  said("served", "page.js", /no page\.js in public\/ \(the served files\) nor anywhere in the tree/);
+  said("python", "kernel.js", /no kernel\.js/);
+  said("runtime", "types.d.js", /no types\.d\.js/);
+  both("runtime", "types.d.ts", "src/runtime/types.d.ts");
+  // both spellings in one tree: said, with both names
+  const twice = madeUp("spelled twice", { "src/runtime/forward.js": LINKED, "src/runtime/jobs.js": "", "src/runtime/jobs.ts": "", "a/x.js": "", "b/x.ts": "" });
+  for (const name of ["jobs.js", "jobs.ts"]) {
+    assert.throws(() => treeOf(twice).runtime(name), /jobs\.[jt]s is in src\/runtime\/ \(the runtime files\) in 2 spellings: jobs\.[jt]s and jobs\.[jt]s/);
+    assert.match(pythonOf("--root", twice, "runtime", name).stderr, /in 2 spellings: jobs\.[jt]s and jobs\.[jt]s/);
+  }
+  assert.throws(() => treeOf(twice).runtime("x.js"), /x\.js is not in src\/runtime\/ \(the runtime files\), and is in 2 places: a\/x\.js and b\/x\.ts/);
+  assert.match(pythonOf("--root", twice, "runtime", "x.ts").stderr, /is in 2 places: a\/x\.js and b\/x\.ts/);
+  const anchors = madeUp("the anchor spelled twice", { "src/runtime/forward.js": "", "src/runtime/forward.ts": "" });
+  assert.throws(() => treeOf(anchors).runtime(), /forward\.js \(what says where the runtime files are\) is in 2 places: src\/runtime\/forward\.js and src\/runtime\/forward\.ts/);
+  assert.match(pythonOf("--root", anchors, "runtime").stderr, /is in 2 places: src\/runtime\/forward\.js and src\/runtime\/forward\.ts/);
+}
+
 // ---- no place is written down: neither file names a folder of the project, and another rule's anchors are found as well
 {
   const code = (file, strip) => strip(fs.readFileSync(new URL(file, import.meta.url), "utf8"));
