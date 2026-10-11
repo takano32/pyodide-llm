@@ -261,7 +261,7 @@ function bench(other) {
 // (T352: of the model's GPU worker too. worker: { window: the file a worker starts from, object: the name of the object its modules share })
 function gpuWorker(tree, fields, worker) {
   const files = [worker.window], inFolder = worker.window.replace(/\.js$/, ""), runtime = treeOf(tree).runtime;
-  const folder = runtime(inFolder);
+  const folder = runtime(inFolder, { maybe: true });
   if (fs.existsSync(folder)) for (const file of fs.readdirSync(folder).sort()) files.push(`${inFolder}/${file}`);
   const asts = files.map((file) => parse(fs.readFileSync(runtime(file), "utf8"), { sourceType: "module" }).program);
   const declared = (statement) => {
@@ -322,7 +322,7 @@ function gpuWorker(tree, fields, worker) {
 }
 // the keys of the `shared` object a tree's modules hold between them (none before the division)
 function sharedFields(tree, worker) {
-  const file = treeOf(tree).runtime(worker.window.replace(/\.js$/, "/device.js"));
+  const file = treeOf(tree).runtime(worker.window.replace(/\.js$/, "/device.js"), { maybe: true });
   if (!fs.existsSync(file)) return new Set();
   const program = parse(fs.readFileSync(file, "utf8"), { sourceType: "module" }).program;
   const shared = program.body.find((s) => s.type === "VariableDeclaration" && s.declarations[0].id.name === worker.object);

@@ -43,7 +43,7 @@ function unrotated(z, signs, block) {
 
 let checked = 0;
 for (const [file, wide] of [["simdkernel_plain.wasm", false], ["simdkernel_plain64.wasm", true]]) {
-  if (!fs.existsSync(built(file))) throw new Error(`no ${built(file)}: make kernels`);
+  if (!fs.existsSync(built(file, { maybe: true }))) throw new Error(`no ${built(file, { maybe: true })}: make kernels`);
   let memory;
   try {
     memory = new WebAssembly.Memory(wide ? { initial: 8n, address: "i64" } : { initial: 8 });

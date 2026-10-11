@@ -1066,7 +1066,7 @@ const server = http.createServer((req, res) => {
   // (the runtime's files and the built kernels, each from where this tree keeps them: tests/tree.mjs)
   const kinds = { "/runtime/": runtime, "/built/": built };
   const kind = Object.keys(kinds).find((prefix) => pathname.startsWith(prefix));
-  const file = kind ? kinds[kind](pathname.slice(kind.length)) : "";
+  const file = kind ? kinds[kind](pathname.slice(kind.length), { maybe: true }) : "";
   if (!kind || !fs.existsSync(file)) {
     res.writeHead(404, headers);
     return res.end();

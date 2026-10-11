@@ -17,8 +17,8 @@ import { RULE, treeOf } from "./tree.mjs";
 const tree = treeOf(), where = `${tree.folders.python}/`;
 const there = fs.readdirSync(tree.python(), { recursive: true }).map((name) => name.split(path.sep).join("/"))
   .filter((name) => name.endsWith(".py") && !name.includes("__pycache__")).sort();
-const walked = Object.fromEntries(Object.keys(RULE.packages.modules).map((module) => [module, tree.pythonFiles(module)]));
-const listing = fs.existsSync(tree.runtime("python.js"));
+const walked = Object.fromEntries(Object.keys(RULE.packages).map((module) => [module, tree.pythonFiles(module)]));
+const listing = fs.existsSync(tree.runtime("python.js", { maybe: true }));
 const PYTHON = listing ? (await import(tree.runtimeUrl("python.js"))).PYTHON : walked;
 const listed = Object.values(PYTHON).flat();
 assert.deepEqual([...listed].sort(), there, listing ? `python.js's list is not the .py files of ${where}` : `a .py file of ${where} is no module's (a window, or a file of its package's folder: tests/tree.json)`);

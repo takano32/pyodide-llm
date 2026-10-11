@@ -105,7 +105,7 @@ for (const file of files) {
 let stale = 0;
 const kept = treeOf().folders.built;
 for (const file of fs.readdirSync(mine)) {
-  const built = treeOf().built(file);
+  const built = treeOf().built(file, { maybe: true });
   if (!fs.existsSync(built) || !fs.readFileSync(built).equals(fs.readFileSync(path.join(mine, file)))) {
     console.log(`${kept}/${file}: ${fs.existsSync(built) ? "is not what this tree builds" : "is not there"}: make kernels (and is every file of kernels/ in the Makefile's rule?)`);
     stale += 1;

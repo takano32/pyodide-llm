@@ -1,9 +1,11 @@
 {
-  "about": "Where in a tree what is (T367.1). tests/tree.mjs and tests/tree.py both read this and nothing else knows it. A kind is in the first of its folders that holds its mark; a tree where two of them do is half moved and refused.",
-  "runtime": { "what": "the JavaScript a browser runs", "mark": "worker.js", "folders": ["src/runtime", "public"] },
-  "python": { "what": "the Python sources Pyodide is given", "mark": "llama2_numpy.py", "folders": ["src/python", "public"] },
-  "built": { "what": "what `make kernels` builds, beside the runtime", "beside": { "src/runtime": "src/runtime/built", "public": "public" } },
-  "served": { "what": "what is served as it is (coi.js, coi-test/, models/)", "folder": "public" },
-  "bundled": { "what": "the folders of the runtime whose files a bundler links (static imports); elsewhere a file is fetched as it is and reads its neighbours with its own ?v=", "folders": ["src/runtime"] },
-  "packages": { "what": "a Python module the worker imports is its window (<module>.py) and every .py of its package's folder", "modules": { "llama2_numpy": "engine", "llama2_convert": "convert" } }
+  "about": "What tests/tree.mjs and tests/tree.py look for in a tree (T367.1). No folder of the project is written here: a kind of file is where its anchor is found, by looking at the tree that is asked about.",
+  "anchors": {
+    "runtime": "forward.js",
+    "python": "llama2_numpy.py",
+    "built": "simdkernel.so",
+    "served": "coi.js"
+  },
+  "skip": ["node_modules", "dist", ".tmp", ".git", ".claude", "__pycache__", ".venv", ".astro"],
+  "packages": { "llama2_numpy": "engine", "llama2_convert": "convert" }
 }

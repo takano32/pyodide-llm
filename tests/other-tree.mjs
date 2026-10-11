@@ -34,7 +34,7 @@ export function otherTree(before = "origin/main") {
   // what `make models` built here is in no commit (the models' files at the root and the site's parts, in what is served as it is: models/): the other tree
   // reads this one's. Without them its tests that need a model of the site are skipped, and compared with nothing.
   // (Not the built kernels: no check here runs them, and they are the working tree's.)
-  const models = path.relative(root, served("models")).split(path.sep).join("/");
+  const models = path.relative(root, served("models", { maybe: true })).split(path.sep).join("/");
   const built = git("ls-files", "--others", "--ignored", "--exclude-standard", "--directory").toString().trim().split("\n")
     .map((name) => name.replace(/\/$/, "")).filter((name) => name === models || (!name.includes("/") && !name.startsWith(".") &&
       !["node_modules", "dist", "__pycache__"].includes(name)));

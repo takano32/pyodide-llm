@@ -738,7 +738,7 @@ const ok = (line) => {
 {
   const { MODELS } = await import("../src/models.js");
   const { ROUNDS, FULL_ROUNDS, roundsHere } = await import("../src/bench.js");
-  const PAGE = 65536, folder = pathToFileURL(served("models/"));
+  const PAGE = 65536, folder = pathToFileURL(served("models/", { maybe: true }));
   const headerOf = (entry) => {
     const part = new URL(`${entry.checkpoint}.000`, folder);
     if (!fs.existsSync(part)) return undefined;
@@ -749,7 +749,7 @@ const ok = (line) => {
   };
   const sited = MODELS.filter((one) => !one.hf && one.checkpoint), headers = sited.map(headerOf);
   if (headers.every((header) => !header)) {
-    console.log(`skipped: every load of the benchmark's model section fits its memory (no built models in ${served("models")})`);
+    console.log(`skipped: every load of the benchmark's model section fits its memory (no built models in ${served("models", { maybe: true })})`);
   } else {
     context.stand.real = forward;
     context.crossOriginIsolated = true;
