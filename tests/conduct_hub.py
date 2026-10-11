@@ -311,15 +311,19 @@ def sound(told, conversion, ended, hf, hub):
     late = [request[2] for request in told if request[1:3] in ((place, "tokenizer_config.json"), (place, "chat_template.jinja")) or request[0] == "bytes"]
     assert late[:1] in ([], ["tokenizer_config.json"]) and late.count("chat_template.jinja") <= 1
     assert "chat_template.jinja" not in late or late.index("chat_template.jinja") == 1
-    # a head is asked for from the first byte of its file, in pieces that grow, and nothing of the weights elsewhere
+    # a head is asked for from the first byte of its file, and each further piece of it from where the bytes in hand
+    # end (T374.3: the end of the piece before, or the file's where that came first): no byte twice, no piece that
+    # begins at the file's end or past it (a server refuses that one), and nothing of the weights elsewhere
     heads = {}
     for at, request in enumerate(told):
         if request[0] == "range":
-            assert request[1] == "weights" and request[3] == 0 and request[4] > heads.get(request[2], 0)
-            heads[request[2]] = request[4]
+            file = hub.whole("weights", request[2])
+            assert request[1] == "weights" and request[3] == heads.get(request[2], 0) < request[4]
+            assert request[3] == 0 or request[3] < len(file)
+            heads[request[2]] = request[4] if file is None else min(request[4], len(file))
         if request[0] == "size":
-            # only of a file whose range was just answered (without its size)
-            assert told[at - 1][:3] == ("range", *request[1:])
+            # only of a file whose first range was just answered (without its size)
+            assert told[at - 1][:4] == ("range", *request[1:], 0)
     # the streams come last, each of a file whose head was read, one after another: the progress counts across them
     streams = [request for request in told if request[0] == "stream"]
     assert told[len(told) - len(streams):] == streams and len({request[2] for request in streams}) == len(streams)
@@ -332,6 +336,10 @@ def sound(told, conversion, ended, hf, hub):
         # one file: everything after its head, to its last byte; the head counts as arrived
         _, _, name, begin, end, was, total = streams[0]
         assert was == begin and end == total == len(hub.whole("weights", name))
+        # T374.3. A GGUF: from where the pieces of its head end, which with the stream are the file, once (or from
+        # where its tensors begin, where the head was read whole before the padding after it was: less than 32 bytes
+        # by default, and no tensor's). A safetensors file: from the end of its header, within what was read of it
+        assert heads[name] <= begin if vocabulary or hf["weights"].endswith(".gguf") else begin <= heads[name]
     # the ends: the streams are asked for only by a conversion that was made, and all of them before it is done
     if ended == "converted":
         assert conversion is not None and streams

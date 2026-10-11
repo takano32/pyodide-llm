@@ -2,11 +2,11 @@
 # order the worker asks for them, driven here by a dictionary (tests/conduct_hub.py's Hub): no browser, no worker, no
 # Pyodide. And (T374.2.2) by a folder of the visitor's disk (Folder), which the same conduct converts.
 #
-# Held to four things. The requests of the worker itself, for the 19 repositories and the 10 folders of
+# Held to four things. The requests of the worker itself, for the 20 repositories and the 10 folders of
 # tests/worker-fetches-check.mjs (tests/fixtures/conversion-cases.json is that check's record of them,
 # conversion-fetches.json what was asked): line by line, with the converter's stand-in of that check. A conversion made
 # with no conduct at all (direct(): the files read whole, a Conversion fed in one piece), for the real converter on real
-# files of the same 29 kinds: the checkpoint, the options and the tokenizer.bin. What every conduct's requests must be
+# files of the same 30 kinds: the checkpoint, the options and the tokenizer.bin. What every conduct's requests must be
 # whatever the repository (sound()), for made-up repositories by the hundred: there is no second opinion on the order
 # of their requests since T374.2.3 (the worker's old ladder, written out in Python as today(), went with it). And what
 # the requests are, one at a time, with a stand-in that converts nothing.
@@ -74,8 +74,8 @@ def directly(hub, hf, making):
 
 # ---- the worker's requests, line by line
 def test_the_cases_are_the_ones_the_worker_was_asked_for():
-    assert [case["name"] for case in EVERY_CASE] == list(FETCHES) and len(NAMES) == 19
-    assert sum(len(FETCHES[name]["requests"]) for name in NAMES) == 161
+    assert [case["name"] for case in EVERY_CASE] == list(FETCHES) and len(NAMES) == 20
+    assert sum(len(FETCHES[name]["requests"]) for name in NAMES) == 162
 
 
 def expected_of(name):
@@ -86,7 +86,7 @@ def expected_of(name):
 
 @pytest.mark.parametrize("case", CASES, ids=NAMES)
 def test_a_conduct_asks_what_the_worker_asks(case, monkeypatch):
-    """The 19 repositories of worker-fetches-check.mjs: the same requests in the same order (the file, the range), the
+    """The 20 repositories of worker-fetches-check.mjs: the same requests in the same order (the file, the range), the
     same things handed to the converter, the same end. The hub is given what only the answerer decides: how the line
     cuts a stream into parts, and that a server does not say the size of a file."""
     stand_in = StandIn().into(monkeypatch)
@@ -99,7 +99,7 @@ def test_a_conduct_asks_what_the_worker_asks(case, monkeypatch):
     assert ended == end
 
 
-# ---- the real converter, on real files of the same 19 kinds
+# ---- the real converter, on real files of the same 20 kinds
 CHATML = "{% for message in messages %}<|im_start|>{{ message['role'] }}\n{{ message['content'] }}<|im_end|>\n{% endfor %}" \
          "{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}"
 ALPACA = "{% for message in messages %}### Instruction:\n{{ message['content'] }}\n{% endfor %}### Response:\n"
@@ -166,19 +166,29 @@ def gguf_base(file):
     return llama2_convert.gguf_read(file)[2]
 
 
+def readable(head):
+    """Whether these first bytes of a GGUF hold all of its head."""
+    try:
+        return bool(llama2_convert.gguf_read(head))
+    except Incomplete:
+        return False
+
+
 @pytest.mark.parametrize("case", CASES, ids=NAMES)
 def test_a_conduct_converts_what_the_worker_converts(case, monkeypatch):
     """The real converter and real files: the checkpoint, the options and the tokenizer.bin are those of a conversion
     made with no conduct (direct(): the files whole, fed in one piece), and it ends as that one ends; the files are
     asked for in the order of the fixture, and the requests are sound(). Scaled to files of a few hundred kilobytes:
     the parts of the line are cut by 2 KiB where the worker's are cut by a MiB, and the first piece of a head is as
-    short as the case needs (a header past it; a GGUF's head read at the second try, and at the third)."""
+    short as the case needs (a header past it; a GGUF's head read with its second piece, and with its third).
+    T374.3: what a GGUF's head came with is fed by the conduct, so the checkpoint is direct()'s only where every byte
+    of the tensors reached the conversion once, in the order of the file, from the two hands that feed it."""
     name, files = case["name"], real_files(case)
     hf, making = listed(case)
     making["dtype"] = making["dtype"] if isinstance(making["dtype"], str) else "int8"
     weights = next((file for path, file in files.items() if path.endswith(".gguf")), None)
     head = 128 if "past the first 512 KiB" in name else 512 * 1024 if not weights or "small head" in name \
-        else gguf_base(weights) // 8 if "alone" in name else gguf_base(weights) // 40
+        else gguf_base(weights) // 8 if "3 MiB" in name else gguf_base(weights) // 40
     monkeypatch.setattr(conducting, "HEAD", head)
     monkeypatch.setattr(conducting, "GGUF_HEAD", 4 * head)
     line = dict(unsaid=case["line"].get("unsaid", False), **cut(case["line"], unit=2048))
@@ -188,7 +198,13 @@ def test_a_conduct_converts_what_the_worker_converts(case, monkeypatch):
     assert end == ended and (ended == "converted") == (expected_of(name)[2] == "converted")
     sound(told, got, end, hf, mine)
     # and they are the fixture's but for the sizes: the same files of the same repositories, one after another
-    assert in_turn(mine.asked) == in_turn(FETCHES[name]["requests"])
+    turns = in_turn(FETCHES[name]["requests"])
+    if "vocabulary of another" in name:
+        # (the made-up GGUF comes whole with the third piece of its head, which ends past the file; the real one,
+        # seven times as long as its head, is streamed after that piece)
+        assert turns.count(turns[1]) == 1 and turns[1].endswith(".gguf")
+        turns.append(turns[1])
+    assert in_turn(mine.asked) == turns
     if expected is None:
         assert got is None
         return
@@ -207,10 +223,54 @@ def test_a_conduct_converts_what_the_worker_converts(case, monkeypatch):
     asked = "\n".join(mine.asked)
     if "MiB parts" in name:
         assert len([line for line in mine.asked if "model.safetensors bytes=" in line]) > 5
+    ranges = [request for request in told if request[0] == "range"]
     if "past the first" in name:
-        assert asked.count("model.safetensors bytes=0-") == 2
+        assert [request[3] for request in ranges] == [0, 128] and asked.count("model.safetensors bytes=0-") == 1
     if weights:
-        assert asked.count(".gguf bytes=0-") == (1 if "small head" in name else 2 if "alone" in name else 3)
+        # one piece of the head, two, three: each from where the last ended (sound()), and the first alone from byte 0
+        assert len(ranges) == (1 if "small head" in name else 2 if "3 MiB" in name else 3) and asked.count(".gguf bytes=0-") == 1
+        begin, end = told[-1][3:5]
+        if "small head" in name:
+            # all of the file came with its head: nothing is left to stream, and nothing more is fetched
+            assert begin == end == len(weights) and len(mine.asked) == 1
+        else:
+            # tensors came with the head, which the conduct fed: the stream begins past them, and something is left for it
+            assert gguf_base(weights) < begin < end == len(weights)
+
+
+@pytest.mark.parametrize("name", ["a GGUF alone (a head of 3 MiB)", "a GGUF with the vocabulary of another repository"])
+def test_a_real_gguf_converts_the_same_wherever_the_pieces_of_its_head_end(name, monkeypatch):
+    """T374.3, the real converter: the first piece ends before the head does, at its end, a byte past it, in the
+    tensors, at the file's end and past it; what came with the head is fed in one piece or in many; the server says
+    the size of the file or does not. The checkpoint, the options and the tokenizer.bin are direct()'s every time,
+    and no byte of the GGUF is asked for twice."""
+    case = next(case for case in CASES if case["name"] == name)
+    files = real_files(case)
+    hf, making = listed(case)
+    making["dtype"] = "int8"
+    weights = next(file for path, file in files.items() if path.endswith(".gguf"))
+    base, size = gguf_base(weights), len(weights)
+    expected = direct(Hub(files, hf).whole, hf, THREE, **making)
+    for first in (64, base // 40, base // 8, base - 1, base, base + 1, base + 4096, size - 1, size, size + 100, 2 * MiB):
+        for ahead, unsaid in ((1000, False), (16 * MiB, True)):
+            monkeypatch.setattr(conducting, "GGUF_HEAD", first)
+            monkeypatch.setattr(conducting, "AHEAD", ahead)
+            hub, told = Hub(files, hf, unsaid=unsaid, **cut({}, unit=2048)), []
+            end, got = conducted(hub, hf, making, told)
+            assert end == "converted", (first, end)
+            sound(told, got, end, hf, hub)
+            assert bytes(got.checkpoint) == bytes(expected.checkpoint) and got.options == expected.options
+            assert bytes(got.tokenizer) == bytes(expected.tokenizer)
+            asked = sorted(tuple(int(edge) for edge in line.split("bytes=")[1].split("-")) for line in hub.asked if ".gguf bytes=" in line)
+            # (one after another, but for the padding before the tensors where a piece ended in it: never an overlap)
+            assert asked[0][0] == 0 and all(before[1] + 1 == after[0] or before[1] + 1 < after[0] == base for before, after in zip(asked, asked[1:])), (first, asked)
+            assert sum(1 for line in hub.asked if line.startswith("HEAD ")) == unsaid
+            # the stream begins where the bytes in hand end. (A head is read whole a little before the tensors begin,
+            # which is at a multiple of 32: a piece that ends in that padding is the last, and the stream begins at base)
+            content = next(length for length in range(base - 32, base + 1) if readable(weights[:length]))
+            assert base - 32 < content < base
+            hand = min(next(first * 4 ** n for n in range(9) if first * 4 ** n >= content), size)
+            assert told[-1][3] == max(hand, base) and (first != base - 1 or hand == base - 1)
 
 
 # ---- a folder of the visitor's disk (T374.2.2): the same conduct, answered from the folder's files by their names
@@ -348,7 +408,7 @@ def test_the_requests_of_made_up_repositories_are_sound(monkeypatch):
     second opinion on the order of the requests is gone with the ladder. The 29 cases of the fixture and the tests of
     one request at a time below are what holds the order now.)"""
     rng = random.Random(374)
-    ends = {}
+    ends, came = {}, 0
     for _ in range(1500):
         head, hf, files, line = made_up(rng)
         monkeypatch.setattr(conducting, "HEAD", head)
@@ -368,10 +428,19 @@ def test_the_requests_of_made_up_repositories_are_sound(monkeypatch):
         # after its end, whichever it was, nothing more is asked
         with pytest.raises(StopIteration):
             steps.send(None)
-        streamed = sum(end - begin for _, _, _, begin, end, _, _ in (request for request in told if request[0] == "stream"))
+        streams = [request for request in told if request[0] == "stream"]
+        streamed = sum(end - begin for _, _, _, begin, end, _, _ in streams)
         if conversion is not None:
-            # every byte the streams name went to the converter, and they are the bytes of its tensors
-            assert stand_in.handed[-1].startswith(f"fed {streamed} bytes in ") and stand_in.handed[-1].endswith("; finish()"), said
+            # every byte the streams name went to the converter, and before them what came with the head of a GGUF
+            # (T374.3: from where its tensors begin to where its one stream does): they are the bytes of its tensors
+            ahead = streams[0][3] - conversion.base if hf["weights"].endswith(".gguf") else 0
+            if hf["weights"].endswith(".gguf"):
+                # (the stand-in's head ends where its tensors begin: the stream begins where the last piece of the
+                # head ends, or the file)
+                assert streams[0][3] == min([request[4] for request in told if request[0] == "range"][-1], streams[0][4]), said
+            assert 0 <= ahead and ahead + streamed == (streams[0][6] - conversion.base if ahead else streamed), said
+            assert stand_in.handed[-1].startswith(f"fed {ahead + streamed} bytes in ") and stand_in.handed[-1].endswith("; finish()"), said
+            came += bool(ahead)
             assert "NOT" not in stand_in.handed[-1], said
         else:
             assert not any("finish()" in line for line in stand_in.handed), said
@@ -381,6 +450,7 @@ def test_the_requests_of_made_up_repositories_are_sound(monkeypatch):
     # every way to end was among them, many times
     assert set(ends) == {"converted", "a file is not there", "refused", "no safetensors file", "the head of a GGUF never ends"}, ends
     assert min(ends.values()) >= 20, ends
+    assert came >= 50, came  # (GGUFs whose tensors came with the head, some or all of them)
 
 
 # ---- the requests, one at a time, with a stand-in that converts nothing
@@ -571,15 +641,50 @@ def test_a_file_that_is_no_safetensors_file_is_looked_for_in_the_index_and_refus
         assert "not a safetensors" not in str(refused.value) and hub.asked[-1].endswith("tokenizer.json")
 
 
-def test_the_header_of_a_safetensors_file_past_its_first_piece_is_asked_for_from_the_start(monkeypatch):
+def test_the_header_of_a_safetensors_file_past_its_first_piece_is_asked_for_from_where_that_ended(monkeypatch):
+    """T374.3: the rest of the header alone, joined to what is in hand."""
     told, last, stand_in = requests_of(repository(weights=safetensors(10, header=600_000)), monkeypatch=monkeypatch)
-    assert told[1:3] == [("range", "weights", "model.safetensors", 0, 524288), ("range", "weights", "model.safetensors", 0, 600_008)]
+    assert told[1:3] == [("range", "weights", "model.safetensors", 0, 524288), ("range", "weights", "model.safetensors", 524288, 600_008)]
     assert "a header of 600000 characters, base 600008, start 600008" in stand_in.handed[0]
+    assert told[-1] == ("stream", "weights", "model.safetensors", 600_008, 600_018, 600_008, 600_018) and last[0] == "done"
     # exactly the first piece: not asked for twice
     told, _, _ = requests_of(repository(weights=safetensors(10, header=524288 - 8)), monkeypatch=monkeypatch)
     assert [request[0] for request in told[1:3]] == ["range", "text"]
     told, _, _ = requests_of(repository(weights=safetensors(10, header=524288 - 7)), monkeypatch=monkeypatch)
-    assert told[2] == ("range", "weights", "model.safetensors", 0, 524289)
+    assert told[2] == ("range", "weights", "model.safetensors", 524288, 524289)
+
+
+def test_the_two_pieces_of_a_safetensors_header_are_joined_as_they_lie_in_the_file(monkeypatch):
+    """The header the converter is handed is the file's, whatever the first piece held of it: text that says where
+    each character stands, cut at every place."""
+    header = "".join(f"{at:07}," for at in range(0, 4000, 8))
+    file = File(struct.pack("<Q", len(header)) + header.encode() + b"tensors!")
+    for first in (8, 9, 100, 3999, 4007, 4008, 4016, 5000):
+        monkeypatch.setattr(conducting, "HEAD", first)
+        got = []
+        monkeypatch.setattr(conducting, "Conversion", lambda header, base, *more, **given: got.append((header, base)) or 1 / 0)
+        hub = Hub(repository(weights=file), HF)
+        with pytest.raises(ZeroDivisionError):
+            answered(hub, conduct(HF))
+        assert got == [(header, 4008)], first
+        pieces = [line.split("bytes=")[1] for line in hub.asked if "bytes=" in line]
+        assert pieces == ([f"0-{first - 1}", f"{first}-4007"] if first < 4008 else [f"0-{first - 1}"])
+
+
+def test_a_safetensors_file_that_ends_before_the_header_it_says_is_not_asked_past_its_end(monkeypatch):
+    """A range that begins at the end of a file is refused by a server (416), in other words than the converter's of
+    a header cut short: what there is of the file is in hand, and nothing more is asked of it."""
+    StandIn().into(monkeypatch)
+    for size in (100, 524288):
+        hub = Hub(repository(weights=File(struct.pack("<Q", 600_000) + b"{\"__metadata__\":", size)), HF)
+        with pytest.raises(ValueError):  # (the stand-in's reader of the JSON; the converter's own likewise)
+            answered(hub, conduct(HF))
+        assert [line for line in hub.asked if "model.safetensors" in line] == ["GET owner/model@0123456 model.safetensors bytes=0-524287"]
+    # where the file goes on, the rest is asked for, as far as the header says: the file may end before that
+    hub = Hub(repository(weights=File(struct.pack("<Q", 600_000) + b"{\"__metadata__\":", 524289)), HF)
+    with pytest.raises(ValueError):
+        answered(hub, conduct(HF))
+    assert hub.asked[2] == "GET owner/model@0123456 model.safetensors bytes=524288-600007"
 
 
 def test_the_size_is_asked_for_where_a_range_did_not_say_it_and_only_there(monkeypatch):
@@ -600,11 +705,12 @@ def test_the_size_is_asked_for_where_a_range_did_not_say_it_and_only_there(monke
         stream = steps.send(b"a tokenizer")
         assert stream[:7] == ("stream", "weights", "model.safetensors", 308, 318, 308, 318) and callable(stream[7])
         assert all(type(value) is int for value in stream[3:7])  # (and goes back as an integer: a place in a file)
-    # a GGUF's head: after every piece, as the worker asked (T381 is T374.3's)
+    # a GGUF's head: after its first piece alone (T374.3: after every piece until then)
     hf = {**HF, "weights": "model.gguf"}
-    hub, told = Hub(repository({"model.gguf": gguf(3 * MiB, 100)}), hf, unsaid=True), []
-    answered(hub, conduct(hf), told)
-    assert [request[0] for request in told] == ["range", "size", "range", "size", "stream"]
+    for base, kinds in ((3 * MiB, ["range", "size", "range", "stream"]), (9 * MiB, ["range", "size", "range", "range", "stream"])):
+        hub, told = Hub(repository({"model.gguf": gguf(base, 100)}), hf, unsaid=True), []
+        answered(hub, conduct(hf), told)
+        assert [request[0] for request in told] == kinds
 
 
 def test_shards_are_fed_one_after_another_and_the_progress_counts_across_them(monkeypatch):
@@ -647,35 +753,206 @@ def test_the_shards_of_an_index_are_in_the_order_of_their_names():
 GGUF_HF = {"repo": "maker/model-GGUF", "revision": REVISION, "weights": "model.Q8_0.gguf"}
 
 
-def test_a_ggufs_head_is_asked_for_in_growing_pieces_from_its_start(monkeypatch):
-    for base, pieces in ((1000, [2]), (2 * MiB, [2]), (2 * MiB + 1, [2, 8]), (8 * MiB + 1, [2, 8, 32]), (32 * MiB + 1, [2, 8, 32, 128])):
-        told, last, stand_in = requests_of({"maker/model-GGUF/model.Q8_0.gguf": gguf(base, 700)}, GGUF_HF, monkeypatch)
-        assert [request for request in told if request[0] == "range"] == [("range", "weights", "model.Q8_0.gguf", 0, piece * MiB) for piece in pieces]
-        assert [request for request in told if request[0] == "stream"] == [("stream", "weights", "model.Q8_0.gguf", base, base + 700, base, base + 700)]
-        assert last[0] == "done" and last[1].base == base
-        # nothing but the GGUF is asked for
-        assert {request[2] for request in told if len(request) > 2} == {"model.Q8_0.gguf"}
+def fed_to(monkeypatch):
+    """The stand-in, whose conversion also writes down every piece it is fed: (the stand-in, [the pieces, as bytes])."""
+    stand_in, pieces = StandIn().into(monkeypatch), []
+
+    class Fed(stand_in.Conversion):
+        def feed(self, data):
+            pieces.append(bytes(data))
+            return super().feed(data)
+
+    monkeypatch.setattr(conducting, "Conversion", Fed)
+    return stand_in, pieces
+
+
+def same(pieces, data):
+    """Whether the pieces, one after another, are data. (A function, so that a failure does not have pytest write out
+    how hundreds of kilobytes differ: that took gigabytes.)"""
+    return b"".join(pieces) == data
+
+
+def marked(base, data):
+    """A GGUF of the stand-in's whose tensors say where each of their bytes stands in the file."""
+    tensors = b"".join(struct.pack("<I", at) for at in range(base, base + data, 4))
+    return File(b"GGUF" + struct.pack("<Q", base) + bytes(base - 12) + tensors)
+
+
+def test_a_ggufs_head_is_asked_for_in_pieces_that_end_ever_further_each_from_where_the_last_ended(monkeypatch):
+    """T374.3: 2 MiB, then what is missing of 8, of 32, of 128: no byte twice. The stream begins where the last piece
+    ends (or the file, where that came first), and so does the count of what has arrived."""
+    for base, ends in ((1000, [2]), (2 * MiB, [2]), (2 * MiB + 1, [2, 8]), (8 * MiB + 1, [2, 8, 32]), (32 * MiB + 1, [2, 8, 32, 128])):
+        for data in (700, 200 * MiB):
+            told, last, stand_in = requests_of({"maker/model-GGUF/model.Q8_0.gguf": gguf(base, data)}, GGUF_HF, monkeypatch)
+            begins = [0, *ends[:-1]]
+            assert [request for request in told if request[0] == "range"] == \
+                [("range", "weights", "model.Q8_0.gguf", begin * MiB, end * MiB) for begin, end in zip(begins, ends)]
+            size = base + data
+            hand = min(ends[-1] * MiB, size)
+            assert [request for request in told if request[0] == "stream"] == [("stream", "weights", "model.Q8_0.gguf", hand, size, hand, size)]
+            assert last[0] == "done" and last[1].base == base and last[1].fed == data
+            # the converter was handed the beginning joined, as long as what was asked for of it
+            assert f"the first {hand} bytes)" in stand_in.handed[-2]
+            # nothing but the GGUF is asked for
+            assert {request[2] for request in told if len(request) > 2} == {"model.Q8_0.gguf"}
+
+
+@pytest.mark.parametrize("base, data, first", [
+    (1000, 5000, 4096),     # the head and some tensors with the first piece, the rest streamed
+    (1000, 5000, 1000),     # the first piece ends where the head does: nothing in hand, all of it streamed
+    (1000, 5000, 1004),     # four bytes of the tensors in hand
+    (5000, 5000, 4096),     # a second piece (to 16384): the file ends within it
+    (5000, 60000, 4096),    # a second piece, and a stream after it
+    (17000, 60000, 4096),   # a third (to 65536)
+    (17000, 600000, 4096),  # and a stream after the third
+    (1000, 5000, 6000),     # the file ends exactly where the first piece does
+    (1000, 5000, 60000),    # a file shorter than the first piece
+    (1000, 0, 4096),        # a file that ends where its head does: no tensors
+    (4096, 0, 4096),        # and exactly at the first piece's end
+    (5000, 0, 4096),        # and after a second piece
+])
+def test_the_tensors_that_came_with_a_ggufs_head_are_fed_and_not_asked_for_again(base, data, first, monkeypatch):
+    """T374.3: every byte of the tensors reaches the conversion once and in the order of the file: first what came
+    with the head, from the conduct, then the stream's parts, from whoever answers. No byte of the file is asked for
+    twice, and none past what the pieces of the head and one stream cover."""
+    monkeypatch.setattr(conducting, "GGUF_HEAD", first)
+    monkeypatch.setattr(conducting, "AHEAD", 1000)
+    file = marked(base, data)
+    for hf, files in ((GGUF_HF, {}), ({**GGUF_HF, "vocabulary": {"repo": "owner/model", "revision": REVISION, "tokenizer": "tokenizer.json"}},
+                                      repository(without=["model.safetensors"]))):
+        stand_in, pieces = fed_to(monkeypatch)
+        hub, told = Hub({"maker/model-GGUF/model.Q8_0.gguf": file, **files}, hf, first=400, rest=400), []
+        last = answered(hub, conduct(hf), told)
+        assert last[0] == "done" and same(pieces, file[base:])
+        ranges = [request[3:5] for request in told if request[0] == "range"]
+        hand = min(ranges[-1][1], file.size)
+        assert ranges[0][0] == 0 and all(before[1] == after[0] for before, after in zip(ranges, ranges[1:]))
+        # the stream is asked for even where nothing is left of the file (whether there is anything to fetch is the
+        # answerer's to see), from where the bytes in hand end, which count as arrived
+        assert told[-1] == ("stream", "weights", "model.Q8_0.gguf", hand, file.size, hand, file.size)
+        # what the conduct fed: pieces of AHEAD at most, nothing where the head came alone; then the parts of the line
+        mine = -(-(hand - base) // 1000)
+        assert [len(piece) for piece in pieces[:mine]] == [min(1000, hand - base - at) for at in range(0, hand - base, 1000)]
+        assert all(len(piece) <= 400 for piece in pieces[mine:]) and len(pieces) == mine + -(-(file.size - hand) // 400)
+        # of the file's bytes, the hub was asked for each once
+        asked = sorted(tuple(int(edge) for edge in line.split("bytes=")[1].split("-")) for line in hub.asked if ".gguf bytes=" in line)
+        assert asked[0][0] == 0 and all(before[1] + 1 == after[0] for before, after in zip(asked, asked[1:]))
+        assert min(asked[-1][1] + 1, file.size) == file.size
+        sound(told, last[1], "converted", hf, hub)
+
+
+def test_a_conversion_made_only_after_the_tokenizer_is_fed_what_came_with_the_head_before_the_stream(monkeypatch):
+    """A GGUF with another repository's vocabulary: its beginning is in hand while the tokenizer is asked for, and what
+    it holds of the tensors goes to the conversion as soon as there is one: before the stream is asked for."""
+    hf = {**GGUF_HF, "vocabulary": {"repo": "owner/model", "revision": REVISION, "tokenizer": ["tokenizer.json", "spiece.model"]}}
+    stand_in, pieces = fed_to(monkeypatch)
+    hub = Hub({"maker/model-GGUF/model.Q8_0.gguf": marked(1000, 3 * MiB), **repository({"tokenizer.json": "unreadable", "spiece.model": "a model"})}, hf)
+    steps = conduct(hf)
+    request = next(steps)
+    while request[0] != "stream":
+        assert pieces == []
+        request = steps.send(answer(hub, request))
+    assert [len(piece) for piece in pieces] == [2 * MiB - 1000] and request[3:7] == (2 * MiB, 3 * MiB + 1000, 2 * MiB, 3 * MiB + 1000)
+    assert stand_in.handed[1].endswith(": refused") and "spiece.model" in stand_in.handed[2]
+
+
+def test_what_came_with_a_head_is_not_kept_once_it_is_fed(monkeypatch):
+    """The beginning of a GGUF (as much as 32 MiB) is let go of before the stream is asked for: nothing of the conduct
+    holds it while the file is streamed."""
+    import gc
+    import weakref
+
+    class Kept(bytearray):  # (bytes that a weak reference can be made to)
+        pass
+
+    held = []
+
+    def joined(data, more):
+        held.append(Kept(bytes(data) + bytes(more)))
+        return held[-1]
+
+    monkeypatch.setattr(conducting, "joined", joined)
+    StandIn().into(monkeypatch)
+    hub = Hub({"maker/model-GGUF/model.Q8_0.gguf": gguf(3 * MiB, 20 * MiB)}, GGUF_HF)
+    steps = conduct(GGUF_HF)
+    request = next(steps)
+    while request[0] != "stream":
+        request = steps.send(answer(hub, request))
+    alive = [weakref.ref(data) for data in held]
+    assert len(held) == 2 and len(held[-1]) == 8 * MiB
+    del held[:]
+    gc.disable()
+    try:
+        assert [data() for data in alive] == [None, None]
+    finally:
+        gc.enable()
+    steps.close()
+
+
+def test_a_server_that_answers_a_piece_short_is_asked_from_where_its_answer_ended(monkeypatch):
+    """A piece of a head with fewer bytes than were asked for, of a file that goes on: the next piece begins where
+    the bytes in hand end, and the stream after them. Nothing is skipped and nothing asked for twice."""
+    file = marked(40000, 30000)
+
+    class Short(Hub):
+        def range(self, where, name, begin, end):
+            data, size = super().range(where, name, begin, end)
+            return data[:len(data) * 2 // 3], size
+
+    monkeypatch.setattr(conducting, "GGUF_HEAD", 4096)
+    stand_in, pieces = fed_to(monkeypatch)
+    hub, told = Short({"maker/model-GGUF/model.Q8_0.gguf": file}, GGUF_HF, first=5000, rest=5000), []
+    last = answered(hub, conduct(GGUF_HF), told)
+    assert last[0] == "done" and same(pieces, file[40000:])
+    # (two thirds of 4096; then of what is missing of 16384; of 65536: 47634 in hand, past the head's 40000)
+    assert [request[3:5] for request in told if request[0] == "range"] == [(0, 4096), (2730, 16384), (11832, 65536)]
+    assert told[-1][3:7] == (47634, 70000, 47634, 70000)
 
 
 def test_a_gguf_whose_head_never_ends_is_the_converters_to_refuse(monkeypatch):
-    """The file ends before its head does: Incomplete for good, once a piece as long as the file was asked for."""
+    """The file ends before its head does: Incomplete for good, once a piece that ends at the file's end or past it
+    was asked for."""
     StandIn().into(monkeypatch)
     hub = Hub({"maker/model-GGUF/model.Q8_0.gguf": File(b"GGUF" + struct.pack("<Q", 20 * MiB), 3 * MiB)}, GGUF_HF)
     with pytest.raises(Incomplete):
         answered(hub, conduct(GGUF_HF))
-    assert [line.split("bytes=")[1] for line in hub.asked] == ["0-2097151", "0-8388607"]
+    assert [line.split("bytes=")[1] for line in hub.asked] == ["0-2097151", "2097152-8388607"]
     # and a GGUF that is not there
     assert answered(Hub({}, GGUF_HF), conduct(GGUF_HF)) == ("missing", "weights", "model.Q8_0.gguf")
+    # or that is there no more when the second piece of its head is asked for
+    hub = Hub({"maker/model-GGUF/model.Q8_0.gguf": gguf(3 * MiB, 10)}, GGUF_HF)
+    steps = conduct(GGUF_HF)
+    assert steps.send(answer(hub, next(steps)))[:5] == ("range", "weights", "model.Q8_0.gguf", 2 * MiB, 8 * MiB)
+    assert steps.send(None) == ("missing", "weights", "model.Q8_0.gguf")
 
 
 def test_a_ggufs_head_is_not_asked_for_again_where_the_file_is_as_long_as_the_piece(monkeypatch):
-    """The worker's end of the growing is "the piece asked for is as long as the file" (>=): a file of exactly 2 MiB
-    that is still incomplete is refused after one range, not asked for a second time."""
+    """The end of the growing is "the piece asked for ends at the file's end or past it" (>=): a file of exactly
+    2 MiB that is still incomplete is refused after one range, not asked for a second time."""
     StandIn().into(monkeypatch)
     hub = Hub({"maker/model-GGUF/model.Q8_0.gguf": File(b"GGUF" + struct.pack("<Q", 20 * MiB), 2 * MiB)}, GGUF_HF)
     with pytest.raises(Incomplete):
         answered(hub, conduct(GGUF_HF))
     assert [line.split("bytes=")[1] for line in hub.asked] == ["0-2097151"]
+
+
+def test_a_head_that_never_ends_of_a_file_said_to_be_endless_is_given_up(monkeypatch):
+    """An answerer that says a size its file has not (here: larger than any file) and never has more bytes: the
+    pieces are bounded, and the end is the converter's Incomplete all the same."""
+    class Endless(Hub):
+        def range(self, where, name, begin, end):
+            data, _ = super().range(where, name, begin, end)
+            return data, 1 << 200
+
+        def parts(self, where, name, begin, end):  # (it would never end)
+            raise AssertionError("a file whose head was never read is streamed")
+
+    StandIn().into(monkeypatch)
+    hub = Endless({"maker/model-GGUF/model.Q8_0.gguf": File(b"GGUF" + struct.pack("<Q", 1 << 62), 3 * MiB)}, GGUF_HF)
+    with pytest.raises(Incomplete):
+        answered(hub, conduct(GGUF_HF))
+    assert len(hub.asked) == 1 + conducting.GGUF_PIECES == 17
+    assert hub.asked[1].endswith("bytes=2097152-8388607") and hub.asked[2].endswith("bytes=3145728-33554431")
 
 
 def test_what_the_converter_refuses_of_a_head_is_not_asked_for_again(monkeypatch):
@@ -698,11 +975,13 @@ def test_a_gguf_with_a_vocabulary_asks_the_original_for_everything_but_the_weigh
     files["maker/model-GGUF/model.Q8_0.gguf"] = files.pop("maker/model-GGUF/model.safetensors")
     told, last, stand_in = requests_of(files, hf, monkeypatch)
     assert told[:7] == [("text", "vocabulary", "config.json"),
-                        *[("range", "weights", "model.Q8_0.gguf", 0, piece * MiB) for piece in (2, 8, 32)],
+                        *[("range", "weights", "model.Q8_0.gguf", begin * MiB, end * MiB) for begin, end in ((0, 2), (2, 8), (8, 32))],
                         ("text", "vocabulary", "tokenizer_config.json"), ("text", "vocabulary", "chat_template.jinja"),
                         ("bytes", "vocabulary", "tokenizer.json")]
     assert told[7:9] == [("bytes", "vocabulary", "tokenizer.model"),
-                         ("stream", "weights", "model.Q8_0.gguf", 9 * MiB, 9 * MiB + 500, 9 * MiB, 9 * MiB + 500)]
+                         # (the file ends within the third piece of its head: nothing is left to stream)
+                         ("stream", "weights", "model.Q8_0.gguf", 9 * MiB + 500, 9 * MiB + 500, 9 * MiB + 500, 9 * MiB + 500)]
+    assert stand_in.handed[-1] == "fed 500 bytes in 1 pieces; finish()"
     assert "tokenizer.model of 21 bytes" in stand_in.handed[-2] and "a header of 11 characters" in stand_in.handed[-2]
     assert last[0] == "done"
     # the model's own tokenizer where the vocabulary names none; the original's config.json is one there must be

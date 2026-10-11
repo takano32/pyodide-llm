@@ -349,6 +349,34 @@ const ok = (line) => {
   fresh((url, init, n) => (n === 0 ? new Response("", { status: 408 }) : ranged(init)));
   assert.deepEqual(new Uint8Array((await context.fetchRange(HF, 0, 100, new AbortController().signal)).bytes), bytesOf(0, 100));
   ok("429 is told as a limit to wait for, 408 is asked again");
+
+  // T112, and T374.3 (a head's later pieces begin where the bytes in hand end, not at the file's first byte): a server
+  // that answers a range request with the whole file (200). What was asked for is cut out of it as it streams past,
+  // wherever it begins; the rest is not read; the size said is the file's
+  size = 3 * PART + 12345;
+  for (const [begin, end] of [[0, 100], [2 * MiB, 8 * MiB], [5, 6], [size - 7, size], [size - 7, size + 100]]) {
+    let read = 0;
+    fresh((url, init) => {
+      const whole = body(0, size, { signal: init.signal }), reader = whole.getReader();
+      const counted = new ReadableStream({
+        async pull(controller) {
+          const { done, value } = await reader.read();
+          if (done) return controller.close();
+          read += value.length;
+          controller.enqueue(value);
+        },
+        cancel: (reason) => reader.cancel(reason),
+      }, { highWaterMark: 0 });
+      return new Response(counted, { status: 200, headers: { "Content-Length": String(size) } });
+    });
+    const got = await context.fetchRange(HF, begin, end, new AbortController().signal);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].range, `bytes=${begin}-${end - 1}`);
+    assert.deepEqual(new Uint8Array(got.bytes), bytesOf(begin, Math.min(end, size)), `the bytes ${begin} to ${end} of a file that came whole are not the file's`);
+    assert.equal(got.total, size, "a file that came whole did not say its size");
+    assert.ok(read <= Math.min(end, size) + 2 * MiB, `${read} bytes were read of a file that came whole for its bytes ${begin} to ${end}`);
+  }
+  ok("a range answered with the whole file is cut out of it, wherever it begins, and the rest is not read");
 }
 
 // ---- watchArrivals() (T118, T129 (6))
