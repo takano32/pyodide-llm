@@ -5,7 +5,8 @@
 //
 //   const { context, run, requests, messages, fresh, body, bytesOf, sleep, clock, ... } = workerHarness({ told, gpu, root })
 //
-//   root                   the site's root the worker is told (siteRoot(): the served folder, where models/ is)
+//   root                   the site's root the worker is told (siteRoot(): the served folder, where models/ is); null: nothing is
+//                          told, and the first message the check sends is the worker's first
 //
 //   context, run(code)     the worker's global (the top level of every module is its own) and a line run in it. The line
 //                          is strict: a name it assigns that no module declares is a ReferenceError (T378.3: what the
@@ -142,7 +143,8 @@ export function workerHarness({ told = false, gpu = false, root = siteRoot() } =
   const run = (code) => vm.runInContext(strictly(code), context);
   // (the site's root as the page says it with a load: request.js's)
   context.rootOfTheSite = root;
-  run("loadAsked({ root: rootOfTheSite })");
+  // (root: null says nothing: the check's own first message is then the page's first, which the page's switches are read from)
+  if (root !== null) run("loadAsked({ root: rootOfTheSite })");
 
   // the error a promise rejects with, and when (on the worker's clock); undefined when it resolved
   async function failure(promise) {

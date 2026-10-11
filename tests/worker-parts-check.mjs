@@ -11,6 +11,10 @@
 //                Llama and forward.js's engine come together and go together, in the order a load needs (release,
 //                destroy, the cycle collector, the wait for the GPU's worker to end, and only then a cancelled load ends)
 //
+//   load.js      a whole load of a model of the site to the ready it reports, on stand-ins of Pyodide, llama2_numpy and
+//                the memory and engine forward.js makes: the model built is adopted, the one before it let go of first,
+//                a model whose GPU failed on it alone is loaded again; and timing.js's page path tells the count it found
+//
 // What these parts are still bound to: loaded.js to runtime.js's pyodide (the collector is Python's). weights.js's own
 // (the memory kept from model to model, the model on the GPU alone, the models back on the CPU) is held where its
 // stand-ins are: tests/worker-sink-check.mjs. worker.js's own (the run going on, the stop): tests/worker-check.mjs.
@@ -155,4 +159,95 @@ console.log("ok: request.js by itself: a load's asking, the page's switches read
   assert.throws(() => run("state.llama = undefined"), { name: "ReferenceError" }, "the shared object is back");
 }
 console.log("ok: loaded.js by itself: the Llama and its engine are adopted together and let go together, in a load's order; a cancelled load lets go all the same");
+
+// ---- load.js with its neighbours' stand-ins: a whole load of a model of the site, to the ready it reports. Pyodide and
+// llama2_numpy are stand-ins, forward.js is the real one but for the memory it makes and the engine it builds (as
+// tests/worker-sink-check.mjs has it), the line is the harness's. No model's weights are computed with.
+{
+  const forward = await import(runtimeUrl("forward.js"));
+  const { context, run, fresh, messages, requests, sleep } = workerHarness({ root: null });
+  const HEADER = [64, 128, 2, 4, 4, 512, 256], BYTES = 4096;
+  const file = new Uint8Array(BYTES);
+  file.set(new Uint8Array(new Int32Array(HEADER).buffer));
+  const model = (id) => ({ id, name: `Small ${id}`, checkpoint: id, tokenizer: `${id}.tokenizer.bin`, bytes: BYTES, options: { dtype: "float32" } });
+  const told = [], built = [];
+  let engines = 0;
+  const said = [];
+  context.console = { ...console, warn: (line) => said.push(line), info() {} };
+  context.stand = {
+    forward: { ...forward, weightsMemory: () => ({ memory: new WebAssembly.Memory({ initial: 1 }), base: 0 }), growMemory() {},
+      external: () => ({ engine: { n: ++engines, gpu: Promise.resolve("prompts on the CPU (a stand-in)"), gpuStatus: "the GPU gets ready (a stand-in)", threads: 1 } }) },
+    pyodide: { version: "0.0.0-stand-in", _module: { HEAPU8: { length: 1000 } }, runPython: (code) => told.push(`python: ${code}`),
+      globals: { get: () => (size) => ({ destroy() {}, getBuffer: () => ({ data: new Uint8Array(size), release() {} }) }) } },
+    numpy: { OUTLIER_CHANNELS: 8, Llama: { callKwargs: (checkpoint, tokenizer, options) => {
+      const made = { n: built.length + 1, backend: "a stand-in's backend", seq_len: HEADER[6], options, destroy: () => told.push(`llama ${made.n}: destroy`) };
+      built.push(made);
+      context.stand.asBuilt?.(made);
+      return made;
+    } } },
+  };
+  run("pyodide = stand.pyodide; llama2_numpy = stand.numpy; forwardModule = stand.forward; jsKernels = { relaxed: false }; initialized = Promise.resolve();");
+  const of = (type) => JSON.parse(JSON.stringify(messages.filter((message) => message.type === type)));
+  const load = async (data) => {
+    fresh((url) => new Response(url.endsWith(".bin") ? new Uint8Array(8) : file.slice(), { status: 200 }));
+    await context.onmessage({ data: { type: "load", root: "https://site.test/app/", ...data } });
+    await sleep(50);
+  };
+  await load({ load: 1, model: model("first"), search: "?without=relaxed" });
+  assert.deepEqual(of("error"), []);
+  const [ready] = of("ready");
+  assert.deepEqual({ ...ready, seconds: Object.keys(ready.seconds).sort() }, { type: "ready", load: 1, pyodide: "0.0.0-stand-in", backend: "a stand-in's backend", seq_len: 256,
+    seconds: ["construct", "download"], heap: 1000 + 65536, threads: 1, gpu: "the GPU gets ready (a stand-in)", overlapped: false },
+    "the ready of a load: Pyodide's version, the engine's backend and context, the seconds of its parts, the heap with forward.js's memory, the threads, the GPU's line");
+  assert.ok(Object.values(ready.seconds).every((seconds) => typeof seconds === "number" && seconds >= 0), "the seconds of a load's parts are numbers");
+  assert.deepEqual([built.length, run("llama") === built[0], run("engineNow()").n, [...built[0].options.disable]], [1, true, 1, ["relaxed"]],
+    "the model built is the model loaded now, with forward.js's engine, without what the page's URL switched off");
+  assert.deepEqual(requests.map((r) => r.url).sort(), ["https://site.test/app/models/first.000", "https://site.test/app/models/first.tokenizer.bin"], "the model is asked for under the root the page said");
+  // (the GPU's line once it is ready: told for the engine that is still the one loaded)
+  assert.deepEqual(of("gpu"), [{ type: "gpu", load: 1, note: "prompts on the CPU (a stand-in)" }]);
+
+  // the next model: the first is let go of before the second is built (two never have to fit), and the memory stays
+  told.length = 0;
+  context.stand.asBuilt = () => told.push("the next is built");
+  await load({ load: 2, model: model("second") });
+  assert.deepEqual(told, ["llama 1: destroy", "python: import gc; gc.collect()", "the next is built"]);
+  assert.deepEqual([of("ready").length, of("ready")[0].load, run("llama") === built[1], run("engineNow()").n, of("ready")[0].seconds.download >= 0], [1, 2, true, 2, true]);
+
+  // T156: a model on the GPU alone whose GPU fails as it gets ready is loaded again, on the CPU. (The place on the GPU
+  // alone is tests/worker-sink-check.mjs's to make: here the model is said to be on it as its engine is built, and its
+  // GPU to have failed.) load() asks weights.js with the engine it just adopted, and loads again where the answer is no
+  let ended = 0;
+  context.stand.direct = { lost: "the GPU could not be opened (a test)", end: async () => { ended += 1; } };
+  context.stand.asBuilt = (made) => { if (made.n === 3) run("gpuOnlyNow = stand.direct"); };
+  await load({ load: 3, model: model("alone") });
+  assert.deepEqual(of("error"), []);
+  assert.deepEqual([built.length, ended, run("cpuOnly.has('alone')"), run("gpuOnlyLost()"), of("ready").map((r) => r.load), run("llama") === built[3]], [4, 1, true, undefined, [3], true],
+    "a model on the GPU alone whose GPU failed was not loaded again on the CPU: built twice, its GPU's worker ended, one ready, on the CPU from now on");
+  assert.ok(said.some((line) => /the model was on the GPU alone, and is loaded again on the CPU/.test(line)), "the console did not say why the model is loaded again");
+  context.stand.asBuilt = undefined;
+
+  // ---- timing.js with stand-ins: the page's path (T184) on the model loaded now. What it tells request.js: the count
+  // the search ended on, which the rounds that follow load the model on (T190)
+  const generator = () => ({ next: () => ({ done: true }), destroy() {} });
+  const engine = { gpuSampled: 0, lostThreads: false, searchLog: [], gpuStatus: "prompts on the CPU (a stand-in)", setThreads: async (count) => count };
+  context.stand.loaded = { outside: { engine }, llama: { backend: "a stand-in's", bos: 1, seq_len: 256, destroy() {},
+    generate: { callKwargs: generator }, stats: { toJs: () => ({ sampled: 8, tokens_per_second: 100 }) },
+    tokenizer: { encode: () => ({ toJs: () => [1, 2, 3], destroy() {} }) } } };
+  context.stand.forward = { ...context.stand.forward, SEARCH_SECONDS: 20, endSearch: async () => ({ threads: 2, found: 2, ended: true }),
+    timePrompts: () => [], timedCell: (runs) => ({ runs: runs.length }) };
+  run("forwardModule = stand.forward; adopted(stand.loaded); loadAsked({ threads: { fixed: 0, remembered: 0, hint: 4 } });");
+  for (const shared of [true, false]) {
+    run("loadAsked({ threads: { fixed: 0, remembered: 0, hint: 4 } })");
+    context.stand.pool = { shared };
+    run("weightsPool = stand.pool");
+    const paths = JSON.parse(JSON.stringify(await run("timedPaths")({ prompt: "Once", counts: [64], sampled: 8 })));
+    assert.equal(paths.threads, 2);
+    assert.deepEqual(paths.how, shared ? { searched: [] } : { alone: "no shared memory here" });
+    assert.deepEqual(JSON.parse(JSON.stringify(run("threadsRequest"))), { fixed: 0, remembered: shared ? 2 : 0, hint: 4 },
+      shared ? "the count the page path ended on is not what the rounds after it are asked for" : "a count was remembered where there is no shared memory");
+    assert.deepEqual(paths.perCount.map((row) => row.threads), shared ? [1, 2, 4] : []);
+  }
+  run("weightsPool = undefined; adopted({}); initialized = undefined;");
+}
+console.log("ok: load.js on stand-ins: a load to its ready, the next model after the first is let go of, a model whose GPU failed on it alone loaded again; timing.js: the page path's count told");
 console.log("worker-parts-check: ok");

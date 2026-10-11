@@ -739,8 +739,10 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   whole.set(header);
   w.kept.found = { manifest, where: "opfs", async *parts() { yield whole; }, tokenizer: async () => new Uint8Array(4) };
   const made = w.engines.length;
+  w.run("adopted({})");
   assert.equal(await w.convert(hf(), () => assert.fail("a kept conversion was converted again"), { options: entry }), undefined);
   assert.equal(w.engines.length, made + 1);
+  assert.equal(w.run("llama !== undefined"), true, "the model built of a kept conversion is not the model loaded now (T378.3: loaded.js adopts it)");
   const again = JSON.parse(JSON.stringify(w.engines.at(-1)));
   assert.deepEqual([again.rope_scaling, again.bos, again.rope_theta, again.template], [{}, 151643, 1000000, undefined],
     "a conversion kept before: the entry's RoPE over the manifest's yarn");
