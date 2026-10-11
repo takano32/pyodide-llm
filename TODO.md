@@ -2385,7 +2385,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T431 [整理][遠隔試験] `tests/test_converter_version.py --write` が `llama2_convert` を自分で道に置かない — 状態: 未着手（2026-10-11、T367.1 から。前からある。規模 小）
 
-### T432 [整理][その他] 開けない zip が届いたときの文 — 状態: 未着手（持ち主の文面の決め待ち。2026-10-11、T367.2 から。規模 小）
+### T432 [整理][その他] 開けない zip が届いたときの文 — 状態: 未着手（2026-10-11、持ち主が下の案の文面を承認「文章オススメでよさそう」。T367.3.1 を本線に入れた後、T367.3.2 の前に入れる。2026-10-11、T367.2 から。規模 小）
 - いまは Python のエラーがそのまま出る（「ReadError: /tmp/tmp… is not a zip file」「BadZipFile: Bad CRC-32 for file …」）。起きるのは、サーバが HTML を 200 で返したときと本文が途中で切れたときだけ。前は切れた `.py` が import の SyntaxError だった。
 - 案: 「Could not read engine.zip: the file did not arrive whole. Reload the page to try again.」（`worker/pyodide.js` の `placePython()` で捕まえる）。取れなかったとき（404 など）は今ある文「Could not fetch engine.zip: 404」のまま。
 
