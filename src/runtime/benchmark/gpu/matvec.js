@@ -96,7 +96,7 @@ async function cpuBandwidth([rows, n]) {
   const weights = rows * n, scales = (rows * n / shared.GROUP) * 4, copies = Math.max(1, Math.min(4, Math.floor(128e6 / weights)));
   const bytes = 4096 + n * 8 + rows * 4 + copies * (weights + scales);
   const memory = new WebAssembly.Memory({ initial: Math.ceil(bytes / 65536) + 1 });
-    cpuKernel ??= await WebAssembly.compile(await (await fetch(BUILT["simdkernel_plain.wasm"])).arrayBuffer());
+  cpuKernel ??= await WebAssembly.compile(await (await fetch(BUILT["simdkernel_plain.wasm"])).arrayBuffer());
   const k = (await WebAssembly.instantiate(cpuKernel, { env: { memory } })).exports;
   const U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer);
   const x = 4096, xq = x + n * 4, xs = xq + n, out = xs + (n / shared.GROUP) * 4 + 64, first = Math.ceil((out + rows * 4) / 64) * 64;
