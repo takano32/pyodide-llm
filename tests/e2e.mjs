@@ -388,7 +388,12 @@ let again = null;
 if (process.env.E2E_TWICE && !failures.length) {
   // what the browser holds, as the page lists it (src/runtime/kept.js)
   const listKept = () => page.evaluate(async () => {
-    const module = await import(new URL("kept.js", location.href).href);
+    // (T367.3: kept.js is no file of the site now but a chunk of the worker's bundle, _astro/kept.<hash>.js: the page
+    // that is open has its own copy of it inside its script. The worker's text names the chunk it reads.)
+    const worker = performance.getEntriesByType("resource").map((entry) => entry.name).find((name) => /\/_astro\/worker\.[\w-]+\.js$/.test(name));
+    const chunk = worker && /kept\.[\w-]+\.js/.exec(await (await fetch(worker)).text())?.[0];
+    if (!chunk) throw new Error("no kept chunk is named by the worker");
+    const module = await import(new URL(chunk, worker).href);
     return (await module.keptModels()).map(({ where, manifest }) => `${manifest.name} in ${where}`);
   }).catch((error) => [`(could not list: ${error.message})`]);
   const kept = await listKept();
