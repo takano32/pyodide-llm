@@ -19,7 +19,8 @@
 // reports about a load carries its number, so that the page can tell a late report of a cancelled one.
 
 // T350: this file is the window of the worker: its URL, generate() and the messages. The rest is in the modules
-// of worker/: state.js (the variables they share, in one object), runtime.js (T378.3: init(), the runtime loaded once), told.js, clock.js, pyodide.js (the runtime's
+// of worker/: runtime.js (what the visit finds once), request.js (what the page asked for with a load), loaded.js (the
+// model loaded now) (T378.3: each sets its own, and the others say what happened and read), told.js, clock.js, pyodide.js (the runtime's
 // loading), weights.js (where a model's weights go), ranges.js and sources.js (the fetching), conduct.js (T374.2.1: what
 // answers the conduct of a conversion, which is Python's, from huggingface.co or from a folder), convert.js (a Hugging Face model), load.js and timing.js (what /benchmark/ times).
 // T367.3: a bundler links them (static imports, src/runtime/): they are part of this worker's own file, whose name
@@ -27,25 +28,35 @@
 // of this file is set (the messages that came while the modules were fetched one by one were kept in a queue until
 // then). What the worker asks for later is asked for by a literal name: forward.js, kept.js and the device's key as
 // modules (import("./forward.js")), the kernels and the Python's archives as files (built.js). The site's root, where
-// models/ is, the page hands over with a load (state.root): this file's own URL is under _astro/.
+// models/ is, the page hands over with a load (request.js's root): this file's own URL is under _astro/.
 // T367.4: a page left open across a deployment asks for such a file after it is gone. Where that ends a load (the
 // Python's archives, kept.js at a first conversion) the visitor is told that the site was updated (updated.js); where
 // the engine goes on without the file (the kernels and forward.js: NumPy; a software thread; the GPU's worker; the
 // device's key) it goes on as it always did, and nothing is said: a model that answers is not interrupted.
-import { state, cpuOnly, modelKey } from "./worker/state.js";
-import { init } from "./worker/runtime.js";
+import { pyodide, runtimeAsked } from "./worker/runtime.js";
+import { loadAsked, benching, roundsBegan, roundBegan, roundsEnded } from "./worker/request.js";
+import { llama, engineNow } from "./worker/loaded.js";
+import { weightsBytes, gpuOnlyLost, onCpuFromNow } from "./worker/weights.js";
 import { told } from "./worker/told.js";
 import { since, breathe } from "./worker/clock.js";
 import { load, threadsNow, heapBytes } from "./worker/load.js";
 import { timedGeneration, timedPaths } from "./worker/timing.js";
 
+// What this file alone holds (T378.3: they were fields of the object all the modules shared):
+// the AbortController of the load that is going on, and a promise that settles once it has cleaned up
+let loading, unloaded = Promise.resolve();
+// the run that is going on, and whether the page asked it to stop
+let generating, stopped = false;
+let lastLoad;  // the load message of the model now (T156)
+let pathing = false;  // T184: the benchmark's page path is being timed; see the paths message
+
 async function generate({ type, prompt, ...options }) {
-  state.outsideNow?.engine?.newGeneration?.();  // now and then the remembered number of threads is checked again
+  engineNow()?.newGeneration?.();  // now and then the remembered number of threads is checked again
   // a Python generator: every step of the iteration runs one forward pass and hands over one piece of text
-  const pieces = state.llama.generate.callKwargs(prompt, options);
+  const pieces = llama.generate.callKwargs(prompt, options);
   try {
     let breathed = performance.now();
-    while (!state.stopped) {
+    while (!stopped) {
       const { done, value } = pieces.next();
       if (done) {
         break;
@@ -63,44 +74,41 @@ async function generate({ type, prompt, ...options }) {
   } finally {
     pieces.destroy();
   }
-  postMessage({ type: "done", threads: threadsNow(), gpuTokens: state.outsideNow?.engine?.gpuTokens ?? 0, gpuSampled: state.outsideNow?.engine?.gpuSampled ?? 0,
-                gpu: state.outsideNow?.engine?.gpuStatus,
-                ...state.llama.stats.toJs({ dict_converter: Object.fromEntries }) });
+  postMessage({ type: "done", threads: threadsNow(), gpuTokens: engineNow()?.gpuTokens ?? 0, gpuSampled: engineNow()?.gpuSampled ?? 0,
+                gpu: engineNow()?.gpuStatus,
+                ...llama.stats.toJs({ dict_converter: Object.fromEntries }) });
 }
 
 self.onmessage = async ({ data }) => {
   let signal;
   try {
     if (data.type === "init" || data.type === "load") {
-      state.lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
-      state.threadsRequest = data.threads;
-      state.gpuRequest = data.gpu;
-      state.root = data.root ?? state.root;  // (T367.3: the site's root, where models/ is; the page knows it)
-      state.loadsAhead = Array.isArray(data.ahead) ? data.ahead : undefined;  // (T242; a load of the model page says none)
+      lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
+      loadAsked(data);  // (the threads, the GPU's shaders, the site's root, the loads that follow: request.js)
       // The latest choice wins: the download that is going on stops, and its parts that are complete stay in
       // the cache. Pyodide is loaded once, whatever happens to the model that was asked for first.
-      state.loading?.abort();
-      state.loading = new AbortController();
-      signal = state.loading.signal;
+      loading?.abort();
+      loading = new AbortController();
+      signal = loading.signal;
       // the model downloads while Pyodide loads
-      state.initialized ??= init(data.search);
+      runtimeAsked(data.search);
       // never take the model away from a run that is going on
-      state.stopped = state.generating !== undefined;
+      stopped = generating !== undefined;
       // The cancelled load frees its buffer a few turns of the event loop after the abort. Without waiting for
       // that the next buffer is allocated first, and the WebAssembly memory, which never shrinks, grows by a
       // whole model with every change of mind (587 MB after four of them).
-      const previous = state.unloaded;
-      const current = previous.then(() => state.generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
-      state.unloaded = current.catch(() => {});
+      const previous = unloaded;
+      const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+      unloaded = current.catch(() => {});
       await current;
     } else if (data.type === "bench") {
       // T45: the same model, measured again for every combination of switches the page asked for. The model is
       // built once per round from the checkpoint that is already in the Cache API, so only the engine changes.
       // One at a time: a second request while the rounds run would end a round's threads under its coordinator
-      if (state.benching) {
+      if (benching) {
         return;
       }
-      state.benching = true;
+      roundsBegan();
       const rows = [];
       try {
         for (const round of data.rounds) {
@@ -111,62 +119,61 @@ self.onmessage = async ({ data }) => {
             continue;
           }
           // every round is a load of its own, and it cancels whatever went before, exactly like a change of model
-          state.loading?.abort();
-          state.loading = new AbortController();
-          signal = state.loading.signal;
-          state.disabled = round.without;
+          loading?.abort();
+          loading = new AbortController();
+          signal = loading.signal;
+          roundBegan(round.without);
           const started = performance.now();
-          const previous = state.unloaded;
-          const current = previous.then(() => state.generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
-          state.unloaded = current.catch(() => {});
+          const previous = unloaded;
+          const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+          unloaded = current.catch(() => {});
           await current;
           const ready = since(started);
           const { tokens, speed } = timedGeneration(data.prompt, data.steps);
-          rows.push({ name: round.name, without: round.without, tokens, speed, backend: state.llama.backend, seconds: ready });
+          rows.push({ name: round.name, without: round.without, tokens, speed, backend: llama.backend, seconds: ready });
         }
       } finally {
         // also when a round failed or a change of model cancelled it (the review of T76): the next model must not
-        // load with a round's switches off while the panel shows them on
-        state.disabled = state.pageSwitches;  // (the page's, not a round's)
-        state.benching = false;
+        // load with a round's switches off while the panel shows them on (the page's again: request.js)
+        roundsEnded();
       }
-      postMessage({ type: "bench", load: data.load, rows, pyodide: state.pyodide.version });
+      postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version });
     } else if (data.type === "paths") {
       // T184: the model page's own path, on the model as the first load left it (the GPU too), before the rounds:
       // its prompts and its writing as the page chooses, on the CPU only and on the GPU only
-      if (state.benching || state.pathing || !state.llama) {
+      if (benching || pathing || !llama) {
         return;
       }
-      state.pathing = true;
+      pathing = true;
       try {
         postMessage({ type: "paths", load: data.load, ...(await timedPaths(data)) });
       } finally {
-        state.pathing = false;
+        pathing = false;
       }
     } else if (data.type === "generate") {
-      if (!state.llama) {
+      if (!llama) {
         throw new Error("The model is not ready.");
       }
       // messages keep arriving while this runs, hence the promise the other branches look at
-      state.stopped = false;
-      state.generating = generate(data);
+      stopped = false;
+      generating = generate(data);
       try {
-        await state.generating;
+        await generating;
       } catch (err) {
         // T156: the GPU stopped under a model on it alone: said, and the model loaded again on the CPU
-        const lost = state.gpuOnlyNow?.lost;
+        const lost = gpuOnlyLost();
         if (!lost) throw err;
-        cpuOnly.add(modelKey(state.lastLoad.model));
-        postMessage({ type: "error", load: state.lastLoad.load, reloading: true,
+        onCpuFromNow(lastLoad.model);
+        postMessage({ type: "error", load: lastLoad.load, reloading: true,
           message: `The GPU stopped (${lost}). This model was on the GPU alone, and is loaded again on the CPU.` });
-        state.generating = undefined;
-        self.onmessage({ data: state.lastLoad });
+        generating = undefined;
+        self.onmessage({ data: lastLoad });
       } finally {
-        state.generating = undefined;
+        generating = undefined;
       }
     } else if (data.type === "stop") {
       // a stop that arrives before a run starts, or after it ended, must not cut the next one short
-      state.stopped = state.generating !== undefined;
+      stopped = generating !== undefined;
     }
   } catch (err) {
     // a cancelled load has nothing to report: the one that replaced it speaks for itself
@@ -188,7 +195,7 @@ self.onmessage = async ({ data }) => {
         (name === "RangeError" && !/call stack/i.test(text ?? ""));
       // where it happened goes to the page's console (T96): tests/e2e.mjs keeps the console of a failed run
       postMessage({ type: "error", load: data.load, message: memory ? String(text ?? err).trim().split("\n").pop() : message,
-                    stack: String(err?.stack ?? told(err)), weights: state.weightsNow?.buffer.byteLength ?? 0, pyodide: Boolean(err?.pyodide),
+                    stack: String(err?.stack ?? told(err)), weights: weightsBytes(), pyodide: Boolean(err?.pyodide),
                     ...(memory && { memory: true, heap: heapBytes() }) });
     }
   }

@@ -83,8 +83,12 @@ page_modules() {
   # stand-in generator, a folder under .tmp/, no Pyodide (under a second)
   node tests/conducting-check.mjs
   # T350: the names the worker and its modules (src/runtime/worker/) use: declared, imported, or the worker's globals (the two
-  # checks above run them as scripts of one context, where a missing import does not show)
+  # checks above run them as scripts of one context, where a missing import does not show); T378.3: and that a module
+  # sets its own variables alone (no imported name assigned or hidden by a local, no top-level name twice)
   node tests/worker-modules-check.mjs
+  # T378.3: what the worker's modules hold has owners: request.js (what the page asked for with a load) as the module
+  # it is, and loaded.js (the model loaded now) on a stand-in of Pyodide and of a model: no model, no network
+  node tests/worker-parts-check.mjs
   # T349: the names forward.js and its modules (src/runtime/forward/) hand one another: what a file takes from another is
   # exported there, what createForward() hands a part is what the part takes, and every threads.<name>, onGpu.<name> and
   # held.<name> is a member of that object (none of these is a variable: a wrong name is undefined without a word)

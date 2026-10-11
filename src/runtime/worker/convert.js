@@ -4,14 +4,20 @@
 // huggingface.co from there, and (T374.2.2) a folder of the visitor's disk from its Files.
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { state, loadSeconds } from "./state.js";
-import { since } from "./clock.js";
+import { pyodide, llama2_numpy, pythonKernels } from "./runtime.js";
+import { switchesNow } from "./request.js";
+import { adopted } from "./loaded.js";
+import { since, took } from "./clock.js";
 import { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom, weightsDrained, checkpointSink } from "./weights.js";
 import { conductOf, answered, fromHub, fromFolder } from "./conduct.js";
 import { HEADER_BYTES, headerInts } from "./sources.js";
 import { templatePackage, placePython } from "./pyodide.js";
 import { built } from "../built.js";
 import { named } from "../updated.js";
+
+// What this file alone holds (T378.3): the converter's window, imported when the first conversion comes (the function of that name below),
+// and the models kept from earlier conversions (kept.js, T99), imported then too
+let llama2_convert, keptModule;
 
 // What a conversion made is kept for the next visit (kept.js): in the origin private file system where there is one
 // (T99), else in the Cache API. The original is twice as large, and fetching and converting it again on every visit
@@ -21,7 +27,7 @@ async function loadConverted(model, signal, id) {
   let kept;
   try {
     // under the bits asked for, or either the worker may choose (T115), by this converter (T116)
-    kept = await state.keptModule.openKept(model);
+    kept = await keptModule.openKept(model);
   } catch (error) {
     return { miss: `could not open what is kept: ${error.message ?? error}` };
   }
@@ -63,7 +69,7 @@ async function loadConverted(model, signal, id) {
       return unreadable(error);
     }
     const vocabulary = await kept.tokenizer();
-    loadSeconds.download = since(started);
+    took("download", since(started));
     const constructStarted = performance.now();
     tokenizer = pythonBuffer(vocabulary.length);
     tokenizer.write(0, vocabulary);
@@ -71,8 +77,8 @@ async function loadConverted(model, signal, id) {
     const engineOptions = { ...manifest.options };
     delete engineOptions.template;
     await weightsDrained();  // (T156: a model on the GPU alone: every byte of its layers there)
-    state.llama = weights.llama(tokenizer.buffer, { kernels: state.kernels, disable: state.disabled, ...engineOptions, ...model.options });
-    loadSeconds.construct = since(constructStarted);
+    adopted(weights.llama(tokenizer.buffer, { kernels: pythonKernels, disable: switchesNow(), ...engineOptions, ...model.options }));
+    took("construct", since(constructStarted));
     return { template: manifest.options.template, keptIn: kept.where };
   } finally {
     weights.destroy();
@@ -91,31 +97,31 @@ async function keepConverted(model, checkpoint, bytes, tokenizer, options, signa
   // under the bits it was converted to, which the worker may have chosen (T115)
   const converted = { ...model, conversion: { ...model.conversion, dtype: options.dtype } };
   // T136: what this model was kept as before its source changed is never used again, and takes the room it needs
-  for (const old of await state.keptModule.replaced(model).catch(() => [])) await state.keptModule.forget(old).catch(() => {});
+  for (const old of await keptModule.replaced(model).catch(() => [])) await keptModule.forget(old).catch(() => {});
   // slice() copies: the memory it comes from may grow (and so move) while an await waits
   if (checkpoint.direct) return kept ? kept.finish(manifest, vocabulary) : "the weights went to the GPU alone, and there is no file system here to keep them in as they came";
-  return state.keptModule.keep(converted, manifest, (begin, end) => checkpoint.slice(begin, end), vocabulary, signal);
+  return keptModule.keep(converted, manifest, (begin, end) => checkpoint.slice(begin, end), vocabulary, signal);
 }
 
-/** The converter's window (state.llama2_convert), fetched, placed and imported when a model is first converted: most
+/** The converter's window (llama2_convert), fetched, placed and imported when a model is first converted: most
  * visitors never convert anything. (T367.2: its Python, a window and its parts, is one archive, converter.zip.) */
 export async function converter(signal) {
-  if (!state.llama2_convert) {
+  if (!llama2_convert) {
     // (T397) and jinja2 with it, for the model's chat template: the conversion goes on without it where it does not come
-    const jinja = templatePackage(state.pyodide);
+    const jinja = templatePackage(pyodide);
     const archive = "converter.zip";
-    await placePython(state.pyodide, built(archive, signal).then((res) => res.arrayBuffer()), archive);
+    await placePython(pyodide, built(archive, signal).then((res) => res.arrayBuffer()), archive);
     await jinja;
-    state.llama2_convert = state.pyodide.pyimport("llama2_convert");
+    llama2_convert = pyodide.pyimport("llama2_convert");
   }
-  return state.llama2_convert;
+  return llama2_convert;
 }
 
 export async function convert(model, signal, id) {
   const remote = typeof model.hf.repo === "string";
   // (asked for when a conversion first needs it: a module of its own, _astro/kept.<hash>.js. T367.4: where it is not
   // there because the site was updated since this page was opened, that is what is said)
-  state.keptModule ??= await named(import.meta.url, () => import("../kept.js"));
+  keptModule ??= await named(import.meta.url, () => import("../kept.js"));
   const kept = remote ? await loadConverted(model, signal, id) : undefined;
   if (kept && !kept.miss) {
     return { fromCache: true, keptIn: kept.keptIn, template: kept.template };
@@ -128,7 +134,7 @@ export async function convert(model, signal, id) {
   // is the sink's, once the header is known), let go otherwise
   const keptDtype = model.conversion?.dtype ?? "int8";
   const mayKeep = remote && ["int8", "ternary"].includes(keptDtype) && gpuOnlyPossible(keptDtype);
-  let keep = mayKeep ? await state.keptModule.keeper({ ...model, conversion: { ...model.conversion, dtype: keptDtype } }).catch(() => undefined) : undefined;
+  let keep = mayKeep ? await keptModule.keeper({ ...model, conversion: { ...model.conversion, dtype: keptDtype } }).catch(() => undefined) : undefined;
   const into = checkpointSink(keep), { sink } = into;
   let keptAsItCame = false;  // keep went to keepConverted, which keeps it or lets it go
   let steps, conversion, quantizeRows, readers, failed;
@@ -145,9 +151,9 @@ export async function convert(model, signal, id) {
     // readers of the types a file stores its tensors in, the same float32 several times faster: whichever of them has
     // a kernel, by the type's name (the converter's table of them says which. T123: bfloat16; T136: GGUF's Q8_0;
     // T273: the two ternary types, PQ2_0 and PTQ1_0)
-    const onKernels = state.kernels && !state.disabled.includes("kernels");
-    quantizeRows = onKernels ? state.llama2_numpy.kernel_quantizer(state.kernels) : undefined;
-    readers = onKernels ? state.llama2_convert.kernel_readers(state.kernels) : undefined;
+    const onKernels = pythonKernels && !switchesNow().includes("kernels");
+    quantizeRows = onKernels ? llama2_numpy.kernel_quantizer(pythonKernels) : undefined;
+    readers = onKernels ? llama2_convert.kernel_readers(pythonKernels) : undefined;
     const make = { ...converting, sink, quantize_rows: quantizeRows, readers };
     // T119: the page hears both how much has arrived (and how fast) and how much is converted. With the converted
     // share alone, a slow line looked like a slow conversion: the share moves as fast as the bytes arrive (8 MB/s
@@ -185,8 +191,8 @@ export async function convert(model, signal, id) {
     const { files, ...listed } = model.hf;
     steps = conductOf(listed, make);
     conversion = await answered(steps, remote ? fromHub(model.hf, signal, progress) : fromFolder(files, signal, progress), signal);
-    loadSeconds.download = since(started);
-    loadSeconds.convert = spent / 1000;
+    took("download", since(started));
+    took("convert", spent / 1000);
 
     const constructStarted = performance.now();
     // every one of these proxies keeps its Python object alive: none may be left behind (the checkpoint went to
@@ -200,8 +206,8 @@ export async function convert(model, signal, id) {
       const engineOptions = { ...options };
       delete engineOptions.template;
       await weightsDrained();  // (T156)
-      state.llama = into.weights.llama(proxies[1], { kernels: state.kernels, disable: state.disabled, ...engineOptions, ...model.options });
-      loadSeconds.construct = since(constructStarted);
+      adopted(into.weights.llama(proxies[1], { kernels: pythonKernels, disable: switchesNow(), ...engineOptions, ...model.options }));
+      took("construct", since(constructStarted));
       // (the review of T156: a model not on the GPU alone is kept from its memory, as before (keep()): the file opened
       // for it as it came goes first. Its open handle refused keep()'s, and its drop() in the finally below removed what
       // keep() wrote: every conversion of a browser with a GPU adapter was kept no more, run 36344754761)

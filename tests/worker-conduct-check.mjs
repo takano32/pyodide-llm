@@ -106,8 +106,8 @@ function world({ gpu = false } = {}) {
       },
     },
   };
-  run("state.llama2_convert = stand.converter; state.keptModule = stand.kept; state.pyodide = stand.pyodide; state.llama2_numpy = stand.numpy; " +
-    "state.forwardModule = stand.forward; state.jsKernels = undefined; state.kernels = undefined; state.disabled = [];");
+  run("llama2_convert = stand.converter; keptModule = stand.kept; pyodide = stand.pyodide; llama2_numpy = stand.numpy; " +
+    "forwardModule = stand.forward; jsKernels = undefined; pythonKernels = undefined; roundBegan([]);");
   // the feed a stream's request brings (the conversion's own, a proxy): feed(part) returns the share converted
   const feeding = (feed) => {
     const made = (part) => {
@@ -251,12 +251,12 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   assert.ok(w.allDestroyed() >= 20, "fewer proxies than the requests alone make");
   assert.equal(got.conversion.destroyed, 1);
   assert.equal(w.kept.keeps.length, 1, "the conversion was not kept");
-  assert.equal(w.run("state.llama !== undefined"), true, "no engine was made of the conversion");
+  assert.equal(w.run("llama !== undefined"), true, "no engine was made of the conversion");
   ok("every kind of request is answered with what it asks for: text, bytes, range, size, streams and their end; a file that is not there with undefined");
   ok(`the end of a conduct: the conversion kept and made an engine of, the generator closed, ${w.proxies.length} proxies destroyed once each`);
 
   // ---- the dtype asked for and the kernels' quantizer and readers go to the conduct, and are let go
-  w.run("state.kernels = 'simdkernel.so'; state.llama = undefined");
+  w.run("pythonKernels = 'simdkernel.so'; adopted({})");
   fresh(() => notFound());
   const refused = await w.convert(hf(), function* () {
     yield ["text", "weights", "config.json"];
@@ -270,7 +270,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   assert.equal(make.readers.name, "the readers of simdkernel.so");
   w.allDestroyed();
   assert.equal(make.quantize_rows.destroyed, 1);
-  w.run("state.kernels = undefined");
+  w.run("pythonKernels = undefined");
   ok("the bits asked for, the context and the kernels' quantizer and readers go to the conduct; a conversion that ends early lets go of them");
 
   // ---- "missing": the 404 of that very file, in refused()'s words; the place decides the repository
@@ -441,7 +441,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
 {
   const w = world({ gpu: true });
   w.context.crossOriginIsolated = true;
-  w.run("state.sharedKernels = {}; state.wideKernels = { plain: {}, shared: {} }; state.gpuAdapter = { fallback: false };");
+  w.run("sharedKernels = {}; wideKernels = { plain: {}, shared: {} }; gpuAdapter = { fallback: false };");
   assert.equal(w.run("gpuOnlyPossible('int8')"), true, "the check's device may not put a model on the GPU alone: nothing is opened to keep it in");
   const endings = [
     ["a config.json that is not there", () => notFound(), function* () { yield ["text", "weights", "config.json"]; yield ["missing", "weights", "config.json"]; }, /has no config\.json/],
@@ -559,7 +559,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     got.size = yield ["size", "weights", "MODEL.SAFETENSORS"];
     got.nothing = yield ["size", "weights", "empty.txt"];
     w.opened(make);
-    w.run("state.gpuOnlyNow = stand.direct");  // (a place whose room is waited for: T156)
+    w.run("gpuOnlyNow = stand.direct");  // (a place whose room is waited for: T156)
     // (a stream that ends before its file does, as a shard's: what is read is to the end asked for)
     got.middle = [];
     yield ["stream", "weights", "tokenizer.model", 10, 50, 0, 40, w.feeding((part) => { got.middle.push(part.slice()); return 0.5; })];
@@ -572,7 +572,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
       return (at - BASE) / (SIZE - BASE);
     })];
     got.empty = yield ["stream", "weights", "Model.safetensors", SIZE, SIZE, SIZE, SIZE, w.feeding(() => assert.fail("a stream of nothing was fed"))];
-    w.run("state.gpuOnlyNow = undefined");
+    w.run("gpuOnlyNow = undefined");
     got.conversion = w.conversion();
     yield ["done", got.conversion];
   });
@@ -621,7 +621,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   assert.equal(got.conversion.destroyed, 1);
   assert.equal(w.kept.keeps.length, 0, "a folder's conversion was kept");
   assert.equal(w.kept.opened, 0, "a file was opened to keep a folder's conversion in");
-  assert.equal(w.run("state.llama !== undefined"), true, "no engine was made of the folder's conversion");
+  assert.equal(w.run("llama !== undefined"), true, "no engine was made of the folder's conversion");
   ok("a folder answers every kind of request from its Files: by name whatever the case, a name it does not have with undefined, a range with the size, a stream as the disk gives it, a part a call, the room waited for after each");
   ok("a folder's progress says what it said (0 arrived of the file's size, the share converted), nothing is asked of the network, nothing is kept, Python is handed names alone");
 

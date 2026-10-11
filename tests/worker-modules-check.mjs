@@ -9,7 +9,7 @@
 //   node tests/worker-modules-check.mjs
 //
 // The parser is @babel/parser, which Astro's packages bring (npm ci installs it; this repository does not name it).
-// It also holds every state.<name> to a field of worker/state.js's object.
+// It also holds what the modules keep to its owner (T378.3): no imported name assigned or hidden, no top-level name twice.
 // And it imports worker.js for real (Node links the modules): its receiver is set as it loads, and answers.
 // What it does not see: a browser's own way with a module worker's first message (the browsers do: tests/e2e.mjs).
 import assert from "node:assert/strict";
@@ -24,10 +24,17 @@ const GLOBALS = new Set(("AbortController Array Boolean DataView Date Error Int3
   "Uint8Array Worker WritableStream clearInterval clearTimeout console fetch globalThis navigator performance postMessage self setInterval " +
   "setTimeout undefined").split(" "));
 
-/** { declared: the file's top-level names, free: the names it uses and does not declare } */
+/** { declared: the file's top-level names, free: the names it uses and does not declare, imported: the names it takes
+ * from other files, set: the top-level names it assigns, inner: the names it declares below its top level, kinds: how
+ * each top-level name is declared ("let", "const", "function", "class", "import") } */
 export function namesOf(source) {
   const program = parse(source, { sourceType: "module" }).program;
-  const scopes = [], free = new Set();
+  const scopes = [], free = new Set(), set = new Set(), inner = new Set();
+  // (an assignment's target that no scope below the file's top level declares is one of the file's top level, or free)
+  const assigned = (target) => {
+    if (!target || target.type === "MemberExpression" || target.type === "OptionalMemberExpression") return;
+    for (const name of bound(target)) if (!scopes.slice(1).some((scope) => scope.has(name))) set.add(name);
+  };
   const known = (name) => scopes.some((scope) => scope.has(name));
   // the names a pattern binds, and the expressions inside it (defaults, computed keys), which are read
   const bound = (node, names = [], inside = []) => {
@@ -43,6 +50,7 @@ export function namesOf(source) {
       inside.push(node.right);
       bound(node.left, names, inside);
     } else if (node.type === "RestElement") bound(node.argument, names, inside);
+    else if (node.type === "MemberExpression") inside.push(node);  // (an assignment's pattern: [a.b, c] = ...)
     else throw new Error(`a pattern this check does not know: ${node.type}`);
     return names;
   };
@@ -56,6 +64,7 @@ export function namesOf(source) {
     return s.type === "FunctionDeclaration" || s.type === "ClassDeclaration" ? [s.id.name] : [];
   });
   const scoped = (names, inside) => {
+    if (scopes.length) names.forEach((name) => inner.add(name));
     scopes.push(new Set(names));
     inside();
     scopes.pop();
@@ -80,6 +89,17 @@ export function namesOf(source) {
       case "Identifier":
         if (!known(node.name)) free.add(node.name);
         return;
+      case "AssignmentExpression":
+        assigned(node.left);
+        if (node.left.type === "Identifier" || node.left.type.endsWith("Pattern")) {
+          const target = pattern(node.left);
+          target.names.forEach((name) => !known(name) && free.add(name));
+          target.read();
+        } else walk(node.left);
+        return walk(node.right);
+      case "UpdateExpression":
+        assigned(node.argument);
+        return walk(node.argument);
       case "MemberExpression": case "OptionalMemberExpression":
         walk(node.object);
         if (node.computed) walk(node.property);
@@ -107,6 +127,7 @@ export function namesOf(source) {
         return;
       case "ForStatement": case "ForInStatement": case "ForOfStatement": {
         const head = node.init ?? node.left;
+        if (node.left && node.left.type !== "VariableDeclaration") assigned(node.left);
         return scoped(head?.type === "VariableDeclaration" ? head.declarations.flatMap((d) => bound(d.id)) : [],
           () => [node.init, node.left, node.right, node.test, node.update, node.body].forEach((part) => walk(part)));
       }
@@ -141,7 +162,13 @@ export function namesOf(source) {
   }
   const declared = declarations(program.body);
   scoped(declared, () => program.body.forEach((statement) => walk(statement)));
-  return { declared, free };
+  const kinds = new Map(program.body.flatMap((statement) => {
+    const s = statement.type === "ExportNamedDeclaration" && statement.declaration ? statement.declaration : statement;
+    const kind = s.type === "VariableDeclaration" ? s.kind : s.type === "ImportDeclaration" ? "import" : s.type === "FunctionDeclaration" ? "function" : "class";
+    return declarations([statement]).map((name) => [name, kind]);
+  }));
+  const imported = [...kinds].filter(([, kind]) => kind === "import").map(([name]) => name);
+  return { declared, free, imported, set, inner, kinds };
 }
 
 if (import.meta.url === new URL(process.argv[1], "file:").href) {
@@ -157,27 +184,38 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
   // (a module of the folder that the window does not reach, and a ring: workerScripts() threw)
   console.log(`worker-modules-check: ${files.size} files of the worker use ${count} names of the worker's globals, and nothing they do not declare or import`);
 
-  // ---- the fields of the one object the modules share (worker/state.js): state.<name> is no variable, and a name
-  // that is not a field reads undefined and is set without a word. Every one used is a field, and every field is used
-  const texts = workerScripts().map(({ name, url }) => [name, fs.readFileSync(url, "utf8")]);
-  const fields = /^export const state = \{\n([\s\S]*?)^\};$/m.exec(texts.find(([name]) => name === "state")[1])[1]
-    .split("\n").filter((line) => !line.trim().startsWith("//")).flatMap((line) => [...line.matchAll(/(?:^  |, )(\w+): /g)].map((match) => match[1]));
-  assert.equal(new Set(fields).size, fields.length, "a field of state twice");
-  const used = new Set();
-  for (const [name, text] of texts) {
-    for (const [, field] of text.matchAll(/\bstate\.(?!js\b)(\w+)/g)) {
-      assert.ok(fields.includes(field), `${name} says state.${field}, which is no field of worker/state.js's object`);
-      used.add(field);
+  // ---- T378.3: what the modules hold has owners: a module's own `let`, which the others read by the name they import
+  // (a live binding) and never set. The scripts of one context that the checks run (worker-source.mjs) take the imports
+  // out, and every top level is the context's there, so three mistakes pass those checks and fail in a browser, or the
+  // other way round:
+  //   - a module that assigns a name it imports: it sets the owner's variable in the one context, and is a TypeError in a
+  //     browser ("Assignment to constant variable"), at the moment the line runs;
+  //   - a name declared inside a function that is also one the file imports: the line below it reads the local, without
+  //     a word (T367.4's pitfall: `let unstarted` beside the imported unstarted);
+  //   - two modules that declare the same top-level name: two variables in a browser, one in the context (a `let` twice
+  //     is a SyntaxError there; a function twice is the second one, silently).
+  let owned = 0;
+  for (const [name, { imported, set, inner }] of files) {
+    const written = imported.filter((taken) => set.has(taken));
+    assert.deepEqual(written, [], `${name} assigns ${written.join(", ")}, which it imports: only the module that declares a variable sets it ` +
+      "(a TypeError in a browser; say what happened to a function of the owner instead)");
+    const hidden = imported.filter((taken) => inner.has(taken));
+    assert.deepEqual(hidden, [], `${name} declares ${hidden.join(", ")} inside a function, and imports the same name: the lines below read the local one`);
+    owned += imported.length;
+  }
+  const owners = new Map();
+  for (const [name, { kinds }] of files) {
+    for (const [declared, kind] of kinds) {
+      if (kind === "import") continue;
+      assert.ok(!owners.has(declared), `${declared} is declared at the top of both ${owners.get(declared)} and ${name}: one name in the checks' one context, two in a browser`);
+      owners.set(declared, name);
     }
   }
-  assert.deepEqual(fields.filter((field) => !used.has(field)), [], "fields of state that nothing reads or sets");
-  // (and what the checks that run the worker set in its context: a name that is no field would set nothing the worker reads)
-  for (const check of ["worker-check.mjs", "worker-sink-check.mjs", "worker-fetches-check.mjs"]) {
-    for (const [, field] of fs.readFileSync(new URL(check, import.meta.url), "utf8").matchAll(/\bstate\.(\w+)/g)) {
-      assert.ok(fields.includes(field), `tests/${check} says state.${field}, which is no field of worker/state.js's object`);
-    }
-  }
-  console.log(`worker-modules-check: the ${fields.length} fields of state are the ones the modules use`);
+  // (and no module shares an object for the others to set fields of, as worker/state.js's was: what T378.3 took apart)
+  assert.ok(!files.has("state"), "worker/state.js is back: what the modules hold has owners (runtime.js, request.js, loaded.js, and each module's own)");
+  const lets = [...files].flatMap(([name, { kinds }]) => [...kinds].filter(([, kind]) => kind === "let").map(([declared]) => `${name}: ${declared}`));
+  console.log(`worker-modules-check: ${lets.length} variables at the top of the worker's modules, each set by its own module alone; ` +
+    `${owned} names imported, none assigned or hidden by a local; no top-level name twice`);
 
   // ---- the files as the modules they are, linked by Node: a name imported that is not exported where it is taken
   // from is a SyntaxError here. worker.js awaits nothing before its receiver is set (a module worker's port opens at the
