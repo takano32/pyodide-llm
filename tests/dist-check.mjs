@@ -32,6 +32,8 @@ import { treeOf } from "./tree.mjs";
 
 const ORIGIN = "https://site.test", BASE = "/pyodide-llm/";
 /** what dist's root may hold: the pages, the bundler's folder, and what is served as it is */
+/** the chunks that are fetched only when they are used (dist-check's rule 6) */
+export const LAZY = ["forward", "kept", "key", "gpu", "shaders"];
 export const ROOT = ["_astro", "index.html", "benchmark", "coi.js", "coi-test", "models"];
 
 /** coi.js's own family(), from its text: the function as the Service Worker runs it, on this origin */
@@ -82,6 +84,13 @@ export function distSaid(dist, tree = treeOf()) {
     if (!/^(worker|forward|helper|gpu|benchmark-[\w-]+)\.[\w-]{6,}\.js$/.test(name)) continue;
     const lines = got.toString("utf8").split("\n").length;
     if (got.length / lines > 200) said.push(`_astro/${name} is minified (${Math.round(got.length / lines)} characters a line): the workers are served as the bundler prints them (vite.worker's output.minify: false)`);
+  }
+  // 6 (T367.3's review): the parts that are read only when they are used stay chunks of their own. A static import of one
+  // (or a bundler's choice to fold a small one in) puts it into the worker's text, and then every visit fetches and
+  // evaluates it: the first request list is longer by it and nothing else fails. (key.js is the shaders' hash for the
+  // device's key, read when a GPU is there; kept.js the store of converted models; gpu and shaders the GPU's worker.)
+  for (const lazy of LAZY) {
+    if (!files.some((name) => new RegExp(`^${lazy}\\.[\\w-]{6,}\\.js$`).test(name))) said.push(`_astro/${lazy}.<hash>.js is not there: ${lazy}.js was bundled into another file, and is fetched on every visit now, used or not (a static import of it, or a bundler's choice)`);
   }
   // 4: the built files, once each, the same bytes
   const built = under(tree.built());

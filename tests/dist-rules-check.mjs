@@ -45,14 +45,14 @@ const family = familyOf(coi);
   const sources = { "src/runtime/forward.js": 'import { J } from "./jobs.js";\nexport const F = J;\n', "src/runtime/jobs.js": "export const J = 1;\n", "src/runtime/worker/part.js": "export const P = 2;\n",
     "src/runtime/built/simdkernel.so": "so", "src/runtime/built/simdkernel_plain.wasm": "wasm", "src/runtime/built/engine.zip": "zip", "src/python/llama2_numpy.py": "", "public/coi.js": coi, "public/coi-test/sw.js": "" };
   const good = { "index.html": "", "benchmark/index.html": "", "coi.js": coi, "coi-test/sw.js": "", "models/t.bin": "",
-    "_astro/worker.DR4U5U7O.js": "bundled", "_astro/forward.Dqke8pTt.js": "export const F = 1;\n", "_astro/simdkernel.DtNlNAG4.so": "so", "_astro/simdkernel_plain.DfCGpm7G.wasm": "wasm", "_astro/engine.D5queIE0.zip": "zip", "_astro/index.ChJdR91r.css": "" };
+    "_astro/worker.DR4U5U7O.js": "bundled", "_astro/forward.Dqke8pTt.js": "export const F = 1;\n", "_astro/kept.BDa9_jbn.js": "k", "_astro/key.XnxXfX1x.js": "k", "_astro/gpu.BxCYF6dr.js": "g", "_astro/shaders.B-nxB-d4.js": "s", "_astro/simdkernel.DtNlNAG4.so": "so", "_astro/simdkernel_plain.DfCGpm7G.wasm": "wasm", "_astro/engine.D5queIE0.zip": "zip", "_astro/index.ChJdR91r.css": "" };
   const build = (name, change = {}) => {
     const tree = written(name, { ...sources, ...Object.fromEntries(Object.entries({ ...good, ...change }).filter(([, text]) => text !== null).map(([file, text]) => [`dist/${file}`, text])) });
     return distSaid(path.join(tree, "dist"), treeOf(tree, { ...RULE }));
   };
   const right = build("right");
   assert.deepEqual(right.said, []);
-  assert.match(right.looked, /^6 files of _astro\/, each a family of its own; 3 built files in it once each; none of 3 sources as it is; the root holds nothing else$/);
+  assert.match(right.looked, /^10 files of _astro\/, each a family of its own; 3 built files in it once each; none of 3 sources as it is; the root holds nothing else$/);
   const wrong = (name, change, ...patterns) => {
     const { said } = build(name, change);
     assert.equal(said.length, patterns.length, `${name}: ${said.join(" | ")}`);
@@ -69,6 +69,7 @@ const family = familyOf(coi);
   // (a built file named twice, with other bytes the second time: two files, and the two are one family besides)
   wrong("a built file twice", { "_astro/simdkernel_plain.AAAAAAAA.wasm": "older" }, /^_astro\/simdkernel_plain\.AAAAAAAA\.wasm and _astro\/simdkernel_plain\.DfCGpm7G\.wasm: one family/, /^src\/runtime\/built\/simdkernel_plain\.wasm: 2 files of _astro\/ \(/);
   wrong("a minified worker", { "_astro/worker.DR4U5U7O.js": `${"const a=1;".repeat(100)}\n` }, /^_astro\/worker\.DR4U5U7O\.js is minified \(\d+ characters a line\)/);
+  wrong("a lazy part bundled into another file", { "_astro/key.XnxXfX1x.js": null }, /^_astro\/key\.<hash>\.js is not there: key\.js was bundled into another file, and is fetched on every visit now/);
   wrong("a runtime file at the root", { "worker.js": "as it was" }, /^dist\/worker\.js: nothing asks for it there \(the root holds _astro, index\.html, benchmark, coi\.js, coi-test, models\)/);
   wrong("an archive at the root", { "engine.zip": "zip" }, /^dist\/engine\.zip: nothing asks for it there/);
   wrong("an emptied folder at the root", { "worker/.keep": "" }, /^dist\/worker: nothing asks for it there/);
@@ -76,14 +77,14 @@ const family = familyOf(coi);
   wrong("no benchmark", { "benchmark/index.html": null }, /^dist\/benchmark\/index\.html is not there$/);
   assert.deepEqual(ROOT, ["_astro", "index.html", "benchmark", "coi.js", "coi-test", "models"]);
   assert.throws(() => distSaid(path.join(scratch, "right", "nothing"), treeOf(path.join(scratch, "right"), { ...RULE })), /no _astro\/ in it: npm run build/);
-  ok("a bundled tree's build: right, and wrong in thirteen ways, each said in a line of its own");
+  ok("a bundled tree's build: right, and wrong in fourteen ways, each said in a line of its own");
 
   // ---- a module as a build wrote it
   const dist = path.join(scratch, "right", "dist");
   assert.equal(builtModule("forward", dist).href, pathToFileURL(path.join(dist, "_astro/forward.Dqke8pTt.js")).href);
   assert.equal((await import(builtModule("forward", dist))).F, 1, "what is imported is the build's file, not the sources'");
   assert.throws(() => builtModule("forwar", dist), /neither _astro\/forwar\.<hash>\.js nor forwar\.js in it/);
-  assert.throws(() => builtModule("kept", dist), /neither _astro\/kept\.<hash>\.js nor kept\.js/);
+  assert.throws(() => builtModule("lazy", dist), /neither _astro\/lazy\.<hash>\.js nor lazy\.js/);
   assert.throws(() => builtModule("forward", path.join(scratch, "nowhere")), /no _astro\/ in it: npm run build/);
   const twice = path.join(written("two forwards", { "dist/_astro/forward.Dqke8pTt.js": "", "dist/_astro/forward.AAAAAAAA.js": "", "dist/_astro/forward-check.BBBBBBBB.js": "" }), "dist");
   assert.throws(() => builtModule("forward", twice), /2 files of _astro\/ are called forward \(forward\.AAAAAAAA\.js, forward\.Dqke8pTt\.js\)/);
