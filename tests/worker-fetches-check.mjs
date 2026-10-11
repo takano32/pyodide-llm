@@ -2,7 +2,7 @@
 // What a conversion asks of the network, in order, for every kind of source the page converts: the requests (the
 // file and its range) made for a made-up repository of huggingface.co, and what the converter is handed on the way,
 // held to tests/fixtures/conversion-fetches.json. The conduct of a conversion (which file, how much of its head, which
-// candidate next) is Python's since T374.2.1 (public/convert/conduct.py), the answers (the fetches, the parts of the
+// candidate next) is Python's since T374.2.1 (src/python/convert/conduct.py), the answers (the fetches, the parts of the
 // weights) the worker's (public/worker/conduct.js): this ran the worker's own steps before, and the fixture is what
 // showed that the two together ask for the same things in the same order.
 //
@@ -116,7 +116,7 @@ function diskFile(name, value) {
 // page hands the worker of a folder and what the worker reads of it are held together
 const chosen = async (files) => (await openHuggingFace(Object.entries(files).map(([name, value]) => diskFile(name, value)))).hf;
 
-// ---- the conduct is the real one (public/convert/conduct.py, in Pyodide, as the worker has it) and the worker's loop
+// ---- the conduct is the real one (src/python/convert/conduct.py, in Pyodide, as the worker has it) and the worker's loop
 // answers it (public/worker/conduct.js): the requests below are what the two make together. The converter is a
 // stand-in in the conduct's place of it (tests/conduct_hub.py's StandIn, T374.1), which writes down what it is handed;
 // here it also opens the place of the weights as Writer does, and has the options and the tokenizer a conversion ends with
@@ -219,7 +219,7 @@ const CASES = [
     whole("not a model", { "model.safetensors.index.json": index(["model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors"]) })],
 ];
 
-// ---- T374.2.3: the candidates for a tokenizer are in one place, Python's (TOKENIZERS of public/convert/conduct.py). The
+// ---- T374.2.3: the candidates for a tokenizer are in one place, Python's (TOKENIZERS of src/python/convert/conduct.py). The
 // page names none for a repository nobody has looked at, and keeps one list of its own, for the folder it must look
 // into before there is a Pyodide to ask: that list is held to Python's here
 {

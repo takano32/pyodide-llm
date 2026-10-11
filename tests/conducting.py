@@ -1,7 +1,7 @@
 # conducting.py (T374.4): what a tool that converts a model answers the conduct of a conversion with.
 #
 # Which files a model needs, in which order, which tokenizer is tried next and where the template comes from is the
-# conduct's (public/convert/conduct.py: a generator that asks), as it is for the page's worker. A tool says where the
+# conduct's (src/python/convert/conduct.py: a generator that asks), as it is for the page's worker. A tool says where the
 # files are and what the conversion is made with, and nothing else:
 #
 #   conversion = converted(Directory(folder), {"weights": "model.safetensors"}, dtype="float32", sink=Mapped(out))
@@ -42,7 +42,7 @@ class Missing(Exception):
 
 class Files:
     """What answers a conduct from files on a disk: text, bytes, range, size and stream, each taking what its request
-    has after the kind (public/convert/conduct.py says what each is answered with). path(where, name), the one thing
+    has after the kind (src/python/convert/conduct.py says what each is answered with). path(where, name), the one thing
     a kind of answerer has of its own: the file, or None where there is none.
     instead: {(where, name): a text} to answer with in the place of that file (a config.json changed on purpose).
     part: how many bytes of a stream go to the conversion at a time. fed(): called after each of them."""
@@ -199,7 +199,7 @@ class Heads(Fetched):
 
 def converted(answerer, hf, weights=True, **make):
     """The conversion of a model by its conduct, answered by answerer (a Files; anything with its five answers).
-    hf: the model as public/convert/conduct.py takes it (names only: weights, config, tokenizer, vocabulary).
+    hf: the model as src/python/convert/conduct.py takes it (names only: weights, config, tokenizer, vocabulary).
     make: what Conversion() takes besides the files (dtype, max_seq_len, sink, quantize_rows, readers).
     weights=False: stops where the first stream is asked for and returns the conversion as it is by then, made and
     unfinished (the request of a stream brings the conversion's own feed: the conversion is whose feed it is).

@@ -44,7 +44,7 @@ def entry_options(entry_id):
     return options
 
 
-# T374.4: by the conduct of a conversion (public/convert/conduct.py), answered from the folder as the page's worker
+# T374.4: by the conduct of a conversion (src/python/convert/conduct.py), answered from the folder as the page's worker
 # answers it from huggingface.co: which files are read, the tokenizer (the conduct's candidates, the first the converter
 # reads) and the template (tokenizer_config.json, or chat_template.jinja where that has none) are the page's, of whatever
 # of them the folder has. The checkpoint goes straight into <out>.bin

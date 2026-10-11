@@ -3,7 +3,7 @@
 # worse (the way T72 broke), so what "right" means is fixed first, on a real model, and the reader is held to it.
 #
 # The GGUF reading here is a reference of its own, written from the format's description and kept apart from
-# public/llama2_convert.py on purpose: the reader that goes into the page must not share code with what checks it.
+# src/python/llama2_convert.py on purpose: the reader that goes into the page must not share code with what checks it.
 #
 #   python3 tests/gguf_check.py tensors <model.gguf> <directory of the same model: config.json, model.safetensors
 #                                       or its shards and model.safetensors.index.json> [--original-vocabulary]

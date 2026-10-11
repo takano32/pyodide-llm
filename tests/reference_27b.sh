@@ -5,7 +5,7 @@
 #   (1) Prism ML's fork of llama.cpp (MIT, a pinned commit), built here for the CPU, with tests/reference_27b_fork.cpp
 #       against its libraries: the prompts' ids as the fork tokenizes them, 16 greedy tokens and the logits of every
 #       position, and its tokens/s (the only speed on a CPU anyone has for this model);
-#   (2) tests/reference_27b.py: the engine's own NumPy forward pass (public/llama2_numpy.py) over the GGUF read by
+#   (2) tests/reference_27b.py: the engine's own NumPy forward pass (src/python/llama2_numpy.py) over the GGUF read by
 #       memory map, a matrix widened at a time.
 #
 # And, since the review of T237, a third, between the two: the fork again, patched (tests/reference_27b_patch.py) to

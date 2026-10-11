@@ -1,5 +1,5 @@
 # reference_27b.py
-# T238: the engine's own NumPy forward pass (public/llama2_numpy.py's Llama.forward, as it is) over Ternary Bonsai 2
+# T238: the engine's own NumPy forward pass (src/python/llama2_numpy.py's Llama.forward, as it is) over Ternary Bonsai 2
 # 27B, whose matrices widened to float32 are 107 GB: the GGUF is read by memory map and a matrix is widened a few
 # hundred megabytes at a time, multiplied and let go. What is checked is the engine's computation on the real model:
 # the hybrid attention, the rotated basis (T237), the order of the value heads in a GGUF (llama.cpp stores them

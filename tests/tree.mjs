@@ -26,7 +26,7 @@
 //   tree.runtime("forward.js")         a path; tree.runtimeUrl("forward.js") a file: URL, for import() and new Worker()
 //   tree.python("engine/layout.py")    tree.python() is the folder Python's sys.path wants
 //   tree.built("simdkernel_plain.wasm")   tree.served("models/tokenizer.bin")
-//   tree.runtime("python.js", { maybe: true })   where the file would be, whether or not it is there (for a tool that
+//   tree.built("simdkernel.so", { maybe: true })   where the file would be, whether or not it is there (for a tool that
 //                                      asks whether, or says "make kernels")
 //   tree.folders                       { runtime, python, built, served }: the folders as the tree names them, for a
 //                                      tool's words ("public", "src/runtime")

@@ -1,4 +1,4 @@
-# conduct_hub.py (T374.1): what tests/test_conduct.py drives the conduct of a conversion (public/convert/conduct.py)
+# conduct_hub.py (T374.1): what tests/test_conduct.py drives the conduct of a conversion (src/python/convert/conduct.py)
 # with, and what it holds it to.
 #
 #   Hub        a dictionary for huggingface.co: {"<repository>/<file>": a text, bytes, or a File}, which answers what is

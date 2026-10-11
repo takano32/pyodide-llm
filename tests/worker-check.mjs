@@ -560,7 +560,8 @@ const ok = (line) => {
     context.console.warn = warn;
     // convert() asks for it where it first places the converter, and has waited for it before the converter is imported.
     // That block runs in no check here (the converter is a stand-in in them): its text is read, and tests/e2e.mjs fails
-    // a conversion in a browser that did not ask the CDN for the wheel
+    // a conversion in a browser that did not ask the CDN for the wheel (T367.2: tests/python-archive-check.mjs runs
+    // the block, converter(), on a stand-in of Pyodide: the order of what it asks for and imports)
     const converts = fs.readFileSync(runtimeUrl("worker/convert.js"), "utf8");
     assert.match(converts, /if \(!state\.llama2_convert\) \{[^]*?const jinja = templatePackage\(state\.pyodide\);[^]*?await jinja;\s*state\.llama2_convert = state\.pyodide\.pyimport\("llama2_convert"\);/,
       "convert() no longer loads jinja2 before it imports the converter");

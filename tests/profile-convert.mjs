@@ -25,7 +25,7 @@ const quantizeRows = py.pyimport("llama2_numpy").kernel_quantizer("simdkernel.so
 // the stored types' readers on the kernels, as the page does (T123: bfloat16; T136: GGUF's Q8_0; T273: the two ternary
 // types); --numpy: NumPy's, to compare
 const readers = process.argv.includes("--numpy") ? undefined : convert.kernel_readers("simdkernel.so");
-// T374.2.1: by the conduct of a conversion (public/convert/conduct.py), answered from the folder as the worker answers
+// T374.2.1: by the conduct of a conversion (src/python/convert/conduct.py), answered from the folder as the worker answers
 // it from huggingface.co (public/worker/conduct.js): a request and an answer for every file, and the parts to the
 // conversion's own feed, which the request of a stream brings. (Before, this called the converter itself and fed it;
 // tests/abba-convert.sh against a tree of before T374.2.1 therefore times what the conduct adds to a conversion.)
