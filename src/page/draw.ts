@@ -3,9 +3,10 @@
 import { reportUrl } from "../bench.js";
 import { chat, run, statusText } from "./dom.ts";
 import { parameters } from "./address.ts";
-import { benchmarking, gpuNote, gpuSaid, model, readyLine } from "./model.ts";
+import { benchmarking, gpuNote, gpuSaid, model, outdated, readyLine } from "./model.ts";
 import { generating } from "./answer.ts";
 import { fixSeed } from "./settings.ts";
+import { SLOWER } from "../runtime/updated.js";
 import type { BenchRow, Done } from "../runtime/contracts/messages.ts";
 
 // The round button is the only control: an arrow that sends, a square that stops the run that is going on.
@@ -116,7 +117,8 @@ export function showStatus(note?: string) {
   const { backend, threads, pyodide } = readyLine;
   // (?gpuTest=on, the tests' flag, says so as ?without= does)
   const tested = gpuNote && parameters.get("gpuTest") === "on" ? " (gpuTest)" : "";
-  statusText.textContent = `${model.name} · ${backend}${threads > 1 ? `, ${threads} threads` : ""}${gpuNote ? `, ${gpuNote}${tested}` : ""} · Pyodide ${pyodide}`;
+  // (T439: and, last, that a reload would make it faster, where it runs slower for a file of this build that is gone)
+  statusText.textContent = `${model.name} · ${backend}${threads > 1 ? `, ${threads} threads` : ""}${gpuNote ? `, ${gpuNote}${tested}` : ""} · Pyodide ${pyodide}${outdated ? ` · ${SLOWER}` : ""}`;
 }
 // T135: how many of the prompt's tokens went through the GPU (the ones counted as the prompt: the one after them
 // makes the first logits, on the CPU)

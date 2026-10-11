@@ -174,8 +174,11 @@ export type GpuChose = {
 export type GpuSaid = { type: "gpu"; load: number; note: string; matrices?: undefined };
 // T156: the CPU is faster here than this model on the GPU alone (kept once its load on the CPU is ready)
 export type GpuAlone = { type: "gpu-alone"; load: number; alone: Alone };
+// T439: the worker went on without a file of its build that is gone, on a slower path (worker/outdated.js): once a
+// worker at most, whatever else is going on, and of no load (the page is of a build the site no longer serves)
+export type Updated = { type: "updated"; load?: undefined };
 
-export type FromWorker = Status | Progress | Ready | Token | Done | Bench | Paths | Failed | Threads | ThreadsCompared | GpuChose | GpuSaid | GpuAlone;
+export type FromWorker = Status | Progress | Ready | Token | Done | Bench | Paths | Failed | Threads | ThreadsCompared | GpuChose | GpuSaid | GpuAlone | Updated;
 
 // The model's worker as a page has it: a Worker that takes ToWorker and reports FromWorker
 export type ModelWorker = Omit<Worker, "postMessage" | "onmessage"> & {

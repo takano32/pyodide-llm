@@ -66,6 +66,8 @@ page_modules() {
   # T367.4: what says "the site was updated while this page was open", with stand-ins of a fetch (404, the 500s, a line
   # that dropped, no answer), and, in the sources, what becomes of each file that is asked for later (under a second)
   node tests/updated-check.mjs
+  # T439: what the worker tells the page where it goes on, slower, without a file of its build that is gone (stand-ins)
+  node tests/worker-outdated-check.mjs
   node tests/ladder-check.mjs
   node tests/kept-check.mjs
   node tests/coi-js-check.mjs

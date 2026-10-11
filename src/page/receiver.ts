@@ -6,7 +6,7 @@ import { FULL_ROUNDS, ROUNDS, USAGE_KEY, benchMarkdown, environmentOf, roundsHer
 import { $, chat, files, progress, run, select, statusText } from "./dom.ts";
 import { benchmark, weighed } from "./address.ts";
 import { gpuKey, remember, threadsKey } from "./remembered.ts";
-import { becameReady, benchBegan, benchEnded, failed, loads, model, ready, takesPrompts, threadsNow } from "./model.ts";
+import { becameReady, benchBegan, benchEnded, failed, loads, model, ready, siteUpdated, takesPrompts, threadsNow } from "./model.ts";
 import { answer, idle, used } from "./answer.ts";
 import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
@@ -113,6 +113,11 @@ worker.onmessage = ({ data }) => {
         // no storage here: the next visit times them again
       }
     }
+  } else if (data.type === "updated") {
+    // T439: the worker went on without a file of this page's build, which the site no longer serves: the status line of
+    // a ready model says so from now on (the model answers meanwhile, and nothing else changes)
+    siteUpdated();
+    showStatus();
   } else if (data.type === "gpu-alone") {
     // T156: the CPU is faster here than the GPU for this model on the GPU alone: kept once the load on the CPU is
     // ready (the second review of T156: a CPU that cannot hold the model must not keep the next visits from the GPU),
