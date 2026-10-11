@@ -125,12 +125,20 @@ const isNot = (name, said, pattern) => {
   if (pattern) expect(name, pattern.test(said ?? ""), `said ${JSON.stringify(said)}, not ${pattern}`);
 };
 
+// Offline: the browser is told so, and the server ends every connection without an answer as well (Playwright's Firefox
+// goes on reaching localhost when it is told it is offline: its conversion "offline" simply succeeded, CI's run
+// 38123992979), which is what offline is to a page either way: no answer from anywhere
+async function offlineNow(context) {
+  rule = () => "drop";
+  await context.setOffline(true);
+}
+
 // ---- the cases. after: the rule once the page is ready (the deployment, or the failure); from the start: `first`
 const converting = (after, check, { offline = false } = {}) => async (context, name) => {
   const page = await modelPage(context);
   await ready(page);
   rule = after;
-  if (offline) await context.setOffline(true);
+  if (offline) await offlineNow(context);
   const said = await converted(page);
   console.log(`  the page: ${JSON.stringify(said)}`);
   check(name, said);
@@ -139,7 +147,7 @@ const measuring = (which, after, check, { first, offline = false } = {}) => asyn
   if (first) rule = first;
   const page = await benchmarkPage(context);
   if (after) rule = after;
-  if (offline) await context.setOffline(true);
+  if (offline) await offlineNow(context);
   const said = await section(page, which);
   console.log(`  the section: ${JSON.stringify({ status: said.status, state: said.state, shown: said.shown.slice(0, 160) })}`);
   check(name, said);
