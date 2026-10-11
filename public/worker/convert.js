@@ -102,7 +102,8 @@ export async function converter(signal) {
   if (!state.llama2_convert) {
     // (T397) and jinja2 with it, for the model's chat template: the conversion goes on without it where it does not come
     const jinja = templatePackage(state.pyodide);
-    await placePython(state.pyodide, pythonArchive("converter.zip", signal));
+    const archive = "converter.zip";
+    await placePython(state.pyodide, pythonArchive(archive, signal), archive);
     await jinja;
     state.llama2_convert = state.pyodide.pyimport("llama2_convert");
   }

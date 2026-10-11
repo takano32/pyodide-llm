@@ -211,11 +211,16 @@ const made = build(tree.python(), path.join(work, "tree"));
   // placed: unpacked as a zip, into the folder Pyodide is in (no other folder is named); nothing where the archive did not come
   const unpacked = [];
   const standIn = { unpackArchive: (...given) => { unpacked.push(given); } };
-  await run("placePython")(standIn, Promise.resolve(came));
+  await run("placePython")(standIn, Promise.resolve(came), "engine.zip");
   assert.equal(unpacked.length, 1);
   assert.deepEqual([unpacked[0][0] === came, ...unpacked[0].slice(1)], [true, "zip"], "placePython() unpacks the bytes it was given as a zip, where Pyodide is");
   await assert.rejects(run("placePython")(standIn, Promise.reject(new Error("Could not fetch engine.zip: 404"))), { message: "Could not fetch engine.zip: 404" });
   assert.equal(unpacked.length, 1, "something was unpacked of an archive that did not come");
+  // an archive that came and cannot be read: said by its name, with what Pyodide said kept as the cause (T432)
+  const unreadable = { unpackArchive: () => { throw new Error("ReadError: /tmp/tmpx is not a zip file"); } };
+  const said = await run("placePython")(unreadable, Promise.resolve(came), "converter.zip").catch((error) => error);
+  assert.equal(said.message, "Could not read converter.zip: the file did not arrive whole. Reload the page to try again.");
+  assert.match(said.cause.message, /not a zip file/);
 
   // the converter: asked for by the first conversion and not before, after jinja2 was asked of Pyodide, imported after
   // it is placed; the second conversion asks for nothing
@@ -256,7 +261,7 @@ const made = build(tree.python(), path.join(work, "tree"));
   // (the names as the code says them, in quotes: the comments name them too)
   assert.deepEqual(naming(/"engine\.zip"/), ["worker.js"]);
   assert.deepEqual(naming(/"converter\.zip"/), ["convert"]);
-  assert.match(body(sources["worker.js"], "async function init(search) {"), /pythonArchive\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(state\.pyodide, engine\);\s*state\.llama2_numpy = state\.pyodide\.pyimport\("llama2_numpy"\);/,
+  assert.match(body(sources["worker.js"], "async function init(search) {"), /pythonArchive\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(state\.pyodide, engine, "engine\.zip"\);\s*state\.llama2_numpy = state\.pyodide\.pyimport\("llama2_numpy"\);/,
     "init() asks for the engine's archive before it waits for Pyodide, and places it before it imports the engine");
   assert.equal(Object.values(sources).join("\n").match(/"converter\.zip"/g).length, 1);
   assert.match(body(sources.convert, "async function converter(signal) {"), /"converter\.zip"/);
@@ -272,7 +277,7 @@ const made = build(tree.python(), path.join(work, "tree"));
   const spent = {};
   for (const [name, module] of Object.entries(ARCHIVES)) {
     const began = performance.now();
-    await run("placePython")(real, run("pythonArchive")(name));
+    await run("placePython")(real, run("pythonArchive")(name), name);
     spent[name] = performance.now() - began;
     // (the window and the package are asked for by name, which runs none of them: the parts import NumPy, which is not here)
     const found = (name) => real.runPython(`import importlib.util\nspec = importlib.util.find_spec(${JSON.stringify(name)})\nspec and spec.origin`);
@@ -284,6 +289,12 @@ const made = build(tree.python(), path.join(work, "tree"));
     }
   }
   assert.deepEqual(requests.map(({ url }) => url.slice(url.lastIndexOf("/") + 1)), [last(asked("engine.zip")), last(asked("converter.zip"))]);
+  // T432: what the real Pyodide refuses (half an archive, a page of HTML in its place) is said in the worker's sentence
+  const whole = new Uint8Array(made["engine.zip"]);
+  for (const [what, bytes] of [["half an archive", whole.slice(0, whole.length >> 1)], ["a page", new TextEncoder().encode("<!doctype html><title>404</title>")]]) {
+    await assert.rejects(run("placePython")(real, Promise.resolve(bytes), "engine.zip"),
+      { message: "Could not read engine.zip: the file did not arrive whole. Reload the page to try again." }, what);
+  }
   ok(`in Pyodide ${real.version}: the two archives unpacked by the worker's own functions are found by import, with the sources' bytes (${Object.entries(spent).map(([name, ms]) => `${name} in ${ms.toFixed(1)} ms`).join(", ")})`);
 }
 

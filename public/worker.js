@@ -65,7 +65,7 @@ async function init(search) {
   const version = await resolvePyodideVersion(search);
   state.pyodide = await pyodideSteps(version, (url) => import(url));
 
-  await placePython(state.pyodide, engine);
+  await placePython(state.pyodide, engine, "engine.zip");
   state.llama2_numpy = state.pyodide.pyimport("llama2_numpy");
 
   // The WASM SIMD kernels (kernels/*.ts), which llama2_numpy.py loads with ctypes. They are optional: without
