@@ -1,4 +1,4 @@
-// The requests forward.js waits for in the control area: a block of a prompt, the steps of a generation, the GPU's own
+// The requests forward.ts waits for in the control area: a block of a prompt, the steps of a generation, the GPU's own
 // keys and values (T210), each answered by serve().
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
@@ -7,14 +7,14 @@ import { roomFor, keysIn, block, keysOut, keysBack } from "./block.js";
 import { tokenStep, runTokens } from "./tokens.js";
 import { samplingState, samplingSettings } from "../shaders/run.js";
 
-// A request for count steps from token at pos (src/runtime/forward/gpuside.js's generateMany): the keys and values of positions from to
-// pos - 1 up from forward.js's cache first (cache: its addresses of the keys and the values, its capacity and the
+// A request for count steps from token at pos (src/runtime/forward/gpuside.ts's generateMany): the keys and values of positions from to
+// pos - 1 up from forward.ts's cache first (cache: its addresses of the keys and the values, its capacity and the
 // bytes of a position; half: float16 as here, else float32, narrowed on the way up: T160, a grouped-query model's),
 // the state (token, pos, the end of the history and its length), the settings and a random number a step; the ids into
 // plan.tokens.ids ([sampled, id, id, ...] and, after plan.tokens.most ids, the State's not_finite word: T219, the step
 // after the sampled ones was refused, its logits not finite; a stop token last where one came), and the keys and values of the positions
 // sampled in float16 into plan.staging as a prompt's block's ([keys, values][layer][plan.batch positions]), which
-// forward.js puts into its cache (widened where it is float32), where it still wants the answer. T210: a model on the
+// forward.ts puts into its cache (widened where it is float32), where it still wants the answer. T210: a model on the
 // GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back
 function generate({ serial, count, pos, from, token, history, length, cache, settings, randoms }) {
   serve(serial, async (wanted) => {
@@ -44,7 +44,7 @@ function prompt({ serial, count, pos, tokens }) {
   serve(serial, (wanted) => block(model, count, pos, wanted, false, tokens));
 }
 // The answer to a request (a block of a prompt, T152: the steps of a generation), in the control area: work(wanted)
-// runs while words.beat counts up, then words.failed and words.done = serial, where forward.js still waits for this
+// runs while words.beat counts up, then words.failed and words.done = serial, where forward.ts still waits for this
 // request (wanted: T147, it gave up, and the memory may soon be another model's)
 async function serve(serial, work) {
   const { memory, plan } = model;
@@ -72,7 +72,7 @@ async function serve(serial, work) {
 
 // T210: the GPU's own keys and values of count positions (plan.batch at most) from pos into plan.staging, as a block
 // writes them back: a model on the GPU alone keeps none in the shared memory, and the tests read them so
-// (src/runtime/forward/engine.js's keysAndValues)
+// (src/runtime/forward/engine.ts's keysAndValues)
 function keysOf({ serial, count, pos }) {
   serve(serial, async (wanted) => {
     const encoder = model.device.createCommandEncoder();

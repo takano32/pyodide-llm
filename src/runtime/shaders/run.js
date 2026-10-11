@@ -235,7 +235,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
 }`;
 // T232: EMBED and EMBED_ROWS from a table of ternary weights (see prompt.js's TERNARY_PACKED, above dp4a): a word is 16 codes of
 // two bits and a scale covers 128 weights; a value is its code less one times the scale, one float32 product, as the
-// CPU's embed() has it (src/runtime/forward/engine.js's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
+// CPU's embed() has it (src/runtime/forward/engine.ts's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
 // a workgroup a token of ids; else EMBED's, the state's token). Their loop is llama.cpp's get_rows, as theirs
 const embedTernary = (block) => /* wgsl */ `${block ? "" : STATE}
 @group(0) @binding(0) var<storage, read> table: array<u32>;
@@ -266,7 +266,7 @@ export const EMBED_TERNARY = embedTernary(false), EMBED_ROWS_TERNARY = embedTern
 // ---- T232: the outlier channels of a ternary classifier's input (T92: a few weights of the final norm are several
 // times the others (Ternary Bonsai 1.7B's largest is 5.6 times its median, the 8B's 5.2), and a group of 32 quantized
 // to 8 bits with one of them loses the other 31). The CPU takes them out of the normed stream before it quantizes it
-// and multiplies their columns of the classifier in float32 (src/runtime/forward/engine.js's picked and the kernel add_columns); an int8
+// and multiplies their columns of the classifier in float32 (src/runtime/forward/engine.ts's picked and the kernel add_columns); an int8
 // model's GPU multiplies a classifier of floats instead (T226: fusedMatVec), which reads int8 weights. For ternary
 // weights the GPU does what the CPU does, in two small dispatches around the classifier's matrix, the columns read
 // from the table of codes as it is. No public implementation has this (ONNX Runtime and llama.cpp quantize the input

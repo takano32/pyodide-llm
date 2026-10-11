@@ -1,7 +1,7 @@
-// forward/gpuside.js (T349): the GPU's side of one engine: what the GPU would hold of the model and why it would not
+// forward/gpuside.ts (T349): the GPU's side of one engine: what the GPU would hold of the model and why it would not
 // take it, the GPU's worker (src/runtime/gpu.js) started and stopped, a prompt's blocks and a generation's steps through
 // it, and which of them go there (T135, T148, T152, T156, T210).
-// A module of src/runtime/forward.js; it reads jobs.js and its neighbours by static imports.
+// A module of src/runtime/forward.ts; it reads jobs.ts and its neighbours by static imports.
 
 import { BATCH, GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } from "../jobs.ts";
 import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine,
@@ -195,7 +195,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   // goes to the CPU; run() ends it where the CPU writes).
   // T148: by default (AGENTS.md's policy 9), and without waiting for it: the model is ready on the CPU at once, and the
   // GPU takes the blocks of a prompt from the first one after it is ready (a block past gpuEnd stays on the CPU, so a
-  // GPU that is ready in the middle of a prompt changes nothing of it). Which blocks it takes: promptTimes (choice.js).
+  // GPU that is ready in the middle of a prompt changes nothing of it). Which blocks it takes: promptTimes (choice.ts).
   // T205: gpuEnded, settled once the last GPU's worker made has let go of its buffers and its device (or never began)
   let gpuEnded: Promise<void> = Promise.resolve(), gpuLast: GpuWorker | null = null, quietTimer: ReturnType<typeof setTimeout> | undefined;
   let gpuWorker: GpuWorker | null = null, gpuOn = false, gpuEnd = 0, gpuSerial = 0, gpuTokens = 0, settleGpu: ((note: string) => void) | null = null,

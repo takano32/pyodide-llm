@@ -10,7 +10,7 @@
 //   maximum: the bytes the memory was made with room for (its maximum), null where the browser refused a maximum that
 //   large and the memory was made without one (a report of a number that low says so)
 //
-// One WebAssembly memory, as the models' weights are held (forward.js): a browser may refuse a memory that large before
+// One WebAssembly memory, as the models' weights are held (forward.ts): a browser may refuse a memory that large before
 // the tab runs out. The bytes are random so that a device that compresses its memory (iOS does) counts them all; a
 // page of zeros, or of one byte a page, would compress to nothing and the tab would seem to hold far more. The memory
 // is freed when the page ends this worker. The section runs alone: no other WebAssembly memory is alive in the page

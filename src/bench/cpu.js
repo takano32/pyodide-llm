@@ -2,7 +2,7 @@
 // (T353: a part of src/bench.js, which is the window that exports every name of these)
 import { number, tableCell, unmeasured } from "./cells.js";
 
-// T157: the GPU section of /benchmark/ against the CPU section's forward pass (forward.js itself, relaxed SIMD and the
+// T157: the GPU section of /benchmark/ against the CPU section's forward pass (forward.ts itself, relaxed SIMD and the
 // software threads, as the model page runs it). Before T157 the CPU of the GPU's token table was one thread of
 // matmul_q8 doubled, which read low: 1.44× on the owner's Android where the CPU section's numbers make about 1.0×.
 const STATES = { none: "found nothing to run on here", wrong: "computed something wrong", error: "failed" };

@@ -4,7 +4,7 @@
 //
 //   { step: "device" }                          what this browser can do: SIMD, relaxed SIMD, 64-bit memories, shared
 //                                               memory, WebGPU and OPFS in a worker, the storage the browser grants
-//   { step: "cpu", threads }                    the forward pass of forward.js, the one the model page runs, on a
+//   { step: "cpu", threads }                    the forward pass of forward.ts, the one the model page runs, on a
 //                                               made-up int8 model of Llama 3.2 1B's width (random weights, two
 //                                               layers), one token at a time at each count of software threads, and
 //                                               a prompt's tokens 16 at a time (T108), as the GPU section does them;
@@ -77,7 +77,7 @@ async function device() {
 
 // ---- the CPU. A made-up model of Llama 3.2 1B's width (dim 2048, FFN 8192, 32 heads of 64, 8 of them for keys and
 // values) with two layers and a vocabulary of 32000: 211 MB of int8 weights and their scales, which is what a token
-// reads, whatever the numbers in them. The forward pass is forward.js's own (createForward, the kernels of
+// reads, whatever the numbers in them. The forward pass is forward.ts's own (createForward, the kernels of
 // simdkernel_*.wasm, the software threads of helper.js): what differs from the model page is only that the plan of the
 // tensors comes from here instead of from Python.
 const SHAPE = { dim: 2048, hidden: 8192, layers: 2, heads: 32, kvHeads: 8, vocab: 32000, seqLen: 64 };
@@ -143,7 +143,7 @@ function fillWeights(memory, base, { plan }) {
   }
 }
 
-// a software thread of forward.js, as the model's worker starts one (src/runtime/worker/weights.ts's spawnThread)
+// a software thread of forward.ts, as the model's worker starts one (src/runtime/worker/weights.ts's spawnThread)
 const spawn = (data) => new Promise((resolve, reject) => {
   const worker = new Worker(new URL("../helper.ts", import.meta.url), { type: "module" });
   worker.onmessage = () => resolve({ terminate: () => worker.terminate() });
@@ -285,7 +285,7 @@ const rate = (work, r) => ({ rate: (work * r.passes) / (r.ms / 1000) / 1e9, pass
 const xorOf = (lanes, n) => lanes.reduce((x, lane) => x ^ Math.imul(n, lane), 0);
 
 // the control words of the reading threads, on a SharedArrayBuffer of their own (not a WebAssembly memory: T96): as
-// forward.js cuts a matrix's rows (T93), the weights are read a CHUNK at a time, each thread taking the next one from
+// forward.ts cuts a matrix's rows (T93), the weights are read a CHUNK at a time, each thread taking the next one from
 // NEXT until TOTAL (passes × chunks), so that a slow core (a little one of a big.LITTLE phone) takes fewer instead of
 // holding the others back (T163's review: equal parts read at the slowest thread's speed)
 const GO = 0, DONE = 1, COUNT = 2, TOTAL = 3, STOP = 4, NEXT = 5, CHUNK = 1 << 20, STARTING_MS = 30_000;

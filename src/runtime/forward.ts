@@ -1,4 +1,4 @@
-// forward.js (T93): one token's forward pass in JavaScript, on the SIMD kernels of kernels/*.ts, on a WebAssembly
+// forward.ts (T93): one token's forward pass in JavaScript, on the SIMD kernels of kernels/*.ts, on a WebAssembly
 // memory of its own that holds the weights. Python (llama2_numpy.Llama with external=) still reads the header, says
 // where every tensor is, tokenizes, samples and runs the generation loop; this file does what the engine's kernel_forward()
 // did until T93 retired it, in the same order with the same kernels. What it saves is the Python between the
@@ -11,10 +11,10 @@
 //   const outside = external({ memory, base, size, kernels }); // what Llama(external=) takes
 
 // T349: this file is the window of the forward pass: compileKernels(), external(), and every name it exported as one
-// file. The rest is in the modules of forward/: engine.js (createForward(): one model's forward pass), threads.js (its
-// software threads and the search for their number), gpuside.js (its GPU's side), choice.js (the GPU or the CPU, and
-// its times), paths.js (what /benchmark/ times of the page's path), memory.js (the memory a model takes) and alone.js
-// (a model on the GPU alone). Each is a static import, as jobs.js is: a bundler links them into
+// file. The rest is in the modules of forward/: engine.ts (createForward(): one model's forward pass), threads.ts (its
+// software threads and the search for their number), gpuside.ts (its GPU's side), choice.ts (the GPU or the CPU, and
+// its times), paths.ts (what /benchmark/ times of the page's path), memory.ts (the memory a model takes) and alone.ts
+// (a model on the GPU alone). Each is a static import, as jobs.ts is: a bundler links them into
 // one file (T367.3).
 import { BATCH } from "./jobs.ts";
 export { BATCH };

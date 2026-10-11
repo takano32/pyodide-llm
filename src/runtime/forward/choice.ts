@@ -1,7 +1,7 @@
-// forward/choice.js (T349): how a prompt's blocks and a generation's steps are given to the GPU or kept on the CPU:
+// forward/choice.ts (T349): how a prompt's blocks and a generation's steps are given to the GPU or kept on the CPU:
 // the sizes of what the GPU takes at once, the times of either side as they are measured (promptTimes, tokenTimes),
 // the margin one must be faster by (BETTER), and what the status line says of it (gpuLine).
-// A module of src/runtime/forward.js, which exports its names as before.
+// A module of src/runtime/forward.ts, which exports its names as before.
 
 // T205: the most release() waits for the GPU's worker to say it let go of its buffers and its device ("ended"), before
 // the next model is read; one that says nothing by then (a compilation that does not return) is terminated (worker/weights.ts
@@ -26,7 +26,7 @@ const TOKEN_RECHECK = 4, STOPS_MOST = 8;
 // move a verdict
 const lowerMedian = (xs: number[]) => [...xs].sort((a, b) => a - b)[(xs.length - 1) >> 1];
 
-// T148: how long a block of a prompt takes on either side, from which forward.js gives each block to the GPU or keeps
+// T148: how long a block of a prompt takes on either side, from which forward.ts gives each block to the GPU or keeps
 // it on the CPU (AGENTS.md's policy 9: the GPU by default, the CPU where this device runs it faster). Measured, never
 // written down (the development machine's numbers are no visitor's):
 //   - the CPU: ms a token of the blocks of BATCH it runs of real prompts (no work only to time it), per number of
@@ -86,7 +86,7 @@ export function promptTimes() {
 }
 
 // T152: how long a step of a generation (the forward pass of the token fed, and the sampling of the next) takes on
-// either side, from which forward.js gives the steps to the GPU or keeps them on the CPU, as promptTimes does a
+// either side, from which forward.ts gives the steps to the GPU or keeps them on the CPU, as promptTimes does a
 // prompt's blocks: measured, never written down.
 //   - the CPU: ms of the forward pass of a token with its logits, per number of threads, the lower median of the last
 //     KEEP, none until TIMED (the sampling after it is Python's, on the kernels: not in it, so the CPU looks a little
@@ -141,5 +141,5 @@ export function gpuLine(prompts: string | null | undefined, answers: Answers | n
   return `${prompts}, ${ANSWERS[answers]}`;
 }
 
-// (T349) what forward.js and the other modules read besides, which was not exported where it was one file
+// (T349) what forward.ts and the other modules read besides, which was not exported where it was one file
 export { GPU_RECHECK, TOKEN_RECHECK, STOPS_MOST, lowerMedian, BETTER };

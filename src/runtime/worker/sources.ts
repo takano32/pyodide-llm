@@ -259,6 +259,6 @@ export function readUrl(model: Sized, signal: AbortSignal, load: number) {
 }
 
 // The header of the legacy format: 7 ints, the shape of the model. T115: they also say what the forward pass puts
-// after the checkpoint (forward.js's footprint()), which the memory is chosen by.
+// after the checkpoint (forward.ts's footprint()), which the memory is chosen by.
 export const HEADER_BYTES = 28;
 export const headerInts = (bytes: Uint8Array) => [...new Int32Array(bytes.slice(0, HEADER_BYTES).buffer)];

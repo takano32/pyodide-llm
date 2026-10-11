@@ -1,11 +1,11 @@
-// gpu.js (T135, T147, T148): the model page's GPU, in a worker of its own. forward.js (in the model's worker) makes it
+// gpu.js (T135, T147, T148): the model page's GPU, in a worker of its own. forward.ts (in the model's worker) makes it
 // wherever the worker has WebGPU and the model is one it takes (T148: by default, no option), and hands it the blocks
 // of a prompt (up to plan.batch tokens) one at a time that it finds faster here than on the CPU, waiting in
 // Atomics.wait for the answer: the model's worker cannot wait for a promise while Python calls forwardMany(), and this
 // one can (T94's design; T134's bridge measured 12 to 95 µs a round trip).
 //
-//   { type: "start", memory, plan }  the layers of the model onto the GPU, read from the shared memory of forward.js
-//                                    (plan: what forward.js says of them, addresses in that memory). Says
+//   { type: "start", memory, plan }  the layers of the model onto the GPU, read from the shared memory of forward.ts
+//                                    (plan: what forward.ts says of them, addresses in that memory). Says
 //                                    { type: "progress" } after every step (a layer's weights, a shader compiled,
 //                                    checked, timed: STEP_MS each at most, T147), then { type: "ready",
 //                                    adapter, key, bytes, seconds, form, attention, forms, remembered, blocks } or
@@ -14,19 +14,19 @@
 //                                    (tests); plan.remembered ({ key, matrices, attention }: what the page kept of an
 //                                    earlier visit) spares the timing of the matrices' shaders where key is this
 //                                    adapter's and the shader is still right here; blocks: what a whole block of 16
-//                                    and of 64 tokens takes here (forward.js weighs the GPU against the CPU by it)
+//                                    and of 64 tokens takes here (forward.ts weighs the GPU against the CPU by it)
 //   { type: "prompt", serial, count, pos }
-//                                    the rows of count tokens at positions pos, pos + 1, ... (embedded by forward.js,
+//                                    the rows of count tokens at positions pos, pos + 1, ... (embedded by forward.ts,
 //                                    at plan.rows) through every layer, and their keys and values of every layer into
 //                                    plan.staging as float16. The answer is in the control area: words.failed, then
 //                                    words.done = serial, while words.beat counts up meanwhile; a failure also says
 //                                    { type: "failed", reason }. Nothing is written where words.wanted is no longer
-//                                    serial: forward.js gave the request up (T147: a worker that went on late must not
+//                                    serial: forward.ts gave the request up (T147: a worker that went on late must not
 //                                    write into a memory that may hold the next model by then)
 //   { type: "tokens", serial, count, pos, from, token, history, length, cache, settings, randoms }
 //                                    T152: count steps of a generation from token at pos (the forward pass and the
 //                                    sampling of each, SAMPLE's), after the keys and values of positions from to pos - 1
-//                                    went up from forward.js's cache; the ids into plan.tokens.ids and the keys and
+//                                    went up from forward.ts's cache; the ids into plan.tokens.ids and the keys and
 //                                    values of their positions into plan.staging (gpu/requests.js's generate()). The answer is
 //                                    in the control area as a prompt's. Where plan.tokens asks for it, "ready" says
 //                                    tokens ({ form, ms, forms, remembered, attention, attentions }: the layer of a
@@ -48,7 +48,7 @@
 // its own), the output matrix added to the residual, the RMSNorm, the gate and the up matrices, SwiGLU, the down matrix
 // added. T154: GPT-2 and GPT-NeoX (plan.layerNorm) have LayerNorm with a bias for either norm, a bias after every
 // matrix, no gate (the up matrix is w1, then GELU), GPT-2 no RoPE at all (plan.turned 0: its learned positions are in
-// the rows forward.js embeds) and GPT-NeoX RoPE on a part of every head; GPT-NeoX's parallel residual (plan.parallel)
+// the rows forward.ts embeds) and GPT-NeoX RoPE on a part of every head; GPT-NeoX's parallel residual (plan.parallel)
 // has the FFN's norm read the layer's input before the output matrix adds to it, into a buffer of its own (xn). The
 // last layer stops at its keys and values: nothing of a prompt's token after them is used. Then the block's
 // keys and values of every layer are copied out and read back. The activations are float32 (quantized to 8 bits first
@@ -59,11 +59,11 @@
 // are multiplied by the packed shaders alone (shaders.js's TERNARY_PACKED: the codes unpacked to int8 where the
 // shader loads them); a device without the packed int8 dot keeps such a model on the CPU.
 //
-// T352: this file is the window of the worker: forward.js starts it and its messages come here. What it does is the
+// T352: this file is the window of the worker: forward.ts starts it and its messages come here. What it does is the
 // modules of gpu/: device.js (the shaders' module, what the modules share, the device, buffers), weights.js (the
 // weights onto the GPU), forms.js (the prompt's shaders checked, timed and chosen), block.js (a block of a prompt),
 // tokenattention.js, tokens.js and tokenforms.js (a generated token's attention, its steps, and their forms checked,
-// timed and chosen), requests.js (what forward.js waits for in the control area) and start.js (the model going onto
+// timed and chosen), requests.js (what forward.ts waits for in the control area) and start.js (the model going onto
 // the GPU and leaving it). Each is a static import: a bundler links them into this worker's file (T367.3),
 // and nothing is awaited before the receiver at the end of this file is set. The shaders are linked into it too
 // (T367.5): each module takes the names it uses from the parts of shaders/, and the worker fetches nothing after itself.

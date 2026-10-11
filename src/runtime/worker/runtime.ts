@@ -1,5 +1,5 @@
 // worker/runtime.ts (T378.3): what this visit's worker finds once and every load reads: the runtime (Pyodide, the
-// engine's Python, the kernels, forward.js), what the page's URL fixes for the visit, WebGPU and its adapter. This module alone
+// engine's Python, the kernels, forward.ts), what the page's URL fixes for the visit, WebGPU and its adapter. This module alone
 // sets these (init(), and the adapter as it comes): the others read the names, and ask for the runtime (runtimeAsked)
 // or wait for it (runtimeReady).
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
@@ -14,12 +14,12 @@ import type * as Forward from "../forward.ts";
 import type { Adapter, Compiled } from "../forward.ts";
 
 // (T368.3: these two are there once the runtime is ready, which every load waits for: their types say that state.
-// forward.js may not come, no WebAssembly SIMD or its file gone: forwardModule is undefined then, and jsKernels null)
+// forward.ts may not come, no WebAssembly SIMD or its file gone: forwardModule is undefined then, and jsKernels null)
 export let pyodide: Pyodide, llama2_numpy: EngineWindow;
 // the WASM SIMD kernels that llama2_numpy.py loads with ctypes (the sampling, a conversion's quantizer and readers):
 // their path in Pyodide's file system, or undefined
 export let pythonKernels: string | undefined;
-// T93: the forward pass in JavaScript (forward.js) and its kernels, compiled once
+// T93: the forward pass in JavaScript (forward.ts) and its kernels, compiled once
 export let forwardModule: typeof Forward | undefined, jsKernels: Compiled | null | undefined;
 // T93 stage 2: the kernels for a shared memory (only where the page is cross-origin isolated)
 export let sharedKernels: Compiled | null | undefined;
@@ -37,13 +37,13 @@ export let hfPartBytes = 0, hfConnections = HF_CONNECTIONS;  // 0: not fixed, de
 // when Pyodide became usable, to tell that first model from the ones chosen afterwards
 export let pyodideAt = 0;
 // T156: the adapter, asked for before a model is loaded ({ fallback, limits } or null): whether a model the device
-// cannot hold twice goes on the GPU alone is decided before its bytes come (forward.js's weightsPlace, gpuOnlyUnfit)
+// cannot hold twice goes on the GPU alone is decided before its bytes come (forward.ts's weightsPlace, gpuOnlyUnfit)
 export let gpuAdapter: Adapter | null = null;
 // init() as a promise: every load waits for it, also the one that replaces the first
 let initialized: Promise<void> | undefined;
 
 // T148: a prompt's tokens through the layers on the GPU (gpu.js) by default, wherever this worker has WebGPU and
-// forward.js can put the model there, and the GPU is faster than the CPU here (AGENTS.md's policy 9: no option).
+// forward.ts can put the model there, and the GPU is faster than the CPU here (AGENTS.md's policy 9: no option).
 // ?gpuTest=on, for the tests only: a fallback adapter (SwiftShader, the only WebGPU of CI) taken as a GPU, and every
 // block of a prompt it can take given to it (its speed is no GPU's: the tests look at its numbers, not at its time),
 // and the first right shader of the matrices taken untimed (SwiftShader timed Llama 3.2 1B's past gpu.js's 180 s)
@@ -98,7 +98,7 @@ async function init(search: string) {
       pythonKernels = "/home/pyodide/simdkernel.so";
     }
   }
-  // T93: the forward pass runs in forward.js, on the plain build of the same kernels (simdkernel.so stays for the
+  // T93: the forward pass runs in forward.ts, on the plain build of the same kernels (simdkernel.so stays for the
   // sampling, which works on Python's logits). Without them (no WebAssembly SIMD) the engine runs NumPy.
   try {
     // (T439: a module's failure has no status: this module's own address is asked for, and nothing waits for it)

@@ -121,7 +121,7 @@ worker.onmessage = ({ data }) => {
   } else if (data.type === "gpu-alone") {
     // T156: the CPU is faster here than the GPU for this model on the GPU alone: kept once the load on the CPU is
     // ready (the second review of T156: a CPU that cannot hold the model must not keep the next visits from the GPU),
-    // and the next load goes on the CPU at once (forward.js's aloneHolds says when it no longer holds)
+    // and the next load goes on the CPU at once (forward.ts's aloneHolds says when it no longer holds)
     aloneOnReady = { load: data.load, alone: data.alone };
   } else if (data.type === "threads-compared") {
     // T114: how the worker chose the number of threads, one line per comparison (medians in ms per token)

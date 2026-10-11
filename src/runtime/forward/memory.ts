@@ -1,7 +1,7 @@
-// forward/memory.js (T349): the memory a model takes: what the forward pass puts after a checkpoint (footprint, with
+// forward/memory.ts (T349): the memory a model takes: what the forward pass puts after a checkpoint (footprint, with
 // the frame of a token and the states of the layers that keep one), the type of the keys and values (keysInHalf),
 // whether it fits a 32-bit or a 64-bit memory, and the WebAssembly memory itself (weightsMemory).
-// A module of src/runtime/forward.js, which exports its names as before.
+// A module of src/runtime/forward.ts, which exports its names as before.
 
 import { CONTROL_BYTES, BATCH } from "../jobs.ts";
 import { GPU_BLOCK } from "./choice.ts";
@@ -243,7 +243,7 @@ export function weightsMemory(size: number, { shared = false, maximum, wide = fa
   throw new Error("This browser gives no shared WebAssembly memory for this model.");
 }
 
-// (T349) what forward.js and the other modules read besides, which was not exported where it was one file
+// (T349) what forward.ts and the other modules read besides, which was not exported where it was one file
 // half to float, exactly (the same as NumPy's astype(float32))
 function halfToFloat(h: number) {
   const sign = h & 0x8000 ? -1 : 1, exponent = (h >> 10) & 0x1f, fraction = h & 0x3ff;

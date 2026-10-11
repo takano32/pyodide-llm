@@ -36,9 +36,9 @@ function warmUp(prompt: string) {
 // T184: the model page's own path on the model loaded now (src/bench.js's pathTable() writes it). The GPU is waited for
 // first, GPU_WAIT_S at most (the page does not wait: its first prompts go on the CPU meanwhile; a GPU not ready by then
 // is said as such), then the number of threads is the model page's (T190: the count the model page remembers, which
-// /benchmark/ passes as the model page does, or else the search run to its end: forward.js's endSearch()), and every
+// /benchmark/ passes as the model page does, or else the search run to its end: forward.ts's endSearch()), and every
 // side is timed on it (the CPU's times, and so the choice, are per number of threads). The prompts:
-// forward.js's timePrompts(). The writing: sampled tokens after the prompt at the tok/s the page's status line says
+// forward.ts's timePrompts(). The writing: sampled tokens after the prompt at the tok/s the page's status line says
 // (the engine's stats); T152: where the GPU takes a generation's steps, as the page chooses, on the CPU only and on the
 // GPU only (engine.gpuSide), the sides in turn, a run each after the warm-up.
 const GPU_WAIT_S = 240, WRITING_RUNS = 3;

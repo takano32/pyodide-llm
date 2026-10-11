@@ -114,7 +114,7 @@ export type BenchRow =
   | { name: string; without: string[]; skip?: undefined; tokens: number; speed: number; backend: string; seconds: number }
   | { name: string; without: string[]; skip: string };
 
-// T184: runs of a side as a cell (forward/paths.js's timedCell()), or why it has none, or that it is the CPU's
+// T184: runs of a side as a cell (forward/paths.ts's timedCell()), or why it has none, or that it is the CPU's
 export type PathCell = { speed?: number; low?: number; high?: number; gpuTokens?: number; unsteady?: boolean; skip?: string; same?: string };
 export type PathRow = { what?: string; tokens: number; chosen?: PathCell; cpu: PathCell; gpu: PathCell };
 // how the number of threads the path ran on came about (T190)

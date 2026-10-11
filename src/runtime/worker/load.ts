@@ -131,7 +131,7 @@ export async function load(model: Listed, signal: AbortSignal, id: number): Prom
 }
 
 // The number of threads of the model just loaded (stage 2): ?threads=N fixes it; a count the page remembers for
-// this device and model is used (and checked now and then); else forward.js finds it while generating, from the
+// this device and model is used (and checked now and then); else forward.ts finds it while generating, from the
 // number of logical cores, and the page is told the answer to remember. The software threads of the starting count
 // are started and warmed here, before the model is ready.
 async function startThreads(model: Listed) {
@@ -155,7 +155,7 @@ async function startThreads(model: Listed) {
 export const threadsNow = () => engineNow()?.threads ?? 1;
 
 // T135, T148: what the status line says of the GPU as the model is ready (nothing waits for the GPU: the model runs on
-// the CPU until the GPU is ready, and the prompts go where they are faster from then on, forward.js). Once the layers
+// the CPU until the GPU is ready, and the prompts go where they are faster from then on, forward.ts). Once the layers
 // are on the GPU, or it is known that they will not be, the page is told { type: "gpu", note, ... } (what the GPU
 // chose, and how long it took: the page shows it and remembers the shaders for the next visit). A load let go of
 // meanwhile says it too; the page drops what is not of its latest load.

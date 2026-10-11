@@ -1,7 +1,7 @@
-// forward/alone.js (T349): a model on the GPU alone (T156, T210): what the GPU holds of it, whether it goes there
+// forward/alone.ts (T349): a model on the GPU alone (T156, T210): what the GPU holds of it, whether it goes there
 // (weightsPlace, gpuOnlyUnfit) and stays there (aloneVerdict), and its weights as they arrive, the layers' matrices and
 // the tables to the GPU's worker and the rest to this memory without the holes they leave (gpuOnlyWeights, gpuOnlyPlan).
-// A module of src/runtime/forward.js, which exports its names as before.
+// A module of src/runtime/forward.ts, which exports its names as before.
 
 import { BETTER } from "./choice.ts";
 import type { Header } from "./memory.ts";
@@ -249,5 +249,5 @@ export function gpuOnlyPlan(header: Header, tensors: Tensors, force: Force = {},
   return { layers, matrices, tables, force, remembered };
 }
 
-// (T349) what forward.js and the other modules read besides, which was not exported where it was one file
+// (T349) what forward.ts and the other modules read besides, which was not exported where it was one file
 export { GPU_ALONE };

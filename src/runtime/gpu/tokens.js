@@ -20,9 +20,9 @@ import { SAMPLE } from "../shaders/sample.js";
 // for the step), after which the state's first four words go to the Step uniform for the next pass (a uniform is not a
 // shader's to write). plan.tokens.most steps a submission, their ids read back once (T151: the wait of a submission,
 // 3 to 8.6 ms on the owner's Android, T134, is paid once for them), with the keys and values of their positions, which
-// go into forward.js's cache as the CPU would have written them: the CPU may take the next step, or the next
+// go into forward.ts's cache as the CPU would have written them: the CPU may take the next step, or the next
 // generation, at any position. The keys and values the GPU does not hold (positions the CPU computed since) go up from
-// forward.js's cache first: float16 there as here (T110, T147).
+// forward.ts's cache first: float16 there as here (T110, T147).
 //
 // The form of a layer, from those this device can make: T150's fusedMatVec (llama.cpp's mul_mat_vec, with the norm on
 // its read and RoPE, the residual's add or SwiGLU on its write) with the workgroup's reduction, the same with

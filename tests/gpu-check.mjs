@@ -503,7 +503,7 @@ function caseOf(id, options, reference, bytes) {
 // ---- the browser: a page that is cross-origin isolated (its own headers), a worker that runs forward.js
 const HARNESS = /* js */ `
 const search = "?v=gpu-check";
-const { compileKernels, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf } = await import("/runtime/forward.js" + search);
+const { compileKernels, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf } = await import("/runtime/forward.ts" + search);
 const { GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import("/runtime/jobs.ts" + search);
 const fetched = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
 const b64 = (floats) => {

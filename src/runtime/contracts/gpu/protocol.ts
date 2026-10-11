@@ -1,9 +1,9 @@
-// contracts/gpu/protocol.ts (T368.2): what forward.js and the model's GPU worker say to one another. Types alone:
+// contracts/gpu/protocol.ts (T368.2): what forward.ts and the model's GPU worker say to one another. Types alone:
 // nothing of this file is in what a browser gets (it is read with `import type`).
 //
-// The worker is src/runtime/gpu.js (its head says what each message does), which forward.js makes
-// (src/runtime/forward/gpuside.js) and hands the model in a plan: Started, of { type: "start" }, a model whose layers are
-// in the shared memory too; Opened, of { type: "open" } (src/runtime/forward/alone.js's gpuOnlyPlan(), posted by
+// The worker is src/runtime/gpu.js (its head says what each message does), which forward.ts makes
+// (src/runtime/forward/gpuside.ts) and hands the model in a plan: Started, of { type: "start" }, a model whose layers are
+// in the shared memory too; Opened, of { type: "open" } (src/runtime/forward/alone.ts's gpuOnlyPlan(), posted by
 // src/runtime/worker/weights.ts), a model on the GPU alone (T156), whose bytes follow as { type: "weights" }.
 // A prompt's block, a generation's steps and the keys and values are asked for by a message and answered in the control
 // area: the words of that answer are src/runtime/jobs.ts's constants (GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED), which
@@ -77,7 +77,7 @@ export type Force = {
 export type Remembered = { key?: string; matrices?: string; attention?: string; tokens?: string; alone?: unknown };
 
 // The plan of { type: "start" }: the model's sizes, what RoPE turns, its norm and residual, and addresses in the
-// shared memory (the matrices, the vectors, rows: the rows forward.js embeds, cos and sin: RoPE's tables, staging:
+// shared memory (the matrices, the vectors, rows: the rows forward.ts embeds, cos and sin: RoPE's tables, staging:
 // where a block's keys and values come back)
 export type Started = {
   dim: number;
@@ -113,7 +113,7 @@ export type Started = {
 // The plan of { type: "open" } (gpuOnlyPlan()): the layers and their matrices by where they are in the checkpoint
 export type Opened = { layers: number; matrices: Record<string, Matrix>; tables: Tables; force: Force; remembered: Remembered | undefined };
 
-// forward.js's cache of the keys and values a generation's steps go up from: their addresses, the positions it has
+// forward.ts's cache of the keys and values a generation's steps go up from: their addresses, the positions it has
 // room for, the bytes of a position, and whether they are float16
 export type Cache = { keys: number; values: number; capacity: number; row: number; half: boolean };
 // the sampling of the steps (the engine's settings; stops: the stop tokens)

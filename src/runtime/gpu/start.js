@@ -11,7 +11,7 @@ import { chooseTokens, tokensSaid } from "./tokenforms.js";
 let starting = false;
 
 // ---- T156: a model on the GPU alone. open() makes the device and every buffer of the layers' matrices before a byte
-// of them comes (plan: src/runtime/forward/alone.js's gpuOnlyPlan(): each matrix's rows and length, and where a layer's values and scales
+// of them comes (plan: src/runtime/forward/alone.ts's gpuOnlyPlan(): each matrix's rows and length, and where a layer's values and scales
 // start in the checkpoint; the layers are joined for a token, as a model on the GPU alone always runs its steps here),
 // and take() writes each stretch of them to its buffer as the worker posts it (routes: [start, end) in the checkpoint,
 // the buffer and the offset in it). flow[0] counts the bytes on the GPU (the worker waits on it: a disk read faster

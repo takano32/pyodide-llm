@@ -1,7 +1,7 @@
-// forward/engine.js (T349): createForward(), one model's forward pass: its memory after the checkpoint, its tensors,
+// forward/engine.ts (T349): createForward(), one model's forward pass: its memory after the checkpoint, its tensors,
 // the frames of the activations, the cache of the keys and values, the layers of every architecture, and the object
-// Python and the worker call. The software threads are threads.js's and the GPU's side gpuside.js's: each is handed
-// what it reads of this function. A module of src/runtime/forward.js.
+// Python and the worker call. The software threads are threads.ts's and the GPU's side gpuside.ts's: each is handed
+// what it reads of this function. A module of src/runtime/forward.ts.
 
 import { BATCH, addressed, runner } from "../jobs.ts";
 import { GPU_BLOCK, GPU_TOKENS } from "./choice.ts";
@@ -268,7 +268,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       }
     });
   }
-  // T378.2: what the GPU's side (forward/gpuside.js) reads of this model, as two things made once: the model's facts,
+  // T378.2: what the GPU's side (forward/gpuside.ts) reads of this model, as two things made once: the model's facts,
   // and where its tensors are in the memory (addresses, and the matrices as matrix() made them)
   const shape: Shape = { dim, hidden, layers, heads, kvHeads, headSize, kvDim, qDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart: plan.kv_start,
     gpt2, layerNorm, parallel, unturned, linear, convolution, rotated, sharedClassifier: plan.shared_classifier };
@@ -312,7 +312,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     values = newValues;
     capacity = larger;
   }
-  // the job (jobs.js) of a matrix by count tokens of an input, and of a token's attention: what phase() shares out
+  // the job (jobs.ts) of a matrix by count tokens of an input, and of a token's attention: what phase() shares out
   const jobOf = (m: Held, out: number, outStride: number, input: number, l: number, count: number) => {
     const [w, s, c] = m.layer(l);
     if (!m.int8) return [2, out, input, 0, w, 0, 0, m.n, 0, m.rows, count, outStride, S, 0];
@@ -324,10 +324,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     [halfKV ? 4 : 3, xb + t * S, q + t * S, layerKeys, layerValues, att + t * A, pos, kvHeads, headSize, heads, 1, 0, 0, 0];
   const runRows = runner(k, relaxed);
 
-  // T378.2: the control area of this memory (forward/control.js), through which this thread meets the software threads
+  // T378.2: the control area of this memory (forward/control.ts), through which this thread meets the software threads
   // and the GPU's worker: it is neither's, and both parts below are handed it
   const control = controlArea({ memory, sharedMemory, stalledMs });
-  // T349: the phases and the software threads (forward/threads.js): their functions by name. T378.1: their state is
+  // T349: the phases and the software threads (forward/threads.ts): their functions by name. T378.1: their state is
   // theirs alone: what happens here is told through those functions, and threads.count, .lost and .searching are read.
   // No software thread where the model is on the GPU alone (T156: nothing runs on the CPU). T378.2: the two kernels a
   // thread is started with are chosen here, as this thread's are (relaxed above)
@@ -588,7 +588,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // what the GPU is to take of this model (gpuFit()'s answers), and the places above where it answers
   const taken: Taken = { matrices: fit.matrices, vectors: fit.vectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds };
 
-  // T349: the GPU's side (forward/gpuside.js): its functions by name. T378.2: its state is its own: what happens here is
+  // T349: the GPU's side (forward/gpuside.ts): its functions by name. T378.2: its state is its own: what happens here is
   // told through those functions, and what the page is shown of it is read (onGpu.status, .ready, ...)
   const onGpu = gpuSide({ shape, weights, taken, cpuSide, control, threads,
     options: { gpu, remembered: gpuRemembered, force: gpuForce, direct, stalledMs } });
@@ -698,7 +698,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     generateMany,
     forward(token: number, pos: number, needLogits = true) {
       if (tokenBegan(needLogits)) {
-        // a token of the search for the number of threads (threads.js), timed for it
+        // a token of the search for the number of threads (threads.ts), timed for it
         const began = clock();
         forward(token, pos, needLogits);
         tokenEnded(clock() - began);

@@ -1,7 +1,7 @@
-// forward/threads.js (T349): the software threads of one engine: a phase's rows shared out among them on the control
-// area of a shared memory (jobs.js has its layout; helper.js is a thread), a thread that stopped given up (T120), and
+// forward/threads.ts (T349): the software threads of one engine: a phase's rows shared out among them on the control
+// area of a shared memory (jobs.ts has its layout; helper.ts is a thread), a thread that stopped given up (T120), and
 // the search for how many of them to use (T93's stage 2b, T199, T223, T239).
-// A module of src/runtime/forward.js; it reads jobs.js and its neighbours by static imports.
+// A module of src/runtime/forward.ts; it reads jobs.ts and its neighbours by static imports.
 
 import { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, COUNT, SIZE,
   FIRST } from "../jobs.ts";
@@ -23,7 +23,7 @@ type Search = { best: number; direction: "down" | "up"; moved: boolean; far: boo
   waiting: boolean; whileGpu: boolean };
 // (the control area's words and the table of the jobs are read where threads run and nowhere else: ctl! and table! below)
 
-// ---- the helper threads (stage 2): the control area at the start of a shared memory (jobs.js has its layout)
+// ---- the helper threads (stage 2): the control area at the start of a shared memory (jobs.ts has its layout)
 // how many chunks per thread the rows of a matmul are cut into: whoever is free takes the next one, so a slow core
 // (a little core of a big.LITTLE phone) simply takes fewer. 2 to 16 measured the same (T93); fewer does not steal.
 const CHUNKS_PER_THREAD = 4;
@@ -50,10 +50,10 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   // whoever takes them. Every row is computed whole by one thread with the same kernel, so the numbers are the same
   // with any number of threads.
   //
-  // A job is what jobs.js says: [kind, eight arguments, rows, count, out stride, a stride, b stride].
+  // A job is what jobs.ts says: [kind, eight arguments, rows, count, out stride, a stride, b stride].
   // (ctl: null on a memory that is not shared, where no thread can be started)
   const shared = ctl && spawn;
-  const table = shared ? new Float64Array(memory.buffer, JOB_TABLE, BATCH * JOB) : null;  // the jobs (jobs.js)
+  const table = shared ? new Float64Array(memory.buffer, JOB_TABLE, BATCH * JOB) : null;  // the jobs (jobs.ts)
   const helpers: Thread[] = [];
   let threads = 1, gen = 0;
   // T120: every helper goes, and this engine keeps to one thread from here on. The phase is then run again here:
@@ -140,7 +140,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   // faster; none more where it is 1 or 2. Not on the way up: a visit that remembers 2 would time 8 threads every time
   // (the owner's Android: 0.23 s), and no device's report has a dip above its count (TODO.md's T239 has the table).
   // T240: the search the count in use is owed (unchecked) does not wait for the next generation where the GPU is ready
-  // inside one: it begins at the first token after that (engine.js's forward()), so that a long first answer is not written
+  // inside one: it begins at the first token after that (engine.ts's forward()), so that a long first answer is not written
   // to its end on a count timed beside the GPU's getting ready. Only where the page began a generation: /benchmark/
   // begins none and takes the count the model page remembers as it is (T190).
   const BLOCK = 4;
