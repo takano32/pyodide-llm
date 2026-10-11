@@ -3,6 +3,7 @@
 //   node tests/models-check.mjs
 import assert from "node:assert/strict";
 import { GROUPS, LICENSES, MODELS, PAGE_MEMORY, SIX_OF_EIGHT, filled, memoryFailure, writesJapanese, memoryWarning, modelBytes, sourceOf, sources, weightsFor } from "../src/models.js";
+import { PLAIN_ROPE, QWEN3_FROM_IM_START, QWEN3_OWN_BOS, qwen35 } from "../src/models/formats.js";
 
 for (const entry of MODELS) {
   const repo = sourceOf(entry);
@@ -99,6 +100,18 @@ assert.deepEqual(MODELS.filter((entry) => entry.rebuilt).map(({ id }) => id), ["
 // its two forms share one conversion (kept.js's replaced() takes both ids), and both are kept ternary
 assert.deepEqual(byId("hf-ternary-bonsai-2-27b-thinking").shares, ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]);
 assert.equal(weightsFor(byId("hf-ternary-bonsai-2-27b-thinking"), undefined, 8), "ternary");
+// T235 (the owner, 2026-10-11): the three Ternary Bonsai of the list turn by a plain RoPE: rope_scaling: {} beside the
+// tokens each had (the 8B's own BOS kept), which an empty object says to the engine and null would not (a jsnull in
+// Pyodide). No other entry names a RoPE, and Ternary Bonsai 2 27B, which the choice did not cover, has the options of
+// a Qwen3.5 and nothing more
+assert.deepEqual(PLAIN_ROPE, { rope_scaling: {} });
+for (const [size, tokens] of [["1.7b", QWEN3_OWN_BOS], ["4b", QWEN3_OWN_BOS], ["8b", QWEN3_FROM_IM_START]]) {
+  assert.deepEqual(byId(`hf-ternary-bonsai-${size}`).options, { ...tokens, rope_scaling: {} }, `Ternary Bonsai ${size}`);
+}
+assert.deepEqual(MODELS.filter((entry) => entry.options && "rope_scaling" in entry.options).map(({ id }) => id).sort(),
+  ["hf-ternary-bonsai-1.7b", "hf-ternary-bonsai-4b", "hf-ternary-bonsai-8b"], "an entry names a RoPE of its own that the owner did not choose");
+for (const id of ["hf-ternary-bonsai-2-27b-thinking", "hf-ternary-bonsai-2-27b"]) assert.deepEqual(byId(id).options, qwen35, id);
+assert.ok(!("rope_scaling" in qwen35) && !("rope_scaling" in QWEN3_OWN_BOS) && !("rope_scaling" in QWEN3_FROM_IM_START));
 // T133: Chromium says at most 8 GB: a device at the cap may have any more, so six bits are not asked for there, and
 // only a model past 8 GB is warned of
 const seven = { name: "7B", hf: {}, note: "int8 9.2 GB" }, three = { name: "3B", hf: {}, note: "int8 3.6 GB" };

@@ -70,10 +70,12 @@ function world({ gpu = false } = {}) {
   };
   const buffers = [];
   const kept = { open: 0, opened: 0, refused: 0, dropped: 0, finished: 0, keeps: [] };
+  // what the engine was made with: the options of each Llama (T235)
+  const engines = [];
   context.stand = {
     // (the converter's window: asked for the kernels' readers alone)
     converter: { kernel_readers: (kernels) => proxy(`the readers of ${kernels}`) },
-    numpy: { Llama: { callKwargs: () => ({}) }, OUTLIER_CHANNELS: 8, KV_START: 256, kernel_quantizer: (kernels) => proxy(`the quantizer of ${kernels}`) },
+    numpy: { Llama: { callKwargs: (checkpoint, tokenizer, options) => { engines.push(options); return {}; } }, OUTLIER_CHANNELS: 8, KV_START: 256, kernel_quantizer: (kernels) => proxy(`the quantizer of ${kernels}`) },
     pyodide: {
       toPy: (value) => { const made = proxy("the model as it is listed", { value }); played.listed.push(value); return made; },
       pyimport: (name) => {
@@ -86,7 +88,7 @@ function world({ gpu = false } = {}) {
     forward: { aloneHolds: () => false },
     // the kept models: a file opened to keep a conversion in as it comes has the one handle its file can have (OPFS)
     kept: {
-      openKept: async () => null, replaced: async () => [], forget: async () => {},
+      openKept: async () => kept.found ?? null, replaced: async () => [], forget: async () => {},
       keep: async (model, manifest) => { kept.keeps.push(manifest); },
       keeper: async () => {
         if (kept.open) {
@@ -121,20 +123,20 @@ function world({ gpu = false } = {}) {
   // what a conversion does as it is made: the place of the weights opened through the sink, as Writer opens it
   const opened = (make) => make.sink.open(1000, readable("the header", HEADER), "int8", readable("the form", FORM));
   // the conversion a conduct ends with, as the worker gets it: a proxy
-  const conversion = () => proxy("the conversion", {
-    get options() { return readable("the options", { dtype: "int8", bos: 1 }); },
+  const conversion = (more = {}) => proxy("the conversion", {
+    get options() { return readable("the options", { dtype: "int8", bos: 1, ...more }); },
     get tokenizer() { return proxy("the tokenizer", { getBuffer: () => ({ data: new Uint8Array(4), release() {} }) }); } });
-  const convert = (hf, play, { signal = new AbortController().signal, conversion: asked } = {}) => {
+  const convert = (hf, play, { signal = new AbortController().signal, conversion: asked, options } = {}) => {
     body = play;
     proxies.length = 0;
-    return harness.failure(context.convert({ id: "made-up", name: "Made up", hf, ...(asked && { conversion: asked }) }, signal, 1));
+    return harness.failure(context.convert({ id: "made-up", name: "Made up", hf, ...(asked && { conversion: asked }), ...(options && { options }) }, signal, 1));
   };
   // every proxy made since convert() began was destroyed exactly once
   const allDestroyed = () => {
     for (const made of proxies) assert.equal(made.destroyed, 1, `${made.name} was destroyed ${made.destroyed} times`);
     return proxies.length;
   };
-  return { ...harness, MiB, proxies, proxy, played, buffers, kept, opened, conversion, feeding, convert, allDestroyed };
+  return { ...harness, MiB, proxies, proxy, played, buffers, kept, engines, opened, conversion, feeding, convert, allDestroyed };
 }
 const hf = (more = {}) => ({ repo: "owner/model", revision: REVISION, weights: "model.safetensors", tokenizer: "tokenizer.json", ...more });
 const url = (repository, revision, name) => `https://huggingface.co/${repository}/resolve/${revision}/${name}`;
@@ -709,6 +711,43 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
     w.allDestroyed();
     ok("a folder's stream: a part the converter refuses ends it, a cancelled load cancels the file's reader and feeds nothing more; a load cancelled as an answer comes is not answered");
   }
+}
+
+// ---- T235: what the list says of a model wins over what its conversion says, made now or kept before
+{
+  const w = world();
+  const yarn = { rope_type: "yarn", factor: 4, original_max_position_embeddings: 8192 };
+  // (as src/models/formats.js's PLAIN_ROPE beside an entry's tokens)
+  const entry = { bos: 151643, stop_tokens: [151643, 151645], rope_scaling: {} };
+  w.fresh(() => notFound());
+  const play = function* (make) {
+    w.opened(make);
+    yield ["done", w.conversion({ rope_scaling: yarn, rope_theta: 1000000, template: "{prompt}" })];
+  };
+  assert.equal(await w.convert(hf(), play), undefined);
+  assert.deepEqual(JSON.parse(JSON.stringify(w.engines.at(-1).rope_scaling)), yarn, "a model the list says nothing of has its conversion's RoPE (?hf=)");
+  assert.equal(await w.convert(hf(), play, { options: entry }), undefined);
+  const fresh = JSON.parse(JSON.stringify(w.engines.at(-1)));
+  assert.deepEqual([fresh.rope_scaling, fresh.bos, fresh.rope_theta, fresh.template], [{}, 151643, 1000000, undefined],
+    "a conversion made now: the entry's RoPE and BOS over the converter's, the rest the converter's, the template the page's alone");
+  // what was kept is what the converter said (the manifest of the conversion above), yarn and all
+  assert.deepEqual(w.kept.keeps.at(-1).options.rope_scaling, yarn, "what is kept is the conversion's own options, not the entry's");
+  // a visit after: the same manifest, read back
+  const manifest = JSON.parse(JSON.stringify(w.kept.keeps.at(-1)));
+  const header = new Uint8Array(new Int32Array(HEADER).buffer);
+  const whole = new Uint8Array(manifest.bytes);
+  whole.set(header);
+  w.kept.found = { manifest, where: "opfs", async *parts() { yield whole; }, tokenizer: async () => new Uint8Array(4) };
+  const made = w.engines.length;
+  assert.equal(await w.convert(hf(), () => assert.fail("a kept conversion was converted again"), { options: entry }), undefined);
+  assert.equal(w.engines.length, made + 1);
+  const again = JSON.parse(JSON.stringify(w.engines.at(-1)));
+  assert.deepEqual([again.rope_scaling, again.bos, again.rope_theta, again.template], [{}, 151643, 1000000, undefined],
+    "a conversion kept before: the entry's RoPE over the manifest's yarn");
+  assert.equal(await w.convert(hf(), () => assert.fail("a kept conversion was converted again")), undefined);
+  assert.deepEqual(JSON.parse(JSON.stringify(w.engines.at(-1).rope_scaling)), yarn, "a kept conversion the list says nothing of keeps its own RoPE");
+  w.kept.found = undefined;
+  ok("an entry's options (T235: rope_scaling: {}) win over a conversion's, made now and kept before; without them the conversion's own stand");
 }
 
 console.log(`worker-conduct-check: ${passed} checks passed`);

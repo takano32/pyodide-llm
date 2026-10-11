@@ -1,5 +1,5 @@
 // The entries of the list that come in families: one function a family, which writes its entries from what differs.
-import { ASK_JAPANESE, CHATML, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25 } from "./formats.js";
+import { ASK_JAPANESE, CHATML, PLAIN_ROPE, QWEN3_AT_ONCE, QWEN3_OWN_BOS, lfm25 } from "./formats.js";
 import { atOnce, sampled, thinking } from "./sampling.js";
 
 /** A Qwen3 twice (T124, the owner's "両方を別々に用意できないのか"): thinking first, and answering at once. The two
@@ -49,20 +49,23 @@ export const lfm2 = (id, name, repo, revision, originalRevision, download, sizes
 });
 /** T235, T246: a Ternary Bonsai of Prism ML (a ternary Qwen3) in one of its sizes: its PQ2_0 GGUF's weights with the
  * vocabulary, config.json and chat template of its -unpacked original. What the sizes share is here alone, so that one
- * change covers them all (the owner's open choices of T235's review: config.json's yarn or a plain RoPE, which would
- * be rope_scaling: {} in these options; a word more in the note; Prism ML's attribution). The original's template
+ * change covers them all (the owner's open choices of T235's review: a word more in the note; Prism ML's
+ * attribution). The RoPE is plain (PLAIN_ROPE, the owner's choice of 2026-10-11) and not config.json's yarn: the page
+ * cuts the context at 4096, inside the 8192 or 16384 positions yarn begins to stretch, and there yarn's perplexity was
+ * 2 to 7% the higher in every size (transformers and the engine; Qwen3's card advises against a static yarn on short
+ * texts as well). It is said last, so that a size's own options (`start`) keep it. The original's template
  * always begins the answer with an empty thought (Qwen3's enable_thinking=false): the model has one form, which the
  * converter reads; it is written here (QWEN3_AT_ONCE) since T369, for the entries keep <|endoftext|> in front of it
  * (formats.js's note on QWEN25). It names no BOS (QWEN3_OWN_BOS, which the 1.7B and the 4B bear: 1.5% better than nothing in front
  * on plain text; the 8B does not: 70% worse, as a Qwen3 8B is, and begins at QWEN3_FROM_IM_START: `start`, T250's review).
  * The sampling is the originals' generation_config.json, the same file in the three (its top-k the page's sampler
  * has not) */
-export const ternaryBonsai = (size, revision, originalRevision, download, sizes, start = {}) => ({
+export const ternaryBonsai = (size, revision, originalRevision, download, sizes, { options = QWEN3_OWN_BOS, ...start } = {}) => ({
   group: "hf", id: `hf-ternary-bonsai-${size.toLowerCase()}`, name: `Ternary Bonsai ${size}`,
   note: `answers at once · 日本語 / English · ternary weights · ${sizes}`,
   ...ggufOf(`prism-ml/Ternary-Bonsai-${size}-gguf`, revision, `Ternary-Bonsai-${size}-PQ2_0.gguf`,
     `prism-ml/Ternary-Bonsai-${size}-unpacked`, originalRevision), download,
-  weights: "ternary", conversion: {}, options: QWEN3_OWN_BOS, template: QWEN3_AT_ONCE, ...start,
+  weights: "ternary", conversion: {}, options: { ...options, ...PLAIN_ROPE }, template: QWEN3_AT_ONCE, ...start,
   generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE });
 // Models that huggingface.co serves and this page converts itself (src/python/llama2_convert.py, the code that builds

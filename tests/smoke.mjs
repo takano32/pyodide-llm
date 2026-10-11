@@ -3,6 +3,7 @@
 // release fails here instead of on the site.
 //
 //   make models kernels && node tests/smoke.mjs
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import { version } from "pyodide";
 import { pyodideWithEngine } from "./engine.mjs";
@@ -867,6 +868,27 @@ for temperature, topp in ((0.1, 0.1), (0.1, 0.05)):
 llmjp.release(); del llmjp; gc.collect()
 f"T178: llm-jp-3 150M wrote {len(written)} texts at a low temperature and top-p, the first: {written[0]!r}"
 `));
+}
+// T235: an entry's rope_scaling: {} (src/models/formats.js's PLAIN_ROPE) as the worker hands it to the engine: a
+// JavaScript object among the keyword arguments of Llama.callKwargs(), which Python sees as a proxy. The tables are the
+// plain ones to the bit, and yarn's magnitude is off; the same object with yarn in it scales them
+{
+  const yarn = { rope_type: "yarn", factor: 4.0, original_max_position_embeddings: 8192 };
+  const made = (options) => {
+    const llama = pyodide.pyimport("llama2_numpy").Llama.callKwargs(pyodide.runPython('read("tiny-lm.bin")'), pyodide.runPython('read("tiny-lm.tokenizer.bin")'),
+      { dtype: "int8", tokenizer_kind: "unigram", ...options });
+    pyodide.globals.set("MADE", llama);
+    const said = JSON.parse(pyodide.runPython("import json, hashlib\njson.dumps([MADE.rope_magnitude, hashlib.sha256(MADE.freq_cis_real.tobytes() + MADE.freq_cis_imag.tobytes()).hexdigest()])"));
+    pyodide.runPython("del MADE");
+    llama.destroy();
+    return said;
+  };
+  // (the worker's merge: a kept conversion's options, which say yarn, under the entry's)
+  const kept = { rope_scaling: yarn }, entry = { rope_scaling: {} };
+  const [none, plain, scaled] = [made({}), made({ ...kept, ...entry }), made(kept)];
+  assert.deepEqual(plain, none, "rope_scaling: {} of an entry is not the plain RoPE in the engine");
+  assert.equal(plain[0], 1);
+  assert.ok(Math.abs(scaled[0] - (0.1 * Math.log(4) + 1)) < 1e-12 && scaled[1] !== plain[1], "yarn in the options did not scale the tables");
 }
 // T397: the converter reads a chat template with jinja2 where Pyodide has the package loaded, as the worker loads it
 // before a conversion (worker/pyodide.js's templatePackage()), and with its own reader where it has not. A template
