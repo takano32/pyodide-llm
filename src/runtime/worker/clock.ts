@@ -1,5 +1,5 @@
-// worker/clock.js (T350): the seconds since a moment and those of a load's parts, and a turn of the event loop.
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// worker/clock.ts (T350): the seconds since a moment and those of a load's parts, and a turn of the event loop.
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import type { LoadSeconds } from "../contracts/messages.ts";
 

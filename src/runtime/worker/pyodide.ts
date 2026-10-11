@@ -1,6 +1,6 @@
-// worker/pyodide.js (T350): the version of Pyodide, its loading in named steps, and the watch that tells a slow line
-// from one that stopped (T118, T129). It holds nothing of the worker's state: init() of worker.js keeps what this loads.
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// worker/pyodide.ts (T350): the version of Pyodide, its loading in named steps, and the watch that tells a slow line
+// from one that stopped (T118, T129). It holds nothing of the worker's state: init() of worker.ts keeps what this loads.
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { isError, told } from "./told.ts";
 import type { Status } from "../contracts/messages.ts";

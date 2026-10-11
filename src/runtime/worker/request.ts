@@ -1,7 +1,7 @@
-// worker/request.js (T378.3): what the page asked for with the load that is going on, and with the benchmark's rounds.
+// worker/request.ts (T378.3): what the page asked for with the load that is going on, and with the benchmark's rounds.
 // This module alone sets these: the others say what happened (a load was asked for, the page path found a number of
 // threads, a round began) and read the names.
-// A module of worker.js, which a bundler links (T367.3). It imports nothing (but types, which are no import once built).
+// A module of worker.ts, which a bundler links (T367.3). It imports nothing (but types, which are no import once built).
 
 import type { Asked, GpuAsked, ThreadsAsked } from "../contracts/messages.ts";
 
@@ -24,9 +24,9 @@ export let threadsRequest: ThreadsAsked | undefined;
 export let gpuRequest: GpuAsked | undefined;
 // the URL of the site's root, which the page hands with a load (T367.3): models/ is under it
 export let root: string | undefined;
-// T242: the switches of each load the page says will follow on the model of its init, or undefined (weights.js's pooledWeights())
+// T242: the switches of each load the page says will follow on the model of its init, or undefined (weights.ts's pooledWeights())
 export let loadsAhead: string[][] | undefined;
-// the benchmark's rounds are running (T45); see worker.js's bench message
+// the benchmark's rounds are running (T45); see worker.ts's bench message
 export let benching = false;
 // the switches of the round that is going on, or undefined
 let round: string[] | undefined;

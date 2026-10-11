@@ -14,7 +14,7 @@ import type { Options } from "./contracts/python.ts";
 
 // (T368.1, the types. What is read here of a model of the list: where its weights come from and how they are converted.)
 export type Kept = { name: string; where: "opfs" | "cache"; manifest: Manifest };
-// what is written beside a kept model: what the worker says of the conversion (worker/convert.js: the model's id and
+// what is written beside a kept model: what the worker says of the conversion (worker/convert.ts: the model's id and
 // name, where it came from, the checkpoint's bytes, the options the engine gets, when), and this file's own two: the
 // converter's version and, in the Cache API, the number of parts
 export type Conversion = { id: string; name: string; repo: string; revision: string; bytes: number; options: Options; saved: number };

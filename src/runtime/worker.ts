@@ -19,21 +19,21 @@
 // reports about a load carries its number, so that the page can tell a late report of a cancelled one.
 
 // T350: this file is the window of the worker: its URL, generate() and the messages. The rest is in the modules
-// of worker/: runtime.js (what the visit finds once), request.js (what the page asked for with a load), loaded.js (the
-// model loaded now) (T378.3: each sets its own, and the others say what happened and read), told.js, clock.js, pyodide.js (the runtime's
-// loading), weights.js (where a model's weights go), ranges.js and sources.js (the fetching), conduct.js (T374.2.1: what
-// answers the conduct of a conversion, which is Python's, from huggingface.co or from a folder), convert.js (a Hugging Face model), load.js and timing.js (what /benchmark/ times).
+// of worker/: runtime.ts (what the visit finds once), request.ts (what the page asked for with a load), loaded.ts (the
+// model loaded now) (T378.3: each sets its own, and the others say what happened and read), told.ts, clock.ts, pyodide.ts (the runtime's
+// loading), weights.ts (where a model's weights go), ranges.ts and sources.ts (the fetching), conduct.ts (T374.2.1: what
+// answers the conduct of a conversion, which is Python's, from huggingface.co or from a folder), convert.ts (a Hugging Face model), load.ts and timing.ts (what /benchmark/ times).
 // T367.3: a bundler links them (static imports, src/runtime/): they are part of this worker's own file, whose name
 // carries a hash of its text, so that all are of one deployment, and nothing is awaited before the handler at the end
 // of this file is set (the messages that came while the modules were fetched one by one were kept in a queue until
 // then). What the worker asks for later is asked for by a literal name: forward.js, kept.js and the device's key as
 // modules (import("./forward.js")), the kernels and the Python's archives as files (built.js). The site's root, where
-// models/ is, the page hands over with a load (request.js's root): this file's own URL is under _astro/.
+// models/ is, the page hands over with a load (request.ts's root): this file's own URL is under _astro/.
 // T367.4: a page left open across a deployment asks for such a file after it is gone. Where that ends a load (the
 // Python's archives, kept.js at a first conversion) the visitor is told that the site was updated (updated.js); where
 // the engine goes on without the file (the kernels and forward.js: NumPy; a software thread; the GPU's worker; the
 // device's key) it goes on as it always did: a model that answers is not interrupted. T439: where that is slower
-// (all but the key) the page is told { type: "updated" } once, and its status line says so (worker/outdated.js).
+// (all but the key) the page is told { type: "updated" } once, and its status line says so (worker/outdated.ts).
 import { pyodide, runtimeAsked } from "./worker/runtime.ts";
 import { loadAsked, benching, roundsBegan, roundBegan, roundsEnded } from "./worker/request.ts";
 import { llama, engineNow } from "./worker/loaded.ts";
@@ -87,7 +87,7 @@ self.onmessage = async ({ data }: MessageEvent<ToWorker>) => {
   try {
     if (data.type === "init" || data.type === "load") {
       lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
-      loadAsked(data);  // (the threads, the GPU's shaders, the site's root, the loads that follow: request.js)
+      loadAsked(data);  // (the threads, the GPU's shaders, the site's root, the loads that follow: request.ts)
       // The latest choice wins: the download that is going on stops, and its parts that are complete stay in
       // the cache. Pyodide is loaded once, whatever happens to the model that was asked for first.
       loading?.abort();
@@ -137,7 +137,7 @@ self.onmessage = async ({ data }: MessageEvent<ToWorker>) => {
         }
       } finally {
         // also when a round failed or a change of model cancelled it (the review of T76): the next model must not
-        // load with a round's switches off while the panel shows them on (the page's again: request.js)
+        // load with a round's switches off while the panel shows them on (the page's again: request.ts)
         roundsEnded();
       }
       postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version } satisfies Bench);

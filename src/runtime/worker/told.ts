@@ -1,5 +1,5 @@
-// worker/told.js (T350): a caught value in words, for whatever of the worker reports an error.
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// worker/told.ts (T350): a caught value in words, for whatever of the worker reports an error.
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 // T242: a caught value in words. An Error reads as it always did ("TypeError: Load failed"). What is thrown is not always
 // one: Emscripten's ExitStatus (Pyodide's runtime ending) is an object with a name and a message, and String() of it, or

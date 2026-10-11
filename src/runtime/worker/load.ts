@@ -1,6 +1,6 @@
-// worker/load.js (T350): the load of a model, whichever kind it is, up to the ready it reports, with the software
+// worker/load.ts (T350): the load of a model, whichever kind it is, up to the ready it reports, with the software
 // threads and the GPU's report that follow it.
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { pyodide, llama2_numpy, pythonKernels, pyodideAt, benchPage, runtimeReady } from "./runtime.ts";
 import { threadsRequest, root, switchesNow } from "./request.ts";
@@ -34,9 +34,9 @@ async function localOptions(model: OfTwoFiles | OfTwoUrls, vocabulary: Uint8Arra
 export async function load(model: Listed, signal: AbortSignal, id: number): Promise<void> {
   signal.throwIfAborted();
   // (T156: the adapter before any weights are placed, and the GPU's worker of a model on the GPU alone let go before it
-  // was built: weights.js)
+  // was built: weights.ts)
   await loadBegan(model);
-  // let go of the previous model first, so that two never have to fit in memory (loaded.js)
+  // let go of the previous model first, so that two never have to fit in memory (loaded.ts)
   await letGo(signal);
   if (model.hf) {
     postMessage({ type: "status", load: id, text: `${model.name}: ${model.hf.repo ? "fetching from Hugging Face and converting" : "converting"}...` } satisfies Status);

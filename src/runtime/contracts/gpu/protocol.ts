@@ -4,7 +4,7 @@
 // The worker is src/runtime/gpu.js (its head says what each message does), which forward.js makes
 // (src/runtime/forward/gpuside.js) and hands the model in a plan: Started, of { type: "start" }, a model whose layers are
 // in the shared memory too; Opened, of { type: "open" } (src/runtime/forward/alone.js's gpuOnlyPlan(), posted by
-// src/runtime/worker/weights.js), a model on the GPU alone (T156), whose bytes follow as { type: "weights" }.
+// src/runtime/worker/weights.ts), a model on the GPU alone (T156), whose bytes follow as { type: "weights" }.
 // A prompt's block, a generation's steps and the keys and values are asked for by a message and answered in the control
 // area: the words of that answer are src/runtime/jobs.ts's constants (GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED), which
 // the plan carries as words. They are numbers there, and stay that.

@@ -1,6 +1,6 @@
-// worker/ranges.js (T350): a file of huggingface.co (or of any server that answers range requests) in parts, fed in
+// worker/ranges.ts (T350): a file of huggingface.co (or of any server that answers range requests) in parts, fed in
 // order, with what is tried again and what stops the other connections (T107, T112, T119, T129).
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { hfPartBytes, hfConnections } from "./runtime.ts";
 import { breathe } from "./clock.ts";
@@ -26,7 +26,7 @@ export const worthRetrying = (status: number) => status >= 500 || status === 408
 // Every await in here may end with the AbortError of signal: a newer load has taken over, and this one must
 // leave nothing behind, least of all a Python buffer as large as its model.
 // A Hugging Face model of huggingface.co ({repo, revision, weights, config, tokenizer} are names; one of the visitor's
-// disk is read as the disk gives it, conduct.js): model.safetensors arrives in the order of the file, a few
+// disk is read as the disk gives it, conduct.ts): model.safetensors arrives in the order of the file, a few
 // megabytes at a time, and the Python code that builds the models of this site converts every tensor as it comes and
 // writes it to its place in a buffer of the final size. Reading in the order of the output instead would mean
 // hundreds of range requests, and each one takes a second.

@@ -6,7 +6,7 @@
 // words (one question, one answer: src/benchmark/section.ts's ask()), which are not here.
 //
 // ToWorker: what a page sends. FromWorker: what the worker reports. Of the reports, only ready, bench, paths, done and
-// error end a piece of the worker's work (T172): worker.js's head says which comes when.
+// error end a piece of the worker's work (T172): worker.ts's head says which comes when.
 // load: a number the page counts up. A newer load cancels the one going on, and what the worker reports about a load
 // carries its number, so that the page can tell a late report of a cancelled one. A report that never carries one says
 // `load?: undefined`.
@@ -93,7 +93,7 @@ export type ToWorker =
   // T184: the model page's own path, timed: prompts of counts tokens, and sampled tokens written
   | { type: "paths"; load: number; prompt: string; counts: number[]; sampled: number };
 
-// the seconds of a load's parts (worker/clock.js): Pyodide once a session, the others per model
+// the seconds of a load's parts (worker/clock.ts): Pyodide once a session, the others per model
 export type LoadSeconds = { pyodide: number; download: number; construct: number; convert?: number };
 
 // the engine's stats of an answer (src/python/engine/generation.py)
@@ -125,7 +125,7 @@ export type Status = { type: "status"; load?: number; text: string };
 // converted: the share of a conversion done; perSecond: the bytes arriving
 export type Progress = { type: "progress"; load: number; received: number; total: number; converted?: number; perSecond?: number };
 // A load ended (each round of the benchmark too). gpu: what the status line says of the GPU now. overlapped: a
-// download of this site ran while Pyodide loaded. Of a conversion (worker/convert.js): fromCache, keptIn (where it was
+// download of this site ran while Pyodide loaded. Of a conversion (worker/convert.ts): fromCache, keptIn (where it was
 // kept), notKept (why not), keptMiss (why what was kept was not used), template (its chat_template's one turn)
 export type Ready = {
   type: "ready";
@@ -148,7 +148,7 @@ export type Token = { type: "token"; load?: undefined; text: string };
 // an answer ended (also one stopped): the threads in use, the prompt's tokens and the steps the GPU took, its note
 export type Done = { type: "done"; load?: undefined; threads: number; gpuTokens: number; gpuSampled: number; gpu: string | undefined } & Stats;
 export type Bench = { type: "bench"; load: number; rows: BenchRow[]; pyodide: string };
-// T184: either error, or the rest (worker/timing.js's timedPaths())
+// T184: either error, or the rest (worker/timing.ts's timedPaths())
 export type Paths = {
   type: "paths";
   load: number;
@@ -204,7 +204,7 @@ export type GpuChose = {
 export type GpuSaid = { type: "gpu"; load: number; note: string; matrices?: undefined };
 // T156: the CPU is faster here than this model on the GPU alone (kept once its load on the CPU is ready)
 export type GpuAlone = { type: "gpu-alone"; load: number; alone: Alone };
-// T439: the worker went on without a file of its build that is gone, on a slower path (worker/outdated.js): once a
+// T439: the worker went on without a file of its build that is gone, on a slower path (worker/outdated.ts): once a
 // worker at most, whatever else is going on, and of no load (the page is of a build the site no longer serves)
 export type Updated = { type: "updated"; load?: undefined };
 

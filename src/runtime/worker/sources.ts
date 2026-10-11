@@ -1,7 +1,7 @@
-// worker/sources.js (T350): where the bytes of a llama2.c checkpoint come from: the parts of this site's models
+// worker/sources.ts (T350): where the bytes of a llama2.c checkpoint come from: the parts of this site's models
 // (download(), with the Cache API), a file of the visitor's disk (readFile()) and a URL (readUrl()). Each gives a source
 // whose into(write) writes every byte where it belongs.
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { root } from "./request.ts";
 import { told } from "./told.ts";

@@ -1,6 +1,6 @@
-// worker/weights.js (T350): where the weights of a model go: the memory of forward.js that is kept from model to model,
+// worker/weights.ts (T350): where the weights of a model go: the memory of forward.js that is kept from model to model,
 // a Python buffer where NumPy runs, or the GPU alone (T156), and the sink a conversion writes them through.
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { pyodide, llama2_numpy, forwardModule, jsKernels, sharedKernels, wideKernels, forceWide, gpuForce, benchPage, gpuAdapter, hasWebGpu,
   adapterAsked } from "./runtime.ts";
@@ -88,7 +88,7 @@ export function pythonBuffer(size: number) {
 // Where the weights of a model go (T93): the WebAssembly memory of forward.js, where the forward pass runs, or,
 // without the kernels (?without=kernels, or no WebAssembly SIMD), a Python bytearray for the NumPy engine.
 // write(offset, bytes) fills it, slice(begin, end) copies a stretch out (to keep a conversion), llama() makes the
-// engine on it ({ llama, outside }: Python's Llama and, where forward.js runs it, what forward.js made for it; loaded.js
+// engine on it ({ llama, outside }: Python's Llama and, where forward.js runs it, what forward.js made for it; loaded.ts
 // takes the two), destroy() lets go of the Python buffer (a memory of forward.js goes with the engine).
 // a software thread of forward.js (stage 2): a module worker of its own, ready once its kernels are warm
 const spawnThread = (data: unknown) => new Promise<Thread>((resolve, reject) => {
@@ -388,7 +388,7 @@ export const weightsRoom = () => gpuOnlyNow?.room?.();
 export const weightsDrained = () => gpuOnlyNow?.drained?.();
 // T156: after a model on the GPU alone is built: its GPU ready (true), or failed (false: the worker let go of it, and
 // the model goes on the CPU from now on this visit)
-// engine: forward.js's engine of the model just built (loaded.js's engineNow())
+// engine: forward.js's engine of the model just built (loaded.ts's engineNow())
 export async function gpuOnlyReady(model: Listed, id: number, engine: Engine | undefined) {
   const direct = gpuOnlyNow;
   if (!direct || engine === undefined) return true;

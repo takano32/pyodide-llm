@@ -1,6 +1,6 @@
-// worker/loaded.js (T378.3): the model that is loaded now: Python's Llama and, where forward.js runs it, what
+// worker/loaded.ts (T378.3): the model that is loaded now: Python's Llama and, where forward.js runs it, what
 // forward.js made for it. The two are set together and let go of together, here and nowhere else.
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { pyodide } from "./runtime.ts";
 import type { Outside } from "../contracts/forward-js.ts";

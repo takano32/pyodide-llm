@@ -1,8 +1,8 @@
-// worker/convert.js (T350): a Hugging Face model converted in here as it arrives (src/python/llama2_convert.py), and what
+// worker/convert.ts (T350): a Hugging Face model converted in here as it arrives (src/python/llama2_convert.py), and what
 // a conversion made kept for the next visit and read back (kept.js).
-// T374.2.1: the conversion is conducted by Python (src/python/convert/conduct.py) and answered by conduct.js: a model of
+// T374.2.1: the conversion is conducted by Python (src/python/convert/conduct.py) and answered by conduct.ts: a model of
 // huggingface.co from there, and (T374.2.2) a folder of the visitor's disk from its Files.
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { pyodide, llama2_numpy, pythonKernels } from "./runtime.ts";
 import { switchesNow } from "./request.ts";
@@ -196,7 +196,7 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
         tell();
       },
     };
-    // T374.2.1: Python conducts (src/python/convert/conduct.py), the worker answers (conduct.js): from huggingface.co, or
+    // T374.2.1: Python conducts (src/python/convert/conduct.py), the worker answers (conduct.ts): from huggingface.co, or
     // (T374.2.2) from the Files of a folder of the visitor's disk, which the model has beside the names of its files
     const { files, ...listed } = model.hf;
     steps = conductOf(listed, make);
