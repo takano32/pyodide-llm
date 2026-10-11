@@ -21,7 +21,8 @@
 //
 //   node tests/page-modules-check.mjs
 //
-// The types come off with esbuild and the parser is @babel/parser, both of which npm ci installs for Astro.
+// The types come off with esbuild (with Node's own stripTypeScriptTypes for 3., which renames nothing) and the parser
+// is @babel/parser; npm ci installs both for Astro.
 // What it does not see: what the page does (tests/e2e.mjs, in CI's browsers).
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -30,6 +31,7 @@ import { fileURLToPath } from "node:url";
 import { transformSync } from "esbuild";
 import { parse } from "@babel/parser";
 import { namesOf } from "./worker-modules-check.mjs";
+import { stripTypeScriptTypes } from "node:module";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 // [the page, the folder of its script's modules]
@@ -80,6 +82,17 @@ export function pageSources([PAGE, FOLDER] = PAGES[0]) {
   return files;
 }
 
+/** A module's text with its types blanked and nothing else changed (Node's own way with a .ts file). */
+function written(text) {
+  const { emitWarning } = process;
+  process.emitWarning = () => {};  // (the function is experimental in Node 24, and says so every time)
+  try {
+    return stripTypeScriptTypes(text);
+  } finally {
+    process.emitWarning = emitWarning;
+  }
+}
+
 if (import.meta.url === new URL(process.argv[1], "file:").href) for (const [PAGE, FOLDER] of PAGES) {
   const files = pageSources([PAGE, FOLDER]);
   assert.ok(files.size > 1, `${FOLDER}/ has the modules of ${PAGE}'s script`);
@@ -110,7 +123,9 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) for (const [PAGE
   console.log(`page-modules-check: the imports go round nowhere; in the order they run: ${[...reached].map((name) => path.posix.basename(name)).join(", ")}`);
 
   // ---- 3. T378.5: what the parts hold has owners
-  const names = new Map([...files].map(([name, { code }]) => [name, namesOf(code)]));
+  // (the types off by Node itself, which leaves every name as it is written: esbuild gives a local that hides an
+  // import another name (model2), and the line that reads the wrong one would pass)
+  const names = new Map([...files].map(([name, { text }]) => [name, namesOf(written(text))]));
   let taken = 0;
   for (const [name, { imported, set, inner }] of names) {
     const written = imported.filter((one) => set.has(one));
@@ -143,6 +158,29 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) for (const [PAGE
     for (const { from } of files.get(name).imports) assert.ok(!from.startsWith(`${FOLDER}/`), `${name} imports ${from}: an owner imports no other part of the page's script`);
     lets.push(...own.map((declared) => `${owner}: ${declared}`));
   }
+  // every function of an owner is called by another part of the script: an event nobody says is a state that stays as
+  // it was, without a word (the worker's ready that no becameReady() follows is a page whose button never comes on)
+  const calledIn = (code) => {
+    const found = new Set();
+    (function visit(node) {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) return node.forEach(visit);
+      if (node.type === "CallExpression" && node.callee.type === "Identifier") found.add(node.callee.name);
+      for (const key of Object.keys(node)) if (key !== "loc") visit(node[key]);
+    })(parse(code, { sourceType: "module" }).program);
+    return found;
+  };
+  const owners = OWNERS[FOLDER].map((owner) => `${FOLDER}/${owner}`);
+  const called = new Set([...files].filter(([name]) => !owners.includes(name)).flatMap(([, { text }]) => [...calledIn(written(text))]));
+  const events = owners.flatMap((name) => [...names.get(name).kinds].filter(([, kind]) => kind !== "let" && kind !== "import").map(([declared]) => declared));
+  assert.deepEqual(events.filter((event) => !called.has(event)), [], `functions of ${OWNERS[FOLDER].join(", ")} that no other part of the script calls`);
+  // (the model page: what the visit opens with is said before any other part reads the model as it loads)
+  const order = [...reached];
+  for (const [name, { imports }] of files) {
+    if (!files.has(`${FOLDER}/opening.ts`) || name === `${FOLDER}/opening.ts` || owners.includes(name)) continue;
+    if (!imports.some(({ from, names: taken }) => from === `${FOLDER}/model.ts` && taken.includes("model"))) continue;
+    assert.ok(order.indexOf(`${FOLDER}/opening.ts`) < order.indexOf(name), `${name} reads the model and runs before opening.ts says which one the visit opens with`);
+  }
   console.log(`page-modules-check: ${lets.length} variables of ${OWNERS[FOLDER].join(" and ")}, each set by its own module alone; ` +
-    `${taken} names imported in ${FOLDER}/, none assigned or hidden by a local; no top-level name twice`);
+    `${taken} names imported in ${FOLDER}/, none assigned or hidden by a local; no top-level name twice; ${events.length} events, each said somewhere`);
 }

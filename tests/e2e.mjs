@@ -299,6 +299,11 @@ async function watchAnswer() {
   return async (name) => {
     const early = await page.evaluate(() => window.__early);
     if (early.length) failures.push(`${name}before the answer ended: ${[...new Set(early)].join(", ")}`);
+    // (T378.5: and once it has ended they are back: the page draws the button from what its owner says is going on,
+    // and the worker's idle is said and drawn in two lines)
+    const late = await page.evaluate(() => [document.getElementById("run").getAttribute("aria-label") !== "Run" && "the button did not go back to Run",
+      document.getElementById("model").disabled && "the choice of model did not come back"].filter(Boolean));
+    if (late.length) failures.push(`${name}after the answer ended: ${late.join(", ")}`);
     const count = threadReports - before;
     console.log(`${name}thread reports during the answer: ${count}`);
     return count;
