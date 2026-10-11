@@ -79,6 +79,13 @@ walk(create, (node) => {
     assert.ok(call.arguments.length === 1 && call.arguments[0].type === "ObjectExpression", `createForward() hands ${part} one object`);
     assert.deepEqual(keysOf(call.arguments[0], part).sort(), keysOf(made.params[0], part).sort(), `what createForward() hands ${part} is what it takes`);
     handed += call.arguments[0].properties.length;
+    // T378.1: a model on the GPU alone (direct, T156) runs nothing on the CPU, and the one way the threads' part knows
+    // is that it is handed no spawn (no test in Node makes such an engine: CI's gpu-check does, on a GPU)
+    if (part === "softwareThreads") {
+      const spawn = call.arguments[0].properties.find((property) => property.key.name === "spawn").value;
+      assert.ok(spawn.type === "ConditionalExpression" && spawn.test.type === "Identifier" && spawn.test.name === "direct" && spawn.consequent.type === "NullLiteral" &&
+        spawn.alternate.type === "Identifier" && spawn.alternate.name === "spawn", "createForward() hands softwareThreads no spawn where the model is on the GPU alone (spawn: direct ? null : spawn): software threads would be started there");
+    }
     const returned = made.body.body.at(-1);
     assert.ok(returned.type === "ReturnStatement" && returned.argument.type === "ObjectExpression", `${part} returns one object`);
     const members = membersOf(returned.argument);
