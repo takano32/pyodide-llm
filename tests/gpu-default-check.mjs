@@ -46,6 +46,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
+import { softwareThread } from "./helper-node.mjs";
 import { built, placeKernels, placePython, runtime, runtimeUrl, treeOf } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -191,7 +192,7 @@ if (isMainThread) {
   const { pathTable } = await import(path.join(root, "src/bench.js"));
   const kernels = compileKernels(fs.readFileSync(built("simdkernel_shared.wasm")), fs.readFileSync(built("simdkernel_relaxed_shared.wasm")));
   const spawn = (data) => new Promise((resolve) => {
-    const helper = new Worker(runtime("helper.js"));
+    const helper = softwareThread(runtimeUrl("helper.js"));  // (the sources' helper beside the sources' forward: tests/helper-node.mjs)
     helper.once("message", () => resolve({ terminate: () => helper.terminate() }));
     helper.postMessage(data);
   });

@@ -6,6 +6,13 @@ import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, turnedAt, within, buffe
   pipelineOf, bind, dispatch } from "./device.js";
 import { tablesOf } from "./weights.js";
 import { attentionPasses } from "./tokenattention.js";
+import { GROUP } from "../shaders/common.js";
+import { flashVecSplits } from "../shaders/attention.js";
+import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "../shaders/matvec.js";
+import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "../shaders/fused.js";
+import { STATE_NOT_FINITE, STATE_BYTES, SAMPLING_BYTES, EMBED, EMBED_TERNARY, OUTLIERS_MOST, TAKE_OUTLIERS, TERNARY_COLUMNS,
+  outliersOf } from "../shaders/run.js";
+import { SAMPLE } from "../shaders/sample.js";
 
 // ---- T152: tokens on the GPU. A step of the engine's generate() (the forward pass of the token fed, the sampling of
 // the next) as one compute pass of shaders.js's T151 run: EMBED of the state's token, every layer in a fused form, the
@@ -65,11 +72,11 @@ const tokenShape = (m) => ({ apart: Boolean(m.gen.qkv), gated: Boolean(m.matrice
 // a form's WGSL, [key, code] each (the pipelines every form shares are compiled apart: tokenBuffers); the same code
 // under two keys is compiled once (chooseTokens). The norm is on the read of T150's matrices where it is RMSNorm
 // (LayerNorm takes the mean out first, which no sum of the matrix's rows gives: a dispatch of its own before them)
-const tokenCodes = (wgsl, { dp4a, subgroups, normApart, ternary }, { apart, gated, layerNorm, floatHead }) => {
-  const floats = (output) => wgsl.fusedMatVec({ input: layerNorm ? "plain" : "norm", output, subgroups });
-  const matrix = dp4a ? (output) => (ternary ? wgsl.ternaryMatVec : wgsl.fusedDp4aMatVec)({ output }) : floats;
-  return [...(dp4a && !normApart ? [["normQuantize", wgsl.NORM_QUANTIZE]] : []), ["qkv", matrix(apart ? "write" : "rope")],
-    ["add", dp4a ? matrix("add") : wgsl.fusedMatVec({ input: "plain", output: "add", subgroups })], ["glu", matrix(gated ? "swiglu" : "write")],
+const tokenCodes = ({ dp4a, subgroups, normApart, ternary }, { apart, gated, layerNorm, floatHead }) => {
+  const floats = (output) => fusedMatVec({ input: layerNorm ? "plain" : "norm", output, subgroups });
+  const matrix = dp4a ? (output) => (ternary ? ternaryMatVec : fusedDp4aMatVec)({ output }) : floats;
+  return [...(dp4a && !normApart ? [["normQuantize", NORM_QUANTIZE]] : []), ["qkv", matrix(apart ? "write" : "rope")],
+    ["add", dp4a ? matrix("add") : fusedMatVec({ input: "plain", output: "add", subgroups })], ["glu", matrix(gated ? "swiglu" : "write")],
     ["classifier", (floatHead ? floats : matrix)("write")]];
 };
 
@@ -84,24 +91,24 @@ const bindAt = (m, pipeline, entries) => m.device.createBindGroup({ layout: pipe
 // vector (DP4A: one serves every quantization of a token, each read before the next is made: T175's (l)); what a
 // submission reads back (the ids, the state, and the keys and values of its positions, [keys, values][layer][step])
 async function tokenBuffers(m) {
-  const { plan, wgsl } = m, most = plan.tokens.most, vocab = plan.tokens.classifier.rows;
+  const { plan } = m, most = plan.tokens.most, vocab = plan.tokens.classifier.rows;
   const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, widest = Math.max(plan.dim, qDim, plan.hidden);
   // (one at a time: each in an error scope of its own)
   // (T232: from a table of ternary weights, EMBED_TERNARY)
-  const embedCode = tablesOf(plan).embedding.ternary ? wgsl.EMBED_TERNARY : wgsl.EMBED;
+  const embedCode = tablesOf(plan).embedding.ternary ? EMBED_TERNARY : EMBED;
   const embed = await within(validated(m, () => pipelineOf(m, embedCode)), "compiling the embedding's row");
-  const sample = await within(validated(m, () => pipelineOf(m, wgsl.SAMPLE)), "compiling the sampling");
+  const sample = await within(validated(m, () => pipelineOf(m, SAMPLE)), "compiling the sampling");
   const out = STORAGE | COPY_SRC;
   const g = { embed, sample, most, vocab, h: buffer(m, plan.dim * 4, out | COPY_DST), q: buffer(m, qDim * 4), att: buffer(m, qDim * 4),
     gate: buffer(m, plan.hidden * 4), logits: buffer(m, vocab * 4, out), probs: buffer(m, vocab * 4), order: buffer(m, vocab * 4),
-    state: buffer(m, wgsl.STATE_BYTES, out | COPY_DST), chosen: buffer(m, most * 4, out), randoms: buffer(m, most * 4, STORAGE | COPY_DST),
-    step: buffer(m, 16, UNIFORM | COPY_DST), settings: buffer(m, wgsl.SAMPLING_BYTES, UNIFORM | COPY_DST),
-    xq: buffer(m, widest), xs: buffer(m, (widest / wgsl.GROUP) * 4), xb: buffer(m, plan.dim * 4),
-    readback: buffer(m, most * 4 + wgsl.STATE_BYTES + 2 * plan.layers * most * kvDim * 2, MAP_READ | COPY_DST) };
+    state: buffer(m, STATE_BYTES, out | COPY_DST), chosen: buffer(m, most * 4, out), randoms: buffer(m, most * 4, STORAGE | COPY_DST),
+    step: buffer(m, 16, UNIFORM | COPY_DST), settings: buffer(m, SAMPLING_BYTES, UNIFORM | COPY_DST),
+    xq: buffer(m, widest), xs: buffer(m, (widest / GROUP) * 4), xb: buffer(m, plan.dim * 4),
+    readback: buffer(m, most * 4 + STATE_BYTES + 2 * plan.layers * most * kvDim * 2, MAP_READ | COPY_DST) };
   // fusedMatVec's Params: rows, words, perRow, second, eps, normAt, qRows, kvRows, headSize, turned
   const params = (rows, n, second = 0, normAt = 0, turned = plan.turned) => {
     const bytes = new ArrayBuffer(48);
-    new Uint32Array(bytes).set([rows, n / 4, n / wgsl.GROUP, second, 0, normAt, qDim, kvDim, plan.headSize, turned, 0, 0]);
+    new Uint32Array(bytes).set([rows, n / 4, n / GROUP, second, 0, normAt, qDim, kvDim, plan.headSize, turned, 0, 0]);
     new Float32Array(bytes, 16, 1)[0] = plan.eps;
     return uniform(m, bytes);
   };
@@ -128,7 +135,7 @@ async function tokenBuffers(m) {
   // biases of a layer are one vector then, in the rows' order (one ADD for the three); k's heads are the rows after q's
   const { bq, bk, bv, qNorm } = plan.vectors;
   if (bq || qNorm) {
-    g.rope = await within(validated(m, () => pipelineOf(m, wgsl.TOKEN_ROPE)), "compiling a token's RoPE");
+    g.rope = await within(validated(m, () => pipelineOf(m, TOKEN_ROPE)), "compiling a token's RoPE");
     g.qkv = buffer(m, qkvRows * 4);
   }
   if (bq) {
@@ -154,11 +161,11 @@ async function tokenBuffers(m) {
   // (shaders.js's TAKE_OUTLIERS and TERNARY_COLUMNS), the values taken, and the Outliers of every piece of the table
   const channels = m.ternary ? plan.tokens.channels ?? [] : [];
   if (channels.length) {
-    g.take = await within(validated(m, () => pipelineOf(m, wgsl.TAKE_OUTLIERS)), "compiling the outlier channels' taking");
-    g.columns = await within(validated(m, () => pipelineOf(m, wgsl.TERNARY_COLUMNS)), "compiling the outlier channels' columns");
-    g.picked = buffer(m, wgsl.OUTLIERS_MOST * 4);
-    g.u.take = uniform(m, wgsl.outliersOf(channels));
-    g.u.columns = m.tables.classifier.map((piece) => uniform(m, wgsl.outliersOf(channels, piece.rows, plan.dim)));
+    g.take = await within(validated(m, () => pipelineOf(m, TAKE_OUTLIERS)), "compiling the outlier channels' taking");
+    g.columns = await within(validated(m, () => pipelineOf(m, TERNARY_COLUMNS)), "compiling the outlier channels' columns");
+    g.picked = buffer(m, OUTLIERS_MOST * 4);
+    g.u.take = uniform(m, outliersOf(channels));
+    g.u.columns = m.tables.classifier.map((piece) => uniform(m, outliersOf(channels, piece.rows, plan.dim)));
   }
   g.u.hidden = uniform(m, new Uint32Array([plan.hidden, 0, 0, 0]));
   return g;
@@ -173,11 +180,11 @@ function spread(m, rows, perGroup) {
 // the classifier) and SAMPLE, [pipeline, bind group, x, y] each. positions: how many the attention reads at the most
 // (T224: flash_attn_vec's parts a head go by it)
 function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed = true, positions = m.cache.capacity } = {}) {
-  const { plan, wgsl, gen: g } = m, V = m.vectors, P = form.pipes, cache = m.cache, qDim = plan.heads * plan.headSize;
-  const rows = form.dp4a ? wgsl.ORT_DP4A_MATVEC_ROWS : wgsl.MUL_MAT_VEC_ROWS;
+  const { plan, gen: g } = m, V = m.vectors, P = form.pipes, cache = m.cache, qDim = plan.heads * plan.headSize;
+  const rows = form.dp4a ? ORT_DP4A_MATVEC_ROWS : MUL_MAT_VEC_ROWS;
   const matrix = (pipeline, [w, s], input, params, count, output) =>
     [pipeline, bindAt(m, pipeline, [[0, w], [1, s], ...input, [3, params], ...output]), ...spread(m, count, rows)];
-  const quantize = (x, params, n) => [m.quantize, bindAt(m, m.quantize, [[0, x], [1, g.xq], [2, g.xs], [3, params], [4, g.step]]), Math.ceil(n / wgsl.GROUP / 64), 1];
+  const quantize = (x, params, n) => [m.quantize, bindAt(m, m.quantize, [[0, x], [1, g.xq], [2, g.xs], [3, params], [4, g.step]]), Math.ceil(n / GROUP / 64), 1];
   // What a matrix reads: { norm, quantize, input }, the dispatches before it (the stream's norm where it is one of its
   // own, the quantizing of DP4A's vector: T175) and its bindings of the vector.
   // The stream normed, for a matrix of floats (T150's; T226: the classifier of a model with outlier channels on DP4A
@@ -250,7 +257,7 @@ function tokenPass(m, form, { from = 0, to = m.plan.layers, head = true, embed =
 // a form's whole step for a run that reads up to positions, made again when the cache has grown (its buffers are others
 // then); T224: one a count of the attention's parts a head (flash_attn_vec's nwg goes by the positions)
 function tokenStep(m, form, positions) {
-  const a = m.gen.attention, parts = a.tiles ? 0 : m.wgsl.flashVecSplits(a.shape, positions);
+  const a = m.gen.attention, parts = a.tiles ? 0 : flashVecSplits(a.shape, positions);
   if (form.steps?.cache !== m.cache) form.steps = { cache: m.cache, lists: new Map() };
   if (!form.steps.lists.has(parts)) form.steps.lists.set(parts, tokenPass(m, form, { positions }));
   return form.steps.lists.get(parts);
@@ -261,7 +268,7 @@ function tokenStep(m, form, positions) {
 // the sampler refused the step after the sampled ones: its logits were not finite), kv: [keys, values][layer], the
 // positions' rows of float16 as bytes }
 async function runTokens(m, dispatches, { count, pos, state, settings, randoms, keep = false, extra }) {
-  const { device, plan, wgsl, gen: g } = m, kvRow = plan.kvHeads * plan.headSize * 2, idsBytes = g.most * 4;
+  const { device, plan, gen: g } = m, kvRow = plan.kvHeads * plan.headSize * 2, idsBytes = g.most * 4;
   if (pos + count > m.cache.capacity) throw new Error(`positions to ${pos + count} are past the GPU's cache`);
   device.pushErrorScope("out-of-memory");
   device.pushErrorScope("validation");
@@ -278,8 +285,8 @@ async function runTokens(m, dispatches, { count, pos, state, settings, randoms, 
     encoder.copyBufferToBuffer(g.state, 0, g.step, 0, 16);
   }
   encoder.copyBufferToBuffer(g.chosen, 0, g.readback, 0, count * 4);
-  encoder.copyBufferToBuffer(g.state, 0, g.readback, idsBytes, wgsl.STATE_BYTES);
-  const kvAt = idsBytes + wgsl.STATE_BYTES;
+  encoder.copyBufferToBuffer(g.state, 0, g.readback, idsBytes, STATE_BYTES);
+  const kvAt = idsBytes + STATE_BYTES;
   if (keep) {
     for (let l = 0; l < plan.layers; l++) {
       encoder.copyBufferToBuffer(m.cache.keys[l], pos * kvRow, g.readback, kvAt + l * g.most * kvRow, count * kvRow);
@@ -292,9 +299,9 @@ async function runTokens(m, dispatches, { count, pos, state, settings, randoms, 
   if (invalid || full) throw new Error(`the GPU refused a token (${(invalid ?? full).message})`);
   await g.readback.mapAsync(MAP_READ);
   try {
-    const words = new Uint32Array(g.readback.getMappedRange(0, idsBytes + wgsl.STATE_BYTES).slice(0));
+    const words = new Uint32Array(g.readback.getMappedRange(0, idsBytes + STATE_BYTES).slice(0));
     const after = words.subarray(g.most);
-    const out = { ids: words.slice(0, count), sampled: after[5], stopped: after[7], notFinite: after[wgsl.STATE_NOT_FINITE] };
+    const out = { ids: words.slice(0, count), sampled: after[5], stopped: after[7], notFinite: after[STATE_NOT_FINITE] };
     if (keep) {
       const bytes = new Uint8Array(g.readback.getMappedRange(kvAt, 2 * plan.layers * g.most * kvRow).slice(0));
       out.kv = [0, 1].map((side) => [...Array(plan.layers)].map((_, l) => {

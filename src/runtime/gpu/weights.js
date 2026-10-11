@@ -5,6 +5,8 @@
 
 import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, common, within, buffer, uniform, copyIn, readBack, validated,
   pipelineOf, bind, dispatch } from "./device.js";
+import { GROUP } from "../shaders/common.js";
+import { WIDEN_SIX, sixDispatch, sixValues } from "../shaders/steps.js";
 
 // every layer's matrices (values and scales, as the checkpoint holds them; T154: no w3 where there is no gate) and its
 // vectors: the weights of its two norms, and (T153) Qwen2's biases of q, k and v, Qwen3's norms of a head of q and of
@@ -32,7 +34,7 @@ async function upload(m) {
   }
 }
 async function uploadLayers(m) {
-  const { plan } = m, group = m.wgsl.GROUP;
+  const { plan } = m, group = GROUP;
   let bytes = 0;
   m.matrices = Object.fromEntries(Object.entries(plan.matrices).map(([name, { rows, n, ternary }]) =>
     [name, { rows, n, ternary, pieces: piecesOf(m, rows, rowBytes({ n, ternary })).map(([first, count]) => ({ first, rows: count, layers: [] })) }]));
@@ -122,7 +124,7 @@ function tablesOf(plan, make = (spec) => spec) {
 // and one of scales each, [{ first, rows, values, scales }]; fill(piece, valueBytes, scaleBytes) puts its bytes there
 function tablePieces(m, spec, fill, usage = STORAGE | COPY_DST) {
   return piecesOf(m, spec.rows, rowBytes(spec), m.plan.force.tablePieceBytes ?? m.plan.force.pieceBytes).map(([first, count]) => {
-    const valueBytes = count * rowBytes(spec), scaleBytes = (valueBytes / m.wgsl.GROUP) * 4;
+    const valueBytes = count * rowBytes(spec), scaleBytes = (valueBytes / GROUP) * 4;
     const piece = { first, rows: count, values: buffer(m, valueBytes, usage), scales: buffer(m, scaleBytes, usage) };
     fill(piece, valueBytes, scaleBytes);
     return piece;
@@ -132,7 +134,7 @@ function tablePieces(m, spec, fill, usage = STORAGE | COPY_DST) {
 // their stretches routes that take() writes the bytes to as they come; COPY_SRC for the check's rows (checkTokens).
 // The bytes on the GPU
 function tablesOn(m) {
-  const group = m.wgsl.GROUP;
+  const group = GROUP;
   let bytes = 0;
   m.tables = tablesOf(m.plan, (spec) => tablePieces(m, spec, ({ first, values, scales }, valueBytes, scaleBytes) => {
     const [valuesAt, scalesAt] = spec.at, from = [valuesAt + first * rowBytes(spec), scalesAt + (first * rowBytes(spec) / group) * 4];
@@ -149,7 +151,7 @@ function tablesOn(m) {
 // (b); T232: of 8192 ternary weights, whose scales are a byte to 32 weights), and a matrix a token reads must be one piece (T155). The tables may be in pieces (T209: uploadTokens). null
 // where it cannot, and why in m.tokensWhy: the prompts go on the GPU as before, the tokens stay on the CPU
 function tokensLayout(m) {
-  const { plan } = m, align = m.device.limits.minStorageBufferOffsetAlignment, group = m.wgsl.GROUP;
+  const { plan } = m, align = m.device.limits.minStorageBufferOffsetAlignment, group = GROUP;
   const why = (reason) => {
     m.tokensWhy = reason;
     return null;
@@ -184,7 +186,7 @@ function tokensLayout(m) {
 // T210: a model on the GPU alone makes them as it opens, their bytes routes of the checkpoint as the layers' are
 // (tablesOn), and only the final norm and RoPE's table come from the shared memory here
 async function uploadTokens(m, widen) {
-  const { plan } = m, group = m.wgsl.GROUP, half = plan.headSize / 2;
+  const { plan } = m, group = GROUP, half = plan.headSize / 2;
   let bytes = 0;
   m.tables ??= tablesOf(plan, (spec) => tablePieces(m, spec, (piece, valueBytes, scaleBytes) => {
     const { first, values, scales } = piece, { n, six, at: [valuesAt, scalesAt] } = spec;
@@ -226,8 +228,8 @@ async function uploadTokens(m, widen) {
 // through one buffer of their own, written again for every piece (the queue runs a write after the submissions before
 // it); done() lets it go.
 async function widener(m, tables = []) {
-  const { device, wgsl } = m;
-  const pipeline = await within(validated(m, () => pipelineOf(m, wgsl.WIDEN_SIX)), "compiling the widening of int6");
+  const { device } = m;
+  const pipeline = await within(validated(m, () => pipelineOf(m, WIDEN_SIX)), "compiling the widening of int6");
   const owned = [];
   // (T152: and the classifier's and the embedding's, one piece each)
   const largest = Math.max(CHECK_GROUPS * 24, ...Object.entries(m.plan.matrices).filter(([, matrix]) => matrix.six)
@@ -237,7 +239,7 @@ async function widener(m, tables = []) {
   const run = (values, groups, most = device.limits.maxComputeWorkgroupsPerDimension) => {
     const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
     dispatch(pass, pipeline, bind(m, pipeline, [packed, values, uniform(m, new Uint32Array([groups, 0, 0, 0]), owned)]),
-      ...wgsl.sixDispatch(groups, most));
+      ...sixDispatch(groups, most));
     pass.end();
     device.queue.submit([encoder.finish()]);
   };
@@ -268,7 +270,7 @@ async function checkWiden(m, packed, run) {
     m.device.queue.writeBuffer(values, 0, new Uint8Array(CHECK_GROUPS * 32 + after).fill(0x5a));
     m.device.queue.writeBuffer(packed, 0, bytes);
     run(values, CHECK_GROUPS, 7);
-    const got = new Int8Array(await readBack(m, values, CHECK_GROUPS * 32 + after)), want = m.wgsl.sixValues(bytes);
+    const got = new Int8Array(await readBack(m, values, CHECK_GROUPS * 32 + after)), want = sixValues(bytes);
     const at = want.findIndex((v, i) => got[i] !== v);
     if (at >= 0) return `value ${at % 32} of group ${(at / 32) | 0} is ${got[at]}, JavaScript's ${want[at]}`;
     const past = got.subarray(want.length).findIndex((v) => v !== 0x5a);

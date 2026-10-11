@@ -260,12 +260,6 @@ const LATER = {
     ['new Worker(new URL("../helper.js", import.meta.url)', "quiet: a software thread that does not start leaves fewer threads"],
     ['new Worker(new URL("../gpu.js", import.meta.url)', "quiet: a GPU worker that does not start leaves the model on the CPU (forward/gpuside.js)"],
   ],
-  "src/runtime/gpu.js": [
-    ['import("./shaders.js").catch(() => {})', "quiet: gpu/device.js's import of the same module says it, as a start's unusable: the CPU"],
-  ],
-  "src/runtime/gpu/device.js": [
-    ['import("../shaders.js")', "quiet: a GPU without its shaders is unusable, and the model stays on the CPU"],
-  ],
   "src/runtime/benchmark/sections.js": [
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));", "said"],
     ['named(import.meta.url, () => import("../forward.js"))', "said"],

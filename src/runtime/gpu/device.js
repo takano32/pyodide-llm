@@ -1,9 +1,13 @@
-// What every part of the model's GPU worker stands on: the shaders' module, what the parts share (the model's record,
-// whether a stop was asked, a device lost), the time a step may take, the device and why there is none, the worker's
-// end, and buffers: made, written from the shared memory, read back, bound and dispatched.
+// What every part of the model's GPU worker stands on: what the parts share (the model's record, whether a stop was
+// asked, a device lost), the time a step may take, the device and why there is none, the worker's end, and buffers:
+// made, written from the shared memory, read back, bound and dispatched.
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
-
-const shaders = import("../shaders.js");
+// (T367.5: the WGSL is no module handed round any more. Every module of this worker takes the names it uses from the
+// shaders' parts, src/runtime/shaders/<part>.js, as it takes its neighbours': linked into the worker's file, with
+// nothing to fetch after it and nothing of /benchmark/'s own shaders in it. The device's key is key.js's, the same
+// text the model's worker reads its key from: tests/dist-check.mjs holds the two built files to one key.)
+import { halvesOf } from "../shaders/run.js";
+import { deviceKey } from "../shaders/key.js";
 
 // GPUBufferUsage's values (the name itself is missing where there is no WebGPU)
 const STORAGE = 0x80, COPY_DST = 0x8, COPY_SRC = 0x4, MAP_READ = 0x1, UNIFORM = 0x40;
@@ -14,7 +18,7 @@ const CHUNK = 8 << 20;
 
 // T232: the bytes of a row of a matrix or a table ({ n, ternary }) on the GPU: a byte a weight (int8, and int6 widened),
 // or two bits (ternary: the codes as the checkpoint holds them, 16 weights a u32). A float32 scale goes with every
-// wgsl.GROUP (32) bytes of a row either way: an int8 group of 32 weights, a ternary group of 128
+// GROUP (32) bytes of a row either way: an int8 group of 32 weights, a ternary group of 128
 const rowBytes = ({ n, ternary }) => (ternary ? n / 4 : n);
 // (whether the model's weights are ternary: its layers' matrices are all of one kind, llama2_numpy's dtype)
 const ternaryPlan = (plan) => Object.values(plan.matrices).some((matrix) => matrix.ternary);
@@ -51,7 +55,6 @@ function within(promise, what) {
 // The device, the model's record (model), and the error scopes the layers' buffers go up in; undefined where there is
 // none (say(why): unusable() by default) or the worker is stopping
 async function openDevice(plan, say = unusable) {
-    const wgsl = await shaders;
     if (!self.navigator?.gpu) return say("no WebGPU in a worker here");
     // the browser's own adapter (T148, the review: "high-performance" would keep a laptop's second GPU awake for the
     // whole visit, for prompts that are mostly short; the device measures whichever it gets against its CPU anyway)
@@ -83,9 +86,9 @@ async function openDevice(plan, say = unusable) {
     // T148: what the page keeps of an earlier visit counts only for the same adapter and browser
     // (and the shaders of this deployment: a site whose shaders changed chooses anew, the review of T148)
     // (T232: a ternary model's key holds its own shaders too)
-    const key = wgsl.deviceKey(adapter, device, ternary);
+    const key = deviceKey(adapter, device, ternary);
     const remembered = plan.remembered?.key === key ? plan.remembered : null;
-    common.model = { device, plan, wgsl, owned: [], limit, info, fallback, remembered, adapter, key, ternary };
+    common.model = { device, plan, owned: [], limit, info, fallback, remembered, adapter, key, ternary };
     if (common.stopping) return end();
     // a buffer the device cannot give fails quietly, as an error of these scopes
     device.pushErrorScope("out-of-memory");
@@ -146,7 +149,7 @@ function narrowIn(m, target, address, values, offset = 0) {
   narrowed ??= new Uint16Array(CHUNK / 2);
   for (let done = 0; done < values; done += narrowed.length) {
     const n = Math.min(narrowed.length, values - done);
-    m.wgsl.halvesOf(new Float32Array(m.memory.buffer, address + done * 4, n), narrowed);
+    halvesOf(new Float32Array(m.memory.buffer, address + done * 4, n), narrowed);
     m.device.queue.writeBuffer(target, offset + done * 2, narrowed, 0, n);
   }
 }

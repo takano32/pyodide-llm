@@ -5,6 +5,7 @@
 import { common, copyIn, narrowIn } from "./device.js";
 import { grow, block, keysOut, keysBack } from "./block.js";
 import { tokenStep, runTokens } from "./tokens.js";
+import { samplingState, samplingSettings } from "../shaders/run.js";
 
 // A request for count steps from token at pos (src/runtime/forward/gpuside.js's generateMany): the keys and values of positions from to
 // pos - 1 up from forward.js's cache first (cache: its addresses of the keys and the values, its capacity and the
@@ -17,7 +18,7 @@ import { tokenStep, runTokens } from "./tokens.js";
 // GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back
 function generate({ serial, count, pos, from, token, history, length, cache, settings, randoms }) {
   serve(serial, async (wanted) => {
-    const m = common.model, { plan, wgsl, gen: g } = m, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
+    const m = common.model, { plan, gen: g } = m, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
     if (!g?.form) throw new Error("no tokens on this GPU");
     if (pos + count > m.cache.capacity) grow(m, pos + count);
     const at = (block, l, p) => block + l * cache.capacity * cache.row + p * cache.row;
@@ -28,7 +29,7 @@ function generate({ serial, count, pos, from, token, history, length, cache, set
       }
     }
     const out = await runTokens(m, tokenStep(m, g.form, pos + count), { count, pos, keep: Boolean(cache),
-      state: wgsl.samplingState({ token, pos, history, length }), settings: wgsl.samplingSettings({ vocab: g.vocab, ...settings }),
+      state: samplingState({ token, pos, history, length }), settings: samplingSettings({ vocab: g.vocab, ...settings }),
       randoms: Float32Array.from({ length: count }, (_, i) => randoms[i] ?? 0) });
     if (!wanted()) return;
     for (let side = 0; cache && side < 2; side++) {

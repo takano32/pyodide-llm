@@ -3,6 +3,10 @@
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
+import { GROUP } from "../shaders/common.js";
+import { ternaryValues, tiledOff } from "../shaders/prompt.js";
+import { FLASH_Q_TILE, flashShape, flashTile } from "../shaders/attention.js";
+import { devicePromptForms } from "../shaders/key.js";
 
 // The right tiled shaders are timed together, in turn, on the model's first layer (its seven matrices by a whole block,
 // with the quantizations of a packed one): a submission of n passes of the layer and one of 2n, their difference the
@@ -14,13 +18,13 @@ import { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack,
 const TIMED_MS = 20, MOST_PASSES = 256, PAIRS = 5;
 
 // the tiled shaders of T146 this device can make (shaders.js's promptForms)
-const candidates = ({ device, wgsl, ternary }) => wgsl.devicePromptForms(device, ternary);
+const candidates = ({ device, ternary }) => devicePromptForms(device, ternary);
 
 // ---- the attention: llama.cpp's flash attention with tiles, with f16 in the workgroup's memory where there is
 // shader-f16 and its subgroups where there are (and subgroup_id), else the same without them; each checked first
 // against JavaScript (checkAttention), the next one tried where it is wrong
 async function chooseAttention(m) {
-  const { device, plan, wgsl } = m;
+  const { device, plan } = m;
   const half = device.features.has("shader-f16");
   const subgroups = device.features.has("subgroups") && Boolean(navigator.gpu.wgslLanguageFeatures?.has("subgroup_id"));
   const limits = { memory: device.limits.maxComputeWorkgroupStorageSize, threads: threadsOf(device),
@@ -31,7 +35,7 @@ async function chooseAttention(m) {
   const options = [{ half, subgroups }, { half: false, subgroups: false }].filter((o, i) => i === 0 || o.half !== half || o.subgroups !== subgroups)
     .sort((a, b) => (nameOf(b) === m.remembered?.attention) - (nameOf(a) === m.remembered?.attention));
   for (const option of options) {
-    const shape = wgsl.flashShape({ headSize: plan.headSize, ...option, ...limits });
+    const shape = flashShape({ headSize: plan.headSize, ...option, ...limits });
     const name = nameOf(option);
     if (plan.force.attention && plan.force.attention !== name) continue;
     if (shape.none) {
@@ -39,7 +43,7 @@ async function chooseAttention(m) {
       continue;
     }
     try {
-      const pipeline = await within(validated(m, () => pipelineOf(m, wgsl.flashTile(shape))), `compiling ${name}`);
+      const pipeline = await within(validated(m, () => pipelineOf(m, flashTile(shape))), `compiling ${name}`);
       const wrong = await within(checkAttention(m, pipeline), `checking ${name}`);
       if (!wrong) {
         m.attention = { name, pipeline, shape };
@@ -82,7 +86,7 @@ async function checkAttention(m, pipeline) {
     const group = bind(m, pipeline, [make(q), make(keys), make(values), out, uniform(m, params, owned),
       uniform(m, new Uint32Array([tokens, pos, 0, 0]), owned)]);
     const encoder = m.device.createCommandEncoder(), pass = encoder.beginComputePass();
-    dispatch(pass, pipeline, group, heads * Math.ceil(tokens / m.wgsl.FLASH_Q_TILE));
+    dispatch(pass, pipeline, group, heads * Math.ceil(tokens / FLASH_Q_TILE));
     pass.end();
     m.device.queue.submit([encoder.finish()]);
     const got = new Float32Array(await readBack(m, out, tokens * qDim * 4));
@@ -181,7 +185,7 @@ const productGroups = (m, form, name, l, from, to, add, owned = m.owned) => {
   return pieces.map(({ first, rows: count, layers }) => {
     const out = first ? { buffer: to, offset: first * 4, size: to.size - first * 4 } : to;
     return { rows: count, group: bind(m, form.pipeline, [...layers[l], form.packed ? m.xq : from, out,
-      uniform(m, new Uint32Array([count, n / 4, n / m.wgsl.GROUP, 0, n, rows, add ? 1 : 0, 0]), owned), m.step, ...(form.packed ? [m.xs] : [])]) };
+      uniform(m, new Uint32Array([count, n / 4, n / GROUP, 0, n, rows, add ? 1 : 0, 0]), owned), m.step, ...(form.packed ? [m.xs] : [])]) };
   });
 };
 // the workgroups of form for rows by count tokens: the tiles numbered over x, then y (as T146's shaders number them)
@@ -200,10 +204,10 @@ function multiply(m, pass, form, group, rows, count) {
 // four codes, the one no file has too: every bit of a word matters), against JavaScript's on the codes' values
 // (shaders.js's ternaryValues)
 async function checkForm(m, form) {
-  const { device, wgsl } = m, rows = 300, ternary = Boolean(form.ternary), n = ternary ? 640 : 544, perRow = n / wgsl.GROUP;
-  const scaled = ternary ? 4 * wgsl.GROUP : wgsl.GROUP;  // the weights a scale
+  const { device } = m, rows = 300, ternary = Boolean(form.ternary), n = ternary ? 640 : 544, perRow = n / GROUP;
+  const scaled = ternary ? 4 * GROUP : GROUP;  // the weights a scale
   const stored = ternary ? new Uint8Array((rows * n) / 4).map(() => (Math.random() * 256) | 0) : new Int8Array(rows * n).map(() => (Math.random() * 256) | 0);
-  const w = ternary ? wgsl.ternaryValues(stored) : stored, s = new Float32Array((rows * n) / scaled).map(() => Math.random() * 0.01);
+  const w = ternary ? ternaryValues(stored) : stored, s = new Float32Array((rows * n) / scaled).map(() => Math.random() * 0.01);
   for (const { tokens, wider } of [{ tokens: 11, wider: 0 }, { tokens: 70, wider: 0 }, { tokens: 11, wider: 64 }]) {
     const xStride = n + wider, yStride = rows + (wider ? 20 : 0), owned = [];
     const x = new Float32Array(tokens * xStride).map(() => (Math.random() - 0.5) * 2);
@@ -213,7 +217,7 @@ async function checkForm(m, form) {
       return made;
     };
     try {
-      const io = { xq: buffer(m, tokens * xStride, STORAGE | COPY_SRC, owned), xs: buffer(m, tokens * (xStride / wgsl.GROUP) * 4, STORAGE | COPY_SRC, owned),
+      const io = { xq: buffer(m, tokens * xStride, STORAGE | COPY_SRC, owned), xs: buffer(m, tokens * (xStride / GROUP) * 4, STORAGE | COPY_SRC, owned),
         step: uniform(m, new Uint32Array([tokens, 0, 0, 0]), owned) };
       const wb = make(stored), sb = make(s), xb = make(x), y = make(new Float32Array(tokens * yStride));
       const shape = (add) => uniform(m, new Uint32Array([rows, n / 4, perRow, 0, xStride, yStride, add ? 1 : 0, 0]), owned);
@@ -222,15 +226,15 @@ async function checkForm(m, form) {
       const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
       if (form.packed) {
         dispatch(pass, m.quantize, bind(m, m.quantize, [xb, io.xq, io.xs, uniform(m, new Uint32Array([n, xStride, 0, 0]), owned), io.step]),
-          Math.ceil(n / wgsl.GROUP / 64), tokens);
+          Math.ceil(n / GROUP / 64), tokens);
       }
       groups.forEach((g) => multiply(m, pass, form, g, rows, tokens));
       pass.end();
       device.queue.submit([encoder.finish()]);
       const got = new Float32Array(await readBack(m, y, tokens * yStride * 4));
       const xq = form.packed ? new Int8Array(await readBack(m, io.xq, tokens * xStride)) : null;
-      const xs = form.packed ? new Float32Array(await readBack(m, io.xs, tokens * (xStride / wgsl.GROUP) * 4)) : null;
-      const { wrong } = wgsl.tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: form.half, group: scaled });
+      const xs = form.packed ? new Float32Array(await readBack(m, io.xs, tokens * (xStride / GROUP) * 4)) : null;
+      const { wrong } = tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: form.half, group: scaled });
       if (wrong) return `${wrong} (${tokens} tokens${wider ? ", wider x and y" : ""})`;
     } finally {
       owned.forEach((b) => b.destroy());

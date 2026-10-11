@@ -1,13 +1,15 @@
 // tests/forward-modules-check.mjs (T349): the names that src/runtime/forward.js and its modules (src/runtime/forward/*.js) hand
 // one another. Three things there are no variables, so that a name spelled wrong is `undefined` without a word:
-//   - a name a file takes out of another (`const { a, b } = await import(...)`, `= await modules.x`): every one is
-//     exported there, and every name a file uses is declared in it, taken from another, or a global;
+//   - a name a file uses: every one is declared in it, imported by it, or a global (a ReferenceError where the line
+//     runs, otherwise: neither the build nor Node says it before);
 //   - what createForward() (forward/engine.js) hands a part (softwareThreads, gpuFit, gpuSide) in one object, which the
 //     part takes apart by name: the names handed are the names taken, and what the engine takes out of the part's
 //     object is in it;
 //   - the parts' objects (pool, gpuPart, held): every pool.<name> is a member of what softwareThreads() returns, with a
 //     setter where it is set (a member that is none would read undefined, and set nothing the part reads).
-// And the folder holds the modules the window asks for, and the window links (Node imports it) with no export undefined.
+// And every file of the folder is reached from the window, and the window links (Node imports it) with no export undefined.
+// T367.5: what this held before and the build and Node hold by themselves now is gone from here: that a name taken is
+// exported where it is taken from (the build: MISSING_EXPORT, an error; Node: a SyntaxError as the module is imported).
 // Node only, under a second:
 //
 //   node tests/forward-modules-check.mjs
@@ -21,45 +23,27 @@ import { namesOf } from "./worker-modules-check.mjs";
 
 const GLOBALS = new Set(("Array Atomics BigInt BigInt64Array Boolean Error Float32Array Float64Array Infinity Int32Array Int8Array Map Math NaN Number Object " +
   "Promise Set SharedArrayBuffer Uint16Array Uint8Array URL WebAssembly clearTimeout console performance setTimeout undefined").split(" "));
-// (T367.1: where the runtime is and which form its imports have is the tree's, tests/tree.mjs; the lines that take a
-// neighbour's names are read by tests/imports.mjs, whose windowed() also holds the folder to what the window asks for,
-// or, where a bundler links the files, to what the window reaches)
+// (where the runtime is: tests/tree.mjs. tests/imports.mjs's windowed() reads the window and every file it reaches,
+// says a ring, and holds every file of the folder to be reached)
 const tree = treeOf();
 const linked = windowed("forward.js", { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, more: ["jobs.js"] });
 const modules = linked.there;
 const files = new Map([...linked.files].map(([name, { text }]) => [name, text]));
 const programs = new Map([...linked.files].map(([name, { program }]) => [name, program]));
-const exported = new Map([...programs].map(([name, program]) => [name, new Set(program.body.flatMap((node) => {
-  if (node.type !== "ExportNamedDeclaration") return [];
-  if (!node.declaration) return node.specifiers.map((specifier) => specifier.exported.name);
-  return node.declaration.id ? [node.declaration.id.name] : node.declaration.declarations.flatMap((d) => d.id.type === "Identifier" ? [d.id.name] : d.id.properties.map((p) => p.value.name));
-}))]));
 
-// ---- every name used is declared, taken from another file, or a global; and what is taken is exported there
+// ---- every name used is declared, imported, or a global
 const keysOf = (pattern, what) => pattern.properties.map((property) => {
   assert.ok(property.type === "ObjectProperty" && !property.computed && property.key.type === "Identifier", `${what}: a plain name`);
   return property.key.name;
 });
-let taken = 0;
-for (const [name, program] of programs) {
+let names = 0;
+for (const [name] of programs) {
   if (name === "jobs.js") continue;
-  const unknown = [...namesOf(files.get(name)).free].filter((used) => !GLOBALS.has(used));
-  assert.deepEqual(unknown, [], `${name} uses ${unknown}, which it neither declares nor takes from another file: a ReferenceError where the line runs`);
-  // (what a file awaits at its top and takes apart is a neighbour's names: tests/imports.mjs read every one of them)
-  for (const node of program.body) {
-    const d = node.type === "VariableDeclaration" ? node.declarations[0] : null;
-    if (d?.init?.type !== "AwaitExpression" || d.id.type !== "ObjectPattern") continue;
-    assert.ok(linked.files.get(name).left.includes(node), `${name}: \`${files.get(name).slice(d.init.start, d.init.end)}\` is neither a module of this deployment (its own ?v=) nor one of the window's list`);
-  }
-  for (const { from: file, names } of linked.files.get(name).takes) {
-    assert.ok(exported.has(file), `${name} takes names from ${file}, which is no file of the forward pass`);
-    for (const { imported: wanted } of names) {
-      assert.ok(exported.get(file).has(wanted), `${name} takes ${wanted} from ${file}, which does not export it: undefined`);
-      taken += 1;
-    }
-  }
+  const { free } = namesOf(files.get(name)), unknown = [...free].filter((used) => !GLOBALS.has(used));
+  assert.deepEqual(unknown, [], `${name} uses ${unknown}, which it neither declares nor imports: a ReferenceError where the line runs`);
+  names += free.size;
 }
-console.log(`forward-modules-check: ${programs.size - 1} files use nothing they do not declare or take from another, and the ${taken} names they take are exported`);
+console.log(`forward-modules-check: ${programs.size - 1} files use nothing they do not declare or import (${names} names of the globals)`);
 
 // ---- the parts: what the engine hands each is what it takes, and what a part's object is asked for is in it
 const functionOf = (file, name) => programs.get(file).body.map((node) => node.declaration ?? node).find((node) => node.type === "FunctionDeclaration" && node.id.name === name);

@@ -8,20 +8,17 @@ import { forget, keptModels, outdated, serves } from "../runtime/kept.js";
 
 // What the worker kept of its conversions (src/runtime/kept.js: the origin private file system, or the Cache API): the
 // select says which models need no download any more, and About lists them with a way to delete them.
-// (T367.3: linked into the page's own script. The page read it as a file of its own before, and went on without it
-// where that failed: what reads it still takes a promise of it.)
-const keptModule = Promise.resolve({ forget, keptModels, outdated, serves });
+// (T367.3: linked into the page's own script. A store that cannot be listed is one that kept nothing.)
 export async function showKept() {
-  const kept = await keptModule;
-  let models = (await kept?.keptModels().catch(() => [])) ?? [];
+  let models = await keptModels().catch(() => []);
   // T116: what an older converter kept is never used again, so it goes (the worker deletes it too when it looks)
-  for (const one of models.filter((one: any) => kept.outdated(one))) await kept.forget(one);
-  models = models.filter((one: any) => !kept.outdated(one));
+  for (const one of models.filter((one: any) => outdated(one))) await forget(one);
+  models = models.filter((one: any) => !outdated(one));
   for (const option of select.querySelectorAll("option")) {
     const entry = MODELS.find(({ id }) => id === option.value) as any;
     if (entry?.hf) {
       // kept as it would be loaded now: under its bits (?bits=, or either the worker may choose), by this converter
-      const found = models.some((one: any) => kept.serves(one, weighed(entry)));
+      const found = models.some((one: any) => serves(one, weighed(entry)));
       option.textContent = `${entry.name} — ${entry.note}${found ? " · kept in this browser" : ""}`;
     }
   }
@@ -33,7 +30,7 @@ export async function showKept() {
     remove.type = "button";
     remove.textContent = "delete";
     remove.onclick = async () => {
-      await kept.forget(one);
+      await forget(one);
       if (page.model.id === one.manifest.id) {
         remember(page.model, false);
       }
@@ -47,9 +44,8 @@ export async function showKept() {
 // must still be kept as it would be loaded now (its bits, this converter), or the first of the list starts instead
 export async function stillKept(entry: any) {
   if ((entry.download ?? 0) <= 500e6) return true;
-  const kept = await keptModule;
-  const models = (await kept?.keptModels().catch(() => [])) ?? [];
-  return models.some((one: any) => kept.serves(one, weighed(entry)));
+  const models = await keptModels().catch(() => []);
+  return models.some((one: any) => serves(one, weighed(entry)));
 }
 
 // three groups: what the site was built with, the unquantized originals, and what comes from Hugging Face

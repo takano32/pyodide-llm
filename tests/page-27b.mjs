@@ -61,6 +61,7 @@ import fs from "node:fs";
 import path from "node:path";
 import v8 from "node:v8";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
+import { softwareThread } from "./helper-node.mjs";
 import { built, runtimeUrl } from "./tree.mjs";
 const { compileKernels, createForward, footprint, keysInHalf, needsWide, weightsMemory } = await import(runtimeUrl("forward.js"));
 import { converted, fromFolder, listed } from "./conducting.mjs";
@@ -100,7 +101,7 @@ const breakOf = (name) => {
 };
 
 const spawn = (data) => new Promise((resolve) => {
-  const worker = new Worker(runtimeUrl("helper.js"));
+  const worker = softwareThread(runtimeUrl("helper.js"));  // (the sources' helper beside the sources' forward: tests/helper-node.mjs)
   worker.once("message", () => resolve({ terminate: () => worker.terminate() }));
   worker.postMessage(data);
 });

@@ -5,10 +5,12 @@
 // browser, at the moment the line runs), and no test opens the page outside CI's browsers. So this reads the script
 // and each module as the module it is, and holds
 //   1. every name it uses to one of: declared in the file, imported by it, a global of a page listed below;
-//   2. every name it imports to an export of the file it names (src/models.js and src/bench.js: imported for real);
-//   3. the imports to a graph without a ring, in which the script reaches every file of src/page/;
-//   4. every page.<name> to a field of the one object the parts share (page is no variable's name but an object's: a
+//   2. the imports to a graph without a ring (the build links one without a word), in which the script reaches every
+//      file of src/page/;
+//   3. every page.<name> to a field of the one object the parts share (page is no variable's name but an object's: a
 //      field that is not there reads undefined and is set without a word), and every field to a use.
+// T367.5: that a name imported is exported by the file it names was held here too; the build says it now, as an error
+// (MISSING_EXPORT: the page's script is bundled like the workers'), and it is gone from here.
 // Node only, under a second:
 //
 //   node tests/page-modules-check.mjs
@@ -85,20 +87,7 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) for (const [PAGE
   }
   console.log(`page-modules-check: ${PAGE}: ${files.size} file${files.size > 1 ? "s" : ""} of the page's script use ${count} names of a page's globals, and nothing they do not declare or import`);
 
-  // ---- 2. what is imported is exported there
-  const outside = new Map();
-  for (const [name, { imports }] of files) {
-    for (const { from, names } of imports) {
-      if (!files.has(from) && !outside.has(from)) {
-        assert.ok(fs.existsSync(path.join(root, from)) && from.endsWith(".js"), `${name} imports ${from}, which is no file of the page's script and no module of src/`);
-        outside.set(from, Object.keys(await import(path.join(root, from))));
-      }
-      const there = files.get(from)?.exported ?? outside.get(from);
-      for (const one of names) assert.ok(there.includes(one), `${name} imports ${one} from ${from}, which does not export it`);
-    }
-  }
-
-  // ---- 3. no ring, and the script reaches every file
+  // ---- 2. no ring, and the script reaches every file
   const reached = new Set(), open = [];
   (function visit(name) {
     assert.ok(!open.includes(name), `the imports go round: ${[...open.slice(open.indexOf(name)), name].join(" → ")}`);
@@ -109,9 +98,9 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) for (const [PAGE
     reached.add(name);
   })(PAGE);
   assert.deepEqual([...files.keys()].filter((name) => !reached.has(name)), [], `files of ${FOLDER}/ that the page's script never imports`);
-  console.log(`page-modules-check: the imports name what is exported, without a ring; in the order they run: ${[...reached].map((name) => path.posix.basename(name)).join(", ")}`);
+  console.log(`page-modules-check: the imports go round nowhere; in the order they run: ${[...reached].map((name) => path.posix.basename(name)).join(", ")}`);
 
-  // ---- 4. the fields of the one object the parts share
+  // ---- 3. the fields of the one object the parts share
   const holders = [...files].filter(([, { code }]) => /^(export )?const page = \{$/m.test(code));
   assert.equal(holders.length, 1, "one file declares `const page = {`");
   const declaration = parse(holders[0][1].code, { sourceType: "module" }).program.body.map((statement) => statement.declaration ?? statement)

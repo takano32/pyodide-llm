@@ -11,9 +11,9 @@
 //                                     reads forward.js from there instead of from the sources: forwardUrl() below
 //
 // Only what a worker imports dynamically is a chunk with its own exports (forward, shaders, key, kept): a module that
-// is linked statically is inside its importer's file, under whatever names the bundler gave it. And a bundle is a
-// browser's: helper.js's Node branch is not in it (Vite puts an empty module in node:worker_threads' place), so a tool
-// that starts software threads in Node starts the sources' helper beside a bundled forward.
+// is linked statically is inside its importer's file, under whatever names the bundler gave it. A worker's entry is a
+// file too (helper, gpu, worker), with its entry's exports: helper.<hash>.js is the software thread as a browser runs
+// it, jobs.js linked into it, and tests/helper-node.mjs starts it in Node beside a bundled forward (T367.5).
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
