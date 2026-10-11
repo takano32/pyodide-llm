@@ -1,7 +1,6 @@
 // forward/paths.js (T349): what /benchmark/ times of the model page's own path through an engine: prompts as the
 // page chooses, on the CPU only and on the GPU only (timePrompts, T184), and the threads' search run to its end (endSearch, T190).
-// A module of public/forward.js, which asks for it with its own ?v=<build> and exports its names as before; it reads
-// its neighbour the same way.
+// A module of src/runtime/forward.js, which exports its names as before.
 
 import { BETTER } from "./choice.js";
 

@@ -3,7 +3,8 @@ import { parameters } from "./address.ts";
 
 declare const __BUILD__: string;
 
-// ?v=<commit>: a new page must never run with the cached worker or Python code of the previous deployment
+// ?v=<commit>, on the Service Worker's registration: a new deployment installs its own (the workers and the Python are
+// named by a hash of their text since T367.3, and need none)
 // T93 stage 3: cross-origin isolation, for the software threads of forward.js. GitHub Pages cannot send the headers,
 // so a service worker (coi.js) adds them; it controls the page from the next load on, so the first visit reloads
 // once. Nothing else starts before that. If it cannot register, or the page is still not isolated after the

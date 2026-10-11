@@ -1,5 +1,5 @@
 // worker/clock.js (T350): the seconds since a moment, and a turn of the event loop.
-// A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
+// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 export const since = (started) => (performance.now() - started) / 1000;
 

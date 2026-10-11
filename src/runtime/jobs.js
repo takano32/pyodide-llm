@@ -2,8 +2,8 @@
 // for the software threads that take them (helper.js). One place for the layout of the control area at the start of
 // a shared memory, the kinds of kernel calls, and how the rows of a job are run, so that the two never drift apart.
 //
-// A plain ES module. forward.js and helper.js import it with the ?v= of their own URL (GitHub Pages caches a file
-// for ten minutes: the three must come from the same deployment).
+// A plain ES module. forward.js and helper.js import it, and a bundler links it into each (T367.3: the two
+// then hold the same text because they are of one build).
 
 /** the control area: the first bytes of a shared memory, as 32-bit words (the helpers', then the GPU's: GPU_DONE) */
 export const CONTROL_BYTES = 8192;

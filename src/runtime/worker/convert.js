@@ -2,7 +2,7 @@
 // a conversion made kept for the next visit and read back (kept.js).
 // T374.2.1: the conversion is conducted by Python (src/python/convert/conduct.py) and answered by conduct.js: a model of
 // huggingface.co from there, and (T374.2.2) a folder of the visitor's disk from its Files.
-// A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
+// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { state, loadSeconds } from "./state.js";
 import { since } from "./clock.js";
@@ -111,7 +111,7 @@ export async function converter(signal) {
 
 export async function convert(model, signal, id) {
   const remote = typeof model.hf.repo === "string";
-  // with the ?v=<build> of this worker, like every file it reads (AGENTS.md)
+  // (asked for when a conversion first needs it: a module of its own, _astro/kept.<hash>.js)
   state.keptModule ??= await import("../kept.js");
   const kept = remote ? await loadConverted(model, signal, id) : undefined;
   if (kept && !kept.miss) {

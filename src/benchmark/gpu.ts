@@ -1,4 +1,4 @@
-// The section "GPU": the steps asked of public/benchmark/gpu.js one at a time, and the Markdown of what came back.
+// The section "GPU": the steps asked of src/runtime/benchmark/gpu.js one at a time, and the Markdown of what came back.
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { checkVerdict, matVecTable, cpuBaseline, tokenTable, layerTable, layerStepsTable, generateTable, unmeasured,
   tableCell, noRatios, threadsOf, timesFaster } from "../bench.js";
@@ -131,7 +131,7 @@ function overheadMarkdown(s: any) {
     `| the token's id read back (4 bytes) | ${fixed(o.readToken, 2)} |`,
     `| every logit read back (${o.vocab} floats) | ${fixed(o.readLogits, 2)} |`];
 }
-// T168: the device's ceilings, each a loop of that alone (public/shaders.js, the method of clpeak): what the
+// T168: the device's ceilings, each a loop of that alone (src/runtime/shaders.js, the method of clpeak): what the
 // prompt's shaders are held against
 const percent = (part: number, whole: number) => `${fixed((100 * part) / whole, 1)}%`;
 function ceilingsMarkdown(s: any) {

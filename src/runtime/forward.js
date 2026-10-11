@@ -14,8 +14,8 @@
 // file. The rest is in the modules of forward/: engine.js (createForward(): one model's forward pass), threads.js (its
 // software threads and the search for their number), gpuside.js (its GPU's side), choice.js (the GPU or the CPU, and
 // its times), paths.js (what /benchmark/ times of the page's path), memory.js (the memory a model takes) and alone.js
-// (a model on the GPU alone). Each is asked for with this file's own ?v=<build>, as jobs.js is, so that all come from
-// one deployment, and all at once: one after another's end would add a round trip for each.
+// (a model on the GPU alone). Each is a static import, as jobs.js is: a bundler links them into
+// one file (T367.3).
 import { BATCH } from "./jobs.js";
 export { BATCH };
 import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine } from "./forward/choice.js";

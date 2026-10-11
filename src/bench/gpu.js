@@ -127,7 +127,7 @@ export function tokenTable(steps, baseline, gpu = {}) {
 
 /**
  * T150: the GPU section's table of one layer of a token: its fourteen steps each a dispatch of their own and the same
- * fused into five (public/shaders.js's fusedMatVec), on llama.cpp's matrix × vector; T175: the same on ONNX Runtime's
+ * fused into five (src/runtime/shaders.js's fusedMatVec), on llama.cpp's matrix × vector; T175: the same on ONNX Runtime's
  * DP4A for small M, its vector quantized before each matrix: separate steps (eighteen), fused but for the norms
  * (eleven) and fused (nine: fusedDp4aMatVec, the norm with the quantizer). step: {name, result: {model, pos, layers,
  * GB, rows: [{form, check, base, fused, normApart, subgroups, dispatches, msPerLayer, GBps, unsteady}, or {form, check,

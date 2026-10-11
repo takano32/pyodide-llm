@@ -29,7 +29,7 @@ self.onmessage = async ({ data }) => {
   }
 };
 
-// ---- the kernels, as the model's worker compiles them (public/worker.js): the plain build, and the shared one where
+// ---- the kernels, as the model's worker compiles them (src/runtime/worker.js): the plain build, and the shared one where
 // the page is cross-origin isolated. null where this browser cannot compile them (no WebAssembly SIMD)
 async function kernelsOf(forward, kind) {
   const fetched = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
@@ -135,7 +135,7 @@ function fillWeights(memory, base, { plan }) {
   }
 }
 
-// a software thread of forward.js, as the model's worker starts one (public/worker/weights.js's spawnThread)
+// a software thread of forward.js, as the model's worker starts one (src/runtime/worker/weights.js's spawnThread)
 const spawn = (data) => new Promise((resolve, reject) => {
   const worker = new Worker(new URL("../helper.js", import.meta.url), { type: "module" });
   worker.onmessage = () => resolve({ terminate: () => worker.terminate() });

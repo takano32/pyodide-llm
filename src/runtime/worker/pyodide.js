@@ -1,6 +1,6 @@
 // worker/pyodide.js (T350): the version of Pyodide, its loading in named steps, and the watch that tells a slow line
 // from one that stopped (T118, T129). It holds nothing of the worker's state: init() of worker.js keeps what this loads.
-// A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
+// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { isError, told } from "./told.js";
 import { BUILT } from "../built.js";
@@ -180,8 +180,8 @@ export async function pyodideSteps(version, importer) {
 
 // T367.2: the site's Python comes as one archive a module (python_archive.py builds them of src/python/): engine.zip, which
 // every load imports, and converter.zip, which the first conversion asks for. One request each, where every .py was one
-// (fifteen and nineteen). An archive is fetched with this worker's ?v=<build>, like every file of the site the worker
-// reads, so that it is the Python of the worker's own deployment.
+// (fifteen and nineteen). An archive is a built file (built.js): the bundler gives it a name with a hash of its bytes,
+// and the worker's own text names that file, so it is the Python of the worker's own build (T367.3).
 export async function pythonArchive(name, signal) {
   const res = await fetch(BUILT[name], { signal });
   if (!res.ok) {

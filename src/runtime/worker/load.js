@@ -1,6 +1,6 @@
 // worker/load.js (T350): the load of a model, whichever kind it is, up to the ready it reports, with the software
 // threads and the GPU's report that follow it.
-// A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
+// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { state, adapterAsked, modelKey, loadSeconds } from "./state.js";
 import { since } from "./clock.js";

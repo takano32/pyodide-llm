@@ -1,6 +1,6 @@
 // worker/weights.js (T350): where the weights of a model go: the memory of forward.js that is kept from model to model,
 // a Python buffer where NumPy runs, or the GPU alone (T156), and the sink a conversion writes them through.
-// A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
+// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { state, hasWebGpu, cpuOnly, modelKey } from "./state.js";
 

@@ -21,12 +21,13 @@
 // T350: this file is the window of the worker: its URL, init(), generate() and the messages. The rest is in the modules
 // of worker/: state.js (the variables they share, in one object), told.js, clock.js, pyodide.js (the runtime's
 // loading), weights.js (where a model's weights go), ranges.js and sources.js (the fetching), conduct.js (T374.2.1: what
-// answers the conduct of a conversion, which is Python's, from huggingface.co or from a folder), convert.js (a Hugging Face model), load.js and timing.js (what /benchmark/ times). Each is asked for with this worker's ?v=<build>, so
-// that all come from one deployment (as forward.js reads jobs.js), and all at once: one after another's end would add
-// a round trip for each to the first load. The page's first message may come while they are fetched, and a module
-// worker's port opens at the module's first await, where a message that finds no onmessage is lost (helper.js, T109):
-// so the messages are kept until the handler at the end of this file is set, which then takes them in the order
-// they came.
+// answers the conduct of a conversion, which is Python's, from huggingface.co or from a folder), convert.js (a Hugging Face model), load.js and timing.js (what /benchmark/ times).
+// T367.3: a bundler links them (static imports, src/runtime/): they are part of this worker's own file, whose name
+// carries a hash of its text, so that all are of one deployment, and nothing is awaited before the handler at the end
+// of this file is set (the messages that came while the modules were fetched one by one were kept in a queue until
+// then). What the worker asks for later is asked for by a literal name: forward.js, kept.js and the device's key as
+// modules (import("./forward.js")), the kernels and the Python's archives as files (built.js). The site's root, where
+// models/ is, the page hands over with a load (state.root): this file's own URL is under _astro/.
 import { BUILT } from "./built.js";
 import { state, cpuOnly, modelKey, loadSeconds } from "./worker/state.js";
 import { told } from "./worker/told.js";
@@ -55,8 +56,8 @@ async function init(search) {
   // (T156: ?gpuTest=only, the tests' too: a model the GPU can take on the GPU alone, whatever its size)
   state.gpuForce = ["on", "only"].includes(asked.get("gpuTest")) ? { fallback: true, always: true, quick: true, only: asked.get("gpuTest") === "only" } : {};
   state.benchPage = asked.has("bench");
-  // T367.2: the engine's Python (a window and its parts, T348) is one archive, engine.zip, with the ?v=<build> of this
-  // worker. It is small and of this site, so it is asked for now, beside Pyodide, and is there when that is ready.
+  // T367.2: the engine's Python (a window and its parts, T348) is one archive, engine.zip, of this worker's
+  // build (built.js). It is small and of this site, so it is asked for now, beside Pyodide, and is there when that is ready.
   const engine = pythonArchive("engine.zip");
   engine.catch(() => {});  // (it is awaited below: a load that ends before that leaves no unhandled rejection)
   const version = await resolvePyodideVersion(search);
@@ -193,7 +194,7 @@ self.onmessage = async ({ data }) => {
       } finally {
         // also when a round failed or a change of model cancelled it (the review of T76): the next model must not
         // load with a round's switches off while the panel shows them on
-        state.disabled = state.pageSwitches;  // not self.location.search: that is the worker's own URL (?v=hash)
+        state.disabled = state.pageSwitches;  // (the page's, not a round's)
         state.benching = false;
       }
       postMessage({ type: "bench", load: data.load, rows, pyodide: state.pyodide.version });

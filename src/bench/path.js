@@ -8,7 +8,7 @@ export const threadsKey = (id, nav) => `threads:${id}:${nav.hardwareConcurrency}
 
 // the words of the page path's first line for what stopped, which pathTable() writes and pathWarnings() lists (T227's
 // review): software threads that stopped after the count was found, a search that did not end, the GPU stopped while the
-// sides were timed; and (public/worker/timing.js) why a page that is not isolated has one thread, which is no failure
+// sides were timed; and (src/runtime/worker/timing.js) why a page that is not isolated has one thread, which is no failure
 const STOPPED_WHILE_TIMED = "a software thread stopped while timed, and one thread went on";
 const searchNotEnded = (how) => `the search had not ended after ${how.unfinished} s`;
 const gpuStopped = (gpu) => `WebGPU stopped while timed: ${tableCell(gpu.lost)}`;

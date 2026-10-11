@@ -25,8 +25,9 @@ export default defineConfig({
       },
     },
     define: {
-      // The commit of the deployment. GitHub Pages lets browsers cache every file for ten minutes, and a new page
-      // must never run with the worker or the Python code of the previous deployment: see the ?v= in src/page/.
+      // The commit of the deployment: the ?v= of the Service Worker's registration (src/page/isolation.ts), so that a
+      // new deployment installs its own, and the build a report names. The workers and what they read carry a hash
+      // of their own text in their names instead (T367.3).
       __BUILD__: JSON.stringify((process.env.GITHUB_SHA ?? "dev").slice(0, 7)),
     },
   },

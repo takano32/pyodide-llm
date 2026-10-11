@@ -12,7 +12,7 @@ const port = node ? (await import("node:worker_threads")).parentPort : self;
 // it, the browser does not: the page hung on it once, T109).
 const started = new Promise((resolve) => (node ? port.once("message", resolve) : (self.onmessage = (event) => resolve(event.data))));
 
-// what a job is and how its rows are run: jobs.js, the same file forward.js reads, from the same deployment
+// what a job is and how its rows are run: jobs.js, the same file forward.js reads (linked into both by the bundler)
 import { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, SIZE, FIRST, CONTROL_BYTES, addressed, runner, warmUp } from "./jobs.js";
 
 const { memory, plain, relaxed, share, wide = false } = await started;

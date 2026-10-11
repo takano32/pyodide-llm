@@ -1,7 +1,7 @@
 // forward/gpuside.js (T349): the GPU's side of one engine: what the GPU would hold of the model and why it would not
-// take it, the GPU's worker (public/gpu.js) started and stopped, a prompt's blocks and a generation's steps through
+// take it, the GPU's worker (src/runtime/gpu.js) started and stopped, a prompt's blocks and a generation's steps through
 // it, and which of them go there (T135, T148, T152, T156, T210).
-// A module of public/forward.js, asked for with its ?v=<build>; it reads jobs.js and its neighbours the same way.
+// A module of src/runtime/forward.js; it reads jobs.js and its neighbours by static imports.
 
 import { BATCH, GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } from "../jobs.js";
 import { GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine, STOPS_MOST } from "./choice.js";

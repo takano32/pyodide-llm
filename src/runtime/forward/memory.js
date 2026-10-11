@@ -1,8 +1,7 @@
 // forward/memory.js (T349): the memory a model takes: what the forward pass puts after a checkpoint (footprint, with
 // the frame of a token and the states of the layers that keep one), the type of the keys and values (keysInHalf),
 // whether it fits a 32-bit or a 64-bit memory, and the WebAssembly memory itself (weightsMemory).
-// A module of public/forward.js, which asks for it with its own ?v=<build> and exports its names as before; it reads
-// jobs.js and its neighbour the same way.
+// A module of src/runtime/forward.js, which exports its names as before.
 
 import { CONTROL_BYTES, BATCH } from "../jobs.js";
 import { GPU_BLOCK } from "./choice.js";

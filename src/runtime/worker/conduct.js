@@ -10,7 +10,7 @@
 // that is not there is answered with undefined, which is None in Python (null is not). Every other failure is thrown
 // and never answered. missing(where, name): the error of a conduct that ended for want of that file, in the words of
 // whoever knows the place (or nothing: the loop has a sentence of its own, which neither answerer here leaves it to).
-// A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
+// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { state } from "./state.js";
 import { fileSize, refused, fetchRange, inOrder } from "./ranges.js";

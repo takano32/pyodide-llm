@@ -4,7 +4,7 @@ import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES,
 import { BASE, $, parameters, type Result } from "./dom.ts";
 import { staged, worker, model } from "./section.ts";
 
-// the model page's worker itself (public/worker.js): the model loads as the model page loads it (the GPU too), the
+// the model page's worker itself (src/runtime/worker.js): the model loads as the model page loads it (the GPU too), the
 // model page's own path is timed on it (T184: prompts and writing as the page chooses between the GPU and the CPU,
 // and on each alone), then the rounds of ?bench=1 (T45), which load it again each, on the CPU alone
 // what the model section measured, under the name of the model it ran (the choice may change after)

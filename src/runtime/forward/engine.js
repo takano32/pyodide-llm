@@ -1,7 +1,7 @@
 // forward/engine.js (T349): createForward(), one model's forward pass: its memory after the checkpoint, its tensors,
 // the frames of the activations, the cache of the keys and values, the layers of every architecture, and the object
 // Python and the worker call. The software threads are threads.js's and the GPU's side gpuside.js's: each is handed
-// what it reads of this function. A module of public/forward.js, which asks for it with its own ?v=<build>.
+// what it reads of this function. A module of src/runtime/forward.js.
 
 import { BATCH, addressed, runner } from "../jobs.js";
 import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK } from "./choice.js";

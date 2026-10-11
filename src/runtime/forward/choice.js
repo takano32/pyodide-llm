@@ -1,7 +1,7 @@
 // forward/choice.js (T349): how a prompt's blocks and a generation's steps are given to the GPU or kept on the CPU:
 // the sizes of what the GPU takes at once, the times of either side as they are measured (promptTimes, tokenTimes),
 // the margin one must be faster by (BETTER), and what the status line says of it (gpuLine).
-// A module of public/forward.js, which asks for it with its own ?v=<build> and exports its names as before.
+// A module of src/runtime/forward.js, which exports its names as before.
 
 // T205: the most release() waits for the GPU's worker to say it let go of its buffers and its device ("ended"), before
 // the next model is read; one that says nothing by then (a compilation that does not return) is terminated (worker/weights.js

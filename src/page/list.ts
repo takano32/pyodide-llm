@@ -6,7 +6,7 @@ import { remember } from "./remembered.ts";
 import { page } from "./state.ts";
 import { forget, keptModels, outdated, serves } from "../runtime/kept.js";
 
-// What the worker kept of its conversions (public/kept.js: the origin private file system, or the Cache API): the
+// What the worker kept of its conversions (src/runtime/kept.js: the origin private file system, or the Cache API): the
 // select says which models need no download any more, and About lists them with a way to delete them.
 // (T367.3: linked into the page's own script. The page read it as a file of its own before, and went on without it
 // where that failed: what reads it still takes a promise of it.)

@@ -3,7 +3,7 @@
 import { number, times, noRatios, tableCell, unmeasured } from "./cells.js";
 
 /**
- * T151: the GPU section's table of tokens generated on the GPU (public/shaders.js's EMBED, fusedMatVec and SAMPLE: the
+ * T151: the GPU section's table of tokens generated on the GPU (src/runtime/shaders.js's EMBED, fusedMatVec and SAMPLE: the
  * sampling on the GPU too, the state carried from token to token there). step: {name, result: {model, layers, vocab,
  * GB, dispatches, chunkDispatches, tokens, settings, work: {ms, unsteady}, chunkWork, rows: [{perSubmission, msPerToken,
  * fixedMs, chunks}], sampling: {vocab, msEach, over, unsteady, chunks: {msEach, unsteady, pick} (pick: its last stage

@@ -1,6 +1,6 @@
 // worker/ranges.js (T350): a file of huggingface.co (or of any server that answers range requests) in parts, fed in
 // order, with what is tried again and what stops the other connections (T107, T112, T119, T129).
-// A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
+// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { state } from "./state.js";
 import { breathe } from "./clock.js";

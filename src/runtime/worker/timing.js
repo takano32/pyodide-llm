@@ -1,5 +1,5 @@
 // worker/timing.js (T350): what /benchmark/ has the worker time: a generation, and the model page's own path (T184).
-// A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
+// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { state } from "./state.js";
 

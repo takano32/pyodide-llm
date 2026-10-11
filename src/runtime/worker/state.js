@@ -1,7 +1,7 @@
 // worker/state.js (T350): what the modules of the worker read and set together. A module cannot assign a variable of
 // another, so what more than one of them sets is a field of this one object; below it, what this visit's worker found
 // once and all of them read (WebGPU and its adapter, the models that left the GPU, the seconds of a load).
-// A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
+// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 const HF_CONNECTIONS = 6;
 export const state = {

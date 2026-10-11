@@ -1,7 +1,7 @@
 // forward/threads.js (T349): the software threads of one engine: a phase's rows shared out among them on the control
 // area of a shared memory (jobs.js has its layout; helper.js is a thread), a thread that stopped given up (T120), and
 // the search for how many of them to use (T93's stage 2b, T199, T223, T239).
-// A module of public/forward.js, asked for with its ?v=<build>; it reads jobs.js and its neighbours the same way.
+// A module of src/runtime/forward.js; it reads jobs.js and its neighbours by static imports.
 
 import { CONTROL_BYTES, GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, COUNT, SIZE,
   FIRST } from "../jobs.js";
