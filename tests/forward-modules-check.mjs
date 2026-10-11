@@ -5,9 +5,9 @@
 //   - what createForward() (forward/engine.js) hands a part (softwareThreads, gpuFit, gpuSide) in one object, which the
 //     part takes apart by name: the names handed are the names taken, and what the engine takes out of the part's
 //     object is in it;
-//   - the parts' objects (pool, gpuPart, held): every pool.<name> is a member of what softwareThreads() returns, with a
-//     setter where it is set (a member that is none would read undefined, and set nothing the part reads). T378.1: pool
-//     has no setter at all, and three getters.
+//   - the parts' objects (threads, onGpu, held): every threads.<name> is a member of what softwareThreads() returns, with a
+//     setter where it is set (a member that is none would read undefined, and set nothing the part reads). T378.1: threads
+//     has no setter at all, and three getters. T378.2: onGpu (gpuSide()'s) has none either.
 // And every file of the folder is reached from the window, and the window links (Node imports it) with no export undefined.
 // T367.5: what this held before and the build and Node hold by themselves now is gone from here: that a name taken is
 // exported where it is taken from (the build: MISSING_EXPORT, an error; Node: a SyntaxError as the module is imported).
@@ -97,12 +97,17 @@ walk(create, (node) => {
     keysOf(node.id, node.init.name).forEach((name) => assert.ok(objects.get(node.init.name).has(name), `createForward() takes ${name} out of ${node.init.name}, which has none`));
   }
 });
-assert.deepEqual([...objects.keys()].sort(), ["gpuPart", "held", "threads"], "the parts' objects in createForward()");
+assert.deepEqual([...objects.keys()].sort(), ["held", "onGpu", "threads"], "the parts' objects in createForward()");
 // T378.1: the software threads' state has one owner: its object has no setter (what happens is told it by functions
 // named for that), and the three things read of it are all it has that is no function of its own or a fact made once
 const settable = [...objects.get("threads")].filter(([, kinds]) => kinds.has("set")).map(([name]) => name);
 assert.deepEqual(settable, [], `softwareThreads()'s object has a setter (${settable}): its variables are its own, and what happens is told it by a function`);
 assert.deepEqual([...objects.get("threads")].filter(([, kinds]) => kinds.has("get")).map(([name]) => name).sort(), ["count", "lost", "searching"], "what is read of the software threads' state");
+// T378.2: the GPU's side's state the same: no setter, and what is read of it is what the page is shown
+const assignable = [...objects.get("onGpu")].filter(([, kinds]) => kinds.has("set")).map(([name]) => name);
+assert.deepEqual(assignable, [], `gpuSide()'s object has a setter (${assignable}): its variables are its own, and what happens is told it by a function`);
+assert.deepEqual([...objects.get("onGpu")].filter(([, kinds]) => kinds.has("get")).map(([name]) => name).sort(),
+  ["chosen", "promptTokens", "ready", "sampled", "status", "stepsWhyNot", "whyNot"], "what is read of the GPU's side's state");
 let through = 0;
 for (const [name, program] of programs) {
   walk(program, (node) => {
@@ -117,7 +122,7 @@ for (const [name, program] of programs) {
     }
   });
 }
-console.log(`forward-modules-check: createForward() hands its parts the ${handed} names they take, and the ${through} places that go through pool, gpuPart and held name members of them`);
+console.log(`forward-modules-check: createForward() hands its parts the ${handed} names they take, and the ${through} places that go through threads, onGpu and held name members of them`);
 
 // ---- the window links, and exports nothing undefined
 const window = await import(tree.runtimeUrl("forward.js"));

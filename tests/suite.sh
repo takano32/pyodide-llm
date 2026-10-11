@@ -86,7 +86,7 @@ page_modules() {
   # checks above run them as scripts of one context, where a missing import does not show)
   node tests/worker-modules-check.mjs
   # T349: the names forward.js and its modules (src/runtime/forward/) hand one another: what a file takes from another is
-  # exported there, what createForward() hands a part is what the part takes, and every pool.<name>, gpuPart.<name> and
+  # exported there, what createForward() hands a part is what the part takes, and every threads.<name>, onGpu.<name> and
   # held.<name> is a member of that object (none of these is a variable: a wrong name is undefined without a word)
   node tests/forward-modules-check.mjs
   # T357: the plan Python hands forward.js and the plan forward.js hands the GPU's worker, each held to both of its ends:
