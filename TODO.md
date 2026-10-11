@@ -2490,8 +2490,8 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 状態: 未着手（2026-10-10、T359 の 3 歩目のレビューから。規模 小）
 - GPT-2 の `n_inner` の既定（4 × dim）、NeoX の `tie_word_embeddings` の既定、NeoX の「head のどこも回さない」の断り。この歩の前から試験が無い行（実物の config は鍵を書くので当たらない）。小さな試験を 3 つ。
-### T378 [整理][その他] 状態に持ち主を: 共有の入れ物をなくす — 状態: 進行中（**T378.1 は完了: 本線 425c8d0、デプロイ run 38143263229、本番 run 38143543390（Chromium）・38143544963（Firefox）・38143546409（WebKit）**、ほかは未着手。2026-10-10、T376 の案から。T367 の後、T368 の前。規模 大だが 1 つずつは中）
-- **子タスクの番号（2026-10-10）。1 つずつ CI・レビュー・デプロイ**: **T378.1** `forward/` の `pool`（1 トークンの道: 前後を測る。T367 を待たない）/ **T378.2** `gpuPart` と `gpuSide()` の引数（同じく測る。T367 を待たない。**反映前・レビュー前、2026-10-11、ブランチ `t378.2-gpu-side`: 実装と CI が済んだ**）/ **T378.3** worker の `state` 36 個 / **T378.4** `gpu/` の `common` と `m`（測る。レビューは `shader-reviewer`）/ **T378.5** ページと `/benchmark/` の `page`。**T378.1 はレビュー前（2026-10-11、ブランチ `t378.1-pool`、本線には入れていない）**、ほかは未着手。
+### T378 [整理][その他] 状態に持ち主を: 共有の入れ物をなくす — 状態: 進行中（**T378.1 は完了: 本線 425c8d0、デプロイ run 38143263229、本番 run 38143543390（Chromium）・38143544963（Firefox）・38143546409（WebKit）**。**T378.2 は完了: 本線 e3edf01、デプロイ run 38154388399、本番 run 38154761412・38154763126・38154764836**。T378.3 は進行中、ほかは未着手。2026-10-10、T376 の案から。T367 の後、T368 の前。規模 大だが 1 つずつは中）
+- **子タスクの番号（2026-10-10）。1 つずつ CI・レビュー・デプロイ**: **T378.1** `forward/` の `pool`（1 トークンの道: 前後を測る。T367 を待たない）/ **T378.2** `gpuPart` と `gpuSide()` の引数（同じく測る。T367 を待たない。**完了、2026-10-11、本線 e3edf01**）/ **T378.3** worker の `state` 36 個 / **T378.4** `gpu/` の `common` と `m`（測る。レビューは `shader-reviewer`）/ **T378.5** ページと `/benchmark/` の `page`。**T378.1 はレビュー前（2026-10-11、ブランチ `t378.1-pool`、本線には入れていない）**、ほかは未着手。
 - 決まり: モジュールは関数を出し、ほかが代入する物を出さない。5 つのコミットで 1 つずつデプロイ: (1) `forward/` の `pool`（setter 8 → 出来事の名前の関数）、(2) `gpuPart` と `gpuSide()` の引数 54 個（約 6 つの物に）、(3) worker の `state` 36 個（`runtime`・読み込みの頼み・`loaded`・worker.js 自身の `let` に）、(4) `gpu/` の `common` と `m`（`m.block`・`m.weights`・`m.forms`・`m.tokens`）、(5) ページと `/benchmark/` の `page`。(1)(2) は T367 を待たない。
 - **T378.1 で予定する違い（2026-10-11、実装の前に書いた）**。形: `forward/threads.js` の `softwareThreads()` が返す物から setter 8 つ（`threads`・`search`・`chosen`・`generations`・`recheckEvery`・`onChosen`・`onCompared`・`unchecked`）を無くし、出来事の名前の関数に替える: 本数を決めて使う（エンジンの `setThreads()` の中身）、本数を探す（`findThreads()` の中身）、生成が始まった（`newGeneration()` のうちスレッドの分）、トークンが始まった・終わった（`forward()` の検索の計時のうちスレッドの分）、スレッドを止める。外が読むのは本数・スレッドを失ったか・検索中か、の 3 つの getter だけ（検索の中身のオブジェクトは外に出さない）。
   - **訪問者に見えるもの: 無い見込み。** カーネルの呼び出しの列、段の分け方、検索の比べの順と判定、ステータス行、コンソールの文は同じ。網の `calls`・`choices`・`shaders`・`models`・`layouts`・`python`・`page`・`bench`・`gpuworker` は「同じ」、`exports` も同じ（`forward.js` の窓口の export は変えない。エンジンのオブジェクトのメンバーの名前も変えない）の見込み。`sizes` は `threads.js` が少し大きく `engine.js` が少し小さくなる。
@@ -2540,7 +2540,8 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **束ねたファイルの名前**: `_astro/forward.<ハッシュ>.js` と、それを名指す worker の名前が替わる。
   - **1 ブロック・1 トークンの道**: CPU のブロックは今 `gpuEnd` の getter と setter の 2 回 → 1 回（「CPU が書いた」）。歩の計時の無いトークンは getter 1〜2 回 → 呼び出し 1 回。数は実装の後に数えて書く。
   - **試験**: `tests/forward-modules-check.mjs` を新しい形（まとめた物の鍵）に直す。GPU の側の部品だけを代役（同じスレッドの偽の GPU の Worker・偽の時計・小さい共有メモリ）で回す試験と、T450（GPU だけのエンジンを Node で作り、`spawn` が呼ばれないことを動きで）、T451（`tokenEnded` が在るが誤った本数に書く場合）を足す。
-- **T378.2 の結果（2026-10-11、ブランチ `t378.2-gpu-side`、本線には入れていない。レビュー前。Opus medium。細かい決まりと落とし穴は AGENTS.md の「GPU の側に持ち主を置き、引数をまとめるとき」）**
+- **T378.2 のレビューと本番（2026-10-11）**: レビュー（Sonnet low、2026-10-11）: 本線に入れてよい、必ず直すものは無い。出来事の関数を前の木（7430fa2）の書く所と突き合わせて読み、引数をまとめて生きた値が写しになった所は無い（`cpuSide` の `H`・`capacity`・`keys`・`values` と `threads.count`・`threads.searching` は getter のまま、`shape` と `weights` は前から値で渡していた物だけ）。順の違いは 1 つ: `newGeneration` で `gpuTokens = 0` がスレッドの `generationBegan()` の後になった（間に読む所は無い）。動かしたもの: `gpu-part-check`・`gpu-alone-check`・`threads-part-check`・`forward-modules-check`・`gpu-default-check`・`gpu-choice-check`・`thread-search-check`・`plan-keys-check`・`memory-check`・`forward-check`・`threads-check`・網（`--before 7430fa2`、「違う」0）・ビルドと `dist-check`。自分の壊し方 7 つのうち 6 つが `gpu-part-check`（1 つは `gpu-alone-check` も）で落ち、1 つ（エンジンが `cpuStepEnded` に測った時間でなく 0 を渡す）は軽い組を通って全部の組の `gpu-default-check` が落とす（T458）。回していないもの: `gpu-hybrid-check`（作り物のファイルが要る。軽い組では通っている）、CI の回し直し。覆す条件: `gpu-prompt.yml`（run 38150219922）の GPU だけのモデルのビット単位の一致か CPU のやり直しが崩れていたとき。**本線 e3edf01、デプロイ run 38154388399。本番（Linux の Chromium 156、CI の機械の数字）**: tiny-lm 495.2 tok/s・llm-jp-3 150M 141.7 tok/s（4 本）で 2 回目の訪問まで（run 38154761412）、GPU の道 `gpuTest=on` の llm-jp-3 150M が 40 トークン（run 38154763126）、GPU だけの道 `gpuTest=only` の Ternary Bonsai 1.7B が 40 トークン（run 38154764836）。SwiftShader の速さは意味が無い。Firefox と WebKit は本番で回していない（GPU の側と引数のまとめで、エンジンごとに違う所に触っていない）。本物の GPU と持ち主の端末は未計測。**採番**: T455〜T459（実装の気づき (c) は T456 に入れた。(g) の `shape` を 2 つの部品が一部ずつ読む形は、読むだけの記録なので採番しない: レビュー）。
+- **T378.2 の結果（2026-10-11、ブランチ `t378.2-gpu-side`、本線 e3edf01。Opus medium。細かい決まりと落とし穴は AGENTS.md の「GPU の側に持ち主を置き、引数をまとめるとき」）**
   - **形**: `gpuSide()` が返す物（エンジンの中の名前は `onGpu`）の setter 10 → 0。前に 15 か所で書いていたものは 9 つの出来事: `generationBegan()`（`newGeneration` の `gpuTokens`・`written`・`sinceCheck`・`recheck`・`gpuSampled`・`sinceTokens`・`tokenRecheck`・`cpuRecheck`）、`prompt(list, pos)`（`forwardMany` の輪と `written`）、`cpuWrote(pos)`（`run()` の `gpuEnd`）、`cpuStepBegan(needLogits)` と `cpuStepEnded(ms)`（`forward()` の歩の計時と `tokenRecheck`・`cpuRecheck`）、`generateMany(…)`（前から関数）、`put(side)`（`gpuSide`）、`notHere()`（`run()` の頭の GPU だけの断り）、`release()`（`release()` のうち GPU の分）。聞く関数は `gettingReady()`・`promptBlock()`・`tokenBlock()`・`keysAndValues()`、読むのは `note` と getter 7 つ（`status`・`chosen`・`ready`・`whyNot`・`stepsWhyNot`・`promptTokens`・`sampled`）。外に出していた `times`・`steps`・`stopGpu`・`gpuTakes`・`verdict`・`promptOnGpu`・`promptOnCpu`・`tokenVerdict`・`gpuSteps`・`statusNow` と getter 9 つは部品の中だけの物になった。
   - **引数**: `gpuSide()` は 54 個 → 7 つの物（`shape`・`weights`・`taken`・`cpuSide`・`control`・`threads`・`options`）、`gpuFit()` は 40 個 → 4 つ（`shape`・`weights`・`device`・`direct`）、`softwareThreads()` は 9 個 → 7 個（`plan`・`stalledMs`・`sharedMemory` が無くなり `control` が入り、`kernels` は選んだ 2 つ）。作る順のために包んだ関数は 1 つ（`gpuGettingReady`）。`shape` は 24 の鍵、`weights` は 28。
   - **T378.1 の残り**: (b) スレッドの部品は計画を知らない（カーネル 2 つを受ける）。(c) 制御領域は `forward/control.js` の `controlArea()` が持ち主（39 行）。(d) `pool` → `threads`、本数は `threads.count`。
@@ -3472,6 +3473,21 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-10-11、T235 から。規模 小、決めること 1 つ）
 - float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。
+
+### T455 [整理][WebGPU] GPU の側に時計が 2 つある — 状態: 未着手（2026-10-11、T378.2 から。規模 小）
+- `gpuSide()` はブロックと歩を自分の `now` で計り、CPU の歩はエンジンの `performance.now()` で計る。エンジンの試験用の `clock` はスレッドの検索にしか届かない。1 つの時計を渡す。
+
+### T456 [整理][WebGPU] `cpuStepEnded()` は始まりの無い終わりも時間を書く — 状態: 未着手（2026-10-11、T378.2 から。規模 小）
+- スレッドの `tokenEnded()` は始まっていないトークンの終わりを無視する（T378.1）。GPU の側も同じにそろえる。`put()` が知らない語を null に直す所は要らない（読む側は `"cpu"` と `"gpu"` としか比べない）。
+
+### T457 [整理][WebGPU] `forward/gpuside.js` を分ける — 状態: 未着手（2026-10-11、T378.2 から。規模 中）
+- 606 行で、1 つの関数が 480 行。状態に持ち主ができたので、置けるかの判定・Worker の始まりと知らせ・プロンプト・歩に分けられる。
+
+### T458 [整理][遠隔試験] エンジンが GPU の側に言い忘れる壊し方は全部の組でしか落ちない — 状態: 未着手（2026-10-11、T378.2 の実装とレビューから。規模 小）
+- `run()` が `cpuWrote` を呼ばない、`forward()` が歩を計らない・`cpuStepEnded` に 0 を渡す、`newGeneration()` が GPU の側に言わない、の 4 つは軽い組を通り、`gpu-default-check`（全部の組）だけが落とす。代役の GPU と偽の時計で 1 回の生成を通す短い検査を軽い組に。
+
+### T459 [整理][遠隔試験] `forward-modules-check` は取り出さずに読む鍵を見ない — 状態: 未着手（2026-10-11、T378.2 から。規模 小）
+- まとめた引数を `kernels.plain` のように分割代入なしで読む所の綴りは検査に掛からない。
 
 ### T276 [性能][Bonsai] Ternary Bonsai の 1.7B・4B・8B を素の RoPE に — 状態: **完了**（2026-10-11、持ち主「オススメで」。T235 の番号で実装した: 本線 7430fa2、記録は T235 の「素の RoPE にした結果」）
 - レビュー 2 本（T235・T246）の勧めは素の RoPE: 3 つの大きさとも perplexity が 2〜4% 低い（20 の測り全部）。config・GGUF・transformers・fork は yarn。ブランチ `t235-plain-rope` は 3 値にする前のものなので、`ternaryBonsai()` に合わせ直す。覆す条件: Prism ML が yarn で学習したと分かる、文脈を 8192 より上げる。
