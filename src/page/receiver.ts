@@ -6,7 +6,8 @@ import { FULL_ROUNDS, ROUNDS, USAGE_KEY, benchMarkdown, environmentOf, roundsHer
 import { $, chat, files, progress, run, select, statusText } from "./dom.ts";
 import { benchmark, weighed } from "./address.ts";
 import { gpuKey, remember, threadsKey } from "./remembered.ts";
-import { becameReady, benchBegan, benchEnded, failed, idle, page, takesPrompts, threadsNow } from "./state.ts";
+import { becameReady, benchBegan, benchEnded, failed, loads, model, ready, takesPrompts, threadsNow } from "./model.ts";
+import { answer, idle, used } from "./answer.ts";
 import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
 import { message, meta, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
@@ -15,7 +16,7 @@ import { unstarted } from "../runtime/updated.js";
 
 declare const __BUILD__: string;
 
-const loadedHow = (data: any) => ((page.model as any).hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : (page.model as any).file ? "read" : "download");
+const loadedHow = (data: any) => ((model as any).hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : (model as any).file ? "read" : "download");
 let benchAsked = false;  // the benchmark is asked for once a page, whatever becomes of it
 // T156: the worker's verdict that the CPU is faster here than a model on the GPU alone, until its load on the CPU is ready
 let aloneOnReady: { load: number; alone: unknown } | undefined;
@@ -27,7 +28,7 @@ export const worker = new Worker(new URL("../runtime/worker.js", import.meta.url
 export const root = new URL(import.meta.env.BASE_URL, location.href).href;
 worker.onmessage = ({ data }) => {
   // a late report about a load that another choice of model has cancelled
-  if (data.load !== undefined && data.load !== page.loads) {
+  if (data.load !== undefined && data.load !== loads) {
     return;
   }
   if (data.type === "status") {
@@ -41,25 +42,25 @@ worker.onmessage = ({ data }) => {
     // the visitor's own disk has nothing to fetch: the share alone
     const converted = data.converted === undefined ? "" : `${Math.floor(data.converted * 100)} % converted`;
     progress.value = data.received || (data.converted ?? 0) * data.total;
-    statusText.textContent = !data.received && converted ? `${page.model.name}: ${converted}`
-      : `${page.model.name}: ${megabytes(data.received)} / ${megabytes(data.total)} MB` +
+    statusText.textContent = !data.received && converted ? `${model.name}: ${converted}`
+      : `${model.name}: ${megabytes(data.received)} / ${megabytes(data.total)} MB` +
         (data.perSecond ? ` · ${megabytes(data.perSecond)} MB/s` : "") + (converted ? ` · ${converted}` : "");
   } else if (data.type === "bench") {
     // T45 measured, T76 shows it: one bubble with the table, and under it the Markdown to copy or to report
-    const environment = environmentOf(navigator, { model: page.model.name, pyodide: data.pyodide, build: __BUILD__, site: location.origin + location.pathname });
+    const environment = environmentOf(navigator, { model: model.name, pyodide: data.pyodide, build: __BUILD__, site: location.origin + location.pathname });
     const markdown = benchMarkdown(data.rows, environment);
     (window as any).__bench = { rows: data.rows, environment, markdown };
     benchEnded();
     console.log(markdown);
     showBench(data.rows, environment, markdown);
-    statusText.textContent = `${page.model.name} · benchmark done`;
+    statusText.textContent = `${model.name} · benchmark done`;
     run.disabled = false;
   } else if (data.type === "ready") {
     becameReady(data);
     if (aloneOnReady?.load === data.load) {
       try {
-        const kept = JSON.parse(localStorage.getItem(gpuKey(page.model)) ?? "null") ?? {};
-        localStorage.setItem(gpuKey(page.model), JSON.stringify({ ...kept, alone: aloneOnReady.alone }));
+        const kept = JSON.parse(localStorage.getItem(gpuKey(model)) ?? "null") ?? {};
+        localStorage.setItem(gpuKey(model), JSON.stringify({ ...kept, alone: aloneOnReady.alone }));
       } catch {
         // no storage here: the next visit weighs the two again
       }
@@ -70,12 +71,12 @@ worker.onmessage = ({ data }) => {
     // once: every round of the benchmark loads the model again and reports ready too (T96: the second request
     // ended the first round's threads under its coordinator, which then waited for ever)
     if (benchmark && !benchAsked) {
-      statusText.textContent = `${page.model.name} · benchmarking...`;
+      statusText.textContent = `${model.name} · benchmarking...`;
       benchAsked = true;
       benchBegan();
-      worker.postMessage({ type: "bench", model: weighed(page.model), load: page.loads,
+      worker.postMessage({ type: "bench", model: weighed(model), load: loads,
         // T214: where the browser does not say its memory, the round without the kernels is a row that says why
-        rounds: roundsHere(benchmark === "full" ? FULL_ROUNDS : ROUNDS, (navigator as any).deviceMemory), prompt: page.model.prompt || "Once upon a time", steps: 64 });
+        rounds: roundsHere(benchmark === "full" ? FULL_ROUNDS : ROUNDS, (navigator as any).deviceMemory), prompt: model.prompt || "Once upon a time", steps: 64 });
     }
     showSettings();
     // the model is in the Cache API now: ask the browser not to evict it (only a page may ask, not a worker)
@@ -92,7 +93,7 @@ worker.onmessage = ({ data }) => {
     ]);
     $("load").classList.add("measured");
     showKept();
-    remember(page.model, (page.model as any).hf && !data.notKept);
+    remember(model, (model as any).hf && !data.notKept);
   } else if (data.type === "gpu") {
     // T148: the GPU is ready (or will not be): the status line says so, the load's breakdown says what it chose and
     // how long it took, and what it chose is kept for the next visit on this device
@@ -105,8 +106,8 @@ worker.onmessage = ({ data }) => {
       try {
         // (T152: and the layer of a token)
         // (T156: with what it kept of a model on the GPU alone: its own key says when it no longer holds)
-        const alone = JSON.parse(localStorage.getItem(gpuKey(page.model)) ?? "null")?.alone;
-        localStorage.setItem(gpuKey(page.model), JSON.stringify({ key: data.key, matrices: data.matrices, attention: data.attention, tokens: data.tokens, alone }));
+        const alone = JSON.parse(localStorage.getItem(gpuKey(model)) ?? "null")?.alone;
+        localStorage.setItem(gpuKey(model), JSON.stringify({ key: data.key, matrices: data.matrices, attention: data.attention, tokens: data.tokens, alone }));
       } catch {
         // no storage here: the next visit times them again
       }
@@ -136,7 +137,7 @@ worker.onmessage = ({ data }) => {
   } else if (data.type === "token") {
     // stick to the bottom only while the reader is there
     const pinned = chat.scrollHeight - chat.scrollTop - chat.clientHeight < 40;
-    page.answer!.firstElementChild!.textContent += data.text;
+    answer!.firstElementChild!.textContent += data.text;
     if (pinned) {
       chat.scrollTop = chat.scrollHeight;
     }
@@ -153,12 +154,12 @@ worker.onmessage = ({ data }) => {
       // no storage here: the tokens are weighed as many
     }
     // the settings this very answer was written with: with the seed the same text can be asked for again
-    const how = page.used.temperature ? `temp ${page.used.temperature}` : "greedy";
-    meta(page.answer!, `${page.model.name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s${data.threads > 1 ? ` · ${data.threads} threads` : ""} · ${how}`, [
+    const how = used.temperature ? `temp ${used.temperature}` : "greedy";
+    meta(answer!, `${model.name} · ${data.tokens} tokens · ${data.tokens_per_second.toFixed(1)} tok/s${data.threads > 1 ? ` · ${data.threads} threads` : ""} · ${how}`, [
       `first token ${seconds(data.first_token_seconds)}`,
       `prompt ${data.prompt_tokens} tokens${onGpu(data)} · ${data.prompt_tokens_per_second.toFixed(1)} tok/s`,
       `generated ${data.tokens - data.prompt_tokens} tokens${onGpuSampled(data)} · ${data.tokens_per_second.toFixed(1)} tok/s · ${seconds(data.seconds)} in all`,
-    ], page.used.temperature ? page.used.seed : undefined);
+    ], used.temperature ? used.seed : undefined);
   } else if (data.type === "error") {
     aloneOnReady = undefined;  // (T156: the load on the CPU did not come to ready)
     // the console keeps where it happened, for a failed run's record (T82's artifacts, T96)
@@ -189,8 +190,8 @@ worker.onmessage = ({ data }) => {
       });
       return;
     }
-    message("model error", data.memory ? memoryFailure(page.model, data.heap, data.message) : data.message);
-    statusText.textContent = data.reloading ? `${page.model.name}: loading again on the CPU...` : page.ready ? `${page.model.name}` : `Could not load ${page.model.name}`;
+    message("model error", data.memory ? memoryFailure(model, data.heap, data.message) : data.message);
+    statusText.textContent = data.reloading ? `${model.name}: loading again on the CPU...` : ready ? `${model.name}` : `Could not load ${model.name}`;
   }
   // T172: only the messages that end a piece of the worker's work mean it is idle again (a load: ready, the
   // benchmark: bench, a text: done, any of them: error). The others come in the middle of one: status, progress

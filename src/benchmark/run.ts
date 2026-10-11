@@ -4,7 +4,7 @@
 import { forgetMark, readMark, memoryResult } from "../page-memory.js";
 import { cpuBaseline, CPU_SPEED_KEY } from "../bench.js";
 import { $, parameters, SECTIONS, type Name, ALL, type Result, results } from "./dom.ts";
-import { page, runBegan, runEnded, sectionBegan } from "./state.ts";
+import { runAt, runBegan, runEnded, sectionAt, sectionBegan } from "./running.ts";
 import { parts, rendered, clock, staged, ticked, live, stalled } from "./section.ts";
 import { device, cpu } from "./cpu.ts";
 import { modelSection } from "./model.ts";
@@ -85,7 +85,7 @@ async function runSections(names: readonly Name[]) {
     }
     progress.box.hidden = true;
     state.className = `state ${result.status}`;
-    state.textContent = `${STATE[result.status]} · ${clock(performance.now() - page.sectionBegan)}`;
+    state.textContent = `${STATE[result.status]} · ${clock(performance.now() - sectionAt)}`;
     out.innerHTML = rendered(result.markdown);
     // T157: the GPU section's tables hold the GPU against the CPU section; a CPU section run after it (on its own
     // button) writes them again, and the report with them
@@ -98,7 +98,7 @@ async function runSections(names: readonly Name[]) {
   }
   clearInterval(tick);
   awake.stop();
-  if (names.length > 1) $("overall").textContent = `${names.length} sections in ${clock(performance.now() - page.runBegan)}`;
+  if (names.length > 1) $("overall").textContent = `${names.length} sections in ${clock(performance.now() - runAt)}`;
   buttons.forEach((b) => (b.disabled = false));
   runEnded();
   (window as any).__benchmark.done = true;

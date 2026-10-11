@@ -3,7 +3,7 @@ import { GROUPS, MODELS } from "../models.js";
 import { $, select } from "./dom.ts";
 import { fromUrl, weighed } from "./address.ts";
 import { remember } from "./remembered.ts";
-import { page } from "./state.ts";
+import { model } from "./model.ts";
 import { forget, keptModels, outdated, serves } from "../runtime/kept.js";
 
 // What the worker kept of its conversions (src/runtime/kept.js: the origin private file system, or the Cache API): the
@@ -31,8 +31,8 @@ export async function showKept() {
     remove.textContent = "delete";
     remove.onclick = async () => {
       await forget(one);
-      if (page.model.id === one.manifest.id) {
-        remember(page.model, false);
+      if (model.id === one.manifest.id) {
+        remember(model, false);
       }
       showKept();
     };

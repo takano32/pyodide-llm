@@ -4,7 +4,7 @@ import { MODELS, memoryWarning } from "../models.js";
 import { $, files, progress, run, select } from "./dom.ts";
 import { REPOSITORY, REVISION, fromUrl, hfEntry, weighed } from "./address.ts";
 import { gpuFor, threadsFor } from "./remembered.ts";
-import { chose, page } from "./state.ts";
+import { type Model, chose, model } from "./model.ts";
 import { show } from "./settings.ts";
 import { message } from "./draw.ts";
 import { root, worker } from "./receiver.ts";
@@ -13,7 +13,7 @@ import { openHuggingFace } from "./folder.ts";
 // A model of the visitor's own disk, from the folder button or dropped on the page. The legacy format knows
 // nothing about itself, so whatever differs from llama2.c's conventions comes as a third file: .json, shaped
 // like an entry of src/models.js ({options, generation, prompt, placeholder}).
-let local: typeof page.model | undefined = fromUrl;
+let local: Model | undefined = fromUrl;
 async function open(chosen: File[]) {
   if (chosen.some(({ name }) => name.toLowerCase().endsWith(".safetensors"))) {
     try {
@@ -84,7 +84,7 @@ for (const button of document.querySelectorAll<HTMLButtonElement>(".intro .choos
 // (every switch of the panel reloads) or a shared link opens that model and no other (the review of T75 and T88:
 // after ?hf=, choosing a model of the list and then a switch reloaded the Hugging Face model). A file of the disk
 // has no address: its URL names nothing, and a reload opens the model remembered before it.
-function nameInUrl(current: typeof page.model) {
+function nameInUrl(current: Model) {
   const url = new URL(location.href);
   for (const name of ["model", "hf", "revision", "checkpoint", "tokenizer", "template", "prompt"]) {
     url.searchParams.delete(name);
@@ -151,7 +151,7 @@ repositorySheet.addEventListener("toggle", (event) => {
 
 select.onchange = () => {
   if (select.value === "hf-other") {
-    select.value = page.model.id === "local" && !select.querySelector('option[value="local"]') ? MODELS[0].id : page.model.id;
+    select.value = model.id === "local" && !select.querySelector('option[value="local"]') ? MODELS[0].id : model.id;
     repositorySheet.showPopover();
     return;
   }
@@ -162,17 +162,17 @@ select.onchange = () => {
   const asks = [download > 500e6 && `${chosen.name}: ${(download / 1e9).toFixed(1)} GB will be fetched from huggingface.co and converted in this browser.`,
                 memoryWarning(weighed(chosen), (navigator as any).deviceMemory)].filter(Boolean);
   if (asks.length && !confirm(`${asks.join(" ")} Go on?`)) {
-    select.value = page.model.id;
+    select.value = model.id;
     return;
   }
   const load = chose(chosen);
-  nameInUrl(page.model);
-  show(page.model);
+  nameInUrl(model);
+  show(model);
   run.disabled = true;
   progress.hidden = true;
   // the timings of the previous load
   $("load").classList.remove("measured");
   ($("load") as HTMLDetailsElement).open = false;
   // search: this may reach the worker before init does, while the page looks at what is kept (T116)
-  worker.postMessage({ type: "load", root, search: location.search, model: weighed(page.model), load, threads: threadsFor(page.model), gpu: gpuFor(page.model) });
+  worker.postMessage({ type: "load", root, search: location.search, model: weighed(model), load, threads: threadsFor(model), gpu: gpuFor(model) });
 };
