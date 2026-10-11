@@ -86,7 +86,7 @@ walk(create, (node) => {
     handed += call.arguments[0].properties.length;
     calls.push([part, made, call]);
     // T378.1: a model on the GPU alone (direct, T156) runs nothing on the CPU, and the one way the threads' part knows
-    // is that it is handed no spawn (no test in Node makes such an engine: CI's gpu-check does, on a GPU)
+    // is that it is handed no spawn (T450: tests/gpu-alone-check.mjs makes such an engine and sees that none is started)
     if (part === "softwareThreads") {
       const spawn = call.arguments[0].properties.find((property) => property.key.name === "spawn").value;
       assert.ok(spawn.type === "ConditionalExpression" && spawn.test.type === "Identifier" && spawn.test.name === "direct" && spawn.consequent.type === "NullLiteral" &&
