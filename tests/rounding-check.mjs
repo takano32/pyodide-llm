@@ -1,4 +1,4 @@
-// T225's review: /benchmark/'s GPU worker (public/benchmark/gpu.js) checking the shaders on devices that round a float32 to a
+// T225's review: /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js) checking the shaders on devices that round a float32 to a
 // float16 the other ways WGSL lets a device (tests/rounding.mjs: toward zero, as Direct3D does, which the owner's NVIDIA
 // PC on Windows did; away from zero; every conversion toward zero), in Node on Dawn + lavapipe at subgroups of 4 and 16
 // (tests/bench-dawn.mjs, the step "check"). CI's own implementations round to the nearest, so nothing else in CI says
@@ -20,7 +20,7 @@ if (!webgpu) {
 }
 const hows = asked.length ? asked : ["toward-zero"];
 const icd = process.env.VK_ICD_FILENAMES ?? `/usr/share/vulkan/icd.d/${fs.readdirSync("/usr/share/vulkan/icd.d").find((name) => /^lvp_icd.*\.json$/.test(name))}`;
-// how /benchmark/'s verdicts say what the cache holds (public/benchmark/gpu.js's halvesSaid), added up over a row's words
+// how /benchmark/'s verdicts say what the cache holds (src/runtime/benchmark/gpu.js's halvesSaid), added up over a row's words
 const WORDS = /K and V (\d+) to the nearest float16(?:, (\d+) toward zero, (\d+) away from it, (\d+) farther)?/g;
 const counted = (text) => {
   const sum = { same: 0, inward: 0, outward: 0, far: 0 };

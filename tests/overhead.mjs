@@ -1,6 +1,6 @@
 // T164: what a token costs outside forward.js, in Node's Pyodide, as the page runs it: the forward pass in
-// public/forward.js, the sampling kernels of simdkernel.so through ctypes, and generate() in Python, driven from
-// JavaScript as public/worker.js drives it. One thread: tests/engine.mjs starts no software threads (the page's
+// src/runtime/forward.js, the sampling kernels of simdkernel.so through ctypes, and generate() in Python, driven from
+// JavaScript as src/runtime/worker.js drives it. One thread: tests/engine.mjs starts no software threads (the page's
 // threads shorten the forward pass and leave the outside as it is, see T164 in TODO.md).
 //
 // A generated token, at the positions 0..N-1, with the model's temperature, top-p and repetition penalty:
@@ -62,7 +62,7 @@ py.globals.set("js_prompt", (engine, n) => {
   return (performance.now() - began) / n;
 });
 py.globals.set("js_nothing", () => {});
-// what forward() ends with (public/forward.js): a view of the logits made anew, into Python's array
+// what forward() ends with (src/runtime/forward.js): a view of the logits made anew, into Python's array
 py.globals.set("js_copy", (array, n) => {
   const source = new ArrayBuffer(4 * Number(array.size));
   return timed(n, () => {
@@ -71,7 +71,7 @@ py.globals.set("js_copy", (array, n) => {
     view.release();
   });
 });
-// generate() as public/worker.js's generate() drives it
+// generate() as src/runtime/worker.js's generate() drives it
 py.globals.set("js_generate", (generate, prompt, settings) => {
   const channel = new MessageChannel();
   const pieces = generate.callKwargs(prompt, settings.toJs({ dict_converter: Object.fromEntries }));

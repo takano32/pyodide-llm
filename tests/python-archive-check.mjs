@@ -11,7 +11,7 @@
 //       same bytes; and an archive that lies built in the tree is the one its sources make now (an old one beside new
 //       sources is what a server of public/ would hand out). What python-files-check held of the sources stays: a
 //       package has an __init__.py, and its parts import by the package's own name;
-//   (3) the worker's way with them (public/worker/pyodide.js and convert.js, in a vm: tests/worker-harness.mjs): what it
+//   (3) the worker's way with them (src/runtime/worker/pyodide.js and convert.js, in a vm: tests/worker-harness.mjs): what it
 //       asks for and with which ?v=, what it says when the archive is not there, that the converter's archive is asked
 //       for when a model is first converted and not before, on a stand-in of Pyodide; and with the real Pyodide, that
 //       what it unpacks is found by `import`, with the sources' bytes.

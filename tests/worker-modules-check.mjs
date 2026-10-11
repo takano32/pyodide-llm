@@ -1,4 +1,4 @@
-// tests/worker-modules-check.mjs (T350): the names that public/worker.js and its modules (public/worker/*.js) use.
+// tests/worker-modules-check.mjs (T350): the names that src/runtime/worker.js and its modules (src/runtime/worker/*.js) use.
 //
 // The checks that run the worker in Node make one context's scripts of these files (tests/worker-source.mjs), where
 // every module's top level is a global: a module that uses a name of another without importing it works there, and is

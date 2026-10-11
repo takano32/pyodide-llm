@@ -9,7 +9,7 @@ import { pyodideWithEngine } from "./engine.mjs";
 import { runtimeUrl } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
-// kernel_llama(): the engine with the forward pass of public/forward.js, as the page runs it (T93)
+// kernel_llama(): the engine with the forward pass of src/runtime/forward.js, as the page runs it (T93)
 const { pyodide } = await pyodideWithEngine();
 for (const file of ["stories260K.bin", "tok512.bin", "stories3_5M-v4k.bin", "tok4096.bin",
                     "stories15M.f32", "tokenizer.bin", "tiny-lm.bin", "tiny-lm.tokenizer.bin"]) {
@@ -713,7 +713,7 @@ llama2_convert.checkpoint_size([64, 96, 2, 4, 2, 320, 24], "int8", {"qk_norm": T
   if (!refused) throw new Error("checkpoint_dtype() took the file without its head_dim");
   engine.destroy();
 }
-// T151: the CPU's sampling in JavaScript (public/shaders.js's penalizeLikeCpu and sampleLikeCpu: what /benchmark/ holds
+// T151: the CPU's sampling in JavaScript (src/runtime/shaders.js's penalizeLikeCpu and sampleLikeCpu: what /benchmark/ holds
 // the GPU's SAMPLE to) is the kernel's: the same logits, history and random number, the same penalized logits and the
 // same token (or, as above, a neighbour of about the same logit where rounding moves a border: the kernel's exp() is a
 // polynomial, JavaScript's is not)

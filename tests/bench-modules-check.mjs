@@ -1,5 +1,5 @@
-// tests/bench-modules-check.mjs (T353): the names that /benchmark/'s GPU worker (public/benchmark/gpu.js) and its modules
-// (public/benchmark/gpu/*.js) hand one another, and the names the modules of src/bench/ use. None of these is held by
+// tests/bench-modules-check.mjs (T353): the names that /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js) and its modules
+// (src/runtime/benchmark/gpu/*.js) hand one another, and the names the modules of src/bench/ use. None of these is held by
 // anything else outside a browser with a GPU: the worker's steps run only there (CI's bench-check.mjs and bench-dawn.mjs).
 //   - a name a file takes out of another (`const { a, b } = await import(...)`, `= await modules.x`) is exported there,
 //     and every name a file uses is declared in it, taken from another, or a worker's global (a ReferenceError where

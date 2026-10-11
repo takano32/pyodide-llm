@@ -46,10 +46,8 @@ page_modules() {
   # the tools are to read; and the one reader of how a file takes its neighbours' names (tests/imports.mjs), on made-up texts
   node tests/tree-check.mjs
   node tests/imports-check.mjs
-  # T367.3.1: the tool that moves the runtime to where a bundler links it and rewrites its imports (tests/runtime-move.mjs),
-  # on made-up texts and on this tree; and what is asked of a build (tests/dist-check.mjs, run on the build itself after
-  # `npm run build`) and how a tool reads a module of a build (tests/bundle.mjs), on made-up builds
-  node tests/runtime-move-check.mjs
+  # T367.3.1: what is asked of a build (tests/dist-check.mjs, run on the build itself after `npm run build`) and how a
+  # tool reads a module of a build (tests/bundle.mjs), on made-up builds
   node tests/dist-rules-check.mjs
   # T367.2: the site's Python as two archives (python_archive.py): what goes in and that the same sources give the same
   # bytes, that they hold what the tools walk and place, and the worker's way with them (a stand-in of Pyodide, and Pyodide)
@@ -61,7 +59,7 @@ page_modules() {
   # T366: the device's key holds the WGSL a device is given and no function's source: one character more in any piece of
   # the engine's shaders moves it, and a formatter's, a minifier's or a bundler's way with the file does not (about 15 s)
   node tests/device-key-check.mjs
-  # T351: the names shaders.js (the window) and its modules (public/shaders/) hand one another: what a file takes of another
+  # T351: the names shaders.js (the window) and its modules (src/runtime/shaders/) hand one another: what a file takes of another
   # is exported there, each module comes after those it takes from, and the window exports every name the modules export
   # where they are declared (a name that is nowhere is "undefined" in a shader's text, which only a GPU refuses)
   node tests/shaders-modules-check.mjs
@@ -81,10 +79,10 @@ page_modules() {
   # T374.4: what the Node tools that convert a model answer the same conduct with (tests/conducting.mjs), alone: a
   # stand-in generator, a folder under .tmp/, no Pyodide (under a second)
   node tests/conducting-check.mjs
-  # T350: the names the worker and its modules (public/worker/) use: declared, imported, or the worker's globals (the two
+  # T350: the names the worker and its modules (src/runtime/worker/) use: declared, imported, or the worker's globals (the two
   # checks above run them as scripts of one context, where a missing import does not show)
   node tests/worker-modules-check.mjs
-  # T349: the names forward.js and its modules (public/forward/) hand one another: what a file takes from another is
+  # T349: the names forward.js and its modules (src/runtime/forward/) hand one another: what a file takes from another is
   # exported there, what createForward() hands a part is what the part takes, and every pool.<name>, gpuPart.<name> and
   # held.<name> is a member of that object (none of these is a variable: a wrong name is undefined without a word)
   node tests/forward-modules-check.mjs
@@ -96,11 +94,11 @@ page_modules() {
   # exported, or a page's globals, and every page.<name> a field of the one object the parts share (the build does not
   # say a name that is nowhere, and nothing opens the page outside CI's browsers)
   node tests/page-modules-check.mjs
-  # T353: the names /benchmark/'s GPU worker (public/benchmark/gpu.js) and its modules hand one another, every shared.<name>
+  # T353: the names /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js) and its modules hand one another, every shared.<name>
   # a field of the object the steps share, a message at the window's first await answered once, and the names the tables'
   # modules (src/bench/) use (the worker's steps run only where there is a GPU: nothing else outside CI reads them)
   node tests/bench-modules-check.mjs
-  # T352: the names the model's GPU worker (public/gpu.js) and its modules (public/gpu/) hand one another, every
+  # T352: the names the model's GPU worker (src/runtime/gpu.js) and its modules (src/runtime/gpu/) hand one another, every
   # common.<name> a field of the object they share, and messages at the window's first await played once, in order (the
   # worker runs only where there is a GPU: outside CI's GPU jobs nothing else reads its lines)
   node tests/gpu-modules-check.mjs
@@ -152,7 +150,7 @@ if [ "$suite" = full ]; then
   part "the workflows' time limits" node tests/workflows-check.mjs
   # T346: the files past the size a file should have, said every night (never a failure)
   part "the sizes of the files" node tests/unchanged.mjs sizes
-  # T93: the forward pass of public/forward.js against NumPy's, on the site's models (the line is for 128 positions)
+  # T93: the forward pass of src/runtime/forward.js against NumPy's, on the site's models (the line is for 128 positions)
   part "forward.js against NumPy" node tests/forward-check.mjs --rounds 1 --positions 128
   part "forward.js against NumPy, not shared" node tests/forward-check.mjs stories260K tiny-lm --rounds 1 --positions 128 --plain
   # T130: a shared memory refused for a model whose float32 keys and values would not fit: float16 on a plain memory

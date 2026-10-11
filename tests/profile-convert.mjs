@@ -26,7 +26,7 @@ const quantizeRows = py.pyimport("llama2_numpy").kernel_quantizer("simdkernel.so
 // types); --numpy: NumPy's, to compare
 const readers = process.argv.includes("--numpy") ? undefined : convert.kernel_readers("simdkernel.so");
 // T374.2.1: by the conduct of a conversion (src/python/convert/conduct.py), answered from the folder as the worker answers
-// it from huggingface.co (public/worker/conduct.js): a request and an answer for every file, and the parts to the
+// it from huggingface.co (src/runtime/worker/conduct.js): a request and an answer for every file, and the parts to the
 // conversion's own feed, which the request of a stream brings. (Before, this called the converter itself and fed it;
 // tests/abba-convert.sh against a tree of before T374.2.1 therefore times what the conduct adds to a conversion.)
 // T374.4: the answerer and what a path stands for are tests/conducting.mjs's (page-27b.mjs has the same), and the

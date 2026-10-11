@@ -386,7 +386,7 @@ for (const next of (process.env.E2E_THEN ?? "").split(/\s+/).filter(Boolean)) {
 }
 let again = null;
 if (process.env.E2E_TWICE && !failures.length) {
-  // what the browser holds, as the page lists it (public/kept.js)
+  // what the browser holds, as the page lists it (src/runtime/kept.js)
   const listKept = () => page.evaluate(async () => {
     const module = await import(new URL("kept.js", location.href).href);
     return (await module.keptModels()).map(({ where, manifest }) => `${manifest.name} in ${where}`);

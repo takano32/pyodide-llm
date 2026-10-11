@@ -1,4 +1,4 @@
-// tests/worker-source.mjs (T350): public/worker.js and its modules (public/worker/*.js) as scripts of one vm context.
+// tests/worker-source.mjs (T350): src/runtime/worker.js and its modules (src/runtime/worker/*.js) as scripts of one vm context.
 //
 // The checks that run the worker in Node (worker-check.mjs, worker-sink-check.mjs) reach its functions and variables as
 // globals of a context: they call download() and set forwardModule. The worker's text was one script for that; it is a

@@ -48,7 +48,7 @@ assert.equal(ROUNDS[1].skip, undefined, "ROUNDS itself is left as it is");
 for (const memory of [8, 4, 0.5]) assert.deepEqual(roundsHere(ROUNDS, memory), ROUNDS, `a browser that says ${memory} GB runs every round`);
 assert.deepEqual(roundsHere(FULL_ROUNDS, undefined).filter((round) => round.skip).map((round) => round.name), ["NumPy only", "the kernels, int8 widened"], "?bench=full: the two rounds that widen the weights");
 assert.ok(/does not say how much memory/.test(MEMORY_UNSAID) && /float32/.test(MEMORY_UNSAID) && !/NumPy/.test(MEMORY_UNSAID), MEMORY_UNSAID);
-// the worker's row for it (public/worker.js: nothing loaded, the reason carried), in the report and back out of it
+// the worker's row for it (src/runtime/worker.js: nothing loaded, the reason carried), in the report and back out of it
 const iphoneRows = [rows[0], { name: "without the kernels", without: ["kernels"], skip: MEMORY_UNSAID }];
 const iphone = benchMarkdown(iphoneRows, environmentOf({ hardwareConcurrency: 6, userAgent: "Mozilla/5.0 (iPhone)" }, { model: "llm-jp-3 150M" }));
 const skippedLine = iphone.split("\n").find((line) => line.startsWith("| without the kernels |"));

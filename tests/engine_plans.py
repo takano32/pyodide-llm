@@ -1,5 +1,5 @@
 # engine_plans.py (T357)
-# The plan Llama(external=) hands public/forward.js, as Python builds it today (the dict of engine/external.py's
+# The plan Llama(external=) hands src/runtime/forward.js, as Python builds it today (the dict of engine/external.py's
 # ExternalForward), for made-up headers: nothing of a model is there but its header and a final norm's weight, and
 # start(plan) keeps the plan and ends before the engine is built (and before the tokenizer is read).
 #   engine_plan(L, header, dtype, form, more, size)   L: llama2_numpy of the tree asked; more: what Llama takes besides

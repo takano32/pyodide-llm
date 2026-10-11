@@ -39,8 +39,8 @@ if (!webgpu) {
   process.exit(2);
 }
 const root = new URL("../", import.meta.url).pathname;
-// the two versions of the shaders: the working tree's and the ref's. (T351: shaders.js is a window over public/shaders/, so
-// a version is a tree's public/shaders.js with what it imports beside it, never the one file: the ref's whole tree is
+// the two versions of the shaders: the working tree's and the ref's. (T351: shaders.js is a window over src/runtime/shaders/, so
+// a version is a tree's src/runtime/shaders.js with what it imports beside it, never the one file: the ref's whole tree is
 // tests/other-tree.mjs's, which holds either form)
 const scratch = path.join(root, ".tmp", "sample-gpu-bench");
 fs.mkdirSync(scratch, { recursive: true });

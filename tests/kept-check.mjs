@@ -1,4 +1,4 @@
-// kept-check.mjs (T99): public/kept.js in Node, on small stand-ins for the origin private file system and the Cache
+// kept-check.mjs (T99): src/runtime/kept.js in Node, on small stand-ins for the origin private file system and the Cache
 // API (Node has neither). What a browser does with them is for CI (tests/e2e.mjs with E2E_TWICE); this holds the
 // logic: a kept model reads back the same bytes, OPFS comes before the Cache API, the Cache API is the fallback and
 // still read, a write that fails leaves nothing, and forget() removes what the list shows.

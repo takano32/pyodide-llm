@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/page_lfm2.sh (T260): an LFM2 of the list on the page's forward pass (public/forward.js on the int8 kernels),
+# tests/page_lfm2.sh (T260): an LFM2 of the list on the page's forward pass (src/runtime/forward.js on the int8 kernels),
 # for CI (tests.yml's extra=, after `make kernels` and with the suite's pyodide: the development machine runs no model
 # of gigabytes):
 #

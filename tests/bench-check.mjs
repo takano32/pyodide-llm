@@ -41,7 +41,7 @@ if (wrong && !dist) {
   console.log("--wrong changes a file the page is served, so it needs --dist");
   process.exit(1);
 }
-// the layer check's line in public/benchmark/gpu/layercheck.js (T353: in gpu.js before): a stream off by more than it is WRONG
+// the layer check's line in src/runtime/benchmark/gpu/layercheck.js (T353: in gpu.js before): a stream off by more than it is WRONG
 const LAYER_LINE = "LAYER_LINE = 1e-3", NO_LINE = "LAYER_LINE = 1e-12";
 let [site = "https://takano32.github.io/pyodide-llm/", ...engines] = dist ? [undefined, ...args] : args;
 let server;

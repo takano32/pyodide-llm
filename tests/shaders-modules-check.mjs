@@ -1,5 +1,5 @@
-// tests/shaders-modules-check.mjs (T351): the names that public/shaders.js (the window) and its modules
-// (public/shaders/*.js) hand one another.
+// tests/shaders-modules-check.mjs (T351): the names that src/runtime/shaders.js (the window) and its modules
+// (src/runtime/shaders/*.js) hand one another.
 //
 // The window takes every name out of a module (`const { a, b } = await modules.x`) and a module takes a neighbour's the
 // same way (`= await import(…)`): none of these is a variable until the line runs, a name that is not exported where it

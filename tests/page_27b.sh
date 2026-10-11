@@ -13,7 +13,7 @@
 # the model. LONG_TOKENS=600 (with LONG_ROWS below 600) makes a short pass through the whole of a stage, a check of the
 # tool and not of the model.
 #
-# Run it when public/forward.js, the ternary kernels (kernels/ternary.ts), rotate and unrotate, the converter's reading
+# Run it when src/runtime/forward.js, the ternary kernels (kernels/ternary.ts), rotate and unrotate, the converter's reading
 # of a GGUF or the list's entry change in a way that could move what this model computes.
 #
 # STAGES (the default: "reference convert page breaks", an hour and a half on 4 logical cores):

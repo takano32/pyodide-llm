@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/page_ternary.sh (T230, T231): a real ternary model of the list on the page's forward pass (public/forward.js),
+# tests/page_ternary.sh (T230, T231): a real ternary model of the list on the page's forward pass (src/runtime/forward.js),
 # as the ternary dtype (its weights as they are, on the ternary kernels) and as int8 (the same weights widened, on the
 # int8 kernels: how T235 ran it), for CI (tests.yml's extra=, after `make kernels` and with the suite's pyodide: the
 # development machine runs no model of gigabytes):

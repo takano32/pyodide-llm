@@ -7,12 +7,12 @@
 //   1. Python -> forward.js: the plan Llama(external=) hands start() (src/python/engine/external.py's ExternalForward), as
 //      Python builds it for one made-up model of every layout and dtype (tests/engine_plans.py, the native Python):
 //      its keys, the names of its tensors, each tensor's keys, the names of its derived tables. Against what
-//      public/forward.js and public/forward/*.js read, by their syntax trees: `plan.<key>` and what is taken out of
+//      src/runtime/forward.js and src/runtime/forward/*.js read, by their syntax trees: `plan.<key>` and what is taken out of
 //      `plan`; the names handed to matrix() and floats() and read off `T` (plan.tensors); the properties read off a
 //      tensor (`t.<key>`, `T.<name>.<key>`, `tensors[...]`).
-//   2. forward.js -> the GPU's worker: the plan of { type: "start" } (public/forward/gpuside.js's literal) and of
-//      { type: "open" } (public/forward/alone.js's gpuOnlyPlan()), with what they hold one level down where that is
-//      written as a literal (tokens, words, vectors, tables; a vector is read by its name as a property or in a text). Against what public/gpu.js and public/gpu/*.js read of
+//   2. forward.js -> the GPU's worker: the plan of { type: "start" } (src/runtime/forward/gpuside.js's literal) and of
+//      { type: "open" } (src/runtime/forward/alone.js's gpuOnlyPlan()), with what they hold one level down where that is
+//      written as a literal (tokens, words, vectors, tables; a vector is read by its name as a property or in a text). Against what src/runtime/gpu.js and src/runtime/gpu/*.js read of
 //      `plan` and of anything's `.plan`. Both ends by their syntax trees: the worker runs only where there is a GPU.
 //      (force and remembered come from the worker and the page, and matrices is keyed by the tensors' names: their
 //      insides are not looked at.)
@@ -157,7 +157,7 @@ const returned = (fn) => {
   held("the derived tables' names, Python to forward.js", derived, new Set([...readDerived].filter((name) => derived.has(name) || !tensors.has(name))));
 
   // T359.5: until forward.js reads them, the layers' facts and the widths are held here to what forward.js works out
-  // for itself from the same plan (public/forward/memory.js's layerSlots(), linearWidths() and rotatedWidths(), and
+  // for itself from the same plan (src/runtime/forward/memory.js's layerSlots(), linearWidths() and rotatedWidths(), and
   // engine.js's turns: no layer of a GPT-2, and not the ones left alone), so that T375 swaps like for like
   const { layerSlots, linearWidths, rotatedWidths } = await import(runtimeUrl("forward/memory.js"));
   plans.forEach((plan, index) => {

@@ -1,4 +1,4 @@
-// Where the time of one token goes, in the forward pass of public/forward.js (the page's, since T93), measured in
+// Where the time of one token goes, in the forward pass of src/runtime/forward.js (the page's, since T93), measured in
 // Node: every kernel call is wrapped and timed (performance.now() resolves well below a microsecond here, and a
 // token makes about a hundred calls), and the calls are summed by kind. What the wrapping itself costs is the
 // difference between the wrapped and the plain run, and is shown. The classifier is the difference between a

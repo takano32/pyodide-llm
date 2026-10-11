@@ -1,4 +1,4 @@
-// T225's review: what /benchmark/'s layer check says (public/benchmark/gpu.js's judgeLayer) of a device that is JavaScript
+// T225's review: what /benchmark/'s layer check says (src/runtime/benchmark/gpu.js's judgeLayer) of a device that is JavaScript
 // too, in Node, without a GPU:   node tests/layer-check.mjs
 // The check's own data (layerCheckData: 33 heads of 64 and 3 of K and V at 2112 wide, 71 positions), the layer run in
 // float64 by the check's own reference (layerReference) as a device would leave it, its keys and values rounded to

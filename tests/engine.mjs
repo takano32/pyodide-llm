@@ -1,5 +1,5 @@
 // The engine as the page runs it, for the tests and measurements that run in Node (T93): Pyodide with
-// llama2_numpy.py and the sampling kernels, and the forward pass in public/forward.js on a WebAssembly memory of its
+// llama2_numpy.py and the sampling kernels, and the forward pass in src/runtime/forward.js on a WebAssembly memory of its
 // own. Python gets one function for it:
 //
 //   kernel_llama(checkpoint, tokenizer, **options)

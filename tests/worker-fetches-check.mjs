@@ -3,7 +3,7 @@
 // file and its range) made for a made-up repository of huggingface.co, and what the converter is handed on the way,
 // held to tests/fixtures/conversion-fetches.json. The conduct of a conversion (which file, how much of its head, which
 // candidate next) is Python's since T374.2.1 (src/python/convert/conduct.py), the answers (the fetches, the parts of the
-// weights) the worker's (public/worker/conduct.js): this ran the worker's own steps before, and the fixture is what
+// weights) the worker's (src/runtime/worker/conduct.js): this ran the worker's own steps before, and the fixture is what
 // showed that the two together ask for the same things in the same order.
 //
 //   node tests/worker-fetches-check.mjs            compares; exit 1 where a case differs (the first lines that do are said)
@@ -117,7 +117,7 @@ function diskFile(name, value) {
 const chosen = async (files) => (await openHuggingFace(Object.entries(files).map(([name, value]) => diskFile(name, value)))).hf;
 
 // ---- the conduct is the real one (src/python/convert/conduct.py, in Pyodide, as the worker has it) and the worker's loop
-// answers it (public/worker/conduct.js): the requests below are what the two make together. The converter is a
+// answers it (src/runtime/worker/conduct.js): the requests below are what the two make together. The converter is a
 // stand-in in the conduct's place of it (tests/conduct_hub.py's StandIn, T374.1), which writes down what it is handed;
 // here it also opens the place of the weights as Writer does, and has the options and the tokenizer a conversion ends with
 const pyodide = await loadPyodide();

@@ -1,4 +1,4 @@
-// T129: where fetching and loading meet in public/worker.js, run as it is in a vm context on made-up fetches, streams
+// T129: where fetching and loading meet in src/runtime/worker.js, run as it is in a vm context on made-up fetches, streams
 // and a clock that goes a hundred times as fast: the parts of this site's models (download()), the ranges of
 // huggingface.co (fetchRange(), inOrder(), refused()), the count of what arrives while Pyodide loads (watchArrivals()),
 // the version of Pyodide and its steps (resolvePyodideVersion(), pyodideSteps()), and a model past even a 64-bit memory

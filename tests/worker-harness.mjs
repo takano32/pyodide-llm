@@ -1,5 +1,5 @@
 // tests/worker-harness.mjs (T357, out of tests/worker-check.mjs where T129 wrote it)
-// public/worker.js and its modules in a vm context whose global is its self, as in a worker, on a made-up network and
+// src/runtime/worker.js and its modules in a vm context whose global is its self, as in a worker, on a made-up network and
 // a clock of the test's: what the checks that run the worker in Node share (worker-check.mjs: where fetching and loading
 // meet; worker-fetches-check.mjs: what a conversion asks for).
 //

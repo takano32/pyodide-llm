@@ -1,4 +1,4 @@
-"""CONVERTER (public/kept.js) goes up when what the converter makes of a model changes (T116, T369 review): a kept
+"""CONVERTER (src/runtime/kept.js) goes up when what the converter makes of a model changes (T116, T369 review): a kept
 conversion of the old version is used otherwise, with the old options.
 
 tests/fixtures/converter-output.json holds the version and a digest of what the converter makes of three made-up models
@@ -49,7 +49,7 @@ def test_a_change_of_what_the_converter_makes_comes_with_a_new_converter_version
     changed = digest() != recorded["digest"]
     assert not (changed and now == recorded["converter"]), (
         f"what the converter makes of the made-up models changed while CONVERTER is still {now}: raise CONVERTER in "
-        "public/kept.js, or, if no kept conversion would differ, write the digest again with "
+        "src/runtime/kept.js, or, if no kept conversion would differ, write the digest again with "
         "python3 tests/test_converter_version.py --write")
     assert now == recorded["converter"], (
         f"CONVERTER is {now} and tests/fixtures/converter-output.json is for {recorded['converter']}: write it again "

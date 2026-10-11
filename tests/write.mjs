@@ -1,5 +1,5 @@
 // write.mjs (T249): what a Hugging Face model of the list writes for its own prompt on the page's engine
-// (public/forward.js on the int8 kernels, tests/engine.mjs), greedy, for a person to read: whether a model added to
+// (src/runtime/forward.js on the int8 kernels, tests/engine.mjs), greedy, for a person to read: whether a model added to
 // the list writes sensible text is not something a number says. The checkpoint is read from its file straight into
 // forward.js's memory (a 64-bit one where the model with its forward pass does not fit 4 GiB, as on the page).
 //

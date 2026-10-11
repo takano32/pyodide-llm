@@ -7,7 +7,7 @@
 //
 //   --built [<a dist>]: `shaders` with the working tree's side read from a build (T367.3.1: see where the flag is read)
 //
-//   shaders  every export of public/shaders.js (a text as it is; T366: a maker of WGSL as the texts it makes, for every
+//   shaders  every export of src/runtime/shaders.js (a text as it is; T366: a maker of WGSL as the texts it makes, for every
 //            choice its text branches on; another function as its source) and deviceKey() for 192 made-up adapters: a
 //            device forgets the forms it measured when the key changes (AGENTS.md). The key holds the WGSL a device is
 //            given and no function's source (tests/device-key-check.mjs holds that every piece of the engine's shaders
@@ -36,8 +36,8 @@
 //            (T353) and the same of /benchmark/'s script (src/pages/benchmark.astro's <script> and src/benchmark/*.ts)
 //   bench    (T353 review) every call tests/bench.mjs makes to src/bench.js, written down (tests/unchanged-bench.mjs), in both trees:
 //            the arguments and the Markdown or numbers that come back. The tables' words, cells and warnings, read by nothing else
-//   gpuworker (T353 review) the statements of /benchmark/'s GPU worker (public/benchmark/gpu.js and public/benchmark/gpu/*.js), and (T352)
-//            of the model's (public/gpu.js and public/gpu/*.js, whose modules share `common` where the benchmark's share `shared`), each
+//   gpuworker (T353 review) the statements of /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js and src/runtime/benchmark/gpu/*.js), and (T352)
+//            of the model's (src/runtime/gpu.js and src/runtime/gpu/*.js, whose modules share `common` where the benchmark's share `shared`), each
 //            function and constant as its syntax tree: `shared.<x>` (the fields the modules share) read as the `let` it was, the
 //            ../ of a URL dropped, positions and comments dropped. A field taken for another (`shared.fallback` for `shared.packed`:
 //            a device that is not a fallback and has the packed dot product tells them apart, one that is neither or both does not),
@@ -86,7 +86,7 @@ function said(what, { count, differ, gone, added }, more = "") {
   return wrong === 0;
 }
 
-// T366: the makers of WGSL among public/shaders.js's exports, and the arguments that walk every branch of each one's
+// T366: the makers of WGSL among src/runtime/shaders.js's exports, and the arguments that walk every branch of each one's
 // text (a number is written into the text and chooses nothing). The engine's makers are held by deviceKey() as well
 // (below); the benchmark's (fmaCeiling, mulMatVec) by this table alone: a branch added to one of those is to be added here
 const EITHER = [false, true], OUTPUTS = ["rope", "add", "swiglu", "write"];
@@ -339,7 +339,7 @@ function sharedFields(tree, worker) {
   const shared = program.body.find((s) => s.type === "VariableDeclaration" && s.declarations[0].id.name === worker.object);
   return new Set(shared.declarations[0].init.properties.map((p) => p.key.name));
 }
-// (T352: the model's GPU worker, public/gpu.js and public/gpu/*.js, whose modules share `common`: open() has a parameter named shared)
+// (T352: the model's GPU worker, src/runtime/gpu.js and src/runtime/gpu/*.js, whose modules share `common`: open() has a parameter named shared)
 // (window: the file a worker starts from, as the runtime names it)
 const GPU_WORKERS = [{ window: "benchmark/gpu.js", object: "shared", name: "/benchmark/'s GPU worker" },
   { window: "gpu.js", object: "common", name: "the model's GPU worker" }];

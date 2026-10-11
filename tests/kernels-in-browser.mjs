@@ -6,7 +6,7 @@
 // three shuffles of interleave() wrongly. Nothing else saw it: every
 // end-to-end run of a model asks for an answer to appear, not for it to be right.
 //
-// Each engine gets the compiled kernels (public/*.wasm of this checkout after `make kernels`, or those of a deployed site
+// Each engine gets the compiled kernels (src/runtime/built/*.wasm of this checkout after `make kernels`, or those of a deployed site
 // with --site) in a blank page, and each kernel is called in batches (1, 400, 4000 and 30000 calls, a pause after each for
 // the background compile to land) with its result held to the same arithmetic written out in JavaScript after every batch.
 // The relaxed kernels are checked where the engine has relaxed SIMD (the others are not run there, as in the page).
