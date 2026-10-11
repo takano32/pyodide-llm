@@ -11,7 +11,7 @@ import type { Dtype, Form } from "../contracts/form.ts";
 import type { ToGpu } from "../contracts/gpu/protocol.ts";
 import type { GpuAlone, Listed } from "../contracts/messages.ts";
 import type { Bytes, Dict, List, Llama, Options, Sink } from "../contracts/python.ts";
-import type { Direct, Engine, GpuOnlyWeights, Header, Memory, Outside, Place, Tensors, Thread } from "../contracts/forward-js.ts";
+import type { Direct, Engine, Footprint, GpuOnlyWeights, Header, Memory, Outside, Place, Tensors, Thread } from "../contracts/forward-js.ts";
 
 // T368.3, the shapes this file makes and hands on.
 // what writes a stretch of the checkpoint where it belongs
@@ -177,7 +177,7 @@ function pooledWeights(size: number, after: number, shared: boolean, wide: boole
 // model's keys and values may be float16; forward.js's keysInHalf says whether they are, T160, T130).
 // What footprint() takes (the worker asks keysInHalf the same).
 // without: the switches of the load (those of the load going on, or of one that follows: loadsAhead, T242).
-function forwardOptions(options: Options, shared: boolean, without = switchesNow()) {
+function forwardOptions(options: Options, shared: boolean, without = switchesNow()): Footprint {
   const { dtype = "float32" } = options;
   const int8 = !without.includes("int8"), quantized = ["int8", "int6", "ternary"].includes(dtype);
   return {
