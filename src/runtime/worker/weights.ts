@@ -11,7 +11,8 @@ import type { Dtype, Form } from "../contracts/form.ts";
 import type { ToGpu } from "../contracts/gpu/protocol.ts";
 import type { GpuAlone, Listed } from "../contracts/messages.ts";
 import type { Bytes, Dict, List, Llama, Options, Sink } from "../contracts/python.ts";
-import type { Direct, Engine, Footprint, GpuOnlyWeights, Header, Memory, Outside, Place, Tensors, Thread } from "../contracts/forward-js.ts";
+import type { Direct, Engine, Footprint, GpuOnlyWeights, Header, Memory, Outside, Place, Thread } from "../forward.ts";
+import type { Tensors } from "../contracts/plan.ts";
 
 // T368.3, the shapes this file makes and hands on.
 // what writes a stretch of the checkpoint where it belongs

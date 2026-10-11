@@ -165,7 +165,7 @@ function watchGpu(id: number) {
   if (!engine) return "prompts on the CPU (the NumPy engine runs this model)";
   if (!engine.gpu) return `prompts on the CPU (${benchPage ? "the benchmark times the CPU" : "no WebGPU in a worker here"})`;
   engine.gpu.then((note) => engineNow() === engine && postMessage({ type: "gpu", load: id, note, ...(engine.gpuReady ?? {}) } as GpuChose | GpuSaid));
-  return engine.gpuStatus;
+  return engine.gpuStatus!;  // (a line wherever the engine has a GPU: engine.gpu, above)
 }
 
 /** The size of Pyodide's WebAssembly memory, which only grows; undefined before Pyodide is there. */

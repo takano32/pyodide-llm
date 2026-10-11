@@ -3,7 +3,7 @@
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { pyodide } from "./runtime.ts";
-import type { Outside } from "../contracts/forward-js.ts";
+import type { Outside } from "../forward.ts";
 import type { Llama } from "../contracts/python.ts";
 
 // Python's Llama of the model loaded now (a PyProxy), or undefined

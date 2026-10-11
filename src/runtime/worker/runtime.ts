@@ -10,7 +10,8 @@ import { since, took } from "./clock.ts";
 import { wentWithout } from "./outdated.ts";
 import type { EngineWindow, Pyodide, PyodideModule } from "../contracts/python.ts";
 import type { Force } from "../contracts/gpu/protocol.ts";
-import type { Adapter, Forward, Kernels } from "../contracts/forward-js.ts";
+import type * as Forward from "../forward.ts";
+import type { Adapter, Compiled } from "../forward.ts";
 
 // (T368.3: these two are there once the runtime is ready, which every load waits for: their types say that state.
 // forward.js may not come, no WebAssembly SIMD or its file gone: forwardModule is undefined then, and jsKernels null)
@@ -19,11 +20,11 @@ export let pyodide: Pyodide, llama2_numpy: EngineWindow;
 // their path in Pyodide's file system, or undefined
 export let pythonKernels: string | undefined;
 // T93: the forward pass in JavaScript (forward.js) and its kernels, compiled once
-export let forwardModule: Forward | undefined, jsKernels: Kernels | null | undefined;
+export let forwardModule: typeof Forward | undefined, jsKernels: Compiled | null | undefined;
 // T93 stage 2: the kernels for a shared memory (only where the page is cross-origin isolated)
-export let sharedKernels: Kernels | null | undefined;
+export let sharedKernels: Compiled | null | undefined;
 // T101: the kernels for a 64-bit memory, for a model past 4 GiB ({ plain, shared }), where the browser has Memory64
-export let wideKernels: { plain: Kernels | null; shared: Kernels | null } | undefined;
+export let wideKernels: { plain: Compiled | null; shared: Compiled | null } | undefined;
 // ?wide=on: a 64-bit memory for every model, to try that path on a small one (measuring, tests), as ?offline=on says
 export let forceWide = false;
 // ?gpuTest= (T148, T156; the tests only): what a fallback adapter is taken for (hasWebGpu's comment below)
@@ -104,7 +105,7 @@ async function init(search: string) {
     forwardModule = await import("../forward.ts").catch((error) => {
       void wentWithout(error, import.meta.url);
       throw error;
-    }) as unknown as Forward;
+    });
     // one build of the kernels: simdkernel_<kind>.wasm and simdkernel_relaxed_<kind>.wasm, or null
     const build = async (kind: string, wide = false) => {
       const [plain, relaxed] = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
@@ -119,7 +120,7 @@ async function init(search: string) {
     if (jsKernels && self.crossOriginIsolated) sharedKernels = await build("shared");
     // T101: on their own, so that a browser that says it makes 64-bit memories and then cannot compile their kernels
     // (Playwright's WebKit did, 2026-09-25) keeps the 32-bit ones: in the same try it lost every kernel and ran NumPy
-    if (jsKernels && forwardModule!.memory64()) {
+    if (jsKernels && forwardModule.memory64()) {
       try {
         wideKernels = { plain: await build("plain64", true), shared: self.crossOriginIsolated ? await build("shared64", true) : null };
       } catch {

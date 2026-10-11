@@ -93,7 +93,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
 
   // ---- memory: the checkpoint at base, everything else after it; views are made again after the memory grows
   let top = align(base + size);
-  let buffer: ArrayBufferLike | undefined, F!: Float32Array, I!: Int8Array, U!: Uint8Array, H!: Uint16Array;
+  // (F!: of the four, F alone is read outside a function, after views() made them)
+  let buffer: ArrayBufferLike | undefined, F!: Float32Array, I: Int8Array, U: Uint8Array, H: Uint16Array;
   const views = () => {
     if (buffer !== memory.buffer) {
       buffer = memory.buffer;

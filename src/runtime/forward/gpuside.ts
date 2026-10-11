@@ -650,7 +650,9 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
      * are on the GPU or it is known that they will not be (T148: nothing waits for it); undefined where it has none */
     note: gpuNote,
     /** T148: what the status line says of the GPU now (it changes with the times of the prompts) */
-    get status() { return statusNow(); },
+    // (T368.4: a line or, where the engine has no GPU, undefined: null, nothing to say yet, is only while this function
+    // runs, which starts the GPU's worker or refuses it before it returns)
+    get status() { return statusNow() as string | undefined; },
     /** what the GPU chose as it started ({ matrices, attention, key, remembered, seconds, ... }: the page shows it and
      * remembers it): once it did, and while it is on */
     get chosen() { return gpuChosen; },
