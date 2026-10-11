@@ -97,12 +97,12 @@ walk(create, (node) => {
     keysOf(node.id, node.init.name).forEach((name) => assert.ok(objects.get(node.init.name).has(name), `createForward() takes ${name} out of ${node.init.name}, which has none`));
   }
 });
-assert.deepEqual([...objects.keys()].sort(), ["gpuPart", "held", "pool"], "the parts' objects in createForward()");
+assert.deepEqual([...objects.keys()].sort(), ["gpuPart", "held", "threads"], "the parts' objects in createForward()");
 // T378.1: the software threads' state has one owner: its object has no setter (what happens is told it by functions
 // named for that), and the three things read of it are all it has that is no function of its own or a fact made once
-const settable = [...objects.get("pool")].filter(([, kinds]) => kinds.has("set")).map(([name]) => name);
+const settable = [...objects.get("threads")].filter(([, kinds]) => kinds.has("set")).map(([name]) => name);
 assert.deepEqual(settable, [], `softwareThreads()'s object has a setter (${settable}): its variables are its own, and what happens is told it by a function`);
-assert.deepEqual([...objects.get("pool")].filter(([, kinds]) => kinds.has("get")).map(([name]) => name).sort(), ["lost", "searching", "threads"], "what is read of the software threads' state");
+assert.deepEqual([...objects.get("threads")].filter(([, kinds]) => kinds.has("get")).map(([name]) => name).sort(), ["count", "lost", "searching"], "what is read of the software threads' state");
 let through = 0;
 for (const [name, program] of programs) {
   walk(program, (node) => {

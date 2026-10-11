@@ -7,6 +7,7 @@ import { BATCH, addressed, runner } from "../jobs.js";
 import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK } from "./choice.js";
 import { growMemory, PAGE, align, layerSlots, attendingLayers, linearWidths, frameArrays, rotatedWidths, frameBytes } from "./memory.js";
 import { GPU_ALONE } from "./alone.js";
+import { controlArea } from "./control.js";
 import { softwareThreads } from "./threads.js";
 import { gpuFit, gpuSide } from "./gpuside.js";
 
@@ -303,12 +304,19 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     [halfKV ? 4 : 3, xb + t * S, q + t * S, layerKeys, layerValues, att + t * A, pos, kvHeads, headSize, heads, 1, 0, 0, 0];
   const runRows = runner(k, relaxed);
 
+  // T378.2: the control area of this memory (forward/control.js), through which this thread meets the software threads
+  // and the GPU's worker: it is neither's, and both parts below are handed it
+  const control = controlArea({ memory, sharedMemory, stalledMs });
   // T349: the phases and the software threads (forward/threads.js): their functions by name. T378.1: their state is
-  // theirs alone: what happens here is told through those functions, and pool.threads, .lost and .searching are read.
-  // No software thread where the model is on the GPU alone (T156: nothing runs on the CPU)
-  const pool = softwareThreads({ memory, kernels, plan, spawn: direct ? null : spawn, stalledMs, wide, sharedMemory, runRows,
+  // theirs alone: what happens here is told through those functions, and threads.count, .lost and .searching are read.
+  // No software thread where the model is on the GPU alone (T156: nothing runs on the CPU). T378.2: the two kernels a
+  // thread is started with are chosen here, as this thread's are (relaxed above)
+  const threads = softwareThreads({ memory, wide, kernels: { plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null },
+    spawn: direct ? null : spawn, control, runRows,
+    // (a function: the GPU's side is made after the threads, which it reads)
     gpuGettingReady: () => gpuPart.gpuGettingReady() });
-  const { phase, ctl, waitUntil, searchLog, use, find, generationBegan, tokenBegan, tokenEnded, stop } = pool;
+  const { phase, searchLog, use, find, generationBegan, tokenBegan, tokenEnded, stop } = threads;
+  const { ctl, waitUntil } = control;
   // matmuls of one input (count tokens of it, a frame apart): [matrix, output, output stride, layer] each
   // T237: in a rotated basis the matrices read R of the input, turned here once for all of them (a kernel on this
   // thread: 5 blocks of 1024 take a few microseconds, a thousandth of the rows they are multiplied by)
@@ -566,7 +574,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const gpuPart = gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, direct, stalledMs, always, dim, layers, heads,
     kvHeads, headSize, vocab, seqLen, hidden, kvDim, gpt2, layerNorm, parallel, unturned, views, T, halfKV, D, KV, wo, wcls,
     finalW, finalB, eps, cosTable, sinTable, positions, channels, gpuMatrices, gpuVectors, gpuWhyNot, staging, gpuRows,
-    tokensWhyNot, gpuIds, grow, ctl, waitUntil, pool, embed, fromStaging, stagingFinite, notFiniteKV, run, held, halfToFloat });
+    tokensWhyNot, gpuIds, grow, ctl, waitUntil, threads, embed, fromStaging, stagingFinite, notFiniteKV, run, held, halfToFloat });
   const { stopGpu, times, steps, tokenVerdict, verdict, gpuTakes, promptOnGpu, promptOnCpu, gpuNote, statusNow, gpuSteps,
     generateMany, gpuKeysAndValues } = gpuPart;
 
@@ -592,16 +600,16 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       // T148: halfway between the threads' checks, a prompt goes to the side not chosen, so that its time stays
       // today's (a device that heats up, a GPU timed while the CPU was busy)
       gpuPart.written = 0;
-      const whole = gpuPart.gpuOn && !always ? times.of(GPU_BLOCK, pool.threads) : null;
-      if (whole && ++gpuPart.sinceCheck >= GPU_RECHECK && !gpuPart.recheck && !pool.searching) {
+      const whole = gpuPart.gpuOn && !always ? times.of(GPU_BLOCK, threads.count) : null;
+      if (whole && ++gpuPart.sinceCheck >= GPU_RECHECK && !gpuPart.recheck && !threads.searching) {
         gpuPart.recheck = whole.faster ? "cpu" : "gpu";
         gpuPart.sinceCheck = 0;
         console.info(`gpu: the ${gpuPart.recheck === "cpu" ? "CPU on the end" : "GPU on the beginning"} of the next long prompt, to time it again`);
       }
       // T152: the same for the steps of a generation, the side not chosen taking its first ones
       gpuPart.gpuSampled = 0;
-      const stepsNow = gpuPart.tokensOn && !always ? steps.of(pool.threads) : null;
-      if (stepsNow && ++gpuPart.sinceTokens >= GPU_RECHECK && !gpuPart.tokenRecheck && !pool.searching) {
+      const stepsNow = gpuPart.tokensOn && !always ? steps.of(threads.count) : null;
+      if (stepsNow && ++gpuPart.sinceTokens >= GPU_RECHECK && !gpuPart.tokenRecheck && !threads.searching) {
         gpuPart.tokenRecheck = stepsNow.faster ? "cpu" : "gpu";
         gpuPart.cpuRecheck = TOKEN_RECHECK;
         gpuPart.sinceTokens = 0;
@@ -610,17 +618,17 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       tokenVerdict();
     },
     get searching() {
-      return pool.searching;
+      return threads.searching;
     },
     searchLog,
     get threads() {
-      return pool.threads;
+      return threads.count;
     },
     /** the helper threads end; this engine runs on its own again */
     stopThreads: stop,
     /** T120: whether a software thread stopped under this engine, which then went on with one */
     get lostThreads() {
-      return pool.lost;
+      return threads.lost;
     },
     /** the float32 array of Python's that forward() fills with the logits */
     bind(array) {
@@ -649,7 +657,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     get promptBlock() {
       if (!gpuPart.gpuOn || gpuPart.gpuSide === "cpu") return BATCH;
       if (always || gpuPart.gpuSide === "gpu") return GPU_BLOCK;
-      const whole = times.of(GPU_BLOCK, pool.threads);
+      const whole = times.of(GPU_BLOCK, threads.count);
       return whole && (whole.faster || (gpuPart.recheck === "gpu" && gpuPart.written === 0)) ? GPU_BLOCK : BATCH;
     },
     /** T147: the shaders the GPU multiplies a prompt's matrices and runs its attention with (tests) */
@@ -716,7 +724,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         // T152: a step on the CPU, timed against the GPU's
         const began = performance.now();
         forward(token, pos, needLogits);
-        steps.cpu(pool.threads, performance.now() - began);
+        steps.cpu(threads.count, performance.now() - began);
         if (gpuPart.tokenRecheck === "cpu" && --gpuPart.cpuRecheck <= 0) gpuPart.tokenRecheck = null;
       } else {
         forward(token, pos, needLogits);

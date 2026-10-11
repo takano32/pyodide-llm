@@ -3,7 +3,7 @@
 // the search for how many of them to use (T93's stage 2b, T199, T223, T239).
 // A module of src/runtime/forward.js; it reads jobs.js and its neighbours by static imports.
 
-import { CONTROL_BYTES, GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, COUNT, SIZE,
+import { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, COUNT, SIZE,
   FIRST } from "../jobs.js";
 import { lowerMedian, BETTER } from "./choice.js";
 
@@ -17,49 +17,27 @@ const CHUNKS_PER_THREAD = 4;
  * how many to use (T199, T223, T239, T240).
  * T378.1: the state here (the count in use, the search, what a visit remembers) has this one owner. The rest of the
  * engine tells it what happened, by functions named for that (use, find, generationBegan, tokenBegan and tokenEnded,
- * stop), and reads three things of it (threads, lost, searching); nothing outside assigns a variable of it. The engine
+ * stop), and reads three things of it (count, lost, searching); nothing outside assigns a variable of it. The engine
  * takes the functions out by name once (phase() and tokenBegan() are a token's path: plain calls of closures).
  * spawn: left out where no software thread is ever to run (a memory that is not shared has none either; the engine
  * leaves it out where the model is on the GPU alone, T156). gpuGettingReady(): whether the GPU's side is still getting
- * ready, which is made after this. */
-export function softwareThreads({ memory, kernels, plan, spawn, stalledMs, wide, sharedMemory, runRows, gpuGettingReady }) {
+ * ready, which is made after this.
+ * T378.2: kernels: the two a thread is started with ({ plain, relaxed }, relaxed null where the model does not run on
+ * it): the part knows nothing of the plan. control: the control area (control.js), which is the engine's and the GPU's
+ * side's as well. */
+export function softwareThreads({ memory, wide, kernels, spawn, control, runRows, gpuGettingReady }) {
+  const { ctl, waitUntil } = control;
   // ---- the matrix multiplications, in phases: the matmuls that read the same input (q, k and v; w1 and w3) go
   // out together. The input is quantized here, once; the rows are computed here and, with helper threads, by
   // whoever takes them. Every row is computed whole by one thread with the same kernel, so the numbers are the same
   // with any number of threads.
   //
   // A job is what jobs.js says: [kind, eight arguments, rows, count, out stride, a stride, b stride].
-  const shared = sharedMemory && spawn;
-  // the control area of a shared memory: the helpers' words, and the GPU's (T135: with or without helpers)
-  const ctl = sharedMemory ? new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4) : null;
+  // (ctl: null on a memory that is not shared, where no thread can be started)
+  const shared = ctl && spawn;
   const table = shared ? new Float64Array(memory.buffer, JOB_TABLE, BATCH * JOB) : null;  // the jobs (jobs.js)
-  // the memory is kept from model to model (T96), and the control area with it: what the last engine's phases left
-  // there (a helper counted in ACTIVE when it was ended, a generation) would hold this one's first phase for ever
-  ctl?.fill(0);
   const helpers = [];
   let threads = 1, gen = 0;
-  // stopThreads() runs on this thread too, never in the middle of a phase: a wait here ends when the helpers have done
-  // their part. A helper the browser itself stopped (iOS may end a worker for its memory) never counts the chunk it
-  // took: T120, the wait gives up when its count has not moved for stalledMs, and says false. (A check of a flag that
-  // stopThreads() raised and lowered again stood here and could never be seen, the review of T96 found.)
-  // A wait that took far longer than it asked for means this thread did not run either (a frozen tab, a phone that
-  // suspended the page): the helpers were stopped with it, and the time from before does not count (the review of
-  // T120: a stop of 10 s gave a thread up now and then as the page came back)
-  // alive (T135): the word whose change counts as progress, where it is not the one waited on (the GPU's worker counts
-  // one up while it works, and answers only at the end)
-  const waitUntil = (index, done, alive = index) => {
-    const tick = Math.min(1000, stalledMs);
-    let moved = performance.now(), last = moved, beat = Atomics.load(ctl, alive);
-    for (let seen = Atomics.load(ctl, index); !done(seen);) {
-      Atomics.wait(ctl, index, seen, tick);
-      const now = Atomics.load(ctl, index), beatNow = Atomics.load(ctl, alive), at = performance.now();
-      if (at - last > 2 * tick) moved = at;
-      last = at;
-      if (now !== seen || beatNow !== beat) [seen, beat, moved] = [now, beatNow, at];
-      else if (at - moved > stalledMs) return false;
-    }
-    return true;
-  };
   // T120: every helper goes, and this engine keeps to one thread from here on. The phase is then run again here:
   // each chunk writes only its own rows, from inputs that no phase changes while it runs, so what the helpers did
   // before they stopped is written over with the same numbers
@@ -238,8 +216,7 @@ export function softwareThreads({ memory, kernels, plan, spawn, stalledMs, wide,
     const since = stops;
     if (helpers.length < n - 1 && helpers.length === 0) Atomics.store(ctl, QUIT, 0);  // after stopThreads(): a fresh start
     while (helpers.length < n - 1) {
-      const helper = await spawn({ memory, wide, plain: kernels.plain, relaxed: plan.int8 && plan.relaxed ? kernels.relaxed : null,
-        share: helpers.length + 1 });
+      const helper = await spawn({ memory, wide, plain: kernels.plain, relaxed: kernels.relaxed, share: helpers.length + 1 });
       if (lost || stops !== since) {
         helper.terminate?.();
         return false;
@@ -312,8 +289,8 @@ export function softwareThreads({ memory, kernels, plan, spawn, stalledMs, wide,
     if (shared) stopHelpers();
   }
   return {
-    ctl, waitUntil, phase, searchLog, use, find, generationBegan, tokenBegan, tokenEnded, stop,
-    get threads() { return threads; },
+    phase, searchLog, use, find, generationBegan, tokenBegan, tokenEnded, stop,
+    get count() { return threads; },
     get lost() { return lost; },
     get searching() { return search !== null; },
   };

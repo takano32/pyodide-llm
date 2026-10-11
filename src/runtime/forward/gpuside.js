@@ -95,12 +95,12 @@ export function gpuFit({ plan, gpuRoom, memoryUnsaid, direct, dim, layers, headS
 /** T349: the GPU's side of one engine (createForward(), which hands in what it reads of it): the GPU's worker started
  * and stopped, a prompt's blocks and a generation's steps through it, and which of them it takes (T135, T148, T152,
  * T156). Returns what the rest of the engine calls of it, and its variables that the rest reads or sets, each through
- * a getter and a setter. pool: the software threads' (threads.js); held: the engine's views and its cache as they are
+ * a getter and a setter. threads: the software threads' (threads.js); held: the engine's views and its cache as they are
  * now. */
 export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, direct, stalledMs, always, dim, layers, heads,
   kvHeads, headSize, vocab, seqLen, hidden, kvDim, gpt2, layerNorm, parallel, unturned, views, T, halfKV, D, KV, wo, wcls,
   finalW, finalB, eps, cosTable, sinTable, positions, channels, gpuMatrices, gpuVectors, gpuWhyNot, staging, gpuRows,
-  tokensWhyNot, gpuIds, grow, ctl, waitUntil, pool, embed, fromStaging, stagingFinite, notFiniteKV, run, held, halfToFloat }) {
+  tokensWhyNot, gpuIds, grow, ctl, waitUntil, threads, embed, fromStaging, stagingFinite, notFiniteKV, run, held, halfToFloat }) {
   // ---- T135: a prompt on the GPU. gpu() makes the GPU's worker (gpu.js), which puts this model's layers on the GPU
   // once (a second copy of them: the CPU keeps its own, for the tokens after the prompt), and then runs each block of a
   // prompt that forwardMany() hands it through all the layers in one submission, while this thread waits for its
@@ -274,7 +274,7 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
   function gpuTakes(count, pos0) {
     if (!gpuOn || pos0 > gpuEnd || gpuSide === "cpu") return false;
     if (always || gpuSide === "gpu") return true;
-    const known = times.of(count, pool.threads);
+    const known = times.of(count, threads.count);
     if (!known) return false;  // the CPU is timed first, on this prompt
     return known.faster || (recheck === "gpu" && pos0 === 0 && count === GPU_BLOCK);
   }
@@ -282,13 +282,13 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
   // rounded up to a block of the CPU's, and none said up to one: the line does not move with every prompt), and the
   // console says it where it changes. Until the CPU is timed, the line stays as the GPU left it
   function verdict() {
-    const most = times.of(GPU_BLOCK, pool.threads), from = times.threshold(GPU_BLOCK, pool.threads);
+    const most = times.of(GPU_BLOCK, threads.count), from = times.threshold(GPU_BLOCK, threads.count);
     if (!most || always) return;
     const status = from > GPU_BLOCK ? PROMPTS_CPU
       : from > BATCH ? `prompts of ${Math.ceil(from / BATCH) * BATCH} tokens and more on WebGPU` : PROMPTS_GPU;
     if (status !== gpuStatus) {
       console.info(`gpu: a block of ${GPU_BLOCK} tokens: ${most.gpu.toFixed(1)} ms on the GPU, ${most.cpu.toFixed(1)} ms on the ` +
-        `CPU (${pool.threads} thread${pool.threads > 1 ? "s" : ""}), the GPU from ${from > GPU_BLOCK ? "no count" : `${from} tokens`}: ${status}`);
+        `CPU (${threads.count} thread${threads.count > 1 ? "s" : ""}), the GPU from ${from > GPU_BLOCK ? "no count" : `${from} tokens`}: ${status}`);
     }
     gpuStatus = status;
   }
@@ -359,7 +359,7 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
       const piece = tokens.slice(i, i + BATCH), began = performance.now();
       run(piece, pos0 + i, false);
       if (gpuOn && piece.length === BATCH) {
-        times.cpu(pool.threads, (performance.now() - began) / BATCH);
+        times.cpu(threads.count, (performance.now() - began) / BATCH);
         if (recheck === "cpu") recheck = null;
       }
     }
@@ -368,12 +368,12 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
   // T152: the verdict for a generation's steps, as a generation begins: the status line has it (it changes only there),
   // and the console says it where it changes
   function tokenVerdict() {
-    const known = tokensOn && !always ? steps.of(pool.threads) : null;
+    const known = tokensOn && !always ? steps.of(threads.count) : null;
     if (!known) return;
     const status = known.faster ? "gpu" : "cpu";
     if (status !== tokenStatus) {
       console.info(`gpu: a step of a generation: ${known.gpu.toFixed(2)} ms on the GPU, ${known.cpu.toFixed(2)} ms on the CPU ` +
-        `(${pool.threads} thread${pool.threads > 1 ? "s" : ""}): answers on ${known.faster ? "WebGPU" : "the CPU"}`);
+        `(${threads.count} thread${threads.count > 1 ? "s" : ""}): answers on ${known.faster ? "WebGPU" : "the CPU"}`);
     }
     tokenStatus = status;
   }
@@ -381,10 +381,10 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
   function gpuSteps() {
     if (!tokensOn || !gpuOn || gpuSide === "cpu") return false;
     if (always || gpuSide === "gpu") return true;
-    if (pool.searching) return false;
+    if (threads.searching) return false;
     if (tokenRecheck === "gpu") return true;
     if (tokenRecheck === "cpu") return false;
-    return Boolean(steps.of(pool.threads)?.faster);
+    return Boolean(steps.of(threads.count)?.faster);
   }
   /** T152: count steps of generate() on the GPU from token at pos: the forward pass of each token and the sampling of
    * the next (the penalty over the last of history, whose length is length; temperature, topp; randoms: a number for
