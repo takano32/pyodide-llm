@@ -24,7 +24,7 @@ tokens, and the fixed cost is shared among them.
 
 ## How it works
 
-1. For each model, `forward.js` starts a GPU worker (`public/gpu.js`). It copies the int8 weights and scales of
+1. For each model, `forward.js` starts a GPU worker (`src/runtime/gpu.js`). It copies the int8 weights and scales of
    the layers and their norms to the GPU. Where the tokens of the answer can run on the GPU (step 5), the
    classifier, the embeddings and the RoPE table go there as well; otherwise they stay on the CPU.
 2. It compiles the candidate shaders for the matrix products and checks each against JavaScript on a small matrix
@@ -123,7 +123,7 @@ and 0.02 GB on the CPU's side) against 4.7 GB on the CPU alone, and Llama 3.1 Sw
 
 ## The shaders and where they come from
 
-The shapes are taken from public implementations, and each file keeps their notices (the files of `public/shaders/`, which `public/shaders.js` ties together):
+The shapes are taken from public implementations, and each file keeps their notices (the files of `src/runtime/shaders/`, which `src/runtime/shaders.js` ties together):
 
 | What | Source |
 |---|---|
