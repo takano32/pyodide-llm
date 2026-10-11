@@ -2415,6 +2415,25 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - `tests/worker-check.mjs` が Node の `TimeoutNegativeWarning` を 1 回出す。鍵の合わない検査が失敗でなく期限まで待つ。`bench-check --dist chrome` は手元の Chrome の WebGPU の節を回す（`--run` で外せる）。
 - `gpu-prompt.yml` の `gpu-check.mjs` は GPU の Worker のソースを配る（束でない）: 束の GPU の Worker を GPU つきで踏むのは、本番の `models.yml query=gpuTest=on` だけ。
 
+### T438 [整理][遠隔試験] 「名指す側の名前も変わる」ことを誰も見張っていない — 状態: 未着手（2026-10-11、T367.4 から。規模 小）
+- T367.4 の「更新された」の線は、後から読む部品が変わると、それを名指す塊の名前（中身のハッシュ）も変わることに乗っている（実装が 7 つの部品を 1 つずつ変えて確かめた）。束ね手か名前の形を変える回に、2 つのビルドで見る検査が要る。
+
+### T439 [整理][その他] 更新の後、古いページのモデルが黙って遅い道で動き続ける — 状態: 未着手（持ち主の文面の決め待ち。急がない。2026-10-11、T367.4 から。規模 小）
+- モデルのページで、カーネルか `forward.js` が 404 だと NumPy（数倍遅い）、スレッドの部品なら本数が減り、GPU の Worker なら CPU で、何も言わずに答え続ける（T367.4 は「読み込み直して続けてください」の 1 文しか持たず、答えているモデルには当たらない）。知らせるなら新しい文（例: ステータス行に「the site was updated: reload for full speed」）が要る。
+
+### T440 [バグ][計測実行] `/benchmark/` はカーネルが 5xx か回線の切れで取れないと「no WebAssembly SIMD in this browser」と言う — 状態: 未着手（2026-10-11、T367.4 から。前からある。規模 小）
+- `kernelsOf`・`ceilingsOf` が取得の失敗を null にする。T367.4 は 404 の場合だけ更新の文に替えた。取れなかったことをそのまま言う（今ある「Could not fetch <名前>: <状態>」）。
+
+### T441 [整理][遠隔試験] Firefox のオフラインの試験が何も見ていない見込み、と `updated-in-browser.mjs` の置き場 — 状態: 未着手（2026-10-11、T367.4 から。規模 小）
+- Playwright の Firefox は `setOffline(true)` の後も localhost に届く（`tests/updated-in-browser.mjs` の最初の CI の回 38123992979 で、Firefox の「オフライン」の変換がそのまま成功した）。`tests/e2e.mjs` の `E2E_OFFLINE` は `setOffline` と読み込み直しだけなので、`preview.yml offline=true` の Firefox は手元で配るファイルについて何も確かめていない見込み（状況証拠: Firefox では回していない）。道具の `offlineNow`（サーバも接続を落とす）を e2e に使うか、`setOffline` の後に取得が失敗することを先に見る。
+- `tests/updated-in-browser.mjs`（28 通り、Chrome で約 3 分）は決まって回る所が無い: `browsers.yml` に Chromium・Firefox・WebKit で 1 回（レビューの勧め）。
+
+### T442 [整理][その他] T367.4 の小さな気づき — 状態: 未着手（2026-10-11。規模 小）
+- AGENTS.md の「束ねた後の決まり」の (10) は「`/*! … */` だけが残る」と書くが、`/** … */` も残る。
+- `/benchmark/` の GPU の Worker の `shaders` の Promise は、失敗すると unhandled rejection（前から）。
+- モデルのページの始まりで、`simdkernel.so` の取得の失敗は黙って NumPy、本文が途中で切れると致命（前からの不ぞろい）。
+- 確かめの HEAD は失敗の後に最大 10 秒待つ: 回線が死んでいるとき、前の文が出るまで 10 秒遅れる。
+
 ### T422 [整理][遠隔試験] `tests/conducting.mjs` の `converted()` がジェネレータを閉じ忘れても落ちない — 状態: 未着手（2026-10-11、T374.4 のレビューから。規模 小）
 - `conducting-check.mjs` は `answered()` を代役で見るだけで、`converted()`（Pyodide が要る）を回さない。`steps.return()` を消す壊し方が通った。Pyodide の代役で 1 つ足すか、`page-27b.mjs` の dry が踏むことを検査にする。
 
@@ -2495,7 +2514,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **見ないもの・未確認**: (a) 数を作る式（`flashShape()` の `kvTile` の上限 64 や `wgSize` の式、`flashVecShape()`）を変えても鍵は動かない。書き込まれる数が端末ごとに変わるだけで、覚えた形の名前は同じ（形は読み込みの時に検査し直す）。前の鍵も同じ。(b) `gpu.js` が実際にコンパイルする文を本物の装置で全部集めて鍵の文の集合に入っているか照らす道は作っていない（Dawn の job の `createShaderModule` を包む形: `tests/rounding.mjs` と同じ所に入れられる。今の道は読んで数えた 13 の呼びの一覧で守っている）。(c) 本物の GPU・ブラウザでの鍵の動き（新しい鍵で `remembered` が同じ鍵に当たること）は CI の gpu-check（`remembered.same`）で見る。持ち主の端末で形を選び直す所は未計測。(d) T367 でファイルを動かすと、この試験の `public/shaders.js` と `public/gpu.js` の読み先が変わる（試験の頭の `read()`）。
 
 - **本番（2026-10-09、デプロイ run 37981068892。全部の run の終わりを待ってから書いた）**: Chromium の 2 回の訪問（tiny-lm・llm-jp-3 150M・Qwen3.5 0.8B）run 37981545533、`gpuTest=on` の 2 回の訪問（SwiftShader、新しい鍵で形を覚えて 2 回目に使う道）run 37981548282、Firefox run 37981551507、WebKit の 2 回の訪問（3 モデル）run 37981542879: どれも成功。持ち主の端末で形を 1 回選び直す所は未計測。
-### T367 [整理][その他] 配り方をビルドに載せる（JS のまま） — 状態: 進行中（**T367.1 は完了: 本線 175fe1b、デプロイ run 38107923745（道具だけなので本番の `models.yml` は回していない）**。**T367.2 は完了: 本線 20f33da、デプロイ run 38111973609、本番 run 38112228575（遅い回線）・38112229887（Chromium）・38112231271（Firefox）・38112232716（WebKit）**。**T367.3 は孫タスクに分けた（2026-10-11、実装が決めた）: T367.3.1（道具を先に、製品に触らない）は完了: 本線 d39a40b、デプロイ run 38115991177（T432 と一緒）。T367.3.2（動かして束ねる、2 つのページを 1 回で）は完了: 本線 6e53d35、デプロイ run 38120411259、本番は「T367.3.2 の結果」の頭**。**T367.4 は実装した: ブランチ `t367.4-old-page`、レビュー前（CI は run 38123992979・38124495879）**。T367.5・.6 は未着手。2026-10-09、T365・T366 の後。規模 大）
+### T367 [整理][その他] 配り方をビルドに載せる（JS のまま） — 状態: 進行中（**T367.1 は完了: 本線 175fe1b、デプロイ run 38107923745（道具だけなので本番の `models.yml` は回していない）**。**T367.2 は完了: 本線 20f33da、デプロイ run 38111973609、本番 run 38112228575（遅い回線）・38112229887（Chromium）・38112231271（Firefox）・38112232716（WebKit）**。**T367.3 は孫タスクに分けた（2026-10-11、実装が決めた）: T367.3.1（道具を先に、製品に触らない）は完了: 本線 d39a40b、デプロイ run 38115991177（T432 と一緒）。T367.3.2（動かして束ねる、2 つのページを 1 回で）は完了: 本線 6e53d35、デプロイ run 38120411259、本番は「T367.3.2 の結果」の頭**。**T367.4 は完了: 本線 a1c9714、デプロイ run 38125570585、本番 run 38125867178（Chromium）・38125868601（Firefox）・38125869968（WebKit）・38125871376（`/benchmark/`）**。T367.5・.6 は未着手。2026-10-09、T365・T366 の後。規模 大）
 - **持ち主の決定（2026-10-10「オススメでよさそうです」、T365 の設計の 4 つ）**: (1) ビルドに載せる。(2) Worker のコードは縮めない（minify しない。CI で雑音の外で速いと出たときだけ見直す）。(3) Python のソースは `src/python/` に移す。(4) デプロイの間に開いていた古いページに出す文（T367.4）は「The site was updated while this page was open. Reload the page to go on.」。
 - **子タスクの番号（2026-10-10、T365 の設計の §8。順に 1 つずつ CI・レビュー・デプロイ。どれも未着手。持ち主が T365 の案を承認してから。レビューは `reviewer`、T367.3 の GPU の Worker の分は `shader-reviewer`）**:
   - **T367.1** 試験の道具を先に（製品に触らない）: 木のどこに何があるかを答える 1 か所（`tests/tree.mjs`: 実行時の JavaScript・Python・作る物の場所を、木を見て両方の配置で）を置き、`public/` を名指しする道具 95 をそこ越しに。import の書き方を文として読む道具 8 つ（`worker-source.mjs`・`shaders-source.mjs`・`*-modules-check.mjs` 5 つ・`python-files-check.mjs`）は今の形と静的な import の両方を読めるように。網（`tests/unchanged.mjs`）は移す前の木と後の木を比べられること。訪問者: 無し。**CI は省く**（道具だけ。手元で軽い組と網が「ok」）。
@@ -2598,7 +2617,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **網（`node tests/unchanged.mjs --before 14a0fc1`）**: `page`（`receiver.ts`・`section.ts`・`model.ts` の `onerror` と import）と `gpuworker`（`/benchmark/` の GPU の Worker: `device.js` のシェーダの import と `matvec.js` のカーネルの取得。モデルの GPU の Worker は同じ）が「違う」。`sizes` は新しいファイル 1 つ。ほか（`shaders`・`models`・`calls`・`choices`・`exports`・`layouts`・`python`・`bench`）は同じ。
   - **推論の道**: 1 トークン・1 ブロック・1 submit の道のファイル（`forward/`・`gpu/`・`helper.js`・`jobs.js`・`shaders/`・カーネル・Python）は 1 字も触らない。触るのは始まり（init・最初の変換）と失敗の受け口だけ。`forward`・`gpu`・`helper`・`shaders`・`key` の塊は前のビルドとバイト単位で同じはず（`dist/_astro/` の名前で見る）。
   - **CI は省く見込み**: 線は偽の fetch で、通しは手元の Chrome で踏める。エンジンごとに違いうるのは「始まらなかった module worker の `error` に文が無い」ことだけで、文があれば今の文のままになる（誤って「更新」とは言わない側に倒れる）。
-- **T367.4 の結果（2026-10-11、Opus medium。ブランチ `t367.4-old-page`、レビュー前。本線には入れていない）。**
+- **T367.4 の結果（2026-10-11、Opus medium。完了: レビュー済み、本線 a1c9714、ブランチは消した）。** **レビュー（Sonnet low、2026-10-11）**: 入れてよい。足した試験 1 つ（確かめの待ちの既定が 10 秒であること: db72699。10 → 100 秒の壊し方が通っていた）。`coi.js` は HEAD をそのまま `fetch` に渡し（写しで答えるのは Range の無い GET だけ）、`no-store` で HTTP キャッシュも通らない。オフライン・切れ・ブロックは `fetch` が投げるので更新とは言わない。動く道（NumPy・スレッドの減り・GPU から CPU）は黙ったまま: `updated-check` の表は「言う」18・「黙る」8（訳つき）。取り消しは AbortError のまま。文はふつうの Error で `type: "error"` として届く（仕事の終わりの知らせ: ボタンは空きに戻る）。`/benchmark/` では節の状態「failed · N s」に出て、報告の警告が拾う。1 トークンの道の塊（`forward`・`gpu`・`helper`・`kept`・`key`・`shaders`）と作る物 16 個は本番と同じ名前（同じ中身）。壊し方 13 のうち 12 が落ち、残りが上の試験。CI を省いた。訳: 直しは試験のファイルだけ。**本番（デプロイ run 38125570585 の後）**: Chromium で tiny-lm・フォルダの変換・SmolLM2 135M Instruct が 2 回目の訪問まで（SmolLM2 は OPFS から 2.4 秒）、Firefox と WebKit で tiny-lm とフォルダの変換、`bench.yml` が通る。**本物のデプロイの境目で文が出る所は見ていない**（道具がサーバの側で作った 404 で見た）。気づきは T438〜T442 に採番した。
   - **線を決める 1 か所は `src/runtime/updated.js`（76 行）**: 文 `UPDATED`、そのエラー `updated()`（名前は `Error` のまま印 `updated` を持つ: 文だけで報告される）、このサイトの版のファイルか `ofThisBuild()`（同じオリジンで `_astro/` の下）、答えが「無くなった」か `answeredGone()`（そのファイルの 404）、今無いか `gone()`（HEAD・`no-store`・10 秒）、後から取るモジュール `named(import.meta.url, () => import(…))`、始まらなかった Worker `unstarted(event, import.meta.url, 今の文)`。作る物は `built.js` の `built(name, signal)`（答えを返す。404 は `updated()`、ほかの not ok は前と同じ「Could not fetch <名前>: <状態>」）。
   - **ファイルの種類ごと**: 作る物（カーネル・Python の zip）= 自分の `fetch` の 404 そのもの。後から取るモジュール（`kept`・`/benchmark/` の `forward` と `shaders`）と Worker（ページの worker、節の Worker 6 つ、`/benchmark/` の `helper` と `reader`）= 失敗の後で、名前を書いているファイル自身を HEAD で聞いて 404 のとき。**予定どおり、フォールバックのある所（モデルのページの worker のカーネル・`forward.js`・`helper`・GPU の Worker とそのシェーダ・端末の鍵）は何も言わず、動きも同じ**（`worker.js` のカーネルの 2 か所は `built()` 越しになったが、失敗は今までどおり全部黙って NumPy）。
   - **消した行・足した行**: 製品 11 ファイルで +157 −41（うち `updated.js` 76 と `built.js` の 19 が新しい。消したのは `pythonArchive()` と `fetch(BUILT[…])` の 6 か所、ページと節の `onerror` の 3 つの文）。試験 +655 −7（`tests/updated-check.mjs` 362 行、`tests/updated-in-browser.mjs` 280 行。`python-archive-check.mjs` は `pythonArchive` を `built()` に、`bench-modules-check.mjs` はグローバルの一覧に 4 つ）。
