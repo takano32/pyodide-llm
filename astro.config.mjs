@@ -13,6 +13,11 @@ export default defineConfig({
     // the other's copy out). The workers are not minified (the owner, 2026-10-10: a visitor's report and the console
     // name functions as the sources do); format "es": a worker's module awaits at its top level.
     build: { assetsInlineLimit: 0 },
+    // The development server only (`npm run dev`; a build has no server): it names a worker's module without the
+    // site's base (/src/runtime/worker.js?worker_file), which is outside the Service Worker's scope, so that file
+    // came without the isolation headers and the isolated page refused to start the worker (ERR_BLOCKED_BY_RESPONSE).
+    // The server sends them itself. public/coi.js and the deployed site are as they were.
+    server: { headers: { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" } },
     worker: {
       format: "es",
       rolldownOptions: {
