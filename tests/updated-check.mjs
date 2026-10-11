@@ -221,7 +221,7 @@ console.log("updated-check: built() says a built file's 404 as the update, and a
 // tests/worker-check.mjs has them: whatever the worker was doing when a file of its build was found gone)
 {
   const { run, messages } = workerHarness();
-  run("state.llama = { generate: { callKwargs() { throw updated(new TypeError('Failed to fetch dynamically imported module')); } } };");
+  run("adopted({ llama: { generate: { callKwargs() { throw updated(new TypeError('Failed to fetch dynamically imported module')); } } } });");
   await run("self.onmessage")({ data: { type: "generate", prompt: "Once" } });
   const report = messages.filter((message) => message.type === "error");
   assert.equal(report.length, 1);
@@ -229,7 +229,7 @@ console.log("updated-check: built() says a built file's 404 as the update, and a
   assert.ok(!report[0].memory && !report[0].pyodide, "and it is no memory that ran out and no Pyodide that did not load");
   // and a built file that could not be fetched otherwise is reported as it was
   messages.length = 0;
-  run("state.llama = { generate: { callKwargs() { throw new Error('Could not fetch converter.zip: 500'); } } };");
+  run("adopted({ llama: { generate: { callKwargs() { throw new Error('Could not fetch converter.zip: 500'); } } } });");
   await run("self.onmessage")({ data: { type: "generate", prompt: "Once" } });
   assert.equal(messages.find((message) => message.type === "error").message, "Could not fetch converter.zip: 500");
 }
@@ -243,18 +243,16 @@ console.log("updated-check: the model's worker tells the page the sentence alone
 // unstarted() at its worker's error, and one the engine does without says why it is quiet.
 const root = new URL("../", import.meta.url);
 const LATER = {
-  "src/runtime/worker.js": [
+  "src/runtime/worker/runtime.js": [
+    ['import("../shaders/key.js")', "quiet: without the device's key nothing kept of this device holds, and the GPU is weighed again"],
     ['built("engine.zip").then((res) => res.arrayBuffer());', "said"],
     ["built(name).catch(() => undefined);", "quiet: without simdkernel.so the sampling runs on NumPy"],
-    ['import("./forward.js")', "quiet: without forward.js or its kernels the engine runs on NumPy"],
+    ['import("../forward.js")', "quiet: without forward.js or its kernels the engine runs on NumPy"],
     ["built(name).then((res) => res.arrayBuffer()).catch(() => null)));", "quiet: without the kernels the engine runs on NumPy"],
   ],
   "src/runtime/worker/convert.js": [
     ["built(archive, signal).then((res) => res.arrayBuffer()), archive);", "said"],
     ['named(import.meta.url, () => import("../kept.js"))', "said"],
-  ],
-  "src/runtime/worker/state.js": [
-    ['import("../shaders/key.js")', "quiet: without the device's key nothing kept of this device holds, and the GPU is weighed again"],
   ],
   "src/runtime/worker/weights.js": [
     ['new Worker(new URL("../helper.js", import.meta.url)', "quiet: a software thread that does not start leaves fewer threads"],
@@ -338,7 +336,7 @@ for (const name of sources) {
 }
 // the quiet ones' files know nothing of updated.js: no fallback was turned into an error
 const knows = (name) => /updated\.js|\bunstarted\b|\bisUpdated\b|\bUPDATED\b/.test(code(name));
-for (const name of ["src/runtime/worker/state.js", "src/runtime/worker/weights.js", "src/runtime/gpu.js", "src/runtime/gpu/device.js"]) {
+for (const name of ["src/runtime/worker/weights.js", "src/runtime/gpu.js", "src/runtime/gpu/device.js"]) {
   assert.ok(!knows(name), `${name} holds a fallback (LATER) and now knows of updated.js`);
 }
 // and neither does anything on a token's, a block's or a submit's path: the engine, its threads, the GPU's worker, the

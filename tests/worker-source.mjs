@@ -24,8 +24,8 @@ import { treeOf } from "./tree.mjs";
  * tree: tests/tree.mjs's (this tree's by default): where the runtime is, and which form its imports have. */
 export function workerScripts(tree = treeOf()) {
   const { files, there, others } = windowed("worker.js", { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
-  // (the second name of "export const A = 1, B = 2;" too)
-  const exported = (name, file) => new RegExp(`^export ((async )?(function\\*?|const|let|class) |const [^;\\n]*, )${name}\\b`, "m").test(files.get(file).text);
+  // (the second name of "export const A = 1, B = 2;" and of "export let a, b;" too)
+  const exported = (name, file) => new RegExp(`^export ((async )?(function\\*?|const|let|class) |(const|let) [^;\\n]*, )${name}\\b`, "m").test(files.get(file).text);
   // (a module by its name without the folder and the .js, as the checks that read these scripts know it)
   // (a file outside worker/ that a module takes names of, T367.3's built.js: by its own name without the .js)
   const short = (file) => (file === "worker.js" ? file : file.replace(/^worker\//, "").slice(0, -".js".length));

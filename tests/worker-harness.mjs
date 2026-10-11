@@ -5,9 +5,13 @@
 //
 //   const { context, run, requests, messages, fresh, body, bytesOf, sleep, clock, ... } = workerHarness({ told, gpu, root })
 //
-//   root                   the site's root the worker is told (siteRoot(): the served folder, where models/ is)
+//   root                   the site's root the worker is told (siteRoot(): the served folder, where models/ is); null: nothing is
+//                          told, and the first message the check sends is the worker's first
 //
-//   context, run(code)     the worker's global (its functions and `state` are its properties) and a line run in it
+//   context, run(code)     the worker's global (the top level of every module is its own) and a line run in it. The line
+//                          is strict: a name it assigns that no module declares is a ReferenceError (T378.3: what the
+//                          modules hold are their own `let`s, and a line written for a variable that is gone would
+//                          make a global nothing reads, without a word)
 //   fresh(route)           forgets the requests and the messages; route(url, init, n) answers the n-th request of that
 //                          URL (0 first) with a Response, a promise of one, or "hang" (no answer until it is aborted)
 //   requests, messages     every request ({ url, at, signal, range, method }) and every postMessage(), in order
@@ -24,6 +28,9 @@ import { pathToFileURL } from "node:url";
 import vm from "node:vm";
 import { runWorker } from "./worker-source.mjs";
 import { treeOf } from "./tree.mjs";
+
+/** A line for the worker's context as strict code: an assignment to a name that is not declared throws */
+export const strictly = (code) => `"use strict"; ${code}`;
 
 /** The site's root as these checks have it: the folder of what is served as it is, where models/ is. A worker whose
  * files a bundler links is told the root by the page with every load (T367.3: its own URL is under _astro/, and
@@ -115,7 +122,7 @@ export function workerHarness({ told = false, gpu = false, root = siteRoot() } =
   // worker.js and its modules (T350: tests/worker-source.mjs makes scripts of them) in a vm context whose global is its
   // self, as in a worker
   const messages = [];
-  // gpu: a WebGPU that gives no adapter (the worker asks for one as it begins: state.gpuAdapter is the check's to set)
+  // gpu: a WebGPU that gives no adapter (the worker asks for one as it begins: runtime.js's gpuAdapter is the check's to set)
   const navigatorStandIn = { deviceMemory: 8, ...(gpu && { gpu: { requestAdapter: async () => null } }) };
   const context = vm.createContext({
     console, URL, URLSearchParams, TextDecoder, TextEncoder, AbortController, DOMException, Response, Headers,
@@ -133,10 +140,11 @@ export function workerHarness({ told = false, gpu = false, root = siteRoot() } =
   });
   context.self = context;
   runWorker(context);
-  const run = (code) => vm.runInContext(code, context);
-  // (the field is the worker's to have: one that reads no root is handed none)
+  const run = (code) => vm.runInContext(strictly(code), context);
+  // (the site's root as the page says it with a load: request.js's)
   context.rootOfTheSite = root;
-  run('if (Object.hasOwn(state, "root")) state["root"] = rootOfTheSite;');
+  // (root: null says nothing: the check's own first message is then the page's first, which the page's switches are read from)
+  if (root !== null) run("loadAsked({ root: rootOfTheSite })");
 
   // the error a promise rejects with, and when (on the worker's clock); undefined when it resolved
   async function failure(promise) {

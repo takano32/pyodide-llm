@@ -2,7 +2,7 @@
 // order, with what is tried again and what stops the other connections (T107, T112, T119, T129).
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { state } from "./state.js";
+import { hfPartBytes, hfConnections } from "./runtime.js";
 import { breathe } from "./clock.js";
 import { weightsRoom } from "./weights.js";
 
@@ -136,7 +136,7 @@ export async function fetchRange(url, begin, end, signal, arriving) {
 // nothing looks stuck).
 export async function inOrder(url, start, size, feed, outer, arriving = () => {}) {
   const small = navigator.deviceMemory !== undefined && navigator.deviceMemory <= 4;
-  let partBytes = state.hfPartBytes || HF_SMALL_PART_BYTES;
+  let partBytes = hfPartBytes || HF_SMALL_PART_BYTES;
   const ranges = [];  // [begin, end] of every part asked for so far, in the order of the file
   const arrived = new Map();
   let scheduled = start, fed = 0, waiting = [], received = start;
@@ -147,7 +147,7 @@ export async function inOrder(url, start, size, feed, outer, arriving = () => {}
   const connection = async () => {
     for (;;) {
       // no more than two parts per connection wait in memory for an earlier one
-      while (ranges.length - fed >= 2 * state.hfConnections) {
+      while (ranges.length - fed >= 2 * hfConnections) {
         await new Promise((resolve) => waiting.push(resolve));
       }
       if (scheduled >= size) {
@@ -164,7 +164,7 @@ export async function inOrder(url, start, size, feed, outer, arriving = () => {}
         throw new Error(`${url} gave ${bytes.length} of the ${end - begin} bytes asked for at ${begin}`);
       }
       arrived.set(part, bytes);
-      if (part === 0 && !state.hfPartBytes) {
+      if (part === 0 && !hfPartBytes) {
         const rate = (end - begin) / ((performance.now() - began) / 1000);
         partBytes = rate >= HF_FAST_BYTES_PER_SECOND && !small ? HF_PART_BYTES : HF_SMALL_PART_BYTES;
       }
@@ -180,7 +180,7 @@ export async function inOrder(url, start, size, feed, outer, arriving = () => {}
     }
   };
   try {
-    await Promise.all(Array.from({ length: state.hfConnections }, connection));
+    await Promise.all(Array.from({ length: hfConnections }, connection));
   } catch (error) {
     inner.abort(error);
     throw error;

@@ -235,13 +235,13 @@ const made = build(tree.python(), path.join(work, "tree"));
     pyimport: (name) => { told.push(`import ${name}`); return { name, destroy() {} }; },
   };
   context.stand = { pyodide };
-  run("state.pyodide = stand.pyodide; state.llama2_convert = undefined;");
+  run("pyodide = stand.pyodide; llama2_convert = undefined;");
   fresh((url, init) => { told.push(`fetch ${last(url)}`); return answers(made["converter.zip"])(url, init); });
   assert.equal(requests.length, 0);
   const load = new AbortController();
   const converter = await run("converter")(load.signal);
   assert.equal(converter.name, "llama2_convert");
-  assert.equal(run("state.llama2_convert"), converter);
+  assert.equal(run("llama2_convert"), converter);
   assert.deepEqual(told, ["loadPackage jinja2", `fetch ${last(asked("converter.zip"))}`, `unpack zip of ${made["converter.zip"].length} bytes`, "import jinja2", "import llama2_convert"],
     "jinja2 is asked for first, the archive fetched and unpacked meanwhile, and the converter imported once both are there");
   assert.deepEqual(requests.map(({ url, signal }) => [url, signal === load.signal]), [[asked("converter.zip"), true]], "one request, the load's to cancel");
@@ -249,10 +249,10 @@ const made = build(tree.python(), path.join(work, "tree"));
   assert.equal(await run("converter")(load.signal), converter);
   assert.deepEqual([told, requests.length], [[], 1], "the second conversion fetched or placed the converter again");
   // a converter that did not come: the conversion fails with the fetch's words, and the next one asks again
-  run("state.llama2_convert = undefined;");
+  run("llama2_convert = undefined;");
   fresh(() => new Response("", { status: 503 }));
   await assert.rejects(run("converter")(load.signal), { message: "Could not fetch converter.zip: 503" });
-  assert.equal(run("state.llama2_convert"), undefined);
+  assert.equal(run("llama2_convert"), undefined);
 
   // who names the archives: init() the engine's, converter() the converter's, and convert() alone calls converter().
   // (init() runs in no check in Node: it loads Pyodide from the CDN. What it asks for and when is seen in a browser,
@@ -262,9 +262,9 @@ const made = build(tree.python(), path.join(work, "tree"));
   const naming = (pattern) => Object.entries(sources).filter(([, source]) => pattern.test(source)).map(([name]) => name);
   const body = (source, head) => { const from = source.indexOf(head); assert.ok(from >= 0, `no ${head}`); return source.slice(from, source.indexOf("\n}\n", from)); };
   // (the names as the code says them, in quotes: the comments name them too)
-  assert.deepEqual(naming(/"engine\.zip"/), ["worker.js"]);
+  assert.deepEqual(naming(/"engine\.zip"/), ["runtime"]);
   assert.deepEqual(naming(/"converter\.zip"/), ["convert"]);
-  assert.match(body(sources["worker.js"], "async function init(search) {"), /built\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(state\.pyodide, engine, "engine\.zip"\);\s*state\.llama2_numpy = state\.pyodide\.pyimport\("llama2_numpy"\);/,
+  assert.match(body(sources.runtime, "async function init(search) {"), /built\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(pyodide, engine, "engine\.zip"\);\s*llama2_numpy = pyodide\.pyimport\("llama2_numpy"\);/,
     "init() asks for the engine's archive before it waits for Pyodide, and places it before it imports the engine");
   assert.equal(Object.values(sources).join("\n").match(/"converter\.zip"/g).length, 1);
   assert.match(body(sources.convert, "async function converter(signal) {"), /"converter\.zip"/);

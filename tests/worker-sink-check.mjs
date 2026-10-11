@@ -15,6 +15,7 @@ import vm from "node:vm";
 import { python, runtimeUrl } from "./tree.mjs";
 const forward = await import(runtimeUrl("forward.js"));
 import { runWorker } from "./worker-source.mjs";
+import { strictly } from "./worker-harness.mjs";
 
 const root = new URL("..", import.meta.url);
 const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
@@ -75,12 +76,12 @@ context.stand = {
   // with ?without=kernels: the checkpoint in a Python bytearray
   pyodide: { globals: { get: () => () => ({ destroy: () => destroyed++, getBuffer: () => ({ data: new Uint8Array(8), release() {} }) }) } },
 };
-vm.runInContext("state.forwardModule = stand.forward; state.pyodide = stand.pyodide; state.jsKernels = { relaxed: true }; " +
-  "state.llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }; state.disabled = [];", context);
+vm.runInContext(strictly("forwardModule = stand.forward; pyodide = stand.pyodide; jsKernels = { relaxed: true }; " +
+  "llama2_numpy = { KV_START: 256, OUTLIER_CHANNELS: 8 }; roundBegan([]);"), context);
 const proxy = (value) => ({ toJs: () => value, destroy() {} });
 const opened = (header, form, dtype = "int8") => {
   counted.length = 0;
-  const into = vm.runInContext("checkpointSink()", context);
+  const into = vm.runInContext(strictly("checkpointSink()"), context);
   into.sink.open(600e6, proxy(header), dtype, proxy(form));
   assert.equal(counted.length, 1, "sink.open() did not size the memory by footprint()");
   const [header2, size, options] = counted[0];
@@ -126,8 +127,8 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
     handed.push(args.halfKeys);
     return {};
   };
-  vm.runInContext("state.disabled = []; state.sharedKernels = {}; state.wideKernels = { plain: {}, shared: {} }; state.threadsRequest = undefined; " +
-    "state.llama2_numpy.Llama = { callKwargs: () => ({}) };", context);
+  vm.runInContext(strictly("roundBegan([]); sharedKernels = {}; wideKernels = { plain: {}, shared: {} }; threadsRequest = undefined; " +
+    "llama2_numpy.Llama = { callKwargs: () => ({}) };"), context);
   const cases = [["llm-jp-3 150M", [512, 2048, 12, 8, 8, 99584, 4096], 160e6, {}, true],
     ["Qwen2.5 0.5B", [896, 4864, 24, 14, 2, 151936, 4096], 555992604, { bias: true }, false],
     ["Qwen2.5 3B", [2048, 11008, 36, 16, 2, 151936, 4096], 3472375836, { bias: true }, false],
@@ -145,7 +146,7 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
     "sarashina2.2 3B, six bits": true, "Ternary Bonsai 1.7B, ternary": false, "Ternary Bonsai 2 27B, ternary": false };
   const handedFor = (header, size, form, dtype) => {
     handed.length = 0;
-    const into = vm.runInContext("checkpointSink()", context);
+    const into = vm.runInContext(strictly("checkpointSink()"), context);
     into.sink.open(size, proxy(header), dtype, proxy({ ...FORM, ...form }));
     into.weights.llama({}, {});
     assert.equal(handed.length, 1, "the engine was not made through external()");
@@ -154,13 +155,16 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
   for (const [isolated, refused] of [[true, false], [false, false], [true, true]]) {
     context.self.crossOriginIsolated = isolated;
     context.refuseShared = refused;
-    vm.runInContext("state.weightsPool = undefined", context);  // a new memory for every case: the refusal is when one is made
+    vm.runInContext(strictly("weightsPool = undefined"), context);  // a new memory for every case: the refusal is when one is made
     for (const [name, header, size, form, half, dtype = "int8"] of cases) {
       const want = isolated && !refused ? half : plain[name];
       const where = `${name}${isolated ? refused ? " (a shared memory refused)" : "" : " (not isolated)"}`;
       assert.equal(handedFor(header, size, form, dtype), want,
         `${where}: the worker hands the engine ${want ? "float16" : "float32"} keys and values`);
-      vm.runInContext("state.weightsPool = undefined", context);
+      // (T378.3: what timing.js asks of the memory: software threads can be had on a shared one alone)
+      assert.equal(vm.runInContext(strictly("memoryShared()"), context), isolated && !refused, `${where}: whether the memory is shared`);
+      vm.runInContext(strictly("weightsPool = undefined"), context);
+      assert.equal(vm.runInContext(strictly("memoryShared()"), context), false, "no memory, and a shared one");
     }
   }
   // (the review of T130) a shared memory the browser gave at a lowered maximum: where the forward pass does not fit it, the
@@ -175,7 +179,7 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
     for (const [maximum, shared] of [[need - 1, false], [need, true], [need + GiB, true]]) {
       context.sharedMaximum = maximum;
       context.made = [];
-      vm.runInContext("state.weightsPool = undefined", context);
+      vm.runInContext(strictly("weightsPool = undefined"), context);
       const want = shared ? half : plain[name], where = `${name}, a shared memory of ${maximum} pages where ${need} are needed`;
       assert.equal(handedFor(header, size, form, dtype), want, `${where}: the worker hands the engine ${want ? "float16" : "float32"} keys and values`);
       assert.deepEqual(context.made, shared ? ["shared"] : ["shared", "plain"], `${where}: ${shared ? "kept" : "a plain memory made instead"}`);
@@ -185,14 +189,17 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
   context.sharedMaximum = undefined;
   context.self.crossOriginIsolated = false;
   context.refuseShared = false;
-  vm.runInContext("state.sharedKernels = undefined; state.wideKernels = undefined; delete state.llama2_numpy.Llama;", context);
+  vm.runInContext(strictly("sharedKernels = undefined; wideKernels = undefined; delete llama2_numpy.Llama;"), context);
   console.log("ok: the worker hands the engine the type of keys and values it sized the memory for");
 }
 
 // the Python buffer of ?without=kernels: let go once, by another open() (another tokenizer) or by release()
-vm.runInContext('state.disabled = ["kernels"];', context);
-const into = vm.runInContext("checkpointSink()", context);
+vm.runInContext(strictly('roundBegan(["kernels"]);'), context);
+const into = vm.runInContext(strictly("checkpointSink()"), context);
+assert.ok(vm.runInContext(strictly("weightsBytes()"), context) > 0, "the last model's memory of forward.js");
 into.sink.open(600e6, proxy(QWEN3), "int8", proxy(qwen3));
+// (T378.3: Python holds these weights: no memory of forward.js is the model's, which the page's heap would count twice)
+assert.equal(vm.runInContext(strictly("weightsBytes()"), context), 0, "a model in a Python buffer still counts the last model's memory of forward.js");
 assert.equal(destroyed, 0);
 into.sink.open(600e6, proxy(QWEN3), "int8", proxy(qwen3));
 assert.equal(destroyed, 1, "a second open() kept the first buffer");
@@ -259,11 +266,11 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     llama2_numpy: { KV_START: 256, OUTLIER_CHANNELS: 8, external_tensors: () => ({ toJs: () => tensors, destroy() {} }),
       Llama: { callKwargs: () => ({}) } },
   };
-  vm.runInContext("state.forwardModule = stand.forward; state.llama2_numpy = stand.llama2_numpy; state.jsKernels = { relaxed: true }; " +
-    "state.sharedKernels = {}; state.wideKernels = { plain: {}, shared: {} }; state.disabled = [];", gpuContext);
-  await vm.runInContext("adapterAsked", gpuContext);
+  vm.runInContext(strictly("forwardModule = stand.forward; llama2_numpy = stand.llama2_numpy; jsKernels = { relaxed: true }; " +
+    "sharedKernels = {}; wideKernels = { plain: {}, shared: {} }; roundBegan([]);"), gpuContext);
+  await vm.runInContext(strictly("adapterAsked"), gpuContext);
   const opened = () => {
-    const into = vm.runInContext("checkpointSink()", gpuContext);
+    const into = vm.runInContext(strictly("checkpointSink()"), gpuContext);
     into.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
     assert.ok(into.weights.direct, "Llama 3.2 3B on a device that says 8 GB did not go on the GPU alone");
     const worker = workers.at(-1);
@@ -275,7 +282,8 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     const { into, worker } = opened();
     into.release();
     assert.deepEqual(worker.told, ["open", "stop"], "a model on the GPU alone let go before it was built kept its GPU's worker");
-    await vm.runInContext("state.gpuOnlyEnding", gpuContext);
+    assert.ok(!worker.terminated);
+    await vm.runInContext(strictly("loadBegan({ id: 'the next load' })"), gpuContext);  // (T378.3: what load() says first)
     assert.ok(worker.terminated, "the next load did not wait for the GPU's worker to end");
   }
   // (2) another try of the converter (sink.open() again) lets go of the first one's worker
@@ -284,20 +292,20 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     into.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
     assert.deepEqual(worker.told, ["open", "stop"], "a second sink.open() kept the first GPU's worker");
     into.release();
-    await vm.runInContext("state.gpuOnlyEnding", gpuContext);
+    await vm.runInContext(strictly("gpuOnlyEnding"), gpuContext);
   }
   // (3) built, its GPU ready: kept (destroy() lets nothing go); then its GPU fails: let go before the load on the CPU
   for (const lost of [null, "the GPU was lost (a test)"]) {
     const { into, worker } = opened();
     engineGpu = Promise.resolve("prompts and answers on WebGPU");
-    into.weights.llama({}, {});
+    gpuContext.made = into.weights.llama({}, {});
     into.release();
     assert.deepEqual(worker.told, ["open"], "a built model on the GPU alone lost its GPU's worker");
     gpuContext.lost = lost;
-    vm.runInContext("state.gpuOnlyNow.lost = lost", gpuContext);
-    const ready = await vm.runInContext("gpuOnlyReady({ id: 'probe' })", gpuContext);
+    vm.runInContext(strictly("gpuOnlyNow.lost = lost"), gpuContext);
+    const ready = await vm.runInContext(strictly("gpuOnlyReady({ id: 'probe' }, undefined, made.outside.engine)"), gpuContext);
     assert.equal(ready, !lost);
-    assert.equal(vm.runInContext("cpuOnly.has('probe')", gpuContext), Boolean(lost));
+    assert.equal(vm.runInContext(strictly("cpuOnly.has('probe')"), gpuContext), Boolean(lost));
     assert.deepEqual(worker.told, lost ? ["open", "stop"] : ["open"]);
     assert.equal(worker.terminated, Boolean(lost), "the load on the CPU began before the GPU's worker ended");
   }
@@ -307,20 +315,20 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
   {
     const { into } = opened();
     engineGpu = Promise.resolve("prompts and answers on the CPU");
-    into.weights.llama({}, {});
+    gpuContext.made = into.weights.llama({}, {});
     into.release();
     const said = [], told = [];
     gpuContext.postMessage = (data) => said.push(JSON.parse(JSON.stringify(data)));
     gpuContext.console = { ...console, info: (line) => told.push(line) };
     gpuContext.verdict = { key: "arm|valhall||Mali-G615|a browser|0", cpu: { GBps: 28.7, threads: 4, promptGMACs: 40 } };
-    vm.runInContext("state.gpuOnlyNow.lost = 'the CPU as /benchmark/ measured it'; state.gpuOnlyNow.verdict = verdict", gpuContext);
-    assert.equal(await vm.runInContext("gpuOnlyReady({ id: 'kept' }, 7)", gpuContext), false);
+    vm.runInContext(strictly("gpuOnlyNow.lost = 'the CPU as /benchmark/ measured it'; gpuOnlyNow.verdict = verdict"), gpuContext);
+    assert.equal(await vm.runInContext(strictly("gpuOnlyReady({ id: 'kept' }, 7, made.outside.engine)"), gpuContext), false);
     assert.deepEqual(said.filter((data) => data.type === "gpu-alone"), [{ type: "gpu-alone", load: 7, alone: gpuContext.verdict }],
       "the verdict went to the page without its load's id");
     const placed = (cpu) => {
       gpuContext.cpu = cpu;
-      vm.runInContext("state.gpuAdapter.key = verdict.key; state.gpuRequest = { remembered: { alone: verdict }, cpu }", gpuContext);
-      const sunk = vm.runInContext("checkpointSink()", gpuContext);
+      vm.runInContext(strictly("gpuAdapter.key = verdict.key; gpuRequest = { remembered: { alone: verdict }, cpu }"), gpuContext);
+      const sunk = vm.runInContext(strictly("checkpointSink()"), gpuContext);
       sunk.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
       const direct = Boolean(sunk.weights.direct);
       sunk.release();
@@ -329,8 +337,45 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     assert.equal(placed({ GBps: 28.7, threads: 4, promptGMACs: 40 }), false, "a verdict the page kept left the model on the GPU alone");
     assert.ok(told.some((line) => /as the page kept it/.test(line)), "the console did not say the verdict it kept");
     assert.equal(placed({ GBps: 30.1, threads: 4, promptGMACs: 40 }), true, "/benchmark/'s CPU measured again did not weigh the two again");
-    await vm.runInContext("state.gpuOnlyEnding", gpuContext);
+    await vm.runInContext(strictly("gpuOnlyEnding"), gpuContext);
     gpuContext.console = console;
   }
-  console.log("ok: a model on the GPU alone lets go of its GPU's worker where its load ends without it (T156's review)");
+  // (5) T378.3: what weights.js holds of a model on the GPU alone is its own; the others say what happened and ask.
+  // The GPU is lost under the model (forward.js says so to the place's onLost): gpuOnlyLost() says why, to worker.js;
+  // the next load begins with no model on the GPU alone (the reason does not outlive the model); a model said to be on
+  // the CPU from now on (worker.js, where a run failed under it) goes there by its key, and another model does not
+  {
+    const ask = (code) => vm.runInContext(strictly(code), gpuContext);
+    await ask("loadBegan({ id: 'llama-3b' })");
+    const { into, worker } = opened();
+    assert.deepEqual([ask("gpuOnlyLost()"), ask("memoryShared()"), ask("weightsBytes()")], [null, true, 65536], "a model on the GPU alone, its GPU going on");
+    into.weights.direct.onLost("the GPU's device was lost (a test)");
+    assert.equal(ask("gpuOnlyLost()"), "the GPU's device was lost (a test)");
+    into.release();
+    await ask("loadBegan({ id: 'llama-3b' })");
+    assert.ok(worker.terminated);
+    assert.deepEqual([ask("gpuOnlyLost()"), ask("weightsRoom()"), ask("weightsDrained()")], [undefined, undefined, undefined], "a new load began with the last one's model on the GPU alone");
+    const direct = () => {
+      const sunk = ask("checkpointSink()");
+      sunk.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
+      const alone = Boolean(sunk.weights.direct);
+      sunk.release();
+      return alone;
+    };
+    ask("gpuRequest = undefined");  // (no verdict kept, as (4) left one)
+    assert.equal(direct(), true);
+    await ask("loadBegan({ id: 'llama-3b' })");
+    ask("onCpuFromNow({ id: 'llama-3b' })");
+    assert.equal(direct(), false, "a model whose GPU failed under it went on the GPU alone again");
+    await ask("loadBegan({ id: 'llama-3b' })");
+    assert.equal(direct(), false, "and again at its next load: for the rest of the visit");
+    await ask("loadBegan({ hf: { repo: 'someone/llama-3b', revision: 'abc' }, id: 'llama-3b' })");
+    assert.equal(direct(), true, "a Hugging Face model is another model than the site's of the same id");
+    ask("onCpuFromNow({ hf: { repo: 'someone/llama-3b', revision: 'abc' } })");
+    assert.equal(direct(), false);
+    await ask("loadBegan({ name: 'A file of mine' })");
+    assert.equal(direct(), true, "a model with a name alone (a file of the visitor's)");
+    await ask("loadBegan({ id: 'the next load' })");
+  }
+  console.log("ok: a model on the GPU alone lets go of its GPU's worker where its load ends without it (T156's review); what weights.js holds of it is told and asked (T378.3)");
 }

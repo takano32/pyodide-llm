@@ -3,7 +3,7 @@
 // whose into(write) writes every byte where it belongs.
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { state } from "./state.js";
+import { root } from "./request.js";
 import { told } from "./told.js";
 import { since } from "./clock.js";
 import { weightsRoom } from "./weights.js";
@@ -86,7 +86,7 @@ export function download(model, signal, load) {
   // runners, with the service worker and without it alike): the part is fetched again, twice at most. Its chunks go
   // to the same offsets, so what arrived before the break is written over with the same bytes. T129 (4): so is a
   // part the server failed (5xx, 408), as a fetch from huggingface.co is.
-  const partUrl = (part) => new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, state.root).href;
+  const partUrl = (part) => new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, root).href;
   const fetchOnce = async (part) => {
     const res = await fetchPart(partUrl(part), model, part, inner.signal);
     if (!res.ok) {

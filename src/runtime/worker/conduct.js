@@ -12,7 +12,7 @@
 // whoever knows the place (or nothing: the loop has a sentence of its own, which neither answerer here leaves it to).
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { state } from "./state.js";
+import { pyodide } from "./runtime.js";
 import { fileSize, refused, fetchRange, inOrder } from "./ranges.js";
 import { weightsRoom } from "./weights.js";
 
@@ -21,9 +21,9 @@ import { weightsRoom } from "./weights.js";
 // takes besides the files.
 // Every proxy on the way is let go: each keeps its Python object alive.
 export function conductOf(hf, make) {
-  const module = state.pyodide.pyimport("convert.conduct"), conduct = module.conduct;
+  const module = pyodide.pyimport("convert.conduct"), conduct = module.conduct;
   // (JSON: a key whose value is undefined is left out. In Python it would be there, with a value that is not None)
-  const listed = state.pyodide.toPy(JSON.parse(JSON.stringify(hf)));
+  const listed = pyodide.toPy(JSON.parse(JSON.stringify(hf)));
   try {
     return conduct.callKwargs(listed, make);
   } finally {

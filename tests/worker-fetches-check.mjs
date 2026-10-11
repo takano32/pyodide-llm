@@ -159,8 +159,8 @@ context.stand = {
   pyodide,
   numpy: { Llama: { callKwargs: () => ({}) }, OUTLIER_CHANNELS: 8, KV_START: 256 },
 };
-run("state.llama2_convert = stand.converter; state.keptModule = stand.kept; state.pyodide = stand.pyodide; state.llama2_numpy = stand.numpy; " +
-  "state.jsKernels = undefined; state.kernels = undefined; state.disabled = [];");
+run("llama2_convert = stand.converter; keptModule = stand.kept; pyodide = stand.pyodide; llama2_numpy = stand.numpy; " +
+  "jsKernels = undefined; pythonKernels = undefined; roundBegan([]);");
 
 // ---- the cases: [name, the model's hf, the hub's files, the line]
 const one = safetensors(100 * MiB), small = safetensors(3 * MiB + 100);
@@ -281,7 +281,7 @@ for (const [name, { dtype, ...source }, files, line = {}] of CASES) {
     // (what a folder's progress says has arrived, and of how much: the page shows the share converted)
     ...(folder && { progress: [...new Set(progress.map((m) => `${m.received} of ${m.total}`))] }),
   };
-  run("state.llama = undefined");
+  run("adopted({})");
 }
 
 const written = `${JSON.stringify(found, null, 1)}\n`;
