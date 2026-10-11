@@ -15,6 +15,8 @@
 // mobile line a visit then costs the version check and the page, nothing more (the owner's wish; Safari does not
 // say what line it is on, so this does not ask). One copy per file: a new build or a new Pyodide replaces the old
 // one. Registered with offline=0, it throws the copies away.
+// T367.6: and when a new build's Service Worker takes over, the copies of this site's files with another build's ?v=
+// go (forgotten(), below): nobody asks for them again.
 const OFFLINE = new URL(self.location.href).searchParams.get("offline") !== "0";
 const KEPT = "offline-v1";
 
@@ -56,6 +58,24 @@ async function copyOf(request) {
 // T117: the Cache API may fail to open (storage turned off, a private window, a full disk): then there is no copy,
 // and the network answers as it did before T111. (A failure here made worker.js a network error with the network up.)
 const quietly = (promise) => promise.catch(() => undefined);
+// T367.6: the build this Service Worker was registered for (coi.js?v=<build>: src/page/isolation.ts)
+const BUILD = new URL(self.location.href).searchParams.get("v");
+/** Whether a copy is one that no page of this build asks for: a file of this site with another build's ?v=. Until
+ * T367.3 the runtime's files were asked for as <file>?v=<build>; a bundler names them by a hash under /_astro/ now.
+ * keep() drops the old copy of a file only when it keeps a new one, so the copies of files that are asked for no
+ * more stayed for ever. (A file served as it is with this build's ?v= is not one of them: a page of this build may
+ * have fetched it under the Service Worker before this one.) */
+function forgotten(address) {
+  const url = new URL(address), v = url.searchParams.get("v");
+  return url.origin === self.location.origin && v !== null && v !== BUILD;
+}
+/** Drops the forgotten copies. Each one apart: one that cannot be deleted leaves the others to go. */
+async function forget() {
+  const cache = await caches.open(KEPT);
+  for (const old of await cache.keys()) {
+    if (forgotten(old.url)) await quietly((async () => cache.delete(old))());
+  }
+}
 function isolated(response) {
   if (response.status === 0) return response;  // opaque: nothing to add, and nothing may be read
   const headers = new Headers(response.headers);
@@ -68,6 +88,8 @@ self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (event) => event.waitUntil((async () => {
   if (!OFFLINE) await caches.delete(KEPT);
   await self.clients.claim();
+  // T367.6: after the claim, which does not wait for it; and whatever fails in it, the activation ends
+  if (OFFLINE) await quietly(forget());
 })()));
 self.addEventListener("fetch", (event) => {
   const request = event.request;
