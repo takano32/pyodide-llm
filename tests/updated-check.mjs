@@ -96,6 +96,16 @@ const probe = (fetch, more = {}) => ({ fetch, here, ...more });
   const waited = await Promise.race([gone(WORKER, probe(silent, { seconds: 0.05 })), new Promise((resolve) => setTimeout(() => resolve("still asking"), 2000))]);
   assert.equal(waited, false, "a HEAD that is not answered is given up, and is no update");
   assert.ok(aborted && performance.now() - began < 2000, "and its fetch is ended");
+  // the limit it is given when no one says: ten seconds (a page waits that long, at most, before it shows the words it had)
+  const delays = [];
+  const setTimeoutWas = globalThis.setTimeout;
+  globalThis.setTimeout = (fn, ms, ...rest) => (delays.push(ms), setTimeoutWas(fn, ms, ...rest));
+  try {
+    await gone(WORKER, probe(status(404)));
+  } finally {
+    globalThis.setTimeout = setTimeoutWas;
+  }
+  assert.deepEqual(delays, [10000], "a HEAD that is not answered is given up after ten seconds");
   // what is not of this build is not asked for at all: a model's part that is 404 is a missing part, as it was
   asked.length = 0;
   for (const address of [`${SITE}models/tiny-lm.bin.000`, "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs", "file:///x/src/runtime/worker.js", SITE]) {
