@@ -177,6 +177,24 @@ export async function pyodideSteps(version, importer) {
   }
 }
 
+// T367.2: the site's Python comes as one archive a module (python_archive.py builds them of src/python/): engine.zip, which
+// every load imports, and converter.zip, which the first conversion asks for. One request each, where every .py was one
+// (fifteen and nineteen). An archive is fetched with this worker's ?v=<build>, like every file of the site the worker
+// reads, so that it is the Python of the worker's own deployment.
+export async function pythonArchive(name, signal) {
+  const res = await fetch(new URL(`../${name}${self.location.search}`, import.meta.url), { signal });
+  if (!res.ok) {
+    throw new Error(`Could not fetch ${name}: ${res.status}`);
+  }
+  return res.arrayBuffer();
+}
+
+/** Unpacks an archive (its bytes, or a promise of them) where `import` finds what is in it: Pyodide's working folder,
+ * where the files were written one by one before. Nothing is placed unless the whole archive came. */
+export async function placePython(pyodide, archive) {
+  pyodide.unpackArchive(await archive, "zip");
+}
+
 // T397: jinja2, with which the converter renders a model's own chat template as transformers does (convert/template.py).
 // Pyodide's package of the version that is loaded, by its lock (no version is written here), asked for when a
 // conversion is first made: most visitors never convert anything. Whether it came: where it did not (the CDN said no,

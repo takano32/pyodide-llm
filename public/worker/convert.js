@@ -1,6 +1,6 @@
-// worker/convert.js (T350): a Hugging Face model converted in here as it arrives (public/llama2_convert.py), and what
+// worker/convert.js (T350): a Hugging Face model converted in here as it arrives (src/python/llama2_convert.py), and what
 // a conversion made kept for the next visit and read back (kept.js).
-// T374.2.1: the conversion is conducted by Python (public/convert/conduct.py) and answered by conduct.js: a model of
+// T374.2.1: the conversion is conducted by Python (src/python/convert/conduct.py) and answered by conduct.js: a model of
 // huggingface.co from there, and (T374.2.2) a folder of the visitor's disk from its Files.
 // A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
 
@@ -10,7 +10,7 @@ const { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom
   await import(new URL(`weights.js${new URL(import.meta.url).search}`, import.meta.url));
 const { conductOf, answered, fromHub, fromFolder } = await import(new URL(`conduct.js${new URL(import.meta.url).search}`, import.meta.url));
 const { HEADER_BYTES, headerInts } = await import(new URL(`sources.js${new URL(import.meta.url).search}`, import.meta.url));
-const { templatePackage } = await import(new URL(`pyodide.js${new URL(import.meta.url).search}`, import.meta.url));
+const { templatePackage, pythonArchive, placePython } = await import(new URL(`pyodide.js${new URL(import.meta.url).search}`, import.meta.url));
 
 // What a conversion made is kept for the next visit (kept.js): in the origin private file system where there is one
 // (T99), else in the Cache API. The original is twice as large, and fetching and converting it again on every visit
@@ -96,6 +96,19 @@ async function keepConverted(model, checkpoint, bytes, tokenizer, options, signa
   return state.keptModule.keep(converted, manifest, (begin, end) => checkpoint.slice(begin, end), vocabulary, signal);
 }
 
+/** The converter's window (state.llama2_convert), fetched, placed and imported when a model is first converted: most
+ * visitors never convert anything. (T367.2: its Python, a window and its parts, is one archive, converter.zip.) */
+export async function converter(signal) {
+  if (!state.llama2_convert) {
+    // (T397) and jinja2 with it, for the model's chat template: the conversion goes on without it where it does not come
+    const jinja = templatePackage(state.pyodide);
+    await placePython(state.pyodide, pythonArchive("converter.zip", signal));
+    await jinja;
+    state.llama2_convert = state.pyodide.pyimport("llama2_convert");
+  }
+  return state.llama2_convert;
+}
+
 export async function convert(model, signal, id) {
   const remote = typeof model.hf.repo === "string";
   // with the ?v=<build> of this worker, like every file it reads (AGENTS.md)
@@ -105,22 +118,7 @@ export async function convert(model, signal, id) {
     return { fromCache: true, keptIn: kept.keptIn, template: kept.template };
   }
   const keptMiss = kept?.miss;
-  if (!state.llama2_convert) {
-    // fetched when it is first needed: most visitors never convert anything
-    // (T347: the converter is a window and its parts, python.js's list; each with this worker's ?v=<build>)
-    const { placePython } = await import(new URL(`../python.js${self.location.search}`, import.meta.url));
-    // (T397) and jinja2 with it, for the model's chat template: the conversion goes on without it where it does not come
-    const jinja = templatePackage(state.pyodide);
-    await placePython(state.pyodide, "llama2_convert", async (name) => {
-      const res = await fetch(new URL(`../${name}${self.location.search}`, import.meta.url), { signal });
-      if (!res.ok) {
-        throw new Error(`Could not fetch ${name}: ${res.status}`);
-      }
-      return res.text();
-    });
-    await jinja;
-    state.llama2_convert = state.pyodide.pyimport("llama2_convert");
-  }
+  await converter(signal);
   const started = performance.now();
   // T156: a model that goes on the GPU alone is kept as it comes (nothing holds its weights whole afterwards): a file
   // opened for its int8 conversion (T232: or its ternary one, where the page asked for that) where it may (the choice
@@ -179,7 +177,7 @@ export async function convert(model, signal, id) {
         tell();
       },
     };
-    // T374.2.1: Python conducts (public/convert/conduct.py), the worker answers (conduct.js): from huggingface.co, or
+    // T374.2.1: Python conducts (src/python/convert/conduct.py), the worker answers (conduct.js): from huggingface.co, or
     // (T374.2.2) from the Files of a folder of the visitor's disk, which the model has beside the names of its files
     const { files, ...listed } = model.hf;
     steps = conductOf(listed, make);

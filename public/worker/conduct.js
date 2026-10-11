@@ -1,12 +1,12 @@
 // worker/conduct.js (T374.2.1): the worker's side of a conversion's conduct. Which file a model needs, how much of its
-// head, which tokenizer is tried next and which parts of the weights follow is Python's (public/convert/conduct.py: a
+// head, which tokenizer is tried next and which parts of the weights follow is Python's (src/python/convert/conduct.py: a
 // generator that asks). Here is what answers it (T374.2.2): the loop, which knows nothing of where a file is, and the
 // two answerers it is handed one of: huggingface.co's (the fetches, their parts and their order, what is tried again)
 // and a folder's of the visitor's disk (its Files, read as the disk gives them). Nothing of a model's layout is known
 // here, and nothing of a line or a disk there.
 //
 // An answerer: { answers: { text, bytes, range, size, stream }, missing }. Each answer takes what its request has
-// after the kind (where, name, ...) and gives what public/convert/conduct.py says the request is answered with; a file
+// after the kind (where, name, ...) and gives what src/python/convert/conduct.py says the request is answered with; a file
 // that is not there is answered with undefined, which is None in Python (null is not). Every other failure is thrown
 // and never answered. missing(where, name): the error of a conduct that ended for want of that file, in the words of
 // whoever knows the place (or nothing: the loop has a sentence of its own, which neither answerer here leaves it to).
