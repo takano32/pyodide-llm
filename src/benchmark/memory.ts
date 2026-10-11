@@ -33,7 +33,7 @@ export async function pageMemory(): Promise<Result> {
   if (document.visibilityState === "hidden") stop();
   try {
     return memoryResult(await holdMemory({ ask: (message: any) => ask(w, message), storage: tabStorage, hidden,
-      limit: memoryLimit(parameters.get("memoryMB")), stage: (s: Stage) => staged("memory", s) })) as Result;
+      limit: memoryLimit(parameters.get("memoryMB")), stage: (s: Stage) => staged("memory", s) } as Parameters<typeof holdMemory>[0])) as Result;
   } finally {
     document.removeEventListener("visibilitychange", onVisibility);
     removeEventListener("pagehide", stop);

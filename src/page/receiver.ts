@@ -60,7 +60,7 @@ worker.onmessage = ({ data }) => {
     if (aloneOnReady?.load === data.load) {
       try {
         const kept = JSON.parse(localStorage.getItem(gpuKey(model)) ?? "null") ?? {};
-        localStorage.setItem(gpuKey(model), JSON.stringify({ ...kept, alone: aloneOnReady.alone }));
+        localStorage.setItem(gpuKey(model), JSON.stringify({ ...kept, alone: aloneOnReady!.alone }));
       } catch {
         // no storage here: the next visit weighs the two again
       }

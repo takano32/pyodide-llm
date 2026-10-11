@@ -46,6 +46,10 @@ page_modules() {
   # the tools are to read; and the one reader of how a file takes its neighbours' names (tests/imports.mjs), on made-up texts
   node tests/tree-check.mjs
   node tests/imports-check.mjs
+  # T368.1: the type check of what a browser runs (tsc --noEmit on three programs: the pages' scripts, the runtime's
+  # TypeScript, the Service Worker as the JavaScript it is), that a type's import is said as one, and the count of the
+  # anys that are written
+  node tests/types.mjs
   # T367.3.1: what is asked of a build (tests/dist-check.mjs, run on the build itself after `npm run build`) and how a
   # tool reads a module of a build (tests/bundle.mjs), on made-up builds
   node tests/dist-rules-check.mjs

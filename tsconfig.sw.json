@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "lib": ["ES2024", "WebWorker"], "checkJs": true, "noImplicitAny": false },
+  "include": ["public/coi.js", "src/service-worker.d.ts"]
+}

@@ -9,12 +9,14 @@ import { staged, worker, model, workerFailed } from "./section.ts";
 // and on each alone), then the rounds of ?bench=1 (T45), which load it again each, on the CPU alone
 // what the model section measured, under the name of the model it ran (the choice may change after)
 // said (T227's review): what the page's path says went wrong in its first line (src/bench.js's pathWarnings()), for the warnings
+// a round of ?bench=1 as src/bench/rounds.js lists it; skip: the words of its row where the device does not run it (T214)
+type Round = { name: string; without: string[]; skip?: string };
 export let measured: { name: string; rows: any[]; pyodide: string; paths?: string; said?: string[] } | undefined;
 export async function modelSection(): Promise<Result> {
   const entry = model();
   const w = worker("worker.js");
   // T214: where the browser does not say its memory, the round without the kernels is a row that says why
-  const asked = roundsHere(($("full") as HTMLInputElement).checked ? FULL_ROUNDS : ROUNDS, (navigator as any).deviceMemory);
+  const asked: Round[] = roundsHere(($("full") as HTMLInputElement).checked ? FULL_ROUNDS : ROUNDS, (navigator as any).deviceMemory);
   // T177: the load, the page's path (the worker's words as the stage), then each round that runs (loaded again and
   // run: the worker says ready at the end of each round's load; a skipped round loads nothing)
   const rounds = asked.filter((round) => round.skip === undefined);
