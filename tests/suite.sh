@@ -48,8 +48,10 @@ page_modules() {
   node tests/imports-check.mjs
   # T368.1: the type check of what a browser runs (tsc --noEmit on three programs: the pages' scripts, the runtime's
   # TypeScript, the Service Worker as the JavaScript it is), that a type's import is said as one, and the count of the
-  # anys that are written
+  # anys that are written; then the tool that says whether two builds are the same code (tests/dist-same.mjs, the proof
+  # of a step that only adds types) and what blanks a .ts file's types for the tools, on made-up builds and texts
   node tests/types.mjs
+  node tests/dist-same-check.mjs
   # T367.3.1: what is asked of a build (tests/dist-check.mjs, run on the build itself after `npm run build`) and how a
   # tool reads a module of a build (tests/bundle.mjs), on made-up builds
   node tests/dist-rules-check.mjs
