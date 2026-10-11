@@ -71,6 +71,7 @@ check("what is refused in either form", () => {
       [`export { a } from "./x.js";\n`, /an export from another file/],
       [`const { a } = await import("./x.js");\n`, /an import this check does not know/],
       [`const { a } = await import(new URL("x.js", import.meta.url));\n`, /an import this check does not know/],
+      ["const { a } = await import(new URL(`x.js`, import.meta.url));\n", /an import this check does not know/],  // (no ?v=: another deployment's file)
       [`const { a } = await import(new URL(\`x.js\${search}\`, import.meta.url));\n`, /an import this check does not know/],
       [`const m = await import(new URL(\`x.js\${somewhere.search}\`, import.meta.url));\n`, /an import this check does not know/],
     ]) assert.throws(() => importsOf(text, "f.js", { bundled }), words, `${bundled ? "bundled" : "as it is"}: ${text}`);

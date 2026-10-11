@@ -116,7 +116,7 @@ for (const [name, program] of programs) {
     }
     // the object's own declaration, a module taking it by its name, a module handing it on
     const itsOwn = parent === declaration && key === "id";
-    const takenByName = parent.type === "ObjectProperty" && parent.shorthand;
+    const takenByName = (parent.type === "ObjectProperty" && parent.shorthand) || parent.type === "ImportSpecifier";  // (either form of taking it: tests/imports.mjs)
     const handedOn = parent.type === "ExportSpecifier";
     assert.ok(itsOwn || takenByName || handedOn, `${name} uses the name common otherwise than as common.<field> (line ${node.loc.start.line}): a local of that name hides the object, and the object handed whole is not held here`);
   });
