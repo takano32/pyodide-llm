@@ -2490,8 +2490,8 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 状態: 未着手（2026-10-10、T359 の 3 歩目のレビューから。規模 小）
 - GPT-2 の `n_inner` の既定（4 × dim）、NeoX の `tie_word_embeddings` の既定、NeoX の「head のどこも回さない」の断り。この歩の前から試験が無い行（実物の config は鍵を書くので当たらない）。小さな試験を 3 つ。
-### T378 [整理][その他] 状態に持ち主を: 共有の入れ物をなくす — 状態: 進行中（**T378.1 は完了: 本線 425c8d0、デプロイ run 38143263229、本番 run 38143543390（Chromium）・38143544963（Firefox）・38143546409（WebKit）**。**T378.2 は完了: 本線 e3edf01、デプロイ run 38154388399、本番 run 38154761412・38154763126・38154764836**。T378.3 は進行中、ほかは未着手。2026-10-10、T376 の案から。T367 の後、T368 の前。規模 大だが 1 つずつは中）
-- **子タスクの番号（2026-10-10）。1 つずつ CI・レビュー・デプロイ**: **T378.1** `forward/` の `pool`（1 トークンの道: 前後を測る。T367 を待たない）/ **T378.2** `gpuPart` と `gpuSide()` の引数（同じく測る。T367 を待たない。**完了、2026-10-11、本線 e3edf01**）/ **T378.3** worker の `state` 36 個 / **T378.4** `gpu/` の `common` と `m`（測る。レビューは `shader-reviewer`）/ **T378.5** ページと `/benchmark/` の `page`。**T378.1 はレビュー前（2026-10-11、ブランチ `t378.1-pool`、本線には入れていない）**、ほかは未着手。
+### T378 [整理][その他] 状態に持ち主を: 共有の入れ物をなくす — 状態: 進行中（**T378.1 は完了: 本線 425c8d0、デプロイ run 38143263229、本番 run 38143543390（Chromium）・38143544963（Firefox）・38143546409（WebKit）**。**T378.2 は完了: 本線 e3edf01、デプロイ run 38154388399、本番 run 38154761412・38154763126・38154764836**。**T378.3 は完了: 本線 e4a64bb、デプロイ run 38159262343、本番 run 38159611828・38159613481・38159615165・38159616807・38159618199・38159619632**。T378.4 は進行中、T378.5 は未着手。2026-10-10、T376 の案から。T367 の後、T368 の前。規模 大だが 1 つずつは中）
+- **子タスクの番号（2026-10-10）。1 つずつ CI・レビュー・デプロイ**: **T378.1** `forward/` の `pool`（1 トークンの道: 前後を測る。T367 を待たない）/ **T378.2** `gpuPart` と `gpuSide()` の引数（同じく測る。T367 を待たない。**完了、2026-10-11、本線 e3edf01**）/ **T378.3** worker の `state` 36 個（**完了、2026-10-11、本線 e4a64bb**。数えると 37 個だった）/ **T378.4** `gpu/` の `common` と `m`（測る。レビューは `shader-reviewer`）/ **T378.5** ページと `/benchmark/` の `page`。**T378.1 はレビュー前（2026-10-11、ブランチ `t378.1-pool`、本線には入れていない）**、ほかは未着手。
 - 決まり: モジュールは関数を出し、ほかが代入する物を出さない。5 つのコミットで 1 つずつデプロイ: (1) `forward/` の `pool`（setter 8 → 出来事の名前の関数）、(2) `gpuPart` と `gpuSide()` の引数 54 個（約 6 つの物に）、(3) worker の `state` 36 個（`runtime`・読み込みの頼み・`loaded`・worker.js 自身の `let` に）、(4) `gpu/` の `common` と `m`（`m.block`・`m.weights`・`m.forms`・`m.tokens`）、(5) ページと `/benchmark/` の `page`。(1)(2) は T367 を待たない。
 - **T378.1 で予定する違い（2026-10-11、実装の前に書いた）**。形: `forward/threads.js` の `softwareThreads()` が返す物から setter 8 つ（`threads`・`search`・`chosen`・`generations`・`recheckEvery`・`onChosen`・`onCompared`・`unchecked`）を無くし、出来事の名前の関数に替える: 本数を決めて使う（エンジンの `setThreads()` の中身）、本数を探す（`findThreads()` の中身）、生成が始まった（`newGeneration()` のうちスレッドの分）、トークンが始まった・終わった（`forward()` の検索の計時のうちスレッドの分）、スレッドを止める。外が読むのは本数・スレッドを失ったか・検索中か、の 3 つの getter だけ（検索の中身のオブジェクトは外に出さない）。
   - **訪問者に見えるもの: 無い見込み。** カーネルの呼び出しの列、段の分け方、検索の比べの順と判定、ステータス行、コンソールの文は同じ。網の `calls`・`choices`・`shaders`・`models`・`layouts`・`python`・`page`・`bench`・`gpuworker` は「同じ」、`exports` も同じ（`forward.js` の窓口の export は変えない。エンジンのオブジェクトのメンバーの名前も変えない）の見込み。`sizes` は `threads.js` が少し大きく `engine.js` が少し小さくなる。
@@ -2585,6 +2585,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **1 トークンの道**: `generate()` の輪の `state.stopped`（共有のオブジェクトのプロパティの読み 1 回）が `worker.js` の自分の `let` になる。forward の塊が同じバイトなら速さの CI は回さない。
   - **網**: worker は網の外。`shaders`・`models`・`calls`・`choices`・`exports`・`layouts`・`python`・`page`・`bench`・`gpuworker` は「同じ」、`sizes` は worker の部品の顔ぶれが替わる（`state.js` が消え、3 つ増える）見込み。
   - **試験**: vm の 1 つのスクリプトに載せる試験の `state.<名前>` を全部、持ち主の変数か出来事の関数に替える。**無くなった変数に文字列で書くと別のグローバルができる**（T350 の (5)）ので、試験の台の `run()` を strict にして、宣言の無い名前への代入を ReferenceError にする。`worker-modules-check` は `state.<名前>` の検査の代わりに: 取り込んだ名前に代入しない（vm では通り、ブラウザでは TypeError）、取り込んだ名前と同じ名前の局所を作らない、部品の最上位の名前が 2 つの部品でぶつからない、試験が文字列で書く名前がどれかの部品の最上位の `let` である、を見る。部品だけの試験を足す（`request.js`・`loaded.js`・`weights.js` の出来事）。
+- **T378.3 のレビューと本番（2026-10-11）**: レビュー（Sonnet low、2026-10-11）: 本線に入れてよい、必ず直すものは無い。前の `worker.js`・`load.js`・`weights.js`・`convert.js` と突き合わせて読んだ: 読み込みの間の片付けの順は同じ（`loadBegan` は最初の await の前に `loadingKey` と `gpuOnlyNow` を書く。microtask が 1 段増えるだけ）、`export let` を import の時や既定の引数で写している所は無い、import の輪は無い（`request.js` は何も import しない）、`load` が `init` より先に届いてもページの切り替えは読める（ページは両方の知らせに `search` を付ける）、`ahead` と `root` は前と同じ所に届く、ページへの知らせの名前・欄・`load` の id は同じ。動かしたもの: `worker-parts-check`・`worker-check`（33）・`worker-sink-check`・`worker-conduct-check`（16）・`worker-fetches-check`・`worker-modules-check`・`python-archive-check`・`updated-check`・ビルドと `dist-check`、手元の Chrome で tiny-lm の 2 回目の訪問・モデルの切り替え・変換の 2 回目の訪問・`?kernel=off`・`?without=relaxed,sampler`。自分の壊し方 6 つは全部落ちた。**実装が残した穴（Hugging Face の枝の `gpuOnlyReady` にエンジンを渡さない壊し方が通る）は、レビューが `worker-parts-check` に試験を足して塞いだ**（3ed5ba2）。`runtime.js` の `export let` 16 個は名前を替えた入れ物ではあるが、書くのは `init()` とアダプタの所だけで、外からの代入は `worker-modules-check` が断るので許容。覆す条件: 本番の GPU だけの Hugging Face のモデルで、GPU の失敗の後の CPU の読み直しが動かないとき。**本線 e4a64bb、デプロイ run 38159262343。本番（CI の機械の数字）**: Chromium 156 で tiny-lm・llm-jp-3 150M・SmolLM2 135M Instruct（変換、2 回目は OPFS の保存から 3.2 秒）が 2 回目の訪問まで（run 38159611828）、Firefox 157 と WebKit 27.2 で tiny-lm と llm-jp-3 150M（38159613481・38159615165）、GPU の道 `gpuTest=on` の llm-jp-3 150M（38159616807）、GPU だけの道 `gpuTest=only` の Ternary Bonsai 1.7B（Hugging Face のモデル、38159618199）、`?without=relaxed,sampler` の tiny-lm（38159619632）。本番で見ていないもの: GPU の失敗の後の CPU の読み直し（試験だけ）、本物の GPU、持ち主の端末。**採番**: T460〜T464（実装の気づき (c) はレビューが塞いだ、(f) は T462 に入れた、(h) は T375 の仕事）。
 - **T378.3 の結果（2026-10-11、ブランチ `t378.3-worker-state`、本線には入れていない。レビュー前。Opus medium。細かい決まりと落とし穴は AGENTS.md の「worker の状態に持ち主を置くとき」）**
   - **形**: `worker/state.js`（1 つのオブジェクト `state` の 37 フィールドと、`loadSeconds`・`cpuOnly`・`hasWebGpu`・`adapterAsked`・`modelKey`）を消した。外から代入できるフィールドは 37 → 0。部品は 11 → 13（`runtime.js`・`request.js`・`loaded.js` が増え、`state.js` が消えた）。行数は worker の 12 ファイルの合計 2185 → 13 ファイル 2304（`worker.js` 267 → 203、`weights.js` 362 → 400、`load.js` 183 → 172、`convert.js` 244 → 250、`timing.js` 134 → 137、`clock.js` 14 → 27、`runtime.js` 128・`request.js` 62・`loaded.js` 35 が新しい）。
   - **フィールド → 持ち主**（書く部品と読む部品は構文木で数えた: 捨ての道具 `.tmp/t378.3/fields.mjs`）:
@@ -3535,6 +3536,19 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T459 [整理][遠隔試験] `forward-modules-check` は取り出さずに読む鍵を見ない — 状態: 未着手（2026-10-11、T378.2 から。規模 小）
 - まとめた引数を `kernels.plain` のように分割代入なしで読む所の綴りは検査に掛からない。
+
+### T460 [バグ][その他] 読み込みの秒が次の読み込みに持ち越される — 状態: 未着手（2026-10-11、T378.3 から。規模 小）
+- 変換の後に読んだサイトのモデルが、前の変換の `seconds.convert` を言う。ページは出さないが、e2e の JSON の行には出うる。読み込みの始まりで消す。
+
+### T461 [バグ][その他] 組み立ての途中で投げた `Llama` が forward.js のエンジンを手放さない — 状態: 未着手（2026-10-11、T378.3 から。前からの動き。規模 小）
+- `external()` の物（GPU の Worker を開いていればそれも）が `release()` されないまま残る。T378.3 は「次の読み込みに持ち主として残らない」までを直した。
+
+### T462 [整理][遠隔試験] worker の `init()` を Node で回す — 状態: 未着手（2026-10-11、T378.3 から。規模 中）
+- `init()` は Pyodide を CDN から読むので、Node のどの検査も走らせない（試験は `init()` が置く変数を自分で書いている）。`pyodideSteps` の `importer` の引数と fetch の代役で回せる見込み。`weights.js` も、読む名前（`runtime.js` の 12・`request.js` の 5）を引数で受ければ Node がそのまま import できる。
+
+### T463 [バグ][その他] カーネルの読み込みの輪が、relaxed だけ届いたときも `simdkernel.so` の道を置く — 状態: 未着手（2026-10-11、T378.3 から。1 字も変えずに動かした行。規模 小）
+
+### T464 [整理][遠隔試験] `tests/worker-check.mjs` が 955 行 — 状態: 未着手（2026-10-11、T378.3 から。前から 908 行で目安の 800 を越えていた。規模 小）
 
 ### T276 [性能][Bonsai] Ternary Bonsai の 1.7B・4B・8B を素の RoPE に — 状態: **完了**（2026-10-11、持ち主「オススメで」。T235 の番号で実装した: 本線 7430fa2、記録は T235 の「素の RoPE にした結果」）
 - レビュー 2 本（T235・T246）の勧めは素の RoPE: 3 つの大きさとも perplexity が 2〜4% 低い（20 の測り全部）。config・GGUF・transformers・fork は yarn。ブランチ `t235-plain-rope` は 3 値にする前のものなので、`ternaryBonsai()` に合わせ直す。覆す条件: Prism ML が yarn で学習したと分かる、文脈を 8192 より上げる。
