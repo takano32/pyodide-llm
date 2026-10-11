@@ -9,7 +9,7 @@
 // after the kind (where, name, ...) and gives what public/convert/conduct.py says the request is answered with; a file
 // that is not there is answered with undefined, which is None in Python (null is not). Every other failure is thrown
 // and never answered. missing(where, name): the error of a conduct that ended for want of that file, in the words of
-// whoever knows the place (or nothing: the loop has a sentence of its own).
+// whoever knows the place (or nothing: the loop has a sentence of its own, which neither answerer here leaves it to).
 // A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
 
 const { state } = await import(new URL(`state.js${new URL(import.meta.url).search}`, import.meta.url));
@@ -147,8 +147,8 @@ export function fromHub(hf, signal, progress) {
 // a model needs; of two names that differ in that alone, the first). where is not looked at: a folder is one place.
 //
 // A name the folder does not have is the answer "not there". A file that is there and cannot be read is a failure,
-// thrown as the browser says it. Nothing is said of a file a conduct ends for want of (missing() gives nothing: the
-// page asks for a model's three files before the worker hears of the folder).
+// thrown as the browser says it. A file a conduct ends for want of is said in the folder's words (T427: the page asks
+// for a model's three files before the worker hears of the folder, so it is a file one of those names).
 //
 // progress: as fromHub()'s, but for arriving(): what a disk gives has all arrived. A part goes to the conversion's
 // feed as the disk gives it, one call a part, and waits for the room its weights need where they go on (T156).
@@ -186,6 +186,6 @@ export function fromFolder(files, signal, progress) {
         }
       }),
     },
-    missing: () => undefined,
+    missing: (where, name) => new Error(`The folder has no ${name}, which the model needs.`),
   };
 }
