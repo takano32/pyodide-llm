@@ -14,6 +14,7 @@
 // deployment): tests/updated-in-browser.mjs.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { workerHarness } from "./worker-harness.mjs";
 import { UPDATED, updated, isUpdated, saidOf, ofThisBuild, answeredGone, gone, named, unstarted } from "../src/runtime/updated.js";
 
 // ---- the sentence, whole (the owner's: T367's decision 4)
@@ -92,8 +93,9 @@ const probe = (fetch, more = {}) => ({ fetch, here, ...more });
   let aborted = false;
   const silent = (address, init) => new Promise((resolve, reject) => init.signal.addEventListener("abort", () => { aborted = true; reject(new DOMException("aborted", "AbortError")); }));
   const began = performance.now();
-  assert.equal(await gone(WORKER, probe(silent, { seconds: 0.05 })), false);
-  assert.ok(aborted && performance.now() - began < 2000, "a HEAD that is not answered is given up");
+  const waited = await Promise.race([gone(WORKER, probe(silent, { seconds: 0.05 })), new Promise((resolve) => setTimeout(() => resolve("still asking"), 2000))]);
+  assert.equal(waited, false, "a HEAD that is not answered is given up, and is no update");
+  assert.ok(aborted && performance.now() - began < 2000, "and its fetch is ended");
   // what is not of this build is not asked for at all: a model's part that is 404 is a missing part, as it was
   asked.length = 0;
   for (const address of [`${SITE}models/tiny-lm.bin.000`, "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs", "file:///x/src/runtime/worker.js", SITE]) {
@@ -204,6 +206,24 @@ console.log("updated-check: a worker that did not start is the site's update onl
   }
 }
 console.log("updated-check: built() says a built file's 404 as the update, and any other answer or failure as before");
+
+// ---- the model's worker reports it to the page as the sentence alone (worker.js and its modules in a vm, as
+// tests/worker-check.mjs has them: whatever the worker was doing when a file of its build was found gone)
+{
+  const { run, messages } = workerHarness();
+  run("state.llama = { generate: { callKwargs() { throw updated(new TypeError('Failed to fetch dynamically imported module')); } } };");
+  await run("self.onmessage")({ data: { type: "generate", prompt: "Once" } });
+  const report = messages.filter((message) => message.type === "error");
+  assert.equal(report.length, 1);
+  assert.equal(report[0].message, UPDATED, "the worker's report to the page is the sentence, with no name before it");
+  assert.ok(!report[0].memory && !report[0].pyodide, "and it is no memory that ran out and no Pyodide that did not load");
+  // and a built file that could not be fetched otherwise is reported as it was
+  messages.length = 0;
+  run("state.llama = { generate: { callKwargs() { throw new Error('Could not fetch converter.zip: 500'); } } };");
+  await run("self.onmessage")({ data: { type: "generate", prompt: "Once" } });
+  assert.equal(messages.find((message) => message.type === "error").message, "Could not fetch converter.zip: 500");
+}
+console.log("updated-check: the model's worker tells the page the sentence alone");
 
 // ---- the sources: every file that is asked for later, and what becomes of its failure.
 // said: the visitor is told the site was updated (the failure ends what was asked: a load, a conversion, a section).
