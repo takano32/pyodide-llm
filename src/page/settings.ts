@@ -3,13 +3,14 @@
 import { $, fit, prompt, select } from "./dom.ts";
 import { parameters } from "./address.ts";
 import { type Model, longest, model } from "./model.ts";
+import type { Sampled } from "../runtime/contracts/messages.ts";
 
 // The generation settings. They start as the model's own and go back to them with every change of model, except
 // the seed: "tap the seed of an answer, change the model, send" is how int8 is compared with the original.
 // steps: 0 stands for as many tokens as the model's context holds, which is the default of every model
 // T274: top_k, min_p and presence_penalty have no field: a model's own (its card's) or the link's
-type Settings = { steps: number; temperature: number; topp: number; repetition_penalty: number; seed?: number;
-                  top_k?: number; min_p?: number; presence_penalty?: number };
+// (the worker's contract has their names: one that is added is added there)
+type Settings = Sampled & { steps: number; temperature: number; topp: number; repetition_penalty: number };
 const defaults = (current: Model): Settings => ({ topp: 0.9, repetition_penalty: 1.0, ...(current.generation as any) });
 // The URL may set any of them (T43), so that a link reproduces an answer: ?temperature=0.7&seed=1234&steps=128
 // (&topp= and &repetition_penalty= too, and &top_k=, &min_p= and &presence_penalty=). A value that is not a number, or outside what the field allows, is

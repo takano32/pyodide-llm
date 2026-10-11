@@ -14,8 +14,9 @@
 // What it does not see: a browser's own way with a module worker's first message (the browsers do: tests/e2e.mjs).
 import assert from "node:assert/strict";
 import { parse } from "@babel/parser";
-import { treeOf } from "./tree.mjs";
+import { treeOf, python } from "./tree.mjs";
 import { workerScripts } from "./worker-source.mjs";
+import { contract, differing, givenTo, handedTo, posted as postedBy, readOff, returnedBy, takenBy, told, treeOf as syntaxOf } from "./contracts.mjs";
 import fs from "node:fs";
 
 // what a module worker has without declaring it, as far as these files use it
@@ -216,6 +217,69 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
   const lets = [...files].flatMap(([name, { kinds }]) => [...kinds].filter(([, kind]) => kind === "let").map(([declared]) => `${name}: ${declared}`));
   console.log(`worker-modules-check: ${lets.length} variables at the top of the worker's modules, each set by its own module alone; ` +
     `${owned} names imported, none assigned or hidden by a local; no top-level name twice`);
+
+  // ---- T368.2: what the worker and a page say to one another is src/runtime/contracts/messages.ts's. The pages are
+  // TypeScript, which tsc holds to those types; the worker is JavaScript still, which nothing reads for its shapes. So
+  // here, by the syntax trees: the kinds the worker posts and the kinds it tells apart are the types', and so are the
+  // keys of every message it posts. A key that is in no literal is followed to where it is written (the engine's
+  // stats in Python, convert()'s and timedPaths()'s results, the threads' verdict, what the GPU chose); the type has
+  // each of those, and nothing that none of them writes.
+  // What this does not see: the values (a number where the type says a text), the keys inside a row (a round's, a
+  // path's), a message posted under a computed type, and src/pages/index.astro's own first load (no .ts: tsc does not
+  // read it; it is the same literal as src/page/choose.ts's, which tsc does).
+  {
+    const typed = contract("messages.ts");
+    const trees = workerScripts().map(({ name, url }) => ({ file: name, program: parse(fs.readFileSync(url, "utf8"), { sourceType: "module" }).program }));
+    const only = (...names) => trees.filter(({ file }) => names.includes(file));
+    const forward = (file) => [syntaxOf(`forward/${file}`)];
+    const same = (what, declared, written, more = {}) => {
+      const lines = differing(what, declared, written, more);
+      assert.deepEqual(lines, [], `${lines.join("; ")}: src/runtime/contracts/messages.ts and the worker say different things`);
+    };
+    const from = (keys, why) => Object.fromEntries([...keys].map((key) => [key, why]));
+    // the engine's stats, which "done" spreads in: Python's dict (src/python/engine/generation.py)
+    const generation = fs.readFileSync(python("engine/generation.py"), "utf8");
+    const stats = new Set([.../model\.stats = \{([^}]*)\}/.exec(generation)[1].matchAll(/^\s*"(\w+)":/gm)].map(([, key]) => key));
+    same("contracts/messages.ts's Stats, to the stats of Python's generate()", typed.keysOf("Stats"), stats);
+    // the settings of an answer, which "generate" hands to Python as they are: Sampling's fields and generate()'s own
+    const sampler = fs.readFileSync(python("engine/sampler.py"), "utf8");
+    const sampling = /^class Sampling\b[^]*?(?=^\S)/m.exec(sampler)[0];
+    const fields = new Set([...sampling.matchAll(/^    (\w+): \w+ = /gm)].map(([, key]) => key));
+    assert.ok(fields.has("temperature") && fields.size >= 6, `Sampling's fields were not read out of engine/sampler.py (${[...fields]})`);
+    const own = new Set(/^def generate\(model, ([^)]*)\)/m.exec(generation)[1].split(",").map((one) => one.trim().split("=")[0]).filter((one) => !one.startsWith("*")));
+    assert.deepEqual([...own].sort(), ["echo", "prompt", "seed", "steps"], "generate()'s own arguments are others now: say here which of them a page sends");
+    same("contracts/messages.ts's Sampled, to Sampling's fields and generate()'s steps and seed", typed.keysOf("Sampled"), new Set([...fields, "steps", "seed"]));
+
+    // what the worker posts
+    const declared = typed.membersOf("FromWorker"), sent = postedBy(trees, "owner");
+    same("contracts/messages.ts's FromWorker, to the kinds the worker posts", new Set(declared.keys()), new Set(sent.keys()));
+    const elsewhere = {
+      done: from(stats, "the engine's stats"),
+      ready: from(returnedBy(only("convert"), "convert"), "worker/convert.js's convert()"),
+      paths: from(returnedBy(only("timing"), "timedPaths"), "worker/timing.js's timedPaths()"),
+      "threads-compared": from(handedTo(forward("threads.js"), "onCompared"), "forward/threads.js's verdict"),
+      gpu: from(givenTo(forward("gpuside.js"), "gpuChosen"), "forward/gpuside.js's gpuChosen"),
+    };
+    for (const [kind, keys] of declared) {
+      // (a key that a literal has and another source has too is the literal's)
+      const more = Object.fromEntries(Object.entries(elsewhere[kind] ?? {}).filter(([key]) => !sent.get(kind).keys.has(key)));
+      assert.equal(Boolean(sent.get(kind).spreads), Boolean(elsewhere[kind]), `the worker's "${kind}" ${sent.get(kind).spreads ? "spreads something in that this check does not follow" : "spreads nothing in any more"}`);
+      same(`contracts/messages.ts's FromWorker, the keys of "${kind}"`, keys, sent.get(kind).keys, more);
+    }
+
+    // what the worker is sent: the kinds its receiver tells apart, and the keys it reads off a message (worker.js's
+    // receiver, request.js's loadAsked(), and what generate() and timedPaths() take of the message they are handed)
+    const asked = typed.membersOf("ToWorker");
+    same("contracts/messages.ts's ToWorker, to the kinds worker.js tells apart", new Set(asked.keys()), told(only("worker.js")));
+    const read = new Set([...readOff(only("worker.js", "request"), "data"), ...takenBy(only("worker.js"), "generate"), ...takenBy(only("timing"), "timedPaths")]);
+    read.delete("type");
+    const keys = new Set([...asked.values()].flatMap((one) => [...one]));
+    // (steps is the benchmark's too, which the worker reads; the rest of an answer's settings are Python's to read)
+    const handedOn = from([...typed.keysOf("Sampled"), "echo"].filter((key) => !read.has(key)), "handed to Python's generate() as it is");
+    same("contracts/messages.ts's ToWorker, to the keys the worker reads off a message", keys, read, handedOn);
+    console.log(`worker-modules-check: the worker posts the ${declared.size} kinds of contracts/messages.ts's FromWorker with their keys, ` +
+      `and reads the ${asked.size} kinds of ToWorker and their ${keys.size} keys (${Object.keys(handedOn).length} of them Python's)`);
+  }
 
   // ---- the files as the modules they are, linked by Node: a name imported that is not exported where it is taken
   // from is a SyntaxError here. worker.js awaits nothing before its receiver is set (a module worker's port opens at the

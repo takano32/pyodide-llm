@@ -13,17 +13,18 @@ import { showSettings } from "./settings.ts";
 import { message, meta, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
 import { isolating } from "./isolation.ts";
 import { unstarted } from "../runtime/updated.js";
+import type { Alone, ModelWorker, Ready } from "../runtime/contracts/messages.ts";
 
 declare const __BUILD__: string;
 
-const loadedHow = (data: any) => ((model as any).hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : (model as any).file ? "read" : "download");
+const loadedHow = (data: Ready) => ((model as any).hf ? (data.fromCache ? "from the cache of this browser" : "fetch and conversion") : (model as any).file ? "read" : "download");
 let benchAsked = false;  // the benchmark is asked for once a page, whatever becomes of it
 // T156: the worker's verdict that the CPU is faster here than a model on the GPU alone, until its load on the CPU is ready
-let aloneOnReady: { load: number; alone: unknown } | undefined;
+let aloneOnReady: { load: number; alone: Alone } | undefined;
 if (await isolating()) {
   await new Promise(() => {});  // the page reloads: nothing else may start
 }
-export const worker = new Worker(new URL("../runtime/worker.js", import.meta.url), { type: "module" });
+export const worker: ModelWorker = new Worker(new URL("../runtime/worker.js", import.meta.url), { type: "module" });
 /** the site's root, which the worker is told with a load: models/ is under it, and the worker's own URL is not (T367.3) */
 export const root = new URL(import.meta.env.BASE_URL, location.href).href;
 worker.onmessage = ({ data }) => {
@@ -171,7 +172,7 @@ worker.onmessage = ({ data }) => {
     failed(Boolean(data.reloading));
     // Pyodide that never finishes loading under the service worker (iOS Safari, 2026-09-25: its NumPy step): once,
     // the page goes on without the worker, which is the one-core version the site runs on anyway (policy 6)
-    let fallback = false;
+    let fallback: boolean | undefined = false;
     try {
       fallback = data.pyodide && self.crossOriginIsolated && !sessionStorage.getItem("coi-fallback");
       if (fallback) {

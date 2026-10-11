@@ -16,6 +16,7 @@ import { python, runtimeUrl } from "./tree.mjs";
 const forward = await import(runtimeUrl("forward.js"));
 import { runWorker } from "./worker-source.mjs";
 import { strictly } from "./worker-harness.mjs";
+import { contract, differing } from "./contracts.mjs";
 
 const root = new URL("..", import.meta.url);
 const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
@@ -28,6 +29,21 @@ const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
 // loads: Python refuses such a file where the weights are outside it, so footprint() never reads the key)
 assert.deepEqual(Object.keys(FORM).sort(), ["arch", "bias", "convolution", "head_dim", "kinds", "linear", "qk_norm", "rotated"],
   "FORM has other keys now: say here which of them footprint() reads");
+
+// T368.2: the type whatever is TypeScript reads a form by (src/runtime/contracts/form.ts) says the same keys, and the
+// same architectures as Python's table of them (engine/layout.py's LAYOUTS); its two kinds of layers have the keys of
+// Python's (plan-keys-check.mjs holds those to the plan's)
+{
+  const typed = contract("form.ts");
+  const archs = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
+    "import json, sys; sys.path.insert(0, sys.argv[1]); from engine.layout import LAYOUTS; from engine.dtypes import DTYPES; print(json.dumps([list(LAYOUTS), list(DTYPES)]))", python()],
+  { cwd: fileURLToPath(root) }).toString());
+  const lines = [...differing("contracts/form.ts's Form, to Python's FORM", typed.keysOf("Form"), new Set(Object.keys(FORM))),
+    ...differing("contracts/form.ts's Arch, to Python's LAYOUTS", typed.literalsOf("Arch"), new Set(archs[0])),
+    ...differing("contracts/form.ts's Dtype, to Python's DTYPES", typed.literalsOf("Dtype"), new Set(archs[1]))];
+  assert.deepEqual(lines, [], `${lines.join("; ")}: src/runtime/contracts/form.ts and src/python/engine/layout.py say different things`);
+  console.log(`ok: contracts/form.ts's Form has FORM's ${Object.keys(FORM).length} keys, its Arch Python's ${archs[0].length} layouts, its Dtype Python's ${archs[1].length} dtypes`);
+}
 
 // (7) footprint()'s defaults are FORM's: a form without arch or head_dim (the options of a model converted before
 // T124, a manifest) is counted as the engine reads it
