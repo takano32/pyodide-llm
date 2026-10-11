@@ -26,12 +26,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
-import { compileKernels, createForward, weightsMemory } from "../public/forward.js";
+import { built, runtimeUrl } from "./tree.mjs";
+const { compileKernels, createForward, weightsMemory } = await import(runtimeUrl("forward.js"));
 
 const root = new URL("../", import.meta.url).pathname;
 // a helper thread: resolves once it has its kernels on the shared memory
 const spawn = (data) => new Promise((resolve) => {
-  const worker = new Worker(new URL("../public/helper.js", import.meta.url));
+  const worker = new Worker(runtimeUrl("helper.js"));
   worker.once("message", () => resolve({ terminate: () => worker.terminate() }));
   worker.postMessage(data);
 });
@@ -85,7 +86,7 @@ if (isMainThread) {
 } else {
   const { memory, base, size, plan, counts, rounds, positions, from, wide, versusHalf } = workerData;
   const suffix = wide ? "64" : "";  // T101: a 64-bit memory and its kernels
-  const kernels = compileKernels(fs.readFileSync(`${root}public/simdkernel_shared${suffix}.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_shared${suffix}.wasm`), wide);
+  const kernels = compileKernels(fs.readFileSync(built(`simdkernel_shared${suffix}.wasm`)), fs.readFileSync(built(`simdkernel_relaxed_shared${suffix}.wasm`)), wide);
   const engine = createForward({ memory, base, size, kernels, plan, spawn });
   const greedy = () => {
     const seen = [];
@@ -186,7 +187,7 @@ if (isMainThread) {
   // T120: a software thread that the browser stops in the middle of its chunk (iOS may end a worker for memory):
   // this one takes a chunk and ends without counting it. The coordinator must give its helpers up, run the phase
   // again on its own, and go on with one thread, to the same logits
-  const { WAKE, COUNTER, ACTIVE, CONTROL_BYTES } = await import("../public/jobs.js");
+  const { WAKE, COUNTER, ACTIVE, CONTROL_BYTES } = await import(runtimeUrl("jobs.js"));
   const dying = ({ memory: shared, share }) => new Promise((resolve) => {
     const worker = new Worker(`
       const { parentPort, workerData: { memory, share, WAKE, COUNTER, ACTIVE, CONTROL_BYTES } } = require("node:worker_threads");

@@ -52,6 +52,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { transformSync } from "esbuild";
 import { parse } from "@babel/parser";
 import { otherTree } from "./other-tree.mjs";
+import { treeOf } from "./tree.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
@@ -94,7 +95,7 @@ const MAKERS = {
 };
 
 async function shaders(other) {
-  const [was, now] = await Promise.all([other, root].map((tree) => import(pathToFileURL(path.join(tree, "public/shaders.js")))));
+  const [was, now] = await Promise.all([other, root].map((tree) => import(treeOf(tree).runtimeUrl("shaders.js"))));
   const texts = (module) => Object.fromEntries(Object.entries(module).map(([name, value]) =>
     [name, typeof value === "function" && MAKERS[name] ? MAKERS[name].map((given) => value(...given)).join("\n----\n") : text(value)]));
   let ok = said("shaders, the exports", differences(texts(was), texts(now)));
@@ -180,9 +181,10 @@ async function exports(other) {
   let ok = true;
   const [was, now] = await Promise.all([other, root].map(async (tree) => {
     const found = {};
-    for (const file of ["public/forward.js", "public/jobs.js", "public/kept.js", "public/gpu.js", "src/bench.js"]) {
+    // (T367.1: a window of the runtime by its name there, wherever the tree keeps the runtime: tests/tree.mjs)
+    for (const file of ["forward.js", "jobs.js", "kept.js", "gpu.js", "src/bench.js"]) {
       let module;
-      try { module = await import(pathToFileURL(path.join(tree, file))); } catch (error) { found[`${file}: import`] = `throws ${error.message}`; continue; }
+      try { module = await import(file.startsWith("src/") ? pathToFileURL(path.join(tree, file)) : treeOf(tree).runtimeUrl(file)); } catch (error) { found[`${file}: import`] = `throws ${error.message}`; continue; }
       for (const [name, value] of Object.entries(module)) {
         found[`${file}: ${name}`] = typeof value === "function" ? `${/^class\b/.test(String(value)) ? "class" : "function"}/${value.length}` : JSON.stringify(value) ?? String(value);
       }
@@ -258,10 +260,10 @@ function bench(other) {
 // imports, the window's loading and early queue, the `shared` object, the destructuring of what a module takes from another
 // (T352: of the model's GPU worker too. worker: { window: the file a worker starts from, object: the name of the object its modules share })
 function gpuWorker(tree, fields, worker) {
-  const files = [worker.window], inFolder = worker.window.replace(/\.js$/, "");
-  const folder = path.join(tree, inFolder);
+  const files = [worker.window], inFolder = worker.window.replace(/\.js$/, ""), runtime = treeOf(tree).runtime;
+  const folder = runtime(inFolder);
   if (fs.existsSync(folder)) for (const file of fs.readdirSync(folder).sort()) files.push(`${inFolder}/${file}`);
-  const asts = files.map((file) => parse(fs.readFileSync(path.join(tree, file), "utf8"), { sourceType: "module" }).program);
+  const asts = files.map((file) => parse(fs.readFileSync(runtime(file), "utf8"), { sourceType: "module" }).program);
   const declared = (statement) => {
     const names = [];
     const pattern = (node) => { if (!node) return; if (node.type === "Identifier") names.push(node.name); else if (node.type === "ObjectPattern") node.properties.forEach((p) => pattern(p.type === "RestElement" ? p.argument : p.value)); else if (node.type === "ArrayPattern") node.elements.forEach(pattern); else if (node.type === "AssignmentPattern") pattern(node.left); };
@@ -320,15 +322,16 @@ function gpuWorker(tree, fields, worker) {
 }
 // the keys of the `shared` object a tree's modules hold between them (none before the division)
 function sharedFields(tree, worker) {
-  const file = path.join(tree, worker.window.replace(/\.js$/, "/device.js"));
+  const file = treeOf(tree).runtime(worker.window.replace(/\.js$/, "/device.js"));
   if (!fs.existsSync(file)) return new Set();
   const program = parse(fs.readFileSync(file, "utf8"), { sourceType: "module" }).program;
   const shared = program.body.find((s) => s.type === "VariableDeclaration" && s.declarations[0].id.name === worker.object);
   return new Set(shared.declarations[0].init.properties.map((p) => p.key.name));
 }
 // (T352: the model's GPU worker, public/gpu.js and public/gpu/*.js, whose modules share `common`: open() has a parameter named shared)
-const GPU_WORKERS = [{ window: "public/benchmark/gpu.js", object: "shared", name: "/benchmark/'s GPU worker" },
-  { window: "public/gpu.js", object: "common", name: "the model's GPU worker" }];
+// (window: the file a worker starts from, as the runtime names it)
+const GPU_WORKERS = [{ window: "benchmark/gpu.js", object: "shared", name: "/benchmark/'s GPU worker" },
+  { window: "gpu.js", object: "common", name: "the model's GPU worker" }];
 function gpuworker(other) {
   let same = true;
   for (const worker of GPU_WORKERS) {
@@ -341,6 +344,7 @@ function gpuworker(other) {
 }
 
 function sizes() {
+  // (public and src: wherever a tree keeps the runtime and the Python, it is under one of them)
   const files = git("ls-files", "public", "src", "kernels", "tests", "*.py", "*.mjs").toString().trim().split("\n")
     .filter((file) => /\.(js|mjs|py|ts|astro)$/.test(file) && !file.startsWith("tests/fixtures/") && fs.existsSync(path.join(root, file)));
   const large = files.map((file) => { const body = fs.readFileSync(path.join(root, file), "utf8"); return { file, bytes: Buffer.byteLength(body), lines: body.split("\n").length }; })

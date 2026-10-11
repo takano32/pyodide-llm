@@ -31,7 +31,8 @@ import unicodedata
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "public"))
+from tree import python_folder
+sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
 import conducting  # noqa: E402
 import llama2_numpy  # noqa: E402

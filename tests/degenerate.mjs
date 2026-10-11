@@ -18,7 +18,8 @@
 // less than all the way). The lines it prints are `degenerate <id>: <prompt> ...` for each prompt and a total (ci.mjs's --grep "degenerate").
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
-import { footprint, needsWide } from "../public/forward.js";
+import { runtimeUrl } from "./tree.mjs";
+const { footprint, needsWide } = await import(runtimeUrl("forward.js"));
 import { MODELS, filled } from "../src/models.js";
 import { leave } from "./leave.mjs";
 

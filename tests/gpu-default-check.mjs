@@ -46,11 +46,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
-import { PYTHON, placeFile } from "../public/python.js";
+import { built, placeKernels, placePython, runtime, runtimeUrl, treeOf } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
-const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : path.join(root, "public", "forward.js");
+const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
 
 // T243: the keys and values the made-up GPU writes back where it is asked to (line.kv), as float16 bits: of part (the
 // keys of every layer, then the values), of the t-th position of the request, the i-th of a position. Finite numbers
@@ -189,9 +189,9 @@ if (isMainThread) {
   const { memory, base, size, plan, forwardFile, tokenizer, options } = workerData;
   const { compileKernels, createForward, endSearch, timePrompts, external, OUTSIDE_VOCABULARY } = await import(forwardFile);
   const { pathTable } = await import(path.join(root, "src/bench.js"));
-  const kernels = compileKernels(fs.readFileSync(path.join(root, "public/simdkernel_shared.wasm")), fs.readFileSync(path.join(root, "public/simdkernel_relaxed_shared.wasm")));
+  const kernels = compileKernels(fs.readFileSync(built("simdkernel_shared.wasm")), fs.readFileSync(built("simdkernel_relaxed_shared.wasm")));
   const spawn = (data) => new Promise((resolve) => {
-    const helper = new Worker(path.join(root, "public/helper.js"));
+    const helper = new Worker(runtime("helper.js"));
     helper.once("message", () => resolve({ terminate: () => helper.terminate() }));
     helper.postMessage(data);
   });
@@ -503,7 +503,7 @@ if (isMainThread) {
   // one) leaves found at 1 as well, so "fewer than found" never says it: the page path's head reads lostThreads. This
   // helper takes a chunk and ends without counting it (threads-check's)
   {
-    const { WAKE, COUNTER, ACTIVE, CONTROL_BYTES } = await import(path.join(root, "public/jobs.js"));
+    const { WAKE, COUNTER, ACTIVE, CONTROL_BYTES } = await import(runtimeUrl("jobs.js"));
     const dying = ({ memory: shared, share }) => new Promise((resolve) => {
       const helper = new Worker(`
         const { parentPort, workerData: { memory, share, WAKE, COUNTER, ACTIVE, CONTROL_BYTES } } = require("node:worker_threads");
@@ -870,9 +870,8 @@ if (isMainThread) {
     const { loadPyodide } = await import("pyodide");
     const py = await loadPyodide();
     await py.loadPackage("numpy", { messageCallback: () => {} });
-    for (const name of [...PYTHON.llama2_numpy, ...PYTHON.llama2_convert, "simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
-      placeFile(py, name, fs.readFileSync(path.join(root, "public", name)));
-    }
+    placePython(py, treeOf());
+    placeKernels(py, treeOf());
     py.FS.writeFile("tokenizer.bin", fs.readFileSync(tokenizer));
     const line = { fixed: 60 * perToken, perToken: 2 * perToken, step: 0.2 * cpuStep };
     const gpuOf = (workerData) => () => {

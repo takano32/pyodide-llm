@@ -21,7 +21,8 @@ import unicodedata
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "public"))
+from tree import python_folder
+sys.path.insert(0, python_folder(ROOT))
 import llama2_numpy as new  # noqa: E402
 import llama2_convert as convert  # noqa: E402
 
@@ -322,7 +323,8 @@ if __name__ == "__main__":
     texts = texts_of(200)
     failures = 0
     failures += made_up_check()
-    site = os.path.join(ROOT, "public", "models", "tokenizer.bin")
+    from tree import served_folder
+    site = served_folder(ROOT, os.path.join("models", "tokenizer.bin"))
     cases = [
         ("bpe: Llama 2 (llama2.c's tokenizer.bin)", made("tokenizer.bin", site), real_sp(files["llama2"])),
         ("unigram: tiny-lm (spiece.model)", made("spiece.model", files["tiny-lm"]), real_sp(files["tiny-lm"])),

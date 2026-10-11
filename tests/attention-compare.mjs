@@ -13,6 +13,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import { kernelSources } from "./other-tree.mjs";
+import { built } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const exact = process.argv.includes("--exact");
@@ -24,7 +25,7 @@ execFileSync("npx", ["asc", "-O3", "--noAssert", "--runtime", "stub", "--importM
 
 const memory = new WebAssembly.Memory({ initial: 4200 });
 const load = (file) => new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(file)), { env: { memory } }).exports;
-const kernels = { old: load(`${dir}old.wasm`), new: load(`${root}public/simdkernel_plain.wasm`) };
+const kernels = { old: load(`${dir}old.wasm`), new: load(built("simdkernel_plain.wasm")) };
 const F = new Float32Array(memory.buffer);
 
 let failed = false;

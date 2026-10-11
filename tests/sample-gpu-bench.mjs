@@ -17,6 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { otherTree } from "./other-tree.mjs";
+import { runtime, treeOf } from "./tree.mjs";
 
 const args = process.argv.slice(2), OPTIONS = ["--against", "--rounds", "--seed"];
 const webgpu = args.find((a, i) => !a.startsWith("--") && !OPTIONS.includes(args[i - 1]));
@@ -43,14 +44,14 @@ const root = new URL("../", import.meta.url).pathname;
 // tests/other-tree.mjs's, which holds either form)
 const scratch = path.join(root, ".tmp", "sample-gpu-bench");
 fs.mkdirSync(scratch, { recursive: true });
-const old = path.join(otherTree(against).folder, "public", "shaders.js");
+const old = treeOf(otherTree(against).folder).runtime("shaders.js");
 // (the working tree's text again, a copy: a module is imported once by its address, and so are the modules it asks for)
 const again = path.join(scratch, "working-tree-again");
 fs.rmSync(again, { recursive: true, force: true });
 fs.mkdirSync(again, { recursive: true });
-fs.copyFileSync(path.join(root, "public", "shaders.js"), path.join(again, "shaders.js"));
-fs.cpSync(path.join(root, "public", "shaders"), path.join(again, "shaders"), { recursive: true });
-const versions = [{ name: against, wgsl: await import(pathToFileURL(old).href) }, { name: "working tree", wgsl: await import(pathToFileURL(path.join(root, "public", "shaders.js")).href) },
+fs.copyFileSync(runtime("shaders.js"), path.join(again, "shaders.js"));
+fs.cpSync(runtime("shaders"), path.join(again, "shaders"), { recursive: true });
+const versions = [{ name: against, wgsl: await import(pathToFileURL(old).href) }, { name: "working tree", wgsl: await import(pathToFileURL(runtime("shaders.js")).href) },
   { name: "working tree again", wgsl: await import(pathToFileURL(path.join(again, "shaders.js")).href) }];
 // (three versions of the text, each its own module: the ref's is not the tree's, and the copy is not the tree's object)
 if (versions[0].wgsl === versions[1].wgsl || versions[1].wgsl === versions[2].wgsl || versions[1].wgsl.SAMPLE !== versions[2].wgsl.SAMPLE) {

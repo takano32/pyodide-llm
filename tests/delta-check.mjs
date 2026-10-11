@@ -14,10 +14,11 @@
 // from the kernels, and a kernel and its copy could be wrong the same way; NumPy's is the definition.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { built, python as sources } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const memory = new WebAssembly.Memory({ initial: 16 });
-const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/simdkernel_plain.wasm`)), { env: { memory } }).exports;
+const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(built("simdkernel_plain.wasm"))), { env: { memory } }).exports;
 const F = new Float32Array(memory.buffer), f = Math.fround;
 let seed = 229;
 const next = () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 8;
@@ -112,7 +113,7 @@ for (const n of [1, 3, 4, 5, 8, 13, 64]) {
 const python = `
 import json, sys
 import numpy as np
-sys.path.insert(0, "public")
+sys.path.insert(0, ${JSON.stringify(sources())})
 import llama2_numpy as L
 
 rng = np.random.default_rng(229)
@@ -141,7 +142,7 @@ print(json.dumps(cases))
 const numpy = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c", python], { cwd: root, maxBuffer: 1 << 28 }).toString());
 const near = (got, want) => Math.abs(got - want) <= 2e-5 * Math.max(1, Math.abs(want));
 const wider = new WebAssembly.Memory({ initial: 64 });
-const kw = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/simdkernel_plain.wasm`)), { env: { memory: wider } }).exports;
+const kw = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(built("simdkernel_plain.wasm"))), { env: { memory: wider } }).exports;
 const G = new Float32Array(wider.buffer);
 const putW = (at, values) => { for (let i = 0; i < values.length; i++) G[at / 4 + i] = values[i]; };
 const getW = (at, n) => Array.from(G.subarray(at / 4, at / 4 + n));

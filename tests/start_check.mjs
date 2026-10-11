@@ -20,7 +20,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
-import { footprint, needsWide } from "../public/forward.js";
+import { runtimeUrl } from "./tree.mjs";
+const { footprint, needsWide } = await import(runtimeUrl("forward.js"));
 import { ARTICLES, wikipediaText } from "./wikipedia.mjs";
 import { MODELS } from "../src/models.js";
 import { leave } from "./leave.mjs";

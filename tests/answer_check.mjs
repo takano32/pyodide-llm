@@ -16,7 +16,8 @@
 // (<|im_start|>) that the options' specials name. tests/write.sh runs it (WRITER=answer_check.mjs).
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
-import { footprint, needsWide } from "../public/forward.js";
+import { runtimeUrl } from "./tree.mjs";
+const { footprint, needsWide } = await import(runtimeUrl("forward.js"));
 import { filled } from "../src/models.js";
 import { leave } from "./leave.mjs";
 

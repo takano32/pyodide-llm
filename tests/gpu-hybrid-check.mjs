@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { loadPyodide } from "pyodide";
-import { PYTHON, placeFile } from "../public/python.js";
+import { built, placeKernels, placePython, runtime, runtimeUrl, treeOf } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
@@ -24,7 +24,7 @@ if (!prefix) {
   console.error("usage: node tests/gpu-hybrid-check.mjs <a made-up Qwen3.5, without .bin> [--forward <forward.js>]");
   process.exit(2);
 }
-const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : path.join(root, "public", "forward.js");
+const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
 const { compileKernels, external, weightsMemory } = await import(forwardFile);
 
 const options = JSON.parse(fs.readFileSync(`${prefix}.json`, "utf8"));
@@ -38,11 +38,10 @@ const checkpoint = fs.readFileSync(`${prefix}.bin`);
 
 const py = await loadPyodide();
 await py.loadPackage("numpy", { messageCallback: () => {} });
-for (const name of [...PYTHON.llama2_numpy, ...PYTHON.llama2_convert, "simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
-  placeFile(py, name, fs.readFileSync(path.join(root, "public", name)));
-}
+placePython(py, treeOf());
+placeKernels(py, treeOf());
 py.FS.writeFile("tokenizer.bin", fs.readFileSync(`${prefix}.tokenizer.bin`));
-const kernels = compileKernels(fs.readFileSync(path.join(root, "public/simdkernel_shared.wasm")), fs.readFileSync(path.join(root, "public/simdkernel_relaxed_shared.wasm")));
+const kernels = compileKernels(fs.readFileSync(built("simdkernel_shared.wasm")), fs.readFileSync(built("simdkernel_relaxed_shared.wasm")));
 const { memory, base } = weightsMemory(checkpoint.length, { shared: true });
 new Uint8Array(memory.buffer, base, checkpoint.length).set(checkpoint);
 

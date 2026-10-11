@@ -22,7 +22,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import * as playwright from "playwright-core";
-import { ADDRESSES } from "../public/jobs.js";
+import { built, runtimeUrl } from "./tree.mjs";
+const { ADDRESSES } = await import(runtimeUrl("jobs.js"));
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
@@ -32,7 +33,7 @@ const engines = args.filter((arg, i) => !arg.startsWith("--") && args[i - 1] !==
 const channels = { chrome: "chrome", msedge: "msedge" };
 
 async function wasm(name) {
-  if (!site) return fs.readFileSync(`${root}public/${name}.wasm`).toString("base64");
+  if (!site) return fs.readFileSync(built(`${name}.wasm`)).toString("base64");
   const response = await fetch(new URL(`${name}.wasm`, site));
   if (!response.ok) throw new Error(`${name}.wasm: ${response.status}`);
   return Buffer.from(await response.arrayBuffer()).toString("base64");

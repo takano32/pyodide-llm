@@ -28,6 +28,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "@babel/parser";
 import { planOf } from "./plans.mjs";
+import { runtime, runtimeUrl } from "./tree.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 let failed = 0;
@@ -47,8 +48,8 @@ function held(what, written, read, unread = {}) {
 }
 
 // ---- the syntax trees
-const treesOf = (files) => files.map((file) => ({ file, program: parse(fs.readFileSync(path.join(root, file), "utf8"), { sourceType: "module" }).program }));
-const folder = (window) => [window, ...fs.readdirSync(path.join(root, window.replace(/\.js$/, ""))).filter((file) => file.endsWith(".js")).sort()
+const treesOf = (files) => files.map((file) => ({ file, program: parse(fs.readFileSync(runtime(file), "utf8"), { sourceType: "module" }).program }));
+const folder = (window) => [window, ...fs.readdirSync(runtime(window.replace(/\.js$/, ""))).filter((file) => file.endsWith(".js")).sort()
   .map((file) => `${window.replace(/\.js$/, "")}/${file}`)];
 function walk(node, visit, parent = null) {
   if (!node || typeof node !== "object") return;
@@ -117,7 +118,7 @@ const returned = (fn) => {
   ok(`Python's plan has the same ${keys.size} keys for ${plans.length} made-up models (${families.length} of the layouts' families in five dtypes), ${tensors.size} tensors among them`);
 
   // what forward.js reads
-  const trees = treesOf(folder("public/forward.js"));
+  const trees = treesOf(folder("forward.js"));
   const readKeys = new Set(), readTensors = new Set(), readEntry = new Set(), readDerived = new Set();
   // (toJs: the PyProxy's own method, where the plan is Python's object still)
   const NOT_KEYS = new Set(["toJs"]);
@@ -158,7 +159,7 @@ const returned = (fn) => {
   // T359.5: until forward.js reads them, the layers' facts and the widths are held here to what forward.js works out
   // for itself from the same plan (public/forward/memory.js's layerSlots(), linearWidths() and rotatedWidths(), and
   // engine.js's turns: no layer of a GPT-2, and not the ones left alone), so that T375 swaps like for like
-  const { layerSlots, linearWidths, rotatedWidths } = await import(new URL("../public/forward/memory.js", import.meta.url));
+  const { layerSlots, linearWidths, rotatedWidths } = await import(runtimeUrl("forward/memory.js"));
   plans.forEach((plan, index) => {
     const which = `${cases[index].name}, ${cases[index].dtype}`;
     const slots = layerSlots(plan.n_layers, plan.linear, plan.convolution);
@@ -183,7 +184,7 @@ const returned = (fn) => {
 
 // ---- 2. forward.js -> the GPU's worker
 {
-  const writers = treesOf(folder("public/forward.js"));
+  const writers = treesOf(folder("forward.js"));
   // the plan of { type: "start", memory, plan: { ... } }
   let start;
   for (const { program } of writers) {
@@ -196,7 +197,7 @@ const returned = (fn) => {
       }
     });
   }
-  assert.ok(start, "no { type: \"start\", plan: { ... } } in public/forward/: tests/plan-keys-check.mjs reads the GPU's plan there");
+  assert.ok(start, "no { type: \"start\", plan: { ... } } in the files of forward/: tests/plan-keys-check.mjs reads the GPU's plan there");
   const open = returned(functionNamed(writers, "gpuOnlyPlan"));
   const written = new Set([...literalKeys(start), ...literalKeys(open)]);
   const inside = {
@@ -209,7 +210,7 @@ const returned = (fn) => {
   walk(functionNamed(writers, "gpuOnlyPlan").body, (node) => { if (node.type === "VariableDeclarator" && node.id.name === "tables") literalKeys(node.init, inside.tables); });
   for (const [name, keys] of Object.entries(inside)) assert.ok(keys.size, `nothing found of what the GPU's plan holds in ${name}`);
 
-  const readers = treesOf(folder("public/gpu.js"));
+  const readers = treesOf(folder("gpu.js"));
   const read = new Set(), readInside = Object.fromEntries(Object.keys(inside).map((name) => [name, new Set()]));
   // a plan: `plan`, or anything's `.plan` (m.plan, common.model.plan)
   const isPlan = (node) => (node.type === "Identifier" && node.name === "plan") || (member(node) && node.property.name === "plan");

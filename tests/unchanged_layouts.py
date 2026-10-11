@@ -28,7 +28,8 @@ import sys
 import numpy as np
 
 root = sys.argv[1] if len(sys.argv) > 1 else "."
-sys.path.insert(0, root + "/public")
+from tree import python_folder
+sys.path.insert(0, python_folder(root))
 import llama2_convert as C  # noqa: E402
 import llama2_numpy as L  # noqa: E402
 from engine_plans import engine_plan  # noqa: E402  (tests/engine_plans.py: this script's neighbour, whichever tree is asked)

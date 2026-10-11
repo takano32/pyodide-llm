@@ -116,7 +116,8 @@ import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { pyodideWithEngine } from "./engine.mjs";
 import { MODELS } from "../src/models.js";
-import * as wgsl from "../public/shaders.js";
+import { built, python as sources, runtime, runtimeUrl } from "./tree.mjs";
+const wgsl = await import(runtimeUrl("shaders.js"));
 import { leave } from "./leave.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -442,7 +443,7 @@ for (const id of ids) {
     const prefix = id.slice(0, -".json".length);
     options = JSON.parse(fs.readFileSync(id, "utf8"));
     text = TEXTS.english.repeat(3);
-    const native = spawnSync(process.env.PYTHON ?? "python3", ["-c", `import sys, json\nsys.path.insert(0, ${JSON.stringify(path.join(root, "public"))})\n${PYTHON}
+    const native = spawnSync(process.env.PYTHON ?? "python3", ["-c", `import sys, json\nsys.path.insert(0, ${JSON.stringify(sources())})\n${PYTHON}
 data, vocabulary = open(sys.argv[1] + ".bin", "rb").read(), open(sys.argv[1] + ".tokenizer.bin", "rb").read()
 print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open(sys.argv[1] + ".json")))))`, prefix, text],
       { encoding: "utf8", maxBuffer: 1 << 30, stdio: ["ignore", "pipe", "inherit"] });
@@ -501,8 +502,8 @@ function caseOf(id, options, reference, bytes) {
 // ---- the browser: a page that is cross-origin isolated (its own headers), a worker that runs forward.js
 const HARNESS = /* js */ `
 const search = "?v=gpu-check";
-const { compileKernels, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf } = await import("/public/forward.js" + search);
-const { GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import("/public/jobs.js" + search);
+const { compileKernels, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf } = await import("/runtime/forward.js" + search);
+const { GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import("/runtime/jobs.js" + search);
 const fetched = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
 const b64 = (floats) => {
   const bytes = new Uint8Array(floats.buffer, floats.byteOffset, floats.byteLength);
@@ -510,7 +511,7 @@ const b64 = (floats) => {
   for (let i = 0; i < bytes.length; i += 32768) text += String.fromCharCode(...bytes.subarray(i, i + 32768));
   return btoa(text);
 };
-const openGpu = () => new Worker("/public/gpu.js" + search, { type: "module" });
+const openGpu = () => new Worker("/runtime/gpu.js" + search, { type: "module" });
 // T241: the numbers of the requests the harness itself sends the GPU's worker (forward.js counts its own from 1)
 let ownSerial = 0x40000000;
 // T243: the blocks forward.js is to refuse, a run each of those that end with it (refusedBlock): the value in the row
@@ -518,7 +519,7 @@ let ownSerial = 0x40000000;
 let refusals = 0;
 // T147: every tiled shader of the matrices this adapter can make (each forced in a run of its own), and the one the
 // GPU's worker chooses by timing them (the first run)
-const wgsl = await import("/public/shaders.js" + search);
+const wgsl = await import("/runtime/shaders.js" + search);
 const adapter = await navigator.gpu?.requestAdapter();
 // (T232, ternary: those of a model of ternary weights, the packed ones alone; --forms does not narrow them)
 const formsOf = (ternary) => (!adapter ? [] : wgsl.promptForms({ half: adapter.features.has("shader-f16"), subgroups: adapter.features.has("subgroups"),
@@ -627,7 +628,7 @@ const quantizerProbe = async () => {
   return { rows };
 };
 try {
-  const narrow = compileKernels(await fetched("/public/simdkernel_shared.wasm"), await fetched("/public/simdkernel_relaxed_shared.wasm"));
+  const narrow = compileKernels(await fetched("/built/simdkernel_shared.wasm"), await fetched("/built/simdkernel_relaxed_shared.wasm"));
   const results = [];
   const quantizers = await quantizerProbe().catch((error) => ({ error: String(error?.stack ?? error) }));
   for (const c of await (await fetch("/cases.json")).json()) {
@@ -639,7 +640,7 @@ try {
     const checkpoint = await fetched(c.checkpoint), size = checkpoint.length, tokens = c.reference.tokens, n = tokens.length - 1;
     // T155: a 64-bit memory (c.wide) with its kernels, the checkpoint 4 GiB up as threads-check's --high puts it
     const high = c.wide ? 2 ** 32 : 0;
-    const kernels = c.wide ? compileKernels(await fetched("/public/simdkernel_shared64.wasm"), await fetched("/public/simdkernel_relaxed_shared64.wasm"), true) : narrow;
+    const kernels = c.wide ? compileKernels(await fetched("/built/simdkernel_shared64.wasm"), await fetched("/built/simdkernel_relaxed_shared64.wasm"), true) : narrow;
     const after = footprint(c.reference.header, size, { dtype: c.dtype, halfKV: true, shared: true, gpu: true, head_dim: c.headDim, arch: c.arch });
     const { memory, base: low } = weightsMemory(size + high, { shared: true, wide: Boolean(c.wide), after });
     const base = low + high;
@@ -1062,8 +1063,11 @@ const server = http.createServer((req, res) => {
   // (T152: and NumPy's greedy ids after the prompt, which the harness feeds the GPU's steps)
   if (pathname === "/cases.json") return send(types[".json"], JSON.stringify(cases.map(({ file, reference: { tokens, header, greedy }, ...c }) => ({ ...c, reference: { tokens, header, greedy } }))));
   if (found) return send("application/octet-stream", fs.readFileSync(found.file));
-  const file = path.join(root, "public", pathname.replace(/^\/public\//, ""));
-  if (!pathname.startsWith("/public/") || !fs.existsSync(file)) {
+  // (the runtime's files and the built kernels, each from where this tree keeps them: tests/tree.mjs)
+  const kinds = { "/runtime/": runtime, "/built/": built };
+  const kind = Object.keys(kinds).find((prefix) => pathname.startsWith(prefix));
+  const file = kind ? kinds[kind](pathname.slice(kind.length)) : "";
+  if (!kind || !fs.existsSync(file)) {
     res.writeHead(404, headers);
     return res.end();
   }
@@ -1132,7 +1136,7 @@ let through = false;
 globalThis.onmessage = null;  // gpu.js sets it, a module's plain assignment
 parentPort.on("message", (data) => (through ? globalThis.onmessage({ data }) : waiting.push(data)));
 globalThis.close = () => process.exit(0);
-await import(${JSON.stringify(pathToFileURL(path.join(root, "public", "gpu.js")).href + "?v=gpu-check")});
+await import(${JSON.stringify(pathToFileURL(runtime("gpu.js")).href + "?v=gpu-check")});
 through = true;
 waiting.splice(0).forEach((data) => globalThis.onmessage({ data }));
 `);
@@ -1148,7 +1152,7 @@ globalThis.Worker = class {
 };
 const ONLY = ${JSON.stringify(only ? only.split(",") : [])};
 const NAN_ROUNDS = ${JSON.stringify(nanRounds)};
-${HARNESS.replaceAll('import("/public/', `import(${JSON.stringify(pathToFileURL(path.join(root, "public")).href + "/")} + "`)}
+${HARNESS.replaceAll('import("/runtime/', `import(${JSON.stringify(runtimeUrl("").href.replace(/\/?$/, "/"))} + "`)}
 `);
   return new Promise((resolve) => {
     const worker = new Worker(harnessFile);

@@ -12,7 +12,8 @@ import re
 import sys
 
 root = sys.argv[1]
-sys.path.insert(0, root + "/public")
+from tree import python_folder
+sys.path.insert(0, python_folder(root))
 found = {}
 
 

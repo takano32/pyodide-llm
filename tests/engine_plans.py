@@ -52,7 +52,8 @@ def engine_plan(L, header, dtype, form, more, size):
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, sys.argv[1] + "/public")
+    from tree import python_folder
+    sys.path.insert(0, python_folder(sys.argv[1]))
     import llama2_convert as C
     import llama2_numpy as L
 

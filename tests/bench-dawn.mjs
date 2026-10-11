@@ -4,15 +4,16 @@
 // line "RESULT <seconds> <json>" (its result, or { error }). T219 (from T191's review's throwaway tool): the CI's
 // tests.yml runs it with extra= on a branch, e.g. the step "check" for the sampling's verdicts.
 //   VK_ICD_FILENAMES=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -1) \
-//   node tests/bench-dawn.mjs <the webgpu package's directory> [<a public directory>] [<step>] [<counts>] [<keys>]
+//   node tests/bench-dawn.mjs <the webgpu package's directory> [<the directory of the runtime's files: this tree's by default>] [<step>] [<counts>] [<keys>]
 // step: as the page asks the worker ("info", "check", "prompt", "generate", ...); counts: the prompt's, as 1,16,64;
 // keys: only these of the result, as "sampling,sampling in chunks" (the check's verdicts are long).
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { runtime } from "./tree.mjs";
 
-const [webgpu, dir = "public", step = "check", counts = "16", keys = ""] = process.argv.slice(2);
+const [webgpu, dir = runtime(), step = "check", counts = "16", keys = ""] = process.argv.slice(2);
 if (!webgpu) {
-  console.error("node tests/bench-dawn.mjs <the webgpu package's directory> [<a public directory>] [<step>] [<counts>] [<keys>]");
+  console.error("node tests/bench-dawn.mjs <the webgpu package's directory> [<the directory of the runtime's files: this tree's by default>] [<step>] [<counts>] [<keys>]");
   process.exit(2);
 }
 const { create, globals } = await import(pathToFileURL(path.resolve(webgpu, "index.js")).href);

@@ -20,7 +20,8 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "public"))
+from tree import python_folder
+sys.path.insert(0, python_folder(HERE.parent))
 import llama2_convert  # noqa: E402
 from llama2_numpy import ternary  # noqa: E402
 

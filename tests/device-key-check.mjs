@@ -36,8 +36,9 @@ import { parse } from "@babel/parser";
 import { transformSync } from "esbuild";
 import { rolldown } from "rolldown";
 import { oneSource } from "./shaders-source.mjs";
+import { runtime, runtimeUrl } from "./tree.mjs";
 
-const read = (file) => fs.readFileSync(new URL(`../public/${file}`, import.meta.url), "utf8");
+const read = (file) => fs.readFileSync(runtime(file), "utf8");
 const source = oneSource();
 const program = parse(source, { sourceType: "module" }).program;
 
@@ -115,7 +116,7 @@ function run(text, places = exportWords) {
   }
   return new Function(`${plain}\nreturn { deviceKey };`)().deviceKey;
 }
-const real = (await import("../public/shaders.js"));
+const real = (await import(runtimeUrl("shaders.js")));
 const KEYS = { plain: keysOf(real.deviceKey, false), ternary: keysOf(real.deviceKey, true) };
 assert.deepEqual(keysOf(run(source), false), KEYS.plain, "the modules run as one function's body give the keys of shaders.js imported");
 assert.equal(new Set([...KEYS.plain, ...KEYS.ternary]).size, 2 * DEVICES.length, "a key for each device, and for its ternary models");
@@ -139,8 +140,8 @@ const isShader = (name) => typeof real[name] === "string"
 // T352: gpu.js is a window over the modules of public/gpu/ now, and the worker is all of those files: each is read, and
 // what is said of "gpu.js" below is said of them together (a shader named or compiled in any of them). Every file of the
 // folder is read, whether or not the window asks for it (that it asks for them all is tests/gpu-modules-check.mjs's).
-const gpuFiles = ["gpu.js", ...fs.readdirSync(new URL("../public/gpu/", import.meta.url)).filter((name) => name.endsWith(".js")).sort().map((name) => `gpu/${name}`)];
-assert.ok(gpuFiles.length > 1, "public/gpu/ holds the worker's modules");
+const gpuFiles = ["gpu.js", ...fs.readdirSync(runtime("gpu")).filter((name) => name.endsWith(".js")).sort().map((name) => `gpu/${name}`)];
+assert.ok(gpuFiles.length > 1, "gpu/ holds the worker's modules");
 const gpuNodes = gpuFiles.flatMap((file) => {
   const text = read(file);
   return [...under(parse(text, { sourceType: "module" }).program)].map((n) => ({ n, file, text }));

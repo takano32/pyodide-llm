@@ -22,6 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { otherTree } from "./other-tree.mjs";
+import { treeOf } from "./tree.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
@@ -100,15 +101,16 @@ for (const file of files) {
   console.log(`${file}: the same functions, in another order (${p.functions} functions, ${p.order.length} exports; ${sums})`);
   reordered += 1;
 }
-// public/'s are this tree's
+// the built files this tree keeps (tests/tree.mjs says where) are this tree's
 let stale = 0;
+const kept = treeOf().folders.built;
 for (const file of fs.readdirSync(mine)) {
-  const built = path.join(root, "public", file);
+  const built = treeOf().built(file);
   if (!fs.existsSync(built) || !fs.readFileSync(built).equals(fs.readFileSync(path.join(mine, file)))) {
-    console.log(`public/${file}: ${fs.existsSync(built) ? "is not what this tree builds" : "is not there"}: make kernels (and is every file of kernels/ in the Makefile's rule?)`);
+    console.log(`${kept}/${file}: ${fs.existsSync(built) ? "is not what this tree builds" : "is not there"}: make kernels (and is every file of kernels/ in the Makefile's rule?)`);
     stale += 1;
   }
 }
-if (!stale) console.log("public/: what this tree builds");
-console.log(`kernels-same: ${failed || stale ? "FAILED" : "ok"} (${files.length} files: ${identical} the same bytes, ${reordered} the same functions in another order${failed ? ", the rest different" : ""}${stale ? `, ${stale} of public/ stale` : ""})`);
+if (!stale) console.log(`${kept}/: what this tree builds`);
+console.log(`kernels-same: ${failed || stale ? "FAILED" : "ok"} (${files.length} files: ${identical} the same bytes, ${reordered} the same functions in another order${failed ? ", the rest different" : ""}${stale ? `, ${stale} of ${kept}/ stale` : ""})`);
 process.exit(failed || stale ? 1 : 0);

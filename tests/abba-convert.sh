@@ -11,7 +11,9 @@ set -u
 dir=$1; rounds=${2:-8}; shift 2 || true; dtypes=${*:-int8 float32}
 if [ ! -d .tmp/base ]; then
   git fetch -q --depth 1 origin main && git worktree add -q .tmp/base FETCH_HEAD
-  cp -r node_modules .tmp/base/ && cp public/simdkernel* .tmp/base/public/
+  # (the built kernels are where each tree keeps them: tests/tree.mjs)
+  cp -r node_modules .tmp/base/ && mkdir -p "$(node tests/tree.mjs --root .tmp/base built)" &&
+    cp "$(node tests/tree.mjs built)"/simdkernel* "$(node tests/tree.mjs --root .tmp/base built)"/
 fi
 # T374.2.1: every run gets a layout of its own (LAYOUT: see tests/profile-convert.mjs): where the buffers lie is the
 # same in every run of one tool, and differs between two tools or trees. A base tree whose tool does not know LAYOUT

@@ -8,13 +8,13 @@
 // One thread: a second would take its chunks in an order of its own.
 import crypto from "node:crypto";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { plans } from "./plans.mjs";
+import { treeOf } from "./tree.mjs";
 
 const root = path.resolve(process.argv[2] ?? ".");
-const at = (file) => pathToFileURL(path.join(root, file));
-const { createForward, footprint, keysInHalf } = await import(at("public/forward.js"));
-const { CONTROL_BYTES } = await import(at("public/jobs.js"));
+const tree = treeOf(root);
+const { createForward, footprint, keysInHalf } = await import(tree.runtimeUrl("forward.js"));
+const { CONTROL_BYTES } = await import(tree.runtimeUrl("jobs.js"));
 const { plansOf, planOf, FORM, empty } = plans(root);
 const PAGE = 65536, MiB = 2 ** 20;
 const LINEAR = { every: 4, key_heads: 8, value_heads: 16, key_dim: 128, value_dim: 128, conv: 4 };

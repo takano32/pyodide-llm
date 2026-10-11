@@ -102,10 +102,11 @@ def test_jinja2_is_imported_once_and_not_before_a_template_is_read():
     import sys
     from pathlib import Path
     pytest.importorskip("jinja2")
-    public = Path(__file__).resolve().parent.parent / "public"
+    from tree import python_folder
+    sources = python_folder(Path(__file__).resolve().parent.parent)
     script = ("import sys; sys.path.insert(0, sys.argv[1]); import llama2_convert as c; print('jinja2' in sys.modules); "
               "print(c.one_turn('{{ messages[0].content }}', {})); print('jinja2' in sys.modules)")
-    said = subprocess.check_output([sys.executable, "-c", script, str(public)], text=True).split()
+    said = subprocess.check_output([sys.executable, "-c", script, sources], text=True).split()
     assert said == ["False", "{prompt}", "True"]
     from convert.template import jinja_environment
     assert jinja_environment() is jinja_environment()

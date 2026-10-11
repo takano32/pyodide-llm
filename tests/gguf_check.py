@@ -50,7 +50,8 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "public"))
+from tree import python_folder
+sys.path.insert(0, python_folder(HERE.parent))
 
 # ------------------------------------------------------------------------------------------- the reference reader
 # GGUF v2/v3: "GGUF", version u32, tensor count u64, metadata count u64, the metadata (key, type u32, value), the

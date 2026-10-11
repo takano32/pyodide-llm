@@ -3,11 +3,12 @@
 // Made-up times: the CPU's ms a token of its blocks, gpu.js's two blocks timed as it starts, the blocks the GPU then ran.
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { aloneHolds, BOTH_ON_8, aloneVerdict, cpuReadBytes, footprint, gpuBytes, gpuLine, gpuOnlyPlan, gpuOnlyUnfit, gpuOnlyWeights, gpuHoles, layerWeightsOf, placer, PROMPTS_CPU,
-  PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes, USAGE_UNKNOWN, weightsPlace } from "../public/forward.js";
-import { deviceKey, fusedDp4aMatVec, halvesOf, OUTLIERS_MOST, outliersOf, quantizedLikeCpu, ternaryMatVec, ternaryValues, tiledOff, tokenAttentionData,
-  tokenAttentionOff } from "../public/shaders.js";
+const { aloneHolds, BOTH_ON_8, aloneVerdict, cpuReadBytes, footprint, gpuBytes, gpuLine, gpuOnlyPlan, gpuOnlyUnfit, gpuOnlyWeights, gpuHoles, layerWeightsOf, placer, PROMPTS_CPU,
+  PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes, USAGE_UNKNOWN, weightsPlace } = await import(runtimeUrl("forward.js"));
+const { deviceKey, fusedDp4aMatVec, halvesOf, OUTLIERS_MOST, outliersOf, quantizedLikeCpu, ternaryMatVec, ternaryValues, tiledOff, tokenAttentionData,
+  tokenAttentionOff } = await import(runtimeUrl("shaders.js"));
 import { usedAfter } from "../src/bench.js";
+import { python as sources, runtimeUrl } from "./tree.mjs";
 
 // a GPU with a fixed cost of 40 ms a block and 0.5 ms a token (16 tokens 48 ms, 64 tokens 72 ms)
 const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
@@ -130,7 +131,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
 // repository rounds toward zero (lavapipe and SwiftShader round to the nearest), so this is where that is held
 {
   globalThis.onmessage = null;  // (the worker's file sets it as a module's plain assignment)
-  const { fromHalf, halvesSaid, farthest, heldHalves, toHalf } = await import("../public/benchmark/gpu.js");
+  const { fromHalf, halvesSaid, farthest, heldHalves, toHalf } = await import(runtimeUrl("benchmark/gpu.js"));
   const toFloat = (h) => {
     const sign = h & 0x8000 ? -1 : 1, exponent = (h >> 10) & 0x1f, fraction = h & 0x3ff;
     return exponent ? sign * 2 ** (exponent - 15) * (1 + fraction / 1024) : sign * 2 ** -24 * fraction;
@@ -204,7 +205,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   // the stream of a float form on llm-jp-3 150M came to 3.2 times its line off the nearest's (CI, Dawn with every
   // conversion cut toward zero), and the form was refused
   {
-    const { heldFloats } = await import("../public/gpu.js");
+    const { heldFloats } = await import(runtimeUrl("gpu.js"));
     const asked = (how) => Float64Array.from(values, (x) => toFloat(how(x)));
     for (const how of [nearest, inwards, outwards]) assert.deepEqual([...heldFloats(values, asked(how))], [...asked(how)], `${how.name}: the device's own`);
     const largest = values.reduce((most, x) => Math.max(most, Math.abs(x)), 0), top = [...values.keys()].filter((i) => Math.abs(values[i]) >= largest / 4);
@@ -587,7 +588,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
 // many (a ninth channel past the Outliers' room would throw as the plan is made: the GPU then lost for a model that
 // has them): one number in two languages
 {
-  const python = fs.readFileSync(new URL("../public/engine/checkpoint.py", import.meta.url), "utf8");
+  const python = fs.readFileSync(sources("engine/checkpoint.py"), "utf8");
   assert.equal(Number(/^OUTLIER_CHANNELS = (\d+)$/m.exec(python)?.[1]), OUTLIERS_MOST, "llama2_numpy.OUTLIER_CHANNELS is shaders.js's OUTLIERS_MOST");
   const words = outliersOf([5, 70, 130, 255, 256, 300, 2047, 3], 151936, 2048);
   assert.deepEqual(Array.from(words), [8, 151936, 2048, 0, 5, 70, 130, 255, 256, 300, 2047, 3], "count, rows, n, a word of nothing, then the channels: 48 bytes of the uniform");

@@ -12,11 +12,12 @@
 // took the device's bits): the stream of a float form 3.4e-4 to 2.5e-3 (45% past its line), the scale of the DP4A
 // form's quantized attention output 5.7e-4 to 1.2e-2 (97% past its line), the cache 4.5e-4 to 9.7e-4.
 import assert from "node:assert/strict";
+import { runtimeUrl } from "./tree.mjs";
 
 globalThis.onmessage = null;  // (the worker's file sets it as a module's plain assignment)
-const { fromHalf, judgeLayer, layerCheckData, layerReference, load, toHalf } = await import("../public/benchmark/gpu.js");
+const { fromHalf, judgeLayer, layerCheckData, layerReference, load, toHalf } = await import(runtimeUrl("benchmark/gpu.js"));
 await load();
-const { GROUP, quantizedLikeCpu } = await import("../public/shaders.js");
+const { GROUP, quantizedLikeCpu } = await import(runtimeUrl("shaders.js"));
 
 // a seeded Math.random (mulberry32): the check's data is random, and this holds it to a number it was run on
 const random = Math.random;

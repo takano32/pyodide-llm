@@ -20,11 +20,12 @@
 //   (--kernels is for the broken builds a review makes: kernels/build.py's plain_module() into a folder of its own)
 import fs from "node:fs";
 import path from "node:path";
-import { addressed } from "../public/jobs.js";
+import { built as kernelsFolder, runtimeUrl } from "./tree.mjs";
+const { addressed } = await import(runtimeUrl("jobs.js"));
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
-const folder = path.resolve(args.includes("--kernels") ? args[args.indexOf("--kernels") + 1] : `${root}public`);
+const folder = path.resolve(args.includes("--kernels") ? args[args.indexOf("--kernels") + 1] : kernelsFolder());
 const BAD = [0x7c00, 0xfc00, 0x7e00, 0x7c01, 0xffff, 0xfe01];
 const names = { 0x7c00: "+inf", 0xfc00: "-inf", 0x7e00: "a quiet NaN", 0x7c01: "a NaN of the smallest mantissa", 0xffff: "a NaN of every bit", 0xfe01: "a negative NaN" };
 const finiteHalf = (h) => (h & 0x7c00) !== 0x7c00;
