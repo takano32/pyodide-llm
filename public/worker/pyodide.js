@@ -190,9 +190,16 @@ export async function pythonArchive(name, signal) {
 }
 
 /** Unpacks an archive (its bytes, or a promise of them) where `import` finds what is in it: Pyodide's working folder,
- * where the files were written one by one before. Nothing is placed unless the whole archive came. */
-export async function placePython(pyodide, archive) {
-  pyodide.unpackArchive(await archive, "zip");
+ * where the files were written one by one before. Nothing is placed unless the whole archive came.
+ * An archive that came and cannot be read (cut short, or something else served in its place) is said so by its name
+ * (T432): what Python says of it names a temporary file. An archive that did not come fails as its fetch did. */
+export async function placePython(pyodide, archive, name) {
+  const bytes = await archive;
+  try {
+    pyodide.unpackArchive(bytes, "zip");
+  } catch (error) {
+    throw new Error(`Could not read ${name}: the file did not arrive whole. Reload the page to try again.`, { cause: error });
+  }
 }
 
 // T397: jinja2, with which the converter renders a model's own chat template as transformers does (convert/template.py).
