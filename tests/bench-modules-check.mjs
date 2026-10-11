@@ -30,9 +30,13 @@ const GLOBALS = new Set(("Array ArrayBuffer Atomics BigInt64Array Boolean Error 
 // with the window's own ?v=) or, where a bundler links the files, to what the window reaches, and says a ring)
 const tree = treeOf();
 const at = (name) => `benchmark/${name}`;  // (a file of this worker, by its name under the runtime's folder)
-const linked = windowed(at("gpu.js"), { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled });
-const files = new Map([...linked.files].map(([name, { text }]) => [name.slice(at("").length), text]));
-const programs = new Map([...linked.files].map(([name, { program }]) => [name.slice(at("").length), program]));
+const linked = windowed(at("gpu.js"), { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
+// (a file by its name under the worker's folder; one outside it that a module takes names of, T367.3's table of the
+// built files, by its way from there: "../built.js")
+const short = (name) => (name.startsWith(at("")) ? name.slice(at("").length) : `../${name}`);
+const full = new Map([...linked.files.keys()].map((name) => [short(name), name]));
+const files = new Map([...linked.files].map(([name, { text }]) => [short(name), text]));
+const programs = new Map([...linked.files].map(([name, { program }]) => [short(name), program]));
 const exported = new Map([...programs].map(([name, program]) => [name, new Set(program.body.flatMap((node) => {
   if (node.type !== "ExportNamedDeclaration") return [];
   if (!node.declaration) return node.specifiers.map((specifier) => specifier.exported.name);
@@ -48,16 +52,17 @@ let taken = 0;
 for (const [name, program] of programs) {
   const unknown = [...namesOf(files.get(name)).free].filter((used) => !GLOBALS.has(used));
   assert.deepEqual(unknown, [], `${name} uses ${unknown}, which it neither declares nor takes from another file: a ReferenceError where the line runs`);
-  const { takes: taking, left } = linked.files.get(at(name));
+  const { takes: taking, left } = linked.files.get(full.get(name));
   for (const node of program.body) {
     const d = node.type === "VariableDeclaration" ? node.declarations[0] : null;
     if (d?.init?.type !== "AwaitExpression") continue;
     assert.ok(left.includes(node), `${name}: \`${files.get(name).slice(d.init.start, d.init.end)}\`: what a file awaits at its top is another's names, taken apart`);
   }
   for (const { from, names, how } of taking) {
-    const file = from.slice(at("").length);
-    // (a module takes of a module of the folder; the window, where it has a list, of the list alone)
-    assert.ok(from.startsWith(at("gpu/")) && exported.has(file), `${name} takes names from ${from}, which is no module of the worker`);
+    const file = short(from);
+    // (a module takes of a module of the folder, or of a file outside it that was read for that; the window, where it
+    // has a list, of the list alone)
+    assert.ok((from.startsWith(at("gpu/")) || linked.others.includes(from)) && exported.has(file), `${name} takes names from ${from}, which is no module of the worker`);
     assert.ok(tree.bundled || (how === "await modules") === (name === "gpu.js"), `${name}: a module is taken from with this file's own ?v=, and by the window from its list`);
     for (const { imported: wanted, local } of names) {
       assert.equal(wanted, local, `${name}: a plain name, taken under its own`);

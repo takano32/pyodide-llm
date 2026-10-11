@@ -23,13 +23,14 @@ import { treeOf } from "./tree.mjs";
 /** [{ name, url, source, reads: [module names] }], the modules first, each after what it reads, worker.js last.
  * tree: tests/tree.mjs's (this tree's by default): where the runtime is, and which form its imports have. */
 export function workerScripts(tree = treeOf()) {
-  const { files, there } = windowed("worker.js", { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled });
+  const { files, there, others } = windowed("worker.js", { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
   // (the second name of "export const A = 1, B = 2;" too)
   const exported = (name, file) => new RegExp(`^export ((async )?(function\\*?|const|let|class) |const [^;\\n]*, )${name}\\b`, "m").test(files.get(file).text);
   // (a module by its name without the folder and the .js, as the checks that read these scripts know it)
-  const short = (file) => (file === "worker.js" ? file : file.slice("worker/".length, -".js".length));
+  // (a file outside worker/ that a module takes names of, T367.3's built.js: by its own name without the .js)
+  const short = (file) => (file === "worker.js" ? file : file.replace(/^worker\//, "").slice(0, -".js".length));
   const scripts = new Map();
-  for (const file of [...there, "worker.js"]) {
+  for (const file of [...others, ...there, "worker.js"]) {
     const { text, takes, left } = files.get(file), name = short(file), window = file === "worker.js";
     for (const { from, names } of takes) for (const { imported } of names) {
       if (!exported(imported, from)) throw new Error(`${name} imports ${imported} from ${short(from)}.js, which does not export it`);
@@ -43,7 +44,7 @@ export function workerScripts(tree = treeOf()) {
   }
   const ordered = [];
   try {
-    for (const file of [...there, "worker.js"]) reached(file, (name) => files.get(name).takes.map(({ from }) => from), ordered);
+    for (const file of [...others, ...there, "worker.js"]) reached(file, (name) => files.get(name).takes.map(({ from }) => from), ordered);
   } catch (error) {
     throw new Error(`the worker's modules import in a circle: ${error.message}`);
   }

@@ -63,7 +63,11 @@ jobs:
           bash tests/suite.sh light
 
       - name: Build the site
-        run: npm run build
+        # (T367.3.1, dist-check: what was built, held to the names the Service Worker takes apart: a file it would
+        # never drop the old copy of, or two that would put each other's copy out, is not deployed)
+        run: |
+          npm run build
+          node tests/dist-check.mjs
 
       - name: Setup Pages
         uses: actions/configure-pages@v6

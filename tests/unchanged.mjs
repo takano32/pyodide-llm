@@ -5,6 +5,8 @@
 //   node tests/unchanged.mjs [--before <a commit, default origin/main>] [shaders models calls choices exports layouts python page bench gpuworker sizes]
 //   (PYTHON=.venv/bin/python; in CI: tests.yml's extra="node tests/unchanged.mjs")
 //
+//   --built [<a dist>]: `shaders` with the working tree's side read from a build (T367.3.1: see where the flag is read)
+//
 //   shaders  every export of public/shaders.js (a text as it is; T366: a maker of WGSL as the texts it makes, for every
 //            choice its text branches on; another function as its source) and deviceKey() for 192 made-up adapters: a
 //            device forgets the forms it measured when the key changes (AGENTS.md). The key holds the WGSL a device is
@@ -52,12 +54,19 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { transformSync } from "esbuild";
 import { parse } from "@babel/parser";
 import { otherTree } from "./other-tree.mjs";
+import { builtModule } from "./bundle.mjs";
 import { treeOf } from "./tree.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const flag = (name, otherwise) => (args.includes(name) ? args.splice(args.indexOf(name), 2)[1] : otherwise);
 const before = flag("--before", "origin/main");
+// --built [<a dist>] (T367.3.1): the working tree's side of `shaders` is the shaders as a build wrote them
+// (dist/_astro/shaders.<hash>.js: tests/bundle.mjs), not the sources: every text, every maker's WGSL over its branches
+// and every key, as the worker of a visitor's browser has them. A function that makes no WGSL is a bundler's print of
+// its source there and is counted, not compared.
+const builtAt = args.indexOf("--built");
+const built = builtAt < 0 ? undefined : { dist: args[builtAt + 1] && fs.existsSync(path.join(args[builtAt + 1], "_astro")) ? args.splice(builtAt, 2)[1] : (args.splice(builtAt, 1), undefined) };
 const kinds = args.length ? args : ["shaders", "models", "calls", "choices", "exports", "layouts", "python", "page", "bench", "gpuworker", "sizes"];
 const git = (...command) => execFileSync("git", command, { cwd: root, maxBuffer: 1 << 28 });
 const python = process.env.PYTHON ?? "python3";
@@ -95,10 +104,12 @@ const MAKERS = {
 };
 
 async function shaders(other) {
-  const [was, now] = await Promise.all([other, root].map((tree) => import(treeOf(tree).runtimeUrl("shaders.js"))));
-  const texts = (module) => Object.fromEntries(Object.entries(module).map(([name, value]) =>
+  const [was, now] = await Promise.all([treeOf(other).runtimeUrl("shaders.js"), built ? builtModule("shaders", built.dist) : treeOf(root).runtimeUrl("shaders.js")].map((url) => import(url)));
+  // (--built: a function that makes no WGSL is printed anew by the bundler: its source is no text to compare)
+  const printed = built ? Object.entries(now).filter(([name, value]) => typeof value === "function" && !MAKERS[name]).map(([name]) => name) : [];
+  const texts = (module) => Object.fromEntries(Object.entries(module).filter(([name]) => !printed.includes(name) || !(name in was) || !(name in now)).map(([name, value]) =>
     [name, typeof value === "function" && MAKERS[name] ? MAKERS[name].map((given) => value(...given)).join("\n----\n") : text(value)]));
-  let ok = said("shaders, the exports", differences(texts(was), texts(now)));
+  let ok = said(`shaders, the exports${built ? " as built" : ""}`, differences(texts(was), texts(now)), built ? ` (and ${printed.length} functions that make no WGSL, a bundler's print of their sources: there on both sides, not compared)` : "");
   const keys = { was: {}, now: {} };
   for (const packed of [false, true]) {
     Object.defineProperty(globalThis, "navigator", { configurable: true,

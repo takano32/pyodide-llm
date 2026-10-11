@@ -89,7 +89,10 @@ jobs:
 
       - name: Build the site
         if: ${{ !(inputs.only_extra == true || inputs.only_extra == 'true') }}
-        run: npm run build
+        # (and what was built, as the deploy holds it: tests/dist-check.mjs)
+        run: |
+          npm run build
+          node tests/dist-check.mjs
 
       - name: More
         if: ${{ inputs.extra != '' }}

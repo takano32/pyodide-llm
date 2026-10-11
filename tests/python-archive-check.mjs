@@ -21,7 +21,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import zlib from "node:zlib";
 import { loadPyodide } from "pyodide";
 import { RULE, treeOf } from "./tree.mjs";
@@ -160,8 +160,9 @@ const made = build(tree.python(), path.join(work, "tree"));
   // an archive that lies built in the tree (npm run build, npm run dev and make python build them) is today's
   const beside = [];
   for (const name of Object.keys(ARCHIVES)) {
-    const built = tree.served(name, { maybe: true });
-    if (!fs.existsSync(built)) continue;
+    // (beside what is served as it is, or among the built files: wherever this tree's python_archive.py writes them)
+    const built = [tree.served(name, { maybe: true }), tree.built(name, { maybe: true })].find((file) => fs.existsSync(file));
+    if (!built) continue;
     assert.ok(fs.readFileSync(built).equals(made[name]), `${path.relative(root, built)} is not what python_archive.py makes of ${where} now: an old archive beside newer sources (make python)`);
     beside.push(path.relative(root, built));
   }
@@ -185,12 +186,16 @@ const made = build(tree.python(), path.join(work, "tree"));
   assert.equal(requests.length, 0, "the worker asked for something as its modules ran");
   const beside = (name) => new URL(name, tree.runtimeUrl("worker.js")).href;
   context.location.search = "?v=0123abc";
-  const answers = (bytes) => (url) => (/\.zip\?v=0123abc$/.test(url) ? new Response(bytes) : new Response("", { status: 404 }));
+  // the address an archive is asked for at: beside the worker with the worker's ?v=<build> where each file is served as
+  // it is; the built file by its own name where a bundler links the runtime (it gives the file a name with a hash)
+  const asked = (name) => (tree.bundled ? pathToFileURL(tree.built(name, { maybe: true })).href : `${beside(name)}?v=0123abc`);
+  const last = (url) => url.slice(url.lastIndexOf("/") + 1);
+  const answers = (bytes) => (url) => (Object.keys(ARCHIVES).some((name) => url === asked(name)) ? new Response(bytes) : new Response("", { status: 404 }));
 
   // what is asked for: the archive beside the worker, with the worker's ?v=<build>, once; its bytes whole
   fresh(answers(made["engine.zip"]));
   const came = await run("pythonArchive")("engine.zip");
-  assert.deepEqual(requests.map(({ url, method }) => `${method} ${url}`), [`GET ${beside("engine.zip")}?v=0123abc`]);
+  assert.deepEqual(requests.map(({ url, method }) => `${method} ${url}`), [`GET ${asked("engine.zip")}`]);
   assert.ok(Buffer.from(came).equals(made["engine.zip"]), "the archive's bytes, whole");
   // an archive that is not there: the words a file of the site has when it cannot be fetched
   fresh(() => new Response("", { status: 404 }));
@@ -223,15 +228,15 @@ const made = build(tree.python(), path.join(work, "tree"));
   };
   context.stand = { pyodide };
   run("state.pyodide = stand.pyodide; state.llama2_convert = undefined;");
-  fresh((url, init) => { told.push(`fetch ${url.slice(url.lastIndexOf("/") + 1)}`); return answers(made["converter.zip"])(url, init); });
+  fresh((url, init) => { told.push(`fetch ${last(url)}`); return answers(made["converter.zip"])(url, init); });
   assert.equal(requests.length, 0);
   const load = new AbortController();
   const converter = await run("converter")(load.signal);
   assert.equal(converter.name, "llama2_convert");
   assert.equal(run("state.llama2_convert"), converter);
-  assert.deepEqual(told, ["loadPackage jinja2", "fetch converter.zip?v=0123abc", `unpack zip of ${made["converter.zip"].length} bytes`, "import jinja2", "import llama2_convert"],
+  assert.deepEqual(told, ["loadPackage jinja2", `fetch ${last(asked("converter.zip"))}`, `unpack zip of ${made["converter.zip"].length} bytes`, "import jinja2", "import llama2_convert"],
     "jinja2 is asked for first, the archive fetched and unpacked meanwhile, and the converter imported once both are there");
-  assert.deepEqual(requests.map(({ url, signal }) => [url, signal === load.signal]), [[`${beside("converter.zip")}?v=0123abc`, true]], "one request, the load's to cancel");
+  assert.deepEqual(requests.map(({ url, signal }) => [url, signal === load.signal]), [[asked("converter.zip"), true]], "one request, the load's to cancel");
   told.length = 0;
   assert.equal(await run("converter")(load.signal), converter);
   assert.deepEqual([told, requests.length], [[], 1], "the second conversion fetched or placed the converter again");
@@ -244,7 +249,8 @@ const made = build(tree.python(), path.join(work, "tree"));
   // who names the archives: init() the engine's, converter() the converter's, and convert() alone calls converter().
   // (init() runs in no check in Node: it loads Pyodide from the CDN. What it asks for and when is seen in a browser,
   // tests/e2e.mjs; here its text says that the one archive it names is the engine's.)
-  const sources = Object.fromEntries(workerScripts(tree).map(({ name, source }) => [name, source]));
+  // (the worker's window and its modules: not the table of the built files, which names every one of them, T367.3)
+  const sources = Object.fromEntries(workerScripts(tree).filter(({ url }) => /\/worker(\.js$|\/)/.test(url.pathname)).map(({ name, source }) => [name, source]));
   const naming = (pattern) => Object.entries(sources).filter(([, source]) => pattern.test(source)).map(([name]) => name);
   const body = (source, head) => { const from = source.indexOf(head); assert.ok(from >= 0, `no ${head}`); return source.slice(from, source.indexOf("\n}\n", from)); };
   // (the names as the code says them, in quotes: the comments name them too)
@@ -262,7 +268,7 @@ const made = build(tree.python(), path.join(work, "tree"));
 
   // the real Pyodide: what the worker unpacks is where `import` finds it, with the sources' bytes
   const real = await loadPyodide();
-  fresh((url) => new Response(made[url.slice(url.lastIndexOf("/") + 1, url.indexOf("?"))]));
+  fresh((url) => new Response(made[last(url).split("?")[0]]));
   const spent = {};
   for (const [name, module] of Object.entries(ARCHIVES)) {
     const began = performance.now();
@@ -277,7 +283,7 @@ const made = build(tree.python(), path.join(work, "tree"));
       assert.ok(Buffer.from(real.FS.readFile(`${home}/${file}`)).equals(fs.readFileSync(tree.python(file))), `${file} was unpacked to other bytes`);
     }
   }
-  assert.deepEqual(requests.map(({ url }) => url.slice(url.lastIndexOf("/") + 1)), ["engine.zip?v=0123abc", "converter.zip?v=0123abc"]);
+  assert.deepEqual(requests.map(({ url }) => url.slice(url.lastIndexOf("/") + 1)), [last(asked("engine.zip")), last(asked("converter.zip"))]);
   ok(`in Pyodide ${real.version}: the two archives unpacked by the worker's own functions are found by import, with the sources' bytes (${Object.entries(spent).map(([name, ms]) => `${name} in ${ms.toFixed(1)} ms`).join(", ")})`);
 }
 

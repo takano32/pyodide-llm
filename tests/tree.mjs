@@ -18,8 +18,12 @@
 //   - found in two places: an error that names both (there are two worker.js, two gpu.js, several device.js: a kind's
 //     anchor must be one file, and a name is asked under its kind);
 //   - found nowhere: an error that says where it was looked for;
-//   - never looked into: node_modules, dist, .tmp, .git, .claude, __pycache__ (tree.json's "skip") and links: another
-//     tree's copy under .tmp/ is searched only when it is the tree asked about;
+//   - never looked into: the folders of the tree's root that are no part of what is built and served (tree.json's
+//     "skip": node_modules, dist, .tmp, .git, .claude, and the tests' and the documents' own, T429: a fixture or a note
+//     with an anchor's name is nobody's runtime), __pycache__ at any depth (tree.json's "anywhere"), and links: another
+//     tree's copy under .tmp/ is searched only when it is the tree asked about. A "skip" name is skipped at the root
+//     alone: a folder called dist or docs deeper in the tree is looked into like any other (T429: it was passed over
+//     without a word);
 //   - a tree is walked once a process, and what is found is remembered.
 //
 //   const tree = treeOf(folder)        (no folder: this tree)
@@ -56,11 +60,12 @@ const KINDS = Object.keys(RULE.anchors);
 const trees = new Map();  // a root -> its tree: a tree is walked once a process
 
 /** every file of a tree, as its path from the root with "/" between: no link is followed, no skipped folder entered */
-function walked(root, skip) {
+function walked(root, { skip, anywhere = [] }) {
   const files = [];
   (function walk(folder, under) {
+    const passed = under ? anywhere : [...skip, ...anywhere];  // (skip: names of the root's own folders)
     for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
-      if (entry.isDirectory()) { if (!skip.includes(entry.name)) walk(path.join(folder, entry.name), `${under}${entry.name}/`); }
+      if (entry.isDirectory()) { if (!passed.includes(entry.name)) walk(path.join(folder, entry.name), `${under}${entry.name}/`); }
       else if (entry.isFile()) files.push(`${under}${entry.name}`);
     }
   })(root, "");
@@ -72,8 +77,9 @@ export function treeOf(root = HERE, rule = RULE) {
   if (rule === RULE && trees.has(root)) return trees.get(root);
   let files;
   const tree = { root, walks: 0 };
+  const looked = `looked in every folder but the root's ${rule.skip.join(", ")}${rule.anywhere?.length ? ` and any ${rule.anywhere.join(", ")}` : ""}`;
   const all = () => {
-    if (!files) { files = walked(root, rule.skip); tree.walks += 1; }
+    if (!files) { files = walked(root, rule); tree.walks += 1; }
     return files;
   };
   /** the files whose path ends with name (a whole name, or the last names of a path) */
@@ -81,7 +87,7 @@ export function treeOf(root = HERE, rule = RULE) {
   const one = (name, what) => {
     const found = ending(name);
     if (found.length > 1) throw new Error(`${root}: ${what} is in ${found.length} places: ${found.join(" and ")}`);
-    if (!found.length) throw new Error(`${root}: no ${what} anywhere in the tree (looked in every folder but ${rule.skip.join(", ")})`);
+    if (!found.length) throw new Error(`${root}: no ${what} anywhere in the tree (${looked})`);
     return found[0];
   };
   const folders = {};
@@ -102,7 +108,7 @@ export function treeOf(root = HERE, rule = RULE) {
     // not under the kind's folder: anywhere in the tree, by the end of its path
     const found = ending(name.replace(/\/$/, ""));
     if (found.length > 1) throw new Error(`${root}: ${name} is not in ${folder(kind) || "the root"}/ (the ${kind} files), and is in ${found.length} places: ${found.join(" and ")}`);
-    if (!found.length) throw new Error(`${root}: no ${name} in ${folder(kind) || "the root"}/ (the ${kind} files) nor anywhere in the tree (looked in every folder but ${rule.skip.join(", ")})`);
+    if (!found.length) throw new Error(`${root}: no ${name} in ${folder(kind) || "the root"}/ (the ${kind} files) nor anywhere in the tree (${looked})`);
     return path.join(root, found[0]);
   };
   for (const kind of KINDS) tree[kind] = at(kind);

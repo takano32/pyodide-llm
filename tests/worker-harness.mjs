@@ -3,7 +3,9 @@
 // a clock of the test's: what the checks that run the worker in Node share (worker-check.mjs: where fetching and loading
 // meet; worker-fetches-check.mjs: what a conversion asks for).
 //
-//   const { context, run, requests, messages, fresh, body, bytesOf, sleep, clock, ... } = workerHarness({ told, gpu })
+//   const { context, run, requests, messages, fresh, body, bytesOf, sleep, clock, ... } = workerHarness({ told, gpu, root })
+//
+//   root                   the site's root the worker is told (siteRoot(): the served folder, where models/ is)
 //
 //   context, run(code)     the worker's global (its functions and `state` are its properties) and a line run in it
 //   fresh(route)           forgets the requests and the messages; route(url, init, n) answers the n-th request of that
@@ -17,10 +19,20 @@
 // The Cache API is the check's own stand-in where it needs one. What this cannot see is said at the head of
 // tests/worker-check.mjs (the Service Worker, a real line, a browser's limits) and of tests/worker-source.mjs (a missing
 // import, the wait for the modules).
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import vm from "node:vm";
 import { runWorker } from "./worker-source.mjs";
+import { treeOf } from "./tree.mjs";
 
-export function workerHarness({ told = false, gpu = false } = {}) {
+/** The site's root as these checks have it: the folder of what is served as it is, where models/ is. A worker whose
+ * files a bundler links is told the root by the page with every load (T367.3: its own URL is under _astro/, and
+ * models/ is not beside it); the checks call load() and download() themselves, so the harness says it once, as the
+ * page's first message would. A worker that finds models/ from its own file's URL (each file served as it is, beside
+ * models/) has nothing to be told: the same folder either way, so a check's URLs are the same in both. */
+export const siteRoot = (tree = treeOf()) => pathToFileURL(tree.served() + path.sep).href;
+
+export function workerHarness({ told = false, gpu = false, root = siteRoot() } = {}) {
   const SCALE = 100;  // the worker's milliseconds per real millisecond
   const MiB = 1024 * 1024, PART = 8 * MiB;
   const realNow = () => performance.now();
@@ -122,6 +134,9 @@ export function workerHarness({ told = false, gpu = false } = {}) {
   context.self = context;
   runWorker(context);
   const run = (code) => vm.runInContext(code, context);
+  // (the field is the worker's to have: one that reads no root is handed none)
+  context.rootOfTheSite = root;
+  run('if (Object.hasOwn(state, "root")) state["root"] = rootOfTheSite;');
 
   // the error a promise rejects with, and when (on the worker's clock); undefined when it resolved
   async function failure(promise) {
