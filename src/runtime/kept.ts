@@ -10,12 +10,14 @@
 // The manifest is written last in both: a folder without one is rubbish from a write that did not finish.
 // TypeScript of which only the types are erased (T368.1): the worker imports it, and so does the page.
 
+import type { Options } from "./contracts/python.ts";
+
 // (T368.1, the types. What is read here of a model of the list: where its weights come from and how they are converted.)
 export type Kept = { name: string; where: "opfs" | "cache"; manifest: Manifest };
 // what is written beside a kept model: what the worker says of the conversion (worker/convert.js: the model's id and
 // name, where it came from, the checkpoint's bytes, the options the engine gets, when), and this file's own two: the
 // converter's version and, in the Cache API, the number of parts
-export type Conversion = { id: string; name: string; repo: string; revision: string; bytes: number; options: Record<string, unknown>; saved: number };
+export type Conversion = { id: string; name: string; repo: string; revision: string; bytes: number; options: Options; saved: number };
 export type Manifest = Conversion & { converter?: number; parts?: number };
 export type Converted = { id?: string; shares?: string[]; conversion?: { dtype?: string; max_seq_len?: number };
   hf: { repo: string; revision: string; vocabulary?: { repo: string; revision: string } } };

@@ -116,7 +116,8 @@ export function contractOf(text, name = "a contract") {
 }
 
 // ---- the syntax trees of the runtime's files (a .ts file with its types blanked)
-export const treeOf = (file, find = runtime) => ({ file, program: parse(untyped(fs.readFileSync(find(file), "utf8"), file), { sourceType: "module" }).program });
+// (T368.3: by the name the tree has the file under: one asked for as x.js may be x.ts, and its types are blanked then)
+export const treeOf = (file, find = runtime) => ({ file, program: parse(untyped(fs.readFileSync(find(file), "utf8"), find(file)), { sourceType: "module" }).program });
 export function walk(node, visit, parent = null) {
   if (!node || typeof node !== "object") return;
   if (Array.isArray(node)) { node.forEach((child) => walk(child, visit, parent)); return; }

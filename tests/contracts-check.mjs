@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { parse } from "@babel/parser";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { contract, contractOf, differing, givenTo, handedTo, literalKeys, posted, readOff, returnedBy, takenBy, told, treeOf as syntaxOf, walk } from "./contracts.mjs";
 import { python, runtime } from "./tree.mjs";
 
@@ -133,10 +133,46 @@ assert.match(differing("x", set("a"), set("a"), { b: "spread in" })[0], /listed 
   console.log(`contracts-check: contracts/conduct.ts's ${requests.size} kinds of request are the ones conduct.py yields (each as long), the ${answerers.length} answerers answer and the loop ends on`);
 }
 
+// ---- T368.3: what the worker has of Python (contracts/python.ts) and of forward.js (contracts/forward-js.ts).
+// Neither other end is read by a compiler with these types (Python; JavaScript until T368.4). What is held here is
+// names, one way: every member a type says a module or an object has is a name its source has, so one renamed or
+// dropped there fails here; and every member is one the worker uses (a type that lists what nothing calls is not what
+// the worker has of it). What a call takes and gives is held by what runs the worker on the real ones (the smoke
+// test, worker-fetches-check, the browsers).
+{
+  const read = (file) => fs.readFileSync(file, "utf8");
+  const has = (text, name) => new RegExp(`(?<![\\w.])${name}\\b|\\.${name}\\b`).test(text);
+  const worker = [runtime("worker.js"), ...fs.readdirSync(runtime("worker")).map((name) => runtime(`worker/${name}`))].map(read).join("\n");
+  let held = 0;
+  const holds = (typed, type, where, text) => {
+    const names = [...typed.keysOf(type)].filter((name) => name !== "destroy");
+    assert.ok(names.length > 0, `${type} has no members`);
+    for (const name of names) {
+      assert.ok(has(text, name), `${type} says ${name}, and ${where} has no such name`);
+      assert.ok(new RegExp(`\\b${name}\\b`).test(worker), `${type} says ${name}, which nothing of the worker uses: a contract lists what the worker has, no more`);
+      held += 1;
+    }
+  };
+  const py = contract("python.ts");
+  holds(py, "EngineWindow", "src/python/llama2_numpy.py", read(python("llama2_numpy.py")));
+  holds(py, "ConverterWindow", "src/python/llama2_convert.py", read(python("llama2_convert.py")));
+  holds(py, "ConductModule", "src/python/convert/conduct.py (def conduct)", read(python("convert/conduct.py")).match(/^def (\w+)\(/gm).join("\n"));
+  holds(py, "Llama", "src/python/engine/model.py", read(python("engine/model.py")));
+  holds(py, "Conversion", "src/python/convert/conversion.py", read(python("convert/conversion.py")));
+  holds(py, "Sink", "src/python/convert/checkpoint.py (sink.<name>)", read(python("convert/checkpoint.py")).match(/\bsink\.\w+\(/g).join("\n"));
+  // forward.js: the module's own exports, by importing it; the engine's members by forward/engine.js's text
+  const forward = contract("forward-js.ts"), module = await import(pathToFileURL(runtime("forward.js")));
+  holds(forward, "Forward", "src/runtime/forward.js's exports", Object.keys(module).join("\n"));
+  holds(forward, "Engine", "src/runtime/forward/engine.js", read(runtime("forward/engine.js")));
+  holds(forward, "Outside", "src/runtime/forward.js (external())", read(runtime("forward.js")));
+  holds(forward, "GpuOnlyWeights", "src/runtime/forward/alone.js (gpuOnlyWeights())", read(runtime("forward/alone.js")));
+  console.log(`contracts-check: contracts/python.ts's and contracts/forward-js.ts's ${held} members are names of Python's and forward.js's sources, each one the worker uses`);
+}
+
 // ---- the files of src/runtime/contracts/: types alone (contract() refuses a value), and read as types alone
 const folder = path.dirname(runtime("contracts/plan.ts"));
 const files = fs.readdirSync(folder, { recursive: true }).map((name) => name.split(path.sep).join("/")).filter((name) => name.endsWith(".ts")).sort();
-assert.deepEqual(files, ["conduct.ts", "form.ts", "gpu/protocol.ts", "messages.ts", "plan.ts"], "the contracts are others now: say in AGENTS.md what holds each to its two ends");
+assert.deepEqual(files, ["conduct.ts", "form.ts", "forward-js.ts", "gpu/protocol.ts", "messages.ts", "plan.ts", "python.ts"], "the contracts are others now: say in AGENTS.md what holds each to its two ends");
 let types = 0;
 for (const name of files) types += contract(name).names.length;
 // (the runtime is under src/, where the pages that read a contract are too)
