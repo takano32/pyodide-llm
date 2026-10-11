@@ -13,27 +13,40 @@
 // Before timing, the two must write the same text from the same seed (exit 1 otherwise).
 //
 //   node tests/compare-engines.mjs [model ids of src/models.js = tiny-lm llm-jp-3-150m] [--ref origin/main]
-//                                  [--rounds 5] [--tokens 128] [--greedy]
+//                                  [--rounds 5] [--tokens 128] [--greedy] [--bundle [<dist>]] [--bundle-old <dist>]
 // --greedy: temperature 0 (the forward pass and the least of a sampler), not the entry's own sampling.
+// --bundle (T367.3.1): no other commit: both sides are the working tree's Python, old with the sources' forward.js and
+//   new with the one a build wrote (dist/_astro/forward.<hash>.js, tests/bundle.mjs; <dist>: another build's folder).
+//   What a bundler did to the forward pass, and nothing else. --bundle-old <dist>: old's forward.js is that build's
+//   too: two builds side by side (minified or not), or the same one twice, which is the control (the same code on both
+//   sides: what the tool says of no difference at all).
 import fs from "node:fs";
 import os from "node:os";
 import { loadPyodide } from "pyodide";
 import { MODELS } from "../src/models.js";
 import { otherTree } from "./other-tree.mjs";
 import { leave } from "./leave.mjs";
+import { builtModule } from "./bundle.mjs";
 import { built, placeKernels, placePython, treeOf } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
-const VALUED = ["--ref", "--rounds", "--tokens"];
+const VALUED = ["--ref", "--rounds", "--tokens", "--bundle-old"];
 const option = (name, value) => (args.includes(name) ? args[args.indexOf(name) + 1] : value);
 const ref = option("--ref", "origin/main"), rounds = Number(option("--rounds", 5)), tokens = Number(option("--tokens", 128));
 const greedy = args.includes("--greedy");
-const named = args.filter((arg, i) => !arg.startsWith("--") && !VALUED.includes(args[i - 1]));
+// (--bundle's own folder is the word after it, where that is a folder with a build in it and not a model's id)
+const bundleAt = args.indexOf("--bundle"), bundleOld = option("--bundle-old");
+const bundleDist = bundleAt >= 0 && args[bundleAt + 1] && fs.existsSync(`${args[bundleAt + 1]}/_astro`) ? args[bundleAt + 1] : undefined;
+const bundle = bundleAt >= 0 || bundleOld !== undefined;
+const named = args.filter((arg, i) => !arg.startsWith("--") && !VALUED.includes(args[i - 1]) && !(bundleDist && i === bundleAt + 1));
 const models = named.length ? named : ["tiny-lm", "llm-jp-3-150m"];
 
-const { commit, folder: other } = otherTree(ref);
+const { commit, folder: other } = bundle ? { commit: "", folder: root } : otherTree(ref);
 const trees = { old: other, new: root };
+// each side's forward.js: its tree's sources, or a build's
+const forwards = { old: bundleOld !== undefined ? builtModule("forward", bundleOld) : treeOf(other).runtimeUrl("forward.js"),
+  new: bundle ? builtModule("forward", bundleDist) : treeOf(root).runtimeUrl("forward.js") };
 
 const py = await loadPyodide();
 await py.loadPackage("numpy", { messageCallback: () => {} });
@@ -43,7 +56,7 @@ for (const [which, tree] of Object.entries(trees)) {
   // each tree's engine in a folder of its own: the two have a package of the same name (engine)
   // (the engine's files by walking each tree: its window, and its package where the commit has one)
   placePython(py, treeOf(tree), ["llama2_numpy"], `/trees/${which}`);
-  const forward = await import(treeOf(tree).runtimeUrl("forward.js"));
+  const forward = await import(forwards[which]);
   const kernels = forward.compileKernels(fs.readFileSync(built("simdkernel_shared.wasm")), fs.readFileSync(built("simdkernel_relaxed_shared.wasm")));
   outside[which] = (file) => {
     const checkpoint = fs.readFileSync(file);
@@ -121,7 +134,8 @@ def compare(checkpoint, tokenizer, options, prompt, settings, tokens, rounds):
 `);
 
 const cpu = os.cpus()[0]?.model ?? "?";
-console.log(`compare-engines: ${ref} (${commit.slice(0, 7)}, old) against the working tree (new); ${cpu} (${process.arch}, ${os.cpus().length} logical cores), ` +
+const here = (url) => url.pathname.slice(url.pathname.startsWith(root) ? root.length : 0);
+console.log(`compare-engines: ${bundle ? `the working tree's Python on both sides; forward.js: ${here(forwards.old)} (old) against ${here(forwards.new)} (new)${forwards.old.href === forwards.new.href ? ": the same file, a control" : ""}` : `${ref} (${commit.slice(0, 7)}, old) against the working tree (new)`}; ${cpu} (${process.arch}, ${os.cpus().length} logical cores), ` +
   `Node ${process.version}, load ${os.loadavg().map((l) => l.toFixed(2)).join(" ")}`);
 console.log(`compare-engines: ${tokens} sampled tokens a run, ${rounds} rounds after a warm-up (old new new old, then new old old new), ` +
   `${greedy ? "greedy" : "each entry's own sampling"}; tok/s of the sampled tokens, as the page says them`);

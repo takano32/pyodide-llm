@@ -33,8 +33,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
+import { forwardUrl } from "./bundle.mjs";
 import { built, runtimeUrl } from "./tree.mjs";
-const { automaticDtype, footprint, keysInHalf, needsWide } = await import(runtimeUrl("forward.js"));
+const { automaticDtype, footprint, keysInHalf, needsWide } = await import(forwardUrl());  // (the sources', or with ENGINE_FROM=dist a build's: tests/bundle.mjs)
 import { MODELS } from "../src/models.js";
 
 const root = new URL("../", import.meta.url).pathname;

@@ -46,6 +46,11 @@ page_modules() {
   # the tools are to read; and the one reader of how a file takes its neighbours' names (tests/imports.mjs), on made-up texts
   node tests/tree-check.mjs
   node tests/imports-check.mjs
+  # T367.3.1: the tool that moves the runtime to where a bundler links it and rewrites its imports (tests/runtime-move.mjs),
+  # on made-up texts and on this tree; and what is asked of a build (tests/dist-check.mjs, run on the build itself after
+  # `npm run build`) and how a tool reads a module of a build (tests/bundle.mjs), on made-up builds
+  node tests/runtime-move-check.mjs
+  node tests/dist-rules-check.mjs
   # T367.2: the site's Python as two archives (python_archive.py): what goes in and that the same sources give the same
   # bytes, that they hold what the tools walk and place, and the worker's way with them (a stand-in of Pyodide, and Pyodide)
   node tests/python-archive-check.mjs

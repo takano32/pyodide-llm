@@ -6,6 +6,7 @@
     "built": "simdkernel.so",
     "served": "coi.js"
   },
-  "skip": ["node_modules", "dist", ".tmp", ".git", ".claude", "__pycache__", ".venv", ".astro"],
+  "skip": ["node_modules", "dist", ".tmp", ".git", ".claude", ".venv", ".astro", "tests", "docs"],
+  "anywhere": ["__pycache__"],
   "packages": { "llama2_numpy": "engine", "llama2_convert": "convert" }
 }

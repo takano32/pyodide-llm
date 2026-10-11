@@ -27,8 +27,10 @@ def _files(root):
     if root not in _walked:
         found = []
         for folder, folders, files in os.walk(root, followlinks=False):
-            folders[:] = [name for name in folders if name not in RULE["skip"] and not os.path.islink(os.path.join(folder, name))]
             under = os.path.relpath(folder, root).replace(os.sep, "/")
+            # (T429) "skip": names of the root's own folders; "anywhere": at any depth
+            passed = RULE.get("anywhere", []) + (RULE["skip"] if under == "." else [])
+            folders[:] = [name for name in folders if name not in passed and not os.path.islink(os.path.join(folder, name))]
             found += [name if under == "." else f"{under}/{name}" for name in files if os.path.isfile(os.path.join(folder, name)) and not os.path.islink(os.path.join(folder, name))]
         _walked[root] = found
     return _walked[root]
@@ -39,7 +41,8 @@ def _ending(root, name):
 
 
 def _looked():
-    return f"(looked in every folder but {', '.join(RULE['skip'])})"
+    anywhere = RULE.get("anywhere", [])
+    return f"(looked in every folder but the root's {', '.join(RULE['skip'])}{' and any ' + ', '.join(anywhere) if anywhere else ''})"
 
 
 def _folder_of(root, kind):

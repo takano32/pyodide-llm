@@ -13,8 +13,13 @@
 // gigabytes does not fit Pyodide's heap as a file and as bytes besides (T100).
 import fs from "node:fs";
 import { loadPyodide } from "pyodide";
-import { built, placeKernels, placePython, runtimeUrl, treeOf } from "./tree.mjs";
-const { compileKernels, external, weightsMemory } = await import(runtimeUrl("forward.js"));
+import { forwardUrl } from "./bundle.mjs";
+import { built, placeKernels, placePython, treeOf } from "./tree.mjs";
+// (T367.3.1: the sources' forward.js, or with ENGINE_FROM=dist the one a build wrote: tests/bundle.mjs. Python, the
+// sampling kernels and the kernels forward.js compiles are the tree's either way.)
+export const forwardFrom = forwardUrl();
+if (process.env.ENGINE_FROM === "dist") console.log(`engine: forward.js as built, ${forwardFrom.pathname.slice(treeOf().root.length)}`);
+const { compileKernels, external, weightsMemory } = await import(forwardFrom);
 
 // shared: false gives the memory the page has where it is not cross-origin isolated (one thread, float32 keys)
 // wide (T101): a 64-bit memory and the kernels built for it, whatever the size of the model

@@ -124,8 +124,9 @@ export function reached(from, neighbours, ended = []) {
 
 /** The modules of a window: its file and every .js of the folder of its name ("gpu.js": gpu/), as { name: text },
  * read by `read(name)`, the folder listed by `list(folder)`. And that the window holds them all: in the form with a
- * list, the list is the folder's files; in the static form, every file of the folder is reached from the window. */
-export function windowed(window, { read, list, bundled, more = [] }) {
+ * list, the list is the folder's files; in the static form, every file of the folder is reached from the window.
+ * others: with `outside`, the files outside the folder that were read because a module takes names of them. */
+export function windowed(window, { read, list, bundled, more = [], outside = false }) {
   const folder = window.replace(/\.js$/, "");
   const there = list(folder).filter((name) => name.endsWith(".js")).sort().map((name) => `${folder}/${name}`);
   const files = new Map([window, ...more, ...there].map((name) => [name, { text: read(name) }]));
@@ -139,11 +140,19 @@ export function windowed(window, { read, list, bundled, more = [] }) {
     }
     if (new Set(listed).size !== listed.length) throw new Error(`${window} asks for a module twice`);
   }
+  // outside: a file that is no module of the folder and that one of them takes names of is read too, and what it takes
+  // from in turn (T367.3: the table of the built files, which a worker's modules and the benchmark's read alike). Without
+  // it such a file has to be named in `more`: a module that reaches out of its folder is said, not followed.
+  const others = [];
   for (const [name, { takes }] of files) for (const { from } of takes) {
-    if (!files.has(from)) throw new Error(`${name} takes names from ${from}, which is no file of ${folder}/ (nor ${[window, ...more].join(", ")})`);
+    if (files.has(from)) continue;
+    if (!outside) throw new Error(`${name} takes names from ${from}, which is no file of ${folder}/ (nor ${[window, ...more].join(", ")})`);
+    const text = read(from);
+    files.set(from, { text, ...importsOf(text, from, { bundled }) });  // (a Map takes what is added while it is walked)
+    others.push(from);
   }
   const order = reached(window, (name) => files.get(name).takes.map(({ from }) => from));
   const lost = there.filter((name) => !order.includes(name));
   if (lost.length) throw new Error(`${lost.join(", ")}: in ${folder}/, and neither ${window} nor a file it takes from takes anything of ${lost.length > 1 ? "them" : "it"}`);
-  return { files, there, order, asked };
+  return { files, there, order, asked, others };
 }

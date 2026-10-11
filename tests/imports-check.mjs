@@ -128,6 +128,19 @@ check("a window holds its folder, in both forms", () => {
     assert.equal(Boolean(asked), !bundled);
     assert.deepEqual(said(files.get("w/b.js").takes).map((line) => line.replace(/^(await )?import /, "")), ["w/a.js: one", "k.js: K"]);
   }
+  // outside: a file out of the folder that a module takes names of is read and placed too, in both forms, and what it
+  // takes from in turn; one that is not there fails as the read does
+  for (const [texts, bundled] of [[AS_IT_IS, false], [BUNDLED, true]]) {
+    const deeper = ({ ...texts, "k.js": bundled ? `import { L } from "./l.js";\nexport const K = L;\n` : `${awaited("L", "l.js")}export const K = L;\n`, "l.js": "export const L = 1;\n" });
+    const { "k.js": gone, ...without } = texts;
+    const { files, there, order, others } = windowed("w.js", { ...folderOf(deeper), bundled, outside: true });
+    assert.deepEqual(others, ["k.js", "l.js"], "the files outside the folder, in the order they were met");
+    assert.deepEqual(there, ["w/a.js", "w/b.js"]);
+    assert.deepEqual([...files.keys()], ["w.js", "w/a.js", "w/b.js", "k.js", "l.js"]);
+    assert.deepEqual(order, ["w/a.js", "l.js", "k.js", "w/b.js", "w.js"]);
+    assert.deepEqual(windowed("w.js", { ...folderOf(texts), bundled, more: ["k.js"], outside: true }).others, [], "what `more` named is no other");
+    assert.throws(() => windowed("w.js", { ...folderOf(without), bundled, outside: true }), /no k\.js/);
+  }
 });
 
 check("a window that does not hold its folder", () => {

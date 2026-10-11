@@ -26,8 +26,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
+import { forwardUrl } from "./bundle.mjs";
 import { built, runtimeUrl } from "./tree.mjs";
-const { compileKernels, createForward, weightsMemory } = await import(runtimeUrl("forward.js"));
+const { compileKernels, createForward, weightsMemory } = await import(forwardUrl());  // (the sources', or with ENGINE_FROM=dist a build's: tests/bundle.mjs)
 
 const root = new URL("../", import.meta.url).pathname;
 // a helper thread: resolves once it has its kernels on the shared memory

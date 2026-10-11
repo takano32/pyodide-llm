@@ -85,7 +85,7 @@ for (const [name, { files, folders, bundled }] of Object.entries(LAYOUTS)) {
   assert.equal(treeOf(whole).runtime("coi-test/worker.js"), path.join(whole, "public/coi-test/worker.js"));
   assert.equal(treeOf(whole).python("gpu/device.js"), path.join(whole, "public/gpu/device.js"), "under the kind first: gpu/device.js is public/gpu/device.js, not benchmark's");
   said(whole, "runtime", "device.js", /device\.js is not in public\/ \(the runtime files\), and is in 2 places: public\/benchmark\/gpu\/device\.js and public\/gpu\/device\.js/);
-  said(whole, "served", "nothing.bin", /no nothing\.bin in public\/ \(the served files\) nor anywhere in the tree \(looked in every folder but node_modules, dist, \.tmp/);
+  said(whole, "served", "nothing.bin", /no nothing\.bin in public\/ \(the served files\) nor anywhere in the tree \(looked in every folder but the root's node_modules, dist, \.tmp/);
   const elsewhere = madeUp("a file elsewhere", { "public/forward.js": "", "public/llama2_numpy.py": "", "public/coi.js": "", "public/simdkernel.so": "", "extra/deep/only.js": "", "x/twice.js": "", "y/twice.js": "" });
   assert.equal(treeOf(elsewhere).runtime("only.js"), path.join(elsewhere, "extra/deep/only.js"), "by its name alone");
   assert.equal(treeOf(elsewhere).runtime("deep/only.js"), path.join(elsewhere, "extra/deep/only.js"), "by the end of its path");
@@ -102,7 +102,8 @@ for (const [name, { files, folders, bundled }] of Object.entries(LAYOUTS)) {
   assert.equal(treeOf(path.join(scratch, "half moved, the runtime")).python(), path.join(scratch, "half moved, the runtime", "public"));
   // the folders that are never entered, and links: a second anchor in any of them is not seen
   const hidden = madeUp("hidden copies", { "public/forward.js": "", "public/llama2_numpy.py": "", "public/coi.js": "", "public/simdkernel.so": "",
-    ...Object.fromEntries(RULE.skip.flatMap((skipped) => [[`${skipped}/forward.js`, ""], [`public/${skipped}/llama2_numpy.py`, ""], [`${skipped}/deep/hidden.js`, ""]])),
+    ...Object.fromEntries(RULE.skip.flatMap((skipped) => [[`${skipped}/forward.js`, ""], [`${skipped}/deep/llama2_numpy.py`, ""], [`${skipped}/deep/hidden.js`, ""]])),
+    ...Object.fromEntries(RULE.anywhere.flatMap((skipped) => [[`${skipped}/forward.js`, ""], [`public/${skipped}/llama2_numpy.py`, ""], [`public/deep/${skipped}/hidden.js`, ""]])),
     ".tmp/unchanged/0123abc/public/forward.js": "", ".tmp/unchanged/0123abc/public/llama2_numpy.py": "", ".tmp/unchanged/0123abc/public/coi.js": "", ".tmp/unchanged/0123abc/src/only-there.js": "" });
   fs.symlinkSync(path.join(scratch, "all in public"), path.join(hidden, "linked"));
   fs.symlinkSync(path.join(scratch, "all in public", "public", "forward.js"), path.join(hidden, "forward.js"));
@@ -110,6 +111,25 @@ for (const [name, { files, folders, bundled }] of Object.entries(LAYOUTS)) {
   said(hidden, "runtime", "hidden.js", /no hidden\.js/);
   said(hidden, "runtime", "only-there.js", /no only-there\.js/);
   for (const kind of ["runtime", "python", "served"]) assert.equal(pythonOf("--root", hidden, kind).stdout.trim(), treeOf(hidden)[kind](), `tree.py skips the same, ${kind}`);
+  // T429, the three weak places of the first search. (1) a fixture or a note with an anchor's name stops no tool, and
+  // (2) a name that is not under its kind's folder is not taken from the tests or the documents:
+  assert.ok(RULE.skip.includes("tests") && RULE.skip.includes("docs"), "the tests' and the documents' folders are no part of what is searched");
+  const fixtures = madeUp("fixtures with the anchors' names", { "public/forward.js": "", "public/llama2_numpy.py": "", "public/coi.js": "", "public/simdkernel.so": "",
+    "tests/fixtures/forward.js": "", "tests/fixtures/llama2_numpy.py": "", "tests/coi.js": "", "docs/simdkernel.so": "", "tests/lone.js": "", "docs/notes/lone.py": "", "src/lone.js": "" });
+  assert.deepEqual(treeOf(fixtures).folders, { runtime: "public", python: "public", built: "public", served: "public" });
+  assert.equal(treeOf(fixtures).runtime("lone.js"), path.join(fixtures, "src/lone.js"), "the one in tests/ is not a second place");
+  said(fixtures, "python", "lone.py", /no lone\.py in public\/ \(the python files\) nor anywhere in the tree \(looked in every folder but the root's .*tests, docs and any __pycache__\)/);
+  for (const kind of ["runtime", "python", "built", "served"]) assert.equal(pythonOf("--root", fixtures, kind).stdout.trim(), treeOf(fixtures)[kind](), `tree.py, ${kind}`);
+  // (3) a "skip" name is a folder of the root: deeper, a folder of that name is looked into like any other
+  const deep = madeUp("skipped names deeper", { "src/runtime/forward.js": "", "src/python/llama2_numpy.py": "", "public/coi.js": "", "src/runtime/built/simdkernel.so": "",
+    ...Object.fromEntries(RULE.skip.map((name) => [`src/runtime/${name}/inside-${name.replace(/\W/g, "")}.js`, ""])) });
+  for (const name of RULE.skip) {
+    const file = `${name}/inside-${name.replace(/\W/g, "")}.js`;
+    assert.equal(treeOf(deep).runtime(file), path.join(deep, "src/runtime", file), `src/runtime/${name}/ is looked into`);
+    assert.equal(pythonOf("--root", deep, "runtime", path.basename(file)).stdout.trim(), path.join(deep, "src/runtime", file), `tree.py looks into src/runtime/${name}/`);
+  }
+  const twice = madeUp("an anchor in a deeper dist", { "src/runtime/forward.js": "", "src/runtime/dist/forward.js": "" });
+  said(twice, "runtime", "", /forward\.js .* is in 2 places: src\/runtime\/dist\/forward\.js and src\/runtime\/forward\.js/);
   // another tree's copy under this one's .tmp is searched under its own root, when it is the tree asked about
   const other = path.join(hidden, ".tmp/unchanged/0123abc");
   assert.equal(treeOf(other).runtime("forward.js"), path.join(other, "public/forward.js"));

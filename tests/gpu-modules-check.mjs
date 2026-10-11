@@ -33,7 +33,7 @@ const GLOBALS = new Set(("Array ArrayBuffer Atomics BigInt BigInt64Array Boolean
 // with the window's own ?v=) or, where a bundler links the files, to what the window reaches, and says a ring)
 const tree = treeOf();
 const at = (name) => `${name}`;  // (a file of this worker, by its name under the runtime's folder)
-const linked = windowed(at("gpu.js"), { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled });
+const linked = windowed(at("gpu.js"), { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
 const files = new Map([...linked.files].map(([name, { text }]) => [name.slice(at("").length), text]));
 const programs = new Map([...linked.files].map(([name, { program }]) => [name.slice(at("").length), program]));
 const top = (node) => (node.type === "ExportNamedDeclaration" && node.declaration ? node.declaration : node);

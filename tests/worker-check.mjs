@@ -22,7 +22,7 @@ import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { runtimeUrl, served } from "./tree.mjs";
 const forward = await import(runtimeUrl("forward.js"));
-import { workerHarness } from "./worker-harness.mjs";
+import { workerHarness, siteRoot } from "./worker-harness.mjs";
 
 // the made-up network, clock, messages and context (tests/worker-harness.mjs, T357: the conversion's fetch list uses them too)
 const { SCALE, MiB, PART, realNow, sleep, clock, bytesOf, body, requests, messages, fetchStandIn, navigatorStandIn, context, run, failure, fresh, partOf } = workerHarness();
@@ -230,7 +230,7 @@ const ok = (line) => {
       await sleep(2000);  // the copies go in as the parts stream, and a little after
       return [...kept].map(([key, bytes]) => [partOf(key.split("?")[0]), bytes.length]).sort();
     };
-    const keyOf = (part) => `${new URL(`models/m.${String(part).padStart(3, "0")}`, at).href}?bytes=${model.bytes}`;
+    const keyOf = (part) => `${new URL(`models/m.${String(part).padStart(3, "0")}`, siteRoot()).href}?bytes=${model.bytes}`;
     const expectKept = async (parts, what) => {
       assert.deepEqual(await partsKept(), parts.map((part) => [part, whole(part)[1] - whole(part)[0]]), what);
       for (const part of parts) assert.deepEqual(kept.get(keyOf(part)), bytesOf(...whole(part)), `${what}: the copy of part ${part} is not the file's`);
