@@ -145,6 +145,17 @@ function builtBy(fn) {
   }
   return keys;
 }
+// model, stopping and lost are read where a function runs, never as a module loads: a value taken then (const gone =
+// lost) is a copy that stays what it was, while the name itself is device.js's variable as it is now
+for (const [name, program] of programs) {
+  descend(program, (node, path, key) => {
+    if (node.type !== "Identifier" || !HELD.includes(node.name) || path.some((above) => /Function/.test(above.type))) return;
+    const parent = path[0];
+    if ((isMember(parent) && key === "property" && !parent.computed) || (parent.type === "ObjectProperty" && key === "key") || parent.type === "ImportSpecifier" || parent.type === "ExportSpecifier") return;
+    if (name === OWNER && parent.type === "VariableDeclarator" && key === "id") return;
+    assert.fail(`${name} reads ${node.name} as it loads (line ${node.loc.start.line}): a copy of what it was then; read ${OWNER}'s ${node.name} where it is used`);
+  });
+}
 // ---- the fields: device.js's own, and each record's
 let base = null;
 descend(programs.get(OWNER), (node) => {

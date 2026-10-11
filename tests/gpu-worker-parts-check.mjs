@@ -132,9 +132,13 @@ assert.equal(m.memory, null, "no memory until start() hands one");
 assert.equal(m.ternary, false);
 assert.equal(m.remembered, null, "nothing remembered where the page kept nothing");
 assert.equal(m.limit, 1 << 27, "the largest buffer the device binds");
-handed(memory, plan);
+// (start()'s plan is another object than the one a model on the GPU alone was opened with)
+const opened = m.plan;
+handed(memory, { ...plan });
 assert.equal(m.memory, memory, "handed(): the memory start() was given");
-assert.equal(m.plan, plan);
+assert.notEqual(m.plan, opened, "and its plan");
+assert.deepEqual(m.plan, plan);
+handed(memory, plan);
 {
   // (what the page kept counts for the same adapter and shaders alone)
   const again = standIn();
@@ -291,11 +295,20 @@ assert.ok(same(cache.keys[1].data.subarray(0, 8 * KV_ROW), firstCache.keys[1].da
 assert.ok(firstCache.owned.every((buffer) => buffer.destroyed), "the old cache's buffers are let go");
 assert.equal(m.held, cache.owned, "and the new one's are the ones held");
 assert.ok(cache.owned.every((buffer) => !buffer.destroyed));
-roomFor(m, 1000);
-assert.equal(m.block.cache.capacity, CONTEXT, "never more than the context");
 console.log("gpu-worker-parts-check: block.js makes m.block from the weights' record and the forms', and the cache grows: copied, the old one let go, the new one's buffers held for end()");
 
 // ---- block.js: a block of a prompt
+{
+  // a block past the cache grows it first, and its dispatches read the new one
+  gpu.calls.length = 0;
+  await block(m, 3, 19, () => false);
+  assert.equal(m.block.cache.capacity, 40, "a block at positions past the cache grows it");
+  assert.notEqual(m.block.cache, cache);
+  assert.equal(gpu.calls.filter(([what]) => what === "dispatch").at(-1)[2], m.block.cache.rope[LAYERS - 1], "and writes its keys and values into the cache as it is now");
+  assert.equal(m.held, m.block.cache.owned);
+  roomFor(m, 1000);
+  assert.equal(m.block.cache.capacity, CONTEXT, "never more than the context");
+}
 {
   const { cache: now, x, step, angles } = m.block, count = 5, pos = 3;
   const rows = new Float32Array(memory.buffer, plan.rows, count * DIM).map((_, i) => i / 7 - 3);
@@ -401,6 +414,9 @@ console.log("gpu-worker-parts-check: a block writes its rows, Step and angles, d
   assert.deepEqual(posted.map(({ type }) => type), ["ended"], "the worker ends where it was stopped");
   assert.equal(device_.model, null, "with nothing left on the GPU");
   assert.equal(stopped.calls.length, 0, "and nothing made on the device it was not given");
+  // the weights going up end at their next step: one layer's, where the stop was asked before
+  const one = await uploadLayers(m);
+  assert.equal(one, Object.values(SIZES).reduce((sum, [rows, n]) => sum + rows * n + (rows * n / GROUP) * 4, 0), "uploadLayers() reads the stop as it is now: it ends after the layer it was at");
 }
 console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, the ones held and the device, in that order; a stop asked and a device lost are read by all as device.js holds them");
 console.log("gpu-worker-parts-check: ok");

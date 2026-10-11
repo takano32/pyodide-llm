@@ -212,7 +212,7 @@ const returned = (fn) => {
 
   const readers = treesOf(folder("gpu.js"));
   const read = new Set(), readInside = Object.fromEntries(Object.keys(inside).map((name) => [name, new Set()]));
-  // a plan: `plan`, or anything's `.plan` (m.plan, common.model.plan)
+  // a plan: `plan`, or anything's `.plan` (m.plan, model.plan)
   const isPlan = (node) => (node.type === "Identifier" && node.name === "plan") || (member(node) && node.property.name === "plan");
   // one level down: `<plan>.tokens`, `<plan>.vectors`, ... (which of them, or undefined)
   const insideOf = (node) => (member(node) && isPlan(node.object) && node.property.name in inside ? node.property.name : undefined);
