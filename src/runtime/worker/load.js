@@ -73,7 +73,7 @@ export async function load(model, signal, id) {
   }
   const checkpoint = model.file ? readFile(model, signal, id) : model.url ? readUrl(model, signal, id) : download(model, signal, id);
   const tokenizerBytes = model.file ? model.tokenizerFile.arrayBuffer()
-    : fetch(model.url ? model.url.tokenizer : new URL(`../models/${model.tokenizer}`, import.meta.url), { signal }).then((res) => {
+    : fetch(model.url ? model.url.tokenizer : new URL(`models/${model.tokenizer}`, state.root), { signal }).then((res) => {
       if (!res.ok) {
         throw new Error(`Could not fetch ${model.url?.tokenizer ?? model.tokenizer}: ${res.status}`);
       }

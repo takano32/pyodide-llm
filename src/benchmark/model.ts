@@ -1,7 +1,7 @@
 // The section "Model": the model page's worker itself, the page's path timed and the rounds (T184, T190).
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES, pathTable, pathWarnings, roundsTable } from "../bench.js";
-import { $, parameters, type Result } from "./dom.ts";
+import { BASE, $, parameters, type Result } from "./dom.ts";
 import { staged, worker, model } from "./section.ts";
 
 // the model page's worker itself (public/worker.js): the model loads as the model page loads it (the GPU too), the
@@ -65,7 +65,7 @@ export async function modelSection(): Promise<Result> {
     }
     // T242, ahead: the switches of each round that follows on this model, the only one this worker loads: its memory is
     // made for the largest of them, and not for a next model as well (that gigabyte took down Windows' WebKit here)
-    const loaded = await request({ type: "init", search: parameters.get("gpuTest") === "on" ? "?gpuTest=on" : "", model: entry, load: 1,
+    const loaded = await request({ type: "init", root: new URL(BASE, location.href).href, search: parameters.get("gpuTest") === "on" ? "?gpuTest=on" : "", model: entry, load: 1,
       threads: { remembered, hint: navigator.hardwareConcurrency || 1 }, ahead: rounds.map((round) => round.without) });
     if (loaded.error) return { status: "error", markdown: loaded.error };
     pathing = true;

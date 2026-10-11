@@ -27,6 +27,7 @@
 // worker's port opens at the module's first await, where a message that finds no onmessage is lost (helper.js, T109):
 // so the messages are kept until the handler at the end of this file is set, which then takes them in the order
 // they came.
+import { BUILT } from "./built.js";
 import { state, cpuOnly, modelKey, loadSeconds } from "./worker/state.js";
 import { told } from "./worker/told.js";
 import { resolvePyodideVersion, pyodideSteps, pythonArchive, placePython } from "./worker/pyodide.js";
@@ -59,7 +60,7 @@ async function init(search) {
   const engine = pythonArchive("engine.zip");
   engine.catch(() => {});  // (it is awaited below: a load that ends before that leaves no unhandled rejection)
   const version = await resolvePyodideVersion(search);
-  state.pyodide = await pyodideSteps(version, (url) => import(url));
+  state.pyodide = await pyodideSteps(version, (url) => import(/* @vite-ignore */ url));
 
   await placePython(state.pyodide, engine, "engine.zip");
   state.llama2_numpy = state.pyodide.pyimport("llama2_numpy");
@@ -70,7 +71,7 @@ async function init(search) {
   // "everything" round sampled on NumPy after the page's switch had turned them off, and said nothing).
   state.disabled = state.pageSwitches = switchesOf(search);
   for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
-    const kernel = await fetch(new URL(`${name}${self.location.search}`, import.meta.url)).catch(() => undefined);
+    const kernel = await fetch(BUILT[name]).catch(() => undefined);
     if (kernel?.ok) {
       state.pyodide.FS.writeFile(`/home/pyodide/${name}`, new Uint8Array(await kernel.arrayBuffer()));
       state.kernels = "/home/pyodide/simdkernel.so";
@@ -83,7 +84,7 @@ async function init(search) {
     // one build of the kernels: simdkernel_<kind>.wasm and simdkernel_relaxed_<kind>.wasm, or null
     const build = async (kind, wide = false) => {
       const [plain, relaxed] = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
-        fetch(new URL(`${name}${self.location.search}`, import.meta.url)).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
+        fetch(BUILT[name]).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
       return plain ? state.forwardModule.compileKernels(plain, relaxed, wide) : null;
     };
     state.jsKernels = await build("plain");
@@ -140,6 +141,7 @@ self.onmessage = async ({ data }) => {
       state.lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
       state.threadsRequest = data.threads;
       state.gpuRequest = data.gpu;
+      state.root = data.root ?? state.root;  // (T367.3: the site's root, where models/ is; the page knows it)
       state.loadsAhead = Array.isArray(data.ahead) ? data.ahead : undefined;  // (T242; a load of the model page says none)
       // The latest choice wins: the download that is going on stops, and its parts that are complete stay in
       // the cache. Pyodide is loaded once, whatever happens to the model that was asked for first.

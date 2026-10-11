@@ -21,7 +21,9 @@ let aloneOnReady: { load: number; alone: unknown } | undefined;
 if (await isolating()) {
   await new Promise(() => {});  // the page reloads: nothing else may start
 }
-export const worker = new Worker(`${import.meta.env.BASE_URL}worker.js?v=${__BUILD__}`, { type: "module" });
+export const worker = new Worker(new URL("../runtime/worker.js", import.meta.url), { type: "module" });
+/** the site's root, which the worker is told with a load: models/ is under it, and the worker's own URL is not (T367.3) */
+export const root = new URL(import.meta.env.BASE_URL, location.href).href;
 worker.onmessage = ({ data }) => {
   // a late report about a load that another choice of model has cancelled
   if (data.load !== undefined && data.load !== page.loads) {

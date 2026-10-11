@@ -3,6 +3,7 @@
 // A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
 
 import { isError, told } from "./told.js";
+import { BUILT } from "../built.js";
 
 // the version becomes part of a CDN URL, so accept nothing but a plain version number
 const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
@@ -182,7 +183,7 @@ export async function pyodideSteps(version, importer) {
 // (fifteen and nineteen). An archive is fetched with this worker's ?v=<build>, like every file of the site the worker
 // reads, so that it is the Python of the worker's own deployment.
 export async function pythonArchive(name, signal) {
-  const res = await fetch(new URL(`../${name}${self.location.search}`, import.meta.url), { signal });
+  const res = await fetch(BUILT[name], { signal });
   if (!res.ok) {
     throw new Error(`Could not fetch ${name}: ${res.status}`);
   }

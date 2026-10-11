@@ -16,8 +16,7 @@
 // The first message is claimed before anything is awaited (a module worker's port opens at its first await, and a
 // message that comes before onmessage is set is lost: T109). While a step runs, it tells the page each stage it starts
 // ({stage, at, of}, T177): the page shows it, and it answers none of the page's questions.
-const search = new URL(import.meta.url).search;  // ?v=<commit>: every file of the same deployment
-const at = (name) => new URL(`../${name}${search}`, import.meta.url);
+import { BUILT } from "../built.js";
 const stage = (name, at, of) => postMessage({ stage: name, at, of });
 
 self.onmessage = async ({ data }) => {
@@ -34,7 +33,7 @@ self.onmessage = async ({ data }) => {
 // the page is cross-origin isolated. null where this browser cannot compile them (no WebAssembly SIMD)
 async function kernelsOf(forward, kind) {
   const fetched = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
-    fetch(at(name)).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
+    fetch(BUILT[name]).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
   if (!fetched[0]) return null;
   try {
     return forward.compileKernels(fetched[0], fetched[1]);
@@ -286,7 +285,7 @@ const GO = 0, DONE = 1, COUNT = 2, TOTAL = 3, STOP = 4, NEXT = 5, CHUNK = 1 << 2
 async function ceilingsOf(memory, base, size, shared) {
   const kind = shared ? "shared" : "plain";
   const [plain, relaxed] = await Promise.all([`ceilings_${kind}.wasm`, `ceilings_relaxed_${kind}.wasm`].map((name) =>
-    fetch(at(name)).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
+    fetch(BUILT[name]).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
   if (!plain) throw new Error("the ceilings' loops could not be fetched");
   const module = new WebAssembly.Module(plain);
   const loops = new WebAssembly.Instance(module, { env: { memory } }).exports;

@@ -30,6 +30,7 @@ export const state = {
   disabled: [],
   // what the page's own URL said, to come back to after a benchmark has tried other combinations (T77)
   pageSwitches: [],
+  root: undefined,          // the URL of the site's root, which the page hands with a load (T367.3): models/ is under it
   // init() as a promise: every load waits for it, also the one that replaces the first
   initialized: undefined,
   // the AbortController of the load that is going on, and a promise that settles once it has cleaned up
@@ -71,7 +72,7 @@ export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.reque
     limits: { maxStorageBufferBindingSize, maxBufferSize },
     packed: Boolean(navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) };
   try {
-    const wgsl = await import("../shaders.js");
+    const wgsl = await import("../shaders/key.js");
     state.gpuAdapter.key = wgsl.deviceKey(adapter);
     // (T232: a model of ternary weights has a key of its own, with its shaders: gpu.js says that one)
     state.gpuAdapter.ternaryKey = wgsl.deviceKey(adapter, adapter, true);

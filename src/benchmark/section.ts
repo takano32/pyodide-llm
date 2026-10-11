@@ -3,7 +3,7 @@
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import "./isolation.ts";
 import { MODELS } from "../models.js";
-import { BASE, V, $, type Name, type Result } from "./dom.ts";
+import { $, type Name, type Result } from "./dom.ts";
 import { page } from "./state.ts";
 
 // ---- the sections' elements: a head with a Run button and the state, the progress while it runs (T177), and what
@@ -78,10 +78,19 @@ export function ask(worker: Worker, message: any): Promise<any> {
 // the workers of the running section, and when one of them last said anything: a section that says nothing for
 // STALL_MS is stopped, its workers ended, and the run goes on (T134's review: a GPU without Atomics.waitAsync in its
 // worker never ended the bridge, and the storage and the line never ran)
+// (T367.3: each by its literal URL, which is how the bundler is told of a worker)
+const WORKERS = {
+  "worker.js": () => new Worker(new URL("../runtime/worker.js", import.meta.url), { type: "module" }),
+  "benchmark/gpu.js": () => new Worker(new URL("../runtime/benchmark/gpu.js", import.meta.url), { type: "module" }),
+  "benchmark/memory.js": () => new Worker(new URL("../runtime/benchmark/memory.js", import.meta.url), { type: "module" }),
+  "benchmark/sections.js": () => new Worker(new URL("../runtime/benchmark/sections.js", import.meta.url), { type: "module" }),
+  "benchmark/storage.js": () => new Worker(new URL("../runtime/benchmark/storage.js", import.meta.url), { type: "module" }),
+  "benchmark/waiter.js": () => new Worker(new URL("../runtime/benchmark/waiter.js", import.meta.url), { type: "module" }),
+};
 export const live = new Set<Worker>();
 let heard = 0;
-export function worker(file: string) {
-  const w = new Worker(`${BASE}${file}${V}`, { type: "module" });
+export function worker(file: keyof typeof WORKERS) {
+  const w = WORKERS[file]();
   live.add(w);
   w.addEventListener("message", ({ data }) => {
     heard = performance.now();
