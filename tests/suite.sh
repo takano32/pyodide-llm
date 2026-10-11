@@ -109,6 +109,9 @@ page_modules() {
   # byte, and footprint() holds what is allocated (a few seconds); T223's: the search for the software threads on noisy times
   node tests/memory-check.mjs
   node tests/thread-search-check.mjs
+  # T378.1: the software threads' part (forward/threads.js) by itself, with stand-ins for its neighbours: what the engine
+  # tells it (a count to use, a search, a generation, a token, a stop) changes what it says, in any order (under a second)
+  node tests/threads-part-check.mjs
 }
 part "unit tests of the page's modules" page_modules
 

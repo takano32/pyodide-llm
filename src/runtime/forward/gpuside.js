@@ -381,7 +381,7 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
   function gpuSteps() {
     if (!tokensOn || !gpuOn || gpuSide === "cpu") return false;
     if (always || gpuSide === "gpu") return true;
-    if (pool.search) return false;
+    if (pool.searching) return false;
     if (tokenRecheck === "gpu") return true;
     if (tokenRecheck === "cpu") return false;
     return Boolean(steps.of(pool.threads)?.faster);
