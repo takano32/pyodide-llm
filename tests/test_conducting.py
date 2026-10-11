@@ -452,3 +452,22 @@ def test_the_heads_of_a_repository_are_all_a_conversion_without_weights_needs(tm
     # and again, from what was kept: nothing is asked for
     converted(Heads.of(HF, tmp_path, between="__", remember=True), HF, weights=False, dtype="int8", sink=Nothing())
     assert len(asked) == 2 and len(whole) == 3
+
+
+# ---- tests/hf_fetch.py: the files a conduct asks for, and none of the weights read
+def test_hf_fetch_takes_what_the_conduct_asks_for_and_reads_none_of_the_weights(tmp_path):
+    """A repository whose files are in the folder already (nothing is fetched: a file that is there is not asked for),
+    with a model.safetensors cut off after its header: the conduct is answered as far as the weights' stream and no
+    further, so the cut is never met. (Read through, the file "ends before the bytes its head says it has".)"""
+    import subprocess
+    import sys
+    tensors, config, _, vocabulary = a_model()
+    whole = safetensors_file(tensors)
+    header = 8 + int.from_bytes(whole[:8], "little")
+    folder = folder_of(tmp_path / "owner--model", {
+        "config.json": config, "tokenizer.json": unigram(vocabulary), "model.safetensors": whole[:header + 100],
+        "tokenizer_config.json": json.dumps({"chat_template": ALPACA})}, REVISION)
+    run = subprocess.run([sys.executable, str(Path(__file__).parent / "hf_fetch.py"), f"hf:owner/model@{REVISION}", str(tmp_path)],
+                         capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-2000:]
+    assert Path(run.stdout.strip()) == folder
