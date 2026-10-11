@@ -1,5 +1,5 @@
 // tests/worker-conduct-check.mjs (T374.2.1)
-// The worker's side of a conversion's conduct (public/worker/conduct.js, and convert() of public/worker/convert.js
+// The worker's side of a conversion's conduct (src/runtime/worker/conduct.js, and convert() of src/runtime/worker/convert.js
 // around it), alone: the conduct is a stand-in that plays a list of requests (a JavaScript generator behind the face
 // Pyodide gives a Python one: next(answer) and return(), each request a proxy to be destroyed), the network is
 // tests/worker-harness.mjs's, a folder of the visitor's disk is stand-in Files that write down what is read of them

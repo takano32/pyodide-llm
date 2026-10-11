@@ -1,5 +1,5 @@
 # The engine with its weights outside Python (T93): Llama(external=...) must describe every tensor exactly where
-# the NumPy engine reads it, for every architecture and dtype, so that public/forward.js computes on the same numbers.
+# the NumPy engine reads it, for every architecture and dtype, so that src/runtime/forward.js computes on the same numbers.
 # The forward pass itself runs in JavaScript: tests/smoke.mjs checks it against the NumPy one.
 import numpy as np
 import pytest
@@ -16,7 +16,7 @@ from llama2_numpy import OUTLIER_CHANNELS, Llama, external_tensors, linear_width
 
 
 class Outside:
-    """What public/forward.js offers the engine, with the checkpoint in a bytes object."""
+    """What src/runtime/forward.js offers the engine, with the checkpoint in a bytes object."""
 
     def __init__(self, data):
         self.data, self.size, self.plan = data, len(data), None

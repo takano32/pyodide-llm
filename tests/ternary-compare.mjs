@@ -1,5 +1,5 @@
 // ternary-compare.mjs (T231): the same ternary model as the ternary dtype and as int8 (its weights widened, which is
-// how T235 ran it), both on the page's forward pass (public/forward.js), on the same tokens of a text: how far apart
+// how T235 ran it), both on the page's forward pass (src/runtime/forward.js), on the same tokens of a text: how far apart
 // their logits are, how often their most likely token is the same, and the perplexity of each.
 //
 // What the two share and what they do not. The weights are the same values: ternary holds d, int8 127 times

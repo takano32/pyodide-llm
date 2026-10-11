@@ -3,7 +3,7 @@
 // as all at once) and how long each takes, float32 and float16 caches, at short and long contexts.
 //   git fetch --depth=1 origin main && node tests/attention-compare.mjs FETCH_HEAD [rounds]
 // The old kernels are compiled here from that commit's kernels/*.ts (as kernels/build.py's plain module), the new
-// ones are public/simdkernel_plain.wasm (make kernels). Exit 1 if the outputs differ.
+// ones are src/runtime/built/simdkernel_plain.wasm (make kernels). Exit 1 if the outputs differ.
 // T160: at the end, the float16 cache against the float32 one, old and new (above 1: the float16 cache is slower).
 // T201: --exact, for a change that must write the old's bits (the softmax's maximum): any bit that differs fails, and
 // before the timing each position of short heads (1 to 72 positions, around the 4 and 32 of the maximum's steps)

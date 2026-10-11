@@ -1,5 +1,5 @@
 ---
-// One chat-like screen. Pyodide runs in public/worker.js; this page only draws what the worker reports.
+// One chat-like screen. Pyodide runs in src/runtime/worker.js; this page only draws what the worker reports.
 import { sources } from "../models.js";
 // the licenses of the models, one line per source, written at build time from src/models.js (T87)
 const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
@@ -314,7 +314,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   import { show } from "../page/settings.ts";
   import "../page/draw.ts";
   import "../page/isolation.ts";
-  import { worker } from "../page/receiver.ts";
+  import { root, worker } from "../page/receiver.ts";
   import "../page/choose.ts";
   import "../page/composer.ts";
 
@@ -326,7 +326,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
       show(page.model);
     }
     if (page.loads === 1) {
-      worker.postMessage({ type: "init", search: location.search, model: weighed(page.model), load: page.loads, threads: threadsFor(page.model), gpu: gpuFor(page.model) });
+      worker.postMessage({ type: "init", root, search: location.search, model: weighed(page.model), load: page.loads, threads: threadsFor(page.model), gpu: gpuFor(page.model) });
     }
   })();
 </script>

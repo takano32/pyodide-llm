@@ -4,12 +4,13 @@ import { $, select } from "./dom.ts";
 import { fromUrl, weighed } from "./address.ts";
 import { remember } from "./remembered.ts";
 import { page } from "./state.ts";
+import { forget, keptModels, outdated, serves } from "../runtime/kept.js";
 
-declare const __BUILD__: string;
-
-// What the worker kept of its conversions (public/kept.js: the origin private file system, or the Cache API): the
+// What the worker kept of its conversions (src/runtime/kept.js: the origin private file system, or the Cache API): the
 // select says which models need no download any more, and About lists them with a way to delete them.
-const keptModule = import(/* @vite-ignore */ `${import.meta.env.BASE_URL}kept.js?v=${__BUILD__}`).catch(() => undefined);
+// (T367.3: linked into the page's own script. The page read it as a file of its own before, and went on without it
+// where that failed: what reads it still takes a promise of it.)
+const keptModule = Promise.resolve({ forget, keptModels, outdated, serves });
 export async function showKept() {
   const kept = await keptModule;
   let models = (await kept?.keptModels().catch(() => [])) ?? [];

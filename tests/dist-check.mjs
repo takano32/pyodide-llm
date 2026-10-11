@@ -20,7 +20,10 @@
 //   4. every built file the runtime names (src/runtime/built/) is in dist/_astro/ once, with the same bytes;
 //   5. dist's root holds the pages, _astro/ and what is served as it is (the Service Worker and its test page, the
 //      models), and nothing else: no source, no built file, no archive that nobody asks for.
-// 3 to 5 are of a tree whose runtime a bundler links (tests/tree.mjs's tree.bundled). In a tree where each file is
+//   6. every copyright line and licence text of a source (a /*! … */ comment: a bundler drops every other) is in each
+//      file of dist/_astro/ that holds the source's code, whole; and no source keeps a copyright line in a // comment;
+//   7. the built key and shaders modules give the same deviceKey() as the sources, for 192 made-up devices.
+// 3 to 7 are of a tree whose runtime a bundler links (tests/tree.mjs's tree.bundled). In a tree where each file is
 // served as it is from the same folder as the Service Worker, the root is those files, and this says so and checks 1
 // and 2 alone.
 import assert from "node:assert/strict";
@@ -32,6 +35,8 @@ import { treeOf } from "./tree.mjs";
 
 const ORIGIN = "https://site.test", BASE = "/pyodide-llm/";
 /** what dist's root may hold: the pages, the bundler's folder, and what is served as it is */
+/** the chunks that are fetched only when they are used (dist-check's rule 6) */
+export const LAZY = ["forward", "kept", "key", "gpu", "shaders"];
 export const ROOT = ["_astro", "index.html", "benchmark", "coi.js", "coi-test", "models"];
 
 /** coi.js's own family(), from its text: the function as the Service Worker runs it, on this origin */
@@ -76,6 +81,48 @@ export function distSaid(dist, tree = treeOf()) {
   for (const [name, got] of bytes) {
     if (name.endsWith(".js") && /["'`]data:application\/(wasm|zip|octet-stream)/.test(got.toString("latin1"))) said.push(`_astro/${name} holds a file as a data: URL (vite.build.assetsInlineLimit: 0)`);
   }
+  // (the workers are not minified: the owner's decision, 2026-10-10. A minified file is a few lines of thousands of
+  // characters; what the bundler prints unminified has a statement a line)
+  for (const [name, got] of bytes) {
+    if (!/^(worker|forward|helper|gpu|benchmark-[\w-]+)\.[\w-]{6,}\.js$/.test(name)) continue;
+    const lines = got.toString("utf8").split("\n").length;
+    if (got.length / lines > 200) said.push(`_astro/${name} is minified (${Math.round(got.length / lines)} characters a line): the workers are served as the bundler prints them (vite.worker's output.minify: false)`);
+  }
+  // 6 (T367.3's review): the parts that are read only when they are used stay chunks of their own. A static import of one
+  // (or a bundler's choice to fold a small one in) puts it into the worker's text, and then every visit fetches and
+  // evaluates it: the first request list is longer by it and nothing else fails. (key.js is the shaders' hash for the
+  // device's key, read when a GPU is there; kept.js the store of converted models; gpu and shaders the GPU's worker.)
+  for (const lazy of LAZY) {
+    if (!files.some((name) => new RegExp(`^${lazy}\\.[\\w-]{6,}\\.js$`).test(name))) said.push(`_astro/${lazy}.<hash>.js is not there: ${lazy}.js was bundled into another file, and is fetched on every visit now, used or not (a static import of it, or a bundler's choice)`);
+  }
+  // 6: the notices. A bundler prints a file anew and drops its comments but the ones written /*! … */: the copyright
+  // lines and licence texts of what was taken from other projects (policy 10; the shaders' parts) must be such
+  // comments, or the site serves the code without them (the first bundled build served none of 25). Every notice of a
+  // source is in every file of _astro/ that holds that source's code (the bundler marks it //#region <the source>).
+  const words = (comment) => comment.replace(/^\/\*!/, "").replace(/\*\/$/, "").split("\n").map((line) => line.replace(/^\s*\* ?/, "")).join(" ").replace(/\s+/g, " ").trim();
+  const noticesOf = (text) => (text.match(/\/\*![\s\S]*?\*\//g) ?? []).map(words);
+  const chunks = [...bytes].filter(([name]) => name.endsWith(".js")).map(([name, got]) => ({ name, text: got.toString("utf8") })).map((chunk) => ({ ...chunk, notices: noticesOf(chunk.text), owed: new Map() }));
+  let notices = 0;
+  for (const source of sources) {
+    const text = fs.readFileSync(tree.runtime(source), "utf8"), where = `${tree.folders.runtime}/${source}`;
+    for (const line of text.replace(/\/\*![\s\S]*?\*\//g, "").split("\n")) {
+      if (/^\s*(\/\/|\/\*|\*).*\bCopyright\b.*\b(19|20)\d\d\b/.test(line)) said.push(`${where}: a copyright line in a comment that a bundler drops: ${line.trim().slice(0, 80)} (the copyright lines and the licence text as /*! … */)`);
+    }
+    const mine = noticesOf(text);
+    if (!mine.length) continue;
+    const holding = chunks.filter((chunk) => chunk.text.includes(`//#region ${where}\n`));
+    if (!holding.length) said.push(`${where} has ${mine.length} notices, and no file of _astro/ is marked as holding its code (//#region): are the workers minified, or the file no longer linked?`);
+    for (const chunk of holding) for (const notice of mine) {
+      notices += 1;
+      chunk.owed.set(notice, [...(chunk.owed.get(notice) ?? []), where]);
+    }
+  }
+  // (as many times as its sources have it: the same licence stands over several pieces of code, and one copy cut short
+  // must not be covered by another's)
+  for (const chunk of chunks) for (const [notice, owing] of chunk.owed) {
+    const there = chunk.notices.filter((one) => one === notice).length;
+    if (there < owing.length) said.push(`_astro/${chunk.name} holds the code of ${[...new Set(owing)].join(", ")} with ${there} of the ${owing.length} notices "${notice.slice(0, 60)}…" (${notice.length} characters): served code keeps the copyright line and the whole licence text`);
+  }
   // 4: the built files, once each, the same bytes
   const built = under(tree.built());
   for (const file of built) {
@@ -89,7 +136,36 @@ export function distSaid(dist, tree = treeOf()) {
     if (!ROOT.includes(name)) said.push(`${path.basename(dist)}/${name}: nothing asks for it there (the root holds ${ROOT.join(", ")}): a file of ${tree.folders.served}/ that is no longer served as it is?`);
   }
   for (const name of ["index.html", "benchmark/index.html", "coi.js", "_astro"]) if (!fs.existsSync(path.join(dist, name))) said.push(`${path.basename(dist)}/${name} is not there`);
-  return { said, files, looked: `${files.length} files of _astro/, each a family of its own; ${built.length} built files in it once each; none of ${sources.length} sources as it is; the root holds nothing else` };
+  return { said, files, looked: `${files.length} files of _astro/, each a family of its own; ${built.length} built files in it once each; none of ${sources.length} sources as it is; ${notices} notices where their code is; the root holds nothing else` };
+}
+
+/** The 192 made-up devices of tests/unchanged.mjs's shaders section: the device's key of each, by a module's deviceKey() */
+export function keysOf(module) {
+  const keys = {};
+  for (const packed of [false, true]) {
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { userAgent: "UA", gpu: { wgslLanguageFeatures: new Set(packed ? ["packed_4x8_integer_dot_product"] : []) } } });
+    for (const f16 of [false, true]) for (const subgroups of [false, true]) for (const memory of [16384, 32768, 49152, 65536]) for (const threads of [128, 256, 1024]) for (const ternary of [false, true]) {
+      const device = { info: { vendor: "v", architecture: "a", device: "d", description: "x" }, features: new Set([...(f16 ? ["shader-f16"] : []), ...(subgroups ? ["subgroups"] : [])]),
+        limits: { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup: threads, maxComputeWorkgroupSizeX: threads } };
+      keys[JSON.stringify([packed, f16, subgroups, memory, threads, ternary])] = module.deviceKey(device, device, ternary);
+    }
+  }
+  return keys;
+}
+
+/** 7 (a bundled tree): the worker reads the device's key from one built module (key) and the GPU's worker from another
+ * (shaders), each with its own copy of the shaders' texts: what the page remembers of a device under the one's key is
+ * looked up under the other's, so the two and the sources must give the same key for every device. Lines, as distSaid(). */
+export async function keysSaid(dist, tree = treeOf()) {
+  if (!tree.bundled) return { said: [], looked: "" };
+  const { builtModule } = await import("./bundle.mjs");
+  const [sources, key, shaders] = await Promise.all([tree.runtimeUrl("shaders.js"), builtModule("key", dist), builtModule("shaders", dist)].map(async (url) => keysOf(await import(url))));
+  const said = [];
+  for (const [name, built] of [["key", key], ["shaders", shaders]]) {
+    const differ = Object.keys(sources).filter((device) => built[device] !== sources[device]);
+    if (differ.length) said.push(`_astro/${name}.<hash>.js gives another deviceKey() than the sources for ${differ.length} of ${Object.keys(sources).length} made-up devices (the first: ${differ[0]}: ${built[differ[0]]} for ${sources[differ[0]]})`);
+  }
+  return { said, looked: `; the device's key the same from the built key and shaders modules and the sources, for ${Object.keys(sources).length} devices (${new Set(Object.values(sources)).size} keys)` };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -97,7 +173,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const at = args.indexOf("--tree");
   const tree = at < 0 ? treeOf() : treeOf(args.splice(at, 2)[1]);
   const dist = path.resolve(args[0] ?? path.join(tree.root, "dist"));
-  const { said, looked } = distSaid(dist, tree);
+  const first = distSaid(dist, tree), keys = await keysSaid(dist, tree);
+  const said = [...first.said, ...keys.said], looked = `${first.looked}${keys.looked}`;
   assert.deepEqual(said, [], `dist-check: ${said.length} thing${said.length > 1 ? "s" : ""} wrong with ${dist}:\n${said.join("\n")}\n`);
   console.log(`dist-check: ok (${looked})`);
 }

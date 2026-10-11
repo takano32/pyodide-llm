@@ -1,4 +1,4 @@
-// shaders-source.mjs (T351): public/shaders.js and its modules (public/shaders/*.js), read for the checks.
+// shaders-source.mjs (T351): src/runtime/shaders.js and its modules (src/runtime/shaders/*.js), read for the checks.
 //
 // shaders.js is the window; the texts and their makers are in the modules it lists. The checks that read the shaders'
 // source (tests/device-key-check.mjs, tests/shaders-modules-check.mjs) take it from here:

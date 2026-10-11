@@ -1,4 +1,4 @@
-// tests/forward-modules-check.mjs (T349): the names that public/forward.js and its modules (public/forward/*.js) hand
+// tests/forward-modules-check.mjs (T349): the names that src/runtime/forward.js and its modules (src/runtime/forward/*.js) hand
 // one another. Three things there are no variables, so that a name spelled wrong is `undefined` without a word:
 //   - a name a file takes out of another (`const { a, b } = await import(...)`, `= await modules.x`): every one is
 //     exported there, and every name a file uses is declared in it, taken from another, or a global;

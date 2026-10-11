@@ -8,7 +8,7 @@
 #   Folder     the same for a folder of the visitor's disk (T374.2.2): {"<name>": ...}, found by its name whatever the
 #              case of its letters, which writes down what is read of each file as worker-fetches-check.mjs's Files do
 #              ("range model.safetensors bytes=0-524287"). The disk's is how a stream is cut: a MiB at a time
-#   answered   the loop that answers a conduct from a hub or a folder: the worker's side (public/worker/conduct.js)
+#   answered   the loop that answers a conduct from a hub or a folder: the worker's side (src/runtime/worker/conduct.js)
 #   direct     a conversion with no conduct in it (T374.2.3): the files read whole, a Conversion made of them and fed
 #              in one piece. What a conduct's conversion is compared with on real files, since the worker's old ladder
 #              (and today(), its copy in Python, which this took the place of) is gone

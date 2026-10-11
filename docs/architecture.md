@@ -8,13 +8,13 @@ and measurements, are in [AGENTS.md](../AGENTS.md) (in Japanese).
 ```mermaid
 flowchart TD
   page["the page: src/pages/index.astro"]
-  worker["Web Worker: public/worker.js<br/>resolves Pyodide, downloads and converts models, keeps them (public/kept.js)"]
+  worker["Web Worker: src/runtime/worker.js<br/>resolves Pyodide, downloads and converts models, keeps them (src/runtime/kept.js)"]
   engine["the engine: src/python/llama2_numpy.py<br/>checkpoint, tokenizer, sampling, generate()"]
   convert["the converter: src/python/llama2_convert.py<br/>safetensors and GGUF to the llama2.c format, int8, 6 bits or ternary"]
-  forward["public/forward.js<br/>the forward pass, on its own WebAssembly memory"]
+  forward["src/runtime/forward.js<br/>the forward pass, on its own WebAssembly memory"]
   kernels["kernels/: WebAssembly SIMD kernels"]
-  helper["public/helper.js: software threads"]
-  gpu["public/gpu.js (a window over public/gpu/) and public/shaders.js (a window over public/shaders/): the GPU worker and its WGSL shaders"]
+  helper["src/runtime/helper.js: software threads"]
+  gpu["src/runtime/gpu.js (a window over src/runtime/gpu/) and src/runtime/shaders.js (a window over src/runtime/shaders/): the GPU worker and its WGSL shaders"]
   page -- "the model, the prompt, the settings" --> worker
   worker -- "each piece of text" --> page
   worker --> engine
@@ -29,16 +29,23 @@ flowchart TD
 |---|---|
 | `src/pages/index.astro` and `src/page/` | The chat page and the modules of its script. It draws what the worker reports; the URL holds the state (`?model=`, `?hf=`, `?bits=`, `?without=` and others). |
 | `src/models.js` | The model list: files, sizes, engine options, generation settings, chat templates. The first entry is the default. |
-| `public/worker.js` and `public/worker/` | The worker's window (`init()`, `generate()`, the messages) and its parts: Pyodide's loading, where the weights go, the fetching of a model's parts (this site's and Hugging Face's), the conversion, and what `/benchmark/` times. It loads Pyodide and NumPy, downloads the model in parts while Pyodide loads, and runs `generate()`. |
+| `src/runtime/worker.js` and `src/runtime/worker/` | The worker's window (`init()`, `generate()`, the messages) and its parts: Pyodide's loading, where the weights go, the fetching of a model's parts (this site's and Hugging Face's), the conversion, and what `/benchmark/` times. It loads Pyodide and NumPy, downloads the model in parts while Pyodide loads, and runs `generate()`. |
 | `src/python/llama2_numpy.py` | The engine. Reads llama2.c's legacy format (float32, float16, int8, 6 bits, ternary), the tokenizers (llama2.c's BPE, sentencepiece Unigram, byte-level BPE), the architectures (Llama, Qwen2, Qwen3, Qwen3.5, LFM2, GPT-2, GPT-NeoX), and samples. Without the kernels, NumPy does the arithmetic. |
 | `src/python/llama2_convert.py` | Converts a Hugging Face model (or a GGUF: Q8_0, or the ternary PQ2_0 and PTQ1_0) as its file arrives, and writes it into the model's memory. The same code builds the site's models (`convert_hf.py`, `quantize.py`) and converts in the browser. It also reads a model's chat template (a small part of Jinja). |
 | `python_archive.py` | Packs the two at build time into `engine.zip` and `converter.zip`, which the worker fetches whole and unpacks in Pyodide: one request each (the converter's only when a model is first converted). The same sources give the same bytes. |
-| `public/forward.js` and `public/forward/` | One token's forward pass, and a block of prompt tokens, in JavaScript. It calls the same kernels in the same order as the Python engine would, and chooses for each block and each few tokens whether the CPU or the GPU runs them. `forward.js` is the window; the engine (`engine.js`), its software threads (`threads.js`), its GPU side (`gpuside.js`), the choice between the two (`choice.js`) and the memory a model takes (`memory.js`, `alone.js`) are the modules of `forward/`. |
+| `src/runtime/forward.js` and `src/runtime/forward/` | One token's forward pass, and a block of prompt tokens, in JavaScript. It calls the same kernels in the same order as the Python engine would, and chooses for each block and each few tokens whether the CPU or the GPU runs them. `forward.js` is the window; the engine (`engine.js`), its software threads (`threads.js`), its GPU side (`gpuside.js`), the choice between the two (`choice.js`) and the memory a model takes (`memory.js`, `alone.js`) are the modules of `forward/`. |
 | `kernels/` | The SIMD kernels: int8 and float32 matrix products, activation quantization, RMSNorm, LayerNorm, RoPE, attention, SwiGLU, GELU, and the sampling (repetition penalty, softmax, top-p). |
-| `public/helper.js`, `public/jobs.js` | Software threads, and the work they share. |
-| `public/gpu.js`, `public/gpu/`, `public/shaders.js`, `public/shaders/` | The GPU worker and all WGSL shaders (`gpu.js` is the window the worker starts from, over the nine files of `gpu/`: the device, the weights, the forms checked and chosen, a prompt's block, a token's steps, the requests; `shaders.js` is the window over the twelve files of `shaders/`, which hold the shaders by family and the sources' notices). |
+| `src/runtime/helper.js`, `src/runtime/jobs.js` | Software threads, and the work they share. |
+| `src/runtime/gpu.js`, `src/runtime/gpu/`, `src/runtime/shaders.js`, `src/runtime/shaders/` | The GPU worker and all WGSL shaders (`gpu.js` is the window the worker starts from, over the nine files of `gpu/`: the device, the weights, the forms checked and chosen, a prompt's block, a token's steps, the requests; `shaders.js` is the window over the twelve files of `shaders/`, which hold the shaders by family and the sources' notices). |
 | `public/coi.js` | The Service Worker: adds the headers for threads, keeps Pyodide and NumPy for offline use. |
-| `public/benchmark/`, `src/pages/benchmark.astro`, `src/benchmark/`, `src/bench/` | `/benchmark/`, the measurements of one device in one report: the sections' workers, the page and its script's modules, and the modules that write the tables and the report (`src/bench.js` is their window). |
+| `src/runtime/built.js` and `src/runtime/built/` | What is built and not written: the kernels (`make kernels`) and the Python as two archives (`python_archive.py`), each named once in a table. |
+| `src/runtime/benchmark/`, `src/pages/benchmark.astro`, `src/benchmark/`, `src/bench/` | `/benchmark/`, the measurements of one device in one report: the sections' workers, the page and its script's modules, and the modules that write the tables and the report (`src/bench.js` is their window). |
+
+The build (Astro's, with Vite) links the files of `src/runtime/` into one file a worker, and names every file it
+writes by a hash of its content (`_astro/worker.<hash>.js`, `_astro/simdkernel_plain.<hash>.wasm`): a page never runs a
+worker of another deployment, and a file that did not change is not fetched again. Only the Service Worker and the
+models stay in `public/`, served as they are. The workers are not minified, so a stack in a report names functions as
+the sources do.
 
 ## Why the forward pass is in JavaScript
 

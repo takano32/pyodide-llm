@@ -1,6 +1,6 @@
 // T173: the page-memory section of /benchmark/: how much memory the page can hold before the browser refuses it or
 // ends the tab. A plain module, so that Node tests it alone (tests/page-memory.mjs); the page's worker is
-// public/benchmark/memory.js.
+// src/runtime/benchmark/memory.js.
 //
 // iOS ends a tab past about 2 to 3 GB (jetsam) without an error, so the limit is found by a mark: before each step
 // the page writes in sessionStorage what it held and what it is about to try; a tab the browser ended and loaded again

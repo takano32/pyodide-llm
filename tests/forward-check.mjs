@@ -1,4 +1,4 @@
-// The forward pass of public/forward.js (the page's) against the NumPy forward of llama2_numpy.py, on the models of
+// The forward pass of src/runtime/forward.js (the page's) against the NumPy forward of llama2_numpy.py, on the models of
 // this directory (make models kernels) or converted ones. Since T93 there is no other forward to hold it to.
 //   float32: the kernels add in another order than NumPy, so the last bits differ; the most likely token must be the
 //            same at every position, and no logit may differ by more than 1e-3 (measured 2026-09-25: 1.7e-5 to 3.7e-5).

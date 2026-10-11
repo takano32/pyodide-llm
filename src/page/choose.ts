@@ -7,7 +7,7 @@ import { gpuFor, threadsFor } from "./remembered.ts";
 import { page } from "./state.ts";
 import { show } from "./settings.ts";
 import { message } from "./draw.ts";
-import { worker } from "./receiver.ts";
+import { root, worker } from "./receiver.ts";
 import { openHuggingFace } from "./folder.ts";
 
 // A model of the visitor's own disk, from the folder button or dropped on the page. The legacy format knows
@@ -177,5 +177,5 @@ select.onchange = () => {
   $("load").classList.remove("measured");
   ($("load") as HTMLDetailsElement).open = false;
   // search: this may reach the worker before init does, while the page looks at what is kept (T116)
-  worker.postMessage({ type: "load", search: location.search, model: weighed(page.model), load: ++page.loads, threads: threadsFor(page.model), gpu: gpuFor(page.model) });
+  worker.postMessage({ type: "load", root, search: location.search, model: weighed(page.model), load: ++page.loads, threads: threadsFor(page.model), gpu: gpuFor(page.model) });
 };

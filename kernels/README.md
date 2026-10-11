@@ -24,15 +24,15 @@ import (the widening of an int6 group and of a ternary one).
 | `kernel/math.ts` | what several kinds use, and no kernel: the group's size, a vector's sum, `fexp` and `vexp`, the largest of floats |
 
 A new kernel goes into the file of its kind and into a line of `kernel.ts` (`tests/forward-check.mjs` fails when the
-window and the files disagree, and when `public/jobs.js` does not say which of its arguments are addresses). **A new
+window and the files disagree, and when `src/runtime/jobs.js` does not say which of its arguments are addresses). **A new
 file goes into the Makefile's rule too** (`KERNEL_PARTS`): `make kernels` sees only the files named there, and the
 checks then test the old kernels (`tests/forward-check.mjs` fails when a file of `kernel/` is not named there). `node tests/kernels-same.mjs [--before <commit>]` builds this tree's kernels and
 another commit's and says for every built file whether it is the same bytes, the same functions in another order,
-or different, and whether `public/`'s are this tree's. (The division itself changed the order of the functions in the
+or different, and whether `src/runtime/built/`'s are this tree's. (The division itself changed the order of the functions in the
 five builds of `kernel.ts`, and nothing else: Binaryen sorts the functions that are used equally often by their
 names, and AssemblyScript's name of a function begins with its file.)
 
-`make kernels` compiles them into `public/simdkernel.so` and `public/simdkernel_relaxed.wasmlib` (a few KB, not
+`make kernels` compiles them into `src/runtime/built/simdkernel.so` and `src/runtime/built/simdkernel_relaxed.wasmlib` (a few KB, not
 committed). `build.py` needs no Emscripten: it compiles with AssemblyScript and prepends the `dylink.0` section
 that makes a module an Emscripten side module. Verified to load in Pyodide 0.29.4 and 314.0.7.
 

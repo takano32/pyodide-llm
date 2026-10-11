@@ -200,7 +200,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     "K and V 90 to the nearest float16, 102 toward zero, 0 away from it, 0 farther");
   assert.equal(farthest([1, 2.5], [1, 2]), 0.25);
   assert.ok(Number.isNaN(farthest([NaN, 1], [1, 2])), "a NaN is not within any line");
-  // the engine's own check of a form (public/gpu.js's checkTokens: the first layer's keys and values at position 1) takes
+  // the engine's own check of a form (src/runtime/gpu.js's checkTokens: the first layer's keys and values at position 1) takes
   // the same rule on floats (heldFloats): the device's float16 where it is a neighbour, the nearest where not. Toward zero
   // the stream of a float form on llm-jp-3 150M came to 3.2 times its line off the nearest's (CI, Dawn with every
   // conversion cut toward zero), and the form was refused

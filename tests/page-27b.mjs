@@ -1,4 +1,4 @@
-// page-27b.mjs (T233): Ternary Bonsai 2 27B on the page's forward pass (public/forward.js, the ternary kernels, the
+// page-27b.mjs (T233): Ternary Bonsai 2 27B on the page's forward pass (src/runtime/forward.js, the ternary kernels, the
 // rotated basis, a 64-bit shared memory, software threads), in Node, for CI: the model is 7.66 GB as the ternary
 // checkpoint, so the development machine runs none of this (tests/page_27b.sh has the stages and fetches the files).
 //

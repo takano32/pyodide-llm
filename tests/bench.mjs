@@ -48,7 +48,7 @@ assert.equal(ROUNDS[1].skip, undefined, "ROUNDS itself is left as it is");
 for (const memory of [8, 4, 0.5]) assert.deepEqual(roundsHere(ROUNDS, memory), ROUNDS, `a browser that says ${memory} GB runs every round`);
 assert.deepEqual(roundsHere(FULL_ROUNDS, undefined).filter((round) => round.skip).map((round) => round.name), ["NumPy only", "the kernels, int8 widened"], "?bench=full: the two rounds that widen the weights");
 assert.ok(/does not say how much memory/.test(MEMORY_UNSAID) && /float32/.test(MEMORY_UNSAID) && !/NumPy/.test(MEMORY_UNSAID), MEMORY_UNSAID);
-// the worker's row for it (public/worker.js: nothing loaded, the reason carried), in the report and back out of it
+// the worker's row for it (src/runtime/worker.js: nothing loaded, the reason carried), in the report and back out of it
 const iphoneRows = [rows[0], { name: "without the kernels", without: ["kernels"], skip: MEMORY_UNSAID }];
 const iphone = benchMarkdown(iphoneRows, environmentOf({ hardwareConcurrency: 6, userAgent: "Mozilla/5.0 (iPhone)" }, { model: "llm-jp-3 150M" }));
 const skippedLine = iphone.split("\n").find((line) => line.startsWith("| without the kernels |"));
@@ -869,6 +869,14 @@ for (const [what, pattern] of [
 ]) assert.ok(pattern.test(benchmarkPage), `benchmark.astro: ${what}`);
 // ... and the model page, whose visitor may choose a next model, tells none: its memory keeps that gigabyte (T96)
 assert.ok(/type: "init"/.test(pageText("index.astro")) && !/\bahead\b/.test(pageText("index.astro")), "index.astro tells its worker no loads ahead (T242)");
+// T367.3's review: the worker builds the URLs of models/ from the root the page hands it (state.root, set by the first init
+// or load that carries one): an init without it is a worker whose every model's parts are a TypeError. Every message that
+// starts a worker of the model (both pages' inits, and the loads) names it.
+for (const [page, text] of [["index.astro", pageText("index.astro")], ["benchmark.astro", benchmarkPage]]) {
+  const starts = [...text.matchAll(/type: "(init|load)"[^}]*?\}/g)];
+  assert.ok(starts.length > 0, `${page} starts a worker with an init or a load`);
+  for (const [message, kind] of starts) assert.ok(/\broot\b/.test(message), `${page}: its ${kind} message hands the worker the site's root (models/ is under it)`);
+}
 // the CPU section's ceilings that could not be measured at all say so in that word, as the GPU section's steps do (T227's own
 // change left this one at "Not measured:")
 const noCeilings = cpuTable({ ...aCpu, ceilings: { error: "out of memory\nsecond | line" } });

@@ -1,4 +1,4 @@
-// A step of /benchmark/'s GPU worker (public/benchmark/gpu.js) in Node on Dawn (the npm package webgpu, not a
+// A step of /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js) in Node on Dawn (the npm package webgpu, not a
 // dependency of this project: gpu-prompt.yml installs it under .tmp/dawn) with Mesa's lavapipe (shader-f16 and
 // subgroups, whose width LP_NATIVE_VECTOR_WIDTH sets: 128 → 4, 512 → 16), with no browser: the worker's answer as one
 // line "RESULT <seconds> <json>" (its result, or { error }). T219 (from T191's review's throwaway tool): the CI's

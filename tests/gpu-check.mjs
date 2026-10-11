@@ -1,4 +1,4 @@
-// T135: the prompt on the GPU (public/gpu.js) against the CPU's (public/forward.js) and NumPy's (llama2_numpy.py), in
+// T135: the prompt on the GPU (src/runtime/gpu.js) against the CPU's (src/runtime/forward.js) and NumPy's (llama2_numpy.py), in
 // a real browser, as WebGPU is nowhere else: Playwright's Chromium, whose WebGPU without a GPU is SwiftShader (the CPU
 // in the GPU's place: its speed means nothing, its numbers are right or not).
 //
@@ -1105,7 +1105,7 @@ async function inBrowser() {
 }
 
 // T147: the harness in a worker thread of Node, WebGPU from Dawn (the npm package webgpu at --webgpu), the GPU's
-// worker (public/gpu.js) in a worker thread of its own, the modules from their files and the rest from the server
+// worker (src/runtime/gpu.js) in a worker thread of its own, the modules from their files and the rest from the server
 async function inDawn() {
   const { Worker } = await import("node:worker_threads");
   if (!webgpu) throw new Error("--engine dawn wants --webgpu <the directory of the npm package webgpu>");

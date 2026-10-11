@@ -132,12 +132,12 @@ A checkpoint of more than 1 GB asks first.
    Web Worker. The model is downloaded at the same time, in parts over several connections.
 2. Python (`src/python/llama2_numpy.py`, `src/python/llama2_convert.py`) reads the model, converts a Hugging Face model to
    int8 as its file arrives, and handles the tokenizer and the sampling.
-3. The forward pass of each token runs in JavaScript (`public/forward.js`), which calls WebAssembly SIMD kernels
+3. The forward pass of each token runs in JavaScript (`src/runtime/forward.js`), which calls WebAssembly SIMD kernels
    (`kernels/`, written in AssemblyScript) on the model's own WebAssembly memory. With threads, software threads
-   (`public/helper.js`) share the rows of each matrix. The page measures how many threads are fastest on your
+   (`src/runtime/helper.js`) share the rows of each matrix. The page measures how many threads are fastest on your
    device.
 4. Where WebGPU is available, the blocks of a prompt and the tokens of the answer can run on the GPU
-   (`public/gpu.js`, `public/shaders.js`). The page checks each shader against JavaScript on your device, times them,
+   (`src/runtime/gpu.js`, `src/runtime/shaders.js`). The page checks each shader against JavaScript on your device, times them,
    and uses the GPU only where it measured it faster than the CPU. The answer goes to the GPU 4 tokens at a time,
    each sampled there with the random number the CPU drew for it.
 
@@ -166,7 +166,8 @@ Or with Docker: `docker build -t pyodide-llm . && docker run -p 8080:8080 pyodid
 - `make models` downloads, converts, quantizes and splits the models into `public/models/`. No binary is
   committed: the site's models are built when it is deployed.
 - `make kernels` compiles the SIMD kernels (no Emscripten needed; see [kernels/README.md](kernels/README.md)).
-- `npm run build` builds the site into `dist/`.
+- `npm run build` builds the site into `dist/`: the page's script and the workers (`src/runtime/`) bundled, every
+  file named by a hash of its content.
 
 Checks:
 
@@ -194,4 +195,4 @@ and pitfalls, and [TODO.md](TODO.md) the tasks.
 
 ## License
 
-[Mozilla Public License 2.0](LICENSE), the same as Pyodide's. Some files carry code from other projects under their own licenses, and keep those notices where the code is: `src/python/llama2_numpy.py` (tairov/llama2.py and karpathy/llama2.c, MIT) and the files of `public/shaders/` (`public/shaders.js` is their window; llama.cpp and ONNX Runtime, MIT; TensorFlow.js, MLC LLM and Apache TVM, Apache-2.0). The models are not in this repository and each keeps its own license (see the model list).
+[Mozilla Public License 2.0](LICENSE), the same as Pyodide's. Some files carry code from other projects under their own licenses, and keep those notices where the code is: `src/python/llama2_numpy.py` (tairov/llama2.py and karpathy/llama2.c, MIT) and the files of `src/runtime/shaders/` (`src/runtime/shaders.js` is their window; llama.cpp and ONNX Runtime, MIT; TensorFlow.js, MLC LLM and Apache TVM, Apache-2.0). The models are not in this repository and each keeps its own license (see the model list).

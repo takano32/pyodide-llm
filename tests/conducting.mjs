@@ -1,6 +1,6 @@
 // conducting.mjs (T374.4): what a Node tool that converts a model in Pyodide answers the conduct of a conversion with
 // (src/python/convert/conduct.py: a generator that asks which file comes next; the page's worker answers the same one,
-// public/worker/conduct.js). A tool says where the files are and what the conversion is made with, and nothing of
+// src/runtime/worker/conduct.js). A tool says where the files are and what the conversion is made with, and nothing of
 // which files a model needs, which tokenizer is tried or where its template comes from:
 //
 //   const { hf, folder } = listed(path);

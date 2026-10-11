@@ -1,10 +1,11 @@
-// What the parts of /benchmark/'s script stand on: the deployment's ?v=, the elements by id, the URL's parameters, the
+// What the parts of /benchmark/'s script stand on: the deployment's ?v= (the Service Worker's), the elements by id, the URL's parameters, the
 // sections' names, what a section's result is, the results, and the choices the URL makes.
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 
 declare const __BUILD__: string;
 export const BASE = import.meta.env.BASE_URL;
-// every worker of the same deployment as this page (GitHub Pages keeps a file for ten minutes)
+// the Service Worker's registration carries it (isolation.ts). The workers do not any more (T367.3: a bundler names
+// each file by a hash of its text)
 export const V = `?v=${__BUILD__}`;
 export const $ = (id: string) => document.getElementById(id)!;
 export const parameters = new URLSearchParams(location.search);

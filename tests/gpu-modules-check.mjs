@@ -1,5 +1,5 @@
-// tests/gpu-modules-check.mjs (T352): the names that the model's GPU worker (public/gpu.js) and its modules
-// (public/gpu/*.js) hand one another. Nothing else holds them outside a browser with a GPU: the worker runs only there
+// tests/gpu-modules-check.mjs (T352): the names that the model's GPU worker (src/runtime/gpu.js) and its modules
+// (src/runtime/gpu/*.js) hand one another. Nothing else holds them outside a browser with a GPU: the worker runs only there
 // (CI's gpu-check.mjs), and the checks of forward.js's choices make a GPU's worker of their own.
 //   - a name a file takes out of another (`const { a, b } = await import(...)`, `= await modules.x`) is exported there,
 //     under its own name, and every name a file uses is declared in it, taken from another, or a worker's global (a

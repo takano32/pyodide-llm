@@ -1,4 +1,4 @@
-// tests/device-key-check.mjs (T366): what public/shaders.js's deviceKey() is made of.
+// tests/device-key-check.mjs (T366): what src/runtime/shaders.js's deviceKey() is made of.
 //
 // The key says whether what a device measured (the forms it chose, T148; that the CPU was faster than a model on the GPU
 // alone, T156) still holds. It is to change when a shader the engine runs changes by a character, and not otherwise:
@@ -7,15 +7,15 @@
 //
 //   node tests/device-key-check.mjs
 //
-// T351: shaders.js is a window over the modules of public/shaders/ now. What is read, changed and run here is those
+// T351: shaders.js is a window over the modules of src/runtime/shaders/ now. What is read, changed and run here is those
 // modules as the one module they were (tests/shaders-source.mjs's oneSource(): their statements in the window's order,
 // without the lines that hand names from one to another), and "the file" below is that text. That it is the modules'
 // own behaviour is held where the check starts: run as it is, it gives the keys of the window imported for real.
 // (Whether each module takes the names it uses is tests/shaders-modules-check.mjs's.)
 //
 // (1) Every piece of text of the engine's shaders reaches the hash. A piece is a string, a number or a run of a
-//     template's text in the source of public/shaders.js's modules; the engine's shaders are every text and maker that
-//     public/gpu.js names (wgsl.<name>) and the prompt's tiles, with all they are made of (the names their source
+//     template's text in the source of src/runtime/shaders.js's modules; the engine's shaders are every text and maker that
+//     src/runtime/gpu.js names (wgsl.<name>) and the prompt's tiles, with all they are made of (the names their source
 //     reaches). Each piece is changed by one character, one at a time, the changed file run, and the key of one of
 //     eight made-up devices must differ: so every branch of every maker is walked by what deviceKey() makes of it.
 //     A piece of a ternary model's shaders must leave the key of every other model alone (T232); a piece of anything
@@ -137,7 +137,7 @@ const isShader = (name) => typeof real[name] === "string"
 // any destructuring, a subscript that is a string. (A match for `wgsl.<name>` found a name taken any other way as no shader
 // of gpu.js: a destructured shader was in no key and this check said ok.) A name that is also something else in gpu.js
 // (a property of the same spelling) is taken for a shader and must then reach the hash: it fails loudly, never quietly.
-// T352: gpu.js is a window over the modules of public/gpu/ now, and the worker is all of those files: each is read, and
+// T352: gpu.js is a window over the modules of src/runtime/gpu/ now, and the worker is all of those files: each is read, and
 // what is said of "gpu.js" below is said of them together (a shader named or compiled in any of them). Every file of the
 // folder is read, whether or not the window asks for it (that it asks for them all is tests/gpu-modules-check.mjs's).
 const gpuFiles = ["gpu.js", ...fs.readdirSync(runtime("gpu")).filter((name) => name.endsWith(".js")).sort().map((name) => `gpu/${name}`)];
