@@ -176,6 +176,9 @@ async function chooseMatrices(m) {
   right.forEach((form, i) => m.forms.tried.push({ name: form.name, ms: ms[i] }));
   m.forms.form = right[ms.indexOf(Math.min(...ms))];
 }
+// what "ready" says of the forms chosen: the tiled shader and the attention by their names, what each tiled shader
+// tried came to, and whether the one taken is the one the page remembered
+const formsSaid = (m) => ({ form: m.forms.form.name, attention: m.forms.attention.name, forms: m.forms.tried, remembered: Boolean(m.forms.form.remembered) });
 // the threads of a workgroup of one dimension this device takes
 const threadsOf = (device) => Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX);
 
@@ -293,5 +296,5 @@ async function timeForms(m, forms) {
   }
 }
 
-export { TIMED_MS, MOST_PASSES, PAIRS, chooseAttention, LINE, halfToFloat, chooseMatrices, threadsOf, productGroups,
+export { TIMED_MS, MOST_PASSES, PAIRS, chooseAttention, LINE, halfToFloat, chooseMatrices, formsSaid, threadsOf, productGroups,
   multiply };

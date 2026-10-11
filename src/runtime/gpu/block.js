@@ -2,7 +2,7 @@
 // and values, the block itself as one submission with its keys and values read back, and what a whole block takes (T148).
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, stopping, held, within, buffer, uniform, validated, pipelineOf, bind,
+import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, stopping, held, within, buffer, uniform, copyIn, narrowIn, validated, pipelineOf, bind,
   dispatch } from "./device.js";
 import { tablesOf } from "./weights.js";
 import { productGroups, multiply } from "./forms.js";
@@ -148,6 +148,24 @@ function grow(m, needed) {
   held(m, cache.owned);
 }
 
+// the cache grown where it does not hold positions yet (a block's, a step's, a check's)
+function roomFor(m, positions) {
+  if (positions > m.block.cache.capacity) grow(m, positions);
+}
+// T152: the keys and values of positions from to pos - 1 up from forward.js's cache (cache: its addresses of the keys
+// and the values in the shared memory, its capacity and the bytes of a position; half: float16 as here, else float32,
+// narrowed on the way up: T160, a grouped-query model's), before the steps of a generation read them
+function keysIn(m, cache, from, pos) {
+  const { plan } = m, { keys, values } = m.block.cache, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
+  const at = (block, l, p) => block + l * cache.capacity * cache.row + p * cache.row;
+  for (let l = 0; l < plan.layers; l++) {
+    for (const [block, target] of [[cache.keys, keys[l]], [cache.values, values[l]]]) {
+      if (cache.half) copyIn(m, target, at(block, l, from), (pos - from) * kvRow, from * kvRow);
+      else narrowIn(m, target, at(block, l, from), (pos - from) * kvDim, from * kvRow);
+    }
+  }
+}
+
 // T148: what a whole block takes here, from the submission to its keys and values read back, for 16 and for 64 tokens
 // (plan.batch) at position 0 of the GPU's own cache (which holds nothing of forward.js's yet): forward.js weighs a
 // block of a prompt on the GPU against the same tokens on the CPU by it (a line through the two, scaled by the blocks
@@ -200,7 +218,7 @@ async function block(m, count, pos, wanted, timing = false, tokens) {
   if (!plan.direct) device.queue.writeBuffer(x, 0, rows, 0, count * plan.dim);
   device.queue.writeBuffer(angles, 0, turns, 0, count * plan.headSize);
   device.queue.writeBuffer(step, 0, new Uint32Array([count, pos, 0, 0]));
-  if (pos + count > m.block.cache.capacity) grow(m, pos + count);
+  roomFor(m, pos + count);
   const { cache } = m.block;
   const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass(), form = m.forms.form;
   const multiplied = (pieces) => pieces.forEach((piece) => multiply(m, pass, form, piece.group, piece.rows, count));
@@ -268,4 +286,4 @@ async function keysBack(m, wanted) {
   }
 }
 
-export { prepare, bindLayers, grow, BLOCK_ROUNDS, timeBlocks, block, keysOut, keysBack };
+export { prepare, bindLayers, grow, roomFor, keysIn, BLOCK_ROUNDS, timeBlocks, block, keysOut, keysBack };

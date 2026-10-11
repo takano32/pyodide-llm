@@ -4,7 +4,7 @@
 import { COPY_DST, MAP_READ, rowBytes, turnedAt, stopping, within, buffer, readBack, validated, pipelineOf } from "./device.js";
 import { tablesOf } from "./weights.js";
 import { halfToFloat } from "./forms.js";
-import { grow, BLOCK_ROUNDS } from "./block.js";
+import { roomFor, BLOCK_ROUNDS } from "./block.js";
 import { chooseTokenAttention } from "./tokenattention.js";
 import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.js";
 import { GROUP } from "../shaders/common.js";
@@ -73,6 +73,14 @@ async function choose(m) {
   m.tokens.forms = [...tried, ...right.map((form, i) => ({ name: form.name, ms: ms[i], ...(kept && form.name === kept.name ? { remembered: true } : {}) }))];
 }
 
+// what "ready" says of a token here: the form of its layer chosen and its ms a step, what each form came to, the pieces
+// of the classifier, the attention and what each of those came to; null where the tokens stay on the CPU
+function tokensSaid(m) {
+  const g = m.tokens;
+  return g?.form ? { form: g.form.name, ms: g.ms, forms: g.forms, remembered: g.forms.some((f) => f.remembered), pieces: m.weights.tables.classifier.length,
+    attention: g.attention.name, attentions: g.attentions } : null;
+}
+
 // ms a step of each form: runs of plan.tokens.most steps a submission from position 0 (a made-up state, the settings
 // of the list's sampled models, T151's), the forms in turn after one run each to warm up, BLOCK_ROUNDS rounds (one on
 // a fallback adapter: its times are no GPU's), the median of each over its steps. The runs write the GPU's own keys
@@ -82,7 +90,7 @@ async function timeTokens(m, forms) {
   const state = samplingState({ token: 1, pos: 0, history: [1] });
   const settings = samplingSettings({ vocab: g.vocab, temperature: 0.7, topp: 0.9, penalty: 1.1 });
   const randoms = new Float32Array(most).map(() => Math.fround(Math.random()) % 1);
-  if (most > m.block.cache.capacity) grow(m, most);
+  roomFor(m, most);
   const timed = async (form) => {
     const began = performance.now();
     await runTokens(m, tokenStep(m, form, most), { count: most, pos: 0, state, settings, randoms });
@@ -251,7 +259,7 @@ async function checkTokens(m, form, back = {}) {
     const pos = 1;
     const halfBits = () => (Math.random() < 0.5 ? 0x8000 : 0) | ((13 + ((Math.random() * 3) | 0)) << 10) | ((Math.random() * 1024) | 0);
     const row0 = [0, 1].map(() => new Uint16Array(kvDim).map(halfBits));
-    if (m.block.cache.capacity < 2) grow(m, 2);
+    roomFor(m, 2);
     const { keys: cacheKeys, values: cacheValues } = m.block.cache;
     device.queue.writeBuffer(cacheKeys[0], 0, row0[0]);
     device.queue.writeBuffer(cacheValues[0], 0, row0[1]);
@@ -365,4 +373,4 @@ async function checkTokens(m, form, back = {}) {
   }
 }
 
-export { chooseTokens };
+export { chooseTokens, tokensSaid };

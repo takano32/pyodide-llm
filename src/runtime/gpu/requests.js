@@ -2,8 +2,8 @@
 // keys and values (T210), each answered by serve().
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { model, lost, copyIn, narrowIn } from "./device.js";
-import { grow, block, keysOut, keysBack } from "./block.js";
+import { model, lost } from "./device.js";
+import { roomFor, keysIn, block, keysOut, keysBack } from "./block.js";
 import { tokenStep, runTokens } from "./tokens.js";
 import { samplingState, samplingSettings } from "../shaders/run.js";
 
@@ -18,17 +18,10 @@ import { samplingState, samplingSettings } from "../shaders/run.js";
 // GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back
 function generate({ serial, count, pos, from, token, history, length, cache, settings, randoms }) {
   serve(serial, async (wanted) => {
-    const m = model, { plan, tokens: g } = m, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
+    const m = model, { plan, tokens: g } = m, kvRow = plan.kvHeads * plan.headSize * 2;
     if (!g?.form) throw new Error("no tokens on this GPU");
-    if (pos + count > m.block.cache.capacity) grow(m, pos + count);
-    const { keys, values } = m.block.cache;
-    const at = (block, l, p) => block + l * cache.capacity * cache.row + p * cache.row;
-    for (let l = 0; cache && l < plan.layers; l++) {
-      for (const [block, target] of [[cache.keys, keys[l]], [cache.values, values[l]]]) {
-        if (cache.half) copyIn(m, target, at(block, l, from), (pos - from) * kvRow, from * kvRow);
-        else narrowIn(m, target, at(block, l, from), (pos - from) * kvDim, from * kvRow);
-      }
-    }
+    roomFor(m, pos + count);
+    if (cache) keysIn(m, cache, from, pos);
     const out = await runTokens(m, tokenStep(m, g.form, pos + count), { count, pos, keep: Boolean(cache),
       state: samplingState({ token, pos, history, length }), settings: samplingSettings({ vocab: g.vocab, ...settings }),
       randoms: Float32Array.from({ length: count }, (_, i) => randoms[i] ?? 0) });

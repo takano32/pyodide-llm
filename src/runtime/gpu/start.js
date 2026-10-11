@@ -3,10 +3,10 @@
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 import { model, stopping, lost, stopAsked, handed, within, openDevice, describe, unusable, end } from "./device.js";
-import { upload, uploadLayers, uploadRest, tablesOn } from "./weights.js";
-import { chooseAttention, chooseMatrices } from "./forms.js";
+import { upload, uploadLayers, uploadRest, tablesOn, routed, unwritten } from "./weights.js";
+import { chooseAttention, chooseMatrices, formsSaid } from "./forms.js";
 import { prepare, bindLayers, grow, timeBlocks } from "./block.js";
-import { chooseTokens } from "./tokenforms.js";
+import { chooseTokens, tokensSaid } from "./tokenforms.js";
 
 let starting = false;
 
@@ -44,30 +44,14 @@ function open(plan, shared) {
     }
   })();
 }
-// the bytes at offset of the checkpoint (bytes: a Uint8Array of their own) onto the buffers whose routes they fall in.
-// writeBuffer takes whole words: the bytes of a word a stretch begins or ends in the middle of wait for the rest of it
-// (partial), which another message brings
+// the bytes at offset of the checkpoint (bytes: a Uint8Array of their own) onto the buffers whose routes they fall in
+// (weights.js's routed()), and flow[0] counted once the GPU has them
 function take(data) {
   if (!opened) return void backlog.push(data);
   const { offset, bytes } = data;
   if (!failure) {
     try {
-      const { routes } = model.weights, end = offset + bytes.length;
-      let lo = 0, hi = routes.length;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (routes[mid][1] <= offset) lo = mid + 1;
-        else hi = mid;
-      }
-      for (let i = lo; i < routes.length && routes[i][0] < end; i++) {
-        const [start, stop, target, at] = routes[i];
-        let a = Math.max(start, offset) - offset, here = at + (a + offset - start);
-        const b = Math.min(stop, end) - offset;
-        for (; a < b && here % 4; a++, here++) partialByte(target, here, bytes[a]);
-        const whole = (b - a) & ~3;
-        if (whole) model.device.queue.writeBuffer(target, here, bytes, a, whole);
-        for (let k = a + whole; k < b; k++) partialByte(target, here + (k - a), bytes[k]);
-      }
+      routed(model, offset, bytes);
     } catch (error) {
       failure = String(error?.message ?? error);
     }
@@ -79,20 +63,6 @@ function take(data) {
   if (failure) done();
   else model.device.queue.onSubmittedWorkDone().then(done, done);
 }
-// a byte of target at the byte offset at, the word it is in written once all four of its bytes are there
-function partialByte(target, at, value) {
-  const { partial } = model.weights, word = at - (at % 4);
-  if (!partial.has(target)) partial.set(target, new Map());
-  const words = partial.get(target);
-  if (!words.has(word)) words.set(word, { bytes: new Uint8Array(4), count: 0 });
-  const held = words.get(word);
-  held.bytes[at % 4] = value;
-  if (++held.count < 4) return;
-  model.device.queue.writeBuffer(target, word, held.bytes);
-  words.delete(word);
-  if (!words.size) partial.delete(target);
-}
-
 let startAsked = false;
 async function start(memory, plan) {
   const began = performance.now();
@@ -104,7 +74,7 @@ async function start(memory, plan) {
       await opening;
       if (failure && !stopping) return unusable(`the layers did not go up to the GPU (${failure})`);
       if (stopping || !model) return end();
-      if (model.weights.partial.size) return unusable("the layers' bytes did not all come to the GPU");
+      if (unwritten(model)) return unusable("the layers' bytes did not all come to the GPU");
       handed(memory, plan);
       bytes = openedBytes + (await uploadRest(model));
     } else {
@@ -141,12 +111,9 @@ async function start(memory, plan) {
       if (stopping) return end();
     }
     if (lost) return unusable(lost);
-    const g = model.tokens;
+    // (in this order: form, attention, forms and remembered are formsSaid()'s)
     postMessage({ type: "ready", adapter: describe(adapter), key, bytes, seconds: (performance.now() - began) / 1000,
-      form: model.forms.form.name, attention: model.forms.attention.name, forms: model.forms.tried, remembered: Boolean(model.forms.form.remembered), blocks,
-      tokens: g?.form ? { form: g.form.name, ms: g.ms, forms: g.forms, remembered: g.forms.some((f) => f.remembered), pieces: model.weights.tables.classifier.length,
-        attention: g.attention.name, attentions: g.attentions } : null,
-      tokensWhy: plan.tokens ? tokensWhy ?? null : undefined });
+      ...formsSaid(model), blocks, tokens: tokensSaid(model), tokensWhy: plan.tokens ? tokensWhy ?? null : undefined });
   } catch (error) {
     unusable(String(error?.message ?? error));
   } finally {

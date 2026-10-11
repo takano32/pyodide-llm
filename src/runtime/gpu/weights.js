@@ -153,6 +153,42 @@ function tablesOn(m) {
   routes.sort((a, b) => a[0] - b[0]);
   return bytes;
 }
+// T156: the bytes at offset of the checkpoint (bytes: a Uint8Array of their own) onto the buffers whose routes they
+// fall in. writeBuffer takes whole words: the bytes of a word a stretch begins or ends in the middle of wait for the
+// rest of it (partial), which another stretch brings
+function routed(m, offset, bytes) {
+  const { routes } = m.weights, end = offset + bytes.length;
+  let lo = 0, hi = routes.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (routes[mid][1] <= offset) lo = mid + 1;
+    else hi = mid;
+  }
+  for (let i = lo; i < routes.length && routes[i][0] < end; i++) {
+    const [start, stop, target, at] = routes[i];
+    let a = Math.max(start, offset) - offset, here = at + (a + offset - start);
+    const b = Math.min(stop, end) - offset;
+    for (; a < b && here % 4; a++, here++) partialByte(m, target, here, bytes[a]);
+    const whole = (b - a) & ~3;
+    if (whole) m.device.queue.writeBuffer(target, here, bytes, a, whole);
+    for (let k = a + whole; k < b; k++) partialByte(m, target, here + (k - a), bytes[k]);
+  }
+}
+// a byte of target at the byte offset at, the word it is in written once all four of its bytes are there
+function partialByte(m, target, at, value) {
+  const { partial } = m.weights, word = at - (at % 4);
+  if (!partial.has(target)) partial.set(target, new Map());
+  const words = partial.get(target);
+  if (!words.has(word)) words.set(word, { bytes: new Uint8Array(4), count: 0 });
+  const held = words.get(word);
+  held.bytes[at % 4] = value;
+  if (++held.count < 4) return;
+  m.device.queue.writeBuffer(target, word, held.bytes);
+  words.delete(word);
+  if (!words.size) partial.delete(target);
+}
+// whether bytes of a word still wait for the rest of it: the checkpoint's stretches did not all come
+const unwritten = (m) => m.weights.partial.size > 0;
 // T152: how a token's layer holds its matrices (shaders.js's fusedMatVec and fusedDp4aMatVec read q, k and v as one
 // matrix, gate and up as one, up's rows after gate's): a buffer of values and one of scales a layer for each (sizes),
 // and each matrix's range of them (homes: its offsets in bytes), which the prompt's tiled shaders bind as a matrix of
@@ -290,4 +326,4 @@ async function checkWiden(m, packed, run) {
   }
 }
 
-export { upload, uploadLayers, uploadRest, tablesOf, tablesOn };
+export { upload, uploadLayers, uploadRest, tablesOf, tablesOn, routed, unwritten };
