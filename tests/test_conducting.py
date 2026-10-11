@@ -108,13 +108,17 @@ def played(monkeypatch, requests):
     with, the answers it got and whether it was closed."""
     seen = {"answers": [], "closed": False}
 
-    def conduct(hf, **make):
-        seen["hf"], seen["make"] = hf, make
+    def playing():
         try:
             for request in requests:
                 seen["answers"].append((yield request))
         finally:
             seen["closed"] = True
+
+    def conduct(hf, **make):
+        # (the generator is kept: one that nobody holds is closed when it is let go, whoever forgot to close it)
+        seen["hf"], seen["make"], seen["steps"] = hf, make, playing()
+        return seen["steps"]
 
     monkeypatch.setattr(conducting, "conduct", conduct)
     return seen

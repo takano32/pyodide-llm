@@ -59,12 +59,16 @@ from fetching import download  # noqa: E402
 REPO, REVISION = "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"
 WEIGHTS = "model.safetensors-00001-of-00001.safetensors"
 FILES = ["config.json", "tokenizer.json", "tokenizer_config.json", "model.safetensors.index.json", WEIGHTS]
-# <|endoftext|>: what the converter begins every text with (llama2_convert.normalize), and so what ?hf= opens. NOT what the
-# list's entries begin with: <|im_start|>, 248045 (T236). The engine agrees with transformers on the same ids whichever
-# the first token is, but a perplexity read here is of this other way: a Qwen3.5 reads a text 18% (2B) to 45% (4B) worse
-# after it, and its perplexity then moves by about +-3% under a rounding of its weights, so a Q8_0 GGUF's can read LOWER
-# than the original's (the review of T245: 7.574 against 7.873 on 192 tokens, 4B; with <|im_start|> it is 4.215 against
-# 4.217). tests/perplexity_prepare.py --entry <id> measures the list's way.
+# <|endoftext|>: what the converter begins a text with where it reads no template (llama2_convert.normalize). NOT what the
+# list's entries begin with: <|im_start|>, 248045 (T236), and not what ?hf= begins with since T369 where the converter reads
+# the model's template (with jinja2, T397: its BOS is then the template's first token, <|im_start|>). The comparisons here
+# are of the engine and transformers on the same ids, so the engine is handed this token as its BOS whatever the conversion
+# says (T374.4: without that, the engine's greedy text began after <|im_start|> and transformers' after <|endoftext|>, and
+# "the two wrote OTHER TEXTS" wherever jinja2 was installed: CI's run 38102111965). The engine agrees with transformers on
+# the same ids whichever the first token is, but a perplexity read here is of this other way: a Qwen3.5 reads a text 18%
+# (2B) to 45% (4B) worse after it, and its perplexity then moves by about +-3% under a rounding of its weights, so a Q8_0
+# GGUF's can read LOWER than the original's (the review of T245: 7.574 against 7.873 on 192 tokens, 4B; with <|im_start|>
+# it is 4.215 against 4.217). tests/perplexity_prepare.py --entry <id> measures the list's way.
 BOS = 248044
 # a text of more than 64 tokens (transformers' chunk of the delta rule), English and Japanese
 TEXT = ("Mount Fuji is the highest mountain in Japan, standing 3,776 metres above sea level on the island of Honshu. "
@@ -335,7 +339,7 @@ def real(directory, positions, repo=REPO, revision=REVISION):
     if "template" in conversion.options:
         say(f"real: the converter read a template: {json.dumps(conversion.options['template'])}")
     llama = Llama(np.memmap(sink.path, dtype=np.uint8, mode="r"), conversion.tokenizer, kernels=None,
-                  **{**options, "specials": SPECIALS, "stop_tokens": [248044, 248046]})
+                  **{**options, "specials": SPECIALS, "stop_tokens": [248044, 248046], "bos": BOS})
 
     # the same ids for both: the page's BOS, then the text as the real tokenizer splits it (and the engine's own
     # tokenizer has to split it the same)
@@ -566,7 +570,7 @@ def large(directory, positions, name, source, text_file, minutes, first=0):
 
     data = np.memmap(f"{checkpoint}.bin", dtype=np.uint8, mode="r")
     llama = Llama(data, Path(f"{checkpoint}.tokenizer.bin").read_bytes(), kernels=None,
-                  **{**options, "specials": SPECIALS, "stop_tokens": [248044, 248046]})
+                  **{**options, "specials": SPECIALS, "stop_tokens": [248044, 248046], "bos": BOS})
     tokenizer = tokenizers.Tokenizer.from_file(str(directory / "tokenizer.json"))
     ids = [BOS] + tokenizer.encode(TEXT, add_special_tokens=False).ids
     same = [BOS] + llama.tokenizer.encode(TEXT, llama.specials) == ids
