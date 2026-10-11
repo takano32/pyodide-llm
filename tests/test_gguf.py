@@ -551,6 +551,30 @@ def test_the_lists_ternary_bonsai_turn_by_a_plain_rope(dtype, shape):
     assert all(np.array_equal(a, b) for a, b in zip(ours, [np.array(unscaled.forward(token, pos)) for pos, token in enumerate((3, 7, 9, 11))]))
 
 
+@pytest.mark.parametrize("shape", BONSAI_SIZES)
+def test_the_fixed_outputs_float32_engine_is_given_the_entrys_rope(shape):
+    """tests/fixed_outputs.py writes float32, whose file holds the tables the converter made of config.json's yarn and
+    whose engine does not look at the options: its with_the_entrys_rope() gives that engine the tables the page's
+    engine makes of the same options, to the bit, and then both compute by the same RoPE."""
+    from fixed_outputs import with_the_entrys_rope
+    said = listed_options()[BONSAI_ENTRIES[shape]]
+    config, published, file, same = bonsai_gguf(**BONSAI_SIZES[shape])
+    made = {}
+    for dtype in ("float32", "float16"):
+        got = with_original(file, published, unigram(config["vocab_size"]), "tokenizer.json", dtype)
+        options = {**{key: value for key, value in got.options.items() if key != "template"}, "rope_scaling": said["rope_scaling"]}
+        made[dtype] = Llama(bytes(got.checkpoint), bytes(got.tokenizer), kernels=None, **options), options
+    (whole, options), (page, _) = made["float32"], made["float16"]
+    assert whole.rope_magnitude == 1.0 and whole.freq_cis_real[0, 0] == np.float32(0.1 * math.log(4.0) + 1.0), \
+        "a float32 file's tables are the converter's (yarn's), whatever the options say"
+    assert with_the_entrys_rope(whole, options) is whole
+    assert np.array_equal(whole.freq_cis_real, page.freq_cis_real) and np.array_equal(whole.freq_cis_imag, page.freq_cis_imag)
+    assert whole.freq_cis_real.dtype == page.freq_cis_real.dtype == np.float32 and whole.rope_magnitude == 1.0
+    # (and yarn said in the options is yarn's tables again, magnitude and all: the tool follows the options, whatever they say)
+    with_the_entrys_rope(whole, {**options, "rope_scaling": published["rope_scaling"]})
+    assert whole.freq_cis_real[0, 0] == np.float32(0.1 * math.log(4.0) + 1.0) and not np.allclose(whole.freq_cis_real[:64], page.freq_cis_real[:64], atol=1e-3)
+
+
 def test_a_pq2_0_gguf_alone_converts_to_the_checkpoint_of_the_same_values():
     """?hf= of such a GGUF alone, were it to name a BOS (Ternary-Bonsai's names none and is refused, as T203 has it):
     yarn's numbers come from the GGUF's own metadata, by config.json's names."""
