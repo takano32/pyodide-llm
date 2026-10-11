@@ -9,7 +9,9 @@ import { since } from "./clock.js";
 import { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom, weightsDrained, checkpointSink } from "./weights.js";
 import { conductOf, answered, fromHub, fromFolder } from "./conduct.js";
 import { HEADER_BYTES, headerInts } from "./sources.js";
-import { templatePackage, pythonArchive, placePython } from "./pyodide.js";
+import { templatePackage, placePython } from "./pyodide.js";
+import { built } from "../built.js";
+import { named } from "../updated.js";
 
 // What a conversion made is kept for the next visit (kept.js): in the origin private file system where there is one
 // (T99), else in the Cache API. The original is twice as large, and fetching and converting it again on every visit
@@ -102,7 +104,7 @@ export async function converter(signal) {
     // (T397) and jinja2 with it, for the model's chat template: the conversion goes on without it where it does not come
     const jinja = templatePackage(state.pyodide);
     const archive = "converter.zip";
-    await placePython(state.pyodide, pythonArchive(archive, signal), archive);
+    await placePython(state.pyodide, built(archive, signal).then((res) => res.arrayBuffer()), archive);
     await jinja;
     state.llama2_convert = state.pyodide.pyimport("llama2_convert");
   }
@@ -111,8 +113,9 @@ export async function converter(signal) {
 
 export async function convert(model, signal, id) {
   const remote = typeof model.hf.repo === "string";
-  // (asked for when a conversion first needs it: a module of its own, _astro/kept.<hash>.js)
-  state.keptModule ??= await import("../kept.js");
+  // (asked for when a conversion first needs it: a module of its own, _astro/kept.<hash>.js. T367.4: where it is not
+  // there because the site was updated since this page was opened, that is what is said)
+  state.keptModule ??= await named(import.meta.url, () => import("../kept.js"));
   const kept = remote ? await loadConverted(model, signal, id) : undefined;
   if (kept && !kept.miss) {
     return { fromCache: true, keptIn: kept.keptIn, template: kept.template };

@@ -5,6 +5,7 @@ import "./isolation.ts";
 import { MODELS } from "../models.js";
 import { $, type Name, type Result } from "./dom.ts";
 import { page } from "./state.ts";
+import { unstarted } from "../runtime/updated.js";
 
 // ---- the sections' elements: a head with a Run button and the state, the progress while it runs (T177), and what
 // the section found
@@ -62,6 +63,12 @@ export function ticked() {
   }
 }
 
+// What a section's worker that failed is said as. T367.4: one that did not load because the site was updated since
+// this page was opened (its file is of the page's build, and gone) says that, and that alone. This module is the one
+// that names the workers' files (WORKERS, below), so it is the one whose own address is asked for.
+export const workerFailed = async (event: ErrorEvent) =>
+  (await unstarted(event, import.meta.url, `the worker failed: ${event.message ?? "error"}`)).message;
+
 // one worker, one question, one answer (the section workers answer every message once)
 export function ask(worker: Worker, message: any): Promise<any> {
   return new Promise((resolve) => {
@@ -71,7 +78,7 @@ export function ask(worker: Worker, message: any): Promise<any> {
       if (data.lost || data.alive || data.stage !== undefined) return;
       resolve(data);
     };
-    worker.onerror = (event) => resolve({ error: `the worker failed: ${event.message ?? "error"}` });
+    worker.onerror = async (event) => resolve({ error: await workerFailed(event) });
     worker.postMessage(message);
   });
 }

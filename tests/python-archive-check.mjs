@@ -194,16 +194,19 @@ const made = build(tree.python(), path.join(work, "tree"));
 
   // what is asked for: the archive beside the worker, with the worker's ?v=<build>, once; its bytes whole
   fresh(answers(made["engine.zip"]));
-  const came = await run("pythonArchive")("engine.zip");
+  // (T367.4: an archive is fetched as every built file is, by built.js's built(); its body is the caller's to read)
+  const archive = (name, signal) => run("built")(name, signal).then((res) => res.arrayBuffer());
+  const came = await archive("engine.zip");
   assert.deepEqual(requests.map(({ url, method }) => `${method} ${url}`), [`GET ${asked("engine.zip")}`]);
   assert.ok(Buffer.from(came).equals(made["engine.zip"]), "the archive's bytes, whole");
   // an archive that is not there: the words a file of the site has when it cannot be fetched
   fresh(() => new Response("", { status: 404 }));
-  await assert.rejects(run("pythonArchive")("engine.zip"), { message: "Could not fetch engine.zip: 404" });
+  // (as these checks have the files, they are of no build: the 404 of one that is, is tests/updated-check.mjs's)
+  await assert.rejects(archive("engine.zip"), { message: "Could not fetch engine.zip: 404" });
   // a load that was cancelled: the fetch is the load's to stop
   const cancelled = new AbortController();
   fresh(() => "hang");
-  const waiting = run("pythonArchive")("converter.zip", cancelled.signal);
+  const waiting = archive("converter.zip", cancelled.signal);
   cancelled.abort();
   await assert.rejects(waiting, { name: "AbortError" });
   assert.equal(requests[0].signal, cancelled.signal);
@@ -261,7 +264,7 @@ const made = build(tree.python(), path.join(work, "tree"));
   // (the names as the code says them, in quotes: the comments name them too)
   assert.deepEqual(naming(/"engine\.zip"/), ["worker.js"]);
   assert.deepEqual(naming(/"converter\.zip"/), ["convert"]);
-  assert.match(body(sources["worker.js"], "async function init(search) {"), /pythonArchive\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(state\.pyodide, engine, "engine\.zip"\);\s*state\.llama2_numpy = state\.pyodide\.pyimport\("llama2_numpy"\);/,
+  assert.match(body(sources["worker.js"], "async function init(search) {"), /built\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(state\.pyodide, engine, "engine\.zip"\);\s*state\.llama2_numpy = state\.pyodide\.pyimport\("llama2_numpy"\);/,
     "init() asks for the engine's archive before it waits for Pyodide, and places it before it imports the engine");
   assert.equal(Object.values(sources).join("\n").match(/"converter\.zip"/g).length, 1);
   assert.match(body(sources.convert, "async function converter(signal) {"), /"converter\.zip"/);
@@ -277,7 +280,7 @@ const made = build(tree.python(), path.join(work, "tree"));
   const spent = {};
   for (const [name, module] of Object.entries(ARCHIVES)) {
     const began = performance.now();
-    await run("placePython")(real, run("pythonArchive")(name), name);
+    await run("placePython")(real, archive(name), name);
     spent[name] = performance.now() - began;
     // (the window and the package are asked for by name, which runs none of them: the parts import NumPy, which is not here)
     const found = (name) => real.runPython(`import importlib.util\nspec = importlib.util.find_spec(${JSON.stringify(name)})\nspec and spec.origin`);

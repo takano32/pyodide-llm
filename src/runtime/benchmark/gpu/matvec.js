@@ -1,7 +1,7 @@
 // The steps "bandwidth" and "token": GB/s of one int8 matrix times a vector by every shader (T134, T149) against the CPU's
 // kernel, and a whole token's work of a model's shapes.
 // (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
-import { BUILT } from "../../built.js";
+import { built } from "../../built.js";
 import { shared, MODELS, layerMatrices, SMALL_PER_LAYER, matrixBytes, gpu, MAP_READ, COPY_DST, buffer, noise, floats,
   pipelinesFor, matVecShaders, kindOf, quantizer, matrix, placed, bound, vectors, destroyVectors, run, argmaxOf,
   readBack, median, validated, paired, scoped } from "./device.js";
@@ -96,7 +96,7 @@ async function cpuBandwidth([rows, n]) {
   const weights = rows * n, scales = (rows * n / shared.GROUP) * 4, copies = Math.max(1, Math.min(4, Math.floor(128e6 / weights)));
   const bytes = 4096 + n * 8 + rows * 4 + copies * (weights + scales);
   const memory = new WebAssembly.Memory({ initial: Math.ceil(bytes / 65536) + 1 });
-  cpuKernel ??= await WebAssembly.compile(await (await fetch(BUILT["simdkernel_plain.wasm"])).arrayBuffer());
+  cpuKernel ??= await WebAssembly.compile(await (await built("simdkernel_plain.wasm")).arrayBuffer());
   const k = (await WebAssembly.instantiate(cpuKernel, { env: { memory } })).exports;
   const U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer);
   const x = 4096, xq = x + n * 4, xs = xq + n, out = xs + (n / shared.GROUP) * 4 + 64, first = Math.ceil((out + rows * 4) / 64) * 64;

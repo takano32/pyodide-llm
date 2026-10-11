@@ -11,6 +11,7 @@ import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
 import { message, meta, onGpu, onGpuSampled, rows, seconds, setGenerating, showBench, showStatus } from "./draw.ts";
 import { isolating } from "./isolation.ts";
+import { unstarted } from "../runtime/updated.js";
 
 declare const __BUILD__: string;
 
@@ -205,6 +206,7 @@ worker.onmessage = ({ data }) => {
     select.disabled = files.disabled = false;
   }
 };
-worker.onerror = (event) => {
-  message("model error", `Failed to start the worker: ${event.message}`);
+// (T367.4: a worker that did not load because the site was updated since this page came says that, and that alone)
+worker.onerror = async (event) => {
+  message("model error", (await unstarted(event, import.meta.url, `Failed to start the worker: ${event.message}`)).message);
 };
