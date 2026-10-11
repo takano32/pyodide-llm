@@ -3,7 +3,7 @@
 // GPU's worker (gpuside.js, gpu.js). It belongs to neither of them: createForward() makes it and hands it to both.
 // A module of src/runtime/forward.js; it reads jobs.js by a static import.
 
-import { CONTROL_BYTES } from "../jobs.js";
+import { CONTROL_BYTES } from "../jobs.ts";
 
 /** T378.2: the control area of memory, and the wait on a word of it. ctl is null on a memory that is not shared (no
  * other thread is there to meet). stalledMs: how long a wait may see no progress before it gives up (T120). */

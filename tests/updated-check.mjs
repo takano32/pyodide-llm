@@ -252,16 +252,16 @@ const LATER = {
   ],
   "src/runtime/worker/convert.js": [
     ["built(archive, signal).then((res) => res.arrayBuffer()), archive);", "said"],
-    ['named(import.meta.url, () => import("../kept.js"))', "said"],
+    ['named(import.meta.url, () => import("../kept.ts"))', "said"],
   ],
   "src/runtime/worker/weights.js": [
-    ['new Worker(new URL("../helper.js", import.meta.url)', "quiet: a software thread that does not start leaves fewer threads"],
+    ['new Worker(new URL("../helper.ts", import.meta.url)', "quiet: a software thread that does not start leaves fewer threads"],
     ['new Worker(new URL("../gpu.js", import.meta.url)', "quiet: a GPU worker that does not start leaves the model on the CPU (forward/gpuside.js)"],
   ],
   "src/runtime/benchmark/sections.js": [
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));", "said"],
     ['named(import.meta.url, () => import("../forward.js"))', "said"],
-    ['new Worker(new URL("../helper.js", import.meta.url)', "said"],
+    ['new Worker(new URL("../helper.ts", import.meta.url)', "said"],
     ['named(import.meta.url, () => import("../forward.js"))', "said"],
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));", "said"],
     ['new Worker(new URL("../benchmark/reader.js", import.meta.url)', "said"],
@@ -341,7 +341,7 @@ for (const name of ["src/runtime/worker/weights.js", "src/runtime/gpu.js", "src/
 }
 // and neither does anything on a token's, a block's or a submit's path: the engine, its threads, the GPU's worker, the
 // shaders, what is kept (the kernels and the Python are not JavaScript)
-const path_ = sources.filter((name) => /^src\/runtime\/(forward|gpu|shaders)\/|^src\/runtime\/(forward|gpu|shaders|helper|jobs|kept)\.js$/.test(name));
+const path_ = sources.filter((name) => /^src\/runtime\/(forward|gpu|shaders)\/|^src\/runtime\/(forward|gpu|shaders|helper|jobs|kept)\.(js|ts)$/.test(name));
 assert.ok(path_.length > 30, "the files of the token's path were found");
 for (const name of path_) assert.ok(!knows(name), `${name} is on the token's path and knows of updated.js`);
 // both pages hold a worker's error to it, and the model's worker reports it by its message alone (an Error by name)

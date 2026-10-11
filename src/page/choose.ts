@@ -135,7 +135,7 @@ repositorySheet.addEventListener("toggle", (event) => {
   const revision = revisionField.value.trim() || "main";
   // T119: the message goes on the field that is wrong, and goes away as that field is edited (on the name alone,
   // a wrong revision put right left the name marked, and the form would not open)
-  const wrong = !REPOSITORY.test(repository) ? [field, "owner/name, as huggingface.co spells it"]
+  const wrong: [HTMLInputElement, string] | undefined = !REPOSITORY.test(repository) ? [field, "owner/name, as huggingface.co spells it"]
     : !REVISION.test(revision) ? [revisionField, "a branch, a tag or a commit"] : undefined;
   if (wrong) {
     const [at, words] = wrong;

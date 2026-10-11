@@ -22,7 +22,7 @@ CHATML = "{% for m in messages %}<|im_start|>{{ m.role }}\n{{ m.content }}<|im_e
 
 
 def version():
-    return int(re.search(r"export const CONVERTER = (\d+);", Path(runtime_folder(Path(__file__).resolve().parent.parent, "kept.js")).read_text()).group(1))
+    return int(re.search(r"export const CONVERTER = (\d+);", Path(runtime_folder(Path(__file__).resolve().parent.parent, "kept.ts")).read_text()).group(1))
 
 
 def digest():

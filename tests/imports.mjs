@@ -14,7 +14,11 @@
 //
 // The form of a tree whose files a bundler links (src/runtime/, T367.3): plain static imports of a neighbour's file,
 //
-//   import { a, b as c } from "./x.js";
+//   import { a, b as c } from "./x.js";      (T368.1: or "./x.ts", a neighbour that is TypeScript)
+//
+// T368.1: a file that is TypeScript is read with its types blanked (tests/untyped.mjs: the same length, the same
+// lines), so every tool that reads through here reads JavaScript, and a node's place is its place in the source. An
+// `import type` is blanked with the rest: it links nothing.
 //
 // A tree has one form: `bundled` (tests/tree.mjs's tree.bundled) says which, and the other form in a file is refused
 // (a static import in a file that is fetched as it is drops the ?v=; an import with a ?v= in a bundled file names a
@@ -37,6 +41,7 @@
 // awaited at the top level (a promise kept, or one inside a function: what is fetched later).
 import path from "node:path";
 import { parse } from "@babel/parser";
+import { typed, untyped } from "./untyped.mjs";
 
 const SEARCH = String.raw`\$\{(?:new URL\(import\.meta\.url\)\.search|self\.location\.search)\}`;
 const NEIGHBOUR = new RegExp(String.raw`^await import\(new URL\(\`([\w./-]+\.js)${SEARCH}\`, import\.meta\.url\)\)$`);
@@ -48,7 +53,8 @@ const beside = (file, specifier) => path.posix.normalize(path.posix.join(path.po
 
 export function importsOf(text, file, { bundled }) {
   if (typeof bundled !== "boolean") throw new Error("importsOf(): bundled, whether a bundler links the tree's files (tests/tree.mjs's tree.bundled)");
-  const program = parse(text, { sourceType: "module" }).program;
+  // (T368.1: a .ts file is parsed with its types blanked: a node's place is its place in the source, tests/untyped.mjs)
+  const program = parse(untyped(text, file), { sourceType: "module" }).program;
   const takes = [], left = [];
   let asked = null;
   const fetchedAsItIs = (what) => {
@@ -58,7 +64,7 @@ export function importsOf(text, file, { bundled }) {
     const source = text.slice(node.start, node.end);
     if (node.type === "ImportDeclaration") {
       const specifier = node.source.value;
-      if (!/^\.\.?\/[\w./-]+\.js$/.test(specifier)) throw new Error(`${file}: an import this check does not know: ${source}`);
+      if (!/^\.\.?\/[\w./-]+\.(js|ts)$/.test(specifier) || /\.d\.ts$/.test(specifier)) throw new Error(`${file}: an import this check does not know: ${source}`);
       if (!bundled) throw new Error(`${file}: a static import drops the ?v= (GitHub Pages keeps a file for ten minutes): await import(new URL(…))`);
       const names = node.specifiers.map((one) => {
         if (one.type !== "ImportSpecifier" || one.imported.type !== "Identifier") throw new Error(`${file}: an import this check does not know (the names, each by itself): ${source}`);
@@ -127,9 +133,10 @@ export function reached(from, neighbours, ended = []) {
  * list, the list is the folder's files; in the static form, every file of the folder is reached from the window.
  * others: with `outside`, the files outside the folder that were read because a module takes names of them. */
 export function windowed(window, { read, list, bundled, more = [], outside = false }) {
-  const folder = window.replace(/\.js$/, "");
-  const there = list(folder).filter((name) => name.endsWith(".js")).sort().map((name) => `${folder}/${name}`);
-  const files = new Map([window, ...more, ...there].map((name) => [name, { text: read(name) }]));
+  const folder = window.replace(/\.(js|ts)$/, "");
+  const there = list(folder).filter((name) => name.endsWith(".js") || typed(name)).sort().map((name) => `${folder}/${name}`);
+  // (T368.1: each file's text is JavaScript here, a .ts file's with its types blanked)
+  const files = new Map([window, ...more, ...there].map((name) => [name, { text: untyped(read(name), name) }]));
   for (const [name, entry] of files) Object.assign(entry, importsOf(entry.text, name, { bundled }));
   const { asked } = files.get(window);
   if (!bundled) {
@@ -147,7 +154,7 @@ export function windowed(window, { read, list, bundled, more = [], outside = fal
   for (const [name, { takes }] of files) for (const { from } of takes) {
     if (files.has(from)) continue;
     if (!outside) throw new Error(`${name} takes names from ${from}, which is no file of ${folder}/ (nor ${[window, ...more].join(", ")})`);
-    const text = read(from);
+    const text = untyped(read(from), from);
     files.set(from, { text, ...importsOf(text, from, { bundled }) });  // (a Map takes what is added while it is walked)
     others.push(from);
   }

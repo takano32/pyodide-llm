@@ -80,6 +80,16 @@ const family = familyOf(coi);
     assert.equal(said.length, 1, said.join(" | "));
     assert.match(said[0], /^src\/runtime\/jobs\.js: a copyright line in a comment that a bundler drops/);
   }
+  {
+    // (T368.1: a source that is TypeScript is a source all the same)
+    const { "src/runtime/jobs.js": gone, ...rest } = sources;
+    const tree = written("a copyright line in a TypeScript source", { ...rest, "src/runtime/forward.js": 'import { J } from "./jobs.ts";\nexport const F = J;\n', "src/runtime/jobs.ts": "// Copyright (c) 2021 Someone\nexport const J: number = 1;\n",
+      ...Object.fromEntries(Object.entries(good).map(([file, text]) => [`dist/${file}`, text])) });
+    const { said, looked } = distSaid(path.join(tree, "dist"), treeOf(tree, { ...RULE }));
+    assert.equal(said.length, 1, said.join(" | "));
+    assert.match(said[0], /^src\/runtime\/jobs\.ts: a copyright line in a comment that a bundler drops/);
+    assert.match(looked, /none of 3 sources as it is/);
+  }
   wrong("a minified worker", { "_astro/worker.DR4U5U7O.js": `${BUNDLED}${"const a=1;".repeat(600)}\n` }, /^_astro\/worker\.DR4U5U7O\.js is minified \(\d+ characters a line\)/);
   wrong("a lazy part bundled into another file", { "_astro/key.XnxXfX1x.js": null }, /^_astro\/key\.<hash>\.js is not there: key\.js was bundled into another file, and is fetched on every visit now/);
   wrong("a module of Node's asked for", { "_astro/helper.CZLQh-ea.js": 'const port = (await import("node:worker_threads")).parentPort;\n' }, /^_astro\/helper\.CZLQh-ea\.js asks for node:worker_threads: a module of Node's in a browser's file/);

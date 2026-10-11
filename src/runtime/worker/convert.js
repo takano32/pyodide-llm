@@ -121,7 +121,7 @@ export async function convert(model, signal, id) {
   const remote = typeof model.hf.repo === "string";
   // (asked for when a conversion first needs it: a module of its own, _astro/kept.<hash>.js. T367.4: where it is not
   // there because the site was updated since this page was opened, that is what is said)
-  keptModule ??= await named(import.meta.url, () => import("../kept.js"));
+  keptModule ??= await named(import.meta.url, () => import("../kept.ts"));
   const kept = remote ? await loadConverted(model, signal, id) : undefined;
   if (kept && !kept.miss) {
     return { fromCache: true, keptIn: kept.keptIn, template: kept.template };

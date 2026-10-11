@@ -1,8 +1,8 @@
-// jobs.js (T109): what a job of a phase is, for the one that hands them out (forward.js, in the model's worker) and
-// for the software threads that take them (helper.js). One place for the layout of the control area at the start of
+// jobs.ts (T109): what a job of a phase is, for the one that hands them out (forward.js, in the model's worker) and
+// for the software threads that take them (helper.ts). One place for the layout of the control area at the start of
 // a shared memory, the kinds of kernel calls, and how the rows of a job are run, so that the two never drift apart.
 //
-// A plain ES module. forward.js and helper.js import it, and a bundler links it into each (T367.3: the two
+// TypeScript of which only the types are erased (T368.1: what runs is these lines). forward.js and helper.ts import it, and a bundler links it into each (T367.3: the two
 // then hold the same text because they are of one build).
 
 /** the control area: the first bytes of a shared memory, as 32-bit words (the helpers', then the GPU's: GPU_DONE) */
@@ -54,7 +54,7 @@ if (JOB_TABLE <= JOBS * 4 || JOB_TABLE % 8 || JOB_TABLE + BATCH * JOB * 8 > SCRA
 export const ROWS = 9, COUNT = 10, SIZE = 14, FIRST = 15;
 const BLOCK_BYTES = 16384;
 // (the bytes of a row: float32, int8 and its packings, or two bits a weight)
-export const blockRows = (kind, n) => Math.max(1, Math.floor(BLOCK_BYTES / (kind === 2 ? 4 * n : kind >= 8 ? n / 4 : n)));
+export const blockRows = (kind: number, n: number) => Math.max(1, Math.floor(BLOCK_BYTES / (kind === 2 ? 4 * n : kind >= 8 ? n / 4 : n)));
 // T231: the mask the ternary kernels take as an argument (kernels/ternary.ts: a constant written there would be made
 // again at every use)
 const THREE = 3;
@@ -70,13 +70,20 @@ export const ADDRESSES = {
   argmax: [0], penalize: [0, 1], sample: [0, 5, 6], matmul_q8r: [0, 1, 2, 3, 4, 5], matmul_q6r: [0, 1, 2, 3, 4, 5],
   matmul_q8r_tile: [0, 1, 2, 3, 4, 5], matmul_t2r_tile: [0, 1, 2, 3, 4],
 };
+// (T368.1, the types. A kernel takes numbers, its addresses as BigInt on a 64-bit memory, and what it returns is for
+// its caller to know: most return nothing. The kernels are the names of ADDRESSES and no other: a kernel that is
+// called and is not in that table is a type error, where it was a Number for an address on a 64-bit memory.)
+export type Kernel = (...args: (number | bigint)[]) => unknown;
+export type Kernels = Record<keyof typeof ADDRESSES, Kernel>;
+// a job as it is run: an array, or its view of the control area's table
+export type Job = Iterable<number>;
 /** A kernel module's exports as they are, or on a 64-bit memory (wide) with the addresses made BigInt on the way
  * in: the rest of the code keeps its addresses in Numbers (exact up to 2^53). */
-export function addressed(exports, wide) {
-  if (!wide) return exports;
-  const out = { ...exports };
+export function addressed(exports: WebAssembly.Exports, wide: boolean): Kernels {
+  if (!wide) return exports as Kernels;
+  const out = { ...exports } as Record<string, Kernel>;
   for (const [name, at] of Object.entries(ADDRESSES)) {
-    const kernel = exports[name];
+    const kernel = exports[name] as Kernel | undefined;
     if (kernel) {
       out[name] = (...args) => {
         for (const i of at) args[i] = BigInt(args[i]);
@@ -84,29 +91,29 @@ export function addressed(exports, wide) {
       };
     }
   }
-  return out;
+  return out as Kernels;
 }
 
 /** runRows(job, r0, r1) on these kernels: k, the plain module's exports; r, the relaxed module's or null. job is
  * an array or a view of the control area. */
-export function runner(k, r) {
-  const call = (kind, out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => {
-    if (kind === 0) r.matmul_q8r(out, a, b, a4, a5, a6, a7, r0, r1);
+export function runner(k: Kernels, r: Kernels | null) {
+  const call = (kind: number, out: number, a: number, b: number, a4: number, a5: number, a6: number, a7: number, a8: number, rows: number, r0: number, r1: number) => {
+    if (kind === 0) r!.matmul_q8r(out, a, b, a4, a5, a6, a7, r0, r1);
     else if (kind === 1) k.matmul_q8(out, a, b, a4, a5, a7, r0, r1);
-    else if (kind === 5) r.matmul_q6r(out, a, b, a4, a5, a6, a7, r0, r1);
+    else if (kind === 5) r!.matmul_q6r(out, a, b, a4, a5, a6, a7, r0, r1);
     else if (kind === 6) k.matmul_q6(out, a, b, a4, a5, a7, r0, r1);
     else if (kind === 2) k.matmul_f32(out, a, a4, a7, r0, r1);
     else if (kind === 3) k.attention(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
     else if (kind === 4) k.attention_f16(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
-    else if (kind === 8) r.matmul_t2r(out, a, b, a4, a5, a7, r0, r1, THREE);
+    else if (kind === 8) r!.matmul_t2r(out, a, b, a4, a5, a7, r0, r1, THREE);
     else if (kind === 9) k.matmul_t2(out, a, b, a4, a5, a7, r0, r1, THREE);
     else k.delta_rule(out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
   };
-  return (job, r0, r1) => {
+  return (job: Job, r0: number, r1: number) => {
     const [kind, out, a, b, a4, a5, a6, a7, a8, rows, count, os, as, bs] = job;
     if (count === 1) return call(kind, out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
-    if (kind === 0) return r.matmul_q8r_tile(out, a, b, a4, a5, a6, a7, r0, r1, count, os, as);
-    if (kind === 8) return r.matmul_t2r_tile(out, a, b, a4, a5, a7, r0, r1, count, os, as, THREE);
+    if (kind === 0) return r!.matmul_q8r_tile(out, a, b, a4, a5, a6, a7, r0, r1, count, os, as);
+    if (kind === 8) return r!.matmul_t2r_tile(out, a, b, a4, a5, a7, r0, r1, count, os, as, THREE);
     const step = blockRows(kind, a7);
     for (let r = r0; r < r1; r += step) {
       const end = Math.min(r + step, r1);
@@ -117,7 +124,7 @@ export function runner(k, r) {
 
 /** the kernels warmed up: a new thread runs them unoptimized at first, and a measurement would take that for the
  * speed of the count (T93). Tiny calls on the scratch, many times; what they compute is thrown away. */
-export function warmUp(k, r) {
+export function warmUp(k: Kernels, r: Kernels | null) {
   const xq = SCRATCH, xs = SCRATCH + 64, w = SCRATCH + 128, s = SCRATCH + 192, c = SCRATCH + 256, out = SCRATCH + 320;
   for (let i = 0; i < 4000; i++) {
     k.matmul_q8(out, xq, xs, w, s, 32, 0, 1);

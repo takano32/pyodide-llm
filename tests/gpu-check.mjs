@@ -117,6 +117,7 @@ import { spawnSync } from "node:child_process";
 import { pyodideWithEngine } from "./engine.mjs";
 import { MODELS } from "../src/models.js";
 import { built, python as sources, runtime, runtimeUrl } from "./tree.mjs";
+import { typed, untyped } from "./untyped.mjs";
 const wgsl = await import(runtimeUrl("shaders.js"));
 import { leave } from "./leave.mjs";
 
@@ -503,7 +504,7 @@ function caseOf(id, options, reference, bytes) {
 const HARNESS = /* js */ `
 const search = "?v=gpu-check";
 const { compileKernels, createForward, weightsMemory, footprint, external, gpuOnlyWeights, gpuOnlyPlan, layerWeightsOf } = await import("/runtime/forward.js" + search);
-const { GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import("/runtime/jobs.js" + search);
+const { GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import("/runtime/jobs.ts" + search);
 const fetched = async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer());
 const b64 = (floats) => {
   const bytes = new Uint8Array(floats.buffer, floats.byteOffset, floats.byteLength);
@@ -1066,11 +1067,15 @@ const server = http.createServer((req, res) => {
   // (the runtime's files and the built kernels, each from where this tree keeps them: tests/tree.mjs)
   const kinds = { "/runtime/": runtime, "/built/": built };
   const kind = Object.keys(kinds).find((prefix) => pathname.startsWith(prefix));
-  const file = kind ? kinds[kind](pathname.slice(kind.length), { maybe: true }) : "";
-  if (!kind || !fs.existsSync(file)) {
+  // (T368.1: a file of the runtime that is TypeScript goes to the browser as the JavaScript it is with its types
+  // blanked, tests/untyped.mjs: a browser takes no .ts, and the sources' imports name it so)
+  let file = "";
+  try { file = kind ? kinds[kind](pathname.slice(kind.length)) : ""; } catch { /* not in this tree: 404 */ }
+  if (!kind || !file || !fs.statSync(file).isFile()) {
     res.writeHead(404, headers);
     return res.end();
   }
+  if (typed(file)) return send(types[".js"], untyped(fs.readFileSync(file, "utf8"), file));
   send(types[path.extname(file)] ?? "application/octet-stream", fs.readFileSync(file));
 }).listen(0);
 

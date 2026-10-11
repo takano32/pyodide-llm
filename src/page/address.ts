@@ -1,5 +1,6 @@
 // src/page/address.ts (T355): what the page's address says: which model, how it is weighed (?bits=), whether to measure.
 import { weightsFor } from "../models.js";
+import type { MODELS } from "../models.js";
 
 // A model that is in no list, named in the URL: ?hf=<owner>/<repository>[&revision=] is a Hugging Face model that
 // the page converts (whatever the converter refuses, it refuses in words), ?checkpoint=<url>&tokenizer=<url> are

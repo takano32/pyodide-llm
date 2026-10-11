@@ -36,7 +36,7 @@ const root = new URL("..", import.meta.url);
 const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
 const { createForward, footprint, keysInHalf, needsWide, pastWide } = await import(forwardFile);
-const { CONTROL_BYTES } = await import(runtimeUrl("jobs.js"));
+const { CONTROL_BYTES } = await import(runtimeUrl("jobs.ts"));
 const PAGE = 65536, MiB = 2 ** 20;
 let began = performance.now();
 const seconds = () => { const was = began; began = performance.now(); return `${((began - was) / 1000).toFixed(1)} s`; };

@@ -101,7 +101,7 @@ const breakOf = (name) => {
 };
 
 const spawn = (data) => new Promise((resolve) => {
-  const worker = softwareThread(runtimeUrl("helper.js"));  // (the sources' helper beside the sources' forward: tests/helper-node.mjs)
+  const worker = softwareThread(runtimeUrl("helper.ts"));  // (the sources' helper beside the sources' forward: tests/helper-node.mjs)
   worker.once("message", () => resolve({ terminate: () => worker.terminate() }));
   worker.postMessage(data);
 });

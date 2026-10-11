@@ -7,7 +7,7 @@ import { parentPort } from "node:worker_threads";
 import { runtimeUrl } from "./tree.mjs";
 
 const started = new Promise((resolve) => parentPort.once("message", resolve));
-const J = await import(runtimeUrl("jobs.js"));
+const J = await import(runtimeUrl("jobs.ts"));
 const { memory, plain, relaxed, share, wide = false } = await started;
 const imports = { env: { memory } };
 const k = J.addressed(new WebAssembly.Instance(plain, imports).exports, wide);

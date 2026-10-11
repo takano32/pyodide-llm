@@ -13,6 +13,10 @@ import { storage, line } from "./storage.ts";
 import { tabStorage, pageMemory } from "./memory.ts";
 import { STATE, report, awake } from "./report.ts";
 
+// what src/bench/cpu.js's cpuBaseline() answers: the CPU section's fastest token and prompt, or why there is none
+type Baseline = { why?: string; token?: { threads: number; msPerToken: number; GBps: number; isolated: boolean };
+  prompt?: { threads: number; msPerToken: number; isolated: boolean } };
+
 for (const section of document.querySelectorAll<HTMLElement>("section[data-section]")) {
   const name = section.dataset.section as Name;
   const head = document.createElement("div");
@@ -72,11 +76,11 @@ async function runSections(names: readonly Name[]) {
     }
     results[name] = result;
     // T156: the CPU's reading of the weights here, for the model page (a model on the GPU alone is held against it)
-    const speed = name === "cpu" ? cpuBaseline(result).token : undefined;
+    const speed = name === "cpu" ? (cpuBaseline(result) as Baseline).token : undefined;
     if (speed?.isolated) {
       try {
         // (and a prompt's G MAC/s at its fastest: its model's layers' multiply-adds a token, over its ms)
-        const prompt = cpuBaseline(result).prompt, layerWeights = result.data?.layerWeights;
+        const prompt = (cpuBaseline(result) as Baseline).prompt, layerWeights = result.data?.layerWeights;
         const promptGMACs = prompt && layerWeights ? layerWeights / (prompt.msPerToken / 1000) / 1e9 : undefined;
         localStorage.setItem(CPU_SPEED_KEY, JSON.stringify({ GBps: speed.GBps, threads: speed.threads, promptGMACs }));
       } catch {

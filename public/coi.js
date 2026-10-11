@@ -1,3 +1,4 @@
+// @ts-check
 // coi.js (T93, stage 3): the service worker that makes this site cross-origin isolated, so that the page gets a
 // SharedArrayBuffer and forward.js its software threads. GitHub Pages cannot send response headers, so this adds
 // the two that isolation needs to every response it passes on: Cross-Origin-Opener-Policy: same-origin and

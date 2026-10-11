@@ -192,7 +192,7 @@ if (isMainThread) {
   const { pathTable } = await import(path.join(root, "src/bench.js"));
   const kernels = compileKernels(fs.readFileSync(built("simdkernel_shared.wasm")), fs.readFileSync(built("simdkernel_relaxed_shared.wasm")));
   const spawn = (data) => new Promise((resolve) => {
-    const helper = softwareThread(runtimeUrl("helper.js"));  // (the sources' helper beside the sources' forward: tests/helper-node.mjs)
+    const helper = softwareThread(runtimeUrl("helper.ts"));  // (the sources' helper beside the sources' forward: tests/helper-node.mjs)
     helper.once("message", () => resolve({ terminate: () => helper.terminate() }));
     helper.postMessage(data);
   });
@@ -504,7 +504,7 @@ if (isMainThread) {
   // one) leaves found at 1 as well, so "fewer than found" never says it: the page path's head reads lostThreads. This
   // helper takes a chunk and ends without counting it (threads-check's)
   {
-    const { WAKE, COUNTER, ACTIVE, CONTROL_BYTES } = await import(runtimeUrl("jobs.js"));
+    const { WAKE, COUNTER, ACTIVE, CONTROL_BYTES } = await import(runtimeUrl("jobs.ts"));
     const dying = ({ memory: shared, share }) => new Promise((resolve) => {
       const helper = new Worker(`
         const { parentPort, workerData: { memory, share, WAKE, COUNTER, ACTIVE, CONTROL_BYTES } } = require("node:worker_threads");

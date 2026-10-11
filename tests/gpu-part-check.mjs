@@ -25,7 +25,7 @@ import { runtimeUrl } from "./tree.mjs";
 
 const { gpuSide, gpuFit } = await import(runtimeUrl("forward/gpuside.js"));
 const { controlArea } = await import(runtimeUrl("forward/control.js"));
-const { BATCH, CONTROL_BYTES, GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import(runtimeUrl("jobs.js"));
+const { BATCH, CONTROL_BYTES, GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } = await import(runtimeUrl("jobs.ts"));
 const { GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, STOPS_MOST, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU } = await import(runtimeUrl("forward/choice.js"));
 const { OUTSIDE_VOCABULARY } = await import(runtimeUrl("forward/alone.js"));
 

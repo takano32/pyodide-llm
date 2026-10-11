@@ -134,7 +134,7 @@ A checkpoint of more than 1 GB asks first.
    int8 as its file arrives, and handles the tokenizer and the sampling.
 3. The forward pass of each token runs in JavaScript (`src/runtime/forward.js`), which calls WebAssembly SIMD kernels
    (`kernels/`, written in AssemblyScript) on the model's own WebAssembly memory. With threads, software threads
-   (`src/runtime/helper.js`) share the rows of each matrix. The page measures how many threads are fastest on your
+   (`src/runtime/helper.ts`) share the rows of each matrix. The page measures how many threads are fastest on your
    device.
 4. Where WebGPU is available, the blocks of a prompt and the tokens of the answer can run on the GPU
    (`src/runtime/gpu.js`, `src/runtime/shaders.js`). The page checks each shader against JavaScript on your device, times them,

@@ -76,7 +76,7 @@ export function distSaid(dist, tree = treeOf()) {
   if (!tree.bundled) return { said, files, looked: `${files.length} files of _astro/, each a family of its own (the runtime is served as it is from ${tree.folders.runtime}/: the root is not looked at)` };
   // 3: a source as it is, a file as a data: URL
   const bytes = new Map(files.map((name) => [name, fs.readFileSync(path.join(astro, name))]));
-  const sources = under(tree.runtime()).filter((name) => name.endsWith(".js") && !name.startsWith(`${path.relative(tree.runtime(), tree.built())}/`));
+  const sources = under(tree.runtime()).filter((name) => /\.(js|ts)$/.test(name) && !name.endsWith(".d.ts") && !name.startsWith(`${path.relative(tree.runtime(), tree.built())}/`));
   for (const source of sources) {
     const text = fs.readFileSync(tree.runtime(source));
     for (const [name, got] of bytes) if (got.equals(text)) said.push(`_astro/${name} is ${tree.folders.runtime}/${source} as it is, not bundled: a URL made with a variable copies its whole folder (new URL("./literal", import.meta.url))`);

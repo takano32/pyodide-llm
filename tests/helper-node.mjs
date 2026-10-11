@@ -16,7 +16,7 @@ import { runtimeUrl } from "./tree.mjs";
 
 /** helper.js as the tools read it: the sources', or with ENGINE_FROM=dist a build's (one file, jobs.js in it) */
 export function helperUrl(env = process.env) {
-  if (!env.ENGINE_FROM || env.ENGINE_FROM === "sources") return runtimeUrl("helper.js");
+  if (!env.ENGINE_FROM || env.ENGINE_FROM === "sources") return runtimeUrl("helper.ts");
   if (env.ENGINE_FROM !== "dist") throw new Error(`ENGINE_FROM=${env.ENGINE_FROM}: "dist" (a build's helper) or "sources"`);
   return builtModule("helper", env.ENGINE_DIST || undefined);
 }

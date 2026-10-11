@@ -23,7 +23,7 @@ import fs from "node:fs";
 import os from "node:os";
 import * as playwright from "playwright-core";
 import { built, runtimeUrl } from "./tree.mjs";
-const { ADDRESSES } = await import(runtimeUrl("jobs.js"));
+const { ADDRESSES } = await import(runtimeUrl("jobs.ts"));
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
