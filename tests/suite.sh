@@ -52,6 +52,9 @@ page_modules() {
   # T367.2: the site's Python as two archives (python_archive.py): what goes in and that the same sources give the same
   # bytes, that they hold what the tools walk and place, and the worker's way with them (a stand-in of Pyodide, and Pyodide)
   node tests/python-archive-check.mjs
+  # T367.4: what says "the site was updated while this page was open", with stand-ins of a fetch (404, the 500s, a line
+  # that dropped, no answer), and, in the sources, what becomes of each file that is asked for later (under a second)
+  node tests/updated-check.mjs
   node tests/ladder-check.mjs
   node tests/kept-check.mjs
   node tests/coi-js-check.mjs

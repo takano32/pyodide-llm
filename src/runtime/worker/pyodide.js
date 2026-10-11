@@ -3,7 +3,6 @@
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { isError, told } from "./told.js";
-import { BUILT } from "../built.js";
 
 // the version becomes part of a CDN URL, so accept nothing but a plain version number
 const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
@@ -181,14 +180,8 @@ export async function pyodideSteps(version, importer) {
 // T367.2: the site's Python comes as one archive a module (python_archive.py builds them of src/python/): engine.zip, which
 // every load imports, and converter.zip, which the first conversion asks for. One request each, where every .py was one
 // (fifteen and nineteen). An archive is a built file (built.js): the bundler gives it a name with a hash of its bytes,
-// and the worker's own text names that file, so it is the Python of the worker's own build (T367.3).
-export async function pythonArchive(name, signal) {
-  const res = await fetch(BUILT[name], { signal });
-  if (!res.ok) {
-    throw new Error(`Could not fetch ${name}: ${res.status}`);
-  }
-  return res.arrayBuffer();
-}
+// and the worker's own text names that file, so it is the Python of the worker's own build (T367.3). It is fetched as
+// every built file is (built.js's built(): T367.4).
 
 /** Unpacks an archive (its bytes, or a promise of them) where `import` finds what is in it: Pyodide's working folder,
  * where the files were written one by one before. Nothing is placed unless the whole archive came.

@@ -28,10 +28,14 @@
 // then). What the worker asks for later is asked for by a literal name: forward.js, kept.js and the device's key as
 // modules (import("./forward.js")), the kernels and the Python's archives as files (built.js). The site's root, where
 // models/ is, the page hands over with a load (state.root): this file's own URL is under _astro/.
-import { BUILT } from "./built.js";
+// T367.4: a page left open across a deployment asks for such a file after it is gone. Where that ends a load (the
+// Python's archives, kept.js at a first conversion) the visitor is told that the site was updated (updated.js); where
+// the engine goes on without the file (the kernels and forward.js: NumPy; a software thread; the GPU's worker; the
+// device's key) it goes on as it always did, and nothing is said: a model that answers is not interrupted.
+import { built } from "./built.js";
 import { state, cpuOnly, modelKey, loadSeconds } from "./worker/state.js";
 import { told } from "./worker/told.js";
-import { resolvePyodideVersion, pyodideSteps, pythonArchive, placePython } from "./worker/pyodide.js";
+import { resolvePyodideVersion, pyodideSteps, placePython } from "./worker/pyodide.js";
 import { since, breathe } from "./worker/clock.js";
 import { load, threadsNow, heapBytes } from "./worker/load.js";
 import { timedGeneration, timedPaths } from "./worker/timing.js";
@@ -58,7 +62,7 @@ async function init(search) {
   state.benchPage = asked.has("bench");
   // T367.2: the engine's Python (a window and its parts, T348) is one archive, engine.zip, of this worker's
   // build (built.js). It is small and of this site, so it is asked for now, beside Pyodide, and is there when that is ready.
-  const engine = pythonArchive("engine.zip");
+  const engine = built("engine.zip").then((res) => res.arrayBuffer());
   engine.catch(() => {});  // (it is awaited below: a load that ends before that leaves no unhandled rejection)
   const version = await resolvePyodideVersion(search);
   state.pyodide = await pyodideSteps(version, (url) => import(/* @vite-ignore */ url));
@@ -72,8 +76,8 @@ async function init(search) {
   // "everything" round sampled on NumPy after the page's switch had turned them off, and said nothing).
   state.disabled = state.pageSwitches = switchesOf(search);
   for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
-    const kernel = await fetch(BUILT[name]).catch(() => undefined);
-    if (kernel?.ok) {
+    const kernel = await built(name).catch(() => undefined);  // (also where it is gone, T367.4: NumPy answers)
+    if (kernel) {
       state.pyodide.FS.writeFile(`/home/pyodide/${name}`, new Uint8Array(await kernel.arrayBuffer()));
       state.kernels = "/home/pyodide/simdkernel.so";
     }
@@ -85,7 +89,7 @@ async function init(search) {
     // one build of the kernels: simdkernel_<kind>.wasm and simdkernel_relaxed_<kind>.wasm, or null
     const build = async (kind, wide = false) => {
       const [plain, relaxed] = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
-        fetch(BUILT[name]).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
+        built(name).then((res) => res.arrayBuffer()).catch(() => null)));
       return plain ? state.forwardModule.compileKernels(plain, relaxed, wide) : null;
     };
     state.jsKernels = await build("plain");

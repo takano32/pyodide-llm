@@ -16,7 +16,8 @@
 // The first message is claimed before anything is awaited (a module worker's port opens at its first await, and a
 // message that comes before onmessage is set is lost: T109). While a step runs, it tells the page each stage it starts
 // ({stage, at, of}, T177): the page shows it, and it answers none of the page's questions.
-import { BUILT } from "../built.js";
+import { built } from "../built.js";
+import { isUpdated, saidOf, named, unstarted } from "../updated.js";
 const stage = (name, at, of) => postMessage({ stage: name, at, of });
 
 self.onmessage = async ({ data }) => {
@@ -25,15 +26,22 @@ self.onmessage = async ({ data }) => {
       : await line(data);
     postMessage({ step: data.step, result });
   } catch (error) {
-    postMessage({ step: data.step, error: `${error?.name ?? "Error"}: ${error?.message ?? error}` });
+    postMessage({ step: data.step, error: failed(error) });
   }
+};
+// What a caught value is said as. T367.4: a file of this build that is gone (the page was left open across a
+// deployment) is said as that, alone, and ends the step wherever it is caught: a section measures this build, and what
+// half of its files measure is nothing to report.
+const failed = (error) => saidOf(error, `${error?.name ?? "Error"}: ${error?.message ?? error}`);
+const unlessUpdated = (error) => {
+  if (isUpdated(error)) throw error;
 };
 
 // ---- the kernels, as the model's worker compiles them (src/runtime/worker.js): the plain build, and the shared one where
 // the page is cross-origin isolated. null where this browser cannot compile them (no WebAssembly SIMD)
 async function kernelsOf(forward, kind) {
   const fetched = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
-    fetch(BUILT[name]).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
+    built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));
   if (!fetched[0]) return null;
   try {
     return forward.compileKernels(fetched[0], fetched[1]);
@@ -43,7 +51,7 @@ async function kernelsOf(forward, kind) {
 }
 
 async function device() {
-  const forward = await import("../forward.js");
+  const forward = await named(import.meta.url, () => import("../forward.js"));
   const plain = await kernelsOf(forward, "plain");
   const found = {
     crossOriginIsolated: self.crossOriginIsolated,
@@ -139,12 +147,12 @@ function fillWeights(memory, base, { plan }) {
 const spawn = (data) => new Promise((resolve, reject) => {
   const worker = new Worker(new URL("../helper.js", import.meta.url), { type: "module" });
   worker.onmessage = () => resolve({ terminate: () => worker.terminate() });
-  worker.onerror = (event) => reject(new Error(event.message ?? "a software thread did not start"));
+  worker.onerror = async (event) => reject(await unstarted(event, import.meta.url, event.message ?? "a software thread did not start"));
   worker.postMessage(data);
 });
 
 async function cpu(counts = [1, 2, 4]) {
-  const forward = await import("../forward.js");
+  const forward = await named(import.meta.url, () => import("../forward.js"));
   const shared = self.crossOriginIsolated && typeof SharedArrayBuffer !== "undefined";
   const kernels = shared ? await kernelsOf(forward, "shared") : await kernelsOf(forward, "plain");
   if (!kernels) return { none: "no WebAssembly SIMD in this browser: the model page runs on NumPy here" };
@@ -162,7 +170,8 @@ async function cpu(counts = [1, 2, 4]) {
   try {
     ceilings = await ceilingsOf(memory, base, model.size, shared);
   } catch (error) {
-    ceilingsFailed = `${error?.name ?? "Error"}: ${error?.message ?? error}`;
+    unlessUpdated(error);
+    ceilingsFailed = failed(error);
   }
   const rows = [];
   try {
@@ -262,7 +271,8 @@ const attempt = async (measure) => {
   try {
     return await measure();
   } catch (error) {
-    return { error: `${error?.name ?? "Error"}: ${error?.message ?? error}`, ...(error?.cutShort ? { cutShort: true } : {}) };
+    unlessUpdated(error);
+    return { error: failed(error), ...(error?.cutShort ? { cutShort: true } : {}) };
   }
 };
 const timed = (loop) => (n) => {
@@ -285,7 +295,7 @@ const GO = 0, DONE = 1, COUNT = 2, TOTAL = 3, STOP = 4, NEXT = 5, CHUNK = 1 << 2
 async function ceilingsOf(memory, base, size, shared) {
   const kind = shared ? "shared" : "plain";
   const [plain, relaxed] = await Promise.all([`ceilings_${kind}.wasm`, `ceilings_relaxed_${kind}.wasm`].map((name) =>
-    fetch(BUILT[name]).then((res) => (res.ok ? res.arrayBuffer() : null)).catch(() => null)));
+    built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));
   if (!plain) throw new Error("the ceilings' loops could not be fetched");
   const module = new WebAssembly.Module(plain);
   const loops = new WebAssembly.Instance(module, { env: { memory } }).exports;
@@ -298,21 +308,21 @@ async function ceilingsOf(memory, base, size, shared) {
   const chunks = Math.floor(size / CHUNK), bytes = chunks * CHUNK;
   const control = shared ? new Int32Array(new SharedArrayBuffer(8 * 4)) : null;
   const readers = [];
-  let unstarted;  // a reading thread that did not start: no count past it can be read
+  let neverStarted;  // a reading thread that did not start: no count past it can be read
   const started = async (count) => {
-    if (unstarted && count > readers.length) throw unstarted;
+    if (neverStarted && count > readers.length) throw neverStarted;
     while (readers.length < count - 1) {
       const worker = new Worker(new URL("../benchmark/reader.js", import.meta.url), { type: "module" });
       readers.push(worker);  // stop() ends it even where it never answers
       let timer;
       await Promise.race([new Promise((resolve, reject) => {
         worker.onmessage = resolve;
-        worker.onerror = (event) => reject(new Error(event.message ?? "a reading thread did not start"));
+        worker.onerror = async (event) => reject(await unstarted(event, import.meta.url, event.message ?? "a reading thread did not start"));
         worker.postMessage({ module, memory, control: control.buffer, base, chunk: CHUNK, chunks, share: readers.length });
       }), new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error(`a reading thread did not start in ${STARTING_MS / 1000} seconds`)), STARTING_MS);
       })]).catch((error) => {
-        unstarted = error;
+        neverStarted = error;
         throw error;
       }).finally(() => clearTimeout(timer));
     }

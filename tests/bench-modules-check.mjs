@@ -23,8 +23,8 @@ import { windowed } from "./imports.mjs";
 import { treeOf } from "./tree.mjs";
 import { namesOf } from "./worker-modules-check.mjs";
 
-const GLOBALS = new Set(("Array ArrayBuffer Atomics BigInt64Array Boolean Error Float32Array Float64Array Infinity Int32Array Int8Array Map Math NaN Number " +
-  "Object Set String URL Uint16Array Uint32Array Uint8Array WebAssembly fetch navigator onmessage performance postMessage self undefined").split(" "));
+const GLOBALS = new Set(("AbortController Array ArrayBuffer Atomics BigInt64Array Boolean Error Float32Array Float64Array Infinity Int32Array Int8Array Map Math NaN Number " +
+  "Object Set String URL Uint16Array Uint32Array Uint8Array WebAssembly clearTimeout fetch globalThis navigator onmessage performance postMessage self setTimeout undefined").split(" "));
 // (T367.1: where the runtime is and which form its imports have is the tree's, tests/tree.mjs; the lines that take a
 // neighbour's names are read by tests/imports.mjs, whose windowed() holds the folder to the window's list (each module
 // with the window's own ?v=) or, where a bundler links the files, to what the window reaches, and says a ring)

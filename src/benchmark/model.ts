@@ -2,7 +2,7 @@
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES, pathTable, pathWarnings, roundsTable } from "../bench.js";
 import { BASE, $, parameters, type Result } from "./dom.ts";
-import { staged, worker, model } from "./section.ts";
+import { staged, worker, model, workerFailed } from "./section.ts";
 
 // the model page's worker itself (src/runtime/worker.js): the model loads as the model page loads it (the GPU too), the
 // model page's own path is timed on it (T184: prompts and writing as the page chooses between the GPU and the CPU,
@@ -48,7 +48,7 @@ export async function modelSection(): Promise<Result> {
           resolve({ error: data.message });
         }
       };
-      w.onerror = (event) => resolve({ error: `the worker failed: ${event.message ?? "error"}` });
+      w.onerror = async (event) => resolve({ error: await workerFailed(event) });
     };
     const request = (message: any) => new Promise<any>((resolve) => {
       listen(resolve);
