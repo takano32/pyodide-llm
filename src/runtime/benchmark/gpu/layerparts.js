@@ -1,7 +1,7 @@
 // One layer of a token on the GPU (T150, T175, T224): its shape, the forms it runs in (separate steps, fused, DP4A), their
 // shaders and pipelines, and the buffers and bind groups of one (layerParts()). The layer's check, its times and the
 // generated tokens all build on these.
-// (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 import { shared, matrixBytes, STORAGE, COPY_DST, COPY_SRC, UNIFORM, buffer, fill, floats, pipelinesFor, validated } from "./device.js";
 import { toHalf } from "./halves.js";
 
@@ -51,7 +51,7 @@ const layerForms = () => {
 };
 // whether this device's shaders may use subgroups and subgroup_id
 const hasSubgroupId = () => shared.device.features.has("subgroups") && (navigator.gpu.wgslLanguageFeatures?.has("subgroup_id") ?? false);
-// T224's review: the prompt's tiles for a head of headSize as the engine makes them on this device (public/gpu.js's
+// T224's review: the prompt's tiles for a head of headSize as the engine makes them on this device (src/runtime/gpu.js's
 // chooseAttention: f16 in the workgroup's memory where there is shader-f16, subgroups where there are and subgroup_id,
 // the first it tries), which it chooses a token's attention against; the layer rows' tiles are f32 without subgroups
 // (T150), which the engine makes only where the first is not here. { name, shape }, or null where the two are one

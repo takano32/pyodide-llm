@@ -1,6 +1,6 @@
 // A block of a prompt: the small steps' pipelines and a block's buffers, every layer's bind groups, the GPU's own keys
 // and values, the block itself as one submission with its keys and values read back, and what a whole block takes (T148).
-// (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
+// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, common, within, buffer, uniform, validated, pipelineOf, bind,
   dispatch } from "./device.js";

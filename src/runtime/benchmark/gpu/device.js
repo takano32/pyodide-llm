@@ -1,9 +1,9 @@
 // What every step of /benchmark/'s GPU worker stands on: the shaders' module, the device and its adapter, the models' shapes,
 // buffers and random weights, the int8 shaders of a matrix and how one is bound and run, a read back, and how a time is
 // taken (pairs of n and 2n, forms in turn, an error scope around a measured path).
-// (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 
-// the WGSL, shared with the model's GPU worker (public/shaders.js, T135), from the same deployment as this file. Not
+// the WGSL, shared with the model's GPU worker (src/runtime/shaders.js, T135), a module of its own that both ask for. Not
 // awaited here: a module worker's port opens at its first await, and a message that comes before onmessage is set is
 // lost (T109); every step awaits it instead
 const shaders = import("../../shaders.js");
@@ -44,7 +44,7 @@ const layerMatrices = ({ dim, hidden, heads, kvHeads }) => {
 // the small steps a layer dispatches on its own, as the CPU's forward pass has them (a stand-in each, SMALL; T150's
 // layer step runs the real ones)
 const SMALL_PER_LAYER = 7;
-// the CPU section's made-up model (public/benchmark/sections.js): Llama 3.2 1B's width, two layers
+// the CPU section's made-up model (src/runtime/benchmark/sections.js): Llama 3.2 1B's width, two layers
 const PROMPT_MODEL = { dim: 2048, hidden: 8192, layers: 2, heads: 32, kvHeads: 8 };
 const matrixBytes = ([rows, n]) => rows * n + (rows * n / shared.GROUP) * 4;
 

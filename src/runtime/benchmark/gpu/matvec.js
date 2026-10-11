@@ -1,6 +1,6 @@
 // The steps "bandwidth" and "token": GB/s of one int8 matrix times a vector by every shader (T134, T149) against the CPU's
 // kernel, and a whole token's work of a model's shapes.
-// (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 import { BUILT } from "../../built.js";
 import { shared, MODELS, layerMatrices, SMALL_PER_LAYER, matrixBytes, gpu, MAP_READ, COPY_DST, buffer, noise, floats,
   pipelinesFor, matVecShaders, kindOf, quantizer, matrix, placed, bound, vectors, destroyVectors, run, argmaxOf,

@@ -1,6 +1,6 @@
 // The attention of a generated token (T224): llama.cpp's decode form and the prompt's tiles, checked against
 // JavaScript, timed and chosen, and their dispatches.
-// (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
+// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
 import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.js";

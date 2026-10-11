@@ -1,7 +1,7 @@
 // What every part of the model's GPU worker stands on: the shaders' module, what the parts share (the model's record,
 // whether a stop was asked, a device lost), the time a step may take, the device and why there is none, the worker's
 // end, and buffers: made, written from the shared memory, read back, bound and dispatched.
-// (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
+// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 const shaders = import("../shaders.js");
 
@@ -105,7 +105,7 @@ function unusable(reason) {
 }
 
 // every buffer and the device let go (T94: a model changed for another leaves nothing on the GPU), and this worker ends.
-// T205: it says { type: "ended" } first, for public/forward/engine.js's release() to read the next model after it. Every way out of
+// T205: it says { type: "ended" } first, for src/runtime/forward/engine.js's release() to read the next model after it. Every way out of
 // start() comes here (a stop in the middle of it at its next step), and a stop before or after start() at once
 function end() {
   if (common.model) {

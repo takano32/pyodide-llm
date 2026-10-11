@@ -1,6 +1,6 @@
 // The check of the sampling and of the generated tokens (T151, T178, T195, T219): against the CPU's sampling in JavaScript,
 // with the logits that are not finite, and a few tokens against the layer in JavaScript.
-// (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, floats, run, readBack, validated, scoped } from "./device.js";
 import { toHalf, heldHalves, halvesSaid, farthest } from "./halves.js";
 import { EPS, layerShape, tokenForm, layerAngles } from "./layerparts.js";

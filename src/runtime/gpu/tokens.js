@@ -1,6 +1,6 @@
 // A generated token's steps (T152): the forms of a layer this device can make, a token's buffers and uniforms, the
 // dispatches of a step, and a run of steps as one submission with its ids, state, keys and values read back.
-// (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
+// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, turnedAt, within, buffer, uniform, copyIn, validated,
   pipelineOf, bind, dispatch } from "./device.js";
@@ -25,7 +25,7 @@ import { attentionPasses } from "./tokenattention.js";
 // each in turn: the fastest is taken (T150's and T175's tables left which is fastest to the device: the owner's
 // Android read a layer at 18.5% of its buffer's reads with mul_mat_vec and a matrix at 96.8% with DP4A). The attention
 // (T224, chooseTokenAttention) is llama.cpp's decode form, flash_attn_vec, split over the positions and reduced, or the
-// prompt's tiles, whichever is right and faster here, on this pass's q. Where it came from: the run of T151 (public/benchmark/gpu/generate.js's generate()), whose
+// prompt's tiles, whichever is right and faster here, on this pass's q. Where it came from: the run of T151 (src/runtime/benchmark/gpu/generate.js's generate()), whose
 // form is WebLLM's decode loop without its sync of every token (web-llm, src/llm_chat.ts; no line taken) and llama.cpp's
 // WebGPU graph of a token, one command encoder for all of it (ggml-webgpu.cpp, commit 2145525a, MIT; no line taken).
 // T226: Qwen2's and Qwen3's steps too. What they have between the matrix of q, k and v and RoPE (T153: a bias of each,

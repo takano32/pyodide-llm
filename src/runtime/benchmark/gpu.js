@@ -42,10 +42,8 @@
 // bound and run, how a time is taken), halves.js (the float16 of the cache), layerparts.js, layercheck.js and layer.js
 // (one layer of a token: its forms, its check, its times), matvec.js (a matrix times a vector, a token's work),
 // generate.js and generatecheck.js (generated tokens and the sampling, and their check), check.js (the step "check"),
-// ceilings.js and prompt.js. Each is asked for with this file's own ?v=<build>, as shaders.js is, so that all come from
-// one deployment, and all at once: one after another's end would add a round trip for each.
-// a module worker's port opens at its first await, and a message that comes before onmessage is set is lost (T109):
-// what comes while the modules do is kept here, and handed to the steps in order at the end of this file
+// ceilings.js and prompt.js. Each is a static import: a bundler links them into this worker's file (T367.3), and
+// nothing is awaited before the steps' receiver further down is set.
 import { load, info } from "./gpu/device.js";
 import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./gpu/halves.js";
 import { layerReference, layerCheckData, judgeLayer } from "./gpu/layercheck.js";

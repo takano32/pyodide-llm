@@ -1,6 +1,6 @@
 // The model going onto the GPU and leaving it: open() and take() (T156: a model on the GPU alone, its layers written as
 // the checkpoint comes), start() (the weights, the forms chosen, "ready" or "unusable"), stop().
-// (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
+// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 import { common, within, openDevice, describe, unusable, end } from "./device.js";
 import { upload, uploadLayers, uploadRest, tablesOn } from "./weights.js";
@@ -11,7 +11,7 @@ import { chooseTokens } from "./tokenforms.js";
 let starting = false;
 
 // ---- T156: a model on the GPU alone. open() makes the device and every buffer of the layers' matrices before a byte
-// of them comes (plan: public/forward/alone.js's gpuOnlyPlan(): each matrix's rows and length, and where a layer's values and scales
+// of them comes (plan: src/runtime/forward/alone.js's gpuOnlyPlan(): each matrix's rows and length, and where a layer's values and scales
 // start in the checkpoint; the layers are joined for a token, as a model on the GPU alone always runs its steps here),
 // and take() writes each stretch of them to its buffer as the worker posts it (routes: [start, end) in the checkpoint,
 // the buffer and the offset in it). flow[0] counts the bytes on the GPU (the worker waits on it: a disk read faster

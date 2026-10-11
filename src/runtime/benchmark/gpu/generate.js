@@ -1,6 +1,6 @@
 // The step "generate" (T151, T191): tokens generated on the GPU, the sampling too, read back each or once a submission, the
 // sampling alone, and the logits the sampling is measured and checked on.
-// (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 import { shared, MODELS, PROMPT_MODEL, matrixBytes, gpu, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, fill,
   floats, run, middle, interleaved, scoped } from "./device.js";
 import { EPS, layerShape, tokenForm, layerCodes, fusedLayer, compiled, ropeTable } from "./layerparts.js";

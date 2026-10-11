@@ -1,9 +1,9 @@
 // shaders/sample.js (T351): the sampling of a generated token on the GPU (T151's SAMPLE: the repetition penalty,
 // the softmax, top-p by pivots and the draw, T219's refusal of logits that are not finite), and what it shares with the
 // sampling in chunks (stages.js).
-// A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
-// (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
+// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// a bundler links them).
 //
 // The notices of what SAMPLER_COMMON, SAMPLER_DRAW and SAMPLE are adapted from (the forms and what was changed are described at the head of
 // run.js, above REPETITION_WINDOW, where these notices stand too; they are copied here, as this file holds the lines):

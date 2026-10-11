@@ -1,9 +1,9 @@
 // shaders/bench.js (T351): the shaders that /benchmark/'s GPU section alone runs, but for T149's matrix × vector
 // (matvec.js) and the sampling in chunks (stages.js): T135's first matrix products (WIDEN, PACKED, BATCHED), the argmax,
 // the empty and the small dispatch, and T168's ceilings of the device (clpeak's method; no line of it is copied).
-// A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
-// (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
+// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// a bundler links them).
 import { STEP } from "./common.js";
 
 // the tokens a workgroup of the batched matrix multiplies at once: each weight is read once for all of them

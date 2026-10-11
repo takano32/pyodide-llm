@@ -1,8 +1,7 @@
-// shaders.js (T135): the WGSL of this project in one place. The GPU section of /benchmark/ (public/benchmark/gpu.js,
-// T134) measures with some of them; the model's GPU worker (public/gpu.js) runs a prompt's tokens through the layers
+// shaders.js (T135): the WGSL of this project in one place. The GPU section of /benchmark/ (src/runtime/benchmark/gpu.js,
+// T134) measures with some of them; the model's GPU worker (src/runtime/gpu.js) runs a prompt's tokens through the layers
 // with the tiled matrices of T146 (the one each device runs fastest, T147), the flash attention and the steps of a
-// layer below them. A plain ES module: both import it with the ?v= of their
-// own URL (GitHub Pages keeps a file for ten minutes: all must come from the same deployment).
+// layer below them. A plain ES module, which a bundler links into each of them (T367.3).
 //
 // The weights are this project's int8: values in groups of GROUP with one float32 scale each (llama2_numpy's layout),
 // four values to a u32 as the shaders read them. Every matrix times vector: one workgroup of 64 per row, each thread a
@@ -15,9 +14,8 @@
 // small steps of a layer), attention.js (flash attention by tiles and for one token), matvec.js (a matrix times one
 // vector, the benchmark's forms), fused.js (the fused layer of a generated token), run.js (a run of generated tokens:
 // its state, the embedding, the outliers), sample.js (the sampling), stages.js (the sampling in chunks, the benchmark's),
-// likecpu.js (the CPU's sampling in JavaScript: no shader) and key.js (the device's key). Each is asked for with this
-// file's own ?v=<build>, so that all come from one deployment, and all at once: a part's own import of a neighbour then
-// finds it asked for already, where one after another's end would add a round trip for each.
+// likecpu.js (the CPU's sampling in JavaScript: no shader) and key.js (the device's key). Each is a static import (T367.3: a
+// bundler links them).
 import { GROUP } from "./shaders/common.js";
 import { TILE, WIDEN, PACKED, BATCHED, ARGMAX, EMPTY, SMALL, CEILING_WORKGROUP, FMA_PER_LOOP, DOT4_PER_LOOP,
   SHARED_PER_LOOP, GLOBAL_PER_THREAD, FMA_SHAPES, fmaCeiling, DOT4_CEILING, SHARED_CEILING,

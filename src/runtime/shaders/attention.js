@@ -1,9 +1,9 @@
 // shaders/attention.js (T351): the attention: llama.cpp's flash attention by tiles for the tokens of a prompt
 // (T147) and its flash_attn_vec for one generated token (T224), each under its notice below, and the made-up numbers and
 // the JavaScript the checks hold a token's attention to.
-// A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
-// (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
+// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// a bundler links them).
 import { STEP } from "./common.js";
 
 // T147: the attention of a prompt's tokens, llama.cpp's flash attention with tiles (flash_attn_tile.wgsl), where

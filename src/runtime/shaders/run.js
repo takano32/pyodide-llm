@@ -1,9 +1,9 @@
 // shaders/run.js (T351): a run of generated tokens on the GPU (T151) but for its sampling (sample.js): the state a
 // pass hands the next and the settings of the sampling (with the JavaScript that writes them), the embedding of a token
 // or of a prompt's rows, and the outlier channels of a ternary classifier (T232).
-// A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
-// (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
+// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// a bundler links them).
 
 // ---- T151: a run of generated tokens on the GPU, the ids read back once for all of them. Each token of the run is
 // one compute pass: EMBED (the token's row of the embedding into the residual stream), the layers (fusedMatVec, T150),
@@ -233,7 +233,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
 }`;
 // T232: EMBED and EMBED_ROWS from a table of ternary weights (see prompt.js's TERNARY_PACKED, above dp4a): a word is 16 codes of
 // two bits and a scale covers 128 weights; a value is its code less one times the scale, one float32 product, as the
-// CPU's embed() has it (public/forward/engine.js's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
+// CPU's embed() has it (src/runtime/forward/engine.js's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
 // a workgroup a token of ids; else EMBED's, the state's token). Their loop is llama.cpp's get_rows, as theirs
 const embedTernary = (block) => /* wgsl */ `${block ? "" : STATE}
 @group(0) @binding(0) var<storage, read> table: array<u32>;
@@ -264,7 +264,7 @@ export const EMBED_TERNARY = embedTernary(false), EMBED_ROWS_TERNARY = embedTern
 // ---- T232: the outlier channels of a ternary classifier's input (T92: a few weights of the final norm are several
 // times the others (Ternary Bonsai 1.7B's largest is 5.6 times its median, the 8B's 5.2), and a group of 32 quantized
 // to 8 bits with one of them loses the other 31). The CPU takes them out of the normed stream before it quantizes it
-// and multiplies their columns of the classifier in float32 (public/forward/engine.js's picked and the kernel add_columns); an int8
+// and multiplies their columns of the classifier in float32 (src/runtime/forward/engine.js's picked and the kernel add_columns); an int8
 // model's GPU multiplies a classifier of floats instead (T226: fusedMatVec), which reads int8 weights. For ternary
 // weights the GPU does what the CPU does, in two small dispatches around the classifier's matrix, the columns read
 // from the table of codes as it is. No public implementation has this (ONNX Runtime and llama.cpp quantize the input

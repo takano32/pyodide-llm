@@ -2,9 +2,9 @@
 // mul_mat_vec, ONNX Runtime's MatMulNBits and its DP4A for small M, each under its notice below). /benchmark/'s GPU
 // section alone runs these three; the fused layer of a generated token (fused.js) is made from them and takes the rows a
 // workgroup has from here.
-// A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
-// (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
+// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// a bundler links them).
 import { sdp8ai } from "./prompt.js";
 
 // ---- T149: a matrix times one vector (a generated token's), in the forms of public implementations, for the GPU

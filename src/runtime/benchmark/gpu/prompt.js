@@ -1,5 +1,5 @@
 // The step "prompt": the tokens of a prompt through the matrices all at once (T135's batched shader and T146's tiled ones).
-// (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 import { shared, layerMatrices, SMALL_PER_LAYER, PROMPT_MODEL, matrixBytes, gpu, buffer, pipelinesFor, promptShaders,
   kindOf, quantizer, matrix, vectors, destroyVectors, run, median, validated } from "./device.js";
 

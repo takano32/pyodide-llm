@@ -1,6 +1,6 @@
 // The step "check": the int8 shaders against JavaScript on small matrices (T134; T146: the tiled ones with their edges),
 // then the layer's check and the sampling's and the generation's (layercheck.js, generatecheck.js).
-// (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 import { shared, gpu, MAP_READ, COPY_DST, buffer, floats, promptShaders, matVecShaders, kindOf, quantizer, matrix,
   vectors, destroyVectors, run, argmaxOf, readBack, validated } from "./device.js";
 import { checkLayer, checkTokenAttentions } from "./layercheck.js";

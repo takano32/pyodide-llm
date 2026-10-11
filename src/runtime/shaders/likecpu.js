@@ -1,8 +1,8 @@
 // shaders/likecpu.js (T351): no shader: the CPU's sampling in JavaScript (the kernel's and NumPy's order of
 // operations), which the checks of the GPU's SAMPLE are held to.
-// A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
-// (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
+// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// a bundler links them).
 import { REPETITION_WINDOW } from "./run.js";
 
 // The CPU's sampling in JavaScript (kernels/kernel.ts's penalize() and sample(), as the engine's generate() calls

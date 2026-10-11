@@ -1,8 +1,8 @@
 // shaders/stages.js (T351): the sampling in chunks of the vocabulary, many workgroups (T191's SAMPLER_STAGES).
 // /benchmark/'s GPU section alone runs them.
-// A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
-// (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
+// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// a bundler links them).
 //
 // The notices of what the stages are adapted from (the forms and what was changed are described at the head of
 // run.js, above REPETITION_WINDOW, where these notices stand too; they are copied here, as this file holds the lines):

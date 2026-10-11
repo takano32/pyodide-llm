@@ -1,6 +1,6 @@
 // The check of a layer (T175, T187, T225): the layer in JavaScript, what a form's keys, values and stream are held to, and
 // the attention of a token at several sizes and positions (T224).
-// (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, buffer, floats, run, readBack, scoped } from "./device.js";
 import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./halves.js";
 import { layerShape, layerForms, hasSubgroupId, engineTiles, vecAttention, attentionSteps, layerCheck, compiled,

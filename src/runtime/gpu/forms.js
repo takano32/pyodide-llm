@@ -1,6 +1,6 @@
 // The forms of a prompt's shaders on this device, checked against JavaScript, timed and chosen: the attention's tiles
 // and the matrices' tiled shaders (T146, T147), with how a matrix's pieces are bound and dispatched.
-// (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
+// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
 
@@ -191,7 +191,7 @@ function multiply(m, pass, form, group, rows, count) {
   dispatch(pass, form.pipeline, group, across, Math.ceil(tiles / across));
 }
 
-// T146's check (public/benchmark/gpu/check.js's checkTiled) of a form: 300 rows of 544 (17 groups of 32: a part of a tile
+// T146's check (src/runtime/benchmark/gpu/check.js's checkTiled) of a form: 300 rows of 544 (17 groups of 32: a part of a tile
 // of rows everywhere), 11 and 70 tokens (a part of a tile of tokens; two or one and a part), and 11 tokens whose x and
 // y are wider than the product (xStride 608, yStride 320), each product twice into the same y (the second added:
 // shape.add) against JavaScript's (shaders.js's tiledOff). The reason it is wrong, or null

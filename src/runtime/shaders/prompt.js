@@ -2,9 +2,9 @@
 // TensorFlow.js's packed vec4 and ONNX Runtime's DP4A (each under its notice below), ternary weights unpacked for the last
 // (T232), the forms a device can make of them (T147's promptForms) and the check of one against JavaScript (tiledOff).
 // SDP8AI and ternary_packed() are also what the DP4A forms of one vector (matvec.js, fused.js) are made of.
-// A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
-// (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
+// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// a bundler links them).
 import { GROUP, STEP } from "./common.js";
 
 // ---- T146: a matrix times the tokens of a prompt by tiles (the benchmark measures them; the model's GPU worker is to
@@ -328,7 +328,7 @@ fn main(@builtin(local_invocation_id) localId: vec3<u32>, @builtin(workgroup_id)
 
 // ---- T232: ternary weights (T230: Prism ML's Ternary Bonsai) on the GPU, as the checkpoint holds them: PQ2_0's
 // codes, two bits a weight (weight j of a row at bits 2 (j % 4) of byte j / 4: 0, 1, 2 for -1, 0, +1 times the scale
-// of its group of 128 along the row; 3, which no ternary file has, is +2, as public/forward/engine.js's weightAt and
+// of its group of 128 along the row; 3, which no ternary file has, is +2, as src/runtime/forward/engine.js's weightAt and
 // llama2_numpy.unpack_ternary read it), 16 weights a u32, and a float32 scale a group of 128 in a buffer of its own.
 // Nothing is widened as it goes up (the 8B is 2.3 GB so and 9.2 GB as int8): a row of n weights is n / 4 bytes and
 // n / 128 scales, which is the layout of an int8 row of n / 4 weights (32 bytes of values to a scale), so gpu.js's
@@ -397,7 +397,7 @@ fn ternary_packed(codes: u32) -> vec4<u32> {
   return (bits + vec4<u32>(0x7f7f7f7fu)) ^ vec4<u32>(0x80808080u);
 }`;
 /** JavaScript's unpacking (the checks' answer): the int8 values of ternary codes (a Uint8Array, four weights a byte),
- * as llama2_numpy.unpack_ternary and public/forward/engine.js's weightAt read them */
+ * as llama2_numpy.unpack_ternary and src/runtime/forward/engine.js's weightAt read them */
 export function ternaryValues(packed) {
   const out = new Int8Array(packed.length * 4);
   for (let i = 0; i < out.length; i++) out[i] = ((packed[i >> 2] >> (2 * (i & 3))) & 3) - 1;
@@ -570,7 +570,7 @@ ${dp4aLines(false)}`}
 // ---- T147: the tiled shaders a device may run a prompt's matrices with (T146's), for the model's GPU worker, which
 // checks each against JavaScript on a small matrix (tiledOff) and times the right ones on the model's own weights, and
 // takes the fastest: which is fastest differs from GPU to GPU (T146), and only the device can say. none: why a shape
-// is not made here (the device's threads or workgroup memory), as the benchmark says it (public/benchmark/gpu.js).
+// is not made here (the device's threads or workgroup memory), as the benchmark says it (src/runtime/benchmark/gpu.js).
 // T232, ternary: the forms of a model of ternary weights, ORT's DP4A alone with the weights unpacked from their codes
 // (dp4a's ternary: the float forms would widen every weight to a float); none where there is no packed int8 dot
 export const promptForms = ({ half, subgroups, packed, memory, threads, ternary = false }) => {
@@ -610,7 +610,7 @@ export function quantizedLikeCpu(x) {
 }
 
 // How far a tiled shader's products (got: y after the product twice, the second added: 2 × W·x) are from
-// JavaScript's, the check of T146's review (public/benchmark/gpu/check.js's checkTiled): w, int8 [rows][n] with the float32
+// JavaScript's, the check of T146's review (src/runtime/benchmark/gpu/check.js's checkTiled): w, int8 [rows][n] with the float32
 // scales s [rows][n / 32]; x, the tokens xStride apart; got, yStride apart. A packed form multiplies what the GPU
 // quantized (xq, xs, xStride apart), held to JavaScript's quantize_x first: a scale may differ in its last bits (WGSL's
 // division is not rounded exactly) and a value then by 1, a wrong index by far more. f32 forms: no more than 1e-4 of

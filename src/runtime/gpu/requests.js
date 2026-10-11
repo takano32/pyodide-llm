@@ -1,12 +1,12 @@
 // The requests forward.js waits for in the control area: a block of a prompt, the steps of a generation, the GPU's own
 // keys and values (T210), each answered by serve().
-// (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
+// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 import { common, copyIn, narrowIn } from "./device.js";
 import { grow, block, keysOut, keysBack } from "./block.js";
 import { tokenStep, runTokens } from "./tokens.js";
 
-// A request for count steps from token at pos (public/forward/gpuside.js's generateMany): the keys and values of positions from to
+// A request for count steps from token at pos (src/runtime/forward/gpuside.js's generateMany): the keys and values of positions from to
 // pos - 1 up from forward.js's cache first (cache: its addresses of the keys and the values, its capacity and the
 // bytes of a position; half: float16 as here, else float32, narrowed on the way up: T160, a grouped-query model's),
 // the state (token, pos, the end of the history and its length), the settings and a random number a step; the ids into
@@ -77,7 +77,7 @@ async function serve(serial, work) {
 
 // T210: the GPU's own keys and values of count positions (plan.batch at most) from pos into plan.staging, as a block
 // writes them back: a model on the GPU alone keeps none in the shared memory, and the tests read them so
-// (public/forward/engine.js's keysAndValues)
+// (src/runtime/forward/engine.js's keysAndValues)
 function keysOf({ serial, count, pos }) {
   serve(serial, async (wanted) => {
     const encoder = common.model.device.createCommandEncoder();

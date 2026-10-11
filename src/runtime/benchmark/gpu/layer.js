@@ -1,6 +1,6 @@
 // The steps "layer" and "layer steps": ms a layer by every form (T150, T175), where the time of a layer goes (T202, T208),
 // its attention by the cache's length, and the whole layer by timestamps.
-// (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 import { shared, MODELS, matrixBytes, gpu, STORAGE, COPY_DST, UNIFORM, COPY_SRC, buffer, floats, pipelinesFor, run,
   readBack, validated, PAIRS, middle, interleaved, scoped } from "./device.js";
 import { toHalf } from "./halves.js";
@@ -287,7 +287,7 @@ async function attentionLengths(shape) {
 // DP4A's two where the packed int8 dot is and llama.cpp's elsewhere, which on a device whose fastest layer is another
 // (Apple, where ONNX Runtime does not use DP4A, or llama.cpp's with subgroups) broke down a layer no token runs. Where
 // the layer table gave no time (it failed, or ran in no worker before), as T202.
-// The fastest only of the forms the engine has (public/gpu.js's TOKEN_FORMS; T208's review): not llama.cpp's with the
+// The fastest only of the forms the engine has (src/runtime/gpu.js's TOKEN_FORMS; T208's review): not llama.cpp's with the
 // norms apart (withoutDp4a), which the layer table times where there is no packed int8 dot but no token runs; it can
 // still be the partner.
 function stepForms() {

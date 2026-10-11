@@ -64,14 +64,11 @@
 // weights onto the GPU), forms.js (the prompt's shaders checked, timed and chosen), block.js (a block of a prompt),
 // tokenattention.js, tokens.js and tokenforms.js (a generated token's attention, its steps, and their forms checked,
 // timed and chosen), requests.js (what forward.js waits for in the control area) and start.js (the model going onto
-// the GPU and leaving it). Each is asked for with this file's own ?v=<build>, as shaders.js is, so that all come from
-// one deployment, and all at once: one after another's end would add a round trip for each.
-// (the shaders too, as this file asked for them where it began before it was divided: gpu/device.js's own import of
-// them is this one, and does not wait for device.js to come. Where they do not come, device.js's says so, as a start's
-// "unusable")
+// the GPU and leaving it). Each is a static import: a bundler links them into this worker's file (T367.3),
+// and nothing is awaited before the receiver at the end of this file is set.
+// (the shaders are asked for here as gpu/device.js asks for them, a module of their own that comes after this file:
+// device.js's import of them is this one. Where they do not come, device.js's says so, as a start's "unusable")
 import("./shaders.js").catch(() => {});
-// A module worker's port opens at its first await, and a message that comes before onmessage is set is lost (T109):
-// what comes while the modules do is kept here, and handed to the receiver in order at the end of this file
 import { heldFloats } from "./gpu/tokenforms.js";
 import { generate, prompt, keysOf } from "./gpu/requests.js";
 import { open, take, start, stop } from "./gpu/start.js";

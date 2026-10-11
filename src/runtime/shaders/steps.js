@@ -1,9 +1,9 @@
 // shaders/steps.js (T351): the quantizing and the small steps of a layer: the activations to int8 (QUANTIZE, T241's
 // scale word, which fused.js's NORM_QUANTIZE takes too), int6 weights widened (T155), and RMSNorm, LayerNorm, the
 // residual add, RoPE, SwiGLU and GELU for the tokens of a prompt.
-// A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
-// (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
+// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// a bundler links them).
 //
 // The notice of what T241's scale_word() takes its test of a float's bits from (isnan() of TensorFlow.js,
 // tfjs-backend-webgpu/src/webgpu_program.ts: `(floatToUint & 0x7fffffffu) > 0x7f800000u`; said above SCALE_WORD, and
@@ -174,7 +174,7 @@ export const sixDispatch = (groups, most) => {
   return [Math.max(1, x), Math.ceil(workgroups / Math.max(1, x))];
 };
 /** JavaScript's widening (the check's answer): the int8 values of groups of 24 packed bytes (a Uint8Array), as
- * llama2_numpy.unpack6 and public/forward/engine.js's weightAt read them */
+ * llama2_numpy.unpack6 and src/runtime/forward/engine.js's weightAt read them */
 export function sixValues(packed) {
   const groups = packed.length / 24, out = new Int8Array(groups * 32);
   for (let g = 0; g < groups; g++) {

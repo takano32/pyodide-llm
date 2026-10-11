@@ -1,9 +1,9 @@
 // shaders/fused.js (T351): a layer of a generated token in five dispatches (T150): llama.cpp's matrix × vector with
 // the norm on its read and RoPE, the residual add or SwiGLU on its write, the same on ONNX Runtime's DP4A (T175, with
 // NORM_QUANTIZE) and on ternary weights (T232).
-// A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
-// The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
-// (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
+// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
+// a bundler links them).
 //
 // The notice of what NORM_QUANTIZE (with steps.js's SCALE_WORD, which its text holds) takes its test of a float's bits from (isnan() of TensorFlow.js,
 // tfjs-backend-webgpu/src/webgpu_program.ts: `(floatToUint & 0x7fffffffu) > 0x7f800000u`; said above sample.js's
