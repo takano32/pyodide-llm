@@ -2,7 +2,7 @@
 // and values, the block itself as one submission with its keys and values read back, and what a whole block takes (T148).
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, common, within, buffer, uniform, validated, pipelineOf, bind,
+import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, stopping, within, buffer, uniform, validated, pipelineOf, bind,
   dispatch } from "./device.js";
 import { tablesOf } from "./weights.js";
 import { productGroups, multiply } from "./forms.js";
@@ -155,7 +155,7 @@ async function timeBlocks(m) {
   for (let round = 0; round < (m.fallback ? 1 : BLOCK_ROUNDS); round++) {
     for (let i = 0; i < counts.length; i++) {
       times[i].push(await timed(counts[i]));
-      if (common.stopping) return [];
+      if (stopping) return [];
     }
   }
   return counts.map((count, i) => ({ count, ms: times[i].sort((a, b) => a - b)[times[i].length >> 1] }));

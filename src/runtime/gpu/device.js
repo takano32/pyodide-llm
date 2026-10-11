@@ -26,13 +26,16 @@ const ternaryPlan = (plan) => Object.values(plan.matrices).some((matrix) => matr
 // and k alone (a SmolLM3's every fourth; the shaders take the number as GPT-2's 0)
 const turnedAt = (plan, l) => (plan.unturned?.includes(l) ? 0 : plan.turned);
 
-// T352: what the parts of this worker share and one of them sets (a module's `let` cannot be assigned from another
-// module): the fields were gpu.js's `let`s of the same names
-const common = {
-  model: null,  // what is on the GPU for the model: the device, the plan, the buffers, the pipelines, the cache
-  stopping: false,  // a stop was asked: start() ends at its next step
-  lost: null,  // why the device was lost, once it is
-};
+// T378.4: what the parts of this worker read and this one alone sets (a static import is the live binding: the others
+// take the names and read them, and say what happened where they have something to say, stopAsked()). They were the
+// fields of one object, common, that any part could set (T352)
+let model = null;  // what is on the GPU for the model: the device, the plan, the buffers, the pipelines, the cache
+let stopping = false;  // a stop was asked: start() ends at its next step
+let lost = null;  // why the device was lost, once it is
+// a stop was asked (start.js's stop(): the worker ends at once, or start() does at its next step)
+function stopAsked() {
+  stopping = true;
+}
 
 
 // The most a step of putting the model on the GPU may take: a shader's compilation, a check, the timing, a layer's
@@ -59,7 +62,7 @@ async function openDevice(plan, say = unusable) {
     // the browser's own adapter (T148, the review: "high-performance" would keep a laptop's second GPU awake for the
     // whole visit, for prompts that are mostly short; the device measures whichever it gets against its CPU anyway)
     const adapter = await navigator.gpu.requestAdapter();
-    if (common.stopping) return end();
+    if (stopping) return end();
     if (!adapter) return say("no GPU adapter here");
     // T148: a fallback adapter is the CPU doing the GPU's work (SwiftShader, lavapipe): never faster than the CPU's
     // own kernels, and its compilation of the shaders alone took 2 to 4 minutes (T147). Refused before anything is
@@ -82,18 +85,18 @@ async function openDevice(plan, say = unusable) {
       requiredFeatures: ["shader-f16", "subgroups"].filter((name) => adapter.features.has(name)),
       requiredLimits: { maxStorageBufferBindingSize, maxBufferSize, maxComputeWorkgroupStorageSize, maxComputeInvocationsPerWorkgroup,
         maxComputeWorkgroupSizeX } });
-    device.lost.then((info) => { common.lost = `the GPU was lost (${info.reason}${info.message ? `: ${info.message}` : ""})`; });
+    device.lost.then((info) => { lost = `the GPU was lost (${info.reason}${info.message ? `: ${info.message}` : ""})`; });
     // T148: what the page keeps of an earlier visit counts only for the same adapter and browser
     // (and the shaders of this deployment: a site whose shaders changed chooses anew, the review of T148)
     // (T232: a ternary model's key holds its own shaders too)
     const key = deviceKey(adapter, device, ternary);
     const remembered = plan.remembered?.key === key ? plan.remembered : null;
-    common.model = { device, plan, owned: [], limit, info, fallback, remembered, adapter, key, ternary };
-    if (common.stopping) return end();
+    model = { device, plan, owned: [], limit, info, fallback, remembered, adapter, key, ternary };
+    if (stopping) return end();
     // a buffer the device cannot give fails quietly, as an error of these scopes
     device.pushErrorScope("out-of-memory");
     device.pushErrorScope("validation");
-    return common.model;
+    return model;
 }
 
 function describe(adapter) {
@@ -111,11 +114,11 @@ function unusable(reason) {
 // T205: it says { type: "ended" } first, for src/runtime/forward/engine.js's release() to read the next model after it. Every way out of
 // start() comes here (a stop in the middle of it at its next step), and a stop before or after start() at once
 function end() {
-  if (common.model) {
-    common.model.owned.forEach((buffer) => buffer.destroy());
-    common.model.cache?.owned.forEach((buffer) => buffer.destroy());
-    common.model.device.destroy();
-    common.model = null;
+  if (model) {
+    model.owned.forEach((buffer) => buffer.destroy());
+    model.cache?.owned.forEach((buffer) => buffer.destroy());
+    model.device.destroy();
+    model = null;
   }
   postMessage({ type: "ended" });
   self.close();
@@ -190,5 +193,5 @@ function dispatch(pass, pipeline, group, x, y = 1, z = 1) {
   pass.dispatchWorkgroups(x, y, z);
 }
 
-export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, common, within, openDevice,
+export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, within, openDevice,
   describe, unusable, end, buffer, uniform, copyIn, narrowIn, readBack, validated, pipelineOf, bind, dispatch };

@@ -3,7 +3,7 @@
 // pieces (T155), the layout of a token's joined matrices (T152), and the widening of int6 (T155) with its check.
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, common, within, buffer, uniform, copyIn, readBack, validated,
+import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, readBack, validated,
   pipelineOf, bind, dispatch } from "./device.js";
 import { GROUP } from "../shaders/common.js";
 import { WIDEN_SIX, sixDispatch, sixValues } from "../shaders/steps.js";
@@ -27,7 +27,7 @@ import { WIDEN_SIX, sixDispatch, sixValues } from "../shaders/steps.js";
 async function upload(m) {
   try {
     const bytes = await uploadLayers(m);
-    if (common.stopping) return bytes;
+    if (stopping) return bytes;
     return bytes + (await uploadRest(m));
   } finally {
     m.widen?.done();
@@ -79,7 +79,7 @@ async function uploadLayers(m) {
     if (m.direct) continue;
     // what was written waits in memory until the GPU takes it: let it, before more comes
     await within(m.device.queue.onSubmittedWorkDone(), `layer ${l + 1}'s weights`);
-    if (common.stopping) return bytes;
+    if (stopping) return bytes;
   }
   return bytes;
 }

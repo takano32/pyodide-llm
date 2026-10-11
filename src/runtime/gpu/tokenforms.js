@@ -1,7 +1,7 @@
 // The forms of a token's layer checked on the model's own weights against JavaScript (T152), timed and chosen.
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { COPY_DST, MAP_READ, rowBytes, turnedAt, common, within, buffer, readBack, validated, pipelineOf } from "./device.js";
+import { COPY_DST, MAP_READ, rowBytes, turnedAt, stopping, within, buffer, readBack, validated, pipelineOf } from "./device.js";
 import { tablesOf } from "./weights.js";
 import { halfToFloat } from "./forms.js";
 import { grow, BLOCK_ROUNDS } from "./block.js";
@@ -23,7 +23,7 @@ async function chooseTokens(m) {
   if (plan.parallel && !plan.layerNorm) throw new Error("a parallel residual without LayerNorm is not on the GPU's tokens");
   m.gen = await tokenBuffers(m);
   await chooseTokenAttention(m);
-  if (common.stopping) return;
+  if (stopping) return;
   // T156: the first layer's matrices of a model on the GPU alone are not in the shared memory: checkTokens reads them
   // back from the GPU (T210: and the rows of the tables it reads)
   if (m.direct) {
@@ -51,7 +51,7 @@ async function chooseTokens(m) {
       if (error?.late) throw error;
       tried.push({ name: form.name, none: String(error?.message ?? error) });
     }
-    if (common.stopping) return;
+    if (stopping) return;
   }
   if (!right.length) {
     throw new Error(`no layer of a token is right on this GPU (${tried.map((f) => `${f.name}: ${f.none}`).join("; ") || `none named ${plan.force.tokens}`})`);
@@ -82,7 +82,7 @@ async function timeTokens(m, forms) {
   const times = forms.map(() => []);
   for (let round = 0; round < (m.fallback ? 1 : BLOCK_ROUNDS); round++) {
     for (let i = 0; i < forms.length; i++) times[i].push(await timed(forms[i]));
-    if (common.stopping) break;
+    if (stopping) break;
   }
   return times.map((list) => list.sort((a, b) => a - b)[list.length >> 1] / most);
 }

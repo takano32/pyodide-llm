@@ -2,7 +2,7 @@
 // and the matrices' tiled shaders (T146, T147), with how a matrix's pieces are bound and dispatched.
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
+import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
 import { GROUP } from "../shaders/common.js";
 import { ternaryValues, tiledOff } from "../shaders/prompt.js";
 import { FLASH_Q_TILE, flashShape, flashTile } from "../shaders/attention.js";
@@ -148,7 +148,7 @@ async function chooseMatrices(m) {
       if (error?.late) throw error;
       m.forms.push({ name: kept.name, none: `remembered, but ${error?.message ?? error}` });
     }
-    if (common.stopping) return;
+    if (stopping) return;
   }
   const right = [];
   for (const form of forms) {
@@ -168,7 +168,7 @@ async function chooseMatrices(m) {
       if (error?.late) throw error;
       m.forms.push({ name: form.name, none: String(error?.message ?? error) });
     }
-    if (common.stopping) return;
+    if (stopping) return;
   }
   if (!right.length) throw new Error(`no tiled shader is right on this GPU (${m.forms.map((f) => `${f.name}: ${f.none}`).join("; ") || `none named ${plan.force.matrices}`})`);
   const ms = right.length > 1 ? await within(timeForms(m, right), "timing the tiled shaders") : [0];

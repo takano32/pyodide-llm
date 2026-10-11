@@ -3,10 +3,10 @@
 // (CI's gpu-check.mjs), and the checks of forward.js's choices make a GPU's worker of their own.
 //   - every name a file uses is declared in it, imported by it, or a worker's global (a ReferenceError where the line
 //     runs, otherwise: neither the build nor Node says it before);
-//   - every common.<name> is a field of the one object the modules share (gpu/device.js's common: a field is no
-//     variable, and a wrong name reads undefined and sets nothing another module reads), every field is used, and no
-//     file binds a name `common` of its own (a parameter of that name would hide the object from the function's lines:
-//     open() has one named shared, which is why the object is not);
+//   - T378.4: the model on the GPU, whether a stop was asked and why the device was lost are gpu/device.js's own
+//     variables (model, stopping, lost): no other module sets them (an import cannot be assigned: a TypeError where
+//     the line runs, which neither Node nor the build says before), and no file binds a name of theirs (a parameter or
+//     a local would hide the variable from the function's lines);
 //   - what the modules take from one another goes round nowhere (tests/imports.mjs's windowed(): the build links a
 //     ring without a word, and Node only where a module uses the other's name as it loads), and every file of gpu/
 //     is reached from the window;
@@ -51,15 +51,7 @@ for (const [name] of programs) {
 }
 console.log(`gpu-modules-check: the GPU worker's ${programs.size} files use nothing they do not declare or import (${names} names of a worker's globals), and none waits for itself`);
 
-// ---- the one object the modules share
-const holders = [...programs].filter(([, program]) => program.body.map(top).some((node) => node.type === "VariableDeclaration" && node.declarations.some((d) => d.id.name === "common")));
-assert.deepEqual(holders.map(([name]) => name), ["gpu/device.js"], "gpu/device.js declares common, and nothing else does");
-const declaration = holders[0][1].body.map(top).find((node) => node.type === "VariableDeclaration" && node.declarations[0].id.name === "common").declarations[0];
-assert.equal(declaration.init.type, "ObjectExpression");
-const fields = declaration.init.properties.map((property) => (assert.ok(property.type === "ObjectProperty" && !property.computed), property.key.name));
-assert.equal(new Set(fields).size, fields.length, "a field of common twice");
-const used = new Set();
-let said = 0;
+// ---- what device.js holds and the others read (T378.4): model, stopping, lost
 const walk = (node, visit, parent = null, key = "") => {
   if (!node || typeof node.type !== "string") return;
   visit(node, parent, key);
@@ -68,26 +60,38 @@ const walk = (node, visit, parent = null, key = "") => {
     (Array.isArray(value) ? value : [value]).forEach((child) => walk(child, visit, node, k));
   }
 };
+const HELD = ["model", "stopping", "lost"], OWNER = "gpu/device.js";
+const lets = programs.get(OWNER).body.map(top).filter((node) => node.type === "VariableDeclaration" && node.kind === "let").flatMap((node) => node.declarations.map((d) => d.id.name));
+for (const name of HELD) assert.ok(lets.includes(name), `${OWNER} holds ${name} as a let of its own`);
+assert.ok(![...programs.values()].some((program) => program.body.map(top).some((node) => node.type === "VariableDeclaration" && node.declarations.some((d) => d.id.name === "common"))),
+  "no module declares common: what the modules read of one another is a name each, set where it is declared (T378.4)");
+// a name written: the left of an assignment (a pattern's element too), ++ and --
+const written = (node, parent, key) => (parent.type === "AssignmentExpression" && key === "left") || parent.type === "UpdateExpression" ||
+  ((parent.type === "ArrayPattern" || (parent.type === "ObjectProperty" && key === "value") || parent.type === "RestElement" || parent.type === "AssignmentPattern") && key !== "right");
+// a name bound: declared, a parameter, caught
+const bound = (node, parent, key) => (parent.type === "VariableDeclarator" && key === "id") || (/Function/.test(parent.type) && (key === "params" || key === "id")) ||
+  (parent.type === "CatchClause" && key === "param") || (parent.type === "ClassDeclaration" && key === "id");
+let read = 0;
 for (const [name, program] of programs) {
+  const topLets = new Set(program.body.map(top).filter((node) => node.type === "VariableDeclaration").flatMap((node) => node.declarations));
+  const inPattern = new Set();
   walk(program, (node, parent, key) => {
-    if (node.type !== "Identifier" || node.name !== "common") return;
-    const member = (parent.type === "MemberExpression" || parent.type === "OptionalMemberExpression") && !parent.computed;
-    if (member && key === "property") return;  // (something's .common: no name)
-    if (member && key === "object") {
-      assert.ok(fields.includes(parent.property.name), `${name} says common.${parent.property.name}, which is no field of gpu/device.js's common: undefined`);
-      used.add(parent.property.name);
-      said += 1;
-      return;
-    }
-    // the object's own declaration, a module taking it by its name, a module handing it on
-    const itsOwn = parent === declaration && key === "id";
-    const takenByName = parent.type === "ImportSpecifier";
-    const handedOn = parent.type === "ExportSpecifier";
-    assert.ok(itsOwn || takenByName || handedOn, `${name} uses the name common otherwise than as common.<field> (line ${node.loc.start.line}): a local of that name hides the object, and the object handed whole is not held here`);
+    // (a pattern's names are bound where the pattern is: a declarator's id, a parameter)
+    if ((node.type === "ObjectPattern" || node.type === "ArrayPattern") && (bound(node, parent, key) || inPattern.has(parent) ||
+      (parent.type === "ObjectProperty" && inPattern.has(parent)))) inPattern.add(node);
+    if (node.type === "ObjectProperty" && inPattern.has(parent)) inPattern.add(node);
+    if (node.type !== "Identifier" || !HELD.includes(node.name)) return;
+    const member = (parent.type === "MemberExpression" || parent.type === "OptionalMemberExpression") && !parent.computed && key === "property";
+    if (member || (parent.type === "ObjectProperty" && key === "key" && !parent.computed && !parent.shorthand) || parent.type === "ImportSpecifier" || parent.type === "ExportSpecifier") return;
+    const binds = bound(node, parent, key) || (inPattern.has(parent) && (key === "value" || key === "elements" || parent.shorthand));
+    if (name === OWNER && parent.type === "VariableDeclarator" && key === "id" && topLets.has(parent)) return;  // its own let
+    assert.ok(!binds, `${name} binds a name ${node.name} of its own (line ${node.loc.start.line}): it hides ${OWNER}'s ${node.name} from the lines after it`);
+    if (written(node, parent, key)) {
+      assert.equal(name, OWNER, `${name} sets ${node.name} (line ${node.loc.start.line}): ${OWNER} holds it, and an import cannot be assigned (a TypeError where the line runs); say what happened to ${OWNER} instead`);
+    } else read += 1;
   });
 }
-assert.deepEqual(fields.filter((field) => !used.has(field)), [], "fields of common that nothing reads or sets");
-console.log(`gpu-modules-check: the ${fields.length} fields of common are the ones the modules use (${said} times)`);
+console.log(`gpu-modules-check: model, stopping and lost are gpu/device.js's, set there alone and read ${read} times; no module hides them`);
 
 // ---- the window in Node: it links, and what its receiver is given
 const handlers = [], posted = [];

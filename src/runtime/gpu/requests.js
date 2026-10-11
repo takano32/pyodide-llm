@@ -2,7 +2,7 @@
 // keys and values (T210), each answered by serve().
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { common, copyIn, narrowIn } from "./device.js";
+import { model, lost, copyIn, narrowIn } from "./device.js";
 import { grow, block, keysOut, keysBack } from "./block.js";
 import { tokenStep, runTokens } from "./tokens.js";
 import { samplingState, samplingSettings } from "../shaders/run.js";
@@ -18,7 +18,7 @@ import { samplingState, samplingSettings } from "../shaders/run.js";
 // GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back
 function generate({ serial, count, pos, from, token, history, length, cache, settings, randoms }) {
   serve(serial, async (wanted) => {
-    const m = common.model, { plan, gen: g } = m, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
+    const m = model, { plan, gen: g } = m, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
     if (!g?.form) throw new Error("no tokens on this GPU");
     if (pos + count > m.cache.capacity) grow(m, pos + count);
     const at = (block, l, p) => block + l * cache.capacity * cache.row + p * cache.row;
@@ -47,22 +47,22 @@ function generate({ serial, count, pos, from, token, history, length, cache, set
 
 // ---- a block of a prompt (T210: tokens, the ids of a model on the GPU alone, which embeds them here)
 function prompt({ serial, count, pos, tokens }) {
-  serve(serial, (wanted) => block(common.model, count, pos, wanted, false, tokens));
+  serve(serial, (wanted) => block(model, count, pos, wanted, false, tokens));
 }
 // The answer to a request (a block of a prompt, T152: the steps of a generation), in the control area: work(wanted)
 // runs while words.beat counts up, then words.failed and words.done = serial, where forward.js still waits for this
 // request (wanted: T147, it gave up, and the memory may soon be another model's)
 async function serve(serial, work) {
-  const { memory, plan } = common.model;
+  const { memory, plan } = model;
   const words = new Int32Array(memory.buffer, 0, Math.max(...Object.values(plan.words)) + 1);
   // the model's worker waits: this says that the work goes on, however long the GPU takes (a software adapter)
   const beat = setInterval(() => Atomics.add(words, plan.words.beat, 1), 250);
   const wanted = () => Atomics.load(words, plan.words.wanted) === serial;
   let failed = 1;
   try {
-    if (common.lost) throw new Error(common.lost);
+    if (lost) throw new Error(lost);
     await work(wanted);
-    if (common.lost) throw new Error(common.lost);
+    if (lost) throw new Error(lost);
     failed = 0;
   } catch (error) {
     postMessage({ type: "failed", reason: String(error?.message ?? error) });
@@ -81,10 +81,10 @@ async function serve(serial, work) {
 // (src/runtime/forward/engine.js's keysAndValues)
 function keysOf({ serial, count, pos }) {
   serve(serial, async (wanted) => {
-    const encoder = common.model.device.createCommandEncoder();
-    keysOut(common.model, encoder, pos, count);
-    common.model.device.queue.submit([encoder.finish()]);
-    await keysBack(common.model, wanted);
+    const encoder = model.device.createCommandEncoder();
+    keysOut(model, encoder, pos, count);
+    model.device.queue.submit([encoder.finish()]);
+    await keysBack(model, wanted);
   });
 }
 

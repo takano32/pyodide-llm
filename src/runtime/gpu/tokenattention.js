@@ -2,7 +2,7 @@
 // JavaScript, timed and chosen, and their dispatches.
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
+import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
 import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.js";
 import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, flashVec, flashVecReduce, tokenAttentionData,
   tokenAttentionOff } from "../shaders/attention.js";
@@ -44,7 +44,7 @@ async function chooseTokenAttention(m) {
       if (error?.late) throw error;
       g.attentions.push({ name: a.name, none: String(error?.message ?? error) });
     }
-    if (common.stopping) return;
+    if (stopping) return;
   }
   if (!right.length) {
     throw new Error(`no attention of a token is right on this GPU (${g.attentions.map((a) => `${a.name}: ${a.none}`).join("; ") || `none named ${plan.force.tokenAttention}`})`);
@@ -157,7 +157,7 @@ async function timeTokenAttention(m, right) {
         const once = await submission(item, counts[i]), twice = await submission(item, 2 * counts[i]);
         differences[i].push((twice - once) / counts[i]);
       }
-      if (common.stopping) break;
+      if (stopping) break;
     }
     const ms = differences.map((d) => d.sort((x, y) => x - y)[d.length >> 1] * plan.layers);
     return right.map((a) => items.reduce((sum, item, i) => (item.a === a ? sum + ms[i] : sum), 0));
