@@ -4,7 +4,7 @@
 import "./isolation.ts";
 import { MODELS } from "../models.js";
 import { $, type Name, type Result } from "./dom.ts";
-import { page } from "./state.ts";
+import { current, runAt, runNames, sectionAt } from "./running.ts";
 import { unstarted } from "../runtime/updated.js";
 
 // ---- the sections' elements: a head with a Run button and the state, the progress while it runs (T177), and what
@@ -54,12 +54,12 @@ export function staged(name: Name, { stage, at, of, part = 0 }: Stage) {
   p.stage.textContent = counted ? `${at} / ${of} · ${stage}` : stage;
 }
 export function ticked() {
-  if (!page.current) return;
+  if (!current) return;
   const now = performance.now();
-  parts[page.current].progress.elapsed.textContent = clock(now - page.sectionBegan);
-  if (page.runNames.length > 1) {
-    const title = document.querySelector(`section[data-section="${page.current}"] h2`)?.textContent;
-    $("overall").textContent = `Section ${page.runNames.indexOf(page.current) + 1} / ${page.runNames.length} · ${title} · ${clock(now - page.runBegan)} in all`;
+  parts[current].progress.elapsed.textContent = clock(now - sectionAt);
+  if (runNames.length > 1) {
+    const title = document.querySelector(`section[data-section="${current}"] h2`)?.textContent;
+    $("overall").textContent = `Section ${runNames.indexOf(current) + 1} / ${runNames.length} · ${title} · ${clock(now - runAt)} in all`;
   }
 }
 
@@ -101,7 +101,7 @@ export function worker(file: keyof typeof WORKERS) {
   live.add(w);
   w.addEventListener("message", ({ data }) => {
     heard = performance.now();
-    if (page.current && typeof data?.stage === "string") staged(page.current, data);
+    if (current && typeof data?.stage === "string") staged(current, data);
   });
   return w;
 }

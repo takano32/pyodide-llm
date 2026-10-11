@@ -3,13 +3,14 @@
 import { reportUrl } from "../bench.js";
 import { chat, run, statusText } from "./dom.ts";
 import { parameters } from "./address.ts";
-import { page } from "./state.ts";
+import { benchmarking, gpuNote, gpuSaid, model, readyLine } from "./model.ts";
+import { generating } from "./answer.ts";
 import { fixSeed } from "./settings.ts";
 
 // The round button is the only control: an arrow that sends, a square that stops the run that is going on.
 const RUN_ICON = "M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z", STOP_ICON = "M7 7h10v10H7z";
-export function setGenerating(current: boolean) {
-  page.generating = current;
+export function showRun() {
+  const current = generating;
   run.querySelector("path")!.setAttribute("d", current ? STOP_ICON : RUN_ICON);
   run.setAttribute("aria-label", current ? "Stop" : "Run");
 }
@@ -109,13 +110,12 @@ export function meta(element: Element, text: string, breakdown: string[], seed?:
 }
 export const seconds = (value: number) => `${value.toFixed(value < 10 ? 2 : 1)} s`;
 export function showStatus(note?: string) {
-  if (note && note !== page.gpuNote) console.info(`gpu: ${note}`);
-  page.gpuNote = note ?? page.gpuNote;
-  if (!page.readyLine || page.benchmarking) return;
-  const { backend, threads, pyodide } = page.readyLine;
+  if (gpuSaid(note)) console.info(`gpu: ${note}`);
+  if (!readyLine || benchmarking) return;
+  const { backend, threads, pyodide } = readyLine;
   // (?gpuTest=on, the tests' flag, says so as ?without= does)
-  const tested = page.gpuNote && parameters.get("gpuTest") === "on" ? " (gpuTest)" : "";
-  statusText.textContent = `${page.model.name} · ${backend}${threads > 1 ? `, ${threads} threads` : ""}${page.gpuNote ? `, ${page.gpuNote}${tested}` : ""} · Pyodide ${pyodide}`;
+  const tested = gpuNote && parameters.get("gpuTest") === "on" ? " (gpuTest)" : "";
+  statusText.textContent = `${model.name} · ${backend}${threads > 1 ? `, ${threads} threads` : ""}${gpuNote ? `, ${gpuNote}${tested}` : ""} · Pyodide ${pyodide}`;
 }
 // T135: how many of the prompt's tokens went through the GPU (the ones counted as the prompt: the one after them
 // makes the first logits, on the CPU)

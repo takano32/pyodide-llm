@@ -7,15 +7,22 @@
 //   1. every name it uses to one of: declared in the file, imported by it, a global of a page listed below;
 //   2. the imports to a graph without a ring (the build links one without a word), in which the script reaches every
 //      file of src/page/;
-//   3. every page.<name> to a field of the one object the parts share (page is no variable's name but an object's: a
-//      field that is not there reads undefined and is set without a word), and every field to a use.
+//   3. (T378.5) what the parts hold to its owner: the modules that own the page's state (OWNERS, below) each declare
+//      their own `export let`s, which the others read by the name they import (a live binding: the page's script is
+//      bundled, and src/'s imports are static) and never set. So no imported name is assigned (a TypeError in a
+//      browser, at the moment the line runs: the build says nothing), none is hidden by a local of the same name (the
+//      lines below it read the local, without a word: T367.4's pitfall), and no name is declared at the top of two
+//      modules of one page (which of the two a reader means is then a matter of an import's line). The owners read
+//      nothing of a page, so that Node can import them (tests/page-parts-check.mjs), and the one object the parts
+//      shared (`page`, of state.ts) is not back.
 // T367.5: that a name imported is exported by the file it names was held here too; the build says it now, as an error
 // (MISSING_EXPORT: the page's script is bundled like the workers'), and it is gone from here.
 // Node only, under a second:
 //
 //   node tests/page-modules-check.mjs
 //
-// The types come off with esbuild and the parser is @babel/parser, both of which npm ci installs for Astro.
+// The types come off with esbuild (with Node's own stripTypeScriptTypes for 3., which renames nothing) and the parser
+// is @babel/parser; npm ci installs both for Astro.
 // What it does not see: what the page does (tests/e2e.mjs, in CI's browsers).
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -24,10 +31,14 @@ import { fileURLToPath } from "node:url";
 import { transformSync } from "esbuild";
 import { parse } from "@babel/parser";
 import { namesOf } from "./worker-modules-check.mjs";
+import { stripTypeScriptTypes } from "node:module";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 // [the page, the folder of its script's modules]
 const PAGES = [["src/pages/index.astro", "src/page"], ["src/pages/benchmark.astro", "src/benchmark"]];
+// T378.5: the owners of what a page's script holds, and all they may use without declaring it (nothing of a page)
+export const OWNERS = { "src/page": ["model.ts", "answer.ts"], "src/benchmark": ["running.ts"] };
+const OWNERS_GLOBALS = new Set("Boolean Math undefined".split(" "));
 
 // what a page has without declaring it, as far as these files use it (__BUILD__: astro.config.mjs defines it)
 const GLOBALS = new Set(("Boolean Error Event JSON Math NaN Number Object Option Promise Set String URL URLSearchParams Uint32Array Worker __BUILD__ confirm console " +
@@ -71,6 +82,17 @@ export function pageSources([PAGE, FOLDER] = PAGES[0]) {
   return files;
 }
 
+/** A module's text with its types blanked and nothing else changed (Node's own way with a .ts file). */
+function written(text) {
+  const { emitWarning } = process;
+  process.emitWarning = () => {};  // (the function is experimental in Node 24, and says so every time)
+  try {
+    return stripTypeScriptTypes(text);
+  } finally {
+    process.emitWarning = emitWarning;
+  }
+}
+
 if (import.meta.url === new URL(process.argv[1], "file:").href) for (const [PAGE, FOLDER] of PAGES) {
   const files = pageSources([PAGE, FOLDER]);
   assert.ok(files.size > 1, `${FOLDER}/ has the modules of ${PAGE}'s script`);
@@ -100,21 +122,65 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) for (const [PAGE
   assert.deepEqual([...files.keys()].filter((name) => !reached.has(name)), [], `files of ${FOLDER}/ that the page's script never imports`);
   console.log(`page-modules-check: the imports go round nowhere; in the order they run: ${[...reached].map((name) => path.posix.basename(name)).join(", ")}`);
 
-  // ---- 3. the fields of the one object the parts share
-  const holders = [...files].filter(([, { code }]) => /^(export )?const page = \{$/m.test(code));
-  assert.equal(holders.length, 1, "one file declares `const page = {`");
-  const declaration = parse(holders[0][1].code, { sourceType: "module" }).program.body.map((statement) => statement.declaration ?? statement)
-    .find((statement) => statement.type === "VariableDeclaration" && statement.declarations[0].id.name === "page").declarations[0];
-  const fields = declaration.init.properties.map((property) => (assert.ok(property.type === "ObjectProperty" && !property.computed), property.key.name));
-  assert.equal(new Set(fields).size, fields.length, "a field of page twice");
-  const used = new Set();
-  for (const [name, { text }] of files) {
-    for (const [, field] of text.matchAll(/\bpage\.(\w+)/g)) {
-      assert.ok(fields.includes(field), `${name} says page.${field}, which is no field of ${holders[0][0]}'s object`);
-      used.add(field);
-    }
-    assert.ok(!/\bpage\s*\[/.test(text), `${name} reads page[…]: this check knows page.<name>`);
+  // ---- 3. T378.5: what the parts hold has owners
+  // (the types off by Node itself, which leaves every name as it is written: esbuild gives a local that hides an
+  // import another name (model2), and the line that reads the wrong one would pass)
+  const names = new Map([...files].map(([name, { text }]) => [name, namesOf(written(text))]));
+  let taken = 0;
+  for (const [name, { imported, set, inner }] of names) {
+    const written = imported.filter((one) => set.has(one));
+    assert.deepEqual(written, [], `${name} assigns ${written.join(", ")}, which it imports: only the module that declares a variable sets it ` +
+      "(a TypeError in a browser; say what happened to a function of the owner instead)");
+    const hidden = imported.filter((one) => inner.has(one));
+    assert.deepEqual(hidden, [], `${name} declares ${hidden.join(", ")} inside a function, and imports the same name: the lines below read the local one`);
+    taken += imported.length;
   }
-  assert.deepEqual(fields.filter((field) => !used.has(field)), [], "fields of page that nothing reads or sets");
-  console.log(`page-modules-check: the ${fields.length} fields of page (${holders[0][0]}) are the ones the script uses`);
+  const declaredBy = new Map();
+  for (const [name, { kinds }] of names) {
+    for (const [declared, kind] of kinds) {
+      if (kind === "import") continue;
+      assert.ok(!declaredBy.has(declared), `${declared} is declared at the top of both ${declaredBy.get(declared)} and ${name}: one name for two things of one page`);
+      declaredBy.set(declared, name);
+    }
+  }
+  assert.ok(!files.has(`${FOLDER}/state.ts`) && !declaredBy.has("page"), `${FOLDER}/: the one object the parts shared is back (state.ts, \`page\`): what they hold has owners (${OWNERS[FOLDER].join(", ")})`);
+  // (a `page.<name>` left anywhere is a name used and not declared: 1. above says it)
+  const lets = [];
+  for (const owner of OWNERS[FOLDER]) {
+    const name = `${FOLDER}/${owner}`;
+    assert.ok(names.has(name), `${name}, an owner of the page's state, is not there`);
+    const { free, kinds } = names.get(name);
+    const reads = [...free].filter((used) => !OWNERS_GLOBALS.has(used));
+    assert.deepEqual(reads, [], `${name} uses ${reads.join(", ")}: an owner of the page's state reads nothing of a page (Node imports it as it is)`);
+    const own = [...kinds].filter(([, kind]) => kind === "let").map(([declared]) => declared);
+    assert.ok(own.length > 0, `${name} declares no variable: it owns nothing`);
+    // (and it takes nothing from a module that reads a page as it loads: its imports are ../models.js's at most)
+    for (const { from } of files.get(name).imports) assert.ok(!from.startsWith(`${FOLDER}/`), `${name} imports ${from}: an owner imports no other part of the page's script`);
+    lets.push(...own.map((declared) => `${owner}: ${declared}`));
+  }
+  // every function of an owner is called by another part of the script: an event nobody says is a state that stays as
+  // it was, without a word (the worker's ready that no becameReady() follows is a page whose button never comes on)
+  const calledIn = (code) => {
+    const found = new Set();
+    (function visit(node) {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) return node.forEach(visit);
+      if (node.type === "CallExpression" && node.callee.type === "Identifier") found.add(node.callee.name);
+      for (const key of Object.keys(node)) if (key !== "loc") visit(node[key]);
+    })(parse(code, { sourceType: "module" }).program);
+    return found;
+  };
+  const owners = OWNERS[FOLDER].map((owner) => `${FOLDER}/${owner}`);
+  const called = new Set([...files].filter(([name]) => !owners.includes(name)).flatMap(([, { text }]) => [...calledIn(written(text))]));
+  const events = owners.flatMap((name) => [...names.get(name).kinds].filter(([, kind]) => kind !== "let" && kind !== "import").map(([declared]) => declared));
+  assert.deepEqual(events.filter((event) => !called.has(event)), [], `functions of ${OWNERS[FOLDER].join(", ")} that no other part of the script calls`);
+  // (the model page: what the visit opens with is said before any other part reads the model as it loads)
+  const order = [...reached];
+  for (const [name, { imports }] of files) {
+    if (!files.has(`${FOLDER}/opening.ts`) || name === `${FOLDER}/opening.ts` || owners.includes(name)) continue;
+    if (!imports.some(({ from, names: taken }) => from === `${FOLDER}/model.ts` && taken.includes("model"))) continue;
+    assert.ok(order.indexOf(`${FOLDER}/opening.ts`) < order.indexOf(name), `${name} reads the model and runs before opening.ts says which one the visit opens with`);
+  }
+  console.log(`page-modules-check: ${lets.length} variables of ${OWNERS[FOLDER].join(" and ")}, each set by its own module alone; ` +
+    `${taken} names imported in ${FOLDER}/, none assigned or hidden by a local; no top-level name twice; ${events.length} events, each said somewhere`);
 }

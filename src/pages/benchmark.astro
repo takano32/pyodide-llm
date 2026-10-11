@@ -155,12 +155,12 @@ const BENCH_MODEL = "llm-jp-3-150m";
 <script>
   // T353: the script is the modules of src/benchmark/, read here in the order their statements ran as one script: dom.ts
   // (the elements, the URL, the sections' names), isolation.ts (the service worker and its one reload: what follows
-  // waits for it), state.ts (what the parts share), section.ts (what a section runs on: its progress, its worker), a
+  // waits for it), running.ts (the run that is going on: T378.5), section.ts (what a section runs on: its progress, its worker), a
   // module a section or two (cpu.ts, model.ts, gpu.ts, storage.ts, memory.ts), report.ts and run.ts (the Run buttons,
   // the run, ?run=).
   import "../benchmark/dom.ts";
   import "../benchmark/isolation.ts";
-  import "../benchmark/state.ts";
+  import "../benchmark/running.ts";
   import "../benchmark/section.ts";
   import "../benchmark/cpu.ts";
   import "../benchmark/model.ts";
