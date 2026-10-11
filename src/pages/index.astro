@@ -309,7 +309,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
   import "../page/dom.ts";
   import { weighed } from "../page/address.ts";
   import { gpuFor, recalled, remember, threadsFor } from "../page/remembered.ts";
-  import { page } from "../page/state.ts";
+  import { opensWith, page } from "../page/state.ts";
   import { stillKept } from "../page/list.ts";
   import { show } from "../page/settings.ts";
   import "../page/draw.ts";
@@ -320,8 +320,7 @@ const LOCAL_LICENSE = { "sbintuitions/tiny-lm": "models/tiny-lm.LICENSE.txt" };
 
   // (A model chosen while this looks has started the worker itself, and wins: the review of T116)
   (async () => {
-    if (page.model === recalled && !(await stillKept(page.model)) && page.loads === 1) {
-      page.model = MODELS[0];
+    if (page.model === recalled && !(await stillKept(page.model)) && opensWith(MODELS[0])) {
       remember(undefined);
       show(page.model);
     }

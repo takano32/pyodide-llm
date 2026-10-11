@@ -6,10 +6,10 @@ import { FULL_ROUNDS, ROUNDS, USAGE_KEY, benchMarkdown, environmentOf, roundsHer
 import { $, chat, files, progress, run, select, statusText } from "./dom.ts";
 import { benchmark, weighed } from "./address.ts";
 import { gpuKey, remember, threadsKey } from "./remembered.ts";
-import { page } from "./state.ts";
+import { becameReady, benchBegan, benchEnded, failed, idle, page, takesPrompts, threadsNow } from "./state.ts";
 import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
-import { message, meta, onGpu, onGpuSampled, rows, seconds, setGenerating, showBench, showStatus } from "./draw.ts";
+import { message, meta, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
 import { isolating } from "./isolation.ts";
 import { unstarted } from "../runtime/updated.js";
 
@@ -49,13 +49,13 @@ worker.onmessage = ({ data }) => {
     const environment = environmentOf(navigator, { model: page.model.name, pyodide: data.pyodide, build: __BUILD__, site: location.origin + location.pathname });
     const markdown = benchMarkdown(data.rows, environment);
     (window as any).__bench = { rows: data.rows, environment, markdown };
-    page.benchmarking = false;
+    benchEnded();
     console.log(markdown);
     showBench(data.rows, environment, markdown);
     statusText.textContent = `${page.model.name} · benchmark done`;
     run.disabled = false;
   } else if (data.type === "ready") {
-    page.ready = true;
+    becameReady(data);
     if (aloneOnReady?.load === data.load) {
       try {
         const kept = JSON.parse(localStorage.getItem(gpuKey(page.model)) ?? "null") ?? {};
@@ -67,23 +67,21 @@ worker.onmessage = ({ data }) => {
     aloneOnReady = undefined;
     // for tests/e2e.mjs: how long each part of the load took, and the WebAssembly memory then (T84). Not shown
     (window as any).__ready = data;
-    page.fromTemplate = typeof data.template === "string" ? data.template : undefined;
     // once: every round of the benchmark loads the model again and reports ready too (T96: the second request
     // ended the first round's threads under its coordinator, which then waited for ever)
     if (benchmark && !benchAsked) {
       statusText.textContent = `${page.model.name} · benchmarking...`;
-      benchAsked = page.benchmarking = true;
+      benchAsked = true;
+      benchBegan();
       worker.postMessage({ type: "bench", model: weighed(page.model), load: page.loads,
         // T214: where the browser does not say its memory, the round without the kernels is a row that says why
         rounds: roundsHere(benchmark === "full" ? FULL_ROUNDS : ROUNDS, (navigator as any).deviceMemory), prompt: page.model.prompt || "Once upon a time", steps: 64 });
     }
-    page.longest = data.seq_len;
     showSettings();
     // the model is in the Cache API now: ask the browser not to evict it (only a page may ask, not a worker)
     navigator.storage?.persist?.();
     // T135, T148: whether the prompts go through the GPU, or why not (and the same line in the console); it changes
     // as the GPU gets ready and as the prompts are timed (the "gpu" and "done" messages)
-    page.readyLine = { backend: data.backend, threads: data.threads, pyodide: data.pyodide };
     showStatus(data.gpu);
     const load = $("load-stats");
     load.textContent = "";
@@ -145,7 +143,7 @@ worker.onmessage = ({ data }) => {
   } else if (data.type === "done") {
     // (T223's review: the search checks the count remembered from an earlier visit on the first generation and may change
     // it, 4 to 2 on the owner's Android: the line says the count in use as the answer's line below does)
-    if (page.readyLine) page.readyLine.threads = data.threads;
+    threadsNow(data.threads);
     showStatus(data.gpu);  // T148: the prompts timed on either side may have moved the GPU's verdict
     // T156: how the page is used, for a model on the GPU alone
     try {
@@ -168,7 +166,8 @@ worker.onmessage = ({ data }) => {
     // and has no memory or stack to say: tests/e2e.mjs counted it as a console error)
     if (data.reloading) console.warn(data.message);
     else console.error(`worker error (weights memory ${data.weights} bytes):`, data.stack);
-    page.benchmarking = false;  // a round that failed ends the benchmark: the run button must not stay off (the review of T76)
+    // (a round that failed ends the benchmark; T156: a model the worker loads again on the CPU is not ready)
+    failed(Boolean(data.reloading));
     // Pyodide that never finishes loading under the service worker (iOS Safari, 2026-09-25: its NumPy step): once,
     // the page goes on without the worker, which is the one-core version the site runs on anyway (policy 6)
     let fallback = false;
@@ -191,8 +190,6 @@ worker.onmessage = ({ data }) => {
       return;
     }
     message("model error", data.memory ? memoryFailure(page.model, data.heap, data.message) : data.message);
-    // T156: the worker loads the model again on the CPU (its GPU stopped while it was on the GPU alone)
-    if (data.reloading) page.ready = false;
     statusText.textContent = data.reloading ? `${page.model.name}: loading again on the CPU...` : page.ready ? `${page.model.name}` : `Could not load ${page.model.name}`;
   }
   // T172: only the messages that end a piece of the worker's work mean it is idle again (a load: ready, the
@@ -201,8 +198,9 @@ worker.onmessage = ({ data }) => {
   // as idle, they gave the run button back and a press started a second text on the same engine
   if (["ready", "bench", "done", "error"].includes(data.type)) {
     progress.hidden = true;
-    setGenerating(false);
-    run.disabled = !page.ready || page.benchmarking;  // a prompt sent during the benchmark would find no model ready
+    idle();
+    showRun();
+    run.disabled = !takesPrompts();
     select.disabled = files.disabled = false;
   }
 };

@@ -4,7 +4,7 @@ import { MODELS, memoryWarning } from "../models.js";
 import { $, files, progress, run, select } from "./dom.ts";
 import { REPOSITORY, REVISION, fromUrl, hfEntry, weighed } from "./address.ts";
 import { gpuFor, threadsFor } from "./remembered.ts";
-import { page } from "./state.ts";
+import { chose, page } from "./state.ts";
 import { show } from "./settings.ts";
 import { message } from "./draw.ts";
 import { root, worker } from "./receiver.ts";
@@ -165,17 +165,14 @@ select.onchange = () => {
     select.value = page.model.id;
     return;
   }
-  page.model = chosen;
+  const load = chose(chosen);
   nameInUrl(page.model);
-  page.benchmarking = false;  // the worker cancels the benchmark's round for the new model, and never reports it
   show(page.model);
-  page.ready = false;
-  page.readyLine = page.gpuNote = undefined;  // T148: the status line waits for the new model's
   run.disabled = true;
   progress.hidden = true;
   // the timings of the previous load
   $("load").classList.remove("measured");
   ($("load") as HTMLDetailsElement).open = false;
   // search: this may reach the worker before init does, while the page looks at what is kept (T116)
-  worker.postMessage({ type: "load", root, search: location.search, model: weighed(page.model), load: ++page.loads, threads: threadsFor(page.model), gpu: gpuFor(page.model) });
+  worker.postMessage({ type: "load", root, search: location.search, model: weighed(page.model), load, threads: threadsFor(page.model), gpu: gpuFor(page.model) });
 };
