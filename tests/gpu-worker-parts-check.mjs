@@ -11,9 +11,11 @@
 //     bytes of a word a stretch cuts wait for the rest: unwritten() says so);
 //   - block.js: the record it makes (m.block) from the weights' record and a stand-in for the forms'; the cache made,
 //     grown (the old one copied and let go, the new one's buffers held for end()), roomFor(); a block's writes,
-//     dispatches and its keys and values into the staging, or nowhere where the request was given up; keysIn().
+//     dispatches and its keys and values into the staging, or nowhere where the request was given up; keysIn();
+//   - requests.js: a prompt's block answered in the control area (done, failed, the beat), a request given up
+//     answered nowhere, and a device lost before or during the work read as it is then: failed, and said.
 // Not here, because their work is checked against JavaScript by a device that computes: forms.js, tokens.js,
-// tokenattention.js, tokenforms.js (m.forms and m.tokens are made after checks pass), start.js and requests.js.
+// tokenattention.js, tokenforms.js (m.forms and m.tokens are made after checks pass) and start.js.
 // tests/gpu-modules-check.mjs holds their names. Node only, under a second:
 //
 //   node tests/gpu-worker-parts-check.mjs
@@ -34,6 +36,7 @@ function standIn({ fallback = false, language = [] } = {}) {
   const bytesOf = (data) => (data instanceof ArrayBuffer || data instanceof SharedArrayBuffer ? new Uint8Array(data) : new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
   const device = {
     features: new Set(), limits, lost: new Promise((resolve) => { losing = resolve; }),
+    onSubmit: null,
     createBuffer({ size, usage }) {
       const made = { size, usage, data: new Uint8Array(size), destroyed: false, destroy() { made.destroyed = true; calls.push(["destroy", made]); },
         async mapAsync() {}, getMappedRange: (from = 0, length = size - from) => made.data.slice(from, from + length).buffer, unmap() {} };
@@ -50,7 +53,7 @@ function standIn({ fallback = false, language = [] } = {}) {
         target.data.set(bytes.subarray(from * each, from * each + length), offset);
         calls.push(["write", target, offset, length]);
       },
-      submit() { calls.push(["submit"]); },
+      submit() { calls.push(["submit"]); device.onSubmit?.(); },
       onSubmittedWorkDone: async () => {},
     },
     createShaderModule: ({ code }) => ({ code }),
@@ -108,6 +111,7 @@ const device_ = await import(runtimeUrl("gpu/device.js"));
 const { openDevice, handed, held, end, STORAGE, COPY_DST, COPY_SRC } = device_;
 const { upload, uploadLayers, tablesOn, routed, unwritten } = await import(runtimeUrl("gpu/weights.js"));
 const { prepare, bindLayers, grow, roomFor, keysIn, block } = await import(runtimeUrl("gpu/block.js"));
+const { prompt } = await import(runtimeUrl("gpu/requests.js"));
 const { RMSNORM, HEAD_NORM, ADD, ROPE, SWIGLU, QUANTIZE } = await import(runtimeUrl("shaders/steps.js"));
 const { FLASH_Q_TILE } = await import(runtimeUrl("shaders/attention.js"));
 
@@ -375,6 +379,45 @@ console.log("gpu-worker-parts-check: block.js makes m.block from the weights' re
 }
 console.log("gpu-worker-parts-check: a block writes its rows, Step and angles, dispatches the layers in one submission, and answers into the staging only where it is still wanted; keysIn() puts forward.js's cache up");
 
+// ---- requests.js: a prompt's block answered in the control area, by the model device.js holds now
+{
+  const now = standIn(), WORDS = { beat: 0, wanted: 1, failed: 2, done: 3 };
+  const record = await openDevice({ ...plan, words: WORDS });
+  handed(memory, record.plan);
+  await upload(record);
+  record.forms = { attention, form, tried: [] };
+  await prepare(record);
+  bindLayers(record);
+  grow(record, 16);
+  const words = new Int32Array(memory.buffer, 0, 4), staging = new Uint8Array(memory.buffer, plan.staging, 2 * LAYERS * BATCH * KV_ROW);
+  const asked = async (serial, { wanted = serial } = {}) => {
+    Atomics.store(words, WORDS.wanted, wanted);
+    Atomics.store(words, WORDS.failed, 7);
+    prompt({ serial, count: 4, pos: 0 });
+    for (let i = 0; i < 50 && Atomics.load(words, WORDS.done) !== serial; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+    return { done: Atomics.load(words, WORDS.done), failed: Atomics.load(words, WORDS.failed) };
+  };
+  record.block.cache.keys[0].data.fill(0x11);
+  staging.fill(0xee);
+  posted.length = 0;
+  assert.deepEqual(await asked(1), { done: 1, failed: 0 }, "a block is answered in the control area: done says its serial, failed 0");
+  assert.equal(staging[0], 0x11, "with its keys and values in the staging");
+  assert.deepEqual(posted, []);
+  staging.fill(0xee);
+  assert.deepEqual(await asked(2, { wanted: 3 }), { done: 1, failed: 7 }, "a request forward.js gave up is answered nowhere: the words are another request's by then");
+  assert.ok(staging.every((byte) => byte === 0xee), "nor in the staging");
+  // the device lost while the block is at work: read after the work as it is then
+  now.device.onSubmit = () => { now.device.onSubmit = null; now.lose({ reason: "unknown", message: "" }); };
+  assert.equal(device_.lost, null);
+  assert.deepEqual(await asked(4), { done: 4, failed: 1 }, "a device lost during the work fails the request");
+  assert.deepEqual(posted, [{ type: "failed", reason: "the GPU was lost (unknown)" }], "and says why");
+  // and before it: nothing is asked of the device
+  now.calls.length = 0;
+  assert.deepEqual(await asked(5), { done: 5, failed: 1 }, "a request after the loss fails at once");
+  assert.equal(now.calls.length, 0, "with nothing asked of the device that is gone");
+}
+console.log("gpu-worker-parts-check: requests.js answers a block in the control area, a request given up nowhere, and reads a device lost before or during the work as it is then");
+
 // ---- device.js: the end, a stop, a device lost
 {
   const owned = [...m.owned], kept = [...m.held];
@@ -399,10 +442,9 @@ console.log("gpu-worker-parts-check: a block writes its rows, Step and angles, d
 {
   const lost = standIn();
   await openDevice(plan);
-  assert.equal(device_.lost, null);
   lost.lose({ reason: "destroyed", message: "the driver went away" });
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(device_.lost, "the GPU was lost (destroyed: the driver went away)", "why the device was lost, for the modules that read it");
+  assert.equal(device_.lost, "the GPU was lost (destroyed: the driver went away)", "why the device was lost last, with what the device said, for the modules that read it");
 }
 {
   const stopped = standIn();
