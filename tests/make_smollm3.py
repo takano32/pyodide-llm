@@ -13,7 +13,8 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "public"))
+from tree import python_folder
+sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
 from conftest import synthetic_weights  # noqa: E402
 from test_convert import hugging_face, safetensors_file  # noqa: E402

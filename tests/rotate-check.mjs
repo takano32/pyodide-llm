@@ -8,6 +8,7 @@
 //   the n values, and the input of a call that writes elsewhere is left as it was.
 // It also says how long a block of 1024 takes (T237: one token of the 27B turns 2,122 of them).
 import fs from "node:fs";
+import { built } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const f = Math.fround;
@@ -42,7 +43,7 @@ function unrotated(z, signs, block) {
 
 let checked = 0;
 for (const [file, wide] of [["simdkernel_plain.wasm", false], ["simdkernel_plain64.wasm", true]]) {
-  if (!fs.existsSync(`${root}public/${file}`)) throw new Error(`no public/${file}: make kernels`);
+  if (!fs.existsSync(built(file, { maybe: true }))) throw new Error(`no ${built(file, { maybe: true })}: make kernels`);
   let memory;
   try {
     memory = new WebAssembly.Memory(wide ? { initial: 8n, address: "i64" } : { initial: 8 });
@@ -50,7 +51,7 @@ for (const [file, wide] of [["simdkernel_plain.wasm", false], ["simdkernel_plain
     console.log("rotate-check: no 64-bit memory in this Node, the 32-bit kernels alone");
     continue;
   }
-  const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/${file}`)), { env: { memory } }).exports;
+  const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(built(file))), { env: { memory } }).exports;
   const at = (address) => (wide ? BigInt(address) : address);
   const F = new Float32Array(memory.buffer), bits = new Uint32Array(memory.buffer);
   for (let block = 1; block <= 4096; block *= 2) {

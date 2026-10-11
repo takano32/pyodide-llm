@@ -7,6 +7,7 @@ import { FULL_ROUNDS, MEMORY_UNSAID, PASTE, QUESTIONS, REPORT_LIMIT, ROUNDS, TOO
          generateTable, gpuSkipped, layerCheckNumbers, layerStepsTable, layerTable, matVecTable, PATH_PROMPTS, PATH_WRITES, pathTable, reportTooLong, reportUrl, reportsTable, roundsHere, roundsTable, tableCell, threadCounts, threadsKey, threadsLine, times, timesFaster, tokenTable,
          checkVerdict, pathWarnings, warnings, warningsBlock } from "../src/bench.js";
 import fs from "node:fs";
+import { runtimeUrl } from "./tree.mjs";
 
 const rows = [
   { name: "everything", without: [], tokens: 64, speed: 334.62, seconds: 8.4, backend: "SIMD kernels, int8, relaxed SIMD" },
@@ -76,7 +77,7 @@ for (const page of ["index.astro", "benchmark.astro"]) {
     `${page} asks for the rounds through roundsHere()`);
 }
 assert.ok(/if \(round\.skip !== undefined\) \{\s*rows\.push\(\{ name: round\.name, without: round\.without, skip: round\.skip \}\);\s*continue;/
-  .test(fs.readFileSync(new URL("../public/worker.js", import.meta.url), "utf8")), "the worker writes a skipped round's row and loads nothing");
+  .test(fs.readFileSync(runtimeUrl("worker.js"), "utf8")), "the worker writes a skipped round's row and loads nothing");
 // T91: the issue the page opens, and the table the issues make
 const url = new URL(reportUrl(markdown, environment));
 assert.equal(url.searchParams.get("template"), "benchmark.md");

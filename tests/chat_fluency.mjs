@@ -19,7 +19,8 @@
 // where the format ends in a newline). tests/write.sh runs it (WRITER=chat_fluency.mjs, its TOKENS unused).
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
-import { footprint, needsWide } from "../public/forward.js";
+import { runtimeUrl } from "./tree.mjs";
+const { footprint, needsWide } = await import(runtimeUrl("forward.js"));
 import { filled } from "../src/models.js";
 import { leave } from "./leave.mjs";
 

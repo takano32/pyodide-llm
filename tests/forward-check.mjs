@@ -33,7 +33,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { pyodideWithEngine } from "./engine.mjs";
-import { automaticDtype, footprint, keysInHalf, needsWide } from "../public/forward.js";
+import { built, runtimeUrl } from "./tree.mjs";
+const { automaticDtype, footprint, keysInHalf, needsWide } = await import(runtimeUrl("forward.js"));
 import { MODELS } from "../src/models.js";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -61,7 +62,7 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
 // the float32 scale × the sum)
 {
   const memory = new WebAssembly.Memory({ initial: 4 });
-  const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/simdkernel_plain.wasm`)), { env: { memory } }).exports;
+  const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(built("simdkernel_plain.wasm"))), { env: { memory } }).exports;
   const U = new Uint8Array(memory.buffer), N = new Int32Array(memory.buffer);
   const groups = 2000, w = 4096, out = w + groups * 24;
   for (let i = 0; i < groups * 24; i++) U[w + i] = (Math.imul(i, 2654435761) >>> 7) & 255;
@@ -97,7 +98,7 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
 // the fours (a kernel that scaled the groups after the fours with the scale of the four before them passed there)
 {
   const memory = new WebAssembly.Memory({ initial: 8 });
-  const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/simdkernel_plain.wasm`)), { env: { memory } }).exports;
+  const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(built("simdkernel_plain.wasm"))), { env: { memory } }).exports;
   const I = new Int8Array(memory.buffer), U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer);
   const rows = 24, n = 32 * 41, ng = n / 32;  // the most groups tried: 41
   const w = 4096, w6 = w + rows * n, ws = w6 + rows * ng * 24, x = ws + rows * ng * 4, xs = x + n, out = xs + ng * 4;
@@ -151,7 +152,7 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
   // added one at a time (T197: the bias of 64 taken out of each group's integer before it is scaled). At 1 to 7 groups (no four at all, and one four with 0 to 3
   // after it) and at 41: T167's review, at 41 alone one group comes after the fours, and a kernel that scaled every
   // group after the fours with the first one's scale passed
-  const relaxed = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/simdkernel_relaxed_plain.wasm`)), { env: { memory } }).exports;
+  const relaxed = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(built("simdkernel_relaxed_plain.wasm"))), { env: { memory } }).exports;
   const w8 = out + rows * 4, wc6 = w8 + rows * n, wc8 = wc6 + rows * ng * 4, out8 = wc8 + rows * ng * 4;
   for (let j = 0; j < n; j++) I[x + j] = next() % 128;
   const round = Math.fround;
@@ -217,8 +218,8 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
 {
   const memory = new WebAssembly.Memory({ initial: 1 });
   const env = { env: { memory } };
-  const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/simdkernel_plain.wasm`)), env).exports;
-  const relaxed = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/simdkernel_relaxed_plain.wasm`)), env).exports;
+  const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(built("simdkernel_plain.wasm"))), env).exports;
+  const relaxed = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(built("simdkernel_relaxed_plain.wasm"))), env).exports;
   const I = new Int8Array(memory.buffer), F = new Float32Array(memory.buffer);
   const rows = 8, groups = 5, n = groups * 32, frame = 1024, frameScales = 512, outFrame = 64;
   const w = 1024, ws = w + rows * n, wc = ws + rows * groups * 4, frames = 4096, tiles = frames + 4 * frame, singles = tiles + 4 * outFrame;
@@ -250,7 +251,7 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
 // T101: jobs.js says which arguments of each kernel are addresses (BigInt on a 64-bit memory): the same as the
 // usize parameters of the kernels' source, every exported one
 {
-  const { ADDRESSES } = await import("../public/jobs.js");
+  const { ADDRESSES } = await import(runtimeUrl("jobs.js"));
   // (T356: kernel.ts is the window over kernel/*.ts. The kernels are the functions those files export, and the window
   // must name every one of them and nothing else, from the file it is in: what the window leaves out is in no module.)
   const source = {}, parts = fs.readdirSync(`${root}kernels/kernel`).filter((file) => file.endsWith(".ts")).sort(), written = [];

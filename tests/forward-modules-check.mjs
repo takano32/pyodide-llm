@@ -15,21 +15,20 @@
 // The parser is @babel/parser, which Astro's packages bring (as tests/worker-modules-check.mjs, whose namesOf this uses).
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { parse } from "@babel/parser";
+import { windowed } from "./imports.mjs";
+import { treeOf } from "./tree.mjs";
 import { namesOf } from "./worker-modules-check.mjs";
 
 const GLOBALS = new Set(("Array Atomics BigInt BigInt64Array Boolean Error Float32Array Float64Array Infinity Int32Array Int8Array Map Math NaN Number Object " +
   "Promise Set SharedArrayBuffer Uint16Array Uint8Array URL WebAssembly clearTimeout console performance setTimeout undefined").split(" "));
-const PUBLIC = new URL("../public/", import.meta.url);
-const read = (name) => fs.readFileSync(new URL(name, PUBLIC), "utf8");
-const asked = /\[([^\]]*)\]\.map\(\(name\) =>\n\s*\[name, import\(new URL\(`forward\/\$\{name\}\.js/.exec(read("forward.js"));
-assert.ok(asked, "forward.js asks for its modules in one list");
-const modules = [...asked[1].matchAll(/"(\w+)"/g)].map((match) => match[1]);
-const there = fs.readdirSync(new URL("forward/", PUBLIC)).filter((name) => name.endsWith(".js")).map((name) => name.slice(0, -3)).sort();
-assert.deepEqual([...modules].sort(), there, "the modules forward.js asks for are the files of public/forward/");
-
-const files = new Map([["forward.js", read("forward.js")], ["jobs.js", read("jobs.js")], ...modules.map((name) => [`forward/${name}.js`, read(`forward/${name}.js`)])]);
-const programs = new Map([...files].map(([name, text]) => [name, parse(text, { sourceType: "module" }).program]));
+// (T367.1: where the runtime is and which form its imports have is the tree's, tests/tree.mjs; the lines that take a
+// neighbour's names are read by tests/imports.mjs, whose windowed() also holds the folder to what the window asks for,
+// or, where a bundler links the files, to what the window reaches)
+const tree = treeOf();
+const linked = windowed("forward.js", { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, more: ["jobs.js"] });
+const modules = linked.there;
+const files = new Map([...linked.files].map(([name, { text }]) => [name, text]));
+const programs = new Map([...linked.files].map(([name, { program }]) => [name, program]));
 const exported = new Map([...programs].map(([name, program]) => [name, new Set(program.body.flatMap((node) => {
   if (node.type !== "ExportNamedDeclaration") return [];
   if (!node.declaration) return node.specifiers.map((specifier) => specifier.exported.name);
@@ -46,15 +45,15 @@ for (const [name, program] of programs) {
   if (name === "jobs.js") continue;
   const unknown = [...namesOf(files.get(name)).free].filter((used) => !GLOBALS.has(used));
   assert.deepEqual(unknown, [], `${name} uses ${unknown}, which it neither declares nor takes from another file: a ReferenceError where the line runs`);
+  // (what a file awaits at its top and takes apart is a neighbour's names: tests/imports.mjs read every one of them)
   for (const node of program.body) {
     const d = node.type === "VariableDeclaration" ? node.declarations[0] : null;
     if (d?.init?.type !== "AwaitExpression" || d.id.type !== "ObjectPattern") continue;
-    const from = files.get(name).slice(d.init.start, d.init.end);
-    const source = /import\(new URL\(`([\w./]+)\$\{new URL\(import\.meta\.url\)\.search\}`, import\.meta\.url\)\)$/.exec(from)?.[1] ?? /^await modules\.(\w+)$/.exec(from)?.[1];
-    assert.ok(source, `${name}: \`${from}\` is neither a module of this deployment (its own ?v=) nor one of the window's list`);
-    const file = source.endsWith(".js") ? new URL(source, new URL(name, PUBLIC)).href.slice(PUBLIC.href.length) : `forward/${source}.js`;
+    assert.ok(linked.files.get(name).left.includes(node), `${name}: \`${files.get(name).slice(d.init.start, d.init.end)}\` is neither a module of this deployment (its own ?v=) nor one of the window's list`);
+  }
+  for (const { from: file, names } of linked.files.get(name).takes) {
     assert.ok(exported.has(file), `${name} takes names from ${file}, which is no file of the forward pass`);
-    for (const wanted of keysOf(d.id, name)) {
+    for (const { imported: wanted } of names) {
       assert.ok(exported.get(file).has(wanted), `${name} takes ${wanted} from ${file}, which does not export it: undefined`);
       taken += 1;
     }
@@ -124,6 +123,6 @@ for (const [name, program] of programs) {
 console.log(`forward-modules-check: createForward() hands its parts the ${handed} names they take, and the ${through} places that go through pool, gpuPart and held name members of them`);
 
 // ---- the window links, and exports nothing undefined
-const window = await import("../public/forward.js");
+const window = await import(tree.runtimeUrl("forward.js"));
 for (const [name, value] of Object.entries(window)) assert.notEqual(value, undefined, `forward.js exports ${name} as undefined`);
 console.log(`forward-modules-check: forward.js links its ${modules.length} modules and exports ${Object.keys(window).length} names`);

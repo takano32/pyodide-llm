@@ -20,7 +20,8 @@
 //     j >> 2, the largest |value| of a group), and its refusal of a value that is neither 0 nor of that size.
 import fs from "node:fs";
 import v8 from "node:v8";
-import { addressed } from "../public/jobs.js";
+import { built, runtimeUrl } from "./tree.mjs";
+const { addressed } = await import(runtimeUrl("jobs.js"));
 
 const root = new URL("../", import.meta.url).pathname;
 const f = Math.fround;
@@ -68,7 +69,7 @@ for (const [wide, base] of [[false, 0], [true, 0], [true, HIGH]]) {
     console.log("ternary-check: Liftoff reads v128.load32_splat above 4 GiB at the low 32 bits of the address (V8 13.6 on arm64, Node 24; fixed in V8 14.3): --no-liftoff is set, the kernels above 4 GiB are TurboFan's here");
   }
   const bytesOf = (name) => {
-    const bytes = fs.readFileSync(`${root}public/${name}${wide ? "64" : ""}.wasm`);
+    const bytes = fs.readFileSync(built(`${name}${wide ? "64" : ""}.wasm`));
     return liftoffOff ? Uint8Array.from([...bytes, 0, 2, 1, 98]) : bytes;
   };
   const load = (name) => addressed(new WebAssembly.Instance(new WebAssembly.Module(bytesOf(name)), { env: { memory } }).exports, wide);

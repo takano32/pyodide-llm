@@ -15,13 +15,14 @@ from pathlib import Path
 
 import llama2_convert
 from made_up_tokenizers import byte_level, model, sentencepiece
+from tree import runtime_folder
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "converter-output.json"
 CHATML = "{% for m in messages %}<|im_start|>{{ m.role }}\n{{ m.content }}<|im_end|>\n{% endfor %}{{ '<|im_start|>assistant\\n' }}"
 
 
 def version():
-    return int(re.search(r"export const CONVERTER = (\d+);", (Path(__file__).resolve().parent.parent / "public" / "kept.js").read_text()).group(1))
+    return int(re.search(r"export const CONVERTER = (\d+);", Path(runtime_folder(Path(__file__).resolve().parent.parent, "kept.js")).read_text()).group(1))
 
 
 def digest():

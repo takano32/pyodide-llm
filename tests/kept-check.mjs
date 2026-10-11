@@ -5,6 +5,7 @@
 //
 //   node tests/kept-check.mjs
 import assert from "node:assert/strict";
+import { runtimeUrl } from "./tree.mjs";
 
 // ---- stand-ins: a directory tree of files, and a cache of responses
 class File {
@@ -65,7 +66,7 @@ function browser({ opfs = true, room = Infinity } = {}) {
   return { root, cache };
 }
 
-const kept = await import("../public/kept.js");
+const kept = await import(runtimeUrl("kept.js"));
 const model = { id: "m", name: "M", hf: { repo: "a/b", revision: "0123" }, conversion: {} };
 const bytes = Uint8Array.from({ length: 20 * 1024 * 1024 + 5 }, (_, i) => (i * 7) & 255);  // three parts, the last short
 const manifest = { id: "m", name: "M", repo: "a/b", revision: "0123", bytes: bytes.length, options: { dtype: "int8" } };

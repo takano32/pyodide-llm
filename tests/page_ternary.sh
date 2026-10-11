@@ -63,7 +63,9 @@ if has perplexity; then
 import json, sys
 from pathlib import Path
 import numpy as np
-sys.path.insert(0, "public")
+sys.path.insert(0, "tests")
+from tree import python_folder
+sys.path.insert(0, python_folder())
 from llama2_numpy import Llama
 out, rows = sys.argv[1], {}
 for dtype in ("float32", "ternary"):

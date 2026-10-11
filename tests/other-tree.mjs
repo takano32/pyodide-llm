@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { served } from "./tree.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const git = (...command) => execFileSync("git", command, { cwd: root, maxBuffer: 1 << 28 });
@@ -30,11 +31,12 @@ export function otherTree(before = "origin/main") {
     execFileSync("tar", ["-x", "-C", folder], { input: git("archive", commit) });
     fs.writeFileSync(path.join(folder, "done"), "");
   }
-  // what `make models` built here is in no commit (the models' files at the root and in public/models): the other tree
+  // what `make models` built here is in no commit (the models' files at the root and the site's parts, in what is served as it is: models/): the other tree
   // reads this one's. Without them its tests that need a model of the site are skipped, and compared with nothing.
   // (Not the built kernels: no check here runs them, and they are the working tree's.)
+  const models = path.relative(root, served("models", { maybe: true })).split(path.sep).join("/");
   const built = git("ls-files", "--others", "--ignored", "--exclude-standard", "--directory").toString().trim().split("\n")
-    .map((name) => name.replace(/\/$/, "")).filter((name) => name === "public/models" || (!name.includes("/") && !name.startsWith(".") &&
+    .map((name) => name.replace(/\/$/, "")).filter((name) => name === models || (!name.includes("/") && !name.startsWith(".") &&
       !["node_modules", "dist", "__pycache__"].includes(name)));
   for (const name of built) if (!fs.existsSync(path.join(folder, name))) fs.symlinkSync(path.join(root, name), path.join(folder, name));
   return { commit, folder };

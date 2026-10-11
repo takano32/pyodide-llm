@@ -15,7 +15,8 @@ from pathlib import Path
 import numpy as np
 
 here = Path(__file__).resolve().parent
-sys.path.insert(0, str(here.parent / "public"))
+from tree import python_folder
+sys.path.insert(0, python_folder(here.parent))
 sys.path.insert(0, str(here))
 from llama2_numpy import Llama  # noqa: E402
 from perplexity import perplexity  # noqa: E402

@@ -12,7 +12,8 @@
 // on the int8 kernels).
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
-import { footprint, needsWide } from "../public/forward.js";
+import { runtimeUrl } from "./tree.mjs";
+const { footprint, needsWide } = await import(runtimeUrl("forward.js"));
 import { leave } from "./leave.mjs";
 
 const [out, pageFile, count = "96"] = process.argv.slice(2);

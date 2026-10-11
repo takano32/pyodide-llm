@@ -11,7 +11,8 @@
 // tests/write.sh fetches and converts a model and runs this (in CI: tests.yml's extra=).
 import fs from "node:fs";
 import { pyodideWithEngine } from "./engine.mjs";
-import { footprint, needsWide } from "../public/forward.js";
+import { runtimeUrl } from "./tree.mjs";
+const { footprint, needsWide } = await import(runtimeUrl("forward.js"));
 import { filled } from "../src/models.js";
 import { leave } from "./leave.mjs";
 

@@ -11,6 +11,7 @@
 // gpu-prompt.yml's Dawn job runs it; tests.yml's extra= can: bash tests/rounding-check.sh)
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import { runtime } from "./tree.mjs";
 
 const [webgpu, ...asked] = process.argv.slice(2);
 if (!webgpu) {
@@ -47,7 +48,7 @@ if (modes.length) {
 for (const how of hows) {
   for (const width of [128, 512]) {
     const label = `${how}, subgroups of ${width / 32}`;
-    const run = spawnSync(process.execPath, ["tests/bench-dawn.mjs", webgpu, "public", "check", "16"], {
+    const run = spawnSync(process.execPath, ["tests/bench-dawn.mjs", webgpu, runtime(), "check", "16"], {
       env: { ...process.env, VK_ICD_FILENAMES: icd, LP_NATIVE_VECTOR_WIDTH: String(width), GPU_ROUNDING: how === "nearest" ? "" : how },
       encoding: "utf8", timeout: 900000, maxBuffer: 1 << 28 });
     const line = (run.stdout ?? "").split("\n").find((one) => one.startsWith("RESULT "));

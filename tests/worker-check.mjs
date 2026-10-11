@@ -19,12 +19,14 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import fs from "node:fs";
-import * as forward from "../public/forward.js";
+import { pathToFileURL } from "node:url";
+import { runtimeUrl, served } from "./tree.mjs";
+const forward = await import(runtimeUrl("forward.js"));
 import { workerHarness } from "./worker-harness.mjs";
 
 // the made-up network, clock, messages and context (tests/worker-harness.mjs, T357: the conversion's fetch list uses them too)
 const { SCALE, MiB, PART, realNow, sleep, clock, bytesOf, body, requests, messages, fetchStandIn, navigatorStandIn, context, run, failure, fresh, partOf } = workerHarness();
-const at = new URL("../public/worker.js", import.meta.url);
+const at = runtimeUrl("worker.js");
 // a check that waits for ever (a fix undone: the version asked for ever) fails rather than hangs
 setTimeout(() => {
   console.error("worker-check: still waiting after 180 s");
@@ -559,7 +561,7 @@ const ok = (line) => {
     // convert() asks for it where it first places the converter, and has waited for it before the converter is imported.
     // That block runs in no check here (the converter is a stand-in in them): its text is read, and tests/e2e.mjs fails
     // a conversion in a browser that did not ask the CDN for the wheel
-    const converts = fs.readFileSync(new URL("../public/worker/convert.js", import.meta.url), "utf8");
+    const converts = fs.readFileSync(runtimeUrl("worker/convert.js"), "utf8");
     assert.match(converts, /if \(!state\.llama2_convert\) \{[^]*?const jinja = templatePackage\(state\.pyodide\);[^]*?await jinja;\s*state\.llama2_convert = state\.pyodide\.pyimport\("llama2_convert"\);/,
       "convert() no longer loads jinja2 before it imports the converter");
     ok("jinja2 is asked of Pyodide by its name, and a conversion goes on where it does not come (T397)");
@@ -736,7 +738,7 @@ const ok = (line) => {
 {
   const { MODELS } = await import("../src/models.js");
   const { ROUNDS, FULL_ROUNDS, roundsHere } = await import("../src/bench.js");
-  const PAGE = 65536, folder = new URL("../public/models/", import.meta.url);
+  const PAGE = 65536, folder = pathToFileURL(served("models/", { maybe: true }));
   const headerOf = (entry) => {
     const part = new URL(`${entry.checkpoint}.000`, folder);
     if (!fs.existsSync(part)) return undefined;
@@ -747,7 +749,7 @@ const ok = (line) => {
   };
   const sited = MODELS.filter((one) => !one.hf && one.checkpoint), headers = sited.map(headerOf);
   if (headers.every((header) => !header)) {
-    console.log("skipped: every load of the benchmark's model section fits its memory (no built models in public/models)");
+    console.log(`skipped: every load of the benchmark's model section fits its memory (no built models in ${served("models", { maybe: true })})`);
   } else {
     context.stand.real = forward;
     context.crossOriginIsolated = true;

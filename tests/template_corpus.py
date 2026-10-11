@@ -198,7 +198,8 @@ def main():
 
     top, before = int(take("--top", "0")), take("--before", None)
     directory, repos = Path(arguments[0]), [tuple((argument + "@main").split("@")[:2]) for argument in arguments[1:]]
-    now = converter(HERE.parent / "public" / "llama2_convert.py", "converter_now")
+    from tree import python_folder
+    now = converter(Path(python_folder(HERE.parent, "llama2_convert.py")), "converter_now")
     then = converter(before, "converter_before") if before else None
     if top:
         repos += most_downloaded(top)

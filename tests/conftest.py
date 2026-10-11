@@ -10,7 +10,8 @@ import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "public"))
+from tree import python_folder
+sys.path.insert(0, python_folder(ROOT))
 sys.path.insert(0, str(ROOT))  # quantize.py
 
 # tmp_path lives under the system's temporary directory, which on the development machine is a tmpfs, that is memory

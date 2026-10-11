@@ -11,11 +11,12 @@
 // the real model (tests/reference_lfm2.py).
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import { built, python as sources } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const kernels = (pages) => {
   const memory = new WebAssembly.Memory({ initial: pages });
-  const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/simdkernel_plain.wasm`)), { env: { memory } }).exports;
+  const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(built("simdkernel_plain.wasm"))), { env: { memory } }).exports;
   return [k, new Float32Array(memory.buffer)];
 };
 const f = Math.fround;
@@ -62,7 +63,7 @@ let checked = 0;
 const python = `
 import json, sys
 import numpy as np
-sys.path.insert(0, "public")
+sys.path.insert(0, ${JSON.stringify(sources())})
 import llama2_numpy as L
 
 rng = np.random.default_rng(260)

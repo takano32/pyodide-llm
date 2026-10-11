@@ -22,12 +22,13 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runtime, runtimeUrl } from "./tree.mjs";
 
 const root = new URL("..", import.meta.url);
 const args = process.argv.slice(2);
-const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : fileURLToPath(new URL("public/forward.js", root));
+const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
 const { createForward, footprint } = await import(forwardFile);
-const { CONTROL_BYTES } = await import(new URL("public/jobs.js", root));
+const { CONTROL_BYTES } = await import(runtimeUrl("jobs.js"));
 const { threadsKey } = await import(new URL("src/bench.js", root));
 
 // a float32 Llama of 2 layers: its tensors one after the other (the engine reads none of them with kernels that do nothing)

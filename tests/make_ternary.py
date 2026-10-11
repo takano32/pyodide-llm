@@ -28,7 +28,8 @@ from pathlib import Path
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "public"))
+from tree import python_folder
+sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
 from conftest import basis, qwen35_model, synthetic_weights  # noqa: E402
 from test_convert import safetensors_file  # noqa: E402

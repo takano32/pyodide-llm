@@ -22,7 +22,8 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "public"))
+from tree import python_folder
+sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
 from conftest import basis, folded, qwen35_model  # noqa: E402
 from test_convert import safetensors_file  # noqa: E402

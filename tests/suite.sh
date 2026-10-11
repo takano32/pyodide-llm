@@ -42,6 +42,10 @@ page_modules() {
   node tests/wake.mjs
   node tests/summary-check.mjs
   node tests/models-check.mjs
+  # T367.1: where in a tree what is (tests/tree.mjs, tests/tree.py and their one rule), on made-up trees of every layout
+  # the tools are to read; and the one reader of how a file takes its neighbours' names (tests/imports.mjs), on made-up texts
+  node tests/tree-check.mjs
+  node tests/imports-check.mjs
   # T347: the list of the Python files the worker gives Pyodide is what public/ holds
   node tests/python-files-check.mjs
   node tests/ladder-check.mjs

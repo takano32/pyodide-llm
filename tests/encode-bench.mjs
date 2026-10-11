@@ -24,7 +24,7 @@ import { loadPyodide } from "pyodide";
 import { MODELS } from "../src/models.js";
 import { otherTree } from "./other-tree.mjs";
 import { leave } from "./leave.mjs";
-import { placeFile } from "../public/python.js";
+import { placePython, served, treeOf } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
@@ -34,12 +34,6 @@ const ref = option("--ref", "origin/main"), rounds = Number(option("--rounds", 7
 // windows over packages since T347 and T348, and a commit before them is one file each. (And no `git fetch --depth=1
 // origin +main:...` here any more: in a shallow clone that several worktrees share it cut the history behind main, T356.)
 const other = otherTree(ref).folder;
-// the Python files of a tree, by the module: its own list where it has one (public/python.js, T347), else the one file
-async function pythonOf(tree) {
-  const list = path.join(tree, "public/python.js");
-  const { PYTHON: files } = fs.existsSync(list) ? await import(pathToFileURL(list)) : { PYTHON: {} };
-  return ["llama2_numpy", "llama2_convert"].flatMap((module) => (files[module] ?? [`${module}.py`]).map((name) => [name, fs.readFileSync(path.join(tree, "public", name))]));
-}
 // the old list's options for the site's tokenizer.bin files (tiny-lm's nfkc, before T216)
 // (from the other commit's whole tree: the list is a window over src/models/ since T354)
 fs.mkdirSync(`${root}.tmp/t200/`, { recursive: true });
@@ -61,7 +55,7 @@ async function hfFile(id) {
   return { name, data: fs.readFileSync(target) };
 }
 const listed = (models, id) => models.find((m) => m.id === id)?.options ?? {};
-const site = (file, id) => ({ name: "tokenizer.bin", data: fs.readFileSync(`${root}public/models/${file}`),
+const site = (file, id) => ({ name: "tokenizer.bin", data: fs.readFileSync(served(`models/${file}`)),
                               options: listed(MODELS, id), oldOptions: listed(OLD_MODELS, id) });
 const tokenizers = [
   ["bpe: Llama 2 (stories15M)", site("tokenizer.bin", "stories15M")],
@@ -79,7 +73,8 @@ const py = await loadPyodide();
 await py.loadPackage("numpy", { messageCallback: () => {} });
 // each tree's engine and converter in a folder of its own: the two have packages of the same names (engine, convert)
 for (const [folder, tree] of [["/trees/old", other], ["/trees/new", root]]) {
-  for (const [name, content] of await pythonOf(tree)) placeFile(py, `${folder}/${name}`, content);
+  // (both modules' files by walking the tree: each window, and its package where the commit has one)
+  placePython(py, treeOf(tree), undefined, folder);
 }
 // every prompt and template of the list, with a prompt of both languages in it
 const templates = [...new Set(MODELS.flatMap((m) => [m.prompt, m.template]).filter((t) => typeof t === "string"))];

@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import { version } from "pyodide";
 import { pyodideWithEngine } from "./engine.mjs";
+import { runtimeUrl } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 // kernel_llama(): the engine with the forward pass of public/forward.js, as the page runs it (T93)
@@ -717,7 +718,7 @@ llama2_convert.checkpoint_size([64, 96, 2, 4, 2, 320, 24], "int8", {"qk_norm": T
 // same token (or, as above, a neighbour of about the same logit where rounding moves a border: the kernel's exp() is a
 // polynomial, JavaScript's is not)
 {
-  const { penalizeLikeCpu, sampleLikeCpu } = await import("../public/shaders.js");
+  const { penalizeLikeCpu, sampleLikeCpu } = await import(runtimeUrl("shaders.js"));
   pyodide.runPython(`
 def kernel_pick(buffer, temperature, topp, value, history, penalty, top_k=0, min_p=0.0, presence=0.0):
     logits = np.frombuffer(buffer.to_bytes(), dtype=np.float32).copy()

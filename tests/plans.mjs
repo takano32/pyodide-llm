@@ -5,13 +5,14 @@
 //   const { plansOf, planOf, FORM, empty, nothing } = plans(<the repository's root, a URL or a path>)
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { treeOf } from "./tree.mjs";
 
 // the plan Python hands createForward (llama2_numpy's external_tensors()), for a header, a form and a dtype:
 // where every tensor is, and the bytes of the RoPE tables Python computes (the checkpoint's size is where the places end)
 const python = `
 import json, sys
 import numpy as np
-sys.path.insert(0, "public")
+sys.path.insert(0, sys.argv[1])
 import llama2_convert, llama2_numpy as L
 
 def keeps_int8(header, form, dtype):
@@ -69,8 +70,11 @@ def plan_of(header, form, dtype):
 
 print(json.dumps([plan_of(**s) for s in json.loads(sys.stdin.read())]))
 `;
-const plansIn = (root) => (shapes) => JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c", python],
-  { cwd: typeof root === "string" ? root : fileURLToPath(root), input: JSON.stringify(shapes), maxBuffer: 1 << 28 }).toString());
+// (the tree's Python sources are where tests/tree.mjs finds them: the script is given the folder)
+const plansIn = (root) => (shapes) => {
+  const folder = typeof root === "string" ? root : fileURLToPath(root);
+  return JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c", python, treeOf(folder).python()], { cwd: folder, input: JSON.stringify(shapes), maxBuffer: 1 << 28 }).toString());
+};
 export const FORM = { bias: false, arch: "llama", qk_norm: false, head_dim: 0, linear: null, rotated: null, convolution: null };
 
 // what createForward is handed, from a plan of Python's: kv_start where the cache starts, and the outlier channels of the

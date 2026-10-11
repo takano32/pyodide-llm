@@ -1,0 +1,11 @@
+{
+  "about": "What tests/tree.mjs and tests/tree.py look for in a tree (T367.1). No folder of the project is written here: a kind of file is where its anchor is found, by looking at the tree that is asked about.",
+  "anchors": {
+    "runtime": "forward.js",
+    "python": "llama2_numpy.py",
+    "built": "simdkernel.so",
+    "served": "coi.js"
+  },
+  "skip": ["node_modules", "dist", ".tmp", ".git", ".claude", "__pycache__", ".venv", ".astro"],
+  "packages": { "llama2_numpy": "engine", "llama2_convert": "convert" }
+}

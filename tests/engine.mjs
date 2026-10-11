@@ -13,19 +13,16 @@
 // gigabytes does not fit Pyodide's heap as a file and as bytes besides (T100).
 import fs from "node:fs";
 import { loadPyodide } from "pyodide";
-import { compileKernels, external, weightsMemory } from "../public/forward.js";
-import { PYTHON, placeFile } from "../public/python.js";
-
-const root = new URL("../", import.meta.url).pathname;
+import { built, placeKernels, placePython, runtimeUrl, treeOf } from "./tree.mjs";
+const { compileKernels, external, weightsMemory } = await import(runtimeUrl("forward.js"));
 
 // shared: false gives the memory the page has where it is not cross-origin isolated (one thread, float32 keys)
 // wide (T101): a 64-bit memory and the kernels built for it, whatever the size of the model
 export async function pyodideWithEngine({ shared = true, wide = false } = {}) {
   const pyodide = await loadPyodide();
   await pyodide.loadPackage("numpy", { messageCallback: () => {} });
-  for (const name of [...PYTHON.llama2_numpy, ...PYTHON.llama2_convert, "simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
-    placeFile(pyodide, name, fs.readFileSync(`${root}public/${name}`));
-  }
+  placePython(pyodide, treeOf());
+  placeKernels(pyodide, treeOf());
   // a shared memory, as the page has where it is cross-origin isolated (since T93 stage 3, the usual case), so that
   // what these tests run is what the page runs: forward.js keeps an int8 model's keys and values in float16 there
   // (T110). No software threads are started: those are tests/threads-check.mjs's.
@@ -34,7 +31,7 @@ export async function pyodideWithEngine({ shared = true, wide = false } = {}) {
   // worker) and no test saw it (the review of 2026-09-25)
   if (!shared) delete globalThis.SharedArrayBuffer;
   const variant = (shared ? "shared" : "plain") + (wide ? "64" : "");
-  const kernels = compileKernels(fs.readFileSync(`${root}public/simdkernel_${variant}.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_${variant}.wasm`), wide);
+  const kernels = compileKernels(fs.readFileSync(built(`simdkernel_${variant}.wasm`)), fs.readFileSync(built(`simdkernel_relaxed_${variant}.wasm`)), wide);
   // a checkpoint (Python bytes) copied into a memory of forward.js, as what Llama(external=) takes. halfKeys: the type of
   // the keys and values the worker would hand the engine (external's, T160, T130); left out (None), the engine's own
   pyodide.globals.set("outside", (data, halfKeys) => {

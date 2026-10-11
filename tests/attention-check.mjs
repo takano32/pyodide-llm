@@ -13,10 +13,11 @@
 // The expected output is float64 from the very numbers the kernel reads (the float16 cache's halves widened here).
 //   node tests/attention-check.mjs            (after make kernels; exit 1 if a head is off)
 import fs from "node:fs";
+import { built } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const memory = new WebAssembly.Memory({ initial: 32 });
-const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(`${root}public/simdkernel_plain.wasm`)), { env: { memory } }).exports;
+const k = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(built("simdkernel_plain.wasm"))), { env: { memory } }).exports;
 const F = new Float32Array(memory.buffer), H = new Uint16Array(memory.buffer);
 
 const halfToFloat = (h) => {

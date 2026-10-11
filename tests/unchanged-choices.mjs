@@ -6,10 +6,10 @@
 // are in none of it (the review: BETTER 0.95 -> 0.96 and KEEP 5 -> 6 passed every other check).
 //   node tests/unchanged-choices.mjs <the root of a tree>
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { treeOf } from "./tree.mjs";
 
 const root = path.resolve(process.argv[2] ?? ".");
-const f = await import(pathToFileURL(path.join(root, "public/forward.js")));
+const f = await import(treeOf(root).runtimeUrl("forward.js"));
 const found = {};
 const attempt = (name, make) => { try { found[name] = JSON.stringify(make()) ?? "undefined"; } catch (error) { found[name] = `throws ${error.message}`; } };
 

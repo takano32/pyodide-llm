@@ -10,9 +10,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
+import { served } from "./tree.mjs";
 
 const SITE = "https://takano32.github.io/pyodide-llm/";
-const source = fs.readFileSync(new URL("../public/coi.js", import.meta.url), "utf8");
+const source = fs.readFileSync(served("coi.js"), "utf8");
 
 // a Cache API of one cache, keyed by URL (ignoreSearch drops the query)
 function cacheStorage({ broken = false } = {}) {

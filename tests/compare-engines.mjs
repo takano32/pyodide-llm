@@ -17,13 +17,11 @@
 // --greedy: temperature 0 (the forward pass and the least of a sampler), not the entry's own sampling.
 import fs from "node:fs";
 import os from "node:os";
-import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { loadPyodide } from "pyodide";
 import { MODELS } from "../src/models.js";
 import { otherTree } from "./other-tree.mjs";
 import { leave } from "./leave.mjs";
-import { placeFile } from "../public/python.js";
+import { built, placeKernels, placePython, treeOf } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);
@@ -36,22 +34,17 @@ const models = named.length ? named : ["tiny-lm", "llm-jp-3-150m"];
 
 const { commit, folder: other } = otherTree(ref);
 const trees = { old: other, new: root };
-// the Python files of a tree, by its own list where it has one (public/python.js, T347), else the one file
-async function pythonOf(tree) {
-  const list = path.join(tree, "public/python.js");
-  const { PYTHON: files } = fs.existsSync(list) ? await import(pathToFileURL(list)) : { PYTHON: {} };
-  return (files.llama2_numpy ?? ["llama2_numpy.py"]).map((name) => [name, fs.readFileSync(path.join(tree, "public", name))]);
-}
 
 const py = await loadPyodide();
 await py.loadPackage("numpy", { messageCallback: () => {} });
-for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) py.FS.writeFile(name, fs.readFileSync(`${root}public/${name}`));
+placeKernels(py, treeOf());
 const outside = {};
 for (const [which, tree] of Object.entries(trees)) {
   // each tree's engine in a folder of its own: the two have a package of the same name (engine)
-  for (const [name, content] of await pythonOf(tree)) placeFile(py, `/trees/${which}/${name}`, content);
-  const forward = await import(pathToFileURL(path.join(tree, "public/forward.js")));
-  const kernels = forward.compileKernels(fs.readFileSync(`${root}public/simdkernel_shared.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_shared.wasm`));
+  // (the engine's files by walking each tree: its window, and its package where the commit has one)
+  placePython(py, treeOf(tree), ["llama2_numpy"], `/trees/${which}`);
+  const forward = await import(treeOf(tree).runtimeUrl("forward.js"));
+  const kernels = forward.compileKernels(fs.readFileSync(built("simdkernel_shared.wasm")), fs.readFileSync(built("simdkernel_relaxed_shared.wasm")));
   outside[which] = (file) => {
     const checkpoint = fs.readFileSync(file);
     const { memory, base } = forward.weightsMemory(checkpoint.length, { shared: true });

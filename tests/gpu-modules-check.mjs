@@ -21,22 +21,21 @@
 // The parser is @babel/parser, which Astro's packages bring (as tests/worker-modules-check.mjs, whose namesOf this uses).
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { parse } from "@babel/parser";
+import { windowed } from "./imports.mjs";
+import { treeOf } from "./tree.mjs";
 import { namesOf } from "./worker-modules-check.mjs";
 
 const GLOBALS = new Set(("Array ArrayBuffer Atomics BigInt BigInt64Array Boolean Error Float32Array Float64Array Infinity Int32Array Int8Array Map Math " +
   "NaN Number Object Promise Set String URL Uint16Array Uint32Array Uint8Array clearInterval clearTimeout navigator onmessage performance postMessage " +
   "self setInterval setTimeout undefined").split(" "));
-const FOLDER = new URL("../public/", import.meta.url);
-const read = (name) => fs.readFileSync(new URL(name, FOLDER), "utf8");
-const asked = /\[([^\]]*)\]\.map\(\(name\) =>\n\s*\[name, import\(new URL\(`gpu\/\$\{name\}\.js\$\{new URL\(import\.meta\.url\)\.search\}`, import\.meta\.url\)\)\]\)\);/.exec(read("gpu.js"));
-assert.ok(asked, "gpu.js asks for its modules in one list, each with its own ?v=");
-const modules = [...asked[1].matchAll(/"(\w+)"/g)].map((match) => match[1]);
-const there = fs.readdirSync(new URL("gpu/", FOLDER)).filter((name) => name.endsWith(".js")).map((name) => name.slice(0, -3)).sort();
-assert.deepEqual([...modules].sort(), there, "the modules gpu.js asks for are the files of public/gpu/");
-
-const files = new Map([["gpu.js", read("gpu.js")], ...modules.map((name) => [`gpu/${name}.js`, read(`gpu/${name}.js`)])]);
-const programs = new Map([...files].map(([name, text]) => [name, parse(text, { sourceType: "module" }).program]));
+// (T367.1: where the runtime is and which form its imports have is the tree's, tests/tree.mjs; the lines that take a
+// neighbour's names are read by tests/imports.mjs, whose windowed() holds the folder to the window's list (each module
+// with the window's own ?v=) or, where a bundler links the files, to what the window reaches, and says a ring)
+const tree = treeOf();
+const at = (name) => `${name}`;  // (a file of this worker, by its name under the runtime's folder)
+const linked = windowed(at("gpu.js"), { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled });
+const files = new Map([...linked.files].map(([name, { text }]) => [name.slice(at("").length), text]));
+const programs = new Map([...linked.files].map(([name, { program }]) => [name.slice(at("").length), program]));
 const top = (node) => (node.type === "ExportNamedDeclaration" && node.declaration ? node.declaration : node);
 const exported = new Map([...programs].map(([name, program]) => [name, new Set(program.body.flatMap((node) => {
   if (node.type !== "ExportNamedDeclaration") return [];
@@ -55,42 +54,36 @@ const keysOf = (pattern, what) => pattern.properties.map((property) => {
   return property.key.name;
 });
 let taken = 0;
-const takes = new Map();  // a file -> the files it takes names from
 for (const [name, program] of programs) {
   const unknown = [...namesOf(files.get(name)).free].filter((used) => !GLOBALS.has(used));
   assert.deepEqual(unknown, [], `${name} uses ${unknown}, which it neither declares nor takes from another file: a ReferenceError where the line runs`);
-  takes.set(name, []);
+  const { takes: taking, left } = linked.files.get(at(name));
   for (const node of program.body) {
     const d = node.type === "VariableDeclaration" ? node.declarations[0] : null;
     if (d?.init?.type !== "AwaitExpression") continue;
-    assert.ok(d.id.type === "ObjectPattern" && node.declarations.length === 1, `${name}: what a file awaits at its top is another's names, taken apart`);
-    const from = files.get(name).slice(d.init.start, d.init.end);
-    const source = /^await import\(new URL\(`(\w+\.js)\$\{new URL\(import\.meta\.url\)\.search\}`, import\.meta\.url\)\)$/.exec(from)?.[1] ?? /^await modules\.(\w+)$/.exec(from)?.[1];
-    assert.ok(source && source.endsWith(".js") === (name !== "gpu.js"), `${name}: \`${from}\` is neither a module of this folder with this file's own ?v= nor one of the window's list`);
-    const file = source.endsWith(".js") ? `gpu/${source}` : `gpu/${source}.js`;
-    assert.ok(exported.has(file), `${name} takes names from ${file}, which is no module of the worker`);
-    takes.get(name).push(file);
-    for (const wanted of keysOf(d.id, name)) {
+    assert.ok(left.includes(node), `${name}: \`${files.get(name).slice(d.init.start, d.init.end)}\`: what a file awaits at its top is another's names, taken apart`);
+  }
+  for (const { from, names, how } of taking) {
+    const file = from.slice(at("").length);
+    // (a module takes of a module of the folder; the window, where it has a list, of the list alone)
+    assert.ok(from.startsWith(at("gpu/")) && exported.has(file), `${name} takes names from ${from}, which is no module of the worker`);
+    assert.ok(tree.bundled || (how === "await modules") === (name === "gpu.js"), `${name}: a module is taken from with this file's own ?v=, and by the window from its list`);
+    for (const { imported: wanted, local } of names) {
+      assert.equal(wanted, local, `${name}: a plain name, taken under its own`);
       assert.ok(exported.get(file).has(wanted), `${name} takes ${wanted} from ${file}, which does not export it: undefined`);
       taken += 1;
     }
   }
 }
-const open = [], ended = new Set();
-(function visit(name) {
-  assert.ok(!open.includes(name), `the modules wait for one another: ${[...open.slice(open.indexOf(name)), name].join(" → ")}`);
-  if (ended.has(name)) return;
-  open.push(name);
-  takes.get(name).forEach(visit);
-  open.pop();
-  ended.add(name);
-})("gpu.js");
-assert.equal(ended.size, files.size, "the window takes from every module, or a module it takes from does");
+// (that none waits for itself, and that the window takes from every module or a module it takes from does: windowed())
 // the shaders: gpu/device.js's import of them, and the window's at once, which must be the same module (one URL)
+// (where a bundler links the files there is one module by its path, and nothing to hold)
 const SHADERS = (to) => `import(new URL(\`${to}shaders.js\${new URL(import.meta.url).search}\`, import.meta.url))`;
-assert.ok(files.get("gpu/device.js").includes(`const shaders = ${SHADERS("../")};`), "gpu/device.js imports ../shaders.js with its own ?v=");
-assert.ok(files.get("gpu.js").includes(`\n${SHADERS("")}.catch(() => {});\n`), "gpu.js asks for shaders.js at once, with its own ?v= (a failure is device.js's to say)");
-assert.equal([...files.values()].join("\n").split("shaders.js${").length - 1, 2, "the shaders are imported in those two places");
+if (!tree.bundled) {
+  assert.ok(files.get("gpu/device.js").includes(`const shaders = ${SHADERS("../")};`), "gpu/device.js imports ../shaders.js with its own ?v=");
+  assert.ok(files.get("gpu.js").includes(`\n${SHADERS("")}.catch(() => {});\n`), "gpu.js asks for shaders.js at once, with its own ?v= (a failure is device.js's to say)");
+  assert.equal([...files.values()].join("\n").split("shaders.js${").length - 1, 2, "the shaders are imported in those two places");
+}
 console.log(`gpu-modules-check: the GPU worker's ${programs.size} files use nothing they do not declare or take from another, the ${taken} names they take are exported, and none waits for itself`);
 
 // ---- the one object the modules share
@@ -123,7 +116,7 @@ for (const [name, program] of programs) {
     }
     // the object's own declaration, a module taking it by its name, a module handing it on
     const itsOwn = parent === declaration && key === "id";
-    const takenByName = parent.type === "ObjectProperty" && parent.shorthand;
+    const takenByName = (parent.type === "ObjectProperty" && parent.shorthand) || parent.type === "ImportSpecifier";  // (either form of taking it: tests/imports.mjs)
     const handedOn = parent.type === "ExportSpecifier";
     assert.ok(itsOwn || takenByName || handedOn, `${name} uses the name common otherwise than as common.<field> (line ${node.loc.start.line}): a local of that name hides the object, and the object handed whole is not held here`);
   });
@@ -148,8 +141,10 @@ globalThis.self = globalThis;
 globalThis.close = () => { closed += 1; };
 globalThis.postMessage = (message) => posted.push(message);
 assert.equal(globalThis.navigator?.gpu, undefined, "this check wants a Node without WebGPU");
-const window_ = await import(new URL("gpu.js", FOLDER));
-assert.equal(handlers.length, 2, "gpu.js sets onmessage before its first await, and the receiver at its end");
+const window_ = await import(tree.runtimeUrl(at("gpu.js")));
+// (where a bundler links the files the window awaits no module: the receiver is the one onmessage, set before anything can come)
+if (tree.bundled) assert.equal(handlers.length, 1, "gpu.js sets its receiver once: there is no wait for its modules to keep messages through");
+else assert.equal(handlers.length, 2, "gpu.js sets onmessage before its first await, and the receiver at its end");
 for (const [name, value] of Object.entries(window_)) assert.notEqual(value, undefined, `gpu.js exports ${name} undefined`);
 for (const name of [...exported.get("gpu.js")]) assert.ok(name in window_, `gpu.js exports ${name}`);
 for (let i = 0; i < 100 && !closed; i++) await new Promise((resolve) => setTimeout(resolve, 10));

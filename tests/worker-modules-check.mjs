@@ -14,6 +14,7 @@
 // What it does not see: a browser's own way with a module worker's first message (the browsers do: tests/e2e.mjs).
 import assert from "node:assert/strict";
 import { parse } from "@babel/parser";
+import { treeOf } from "./tree.mjs";
 import { workerScripts } from "./worker-source.mjs";
 import fs from "node:fs";
 
@@ -199,10 +200,19 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
       return "";
     },
   };
-  await import("../public/worker.js");
+  const tree = treeOf();
+  await import(tree.runtimeUrl("worker.js"));
   await new Promise((resolve) => setTimeout(resolve, 50));
-  assert.ok(delivered, "worker.js did not read its URL's search: how does it ask for its modules?");
-  assert.equal(typeof handlerThen, "function", "worker.js had no onmessage at its first await: a message that comes then is lost in a browser");
+  if (tree.bundled) {
+    // (T367.1: where a bundler links the files, the worker awaits no module: its handler is set before anything can
+    // come, and the message is given to it now)
+    assert.equal(typeof self.onmessage, "function", "worker.js set no onmessage as it loaded");
+    if (!delivered) self.onmessage({ data: { type: "generate", prompt: "early" } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  } else {
+    assert.ok(delivered, "worker.js did not read its URL's search: how does it ask for its modules?");
+    assert.equal(typeof handlerThen, "function", "worker.js had no onmessage at its first await: a message that comes then is lost in a browser");
+  }
   assert.deepEqual(posted.map((message) => [message.type, message.message]), [["error", "The model is not ready."]],
     "a message that came while the worker's modules were fetched was not handled once, by the worker's own handler");
   console.log("worker-modules-check: the modules link, and a message that comes while they are fetched is handled after them");

@@ -61,7 +61,8 @@ import fs from "node:fs";
 import path from "node:path";
 import v8 from "node:v8";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
-import { compileKernels, createForward, footprint, keysInHalf, needsWide, weightsMemory } from "../public/forward.js";
+import { built, runtimeUrl } from "./tree.mjs";
+const { compileKernels, createForward, footprint, keysInHalf, needsWide, weightsMemory } = await import(runtimeUrl("forward.js"));
 import { converted, fromFolder, listed } from "./conducting.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -99,7 +100,7 @@ const breakOf = (name) => {
 };
 
 const spawn = (data) => new Promise((resolve) => {
-  const worker = new Worker(new URL("../public/helper.js", import.meta.url));
+  const worker = new Worker(runtimeUrl("helper.js"));
   worker.once("message", () => resolve({ terminate: () => worker.terminate() }));
   worker.postMessage(data);
 });
@@ -279,7 +280,7 @@ if (isMainThread) {
   const { memory, base, size, plan, wide, halfKeys, header, forwardOptions, job } = workerData;
   const say = (line) => parentPort.postMessage({ line: `page: ${line}` });
   const suffix = wide ? "64" : "";
-  const kernels = compileKernels(fs.readFileSync(`${root}public/simdkernel_shared${suffix}.wasm`), fs.readFileSync(`${root}public/simdkernel_relaxed_shared${suffix}.wasm`), wide);
+  const kernels = compileKernels(fs.readFileSync(built(`simdkernel_shared${suffix}.wasm`)), fs.readFileSync(built(`simdkernel_relaxed_shared${suffix}.wasm`)), wide);
   const cpu = (await import("node:os")).cpus()[0].model;
   /** an engine on the memory, as the page's worker makes it; broken: what breakOf() made of a name */
   const engineOf = (broken) => {
@@ -597,7 +598,7 @@ if (isMainThread) {
   }
   if (job.mode === "write") {
     const { pyodideWithEngine } = await import("./engine.mjs");
-    const { external } = await import("../public/forward.js");
+    const { external } = await import(runtimeUrl("forward.js"));
     const { pyodide: py } = await pyodideWithEngine({ shared: true, wide });
     py.FS.writeFile("tokenizer.bin", job.tokenizer);
     const live = external({ memory, base, size, kernels, spawn, halfKeys });

@@ -12,12 +12,13 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
-import * as forward from "../public/forward.js";
+import { python, runtimeUrl } from "./tree.mjs";
+const forward = await import(runtimeUrl("forward.js"));
 import { runWorker } from "./worker-source.mjs";
 
 const root = new URL("..", import.meta.url);
 const FORM = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", ["-c",
-  "import json, sys; sys.path.insert(0, 'public'); import llama2_numpy; print(json.dumps(llama2_numpy.FORM))"],
+  "import json, sys; sys.path.insert(0, sys.argv[1]); import llama2_numpy; print(json.dumps(llama2_numpy.FORM))", python()],
 { cwd: fileURLToPath(root) }).toString());
 // T229: "linear", the linear-attention layers of a Qwen3.5 (null where there are none); T237: "rotated", the basis the
 // matrices are stored in (null: the model's own), whose signs and rotated inputs footprint() counts; T260: "convolution",

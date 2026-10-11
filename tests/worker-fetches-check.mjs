@@ -20,7 +20,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { loadPyodide } from "pyodide";
-import { PYTHON, placeFile } from "../public/python.js";
+import { placePython, runtimeUrl, treeOf } from "./tree.mjs";
 import { workerHarness } from "./worker-harness.mjs";
 import { openHuggingFace, TOKENIZERS } from "../src/page/folder.ts";
 // (the page's module reads its address where it is loaded: there is none here)
@@ -122,8 +122,8 @@ const chosen = async (files) => (await openHuggingFace(Object.entries(files).map
 // here it also opens the place of the weights as Writer does, and has the options and the tokenizer a conversion ends with
 const pyodide = await loadPyodide();
 await pyodide.loadPackage("numpy", { messageCallback: () => {} });
-for (const name of [...PYTHON.llama2_numpy, ...PYTHON.llama2_convert]) placeFile(pyodide, name, fs.readFileSync(new URL(`../public/${name}`, import.meta.url)));
-placeFile(pyodide, "conduct_hub.py", fs.readFileSync(new URL("conduct_hub.py", import.meta.url)));
+placePython(pyodide, treeOf());
+pyodide.FS.writeFile("conduct_hub.py", fs.readFileSync(new URL("conduct_hub.py", import.meta.url)));
 pyodide.runPython(`
 import convert.conduct
 from conduct_hub import StandIn
@@ -226,7 +226,7 @@ const CASES = [
   const proxy = pyodide.runPython("list(convert.conduct.TOKENIZERS)"), candidates = proxy.toJs();
   proxy.destroy();
   assert.deepEqual(TOKENIZERS, candidates, `the tokenizers the page looks for in a folder (TOKENIZERS of src/page/folder.ts: ${TOKENIZERS.join(", ")}) are not ` +
-    `the candidates of a conversion (TOKENIZERS of public/convert/conduct.py: ${candidates.join(", ")}). The list is Python's: edit src/page/folder.ts to say ` +
+    `the candidates of a conversion (TOKENIZERS of ${treeOf().folders.python}/convert/conduct.py: ${candidates.join(", ")}). The list is Python's: edit src/page/folder.ts to say ` +
     "the same names in the same order (its sentence for a folder without a tokenizer is made of them, and a visitor reads it)");
   const entry = hfEntry("owner/model", REVISION, { template: "{prompt}" });
   assert.deepEqual(entry.hf, { repo: "owner/model", revision: REVISION, weights: "model.safetensors", config: "config.json" },
