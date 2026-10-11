@@ -161,7 +161,7 @@ def gguf_head(name, read):
         try:
             return read(data), data, size
         except Incomplete:
-            if want >= size:
+            if want >= size and len(data) >= size:
                 raise
         want *= GGUF_GROWS
         # (the size was said with the first piece)
