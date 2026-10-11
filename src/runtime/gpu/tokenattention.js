@@ -2,34 +2,35 @@
 // JavaScript, timed and chosen, and their dispatches.
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
+import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
 import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.js";
 import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, flashVec, flashVecReduce, tokenAttentionData,
   tokenAttentionOff } from "../shaders/attention.js";
 
 // ---- T224: the attention of a generated token. The candidates: llama.cpp's decode form (shaders.js's flashVec and
 // flashVecReduce: the positions split over nwg workgroups a head, then reduced), with subgroups where there are (and
-// subgroup_id), and with the lanes of the workgroup standing for a subgroup; and the prompt's tiles (m.attention: one
+// subgroup_id), and with the lanes of the workgroup standing for a subgroup; and the prompt's tiles (m.forms.attention: one
 // row of four used, a workgroup a head, T150's (a)). Each checked against JavaScript (checkTokenAttention), the right
-// ones timed (timeTokenAttention), the fastest taken: m.gen.attention, with what each came to (m.gen.attentions).
+// ones timed (timeTokenAttention), the fastest taken: attention, with what each came to (attentions), which
+// tokenforms.js's chooseTokens() puts in the model's record of a token (T378.4: this returns them; null where a stop was asked).
 // plan.force.tokenAttention (tests): that one alone; plan.force.quick: the first right one, untimed. None is
 // remembered (T148 remembers the matrices, the prompt's attention and the token's layer): the two small shaders are
 // compiled, checked and timed at every start.
 const TOKEN_ATTENTION_VEC = "llama.cpp flash_attn_vec", TOKEN_ATTENTION_TILES = "the prompt's attention tiles";
 async function chooseTokenAttention(m) {
-  const { device, plan, gen: g } = m;
+  const { device, plan } = m;
   const subgroups = device.features.has("subgroups") && Boolean(navigator.gpu.wgslLanguageFeatures?.has("subgroup_id"));
   const vec = (withSubgroups) => ({ name: `${TOKEN_ATTENTION_VEC}${withSubgroups ? ", subgroups" : ""}`,
     shape: flashVecShape({ headSize: plan.headSize, subgroups: withSubgroups, threads: threadsOf(device),
       subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize }) });
-  let candidates = [...(subgroups ? [vec(true)] : []), vec(false), { name: TOKEN_ATTENTION_TILES, tiles: true, pipeline: m.attention.pipeline }];
+  let candidates = [...(subgroups ? [vec(true)] : []), vec(false), { name: TOKEN_ATTENTION_TILES, tiles: true, pipeline: m.forms.attention.pipeline }];
   if (plan.force.tokenAttention) candidates = candidates.filter((a) => a.name === plan.force.tokenAttention);
   const right = [];
-  g.attentions = [];
+  const attentions = [];
   for (const a of candidates) {
     if (plan.force.quick && right.length) break;
     if (a.shape?.none) {
-      g.attentions.push({ name: a.name, none: a.shape.none });
+      attentions.push({ name: a.name, none: a.shape.none });
       continue;
     }
     try {
@@ -38,26 +39,28 @@ async function chooseTokenAttention(m) {
         a.reduce = await within(validated(m, () => pipelineOf(m, flashVecReduce(a.shape))), `compiling ${a.name}'s reduce`);
       }
       const wrong = await within(checkTokenAttention(m, a), `checking ${a.name}`);
-      if (wrong) g.attentions.push({ name: a.name, none: `wrong: ${wrong}` });
+      if (wrong) attentions.push({ name: a.name, none: `wrong: ${wrong}` });
       else right.push(a);
     } catch (error) {
       if (error?.late) throw error;
-      g.attentions.push({ name: a.name, none: String(error?.message ?? error) });
+      attentions.push({ name: a.name, none: String(error?.message ?? error) });
     }
-    if (common.stopping) return;
+    if (stopping) return null;
   }
   if (!right.length) {
-    throw new Error(`no attention of a token is right on this GPU (${g.attentions.map((a) => `${a.name}: ${a.none}`).join("; ") || `none named ${plan.force.tokenAttention}`})`);
+    throw new Error(`no attention of a token is right on this GPU (${attentions.map((a) => `${a.name}: ${a.none}`).join("; ") || `none named ${plan.force.tokenAttention}`})`);
   }
   const ms = plan.force.quick || right.length === 1 ? right.map(() => undefined) : await within(timeTokenAttention(m, right), "timing the attention of a token");
   const best = ms.reduce((b, t, i) => (t !== undefined && (ms[b] === undefined || t < ms[b]) ? i : b), 0);
-  right.forEach((a, i) => g.attentions.push({ name: a.name, ms: ms[i] }));
-  g.attention = right[best];
+  right.forEach((a, i) => attentions.push({ name: a.name, ms: ms[i] }));
+  const attention = right[best];
   // the vec form's parts (every head's, nwg of the most) and its Params a count of parts, made as a run needs them
-  if (!g.attention.tiles) {
-    g.parts = buffer(m, flashVecPartsBytes(g.attention.shape, plan.heads));
-    g.params = paramsOf(m, g.attention.shape, plan.heads, plan.kvHeads, m.owned);
+  let parts, params;
+  if (!attention.tiles) {
+    parts = buffer(m, flashVecPartsBytes(attention.shape, plan.heads));
+    params = paramsOf(m, attention.shape, plan.heads, plan.kvHeads, m.owned);
   }
+  return { attention, attentions, parts, params };
 }
 // flashVec's Params a count of parts, each made once (owned: where they go)
 function paramsOf(m, shape, heads, kvHeads, owned) {
@@ -157,7 +160,7 @@ async function timeTokenAttention(m, right) {
         const once = await submission(item, counts[i]), twice = await submission(item, 2 * counts[i]);
         differences[i].push((twice - once) / counts[i]);
       }
-      if (common.stopping) break;
+      if (stopping) break;
     }
     const ms = differences.map((d) => d.sort((x, y) => x - y)[d.length >> 1] * plan.layers);
     return right.map((a) => items.reduce((sum, item, i) => (item.a === a ? sum + ms[i] : sum), 0));

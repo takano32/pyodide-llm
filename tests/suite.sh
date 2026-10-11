@@ -105,10 +105,15 @@ page_modules() {
   # a field of the object the steps share, a message at the window's first await answered once, and the names the tables'
   # modules (src/bench/) use (the worker's steps run only where there is a GPU: nothing else outside CI reads them)
   node tests/bench-modules-check.mjs
-  # T352: the names the model's GPU worker (src/runtime/gpu.js) and its modules (src/runtime/gpu/) hand one another, every
-  # common.<name> a field of the object they share, and messages at the window's first await played once, in order (the
+  # T352: the names the model's GPU worker (src/runtime/gpu.js) and its modules (src/runtime/gpu/) hand one another;
+  # T378.4: its state's owners (model, stopping and lost are device.js's; every field of the model's record read is one
+  # its owner declares, every write is the owner's), and messages at the window's first await played once, in order (the
   # worker runs only where there is a GPU: outside CI's GPU jobs nothing else reads its lines)
   node tests/gpu-modules-check.mjs
+  # T378.4: the parts of that worker that hold its state, each by itself on a WebGPU that writes down what it is asked
+  # and computes nothing: device.js's record and its end, weights.js's (and a checkpoint that comes in stretches, for a
+  # model on the GPU alone), block.js's (the cache grown, a block's dispatches and answer) (under a second)
+  node tests/gpu-worker-parts-check.mjs
   # T130's review, on forward.js's createForward() with kernels that do nothing: the KV cache grows in place without losing a
   # byte, and footprint() holds what is allocated (a few seconds); T223's: the search for the software threads on noisy times
   node tests/memory-check.mjs

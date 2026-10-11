@@ -337,7 +337,8 @@ function sharedFields(tree, worker) {
   if (!fs.existsSync(file)) return new Set();
   const program = parse(fs.readFileSync(file, "utf8"), { sourceType: "module" }).program;
   const shared = program.body.find((s) => s.type === "VariableDeclaration" && s.declarations[0].id.name === worker.object);
-  return new Set(shared.declarations[0].init.properties.map((p) => p.key.name));
+  // (T378.4: the model's worker has no such object any more: its fields are device.js's `let`s again)
+  return new Set(shared?.declarations[0].init.properties.map((p) => p.key.name) ?? []);
 }
 // (T352: the model's GPU worker, src/runtime/gpu.js and src/runtime/gpu/*.js, whose modules share `common`: open() has a parameter named shared)
 // (window: the file a worker starts from, as the runtime names it)
@@ -346,7 +347,8 @@ const GPU_WORKERS = [{ window: "benchmark/gpu.js", object: "shared", name: "/ben
 function gpuworker(other) {
   let same = true;
   for (const worker of GPU_WORKERS) {
-    const fields = sharedFields(root, worker);
+    // (the fields of either tree: where one tree has the object and the other the `let`s it was made of, the two read alike)
+    const fields = new Set([...sharedFields(root, worker), ...sharedFields(other, worker)]);
     const was = gpuWorker(other, fields, worker), now = gpuWorker(root, fields, worker);
     if (!fields.size) console.log(`unchanged: gpuworker: ${worker.name} is one file in the working tree`);
     same = said(`${worker.name}, statement by statement`, differences(was, now)) && same;
