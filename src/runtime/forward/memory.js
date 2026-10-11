@@ -4,8 +4,8 @@
 // A module of public/forward.js, which asks for it with its own ?v=<build> and exports its names as before; it reads
 // jobs.js and its neighbour the same way.
 
-const { CONTROL_BYTES, BATCH } = await import(new URL(`../jobs.js${new URL(import.meta.url).search}`, import.meta.url));
-const { GPU_BLOCK } = await import(new URL(`choice.js${new URL(import.meta.url).search}`, import.meta.url));
+import { CONTROL_BYTES, BATCH } from "../jobs.js";
+import { GPU_BLOCK } from "./choice.js";
 
 const PAGE = 65536;
 

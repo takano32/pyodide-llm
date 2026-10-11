@@ -44,7 +44,7 @@ async function kernelsOf(forward, kind) {
 }
 
 async function device() {
-  const forward = await import(at("forward.js"));
+  const forward = await import("../forward.js");
   const plain = await kernelsOf(forward, "plain");
   const found = {
     crossOriginIsolated: self.crossOriginIsolated,
@@ -138,14 +138,14 @@ function fillWeights(memory, base, { plan }) {
 
 // a software thread of forward.js, as the model's worker starts one (public/worker/weights.js's spawnThread)
 const spawn = (data) => new Promise((resolve, reject) => {
-  const worker = new Worker(at("helper.js"), { type: "module" });
+  const worker = new Worker(new URL("../helper.js", import.meta.url), { type: "module" });
   worker.onmessage = () => resolve({ terminate: () => worker.terminate() });
   worker.onerror = (event) => reject(new Error(event.message ?? "a software thread did not start"));
   worker.postMessage(data);
 });
 
 async function cpu(counts = [1, 2, 4]) {
-  const forward = await import(at("forward.js"));
+  const forward = await import("../forward.js");
   const shared = self.crossOriginIsolated && typeof SharedArrayBuffer !== "undefined";
   const kernels = shared ? await kernelsOf(forward, "shared") : await kernelsOf(forward, "plain");
   if (!kernels) return { none: "no WebAssembly SIMD in this browser: the model page runs on NumPy here" };
@@ -303,7 +303,7 @@ async function ceilingsOf(memory, base, size, shared) {
   const started = async (count) => {
     if (unstarted && count > readers.length) throw unstarted;
     while (readers.length < count - 1) {
-      const worker = new Worker(at("benchmark/reader.js"), { type: "module" });
+      const worker = new Worker(new URL("../benchmark/reader.js", import.meta.url), { type: "module" });
       readers.push(worker);  // stop() ends it even where it never answers
       let timer;
       await Promise.race([new Promise((resolve, reject) => {

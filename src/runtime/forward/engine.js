@@ -3,12 +3,12 @@
 // Python and the worker call. The software threads are threads.js's and the GPU's side gpuside.js's: each is handed
 // what it reads of this function. A module of public/forward.js, which asks for it with its own ?v=<build>.
 
-const { BATCH, addressed, runner } = await import(new URL(`../jobs.js${new URL(import.meta.url).search}`, import.meta.url));
-const { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK } = await import(new URL(`choice.js${new URL(import.meta.url).search}`, import.meta.url));
-const { growMemory, PAGE, align, layerSlots, attendingLayers, linearWidths, frameArrays, rotatedWidths, frameBytes } = await import(new URL(`memory.js${new URL(import.meta.url).search}`, import.meta.url));
-const { GPU_ALONE } = await import(new URL(`alone.js${new URL(import.meta.url).search}`, import.meta.url));
-const { softwareThreads } = await import(new URL(`threads.js${new URL(import.meta.url).search}`, import.meta.url));
-const { gpuFit, gpuSide } = await import(new URL(`gpuside.js${new URL(import.meta.url).search}`, import.meta.url));
+import { BATCH, addressed, runner } from "../jobs.js";
+import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK } from "./choice.js";
+import { growMemory, PAGE, align, layerSlots, attendingLayers, linearWidths, frameArrays, rotatedWidths, frameBytes } from "./memory.js";
+import { GPU_ALONE } from "./alone.js";
+import { softwareThreads } from "./threads.js";
+import { gpuFit, gpuSide } from "./gpuside.js";
 
 // T120: no phase comes near this without progress (the longest token measured, Qwen2.5 7B's on CI, took 286 ms in
 // all): a count that has not moved for so long means a software thread the browser stopped in the middle of its chunk

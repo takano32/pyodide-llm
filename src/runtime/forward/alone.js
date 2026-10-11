@@ -4,7 +4,7 @@
 // A module of public/forward.js, which asks for it with its own ?v=<build> and exports its names as before; it reads
 // its neighbour the same way.
 
-const { BETTER } = await import(new URL(`choice.js${new URL(import.meta.url).search}`, import.meta.url));
+import { BETTER } from "./choice.js";
 
 // ---- T156: a model on the GPU alone. Where the layers could not be held twice (in this memory and on the GPU), the
 // worker decides before a byte comes that the GPU alone takes them (the owner, 2026-09-27: "大きいモデルは最初から GPU

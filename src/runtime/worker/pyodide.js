@@ -2,7 +2,7 @@
 // from one that stopped (T118, T129). It holds nothing of the worker's state: init() of worker.js keeps what this loads.
 // A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
 
-const { isError, told } = await import(new URL(`told.js${new URL(import.meta.url).search}`, import.meta.url));
+import { isError, told } from "./told.js";
 
 // the version becomes part of a CDN URL, so accept nothing but a plain version number
 const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;

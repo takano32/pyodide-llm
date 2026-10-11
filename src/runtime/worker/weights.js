@@ -2,7 +2,7 @@
 // a Python buffer where NumPy runs, or the GPU alone (T156), and the sink a conversion writes them through.
 // A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
 
-const { state, hasWebGpu, cpuOnly, modelKey } = await import(new URL(`state.js${new URL(import.meta.url).search}`, import.meta.url));
+import { state, hasWebGpu, cpuOnly, modelKey } from "./state.js";
 
 // a Python bytearray that JavaScript fills in place
 export function pythonBuffer(size) {
@@ -22,14 +22,14 @@ export function pythonBuffer(size) {
 // engine on it, destroy() lets go of the Python buffer (a memory of forward.js goes with the engine).
 // a software thread of forward.js (stage 2): a module worker of its own, ready once its kernels are warm
 const spawnThread = (data) => new Promise((resolve, reject) => {
-  const worker = new Worker(new URL(`../helper.js${self.location.search}`, import.meta.url), { type: "module" });
+  const worker = new Worker(new URL("../helper.js", import.meta.url), { type: "module" });
   worker.onmessage = () => resolve({ terminate: () => worker.terminate() });
   worker.onerror = (event) => reject(new Error(event.message ?? "a software thread did not start"));
   worker.postMessage(data);
 });
 
 // T135: the GPU's worker of forward.js, a module worker of its own; forward.js starts it
-const openGpu = () => new Worker(new URL(`../gpu.js${self.location.search}`, import.meta.url), { type: "module" });
+const openGpu = () => new Worker(new URL("../gpu.js", import.meta.url), { type: "module" });
 
 // T96: one memory of forward.js, kept from model to model. A browser reserves address space for every WebAssembly
 // memory, shared or not and whatever its maximum, and Chromium refused the third one of a page: the benchmark's

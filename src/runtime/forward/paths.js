@@ -3,7 +3,7 @@
 // A module of public/forward.js, which asks for it with its own ?v=<build> and exports its names as before; it reads
 // its neighbour the same way.
 
-const { BETTER } = await import(new URL(`choice.js${new URL(import.meta.url).search}`, import.meta.url));
+import { BETTER } from "./choice.js";
 
 // T184: the model page's own path on /benchmark/ (worker/timing.js's timedPaths, src/bench.js's pathTable): prompts of counts
 // tokens through forwardMany() at position 0 as the page chooses (T148), on the CPU only and on the GPU only

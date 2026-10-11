@@ -2,9 +2,9 @@
 // order, with what is tried again and what stops the other connections (T107, T112, T119, T129).
 // A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
 
-const { state } = await import(new URL(`state.js${new URL(import.meta.url).search}`, import.meta.url));
-const { breathe } = await import(new URL(`clock.js${new URL(import.meta.url).search}`, import.meta.url));
-const { weightsRoom } = await import(new URL(`weights.js${new URL(import.meta.url).search}`, import.meta.url));
+import { state } from "./state.js";
+import { breathe } from "./clock.js";
+import { weightsRoom } from "./weights.js";
 
 // T129 (3): an AbortController of one download or fetch in order, which also stops where signal (the load's) does.
 // A part that failed for good ends the download: the other connections stop with it rather than fetching the rest of

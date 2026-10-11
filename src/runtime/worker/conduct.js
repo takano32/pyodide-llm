@@ -12,10 +12,9 @@
 // whoever knows the place (or nothing: the loop has a sentence of its own, which neither answerer here leaves it to).
 // A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
 
-const { state } = await import(new URL(`state.js${new URL(import.meta.url).search}`, import.meta.url));
-const { fileSize, refused, fetchRange, inOrder } =
-  await import(new URL(`ranges.js${new URL(import.meta.url).search}`, import.meta.url));
-const { weightsRoom } = await import(new URL(`weights.js${new URL(import.meta.url).search}`, import.meta.url));
+import { state } from "./state.js";
+import { fileSize, refused, fetchRange, inOrder } from "./ranges.js";
+import { weightsRoom } from "./weights.js";
 
 // The conduct of the conversion of a model as it is listed: the generator, not yet asked anything.
 // hf: the item's (weights, config, tokenizer, vocabulary: names, wherever the files are); make: what the converter

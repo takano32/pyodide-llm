@@ -16,17 +16,15 @@
 // its times), paths.js (what /benchmark/ times of the page's path), memory.js (the memory a model takes) and alone.js
 // (a model on the GPU alone). Each is asked for with this file's own ?v=<build>, as jobs.js is, so that all come from
 // one deployment, and all at once: one after another's end would add a round trip for each.
-const modules = Object.fromEntries(["choice", "paths", "memory", "alone", "threads", "gpuside", "engine"].map((name) =>
-  [name, import(new URL(`forward/${name}.js${new URL(import.meta.url).search}`, import.meta.url))]));
-const { BATCH } = await import(new URL(`jobs.js${new URL(import.meta.url).search}`, import.meta.url));
+import { BATCH } from "./jobs.js";
 export { BATCH };
-const { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine } = await modules.choice;
-const { PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch } = await modules.paths;
-const { memory64, footprint, keysInHalf, needsWide, pastWide, automaticDtype, growMemory, weightsMemory } = await modules.memory;
-const { GPU_WEIGHT_BYTES, GPU_TERNARY_BYTES, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf,
+import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine } from "./forward/choice.js";
+import { PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch } from "./forward/paths.js";
+import { memory64, footprint, keysInHalf, needsWide, pastWide, automaticDtype, growMemory, weightsMemory } from "./forward/memory.js";
+import { GPU_WEIGHT_BYTES, GPU_TERNARY_BYTES, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf,
   USAGE_UNKNOWN, cpuReadBytes, aloneVerdict, aloneHolds, OUTSIDE_VOCABULARY, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan,
-  GPU_ALONE } = await modules.alone;
-const { createForward } = await modules.engine;
+  GPU_ALONE } from "./forward/alone.js";
+import { createForward } from "./forward/engine.js";
 export { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine,
   PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch, memory64, footprint, keysInHalf, GPU_WEIGHT_BYTES,
   GPU_TERNARY_BYTES, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf, USAGE_UNKNOWN, cpuReadBytes,

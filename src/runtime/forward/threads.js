@@ -3,9 +3,9 @@
 // the search for how many of them to use (T93's stage 2b, T199, T223, T239).
 // A module of public/forward.js, asked for with its ?v=<build>; it reads jobs.js and its neighbours the same way.
 
-const { CONTROL_BYTES, GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, COUNT, SIZE,
-  FIRST } = await import(new URL(`../jobs.js${new URL(import.meta.url).search}`, import.meta.url));
-const { lowerMedian, BETTER } = await import(new URL(`choice.js${new URL(import.meta.url).search}`, import.meta.url));
+import { CONTROL_BYTES, GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, COUNT, SIZE,
+  FIRST } from "../jobs.js";
+import { lowerMedian, BETTER } from "./choice.js";
 
 // ---- the helper threads (stage 2): the control area at the start of a shared memory (jobs.js has its layout)
 // how many chunks per thread the rows of a matmul are cut into: whoever is free takes the next one, so a slow core

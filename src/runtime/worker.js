@@ -27,16 +27,12 @@
 // worker's port opens at the module's first await, where a message that finds no onmessage is lost (helper.js, T109):
 // so the messages are kept until the handler at the end of this file is set, which then takes them in the order
 // they came.
-const early = [];
-self.onmessage = (event) => early.push(event);
-const modules = Object.fromEntries(["state", "told", "clock", "pyodide", "weights", "ranges", "sources", "conduct", "convert", "load", "timing"].map((name) =>
-  [name, import(new URL(`worker/${name}.js${self.location.search}`, import.meta.url))]));
-const { state, cpuOnly, modelKey, loadSeconds } = await modules.state;
-const { told } = await modules.told;
-const { resolvePyodideVersion, pyodideSteps, pythonArchive, placePython } = await modules.pyodide;
-const { since, breathe } = await modules.clock;
-const { load, threadsNow, heapBytes } = await modules.load;
-const { timedGeneration, timedPaths } = await modules.timing;
+import { state, cpuOnly, modelKey, loadSeconds } from "./worker/state.js";
+import { told } from "./worker/told.js";
+import { resolvePyodideVersion, pyodideSteps, pythonArchive, placePython } from "./worker/pyodide.js";
+import { since, breathe } from "./worker/clock.js";
+import { load, threadsNow, heapBytes } from "./worker/load.js";
+import { timedGeneration, timedPaths } from "./worker/timing.js";
 
 // Only what the engine has a fallback for. A name it does not know is refused there, and the page says so.
 function switchesOf(search) {
@@ -83,7 +79,7 @@ async function init(search) {
   // T93: the forward pass runs in forward.js, on the plain build of the same kernels (simdkernel.so stays for the
   // sampling, which works on Python's logits). Without them (no WebAssembly SIMD) the engine runs NumPy.
   try {
-    state.forwardModule = await import(new URL(`forward.js${self.location.search}`, import.meta.url));
+    state.forwardModule = await import("./forward.js");
     // one build of the kernels: simdkernel_<kind>.wasm and simdkernel_relaxed_<kind>.wasm, or null
     const build = async (kind, wide = false) => {
       const [plain, relaxed] = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
@@ -262,4 +258,3 @@ self.onmessage = async ({ data }) => {
   }
 };
 // (T350) what came while the modules were fetched
-early.splice(0).forEach((event) => self.onmessage(event));

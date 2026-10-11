@@ -2,14 +2,12 @@
 // threads and the GPU's report that follow it.
 // A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
 
-const { state, adapterAsked, modelKey, loadSeconds } = await import(new URL(`state.js${new URL(import.meta.url).search}`, import.meta.url));
-const { since } = await import(new URL(`clock.js${new URL(import.meta.url).search}`, import.meta.url));
-const { pythonBuffer, weightsBuffer, weightsDrained, gpuOnlyReady } =
-  await import(new URL(`weights.js${new URL(import.meta.url).search}`, import.meta.url));
-const { sized, fetchRange } = await import(new URL(`ranges.js${new URL(import.meta.url).search}`, import.meta.url));
-const { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } =
-  await import(new URL(`sources.js${new URL(import.meta.url).search}`, import.meta.url));
-const { convert } = await import(new URL(`convert.js${new URL(import.meta.url).search}`, import.meta.url));
+import { state, adapterAsked, modelKey, loadSeconds } from "./state.js";
+import { since } from "./clock.js";
+import { pythonBuffer, weightsBuffer, weightsDrained, gpuOnlyReady } from "./weights.js";
+import { sized, fetchRange } from "./ranges.js";
+import { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } from "./sources.js";
+import { convert } from "./convert.js";
 
 // The legacy format carries no metadata, but its header fixes the size of a float32, a float16 and an int8 file.
 // A file that is none of them is refused before it is read, and so is a tokenizer.bin of another vocabulary.

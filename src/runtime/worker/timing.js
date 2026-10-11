@@ -1,7 +1,7 @@
 // worker/timing.js (T350): what /benchmark/ has the worker time: a generation, and the model page's own path (T184).
 // A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
 
-const { state } = await import(new URL(`state.js${new URL(import.meta.url).search}`, import.meta.url));
+import { state } from "./state.js";
 
 // T45: a warm-up, then the measured run: the prompt, greedy, steps tokens (fewer where the model ends it first). The
 // warm-up runs its 8 steps (T184's review: return() on a generator that has not started runs none of it)

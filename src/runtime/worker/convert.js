@@ -4,13 +4,12 @@
 // huggingface.co from there, and (T374.2.2) a folder of the visitor's disk from its Files.
 // A module of public/worker.js, which asks for it with its own ?v=<build>; it reads its neighbours the same way.
 
-const { state, loadSeconds } = await import(new URL(`state.js${new URL(import.meta.url).search}`, import.meta.url));
-const { since } = await import(new URL(`clock.js${new URL(import.meta.url).search}`, import.meta.url));
-const { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom, weightsDrained, checkpointSink } =
-  await import(new URL(`weights.js${new URL(import.meta.url).search}`, import.meta.url));
-const { conductOf, answered, fromHub, fromFolder } = await import(new URL(`conduct.js${new URL(import.meta.url).search}`, import.meta.url));
-const { HEADER_BYTES, headerInts } = await import(new URL(`sources.js${new URL(import.meta.url).search}`, import.meta.url));
-const { templatePackage, pythonArchive, placePython } = await import(new URL(`pyodide.js${new URL(import.meta.url).search}`, import.meta.url));
+import { state, loadSeconds } from "./state.js";
+import { since } from "./clock.js";
+import { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom, weightsDrained, checkpointSink } from "./weights.js";
+import { conductOf, answered, fromHub, fromFolder } from "./conduct.js";
+import { HEADER_BYTES, headerInts } from "./sources.js";
+import { templatePackage, pythonArchive, placePython } from "./pyodide.js";
 
 // What a conversion made is kept for the next visit (kept.js): in the origin private file system where there is one
 // (T99), else in the Cache API. The original is twice as large, and fetching and converting it again on every visit
@@ -113,7 +112,7 @@ export async function converter(signal) {
 export async function convert(model, signal, id) {
   const remote = typeof model.hf.repo === "string";
   // with the ?v=<build> of this worker, like every file it reads (AGENTS.md)
-  state.keptModule ??= await import(new URL(`../kept.js${self.location.search}`, import.meta.url));
+  state.keptModule ??= await import("../kept.js");
   const kept = remote ? await loadConverted(model, signal, id) : undefined;
   if (kept && !kept.miss) {
     return { fromCache: true, keptIn: kept.keptIn, template: kept.template };
