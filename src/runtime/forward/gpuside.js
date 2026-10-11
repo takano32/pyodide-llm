@@ -4,8 +4,10 @@
 // A module of src/runtime/forward.js; it reads jobs.js and its neighbours by static imports.
 
 import { BATCH, GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } from "../jobs.js";
-import { GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine, STOPS_MOST } from "./choice.js";
+import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine,
+  STOPS_MOST } from "./choice.js";
 import { GPU_WEIGHT_BYTES, GPU_TERNARY_BYTES, cpuReadBytes, aloneVerdict, OUTSIDE_VOCABULARY } from "./alone.js";
+import { halfToFloat } from "./memory.js";
 
 // T135: the GPU's worker says something at least this often while it puts a model on the GPU: after every step, each
 // of which it gives up itself after 180 s (gpu.js's STEP_MS, T147: SwiftShader compiles a shader in up to 90 s). A
@@ -16,10 +18,14 @@ const GPU_QUIET_MS = 200000;
 let gpuRequests = 0;
 
 /** T349: what the GPU would hold of one engine's model, and why it would not take it (createForward() asks before it
- * allocates the places the GPU writes to). */
-export function gpuFit({ plan, gpuRoom, memoryUnsaid, direct, dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim,
-  layerNorm, linear, convolution, rotated, sharedMemory, T, D, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo,
-  b1, b2, bq, bk, bv, qNorm, kNorm, positions }) {
+ * allocates the places the GPU writes to).
+ * T378.2: shape, the model's facts, and weights, where its tensors are in the memory (createForward() makes both once,
+ * for this and for gpuSide()); device: { gpuRoom, memoryUnsaid, sharedMemory }, what the device and the page give;
+ * direct: the model is on the GPU alone (T156). */
+export function gpuFit({ shape, weights, device, direct }) {
+  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, linear, convolution, rotated, sharedClassifier } = shape;
+  const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions } = weights;
+  const { gpuRoom, memoryUnsaid, sharedMemory } = device;
   // why this model's prompt stays on the CPU, or null: the first stage (T135) takes Llama's layers of int8 weights
   // (T153: with Qwen2's biases, Qwen3's norms of the heads and heads of another size than dim / heads as well; T154:
   // GPT-2's and GPT-NeoX's as well, whose FFN has no gate: w3 is null; T155: int6 weights and 64-bit memories too)
@@ -63,7 +69,7 @@ export function gpuFit({ plan, gpuRoom, memoryUnsaid, direct, dim, layers, headS
   // GPU takes the outlier channels apart as this does, shaders.js's TAKE_OUTLIERS); and the memory for the classifier, the embedding where it is
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
-    const embedding = T.token_embedding_table, group = wcls?.ternary ? 128 : 32;
+    const group = wcls?.ternary ? 128 : 32;
     if (!wcls?.int8 || wcls.group !== group || !(wcls.ternary ? ["ternary"] : ["int8", "int6"]).includes(embedding.kind) || embedding.group !== group) {
       return "a classifier of float weights is not on the GPU's tokens";
     }
@@ -73,7 +79,7 @@ export function gpuFit({ plan, gpuRoom, memoryUnsaid, direct, dim, layers, headS
     if (memoryUnsaid) return "this browser does not say how much memory the device has";
     const table = vocab * dim * (wcls.ternary ? GPU_TERNARY_BYTES : GPU_WEIGHT_BYTES);
     // (GPT-2's positions on the GPU as well, a row a position)
-    const onGpu = layersOnGpu() + table * (plan.shared_classifier ? 1 : 2) + seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0);
+    const onGpu = layersOnGpu() + table * (sharedClassifier ? 1 : 2) + seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0);
     if (gpuRoom !== undefined && onGpu > gpuRoom) {
       return `the classifier on the GPU as well (${Math.round(onGpu / 1e6)} MB with the layers) would not leave this device enough memory`;
     }
@@ -89,18 +95,37 @@ export function gpuFit({ plan, gpuRoom, memoryUnsaid, direct, dim, layers, headS
       ...(qNorm ? { qNorm: { at: qNorm, size: headSize }, kNorm: { at: kNorm, size: headSize } } : {}),
       ...(bo ? { bo: { at: bo, size: dim }, b1: { at: b1, size: hidden }, b2: { at: b2, size: dim } } : {}) };
   }
-  return { gpuMatrices, gpuUnfit, tokensUnfit, gpuVectors };
+  return { matrices: gpuMatrices, vectors: gpuVectors, unfit: gpuUnfit, tokensUnfit };
 }
 
 /** T349: the GPU's side of one engine (createForward(), which hands in what it reads of it): the GPU's worker started
  * and stopped, a prompt's blocks and a generation's steps through it, and which of them it takes (T135, T148, T152,
- * T156). Returns what the rest of the engine calls of it, and its variables that the rest reads or sets, each through
- * a getter and a setter. pool: the software threads' (threads.js); held: the engine's views and its cache as they are
- * now. */
-export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, direct, stalledMs, always, dim, layers, heads,
-  kvHeads, headSize, vocab, seqLen, hidden, kvDim, gpt2, layerNorm, parallel, unturned, views, T, halfKV, D, KV, wo, wcls,
-  finalW, finalB, eps, cosTable, sinTable, positions, channels, gpuMatrices, gpuVectors, gpuWhyNot, staging, gpuRows,
-  tokensWhyNot, gpuIds, grow, ctl, waitUntil, pool, embed, fromStaging, stagingFinite, notFiniteKV, run, held, halfToFloat }) {
+ * T156). Returns what the rest of the engine tells it and asks it (the end of this function has the list).
+ * T378.2: what it is handed is seven things, each taken apart here once (the names in the functions below are locals):
+ *   shape    the model's facts: its sizes, its kind of norm and of residual, what RoPE turns
+ *   weights  where the model's tensors are in the memory: addresses, and the matrices as createForward() made them
+ *   taken    what the GPU is to take of this model: gpuFit()'s matrices and vectors, why it would take none (whyNot)
+ *            or no steps (tokensWhyNot), and the places in the memory it answers into (staging, rows, ids: 0 for none)
+ *   cpuSide  the CPU's side: the memory, its views made anew (views), the cache of the keys and values as it is now
+ *            (cpuSide.H, .capacity, .keys, .values: read each time, they move as the cache grows) and grown (grow),
+ *            and what the CPU does for a block (embed, fromStaging, stagingFinite, run)
+ *   control  the control area (control.js): the words the GPU's worker answers in, and the wait on one
+ *   threads  the software threads' (threads.js): threads.count and threads.searching are read
+ *   options  { gpu: makes the GPU's worker (none: no WebGPU here), remembered, force (gpuForce), direct (T156),
+ *            stalledMs, now (tests only: the clock the blocks and steps are timed by) } */
+export function gpuSide({ shape, weights, taken, cpuSide, control, threads, options }) {
+  const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, gpt2, layerNorm, parallel,
+    unturned, sharedClassifier } = shape;
+  const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels } = weights;
+  const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds } = taken;
+  const { memory, views, grow, embed, fromStaging, stagingFinite, run } = cpuSide;
+  const { ctl, waitUntil } = control;
+  const { gpu, remembered: gpuRemembered, force: gpuForce = {}, direct, stalledMs, now = () => performance.now() } = options;
+  // every block and step the GPU can take goes there, whatever the CPU's time: the tests' fallback adapter, and a model
+  // on the GPU alone (T156)
+  const always = Boolean(gpuForce.always || direct);
+  // T243: what the status line says of a GPU stopped for keys or values that are no finite numbers (where: the request)
+  const notFiniteKV = (where) => `the GPU computed keys or values that are not finite numbers (NaN or infinity) ${where}`;
   // ---- T135: a prompt on the GPU. gpu() makes the GPU's worker (gpu.js), which puts this model's layers on the GPU
   // once (a second copy of them: the CPU keeps its own, for the tokens after the prompt), and then runs each block of a
   // prompt that forwardMany() hands it through all the layers in one submission, while this thread waits for its
@@ -155,15 +180,14 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
   // T226: the final LayerNorm's bias and GPT-2's positions (float32, a row a position), 0 where the model has none; and
   // whether its classifier has outlier channels (T92), and (T232) which they are
   function gpuTokensPlan() {
-    const embedding = T.token_embedding_table;
     return { classifier: { rows: wcls.rows, n: wcls.n, six: wcls.six, ternary: Boolean(wcls.ternary), at: wcls.layer(0).slice(0, 2) },
-      embedding: plan.shared_classifier ? null
+      embedding: sharedClassifier ? null
         : { rows: vocab, n: dim, six: embedding.kind === "int6", ternary: embedding.kind === "ternary", at: [base + embedding.offset, base + embedding.scales] },
       final: finalW, finalBias: finalB, positions, outliers: channels.length > 0, channels, ids: gpuIds, most: GPU_TOKENS };
   }
   function startGpu() {
     // the values of a head RoPE turns: all of them, GPT-NeoX's first rotary (T154), none of GPT-2's
-    const turned = gpt2 ? 0 : plan.rotary > 0 && plan.rotary < headSize ? plan.rotary : headSize;
+    const turned = gpt2 ? 0 : rotary > 0 && rotary < headSize ? rotary : headSize;
     // (six, T155: the values at a layer's address are int6, packed as llama2_numpy.pack6 packs them; ternary, T232:
     // two bits a weight, as llama2_numpy.pack_ternary packs them, which the GPU takes as they are)
     const matrices = Object.fromEntries(Object.entries(gpuMatrices()).map(([name, m]) =>
@@ -242,7 +266,7 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
     // T154: LayerNorm's epsilon is the CPU's layernorm kernel's and NumPy's, 1e-5 (GPT-2's and GPT-NeoX's
     // layer_norm_epsilon); parallel: GPT-NeoX's parallel residual
     worker.postMessage({ type: "start", memory, plan: { dim, hidden, layers, heads, kvHeads, headSize, turned, unturned, seqLen,
-      kvStart: plan.kv_start, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), batch: GPU_BLOCK, matrices,
+      kvStart, eps: layerNorm ? 1e-5 : eps, layerNorm, parallel: Boolean(parallel), batch: GPU_BLOCK, matrices,
       vectors: gpuVectors(), rows: gpuRows, tokens: gpuIds ? gpuTokensPlan() : null,
       cos: cosTable, sin: sinTable, staging, force: gpuForce, remembered: gpuRemembered, direct: Boolean(direct),
       words: { done: GPU_DONE, failed: GPU_FAILED, beat: GPU_BEAT, wanted: GPU_WANTED } } });
@@ -274,7 +298,7 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
   function gpuTakes(count, pos0) {
     if (!gpuOn || pos0 > gpuEnd || gpuSide === "cpu") return false;
     if (always || gpuSide === "gpu") return true;
-    const known = times.of(count, pool.threads);
+    const known = times.of(count, threads.count);
     if (!known) return false;  // the CPU is timed first, on this prompt
     return known.faster || (recheck === "gpu" && pos0 === 0 && count === GPU_BLOCK);
   }
@@ -282,21 +306,21 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
   // rounded up to a block of the CPU's, and none said up to one: the line does not move with every prompt), and the
   // console says it where it changes. Until the CPU is timed, the line stays as the GPU left it
   function verdict() {
-    const most = times.of(GPU_BLOCK, pool.threads), from = times.threshold(GPU_BLOCK, pool.threads);
+    const most = times.of(GPU_BLOCK, threads.count), from = times.threshold(GPU_BLOCK, threads.count);
     if (!most || always) return;
     const status = from > GPU_BLOCK ? PROMPTS_CPU
       : from > BATCH ? `prompts of ${Math.ceil(from / BATCH) * BATCH} tokens and more on WebGPU` : PROMPTS_GPU;
     if (status !== gpuStatus) {
       console.info(`gpu: a block of ${GPU_BLOCK} tokens: ${most.gpu.toFixed(1)} ms on the GPU, ${most.cpu.toFixed(1)} ms on the ` +
-        `CPU (${pool.threads} thread${pool.threads > 1 ? "s" : ""}), the GPU from ${from > GPU_BLOCK ? "no count" : `${from} tokens`}: ${status}`);
+        `CPU (${threads.count} thread${threads.count > 1 ? "s" : ""}), the GPU from ${from > GPU_BLOCK ? "no count" : `${from} tokens`}: ${status}`);
     }
     gpuStatus = status;
   }
   // A block of a prompt (up to GPU_BLOCK tokens at pos0, pos0 + 1, ...) through the layers on the GPU: false where it
   // must go to the CPU instead (no GPU, keys and values the GPU does not have, a failure)
   function promptOnGpu(tokens, pos0) {
-    const count = tokens.length, began = performance.now();
-    if (!direct && pos0 + count - 1 >= held.capacity) grow(pos0 + count - 1);
+    const count = tokens.length, began = now();
+    if (!direct && pos0 + count - 1 >= cpuSide.capacity) grow(pos0 + count - 1);
     views();
     // the GPU reads the rows from there (T210: on the GPU alone, it embeds the tokens itself)
     if (!direct) embed(tokens, pos0, gpuRows, D);
@@ -323,7 +347,7 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
     if (!direct) fromStaging(pos0, count);
     gpuEnd = pos0 + count;
     gpuTokens += count;
-    times.gpu(count, performance.now() - began);
+    times.gpu(count, now() - began);
     if (recheck === "gpu") recheck = null;
     return true;
   }
@@ -345,7 +369,7 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
         for (let l = 0; l < layers; l++) {
           for (let t = 0; t < part; t++) {
             const from = (staging + ((side * layers + l) * GPU_BLOCK + t) * kvDim * 2) / 2, to = (l * count + at + t) * kvDim;
-            for (let i = 0; i < kvDim; i++) out[side][to + i] = halfToFloat(held.H[from + i]);
+            for (let i = 0; i < kvDim; i++) out[side][to + i] = halfToFloat(cpuSide.H[from + i]);
           }
         }
       }
@@ -356,10 +380,10 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
   // weigh against (not while it starts: its upload and compilation share the CPU and the memory)
   function promptOnCpu(tokens, pos0) {
     for (let i = 0; i < tokens.length; i += BATCH) {
-      const piece = tokens.slice(i, i + BATCH), began = performance.now();
+      const piece = tokens.slice(i, i + BATCH), began = now();
       run(piece, pos0 + i, false);
       if (gpuOn && piece.length === BATCH) {
-        times.cpu(pool.threads, (performance.now() - began) / BATCH);
+        times.cpu(threads.count, (now() - began) / BATCH);
         if (recheck === "cpu") recheck = null;
       }
     }
@@ -368,12 +392,12 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
   // T152: the verdict for a generation's steps, as a generation begins: the status line has it (it changes only there),
   // and the console says it where it changes
   function tokenVerdict() {
-    const known = tokensOn && !always ? steps.of(pool.threads) : null;
+    const known = tokensOn && !always ? steps.of(threads.count) : null;
     if (!known) return;
     const status = known.faster ? "gpu" : "cpu";
     if (status !== tokenStatus) {
       console.info(`gpu: a step of a generation: ${known.gpu.toFixed(2)} ms on the GPU, ${known.cpu.toFixed(2)} ms on the CPU ` +
-        `(${pool.threads} thread${pool.threads > 1 ? "s" : ""}): answers on ${known.faster ? "WebGPU" : "the CPU"}`);
+        `(${threads.count} thread${threads.count > 1 ? "s" : ""}): answers on ${known.faster ? "WebGPU" : "the CPU"}`);
     }
     tokenStatus = status;
   }
@@ -381,10 +405,10 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
   function gpuSteps() {
     if (!tokensOn || !gpuOn || gpuSide === "cpu") return false;
     if (always || gpuSide === "gpu") return true;
-    if (pool.searching) return false;
+    if (threads.searching) return false;
     if (tokenRecheck === "gpu") return true;
     if (tokenRecheck === "cpu") return false;
-    return Boolean(steps.of(pool.threads)?.faster);
+    return Boolean(steps.of(threads.count)?.faster);
   }
   /** T152: count steps of generate() on the GPU from token at pos: the forward pass of each token and the sampling of
    * the next (the penalty over the last of history, whose length is length; temperature, topp; randoms: a number for
@@ -403,14 +427,14 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
       console.info(`gpu: answers on the CPU (${tokensReason})`);
       return undefined;
     }
-    const began = performance.now();
-    if (!direct && pos + count - 1 >= held.capacity) grow(pos + count - 1);
+    const began = now();
+    if (!direct && pos + count - 1 >= cpuSide.capacity) grow(pos + count - 1);
     views();
     gpuSerial = ++gpuRequests;
     Atomics.store(ctl, GPU_WANTED, gpuSerial);
     // (T210: on the GPU alone, no cache here to go up from, nor any position the GPU does not hold)
     gpuWorker.postMessage({ type: "tokens", serial: gpuSerial, count, pos, from: direct ? pos : Math.min(gpuEnd, pos), token, history: list(history), length,
-      cache: direct ? null : { keys: held.keys, values: held.values, capacity: held.capacity, row: KV, half: halfKV }, settings: { temperature, topp, penalty, stops: stopList }, randoms: list(randoms) });
+      cache: direct ? null : { keys: cpuSide.keys, values: cpuSide.values, capacity: cpuSide.capacity, row: KV, half: halfKV }, settings: { temperature, topp, penalty, stops: stopList }, randoms: list(randoms) });
     if (!waitUntil(GPU_DONE, (seen) => seen === gpuSerial, GPU_BEAT)) {
       stopGpu(`the GPU's worker stopped answering for ${stalledMs / 1000} s`);
       return undefined;
@@ -457,32 +481,126 @@ export function gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, dire
     if (!direct) fromStaging(pos, sampled);
     gpuEnd = pos + sampled;
     gpuSampled += sampled;
-    if (sampled === count) steps.gpu((performance.now() - began) / count);
+    if (sampled === count) steps.gpu((now() - began) / count);
     if (tokenRecheck === "gpu") tokenRecheck = null;
     return ids;
   }
-  // T349: what the rest of the engine calls of the GPU's side, and reads and sets of where it is
+  // ---- T378.2: what happens to the GPU's side, as the rest of the engine tells it, and what it is asked
+  /** the page began a generation (after the threads were told so: a search of theirs that begins with it is seen
+   * here): the counts of the generation begin again, and now and then the side not chosen is to be timed again */
+  function generationBegan() {
+    gpuTokens = 0;
+    // T148: halfway between the threads' checks, a prompt goes to the side not chosen, so that its time stays
+    // today's (a device that heats up, a GPU timed while the CPU was busy)
+    written = 0;
+    const whole = gpuOn && !always ? times.of(GPU_BLOCK, threads.count) : null;
+    if (whole && ++sinceCheck >= GPU_RECHECK && !recheck && !threads.searching) {
+      recheck = whole.faster ? "cpu" : "gpu";
+      sinceCheck = 0;
+      console.info(`gpu: the ${recheck === "cpu" ? "CPU on the end" : "GPU on the beginning"} of the next long prompt, to time it again`);
+    }
+    // T152: the same for the steps of a generation, the side not chosen taking its first ones
+    gpuSampled = 0;
+    const stepsNow = tokensOn && !always ? steps.of(threads.count) : null;
+    if (stepsNow && ++sinceTokens >= GPU_RECHECK && !tokenRecheck && !threads.searching) {
+      tokenRecheck = stepsNow.faster ? "cpu" : "gpu";
+      cpuRecheck = TOKEN_RECHECK;
+      sinceTokens = 0;
+      console.info(`gpu: the ${tokenRecheck === "cpu" ? `CPU on the first ${TOKEN_RECHECK} steps` : "GPU on the first steps"} of the next generation, to time it again`);
+    }
+    tokenVerdict();
+  }
+  /** T147: how many tokens of a prompt Python hands prompt() at once: GPU_BLOCK where the GPU takes a whole block
+   * (T148: where it is faster), else BATCH (a longer call keeps the worker from answering for longer, and the CPU
+   * gains nothing from it) */
+  function promptBlock() {
+    if (!gpuOn || gpuSide === "cpu") return BATCH;
+    if (always || gpuSide === "gpu") return GPU_BLOCK;
+    const whole = times.of(GPU_BLOCK, threads.count);
+    return whole && (whole.faster || (recheck === "gpu" && written === 0)) ? GPU_BLOCK : BATCH;
+  }
+  /** T108, T135: the tokens of a prompt (list) at positions pos, pos + 1, ..., none of which makes logits: each block
+   * on the GPU where it is on and takes it (GPU_BLOCK at a time), else on the CPU, BATCH at a time through the layers */
+  function prompt(list, pos) {
+    for (let at = 0; at < list.length;) {
+      const block = list.slice(at, at + (gpuOn ? GPU_BLOCK : BATCH)), from = pos + at;
+      if (from === 0) verdict();
+      // T148: the CPU timed again on the last 2 × BATCH tokens of a prompt (its last block is the short one), the
+      // rest of that block where it goes
+      const tail = recheck === "cpu" && block.length < GPU_BLOCK ? Math.min(block.length, 2 * BATCH) : 0;
+      const head = block.slice(0, block.length - tail);
+      if (head.length && (!gpuTakes(head.length, from) || !promptOnGpu(head, from))) promptOnCpu(head, from);
+      if (tail) promptOnCpu(block.slice(head.length), from + head.length);
+      at += block.length;
+    }
+    written = pos + list.length;
+  }
+  /** T135: the CPU is about to write the positions from pos on (run()): from there on the cache holds what the GPU's
+   * own keys and values do not */
+  function cpuWrote(pos) {
+    gpuEnd = Math.min(gpuEnd, pos);
+  }
+  /** T156: something was to run on the CPU of a model whose layers are on the GPU alone (a block or a step the GPU
+   * did not take): the GPU's side is lost (the worker loads the model again on the CPU), and this is the error to throw */
+  function notHere() {
+    if (!directLost) stopGpu("the GPU did not take a block or a step");
+    return Object.assign(new Error(`The GPU stopped (${directLost}), and this model's weights were on it alone`), { directLost: true });
+  }
+  /** T152: a token is about to run on the CPU. Whether it is a step to time against the GPU's (one that makes logits,
+   * where the GPU takes steps): the caller times it then and says cpuStepEnded(its milliseconds) */
+  const cpuStepBegan = (needLogits) => needLogits && tokensOn && gpuOn;
+  /** the step cpuStepBegan() said to time took this long */
+  function cpuStepEnded(milliseconds) {
+    steps.cpu(threads.count, milliseconds);
+    if (tokenRecheck === "cpu" && --cpuRecheck <= 0) tokenRecheck = null;
+  }
+  /** T152: how many steps of a generation Python hands generateMany() at once now: GPU_TOKENS where the GPU takes
+   * them (it is faster, or it is timed again), 0 where the CPU takes the step (the forward pass, and the sampling in
+   * Python). Not while the threads are searched: that times the CPU's tokens */
+  const tokenBlock = () => (gpuSteps() ? GPU_TOKENS : 0);
+  /** T184 (the benchmark's page path): every block of a prompt on "cpu" or on "gpu" (where the GPU is on and holds
+   * the keys and values before it, as gpuForce.always), or anything else: each where it is faster (promptTimes) */
+  function put(side) {
+    gpuSide = side === "cpu" || side === "gpu" ? side : null;
+  }
+  /** The engine is let go: the GPU's worker stops. T205: resolves once it has let go of its buffers and its device, or
+   * after GPU_END_MS (the worker is terminated then), true where it said so: the next model is read after it (an
+   * iPhone's tab went down where the GPU of the one before still held up to 189 MB as the next came from the cache) */
+  function release() {
+    if (gpuWorker) stopGpu();
+    const worker = gpuLast;
+    let timer;
+    const late = new Promise((resolve) => { timer = setTimeout(() => resolve(false), GPU_END_MS); });
+    return Promise.race([gpuEnded.then(() => true), late]).then((ended) => {
+      clearTimeout(timer);
+      if (!ended) {
+        console.warn(`gpu: the GPU's worker did not end within ${GPU_END_MS / 1000} s: terminated`);
+        worker?.terminate?.();
+      }
+      return ended;
+    });
+  }
+  // T378.2: the state above has this one owner: the engine tells it what happened (generationBegan, prompt, cpuWrote,
+  // cpuStepBegan and cpuStepEnded, generateMany, put, notHere, release), asks it (gettingReady, promptBlock, tokenBlock,
+  // keysAndValues), and reads what the page is shown of it; nothing outside assigns a variable of it
   return {
-    gpuGettingReady, times, steps, statusNow, gpuNote, stopGpu, gpuTakes, verdict, promptOnGpu, gpuKeysAndValues,
-    promptOnCpu, tokenVerdict, gpuSteps, generateMany,
-    get gpuEnded() { return gpuEnded; },
-    get gpuLast() { return gpuLast; },
-    get gpuWorker() { return gpuWorker; },
-    get gpuOn() { return gpuOn; },
-    get gpuEnd() { return gpuEnd; }, set gpuEnd(to) { gpuEnd = to; },
-    get gpuTokens() { return gpuTokens; }, set gpuTokens(to) { gpuTokens = to; },
-    get gpuChosen() { return gpuChosen; },
-    get recheck() { return recheck; }, set recheck(to) { recheck = to; },
-    get sinceCheck() { return sinceCheck; }, set sinceCheck(to) { sinceCheck = to; },
-    get written() { return written; }, set written(to) { written = to; },
-    get gpuReason() { return gpuReason; },
-    get gpuSide() { return gpuSide; }, set gpuSide(to) { gpuSide = to; },
-    get directLost() { return directLost; },
-    get tokensOn() { return tokensOn; },
-    get tokensReason() { return tokensReason; },
-    get tokenRecheck() { return tokenRecheck; }, set tokenRecheck(to) { tokenRecheck = to; },
-    get cpuRecheck() { return cpuRecheck; }, set cpuRecheck(to) { cpuRecheck = to; },
-    get sinceTokens() { return sinceTokens; }, set sinceTokens(to) { sinceTokens = to; },
-    get gpuSampled() { return gpuSampled; }, set gpuSampled(to) { gpuSampled = to; },
+    generationBegan, prompt, cpuWrote, cpuStepBegan, cpuStepEnded, generateMany, put, notHere, release,
+    gettingReady: gpuGettingReady, promptBlock, tokenBlock, keysAndValues: gpuKeysAndValues,
+    /** T135: where the worker has WebGPU, a promise of what the status line says of the GPU, settled once the layers
+     * are on the GPU or it is known that they will not be (T148: nothing waits for it); undefined where it has none */
+    note: gpuNote,
+    /** T148: what the status line says of the GPU now (it changes with the times of the prompts) */
+    get status() { return statusNow(); },
+    /** what the GPU chose as it started ({ matrices, attention, key, remembered, seconds, ... }: the page shows it and
+     * remembers it): once it did, and while it is on */
+    get chosen() { return gpuChosen; },
+    get ready() { return gpuOn ? gpuChosen : undefined; },
+    /** T184: why the prompts stay on the CPU (no WebGPU, a fallback adapter, a model the GPU does not take yet, a
+     * failure), or null while none is known; T152: and why a generation's steps do */
+    get whyNot() { return gpu ? gpuReason : "no WebGPU in a worker here"; },
+    get stepsWhyNot() { return gpu ? gpuReason ?? tokensReason : "no WebGPU in a worker here"; },
+    /** T135, T152: the tokens of a prompt and the steps that went through the GPU since the generation began */
+    get promptTokens() { return gpuTokens; },
+    get sampled() { return gpuSampled; },
   };
 }

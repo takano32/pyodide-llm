@@ -6,7 +6,7 @@
 // bound to: jobs.js (where the words of the control area are) and choice.js's lowerMedian and BETTER.
 //
 // The state has one owner (T378.1): the rest of the engine tells it what happened (use, find, generationBegan,
-// tokenBegan and tokenEnded, stop) and reads threads, lost and searching. Held here:
+// tokenBegan and tokenEnded, stop) and reads count, lost and searching. Held here:
 //   - each of those changes what it says it changes, and nothing else that can be read;
 //   - a phase's rows are each run once, whole by one caller, with any count, and alone where there are no threads;
 //   - the search's turns: best, candidate, candidate, best in blocks of 5, the count in use the best one between tokens;
@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
 
 const { softwareThreads } = await import(runtimeUrl("forward/threads.js"));
+const { controlArea } = await import(runtimeUrl("forward/control.js"));
 const { CONTROL_BYTES, JOB, ROWS, COUNT, COUNTER, QUIT, JOB_TABLE, BATCH } = await import(runtimeUrl("jobs.js"));
 
 const PAGE = 65536;
@@ -39,10 +40,13 @@ function made({ spawn = true, sharedMemory = true, stalledMs = 40, late = false 
     beside.started += 1;
     assert.equal(data.memory, memory, "a thread is started on the engine's memory");
     assert.equal(data.share, beside.started - beside.ended, "a thread is told which of them it is");
+    assert.deepEqual([data.plain, data.relaxed, data.wide], ["plain", null, false], "a thread is started with the two kernels the part was handed");
     return late ? new Promise((resolve) => beside.waiting.push(() => resolve(helper()))) : Promise.resolve(helper());
   };
-  const part = softwareThreads({ memory, kernels: { plain: "plain", relaxed: "relaxed" }, plan: { int8: false, relaxed: false },
-    spawn: spawn ? start : null, stalledMs, wide: false, sharedMemory,
+  // (the control area is the real one, on this test's page of memory: T378.2, it is handed to the part)
+  const control = controlArea({ memory, sharedMemory, stalledMs });
+  beside.ctl = control.ctl;
+  const part = softwareThreads({ memory, wide: false, kernels: { plain: "plain", relaxed: null }, spawn: spawn ? start : null, control,
     runRows: (job, from, to) => {
       beside.ran.push([job, from, to]);
       beside.onRun?.();
@@ -50,7 +54,7 @@ function made({ spawn = true, sharedMemory = true, stalledMs = 40, late = false 
     gpuGettingReady: () => beside.gpuGettingReady });
   return { part, beside };
 }
-const read = (part) => ({ threads: part.threads, lost: part.lost, searching: part.searching, log: part.searchLog.length });
+const read = (part) => ({ threads: part.count, lost: part.lost, searching: part.searching, log: part.searchLog.length });
 // every row of every job run once, and in how many pieces
 function covered(beside, jobs) {
   for (const job of jobs) {
@@ -65,7 +69,7 @@ function covered(beside, jobs) {
 // a token that makes logits, as the engine runs one: timed where the part says it is the search's. ms: a count's time
 const token = (part, ms) => {
   if (!part.tokenBegan(true)) return null;
-  const on = part.threads;
+  const on = part.count;
   part.tokenEnded(typeof ms === "function" ? ms(on) : ms[on] ?? 30);
   return on;
 };
@@ -91,9 +95,9 @@ const quietly = async (run) => {
   part.phase(jobs);
   assert.deepEqual(beside.ran.map(([job, from, to]) => [jobs.indexOf(job), from, to]), [[0, 0, 64], [1, 0, 7], [2, 0, 1]], "one thread: each job whole, in order");
   assert.equal(beside.started, 0, "no thread is started before one is asked for");
-  assert.deepEqual(Object.keys(part).sort(), ["ctl", "find", "generationBegan", "lost", "phase", "searchLog", "searching", "stop", "threads", "tokenBegan", "tokenEnded", "use", "waitUntil"],
+  assert.deepEqual(Object.keys(part).sort(), ["count", "find", "generationBegan", "lost", "phase", "searchLog", "searching", "stop", "tokenBegan", "tokenEnded", "use"],
     "what the part hands out");
-  for (const name of ["threads", "lost", "searching"]) {
+  for (const name of ["count", "lost", "searching"]) {
     assert.equal(Object.getOwnPropertyDescriptor(part, name).set, undefined, `${name} cannot be assigned from outside`);
   }
 }
@@ -113,7 +117,7 @@ console.log("ok: as made the part runs on one thread, and nothing of its state c
   part.phase(jobs);
   assert.ok(covered(beside, jobs) < pieces, "2 threads: fewer chunks than 4");
   assert.equal(await part.use(0), 1, "a count below 1 is 1");
-  assert.equal(part.threads, 1);
+  assert.equal(part.count, 1);
   await part.find({ from: 4, chose() {} });
   assert.equal(part.searching, true);
   assert.equal(await part.use(2), 2);
@@ -132,16 +136,16 @@ console.log("ok: use(n) sets the count and starts the threads that are missing; 
   const turns = [];
   for (let i = 0; i < 20; i++) {
     assert.equal(part.tokenBegan(true), true);
-    turns.push(part.threads);
-    part.tokenEnded(ANDROID[part.threads]);
-    if (i < 19) assert.equal(part.threads, 8, "between the search's tokens the count in use is the best so far");
+    turns.push(part.count);
+    part.tokenEnded(ANDROID[part.count]);
+    if (i < 19) assert.equal(part.count, 8, "between the search's tokens the count in use is the best so far");
   }
   assert.deepEqual(turns, [...Array(5).fill(8), ...Array(10).fill(4), ...Array(5).fill(8)], "a comparison's turns");
   assert.deepEqual(part.searchLog.map(({ best, candidate, faster, times }) => [best, candidate, faster, times[best].length, times[candidate].length]), [[8, 4, true, 8, 8]],
     "the first token of each block of 5 is not timed");
-  assert.deepEqual([part.threads, part.searching, told], [4, true, []], "the faster candidate is the best now, and the search goes on");
+  assert.deepEqual([part.count, part.searching, told], [4, true, []], "the faster candidate is the best now, and the search goes on");
   until(part, ANDROID);
-  assert.deepEqual([part.threads, told, verdicts.map(({ best, candidate, faster }) => `${best} ${candidate} ${faster}`)], [2, [2], ["8 4 true", "4 2 true", "2 1 false"]], "the Android's search ends on 2 and says so once");
+  assert.deepEqual([part.count, told, verdicts.map(({ best, candidate, faster }) => `${best} ${candidate} ${faster}`)], [2, [2], ["8 4 true", "4 2 true", "2 1 false"]], "the Android's search ends on 2 and says so once");
   assert.equal(verdicts.length, part.searchLog.length, "every comparison is told");
   assert.equal(token(part, ANDROID), null, "no token is the search's once it has ended");
   // generationBegan(): the count is checked again every `recheck` generations (8 unless said), counted from the load
@@ -163,7 +167,7 @@ console.log("ok: use(n) sets the count and starts the threads that are missing; 
   part.generationBegan();
   assert.equal(part.searching, true, "T223: the first generation searches again from a remembered count");
   until(part, ANDROID);
-  assert.deepEqual([part.threads, told], [2, [2]]);
+  assert.deepEqual([part.count, told], [2, [2]]);
   const began = [];
   for (let generation = 2; generation <= 7; generation++) {
     part.generationBegan();
@@ -194,7 +198,7 @@ console.log("ok: use(n) sets the count and starts the threads that are missing; 
   other.beside.gpuGettingReady = true;
   await other.part.find({ from: 8, chose: (count) => remembered.push(count) });
   until(other.part, ANDROID);
-  assert.deepEqual([other.part.threads, remembered, other.part.searchLog.every(({ whileGpu }) => whileGpu)], [2, [], true], "a verdict beside the GPU is used and not told");
+  assert.deepEqual([other.part.count, remembered, other.part.searchLog.every(({ whileGpu }) => whileGpu)], [2, [], true], "a verdict beside the GPU is used and not told");
   other.beside.gpuGettingReady = false;
   other.part.generationBegan();
   assert.equal(other.part.searching, true);
@@ -202,6 +206,28 @@ console.log("ok: use(n) sets the count and starts the threads that are missing; 
   assert.deepEqual(remembered, [2], "and told once it was found again with the GPU ready");
 }
 console.log("ok: find() searches from a hint at once and from a remembered count with the first generation; generationBegan() again every recheck; never beside a GPU getting ready");
+
+// ---- T451: a token's time is counted for the count it ran on, and for no other. Every token is told a time of its
+// own (its count's hundreds and its turn), so a time put with another count of the comparison, which is there to take
+// it, shows as that: before this, such a break ended in a TypeError or in another search's verdict
+{
+  const { part } = made();
+  await part.find({ from: 4, chose() {} });
+  const ran = { 4: [], 2: [] }, order = [];
+  for (let i = 0; i < 20; i++) {
+    assert.equal(part.tokenBegan(true), true);
+    const on = part.count, ms = 100 * on + i;
+    order.push(on);
+    if (i % 5) ran[on].push(ms);  // the first token of a block of 5 is the switch: not timed
+    part.tokenEnded(ms);
+  }
+  assert.deepEqual(order, [...Array(5).fill(4), ...Array(10).fill(2), ...Array(5).fill(4)], "best, candidate, candidate, best");
+  const [{ best, candidate, times }] = part.searchLog;
+  assert.deepEqual([best, candidate], [4, 2]);
+  assert.deepEqual(times[4], ran[4], "the times of the tokens that ran on 4 threads are 4's, each once, in order");
+  assert.deepEqual(times[2], ran[2], "the times of the tokens that ran on 2 threads are 2's, each once, in order");
+}
+console.log("ok: T451, a token's time is counted for the count it ran on");
 
 // ---- a count that needs more threads: untimed on the best count until they are there
 {
@@ -211,7 +237,7 @@ console.log("ok: find() searches from a hint at once and from a remembered count
   assert.deepEqual([part.searching, beside.started, beside.waiting.length], [true, 1, 1]);
   for (let i = 0; i < 25; i++) {
     assert.equal(part.tokenBegan(true), true);
-    assert.equal(part.threads, 1, "the best count while the candidate's thread starts");
+    assert.equal(part.count, 1, "the best count while the candidate's thread starts");
     part.tokenEnded(5);
   }
   assert.equal(part.searchLog.length, 0, "and nothing is timed meanwhile");
@@ -220,7 +246,7 @@ console.log("ok: find() searches from a hint at once and from a remembered count
   const turns = [];
   for (let i = 0; i < 20; i++) {
     part.tokenBegan(true);
-    turns.push(part.threads);
+    turns.push(part.count);
     part.tokenEnded(5);
   }
   assert.deepEqual([turns.slice(0, 10).join(""), part.searchLog.length], ["1111122222", 1], "timed from the token after the thread is there");
@@ -229,7 +255,7 @@ console.log("ok: find() searches from a hint at once and from a remembered count
   part.stop();
   beside.waiting.splice(0).forEach((release) => release());
   assert.equal(await using, 1, "use() that was overtaken by stop() says 1");
-  assert.deepEqual([part.threads, beside.started, beside.ended], [1, beside.started, beside.started], "and every thread started is ended");
+  assert.deepEqual([part.count, beside.started, beside.ended], [1, beside.started, beside.started], "and every thread started is ended");
 }
 console.log("ok: a candidate's threads are waited for on the best count, untimed; a thread that comes up after stop() is ended");
 
@@ -248,23 +274,23 @@ console.log("ok: a candidate's threads are waited for on the best count, untimed
   part.tokenEnded(1);
   for (let i = 0; i < 19; i++) {
     part.tokenBegan(true);
-    part.tokenEnded(ANDROID[part.threads]);
+    part.tokenEnded(ANDROID[part.count]);
     part.tokenEnded(0.001);  // told again: nothing
   }
   assert.equal(part.searchLog.length, 0, "an end with no token begun counts for nothing");
   part.tokenBegan(true);
   part.tokenBegan(true);  // begun twice: the one turn
-  part.tokenEnded(ANDROID[part.threads]);
+  part.tokenEnded(ANDROID[part.count]);
   assert.deepEqual([part.searchLog.length, part.searchLog[0].times[4].length, Math.min(...part.searchLog[0].times[2])], [1, 8, ANDROID[2]], "a comparison is 20 tokens' ends, each counted once");
   // stop() in the middle of a search: one thread now; the search finds none of its candidate's threads and ends
   part.stop();
   part.stop();
-  assert.equal(part.threads, 1, "stop(): one thread");
+  assert.equal(part.count, 1, "stop(): one thread");
   assert.equal(beside.ended, beside.started, "stop(): every thread ended");
-  assert.equal(Atomics.load(part.ctl, QUIT), 1, "stop(): the word the threads end on is set");
+  assert.equal(Atomics.load(beside.ctl, QUIT), 1, "stop(): the word the threads end on is set");
   // and the part is usable again
   assert.equal(await part.use(2), 2);
-  assert.equal(Atomics.load(part.ctl, QUIT), 0, "a fresh start clears it");
+  assert.equal(Atomics.load(beside.ctl, QUIT), 0, "a fresh start clears it");
   const jobs = [jobOf(64)];
   beside.ran.length = 0;
   part.phase(jobs);
@@ -287,7 +313,7 @@ console.log("ok: a generation, a token or its end told out of turn change nothin
   const jobs = [jobOf(64), jobOf(9)];
   beside.onRun = () => {
     beside.onRun = null;
-    Atomics.add(part.ctl, COUNTER, 1);  // as a thread that took the next chunk and was stopped by the browser
+    Atomics.add(beside.ctl, COUNTER, 1);  // as a thread that took the next chunk and was stopped by the browser
   };
   assert.equal(part.tokenBegan(true), true);
   const said = await quietly(() => part.phase(jobs));
@@ -319,7 +345,7 @@ for (const [title, options] of [["no spawn (a model on the GPU alone)", { spawn:
   for (let i = 0; i < 40; i++) assert.equal(token(part, ANDROID), null, title);
   part.stop();
   assert.deepEqual([read(part), told, beside.started], [{ threads: 1, lost: false, searching: false, log: 0 }, [], 0], title);
-  if (part.ctl) assert.equal(Atomics.load(part.ctl, QUIT), 0, `${title}: stop() has nothing to stop and writes nothing`);
+  if (beside.ctl) assert.equal(Atomics.load(beside.ctl, QUIT), 0, `${title}: stop() has nothing to stop and writes nothing`);
   else assert.equal(options.sharedMemory, false, "no control area only on a memory that is not shared");
   const jobs = [jobOf(64)];
   part.phase(jobs);

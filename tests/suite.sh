@@ -86,7 +86,7 @@ page_modules() {
   # checks above run them as scripts of one context, where a missing import does not show)
   node tests/worker-modules-check.mjs
   # T349: the names forward.js and its modules (src/runtime/forward/) hand one another: what a file takes from another is
-  # exported there, what createForward() hands a part is what the part takes, and every pool.<name>, gpuPart.<name> and
+  # exported there, what createForward() hands a part is what the part takes, and every threads.<name>, onGpu.<name> and
   # held.<name> is a member of that object (none of these is a variable: a wrong name is undefined without a word)
   node tests/forward-modules-check.mjs
   # T357: the plan Python hands forward.js and the plan forward.js hands the GPU's worker, each held to both of its ends:
@@ -112,6 +112,13 @@ page_modules() {
   # T378.1: the software threads' part (forward/threads.js) by itself, with stand-ins for its neighbours: what the engine
   # tells it (a count to use, a search, a generation, a token, a stop) changes what it says, in any order (under a second)
   node tests/threads-part-check.mjs
+  # T378.2: the GPU's side (forward/gpuside.js) by itself the same way: a stand-in of the GPU's worker that answers on this
+  # thread, a clock the test moves, two pages of memory: what the engine tells it (a generation, a prompt, a step, where
+  # the CPU wrote, a side, a let-go) and every way a request is refused (under a second)
+  node tests/gpu-part-check.mjs
+  # T450: an engine on the GPU alone made in Node (kernels that do nothing, the GPU's stand-in): it starts no software
+  # thread whatever is asked, its blocks and steps go to the GPU, and a token on the CPU loses it (under two seconds)
+  node tests/gpu-alone-check.mjs
 }
 part "unit tests of the page's modules" page_modules
 
