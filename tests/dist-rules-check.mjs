@@ -68,6 +68,7 @@ const family = familyOf(coi);
   wrong("a built file's name that begins another's", { "_astro/simdkernel.DtNlNAG4.so": null, "_astro/simdkernel_x.DtNlNAG4.so": "so" }, /^src\/runtime\/built\/simdkernel\.so: no file of _astro\//);
   // (a built file named twice, with other bytes the second time: two files, and the two are one family besides)
   wrong("a built file twice", { "_astro/simdkernel_plain.AAAAAAAA.wasm": "older" }, /^_astro\/simdkernel_plain\.AAAAAAAA\.wasm and _astro\/simdkernel_plain\.DfCGpm7G\.wasm: one family/, /^src\/runtime\/built\/simdkernel_plain\.wasm: 2 files of _astro\/ \(/);
+  wrong("a minified worker", { "_astro/worker.DR4U5U7O.js": `${"const a=1;".repeat(100)}\n` }, /^_astro\/worker\.DR4U5U7O\.js is minified \(\d+ characters a line\)/);
   wrong("a runtime file at the root", { "worker.js": "as it was" }, /^dist\/worker\.js: nothing asks for it there \(the root holds _astro, index\.html, benchmark, coi\.js, coi-test, models\)/);
   wrong("an archive at the root", { "engine.zip": "zip" }, /^dist\/engine\.zip: nothing asks for it there/);
   wrong("an emptied folder at the root", { "worker/.keep": "" }, /^dist\/worker: nothing asks for it there/);

@@ -76,6 +76,13 @@ export function distSaid(dist, tree = treeOf()) {
   for (const [name, got] of bytes) {
     if (name.endsWith(".js") && /["'`]data:application\/(wasm|zip|octet-stream)/.test(got.toString("latin1"))) said.push(`_astro/${name} holds a file as a data: URL (vite.build.assetsInlineLimit: 0)`);
   }
+  // (the workers are not minified: the owner's decision, 2026-10-10. A minified file is a few lines of thousands of
+  // characters; what the bundler prints unminified has a statement a line)
+  for (const [name, got] of bytes) {
+    if (!/^(worker|forward|helper|gpu|benchmark-[\w-]+)\.[\w-]{6,}\.js$/.test(name)) continue;
+    const lines = got.toString("utf8").split("\n").length;
+    if (got.length / lines > 200) said.push(`_astro/${name} is minified (${Math.round(got.length / lines)} characters a line): the workers are served as the bundler prints them (vite.worker's output.minify: false)`);
+  }
   // 4: the built files, once each, the same bytes
   const built = under(tree.built());
   for (const file of built) {

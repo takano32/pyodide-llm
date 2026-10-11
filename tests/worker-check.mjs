@@ -828,6 +828,27 @@ const ok = (line) => {
   run("state.initialized = undefined");
   ok("a thrown value that is no Error is told by its name and message, or its fields");
 
+  // T367.3.2: the site's root comes with a load, from the page, and models/ is asked for under it (the worker's own
+  // URL is under _astro/); a load that says none keeps the root it has. And the page says it with every init and load
+  // (a load may reach the worker before the init does: src/page/choose.ts).
+  if (run('Object.hasOwn(state, "root")')) {
+    const small = { id: "small", name: "Small", checkpoint: "small", tokenizer: "small.tokenizer.bin", bytes: 64, options: {} };
+    const asked = async (data) => {
+      fresh(() => new Response(new Uint8Array(64), { status: 200 }));
+      run("state.initialized = Promise.reject(new Error('no runtime here')); state.initialized.catch(() => {})");
+      await context.onmessage({ data: { type: "load", load: 9, model: small, ...data } });
+      return requests.map((r) => r.url).sort();
+    };
+    const before = run('state["root"]');
+    assert.deepEqual(await asked({ root: "https://other.test/site/" }), ["https://other.test/site/models/small.000", "https://other.test/site/models/small.tokenizer.bin"]);
+    assert.deepEqual(await asked({}), ["https://other.test/site/models/small.000", "https://other.test/site/models/small.tokenizer.bin"], "a load without a root keeps the one it was told");
+    context.rootBefore = before;
+    run('state["root"] = rootBefore; state.initialized = undefined');
+    const posts = ["src/pages/index.astro", "src/page/choose.ts", "src/benchmark/model.ts"].map((file) => [file, fs.readFileSync(new URL(`../${file}`, import.meta.url), "utf8").match(/\{ type: "(?:init|load)",[^}]*/g) ?? []]);
+    for (const [file, found] of posts) assert.ok(found.length === 1 && /\broot\b/.test(found[0]), `${file}: the load it sends the worker says no root: ${found}`);
+    ok("the site's root comes with a load and models/ is asked for under it; the page's three loads say it");
+  }
+
   // Pyodide's runtime that ends as it starts (its standard library did not arrive: loadPyodide() goes on without it, and
   // Python exits) rejects with Emscripten's ExitStatus: told as a step of Pyodide's that stopped; an Error stays itself
   fresh(() => new Response("", { status: 404 }));
