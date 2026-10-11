@@ -766,6 +766,12 @@ def fed_to(monkeypatch):
     return stand_in, pieces
 
 
+def same(pieces, data):
+    """Whether the pieces, one after another, are data. (A function, so that a failure does not have pytest write out
+    how hundreds of kilobytes differ: that took gigabytes.)"""
+    return b"".join(pieces) == data
+
+
 def marked(base, data):
     """A GGUF of the stand-in's whose tensors say where each of their bytes stands in the file."""
     tensors = b"".join(struct.pack("<I", at) for at in range(base, base + data, 4))
@@ -817,7 +823,7 @@ def test_the_tensors_that_came_with_a_ggufs_head_are_fed_and_not_asked_for_again
         stand_in, pieces = fed_to(monkeypatch)
         hub, told = Hub({"maker/model-GGUF/model.Q8_0.gguf": file, **files}, hf, first=400, rest=400), []
         last = answered(hub, conduct(hf), told)
-        assert last[0] == "done" and b"".join(pieces) == file[base:]
+        assert last[0] == "done" and same(pieces, file[base:])
         ranges = [request[3:5] for request in told if request[0] == "range"]
         hand = min(ranges[-1][1], file.size)
         assert ranges[0][0] == 0 and all(before[1] == after[0] for before, after in zip(ranges, ranges[1:]))
@@ -897,7 +903,7 @@ def test_a_server_that_answers_a_piece_short_is_asked_from_where_its_answer_ende
     stand_in, pieces = fed_to(monkeypatch)
     hub, told = Short({"maker/model-GGUF/model.Q8_0.gguf": file}, GGUF_HF, first=5000, rest=5000), []
     last = answered(hub, conduct(GGUF_HF), told)
-    assert last[0] == "done" and b"".join(pieces) == file[40000:]
+    assert last[0] == "done" and same(pieces, file[40000:])
     # (two thirds of 4096; then of what is missing of 16384; of 65536: 47634 in hand, past the head's 40000)
     assert [request[3:5] for request in told if request[0] == "range"] == [(0, 4096), (2730, 16384), (11832, 65536)]
     assert told[-1][3:7] == (47634, 70000, 47634, 70000)
@@ -937,6 +943,9 @@ def test_a_head_that_never_ends_of_a_file_said_to_be_endless_is_given_up(monkeyp
         def range(self, where, name, begin, end):
             data, _ = super().range(where, name, begin, end)
             return data, 1 << 200
+
+        def parts(self, where, name, begin, end):  # (it would never end)
+            raise AssertionError("a file whose head was never read is streamed")
 
     StandIn().into(monkeypatch)
     hub = Endless({"maker/model-GGUF/model.Q8_0.gguf": File(b"GGUF" + struct.pack("<Q", 1 << 62), 3 * MiB)}, GGUF_HF)
