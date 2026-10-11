@@ -9,7 +9,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { RULE, built, placePython, python, runtime, runtimeUrl, served, treeOf } from "./tree.mjs";
+import { RULE, built, placeKernels, placePython, python, runtime, runtimeUrl, served, treeOf } from "./tree.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const scratch = path.join(root, ".tmp", "tree-check", String(process.pid));
@@ -119,6 +119,12 @@ for (const bad of [[], ["kernels"], ["python", "a", "b"]]) {
   assert.deepEqual(placePython(pyodide, tree, ["llama2_numpy"], "before"), tree.pythonFiles("llama2_numpy"));
   assert.deepEqual([...written.keys()], tree.pythonFiles("llama2_numpy").map((name) => `before/${name}`), "under a folder of its own, where two trees are placed");
   assert.ok(made.includes("before") && made.includes("before/engine"));
+  // the kernels Pyodide loads, from the tree's built files (here beside a runtime that is still in public/)
+  for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) fs.writeFileSync(path.join(folder, "public", name), `built ${name}`);
+  written.clear();
+  placeKernels(pyodide, tree);
+  assert.deepEqual([...written], [["simdkernel.so", "built simdkernel.so"], ["simdkernel_relaxed.wasmlib", "built simdkernel_relaxed.wasmlib"]]);
+  assert.throws(() => placeKernels(pyodide, treeOf(path.join(scratch, "both moved"))), /src\/runtime\/built\/simdkernel\.so/, "from built/ beside a moved runtime, where nothing is built here");
   // a commit of before the packages: the window alone; a module whose window is missing is said
   const old = treeOf(madeUp("one file", { "public/worker.js": "", "public/llama2_numpy.py": "all of it" }));
   assert.deepEqual(old.pythonFiles("llama2_numpy"), ["llama2_numpy.py"]);
