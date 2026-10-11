@@ -40,7 +40,8 @@ sys.path.insert(0, str(HERE.parent / "public"))
 sys.path.insert(0, str(HERE))
 from llama2_convert import Conversion  # noqa: E402
 from llama2_numpy import Llama, rope_frequencies, silu  # noqa: E402
-from reference_qwen35 import CHUNK, TEXT, File, differences, fetch, relative  # noqa: E402
+from conducting import Directory, Mapped, converted  # noqa: E402
+from reference_qwen35 import TEXT, differences, fetch, relative  # noqa: E402
 
 # the published models: (repository, revision). The 350M is the one the list's smallest item is the GGUF of
 MODELS = {"350M": ("LiquidAI/LFM2.5-350M", "9e6c6ccf47cd318696e137d381a7ded8fe4df09f"),
@@ -264,19 +265,11 @@ def real(directory, positions, name, with_faults):
         fetch(file, directory, repo, revision)
     tokenizer = tokenizers.Tokenizer.from_file(str(directory / "tokenizer.json"))
 
-    # the conversion, the way the page does it: the file in its own order, float32
-    data = np.memmap(directory / "model.safetensors", dtype=np.uint8, mode="r")
-    (length,) = np.frombuffer(bytes(data[:8]), dtype="<u8")
-    first = 8 + int(length)
-    sink = File(directory / "float32.bin")
+    # the conversion, the way the page does it (T374.4: by the conduct of a conversion, answered from the files fetched
+    # above and no others), float32
+    sink = Mapped(directory / "float32.bin")
     began = time.perf_counter()
-    conversion = Conversion(bytes(data[8:first]).decode(), first, (directory / "config.json").read_text(),
-                            (directory / "tokenizer.json").read_bytes(), "tokenizer.json", dtype="float32",
-                            tokenizer_config=(directory / "tokenizer_config.json").read_text(), sink=sink, start=first,
-                            chat_template=(directory / "chat_template.jinja").read_text())
-    for start in range(first, len(data), CHUNK):
-        conversion.feed(bytes(data[start:start + CHUNK]))
-    conversion.finish()
+    conversion = converted(Directory(directory), {"weights": "model.safetensors", "tokenizer": "tokenizer.json"}, dtype="float32", sink=sink)
     sink.data.flush()
     options = {key: value for key, value in conversion.options.items() if key != "template"}
     shown = {key: (value if key != "specials" else f"{len(value)} of them") for key, value in options.items()}

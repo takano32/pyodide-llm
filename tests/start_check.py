@@ -123,8 +123,7 @@ def main():
     args = parser.parse_args()
     directory = Path(args.directory)
     entry = next(entry for entry in format_check.entries() if entry["id"] == args.model)
-    folder, shards, tokenizers = format_check.fetch(entry, directory)
-    made = format_check.conversion(entry, folder, shards, tokenizers)
+    folder, made = format_check.converted(entry, directory)
     options = {**made.options, **entry.get("options", {})}
     accepted = set(inspect.signature(llama2_numpy.Tokenizer.__init__).parameters) - {"self", "data", "vocab_size", "kind"}
     tokenizer = llama2_numpy.Tokenizer(made.tokenizer, abs(made.stream.header[5]), kind=options["tokenizer_kind"],

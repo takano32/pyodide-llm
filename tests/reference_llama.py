@@ -46,8 +46,10 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "public"))
 sys.path.insert(0, str(HERE))
 import llama2_convert  # noqa: E402
-from llama2_convert import Conversion, joined_shards  # noqa: E402
+from llama2_convert import Conversion  # noqa: E402
 from llama2_numpy import Llama  # noqa: E402
+from conducting import Fetched, Mapped, converted  # noqa: E402
+from convert.conduct import candidates_of  # noqa: E402
 from fetching import download  # noqa: E402
 
 # more than 64 tokens, English and Japanese, with numbers after one space and after several (T254: where MiniCPM5's
@@ -59,7 +61,6 @@ TEXT = ("Mount Fuji is the highest mountain in Japan, standing 3,776 metres abov
 PROMPT = "What is the capital of Japan? Answer in one sentence."
 NEW_TOKENS = 16
 STEPPED = 32  # positions transformers also computes token by token with its cache, for the floor of the line
-CHUNK = 8 << 20
 # --weak: faults put into the engine's weights, to see what the check sees (weak_errors); the made-up Granites' take seconds,
 # the real model's about as long as its own forward pass, 96 positions, each
 WEAK = "--weak" in sys.argv
@@ -442,19 +443,6 @@ def fetch(repo, revision, name, folder, optional=False):
     return download(f"https://huggingface.co/{repo}/resolve/{revision}/{name}", folder / name, optional=optional)
 
 
-class File:
-    """The converter's sink: the float32 checkpoint into a memory-mapped file, never whole into memory."""
-
-    def __init__(self, path):
-        self.path = path
-
-    def open(self, size, header, dtype, form):
-        self.data = np.memmap(self.path, dtype=np.uint8, mode="w+", shape=(size,))
-
-    def write(self, offset, raw):
-        self.data[offset:offset + raw.size] = raw
-
-
 def real(entry, directory, positions, layers=0):
     """layers: only the first of the model's layers, the same on both sides (the model's own embedding, the norm and the
     classifier; every weight of those layers as it is): for a model whose float32 does not fit a runner (Granite 4.2 8B is
@@ -467,13 +455,13 @@ def real(entry, directory, positions, layers=0):
     id = entry["id"]
     original = entry["hf"].get("vocabulary") or entry["hf"]
     repo, revision = original["repo"], original["revision"]
-    named = original.get("tokenizer", "tokenizer.json")
-    named = named if isinstance(named, str) else named[0]
     folder = directory / repo.replace("/", "--") / revision
     say(f"{id}: {repo}@{revision}, transformers {transformers.__version__}, torch {torch.__version__}, numpy {np.__version__}")
-    for name in ("config.json", named):
-        fetch(repo, revision, name, folder)
-    for name in ("tokenizer.json", "tokenizer_config.json", "chat_template.jinja", "special_tokens_map.json", "generation_config.json"):
+    # what transformers reads: the configuration, the tokenizer's files (the entry's, or every candidate there is), the
+    # original's weights
+    fetch(repo, revision, "config.json", folder)
+    for name in dict.fromkeys([*candidates_of({"tokenizer": original.get("tokenizer")}), "tokenizer.json", "tokenizer_config.json",
+                               "chat_template.jinja", "special_tokens_map.json", "generation_config.json"]):
         fetch(repo, revision, name, folder, optional=True)
     names = ["model.safetensors"]
     if fetch(repo, revision, "model.safetensors", folder, optional=True) is None:
@@ -486,52 +474,27 @@ def real(entry, directory, positions, layers=0):
         config = json.dumps({**json.loads(config), "num_hidden_layers": layers})
         say(f"{id}: only the first {layers} of the layers, on both sides")
 
-    # the conversion, the way the page does it: the shards joined, each file in its own order, float32
-    shards = []
+    # the conversion, the way the page does it (T374.4: by the conduct of a conversion, answered from the files fetched
+    # here; what it asks for besides them is fetched as it asks), float32
     if GGUF:
         # the route the list's entries take (T136's second stage): the entry's own GGUF (Q8_0) as the weights, the original's
         # vocabulary and config.json. transformers still has the original's weights, so the two differ by what Q8_0 rounds
         # (about 0.5% of a weight): a line of a different kind, below
-        weights = entry["hf"]["weights"]
-        if not weights.endswith(".gguf"):
+        hf = entry["hf"]
+        if not hf["weights"].endswith(".gguf"):
             sys.exit(f"reference: {id} is not a GGUF entry")
-        gguf = fetch(entry["hf"]["repo"], entry["hf"]["revision"], weights, directory / "gguf" / entry["hf"]["revision"])
-        data = np.memmap(gguf, dtype=np.uint8, mode="r")
-        size = 1 << 20
-        while True:
-            try:
-                header, base = llama2_convert.gguf_weights(bytes(data[:size]), config)
-                break
-            except llama2_convert.Incomplete:
-                size *= 2
-        pieces = [(data, base, len(data))]
-        say(f"{id}: weights from {entry['hf']['repo']}'s {weights} ({len(data)} bytes), the vocabulary and config.json of the original")
+        places = {"weights": (hf["repo"], hf["revision"], directory / "gguf" / hf["revision"]), "vocabulary": (repo, revision, folder)}
+        say(f"{id}: weights from {hf['repo']}'s {hf['weights']}, the vocabulary and config.json of the original")
     else:
-        for name in names:
-            shard = np.memmap(folder / name, dtype=np.uint8, mode="r")
-            size = struct.unpack("<Q", bytes(shard[:8]))[0]
-            shards.append((shard, bytes(shard[8:8 + size]).decode(), 8 + size))
-        if len(shards) == 1:
-            header, base = shards[0][1], shards[0][2]
-            pieces = [(shards[0][0], base, len(shards[0][0]))]
-        else:
-            header, lengths = joined_shards([text for _, text, _ in shards])
-            base = 0
-            pieces = [(shard, begin, begin + length) for (shard, _, begin), length in zip(shards, lengths)]
-    read = lambda name: (folder / name).read_text() if (folder / name).exists() else None
-    tokenizer_config = read("tokenizer_config.json") or ""
-    has_template = bool(json.loads(tokenizer_config).get("chat_template")) if tokenizer_config else False
-    sink = File(directory / f"{id}.float32.bin")
+        # the original's safetensors: the one file, or the shards its index names, joined as the page joins them
+        hf = {"weights": "model.safetensors", "config": "config.json", "tokenizer": original.get("tokenizer")}
+        places = {"weights": (repo, revision, folder)}
+    where = "vocabulary" if hf.get("vocabulary") else "weights"
+    sink = Mapped(directory / f"{id}.float32.bin")
     began = time.perf_counter()
-    conversion = Conversion(header, base, config, (folder / named).read_bytes(), named, dtype="float32",
-                            tokenizer_config=tokenizer_config, chat_template=None if has_template else read("chat_template.jinja"),
-                            sink=sink, start=base)
-    for data, begin, end in pieces:
-        for start in range(begin, end, CHUNK):
-            conversion.feed(bytes(data[start:min(start + CHUNK, end)]))
-    conversion.finish()
+    conversion = converted(Fetched(places, instead={(where, "config.json"): config}), hf, dtype="float32", sink=sink)
     sink.data.flush()
-    del sink.data, shards, pieces
+    del sink.data
     options = {**conversion.options, **entry.get("options", {})}
     template = entry.get("template") or options.get("template")
     options.pop("template", None)

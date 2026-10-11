@@ -53,6 +53,7 @@ sys.path.insert(0, str(HERE))
 import llama2_convert  # noqa: E402
 from llama2_convert import Conversion  # noqa: E402
 from llama2_numpy import Llama  # noqa: E402
+from conducting import Directory, Mapped, converted  # noqa: E402
 from fetching import download  # noqa: E402
 
 REPO, REVISION = "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"
@@ -76,7 +77,6 @@ CHAT = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n
 PROMPT = "What is the capital of Japan? Answer in one sentence."
 SPECIALS = ["<|im_start|>", "<|im_end|>", "<think>", "</think>"]
 NEW_TOKENS = 16
-CHUNK = 8 << 20
 
 say = lambda *parts: print("qwen35:", *parts, flush=True)
 
@@ -85,19 +85,6 @@ def fetch(name, directory, repo=REPO, revision=REVISION):
     # (tests/fetching.py, T357: a download that stopped short is asked for again, which this copy of the loop did not see,
     # and a file the repository does not have is refused at once: this copy asked three times)
     return download(f"https://huggingface.co/{repo}/resolve/{revision}/{name}", directory / name)
-
-
-class File:
-    """The converter's sink: the float32 checkpoint into a memory-mapped file, never whole into memory (3 GB)."""
-
-    def __init__(self, path):
-        self.path = path
-
-    def open(self, size, header, dtype, form):
-        self.data = np.memmap(self.path, dtype=np.uint8, mode="w+", shape=(size,))
-
-    def write(self, offset, raw):
-        self.data[offset:offset + raw.size] = raw
 
 
 def differences(ours, theirs):
@@ -336,19 +323,11 @@ def real(directory, positions, repo=REPO, revision=REVISION):
         fetch(name, directory, repo, revision)
     tokenizer = tokenizers.Tokenizer.from_file(str(directory / "tokenizer.json"))
 
-    # the conversion, the way the page does it: the file in its own order, float32
-    weights = directory / WEIGHTS
-    data = np.memmap(weights, dtype=np.uint8, mode="r")
-    (length,) = np.frombuffer(bytes(data[:8]), dtype="<u8")
-    first = 8 + int(length)
-    sink = File(directory / "float32.bin")
+    # the conversion, the way the page does it (T374.4: by the conduct of a conversion, answered from the files fetched
+    # above and no others), float32
+    sink = Mapped(directory / "float32.bin")
     began = time.perf_counter()
-    conversion = Conversion(bytes(data[8:first]).decode(), first, (directory / "config.json").read_text(),
-                            (directory / "tokenizer.json").read_bytes(), "tokenizer.json", dtype="float32",
-                            tokenizer_config=(directory / "tokenizer_config.json").read_text(), sink=sink, start=first)
-    for start in range(first, len(data), CHUNK):
-        conversion.feed(bytes(data[start:start + CHUNK]))
-    conversion.finish()
+    conversion = converted(Directory(directory), {"weights": WEIGHTS, "tokenizer": "tokenizer.json"}, dtype="float32", sink=sink)
     sink.data.flush()
     options = {key: value for key, value in conversion.options.items() if key != "template"}
     shown = {key: (value if key != "specials" else f"{len(value)} of them") for key, value in options.items()}

@@ -2,8 +2,8 @@
 # What a change of the converter changes for the list (T143's rule, T369): for every Hugging Face entry, the options
 # and the tokenizer.bin the converter makes, and the ids the page sends for format_check.py's prompts, as the list has
 # the entry (its own options and format over the converter's) and as ?hf= has the repository (the converter's alone),
-# in two trees. Only config.json, the tokenizer files and the headers are fetched (format_check.py's fetch()); no
-# weights: the converter writes into a sink that does nothing.
+# in two trees. Only config.json, the tokenizer files and the heads of the weights are fetched (format_check.py's
+# converted()); no weights: the converter writes into a sink that does nothing.
 #
 #   python3 tests/conversions_compare.py <directory for the downloads> [--before <commit>] [model id ...]
 #   python3 tests/conversions_compare.py --dump <tree> <directory for the downloads> <out.json> [model id ...]
@@ -35,8 +35,10 @@ def dump(tree, directory, out, only):
         if only and entry["id"] not in only:
             continue
         try:
-            folder, shards, tokenizers = check.fetch(entry, Path(directory))
-            made = check.conversion(entry, folder, shards, tokenizers)
+            if hasattr(check, "converted"):
+                _, made = check.converted(entry, Path(directory))
+            else:  # (a tree of before T374.4: gone once no such tree is compared with)
+                made = check.conversion(entry, *check.fetch(entry, Path(directory)))
         except Exception as error:  # said, and compared as it is: a refusal that comes or goes is a difference too
             results[entry["id"]] = {"refused": f"{type(error).__name__}: {error}"}
             print(f"refused {entry['id']}: {error}", file=sys.stderr, flush=True)

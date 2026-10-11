@@ -52,7 +52,8 @@
 //   floor's largest, whichever is more; the KL likewise; a most likely token that differs only where the fork's own first
 //   two are no more than twice the row's largest difference apart. --lines none: the numbers alone.
 // convert: the page's conversion (Pyodide, NumPy with 32-bit integers, the kernels' quantizer) of the GGUF into a
-//   64-bit shared memory through a sink, as the worker's checkpointSink has it, fed 16 MiB at a time; the time, the
+//   64-bit shared memory through a sink, as the worker's checkpointSink has it, by the conduct of a conversion answered
+//   from the folder (T374.4, tests/conducting.mjs), the tensors fed 16 MiB at a time; the time (from the first of those on), the
 //   megabytes a second, Pyodide's heap at the end, and the sha256 of the checkpoint (page_27b.sh holds it to the
 //   native conversion's file).
 import crypto from "node:crypto";
@@ -61,6 +62,7 @@ import path from "node:path";
 import v8 from "node:v8";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { compileKernels, createForward, footprint, keysInHalf, needsWide, weightsMemory } from "../public/forward.js";
+import { converted, fromFolder, listed } from "./conducting.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
 const GiB = 2 ** 30, MiB = 2 ** 20;
@@ -627,24 +629,10 @@ async function convert(out, folder, context, pyodideWithEngine) {
   const convert = py.pyimport("llama2_convert"), numpy = py.pyimport("llama2_numpy");
   const quantizeRows = numpy.kernel_quantizer("simdkernel.so");
   const readers = convert.kernel_readers("simdkernel.so");  // the stored types on the kernels, as the page (T273: the two ternary ones)
-  const gguf = fs.readdirSync(folder).filter((name) => name.endsWith(".gguf")).sort()[0];
-  const tokenizer = ["tokenizer.json", "spiece.model", "tokenizer.model"].find((name) => fs.existsSync(`${folder}/${name}`));
-  const fd = fs.openSync(`${folder}/${gguf}`, "r"), size = fs.fstatSync(fd).size;
-  const range = (begin, end) => { const bytes = new Uint8Array(end - begin); fs.readSync(fd, bytes, 0, end - begin, begin); return bytes; };
-  const config = fs.readFileSync(`${folder}/config.json`, "utf8");
-  const tokenizerConfig = fs.existsSync(`${folder}/tokenizer_config.json`) ? fs.readFileSync(`${folder}/tokenizer_config.json`, "utf8") : "";
-  // the GGUF's header in growing pieces, as the worker fetches it (four times the 512 KiB of a safetensors file's head, then four times as much)
-  let header, first;
-  for (let bytes = 4 * 512 * 1024; ; bytes *= 4) {
-    try {
-      const made = convert.gguf_weights(range(0, Math.min(bytes, size)), config);
-      [header, first] = made.toJs();
-      made.destroy();
-      break;
-    } catch (error) {
-      if (error.type !== "Incomplete" || bytes >= size) throw error;
-    }
-  }
+  // T374.4: by the conduct of a conversion, answered from the folder (tests/conducting.mjs) as the worker answers it from
+  // huggingface.co: the GGUF's head in growing pieces, the original's config.json, its tokenizer (the conduct's
+  // candidates) and its template, then the tensors, 16 MiB at a time as the worker's later parts are
+  const { hf } = listed(folder), gguf = hf.weights, size = fs.statSync(`${folder}/${gguf}`).size;
   const into = {};
   const sink = {
     open(bytes, head, dtype, form) {
@@ -661,18 +649,18 @@ async function convert(out, folder, context, pyodideWithEngine) {
       view.release();
     },
   };
-  const conversion = convert.Conversion.callKwargs(header, first, config, new Uint8Array(fs.readFileSync(`${folder}/${tokenizer}`)), tokenizer,
-    { start: first, tokenizer_config: tokenizerConfig, dtype: "ternary", max_seq_len: context, sink, quantize_rows: quantizeRows, readers });
-  console.log(`pyodide: ${gguf} (${size} bytes) to ${into.bytes} bytes of ternary checkpoint, header ${JSON.stringify(into.ints)}, on a ${into.wide ? "64" : "32"}-bit shared memory ` +
-    `(footprint() counts ${(into.after / GiB).toFixed(3)} GiB after it); Pyodide's heap is ${(py._module.HEAPU8.length / MiB).toFixed(0)} MiB before the weights`);
-  const began = performance.now();
-  let reading = 0;
-  for (let at = first; at < size; at += 16 * MiB) {
-    const t = performance.now(), chunk = range(at, Math.min(at + 16 * MiB, size));
-    reading += performance.now() - t;
-    conversion.feed(chunk);
-  }
-  conversion.finish();
+  let began, reading = 0;
+  const answerer = fromFolder(folder, {
+    part: 16 * MiB,
+    // (the conversion is made by now and its sink opened; what came with the GGUF's head, at most 32 MiB of it, is converted already)
+    starting() {
+      console.log(`pyodide: ${gguf} (${size} bytes) to ${into.bytes} bytes of ternary checkpoint, header ${JSON.stringify(into.ints)}, on a ${into.wide ? "64" : "32"}-bit shared memory ` +
+        `(footprint() counts ${(into.after / GiB).toFixed(3)} GiB after it); Pyodide's heap is ${(py._module.HEAPU8.length / MiB).toFixed(0)} MiB before the weights`);
+      began = performance.now();
+    },
+    reading(ms) { reading += ms; },
+  });
+  const conversion = converted(py, hf, { dtype: "ternary", max_seq_len: context, sink, quantize_rows: quantizeRows, readers }, answerer);
   const seconds = (performance.now() - began) / 1000;
   console.log(`pyodide: converted in ${seconds.toFixed(0)} s (${(size / 1e6 / seconds).toFixed(1)} MB/s of the file, ${(reading / 1000).toFixed(0)} s of them reading it), ` +
     `Pyodide's heap is ${(py._module.HEAPU8.length / MiB).toFixed(0)} MiB at the end`);

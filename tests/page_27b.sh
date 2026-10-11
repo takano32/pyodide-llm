@@ -17,8 +17,9 @@
 # of a GGUF or the list's entry change in a way that could move what this model computes.
 #
 # STAGES (the default: "reference convert page breaks", an hour and a half on 4 logical cores):
-#   dry        a made-up model of the 27B's kind through compare, speed and memory (a minute, no download): the tool
-#              itself, before an hour is spent on the real model
+#   dry        a made-up model of the 27B's kind through compare, speed and memory, and (T374.4) a small ternary GGUF of
+#              each type through both conversions (a minute, no download): the tool itself, before an hour is spent on
+#              the real model
 #   reference  tests/reference_27b.sh: the fork, the fork with float32 activations and the engine's NumPy forward pass
 #              over the GGUF, which leaves the ids, the float32 fork's logits and (SAVE_LOGITS) the logits, keys and
 #              values of the run that rounds its activations as the ternary kernels do. REFERENCE_STAGES and TEXTS are
@@ -83,6 +84,23 @@ if has dry; then
   node tests/page-27b.mjs "$dry/page" long "$dry" --entry none --wide --threads 2 --context 2048 --lines "${DRY_LONG_LINES:-3,1,2}" --broken embedding,sign-128-all
   node tests/page-27b.mjs "$dry/page" speed --entry none --wide
   node tests/page-27b.mjs "$dry/page" memory --entry none --wide
+  # T374.4: the two conversions (by the conduct of a conversion: tests/conducting.py and tests/conducting.mjs), which only
+  # the stages on the real model reached: a small ternary GGUF of each type with its original's files, natively and in
+  # Pyodide, to the same checkpoint, tokenizer.bin and options, as the stages convert, pq2 and pyodide hold the 27B's
+  python tests/page_27b.py convert "$dry/gguf-PTQ1_0" "$dry/native" --context 512
+  python tests/page_27b.py convert "$dry/gguf-PQ2_0" "$dry/from-pq2" --context 512
+  cmp "$dry/from-pq2.bin" "$dry/native.bin" && cmp "$dry/from-pq2.tokenizer.bin" "$dry/native.tokenizer.bin" && cmp "$dry/from-pq2.json" "$dry/native.json"
+  for kind in PTQ1_0 PQ2_0; do
+    node tests/page-27b.mjs "$dry/pyodide" convert "$dry/gguf-$kind" --context 512 | tee "$dry/pyodide.log"
+    [ "$(sed -n 's/^pyodide: sha256 of the checkpoint //p' "$dry/pyodide.log")" = "$(sha256sum "$dry/native.bin" | cut -d' ' -f1)" ] \
+      || { echo "page: dry: the conversion of the $kind file in Pyodide is not the native one's checkpoint — FAILED"; exit 1; }
+    [ "$(sed -n 's/^pyodide: sha256 of tokenizer.bin //p' "$dry/pyodide.log")" = "$(sha256sum "$dry/native.tokenizer.bin" | cut -d' ' -f1)" ] \
+      || { echo "page: dry: tokenizer.bin of the $kind file in Pyodide differs — FAILED"; exit 1; }
+  done
+  # a conversion broken on purpose must make another checkpoint (the order of a PTQ1_0 block's values)
+  python tests/page_27b.py convert "$dry/gguf-PTQ1_0" "$dry/broken" --context 512 --broken order
+  cmp -s "$dry/broken.bin" "$dry/native.bin" && { echo "page: dry: the conversion broken on purpose made the right checkpoint — FAILED"; exit 1; }
+  echo "page: dry: the two ternary files convert to one checkpoint natively and in Pyodide ($(stat -c %s "$dry/native.bin") bytes), and the broken conversion to another"
   rm -rf "$dry"
   [ "$stages" = dry ] && exit 0
 fi

@@ -68,6 +68,9 @@ page_modules() {
   # T374.2.1: the worker's loop that answers a conversion's conduct, alone (a stand-in generator, no Pyodide): every kind
   # of request, a file that is not there, failures and cancelled loads, every proxy let go, and T403's file handle
   node tests/worker-conduct-check.mjs
+  # T374.4: what the Node tools that convert a model answer the same conduct with (tests/conducting.mjs), alone: a
+  # stand-in generator, a folder under .tmp/, no Pyodide (under a second)
+  node tests/conducting-check.mjs
   # T350: the names the worker and its modules (public/worker/) use: declared, imported, or the worker's globals (the two
   # checks above run them as scripts of one context, where a missing import does not show)
   node tests/worker-modules-check.mjs

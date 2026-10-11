@@ -1,5 +1,5 @@
 # perplexity_prepare.py
-# A Hugging Face model converted the way the page converts it (llama2_convert.Conversion, fed the file in order),
+# A Hugging Face model converted the way the page converts it (the conduct of a conversion, fed the file in order),
 # for tests/perplexity.mjs and tests/perplexity_native.py (T85): <out>.bin, <out>.tokenizer.bin and <out>.json,
 # the options the page would give Llama(). convert_hf.py does not say those options; the page's path does.
 #
@@ -7,23 +7,22 @@
 #
 # --entry <id> (the review of T247): the options of that entry of src/models.js under the converter's, as the worker merges them
 # ({...engineOptions, ...model.options}), as tests/write_options.py makes them. Without it the options are the converter's alone,
-# which is what ?hf= opens: for a Qwen3.5 a BOS of <|endoftext|>, where the list's entries begin with <|im_start|> (T236) and
-# a text 18% to 45% likelier to read (2B, 4B) with it. A measurement of a model of the list is of the page's way with --entry.
+# which is what ?hf= opens: of the files the folder has (T374.4: tokenizer_config.json and chat_template.jinja are read where
+# they are there, as the page asks for them, so the BOS and the stops are those the converter takes from the model's template,
+# T369; without them, or without jinja2, a Qwen3.5 has a BOS of <|endoftext|>, where the list's entries begin with <|im_start|>,
+# T236, and a text 18% to 45% likelier to read with it, 2B and 4B). A measurement of a model of the list is of the page's way
+# with --entry.
 #
 # A directory with config.json, the tokenizer and a .gguf (tests/hf_fetch.py makes it for T136's second stage): the
-# GGUF's weights with the original's vocabulary and configuration, as the page reads them (llama2_convert.gguf_weights).
+# GGUF's weights with the original's vocabulary and configuration, as the page reads them. What a path stands for is
+# tests/conducting.py's listed().
 import json
-import struct
 import subprocess
 import sys
 from pathlib import Path
 
-import numpy as np
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "public"))
-from llama2_convert import Conversion, Incomplete, gguf_weights, joined_shards  # noqa: E402
-
-CHUNK = 8 << 20
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from conducting import Mapped, converted, listed  # noqa: E402
 
 arguments = sys.argv[1:]
 entry_id = None
@@ -45,71 +44,13 @@ def entry_options(entry_id):
     return options
 
 
-class File:
-    """The converter's sink (llama2_convert.Writer): the checkpoint goes straight into <out>.bin, a memory map, never
-    whole into memory (a float32 Qwen3 0.6B is 2.4 GB, T124)."""
-
-    def open(self, size, header, dtype, form):
-        self.data = np.memmap(f"{out}.bin", dtype=np.uint8, mode="w+", shape=(size,))
-
-    def write(self, offset, raw):
-        self.data[offset:offset + raw.size] = raw
-
-
-sink = File()
-pieces = None  # the files to feed and where, where there is more than one (T192)
-if directory.suffix == ".gguf":
-    # T74: one file holds the weights, the configuration and the vocabulary; its header is read first, as the page does
-    data = np.memmap(directory, dtype=np.uint8, mode="r")
-    size = 1 << 20
-    while True:
-        try:
-            conversion = Conversion.from_gguf(bytes(data[:size]), dtype=dtype, sink=sink)
-            break
-        except Incomplete:
-            size *= 2
-    first = conversion.base
-else:
-    tokenizer = next(p for p in (directory / n for n in ("tokenizer.json", "spiece.model", "tokenizer.model")) if p.exists())
-    config = (directory / "config.json").read_text()
-    weights = sorted(directory.glob("*.gguf"))
-    if weights:
-        # T136's second stage: the header of the GGUF as a safetensors one, once config.json agrees with it
-        data = np.memmap(weights[0], dtype=np.uint8, mode="r")
-        size = 1 << 20
-        while True:
-            try:
-                header, base = gguf_weights(bytes(data[:size]), config)
-                break
-            except Incomplete:
-                size *= 2
-        conversion = Conversion(header, base, config, tokenizer.read_bytes(), tokenizer.name, dtype=dtype, start=base,
-                                sink=sink)
-        first = base
-    else:
-        # one model.safetensors, or (T192) the shards its index names (tests/hf_fetch.py fetches them), joined as the
-        # page's worker joins them (T105): one header over their data one after another, each shard fed from its base
-        index = directory / "model.safetensors.index.json"
-        names = (sorted(set(json.loads(index.read_text())["weight_map"].values()))
-                 if not (directory / "model.safetensors").exists() and index.exists() else ["model.safetensors"])
-        shards = []
-        for name in names:
-            shard = np.memmap(directory / name, dtype=np.uint8, mode="r")
-            size = struct.unpack("<Q", bytes(shard[:8]))[0]
-            shards.append((shard, bytes(shard[8:8 + size]).decode(), 8 + size))
-        if len(shards) == 1:
-            header, base = shards[0][1], shards[0][2]
-            pieces = [(shards[0][0], base, len(shards[0][0]))]
-        else:
-            header, lengths = joined_shards([text for _, text, _ in shards])
-            base = 0
-            pieces = [(shard, begin, begin + length) for (shard, _, begin), length in zip(shards, lengths)]
-        conversion = Conversion(header, base, config, tokenizer.read_bytes(), tokenizer.name, dtype=dtype, start=base,
-                                sink=sink)
-for data, begin, end in pieces or [(data, first, len(data))]:
-    for start in range(begin, end, CHUNK):
-        conversion.feed(bytes(data[start:min(start + CHUNK, end)]))
-conversion.finish()
+# T374.4: by the conduct of a conversion (public/convert/conduct.py), answered from the folder as the page's worker
+# answers it from huggingface.co: which files are read, the tokenizer (the conduct's candidates, the first the converter
+# reads) and the template (tokenizer_config.json, or chat_template.jinja where that has none) are the page's, of whatever
+# of them the folder has. The checkpoint goes straight into <out>.bin
+hf, answerer = listed(directory)
+sink = Mapped(f"{out}.bin")
+conversion = converted(answerer, hf, dtype=dtype, sink=sink)
 sink.data.flush()
 Path(f"{out}.tokenizer.bin").write_bytes(conversion.tokenizer)
 options = {key: value for key, value in conversion.options.items() if key != "template"}
