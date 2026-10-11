@@ -24,7 +24,8 @@ HERE = Path(__file__).resolve().parent
 from tree import python_folder
 sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
-from llama2_numpy import Llama  # noqa: E402
+from llama2_numpy import Llama, rope_frequencies, rope_magnitude  # noqa: E402
+from engine.tensors import rope_tables  # noqa: E402
 from conducting import Fetched, Mapped, converted as conducted  # noqa: E402
 
 FIXTURES = HERE / "fixtures" / "fixed-outputs.json"
@@ -38,7 +39,10 @@ NEW_TOKENS = 16
 # the size of the heads read from config.json and the tensors' names), gets a fixed output of its own too (T212): the
 # same entry with the weights of the original repository its vocabulary comes from, named as the page's hfEntry()
 # names them (no tokenizer: the conduct's candidates, as for any repository nobody looked at). T235: Ternary-Bonsai 1.7B, the one model of PQ2_0 blocks and of yarn's RoPE (its angles and the longer
-# cos and sin), and the one whose template comes from chat_template.jinja. Its float32 checkpoint is 6.9 GB.
+# cos and sin), and the one whose template comes from chat_template.jinja. Its float32 checkpoint is 6.9 GB. Since the
+# owner's choice of 2026-10-11 its entry says a plain RoPE, which this tool gives the float32 engine as the page's
+# engine has it (with_the_entrys_rope(), below): the conversion's yarn is still read and checked on the way (the GGUF's
+# against config.json's), and the text is the plain RoPE's.
 # T229 and T236: a Qwen3.5 (hybrid attention: Gated DeltaNet layers between full-attention ones), the 0.8B, the same
 # two ways: from the list's GGUF (llama.cpp's names for the linear-attention layers, the norms that come with their 1,
 # -exp(A_log), the two small matrices of the gates as Q8_0 rounds them) and from the safetensors of the original (the
@@ -92,6 +96,21 @@ def converted(entry, directory):
     return conversion, sink.path
 
 
+def with_the_entrys_rope(llama, options):
+    """The engine with the RoPE tables its options say, where an entry says the scaling itself (T235: rope_scaling: {}
+    of the list's Ternary Bonsai). The page's engine makes its tables from the options, for its files have none (int8,
+    6-bit, ternary), and so follows the entry; a float32 checkpoint, which this tool writes, has the tables in the file,
+    made by the converter from config.json, and the engine reads them and never looks at the options. Left so, the
+    fixed output would be the text of a RoPE the page does not turn by. The tables are made as the engine makes them
+    for a file without (rope_tables()); the conversion itself is untouched."""
+    scaling = options["rope_scaling"]
+    llama.rope_magnitude = rope_magnitude(scaling)
+    llama.freq_cis_real, llama.freq_cis_imag = rope_tables(
+        llama.arch, llama.seq_len, llama.head_size, llama.rotary, llama.rope_magnitude, "the options'",
+        lambda width: rope_frequencies(width, options.get("rope_theta", 10000.0), scaling))
+    return llama
+
+
 def written(entry, conversion, checkpoint):
     """What the page would write with this model at temperature 0: the prompt in the model's template, the
     options of the conversion with those of src/models.js on top (as the worker merges them)."""
@@ -101,6 +120,8 @@ def written(entry, conversion, checkpoint):
     # filled() of src/models.js: {prompt:trim} trims (T138); the prompts here have no spaces to trim
     prompt = template.replace("{prompt:trim}", "{prompt}").replace("{prompt}", entry["prompt"]) if template else entry["prompt"]
     llama = Llama(np.memmap(checkpoint, dtype=np.uint8, mode="r"), conversion.tokenizer, kernels=None, **options)
+    if "rope_scaling" in entry.get("options", {}):
+        with_the_entrys_rope(llama, options)
     steps = len(llama.tokenizer.encode(prompt, llama.specials)) + NEW_TOKENS
     return "".join(llama.generate(prompt, steps=steps, temperature=0.0, echo=False))
 

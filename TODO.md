@@ -89,7 +89,7 @@
 - **Bonsai（優先、持ち主 2026-10-02）**
   - 実装: T273（変換をカーネルで: 27B の変換 216 秒）、T274（サンプラに top-k・min-p・presence penalty）、T275（Safari の 3 値のカーネル）、T270（ベンチに 3 値の行）、T271（27B を GPU に、大）、T288（3 値のカーネルのほかの形）、T285（27B のメモリの小さな詰め）、T286（1-bit Bonsai）、T283（BitNet b1.58）
   - 調べ・確かめ: T279（1.7B をスマホで）、T287（前の版の 27B）、T290（Safari で 4B・8B）、T280（27B の保存が断られる端末）
-  - 持ち主の判断で済むもの: T276（素の RoPE に。勧め: 替える）、T277（Prism ML の表示）、T281（27B の文脈の長さ）、T289（メモリの文面）、T282（イントロに置くか、候補）
+  - 持ち主の判断で済むもの: T276（素の RoPE に: 2026-10-11 に持ち主が決め、ブランチ `t235-plain-rope-2` でレビュー前）、T277（Prism ML の表示）、T281（27B の文脈の長さ）、T289（メモリの文面）、T282（イントロに置くか、候補）
   - 文書: T234（結果を docs と gist に）
   - 候補: T284（27B の画像の入力、大）
 - **MLX（Clef-Flash: 状態と問いから選択肢の確率を出すモデル。調べだけ済み、2026-10-02）**: T316（全体と決めること）、T317（MLX の 4 ビットの読み手）、T318（全位置の隠れ状態）、T319（頭）、T320（入力の組み立て）、T321（頭の重みの取得と保存）、T322（ページ）、T323（原本との比べ）、T324（画像と動画、保留）、T325（WebGPU で: linear の層を GPU に・GPU だけ・4 ビットのまま・隠れ状態の読み戻し。T271 と重なる）。順は T316 の項。
@@ -3425,7 +3425,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **ほかの 3 つの大きさには引きが無い**（Q8_0 の値、1500 トークン、英語 / 日本語、run 36970949109・36970949463・36970949458。230M は原本の safetensors を int8 にしたもの）: perplexity は 230M 27.12 / 28.59、700M 18.62 / 18.28、1.2B Instruct 14.69 / 17.70（350M は 73.09 / 34.66、1.2B JP は 18.23 / 16.79）。8 ビットの全入力は 230M −0.44 / +0.04%、700M −0.02 / −0.01%、1.2B Instruct +0.18 / +0.31%、7 ビットは −0.50 / +0.28%、+0.29 / +0.25%、−0.20 / +0.36%。位置 0 だけの効きはどれも 0.5% 以下。**引きがあるのは 350M と 1.2B JP だけ**（同じ LFM2.5 でもチェックポイントごとの性質）。350M の英語の perplexity 73 は 230M の 27 より高い。**見立て（未確認）**: 後訓練で平文から外れた模型なので、定数のずれが perplexity に 1 次で効く（KL の約 10 倍）。
 - **勧め（持ち主の判断）: 一覧にこのまま置く。** (1) ページの道（7 ビット）は原本から +2.7〜3.9% で T98 の線の中、(2) Safari の道の 350M の英語 +8.6% は BOS の定数の引きで、丸めなければ +4.1%（線の中）、(3) 答えは壊れない（最尤 99% 一致）、(4) 1.2B JP のページの道の +3.9% も BOS の引きで、丸めなければ約 0。**覆す条件**: 持ち主の端末で 350M の答えが崩れて見えたとき（そのときは T314 を先に）。**直す案は T314**（BOS を丸めない。規模 中。効くのは平文の perplexity の数字で、チャットの答えには見えないので急がない）。
 
-### T276 [性能][Bonsai] Ternary Bonsai の 1.7B・4B・8B を素の RoPE に — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断。規模 小）
+### T276 [性能][Bonsai] Ternary Bonsai の 1.7B・4B・8B を素の RoPE に — 状態: **レビュー前**（2026-10-11、持ち主「オススメで」。T235 の番号で実装した: ブランチ `t235-plain-rope-2`、記録は T235 の「素の RoPE にした結果」。本線にはまだ入れていない）
 - レビュー 2 本（T235・T246）の勧めは素の RoPE: 3 つの大きさとも perplexity が 2〜4% 低い（20 の測り全部）。config・GGUF・transformers・fork は yarn。ブランチ `t235-plain-rope` は 3 値にする前のものなので、`ternaryBonsai()` に合わせ直す。覆す条件: Prism ML が yarn で学習したと分かる、文脈を 8192 より上げる。
 
 ### T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
@@ -4597,7 +4597,45 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 ```
 - 規模 中〜大。窓つきの attention は CPU と GPU の両方。原本はゲート付きで、unsloth の写しから。Gemma 2 と Gemma 4 はこの部品の上に。
 
-### T235 [追加][Bonsai] Ternary-Bonsai-1.7B を一覧に（PQ2_0 を int8 に広げる読みと yarn の RoPE） — 状態: **完了**（2026-10-01 に本線に入れた 8d65233、レビュー済み Sonnet max。持ち主の判断待ちが 4 つ: 下のレビューの項。**そのうち RoPE は決まった（2026-10-11、持ち主「オススメで」）: ページの文脈 4096 では素の RoPE にする（項目の options に `rope_scaling: {}`。効くのは 3 値・int8・float16 で、float32 は表をファイルに持つ）。実装はまだ: T378.1 が本線に入った次に、今の木で入れる（古いブランチ `t235-plain-rope` は分割の前の木）。入れる前に 3 つの大きさで perplexity と書く文を前後で見る**）
+### T235 [追加][Bonsai] Ternary-Bonsai-1.7B を一覧に（PQ2_0 を int8 に広げる読みと yarn の RoPE） — 状態: **完了**（2026-10-01 に本線に入れた 8d65233、レビュー済み Sonnet max。持ち主の判断待ちが 4 つ: 下のレビューの項。**そのうち RoPE は決まった（2026-10-11、持ち主「オススメで」）: ページの文脈 4096 では素の RoPE にする（項目の options に `rope_scaling: {}`。効くのは 3 値・int8・float16 で、float32 は表をファイルに持つ）。実装した（2026-10-11、ブランチ `t235-plain-rope-2`、レビュー前。3 つの大きさの perplexity と書く文の前後は下の「素の RoPE にした結果」）。古いブランチ `t235-plain-rope` は分割の前の木で、使っていない**）
+- **素の RoPE にする回（2026-10-11、ブランチ `t235-plain-rope-2`、T276 と同じ仕事）— 予定の違い（実装の前に書いた）**:
+  - **変えるもの**: 一覧の 3 項目（`hf-ternary-bonsai-1.7b`・`-4b`・`-8b`）の options に `rope_scaling: {}` を足す（`ternaryBonsai()` の 1 か所）。ほかの項目の options は 1 つも変わらない（Ternary Bonsai 2 27B の 2 項目も: 回した基底の別のモデルで、この決定に入っていない）。
+  - **訪問者に見えること**: (1) その 3 つのモデルの答えが変わる（RoPE の表が変わるので、同じ種でも別の文になる）。(2) 文脈 4096 の内の perplexity が前の測りで 2〜7% 下がる（1.7B の日本語 +3.6〜+7.4%、3 つの大きさのチャットで +2〜4%: yarn ÷ 素 − 1）。この回でページのエンジンの前後を測り直す。(3) 4096 を越える文脈はページから届かないので、yarn が要る長さの動きは変わらない（届かないまま）。
+  - **変わらないもの**: 変換の出力（チェックポイント・tokenizer.bin・変換器の options）は 1 バイトも変わらない。`CONVERTER` は上げない: 前に保存した変換はそのまま使われ（取り直しなし）、保存の manifest の yarn の上に項目の `{}` が勝つ（worker は `{ ...保存の options, ...項目の options }`）。送る ID（BOS・書式・止まり）は同じ。WGSL と端末の鍵は変わらず、覚えた GPU の形もそのまま（表は Python が作って forward.js と GPU に渡すだけ）。`?hf=prism-ml/Ternary-Bonsai-…-unpacked` で開いたものは変換器の yarn のまま（変えるのは項目だけ）。
+  - **守りの網で「違う」と出る予定のもの**: `models` の 3 項目の options だけ。ほかが出たら誤り。
+  - **道具**: float32 で書く `tests/fixed_outputs.py` は表をファイルに持つ（変換器が config の yarn から作る）ので、options だけでは 1.7B の固定値が yarn のまま通る。道具を項目の RoPE に合わせ、固定値の文を素の RoPE のものに書き直す（文は CI で出して読む）。transformers・fork・`gguf.yml` との比べは yarn のモデル（原本）の確かめで、ページの項目が使う表とは別になる。
+- **素の RoPE にした結果（2026-10-11、ブランチ `t235-plain-rope-2`、状態: レビュー前。本線にはまだ入れていない）**:
+  - **形**: `src/models/formats.js` に `PLAIN_ROPE = { rope_scaling: {} }`、`src/models/builders.js` の `ternaryBonsai()` が大きさごとの options の後にそれを足す（8B は BOS が別なので、`start` の options を取り出してから足す形にした）。製品のコードの変更はこの 2 ファイルだけ（エンジン・変換器・worker・forward.js・シェーダ・`kept.js` は 1 字も触っていない）。項目が勝つ仕組みは前からある worker の `{ ...変換の options, ...項目の options }`（変換したばかりの道と、保存した変換を読む道の 2 か所）。
+  - **`{}` がどこでどう読まれるか**: (1) エンジン（`engine/model.py`）: worker から届く JavaScript のオブジェクトを `to_py()` で空の辞書にし、`rope_frequencies()` は「偽なら `rope_theta` だけの角」、`rope_magnitude()` は「偽なら 1」。(2) 変換器と `check_config()`: 項目の options を読まない（config.json の yarn を読み、変換の options に yarn を書く。前と同じ）。(3) forward.js と GPU: RoPE の設定を読まない。Python の作った表を計画の `derived` で受け取るだけ。(4) `kept.js`: manifest には変換の options（yarn）がそのまま残る。(5) 道具（`write_options.py`・`perplexity_prepare.py --entry`・`format_check.py`・`fixed_outputs.py`）: worker と同じ順で重ねる。`null` にしなかった訳: Pyodide では `jsnull` で None でない。
+  - **予定の違いと実際**: 予定どおり。守りの網（`node tests/unchanged.mjs --before main`、main は 59c45de）: `models` が「違う」（`MODELS` の 3 項目の options に `rope_scaling: {}` が足されただけ。126 項目の JSON を前後で比べて、ほかの項目もほかの鍵も同じ）、`python` が「違う」（足した pytest 19 件が「新しい」: 2274 → 2293 passed。消えた・違うものは無い）。ほか（`shaders`・鍵 192・`calls`・`choices`・`exports`・`layouts`・`page`・`bench`・`gpuworker`）は全部「同じ」。**予定に無い違いは無い**。英語の Wikipedia の差（+0.5〜+2.7%）は予定に書いた「2〜7%」の下の端より小さい（前の測りでも英語の Wikipedia は +0.2〜+1.7% だった）。
+  - **実測（CI、ページの forward = forward.js と 3 値のカーネル、1 本、`tests/rope_compare.sh`。Wikipedia の最初の 1500 トークン（日本語は富士山、英語は Mount Fuji の頭）、文脈 512 ごとに項目の BOS から。1 回の変換の上で options の `rope_scaling` だけを替えた）**:
+
+    | | 日本語: yarn → 素（yarn ÷ 素 − 1） | 英語: yarn → 素 | CPU | run |
+    |---|---:|---:|---|---|
+    | 1.7B | 46.541 → 44.091（+5.56%） | 22.204 → 22.084（+0.54%） | EPYC 9V45 | 38144288873 |
+    | 4B | 35.676 → 34.049（+4.78%） | 16.980 → 16.826（+0.92%） | EPYC 7763 | 38144291058 |
+    | 8B | 26.387 → 24.996（+5.56%） | 14.577 → 14.192（+2.71%） | EPYC 7763 | 38144292317 |
+
+    6 つの測りの全部で素が低い。速さは RoPE に依らない（1 行の秒が同じ: 1.7B 56〜57 秒、4B 366 秒、8B 671〜673 秒）。
+  - **書く文（同じ run。項目のプロンプト「これからの流行りを3つ挙げてください。」、48 トークン。上が yarn、下が素）**:
+    - 1.7B greedy: 「以下は、このテキストから流行りとしての3つの例です：\n\n1. **「コロナウイルス」** - このテキストは、2020年から2021年まで」→「以下は、このテキストから流行りの3つです：\n\n1. **「コロナウイルス感染症」** - このトピックは、2020年から2021年初」
+    - 1.7B 種 1（温度 0.5・top-p 0.85）: 「以下は、このテキストから流行りの3つです：\n\n1. **AIアシスタントの利用**  \n   さまざまな分野でAIアシスタントの利用が激化しており、ビジネス、教育」→「以下は、現在の流行りの3つです：\n\n1. **AIアシスタントの導入** - ライティング、プログラミング、問題解決などのさまざまなタスクで、AIアシスタントが」
+    - 1.7B 種 2: 「以下は、この段落から流行りの3つです：\n\n1. **AIアシスタントの普及** - AIアシスタントが、ビジネス、教育、個人生活などのさまざまな分野で役立つことが」→「以下は、この段落から流行りとしての3つの例です：\n\n1. **「サッカーのサッカー」**  \n   この表現は、サッカーを「サッカー」にすることを意味」
+    - 4B greedy: 「1. **AIアシスタント**  \n2. **SNS（SNS）**  \n3. **Web3**」（28 トークンで止まる）→「1. **AIアシスタント**  \n2. **SNS（SNS）**  \n3. **AIアシスタント**  \n\n（注：上記のリストは、AIアシスタントの3つ」
+    - 4B 種 1: 「1. **AIアシスタント**  \n2. **ゲーム**  \n3. **SNS**」→「1. **AIアシスタントの普及**  \nAIアシスタントは、ユーザーの質問に即座に答えたり、タスクを自動化したりする能力を持つソフトウェアです。この技術は、」
+    - 4B 種 2: 「1. **AIアシスタント**（例：ChatGPT、Bonsai、Claudeなど）  \n2. **SNS（ソーシャルネットワーキングサービス）**（例：X、」→「1. **AIアシスタント** – 人間と対話するためのAIアシスタント、より迅速かつ正確な情報提供に役立つ。\n\n2. **ビデオコンテンツ** –」
+    - 8B greedy: 「もちろんです！以下は、現在のトレンドや将来の可能性として注目されている3つの流行りを挙げます：\n\n1. **AIアシスタントの普及**  \n   AIチャットボットやス」→「（同じ頭）1. **AIと機械学習の普及**  \n   AIはさまざまな業界で」
+    - 8B 種 1: 「もちろんです！以下は、今後も流行りが続くであろう3つのトレンドです：\n\n1. **AI技術の普及と利用**  \n   AIは、より多くの分野で広く利用され始めています。」→「（同じ頭）1. **AIによるコンテンツ生成**  \nAIが文章、画像、音声、コードを生成する技術は、ビジネス、教育」
+    - 8B 種 2: 「もちろんです！以下は、現在のトレンドや将来の可能性として注目されている3つの流行りです：\n\n1. **AIアシスタントの利用**  \n   AIが日常的なタスクや情報収集」→「…3つの流行りを挙げます：\n\n1. **AIアシスタントの普及**  \n   AIアシスタント（例」
+    - **読み**: どちらの RoPE でも同じ種類の日本語で、文は途中から分かれる。良し悪しは 9 つの文からは言えない（4B の greedy は素のほうが 3 つ目に 1 つ目をくり返した。1.7B の種 2 は素のほうが意味の無い項目を書いた。逆の向きの例は 1.7B の種 1）。決め手は perplexity の表。
+  - **固定値**: `hf-ternary-bonsai-1.7b` の文を「以下は、このテキストから流行りの3つです：\n\n1」に書き直した（float32 のエンジンに項目の表を入れた `fixed_outputs.py` が run 38144288873 で書いた文。T235 のレビューで transformers の float32 が素の RoPE で書いた文と同じ）。書き直した後の確かめは run 38144959697 で「ok」。固定値のほかの 15 個は項目が RoPE を名指さないので、道具の動きは前と同じ。
+  - **試験**: pytest 19 件（`tests/test_gguf.py`: RoPE を名指す項目は 3 つだけ・27B の options の鍵、3 つの大きさの形 × 4 dtype（3 値・int8・6 ビット・float16）で「変換の options（JSON の往復 = manifest）の上に項目のものを重ねたエンジンの表が、素の RoPE の式とビット単位で同じ・縮めなしのモデルと同じ・yarn と違う・倍率 1・logits が縮めなしと同じで yarn と違う」、固定値の道具の差し替え。`tests/test_plan.py`: forward.js に渡る計画の表が素のもの）、`tests/models-check.mjs`（3 項目の options・ほかに名指す項目が無い・27B は `qwen35` そのもの）、`tests/worker-conduct-check.mjs`（worker の 2 つの道: 変換したばかりと保存した変換で項目が勝つ・manifest は yarn のまま・項目の無いモデルは yarn）、`tests/smoke.mjs`（本物の Pyodide に JavaScript の `{}` を `callKwargs` で渡して素の表）。
+  - **わざと壊したもの（11 通り、どれも落ちた）**: 保存した変換が項目に勝つ・変換したばかりの options が項目に勝つ（`worker-conduct-check`）、エンジンの表に yarn の倍率が残る・空の縮めを yarn の倍率と読む（`test_the_lists_ternary_bonsai_turn_by_a_plain_rope`）、27B も素にする（`models-check` と `test_only_the_three…`）、計画の表に倍率が残る（`test_the_tables_python_computes_are_the_plans_bytes`）、計画の表を options に依らず素で作る（`test_the_plan_of_a_model_whose_options_say_no_scaling…` の yarn の側）、8B の自分の options が RoPE を落とす・項目から RoPE を外す・`{}` を `null` にする（`models-check` と pytest）、エンジンの `to_py()` を外す（smoke: `AttributeError: get`）。**試験が見ない所**: `fixed_outputs.py` が差し替えを呼ぶ 1 行（道具の中。CI の固定値の run が見る）、本物のブラウザ（下）。
+  - **手元**: pytest 2299 passed・6 skipped、smoke、`bash tests/suite.sh light`（209 秒）、`npm run build && node tests/dist-check.mjs`、`tests/format_check.py` の 5 項目（Bonsai の 3 つと 27B の 2 つ）が 9/9（送る ID は変わらない）。`tests/conversions_compare.py` は回していない（変換器の出すものに触っていない。項目の options の鍵が 1 つ増えるだけで、`bos`・書式・`specials` は同じ）。
+  - **CI を回した。訳: GB 級のモデルの perplexity と書く文、float32 の固定値（チェックポイント 6.9 GB）は手元で見られない。** 回したのは大きさごとに 1 本（上の 3 つの run。1.7B の run に固定値の文の取り出しを入れた）と、固定値を書き直した後の確かめ 1 本（38144959697、0.9 分）。3 つの run は軽い組も通している。**回していないもの**: 本番のブラウザ（`models.yml`: 本線に入ってデプロイした後に、3 つのうち 1 つを 2 回目の訪問つきで。前に保存した変換が取り直しなしで使われることは `worker-conduct-check` の代役でしか見ていない）、WebGPU（シェーダも GPU の道も触っていない。3 値の GPU は表を CPU と同じ計画から受け取る）、Firefox と WebKit、transformers との比べ（素の RoPE の transformers の数字は T235・T246 のレビューの前の測り）、持ち主の端末。
+  - **yarn のまま比べている確かめ（ページの項目の使う表とは別になった。どれも落ちない）**: `gguf.yml`（GGUF の yarn と原本の config の突き合わせ）、transformers との比べ（`reference_llama.py` の形と T235 の `yarn_reference.py`）、`tests/page_ternary.sh`（`--entry` なしの変換: yarn、BOS も変換器の 1）、`gpu-check` の `synthetic-yarn`。原本と変換器の確かめ、`?hf=` の道の確かめとして残る。
+  - **訪問者に見える文**: 変えていない。項目の note に yarn や文脈の話は無い。README の 98 行（変換器が yarn を読めること）は今も正しい。
+  - **気づき（採番待ち）**: (1) `tests/page_ternary.sh` は `perplexity_prepare.py` を `--entry` なしで呼ぶので、BOS が変換器の 1（`"`）で、いまは RoPE も項目と違う: ページの数字として読めない。`--entry "$id"` を付ける直し。(2) `tests/write.mjs` の見出しは dtype に依らず「int8 N GB」と書く（3 値のファイルを渡すと 0.48 GB の「int8」）。(3) float32 の `Llama` は `rope_scaling` を渡されても黙って無視する（表はファイルのもの）: ページは float32 の HF のモデルを作らないので当たらないが、float32 の道具は気づけない（今回 `fixed_outputs.py` が自分で差し替えた）。エンジンが「ファイルの表と options が食い違う」と言う形にするかは別の話。
 - ブランチ `t235-ternary-bonsai-1.7b`（確かめの道具は別のブランチ `t235-probe`: `tests/yarn_reference.py` と測った 2 つの文。本線には入れない）。決定と落とし穴は AGENTS.md の「3 値の Ternary Bonsai 1.7B」。
 - **出どころ**: GGUF は https://huggingface.co/prism-ml/Ternary-Bonsai-1.7B-gguf （`983b5dec…`、`Ternary-Bonsai-1.7B-PQ2_0.gguf` 463,290,464 バイト、apache-2.0）。原本は https://huggingface.co/prism-ml/Ternary-Bonsai-1.7B-unpacked （`3aca8400…`、float16 の safetensors 3.44 GB、apache-2.0。GGUF のカードの base_model）。PQ2_0 の形は fork の `ggml/src/ggml-common.h` 199〜207 行と `ggml/src/ggml-quants.c` 494〜511 行（https://github.com/PrismML-Eng/llama.cpp 、`88c4bc60…`、MIT。行は写していない）。yarn は transformers の `modeling_rope_utils.py` の `_compute_yarn_parameters`（v4.57.6 と main の `7fb5bcd1…`）と `modeling_qwen3.py`（cos と sin に attention_scaling を掛ける）、fork の `ggml/src/ggml-cpu/ops.cpp` 5832〜5870 行（`rope_yarn`）・`ggml/src/ggml.c` 4424〜4437 行（対の範囲）・`src/llama-context.cpp` 262〜303 行（ext_factor は 1、attn_factor は打ち消してから `rope_yarn` の中で 1 + 0.1 ln(1/freq_scale) を掛け直す）。
 - **調べ（T228）と違っていたこと**: (1) 原本がある（3 値のままの float16 の safetensors）。だから語彙と config は段 ② の形で原本から取り、突き合わせは今ある `candidates` で足りた。(2) yarn は元の文脈より先でだけ効くものではなく、表をいつも変える。cos と sin の倍率（1.1386）もある。(3) config に BOS が無い。(4) 原本の書式には考える形が無い。

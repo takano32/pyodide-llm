@@ -207,5 +207,13 @@ export const lfm2Old = { specials: ["<|im_start|>", "<|im_end|>", "Mathias", "py
 // model's: QWEN3_FROM_IM_START (above) says which are worse for it. Where a model of this family is added,
 // tests/start_check.mjs and tests/answer_check.mjs say whether this BOS is one it can bear
 export const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] };
+// T235 (the owner, 2026-10-11): a plain RoPE, whatever config.json's rope_scaling says. The engine makes the RoPE tables
+// of a file that has none (every dtype of the page: int8, 6-bit, ternary) from the options, and an entry's options win
+// over the converter's and over those of a conversion kept before (worker/convert.js), so this takes the converter's
+// rope_scaling out of them: an empty object is "no scaling" to the engine's rope_frequencies() and rope_magnitude()
+// (the angles of rope_theta alone, cos and sin times 1). Not null: Pyodide makes JavaScript's null a jsnull, which is
+// not None. The conversion is the same bytes and the same options either way (CONVERTER stays), and ?hf= of the same
+// repository, which has no entry, keeps config.json's scaling
+export const PLAIN_ROPE = { rope_scaling: {} };
 export const harmony = { bos: 1, specials: ["<|channel|>", "<|message|>", "<|start|>", "<|end|>"], stop_tokens: [1, 2, 10, 11, 13] };
 export const llmJp = { stop_tokens: [1, 2, 7] };

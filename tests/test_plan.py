@@ -256,3 +256,25 @@ def test_a_llama_hands_on_the_plan_of_its_file(name, header, form, more, dtype, 
     assert outside.plan == alone and list(outside.plan) == list(alone)
     assert bool(alone["outliers"]) is int8 and alone["half_kv"] is (int8 and not disable)
     assert set(alone["derived"]) == (set() if tables is None else {"freq_cis_real", "freq_cis_imag"})
+
+
+@pytest.mark.parametrize("dtype", ["ternary", "int8", "int6"])
+def test_the_plan_of_a_model_whose_options_say_no_scaling_has_the_plain_tables(dtype):
+    """T235: forward.js (and the GPU after it) turns by the tables of the plan and makes none of its own. A Qwen3 whose
+    options say rope_scaling: {} (the list's Ternary Bonsai, over their conversion's yarn) is handed the plain ones to
+    the bit, as one with no scaling at all; one whose options say yarn is handed yarn's, slowed and 1.1386 times longer."""
+    name, header, form, more = MODELS[3]
+    dims, yarn = Dims(header, form), {"rope_type": "yarn", "factor": 4.0, "original_max_position_embeddings": 64}
+    handed = {}
+    for said, scaling in (("empty", {"rope_scaling": {}}), ("none", {}), ("yarn", {"rope_scaling": yarn})):
+        outside = Outside(header, file_size(dims.rows(), dtype))
+        with pytest.raises(Handed):
+            Llama(None, b"", dtype=dtype, external=outside, rope_theta=1000000.0, **form, **more, **scaling)
+        handed[said] = {key: np.frombuffer(table, dtype=np.float32).reshape(dims.seq_len, -1) for key, table in outside.plan["derived"].items()}
+    angles = np.arange(dims.seq_len)[:, None] * (1.0 / 1000000.0 ** (np.arange(0, dims.head_size, 2, dtype=np.float64) / dims.head_size))
+    for key, turn in (("freq_cis_real", np.cos), ("freq_cis_imag", np.sin)):
+        assert np.array_equal(handed["empty"][key], turn(angles).astype(np.float32))
+        assert np.array_equal(handed["empty"][key], handed["none"][key])
+        assert not np.allclose(handed["empty"][key][:64], handed["yarn"][key][:64], atol=1e-3)
+    assert np.allclose(np.hypot(*handed["yarn"].values()), 0.1 * np.log(4.0) + 1.0, atol=1e-6)
+    assert np.allclose(np.hypot(*handed["empty"].values()), 1.0, atol=1e-6)

@@ -2,6 +2,7 @@
 # a Llama turned into llama2.c's order, a Qwen2's left alone) must give the very checkpoint that the safetensors of
 # the same values gives. The real file is checked by tests/gguf_check.py.
 import json
+import math
 import struct
 
 import numpy as np
@@ -12,7 +13,7 @@ from test_convert import converted, hugging_face, reader, safetensors_file
 
 import llama2_convert
 from llama2_convert import Conversion, Incomplete, Safetensors, gguf_read
-from llama2_numpy import rope_frequencies
+from llama2_numpy import Llama, rope_frequencies
 
 NAMES = {"model.embed_tokens.weight": "token_embd.weight", "model.norm.weight": "output_norm.weight",
          "lm_head.weight": "output.weight"}
@@ -490,6 +491,88 @@ def test_a_pq2_0_gguf_with_the_originals_files_is_the_safetensors_conversion(dty
     assert got.options == expected.options
     assert got.options["qk_norm"] is True and got.options["rope_scaling"] == published["rope_scaling"]
     assert got.options["rope_theta"] == published["rope_theta"] and got.options.get("head_dim") == (64 if "heads wider" in shape else None)
+
+
+# T235 (the owner, 2026-10-11): the list's three Ternary Bonsai turn by a plain RoPE, which their entries say
+# (src/models/formats.js's PLAIN_ROPE); the converter, config.json and the GGUF go on saying yarn
+BONSAI_ENTRIES = {"the 1.7B's": "hf-ternary-bonsai-1.7b", "the 4B's: heads wider than dim / heads, theta 5e6": "hf-ternary-bonsai-4b",
+                  "the 8B's: a classifier of its own, yarn from 16384": "hf-ternary-bonsai-8b"}
+
+
+def listed_options():
+    """The options of every Hugging Face entry of src/models.js, by its id."""
+    import subprocess
+    from pathlib import Path
+    script = ("import('./src/models.js').then(({ MODELS }) => console.log(JSON.stringify(Object.fromEntries("
+              "MODELS.filter((m) => m.hf).map((m) => [m.id, m.options ?? {}])))))")
+    return json.loads(subprocess.check_output(["node", "-e", script], cwd=Path(__file__).resolve().parent.parent))
+
+
+def test_only_the_three_ternary_bonsai_of_the_list_name_a_rope():
+    """The entries that say a RoPE of their own are those three and no other: not Ternary Bonsai 2 27B (another model,
+    in a rotated basis, which the choice did not cover), nor any other entry whose config.json scales its RoPE."""
+    options = listed_options()
+    assert {name for name, said in options.items() if "rope_scaling" in said} == set(BONSAI_ENTRIES.values())
+    assert all(options[name]["rope_scaling"] == {} for name in BONSAI_ENTRIES.values())
+    larger = [name for name in options if name.startswith("hf-ternary-bonsai-2-27b")]
+    assert len(larger) == 2 and all(set(options[name]) == {"bos", "stop_tokens", "specials"} for name in larger)
+
+
+@pytest.mark.parametrize("dtype", ["ternary", "int8", "int6", "float16"])
+@pytest.mark.parametrize("shape", BONSAI_SIZES)
+def test_the_lists_ternary_bonsai_turn_by_a_plain_rope(dtype, shape):
+    """What the page's engine is given for one of the three: the conversion's options (kept ones as well: a manifest's
+    JSON), which say config.json's yarn, under the entry's, which say rope_scaling: {} (the worker's merge). The tables
+    the engine then makes are the plain ones to the bit (rope_theta's angles, cos and sin times 1), as if the model had
+    no scaling, and not yarn's, whose angles and magnitude both differ; what the model computes differs with them."""
+    said = {key: value for key, value in listed_options()[BONSAI_ENTRIES[shape]].items() if key not in ("bos", "stop_tokens")}
+    assert said == {"rope_scaling": {}}, "besides its tokens, the entry says the RoPE and nothing else"
+    config, published, file, same = bonsai_gguf(**BONSAI_SIZES[shape])
+    got = with_original(file, published, unigram(config["vocab_size"]), "tokenizer.json", dtype)
+    kept = json.loads(json.dumps({key: value for key, value in got.options.items() if key != "template"}))
+    assert kept["rope_scaling"] == published["rope_scaling"], "the conversion says the original's yarn, as before"
+    make = lambda options: Llama(bytes(got.checkpoint), bytes(got.tokenizer), kernels=None, **options)
+    page, yarn = make({**kept, **said}), make(kept)
+    unscaled = make({key: value for key, value in kept.items() if key != "rope_scaling"})
+    head = page.head_size
+    angles = np.arange(page.seq_len)[:, None] * (1.0 / published["rope_theta"] ** (np.arange(0, head, 2, dtype=np.float64) / head))
+    assert page.rope_magnitude == 1.0 and yarn.rope_magnitude == pytest.approx(0.1 * math.log(4.0) + 1.0)
+    for table, turn, theirs, other in ((page.freq_cis_real, np.cos, unscaled.freq_cis_real, yarn.freq_cis_real),
+                                       (page.freq_cis_imag, np.sin, unscaled.freq_cis_imag, yarn.freq_cis_imag)):
+        assert table.dtype == np.float32 and np.array_equal(table, turn(angles).astype(np.float32))
+        assert np.array_equal(table, theirs)
+        assert not np.allclose(table[:64], other[:64], atol=1e-3)
+    assert np.all(np.hypot(page.freq_cis_real, page.freq_cis_imag) < 1.0001), "yarn's magnitude (1.1386) is in no value"
+    # yarn's angles alone (magnitude 1) are not the plain ones either: the entry takes both of yarn's parts off
+    slowed = np.arange(page.seq_len)[:, None] * rope_frequencies(head, published["rope_theta"], published["rope_scaling"])
+    assert not np.allclose(page.freq_cis_real[:64], np.cos(slowed)[:64], atol=1e-3)
+    ours, theirs = [[np.array(model.forward(token, pos)) for pos, token in enumerate((3, 7, 9, 11))] for model in (page, yarn)]
+    assert np.isfinite(ours[3]).all() and not np.allclose(ours[3], theirs[3], atol=1e-4)
+    assert all(np.array_equal(a, b) for a, b in zip(ours, [np.array(unscaled.forward(token, pos)) for pos, token in enumerate((3, 7, 9, 11))]))
+
+
+@pytest.mark.parametrize("shape", BONSAI_SIZES)
+def test_the_fixed_outputs_float32_engine_is_given_the_entrys_rope(shape):
+    """tests/fixed_outputs.py writes float32, whose file holds the tables the converter made of config.json's yarn and
+    whose engine does not look at the options: its with_the_entrys_rope() gives that engine the tables the page's
+    engine makes of the same options, to the bit, and then both compute by the same RoPE."""
+    from fixed_outputs import with_the_entrys_rope
+    said = listed_options()[BONSAI_ENTRIES[shape]]
+    config, published, file, same = bonsai_gguf(**BONSAI_SIZES[shape])
+    made = {}
+    for dtype in ("float32", "float16"):
+        got = with_original(file, published, unigram(config["vocab_size"]), "tokenizer.json", dtype)
+        options = {**{key: value for key, value in got.options.items() if key != "template"}, "rope_scaling": said["rope_scaling"]}
+        made[dtype] = Llama(bytes(got.checkpoint), bytes(got.tokenizer), kernels=None, **options), options
+    (whole, options), (page, _) = made["float32"], made["float16"]
+    assert whole.rope_magnitude == 1.0 and whole.freq_cis_real[0, 0] == np.float32(0.1 * math.log(4.0) + 1.0), \
+        "a float32 file's tables are the converter's (yarn's), whatever the options say"
+    assert with_the_entrys_rope(whole, options) is whole
+    assert np.array_equal(whole.freq_cis_real, page.freq_cis_real) and np.array_equal(whole.freq_cis_imag, page.freq_cis_imag)
+    assert whole.freq_cis_real.dtype == page.freq_cis_real.dtype == np.float32 and whole.rope_magnitude == 1.0
+    # (and yarn said in the options is yarn's tables again, magnitude and all: the tool follows the options, whatever they say)
+    with_the_entrys_rope(whole, {**options, "rope_scaling": published["rope_scaling"]})
+    assert whole.freq_cis_real[0, 0] == np.float32(0.1 * math.log(4.0) + 1.0) and not np.allclose(whole.freq_cis_real[:64], page.freq_cis_real[:64], atol=1e-3)
 
 
 def test_a_pq2_0_gguf_alone_converts_to_the_checkpoint_of_the_same_values():
