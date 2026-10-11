@@ -14,6 +14,9 @@ dist/
 .astro/
 __pycache__/
 *.wasmlib
+# the site's Python as archives (python_archive.py)
+public/engine.zip
+public/converter.zip
 .venv/
 .tmp/
 # the agents' worktrees (Claude Code makes them for work in parallel)
