@@ -623,7 +623,7 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   ok("a folder answers every kind of request from its Files: by name whatever the case, a name it does not have with undefined, a range with the size, a stream as the disk gives it, a part a call, the room waited for after each");
   ok("a folder's progress says what it said (0 arrived of the file's size, the share converted), nothing is asked of the network, nothing is kept, Python is handed names alone");
 
-  // ---- a conduct that ends for want of a file: the loop's own words (a folder has none for it)
+  // ---- a conduct that ends for want of a file: the folder's own words (T427)
   {
     reads.length = 0;
     const lost = await w.convert(folder(), function* (make) {
@@ -632,11 +632,11 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
       yield ["missing", "weights", "model-00001-of-00002.safetensors"];
       assert.fail("the conduct was asked on after a file was missing");
     });
-    assert.equal(lost.error.message, "The conversion needs model-00001-of-00002.safetensors, which is not there.");
+    assert.equal(lost.error.message, "The folder has no model-00001-of-00002.safetensors, which the model needs.");
     assert.equal(w.played.steps.at(-1).returned, 1);
     w.allDestroyed();
     assert.equal(w.buffers.at(-1).destroyed, 1);
-    ok("a folder's conduct that ends on a missing file: said in the loop's words, the generator closed, nothing left open");
+    ok("a folder's conduct that ends on a missing file: said in the folder's words, the generator closed, nothing left open");
   }
 
   // ---- a file that is there and cannot be read is a failure, never the answer "not there"

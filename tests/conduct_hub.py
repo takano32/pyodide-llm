@@ -139,8 +139,8 @@ class Folder:
         return file
 
     def refusal(self, where, name):
-        """What the worker's loop says of a file a folder's conduct ends for want of (conduct.js's answered())."""
-        return f"The conversion needs {name}, which is not there."
+        """What the worker says of a file a folder's conduct ends for want of (conduct.js's fromFolder(), T427)."""
+        return f"The folder has no {name}, which the model needs."
 
     def text(self, where, name):
         found = self.found("text", name)
@@ -348,7 +348,7 @@ def sound(told, conversion, ended, hf, hub):
     # a file said to be missing was asked for, and is not there
     lost = [request for request in told if ended == f"failed: {hub.refusal(*request[1:3])}"]
     assert all(hub.whole(*request[1:3]) is None for request in lost)
-    if "has no " in ended or "which is not there" in ended:
+    if "has no " in ended:
         assert lost and not streams
 
 

@@ -514,7 +514,7 @@
    "text model.safetensors.index.json"
   ],
   "converter": [],
-  "ended": "failed: The conversion needs model-00001-of-00002.safetensors, which is not there.",
+  "ended": "failed: The folder has no model-00001-of-00002.safetensors, which the model needs.",
   "progress": []
  }
 }
