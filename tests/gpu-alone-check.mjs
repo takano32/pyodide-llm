@@ -28,12 +28,13 @@ console.info = () => {};
 console.warn = () => {};
 
 /** An engine of the made-up model and what stands beside it. direct: on the GPU alone */
-function made(direct) {
+function made(direct, plan = planOf(p)) {
   const memory = new WebAssembly.Memory({ initial: Math.ceil((CONTROL_BYTES + p.size) / PAGE) + 64, maximum: Math.ceil((CONTROL_BYTES + p.size) / PAGE) + 64, shared: true });
   const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
   const beside = { ctl, spawned: 0, ended: 0, kernels: 0, posted: [], lost: [] };
-  const spawn = () => {
+  const spawn = (data) => {
     beside.spawned += 1;
+    beside.started = data;
     return Promise.resolve({ terminate() { beside.ended += 1; } });
   };
   // the GPU's worker: ready as soon as it is started (with a generation's steps), and every request answered at once
@@ -99,7 +100,13 @@ console.log("ok: T450, an engine on the GPU alone starts no software thread what
   assert.deepEqual([engine.threads, beside.spawned], [4, 3], "the same model not on the GPU alone starts its threads");
   engine.stopThreads();
   assert.deepEqual([Atomics.load(beside.ctl, QUIT), beside.ended, engine.threads], [1, 3, 1], "and stops them through the control area");
+  assert.deepEqual([beside.started.plain, beside.started.relaxed, typeof beside.started.share], [empty, empty, "number"], "a thread is started with the two kernels this model runs on");
   assert.equal(await engine.release(), true);
+  // T378.2: the kernels a thread starts with are chosen by the engine: no relaxed one where the model does not run on it
+  const plain = made(false, planOf(p, { relaxed: false }));
+  assert.equal(await plain.engine.setThreads(2), 2);
+  assert.deepEqual([plain.beside.started.plain, plain.beside.started.relaxed], [empty, null], "a model that does not run on relaxed SIMD starts its threads without that kernel");
+  assert.equal(await plain.engine.release(), true);
 }
-console.log("ok: the same model in the memory starts the threads it is asked for");
+console.log("ok: the same model in the memory starts the threads it is asked for, with the kernels it runs on");
 process.exit(0);

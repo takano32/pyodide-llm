@@ -270,6 +270,11 @@ console.log("ok: the GPU's worker is started with the model's plan; the CPU is t
   part.generationBegan();
   assert.deepEqual(said(), ["gpu: the GPU on the beginning of the next long prompt, to time it again"]);
   assert.equal(part.promptBlock(), GPU_BLOCK, "the first block of that prompt is asked for whole");
+  // a prompt too short for a whole block leaves the timing owed, and what follows in it is not asked for whole
+  part.prompt(tokensOf(16), 0);
+  assert.deepEqual([part.promptBlock(), sides(beside)], [BATCH, [16, 0]], "past a prompt's beginning its blocks are the CPU's size");
+  part.generationBegan();
+  assert.deepEqual([said(), part.promptBlock()], [[], GPU_BLOCK], "the next prompt's first block is");
   part.prompt(tokensOf(64), 0);
   assert.equal(part.promptBlock(), BATCH);
   part.prompt(tokensOf(16), 64);
@@ -318,6 +323,13 @@ console.log("ok: the GPU's worker is started with the model's plan; the CPU is t
   assert.deepEqual(sides(beside), [40, 64], "(and the 8 before them, too few for this GPU)");
   feed(part, 64 + 40);
   assert.deepEqual(sides(beside), [0, 104], "once");
+  // T184: where the GPU is the faster, put("cpu") keeps every block from it, and Python is handed the CPU's size
+  part.put("cpu");
+  assert.equal(part.promptBlock(), BATCH);
+  feed(part, 100);
+  assert.deepEqual(sides(beside), [100, 0]);
+  part.put(null);
+  assert.equal(part.promptBlock(), GPU_BLOCK);
 }
 console.log("ok: a block goes where it is faster; the other side is timed again every GPU_RECHECK generations, not during a search; put() puts every block on a side");
 
@@ -522,6 +534,35 @@ console.log("ok: a model on the GPU alone runs nothing on the CPU, reads its key
   assert.deepEqual([settled, beside.terminated], [true, 0]);
 }
 console.log("ok: letting go waits for the GPU's worker to say it ended");
+
+// ---- the control area (control.js), which the part waits on: cleared for a new engine, none on a memory that is not
+// shared, and a wait that sees the GPU's worker count while it works does not give it up (T135: the beat)
+{
+  const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+  new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4).fill(7);
+  const { ctl, waitUntil } = controlArea({ memory, sharedMemory: true, stalledMs: 60 });
+  assert.deepEqual([ctl.length, new Set(ctl)], [CONTROL_BYTES / 4, new Set([0])], "what the engine before left in the control area is gone");
+  assert.equal(controlArea({ memory: new WebAssembly.Memory({ initial: 1 }), sharedMemory: false, stalledMs: 60 }).ctl, null);
+  const { Worker } = await import("node:worker_threads");
+  // another thread counts the beat every 10 ms for 240 ms, four times the wait's patience, and then answers
+  const beats = new Worker(`const { workerData: [buffer, beat, done] } = require("node:worker_threads");
+    const ctl = new Int32Array(buffer, 0, ${CONTROL_BYTES / 4});
+    let n = 0;
+    const timer = setInterval(() => {
+      Atomics.add(ctl, beat, 1);
+      if (++n < 24) return;
+      clearInterval(timer);
+      Atomics.store(ctl, done, 5);
+      Atomics.notify(ctl, done);
+    }, 10);`, { eval: true, workerData: [memory.buffer, GPU_BEAT, GPU_DONE] });
+  await new Promise((resolve) => beats.once("online", resolve));
+  const began = performance.now();
+  assert.equal(waitUntil(GPU_DONE, (seen) => seen === 5, GPU_BEAT), true, "a worker that counts while it works is waited for past the time a silent one is given");
+  assert.ok(performance.now() - began > 120, "(and it was waited for)");
+  assert.equal(waitUntil(GPU_DONE, (seen) => seen === 6, GPU_BEAT), false, "one that neither answers nor counts is given up");
+  await beats.terminate();
+}
+console.log("ok: the control area is cleared for a new engine, and a wait is kept up by the beat of a worker at work");
 
 // ---- gpuFit(): why the GPU would not take a model, and the vectors it reads
 {
