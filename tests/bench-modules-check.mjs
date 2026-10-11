@@ -1,15 +1,16 @@
 // tests/bench-modules-check.mjs (T353): the names that /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js) and its modules
 // (src/runtime/benchmark/gpu/*.js) hand one another, and the names the modules of src/bench/ use. None of these is held by
 // anything else outside a browser with a GPU: the worker's steps run only there (CI's bench-check.mjs and bench-dawn.mjs).
-//   - a name a file takes out of another (`const { a, b } = await import(...)`, `= await modules.x`) is exported there,
-//     and every name a file uses is declared in it, taken from another, or a worker's global (a ReferenceError where
-//     the line runs, otherwise);
+//   - every name a file uses is declared in it, imported by it, or a worker's global (a ReferenceError where the
+//     line runs, otherwise: neither the build nor Node says it before);
 //   - every shared.<name> is a field of the one object the steps share (gpu/device.js's shared: a field is no variable,
 //     and a wrong name reads undefined and sets nothing a step reads), and every field is used;
-//   - the folder holds the modules the window asks for, and what they take from one another goes round nowhere (a ring
-//     of awaited imports never ends);
-//   - the window links in Node with every export defined, and a message that comes at its first await (while the modules
-//     load) reaches the steps' onmessage once (T109: a module worker loses what comes before its onmessage is set).
+//   - what the modules take from one another goes round nowhere (tests/imports.mjs's windowed(): the build links a ring
+//     without a word), and every file of the folder is reached from the window;
+//   - the window links in Node with every export defined, and a message given to the steps' onmessage as it is set is
+//     answered once.
+// T367.5: what this held before and the build and Node hold by themselves now is gone from here: that a name taken is
+// exported where it is taken from (the build: MISSING_EXPORT, an error; Node: a SyntaxError as the module is imported).
 // And every module of src/bench/ uses only what it declares or imports (the tables are functions: a name that is
 // nowhere is a ReferenceError only when that table is written).
 // Node only, under a second:
@@ -25,9 +26,8 @@ import { namesOf } from "./worker-modules-check.mjs";
 
 const GLOBALS = new Set(("AbortController Array ArrayBuffer Atomics BigInt64Array Boolean Error Float32Array Float64Array Infinity Int32Array Int8Array Map Math NaN Number " +
   "Object Set String URL Uint16Array Uint32Array Uint8Array WebAssembly clearTimeout fetch globalThis navigator onmessage performance postMessage self setTimeout undefined").split(" "));
-// (T367.1: where the runtime is and which form its imports have is the tree's, tests/tree.mjs; the lines that take a
-// neighbour's names are read by tests/imports.mjs, whose windowed() holds the folder to the window's list (each module
-// with the window's own ?v=) or, where a bundler links the files, to what the window reaches, and says a ring)
+// (where the runtime is: tests/tree.mjs. tests/imports.mjs's windowed() reads the window and every file it reaches,
+// says a ring, and holds every file of the folder to be reached)
 const tree = treeOf();
 const at = (name) => `benchmark/${name}`;  // (a file of this worker, by its name under the runtime's folder)
 const linked = windowed(at("gpu.js"), { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
@@ -37,42 +37,19 @@ const short = (name) => (name.startsWith(at("")) ? name.slice(at("").length) : `
 const full = new Map([...linked.files.keys()].map((name) => [short(name), name]));
 const files = new Map([...linked.files].map(([name, { text }]) => [short(name), text]));
 const programs = new Map([...linked.files].map(([name, { program }]) => [short(name), program]));
-const exported = new Map([...programs].map(([name, program]) => [name, new Set(program.body.flatMap((node) => {
-  if (node.type !== "ExportNamedDeclaration") return [];
-  if (!node.declaration) return node.specifiers.map((specifier) => specifier.exported.name);
-  return node.declaration.id ? [node.declaration.id.name] : node.declaration.declarations.map((d) => (assert.equal(d.id.type, "Identifier"), d.id.name));
-}))]));
 
-// ---- every name used is declared, taken from another file, or a global; and what is taken is exported there
-const keysOf = (pattern, what) => pattern.properties.map((property) => {
-  assert.ok(property.type === "ObjectProperty" && !property.computed && property.key.type === "Identifier" && property.shorthand, `${what}: a plain name`);
-  return property.key.name;
-});
-let taken = 0;
-for (const [name, program] of programs) {
-  const unknown = [...namesOf(files.get(name)).free].filter((used) => !GLOBALS.has(used));
-  assert.deepEqual(unknown, [], `${name} uses ${unknown}, which it neither declares nor takes from another file: a ReferenceError where the line runs`);
-  const { takes: taking, left } = linked.files.get(full.get(name));
-  for (const node of program.body) {
-    const d = node.type === "VariableDeclaration" ? node.declarations[0] : null;
-    if (d?.init?.type !== "AwaitExpression") continue;
-    assert.ok(left.includes(node), `${name}: \`${files.get(name).slice(d.init.start, d.init.end)}\`: what a file awaits at its top is another's names, taken apart`);
-  }
-  for (const { from, names, how } of taking) {
-    const file = short(from);
-    // (a module takes of a module of the folder, or of a file outside it that was read for that; the window, where it
-    // has a list, of the list alone)
-    assert.ok((from.startsWith(at("gpu/")) || linked.others.includes(from)) && exported.has(file), `${name} takes names from ${from}, which is no module of the worker`);
-    assert.ok(tree.bundled || (how === "await modules") === (name === "gpu.js"), `${name}: a module is taken from with this file's own ?v=, and by the window from its list`);
-    for (const { imported: wanted, local } of names) {
-      assert.equal(wanted, local, `${name}: a plain name, taken under its own`);
-      assert.ok(exported.get(file).has(wanted), `${name} takes ${wanted} from ${file}, which does not export it: undefined`);
-      taken += 1;
-    }
+// ---- every name used is declared, imported, or a global
+let names = 0;
+for (const [name] of programs) {
+  const { free } = namesOf(files.get(name)), unknown = [...free].filter((used) => !GLOBALS.has(used));
+  assert.deepEqual(unknown, [], `${name} uses ${unknown}, which it neither declares nor imports: a ReferenceError where the line runs`);
+  names += free.size;
+  for (const { from } of linked.files.get(full.get(name)).takes) {
+    assert.ok(from.startsWith(at("gpu/")) || linked.others.includes(from), `${name} takes names from ${from}, which is no module of the worker`);
   }
 }
 // (that none waits for itself, and that the window takes from every module or a module it takes from does: windowed())
-console.log(`bench-modules-check: the GPU worker's ${programs.size} files use nothing they do not declare or take from another, the ${taken} names they take are exported, and none waits for itself`);
+console.log(`bench-modules-check: the GPU worker's ${programs.size} files use nothing they do not declare or import (${names} names of a worker's globals), and none waits for itself`);
 
 // ---- the one object the steps share
 const holders = [...programs].filter(([, program]) => program.body.some((node) => (node.declaration ?? node).type === "VariableDeclaration" && (node.declaration ?? node).declarations[0].id.name === "shared"));
@@ -103,23 +80,20 @@ for (const [name, program] of programs) {
 assert.deepEqual(fields.filter((field) => !used.has(field)), [], "fields of shared that nothing reads or sets");
 console.log(`bench-modules-check: the ${fields.length} fields of shared are the ones the steps use (${said} times)`);
 
-// ---- the window in Node: its exports, and a message that comes while the modules load
+// ---- the window in Node: it links, and what its onmessage is given
 const handlers = [], posted = [];
 Object.defineProperty(globalThis, "onmessage", { configurable: true, get: () => handlers.at(-1), set(handler) {
   handlers.push(handler);
-  // (the first one is set before the window's first await: a message at that moment, which a worker's port may deliver)
+  // (a message as the steps' onmessage is set)
   if (handlers.length === 1) handler({ data: { step: "no such step" } });
 } });
 globalThis.postMessage = (message) => posted.push(message);
 const window_ = await import(tree.runtimeUrl(at("gpu.js")));
-// (where a bundler links the files the window awaits no module: the steps' onmessage is the one, set before anything can come)
-if (tree.bundled) assert.equal(handlers.length, 1, "gpu.js sets the steps' onmessage once: there is no wait for its modules to keep a message through");
-else assert.equal(handlers.length, 2, "gpu.js sets onmessage before its first await, and the steps' own at its end");
+assert.equal(handlers.length, 1, "gpu.js sets the steps' onmessage once, as it loads: nothing is awaited before it");
 for (const [name, value] of Object.entries(window_)) assert.notEqual(value, undefined, `gpu.js exports ${name} undefined`);
-for (const name of [...exported.get("gpu.js")]) assert.ok(name in window_, `gpu.js exports ${name}`);
 for (let i = 0; i < 100 && !posted.length; i++) await new Promise((resolve) => setTimeout(resolve, 10));
-assert.deepEqual(posted, [{ step: "no such step", result: undefined }], "the message that came at the window's first await was answered by the steps' onmessage, once");
-console.log(`bench-modules-check: gpu.js links (${Object.keys(window_).length} exports), and a message at its first await is answered once`);
+assert.deepEqual(posted, [{ step: "no such step", result: undefined }], "the message given as the steps' onmessage was set was answered by it, once");
+console.log(`bench-modules-check: gpu.js links (${Object.keys(window_).length} exports), and a message given as its onmessage is set is answered once`);
 
 // ---- src/bench/: the tables' modules use what they declare or import
 const TABLES = new URL("../src/bench/", import.meta.url);

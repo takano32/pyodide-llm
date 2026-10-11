@@ -3,14 +3,14 @@
 // The checks that run the worker in Node make one context's scripts of these files (tests/worker-source.mjs), where
 // every module's top level is a global: a module that uses a name of another without importing it works there, and is
 // a ReferenceError in a browser, at the moment the line runs. So this reads each file as the module it is and holds
-// every name it uses to one of: declared in the file, imported by it (and exported where it is imported from), or one
-// of the worker's own globals listed below. Node only, under a second:
+// every name it uses to one of: declared in the file, imported by it, or one of the worker's own globals listed below
+// (that what is imported is exported there is the build's and Node's to say: MISSING_EXPORT, a SyntaxError: T367.5). Node only, under a second:
 //
 //   node tests/worker-modules-check.mjs
 //
 // The parser is @babel/parser, which Astro's packages bring (npm ci installs it; this repository does not name it).
 // It also holds every state.<name> to a field of worker/state.js's object.
-// And it imports worker.js for real (Node links the modules), and plays a message that comes at its first await.
+// And it imports worker.js for real (Node links the modules): its receiver is set as it loads, and answers.
 // What it does not see: a browser's own way with a module worker's first message (the browsers do: tests/e2e.mjs).
 import assert from "node:assert/strict";
 import { parse } from "@babel/parser";
@@ -154,7 +154,7 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
       "which it neither declares nor imports: a ReferenceError in a browser");
     count += free.size;
   }
-  // (an import of a name the other file does not export, and a module of the folder nobody asks for: workerScripts() threw)
+  // (a module of the folder that the window does not reach, and a ring: workerScripts() threw)
   console.log(`worker-modules-check: ${files.size} files of the worker use ${count} names of the worker's globals, and nothing they do not declare or import`);
 
   // ---- the fields of the one object the modules share (worker/state.js): state.<name> is no variable, and a name
@@ -179,41 +179,18 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
   }
   console.log(`worker-modules-check: the ${fields.length} fields of state are the ones the modules use`);
 
-  // ---- the files as the modules they are, linked by Node: worker.js waits for its modules at its top level, and a
-  // message that comes meanwhile is handled once they are there. A module worker's port opens at the module's first
-  // await, and a message that finds no onmessage then is lost (AGENTS.md, helper.js: T109): played here by a message
-  // that is given to whatever self.onmessage is in the microtask after worker.js first read its own URL's search,
-  // which it does to ask for its modules, before its first await. A "generate" before any model: the worker's own
-  // handler answers "The model is not ready."
+  // ---- the files as the modules they are, linked by Node: a name imported that is not exported where it is taken
+  // from is a SyntaxError here. worker.js awaits nothing before its receiver is set (a module worker's port opens at the
+  // module's first await, and a message that finds no onmessage then is lost: AGENTS.md, helper.js, T109). A "generate"
+  // before any model: the worker's own handler answers "The model is not ready."
   const posted = [];
-  let delivered = false, handlerThen;
   Object.assign(globalThis, { self: globalThis, postMessage: (message) => posted.push(message) });
-  globalThis.location = {
-    get search() {
-      if (!delivered) {
-        delivered = true;
-        queueMicrotask(() => {
-          handlerThen = self.onmessage;
-          self.onmessage?.({ data: { type: "generate", prompt: "early" } });
-        });
-      }
-      return "";
-    },
-  };
-  const tree = treeOf();
-  await import(tree.runtimeUrl("worker.js"));
+  globalThis.location = { search: "" };
+  await import(treeOf().runtimeUrl("worker.js"));
+  assert.equal(typeof self.onmessage, "function", "worker.js set no onmessage as it loaded");
+  self.onmessage({ data: { type: "generate", prompt: "early" } });
   await new Promise((resolve) => setTimeout(resolve, 50));
-  if (tree.bundled) {
-    // (T367.1: where a bundler links the files, the worker awaits no module: its handler is set before anything can
-    // come, and the message is given to it now)
-    assert.equal(typeof self.onmessage, "function", "worker.js set no onmessage as it loaded");
-    if (!delivered) self.onmessage({ data: { type: "generate", prompt: "early" } });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  } else {
-    assert.ok(delivered, "worker.js did not read its URL's search: how does it ask for its modules?");
-    assert.equal(typeof handlerThen, "function", "worker.js had no onmessage at its first await: a message that comes then is lost in a browser");
-  }
   assert.deepEqual(posted.map((message) => [message.type, message.message]), [["error", "The model is not ready."]],
-    "a message that came while the worker's modules were fetched was not handled once, by the worker's own handler");
-  console.log("worker-modules-check: the modules link, and a message that comes while they are fetched is handled after them");
+    "a message given to the receiver worker.js set as it loaded was not handled once, by the worker's own handler");
+  console.log("worker-modules-check: the modules link, and the receiver set as they load answers");
 }
