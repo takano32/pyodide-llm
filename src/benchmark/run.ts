@@ -4,7 +4,7 @@
 import { forgetMark, readMark, memoryResult } from "../page-memory.js";
 import { cpuBaseline, CPU_SPEED_KEY } from "../bench.js";
 import { $, parameters, SECTIONS, type Name, ALL, type Result, results } from "./dom.ts";
-import { page } from "./state.ts";
+import { page, runBegan, runEnded, sectionBegan } from "./state.ts";
 import { parts, rendered, clock, staged, ticked, live, stalled } from "./section.ts";
 import { device, cpu } from "./cpu.ts";
 import { modelSection } from "./model.ts";
@@ -39,15 +39,11 @@ for (const section of document.querySelectorAll<HTMLElement>("section[data-secti
 }
 
 const RUN: Record<Name, () => Promise<Result>> = { device, cpu, model: modelSection, gpu, storage, line, memory: pageMemory };
-let running = false;
 async function runSections(names: readonly Name[]) {
-  if (running) return;
-  running = true;
+  if (!runBegan(names, performance.now())) return;
   const buttons = [$("run-all"), ...Object.values(parts).map((p) => p.run)] as HTMLButtonElement[];
   buttons.forEach((b) => (b.disabled = true));
   (window as any).__benchmark.done = false;
-  page.runNames = names;
-  page.runBegan = performance.now();
   $("overall").hidden = names.length < 2;
   const tick = setInterval(ticked, 1000);
   awake.start();
@@ -56,8 +52,7 @@ async function runSections(names: readonly Name[]) {
     state.className = "state";
     state.textContent = "running...";
     out.innerHTML = "";
-    page.current = name;
-    page.sectionBegan = performance.now();
+    sectionBegan(name, performance.now());
     staged(name, { stage: "starting" });
     progress.box.hidden = false;
     ticked();
@@ -103,11 +98,10 @@ async function runSections(names: readonly Name[]) {
   }
   clearInterval(tick);
   awake.stop();
-  page.current = undefined;
   if (names.length > 1) $("overall").textContent = `${names.length} sections in ${clock(performance.now() - page.runBegan)}`;
   buttons.forEach((b) => (b.disabled = false));
+  runEnded();
   (window as any).__benchmark.done = true;
-  running = false;
 }
 $("run-all").onclick = () => runSections(ALL);
 // T192: where the clipboard refuses (or there is none), say so and select the whole for copying by hand: on a

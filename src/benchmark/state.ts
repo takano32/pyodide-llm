@@ -13,3 +13,24 @@ export const page = {
   runBegan: 0,
   runNames: [] as readonly Name[],
 };
+
+// ---- T378.5: what happens to it. run.ts says these and sets no field itself. No clock is read here: the time is told.
+let running = false;
+/** A run of these sections begins. While one is running another does not: false. */
+export function runBegan(names: readonly Name[], now: number) {
+  if (running) return false;
+  running = true;
+  page.runNames = names;
+  page.runBegan = now;
+  return true;
+}
+/** The next section of the run begins. */
+export function sectionBegan(name: Name, now: number) {
+  page.current = name;
+  page.sectionBegan = now;
+}
+/** The run is over: no section is running, and another run may begin. */
+export function runEnded() {
+  page.current = undefined;
+  running = false;
+}
