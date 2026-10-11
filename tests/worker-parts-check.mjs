@@ -176,7 +176,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   context.console = { ...console, warn: (line) => said.push(line), info() {} };
   context.stand = {
     forward: { ...forward, weightsMemory: () => ({ memory: new WebAssembly.Memory({ initial: 1 }), base: 0 }), growMemory() {},
-      external: () => ({ engine: { n: ++engines, gpu: Promise.resolve("prompts on the CPU (a stand-in)"), gpuStatus: "the GPU gets ready (a stand-in)", threads: 1 } }) },
+      external: () => ({ engine: { n: ++engines, gpu: context.stand.gpuOf?.(engines) ?? Promise.resolve("prompts on the CPU (a stand-in)"), gpuStatus: "the GPU gets ready (a stand-in)", threads: 1 } }) },
     pyodide: { version: "0.0.0-stand-in", _module: { HEAPU8: { length: 1000 } }, runPython: (code) => told.push(`python: ${code}`),
       globals: { get: () => (size) => ({ destroy() {}, getBuffer: () => ({ data: new Uint8Array(size), release() {} }) }) } },
     numpy: { OUTLIER_CHANNELS: 8, Llama: { callKwargs: (checkpoint, tokenizer, options) => {
@@ -225,6 +225,17 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
     "a model on the GPU alone whose GPU failed was not loaded again on the CPU: built twice, its GPU's worker ended, one ready, on the CPU from now on");
   assert.ok(said.some((line) => /the model was on the GPU alone, and is loaded again on the CPU/.test(line)), "the console did not say why the model is loaded again");
   context.stand.asBuilt = undefined;
+
+  // T148: a GPU that gets ready after its model was let go of says nothing to the page (its line is of another engine)
+  let late;
+  const before = engines;
+  context.stand.gpuOf = (n) => (n === before + 1 ? new Promise((resolve) => { late = resolve; }) : undefined);
+  await load({ load: 5, model: model("late") });
+  await load({ load: 6, model: model("after") });
+  late("prompts on WebGPU (too late)");
+  await sleep(50);
+  assert.deepEqual(of("gpu").map(({ load, note }) => [load, note]), [[6, "prompts on the CPU (a stand-in)"]], "the GPU of a model let go of told the page its line");
+  context.stand.gpuOf = undefined;
 
   // ---- timing.js with stand-ins: the page's path (T184) on the model loaded now. What it tells request.js: the count
   // the search ended on, which the rounds that follow load the model on (T190)
