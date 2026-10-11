@@ -27,18 +27,20 @@ import fs from "node:fs";
 import path from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
 import { forwardUrl } from "./bundle.mjs";
+import { helperUrl, softwareThread } from "./helper-node.mjs";
 import { built, runtimeUrl } from "./tree.mjs";
 const { compileKernels, createForward, weightsMemory } = await import(forwardUrl());  // (the sources', or with ENGINE_FROM=dist a build's: tests/bundle.mjs)
 
 const root = new URL("../", import.meta.url).pathname;
 // a helper thread: resolves once it has its kernels on the shared memory
 const spawn = (data) => new Promise((resolve) => {
-  const worker = new Worker(runtimeUrl("helper.js"));
+  const worker = softwareThread();  // (src/runtime/helper.js, or with ENGINE_FROM=dist a build's: tests/helper-node.mjs)
   worker.once("message", () => resolve({ terminate: () => worker.terminate() }));
   worker.postMessage(data);
 });
 
 if (isMainThread) {
+  if (process.env.ENGINE_FROM === "dist") console.log(`threads: helper.js as built, ${helperUrl().pathname.slice(root.length - 1)} (its jobs.js in it)`);
   const { pyodideWithEngine } = await import("./engine.mjs");
   const { MODELS } = await import("../src/models.js");
   const args = process.argv.slice(2);

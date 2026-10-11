@@ -23,7 +23,9 @@
 //   6. every copyright line and licence text of a source (a /*! … */ comment: a bundler drops every other) is in each
 //      file of dist/_astro/ that holds the source's code, whole; and no source keeps a copyright line in a // comment;
 //   7. the built key and shaders modules give the same deviceKey() as the sources, for 192 made-up devices.
-// 3 to 7 are of a tree whose runtime a bundler links (tests/tree.mjs's tree.bundled). In a tree where each file is
+//   8. no file of dist/_astro/ asks for a module of Node's, or is the bundler's stand-in for one: the runtime is a
+//      browser's (T367.5: what Node's tests need of a worker is tests/helper-node.mjs's to give).
+// 3 to 8 are of a tree whose runtime a bundler links (tests/tree.mjs's tree.bundled). In a tree where each file is
 // served as it is from the same folder as the Service Worker, the root is those files, and this says so and checks 1
 // and 2 alone.
 import assert from "node:assert/strict";
@@ -122,6 +124,15 @@ export function distSaid(dist, tree = treeOf()) {
   for (const chunk of chunks) for (const [notice, owing] of chunk.owed) {
     const there = chunk.notices.filter((one) => one === notice).length;
     if (there < owing.length) said.push(`_astro/${chunk.name} holds the code of ${[...new Set(owing)].join(", ")} with ${there} of the ${owing.length} notices "${notice.slice(0, 60)}…" (${notice.length} characters): served code keeps the copyright line and the whole licence text`);
+  }
+  // 8 (T367.5): Node's modules. A file of the runtime that imports one (helper.js had a branch for worker_threads) is
+  // built with a warning and no error: the bundler puts an empty module in its place, a chunk of its own, and a
+  // fragment of its runtime that the importer then fetches on every visit.
+  for (const [name, got] of bytes) {
+    if (!name.endsWith(".js")) continue;
+    const asked = /\b(?:from|import)\s*\(?\s*["'](node:[\w/]+)["']/.exec(got.toString("utf8"))?.[1];
+    if (asked) said.push(`_astro/${name} asks for ${asked}: a module of Node's in a browser's file (what the tests need of Node is theirs to give: tests/helper-node.mjs)`);
+    if (/^(__vite-browser-external|rolldown-runtime)\./.test(name)) said.push(`_astro/${name}: the bundler's stand-in for a module of Node's, or its own runtime for one: a file of the runtime imports a module a browser does not have`);
   }
   // 4: the built files, once each, the same bytes
   const built = under(tree.built());
