@@ -6,7 +6,8 @@
 //     part takes apart by name: the names handed are the names taken, and what the engine takes out of the part's
 //     object is in it;
 //   - the parts' objects (pool, gpuPart, held): every pool.<name> is a member of what softwareThreads() returns, with a
-//     setter where it is set (a member that is none would read undefined, and set nothing the part reads).
+//     setter where it is set (a member that is none would read undefined, and set nothing the part reads). T378.1: pool
+//     has no setter at all, and three getters.
 // And every file of the folder is reached from the window, and the window links (Node imports it) with no export undefined.
 // T367.5: what this held before and the build and Node hold by themselves now is gone from here: that a name taken is
 // exported where it is taken from (the build: MISSING_EXPORT, an error; Node: a SyntaxError as the module is imported).
@@ -78,6 +79,13 @@ walk(create, (node) => {
     assert.ok(call.arguments.length === 1 && call.arguments[0].type === "ObjectExpression", `createForward() hands ${part} one object`);
     assert.deepEqual(keysOf(call.arguments[0], part).sort(), keysOf(made.params[0], part).sort(), `what createForward() hands ${part} is what it takes`);
     handed += call.arguments[0].properties.length;
+    // T378.1: a model on the GPU alone (direct, T156) runs nothing on the CPU, and the one way the threads' part knows
+    // is that it is handed no spawn (no test in Node makes such an engine: CI's gpu-check does, on a GPU)
+    if (part === "softwareThreads") {
+      const spawn = call.arguments[0].properties.find((property) => property.key.name === "spawn").value;
+      assert.ok(spawn.type === "ConditionalExpression" && spawn.test.type === "Identifier" && spawn.test.name === "direct" && spawn.consequent.type === "NullLiteral" &&
+        spawn.alternate.type === "Identifier" && spawn.alternate.name === "spawn", "createForward() hands softwareThreads no spawn where the model is on the GPU alone (spawn: direct ? null : spawn): software threads would be started there");
+    }
     const returned = made.body.body.at(-1);
     assert.ok(returned.type === "ReturnStatement" && returned.argument.type === "ObjectExpression", `${part} returns one object`);
     const members = membersOf(returned.argument);
@@ -90,6 +98,11 @@ walk(create, (node) => {
   }
 });
 assert.deepEqual([...objects.keys()].sort(), ["gpuPart", "held", "pool"], "the parts' objects in createForward()");
+// T378.1: the software threads' state has one owner: its object has no setter (what happens is told it by functions
+// named for that), and the three things read of it are all it has that is no function of its own or a fact made once
+const settable = [...objects.get("pool")].filter(([, kinds]) => kinds.has("set")).map(([name]) => name);
+assert.deepEqual(settable, [], `softwareThreads()'s object has a setter (${settable}): its variables are its own, and what happens is told it by a function`);
+assert.deepEqual([...objects.get("pool")].filter(([, kinds]) => kinds.has("get")).map(([name]) => name).sort(), ["lost", "searching", "threads"], "what is read of the software threads' state");
 let through = 0;
 for (const [name, program] of programs) {
   walk(program, (node) => {

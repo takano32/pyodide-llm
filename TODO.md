@@ -2456,7 +2456,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T447 [整理][遠隔試験] `compare-engines` の側の偏りと、束ねた `helper` の速さの前後 — 状態: 未着手（2026-10-11、T367.5 から。規模 小）
 - 同じバイトの forward どうしの対照で、llm-jp-3 150M は new の側が 4 回とも 0.4〜1.1% 速い（順の裏返しでは消えない）。1% を言う比は対照の比で読む（`tests/compare-builds.sh` は対照を毎回並べる）。偏りの訳は未確認。
-- `compare-engines` はソフトウェアスレッドなしで測る。束ねた `helper` はバイトが変わった（輪の文は同じ、束は小さくなった）が、スレッドつきの前後の速さは測っていない: `helper.js` か `jobs.js` の輪に触る回には、4 本の `compare-builds` を足す。
+- `compare-engines` はソフトウェアスレッドなしで測る。束ねた `helper` はバイトが変わった（輪の文は同じ、束は小さくなった）が、スレッドつきの前後の速さは測っていない: `helper.js` か `jobs.js` の輪に触る回には、4 本の `compare-builds` を足す。 **道具は T378.1 で足した（2026-10-11）**: `THREADS=2,4 bash tests/compare-builds.sh <コミット> 21 2`（`tests/threads-compare.mjs`）。T367.5 の `helper` の前後そのものは測っていない。
 
 ### T448 [整理][その他] T367.5 の小さな気づき — 状態: 未着手（2026-10-11。規模 小）
 - `tests/imports.mjs` は束ねる前の配置（`?v=`・窓口の一覧）の読み手を持ったまま: 使う所を数えて、無ければ消す。
@@ -2490,9 +2490,43 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 
 ### T387 [試験][変換] 家族の表の、壊しても試験が通る 3 行 — 状態: 未着手（2026-10-10、T359 の 3 歩目のレビューから。規模 小）
 - GPT-2 の `n_inner` の既定（4 × dim）、NeoX の `tie_word_embeddings` の既定、NeoX の「head のどこも回さない」の断り。この歩の前から試験が無い行（実物の config は鍵を書くので当たらない）。小さな試験を 3 つ。
-### T378 [整理][その他] 状態に持ち主を: 共有の入れ物をなくす — 状態: 未着手（2026-10-10、T376 の案から。T367 の後、T368 の前。規模 大だが 1 つずつは中）
-- **子タスクの番号（2026-10-10）。1 つずつ CI・レビュー・デプロイ**: **T378.1** `forward/` の `pool`（1 トークンの道: 前後を測る。T367 を待たない）/ **T378.2** `gpuPart` と `gpuSide()` の引数（同じく測る。T367 を待たない）/ **T378.3** worker の `state` 36 個 / **T378.4** `gpu/` の `common` と `m`（測る。レビューは `shader-reviewer`）/ **T378.5** ページと `/benchmark/` の `page`。どれも未着手。
+### T378 [整理][その他] 状態に持ち主を: 共有の入れ物をなくす — 状態: 進行中（T378.1 はレビュー前、ほかは未着手。2026-10-10、T376 の案から。T367 の後、T368 の前。規模 大だが 1 つずつは中）
+- **子タスクの番号（2026-10-10）。1 つずつ CI・レビュー・デプロイ**: **T378.1** `forward/` の `pool`（1 トークンの道: 前後を測る。T367 を待たない）/ **T378.2** `gpuPart` と `gpuSide()` の引数（同じく測る。T367 を待たない）/ **T378.3** worker の `state` 36 個 / **T378.4** `gpu/` の `common` と `m`（測る。レビューは `shader-reviewer`）/ **T378.5** ページと `/benchmark/` の `page`。**T378.1 はレビュー前（2026-10-11、ブランチ `t378.1-pool`、本線には入れていない）**、ほかは未着手。
 - 決まり: モジュールは関数を出し、ほかが代入する物を出さない。5 つのコミットで 1 つずつデプロイ: (1) `forward/` の `pool`（setter 8 → 出来事の名前の関数）、(2) `gpuPart` と `gpuSide()` の引数 54 個（約 6 つの物に）、(3) worker の `state` 36 個（`runtime`・読み込みの頼み・`loaded`・worker.js 自身の `let` に）、(4) `gpu/` の `common` と `m`（`m.block`・`m.weights`・`m.forms`・`m.tokens`）、(5) ページと `/benchmark/` の `page`。(1)(2) は T367 を待たない。
+- **T378.1 で予定する違い（2026-10-11、実装の前に書いた）**。形: `forward/threads.js` の `softwareThreads()` が返す物から setter 8 つ（`threads`・`search`・`chosen`・`generations`・`recheckEvery`・`onChosen`・`onCompared`・`unchecked`）を無くし、出来事の名前の関数に替える: 本数を決めて使う（エンジンの `setThreads()` の中身）、本数を探す（`findThreads()` の中身）、生成が始まった（`newGeneration()` のうちスレッドの分）、トークンが始まった・終わった（`forward()` の検索の計時のうちスレッドの分）、スレッドを止める。外が読むのは本数・スレッドを失ったか・検索中か、の 3 つの getter だけ（検索の中身のオブジェクトは外に出さない）。
+  - **訪問者に見えるもの: 無い見込み。** カーネルの呼び出しの列、段の分け方、検索の比べの順と判定、ステータス行、コンソールの文は同じ。網の `calls`・`choices`・`shaders`・`models`・`layouts`・`python`・`page`・`bench`・`gpuworker` は「同じ」、`exports` も同じ（`forward.js` の窓口の export は変えない。エンジンのオブジェクトのメンバーの名前も変えない）の見込み。`sizes` は `threads.js` が少し大きく `engine.js` が少し小さくなる。
+  - **予定する動きの違いは 1 つ**: GPU だけに置いたモデル（`direct`）のエンジンには、スレッドを作る関数 `spawn` を渡さない（「スレッドを使わない」を、3 か所の `direct` の比べでなく 1 つの事実として渡す）。そのエンジンの `stopThreads()`・`release()` は、今は 1 本も居ないスレッドを止める手順（制御領域の `QUIT` の語を 1 に書く、止めた回数を数える）を通るが、通らなくなる。その語を読むスレッドは居らず、次のエンジンは制御領域を 0 で埋めてから始めるので、見えるものは無い。
+  - **束ねたファイルの名前**: `_astro/forward.<ハッシュ>.js` と、それを名指す worker の名前が替わる（どの変更でも同じ: 訪問者はそのファイルを 1 回取り直す）。シェーダの文と `deviceKey()` は触らない。
+  - **1 トークンの道**: 検索していないトークンは、今は境目を 2 回またぐ（`pool.unchecked` と `pool.search` の getter）。後は 1 回（「トークンが始まった」の呼び出し）の見込み。段（`phase()`）は今も後も名前で取り出した関数の直の呼び出しで、段ごと・仕事ごとの境目の読みは 0 のまま。数は実装の後に数えて書く。
+  - **試験**: `tests/forward-modules-check.mjs` の一覧は同じコミットで直す。スレッドの部品だけを代役（偽の時計・偽のスレッド・何もしない `runRows`）で回す試験を足す。
+- **T378.1 の結果（2026-10-11、状態: レビュー前。Opus medium。細かい決まりと落とし穴は AGENTS.md の「状態に持ち主を置くとき」）**
+  - **形**: `softwareThreads()` が返す物の setter 8 つ → 0。外が言う出来事は 6 つの関数: `use(n)`（前の `setThreads` の中身: `threads`・`search` を書いていた）、`find(…)`（`findThreads` の中身: `onChosen`・`onCompared`・`recheckEvery`・`threads`・`chosen`・`unchecked`）、`generationBegan()`（`newGeneration` の `generations += 1` と検索の始め）、`tokenBegan(needLogits)` と `tokenEnded(ms)`（`forward()` の検索の番: `threads` を 2 回書き、`search`・`unchecked`・`generations`・`chosen` を読んでいた）、`stop()`。getter は `threads`・`lost`・`searching` の 3 つ。外に出していた `shared`・`ensureHelpers`・`beginSearch`・`mayRecheck`・`countForToken`・`recordToken`・`stopHelpers` は部品の中だけの物になった。`engine.js` は 799 → 773 行、`threads.js` は 261 → 320 行。`gpuside.js` は `pool.search` → `pool.searching` の 1 か所だけ。
+  - **境目をまたぐ数（1 トークン、何もしないカーネルのエンジンで 20 トークン、1・2・4 本とも同じ）**: 検索していないトークンは前 2（getter 2 つ）→ 後 1（`tokenBegan`）。検索のトークンは前 8（getter 4・呼び出し 2・setter 2）→ 後 2。段は前後とも 1 トークン 11 回（logits の無いトークンは 10 回）の `phase` の直の呼び出しで、仕事ごとは 0。
+  - **網（`node tests/unchanged.mjs --before a0c8fd9`）**: 「違う」は 0。`shaders` と鍵 192・`models` 3031・`calls` 150・`choices` 4869・`exports`（JavaScript 135、Python 466）・`layouts` 1451・`python` 1820（pytest は両方 2274 passed・12 skipped）・`page` 613・`/benchmark/` 734・`bench` 742・`gpuworker` 140 と 98 が「同じ」。`sizes` は 13 ファイルで前と同じ顔ぶれ。**予定に無い違いは無い。**予定した 1 つ（GPU だけのエンジンが `QUIT` を書かない）は網のどれにも出ない。
+  - **速さ（CI、`THREADS=2,4 bash tests/compare-builds.sh a0c8fd9… 21 2`。本線のビルド（`forward.Dqke8pTt.js`）対 この木のビルド（`forward.BlR-BXhZ.js`）と、対照 = この木の 2 つのビルド。new ÷ old の 1 回目・2 回目。`helper` は 3 つとも同じ名前）**:
+
+    | CPU | モデル | 本数 | 本線 → この木 | 対照 | 同じ側を 2 回（中央） |
+    |---|---|---|---|---|---|
+    | AMD EPYC 9V45（x86-64、4 論理コア、run 38138705267） | tiny-lm | なし | 1.016・0.999 | 1.002・1.001 | 1.013〜1.030 |
+    | | | 2 | 1.020・0.988 | 0.993・0.990 | 1.016〜1.056 |
+    | | | 4 | 0.990・1.023 | 0.992・1.001 | 1.014〜1.027 |
+    | | llm-jp-3 150M | なし | 0.995・0.998 | 0.998・1.003 | 1.004〜1.016 |
+    | | | 2 | 1.003・1.005 | 0.993・1.005 | 1.007〜1.021 |
+    | | | 4 | 0.995・0.993 | 0.999・1.001 | 1.011〜1.020 |
+    | arm64（4 論理コア、ランナーは CPU の名前を言わない、run 38138706882） | tiny-lm | なし | 1.002・1.003 | 1.000・0.997 | 1.006〜1.010 |
+    | | | 2 | 1.008・0.989 | 0.994・0.995 | 1.008〜1.012 |
+    | | | 4 | 1.007・1.006 | 1.011・0.997 | 1.013〜1.016 |
+    | | llm-jp-3 150M | なし | 0.998・0.996 | 0.987・0.997 | 1.006〜1.015 |
+    | | | 2 | 1.001・1.008 | 1.003・0.998 | 1.010〜1.013 |
+    | | | 4 | 0.994・1.004 | 1.006・1.003 | 1.018〜1.023 |
+
+    **読めること**: 本線 → この木の 24 の比は 0.988〜1.023、対照の 24 は 0.987〜1.011。対照の幅の下に出たのは tiny-lm の 2 本の 2 回目だけ（0.988 と 0.989: 同じ比べの 1 回目は 1.020 と 1.008 で、向きが入れ替わる）。どの CPU・どの本数でも、2 回とも同じ向きに対照の外へ出た組は無い: 遅くなったとは読めない。**読めないこと**: 1〜2% より小さい差（1 つの側を続けて 2 回測っても中央で 0.4〜5.6% 動く）。x86-64 の llm-jp-3 150M の 4 本は 2 回とも 1 未満（0.995・0.993、対照 0.999・1.001、ラウンドごとの中央は 1.008・0.997）で、0.5% ほどの差があるとも無いとも言えない。4 論理コアのランナーの 4 本はほかの仕事とコアを分け合う。持ち主の端末は未計測。
+  - **わざと壊した 22 通り**（出来事ごとに 1 つ以上、メンバーの綴り 3 つ、呼び出しの落とし 3 つ）: 21 が落ちた。`threads-part-check` が 16、`thread-search-check` が 12、`gpu-default-check` が 12、`forward-modules-check` が 4（綴りと setter）、`threads-check` が 3。落ちなかった 1 つは「GPU だけのエンジンに `spawn` を渡す」（Node にそのエンジンを作る試験が無い）: `forward-modules-check` に構文木の検査を足し、落ちるのを見た。「`tokenEnded` が本数を best に戻さない」「`use` が検索を止めない」「logits の無いトークンも検索の番にする」「止まったスレッドの後に検索を残す」「`tokenEnded` が番を消さない」は部品だけの試験でしか落ちない。
+  - **3 つの物差し**: (1) 単独の試験: できる（`tests/threads-part-check.mjs`。結び付きは `jobs.js` の語の場所と `choice.js` の 2 つの名前）。(2) 機能を足す（作り物の「頼まれた間は 1 本」を捨ての木の前後に本当に足し、エンジン越しに同じ答えを出す所まで）: 前 2 ファイル 7 か所 → 後 2 ファイル 8 か所。**減っていない**。エンジンの共有の流れの中の直しが 3 → 0、エンジンに残るのは名前を取り出す所とメンバーの 1 行。(3) モデルを足す: 前後とも `threads.js` は 0 か所（変わらない）。
+  - **手元の確かめ**: `bash tests/suite.sh light`（203 秒）、`forward-check`・`threads-check`（1・2・4・8 本がビット単位で同じ、止まったスレッド、後から来たスレッド）をソースと `ENGINE_FROM=dist` で、`thread-search-check`・`memory-check`・`gpu-default-check`・`gpu-hybrid-check`（軽い組の中で）・`forward-modules-check`・`updated-check`・`npm run build` と `dist-check`（34 ファイル）。実ブラウザ（Chrome 155、ビルドした `dist/`）: tiny-lm は準備完了 8.5 秒・343.7 tok/s・スレッドの知らせ 2 回、llm-jp-3 150M は 11.3 秒・82.7 tok/s・「2 threads」・知らせ 3 回、どちらも失敗 0。
+  - **CI を回した。訳: 速さ（スレッドつきも）・x86-64 の全部の組・GPU だけに置いたエンジンは手元で見られない。** `tests.yml full=true` と速さ: run 38138705267、success（全部の組 664 秒、EPYC 9V45）。arm64 の軽い組と速さ: run 38138706882、success。`gpu-prompt.yml`（既定の組）: run 38141660919、success（Chromium と Dawn。FAILED は 0、「on the GPU alone」の行は作り物の全部で「keys and values the same to the bit」）: `gpuside.js` は 1 語の改名だけだが、予定した違いが GPU だけのエンジンの道にあり、そのエンジンを作るのは `gpu-check` だけなので 1 回回した。`full=true` は回していない。
+  - **回していないもの**: Firefox・WebKit、GB 級のモデル、持ち主の端末、本番（本線に入れていない）。
+  - **気づき（採番していない）**: (a) GPU だけのエンジン（`direct`）を Node で作る試験が無い（偽の GPU の Worker で作れれば、(3) の行を構文木でなく動きで見られる）。(b) `softwareThreads()` に渡す `plan` と `kernels` は、スレッドに渡すカーネル 2 つを選ぶためだけに読む（`plan.int8 && plan.relaxed`）: 選んだ 2 つを渡す形にすれば部品は計画を知らなくてよい（T378.2 で引数を組み直すときに）。(c) `ctl` と `waitUntil` は GPU の側も使う制御領域の物で、スレッドの部品が持ち主である訳は「先に作られるから」だけ。(d) 名前 `pool` は替えていない（設計は `threads`・`threads.count`）。
 - **(1)(2)(4) は 1 ブロック・1 トークンごとの道に触る**: CI で前後を交互に測り、遅くなる形は入れない（持ち主）。先に足す試験は T357.1 の停止の試験。`*-modules-check.mjs` のフィールドの一覧は同じコミットで直す。細かい案は docs/notes/t376-design-2026-10-10.md の (a)。
 
 ### T379 [整理][WebGPU] シェーダの目録を 1 つに（端末の鍵・Worker・網が同じ一覧を読む） — 状態: 未着手（2026-10-10、T376 の案から。T367 の後。規模 中。レビューは `shader-reviewer`）

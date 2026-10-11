@@ -14,10 +14,14 @@ const CHUNKS_PER_THREAD = 4;
 
 /** T349: the phases and the software threads of one engine (createForward(), which hands in what they read of it):
  * phase(jobs) shares a phase's rows out among the threads in use and waits for them (T93, T120), and the search finds
- * how many to use (T199, T223, T239, T240). Returns what the rest of the engine calls of them, and its variables that
- * the rest reads or sets, each through a getter and a setter (the variables themselves stay this function's own, as
- * they were createForward()'s: phase() reads `threads` as it did). gpuGettingReady(): whether the GPU's side is still
- * getting ready, which is made after this. */
+ * how many to use (T199, T223, T239, T240).
+ * T378.1: the state here (the count in use, the search, what a visit remembers) has this one owner. The rest of the
+ * engine tells it what happened, by functions named for that (use, find, generationBegan, tokenBegan and tokenEnded,
+ * stop), and reads three things of it (threads, lost, searching); nothing outside assigns a variable of it. The engine
+ * takes the functions out by name once (phase() and tokenBegan() are a token's path: plain calls of closures).
+ * spawn: left out where no software thread is ever to run (a memory that is not shared has none either; the engine
+ * leaves it out where the model is on the GPU alone, T156). gpuGettingReady(): whether the GPU's side is still getting
+ * ready, which is made after this. */
 export function softwareThreads({ memory, kernels, plan, spawn, stalledMs, wide, sharedMemory, runRows, gpuGettingReady }) {
   // ---- the matrix multiplications, in phases: the matmuls that read the same input (q, k and v; w1 and w3) go
   // out together. The input is quantized here, once; the rows are computed here and, with helper threads, by
@@ -244,18 +248,73 @@ export function softwareThreads({ memory, kernels, plan, spawn, stalledMs, wide,
     }
     return true;
   }
-  // T349: what the rest of the engine calls of the phases and the software threads, and reads and sets of their search
+
+  // ---- T378.1: what happens to the threads, as the rest of the engine tells it
+  /** n threads from the next token on, with no search: the helpers that are missing are started. Resolves to the count
+   * in use: 1 where there are no software threads here, or one stopped under this engine (T120) */
+  async function use(n) {
+    if (!shared || lost) return (threads = 1);
+    search = null;
+    if (!(await ensureHelpers(n))) return (threads = 1);
+    threads = Math.max(1, n);
+    return threads;
+  }
+  /** The count is to be found while tokens are written: from a hint, or from a count remembered from an earlier visit,
+   * which is searched again from on this visit (T223) and then every recheck generations. chose(count) is told the
+   * answer, compared(verdict) every comparison on the way. The helpers of the starting count are started before this
+   * resolves (to the count in use), so the first tokens do not wait for them */
+  async function find({ from, remembered = 0, recheck = 8, chose, compared }) {
+    if (!shared || lost) return 1;
+    onChosen = chose;
+    onCompared = compared;
+    recheckEvery = recheck;
+    const start = Math.max(1, remembered || from);
+    if (!(await ensureHelpers(start))) return (threads = 1);
+    threads = start;
+    if (remembered) {
+      chosen = remembered;
+      unchecked = true;  // T223: searched again from it on this visit
+    } else {
+      beginSearch(start);
+    }
+    return threads;
+  }
+  /** the page began a generation: now and then the count in use is checked against its neighbours again (T223: and
+   * first on the first generation with no GPU getting ready, where the count is remembered from an earlier visit or
+   * was found while the GPU got ready) */
+  function generationBegan() {
+    generations += 1;
+    if (mayRecheck() && (unchecked || generations % recheckEvery === 0)) beginSearch(chosen);
+  }
+  // A token's turn in the search, between tokenBegan() and tokenEnded(): [the count it runs on, whether it is timed]
+  let turn = null;
+  /** A token is about to run. Whether it is the search's: it then runs on the count the search wants next, and the
+   * caller times it and says tokenEnded(its milliseconds). T240: the search the count in use is owed begins here. Only
+   * the tokens that make logits are the search's */
+  function tokenBegan(needLogits) {
+    if (unchecked && generations && mayRecheck()) beginSearch(chosen);
+    if (!search || !needLogits) return false;
+    turn = countForToken();
+    threads = turn[0];
+    return true;
+  }
+  /** the token tokenBegan() said was the search's took this long: counted, and the count in use is the best so far
+   * again (or what the search ended on). Nothing where no such token began */
+  function tokenEnded(milliseconds) {
+    if (!turn) return;
+    const [count, timed] = turn;
+    turn = null;
+    recordToken(count, milliseconds, timed);
+    if (search) threads = search.best;
+  }
+  /** the helper threads end; the engine runs on its own again */
+  function stop() {
+    if (shared) stopHelpers();
+  }
   return {
-    shared, ctl, waitUntil, phase, mayRecheck, searchLog, beginSearch, countForToken, recordToken, stopHelpers,
-    ensureHelpers,
-    get threads() { return threads; }, set threads(to) { threads = to; },
+    ctl, waitUntil, phase, searchLog, use, find, generationBegan, tokenBegan, tokenEnded, stop,
+    get threads() { return threads; },
     get lost() { return lost; },
-    get search() { return search; }, set search(to) { search = to; },
-    get chosen() { return chosen; }, set chosen(to) { chosen = to; },
-    get generations() { return generations; }, set generations(to) { generations = to; },
-    get recheckEvery() { return recheckEvery; }, set recheckEvery(to) { recheckEvery = to; },
-    get onChosen() { return onChosen; }, set onChosen(to) { onChosen = to; },
-    get onCompared() { return onCompared; }, set onCompared(to) { onCompared = to; },
-    get unchecked() { return unchecked; }, set unchecked(to) { unchecked = to; },
+    get searching() { return search !== null; },
   };
 }

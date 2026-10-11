@@ -303,11 +303,12 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     [halfKV ? 4 : 3, xb + t * S, q + t * S, layerKeys, layerValues, att + t * A, pos, kvHeads, headSize, heads, 1, 0, 0, 0];
   const runRows = runner(k, relaxed);
 
-  // T349: the phases and the software threads (forward/threads.js): their functions by name, their variables through pool
-  const pool = softwareThreads({ memory, kernels, plan, spawn, stalledMs, wide, sharedMemory, runRows,
+  // T349: the phases and the software threads (forward/threads.js): their functions by name. T378.1: their state is
+  // theirs alone: what happens here is told through those functions, and pool.threads, .lost and .searching are read.
+  // No software thread where the model is on the GPU alone (T156: nothing runs on the CPU)
+  const pool = softwareThreads({ memory, kernels, plan, spawn: direct ? null : spawn, stalledMs, wide, sharedMemory, runRows,
     gpuGettingReady: () => gpuPart.gpuGettingReady() });
-  const { phase, ctl, waitUntil, shared, ensureHelpers, beginSearch, mayRecheck, searchLog, stopHelpers, countForToken,
-    recordToken } = pool;
+  const { phase, ctl, waitUntil, searchLog, use, find, generationBegan, tokenBegan, tokenEnded, stop } = pool;
   // matmuls of one input (count tokens of it, a frame apart): [matrix, output, output stride, layer] each
   // T237: in a rotated basis the matrices read R of the input, turned here once for all of them (a kernel on this
   // thread: 5 blocks of 1024 take a few microseconds, a thousandth of the rows they are multiplied by)
@@ -576,45 +577,23 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     backend,
     /** Use n threads from the next token on (stage 2): starts the helpers that are missing. 1 on a memory that is
      * not shared. Resolves to the number in use. */
-    async setThreads(n) {
-      if (!shared || pool.lost || direct) return (pool.threads = 1);
-      pool.search = null;
-      if (!(await ensureHelpers(n))) return (pool.threads = 1);
-      pool.threads = Math.max(1, n);
-      return pool.threads;
-    },
+    setThreads: use,
     /** Find the number of threads while generating (see threads.js): from a hint, or from a count remembered from an
      * earlier visit, which is then only checked against its neighbours now and then (every recheck generations).
      * chose(count) is told the answer, compared(verdict) every comparison on the way. The helpers of the starting count are started (and warmed) before this
      * resolves, so the first tokens do not wait for them. */
-    async findThreads({ from, remembered = 0, recheck = 8, chose, compared }) {
-      if (!shared || pool.lost || direct) return 1;
-      pool.onChosen = chose;
-      pool.onCompared = compared;
-      pool.recheckEvery = recheck;
-      const start = Math.max(1, remembered || from);
-      if (!(await ensureHelpers(start))) return (pool.threads = 1);
-      pool.threads = start;
-      if (remembered) {
-        pool.chosen = remembered;
-        pool.unchecked = true;  // T223: searched again from it on this visit
-      } else {
-        beginSearch(start);
-      }
-      return pool.threads;
-    },
+    findThreads: find,
     /** the page starts a generation: now and then the remembered count is checked against its neighbours again (T223:
      * and first on the first generation of a load with no GPU getting ready, where the count in use is remembered from
      * an earlier visit or was found while the GPU got ready) */
     newGeneration() {
       gpuPart.gpuTokens = 0;
-      pool.generations += 1;
-      if (mayRecheck() && (pool.unchecked || pool.generations % pool.recheckEvery === 0)) beginSearch(pool.chosen);
+      generationBegan();
       // T148: halfway between the threads' checks, a prompt goes to the side not chosen, so that its time stays
       // today's (a device that heats up, a GPU timed while the CPU was busy)
       gpuPart.written = 0;
       const whole = gpuPart.gpuOn && !always ? times.of(GPU_BLOCK, pool.threads) : null;
-      if (whole && ++gpuPart.sinceCheck >= GPU_RECHECK && !gpuPart.recheck && !pool.search) {
+      if (whole && ++gpuPart.sinceCheck >= GPU_RECHECK && !gpuPart.recheck && !pool.searching) {
         gpuPart.recheck = whole.faster ? "cpu" : "gpu";
         gpuPart.sinceCheck = 0;
         console.info(`gpu: the ${gpuPart.recheck === "cpu" ? "CPU on the end" : "GPU on the beginning"} of the next long prompt, to time it again`);
@@ -622,7 +601,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       // T152: the same for the steps of a generation, the side not chosen taking its first ones
       gpuPart.gpuSampled = 0;
       const stepsNow = gpuPart.tokensOn && !always ? steps.of(pool.threads) : null;
-      if (stepsNow && ++gpuPart.sinceTokens >= GPU_RECHECK && !gpuPart.tokenRecheck && !pool.search) {
+      if (stepsNow && ++gpuPart.sinceTokens >= GPU_RECHECK && !gpuPart.tokenRecheck && !pool.searching) {
         gpuPart.tokenRecheck = stepsNow.faster ? "cpu" : "gpu";
         gpuPart.cpuRecheck = TOKEN_RECHECK;
         gpuPart.sinceTokens = 0;
@@ -631,16 +610,14 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       tokenVerdict();
     },
     get searching() {
-      return pool.search !== null;
+      return pool.searching;
     },
     searchLog,
     get threads() {
       return pool.threads;
     },
     /** the helper threads end; this engine runs on its own again */
-    stopThreads() {
-      if (shared) stopHelpers();
-    },
+    stopThreads: stop,
     /** T120: whether a software thread stopped under this engine, which then went on with one */
     get lostThreads() {
       return pool.lost;
@@ -730,14 +707,11 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     /** T152: count steps of generate() on the GPU, or undefined where it did not take them (gpuside.js's generateMany) */
     generateMany,
     forward(token, pos, needLogits = true) {
-      if (pool.unchecked && pool.generations && mayRecheck()) beginSearch(pool.chosen);  // T240
-      if (pool.search && needLogits) {
-        const [count, timed] = countForToken();
-        pool.threads = count;
+      if (tokenBegan(needLogits)) {
+        // a token of the search for the number of threads (threads.js), timed for it
         const began = clock();
         forward(token, pos, needLogits);
-        recordToken(count, clock() - began, timed);
-        if (pool.search) pool.threads = pool.search.best;
+        tokenEnded(clock() - began);
       } else if (needLogits && gpuPart.tokensOn && gpuPart.gpuOn) {
         // T152: a step on the CPU, timed against the GPU's
         const began = performance.now();

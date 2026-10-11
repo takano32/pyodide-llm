@@ -9,6 +9,10 @@
 # one code were 1.4% apart on arm64 with 7 rounds; T437: 15 rounds or more, and the control every time).
 #
 #   bash tests/compare-builds.sh [<commit> = origin/main] [<rounds> = 21] [<times> = 2] [model ids = tiny-lm llm-jp-3-150m]
+#   THREADS=2,4 bash tests/compare-builds.sh …    T378.1, T447: after each of those, the same two pairs WITH software threads
+#                                                 (tests/threads-compare.mjs: each build's forward and its own helper, that
+#                                                 many threads). compare-engines runs no software thread: a change of
+#                                                 forward/threads.js, helper.js or jobs.js is measured only here.
 #
 # CI's (the speed of a development machine decides nothing): tests.yml's extra=, on x86-64 and runner=ubuntu-24.04-arm,
 # after the suite (the models, the kernels and dist/ are there then). Both sides read this tree's Python and kernels:
@@ -31,4 +35,9 @@ for time in $(seq 1 "$times"); do
   node tests/compare-engines.mjs "$@" --rounds "$rounds" --bundle-old "$other/dist" --bundle dist
   echo "compare-builds: the control, this tree built again (old) against this tree's build (new), $rounds rounds, time $time of $times"
   node tests/compare-engines.mjs "$@" --rounds "$rounds" --bundle-old "$again" --bundle dist
+  [ -n "${THREADS:-}" ] || continue
+  echo "compare-builds: with $THREADS software threads, $ref's build (old) against this tree's (new), $rounds rounds, time $time of $times"
+  node tests/threads-compare.mjs "$@" --rounds "$rounds" --threads "$THREADS" --old "$other/dist" --new dist
+  echo "compare-builds: with $THREADS software threads, the control, this tree built again (old) against this tree's build (new), $rounds rounds, time $time of $times"
+  node tests/threads-compare.mjs "$@" --rounds "$rounds" --threads "$THREADS" --old "$again" --new dist
 done
