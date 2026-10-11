@@ -87,7 +87,7 @@ export function ask(worker: Worker, message: any): Promise<any> {
 // worker never ended the bridge, and the storage and the line never ran)
 // (T367.3: each by its literal URL, which is how the bundler is told of a worker)
 const WORKERS = {
-  "worker.js": () => new Worker(new URL("../runtime/worker.js", import.meta.url), { type: "module" }),
+  "worker.js": () => new Worker(new URL("../runtime/worker.ts", import.meta.url), { type: "module" }),
   "benchmark/gpu.js": () => new Worker(new URL("../runtime/benchmark/gpu.js", import.meta.url), { type: "module" }),
   "benchmark/memory.js": () => new Worker(new URL("../runtime/benchmark/memory.js", import.meta.url), { type: "module" }),
   "benchmark/sections.js": () => new Worker(new URL("../runtime/benchmark/sections.js", import.meta.url), { type: "module" }),

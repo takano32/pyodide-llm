@@ -1,4 +1,4 @@
-// worker/conduct.js (T374.2.1): the worker's side of a conversion's conduct. Which file a model needs, how much of its
+// worker/conduct.ts (T374.2.1): the worker's side of a conversion's conduct. Which file a model needs, how much of its
 // head, which tokenizer is tried next and which parts of the weights follow is Python's (src/python/convert/conduct.py: a
 // generator that asks). Here is what answers it (T374.2.2): the loop, which knows nothing of where a file is, and the
 // two answerers it is handed one of: huggingface.co's (the fetches, their parts and their order, what is tried again)
@@ -10,17 +10,21 @@
 // that is not there is answered with undefined, which is None in Python (null is not). Every other failure is thrown
 // and never answered. missing(where, name): the error of a conduct that ended for want of that file, in the words of
 // whoever knows the place (or nothing: the loop has a sentence of its own, which neither answerer here leaves it to).
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { pyodide } from "./runtime.js";
-import { fileSize, refused, fetchRange, inOrder } from "./ranges.js";
-import { weightsRoom } from "./weights.js";
+import { pyodide } from "./runtime.ts";
+import { fileSize, refused, fetchRange, inOrder } from "./ranges.ts";
+import { weightsRoom } from "./weights.ts";
+import type { Thrown } from "./told.ts";
+import type { Hf } from "../contracts/messages.ts";
+import type { Answerer, Feed, Progress, Request, Where } from "../contracts/conduct.ts";
+import type { Conduct, Conversion, Proxy } from "../contracts/python.ts";
 
 // The conduct of the conversion of a model as it is listed: the generator, not yet asked anything.
 // hf: the item's (weights, config, tokenizer, vocabulary: names, wherever the files are); make: what the converter
 // takes besides the files.
 // Every proxy on the way is let go: each keeps its Python object alive.
-export function conductOf(hf, make) {
+export function conductOf(hf: Hf, make: object) {
   const module = pyodide.pyimport("convert.conduct"), conduct = module.conduct;
   // (JSON: a key whose value is undefined is left out. In Python it would be there, with a value that is not None)
   const listed = pyodide.toPy(JSON.parse(JSON.stringify(hf)));
@@ -35,7 +39,7 @@ export function conductOf(hf, make) {
 
 // What next() of the generator gave, as an array, its proxy let go. The conversion of ("done", conversion) stays a
 // proxy (depth 1), which whoever asked for it destroys; and so does the feed of a stream, which the loop destroys.
-function requestOf(step) {
+function requestOf(step: ReturnType<Conduct["next"]>): Request {
   if (step.done) {
     throw new Error("The conduct of the conversion ended without a word.");
   }
@@ -56,24 +60,24 @@ function requestOf(step) {
 //
 // A proxy a request brings (the feed of a stream: the conversion's own) is the loop's to let go of, once the request is
 // answered, or failed, or was of a kind nothing answers (T407): no answerer has to remember it.
-export async function answered(steps, { answers, missing }, signal) {
+export async function answered(steps: Conduct, { answers, missing }: Answerer, signal: AbortSignal) {
   for (let request = requestOf(steps.next()); ;) {
     const [kind, ...asked] = request;
     if (kind === "done") {
-      return asked[0];  // (the conversion)
+      return asked[0] as Conversion;  // (the conversion)
     }
-    let answer;
+    let answer: unknown;
     try {
       if (kind === "missing") {
-        throw missing(...asked) ?? new Error(`The conversion needs ${asked[1]}, which is not there.`);
+        throw missing(...(asked as [Where, string])) ?? new Error(`The conversion needs ${asked[1]}, which is not there.`);
       }
       if (!Object.hasOwn(answers, kind)) {
         throw new Error(`The conduct of the conversion asked for ${kind}, which nothing here answers.`);
       }
-      answer = await answers[kind](...asked);
+      answer = await (answers as Record<string, (...asked: unknown[]) => unknown>)[kind](...asked);
     } finally {
       for (const brought of asked) {
-        if (typeof brought?.destroy === "function") brought.destroy();
+        if (typeof (brought as Partial<Proxy> | undefined)?.destroy === "function") (brought as Proxy).destroy();
       }
     }
     // (a load cancelled while its answer came converts nothing more)
@@ -92,22 +96,22 @@ export async function answered(steps, { answers, missing }, signal) {
 // hands a part to the conversion and returns the share converted (the time it takes is the converter's, T84).
 // A stream's parts go from here to the conversion's own feed, which the request brings: the call the worker's own
 // steps made for a part, and nothing more.
-export function fromHub(hf, signal, progress) {
+export function fromHub(hf: Hf, signal: AbortSignal, progress: Progress): Answerer {
   const places = { weights: hf, vocabulary: hf.vocabulary };
-  const at = (where, name) => `https://huggingface.co/${places[where].repo}/resolve/${places[where].revision}/${name}`;
-  const notThere = new Map();  // by URL, the error of each 404 answered with undefined
-  const orNot = async (url, fetched) => {
+  const at = (where: Where, name: string) => `https://huggingface.co/${places[where]!.repo}/resolve/${places[where]!.revision}/${name}`;
+  const notThere = new Map<string, Error>();  // by URL, the error of each 404 answered with undefined
+  const orNot = async <T>(url: string, fetched: () => Promise<T>) => {
     try {
       return await fetched();
     } catch (error) {
-      if (error.status !== 404) {
+      if ((error as Thrown).status !== 404) {
         throw error;
       }
-      notThere.set(url, error);
+      notThere.set(url, error as Error);
       return undefined;
     }
   };
-  const file = async (url) => {
+  const file = async (url: string) => {
     const res = await fetch(url, { signal });
     if (!res.ok) {
       throw refused(url, res);
@@ -115,14 +119,14 @@ export function fromHub(hf, signal, progress) {
     return res;
   };
   // (each answer by the address of its file)
-  const of = (answer) => (where, name, ...more) => answer(at(where, name), ...more);
+  const of = <More extends unknown[], Given>(answer: (url: string, ...more: More) => Given) => (where: Where, name: string, ...more: More) => answer(at(where, name), ...more);
   return {
     answers: {
       text: of((url) => orNot(url, async () => (await file(url)).text())),
       bytes: of((url) => orNot(url, async () => new Uint8Array(await (await file(url)).arrayBuffer()))),
       // [the bytes, the size of the whole file]; undefined for a size the answer did not show (Content-Range is not a
       // header CORS shows by default, T112): the conduct then asks for it
-      range: of((url, begin, end) => orNot(url, async () => {
+      range: of((url, begin: number, end: number) => orNot(url, async (): Promise<[Uint8Array, number | undefined]> => {
         const { bytes, total } = await fetchRange(url, begin, end, signal);
         return [bytes, Number.isFinite(total) && total > 0 ? total : undefined];
       })),
@@ -130,7 +134,7 @@ export function fromHub(hf, signal, progress) {
       // the parts go to the conversion itself (feed) as inOrder() has them in the order of the file: nothing of the
       // conduct runs for a part, which costs what it did. What is answered is the end of the stream. Of total bytes,
       // before were in when this stream began (the shards count one after another: the review of T119)
-      stream: of(async (url, begin, end, before, total, feed) => {
+      stream: of(async (url, begin: number, end: number, before: number, total: number, feed: Feed) => {
         progress.of(total);
         await inOrder(url, begin, end, (part) => progress.converting(() => feed(part)), signal,
           (received) => progress.arriving(before + received - begin));
@@ -151,14 +155,14 @@ export function fromHub(hf, signal, progress) {
 //
 // progress: as fromHub()'s, but for arriving(): what a disk gives has all arrived. A part goes to the conversion's
 // feed as the disk gives it, one call a part, and waits for the room its weights need where they go on (T156).
-export function fromFolder(files, signal, progress) {
-  const named = new Map();
+export function fromFolder(files: File[], signal: AbortSignal, progress: Progress): Answerer {
+  const named = new Map<string, File>();
   for (const file of files) {
     const name = file.name.toLowerCase();
     if (!named.has(name)) named.set(name, file);
   }
   // (each answer by the File of that name, where there is one)
-  const of = (answer) => (where, name, ...more) => {
+  const of = <More extends unknown[], Given>(answer: (file: File, ...more: More) => Given) => (where: Where, name: string, ...more: More) => {
     const file = named.get(name.toLowerCase());
     return file && answer(file, ...more);
   };
@@ -166,9 +170,9 @@ export function fromFolder(files, signal, progress) {
     answers: {
       text: of((file) => file.text()),
       bytes: of(async (file) => new Uint8Array(await file.arrayBuffer())),
-      range: of(async (file, begin, end) => [new Uint8Array(await file.slice(begin, end).arrayBuffer()), file.size]),
+      range: of(async (file, begin: number, end: number): Promise<[Uint8Array, number]> => [new Uint8Array(await file.slice(begin, end).arrayBuffer()), file.size]),
       size: of((file) => file.size),
-      stream: of(async (file, begin, end, before, total, feed) => {
+      stream: of(async (file, begin: number, end: number, before: number, total: number, feed: Feed) => {
         progress.of(total);
         const reader = file.slice(begin, end).stream().getReader();
         for (;;) {

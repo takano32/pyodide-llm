@@ -19,42 +19,44 @@
 // reports about a load carries its number, so that the page can tell a late report of a cancelled one.
 
 // T350: this file is the window of the worker: its URL, generate() and the messages. The rest is in the modules
-// of worker/: runtime.js (what the visit finds once), request.js (what the page asked for with a load), loaded.js (the
-// model loaded now) (T378.3: each sets its own, and the others say what happened and read), told.js, clock.js, pyodide.js (the runtime's
-// loading), weights.js (where a model's weights go), ranges.js and sources.js (the fetching), conduct.js (T374.2.1: what
-// answers the conduct of a conversion, which is Python's, from huggingface.co or from a folder), convert.js (a Hugging Face model), load.js and timing.js (what /benchmark/ times).
+// of worker/: runtime.ts (what the visit finds once), request.ts (what the page asked for with a load), loaded.ts (the
+// model loaded now) (T378.3: each sets its own, and the others say what happened and read), told.ts, clock.ts, pyodide.ts (the runtime's
+// loading), weights.ts (where a model's weights go), ranges.ts and sources.ts (the fetching), conduct.ts (T374.2.1: what
+// answers the conduct of a conversion, which is Python's, from huggingface.co or from a folder), convert.ts (a Hugging Face model), load.ts and timing.ts (what /benchmark/ times).
 // T367.3: a bundler links them (static imports, src/runtime/): they are part of this worker's own file, whose name
 // carries a hash of its text, so that all are of one deployment, and nothing is awaited before the handler at the end
 // of this file is set (the messages that came while the modules were fetched one by one were kept in a queue until
 // then). What the worker asks for later is asked for by a literal name: forward.js, kept.js and the device's key as
 // modules (import("./forward.js")), the kernels and the Python's archives as files (built.js). The site's root, where
-// models/ is, the page hands over with a load (request.js's root): this file's own URL is under _astro/.
+// models/ is, the page hands over with a load (request.ts's root): this file's own URL is under _astro/.
 // T367.4: a page left open across a deployment asks for such a file after it is gone. Where that ends a load (the
 // Python's archives, kept.js at a first conversion) the visitor is told that the site was updated (updated.js); where
 // the engine goes on without the file (the kernels and forward.js: NumPy; a software thread; the GPU's worker; the
 // device's key) it goes on as it always did: a model that answers is not interrupted. T439: where that is slower
-// (all but the key) the page is told { type: "updated" } once, and its status line says so (worker/outdated.js).
-import { pyodide, runtimeAsked } from "./worker/runtime.js";
-import { loadAsked, benching, roundsBegan, roundBegan, roundsEnded } from "./worker/request.js";
-import { llama, engineNow } from "./worker/loaded.js";
-import { weightsBytes, gpuOnlyLost, onCpuFromNow } from "./worker/weights.js";
-import { told } from "./worker/told.js";
-import { since, breathe } from "./worker/clock.js";
-import { load, threadsNow, heapBytes } from "./worker/load.js";
-import { timedGeneration, timedPaths } from "./worker/timing.js";
+// (all but the key) the page is told { type: "updated" } once, and its status line says so (worker/outdated.ts).
+import { pyodide, runtimeAsked } from "./worker/runtime.ts";
+import { loadAsked, benching, roundsBegan, roundBegan, roundsEnded } from "./worker/request.ts";
+import { llama, engineNow } from "./worker/loaded.ts";
+import { weightsBytes, gpuOnlyLost, onCpuFromNow } from "./worker/weights.ts";
+import { told } from "./worker/told.ts";
+import { since, breathe } from "./worker/clock.ts";
+import { load, threadsNow, heapBytes } from "./worker/load.ts";
+import { timedGeneration, timedPaths } from "./worker/timing.ts";
+import type { Thrown } from "./worker/told.ts";
+import type { Bench, BenchRow, Done, Failed, Paths, Token, ToWorker } from "./contracts/messages.ts";
 
 // What this file alone holds (T378.3: they were fields of the object all the modules shared):
 // the AbortController of the load that is going on, and a promise that settles once it has cleaned up
-let loading, unloaded = Promise.resolve();
+let loading: AbortController | undefined, unloaded = Promise.resolve();
 // the run that is going on, and whether the page asked it to stop
-let generating, stopped = false;
-let lastLoad;  // the load message of the model now (T156)
+let generating: Promise<void> | undefined, stopped = false;
+let lastLoad: Extract<ToWorker, { type: "init" | "load" }> | undefined;  // the load message of the model now (T156)
 let pathing = false;  // T184: the benchmark's page path is being timed; see the paths message
 
-async function generate({ type, prompt, ...options }) {
+async function generate({ type, prompt, ...options }: Extract<ToWorker, { type: "generate" }>) {
   engineNow()?.newGeneration?.();  // now and then the remembered number of threads is checked again
   // a Python generator: every step of the iteration runs one forward pass and hands over one piece of text
-  const pieces = llama.generate.callKwargs(prompt, options);
+  const pieces = llama!.generate.callKwargs(prompt, options);
   try {
     let breathed = performance.now();
     while (!stopped) {
@@ -62,7 +64,7 @@ async function generate({ type, prompt, ...options }) {
       if (done) {
         break;
       }
-      postMessage({ type: "token", text: value });
+      postMessage({ type: "token", text: value } satisfies Token);
       // by the clock and not by the token: often enough for the button to feel immediate with a model that
       // writes 50 tokens a second, rarely enough not to cost one that writes 900 a measurable tok/s
       if (performance.now() - breathed > 50) {
@@ -77,15 +79,15 @@ async function generate({ type, prompt, ...options }) {
   }
   postMessage({ type: "done", threads: threadsNow(), gpuTokens: engineNow()?.gpuTokens ?? 0, gpuSampled: engineNow()?.gpuSampled ?? 0,
                 gpu: engineNow()?.gpuStatus,
-                ...llama.stats.toJs({ dict_converter: Object.fromEntries }) });
+                ...llama!.stats.toJs({ dict_converter: Object.fromEntries }) } satisfies Done);
 }
 
-self.onmessage = async ({ data }) => {
-  let signal;
+self.onmessage = async ({ data }: MessageEvent<ToWorker>) => {
+  let signal: AbortSignal | undefined;
   try {
     if (data.type === "init" || data.type === "load") {
       lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
-      loadAsked(data);  // (the threads, the GPU's shaders, the site's root, the loads that follow: request.js)
+      loadAsked(data);  // (the threads, the GPU's shaders, the site's root, the loads that follow: request.ts)
       // The latest choice wins: the download that is going on stops, and its parts that are complete stay in
       // the cache. Pyodide is loaded once, whatever happens to the model that was asked for first.
       loading?.abort();
@@ -99,7 +101,7 @@ self.onmessage = async ({ data }) => {
       // that the next buffer is allocated first, and the WebAssembly memory, which never shrinks, grows by a
       // whole model with every change of mind (587 MB after four of them).
       const previous = unloaded;
-      const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+      const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal!, data.load));
       unloaded = current.catch(() => {});
       await current;
     } else if (data.type === "bench") {
@@ -110,7 +112,7 @@ self.onmessage = async ({ data }) => {
         return;
       }
       roundsBegan();
-      const rows = [];
+      const rows: BenchRow[] = [];
       try {
         for (const round of data.rounds) {
           // T214: a round the page skips (src/bench.js's roundsHere(): NumPy's float32 weights where the browser does
@@ -126,19 +128,19 @@ self.onmessage = async ({ data }) => {
           roundBegan(round.without);
           const started = performance.now();
           const previous = unloaded;
-          const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+          const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal!, data.load));
           unloaded = current.catch(() => {});
           await current;
           const ready = since(started);
           const { tokens, speed } = timedGeneration(data.prompt, data.steps);
-          rows.push({ name: round.name, without: round.without, tokens, speed, backend: llama.backend, seconds: ready });
+          rows.push({ name: round.name, without: round.without, tokens, speed, backend: llama!.backend, seconds: ready });
         }
       } finally {
         // also when a round failed or a change of model cancelled it (the review of T76): the next model must not
-        // load with a round's switches off while the panel shows them on (the page's again: request.js)
+        // load with a round's switches off while the panel shows them on (the page's again: request.ts)
         roundsEnded();
       }
-      postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version });
+      postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version } satisfies Bench);
     } else if (data.type === "paths") {
       // T184: the model page's own path, on the model as the first load left it (the GPU too), before the rounds:
       // its prompts and its writing as the page chooses, on the CPU only and on the GPU only
@@ -147,7 +149,7 @@ self.onmessage = async ({ data }) => {
       }
       pathing = true;
       try {
-        postMessage({ type: "paths", load: data.load, ...(await timedPaths(data)) });
+        postMessage({ type: "paths", load: data.load, ...(await timedPaths(data)) } satisfies Paths);
       } finally {
         pathing = false;
       }
@@ -164,11 +166,11 @@ self.onmessage = async ({ data }) => {
         // T156: the GPU stopped under a model on it alone: said, and the model loaded again on the CPU
         const lost = gpuOnlyLost();
         if (!lost) throw err;
-        onCpuFromNow(lastLoad.model);
-        postMessage({ type: "error", load: lastLoad.load, reloading: true,
-          message: `The GPU stopped (${lost}). This model was on the GPU alone, and is loaded again on the CPU.` });
+        onCpuFromNow(lastLoad!.model);
+        postMessage({ type: "error", load: lastLoad!.load, reloading: true,
+          message: `The GPU stopped (${lost}). This model was on the GPU alone, and is loaded again on the CPU.` } satisfies Failed);
         generating = undefined;
-        self.onmessage({ data: lastLoad });
+        self.onmessage!({ data: lastLoad } as MessageEvent<ToWorker>);
       } finally {
         generating = undefined;
       }
@@ -183,21 +185,21 @@ self.onmessage = async ({ data }) => {
       // name and message on the last line: the memory of the weights, which the converter opens through the sink
       // (weightsBuffer: Safari's refusal of a model past 4 GB, a memory the browser will not make or grow), and
       // forward.js growing the keys and values. It is told as itself (the review of T133: it was a traceback)
-      const [, name = err?.name, text = err?.message] = err?.type === "JsException"
-        ? /^pyodide\.ffi\.JsException: (\w+): (.*)$/.exec(err.message.trim().split("\n").pop()) ?? [] : [];
+      const [, name = (err as Thrown)?.name, text = (err as Thrown)?.message] = (err as Thrown)?.type === "JsException"
+        ? /^pyodide\.ffi\.JsException: (\w+): (.*)$/.exec((err as Thrown).message!.trim().split("\n").pop()!) ?? [] : [];
       // a ValueError of the engine is a message for the reader (wrong file, prompt too long): no traceback
-      const message = err?.type === "ValueError" ? err.message.trim().split("\n").pop().replace(/^ValueError: /, "")
+      const message = (err as Thrown)?.type === "ValueError" ? (err as Thrown).message!.trim().split("\n").pop()!.replace(/^ValueError: /, "")
         : name === "Error" ? text : told(err);
       // T90: the memory ran out, in Python (MemoryError: malloc could not grow the WebAssembly memory) or in
       // JavaScript (RangeError: an ArrayBuffer or WebAssembly.Memory.grow was refused). The page says so in words
       // a visitor understands, with how much memory the page had when it happened.
       // (V8 also raises RangeError for a stack overflow, which is not this; Firefox says InternalError: out of memory)
-      const memory = err?.type === "MemoryError" || name === "InternalError" ||
+      const memory = (err as Thrown)?.type === "MemoryError" || name === "InternalError" ||
         (name === "RangeError" && !/call stack/i.test(text ?? ""));
       // where it happened goes to the page's console (T96): tests/e2e.mjs keeps the console of a failed run
-      postMessage({ type: "error", load: data.load, message: memory ? String(text ?? err).trim().split("\n").pop() : message,
-                    stack: String(err?.stack ?? told(err)), weights: weightsBytes(), pyodide: Boolean(err?.pyodide),
-                    ...(memory && { memory: true, heap: heapBytes() }) });
+      postMessage({ type: "error", load: data.load, message: memory ? String(text ?? err).trim().split("\n").pop()! : message!,
+                    stack: String((err as Thrown)?.stack ?? told(err)), weights: weightsBytes(), pyodide: Boolean((err as Thrown)?.pyodide),
+                    ...(memory && { memory: true, heap: heapBytes() }) } satisfies Failed);
     }
   }
 };

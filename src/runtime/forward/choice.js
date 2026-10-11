@@ -4,7 +4,7 @@
 // A module of src/runtime/forward.js, which exports its names as before.
 
 // T205: the most release() waits for the GPU's worker to say it let go of its buffers and its device ("ended"), before
-// the next model is read; one that says nothing by then (a compilation that does not return) is terminated (worker/weights.js
+// the next model is read; one that says nothing by then (a compilation that does not return) is terminated (worker/weights.ts
 // waits as long for the GPU's worker of a model on the GPU alone let go before its engine was built, T156)
 export const GPU_END_MS = 5000;
 // T147: the most tokens of a prompt the GPU takes at once: the tokens of the largest tile (T146's 64 × 64), whose

@@ -58,7 +58,7 @@ export async function modelSection(): Promise<Result> {
     });
     // ?gpuTest=on (tests only, as on the model page: T148): CI's fallback adapter taken as a GPU, to see the GPU's side
     // T190: the number of threads the model page remembers for this model here (it reads it the same way), else a
-    // search from the logical cores that the page path lets end (worker/timing.js); nothing is remembered from here
+    // search from the logical cores that the page path lets end (worker/timing.ts); nothing is remembered from here
     let remembered = 0;
     try {
       remembered = Number(localStorage.getItem(threadsKey(entry.id, navigator))) || 0;

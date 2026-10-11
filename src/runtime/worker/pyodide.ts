@@ -1,8 +1,10 @@
-// worker/pyodide.js (T350): the version of Pyodide, its loading in named steps, and the watch that tells a slow line
-// from one that stopped (T118, T129). It holds nothing of the worker's state: init() of worker.js keeps what this loads.
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// worker/pyodide.ts (T350): the version of Pyodide, its loading in named steps, and the watch that tells a slow line
+// from one that stopped (T118, T129). It holds nothing of the worker's state: init() of worker.ts keeps what this loads.
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { isError, told } from "./told.js";
+import { isError, told } from "./told.ts";
+import type { Status } from "../contracts/messages.ts";
+import type { Pyodide, PyodideModule } from "../contracts/python.ts";
 
 // the version becomes part of a CDN URL, so accept nothing but a plain version number
 const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
@@ -15,14 +17,14 @@ const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;
 // model's parts fill: the first bytes of a new connection wait behind them (slow.yml, the review of T129: 20.5 s behind
 // a 1 MB model at 0.4 Mbps with the oldest connection served first, 14.2 s through one queue of 256 KB at 0.4 Mbps,
 // 0.8 s with the line shared by turns), so 30 seconds is little more than such a line's queue.
-export async function resolvePyodideVersion(search) {
+export async function resolvePyodideVersion(search: string) {
   const forced = new URLSearchParams(search).get("pyodide");
-  if (PYODIDE_VERSION_PATTERN.test(forced)) {
-    return forced;
+  if (PYODIDE_VERSION_PATTERN.test(forced!)) {  // (none: null, which is read as "null" and is no version)
+    return forced!;
   }
   const given = new AbortController();
   const timer = setTimeout(() => given.abort(), QUIET_SECONDS * 1000);
-  let version;
+  let version: string;
   try {
     const res = await fetch("https://data.jsdelivr.com/v1/packages/npm/pyodide/resolved?specifier=latest", { signal: given.signal });
     version = (await res.json()).version;
@@ -43,7 +45,7 @@ export async function resolvePyodideVersion(search) {
 // as well and puts the wheel into the HTTP cache while Pyodide is still coming up. Nothing is written down here:
 // the version is the one resolved at run time, the file name comes from the lock. Anything unexpected (another
 // shape of the lock, a CDN that says no) only means no head start, so every error is dropped.
-async function prefetchNumpy(base) {
+async function prefetchNumpy(base: string) {
   try {
     const lock = await (await fetch(`${base}pyodide-lock.json`)).json();
     const name = lock.packages?.numpy?.file_name;
@@ -65,8 +67,10 @@ async function prefetchNumpy(base) {
 // its limit) the 9 MB took longer than T113's limits of 60 to 90 seconds, and a sound load fell back to no service
 // worker, then timed out again. Nothing arriving for this long is a stop, not a slow line (128 kbps is 16 kB a second).
 const QUIET_SECONDS = 30;
+// (T368.3) what watches a load's arrivals: the count, stop() (the fetch as it was), quiet(seconds) (below)
+type Watch = { arrived: number; stop(): void; quiet(seconds: number): { promise: Promise<void>; cancel(): void } };
 function watchArrivals() {
-  const watch = { arrived: 0 };
+  const watch = { arrived: 0 } as Watch;
   const plain = self.fetch;
   // T129 (6): a browser that would not make a Response of a stream piped through a TransformStream gets its responses
   // as they came, each counted once as it arrives (the three engines of the CI make them; a throw in the wrapper
@@ -79,7 +83,7 @@ function watchArrivals() {
       return false;
     }
   })();
-  self.fetch = async (...args) => {
+  self.fetch = async (...args: Parameters<typeof fetch>) => {
     const res = await plain(...args);
     watch.arrived += 1;
     if (!wraps || !res.body || [101, 204, 205, 304].includes(res.status)) {
@@ -93,7 +97,7 @@ function watchArrivals() {
     }));
     return new Response(counted, { status: res.status, statusText: res.statusText, headers: res.headers });
   };
-  let observer;
+  let observer: PerformanceObserver | undefined;
   try {
     observer = new PerformanceObserver((list) => { watch.arrived += list.getEntries().length; });
     observer.observe({ type: "resource" });
@@ -109,8 +113,8 @@ function watchArrivals() {
    * or a worker busy for a long while, runs no tick, and a clock that jumped over it would call that a line that
    * stopped (T129's review; the same lesson as the software threads', T120) */
   watch.quiet = (seconds) => {
-    let timer;
-    const promise = new Promise((resolve) => {
+    let timer: ReturnType<typeof setInterval>;
+    const promise = new Promise<void>((resolve) => {
       let seen = -1, silent = 0;
       timer = setInterval(() => {
         if (watch.arrived !== seen) {
@@ -135,16 +139,16 @@ function watchArrivals() {
 // until its end, and where the prefetch had not put it in the HTTP cache (no lock, another shape of it, a CDN that said
 // no, a cache that did not keep it) a line below 0.8 Mbps gave NumPy up after QUIET_SECONDS while it was arriving. The
 // check of the wheel's hash (SRI) goes; the wheel comes from the same CDN and version as the rest of Pyodide.
-export async function pyodideSteps(version, importer) {
+export async function pyodideSteps(version: string, importer: (url: string) => Promise<PyodideModule>) {
   const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
   const watch = watchArrivals();
-  const stop = (name, why) => {
-    const error = new Error(`Pyodide ${version}: "${name}" ${why}`);
+  const stop = (name: string, why: string) => {
+    const error: Error & { pyodide?: boolean } = new Error(`Pyodide ${version}: "${name}" ${why}`);
     error.pyodide = true;  // the page may try again without the service worker (isolation made this hang on iOS)
     return error;
   };
-  const step = async (name, promise) => {
-    postMessage({ type: "status", text: `Loading Pyodide ${version}: ${name}...` });
+  const step = async <T>(name: string, promise: Promise<T>) => {
+    postMessage({ type: "status", text: `Loading Pyodide ${version}: ${name}...` } satisfies Status);
     const quiet = watch.quiet(QUIET_SECONDS);
     const stalled = quiet.promise.then(() => { throw stop(name, `got nothing from the network for ${QUIET_SECONDS} seconds`); });
     try {
@@ -187,7 +191,7 @@ export async function pyodideSteps(version, importer) {
  * where the files were written one by one before. Nothing is placed unless the whole archive came.
  * An archive that came and cannot be read (cut short, or something else served in its place) is said so by its name
  * (T432): what Python says of it names a temporary file. An archive that did not come fails as its fetch did. */
-export async function placePython(pyodide, archive, name) {
+export async function placePython(pyodide: Pyodide, archive: ArrayBuffer | Promise<ArrayBuffer>, name: string) {
   const bytes = await archive;
   try {
     pyodide.unpackArchive(bytes, "zip");
@@ -204,8 +208,8 @@ export async function placePython(pyodide, archive, name) {
 // One load at a time for a Pyodide: watchArrivals() wraps self.fetch and puts back the one it found, so two overlapping
 // ones (a conversion that was cancelled while jinja2 came, and the next one) would leave the first's wrapper on every
 // fetch for good (T369 review). A load that did not succeed is forgotten, and the next conversion tries again.
-const templatePackages = new WeakMap();
-export function templatePackage(pyodide) {
+const templatePackages = new WeakMap<Pyodide, Promise<boolean>>();
+export function templatePackage(pyodide: Pyodide) {
   if (!templatePackages.has(pyodide)) {
     templatePackages.set(pyodide, loadTemplatePackage(pyodide).then((came) => {
       if (!came) templatePackages.delete(pyodide);
@@ -215,7 +219,7 @@ export function templatePackage(pyodide) {
   return templatePackages.get(pyodide);
 }
 
-async function loadTemplatePackage(pyodide) {
+async function loadTemplatePackage(pyodide: Pyodide) {
   const watch = watchArrivals(), quiet = watch.quiet(QUIET_SECONDS);
   try {
     const stalled = quiet.promise.then(() => { throw new Error(`nothing arrived for ${QUIET_SECONDS} seconds`); });

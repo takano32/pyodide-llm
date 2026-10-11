@@ -1,13 +1,22 @@
-// worker/sources.js (T350): where the bytes of a llama2.c checkpoint come from: the parts of this site's models
+// worker/sources.ts (T350): where the bytes of a llama2.c checkpoint come from: the parts of this site's models
 // (download(), with the Cache API), a file of the visitor's disk (readFile()) and a URL (readUrl()). Each gives a source
 // whose into(write) writes every byte where it belongs.
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { root } from "./request.js";
-import { told } from "./told.js";
-import { since } from "./clock.js";
-import { weightsRoom } from "./weights.js";
-import { innerAbort, worthRetrying, inOrder } from "./ranges.js";
+import { root } from "./request.ts";
+import { told } from "./told.ts";
+import { since } from "./clock.ts";
+import { weightsRoom } from "./weights.ts";
+import { innerAbort, worthRetrying, inOrder } from "./ranges.ts";
+import type { Thrown } from "./told.ts";
+import type { Write } from "./weights.ts";
+import type { OfThisSite, OfTwoFiles, OfTwoUrls, Progress } from "../contracts/messages.ts";
+
+// T368.3: a source of a checkpoint: into(write) writes every byte where it belongs (write: the place of the weights,
+// weights.ts); seconds: how long its bytes took, once they are in. A download of this site's has besides: overlapped
+// (it runs while Pyodide loads), header (the checkpoint's first bytes, as soon as they come) and stop(why) (it
+// fetches no more)
+export type Source = { into(write: Write): Promise<void>; seconds?: number; overlapped?: boolean; header?: Promise<Uint8Array>; stop?(why?: unknown): void };
 
 // Checkpoints are deployed in parts of 8 MiB (see the Makefile). Several parts download at once, which is
 // about twice as fast as one stream, and the download runs while Pyodide is still loading: until the Python
@@ -25,10 +34,10 @@ const MODEL_CACHE = "models-v2";
 globalThis.caches?.delete("models-v1").catch(() => {});
 
 // A part's bytes: PART_BYTES, the last one less
-const partBytes = (model, part) => Math.min(PART_BYTES, model.bytes - part * PART_BYTES);
-const partKey = (url, model) => `${url}?bytes=${model.bytes}`;
+const partBytes = (model: OfThisSite, part: number) => Math.min(PART_BYTES, model.bytes - part * PART_BYTES);
+const partKey = (url: string, model: OfThisSite) => `${url}?bytes=${model.bytes}`;
 
-async function fetchPart(url, model, part, signal) {
+async function fetchPart(url: string, model: OfThisSite, part: number, signal: AbortSignal) {
   const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
   const key = partKey(url, model);
   // a Cache API that fails here (T117 met it in the service worker) leaves the network to answer
@@ -52,47 +61,47 @@ async function fetchPart(url, model, part, signal) {
         if (count !== expected) throw new Error(`part ${part}: ${count} of ${expected} bytes`);
       },
     });
-    cache.put(key, new Response(res.clone().body.pipeThrough(whole))).catch(() => {});
+    cache.put(key, new Response(res.clone().body!.pipeThrough(whole))).catch(() => {});
   }
   return res;
 }
 // a part that broke is not read from the cache again: the next try asks the network
-async function forgetPart(url, model) {
+async function forgetPart(url: string, model: OfThisSite) {
   const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
   await cache?.delete(partKey(url, model)).catch(() => {});
 }
 
 // parts of this checkpoint that were cached for another size are of no use any more
-export async function dropStaleParts(model) {
+export async function dropStaleParts(model: OfThisSite) {
   const cache = await globalThis.caches?.open(MODEL_CACHE).catch(() => undefined);
   for (const request of (await cache?.keys().catch(() => undefined)) ?? []) {
     const url = new URL(request.url);
     if (url.pathname.includes(`/models/${model.checkpoint}.`) && url.searchParams.get("bytes") !== String(model.bytes)) {
-      cache.delete(request).catch(() => {});
+      cache!.delete(request).catch(() => {});
     }
   }
 }
 
-export function download(model, signal, load) {
+export function download(model: OfThisSite, signal: AbortSignal, load: number) {
   const parts = Math.ceil(model.bytes / PART_BYTES);
-  const queue = [];
+  const queue: [number, Uint8Array<ArrayBuffer>][] = [];
   const started = performance.now();
   const inner = innerAbort(signal);
-  let sink, next = 0, received = 0, reported = -1;
+  let sink: Write | undefined, next = 0, received = 0, reported = -1;
   // T115: the checkpoint's first bytes (its header), as soon as the first part brings them
-  let head = new Uint8Array(0), tell;
-  const header = new Promise((resolve) => { tell = resolve; });
+  let head = new Uint8Array(0), tell: (head: Uint8Array) => void;
+  const header = new Promise<Uint8Array>((resolve) => { tell = resolve; });
   // T97: Firefox on Windows breaks the body of a part now and then ("Error in input stream", 1 load in 12 on the CI
   // runners, with the service worker and without it alike): the part is fetched again, twice at most. Its chunks go
   // to the same offsets, so what arrived before the break is written over with the same bytes. T129 (4): so is a
   // part the server failed (5xx, 408), as a fetch from huggingface.co is.
-  const partUrl = (part) => new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, root).href;
-  const fetchOnce = async (part) => {
+  const partUrl = (part: number) => new URL(`models/${model.checkpoint}.${String(part).padStart(3, "0")}`, root).href;
+  const fetchOnce = async (part: number) => {
     const res = await fetchPart(partUrl(part), model, part, inner.signal);
     if (!res.ok) {
       throw Object.assign(new Error(`Could not fetch part ${part} of ${model.checkpoint}: ${res.status}`), { final: !worthRetrying(res.status) });
     }
-    const reader = res.body.getReader();
+    const reader = res.body!.getReader();
     let got = 0;
     try {
       for (let offset = part * PART_BYTES; ;) {
@@ -112,7 +121,7 @@ export function download(model, signal, load) {
             sink(offset, value);
             await weightsRoom();
           } catch (error) {
-            throw Object.assign(error, { final: true });
+            throw Object.assign(error as object, { final: true });
           }
         } else {
           queue.push([offset, value]);
@@ -130,7 +139,7 @@ export function download(model, signal, load) {
         const percent = Math.floor((received / model.bytes) * 100);
         if (percent > reported) {
           reported = percent;
-          postMessage({ type: "progress", load, received, total: model.bytes });
+          postMessage({ type: "progress", load, received, total: model.bytes } satisfies Progress);
         }
       }
     } catch (error) {
@@ -147,14 +156,14 @@ export function download(model, signal, load) {
           await fetchOnce(part);
           break;
         } catch (error) {
-          if (inner.signal.aborted || error.final) {
+          if (inner.signal.aborted || (error as Thrown).final) {
             throw error;
           }
           if (attempt === 2) {
             // T129 (4): which part, where the browser's words do not say ("TypeError: Error in input stream")
-            throw new Error(`Part ${part} of ${model.checkpoint} failed three times: ${error?.message ?? told(error)}`, { cause: error });
+            throw new Error(`Part ${part} of ${model.checkpoint} failed three times: ${(error as Thrown)?.message ?? told(error)}`, { cause: error });
           }
-          console.warn(`part ${part} of ${model.checkpoint} broke off (${error?.message ?? told(error)}): fetched again`);
+          console.warn(`part ${part} of ${model.checkpoint} broke off (${(error as Thrown)?.message ?? told(error)}): fetched again`);
           await forgetPart(partUrl(part), model);  // it may have come from the cache: the next try is the network's
         }
       }
@@ -162,7 +171,7 @@ export function download(model, signal, load) {
   };
   // The download runs while Pyodide loads, so it usually ends long before into() can write anything into Python.
   // Its own seconds are the time until the last byte arrived, not the time until the waiting was over as well.
-  const source = { overlapped: true };
+  const source = { overlapped: true } as Required<Source>;
   const finished = Promise.all(Array.from({ length: Math.min(CONNECTIONS, parts) }, connection))
     .then(() => { source.seconds = since(started); }, (error) => {
       inner.abort(error);  // T129 (3): the other connections stop with the part that failed for good
@@ -195,9 +204,9 @@ export function download(model, signal, load) {
 }
 
 // The same for a file of the visitor's own disk: read in chunks straight into the Python buffer, never as a whole.
-export function readFile(model, signal, load) {
+export function readFile(model: OfTwoFiles, signal: AbortSignal, load: number) {
   // a file is read only once there is somewhere to put it, so these seconds begin here and not at the choice
-  const source = {
+  const source: Source = {
     async into(write) {
       const started = performance.now();
       const reader = model.file.stream().getReader();
@@ -217,7 +226,7 @@ export function readFile(model, signal, load) {
         const percent = Math.floor((offset / model.bytes) * 100);
         if (percent !== reported) {
           reported = percent;
-          postMessage({ type: "progress", load, received: offset, total: model.bytes });
+          postMessage({ type: "progress", load, received: offset, total: model.bytes } satisfies Progress);
         }
       }
       source.seconds = since(started);
@@ -227,8 +236,10 @@ export function readFile(model, signal, load) {
 }
 
 // A llama2.c checkpoint at a URL (?checkpoint=&tokenizer=): range requests in parallel, written where they belong
-export function readUrl(model, signal, load) {
-  const source = {
+// (T368.3, Sized: its size is known by now: load.ts asked the server)
+export type Sized = OfTwoUrls & { bytes: number };
+export function readUrl(model: Sized, signal: AbortSignal, load: number) {
+  const source: Source = {
     async into(write) {
       const started = performance.now();
       let offset = 0, reported = -1;
@@ -238,7 +249,7 @@ export function readUrl(model, signal, load) {
         const percent = Math.floor((offset / model.bytes) * 100);
         if (percent !== reported) {
           reported = percent;
-          postMessage({ type: "progress", load, received: offset, total: model.bytes });
+          postMessage({ type: "progress", load, received: offset, total: model.bytes } satisfies Progress);
         }
       }, signal);
       source.seconds = since(started);
@@ -250,4 +261,4 @@ export function readUrl(model, signal, load) {
 // The header of the legacy format: 7 ints, the shape of the model. T115: they also say what the forward pass puts
 // after the checkpoint (forward.js's footprint()), which the memory is chosen by.
 export const HEADER_BYTES = 28;
-export const headerInts = (bytes) => [...new Int32Array(bytes.slice(0, HEADER_BYTES).buffer)];
+export const headerInts = (bytes: Uint8Array) => [...new Int32Array(bytes.slice(0, HEADER_BYTES).buffer)];

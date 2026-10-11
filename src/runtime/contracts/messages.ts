@@ -6,17 +6,46 @@
 // words (one question, one answer: src/benchmark/section.ts's ask()), which are not here.
 //
 // ToWorker: what a page sends. FromWorker: what the worker reports. Of the reports, only ready, bench, paths, done and
-// error end a piece of the worker's work (T172): worker.js's head says which comes when.
+// error end a piece of the worker's work (T172): worker.ts's head says which comes when.
 // load: a number the page counts up. A newer load cancels the one going on, and what the worker reports about a load
 // carries its number, so that the page can tell a late report of a cancelled one. A report that never carries one says
 // `load?: undefined`.
 //
-// The page's side is TypeScript and is held to these by tsc (ModelWorker, below). The worker's side is JavaScript
-// still: tests/worker-modules-check.mjs holds the kinds and the keys it posts and reads to these types.
+// Both sides are TypeScript and are held to these by tsc: the page's by ModelWorker, below, the worker's (T368.3) by
+// what its receiver takes (MessageEvent<ToWorker>) and by `satisfies` at every postMessage().
+// tests/worker-modules-check.mjs still holds the kinds and the keys the worker posts and reads to these types: it says
+// a key that is in the type and written nowhere, and a postMessage() without its `satisfies`, which tsc does not.
+import type { Dtype } from "./form.ts";
+import type { Options } from "./python.ts";
 
 // An item of src/models.js as the page weighed it (src/page/address.ts's weighed()), or one the page made of a folder,
-// of two files, of a repository or of two URLs. Its shape is that file's, which is JavaScript still.
-export type Listed = object;
+// of two files, of a repository or of two URLs: as far as the worker reads it (T368.3; the list's own shape is that
+// file's, which is JavaScript still, and has more). One of four kinds, told apart by hf, file and url:
+export type Listed = OfThisSite | OfTwoFiles | OfTwoUrls | OfHuggingFace;
+// what every kind has: an id (an item's of the list; "local" for one the page made), its name, and what its engine
+// is made with (for a model that is converted, over what its conversion says: an item's options win)
+type Named = { id: string; name: string; options?: Options };
+// a model of this site: its parts under models/ (<checkpoint>.000, ...), their bytes together, its tokenizer's file
+export type OfThisSite = Named & { checkpoint: string; tokenizer: string; bytes: number; options: Options; hf?: undefined; file?: undefined; url?: undefined };
+// two files of the visitor's disk, a llama2.c checkpoint (bytes: its size) and its tokenizer.bin, read where they are
+export type OfTwoFiles = Named & { file: File; tokenizerFile: File; bytes: number; hf?: undefined; url?: undefined };
+// the same at two URLs (?checkpoint=&tokenizer=); bytes: the worker's own, what the server says the checkpoint's size is
+export type OfTwoUrls = Named & { url: { checkpoint: string; tokenizer: string }; bytes?: number; tokenizer?: undefined; hf?: undefined; file?: undefined };
+// A Hugging Face model, converted in the worker. hf: the names of its files, which Python's conduct reads
+// (src/python/convert/conduct.py), and where they are: huggingface.co's repository and revision (vocabulary: another
+// repository for the vocabulary, the config and the template, T136), or files: the Files of a folder of the visitor's
+// disk (T374.2.2). conversion: the dtype asked for (none: the worker chooses, T115) and the context it is cut to.
+// shares: the other ids of the list that are the same conversion (kept.ts)
+export type Hf = {
+  repo?: string;
+  revision?: string;
+  weights?: string;
+  config?: string;
+  tokenizer?: string;
+  vocabulary?: { repo: string; revision: string; config?: string; tokenizer?: string };
+  files?: File[];
+};
+export type OfHuggingFace = Named & { hf: Hf; conversion?: { dtype?: Dtype; max_seq_len?: number }; shares?: string[]; file?: undefined; url?: undefined };
 
 // T93 stage 2: what the page asks about the number of threads: fixed (?threads=N), the count it remembers for this
 // device and model, and the logical cores to search from
@@ -57,13 +86,14 @@ export type ToWorker =
   // the first load of a worker, and every load after it
   | ({ type: "init" } & Asked)
   | ({ type: "load" } & Asked)
-  | ({ type: "generate"; prompt: string; echo: boolean } & Sampled)
-  | { type: "stop" }
+  // (load: neither is of a load; the worker's receiver reads data.load of whatever failed)
+  | ({ type: "generate"; load?: undefined; prompt: string; echo: boolean } & Sampled)
+  | { type: "stop"; load?: undefined }
   | { type: "bench"; model: Listed; load: number; rounds: Round[]; prompt: string; steps: number }
   // T184: the model page's own path, timed: prompts of counts tokens, and sampled tokens written
   | { type: "paths"; load: number; prompt: string; counts: number[]; sampled: number };
 
-// the seconds of a load's parts (worker/clock.js): Pyodide once a session, the others per model
+// the seconds of a load's parts (worker/clock.ts): Pyodide once a session, the others per model
 export type LoadSeconds = { pyodide: number; download: number; construct: number; convert?: number };
 
 // the engine's stats of an answer (src/python/engine/generation.py)
@@ -95,7 +125,7 @@ export type Status = { type: "status"; load?: number; text: string };
 // converted: the share of a conversion done; perSecond: the bytes arriving
 export type Progress = { type: "progress"; load: number; received: number; total: number; converted?: number; perSecond?: number };
 // A load ended (each round of the benchmark too). gpu: what the status line says of the GPU now. overlapped: a
-// download of this site ran while Pyodide loaded. Of a conversion (worker/convert.js): fromCache, keptIn (where it was
+// download of this site ran while Pyodide loaded. Of a conversion (worker/convert.ts): fromCache, keptIn (where it was
 // kept), notKept (why not), keptMiss (why what was kept was not used), template (its chat_template's one turn)
 export type Ready = {
   type: "ready";
@@ -118,7 +148,7 @@ export type Token = { type: "token"; load?: undefined; text: string };
 // an answer ended (also one stopped): the threads in use, the prompt's tokens and the steps the GPU took, its note
 export type Done = { type: "done"; load?: undefined; threads: number; gpuTokens: number; gpuSampled: number; gpu: string | undefined } & Stats;
 export type Bench = { type: "bench"; load: number; rows: BenchRow[]; pyodide: string };
-// T184: either error, or the rest (worker/timing.js's timedPaths())
+// T184: either error, or the rest (worker/timing.ts's timedPaths())
 export type Paths = {
   type: "paths";
   load: number;
@@ -174,7 +204,7 @@ export type GpuChose = {
 export type GpuSaid = { type: "gpu"; load: number; note: string; matrices?: undefined };
 // T156: the CPU is faster here than this model on the GPU alone (kept once its load on the CPU is ready)
 export type GpuAlone = { type: "gpu-alone"; load: number; alone: Alone };
-// T439: the worker went on without a file of its build that is gone, on a slower path (worker/outdated.js): once a
+// T439: the worker went on without a file of its build that is gone, on a slower path (worker/outdated.ts): once a
 // worker at most, whatever else is going on, and of no load (the page is of a build the site no longer serves)
 export type Updated = { type: "updated"; load?: undefined };
 

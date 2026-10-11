@@ -250,7 +250,7 @@ console.log("updated-check: the model's worker tells the page the sentence alone
 // that costs nothing says why it is quiet.
 const root = new URL("../", import.meta.url);
 const LATER = {
-  "src/runtime/worker/runtime.js": [
+  "src/runtime/worker/runtime.ts": [
     ['import("../shaders/key.js")', "quiet: without the device's key nothing kept of this device holds, and the GPU is weighed again"],
     ['built("engine.zip").then((res) => res.arrayBuffer());', "said"],
     ["built(name).catch((error) => void wentWithout(error));", "slower: without simdkernel.so the sampling runs on NumPy"],
@@ -258,11 +258,11 @@ const LATER = {
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => {", "slower: without the kernels the engine runs on NumPy, without the relaxed ones on the plain, " +
       "without the shared ones on one thread (the kernels of a 64-bit memory are not told: without them a model past 4 GB is refused)"],
   ],
-  "src/runtime/worker/convert.js": [
+  "src/runtime/worker/convert.ts": [
     ["built(archive, signal).then((res) => res.arrayBuffer()), archive);", "said"],
     ['named(import.meta.url, () => import("../kept.ts"))', "said"],
   ],
-  "src/runtime/worker/weights.js": [
+  "src/runtime/worker/weights.ts": [
     ['new Worker(new URL("../helper.ts", import.meta.url)', "slower: a software thread that does not start leaves fewer threads"],
     ['new Worker(new URL("../gpu.js", import.meta.url)', "slower: a GPU worker that does not start leaves the model on the CPU (forward/gpuside.js)"],
   ],
@@ -281,10 +281,10 @@ const LATER = {
     ['built("simdkernel_plain.wasm")).arrayBuffer());', "said"],
   ],
   "src/page/receiver.ts": [
-    ['new Worker(new URL("../runtime/worker.js", import.meta.url)', "said"],
+    ['new Worker(new URL("../runtime/worker.ts", import.meta.url)', "said"],
   ],
   "src/benchmark/section.ts": [
-    ['new Worker(new URL("../runtime/worker.js", import.meta.url)', "said"],
+    ['new Worker(new URL("../runtime/worker.ts", import.meta.url)', "said"],
     ['new Worker(new URL("../runtime/benchmark/gpu.js", import.meta.url)', "said"],
     ['new Worker(new URL("../runtime/benchmark/memory.js", import.meta.url)', "said"],
     ['new Worker(new URL("../runtime/benchmark/sections.js", import.meta.url)', "said"],
@@ -331,7 +331,9 @@ for (const name of sources) {
     if (why.startsWith("quiet")) assert.ok(!/ithout\(/.test(what), `${name}: ${what} is quiet`);
     if (why.startsWith("slower") && what.startsWith("built(")) assert.ok(/\.catch\(\(error\) => (void wentWithout\(error\)\);|\{)$/.test(what), `${name}: ${what} hands its failure to wentWithout(error)`);
     if (why.startsWith("slower") && what.startsWith("import(")) {
-      assert.ok(text.includes(`${what}.catch((error) => {\n      void wentWithout(error, import.meta.url);\n      throw error;\n    });`), `${name}: ${what} hands its failure to wentWithout(error, import.meta.url), and fails as it did`);
+      // (T368.3: the module may be cast to a type after it, which is no part of what runs)
+      const handing = `${what}.catch((error) => {\n      void wentWithout(error, import.meta.url);\n      throw error;\n    })`;
+      assert.ok(text.includes(`${handing};`) || /^ as [\w ]+;/.test(text.slice(text.indexOf(handing) + handing.length)) && text.includes(handing), `${name}: ${what} hands its failure to wentWithout(error, import.meta.url), and fails as it did`);
     }
     // a built file whose failure is said: nothing on its line swallows it (a catch there lets updated() through)
     if (why === "said" && what.startsWith("built(")) assert.ok(!what.includes(".catch(") || what.includes(".catch((error) => unlessUpdated(error) ?? null)"), `${name}: ${what} is said`);
@@ -339,7 +341,7 @@ for (const name of sources) {
   // as many failures are handed to outdated.js as there are slower fallbacks (none where there is none), a worker's
   // with its event and the address of the module that made it, and nothing waits for the answer (void)
   const slowerHere = listed.filter(([, why]) => why.startsWith("slower"));
-  if (name !== "src/runtime/worker/outdated.js") {
+  if (name !== "src/runtime/worker/outdated.ts") {
     assert.equal(handed(text), slowerHere.length, `${name}: ${handed(text)} failures are handed to worker/outdated.js, and ${slowerHere.length} of its files are listed as slower (LATER)`);
     assert.equal((text.match(/void workerWentWithout\(event, import\.meta\.url\)/g) ?? []).length, slowerHere.filter(([what]) => what.startsWith("new Worker(")).length,
       `${name}: each worker it goes on without hands its error event to workerWentWithout(event, import.meta.url)`);
@@ -365,13 +367,13 @@ for (const name of sources) {
 // the files that hold a fallback know nothing of updated.js: no fallback was turned into an error (what they know is
 // worker/outdated.js, which throws nothing, turns no failure into another, and posts one kind of message)
 {
-  const text = code("src/runtime/worker/outdated.js");
+  const text = code("src/runtime/worker/outdated.ts");
   assert.ok(/import \{ gone, isUpdated \} from "\.\.\/updated\.js";/.test(text), "outdated.js takes gone() and isUpdated() of updated.js, and nothing that makes an error");
   assert.ok(!/\bthrow\b|\bnew Error\b|\breject\b/.test(text), "outdated.js throws nothing");
-  assert.deepEqual(text.match(/postMessage\([^)]*\)/g), ['postMessage({ type: "updated" })'], "outdated.js posts the one word, and nothing else");
+  assert.deepEqual(text.match(/postMessage\([^)]*\)/g), ['postMessage({ type: "updated" } satisfies Updated)'], "outdated.js posts the one word, and nothing else");
 }
 const knows = (name) => /updated\.js|\bunstarted\b|\bisUpdated\b|\bUPDATED\b/.test(code(name));
-for (const name of ["src/runtime/worker/weights.js", "src/runtime/gpu.js", "src/runtime/gpu/device.js"]) {
+for (const name of ["src/runtime/worker/weights.ts", "src/runtime/gpu.js", "src/runtime/gpu/device.js"]) {
   assert.ok(!knows(name), `${name} holds a fallback (LATER) and now knows of updated.js`);
 }
 // and neither does anything on a token's, a block's or a submit's path: the engine, its threads, the GPU's worker, the
@@ -394,7 +396,7 @@ assert.ok(/worker\.onerror = async \(event\) => resolve\(\{ error: await workerF
 }
 // the kernels of a 64-bit memory are fetched on the same line as the others and are no slower path (without them a
 // model past 4 GB is refused, and a small one runs as fast as ever): their absence is not told
-assert.ok(code("src/runtime/worker/runtime.js").includes("built(name).then((res) => res.arrayBuffer()).catch((error) => {\n          if (!wide) void wentWithout(error);\n          return null;\n        })));"),
+assert.ok(code("src/runtime/worker/runtime.ts").includes("built(name).then((res) => res.arrayBuffer()).catch((error) => {\n          if (!wide) void wentWithout(error);\n          return null;\n        })));"),
   "runtime.js tells of the kernels that are gone, but for those of a 64-bit memory");
 // each sentence is written once, and the status line's is read by what draws the status line alone (as its last part)
 for (const words of ["The site was updated", "the site was updated: ", "reload for full speed", "for full speed"]) {

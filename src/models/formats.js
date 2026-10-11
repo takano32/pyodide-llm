@@ -209,7 +209,7 @@ export const lfm2Old = { specials: ["<|im_start|>", "<|im_end|>", "Mathias", "py
 export const QWEN3_OWN_BOS = { bos: 151643, stop_tokens: [151643, 151645] };
 // T235 (the owner, 2026-10-11): a plain RoPE, whatever config.json's rope_scaling says. The engine makes the RoPE tables
 // of a file that has none (every dtype of the page: int8, 6-bit, ternary) from the options, and an entry's options win
-// over the converter's and over those of a conversion kept before (worker/convert.js), so this takes the converter's
+// over the converter's and over those of a conversion kept before (worker/convert.ts), so this takes the converter's
 // rope_scaling out of them: an empty object is "no scaling" to the engine's rope_frequencies() and rope_magnitude()
 // (the angles of rope_theta alone, cos and sin times 1). Not null: Pyodide makes JavaScript's null a jsnull, which is
 // not None. The conversion is the same bytes and the same options either way (CONVERTER stays), and ?hf= of the same

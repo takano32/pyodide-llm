@@ -4,7 +4,7 @@
 
 import { BETTER } from "./choice.js";
 
-// T184: the model page's own path on /benchmark/ (worker/timing.js's timedPaths, src/bench.js's pathTable): prompts of counts
+// T184: the model page's own path on /benchmark/ (worker/timing.ts's timedPaths, src/bench.js's pathTable): prompts of counts
 // tokens through forwardMany() at position 0 as the page chooses (T148), on the CPU only and on the GPU only
 // (engine.gpuSide). The sides take turns, a warm-up round and then PATH_ROUNDS, so that a device that heats up or is
 // busy for a while slows all of them alike; each cell is the median with the slowest and the fastest, unsteady where

@@ -1,16 +1,17 @@
-// worker/ranges.js (T350): a file of huggingface.co (or of any server that answers range requests) in parts, fed in
+// worker/ranges.ts (T350): a file of huggingface.co (or of any server that answers range requests) in parts, fed in
 // order, with what is tried again and what stops the other connections (T107, T112, T119, T129).
-// A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
+// A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { hfPartBytes, hfConnections } from "./runtime.js";
-import { breathe } from "./clock.js";
-import { weightsRoom } from "./weights.js";
+import { hfPartBytes, hfConnections } from "./runtime.ts";
+import { breathe } from "./clock.ts";
+import { weightsRoom } from "./weights.ts";
+import type { Thrown } from "./told.ts";
 
 // T129 (3): an AbortController of one download or fetch in order, which also stops where signal (the load's) does.
 // A part that failed for good ends the download: the other connections stop with it rather than fetching the rest of
 // the model until the next load cancels this one (the review of T97). done() lets go of the load's signal.
-export function innerAbort(signal) {
-  const inner = new AbortController();
+export function innerAbort(signal: AbortSignal) {
+  const inner = new AbortController() as AbortController & { done(): void };
   const outer = () => inner.abort(signal.reason);
   if (signal.aborted) outer();
   else signal.addEventListener("abort", outer, { once: true });
@@ -20,12 +21,12 @@ export function innerAbort(signal) {
 // T129 (4, 5): the statuses another try may cure: the server's own failures (5xx) and 408 (it gave up waiting). The
 // rest of 4xx is answered the same the next time; 429 is huggingface.co's limit on the requests of an address, which
 // a try within the second only adds to (refused() says to wait).
-export const worthRetrying = (status) => status >= 500 || status === 408;
+export const worthRetrying = (status: number) => status >= 500 || status === 408;
 
 // Every await in here may end with the AbortError of signal: a newer load has taken over, and this one must
 // leave nothing behind, least of all a Python buffer as large as its model.
 // A Hugging Face model of huggingface.co ({repo, revision, weights, config, tokenizer} are names; one of the visitor's
-// disk is read as the disk gives it, conduct.js): model.safetensors arrives in the order of the file, a few
+// disk is read as the disk gives it, conduct.ts): model.safetensors arrives in the order of the file, a few
 // megabytes at a time, and the Python code that builds the models of this site converts every tensor as it comes and
 // writes it to its place in a buffer of the final size. Reading in the order of the output instead would mean
 // hundreds of range requests, and each one takes a second.
@@ -43,7 +44,7 @@ const HF_FAST_BYTES_PER_SECOND = 4e6;
 // response says it in Content-Range, but that header is not one CORS shows by default: huggingface.co exposes it by
 // name, its CDN by "*", and a browser that does not honour "*" (WebKit; T112) sees none and the fetch never began
 // ("The file ended before all of its tensors were read"). Content-Length of a HEAD is always shown.
-export async function fileSize(url, signal) {
+export async function fileSize(url: string, signal: AbortSignal) {
   const res = await fetch(url, { method: "HEAD", signal });
   const length = Number(res.headers.get("Content-Length"));
   if (!res.ok || !Number.isFinite(length) || length <= 0) {
@@ -52,14 +53,14 @@ export async function fileSize(url, signal) {
   return length;
 }
 // the size a range response reported, or the file's size asked for separately when it did not
-export const sized = async (url, result, signal) => (Number.isFinite(result.total) && result.total > 0 ? result : { ...result, total: await fileSize(url, signal) });
+export const sized = async (url: string, result: { bytes: Uint8Array; total: number }, signal: AbortSignal) => (Number.isFinite(result.total) && result.total > 0 ? result : { ...result, total: await fileSize(url, signal) });
 
 // Bytes from..to of a response's body, taken as they stream past and no further: the rest is cancelled.
 // arriving(count) is told of every stretch kept. Fewer bytes than asked for when the body ends first.
-async function bodyBetween(res, from, to, arriving) {
+async function bodyBetween(res: Response, from: number, to: number, arriving?: (count: number) => void) {
   const bytes = new Uint8Array(to - from);
   let at = 0, kept = 0;  // at: where in the body the next chunk begins
-  const reader = res.body.getReader();
+  const reader = res.body!.getReader();
   try {
     while (at < to) {
       const { done, value } = await reader.read();
@@ -82,10 +83,10 @@ async function bodyBetween(res, from, to, arriving) {
 // A fetch that huggingface.co refused, in the visitor's words (T119). The status alone does not tell: a gated
 // repository and one that is not there (or private) both answer 401; X-Error-Code (which CORS shows) says which.
 // Such an answer is the same the next time: it is not asked again (status says so).
-export function refused(url, res) {
+export function refused(url: string, res: Response) {
   const [, repository, revision, file] = /^https:\/\/huggingface\.co\/(.+?)\/resolve\/([^/]+)\/(.+)$/.exec(url) ?? [];
   const code = res.headers.get("X-Error-Code");
-  const error = new Error(!repository ? `Could not fetch ${url}: ${res.status}`
+  const error: Error & { status?: number } = new Error(!repository ? `Could not fetch ${url}: ${res.status}`
     : code === "GatedRepo" ? `${repository} is gated on huggingface.co: its owner lets it be fetched only after a login and an accepted license, which this page cannot do. A copy of it that someone else published openly may work.`
     : code === "RevisionNotFound" ? `${repository} has no revision ${revision} on huggingface.co.`
     : code === "EntryNotFound" ? `${repository} has no ${file} at ${revision} on huggingface.co` +
@@ -99,11 +100,11 @@ export function refused(url, res) {
   return error;
 }
 
-export async function fetchRange(url, begin, end, signal, arriving) {
+export async function fetchRange(url: string, begin: number, end: number, signal: AbortSignal, arriving?: (count: number) => void) {
   for (let attempt = 0; ; attempt++) {
     // the bytes of a body that broke come again with the next try: they are taken back (the review of T119)
     let counted = 0;
-    const counting = arriving && ((count) => { counted += count; arriving(count); });
+    const counting = arriving && ((count: number) => { counted += count; arriving(count); });
     try {
       const res = await fetch(url, { headers: { Range: `bytes=${begin}-${end - 1}` }, signal });
       if (res.status !== 206 && res.status !== 200) {
@@ -120,9 +121,9 @@ export async function fetchRange(url, begin, end, signal, arriving) {
       const total = Number(whole ? res.headers.get("Content-Length") : (res.headers.get("Content-Range") ?? "").split("/")[1]);
       return { bytes, total };
     } catch (error) {
-      if (counted) arriving(-counted);
+      if (counted) arriving!(-counted);
       // (T129 (5): the rest of 4xx is answered the same the next time; 408 and 5xx not)
-      if (signal.aborted || attempt === 2 || (error.status >= 400 && !worthRetrying(error.status))) {
+      if (signal.aborted || attempt === 2 || ((error as Thrown).status! >= 400 && !worthRetrying((error as Thrown).status!))) {
         throw error;
       }
     }
@@ -134,12 +135,12 @@ export async function fetchRange(url, begin, end, signal, arriving) {
 // arriving(bytes): how much of the file is in so far, told as it comes (the page shows it until the conversion of
 // the first part gives it percentages: on a slow line the first part alone takes a while, and a line that says
 // nothing looks stuck).
-export async function inOrder(url, start, size, feed, outer, arriving = () => {}) {
+export async function inOrder(url: string, start: number, size: number, feed: (bytes: Uint8Array<ArrayBuffer>) => void, outer: AbortSignal, arriving: (received: number) => void = () => {}) {
   const small = navigator.deviceMemory !== undefined && navigator.deviceMemory <= 4;
   let partBytes = hfPartBytes || HF_SMALL_PART_BYTES;
-  const ranges = [];  // [begin, end] of every part asked for so far, in the order of the file
-  const arrived = new Map();
-  let scheduled = start, fed = 0, waiting = [], received = start;
+  const ranges: [number, number][] = [];  // [begin, end] of every part asked for so far, in the order of the file
+  const arrived = new Map<number, Uint8Array<ArrayBuffer>>();
+  let scheduled = start, fed = 0, waiting: (() => void)[] = [], received = start;
   // T129 (3): a part that failed for good (or a feed the converter refused) stops the other connections rather than
   // fetching the rest of the file until the next load cancels this one. (One that waits for room is never woken, and
   // goes with the rest of this call.)
@@ -148,7 +149,7 @@ export async function inOrder(url, start, size, feed, outer, arriving = () => {}
     for (;;) {
       // no more than two parts per connection wait in memory for an earlier one
       while (ranges.length - fed >= 2 * hfConnections) {
-        await new Promise((resolve) => waiting.push(resolve));
+        await new Promise<void>((resolve) => waiting.push(resolve));
       }
       if (scheduled >= size) {
         return;
@@ -170,7 +171,7 @@ export async function inOrder(url, start, size, feed, outer, arriving = () => {}
       }
       while (arrived.has(fed)) {
         signal.throwIfAborted();
-        feed(arrived.get(fed));
+        feed(arrived.get(fed)!);
         arrived.delete(fed++);
         // the conversion of a part takes a moment: let messages in (T156: and the GPU's worker catch up)
         await breathe();
