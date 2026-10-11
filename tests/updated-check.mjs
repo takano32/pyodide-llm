@@ -402,7 +402,7 @@ for (const words of ["The site was updated", "the site was updated: ", "reload f
   assert.deepEqual(writers, ["src/runtime/updated.js"], `"${words}" is written in one file`);
 }
 assert.deepEqual(sources.filter((name) => /\bSLOWER\b/.test(code(name))), ["src/runtime/updated.js", "src/page/draw.ts"].sort((a, b) => sources.indexOf(a) - sources.indexOf(b)), "SLOWER is read by src/page/draw.ts alone");
-assert.ok(code("src/page/draw.ts").includes("· Pyodide ${pyodide}${outdated ? ` · ${SLOWER}` : \"\"}`;"), "the status line of a ready model ends with it where the page is an old one, after all it said before");
+assert.ok(code("src/page/draw.ts").includes("statusText.textContent = `${model.name} · ${backend}${threads > 1 ? `, ${threads} threads` : \"\"}${gpuNote ? `, ${gpuNote}${tested}` : \"\"} · Pyodide ${pyodide}${outdated ? ` · ${SLOWER}` : \"\"}`;"), "the status line of a ready model ends with it where the page is an old one, after all it said before");
 // and the page takes the worker's word as it comes: the owner's event, then the line drawn again
 assert.ok(/\} else if \(data\.type === "updated"\) \{\n(?:\s*\/\/[^\n]*\n)*\s*siteUpdated\(\);\n\s*showStatus\(\);\n/.test(fs.readFileSync(new URL("src/page/receiver.ts", root), "utf8")), "receiver.ts says siteUpdated() and draws the status line at the worker's { type: \"updated\" }");
 console.log(`updated-check: ${said} files asked for later say the update where they are gone, ${slower} are done without on a slower path and tell the page so where they are gone, ${quiet} cost nothing and say nothing; ${path_.length} files of the token's path know none of it`);
