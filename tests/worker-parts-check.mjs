@@ -237,6 +237,26 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   assert.deepEqual(of("gpu").map(({ load, note }) => [load, note]), [[6, "prompts on the CPU (a stand-in)"]], "the GPU of a model let go of told the page its line");
   context.stand.gpuOf = undefined;
 
+  // the same for a model of Hugging Face: convert() adopts what the place of its weights built, and load() asks weights.js
+  // with the engine that is the model's (not undefined, not the one before): the GPU that failed loads it again
+  {
+    let converts = 0, ended2 = 0;
+    context.stand.convert = async (model) => {
+      converts += 1;
+      const made = { n: 100 + converts, backend: "a stand-in's backend", seq_len: HEADER[6], destroy() {} };
+      context.stand.made = { llama: made, outside: { engine: { n: 100 + converts, gpu: Promise.resolve("a stand-in"), gpuStatus: "stand-in", threads: 1 } } };
+      run("adopted(stand.made)");
+      if (converts === 1) run("gpuOnlyNow = stand.direct2");
+      return {};
+    };
+    context.stand.direct2 = { lost: "the GPU could not be opened (a test)", end: async () => { ended2 += 1; } };
+    run("convert = stand.convert");
+    await load({ load: 7, model: { ...model("remote"), hf: { repo: "someone/remote", revision: "0".repeat(40) } } });
+    assert.deepEqual(of("error"), []);
+    assert.deepEqual([converts, ended2, run("cpuOnly.has('hf:someone/remote@' + '0'.repeat(40))"), of("ready").map((r) => r.load), run("engineNow().n")], [2, 1, true, [7], 102],
+      "a model of Hugging Face on the GPU alone whose GPU failed was not loaded again: converted twice, its GPU's worker ended, one ready, the engine of the second");
+  }
+
   // ---- timing.js with stand-ins: the page's path (T184) on the model loaded now. What it tells request.js: the count
   // the search ended on, which the rounds that follow load the model on (T190)
   const generator = () => ({ next: () => ({ done: true }), destroy() {} });
