@@ -4,7 +4,7 @@
 // A module of src/runtime/forward.js; it reads jobs.js and its neighbours by static imports.
 
 import { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, COUNT, SIZE,
-  FIRST } from "../jobs.js";
+  FIRST } from "../jobs.ts";
 import { lowerMedian, BETTER } from "./choice.js";
 
 // ---- the helper threads (stage 2): the control area at the start of a shared memory (jobs.js has its layout)

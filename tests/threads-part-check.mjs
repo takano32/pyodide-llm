@@ -20,7 +20,7 @@ import { runtimeUrl } from "./tree.mjs";
 
 const { softwareThreads } = await import(runtimeUrl("forward/threads.js"));
 const { controlArea } = await import(runtimeUrl("forward/control.js"));
-const { CONTROL_BYTES, JOB, ROWS, COUNT, COUNTER, QUIT, JOB_TABLE, BATCH } = await import(runtimeUrl("jobs.js"));
+const { CONTROL_BYTES, JOB, ROWS, COUNT, COUNTER, QUIT, JOB_TABLE, BATCH } = await import(runtimeUrl("jobs.ts"));
 
 const PAGE = 65536;
 assert.ok(JOB_TABLE + BATCH * JOB * 8 <= PAGE && CONTROL_BYTES <= PAGE, "the control area fits the one page of this test's memory");

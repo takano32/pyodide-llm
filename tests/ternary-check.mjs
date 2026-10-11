@@ -21,7 +21,7 @@
 import fs from "node:fs";
 import v8 from "node:v8";
 import { built, runtimeUrl } from "./tree.mjs";
-const { addressed } = await import(runtimeUrl("jobs.js"));
+const { addressed } = await import(runtimeUrl("jobs.ts"));
 
 const root = new URL("../", import.meta.url).pathname;
 const f = Math.fround;

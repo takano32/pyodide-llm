@@ -16,7 +16,7 @@
 // its times), paths.js (what /benchmark/ times of the page's path), memory.js (the memory a model takes) and alone.js
 // (a model on the GPU alone). Each is a static import, as jobs.js is: a bundler links them into
 // one file (T367.3).
-import { BATCH } from "./jobs.js";
+import { BATCH } from "./jobs.ts";
 export { BATCH };
 import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine } from "./forward/choice.js";
 import { PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch } from "./forward/paths.js";

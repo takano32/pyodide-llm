@@ -3,7 +3,7 @@
 // Python and the worker call. The software threads are threads.js's and the GPU's side gpuside.js's: each is handed
 // what it reads of this function. A module of src/runtime/forward.js.
 
-import { BATCH, addressed, runner } from "../jobs.js";
+import { BATCH, addressed, runner } from "../jobs.ts";
 import { GPU_BLOCK, GPU_TOKENS } from "./choice.js";
 import { growMemory, PAGE, align, layerSlots, attendingLayers, linearWidths, frameArrays, rotatedWidths, frameBytes, halfToFloat } from "./memory.js";
 import { GPU_ALONE } from "./alone.js";

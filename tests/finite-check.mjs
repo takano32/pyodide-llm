@@ -21,7 +21,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { built as kernelsFolder, runtimeUrl } from "./tree.mjs";
-const { addressed } = await import(runtimeUrl("jobs.js"));
+const { addressed } = await import(runtimeUrl("jobs.ts"));
 
 const root = new URL("../", import.meta.url).pathname;
 const args = process.argv.slice(2);

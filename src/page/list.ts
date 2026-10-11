@@ -4,7 +4,7 @@ import { $, select } from "./dom.ts";
 import { fromUrl, weighed } from "./address.ts";
 import { remember } from "./remembered.ts";
 import { model } from "./model.ts";
-import { forget, keptModels, outdated, serves } from "../runtime/kept.js";
+import { forget, keptModels, outdated, serves } from "../runtime/kept.ts";
 
 // What the worker kept of its conversions (src/runtime/kept.js: the origin private file system, or the Cache API): the
 // select says which models need no download any more, and About lists them with a way to delete them.

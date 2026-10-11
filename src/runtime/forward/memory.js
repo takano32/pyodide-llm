@@ -3,7 +3,7 @@
 // whether it fits a 32-bit or a 64-bit memory, and the WebAssembly memory itself (weightsMemory).
 // A module of src/runtime/forward.js, which exports its names as before.
 
-import { CONTROL_BYTES, BATCH } from "../jobs.js";
+import { CONTROL_BYTES, BATCH } from "../jobs.ts";
 import { GPU_BLOCK } from "./choice.js";
 
 const PAGE = 65536;

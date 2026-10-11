@@ -252,7 +252,7 @@ const file = (f) => (path.isAbsolute(f) ? f : root + f);
 // T101: jobs.js says which arguments of each kernel are addresses (BigInt on a 64-bit memory): the same as the
 // usize parameters of the kernels' source, every exported one
 {
-  const { ADDRESSES } = await import(runtimeUrl("jobs.js"));
+  const { ADDRESSES } = await import(runtimeUrl("jobs.ts"));
   // (T356: kernel.ts is the window over kernel/*.ts. The kernels are the functions those files export, and the window
   // must name every one of them and nothing else, from the file it is in: what the window leaves out is in no module.)
   const source = {}, parts = fs.readdirSync(`${root}kernels/kernel`).filter((file) => file.endsWith(".ts")).sort(), written = [];

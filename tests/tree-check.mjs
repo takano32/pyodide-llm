@@ -156,7 +156,7 @@ for (const [name, { files, folders, bundled }] of Object.entries(LAYOUTS)) {
   for (const [name, file] of [["forward.js", "src/runtime/forward.ts"], ["forward.ts", "src/runtime/forward.ts"], ["jobs.js", "src/runtime/jobs.ts"], ["jobs.ts", "src/runtime/jobs.ts"],
     ["worker.ts", "src/runtime/worker.js"], ["worker.js", "src/runtime/worker.js"], ["worker/part.js", "src/runtime/worker/part.ts"], ["lone.js", "elsewhere/deep/lone.ts"],
     ["deep/lone.ts", "elsewhere/deep/lone.ts"]]) both("runtime", name, file);
-  assert.equal(tree.runtimeUrl("jobs.js").href, pathToFileURL(path.join(half, "src/runtime/jobs.ts")).href);
+  assert.equal(tree.runtimeUrl("jobs.ts").href, pathToFileURL(path.join(half, "src/runtime/jobs.ts")).href);
   assert.equal(tree.runtime("jobs.js", { maybe: true }), path.join(half, "src/runtime/jobs.js"), "where a file would be: as it was asked for");
   // the other kinds' names are one spelling each, and a declaration file is nobody's other spelling
   const said = (kind, name, words) => {
@@ -240,7 +240,7 @@ for (const [name, { files, folders, bundled }] of Object.entries(LAYOUTS)) {
   assert.equal(python(), tree.python());
   assert.equal(served("coi.js"), tree.served("coi.js"));
   assert.equal(built("simdkernel_plain.wasm", { maybe: true }), tree.built("simdkernel_plain.wasm", { maybe: true }));
-  assert.equal(runtimeUrl("jobs.js").href, tree.runtimeUrl("jobs.js").href);
+  assert.equal(runtimeUrl("jobs.ts").href, tree.runtimeUrl("jobs.ts").href);
   for (const file of [runtime("worker.js"), runtime("gpu.js"), runtime("benchmark/gpu.js"), runtime("gpu/device.js"), python("llama2_convert.py"), python("convert/conduct.py")]) assert.ok(fs.existsSync(file), `${file} is there`);
   assert.notEqual(runtime("gpu.js"), runtime("benchmark/gpu.js"));
   // every module the rule names is there, with its package, and no .py beside them is nobody's

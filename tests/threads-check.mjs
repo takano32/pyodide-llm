@@ -190,7 +190,7 @@ if (isMainThread) {
   // T120: a software thread that the browser stops in the middle of its chunk (iOS may end a worker for memory):
   // this one takes a chunk and ends without counting it. The coordinator must give its helpers up, run the phase
   // again on its own, and go on with one thread, to the same logits
-  const { WAKE, COUNTER, ACTIVE, CONTROL_BYTES } = await import(runtimeUrl("jobs.js"));
+  const { WAKE, COUNTER, ACTIVE, CONTROL_BYTES } = await import(runtimeUrl("jobs.ts"));
   const dying = ({ memory: shared, share }) => new Promise((resolve) => {
     const worker = new Worker(`
       const { parentPort, workerData: { memory, share, WAKE, COUNTER, ACTIVE, CONTROL_BYTES } } = require("node:worker_threads");

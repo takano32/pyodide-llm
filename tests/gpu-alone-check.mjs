@@ -18,7 +18,7 @@ import { runtime, runtimeUrl } from "./tree.mjs";
 const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
 const { createForward, GPU_BLOCK, GPU_TOKENS } = await import(forwardFile);
-const { CONTROL_BYTES, QUIT, GPU_DONE, GPU_FAILED } = await import(runtimeUrl("jobs.js"));
+const { CONTROL_BYTES, QUIT, GPU_DONE, GPU_FAILED } = await import(runtimeUrl("jobs.ts"));
 const { plansOf, planOf, FORM, empty } = plans(new URL("..", import.meta.url));
 
 const PAGE = 65536;

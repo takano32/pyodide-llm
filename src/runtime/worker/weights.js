@@ -60,7 +60,7 @@ export function pythonBuffer(size) {
 // takes the two), destroy() lets go of the Python buffer (a memory of forward.js goes with the engine).
 // a software thread of forward.js (stage 2): a module worker of its own, ready once its kernels are warm
 const spawnThread = (data) => new Promise((resolve, reject) => {
-  const worker = new Worker(new URL("../helper.js", import.meta.url), { type: "module" });
+  const worker = new Worker(new URL("../helper.ts", import.meta.url), { type: "module" });
   worker.onmessage = () => resolve({ terminate: () => worker.terminate() });
   worker.onerror = (event) => reject(new Error(event.message ?? "a software thread did not start"));
   worker.postMessage(data);
