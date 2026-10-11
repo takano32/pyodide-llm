@@ -42,7 +42,11 @@ if (wrong && !dist) {
   process.exit(1);
 }
 // the layer check's line in src/runtime/benchmark/gpu/layercheck.js (T353: in gpu.js before): a stream off by more than it is WRONG
-const LAYER_LINE = "LAYER_LINE = 1e-3", NO_LINE = "LAYER_LINE = 1e-12";
+// (T367.3.2: in a build the check is in the GPU section's worker as the bundler linked and printed it,
+// _astro/benchmark-gpu.<hash>.js, where the number is written .001; a build that serves the sources as they are has
+// benchmark/gpu/layercheck.js)
+const LAYER_LINE = /\bLAYER_LINE = (?:1e-3|0?\.001)\b/, NO_LINE = "LAYER_LINE = 1e-12";
+const holdsTheLine = (pathname) => /\/benchmark\/gpu\/layercheck\.js$|\/_astro\/benchmark-gpu\.[\w-]{6,}\.js$/.test(pathname);
 let [site = "https://takano32.github.io/pyodide-llm/", ...engines] = dist ? [undefined, ...args] : args;
 let server;
 if (dist) {
@@ -58,10 +62,10 @@ if (dist) {
       return res.end();
     }
     // --wrong: the GPU section's worker with no line left for the layer check to hold (a rename of it fails here, loudly)
-    if (wrong && pathname.endsWith("/benchmark/gpu/layercheck.js")) {
+    if (wrong && holdsTheLine(pathname)) {
       const text = fs.readFileSync(file, "utf8");
-      if (!text.includes(LAYER_LINE)) {
-        console.log(`--wrong: ${LAYER_LINE} is not in benchmark/gpu/layercheck.js any more: change this test with it`);
+      if (!LAYER_LINE.test(text)) {
+        console.log(`--wrong: ${LAYER_LINE} is not in ${pathname.slice(base.length)} any more: change this test with it`);
         process.exit(1);
       }
       res.writeHead(200, { "Content-Type": types[".js"] });

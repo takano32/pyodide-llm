@@ -32,10 +32,29 @@ const site = siteAt >= 0 ? args[siteAt + 1].replace(/\/?$/, "/") : null;
 const engines = args.filter((arg, i) => !arg.startsWith("--") && args[i - 1] !== "--site");
 const channels = { chrome: "chrome", msedge: "msedge" };
 
+// T367.3.2: a deployed site names a built file by a hash of its bytes (_astro/simdkernel_plain.<hash>.wasm), and the
+// name is written nowhere but in the worker's text: the page names its script, the script the worker, the worker the
+// kernels. So the site is read as a browser reads it. (A site of before T367.3 served <name>.wasm at its root.)
+let workerText;
+async function textOf(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${url}: ${response.status}`);
+  return response.text();
+}
+async function siteWorker() {
+  const page = await textOf(site);
+  for (const script of new Set(page.match(/_astro\/[\w.-]+\.js/g) ?? [])) {
+    const worker = /\bworker\.[\w-]{6,}\.js/.exec(await textOf(new URL(script, site)))?.[0];
+    if (worker) return textOf(new URL(`_astro/${worker}`, site));
+  }
+  return null;  // (no bundled worker: the built files are at the site's root)
+}
 async function wasm(name) {
   if (!site) return fs.readFileSync(built(`${name}.wasm`)).toString("base64");
-  const response = await fetch(new URL(`${name}.wasm`, site));
-  if (!response.ok) throw new Error(`${name}.wasm: ${response.status}`);
+  workerText ??= siteWorker();
+  const hashed = new RegExp(`\\b${name}\\.[\\w-]{6,}\\.wasm`).exec((await workerText) ?? "")?.[0];
+  const response = await fetch(new URL(hashed ? `_astro/${hashed}` : `${name}.wasm`, site));
+  if (!response.ok) throw new Error(`${hashed ?? `${name}.wasm`}: ${response.status}`);
   return Buffer.from(await response.arrayBuffer()).toString("base64");
 }
 const modules = { plain: await wasm("simdkernel_plain"), relaxed: await wasm("simdkernel_relaxed_plain") };
