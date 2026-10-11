@@ -2,14 +2,14 @@
 // threads and the GPU's report that follow it.
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { pyodide, llama2_numpy, pythonKernels, pyodideAt, benchPage, runtimeReady } from "./runtime.js";
-import { threadsRequest, root, switchesNow } from "./request.js";
-import { llama, engineNow, adopted, letGo } from "./loaded.js";
-import { since, took, secondsSoFar } from "./clock.js";
-import { pythonBuffer, weightsBuffer, weightsDrained, gpuOnlyReady, loadBegan, weightsBytes } from "./weights.js";
-import { sized, fetchRange } from "./ranges.js";
-import { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } from "./sources.js";
-import { convert } from "./convert.js";
+import { pyodide, llama2_numpy, pythonKernels, pyodideAt, benchPage, runtimeReady } from "./runtime.ts";
+import { threadsRequest, root, switchesNow } from "./request.ts";
+import { llama, engineNow, adopted, letGo } from "./loaded.ts";
+import { since, took, secondsSoFar } from "./clock.ts";
+import { pythonBuffer, weightsBuffer, weightsDrained, gpuOnlyReady, loadBegan, weightsBytes } from "./weights.ts";
+import { sized, fetchRange } from "./ranges.ts";
+import { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } from "./sources.ts";
+import { convert } from "./convert.ts";
 
 // The legacy format carries no metadata, but its header fixes the size of a float32, a float16 and an int8 file.
 // A file that is none of them is refused before it is read, and so is a tokenizer.bin of another vocabulary.

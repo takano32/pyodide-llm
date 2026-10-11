@@ -2,7 +2,7 @@
 // forward.js made for it. The two are set together and let go of together, here and nowhere else.
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { pyodide } from "./runtime.js";
+import { pyodide } from "./runtime.ts";
 
 // Python's Llama of the model loaded now (a PyProxy), or undefined
 export let llama;

@@ -34,14 +34,14 @@
 // the engine goes on without the file (the kernels and forward.js: NumPy; a software thread; the GPU's worker; the
 // device's key) it goes on as it always did: a model that answers is not interrupted. T439: where that is slower
 // (all but the key) the page is told { type: "updated" } once, and its status line says so (worker/outdated.js).
-import { pyodide, runtimeAsked } from "./worker/runtime.js";
-import { loadAsked, benching, roundsBegan, roundBegan, roundsEnded } from "./worker/request.js";
-import { llama, engineNow } from "./worker/loaded.js";
-import { weightsBytes, gpuOnlyLost, onCpuFromNow } from "./worker/weights.js";
-import { told } from "./worker/told.js";
-import { since, breathe } from "./worker/clock.js";
-import { load, threadsNow, heapBytes } from "./worker/load.js";
-import { timedGeneration, timedPaths } from "./worker/timing.js";
+import { pyodide, runtimeAsked } from "./worker/runtime.ts";
+import { loadAsked, benching, roundsBegan, roundBegan, roundsEnded } from "./worker/request.ts";
+import { llama, engineNow } from "./worker/loaded.ts";
+import { weightsBytes, gpuOnlyLost, onCpuFromNow } from "./worker/weights.ts";
+import { told } from "./worker/told.ts";
+import { since, breathe } from "./worker/clock.ts";
+import { load, threadsNow, heapBytes } from "./worker/load.ts";
+import { timedGeneration, timedPaths } from "./worker/timing.ts";
 
 // What this file alone holds (T378.3: they were fields of the object all the modules shared):
 // the AbortController of the load that is going on, and a promise that settles once it has cleaned up

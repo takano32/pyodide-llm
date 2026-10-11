@@ -30,6 +30,7 @@ import { parse } from "@babel/parser";
 import { planOf } from "./plans.mjs";
 import { runtime, runtimeUrl } from "./tree.mjs";
 import { contract, differing, posted, told } from "./contracts.mjs";
+import { untyped } from "./untyped.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 let failed = 0;
@@ -57,7 +58,8 @@ function typedAs(what, declared, written, more = {}) {
 }
 
 // ---- the syntax trees
-const treesOf = (files) => files.map((file) => ({ file, program: parse(fs.readFileSync(runtime(file), "utf8"), { sourceType: "module" }).program }));
+// (T368.3: a file that is TypeScript is parsed with its types blanked, by the name the tree has it under)
+const treesOf = (files) => files.map((file) => ({ file, program: parse(untyped(fs.readFileSync(runtime(file), "utf8"), runtime(file)), { sourceType: "module" }).program }));
 const folder = (window) => [window, ...fs.readdirSync(runtime(window.replace(/\.js$/, ""))).filter((file) => file.endsWith(".js")).sort()
   .map((file) => `${window.replace(/\.js$/, "")}/${file}`)];
 function walk(node, visit, parent = null) {

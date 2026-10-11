@@ -1,4 +1,4 @@
-// tests/worker-modules-check.mjs (T350): the names that src/runtime/worker.js and its modules (src/runtime/worker/*.js) use.
+// tests/worker-modules-check.mjs (T350): the names that src/runtime/worker.ts and its modules (src/runtime/worker/*.ts) use.
 //
 // The checks that run the worker in Node make one context's scripts of these files (tests/worker-source.mjs), where
 // every module's top level is a global: a module that uses a name of another without importing it works there, and is
@@ -18,6 +18,7 @@ import { treeOf, python } from "./tree.mjs";
 import { workerScripts } from "./worker-source.mjs";
 import { contract, differing, givenTo, handedTo, posted as postedBy, readOff, returnedBy, takenBy, told, treeOf as syntaxOf } from "./contracts.mjs";
 import fs from "node:fs";
+import { untyped } from "./untyped.mjs";
 
 // what a module worker has without declaring it, as far as these files use it
 const GLOBALS = new Set(("AbortController Array Boolean DataView Date Error Int32Array JSON Map Math MessageChannel Number Object " +
@@ -173,7 +174,9 @@ export function namesOf(source) {
 }
 
 if (import.meta.url === new URL(process.argv[1], "file:").href) {
-  const files = new Map(workerScripts().map(({ name, url }) => [name, namesOf(fs.readFileSync(url, "utf8"))]));
+  // (T368.3: each file as the JavaScript it is once its types are blanked, tests/untyped.mjs: a type's name is no name used)
+  const plain = (url) => untyped(fs.readFileSync(url, "utf8"), url.pathname);
+  const files = new Map(workerScripts().map(({ name, url }) => [name, namesOf(plain(url))]));
   let count = 0;
   for (const [name, { free }] of files) {
     const unknown = [...free].filter((used) => !GLOBALS.has(used));
@@ -229,7 +232,7 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
   // read it; it is the same literal as src/page/choose.ts's, which tsc does).
   {
     const typed = contract("messages.ts");
-    const trees = workerScripts().map(({ name, url }) => ({ file: name, program: parse(fs.readFileSync(url, "utf8"), { sourceType: "module" }).program }));
+    const trees = workerScripts().map(({ name, url }) => ({ file: name, program: parse(plain(url), { sourceType: "module" }).program }));
     const only = (...names) => trees.filter(({ file }) => names.includes(file));
     const forward = (file) => [syntaxOf(`forward/${file}`)];
     const same = (what, declared, written, more = {}) => {
@@ -270,8 +273,8 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
     // what the worker is sent: the kinds its receiver tells apart, and the keys it reads off a message (worker.js's
     // receiver, request.js's loadAsked(), and what generate() and timedPaths() take of the message they are handed)
     const asked = typed.membersOf("ToWorker");
-    same("contracts/messages.ts's ToWorker, to the kinds worker.js tells apart", new Set(asked.keys()), told(only("worker.js")));
-    const read = new Set([...readOff(only("worker.js", "request"), "data"), ...takenBy(only("worker.js"), "generate"), ...takenBy(only("timing"), "timedPaths")]);
+    same("contracts/messages.ts's ToWorker, to the kinds worker.js tells apart", new Set(asked.keys()), told(only("worker.ts")));
+    const read = new Set([...readOff(only("worker.ts", "request"), "data"), ...takenBy(only("worker.ts"), "generate"), ...takenBy(only("timing"), "timedPaths")]);
     read.delete("type");
     const keys = new Set([...asked.values()].flatMap((one) => [...one]));
     // (steps is the benchmark's too, which the worker reads; the rest of an answer's settings are Python's to read)

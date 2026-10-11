@@ -258,7 +258,7 @@ const made = build(tree.python(), path.join(work, "tree"));
   // (init() runs in no check in Node: it loads Pyodide from the CDN. What it asks for and when is seen in a browser,
   // tests/e2e.mjs; here its text says that the one archive it names is the engine's.)
   // (the worker's window and its modules: not the table of the built files, which names every one of them, T367.3)
-  const sources = Object.fromEntries(workerScripts(tree).filter(({ url }) => /\/worker(\.js$|\/)/.test(url.pathname)).map(({ name, source }) => [name, source]));
+  const sources = Object.fromEntries(workerScripts(tree).filter(({ url }) => /\/worker(\.(js|ts)$|\/)/.test(url.pathname)).map(({ name, source }) => [name, source]));
   const naming = (pattern) => Object.entries(sources).filter(([, source]) => pattern.test(source)).map(([name]) => name);
   const body = (source, head) => { const from = source.indexOf(head); assert.ok(from >= 0, `no ${head}`); return source.slice(from, source.indexOf("\n}\n", from)); };
   // (the names as the code says them, in quotes: the comments name them too)

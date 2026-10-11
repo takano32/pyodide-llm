@@ -4,14 +4,14 @@
 // huggingface.co from there, and (T374.2.2) a folder of the visitor's disk from its Files.
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { pyodide, llama2_numpy, pythonKernels } from "./runtime.js";
-import { switchesNow } from "./request.js";
-import { adopted } from "./loaded.js";
-import { since, took } from "./clock.js";
-import { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom, weightsDrained, checkpointSink } from "./weights.js";
-import { conductOf, answered, fromHub, fromFolder } from "./conduct.js";
-import { HEADER_BYTES, headerInts } from "./sources.js";
-import { templatePackage, placePython } from "./pyodide.js";
+import { pyodide, llama2_numpy, pythonKernels } from "./runtime.ts";
+import { switchesNow } from "./request.ts";
+import { adopted } from "./loaded.ts";
+import { since, took } from "./clock.ts";
+import { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoom, weightsDrained, checkpointSink } from "./weights.ts";
+import { conductOf, answered, fromHub, fromFolder } from "./conduct.ts";
+import { HEADER_BYTES, headerInts } from "./sources.ts";
+import { templatePackage, placePython } from "./pyodide.ts";
 import { built } from "../built.js";
 import { named } from "../updated.js";
 

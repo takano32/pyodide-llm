@@ -1,10 +1,10 @@
 // worker/timing.js (T350): what /benchmark/ has the worker time: a generation, and the model page's own path (T184).
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { forwardModule } from "./runtime.js";
-import { threadsRequest, threadsFound } from "./request.js";
-import { llama, engineNow } from "./loaded.js";
-import { memoryShared } from "./weights.js";
+import { forwardModule } from "./runtime.ts";
+import { threadsRequest, threadsFound } from "./request.ts";
+import { llama, engineNow } from "./loaded.ts";
+import { memoryShared } from "./weights.ts";
 
 // T45: a warm-up, then the measured run: the prompt, greedy, steps tokens (fewer where the model ends it first). The
 // warm-up runs its 8 steps (T184's review: return() on a generator that has not started runs none of it)

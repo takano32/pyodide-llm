@@ -2,9 +2,9 @@
 // order, with what is tried again and what stops the other connections (T107, T112, T119, T129).
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { hfPartBytes, hfConnections } from "./runtime.js";
-import { breathe } from "./clock.js";
-import { weightsRoom } from "./weights.js";
+import { hfPartBytes, hfConnections } from "./runtime.ts";
+import { breathe } from "./clock.ts";
+import { weightsRoom } from "./weights.ts";
 
 // T129 (3): an AbortController of one download or fetch in order, which also stops where signal (the load's) does.
 // A part that failed for good ends the download: the other connections stop with it rather than fetching the rest of

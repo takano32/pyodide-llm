@@ -24,7 +24,7 @@ let aloneOnReady: { load: number; alone: Alone } | undefined;
 if (await isolating()) {
   await new Promise(() => {});  // the page reloads: nothing else may start
 }
-export const worker: ModelWorker = new Worker(new URL("../runtime/worker.js", import.meta.url), { type: "module" });
+export const worker: ModelWorker = new Worker(new URL("../runtime/worker.ts", import.meta.url), { type: "module" });
 /** the site's root, which the worker is told with a load: models/ is under it, and the worker's own URL is not (T367.3) */
 export const root = new URL(import.meta.env.BASE_URL, location.href).href;
 worker.onmessage = ({ data }) => {

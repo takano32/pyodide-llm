@@ -2,7 +2,7 @@
 // from one that stopped (T118, T129). It holds nothing of the worker's state: init() of worker.js keeps what this loads.
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { isError, told } from "./told.js";
+import { isError, told } from "./told.ts";
 
 // the version becomes part of a CDN URL, so accept nothing but a plain version number
 const PYODIDE_VERSION_PATTERN = /^\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?$/;

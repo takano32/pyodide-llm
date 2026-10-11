@@ -3,9 +3,9 @@
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { pyodide, llama2_numpy, forwardModule, jsKernels, sharedKernels, wideKernels, forceWide, gpuForce, benchPage, gpuAdapter, hasWebGpu,
-  adapterAsked } from "./runtime.js";
-import { threadsRequest, gpuRequest, loadsAhead, benching, switchesNow } from "./request.js";
-import { workerWentWithout } from "./outdated.js";
+  adapterAsked } from "./runtime.ts";
+import { threadsRequest, gpuRequest, loadsAhead, benching, switchesNow } from "./request.ts";
+import { workerWentWithout } from "./outdated.ts";
 
 // What this file alone holds (T378.3: they were fields of the object all the modules shared). The others say what
 // happened (loadBegan, onCpuFromNow) and ask (weightsBytes, memoryShared, gpuOnlyLost, weightsRoom, weightsDrained).

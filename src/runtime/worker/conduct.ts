@@ -12,9 +12,9 @@
 // whoever knows the place (or nothing: the loop has a sentence of its own, which neither answerer here leaves it to).
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { pyodide } from "./runtime.js";
-import { fileSize, refused, fetchRange, inOrder } from "./ranges.js";
-import { weightsRoom } from "./weights.js";
+import { pyodide } from "./runtime.ts";
+import { fileSize, refused, fetchRange, inOrder } from "./ranges.ts";
+import { weightsRoom } from "./weights.ts";
 
 // The conduct of the conversion of a model as it is listed: the generator, not yet asked anything.
 // hf: the item's (weights, config, tokenizer, vocabulary: names, wherever the files are); make: what the converter

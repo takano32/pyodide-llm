@@ -3,11 +3,11 @@
 // whose into(write) writes every byte where it belongs.
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { root } from "./request.js";
-import { told } from "./told.js";
-import { since } from "./clock.js";
-import { weightsRoom } from "./weights.js";
-import { innerAbort, worthRetrying, inOrder } from "./ranges.js";
+import { root } from "./request.ts";
+import { told } from "./told.ts";
+import { since } from "./clock.ts";
+import { weightsRoom } from "./weights.ts";
+import { innerAbort, worthRetrying, inOrder } from "./ranges.ts";
 
 // Checkpoints are deployed in parts of 8 MiB (see the Makefile). Several parts download at once, which is
 // about twice as fast as one stream, and the download runs while Pyodide is still loading: until the Python

@@ -5,9 +5,9 @@
 // A module of worker.js; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { built } from "../built.js";
-import { resolvePyodideVersion, pyodideSteps, placePython } from "./pyodide.js";
-import { since, took } from "./clock.js";
-import { wentWithout } from "./outdated.js";
+import { resolvePyodideVersion, pyodideSteps, placePython } from "./pyodide.ts";
+import { since, took } from "./clock.ts";
+import { wentWithout } from "./outdated.ts";
 
 export let pyodide, llama2_numpy;
 // the WASM SIMD kernels that llama2_numpy.py loads with ctypes (the sampling, a conversion's quantizer and readers):
