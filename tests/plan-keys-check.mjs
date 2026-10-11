@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "@babel/parser";
 import { planOf } from "./plans.mjs";
 import { runtime, runtimeUrl } from "./tree.mjs";
+import { contract, differing, posted, told } from "./contracts.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 let failed = 0;
@@ -45,6 +46,14 @@ function held(what, written, read, unread = {}) {
   if (stale.length) wrong(`${what}: listed as read nowhere, and it is read now or written no more: ${stale.join(", ")}`);
   for (const [key, why] of Object.entries(unread)) if (!stale.includes(key)) console.log(`     (${what}: ${key} is written and read nowhere: ${why})`);
   if (!neverWritten.length && !neverRead.length && !stale.length) ok(`${what}: ${written.size} written, ${read.size} read, each at both ends${Object.keys(unread).length ? ` but ${Object.keys(unread).join(", ")}` : ""}`);
+}
+
+// T368.2: a type of src/runtime/contracts/ against what is written across the line it is the contract of: the same names
+// (more: { name: why the type has it and this writer does not })
+function typedAs(what, declared, written, more = {}) {
+  const lines = differing(what, declared, written, more);
+  lines.forEach(wrong);
+  if (!lines.length) ok(`${what}: the type's ${declared.size} are the ${written.size} written${Object.keys(more).length ? ` and ${Object.keys(more).join(", ")}` : ""}`);
 }
 
 // ---- the syntax trees
@@ -116,6 +125,26 @@ const returned = (fn) => {
     Object.keys(plan.derived).forEach((name) => derived.add(name.replace(/^signs\.\d+$/, "signs.<width>")));
   });
   ok(`Python's plan has the same ${keys.size} keys for ${plans.length} made-up models (${families.length} of the layouts' families in five dtypes), ${tensors.size} tensors among them`);
+
+  // T368.2: and the types say the same (src/runtime/contracts/plan.ts, which whatever is TypeScript reads the plan by; the
+  // form's two kinds of layers are form.ts's): the keys, the tensors' names, a tensor's keys and the ways it is stored,
+  // the derived tables, a layer's facts and its kinds, the widths
+  {
+    const typed = contract("plan.ts"), form = contract("form.ts");
+    const each = (pick) => new Set(plans.flatMap(pick));
+    const inside = (pick) => each((plan) => Object.keys(pick(plan) ?? {}));
+    typedAs("contracts/plan.ts's Plan, to Python's plan", typed.keysOf("Plan"), keys);
+    typedAs("contracts/plan.ts's TensorName, to the tensors Python places", typed.literalsOf("TensorName"), tensors);
+    typedAs("contracts/plan.ts's Tensor, to a tensor of Python's plan", typed.keysOf("Tensor"), entryKeys);
+    typedAs("contracts/plan.ts's Stored, to the ways Python's tensors are stored", typed.literalsOf("Stored"), each((plan) => Object.values(plan.tensors).map((entry) => entry.kind)));
+    typedAs("contracts/plan.ts's Derived, to the tables Python computes", typed.keysOf("Derived"), new Set([...derived].map((name) => name.replace("<width>", "<number>"))));
+    typedAs("contracts/plan.ts's Layer, to a layer's facts", typed.keysOf("Layer"), each((plan) => plan.layers.flatMap(Object.keys)));
+    typedAs("contracts/plan.ts's LayerKind, to the kinds of Python's layers", typed.literalsOf("LayerKind"), each((plan) => plan.layers.map((layer) => layer.kind)));
+    typedAs("contracts/plan.ts's Widths, to the plan's widths", typed.keysOf("Widths"), inside((plan) => plan.widths));
+    typedAs("contracts/plan.ts's LinearWidths, to the widths of a linear-attention layer", typed.keysOf("LinearWidths"), inside((plan) => plan.widths.linear));
+    typedAs("contracts/form.ts's Linear, to the plan's linear", form.keysOf("Linear"), inside((plan) => plan.linear));
+    typedAs("contracts/form.ts's Convolution, to the plan's convolution", form.keysOf("Convolution"), inside((plan) => plan.convolution));
+  }
 
   // what forward.js reads
   const trees = treesOf(folder("forward.js"));
@@ -241,6 +270,26 @@ const returned = (fn) => {
   held("the GPU's plan's words", inside.words, readInside.words);
   // (what is read off a vector itself, { at, size }, is no name of one)
   held("the GPU's plan's vectors", inside.vectors, new Set([...readInside.vectors].filter((key) => !["at", "size"].includes(key))));
+
+  // T368.2: and the types say the same (src/runtime/contracts/gpu/protocol.ts): the two plans, what they hold one level
+  // down, and the messages either side posts, by their kinds and by the keys of each
+  const typed = contract("gpu/protocol.ts");
+  typedAs("contracts/gpu/protocol.ts's Started, to the plan of { type: \"start\" }", typed.keysOf("Started"), literalKeys(start));
+  typedAs("contracts/gpu/protocol.ts's Opened, to gpuOnlyPlan()'s plan", typed.keysOf("Opened"), literalKeys(open));
+  for (const [name, type] of [["tokens", "Tokens"], ["vectors", "Vectors"], ["words", "Words"], ["tables", "Tables"]]) {
+    typedAs(`contracts/gpu/protocol.ts's ${type}, to the GPU's plan's ${name}`, typed.keysOf(type), inside[name]);
+  }
+  // (a message's keys that are not in its literal: where they come from)
+  const messages = (what, type, writers, to, receivers, more = {}) => {
+    const declared = typed.membersOf(type), sent = posted(writers, to);
+    typedAs(`contracts/gpu/protocol.ts's ${type}, to the kinds ${what} posts`, new Set(declared.keys()), new Set(sent.keys()));
+    typedAs(`contracts/gpu/protocol.ts's ${type}, to the kinds the other side tells apart`, new Set(declared.keys()), told(receivers));
+    for (const [kind, keys] of declared) if (sent.has(kind)) typedAs(`contracts/gpu/protocol.ts's ${type}, the keys of "${kind}"`, keys, sent.get(kind).keys, more[kind]);
+  };
+  // (the model's worker opens the GPU's worker of a model on the GPU alone, with forward.js's plan: worker/weights.js)
+  messages("forward.js (and worker/weights.js)", "ToGpu", [...writers, ...treesOf(["worker/weights.js"])], "worker", treesOf(["gpu.js"]));
+  messages("the GPU's worker", "FromGpu", readers, "owner", treesOf(["forward/gpuside.js"]),
+    { ready: Object.fromEntries(["form", "attention", "forms", "remembered"].map((key) => [key, "gpu/forms.js's formsSaid(), spread in"])) });
 }
 
 console.log(failed ? `plan-keys-check: FAILED (${failed})` : "plan-keys-check: ok");

@@ -3,18 +3,18 @@
 import { roundsHere, FULL_ROUNDS, ROUNDS, threadsKey, PATH_PROMPTS, PATH_WRITES, pathTable, pathWarnings, roundsTable } from "../bench.js";
 import { BASE, $, parameters, type Result } from "./dom.ts";
 import { staged, worker, model, workerFailed } from "./section.ts";
+import type { BenchRow, ModelWorker, Progress, Round, ToWorker } from "../runtime/contracts/messages.ts";
 
 // the model page's worker itself (src/runtime/worker.js): the model loads as the model page loads it (the GPU too), the
 // model page's own path is timed on it (T184: prompts and writing as the page chooses between the GPU and the CPU,
 // and on each alone), then the rounds of ?bench=1 (T45), which load it again each, on the CPU alone
 // what the model section measured, under the name of the model it ran (the choice may change after)
 // said (T227's review): what the page's path says went wrong in its first line (src/bench.js's pathWarnings()), for the warnings
-// a round of ?bench=1 as src/bench/rounds.js lists it; skip: the words of its row where the device does not run it (T214)
-type Round = { name: string; without: string[]; skip?: string };
-export let measured: { name: string; rows: any[]; pyodide: string; paths?: string; said?: string[] } | undefined;
+// (a round of ?bench=1 as src/bench/rounds.js lists it: the contract's Round)
+export let measured: { name: string; rows: BenchRow[]; pyodide: string; paths?: string; said?: string[] } | undefined;
 export async function modelSection(): Promise<Result> {
   const entry = model();
-  const w = worker("worker.js");
+  const w: ModelWorker = worker("worker.js");
   // T214: where the browser does not say its memory, the round without the kernels is a row that says why
   const asked: Round[] = roundsHere(($("full") as HTMLInputElement).checked ? FULL_ROUNDS : ROUNDS, (navigator as any).deviceMemory);
   // T177: the load, the page's path (the worker's words as the stage), then each round that runs (loaded again and
@@ -23,7 +23,7 @@ export async function modelSection(): Promise<Result> {
   const stages = 2 + rounds.length;
   let readies = 0, pathing = false;
   const prompt = entry.prompt || "Once upon a time";
-  const megabytes = (data: any) => `the model: ${(data.received / 1e6 || 0).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
+  const megabytes = (data: Progress) => `the model: ${(data.received / 1e6 || 0).toFixed(1)} / ${(data.total / 1e6).toFixed(1)} MB`;
   try {
     const listen = (resolve: (value: any) => void) => {
       w.onmessage = ({ data }) => {
@@ -52,7 +52,7 @@ export async function modelSection(): Promise<Result> {
       };
       w.onerror = async (event) => resolve({ error: await workerFailed(event) });
     };
-    const request = (message: any) => new Promise<any>((resolve) => {
+    const request = (message: ToWorker) => new Promise<any>((resolve) => {
       listen(resolve);
       w.postMessage(message);
     });

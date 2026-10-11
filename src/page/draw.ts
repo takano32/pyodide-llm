@@ -6,6 +6,7 @@ import { parameters } from "./address.ts";
 import { benchmarking, gpuNote, gpuSaid, model, readyLine } from "./model.ts";
 import { generating } from "./answer.ts";
 import { fixSeed } from "./settings.ts";
+import type { BenchRow, Done } from "../runtime/contracts/messages.ts";
 
 // The round button is the only control: an arrow that sends, a square that stops the run that is going on.
 const RUN_ICON = "M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z", STOP_ICON = "M7 7h10v10H7z";
@@ -36,7 +37,7 @@ export function rows(element: Element, lines: string[]) {
   }
 }
 // T76: the benchmark's bubble. The table is the Markdown's; the buttons under it are the way to send it on.
-export function showBench(benchRows: any[], environment: any, markdown: string) {
+export function showBench(benchRows: BenchRow[], environment: any, markdown: string) {
   const element = message("model bench");
   const bubble = element.firstElementChild!;
   bubble.textContent = "";
@@ -119,8 +120,8 @@ export function showStatus(note?: string) {
 }
 // T135: how many of the prompt's tokens went through the GPU (the ones counted as the prompt: the one after them
 // makes the first logits, on the CPU)
-export const onGpu = (data: any) => (!data.gpuTokens ? "" : data.gpuTokens >= data.prompt_tokens ? " on WebGPU"
+export const onGpu = (data: Done) => (!data.gpuTokens ? "" : data.gpuTokens >= data.prompt_tokens ? " on WebGPU"
   : ` (${data.gpuTokens} on WebGPU)`);
 // T152: how many of the tokens it wrote the GPU sampled (the sampled steps: a stop token among them)
-export const onGpuSampled = (data: any) => (!data.gpuSampled ? "" : data.gpuSampled >= data.sampled ? " on WebGPU"
+export const onGpuSampled = (data: Done) => (!data.gpuSampled ? "" : data.gpuSampled >= data.sampled ? " on WebGPU"
   : ` (${data.gpuSampled} on WebGPU)`);

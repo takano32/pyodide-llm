@@ -52,6 +52,11 @@ page_modules() {
   # of a step that only adds types) and what blanks a .ts file's types for the tools, on made-up builds and texts
   node tests/types.mjs
   node tests/dist-same-check.mjs
+  # T368.2: the shapes that cross a line as plain objects are types (src/runtime/contracts/): what reads them for the
+  # checks that hold each to its two ends (plan-keys-check, worker-modules-check and worker-sink-check, below), on
+  # made-up types; that those files hold types alone and are read with `import type`; and the conduct's requests held
+  # to the tuples conduct.py yields and to the answerers
+  node tests/contracts-check.mjs
   # T367.3.1: what is asked of a build (tests/dist-check.mjs, run on the build itself after `npm run build`) and how a
   # tool reads a module of a build (tests/bundle.mjs), on made-up builds
   node tests/dist-rules-check.mjs

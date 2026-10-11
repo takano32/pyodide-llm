@@ -1,0 +1,146 @@
+// contracts/gpu/protocol.ts (T368.2): what forward.js and the model's GPU worker say to one another. Types alone:
+// nothing of this file is in what a browser gets (it is read with `import type`).
+//
+// The worker is src/runtime/gpu.js (its head says what each message does), which forward.js makes
+// (src/runtime/forward/gpuside.js) and hands the model in a plan: Started, of { type: "start" }, a model whose layers are
+// in the shared memory too; Opened, of { type: "open" } (src/runtime/forward/alone.js's gpuOnlyPlan(), posted by
+// src/runtime/worker/weights.js), a model on the GPU alone (T156), whose bytes follow as { type: "weights" }.
+// A prompt's block, a generation's steps and the keys and values are asked for by a message and answered in the control
+// area: the words of that answer are src/runtime/jobs.ts's constants (GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED), which
+// the plan carries as words. They are numbers there, and stay that.
+//
+// Both ends are JavaScript still, which no compiler reads: tests/plan-keys-check.mjs holds the plans' keys written
+// (forward/) to the keys read (gpu/) and to these types, and the messages' kinds and keys to ToGpu and FromGpu.
+
+// a matrix of every layer: rows of n values, int6 (T155) or ternary (T232) where the values at a layer's address are
+// packed so, and for every layer [where its values are, where its scales are]
+export type Matrix = { rows: number; n: number; six?: boolean; ternary: boolean; layers: [number, number][] };
+// a table (the classifier, the embedding): as a matrix, at [values, scales]
+export type Table = { rows: number; n: number; six?: boolean; ternary: boolean; at: [number, number] };
+// a vector of every layer: where it is, and its size a layer
+export type Vector = { at: number; size: number };
+
+// The vectors a model has (gpuside.js's gpuVectors()): the norms' weights always; LayerNorm's biases (T154), Qwen2's
+// biases of q, k and v and Qwen3's norms of a head (T153), a GPT-2's biases after its matrices, where the model has them
+export type Vectors = {
+  attention: Vector;
+  ffn: Vector;
+  attentionBias?: Vector;
+  ffnBias?: Vector;
+  bq?: Vector;
+  bk?: Vector;
+  bv?: Vector;
+  qNorm?: Vector;
+  kNorm?: Vector;
+  bo?: Vector;
+  b1?: Vector;
+  b2?: Vector;
+};
+
+// T152: what the worker takes for a generation's steps (gpuside.js's gpuTokensPlan()): the classifier and, where it is
+// another table, the embedding; the final norm (its bias and GPT-2's positions: 0 where the model has none); whether
+// the classifier has outlier channels (T92) and which; where the ids go; the most steps of a submission
+export type Tokens = {
+  classifier: Table;
+  embedding: Table | null;
+  final: number;
+  finalBias: number;
+  positions: number;
+  outliers: boolean;
+  channels: number[];
+  ids: number;
+  most: number;
+};
+
+// T210: the tables of a model on the GPU alone, which come with the checkpoint's bytes
+export type Tables = { classifier: Table; embedding: Table | null };
+
+// the words of the control area a request is answered in (jobs.ts's GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED)
+export type Words = { done: number; failed: number; beat: number; wanted: number };
+
+// What the tests ask for (the page's ?gpuTest=: fallback, always, quick, only; tests/gpu-check.mjs: the rest). Nothing
+// of it is set for a visitor.
+export type Force = {
+  fallback?: boolean;
+  always?: boolean;
+  quick?: boolean;
+  only?: boolean;
+  matrices?: string;
+  attention?: string;
+  tokens?: string;
+  tokenAttention?: string;
+  pieceBytes?: number;
+  tablePieceBytes?: number;
+};
+
+// what the page kept of an earlier visit on this device (T148, T152): the shaders chosen then, under the device's key
+export type Remembered = { key?: string; matrices?: string; attention?: string; tokens?: string; alone?: unknown };
+
+// The plan of { type: "start" }: the model's sizes, what RoPE turns, its norm and residual, and addresses in the
+// shared memory (the matrices, the vectors, rows: the rows forward.js embeds, cos and sin: RoPE's tables, staging:
+// where a block's keys and values come back)
+export type Started = {
+  dim: number;
+  hidden: number;
+  layers: number;
+  heads: number;
+  kvHeads: number;
+  headSize: number;
+  // the values of a head RoPE turns (0: a GPT-2), and the layers it leaves alone (T255)
+  turned: number;
+  unturned: number[];
+  seqLen: number;
+  kvStart: number;
+  eps: number;
+  layerNorm: boolean;
+  parallel: boolean;
+  // the most tokens of a block
+  batch: number;
+  matrices: Record<string, Matrix>;
+  vectors: Vectors;
+  rows: number;
+  tokens: Tokens | null;
+  cos: number;
+  sin: number;
+  staging: number;
+  force: Force;
+  remembered: Remembered | undefined;
+  // the model is on the GPU alone (it was opened first)
+  direct: boolean;
+  words: Words;
+};
+
+// The plan of { type: "open" } (gpuOnlyPlan()): the layers and their matrices by where they are in the checkpoint
+export type Opened = { layers: number; matrices: Record<string, Matrix>; tables: Tables; force: Force; remembered: Remembered | undefined };
+
+// forward.js's cache of the keys and values a generation's steps go up from: their addresses, the positions it has
+// room for, the bytes of a position, and whether they are float16
+export type Cache = { keys: number; values: number; capacity: number; row: number; half: boolean };
+// the sampling of the steps (the engine's settings; stops: the stop tokens)
+export type Sampling = { temperature: number; topp: number; penalty: number; stops: number[] };
+
+export type ToGpu =
+  | { type: "open"; plan: Opened; flow: SharedArrayBuffer }
+  | { type: "weights"; offset: number; bytes: Uint8Array }
+  | { type: "start"; memory: WebAssembly.Memory; plan: Started }
+  // T210: tokens, the ids of a model on the GPU alone, which embeds them there
+  | { type: "prompt"; serial: number; count: number; pos: number; tokens?: number[] }
+  | { type: "tokens"; serial: number; count: number; pos: number; from: number; token: number; history: number[]; length: number;
+      cache: Cache | null; settings: Sampling; randoms: number[] }
+  | { type: "keys"; serial: number; count: number; pos: number }
+  | { type: "stop" };
+
+// what a form (a shader's way with the matrices, the attention, a token's layer) came to where it was tried: its ms,
+// or that it was remembered, or why it is none
+export type Tried = { name: string; ms?: number; remembered?: boolean; none?: string };
+// T152, T224: the layer of a token chosen and its ms a step, the attention of a token, the pieces of the classifier
+export type TokensChosen = { form: string; ms: number | undefined; forms: Tried[]; remembered: boolean; pieces: number; attention: string; attentions: Tried[] };
+
+export type FromGpu =
+  | { type: "progress" }
+  // form, attention, forms, remembered: gpu/forms.js's formsSaid(); blocks: what a whole block of count tokens takes
+  | { type: "ready"; adapter: string; key: string; bytes: number; seconds: number; form: string; attention: string; forms: Tried[];
+      remembered: boolean; blocks: { count: number; ms: number }[]; tokens: TokensChosen | null; tokensWhy: string | null | undefined }
+  | { type: "unusable"; reason: string }
+  | { type: "failed"; reason: string }
+  | { type: "ended" };
