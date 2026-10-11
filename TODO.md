@@ -89,7 +89,7 @@
 - **Bonsai（優先、持ち主 2026-10-02）**
   - 実装: T273（変換をカーネルで: 27B の変換 216 秒）、T274（サンプラに top-k・min-p・presence penalty）、T275（Safari の 3 値のカーネル）、T270（ベンチに 3 値の行）、T271（27B を GPU に、大）、T288（3 値のカーネルのほかの形）、T285（27B のメモリの小さな詰め）、T286（1-bit Bonsai）、T283（BitNet b1.58）
   - 調べ・確かめ: T279（1.7B をスマホで）、T287（前の版の 27B）、T290（Safari で 4B・8B）、T280（27B の保存が断られる端末）
-  - 持ち主の判断で済むもの: T276（素の RoPE に: 2026-10-11 に持ち主が決め、ブランチ `t235-plain-rope-2` でレビュー前）、T277（Prism ML の表示）、T281（27B の文脈の長さ）、T289（メモリの文面）、T282（イントロに置くか、候補）
+  - 持ち主の判断で済むもの: T276（素の RoPE に: 2026-10-11 に持ち主が決め、本線 7430fa2 に入れた。完了）、T277（Prism ML の表示）、T281（27B の文脈の長さ）、T289（メモリの文面）、T282（イントロに置くか、候補）
   - 文書: T234（結果を docs と gist に）
   - 候補: T284（27B の画像の入力、大）
 - **MLX（Clef-Flash: 状態と問いから選択肢の確率を出すモデル。調べだけ済み、2026-10-02）**: T316（全体と決めること）、T317（MLX の 4 ビットの読み手）、T318（全位置の隠れ状態）、T319（頭）、T320（入力の組み立て）、T321（頭の重みの取得と保存）、T322（ページ）、T323（原本との比べ）、T324（画像と動画、保留）、T325（WebGPU で: linear の層を GPU に・GPU だけ・4 ビットのまま・隠れ状態の読み戻し。T271 と重なる）。順は T316 の項。
@@ -3425,7 +3425,16 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **ほかの 3 つの大きさには引きが無い**（Q8_0 の値、1500 トークン、英語 / 日本語、run 36970949109・36970949463・36970949458。230M は原本の safetensors を int8 にしたもの）: perplexity は 230M 27.12 / 28.59、700M 18.62 / 18.28、1.2B Instruct 14.69 / 17.70（350M は 73.09 / 34.66、1.2B JP は 18.23 / 16.79）。8 ビットの全入力は 230M −0.44 / +0.04%、700M −0.02 / −0.01%、1.2B Instruct +0.18 / +0.31%、7 ビットは −0.50 / +0.28%、+0.29 / +0.25%、−0.20 / +0.36%。位置 0 だけの効きはどれも 0.5% 以下。**引きがあるのは 350M と 1.2B JP だけ**（同じ LFM2.5 でもチェックポイントごとの性質）。350M の英語の perplexity 73 は 230M の 27 より高い。**見立て（未確認）**: 後訓練で平文から外れた模型なので、定数のずれが perplexity に 1 次で効く（KL の約 10 倍）。
 - **勧め（持ち主の判断）: 一覧にこのまま置く。** (1) ページの道（7 ビット）は原本から +2.7〜3.9% で T98 の線の中、(2) Safari の道の 350M の英語 +8.6% は BOS の定数の引きで、丸めなければ +4.1%（線の中）、(3) 答えは壊れない（最尤 99% 一致）、(4) 1.2B JP のページの道の +3.9% も BOS の引きで、丸めなければ約 0。**覆す条件**: 持ち主の端末で 350M の答えが崩れて見えたとき（そのときは T314 を先に）。**直す案は T314**（BOS を丸めない。規模 中。効くのは平文の perplexity の数字で、チャットの答えには見えないので急がない）。
 
-### T276 [性能][Bonsai] Ternary Bonsai の 1.7B・4B・8B を素の RoPE に — 状態: **レビュー前**（2026-10-11、持ち主「オススメで」。T235 の番号で実装した: ブランチ `t235-plain-rope-2`、記録は T235 の「素の RoPE にした結果」。本線にはまだ入れていない）
+### T452 [バグ][遠隔試験] `tests/page_ternary.sh` が項目の options なしで測る — 状態: 未着手（2026-10-11、T235 の素の RoPE の実装から。規模 小）
+- `perplexity_prepare.py` を `--entry` なしで呼ぶので、変換器の BOS（1）と yarn で測る: ページの数字ではない。`--entry "$id"` を渡す。
+
+### T453 [バグ][遠隔試験] `tests/write.mjs` が dtype に依らず「int8 N GB」と書く — 状態: 未着手（2026-10-11、T235 から。規模 小）
+- 3 値のファイルが「int8 0.48 GB」と出る。チェックポイントの dtype を言う。
+
+### T454 [整理][CPU] float32 の `Llama` は `rope_scaling` を黙って読まない — 状態: 未着手（2026-10-11、T235 から。規模 小、決めること 1 つ）
+- float32 のファイルは RoPE の表を持つので、エンジンは options の `rope_scaling` を見ない。float32 で書く道具は食い違いに気づけない（`fixed_outputs.py` は自分で表を差し替える）。エンジンが言うべきか（ファイルの表と options の表が違えば断る・options を勝たせる）は決めていない。
+
+### T276 [性能][Bonsai] Ternary Bonsai の 1.7B・4B・8B を素の RoPE に — 状態: **完了**（2026-10-11、持ち主「オススメで」。T235 の番号で実装した: 本線 7430fa2、記録は T235 の「素の RoPE にした結果」）
 - レビュー 2 本（T235・T246）の勧めは素の RoPE: 3 つの大きさとも perplexity が 2〜4% 低い（20 の測り全部）。config・GGUF・transformers・fork は yarn。ブランチ `t235-plain-rope` は 3 値にする前のものなので、`ternaryBonsai()` に合わせ直す。覆す条件: Prism ML が yarn で学習したと分かる、文脈を 8192 より上げる。
 
 ### T277 [描画][Bonsai] 「Created using Bonsai by Prism ML.」の表示 — 状態: 未着手（2026-10-02 の洗い出しで採番。持ち主の判断: 置き場と文面。規模 小）
@@ -4604,7 +4613,8 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **変わらないもの**: 変換の出力（チェックポイント・tokenizer.bin・変換器の options）は 1 バイトも変わらない。`CONVERTER` は上げない: 前に保存した変換はそのまま使われ（取り直しなし）、保存の manifest の yarn の上に項目の `{}` が勝つ（worker は `{ ...保存の options, ...項目の options }`）。送る ID（BOS・書式・止まり）は同じ。WGSL と端末の鍵は変わらず、覚えた GPU の形もそのまま（表は Python が作って forward.js と GPU に渡すだけ）。`?hf=prism-ml/Ternary-Bonsai-…-unpacked` で開いたものは変換器の yarn のまま（変えるのは項目だけ）。
   - **守りの網で「違う」と出る予定のもの**: `models` の 3 項目の options だけ。ほかが出たら誤り。
   - **道具**: float32 で書く `tests/fixed_outputs.py` は表をファイルに持つ（変換器が config の yarn から作る）ので、options だけでは 1.7B の固定値が yarn のまま通る。道具を項目の RoPE に合わせ、固定値の文を素の RoPE のものに書き直す（文は CI で出して読む）。transformers・fork・`gguf.yml` との比べは yarn のモデル（原本）の確かめで、ページの項目が使う表とは別になる。
-- **素の RoPE にした結果（2026-10-11、ブランチ `t235-plain-rope-2`、状態: レビュー前。本線にはまだ入れていない）**:
+- **素の RoPE のレビューと本番（2026-10-11）**: レビュー（Sonnet low、2026-10-11）: 本線に入れてよい、必ず直すものは無い。動かしたもの: `models-check`・`worker-conduct-check`（16）・pytest の `test_plan.py` と `test_gguf.py`（384 passed）・smoke（本物の Pyodide に JavaScript の `{rope_scaling: {}}` を渡して、表が縮めなしと同じ・倍率 1。保存した変換の options の上に項目の `{}` を重ねても同じ）。自分の壊し方 3 つ: worker の重ねる順を逆に → `worker-conduct-check` が落ちる、`rope_frequencies` の `if not scaling` を `is None` に → `test_plan.py` が 3 件落ちる、`rope_magnitude` の同じ替え → 通る（`{}` では種類が無く倍率は 1 のままで、同じ動き）。見ていないもの: CI のログとの数字の突き合わせ（記録どうしは合う）、網の回し直し、`gpuOnlyPlan` と `/benchmark/` のモデルの節の実走（読んだ限り options は読まず、Python の作った表を受けるだけ）。覆す条件: Prism ML が推論に yarn を指定していると分かったとき、ページの文脈が 8192 以上になったとき、yarn が良いという別の計測が出たとき（戻すのは `ternaryBonsai()` の `...PLAIN_ROPE` の 1 か所と固定値の 1 行）。**本線 7430fa2、デプロイ run 38148294127、本番 run 38148641361**（Linux の Chromium 156、Ternary Bonsai 1.7B: 準備完了 19.1 秒・256 トークン・17.0 tok/s・4 本、2 回目の訪問は OPFS の保存から 4.1 秒: 前に保存した変換（yarn の options）の上で項目の素の RoPE が効く道）。CI の機械の数字で、持ち主の端末では未計測。4B・8B・Firefox・WebKit・GPU の道は本番で見ていない（RoPE の表は Python が作って計画で渡すので、道ごとの違いは無い見立て）。**採番**: T452・T453・T454。
+- **素の RoPE にした結果（2026-10-11、ブランチ `t235-plain-rope-2`、本線 7430fa2）**:
   - **形**: `src/models/formats.js` に `PLAIN_ROPE = { rope_scaling: {} }`、`src/models/builders.js` の `ternaryBonsai()` が大きさごとの options の後にそれを足す（8B は BOS が別なので、`start` の options を取り出してから足す形にした）。製品のコードの変更はこの 2 ファイルだけ（エンジン・変換器・worker・forward.js・シェーダ・`kept.js` は 1 字も触っていない）。項目が勝つ仕組みは前からある worker の `{ ...変換の options, ...項目の options }`（変換したばかりの道と、保存した変換を読む道の 2 か所）。
   - **`{}` がどこでどう読まれるか**: (1) エンジン（`engine/model.py`）: worker から届く JavaScript のオブジェクトを `to_py()` で空の辞書にし、`rope_frequencies()` は「偽なら `rope_theta` だけの角」、`rope_magnitude()` は「偽なら 1」。(2) 変換器と `check_config()`: 項目の options を読まない（config.json の yarn を読み、変換の options に yarn を書く。前と同じ）。(3) forward.js と GPU: RoPE の設定を読まない。Python の作った表を計画の `derived` で受け取るだけ。(4) `kept.js`: manifest には変換の options（yarn）がそのまま残る。(5) 道具（`write_options.py`・`perplexity_prepare.py --entry`・`format_check.py`・`fixed_outputs.py`）: worker と同じ順で重ねる。`null` にしなかった訳: Pyodide では `jsnull` で None でない。
   - **予定の違いと実際**: 予定どおり。守りの網（`node tests/unchanged.mjs --before main`、main は 59c45de）: `models` が「違う」（`MODELS` の 3 項目の options に `rope_scaling: {}` が足されただけ。126 項目の JSON を前後で比べて、ほかの項目もほかの鍵も同じ）、`python` が「違う」（足した pytest 19 件が「新しい」: 2274 → 2293 passed。消えた・違うものは無い）。ほか（`shaders`・鍵 192・`calls`・`choices`・`exports`・`layouts`・`page`・`bench`・`gpuworker`）は全部「同じ」。**予定に無い違いは無い**。英語の Wikipedia の差（+0.5〜+2.7%）は予定に書いた「2〜7%」の下の端より小さい（前の測りでも英語の Wikipedia は +0.2〜+1.7% だった）。
