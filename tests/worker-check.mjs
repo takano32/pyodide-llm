@@ -905,4 +905,50 @@ const ok = (line) => {
   run("adopted({})");
 }
 
+// ---- T378.3 (T156's path, which nothing ran outside a browser): the GPU stops under a run of a model that is on the GPU
+// alone. The page is told so in the owner's words, the model is on the CPU from now on (weights.js's own list, which
+// worker.js tells by onCpuFromNow), and the load the page last asked for is asked for again, by its own message. A
+// run that fails with the GPU going on is an error like any other, and loads nothing.
+{
+  const small = { id: "small-on-the-gpu", name: "Small", checkpoint: "small", tokenizer: "small.tokenizer.bin", bytes: 64, options: {} };
+  const of = (type) => messages.filter((message) => message.type === type);
+  const noRuntime = () => run("initialized = Promise.reject(new Error('no runtime in this check')); initialized.catch(() => {})");
+  // the load the page asked for (it fails here, where no runtime comes: the worker knows what was asked for all the same)
+  noRuntime();
+  fresh(() => new Response(new Uint8Array(64), { status: 200 }));
+  await context.onmessage({ data: { type: "load", load: 21, model: small } });
+  const told = [];
+  context.stand = {
+    pyodide: { runPython: (code) => told.push(code) },
+    llama: { generate: { callKwargs: () => { throw new Error("the device was lost under the run"); } }, destroy: () => told.push("destroy") },
+    direct: { lost: null },
+  };
+  for (const lost of [null, "the GPU's device was lost (a test)"]) {
+    context.stand.direct.lost = lost;
+    run("pyodide = stand.pyodide; adopted({ llama: stand.llama }); gpuOnlyNow = stand.direct;");
+    noRuntime();
+    fresh(() => new Response(new Uint8Array(64), { status: 200 }));
+    told.length = 0;
+    await context.onmessage({ data: { type: "generate", prompt: "a prompt" } });
+    await sleep(2000);  // (the load that follows is the worker's own message to itself)
+    assert.equal(run("generating"), undefined, "a run that failed is still the run going on");
+    if (!lost) {
+      assert.deepEqual(of("error").map(({ message, reloading }) => [message, reloading]), [["the device was lost under the run", undefined]]);
+      assert.deepEqual([requests.length, run("cpuOnly.has('small-on-the-gpu')"), run("llama") === context.stand.llama, told], [0, false, true, []],
+        "a run that failed with its GPU going on loaded something, or took the model away");
+      continue;
+    }
+    assert.deepEqual(JSON.parse(JSON.stringify(of("error")[0])), { type: "error", load: 21, reloading: true,
+      message: "The GPU stopped (the GPU's device was lost (a test)). This model was on the GPU alone, and is loaded again on the CPU." });
+    assert.equal(run("cpuOnly.has('small-on-the-gpu')"), true, "the model whose GPU stopped under a run is not on the CPU from now on");
+    assert.deepEqual(told, ["destroy", "import gc; gc.collect()"], "the model was not let go of for the load that follows");
+    assert.deepEqual([run("llama"), run("gpuOnlyLost()")], [undefined, undefined], "the load that follows began with the lost model");
+    assert.deepEqual(requests.map((r) => r.url.split("/").pop()).sort(), ["small.000", "small.tokenizer.bin"], "the load the page asked for last was not asked for again");
+    // (that load ends here as the first one did: no runtime)
+    assert.deepEqual(of("error").slice(1).map(({ load, message }) => [load, message]), [[21, "no runtime in this check"]]);
+  }
+  run("initialized = undefined; adopted({}); gpuOnlyNow = undefined; pyodide = undefined;");
+  ok("the GPU stopped under a run of a model on the GPU alone: said, the model on the CPU from now on, and the page's last load asked for again");
+}
+
 console.log(`worker-check: ${passed} checks passed`);
