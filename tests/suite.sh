@@ -102,6 +102,9 @@ page_modules() {
   # CI's browsers); T378.5: what the parts hold has owners (model.ts, answer.ts, running.ts): no imported name
   # assigned or hidden by a local, no top-level name twice, and the owners read nothing of a page
   node tests/page-modules-check.mjs
+  # T378.5: the owners of the pages' state each by itself, imported by Node as the modules they are (model.ts, answer.ts,
+  # running.ts: what each event changes and nothing else), and the model a visit opens with (opening.ts, a process a visit)
+  node tests/page-parts-check.mjs
   # T353: the names /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js) and its modules hand one another, every shared.<name>
   # a field of the object the steps share, a message at the window's first await answered once, and the names the tables'
   # modules (src/bench/) use (the worker's steps run only where there is a GPU: nothing else outside CI reads them)
