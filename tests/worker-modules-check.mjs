@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { parse } from "@babel/parser";
 import { treeOf, python } from "./tree.mjs";
 import { workerScripts } from "./worker-source.mjs";
-import { contract, differing, givenTo, handedTo, posted as postedBy, readOff, returnedBy, takenBy, told, treeOf as syntaxOf } from "./contracts.mjs";
+import { contract, differing, givenTo, handedTo, posted as postedBy, readOff, returnedBy, takenBy, told, treeOf as syntaxOf, walk } from "./contracts.mjs";
 import fs from "node:fs";
 import { untyped } from "./untyped.mjs";
 
@@ -270,6 +270,25 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
       same(`contracts/messages.ts's FromWorker, the keys of "${kind}"`, keys, sent.get(kind).keys, more);
     }
 
+    // T368.3: the worker is TypeScript, and tsc holds a message it posts to the type where the message says which:
+    // postMessage({ … } satisfies <a member of FromWorker>). The worker's own postMessage() takes anything, so a
+    // message without that is held by nothing but the keys above: every one says it (one is cast, and says why:
+    // load.ts's "gpu", whose spread tsc reads otherwise).
+    const members = new Set(["FromWorker", ...typed.names]);
+    let held = 0;
+    for (const { name, url } of workerScripts()) {
+      const program = parse(fs.readFileSync(url, "utf8"), { sourceType: "module", plugins: ["typescript"] }).program;
+      walk(program, (node) => {
+        if (node.type !== "CallExpression" || node.callee.type !== "Identifier" || node.callee.name !== "postMessage") return;
+        const [message] = node.arguments, said = message?.typeAnnotation;
+        const names = !said ? [] : said.type === "TSUnionType" ? said.types.map((one) => one.typeName?.name) : [said.typeName?.name];
+        assert.ok(["TSSatisfiesExpression", "TSAsExpression"].includes(message?.type) && names.length && names.every((one) => members.has(one)),
+          `${name}, line ${node.loc.start.line}: a message is posted without \`satisfies\` a type of contracts/messages.ts: nothing holds its values to what the page reads`);
+        held += 1;
+      });
+    }
+    assert.ok(held >= declared.size, `${held} messages posted were found, fewer than the ${declared.size} kinds`);
+
     // what the worker is sent: the kinds its receiver tells apart, and the keys it reads off a message (worker.js's
     // receiver, request.js's loadAsked(), and what generate() and timedPaths() take of the message they are handed)
     const asked = typed.membersOf("ToWorker");
@@ -281,7 +300,7 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) {
     const handedOn = from([...typed.keysOf("Sampled"), "echo"].filter((key) => !read.has(key)), "handed to Python's generate() as it is");
     same("contracts/messages.ts's ToWorker, to the keys the worker reads off a message", keys, read, handedOn);
     console.log(`worker-modules-check: the worker posts the ${declared.size} kinds of contracts/messages.ts's FromWorker with their keys, ` +
-      `and reads the ${asked.size} kinds of ToWorker and their ${keys.size} keys (${Object.keys(handedOn).length} of them Python's)`);
+      `and reads the ${asked.size} kinds of ToWorker and their ${keys.size} keys (${Object.keys(handedOn).length} of them Python's); each of the ${held} messages it posts says its type to tsc`);
   }
 
   // ---- the files as the modules they are, linked by Node: a name imported that is not exported where it is taken

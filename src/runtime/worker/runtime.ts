@@ -8,21 +8,26 @@ import { built } from "../built.js";
 import { resolvePyodideVersion, pyodideSteps, placePython } from "./pyodide.ts";
 import { since, took } from "./clock.ts";
 import { wentWithout } from "./outdated.ts";
+import type { EngineWindow, Pyodide, PyodideModule } from "../contracts/python.ts";
+import type { Force } from "../contracts/gpu/protocol.ts";
+import type { Adapter, Forward, Kernels } from "../contracts/forward-js.ts";
 
-export let pyodide, llama2_numpy;
+// (T368.3: these two are there once the runtime is ready, which every load waits for: their types say that state.
+// forward.js may not come, no WebAssembly SIMD or its file gone: forwardModule is undefined then, and jsKernels null)
+export let pyodide: Pyodide, llama2_numpy: EngineWindow;
 // the WASM SIMD kernels that llama2_numpy.py loads with ctypes (the sampling, a conversion's quantizer and readers):
 // their path in Pyodide's file system, or undefined
-export let pythonKernels;
+export let pythonKernels: string | undefined;
 // T93: the forward pass in JavaScript (forward.js) and its kernels, compiled once
-export let forwardModule, jsKernels;
+export let forwardModule: Forward | undefined, jsKernels: Kernels | null | undefined;
 // T93 stage 2: the kernels for a shared memory (only where the page is cross-origin isolated)
-export let sharedKernels;
+export let sharedKernels: Kernels | null | undefined;
 // T101: the kernels for a 64-bit memory, for a model past 4 GiB ({ plain, shared }), where the browser has Memory64
-export let wideKernels;
+export let wideKernels: { plain: Kernels | null; shared: Kernels | null } | undefined;
 // ?wide=on: a 64-bit memory for every model, to try that path on a small one (measuring, tests), as ?offline=on says
 export let forceWide = false;
 // ?gpuTest= (T148, T156; the tests only): what a fallback adapter is taken for (hasWebGpu's comment below)
-export let gpuForce = {};
+export let gpuForce: Force = {};
 // ?bench= (T45): the page measures the CPU's combinations, and no GPU starts beside them
 export let benchPage = false;
 // T107: ?hfParts=<MiB>&hfConnections=<N> fix the two, to measure; the page offers no way to them
@@ -32,9 +37,9 @@ export let hfPartBytes = 0, hfConnections = HF_CONNECTIONS;  // 0: not fixed, de
 export let pyodideAt = 0;
 // T156: the adapter, asked for before a model is loaded ({ fallback, limits } or null): whether a model the device
 // cannot hold twice goes on the GPU alone is decided before its bytes come (forward.js's weightsPlace, gpuOnlyUnfit)
-export let gpuAdapter = null;
+export let gpuAdapter: Adapter | null = null;
 // init() as a promise: every load waits for it, also the one that replaces the first
-let initialized;
+let initialized: Promise<void> | undefined;
 
 // T148: a prompt's tokens through the layers on the GPU (gpu.js) by default, wherever this worker has WebGPU and
 // forward.js can put the model there, and the GPU is faster than the CPU here (AGENTS.md's policy 9: no option).
@@ -47,7 +52,7 @@ export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.reque
   if (!adapter) return;
   const { maxStorageBufferBindingSize, maxBufferSize } = adapter.limits;
   // (T232, packed: WGSL's packed int8 dot, which ternary weights are multiplied with on the GPU)
-  gpuAdapter = { fallback: Boolean(adapter.info?.isFallbackAdapter ?? adapter.isFallbackAdapter),
+  gpuAdapter = { fallback: Boolean(adapter.info?.isFallbackAdapter ?? (adapter as GPUAdapter & { isFallbackAdapter?: boolean }).isFallbackAdapter),
     limits: { maxStorageBufferBindingSize, maxBufferSize },
     packed: Boolean(navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) };
   try {
@@ -60,7 +65,7 @@ export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.reque
   }
 }).catch(() => {});
 
-async function init(search) {
+async function init(search: string) {
   const started = performance.now();
   const asked = new URLSearchParams(search);
   const parts = Number(asked.get("hfParts")), connections = Number(asked.get("hfConnections"));
@@ -68,14 +73,14 @@ async function init(search) {
   if (connections >= 1 && connections <= 32) hfConnections = Math.floor(connections);
   forceWide = asked.get("wide") === "on";
   // (T156: ?gpuTest=only, the tests' too: a model the GPU can take on the GPU alone, whatever its size)
-  gpuForce = ["on", "only"].includes(asked.get("gpuTest")) ? { fallback: true, always: true, quick: true, only: asked.get("gpuTest") === "only" } : {};
+  gpuForce = (["on", "only"] as (string | null)[]).includes(asked.get("gpuTest")) ? { fallback: true, always: true, quick: true, only: asked.get("gpuTest") === "only" } : {};
   benchPage = asked.has("bench");
   // T367.2: the engine's Python (a window and its parts, T348) is one archive, engine.zip, of this worker's
   // build (built.js). It is small and of this site, so it is asked for now, beside Pyodide, and is there when that is ready.
   const engine = built("engine.zip").then((res) => res.arrayBuffer());
   engine.catch(() => {});  // (it is awaited below: a load that ends before that leaves no unhandled rejection)
   const version = await resolvePyodideVersion(search);
-  pyodide = await pyodideSteps(version, (url) => import(/* @vite-ignore */ url));
+  pyodide = await pyodideSteps(version, (url: string): Promise<PyodideModule> => import(/* @vite-ignore */ url));
 
   await placePython(pyodide, engine, "engine.zip");
   llama2_numpy = pyodide.pyimport("llama2_numpy");
@@ -99,22 +104,22 @@ async function init(search) {
     forwardModule = await import("../forward.js").catch((error) => {
       void wentWithout(error, import.meta.url);
       throw error;
-    });
+    }) as unknown as Forward;
     // one build of the kernels: simdkernel_<kind>.wasm and simdkernel_relaxed_<kind>.wasm, or null
-    const build = async (kind, wide = false) => {
+    const build = async (kind: string, wide = false) => {
       const [plain, relaxed] = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
         built(name).then((res) => res.arrayBuffer()).catch((error) => {
           // (T439: the kernels of a 64-bit memory are no slower path: without them a model past 4 GB is refused)
           if (!wide) void wentWithout(error);
           return null;
         })));
-      return plain ? forwardModule.compileKernels(plain, relaxed, wide) : null;
+      return plain ? forwardModule!.compileKernels(plain, relaxed, wide) : null;
     };
     jsKernels = await build("plain");
     if (jsKernels && self.crossOriginIsolated) sharedKernels = await build("shared");
     // T101: on their own, so that a browser that says it makes 64-bit memories and then cannot compile their kernels
     // (Playwright's WebKit did, 2026-09-25) keeps the 32-bit ones: in the same try it lost every kernel and ran NumPy
-    if (jsKernels && forwardModule.memory64()) {
+    if (jsKernels && forwardModule!.memory64()) {
       try {
         wideKernels = { plain: await build("plain64", true), shared: self.crossOriginIsolated ? await build("shared64", true) : null };
       } catch {
@@ -130,7 +135,7 @@ async function init(search) {
 
 /** A load was asked for: the runtime starts with the first one (the model downloads while Pyodide loads), from what
  * the page's URL said, and is the same promise for every later one */
-export function runtimeAsked(search) {
+export function runtimeAsked(search: string) {
   initialized ??= init(search);
   return initialized;
 }

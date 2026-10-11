@@ -331,7 +331,9 @@ for (const name of sources) {
     if (why.startsWith("quiet")) assert.ok(!/ithout\(/.test(what), `${name}: ${what} is quiet`);
     if (why.startsWith("slower") && what.startsWith("built(")) assert.ok(/\.catch\(\(error\) => (void wentWithout\(error\)\);|\{)$/.test(what), `${name}: ${what} hands its failure to wentWithout(error)`);
     if (why.startsWith("slower") && what.startsWith("import(")) {
-      assert.ok(text.includes(`${what}.catch((error) => {\n      void wentWithout(error, import.meta.url);\n      throw error;\n    });`), `${name}: ${what} hands its failure to wentWithout(error, import.meta.url), and fails as it did`);
+      // (T368.3: the module may be cast to a type after it, which is no part of what runs)
+      const handing = `${what}.catch((error) => {\n      void wentWithout(error, import.meta.url);\n      throw error;\n    })`;
+      assert.ok(text.includes(`${handing};`) || /^ as [\w ]+;/.test(text.slice(text.indexOf(handing) + handing.length)) && text.includes(handing), `${name}: ${what} hands its failure to wentWithout(error, import.meta.url), and fails as it did`);
     }
     // a built file whose failure is said: nothing on its line swallows it (a catch there lets updated() through)
     if (why === "said" && what.startsWith("built(")) assert.ok(!what.includes(".catch(") || what.includes(".catch((error) => unlessUpdated(error) ?? null)"), `${name}: ${what} is said`);
@@ -368,7 +370,7 @@ for (const name of sources) {
   const text = code("src/runtime/worker/outdated.ts");
   assert.ok(/import \{ gone, isUpdated \} from "\.\.\/updated\.js";/.test(text), "outdated.js takes gone() and isUpdated() of updated.js, and nothing that makes an error");
   assert.ok(!/\bthrow\b|\bnew Error\b|\breject\b/.test(text), "outdated.js throws nothing");
-  assert.deepEqual(text.match(/postMessage\([^)]*\)/g), ['postMessage({ type: "updated" })'], "outdated.js posts the one word, and nothing else");
+  assert.deepEqual(text.match(/postMessage\([^)]*\)/g), ['postMessage({ type: "updated" } satisfies Updated)'], "outdated.js posts the one word, and nothing else");
 }
 const knows = (name) => /updated\.js|\bunstarted\b|\bisUpdated\b|\bUPDATED\b/.test(code(name));
 for (const name of ["src/runtime/worker/weights.ts", "src/runtime/gpu.js", "src/runtime/gpu/device.js"]) {

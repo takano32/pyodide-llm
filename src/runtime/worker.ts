@@ -42,19 +42,21 @@ import { told } from "./worker/told.ts";
 import { since, breathe } from "./worker/clock.ts";
 import { load, threadsNow, heapBytes } from "./worker/load.ts";
 import { timedGeneration, timedPaths } from "./worker/timing.ts";
+import type { Thrown } from "./worker/told.ts";
+import type { Bench, BenchRow, Done, Failed, Paths, Token, ToWorker } from "./contracts/messages.ts";
 
 // What this file alone holds (T378.3: they were fields of the object all the modules shared):
 // the AbortController of the load that is going on, and a promise that settles once it has cleaned up
-let loading, unloaded = Promise.resolve();
+let loading: AbortController | undefined, unloaded = Promise.resolve();
 // the run that is going on, and whether the page asked it to stop
-let generating, stopped = false;
-let lastLoad;  // the load message of the model now (T156)
+let generating: Promise<void> | undefined, stopped = false;
+let lastLoad: Extract<ToWorker, { type: "init" | "load" }> | undefined;  // the load message of the model now (T156)
 let pathing = false;  // T184: the benchmark's page path is being timed; see the paths message
 
-async function generate({ type, prompt, ...options }) {
+async function generate({ type, prompt, ...options }: Extract<ToWorker, { type: "generate" }>) {
   engineNow()?.newGeneration?.();  // now and then the remembered number of threads is checked again
   // a Python generator: every step of the iteration runs one forward pass and hands over one piece of text
-  const pieces = llama.generate.callKwargs(prompt, options);
+  const pieces = llama!.generate.callKwargs(prompt, options);
   try {
     let breathed = performance.now();
     while (!stopped) {
@@ -62,7 +64,7 @@ async function generate({ type, prompt, ...options }) {
       if (done) {
         break;
       }
-      postMessage({ type: "token", text: value });
+      postMessage({ type: "token", text: value } satisfies Token);
       // by the clock and not by the token: often enough for the button to feel immediate with a model that
       // writes 50 tokens a second, rarely enough not to cost one that writes 900 a measurable tok/s
       if (performance.now() - breathed > 50) {
@@ -77,11 +79,11 @@ async function generate({ type, prompt, ...options }) {
   }
   postMessage({ type: "done", threads: threadsNow(), gpuTokens: engineNow()?.gpuTokens ?? 0, gpuSampled: engineNow()?.gpuSampled ?? 0,
                 gpu: engineNow()?.gpuStatus,
-                ...llama.stats.toJs({ dict_converter: Object.fromEntries }) });
+                ...llama!.stats.toJs({ dict_converter: Object.fromEntries }) } satisfies Done);
 }
 
-self.onmessage = async ({ data }) => {
-  let signal;
+self.onmessage = async ({ data }: MessageEvent<ToWorker>) => {
+  let signal: AbortSignal | undefined;
   try {
     if (data.type === "init" || data.type === "load") {
       lastLoad = data;  // (T156: loaded again on the CPU where its GPU fails while the model is on it alone)
@@ -99,7 +101,7 @@ self.onmessage = async ({ data }) => {
       // that the next buffer is allocated first, and the WebAssembly memory, which never shrinks, grows by a
       // whole model with every change of mind (587 MB after four of them).
       const previous = unloaded;
-      const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+      const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal!, data.load));
       unloaded = current.catch(() => {});
       await current;
     } else if (data.type === "bench") {
@@ -110,7 +112,7 @@ self.onmessage = async ({ data }) => {
         return;
       }
       roundsBegan();
-      const rows = [];
+      const rows: BenchRow[] = [];
       try {
         for (const round of data.rounds) {
           // T214: a round the page skips (src/bench.js's roundsHere(): NumPy's float32 weights where the browser does
@@ -126,19 +128,19 @@ self.onmessage = async ({ data }) => {
           roundBegan(round.without);
           const started = performance.now();
           const previous = unloaded;
-          const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal, data.load));
+          const current = previous.then(() => generating?.catch(() => {})).then(() => load(data.model, signal!, data.load));
           unloaded = current.catch(() => {});
           await current;
           const ready = since(started);
           const { tokens, speed } = timedGeneration(data.prompt, data.steps);
-          rows.push({ name: round.name, without: round.without, tokens, speed, backend: llama.backend, seconds: ready });
+          rows.push({ name: round.name, without: round.without, tokens, speed, backend: llama!.backend, seconds: ready });
         }
       } finally {
         // also when a round failed or a change of model cancelled it (the review of T76): the next model must not
         // load with a round's switches off while the panel shows them on (the page's again: request.js)
         roundsEnded();
       }
-      postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version });
+      postMessage({ type: "bench", load: data.load, rows, pyodide: pyodide.version } satisfies Bench);
     } else if (data.type === "paths") {
       // T184: the model page's own path, on the model as the first load left it (the GPU too), before the rounds:
       // its prompts and its writing as the page chooses, on the CPU only and on the GPU only
@@ -147,7 +149,7 @@ self.onmessage = async ({ data }) => {
       }
       pathing = true;
       try {
-        postMessage({ type: "paths", load: data.load, ...(await timedPaths(data)) });
+        postMessage({ type: "paths", load: data.load, ...(await timedPaths(data)) } satisfies Paths);
       } finally {
         pathing = false;
       }
@@ -164,11 +166,11 @@ self.onmessage = async ({ data }) => {
         // T156: the GPU stopped under a model on it alone: said, and the model loaded again on the CPU
         const lost = gpuOnlyLost();
         if (!lost) throw err;
-        onCpuFromNow(lastLoad.model);
-        postMessage({ type: "error", load: lastLoad.load, reloading: true,
-          message: `The GPU stopped (${lost}). This model was on the GPU alone, and is loaded again on the CPU.` });
+        onCpuFromNow(lastLoad!.model);
+        postMessage({ type: "error", load: lastLoad!.load, reloading: true,
+          message: `The GPU stopped (${lost}). This model was on the GPU alone, and is loaded again on the CPU.` } satisfies Failed);
         generating = undefined;
-        self.onmessage({ data: lastLoad });
+        self.onmessage!({ data: lastLoad } as MessageEvent<ToWorker>);
       } finally {
         generating = undefined;
       }
@@ -183,21 +185,21 @@ self.onmessage = async ({ data }) => {
       // name and message on the last line: the memory of the weights, which the converter opens through the sink
       // (weightsBuffer: Safari's refusal of a model past 4 GB, a memory the browser will not make or grow), and
       // forward.js growing the keys and values. It is told as itself (the review of T133: it was a traceback)
-      const [, name = err?.name, text = err?.message] = err?.type === "JsException"
-        ? /^pyodide\.ffi\.JsException: (\w+): (.*)$/.exec(err.message.trim().split("\n").pop()) ?? [] : [];
+      const [, name = (err as Thrown)?.name, text = (err as Thrown)?.message] = (err as Thrown)?.type === "JsException"
+        ? /^pyodide\.ffi\.JsException: (\w+): (.*)$/.exec((err as Thrown).message!.trim().split("\n").pop()!) ?? [] : [];
       // a ValueError of the engine is a message for the reader (wrong file, prompt too long): no traceback
-      const message = err?.type === "ValueError" ? err.message.trim().split("\n").pop().replace(/^ValueError: /, "")
+      const message = (err as Thrown)?.type === "ValueError" ? (err as Thrown).message!.trim().split("\n").pop()!.replace(/^ValueError: /, "")
         : name === "Error" ? text : told(err);
       // T90: the memory ran out, in Python (MemoryError: malloc could not grow the WebAssembly memory) or in
       // JavaScript (RangeError: an ArrayBuffer or WebAssembly.Memory.grow was refused). The page says so in words
       // a visitor understands, with how much memory the page had when it happened.
       // (V8 also raises RangeError for a stack overflow, which is not this; Firefox says InternalError: out of memory)
-      const memory = err?.type === "MemoryError" || name === "InternalError" ||
+      const memory = (err as Thrown)?.type === "MemoryError" || name === "InternalError" ||
         (name === "RangeError" && !/call stack/i.test(text ?? ""));
       // where it happened goes to the page's console (T96): tests/e2e.mjs keeps the console of a failed run
-      postMessage({ type: "error", load: data.load, message: memory ? String(text ?? err).trim().split("\n").pop() : message,
-                    stack: String(err?.stack ?? told(err)), weights: weightsBytes(), pyodide: Boolean(err?.pyodide),
-                    ...(memory && { memory: true, heap: heapBytes() }) });
+      postMessage({ type: "error", load: data.load, message: memory ? String(text ?? err).trim().split("\n").pop()! : message!,
+                    stack: String((err as Thrown)?.stack ?? told(err)), weights: weightsBytes(), pyodide: Boolean((err as Thrown)?.pyodide),
+                    ...(memory && { memory: true, heap: heapBytes() }) } satisfies Failed);
     }
   }
 };

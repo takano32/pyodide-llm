@@ -260,16 +260,18 @@ const made = build(tree.python(), path.join(work, "tree"));
   // (the worker's window and its modules: not the table of the built files, which names every one of them, T367.3)
   const sources = Object.fromEntries(workerScripts(tree).filter(({ url }) => /\/worker(\.(js|ts)$|\/)/.test(url.pathname)).map(({ name, source }) => [name, source]));
   const naming = (pattern) => Object.entries(sources).filter(([, source]) => pattern.test(source)).map(([name]) => name);
-  const body = (source, head) => { const from = source.indexOf(head); assert.ok(from >= 0, `no ${head}`); return source.slice(from, source.indexOf("\n}\n", from)); };
+  // (T368.3: head, a function's first line as a pattern: the scripts are the sources with their types blanked, which
+  // leaves spaces where a parameter's type was)
+  const body = (source, head) => { const from = source.search(head); assert.ok(from >= 0, `no ${head}`); return source.slice(from, source.indexOf("\n}\n", from)); };
   // (the names as the code says them, in quotes: the comments name them too)
   assert.deepEqual(naming(/"engine\.zip"/), ["runtime"]);
   assert.deepEqual(naming(/"converter\.zip"/), ["convert"]);
-  assert.match(body(sources.runtime, "async function init(search) {"), /built\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(pyodide, engine, "engine\.zip"\);\s*llama2_numpy = pyodide\.pyimport\("llama2_numpy"\);/,
+  assert.match(body(sources.runtime, /^async function init\(search *\) \{$/m), /built\("engine\.zip"\)[^]*await pyodideSteps\([^]*await placePython\(pyodide, engine, "engine\.zip"\);\s*llama2_numpy = pyodide\.pyimport\("llama2_numpy"\);/,
     "init() asks for the engine's archive before it waits for Pyodide, and places it before it imports the engine");
   assert.equal(Object.values(sources).join("\n").match(/"converter\.zip"/g).length, 1);
-  assert.match(body(sources.convert, "async function converter(signal) {"), /"converter\.zip"/);
+  assert.match(body(sources.convert, /^async function converter\(signal *\) \{$/m), /"converter\.zip"/);
   assert.deepEqual(Object.entries(sources).flatMap(([name, source]) => [...source.matchAll(/\bconverter\(/g)].map(() => name)), ["convert", "convert"], "converter() is called in one place");
-  assert.match(body(sources.convert, "async function convert(model, signal, id) {"), /if \(kept && !kept\.miss\) \{\s*return [^]*?\}\s*const keptMiss = [^\n]*\n\s*await converter\(signal\);/,
+  assert.match(body(sources.convert, /^async function convert\(model *, signal *, id *\) \{$/m), /if \(kept && !kept\.miss\) \{\s*return [^]*?\}\s*const keptMiss = [^\n]*\n\s*await converter\(signal\);/,
     "convert() asks for the converter only once the model is not among the kept ones");
   assert.ok(!/\.py\b[^"'`\n]*\$\{self\.location\.search\}|python\.js/.test(Object.values(sources).join("\n")), "the worker still fetches a .py or python.js");
   ok("the worker asks for an archive beside itself with its own ?v=, says the fetch's words where it is not there, unpacks it where Pyodide is; the converter's on the first conversion alone");
