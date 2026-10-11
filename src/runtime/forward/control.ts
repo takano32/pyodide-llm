@@ -7,7 +7,7 @@ import { CONTROL_BYTES } from "../jobs.ts";
 
 /** T378.2: the control area of memory, and the wait on a word of it. ctl is null on a memory that is not shared (no
  * other thread is there to meet). stalledMs: how long a wait may see no progress before it gives up (T120). */
-export function controlArea({ memory, sharedMemory, stalledMs }) {
+export function controlArea({ memory, sharedMemory, stalledMs }: { memory: WebAssembly.Memory; sharedMemory: boolean; stalledMs: number }) {
   // the control area of a shared memory: the helpers' words, and the GPU's (T135: with or without helpers)
   const ctl = sharedMemory ? new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4) : null;
   // the memory is kept from model to model (T96), and the control area with it: what the last engine's phases left
@@ -22,12 +22,12 @@ export function controlArea({ memory, sharedMemory, stalledMs }) {
   // T120: a stop of 10 s gave a thread up now and then as the page came back)
   // alive (T135): the word whose change counts as progress, where it is not the one waited on (the GPU's worker counts
   // one up while it works, and answers only at the end)
-  const waitUntil = (index, done, alive = index) => {
+  const waitUntil = (index: number, done: (seen: number) => boolean, alive = index) => {
     const tick = Math.min(1000, stalledMs);
-    let moved = performance.now(), last = moved, beat = Atomics.load(ctl, alive);
-    for (let seen = Atomics.load(ctl, index); !done(seen);) {
-      Atomics.wait(ctl, index, seen, tick);
-      const now = Atomics.load(ctl, index), beatNow = Atomics.load(ctl, alive), at = performance.now();
+    let moved = performance.now(), last = moved, beat = Atomics.load(ctl!, alive);
+    for (let seen = Atomics.load(ctl!, index); !done(seen);) {
+      Atomics.wait(ctl!, index, seen, tick);
+      const now = Atomics.load(ctl!, index), beatNow = Atomics.load(ctl!, alive), at = performance.now();
       if (at - last > 2 * tick) moved = at;
       last = at;
       if (now !== seen || beatNow !== beat) [seen, beat, moved] = [now, beatNow, at];
@@ -37,3 +37,5 @@ export function controlArea({ memory, sharedMemory, stalledMs }) {
   };
   return { ctl, waitUntil };
 }
+// (T368.4) what both of an engine's parts are handed of it
+export type Control = ReturnType<typeof controlArea>;

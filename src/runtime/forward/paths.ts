@@ -3,6 +3,13 @@
 // A module of src/runtime/forward.js, which exports its names as before.
 
 import { BETTER } from "./choice.ts";
+import type { Engine } from "./engine.ts";
+import type { PathCell, PathRow } from "../contracts/messages.ts";
+
+// (T368.4, the types) a run of one side: its ms, and the tokens of it the GPU took
+type Run = { ms: number; gpuTokens: number };
+// a row as it is filled: every side's cell comes after the row is made
+type Row = Omit<PathRow, "cpu" | "gpu"> & Partial<Pick<PathRow, "cpu" | "gpu">>;
 
 // T184: the model page's own path on /benchmark/ (worker/timing.ts's timedPaths, src/bench.js's pathTable): prompts of counts
 // tokens through forwardMany() at position 0 as the page chooses (T148), on the CPU only and on the GPU only
@@ -12,14 +19,14 @@ import { BETTER } from "./choice.ts";
 // one side, timed once ("same" in the other). A GPU side a run of which the GPU did not take whole (it failed or was
 // lost on the way: its time is the CPU's) is no GPU's time, and is said as such with why (as T157's lost device).
 export const PATH_ROUNDS = 4;
-export function timePrompts(engine, { words, counts, rounds = PATH_ROUNDS }) {
+export function timePrompts(engine: Engine, { words, counts, rounds = PATH_ROUNDS }: { words: number[]; counts: number[]; rounds?: number }) {
   const gpu = Boolean(engine.gpuReady);
   const sides = gpu ? { chosen: null, cpu: "cpu", gpu: "gpu" } : { cpu: "cpu" };
-  const rows = [];
+  const rows: PathRow[] = [];
   try {
     for (const count of counts) {
       const tokens = Array.from({ length: count }, (_, i) => words[i % words.length]);
-      const runs = Object.fromEntries(Object.keys(sides).map((name) => [name, []]));
+      const runs: Record<string, Run[]> = Object.fromEntries(Object.keys(sides).map((name) => [name, []]));
       for (let round = 0; round <= rounds; round++) {
         for (const [name, side] of Object.entries(sides)) {
           engine.gpuSide = side;
@@ -28,11 +35,11 @@ export function timePrompts(engine, { words, counts, rounds = PATH_ROUNDS }) {
           if (round) runs[name].push({ ms: performance.now() - began, gpuTokens: engine.gpuTokens - before });
         }
       }
-      const row = { what: "prompt", tokens: count, chosen: { same: "cpu" } };
-      for (const [name, list] of Object.entries(runs)) row[name] = timedCell(list, count);
+      const row: Row = { what: "prompt", tokens: count, chosen: { same: "cpu" } };
+      for (const [name, list] of Object.entries(runs)) row[name as "chosen" | "cpu" | "gpu"] = timedCell(list, count);
       if (!gpu) row.gpu = { skip: engine.gpuWhyNot ?? "not ready" };
       else if (runs.gpu.some((run) => run.gpuTokens < count)) row.gpu = { skip: engine.gpuWhyNot ?? "the GPU did not take every block" };
-      rows.push(row);
+      rows.push(row as PathRow);  // (every side's cell is in it now)
     }
   } finally {
     engine.gpuSide = null;
@@ -41,11 +48,11 @@ export function timePrompts(engine, { words, counts, rounds = PATH_ROUNDS }) {
 }
 /** T184: runs of count tokens ({ ms, gpuTokens }) as a cell: tok/s of the median run, of the slowest and the fastest,
  * the median run's tokens on the GPU, and whether they spread more than BETTER's margin */
-export function timedCell(runs, count) {
+export function timedCell(runs: Run[], count: number): PathCell {
   const sorted = [...runs].sort((a, b) => a.ms - b.ms), middle = sorted[(sorted.length - 1) >> 1];
-  const speed = (run) => count / (run.ms / 1000);
-  return { speed: speed(middle), low: speed(sorted.at(-1)), high: speed(sorted[0]), gpuTokens: middle.gpuTokens,
-           unsteady: sorted.at(-1).ms * BETTER > sorted[0].ms };
+  const speed = (run: Run) => count / (run.ms / 1000);
+  return { speed: speed(middle), low: speed(sorted.at(-1)!), high: speed(sorted[0]), gpuTokens: middle.gpuTokens,
+           unsteady: sorted.at(-1)!.ms * BETTER > sorted[0].ms };
 }
 
 // T190: the number of threads the page path is timed on is the model page's own. findThreads() started from the count
@@ -55,7 +62,7 @@ export function timedCell(runs, count) {
 // model page runs 4. A turn of the event loop between generations: the helpers a larger count needs start meanwhile.
 // SEARCH_SECONDS at most; ended says whether the search came to its end.
 export const SEARCH_SECONDS = 120;
-export async function endSearch(engine, write, { seconds = SEARCH_SECONDS } = {}) {
+export async function endSearch(engine: Engine, write: () => unknown, { seconds = SEARCH_SECONDS }: { seconds?: number } = {}) {
   const until = performance.now() + seconds * 1000;
   let generations = 0;
   while (engine.searching && performance.now() < until) {

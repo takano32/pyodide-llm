@@ -29,6 +29,9 @@ export type TensorName =
   // LFM2: a convolution layer's two matrices (T260; its taps are under conv too)
   | "win" | "wout";
 
+// where every tensor of a model is: the plan's, and what Python's external_tensors() places before a model is built
+export type Tensors = Partial<Record<TensorName, Tensor>>;
+
 // The few arrays Python computes, as bytes: the RoPE tables of a file that has none of its own (float32), and the
 // signs of a rotated basis for every width a matrix reads (T237)
 export type Derived = { freq_cis_real?: Uint8Array; freq_cis_imag?: Uint8Array; [signs: `signs.${number}`]: Uint8Array };
@@ -64,7 +67,7 @@ export type Plan = {
   // the int8 kernels compute on the matrices as they are
   int8: boolean;
   relaxed: boolean;
-  tensors: Partial<Record<TensorName, Tensor>>;
+  tensors: Tensors;
   derived: Derived;
   // T92: the channels of the classifier's input that go as float32
   outliers: number[];

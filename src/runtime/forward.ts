@@ -25,6 +25,19 @@ import { GPU_WEIGHT_BYTES, GPU_TERNARY_BYTES, gpuBytes, gpuHoles, placer, BOTH_O
   USAGE_UNKNOWN, cpuReadBytes, aloneVerdict, aloneHolds, OUTSIDE_VOCABULARY, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan,
   GPU_ALONE } from "./forward/alone.ts";
 import { createForward } from "./forward/engine.ts";
+import type { Compiled, Engine, Made } from "./forward/engine.ts";
+import type { Plan, TensorName } from "./contracts/plan.ts";
+// (T368.4) the types of what this window hands out, for the worker, which reads the module's own through
+// `import type * as Forward from "../forward.ts"`
+export type { Compiled, Engine, Made } from "./forward/engine.ts";
+export type { Footprint, Header, Memory } from "./forward/memory.ts";
+export type { Adapter, Direct, GpuForm, GpuOnlyWeights, Hole, Place } from "./forward/alone.ts";
+export type { Chosen, GpuWorker } from "./forward/gpuside.ts";
+export type { Spawn, Thread } from "./forward/threads.ts";
+// What Python's Llama(external=) takes (external()): engine is there once Python called start(plan). The plan comes as
+// Python's dict (a PyProxy, which toJs() makes an object of) or, from the tests, as the object
+export type Outside = { size: number; read(offset: number, length: number): Uint8Array; start(plan: Handed): Engine; engine?: Engine };
+type Handed = Plan & { toJs?(options: { dict_converter: typeof Object.fromEntries }): Plan };
 export { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine,
   PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch, memory64, footprint, keysInHalf, GPU_WEIGHT_BYTES,
   GPU_TERNARY_BYTES, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf, USAGE_UNKNOWN, cpuReadBytes,
@@ -33,8 +46,8 @@ export { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNT
 
 /** The kernels as WebAssembly modules. The relaxed one fails to compile where relaxed SIMD is missing (Safari):
  * then int8 runs on matmul_q8. wide (T101): the build for a 64-bit memory (simdkernel_*64.wasm). */
-export function compileKernels(plain, relaxed, wide = false) {
-  let relaxedModule = null;
+export function compileKernels(plain: BufferSource, relaxed?: BufferSource | null, wide = false): Compiled {
+  let relaxedModule: WebAssembly.Module | null = null;
   try {
     relaxedModule = relaxed ? new WebAssembly.Module(relaxed) : null;
   } catch {
@@ -48,9 +61,9 @@ export function compileKernels(plain, relaxed, wide = false) {
 /** T156 direct ({ place, stored, onLost }, gpuOnlyWeights()): the layers' matrices are on the GPU alone, memory holds
  * the rest of the checkpoint (stored bytes) packed without them, a tensor at place(its offset in the checkpoint);
  * onLost(why) is told where the GPU stops (the model has to be loaded again on the CPU). */
-export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce, halfKeys, direct }) {
-  const place = direct?.place ?? ((offset) => offset);
-  const outside = {
+export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce, halfKeys, direct }: Omit<Made, "plan" | "wrap" | "stalledMs" | "clock">) {
+  const place = direct?.place ?? ((offset: number) => offset);
+  const outside: Outside = {
     size,
     read: (offset, length) => new Uint8Array(memory.buffer, base + place(offset), length).slice(),
     start: (plan) => {
@@ -58,7 +71,7 @@ export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, mem
       // (T156: every tensor but those on the GPU alone where it is in memory; those keep their offsets in the
       // checkpoint, which only the GPU's worker reads)
       if (direct) {
-        plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, GPU_ALONE.includes(name) ? t
+        plan.tensors = Object.fromEntries(Object.entries(plan.tensors).map(([name, t]) => [name, GPU_ALONE.includes(name as TensorName) ? t
           : { ...t, offset: place(t.offset), ...(t.scales ? { scales: place(t.scales) } : {}) }]));
       }
       outside.engine = createForward({ memory, base, size: direct ? direct.stored : size, kernels, spawn, gpu, gpuRoom,

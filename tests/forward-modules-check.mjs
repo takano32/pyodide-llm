@@ -28,7 +28,7 @@ const GLOBALS = new Set(("Array Atomics BigInt BigInt64Array Boolean Error Float
 // (where the runtime is: tests/tree.mjs. tests/imports.mjs's windowed() reads the window and every file it reaches,
 // says a ring, and holds every file of the folder to be reached)
 const tree = treeOf();
-const linked = windowed("forward.js", { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, more: ["jobs.ts"] });
+const linked = windowed("forward.ts", { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, more: ["jobs.ts"] });
 const modules = linked.there;
 const files = new Map([...linked.files].map(([name, { text }]) => [name, text]));
 const programs = new Map([...linked.files].map(([name, { program }]) => [name, program]));
