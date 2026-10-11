@@ -14,22 +14,32 @@ import { samplingState, samplingSettings } from "../shaders/run.js";
 import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.js";
 
 // The forms of a token this device can make, compiled, checked and (where more than one is right) timed; the fastest
-// taken (m.gen.form), with what each came to (m.gen.forms) and its ms a step (m.gen.ms). plan.remembered.tokens: the
+// taken (m.tokens.form), with what each came to (m.tokens.forms) and its ms a step (m.tokens.ms). plan.remembered.tokens: the
 // one the page kept for this adapter, alone where it is still right here. plan.force.tokens (tests): that form alone;
 // plan.force.quick: the first right one, untimed. Throws where none is right (the tokens then stay on the CPU)
+// T378.4: m.tokens is this module's to set, and no other's: a token's buffers and pipelines (tokens.js's
+// tokenBuffers() makes them), its attention (tokenattention.js's chooseTokenAttention() chooses it), and the form of
+// its layer chosen here. null where no form is right
 async function chooseTokens(m) {
+  try {
+    await choose(m);
+  } catch (error) {
+    m.tokens = null;
+    throw error;
+  }
+}
+async function choose(m) {
   const { plan } = m;
   // (tokenPass puts a parallel residual's second norm before o as a dispatch: LayerNorm's, GPT-NeoX's)
   if (plan.parallel && !plan.layerNorm) throw new Error("a parallel residual without LayerNorm is not on the GPU's tokens");
-  m.gen = await tokenBuffers(m);
-  await chooseTokenAttention(m);
+  const made = await tokenBuffers(m), chosen = await chooseTokenAttention(m);
   if (stopping) return;
+  m.tokens = { ...made, ...chosen, form: null, ms: undefined, forms: null };
   // T156: the first layer's matrices of a model on the GPU alone are not in the shared memory: checkTokens reads them
-  // back from the GPU (T210: and the rows of the tables it reads)
-  if (m.direct) {
-    m.firstLayer ??= await within(firstLayer(m), "reading the first layer back");
-    m.tableRows ??= await within(tableRows(m), "reading the tables' rows back");
-  }
+  // back from the GPU (T210: and the rows of the tables it reads). (The review of T156: they go as this returns: the
+  // first layer stayed in this worker for the whole visit, 113 MB of Llama 3.2 3B, 245 MB of Llama 3.1 Swallow 8B)
+  const back = plan.direct ? { firstLayer: await within(firstLayer(m), "reading the first layer back"),
+    tableRows: await within(tableRows(m), "reading the tables' rows back") } : {};
   let forms = tokenCandidates(m);
   if (plan.force.tokens) forms = forms.filter((form) => form.name === plan.force.tokens);
   const kept = !plan.force.tokens && forms.find((form) => form.name === m.remembered?.tokens);
@@ -44,7 +54,7 @@ async function chooseTokens(m) {
         if (!compiled.has(code)) compiled.set(code, await within(validated(m, () => pipelineOf(m, code)), `compiling ${form.name}`));
         form.pipes[key] = compiled.get(code);
       }
-      const wrong = await within(checkTokens(m, form), `checking ${form.name}`);
+      const wrong = await within(checkTokens(m, form, back), `checking ${form.name}`);
       if (wrong) tried.push({ name: form.name, none: `wrong: ${wrong}` });
       else right.push(form);
     } catch (error) {
@@ -58,9 +68,9 @@ async function chooseTokens(m) {
   }
   const ms = plan.force.quick ? right.map(() => undefined) : await within(timeTokens(m, right), "timing a token");
   const best = ms.reduce((b, t, i) => (t !== undefined && (ms[b] === undefined || t < ms[b]) ? i : b), 0);
-  m.gen.form = right[best];
-  m.gen.ms = ms[best];
-  m.gen.forms = [...tried, ...right.map((form, i) => ({ name: form.name, ms: ms[i], ...(kept && form.name === kept.name ? { remembered: true } : {}) }))];
+  m.tokens.form = right[best];
+  m.tokens.ms = ms[best];
+  m.tokens.forms = [...tried, ...right.map((form, i) => ({ name: form.name, ms: ms[i], ...(kept && form.name === kept.name ? { remembered: true } : {}) }))];
 }
 
 // ms a step of each form: runs of plan.tokens.most steps a submission from position 0 (a made-up state, the settings
@@ -68,11 +78,11 @@ async function chooseTokens(m) {
 // a fallback adapter: its times are no GPU's), the median of each over its steps. The runs write the GPU's own keys
 // and values of those positions, which hold nothing of forward.js's yet (as timeBlocks)
 async function timeTokens(m, forms) {
-  const { gen: g } = m, most = g.most;
+  const { tokens: g } = m, most = g.most;
   const state = samplingState({ token: 1, pos: 0, history: [1] });
   const settings = samplingSettings({ vocab: g.vocab, temperature: 0.7, topp: 0.9, penalty: 1.1 });
   const randoms = new Float32Array(most).map(() => Math.fround(Math.random()) % 1);
-  if (most > m.cache.capacity) grow(m, most);
+  if (most > m.block.cache.capacity) grow(m, most);
   const timed = async (form) => {
     const began = performance.now();
     await runTokens(m, tokenStep(m, form, most), { count: most, pos: 0, state, settings, randoms });
@@ -128,7 +138,7 @@ export { heldFloats };  // (tests/gpu-choice-check.mjs)
 // ternary codes) and a Float32Array each, read back from their buffers (a piece after another: the rows in order)
 async function firstLayer(m) {
   const group = GROUP, out = {};
-  for (const [name, matrix] of Object.entries(m.matrices)) {
+  for (const [name, matrix] of Object.entries(m.weights.matrices)) {
     const row = rowBytes(matrix), rows = matrix.pieces.reduce((sum, piece) => sum + piece.rows, 0);
     const values = new Uint8Array(rows * row), scales = new Float32Array((rows * row) / group);
     for (const piece of matrix.pieces) {
@@ -167,11 +177,11 @@ async function tableRows(m) {
       target.destroy();
     }
   };
-  return { embedding: await read(m.tables.embedding, specs.embedding, checkCandidates(vocab)),
-    classifier: await read(m.tables.classifier, specs.classifier, checkRows(vocab)) };
+  return { embedding: await read(m.weights.tables.embedding, specs.embedding, checkCandidates(vocab)),
+    classifier: await read(m.weights.tables.classifier, specs.classifier, checkRows(vocab)) };
 }
-async function checkTokens(m, form) {
-  const { plan, gen: g, device } = m, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize, half = headSize / 2;
+async function checkTokens(m, form, back = {}) {
+  const { plan, tokens: g, device } = m, vocab = g.vocab, dim = plan.dim, headSize = plan.headSize, half = headSize / 2;
   const qDim = plan.heads * headSize, kvDim = plan.kvHeads * headSize, line = form.dp4a ? DP4A_LINE : LAYER_LINE;
   const floats = (address, n) => Float64Array.from(new Float32Array(m.memory.buffer, address, n));
   // row r of a matrix or a table ({ n, six, ternary }, its values and scales at [valuesAt, scalesAt] in the shared
@@ -187,8 +197,8 @@ async function checkTokens(m, form) {
   const readBackRows = (spec, [values, scales]) => (r) => [valuesOf(spec, values.subarray(r * stored(spec), (r + 1) * stored(spec))),
     scales.subarray(r * scalesOf(spec), (r + 1) * scalesOf(spec))];
   const tableSpec = (name) => (name === "embedding" ? plan.tokens.embedding ?? plan.tokens.classifier : plan.tokens.classifier);
-  const tableRow = (name) => (m.tableRows ? (r) => {
-    const [bytes, scales] = m.tableRows[name].get(r);
+  const tableRow = (name) => (back.tableRows ? (r) => {
+    const [bytes, scales] = back.tableRows[name].get(r);
     return [valuesOf(tableSpec(name), bytes), scales];
   } : inMemory(tableSpec(name), tableSpec(name).at));
   // a matrix's rows (n weights each, rowOf(r): [values, scales]) times x, the rows given (packed: x quantized first).
@@ -209,7 +219,7 @@ async function checkTokens(m, form) {
   const all = (n) => [...Array(n).keys()];
   const matmul = (name, x) => {
     const matrix = plan.matrices[name];
-    return product(matrix.n, m.firstLayer ? readBackRows(matrix, m.firstLayer[name]) : inMemory(matrix, matrix.layers[0]), x, all(matrix.rows));
+    return product(matrix.n, back.firstLayer ? readBackRows(matrix, back.firstLayer[name]) : inMemory(matrix, matrix.layers[0]), x, all(matrix.rows));
   };
   const rms = (x, weights) => {
     const s = 1 / Math.sqrt(x.reduce((sum, v) => sum + v * v, 0) / x.length + plan.eps);
@@ -241,9 +251,10 @@ async function checkTokens(m, form) {
     const pos = 1;
     const halfBits = () => (Math.random() < 0.5 ? 0x8000 : 0) | ((13 + ((Math.random() * 3) | 0)) << 10) | ((Math.random() * 1024) | 0);
     const row0 = [0, 1].map(() => new Uint16Array(kvDim).map(halfBits));
-    if (m.cache.capacity < 2) grow(m, 2);
-    device.queue.writeBuffer(m.cache.keys[0], 0, row0[0]);
-    device.queue.writeBuffer(m.cache.values[0], 0, row0[1]);
+    if (m.block.cache.capacity < 2) grow(m, 2);
+    const { keys: cacheKeys, values: cacheValues } = m.block.cache;
+    device.queue.writeBuffer(cacheKeys[0], 0, row0[0]);
+    device.queue.writeBuffer(cacheValues[0], 0, row0[1]);
     const readH = buffer(m, dim * 4, MAP_READ | COPY_DST, owned);
     const { kv } = await runTokens(m, tokenPass(m, form, { to: 1, head: false, positions: pos + 1 }), { count: 1, pos, keep: true,
       state: samplingState({ token, pos, history: [token] }), extra: (encoder) => encoder.copyBufferToBuffer(g.h, 0, readH, 0, dim * 4) });

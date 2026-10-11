@@ -18,12 +18,13 @@ import { samplingState, samplingSettings } from "../shaders/run.js";
 // GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back
 function generate({ serial, count, pos, from, token, history, length, cache, settings, randoms }) {
   serve(serial, async (wanted) => {
-    const m = model, { plan, gen: g } = m, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
+    const m = model, { plan, tokens: g } = m, kvDim = plan.kvHeads * plan.headSize, kvRow = kvDim * 2;
     if (!g?.form) throw new Error("no tokens on this GPU");
-    if (pos + count > m.cache.capacity) grow(m, pos + count);
+    if (pos + count > m.block.cache.capacity) grow(m, pos + count);
+    const { keys, values } = m.block.cache;
     const at = (block, l, p) => block + l * cache.capacity * cache.row + p * cache.row;
     for (let l = 0; cache && l < plan.layers; l++) {
-      for (const [block, target] of [[cache.keys, m.cache.keys[l]], [cache.values, m.cache.values[l]]]) {
+      for (const [block, target] of [[cache.keys, keys[l]], [cache.values, values[l]]]) {
         if (cache.half) copyIn(m, target, at(block, l, from), (pos - from) * kvRow, from * kvRow);
         else narrowIn(m, target, at(block, l, from), (pos - from) * kvDim, from * kvRow);
       }

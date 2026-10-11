@@ -2,7 +2,7 @@
 // the checkpoint comes), start() (the weights, the forms chosen, "ready" or "unusable"), stop().
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { model, stopping, lost, stopAsked, within, openDevice, describe, unusable, end } from "./device.js";
+import { model, stopping, lost, stopAsked, handed, within, openDevice, describe, unusable, end } from "./device.js";
 import { upload, uploadLayers, uploadRest, tablesOn } from "./weights.js";
 import { chooseAttention, chooseMatrices } from "./forms.js";
 import { prepare, bindLayers, grow, timeBlocks } from "./block.js";
@@ -18,6 +18,8 @@ let starting = false;
 // than the GPU takes it would pile up in the messages). What comes before the buffers are made waits (backlog). A
 // failure (no adapter, a buffer the device refused) takes the rest as if written, and start() says it
 let opening = null, opened = false, failure = null, flow = null;
+// the bytes that open() put up, for start() to say with the rest
+let openedBytes = 0;
 const backlog = [];
 function open(plan, shared) {
   starting = true;
@@ -28,11 +30,9 @@ function open(plan, shared) {
         failure ??= "the GPU's worker was stopped";
         return;
       }
-      model.direct = { routes: [], partial: new Map(), bytes: 0 };
-      model.direct.bytes = await uploadLayers(model);
+      openedBytes = await uploadLayers(model, true);
       // T210: the tables too, which nothing holds in the shared memory either
-      model.direct.bytes += tablesOn(model);
-      model.direct.routes.sort((a, b) => a[0] - b[0]);
+      openedBytes += tablesOn(model);
       if (stopping) failure ??= "the GPU's worker was stopped";
     } catch (error) {
       failure = String(error?.message ?? error);
@@ -52,7 +52,7 @@ function take(data) {
   const { offset, bytes } = data;
   if (!failure) {
     try {
-      const { routes } = model.direct, end = offset + bytes.length;
+      const { routes } = model.weights, end = offset + bytes.length;
       let lo = 0, hi = routes.length;
       while (lo < hi) {
         const mid = (lo + hi) >> 1;
@@ -81,7 +81,7 @@ function take(data) {
 }
 // a byte of target at the byte offset at, the word it is in written once all four of its bytes are there
 function partialByte(target, at, value) {
-  const { partial } = model.direct, word = at - (at % 4);
+  const { partial } = model.weights, word = at - (at % 4);
   if (!partial.has(target)) partial.set(target, new Map());
   const words = partial.get(target);
   if (!words.has(word)) words.set(word, { bytes: new Uint8Array(4), count: 0 });
@@ -104,13 +104,12 @@ async function start(memory, plan) {
       await opening;
       if (failure && !stopping) return unusable(`the layers did not go up to the GPU (${failure})`);
       if (stopping || !model) return end();
-      if (model.direct.partial.size) return unusable("the layers' bytes did not all come to the GPU");
-      model.memory = memory;
-      model.plan = plan;
-      bytes = model.direct.bytes + (await uploadRest(model));
+      if (model.weights.partial.size) return unusable("the layers' bytes did not all come to the GPU");
+      handed(memory, plan);
+      bytes = openedBytes + (await uploadRest(model));
     } else {
       if (!(await openDevice(plan))) return;
-      model.memory = memory;
+      handed(memory, plan);
       bytes = await upload(model);
     }
     const { device, adapter, key } = model;
@@ -131,26 +130,23 @@ async function start(memory, plan) {
     if (stopping) return end();
     // T152: a token and the ones after it, where the model's layers were put up for them (tokensLayout). What fails
     // here leaves the tokens on the CPU and the prompts on the GPU
-    if (plan.tokens && !model.tokensWhy) {
+    // (why not: the layers could not be joined for a token as they went up, or no form of a token is right here)
+    let tokensWhy = model.weights.unjoined;
+    if (plan.tokens && !tokensWhy) {
       try {
         await chooseTokens(model);
       } catch (error) {
-        model.tokensWhy = String(error?.message ?? error);
-        model.gen = null;
-      } finally {
-        // (the review of T156: the first layer read back for the checks of a model on the GPU alone goes with them: it
-        // stayed in this worker for the whole visit, 113 MB of Llama 3.2 3B, 245 MB of Llama 3.1 Swallow 8B)
-        model.firstLayer = model.tableRows = undefined;
+        tokensWhy = String(error?.message ?? error);
       }
       if (stopping) return end();
     }
     if (lost) return unusable(lost);
-    const g = model.gen;
+    const g = model.tokens;
     postMessage({ type: "ready", adapter: describe(adapter), key, bytes, seconds: (performance.now() - began) / 1000,
-      form: model.form.name, attention: model.attention.name, forms: model.forms, remembered: Boolean(model.form.remembered), blocks,
-      tokens: g?.form ? { form: g.form.name, ms: g.ms, forms: g.forms, remembered: g.forms.some((f) => f.remembered), pieces: model.tables.classifier.length,
+      form: model.forms.form.name, attention: model.forms.attention.name, forms: model.forms.tried, remembered: Boolean(model.forms.form.remembered), blocks,
+      tokens: g?.form ? { form: g.form.name, ms: g.ms, forms: g.forms, remembered: g.forms.some((f) => f.remembered), pieces: model.weights.tables.classifier.length,
         attention: g.attention.name, attentions: g.attentions } : null,
-      tokensWhy: plan.tokens ? model.tokensWhy ?? null : undefined });
+      tokensWhy: plan.tokens ? tokensWhy ?? null : undefined });
   } catch (error) {
     unusable(String(error?.message ?? error));
   } finally {

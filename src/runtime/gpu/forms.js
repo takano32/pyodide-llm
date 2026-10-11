@@ -46,7 +46,9 @@ async function chooseAttention(m) {
       const pipeline = await within(validated(m, () => pipelineOf(m, flashTile(shape))), `compiling ${name}`);
       const wrong = await within(checkAttention(m, pipeline), `checking ${name}`);
       if (!wrong) {
-        m.attention = { name, pipeline, shape };
+        // (T378.4: this module's record, which it alone sets: the attention, then chooseMatrices()'s form and what
+        // each one tried came to)
+        m.forms = { attention: { name, pipeline, shape }, form: null, tried: [] };
         return;
       }
       tried.push(`${name}: ${wrong}`);
@@ -130,7 +132,6 @@ async function chooseMatrices(m) {
   const { plan } = m;
   let forms = candidates(m);
   if (plan.force.matrices) forms = forms.filter((form) => form.name === plan.force.matrices);
-  m.forms = [];
   // T148: the shader the page remembers for this adapter, alone, where it is one this device still makes and it is
   // still right here (a driver may have changed under the same names): no other is compiled or timed. Else all of them
   const kept = !plan.force.matrices && forms.find((form) => !form.none && form.name === m.remembered?.matrices);
@@ -139,14 +140,14 @@ async function chooseMatrices(m) {
       const tiled = { ...kept, remembered: true, pipeline: await within(validated(m, () => pipelineOf(m, kept.code, kept.constants)), `compiling ${kept.name}`) };
       const wrong = await within(checkForm(m, tiled), `checking ${kept.name}`);
       if (!wrong) {
-        m.forms.push({ name: kept.name, remembered: true });
-        m.form = tiled;
+        m.forms.tried.push({ name: kept.name, remembered: true });
+        m.forms.form = tiled;
         return;
       }
-      m.forms.push({ name: kept.name, none: `remembered, but wrong now: ${wrong}` });
+      m.forms.tried.push({ name: kept.name, none: `remembered, but wrong now: ${wrong}` });
     } catch (error) {
       if (error?.late) throw error;
-      m.forms.push({ name: kept.name, none: `remembered, but ${error?.message ?? error}` });
+      m.forms.tried.push({ name: kept.name, none: `remembered, but ${error?.message ?? error}` });
     }
     if (stopping) return;
   }
@@ -155,25 +156,25 @@ async function chooseMatrices(m) {
     if (plan.force.quick && right.length) break;  // T148: the page's tests, the first right one untimed
     if (form === kept) continue;  // wrong just now
     if (form.none) {
-      m.forms.push({ name: form.name, none: form.none });
+      m.forms.tried.push({ name: form.name, none: form.none });
       continue;
     }
     try {
       const pipeline = await within(validated(m, () => pipelineOf(m, form.code, form.constants)), `compiling ${form.name}`);
       const tiled = { ...form, pipeline };
       const wrong = await within(checkForm(m, tiled), `checking ${form.name}`);
-      if (wrong) m.forms.push({ name: form.name, none: `wrong: ${wrong}` });
+      if (wrong) m.forms.tried.push({ name: form.name, none: `wrong: ${wrong}` });
       else right.push(tiled);
     } catch (error) {
       if (error?.late) throw error;
-      m.forms.push({ name: form.name, none: String(error?.message ?? error) });
+      m.forms.tried.push({ name: form.name, none: String(error?.message ?? error) });
     }
     if (stopping) return;
   }
-  if (!right.length) throw new Error(`no tiled shader is right on this GPU (${m.forms.map((f) => `${f.name}: ${f.none}`).join("; ") || `none named ${plan.force.matrices}`})`);
+  if (!right.length) throw new Error(`no tiled shader is right on this GPU (${m.forms.tried.map((f) => `${f.name}: ${f.none}`).join("; ") || `none named ${plan.force.matrices}`})`);
   const ms = right.length > 1 ? await within(timeForms(m, right), "timing the tiled shaders") : [0];
-  right.forEach((form, i) => m.forms.push({ name: form.name, ms: ms[i] }));
-  m.form = right[ms.indexOf(Math.min(...ms))];
+  right.forEach((form, i) => m.forms.tried.push({ name: form.name, ms: ms[i] }));
+  m.forms.form = right[ms.indexOf(Math.min(...ms))];
 }
 // the threads of a workgroup of one dimension this device takes
 const threadsOf = (device) => Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX);
@@ -181,11 +182,11 @@ const threadsOf = (device) => Math.min(device.limits.maxComputeInvocationsPerWor
 // layer l's matrix name by the tokens of from into to (added where add): a bind group of form and its rows for each
 // piece (T155), which writes its rows of to (bound from its first row; a token's row of to is the whole matrix's)
 const productGroups = (m, form, name, l, from, to, add, owned = m.owned) => {
-  const { rows, n, pieces } = m.matrices[name];
+  const { rows, n, pieces } = m.weights.matrices[name], { xq, xs, step } = m.block;
   return pieces.map(({ first, rows: count, layers }) => {
     const out = first ? { buffer: to, offset: first * 4, size: to.size - first * 4 } : to;
-    return { rows: count, group: bind(m, form.pipeline, [...layers[l], form.packed ? m.xq : from, out,
-      uniform(m, new Uint32Array([count, n / 4, n / GROUP, 0, n, rows, add ? 1 : 0, 0]), owned), m.step, ...(form.packed ? [m.xs] : [])]) };
+    return { rows: count, group: bind(m, form.pipeline, [...layers[l], form.packed ? xq : from, out,
+      uniform(m, new Uint32Array([count, n / 4, n / GROUP, 0, n, rows, add ? 1 : 0, 0]), owned), step, ...(form.packed ? [xs] : [])]) };
   });
 };
 // the workgroups of form for rows by count tokens: the tiles numbered over x, then y (as T146's shaders number them)
@@ -204,7 +205,7 @@ function multiply(m, pass, form, group, rows, count) {
 // four codes, the one no file has too: every bit of a word matters), against JavaScript's on the codes' values
 // (shaders.js's ternaryValues)
 async function checkForm(m, form) {
-  const { device } = m, rows = 300, ternary = Boolean(form.ternary), n = ternary ? 640 : 544, perRow = n / GROUP;
+  const { device } = m, { quantize } = m.block, rows = 300, ternary = Boolean(form.ternary), n = ternary ? 640 : 544, perRow = n / GROUP;
   const scaled = ternary ? 4 * GROUP : GROUP;  // the weights a scale
   const stored = ternary ? new Uint8Array((rows * n) / 4).map(() => (Math.random() * 256) | 0) : new Int8Array(rows * n).map(() => (Math.random() * 256) | 0);
   const w = ternary ? ternaryValues(stored) : stored, s = new Float32Array((rows * n) / scaled).map(() => Math.random() * 0.01);
@@ -225,7 +226,7 @@ async function checkForm(m, form) {
       const groups = await validated(m, () => [group(false), group(true)]);
       const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
       if (form.packed) {
-        dispatch(pass, m.quantize, bind(m, m.quantize, [xb, io.xq, io.xs, uniform(m, new Uint32Array([n, xStride, 0, 0]), owned), io.step]),
+        dispatch(pass, quantize, bind(m, quantize, [xb, io.xq, io.xs, uniform(m, new Uint32Array([n, xStride, 0, 0]), owned), io.step]),
           Math.ceil(n / GROUP / 64), tokens);
       }
       groups.forEach((g) => multiply(m, pass, form, g, rows, tokens));
@@ -247,11 +248,13 @@ async function checkForm(m, form) {
 // each packed one's inputs quantized first
 async function timeForms(m, forms) {
   const { device, plan } = m, owned = [], layer = [];
+  // (the block's own buffers and quantizations, block.js's: read here, written by a pass)
+  const { step, x, xb, q, k, v, gate, up, ffnInput, quantize: quantizer, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate } = m.block;
   try {
-    device.queue.writeBuffer(m.step, 0, new Uint32Array([plan.batch, 0, 0, 0]));
-    const products = [["wq", m.xb, m.q, false, m.quantizeXb], ["wk", m.xb, m.k], ["wv", m.xb, m.v], ["wo", m.xb, m.x, true, m.quantizeAttention],
-      ["w1", m.ffnInput, m.gate, false, m.quantizeFfn], ["w3", m.ffnInput, m.up], ["w2", m.gate, m.x, true, m.quantizeGate]]
-      .filter(([name]) => m.matrices[name]);
+    device.queue.writeBuffer(step, 0, new Uint32Array([plan.batch, 0, 0, 0]));
+    const products = [["wq", xb, q, false, quantizeXb], ["wk", xb, k], ["wv", xb, v], ["wo", xb, x, true, quantizeAttention],
+      ["w1", ffnInput, gate, false, quantizeFfn], ["w3", ffnInput, up], ["w2", gate, x, true, quantizeGate]]
+      .filter(([name]) => m.weights.matrices[name]);
     // (a matrix's input quantized once, before its first piece)
     for (const form of forms) {
       layer.push(await validated(m, () => products.flatMap(([name, from, to, add, quantize]) =>
@@ -261,7 +264,7 @@ async function timeForms(m, forms) {
       const form = forms[i], encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
       for (let p = 0; p < passes; p++) {
         for (const { group, rows, quantize } of layer[i]) {
-          if (form.packed && quantize) dispatch(pass, m.quantize, quantize.group, quantize.x, plan.batch);
+          if (form.packed && quantize) dispatch(pass, quantizer, quantize.group, quantize.x, plan.batch);
           multiply(m, pass, form, group, rows, plan.batch);
         }
       }

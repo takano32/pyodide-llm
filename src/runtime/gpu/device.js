@@ -27,14 +27,34 @@ const ternaryPlan = (plan) => Object.values(plan.matrices).some((matrix) => matr
 const turnedAt = (plan, l) => (plan.unturned?.includes(l) ? 0 : plan.turned);
 
 // T378.4: what the parts of this worker read and this one alone sets (a static import is the live binding: the others
-// take the names and read them, and say what happened where they have something to say, stopAsked()). They were the
-// fields of one object, common, that any part could set (T352)
-let model = null;  // what is on the GPU for the model: the device, the plan, the buffers, the pipelines, the cache
+// take the names and read them, and say what happened where they have something to say: stopAsked(), handed(),
+// held()). They were the fields of one object, common, that any part could set (T352)
+//
+// model is the record of what is on the GPU for the model. What openDevice() puts in it is this module's and is read
+// by all: the device, the plan and the shared memory, the buffers that live as long as the model (owned), and what
+// the adapter said of itself. The rest is four records, each made and set by one module and read by the others:
+//   model.weights  weights.js   the layers' matrices and vectors and a token's tables, as buffers
+//   model.block    block.js     the small steps' pipelines, a block's buffers and bind groups, the keys and values
+//   model.forms    forms.js     the prompt's attention and tiled shader chosen here, and what each one tried came to
+//   model.tokens   tokenforms.js  a token's buffers and pipelines, its attention and the form of its layer chosen here
+// (tests/gpu-modules-check.mjs holds every field read to one its owner declares, and every write to its owner)
+let model = null;
 let stopping = false;  // a stop was asked: start() ends at its next step
 let lost = null;  // why the device was lost, once it is
 // a stop was asked (start.js's stop(): the worker ends at once, or start() does at its next step)
 function stopAsked() {
   stopping = true;
+}
+// start() was asked: the shared memory the model's weights and requests are read from, and the plan that says where
+// (a model on the GPU alone was opened with another, before its checkpoint came: T156)
+function handed(memory, plan) {
+  model.memory = memory;
+  model.plan = plan;
+}
+// the buffers of what is made again as it grows (block.js's keys and values): end() lets go of the ones held last,
+// after the model's own (the ones before them went as they were replaced)
+function held(m, buffers) {
+  m.held = buffers;
 }
 
 
@@ -91,7 +111,7 @@ async function openDevice(plan, say = unusable) {
     // (T232: a ternary model's key holds its own shaders too)
     const key = deviceKey(adapter, device, ternary);
     const remembered = plan.remembered?.key === key ? plan.remembered : null;
-    model = { device, plan, owned: [], limit, info, fallback, remembered, adapter, key, ternary };
+    model = { device, plan, memory: null, owned: [], held: null, limit, info, fallback, remembered, adapter, key, ternary };
     if (stopping) return end();
     // a buffer the device cannot give fails quietly, as an error of these scopes
     device.pushErrorScope("out-of-memory");
@@ -116,7 +136,7 @@ function unusable(reason) {
 function end() {
   if (model) {
     model.owned.forEach((buffer) => buffer.destroy());
-    model.cache?.owned.forEach((buffer) => buffer.destroy());
+    model.held?.forEach((buffer) => buffer.destroy());
     model.device.destroy();
     model = null;
   }
@@ -193,5 +213,5 @@ function dispatch(pass, pipeline, group, x, y = 1, z = 1) {
   pass.dispatchWorkgroups(x, y, z);
 }
 
-export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, within, openDevice,
+export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, openDevice,
   describe, unusable, end, buffer, uniform, copyIn, narrowIn, readBack, validated, pipelineOf, bind, dispatch };
