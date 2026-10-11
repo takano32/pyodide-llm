@@ -3,8 +3,8 @@
 # test passed while the page wrote broken text (T72: v permuted as well, rotary never passed on), because the
 # synthetic models of the unit tests cannot tell a sensible sentence from a wrong one. These can.
 #
-# One small model per architecture and source, converted the way the page converts it (llama2_convert.Conversion,
-# fed the file in order) to float32, then 16 greedy tokens from the model's own prompt and template. float32
+# One small model per architecture and source, converted the way the page converts it (the conduct of a conversion,
+# answered from the files fetched: tests/conducting.py) to float32, then 16 greedy tokens from the model's own prompt and template. float32
 # because int8 changes its text with the order of additions (AGENTS.md); float32 with NumPy is the same, to the
 # character, as float32 with the kernels. Where each model comes from, its prompt and template are read from
 # src/models.js (with Node), so nothing here can drift from the list.
@@ -22,14 +22,12 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "public"))
-import llama2_convert  # noqa: E402
-from llama2_convert import Conversion, Incomplete  # noqa: E402
+sys.path.insert(0, str(HERE))
 from llama2_numpy import Llama  # noqa: E402
-from fetching import download  # noqa: E402
+from conducting import Fetched, Mapped, converted as conducted  # noqa: E402
 
 FIXTURES = HERE / "fixtures" / "fixed-outputs.json"
 NEW_TOKENS = 16
-CHUNK = 8 << 20
 # one per architecture and way in: GPT-NeoX, GPT-2, a Llama from a GGUF (T74), a Llama with a Unigram tokenizer.json,
 # and a Qwen3 (T124: the norms of q and k, heads of 128 in a dim of 1024), from its GGUF and from its safetensors
 # (T212). Pythia and GPT-2 come from GGUFs since
@@ -38,7 +36,7 @@ CHUNK = 8 << 20
 # The list takes Qwen3 from a GGUF since T203, so its safetensors, the way ?hf= opens a Qwen3 (the norms of q and k and
 # the size of the heads read from config.json and the tensors' names), gets a fixed output of its own too (T212): the
 # same entry with the weights of the original repository its vocabulary comes from, named as the page's hfEntry()
-# names them. T235: Ternary-Bonsai 1.7B, the one model of PQ2_0 blocks and of yarn's RoPE (its angles and the longer
+# names them (no tokenizer: the conduct's candidates, as for any repository nobody looked at). T235: Ternary-Bonsai 1.7B, the one model of PQ2_0 blocks and of yarn's RoPE (its angles and the longer
 # cos and sin), and the one whose template comes from chat_template.jinja. Its float32 checkpoint is 6.9 GB.
 # T229 and T236: a Qwen3.5 (hybrid attention: Gated DeltaNet layers between full-attention ones), the 0.8B, the same
 # two ways: from the list's GGUF (llama.cpp's names for the linear-attention layers, the norms that come with their 1,
@@ -76,82 +74,19 @@ def entries():
     for id, (of, weights) in SAFETENSORS.items():
         original = found[of]["hf"]["vocabulary"]
         found[id] = {**found[of], "id": id, "hf": {"repo": original["repo"], "revision": original["revision"],
-                     "weights": weights, "config": "config.json",
-                     "tokenizer": ["tokenizer.json", "tokenizer.model", "spiece.model"]}}
+                     "weights": weights, "config": "config.json"}}
     return [found[id] for id in MODELS]
 
 
-def fetch(entry, name, directory):
-    hf = entry["hf"]
-    target = directory / hf["repo"].replace("/", "--") / hf["revision"] / name
-    # (tests/fetching.py, T357: three tries, a download that stopped short asked for again, a 404 not)
-    return download(f"https://huggingface.co/{hf['repo']}/resolve/{hf['revision']}/{name}", target)
-
-
-class File:
-    """The converter's sink (llama2_convert.Writer): the float32 checkpoint goes into a file of its own, a memory map,
-    never whole into memory (Qwen3 0.6B's is 2.4 GB, T124)."""
-
-    def __init__(self, path):
-        self.path = path
-
-    def open(self, size, header, dtype, form):
-        self.data = np.memmap(self.path, dtype=np.uint8, mode="w+", shape=(size,))
-
-    def write(self, offset, raw):
-        self.data[offset:offset + raw.size] = raw
-
-
 def converted(entry, directory):
+    """(the conversion of the entry to float32, the file of its checkpoint), by the conduct of a conversion (T374.4):
+    the files it asks for are fetched as it asks for them (tests/fetching.py through conducting.Fetched: three tries,
+    a download that stopped short asked for again, a 404 "not there"), each repository's into its own folder. The
+    checkpoint goes into a file beside the weights, a memory map (Qwen3 0.6B's is 2.4 GB, T124)."""
     hf = entry["hf"]
-    weights = fetch(entry, hf["weights"], directory)
-    data = np.memmap(weights, dtype=np.uint8, mode="r")
-    sink = File(weights.with_name("float32.bin"))
-    # T136's second and third stages: a GGUF's weights with the vocabulary and config.json of the original
-    vocabulary = hf.get("vocabulary")
-    if hf["weights"].endswith(".gguf") and not vocabulary:
-        size = 1 << 20
-        while True:
-            try:
-                conversion = Conversion.from_gguf(bytes(data[:size]), dtype="float32", sink=sink)
-                break
-            except Incomplete:
-                size *= 4
-        first = conversion.base
-    else:
-        source = {"hf": vocabulary} if vocabulary else entry
-        tokenizer = (vocabulary or hf)["tokenizer"]
-        tokenizer = tokenizer if isinstance(tokenizer, str) else tokenizer[0]
-        try:
-            tokenizer_config = fetch(source, "tokenizer_config.json", directory).read_text()
-        except OSError:
-            tokenizer_config = ""
-        # T127: the template is in chat_template.jinja where tokenizer_config.json has none, and the page asks for it
-        # there (T235: Ternary-Bonsai's original keeps it so; without it this wrote on from the bare prompt)
-        chat_template = None
-        if not (tokenizer_config and json.loads(tokenizer_config).get("chat_template")):
-            try:
-                chat_template = fetch(source, "chat_template.jinja", directory).read_text()
-            except OSError:
-                pass  # most repositories have none
-        config = fetch(source, "config.json" if vocabulary else hf["config"], directory).read_text()
-        if vocabulary:
-            size = 1 << 20
-            while True:
-                try:
-                    header, first = llama2_convert.gguf_weights(bytes(data[:size]), config)
-                    break
-                except Incomplete:
-                    size *= 4
-        else:
-            (length,) = np.frombuffer(bytes(data[:8]), dtype="<u8")
-            header, first = bytes(data[8:8 + int(length)]).decode(), 8 + int(length)
-        conversion = Conversion(header, first, config, fetch(source, tokenizer, directory).read_bytes(), tokenizer,
-                                dtype="float32", tokenizer_config=tokenizer_config, chat_template=chat_template, sink=sink,
-                                start=first)
-    for start in range(first, len(data), CHUNK):
-        conversion.feed(bytes(data[start:start + CHUNK]))
-    conversion.finish()
+    answerer = Fetched.of(hf, directory)
+    sink = Mapped(answerer.folder("weights") / "float32.bin")
+    conversion = conducted(answerer, hf, dtype="float32", sink=sink)
     sink.data.flush()
     return conversion, sink.path
 

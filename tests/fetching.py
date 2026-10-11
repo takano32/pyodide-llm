@@ -5,6 +5,9 @@
 # tensors were read." a minute into its conversion, a failure that named the converter (the review of T247; AGENTS.md).
 # tests/fixed_outputs.py had the check; the reference tools' copies of the same loop (reference_llama.py,
 # reference_qwen35.py, and reference_lfm2.py through it) did not.
+# T374.4: and the size of a file, for whoever reads a file by its ranges and must know where it ends (ranged() holds
+# an answer to the length asked for: a range past the end of the file is never right). The tools reach all three
+# through tests/conducting.py's answerers, or call them as they are.
 import http.client
 import time
 import urllib.error
@@ -63,3 +66,28 @@ def ranged(url, start, length, tries=4, timeout=120, wait=0, said=None):
             if said:
                 said(error)
             time.sleep(wait * (attempt + 1))
+
+
+def sized(url, tries=4, timeout=120):
+    """The size of the file at url, or None where there is no such file (a 404): by a Range request for its first byte
+    (the redirect to the CDN is followed), whose answer says of how many it is one. Asked again as ranged() asks."""
+    request = urllib.request.Request(url, headers={"Range": "bytes=0-0"})
+    for attempt in range(tries):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                said = response.headers.get("Content-Range") or ""  # "bytes 0-0/1234"
+                if said.rpartition("/")[2].isdigit():
+                    return int(said.rpartition("/")[2])
+                # (a server that sends the whole file instead says its length)
+                length = response.headers.get("Content-Length")
+                if getattr(response, "status", 200) == 200 and length is not None:
+                    return int(length)
+                raise OSError(f"{url}: the answer does not say the size of the file")
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                return None
+            if error.code < 500 or attempt == tries - 1:
+                raise
+        except (OSError, http.client.HTTPException):
+            if attempt == tries - 1:
+                raise

@@ -3,55 +3,42 @@
 # hand to tests/perplexity_prepare.py: the directory, or the .gguf file. For a GGUF that takes the vocabulary of its
 # original (T136's second stage, hf.vocabulary): the directory of the original's files, with the GGUF linked into it
 # (T145: int4.yml and draft.yml named the originals instead).
+# T374.4: which files those are is the conduct's of a conversion (public/convert/conduct.py), as it is for the page: it
+# is answered until it asks for the weights' stream, and each file it asked for on the way was fetched whole
+# (tests/conducting.py's Fetched): the one file of the weights or the shards its index names (T192), config.json,
+# tokenizer_config.json, chat_template.jinja where that has no template, and the tokenizer the converter takes. The
+# conversion made for that writes nothing and is let go.
 #
 #   python3 tests/hf_fetch.py <model id, or hf:<owner>/<repository>@<revision> (as tests/e2e.mjs takes it)> <directory>
 import json
 import subprocess
 import sys
-import urllib.error
 from pathlib import Path
 
-from fixed_outputs import HERE, fetch
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from conducting import Fetched, Nothing, converted  # noqa: E402
 
 model_id, directory = sys.argv[1], Path(sys.argv[2])
 script = f"import('./src/models.js').then(({{ MODELS }}) => console.log(JSON.stringify(MODELS.find((m) => m.id === {json.dumps(model_id)}))))"
 if model_id.startswith("hf:"):
-    # a repository the list does not name as it is (the original of a model the list takes from a GGUF, T98)
+    # a repository the list does not name as it is (the original of a model the list takes from a GGUF, T98), as ?hf=
+    # opens one: no tokenizer is named, so the conduct's candidates (T374.4: tokenizer.json alone before)
     repo, _, revision = model_id[3:].partition("@")
-    entry = {"hf": {"repo": repo, "revision": revision or "main", "weights": "model.safetensors",
-                    "config": "config.json", "tokenizer": "tokenizer.json"}}
+    entry = {"hf": {"repo": repo, "revision": revision or "main", "weights": "model.safetensors", "config": "config.json"}}
 else:
     entry = json.loads(subprocess.check_output(["node", "-e", script], cwd=HERE.parent))
 hf = entry["hf"]
-try:
-    weights = fetch(entry, hf["weights"], directory)
-except urllib.error.HTTPError as error:
-    # T192: a model without a model.safetensors is split over several files (Qwen3 1.7B and up). Its index says which,
-    # read as the page's worker reads it (shardsOf()): the files named in weight_map, in the order of their names.
-    # perplexity_prepare.py joins them as the page does (llama2_convert.joined_shards()).
-    if error.code != 404 or hf["weights"].endswith(".gguf"):
-        raise
-    index = fetch(entry, f"{hf['weights']}.index.json", directory)
-    shards = sorted(set(json.loads(index.read_text())["weight_map"].values()))
-    if not shards:
-        raise
-    for name in shards:
-        weights = fetch(entry, name, directory)
-gguf, vocabulary = hf["weights"].endswith(".gguf"), hf.get("vocabulary")
-if gguf and not vocabulary:
+answerer = Fetched.of(hf, directory)
+converted(answerer, hf, weights=False, sink=Nothing())
+weights = answerer.folder("weights") / hf["weights"]
+if hf["weights"].endswith(".gguf") and not hf.get("vocabulary"):
     print(weights)  # T74: the GGUF says its configuration and vocabulary itself
     sys.exit(0)
-# the configuration and the tokenizer: the model's, or for a GGUF those of the original it takes them from
-source = {"hf": vocabulary} if vocabulary else entry
-folder = directory / source["hf"]["repo"].replace("/", "--") / source["hf"]["revision"]  # where fetch() puts them
-tokenizer = (vocabulary or hf)["tokenizer"]
-for name in ["config.json" if vocabulary else hf["config"],
-             *([tokenizer] if isinstance(tokenizer, str) else tokenizer[:1]), "tokenizer_config.json"]:
-    try:
-        fetch(source, name, directory)
-    except OSError:
-        pass  # tokenizer_config.json is optional
-if vocabulary:
+# the configuration and the tokenizer: the model's, or for a GGUF those of the original it takes them from, with the
+# GGUF linked beside them
+folder = answerer.folder("vocabulary" if hf.get("vocabulary") else "weights")
+if hf.get("vocabulary"):
     link = folder / hf["weights"]
     if not link.exists():
         link.symlink_to(weights.resolve())

@@ -1,6 +1,6 @@
 # page_27b.py
-# T233: Ternary Bonsai 2 27B converted as the page converts it (llama2_convert.Conversion, fed the file in order), by
-# the native Python of a CI runner, into a file: the ternary checkpoint (7.66 GB) that tests/page-27b.mjs runs on the
+# T233: Ternary Bonsai 2 27B converted as the page converts it (the conduct of a conversion answered from the folder,
+# tests/conducting.py: T374.4), by the native Python of a CI runner, into a file: the ternary checkpoint (7.66 GB) that tests/page-27b.mjs runs on the
 # page's forward pass. tests/page_27b.sh runs it; the development machine does not (the GGUF is 5.95 GB).
 #
 #   python tests/page_27b.py convert <folder> <out> [--context 4096] [--broken tiled | order]
@@ -8,8 +8,9 @@
 #
 # convert. <folder>: what tests/hf_fetch.py makes for the list's entry (the original's config.json and tokenizer, the
 #   GGUF linked beside them). Writes <out>.bin (a memory map: the checkpoint is never whole in memory), <out>.tokenizer.bin
-#   and <out>.json (the options the page would hand the engine), and says the seconds and the memory: the peak of the
-#   process's own memory (RssAnon, read after every piece fed; the two memory maps are the file system's pages).
+#   and <out>.json (the options the page would hand the engine), and says the seconds (of the whole conduct: the head,
+#   the tokenizer and the template too) and the memory: the peak of the process's own memory (RssAnon, read after every
+#   part of the stream fed; the checkpoint's memory map is the file system's pages).
 #   --broken: a conversion wrong on purpose in a way only this model's files show, for the comparison to fail on:
 #     tiled  the columns of a linear-attention layer's output matrix read in llama.cpp's order of the value heads, as
 #            the other tensors of the value heads are stored (T245). A rotated GGUF holds these columns in Hugging
@@ -19,7 +20,9 @@
 # made-up: a small model of the 27B's kind (tests/make_ternary.py's `rotated`: ternary, hybrid, three value heads to a
 #   key head, a rotated basis) with references made by the engine's NumPy forward pass, in the files and layouts
 #   tests/reference_27b.sh leaves, for a dry run of tests/page-27b.mjs's comparison in a minute (its numbers are not
-#   held to lines: the reference here does not round the activations).
+#   held to lines: the reference here does not round the activations). And (T374.4) two folders as tests/hf_fetch.py
+#   makes one for the 27B, each with a small ternary GGUF (PTQ1_0, PQ2_0): what `convert` and page-27b.mjs's convert
+#   take, for a dry run of both.
 import json
 import resource
 import sys
@@ -32,9 +35,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "public"))
 sys.path.insert(0, str(HERE))
 import llama2_convert  # noqa: E402
-from llama2_convert import Conversion, Incomplete, gguf_weights  # noqa: E402
-
-CHUNK = 8 << 20
+from conducting import Mapped, converted, listed  # noqa: E402
+from convert import conduct as conducting_part  # noqa: E402
 
 
 def own_memory():
@@ -43,20 +45,6 @@ def own_memory():
         if line.startswith("RssAnon:"):
             return int(line.split()[1]) / 1024
     return 0.0
-
-
-class File:
-    """The converter's sink: the checkpoint goes into <out>.bin, a memory map."""
-
-    def __init__(self, path):
-        self.path = path
-
-    def open(self, size, header, dtype, form):
-        self.size, self.header, self.dtype = size, list(header), dtype
-        self.data = np.memmap(self.path, dtype=np.uint8, mode="w+", shape=(size,))
-
-    def write(self, offset, raw):
-        self.data[offset:offset + raw.size] = raw
 
 
 def bytes_first(raw):
@@ -68,43 +56,46 @@ def bytes_first(raw):
     return ((digits.view(np.int8) - np.int8(1)) * scales).reshape(-1)
 
 
+def tiled(header, config):
+    """The mark gguf_model() takes off a rotated GGUF's output matrices, put back."""
+    linear = llama2_convert.linear_layers(llama2_convert.normalize(json.loads(config)))
+    after_keys, of_a_head, axis = llama2_convert.QWEN35_TILED["out_proj.weight"]
+    header = json.loads(header)
+    marked = [name for name in header if name.endswith("linear_attn.out_proj.weight")]
+    for name in marked:
+        header[name]["tiled"] = (2 * linear["key_heads"] * linear["key_dim"] if after_keys else 0, linear["key_heads"],
+                                 linear["value_heads"] // linear["key_heads"], linear["value_dim"] if of_a_head else 1, axis)
+    print(f"page: broken on purpose: the columns of {len(marked)} output matrices are read in llama.cpp's order of the value heads")
+    return json.dumps(header)
+
+
 def convert(folder, out, context, broken):
-    folder = Path(folder)
-    gguf = sorted(folder.glob("*.gguf"))[0]
-    tokenizer = next(path for path in (folder / name for name in ("tokenizer.json", "spiece.model", "tokenizer.model")) if path.exists())
-    config = (folder / "config.json").read_text()
-    tokenizer_config = folder / "tokenizer_config.json"
-    data = np.memmap(gguf, dtype=np.uint8, mode="r")
-    size = 1 << 20
-    while True:
-        try:
-            header, base = gguf_weights(bytes(data[:size]), config)
-            break
-        except Incomplete:
-            size *= 2
+    # (the folder as tests/hf_fetch.py makes it: the first .gguf by its name, with the original's files beside it)
+    peak = own_memory()
+
+    def fed():
+        nonlocal peak
+        peak = max(peak, own_memory())
+
+    hf, answerer = listed(folder, fed=fed)
+    gguf = Path(folder) / hf["weights"]
     if broken == "tiled":
-        # the mark gguf_model() takes off a rotated GGUF's output matrices, put back
-        linear = llama2_convert.linear_layers(llama2_convert.normalize(json.loads(config)))
-        after_keys, of_a_head, axis = llama2_convert.QWEN35_TILED["out_proj.weight"]
-        header = json.loads(header)
-        marked = [name for name in header if name.endswith("linear_attn.out_proj.weight")]
-        for name in marked:
-            header[name]["tiled"] = (2 * linear["key_heads"] * linear["key_dim"] if after_keys else 0, linear["key_heads"],
-                                     linear["value_heads"] // linear["key_heads"], linear["value_dim"] if of_a_head else 1, axis)
-        print(f"page: broken on purpose: the columns of {len(marked)} output matrices are read in llama.cpp's order of the value heads")
-        header = json.dumps(header)
+        # between the header the conduct makes of the GGUF's head and the conversion it makes with it: in the conduct's
+        # own name for the reader (set in the part that reads the name, as a test would)
+        reading = conducting_part.gguf_weights
+
+        def marked(head, config):
+            header, base = reading(head, config)
+            return tiled(header, config), base
+
+        conducting_part.gguf_weights = marked
     if broken == "order":
         assert gguf.name.endswith("PTQ1_0.gguf"), "the order of a PTQ1_0 block is broken on the PTQ1_0 file"
         llama2_convert.SOURCES["PTQ1_0"] = llama2_convert.SOURCES["PTQ1_0"]._replace(read=bytes_first)
         print("page: broken on purpose: a PTQ1_0 block's values are read in the order of its bytes")
-    sink = File(f"{out}.bin")
-    began, peak = time.perf_counter(), own_memory()
-    conversion = Conversion(header, base, config, tokenizer.read_bytes(), tokenizer.name, dtype="ternary", max_seq_len=context,
-                            start=base, tokenizer_config=tokenizer_config.read_text() if tokenizer_config.exists() else None, sink=sink)
-    for start in range(base, len(data), CHUNK):
-        conversion.feed(bytes(data[start:min(start + CHUNK, len(data))]))
-        peak = max(peak, own_memory())
-    conversion.finish()
+    sink = Mapped(f"{out}.bin")
+    began, size = time.perf_counter(), gguf.stat().st_size
+    conversion = converted(answerer, hf, dtype="ternary", max_seq_len=context, sink=sink)
     sink.data.flush()
     seconds = time.perf_counter() - began
     Path(f"{out}.tokenizer.bin").write_bytes(conversion.tokenizer)
@@ -112,9 +103,9 @@ def convert(folder, out, context, broken):
     Path(f"{out}.json").write_text(json.dumps(options))
     shown = {**options, "rotated": options.get("rotated") and {"block": options["rotated"]["block"],
                                                                "signs": {width: f"{len(bits)} hex digits" for width, bits in options["rotated"]["signs"].items()}}}
-    print(f"page: {gguf.name} ({len(data):,} bytes) to {out}.bin: {sink.size:,} bytes ({sink.size / 2 ** 30:.3f} GiB) of {sink.dtype}, header {sink.header}, "
-          f"in {seconds:.0f} s ({len(data) / 1e6 / seconds:.0f} MB/s of the file); the process's own memory {peak:.0f} MB at most "
-          f"(with the pages of the two files it touched {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.0f} MB)")
+    print(f"page: {gguf.name} ({size:,} bytes) to {out}.bin: {sink.size:,} bytes ({sink.size / 2 ** 30:.3f} GiB) of {sink.dtype}, header {sink.header}, "
+          f"in {seconds:.0f} s ({size / 1e6 / seconds:.0f} MB/s of the file); the process's own memory {peak:.0f} MB at most "
+          f"(with the pages of the checkpoint's file it touched {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024:.0f} MB)")
     print(f"page: the options of the conversion: {json.dumps(shown, ensure_ascii=False)}")
     print(f"page: a template the converter read: {'yes' if 'template' in conversion.options else 'none (the list writes the format)'}; "
           f"tokenizer.bin {len(conversion.tokenizer):,} bytes")
@@ -160,6 +151,20 @@ def made_up(directory):
     (directory / "fork-long.rows").write_text(" ".join(map(str, wanted)) + "\n")
     np.asarray(kept, dtype=np.float32).tofile(directory / "fork-long.logits")
     print(f"page: made-up long text: {len(long_prompt)} tokens, rows of {len(wanted)} positions of it and of {len(wrote) - 1} written after it")
+    # T374.4: and a small ternary model as the 27B is published, for a dry run of the two conversions (`convert` here and
+    # of tests/page-27b.mjs), which no other stage of the dry run reaches: a folder with the original's config.json and
+    # tokenizer and a GGUF of each ternary type beside them (tests/test_ternary.py's made-up Qwen3: the same values
+    # in both files, as the 27B's two files hold the same model)
+    from test_gguf import unigram
+    from test_ternary import bonsai
+    for kind in ("PTQ1_0", "PQ2_0"):
+        shape, published, file, _ = bonsai(kind)
+        folder = directory / f"gguf-{kind}"
+        folder.mkdir(exist_ok=True)
+        (folder / "config.json").write_text(json.dumps(published))
+        (folder / "tokenizer.json").write_bytes(unigram(shape["vocab_size"]))
+        (folder / f"made-up-{kind}.gguf").write_bytes(file)
+        print(f"page: made-up GGUF of {kind} blocks: {len(file):,} bytes, with the config.json and the tokenizer of its original beside it")
 
 
 if __name__ == "__main__":
