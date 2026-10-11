@@ -2357,11 +2357,16 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - GGUF の頭の試験を自分のファイルに分ける。代役の変換器は「頭が揃った」を「バイトが `base` に届いた」と同じに見る（詰め物の誤りを隠した形: AGENTS.md に教えを書いた）。
 
 
-### T421 [整理][遠隔試験] `perplexity_prepare.py` を `--entry` なしで呼ぶ手順の options が黙って変わった — 状態: 未着手（持ち主の決め待ち。2026-10-11、T374.4 のレビューから。規模 小）
+### T421 [整理][遠隔試験] `perplexity_prepare.py` を `--entry` なしで呼ぶ手順の options が黙って変わった — 状態: 完了（2026-10-11、持ち主が (a) に決めた「オススメでよさそう」: 今の形のまま。**T374.4（本線 9ff1e49）の前と後で、`--entry` なしで測った perplexity の数字は並べない**（頭のトークンと止まりが違う）。2026-10-11、T374.4 のレビューから。規模 小）
 - T374.4 から、`--entry` なしの変換は tokenizer_config.json と chat_template.jinja を読む（`?hf=` で開いたページと同じ `bos`・止まり・`specials`・`lowercase`）。チェックポイントのバイトは同じ。
 - `--entry` なしで呼ぶ所: `.github/workflows/int4.yml`（66 行）・`draft.yml`（52 行）（perplexity を測る: 頭のトークンが変わるので前の数字と並べられない）、`tests/write.sh`（29 行）、`tests/gpu-real.sh`（CPU・GPU・NumPy を同じ options で比べるので害は無い）、`tests/page_qwen35.sh`（引数があるときだけ `--entry`）。
 - 決めること: (a) 今の形のまま、台帳に「T374.4 の前後の数字は並べられない」と書く（取りまとめの勧め: ページの `?hf=` と同じになった）、(b) 呼ぶ所に `--entry` を渡す、(c) `listed()` の答え手に 1 行足して前の動きに戻す。
 - `int4.yml` と `draft.yml` は numpy だけを入れるので jinja2 が無く、自前の書式の読み手が走る（開発機と options が違いうる）: 一緒に見る。
+
+### T427 [整理][変換] フォルダの「ファイルが無い」の文をフォルダの言葉に — 状態: 未着手（2026-10-11、持ち主が文面を承認「オススメでよさそう」。T367.1 の後に。規模 小）
+- フォルダの答え手（`public/worker/conduct.js` の `fromFolder()` の `missing`）が自分の文を言う: 「The folder has no <名前>, which the model needs.」。輪の文「The conversion needs <名前>, which is not there.」は、文を持たない答え手のために残る（いまは誰にも出ない）。
+- 同じ日に決まったこと: バグのときだけ出る 2 つの文（「The conduct of the conversion ended without a word.」「The conduct of the conversion asked for <種類>, which nothing here answers.」）はそのまま。T410（フォルダから分割された safetensors と .gguf を開く）は広げずに積んだまま。
+- 確かめ: `tests/worker-conduct-check.mjs` と `worker-fetches-check.mjs` の fixture（フォルダの index の場合の `ended`）。ページに届く文が変わるのでデプロイの後に手元の Chrome の `e2e.mjs hf chrome` を 1 回。
 
 ### T422 [整理][遠隔試験] `tests/conducting.mjs` の `converted()` がジェネレータを閉じ忘れても落ちない — 状態: 未着手（2026-10-11、T374.4 のレビューから。規模 小）
 - `conducting-check.mjs` は `answered()` を代役で見るだけで、`converted()`（Pyodide が要る）を回さない。`steps.return()` を消す壊し方が通った。Pyodide の代役で 1 つ足すか、`page-27b.mjs` の dry が踏むことを検査にする。
