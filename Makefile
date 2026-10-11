@@ -28,14 +28,14 @@ public/models/.done:	$(CHECKPOINTS) $(TOKENIZERS)
 	touch $@
 
 # The WASM SIMD kernels that llama2_numpy.py loads with ctypes, compiled by AssemblyScript (no binary is committed)
-kernels:	public/simdkernel.so
+kernels:	src/runtime/built/simdkernel.so
 
-# (every source is named here: one that is not leaves the old kernels in public/ when it changes, and the checks then
+# (every source is named here: one that is not leaves the old kernels in src/runtime/built/ when it changes, and the checks then
 # test those. kernel.ts is the window over kernel/*.ts, T356)
 KERNEL_PARTS = kernels/kernel/matmul.ts kernels/kernel/quantize.ts kernels/kernel/attention.ts kernels/kernel/halves.ts \
 	kernels/kernel/activations.ts kernels/kernel/stateful.ts kernels/kernel/sample.ts kernels/kernel/math.ts
-public/simdkernel.so:	kernels/kernel.ts $(KERNEL_PARTS) kernels/kernel_relaxed.ts kernels/six.ts kernels/ternary.ts kernels/ceilings.ts kernels/ceilings_relaxed.ts kernels/wasm64.mjs kernels/build.py node_modules
-	python3 kernels/build.py public
+src/runtime/built/simdkernel.so:	kernels/kernel.ts $(KERNEL_PARTS) kernels/kernel_relaxed.ts kernels/six.ts kernels/ternary.ts kernels/ceilings.ts kernels/ceilings_relaxed.ts kernels/wasm64.mjs kernels/build.py node_modules
+	python3 kernels/build.py src/runtime/built
 
 # The site's Python (src/python/) as two archives, engine.zip and converter.zip, which the worker fetches whole and
 # unpacks in Pyodide (python_archive.py, T367.2; no binary is committed). Built every time it is asked for: it takes a
@@ -97,5 +97,5 @@ node_modules:	package-lock.json
 
 clean:
 	rm -f *.bin *.f32 *.f16 tiny-lm.LICENSE.txt
-	rm -rf public/models public/simdkernel* public/engine.zip public/converter.zip dist .astro tiny-lm llm-jp-3-150m node_modules
+	rm -rf public/models src/runtime/built dist .astro tiny-lm llm-jp-3-150m node_modules
 

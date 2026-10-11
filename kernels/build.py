@@ -40,7 +40,7 @@ def side_module(source, out, features):
 
 
 def plain_module(source, out, features, shared=False, wasm64=False):
-    """T93: the same kernels as plain WebAssembly, instantiated by public/forward.js on the memory that holds the
+    """T93: the same kernels as plain WebAssembly, instantiated by src/runtime/forward.js on the memory that holds the
     weights (not Pyodide's). No dylink.0. shared: on a shared memory, for threads that share the weights (stage 2,
     and tests/threads-check.mjs). wasm64 (T101): on a 64-bit memory (kernels/wasm64.mjs), for models past 4 GiB."""
     flags = ["--sharedMemory", "--maximumMemory", "65536"] if shared else []
@@ -54,6 +54,7 @@ def plain_module(source, out, features, shared=False, wasm64=False):
 
 if __name__ == "__main__":
     here, out = Path(__file__).parent, Path(sys.argv[1])
+    out.mkdir(parents=True, exist_ok=True)  # (src/runtime/built/ is no folder of a fresh checkout: nothing built is committed)
     side_module(here / "kernel.ts", out / "simdkernel.so", "simd")
     side_module(here / "kernel_relaxed.ts", out / "simdkernel_relaxed.wasmlib", "simd,relaxed-simd")
     plain_module(here / "kernel.ts", out / "simdkernel_plain.wasm", "simd")

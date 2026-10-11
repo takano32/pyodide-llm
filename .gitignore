@@ -14,9 +14,8 @@ dist/
 .astro/
 __pycache__/
 *.wasmlib
-# the site's Python as archives (python_archive.py)
-public/engine.zip
-public/converter.zip
+# what is built beside the runtime (make kernels, python_archive.py): the kernels and the site's Python as archives
+src/runtime/built/
 .venv/
 .tmp/
 # the agents' worktrees (Claude Code makes them for work in parallel)

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """python_archive.py (T367.2): the site's Python as two archives, which the worker fetches whole and unpacks in Pyodide
-(public/worker/pyodide.js): one request where there were fifteen, and nineteen for a conversion.
+(src/runtime/worker/pyodide.js): one request where there were fifteen, and nineteen for a conversion.
 
-    python3 python_archive.py [<the folder of the sources> [<the folder to write into>]]     (src/python, public)
+    python3 python_archive.py [<the folder of the sources> [<the folder to write into>]]     (src/python, src/runtime/built)
 
     engine.zip      llama2_numpy.py and every .py of engine/       what every visit imports
     converter.zip   llama2_convert.py and every .py of convert/    fetched when a model is first converted
@@ -47,7 +47,7 @@ def archive(sources, window, package):
     return held.getvalue()
 
 
-def main(sources="src/python", out="public"):
+def main(sources="src/python", out="src/runtime/built"):
     here = Path(__file__).resolve().parent
     sources, out = (here / sources).resolve(), (here / out).resolve()
     out.mkdir(parents=True, exist_ok=True)
