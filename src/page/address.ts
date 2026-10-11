@@ -18,7 +18,7 @@ export const REPOSITORY = /^[\w.-]+\/[\w.-]+$/, REVISION = /^[\w.-]+$/;
 // a repository nobody has looked at, as an entry of the list: the same for ?hf= and for the sheet (T88). The
 // template and prompt of a link belong to the repository the link names, not to one opened later in the sheet.
 // T374.2.3: it names no tokenizer. Which files are tried, and in which order, is the conduct's of the conversion to
-// say (TOKENIZERS of public/convert/conduct.py)
+// say (TOKENIZERS of src/python/convert/conduct.py)
 export function hfEntry(repository: string, revision: string, link: { template?: string; prompt?: string } = {}): typeof MODELS[number] {
   const common = { id: "local", options: {}, prompt: link.prompt ?? "", placeholder: "", template: link.template };
   return { ...common, name: repository, note: revision === "main" ? "Hugging Face" : `Hugging Face · ${revision.slice(0, 12)}`,

@@ -1,5 +1,5 @@
 // conducting.mjs (T374.4): what a Node tool that converts a model in Pyodide answers the conduct of a conversion with
-// (public/convert/conduct.py: a generator that asks which file comes next; the page's worker answers the same one,
+// (src/python/convert/conduct.py: a generator that asks which file comes next; the page's worker answers the same one,
 // public/worker/conduct.js). A tool says where the files are and what the conversion is made with, and nothing of
 // which files a model needs, which tokenizer is tried or where its template comes from:
 //
@@ -106,7 +106,7 @@ export function answered(steps, { answers, missing }) {
   }
 }
 
-/** The conversion of a model by its conduct, in the Pyodide py. hf: the model as public/convert/conduct.py takes it
+/** The conversion of a model by its conduct, in the Pyodide py. hf: the model as src/python/convert/conduct.py takes it
  * (names only); make: what the converter takes besides the files (dtype, max_seq_len, sink, quantize_rows, readers). */
 export function converted(py, hf, make, answerer) {
   const module = py.pyimport("convert.conduct");

@@ -1,4 +1,4 @@
-# The conduct of a conversion (T374.1, public/convert/conduct.py): a generator that asks for a model's files in the
+# The conduct of a conversion (T374.1, src/python/convert/conduct.py): a generator that asks for a model's files in the
 # order the worker asks for them, driven here by a dictionary (tests/conduct_hub.py's Hub): no browser, no worker, no
 # Pyodide. And (T374.2.2) by a folder of the visitor's disk (Folder), which the same conduct converts.
 #

@@ -14,7 +14,7 @@
 # apply_chat_template does: trim_blocks, lstrip_blocks, the tokenizer's special tokens by name, tools and documents
 # as None, strftime_now, raise_exception, tojson, the generation tag) and by the reader. The reader may refuse (the page then has no format for ?hf=); what it
 # must not do is read a template and write another text than Jinja: any such is DIFFERENT and the exit status is 1.
-# --before: the same with another copy of the converter (public/llama2_convert.py of another tree: main's is under
+# --before: the same with another copy of the converter (src/python/llama2_convert.py of another tree: main's is under
 # .tmp/unchanged/<commit> once `node tests/unchanged.mjs sizes` or any of its checks has run, tests/other-tree.mjs),
 # and what changed between the two is listed: a change of the reader is to move templates from refused to the same,
 # and nothing else.
@@ -42,7 +42,7 @@ def converter(path, name):
     sys.path.insert(0, str(Path(path).resolve().parent))  # (its own llama2_numpy, where it imports one)
     # T347: the converter is a window over the package convert/ beside it. Two converters have two packages of that
     # name, so each is imported with none loaded and taken out again: a second would else get the first one's parts
-    # and be compared with itself. (The file given is the window: public/llama2_convert.py of a tree.)
+    # and be compared with itself. (The file given is the window: src/python/llama2_convert.py of a tree.)
     parts = lambda: [key for key in sys.modules if key == "convert" or key.startswith("convert.")]
     aside = {key: sys.modules.pop(key) for key in parts()}
     try:

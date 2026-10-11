@@ -3,7 +3,7 @@
 #   <out>.bin            llama2.c "legacy" checkpoint (7 int header, then the tensors): float32, float16 or int8
 #   <out>.tokenizer.bin  llama2.c tokenizer format, from the sentencepiece model or the tokenizer.json
 # It runs when the site is deployed, so no converted binary has to live in the repository. The conversion itself
-# is public/llama2_convert.py, which the page uses too: this file adds what only the build needs, the files of a
+# is src/python/llama2_convert.py, which the page uses too: this file adds what only the build needs, the files of a
 # directory and PyTorch's pickle format.
 #
 #   python3 convert_hf.py <directory with config.json, pytorch_model.bin | model.safetensors | shards with an index,
@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "public"))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src" / "python"))
 from llama2_convert import (Arrays, Safetensors, Shards, bfloat16, checkpoint_form, checkpoint_header, checkpoint_size,  # noqa: E402
                             convert_weights, normalize, sentencepiece_charsmap, sentencepiece_pieces, tokenizer_bin,
                             tokenizer_json_charsmap, tokenizer_json_options, tokenizer_json_pieces, unturned_layers)

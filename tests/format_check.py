@@ -3,7 +3,7 @@
 # sends ([bos] + llama2_numpy.Tokenizer on the converter's tokenizer.bin, with the options the worker merges and
 # filled()'s rules) against transformers' apply_chat_template on the files of the pinned revision. Only config.json,
 # the tokenizer files and the heads of the weights (by Range) are fetched; no weights. The conversion is the page's:
-# the conduct of a conversion (public/convert/conduct.py) answered until it asks for the weights (T374.4,
+# the conduct of a conversion (src/python/convert/conduct.py) answered until it asks for the weights (T374.4,
 # tests/conducting.py's Heads).
 #
 #   python3 tests/format_check.py [--hf] [--prompt <text> ...] <directory for the downloads> [model id ...]

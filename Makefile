@@ -1,6 +1,6 @@
 
 
-.PHONY: run models kernels clean
+.PHONY: run models kernels python clean
 .SECONDARY:
 
 TINYLLAMAS = https://huggingface.co/karpathy/tinyllamas/resolve/main
@@ -37,8 +37,15 @@ KERNEL_PARTS = kernels/kernel/matmul.ts kernels/kernel/quantize.ts kernels/kerne
 public/simdkernel.so:	kernels/kernel.ts $(KERNEL_PARTS) kernels/kernel_relaxed.ts kernels/six.ts kernels/ternary.ts kernels/ceilings.ts kernels/ceilings_relaxed.ts kernels/wasm64.mjs kernels/build.py node_modules
 	python3 kernels/build.py public
 
+# The site's Python (src/python/) as two archives, engine.zip and converter.zip, which the worker fetches whole and
+# unpacks in Pyodide (python_archive.py, T367.2; no binary is committed). Built every time it is asked for: it takes a
+# tenth of a second, and an archive older than its sources is then nowhere. `npm run build` and `npm run dev` build
+# them first (package.json).
+python:
+	python3 python_archive.py
+
 # int8, 3.5x smaller than float32 (quantize.py)
-%.bin:	%.f32 quantize.py public/llama2_convert.py $(wildcard public/convert/*.py)
+%.bin:	%.f32 quantize.py src/python/llama2_convert.py $(wildcard src/python/convert/*.py)
 	python3 quantize.py $< $@
 
 # Hugging Face checkpoints: convert_hf.py writes <out>.bin and <out>.tokenizer.bin
@@ -49,7 +56,7 @@ llm-jp-3-150m/model.safetensors:
 # llm-jp-3-150m keeps its whole context of 4096 tokens: the engine lets the KV cache (200 MB at that length) grow
 # with the text instead of reserving it.
 # convert_hf.py writes int8 directly (the same bytes as float32 followed by quantize.py, without the 600 MB between)
-CONVERTER = convert_hf.py public/llama2_convert.py $(wildcard public/convert/*.py)
+CONVERTER = convert_hf.py src/python/llama2_convert.py $(wildcard src/python/convert/*.py)
 
 llm-jp-3-150m.bin llm-jp-3-150m.tokenizer.bin &:	llm-jp-3-150m/model.safetensors $(CONVERTER)
 	python3 convert_hf.py llm-jp-3-150m llm-jp-3-150m int8 4096
@@ -90,5 +97,5 @@ node_modules:	package-lock.json
 
 clean:
 	rm -f *.bin *.f32 *.f16 tiny-lm.LICENSE.txt
-	rm -rf public/models public/simdkernel* dist .astro tiny-lm llm-jp-3-150m node_modules
+	rm -rf public/models public/simdkernel* public/engine.zip public/converter.zip dist .astro tiny-lm llm-jp-3-150m node_modules
 

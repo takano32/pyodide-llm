@@ -2,7 +2,7 @@
 // model is an entry of src/models.js, or one with {file, tokenizerFile}: two files of the visitor's own disk,
 // which are read where they are and go nowhere. Or one with {hf: {weights, config, tokenizer}}: a Hugging Face
 // model by the names of its files, of huggingface.co ({repo, revision}) or of that disk ({files}: the Files of a
-// folder, T374.2.2), which public/llama2_convert.py converts in here as it arrives.
+// folder, T374.2.2), which the converter (src/python/llama2_convert.py) converts in here as it arrives.
 // The page sends   {type: "init", search, model, load},  {type: "load", search, model, load},
 //                  {type: "generate", prompt, ...options}  and  {type: "stop"}; /benchmark/'s model section also
 //                  ahead in its init (T242: the switches of each load that follows on the same model, see loadsAhead),
@@ -31,12 +31,9 @@ const early = [];
 self.onmessage = (event) => early.push(event);
 const modules = Object.fromEntries(["state", "told", "clock", "pyodide", "weights", "ranges", "sources", "conduct", "convert", "load", "timing"].map((name) =>
   [name, import(new URL(`worker/${name}.js${self.location.search}`, import.meta.url))]));
-// (the list of the engine's Python files, with the worker's modules and not after them: init() reads the files by it)
-const python = import(new URL(`python.js${self.location.search}`, import.meta.url));
-python.catch(() => {});  // (init() awaits it: until then a failure is nobody's)
 const { state, cpuOnly, modelKey, loadSeconds } = await modules.state;
 const { told } = await modules.told;
-const { resolvePyodideVersion, pyodideSteps } = await modules.pyodide;
+const { resolvePyodideVersion, pyodideSteps, pythonArchive, placePython } = await modules.pyodide;
 const { since, breathe } = await modules.clock;
 const { load, threadsNow, heapBytes } = await modules.load;
 const { timedGeneration, timedPaths } = await modules.timing;
@@ -61,22 +58,14 @@ async function init(search) {
   // (T156: ?gpuTest=only, the tests' too: a model the GPU can take on the GPU alone, whatever its size)
   state.gpuForce = ["on", "only"].includes(asked.get("gpuTest")) ? { fallback: true, always: true, quick: true, only: asked.get("gpuTest") === "only" } : {};
   state.benchPage = asked.has("bench");
-  // T348: the engine is a window and its parts (python.js's list), each with the ?v=<build> of this worker, so that all
-  // come from the same deployment. They are small and of this site, so they are asked for now, beside Pyodide, and
-  // are there when it is ready (one file was fetched after it before; eleven, one after another's list, would add to
-  // the time to ready).
-  const engine = python.then(({ readPython }) => readPython("llama2_numpy", async (name) => {
-    const res = await fetch(new URL(`${name}${self.location.search}`, import.meta.url));
-    if (!res.ok) {
-      throw new Error(`Could not fetch ${name}: ${res.status}`);
-    }
-    return res.text();
-  }));
+  // T367.2: the engine's Python (a window and its parts, T348) is one archive, engine.zip, with the ?v=<build> of this
+  // worker. It is small and of this site, so it is asked for now, beside Pyodide, and is there when that is ready.
+  const engine = pythonArchive("engine.zip");
   engine.catch(() => {});  // (it is awaited below: a load that ends before that leaves no unhandled rejection)
   const version = await resolvePyodideVersion(search);
   state.pyodide = await pyodideSteps(version, (url) => import(url));
 
-  await (await python).placePython(state.pyodide, "llama2_numpy", null, engine);
+  await placePython(state.pyodide, engine);
   state.llama2_numpy = state.pyodide.pyimport("llama2_numpy");
 
   // The WASM SIMD kernels (kernels/*.ts), which llama2_numpy.py loads with ctypes. They are optional: without

@@ -1,7 +1,7 @@
 # Fable's independent reading of T200 (2026-09-27), run on CI only (tests.yml extra=): not for the main line.
 #
 # Compares encode() of main before T200 (tests/t200_fable/old_numpy.py, 50f1ac4), of the working copy
-# (public/llama2_numpy.py), of T206 (t206_numpy.py, branch t206-onig) and of T207 (t207_numpy.py, branch t207-bpe-heap)
+# (src/python/llama2_numpy.py), of T206 (t206_numpy.py, branch t206-onig) and of T207 (t207_numpy.py, branch t207-bpe-heap)
 # on adversarial texts (every class of character next to every other, contractions in every case, ſ, K, the C0 and C1
 # controls, every kind of space, NFKC compatibility characters, combining marks, emoji sequences, long runs), on the
 # seven real vocabularies encode-bench.mjs takes; on made-up BPE and unigram vocabularies of its own (scores +inf, -0.0,

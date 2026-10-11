@@ -6,7 +6,7 @@
 // sentencepiece tokenizer.model / spiece.model). The worker converts them in the browser, to int8 and with a
 // context of 512 tokens unless the settings say otherwise ({"conversion": {"dtype": ..., "max_seq_len": ...}}).
 // The tokenizers a folder may come with. The conversion's own list is Python's (TOKENIZERS of
-// public/convert/conduct.py: which are tried, and in which order); this page asks for one of them before Pyodide is
+// src/python/convert/conduct.py: which are tried, and in which order); this page asks for one of them before Pyodide is
 // there to say, so it keeps the names too, and tests/worker-fetches-check.mjs holds the two lists to each other
 export const TOKENIZERS = ["tokenizer.json", "tokenizer.model", "spiece.model"];
 const HF_IGNORED = ["tokenizer_config.json", "generation_config.json", "special_tokens_map.json", "model.safetensors.index.json"];
@@ -25,7 +25,7 @@ export async function openHuggingFace(chosen: File[]) {
     id: "local", name: given.name ?? weights[0].name, note: `local · Hugging Face · ${(weights[0].size / 1e6).toFixed(0)} MB`,
     // T374.2.2: the folder as it was chosen, and which of it is the weights. What else of it is read (config.json, the
     // chat template where it has one, T127, the first tokenizer the converter can read, T138) is asked for by name
-    // by the conduct of the conversion (public/convert/conduct.py), and answered from these Files by the worker
+    // by the conduct of the conversion (src/python/convert/conduct.py), and answered from these Files by the worker
     hf: { files: chosen, weights: weights[0].name },
     conversion: given.conversion ?? {}, options: given.options ?? {},
     // a model nobody has tuned this page for: sample, as such models loop when they decode greedily

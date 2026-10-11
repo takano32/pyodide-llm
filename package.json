@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "astro dev --host 0.0.0.0 --port 8080",
-    "build": "astro build",
+    "dev": "python3 python_archive.py && astro dev --host 0.0.0.0 --port 8080",
+    "build": "python3 python_archive.py && astro build",
     "preview": "astro preview --host 0.0.0.0 --port 8080"
   },
   "dependencies": {

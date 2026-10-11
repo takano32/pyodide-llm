@@ -46,8 +46,9 @@ page_modules() {
   # the tools are to read; and the one reader of how a file takes its neighbours' names (tests/imports.mjs), on made-up texts
   node tests/tree-check.mjs
   node tests/imports-check.mjs
-  # T347: the list of the Python files the worker gives Pyodide is what public/ holds
-  node tests/python-files-check.mjs
+  # T367.2: the site's Python as two archives (python_archive.py): what goes in and that the same sources give the same
+  # bytes, that they hold what the tools walk and place, and the worker's way with them (a stand-in of Pyodide, and Pyodide)
+  node tests/python-archive-check.mjs
   node tests/ladder-check.mjs
   node tests/kept-check.mjs
   node tests/coi-js-check.mjs

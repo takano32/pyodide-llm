@@ -9,8 +9,8 @@ and measurements, are in [AGENTS.md](../AGENTS.md) (in Japanese).
 flowchart TD
   page["the page: src/pages/index.astro"]
   worker["Web Worker: public/worker.js<br/>resolves Pyodide, downloads and converts models, keeps them (public/kept.js)"]
-  engine["the engine: public/llama2_numpy.py<br/>checkpoint, tokenizer, sampling, generate()"]
-  convert["the converter: public/llama2_convert.py<br/>safetensors and GGUF to the llama2.c format, int8, 6 bits or ternary"]
+  engine["the engine: src/python/llama2_numpy.py<br/>checkpoint, tokenizer, sampling, generate()"]
+  convert["the converter: src/python/llama2_convert.py<br/>safetensors and GGUF to the llama2.c format, int8, 6 bits or ternary"]
   forward["public/forward.js<br/>the forward pass, on its own WebAssembly memory"]
   kernels["kernels/: WebAssembly SIMD kernels"]
   helper["public/helper.js: software threads"]
@@ -30,8 +30,9 @@ flowchart TD
 | `src/pages/index.astro` and `src/page/` | The chat page and the modules of its script. It draws what the worker reports; the URL holds the state (`?model=`, `?hf=`, `?bits=`, `?without=` and others). |
 | `src/models.js` | The model list: files, sizes, engine options, generation settings, chat templates. The first entry is the default. |
 | `public/worker.js` and `public/worker/` | The worker's window (`init()`, `generate()`, the messages) and its parts: Pyodide's loading, where the weights go, the fetching of a model's parts (this site's and Hugging Face's), the conversion, and what `/benchmark/` times. It loads Pyodide and NumPy, downloads the model in parts while Pyodide loads, and runs `generate()`. |
-| `public/llama2_numpy.py` | The engine. Reads llama2.c's legacy format (float32, float16, int8, 6 bits, ternary), the tokenizers (llama2.c's BPE, sentencepiece Unigram, byte-level BPE), the architectures (Llama, Qwen2, Qwen3, Qwen3.5, LFM2, GPT-2, GPT-NeoX), and samples. Without the kernels, NumPy does the arithmetic. |
-| `public/llama2_convert.py` | Converts a Hugging Face model (or a GGUF: Q8_0, or the ternary PQ2_0 and PTQ1_0) as its file arrives, and writes it into the model's memory. The same code builds the site's models (`convert_hf.py`, `quantize.py`) and converts in the browser. It also reads a model's chat template (a small part of Jinja). |
+| `src/python/llama2_numpy.py` | The engine. Reads llama2.c's legacy format (float32, float16, int8, 6 bits, ternary), the tokenizers (llama2.c's BPE, sentencepiece Unigram, byte-level BPE), the architectures (Llama, Qwen2, Qwen3, Qwen3.5, LFM2, GPT-2, GPT-NeoX), and samples. Without the kernels, NumPy does the arithmetic. |
+| `src/python/llama2_convert.py` | Converts a Hugging Face model (or a GGUF: Q8_0, or the ternary PQ2_0 and PTQ1_0) as its file arrives, and writes it into the model's memory. The same code builds the site's models (`convert_hf.py`, `quantize.py`) and converts in the browser. It also reads a model's chat template (a small part of Jinja). |
+| `python_archive.py` | Packs the two at build time into `engine.zip` and `converter.zip`, which the worker fetches whole and unpacks in Pyodide: one request each (the converter's only when a model is first converted). The same sources give the same bytes. |
 | `public/forward.js` and `public/forward/` | One token's forward pass, and a block of prompt tokens, in JavaScript. It calls the same kernels in the same order as the Python engine would, and chooses for each block and each few tokens whether the CPU or the GPU runs them. `forward.js` is the window; the engine (`engine.js`), its software threads (`threads.js`), its GPU side (`gpuside.js`), the choice between the two (`choice.js`) and the memory a model takes (`memory.js`, `alone.js`) are the modules of `forward/`. |
 | `kernels/` | The SIMD kernels: int8 and float32 matrix products, activation quantization, RMSNorm, LayerNorm, RoPE, attention, SwiGLU, GELU, and the sampling (repetition penalty, softmax, top-p). |
 | `public/helper.js`, `public/jobs.js` | Software threads, and the work they share. |

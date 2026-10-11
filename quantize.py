@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 
 # the format and the arithmetic are shared with the converter, which also writes int8 directly
-sys.path.insert(0, str(Path(__file__).resolve().parent / "public"))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src" / "python"))
 from llama2_convert import layout, quantize  # noqa: E402
 from llama2_numpy import pack6, quantize6  # noqa: E402
 

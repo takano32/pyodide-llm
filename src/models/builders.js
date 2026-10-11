@@ -65,7 +65,7 @@ export const ternaryBonsai = (size, revision, originalRevision, download, sizes,
   weights: "ternary", conversion: {}, options: QWEN3_OWN_BOS, template: QWEN3_AT_ONCE, ...start,
   generation: { steps: 0, temperature: 0.5, topp: 0.85, repetition_penalty: 1.0 },
   prompt: "これからの流行りを3つ挙げてください。", placeholder: ASK_JAPANESE });
-// Models that huggingface.co serves and this page converts itself (public/llama2_convert.py, the code that builds
+// Models that huggingface.co serves and this page converts itself (src/python/llama2_convert.py, the code that builds
 // the models above): plain Llama architecture, one safetensors file, a Unigram tokenizer.json or a sentencepiece
 // model. revision pins the commit, so that nothing changes under the page. download is the size of model.safetensors.
 export const hf = (repo, revision, tokenizer = "tokenizer.json") => ({ repo, revision, weights: "model.safetensors", config: "config.json", tokenizer });

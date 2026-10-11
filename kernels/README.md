@@ -3,7 +3,7 @@
 `kernel.ts` and `kernel_relaxed.ts` (AssemblyScript) are the numeric core of the site: float32 and int8 matmul,
 activation quantization, rmsnorm, RoPE, attention, SwiGLU, the residual add, LayerNorm and GELU (for GPT-2 models,
 T65), and sampling (repetition penalty, softmax,
-top-p). `public/llama2_numpy.py` loads
+top-p). `src/python/llama2_numpy.py` loads
 them with `ctypes.CDLL` (`load_kernels`) and drives them from Python (`Llama.kernel_forward`): Python keeps
 sequencing the layers, NumPy keeps owning the memory, the kernels get addresses and work in place. Nothing is
 copied and there is no JavaScript glue. When they cannot be loaded, NumPy does the math as before.
