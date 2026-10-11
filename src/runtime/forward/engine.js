@@ -5,7 +5,7 @@
 
 import { BATCH, addressed, runner } from "../jobs.js";
 import { GPU_BLOCK, GPU_TOKENS } from "./choice.js";
-import { growMemory, PAGE, align, layerSlots, attendingLayers, linearWidths, frameArrays, rotatedWidths, frameBytes } from "./memory.js";
+import { growMemory, PAGE, align, layerSlots, attendingLayers, linearWidths, frameArrays, rotatedWidths, frameBytes, halfToFloat } from "./memory.js";
 import { GPU_ALONE } from "./alone.js";
 import { controlArea } from "./control.js";
 import { softwareThreads } from "./threads.js";
@@ -14,14 +14,6 @@ import { gpuFit, gpuSide } from "./gpuside.js";
 // T120: no phase comes near this without progress (the longest token measured, Qwen2.5 7B's on CI, took 286 ms in
 // all): a count that has not moved for so long means a software thread the browser stopped in the middle of its chunk
 const STALLED_MS = 10000;
-
-// half to float, exactly (the same as NumPy's astype(float32))
-function halfToFloat(h) {
-  const sign = h & 0x8000 ? -1 : 1, exponent = (h >> 10) & 0x1f, fraction = h & 0x3ff;
-  if (exponent === 0) return sign * fraction * 2 ** -24;
-  if (exponent === 31) return fraction ? NaN : sign * Infinity;
-  return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
-}
 
 /** spawn (stage 2, a shared memory only): starts one helper thread with { memory, plain, relaxed } and resolves once
  * it is ready; the result has terminate(). Without it, or on a memory that is not shared, everything runs here. */
@@ -52,9 +44,6 @@ function halfToFloat(h) {
  * model again on the CPU). T210: no cache of keys and values here either; the GPU embeds a prompt's tokens itself */
 export function createForward({ memory, base, size, kernels, plan, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce = {},
   halfKeys, direct, wrap = (exports) => exports, stalledMs = STALLED_MS, clock = () => performance.now() }) {
-  // every block and step the GPU can take goes there, whatever the CPU's time: the tests' fallback adapter, and a model
-  // on the GPU alone (T156)
-  const always = Boolean(gpuForce.always || direct);
   const { dim, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: headSize, vocab_size: vocab,
     seq_len: seqLen, rotary, arch } = plan;
   const hidden = plan.hidden_dim, kvDim = kvHeads * headSize, qDim = heads * headSize;
@@ -252,22 +241,26 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
       }
     });
   }
-  // T349: what the GPU would hold of this model, and why it would not take it (forward/gpuside.js)
-  const { gpuMatrices, gpuUnfit, tokensUnfit, gpuVectors } = gpuFit({ plan, gpuRoom, memoryUnsaid, direct, dim, layers,
-    headSize, vocab, seqLen, hidden, kvDim, qDim, layerNorm, linear, convolution, rotated, sharedMemory, T, D, wq, wk, wv,
-    wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions });
+  // T378.2: what the GPU's side (forward/gpuside.js) reads of this model, as two things made once: the model's facts,
+  // and where its tensors are in the memory (addresses, and the matrices as matrix() made them)
+  const shape = { dim, hidden, layers, heads, kvHeads, headSize, kvDim, qDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart: plan.kv_start,
+    gpt2, layerNorm, parallel, unturned, linear, convolution, rotated, sharedClassifier: plan.shared_classifier };
+  const weights = { base, embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, finalW, finalB, bo, b1, b2, bq, bk, bv, qNorm, kNorm,
+    cosTable, sinTable, positions, channels };
+  // T349: what the GPU would hold of this model, and why it would not take it
+  const fit = gpuFit({ shape, weights, device: { gpuRoom, memoryUnsaid, sharedMemory }, direct });
 
   // T135: where the GPU's worker puts the keys and values of a prompt's block (float16, T147: the keys
   // [layers][GPU_BLOCK][kvDim], then the values the same), for the cache below, and where it reads the block's rows
   // (dense). Only where the page asked for the GPU and it can take this model
-  const gpuWhyNot = gpu ? gpuUnfit() : null;
+  const gpuWhyNot = gpu ? fit.unfit() : null;
   // (T210: a model on the GPU alone has its keys and values read back there only for the tests, keysAndValues; and the
   // GPU embeds its rows itself)
   const staging = gpu && !gpuWhyNot ? alloc(2 * layers * GPU_BLOCK * kvDim * 2) : 0;
   const gpuRows = staging && !direct ? alloc(GPU_BLOCK * D) : 0;
   // T152: why a generation's steps stay on the CPU where the prompt's blocks may go to the GPU (else null), and where
   // the GPU's worker writes the ids of the steps it took ([sampled, id, ...])
-  const tokensWhyNot = staging ? tokensUnfit() : null;
+  const tokensWhyNot = staging ? fit.tokensUnfit() : null;
   // (T219: and after the ids, the word that says the step after them was refused: its logits were not finite)
   const gpuIds = staging && !tokensWhyNot ? alloc((2 + GPU_TOKENS) * 4) : 0;
 
@@ -316,7 +309,6 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     // (a function: the GPU's side is made after the threads, which it reads)
     gpuGettingReady: () => onGpu.gettingReady() });
   const { phase, searchLog, use, find, generationBegan, tokenBegan, tokenEnded, stop } = threads;
-  const { ctl, waitUntil } = control;
   // matmuls of one input (count tokens of it, a frame apart): [matrix, output, output stride, layer] each
   // T237: in a rotated basis the matrices read R of the input, turned here once for all of them (a kernel on this
   // thread: 5 blocks of 1024 take a few microseconds, a thousandth of the rows they are multiplied by)
@@ -391,8 +383,6 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     }
     return true;
   }
-  // T243: what the status line says of a GPU stopped for them (where: the request)
-  const notFiniteKV = (where) => `the GPU computed keys or values that are not finite numbers (NaN or infinity) ${where}`;
   // a token's key and value (float32, at key and value) into the cache at keyAt and valueAt
   function cache(keyAt, valueAt, key, value) {
     if (halfKV) {
@@ -559,20 +549,22 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     }
     matmuls(xb, count, [[wout, xb2, S, a]]);
   }
-  // T349: what the GPU's side reads of the views of this memory and of the cache of the keys and values, as they are now
-  const held = {
+  // T378.2: what the GPU's side is handed of the CPU's side: the memory and its views, the cache of the keys and values as
+  // it is now (T349: getters, read each time: the cache moves as it grows) and grown, and what the CPU does for a block
+  const cpuSide = {
+    memory, views, grow, embed, fromStaging, stagingFinite, run,
     get H() { return H; },
     get capacity() { return capacity; },
     get keys() { return keys; },
     get values() { return values; },
   };
+  // what the GPU is to take of this model (gpuFit()'s answers), and the places above where it answers
+  const taken = { matrices: fit.matrices, vectors: fit.vectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds };
 
   // T349: the GPU's side (forward/gpuside.js): its functions by name. T378.2: its state is its own: what happens here is
   // told through those functions, and what the page is shown of it is read (onGpu.status, .ready, ...)
-  const onGpu = gpuSide({ memory, base, plan, gpu, gpuRemembered, gpuForce, direct, stalledMs, always, dim, layers, heads,
-    kvHeads, headSize, vocab, seqLen, hidden, kvDim, gpt2, layerNorm, parallel, unturned, views, T, halfKV, D, KV, wo, wcls,
-    finalW, finalB, eps, cosTable, sinTable, positions, channels, gpuMatrices, gpuVectors, gpuWhyNot, staging, gpuRows,
-    tokensWhyNot, gpuIds, grow, ctl, waitUntil, threads, embed, fromStaging, stagingFinite, notFiniteKV, run, held, halfToFloat });
+  const onGpu = gpuSide({ shape, weights, taken, cpuSide, control, threads,
+    options: { gpu, remembered: gpuRemembered, force: gpuForce, direct, stalledMs } });
   const { cpuWrote, cpuStepBegan, cpuStepEnded, generateMany, promptBlock, tokenBlock } = onGpu;
 
   let bound = null;

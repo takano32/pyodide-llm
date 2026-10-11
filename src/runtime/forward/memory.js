@@ -213,4 +213,12 @@ export function weightsMemory(size, { shared = false, maximum, wide = false, aft
 }
 
 // (T349) what forward.js and the other modules read besides, which was not exported where it was one file
-export { PAGE, align, layerSlots, attendingLayers, linearWidths, frameArrays, rotatedWidths, frameBytes };
+// half to float, exactly (the same as NumPy's astype(float32))
+function halfToFloat(h) {
+  const sign = h & 0x8000 ? -1 : 1, exponent = (h >> 10) & 0x1f, fraction = h & 0x3ff;
+  if (exponent === 0) return sign * fraction * 2 ** -24;
+  if (exponent === 31) return fraction ? NaN : sign * Infinity;
+  return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
+}
+
+export { PAGE, align, layerSlots, attendingLayers, linearWidths, frameArrays, rotatedWidths, frameBytes, halfToFloat };
