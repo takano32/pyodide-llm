@@ -105,7 +105,7 @@ jobs:
         shell: bash
         run: |
           bash tests/apt-timeouts.sh
-          pip install numpy tokenizers regex
+          pip install numpy tokenizers regex jinja2
           npm ci
           make models kernels
           npx playwright-core install --with-deps chromium
@@ -162,7 +162,7 @@ jobs:
         shell: bash
         run: |
           bash tests/apt-timeouts.sh
-          pip install numpy tokenizers regex
+          pip install numpy tokenizers regex jinja2
           npm ci
           make models kernels
           sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers

@@ -60,7 +60,7 @@ jobs:
         if: (matrix.size || 'small') == inputs.size
         shell: bash
         run: |
-          python3 -m pip install --quiet numpy
+          python3 -m pip install --quiet numpy jinja2
           source=$(python3 tests/hf_fetch.py ${{ matrix.model }} downloads)
           echo "SOURCE=$source" >> "$GITHUB_ENV"
           python3 tests/perplexity_prepare.py "$source" prepared int8

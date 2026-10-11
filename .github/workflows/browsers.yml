@@ -326,7 +326,7 @@ jobs:
         if: always() && matrix.size == 'small'
         shell: bash
         run: |
-          python3 -m pip install --quiet numpy
+          python3 -m pip install --quiet numpy jinja2
           echo "### Fixed outputs (T86)" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           python3 tests/fixed_outputs.py "$RUNNER_TEMP/fixed" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"

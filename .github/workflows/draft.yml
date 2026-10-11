@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           npm ci
-          python3 -m pip install --quiet numpy
+          python3 -m pip install --quiet numpy jinja2
           make kernels
           mkdir -p prepared
           for id in ${{ matrix.small }} ${{ matrix.large }}; do
