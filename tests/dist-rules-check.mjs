@@ -66,6 +66,8 @@ const family = familyOf(coi);
   wrong("an old built file", { "_astro/simdkernel_plain.DfCGpm7G.wasm": "older" }, /^_astro\/simdkernel_plain\.DfCGpm7G\.wasm is not src\/runtime\/built\/simdkernel_plain\.wasm byte for byte/);
   // (simdkernel is no beginning of simdkernel_plain's name: each built file is looked for under its whole name)
   wrong("a built file's name that begins another's", { "_astro/simdkernel.DtNlNAG4.so": null, "_astro/simdkernel_x.DtNlNAG4.so": "so" }, /^src\/runtime\/built\/simdkernel\.so: no file of _astro\//);
+  // (a built file named twice, with other bytes the second time: two files, and the two are one family besides)
+  wrong("a built file twice", { "_astro/simdkernel_plain.AAAAAAAA.wasm": "older" }, /^_astro\/simdkernel_plain\.AAAAAAAA\.wasm and _astro\/simdkernel_plain\.DfCGpm7G\.wasm: one family/, /^src\/runtime\/built\/simdkernel_plain\.wasm: 2 files of _astro\/ \(/);
   wrong("a runtime file at the root", { "worker.js": "as it was" }, /^dist\/worker\.js: nothing asks for it there \(the root holds _astro, index\.html, benchmark, coi\.js, coi-test, models\)/);
   wrong("an archive at the root", { "engine.zip": "zip" }, /^dist\/engine\.zip: nothing asks for it there/);
   wrong("an emptied folder at the root", { "worker/.keep": "" }, /^dist\/worker: nothing asks for it there/);
@@ -73,7 +75,7 @@ const family = familyOf(coi);
   wrong("no benchmark", { "benchmark/index.html": null }, /^dist\/benchmark\/index\.html is not there$/);
   assert.deepEqual(ROOT, ["_astro", "index.html", "benchmark", "coi.js", "coi-test", "models"]);
   assert.throws(() => distSaid(path.join(scratch, "right", "nothing"), treeOf(path.join(scratch, "right"), { ...RULE })), /no _astro\/ in it: npm run build/);
-  ok("a bundled tree's build: right, and wrong in twelve ways, each said in a line of its own");
+  ok("a bundled tree's build: right, and wrong in thirteen ways, each said in a line of its own");
 
   // ---- a module as a build wrote it
   const dist = path.join(scratch, "right", "dist");
