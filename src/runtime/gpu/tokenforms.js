@@ -1,15 +1,12 @@
 // The forms of a token's layer checked on the model's own weights against JavaScript (T152), timed and chosen.
 // (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
 
-const { COPY_DST, MAP_READ, rowBytes, turnedAt, common, within, buffer, readBack, validated, pipelineOf } =
-  await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
-const { tablesOf } = await import(new URL(`weights.js${new URL(import.meta.url).search}`, import.meta.url));
-const { halfToFloat } = await import(new URL(`forms.js${new URL(import.meta.url).search}`, import.meta.url));
-const { grow, BLOCK_ROUNDS } = await import(new URL(`block.js${new URL(import.meta.url).search}`, import.meta.url));
-const { chooseTokenAttention } =
-  await import(new URL(`tokenattention.js${new URL(import.meta.url).search}`, import.meta.url));
-const { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } =
-  await import(new URL(`tokens.js${new URL(import.meta.url).search}`, import.meta.url));
+import { COPY_DST, MAP_READ, rowBytes, turnedAt, common, within, buffer, readBack, validated, pipelineOf } from "./device.js";
+import { tablesOf } from "./weights.js";
+import { halfToFloat } from "./forms.js";
+import { grow, BLOCK_ROUNDS } from "./block.js";
+import { chooseTokenAttention } from "./tokenattention.js";
+import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.js";
 
 // The forms of a token this device can make, compiled, checked and (where more than one is right) timed; the fastest
 // taken (m.gen.form), with what each came to (m.gen.forms) and its ms a step (m.gen.ms). plan.remembered.tokens: the

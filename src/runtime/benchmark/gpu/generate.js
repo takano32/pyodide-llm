@@ -1,9 +1,9 @@
 // The step "generate" (T151, T191): tokens generated on the GPU, the sampling too, read back each or once a submission, the
 // sampling alone, and the logits the sampling is measured and checked on.
 // (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
-const { shared, MODELS, PROMPT_MODEL, matrixBytes, gpu, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, fill,
-  floats, run, middle, interleaved, scoped } = await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
-const { EPS, layerShape, tokenForm, layerCodes, fusedLayer, compiled, ropeTable } = await import(new URL(`layerparts.js${new URL(import.meta.url).search}`, import.meta.url));
+import { shared, MODELS, PROMPT_MODEL, matrixBytes, gpu, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, fill,
+  floats, run, middle, interleaved, scoped } from "./device.js";
+import { EPS, layerShape, tokenForm, layerCodes, fusedLayer, compiled, ropeTable } from "./layerparts.js";
 
 // ---- T151: generated tokens on the GPU (shaders.js's EMBED, fusedMatVec and SAMPLE): a token a compute pass, the
 // sampler's state carried from one to the next on the GPU, and the ids read back once for the run: against reading

@@ -3,7 +3,7 @@
 // end, and buffers: made, written from the shared memory, read back, bound and dispatched.
 // (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
 
-const shaders = import(new URL(`../shaders.js${new URL(import.meta.url).search}`, import.meta.url));
+const shaders = import("../shaders.js");
 
 // GPUBufferUsage's values (the name itself is missing where there is no WebGPU)
 const STORAGE = 0x80, COPY_DST = 0x8, COPY_SRC = 0x4, MAP_READ = 0x1, UNIFORM = 0x40;

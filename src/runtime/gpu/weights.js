@@ -3,9 +3,8 @@
 // pieces (T155), the layout of a token's joined matrices (T152), and the widening of int6 (T155) with its check.
 // (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
 
-const { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, common, within, buffer, uniform, copyIn, readBack, validated,
-  pipelineOf, bind, dispatch } =
-  await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
+import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, common, within, buffer, uniform, copyIn, readBack, validated,
+  pipelineOf, bind, dispatch } from "./device.js";
 
 // every layer's matrices (values and scales, as the checkpoint holds them; T154: no w3 where there is no gate) and its
 // vectors: the weights of its two norms, and (T153) Qwen2's biases of q, k and v, Qwen3's norms of a head of q and of

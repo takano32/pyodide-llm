@@ -1,7 +1,7 @@
 // The step "prompt": the tokens of a prompt through the matrices all at once (T135's batched shader and T146's tiled ones).
 // (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
-const { shared, layerMatrices, SMALL_PER_LAYER, PROMPT_MODEL, matrixBytes, gpu, buffer, pipelinesFor, promptShaders,
-  kindOf, quantizer, matrix, vectors, destroyVectors, run, median, validated } = await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
+import { shared, layerMatrices, SMALL_PER_LAYER, PROMPT_MODEL, matrixBytes, gpu, buffer, pipelinesFor, promptShaders,
+  kindOf, quantizer, matrix, vectors, destroyVectors, run, median, validated } from "./device.js";
 
 // ---- a prompt: its tokens through the matrices of the CPU section's made-up model (two layers of Llama 3.2 1B's
 // width, no classifier: a prompt's tokens make no logits) all at once, count tokens at a time, with the small steps

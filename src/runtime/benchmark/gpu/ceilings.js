@@ -1,9 +1,9 @@
 // The steps "overhead" and "ceilings": what a token costs besides the weights, and the device's ceilings (T168): f32 and f16
 // multiply-adds, dot4I8Packed, reading the workgroup's memory and a storage buffer.
 // (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
-const { shared, MODELS, gpu, STORAGE, COPY_SRC, COPY_DST, MAP_READ, UNIFORM, buffer, fill, floats, pipelinesFor, run,
+import { shared, MODELS, gpu, STORAGE, COPY_SRC, COPY_DST, MAP_READ, UNIFORM, buffer, fill, floats, pipelinesFor, run,
   readBack, median, DISPATCH_MS, SUBMISSION_MS, CEILING_GROUPS, FIRST_LOOPS, MOST_LOOPS, MOST_DISPATCHES,
-  GLOBAL_BYTES, paired, scoped } = await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
+  GLOBAL_BYTES, paired, scoped } from "./device.js";
 
 // ---- what a token costs besides its weights: the dispatches of Llama 3.2 1B's token (seven matrices and seven small
 // steps a layer, 16 layers, and the classifier: about 240) doing nothing, a submission with and without waiting for

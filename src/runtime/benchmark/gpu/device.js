@@ -6,7 +6,7 @@
 // the WGSL, shared with the model's GPU worker (public/shaders.js, T135), from the same deployment as this file. Not
 // awaited here: a module worker's port opens at its first await, and a message that comes before onmessage is set is
 // lost (T109); every step awaits it instead
-const shaders = import(new URL(`../../shaders.js${new URL(import.meta.url).search}`, import.meta.url));
+const shaders = import("../../shaders.js");
 // T353: what the steps share and one of them sets (a module's `let` cannot be assigned from another module, and the
 // steps are the modules of gpu/): the fields were this file's `let`s of the same names
 const shared = {

@@ -2,8 +2,7 @@
 // and the matrices' tiled shaders (T146, T147), with how a matrix's pieces are bound and dispatched.
 // (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
 
-const { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } =
-  await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
+import { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
 
 // The right tiled shaders are timed together, in turn, on the model's first layer (its seven matrices by a whole block,
 // with the quantizations of a packed one): a submission of n passes of the layer and one of 2n, their difference the

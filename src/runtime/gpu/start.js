@@ -2,15 +2,11 @@
 // the checkpoint comes), start() (the weights, the forms chosen, "ready" or "unusable"), stop().
 // (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
 
-const { common, within, openDevice, describe, unusable, end } =
-  await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
-const { upload, uploadLayers, uploadRest, tablesOn } =
-  await import(new URL(`weights.js${new URL(import.meta.url).search}`, import.meta.url));
-const { chooseAttention, chooseMatrices } =
-  await import(new URL(`forms.js${new URL(import.meta.url).search}`, import.meta.url));
-const { prepare, bindLayers, grow, timeBlocks } =
-  await import(new URL(`block.js${new URL(import.meta.url).search}`, import.meta.url));
-const { chooseTokens } = await import(new URL(`tokenforms.js${new URL(import.meta.url).search}`, import.meta.url));
+import { common, within, openDevice, describe, unusable, end } from "./device.js";
+import { upload, uploadLayers, uploadRest, tablesOn } from "./weights.js";
+import { chooseAttention, chooseMatrices } from "./forms.js";
+import { prepare, bindLayers, grow, timeBlocks } from "./block.js";
+import { chooseTokens } from "./tokenforms.js";
 
 let starting = false;
 

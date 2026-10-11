@@ -4,7 +4,7 @@
 // A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
 // (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
-const { STEP } = await import(new URL(`common.js${new URL(import.meta.url).search}`, import.meta.url));
+import { STEP } from "./common.js";
 
 // T147: the attention of a prompt's tokens, llama.cpp's flash attention with tiles (flash_attn_tile.wgsl), where
 // T135's (one workgroup a head and token) wrote every score to memory and read it three times, and read the same keys

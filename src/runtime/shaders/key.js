@@ -4,12 +4,12 @@
 // A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
 // (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
-const { TERNARY_PACKED, promptForms } = await import(new URL(`prompt.js${new URL(import.meta.url).search}`, import.meta.url));
-const { QUANTIZE, WIDEN_SIX, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } = await import(new URL(`steps.js${new URL(import.meta.url).search}`, import.meta.url));
-const { flashTile, flashVec, flashVecReduce } = await import(new URL(`attention.js${new URL(import.meta.url).search}`, import.meta.url));
-const { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } = await import(new URL(`fused.js${new URL(import.meta.url).search}`, import.meta.url));
-const { EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS } = await import(new URL(`run.js${new URL(import.meta.url).search}`, import.meta.url));
-const { SAMPLE } = await import(new URL(`sample.js${new URL(import.meta.url).search}`, import.meta.url));
+import { TERNARY_PACKED, promptForms } from "./prompt.js";
+import { QUANTIZE, WIDEN_SIX, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "./steps.js";
+import { flashTile, flashVec, flashVecReduce } from "./attention.js";
+import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "./fused.js";
+import { EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS } from "./run.js";
+import { SAMPLE } from "./sample.js";
 
 // ---- T148: the key of what the page remembers of a device (the shaders it chose, T156: that the CPU was faster than a
 // model on the GPU alone): the adapter and the browser, and the text of the engine's shaders as a short hash (FNV-1a):

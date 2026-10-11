@@ -1,10 +1,10 @@
 // The step "check": the int8 shaders against JavaScript on small matrices (T134; T146: the tiled ones with their edges),
 // then the layer's check and the sampling's and the generation's (layercheck.js, generatecheck.js).
 // (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
-const { shared, gpu, MAP_READ, COPY_DST, buffer, floats, promptShaders, matVecShaders, kindOf, quantizer, matrix,
-  vectors, destroyVectors, run, argmaxOf, readBack, validated } = await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
-const { checkLayer, checkTokenAttentions } = await import(new URL(`layercheck.js${new URL(import.meta.url).search}`, import.meta.url));
-const { checkSampling, checkGeneration } = await import(new URL(`generatecheck.js${new URL(import.meta.url).search}`, import.meta.url));
+import { shared, gpu, MAP_READ, COPY_DST, buffer, floats, promptShaders, matVecShaders, kindOf, quantizer, matrix,
+  vectors, destroyVectors, run, argmaxOf, readBack, validated } from "./device.js";
+import { checkLayer, checkTokenAttentions } from "./layercheck.js";
+import { checkSampling, checkGeneration } from "./generatecheck.js";
 
 // ---- check: every shader against JavaScript: the two of a matrix × vector on 300 rows of 512 (rows that are not a
 // power of two), the batched one on the same with 11 tokens (a tile and a part of one), the tiled ones (checkTiled),

@@ -44,22 +44,17 @@
 // generate.js and generatecheck.js (generated tokens and the sampling, and their check), check.js (the step "check"),
 // ceilings.js and prompt.js. Each is asked for with this file's own ?v=<build>, as shaders.js is, so that all come from
 // one deployment, and all at once: one after another's end would add a round trip for each.
-const modules = Object.fromEntries(["device", "halves", "layerparts", "layercheck", "matvec", "layer", "generate",
-  "generatecheck", "check", "ceilings", "prompt"].map((name) =>
-  [name, import(new URL(`gpu/${name}.js${new URL(import.meta.url).search}`, import.meta.url))]));
 // a module worker's port opens at its first await, and a message that comes before onmessage is set is lost (T109):
 // what comes while the modules do is kept here, and handed to the steps in order at the end of this file
-const early = [];
-onmessage = (event) => early.push(event);
-const { load, info } = await modules.device;
-const { toHalf, fromHalf, heldHalves, halvesSaid, farthest } = await modules.halves;
-const { layerReference, layerCheckData, judgeLayer } = await modules.layercheck;
-const { bandwidth, token } = await modules.matvec;
-const { layer, layerSteps } = await modules.layer;
-const { generate } = await modules.generate;
-const { check } = await modules.check;
-const { overhead, ceilings } = await modules.ceilings;
-const { prompt } = await modules.prompt;
+import { load, info } from "./gpu/device.js";
+import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./gpu/halves.js";
+import { layerReference, layerCheckData, judgeLayer } from "./gpu/layercheck.js";
+import { bandwidth, token } from "./gpu/matvec.js";
+import { layer, layerSteps } from "./gpu/layer.js";
+import { generate } from "./gpu/generate.js";
+import { check } from "./gpu/check.js";
+import { overhead, ceilings } from "./gpu/ceilings.js";
+import { prompt } from "./gpu/prompt.js";
 
 // (these are pure: tests/gpu-choice-check.mjs holds the rounding of the cache to what a device may choose, and
 // tests/layer-check.mjs holds the layer check's judgement to devices that are JavaScript too)
@@ -107,4 +102,3 @@ onmessage = async ({ data }) => {
     postMessage({ step: data.step, error: String(error?.message ?? error) });
   }
 };
-for (const event of early.splice(0)) onmessage(event);

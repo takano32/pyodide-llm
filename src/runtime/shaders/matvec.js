@@ -5,7 +5,7 @@
 // A part of public/shaders.js, which is the window: everything outside public/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part asks for its neighbours with its own ?v=<build>
 // (GitHub Pages keeps a file for ten minutes: all must come from one deployment).
-const { sdp8ai } = await import(new URL(`prompt.js${new URL(import.meta.url).search}`, import.meta.url));
+import { sdp8ai } from "./prompt.js";
 
 // ---- T149: a matrix times one vector (a generated token's), in the forms of public implementations, for the GPU
 // section of /benchmark/ to measure beside WIDEN and PACKED (the model's GPU worker is to take the fastest on each

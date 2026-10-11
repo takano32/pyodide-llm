@@ -2,11 +2,10 @@
 // and values, the block itself as one submission with its keys and values read back, and what a whole block takes (T148).
 // (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
 
-const { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, common, within, buffer, uniform, validated, pipelineOf, bind,
-  dispatch } = await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
-const { tablesOf } = await import(new URL(`weights.js${new URL(import.meta.url).search}`, import.meta.url));
-const { productGroups, multiply } =
-  await import(new URL(`forms.js${new URL(import.meta.url).search}`, import.meta.url));
+import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, common, within, buffer, uniform, validated, pipelineOf, bind,
+  dispatch } from "./device.js";
+import { tablesOf } from "./weights.js";
+import { productGroups, multiply } from "./forms.js";
 
 // the pipelines of a layer's small steps and the buffers of a block's activations
 async function prepare(m) {

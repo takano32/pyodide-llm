@@ -2,10 +2,8 @@
 // JavaScript, timed and chosen, and their dispatches.
 // (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
 
-const { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } =
-  await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
-const { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } =
-  await import(new URL(`forms.js${new URL(import.meta.url).search}`, import.meta.url));
+import { STORAGE, COPY_DST, COPY_SRC, common, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
+import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.js";
 
 // ---- T224: the attention of a generated token. The candidates: llama.cpp's decode form (shaders.js's flashVec and
 // flashVecReduce: the positions split over nwg workgroups a head, then reduced), with subgroups where there are (and

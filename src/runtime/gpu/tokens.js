@@ -2,12 +2,10 @@
 // dispatches of a step, and a run of steps as one submission with its ids, state, keys and values read back.
 // (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
 
-const { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, turnedAt, within, buffer, uniform, copyIn, validated,
-  pipelineOf, bind, dispatch } =
-  await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
-const { tablesOf } = await import(new URL(`weights.js${new URL(import.meta.url).search}`, import.meta.url));
-const { attentionPasses } =
-  await import(new URL(`tokenattention.js${new URL(import.meta.url).search}`, import.meta.url));
+import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, turnedAt, within, buffer, uniform, copyIn, validated,
+  pipelineOf, bind, dispatch } from "./device.js";
+import { tablesOf } from "./weights.js";
+import { attentionPasses } from "./tokenattention.js";
 
 // ---- T152: tokens on the GPU. A step of the engine's generate() (the forward pass of the token fed, the sampling of
 // the next) as one compute pass of shaders.js's T151 run: EMBED of the state's token, every layer in a fused form, the

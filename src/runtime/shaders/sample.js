@@ -42,7 +42,7 @@
 // Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
 // an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
 // specific language governing permissions and limitations under the License.
-const { REPETITION_WINDOW, STATE, SAMPLING } = await import(new URL(`run.js${new URL(import.meta.url).search}`, import.meta.url));
+import { REPETITION_WINDOW, STATE, SAMPLING } from "./run.js";
 
 // What SAMPLE and the stages of the sampling in chunks (T191, stages.js) share: the constants, the workgroup's memory of
 // the reductions, and cumsum.wgsl's scan.

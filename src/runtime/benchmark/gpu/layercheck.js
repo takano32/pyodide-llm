@@ -1,10 +1,10 @@
 // The check of a layer (T175, T187, T225): the layer in JavaScript, what a form's keys, values and stream are held to, and
 // the attention of a token at several sizes and positions (T224).
 // (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
-const { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, buffer, floats, run, readBack, scoped } = await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
-const { toHalf, fromHalf, heldHalves, halvesSaid, farthest } = await import(new URL(`halves.js${new URL(import.meta.url).search}`, import.meta.url));
-const { layerShape, layerForms, hasSubgroupId, engineTiles, vecAttention, attentionSteps, layerCheck, compiled,
-  layerPipes, layerParts, layerAngles, layerState } = await import(new URL(`layerparts.js${new URL(import.meta.url).search}`, import.meta.url));
+import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, buffer, floats, run, readBack, scoped } from "./device.js";
+import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./halves.js";
+import { layerShape, layerForms, hasSubgroupId, engineTiles, vecAttention, attentionSteps, layerCheck, compiled,
+  layerPipes, layerParts, layerAngles, layerState } from "./layerparts.js";
 
 // T175: where a matrix of a layer takes its input (layerReference's inputs), in the order of the DP4A forms' quantized
 // vectors: the normed stream before q, k and v; the attention's output before o; the normed stream before gate and up;

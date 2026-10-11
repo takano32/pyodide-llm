@@ -1,12 +1,12 @@
 // The steps "layer" and "layer steps": ms a layer by every form (T150, T175), where the time of a layer goes (T202, T208),
 // its attention by the cache's length, and the whole layer by timestamps.
 // (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
-const { shared, MODELS, matrixBytes, gpu, STORAGE, COPY_DST, UNIFORM, COPY_SRC, buffer, floats, pipelinesFor, run,
-  readBack, validated, PAIRS, middle, interleaved, scoped } = await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
-const { toHalf } = await import(new URL(`halves.js${new URL(import.meta.url).search}`, import.meta.url));
-const { LAYER_POS, LAYER_MOST, layerShape, LAYER_KINDS, layerForms, hasSubgroupId, engineTiles, vecAttention,
-  attentionSteps, layerCheck, compiled, layerPipes, layerParts, MATRIX_KEYS } = await import(new URL(`layerparts.js${new URL(import.meta.url).search}`, import.meta.url));
-const { MATVEC_BYTES, MATVEC_MOST } = await import(new URL(`matvec.js${new URL(import.meta.url).search}`, import.meta.url));
+import { shared, MODELS, matrixBytes, gpu, STORAGE, COPY_DST, UNIFORM, COPY_SRC, buffer, floats, pipelinesFor, run,
+  readBack, validated, PAIRS, middle, interleaved, scoped } from "./device.js";
+import { toHalf } from "./halves.js";
+import { LAYER_POS, LAYER_MOST, layerShape, LAYER_KINDS, layerForms, hasSubgroupId, engineTiles, vecAttention,
+  attentionSteps, layerCheck, compiled, layerPipes, layerParts, MATRIX_KEYS } from "./layerparts.js";
+import { MATVEC_BYTES, MATVEC_MOST } from "./matvec.js";
 
 async function layer() {
   await gpu();

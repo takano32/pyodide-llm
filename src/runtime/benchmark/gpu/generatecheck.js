@@ -1,12 +1,12 @@
 // The check of the sampling and of the generated tokens (T151, T178, T195, T219): against the CPU's sampling in JavaScript,
 // with the logits that are not finite, and a few tokens against the layer in JavaScript.
 // (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
-const { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, floats, run, readBack, validated, scoped } = await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
-const { toHalf, heldHalves, halvesSaid, farthest } = await import(new URL(`halves.js${new URL(import.meta.url).search}`, import.meta.url));
-const { EPS, layerShape, tokenForm, layerAngles } = await import(new URL(`layerparts.js${new URL(import.meta.url).search}`, import.meta.url));
-const { INPUTS, dequantized, NORMED_SCALE_LINE, scaleLine, quantizedOff, layerReference } = await import(new URL(`layercheck.js${new URL(import.meta.url).search}`, import.meta.url));
-const { GENERATE_SETTINGS, GENERATE_CHECK, generationPipes, samplerPipes, samplerDispatches, generationParts,
-  generationRun, randomsOf, TIED_RUN, tiedLogits, sparseLogits, UNREFUSED, unfiniteLogits, madeUpLogits } = await import(new URL(`generate.js${new URL(import.meta.url).search}`, import.meta.url));
+import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, floats, run, readBack, validated, scoped } from "./device.js";
+import { toHalf, heldHalves, halvesSaid, farthest } from "./halves.js";
+import { EPS, layerShape, tokenForm, layerAngles } from "./layerparts.js";
+import { INPUTS, dequantized, NORMED_SCALE_LINE, scaleLine, quantizedOff, layerReference } from "./layercheck.js";
+import { GENERATE_SETTINGS, GENERATE_CHECK, generationPipes, samplerPipes, samplerDispatches, generationParts,
+  generationRun, randomsOf, TIED_RUN, tiedLogits, sparseLogits, UNREFUSED, unfiniteLogits, madeUpLogits } from "./generate.js";
 
 // The check of SAMPLE (T151) against the CPU's sampling in JavaScript (shaders.js's sampleLikeCpu and
 // penalizeLikeCpu, which tests/smoke.mjs holds to the kernel): the same logits, history and random number must pick

@@ -14,10 +14,10 @@
 // Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
 // an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
 // specific language governing permissions and limitations under the License.
-const { GROUP, STEP } = await import(new URL(`common.js${new URL(import.meta.url).search}`, import.meta.url));
-const { TERNARY_PACKED, sdp8ai } = await import(new URL(`prompt.js${new URL(import.meta.url).search}`, import.meta.url));
-const { SCALE_WORD } = await import(new URL(`steps.js${new URL(import.meta.url).search}`, import.meta.url));
-const { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } = await import(new URL(`matvec.js${new URL(import.meta.url).search}`, import.meta.url));
+import { GROUP, STEP } from "./common.js";
+import { TERNARY_PACKED, sdp8ai } from "./prompt.js";
+import { SCALE_WORD } from "./steps.js";
+import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.js";
 
 // ---- T150: a layer of a generated token in five dispatches where the separate steps take fourteen (RMSNorm; q, k and
 // v; RoPE and the cache; the attention; o; the residual add; RMSNorm; gate and up; SwiGLU; down; the residual add):

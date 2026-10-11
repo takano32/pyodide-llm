@@ -51,7 +51,7 @@
 // Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
 // an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
 // specific language governing permissions and limitations under the License.
-const { SAMPLER_COMMON, SAMPLER_DRAW } = await import(new URL(`sample.js${new URL(import.meta.url).search}`, import.meta.url));
+import { SAMPLER_COMMON, SAMPLER_DRAW } from "./sample.js";
 
 // ---- T191: the sampling in chunks of the vocabulary, many workgroups. SAMPLE's one workgroup reads the vocabulary on
 // one of the GPU's cores (the owner's Android: 5.9 ms of 11 a token of the CPU section's model, Llama 3's 128256

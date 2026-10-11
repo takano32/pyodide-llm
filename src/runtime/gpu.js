@@ -66,20 +66,15 @@
 // timed and chosen), requests.js (what forward.js waits for in the control area) and start.js (the model going onto
 // the GPU and leaving it). Each is asked for with this file's own ?v=<build>, as shaders.js is, so that all come from
 // one deployment, and all at once: one after another's end would add a round trip for each.
-const modules = Object.fromEntries(["device", "weights", "forms", "block", "tokenattention", "tokens", "tokenforms",
-  "requests", "start"].map((name) =>
-  [name, import(new URL(`gpu/${name}.js${new URL(import.meta.url).search}`, import.meta.url))]));
 // (the shaders too, as this file asked for them where it began before it was divided: gpu/device.js's own import of
 // them is this one, and does not wait for device.js to come. Where they do not come, device.js's says so, as a start's
 // "unusable")
-import(new URL(`shaders.js${new URL(import.meta.url).search}`, import.meta.url)).catch(() => {});
+import("./shaders.js").catch(() => {});
 // A module worker's port opens at its first await, and a message that comes before onmessage is set is lost (T109):
 // what comes while the modules do is kept here, and handed to the receiver in order at the end of this file
-const early = [];
-onmessage = (event) => early.push(event);
-const { heldFloats } = await modules.tokenforms;
-const { generate, prompt, keysOf } = await modules.requests;
-const { open, take, start, stop } = await modules.start;
+import { heldFloats } from "./gpu/tokenforms.js";
+import { generate, prompt, keysOf } from "./gpu/requests.js";
+import { open, take, start, stop } from "./gpu/start.js";
 
 // (pure: tests/gpu-choice-check.mjs holds the rounding of the keys and values to what a device may choose)
 export { heldFloats };
@@ -93,4 +88,3 @@ onmessage = ({ data }) => {
   else if (data.type === "keys") keysOf(data);
   else if (data.type === "stop") stop();
 };
-for (const event of early.splice(0)) onmessage(event);

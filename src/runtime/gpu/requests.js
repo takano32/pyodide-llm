@@ -2,12 +2,9 @@
 // keys and values (T210), each answered by serve().
 // (T352: a module of the model's GPU worker, public/gpu.js, which asks for it with its own ?v=<build>)
 
-const { common, copyIn, narrowIn } =
-  await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
-const { grow, block, keysOut, keysBack } =
-  await import(new URL(`block.js${new URL(import.meta.url).search}`, import.meta.url));
-const { tokenStep, runTokens } =
-  await import(new URL(`tokens.js${new URL(import.meta.url).search}`, import.meta.url));
+import { common, copyIn, narrowIn } from "./device.js";
+import { grow, block, keysOut, keysBack } from "./block.js";
+import { tokenStep, runTokens } from "./tokens.js";
 
 // A request for count steps from token at pos (public/forward/gpuside.js's generateMany): the keys and values of positions from to
 // pos - 1 up from forward.js's cache first (cache: its addresses of the keys and the values, its capacity and the

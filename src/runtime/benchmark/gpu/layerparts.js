@@ -2,8 +2,8 @@
 // shaders and pipelines, and the buffers and bind groups of one (layerParts()). The layer's check, its times and the
 // generated tokens all build on these.
 // (T353: a module of /benchmark/'s GPU worker, public/benchmark/gpu.js, which asks for it with its own ?v=<build>)
-const { shared, matrixBytes, STORAGE, COPY_DST, COPY_SRC, UNIFORM, buffer, fill, floats, pipelinesFor, validated } = await import(new URL(`device.js${new URL(import.meta.url).search}`, import.meta.url));
-const { toHalf } = await import(new URL(`halves.js${new URL(import.meta.url).search}`, import.meta.url));
+import { shared, matrixBytes, STORAGE, COPY_DST, COPY_SRC, UNIFORM, buffer, fill, floats, pipelinesFor, validated } from "./device.js";
+import { toHalf } from "./halves.js";
 
 // ---- T150: one layer of a generated token (Llama 3.2 1B's width, at position LAYER_POS), as its fourteen separate
 // steps (RMSNorm, q, k, v, RoPE and the cache, the attention, o, the residual add, RMSNorm, gate, up, SwiGLU, down, the

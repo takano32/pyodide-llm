@@ -18,30 +18,28 @@
 // likecpu.js (the CPU's sampling in JavaScript: no shader) and key.js (the device's key). Each is asked for with this
 // file's own ?v=<build>, so that all come from one deployment, and all at once: a part's own import of a neighbour then
 // finds it asked for already, where one after another's end would add a round trip for each.
-const modules = Object.fromEntries(["common", "bench", "prompt", "steps", "attention", "matvec", "fused", "run", "sample", "stages", "likecpu", "key"].map((name) =>
-  [name, import(new URL(`shaders/${name}.js${new URL(import.meta.url).search}`, import.meta.url))]));
-const { GROUP } = await modules.common;
-const { TILE, WIDEN, PACKED, BATCHED, ARGMAX, EMPTY, SMALL, CEILING_WORKGROUP, FMA_PER_LOOP, DOT4_PER_LOOP,
+import { GROUP } from "./shaders/common.js";
+import { TILE, WIDEN, PACKED, BATCHED, ARGMAX, EMPTY, SMALL, CEILING_WORKGROUP, FMA_PER_LOOP, DOT4_PER_LOOP,
   SHARED_PER_LOOP, GLOBAL_PER_THREAD, FMA_SHAPES, fmaCeiling, DOT4_CEILING, SHARED_CEILING,
-  GLOBAL_CEILING } = await modules.bench;
-const { REG_TILES, regTileShape, regTileBytes, DP4A_SHAPE, regTile, TFJS_SHAPE, tfjsTile, ternaryValues, dp4a,
-  promptForms, quantizedLikeCpu, TILED_LINE, tiledOff } = await modules.prompt;
-const { QUANTIZE, WIDEN_SIX_WORKGROUP, WIDEN_SIX, sixDispatch, sixValues, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE,
-  SWIGLU, GELU } = await modules.steps;
-const { FLASH_Q_TILE, flashShape, flashTile, FLASH_VEC_KV_TILE, FLASH_VEC_LANES, flashVecShape, flashVecSplits,
+  GLOBAL_CEILING } from "./shaders/bench.js";
+import { REG_TILES, regTileShape, regTileBytes, DP4A_SHAPE, regTile, TFJS_SHAPE, tfjsTile, ternaryValues, dp4a,
+  promptForms, quantizedLikeCpu, TILED_LINE, tiledOff } from "./shaders/prompt.js";
+import { QUANTIZE, WIDEN_SIX_WORKGROUP, WIDEN_SIX, sixDispatch, sixValues, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE,
+  SWIGLU, GELU } from "./shaders/steps.js";
+import { FLASH_Q_TILE, flashShape, flashTile, FLASH_VEC_KV_TILE, FLASH_VEC_LANES, flashVecShape, flashVecSplits,
   flashVecPartsBytes, flashVecParams, flashVec, flashVecReduce, TOKEN_ATTENTION_PAST, TOKEN_ATTENTION_STEEP,
-  TOKEN_ATTENTION_PEAK, tokenAttentionData, tokenAttentionOff } = await modules.attention;
-const { MUL_MAT_VEC_ROWS, ORT_MATVEC_ROWS, ORT_DP4A_MATVEC_ROWS, mulMatVec, ortMatVec,
-  ortDp4aMatVec } = await modules.matvec;
-const { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } = await modules.fused;
-const { REPETITION_WINDOW, STOPS_MOST, STATE_NOT_FINITE, STATE_BYTES, halvesOf, samplingState, SAMPLING_BYTES,
+  TOKEN_ATTENTION_PEAK, tokenAttentionData, tokenAttentionOff } from "./shaders/attention.js";
+import { MUL_MAT_VEC_ROWS, ORT_MATVEC_ROWS, ORT_DP4A_MATVEC_ROWS, mulMatVec, ortMatVec,
+  ortDp4aMatVec } from "./shaders/matvec.js";
+import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "./shaders/fused.js";
+import { REPETITION_WINDOW, STOPS_MOST, STATE_NOT_FINITE, STATE_BYTES, halvesOf, samplingState, SAMPLING_BYTES,
   samplingSettings, EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, OUTLIERS_MOST, TAKE_OUTLIERS, TERNARY_COLUMNS,
-  outliersOf } = await modules.run;
-const { SAMPLE } = await modules.sample;
-const { SAMPLE_CHUNK, sampleChunks, samplePartsBytes, SAMPLE_MAX, SAMPLE_SUM, SAMPLE_GATHER, SAMPLE_PICK,
-  SAMPLER_STAGES } = await modules.stages;
-const { penalizeLikeCpu, sampleLikeCpu, argmaxLikeCpu, finiteLikeCpu, walkLikeCpu } = await modules.likecpu;
-const { devicePromptForms, deviceKey } = await modules.key;
+  outliersOf } from "./shaders/run.js";
+import { SAMPLE } from "./shaders/sample.js";
+import { SAMPLE_CHUNK, sampleChunks, samplePartsBytes, SAMPLE_MAX, SAMPLE_SUM, SAMPLE_GATHER, SAMPLE_PICK,
+  SAMPLER_STAGES } from "./shaders/stages.js";
+import { penalizeLikeCpu, sampleLikeCpu, argmaxLikeCpu, finiteLikeCpu, walkLikeCpu } from "./shaders/likecpu.js";
+import { devicePromptForms, deviceKey } from "./shaders/key.js";
 export { GROUP, TILE, WIDEN, PACKED, BATCHED, REG_TILES, regTileShape, regTileBytes, DP4A_SHAPE, regTile, TFJS_SHAPE,
   tfjsTile, ternaryValues, dp4a, QUANTIZE, WIDEN_SIX_WORKGROUP, WIDEN_SIX, sixDispatch, sixValues, promptForms,
   quantizedLikeCpu, TILED_LINE, tiledOff, ARGMAX, EMPTY, SMALL, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, FLASH_Q_TILE,
