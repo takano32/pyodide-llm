@@ -2,7 +2,7 @@
 // page chooses, on the CPU only and on the GPU only (timePrompts, T184), and the threads' search run to its end (endSearch, T190).
 // A module of src/runtime/forward.js, which exports its names as before.
 
-import { BETTER } from "./choice.js";
+import { BETTER } from "./choice.ts";
 
 // T184: the model page's own path on /benchmark/ (worker/timing.ts's timedPaths, src/bench.js's pathTable): prompts of counts
 // tokens through forwardMany() at position 0 as the page chooses (T148), on the CPU only and on the GPU only

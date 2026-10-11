@@ -5,7 +5,7 @@
 
 import { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, COUNT, SIZE,
   FIRST } from "../jobs.ts";
-import { lowerMedian, BETTER } from "./choice.js";
+import { lowerMedian, BETTER } from "./choice.ts";
 
 // ---- the helper threads (stage 2): the control area at the start of a shared memory (jobs.js has its layout)
 // how many chunks per thread the rows of a matmul are cut into: whoever is free takes the next one, so a slow core

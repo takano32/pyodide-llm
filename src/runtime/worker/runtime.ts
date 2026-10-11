@@ -101,7 +101,7 @@ async function init(search: string) {
   // sampling, which works on Python's logits). Without them (no WebAssembly SIMD) the engine runs NumPy.
   try {
     // (T439: a module's failure has no status: this module's own address is asked for, and nothing waits for it)
-    forwardModule = await import("../forward.js").catch((error) => {
+    forwardModule = await import("../forward.ts").catch((error) => {
       void wentWithout(error, import.meta.url);
       throw error;
     }) as unknown as Forward;

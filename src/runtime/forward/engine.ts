@@ -4,12 +4,12 @@
 // what it reads of this function. A module of src/runtime/forward.js.
 
 import { BATCH, addressed, runner } from "../jobs.ts";
-import { GPU_BLOCK, GPU_TOKENS } from "./choice.js";
-import { growMemory, PAGE, align, layerSlots, attendingLayers, linearWidths, frameArrays, rotatedWidths, frameBytes, halfToFloat } from "./memory.js";
-import { GPU_ALONE } from "./alone.js";
-import { controlArea } from "./control.js";
-import { softwareThreads } from "./threads.js";
-import { gpuFit, gpuSide } from "./gpuside.js";
+import { GPU_BLOCK, GPU_TOKENS } from "./choice.ts";
+import { growMemory, PAGE, align, layerSlots, attendingLayers, linearWidths, frameArrays, rotatedWidths, frameBytes, halfToFloat } from "./memory.ts";
+import { GPU_ALONE } from "./alone.ts";
+import { controlArea } from "./control.ts";
+import { softwareThreads } from "./threads.ts";
+import { gpuFit, gpuSide } from "./gpuside.ts";
 
 // T120: no phase comes near this without progress (the longest token measured, Qwen2.5 7B's on CI, took 286 ms in
 // all): a count that has not moved for so long means a software thread the browser stopped in the middle of its chunk

@@ -5,9 +5,9 @@
 
 import { BATCH, GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } from "../jobs.ts";
 import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine,
-  STOPS_MOST } from "./choice.js";
-import { GPU_WEIGHT_BYTES, GPU_TERNARY_BYTES, cpuReadBytes, aloneVerdict, OUTSIDE_VOCABULARY } from "./alone.js";
-import { halfToFloat } from "./memory.js";
+  STOPS_MOST } from "./choice.ts";
+import { GPU_WEIGHT_BYTES, GPU_TERNARY_BYTES, cpuReadBytes, aloneVerdict, OUTSIDE_VOCABULARY } from "./alone.ts";
+import { halfToFloat } from "./memory.ts";
 
 // T135: the GPU's worker says something at least this often while it puts a model on the GPU: after every step, each
 // of which it gives up itself after 180 s (gpu.js's STEP_MS, T147: SwiftShader compiles a shader in up to 90 s). A

@@ -254,7 +254,7 @@ const LATER = {
     ['import("../shaders/key.js")', "quiet: without the device's key nothing kept of this device holds, and the GPU is weighed again"],
     ['built("engine.zip").then((res) => res.arrayBuffer());', "said"],
     ["built(name).catch((error) => void wentWithout(error));", "slower: without simdkernel.so the sampling runs on NumPy"],
-    ['import("../forward.js")', "slower: without forward.js the engine runs on NumPy"],
+    ['import("../forward.ts")', "slower: without forward.js the engine runs on NumPy"],
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => {", "slower: without the kernels the engine runs on NumPy, without the relaxed ones on the plain, " +
       "without the shared ones on one thread (the kernels of a 64-bit memory are not told: without them a model past 4 GB is refused)"],
   ],
@@ -268,9 +268,9 @@ const LATER = {
   ],
   "src/runtime/benchmark/sections.js": [
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));", "said"],
-    ['named(import.meta.url, () => import("../forward.js"))', "said"],
+    ['named(import.meta.url, () => import("../forward.ts"))', "said"],
     ['new Worker(new URL("../helper.ts", import.meta.url)', "said"],
-    ['named(import.meta.url, () => import("../forward.js"))', "said"],
+    ['named(import.meta.url, () => import("../forward.ts"))', "said"],
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));", "said"],
     ['new Worker(new URL("../benchmark/reader.js", import.meta.url)', "said"],
   ],

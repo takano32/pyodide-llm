@@ -4,7 +4,7 @@
 // A module of src/runtime/forward.js, which exports its names as before.
 
 import { CONTROL_BYTES, BATCH } from "../jobs.ts";
-import { GPU_BLOCK } from "./choice.js";
+import { GPU_BLOCK } from "./choice.ts";
 
 const PAGE = 65536;
 

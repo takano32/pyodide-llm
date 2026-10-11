@@ -3,7 +3,7 @@
 // the tables to the GPU's worker and the rest to this memory without the holes they leave (gpuOnlyWeights, gpuOnlyPlan).
 // A module of src/runtime/forward.js, which exports its names as before.
 
-import { BETTER } from "./choice.js";
+import { BETTER } from "./choice.ts";
 
 // ---- T156: a model on the GPU alone. Where the layers could not be held twice (in this memory and on the GPU), the
 // worker decides before a byte comes that the GPU alone takes them (the owner, 2026-09-27: "大きいモデルは最初から GPU

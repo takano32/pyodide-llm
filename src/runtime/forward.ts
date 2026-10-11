@@ -18,13 +18,13 @@
 // one file (T367.3).
 import { BATCH } from "./jobs.ts";
 export { BATCH };
-import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine } from "./forward/choice.js";
-import { PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch } from "./forward/paths.js";
-import { memory64, footprint, keysInHalf, needsWide, pastWide, automaticDtype, growMemory, weightsMemory } from "./forward/memory.js";
+import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine } from "./forward/choice.ts";
+import { PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch } from "./forward/paths.ts";
+import { memory64, footprint, keysInHalf, needsWide, pastWide, automaticDtype, growMemory, weightsMemory } from "./forward/memory.ts";
 import { GPU_WEIGHT_BYTES, GPU_TERNARY_BYTES, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf,
   USAGE_UNKNOWN, cpuReadBytes, aloneVerdict, aloneHolds, OUTSIDE_VOCABULARY, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan,
-  GPU_ALONE } from "./forward/alone.js";
-import { createForward } from "./forward/engine.js";
+  GPU_ALONE } from "./forward/alone.ts";
+import { createForward } from "./forward/engine.ts";
 export { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine,
   PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch, memory64, footprint, keysInHalf, GPU_WEIGHT_BYTES,
   GPU_TERNARY_BYTES, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf, USAGE_UNKNOWN, cpuReadBytes,

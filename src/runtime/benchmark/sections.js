@@ -51,7 +51,7 @@ async function kernelsOf(forward, kind) {
 }
 
 async function device() {
-  const forward = await named(import.meta.url, () => import("../forward.js"));
+  const forward = await named(import.meta.url, () => import("../forward.ts"));
   const plain = await kernelsOf(forward, "plain");
   const found = {
     crossOriginIsolated: self.crossOriginIsolated,
@@ -152,7 +152,7 @@ const spawn = (data) => new Promise((resolve, reject) => {
 });
 
 async function cpu(counts = [1, 2, 4]) {
-  const forward = await named(import.meta.url, () => import("../forward.js"));
+  const forward = await named(import.meta.url, () => import("../forward.ts"));
   const shared = self.crossOriginIsolated && typeof SharedArrayBuffer !== "undefined";
   const kernels = shared ? await kernelsOf(forward, "shared") : await kernelsOf(forward, "plain");
   if (!kernels) return { none: "no WebAssembly SIMD in this browser: the model page runs on NumPy here" };

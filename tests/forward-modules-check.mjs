@@ -67,9 +67,9 @@ const membersOf = (object) => {
   }
   return members;
 };
-const PARTS = { controlArea: "forward/control.js", softwareThreads: "forward/threads.js", gpuFit: "forward/gpuside.js", gpuSide: "forward/gpuside.js" };
+const PARTS = { controlArea: "forward/control.ts", softwareThreads: "forward/threads.ts", gpuFit: "forward/gpuside.ts", gpuSide: "forward/gpuside.ts" };
 const objects = new Map();  // the name a part's object has in the engine -> its members
-const create = functionOf("forward/engine.js", "createForward");
+const create = functionOf("forward/engine.ts", "createForward");
 let handed = 0;
 const calls = [], literals = new Map();  // T378.2: each part's call, and the objects createForward() makes by name
 walk(create, (node) => {
