@@ -2364,7 +2364,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - 決めること: (a) 今の形のまま、台帳に「T374.4 の前後の数字は並べられない」と書く（取りまとめの勧め: ページの `?hf=` と同じになった）、(b) 呼ぶ所に `--entry` を渡す、(c) `listed()` の答え手に 1 行足して前の動きに戻す。
 - `int4.yml` と `draft.yml` は numpy だけを入れるので jinja2 が無く、自前の書式の読み手が走る（開発機と options が違いうる）: 一緒に見る。
 
-### T427 [整理][変換] フォルダの「ファイルが無い」の文をフォルダの言葉に — 状態: 反映済み（本線 02f066b、デプロイ run 38108207751。2026-10-11、取りまとめ（Opus）が直に実装。別のレビューは省いた。訳: 文 1 つと、その文を持つ試験 3 か所だけ。手元で `worker-conduct-check`（15）・`worker-fetches-check`（30）・`test_conduct.py` と fuzz（139 件）が通る。CI を省いた。訳: 同じ試験が手元で踏む。前の状態: 未着手（2026-10-11、持ち主が文面を承認「オススメでよさそう」。T367.1 の後に。規模 小）
+### T427 [整理][変換] フォルダの「ファイルが無い」の文をフォルダの言葉に — 状態: 完了（本線 02f066b、デプロイ run 38108207751、本番 run 38108511453: Chromium で tiny-lm とフォルダの変換 `hf` が通る。2026-10-11、取りまとめ（Opus）が直に実装。別のレビューは省いた。訳: 文 1 つと、その文を持つ試験 3 か所だけ。手元で `worker-conduct-check`（15）・`worker-fetches-check`（30）・`test_conduct.py` と fuzz（139 件）が通る。CI を省いた。訳: 同じ試験が手元で踏む。前の状態: 未着手（2026-10-11、持ち主が文面を承認「オススメでよさそう」。T367.1 の後に。規模 小）
 - フォルダの答え手（`public/worker/conduct.js` の `fromFolder()` の `missing`）が自分の文を言う: 「The folder has no <名前>, which the model needs.」。輪の文「The conversion needs <名前>, which is not there.」は、文を持たない答え手のために残る（いまは誰にも出ない）。
 - 同じ日に決まったこと: バグのときだけ出る 2 つの文（「The conduct of the conversion ended without a word.」「The conduct of the conversion asked for <種類>, which nothing here answers.」）はそのまま。T410（フォルダから分割された safetensors と .gguf を開く）は広げずに積んだまま。
 - 確かめ: `tests/worker-conduct-check.mjs` と `worker-fetches-check.mjs` の fixture（フォルダの index の場合の `ended`）。ページに届く文が変わるのでデプロイの後に手元の Chrome の `e2e.mjs hf chrome` を 1 回。
