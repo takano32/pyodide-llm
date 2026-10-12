@@ -27,6 +27,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { parse } from "@babel/parser";
 import { windowed } from "./imports.mjs";
 import { treeOf } from "./tree.mjs";
 import { namesOf } from "./worker-modules-check.mjs";
@@ -271,6 +272,26 @@ for (const [record, fields] of Object.entries(fieldsOf)) {
 assert.deepEqual([...base].filter((field) => !reads.base.has(field)), [], `fields ${OWNER} declares of the model's record that nothing reads`);
 console.log(`gpu-modules-check: the model's record: ${base.size} fields of gpu/device.js's and ${Object.entries(fieldsOf).map(([record, fields]) => `${fields.size} of m.${record}`).join(", ")}, ` +
   `each set by its owner alone and read by a name it declares (${uses} uses)`);
+
+// ---- T368.6: the worker is TypeScript, and tsc holds a message it posts to the type where the message says which:
+// postMessage({ … } satisfies FromGpu). The worker's own postMessage() takes anything, so a message without that is
+// held by nothing but its keys (tests/plan-keys-check.mjs): every one says it. (The sources as they are written here:
+// the types blanked, as everywhere else in this check, say nothing of it.)
+if (END === ".ts") {
+  let said = 0;
+  for (const name of files.keys()) {
+    const typedProgram = parse(fs.readFileSync(tree.runtime(name), "utf8"), { sourceType: "module", plugins: ["typescript"] }).program;
+    walk(typedProgram, (node) => {
+      if (node.type !== "CallExpression" || node.callee.type !== "Identifier" || node.callee.name !== "postMessage") return;
+      const [message] = node.arguments;
+      assert.ok(message?.type === "TSSatisfiesExpression" && message.typeAnnotation.typeName?.name === "FromGpu",
+        `${name}, line ${node.loc.start.line}: a message is posted without \`satisfies FromGpu\`: nothing holds its values to what forward.ts reads`);
+      said += 1;
+    });
+  }
+  assert.ok(said >= 5, `${said} messages posted were found, fewer than FromGpu's 5 kinds`);
+  console.log(`gpu-modules-check: the ${said} messages the worker posts each satisfy contracts/gpu/protocol.ts's FromGpu`);
+}
 
 // ---- the window in Node: it links, and what its receiver is given
 const handlers = [], posted = [];
