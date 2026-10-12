@@ -14,7 +14,8 @@
 //                          make a global nothing reads, without a word)
 //   fresh(route)           forgets the requests and the messages; route(url, init, n) answers the n-th request of that
 //                          URL (0 first) with a Response, a promise of one, or "hang" (no answer until it is aborted)
-//   requests, messages     every request ({ url, at, signal, range, method }) and every postMessage(), in order
+//   requests, messages     every request ({ url, at, signal, range, method, init }: tests/fakes/fetch.mjs) and every
+//                          postMessage(), in order
 //   body(from, to, how)    a stream of the made-up file's bytes [from, to), bytesOf(from, to) those bytes
 //   clock, sleep(ms)       the worker's clock: a hundred times as fast as the real one (30 seconds of the worker's are
 //                          0.3 s here), or with { told: true } one that stands still but for sleep(ms), which moves it
@@ -26,6 +27,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import vm from "node:vm";
+import { abortError, madeUpNetwork } from "./fakes/fetch.mjs";
 import { runWorker } from "./worker-source.mjs";
 import { treeOf } from "./tree.mjs";
 
@@ -77,7 +79,6 @@ export function workerHarness({ told = false, gpu = false, root = siteRoot() } =
     for (let i = 0; i < bytes.length; i++) bytes[i] = Math.imul(from + i, 2654435761) >>> 24;
     return bytes;
   }
-  const abortError = (signal) => signal.reason ?? new DOMException("aborted", "AbortError");
 
   // a body of the file's bytes [from, to), chunk by chunk, each after delay ms of the worker's; breakAt: it breaks there;
   // head: the bytes that begin it instead of the made-up ones (a header); cancelled(): told when its reader lets go of it
@@ -102,22 +103,9 @@ export function workerHarness({ told = false, gpu = false, root = siteRoot() } =
     }, { highWaterMark: 0 });
   }
 
-  // the made-up network: route(url, init, n) answers the n-th request of that URL (0 first) with a Response, a promise of
-  // one, or "hang" (no answer until the request is aborted). Every request is written down.
-  const requests = [];
-  let route = () => new Response("", { status: 404 });
-  function fetchStandIn(input, init = {}) {
-    const url = String(input?.url ?? input);
-    const n = requests.filter((r) => r.url === url).length;
-    const request = { url, at: clock.now(), signal: init.signal, range: init.headers?.Range, method: init.method ?? "GET" };
-    requests.push(request);
-    return new Promise((resolve, reject) => {
-      const signal = init.signal;
-      if (signal?.aborted) return reject(abortError(signal));
-      signal?.addEventListener("abort", () => reject(abortError(signal)), { once: true });
-      Promise.resolve(route(url, init, n)).then((answer) => (answer === "hang" ? undefined : resolve(answer)), reject);
-    });
-  }
+  // the made-up network (tests/fakes/fetch.mjs): route(url, init, n) answers the n-th request of that URL (0 first) with a
+  // Response, a promise of one, or "hang" (no answer until the request is aborted). Every request is written down.
+  const { fetch: fetchStandIn, requests, answers } = madeUpNetwork({ now: clock.now });
 
   // worker.js and its modules (T350: tests/worker-source.mjs makes scripts of them) in a vm context whose global is its
   // self, as in a worker
@@ -157,9 +145,8 @@ export function workerHarness({ told = false, gpu = false, root = siteRoot() } =
     }
   }
   const fresh = (routing) => {
-    requests.length = 0;
     messages.length = 0;
-    route = routing;
+    answers(routing);
   };
   const partOf = (url) => Number(/\.(\d{3})$/.exec(url)?.[1]);
 
