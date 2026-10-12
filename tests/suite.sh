@@ -113,7 +113,8 @@ page_modules() {
   node tests/forward-modules-check.mjs
   # T357: the plan Python hands forward.js and the plan forward.js hands the GPU's worker, each held to both of its ends:
   # a key written and read nowhere, or read and never written (undefined without a word), for one made-up model of every
-  # layout and dtype (under a second)
+  # layout and dtype (under a second); T375.2: and the one plan written by hand, /benchmark/'s made-up
+  # model's (src/runtime/benchmark/madeup.ts), held to the plan Python makes for the same header
   node tests/plan-keys-check.mjs
   # T355: the names the model page's script (src/pages/index.astro and src/page/) and /benchmark/'s use: declared,
   # imported, or a page's globals (the .astro scripts are in no program of tsc's, the build does not say a name that
@@ -151,6 +152,11 @@ page_modules() {
   # T450: an engine on the GPU alone made in Node (kernels that do nothing, the GPU's stand-in): it starts no software
   # thread whatever is asked, its blocks and steps go to the GPU, and a token on the CPU loses it (under two seconds)
   node tests/gpu-alone-check.mjs
+  # T375.2: forward.ts reads what a model's layers are from the facts of Python's plan and from no architecture's name:
+  # its createForward() on the kernels against the reference in NumPy (the native Python), for small float32 models of
+  # the five architectures and of three whose facts are no architecture's pair (RMSNorms with GPT-2's FFN, LayerNorms
+  # with a gated one, a Llama RoPE turns no layer of); and a plan without its layers' facts is refused (under a second)
+  node tests/plan-facts-check.mjs
 }
 part "unit tests of the page's modules" page_modules
 

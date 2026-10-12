@@ -1,0 +1,107 @@
+# plan_facts.py (T375.2)
+# Small made-up models whose architecture is a record of facts (engine/layout.py's LAYOUTS), each as what an engine
+# outside Python is handed (the checkpoint and the plan: engine/plan.py's forward_plan(), as Llama(external=) makes it)
+# and what the reference in NumPy answers for a few tokens. tests/plan-facts-check.mjs runs forward.ts on them.
+#   python tests/plan_facts.py <the root of a tree> <a folder to write into>     -> the cases, as JSON; the files in the folder
+# Beside the five architectures there are, three whose facts are no architecture's pair: every one of the table has
+# LayerNorms with GPT-2's FFN or RMSNorms with a gated one, so that an engine that read one fact for the other, or
+# the name, would answer right for all five. Their names are none an engine outside Python has heard of.
+import json
+import os
+import struct
+import sys
+
+import numpy as np
+
+TOKENS = [5, 17, 3, 250, 9, 9, 41, 2, 300, 77]
+# (a linear-attention layer's numbers: such that a frame sized by its key heads in place of its value heads is a line
+# of the cache shorter, and the next token's frame begins inside it)
+LINEAR = {"every": 2, "key_heads": 3, "value_heads": 9, "key_dim": 16, "value_dim": 16, "conv": 4}
+# (dim, hidden, layers, heads, kv heads, vocab, context): a negative vocabulary is a classifier of its own
+GROUPED, FILLED = [64, 128, 4, 4, 2, 320, 48], [64, 128, 3, 4, 4, -320, 48]
+
+
+class Handed(Exception):
+    """The plan is in hand: nothing of the engine is built."""
+
+
+class External:
+    def __init__(self, checkpoint):
+        self.checkpoint, self.size, self.plan = checkpoint, len(checkpoint), None
+
+    def read(self, offset, length):
+        return self.checkpoint[offset:offset + length]
+
+    def start(self, plan):
+        self.plan = plan
+        raise Handed()
+
+
+def cases(L):
+    from engine.layout import gpt2
+    layouts = L.LAYOUTS
+    # RMSNorms with GPT-2's FFN (the file's biases of the norms are read by nobody), and LayerNorms with a gated FFN:
+    # a GPT-2's rows and a third matrix. Both with GPT-NeoX's parallel residual, by which the FFN's norm, of either
+    # kind, reads the layer's input
+    layouts["rms and gelu"] = layouts["gpt2"]._replace(layer_norm=False)
+    gated = lambda d: [*gpt2(d), d.stack("w3", L.MATRIX, L.EVERY, d.hidden_dim, d.dim)]
+    layouts["layer norms and a gate"] = layouts["neox"]._replace(rows=gated, gated_ffn=True)
+    # and a Llama that RoPE turns no layer of, which is no GPT-2 in anything else
+    # (T237, a rotated basis: signs for every width the model's matrices read, every seventh of them minus)
+    def rotated(header, form):
+        q_dim = header[3] * (form.get("head_dim") or header[0] // header[3])
+        widths = L.rotated_widths(header[0], q_dim, header[1], L.linear_form(form.get("linear")))
+        return {**form, "rotated": {"block": 8, "signs": {str(width): L.sign_bits(np.where(np.arange(width) % 7 == 3, -1.0, 1.0)) for width in widths}}}
+    qwen35 = {"arch": "qwen35", "head_dim": 16, "linear": LINEAR}
+    return [
+        ("llama", GROUPED, {}, {}),
+        ("llama, RoPE leaving two layers alone", GROUPED, {}, {"unturned": (1, 3)}),
+        ("qwen2 and qwen3", GROUPED, {"bias": True, "qk_norm": True, "head_dim": 32}, {"rms_norm_eps": 1e-6}),
+        ("gpt2", FILLED, {"arch": "gpt2"}, {}),
+        ("neox", FILLED, {"arch": "neox"}, {"rotary": 4, "parallel_residual": True}),
+        ("qwen35", GROUPED, qwen35, {"rotary": 4}),
+        ("lfm2", GROUPED, {"arch": "lfm2", "qk_norm": True, "convolution": {"layers": "ccac", "taps": 3}}, {}),
+        ("llama, in a rotated basis", GROUPED, rotated(GROUPED, {"head_dim": 32}), {}),
+        ("qwen35, in a rotated basis", GROUPED, rotated(GROUPED, qwen35), {"rotary": 4}),
+        ("rms and gelu", FILLED, {"arch": "rms and gelu"}, {"parallel_residual": True}),
+        ("layer norms and a gate", FILLED, {"arch": "layer norms and a gate"}, {"rotary": 4, "parallel_residual": True}),
+        ("llama, RoPE leaving every layer alone", GROUPED, {}, {"unturned": (0, 1, 2, 3)}),
+    ]
+
+
+def made_up(L, header, form, seed):
+    """A float32 checkpoint of this header and form: small random numbers for every tensor."""
+    size = L.file_size(L.tensor_rows(header, form), "float32") - 28
+    values = np.random.default_rng(seed).uniform(-0.2, 0.2, size // 4).astype(np.float32)
+    return struct.pack("<7i", *header) + values.tobytes()
+
+
+if __name__ == "__main__":
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from conftest import pack_tokenizer, tiny_vocab
+    from tree import python_folder
+    sys.path.insert(0, python_folder(sys.argv[1]))
+    import llama2_numpy as L
+
+    folder, said = sys.argv[2], []
+    tokenizer = pack_tokenizer(tiny_vocab(320))
+    for index, (name, header, form, options) in enumerate(cases(L)):
+        checkpoint = made_up(L, header, form, 6 + index)
+        external = External(checkpoint)
+        try:
+            L.Llama(None, b"", dtype="float32", external=external, **form, **options)
+        except Handed:
+            pass
+        plan = dict(external.plan)
+        derived = {}
+        for table, value in plan["derived"].items():
+            derived[table] = f"{index}.{table}"
+            open(os.path.join(folder, derived[table]), "wb").write(bytes(value))
+        plan["derived"] = derived
+        model = L.Llama(checkpoint, tokenizer, dtype="float32", **form, **options)
+        logits = np.stack([model.forward(token, pos) for pos, token in enumerate(TOKENS)]).astype(np.float32)
+        open(os.path.join(folder, f"{index}.bin"), "wb").write(checkpoint)
+        open(os.path.join(folder, f"{index}.logits"), "wb").write(logits.tobytes())
+        said.append({"name": name, "plan": plan, "tokens": TOKENS, "checkpoint": f"{index}.bin", "logits": f"{index}.logits",
+                     "facts": {"layer_norm": model.layer_norm, "gated_ffn": model.gated_ffn}})
+    print(json.dumps(said))

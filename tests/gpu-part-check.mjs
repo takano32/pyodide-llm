@@ -196,6 +196,10 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual(plan.tokens, { classifier: { rows: 100, n: 8, six: false, ternary: false, at: [44000, 44500] }, embedding: null, final: 50200, finalBias: 0, positions: 0,
     outliers: false, channels: [], ids: IDS, most: GPU_TOKENS });
   assert.deepEqual([plan.cos, plan.sin, plan.remembered, plan.force], [51000, 52000, { key: "kept" }, {}]);
+  // T375.2: how many values of a head RoPE turns is a fact of the layers (does it turn any) and the model's rotary: all
+  // of a head, a part of it, none where no layer is turned (a GPT-2), whatever the rotary says
+  const turnedOf = (shape) => made({ shape }).beside.posted[0].plan.turned;
+  assert.deepEqual([turnedOf({ rotary: 2 }), turnedOf({ rotary: 4 }), turnedOf({ turning: false }), turnedOf({ turning: false, rotary: 2 })], [2, 4, 0, 0]);
   feed(part, 40);
   assert.deepEqual([sides(beside), part.promptBlock(), part.tokenBlock(), part.cpuStepBegan(true), part.ready], [[40, 0], BATCH, 0, false, undefined], "getting ready: the CPU's, and no step timed");
   beside.worker.say({ type: "progress" });
