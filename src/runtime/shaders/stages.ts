@@ -89,8 +89,8 @@ import { SAMPLER_COMMON, SAMPLER_DRAW } from "./sample.ts";
 // step as SAMPLE does (the stages between run on such logits harmlessly: a NaN is under any floor, +inf over it, and
 // what they count and gather stays within the vocabulary).
 export const SAMPLE_CHUNK = 1024;
-export const sampleChunks = (vocab) => Math.ceil(vocab / SAMPLE_CHUNK);
-export const samplePartsBytes = (vocab) => 8 * (1 + 3 * sampleChunks(vocab));
+export const sampleChunks = (vocab: number) => Math.ceil(vocab / SAMPLE_CHUNK);
+export const samplePartsBytes = (vocab: number) => 8 * (1 + 3 * sampleChunks(vocab));
 const CHUNKS_COMMON = /* wgsl */ `
 ${SAMPLER_COMMON}
 const CHUNK = ${SAMPLE_CHUNK}u;

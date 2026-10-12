@@ -171,13 +171,13 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) count: vec3u,
   values[out + 7u] = widened(low.w >> 4u, top.y, 6u); // 28..31
 }`;
 /** the workgroups [x, y] of WIDEN_SIX for groups: a second dimension past the device's most of one */
-export const sixDispatch = (groups, most) => {
+export const sixDispatch = (groups: number, most: number): [number, number] => {
   const workgroups = Math.ceil(groups / WIDEN_SIX_WORKGROUP), x = Math.min(workgroups, most);
   return [Math.max(1, x), Math.ceil(workgroups / Math.max(1, x))];
 };
 /** JavaScript's widening (the check's answer): the int8 values of groups of 24 packed bytes (a Uint8Array), as
  * llama2_numpy.unpack6 and src/runtime/forward/engine.js's weightAt read them */
-export function sixValues(packed) {
+export function sixValues(packed: ArrayLike<number>) {
   const groups = packed.length / 24, out = new Int8Array(groups * 32);
   for (let g = 0; g < groups; g++) {
     for (let j = 0; j < 32; j++) {
@@ -221,7 +221,7 @@ export function sixValues(packed) {
  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-const rmsNorm = (inPlace) => /* wgsl */ `
+const rmsNorm = (inPlace: boolean) => /* wgsl */ `
 struct Norm { size: u32, at: u32, eps: f32, first: u32 }
 ${STEP}
 @group(0) @binding(0) var<storage, ${inPlace ? "read_write" : "read"}> x: array<f32>;

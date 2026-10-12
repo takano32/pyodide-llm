@@ -109,7 +109,7 @@ export const STATE_BYTES = 32 + 4 * REPETITION_WINDOW;
  * Uint16Array as long as floats. Infinities and NaN stay so, what is past float16's largest becomes an infinity, and
  * what is below half its least subnormal 0. */
 const floatWord = new Float32Array(1), floatBits = new Uint32Array(floatWord.buffer);
-export function halvesOf(floats, out) {
+export function halvesOf(floats: ArrayLike<number>, out: Uint16Array) {
   for (let i = 0; i < floats.length; i++) {
     floatWord[0] = floats[i];
     const bits = floatBits[0], sign = (bits >>> 16) & 0x8000, exponent = (bits >>> 23) & 0xff, fraction = bits & 0x7fffff;
@@ -141,7 +141,7 @@ export function halvesOf(floats, out) {
 /** The state a run starts from: the token it feeds first, at pos, and the history before it (BOS, the prompt and
  * the tokens sampled before, the fed token last: the penalty's window is its latest REPETITION_WINDOW). length (T152:
  * the engine hands the latest of a longer history over): how long the history is, of which history is the end. */
-export function samplingState({ token, pos, history, length = history.length }) {
+export function samplingState({ token, pos, history, length = history.length }: { token: number; pos: number; history: ArrayLike<number>; length?: number }) {
   const words = new Uint32Array(STATE_BYTES / 4), first = length - history.length;
   words.set([1, pos, 0, 0, token, 0, length, 0]);
   for (let at = Math.max(first, length - REPETITION_WINDOW); at < length; at++) {
@@ -158,7 +158,7 @@ const SAMPLING = /* wgsl */ `struct Sampling {
 export const SAMPLING_BYTES = 32 + 4 * STOPS_MOST;
 /** Sampling's bytes: the engine's settings (temperature 0: the most likely token; top-p outside (0, 1): no nucleus;
  * penalty 1: none) and its stop tokens. */
-export function samplingSettings({ vocab, temperature, topp, penalty = 1, stops = [] }) {
+export function samplingSettings({ vocab, temperature, topp, penalty = 1, stops = [] }: { vocab: number; temperature: number; topp: number; penalty?: number; stops?: ArrayLike<number> }) {
   if (stops.length > STOPS_MOST) throw new Error(`more than ${STOPS_MOST} stop tokens`);
   const bytes = new ArrayBuffer(SAMPLING_BYTES), words = new Uint32Array(bytes), values = new Float32Array(bytes);
   words.set([vocab, stops.length]);
@@ -237,7 +237,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
 // two bits and a scale covers 128 weights; a value is its code less one times the scale, one float32 product, as the
 // CPU's embed() has it (src/runtime/forward/engine.ts's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
 // a workgroup a token of ids; else EMBED's, the state's token). Their loop is llama.cpp's get_rows, as theirs
-const embedTernary = (block) => /* wgsl */ `${block ? "" : STATE}
+const embedTernary = (block: boolean) => /* wgsl */ `${block ? "" : STATE}
 @group(0) @binding(0) var<storage, read> table: array<u32>;
 @group(0) @binding(1) var<storage, read> scales: array<f32>;
 @group(0) @binding(2) var<storage, read> ${block ? "ids: array<u32>" : "state: State"};
@@ -326,7 +326,7 @@ fn main(@builtin(workgroup_id) id: vec3<u32>, @builtin(num_workgroups) count: ve
     dst[row] = dst[row] + sum;
 }`;
 /** the Outliers of channels (OUTLIERS_MOST at most) for a piece of rows by n of the table, as bytes */
-export function outliersOf(channels, rows = 0, n = 0) {
+export function outliersOf(channels: ArrayLike<number>, rows = 0, n = 0) {
   const words = new Uint32Array(4 + OUTLIERS_MOST);
   words.set([channels.length, rows, n, 0]);
   words.set(channels, 4);

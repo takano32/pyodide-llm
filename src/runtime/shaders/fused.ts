@@ -20,6 +20,11 @@ import { TERNARY_PACKED, sdp8ai } from "./prompt.ts";
 import { SCALE_WORD } from "./steps.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.ts";
 
+// (T368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
+// names a maker's text branches on
+export type FusedInput = "norm" | "plain";
+export type FusedOutput = "rope" | "add" | "swiglu" | "write";
+
 // ---- T150: a layer of a generated token in five dispatches where the separate steps take fourteen (RMSNorm; q, k and
 // v; RoPE and the cache; the attention; o; the residual add; RMSNorm; gate and up; SwiGLU; down; the residual add):
 //   1. q, k and v as one matrix (their rows one after the other in one buffer), the norm on its read of the input, and
@@ -92,7 +97,7 @@ const FUSED_PARAMS = /* wgsl */ `struct Params { rows: u32, words: u32, perRow: 
 // where the write of an output goes (bindings 5 on): T150's, and T175's DP4A form's alike. T226: the write of a pair
 // is a function (write_pair), which TOKEN_ROPE below calls too: the same lines where the matrix's write cannot turn
 // the pair yet (a bias or a head's norm comes between)
-const fusedOutputs = (output) => (output === "rope" ? `@group(0) @binding(5) var<storage, read_write> q: array<f32>;
+const fusedOutputs = (output: FusedOutput) => (output === "rope" ? `@group(0) @binding(5) var<storage, read_write> q: array<f32>;
 @group(0) @binding(6) var<storage, read_write> keys: array<u32>;
 @group(0) @binding(7) var<storage, read_write> values: array<u32>;
 @group(0) @binding(8) var<storage, read> angles: array<f32>;
@@ -132,7 +137,7 @@ fn write_pair(row: u32, v0: f32, v1: f32) {
 }` : "@group(0) @binding(5) var<storage, read_write> dst: array<f32>;");
 // The write (the epilogue), T150's and T175's DP4A form's alike: a workgroup's OUTPUTS_PER_WG rows from row_base on,
 // their sums in totals (up's rows' after them, for SwiGLU), each times scale (the norm's, or 1), by thread thread_id
-const fusedWrite = (output) => (output === "rope" ? `    // a pair of neighbouring rows a thread
+const fusedWrite = (output: FusedOutput) => (output === "rope" ? `    // a pair of neighbouring rows a thread
     if (thread_id < OUTPUTS_PER_WG / 2u) {
         let row = row_base + 2u * thread_id;
         if (row < params.rows) {
@@ -170,7 +175,7 @@ fn main(@builtin(local_invocation_index) t: u32) {
         write_pair(row, src1[row], src1[row + 1u]);
     }
 }`;
-export const fusedMatVec =({ input, output, subgroups }) => {
+export const fusedMatVec =({ input, output, subgroups }: { input: FusedInput; output: FusedOutput; subgroups: boolean }): string => {
   const norm = input === "norm", glu = output === "swiglu";
   const matrices = glu ? 2 : 1, sums = MUL_MAT_VEC_ROWS * matrices + (norm ? 1 : 0);
   return /* wgsl */ `${subgroups ? "enable subgroups;\nrequires subgroup_id;\n" : ""}
@@ -431,7 +436,7 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
 //
 // output: as fusedMatVec's ("rope", "add", "swiglu" or "write"). Bindings: 0 the weights, 1 their scales, 2 the
 // quantized vector (xq), 3 params, 4 its scales (xs); 5 on as fusedMatVec's.
-export const fusedDp4aMatVec = ({ output }) => /* wgsl */ `requires packed_4x8_integer_dot_product;
+export const fusedDp4aMatVec = ({ output }: { output: FusedOutput }): string => /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${FUSED_PARAMS}
 ${STEP}
 @group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>
@@ -575,7 +580,7 @@ ${fusedWrite(output)}
  */
 //
 // (ternary_packed: the notice of Prism ML's fork of llama.cpp is above prompt.js's TERNARY_PACKED.)
-export const ternaryMatVec = ({ output }) => /* wgsl */ `requires packed_4x8_integer_dot_product;
+export const ternaryMatVec = ({ output }: { output: FusedOutput }): string => /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${FUSED_PARAMS}
 ${STEP}
 @group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' codes, 16 of two bits to a u32

@@ -189,8 +189,10 @@ const CEILING_HEAD = /* wgsl */ `
 struct Plan { loops: u32, seed: u32, a: f32, b: f32 }
 @group(0) @binding(0) var<storage, read_write> out: array<u32>;
 @group(0) @binding(1) var<uniform> plan: Plan;`;
-export const FMA_SHAPES = ["square", "affine"];
-export const fmaCeiling = (half, shape) => {
+// (T368.5: the two shapes of the multiply-adds, by name)
+type FmaShape = "square" | "affine";
+export const FMA_SHAPES: FmaShape[] = ["square", "affine"];
+export const fmaCeiling = (half: boolean, shape: FmaShape): string => {
   const T = half ? "f16" : "f32";
   const body = shape === "square"
     ? `  let c = vec4<${T}>(${T}(-1.0 - f32(lane) / 1024.0)) - vec4<${T}>(0.0, 0.1, 0.2, 0.3);

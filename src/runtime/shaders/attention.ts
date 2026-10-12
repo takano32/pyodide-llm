@@ -6,6 +6,16 @@
 // a bundler links them).
 import { STEP } from "./common.ts";
 
+// (T368.5) the shapes the makers below are given, each what its shape function returns: a number is written into the
+// text, half and subgroups choose its lines. none: why a device cannot run it (and then nothing is made of it)
+export type FlashShape = { headSize: number; half: boolean; subgroups: boolean; wgSize: number; kvTile: number; minSubgroup: number; none?: string };
+export type FlashVecShape = { headSize: number; subgroups: boolean; wgSize: number; kvTile: number; dSplit: number; splits: number; reduceSize: number; none?: string };
+// the sizes of a subgroup a device says (the adapter's info), where it has subgroups
+type Subgroups = { subgroupMin?: number; subgroupMax?: number };
+// the made-up numbers of a token's attention (tokenAttentionData's) and the sizes they are of
+type AttentionSizes = { heads: number; kvHeads: number; size: number; positions: number };
+type AttentionData = { q: ArrayLike<number>; keys: ArrayLike<number>; values: ArrayLike<number> };
+
 // T147: the attention of a prompt's tokens, llama.cpp's flash attention with tiles (flash_attn_tile.wgsl), where
 // T135's (one workgroup a head and token) wrote every score to memory and read it three times, and read the same keys
 // and values again for every head of q that shares them. A workgroup takes Q_TILE (4) tokens of one head: their q
@@ -22,7 +32,7 @@ import { STEP } from "./common.ts";
 // (ggml-webgpu-shader-lib.hpp): Q_TILE 4, KV_TILE at most 64 and what the workgroup's memory holds, WG_SIZE the larger
 // of 128 and 4 subgroups; MIN_SUBGROUP_SIZE sizes the registers.
 export const FLASH_Q_TILE = 4;
-export const flashShape = ({ headSize, half, subgroups, memory, threads, subgroupMin = 4, subgroupMax = 128 }) => {
+export const flashShape = ({ headSize, half, subgroups, memory, threads, subgroupMin = 4, subgroupMax = 128 }: Pick<FlashShape, "headSize" | "half" | "subgroups"> & { memory: number; threads: number } & Subgroups): FlashShape => {
   const bytes = half ? 2 : 4;
   const wgSize = subgroups ? Math.min(threads, Math.max(128, FLASH_Q_TILE * subgroupMax)) : 128;
   // llama.cpp's ggml_webgpu_flash_attn_wg_mem_bytes, for this shader's arrays: q, then per position its keys or values
@@ -52,7 +62,7 @@ export const flashShape = ({ headSize, half, subgroups, memory, threads, subgrou
  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-export const flashTile = ({ headSize, half, subgroups, wgSize, kvTile, minSubgroup }) => /* wgsl */ `${half ? "enable f16;\n" : ""}${subgroups ? "enable subgroups;\n" : ""}
+export const flashTile = ({ headSize, half, subgroups, wgSize, kvTile, minSubgroup }: Omit<FlashShape, "none">): string => /* wgsl */ `${half ? "enable f16;\n" : ""}${subgroups ? "enable subgroups;\n" : ""}
 struct Params { heads: u32, kvHeads: u32, scale: f32, unused: u32 }
 ${STEP}
 @group(0) @binding(0) var<storage, read> Q: array<f32>;             // [tokens][heads × HEAD_DIM]
@@ -343,7 +353,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
 // the same sum), and nwg goes up to FLASH_VEC_LANES (this project's, as flashTile's LANES: llama.cpp's vec path needs
 // subgroups).
 export const FLASH_VEC_KV_TILE = 32, FLASH_VEC_LANES = 32;
-export const flashVecShape = ({ headSize, subgroups, threads, subgroupMin = 4, subgroupMax = 128 }) => {
+export const flashVecShape = ({ headSize, subgroups, threads, subgroupMin = 4, subgroupMax = 128 }: Pick<FlashVecShape, "headSize" | "subgroups"> & { threads: number } & Subgroups): FlashVecShape => {
   const least = subgroups ? subgroupMin : FLASH_VEC_LANES, wgSize = subgroups ? subgroupMax : FLASH_VEC_LANES;
   const lowest = headSize & -headSize, dSplit = Math.min(least, 4, Math.max(lowest / 4, 1));
   return { headSize, subgroups, wgSize, kvTile: FLASH_VEC_KV_TILE, dSplit, splits: least,
@@ -352,15 +362,15 @@ export const flashVecShape = ({ headSize, subgroups, threads, subgroupMin = 4, s
 };
 // Adapted from llama.cpp, ggml/src/ggml-webgpu/ggml-webgpu.cpp (ggml_webgpu_flash_attn_vec_nwg), commit 95887577, under
 // the MIT License (the notice is the one above flashVec): the workgroups a head for positions
-export function flashVecSplits({ splits, kvTile }, positions) {
+export function flashVecSplits({ splits, kvTile }: Pick<FlashVecShape, "splits" | "kvTile">, positions: number) {
   let nwg = 1;
   while (2 * nwg * kvTile < positions && nwg < splits) nwg <<= 1;
   return Math.min(nwg, splits);
 }
 // the bytes of the parts a dispatch of heads writes (nwg of the most a head, headSize values and two numbers each)
-export const flashVecPartsBytes = ({ splits, headSize }, heads) => heads * splits * (headSize + 2) * 4;
+export const flashVecPartsBytes = ({ splits, headSize }: Pick<FlashVecShape, "splits" | "headSize">, heads: number) => heads * splits * (headSize + 2) * 4;
 // the Params both dispatches read: heads, kvHeads, the scale of a score, nwg, where the sums and largests start
-export function flashVecParams({ headSize, splits }, heads, kvHeads, nwg) {
+export function flashVecParams({ headSize, splits }: Pick<FlashVecShape, "headSize"> & { splits?: number }, heads: number, kvHeads: number, nwg: number) {
   const bytes = new ArrayBuffer(32);
   new Uint32Array(bytes).set([heads, kvHeads, 0, nwg, heads * nwg * headSize, 0, 0, 0]);
   new Float32Array(bytes, 8, 1)[0] = 1 / Math.sqrt(headSize);
@@ -368,7 +378,7 @@ export function flashVecParams({ headSize, splits }, heads, kvHeads, nwg) {
 }
 // the WGSL head and helpers both take: a subgroup's shuffles, largest and sum, the subgroup's or (none) the workgroup's
 // lanes' through its memory
-const flashVecLanes = (subgroups, wgSize) => (subgroups ? /* wgsl */ `
+const flashVecLanes = (subgroups: boolean, wgSize: number) => (subgroups ? /* wgsl */ `
 fn shuffle_down(value: f32, delta: u32) -> f32 { return subgroupShuffleDown(value, delta); }
 fn shuffle_down4(value: vec4<f32>, delta: u32) -> vec4<f32> { return subgroupShuffleDown(value, delta); }
 fn shuffle(value: f32, source: u32) -> f32 { return subgroupShuffle(value, source); }
@@ -400,7 +410,7 @@ fn lanes_add4(value: vec4<f32>) -> vec4<f32> {
 }
 fn lanes_add(value: f32) -> f32 { return lanes_add4(vec4<f32>(value)).x; }`);
 const FLASH_VEC_PARAMS = /* wgsl */ `struct Params { heads: u32, kvHeads: u32, scale: f32, nwg: u32, stats: u32, unused0: u32, unused1: u32, unused2: u32 }`;
-const flashVecHead = (subgroups) => (subgroups ? "diagnostic(off, subgroup_uniformity);\nenable subgroups;\nrequires subgroup_id;\n" : "");
+const flashVecHead = (subgroups: boolean) => (subgroups ? "diagnostic(off, subgroup_uniformity);\nenable subgroups;\nrequires subgroup_id;\n" : "");
 
 // Adapted from llama.cpp, ggml/src/ggml-webgpu/wgsl-shaders/flash_attn_vec_split.wgsl and flash_attn_vec_reduce.wgsl
 // (and, for flashVecShape's and flashVecSplits' numbers, ggml-webgpu.cpp and ggml-webgpu-shader-lib.hpp; commit
@@ -423,7 +433,7 @@ const flashVecHead = (subgroups) => (subgroups ? "diagnostic(off, subgroup_unifo
  */
 //
 // The first dispatch: heads × nwg workgroups (the head wg_id.x / nwg, its part wg_id.x % nwg)
-export const flashVec = ({ headSize, subgroups, wgSize, kvTile, dSplit }) => {
+export const flashVec = ({ headSize, subgroups, wgSize, kvTile, dSplit }: Pick<FlashVecShape, "headSize" | "subgroups" | "wgSize" | "kvTile" | "dSplit">): string => {
   // only the first subgroup works where the workgroup holds more than one (llama.cpp's); the lanes are one subgroup
   const first = subgroups ? "if (subgroup_id == 0u) {" : "{";
   return /* wgsl */ `${flashVecHead(subgroups)}
@@ -664,7 +674,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
 };
 // The second dispatch (where nwg is more than 1): a workgroup a head, a lane a part (the reduce's subgroup, or the
 // lanes)
-export const flashVecReduce = ({ headSize, subgroups, reduceSize }) => /* wgsl */ `${flashVecHead(subgroups)}
+export const flashVecReduce = ({ headSize, subgroups, reduceSize }: Pick<FlashVecShape, "headSize" | "subgroups" | "reduceSize">): string => /* wgsl */ `${flashVecHead(subgroups)}
 ${FLASH_VEC_PARAMS}
 @group(0) @binding(0) var<storage, read> tmp: array<f32>;
 @group(0) @binding(1) var<storage, read_write> dst: array<vec4<f32>>;
@@ -730,7 +740,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>,
  * random keys alone leave every part's largest within 88 of the largest of all (the CI's mutations, T224: the reduce
  * taking part 0's largest passed), and a part's largest must be that far from another's to be seen. */
 export const TOKEN_ATTENTION_PAST = 8, TOKEN_ATTENTION_STEEP = 40, TOKEN_ATTENTION_PEAK = 33;
-export function tokenAttentionData({ heads, kvHeads, size, positions, steep = [] }) {
+export function tokenAttentionData({ heads, kvHeads, size, positions, steep = [] }: AttentionSizes & { steep?: number[] }) {
   const q = new Float32Array(heads * size).map((_, i) => (Math.random() * 2 - 1) * (steep.includes(Math.floor(i / size)) ? TOKEN_ATTENTION_STEEP : 1));
   const halfBits = () => ((Math.random() < 0.5 ? 0x8000 : 0) | ((12 + ((Math.random() * 5) | 0)) << 10) | ((Math.random() * 1024) | 0));
   const rows = (positions + TOKEN_ATTENTION_PAST) * kvHeads * size;
@@ -741,11 +751,11 @@ export function tokenAttentionData({ heads, kvHeads, size, positions, steep = []
   }
   return { q, keys, values: new Uint16Array(rows).map(halfBits) };
 }
-const fromHalf = (h) => (h & 0x8000 ? -1 : 1) * ((h >> 10) & 31 ? 2 ** (((h >> 10) & 31) - 15) * (1 + (h & 1023) / 1024) : 2 ** -14 * ((h & 1023) / 1024));
+const fromHalf = (h: number) => (h & 0x8000 ? -1 : 1) * ((h >> 10) & 31 ? 2 ** (((h >> 10) & 31) - 15) * (1 + (h & 1023) / 1024) : 2 ** -14 * ((h & 1023) / 1024));
 /** T224: how far got (a token's attention output, heads × size, from the GPU) is from the attention of data
  * (tokenAttentionData's, heads of q on kvHeads, each head of q to kvHeads' own, the token reading positions) in float64:
  * the largest difference of a head's output over the largest |value| of its head. NaN where got holds one. */
-export function tokenAttentionOff(got, { q, keys, values }, { heads, kvHeads, size, positions }) {
+export function tokenAttentionOff(got: ArrayLike<number>, { q, keys, values }: AttentionData, { heads, kvHeads, size, positions }: AttentionSizes) {
   const kvDim = kvHeads * size, scale = 1 / Math.sqrt(size);
   let worst = 0;
   for (let h = 0; h < heads; h++) {

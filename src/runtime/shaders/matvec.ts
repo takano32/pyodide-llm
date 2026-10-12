@@ -59,7 +59,7 @@ const MATVEC_SHAPE = /* wgsl */ `struct Shape { rows: u32, words: u32, perRow: u
  */
 // The preprocessor's defines are the template's parameters here (a function-scope array cannot take an override's
 // size): WG_SIZE 256, OUTPUTS_PER_WG 4, NUM_COLS 1 (its loop and the barrier after each column left out).
-const mulMatVecAcc = (packed) => (packed ? /* wgsl */ `
+const mulMatVecAcc = (packed: boolean) => (packed ? /* wgsl */ `
 fn accumulate_vec_q_dot(thread_id: u32, row_base: u32) -> array<f32, OUTPUTS_PER_WG> {
     var acc: array<f32, OUTPUTS_PER_WG>;
 
@@ -126,7 +126,7 @@ fn accumulate_vec_dot(thread_id: u32, row_base: u32) -> array<f32, OUTPUTS_PER_W
 
     return acc;
 }`);
-export const mulMatVec = ({ packed, subgroups }) => /* wgsl */ `${subgroups ? "enable subgroups;\nrequires subgroup_id;\n" : ""}${packed ? "requires packed_4x8_integer_dot_product;\n" : ""}
+export const mulMatVec = ({ packed, subgroups }: { packed: boolean; subgroups: boolean }): string => /* wgsl */ `${subgroups ? "enable subgroups;\nrequires subgroup_id;\n" : ""}${packed ? "requires packed_4x8_integer_dot_product;\n" : ""}
 ${MATVEC_SHAPE}
 @group(0) @binding(0) var<storage, read> src0: array<u32>;
 @group(0) @binding(1) var<storage, read> scales: array<f32>;
