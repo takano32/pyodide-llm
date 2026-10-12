@@ -42,7 +42,7 @@ async function info(): Promise<StorageInfo> {
     && typeof FileSystemFileHandle.prototype.createSyncAccessHandle === "function" };
   try {
     const { usage, quota } = await navigator.storage.estimate();
-    Object.assign(out, { usage, quota });
+    Object.assign(out, { usage, quota } satisfies Partial<StorageInfo>);
   } catch (error) {
     out.estimate = String(error);
   }

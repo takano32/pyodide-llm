@@ -352,13 +352,13 @@ async function checkTokenAttentions() {
           });
           const off = shared.WGSL.tokenAttentionOff(got, data, { heads, kvHeads, size, positions });
           // (a NaN stays the worst: `!(off <= NaN)` is true, and the next size's number would take its place: T224's review)
-          if (!Number.isNaN(verdict.worstRelative) && !(off <= verdict.worstRelative)) Object.assign(verdict, { worstRelative: off, at: { headSize: size, positions } });
+          if (!Number.isNaN(verdict.worstRelative) && !(off <= verdict.worstRelative)) Object.assign(verdict, { worstRelative: off, at: { headSize: size, positions } } satisfies Partial<Verdict>);
         }
         postMessage({ alive: true } satisfies Alive);
       }
       verdict.ok = verdict.worstRelative <= TOKEN_ATTENTION_LINE;
     } catch (error) {
-      Object.assign(verdict, { ok: false, worstRelative: NaN, error: String((error as Thrown)?.message ?? error) });
+      Object.assign(verdict, { ok: false, worstRelative: NaN, error: String((error as Thrown)?.message ?? error) } satisfies Partial<Verdict>);
     }
     verdicts[`a token's attention, ${form.name}`] = verdict;
   }

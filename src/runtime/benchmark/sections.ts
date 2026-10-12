@@ -94,7 +94,7 @@ async function device(): Promise<DeviceFound> {
   };
   try {
     const { usage, quota } = await navigator.storage.estimate();
-    Object.assign(found, { usage, quota });
+    Object.assign(found, { usage, quota } satisfies Partial<DeviceFound>);
   } catch {
     // no navigator.storage here: said by opfs above
   }

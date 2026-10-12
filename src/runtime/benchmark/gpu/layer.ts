@@ -59,8 +59,8 @@ async function layer(): Promise<LayerFound> {
       const results = await validated(() => interleaved(running.map((t) => t.submission!), LAYER_MOST));
       running.forEach((t, i) => {
         const r = results[i];
-        Object.assign(t.row, r.error ? { error: r.error } : { msPerLayer: r.ms! / r.dispatches!, layers: r.dispatches, GBps: bytes / (r.ms! / r.dispatches!) / 1e6,
-          ...(r.ratio ? { ratio: r.ratio } : {}), ...(r.unsteady ? { unsteady: true } : {}) });
+        Object.assign(t.row, (r.error ? { error: r.error } : { msPerLayer: r.ms! / r.dispatches!, layers: r.dispatches, GBps: bytes / (r.ms! / r.dispatches!) / 1e6,
+          ...(r.ratio ? { ratio: r.ratio } : {}), ...(r.unsteady ? { unsteady: true } : {}) }) satisfies Partial<LayerRow>);
       });
     } catch (error) {
       running.forEach((t) => (t.row.error = String((error as Thrown)?.message ?? error)));
