@@ -50,6 +50,10 @@ page_modules() {
   # clock of a token, Pyodide's proxies and a generator's face), each by itself: what each does as the thing it stands
   # for, which a check that uses it leans on without saying (under a second)
   node tests/fakes-check.mjs
+  # T357.6: the Node tools' one place for fetching (tests/fetching.mjs: a file held to its length, asked for again where
+  # another try may mend it, not where the server refused) on a server of this machine; and through it and Python's
+  # (tests/fetching.py) the text of Wikipedia and the files gguf.yml compares (a second or so; nothing leaves the machine)
+  node tests/fetching-check.mjs
   # T368.1: the type check of what a browser runs (tsc --noEmit on three programs: the pages' scripts, the runtime's
   # TypeScript, the Service Worker as the JavaScript it is), that a type's import is said as one, and the count of the
   # anys that are written (T473: no more than there are now); T368.8: and that a name a file of the runtime uses without
