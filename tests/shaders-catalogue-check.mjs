@@ -18,10 +18,13 @@
 //     function itself (called with a model's numbers), and it cannot be written to by a name the rows do not have;
 //   - the key is the fold of these rows and of nothing else of the catalogue: computed here a second time from the
 //     rows (FNV-1a, the unit separator after each text) for eight made-up devices and their ternary models.
+//   - (T379.2) every maker of WGSL the window exports has rows here, or arguments in tests/shader-makers.mjs (the
+//     tiles', the benchmark's), each set of which makes a text of its own.
 // What a maker's text branches on that no row walks (a new parameter) is tests/device-key-check.mjs's, which changes
 // each piece of the shaders' source by a character; that the worker takes shaders nowhere else, too.
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
+import { MAKERS_APART, makersOfWgsl } from "./shader-makers.mjs";
 
 const { ENGINE, ENGINE_SHADERS, TERNARY_SHADERS, deviceKey, devicePromptForms, ...window } = await import(runtimeUrl("shaders.js"));
 
@@ -81,6 +84,21 @@ for (const [name, givens] of makers) {
   for (const [i, key] of choices.entries()) assert.ok(values[i].size > 1, `${name}'s ${key} takes one value in every row: no choice`);
 }
 console.log(`shaders-catalogue-check: ${[...makers].map(([name, givens]) => `${name} × ${givens.length}`).join(", ")}: every combination of each maker's choices, one set of numbers`);
+
+// ---- (T379.2) every maker of WGSL the window exports is walked by someone: the catalogue's rows (above), or the list
+// of the makers apart (tests/shader-makers.mjs: the prompt's tiles and the benchmark's own, which the net compares
+// with another commit's by the texts those arguments make). A maker in neither would be compared by its syntax tree
+// alone, and a branch of it by nothing; a maker in both is the catalogue's
+const shadersModule = await import(runtimeUrl("shaders.js"));
+assert.deepEqual(makersOfWgsl(shadersModule), [...new Set([...makers.keys(), ...Object.keys(MAKERS_APART)])].sort(),
+  "the makers of WGSL that shaders.ts exports are the catalogue's and tests/shader-makers.mjs's: a new one is to have rows in shaders/engine.ts (the engine's) or arguments in that list");
+for (const name of Object.keys(MAKERS_APART)) assert.ok(!makers.has(name), `${name} has rows in the catalogue: tests/shader-makers.mjs is for the makers that have none`);
+for (const [name, givens] of Object.entries(MAKERS_APART)) {
+  const made = givens.map((given) => shadersModule[name](...given));
+  for (const text of made) assert.ok(typeof text === "string" && /@compute/.test(text), `${name}: a shader of each set of arguments`);
+  assert.equal(new Set(made).size, givens.length, `${name}: two sets of arguments of tests/shader-makers.mjs make one text: an argument the maker does not take (its branches are not walked)`);
+}
+console.log(`shaders-catalogue-check: ${makersOfWgsl(shadersModule).length} makers of WGSL, each the catalogue's (${makers.size}) or of the list apart (${Object.keys(MAKERS_APART).join(", ")})`);
 
 // ---- ENGINE: the rows by name
 assert.deepEqual(Object.keys(ENGINE), [...new Set(rows.map((row) => row.name))], "ENGINE's names are the rows', in their order");

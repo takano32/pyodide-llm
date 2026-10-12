@@ -19,6 +19,7 @@ import { GROUP, STEP } from "./common.ts";
 import { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
 import { SCALE_WORD, PACKED, ROW_RMS, NORM } from "./steps.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.ts";
+import type { Packing } from "./common.ts";
 
 // (T368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
 // names a maker's text branches on. (T379.1) Each a list of values, which the catalogue walks (engine.ts), and the
@@ -487,7 +488,8 @@ const DP4A_WEIGHTS = {
     scale: (row: string) => `${row} * K128 + k_offset / 4u`,
     word: (at: string) => `ternary_packed(b[${at}])`,
   },
-};
+} satisfies Record<Packing, object>;
+// (a row for every packing, and no other: common.ts's Packing)
 export type FusedWeights = keyof typeof DP4A_WEIGHTS;
 //
 // output: as fusedMatVec's ("rope", "add", "swiglu" or "write"); weights: their packing, a row of DP4A_WEIGHTS.

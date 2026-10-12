@@ -6,6 +6,7 @@
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { GROUP, STEP } from "./common.ts";
+import type { Packing } from "./common.ts";
 
 // (T368.5) a tile of a prompt's matrix product: the rows and tokens a workgroup takes and its threads; and a form, one
 // tiled shader a device may run (promptForms): its text, the overrides of its pipeline, whether it reads packed int8
@@ -466,10 +467,12 @@ fn SDP8AI(a1: vec4<u32>, b1: vec4<u32>, a2: vec4<u32>, b2: vec4<u32>, scale: f32
 const dp4aLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => `    lane_output${(i >> 2) + 1}[${i & 3}] += ` + (subgroup
   ? `SDP8AI(own_a0, subgroupShuffle(own_b0, ${i}u), own_a1, subgroupShuffle(own_b1, ${i}u), subgroupShuffle(own_scale_b, ${i}u) * own_scale_a);`
   : `SDP8AI(own_a0, tile_B[0][base_B + ${i}u], own_a1, tile_B[1][base_B + ${i}u], own_scale_a * scale_B[base_B + ${i}u]);`)).join("\n");
-// T232, ternary: the weights are PQ2_0's codes as the checkpoint holds them (TERNARY_PACKED below, and what is changed
-// for them there); the text without it is what it was, to the byte (deviceKey() hashes it: a device keeps the shader it
-// remembers)
-export const dp4a = (subgroups: boolean, ternary = false): string => /* wgsl */ `requires packed_4x8_integer_dot_product;
+// T232, weights "ternary": the weights are PQ2_0's codes as the checkpoint holds them (TERNARY_PACKED above, and what
+// is changed for them there). (T379.2: the packing by its name, as fused.ts's fusedDp4aMatVec takes it; a boolean
+// `ternary` until then.)
+export const dp4a = ({ subgroups, weights }: { subgroups: boolean; weights: Packing }): string => {
+  const ternary = weights === "ternary";
+  return /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${subgroups ? "enable subgroups;\n" : ""}
 ${TILE_SHAPE}
 ${STEP}
@@ -592,6 +595,7 @@ ${dp4aLines(false)}`}
     }
   }
 }`;
+};
 
 // ---- T147: the tiled shaders a device may run a prompt's matrices with (T146's), for the model's GPU worker, which
 // checks each against JavaScript on a small matrix (tiledOff) and times the right ones on the model's own weights, and
@@ -605,7 +609,7 @@ export const promptForms = ({ half, subgroups, packed, memory, threads, ternary 
   if (ternary) {
     const none = packed ? past(DP4A_SHAPE, 4608) : "no packed int8 dot here";
     return [false, ...(subgroups ? [true] : [])].map((lanes) => ({ name: `ORT DP4A 64×64${lanes ? ", subgroups" : ""}, ternary`,
-      tile: DP4A_SHAPE, packed: true, half: false, ternary: true, code: dp4a(lanes, true), none }));
+      tile: DP4A_SHAPE, packed: true, half: false, ternary: true, code: dp4a({ subgroups: lanes, weights: "ternary" }), none }));
   }
   const forms: PromptForm[] = REG_TILES.map((tile) => {
     const shape = regTileShape(tile);
@@ -614,8 +618,8 @@ export const promptForms = ({ half, subgroups, packed, memory, threads, ternary 
   });
   forms.push({ name: "TF.js tiles 32×32, vec4", tile: TFJS_SHAPE, packed: false, half: false, code: tfjsTile, none: past(TFJS_SHAPE, 2 * 32 * 32 * 4) });
   const dp4aNone = packed ? past(DP4A_SHAPE, 4608) : "no packed int8 dot here";
-  forms.push({ name: "ORT DP4A 64×64", tile: DP4A_SHAPE, packed: true, half: false, code: dp4a(false), none: dp4aNone });
-  if (subgroups) forms.push({ name: "ORT DP4A 64×64, subgroups", tile: DP4A_SHAPE, packed: true, half: false, code: dp4a(true), none: dp4aNone });
+  forms.push({ name: "ORT DP4A 64×64", tile: DP4A_SHAPE, packed: true, half: false, code: dp4a({ subgroups: false, weights: "int8" }), none: dp4aNone });
+  if (subgroups) forms.push({ name: "ORT DP4A 64×64, subgroups", tile: DP4A_SHAPE, packed: true, half: false, code: dp4a({ subgroups: true, weights: "int8" }), none: dp4aNone });
   return forms;
 };
 
