@@ -146,7 +146,7 @@ const NAN_CHOICES = { all: { models: "all", weights: true }, "made-up": { models
 const nanRounds = NAN_CHOICES[option("--nan", { dawn: "made-up", chromium: "small" }[engine] ?? "none")] ?? NAN_CHOICES.none;
 // T153: the made-up models of another form (see above). Three layers: a layer's vectors are read at l × their size,
 // which a second layer alone would not tell from 0 + size
-const TERNARY = { dim: 128, hidden: 384, layers: 3, heads: 8, kv_heads: 4, qk_norm: true, head_dim: 32, ternary: true };
+const TERNARY = { dim: 128, hidden: 384, layers: 3, heads: 8, kv_heads: 4, qk_norm: true, head_dim: 32, dtype: "ternary" };
 const TERNARY_OPTIONS = { dtype: "ternary", qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 };
 const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias: true }, { bias: true, rms_norm_eps: 1e-6 }],
   "synthetic-qwen3": [{ layers: 3, qk_norm: true, head_dim: 32 }, { qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 }],
@@ -170,7 +170,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   "synthetic-gpt2-calm": [{ layers: 3, kv_heads: 4, arch: "gpt2", outliers: 8, calm: true }, { arch: "gpt2" }],
   "synthetic-qwen-calm": [{ layers: 3, bias: true, qk_norm: true, head_dim: 32, calm: true }, { bias: true, qk_norm: true, head_dim: 32, rms_norm_eps: 0.5 }],
   // T155: [form, options, the run's: the GPU's pieces, a 64-bit memory]
-  "synthetic-6bit": [{ dim: 128, hidden: 320, layers: 3, six: true }, { dtype: "int6" }, { force: { pieceBytes: 20480 } }],
+  "synthetic-6bit": [{ dim: 128, hidden: 320, layers: 3, dtype: "int6" }, { dtype: "int6" }, { force: { pieceBytes: 20480 } }],
   "synthetic-wide": [{ dim: 128, hidden: 320, layers: 3 }, {}, { force: { pieceBytes: 20480 }, wide: true }],
   // T232: ternary weights, in Ternary Bonsai's form (see above)
   "synthetic-ternary": [{ ...TERNARY, outliers: 8 }, TERNARY_OPTIONS],
@@ -291,58 +291,6 @@ const PYTHON = `
 import base64, gc, struct, numpy as np, llama2_numpy, llama2_convert
 from llama2_numpy import Llama, external_tensors
 
-def synthetic(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, six=False, outliers=0, calm=False, ternary=False, spread=7, **form):
-    """A made-up int8 checkpoint and its tokenizer.bin, as quantize.py writes one: grouped-query attention. form
-    (T153): llama2_numpy.FORM's bias, qk_norm and head_dim, whose vectors are drawn as the norms' are. six (T155):
-    int6 (T98), as llama2_convert's Writer writes it: every matrix's packed values, then its scales. outliers (T226):
-    that many weights of the final norm are 12 (GPT-2's are 12 to 17 times the others, T92), so that the engine takes
-    their channels apart in the classifier (llama2_numpy.outlier_channels), at channels 0, spread, 2 spread, ... (mod dim:
-    the T232 review's spread of 37 puts some in every group of 128 of a dim of 256). calm (T226's review): the layers'
-    matrices at 0.1 and the norms' weights 1 +- 0.3, see the head of this file. ternary (T232): ternary weights (T230),
-    as llama2_convert's Writer writes them: every group of 128 along a row of a matrix keeps the signs of its larger
-    values (about two thirds) times one scale of its own, the rest are 0 (tests/make_ternary.py's). A negative vocab (the
-    header's own way of saying so): a classifier apart from the embedding (llama2_convert.layout)"""
-    rng = np.random.default_rng(seed)
-    header = (dim, hidden, layers, heads, kv_heads, vocab, seq_len)
-    out = [struct.pack("<7i", *header)]
-    # T154: GPT-2's and GPT-NeoX's vectors (Llama.gpt2_tensors' order) are the weights of the LayerNorms at 0, 6 and 10,
-    # and biases, which are drawn around 0 as the matrices are. T187: so are Llama's biases of q, k and v (Qwen2's, the
-    # vectors 3 to 5 after the three norms): around 1 as a norm (1 ± 0.03), the biases of every layer were nearly the
-    # same, and DP4A's 8 bits hid a GPU that read layer 0's in every layer (0.98 of its line)
-    gpt = form.get("arch", "llama") in ("gpt2", "neox")
-    is_bias = (lambda i: i not in (0, 6, 10)) if gpt else (lambda i: bool(form.get("bias")) and 3 <= i < 6)
-    final = 10 if gpt else 2  # the final norm's weight
-    vectors = 0
-    for shape, is_matrix in llama2_convert.layout(*header, **form):
-        if is_matrix is None:
-            continue  # the RoPE tables: an int8 file leaves them out
-        values = (rng.standard_normal(shape) * 0.3).astype(np.float32)
-        if not is_matrix:
-            values = values if is_bias(vectors) else 1.0 + values * (1.0 if calm else 0.1)
-            if outliers and vectors == final:
-                values[np.arange(outliers) * spread % dim] = 12.0
-            vectors += 1
-            out.append(values.astype(np.float32).tobytes())
-            continue
-        if calm and len(shape) == 3:
-            values = values / 3  # a layer's matrix (the embedding, the positions and the classifier are 2-D: as they are)
-        if ternary:
-            groups = values.reshape(-1, 128)
-            cut = np.quantile(np.abs(groups), 1 / 3, axis=1, keepdims=True)
-            d = (np.abs(groups).mean(axis=1, keepdims=True) * rng.uniform(0.5, 1.5, (len(groups), 1))).astype(np.float32)
-            q, scales = llama2_numpy.ternary((np.sign(groups) * (np.abs(groups) > cut) * d).astype(np.float32))
-            out += [q.tobytes(), scales.tobytes()]
-            continue
-        if six:
-            q, scales = llama2_numpy.quantize6(values.reshape(-1, shape[-1]))
-            out += [llama2_numpy.pack6(q).tobytes(), scales.tobytes()]
-            continue
-        q, scales = llama2_convert.quantize(values.reshape(-1, shape[-1]))
-        out += [q.tobytes(), scales.tobytes()]
-    pieces = [f"<{i}>".encode() for i in range(abs(vocab))]
-    tokenizer = struct.pack("<i", max(map(len, pieces))) + b"".join(struct.pack("<fi", 0.0, len(p)) + p for p in pieces)
-    return b"".join(out), tokenizer
-
 class Half(np.ndarray):
     """T153: a cache that keeps what is written into it rounded to float16 (the GPU's and the CPU's cache, T110)"""
     def __setitem__(self, key, value):
@@ -418,6 +366,10 @@ def answers(data, vocabulary, text, count, options):
             "keys8": eight["keys"], "values8": eight["values"], "logits8": eight["logits"]}
 `;
 py.runPython(PYTHON);
+// the made-up models are tests/made_up.py's quantized() (T357.2: the maker the unit tests have, laid out by the engine's
+// rows): SYNTHETIC's forms below are its arguments
+py.FS.writeFile("made_up.py", fs.readFileSync(path.join(root, "tests", "made_up.py")));
+py.runPython("import made_up");
 
 // each text three times over: long enough for COUNT tokens of every model here
 const TEXTS = {
@@ -436,7 +388,7 @@ for (const id of ids) {
     const [form, engineOptions] = SYNTHETIC[id];
     run = SYNTHETIC[id][2] ?? {};
     py.globals.set("FORM", py.toPy(form));
-    py.runPython(`data, vocabulary = synthetic(**FORM)`);
+    py.runPython(`data, vocabulary = made_up.quantized(**FORM)`);
     options = { dtype: "int8", ...engineOptions };
   } else if (id.endsWith(".json")) {
     // T153: NumPy's answer in the native Python ($PYTHON, python3 by default): Qwen3 0.6B widened to float32 is 2.4
