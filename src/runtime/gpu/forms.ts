@@ -1,6 +1,6 @@
 // The forms of a prompt's shaders on this device, checked against JavaScript, timed and chosen: the attention's tiles
 // and the matrices' tiled shaders (T146, T147), with how a matrix's pieces are bound and dispatched.
-// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
+// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
@@ -266,7 +266,7 @@ async function checkForm(m: Model, form: Tiled) {
 // each packed one's inputs quantized first
 async function timeForms(m: Model, forms: Tiled[]) {
   const { device, plan } = m, owned: GPUBuffer[] = [], layer: { rows: number; group: GPUBindGroup; quantize: Quantizing | null | undefined }[][] = [];
-  // (the block's own buffers and quantizations, block.js's: read here, written by a pass)
+  // (the block's own buffers and quantizations, block.ts's: read here, written by a pass)
   const { step, x, xb, q, k, v, gate, up, ffnInput, quantize: quantizer, quantizeXb, quantizeAttention, quantizeFfn, quantizeGate } = m.block;
   try {
     device.queue.writeBuffer(step, 0, new Uint32Array([plan.batch, 0, 0, 0]));

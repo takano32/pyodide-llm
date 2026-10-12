@@ -1,6 +1,6 @@
 // forward/control.ts (T378.2): the control area of one engine: the words at the start of a shared memory (jobs.ts has
 // their layout) through which this thread and the others meet: the software threads (threads.ts, helper.ts) and the
-// GPU's worker (gpuside.ts, gpu.js). It belongs to neither of them: createForward() makes it and hands it to both.
+// GPU's worker (gpuside.ts, gpu.ts). It belongs to neither of them: createForward() makes it and hands it to both.
 // A module of src/runtime/forward.ts; it reads jobs.ts by a static import.
 
 import { CONTROL_BYTES } from "../jobs.ts";

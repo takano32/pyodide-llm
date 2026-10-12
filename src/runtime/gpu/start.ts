@@ -1,6 +1,6 @@
 // The model going onto the GPU and leaving it: open() and take() (T156: a model on the GPU alone, its layers written as
 // the checkpoint comes), start() (the weights, the forms chosen, "ready" or "unusable"), stop().
-// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
+// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { model, stopping, lost, stopAsked, handed, within, openDevice, describe, unusable, end } from "./device.ts";
 import { upload, uploadLayers, uploadRest, tablesOn, routed, unwritten } from "./weights.ts";
@@ -50,7 +50,7 @@ function open(plan: Opened, shared: SharedArrayBuffer) {
   })();
 }
 // the bytes at offset of the checkpoint (bytes: a Uint8Array of their own) onto the buffers whose routes they fall in
-// (weights.js's routed()), and flow[0] counted once the GPU has them
+// (weights.ts's routed()), and flow[0] counted once the GPU has them
 function take(data: Stretch) {
   if (!opened) return void backlog.push(data);
   const { offset, bytes } = data;

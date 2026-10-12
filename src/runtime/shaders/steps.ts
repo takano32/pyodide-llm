@@ -57,7 +57,7 @@ import { GROUP, STEP } from "./common.ts";
 // multiply the NaN input itself; the quantizers' comparison only picks the integers of a group whose scale is a NaN
 // already. The tests on lavapipe and SwiftShader, where max drops a NaN, hold that for those two; a device where exp(NaN)
 // or a half's NaN is another number is not tried.) A flag word would need a binding in every quantizer, a place in the
-// State and a reader in gpu.js and forward.ts for what the logits already say. (3) An infinity becomes a NaN too: a scale of
+// State and a reader in gpu.ts and forward.ts for what the logits already say. (3) An infinity becomes a NaN too: a scale of
 // infinity makes a row +inf or -inf by the sign of its dot (and NaN where the dot is 0), and the way from there to the
 // logits then rests on the next norm's 0 × inf (a NaN) and on T195's rule for logits that are all -inf (refused: no token
 // over -3.4e38; some -inf among finite ones are tokens that cannot be drawn, which no scale of one infinity makes).
@@ -112,8 +112,8 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 // zero and its scale is a quarter (llama2_numpy.pack6), so the widened values and the checkpoint's own scales are an
 // int8 matrix, the same products to the bit, and every tiled shader, check and timing stays as it is.
 //
-// WIDEN_SIX: the WGSL of that widening, one dispatch a piece of a matrix (gpu.js's upload). No public implementation
-// has this packing (llama.cpp's Q6_K packs otherwise), so it is written apart (T155: Fable high). What gpu.js gives it:
+// WIDEN_SIX: the WGSL of that widening, one dispatch a piece of a matrix (gpu.ts's upload). No public implementation
+// has this packing (llama.cpp's Q6_K packs otherwise), so it is written apart (T155: Fable high). What gpu.ts gives it:
 //   @group(0) @binding(0) var<storage, read> packed: array<u32>;         the groups as llama2_numpy.pack6 writes them,
 //                                                                        24 bytes (6 words) a group, one after another,
 //                                                                        from word 0 (the piece alone, uploaded apart)
@@ -123,7 +123,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
 //   @group(0) @binding(2) var<uniform> widen: vec4<u32>;                 x: the groups; y, z, w: 0
 // dispatched as @workgroup_size(WIDEN_SIX_WORKGROUP) with sixDispatch(groups, the device's
 // maxComputeWorkgroupsPerDimension): a thread a group, group number (workgroup_id.y × num_workgroups.x +
-// workgroup_id.x) × WIDEN_SIX_WORKGROUP + local_invocation_index, those past widen.x doing nothing. gpu.js checks it
+// workgroup_id.x) × WIDEN_SIX_WORKGROUP + local_invocation_index, those past widen.x doing nothing. gpu.ts checks it
 // against sixValues() below as it starts (every group of random bytes: any 24 bytes are a group), to the bit.
 //
 // The form (T155, Fable): four values a word, as the bytes lie. A group's six words are its 24 bytes: low[0..15] in

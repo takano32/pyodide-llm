@@ -1,5 +1,5 @@
 // shaders.ts (T135): the WGSL of this project in one place. The GPU section of /benchmark/ (src/runtime/benchmark/gpu.js,
-// T134) measures with some of them; the model's GPU worker (src/runtime/gpu.js) runs a prompt's tokens through the layers
+// T134) measures with some of them; the model's GPU worker (src/runtime/gpu.ts) runs a prompt's tokens through the layers
 // with the tiled matrices of T146 (the one each device runs fastest, T147), the flash attention and the steps of a
 // layer below them. A plain ES module, which a bundler links into each of them (T367.3).
 //
@@ -19,7 +19,7 @@
 // T367.5: who reads the window. /benchmark/'s GPU worker (benchmark/gpu/device.js), which measures with nearly all of
 // them and fetches this module when its section runs; and the tools (the net's shaders section, tests/gpu-check.mjs,
 // tests/smoke.mjs and others), to which shaders.ts is the name of all the WGSL there is. The model's GPU worker does
-// not: its modules take the names they use from the parts (gpu/*.js), linked into the worker's own file without
+// not: its modules take the names they use from the parts (gpu/*.ts), linked into the worker's own file without
 // /benchmark/'s shaders, and the model's worker takes the device's key from shaders/key.ts.
 import { GROUP } from "./shaders/common.ts";
 import { TILE, WIDEN, PACKED, BATCHED, ARGMAX, EMPTY, SMALL, CEILING_WORKGROUP, FMA_PER_LOOP, DOT4_PER_LOOP,

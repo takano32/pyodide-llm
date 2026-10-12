@@ -1,6 +1,6 @@
 // The attention of a generated token (T224): llama.cpp's decode form and the prompt's tiles, checked against
 // JavaScript, timed and chosen, and their dispatches.
-// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
+// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.ts";
@@ -26,7 +26,7 @@ type Io = { q: GPUBuffer; keys: GPUBuffer; values: GPUBuffer; out: GPUBuffer; fl
 // subgroup_id), and with the lanes of the workgroup standing for a subgroup; and the prompt's tiles (m.forms.attention: one
 // row of four used, a workgroup a head, T150's (a)). Each checked against JavaScript (checkTokenAttention), the right
 // ones timed (timeTokenAttention), the fastest taken: attention, with what each came to (attentions), which
-// tokenforms.js's chooseTokens() puts in the model's record of a token (T378.4: this returns them; null where a stop was asked).
+// tokenforms.ts's chooseTokens() puts in the model's record of a token (T378.4: this returns them; null where a stop was asked).
 // plan.force.tokenAttention (tests): that one alone; plan.force.quick: the first right one, untimed. None is
 // remembered (T148 remembers the matrices, the prompt's attention and the token's layer): the two small shaders are
 // compiled, checked and timed at every start.

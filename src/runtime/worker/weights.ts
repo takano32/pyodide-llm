@@ -293,7 +293,7 @@ const gpuOnlyAllowed = () => hasWebGpu && self.navigator?.deviceMemory !== undef
   Boolean(wideKernels?.shared) && !switchesNow().includes("int8") && !cpuOnly.has(loadingKey) &&
   Boolean(gpuAdapter) && (!gpuAdapter!.fallback || Boolean(gpuForce.fallback));
 // T156: whether the page kept that the CPU was faster here than this model on the GPU alone (forward.ts's aloneHolds)
-// (dtype, T232: the key is the one gpu.js gave the verdict, a ternary model's its own)
+// (dtype, T232: the key is the one gpu.ts gave the verdict, a ternary model's its own)
 const aloneKept = (dtype: Dtype) => Boolean(gpuAdapter) &&
   forwardModule!.aloneHolds(gpuRequest?.remembered?.alone, dtype === "ternary" ? gpuAdapter!.ternaryKey : gpuAdapter!.key, gpuRequest?.cpu);
 // T156: where a model goes ({ mode: "both" | "gpu" | "cpu", gpuRoom }, forward.ts's weightsPlace): the GPU alone only

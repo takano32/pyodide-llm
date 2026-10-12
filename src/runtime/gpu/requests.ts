@@ -1,6 +1,6 @@
 // The requests forward.ts waits for in the control area: a block of a prompt, the steps of a generation, the GPU's own
 // keys and values (T210), each answered by serve().
-// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
+// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { model, lost } from "./device.ts";
 import { roomFor, keysIn, block, keysOut, keysBack } from "./block.ts";

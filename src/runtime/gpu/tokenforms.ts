@@ -1,5 +1,5 @@
 // The forms of a token's layer checked on the model's own weights against JavaScript (T152), timed and chosen.
-// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
+// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { COPY_DST, MAP_READ, rowBytes, turnedAt, stopping, within, buffer, readBack, validated, pipelineOf } from "./device.ts";
 import { tablesOf } from "./weights.ts";
@@ -36,8 +36,8 @@ type Rounding = Math & { f16round?: (value: number) => number };
 // taken (m.tokens.form), with what each came to (m.tokens.forms) and its ms a step (m.tokens.ms). plan.remembered.tokens: the
 // one the page kept for this adapter, alone where it is still right here. plan.force.tokens (tests): that form alone;
 // plan.force.quick: the first right one, untimed. Throws where none is right (the tokens then stay on the CPU)
-// T378.4: m.tokens is this module's to set, and no other's: a token's buffers and pipelines (tokens.js's
-// tokenBuffers() makes them), its attention (tokenattention.js's chooseTokenAttention() chooses it), and the form of
+// T378.4: m.tokens is this module's to set, and no other's: a token's buffers and pipelines (tokens.ts's
+// tokenBuffers() makes them), its attention (tokenattention.ts's chooseTokenAttention() chooses it), and the form of
 // its layer chosen here. null where no form is right
 async function chooseTokens(m: Model) {
   try {

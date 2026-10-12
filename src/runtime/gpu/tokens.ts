@@ -1,6 +1,6 @@
 // A generated token's steps (T152): the forms of a layer this device can make, a token's buffers and uniforms, the
 // dispatches of a step, and a run of steps as one submission with its ids, state, keys and values read back.
-// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
+// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, turnedAt, within, buffer, uniform, copyIn, validated,
   pipelineOf, bind, dispatch } from "./device.ts";
@@ -162,7 +162,7 @@ const bindAt = (m: Model, pipeline: GPUComputePipeline, entries: Entry[]) => m.d
 // scratch arrays of the vocabulary; the state, the ids, the random numbers, the Step and the settings; the quantized
 // vector (DP4A: one serves every quantization of a token, each read before the next is made: T175's (l)); what a
 // submission reads back (the ids, the state, and the keys and values of its positions, [keys, values][layer][step])
-// T378.4: what this makes is the first part of the model's record of a token, m.tokens, which tokenforms.js's
+// T378.4: what this makes is the first part of the model's record of a token, m.tokens, which tokenforms.ts's
 // chooseTokens() sets (with the attention and the form chosen); the functions below read it
 async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   const { plan } = m, most = plan.tokens!.most, vocab = plan.tokens!.classifier.rows;

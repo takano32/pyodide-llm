@@ -1,7 +1,7 @@
 // The weights onto the GPU: every layer's matrices and vectors and a token's tables, from the shared memory or (a
-// model on the GPU alone, T156) as routes of the checkpoint that start.js's take() writes; a matrix past a buffer in
+// model on the GPU alone, T156) as routes of the checkpoint that start.ts's take() writes; a matrix past a buffer in
 // pieces (T155), the layout of a token's joined matrices (T152), and the widening of int6 (T155) with its check.
-// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
+// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, readBack, validated,
   pipelineOf, bind, dispatch } from "./device.ts";

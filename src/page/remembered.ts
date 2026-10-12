@@ -20,7 +20,7 @@ export const threadsFor = (entry: { id: string }) => {
   return { fixed: fixedThreads, remembered, hint: navigator.hardwareConcurrency || 1 };
 };
 // T148: what the GPU chose for a model on this device (its shaders: T147 times them all the first time), for the next
-// visit: the worker's GPU compiles only those, where the adapter and browser are the same (gpu.js's key)
+// visit: the worker's GPU compiles only those, where the adapter and browser are the same (gpu.ts's key)
 // (a model of ?hf= or of the visitor's folder is "local" in the list: named by its repository or its name, the
 // review of T148)
 export const gpuKey = (entry: any) => `gpu:${entry.id !== "local" ? entry.id : entry.hf?.repo ? `hf:${entry.hf.repo}@${entry.hf.revision}` : `file:${entry.name}`}`;

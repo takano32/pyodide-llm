@@ -1,6 +1,6 @@
 // A block of a prompt: the small steps' pipelines and a block's buffers, every layer's bind groups, the GPU's own keys
 // and values, the block itself as one submission with its keys and values read back, and what a whole block takes (T148).
-// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
+// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, stopping, held, within, buffer, uniform, copyIn, narrowIn, validated, pipelineOf, bind,
   dispatch } from "./device.ts";
@@ -78,7 +78,7 @@ type Block = {
 
 // the pipelines of a layer's small steps and the buffers of a block's activations
 // T378.4: they are this module's record, m.block, made here once and set by this module alone (bindLayers() puts the
-// layers' bind groups in it once the forms are chosen, grow() the keys and values); forms.js and tokens.js read its
+// layers' bind groups in it once the forms are chosen, grow() the keys and values); forms.ts and tokens.ts read its
 // pipelines and buffers for their own bind groups
 async function prepare(m: Model) {
   const { plan } = m, B = plan.batch, gated = Boolean(plan.matrices.w3);
@@ -209,7 +209,7 @@ function grow(m: Model, needed: number) {
     cache.attention.push(bind(m, m.forms.attention.pipeline, [b.q, cache.keys[l], cache.values[l], b.xb, attentionParams, b.step]));
   }
   m.block.cache = cache;
-  // (device.js's end() lets go of these, the ones held last)
+  // (device.ts's end() lets go of these, the ones held last)
   held(m, cache.owned);
 }
 

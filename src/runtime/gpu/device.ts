@@ -1,10 +1,10 @@
 // What every part of the model's GPU worker stands on: what the parts share (the model's record, whether a stop was
 // asked, a device lost), the time a step may take, the device and why there is none, the worker's end, and buffers:
 // made, written from the shared memory, read back, bound and dispatched.
-// (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
+// (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 // (T367.5: the WGSL is no module handed round any more. Every module of this worker takes the names it uses from the
-// shaders' parts, src/runtime/shaders/<part>.js, as it takes its neighbours': linked into the worker's file, with
-// nothing to fetch after it and nothing of /benchmark/'s own shaders in it. The device's key is key.js's, the same
+// shaders' parts, src/runtime/shaders/<part>.ts, as it takes its neighbours': linked into the worker's file, with
+// nothing to fetch after it and nothing of /benchmark/'s own shaders in it. The device's key is key.ts's, the same
 // text the model's worker reads its key from: tests/dist-check.mjs holds the two built files to one key.)
 import { halvesOf } from "../shaders/run.ts";
 import { deviceKey } from "../shaders/key.ts";
@@ -79,15 +79,15 @@ const turnedAt = (plan: Pick<Started, "unturned" | "turned">, l: number) => (pla
 // model is the record of what is on the GPU for the model. What openDevice() puts in it is this module's and is read
 // by all: the device, the plan and the shared memory, the buffers that live as long as the model (owned), and what
 // the adapter said of itself. The rest is four records, each made and set by one module and read by the others:
-//   model.weights  weights.js   the layers' matrices and vectors and a token's tables, as buffers
-//   model.block    block.js     the small steps' pipelines, a block's buffers and bind groups, the keys and values
-//   model.forms    forms.js     the prompt's attention and tiled shader chosen here, and what each one tried came to
-//   model.tokens   tokenforms.js  a token's buffers and pipelines, its attention and the form of its layer chosen here
+//   model.weights  weights.ts   the layers' matrices and vectors and a token's tables, as buffers
+//   model.block    block.ts     the small steps' pipelines, a block's buffers and bind groups, the keys and values
+//   model.forms    forms.ts     the prompt's attention and tiled shader chosen here, and what each one tried came to
+//   model.tokens   tokenforms.ts  a token's buffers and pipelines, its attention and the form of its layer chosen here
 // (tests/gpu-modules-check.mjs holds every field read to one its owner declares, and every write to its owner)
 let model: Model | null = null;
 let stopping = false;  // a stop was asked: start() ends at its next step
 let lost: string | null = null;  // why the device was lost, once it is
-// a stop was asked (start.js's stop(): the worker ends at once, or start() does at its next step)
+// a stop was asked (start.ts's stop(): the worker ends at once, or start() does at its next step)
 function stopAsked() {
   stopping = true;
 }
@@ -97,7 +97,7 @@ function handed(memory: WebAssembly.Memory, plan: Started) {
   model!.memory = memory;
   model!.plan = plan;
 }
-// the buffers of what is made again as it grows (block.js's keys and values): end() lets go of the ones held last,
+// the buffers of what is made again as it grows (block.ts's keys and values): end() lets go of the ones held last,
 // after the model's own (the ones before them went as they were replaced)
 function held(m: Model, buffers: GPUBuffer[]) {
   m.held = buffers;

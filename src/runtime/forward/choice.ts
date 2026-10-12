@@ -32,7 +32,7 @@ const lowerMedian = (xs: number[]) => [...xs].sort((a, b) => a - b)[(xs.length -
 //   - the CPU: ms a token of the blocks of BATCH it runs of real prompts (no work only to time it), per number of
 //     threads (the search may change it), the lower median of the last KEEP; none until TIMED of them (the first
 //     block after a pause is the slowest: a single one would favour the GPU);
-//   - the GPU: gpu.js times whole blocks of 16 and 64 tokens as it starts (in turn, after one of each to warm up),
+//   - the GPU: gpu.ts times whole blocks of 16 and 64 tokens as it starts (in turn, after one of each to warm up),
 //     and the line through them says a block of any count (fixed + a token: the tiles make a block of 16 cost nearly
 //     as much as one of 64); every block it then runs for real scales that line by the lower median of the last KEEP
 //     ratios (what the page adds around a block, a device that heats up or is loaded).
@@ -91,7 +91,7 @@ export function promptTimes() {
 //   - the CPU: ms of the forward pass of a token with its logits, per number of threads, the lower median of the last
 //     KEEP, none until TIMED (the sampling after it is Python's, on the kernels: not in it, so the CPU looks a little
 //     faster than it is, the side the choice errs to);
-//   - the GPU: ms a step of a run of GPU_TOKENS (gpu.js times runs as it starts, then every whole run is timed here,
+//   - the GPU: ms a step of a run of GPU_TOKENS (gpu.ts times runs as it starts, then every whole run is timed here,
 //     from the request to its answer), the lower median of the last KEEP.
 // The steps go to the GPU where a step takes less than BETTER of the CPU's.
 export function tokenTimes() {
