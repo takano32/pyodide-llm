@@ -163,7 +163,10 @@ console.log(`forward-modules-check: createForward() hands its parts the ${handed
 // carried for nothing), and a name taken out of `at` that nobody put in a frame (at is a record of numbers by any
 // name: a name that is in no frame is undefined, and every address made of it NaN, without a word). The names of a
 // frame are the first strings of the pairs in memory.ts's frameArrays() and in the kinds' frame().
-const PARTS_OF_CORE = ["forward/attention.ts", "forward/linear.ts", "forward/convolution.ts", "forward/ffn.ts"];
+// (the kinds' files are the ones the table's file takes a name of: a new kind's file is read here with no line of this check)
+const kindFiles = fs.readFileSync(tree.runtime("forward/kinds.ts"), "utf8").split("\n").map((line) => /^import \{[^}]*\} from "\.\/(\w+\.ts)";/.exec(line)?.[1]).filter(Boolean).map((file) => `forward/${file}`);
+assert.ok(kindFiles.length >= 3, "forward/kinds.ts takes each kind out of a file of its own");
+const PARTS_OF_CORE = [...kindFiles, "forward/ffn.ts"];
 const coreMade = [...membersOf(literals.get("core")).keys()], coreTaken = new Set();
 assert.ok(coreMade.length, "createForward() makes core as an object");
 let parts = 0;
@@ -179,7 +182,7 @@ for (const file of PARTS_OF_CORE) {
     }
   });
 }
-assert.equal(parts, 5, "the three kinds' make() and the two FFNs take core apart");
+assert.equal(parts, kindFiles.length + 2, "every kind's make() and the two FFNs take core apart");
 // (cache: the layers that keep keys and values alone take it; a kind that reads `core.<name>` otherwise is not counted)
 assert.deepEqual(coreMade.filter((name) => !coreTaken.has(name)), [], "createForward() makes core with what no kind and no FFN takes out of it");
 const framedNames = new Set();
