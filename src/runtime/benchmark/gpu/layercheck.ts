@@ -1,10 +1,10 @@
 // The check of a layer (T175, T187, T225): the layer in JavaScript, what a form's keys, values and stream are held to, and
 // the attention of a token at several sizes and positions (T224).
 // (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
-import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, buffer, floats, run, readBack, scoped } from "./device.js";
-import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./halves.js";
+import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, buffer, floats, run, readBack, scoped } from "./device.ts";
+import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./halves.ts";
 import { layerShape, layerForms, hasSubgroupId, engineTiles, vecAttention, attentionSteps, layerCheck, compiled,
-  layerPipes, layerParts, layerAngles, layerState } from "./layerparts.js";
+  layerPipes, layerParts, layerAngles, layerState } from "./layerparts.ts";
 
 // T175: where a matrix of a layer takes its input (layerReference's inputs), in the order of the DP4A forms' quantized
 // vectors: the normed stream before q, k and v; the attention's output before o; the normed stream before gate and up;

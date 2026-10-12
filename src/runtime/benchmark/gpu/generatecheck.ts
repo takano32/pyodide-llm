@@ -1,12 +1,12 @@
 // The check of the sampling and of the generated tokens (T151, T178, T195, T219): against the CPU's sampling in JavaScript,
 // with the logits that are not finite, and a few tokens against the layer in JavaScript.
 // (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
-import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, floats, run, readBack, validated, scoped } from "./device.js";
-import { toHalf, heldHalves, halvesSaid, farthest } from "./halves.js";
-import { EPS, layerShape, tokenForm, layerAngles } from "./layerparts.js";
-import { INPUTS, dequantized, NORMED_SCALE_LINE, scaleLine, quantizedOff, layerReference } from "./layercheck.js";
+import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, floats, run, readBack, validated, scoped } from "./device.ts";
+import { toHalf, heldHalves, halvesSaid, farthest } from "./halves.ts";
+import { EPS, layerShape, tokenForm, layerAngles } from "./layerparts.ts";
+import { INPUTS, dequantized, NORMED_SCALE_LINE, scaleLine, quantizedOff, layerReference } from "./layercheck.ts";
 import { GENERATE_SETTINGS, GENERATE_CHECK, generationPipes, samplerPipes, samplerDispatches, generationParts,
-  generationRun, randomsOf, TIED_RUN, tiedLogits, sparseLogits, UNREFUSED, unfiniteLogits, madeUpLogits } from "./generate.js";
+  generationRun, randomsOf, TIED_RUN, tiedLogits, sparseLogits, UNREFUSED, unfiniteLogits, madeUpLogits } from "./generate.ts";
 
 // The check of SAMPLE (T151) against the CPU's sampling in JavaScript (shaders.ts's sampleLikeCpu and
 // penalizeLikeCpu, which tests/smoke.mjs holds to the kernel): the same logits, history and random number must pick

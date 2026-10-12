@@ -5,7 +5,7 @@ import "./isolation.ts";
 import { MODELS } from "../models.js";
 import { $, type Name, type Result } from "./dom.ts";
 import { current, runAt, runNames, sectionAt } from "./running.ts";
-import { unstarted } from "../runtime/updated.js";
+import { unstarted } from "../runtime/updated.ts";
 
 // ---- the sections' elements: a head with a Run button and the state, the progress while it runs (T177), and what
 // the section found
@@ -88,11 +88,11 @@ export function ask(worker: Worker, message: any): Promise<any> {
 // (T367.3: each by its literal URL, which is how the bundler is told of a worker)
 const WORKERS = {
   "worker.js": () => new Worker(new URL("../runtime/worker.ts", import.meta.url), { type: "module" }),
-  "benchmark/gpu.js": () => new Worker(new URL("../runtime/benchmark/gpu.js", import.meta.url), { type: "module" }),
-  "benchmark/memory.js": () => new Worker(new URL("../runtime/benchmark/memory.js", import.meta.url), { type: "module" }),
-  "benchmark/sections.js": () => new Worker(new URL("../runtime/benchmark/sections.js", import.meta.url), { type: "module" }),
-  "benchmark/storage.js": () => new Worker(new URL("../runtime/benchmark/storage.js", import.meta.url), { type: "module" }),
-  "benchmark/waiter.js": () => new Worker(new URL("../runtime/benchmark/waiter.js", import.meta.url), { type: "module" }),
+  "benchmark/gpu.js": () => new Worker(new URL("../runtime/benchmark/gpu.ts", import.meta.url), { type: "module" }),
+  "benchmark/memory.js": () => new Worker(new URL("../runtime/benchmark/memory.ts", import.meta.url), { type: "module" }),
+  "benchmark/sections.js": () => new Worker(new URL("../runtime/benchmark/sections.ts", import.meta.url), { type: "module" }),
+  "benchmark/storage.js": () => new Worker(new URL("../runtime/benchmark/storage.ts", import.meta.url), { type: "module" }),
+  "benchmark/waiter.js": () => new Worker(new URL("../runtime/benchmark/waiter.ts", import.meta.url), { type: "module" }),
 };
 export const live = new Set<Worker>();
 let heard = 0;

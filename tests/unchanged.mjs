@@ -355,8 +355,11 @@ function gpuWorker(tree, fields, worker) {
 }
 // the keys of the `shared` object a tree's modules hold between them (none before the division)
 function sharedFields(tree, worker) {
-  const file = treeOf(tree).runtime(worker.window.replace(/\.js$/, "/device.js"), { maybe: true });
-  if (!fs.existsSync(file)) return new Set();
+  // (T368.7: device.ts or device.js, whichever the tree has: asked for with `maybe`, the name comes back as it was
+  // spelled, and a tree whose file is TypeScript read as having no such object at all)
+  const spelled = treeOf(tree).runtime(worker.window.replace(/\.js$/, "/device.js"), { maybe: true });
+  const file = [spelled.replace(/\.js$/, ".ts"), spelled].find((one) => fs.existsSync(one));
+  if (!file) return new Set();
   const program = parse(untyped(fs.readFileSync(file, "utf8"), file), { sourceType: "module" }).program;
   const shared = program.body.find((s) => s.type === "VariableDeclaration" && s.declarations[0].id.name === worker.object);
   // (T378.4: the model's worker has no such object any more: its fields are device.js's `let`s again)

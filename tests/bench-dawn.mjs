@@ -1,4 +1,4 @@
-// A step of /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js) in Node on Dawn (the npm package webgpu, not a
+// A step of /benchmark/'s GPU worker (src/runtime/benchmark/gpu.ts) in Node on Dawn (the npm package webgpu, not a
 // dependency of this project: gpu-prompt.yml installs it under .tmp/dawn) with Mesa's lavapipe (shader-f16 and
 // subgroups, whose width LP_NATIVE_VECTOR_WIDTH sets: 128 → 4, 512 → 16), with no browser: the worker's answer as one
 // line "RESULT <seconds> <json>" (its result, or { error }). T219 (from T191's review's throwaway tool): the CI's
@@ -7,6 +7,7 @@
 //   node tests/bench-dawn.mjs <the webgpu package's directory> [<the directory of the runtime's files: this tree's by default>] [<step>] [<counts>] [<keys>]
 // step: as the page asks the worker ("info", "check", "prompt", "generate", ...); counts: the prompt's, as 1,16,64;
 // keys: only these of the result, as "sampling,sampling in chunks" (the check's verdicts are long).
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { runtime } from "./tree.mjs";
@@ -30,7 +31,10 @@ globalThis.postMessage = (message) => {
   // (the worker's progress: alive, lost and stage are no answer)
   if (!message.alive && !message.lost && !message.stage) answer?.(message);
 };
-await import(pathToFileURL(path.resolve(dir, "benchmark/gpu.js")).href);
+// (T368.7: the worker's window is gpu.ts; a directory of an older tree given by hand has gpu.js. Node runs either)
+const window_ = ["benchmark/gpu.ts", "benchmark/gpu.js"].map((name) => path.resolve(dir, name)).find((file) => fs.existsSync(file));
+if (!window_) throw new Error(`${dir} holds no benchmark/gpu.ts (nor .js): is it the runtime's folder?`);
+await import(pathToFileURL(window_).href);
 const began = performance.now();
 const reply = await new Promise((resolve) => {
   answer = resolve;

@@ -11,7 +11,7 @@
 // Nothing waits for this: the caller goes on to its fallback at once, and the word comes when the server has answered
 // (a HEAD, after a failure only; never on a visit where nothing failed). Nothing here throws, and no failure is
 // turned into another: the fallbacks are what they were.
-import { gone, isUpdated } from "../updated.js";
+import { gone, isUpdated } from "../updated.ts";
 import type { Updated } from "../contracts/messages.ts";
 
 // (the tests' own fetch and address, which gone() takes: nothing of the worker hands one)

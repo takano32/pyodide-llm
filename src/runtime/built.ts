@@ -6,7 +6,7 @@
 // the whole folder, and files of less than 4 KB went into the worker's text as data: URLs (T365).
 // T367.4: built() is how one is fetched, here and nowhere else: a page left open across a deployment asks for a name
 // that is gone, and the 404 it gets is told as the site having been updated (updated.js), not as a failed fetch.
-import { answeredGone, updated } from "./updated.js";
+import { answeredGone, updated } from "./updated.ts";
 
 export const BUILT = {
   "simdkernel.so": new URL("./built/simdkernel.so", import.meta.url),

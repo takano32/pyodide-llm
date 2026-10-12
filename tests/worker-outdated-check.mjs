@@ -20,7 +20,7 @@
 import assert from "node:assert/strict";
 import { workerHarness } from "./worker-harness.mjs";
 import { runtimeUrl } from "./tree.mjs";
-import { updated } from "../src/runtime/updated.js";
+import { updated } from "../src/runtime/updated.ts";
 
 const here = { origin: "https://takano32.github.io" };
 const WORKER = "https://takano32.github.io/pyodide-llm/_astro/worker.BwFFQ8AO.js";

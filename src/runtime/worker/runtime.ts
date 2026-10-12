@@ -4,7 +4,7 @@
 // or wait for it (runtimeReady).
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { built } from "../built.js";
+import { built } from "../built.ts";
 import { resolvePyodideVersion, pyodideSteps, placePython } from "./pyodide.ts";
 import { since, took } from "./clock.ts";
 import { wentWithout } from "./outdated.ts";

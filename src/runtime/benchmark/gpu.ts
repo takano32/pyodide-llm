@@ -44,15 +44,15 @@
 // generate.js and generatecheck.js (generated tokens and the sampling, and their check), check.js (the step "check"),
 // ceilings.js and prompt.js. Each is a static import: a bundler links them into this worker's file (T367.3), and
 // nothing is awaited before the steps' receiver further down is set.
-import { load, info } from "./gpu/device.js";
-import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./gpu/halves.js";
-import { layerReference, layerCheckData, judgeLayer } from "./gpu/layercheck.js";
-import { bandwidth, token } from "./gpu/matvec.js";
-import { layer, layerSteps } from "./gpu/layer.js";
-import { generate } from "./gpu/generate.js";
-import { check } from "./gpu/check.js";
-import { overhead, ceilings } from "./gpu/ceilings.js";
-import { prompt } from "./gpu/prompt.js";
+import { load, info } from "./gpu/device.ts";
+import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./gpu/halves.ts";
+import { layerReference, layerCheckData, judgeLayer } from "./gpu/layercheck.ts";
+import { bandwidth, token } from "./gpu/matvec.ts";
+import { layer, layerSteps } from "./gpu/layer.ts";
+import { generate } from "./gpu/generate.ts";
+import { check } from "./gpu/check.ts";
+import { overhead, ceilings } from "./gpu/ceilings.ts";
+import { prompt } from "./gpu/prompt.ts";
 
 // (these are pure: tests/gpu-choice-check.mjs holds the rounding of the cache to what a device may choose, and
 // tests/layer-check.mjs holds the layer check's judgement to devices that are JavaScript too)

@@ -2,8 +2,8 @@
 // sampling alone, and the logits the sampling is measured and checked on.
 // (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 import { shared, MODELS, PROMPT_MODEL, matrixBytes, gpu, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, fill,
-  floats, run, middle, interleaved, scoped } from "./device.js";
-import { EPS, layerShape, tokenForm, layerCodes, fusedLayer, compiled, ropeTable } from "./layerparts.js";
+  floats, run, middle, interleaved, scoped } from "./device.ts";
+import { EPS, layerShape, tokenForm, layerCodes, fusedLayer, compiled, ropeTable } from "./layerparts.ts";
 
 // ---- T151: generated tokens on the GPU (shaders.ts's EMBED, fusedMatVec and SAMPLE): a token a compute pass, the
 // sampler's state carried from one to the next on the GPU, and the ids read back once for the run: against reading

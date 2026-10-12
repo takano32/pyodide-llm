@@ -2,9 +2,9 @@
 // then the layer's check and the sampling's and the generation's (layercheck.js, generatecheck.js).
 // (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 import { shared, gpu, MAP_READ, COPY_DST, buffer, floats, promptShaders, matVecShaders, kindOf, quantizer, matrix,
-  vectors, destroyVectors, run, argmaxOf, readBack, validated } from "./device.js";
-import { checkLayer, checkTokenAttentions } from "./layercheck.js";
-import { checkSampling, checkGeneration } from "./generatecheck.js";
+  vectors, destroyVectors, run, argmaxOf, readBack, validated } from "./device.ts";
+import { checkLayer, checkTokenAttentions } from "./layercheck.ts";
+import { checkSampling, checkGeneration } from "./generatecheck.ts";
 
 // ---- check: every shader against JavaScript: the two of a matrix × vector on 300 rows of 512 (rows that are not a
 // power of two), the batched one on the same with 11 tokens (a tile and a part of one), the tiled ones (checkTiled),

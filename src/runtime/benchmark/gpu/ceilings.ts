@@ -3,7 +3,7 @@
 // (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 import { shared, MODELS, gpu, STORAGE, COPY_SRC, COPY_DST, MAP_READ, UNIFORM, buffer, fill, floats, pipelinesFor, run,
   readBack, median, DISPATCH_MS, SUBMISSION_MS, CEILING_GROUPS, FIRST_LOOPS, MOST_LOOPS, MOST_DISPATCHES,
-  GLOBAL_BYTES, paired, scoped } from "./device.js";
+  GLOBAL_BYTES, paired, scoped } from "./device.ts";
 
 // ---- what a token costs besides its weights: the dispatches of Llama 3.2 1B's token (seven matrices and seven small
 // steps a layer, 16 layers, and the classifier: about 240) doing nothing, a submission with and without waiting for

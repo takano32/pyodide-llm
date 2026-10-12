@@ -12,7 +12,7 @@ import { showKept } from "./list.ts";
 import { showSettings } from "./settings.ts";
 import { message, meta, onGpu, onGpuSampled, rows, seconds, showBench, showRun, showStatus } from "./draw.ts";
 import { isolating } from "./isolation.ts";
-import { unstarted } from "../runtime/updated.js";
+import { unstarted } from "../runtime/updated.ts";
 import type { Alone, ModelWorker, Ready } from "../runtime/contracts/messages.ts";
 
 declare const __BUILD__: string;

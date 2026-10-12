@@ -15,7 +15,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { workerHarness } from "./worker-harness.mjs";
-import { UPDATED, SLOWER, updated, isUpdated, saidOf, ofThisBuild, answeredGone, gone, named, unstarted } from "../src/runtime/updated.js";
+import { UPDATED, SLOWER, updated, isUpdated, saidOf, ofThisBuild, answeredGone, gone, named, unstarted } from "../src/runtime/updated.ts";
 
 // ---- the sentence, whole (the owner's: T367's decision 4)
 assert.equal(UPDATED, "The site was updated while this page was open. Reload the page to go on.");
@@ -175,9 +175,9 @@ console.log("updated-check: a worker that did not start is the site's update onl
   fs.mkdirSync(astro, { recursive: true });
   const globals = { fetch: globalThis.fetch, location: Object.getOwnPropertyDescriptor(globalThis, "location") };
   try {
-    for (const name of ["built.js", "updated.js"]) fs.copyFileSync(new URL(name, runtime), new URL(name, astro));
-    const served = await import(new URL("built.js", astro).href);
-    const source = await import(new URL("built.js", runtime).href);
+    for (const name of ["built.ts", "updated.ts"]) fs.copyFileSync(new URL(name, runtime), new URL(name, astro));
+    const served = await import(new URL("built.ts", astro).href);
+    const source = await import(new URL("built.ts", runtime).href);
     const fetched = [];
     const answer = (make) => { globalThis.fetch = async (address, init) => { fetched.push({ address: String(address), ...init }); return make(); }; };
     const at = (origin) => Object.defineProperty(globalThis, "location", { configurable: true, value: origin === undefined ? undefined : { origin } });
@@ -266,18 +266,18 @@ const LATER = {
     ['new Worker(new URL("../helper.ts", import.meta.url)', "slower: a software thread that does not start leaves fewer threads"],
     ['new Worker(new URL("../gpu.ts", import.meta.url)', "slower: a GPU worker that does not start leaves the model on the CPU (forward/gpuside.js)"],
   ],
-  "src/runtime/benchmark/sections.js": [
+  "src/runtime/benchmark/sections.ts": [
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));", "said"],
     ['named(import.meta.url, () => import("../forward.ts"))', "said"],
     ['new Worker(new URL("../helper.ts", import.meta.url)', "said"],
     ['named(import.meta.url, () => import("../forward.ts"))', "said"],
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));", "said"],
-    ['new Worker(new URL("../benchmark/reader.js", import.meta.url)', "said"],
+    ['new Worker(new URL("../benchmark/reader.ts", import.meta.url)', "said"],
   ],
-  "src/runtime/benchmark/gpu/device.js": [
+  "src/runtime/benchmark/gpu/device.ts": [
     ['named(import.meta.url, () => import("../../shaders.ts"))', "said"],
   ],
-  "src/runtime/benchmark/gpu/matvec.js": [
+  "src/runtime/benchmark/gpu/matvec.ts": [
     ['built("simdkernel_plain.wasm")).arrayBuffer());', "said"],
   ],
   "src/page/receiver.ts": [
@@ -285,11 +285,11 @@ const LATER = {
   ],
   "src/benchmark/section.ts": [
     ['new Worker(new URL("../runtime/worker.ts", import.meta.url)', "said"],
-    ['new Worker(new URL("../runtime/benchmark/gpu.js", import.meta.url)', "said"],
-    ['new Worker(new URL("../runtime/benchmark/memory.js", import.meta.url)', "said"],
-    ['new Worker(new URL("../runtime/benchmark/sections.js", import.meta.url)', "said"],
-    ['new Worker(new URL("../runtime/benchmark/storage.js", import.meta.url)', "said"],
-    ['new Worker(new URL("../runtime/benchmark/waiter.js", import.meta.url)', "said"],
+    ['new Worker(new URL("../runtime/benchmark/gpu.ts", import.meta.url)', "said"],
+    ['new Worker(new URL("../runtime/benchmark/memory.ts", import.meta.url)', "said"],
+    ['new Worker(new URL("../runtime/benchmark/sections.ts", import.meta.url)', "said"],
+    ['new Worker(new URL("../runtime/benchmark/storage.ts", import.meta.url)', "said"],
+    ['new Worker(new URL("../runtime/benchmark/waiter.ts", import.meta.url)', "said"],
   ],
 };
 const sources = [];
@@ -308,15 +308,15 @@ let said = 0, quiet = 0, slower = 0;
 const handed = (text) => (text.match(/\b(?:wentWithout|workerWentWithout)\(/g) ?? []).length;
 for (const name of sources) {
   const text = code(name);
-  if (name === "src/runtime/updated.js") continue;
-  const found = name === "src/runtime/built.js" ? [] : [...text.matchAll(later)].map((match) => tidy(match[0]));
+  if (name === "src/runtime/updated.ts") continue;
+  const found = name === "src/runtime/built.ts" ? [] : [...text.matchAll(later)].map((match) => tidy(match[0]));
   const listed = LATER[name] ?? [];
   assert.deepEqual(found, listed.map(([what]) => what),
     `${name}: the files it asks for later are not the ones tests/updated-check.mjs lists (LATER). One whose absence ends what was asked is fetched ` +
     "by built() (a built file), named(import.meta.url, () => import(…)) (a module) or has unstarted() at its worker's error, and is listed as said; " +
     "one the engine goes on without is listed as quiet, with why");
   // a built file's address is fetched by built() alone, and its table is read nowhere else
-  if (name !== "src/runtime/built.js") assert.ok(!/\bBUILT\b/.test(text), `${name} reads the table of built files itself: built() is how one is fetched (a 404 is the site's update)`);
+  if (name !== "src/runtime/built.ts") assert.ok(!/\bBUILT\b/.test(text), `${name} reads the table of built files itself: built() is how one is fetched (a 404 is the site's update)`);
   for (const [what, why] of listed) {
     assert.ok(why === "said" || /^(quiet|slower): \S/.test(why), `${name}: ${what} is said, or slower or quiet with a reason`);
     why === "said" ? said++ : why.startsWith("slower") ? slower++ : quiet++;
@@ -359,7 +359,7 @@ for (const name of Object.keys(LATER)) assert.ok(sources.includes(name), `${name
 // a module that takes these names declares none of them again: sections.js had a `let unstarted` in the function that
 // calls unstarted(), which then called the variable (undefined), and the worker's error went nowhere
 for (const name of sources) {
-  const text = code(name), taken = /import \{([^}]*)\} from "[./]*(?:runtime\/)?(?:updated|built)\.js";/g;
+  const text = code(name), taken = /import \{([^}]*)\} from "[./]*(?:runtime\/)?(?:updated|built)\.ts";/g;
   for (const [, names] of text.matchAll(taken)) for (const one of names.split(",").map((each) => each.trim())) {
     assert.ok(!new RegExp(`\\b(?:let|const|var|function|class)\\s+${one}\\b|\\(${one}\\) =>|\\b${one} = `).test(text), `${name} takes ${one} and declares or assigns a ${one} of its own`);
   }
@@ -368,11 +368,12 @@ for (const name of sources) {
 // worker/outdated.js, which throws nothing, turns no failure into another, and posts one kind of message)
 {
   const text = code("src/runtime/worker/outdated.ts");
-  assert.ok(/import \{ gone, isUpdated \} from "\.\.\/updated\.js";/.test(text), "outdated.js takes gone() and isUpdated() of updated.js, and nothing that makes an error");
+  assert.ok(/import \{ gone, isUpdated \} from "\.\.\/updated\.ts";/.test(text), "outdated.js takes gone() and isUpdated() of updated.js, and nothing that makes an error");
   assert.ok(!/\bthrow\b|\bnew Error\b|\breject\b/.test(text), "outdated.js throws nothing");
   assert.deepEqual(text.match(/postMessage\([^)]*\)/g), ['postMessage({ type: "updated" } satisfies Updated)'], "outdated.js posts the one word, and nothing else");
 }
-const knows = (name) => /updated\.js|\bunstarted\b|\bisUpdated\b|\bUPDATED\b/.test(code(name));
+// (T368.7: the file by either ending: it was looked for as updated.js alone, which no import says any more)
+const knows = (name) => /updated\.(js|ts)|\bunstarted\b|\bisUpdated\b|\bUPDATED\b/.test(code(name));
 for (const name of ["src/runtime/worker/weights.ts", "src/runtime/gpu.ts", "src/runtime/gpu/device.ts"]) {
   assert.ok(!knows(name), `${name} holds a fallback (LATER) and now knows of updated.js`);
 }
@@ -382,13 +383,13 @@ const path_ = sources.filter((name) => /^src\/runtime\/(forward|gpu|shaders)\/|^
 assert.ok(path_.length > 30, "the files of the token's path were found");
 for (const name of path_) assert.ok(!knows(name), `${name} is on the token's path and knows of updated.js`);
 // both pages hold a worker's error to it, and the model's worker reports it by its message alone (an Error by name)
-for (const name of ["src/page/receiver.ts", "src/benchmark/section.ts"]) assert.ok(/import \{ unstarted \} from "\.\.\/runtime\/updated\.js";/.test(code(name)), name);
+for (const name of ["src/page/receiver.ts", "src/benchmark/section.ts"]) assert.ok(/import \{ unstarted \} from "\.\.\/runtime\/updated\.ts";/.test(code(name)), name);
 assert.ok(/w\.onerror = async \(event\) => resolve\(\{ error: await workerFailed\(event\) \}\);/.test(code("src/benchmark/model.ts")), "/benchmark/'s model section holds its worker's error to section.ts's workerFailed()");
 assert.ok(/worker\.onerror = async \(event\) => resolve\(\{ error: await workerFailed\(event\) \}\);/.test(code("src/benchmark/section.ts")), "/benchmark/'s sections hold their workers' errors to workerFailed()");
 // /benchmark/'s CPU and device worker says a caught value by one function, which says an update alone, and the rows
 // that catch a failure of their own (the ceilings, a loop's attempt) let an update through to it
 {
-  const text = code("src/runtime/benchmark/sections.js");
+  const text = code("src/runtime/benchmark/sections.ts");
   assert.ok(text.includes("const failed = (error) => saidOf(error, `${error?.name ?? \"Error\"}: ${error?.message ?? error}`);"), "sections.js's failed() says an update alone");
   assert.ok(text.includes("postMessage({ step: data.step, error: failed(error) });"), "a step that failed is said by failed()");
   assert.equal((text.match(/\n {4}unlessUpdated\(error\);\n/g) ?? []).length, 2, "the ceilings' and an attempt's catch let an update through");
@@ -401,9 +402,9 @@ assert.ok(code("src/runtime/worker/runtime.ts").includes("built(name).then((res)
 // each sentence is written once, and the status line's is read by what draws the status line alone (as its last part)
 for (const words of ["The site was updated", "the site was updated: ", "reload for full speed", "for full speed"]) {
   const writers = sources.filter((name) => fs.readFileSync(new URL(name, root), "utf8").includes(words));
-  assert.deepEqual(writers, ["src/runtime/updated.js"], `"${words}" is written in one file`);
+  assert.deepEqual(writers, ["src/runtime/updated.ts"], `"${words}" is written in one file`);
 }
-assert.deepEqual(sources.filter((name) => /\bSLOWER\b/.test(code(name))), ["src/runtime/updated.js", "src/page/draw.ts"].sort((a, b) => sources.indexOf(a) - sources.indexOf(b)), "SLOWER is read by src/page/draw.ts alone");
+assert.deepEqual(sources.filter((name) => /\bSLOWER\b/.test(code(name))), ["src/runtime/updated.ts", "src/page/draw.ts"].sort((a, b) => sources.indexOf(a) - sources.indexOf(b)), "SLOWER is read by src/page/draw.ts alone");
 assert.ok(code("src/page/draw.ts").includes("statusText.textContent = `${model.name} · ${backend}${threads > 1 ? `, ${threads} threads` : \"\"}${gpuNote ? `, ${gpuNote}${tested}` : \"\"} · Pyodide ${pyodide}${outdated ? ` · ${SLOWER}` : \"\"}`;"), "the status line of a ready model ends with it where the page is an old one, after all it said before");
 // and the page takes the worker's word as it comes: the owner's event, then the line drawn again
 assert.ok(/\} else if \(data\.type === "updated"\) \{\n(?:\s*\/\/[^\n]*\n)*\s*siteUpdated\(\);\n\s*showStatus\(\);\n/.test(fs.readFileSync(new URL("src/page/receiver.ts", root), "utf8")), "receiver.ts says siteUpdated() and draws the status line at the worker's { type: \"updated\" }");

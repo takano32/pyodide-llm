@@ -7,7 +7,7 @@
 // awaited here: a module worker's port opens at its first await, and a message that comes before onmessage is set is
 // lost (T109); every step awaits it instead. (T367.4: where it is gone because the site was updated since the page
 // was opened, the step that awaits it says so: updated.js)
-import { named } from "../../updated.js";
+import { named } from "../../updated.ts";
 const shaders = named(import.meta.url, () => import("../../shaders.ts"));
 // T353: what the steps share and one of them sets (a module's `let` cannot be assigned from another module, and the
 // steps are the modules of gpu/): the fields were this file's `let`s of the same names

@@ -16,8 +16,8 @@
 // The first message is claimed before anything is awaited (a module worker's port opens at its first await, and a
 // message that comes before onmessage is set is lost: T109). While a step runs, it tells the page each stage it starts
 // ({stage, at, of}, T177): the page shows it, and it answers none of the page's questions.
-import { built } from "../built.js";
-import { isUpdated, saidOf, named, unstarted } from "../updated.js";
+import { built } from "../built.ts";
+import { isUpdated, saidOf, named, unstarted } from "../updated.ts";
 const stage = (name, at, of) => postMessage({ stage: name, at, of });
 
 self.onmessage = async ({ data }) => {
@@ -312,7 +312,7 @@ async function ceilingsOf(memory, base, size, shared) {
   const started = async (count) => {
     if (neverStarted && count > readers.length) throw neverStarted;
     while (readers.length < count - 1) {
-      const worker = new Worker(new URL("../benchmark/reader.js", import.meta.url), { type: "module" });
+      const worker = new Worker(new URL("../benchmark/reader.ts", import.meta.url), { type: "module" });
       readers.push(worker);  // stop() ends it even where it never answers
       let timer;
       await Promise.race([new Promise((resolve, reject) => {

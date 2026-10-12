@@ -2,11 +2,11 @@
 // its attention by the cache's length, and the whole layer by timestamps.
 // (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 import { shared, MODELS, matrixBytes, gpu, STORAGE, COPY_DST, UNIFORM, COPY_SRC, buffer, floats, pipelinesFor, run,
-  readBack, validated, PAIRS, middle, interleaved, scoped } from "./device.js";
-import { toHalf } from "./halves.js";
+  readBack, validated, PAIRS, middle, interleaved, scoped } from "./device.ts";
+import { toHalf } from "./halves.ts";
 import { LAYER_POS, LAYER_MOST, layerShape, LAYER_KINDS, layerForms, hasSubgroupId, engineTiles, vecAttention,
-  attentionSteps, layerCheck, compiled, layerPipes, layerParts, MATRIX_KEYS } from "./layerparts.js";
-import { MATVEC_BYTES, MATVEC_MOST } from "./matvec.js";
+  attentionSteps, layerCheck, compiled, layerPipes, layerParts, MATRIX_KEYS } from "./layerparts.ts";
+import { MATVEC_BYTES, MATVEC_MOST } from "./matvec.ts";
 
 async function layer() {
   await gpu();
