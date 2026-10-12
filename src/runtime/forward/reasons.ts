@@ -47,8 +47,12 @@ export const REASONS = {
   packed: (weights: string) => `${weights} weights need the packed int8 dot product of WGSL, which this browser lacks`,
   // ---- a model on the GPU alone (alone.ts's gpuOnlyUnfit(): read as yes or no, and by the tests)
   aloneFallback: "a fallback adapter",
-  // (T382: the words are older than what they say; kept as they are until that task)
-  aloneArchitecture: "GPT-2 and GPT-NeoX (and a Qwen3.5 and an LFM2) are not placed on the GPU alone: only a Llama's tensors are, by external_tensors()",
+  // (T382: a fact of the model each, in aloneFactsUnfit()'s order; layers that keep a state are "stateful" above. No
+  // model of the list with one of these is too large to hold twice, so the GPU alone has no steps made for them)
+  aloneGate: "a gate of the attention's output is not on the GPU alone yet",
+  alonePositions: "a table of positions is not on the GPU alone yet",
+  aloneFfn: "an FFN without a gate is not on the GPU alone yet",
+  aloneNorms: "LayerNorms are not on the GPU alone yet",
   aloneDtype: (dtype: string) => `${dtype} weights stay on the CPU`,
   aloneHeads: "heads of a size that is no multiple of 4",
   aloneStarts: "q, k and v or gate and up would not start where this GPU binds a buffer",

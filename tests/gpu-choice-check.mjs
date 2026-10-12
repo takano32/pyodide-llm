@@ -335,11 +335,11 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(gpuOnlyUnfit([2048, 11008, 36, 16, 2, 151936, 4096], "int8", { bias: true }, adapter), null, "Qwen2.5 3B");
   assert.equal(gpuOnlyUnfit([2560, 9728, 36, 32, 8, 151936, 4096], "int8", { qk_norm: true, head_dim: 128 }, adapter), null, "Qwen3 4B");
   assert.equal(gpuOnlyUnfit([4096, 12288, 36, 32, 8, 151936, 4096], "int8", { qk_norm: true, head_dim: 128 }, adapter), null, "Qwen3 8B");
-  assert.match(gpuOnlyUnfit(oneB, "int8", { arch: "gpt2" }, adapter), /GPT-2 and GPT-NeoX/);
+  assert.equal(gpuOnlyUnfit(oneB, "int8", { arch: "gpt2" }, adapter), "a table of positions is not on the GPU alone yet");
   // T237: a model in a rotated basis, whose inputs the GPU does not turn
   assert.match(gpuOnlyUnfit(oneB, "int8", { rotated: { block: 1024, signs: {} } }, adapter), /rotated basis/);
-  assert.match(gpuOnlyUnfit(oneB, "int8", { arch: "neox" }, adapter), /GPT-2 and GPT-NeoX/);
-  assert.match(gpuOnlyUnfit(oneB, "int8", { arch: "qwen35" }, adapter), /Qwen3\.5/, "T229: a hybrid model is not placed on the GPU alone either");
+  assert.equal(gpuOnlyUnfit(oneB, "int8", { arch: "neox" }, adapter), "an FFN without a gate is not on the GPU alone yet");
+  assert.equal(gpuOnlyUnfit(oneB, "int8", { arch: "qwen35" }, adapter), "a gate of the attention's output is not on the GPU alone yet", "T229: a hybrid model is not placed on the GPU alone either");
   assert.match(gpuOnlyUnfit(oneB, "int6", {}, adapter), /int6/);
   // stories15M (dim 288, 6 heads): k starts at 288 × 288 weights, no multiple of 2048 (T152)
   assert.match(gpuOnlyUnfit([288, 768, 6, 6, 6, 32000, 256], "int8", {}, adapter), /would not start/);
@@ -365,7 +365,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.equal(gpuOnlyUnfit([256, 1152, 3, 8, 4, -320, 256], "ternary", { qk_norm: true, head_dim: 32 }, packed), null, "gpu-check's made-up untied ternary model");
   // (the review of T237) with the refusal of ternary weights gone, the others still stand, each with its own reason:
   // the 27B is ternary, in a rotated basis, with linear-attention layers (a Qwen3.5)
-  assert.match(gpuOnlyUnfit([5120, 17408, 64, 24, 4, 248320, 4096], "ternary", { arch: "qwen35", head_dim: 256, rotated: { block: 1024, signs: {} } }, packed), /Qwen3\.5/);
+  assert.match(gpuOnlyUnfit([5120, 17408, 64, 24, 4, 248320, 4096], "ternary", { arch: "qwen35", head_dim: 256, rotated: { block: 1024, signs: {} } }, packed), /^a gate of the attention's output/);
   assert.match(gpuOnlyUnfit([2048, 6144, 28, 16, 8, 151936, 4096], "ternary", { ...bonsai, rotated: { block: 1024, signs: {} } }, packed), /rotated basis/);
 }
 // T156: the checkpoint's stretches: the layers' matrices to the GPU's worker, the rest packed into memory, whatever the

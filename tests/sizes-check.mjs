@@ -19,7 +19,7 @@ import { runtimeUrl } from "./tree.mjs";
 const { ARCHITECTURES, architectureOf } = await import(runtimeUrl("forward/architectures.js"));
 const { sizesOfForm, sizesOfPlan, kindsHad } = await import(runtimeUrl("forward/sizes.js"));
 const { footprint, keysInHalf } = await import(runtimeUrl("forward/memory.js"));
-const { gpuBytes, layerWeightsOf, gpuOnlyUnfit, gpuWeightBytes } = await import(runtimeUrl("forward/alone.js"));
+const { gpuBytes, layerWeightsOf, gpuOnlyUnfit, aloneFactsUnfit, gpuWeightBytes } = await import(runtimeUrl("forward/alone.js"));
 const { PACKED, BATCH, weightBytes } = await import(runtimeUrl("jobs.js"));
 const { LAYER_KINDS } = await import(runtimeUrl("forward/kinds.js"));
 
@@ -155,16 +155,32 @@ const KINDS = { attention: plain, echo };
   }
   assert.equal(layerWeightsOf(header, { head_dim: 128 }), layers * (2 * 4096 * dim + 2 * 1024 * dim + 3 * hidden * dim), "(by the head's size where the form says one)");
   const adapter = { fallback: false, packed: true, limits: { maxStorageBufferBindingSize: 2 ** 31, maxBufferSize: 2 ** 32 } };
-  const refused = /^GPT-2 and GPT-NeoX \(and a Qwen3\.5 and an LFM2\) are not placed on the GPU alone/;
-  // by the architecture's facts: RMSNorms, a gated FFN, no table of positions, no gate of the attention's output
+  // by the architecture's facts: RMSNorms, a gated FFN, no table of positions, no gate of the attention's output. T382:
+  // each fact by a reason of its own, the first of them in aloneFactsUnfit()'s order (said to nobody but the tests:
+  // the worker reads yes or no)
+  const GATE = "a gate of the attention's output is not on the GPU alone yet", POSITIONS = "a table of positions is not on the GPU alone yet",
+    FFN = "an FFN without a gate is not on the GPU alone yet", NORMS = "LayerNorms are not on the GPU alone yet", STATE = "layers that keep a state are not on the GPU yet";
   for (const [arch, { gatedFfn, layerNorm, positions, gate }] of Object.entries(ARCHITECTURES)) {
-    const may = gatedFfn && !layerNorm && !positions && !gate, said = gpuOnlyUnfit(header, "int8", { arch }, adapter);
-    assert.ok(may ? said === null : refused.test(said), `${arch}: ${said}`);
+    const said = gpuOnlyUnfit(header, "int8", { arch }, adapter);
+    assert.equal(said, gate ? GATE : positions ? POSITIONS : !gatedFfn ? FFN : layerNorm ? NORMS : null, `${arch}: ${said}`);
   }
+  assert.deepEqual(["llama", "gpt2", "neox", "qwen35", "lfm2"].map((arch) => gpuOnlyUnfit(header, "int8", { arch }, adapter)), [null, POSITIONS, FFN, GATE, null]);
+  // (T487: the table's five lines never have one of these facts without another, so each is asked by itself here, of
+  // facts no architecture has: RMSNorms with GPT-2's FFN, LayerNorms with a gated one, a table of positions alone)
+  const LLAMAS = { stateful: false, gate: false, positions: false, gatedFfn: true, layerNorm: false };
+  assert.equal(aloneFactsUnfit(LLAMAS), null);
+  for (const [fact, value, reason] of [["stateful", true, STATE], ["gate", true, GATE], ["positions", true, POSITIONS], ["gatedFfn", false, FFN], ["layerNorm", true, NORMS]]) {
+    assert.equal(aloneFactsUnfit({ ...LLAMAS, [fact]: value }), reason, `a model that is a Llama but for ${fact} = ${value}`);
+  }
+  // (the order: the first of them that holds)
+  assert.deepEqual([aloneFactsUnfit({ stateful: true, gate: true, positions: true, gatedFfn: false, layerNorm: true }),
+    aloneFactsUnfit({ ...LLAMAS, gate: true, positions: true, gatedFfn: false, layerNorm: true }), aloneFactsUnfit({ ...LLAMAS, positions: true, gatedFfn: false, layerNorm: true }),
+    aloneFactsUnfit({ ...LLAMAS, gatedFfn: false, layerNorm: true })], [STATE, GATE, POSITIONS, FFN]);
   // and every layer attending: the form's layers that keep a state keep the model off it, whatever its name
   const linear = { every: 4, key_heads: 16, value_heads: 16, key_dim: 128, value_dim: 128, conv: 4 };
-  assert.match(gpuOnlyUnfit(header, "int8", { arch: "llama", linear }, adapter), refused);
-  assert.match(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "ca".repeat(8), taps: 3 } }, adapter), refused);
+  assert.equal(gpuOnlyUnfit(header, "int8", { arch: "llama", linear }, adapter), STATE);
+  assert.equal(gpuOnlyUnfit(header, "int8", { arch: "qwen35", linear }, adapter), STATE);
+  assert.equal(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "ca".repeat(8), taps: 3 } }, adapter), STATE);
   assert.equal(gpuOnlyUnfit(header, "int8", { arch: "lfm2", convolution: { layers: "a".repeat(16), taps: 3 } }, adapter), null, "(an LFM2 without a convolution layer has a Llama's facts)");
   assert.equal(gpuOnlyUnfit(header, "int8", { rotated: { block: 1024 } }, adapter), "a rotated basis is not on the GPU yet");
   // by the packing's line: whether a model of it may be there alone, and what its shaders need of the browser

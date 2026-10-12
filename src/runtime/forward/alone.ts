@@ -6,6 +6,7 @@
 import { PACKED, packingOf, weightBytes } from "../jobs.ts";
 import { BETTER } from "./choice.ts";
 import { architectureOf } from "./architectures.ts";
+import type { Architecture } from "./architectures.ts";
 import { LAYER_KINDS } from "./kinds.ts";
 import { ATTENTION, sizesOfForm } from "./sizes.ts";
 import { REASONS } from "./reasons.ts";
@@ -173,6 +174,18 @@ const BINDS_AT = 256;
 // T219: what a model on the GPU alone says where the GPU sampled an id outside the vocabulary (its logits were not
 // finite numbers, most likely: the words of T195's NOT_FINITE, llama2_numpy.py), since no CPU can take the step again
 export const OUTSIDE_VOCABULARY = "The model computed logits on the GPU that are not finite numbers (NaN or infinity), so no token can be drawn: its weights are broken or its numbers overflowed.";
+/** T382: why a model of these facts cannot go on the GPU alone, or null: the first fact that keeps it off, each by its
+ * own reason (stateful: it has a layer that keeps a state; the rest are its architecture's line and its sizes' gate).
+ * Apart from gpuOnlyUnfit() so that a set of facts no architecture of the table has can be asked too (the tests) */
+export function aloneFactsUnfit({ stateful, gate, positions, gatedFfn, layerNorm }:
+  Pick<Architecture, "gate" | "positions" | "gatedFfn" | "layerNorm"> & { stateful: boolean }) {
+  if (stateful) return REASONS.stateful;
+  if (gate) return REASONS.aloneGate;
+  if (positions) return REASONS.alonePositions;
+  if (!gatedFfn) return REASONS.aloneFfn;
+  if (layerNorm) return REASONS.aloneNorms;
+  return null;
+}
 export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rotated?: Rotated | null } = {},
   adapter: Adapter | null | undefined, force: Force = {}) {
   const [dim, hidden] = header;
@@ -181,10 +194,9 @@ export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rot
   // T375.5: by the model's facts, not by its architecture's name: RMSNorms, a gated FFN, no table of positions, no
   // gate of the attention's output, and every layer attending (which of the five architectures a Llama's alone are)
   const sizes = sizesOfForm(header, form, LAYER_KINDS), { q: qDim, kv: kvDim } = sizes.widths;
-  const { gatedFfn, layerNorm, positions } = architectureOf(form.arch ?? "llama");
-  if (!gatedFfn || layerNorm || positions || sizes.gate || sizes.kinds.some((kind) => kind !== ATTENTION)) {
-    return REASONS.aloneArchitecture;
-  }
+  // (T382: the architecture's line as it is, so that no fact of it is handed on by hand, and the two the sizes say)
+  const facts = aloneFactsUnfit({ ...architectureOf(form.arch ?? "llama"), gate: sizes.gate, stateful: sizes.kinds.some((kind) => kind !== ATTENTION) });
+  if (facts) return facts;
   if (form.rotated) return REASONS.rotated;  // T237
   // (the packing's line of jobs.ts's PACKED: whether a model of it may be on the GPU alone, and what its shaders need)
   const packing = packingOf(dtype), held = packing?.gpu;
