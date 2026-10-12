@@ -586,7 +586,7 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   const changed = of("ternary", "add").replace("var output_value = f32(0);", "var output_value = f32(1);");
   assert.notDeepEqual(kept(changed), kept(of("int8", "add")), "a changed line is a difference");
   // a packing the table has no row of is no text (the type says so before it runs)
-  assert.throws(() => of("int5", "add"), TypeError, "a packing without a row of DP4A_WEIGHTS");
+  assert.throws(() => of("no such packing", "add"), TypeError, "a packing without a row of DP4A_WEIGHTS");
 }
 // T232's review: the outlier channels' two shaders take as many as OUTLIERS_MOST, and Python's OUTLIER_CHANNELS is that
 // many (a ninth channel past the Outliers' room would throw as the plan is made: the GPU then lost for a model that

@@ -106,7 +106,15 @@ function makersOf(module) {
 }
 // (until T379.1 is the tree compared with: there the texts for ternary weights are a maker's of their own,
 // ternaryMatVec, which took no packing; the texts are compared as fusedDp4aMatVec's all the same)
-const madeBy = (module, name, given) => (name === "fusedDp4aMatVec" && given[0].weights === "ternary" && module.ternaryMatVec ? module.ternaryMatVec : module[name])(...given);
+// A maker that does not take a choice this tree's catalogue gives it (a packing the other tree has no row of) says so
+// where its text would be: a difference, and the net goes on
+function madeBy(module, name, given) {
+  try {
+    return (name === "fusedDp4aMatVec" && given[0].weights === "ternary" && module.ternaryMatVec ? module.ternaryMatVec : module[name])(...given);
+  } catch (error) {
+    return `throws ${error.message}`;
+  }
+}
 
 // T368.5: a function of the shaders that makes no WGSL (the checks' JavaScript, the shapes, the key) by its statements, as
 // a syntax tree: Node runs a .ts file with its types blanked, so that String(a function) of shaders.ts has spaces where a
