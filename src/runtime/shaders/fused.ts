@@ -478,8 +478,9 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
 //   bindings   bindings 0 and 1: the weights as the shader reads their words, and the scales of their groups
 //   unpacking  what turns a word of the weights into packed int8, after SDP8AI (nothing where they are int8)
 //   rowScales  after K32: how many scales a row has, where that is not the vector's groups of 32
-//   group      after k_offset: what a thread's group of 32 is in the weights
-//   scale      the index of the scale of that group in a row (b_global, or up's row)
+//   scale      the index of the scale of a thread's group of 32 (k_offset: of int8 weights the index of its scale in
+//              a row as it is, which ORT's text names block_idx; of ternary ones two words of codes, a quarter of a
+//              scale's group) in a row (b_global, or up's row)
 //   word       a vec4<u32> of 16 packed int8, of the word at an index of b
 const DP4A_WEIGHTS = {
   int8: {
@@ -487,10 +488,7 @@ const DP4A_WEIGHTS = {
 @group(0) @binding(1) var<storage, read> scales_b: array<f32>;`,
     unpacking: "",
     rowScales: "",
-    group: `
-        // k_offset - covers 32 values of k in input_b
-        let block_idx = k_offset;`,
-    scale: (row: string) => `${row} * params.perRow + block_idx`,
+    scale: (row: string) => `${row} * params.perRow + k_offset`,
     word: (at: string) => `b[${at}]`,
   },
   ternary: {
@@ -500,8 +498,6 @@ const DP4A_WEIGHTS = {
     rowScales: `
     // the scales of a row of the weights: one a group of 128
     let K128 = params.perRow / 4u;`,
-    group: `
-        // k_offset - covers 32 values of k in input_b: two words of codes`,
     scale: (row: string) => `${row} * K128 + k_offset / 4u`,
     word: (at: string) => `ternary_packed(b[${at}])`,
   },
@@ -581,7 +577,8 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
         var own_a: vec4<u32> = tile_A[local_col * 2];
         var own_a1: vec4<u32> = tile_A[local_col * 2 + 1];
         var own_scale_a = scale_A[local_col];
-        let k_offset = kidx_v + local_col;${packing.group}
+        let k_offset = kidx_v + local_col;
+        // k_offset - covers 32 values of k in input_b
         // calculate intermediate results into inter_results.
         for (var row_offset = 0u; row_offset < tile_size; row_offset += sub_tile_count) {
             let b_global = b_global_base + row_offset + local_row;
