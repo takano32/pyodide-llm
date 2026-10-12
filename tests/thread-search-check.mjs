@@ -22,6 +22,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { tokenClock } from "./fakes/token-clock.mjs";
 import { plans as plansFor } from "./plans.mjs";
 import { runtime, runtimeUrl } from "./tree.mjs";
 
@@ -74,15 +75,13 @@ const fastest = (ms) => Number(Object.keys(ms).reduce((a, b) => (ms[b] < ms[a] ?
  * 5 tokens times by (a number, or [from, to]: one between them) with the probability slow. Returns what the engine told
  * the page to remember, its comparisons, and extra: the ms they took over as many tokens on the fastest count of ms. */
 async function visit(ms, { remembered = 0, hint = 8, sigma = 0, slow = 0, by = 3 } = {}) {
-  let engine = null, starting = false, time = 0, comparison = -1, token = 0, blockSlowed = 1;
-  const clock = () => {
-    starting = !starting;  // the search reads the clock as a token starts and as it ends
-    if (starting) return time;
+  let engine = null, comparison = -1, token = 0, blockSlowed = 1;
+  // (the search reads the clock as a token starts and as it ends: tests/fakes/token-clock.mjs)
+  const clock = tokenClock(() => {
     if (engine.searchLog.length !== comparison) [comparison, token] = [engine.searchLog.length, 0];
     if (token++ % 5 === 0) blockSlowed = random() >= slow ? 1 : Array.isArray(by) ? by[0] + (by[1] - by[0]) * random() : by;
-    time += (ms[engine.threads] ?? 30) * Math.exp(sigma * normal()) * blockSlowed;
-    return time;
-  };
+    return (ms[engine.threads] ?? 30) * Math.exp(sigma * normal()) * blockSlowed;
+  });
   engine = createForward({ memory, base: CONTROL_BYTES, size, kernels: { plain: empty, relaxed: null, wide: false }, plan, spawn, clock,
     wrap: () => new Proxy({}, { get: (_, name) => (name === "then" ? undefined : () => 0) }) });
   const told = [];
@@ -262,12 +261,8 @@ if (args.includes("--table")) {
   console.info = () => {};  // forward.js's lines about the GPU
   /** an engine with a GPU getting ready; ready(): the GPU's worker says it is; write(n): n tokens with logits */
   async function withGpu({ remembered = 0 } = {}) {
-    let engine = null, starting = false, time = 0, said = null, isReady = false, pos = 0;
-    const clock = () => {
-      starting = !starting;
-      if (!starting) time += (isReady ? ANDROID : BESIDE)[engine.threads] ?? 30;
-      return time;
-    };
+    let engine = null, said = null, isReady = false, pos = 0;
+    const clock = tokenClock(() => (isReady ? ANDROID : BESIDE)[engine.threads] ?? 30);
     const gpu = () => ({ postMessage: (data) => { if (data.type === "stop") said({ data: { type: "ended" } }); },
       set onmessage(f) { said = f; }, set onerror(f) {}, terminate() {} });
     engine = createForward({ memory: int8Memory, base: CONTROL_BYTES, size: bytes, kernels: { plain: empty, relaxed: null, wide: false }, plan: int8Plan, spawn, clock, gpu,

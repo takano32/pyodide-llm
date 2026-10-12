@@ -46,6 +46,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { Worker, isMainThread, parentPort, workerData } from "node:worker_threads";
+import { tokenClock } from "./fakes/token-clock.mjs";
 import { softwareThread } from "./helper-node.mjs";
 import { built, placeKernels, placePython, runtime, runtimeUrl, treeOf } from "./tree.mjs";
 
@@ -334,18 +335,16 @@ if (isMainThread) {
                                         ["CI's runner", { 1: 13, 2: 10, 4: 11 }, 4, 2]]) {
     const chosen = [];
     for (const slowed of [null, 0, 1, 2, 3]) {
-      let engine = null, starting = false, time = 0, comparison = -1, token = 0;
-      const clock = () => {
-        starting = !starting;  // the search reads the clock as a token starts and as it ends
-        if (starting) return time;
+      let engine = null, comparison = -1, token = 0;
+      // (the search reads the clock as a token starts and as it ends: tests/fakes/token-clock.mjs)
+      const clock = tokenClock(() => {
         // the end of a token: its count is the one the engine runs it on. No helper is started on the way to the
         // count wanted (the search goes down from counts whose helpers findThreads started), so a comparison's 20 tokens
         // are its 4 blocks of 5. (A count past ms: a search gone the wrong way)
         if (engine.searchLog.length !== comparison) [comparison, token] = [engine.searchLog.length, 0];
         const block = Math.floor(token++ / 5);
-        time += (ms[engine.threads] ?? 30) * (block === slowed ? 3 : 1);
-        return time;
-      };
+        return (ms[engine.threads] ?? 30) * (block === slowed ? 3 : 1);
+      });
       engine = createForward({ memory, base, size, kernels, plan, spawn, clock });
       await engine.findThreads({ from });
       const ended = await endSearch(engine, () => { for (let pos = 0; pos < 6; pos++) engine.forward(100 + pos, pos, true); });
@@ -359,14 +358,6 @@ if (isMainThread) {
   // T223: the owner's Android's writing of llm-jp-3 150M on the CPU alone (/benchmark/, site d531cd5): 1 thread 110,
   // 2 123, 4 38.6, 8 32.3 tok/s; as ms a token
   const LLM_JP = { 1: 1000 / 110, 2: 1000 / 123, 4: 1000 / 38.6, 8: 1000 / 32.3 };
-  const madeUpClock = (msNow) => {
-    let starting = false, time = 0;
-    return () => {
-      starting = !starting;  // the search reads the clock as a token starts and as it ends
-      if (!starting) time += msNow();
-      return time;
-    };
-  };
   const generation = (engine) => {
     engine.newGeneration();
     for (let pos = 0; pos < 6; pos++) engine.forward(100 + pos, pos, true);
@@ -374,7 +365,7 @@ if (isMainThread) {
   const verdicts = (engine) => engine.searchLog.map(({ best, candidate, faster, whileGpu }) => `${best} or ${candidate}: ${faster ? candidate : best}${whileGpu ? " (GPU getting ready)" : ""}`);
   {
     let engine = null;
-    engine = createForward({ memory, base, size, kernels, plan, spawn, clock: madeUpClock(() => LLM_JP[engine.threads] ?? 40) });
+    engine = createForward({ memory, base, size, kernels, plan, spawn, clock: tokenClock(() => LLM_JP[engine.threads] ?? 40) });
     const told = [];
     await engine.findThreads({ from: 8, chose: (count) => told.push(count) });
     const ended = await endSearch(engine, () => generation(engine));
@@ -391,7 +382,7 @@ if (isMainThread) {
       return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
         set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
     };
-    engine = createForward({ memory, base, size, kernels, plan, spawn, gpu, clock: madeUpClock(() => (gpuReady ? LLM_JP : beside)[engine.threads] ?? 40) });
+    engine = createForward({ memory, base, size, kernels, plan, spawn, gpu, clock: tokenClock(() => (gpuReady ? LLM_JP : beside)[engine.threads] ?? 40) });
     const told = [];
     await engine.findThreads({ from: 8, chose: (count) => told.push(count) });
     const turn = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -429,7 +420,7 @@ if (isMainThread) {
       return { postMessage: (data) => fake.postMessage(data), set onmessage(f) { fake.on("message", (data) => f({ data })); },
         set onerror(f) { fake.on("error", (error) => f({ message: error.message })); }, terminate: () => fake.terminate() };
     };
-    engine = createForward({ memory, base, size, kernels, plan, spawn, gpu, clock: madeUpClock(() => (gpuReady ? LLM_JP : beside)[engine.threads] ?? 40) });
+    engine = createForward({ memory, base, size, kernels, plan, spawn, gpu, clock: tokenClock(() => (gpuReady ? LLM_JP : beside)[engine.threads] ?? 40) });
     const told = [];
     await engine.findThreads({ from: 8, chose: (count) => told.push(count) });
     const turn = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -463,7 +454,7 @@ if (isMainThread) {
     // verdicts "16 or 8: 8, 8 or 4: 8"): the 8 the page remembers there is left for 2, by the quarter (8 or 2)
     const PC = { 1: 1000 / 100, 2: 1000 / 171, 4: 1000 / 150, 8: 1000 / 158, 16: 1000 / 120 };
     let engine = null;
-    engine = createForward({ memory, base, size, kernels, plan, spawn, clock: madeUpClock(() => PC[engine.threads] ?? 40) });
+    engine = createForward({ memory, base, size, kernels, plan, spawn, clock: tokenClock(() => PC[engine.threads] ?? 40) });
     const told = [];
     await engine.findThreads({ from: 16, remembered: 8, chose: (count) => told.push(count) });
     const turn = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -479,7 +470,7 @@ if (isMainThread) {
   {
     // a count remembered from an earlier visit (4, the owner's Android's) is searched again on the first generation
     let engine = null;
-    engine = createForward({ memory, base, size, kernels, plan, spawn, clock: madeUpClock(() => LLM_JP[engine.threads] ?? 40) });
+    engine = createForward({ memory, base, size, kernels, plan, spawn, clock: tokenClock(() => LLM_JP[engine.threads] ?? 40) });
     const told = [];
     await engine.findThreads({ from: 8, remembered: 4, chose: (count) => told.push(count) });
     const idle = engine.searching;
