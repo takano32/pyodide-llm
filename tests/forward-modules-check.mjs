@@ -1,53 +1,45 @@
-// tests/forward-modules-check.mjs (T349): the names that src/runtime/forward.js and its modules (src/runtime/forward/*.js) hand
-// one another. Three things there are no variables, so that a name spelled wrong is `undefined` without a word:
-//   - a name a file uses: every one is declared in it, imported by it, or a global (a ReferenceError where the line
-//     runs, otherwise: neither the build nor Node says it before);
-//   - what createForward() (forward/engine.js) hands a part (controlArea, softwareThreads, gpuFit, gpuSide) in one object, which the
-//     part takes apart by name: the names handed are the names taken, and what the engine takes out of the part's
-//     object is in it. T378.2: a part is handed a few things (shape, weights, cpuSide, ...), each an object it takes apart
-//     once: the names taken out of each are keys of the object createForward() made, and no key is made for nothing;
-//   - the parts' objects (threads, onGpu, fit, cpuSide): every threads.<name> is a member of what softwareThreads() returns, with a
-//     setter where it is set (a member that is none would read undefined, and set nothing the part reads). T378.1: threads
-//     has no setter at all, and three getters. T378.2: onGpu (gpuSide()'s) has none either.
-// And every file of the folder is reached from the window, and the window links (Node imports it) with no export undefined.
-// T367.5: what this held before and the build and Node hold by themselves now is gone from here: that a name taken is
-// exported where it is taken from (the build: MISSING_EXPORT, an error; Node: a SyntaxError as the module is imported).
-// Node only, under a second:
+// tests/forward-modules-check.mjs (T349): what the type check does not hold of what src/runtime/forward.ts and its
+// modules (src/runtime/forward/*.ts) hand one another. Node only, under a second:
 //
 //   node tests/forward-modules-check.mjs
 //
-// The parser is @babel/parser, which Astro's packages bring (as tests/worker-modules-check.mjs, whose namesOf this uses).
+// T368.8: forward is TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a name
+// used and declared nowhere, and a name misspelt where createForward() hands a part its things or where the part
+// takes them. And that a model on the GPU
+// alone is handed no spawn (the syntax of one line here) is tests/gpu-alone-check.mjs's, which makes such an engine
+// (T450); that threads.count and onGpu.chosen cannot be assigned, the two parts' own checks'.
+// What is left here is what tsc, the build and Node all let pass, each with why:
+//   - a ring of imports, and a file of forward/ that the window does not reach (tests/imports.mjs's windowed(): the
+//     build links a ring without a word, and Node only where a module uses the other's name as it loads);
+//   - a part that takes a thing createForward() never hands it, at the top or out of shape, weights, taken, …:
+//     optional in the part's type, it is undefined without a word (the names handed are the names taken);
+//   - a key createForward() makes of shape, weights, taken, cpuSide, … that no part takes out: a fact carried for
+//     nothing, and a correct object to tsc;
+//   - a name taken out of a part's object, or said of one (threads.<name>, onGpu.<name>, …), that is not in it, and
+//     a member set that has no setter: tsc says the plain mistake, and not one made through a cast, which this reads
+//     with the types blanked;
+//   - what is read of the two parts' state: threads has three getters and onGpu seven, and one more is state shown
+//     that was the part's own (T378.1, T378.2);
+//   - that the window links in Node with no export undefined.
+// The parser is @babel/parser, which Astro's packages bring.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { windowed } from "./imports.mjs";
 import { treeOf } from "./tree.mjs";
-import { namesOf } from "./worker-modules-check.mjs";
 
-const GLOBALS = new Set(("Array Atomics BigInt BigInt64Array Boolean Error Float32Array Float64Array Infinity Int32Array Int8Array Map Math NaN Number Object " +
-  "Promise Set SharedArrayBuffer Uint16Array Uint8Array URL WebAssembly clearTimeout console performance setTimeout undefined").split(" "));
 // (where the runtime is: tests/tree.mjs. tests/imports.mjs's windowed() reads the window and every file it reaches,
 // says a ring, and holds every file of the folder to be reached)
 const tree = treeOf();
 const linked = windowed("forward.ts", { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, more: ["jobs.ts"] });
 const modules = linked.there;
-const files = new Map([...linked.files].map(([name, { text }]) => [name, text]));
 const programs = new Map([...linked.files].map(([name, { program }]) => [name, program]));
 
-// ---- every name used is declared, imported, or a global
 const keysOf = (pattern, what) => pattern.properties.map((property) => {
   assert.ok(property.type === "ObjectProperty" && !property.computed && property.key.type === "Identifier", `${what}: a plain name`);
   return property.key.name;
 });
-let names = 0;
-for (const [name] of programs) {
-  if (name === "jobs.ts") continue;
-  const { free } = namesOf(files.get(name)), unknown = [...free].filter((used) => !GLOBALS.has(used));
-  assert.deepEqual(unknown, [], `${name} uses ${unknown}, which it neither declares nor imports: a ReferenceError where the line runs`);
-  names += free.size;
-}
-console.log(`forward-modules-check: ${programs.size - 1} files use nothing they do not declare or import (${names} names of the globals)`);
 
-// ---- the parts: what the engine hands each is what it takes, and what a part's object is asked for is in it
+// ---- the parts: what the engine hands each is what it takes
 const functionOf = (file, name) => programs.get(file).body.map((node) => node.declaration ?? node).find((node) => node.type === "FunctionDeclaration" && node.id.name === name);
 const walk = (node, visit) => {
   if (!node || typeof node.type !== "string") return;
@@ -85,13 +77,6 @@ walk(create, (node) => {
     assert.deepEqual(keysOf(call.arguments[0], part).sort(), keysOf(made.params[0], part).sort(), `what createForward() hands ${part} is what it takes`);
     handed += call.arguments[0].properties.length;
     calls.push([part, made, call]);
-    // T378.1: a model on the GPU alone (direct, T156) runs nothing on the CPU, and the one way the threads' part knows
-    // is that it is handed no spawn (T450: tests/gpu-alone-check.mjs makes such an engine and sees that none is started)
-    if (part === "softwareThreads") {
-      const spawn = call.arguments[0].properties.find((property) => property.key.name === "spawn").value;
-      assert.ok(spawn.type === "ConditionalExpression" && spawn.test.type === "Identifier" && spawn.test.name === "direct" && spawn.consequent.type === "NullLiteral" &&
-        spawn.alternate.type === "Identifier" && spawn.alternate.name === "spawn", "createForward() hands softwareThreads no spawn where the model is on the GPU alone (spawn: direct ? null : spawn): software threads would be started there");
-    }
     const returned = made.body.body.at(-1);
     assert.ok(returned.type === "ReturnStatement" && returned.argument.type === "ObjectExpression", `${part} returns one object`);
     const members = membersOf(returned.argument);
@@ -105,9 +90,9 @@ walk(create, (node) => {
 });
 assert.deepEqual([...objects.keys()].sort(), ["control", "cpuSide", "fit", "onGpu", "threads"], "the parts' objects in createForward()");
 // T378.2: a part is handed a few things, each an object it takes apart at its top (const { a, b } = shape): every name
-// taken out of one is a key of the object createForward() made for it (a name that is none is undefined without a
-// word, as before), and every key made is taken by some part (one that no part takes is a fact carried for nothing).
-// NOT_HANDED: what a part takes with a default and only a test hands it
+// taken out of one is a key createForward() made (a misspelt one is tsc's to say; one that is optional in the type and
+// never made is undefined without a word), and every key made is taken by some part (one that no part takes is a fact
+// carried for nothing). NOT_HANDED: what a part takes with a default and only a test hands it
 const NOT_HANDED = { gpuSide: { options: ["now"] } };
 const made = new Map(), taken = new Map();  // an object of createForward() -> its keys; -> the keys the parts take
 let grouped = 0;
@@ -146,16 +131,15 @@ for (const [where, keys] of made) {
   assert.deepEqual(unread, [], `createForward() makes ${where} with ${unread}, which no part takes out of it`);
 }
 assert.deepEqual([...made.keys()].sort(), ["cpuSide", "gpuFit.device", "gpuSide.options", "shape", "taken", "weights"], "the things createForward() hands its parts");
-// T378.1: the software threads' state has one owner: its object has no setter (what happens is told it by functions
-// named for that), and the three things read of it are all it has that is no function of its own or a fact made once
-const settable = [...objects.get("threads")].filter(([, kinds]) => kinds.has("set")).map(([name]) => name);
-assert.deepEqual(settable, [], `softwareThreads()'s object has a setter (${settable}): its variables are its own, and what happens is told it by a function`);
-assert.deepEqual([...objects.get("threads")].filter(([, kinds]) => kinds.has("get")).map(([name]) => name).sort(), ["count", "lost", "searching"], "what is read of the software threads' state");
-// T378.2: the GPU's side's state the same: no setter, and what is read of it is what the page is shown
-const assignable = [...objects.get("onGpu")].filter(([, kinds]) => kinds.has("set")).map(([name]) => name);
-assert.deepEqual(assignable, [], `gpuSide()'s object has a setter (${assignable}): its variables are its own, and what happens is told it by a function`);
-assert.deepEqual([...objects.get("onGpu")].filter(([, kinds]) => kinds.has("get")).map(([name]) => name).sort(),
-  ["chosen", "promptTokens", "ready", "sampled", "status", "stepsWhyNot", "whyNot"], "what is read of the GPU's side's state");
+// T378.1, T378.2: the state of the software threads and of the GPU's side has one owner each: what happens is told the
+// part by functions named for that, and what is read of it is these getters and no other (that none can be assigned is
+// tests/threads-part-check.mjs's and tests/gpu-part-check.mjs's to see, and that each is a member where it is read, tsc's)
+const getters = (part) => [...objects.get(part)].filter(([, kinds]) => kinds.has("get")).map(([name]) => name).sort();
+assert.deepEqual(getters("threads"), ["count", "lost", "searching"], "what is read of the software threads' state");
+assert.deepEqual(getters("onGpu"), ["chosen", "promptTokens", "ready", "sampled", "status", "stepsWhyNot", "whyNot"], "what is read of the GPU's side's state");
+// every threads.<name>, onGpu.<name>, fit.<name> and cpuSide.<name> is a member of that object, with a setter where it
+// is set. tsc says one that is misspelt, and one set that has no setter (T368.8); these lines are kept for what it
+// lets pass: a name said through a cast (the types are blanked here: `(threads as T).cuont` is threads.cuont)
 let through = 0;
 for (const [name, program] of programs) {
   walk(program, (node) => {
@@ -170,7 +154,8 @@ for (const [name, program] of programs) {
     }
   });
 }
-console.log(`forward-modules-check: createForward() hands its parts the ${handed} things they take (${grouped} names taken out of ${made.size} of them), and the ${through} places that go through threads, onGpu, fit and cpuSide name members of them`);
+console.log(`forward-modules-check: createForward() hands its parts the ${handed} things they take (${grouped} names taken out of ${made.size} of them), ` +
+  `and the ${through} places that go through threads, onGpu, fit and cpuSide name members of them; what is read of threads and of onGpu is their getters`);
 
 // ---- the window links, and exports nothing undefined
 const window = await import(tree.runtimeUrl("forward.js"));

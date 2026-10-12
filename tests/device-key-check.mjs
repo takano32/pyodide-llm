@@ -11,7 +11,7 @@
 // modules as the one module they were (tests/shaders-source.mjs's oneSource(): their statements in the window's order,
 // without the lines that hand names from one to another), and "the file" below is that text. That it is the modules'
 // own behaviour is held where the check starts: run as it is, it gives the keys of the window imported for real.
-// (Whether each module takes the names it uses is tests/shaders-modules-check.mjs's.)
+// (Whether each module takes the names it uses is the type check's: tests/types.mjs.)
 //
 // (1) Every piece of text of the engine's shaders reaches the hash. A piece is a string, a number or a run of a
 //     template's text in the source of src/runtime/shaders.js's modules; the engine's shaders are every text and maker that

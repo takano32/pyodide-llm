@@ -10,10 +10,20 @@
 // A .js file that a .ts file imports is read for its shapes and not checked (checkJs is off): a file is checked from
 // the day it is made .ts.
 //
-// The rule tsc does not hold: a type's import is `import type { X } from …`, never `import { type X } from …` with
-// nothing else in the braces. Node runs a .ts file by blanking its types, so the second form is left as an import of
-// the module (it is loaded and run, for nothing: T378.5's note), where a bundler drops it. With `import type` the two
-// read the same.
+// Two rules tsc does not hold:
+//   - a type's import is `import type { X } from …`, never `import { type X } from …` with nothing else in the braces.
+//     Node runs a .ts file by blanking its types, so the second form is left as an import of the module (it is loaded
+//     and run, for nothing: T378.5's note), where a bundler drops it. With `import type` the two read the same.
+//   - (T368.8) a name that a file of the runtime uses and neither declares nor imports is one of AMBIENT, the names of
+//     a worker that these files mean to use. tsc says a name that is nowhere (TS2304: a forgotten import, a misspelling;
+//     the six *-modules-check.mjs each said that with a list of their own until T368.8). It does not say one that
+//     its library declares: `name` is a string in every worker, so a line moved out of the loop that bound its `name`
+//     reads the worker's, and types the same. Nor one that a file without an import or an export declares at its top:
+//     such a file is a script to tsc, and its names are every file's (benchmark/reader.ts's COUNT and TOTAL, which
+//     forward/threads.ts imports from jobs.ts: left out of that import, tsc reads the reader's). A new ambient name is
+//     added to the list where it is first used; one that no file uses any more is taken off (said here).
+//     The pages' scripts have the same rule with a page's names in tests/page-modules-check.mjs (the .astro scripts
+//     are in no program of tsc's), and src/bench/'s JavaScript in tests/bench-modules-check.mjs.
 //
 // The count: every `any` that is written (and every @ts-expect-error, @ts-ignore), by file. Each step of T368 reports
 // it; none is refused here. An `any` is counted where it stands in a type (what blanking the types removes), so one
@@ -22,10 +32,21 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { namesOf } from "./names.mjs";
 import { typed, untyped } from "./untyped.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 export const PROGRAMS = ["tsconfig.page.json", "tsconfig.worker.json", "tsconfig.sw.json"];
+
+// what a worker (and the page's main thread, for the two modules it runs too: kept.ts, updated.ts) has without
+// declaring it, as far as the runtime's files use it
+export const AMBIENT = new Set(("AbortController Array ArrayBuffer Atomics BigInt BigInt64Array Boolean Date Error FileSystemFileHandle Float32Array Float64Array " +
+  "Infinity Int32Array Int8Array JSON Map Math MessageChannel NaN Number Object PerformanceObserver Promise ReadableStream Response Set SharedArrayBuffer String Symbol " +
+  "TextEncoder TransformStream URL URLSearchParams Uint16Array Uint32Array Uint8Array WeakMap WebAssembly Worker WritableStream clearInterval clearTimeout console crypto " +
+  "encodeURIComponent fetch globalThis navigator onmessage performance postMessage self setInterval setTimeout undefined").split(" "));
+
+/** the names a text uses and neither declares nor imports (its types blanked first: a type's name is no name used) */
+export const ambient = (text, name) => [...namesOf(untyped(text, name)).free];
 
 /** the imports of a text that name types alone and are not `import type`: the statements, as written */
 export function typeOnlyImports(text) {
@@ -67,6 +88,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     failed = true;
     console.log(`types: ${file}: ${statement}\n    names types alone: write it \`import type { … }\` (Node would load the module for nothing, a bundler would not)`);
   }
+  const used = new Set();
+  for (const file of sources("src/runtime")) {
+    const free = ambient(fs.readFileSync(path.join(root, file), "utf8"), file), unknown = free.filter((name) => !AMBIENT.has(name));
+    free.forEach((name) => used.add(name));
+    if (!unknown.length) continue;
+    failed = true;
+    console.log(`types: ${file} uses ${unknown.join(", ")}, which it neither declares nor imports, and which is no ambient name the runtime uses (tests/types.mjs's AMBIENT):\n` +
+      "    a forgotten import that tsc reads as its library's name or as a script's; or a new ambient name, to add to AMBIENT");
+  }
+  const unused = [...AMBIENT].filter((name) => !used.has(name));
+  if (unused.length) { failed = true; console.log(`types: AMBIENT lists ${unused.join(", ")}, which no file of src/runtime uses any more: take ${unused.length > 1 ? "them" : "it"} off`); }
+  console.log(`types: the runtime's ${sources("src/runtime").length} files use ${used.size} ambient names, each one of AMBIENT's ${AMBIENT.size}`);
   const total = (key) => counts.reduce((sum, count) => sum + count[key], 0);
   console.log(`types: ${files.length} TypeScript sources; any written ${total("any")} times (${counts.filter((count) => count.any).map((count) => `${count.file.replace(/^src\//, "")} ${count.any}`).join(", ") || "nowhere"}); ` +
     `${total("off")} checks switched off by a comment`);

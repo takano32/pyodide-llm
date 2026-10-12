@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { compared, report, unhashed } from "./dist-same.mjs";
 import { typed, untyped } from "./untyped.mjs";
-import { anys, typeOnlyImports } from "./types.mjs";
+import { AMBIENT, ambient, anys, typeOnlyImports } from "./types.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const scratch = path.join(root, ".tmp/dist-same-check");
@@ -143,7 +143,11 @@ console.log("dist-same-check: two builds of one code are the same code; 11 diffe
     ['import { type A } from "./a.ts";', 'import { type E, type F, } from "./e.ts";']);
   assert.deepEqual(anys('// any comment\nconst words = "any";\nconst a: any = 1, b = a as any;\nfunction f(x: any[], y: Record<string, any>): Promise<any> { return x as never; }\n// @ts-expect-error\nconst company = 1;\n', "x.ts"), { any: 5, off: 1 });
   assert.deepEqual(anys("const many = 1;\n", "x.ts"), { any: 0, off: 0 });
+  // T368.8: the names a text uses and neither declares nor imports: a type's name is none, a name bound further in is none
+  assert.deepEqual(ambient('import { a } from "./a.ts";\nimport type { T } from "./t.ts";\nlet own: T | Uint8Array;\nexport function f(given: T) {\n  for (const name of a) own = given;\n  return name + nowhere + fetch.length;\n}\n', "x.ts"),
+    ["name", "nowhere", "fetch"]);
+  assert.ok(AMBIENT.has("fetch") && !AMBIENT.has("name") && !AMBIENT.has("document"), "a worker's own names that the runtime means to use: not `name`, and nothing of a page");
 }
-console.log("dist-same-check: a .ts text is blanked to the same length and lines; a type's import and a written any are found");
+console.log("dist-same-check: a .ts text is blanked to the same length and lines; a type's import, a written any and an ambient name are found");
 fs.rmSync(scratch, { recursive: true, force: true });
 console.log("dist-same-check: ok");

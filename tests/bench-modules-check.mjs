@@ -1,25 +1,27 @@
-// tests/bench-modules-check.mjs (T353): the names that /benchmark/'s GPU worker (src/runtime/benchmark/gpu.ts) and its modules
-// (src/runtime/benchmark/gpu/*.ts; .js until T368.7) hand one another, and the names the modules of src/bench/ use. None of these is held by
-// anything else outside a browser with a GPU: the worker's steps run only there (CI's bench-check.mjs and bench-dawn.mjs).
-//   - every name a file uses is declared in it, imported by it, or a worker's global (a ReferenceError where the
-//     line runs, otherwise: neither the build nor Node says it before);
-//   - every shared.<name> is a field of the one object the steps share (gpu/device.js's shared: a field is no variable,
-//     and a wrong name reads undefined and sets nothing a step reads), and every field is used;
-//   - what the modules take from one another goes round nowhere (tests/imports.mjs's windowed(): the build links a ring
-//     without a word), and every file of the folder is reached from the window;
-//   - the window links in Node with every export defined, and a message given to the steps' onmessage as it is set is
-//     answered once;
-//   - (T368.7) every message a section's worker posts to the page says which type of contracts/benchmark.ts it is
-//     (`satisfies`): a worker's own postMessage() takes anything, and tsc holds only a message that says so.
-// T367.5: what this held before and the build and Node hold by themselves now is gone from here: that a name taken is
-// exported where it is taken from (the build: MISSING_EXPORT, an error; Node: a SyntaxError as the module is imported).
-// And every module of src/bench/ uses only what it declares or imports (the tables are functions: a name that is
-// nowhere is a ReferenceError only when that table is written).
-// Node only, under a second:
+// tests/bench-modules-check.mjs (T353): what the type check does not hold of /benchmark/'s GPU worker
+// (src/runtime/benchmark/gpu.ts) and its modules (src/runtime/benchmark/gpu/*.ts), and the names the modules of
+// src/bench/ use. Nothing else reads the worker's lines outside a browser with a GPU: its steps run only there (CI's
+// bench-check.mjs and bench-dawn.mjs). Node only, under a second:
 //
 //   node tests/bench-modules-check.mjs
 //
-// The parser is @babel/parser, which Astro's packages bring (as tests/worker-modules-check.mjs, whose namesOf this uses).
+// T368.8: the worker is TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a name
+// used and declared nowhere. (A shared.<name> that is misspelt is tsc's too, and still said below: the same line holds
+// a field that the type has as optional and the object is made without.)
+// What is left here is what tsc, the build and Node all let pass, each with why:
+//   - a shared.<name> that gpu/device.ts's object is made without (optional in its type, it is undefined without a
+//     word), and a field of it that no step reads or sets (a correct object to tsc);
+//   - a ring of imports, and a file of the folder that the window does not reach (tests/imports.mjs's windowed(): the
+//     build links a ring without a word);
+//   - (T368.7) a message a section's worker posts to the page without `satisfies` a type of contracts/benchmark.ts: a
+//     worker's own postMessage() takes anything, and tsc holds only a message that says so;
+//   - that the window links in Node with every export defined, and that a message given to the steps' onmessage as it
+//     is set is answered once;
+//   - a name that a module of src/bench/ uses and neither declares nor imports: those are JavaScript (T480), which tsc
+//     reads for its shapes and does not check, and the tables are functions (a name that is nowhere is a
+//     ReferenceError only when that table is written).
+// What it does not see: an await before the steps' onmessage is set (the import below waits for the module whole).
+// The parser is @babel/parser, which Astro's packages bring.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -28,10 +30,8 @@ import { contract } from "./contracts.mjs";
 import { windowed } from "./imports.mjs";
 import { treeOf } from "./tree.mjs";
 import { typed, untyped } from "./untyped.mjs";
-import { namesOf } from "./worker-modules-check.mjs";
+import { namesOf } from "./names.mjs";
 
-const GLOBALS = new Set(("AbortController Array ArrayBuffer Atomics BigInt64Array Boolean Error Float32Array Float64Array Infinity Int32Array Int8Array Map Math NaN Number " +
-  "Object Set String URL Uint16Array Uint32Array Uint8Array WebAssembly clearTimeout fetch globalThis navigator onmessage performance postMessage self setTimeout undefined").split(" "));
 // (where the runtime is: tests/tree.mjs. tests/imports.mjs's windowed() reads the window and every file it reaches,
 // says a ring, and holds every file of the folder to be reached)
 const tree = treeOf();
@@ -43,22 +43,9 @@ const linked = windowed(at(WINDOW), { read: (name) => fs.readFileSync(tree.runti
 // (a file by its name under the worker's folder; one outside it that a module takes names of, T367.3's table of the
 // built files, by its way from there: "../built.js")
 const short = (name) => (name.startsWith(at("")) ? name.slice(at("").length) : `../${name}`);
-const full = new Map([...linked.files.keys()].map((name) => [short(name), name]));
-const files = new Map([...linked.files].map(([name, { text }]) => [short(name), text]));
 const programs = new Map([...linked.files].map(([name, { program }]) => [short(name), program]));
-
-// ---- every name used is declared, imported, or a global
-let names = 0;
-for (const [name] of programs) {
-  const { free } = namesOf(files.get(name)), unknown = [...free].filter((used) => !GLOBALS.has(used));
-  assert.deepEqual(unknown, [], `${name} uses ${unknown}, which it neither declares nor imports: a ReferenceError where the line runs`);
-  names += free.size;
-  for (const { from } of linked.files.get(full.get(name)).takes) {
-    assert.ok(from.startsWith(at("gpu/")) || linked.others.includes(from), `${name} takes names from ${from}, which is no module of the worker`);
-  }
-}
 // (that none waits for itself, and that the window takes from every module or a module it takes from does: windowed())
-console.log(`bench-modules-check: the GPU worker's ${programs.size} files use nothing they do not declare or import (${names} names of a worker's globals), and none waits for itself`);
+console.log(`bench-modules-check: the GPU worker's ${programs.size} files are reached from ${WINDOW}, and none waits for itself`);
 
 // ---- the one object the steps share
 const holders = [...programs].filter(([, program]) => program.body.some((node) => (node.declaration ?? node).type === "VariableDeclaration" && (node.declaration ?? node).declarations[0].id.name === "shared"));

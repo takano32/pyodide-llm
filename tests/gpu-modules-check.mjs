@@ -1,40 +1,40 @@
-// tests/gpu-modules-check.mjs (T352): the names that the model's GPU worker (src/runtime/gpu.js) and its modules
-// (src/runtime/gpu/*.js) use. Nothing else holds them outside a browser with a GPU: the worker runs only there
-// (CI's gpu-check.mjs), and the checks of forward.js's choices make a GPU's worker of their own.
-//   - every name a file uses is declared in it, imported by it, or a worker's global (a ReferenceError where the line
-//     runs, otherwise: neither the build nor Node says it before);
-//   - T378.4: the model on the GPU, whether a stop was asked and why the device was lost are gpu/device.js's own
-//     variables (model, stopping, lost): no other module sets them (an import cannot be assigned: a TypeError where
-//     the line runs, which neither Node nor the build says before), and no file binds a name of theirs (a parameter or
-//     a local would hide the variable from the function's lines);
-//   - T378.4: the model's record (m, model) is device.js's fields and four records, m.weights, m.block, m.forms and
-//     m.tokens, each made and set by one module: every field read is one its owner declares where it makes the record,
-//     every write is in the owner's file, and no record is handed on whole (see the section below);
-//   - what the modules take from one another goes round nowhere (tests/imports.mjs's windowed(): the build links a
-//     ring without a word, and Node only where a module uses the other's name as it loads), and every file of gpu/
-//     is reached from the window;
-//   - the window links in Node, and a start and the stop after it, given to its receiver as it is set, are answered
-//     once each, in their order.
-// T367.5: what this held before and the build and Node hold by themselves now is gone from here: that a name taken is
-// exported where it is taken from (the build: MISSING_EXPORT, an error; Node: a SyntaxError as the window is imported
-// below), and that no module exports a `let` (a static import is the live binding, no copy). What a module takes of
-// the shaders is tests/device-key-check.mjs's (the import lines are the shaders the key must hold).
-// Node only, under a second:
+// tests/gpu-modules-check.mjs (T352): what the type check does not hold of the model's GPU worker (src/runtime/gpu.ts)
+// and its modules (src/runtime/gpu/*.ts). Nothing else reads their lines outside a browser with a GPU: the worker runs
+// only there (CI's gpu-check.mjs), and the checks of forward.ts's choices make a GPU's worker of their own. Node only,
+// under a second:
 //
 //   node tests/gpu-modules-check.mjs
 //
-// The parser is @babel/parser, which Astro's packages bring (as tests/worker-modules-check.mjs, whose namesOf this uses).
+// T368.8: the worker is TypeScript, and tsc (tests/types.mjs) says what this check said before of a wrong name: a name
+// used and declared nowhere, and model, stopping or lost assigned outside gpu/device.ts (an import cannot be
+// assigned: TS2632). (A field of the model's record that is misspelt is tsc's too, and still said below: the same
+// line holds a field that the type has as optional and no owner makes.)
+// What is left here is what tsc, the build and Node all let pass, each with why:
+//   - a module that takes names from elsewhere than the worker's modules and the shaders' parts: it links, and what
+//     the worker's file holds grows without a word (T367.5);
+//   - T378.4: a name model, stopping or lost bound in a file (a parameter or a local hides gpu/device.ts's variable
+//     from the function's lines, and types the same), one of them read as a module loads (a copy of what it was
+//     then), and `common`, the object the modules shared, back;
+//   - T378.4: the model's record has owners. m.weights, m.block, m.forms and m.tokens are each made in one place and
+//     set in one module's file alone, device.ts's own fields in device.ts alone (to tsc any module may set a field of
+//     the right type); every field read is one its owner makes (to tsc one that the type has as optional is there);
+//     a record goes nowhere whole (this follows a record by its names: one handed on is set where this does not
+//     look); and every field made is read somewhere (one that nothing reads is a correct record to tsc);
+//   - a message posted without `satisfies FromGpu`: the worker's own postMessage() takes anything;
+//   - a ring of imports, and a file of gpu/ that the window does not reach (tests/imports.mjs's windowed(): the build
+//     links a ring without a word, and Node only where a module uses the other's name as it loads);
+//   - that the window links in Node, and that a start and the stop after it, given to its receiver as it is set, are
+//     answered once each, in their order.
+// What a module takes of the shaders is tests/device-key-check.mjs's (the import lines are the shaders the key must hold).
+// What it does not see: an await before the receiver is set (the import below waits for the module whole).
+// The parser is @babel/parser, which Astro's packages bring.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { parse } from "@babel/parser";
 import { windowed } from "./imports.mjs";
 import { treeOf } from "./tree.mjs";
-import { namesOf } from "./worker-modules-check.mjs";
 
-const GLOBALS = new Set(("Array ArrayBuffer Atomics BigInt BigInt64Array Boolean Error Float32Array Float64Array Infinity Int32Array Int8Array Map Math " +
-  "NaN Number Object Promise Set String URL Uint16Array Uint32Array Uint8Array clearInterval clearTimeout navigator onmessage performance postMessage " +
-  "self setInterval setTimeout undefined").split(" "));
 // (where the runtime is: tests/tree.mjs. tests/imports.mjs's windowed() reads the window and every file it reaches,
 // says a ring, and holds every file of gpu/ to be reached; the shaders' parts a module takes names of are read with them)
 const tree = treeOf();
@@ -42,21 +42,16 @@ const tree = treeOf();
 const WINDOW = path.basename(tree.runtime("gpu.js")), END = path.extname(WINDOW);
 const linked = windowed(WINDOW, { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
 const own = (name) => name === WINDOW || name.startsWith("gpu/");
-const files = new Map([...linked.files].filter(([name]) => own(name)).map(([name, { text }]) => [name, text]));
 const programs = new Map([...linked.files].filter(([name]) => own(name)).map(([name, { program }]) => [name, program]));
 const top = (node) => (node.type === "ExportNamedDeclaration" && node.declaration ? node.declaration : node);
 
-// ---- every name used is declared, imported, or a global
-let names = 0;
+// ---- a module of the worker takes of the worker's modules and of the shaders' parts
 for (const [name] of programs) {
-  const { free } = namesOf(files.get(name)), unknown = [...free].filter((used) => !GLOBALS.has(used));
-  assert.deepEqual(unknown, [], `${name} uses ${unknown}, which it neither declares nor imports: a ReferenceError where the line runs`);
-  names += free.size;
   for (const { from } of linked.files.get(name).takes) {
     assert.ok(own(from) || /^shaders\/\w+\.[jt]s$/.test(from), `${name} takes names from ${from}: a module of the worker takes of the worker's modules and of the shaders' parts (shaders/<part>.js)`);
   }
 }
-console.log(`gpu-modules-check: the GPU worker's ${programs.size} files use nothing they do not declare or import (${names} names of a worker's globals), and none waits for itself`);
+console.log(`gpu-modules-check: the GPU worker's ${programs.size} files take of one another and of the shaders' parts, and none waits for itself`);
 
 // ---- what device.js holds and the others read (T378.4): model, stopping, lost
 const walk = (node, visit, parent = null, key = "") => {
@@ -72,9 +67,6 @@ const lets = programs.get(OWNER).body.map(top).filter((node) => node.type === "V
 for (const name of HELD) assert.ok(lets.includes(name), `${OWNER} holds ${name} as a let of its own`);
 assert.ok(![...programs.values()].some((program) => program.body.map(top).some((node) => node.type === "VariableDeclaration" && node.declarations.some((d) => d.id.name === "common"))),
   "no module declares common: what the modules read of one another is a name each, set where it is declared (T378.4)");
-// a name written: the left of an assignment (a pattern's element too), ++ and --
-const written = (node, parent, key) => (parent.type === "AssignmentExpression" && key === "left") || parent.type === "UpdateExpression" ||
-  ((parent.type === "ArrayPattern" || (parent.type === "ObjectProperty" && key === "value") || parent.type === "RestElement" || parent.type === "AssignmentPattern") && key !== "right");
 // a name bound: declared, a parameter, caught
 const bound = (node, parent, key) => (parent.type === "VariableDeclarator" && key === "id") || (/Function/.test(parent.type) && (key === "params" || key === "id")) ||
   (parent.type === "CatchClause" && key === "param") || (parent.type === "ClassDeclaration" && key === "id");
@@ -93,20 +85,18 @@ for (const [name, program] of programs) {
     const binds = bound(node, parent, key) || (inPattern.has(parent) && (key === "value" || key === "elements" || parent.shorthand));
     if (name === OWNER && parent.type === "VariableDeclarator" && key === "id" && topLets.has(parent)) return;  // its own let
     assert.ok(!binds, `${name} binds a name ${node.name} of its own (line ${node.loc.start.line}): it hides ${OWNER}'s ${node.name} from the lines after it`);
-    if (written(node, parent, key)) {
-      assert.equal(name, OWNER, `${name} sets ${node.name} (line ${node.loc.start.line}): ${OWNER} holds it, and an import cannot be assigned (a TypeError where the line runs); say what happened to ${OWNER} instead`);
-    } else read += 1;
+    read += 1;
   });
 }
-console.log(`gpu-modules-check: model, stopping and lost are gpu/device.js's, set there alone and read ${read} times; no module hides them`);
+console.log(`gpu-modules-check: model, stopping and lost are gpu/device.js's, named ${read} times; no module hides them`);
 
 // ---- the model's record (T378.4): what device.js puts in it, and the four records, each one module's
-// A field is no variable: a wrong name reads undefined and sets nothing another module reads, and neither Node nor the
-// build says so. Every m.<name> and model.<name> is a field device.js's openDevice() declares or one of the records;
-// every field read of a record is one its owner declares where it makes the record (m.<record> = { ... }: the literal's
-// keys, and the keys of what a builder of another module returns where the literal spreads it); a record and its
-// fields are set in the owner's file alone; and a record goes nowhere whole (taken apart or under a local name in
-// the function that reads it, where this follows it).
+// A record's fields are what its owner declares where it makes the record (m.<record> = { ... }: the literal's keys, and
+// the keys of what a builder of another module returns where the literal spreads it). Every field read is one of them
+// (tsc says a name that the record's type has not; one that the type has as optional and the owner never makes is
+// undefined without a word); a record and its fields are set in the owner's file alone; a record goes nowhere whole
+// (taken apart or under a local name in the function that reads it, where this follows it); and every field is read
+// somewhere.
 const RECORDS = { weights: `gpu/weights${END}`, block: `gpu/block${END}`, forms: `gpu/forms${END}`, tokens: `gpu/tokenforms${END}` };
 const MODEL = ["m", "model"];
 const isMember = (node) => node.type === "MemberExpression" || node.type === "OptionalMemberExpression";
@@ -141,7 +131,7 @@ function builtBy(fn) {
   });
   assert.ok(keys.size, `${file}: ${fn}() returns no object`);
   if (local) {
-    descend(node.body, (n, path) => {
+    descend(node.body, (n) => {
       if (isMember(n) && !n.computed && n.object.type === "Identifier" && n.object.name === local) {
         assert.ok(keys.has(n.property.name), `${file}: ${fn}() says ${local}.${n.property.name}, which is no field of the ${local} it declares (line ${n.loc.start.line})`);
       }
@@ -279,7 +269,7 @@ console.log(`gpu-modules-check: the model's record: ${base.size} fields of gpu/d
 // the types blanked, as everywhere else in this check, say nothing of it.)
 if (END === ".ts") {
   let said = 0;
-  for (const name of files.keys()) {
+  for (const name of programs.keys()) {
     const typedProgram = parse(fs.readFileSync(tree.runtime(name), "utf8"), { sourceType: "module", plugins: ["typescript"] }).program;
     walk(typedProgram, (node) => {
       if (node.type !== "CallExpression" || node.callee.type !== "Identifier" || node.callee.name !== "postMessage") return;

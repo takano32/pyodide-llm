@@ -48,8 +48,10 @@ page_modules() {
   node tests/imports-check.mjs
   # T368.1: the type check of what a browser runs (tsc --noEmit on three programs: the pages' scripts, the runtime's
   # TypeScript, the Service Worker as the JavaScript it is), that a type's import is said as one, and the count of the
-  # anys that are written; then the tool that says whether two builds are the same code (tests/dist-same.mjs, the proof
-  # of a step that only adds types) and what blanks a .ts file's types for the tools, on made-up builds and texts
+  # anys that are written; T368.8: and that a name a file of the runtime uses without declaring or importing it is an
+  # ambient name the runtime means (the one thing of a wrong name that tsc lets pass). Then the tool that says whether
+  # two builds are the same code (tests/dist-same.mjs, the proof of a step that only adds types) and what blanks a .ts
+  # file's types for the tools, on made-up builds and texts
   node tests/types.mjs
   node tests/dist-same-check.mjs
   # T368.2: the shapes that cross a line as plain objects are types (src/runtime/contracts/): what reads them for the
@@ -75,9 +77,9 @@ page_modules() {
   # T366: the device's key holds the WGSL a device is given and no function's source: one character more in any piece of
   # the engine's shaders moves it, and a formatter's, a minifier's or a bundler's way with the file does not (about 15 s)
   node tests/device-key-check.mjs
-  # T351: the names shaders.js (the window) and its modules (src/runtime/shaders/) hand one another: what a file takes of another
-  # is exported there, each module comes after those it takes from, and the window exports every name the modules export
-  # where they are declared (a name that is nowhere is "undefined" in a shader's text, which only a GPU refuses)
+  # T351: what tsc does not hold of the names shaders.ts (the window) and its modules (src/runtime/shaders/) hand one
+  # another: each module comes after those it takes from, and the window exports every name the modules export where
+  # they are declared (the tools read the window as JavaScript: a name dropped is undefined there without a word)
   node tests/shaders-modules-check.mjs
   # T225's review: /benchmark/'s layer check against devices that round the cache's float16 as WGSL lets them (about 10 s)
   node tests/layer-check.mjs
@@ -95,37 +97,38 @@ page_modules() {
   # T374.4: what the Node tools that convert a model answer the same conduct with (tests/conducting.mjs), alone: a
   # stand-in generator, a folder under .tmp/, no Pyodide (under a second)
   node tests/conducting-check.mjs
-  # T350: the names the worker and its modules (src/runtime/worker/) use: declared, imported, or the worker's globals (the two
-  # checks above run them as scripts of one context, where a missing import does not show); T378.3: and that a module
-  # sets its own variables alone (no imported name assigned or hidden by a local, no top-level name twice)
+  # T350, T378.3: what tsc does not hold of the worker and its modules (src/runtime/worker/): no imported name hidden
+  # by a local, no top-level name twice (one name in the one context the two checks above run them in); T368.2: the
+  # messages' types have nothing that nobody writes or reads, and every message posted says its type to tsc
   node tests/worker-modules-check.mjs
   # T378.3: what the worker's modules hold has owners: request.js (what the page asked for with a load) as the module
   # it is, and loaded.js (the model loaded now) on a stand-in of Pyodide and of a model: no model, no network
   node tests/worker-parts-check.mjs
-  # T349: the names forward.js and its modules (src/runtime/forward/) hand one another: what a file takes from another is
-  # exported there, what createForward() hands a part is what the part takes, and every threads.<name>, onGpu.<name> and
-  # held.<name> is a member of that object (none of these is a variable: a wrong name is undefined without a word)
+  # T349: what tsc does not hold of what forward.ts and its modules (src/runtime/forward/) hand one another: no ring of
+  # imports, a part takes nothing createForward() never hands it, every key made of shape, weights, … is taken by a
+  # part, and what is read of the two parts' state is their getters
   node tests/forward-modules-check.mjs
   # T357: the plan Python hands forward.js and the plan forward.js hands the GPU's worker, each held to both of its ends:
   # a key written and read nowhere, or read and never written (undefined without a word), for one made-up model of every
   # layout and dtype (under a second)
   node tests/plan-keys-check.mjs
   # T355: the names the model page's script (src/pages/index.astro and src/page/) and /benchmark/'s use: declared,
-  # imported, or a page's globals (the build does not say a name that is nowhere, and nothing opens the page outside
-  # CI's browsers); T378.5: what the parts hold has owners (model.ts, answer.ts, running.ts): no imported name
-  # assigned or hidden by a local, no top-level name twice, and the owners read nothing of a page
+  # imported, or a page's globals (the .astro scripts are in no program of tsc's, the build does not say a name that
+  # is nowhere, and tsc takes a page's own names for the modules'); T378.5: what the parts hold has owners (model.ts,
+  # answer.ts, running.ts): no imported name hidden by a local, no top-level name twice, and the owners read nothing
+  # of a page
   node tests/page-modules-check.mjs
   # T378.5: the owners of the pages' state each by itself, imported by Node as the modules they are (model.ts, answer.ts,
   # running.ts: what each event changes and nothing else), and the model a visit opens with (opening.ts, a process a visit)
   node tests/page-parts-check.mjs
-  # T353: the names /benchmark/'s GPU worker (src/runtime/benchmark/gpu.js) and its modules hand one another, every shared.<name>
-  # a field of the object the steps share, a message at the window's first await answered once, and the names the tables'
-  # modules (src/bench/) use (the worker's steps run only where there is a GPU: nothing else outside CI reads them)
+  # T353: what tsc does not hold of /benchmark/'s GPU worker (src/runtime/benchmark/gpu.ts) and its modules: no ring of
+  # imports, every field of the object the steps share used, every message posted says its type, a message as the
+  # window's onmessage is set answered once; and the names the tables' modules (src/bench/, JavaScript) use
   node tests/bench-modules-check.mjs
-  # T352: the names the model's GPU worker (src/runtime/gpu.js) and its modules (src/runtime/gpu/) hand one another;
-  # T378.4: its state's owners (model, stopping and lost are device.js's; every field of the model's record read is one
-  # its owner declares, every write is the owner's), and messages at the window's first await played once, in order (the
-  # worker runs only where there is a GPU: outside CI's GPU jobs nothing else reads its lines)
+  # T352, T378.4: what tsc does not hold of the model's GPU worker (src/runtime/gpu.ts) and its modules (src/runtime/gpu/):
+  # its state's owners (model, stopping and lost are hidden nowhere and read where a function runs; every field of the
+  # model's record is set in its owner's file and read somewhere), every message posted says its type, and messages as
+  # the window's receiver is set played once, in order (the worker runs only where there is a GPU)
   node tests/gpu-modules-check.mjs
   # T378.4: the parts of that worker that hold its state, each by itself on a WebGPU that writes down what it is asked
   # and computes nothing: device.js's record and its end, weights.js's (and a checkpoint that comes in stretches, for a
