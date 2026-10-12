@@ -105,10 +105,6 @@ const SILENT = {
     ["isolating", "catch {}", `${STORAGE}the address alone says whether the copies are kept`],
     ["isolating", "catch { return false; }", "the Service Worker's registration was refused: the page goes on unisolated and on one core, as where there is none (T371 is to say why there is one thread)"],
   ],
-  "src/page/list.ts": [
-    ["showKept", "keptModels().catch(() => [])", "T380.2 says it next: a store that cannot be listed shows as one that kept nothing"],
-    ["stillKept", "keptModels().catch(() => [])", "T380.2 says it next: a store that cannot be listed starts the first model of the list"],
-  ],
   "src/page/receiver.ts": [
     ["worker.onmessage", "catch {}", `${STORAGE}the next visit weighs the GPU and the CPU again`],
     ["worker.onmessage", "catch {}", `${STORAGE}the next visit times the shaders again`],
@@ -144,9 +140,6 @@ const SILENT = {
     ["memory64", "catch { return false; }", "the question itself: a browser that makes no 64-bit memory throws, and false is the answer"],
     ["weightsMemory", "catch {}", "too much address space for this browser: less is asked for, and the last refusal is thrown by the loop's end"],
   ],
-  "src/runtime/forward/threads.ts": [
-    ["nextCandidate", "ensureHelpers(candidate).then((complete) => { if (!search) r … …lse; else finish(); }, () => finish())", "T380.2 says it next: a software thread that did not start ends the search at the best count"],
-  ],
   "src/runtime/kept.ts": [
     ["folders", "catch { return undefined; }", "no origin private file system here (or its folder not made yet): the Cache API is looked in, and keep() says why nothing was kept"],
     ["openCache", "globalThis.caches?.open(CACHE_NAME).catch(() => undefined)", "a Cache API that will not open (storage turned off, a private window): as none, and keep() says why nothing was kept"],
@@ -171,11 +164,9 @@ const SILENT = {
   "src/runtime/worker/convert.ts": [
     ["keepConverted", "keptModule.replaced(model).catch(() => [])", "T136: what was kept of the model's old source could not be listed: it stays and takes room, and the new one is kept or keep() says why not"],
     ["keepConverted", "keptModule.forget(old).catch(() => {})", "T136: an old copy that could not be deleted stays and takes room: keep() says so if the new one then does not fit"],
-    ["convert", "keptModule.keeper({...(model), conversion: {...model.convers … .catch(() => undefined)", "T380.2 says it next: no file to keep a model on the GPU alone in as it comes"],
   ],
   "src/runtime/worker/load.ts": [
     ["load", "tokenizerBytes.catch(() => {})", "awaited below: a load that ends before that (cancelled, the runtime never came) leaves no unhandled rejection"],
-    ["startThreads", "catch { engine.stopThreads?.(); return 1; }", "T380.2 says it next: the software threads did not start: one thread"],
   ],
   "src/runtime/worker/pyodide.ts": [
     ["prefetchNumpy", "catch {}", "a head start only: Pyodide's own loadPackage fetches the wheel next, and its failure is told"],
@@ -186,12 +177,9 @@ const SILENT = {
     ["bodyBetween", "reader.cancel().catch(() => {})", "a body that is read no further (T112: the whole file came for a range): whether the cancel took is nothing the load reads"],
   ],
   "src/runtime/worker/runtime.ts": [
-    ["(the module)", "navigator.gpu.requestAdapter().then(async (adapter) => { if  … .catch(() => {})", "T380.2 says it next: the adapter could not be asked for: no GPU this visit"],
-    ["(the module)", "catch {}", "T380.2 says it next: no key of the device: nothing the page kept of it holds"],
     ["init", "engine.catch(() => {})", "awaited below (placePython): a load that ends before that leaves no unhandled rejection"],
     ["init", "catch { wideKernels = undefined; }", "T101: a browser that says it makes 64-bit memories and cannot compile their kernels (Playwright's WebKit did, on an ordinary visit) " +
       "keeps the 32-bit ones; a model past 4 GB is then refused with its own sentence"],
-    ["init", "catch { jsKernels = null; }", "T380.2 says it next: forward.ts or its kernels failed: the engine runs NumPy"],
   ],
   "src/runtime/worker/sources.ts": [
     ["(the module)", "globalThis.caches?.delete(\"models-v1\").catch(() => {})", "what an earlier version of the page stored: if it cannot be deleted it stays, and nothing reads it"],
@@ -208,9 +196,6 @@ const SILENT = {
     ["download", "finished.catch(() => {})", "awaited by into(): a load cancelled while Pyodide still loads never gets there, and that is no unhandled rejection"],
     ["download", "source.header.catch(() => {})", "awaited by the load: one that ends before it leaves no unhandled rejection"],
   ],
-  "src/runtime/worker/weights.ts": [
-    ["pooledWeights", "catch { memory = undefined; }", "T380.2 says it next: no shared memory for the model: one thread"],
-  ],
   "src/wake.js": [
     ["ask", "got.release?.().catch?.(() => {})", "a lock that is let go at once (the run ended while the browser answered): one already released is the same"],
     ["ask", "catch {}", "the wake lock was refused (a battery saver, a page not shown, a policy): the run goes on, and the report says how long the page was hidden"],
@@ -221,6 +206,17 @@ const SILENT = {
 // ---- the catches that say: [file, the very text of what they tell the console]. None of them is silent (the table
 // has no row of theirs), and each line reads the caught value
 const SAID = {
+  "src/runtime/worker/convert.ts": ["console.warn(`kept: no file to keep this model in as it comes (${told(error)}): a model on the GPU alone is not kept`);"],
+  "src/runtime/worker/runtime.ts": [
+    "console.warn(`gpu: no key of this device (${told(error)}): what the page kept of it is not used`);",
+    "console.warn(`gpu: the adapter could not be asked for (${told(error)}): no GPU on this visit`);",
+    "console.warn(`kernels: forward.js and its kernels did not start (${told(error)}): the engine runs NumPy`);",
+  ],
+  "src/runtime/worker/load.ts": ["console.warn(`threads: the software threads did not start (${told(error)}): one thread`);"],
+  "src/runtime/worker/weights.ts": ["console.warn(`memory: no shared memory for this model (${told(error)}): a memory that is not shared, and one thread`);"],
+  // (forward.ts's parts and the page's read no failure.ts: the caught value in its own words)
+  "src/runtime/forward/threads.ts": ["console.warn(`threads: a software thread did not start (${String(error)}): the search ends at ${best}`);"],
+  "src/page/list.ts": ["console.warn(`kept: what this browser kept could not be listed (${String(error)}): shown as nothing kept`);"],
 };
 
 // ---- the tree against the table
@@ -255,7 +251,7 @@ for (const [file, lines] of Object.entries(SAID)) {
   const text = fs.readFileSync(path.join(root, file), "utf8");
   for (const line of lines) {
     assert.ok(text.includes(line), `${file} no longer tells the console ${JSON.stringify(line)}: a catch that said its failure says it still, or its row here goes with it`);
-    assert.ok(/console\.warn\(/.test(line) && !/console\.error/.test(line), `${file}: ${line} is a line of console.warn`);
+    assert.ok(/^console\.warn\(`[^`]+ \(\$\{(?:told|String)\(error\)\}\): [^`]+`\);$/.test(line), `${file}: ${line} is one line of console.warn: what failed, (the caught value), what stands in`);
     saying++;
   }
 }

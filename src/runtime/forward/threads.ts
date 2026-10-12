@@ -167,7 +167,11 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
         if (!search) return;
         if (complete) search.waiting = false;
         else finish();
-      }, () => finish());
+      }, (error) => {
+        // (T380.2: said. forward.ts's parts do not read failure.ts, so the caught value in its own words)
+        console.warn(`threads: a software thread did not start (${String(error)}): the search ends at ${best}`);
+        finish();
+      });
     }
   }
   // the candidate was not faster than the best, or there is no count there: the next one, or the end (T239: a quarter

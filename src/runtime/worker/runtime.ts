@@ -9,6 +9,7 @@ import type { Built } from "../built.ts";
 import { resolvePyodideVersion, pyodideSteps, placePython } from "./pyodide.ts";
 import { since, took } from "./clock.ts";
 import { wentWithout } from "./outdated.ts";
+import { told } from "../failure.ts";
 import type { EngineWindow, Pyodide, PyodideModule } from "../contracts/python.ts";
 import type { Force } from "../contracts/gpu/protocol.ts";
 import type * as Forward from "../forward.ts";
@@ -62,10 +63,14 @@ export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.reque
     gpuAdapter.key = wgsl.deviceKey(adapter);
     // (T232: a model of ternary weights has a key of its own, with its shaders: gpu.ts says that one)
     gpuAdapter.ternaryKey = wgsl.deviceKey(adapter, adapter, true);
-  } catch {
+  } catch (error) {
     // no key: nothing the page kept of this device holds (a model on the GPU alone is weighed again)
+    console.warn(`gpu: no key of this device (${told(error)}): what the page kept of it is not used`);
   }
-}).catch(() => {});
+}).catch((error) => {
+  // (T380.2: said. What was found of the adapter before it failed stays; with none, no model goes on the GPU)
+  console.warn(`gpu: the adapter could not be asked for (${told(error)}): no GPU on this visit`);
+});
 
 async function init(search: string) {
   const started = performance.now();
@@ -128,7 +133,9 @@ async function init(search: string) {
         wideKernels = undefined;
       }
     }
-  } catch {
+  } catch (error) {
+    // (T380.2: said, whatever it was: no WebAssembly SIMD here, a kernel that did not compile, forward.ts that did not come)
+    console.warn(`kernels: forward.js and its kernels did not start (${told(error)}): the engine runs NumPy`);
     jsKernels = null;
   }
   took("pyodide", since(started));

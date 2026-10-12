@@ -6,6 +6,7 @@ import { pyodide, llama2_numpy, forwardModule, jsKernels, sharedKernels, wideKer
   adapterAsked } from "./runtime.ts";
 import { threadsRequest, gpuRequest, loadsAhead, benching, switchesNow } from "./request.ts";
 import { workerWentWithout } from "./outdated.ts";
+import { told } from "../failure.ts";
 import type { keeper } from "../kept.ts";
 import type { Dtype, Form } from "../contracts/form.ts";
 import type { ToGpu } from "../contracts/gpu/protocol.ts";
@@ -145,8 +146,10 @@ function pooledWeights(size: number, after: number, shared: boolean, wide: boole
       try {
         // (a page more where nothing follows, as needs() counts one past what the model takes)
         ({ memory, base } = forwardModule!.weightsMemory(size, { shared: true, wide, after: largest, ...(ahead !== undefined && { spare: 65536 }) }));
-      } catch {
-        memory = undefined;  // no shared memory here: one thread
+      } catch (error) {
+        // no shared memory here: one thread (T380.2: said, as the lowered one below is)
+        console.warn(`memory: no shared memory for this model (${told(error)}): a memory that is not shared, and one thread`);
+        memory = undefined;
       }
       // (T130's review) a shared memory the browser gave at a lowered maximum (weightsMemory's second and third try: the
       // checkpoint and a gigabyte, or a quarter of one) that the forward pass does not fit would run out of memory when

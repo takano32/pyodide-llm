@@ -17,6 +17,7 @@ import { named } from "../updated.ts";
 // (the kept models' module as a type; it is imported when a conversion first needs it, in convert())
 import type * as Kept from "../kept.ts";
 import type { Keeper, Weights } from "./weights.ts";
+import { told } from "../failure.ts";
 import type { Thrown } from "../failure.ts";
 import type { Hf, Listed, OfHuggingFace, Progress, Status } from "../contracts/messages.ts";
 import type { Progress as Arriving } from "../contracts/conduct.ts";
@@ -144,7 +145,11 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
   // is the sink's, once the header is known), let go otherwise
   const keptDtype = model.conversion?.dtype ?? "int8";
   const mayKeep = remote && gpuOnlyPossible(keptDtype);
-  let keep = mayKeep ? await keptModule!.keeper({ ...(model as Remote), conversion: { ...model.conversion, dtype: keptDtype } }).catch(() => undefined) : undefined;
+  // (T380.2: a file that could not be opened is said: the conversion goes on, and a model on the GPU alone is then not kept)
+  let keep = mayKeep ? await keptModule!.keeper({ ...(model as Remote), conversion: { ...model.conversion, dtype: keptDtype } }).catch((error) => {
+    console.warn(`kept: no file to keep this model in as it comes (${told(error)}): a model on the GPU alone is not kept`);
+    return undefined;
+  }) : undefined;
   const into = checkpointSink(keep), { sink } = into;
   let keptAsItCame = false;  // keep went to keepConverted, which keeps it or lets it go
   let steps: Conduct | undefined, conversion: Conversion | undefined, quantizeRows: Proxy | undefined, readers: Proxy | undefined, failed;
@@ -168,12 +173,12 @@ export async function convert(model: OfHuggingFace, signal: AbortSignal, id: num
     // T119: the page hears both how much has arrived (and how fast) and how much is converted. With the converted
     // share alone, a slow line looked like a slow conversion: the share moves as fast as the bytes arrive (8 MB/s
     // from Japan, T123), the conversion itself is about 500 MB/s
-    let spent = 0, told = 0, size: number, arrived = 0, converted = 0, firstAt = 0, firstBytes = 0;
+    let spent = 0, toldAt = 0, size: number, arrived = 0, converted = 0, firstAt = 0, firstBytes = 0;
     const tell = (now = performance.now()) => {
-      if (now - told < 250 && converted < 1) {
+      if (now - toldAt < 250 && converted < 1) {
         return;
       }
-      told = now;
+      toldAt = now;
       const perSecond = firstAt && now > firstAt + 1000 ? ((arrived - firstBytes) / (now - firstAt)) * 1000 : undefined;
       postMessage({ type: "progress", load: id, received: arrived, total: size, converted, perSecond } satisfies Progress);
     };

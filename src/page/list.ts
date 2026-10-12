@@ -9,8 +9,13 @@ import { forget, keptModels, outdated, serves } from "../runtime/kept.ts";
 // What the worker kept of its conversions (src/runtime/kept.ts: the origin private file system, or the Cache API): the
 // select says which models need no download any more, and About lists them with a way to delete them.
 // (T367.3: linked into the page's own script. A store that cannot be listed is one that kept nothing.)
+// (T380.2: one that cannot be listed says so on the console, and shows as before)
+const listed = () => keptModels().catch((error): Awaited<ReturnType<typeof keptModels>> => {
+  console.warn(`kept: what this browser kept could not be listed (${String(error)}): shown as nothing kept`);
+  return [];
+});
 export async function showKept() {
-  let models = await keptModels().catch(() => []);
+  let models = await listed();
   // T116: what an older converter kept is never used again, so it goes (the worker deletes it too when it looks)
   for (const one of models.filter((one) => outdated(one))) await forget(one);
   models = models.filter((one) => !outdated(one));
@@ -44,7 +49,7 @@ export async function showKept() {
 // must still be kept as it would be loaded now (its bits, this converter), or the first of the list starts instead
 export async function stillKept(entry: any) {
   if ((entry.download ?? 0) <= 500e6) return true;
-  const models = await keptModels().catch(() => []);
+  const models = await listed();
   return models.some((one) => serves(one, weighed(entry)));
 }
 

@@ -169,9 +169,13 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
     assert.equal(handed.length, 1, "the engine was not made through external()");
     return handed[0];
   };
+  // (T380.2: a shared memory that was refused is said on the console, once a memory that is made; nothing where none was)
+  const warned = [];
+  context.console = { ...console, warn: (line) => warned.push(line) };
   for (const [isolated, refused] of [[true, false], [false, false], [true, true]]) {
     context.self.crossOriginIsolated = isolated;
     context.refuseShared = refused;
+    warned.length = 0;
     vm.runInContext(strictly("weightsPool = undefined"), context);  // a new memory for every case: the refusal is when one is made
     for (const [name, header, size, form, half, dtype = "int8"] of cases) {
       const want = isolated && !refused ? half : plain[name];
@@ -183,7 +187,10 @@ assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "
       vm.runInContext(strictly("weightsPool = undefined"), context);
       assert.equal(vm.runInContext(strictly("memoryShared()"), context), false, "no memory, and a shared one");
     }
+    assert.deepEqual(warned, refused ? cases.map(() => "memory: no shared memory for this model (Error: no shared memory here): a memory that is not shared, and one thread") : [],
+      `the console of ${isolated ? refused ? "a shared memory refused" : "a shared memory" : "a page that is not isolated"}`);
   }
+  context.console = console;
   // (the review of T130) a shared memory the browser gave at a lowered maximum: where the forward pass does not fit it, the
   // worker makes a plain one instead (and hands the engine what a plain memory keeps); where it does, it keeps the shared one
   context.self.crossOriginIsolated = true;
