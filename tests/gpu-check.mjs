@@ -187,8 +187,7 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
   // group), a hidden size of 1152 (w2's rows are 9 groups of 128, 36 of 32: a second pass of 4), and calm (T226's review),
   // so that the packed lines also show a layer's weights read from another layer
   "synthetic-ternary-untied": [{ ...TERNARY, dim: 256, hidden: 1152, vocab: -320, outliers: 8, spread: 37, calm: true }, TERNARY_OPTIONS] };
-// the models to check: by default every made-up one and the site's three; "made-up" stands for every made-up one (T193:
-// gpu-prompt.yml's suites name them so, and a made-up model added above joins them)
+// which made-up models an engine runs for "made-up"
 // T241's review (the full suite's time: Chrome 38 and Edge 42 minutes in main's run 36902097346, Edge 23 before T241): a run
 // of a model on SwiftShader costs 5 to 7 s of its shaders' compiling before anything is checked, a made-up model has 14
 // runs, and the three browsers run the same SwiftShader. So "made-up" is every made-up model on Dawn (lavapipe, 0.5 s a
@@ -199,7 +198,10 @@ const SYNTHETIC = { "synthetic": [{}, {}], "synthetic-qwen2": [{ layers: 3, bias
 // (T232: the ternary models' calm one and the one in pieces in a 64-bit memory are Dawn's too: their shaders are the first's;
 // the review's untied one too: the tables' shaders are the first's, what differs is the numbers they are given)
 const DAWN_ONLY = ["synthetic-yarn", "synthetic-smollm3", "synthetic-gpt2-calm", "synthetic-qwen-calm", "synthetic-ternary-calm", "synthetic-ternary-wide", "synthetic-ternary-untied"];
-const madeUp = Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
+const madeUpOn = (engine) => Object.keys(SYNTHETIC).filter((name) => engine === "dawn" || (engine === "chromium" ? !DAWN_ONLY.includes(name) : NAN_MODELS.includes(name)));
+// the models to check: by default every made-up one and the site's three; "made-up" stands for every made-up one (T193:
+// gpu-prompt.yml's suites name them so, and a made-up model added above joins them)
+const madeUp = madeUpOn(engine);
 const ids = (args.length ? args : ["made-up", "stories15M", "tiny-lm", "llm-jp-3-150m"])
   .flatMap((id) => (id === "made-up" ? madeUp : [id]));
 if ((args.length ? args : ["made-up"]).includes("made-up")) console.log(`suite: "made-up" on ${engine} is ${madeUp.join(" ")}`);
@@ -286,7 +288,6 @@ const K = { float32: 4, f16: 8 };
 const K_PACKED = 3, SCALE_LINE = 1e-4, TIE = Math.LN2;
 
 // ---- Node: the plans and NumPy's answers
-const { pyodide: py } = await pyodideWithEngine();
 const PYTHON = `
 import base64, gc, struct, numpy as np, llama2_numpy, llama2_convert
 from llama2_numpy import Llama, external_tensors
@@ -365,11 +366,16 @@ def answers(data, vocabulary, text, count, options):
     return {**exact, "keys16": rounded["keys"], "values16": rounded["values"], "logits16": rounded["logits"],
             "keys8": eight["keys"], "values8": eight["values"], "logits8": eight["logits"]}
 `;
-py.runPython(PYTHON);
-// the made-up models are tests/made_up.py's quantized() (T357.2: the maker the unit tests have, laid out by the engine's
-// rows): SYNTHETIC's forms below are its arguments
-py.FS.writeFile("made_up.py", fs.readFileSync(path.join(root, "tests", "made_up.py")));
-py.runPython("import made_up");
+// Pyodide with the engine as the page has it, the Python above and the made-up models' maker
+async function referencePython() {
+  const { pyodide: py } = await pyodideWithEngine();
+  py.runPython(PYTHON);
+  // the made-up models are tests/made_up.py's quantized() (T357.2: the maker the unit tests have, laid out by the engine's
+  // rows): SYNTHETIC's forms below are its arguments
+  py.FS.writeFile("made_up.py", fs.readFileSync(path.join(root, "tests", "made_up.py")));
+  py.runPython("import made_up");
+  return py;
+}
 
 // each text three times over: long enough for COUNT tokens of every model here
 const TEXTS = {
@@ -378,10 +384,9 @@ const TEXTS = {
   japanese: "富士山は静岡県と山梨県にまたがる活火山で、標高三七七六メートルの日本最高峰である。古くから信仰の対象とされ、" +
     "多くの和歌や絵画に描かれてきた。二〇一三年には世界文化遺産に登録され、毎年夏には多くの登山者が山頂を目指す。",
 };
-const cases = [];
-const directory = path.join(root, ".tmp", "gpu-check");
-fs.mkdirSync(directory, { recursive: true });
-for (const id of ids) {
+// NumPy's answers for one model and its case (caseOf, below): a made-up model's name, <prefix>.json, or a model of
+// src/models.js
+function referenceCase(py, directory, id) {
   let options, text, run = {};
   const began = performance.now();
   if (SYNTHETIC[id]) {
@@ -404,8 +409,7 @@ print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open
     const numpySeconds = (performance.now() - began) / 1000;
     py.FS.writeFile("tokenizer.bin", fs.readFileSync(`${prefix}.tokenizer.bin`));
     py.runPython(`vocabulary = open("tokenizer.bin", "rb").read()`);
-    cases.push({ ...caseOf(id, options, JSON.parse(native.stdout), new Uint8Array(fs.readFileSync(`${prefix}.bin`))), numpySeconds });
-    continue;
+    return { ...caseOf(py, directory, id, options, JSON.parse(native.stdout), new Uint8Array(fs.readFileSync(`${prefix}.bin`))), numpySeconds };
   } else {
     const entry = MODELS.find((m) => m.id === id);
     if (!entry) throw new Error(`no model ${id} in src/models.js`);
@@ -420,11 +424,11 @@ print(json.dumps(answers(data, vocabulary, sys.argv[2], ${COUNT}, json.load(open
   py.globals.set("TEXT", text ?? "");
   const reference = py.runPython(`answers(data, vocabulary, TEXT, ${COUNT}, OPTIONS)`).toJs({ dict_converter: Object.fromEntries });
   const numpySeconds = (performance.now() - began) / 1000;
-  cases.push({ ...caseOf(id, options, reference, py.runPython("data").toJs()), numpySeconds, ...run });
+  return { ...caseOf(py, directory, id, options, reference, py.runPython("data").toJs()), numpySeconds, ...run };
 }
 // the plan forward.js gets from Python (the vocabulary in Pyodide's globals), recorded: Llama(external=) with a start()
 // that keeps it, and the case the browser runs
-function caseOf(id, options, reference, bytes) {
+function caseOf(py, directory, id, options, reference, bytes) {
   const began = performance.now();
   let plan;
   py.globals.set("OPTIONS", py.toPy(options));
@@ -451,6 +455,11 @@ function caseOf(id, options, reference, bytes) {
   return { id, plan, places, headDim: options.head_dim ?? 0, arch: options.arch ?? "llama", dtype: options.dtype, checkpoint: `/case/${name}.bin`, file, reference,
     planSeconds: (performance.now() - began) / 1000 };
 }
+
+const py = await referencePython();
+const directory = path.join(root, ".tmp", "gpu-check");
+fs.mkdirSync(directory, { recursive: true });
+const cases = ids.map((id) => referenceCase(py, directory, id));
 
 // ---- the browser: a page that is cross-origin isolated (its own headers), a worker that runs forward.js
 const HARNESS = /* js */ `
@@ -1003,7 +1012,7 @@ worker.onmessage = ({ data }) => { window.__gpuCheck = data; };
 worker.onerror = (event) => { window.__gpuCheck = { error: event.message ?? "the harness did not start" }; };
 </script>`;
 const types = { ".js": "text/javascript", ".wasm": "application/wasm", ".json": "application/json", ".html": "text/html; charset=utf-8" };
-const server = http.createServer((req, res) => {
+const served = (cases, only, nanRounds) => http.createServer((req, res) => {
   const pathname = decodeURIComponent(new URL(req.url, "http://localhost").pathname);
   const headers = { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" };
   const send = (type, body) => {
@@ -1031,8 +1040,9 @@ const server = http.createServer((req, res) => {
   send(types[path.extname(file)] ?? "application/octet-stream", fs.readFileSync(file));
 }).listen(0);
 
+const server = served(cases, only, nanRounds);
 const lines = [];
-const outcome = engine === "dawn" ? await inDawn() : await inBrowser();
+const outcome = engine === "dawn" ? await inDawn({ webgpu, directory, server, only, nanRounds, lines }) : await inBrowser({ engine, server, lines });
 server.close();
 if (lines.length) console.log(lines.join("\n"));
 // T147: the list of forms comes from an adapter of its own, which SwiftShader now and then does not give (AGENTS.md)
@@ -1045,7 +1055,7 @@ if (outcome.error) {
   await leave(1);
 }
 
-async function inBrowser() {
+async function inBrowser({ engine, server, lines }) {
   const playwright = await import("playwright-core");
   // Chromium's WebGPU without a GPU: SwiftShader (as tests/bench-check.mjs has it)
   const WEBGPU = ["--enable-unsafe-webgpu", "--enable-features=Vulkan", "--use-webgpu-adapter=swiftshader"];
@@ -1063,7 +1073,7 @@ async function inBrowser() {
 
 // T147: the harness in a worker thread of Node, WebGPU from Dawn (the npm package webgpu at --webgpu), the GPU's
 // worker (src/runtime/gpu.js) in a worker thread of its own, the modules from their files and the rest from the server
-async function inDawn() {
+async function inDawn({ webgpu, directory, server, only, nanRounds, lines }) {
   const { Worker } = await import("node:worker_threads");
   if (!webgpu) throw new Error("--engine dawn wants --webgpu <the directory of the npm package webgpu>");
   const dir = path.join(directory, "dawn");
@@ -1166,10 +1176,10 @@ function scaleOff(got, want) {
 // the status of a GPU that takes the prompts (T152: what it says of the tokens after it)
 // (T152: "prompts and answers on WebGPU", or "prompts on WebGPU, answers on the CPU")
 const promptsOnGpu = (note) => /^prompts (and answers )?on WebGPU($|, )/.test(note ?? "");
-let failed = false;
 // T241's review: the quantizers alone (the harness's quantizerProbe): the word of every group's scale as the contract in
 // shaders.js says (a finite group's the largest |value| / 127, a group with a NaN or an infinity a NaN)
-{
+function quantizersWrong(outcome) {
+  let failed = false;
   const q = outcome.quantizers;
   if (q?.rows) {
     const wrong = q.rows.filter((r) => !r.ok);
@@ -1180,8 +1190,11 @@ let failed = false;
     console.log(`the quantizers alone: FAILED\n    - ${q.error}`);
     failed = true;
   } else console.log(`the quantizers alone: not tried (${q?.skipped ?? "no answer"})`);
+  return failed;
 }
-for (const { id, cpu, gpu: runs, late, refused, remembered, alone, broken, nanSeconds } of outcome.results) {
+// a model's lines (the CPU's, each run's, the steps', the tables) and whether any of them failed
+function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alone, broken, nanSeconds }) {
+  let failed = false;
   const c = cases.find((entry) => entry.id === id), ref = c.reference, n = ref.tokens.length - 1;
   const [dim, , layers, heads, kvHeads] = ref.header, kvDim = (c.headDim || dim / heads) * kvHeads;
   const exact = { keys: ref.keys, values: ref.values };
@@ -1355,7 +1368,10 @@ for (const { id, cpu, gpu: runs, late, refused, remembered, alone, broken, nanSe
   if (nanSeconds && Object.values(nanSeconds).some((s) => s > 0)) {
     console.log(`seconds of the NaN rounds of ${id}: ${Object.entries(nanSeconds).map(([round, s]) => `${round} ${s.toFixed(1)}`).join(", ")}`);
   }
+  return failed;
 }
+let failed = quantizersWrong(outcome);
+for (const result of outcome.results) failed = modelWrong(cases, result) || failed;
 await leave(failed ? 1 : 0);
 
 // T213: the first matrix a token's layer would bind inside a joined buffer (q, k and v as one, gate and up as one,
