@@ -51,9 +51,12 @@ page_modules() {
   # anys that are written (T473: no more than there are now); T368.8: and that a name a file of the runtime uses without
   # declaring or importing it is an ambient name the runtime means (the one thing of a wrong name that tsc lets pass).
   # Then the tool that says whether two builds are the same code (tests/dist-same.mjs, the proof of a step that only
-  # adds types) and what blanks a .ts file's types for the tools, on made-up builds and texts
+  # adds types) and what blanks a .ts file's types for the tools, on made-up builds and texts; and (T481) the tool that
+  # says whether the sources of two commits are the same code by their syntax trees (tests/same-syntax.mjs: what a
+  # bundler prints away, a shorthand opened, a number written otherwise), on made-up texts
   node tests/types.mjs
   node tests/dist-same-check.mjs
+  node tests/same-syntax-check.mjs
   # T368.2: the shapes that cross a line as plain objects are types (src/runtime/contracts/): what reads them for the
   # checks that hold each to its two ends (plan-keys-check, worker-modules-check and worker-sink-check, below), on
   # made-up types; that those files hold types alone and are read with `import type`; and the conduct's requests held
