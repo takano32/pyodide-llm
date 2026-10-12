@@ -24,13 +24,15 @@ import { memory64, footprint, keysInHalf, needsWide, pastWide, automaticDtype, g
 import { GPU_WEIGHT_BYTES, GPU_TERNARY_BYTES, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf,
   USAGE_UNKNOWN, cpuReadBytes, aloneVerdict, aloneHolds, OUTSIDE_VOCABULARY, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan,
   GPU_ALONE } from "./forward/alone.ts";
-import { createForward, LAYER_KINDS } from "./forward/engine.ts";
+import { createForward } from "./forward/engine.ts";
+import { LAYER_KINDS } from "./forward/kinds.ts";
 import type { Compiled, Engine, Made } from "./forward/engine.ts";
 import type { Plan, TensorName } from "./contracts/plan.ts";
 // (T368.4) the types of what this window hands out, for the worker, which reads the module's own through
 // `import type * as Forward from "../forward.ts"`
 export type { Compiled, Engine, Made } from "./forward/engine.ts";
-export type { Cache, Core, Kind, Kinds, Layers, Room, Step } from "./forward/engine.ts";
+export type { Core, Kind, Kinds, Layers, Room, Step } from "./forward/kinds.ts";
+export type { Cache } from "./forward/cache.ts";
 export type { Footprint, Header, Memory } from "./forward/memory.ts";
 export type { Adapter, Direct, GpuForm, GpuOnlyWeights, Hole, Place } from "./forward/alone.ts";
 export type { Chosen, GpuWorker } from "./forward/gpuside.ts";
