@@ -52,11 +52,11 @@ from tree import python_folder
 sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
 import llama2_convert  # noqa: E402
-from llama2_convert import Conversion  # noqa: E402
 from llama2_numpy import Llama  # noqa: E402
-from conducting import Directory, Mapped, converted  # noqa: E402
-from fetching import download  # noqa: E402
-from reference import differences, relative  # noqa: E402
+from conducting import Directory  # noqa: E402
+from reference import (TEXT, States, both_ways, differences, ended, engine_logits, fetch, float32_file,  # noqa: E402
+                       kept_logits, line_of, logits_failed, logits_said, long_failed, long_ids, made_up_engine,
+                       option, options_shown)
 
 REPO, REVISION = "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"
 WEIGHTS = "model.safetensors-00001-of-00001.safetensors"
@@ -72,11 +72,6 @@ FILES = ["config.json", "tokenizer.json", "tokenizer_config.json", "model.safete
 # GGUF's can read LOWER than the original's (the review of T245: 7.574 against 7.873 on 192 tokens, 4B; with <|im_start|>
 # it is 4.215 against 4.217). tests/perplexity_prepare.py --entry <id> measures the list's way.
 BOS = 248044
-# a text of more than 64 tokens (transformers' chunk of the delta rule), English and Japanese
-TEXT = ("Mount Fuji is the highest mountain in Japan, standing 3,776 metres above sea level on the island of Honshu. "
-        "It is an active stratovolcano that last erupted from 1707 to 1708, and on clear days it can be seen from "
-        "Tokyo, about 100 kilometres to the north-east. 富士山は日本で最も高い山で、古くから信仰の対象とされ、"
-        "多くの絵画や文学作品に描かれてきました。夏には多くの登山者が山頂を目指します。")
 # the chat format of one turn without thinking, as chat_template.jinja writes it (the template calls a macro, which
 # the converter's reader does not read: T236 writes it into the list by hand)
 CHAT = "<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
@@ -87,19 +82,12 @@ NEW_TOKENS = 16
 say = lambda *parts: print("qwen35:", *parts, flush=True)
 
 
-def fetch(name, directory, repo=REPO, revision=REVISION):
-    # (tests/fetching.py, T357: a download that stopped short is asked for again, which this copy of the loop did not see,
-    # and a file the repository does not have is refused at once: this copy asked three times)
-    return download(f"https://huggingface.co/{repo}/resolve/{revision}/{name}", directory / name)
-
-
 # What the engine and transformers hold after the same positions, which a fault of the engine shows in long before the
 # logits do (the logits of the review's 34 faults of the real model were 5e-2 to 30, their states 8e-3 to 1e+29, against
 # 3e-6 for the right computation): per layer a linear-attention layer's recurrent state (value heads, key_dim, value_dim)
 # and the last conv - 1 tokens' q, k and v before the convolution; a full-attention layer's keys (as Hugging Face has them:
-# the first rotary values of a head not interleaved) and values. STATES: what is compared.
-STATES = ("recurrent state", "convolution rows", "keys", "values")
-STATE_LINE = 1e-4  # at least: ten times what transformers' own two computations differ by where that is more
+# the first rotary values of a head not interleaved) and values. HELD (below the two that read them): what is compared,
+# each within ten times what transformers' own two computations differ by and 1e-4 at least (reference.States).
 
 
 def engine_states(llama, count):
@@ -127,36 +115,12 @@ def model_states(past, count):
     return out
 
 
-def state_distances(ours, theirs):
-    """the largest relative distance over the layers, for each of STATES"""
-    worst = dict.fromkeys(STATES, 0.0)
-    for l, (kind, mine) in ours.items():
-        for name, a, b in zip(STATES[:2] if kind == "linear" else STATES[2:], mine, theirs[l][1]):
-            worst[name] = max(worst[name], relative(a, b))
-    return worst
+HELD = States({"linear": ("recurrent state", "convolution rows"), "full": ("keys", "values")}, engine_states, model_states)
 
-
-def compare_states(label, llama, count, at_once, stepped):
-    """the engine's states against transformers' after count positions: each within the line of 10 times what transformers'
-    own two computations (at once, token by token) differ by, and 1e-4 at least. True where they are not"""
-    apart = state_distances(engine_states(llama, count), stepped)
-    floor = state_distances(at_once, stepped)
-    failed = False
-    parts = []
-    for name in STATES:
-        line = max(STATE_LINE, 10 * floor[name])
-        bad = apart[name] > line
-        failed |= bad
-        parts.append(f"{name} {apart[name]:.1e} (transformers' own {floor[name]:.1e}, line {line:.1e}){' — FAILED' if bad else ''}")
-    say(f"{label}: the states after {count} positions against transformers': " + "; ".join(parts))
-    return failed
-
-
-# Past the 96 positions of the main comparison: LONG positions of a text through transformers (at once, its chunks of 64) and
-# through the engine, the logits at LONG_AT (the keys and values of the full-attention layers double at 256 and 512 here, the
-# linear layers' state has had a thousand tokens to drift in) and the states at the end. The engine ran 1024 positions
-# of English Wikipedia at 1.6e-4 and 1.7e-6 from transformers in the review (CI's x86-64, 100 s).
-LONG = 1024
+# Past the 96 positions of the main comparison: reference.LONG positions of a text through transformers (at once, its chunks
+# of 64) and through the engine, the logits at LONG_AT (the keys and values of the full-attention layers double at 256 and 512
+# here, the linear layers' state has had a thousand tokens to drift in) and the states at the end. The engine ran 1024
+# positions of English Wikipedia at 1.6e-4 and 1.7e-6 from transformers in the review (CI's x86-64, 100 s).
 LONG_AT = (0, 3, 63, 64, 65, 255, 256, 257, 511, 512, 513, 1023)
 
 
@@ -164,30 +128,12 @@ def long_check(directory, tokenizer, llama, line):
     import torch
     from transformers import Qwen3_5ForConditionalGeneration
 
-    text = " ".join(f"Section {i}. {TEXT}" for i in range(12))
-    ids = ([BOS] + tokenizer.encode(text, add_special_tokens=False).ids)[:LONG]
-    at = [position for position in LONG_AT if position < len(ids)]
+    ids, at = long_ids(tokenizer, BOS, LONG_AT)
     model = Qwen3_5ForConditionalGeneration.from_pretrained(str(directory), dtype=torch.float32).eval()
-    with torch.no_grad():
-        out = model(input_ids=torch.tensor([ids]), use_cache=True, logits_to_keep=torch.tensor(at))
-    theirs, states = out.logits[0].float().numpy(), model_states(out.past_key_values, len(ids))
-    del model, out
+    theirs, states = kept_logits(model, ids, at, model_states)
+    del model
     gc.collect()
-    began = time.perf_counter()
-    kept = {}
-    for pos, token in enumerate(ids):
-        logits = llama.forward(token, pos)
-        if pos in at:
-            kept[pos] = logits.copy()
-    largest, mean, same, margin = differences(np.stack([kept[position] for position in at]), theirs)
-    apart = state_distances(engine_states(llama, len(ids)), states)
-    ok = largest <= line and (same == len(at) or margin <= 2 * largest)
-    bad = [name for name in STATES if apart[name] > STATE_LINE]
-    say(f"long: the engine ran {len(ids)} positions in {time.perf_counter() - began:.1f} s; the logits at {len(at)} of them against transformers': "
-        f"largest difference {largest:.2e}, mean {mean:.2e}, the same most likely token at {same} of {len(at)}"
-        f"{'' if ok else f' — FAILED (the line: {line:.1e})'}; the states after them: "
-        + "; ".join(f"{name} {apart[name]:.1e}" for name in STATES) + (f" — FAILED (the line: {STATE_LINE:.0e}): {', '.join(bad)}" if bad else ""))
-    return not ok or bool(bad)
+    return long_failed(say, HELD, llama, ids, at, theirs, states, line)
 
 
 # --------------------------------------------------------------------------------------------- made-up models
@@ -239,15 +185,7 @@ def made_up(name, settings, positions=80):
         assert model.lm_head.weight is model.model.embed_tokens.weight, "the classifier is not tied"
     rng = np.random.default_rng(229)
     tokens = [int(token) for token in rng.integers(0, 320, positions)]
-    ids = torch.tensor([tokens])
-    with torch.no_grad():
-        out = model(input_ids=ids, use_cache=True)
-        whole, at_once = out.logits[0].numpy(), model_states(out.past_key_values, positions)
-        past, stepped = None, []
-        for at in range(positions):
-            out = model(input_ids=ids[:, at:at + 1], past_key_values=past, use_cache=True)
-            past = out.past_key_values
-            stepped.append(out.logits[0, -1].numpy())
+    whole, at_once, stepped, stepped_states = both_ways(model, tokens, model_states)
     tensors = {key: value.detach().numpy() for key, value in model.state_dict().items()}
     if config.tie_word_embeddings:
         tensors.pop("lm_head.weight", None)
@@ -258,18 +196,8 @@ def made_up(name, settings, positions=80):
     text["rope_parameters"].setdefault("partial_rotary_factor", rotary)
     naive = naive_qwen35_logits(tensors, published, tokens)
 
-    from test_convert import safetensors_file
-    file = safetensors_file(tensors)
-    size = struct.unpack("<Q", file[:8])[0]
-    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                             "vocab": [[f"w{i}", -float(i)] for i in range(320)]}}).encode()
-    conversion = Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(published), vocabulary, "tokenizer.json",
-                            dtype="float32", max_seq_len=256, start=8 + size)
-    conversion.feed(file[8 + size:])
-    conversion.finish()
-    options = {key: value for key, value in conversion.options.items() if key != "template"}
-    llama = Llama(bytes(conversion.checkpoint), conversion.tokenizer, **options)
-    ours = [llama.forward(token, pos).copy() for pos, token in enumerate(tokens)]
+    llama, options, _ = made_up_engine(tensors, published)
+    ours = engine_logits(llama, tokens)
 
     failed = False
     # the line, as for the real model: ten times what transformers' own two computations differ by (it runs the
@@ -277,18 +205,14 @@ def made_up(name, settings, positions=80):
     # leaves between two right computations of these random weights, 2.3e-3 for the first model in CI's first run),
     # and no less than 2e-3
     floor = differences(stepped, whole)[0]
-    line = max(2e-3, 10 * floor)
+    line = line_of(floor, 2e-3)
     say(f"made-up ({name}), transformers token by token against transformers at once: largest difference {floor:.2e}")
     pairs = [("the naive reference against transformers at once", naive, whole),
              ("the engine against transformers at once", ours, whole),
              ("the engine against transformers token by token", ours, stepped)]
     for what, a, b in pairs:
-        largest, mean, same, margin = differences(a, b)
-        ok = largest <= line and (same == positions or margin <= 2 * largest)
-        failed |= not ok
-        say(f"made-up ({name}), {what}: largest difference {largest:.2e}, mean {mean:.2e}, the same most likely "
-            f"token at {same} of {positions} positions{'' if ok else f' — FAILED (the line: {line:.1e})'}")
-    failed |= compare_states(f"made-up ({name})", llama, positions, at_once, model_states(past, positions))
+        failed |= logits_failed(say, f"made-up ({name}), {what}", a, b, line)
+    failed |= HELD.failed(say, f"made-up ({name})", llama, positions, at_once, stepped_states)
     say(f"made-up ({name}): options {json.dumps({key: options[key] for key in ('arch', 'linear', 'head_dim', 'rotary', 'rope_theta', 'rms_norm_eps') if key in options})}")
     return failed
 
@@ -314,16 +238,13 @@ def real(directory, positions, repo=REPO, revision=REVISION):
 
     # the conversion, the way the page does it (T374.4: by the conduct of a conversion, answered from the files fetched
     # above and no others), float32
-    sink = Mapped(directory / "float32.bin")
-    began = time.perf_counter()
-    conversion = converted(Directory(directory), {"weights": WEIGHTS, "tokenizer": "tokenizer.json"}, dtype="float32", sink=sink)
-    sink.data.flush()
+    path = directory / "float32.bin"
+    conversion, seconds = float32_file(Directory(directory), {"weights": WEIGHTS, "tokenizer": "tokenizer.json"}, path)
     options = {key: value for key, value in conversion.options.items() if key != "template"}
-    shown = {key: (value if key != "specials" else f"{len(value)} of them") for key, value in options.items()}
-    say(f"real: converted in {time.perf_counter() - began:.1f} s, {sink.path.stat().st_size} bytes, options {json.dumps(shown)}")
+    say(f"real: converted in {seconds:.1f} s, {path.stat().st_size} bytes, options {options_shown(options)}")
     if "template" in conversion.options:
         say(f"real: the converter read a template: {json.dumps(conversion.options['template'])}")
-    llama = Llama(np.memmap(sink.path, dtype=np.uint8, mode="r"), conversion.tokenizer, kernels=None,
+    llama = Llama(np.memmap(path, dtype=np.uint8, mode="r"), conversion.tokenizer, kernels=None,
                   **{**options, "specials": SPECIALS, "stop_tokens": [248044, 248046], "bos": BOS})
 
     # the same ids for both: the page's BOS, then the text as the real tokenizer splits it (and the engine's own
@@ -339,34 +260,23 @@ def real(directory, positions, repo=REPO, revision=REVISION):
     ids = ids[:positions]
 
     model = Qwen3_5ForConditionalGeneration.from_pretrained(str(directory), dtype=torch.float32).eval()
-    tensor = torch.tensor([ids])
+    began = time.perf_counter()
+    whole, at_once, stepped, stepped_states = both_ways(model, ids, model_states)
+    say(f"real: transformers, {len(ids)} positions at once and token by token in {time.perf_counter() - began:.1f} s")
     with torch.no_grad():
-        began = time.perf_counter()
-        out = model(input_ids=tensor, use_cache=True)
-        whole, at_once = out.logits[0].float().numpy(), model_states(out.past_key_values, len(ids))
-        say(f"real: transformers, {len(ids)} positions at once in {time.perf_counter() - began:.1f} s")
-        past, stepped = None, []
-        for at in range(len(ids)):
-            out = model(input_ids=tensor[:, at:at + 1], past_key_values=past, use_cache=True)
-            past = out.past_key_values
-            stepped.append(out.logits[0, -1].float().numpy())
         generated = model.generate(torch.tensor([[BOS] + chat_ids]), max_new_tokens=NEW_TOKENS, do_sample=False)[0].tolist()
         listed = tokenizer.encode(LISTED, add_special_tokens=False).ids
         as_listed = model.generate(torch.tensor([listed]), max_new_tokens=NEW_TOKENS, do_sample=False)[0].tolist()[len(listed):]
     theirs = generated[1 + len(chat_ids):]
     say(f"real: transformers wrote for the list's prompt, from the format's first token: "
         f"{json.dumps(tokenizer.decode(as_listed, skip_special_tokens=False), ensure_ascii=False)} {as_listed}")
-    stepped_states = model_states(past, len(ids))
-    del model, out
+    del model
     gc.collect()
 
     began = time.perf_counter()
-    ours = [llama.forward(token, pos).copy() for pos, token in enumerate(ids)]
+    ours = engine_logits(llama, ids)
     say(f"real: the engine (NumPy, float32), {len(ids)} positions in {time.perf_counter() - began:.1f} s")
-    for what, logits in (("transformers", whole), ("the engine", ours)):
-        logits = np.asarray(logits)
-        say(f"real: logits of {what}: min {logits.min():.3f}, max {logits.max():.3f}, mean {logits.mean():.4f}, "
-            f"std {logits.std():.4f}")
+    logits_said(say, "real", whole, ours)
     floor = differences(stepped, whole)[0]
     say(f"real: transformers token by token against transformers at once: largest difference {floor:.2e} "
         f"(its two forms of the delta rule: what float32 leaves between two right computations)")
@@ -376,16 +286,11 @@ def real(directory, positions, repo=REPO, revision=REVISION):
     # (tests/probe_qwen35.py, a throwaway branch): the weakest, RoPE over 32 values of a head and not 64, is 4.6e-2 away
     # (a line of 2e-2 let it by 2.3 times), and the states (below) are 3e-6 away from transformers' where the weakest
     # fault's are 8e-3. The line was 2e-2 before.
-    line = max(1e-3, 10 * floor)
+    line = line_of(floor, 1e-3)
     for what, reference in (("transformers at once", whole), ("transformers token by token", stepped)):
-        largest, mean, same, margin = differences(ours, reference)
-        ok = largest <= line and (same == len(ids) or margin <= 2 * largest)
-        failed |= not ok
-        say(f"real: the engine against {what}: largest difference {largest:.2e}, mean {mean:.2e}, the same most "
-            f"likely token at {same} of {len(ids)} positions (the largest gap between the reference's best two where "
-            f"it is not: {margin:.2e}){'' if ok else f' — FAILED (the line: {line:.1e})'}")
+        failed |= logits_failed(say, f"real: the engine against {what}", ours, reference, line, gap=True)
 
-    failed |= compare_states("real", llama, len(ids), at_once, stepped_states)
+    failed |= HELD.failed(say, "real", llama, len(ids), at_once, stepped_states)
 
     # 16 greedy tokens for the chat prompt, by transformers' generate() and by the engine's
     text = "".join(llama.generate(chat, steps=len(chat_ids) + NEW_TOKENS, temperature=0.0, echo=False))
@@ -398,7 +303,7 @@ def real(directory, positions, repo=REPO, revision=REVISION):
     failed |= not same
     say(f"real: the two wrote {'the same' if same else 'OTHER TEXTS — FAILED'}")
     failed |= long_check(directory, tokenizer, llama, line)
-    sink.path.unlink()
+    path.unlink()
     return failed
 
 
@@ -417,9 +322,8 @@ def prepared(source, out):
     if run.returncode:
         raise RuntimeError(f"perplexity_prepare.py: {run.stderr[-2000:]}")
     options = json.loads(Path(f"{out}.json").read_text())
-    shown = {key: (value if key != "specials" else f"{len(value)} of them") for key, value in options.items()}
     say(f"large: {source.name} converted in {time.perf_counter() - began:.0f} s, {Path(f'{out}.bin').stat().st_size} bytes, "
-        f"options {json.dumps(shown)}")
+        f"options {options_shown(options)}")
     return options
 
 
@@ -593,10 +497,7 @@ def large(directory, positions, name, source, text_file, minutes, first=0):
         failed = True
         say(f"large: fewer than 64 positions — FAILED")
     whole = whole[:len(ours)]
-    for what, logits in (("transformers", whole), ("the engine", ours)):
-        logits = np.asarray(logits)
-        say(f"large: logits of {what}: min {logits.min():.3f}, max {logits.max():.3f}, mean {logits.mean():.4f}, "
-            f"std {logits.std():.4f}")
+    logits_said(say, "large", whole, ours)
     largest, mean, agree, margin = differences(ours, whole)
     if source == "gguf":
         # the GGUF's values are Q8_0's rounding of the original's: no logits within a line of float32's, but the most
@@ -634,33 +535,26 @@ def large(directory, positions, name, source, text_file, minutes, first=0):
 
 def main():
     directory = Path(sys.argv[1])
-    only = next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--only=")), None)
-    positions = int(next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--positions=")), 96))
-    option = lambda name, default=None: next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith(f"--{name}=")), default)
+    only, positions = option("only"), int(option("positions", 96))
     failed = False
     if only == "theirs":
         theirs(directory, directory / "ids.json")
         return
     if option("model") in OTHERS:
-        failed = real(directory / option("model"), positions, *OTHERS[option("model")])
-        say("FAILED" if failed else "the engine computes what transformers computes")
-        sys.exit(1 if failed else 0)
+        ended(say, real(directory / option("model"), positions, *OTHERS[option("model")]))
     if option("model") in LARGE:
-        failed = large(directory, positions, option("model"), option("from", "safetensors"), option("text"),
-                       float(option("minutes", 40)), int(option("first", 0)))
-        say("FAILED" if failed else "the engine computes what transformers computes")
-        sys.exit(1 if failed else 0)
+        ended(say, large(directory, positions, option("model"), option("from", "safetensors"), option("text"),
+                         float(option("minutes", 40)), int(option("first", 0))))
     if only == "fetch":
         for name in FILES:
-            fetch(name, directory)
+            fetch(name, directory, REPO, REVISION)
         return
     if only in (None, "made-up"):
         for name, settings in MADE_UP.items():
             failed |= made_up(name, settings)
     if only in (None, "real"):
         failed |= real(directory, positions)
-    say("FAILED" if failed else "the engine computes what transformers computes")
-    sys.exit(1 if failed else 0)
+    ended(say, failed)
 
 
 if __name__ == "__main__":
