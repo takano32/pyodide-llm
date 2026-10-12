@@ -11,9 +11,9 @@ export const ARTICLES = { en: ["Mount Fuji", "Natsume Sōseki", "Shinkansen"], j
 
 // (the review of T236: a CI runner's connection to Wikipedia timed out once, and a measurement an hour in began with
 // nothing: a few tries, 10, 20, 30 and 40 seconds apart. T357.6: the tries are tests/fetching.mjs's, which asks again
-// for what another try may mend, and not for what Wikipedia refuses (a 4xx))
+// for what another try may mend, and not for what Wikipedia refuses (a 4xx; but 408 and 429, a busy shared address, are asked for again as before))
 const ASKING = {
-  tries: 5, wait: 10000, timeout: 60000, headers: { "User-Agent": "pyodide-llm perplexity measurement" },
+  tries: 5, wait: 10000, again: [408, 429], timeout: 60000, headers: { "User-Agent": "pyodide-llm perplexity measurement" },
   said: (error, attempt) => console.error(`wikipedia.mjs: attempt ${attempt} failed (${error.cause?.code ?? error.message}); trying again`),
 };
 const pagesOf = async (url, asking) => JSON.parse(await fetched(url, { ...ASKING, ...asking })).query.pages;

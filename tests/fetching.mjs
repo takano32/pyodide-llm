@@ -12,7 +12,7 @@
 //
 //   await download(url, target, { tries = 3, timeout = 60000, optional = false })   -> target, or null
 //   await fetched(url, { tries = 3, timeout = 60000 })                             -> a Buffer
-//   both: { wait: ms more before each next try (wait, 2 * wait, ...; none by default), said(error, attempt): told of
+//   both: { again: [statuses of 4xx that are asked for again all the same (Wikipedia's 408 and 429), none by default], wait: ms more before each next try (wait, 2 * wait, ...; none by default), said(error, attempt): told of
 //           each try that failed but the last, headers: more of them, fetch and sleep: the tests' own }
 //
 // Where Node differs from Python, and this file with it:
@@ -56,20 +56,20 @@ async function once(url, { timeout, headers, fetch }, take) {
 }
 
 /** attempt(), again where it failed with what another try may mend. */
-async function tried({ tries, wait, said, sleep }, attempt) {
+async function tried({ tries, wait, said, sleep, again }, attempt) {
   for (let n = 1; ; n++) {
     try {
       return await attempt();
     } catch (error) {
-      if (error.status < 500 || n >= tries) throw error;
+      if ((error.status < 500 && !again.includes(error.status)) || n >= tries) throw error;
       said?.(error, n);
       if (wait) await sleep(wait * n);
     }
   }
 }
 
-const settled = ({ tries = 3, timeout = 60000, wait = 0, optional = false, headers = {}, said, fetch = globalThis.fetch, sleep = pause } = {}) =>
-  ({ tries, timeout, wait, optional, headers, said, fetch, sleep });
+const settled = ({ tries = 3, timeout = 60000, wait = 0, optional = false, again = [], headers = {}, said, fetch = globalThis.fetch, sleep = pause } = {}) =>
+  ({ tries, timeout, wait, optional, again, headers, said, fetch, sleep });
 
 /** The file at url as target (a path), fetched unless it is there: target, or null where the server refused a file
  * that is optional. */

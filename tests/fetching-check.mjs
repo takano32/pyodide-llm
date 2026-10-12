@@ -123,6 +123,13 @@ const folder = (name) => fs.existsSync(placed(name)) ? fs.readdirSync(placed(nam
   ok("what the server refuses (4xx) is thrown at once, with its status");
 }
 {
+  serving({ "/file": [{ status: 429 }, { status: 408 }, { status: 200, body: "whole" }] });
+  const got = await download(`${base}/file`, placed("again/file.bin"), { again: [408, 429] });
+  assert.equal(fs.readFileSync(got, "utf8"), "whole");
+  assert.equal(asked.length, 3, "a status named in again is asked for again");
+  ok("a 4xx named in `again` is asked for again (Wikipedia's 408 and 429)");
+}
+{
   serving({ "/file": [{ status: 404 }] });
   assert.equal(await download(`${base}/file`, placed("optional/file.bin"), { optional: true }), null);
   assert.equal(asked.length, 1);
