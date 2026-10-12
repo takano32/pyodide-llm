@@ -1,7 +1,7 @@
 // What every step of /benchmark/'s GPU worker stands on: the shaders' module, the device and its adapter, the models' shapes,
 // buffers and random weights, the int8 shaders of a matrix and how one is bound and run, a read back, and how a time is
 // taken (pairs of n and 2n, forms in turn, an error scope around a measured path).
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
 
 // the WGSL, shared with the model's GPU worker (src/runtime/shaders.ts, T135), a module of its own that both ask for. Not
 // awaited here: a module worker's port opens at its first await, and a message that comes before onmessage is set is
@@ -9,6 +9,47 @@
 // was opened, the step that awaits it says so: updated.js)
 import { named } from "../../updated.ts";
 const shaders = named(import.meta.url, () => import("../../shaders.ts"));
+// T368.7: the types of what the steps hand one another. They are written here, where the things are made, and the
+// steps take them with `import type` (what crosses to the page is contracts/benchmark.ts's).
+import type * as Shaders from "../../shaders.ts";
+import type { PromptForm, Tile } from "../../shaders/prompt.ts";
+import type { Alive, GpuAbout, Lost, GpuInfo, GpuModel, LayerRow, Verdict } from "../../contracts/benchmark.ts";
+// What the steps share, as a step reads it: every step awaits load() (the shaders' module, its GROUP and TILE) and
+// gpu() (the device and its adapter) before anything else, and reads them as there from then on. Until then they are
+// undefined, which is what the object is made with (Unset: the same fields, none of them set).
+type Shared = { WGSL: typeof Shaders; GROUP: number; TILE: number; device: GPUDevice; adapter: GPUAdapter; packed: boolean; fallback: boolean;
+  layerVerdicts: Record<string, Verdict> | undefined; layerTimes: LayerRow[] | undefined };
+type Unset = { [Field in keyof Shared]: Shared[Field] extends boolean ? boolean : undefined };
+// (an adapter of before GPUAdapterInfo said whether it is a fallback said so itself)
+type Older = GPUAdapter & { isFallbackAdapter?: boolean };
+// a model's shape, as the legacy header has it; a matrix's [rows, n]; its weights where a check gives them
+export type ModelShape = { dim: number; hidden: number; layers: number; heads: number; kvHeads: number };
+export type Shape = [rows: number, n: number];
+export type Weights = { w: Uint8Array<ArrayBuffer>; s: Float32Array<ArrayBuffer> };
+// a dispatch: what run() takes
+export type Dispatch = [pipeline: GPUComputePipeline, group: GPUBindGroup | null, x: number, y: number, z?: number];
+// the vectors every matrix reads and writes (vectors())
+export type Vectors = { x: GPUBuffer; xq: GPUBuffer; xs: GPUBuffer; y: GPUBuffer; tokens: number; xStride: number; yStride: number; step: GPUBuffer };
+// what matrix() takes for a shader: one of the worker's own three, or a pipeline of a shader with code of its own
+export type Own = { pipeline: GPUComputePipeline; tile?: Tile; rows?: number; packed?: boolean };
+export type Kind = "widen" | "packed" | "batched" | Own;
+// a shader of a prompt (promptShaders()) and of a matrix times a vector (matVecShaders()), as kindOf() takes either
+export type PromptShader = { name: string; kind: "batched"; code?: undefined; none?: undefined; tile?: undefined; packed?: undefined; half?: undefined; constants?: undefined } | (PromptForm & { kind?: undefined; rows?: undefined; check?: undefined });
+export type MatVecShader = { name: string; kind?: "widen" | "packed"; check?: string; none?: string; code?: string; rows?: number; packed?: boolean; constants?: undefined; tile?: undefined };
+type Pipelines = { widen: GPUComputePipeline; packed: GPUComputePipeline | null; small: GPUComputePipeline; batched: GPUComputePipeline; argmax: GPUComputePipeline; empty: GPUComputePipeline };
+// the weights of a matrix on the GPU (placed()), and a matrix bound (matrix())
+export type Placed = { chunks: { w: GPUBuffer; s: GPUBuffer; shape: GPUBuffer; count: number }[]; owned: GPUBuffer[]; bytes: number };
+export type Bound = { dispatches: Dispatch[]; owned: GPUBuffer[]; bytes: number };
+// what is destroyed after a scope (a buffer, or a query set by its own destroy)
+export type Owned = { destroy(): void };
+// a caught value, where its words are read
+export type Thrown = { message?: string } | null | undefined;
+// a submission of n of something, timed: its ms
+export type Submission = (n: number) => Promise<number>;
+// paired()'s answer, and (strict) that the most never took SUBMISSION_MS; interleaved()'s of each
+export type Paired = { ms: number; dispatches: number; ratio?: number; unsteady?: boolean; short?: undefined };
+export type Short = { short: true };
+export type Timed = { ms: number; dispatches: number; ratio?: number; unsteady?: boolean; error?: undefined } | { error: string; ms?: undefined; dispatches?: undefined; ratio?: undefined; unsteady?: undefined };
 // T353: what the steps share and one of them sets (a module's `let` cannot be assigned from another module, and the
 // steps are the modules of gpu/): the fields were this file's `let`s of the same names
 const shared = {
@@ -25,21 +66,21 @@ const shared = {
   layerVerdicts: undefined,
   // T208: the layer table's rows (layer()), for the steps' table to break down the layer a token would run here
   layerTimes: undefined,
-};
+} satisfies Unset as unknown as Shared;
 // (every step awaits this first; so do the tests that import the pure helpers below)
-async function load() {
+async function load(): Promise<void> {
   shared.WGSL ??= await shaders;
   ({ GROUP: shared.GROUP, TILE: shared.TILE } = shared.WGSL);
 }
 
 // the shapes of the models in the list that the measurement stands for (legacy header: dim, hidden, layers, heads,
 // kv heads, vocab), and the int8 matrices of a layer, [rows, n]
-const MODELS = {
+const MODELS: Record<GpuModel, ModelShape & { vocab: number }> = {
   "llm-jp-3 150M": { dim: 512, hidden: 2048, layers: 12, heads: 8, kvHeads: 8, vocab: 99584 },
   "Llama 3.2 1B": { dim: 2048, hidden: 8192, layers: 16, heads: 32, kvHeads: 8, vocab: 128256 },
   "Llama 3.2 3B": { dim: 3072, hidden: 8192, layers: 28, heads: 24, kvHeads: 8, vocab: 128256 },
 };
-const layerMatrices = ({ dim, hidden, heads, kvHeads }) => {
+const layerMatrices = ({ dim, hidden, heads, kvHeads }: ModelShape): Shape[] => {
   const kvDim = (dim / heads) * kvHeads;
   return [[dim, dim], [kvDim, dim], [kvDim, dim], [dim, dim], [hidden, dim], [hidden, dim], [dim, hidden]];
 };
@@ -47,37 +88,37 @@ const layerMatrices = ({ dim, hidden, heads, kvHeads }) => {
 // layer step runs the real ones)
 const SMALL_PER_LAYER = 7;
 // the CPU section's made-up model (src/runtime/benchmark/sections.js): Llama 3.2 1B's width, two layers
-const PROMPT_MODEL = { dim: 2048, hidden: 8192, layers: 2, heads: 32, kvHeads: 8 };
-const matrixBytes = ([rows, n]) => rows * n + (rows * n / shared.GROUP) * 4;
+const PROMPT_MODEL: ModelShape = { dim: 2048, hidden: 8192, layers: 2, heads: 32, kvHeads: 8 };
+const matrixBytes = ([rows, n]: Shape) => rows * n + (rows * n / shared.GROUP) * 4;
 
-async function gpu() {
+async function gpu(): Promise<GPUDevice> {
   if (shared.device) return shared.device;
   if (!self.navigator?.gpu) throw new Error("no navigator.gpu in a worker here");
-  shared.adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  shared.adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" }) as GPUAdapter;
   if (!shared.adapter) throw new Error("navigator.gpu gave no adapter");
-  shared.fallback = Boolean(shared.adapter.info?.isFallbackAdapter ?? shared.adapter.isFallbackAdapter);
+  shared.fallback = Boolean(shared.adapter.info?.isFallbackAdapter ?? (shared.adapter as Older).isFallbackAdapter);
   shared.packed = navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product") ?? false;
   // as much of a buffer and of a binding as the adapter allows: the weights are the point. T146's tiled shaders use
   // shader-f16 and subgroups where the adapter has them (asked for only then: a device refuses a feature it lacks)
   shared.device = await shared.adapter.requestDevice({
-    requiredFeatures: ["shader-f16", "subgroups", "timestamp-query"].filter((name) => shared.adapter.features.has(name)),
+    requiredFeatures: (["shader-f16", "subgroups", "timestamp-query"] satisfies GPUFeatureName[]).filter((name) => shared.adapter.features.has(name)),
     requiredLimits: {
       maxStorageBufferBindingSize: shared.adapter.limits.maxStorageBufferBindingSize,
       maxBufferSize: shared.adapter.limits.maxBufferSize,
     },
   });
-  shared.device.lost.then((info) => postMessage({ lost: `${info.reason}: ${info.message}` }));
+  shared.device.lost.then((info) => postMessage({ lost: `${info.reason}: ${info.message}` } satisfies Lost));
   return shared.device;
 }
 
-async function info() {
-  const found = { worker: Boolean(self.navigator?.gpu) };
+async function info(): Promise<GpuInfo> {
+  const found: GpuInfo = { worker: Boolean(self.navigator?.gpu) };
   if (!found.worker) return found;
   await gpu();
   const about = shared.adapter.info ?? {};
   Object.assign(found, {
     adapter: [about.vendor, about.architecture, about.device, about.description].filter(Boolean).join(" · ") || "(not told)",
-    fallback: shared.adapter.info?.isFallbackAdapter ?? shared.adapter.isFallbackAdapter ?? null,
+    fallback: shared.adapter.info?.isFallbackAdapter ?? (shared.adapter as Older).isFallbackAdapter ?? null,
     maxStorageBufferBindingSize: shared.adapter.limits.maxStorageBufferBindingSize,
     maxBufferSize: shared.adapter.limits.maxBufferSize,
     maxComputeWorkgroupsPerDimension: shared.adapter.limits.maxComputeWorkgroupsPerDimension,
@@ -89,31 +130,31 @@ async function info() {
     features: [...shared.adapter.features].sort(),
     wgsl: [...(navigator.gpu.wgslLanguageFeatures ?? [])].sort(),
     packed: shared.packed,
-  });
+  } satisfies GpuAbout);
   return found;
 }
 
 // ---- buffers
 // GPUBufferUsage's values (the name itself is missing where there is no WebGPU)
 const STORAGE = 0x80, COPY_DST = 0x8, COPY_SRC = 0x4, MAP_READ = 0x1, UNIFORM = 0x40;
-function buffer(bytes, usage = STORAGE | COPY_DST) {
+function buffer(bytes: number, usage = STORAGE | COPY_DST): GPUBuffer {
   return shared.device.createBuffer({ size: Math.max(16, Math.ceil(bytes / 16) * 16), usage });
 }
 // random bytes, written a few megabytes at a time (writeBuffer copies them, so one block serves them all)
 const noise = new Uint8Array(4 << 20).map(() => (Math.random() * 256) | 0);
-function fill(target, bytes) {
+function fill(target: GPUBuffer, bytes: number) {
   for (let at = 0; at < bytes; at += noise.length) shared.device.queue.writeBuffer(target, at, noise, 0, Math.min(noise.length, bytes - at) & ~3);
 }
-function floats(count, scale = 0.01) {
+function floats(count: number, scale = 0.01) {
   const values = new Float32Array(count);
   for (let i = 0; i < count; i++) values[i] = (Math.random() - 0.5) * scale;
   return values;
 }
 
-let pipelines;
-function pipelinesFor() {
+let pipelines: Pipelines | undefined;
+function pipelinesFor(): Pipelines {
   if (pipelines) return pipelines;
-  const make = (code) => shared.device.createComputePipeline({ layout: "auto", compute: { module: shared.device.createShaderModule({ code }), entryPoint: "main" } });
+  const make = (code: string) => shared.device.createComputePipeline({ layout: "auto", compute: { module: shared.device.createShaderModule({ code }), entryPoint: "main" } });
   pipelines = { widen: make(shared.WGSL.WIDEN), packed: shared.packed ? make(shared.WGSL.PACKED) : null, small: make(shared.WGSL.SMALL),
                 batched: make(shared.WGSL.BATCHED), argmax: make(shared.WGSL.ARGMAX), empty: make(shared.WGSL.EMPTY) };
   return pipelines;
@@ -124,8 +165,8 @@ function pipelinesFor() {
 // (where the packed int8 dot is), with its subgroup path where subgroups are. A shape past the device's workgroup
 // memory or threads is not made (none says why). A tiled shader's pipeline is made when first asked for, asynchronously
 // and in an error scope: one this device refuses rejects there, and only its own rows say so
-const tiledPipelines = new Map();
-function promptShaders() {
+const tiledPipelines = new Map<string, Promise<GPUComputePipeline>>();
+function promptShaders(): PromptShader[] {
   const { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX } = shared.device.limits;
   // T147: the tiled ones are the model's GPU worker's candidates (shaders.ts's promptForms), the same list
   return [{ name: "batched (T135)", kind: "batched" }, ...shared.WGSL.promptForms({ half: shared.device.features.has("shader-f16"),
@@ -134,14 +175,14 @@ function promptShaders() {
 // T149: the shaders of a matrix times one vector (a generated token's): T134's two, then llama.cpp's mul_mat_vec (its
 // float form and its MMVQ one, each with the workgroup's reduction and, where subgroups are, with subgroupAdd) and
 // ONNX Runtime's MatMulNBits and DP4A for small M (shaders.ts). rows: the rows a workgroup takes
-function matVecShaders() {
+function matVecShaders(): MatVecShader[] {
   const noPacked = shared.packed ? undefined : "no packed int8 dot here";
   const subgroups = shared.device.features.has("subgroups");
   const noSubgroupId = navigator.gpu.wgslLanguageFeatures?.has("subgroup_id") ? undefined : "no subgroup_id in this WGSL";
   // check: the name of the shader's verdict in check() (T134's two are checked on their own there)
-  const shaders = [{ name: "widened (T134)", kind: "widen", check: "widen" },
+  const shaders: MatVecShader[] = [{ name: "widened (T134)", kind: "widen", check: "widen" },
     { name: "packed int8 (T134)", kind: "packed", check: "packed", none: noPacked }];
-  for (const [form, isPacked] of [["mul_mat_vec", false], ["MMVQ", true]]) {
+  for (const [form, isPacked] of [["mul_mat_vec", false], ["MMVQ", true]] satisfies [string, boolean][]) {
     for (const withSubgroups of subgroups ? [false, true] : [false]) {
       shaders.push({ name: `llama.cpp ${form}, ${shared.WGSL.MUL_MAT_VEC_ROWS} rows${withSubgroups ? ", subgroups" : ""}`,
         code: shared.WGSL.mulMatVec({ packed: isPacked, subgroups: withSubgroups }), rows: shared.WGSL.MUL_MAT_VEC_ROWS, packed: isPacked,
@@ -155,18 +196,18 @@ function matVecShaders() {
 }
 // what matrix() takes for a shader: "widen", "packed", "batched", or { pipeline, tile or rows, packed } of one with code
 // of its own (a tiled one, T146, or a matrix × vector's of T149)
-async function kindOf(shader) {
+async function kindOf(shader: PromptShader | MatVecShader): Promise<Kind | undefined> {
   if (!shader.code) return shader.kind;
   if (!tiledPipelines.has(shader.name)) {
     tiledPipelines.set(shader.name, validated(() => shared.device.createComputePipelineAsync({ layout: "auto",
-      compute: { module: shared.device.createShaderModule({ code: shader.code }), entryPoint: "main", constants: shader.constants } })));
+      compute: { module: shared.device.createShaderModule({ code: shader.code! }), entryPoint: "main", constants: shader.constants } })));
   }
-  return { pipeline: await tiledPipelines.get(shader.name), tile: shader.tile, rows: shader.rows, packed: shader.packed };
+  return { pipeline: await tiledPipelines.get(shader.name)!, tile: shader.tile, rows: shader.rows, packed: shader.packed };
 }
 // the activations of the packed tiled shaders, quantized on the GPU (shaders.ts's QUANTIZE): the first n values of
 // each of io's tokens, from io.x into io.xq and io.xs. One thread a group of 32, the tokens along y
-let quantizePipeline;
-function quantizer(io, n) {
+let quantizePipeline: GPUComputePipeline | undefined;
+function quantizer(io: Vectors, n: number): { dispatch: Dispatch; owned: GPUBuffer[] } {
   quantizePipeline ??= shared.device.createComputePipeline({ layout: "auto", compute: { module: shared.device.createShaderModule({ code: shared.WGSL.QUANTIZE }), entryPoint: "main" } });
   const shape = buffer(16, UNIFORM | COPY_DST);
   shared.device.queue.writeBuffer(shape, 0, new Uint32Array([n, io.xStride, 0, 0]));
@@ -180,16 +221,16 @@ function quantizer(io, n) {
 // x, workgroups y, workgroups z] each. kind "batched" or a tiled one (kindOf): by io.tokens vectors at once (x and y
 // hold them io.xStride and io.yStride floats apart); add: the products added to what y holds (the residual stream of
 // the model's layers), for the checks
-function matrix([rows, n], io, kind = "widen", data, { add = false, chunk } = {}) {
+function matrix([rows, n]: Shape, io: Vectors, kind: Kind = "widen", data?: Weights, { add = false, chunk }: { add?: boolean; chunk?: number } = {}): Bound {
   const held = placed([rows, n], io, data, { add, chunk });
   return { ...bound(held, io, kind), owned: held.owned, bytes: held.bytes };
 }
 // the weights of a matrix on the GPU, in chunks of rows that each fit a binding, with each chunk's Shape (T149: placed
 // once and bound by every shader of a matrix × vector)
-function placed([rows, n], io, data, { add = false, chunk } = {}) {
+function placed([rows, n]: Shape, io: Vectors, data?: Weights, { add = false, chunk }: { add?: boolean; chunk?: number } = {}): Placed {
   const words = n / 4, perRow = n / shared.GROUP, rowBytes = n;
   const most = chunk ?? Math.max(1, Math.floor(Math.min(shared.device.limits.maxStorageBufferBindingSize, shared.device.limits.maxBufferSize) / rowBytes));
-  const chunks = [], owned = [];
+  const chunks: Placed["chunks"] = [], owned: GPUBuffer[] = [];
   for (let first = 0; first < rows; first += most) {
     const count = Math.min(most, rows - first);
     const w = buffer(count * rowBytes), s = buffer(count * perRow * 4), shape = buffer(32, UNIFORM | COPY_DST);
@@ -208,14 +249,14 @@ function placed([rows, n], io, data, { add = false, chunk } = {}) {
   return { chunks, owned, bytes: matrixBytes([rows, n]) };
 }
 // the dispatches that multiply placed weights by x into y for a shader: [pipeline, bind group, workgroups x, y, z] each
-function bound({ chunks }, io, kind = "widen") {
+function bound({ chunks }: Pick<Placed, "chunks">, io: Vectors, kind: Kind = "widen"): { dispatches: Dispatch[] } {
   const own = typeof kind === "object", tiled = own && Boolean(kind.tile), matVec = own && Boolean(kind.rows);
   const { widen, packed: packedPipeline, batched } = pipelinesFor();
-  const pipeline = own ? kind.pipeline : { widen, packed: packedPipeline, batched }[kind];
+  const pipeline = (own ? kind.pipeline : { widen, packed: packedPipeline, batched }[kind])!;
   const quantized = own ? kind.packed : kind === "packed";
-  const dispatches = [];
+  const dispatches: Dispatch[] = [];
   for (const { w, s, shape, count } of chunks) {
-    const entries = [{ binding: 0, resource: { buffer: w } }, { binding: 1, resource: { buffer: s } },
+    const entries: GPUBindGroupEntry[] = [{ binding: 0, resource: { buffer: w } }, { binding: 1, resource: { buffer: s } },
       { binding: 2, resource: { buffer: quantized ? io.xq : io.x } }, { binding: 3, resource: { buffer: io.y } },
       { binding: 4, resource: { buffer: shape } }];
     if (kind === "packed" || (matVec && quantized)) entries.push({ binding: 5, resource: { buffer: io.xs } });
@@ -224,12 +265,12 @@ function bound({ chunks }, io, kind = "widen") {
     const group = shared.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0), entries });
     if (tiled) {
       // the tiles numbered over x, then y (as both sources number them: the rows' tiles first, then the tokens')
-      const tiles = Math.ceil(count / kind.tile.rows) * Math.ceil(io.tokens / kind.tile.tokens);
+      const tiles = Math.ceil(count / kind.tile!.rows) * Math.ceil(io.tokens / kind.tile!.tokens);
       const across = Math.min(tiles, shared.device.limits.maxComputeWorkgroupsPerDimension);
       dispatches.push([pipeline, group, across, Math.ceil(tiles / across)]);
     } else if (matVec) {
       // T149: kind.rows rows a workgroup, numbered over x and then y
-      const groups = Math.ceil(count / kind.rows), across = Math.min(groups, shared.device.limits.maxComputeWorkgroupsPerDimension);
+      const groups = Math.ceil(count / kind.rows!), across = Math.min(groups, shared.device.limits.maxComputeWorkgroupsPerDimension);
       dispatches.push([pipeline, group, across, Math.ceil(groups / across)]);
     } else {
       const across = Math.min(count, shared.device.limits.maxComputeWorkgroupsPerDimension);
@@ -240,8 +281,8 @@ function bound({ chunks }, io, kind = "widen") {
 }
 // the vectors every matrix reads and writes: x of the longest row, y of the most rows, tokens of each (the batched and
 // tiled shaders take several); xq and xs: x quantized, 8 bits a value and a float32 scale a group of 32, of every token
-function vectors(longest, most, tokens = 1) {
-  const io = { x: buffer(tokens * longest * 4), xq: buffer(tokens * longest, STORAGE | COPY_DST | COPY_SRC),
+function vectors(longest: number, most: number, tokens = 1): Vectors {
+  const io: Vectors = { x: buffer(tokens * longest * 4), xq: buffer(tokens * longest, STORAGE | COPY_DST | COPY_SRC),
                xs: buffer(tokens * (longest / shared.GROUP) * 4, STORAGE | COPY_DST | COPY_SRC),
                y: buffer(tokens * most * 4 + 16, STORAGE | COPY_DST | COPY_SRC), tokens, xStride: longest, yStride: most,
                step: buffer(16, UNIFORM | COPY_DST) };
@@ -251,14 +292,14 @@ function vectors(longest, most, tokens = 1) {
   shared.device.queue.writeBuffer(io.xs, 0, floats(tokens * (longest / shared.GROUP), 0.1));
   return io;
 }
-const destroyVectors = (io) => [io.x, io.xq, io.xs, io.y, io.step].forEach((b) => b.destroy());
-function run(pass, [pipeline, group, x, y, z = 1]) {
+const destroyVectors = (io: Vectors) => [io.x, io.xq, io.xs, io.y, io.step].forEach((b) => b.destroy());
+function run(pass: GPUComputePassEncoder, [pipeline, group, x, y, z = 1]: Dispatch) {
   pass.setPipeline(pipeline);
   if (group) pass.setBindGroup(0, group);  // none for the empty dispatch
   pass.dispatchWorkgroups(x, y, z);
 }
 // the most likely token of the logits in y (the classifier's output), into a buffer of its own
-function argmaxOf(io, vocab) {
+function argmaxOf(io: Vectors, vocab: number): { dispatch: Dispatch; chosen: GPUBuffer; owned: GPUBuffer[] } {
   const { argmax } = pipelinesFor();
   const chosen = buffer(16, STORAGE | COPY_SRC), count = buffer(16, UNIFORM | COPY_DST);
   shared.device.queue.writeBuffer(count, 0, new Uint32Array([vocab, 0, 0, 0]));
@@ -268,7 +309,7 @@ function argmaxOf(io, vocab) {
 }
 // read size bytes of source back: the copy, the submission and the mapping, as a token's logits come back. target: a
 // buffer to read into again and again (a measurement's loop), else one made and destroyed here
-async function readBack(encoder, source, size, target) {
+async function readBack(encoder: GPUCommandEncoder, source: GPUBuffer, size: number, target?: GPUBuffer): Promise<ArrayBuffer> {
   const bytes = Math.ceil(size / 4) * 4, into = target ?? buffer(bytes, MAP_READ | COPY_DST);
   encoder.copyBufferToBuffer(source, 0, into, 0, bytes);
   shared.device.queue.submit([encoder.finish()]);
@@ -279,10 +320,10 @@ async function readBack(encoder, source, size, target) {
   return got;
 }
 // the median of runs of a measurement, in ms, after warm-up runs (one run and no warm-up on a fallback adapter)
-async function median(measure, times = 10, warm = 3) {
+async function median(measure: () => Promise<unknown>, times = 10, warm = 3) {
   if (shared.fallback) [times, warm] = [1, 0];
   for (let i = 0; i < warm; i++) await measure();
-  const ms = [];
+  const ms: number[] = [];
   for (let i = 0; i < times; i++) {
     const began = performance.now();
     await measure();
@@ -291,7 +332,7 @@ async function median(measure, times = 10, warm = 3) {
   return ms.sort((a, b) => a - b)[ms.length >> 1];
 }
 // what fn does on the GPU, a validation error of it thrown (a pipeline or a bind group the device refused)
-async function validated(fn) {
+async function validated<Made>(fn: () => Made | Promise<Made>): Promise<Made> {
   shared.device.pushErrorScope("validation");
   try {
     return await fn();
@@ -320,23 +361,25 @@ const CEILING_GROUPS = 256, FIRST_LOOPS = 4, MOST_LOOPS = 1 << 14, MOST_DISPATCH
 // the storage buffer the global read streams through: 128 MiB, WebGPU's default largest binding (or the device's
 // largest, if smaller), meant to be larger than the GPU's caches (their sizes on the owner's devices are not measured)
 const GLOBAL_BYTES = 128 << 20;
-const middle = (values) => [...values].sort((x, y) => x - y)[values.length >> 1];
+const middle = (values: number[]) => [...values].sort((x, y) => x - y)[values.length >> 1];
 // the time of n dispatches (what submission(n) submits and waits for, in ms): n doubles, up to most, until a submission
 // takes SUBMISSION_MS (short: it never did), then PAIRS submissions of n and of 2n in turn, and the median of their
 // differences; past STEADY the pairs once more, then unsteady, or an error where 2n took no longer than n (lavapipe
 // under load once read a negative time, T149). T168's, and T149's matrix × vector. strict: none of the pairs when
 // most never took SUBMISSION_MS (a loop that did no work), only { short: true }
-async function paired(submission, most, strict = false) {
-  let n = 1, ms;
+async function paired(submission: Submission, most: number): Promise<Paired>;
+async function paired(submission: Submission, most: number, strict: boolean): Promise<Paired | Short>;
+async function paired(submission: Submission, most: number, strict = false): Promise<Paired | Short> {
+  let n = 1, ms: number;
   while ((ms = await submission(n)) < SUBMISSION_MS && n < most) n *= 2;
   if (strict && ms < SUBMISSION_MS) return { short: true };
   for (let tries = 0; ; tries++) {
-    const differences = [], ratios = [];
+    const differences: number[] = [], ratios: number[] = [];
     for (let i = 0; i < PAIRS; i++) {
       const once = await submission(n), twice = await submission(2 * n);
       differences.push(twice - once);
       ratios.push(twice / once);
-      postMessage({ alive: true });
+      postMessage({ alive: true } satisfies Alive);
     }
     // a median difference of 0 or less (2n no longer than n: the load moved) is no time at all, never steady
     const ratio = middle(ratios), took = middle(differences), steady = took > 0 && ratio >= STEADY[0] && ratio <= STEADY[1];
@@ -351,29 +394,29 @@ async function paired(submission, most, strict = false) {
 // PAIRS rounds of a submission of n and one of 2n of each, so that a device's warming and load fall on all of them
 // alike. Each: { ms, dispatches (n), ratio } as paired() says it, unsteady past STEADY after the rounds are taken
 // once more, or { error } where its 2n took no longer than its n. On a fallback adapter one submission of 1 each.
-async function interleaved(submissions, most) {
+async function interleaved(submissions: Submission[], most: number): Promise<Timed[]> {
   if (shared.fallback) {
-    const results = [];
+    const results: Timed[] = [];
     for (const submission of submissions) results.push({ ms: await submission(1), dispatches: 1 });
     return results;
   }
-  const counts = [];
+  const counts: number[] = [];
   for (const submission of submissions) {
     await submission(2);
     let n = 1;
     while ((await submission(n)) < SUBMISSION_MS && n < most) n *= 2;
     counts.push(n);
-    postMessage({ alive: true });
+    postMessage({ alive: true } satisfies Alive);
   }
   for (let tries = 0; ; tries++) {
-    const differences = submissions.map(() => []), ratios = submissions.map(() => []);
+    const differences = submissions.map((): number[] => []), ratios = submissions.map((): number[] => []);
     for (let round = 0; round < PAIRS; round++) {
       for (let i = 0; i < submissions.length; i++) {
         const once = await submissions[i](counts[i]), twice = await submissions[i](2 * counts[i]);
         differences[i].push(twice - once);
         ratios[i].push(twice / once);
       }
-      postMessage({ alive: true });
+      postMessage({ alive: true } satisfies Alive);
     }
     const results = submissions.map((_, i) => {
       const ratio = middle(ratios[i]), took = middle(differences[i]);
@@ -387,11 +430,11 @@ async function interleaved(submissions, most) {
 }
 // what fn does on the GPU (given an array for the buffers it makes, destroyed after), with an error of the device
 // thrown: validation (a pipeline or bind group refused) or out of memory (a buffer it could not give)
-async function scoped(fn) {
-  const owned = [];
+async function scoped<Made>(fn: (owned: Owned[]) => Made | Promise<Made>): Promise<Made> {
+  const owned: Owned[] = [];
   shared.device.pushErrorScope("out-of-memory");
   shared.device.pushErrorScope("validation");
-  let result, failure;
+  let result: Made | undefined, failure: unknown;
   try {
     result = await fn(owned);
   } catch (error) {
@@ -399,9 +442,9 @@ async function scoped(fn) {
   }
   const invalid = await shared.device.popErrorScope(), outOfMemory = await shared.device.popErrorScope();
   owned.forEach((b) => b.destroy());
-  if (invalid ?? outOfMemory) throw new Error((invalid ?? outOfMemory).message);
+  if (invalid ?? outOfMemory) throw new Error((invalid ?? outOfMemory)!.message);
   if (failure) throw failure;
-  return result;
+  return result as Made;
 }
 
 export { shared, load, MODELS, layerMatrices, SMALL_PER_LAYER, PROMPT_MODEL, matrixBytes, gpu, info, STORAGE,

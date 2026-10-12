@@ -1,4 +1,4 @@
-// built.js (T367.3): the files of this site that are built and not written (`make kernels`: kernels/build.py; `make
+// built.ts (T367.3; built.js until T368.7): the files of this site that are built and not written (`make kernels`: kernels/build.py; `make
 // python`: python_archive.py), in src/runtime/built/, each by its own literal name. That is how a bundler is told of a
 // file it is to serve: Vite gives each a name with a hash of its bytes (_astro/simdkernel_plain.<hash>.wasm), so a file
 // that did not change keeps its name from one deployment to the next, and a page never reads one of another build.
@@ -27,11 +27,14 @@ export const BUILT = {
   "converter.zip": new URL("./built/converter.zip", import.meta.url),
 };
 
+// (T368.7: a built file's name: a key of the table. A name put together is held to it too, where its parts are typed)
+export type Built = keyof typeof BUILT;
+
 /** The answer for one of them, by its name in the table: one that is ok, whose body the caller reads. A 404 for a file
  * of this site's build is updated() (the page is of a build the site no longer serves); any other answer that is not
  * ok is said by the name and the status, and a fetch that fails (offline, a line that dropped, an abort by `signal`)
  * fails as it did. Where the engine has a fallback for the file (the kernels: NumPy), the caller catches all of it. */
-export async function built(name, signal) {
+export async function built(name: Built, signal?: AbortSignal): Promise<Response> {
   const res = await fetch(BUILT[name], { signal });
   if (answeredGone(BUILT[name], res.status)) {
     throw updated();

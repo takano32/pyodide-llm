@@ -9,14 +9,16 @@
 //                                 the time to open a handle, whether a second handle on the same file is refused, and
 //                                 whether the file opens again once the first is closed. The file is removed at the end.
 
+// T368.7: what the page asks and is answered (contracts/benchmark.ts)
+import type { Answer, Staged, StorageInfo, StorageResults, StorageRun, ToStorage } from "../contracts/benchmark.ts";
 const PIECE = 8 << 20;
 // T177: the stage a run is at, for the page to show ({stage, at, of}; it answers none of the page's questions)
 const STAGES = 4;
-const stage = (name, at) => postMessage({ stage: name, at, of: STAGES });
+const stage = (name: string, at: number) => postMessage({ stage: name, at, of: STAGES } satisfies Staged);
 const FOLDER = "benchmark", FILE = "pieces.bin", PROGRESS = "progress.json";
 
 // the bytes of piece i: a pattern of its own, so that the read-back can tell the pieces apart
-function fill(bytes, i) {
+function fill(bytes: Uint8Array, i: number) {
   const words = new Uint32Array(bytes.buffer, bytes.byteOffset, bytes.length / 4);
   let x = ((i + 1) * 2654435761) >>> 0;
   for (let j = 0; j < words.length; j += 1024) {
@@ -27,16 +29,16 @@ function fill(bytes, i) {
 }
 // far apart: every piece about half the file away from the one before (a stride coprime with the count, so that every
 // piece comes once). A conversion writes each tensor where the checkpoint has it, in the order of the source file
-function scattered(count) {
-  const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+function scattered(count: number) {
+  const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
   let stride = Math.floor(count / 2) + 1;
   while (gcd(stride, count) !== 1) stride++;
   return Array.from({ length: count }, (_, k) => (k * stride) % count);
 }
-const seconds = (began) => (performance.now() - began) / 1000;
+const seconds = (began: number) => (performance.now() - began) / 1000;
 
-async function info() {
-  const out = { opfs: Boolean(navigator.storage?.getDirectory), syncHandle: typeof FileSystemFileHandle !== "undefined"
+async function info(): Promise<StorageInfo> {
+  const out: StorageInfo = { opfs: Boolean(navigator.storage?.getDirectory), syncHandle: typeof FileSystemFileHandle !== "undefined"
     && typeof FileSystemFileHandle.prototype.createSyncAccessHandle === "function" };
   try {
     const { usage, quota } = await navigator.storage.estimate();
@@ -47,12 +49,12 @@ async function info() {
   return out;
 }
 
-async function run(mib) {
+async function run(mib: number): Promise<StorageRun> {
   const count = Math.max(2, Math.floor(mib * (1 << 20) / PIECE)), size = count * PIECE;
   const root = await navigator.storage.getDirectory();
   const dir = await root.getDirectoryHandle(FOLDER, { create: true });
   const file = await dir.getFileHandle(FILE, { create: true });
-  const out = { mib: size / (1 << 20), pieces: count };
+  const out = { mib: size / (1 << 20), pieces: count } as StorageRun;
   let began = performance.now();
   const handle = await file.createSyncAccessHandle();
   out.openSeconds = seconds(began);
@@ -63,14 +65,14 @@ async function run(mib) {
       second.close();
       out.secondHandle = "opened (NOT refused)";
     } catch (error) {
-      out.secondHandle = `refused (${error.name})`;
+      out.secondHandle = `refused (${(error as Error).name})`;
     }
     began = performance.now();
     handle.truncate(size);
     handle.flush();
     out.truncateSeconds = seconds(began);
     const bytes = new Uint8Array(PIECE);
-    const put = (i) => {
+    const put = (i: number) => {
       fill(bytes, i);
       const written = handle.write(bytes, { at: i * PIECE });
       // T180: Chromium hands back a file error as a negative count read unsigned (4294967288 is -8, no space)
@@ -81,7 +83,7 @@ async function run(mib) {
       }
     };
     // (a) in order and (b) far apart, one flush at the end
-    const once = (order) => {
+    const once = (order: number[]) => {
       const start = performance.now();
       for (const i of order) put(i);
       const f = performance.now();
@@ -134,15 +136,15 @@ async function run(mib) {
     again.close();
     out.reopen = "opened";
   } catch (error) {
-    out.reopen = `refused (${error.name})`;
+    out.reopen = `refused (${(error as Error).name})`;
   }
   await root.removeEntry(FOLDER, { recursive: true });
   return out;
 }
 
-onmessage = async ({ data }) => {
+onmessage = async ({ data }: MessageEvent<ToStorage>) => {
   try {
-    postMessage({ result: data.step === "info" ? await info() : await run(data.mib) });
+    postMessage({ result: data.step === "info" ? await info() : await run(data.mib) } satisfies Answer<StorageResults[keyof StorageResults]>);
   } catch (error) {
     // what is left of the file goes, so that a failed run never keeps a gigabyte
     try {
@@ -150,6 +152,6 @@ onmessage = async ({ data }) => {
     } catch {
       // nothing was made
     }
-    postMessage({ error: `${error.name}: ${error.message}` });
+    postMessage({ error: `${(error as Error).name}: ${(error as Error).message}` } satisfies Answer<StorageResults[keyof StorageResults]>);
   }
 };

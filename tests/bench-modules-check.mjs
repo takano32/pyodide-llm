@@ -8,7 +8,9 @@
 //   - what the modules take from one another goes round nowhere (tests/imports.mjs's windowed(): the build links a ring
 //     without a word), and every file of the folder is reached from the window;
 //   - the window links in Node with every export defined, and a message given to the steps' onmessage as it is set is
-//     answered once.
+//     answered once;
+//   - (T368.7) every message a section's worker posts to the page says which type of contracts/benchmark.ts it is
+//     (`satisfies`): a worker's own postMessage() takes anything, and tsc holds only a message that says so.
 // T367.5: what this held before and the build and Node hold by themselves now is gone from here: that a name taken is
 // exported where it is taken from (the build: MISSING_EXPORT, an error; Node: a SyntaxError as the module is imported).
 // And every module of src/bench/ uses only what it declares or imports (the tables are functions: a name that is
@@ -21,6 +23,8 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { parse } from "@babel/parser";
+import { contract } from "./contracts.mjs";
 import { windowed } from "./imports.mjs";
 import { treeOf } from "./tree.mjs";
 import { typed, untyped } from "./untyped.mjs";
@@ -84,6 +88,27 @@ for (const [name, program] of programs) {
 }
 assert.deepEqual(fields.filter((field) => !used.has(field)), [], "fields of shared that nothing reads or sets");
 console.log(`bench-modules-check: the ${fields.length} fields of shared are the ones the steps use (${said} times)`);
+
+// ---- T368.7: the workers are TypeScript, and tsc holds a message one posts to the page to the type the message says
+// it is: postMessage({ … } satisfies Alive). Every message of the section's workers says one of contracts/benchmark.ts
+// (the sources as they are written: with the types blanked, as above, nothing of it is left). reader.ts is no
+// section's worker: it answers the CPU section's worker, with one word.
+if (END === ".ts") {
+  const types = new Set(contract("benchmark.ts").names);
+  const posting = [...[...linked.files.keys()].filter((name) => name.startsWith(at(""))), ...["sections", "storage", "memory", "waiter"].map((name) => at(`${name}${END}`))];
+  let posts = 0;
+  for (const name of posting) {
+    walk(parse(fs.readFileSync(tree.runtime(name), "utf8"), { sourceType: "module", plugins: ["typescript"] }).program, (node) => {
+      if (node.type !== "CallExpression" || node.callee.type !== "Identifier" || node.callee.name !== "postMessage") return;
+      const [message] = node.arguments;
+      assert.ok(message?.type === "TSSatisfiesExpression" && types.has(message.typeAnnotation.typeName?.name),
+        `${name}, line ${node.loc.start.line}: a message is posted without \`satisfies\` a type of contracts/benchmark.ts: nothing holds its keys and values to what the page reads`);
+      posts += 1;
+    });
+  }
+  assert.ok(posts >= 30, `${posts} messages posted were found in ${posting.length} files: fewer than the workers post`);
+  console.log(`bench-modules-check: the ${posts} messages the sections' workers post (${posting.length} files) each satisfy a type of contracts/benchmark.ts`);
+}
 
 // ---- the window in Node: it links, and what its onmessage is given
 const handlers = [], posted = [];

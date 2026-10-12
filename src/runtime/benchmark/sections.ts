@@ -18,29 +18,55 @@
 // ({stage, at, of}, T177): the page shows it, and it answers none of the page's questions.
 import { built } from "../built.ts";
 import { isUpdated, saidOf, named, unstarted } from "../updated.ts";
-const stage = (name, at, of) => postMessage({ stage: name, at, of });
+// T368.7: what the page asks and is answered (contracts/benchmark.ts), and the engine's own types of what it is handed
+import type * as Forward from "../forward.ts";
+import type { Compiled, Spawn } from "../forward.ts";
+import type { Built } from "../built.ts";
+import type { Plan, Tensor } from "../contracts/plan.ts";
+import type { Alive, Answer, CpuCeiling, CpuCeilings, CpuFound, CpuRow, DeviceFound, Failed, LineFetched, LineFound, SectionsResults, Staged, ToSections } from "../contracts/benchmark.ts";
+// a caught value, where its words are read
+type Thrown = { name?: string; message?: string; cutShort?: boolean } | null | undefined;
+// The made-up model's plan. It is not all of a Plan (contracts/plan.ts), and is handed to the engine as one: its
+// float32 tensors say no group and no scales, and it has none of linear, unturned, convolution and rotated (which the
+// engine reads as not there) nor of layers and widths (which it does not read yet)
+type Int8 = Tensor & { kind: "int8" };
+type Float = { kind: "f32"; offset: number; shape: number[] };
+type MadeName = "token_embedding_table" | "rms_att_weight" | "wq" | "wk" | "wv" | "wo" | "rms_ffn_weight" | "w1" | "w2" | "w3" | "rms_final_weight";
+type MadeUp = Omit<Plan, "tensors" | "linear" | "unturned" | "convolution" | "rotated" | "layers" | "widths"> & { tensors: Record<MadeName, Int8 | Float> };
+type Model = ReturnType<typeof madeUpModel>;
+// a loop of the ceilings' modules, as it is called here: by numbers, for a checksum
+type Loop = (...numbers: number[]) => number;
+// what paired() measured, as a rate
+type Rated = { rate: number; passes: number; ratio: number; unsteady?: boolean };
+// what an attempt at a ceiling gives: what it measured, or the words of what failed
+type Attempted<Measured> = Measured | { error: string; cutShort?: boolean };
+// the ceilings' loops on a memory (ceilingsOf()), with what cpu() puts beside them as it measures
+type Ceilings = { relaxed: boolean; read: NonNullable<CpuCeilings["read"]>; reading(count: number): Promise<{ GBps: number } & Omit<Rated, "rate">>;
+  dotting(): { GMACs: number } & Omit<Rated, "rate">; dottingRegisters(): { GMACs: number } & Omit<Rated, "rate">; fmaing(): { GMACs: number } & Omit<Rated, "rate">; stop(): void;
+  dot?: CpuCeiling<"GMACs">; dotRegisters?: CpuCeiling<"GMACs">; fma?: CpuCeiling<"GMACs"> };
+const stage = (name: string, at: number, of: number) => postMessage({ stage: name, at, of } satisfies Staged);
 
-self.onmessage = async ({ data }) => {
+self.onmessage = async ({ data }: MessageEvent<ToSections>) => {
   try {
     const result = data.step === "device" ? await device() : data.step === "cpu" ? await cpu(data.threads)
       : await line(data);
-    postMessage({ step: data.step, result });
+    postMessage({ step: data.step, result } satisfies Answer<SectionsResults[keyof SectionsResults]>);
   } catch (error) {
-    postMessage({ step: data.step, error: failed(error) });
+    postMessage({ step: data.step, error: failed(error) } satisfies Failed);
   }
 };
 // What a caught value is said as. T367.4: a file of this build that is gone (the page was left open across a
 // deployment) is said as that, alone, and ends the step wherever it is caught: a section measures this build, and what
 // half of its files measure is nothing to report.
-const failed = (error) => saidOf(error, `${error?.name ?? "Error"}: ${error?.message ?? error}`);
-const unlessUpdated = (error) => {
+const failed = (error: unknown) => saidOf(error, `${(error as Thrown)?.name ?? "Error"}: ${(error as Thrown)?.message ?? error}`);
+const unlessUpdated = (error: unknown): undefined => {
   if (isUpdated(error)) throw error;
 };
 
-// ---- the kernels, as the model's worker compiles them (src/runtime/worker.js): the plain build, and the shared one where
+// ---- the kernels, as the model's worker compiles them (src/runtime/worker/runtime.ts): the plain build, and the shared one where
 // the page is cross-origin isolated. null where this browser cannot compile them (no WebAssembly SIMD)
-async function kernelsOf(forward, kind) {
-  const fetched = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
+async function kernelsOf(forward: typeof Forward, kind: "plain" | "shared"): Promise<Compiled | null> {
+  const fetched = await Promise.all(([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`] satisfies Built[]).map((name) =>
     built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));
   if (!fetched[0]) return null;
   try {
@@ -50,10 +76,10 @@ async function kernelsOf(forward, kind) {
   }
 }
 
-async function device() {
+async function device(): Promise<DeviceFound> {
   const forward = await named(import.meta.url, () => import("../forward.ts"));
   const plain = await kernelsOf(forward, "plain");
-  const found = {
+  const found: DeviceFound = {
     crossOriginIsolated: self.crossOriginIsolated,
     sharedMemory: typeof SharedArrayBuffer !== "undefined",
     simd: Boolean(plain),
@@ -89,14 +115,14 @@ const PROMPT = Array.from({ length: 16 }, (_, i) => 1 + i), PROMPT_RUNS = 5;
 function madeUpModel() {
   const { dim, hidden, layers, heads, kvHeads, vocab, seqLen } = SHAPE;
   const headSize = dim / heads, kvDim = kvHeads * headSize;
-  const tensors = {};
+  const tensors = {} as MadeUp["tensors"];
   let offset = 28;  // after the legacy header, as in a checkpoint file
-  const int8 = (name, shape) => {
+  const int8 = (name: MadeName, shape: number[]) => {
     const count = shape.reduce((a, b) => a * b, 1);
     tensors[name] = { kind: "int8", offset, shape, group: GROUP, scales: offset + count };
     offset += count + (count / GROUP) * 4;
   };
-  const f32 = (name, shape) => {
+  const f32 = (name: MadeName, shape: number[]) => {
     tensors[name] = { kind: "f32", offset, shape };
     offset += shape.reduce((a, b) => a * b, 1) * 4;
   };
@@ -120,7 +146,7 @@ function madeUpModel() {
       sin[pos * headSize / 2 + i] = Math.sin(angle);
     }
   }
-  const plan = { arch: "llama", dim, hidden_dim: hidden, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads,
+  const plan: MadeUp = { arch: "llama", dim, hidden_dim: hidden, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads,
     head_size: headSize, vocab_size: vocab, seq_len: seqLen, rotary: headSize, parallel_residual: false, kv_start: seqLen,
     rms_norm_eps: 1e-5, shared_classifier: true, int8: true, relaxed: true, tensors, outliers: [], half_kv: true,
     derived: { freq_cis_real: new Uint8Array(cos.buffer), freq_cis_imag: new Uint8Array(sin.buffer) } };
@@ -128,7 +154,7 @@ function madeUpModel() {
 }
 
 // random bytes for the int8 values, a scale that keeps the activations near 1, and norms of 1
-function fillWeights(memory, base, { plan }) {
+function fillWeights(memory: WebAssembly.Memory, base: number, { plan }: Pick<Model, "plan">) {
   const U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer);
   const noise = new Uint8Array(1 << 20);
   for (let at = 0; at < noise.length; at += 65536) crypto.getRandomValues(noise.subarray(at, at + 65536));
@@ -136,7 +162,7 @@ function fillWeights(memory, base, { plan }) {
     const count = t.shape.reduce((a, b) => a * b, 1);
     if (t.kind === "int8") {
       for (let at = 0; at < count; at += noise.length) U.set(noise.subarray(0, Math.min(noise.length, count - at)), base + t.offset + at);
-      F.fill(1 / (64 * Math.sqrt(t.shape.at(-1))), (base + t.scales) / 4, (base + t.scales) / 4 + count / GROUP);
+      F.fill(1 / (64 * Math.sqrt(t.shape.at(-1)!)), (base + t.scales) / 4, (base + t.scales) / 4 + count / GROUP);
     } else {
       F.fill(1, (base + t.offset) / 4, (base + t.offset) / 4 + count);
     }
@@ -144,14 +170,14 @@ function fillWeights(memory, base, { plan }) {
 }
 
 // a software thread of forward.ts, as the model's worker starts one (src/runtime/worker/weights.ts's spawnThread)
-const spawn = (data) => new Promise((resolve, reject) => {
+const spawn: Spawn = (data) => new Promise((resolve, reject) => {
   const worker = new Worker(new URL("../helper.ts", import.meta.url), { type: "module" });
   worker.onmessage = () => resolve({ terminate: () => worker.terminate() });
   worker.onerror = async (event) => reject(await unstarted(event, import.meta.url, event.message ?? "a software thread did not start"));
   worker.postMessage(data);
 });
 
-async function cpu(counts = [1, 2, 4]) {
+async function cpu(counts = [1, 2, 4]): Promise<CpuFound> {
   const forward = await named(import.meta.url, () => import("../forward.ts"));
   const shared = self.crossOriginIsolated && typeof SharedArrayBuffer !== "undefined";
   const kernels = shared ? await kernelsOf(forward, "shared") : await kernelsOf(forward, "plain");
@@ -164,16 +190,16 @@ async function cpu(counts = [1, 2, 4]) {
   const after = forward.footprint(model.header, model.size, { dtype: "int8", relaxed: Boolean(kernels.relaxed), halfKV: true, shared });
   const { memory, base } = forward.weightsMemory(model.size, { shared, after });
   fillWeights(memory, base, model);
-  const engine = forward.createForward({ memory, base, size: model.size, kernels, plan: model.plan, spawn: shared ? spawn : undefined });
+  const engine = forward.createForward({ memory, base, size: model.size, kernels, plan: model.plan as Plan, spawn: shared ? spawn : undefined });
   // T163: the ceilings' loops on the same memory (no memory more: T96); their failure leaves the forward pass alone
-  let ceilings = null, ceilingsFailed;
+  let ceilings: Ceilings | null = null, ceilingsFailed: string | undefined;
   try {
     ceilings = await ceilingsOf(memory, base, model.size, shared);
   } catch (error) {
     unlessUpdated(error);
     ceilingsFailed = failed(error);
   }
-  const rows = [];
+  const rows: CpuRow[] = [];
   try {
     for (const asked of counts) {
       // without shared memory there are no software threads: one row, of one thread
@@ -185,7 +211,7 @@ async function cpu(counts = [1, 2, 4]) {
         continue;
       }
       for (let i = 0; i < WARM; i++) engine.forward(1, i, true);
-      const times = [];
+      const times: number[] = [];
       for (let i = 0; i < TOKENS; i++) {
         const began = performance.now();
         engine.forward(1 + i, (WARM + i) % SHAPE.seqLen, true);
@@ -196,7 +222,7 @@ async function cpu(counts = [1, 2, 4]) {
       const logits = engine.logits();
       // a prompt of 16 tokens at positions 0 to 15, over and over (the keys and values of those positions are rewritten)
       engine.forwardMany(PROMPT, 0);
-      const blocks = [];
+      const blocks: number[] = [];
       for (let i = 0; i < PROMPT_RUNS; i++) {
         const began = performance.now();
         engine.forwardMany(PROMPT, 0);
@@ -207,7 +233,7 @@ async function cpu(counts = [1, 2, 4]) {
                   promptMsPerToken: blocks[blocks.length >> 1] / PROMPT.length, finite: logits.every(Number.isFinite) });
       // T163: the ceilings right after the row they are held against (a phone that warms up slows both alike): reading
       // at the same count, and the compute loops after the row of one thread
-      if (ceilings) ceilings.read.push({ threads, ...(await attempt(() => ceilings.reading(threads))) });
+      if (ceilings) ceilings.read.push({ threads, ...(await attempt(() => ceilings!.reading(threads))) });
       if (ceilings && threads === 1) {
         const none = { none: "no relaxed SIMD in this browser" };
         ceilings.dot = ceilings.relaxed ? await attempt(ceilings.dotting) : none;
@@ -219,7 +245,7 @@ async function cpu(counts = [1, 2, 4]) {
     engine.release();
     ceilings?.stop();
   }
-  const { read, dot, dotRegisters, fma } = ceilings ?? {};
+  const { read, dot, dotRegisters, fma } = (ceilings ?? {}) as Partial<Ceilings>;
   return { backend: engine.backend, shared, megabytes: model.size / 1e6, tokenMegabytes: tokenBytes(model, kernels) / 1e6,
            layerWeights: layerWeights(model), rows, ceilings: ceilings ? { read, dot, dotRegisters, fma } : { error: ceilingsFailed } };
 }
@@ -227,11 +253,11 @@ async function cpu(counts = [1, 2, 4]) {
 // what a token reads: the checkpoint, and with relaxed SIMD matmul_q8r's corrections too (an int32 for each group of
 // every int8 matrix: 23.4 MB here). The GB/s column stays the checkpoint's (T157 turns it into other models' speeds);
 // its share of reading alone counts these bytes (T163's review). Safari's matmul_q8 reads no corrections.
-const tokenBytes = ({ plan, size }, kernels) => size + (kernels.relaxed ? Object.values(plan.tensors)
+const tokenBytes = ({ plan, size }: Model, kernels: Compiled) => size + (kernels.relaxed ? Object.values(plan.tensors)
   .filter((t) => t.kind === "int8").reduce((sum, t) => sum + (t.shape.reduce((a, b) => a * b, 1) / t.group) * 4, 0) : 0);
 
 // the weights of the layers' matrices: a multiply-add each for every token of a prompt (no classifier there)
-const layerWeights = ({ plan }) => ["wq", "wk", "wv", "wo", "w1", "w2", "w3"]
+const layerWeights = ({ plan }: Model) => (["wq", "wk", "wv", "wo", "w1", "w2", "w3"] satisfies MadeName[])
   .reduce((sum, name) => sum + plan.tensors[name].shape.reduce((a, b) => a * b, 1), 0);
 
 // ---- T163: the CPU's ceilings, loops of one kind of instruction (kernels/ceilings.ts, kernels/ceilings_relaxed.ts,
@@ -243,17 +269,17 @@ const layerWeights = ({ plan }) => ["wq", "wk", "wv", "wo", "w1", "w2", "w3"]
 // must take PAIR_MS by MOST_PASSES, and 2n passes must take at least SHORT times n (a loop whose passes were dropped
 // takes the same time for any count: T163's review). cutShort: the section is then wrong, as for logits not finite.
 const PAIR_MS = 20, PAIRS = 5, STEADY = [1.6, 2.2], SHORT = 1.3, MOST_PASSES = 2 ** 30;
-const cutShort = (message) => Object.assign(new Error(message), { cutShort: true });
-const middle = (values) => [...values].sort((a, b) => a - b)[values.length >> 1];
+const cutShort = (message: string) => Object.assign(new Error(message), { cutShort: true });
+const middle = (values: number[]) => [...values].sort((a, b) => a - b)[values.length >> 1];
 // run(n): the ms of n passes; right(n): whether the loop's checksum of n passes is the one computed here
-function paired(run, right) {
+function paired(run: (n: number) => number, right: (n: number) => boolean) {
   run(1);
-  let n = 1, ms;
+  let n = 1, ms: number;
   while ((ms = run(n)) < PAIR_MS && n < MOST_PASSES) n *= 2;
   if (ms < PAIR_MS) throw cutShort(`${n} passes took ${ms.toFixed(3)} ms: the loop was compiled away`);
   if (!right(n)) throw cutShort(`the checksum of ${n} passes is not the loop's work: the compiler cut it short`);
   for (let tries = 0; ; tries++) {
-    const differences = [], ratios = [];
+    const differences: number[] = [], ratios: number[] = [];
     for (let i = 0; i < PAIRS; i++) {
       const once = run(n), twice = run(2 * n);
       differences.push(twice - once);
@@ -267,22 +293,22 @@ function paired(run, right) {
     }
   }
 }
-const attempt = async (measure) => {
+const attempt = async <Measured>(measure: () => Measured | Promise<Measured>): Promise<Attempted<Measured>> => {
   try {
     return await measure();
   } catch (error) {
     unlessUpdated(error);
-    return { error: failed(error), ...(error?.cutShort ? { cutShort: true } : {}) };
+    return { error: failed(error), ...((error as Thrown)?.cutShort ? { cutShort: true } : {}) };
   }
 };
-const timed = (loop) => (n) => {
+const timed = (loop: (n: number) => unknown) => (n: number) => {
   const began = performance.now();
   loop(n);
   return performance.now() - began;
 };
-const rate = (work, r) => ({ rate: (work * r.passes) / (r.ms / 1000) / 1e9, passes: r.passes, ratio: r.ratio, ...(r.unsteady ? { unsteady: true } : {}) });
+const rate = (work: number, r: ReturnType<typeof paired>): Rated => ({ rate: (work * r.passes) / (r.ms / 1000) / 1e9, passes: r.passes, ratio: r.ratio, ...(r.unsteady ? { unsteady: true } : {}) });
 // the checksum of the int loops: the lane j of their sum is n times one pass's (lanes[j]), wrapped to 32 bits
-const xorOf = (lanes, n) => lanes.reduce((x, lane) => x ^ Math.imul(n, lane), 0);
+const xorOf = (lanes: number[], n: number) => lanes.reduce((x, lane) => x ^ Math.imul(n, lane), 0);
 
 // the control words of the reading threads, on a SharedArrayBuffer of their own (not a WebAssembly memory: T96): as
 // forward.ts cuts a matrix's rows (T93), the weights are read a CHUNK at a time, each thread taking the next one from
@@ -292,33 +318,33 @@ const GO = 0, DONE = 1, COUNT = 2, TOTAL = 3, STOP = 4, NEXT = 5, CHUNK = 1 << 2
 
 // The loops on the memory of the made-up model, its weights at base (size bytes): nothing new is reserved (T96).
 // dotting() makes 4 KB of them 7-bit for its loop (see ceilings_relaxed.ts) and puts them back after.
-async function ceilingsOf(memory, base, size, shared) {
+async function ceilingsOf(memory: WebAssembly.Memory, base: number, size: number, shared: boolean): Promise<Ceilings> {
   const kind = shared ? "shared" : "plain";
-  const [plain, relaxed] = await Promise.all([`ceilings_${kind}.wasm`, `ceilings_relaxed_${kind}.wasm`].map((name) =>
+  const [plain, relaxed] = await Promise.all(([`ceilings_${kind}.wasm`, `ceilings_relaxed_${kind}.wasm`] satisfies Built[]).map((name) =>
     built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));
   if (!plain) throw new Error("the ceilings' loops could not be fetched");
   const module = new WebAssembly.Module(plain);
-  const loops = new WebAssembly.Instance(module, { env: { memory } }).exports;
-  let dot = null, dotRegisters = null;
+  const loops = new WebAssembly.Instance(module, { env: { memory } }).exports as { read: Loop; fma: Loop };
+  let dot: Loop | null = null, dotRegisters: Loop | null = null;
   try {
-    if (relaxed) ({ dot, dotRegisters } = new WebAssembly.Instance(new WebAssembly.Module(relaxed), { env: { memory } }).exports);
+    if (relaxed) ({ dot, dotRegisters } = new WebAssembly.Instance(new WebAssembly.Module(relaxed), { env: { memory } }).exports as { dot: Loop; dotRegisters: Loop });
   } catch {
     // no relaxed SIMD here (Safari): the row says so
   }
   const chunks = Math.floor(size / CHUNK), bytes = chunks * CHUNK;
   const control = shared ? new Int32Array(new SharedArrayBuffer(8 * 4)) : null;
-  const readers = [];
-  let neverStarted;  // a reading thread that did not start: no count past it can be read
-  const started = async (count) => {
+  const readers: Worker[] = [];
+  let neverStarted: unknown;  // a reading thread that did not start: no count past it can be read
+  const started = async (count: number) => {
     if (neverStarted && count > readers.length) throw neverStarted;
     while (readers.length < count - 1) {
       const worker = new Worker(new URL("../benchmark/reader.ts", import.meta.url), { type: "module" });
       readers.push(worker);  // stop() ends it even where it never answers
-      let timer;
+      let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([new Promise((resolve, reject) => {
         worker.onmessage = resolve;
         worker.onerror = async (event) => reject(await unstarted(event, import.meta.url, event.message ?? "a reading thread did not start"));
-        worker.postMessage({ module, memory, control: control.buffer, base, chunk: CHUNK, chunks, share: readers.length });
+        worker.postMessage({ module, memory, control: control!.buffer, base, chunk: CHUNK, chunks, share: readers.length });
       }), new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error(`a reading thread did not start in ${STARTING_MS / 1000} seconds`)), STARTING_MS);
       })]).catch((error) => {
@@ -336,21 +362,21 @@ async function ceilingsOf(memory, base, size, shared) {
     read: [],
     // reading alone with count threads, CHUNKs taken in turn (this worker and the reading threads); the checksum is of
     // this worker's loop over all of them (the reading threads run the same loop)
-    async reading(count) {
+    async reading(count: number) {
       await started(count);
       const r = paired((n) => {
         const began = performance.now();
         if (count === 1) {
           loops.read(base, bytes, n);
         } else {
-          Atomics.store(control, DONE, 0);
-          Atomics.store(control, NEXT, 0);
-          Atomics.store(control, TOTAL, n * chunks);
-          Atomics.store(control, COUNT, count);
-          Atomics.add(control, GO, 1);
-          Atomics.notify(control, GO);
-          for (let k; (k = Atomics.add(control, NEXT, 1)) < n * chunks;) loops.read(base + (k % chunks) * CHUNK, CHUNK, 1);
-          for (let done; (done = Atomics.load(control, DONE)) < count - 1;) Atomics.wait(control, DONE, done);
+          Atomics.store(control!, DONE, 0);
+          Atomics.store(control!, NEXT, 0);
+          Atomics.store(control!, TOTAL, n * chunks);
+          Atomics.store(control!, COUNT, count);
+          Atomics.add(control!, GO, 1);
+          Atomics.notify(control!, GO);
+          for (let k; (k = Atomics.add(control!, NEXT, 1)) < n * chunks;) loops.read(base + (k % chunks) * CHUNK, CHUNK, 1);
+          for (let done; (done = Atomics.load(control!, DONE)) < count - 1;) Atomics.wait(control!, DONE, done);
         }
         return performance.now() - began;
       }, (n) => loops.read(base, bytes, n) === xorOf(lanes, n));
@@ -364,19 +390,19 @@ async function ceilingsOf(memory, base, size, shared) {
         for (let i = 0; i < x.length; i++) x[i] &= 0x7f;
         const sums = [0, 0, 0, 0];
         for (let i = 0; i < w.length; i++) sums[(i >> 2) & 3] += w[i] * x[i];
-        const { rate: GMACs, ...rest } = rate(4096, paired(timed((n) => dot(base, n)), (n) => dot(base, n) === xorOf(sums, n)));
+        const { rate: GMACs, ...rest } = rate(4096, paired(timed((n) => dot!(base, n)), (n) => dot!(base, n) === xorOf(sums, n)));
         return { GMACs, ...rest };
       } finally {
         x.set(kept);
       }
     },
     dottingRegisters() {
-      const loop = (n) => dotRegisters(n, 3, 5, 1);
+      const loop = (n: number) => dotRegisters!(n, 3, 5, 1);
       const { rate: GMACs, ...rest } = rate(128, paired(timed(loop), (n) => loop(n) === dotRegistersSum(n)));
       return { GMACs, ...rest };
     },
     fmaing() {
-      const loop = (n) => loops.fma(n, 1, 0.9999, 1e-7);
+      const loop = (n: number) => loops.fma(n, 1, 0.9999, 1e-7);
       const { rate: GMACs, ...rest } = rate(32, paired(timed(loop), (n) => loop(n) === fmaSum(n)));
       return { GMACs, ...rest };
     },
@@ -393,7 +419,7 @@ async function ceilingsOf(memory, base, size, shared) {
 
 // ceilings.ts's fma(n, 1, 0.9999, 1e-7) in float32, one lane (the four are alike) of the 8 accumulators, which start at
 // 0 to 7, rounded as WebAssembly rounds each step
-function fmaSum(n) {
+function fmaSum(n: number) {
   const f = Math.fround, d = f(1e-7), w = [1, 1.0009765625, 1.001953125, 1.0029296875];
   let x = f(0.9999), y = f(x + 0.25);
   const a = [0, 1, 2, 3, 4, 5, 6, 7];
@@ -411,8 +437,8 @@ function fmaSum(n) {
 
 // ceilings_relaxed.ts's dotRegisters(n, 3, 5, 1): a lane of each dot adds 4 × a × 5, a running 3, 4, 5, … as int8
 // (wrapping at 127); the 8 accumulators start at lanes 1000k + j, and the checksum sums the 4 lanes of all 8
-function dotRegistersSum(n) {
-  const int8 = (v) => ((v + 128) % 256 + 256) % 256 - 128;
+function dotRegistersSum(n: number) {
+  const int8 = (v: number) => ((v + 128) % 256 + 256) % 256 - 128;
   // the sum of a over n passes: whole turns of 256 values add -128 each
   let sum = Math.floor(n / 256) * -128;
   for (let i = 0; i < n % 256; i++) sum += int8(3 + i);
@@ -424,31 +450,31 @@ function dotRegistersSum(n) {
 // so far are due at that rate. Chromium and Firefox then stop taking from the connection, and the server's sending
 // slows with it (the connection's flow control): what is paced is this page's download, not the whole line of the
 // device. WebKit does not stop taking (T134's review): there only this page's reading is paced.
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // A fetch that brings nothing for STALL_MS is given up (as the model's worker gives up on Pyodide, T118), and while
 // bytes come the page hears of it once a second: its own deadline is for a section that says nothing at all.
 const STALL_MS = 30_000;
 // range: false for a part of the site's model, which GitHub Pages sends gzipped and answers a range of with a piece of
 // the gzip stream (AGENTS.md): the whole part, read to its end
-async function measure(url, { bytes, rate, range = true }) {
+async function measure(url: string, { bytes, rate, range = true }: { bytes: number; rate?: number; range?: boolean }): Promise<LineFetched> {
   const began = performance.now();
   const abort = new AbortController();
-  let stalled = false, told = began, timer;
+  let stalled = false, told = began, timer: ReturnType<typeof setTimeout> | undefined;
   const alive = () => {
     clearTimeout(timer);
     timer = setTimeout(() => { stalled = true; abort.abort(); }, STALL_MS);
     if (performance.now() - told > 1000) {
       told = performance.now();
-      postMessage({ alive: true });
+      postMessage({ alive: true } satisfies Alive);
     }
   };
   alive();
-  let res, headers, got = 0, first;
+  let res: Response | undefined, headers: number | undefined, got = 0, first: number | undefined;
   try {
     res = await fetch(url, { headers: range ? { Range: `bytes=0-${bytes - 1}` } : {}, cache: "no-store", signal: abort.signal });
     if (!res.ok) throw new Error(`${url.split("?")[0]}: ${res.status}`);
     headers = performance.now() - began;
-    const reader = res.body.getReader();
+    const reader = res.body!.getReader();
     for (;;) {
       const { done, value } = await reader.read();
       alive();
@@ -473,37 +499,37 @@ async function measure(url, { bytes, rate, range = true }) {
     clearTimeout(timer);
   }
   const ended = performance.now();
-  return { status: res.status, headersMs: headers, firstByteMs: (first ?? ended) - began, bytes: Math.min(got, bytes),
+  return { status: res!.status, headersMs: headers!, firstByteMs: (first ?? ended) - began, bytes: Math.min(got, bytes),
            MBps: Math.min(got, bytes) / 1e6 / ((ended - (first ?? began)) / 1000) };
 }
 
-async function line({ site, hf, rates = [], seconds = 4 }) {
-  const out = { site: null, hf: null, paced: [] };
+async function line({ site, hf, rates = [], seconds = 4 }: Extract<ToSections, { step: "line" }>): Promise<LineFound> {
+  const out: LineFound = { site: null, hf: null, paced: [] };
   const stages = 2 + rates.length;
   stage("this site: a part of the model", 1, stages);
   try {
     out.site = await measure(site.url, site);
   } catch (error) {
-    out.site = { error: String(error.message ?? error) };
+    out.site = { error: String((error as Error).message ?? error) };
   }
   stage("huggingface.co: a range of a model", 2, stages);
   try {
     out.hf = await measure(hf.url, { bytes: hf.bytes });
   } catch (error) {
-    out.hf = { error: String(error.message ?? error) };
+    out.hf = { error: String((error as Error).message ?? error) };
     return out;
   }
   for (const [i, rate] of rates.entries()) {
     stage(`huggingface.co no faster than ${rate} MB/s`, 3 + i, stages);
     // a line slower than the rate asked for cannot be paced to it: said as such, not measured for ever
-    if (out.hf.MBps < rate) {
+    if (out.hf!.MBps! < rate) {
       out.paced.push({ rate, slower: true });
       continue;
     }
     try {
       out.paced.push({ rate, ...(await measure(hf.url, { bytes: Math.round(rate * 1e6 * seconds), rate })) });
     } catch (error) {
-      out.paced.push({ rate, error: String(error.message ?? error) });
+      out.paced.push({ rate, error: String((error as Error).message ?? error) });
     }
   }
   return out;

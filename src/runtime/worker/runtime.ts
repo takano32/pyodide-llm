@@ -5,6 +5,7 @@
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { built } from "../built.ts";
+import type { Built } from "../built.ts";
 import { resolvePyodideVersion, pyodideSteps, placePython } from "./pyodide.ts";
 import { since, took } from "./clock.ts";
 import { wentWithout } from "./outdated.ts";
@@ -90,7 +91,7 @@ async function init(search: string) {
   // them, or with ?kernel=off, NumPy does the math, several times slower. They are read even with ?kernel=off: the
   // switches say what is used (request.ts's switchesNow()), and the benchmark's rounds with the kernels need them there (T119: its
   // "everything" round sampled on NumPy after the page's switch had turned them off, and said nothing).
-  for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"]) {
+  for (const name of ["simdkernel.so", "simdkernel_relaxed.wasmlib"] satisfies Built[]) {
     // (also where it is gone, T367.4: NumPy answers, and T439: the page is told why it is slower)
     const kernel = await built(name).catch((error) => void wentWithout(error));
     if (kernel) {
@@ -107,8 +108,8 @@ async function init(search: string) {
       throw error;
     });
     // one build of the kernels: simdkernel_<kind>.wasm and simdkernel_relaxed_<kind>.wasm, or null
-    const build = async (kind: string, wide = false) => {
-      const [plain, relaxed] = await Promise.all([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`].map((name) =>
+    const build = async (kind: "plain" | "shared" | "plain64" | "shared64", wide = false) => {
+      const [plain, relaxed] = await Promise.all(([`simdkernel_${kind}.wasm`, `simdkernel_relaxed_${kind}.wasm`] satisfies Built[]).map((name) =>
         built(name).then((res) => res.arrayBuffer()).catch((error) => {
           // (T439: the kernels of a 64-bit memory are no slower path: without them a model past 4 GB is refused)
           if (!wide) void wentWithout(error);

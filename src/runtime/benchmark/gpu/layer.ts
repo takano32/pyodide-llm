@@ -1,25 +1,34 @@
 // The steps "layer" and "layer steps": ms a layer by every form (T150, T175), where the time of a layer goes (T202, T208),
 // its attention by the cache's length, and the whole layer by timestamps.
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
 import { shared, MODELS, matrixBytes, gpu, STORAGE, COPY_DST, UNIFORM, COPY_SRC, buffer, floats, pipelinesFor, run,
   readBack, validated, PAIRS, middle, interleaved, scoped } from "./device.ts";
 import { toHalf } from "./halves.ts";
 import { LAYER_POS, LAYER_MOST, layerShape, LAYER_KINDS, layerForms, hasSubgroupId, engineTiles, vecAttention,
   attentionSteps, layerCheck, compiled, layerPipes, layerParts, MATRIX_KEYS } from "./layerparts.ts";
 import { MATVEC_BYTES, MATVEC_MOST } from "./matvec.ts";
+import type { Dispatch, Owned, Submission, Thrown, Timed } from "./device.ts";
+import type { AttentionPipes, Form, Grouping, LayerShape, MatrixKey, Step, Tried } from "./layerparts.ts";
+import type { Alive, AttentionLengths, AttentionRow, LayerFound, LayerRow, LayerStepsFound, StepsForm, StepTimed, Timestamps, Timing } from "../../contracts/benchmark.ts";
+// T368.7: what the steps' table times in turn: a form's whole layer, or a step alone
+type Item = { form?: string; step?: string; kind?: string; matrix?: MatrixKey; submission: Submission };
+// a form's layers on the copies, a layer's dispatches each
+type Layers = { form: string; each: Step[][] };
+// an attention the lengths' table tries: its pipelines, or why it cannot run here
+type Made = Partial<AttentionPipes> & { none?: string };
 
-async function layer() {
+async function layer(): Promise<LayerFound> {
   await gpu();
   const shape = layerShape(MODELS["Llama 3.2 1B"]);
   const bytes = Object.values(shape.matrices).reduce((sum, matrix) => sum + matrixBytes(matrix), 0);
-  const copies = shared.fallback ? 1 : Math.ceil(MATVEC_BYTES / bytes), rows = [];
+  const copies = shared.fallback ? 1 : Math.ceil(MATVEC_BYTES / bytes), rows: LayerRow[] = [];
   await scoped(async (owned) => {
     const parts = layerParts(shape, LAYER_POS, copies, owned);
     await shared.device.queue.onSubmittedWorkDone();
     // the forms that can run here, each with what submits n layers of it (each on the next copy) and waits
-    const timed = [];
+    const timed: { row: LayerRow; submission?: Submission }[] = [];
     for (const form of layerForms()) {
-      const row = { form: form.name, check: layerCheck(form), base: form.base, fused: form.fused, subgroups: form.subgroups, ...(form.normApart ? { normApart: true } : {}) };
+      const row: LayerRow = { form: form.name, check: layerCheck(form), base: form.base, fused: form.fused, subgroups: form.subgroups, ...(form.normApart ? { normApart: true } : {}) };
       if (form.none) {
         timed.push({ row: { ...row, none: form.none } });
         continue;
@@ -28,7 +37,7 @@ async function layer() {
         const pipes = await layerPipes(shape, form);
         const each = await validated(async () => [...Array(copies)].map((_, copy) => parts.dispatches(form, pipes, copy)));
         let next = 0;
-        const submission = async (n) => {
+        const submission = async (n: number) => {
           const encoder = shared.device.createCommandEncoder(), pass = encoder.beginComputePass();
           for (let i = 0; i < n; i++) each[next++ % copies].forEach((d) => run(pass, d));
           pass.end();
@@ -40,21 +49,21 @@ async function layer() {
         row.dispatches = each[0].length;
         timed.push({ row, submission });
       } catch (error) {
-        timed.push({ row: { ...row, error: String(error?.message ?? error) } });
+        timed.push({ row: { ...row, error: String((error as Thrown)?.message ?? error) } });
       } finally {
-        postMessage({ alive: true });
+        postMessage({ alive: true } satisfies Alive);
       }
     }
     const running = timed.filter((t) => t.submission);
     try {
-      const results = await validated(() => interleaved(running.map((t) => t.submission), LAYER_MOST));
+      const results = await validated(() => interleaved(running.map((t) => t.submission!), LAYER_MOST));
       running.forEach((t, i) => {
         const r = results[i];
-        Object.assign(t.row, r.error ? { error: r.error } : { msPerLayer: r.ms / r.dispatches, layers: r.dispatches, GBps: bytes / (r.ms / r.dispatches) / 1e6,
+        Object.assign(t.row, r.error ? { error: r.error } : { msPerLayer: r.ms! / r.dispatches!, layers: r.dispatches, GBps: bytes / (r.ms! / r.dispatches!) / 1e6,
           ...(r.ratio ? { ratio: r.ratio } : {}), ...(r.unsteady ? { unsteady: true } : {}) });
       });
     } catch (error) {
-      running.forEach((t) => (t.row.error = String(error?.message ?? error)));
+      running.forEach((t) => (t.row.error = String((error as Thrown)?.message ?? error)));
     }
     rows.push(...timed.map((t) => t.row));
   });
@@ -85,13 +94,13 @@ async function layer() {
 // submission starts alike; the whole layer's attention reads the one cache of positions up to LAYER_POS (256 KB of
 // keys and values), as in layer(): between two reads of it, a copy's weights (68 MB).
 // T208: then the whole layer once more by the GPU's own clock where the device gives timestamp-query (timestamps()).
-async function layerSteps() {
+async function layerSteps(): Promise<LayerStepsFound> {
   await gpu();
   const shape = layerShape(MODELS["Llama 3.2 1B"]);
   const bytes = Object.values(shape.matrices).reduce((sum, matrix) => sum + matrixBytes(matrix), 0);
   const copies = shared.fallback ? 1 : Math.ceil(MATVEC_BYTES / bytes);
   const { forms, chosen } = stepForms();
-  const result = { model: "Llama 3.2 1B", pos: LAYER_POS, layers: MODELS["Llama 3.2 1B"].layers, copies, GB: bytes / 1e9, dp4a: Boolean(forms[0]?.dp4a), chosen };
+  const result: Omit<LayerStepsFound, "forms" | "steps" | "lengths"> = { model: "Llama 3.2 1B", pos: LAYER_POS, layers: MODELS["Llama 3.2 1B"].layers, copies, GB: bytes / 1e9, dp4a: Boolean(forms[0]?.dp4a), chosen };
   if (!forms.length) return { ...result, forms: [], steps: [], lengths: await attentionLengths(shape) };
   const out = await scoped(async (owned) => {
     const parts = layerParts(shape, LAYER_POS, copies, owned, undefined, shared.fallback ? 0 : MATVEC_BYTES);
@@ -104,9 +113,9 @@ async function layerSteps() {
     await shared.device.queue.onSubmittedWorkDone();
     // units: the dispatches of one unit each, on a copy or a range of the weights, taken in turn; a submission of n
     // units, the stream written back first
-    const timing = (units) => {
+    const timing = (units: Dispatch[][]) => {
       let next = 0;
-      return async (n) => {
+      return async (n: number) => {
         parts.restart();
         const encoder = shared.device.createCommandEncoder(), pass = encoder.beginComputePass();
         for (let i = 0; i < n; i++) units[next++ % units.length].forEach((d) => run(pass, d));
@@ -118,21 +127,21 @@ async function layerSteps() {
       };
     };
     // what is timed: a step { step, kind, matrix } or a form's layer { form }, each with its submission
-    const items = [], rows = [], seen = new Set(), layers = [];
-    const add = (item, units) => items.push({ ...item, submission: timing(units) });
+    const items: Item[] = [], rows: StepsForm[] = [], seen = new Set<string>(), layers: Layers[] = [];
+    const add = (item: Omit<Item, "submission">, units: Dispatch[][]) => items.push({ ...item, submission: timing(units) });
     for (const form of forms) {
-      const row = { form: form.name, check: layerCheck(form), normApart: Boolean(form.normApart) };
+      const row: StepsForm = { form: form.name, check: layerCheck(form), normApart: Boolean(form.normApart) };
       rows.push(row);
       try {
         const pipes = await layerPipes(shape, form);
-        const each = await validated(async () => [...Array(copies)].map((_, copy) => parts.dispatches(form, pipes, copy)));
+        const each = await validated(async () => [...Array(copies)].map((_, copy) => parts.dispatches(form, pipes, copy) as Step[]));
         row.dispatches = each[0].length;
         // how many of each step a layer dispatches, in the layer's order
         row.steps = [];
         each[0].forEach(({ step }) => {
-          const known = row.steps.find((one) => one.step === step);
+          const known = row.steps!.find((one) => one.step === step);
           if (known) known.count++;
-          else row.steps.push({ step, count: 1 });
+          else row.steps!.push({ step, count: 1 });
         });
         // each step not timed yet (the first of its name): a matrix's on every range of its size in turn (its other
         // bindings as the layer's), the attention's on every cache in turn, the others' on the copies as the layer
@@ -148,9 +157,9 @@ async function layerSteps() {
           add({ step, kind, ...(matrix ? { matrix } : {}) }, stepUnits[i]);
         });
       } catch (error) {
-        row.error = String(error?.message ?? error);
+        row.error = String((error as Thrown)?.message ?? error);
       } finally {
-        postMessage({ alive: true });
+        postMessage({ alive: true } satisfies Alive);
       }
     }
     if (!items.length) return { ...result, forms: rows, steps: [] };
@@ -161,16 +170,16 @@ async function layerSteps() {
     alone.forEach((units, i) => add({ step: units[0][0].step, kind: "alone", matrix: MATRIX_KEYS[i] }, units));
     const floor = parts.floor(pipelinesFor().small);
     add({ step: floor.step, kind: floor.kind }, [[floor]]);
-    postMessage({ alive: true });
+    postMessage({ alive: true } satisfies Alive);
     const results = await validated(() => interleaved(items.map((item) => item.submission), MATVEC_MOST));
-    const timed = (r) => (r.error ? { error: r.error }
-      : { ms: r.ms / r.dispatches, n: r.dispatches, ratio: r.ratio, ...(r.unsteady ? { unsteady: true } : {}) });
-    const steps = [];
+    const timed = (r: Timed): Timing => (r.error ? { error: r.error }
+      : { ms: r.ms! / r.dispatches!, n: r.dispatches, ratio: r.ratio, ...(r.unsteady ? { unsteady: true } : {}) });
+    const steps: StepTimed[] = [];
     items.forEach((item, i) => {
-      if (item.form) Object.assign(rows.find((row) => row.form === item.form), timed(results[i]));
-      else steps.push({ step: item.step, kind: item.kind, ...(item.matrix ? { matrix: item.matrix } : {}), ...timed(results[i]) });
+      if (item.form) Object.assign(rows.find((row) => row.form === item.form)!, timed(results[i]));
+      else steps.push({ step: item.step!, kind: item.kind!, ...(item.matrix ? { matrix: item.matrix } : {}), ...timed(results[i]) });
     });
-    postMessage({ alive: true });
+    postMessage({ alive: true } satisfies Alive);
     return { ...result, forms: rows, steps, timestamps: await timestamps(parts, layers) };
   });
   return { ...out, lengths: await attentionLengths(shape) };
@@ -186,13 +195,13 @@ async function layerSteps() {
 // against and the vec rows are read against (base). { positions, rows: [{ attention, tiles, times: [{ ms, n, ratio,
 // unsteady }, { error } or { none } a length] }], base, MB } or { error }
 const ATTENTION_LENGTHS = [128, 1024, 4096];
-async function attentionLengths(shape) {
+async function attentionLengths(shape: LayerShape): Promise<AttentionLengths> {
   const { heads, kvHeads, headSize, kvDim } = shape;
   const engine = engineTiles(headSize);
-  const forms = [{ name: "the prompt's tiles (flash attention's tile)", tiles: true }, ...(engine ? [{ name: engine.name, tiles: true, engine: true }] : []),
-    ...(hasSubgroupId() ? [true] : []).map(() => ({ name: vecAttention(true).name, attention: "vec", vecSubgroups: true })),
+  const forms: Tried[] = [{ name: "the prompt's tiles (flash attention's tile)", tiles: true }, ...(engine ? [{ name: engine.name, tiles: true, engine: true }] : []),
+    ...(hasSubgroupId() ? [true] : []).map((): Tried => ({ name: vecAttention(true).name, attention: "vec", vecSubgroups: true })),
     { name: vecAttention(false).name, attention: "vec", vecSubgroups: false }];
-  const rows = forms.map((form) => ({ attention: form.name, ...(form.tiles ? { tiles: true } : {}), times: [] }));
+  const rows = forms.map((form): AttentionRow => ({ attention: form.name, ...(form.tiles ? { tiles: true } : {}), times: [] }));
   const base = engine ? 1 : 0;
   let MB = 0;
   try {
@@ -200,9 +209,9 @@ async function attentionLengths(shape) {
     const flash = shared.WGSL.flashShape({ headSize, half: false, subgroups: false, memory, threads: Math.min(maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX) });
     if (flash.none) throw new Error(flash.none);
     // (one at a time: each in an error scope of its own)
-    const pipes = [];
+    const pipes: Made[] = [];
     for (const form of forms) {
-      const made = { flash: await compiled(shared.WGSL.flashTile(form.engine ? engine.shape : flash)) };
+      const made: Made = { flash: await compiled(shared.WGSL.flashTile(form.engine ? engine!.shape : flash)) };
       if (form.attention === "vec") {
         made.vecShape = vecAttention(form.vecSubgroups).shape(headSize);
         if (made.vecShape.none) {
@@ -216,12 +225,12 @@ async function attentionLengths(shape) {
     }
     for (const positions of ATTENTION_LENGTHS) {
       await scoped(async (owned) => {
-        const make = (bytes, usage = STORAGE | COPY_DST) => {
+        const make = (bytes: number, usage = STORAGE | COPY_DST) => {
           const b = buffer(bytes, usage);
           owned.push(b);
           return b;
         };
-        const uniform = (bytes) => {
+        const uniform = (bytes: Uint8Array<ArrayBuffer> | Uint32Array<ArrayBuffer>) => {
           const b = make(bytes.byteLength, UNIFORM | COPY_DST);
           shared.device.queue.writeBuffer(b, 0, bytes);
           return b;
@@ -244,14 +253,14 @@ async function attentionLengths(shape) {
         const flashParams = new ArrayBuffer(16);
         new Uint32Array(flashParams, 0, 2).set([heads, kvHeads]);
         new Float32Array(flashParams, 8, 1)[0] = 1 / Math.sqrt(headSize);
-        const vecParams = new Map();
+        const vecParams = new Map<number, GPUBuffer>();
         const u = { step: uniform(new Uint32Array([1, positions - 1, 0, 0])), positions, flash: uniform(new Uint8Array(flashParams)),
-          vecParams: (nwg) => vecParams.get(nwg) ?? vecParams.set(nwg, uniform(shared.WGSL.flashVecParams({ headSize }, heads, kvHeads, nwg))).get(nwg) };
-        const group = (pipeline, entries) => shared.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
-          entries: entries.map(([binding, resource]) => ({ binding, resource: "offset" in resource ? resource : { buffer: resource } })) });
-        const timing = (units) => {
+          vecParams: (nwg: number) => vecParams.get(nwg) ?? vecParams.set(nwg, uniform(shared.WGSL.flashVecParams({ headSize }, heads, kvHeads, nwg))).get(nwg)! };
+        const group: Grouping = (pipeline, entries) => shared.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
+          entries: entries.map(([binding, resource]) => ({ binding, resource: "offset" in resource ? resource : { buffer: resource as GPUBuffer } })) });
+        const timing = (units: Dispatch[][]) => {
           let next = 0;
-          return async (n) => {
+          return async (n: number) => {
             const encoder = shared.device.createCommandEncoder(), pass = encoder.beginComputePass();
             for (let i = 0; i < n; i++) units[next++ % units.length].forEach((d) => run(pass, d));
             pass.end();
@@ -262,21 +271,21 @@ async function attentionLengths(shape) {
           };
         };
         const running = forms.map((form, i) => (pipes[i].none ? null
-          : timing(caches.map((cache) => attentionSteps(form, pipes[i], heads, cache, v, u, group)))));
-        const results = await validated(() => interleaved(running.filter(Boolean), MATVEC_MOST));
+          : timing(caches.map((cache) => attentionSteps(form, pipes[i] as AttentionPipes, heads, cache, v, u, group)))));
+        const results = await validated(() => interleaved(running.filter(Boolean) as Submission[], MATVEC_MOST));
         let k = 0;
         running.forEach((submission, i) => {
           if (!submission) return rows[i].times.push({ none: pipes[i].none });
           const r = results[k++];
-          rows[i].times.push(r.error ? { error: r.error } : { ms: r.ms / r.dispatches, n: r.dispatches, ratio: r.ratio, ...(r.unsteady ? { unsteady: true } : {}) });
+          rows[i].times.push(r.error ? { error: r.error } : { ms: r.ms! / r.dispatches!, n: r.dispatches, ratio: r.ratio, ...(r.unsteady ? { unsteady: true } : {}) });
         });
-        postMessage({ alive: true });
+        postMessage({ alive: true } satisfies Alive);
       });
     }
     // (bytes: the keys and values of a length, read once: float16, two of them; src/bench.js turns the time into GB/s)
     return { positions: ATTENTION_LENGTHS, rows, base, MB, bytes: ATTENTION_LENGTHS.map((positions) => positions * kvDim * 2 * 2) };
   } catch (error) {
-    return { error: String(error?.message ?? error) };
+    return { error: String((error as Thrown)?.message ?? error) };
   }
 }
 // T208: the fused forms the steps' table breaks down. The engine runs the fastest fused layer the check found right
@@ -290,10 +299,10 @@ async function attentionLengths(shape) {
 // The fastest only of the forms the engine has (src/runtime/gpu.js's TOKEN_FORMS; T208's review): not llama.cpp's with the
 // norms apart (withoutDp4a), which the layer table times where there is no packed int8 dot but no token runs; it can
 // still be the partner.
-function stepForms() {
+function stepForms(): { forms: Form[]; chosen: LayerStepsFound["chosen"] } {
   const fused = layerForms().filter((form) => form.fused && !form.none), engine = fused.filter((form) => !form.withoutDp4a);
-  const fastest = (shared.layerTimes ?? []).filter((row) => row.fused && row.msPerLayer > 0 && shared.layerVerdicts?.[row.check]?.ok === true)
-    .sort((a, b) => a.msPerLayer - b.msPerLayer).map((row) => engine.find((form) => form.name === row.form)).find(Boolean);
+  const fastest = (shared.layerTimes ?? []).filter((row) => row.fused && row.msPerLayer! > 0 && shared.layerVerdicts?.[row.check]?.ok === true)
+    .sort((a, b) => a.msPerLayer! - b.msPerLayer!).map((row) => engine.find((form) => form.name === row.form)).find(Boolean);
   if (!fastest) {
     const forms = LAYER_KINDS.filter((kind) => kind.fused && Boolean(kind.dp4a) === shared.packed).map((kind) => ({ ...kind, subgroups: false }));
     return { forms, chosen: { by: "packed", why: shared.layerTimes ? "the layer table has no fused layer timed and found right" : "no layer table was timed before" } };
@@ -317,7 +326,7 @@ function stepForms() {
 // submissions' times: those hold the wait of a submission, taken out as the difference of 2n and n, while these hold
 // only what runs on the GPU. { none } where the device gives no timestamp-query, { error } where it failed.
 const TIMESTAMP_LAYERS = 32;
-async function timestamps(parts, layers) {
+async function timestamps(parts: Pick<ReturnType<typeof layerParts>, "restart">, layers: Layers[]): Promise<Timestamps> {
   if (!shared.device.features.has("timestamp-query")) return { none: "this device gives no timestamp-query (the GPU's own clock) to this page" };
   if (!layers.length) return { none: "no form's layer ran" };
   const count = shared.fallback ? 1 : TIMESTAMP_LAYERS, rounds = shared.fallback ? 1 : PAIRS;
@@ -326,7 +335,7 @@ async function timestamps(parts, layers) {
       const set = shared.device.createQuerySet({ type: "timestamp", count: 2 * count });
       const resolved = buffer(16 * count, 0x200 | COPY_SRC);  // GPUBufferUsage.QUERY_RESOLVE
       owned.push(resolved, { destroy: () => set.destroy() });
-      const means = layers.map(() => []), spans = layers.map(() => []);
+      const means = layers.map((): number[] => []), spans = layers.map((): number[] => []);
       for (let round = 0; round < rounds; round++) {
         for (const [i, { each }] of layers.entries()) {
           parts.restart();
@@ -343,12 +352,12 @@ async function timestamps(parts, layers) {
           means[i].push(ns / count / 1e6);
           spans[i].push(Number(stamps[2 * count - 1] - stamps[0]) / count / 1e6);
         }
-        postMessage({ alive: true });
+        postMessage({ alive: true } satisfies Alive);
       }
       return { layers: count, rounds, forms: layers.map(({ form }, i) => ({ form, ms: middle(means[i]), span: middle(spans[i]) })) };
     });
   } catch (error) {
-    return { error: String(error?.message ?? error) };
+    return { error: String((error as Thrown)?.message ?? error) };
   }
 }
 

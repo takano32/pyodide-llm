@@ -1,15 +1,17 @@
 // The step "check": the int8 shaders against JavaScript on small matrices (T134; T146: the tiled ones with their edges),
-// then the layer's check and the sampling's and the generation's (layercheck.js, generatecheck.js).
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
+// then the layer's check and the sampling's and the generation's (layercheck.ts, generatecheck.ts).
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
 import { shared, gpu, MAP_READ, COPY_DST, buffer, floats, promptShaders, matVecShaders, kindOf, quantizer, matrix,
   vectors, destroyVectors, run, argmaxOf, readBack, validated } from "./device.ts";
 import { checkLayer, checkTokenAttentions } from "./layercheck.ts";
 import { checkSampling, checkGeneration } from "./generatecheck.ts";
+import type { Owned, Thrown } from "./device.ts";
+import type { Alive, Verdict, Verdicts } from "../../contracts/benchmark.ts";
 
 // ---- check: every shader against JavaScript: the two of a matrix × vector on 300 rows of 512 (rows that are not a
 // power of two), the batched one on the same with 11 tokens (a tile and a part of one), the tiled ones (checkTiled),
 // the argmax on logits of Llama 3's vocabulary and on a tie (the first of the largest, as JavaScript finds it)
-async function check() {
+async function check(): Promise<Verdicts> {
   await gpu();
   const rows = 300, n = 512, words = n / 4;
   const w = new Uint8Array(rows * n).map(() => (Math.random() * 256) | 0), s = floats(rows * n / shared.GROUP, 0.01);
@@ -19,8 +21,8 @@ async function check() {
   shared.device.queue.writeBuffer(io.xq, 0, new Uint8Array(xq.buffer));
   shared.device.queue.writeBuffer(io.xs, 0, xs);
   const signed = new Int8Array(w.buffer);
-  const verdicts = {};
-  for (const kind of shared.packed ? ["widen", "packed"] : ["widen"]) {
+  const verdicts: Verdicts = {};
+  for (const kind of shared.packed ? ["widen", "packed"] satisfies ("widen" | "packed")[] : ["widen"] satisfies "widen"[]) {
     const m = matrix([rows, n], io, kind, { w, s });
     const readback = buffer(rows * 4, MAP_READ | COPY_DST);
     const encoder = shared.device.createCommandEncoder(), pass = encoder.beginComputePass();
@@ -66,7 +68,7 @@ async function check() {
 // vector quantized in JavaScript (as PACKED is checked), whose products are exact integers times the two scales
 const SENTINEL = 7.25;
 async function checkMatVec() {
-  const rows = 300, past = 16, verdicts = {};
+  const rows = 300, past = 16, verdicts: Verdicts = {};
   for (const shader of matVecShaders().filter((one) => one.code && !one.none)) {
     try {
       const kind = await kindOf(shader);
@@ -80,7 +82,7 @@ async function checkMatVec() {
         shared.device.queue.writeBuffer(io.xq, 0, new Uint8Array(xq.buffer));
         shared.device.queue.writeBuffer(io.xs, 0, xs);
         shared.device.queue.writeBuffer(io.y, 0, new Float32Array(rows + past).fill(SENTINEL));
-        const owned = [];
+        const owned: Owned[] = [];
         const got = await validated(async () => {
           const m = matrix([rows, n], io, kind, { w, s }, { chunk: 101 });
           owned.push(...m.owned);
@@ -108,11 +110,11 @@ async function checkMatVec() {
       }
       verdicts[shader.name] = { worstRelative: worst, ok: !over && !touched, ...(touched ? { wrotePastTheRows: true } : {}) };
     } catch (error) {
-      verdicts[shader.name] = { worstRelative: NaN, ok: false, error: String(error?.message ?? error) };
+      verdicts[shader.name] = { worstRelative: NaN, ok: false, error: String((error as Thrown)?.message ?? error) };
     } finally {
       // the page stops a section that says nothing for 5 minutes: SwiftShader compiles a shader for up to 90 s, and
       // the checks before the layer's took 380 s together under load (T151)
-      postMessage({ alive: true });
+      postMessage({ alive: true } satisfies Alive);
     }
   }
   return verdicts;
@@ -136,7 +138,7 @@ async function checkTiled() {
   const rows = 300, n = 544, perRow = n / shared.GROUP;
   const w = new Uint8Array(rows * n).map(() => (Math.random() * 256) | 0), s = floats(rows * perRow, 0.01);
   const signed = new Int8Array(w.buffer);
-  const verdicts = {};
+  const verdicts: Verdicts = {};
   for (const shader of promptShaders().filter((one) => one.tile && !one.none)) {
     try {
       const kind = await kindOf(shader);
@@ -145,7 +147,7 @@ async function checkTiled() {
         const xStride = n + wider, yStride = rows + (wider ? 20 : 0);
         const io = vectors(xStride, yStride, tokens), x = floats(tokens * xStride, 2);
         shared.device.queue.writeBuffer(io.x, 0, x);
-        const owned = [];
+        const owned: Owned[] = [];
         const [got, xq, xs] = await validated(async () => {
           const made = [matrix([rows, n], io, kind, { w, s }, { chunk: 100 }), matrix([rows, n], io, kind, { w, s }, { chunk: 100, add: true })];
           const quantize = shader.packed ? quantizer(io, n) : null;
@@ -163,7 +165,7 @@ async function checkTiled() {
           destroyVectors(io);
         });
         // T147: the comparison is shaders.ts's tiledOff, the model's GPU worker's too
-        const off = shared.WGSL.tiledOff({ w: signed, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: shader.half });
+        const off = shared.WGSL.tiledOff({ w: signed, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: shader.half! });
         worst = Math.max(worst, off.worst);
         over ||= Boolean(off.wrong);
         far ||= off.far;
@@ -174,16 +176,16 @@ async function checkTiled() {
       const quantizing = values ? { apart: apart / values, far } : {};
       verdicts[shader.name] = { worstRelative: worst, ok: !over && !far && apart <= 0.01 * values, ...quantizing };
     } catch (error) {
-      verdicts[shader.name] = { worstRelative: NaN, ok: false, error: String(error?.message ?? error) };
+      verdicts[shader.name] = { worstRelative: NaN, ok: false, error: String((error as Thrown)?.message ?? error) };
     } finally {
       // the page stops a section that says nothing for 5 minutes: SwiftShader compiles a shader for up to 90 s, and
       // the checks before the layer's took 380 s together under load (T151)
-      postMessage({ alive: true });
+      postMessage({ alive: true } satisfies Alive);
     }
   }
   return verdicts;
 }
-async function checkBatched(w, s, rows, n) {
+async function checkBatched(w: Uint8Array<ArrayBuffer>, s: Float32Array<ArrayBuffer>, rows: number, n: number): Promise<Verdict> {
   const tokens = 11, io = vectors(n, rows, tokens), x = floats(tokens * n, 2);
   shared.device.queue.writeBuffer(io.x, 0, x);
   const m = matrix([rows, n], io, "batched", { w, s });
@@ -206,7 +208,7 @@ async function checkBatched(w, s, rows, n) {
 }
 async function checkArgmax() {
   let right = true;
-  for (const [vocab, tie] of [[128256, false], [1000, true]]) {
+  for (const [vocab, tie] of [[128256, false], [1000, true]] satisfies [number, boolean][]) {
     const io = vectors(4, vocab), logits = floats(vocab, 20);
     if (tie) logits[700] = logits[300] = 50;  // the first of the two
     shared.device.queue.writeBuffer(io.y, 0, logits);
