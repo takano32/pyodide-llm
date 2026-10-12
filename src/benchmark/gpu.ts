@@ -5,7 +5,7 @@ import { checkVerdict, matVecTable, cpuBaseline, tokenTable, layerTable, layerSt
 import { $, type Result, results } from "./dom.ts";
 import { staged, ask, worker, fixed, yes } from "./section.ts";
 import type { Asking } from "./section.ts";
-import type { GpuCeiling, GpuCeilings, GpuInfo, GpuModel, Overhead, PromptFound, PromptRow, ToBenchGpu, Verdict, Verdicts, Waited } from "../runtime/contracts/benchmark.ts";
+import type { GpuCeiling, GpuCeilings, GpuInfo, GpuModel, Overhead, PromptFound, PromptRow, ToBenchGpu, ToWaiter, Verdict, Verdicts, Waited } from "../runtime/contracts/benchmark.ts";
 // T368.7: a step as the section keeps it, by the name the page gives it: its result (contracts/benchmark.ts's, by the
 // step asked) or what failed. The list of them is read by name, which no type follows: each reader says what it takes
 type Stepped<Result> = { name: string; result?: Result; error?: string };
@@ -79,9 +79,9 @@ async function gpuBridge(w: Asking<"benchmark/gpu.js">) {
   if (!self.crossOriginIsolated) return { error: "not measured: the page is not cross-origin isolated" };
   const memory = new SharedArrayBuffer(8);
   const waiter = worker("benchmark/waiter.js");
-  const waited = new Promise<Waited>((resolve) => { waiter.onmessage = ({ data }) => resolve(data); });
+  const waited = new Promise<Waited>((resolve) => { waiter.onmessage = ({ data }: MessageEvent<Waited>) => resolve(data); });
   const answered = ask(w, { step: "bridge", memory, rounds: BRIDGE_ROUNDS });
-  waiter.postMessage({ memory, rounds: BRIDGE_ROUNDS });
+  waiter.postMessage({ memory, rounds: BRIDGE_ROUNDS } satisfies ToWaiter);
   try {
     // without Atomics.waitAsync nothing answers the waiter, which would wait for ever (T134's review)
     const answer = await answered;
