@@ -20,27 +20,33 @@ class Handed(Exception):
 
 
 class External:
-    """What Llama(external=) asks of forward.js, as far as the plan: the header, the final norm's weight (with three
-    channels far above the rest where the case asks for outliers), and start(plan), which keeps the plan and ends."""
+    """forward.js as far as the plan, for Llama(external=): size and read(offset, length) of the checkpoint, and
+    start(plan), which keeps the plan and ends (Handed) before any engine is built. The one stand-in of it (T357.5):
+    tests/plan_facts.py hands it a real checkpoint's bytes to read, the others nowhere()'s."""
 
-    def __init__(self, header, size, outliers):
-        self.header, self.size, self.outliers, self.plan = header, size, outliers, None
-
-    def read(self, offset, length):
-        if offset == 0:
-            return struct.pack("<7i", *self.header)
-        weight = 1.0 + np.arange(length // 4, dtype=np.float32) / 1024
-        if self.outliers:
-            weight[[5, 77, 130]] = (50.0, 60.0, 70.0)
-        return weight.tobytes()
+    def __init__(self, size, read):
+        self.size, self.read, self.plan = size, read, None
 
     def start(self, plan):
         self.plan = plan
         raise Handed()
 
 
+def nowhere(header, outliers):
+    """read(offset, length) of a file that is nowhere: its header, and wherever else Llama reads (the final norm's
+    weight, for the outlier channels) a weight a little above 1, three channels far above the rest where outliers."""
+    def read(offset, length):
+        if offset == 0:
+            return struct.pack("<7i", *header)
+        weight = 1.0 + np.arange(length // 4, dtype=np.float32) / 1024
+        if outliers:
+            weight[[5, 77, 130]] = (50.0, 60.0, 70.0)
+        return weight.tobytes()
+    return read
+
+
 def engine_plan(L, header, dtype, form, more, size):
-    external = External(header, size, more.get("outliers", False))
+    external = External(size, nowhere(header, more.get("outliers", False)))
     options = {key: value for key, value in more.items() if key != "outliers"}
     try:
         L.Llama(None, b"", dtype=dtype, external=external, **form, **options)

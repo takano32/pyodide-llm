@@ -12,28 +12,14 @@ import sys
 
 import numpy as np
 
+from engine_plans import External, Handed
+
 TOKENS = [5, 17, 3, 250, 9, 9, 41, 2, 300, 77]
 # (a linear-attention layer's numbers: such that a frame sized by its key heads in place of its value heads is a line
 # of the cache shorter, and the next token's frame begins inside it)
 LINEAR = {"every": 2, "key_heads": 3, "value_heads": 9, "key_dim": 16, "value_dim": 16, "conv": 4}
 # (dim, hidden, layers, heads, kv heads, vocab, context): a negative vocabulary is a classifier of its own
 GROUPED, FILLED = [64, 128, 4, 4, 2, 320, 48], [64, 128, 3, 4, 4, -320, 48]
-
-
-class Handed(Exception):
-    """The plan is in hand: nothing of the engine is built."""
-
-
-class External:
-    def __init__(self, checkpoint):
-        self.checkpoint, self.size, self.plan = checkpoint, len(checkpoint), None
-
-    def read(self, offset, length):
-        return self.checkpoint[offset:offset + length]
-
-    def start(self, plan):
-        self.plan = plan
-        raise Handed()
 
 
 def cases(L):
@@ -79,7 +65,7 @@ if __name__ == "__main__":
     tokenizer = made_up.pack_tokenizer(made_up.tiny_vocab(320))
     for index, (name, header, form, options) in enumerate(cases(L)):
         checkpoint = made_up.checkpoint(header, form, "float32", tensor=made_up.uniform(6 + index))
-        external = External(checkpoint)
+        external = External(len(checkpoint), lambda offset, length: checkpoint[offset:offset + length])
         try:
             L.Llama(None, b"", dtype="float32", external=external, **form, **options)
         except Handed:
