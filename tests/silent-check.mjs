@@ -205,6 +205,12 @@ const SILENT = {
 
 // ---- the catches that say: [file, the very text of what they tell the console]. None of them is silent (the table
 // has no row of theirs), and each line reads the caught value
+// (THEN: the two that no check of Node's runs, init() behind Pyodide's CDN and the page's list beside its elements, with
+// the statement after the line, which is the fallback they had before they said anything)
+const THEN = {
+  "console.warn(`kernels: forward.js and its kernels did not start (${told(error)}): the engine runs NumPy`);": "jsKernels = null;",
+  "console.warn(`kept: what this browser kept could not be listed (${String(error)}): shown as nothing kept`);": "return [];",
+};
 const SAID = {
   "src/runtime/worker/convert.ts": ["console.warn(`kept: no file to keep this model in as it comes (${told(error)}): a model on the GPU alone is not kept`);"],
   "src/runtime/worker/runtime.ts": [
@@ -252,6 +258,10 @@ for (const [file, lines] of Object.entries(SAID)) {
   for (const line of lines) {
     assert.ok(text.includes(line), `${file} no longer tells the console ${JSON.stringify(line)}: a catch that said its failure says it still, or its row here goes with it`);
     assert.ok(/^console\.warn\(`[^`]+ \(\$\{(?:told|String)\(error\)\}\): [^`]+`\);$/.test(line), `${file}: ${line} is one line of console.warn: what failed, (the caught value), what stands in`);
+    if (THEN[line]) {
+      const after = text.slice(text.indexOf(line) + line.length).trimStart().split("\n")[0];
+      assert.equal(after, THEN[line], `${file}: after it says ${JSON.stringify(line.slice(0, 50))}… the catch goes on as it did before it said anything`);
+    }
     saying++;
   }
 }
