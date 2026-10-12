@@ -56,6 +56,7 @@ import { parse } from "@babel/parser";
 import { otherTree } from "./other-tree.mjs";
 import { builtModule } from "./bundle.mjs";
 import { treeOf } from "./tree.mjs";
+import { untyped } from "./untyped.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
@@ -286,7 +287,9 @@ function gpuWorker(tree, fields, worker) {
   const files = [worker.window], inFolder = worker.window.replace(/\.js$/, ""), runtime = treeOf(tree).runtime;
   const folder = runtime(inFolder, { maybe: true });
   if (fs.existsSync(folder)) for (const file of fs.readdirSync(folder).sort()) files.push(`${inFolder}/${file}`);
-  const asts = files.map((file) => parse(fs.readFileSync(runtime(file), "utf8"), { sourceType: "module" }).program);
+  // (T368.6: a file that is TypeScript with its types blanked, by the name the tree has for it: the statements are then
+  // the JavaScript they were, and a type's declaration or import is none)
+  const asts = files.map((file) => parse(untyped(fs.readFileSync(runtime(file), "utf8"), runtime(file)), { sourceType: "module" }).program);
   const declared = (statement) => {
     const names = [];
     const pattern = (node) => { if (!node) return; if (node.type === "Identifier") names.push(node.name); else if (node.type === "ObjectPattern") node.properties.forEach((p) => pattern(p.type === "RestElement" ? p.argument : p.value)); else if (node.type === "ArrayPattern") node.elements.forEach(pattern); else if (node.type === "AssignmentPattern") pattern(node.left); };
@@ -354,7 +357,7 @@ function gpuWorker(tree, fields, worker) {
 function sharedFields(tree, worker) {
   const file = treeOf(tree).runtime(worker.window.replace(/\.js$/, "/device.js"), { maybe: true });
   if (!fs.existsSync(file)) return new Set();
-  const program = parse(fs.readFileSync(file, "utf8"), { sourceType: "module" }).program;
+  const program = parse(untyped(fs.readFileSync(file, "utf8"), file), { sourceType: "module" }).program;
   const shared = program.body.find((s) => s.type === "VariableDeclaration" && s.declarations[0].id.name === worker.object);
   // (T378.4: the model's worker has no such object any more: its fields are device.js's `let`s again)
   return new Set(shared?.declarations[0].init.properties.map((p) => p.key.name) ?? []);

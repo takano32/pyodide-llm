@@ -67,9 +67,9 @@
 // the GPU and leaving it). Each is a static import: a bundler links them into this worker's file (T367.3),
 // and nothing is awaited before the receiver at the end of this file is set. The shaders are linked into it too
 // (T367.5): each module takes the names it uses from the parts of shaders/, and the worker fetches nothing after itself.
-import { heldFloats } from "./gpu/tokenforms.js";
-import { generate, prompt, keysOf } from "./gpu/requests.js";
-import { open, take, start, stop } from "./gpu/start.js";
+import { heldFloats } from "./gpu/tokenforms.ts";
+import { generate, prompt, keysOf } from "./gpu/requests.ts";
+import { open, take, start, stop } from "./gpu/start.ts";
 
 // (pure: tests/gpu-choice-check.mjs holds the rounding of the keys and values to what a device may choose)
 export { heldFloats };

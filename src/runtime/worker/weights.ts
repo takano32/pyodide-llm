@@ -105,7 +105,7 @@ const spawnThread = (data: unknown) => new Promise<Thread>((resolve, reject) => 
 // T135: the GPU's worker of forward.ts, a module worker of its own; forward.ts starts it
 // (T439: forward.ts holds its error, and the model stays on the CPU; beside that the page is told where it is the site's update)
 function openGpu() {
-  const worker = new Worker(new URL("../gpu.js", import.meta.url), { type: "module" });
+  const worker = new Worker(new URL("../gpu.ts", import.meta.url), { type: "module" });
   worker.addEventListener("error", (event) => void workerWentWithout(event, import.meta.url));
   return worker;
 }

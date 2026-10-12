@@ -2,11 +2,11 @@
 // the checkpoint comes), start() (the weights, the forms chosen, "ready" or "unusable"), stop().
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { model, stopping, lost, stopAsked, handed, within, openDevice, describe, unusable, end } from "./device.js";
-import { upload, uploadLayers, uploadRest, tablesOn, routed, unwritten } from "./weights.js";
-import { chooseAttention, chooseMatrices, formsSaid } from "./forms.js";
-import { prepare, bindLayers, grow, timeBlocks } from "./block.js";
-import { chooseTokens, tokensSaid } from "./tokenforms.js";
+import { model, stopping, lost, stopAsked, handed, within, openDevice, describe, unusable, end } from "./device.ts";
+import { upload, uploadLayers, uploadRest, tablesOn, routed, unwritten } from "./weights.ts";
+import { chooseAttention, chooseMatrices, formsSaid } from "./forms.ts";
+import { prepare, bindLayers, grow, timeBlocks } from "./block.ts";
+import { chooseTokens, tokensSaid } from "./tokenforms.ts";
 
 let starting = false;
 

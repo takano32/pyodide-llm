@@ -512,7 +512,7 @@ const b64 = (floats) => {
   for (let i = 0; i < bytes.length; i += 32768) text += String.fromCharCode(...bytes.subarray(i, i + 32768));
   return btoa(text);
 };
-const openGpu = () => new Worker("/runtime/gpu.js" + search, { type: "module" });
+const openGpu = () => new Worker("/runtime/gpu.ts" + search, { type: "module" });
 // T241: the numbers of the requests the harness itself sends the GPU's worker (forward.js counts its own from 1)
 let ownSerial = 0x40000000;
 // T243: the blocks forward.js is to refuse, a run each of those that end with it (refusedBlock): the value in the row

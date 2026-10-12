@@ -2,7 +2,7 @@
 // and the matrices' tiled shaders (T146, T147), with how a matrix's pieces are bound and dispatched.
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
+import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ternaryValues, tiledOff } from "../shaders/prompt.ts";
 import { FLASH_Q_TILE, flashShape, flashTile } from "../shaders/attention.ts";

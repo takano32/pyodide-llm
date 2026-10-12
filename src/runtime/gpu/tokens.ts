@@ -3,9 +3,9 @@
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, turnedAt, within, buffer, uniform, copyIn, validated,
-  pipelineOf, bind, dispatch } from "./device.js";
-import { tablesOf } from "./weights.js";
-import { attentionPasses } from "./tokenattention.js";
+  pipelineOf, bind, dispatch } from "./device.ts";
+import { tablesOf } from "./weights.ts";
+import { attentionPasses } from "./tokenattention.ts";
 import { GROUP } from "../shaders/common.ts";
 import { flashVecSplits } from "../shaders/attention.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "../shaders/matvec.ts";

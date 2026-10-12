@@ -4,7 +4,7 @@
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, readBack, validated,
-  pipelineOf, bind, dispatch } from "./device.js";
+  pipelineOf, bind, dispatch } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
 import { WIDEN_SIX, sixDispatch, sixValues } from "../shaders/steps.ts";
 

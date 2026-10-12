@@ -3,9 +3,9 @@
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, stopping, held, within, buffer, uniform, copyIn, narrowIn, validated, pipelineOf, bind,
-  dispatch } from "./device.js";
-import { tablesOf } from "./weights.js";
-import { productGroups, multiply } from "./forms.js";
+  dispatch } from "./device.ts";
+import { tablesOf } from "./weights.ts";
+import { productGroups, multiply } from "./forms.ts";
 import { GROUP } from "../shaders/common.ts";
 import { QUANTIZE, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "../shaders/steps.ts";
 import { FLASH_Q_TILE } from "../shaders/attention.ts";

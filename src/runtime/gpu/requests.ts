@@ -2,9 +2,9 @@
 // keys and values (T210), each answered by serve().
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { model, lost } from "./device.js";
-import { roomFor, keysIn, block, keysOut, keysBack } from "./block.js";
-import { tokenStep, runTokens } from "./tokens.js";
+import { model, lost } from "./device.ts";
+import { roomFor, keysIn, block, keysOut, keysBack } from "./block.ts";
+import { tokenStep, runTokens } from "./tokens.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
 
 // A request for count steps from token at pos (src/runtime/forward/gpuside.ts's generateMany): the keys and values of positions from to

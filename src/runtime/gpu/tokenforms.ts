@@ -1,12 +1,12 @@
 // The forms of a token's layer checked on the model's own weights against JavaScript (T152), timed and chosen.
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
-import { COPY_DST, MAP_READ, rowBytes, turnedAt, stopping, within, buffer, readBack, validated, pipelineOf } from "./device.js";
-import { tablesOf } from "./weights.js";
-import { halfToFloat } from "./forms.js";
-import { roomFor, BLOCK_ROUNDS } from "./block.js";
-import { chooseTokenAttention } from "./tokenattention.js";
-import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.js";
+import { COPY_DST, MAP_READ, rowBytes, turnedAt, stopping, within, buffer, readBack, validated, pipelineOf } from "./device.ts";
+import { tablesOf } from "./weights.ts";
+import { halfToFloat } from "./forms.ts";
+import { roomFor, BLOCK_ROUNDS } from "./block.ts";
+import { chooseTokenAttention } from "./tokenattention.ts";
+import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ternaryValues, quantizedLikeCpu } from "../shaders/prompt.ts";
 import { sixValues } from "../shaders/steps.ts";
