@@ -168,7 +168,8 @@ assert.match(differing("x", set("a"), set("a"), { b: "spread in" })[0], /listed 
 // ---- the files of src/runtime/contracts/: types alone (contract() refuses a value), and read as types alone
 const folder = path.dirname(runtime("contracts/plan.ts"));
 const files = fs.readdirSync(folder, { recursive: true }).map((name) => name.split(path.sep).join("/")).filter((name) => name.endsWith(".ts")).sort();
-assert.deepEqual(files, ["conduct.ts", "form.ts", "gpu/protocol.ts", "messages.ts", "plan.ts", "python.ts"], "the contracts are others now: say in AGENTS.md what holds each to its two ends");
+// (T368.7: benchmark.ts, /benchmark/'s page and its sections' workers: both ends are TypeScript, and tsc holds each to it)
+assert.deepEqual(files, ["benchmark.ts", "conduct.ts", "form.ts", "gpu/protocol.ts", "messages.ts", "plan.ts", "python.ts"], "the contracts are others now: say in AGENTS.md what holds each to its two ends");
 let types = 0;
 for (const name of files) types += contract(name).names.length;
 // (the runtime is under src/, where the pages that read a contract are too)

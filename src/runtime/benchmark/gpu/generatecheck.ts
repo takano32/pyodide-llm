@@ -1,12 +1,28 @@
 // The check of the sampling and of the generated tokens (T151, T178, T195, T219): against the CPU's sampling in JavaScript,
 // with the logits that are not finite, and a few tokens against the layer in JavaScript.
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
-import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, floats, run, readBack, validated, scoped } from "./device.js";
-import { toHalf, heldHalves, halvesSaid, farthest } from "./halves.js";
-import { EPS, layerShape, tokenForm, layerAngles } from "./layerparts.js";
-import { INPUTS, dequantized, NORMED_SCALE_LINE, scaleLine, quantizedOff, layerReference } from "./layercheck.js";
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
+import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, MAP_READ, buffer, floats, run, readBack, validated, scoped } from "./device.ts";
+import { toHalf, heldHalves, halvesSaid, farthest } from "./halves.ts";
+import { EPS, layerShape, tokenForm, layerAngles } from "./layerparts.ts";
+import { INPUTS, dequantized, NORMED_SCALE_LINE, scaleLine, quantizedOff, layerReference } from "./layercheck.ts";
 import { GENERATE_SETTINGS, GENERATE_CHECK, generationPipes, samplerPipes, samplerDispatches, generationParts,
-  generationRun, randomsOf, TIED_RUN, tiedLogits, sparseLogits, UNREFUSED, unfiniteLogits, madeUpLogits } from "./generate.js";
+  generationRun, randomsOf, TIED_RUN, tiedLogits, sparseLogits, UNREFUSED, unfiniteLogits, madeUpLogits } from "./generate.ts";
+import type { Dispatch, Owned, Shape, Thrown, Weights } from "./device.ts";
+import type { MatrixKey } from "./layerparts.ts";
+import type { GenerationData, Sampler } from "./generate.ts";
+import type { Alive, Verdict, Verdicts } from "../../contracts/benchmark.ts";
+// T368.7: a case of the sampling's check: a vocabulary, the logits it is of (a spread and its peaks, sparse, tied, and
+// what is not finite in them: unfinite, at where that kind has a place), the settings, and the random number ("fifth":
+// the middle of the fifth tied token's share); a run's settings are a case without its one random number
+type Case = { vocab: number; spread?: number; peaks?: number; sparse?: boolean; ties?: boolean; short?: boolean; unfinite?: string; at?: number;
+  topp: number; temperature: number; penalty: number; random: number | "fifth" };
+type Running = Omit<Case, "random">;
+// what a submission of the sampler left: the ids and the state's words
+type Sampled = { ids: Uint32Array; state: Uint32Array };
+// the GPU's quantized vectors of a pass, [token][vector]; its caches after a run, [layer]; heldHalves' answer
+type Recorded = { xq: Int8Array; xs: Float32Array }[][];
+type Caches = { keys: Uint16Array; values: Uint16Array }[];
+type Held = ReturnType<typeof heldHalves>;
 
 // The check of SAMPLE (T151) against the CPU's sampling in JavaScript (shaders.ts's sampleLikeCpu and
 // penalizeLikeCpu, which tests/smoke.mjs holds to the kernel): the same logits, history and random number must pick
@@ -19,9 +35,9 @@ import { GENERATE_SETTINGS, GENERATE_CHECK, generationPipes, samplerPipes, sampl
 // logits come from the GPU's own forward pass, any within `band` of it (and of a token acceptable otherwise). The
 // count of tokens that passed by an edge only is in the verdict.
 const EDGE = 1e-4;
-function acceptable(logits, { temperature, topp }, random, band = 0) {
+function acceptable(logits: Float32Array, { temperature, topp }: Pick<Case, "temperature" | "topp">, random: number, band = 0) {
   const picks = new Set([shared.WGSL.sampleLikeCpu(logits, temperature, topp, random)]), [first] = picks;
-  const near = (token) => band > 0 ? logits.forEach((value, i) => Math.abs(value - logits[token]) <= band && picks.add(i)) : picks.add(token);
+  const near = (token: number) => band > 0 ? logits.forEach((value, i) => Math.abs(value - logits[token]) <= band && picks.add(i)) : picks.add(token);
   // the most likely token: NumPy's first index of the largest logit, exactly where the logits are the same
   if (temperature === 0) {
     near(first);
@@ -45,9 +61,9 @@ function acceptable(logits, { temperature, topp }, random, band = 0) {
 // the index, as SAMPLE takes them and walkLikeCpu walks them). Then runs of four tokens in one submission (the i-th
 // random number for the i-th token, the logits penalized again each time as the CPU's would be), and a run with a stop
 // token: it is written, the state stops and nothing after it changes.
-async function checkSampling(kind = "one") {
+async function checkSampling(kind: Sampler = "one"): Promise<Verdict> {
   const pipes = await samplerPipes();
-  const cases = [];
+  const cases: Case[] = [];
   for (const vocab of [1003, 128256]) {
     // (a fallback adapter takes a second or so for each of the big vocabulary's: one spread there)
     for (const spread of vocab === 1003 ? [0.5, 2, 6, 12] : shared.fallback ? [2] : [2, 6]) {
@@ -86,7 +102,7 @@ async function checkSampling(kind = "one") {
   // temperature 0 too; the review's: NaNs of other bits, every logit NaN, +inf beside -inf, and a NaN or +inf on the
   // penalty's last token (which the penalty multiplies or divides)
   for (const vocab of [1003, 128256]) {
-    const places = [["nan", 0], ["nan", vocab - 1], ["nan", (vocab / 2 | 0) + 1], ["+inf", vocab - 1], ["+inf", 777], ["-inf all", 0],
+    const places: [string, number][] = [["nan", 0], ["nan", vocab - 1], ["nan", (vocab / 2 | 0) + 1], ["+inf", vocab - 1], ["+inf", 777], ["-inf all", 0],
       ["nan, the sign set", 3], ["nan, signaling", vocab - 2], ["nan, all ones", 500], ["nan all", 0], ["+inf and -inf", 600],
       ["nan in the window", 0], ["+inf in the window", 0]];
     // (a fallback adapter takes a second or so for each of the big vocabulary's: six of them there)
@@ -99,12 +115,12 @@ async function checkSampling(kind = "one") {
       for (const [topp, temperature] of [[0.9, 0.7], [1, 0.7], [0.9, 0]]) cases.push({ vocab, spread: 2, topp, temperature, penalty: 1.3, random: 0.5, unfinite, at: 321 });
     }
   }
-  const most = 128256, owned = [];
+  const most = 128256, owned: Owned[] = [];
   let wrong = 0, edge = 0, checked = 0;
-  const problems = [];
+  const problems: string[] = [];
   try {
     await validated(async () => {
-      const make = (bytes, usage = STORAGE | COPY_DST | COPY_SRC) => {
+      const make = (bytes: number, usage = STORAGE | COPY_DST | COPY_SRC) => {
         const b = buffer(bytes, usage);
         owned.push(b);
         return b;
@@ -114,11 +130,11 @@ async function checkSampling(kind = "one") {
         parts = make(shared.WGSL.samplePartsBytes(most));
       const b = { 0: logitsBuffer, 1: probs, 2: order, 3: state, 4: chosen, 5: randoms, 6: settings, 7: parts };
       // the sampler's dispatches for a vocabulary (the chunks' count is the vocabulary's)
-      const lists = new Map();
-      const listOf = (vocab) => lists.get(vocab) ?? lists.set(vocab, samplerDispatches(kind, pipes, b, vocab)).get(vocab);
+      const lists = new Map<number, Dispatch[]>();
+      const listOf = (vocab: number) => lists.get(vocab) ?? lists.set(vocab, samplerDispatches(kind, pipes, b, vocab)).get(vocab)!;
       const back = make(16 * 4 + shared.WGSL.STATE_BYTES, MAP_READ | COPY_DST);
       // steps SAMPLE dispatches in one submission, from the case's history; the ids and the state back
-      const sampled = async (c, logits, history, draws, steps, stops = []) => {
+      const sampled = async (c: Running, logits: Float32Array<ArrayBuffer>, history: number[], draws: number[], steps: number, stops: number[] = []): Promise<Sampled> => {
         shared.device.queue.writeBuffer(logitsBuffer, 0, logits);
         shared.device.queue.writeBuffer(state, 0, shared.WGSL.samplingState({ token: history[history.length - 1], pos: 40, history }));
         shared.device.queue.writeBuffer(chosen, 0, new Uint32Array(16).fill(SENTINEL_ID));
@@ -137,7 +153,7 @@ async function checkSampling(kind = "one") {
         return { ids: words.subarray(0, 16), state: words.subarray(16) };
       };
       // the tokens of a run held to the CPU's, step by step (the CPU's history goes on with the GPU's tokens)
-      const judge = (c, logits, history, draws, got, stops = []) => {
+      const judge = (c: Running, logits: Float32Array, history: number[], draws: number[], got: Sampled, stops: number[] = []) => {
         const cpu = Float32Array.from(logits), seen = [...history];
         let k = 0;
         for (; k < draws.length; k++) {
@@ -168,8 +184,8 @@ async function checkSampling(kind = "one") {
         }
       };
       for (const c of cases) {
-        const logits = c.ties ? tiedLogits(c.vocab) : c.sparse ? sparseLogits(c.vocab) : madeUpLogits(c.vocab, c.spread, c.peaks);
-        if (c.unfinite) unfiniteLogits(logits, c.unfinite, c.at);
+        const logits = c.ties ? tiedLogits(c.vocab) : c.sparse ? sparseLogits(c.vocab) : madeUpLogits(c.vocab, c.spread!, c.peaks);
+        if (c.unfinite) unfiniteLogits(logits, c.unfinite, c.at!);
         const ranked = [...logits.keys()].sort((a, b) => logits[b] - logits[a]);
         // 70 tokens: the 6 before the window two of the most likely (3rd and 4th, which must not be penalized), then the
         // window: the three most likely twice each (a repeat is penalized once), early and late in it (both halves of
@@ -204,7 +220,7 @@ async function checkSampling(kind = "one") {
         } else {
           judge(c, logits, history, [random], await sampled(c, logits, history, [random], 1));
         }
-        postMessage({ alive: true });
+        postMessage({ alive: true } satisfies Alive);
       }
       // runs: the i-th random number for the i-th token, and a stop token (the run's third token, taken again), second
       // of two and last of eight: the settings hold the stop tokens four to a vec4, and the list's models have up to
@@ -221,7 +237,7 @@ async function checkSampling(kind = "one") {
       }
     });
   } catch (error) {
-    return { worstRelative: NaN, ok: false, error: String(error?.message ?? error) };
+    return { worstRelative: NaN, ok: false, error: String((error as Thrown)?.message ?? error) };
   } finally {
     owned.forEach((b) => b.destroy());
   }
@@ -247,16 +263,16 @@ const NOT_A_TOKEN = 200000;
 // logits held (the GPU's, read back, against the reference's over the largest, and whether the most likely token is
 // the same) and how the keys and values were rounded: a line where it is ok, every step where it is not
 const GENERATION_CHECK_POS = 5, GENERATION_CHECK_TOKENS = 6;
-async function checkGeneration() {
+async function checkGeneration(): Promise<Verdicts> {
   const model = GENERATE_CHECK, shape = layerShape(model), { dim, hidden, kvDim, headSize } = shape, form = tokenForm();
   const pos = GENERATION_CHECK_POS, count = GENERATION_CHECK_TOKENS, positions = pos + count + 1;
-  const matrix = ([rows, n], scale) => ({ w: new Uint8Array(rows * n).map(() => (Math.random() * 256) | 0), s: floats(rows * n / shared.GROUP, scale) });
+  const matrix = ([rows, n]: Shape, scale: number): Weights => ({ w: new Uint8Array(rows * n).map(() => (Math.random() * 256) | 0), s: floats(rows * n / shared.GROUP, scale) });
   const cache = () => new Uint16Array(positions * kvDim).map((_, i) => (i < pos * kvDim ? toHalf((Math.random() - 0.5) * 4) : 0));
-  const data = { layers: [...Array(model.layers)].map(() => Object.fromEntries(Object.entries(shape.matrices).map(([key, m]) => [key, matrix(m, 0.01 * Math.sqrt(256 / m[1]))]))),
+  const data = { layers: [...Array(model.layers)].map(() => Object.fromEntries((Object.entries(shape.matrices) as [MatrixKey, Shape][]).map(([key, m]) => [key, matrix(m, 0.01 * Math.sqrt(256 / m[1]))])) as Record<MatrixKey, Weights>),
     classifier: matrix([model.vocab, dim], 0.002), norms: new Float32Array((2 * model.layers + 1) * dim).map(() => 0.5 + Math.random()),
-    keys: [...Array(model.layers)].map(cache), values: [...Array(model.layers)].map(cache), eps: EPS };
+    keys: [...Array(model.layers)].map(cache), values: [...Array(model.layers)].map(cache), eps: EPS } satisfies GenerationData;
   const history = [...Array(pos + 1)].map(() => (Math.random() * model.vocab) | 0), draws = randomsOf(count);
-  const embedded = (token) => {
+  const embedded = (token: number) => {
     const signed = new Int8Array(data.classifier.w.buffer), h = new Float64Array(dim);
     for (let i = 0; i < dim; i++) h[i] = signed[token * dim + i] * data.classifier.s[(token * dim + i) / shared.GROUP | 0];
     return h;
@@ -265,14 +281,14 @@ async function checkGeneration() {
   // the GPU's quantized vectors of each pass ([token][layer × 4 + point, then the classifier's] {xq, xs}); quantizing
   // collects where one of them is not quantize_x's of the reference's values
   // caches: the GPU's keys and values after the run ([layer] { keys, values }); rounded collects heldHalves' counts
-  const referenceLogits = (tokens, vectors, quantizing, caches, rounded) => {
-    const keys = data.keys.map((k) => Uint16Array.from(k)), values = data.values.map((v) => Uint16Array.from(v)), out = [];
+  const referenceLogits = (tokens: number[], vectors: Recorded | undefined, quantizing: string[], caches: Caches, rounded: Held[]) => {
+    const keys = data.keys.map((k) => Uint16Array.from(k)), values = data.values.map((v) => Uint16Array.from(v)), out: Float32Array<ArrayBuffer>[] = [];
     for (let k = 0; k < tokens.length; k++) {
       const p = pos + k;
       let h = embedded(tokens[k]);
       // the GPU's quantized vector in place of x (T175), held to quantize_x of x
-      const taken = (at, x, what) => {
-        const { xq, xs } = vectors[k][at], { wrong } = quantizedOff(x, xq, xs, at === 4 * model.layers ? NORMED_SCALE_LINE : scaleLine(INPUTS[at % 4]));
+      const taken = (at: number, x: Float64Array, what: string) => {
+        const { xq, xs } = vectors![k][at], { wrong } = quantizedOff(x, xq, xs, at === 4 * model.layers ? NORMED_SCALE_LINE : scaleLine(INPUTS[at % 4]));
         if (wrong) quantizing.push(`token ${k}, ${what}: ${wrong}`);
         return dequantized(xq, xs);
       };
@@ -302,29 +318,29 @@ async function checkGeneration() {
     }
     return out;
   };
-  const verdicts = {};
+  const verdicts: Verdicts = {};
   let tokens = 0, edge = 0;
-  const problems = [], steps = [];
+  const problems: string[] = [], steps: string[] = [];
   try {
     await scoped(async (owned) => {
       const pipes = await generationPipes(headSize, form);
       const parts = generationParts(model, form, pipes, positions, owned, data);
       for (const settings of [{ temperature: 0, topp: 0.9, penalty: 1 }, { ...GENERATE_SETTINGS }]) {
-        const runOnce = async (stops = []) => {
+        const runOnce = async (stops: number[] = []) => {
           // (the caches need no reset: a run writes each position's row before its attention reads it)
           parts.reset(shared.WGSL.samplingState({ token: history[pos], pos, history }), draws, shared.WGSL.samplingSettings({ vocab: model.vocab, ...settings, stops }));
           return generationRun(parts, count, count);
         };
         const got = await runOnce();
         const sampled = Math.min(got.state[5], count), fed = [history[pos], ...got.ids.subarray(0, sampled - 1)];
-        const { vectors, logits: gpuLogits } = parts.recorded(await readBack(shared.device.createCommandEncoder(), parts.record, parts.recording), sampled);
+        const { vectors, logits: gpuLogits } = parts.recorded!(await readBack(shared.device.createCommandEncoder(), parts.record!, parts.recording!), sampled);
         // T225: the GPU's keys and values of the positions before the run and of those it wrote
-        const caches = [], cached = async (source) => new Uint16Array(await readBack(shared.device.createCommandEncoder(), source, (pos + sampled) * kvDim * 2));
+        const caches: Caches = [], cached = async (source: GPUBuffer) => new Uint16Array(await readBack(shared.device.createCommandEncoder(), source, (pos + sampled) * kvDim * 2));
         for (const { keys, values } of parts.caches) caches.push({ keys: await cached(keys), values: await cached(values) });
-        const quantizing = [], rounded = [];
+        const quantizing: string[] = [], rounded: Held[] = [];
         const logits = referenceLogits(fed, vectors, quantizing, caches, rounded), seen = [...history];
         problems.push(...quantizing.slice(0, 3).map((why) => `T ${settings.temperature}, ${why}`));
-        const most = (values) => values.reduce((best, value, i) => (value > values[best] ? i : best), 0), held = [];
+        const most = (values: Float32Array) => values.reduce((best, value, i) => (value > values[best] ? i : best), 0), held: { off: number; most: boolean }[] = [];
         let stopped = false;
         for (let k = 0; k < sampled; k++) {
           const cpu = logits[k];
@@ -358,12 +374,12 @@ async function checkGeneration() {
             }
           }
         }
-        postMessage({ alive: true });
+        postMessage({ alive: true } satisfies Alive);
       }
     });
     verdicts["tokens on the GPU"] = { worstRelative: 0, ok: problems.length === 0, tokens, edge, layer: form.name, steps: `steps: ${steps.join("; ")}`, ...(problems.length ? { problems } : {}) };
   } catch (error) {
-    verdicts["tokens on the GPU"] = { worstRelative: NaN, ok: false, error: String(error?.message ?? error) };
+    verdicts["tokens on the GPU"] = { worstRelative: NaN, ok: false, error: String((error as Thrown)?.message ?? error) };
   }
   return verdicts;
 }

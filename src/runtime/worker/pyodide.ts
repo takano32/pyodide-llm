@@ -183,9 +183,9 @@ export async function pyodideSteps(version: string, importer: (url: string) => P
 
 // T367.2: the site's Python comes as one archive a module (python_archive.py builds them of src/python/): engine.zip, which
 // every load imports, and converter.zip, which the first conversion asks for. One request each, where every .py was one
-// (fifteen and nineteen). An archive is a built file (built.js): the bundler gives it a name with a hash of its bytes,
+// (fifteen and nineteen). An archive is a built file (built.ts): the bundler gives it a name with a hash of its bytes,
 // and the worker's own text names that file, so it is the Python of the worker's own build (T367.3). It is fetched as
-// every built file is (built.js's built(): T367.4).
+// every built file is (built.ts's built(): T367.4).
 
 /** Unpacks an archive (its bytes, or a promise of them) where `import` finds what is in it: Pyodide's working folder,
  * where the files were written one by one before. Nothing is placed unless the whole archive came.

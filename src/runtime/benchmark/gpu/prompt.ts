@@ -1,7 +1,9 @@
 // The step "prompt": the tokens of a prompt through the matrices all at once (T135's batched shader and T146's tiled ones).
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
 import { shared, layerMatrices, SMALL_PER_LAYER, PROMPT_MODEL, matrixBytes, gpu, buffer, pipelinesFor, promptShaders,
-  kindOf, quantizer, matrix, vectors, destroyVectors, run, median, validated } from "./device.js";
+  kindOf, quantizer, matrix, vectors, destroyVectors, run, median, validated } from "./device.ts";
+import type { Kind, Own, Owned, Thrown } from "./device.ts";
+import type { Alive, PromptFound, PromptRow } from "../../contracts/benchmark.ts";
 
 // ---- a prompt: its tokens through the matrices of the CPU section's made-up model (two layers of Llama 3.2 1B's
 // width, no classifier: a prompt's tokens make no logits) all at once, count tokens at a time, with the small steps
@@ -10,7 +12,7 @@ import { shared, layerMatrices, SMALL_PER_LAYER, PROMPT_MODEL, matrixBytes, gpu,
 // and token. A packed shader's input is quantized first where a matrix reads an input of its own (q: the norm's; o:
 // the attention's; gate: the norm's; down: SwiGLU's), as the model's layers would
 const NEW_INPUT = new Set([0, 3, 4, 6]);
-async function prompt(counts = [1, 16, 64]) {
+async function prompt(counts = [1, 16, 64]): Promise<PromptFound> {
   await gpu();
   // a fallback adapter measures one count, the block of 16 the CPU also takes: each shader and count takes 10 to 100 s
   // there (SwiftShader on the development machine, T146: 580 s for all three), and its times are no GPU's anyway
@@ -20,19 +22,19 @@ async function prompt(counts = [1, 16, 64]) {
   const longest = Math.max(model.dim, model.hidden), most = model.hidden;
   const smallPipeline = pipelinesFor().small, a = buffer(model.dim * 4), b = buffer(model.dim * 4);
   const smallGroup = shared.device.createBindGroup({ layout: smallPipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: a } }, { binding: 1, resource: { buffer: b } }] });
-  const measure = async (kind, tokens) => {
-    const io = vectors(longest, most, tokens), owned = [];
+  const measure = async (kind: Kind | undefined, tokens: number) => {
+    const io = vectors(longest, most, tokens), owned: Owned[] = [];
     try {
       return await validated(async () => {
         const made = shapes.map((shape) => matrix(shape, io, kind));
         // one quantizer a width (q, k, v and gate, up read the same width: one each, not one a matrix left unowned)
-        const quantize = kind.packed ? new Map([...new Set(perLayer.map(([, n]) => n))].map((n) => [n, quantizer(io, n)])) : null;
+        const quantize = (kind as Own).packed ? new Map([...new Set(perLayer.map(([, n]) => n))].map((n) => [n, quantizer(io, n)])) : null;
         owned.push(...made.flatMap((m) => m.owned), ...[...(quantize?.values() ?? [])].flatMap((q) => q.owned));
         await shared.device.queue.onSubmittedWorkDone();
         const once = async () => {
           const encoder = shared.device.createCommandEncoder(), pass = encoder.beginComputePass();
           made.forEach((m, i) => {
-            if (quantize && NEW_INPUT.has(i % perLayer.length)) run(pass, quantize.get(shapes[i][1]).dispatch);
+            if (quantize && NEW_INPUT.has(i % perLayer.length)) run(pass, quantize.get(shapes[i][1])!.dispatch);
             m.dispatches.forEach((d) => run(pass, d));
             if (i % perLayer.length === perLayer.length - 1) for (let j = 0; j < SMALL_PER_LAYER; j++) run(pass, [smallPipeline, smallGroup, 1, 1]);
           });
@@ -47,10 +49,10 @@ async function prompt(counts = [1, 16, 64]) {
       owned.forEach((x) => x.destroy());
       destroyVectors(io);
       // the page stops a section that says nothing for 5 minutes, and a fallback adapter takes minutes for all of these
-      postMessage({ alive: true });
+      postMessage({ alive: true } satisfies Alive);
     }
   };
-  const rows = [];
+  const rows: PromptRow[] = [];
   for (const shader of promptShaders()) {
     if (shader.none) {
       rows.push({ shader: shader.name, none: shader.none });
@@ -61,7 +63,7 @@ async function prompt(counts = [1, 16, 64]) {
       // what the row's GFLOPS are held against (T168): the dot4I8Packed ceiling, the f16 or the f32 one
       for (const tokens of counts) rows.push({ shader: shader.name, packed: shader.packed, half: shader.half, ...await measure(kind, tokens) });
     } catch (error) {
-      rows.push({ shader: shader.name, error: String(error?.message ?? error) });
+      rows.push({ shader: shader.name, error: String((error as Thrown)?.message ?? error) });
     }
   }
   // the batched shader once more at the most tokens, last: a device that has warmed up and slowed down since shows it

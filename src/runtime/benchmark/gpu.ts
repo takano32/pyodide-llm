@@ -38,21 +38,26 @@
 // The weights are random: only their size and layout matter. int8 in groups of 32 with a float32 scale each, as the
 // checkpoints of this project (llama2_numpy's layout), 4 values to a u32.
 // T353: this file is the window of the worker: the page starts it and its steps are asked of it, and the tests import the
-// pure helpers from it. The steps are the modules of gpu/: device.js (the shaders' module, the device, buffers, a matrix
-// bound and run, how a time is taken), halves.js (the float16 of the cache), layerparts.js, layercheck.js and layer.js
-// (one layer of a token: its forms, its check, its times), matvec.js (a matrix times a vector, a token's work),
-// generate.js and generatecheck.js (generated tokens and the sampling, and their check), check.js (the step "check"),
-// ceilings.js and prompt.js. Each is a static import: a bundler links them into this worker's file (T367.3), and
+// pure helpers from it. The steps are the modules of gpu/: device.ts (the shaders' module, the device, buffers, a matrix
+// bound and run, how a time is taken), halves.ts (the float16 of the cache), layerparts.ts, layercheck.ts and layer.ts
+// (one layer of a token: its forms, its check, its times), matvec.ts (a matrix times a vector, a token's work),
+// generate.ts and generatecheck.ts (generated tokens and the sampling, and their check), check.ts (the step "check"),
+// ceilings.ts and prompt.ts. Each is a static import: a bundler links them into this worker's file (T367.3), and
 // nothing is awaited before the steps' receiver further down is set.
-import { load, info } from "./gpu/device.js";
-import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./gpu/halves.js";
-import { layerReference, layerCheckData, judgeLayer } from "./gpu/layercheck.js";
-import { bandwidth, token } from "./gpu/matvec.js";
-import { layer, layerSteps } from "./gpu/layer.js";
-import { generate } from "./gpu/generate.js";
-import { check } from "./gpu/check.js";
-import { overhead, ceilings } from "./gpu/ceilings.js";
-import { prompt } from "./gpu/prompt.js";
+import { load, info } from "./gpu/device.ts";
+import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./gpu/halves.ts";
+import { layerReference, layerCheckData, judgeLayer } from "./gpu/layercheck.ts";
+import { bandwidth, token } from "./gpu/matvec.ts";
+import { layer, layerSteps } from "./gpu/layer.ts";
+import { generate } from "./gpu/generate.ts";
+import { check } from "./gpu/check.ts";
+import { overhead, ceilings } from "./gpu/ceilings.ts";
+import { prompt } from "./gpu/prompt.ts";
+// T368.7: what the page asks and what it is answered (contracts/benchmark.ts): a step's result by the step's name, or
+// undefined for a step that is none of them
+import type { Thrown } from "./gpu/device.ts";
+import type { Answer, BenchGpuResults, Bridged, ToBenchGpu } from "../contracts/benchmark.ts";
+type Result = BenchGpuResults[keyof BenchGpuResults] | undefined;
 
 // (these are pure: tests/gpu-choice-check.mjs holds the rounding of the cache to what a device may choose, and
 // tests/layer-check.mjs holds the layer check's judgement to devices that are JavaScript too)
@@ -60,7 +65,7 @@ export { toHalf, fromHalf, heldHalves, halvesSaid, farthest, layerCheckData, jud
 
 // ---- the bridge: a worker that waits (Atomics.wait, as the model's worker would while Python calls forward())
 // and this one, which must not block (it awaits the GPU): Atomics.waitAsync where there is one
-async function bridge(memory, rounds) {
+async function bridge(memory: SharedArrayBuffer, rounds: number): Promise<Bridged> {
   const words = new Int32Array(memory);
   const hasWaitAsync = typeof Atomics.waitAsync === "function";
   if (!hasWaitAsync) return { waitAsync: false };
@@ -80,10 +85,10 @@ async function bridge(memory, rounds) {
   return { waitAsync: true };
 }
 
-onmessage = async ({ data }) => {
+onmessage = async ({ data }: MessageEvent<ToBenchGpu>) => {
   try {
     await load();
-    let result;
+    let result: Result;
     if (data.step === "info") result = await info();
     else if (data.step === "check") result = await check();
     else if (data.step === "bandwidth") result = await bandwidth(data.shape);
@@ -95,8 +100,8 @@ onmessage = async ({ data }) => {
     else if (data.step === "prompt") result = await prompt(data.counts);
     else if (data.step === "ceilings") result = await ceilings();
     else if (data.step === "bridge") result = await bridge(data.memory, data.rounds);
-    postMessage({ step: data.step, result });
+    postMessage({ step: data.step, result } satisfies Answer<Result>);
   } catch (error) {
-    postMessage({ step: data.step, error: String(error?.message ?? error) });
+    postMessage({ step: data.step, error: String((error as Thrown)?.message ?? error) } satisfies Answer<Result>);
   }
 };

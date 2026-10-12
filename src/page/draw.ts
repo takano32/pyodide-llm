@@ -6,7 +6,7 @@ import { parameters } from "./address.ts";
 import { benchmarking, gpuNote, gpuSaid, model, outdated, readyLine } from "./model.ts";
 import { generating } from "./answer.ts";
 import { fixSeed } from "./settings.ts";
-import { SLOWER } from "../runtime/updated.js";
+import { SLOWER } from "../runtime/updated.ts";
 import type { BenchRow, Done } from "../runtime/contracts/messages.ts";
 
 // The round button is the only control: an arrow that sends, a square that stops the run that is going on.

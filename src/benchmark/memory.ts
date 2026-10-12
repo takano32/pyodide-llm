@@ -3,6 +3,7 @@
 import { memoryResult, holdMemory, memoryLimit } from "../page-memory.js";
 import { parameters, type Result } from "./dom.ts";
 import { type Stage, staged, ask, worker } from "./section.ts";
+import type { ToMemory } from "../runtime/contracts/benchmark.ts";
 
 // T173: the tab's sessionStorage, where it works (null: the page-memory section does not run)
 export const tabStorage = (() => {
@@ -32,7 +33,7 @@ export async function pageMemory(): Promise<Result> {
   addEventListener("pagehide", stop);
   if (document.visibilityState === "hidden") stop();
   try {
-    return memoryResult(await holdMemory({ ask: (message: any) => ask(w, message), storage: tabStorage, hidden,
+    return memoryResult(await holdMemory({ ask: (message: ToMemory) => ask(w, message), storage: tabStorage, hidden,
       limit: memoryLimit(parameters.get("memoryMB")), stage: (s: Stage) => staged("memory", s) } as Parameters<typeof holdMemory>[0])) as Result;
   } finally {
     document.removeEventListener("visibilitychange", onVisibility);

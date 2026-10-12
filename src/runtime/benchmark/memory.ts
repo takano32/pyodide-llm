@@ -15,19 +15,22 @@
 // page of zeros, or of one byte a page, would compress to nothing and the tab would seem to hold far more. The memory
 // is freed when the page ends this worker. The section runs alone: no other WebAssembly memory is alive in the page
 // (T96: Chromium refused a page its third).
+// T368.7: what the page asks and is answered (contracts/benchmark.ts); a caught value, where its words are read
+import type { Answer, MemoryGrown, ToMemory } from "../contracts/benchmark.ts";
+type Thrown = { name?: string; message?: string } | null | undefined;
 const PAGE = 65536;
-let memory, maximum, filled = 0, seed = 0x9e3779b9 | 0;
+let memory: WebAssembly.Memory | undefined, maximum!: number | null, filled = 0, seed = 0x9e3779b9 | 0;
 
-onmessage = ({ data }) => {
+onmessage = ({ data }: MessageEvent<ToMemory>) => {
   try {
-    if (data.step === "grow") postMessage({ result: grow(data.to, data.limit) });
-    else postMessage({ error: `no step ${data.step} here` });
+    if (data.step === "grow") postMessage({ result: grow(data.to, data.limit) } satisfies Answer<MemoryGrown>);
+    else postMessage({ error: `no step ${(data as { step: string }).step} here` } satisfies Answer<MemoryGrown>);
   } catch (error) {
-    postMessage({ error: `${error?.name ?? "Error"}: ${error?.message ?? error}` });
+    postMessage({ error: `${(error as Thrown)?.name ?? "Error"}: ${(error as Thrown)?.message ?? error}` } satisfies Answer<MemoryGrown>);
   }
 };
 
-function grow(to, limit) {
+function grow(to: number, limit: number): MemoryGrown {
   if (!memory) {
     // the maximum of the limit, where the browser takes it; else none (the browser's own)
     try {
@@ -41,7 +44,7 @@ function grow(to, limit) {
   try {
     memory.grow((to - memory.buffer.byteLength) / PAGE);
   } catch (error) {
-    return { held: filled, maximum, refused: `${error?.name ?? "Error"}: ${error?.message ?? error}` };
+    return { held: filled, maximum, refused: `${(error as Thrown)?.name ?? "Error"}: ${(error as Thrown)?.message ?? error}` };
   }
   // xorshift32 over the new part, a word at a time
   const words = new Uint32Array(memory.buffer, filled, (to - filled) / 4);

@@ -241,7 +241,9 @@ function pageShape(tree, astro = "index.astro", modules = "page") {
     // (the one object the parts share: the names of its fields were the names of the `let`s)
     if (type === "VariableDeclarator" && node.id.name === "page" && node.init?.type === "ObjectExpression") { node.init.properties.forEach((property) => visit(property.value)); return; }
     if (!SKIPPED.test(type)) add(`node ${type}`);
-    if (type === "StringLiteral" || type === "NumericLiteral" || type === "BooleanLiteral") add(`literal ${JSON.stringify(node.value)}`);
+    // (T368.7: a file of the runtime that a page names, a worker's in new URL(), is the same file under its other ending:
+    // "../runtime/benchmark/gpu.ts" was "../runtime/benchmark/gpu.js". Only such a name, and only its ending)
+    if (type === "StringLiteral" || type === "NumericLiteral" || type === "BooleanLiteral") add(`literal ${JSON.stringify(typeof node.value === "string" ? node.value.replace(/^(\.\.\/runtime\/[\w./-]+)\.ts$/, "$1.js") : node.value)}`);
     if (type === "RegExpLiteral") add(`regular expression /${node.pattern}/${node.flags}`);
     if (type === "TemplateElement") add(`template ${JSON.stringify(node.value.cooked)}`);
     if (/^(Binary|Logical|Assignment|Unary|Update)Expression$/.test(type)) add(`operator ${type} ${node.operator}`);
@@ -355,8 +357,11 @@ function gpuWorker(tree, fields, worker) {
 }
 // the keys of the `shared` object a tree's modules hold between them (none before the division)
 function sharedFields(tree, worker) {
-  const file = treeOf(tree).runtime(worker.window.replace(/\.js$/, "/device.js"), { maybe: true });
-  if (!fs.existsSync(file)) return new Set();
+  // (T368.7: device.ts or device.js, whichever the tree has: asked for with `maybe`, the name comes back as it was
+  // spelled, and a tree whose file is TypeScript read as having no such object at all)
+  const spelled = treeOf(tree).runtime(worker.window.replace(/\.js$/, "/device.js"), { maybe: true });
+  const file = [spelled.replace(/\.js$/, ".ts"), spelled].find((one) => fs.existsSync(one));
+  if (!file) return new Set();
   const program = parse(untyped(fs.readFileSync(file, "utf8"), file), { sourceType: "module" }).program;
   const shared = program.body.find((s) => s.type === "VariableDeclaration" && s.declarations[0].id.name === worker.object);
   // (T378.4: the model's worker has no such object any more: its fields are device.js's `let`s again)

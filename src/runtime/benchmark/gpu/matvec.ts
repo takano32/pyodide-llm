@@ -1,10 +1,14 @@
 // The steps "bandwidth" and "token": GB/s of one int8 matrix times a vector by every shader (T134, T149) against the CPU's
 // kernel, and a whole token's work of a model's shapes.
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
-import { built } from "../../built.js";
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
+import { built } from "../../built.ts";
 import { shared, MODELS, layerMatrices, SMALL_PER_LAYER, matrixBytes, gpu, MAP_READ, COPY_DST, buffer, noise, floats,
   pipelinesFor, matVecShaders, kindOf, quantizer, matrix, placed, bound, vectors, destroyVectors, run, argmaxOf,
-  readBack, median, validated, paired, scoped } from "./device.js";
+  readBack, median, validated, paired, scoped } from "./device.ts";
+import type { Bound, Dispatch, MatVecShader, Paired, Placed, Shape, Thrown } from "./device.ts";
+import type { Alive, Bandwidth, BandwidthRow, CpuBandwidth, GpuModel, TokenFound } from "../../contracts/benchmark.ts";
+// a kernel of simdkernel_plain.wasm, as it is called here: by addresses and counts
+type Kernel = (...numbers: number[]) => unknown;
 
 // ---- bandwidth: one matrix by every shader of matVecShaders() (T149), timed as the ceilings are (paired: a submission
 // of 2n of it less one of n, so that what a submission costs besides its work drops out, T168). The weights are
@@ -17,18 +21,18 @@ import { shared, MODELS, layerMatrices, SMALL_PER_LAYER, matrixBytes, gpu, MAP_R
 // minutes of bench-check's 20 for the GPU section with the classifier's 295 MB 8 times). widen and packed: T134's two;
 // cpu: the CPU's kernel on the same bytes
 const MATVEC_MOST = 1 << 14, MATVEC_BYTES = 128 << 20, FALLBACK_BYTES = 32 << 20;
-async function bandwidth(shape) {
+async function bandwidth(shape: Shape): Promise<Bandwidth> {
   await gpu();
-  const bytes = matrixBytes(shape), shaders = matVecShaders(), rows = [];
-  const label = (shader) => ({ shader: shader.name, check: shader.check ?? shader.name });
+  const bytes = matrixBytes(shape), shaders = matVecShaders(), rows: BandwidthRow[] = [];
+  const label = (shader: MatVecShader) => ({ shader: shader.name, check: shader.check ?? shader.name });
   if (shared.fallback && bytes > FALLBACK_BYTES) {
     return { rows: shaders.map((shader) => ({ ...label(shader), none: "not on a fallback adapter" })), cpu: await cpuBandwidth(shape) };
   }
-  const io = vectors(shape[1], shape[0]), held = [];
+  const io = vectors(shape[1], shape[0]), held: Placed[] = [];
   const copies = shared.fallback ? 1 : Math.ceil(MATVEC_BYTES / bytes);
   // what the dispatches do, timed: n of them a submission, each on the next copy (never the one just read)
   let next = 0;
-  const timer = (each) => async (n) => {
+  const timer = (each: Dispatch[][]) => async (n: number) => {
     const encoder = shared.device.createCommandEncoder(), pass = encoder.beginComputePass();
     for (let i = 0; i < n; i++) each[next++ % each.length].forEach((d) => run(pass, d));
     pass.end();
@@ -37,7 +41,7 @@ async function bandwidth(shape) {
     await shared.device.queue.onSubmittedWorkDone();
     return performance.now() - began;
   };
-  const time = async (each) => {
+  const time = async (each: Dispatch[][]): Promise<Paired> => {
     const submission = timer(each);
     if (shared.fallback) return { ms: await submission(1), dispatches: 1 };
     await submission(2);
@@ -48,7 +52,7 @@ async function bandwidth(shape) {
       for (let c = 0; c < copies; c++) held.push(placed(shape, io));
       await shared.device.queue.onSubmittedWorkDone();
     });
-    const measure = async (shader, again = false) => {
+    const measure = async (shader: MatVecShader, again = false): Promise<BandwidthRow> => {
       const row = { ...label(shader), ...(again ? { shader: `${shader.name}, again at the end`, again } : {}) };
       if (shader.none) return { ...row, none: shader.none };
       try {
@@ -59,9 +63,9 @@ async function bandwidth(shape) {
         return { ...row, GBps: (r.dispatches * bytes) / (r.ms / 1000) / 1e9, msEach: r.ms / r.dispatches, dispatches: r.dispatches,
           ...(r.ratio ? { ratio: r.ratio } : {}), ...(r.unsteady ? { unsteady: true } : {}) };
       } catch (error) {
-        return { ...row, error: String(error?.message ?? error) };
+        return { ...row, error: String((error as Thrown)?.message ?? error) };
       } finally {
-        postMessage({ alive: true });
+        postMessage({ alive: true } satisfies Alive);
       }
     };
     for (const shader of shaders) rows.push(await measure(shader));
@@ -70,20 +74,20 @@ async function bandwidth(shape) {
     held.forEach((h) => h.owned.forEach((b) => b.destroy()));
   }
   // the vector of a packed shader quantized (QUANTIZE, one dispatch a vector of this width)
-  let quantize;
+  let quantize: Bandwidth["quantize"];
   if (shared.packed) {
     const q = quantizer(io, shape[1]);
     try {
       const r = await validated(() => time([[q.dispatch]]));
       quantize = { msEach: r.ms / r.dispatches, ...(r.unsteady ? { unsteady: true } : {}) };
     } catch (error) {
-      quantize = { error: String(error?.message ?? error) };
+      quantize = { error: String((error as Thrown)?.message ?? error) };
     } finally {
       q.owned.forEach((b) => b.destroy());
     }
   }
   destroyVectors(io);
-  const measured = (kind) => rows.find((row) => row.check === kind && !row.again && row.GBps);
+  const measured = (kind: string) => rows.find((row) => row.check === kind && !row.again && row.GBps);
   return { rows, copies, quantize, widen: measured("widen"), packed: measured("packed"), cpu: await cpuBandwidth(shape) };
 }
 
@@ -91,13 +95,13 @@ async function bandwidth(shape) {
 // browser has it), on four matrices of this shape in turn so that no cache holds them. The page's forward pass does
 // more than this with relaxed SIMD and its software threads (2.9 times on the owner's Android, T157), which is why the
 // token's table holds the GPU against the CPU section instead.
-let cpuKernel;
-async function cpuBandwidth([rows, n]) {
+let cpuKernel: WebAssembly.Module | undefined;
+async function cpuBandwidth([rows, n]: Shape): Promise<CpuBandwidth> {
   const weights = rows * n, scales = (rows * n / shared.GROUP) * 4, copies = Math.max(1, Math.min(4, Math.floor(128e6 / weights)));
   const bytes = 4096 + n * 8 + rows * 4 + copies * (weights + scales);
   const memory = new WebAssembly.Memory({ initial: Math.ceil(bytes / 65536) + 1 });
   cpuKernel ??= await WebAssembly.compile(await (await built("simdkernel_plain.wasm")).arrayBuffer());
-  const k = (await WebAssembly.instantiate(cpuKernel, { env: { memory } })).exports;
+  const k = (await WebAssembly.instantiate(cpuKernel, { env: { memory } })).exports as { quantize_x: Kernel; matmul_q8: Kernel };
   const U = new Uint8Array(memory.buffer), F = new Float32Array(memory.buffer);
   const x = 4096, xq = x + n * 4, xs = xq + n, out = xs + (n / shared.GROUP) * 4 + 64, first = Math.ceil((out + rows * 4) / 64) * 64;
   F.set(floats(n, 2), x / 4);
@@ -107,7 +111,7 @@ async function cpuBandwidth([rows, n]) {
     F.set(floats(rows * n / shared.GROUP, 0.002), (at + weights) / 4);
   }
   k.quantize_x(xq, xs, x, n, 0);
-  const pass = (c) => k.matmul_q8(out, xq, xs, first + c * (weights + scales), first + c * (weights + scales) + weights, n, 0, rows);
+  const pass = (c: number) => k.matmul_q8(out, xq, xs, first + c * (weights + scales), first + c * (weights + scales) + weights, n, 0, rows);
   for (let c = 0; c < copies; c++) pass(c);
   const rounds = Math.max(1, Math.round(200e6 / weights));
   const began = performance.now();
@@ -118,15 +122,15 @@ async function cpuBandwidth([rows, n]) {
 
 // ---- a token's work: every layer's seven matrices and seven small dispatches, the classifier, the logits back.
 // sample: the argmax on the GPU and 4 bytes back instead of the logits
-async function token(name, kind = "widen", { sample = false } = {}) {
+async function token(name: GpuModel, kind: "widen" | "packed" = "widen", { sample = false }: { sample?: boolean } = {}): Promise<TokenFound> {
   await gpu();
   const model = MODELS[name];
   const perLayer = layerMatrices(model), small = SMALL_PER_LAYER;
   const shapes = [...Array(model.layers)].flatMap(() => perLayer);
-  const classifier = [model.vocab, model.dim];
+  const classifier: Shape = [model.vocab, model.dim];
   const longest = Math.max(model.dim, model.hidden), most = Math.max(2 * model.hidden, model.vocab);
   const io = vectors(longest, most);
-  const made = [];
+  const made: Bound[] = [];
   let bytes = 0;
   // a buffer the device cannot give fails later and quietly, as an error of these scopes
   shared.device.pushErrorScope("out-of-memory");
@@ -141,7 +145,7 @@ async function token(name, kind = "widen", { sample = false } = {}) {
     await shared.device.popErrorScope();
     await shared.device.popErrorScope();
     made.forEach((m) => m.owned.forEach((b) => b.destroy()));
-    return { model: name, error: `could not hold the weights (${(bytes / 1e9).toFixed(2)} GB made): ${error.message}` };
+    return { model: name, error: `could not hold the weights (${(bytes / 1e9).toFixed(2)} GB made): ${(error as Error).message}` };
   }
   const smallPipeline = pipelinesFor().small;
   const a = buffer(model.dim * 4), b = buffer(model.dim * 4);

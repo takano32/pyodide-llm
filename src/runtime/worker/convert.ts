@@ -12,8 +12,8 @@ import { pythonBuffer, automaticBits, weightsBuffer, gpuOnlyPossible, weightsRoo
 import { conductOf, answered, fromHub, fromFolder } from "./conduct.ts";
 import { HEADER_BYTES, headerInts } from "./sources.ts";
 import { templatePackage, placePython } from "./pyodide.ts";
-import { built } from "../built.js";
-import { named } from "../updated.js";
+import { built } from "../built.ts";
+import { named } from "../updated.ts";
 // (the kept models' module as a type; it is imported when a conversion first needs it, in convert())
 import type * as Kept from "../kept.ts";
 import type { Keeper, Weights } from "./weights.ts";

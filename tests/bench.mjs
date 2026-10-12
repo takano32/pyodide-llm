@@ -859,7 +859,7 @@ for (const [what, pattern] of [
   ["the CPU section hands over what it says", /return \{ status: said\.length \? "wrong" : "ok", data: r, markdown: lines\.join\("\\n"\), said \};/],
   ["the GPU section spreads its Markdown and what it says", /\.\.\.gpuMarkdown\(steps, bridge, lost\) \};/],
   ["and writes both again after the CPU section", /Object\.assign\(g, gpuMarkdown\(g\.data\.steps, g\.data\.bridge, g\.data\.lost\)\);/],
-  ["gpuMarkdown says the verdicts that are not ok", /said\.push\(\.\.\.verdicts\.filter\(\(\[, v\]: any\) => v\.error \|\| !v\.ok\)\.map\(checkVerdict\)\);[\s\S]*return \{ markdown: lines\.join\("\\n"\), said \};/],
+  ["gpuMarkdown says the verdicts that are not ok", /said\.push\(\.\.\.verdicts\.filter\(\(\[, v\](?:: any)?\) => v\.error \|\| !v\.ok\)\.map\(checkVerdict\)\);[\s\S]*return \{ markdown: lines\.join\("\\n"\), said \};/],
   ["the model section hands over what its path says", /said: pathWarnings\(paths\)/],
   ["the report lists the head's and the sections' warnings", /warnings\(\[\{ title: TITLES\.model, markdown: head, said: measured\?\.said \}, \.\.\.shown\.map\(/],
   ["and cuts the summary to the link", /shortReport\(head, .*, warned, environment\)/],

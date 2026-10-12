@@ -152,7 +152,7 @@ const LAYER_LINE = 2e-3, LOGITS_LINE = 1e-3, DP4A_LINE = 2e-2;
 // keys and values the GPU writes are then 1 float16 spacing from the nearest's on about half of their numbers, and the
 // stream computed from the nearest's was up to 3.2 times the line off the GPU's (CI, Dawn on lavapipe with every
 // conversion cut toward zero: a llama.cpp form on llm-jp-3 150M 6.5e-3 at the line 2e-3; with the GPU's own keys and
-// values 2.3e-6, as src/runtime/benchmark/gpu/halves.js's heldHalves takes them: T225). So the reference takes the device's own
+// values 2.3e-6, as src/runtime/benchmark/gpu/halves.ts's heldHalves takes them: T225). So the reference takes the device's own
 // float16 (got, as floats) of a value where it is within a float16 spacing of the value and the float32 sums' noise
 // (HALF_SLACK of the largest: about 10 times a sum of 2112 products's), and the nearest where it is not: a wrong key
 // or value is as far from the line as before, and the keys' and values' lines below are unchanged.

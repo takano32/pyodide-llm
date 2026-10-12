@@ -28,7 +28,7 @@ import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
 import * as playwright from "playwright-core";
-import { UPDATED, SLOWER } from "../src/runtime/updated.js";
+import { UPDATED, SLOWER } from "../src/runtime/updated.ts";
 import { leave } from "./leave.mjs";
 
 const [engine = "chromium", ...only] = process.argv.slice(2);

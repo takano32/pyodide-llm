@@ -1,10 +1,13 @@
 // The float16 of the cache: a float32 to a half and back in JavaScript, and what a device may round a key or a value to
 // (WGSL leaves the direction to it, T225): pure, and tested in Node (tests/gpu-choice-check.mjs, tests/layer-check.mjs).
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
 
 // float32 to float16's bits, rounded to the nearest (ties to even), as a cache holds its keys and values
 const f32 = new Float32Array(1), bits32 = new Uint32Array(f32.buffer);
-function toHalf(value) {
+// T368.7: a vector of numbers as these take one (a typed array or a plain one), and heldHalves' counts
+type Numbers = Float64Array | Float32Array | number[];
+type Counts = { same: number; inward: number; outward: number; far: number };
+function toHalf(value: number): number {
   f32[0] = value;
   const b = bits32[0], sign = (b >>> 16) & 0x8000, exponent = ((b >>> 23) & 0xff) - 112;
   let mantissa = b & 0x7fffff;
@@ -18,7 +21,7 @@ function toHalf(value) {
   const kept = (exponent << 10) | (mantissa >> 13), rest = mantissa & 0x1fff;
   return sign | (kept + (rest > 0x1000 || (rest === 0x1000 && kept & 1) ? 1 : 0));
 }
-function fromHalf(h) {
+function fromHalf(h: number): number {
   const exponent = (h >> 10) & 31, mantissa = h & 1023, sign = h & 0x8000 ? -1 : 1;
   return sign * (exponent ? 2 ** (exponent - 15) * (1 + mantissa / 1024) : 2 ** -14 * (mantissa / 1024));
 }
@@ -46,7 +49,7 @@ function fromHalf(h) {
 // { bits: what the reference goes on with, nearest: its own, same / inward / outward: the GPU's that are the nearest,
 // the neighbour toward zero, the neighbour away from it, far: neither }
 const HALF_SLACK = 1e-5;
-function heldHalves(x, got) {
+function heldHalves(x: Numbers, got: Uint16Array): Counts & { bits: Uint16Array; nearest: Uint16Array } {
   let largest = 0;
   for (const value of x) largest = Math.max(largest, Math.abs(value));
   const nearest = Uint16Array.from(x, toHalf), bits = nearest.slice(), counts = { same: 0, inward: 0, outward: 0, far: 0 };
@@ -61,13 +64,13 @@ function heldHalves(x, got) {
   return { bits, nearest, ...counts };
 }
 // T225: how the GPU rounded its keys and values (heldHalves' counts, summed), in a few words
-const halvesSaid = (counts) => {
-  const sum = (key) => counts.reduce((total, c) => total + c[key], 0), [same, inward, outward, far] = ["same", "inward", "outward", "far"].map(sum);
+const halvesSaid = (counts: Counts[]): string => {
+  const sum = (key: keyof Counts) => counts.reduce((total, c) => total + c[key], 0), [same, inward, outward, far] = (["same", "inward", "outward", "far"] satisfies (keyof Counts)[]).map(sum);
   return inward + outward + far === 0 ? `K and V ${same} to the nearest float16`
     : `K and V ${same} to the nearest float16, ${inward} toward zero, ${outward} away from it, ${far} farther`;
 };
 // T225: the largest difference of two vectors over the largest magnitude of the second
-const farthest = (got, want) => {
+const farthest = (got: ArrayLike<number>, want: Numbers): number => {
   let off = 0, largest = 0;
   want.forEach((value, i) => {
     off = Math.max(off, Math.abs(got[i] - value));

@@ -1,17 +1,30 @@
 // The check of a layer (T175, T187, T225): the layer in JavaScript, what a form's keys, values and stream are held to, and
 // the attention of a token at several sizes and positions (T224).
-// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
-import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, buffer, floats, run, readBack, scoped } from "./device.js";
-import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./halves.js";
+// (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.ts, which a bundler links it into: T367.3)
+import { shared, STORAGE, COPY_DST, COPY_SRC, UNIFORM, buffer, floats, run, readBack, scoped } from "./device.ts";
+import { toHalf, fromHalf, heldHalves, halvesSaid, farthest } from "./halves.ts";
 import { layerShape, layerForms, hasSubgroupId, engineTiles, vecAttention, attentionSteps, layerCheck, compiled,
-  layerPipes, layerParts, layerAngles, layerState } from "./layerparts.js";
+  layerPipes, layerParts, layerAngles, layerState } from "./layerparts.ts";
+import type { Shape, Thrown, Weights } from "./device.ts";
+import type { AttentionPipes, Form, Grouping, LayerShape, LayerState, MatrixKey, Tried } from "./layerparts.ts";
+import type { Alive, Verdict, Verdicts } from "../../contracts/benchmark.ts";
+// T368.7: where a matrix takes its input (INPUTS); a vector of numbers as the reference has them; the check's data (a
+// layer's state, its weights, the angles and eps); what the GPU left of a form (checkLayer() reads it back, judgeLayer()
+// judges it); a stage of the verdict's line: its name, what to say, whether it departed
+type Point = "qkv" | "o" | "ffn" | "down";
+type Numbers = Float64Array | Float32Array | number[];
+export type CheckData = LayerState & Record<MatrixKey, Weights> & { angles: Float32Array; eps: number };
+// what the reference takes of it: the stream may be its own float64 of the layer before
+export type Referenced = Record<MatrixKey, Weights> & { h: Numbers; norms: Float32Array; keys: Uint16Array; values: Uint16Array; angles: Float32Array; eps: number };
+export type Left = { h: Float32Array; keys: Uint16Array; values: Uint16Array; quantized: { xq: Int8Array; xs: Float32Array }[]; q: Float32Array; att: Float32Array; g: Float32Array };
+type Stage = [name: string, said: string, departed: boolean];
 
 // T175: where a matrix of a layer takes its input (layerReference's inputs), in the order of the DP4A forms' quantized
 // vectors: the normed stream before q, k and v; the attention's output before o; the normed stream before gate and up;
 // silu(gate) × up before down
-const INPUTS = ["qkv", "o", "ffn", "down"];
+const INPUTS: Point[] = ["qkv", "o", "ffn", "down"];
 // a quantized vector's values (int8 × the scale of its group of 32), as a matrix on DP4A takes it
-function dequantized(xq, xs) {
+function dequantized(xq: Int8Array, xs: Float32Array) {
   return Float64Array.from(xq, (value, i) => value * xs[(i / shared.GROUP) | 0]);
 }
 // T175: how a vector the GPU quantized (xq, xs) holds to quantize_x of x, the reference's values where it was made
@@ -29,8 +42,8 @@ function dequantized(xq, xs) {
 // stays). Returns { wrong: why or null, scale: the worst relative difference of a scale, apart: the values off by 1 or
 // more, more: those off by more than 1, of: how many }
 const QUANTIZED_SCALE_LINE = 1e-3, NORMED_SCALE_LINE = 3e-5;
-const scaleLine = (point) => (point === "qkv" || point === "ffn" ? NORMED_SCALE_LINE : QUANTIZED_SCALE_LINE);
-function quantizedOff(x, xq, xs, line) {
+const scaleLine = (point: Point) => (point === "qkv" || point === "ffn" ? NORMED_SCALE_LINE : QUANTIZED_SCALE_LINE);
+function quantizedOff(x: Numbers, xq: Int8Array, xs: Float32Array, line: number) {
   const mine = shared.WGSL.quantizedLikeCpu(Float32Array.from(x));
   let far = false, apart = 0, scale = 0, more = 0;
   mine.xs.forEach((want, g) => {
@@ -39,8 +52,8 @@ function quantizedOff(x, xq, xs, line) {
     far ||= !(off <= line);
   });
   mine.xq.forEach((value, i) => {
-    more += Math.abs(xq[i] - value) > 1;
-    apart += xq[i] !== value;
+    more += (Math.abs(xq[i] - value) > 1) as unknown as number;
+    apart += (xq[i] !== value) as unknown as number;
   });
   far ||= more > 0;
   const wrong = far ? "far from quantize_x's" : apart > 0.01 * x.length ? `${apart} of ${x.length} values not quantize_x's` : null;
@@ -53,8 +66,8 @@ function quantizedOff(x, xq, xs, line) {
 // float16 next to x, heldHalves; else rounded to the nearest).
 // Returns the residual stream after the layer, the float16 bits of the keys and values of the position, and (T225)
 // stages: q after RoPE, the attention's output and silu(gate) × up, for a check to say where a form first departs
-function layerReference({ dim, hidden, heads, kvHeads, headSize, kvDim }, pos, d, inputs = (point, x) => x, halves = (which, x) => Uint16Array.from(x, toHalf)) {
-  const product = ({ w, s }, n, first, rows, x) => {
+function layerReference({ dim, hidden, heads, kvHeads, headSize, kvDim }: Omit<LayerShape, "matrices">, pos: number, d: Referenced, inputs: (point: Point, x: Float64Array) => Float64Array = (point, x) => x, halves: (which: "keys" | "values", x: Float64Array) => Uint16Array = (which, x) => Uint16Array.from(x, toHalf)) {
+  const product = ({ w, s }: Weights, n: number, first: number, rows: number, x: Float64Array) => {
     const signed = new Int8Array(w.buffer, w.byteOffset, w.length), out = new Float64Array(rows);
     for (let r = 0; r < rows; r++) {
       let sum = 0;
@@ -63,13 +76,13 @@ function layerReference({ dim, hidden, heads, kvHeads, headSize, kvDim }, pos, d
     }
     return out;
   };
-  const normed = (x, at) => {
+  const normed = (x: Float64Array, at: number) => {
     let squares = 0;
     for (const value of x) squares += value * value;
     const scale = 1 / Math.sqrt(squares / dim + d.eps);
     return x.map((value, i) => d.norms[at + i] * (scale * value));
   };
-  const turned = (vector) => {
+  const turned = (vector: Float64Array) => {
     for (let j = 0; j < vector.length; j += 2) {
       const i = (j % headSize) / 2, c = d.angles[i], s = d.angles[headSize / 2 + i], [a, b] = [vector[j], vector[j + 1]];
       vector[j] = a * c - b * s;
@@ -81,10 +94,10 @@ function layerReference({ dim, hidden, heads, kvHeads, headSize, kvDim }, pos, d
   const q = turned(product(d.qkv, dim, 0, dim, xb)), k = turned(product(d.qkv, dim, dim, kvDim, xb));
   const v = product(d.qkv, dim, dim + kvDim, kvDim, xb);
   const keys = halves("keys", k), values = halves("values", v);
-  const cached = (all, row) => (p, i) => fromHalf(p === pos ? row[i] : all[p * kvDim + i]);
+  const cached = (all: Uint16Array, row: Uint16Array) => (p: number, i: number) => fromHalf(p === pos ? row[i] : all[p * kvDim + i]);
   const K = cached(d.keys, keys), V = cached(d.values, values), att = new Float64Array(dim);
   for (let head = 0; head < heads; head++) {
-    const kv = Math.floor(head / (heads / kvHeads)) * headSize, scores = [];
+    const kv = Math.floor(head / (heads / kvHeads)) * headSize, scores: number[] = [];
     for (let p = 0; p <= pos; p++) {
       let score = 0;
       for (let i = 0; i < headSize; i++) score += q[head * headSize + i] * K(p, kv + i);
@@ -133,23 +146,23 @@ const LAYER_CHECK_OUTLIERS = Math.round((3 * LAYER_CHECK.dim) / 256), LAYER_CHEC
 // weights, the cache before the position, the angles and eps (judgeLayer() and the tests take them as they are)
 function layerCheckData() {
   const shape = layerShape(LAYER_CHECK), pos = LAYER_CHECK_POS;
-  const data = { ...layerState(shape, pos), angles: layerAngles(shape.headSize, pos), eps: LAYER_CHECK_EPS };
+  const data = { ...layerState(shape, pos), angles: layerAngles(shape.headSize, pos), eps: LAYER_CHECK_EPS } as CheckData;
   for (let i = 0; i < LAYER_CHECK_OUTLIERS; i++) {
     data.h[Math.floor((i + 0.5) * shape.dim / LAYER_CHECK_OUTLIERS)] = LAYER_CHECK_OUTLIER * (i % 2 ? -1 : 1);
   }
   data.h.fill(0, 0, shared.GROUP);
-  for (const [key, [rows, n]] of Object.entries(shape.matrices)) {
+  for (const [key, [rows, n]] of Object.entries(shape.matrices) as [MatrixKey, Shape][]) {
     data[key] = { w: new Uint8Array(rows * n).map(() => (Math.random() * 256) | 0), s: floats(rows * n / shared.GROUP, 0.01 * Math.sqrt(256 / n)) };
   }
   return { shape, pos, data };
 }
-const sameBytes = (a, b) => {
+const sameBytes = (a: ArrayBufferView, b: ArrayBufferView) => {
   const x = new Uint8Array(a.buffer, a.byteOffset, a.byteLength), y = new Uint8Array(b.buffer, b.byteOffset, b.byteLength);
   return x.length === y.length && x.every((byte, i) => byte === y[i]);
 };
 // { ok, bitForBit, ulps: the most a scale is apart, apart: the values off by 1, stream: the stream's difference over
 // what the layer added (where every value is the same) }
-const sameAs = (got, other, added) => {
+const sameAs = (got: Left, other: Left, added: number) => {
   let ulps = 0, apart = 0, far = false, values = 0;
   got.quantized.forEach((q, i) => {
     const bits = new Int32Array(q.xs.buffer, q.xs.byteOffset, q.xs.length), otherBits = new Int32Array(other.quantized[i].xs.buffer, other.quantized[i].xs.byteOffset, q.xs.length);
@@ -157,7 +170,7 @@ const sameAs = (got, other, added) => {
     bits.forEach((b, g) => (ulps = Math.max(ulps, Math.abs(b - otherBits[g]))));
     q.xq.forEach((value, k) => {
       far ||= Math.abs(value - other.quantized[i].xq[k]) > 1;
-      apart += value !== other.quantized[i].xq[k];
+      apart += (value !== other.quantized[i].xq[k]) as unknown as number;
     });
     values += q.xq.length;
   });
@@ -173,20 +186,20 @@ const sameAs = (got, other, added) => {
 // words (tests/layer-check.mjs gives it a device that is JavaScript too). normsApart: what the DP4A fused form with the
 // norms apart left, for the fused form to be held to (within a few ulp), by the attention (T224: the prompt's tiles or
 // flash_attn_vec, whose sums go in another order): the one with them apart puts what it left (got) there. Returns the verdict
-function judgeLayer(shape, pos, data, form, got, normsApart) {
+function judgeLayer(shape: LayerShape, pos: number, data: CheckData, form: Pick<Form, "dp4a" | "fused" | "normApart" | "attention">, got: Left, normsApart: Record<string, Left>): Verdict {
   // T175: on DP4A the reference takes the GPU's own quantized vectors (a value on a rounding's edge may go either
   // way, and moves a layer's output by more than LAYER_LINE), and each of them is held to quantize_x of the
   // reference's values where it was made (quantizedOff)
   // T225: and the GPU's own keys and values of the position, where each is a float16 next to the reference's
   // (heldHalves: which of the two is the device's choice); the cache's line stays against the reference's nearest
-  const made = [], rounded = {};
-  const row = (cache) => cache.subarray(pos * shape.kvDim, (pos + 1) * shape.kvDim);
+  const made: Float64Array[] = [], rounded = {} as Record<"keys" | "values", ReturnType<typeof heldHalves>>;
+  const row = (cache: Uint16Array) => cache.subarray(pos * shape.kvDim, (pos + 1) * shape.kvDim);
   const want = layerReference(shape, pos, data, form.dp4a ? (point, x) => {
     const i = INPUTS.indexOf(point);
     made[i] = x;
     return dequantized(got.quantized[i].xq, got.quantized[i].xs);
   } : undefined, (which, x) => (rounded[which] = heldHalves(x, row(got[which]))).bits);
-  const quantizing = form.dp4a ? INPUTS.map((point, i) => [point, quantizedOff(made[i], got.quantized[i].xq, got.quantized[i].xs, scaleLine(point))]) : [];
+  const quantizing: [Point, ReturnType<typeof quantizedOff>][] = form.dp4a ? INPUTS.map((point, i) => [point, quantizedOff(made[i], got.quantized[i].xq, got.quantized[i].xs, scaleLine(point))]) : [];
   const wrongly = quantizing.filter(([, q]) => q.wrong);
   let added = 0, largestKey = 0, largestValue = 0;
   want.h.forEach((value, i) => (added = Math.max(added, Math.abs(value - data.h[i]))));
@@ -205,7 +218,7 @@ function judgeLayer(shape, pos, data, form, got, normsApart) {
   }
   const cache = Math.max(keyOff, valueOff);
   // the DP4A fused form against the one with the norms apart, within a few ulp (undefined where that one was not run)
-  let agreed;
+  let agreed: ReturnType<typeof sameAs> | undefined;
   if (form.dp4a && form.fused) {
     const key = form.attention ?? "tiles";
     if (form.normApart) normsApart[key] = got;
@@ -215,17 +228,17 @@ function judgeLayer(shape, pos, data, form, got, normsApart) {
   // T225: the stages in the order the layer runs them, [name, what to say, whether it departed] (a float vector
   // against the reference's, over its largest, departs past LAYER_LINE: no verdict, only where to look), in one
   // line for the report: short where the form is ok, every stage and the first that departed where it is not
-  const quantizedAt = (point) => quantizing.filter(([at]) => at === point).map(([, q]) =>
+  const quantizedAt = (point: Point) => quantizing.filter(([at]) => at === point).map(([, q]): Stage =>
     [`${point}'s quantizing`, `${point} quantized: scales ${q.scale.toExponential(1)}, ${q.apart} of ${q.of} off by 1${q.more ? ` (${q.more} by more)` : ""}`, Boolean(q.wrong)]);
-  const float = (name, mine, theirs) => {
+  const float = (name: string, mine: ArrayLike<number>, theirs: Float64Array): Stage[] => {
     const apart = farthest(mine, theirs);
     return [[name, `${name} ${apart.toExponential(1)}`, !(apart < LAYER_LINE)]];
   };
   const halves = [rounded.keys, rounded.values];
-  const order = [...quantizedAt("qkv"), ...float("q", got.q, want.stages.q),
+  const order: Stage[] = [...quantizedAt("qkv"), ...float("q", got.q, want.stages.q),
     ["K and V", halvesSaid(halves), halves.some((h) => h.far > 0) || !(cache < CACHE_LINE)], ...float("attention", got.att, want.stages.att),
     ...quantizedAt("o"), ...quantizedAt("ffn"), ...float("silu(gate) × up", got.g, want.stages.g), ...quantizedAt("down"),
-    ["the stream", `stream ${off.toExponential(1)}`, !(off < LAYER_LINE)], ...(touched ? [["the cache's other positions", "the cache's other positions written", true]] : [])];
+    ["the stream", `stream ${off.toExponential(1)}`, !(off < LAYER_LINE)], ...(touched ? [["the cache's other positions", "the cache's other positions written", true]] satisfies Stage[] : [])];
   const first = order.find(([, , departed]) => departed)?.[0] ?? (agreed?.ok === false ? "only against the norms apart" : "none");
   const stages = ok ? `stages: ${order.filter(([name]) => !name.endsWith("quantizing") && name !== "the stream").map(([, said]) => said).join(", ")}`
     : `stages: ${order.map(([, said]) => said).join(", ")}; cache ${cache.toExponential(1)}; first to depart: ${first}`;
@@ -235,8 +248,8 @@ function judgeLayer(shape, pos, data, form, got, normsApart) {
     ...(quantizing.length ? { quantized: quantizing.map(([point, q]) => ({ point, ...q })) } : {}) };
 }
 async function checkLayer() {
-  const { shape, pos, data } = layerCheckData(), verdicts = {};
-  const normsApart = {};
+  const { shape, pos, data } = layerCheckData(), verdicts: Verdicts = {};
+  const normsApart: Record<string, Left> = {};
   for (const form of layerForms()) {
     if (form.none) continue;
     try {
@@ -248,9 +261,9 @@ async function checkLayer() {
         pass.end();
         const h = new Float32Array(await readBack(encoder, parts.vectors.h, shape.dim * 4));
         const cacheBytes = (pos + 1) * shape.kvDim * 2;
-        const back = async (source, bytes) => readBack(shared.device.createCommandEncoder(), source, bytes);
+        const back = async (source: GPUBuffer, bytes: number) => readBack(shared.device.createCommandEncoder(), source, bytes);
         // T175: the four vectors the DP4A form quantized, each as the matrix after it took it
-        const quantized = [];
+        const quantized: Left["quantized"] = [];
         if (form.dp4a) {
           for (const [i, n] of [shape.dim, shape.dim, shape.dim, shape.hidden].entries()) {
             quantized.push({ xq: new Int8Array(await back(parts.vectors.quantized[i].xq, n)),
@@ -259,16 +272,16 @@ async function checkLayer() {
         }
         // T225: what the stages left behind (q after RoPE, the attention's output, silu(gate) × up), to say where a
         // form first departs
-        const left = async (source, n) => new Float32Array(await back(source, n * 4));
+        const left = async (source: GPUBuffer, n: number) => new Float32Array(await back(source, n * 4));
         return { h, keys: new Uint16Array(await back(parts.vectors.keys, cacheBytes)), values: new Uint16Array(await back(parts.vectors.values, cacheBytes)), quantized,
           q: await left(parts.vectors.q, shape.dim), att: await left(parts.vectors.att, shape.dim), g: await left(parts.vectors.g, shape.hidden) };
       });
       verdicts[layerCheck(form)] = judgeLayer(shape, pos, data, form, got, normsApart);
     } catch (error) {
-      verdicts[layerCheck(form)] = { worstRelative: NaN, ok: false, error: String(error?.message ?? error) };
+      verdicts[layerCheck(form)] = { worstRelative: NaN, ok: false, error: String((error as Thrown)?.message ?? error) };
     } finally {
       // the page stops a section that says nothing for 5 minutes: SwiftShader compiles each form's shaders for tens of s
-      postMessage({ alive: true });
+      postMessage({ alive: true } satisfies Alive);
     }
   }
   shared.layerVerdicts = verdicts;
@@ -285,17 +298,17 @@ async function checkLayer() {
 // another form). { "a token's attention, <form>": { ok, worstRelative, at } }
 const TOKEN_ATTENTION_SIZES = [64, 128, 256], TOKEN_ATTENTION_POSITIONS = [40, 70, 300, 1100], TOKEN_ATTENTION_LINE = 4e-3;
 async function checkTokenAttentions() {
-  const heads = 4, kvHeads = 2, verdicts = {};
+  const heads = 4, kvHeads = 2, verdicts: Verdicts = {};
   const { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX } = shared.device.limits;
   const engine = engineTiles(64);
-  const forms = [{ name: "the prompt's tiles" }, ...(engine ? [{ name: engine.name, engine: true }] : []),
-    ...(hasSubgroupId() ? [true] : []).map(() => ({ name: vecAttention(true).name, attention: "vec", vecSubgroups: true })),
+  const forms: Tried[] = [{ name: "the prompt's tiles" }, ...(engine ? [{ name: engine.name, engine: true }] : []),
+    ...(hasSubgroupId() ? [true] : []).map((): Tried => ({ name: vecAttention(true).name, attention: "vec", vecSubgroups: true })),
     { name: vecAttention(false).name, attention: "vec", vecSubgroups: false }];
   for (const form of forms) {
-    const verdict = { ok: true, worstRelative: 0 };
+    const verdict: Verdict = { ok: true, worstRelative: 0 };
     try {
       for (const size of TOKEN_ATTENTION_SIZES) {
-        const pipes = {};
+        const pipes = {} as AttentionPipes;
         if (form.attention === "vec") {
           pipes.vecShape = vecAttention(form.vecSubgroups).shape(size);
           if (pipes.vecShape.none) throw new Error(pipes.vecShape.none);
@@ -311,27 +324,27 @@ async function checkTokenAttentions() {
         for (const positions of TOKEN_ATTENTION_POSITIONS) {
           const data = shared.WGSL.tokenAttentionData({ heads, kvHeads, size, positions, steep: [3] });
           const got = await scoped(async (owned) => {
-            const make = (bytes, usage = STORAGE | COPY_DST | COPY_SRC) => {
+            const make = (bytes: number, usage = STORAGE | COPY_DST | COPY_SRC) => {
               const b = buffer(bytes, usage);
               owned.push(b);
               return b;
             };
-            const put = (values, usage) => {
+            const put = (values: Float32Array<ArrayBuffer> | Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer> | Uint8Array<ArrayBuffer>, usage?: number) => {
               const b = make(values.byteLength, usage);
               shared.device.queue.writeBuffer(b, 0, values);
               return b;
             };
-            const uniform = (values) => put(values, UNIFORM | COPY_DST);
+            const uniform = (values: Uint32Array<ArrayBuffer> | Uint8Array<ArrayBuffer>) => put(values, UNIFORM | COPY_DST);
             const flashParams = new ArrayBuffer(16);
             new Uint32Array(flashParams, 0, 2).set([heads, kvHeads]);
             new Float32Array(flashParams, 8, 1)[0] = 1 / Math.sqrt(size);
-            const vecParams = new Map();
+            const vecParams = new Map<number, GPUBuffer>();
             const u = { step: uniform(new Uint32Array([1, positions - 1, 0, 0])), positions, flash: uniform(new Uint8Array(flashParams)),
-              vecParams: (nwg) => vecParams.get(nwg) ?? vecParams.set(nwg, uniform(shared.WGSL.flashVecParams({ headSize: size }, heads, kvHeads, nwg))).get(nwg) };
+              vecParams: (nwg: number) => vecParams.get(nwg) ?? vecParams.set(nwg, uniform(shared.WGSL.flashVecParams({ headSize: size }, heads, kvHeads, nwg))).get(nwg)! };
             const v = { q: put(data.q), att: make(heads * size * 4), parts: make(pipes.vecShape ? shared.WGSL.flashVecPartsBytes(pipes.vecShape, heads) : 16) };
             const cache = { keys: put(data.keys), values: put(data.values) };
-            const group = (pipeline, entries) => shared.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
-              entries: entries.map(([binding, resource]) => ({ binding, resource: { buffer: resource } })) });
+            const group: Grouping = (pipeline, entries) => shared.device.createBindGroup({ layout: pipeline.getBindGroupLayout(0),
+              entries: entries.map(([binding, resource]) => ({ binding, resource: { buffer: resource as GPUBuffer } })) });
             const encoder = shared.device.createCommandEncoder(), pass = encoder.beginComputePass();
             attentionSteps(form, pipes, heads, cache, v, u, group).forEach((d) => run(pass, d));
             pass.end();
@@ -339,13 +352,13 @@ async function checkTokenAttentions() {
           });
           const off = shared.WGSL.tokenAttentionOff(got, data, { heads, kvHeads, size, positions });
           // (a NaN stays the worst: `!(off <= NaN)` is true, and the next size's number would take its place: T224's review)
-          if (!Number.isNaN(verdict.worstRelative) && !(off <= verdict.worstRelative)) Object.assign(verdict, { worstRelative: off, at: { headSize: size, positions } });
+          if (!Number.isNaN(verdict.worstRelative) && !(off <= verdict.worstRelative)) Object.assign(verdict, { worstRelative: off, at: { headSize: size, positions } } satisfies Partial<Verdict>);
         }
-        postMessage({ alive: true });
+        postMessage({ alive: true } satisfies Alive);
       }
       verdict.ok = verdict.worstRelative <= TOKEN_ATTENTION_LINE;
     } catch (error) {
-      Object.assign(verdict, { ok: false, worstRelative: NaN, error: String(error?.message ?? error) });
+      Object.assign(verdict, { ok: false, worstRelative: NaN, error: String((error as Thrown)?.message ?? error) } satisfies Partial<Verdict>);
     }
     verdicts[`a token's attention, ${form.name}`] = verdict;
   }
