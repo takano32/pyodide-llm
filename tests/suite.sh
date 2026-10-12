@@ -157,6 +157,9 @@ page_modules() {
   # the five architectures and of three whose facts are no architecture's pair (RMSNorms with GPT-2's FFN, LayerNorms
   # with a gated one, a Llama RoPE turns no layer of); and a plan without its layers' facts is refused (under a second)
   node tests/plan-facts-check.mjs
+  # T375.3: the parts the engine chooses as it is made, each by itself with stand-ins: the three kinds of layers, the two
+  # FFNs and the cache of the keys and values (what goes out of a step, in what order and where; what position 0 clears)
+  node tests/layer-parts-check.mjs
 }
 part "unit tests of the page's modules" page_modules
 

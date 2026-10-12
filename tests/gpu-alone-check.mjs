@@ -28,7 +28,7 @@ console.info = () => {};
 console.warn = () => {};
 
 /** An engine of the made-up model and what stands beside it. direct: on the GPU alone */
-function made(direct, plan = planOf(p), size = p.size) {
+function made(direct, plan = planOf(p), size = p.size, gpuForce = {}) {
   const memory = new WebAssembly.Memory({ initial: Math.ceil((CONTROL_BYTES + size) / PAGE) + 64, maximum: Math.ceil((CONTROL_BYTES + size) / PAGE) + 64, shared: true });
   const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
   const beside = { ctl, spawned: 0, ended: 0, kernels: 0, posted: [], lost: [] };
@@ -57,8 +57,9 @@ function made(direct, plan = planOf(p), size = p.size) {
       } };
   };
   // kernels that do nothing, counted: none is called for a model on the GPU alone once it is made
-  const wrap = () => new Proxy({}, { get: () => () => { beside.kernels += 1; return 0; } });
-  const engine = createForward({ memory, base: CONTROL_BYTES, size, kernels: { plain: empty, relaxed: empty, wide: false }, plan, spawn, gpu, wrap,
+  // (finite_f16 says yes: what the GPU wrote back is looked at by that kernel, and a stand-in that writes nothing wrote zeros)
+  const wrap = () => new Proxy({}, { get: (_, name) => () => { beside.kernels += 1; return name === "finite_f16" ? 1 : 0; } });
+  const engine = createForward({ memory, base: CONTROL_BYTES, size, kernels: { plain: empty, relaxed: empty, wide: false }, plan, spawn, gpu, wrap, gpuForce,
     direct: direct ? { onLost: (why) => beside.lost.push(why) } : undefined });
   return { engine, beside };
 }
@@ -139,4 +140,29 @@ console.log("ok: the same model in the memory starts the threads it is asked for
   assert.equal(await still.engine.release(), true);
 }
 console.log("ok: T375.2, the GPU's worker is told how much of a head RoPE turns and the kind of the norms from the plan's facts");
+
+// ---- T375.3 (the review): the cache of the keys and values is the last thing in the memory, below it the places the
+// GPU answers into, and the GPU is told where its keys and values are as they are now, after the cache grew. A cache
+// placed before the staging place, or addresses told as they were when the engine was made, leaves the GPU reading and
+// writing over what is not its own (it passed the whole light suite, and only gpu-default-check saw it)
+{
+  const { engine, beside } = made(false, planOf(p, { kvStart: 16 }), p.size, { always: true });
+  await engine.gpu;
+  const [{ plan: started }] = beside.posted;
+  engine.forwardMany(tokens(20), 0);
+  assert.ok(engine.gpuTokens >= 20, "the prompt went through the GPU");
+  engine.generateMany(5, 20, [1, 2], 2, 4, 0, 0.9, 1, [], []);
+  engine.forwardMany(tokens(80), 24);
+  engine.generateMany(5, 104, [1, 2], 2, 4, 0, 0.9, 1, [], []);
+  const [first, last] = beside.posted.filter((data) => data.type === "tokens").map(({ cache }) => cache);
+  assert.ok(first && last, "the steps were asked of the GPU twice, with the cache's places");
+  const layers = 2;
+  assert.equal(first.capacity, 32, "the cache had grown to twice its start");
+  assert.equal(last.capacity, 128, "and to the context after the larger prompt");
+  assert.equal(last.values, last.keys + layers * last.capacity * last.row, "the values begin where the keys end, at the capacity the GPU is told");
+  assert.notEqual(last.values, first.values, "the values moved as the cache grew, and the GPU is told where they are now");
+  assert.ok(last.keys > Math.max(started.staging, started.rows, started.tokens.ids), "the cache is placed after what the GPU answers into, where it can grow");
+  assert.equal(await engine.release(), true);
+}
+console.log("ok: T375.3, the cache of the keys and values grows in place after the GPU's places, and the GPU is told where it is as it is now");
 process.exit(0);

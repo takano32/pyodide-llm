@@ -25,11 +25,14 @@ import { GPU_WEIGHT_BYTES, GPU_TERNARY_BYTES, gpuBytes, gpuHoles, placer, BOTH_O
   USAGE_UNKNOWN, cpuReadBytes, aloneVerdict, aloneHolds, OUTSIDE_VOCABULARY, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan,
   GPU_ALONE } from "./forward/alone.ts";
 import { createForward } from "./forward/engine.ts";
+import { LAYER_KINDS } from "./forward/kinds.ts";
 import type { Compiled, Engine, Made } from "./forward/engine.ts";
 import type { Plan, TensorName } from "./contracts/plan.ts";
 // (T368.4) the types of what this window hands out, for the worker, which reads the module's own through
 // `import type * as Forward from "../forward.ts"`
 export type { Compiled, Engine, Made } from "./forward/engine.ts";
+export type { Core, Kind, Kinds, Layers, Room, Step } from "./forward/kinds.ts";
+export type { Cache } from "./forward/cache.ts";
 export type { Footprint, Header, Memory } from "./forward/memory.ts";
 export type { Adapter, Direct, GpuForm, GpuOnlyWeights, Hole, Place } from "./forward/alone.ts";
 export type { Chosen, GpuWorker } from "./forward/gpuside.ts";
@@ -42,7 +45,7 @@ export { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, promptTimes, tokenTimes, PROMPTS_UNT
   PATH_ROUNDS, timePrompts, timedCell, SEARCH_SECONDS, endSearch, memory64, footprint, keysInHalf, GPU_WEIGHT_BYTES,
   GPU_TERNARY_BYTES, gpuBytes, gpuHoles, placer, BOTH_ON_8, weightsPlace, layerWeightsOf, USAGE_UNKNOWN, cpuReadBytes,
   aloneVerdict, aloneHolds, OUTSIDE_VOCABULARY, gpuOnlyUnfit, gpuOnlyWeights, gpuOnlyPlan, needsWide, pastWide,
-  automaticDtype, growMemory, weightsMemory, createForward };
+  automaticDtype, growMemory, weightsMemory, createForward, LAYER_KINDS };
 
 /** The kernels as WebAssembly modules. The relaxed one fails to compile where relaxed SIMD is missing (Safari):
  * then int8 runs on matmul_q8. wide (T101): the build for a 64-bit memory (simdkernel_*64.wasm). */
@@ -61,7 +64,7 @@ export function compileKernels(plain: BufferSource, relaxed?: BufferSource | nul
 /** T156 direct ({ place, stored, onLost }, gpuOnlyWeights()): the layers' matrices are on the GPU alone, memory holds
  * the rest of the checkpoint (stored bytes) packed without them, a tensor at place(its offset in the checkpoint);
  * onLost(why) is told where the GPU stops (the model has to be loaded again on the CPU). */
-export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce, halfKeys, direct }: Omit<Made, "plan" | "wrap" | "stalledMs" | "clock">) {
+export function external({ memory, base, size, kernels, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce, halfKeys, direct }: Omit<Made, "plan" | "wrap" | "stalledMs" | "clock" | "kinds">) {
   const place = direct?.place ?? ((offset: number) => offset);
   const outside: Outside = {
     size,
