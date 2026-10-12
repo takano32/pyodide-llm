@@ -2231,6 +2231,46 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **見ていないもの**: 持ち主の端末、Firefox と WebKit、本物の GPU。回した基底で幅が「dim・q・FFN・linear の出」の順に並ばないモデル（符号の表の番地が入れ替わる: 予定 4）は作り物に無い。27B の本物の比べ（`page_27b.sh` の dry だけ）。`/benchmark/` のモデルの節と GPU の節（CPU の節だけ）。捨ての木の (iii) は `footprint()` を直していない。
   - **気づき（採番していない）**: (1) `footprint()` と エンジンは、層の置き場と幅を別の式で数えている（T375.5 まで。`plan-keys-check` と `memory-check` が見張る）。(2) NumPy の forward は GPT-2 の `bo` を `self.bo[a]`（attention の層の中の番号）で、JavaScript は層の番号で引く（今ある記録では同じ。状態を持つ層と bias の両方を持つ記録ができると食い違う）。(3) GPU の Worker（`gpu/`）は `layerNorm` と `w3` の有無で層を選んでいて、事実が食い違う記録（RMSNorm で GELU）を正しく計算するかは見ていない（GPU の側は抽象化しない、の内）。(4) `plan-facts-check` の線 1e-3 に対して正しい答えは 2e-7、取り違えは 0.4: 線を締める余地がある。(5) `calls` の作り物の gpt2 は、手書きの頃からの名残りで `derived` に RoPE の表を持つ（番地を変えないために残した）。(6) T477 の「行列の `!`」は減っていない（T375.3 の形で）。
 - **T375.2 のレビューと本番（2026-10-12）**: レビュー（Sonnet high、`shader-reviewer`）: 本線に入れてよい、直しは無い。(1) 網の `calls` 150・`choices` 4869・`shaders` 102 と鍵 192・`gpuworker` は「同じ」、`layouts` は「新しい」184 件だけ。**`calls` は「本線の木を前の道具（手書きの計画）で」と「この木をこの木の道具（Python の計画）で」を別々に回して 150 個のハッシュを突き合わせ、違い 0**（片方の道具を両方に当てた比べではない）。`forward-check` 4 本、軽い組 226 秒、型、ビルドと `dist-check`。(2) 消した `gpt2`・`layerNorm` の読み替えを、今ある記録の全部で前後の条件の表にして取り違え無し。(3) GPU の側: 新しい断り（ae3911e）は `gpuUnfit()` で linear と convolution の後ろなので、Qwen3.5 と LFM2 は前からの文が先に返り、**今あるモデルで新しい文は出ない**。その行を消すと `gpu-part-check`、`turned` を 0 にすると `gpu-alone-check` が落ちる。CI の `gpu-prompt.yml full=true`（38204900656）を本線の側（38191340195）と job ごとに: FAILED 0、「on the CPU」508・200・56・56、GPU だけの行 12・6・4・4、訳の分布が同じ。(4) 回した基底の表の順: 入れ替わるのは hidden < q か dim > q のときだけで、27B（5120・6144・17408）では番地は変わらない。27B の本物の比べは要らないとの意見（次に回す機会に）。(5) `madeup.ts`: 前の `sections.ts` の作り物と、共有・共有なしでカーネルの呼び出しの列と番地のハッシュが同じ（1132 回ずつ）。(6) `plan-facts-check` を 11 通り壊して全部落ちる。(7) 速さは 2 つの run のログで、どのマスも対照の幅と重なる。確かめていないもの: ae3911e の CI、本物の GPU、Firefox・WebKit、本物の 27B、`/benchmark/` のモデルの節と GPU の節。**本線 95e9d3e、デプロイ run 38208329634。本番（CI の機械。アーキテクチャごとに）**: Chromium 156 で tiny-lm 536.0・llm-jp-3 150M 126.0・SmolLM2 135M Instruct 89.8・Pythia 14M（NeoX）877.6・GPT-2 124M 119.7・LFM2.5 350M（畳み込みの層）59.1 tok/s が 2 回の訪問まで（run 38208740287）、Qwen3.5 0.8B（linear attention の層）29.3 tok/s（38209442937）、Firefox 157 で tiny-lm 538.7・llm-jp-3 150M 143.0・Pythia 14M 761.1（38208741946）、`gpuTest=on` の llm-jp-3 150M が GPU で 40 トークン（38208745078: CI を通っていなかった ae3911e の後の GPU の道）、`gpuTest=only` の Ternary Bonsai 1.7B が GPU だけで 40 トークン（38208746902）。**WebKit 27.2 の run 38208743380 は failure**: tiny-lm 495.9・llm-jp-3 150M 130.3・Pythia 14M 909.5 tok/s と 3 つとも答えを書いた後、Pythia 14M で「console errors: Failed to load resource: the server responded with a status of 404」= **T360**（WebKit だけが、無いトークナイザの候補の 404 をコンソールのエラーにする。Pythia 14M は 2026-10-11 の run 38099257741 でも同じ）。この変更の落ちではないが、取りまとめ役が WebKit の組に Pythia を入れたのが誤り: T360 を直すまで、WebKit の本番の確かめに候補を 404 で確かめる項目を入れない。tok/s は回ごとにランナーの CPU が違うので前の回と比べない。持ち主の端末は未計測。気づきは T484。
+- **T375.3 — 状態: 進行中（2026-10-12、ブランチ `t375.3-layer-parts`、main = 95e9d3e）。先に読んだ表（実装の前）**: `src/runtime/forward/engine.ts`（779 行・51,011 バイト）の `createForward()` の中で、層の種類・FFN の種類・norm の種類を知っている所。行は 95e9d3e のもの。
+
+  | 行 | 何を知っているか | いつ走るか | 読み書きする状態 |
+  |---|---|---|---|
+  | 91〜92 | エンジンが 1 歩を持つ種類の名前の一覧（`["attention", "linear", "convolution"]`） | 作るとき | — |
+  | 94〜95 | `lines`（状態を持つ層か）・`linearAt`（linear の層か）・`attending`（KV を持つ層の数）を種類の名前から | 作るとき（`run()` が層ごとに読む） | — |
+  | 99〜102 | 状態を持つ層の数（`plan.linear`・`plan.convolution`）と、それが無い計画の断り | 作るとき | — |
+  | 222〜224 | 枠の配列: linear の層の `gate`・`mixed`・`conv`・`z`・`work`、畳み込みの層の `mixed`、`xb` と `xq` の幅に linear の層の出の幅 | 作るとき | 枠 |
+  | 231・235〜236・238・245 | attention の層のテンソル（`wq`・`wk`・`wv`・`wo`・`bq`・`bk`・`bv`・head の norm・RoPE の表・gate の `wg`） | 作るとき | — |
+  | 245〜247・254 | linear の層のテンソル 9 つと head の数 4 つ | 作るとき | — |
+  | 257 | 畳み込みの層の入りの行列（出の行列と taps は linear の層と同じ名前で 245〜246） | 作るとき | — |
+  | 258〜268 | 状態の大きさと置き場: linear の状態 2 枚（`states`）と今の枚（`flips`）、畳み込みの行（`convRows`: 2 つの種類が同じ変数）、l2 の重み 2 本、`stateAt` | 作るとき | 状態を作る |
+  | 295 | GPU の側へ渡す `linear`・`convolution`・`stateful` | 作るとき | — |
+  | 324〜336 | KV のキャッシュ（`attending` 層ぶん）と `grow()` | 作るとき・伸びるとき | KV |
+  | 345〜346 | attention の段の仕事（種類 3・4） | 1 ブロックに層ごと | KV を読む |
+  | 404〜444 | KV への書き込み（`cache`・`cacheHalves`・`fromStaging`）と `stagingFinite` | トークンごと・GPU のブロックごと | KV に書く |
+  | 456・525 | `if (convBytes) follow(pos0)`・`stateAt = pos0 + count`（状態を持つ層があるか） | 1 ブロックに 1 回 | `stateAt` |
+  | 466〜469 | 種類の枝: `linearAttention()`・`shortConvolution()`・その場に書いた attention | 1 ブロックに層ごと | — |
+  | 470〜498 | attention の層の中身（行列 3〜4、bias、head の norm、RoPE、KV、段、gate、出の行列） | 1 ブロックに層ごと | KV に書いて読む |
+  | 544〜553 | `follow()`: 位置 0 で種類ごとの状態を消す、順でない位置を断る | 1 ブロックに 1 回 | 状態を消す |
+  | 558〜590 | `linearAttention()`（デルタ則の段は種類 7。状態は読む枚と書く枚を分ける: T120） | 1 ブロックに層ごと | 状態 2 枚・畳み込みの行 |
+  | 596〜604 | `shortConvolution()`（行に触るのは取りまとめ役だけ、段の外） | 1 ブロックに層ごと | 畳み込みの行 |
+  | 760〜773 | `keysAndValues()`（`attending` 層ぶん読む） | 試験 | KV を読む |
+  | 232・235 と 508〜523 | FFN の種類（gate つき: `w1`・`w3`・swiglu・`w2`。GPT-2 の: `w1`・gelu と `b1`・`w2`・`b2`） | 作るとき・1 ブロックに層ごと | — |
+  | 233〜234 と 462〜463・505〜506・528〜529 | norm の種類（LayerNorm か RMSNorm か）の枝 3 つ | トークンごとに層ごと 2 回と、最後に 1 回 | — |
+
+  T375.2 の「(iii) 新しい種類の状態を持つ層は `engine.ts` に 9 か所」の中身（捨ての `echo`）: 91 行の一覧、94 行の `echoAt`、行列の読み、状態の置き場、456 と 525 の条件、466 の枝、`follow()` の消し、層の関数。どれも `createForward()` の中。
+- **T375.3 の形（実装の前に決めた。訳つき）**:
+  1. **種類の表 `LAYER_KINDS`（`forward/kinds.ts`）**: 種類の名前 → `{ frame(plan), make(core, count) }`。`frame` はその種類が 1 トークンの枠に置く配列と、行列が読むいちばん広い幅。`make` はその種類の層の全部の持ち主（テンソル・状態）を作り、`{ layer(place, fact), clear? }` を返す。`layer()` は 1 つの層の 1 歩（`(count, pos0) => void`）で、エンジンは層ごとの 1 歩を配列に持って `run()` で直に呼ぶ。`clear` を持つ部品は「位置 0 で消す状態を持つ」: 順でない位置の断り（`follow()`・`stateAt`）はエンジンに 1 つのまま（走りの全体の事実なので）。**部品は種類ごとで、層ごとではない**: 状態の置き場が種類ごとに 1 つの塊（今の番地のまま）で、消すのも種類ごとに 1 回なため。
+  2. **部品は 3 つ**: `forward/attention.ts`・`forward/linear.ts`・`forward/convolution.ts`（フォルダは平らなまま: 道具が `forward/` を 1 段で並べる）。FFN は `forward/ffn.ts` の関数 2 つ（`gatedFfn`・`plainFfn`: 状態が無いので、作るときに 1 つを名前に置くだけ）。norm は 1 行の関数 2 つで、エンジンの中で作るときに選ぶ（ファイルにしない: 読む人が辿るファイルを増やすだけ）。
+  3. **KV のキャッシュは別の部品 `forward/cache.ts`**（指針は「状態の持ち主は層の部品」だった。変えた訳: キャッシュは GPU の側（`cpuSide`）と試験（`keysAndValues()`）も読み書きし、「伸びるのでメモリの最後に置く」というエンジンの置き場の決まりを持つ。attention の部品の持ち物にすると、エンジンが「attention の部品」を名指しで取り出すことになる）。attention の部品は作るときに `cache.hold(層の数)` で自分の層の置き場を取り、エンジンは最後に `cache.place()` を呼ぶ（置くのを最後にする 1 行は、今の番地のままにするためでなく、伸び方の決まりそのもの）。
+  4. **エンジンが部品に渡すものは 1 つの物 `core`**（計画、カーネル、メモリの `alloc` と今の見え方、テンソルを名前で取る `floats()`・`matrix()`、枠の番地 `at` と幅 `S`、`matmuls()`・`phase()`、キャッシュ）。`matrix()` は名前で覚える形にする（エンジンが GPU のために名指す行列と、部品が取る行列が同じ物になる。いまはどの名前も 1 回しか呼ばれないので動きは同じ）。
+  5. **表は閉じない**: `createForward({ kinds })`（試験だけ。既定は `LAYER_KINDS`）。
+- **T375.3 の予定する違い（実装の前に書いた）**:
+  1. **訪問者に見えるものは無い。** カーネルの呼び出しの列と番地は網の `calls` の 150 通りで同じ見込み（割り当ての順を変えない: GPU が読むテンソルを今の順にエンジンが先に名指し、部品は表の順（attention・linear・畳み込み）に作り、キャッシュは最後）。
+  2. **枠の配列は「共通のもの + 種類ごとのもの + 回した基底の `xr`」で組む**（`memory.ts` の `frameArrays()` の署名が変わり、`footprint()` は自分の式から同じ形を渡す）。今ある 5 つのアーキテクチャでは同じ並び・同じ大きさ。`gate` は attention の部品が `wg` のあるモデルで置く（いまは linear の層があるときに置いている: `wg` があって linear の層の無いモデルは無い）。
+  3. **断りの文は同じ**。「状態を持つ層の数が無い計画」の断りは種類の部品に移る（投げるのは今までどおりエンジンを作るとき）。
+  4. **1 ブロックに、層ごとに間接の呼び出しが 2 つ（層の中身・FFN）、トークンごとに norm の呼び出しが層ごとに 2 つと最後に 1 つ増える。** カーネルの呼び出しは増えない。
+  5. **束**: `forward` の塊だけが変わる（`helper`・`gpu`・`kept`・`key`・`shaders` は同じ名前・同じバイト）。窓口 `forward.ts` は `LAYER_KINDS` を出す（網の `exports` に「新しい」が出る）。`jobs.ts`・`gpuside.ts`・`threads.ts`・`control.ts` は変えない。
+  6. `tests/forward-modules-check.mjs` の「`createForward()` が部品に渡す名前」の規則は、新しい部品の分を足す（規則を外すのでなく）。
 ### T376 [設計][その他] 分割が残した継ぎ目を洗い出して、抽象化の全体の設計を決める — 状態: 完了（2026-10-10、持ち主が案を承認「オススメでいいよ」。2026-10-09、持ち主「この方針でやり直したほうがいいことあったらやってください」「抽象化のまえにやりたいよね？」。T352 の後、T357 の前。規模 中。実装はしない: 設計を持ち主に見せる）
 - **考え**: 分割そのもの（どの文をどのファイルに置くか）はやり直さない。責務の切れ目で切ってあり、「動かすだけ」を先にやるのは動きを変えてよい今でも正しい順。やり直す値打ちがあるのは、動きを変えない決まりのために曲げた所（継ぎ目）で、それは抽象化の仕事そのもの。だから別の回に 2 度やらず、抽象化の設計を広げて 1 回でやる。
 - **いま分かっている継ぎ目（どの番号にも入っていなかった）**: (a) 部品が一緒に読み書きする変数を機械的に 1 つのオブジェクトに入れた所: `worker/state.js` の `state`（36 個）・`src/page/state.ts` の `page`・`public/gpu/device.js` の `common`・`public/benchmark/gpu/device.js` の `shared`・`src/benchmark/state.ts` の `page`、`forward/` の `pool`・`gpuPart`・`held`（getter と setter のオブジェクト）。持ち主をはっきりさせる形（その状態を持つ部品が方法で出す）に。(b) `Llama` の土台クラス 3 つ（メソッドを 1 字も変えずに移すための継承: `TensorOrder`・`Sampling`・`Generation`）。(c) 鍵を動かさないために残した写し（`ternaryMatVec` は `fusedDp4aMatVec` の写し）と、シェーダを作る関数の重なり。(d) import を書き換えないためだけの窓口（`shaders.js`・`gpu.js`・`forward.js`・`worker.js`・`src/models.js`・`src/bench.js`・Python の 2 つ）: T367 で束ねるなら、読む側が部品を直に読む形にできるものがある。(e) 分割の途中で見つけて直していない誤り（`gpu.js` の `ended` が 2 回、古いコメント、T371・T372 など: 採番して後で）。
