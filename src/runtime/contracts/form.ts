@@ -3,7 +3,7 @@
 //
 // The form is Python's (src/python/engine/layout.py's FORM, with each key's default there): the converter makes it
 // (convert/plan.py's checkpoint_form()), a conversion's options and a kept model's manifest carry it, the worker takes it
-// from the converter's sink.open() (worker/weights.ts) and hands it on by the same names to forward.js's footprint()
+// from the converter's sink.open() (worker/weights.ts) and hands it on by the same names to forward.ts's footprint()
 // and to external_tensors(). tests/worker-sink-check.mjs holds these keys to FORM's and follows them to footprint().
 //
 // A key that is added here is added in layout.py's FORM first (AGENTS.md, "形式を変えるとき").
@@ -36,6 +36,6 @@ export type Form = {
   linear: Linear | null;
   rotated: Rotated | null;
   convolution: Convolution | null;
-  // T359: the rows stored otherwise than the file's dtype stores a row of their role (which forward.js does not read yet)
+  // T359: the rows stored otherwise than the file's dtype stores a row of their role (which forward.ts does not read yet)
   kinds: Record<string, Dtype> | null;
 };

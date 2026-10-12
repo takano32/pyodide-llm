@@ -84,7 +84,7 @@ function tokensSaid(m) {
 // ms a step of each form: runs of plan.tokens.most steps a submission from position 0 (a made-up state, the settings
 // of the list's sampled models, T151's), the forms in turn after one run each to warm up, BLOCK_ROUNDS rounds (one on
 // a fallback adapter: its times are no GPU's), the median of each over its steps. The runs write the GPU's own keys
-// and values of those positions, which hold nothing of forward.js's yet (as timeBlocks)
+// and values of those positions, which hold nothing of forward.ts's yet (as timeBlocks)
 async function timeTokens(m, forms) {
   const { tokens: g } = m, most = g.most;
   const state = samplingState({ token: 1, pos: 0, history: [1] });
@@ -109,7 +109,7 @@ async function timeTokens(m, forms) {
 // packed dot differ from device to device, and only the device can say):
 //   1. EMBED of a token of the second half of the vocabulary and the first layer at position 1 (the cache's row 0 of random
 //      float16), the stream h and the keys and values of position 1 read back: against JavaScript's layer in float64
-//      (the weights read from the shared memory as forward.js holds them: int6 widened by shaders.js's sixValues; RoPE
+//      (the weights read from the shared memory as forward.ts holds them: int6 widened by shaders.js's sixValues; RoPE
 //      from the CPU's tables; the keys and values rounded to float16 where the attention reads them (T225's review: the
 //      device's own float16 where it is a neighbour of the float64 value, heldFloats; else the nearest); on DP4A each
 //      matrix's input quantized as quantize_x quantizes it, in float32). The stream: no farther than LAYER_LINE of the
@@ -276,7 +276,7 @@ async function checkTokens(m, form, back = {}) {
     const x0 = Float64Array.from(eRow, (v, i) => v * eScales[Math.floor((i * eScales.length) / eRow.length)]);
     if (plan.tokens.positions) floats(plan.tokens.positions + pos * dim * 4, dim).forEach((p, i) => { x0[i] += p; });
     const xn = norm(x0, vectorOf("attention"), vectorOf("attentionBias"));
-    // T226: as the CPU has it (forward.js), the biases (Qwen2's; T154's), then the norms of the heads of q and k
+    // T226: as the CPU has it (forward.ts), the biases (Qwen2's; T154's), then the norms of the heads of q and k
     // (Qwen3's), then RoPE (all of a head, T154: a part of it, or none); the first layer's of each, where the model
     // has them
     const [q, k, v] = [["wq", "bq"], ["wk", "bk"], ["wv", "bv"]].map(([name, bias]) => plus(matmul(name, xn), bias));
@@ -343,7 +343,7 @@ async function checkTokens(m, form, back = {}) {
     // (T226: a classifier of floats on DP4A too where the model has outlier channels: tokenShape's floatHead)
     const packedHead = form.dp4a && !floatHead(m);
     const normedStream = norm(Float64Array.from(stream2), floats(plan.tokens.final, dim), plan.tokens.finalBias && floats(plan.tokens.finalBias, dim));
-    // T232: a ternary classifier's outlier channels as the CPU has them (src/runtime/forward/engine.js's picked): taken out of the normed
+    // T232: a ternary classifier's outlier channels as the CPU has them (src/runtime/forward/engine.ts's picked): taken out of the normed
     // stream before it is quantized, and their columns of the table multiplied apart, in floats
     const taken = g.take ? plan.tokens.channels.map((c) => {
       const value = normedStream[c];

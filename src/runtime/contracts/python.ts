@@ -49,7 +49,7 @@ export type Llama = Proxy & {
   // the stats of the last generation, once its generator is closed
   stats: Dict<Stats>;
   tokenizer: { encode(text: string): List<number[]> };
-  // what an engine outside Python holds (forward.js's, its threads, the GPU's worker): a promise where there is a
+  // what an engine outside Python holds (forward.ts's, its threads, the GPU's worker): a promise where there is a
   // GPU's worker to wait for; no such method where NumPy runs the model
   release?(): Promise<unknown> | undefined;
 };

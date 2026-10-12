@@ -1,9 +1,39 @@
-// forward/alone.js (T349): a model on the GPU alone (T156, T210): what the GPU holds of it, whether it goes there
+// forward/alone.ts (T349): a model on the GPU alone (T156, T210): what the GPU holds of it, whether it goes there
 // (weightsPlace, gpuOnlyUnfit) and stays there (aloneVerdict), and its weights as they arrive, the layers' matrices and
 // the tables to the GPU's worker and the rest to this memory without the holes they leave (gpuOnlyWeights, gpuOnlyPlan).
-// A module of src/runtime/forward.js, which exports its names as before.
+// A module of src/runtime/forward.ts, which exports its names as before.
 
-import { BETTER } from "./choice.js";
+import { BETTER } from "./choice.ts";
+import type { Header } from "./memory.ts";
+import type { Arch, Dtype, Rotated } from "../contracts/form.ts";
+import type { Force, Matrix, Opened, Remembered, Table, ToGpu } from "../contracts/gpu/protocol.ts";
+import type { Alone, CpuSpeed, Usage } from "../contracts/messages.ts";
+import type { Tensor, TensorName, Tensors } from "../contracts/plan.ts";
+
+// (T368.4, the types) what of a form says whether a model can go on the GPU, and how many bytes it takes there
+export type GpuForm = { arch?: Arch; bias?: boolean; qk_norm?: boolean; head_dim?: number };
+// the adapter as the worker keeps it (worker/runtime.ts)
+export type Adapter = { fallback: boolean; limits: { maxStorageBufferBindingSize: number; maxBufferSize: number }; packed: boolean; key?: string; ternaryKey?: string };
+// T156: where a model goes (weightsPlace()); gpuRoom: the bytes left for the GPU's copy where it is not on the GPU alone
+export type Place = { mode: "both" | "gpu" | "cpu"; gpuRoom?: number };
+// a stretch of a checkpoint that the GPU alone holds: [start, end)
+export type Hole = [number, number];
+// T156: a model on the GPU alone, as the worker makes it and the engine reads it: the bytes kept in the memory (stored)
+// of size, where each is (place), the multiply-adds of its layers, /benchmark/'s CPU reading and the page's use (what
+// the GPU is held against), and onLost(why), told where the GPU stops under it. The GPU's side writes verdict: the CPU
+// is faster here (the page keeps it)
+export type Direct = {
+  stored: number;
+  size: number;
+  place(offset: number): number;
+  layerWeights: number;
+  cpu: CpuSpeed | undefined;
+  usage: Usage;
+  onLost?(why: string): void;
+  verdict?: Alone;
+};
+// T156: the weights of a model on the GPU alone as they come (what gpuOnlyWeights() returns)
+export type GpuOnlyWeights = ReturnType<typeof gpuOnlyWeights>;
 
 // ---- T156: a model on the GPU alone. Where the layers could not be held twice (in this memory and on the GPU), the
 // worker decides before a byte comes that the GPU alone takes them (the owner, 2026-09-27: "大きいモデルは最初から GPU
@@ -20,7 +50,7 @@ export const GPU_WEIGHT_BYTES = 1 + 4 / 32, GPU_TERNARY_BYTES = 1 / 4 + 4 / 128;
  * and values (float16, the whole context), and for a generation's steps (T152) the classifier (and the embedding where
  * it is another table), RoPE's table of every position and the sampling's three arrays of the vocabulary. forward.js
  * counts the same of a model it runs (layersOnGpu, tokensUnfit). */
-export function gpuBytes(header, { head_dim = 0, arch = "llama", dtype = "int8" } = {}) {
+export function gpuBytes(header: Header, { head_dim = 0, arch = "llama", dtype = "int8" }: GpuForm & { dtype?: Dtype } = {}) {
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
   const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads, qDim = heads * headSize, kvDim = kvHeads * headSize;
   const each = dtype === "ternary" ? GPU_TERNARY_BYTES : GPU_WEIGHT_BYTES;
@@ -32,23 +62,23 @@ export function gpuBytes(header, { head_dim = 0, arch = "llama", dtype = "int8" 
 }
 
 // the layers' matrices of a Llama, which the GPU alone holds (T156)
-const LAYER_MATRICES = ["wq", "wk", "wv", "wo", "w1", "w2", "w3"];
+const LAYER_MATRICES: TensorName[] = ["wq", "wk", "wv", "wo", "w1", "w2", "w3"];
 // T210: and its tables, the embedding and a classifier of its own (wcls is the embedding's tensor where it is shared):
 // the GPU embeds a prompt's rows too (shaders.js's EMBED_ROWS), and nothing of them is here
-const GPU_ALONE = [...LAYER_MATRICES, "token_embedding_table", "wcls"];
+const GPU_ALONE: TensorName[] = [...LAYER_MATRICES, "token_embedding_table", "wcls"];
 /** T156: the stretches of the checkpoint the GPU alone holds, the layers' matrices and (T210) the tables ([start, end)
  * of each, in file order: every one is its values and then its scales, llama2_numpy's Tensor), from the tensors
  * llama2_numpy.external_tensors() places */
-export function gpuHoles(tensors) {
-  const holes = new Map(GPU_ALONE.filter((name) => tensors[name]).map((name) => {
-    const t = tensors[name], values = t.shape.reduce((a, b) => a * b, 1);
+export function gpuHoles(tensors: Tensors) {
+  const holes = new Map(GPU_ALONE.filter((name) => tensors[name]).map((name): [number, Hole] => {
+    const t = tensors[name]!, values = t.shape.reduce((a, b) => a * b, 1);
     return [t.offset, [t.offset, t.scales + (values / t.group) * 4]];
   }));
   return [...holes.values()].sort((a, b) => a[0] - b[0]);
 }
 /** T156: where an offset of the checkpoint (outside the holes) is in the memory that holds the rest: less the holes
  * before it */
-export const placer = (holes) => (offset) => holes.reduce((at, [start, end]) => (end <= offset ? at - (end - start) : at), offset);
+export const placer = (holes: Hole[]) => (offset: number) => holes.reduce((at, [start, end]) => (end <= offset ? at - (end - start) : at), offset);
 
 /** T156: whether a model goes on the GPU alone, from what is known before its bytes come (the owner's B, 2026-09-27;
  * TODO.md's T156 has the numbers): both, as before (T148: the layers in this memory and on the GPU, and each block and
@@ -64,16 +94,17 @@ export const placer = (holes) => (offset) => holes.reduce((at, [start, end]) => 
  * matrices and what the forward pass puts after that (footprint with direct); gpu: gpuBytes. Returns { mode: "both" |
  * "gpu" | "cpu", gpuRoom } */
 export const BOTH_ON_8 = 6.5 * 2 ** 30;
-export function weightsPlace({ cpu, gpuOnly, gpu, deviceMemory = 4, eligible = false, forced = false }) {
+export function weightsPlace({ cpu, gpuOnly, gpu, deviceMemory = 4, eligible = false, forced = false }:
+  { cpu: number; gpuOnly?: number; gpu: number; deviceMemory?: number; eligible?: boolean; forced?: boolean }): Place {
   const room = deviceMemory >= 8 ? BOTH_ON_8 : (deviceMemory * 2 ** 30) / 2;
   if (forced && eligible) return { mode: "gpu" };
   if (cpu + gpu <= room) return { mode: "both", gpuRoom: room - cpu };
-  if (eligible && (deviceMemory >= 8 || gpuOnly + gpu <= room)) return { mode: "gpu" };
+  if (eligible && (deviceMemory >= 8 || gpuOnly! + gpu <= room)) return { mode: "gpu" };
   return { mode: "cpu", gpuRoom: room - cpu };
 }
 
 /** T156: the multiply-adds of a Llama's layers a token of a prompt makes (every weight of its seven matrices once) */
-export function layerWeightsOf(header, { head_dim = 0 } = {}) {
+export function layerWeightsOf(header: Header, { head_dim = 0 }: { head_dim?: number } = {}) {
   const [dim, hidden, layers, heads, kvHeads] = header;
   const headSize = head_dim || dim / heads, qDim = heads * headSize, kvDim = kvHeads * headSize;
   return layers * (2 * qDim * dim + 2 * kvDim * dim + 3 * hidden * dim);
@@ -94,18 +125,19 @@ export const USAGE_UNKNOWN = { prompt: 1, written: 1 };
  * that, and its CPU kernel is bound by its arithmetic, not by the reading (T231: 1.0 to 2.0 times the int8 kernel's
  * weights a second on the CPUs measured): the caller hands the bytes of the same weights as int8 (cpuReadBytes), so
  * that the CPU is not taken for four times as fast as it is. */
-export const cpuReadBytes = (size, dtype) => (dtype === "ternary" ? size * (GPU_WEIGHT_BYTES / GPU_TERNARY_BYTES) : size);
-export function aloneVerdict({ size, layerWeights, cpu = {}, gpu = {}, usage = USAGE_UNKNOWN }) {
-  const parts = [];
-  if (cpu.GBps > 0 && gpu.stepMs > 0) parts.push([usage.written, size / (cpu.GBps * 1e6), gpu.stepMs]);
-  if (cpu.promptGMACs > 0 && gpu.promptMs > 0) parts.push([usage.prompt, layerWeights / (cpu.promptGMACs * 1e6), gpu.promptMs]);
+export const cpuReadBytes = (size: number, dtype: Dtype) => (dtype === "ternary" ? size * (GPU_WEIGHT_BYTES / GPU_TERNARY_BYTES) : size);
+export function aloneVerdict({ size, layerWeights, cpu = {}, gpu = {}, usage = USAGE_UNKNOWN }:
+  { size: number; layerWeights: number; cpu?: CpuSpeed; gpu?: { stepMs?: number; promptMs?: number }; usage?: Usage }) {
+  const parts: [number, number, number][] = [];
+  if (cpu.GBps! > 0 && gpu.stepMs! > 0) parts.push([usage.written, size / (cpu.GBps! * 1e6), gpu.stepMs!]);
+  if (cpu.promptGMACs! > 0 && gpu.promptMs! > 0) parts.push([usage.prompt, layerWeights / (cpu.promptGMACs! * 1e6), gpu.promptMs!]);
   const onCpu = parts.reduce((sum, [n, ms]) => sum + n * ms, 0), onGpu = parts.reduce((sum, [n, , ms]) => sum + n * ms, 0);
   return { cpuFaster: parts.length > 0 && onCpu < BETTER * onGpu, cpu: onCpu, gpu: onGpu };
 }
 /** T156: whether a verdict the page kept (alone: { key, cpu }, the device's key and /benchmark/'s CPU then) still holds:
  * the same device, browser and shaders (the key, T148's), and the same CPU reading of /benchmark/ (a new run of its
  * CPU section, or none now, asks again) */
-export const aloneHolds = (alone, key, cpu) => Boolean(alone && key && alone.key === key && cpu &&
+export const aloneHolds = (alone: Alone | null | undefined, key: string | undefined, cpu: CpuSpeed | undefined) => Boolean(alone && key && alone.key === key && cpu &&
   alone.cpu?.GBps === cpu.GBps && alone.cpu?.promptGMACs === cpu.promptGMACs);
 
 // T220: where the GPU's device binds a buffer (minStorageBufferOffsetAlignment). gpu.js asks its device for the
@@ -126,7 +158,8 @@ const BINDS_AT = 256;
 // T219: what a model on the GPU alone says where the GPU sampled an id outside the vocabulary (its logits were not
 // finite numbers, most likely: the words of T195's NOT_FINITE, llama2_numpy.py), since no CPU can take the step again
 export const OUTSIDE_VOCABULARY = "The model computed logits on the GPU that are not finite numbers (NaN or infinity), so no token can be drawn: its weights are broken or its numbers overflowed.";
-export function gpuOnlyUnfit(header, dtype, { arch = "llama", head_dim = 0, rotated = null } = {}, adapter, force = {}) {
+export function gpuOnlyUnfit(header: Header, dtype: Dtype, { arch = "llama", head_dim = 0, rotated = null }: GpuForm & { rotated?: Rotated | null } = {},
+  adapter: Adapter | null | undefined, force: Force = {}) {
   const [dim, hidden, , heads, kvHeads] = header;
   const headSize = head_dim || dim / heads, qDim = heads * headSize, kvDim = kvHeads * headSize;
   if (!adapter) return "no GPU adapter here";
@@ -141,7 +174,7 @@ export function gpuOnlyUnfit(header, dtype, { arch = "llama", head_dim = 0, rota
   const binds = Math.min(maxStorageBufferBindingSize, maxBufferSize);
   // (a joined matrix's parts start where the device binds, the scales an eighth of the values' bytes on; T232: a
   // ternary weight is a quarter of a byte)
-  const bytes = (weights) => (ternary ? weights / 4 : weights);
+  const bytes = (weights: number) => (ternary ? weights / 4 : weights);
   const starts = [qDim * dim, (qDim + kvDim) * dim, hidden * dim].map(bytes);
   if (starts.some((values) => values % BINDS_AT || (values / 8) % BINDS_AT)) return "q, k and v or gate and up would not start where this GPU binds a buffer";
   if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden)].some((weights) => bytes(weights) > binds)) return "a layer's matrices are past a buffer of this GPU";
@@ -159,12 +192,13 @@ const FLOW_BYTES = 64 * 2 ** 20, FLOW_STALL_MS = 60000;
  * write(offset, bytes), room(), drained() }: write() puts the bytes outside the holes into memory at base +
  * place(offset), and posts those in them to the worker (a copy each); room() resolves once the worker is no more than
  * FLOW_BYTES behind, drained() once it has all of them; stored is what memory holds (the checkpoint less the holes). */
-export function gpuOnlyWeights({ memory, base, size, tensors, worker }) {
+export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
+  { memory: WebAssembly.Memory; base: number; size: number; tensors: Tensors; worker: { postMessage(message: ToGpu, transfer: Transferable[]): void } }) {
   const holes = gpuHoles(tensors), place = placer(holes);
   const stored = size - holes.reduce((sum, [start, end]) => sum + (end - start), 0);
   const flow = new SharedArrayBuffer(8), taken = new BigInt64Array(flow);
   let sent = 0n;
-  const wait = async (ahead) => {
+  const wait = async (ahead: bigint) => {
     let seen = Atomics.load(taken, 0), moved = performance.now();
     while (sent - seen > ahead) {
       if (Atomics.waitAsync) await Atomics.waitAsync(taken, 0, seen, 1000).value;
@@ -174,14 +208,14 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker }) {
       else if (performance.now() - moved > FLOW_STALL_MS) throw new Error(`the GPU took no weights for ${FLOW_STALL_MS / 1000} s`);
     }
   };
-  const post = (offset, chunk, from, to) => {
+  const post = (offset: number, chunk: Uint8Array, from: number, to: number) => {
     const bytes = chunk.slice(from, to);
     worker.postMessage({ type: "weights", offset: offset + from, bytes }, [bytes.buffer]);
     sent += BigInt(to - from);
   };
   return {
     holes, place, stored, flow,
-    write(offset, chunk) {
+    write(offset: number, chunk: Uint8Array) {
       let at = 0;
       for (const [start, end] of holes) {
         if (end <= offset + at || start >= offset + chunk.length) continue;
@@ -201,19 +235,19 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker }) {
  * matrices, before a byte comes): each matrix's rows and length and, a layer each, where its values and scales start in
  * the checkpoint (the offsets the bytes come with). T210: and the tables' ({ classifier, embedding }, the embedding
  * null where the classifier is it: { rows, n, at: [values, scales] } each, in the checkpoint too) */
-export function gpuOnlyPlan(header, tensors, force = {}, remembered) {
+export function gpuOnlyPlan(header: Header, tensors: Tensors, force: Force = {}, remembered?: Remembered): Opened {
   const layers = header[2];
   // (T232, ternary: a weight is two bits of the values, gpu.js's rowBytes)
-  const matrices = Object.fromEntries(LAYER_MATRICES.map((name) => {
-    const t = tensors[name], [, rows, n] = t.shape, perLayer = rows * n, ternary = t.kind === "ternary";
+  const matrices = Object.fromEntries(LAYER_MATRICES.map((name): [string, Matrix] => {
+    const t = tensors[name]!, [, rows, n] = t.shape, perLayer = rows * n, ternary = t.kind === "ternary";
     return [name, { rows, n, ternary, layers: Array.from({ length: layers }, (_, l) =>
       [t.offset + l * (ternary ? perLayer / 4 : perLayer), t.scales + (l * perLayer / t.group) * 4]) }];
   }));
-  const table = (t) => ({ rows: t.shape[0], n: t.shape[1], ternary: t.kind === "ternary", at: [t.offset, t.scales] });
-  const embedding = tensors.token_embedding_table, classifier = tensors.wcls ?? embedding;
+  const table = (t: Tensor): Table => ({ rows: t.shape[0], n: t.shape[1], ternary: t.kind === "ternary", at: [t.offset, t.scales] });
+  const embedding = tensors.token_embedding_table!, classifier = tensors.wcls ?? embedding;
   const tables = { classifier: table(classifier), embedding: classifier.offset === embedding.offset ? null : table(embedding) };
   return { layers, matrices, tables, force, remembered };
 }
 
-// (T349) what forward.js and the other modules read besides, which was not exported where it was one file
+// (T349) what forward.ts and the other modules read besides, which was not exported where it was one file
 export { GPU_ALONE };

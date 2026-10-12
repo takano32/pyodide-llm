@@ -1,13 +1,29 @@
-// forward/threads.js (T349): the software threads of one engine: a phase's rows shared out among them on the control
-// area of a shared memory (jobs.js has its layout; helper.js is a thread), a thread that stopped given up (T120), and
+// forward/threads.ts (T349): the software threads of one engine: a phase's rows shared out among them on the control
+// area of a shared memory (jobs.ts has its layout; helper.ts is a thread), a thread that stopped given up (T120), and
 // the search for how many of them to use (T93's stage 2b, T199, T223, T239).
-// A module of src/runtime/forward.js; it reads jobs.js and its neighbours by static imports.
+// A module of src/runtime/forward.ts; it reads jobs.ts and its neighbours by static imports.
 
 import { GEN, QUIT, COUNTER, FINISHED, ACTIVE, TOTAL, WAKE, JOBS, JOB, JOB_TABLE, BATCH, ROWS, COUNT, SIZE,
   FIRST } from "../jobs.ts";
-import { lowerMedian, BETTER } from "./choice.js";
+import { lowerMedian, BETTER } from "./choice.ts";
+import type { Job } from "../jobs.ts";
+import type { Control } from "./control.ts";
+import type { ThreadsCompared } from "../contracts/messages.ts";
 
-// ---- the helper threads (stage 2): the control area at the start of a shared memory (jobs.js has its layout)
+// (T368.4, the types) a software thread, started and warm, and what starts one (the worker's spawn(): share is the
+// thread's own word of the control area)
+export type Thread = { terminate?(): void };
+export type Spawn = (start: { memory: WebAssembly.Memory; wide: boolean; plain: WebAssembly.Module; relaxed: WebAssembly.Module | null; share: number }) => Promise<Thread>;
+// a comparison of two counts as the page is told it, and as the log keeps it
+export type Compared = Omit<ThreadsCompared, "type" | "load" | "model">;
+type Logged = { best: number; candidate: number; times: Record<number, number[]>; faster: boolean; whileGpu: boolean };
+// the search under way: the best count so far and the one it is held against, each one's ms a token (null until a
+// candidate is chosen), the step of the comparison, whether the candidate's helpers are still starting
+type Search = { best: number; direction: "down" | "up"; moved: boolean; far: boolean; candidate: number; times: Record<number, number[]> | null; step: number;
+  waiting: boolean; whileGpu: boolean };
+// (the control area's words and the table of the jobs are read where threads run and nowhere else: ctl! and table! below)
+
+// ---- the helper threads (stage 2): the control area at the start of a shared memory (jobs.ts has its layout)
 // how many chunks per thread the rows of a matmul are cut into: whoever is free takes the next one, so a slow core
 // (a little core of a big.LITTLE phone) simply takes fewer. 2 to 16 measured the same (T93); fewer does not steal.
 const CHUNKS_PER_THREAD = 4;
@@ -25,18 +41,20 @@ const CHUNKS_PER_THREAD = 4;
  * T378.2: kernels: the two a thread is started with ({ plain, relaxed }, relaxed null where the model does not run on
  * it): the part knows nothing of the plan. control: the control area (control.js), which is the engine's and the GPU's
  * side's as well. */
-export function softwareThreads({ memory, wide, kernels, spawn, control, runRows, gpuGettingReady }) {
+export function softwareThreads({ memory, wide, kernels, spawn, control, runRows, gpuGettingReady }: {
+  memory: WebAssembly.Memory; wide: boolean; kernels: { plain: WebAssembly.Module; relaxed: WebAssembly.Module | null }; spawn: Spawn | null | undefined;
+  control: Control; runRows: (job: Job, r0: number, r1: number) => unknown; gpuGettingReady: () => boolean }) {
   const { ctl, waitUntil } = control;
   // ---- the matrix multiplications, in phases: the matmuls that read the same input (q, k and v; w1 and w3) go
   // out together. The input is quantized here, once; the rows are computed here and, with helper threads, by
   // whoever takes them. Every row is computed whole by one thread with the same kernel, so the numbers are the same
   // with any number of threads.
   //
-  // A job is what jobs.js says: [kind, eight arguments, rows, count, out stride, a stride, b stride].
+  // A job is what jobs.ts says: [kind, eight arguments, rows, count, out stride, a stride, b stride].
   // (ctl: null on a memory that is not shared, where no thread can be started)
   const shared = ctl && spawn;
-  const table = shared ? new Float64Array(memory.buffer, JOB_TABLE, BATCH * JOB) : null;  // the jobs (jobs.js)
-  const helpers = [];
+  const table = shared ? new Float64Array(memory.buffer, JOB_TABLE, BATCH * JOB) : null;  // the jobs (jobs.ts)
+  const helpers: Thread[] = [];
   let threads = 1, gen = 0;
   // T120: every helper goes, and this engine keeps to one thread from here on. The phase is then run again here:
   // each chunk writes only its own rows, from inputs that no phase changes while it runs, so what the helpers did
@@ -49,44 +67,44 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     search = null;
     chosen = 1;
   }
-  function phase(jobs) {
+  function phase(jobs: number[][]) {
     const alone = () => {
       for (const job of jobs) runRows(job, 0, job[ROWS]);
     };
     if (threads <= 1) return alone();
     // close the previous phase (odd), let every helper still awake leave it, then rewrite the jobs
-    Atomics.store(ctl, GEN, gen + 1);
+    Atomics.store(ctl!, GEN, gen + 1);
     if (!waitUntil(ACTIVE, (seen) => seen === 0)) {
       giveUp();
       return alone();
     }
     let total = 0;
-    ctl[JOBS] = jobs.length;
+    ctl![JOBS] = jobs.length;
     jobs.forEach((job, i) => {
       const at = i * JOB, rows = job[ROWS];
       const quad = job[COUNT] > 1 ? 4 : 1;  // T159: a prompt's chunks in fours of rows, the tiles of matmul_q8r_tile
       const size = quad * Math.ceil(rows / (threads * CHUNKS_PER_THREAD * quad));
-      table.set(job, at);
-      table[at + SIZE] = size;
-      table[at + FIRST] = total;
+      table!.set(job, at);
+      table![at + SIZE] = size;
+      table![at + FIRST] = total;
       total += Math.ceil(rows / size);
     });
-    ctl[TOTAL] = total;
-    Atomics.store(ctl, COUNTER, 0);
-    Atomics.store(ctl, FINISHED, 0);
+    ctl![TOTAL] = total;
+    Atomics.store(ctl!, COUNTER, 0);
+    Atomics.store(ctl!, FINISHED, 0);
     gen += 2;
-    Atomics.store(ctl, GEN, gen);
+    Atomics.store(ctl!, GEN, gen);
     // wake helpers 1.. by name, no more than there are chunks for them and no more than this many threads
     for (let h = 1, wake = Math.min(threads - 1, total - 1); h <= wake; h++) {
-      Atomics.store(ctl, WAKE + h, gen);
-      Atomics.notify(ctl, WAKE + h, 1);
+      Atomics.store(ctl!, WAKE + h, gen);
+      Atomics.notify(ctl!, WAKE + h, 1);
     }
-    for (let c = Atomics.add(ctl, COUNTER, 1); c < total; c = Atomics.add(ctl, COUNTER, 1)) {
+    for (let c = Atomics.add(ctl!, COUNTER, 1); c < total; c = Atomics.add(ctl!, COUNTER, 1)) {
       let j = jobs.length - 1;
-      while (table[j * JOB + FIRST] > c) j--;
-      const at = j * JOB, size = table[at + SIZE], r0 = (c - table[at + FIRST]) * size;
+      while (table![j * JOB + FIRST] > c) j--;
+      const at = j * JOB, size = table![at + SIZE], r0 = (c - table![at + FIRST]) * size;
       runRows(jobs[j], r0, Math.min(r0 + size, jobs[j][ROWS]));
-      Atomics.add(ctl, FINISHED, 1);
+      Atomics.add(ctl!, FINISHED, 1);
     }
     if (!waitUntil(FINISHED, (seen) => seen === total)) {
       giveUp();
@@ -122,28 +140,29 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   // faster; none more where it is 1 or 2. Not on the way up: a visit that remembers 2 would time 8 threads every time
   // (the owner's Android: 0.23 s), and no device's report has a dip above its count (TODO.md's T239 has the table).
   // T240: the search the count in use is owed (unchecked) does not wait for the next generation where the GPU is ready
-  // inside one: it begins at the first token after that (engine.js's forward()), so that a long first answer is not written
+  // inside one: it begins at the first token after that (engine.ts's forward()), so that a long first answer is not written
   // to its end on a count timed beside the GPU's getting ready. Only where the page began a generation: /benchmark/
   // begins none and takes the count the model page remembers as it is (T190).
   const BLOCK = 4;
-  let search = null, chosen = 0, generations = 0, recheckEvery = 0, onChosen = null, onCompared = null, unchecked = false;
+  let search: Search | null = null, chosen = 0, generations = 0, recheckEvery = 0, onChosen: ((count: number) => void) | null | undefined = null,
+    onCompared: ((verdict: Compared) => void) | null | undefined = null, unchecked = false;
   // whether a search from the count in use may begin now (none under way, nothing of the GPU's getting ready beside it)
   const mayRecheck = () => !search && chosen && recheckEvery && !gpuGettingReady();
-  const searchLog = [];  // every comparison: the counts, their times in ms per token, and the verdict
-  function beginSearch(from) {
+  const searchLog: Logged[] = [];  // every comparison: the counts, their times in ms per token, and the verdict
+  function beginSearch(from: number) {
     search = { best: Math.max(1, from), direction: from > 1 ? "down" : "up", moved: false, far: false, candidate: 0, times: null, step: 0, waiting: false, whileGpu: false };
     nextCandidate();
   }
   function nextCandidate() {
     if (lost) return finish();
-    const { best, direction, far } = search;
+    const { best, direction, far } = search!;
     const candidate = direction === "down" ? Math.floor(best / (far ? 4 : 2)) : best * 2;
     if (candidate < 1) return passed();
-    search.candidate = candidate;
-    search.times = { [best]: [], [candidate]: [] };
-    search.step = 0;
+    search!.candidate = candidate;
+    search!.times = { [best]: [], [candidate]: [] };
+    search!.step = 0;
     if (helpers.length < candidate - 1) {
-      search.waiting = true;
+      search!.waiting = true;
       ensureHelpers(candidate).then((complete) => {
         if (!search) return;
         if (complete) search.waiting = false;
@@ -154,8 +173,8 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   // the candidate was not faster than the best, or there is no count there: the next one, or the end (T239: a quarter
   // after half; then twice as many, where the best is still the count the search began from)
   function passed() {
-    if (search.direction === "down" && !search.far) search.far = true;
-    else if (search.direction === "down" && !search.moved) search.direction = "up";
+    if (search!.direction === "down" && !search!.far) search!.far = true;
+    else if (search!.direction === "down" && !search!.moved) search!.direction = "up";
     else return finish();
     nextCandidate();
   }
@@ -168,28 +187,28 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     if (!lost && !unchecked) onChosen?.(chosen);
   }
   // the count for the next token, and whether it is timed
-  function countForToken() {
+  function countForToken(): [number, boolean] {
     if (lost) return [1, false];
     if (!search || search.waiting) return [search ? search.best : threads, false];
     const order = [search.best, search.candidate, search.candidate, search.best];
     const block = Math.floor(search.step / (BLOCK + 1)), inBlock = search.step % (BLOCK + 1);
     return [order[block], inBlock > 0];
   }
-  function recordToken(count, milliseconds, timed) {
+  function recordToken(count: number, milliseconds: number, timed: boolean) {
     if (!search || search.waiting) return;
     if (timed) {
-      search.times[count].push(milliseconds);
+      search.times![count].push(milliseconds);
       if (gpuGettingReady()) search.whileGpu = true;
     }
     search.step += 1;
     if (search.step < 4 * (BLOCK + 1)) return;
     const { best, candidate } = search;
-    const bestMs = lowerMedian(search.times[best]), candidateMs = lowerMedian(search.times[candidate]);
+    const bestMs = lowerMedian(search.times![best]), candidateMs = lowerMedian(search.times![candidate]);
     const faster = candidateMs < bestMs * BETTER;
     const { whileGpu } = search;
-    searchLog.push({ best, candidate, times: search.times, faster, whileGpu });
+    searchLog.push({ best, candidate, times: search.times!, faster, whileGpu });
     // T114: every verdict, so that a device's choice can be followed afterwards (the page writes it to the console)
-    onCompared?.({ best, candidate, bestMs, candidateMs, faster, whileGpu, tokens: search.times[best].length + search.times[candidate].length });
+    onCompared?.({ best, candidate, bestMs, candidateMs, faster, whileGpu, tokens: search.times![best].length + search.times![candidate].length });
     if (!faster) return passed();
     Object.assign(search, { best: candidate, moved: true, far: false });
     nextCandidate();
@@ -198,10 +217,10 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   let stops = 0;  // stopHelpers() counts them: a helper whose start began before one is not kept
   function stopHelpers() {
     stops += 1;
-    Atomics.store(ctl, QUIT, 1);
+    Atomics.store(ctl!, QUIT, 1);
     for (let h = 1; h <= helpers.length; h++) {
-      Atomics.add(ctl, WAKE + h, 2);
-      Atomics.notify(ctl, WAKE + h);
+      Atomics.add(ctl!, WAKE + h, 2);
+      Atomics.notify(ctl!, WAKE + h);
     }
     // QUIT stays set until the next ensureHelpers(): a helper that wakes late must still see it
     helpers.splice(0).forEach((helper) => helper.terminate?.());
@@ -211,12 +230,12 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   // (release(), stopThreads(), giveUp()) is ended at once: the review of T120 found such ones left alive when the
   // visitor chose another model while the search started more, and the next model's engine on the same memory
   // (T96) woke them, with the old engine's kernels (one threw holding a chunk: 10 s still, then one thread)
-  async function ensureHelpers(n) {
+  async function ensureHelpers(n: number) {
     if (lost) return false;  // T120: none again after a helper stopped under this engine
     const since = stops;
-    if (helpers.length < n - 1 && helpers.length === 0) Atomics.store(ctl, QUIT, 0);  // after stopThreads(): a fresh start
+    if (helpers.length < n - 1 && helpers.length === 0) Atomics.store(ctl!, QUIT, 0);  // after stopThreads(): a fresh start
     while (helpers.length < n - 1) {
-      const helper = await spawn({ memory, wide, plain: kernels.plain, relaxed: kernels.relaxed, share: helpers.length + 1 });
+      const helper = await spawn!({ memory, wide, plain: kernels.plain, relaxed: kernels.relaxed, share: helpers.length + 1 });
       if (lost || stops !== since) {
         helper.terminate?.();
         return false;
@@ -229,7 +248,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   // ---- T378.1: what happens to the threads, as the rest of the engine tells it
   /** n threads from the next token on, with no search: the helpers that are missing are started. Resolves to the count
    * in use: 1 where there are no software threads here, or one stopped under this engine (T120) */
-  async function use(n) {
+  async function use(n: number) {
     if (!shared || lost) return (threads = 1);
     search = null;
     if (!(await ensureHelpers(n))) return (threads = 1);
@@ -240,7 +259,8 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
    * which is searched again from on this visit (T223) and then every recheck generations. chose(count) is told the
    * answer, compared(verdict) every comparison on the way. The helpers of the starting count are started before this
    * resolves (to the count in use), so the first tokens do not wait for them */
-  async function find({ from, remembered = 0, recheck = 8, chose, compared }) {
+  async function find({ from, remembered = 0, recheck = 8, chose, compared }:
+    { from: number; remembered?: number; recheck?: number; chose?: (count: number) => void; compared?: (verdict: Compared) => void }) {
     if (!shared || lost) return 1;
     onChosen = chose;
     onCompared = compared;
@@ -264,11 +284,11 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     if (mayRecheck() && (unchecked || generations % recheckEvery === 0)) beginSearch(chosen);
   }
   // A token's turn in the search, between tokenBegan() and tokenEnded(): [the count it runs on, whether it is timed]
-  let turn = null;
+  let turn: [number, boolean] | null = null;
   /** A token is about to run. Whether it is the search's: it then runs on the count the search wants next, and the
    * caller times it and says tokenEnded(its milliseconds). T240: the search the count in use is owed begins here. Only
    * the tokens that make logits are the search's */
-  function tokenBegan(needLogits) {
+  function tokenBegan(needLogits: boolean) {
     if (unchecked && generations && mayRecheck()) beginSearch(chosen);
     if (!search || !needLogits) return false;
     turn = countForToken();
@@ -277,7 +297,7 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
   }
   /** the token tokenBegan() said was the search's took this long: counted, and the count in use is the best so far
    * again (or what the search ended on). Nothing where no such token began */
-  function tokenEnded(milliseconds) {
+  function tokenEnded(milliseconds: number) {
     if (!turn) return;
     const [count, timed] = turn;
     turn = null;
@@ -295,3 +315,5 @@ export function softwareThreads({ memory, wide, kernels, spawn, control, runRows
     get searching() { return search !== null; },
   };
 }
+// (T368.4) what the rest of an engine has of its software threads
+export type Threads = ReturnType<typeof softwareThreads>;

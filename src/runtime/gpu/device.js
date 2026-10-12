@@ -61,7 +61,7 @@ function held(m, buffers) {
 // The most a step of putting the model on the GPU may take: a shader's compilation, a check, the timing, a layer's
 // weights. SwiftShader took up to 90 s to compile llama.cpp's 64×64 tiles on the development machine (T147), a GPU
 // compiles in far less; twice that is a GPU that hangs. The worker then gives the GPU up (the prompt stays on the
-// CPU), and says { type: "progress" } after every step meanwhile (forward.js gives up a worker that says nothing for
+// CPU), and says { type: "progress" } after every step meanwhile (forward.ts gives up a worker that says nothing for
 // longer than this: one the browser ended)
 const STEP_MS = 180000;
 function within(promise, what) {
@@ -131,7 +131,7 @@ function unusable(reason) {
 }
 
 // every buffer and the device let go (T94: a model changed for another leaves nothing on the GPU), and this worker ends.
-// T205: it says { type: "ended" } first, for src/runtime/forward/engine.js's release() to read the next model after it. Every way out of
+// T205: it says { type: "ended" } first, for src/runtime/forward/engine.ts's release() to read the next model after it. Every way out of
 // start() comes here (a stop in the middle of it at its next step), and a stop before or after start() at once
 function end() {
   if (model) {

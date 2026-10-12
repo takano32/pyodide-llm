@@ -152,7 +152,7 @@ function grow(m, needed) {
 function roomFor(m, positions) {
   if (positions > m.block.cache.capacity) grow(m, positions);
 }
-// T152: the keys and values of positions from to pos - 1 up from forward.js's cache (cache: its addresses of the keys
+// T152: the keys and values of positions from to pos - 1 up from forward.ts's cache (cache: its addresses of the keys
 // and the values in the shared memory, its capacity and the bytes of a position; half: float16 as here, else float32,
 // narrowed on the way up: T160, a grouped-query model's), before the steps of a generation read them
 function keysIn(m, cache, from, pos) {
@@ -167,7 +167,7 @@ function keysIn(m, cache, from, pos) {
 }
 
 // T148: what a whole block takes here, from the submission to its keys and values read back, for 16 and for 64 tokens
-// (plan.batch) at position 0 of the GPU's own cache (which holds nothing of forward.js's yet): forward.js weighs a
+// (plan.batch) at position 0 of the GPU's own cache (which holds nothing of forward.ts's yet): forward.ts weighs a
 // block of a prompt on the GPU against the same tokens on the CPU by it (a line through the two, scaled by the blocks
 // it then times itself). The two in turn, BLOCK_ROUNDS rounds after one of each to warm up (the pipelines' first
 // dispatches, the weights' first reads), the median of each (a device that warms up or is loaded meanwhile falls on
@@ -191,13 +191,13 @@ async function timeBlocks(m) {
 }
 
 // A block of count tokens at pos through the layers, its keys and values into plan.staging where wanted() still says
-// so. timing (T148, timeBlocks): rows and angles of zeros instead of forward.js's, and nothing written back
+// so. timing (T148, timeBlocks): rows and angles of zeros instead of forward.ts's, and nothing written back
 async function block(m, count, pos, wanted, timing = false, tokens) {
   const { device, plan } = m, half = plan.headSize / 2;
   // (T378.4: this module's record taken apart once: the layers' loop below reads locals. The cache after grow())
   const { norm, headNorm, add, rope, activation, quantize, x, angles, step, rows, turns, ids, activationGroup, quantizeXb, quantizeAttention,
     quantizeFfn, quantizeGate, embedRows, embedGroups, layers } = m.block;
-  // the rows forward.js embedded (dense), and the angles of their positions (the tables forward.js has); views of just
+  // the rows forward.ts embedded (dense), and the angles of their positions (the tables forward.ts has); views of just
   // those floats (T155: not a view of the whole of a 64-bit memory of some GB for every block)
   const floats = (address, n) => new Float32Array(m.memory.buffer, address, n);
   // (T210: on the GPU alone, the tokens themselves, embedded here; token 0 where it is timed)
@@ -235,7 +235,7 @@ async function block(m, count, pos, wanted, timing = false, tokens) {
     multiplied(layer.q);
     multiplied(layer.k);
     multiplied(layer.v);
-    // T153: as the CPU has it (forward.js), the biases, then the norms of the heads, then RoPE
+    // T153: as the CPU has it (forward.ts), the biases, then the norms of the heads, then RoPE
     layer.biases.forEach(biased);
     for (const head of layer.headNorms) dispatch(pass, headNorm, head.group, head.heads, count);
     dispatch(pass, rope, cache.rope[l], count);

@@ -1,14 +1,40 @@
-// forward/memory.js (T349): the memory a model takes: what the forward pass puts after a checkpoint (footprint, with
+// forward/memory.ts (T349): the memory a model takes: what the forward pass puts after a checkpoint (footprint, with
 // the frame of a token and the states of the layers that keep one), the type of the keys and values (keysInHalf),
 // whether it fits a 32-bit or a 64-bit memory, and the WebAssembly memory itself (weightsMemory).
-// A module of src/runtime/forward.js, which exports its names as before.
+// A module of src/runtime/forward.ts, which exports its names as before.
 
 import { CONTROL_BYTES, BATCH } from "../jobs.ts";
-import { GPU_BLOCK } from "./choice.js";
+import { GPU_BLOCK } from "./choice.ts";
+import type { Arch, Convolution, Dtype, Linear, Rotated } from "../contracts/form.ts";
+
+// (T368.4, the types) a checkpoint's header: the 7 ints of the legacy format
+export type Header = number[];
+// A memory weightsMemory() made: a shared one says the pages it may grow to, and whether the browser gave fewer than
+// were asked for (T96)
+export type Memory = WebAssembly.Memory & { maximum?: number; limited?: boolean };
+// what a 64-bit memory is made with (T101), which the WebAssembly types of TypeScript's lib do not know yet
+type Wide = { initial: bigint; maximum?: bigint; address: "i64" };
+// What sizes the forward pass besides the header (footprint(), keysInHalf()): the dtype and the form's part of it, and
+// how the engine is to run (footprint() below says each)
+export type Footprint = {
+  dtype?: Dtype;
+  arch?: Arch;
+  int8?: boolean;
+  relaxed?: boolean;
+  halfKV?: boolean;
+  shared?: boolean;
+  outliers?: number;
+  head_dim?: number;
+  gpu?: boolean;
+  direct?: boolean;
+  linear?: Linear | null;
+  rotated?: Rotated | null;
+  convolution?: Convolution | null;
+};
 
 const PAGE = 65536;
 
-const align = (n, to = 64) => Math.ceil(n / to) * to;
+const align = (n: number, to = 64) => Math.ceil(n / to) * to;
 
 // T101: a 64-bit memory (Memory64) holds more than 4 GiB. Chrome and Firefox have it, shipping Safari not. Its sizes
 // are BigInt; the pages of a 32-bit memory stop at 65536, those of a 64-bit one here at 262144 (16 GiB, Chrome's).
@@ -16,7 +42,7 @@ const PAGES_32 = 65536, PAGES_64 = 262144;
 /** Whether this browser makes 64-bit memories. */
 export function memory64() {
   try {
-    new WebAssembly.Memory({ initial: 1n, address: "i64" });
+    new WebAssembly.Memory({ initial: 1n, address: "i64" } satisfies Wide as unknown as WebAssembly.MemoryDescriptor);
     return true;
   } catch {
     return false;
@@ -32,7 +58,7 @@ export function memory64() {
 /** for every layer [whether it keeps a state in place of keys and values (a linear-attention layer, a convolution
  * layer), its place among the layers of its kind]: where its tensors are in the file's stacks, and its keys and values
  * or its state here (llama2_numpy.layer_slots) */
-const layerSlots = (layers, linear, convolution = null) => {
+const layerSlots = (layers: number, linear: Linear | null, convolution: Convolution | null = null): [boolean, number][] => {
   const counts = [0, 0];
   return Array.from({ length: layers }, (_, l) => {
     const kind = (convolution ? convolution.layers[l] === "c" : linear && (l + 1) % linear.every !== 0) ? 1 : 0;
@@ -40,23 +66,23 @@ const layerSlots = (layers, linear, convolution = null) => {
   });
 };
 /** the layers that attend over all positions (and keep keys and values): all of them without linear or convolution ones */
-const attendingLayers = (layers, linear, convolution = null) =>
+const attendingLayers = (layers: number, linear: Linear | null, convolution: Convolution | null = null) =>
   layerSlots(layers, linear, convolution).filter(([stateful]) => !stateful).length;
 /** of a linear-attention layer: the values the convolution runs over (q, k and v), those of q or of k, those of v */
-const linearWidths = (linear) => {
+const linearWidths = (linear: Linear) => {
   const keys = linear.key_heads * linear.key_dim, read = linear.value_heads * linear.value_dim;
   return { mixed: 2 * keys + read, keys, read };
 };
 /** the bytes of the state of the linear-attention layers: a matrix (key_dim, value_dim) a value head, twice (the
  * delta rule reads one and writes the other, so that a phase run again computes the same, T120), and the last conv
  * tokens' q, k and v before the convolution; and the two weights the l2 norm of a head of q and of k is taken with */
-const linearStateBytes = (layers, linear) => {
+const linearStateBytes = (layers: number, linear: Linear) => {
   const lines = layers - attendingLayers(layers, linear), { mixed } = linearWidths(linear);
   return lines * (2 * linear.value_heads * linear.key_dim * linear.value_dim + linear.conv * mixed) * 4 + 2 * align(linear.key_dim * 4);
 };
 /** T260: the bytes of the state of an LFM2's convolution layers: the last taps tokens' values before the convolution
  * (dim of them a token; the token under way is the last) */
-const convolutionStateBytes = (layers, dim, convolution) =>
+const convolutionStateBytes = (layers: number, dim: number, convolution: Convolution) =>
   (layers - attendingLayers(layers, null, convolution)) * convolution.taps * dim * 4;
 
 // The arrays of one token's frame (see createForward), in their order, and the bytes of each. qDim: the width of q
@@ -68,21 +94,25 @@ const convolutionStateBytes = (layers, dim, convolution) =>
 // ternary (T231): after the scales of the activations' groups of 32 (xs) come as many int32, minus each group's sum
 // (kernels' interleave)
 // T260, an LFM2: what a convolution layer's matrix in gives (mixed: the gates B and C and what B multiplies, 3 dim)
-const frameArrays = (dim, hidden, kvDim, qDim = dim, linear = null, rotated = null, ternary = false, convolution = null) => {
+// (rotated: the form's rotated basis or the plan's block of one: whether there is one is all that is read. Framed: an
+// array of a token's frame, its name and its bytes)
+type Framed = [string, number];
+const frameArrays = (dim: number, hidden: number, kvDim: number, qDim = dim, linear: Linear | null = null, rotated: Rotated | number | null = null, ternary = false,
+  convolution: Convolution | null = null): Framed[] => {
   const { mixed = 0, read = 0 } = linear ? linearWidths(linear) : {};
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QD = Math.max(dim, qDim, read) * 4, XQ = Math.max(dim, hidden, qDim, read);
   return [["x", D], ["xb", QD], ["xb2", D], ["q", qDim * 4], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD],
     ["hb2", HD], ["xq", XQ], ["xs", Math.ceil(XQ / 32) * (ternary ? 8 : 4)],
     ...(linear ? [["gate", qDim * 4], ["mixed", mixed * 4], ["conv", mixed * 4], ["z", read * 4],
-      ["work", (2 * linear.value_heads + read) * 4]] : []),
-    ...(convolution ? [["mixed", 3 * dim * 4]] : []),
-    ...(rotated ? [["xr", XQ * 4]] : [])];
+      ["work", (2 * linear.value_heads + read) * 4]] satisfies Framed[] : []),
+    ...(convolution ? [["mixed", 3 * dim * 4]] satisfies Framed[] : []),
+    ...(rotated ? [["xr", XQ * 4]] satisfies Framed[] : [])];
 };
 /** T237: the widths of what a model's matrices read (llama2_numpy.rotated_widths): the residual stream, an
  * attention's output (and a linear-attention layer's), the FFN's inside. A rotated basis has signs for each. */
-const rotatedWidths = (dim, hidden, qDim, linear) =>
+const rotatedWidths = (dim: number, hidden: number, qDim: number, linear: Linear | null) =>
   [...new Set([dim, qDim, hidden, ...(linear ? [linearWidths(linear).read] : [])])];
-const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(bytes), 0);
+const frameBytes = (arrays: Framed[]) => arrays.reduce((size, [, bytes]) => size + align(bytes), 0);
 
 /** T115: the most bytes the forward pass puts after a checkpoint of size bytes: at the end of its whole context,
  * the KV cache grown to it in place (T130). An upper bound, a little above what createForward allocates
@@ -99,9 +129,9 @@ const frameBytes = (arrays) => arrays.reduce((size, [, bytes]) => size + align(b
  * linear-attention layers of a Qwen3.5, which keep a state of a fixed size and no keys and values. rotated (T237):
  * the form's, a rotated basis (its signs for every width, and a place in the frame for a rotated input). convolution
  * (T260): the form's, the convolution layers of an LFM2, which keep the last taps tokens and no keys and values. */
-export function footprint(header, size, { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false,
+export function footprint(header: Header, size: number, { dtype = "float32", arch = "llama", int8 = true, relaxed = true, halfKV = false,
   shared = false, outliers = 8, head_dim = 0, gpu = false, direct = false, linear = null, rotated = null,
-  convolution = null } = {}) {
+  convolution = null }: Footprint = {}) {
   const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
   const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads, kvDim = kvHeads * headSize, qDim = heads * headSize;
   const ternary = dtype === "ternary", quantized = dtype === "int8" || dtype === "int6" || ternary, six = dtype === "int6";
@@ -162,22 +192,22 @@ export function footprint(header, size, { dtype = "float32", arch = "llama", int
 }
 /** T160: whether the keys and values of a model that may keep them in float16 (footprint's halfKV) do, as footprint
  * counts them. The worker hands this to createForward: what it sized the memory for. */
-export const keysInHalf = (header, size, options = {}) =>
+export const keysInHalf = (header: Header, size: number, options: Footprint = {}) =>
   Boolean(options.halfKV) && footprint(header, size, options) < footprint(header, size, { ...options, halfKV: false });
 
 /** Whether a checkpoint of size bytes and the forward pass after it (footprint) pass the 4 GiB of a 32-bit memory.
  * A model that fits stays there: a 64-bit memory runs the kernels about a tenth slower (T101, measured). */
-export const needsWide = (size, after) => CONTROL_BYTES + size + after > PAGES_32 * PAGE;
+export const needsWide = (size: number, after: number) => CONTROL_BYTES + size + after > PAGES_32 * PAGE;
 /** T129 (7): whether they pass even a 64-bit memory (16 GiB here, Chrome's): no memory holds such a model. */
-export const pastWide = (size, after) => CONTROL_BYTES + size + after > PAGES_64 * PAGE;
+export const pastWide = (size: number, after: number) => CONTROL_BYTES + size + after > PAGES_64 * PAGE;
 /** T133: the dtype of a model converted with none asked for, from its int8 size and what the forward pass puts after
  * it (footprint, as int8): int8 where that fits a 32-bit memory, or where the browser has a 64-bit one (wide: Chrome
  * and Firefox; about a tenth slower, against six bits' half the speed and +1.4 to 1.7% of perplexity, T98); else six
  * bits (7/9 of int8's memory: Safari). */
-export const automaticDtype = (int8, after, wide) => (wide || !needsWide(int8, after) ? "int8" : "int6");
+export const automaticDtype = (int8: number, after: number, wide: boolean) => (wide || !needsWide(int8, after) ? "int8" : "int6");
 /** memory.grow(pages), in the number type of the memory (wide: 64-bit) */
-export function growMemory(memory, pages, wide) {
-  memory.grow(wide ? BigInt(pages) : pages);
+export function growMemory(memory: WebAssembly.Memory, pages: number, wide: boolean) {
+  memory.grow((wide ? BigInt(pages) : pages) as number);
 }
 
 /** A memory with room for a checkpoint of size bytes at base; the forward pass allocates after it. shared (stage 2):
@@ -188,11 +218,12 @@ export function growMemory(memory, pages, wide) {
  * memory for the models that fit under that maximum (T96): a browser reserves address space for each WebAssembly
  * memory whatever its maximum, and Chromium refused the third one of a page. spare (bytes): what is asked for besides
  * the model, the gigabyte for the next one unless it is said (T242: no model follows in /benchmark/'s worker). */
-export function weightsMemory(size, { shared = false, maximum, wide = false, after = 3 * size, spare = 2 ** 30 } = {}) {
+export function weightsMemory(size: number, { shared = false, maximum, wide = false, after = 3 * size, spare = 2 ** 30 }:
+  { shared?: boolean; maximum?: number; wide?: boolean; after?: number; spare?: number } = {}): { memory: Memory; base: number } {
   const base = shared ? CONTROL_BYTES : 64;
   const initial = Math.ceil((base + size) / PAGE) + 1;
   // a 64-bit memory (T101) says its sizes in BigInt
-  const describe = (pages) => (wide ? { initial: BigInt(initial), ...(pages ? { maximum: BigInt(pages) } : {}), address: "i64" }
+  const describe = (pages?: number): WebAssembly.MemoryDescriptor => (wide ? { initial: BigInt(initial), ...(pages ? { maximum: BigInt(pages) } : {}), address: "i64" } satisfies Wide as unknown as WebAssembly.MemoryDescriptor
     : { initial, ...(pages ? { maximum: pages } : {}) });
   if (!shared) return { memory: new WebAssembly.Memory(describe()), base };
   // what the model needs, and a gigabyte for the next one to fit as well (T96); less if the browser refuses, never more
@@ -201,7 +232,7 @@ export function weightsMemory(size, { shared = false, maximum, wide = false, aft
   const most = maximum ?? Math.min(wide ? PAGES_64 : PAGES_32, Math.ceil((base + size + after + spare) / PAGE));
   for (const pages of [most, ...[initial + 16384, initial + 4096].filter((fewer) => fewer < most)]) {
     try {
-      const memory = new WebAssembly.Memory({ ...describe(Math.max(pages, initial)), shared: true });
+      const memory: Memory = new WebAssembly.Memory({ ...describe(Math.max(pages, initial)), shared: true });
       memory.maximum = Math.max(pages, initial);  // the worker keeps the memory as long as the next model fits (T96)
       memory.limited = pages < most;  // the browser gave less than was asked for: a new memory would not get more
       return { memory, base };
@@ -212,9 +243,9 @@ export function weightsMemory(size, { shared = false, maximum, wide = false, aft
   throw new Error("This browser gives no shared WebAssembly memory for this model.");
 }
 
-// (T349) what forward.js and the other modules read besides, which was not exported where it was one file
+// (T349) what forward.ts and the other modules read besides, which was not exported where it was one file
 // half to float, exactly (the same as NumPy's astype(float32))
-function halfToFloat(h) {
+function halfToFloat(h: number) {
   const sign = h & 0x8000 ? -1 : 1, exponent = (h >> 10) & 0x1f, fraction = h & 0x3ff;
   if (exponent === 0) return sign * fraction * 2 ** -24;
   if (exponent === 31) return fraction ? NaN : sign * Infinity;

@@ -1,8 +1,8 @@
-// contracts/plan.ts (T368.2): the plan Python hands forward.js, what a model is to an engine outside Python. Types
+// contracts/plan.ts (T368.2): the plan Python hands forward.ts, what a model is to an engine outside Python. Types
 // alone: nothing of this file is in what a browser gets (it is read with `import type`).
 //
 // Python makes it in one place (src/python/engine/plan.py's forward_plan(), a dict; Llama(external=) hands it to
-// start(plan), which is forward.js's external()), and createForward() (src/runtime/forward/engine.js) reads it. The two
+// start(plan), which is forward.ts's external()), and createForward() (src/runtime/forward/engine.ts) reads it. The two
 // ends are in two languages, so no compiler holds them together: tests/plan-keys-check.mjs does, and it holds the keys
 // written here to Python's too (a key added or dropped on one side alone fails the light suite).
 //
@@ -28,6 +28,9 @@ export type TensorName =
   | "wg" | "wqkv" | "wz" | "wb" | "wa" | "conv" | "dt_bias" | "decay" | "delta_norm"
   // LFM2: a convolution layer's two matrices (T260; its taps are under conv too)
   | "win" | "wout";
+
+// where every tensor of a model is: the plan's, and what Python's external_tensors() places before a model is built
+export type Tensors = Partial<Record<TensorName, Tensor>>;
 
 // The few arrays Python computes, as bytes: the RoPE tables of a file that has none of its own (float32), and the
 // signs of a rotated basis for every width a matrix reads (T237)
@@ -64,7 +67,7 @@ export type Plan = {
   // the int8 kernels compute on the matrices as they are
   int8: boolean;
   relaxed: boolean;
-  tensors: Partial<Record<TensorName, Tensor>>;
+  tensors: Tensors;
   derived: Derived;
   // T92: the channels of the classifier's input that go as float32
   outliers: number[];
@@ -76,7 +79,7 @@ export type Plan = {
   rotated: number;
   // T110: the keys and values may be float16
   half_kv: boolean;
-  // T359.5 (forward.js reads these two from T375)
+  // T359.5 (forward.ts reads these two from T375)
   layers: Layer[];
   widths: Widths;
 };

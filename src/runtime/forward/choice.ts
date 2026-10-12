@@ -1,7 +1,7 @@
-// forward/choice.js (T349): how a prompt's blocks and a generation's steps are given to the GPU or kept on the CPU:
+// forward/choice.ts (T349): how a prompt's blocks and a generation's steps are given to the GPU or kept on the CPU:
 // the sizes of what the GPU takes at once, the times of either side as they are measured (promptTimes, tokenTimes),
 // the margin one must be faster by (BETTER), and what the status line says of it (gpuLine).
-// A module of src/runtime/forward.js, which exports its names as before.
+// A module of src/runtime/forward.ts, which exports its names as before.
 
 // T205: the most release() waits for the GPU's worker to say it let go of its buffers and its device ("ended"), before
 // the next model is read; one that says nothing by then (a compilation that does not return) is terminated (worker/weights.ts
@@ -24,9 +24,9 @@ const TOKEN_RECHECK = 4, STOPS_MOST = 8;
 // T148 (the review): the lower of the two middles. A block is slowed by what else runs (the first after a pause, a
 // page in the background), never sped up: of two, the faster says the device, and one slow first block does not
 // move a verdict
-const lowerMedian = (xs) => [...xs].sort((a, b) => a - b)[(xs.length - 1) >> 1];
+const lowerMedian = (xs: number[]) => [...xs].sort((a, b) => a - b)[(xs.length - 1) >> 1];
 
-// T148: how long a block of a prompt takes on either side, from which forward.js gives each block to the GPU or keeps
+// T148: how long a block of a prompt takes on either side, from which forward.ts gives each block to the GPU or keeps
 // it on the CPU (AGENTS.md's policy 9: the GPU by default, the CPU where this device runs it faster). Measured, never
 // written down (the development machine's numbers are no visitor's):
 //   - the CPU: ms a token of the blocks of BATCH it runs of real prompts (no work only to time it), per number of
@@ -41,49 +41,52 @@ const lowerMedian = (xs) => [...xs].sort((a, b) => a - b)[(xs.length - 1) >> 1];
 // never), and so does a device whose GPU is slower. The threshold is the smallest count the GPU is faster for.
 // (BETTER is also the margin of the threads' search: faster by more than the noise of a run)
 const KEEP = 5, TIMED = 2, BETTER = 0.95;
+// (T368.4) a block the GPU's worker timed as it started; and either side's ms with whether the GPU takes it
+export type Block = { count: number; ms: number };
+export type Times = { cpu: number; gpu: number; faster: boolean };
 export function promptTimes() {
-  const cpu = new Map(), ratios = [];
-  let line = null;
-  const keep = (list, value) => {
+  const cpu = new Map<number, number[]>(), ratios: number[] = [];
+  let line: { fixed: number; perToken: number } | null = null;
+  const keep = (list: number[], value: number) => {
     list.push(value);
     if (list.length > KEEP) list.shift();
   };
-  const onLine = (count) => line.fixed + line.perToken * count;
+  const onLine = (count: number) => line!.fixed + line!.perToken * count;
   return {
     /** gpu.js's blocks timed as it started: [{ count, ms }], the smaller first */
-    started(blocks) {
+    started(blocks: Block[]) {
       const [a, b = a] = blocks;
       const perToken = b.count > a.count ? Math.max(0, (b.ms - a.ms) / (b.count - a.count)) : 0;
       line = { fixed: Math.max(0, a.ms - perToken * a.count), perToken };
     },
     /** a block of BATCH the CPU ran on threads threads: ms a token */
-    cpu(threads, msPerToken) {
+    cpu(threads: number, msPerToken: number) {
       if (!cpu.has(threads)) cpu.set(threads, []);
-      keep(cpu.get(threads), msPerToken);
+      keep(cpu.get(threads)!, msPerToken);
     },
     /** a block of count tokens the GPU ran, in ms */
-    gpu(count, ms) {
+    gpu(count: number, ms: number) {
       if (line && onLine(count) > 0) keep(ratios, ms / onLine(count));
     },
     /** { cpu, gpu, faster }: the ms of count tokens on either, on threads threads, and whether the GPU takes them;
      * null where the CPU is not timed yet (or the GPU has not started) */
-    of(count, threads) {
+    of(count: number, threads: number): Times | null {
       const times = cpu.get(threads);
       if (!line || !times || times.length < TIMED) return null;
       const onCpu = lowerMedian(times) * count, onGpu = onLine(count) * (ratios.length ? lowerMedian(ratios) : 1);
       return { cpu: onCpu, gpu: onGpu, faster: onGpu < BETTER * onCpu };
     },
     /** the fewest tokens of a block (up to most) the GPU takes, most + 1 where none; null where of() is */
-    threshold(most, threads) {
+    threshold(most: number, threads: number) {
       if (!this.of(most, threads)) return null;
-      for (let count = 1; count <= most; count++) if (this.of(count, threads).faster) return count;
+      for (let count = 1; count <= most; count++) if (this.of(count, threads)!.faster) return count;
       return most + 1;
     },
   };
 }
 
 // T152: how long a step of a generation (the forward pass of the token fed, and the sampling of the next) takes on
-// either side, from which forward.js gives the steps to the GPU or keeps them on the CPU, as promptTimes does a
+// either side, from which forward.ts gives the steps to the GPU or keeps them on the CPU, as promptTimes does a
 // prompt's blocks: measured, never written down.
 //   - the CPU: ms of the forward pass of a token with its logits, per number of threads, the lower median of the last
 //     KEEP, none until TIMED (the sampling after it is Python's, on the kernels: not in it, so the CPU looks a little
@@ -92,24 +95,24 @@ export function promptTimes() {
 //     from the request to its answer), the lower median of the last KEEP.
 // The steps go to the GPU where a step takes less than BETTER of the CPU's.
 export function tokenTimes() {
-  const cpu = new Map(), gpu = [];
-  const keep = (list, value) => {
+  const cpu = new Map<number, number[]>(), gpu: number[] = [];
+  const keep = (list: number[], value: number) => {
     list.push(value);
     if (list.length > KEEP) list.shift();
   };
   return {
     /** a token's forward pass on the CPU on threads threads, in ms */
-    cpu(threads, ms) {
+    cpu(threads: number, ms: number) {
       if (!cpu.has(threads)) cpu.set(threads, []);
-      keep(cpu.get(threads), ms);
+      keep(cpu.get(threads)!, ms);
     },
     /** ms a step of a run on the GPU */
-    gpu(ms) {
+    gpu(ms: number) {
       keep(gpu, ms);
     },
     /** { cpu, gpu, faster }: ms a step on either, on threads threads, and whether the GPU takes the steps; null where
      * either is not timed yet */
-    of(threads) {
+    of(threads: number): Times | null {
       const times = cpu.get(threads);
       if (!gpu.length || !times || times.length < TIMED) return null;
       const onCpu = lowerMedian(times), onGpu = lowerMedian(gpu);
@@ -127,7 +130,10 @@ export const PROMPTS_GPU = "prompts on WebGPU";
 export const PROMPTS_CPU = "prompts on the CPU (faster here than WebGPU)";
 const ANSWERS = { gpu: "answers on WebGPU", cpu: "answers on the CPU (faster here)", why: "answers on the CPU",
   untimed: "answers on WebGPU where it is faster than the CPU" };
-export function gpuLine(prompts, answers) {
+// (T368.4) what the status line's two halves are: the prompts' line (null: nothing to say yet; undefined: no GPU for
+// this engine), and the answers' word
+export type Answers = keyof typeof ANSWERS;
+export function gpuLine(prompts: string | null | undefined, answers: Answers | null) {
   if (!prompts || !answers) return prompts;
   if (prompts === PROMPTS_UNTIMED && answers === "untimed") return "WebGPU where it is faster than the CPU";
   if (prompts === PROMPTS_GPU && answers === "gpu") return "prompts and answers on WebGPU";
@@ -135,5 +141,5 @@ export function gpuLine(prompts, answers) {
   return `${prompts}, ${ANSWERS[answers]}`;
 }
 
-// (T349) what forward.js and the other modules read besides, which was not exported where it was one file
+// (T349) what forward.ts and the other modules read besides, which was not exported where it was one file
 export { GPU_RECHECK, TOKEN_RECHECK, STOPS_MOST, lowerMedian, BETTER };
