@@ -20,6 +20,9 @@
 //   - a name that a module of src/bench/ uses and neither declares nor imports: those are JavaScript (T480), which tsc
 //     reads for its shapes and does not check, and the tables are functions (a name that is nowhere is a
 //     ReferenceError only when that table is written).
+//   - (T379.2, of T379.1's review) the packing a step of this worker asks fusedDp4aMatVec for: "int8", written out.
+//     The benchmark's matrices are int8, and "ternary" is as good a packing to tsc: the worker would bind int8 weights
+//     to a text that reads ternary codes, and its steps run only where there is a GPU;
 // What it does not see: an await before the steps' onmessage is set (the import below waits for the module whole).
 // The parser is @babel/parser, which Astro's packages bring.
 import assert from "node:assert/strict";
@@ -74,7 +77,23 @@ for (const [name, program] of programs) {
   });
 }
 assert.deepEqual(fields.filter((field) => !used.has(field)), [], "fields of shared that nothing reads or sets");
+// (T379.2) the benchmark's DP4A matrix of a token is the int8 one, said at every call
+let asked = 0, named = 0;
+for (const [name, program] of programs) {
+  walk(program, (node) => {
+    if (node.type !== "CallExpression" || node.callee.type !== "MemberExpression" || node.callee.property.name !== "fusedDp4aMatVec") return;
+    const given = node.arguments[0];
+    const weights = given?.type === "ObjectExpression" ? given.properties.find((property) => property.type === "ObjectProperty" && !property.computed && (property.key.name ?? property.key.value) === "weights") : null;
+    assert.ok(weights && weights.value.type === "StringLiteral" && weights.value.value === "int8",
+      `${name} calls fusedDp4aMatVec without weights: "int8" written out: the benchmark's matrices are int8 (a ternary text would read them as codes, and nothing here runs it)`);
+    asked += 1;
+  });
+  walk(program, (node) => { named += node.type === "Identifier" && node.name === "fusedDp4aMatVec" ? 1 : 0; });
+}
+assert.equal(named, asked, "/benchmark/'s worker names fusedDp4aMatVec otherwise than as <the shaders>.fusedDp4aMatVec({ … }): this check reads its calls");
+assert.ok(asked >= 4, `the calls of fusedDp4aMatVec in /benchmark/'s worker: ${asked} found (4 when this was written)`);
 console.log(`bench-modules-check: the ${fields.length} fields of shared are the ones the steps use (${said} times)`);
+console.log(`bench-modules-check: ${asked} calls of fusedDp4aMatVec, each for int8 weights`);
 
 // ---- T368.7: the workers are TypeScript, and tsc holds a message one posts to the page to the type the message says
 // it is: postMessage({ … } satisfies Alive). Every message of the section's workers says one of contracts/benchmark.ts
