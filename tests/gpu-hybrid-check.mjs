@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { loadPyodide } from "pyodide";
+import { workers } from "./fakes/worker.mjs";
 import { built, placeKernels, placePython, runtime, runtimeUrl, treeOf } from "./tree.mjs";
 
 const root = new URL("../", import.meta.url).pathname;
@@ -46,11 +47,7 @@ const { memory, base } = weightsMemory(checkpoint.length, { shared: true });
 new Uint8Array(memory.buffer, base, checkpoint.length).set(checkpoint);
 
 // a GPU's worker that is asked for and never answers
-let spawned = 0;
-const gpu = () => {
-  spawned++;
-  return { postMessage() {}, set onmessage(handler) {}, set onerror(handler) {}, terminate() {} };
-};
+const { factory: gpu, made: gpus } = workers();
 const outside = external({ memory, base, size: checkpoint.length, kernels, gpu });
 py.globals.set("OUTSIDE", outside);
 py.globals.set("OPTIONS", py.toPy(options));
@@ -59,7 +56,7 @@ llama = Llama(None, open("tokenizer.bin", "rb").read(), kernels="simdkernel.so",
 // (a GPU that was started would never say it is ready: do not wait for it for ever)
 const status = await Promise.race([outside.engine.gpu, new Promise((resolve) => setTimeout(() => resolve("no answer in 3 s"), 3000))]);
 const failures = [];
-if (spawned !== 0) failures.push(`the GPU's worker was started ${spawned} time(s) for ${model}`);
+if (gpus.length !== 0) failures.push(`the GPU's worker was started ${gpus.length} time(s) for ${model}`);
 if (!reason.test(status ?? "")) failures.push(`the status line says "${status}", not why the GPU is not used`);
 if (!reason.test(outside.engine.gpuStatus ?? "")) failures.push(`gpuStatus is "${outside.engine.gpuStatus}"`);
 await outside.engine.release();

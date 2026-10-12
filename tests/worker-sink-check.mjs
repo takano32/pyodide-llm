@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
+import { workers as workersStandIn } from "./fakes/worker.mjs";
 import { python, runtimeUrl } from "./tree.mjs";
 const forward = await import(runtimeUrl("forward.js"));
 import { runWorker } from "./worker-source.mjs";
@@ -253,32 +254,12 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     end += int8 ? count + count / 8 : count * 4;
   }
   const size = end;
-  // the GPU's worker (gpu.js): what it was told, and "ended" a moment after a stop, as its end() says it
-  const workers = [];
-  class Worker {
-    constructor() {
-      Object.assign(this, { heard: [], errors: [], told: [], terminated: false, onerror: null });
-      workers.push(this);
-    }
-    addEventListener(type, listener) {
-      if (type === "message") this.heard.push(listener);
-      if (type === "error") this.errors.push(listener);
-    }
-    // (T377) the browser says the worker's script did not arrive, or that it threw: to every listener and to onerror
-    fail(message) {
-      const event = { message };
-      this.errors.forEach((listener) => listener(event));
-      this.onerror?.(event);
-    }
-    postMessage(data) {
-      this.told.push(data.type);
-      if (data.type === "open") this.flow = data.flow;
-      if (data.type === "stop") setTimeout(() => this.heard.forEach((listener) => listener({ data: { type: "ended" } })), 5);
-    }
-    terminate() {
-      this.terminated = true;
-    }
-  }
+  // the GPU's worker (gpu.js; tests/fakes/worker.mjs): what it was told, and "ended" a moment after a stop, as its end()
+  // says it. (T377) worker.fail({ message }): the browser says the worker's script did not arrive, or that it threw
+  const { Worker, made: workers } = workersStandIn({ answer(data, worker) {
+    if (data.type === "stop") setTimeout(() => worker.say({ type: "ended" }), 5);
+  } });
+  const typesPosted = (worker) => worker.posted.map(({ type }) => type);
   const android = { deviceMemory: 8, gpu: { requestAdapter: async () => ({ info: { isFallbackAdapter: false },
     limits: { maxStorageBufferBindingSize: 2 ** 28, maxBufferSize: 2 ** 28, minStorageBufferOffsetAlignment: 256 } }) } };
   const gpuContext = vm.createContext({
@@ -306,14 +287,14 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     into.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
     assert.ok(into.weights.direct, "Llama 3.2 3B on a device that says 8 GB did not go on the GPU alone");
     const worker = workers.at(-1);
-    assert.deepEqual(worker.told, ["open"]);
+    assert.deepEqual(typesPosted(worker), ["open"]);
     return { into, worker };
   };
   // (1) let go before its engine was built: the worker is stopped, and the next load waits for its "ended"
   {
     const { into, worker } = opened();
     into.release();
-    assert.deepEqual(worker.told, ["open", "stop"], "a model on the GPU alone let go before it was built kept its GPU's worker");
+    assert.deepEqual(typesPosted(worker), ["open", "stop"], "a model on the GPU alone let go before it was built kept its GPU's worker");
     assert.ok(!worker.terminated);
     await vm.runInContext(strictly("loadBegan({ id: 'the next load' })"), gpuContext);  // (T378.3: what load() says first)
     assert.ok(worker.terminated, "the next load did not wait for the GPU's worker to end");
@@ -322,7 +303,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
   {
     const { into, worker } = opened();
     into.sink.open(size, proxy(LLAMA3B), "int8", proxy(FORM));
-    assert.deepEqual(worker.told, ["open", "stop"], "a second sink.open() kept the first GPU's worker");
+    assert.deepEqual(typesPosted(worker), ["open", "stop"], "a second sink.open() kept the first GPU's worker");
     into.release();
     await vm.runInContext(strictly("gpuOnlyEnding"), gpuContext);
   }
@@ -332,13 +313,13 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     engineGpu = Promise.resolve("prompts and answers on WebGPU");
     gpuContext.made = into.weights.llama({}, {});
     into.release();
-    assert.deepEqual(worker.told, ["open"], "a built model on the GPU alone lost its GPU's worker");
+    assert.deepEqual(typesPosted(worker), ["open"], "a built model on the GPU alone lost its GPU's worker");
     gpuContext.lost = lost;
     vm.runInContext(strictly("gpuOnlyNow.lost = lost"), gpuContext);
     const ready = await vm.runInContext(strictly("gpuOnlyReady({ id: 'probe' }, undefined, made.outside.engine)"), gpuContext);
     assert.equal(ready, !lost);
     assert.equal(vm.runInContext(strictly("cpuOnly.has('probe')"), gpuContext), Boolean(lost));
-    assert.deepEqual(worker.told, lost ? ["open", "stop"] : ["open"]);
+    assert.deepEqual(typesPosted(worker), lost ? ["open", "stop"] : ["open"]);
     assert.equal(worker.terminated, Boolean(lost), "the load on the CPU began before the GPU's worker ended");
   }
   // (4) the second review of T156: the verdict that the CPU is faster goes to the page with its load's id (the page
@@ -447,24 +428,24 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       const { into, worker } = opened();
       const said = [];
       gpuContext.console = { ...console, warn: (line) => said.push(line) };
-      if (failsAt === 0) worker.fail("no such script");
+      if (failsAt === 0) worker.fail({ message: "no such script" });
       into.weights.write(tensors.wq.offset, inWq);
-      if (failsAt === 1) worker.fail("no such script");
+      if (failsAt === 1) worker.fail({ message: "no such script" });
       into.weights.write(tensors.wq.offset + 1000, inWq);
       // (the room is asked after every stretch, and all of it before the engine is built: sources.js, load.js)
       const waiting = ask("weightsDrained()");
-      if (failsAt === 2) setTimeout(() => worker.fail("no such script"), 20);
+      if (failsAt === 2) setTimeout(() => worker.fail({ message: "no such script" }), 20);
       if (failsAt === 3) {
         assert.equal(await Promise.race([waiting.then(() => "ended"), new Promise((resolve) => setTimeout(() => resolve("still waiting"), 300))]), "still waiting",
           "the weights did not wait for a GPU's worker that goes on and has not taken them yet");
         // (the worker takes them, as gpu.js's take() counts: the wait ends)
-        const flow = new BigInt64Array(worker.flow);
+        const flow = new BigInt64Array(worker.posted.find(({ type }) => type === "open").flow);
         Atomics.add(flow, 0, 2000n);
         Atomics.notify(flow, 0);
       }
       assert.equal(await soon(waiting), "ended", `a GPU's worker that failed ${title}: the weights went on waiting for it`);
       assert.equal(await soon(ask("weightsRoom()")), "ended");
-      assert.deepEqual(worker.told, ["open", ...Array(Math.min(failsAt, 2)).fill("weights")], `a GPU's worker that failed ${title} was posted what it will not take`);
+      assert.deepEqual(typesPosted(worker), ["open", ...Array(Math.min(failsAt, 2)).fill("weights")], `a GPU's worker that failed ${title} was posted what it will not take`);
       engineGpu = Promise.resolve("prompts on the CPU (a stand-in)");
       gpuContext.made = into.weights.llama({}, {});
       into.release();
@@ -484,7 +465,7 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       into.release();
       const lost = [];
       direct.onLost = (why) => lost.push(why);
-      worker.fail("it threw");
+      worker.fail({ message: "it threw" });
       assert.deepEqual(lost, ["the GPU's worker did not start (it threw)"], "an error of the GPU's worker under a built engine was not said once");
       await direct.end();
     }

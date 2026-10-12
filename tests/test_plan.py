@@ -3,12 +3,12 @@ run, with no model and no weights: every test here but the last makes no Llama. 
 ExternalForward what forward_plan() makes of the same facts. (That the plan's keys are the ones forward.js reads is
 tests/plan-keys-check.mjs's, and that their values are what they were is the net's kind "layouts".)"""
 import math
-import struct
 
 import numpy as np
 import pytest
 
 import engine.model
+from engine_plans import External, Handed, nowhere
 from engine.layout import LAYOUTS, stateful_kinds
 from engine.plan import ATTENTION, Settings
 from engine.tensors import rope_tables
@@ -230,27 +230,10 @@ def test_a_file_no_engine_outside_can_take_has_no_plan():
 
 
 # ------------------------------------------------------------------------------------------- and what Llama hands on
-class Handed(Exception):
-    """The plan is in hand: nothing of the engine is built (and the tokenizer is never read)."""
-
-
-class Outside:
-    """forward.js as far as the plan, for a file that is nowhere: its header, its size, a final norm's weight with three
-    channels far above the rest, and start(plan), which keeps the plan and ends."""
-
-    def __init__(self, header, size):
-        self.header, self.size, self.plan = header, size, None
-
-    def read(self, offset, length):
-        if offset == 0:
-            return struct.pack("<7i", *self.header)
-        weight = 1.0 + np.arange(length // 4, dtype=np.float32) / 1024
-        weight[[5, 77, 130]] = (50.0, 60.0, 70.0)
-        return weight.tobytes()
-
-    def start(self, plan):
-        self.plan = plan
-        raise Handed()
+def Outside(header, size):
+    """forward.js as far as the plan, for a file that is nowhere (tests/engine_plans.py's stand-in): its header, its
+    size, a final norm's weight with three channels far above the rest, and start(plan), which keeps the plan and ends."""
+    return External(size, nowhere(header, True))
 
 
 @cases

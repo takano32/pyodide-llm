@@ -20,6 +20,8 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import vm from "node:vm";
+import { cacheStorage } from "./fakes/cache.mjs";
+import { failing, madeUpNetwork } from "./fakes/fetch.mjs";
 import { served } from "./tree.mjs";
 
 const SITE = "https://takano32.github.io/pyodide-llm/";
@@ -27,48 +29,23 @@ const SITE = "https://takano32.github.io/pyodide-llm/";
 const HELD = "88ad804c36acbbf740121bb54e654b22d9c0a1361655bf79e7409b5dc2eac9f5";
 const source = fs.readFileSync(served("coi.js"), "utf8");
 
-// a Cache API of one cache, keyed by URL (ignoreSearch drops the query)
-// broken: it does not open; stuck: the addresses whose copies cannot be deleted; unlisted: keys() fails.
-// said: what was asked of it, in order ("keys", "delete <url>", "delete the cache <name>", "open")
-function cacheStorage({ broken = false, stuck = [], unlisted = false } = {}) {
-  const map = new Map(), said = [];
-  const cache = {
-    put: async (url, response) => { map.set(typeof url === "string" ? url : url.url, await response.arrayBuffer()); },
-    match: async (url, { ignoreSearch = false } = {}) => {
-      const key = typeof url === "string" ? url : url.url;
-      const strip = (u) => u.split("?")[0];
-      for (const [stored, body] of map) {
-        if (stored === key || (ignoreSearch && strip(stored) === strip(key))) return new Response(body.slice(0));
-      }
-      return undefined;
-    },
-    keys: async () => { said.push("keys"); if (unlisted) throw new Error("UnknownError"); return [...map.keys()].map((url) => ({ url })); },
-    delete: async (request) => {
-      said.push(`delete ${request.url}`);
-      if (stuck.includes(request.url)) throw new Error("QuotaExceededError");
-      return map.delete(request.url);
-    },
-  };
-  return { map, said, caches: {
-    open: async () => { said.push("open"); if (broken) throw new Error("SecurityError"); return cache; },
-    delete: async (name) => { said.push(`delete the cache ${name}`); map.clear(); return true; },
-  } };
-}
+// the Cache API is tests/fakes/cache.mjs's: one cache, keyed by URL (ignoreSearch drops the query); broken: it does not
+// open; stuck: the addresses whose copies cannot be deleted; unlisted: keys() fails. said: what was asked of it, in
+// order ("keys", "delete <url>", "delete the cache <name>", "open")
 
 // coi.js loaded afresh with these stand-ins; returns ask(url, mode) -> the answer's text, or an error.
 // ask.activate() is the browser's activate event: it waits for what the listener asked it to wait for, and gives
 // what that ended as (undefined, or the error it was rejected with). said: the cache's list, where the claim goes too
 function worker({ caches, online, registered = "?v=new", said = [] }) {
-  const listeners = {};
+  const listeners = {}, network = madeUpNetwork();
   const context = {
     self: { location: new URL(`${SITE}coi.js${registered}`), addEventListener: (type, f) => { listeners[type] = f; }, skipWaiting() {},
       clients: { claim: async () => { said.push("claim"); } } },
     caches, URL, Headers, Response,
-    fetch: async (request) => {
-      if (!online) throw new TypeError("Failed to fetch");
-      return new Response(`network: ${request.url}`, { status: 200 });
-    },
+    fetch: network.fetch,
   };
+  // (tests/fakes/fetch.mjs's network: every address answers with its own name, or the line is down)
+  network.answers(online ? (url) => new Response(`network: ${url}`, { status: 200 }) : failing(new TypeError("Failed to fetch")));
   context.self.caches = caches;
   vm.createContext(context);
   vm.runInContext(source, context);

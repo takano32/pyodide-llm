@@ -5,9 +5,10 @@
 //
 //   node tests/kept-check.mjs
 import assert from "node:assert/strict";
+import { cacheStorage } from "./fakes/cache.mjs";
 import { runtimeUrl } from "./tree.mjs";
 
-// ---- stand-ins: a directory tree of files, and a cache of responses
+// ---- stand-ins: a directory tree of files (the Cache API is tests/fakes/cache.mjs's)
 class File {
   constructor() { this.bytes = new Uint8Array(0); }
 }
@@ -47,23 +48,15 @@ class DirectoryHandle {
   async removeEntry(name) { if (!this.children.delete(name)) throw new Error("NotFoundError"); }
   async *entries() { for (const [name, child] of this.children) if (child instanceof DirectoryHandle) yield [name, child]; }
 }
-class Cache {
-  constructor() { this.map = new Map(); }
-  async put(key, response) { this.map.set(key, new Uint8Array(await response.arrayBuffer())); }
-  async match(key) { const bytes = this.map.get(typeof key === "string" ? key : key.url); return bytes && new Response(bytes); }
-  async keys() { return [...this.map.keys()].map((url) => ({ url })); }
-  async delete(request) { return this.map.delete(request.url); }
-}
-
 function browser({ opfs = true, room = Infinity } = {}) {
   const limit = { bytes: room };
-  const root = new DirectoryHandle(limit), cache = new Cache();
+  const root = new DirectoryHandle(limit), { caches, map } = cacheStorage();
   globalThis.self = { location: { origin: "https://example.test" } };
-  globalThis.caches = { open: async () => cache };
+  globalThis.caches = caches;
   Object.defineProperty(globalThis, "navigator", { value: { storage: { getDirectory: async () => root } }, configurable: true });
   globalThis.FileSystemFileHandle = opfs ? FileHandle : undefined;
   if (!opfs) globalThis.navigator.storage.getDirectory = async () => { throw new Error("no OPFS"); };
-  return { root, cache };
+  return { root, cache: { map } };
 }
 
 const kept = await import(runtimeUrl("kept.ts"));
