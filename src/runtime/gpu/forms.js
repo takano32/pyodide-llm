@@ -17,7 +17,7 @@ import { devicePromptForms } from "../shaders/key.ts";
 // fallback adapter (the CPU in the GPU's place: its times are no GPU's) one pair of one pass
 const TIMED_MS = 20, MOST_PASSES = 256, PAIRS = 5;
 
-// the tiled shaders of T146 this device can make (shaders.js's promptForms)
+// the tiled shaders of T146 this device can make (shaders.ts's promptForms)
 const candidates = ({ device, ternary }) => devicePromptForms(device, ternary);
 
 // ---- the attention: llama.cpp's flash attention with tiles, with f16 in the workgroup's memory where there is
@@ -124,7 +124,7 @@ function halfToFloat(h) {
   return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
 }
 
-// ---- the matrices: the tiled shaders of T146 that this device can make (shaders.js's promptForms), each checked on a
+// ---- the matrices: the tiled shaders of T146 that this device can make (shaders.ts's promptForms), each checked on a
 // small matrix against JavaScript (checkForm: subgroups, f16 rounding and drivers differ from device to device, and
 // only the device can say), the right ones timed on the model's own gate matrix by a whole block, and the fastest
 // taken. forms: what each came to (ms, or why not), for the console. plan.force.matrices (tests only): that form alone, untimed.
@@ -202,11 +202,11 @@ function multiply(m, pass, form, group, rows, count) {
 // T146's check (src/runtime/benchmark/gpu/check.js's checkTiled) of a form: 300 rows of 544 (17 groups of 32: a part of a tile
 // of rows everywhere), 11 and 70 tokens (a part of a tile of tokens; two or one and a part), and 11 tokens whose x and
 // y are wider than the product (xStride 608, yStride 320), each product twice into the same y (the second added:
-// shape.add) against JavaScript's (shaders.js's tiledOff). The reason it is wrong, or null
+// shape.add) against JavaScript's (shaders.ts's tiledOff). The reason it is wrong, or null
 // T232, a ternary form: rows of 640 weights (5 groups of 128 with a scale each, 20 of the activations' groups of 32:
 // a weight's scale holds for four steps of the width, and the next is another), the weights random bytes of codes (all
 // four codes, the one no file has too: every bit of a word matters), against JavaScript's on the codes' values
-// (shaders.js's ternaryValues)
+// (shaders.ts's ternaryValues)
 async function checkForm(m, form) {
   const { device } = m, { quantize } = m.block, rows = 300, ternary = Boolean(form.ternary), n = ternary ? 640 : 544, perRow = n / GROUP;
   const scaled = ternary ? 4 * GROUP : GROUP;  // the weights a scale

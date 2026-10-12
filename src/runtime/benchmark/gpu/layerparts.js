@@ -7,7 +7,7 @@ import { toHalf } from "./halves.js";
 
 // ---- T150: one layer of a generated token (Llama 3.2 1B's width, at position LAYER_POS), as its fourteen separate
 // steps (RMSNorm, q, k, v, RoPE and the cache, the attention, o, the residual add, RMSNorm, gate, up, SwiGLU, down, the
-// residual add: the prompt's shaders and T149's matrix × vector), fused into five (shaders.js's fusedMatVec: q, k
+// residual add: the prompt's shaders and T149's matrix × vector), fused into five (shaders.ts's fusedMatVec: q, k
 // and v with the norm and RoPE, the attention, o with the add, gate and up with the norm and SwiGLU, down with the
 // add), each with the workgroup's reduction and, where subgroups are, with subgroupAdd; and T175's forms on DP4A
 // below (LAYER_KINDS). All read the same weights: a layer's four matrices (q, k and v one after the other; o; gate and up; down), the separate
@@ -63,7 +63,7 @@ function engineTiles(headSize) {
     subgroupMin: shared.adapter.info?.subgroupMinSize, subgroupMax: shared.adapter.info?.subgroupMaxSize });
   return shape.none ? null : { shape, name: `the prompt's tiles${half ? ", f16" : ""}${subgroups ? ", subgroups" : ""} (the engine's here)` };
 }
-// T224: the attention of a token by llama.cpp's flash_attn_vec (shaders.js's flashVec and flashVecReduce), with
+// T224: the attention of a token by llama.cpp's flash_attn_vec (shaders.ts's flashVec and flashVecReduce), with
 // subgroups where there are, else with the lanes of the workgroup standing for a subgroup; shape(headSize): its shape
 const vecAttention = (subgroups = hasSubgroupId()) => ({ subgroups, name: `flash_attn_vec${subgroups ? " (subgroups)" : ""}`,
   shape: (headSize) => shared.WGSL.flashVecShape({ headSize, subgroups, threads: Math.min(shared.device.limits.maxComputeInvocationsPerWorkgroup, shared.device.limits.maxComputeWorkgroupSizeX),

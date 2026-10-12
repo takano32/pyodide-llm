@@ -1,6 +1,6 @@
-// shaders/likecpu.js (T351): no shader: the CPU's sampling in JavaScript (the kernel's and NumPy's order of
+// shaders/likecpu.ts (T351): no shader: the CPU's sampling in JavaScript (the kernel's and NumPy's order of
 // operations), which the checks of the GPU's SAMPLE are held to.
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { REPETITION_WINDOW } from "./run.ts";

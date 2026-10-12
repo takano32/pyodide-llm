@@ -1,12 +1,12 @@
-// shaders/sample.js (T351): the sampling of a generated token on the GPU (T151's SAMPLE: the repetition penalty,
+// shaders/sample.ts (T351): the sampling of a generated token on the GPU (T151's SAMPLE: the repetition penalty,
 // the softmax, top-p by pivots and the draw, T219's refusal of logits that are not finite), and what it shares with the
-// sampling in chunks (stages.js).
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// sampling in chunks (stages.ts).
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 //
 // The notices of what SAMPLER_COMMON, SAMPLER_DRAW and SAMPLE are adapted from (the forms and what was changed are described at the head of
-// run.js, above REPETITION_WINDOW, where these notices stand too; they are copied here, as this file holds the lines):
+// run.ts, above REPETITION_WINDOW, where these notices stand too; they are copied here, as this file holds the lines):
 //
 // Adapted from llama.cpp, ggml/src/ggml-webgpu/wgsl-shaders/argmax.wgsl, soft_max.wgsl, cumsum.wgsl and get_rows.wgsl
 // (https://github.com/ggml-org/llama.cpp, commit 95887577, 2026-09-26), under the MIT License:
@@ -28,7 +28,7 @@
  */
 //
 // Adapted from MLC LLM, python/mlc_llm/op/top_p_pivot.py and python/mlc_llm/compiler_pass/attach_logit_processor.py
-// (and, for T191's sampling in chunks in stages.js, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
+// (and, for T191's sampling in chunks in stages.ts, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
 // (https://github.com/mlc-ai/mlc-llm, commit 9fa644f5, 2026-08-17), and from the sampling of WebLLM
 // (https://github.com/mlc-ai/web-llm, src/llm_chat.ts) and Apache TVM (python/tvm/relax/frontend/nn/op.py,
 // https://github.com/apache/tvm, commit e0ed4aad), under the Apache License, Version 2.0. Changed as described above.
@@ -46,7 +46,7 @@
  */
 import { REPETITION_WINDOW, STATE, SAMPLING } from "./run.ts";
 
-// What SAMPLE and the stages of the sampling in chunks (T191, stages.js) share: the constants, the workgroup's memory of
+// What SAMPLE and the stages of the sampling in chunks (T191, stages.ts) share: the constants, the workgroup's memory of
 // the reductions, and cumsum.wgsl's scan.
 // T219: is_nan_magnitude() below takes the form of isnan() in TensorFlow.js, tfjs-backend-webgpu/src/webgpu_program.ts
 // (https://github.com/tensorflow/tfjs, master of 2026-09-28, the file's last commit d45c6af3 of 2023-07-17, which has
@@ -311,7 +311,7 @@ fn draw_nucleus(count: u32, total: f32, r: f32, argmax: u32, t: u32) {
 }
 `;
 
-// The penalty, softmax, top-p and the draw of one token, in one workgroup: see the head of run.js. Bindings: 0 the logits (the
+// The penalty, softmax, top-p and the draw of one token, in one workgroup: see the head of run.ts. Bindings: 0 the logits (the
 // penalty is applied to them in place, as the CPU does), 1 and 2 scratch of the vocabulary's size (probabilities and
 // the indices of those gathered), 3 the state, 4 chosen, 5 the random numbers, 6 the settings.
 export const SAMPLE = /* wgsl */ `

@@ -1,13 +1,13 @@
-// shaders/steps.js (T351): the quantizing and the small steps of a layer: the activations to int8 (QUANTIZE, T241's
-// scale word, which fused.js's NORM_QUANTIZE takes too), int6 weights widened (T155), and RMSNorm, LayerNorm, the
+// shaders/steps.ts (T351): the quantizing and the small steps of a layer: the activations to int8 (QUANTIZE, T241's
+// scale word, which fused.ts's NORM_QUANTIZE takes too), int6 weights widened (T155), and RMSNorm, LayerNorm, the
 // residual add, RoPE, SwiGLU and GELU for the tokens of a prompt.
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 //
 // The notice of what T241's scale_word() takes its test of a float's bits from (isnan() of TensorFlow.js,
 // tfjs-backend-webgpu/src/webgpu_program.ts: `(floatToUint & 0x7fffffffu) > 0x7f800000u`; said above SCALE_WORD, and
-// with what was changed above sample.js's SAMPLER_COMMON, where this notice stands too; copied here, as this file
+// with what was changed above sample.ts's SAMPLER_COMMON, where this notice stands too; copied here, as this file
 // holds lines of that form).
 /*! Copyright 2022 Google LLC. All Rights Reserved.
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
@@ -44,7 +44,7 @@ import { GROUP, STEP } from "./common.ts";
 // Why so. (1) The bits of floats that are not negative are in the order of their values, so the integer max of the
 // magnitudes is the bits of the float max of the |values| for every finite input (-0 is 0, a denormal its own bits):
 // the scale and the values of a finite group are what they were, to the bit. An infinity's magnitude (0x7f800000) is
-// over every finite one's and a NaN's over that (isnan's form of TensorFlow.js, T219's: its notice is at the head of this file and above sample.js's
+// over every finite one's and a NaN's over that (isnan's form of TensorFlow.js, T219's: its notice is at the head of this file and above sample.ts's
 // SAMPLER_COMMON), and an integer max drops neither. (2) What carries it on is the scale itself, no flag: the matrix
 // (the tiles' and fusedDp4aMatVec's SDP8AI) multiplies each group's integer dot by scale_a × scale_b and adds the
 // groups of a row, so every row of its output is a NaN, whatever the integers of that group are; the residual stream

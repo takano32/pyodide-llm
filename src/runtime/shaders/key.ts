@@ -1,7 +1,7 @@
-// shaders/key.js (T351): the key of what the page remembers of a device (T148, T366): the adapter, the browser and a
+// shaders/key.ts (T351): the key of what the page remembers of a device (T148, T366): the adapter, the browser and a
 // hash of the WGSL of the engine's shaders. It takes every part the engine's GPU worker runs a shader of, and none of
-// the benchmark's own (bench.js, stages.js) or likecpu.js.
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// the benchmark's own (bench.ts, stages.ts) or likecpu.ts.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { TERNARY_PACKED, promptForms } from "./prompt.ts";

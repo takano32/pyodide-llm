@@ -64,7 +64,7 @@ export function gpuBytes(header: Header, { head_dim = 0, arch = "llama", dtype =
 // the layers' matrices of a Llama, which the GPU alone holds (T156)
 const LAYER_MATRICES: TensorName[] = ["wq", "wk", "wv", "wo", "w1", "w2", "w3"];
 // T210: and its tables, the embedding and a classifier of its own (wcls is the embedding's tensor where it is shared):
-// the GPU embeds a prompt's rows too (shaders.js's EMBED_ROWS), and nothing of them is here
+// the GPU embeds a prompt's rows too (shaders.ts's EMBED_ROWS), and nothing of them is here
 const GPU_ALONE: TensorName[] = [...LAYER_MATRICES, "token_embedding_table", "wcls"];
 /** T156: the stretches of the checkpoint the GPU alone holds, the layers' matrices and (T210) the tables ([start, end)
  * of each, in file order: every one is its values and then its scales, llama2_numpy's Tensor), from the tensors

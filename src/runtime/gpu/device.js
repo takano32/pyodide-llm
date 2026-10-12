@@ -90,7 +90,7 @@ async function openDevice(plan, say = unusable) {
     const info = adapter.info ?? {};
     const fallback = Boolean(info.isFallbackAdapter ?? adapter.isFallbackAdapter);
     if (fallback && !plan.force.fallback) return say("a fallback adapter: the CPU in the GPU's place");
-    // T232: ternary weights are multiplied as packed int8 alone (shaders.js's TERNARY_PACKED): said before anything goes up
+    // T232: ternary weights are multiplied as packed int8 alone (shaders.ts's TERNARY_PACKED): said before anything goes up
     const ternary = ternaryPlan(plan);
     if (ternary && !navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) {
       return say("ternary weights need the packed int8 dot product of WGSL, which this browser lacks");

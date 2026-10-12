@@ -1,7 +1,7 @@
-// shaders/bench.js (T351): the shaders that /benchmark/'s GPU section alone runs, but for T149's matrix × vector
-// (matvec.js) and the sampling in chunks (stages.js): T135's first matrix products (WIDEN, PACKED, BATCHED), the argmax,
+// shaders/bench.ts (T351): the shaders that /benchmark/'s GPU section alone runs, but for T149's matrix × vector
+// (matvec.ts) and the sampling in chunks (stages.ts): T135's first matrix products (WIDEN, PACKED, BATCHED), the argmax,
 // the empty and the small dispatch, and T168's ceilings of the device (clpeak's method; no line of it is copied).
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { STEP } from "./common.ts";

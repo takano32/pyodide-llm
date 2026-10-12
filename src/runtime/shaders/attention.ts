@@ -1,7 +1,7 @@
-// shaders/attention.js (T351): the attention: llama.cpp's flash attention by tiles for the tokens of a prompt
+// shaders/attention.ts (T351): the attention: llama.cpp's flash attention by tiles for the tokens of a prompt
 // (T147) and its flash_attn_vec for one generated token (T224), each under its notice below, and the made-up numbers and
 // the JavaScript the checks hold a token's attention to.
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { STEP } from "./common.ts";

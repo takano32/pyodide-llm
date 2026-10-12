@@ -1,8 +1,8 @@
-// shaders/prompt.js (T351): a matrix times the tokens of a prompt by tiles (T146): llama.cpp's register tiles,
+// shaders/prompt.ts (T351): a matrix times the tokens of a prompt by tiles (T146): llama.cpp's register tiles,
 // TensorFlow.js's packed vec4 and ONNX Runtime's DP4A (each under its notice below), ternary weights unpacked for the last
 // (T232), the forms a device can make of them (T147's promptForms) and the check of one against JavaScript (tiledOff).
-// SDP8AI and ternary_packed() are also what the DP4A forms of one vector (matvec.js, fused.js) are made of.
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// SDP8AI and ternary_packed() are also what the DP4A forms of one vector (matvec.ts, fused.ts) are made of.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { GROUP, STEP } from "./common.ts";

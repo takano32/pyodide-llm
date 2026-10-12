@@ -1,8 +1,8 @@
-// shaders/matvec.js (T351): T149's matrix times one vector in the forms of public implementations (llama.cpp's
+// shaders/matvec.ts (T351): T149's matrix times one vector in the forms of public implementations (llama.cpp's
 // mul_mat_vec, ONNX Runtime's MatMulNBits and its DP4A for small M, each under its notice below). /benchmark/'s GPU
-// section alone runs these three; the fused layer of a generated token (fused.js) is made from them and takes the rows a
+// section alone runs these three; the fused layer of a generated token (fused.ts) is made from them and takes the rows a
 // workgroup has from here.
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { sdp8ai } from "./prompt.ts";

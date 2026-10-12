@@ -1,4 +1,4 @@
-// shaders.js (T135): the WGSL of this project in one place. The GPU section of /benchmark/ (src/runtime/benchmark/gpu.js,
+// shaders.ts (T135): the WGSL of this project in one place. The GPU section of /benchmark/ (src/runtime/benchmark/gpu.js,
 // T134) measures with some of them; the model's GPU worker (src/runtime/gpu.js) runs a prompt's tokens through the layers
 // with the tiled matrices of T146 (the one each device runs fastest, T147), the flash attention and the steps of a
 // layer below them. A plain ES module, which a bundler links into each of them (T367.3).
@@ -9,18 +9,18 @@
 // sums add up in the workgroup's memory. Rows past the most workgroups of a dimension go to its second one.
 
 // T351: this file is the window of the shaders: every name it exported as one file, and nothing else. The texts and
-// their makers are in the modules of shaders/, by family: common.js (what all share), bench.js (/benchmark/'s own: the
-// first matrix products, the ceilings), prompt.js (a prompt's tiled matrix products), steps.js (the quantizing and the
-// small steps of a layer), attention.js (flash attention by tiles and for one token), matvec.js (a matrix times one
-// vector, the benchmark's forms), fused.js (the fused layer of a generated token), run.js (a run of generated tokens:
-// its state, the embedding, the outliers), sample.js (the sampling), stages.js (the sampling in chunks, the benchmark's),
-// likecpu.js (the CPU's sampling in JavaScript: no shader) and key.js (the device's key). Each is a static import (T367.3: a
+// their makers are in the modules of shaders/, by family: common.ts (what all share), bench.ts (/benchmark/'s own: the
+// first matrix products, the ceilings), prompt.ts (a prompt's tiled matrix products), steps.ts (the quantizing and the
+// small steps of a layer), attention.ts (flash attention by tiles and for one token), matvec.ts (a matrix times one
+// vector, the benchmark's forms), fused.ts (the fused layer of a generated token), run.ts (a run of generated tokens:
+// its state, the embedding, the outliers), sample.ts (the sampling), stages.ts (the sampling in chunks, the benchmark's),
+// likecpu.ts (the CPU's sampling in JavaScript: no shader) and key.ts (the device's key). Each is a static import (T367.3: a
 // bundler links them).
 // T367.5: who reads the window. /benchmark/'s GPU worker (benchmark/gpu/device.js), which measures with nearly all of
 // them and fetches this module when its section runs; and the tools (the net's shaders section, tests/gpu-check.mjs,
-// tests/smoke.mjs and others), to which shaders.js is the name of all the WGSL there is. The model's GPU worker does
+// tests/smoke.mjs and others), to which shaders.ts is the name of all the WGSL there is. The model's GPU worker does
 // not: its modules take the names they use from the parts (gpu/*.js), linked into the worker's own file without
-// /benchmark/'s shaders, and the model's worker takes the device's key from shaders/key.js.
+// /benchmark/'s shaders, and the model's worker takes the device's key from shaders/key.ts.
 import { GROUP } from "./shaders/common.ts";
 import { TILE, WIDEN, PACKED, BATCHED, ARGMAX, EMPTY, SMALL, CEILING_WORKGROUP, FMA_PER_LOOP, DOT4_PER_LOOP,
   SHARED_PER_LOOP, GLOBAL_PER_THREAD, FMA_SHAPES, fmaCeiling, DOT4_CEILING, SHARED_CEILING,

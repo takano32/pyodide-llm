@@ -5,7 +5,7 @@ import { shared, MODELS, PROMPT_MODEL, matrixBytes, gpu, STORAGE, COPY_DST, COPY
   floats, run, middle, interleaved, scoped } from "./device.js";
 import { EPS, layerShape, tokenForm, layerCodes, fusedLayer, compiled, ropeTable } from "./layerparts.js";
 
-// ---- T151: generated tokens on the GPU (shaders.js's EMBED, fusedMatVec and SAMPLE): a token a compute pass, the
+// ---- T151: generated tokens on the GPU (shaders.ts's EMBED, fusedMatVec and SAMPLE): a token a compute pass, the
 // sampler's state carried from one to the next on the GPU, and the ids read back once for the run: against reading
 // each one back, whose wait (3 to 8.6 ms for 4 bytes on the owner's Android, T134) a token pays alone.
 // The layers are tokenForm()'s (T175): the fused layer on DP4A where the packed int8 dot is, else T150's with the
@@ -34,7 +34,7 @@ async function generationPipes(headSize, form) {
   return pipes;
 }
 // T191: the two ways of sampling a token on the GPU, measured side by side: SAMPLE's one workgroup (T151) and the
-// sampling in chunks of the vocabulary (shaders.js's SAMPLER_STAGES, a workgroup a chunk)
+// sampling in chunks of the vocabulary (shaders.ts's SAMPLER_STAGES, a workgroup a chunk)
 const SAMPLERS = ["one", "chunks"];
 async function samplerPipes() {
   const pipes = { one: await compiled(shared.WGSL.SAMPLE), chunks: [] };
