@@ -144,14 +144,6 @@ const folder = (name) => fs.existsSync(placed(name)) ? fs.readdirSync(placed(nam
   ok("a server's own failure (5xx) is asked for again");
 }
 {
-  serving({ "/file": [{ never: true }, { body: WHOLE }] });
-  const target = placed("silent/file.bin");
-  await download(`${base}/file`, target, { timeout: 200 });
-  assert.equal(fs.readFileSync(target, "latin1"), WHOLE);
-  assert.equal(asked.length, 2);
-  ok("a request that got no answer in its time is asked for again");
-}
-{
   const waits = [];
   serving({ "/file": [{ status: 500 }, { status: 500 }, { status: 500 }, { body: WHOLE }] });
   await download(`${base}/file`, placed("waited/file.bin"), { tries: 4, wait: 10000, sleep: async (ms) => waits.push(ms) });
@@ -169,11 +161,13 @@ const folder = (name) => fs.existsSync(placed(name)) ? fs.readdirSync(placed(nam
     return network;
   };
   const saying = (body, headers) => () => new Response(body, { headers });
-  let network = answering([saying("x".repeat(40), { "Content-Length": "100" }), saying(WHOLE, { "Content-Length": "100" })]);
   const target = placed("lied/file.bin");
+  const between = [];  // what is in the folder as the second try is asked for
+  let network = answering([saying("x".repeat(40), { "Content-Length": "100" }), () => (between.push(...folder("lied")), saying(WHOLE, { "Content-Length": "100" })())]);
   await download("https://hub.test/file", target, { fetch: network.fetch });
   assert.equal(fs.readFileSync(target, "latin1"), WHOLE);
   assert.equal(network.requests.length, 2, "40 bytes of a promised 100 are not the file");
+  assert.deepEqual(between, ["file.bin.part"], "what has not all come is not under the file's name: a run that is stopped leaves no short file to be read");
   network = answering([saying("x".repeat(40), { "Content-Length": "100" })]);
   const error = await failure(download("https://hub.test/file", placed("lied/short.bin"), { fetch: network.fetch }));
   assert.match(error.message, /40 of 100 bytes came$/, "the error says what came");
@@ -192,6 +186,15 @@ const folder = (name) => fs.existsSync(placed(name)) ? fs.readdirSync(placed(nam
   assert.deepEqual({ ...network.requests[0].init.headers }, { "Accept-Encoding": "identity", "User-Agent": "a tool" }, "the tool's headers go with the request");
   assert.ok(network.requests[0].signal instanceof AbortSignal, "every request has its time limit");
   ok("a body is held to the length its answer says, where it says one of the body as it comes");
+}
+
+{
+  serving({ "/file": [{ never: true }, { body: WHOLE }] });
+  const target = placed("silent/file.bin");
+  await download(`${base}/file`, target, { timeout: 200 });
+  assert.equal(fs.readFileSync(target, "latin1"), WHOLE);
+  assert.equal(asked.length, 2);
+  ok("a request that got no answer in its time is asked for again");
 }
 
 // ---- fetched(): an answer's body
