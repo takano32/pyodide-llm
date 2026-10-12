@@ -2,15 +2,22 @@
 # tool (tests/make_*.py, tests/plan_facts.py) and a Pyodide (tests/gpu-check.mjs, tests/forward-check.mjs) import it as
 # it is: whoever imports it has put the engine's Python on sys.path first (tests/tree.py's python_folder()).
 #
+# The file of the engine: one maker, checkpoint(), which lays a model out by the engine's own rows (engine/layout.py)
+# and stores each as the engine's registry of dtypes does (engine/dtypes.py): no order and no shape of a tensor is
+# written down here, and what a made-up model's values are is a function of the row (named(), uniform(), drawn()).
+#
 # What Hugging Face would publish, family by family: the tensors by transformers' names and shapes and the config.json,
 # written out by hand. These are the converter's input and the tests' own word of what a published model is: they do
 # not read the converter's table of sources (convert/families/), or a mistake there would be in the input too.
 import json
 import struct
+from pathlib import Path
 
 import numpy as np
 
 import llama2_numpy
+from engine.dtypes import DTYPES
+from engine.layout import VECTOR, check_suited, kind_of, tensor_rows
 
 
 # ------------------------------------------------------------------------------------------- a Llama
@@ -240,3 +247,174 @@ def lfm2_model(dim=32, block_ff_dim=96, kinds="ccaccaca", n_heads=4, n_kv_heads=
                   bos_token_id=1, eos_token_id=7, pad_token_id=0, tie_embedding=shared, use_pos_enc=True,
                   rope_parameters={"rope_theta": 1000000.0, "rope_type": "default"})
     return tensors, config
+
+
+# ------------------------------------------------------------------------------------------- the engine's file
+def checkpoint(header, form=None, dtype="float32", *, tensor):
+    """The file of a model with this header (the 7 ints) and form (llama2_numpy.FORM's keys) in this dtype, as the
+    engine reads it: the header, then every row of engine/layout.py's tensor_rows() in its order, each stored as its
+    kind (kind_of(): the vectors of a quantized file are float32, and it has no RoPE tables) by the registry of dtypes.
+    tensor(row) -> the values of the row (its name, role, shape and layers: layout.py's Row), an array of the row's
+    shape; it is asked for the rows the file holds, in file order, and for no other.
+    One tensor after the other, by nobody's table of places: that the places of placed() are these is what the
+    engine's reading of the file checks."""
+    rows = tensor_rows(header, form)
+    check_suited(rows, dtype)
+    out = [struct.pack("<7i", *header)]
+    for row in rows:
+        kind = kind_of(row, dtype)
+        if kind is None:
+            continue
+        values = np.asarray(tensor(row))
+        if values.shape != tuple(row.shape):
+            raise ValueError(f"The tensor {row.name} of this model is {tuple(row.shape)}, and the values made up for it are {values.shape}.")
+        stored = DTYPES[kind]
+        if not stored.bits:
+            out.append(np.ascontiguousarray(values, dtype=stored.name).tobytes())
+            continue
+        packed, scales = stored.pack(np.asarray(values, dtype=np.float32).reshape(-1, row.shape[-1]))
+        out += [np.ascontiguousarray(packed).tobytes(), np.ascontiguousarray(scales, dtype=np.float32).tobytes()]
+    return b"".join(out)
+
+
+def tensors_of(data, form=None):
+    """{a row's name: its values} of a float32 checkpoint, read back by the same rows."""
+    header, offset, tensors = struct.unpack_from("<7i", data, 0), 28, {}
+    for row in tensor_rows(header, form):
+        tensors[row.name] = np.frombuffer(data, dtype=np.float32, count=int(np.prod(row.shape)), offset=offset).reshape(row.shape)
+        offset += tensors[row.name].nbytes
+    assert offset == len(data), "the file is not a float32 checkpoint of this header and form"
+    return tensors
+
+
+# ---- what the values are
+def named(weights):
+    """The values a dict has under the rows' names."""
+    return lambda row: weights[row.name]
+
+
+def uniform(seed, low=-0.2, high=0.2):
+    """Small random numbers for every tensor, of one stream in file order."""
+    rng = np.random.default_rng(seed)
+    return lambda row: rng.uniform(low, high, row.shape)
+
+
+# the vectors of a file that are biases, by the rows' names: every other vector is the weight of a norm
+BIASES = ("bq", "bk", "bv", "bo", "b1", "b2", "ln_att_bias", "ln_ffn_bias", "ln_final_bias")
+
+
+def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
+    """The values of the made-up models the GPU is checked on (tests/gpu-check.mjs), of one stream in file order: a
+    matrix is 0.3 N; the weight of a norm is 1 + 0.03 N, a bias 0.3 N (T154, T187: around 0 as the matrices are, or
+    the biases of every layer are nearly the same and 8 bits hide a GPU that reads layer 0's in every layer).
+    outliers (T226): that many weights of the final norm are 12 (GPT-2's are 12 to 17 times the others, T92), so that
+    the engine takes their channels apart in the classifier (llama2_numpy.outlier_channels), at channels 0, spread,
+    2 spread, ... (mod dim: the T232 review's spread of 37 puts some in every group of 128 of a dim of 256).
+    calm (T226's review): the layers' matrices at 0.1 and the norms' weights 1 +- 0.3, see the head of gpu-check.mjs.
+    ternary (T232): every group of 128 along a row of a matrix keeps the signs of its larger values (about two thirds)
+    times one scale of its own, the rest are 0 (ternarized()'s, below), which the ternary dtype stores as they are."""
+    rng = np.random.default_rng(seed)
+
+    def tensor(row):
+        values = (rng.standard_normal(row.shape) * 0.3).astype(np.float32)
+        if row.role == VECTOR:
+            values = values if row.name in BIASES else 1.0 + values * (1.0 if calm else 0.1)
+            if outliers and row.name == "rms_final_weight":
+                values[np.arange(outliers) * spread % row.shape[-1]] = 12.0
+            return values.astype(np.float32)
+        if calm and row.per is not None:
+            values = values / 3  # a layer's matrix (the embedding, the positions and the classifier: as they are)
+        if ternary:
+            groups = values.reshape(-1, 128)
+            cut = np.quantile(np.abs(groups), 1 / 3, axis=1, keepdims=True)
+            d = (np.abs(groups).mean(axis=1, keepdims=True) * rng.uniform(0.5, 1.5, (len(groups), 1))).astype(np.float32)
+            values = (np.sign(groups) * (np.abs(groups) > cut) * d).astype(np.float32).reshape(row.shape)
+        return values
+    return tensor
+
+
+def quantized(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, dtype="int8", outliers=0,
+              calm=False, spread=7, **form):
+    """A made-up checkpoint of drawn()'s values in a quantized dtype (int8 as quantize.py writes one, int6 of T98,
+    ternary of T230) and its tokenizer.bin: grouped-query attention unless kv_heads says otherwise. form:
+    llama2_numpy.FORM's keys (arch, bias, qk_norm, head_dim ...). A negative vocab (the header's own way of saying so):
+    a classifier apart from the embedding."""
+    tensor = drawn(seed, outliers, spread, calm, ternary=dtype == "ternary")
+    return checkpoint((dim, hidden, layers, heads, kv_heads, vocab, seq_len), form, dtype, tensor=tensor), numbered(abs(vocab))
+
+
+# ---- a Llama's, from synthetic_weights()
+def header_of(config):
+    """The 7 ints of synthetic_weights()'s configuration (a negative vocabulary: a classifier of its own)."""
+    return (config["dim"], config["hidden_dim"], config["n_layers"], config["n_heads"], config["n_kv_heads"],
+            config["vocab_size"] if config["shared"] else -config["vocab_size"], config["seq_len"])
+
+
+def settings_of(header):
+    """synthetic_weights()'s configuration of a Llama with this header, whose heads fill dim."""
+    dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
+    head_size = dim // n_heads
+    return dict(dim=dim, hidden_dim=hidden_dim, n_layers=n_layers, n_heads=n_heads, n_kv_heads=n_kv_heads,
+                vocab_size=abs(vocab_size), seq_len=seq_len, head_size=head_size, q_dim=n_heads * head_size,
+                kv_dim=n_kv_heads * head_size, shared=vocab_size > 0)
+
+
+def pack_checkpoint(config, weights):
+    """The float32 checkpoint of synthetic_weights()'s weights: llama2.c's file."""
+    return checkpoint(header_of(config), {"head_dim": config["head_size"]}, "float32", tensor=named(weights))
+
+
+# ------------------------------------------------------------------------------------------- tokenizers
+def numbered(count):
+    """A tokenizer.bin of count pieces <0>, <1>, ...: for a model nobody reads the text of."""
+    return pack_tokenizer([(0.0, f"<{i}>".encode()) for i in range(count)])
+
+
+def unigram(count):
+    """A tokenizer.json of count pieces w0, w1, ..., the same."""
+    return json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
+                       "vocab": [[f"w{i}", -float(i)] for i in range(count)]}}).encode()
+
+
+def pack_tokenizer(pieces):
+    """llama2.c's tokenizer.bin: max piece length, then (score, length, bytes) per piece."""
+    out = [struct.pack("<i", max(len(text) for _, text in pieces))]
+    out += [struct.pack("<fi", score, len(text)) + text for score, text in pieces]
+    return b"".join(out)
+
+
+def tiny_vocab(vocab_size=320):
+    """A vocabulary of that many pieces: <unk>, byte fallbacks, then words and characters.
+
+    Byte and control pieces get the unmatchable score convert_hf.py writes, so they never match text directly.
+    """
+    pieces = [(-1e9, b"<unk>"), (-1e9, b"<s>"), (-1e9, b"</s>")]
+    pieces += [(-1e9, b"<0x%02X>" % byte) for byte in range(256)]
+    words = [" ", " the", " cat", " s", "a", "t", "o", "n", "e", "h", "c", " a", " o",
+             "流", "行", "、", " 流行り", "Ａ", "!", "?", " \n", "\n", " hello", " world",
+             " he", "l", "w", "r", "d", " t", "i", "g", "猫", " 猫", "り"]
+    for i, word in enumerate(words):
+        pieces.append((-float(i) * 0.5, word.encode("utf-8")))
+    assert len(pieces) <= vocab_size, "the vocabulary does not fit"
+    while len(pieces) < vocab_size:  # padding rows, never matchable
+        pieces.append((-1e9, b"<pad%d>" % len(pieces)))
+    return pieces[:vocab_size]
+
+
+# ------------------------------------------------------------------------------------------- a model as files
+def files(out, tensors, config, dtype, seq_len, vocab, metadata=None):
+    """<out>.bin, <out>.tokenizer.bin and <out>.json (as tests/perplexity_prepare.py writes them) of the model Hugging
+    Face would publish as these tensors and this config.json, converted the way the page converts them
+    (llama2_convert.Conversion), for the checks of forward.js that take a model by its files. vocab: the pieces of its
+    vocabulary. metadata: more of the safetensors header's __metadata__ (T237: a rotated basis)."""
+    import llama2_convert  # (here and not above: everything else of this file needs the engine alone)
+    file = safetensors_file(tensors, metadata=metadata)
+    size = struct.unpack("<Q", file[:8])[0]
+    conversion = llama2_convert.Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(config), unigram(vocab),
+                                           "tokenizer.json", dtype=dtype, max_seq_len=seq_len, start=8 + size)
+    conversion.feed(file[8 + size:])
+    conversion.finish()
+    Path(f"{out}.bin").write_bytes(bytes(conversion.checkpoint))
+    Path(f"{out}.tokenizer.bin").write_bytes(conversion.tokenizer)
+    Path(f"{out}.json").write_text(json.dumps(conversion.options))
+    print(f"{out}.bin: {len(conversion.checkpoint)} bytes ({dtype}), {json.dumps(conversion.options)}")

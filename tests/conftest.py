@@ -22,7 +22,8 @@ os.environ.setdefault("PYTEST_DEBUG_TEMPROOT", str(ROOT / ".tmp"))
 
 import llama2_numpy  # noqa: E402
 # the made-up models are tests/made_up.py's (T357.2): the tests take them from here as they always did
-from made_up import FOLDED, basis, folded, lfm2_model, qwen35_model, rope_tables, synthetic_weights  # noqa: E402, F401
+from made_up import (FOLDED, basis, folded, lfm2_model, pack_checkpoint, pack_tokenizer, qwen35_model, rope_tables,  # noqa: E402, F401
+                     synthetic_weights, tiny_vocab)
 
 
 def model_file(name):
@@ -123,47 +124,14 @@ def vocabulary_conversion(tokenizer, name, vocab_size, tokenizer_config=None, **
                                      tokenizer_config=tokenizer_config, sink=NoWeights())
 
 
-# the tensor order of the llama2.c "legacy" format, as quantize.py and llama2_numpy.py read it
+# llama2.c's order of the tensors of its "legacy" file, written out here once. Nothing makes a file by it: the made-up
+# checkpoints are laid out by the engine's own rows (tests/made_up.py's checkpoint(), T357.2), and a test holds those
+# rows to this (tests/test_made_up.py), so that a Llama's file stays the file llama2.c and quantize.py read.
 TENSOR_ORDER = ["token_embedding_table", "rms_att_weight", "wq", "wk", "wv", "wo",
                 "rms_ffn_weight", "w1", "w2", "w3", "rms_final_weight", "freq_cis_real", "freq_cis_imag"]
 
 
-def pack_checkpoint(config, weights):
-    """The float32 checkpoint: a 7 int header (negative vocab size means an unshared classifier) then tensors."""
-    vocab_size = config["vocab_size"] if config["shared"] else -config["vocab_size"]
-    out = [struct.pack("<7i", config["dim"], config["hidden_dim"], config["n_layers"], config["n_heads"],
-                       config["n_kv_heads"], vocab_size, config["seq_len"])]
-    names = TENSOR_ORDER + ([] if config["shared"] else ["wcls"])
-    out += [np.ascontiguousarray(weights[name], dtype=np.float32).tobytes() for name in names]
-    return b"".join(out)
-
-
 # ------------------------------------------------------------------------------------- synthetic tokenizer
-
-def pack_tokenizer(pieces):
-    """llama2.c's tokenizer.bin: max piece length, then (score, length, bytes) per piece."""
-    out = [struct.pack("<i", max(len(text) for _, text in pieces))]
-    out += [struct.pack("<fi", score, len(text)) + text for score, text in pieces]
-    return b"".join(out)
-
-
-def tiny_vocab(vocab_size=320):
-    """A vocabulary of that many pieces: <unk>, byte fallbacks, then words and characters.
-
-    Byte and control pieces get the unmatchable score convert_hf.py writes, so they never match text directly.
-    """
-    pieces = [(-1e9, b"<unk>"), (-1e9, b"<s>"), (-1e9, b"</s>")]
-    pieces += [(-1e9, b"<0x%02X>" % byte) for byte in range(256)]
-    words = [" ", " the", " cat", " s", "a", "t", "o", "n", "e", "h", "c", " a", " o",
-             "流", "行", "、", " 流行り", "Ａ", "!", "?", " \n", "\n", " hello", " world",
-             " he", "l", "w", "r", "d", " t", "i", "g", "猫", " 猫", "り"]
-    for i, word in enumerate(words):
-        pieces.append((-float(i) * 0.5, word.encode("utf-8")))
-    assert len(pieces) <= vocab_size, "the vocabulary does not fit"
-    while len(pieces) < vocab_size:  # padding rows, never matchable
-        pieces.append((-1e9, b"<pad%d>" % len(pieces)))
-    return pieces[:vocab_size]
-
 
 def tiny_tokenizer(kind="bpe", nfkc=False):
     pieces = tiny_vocab(320)
