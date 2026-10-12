@@ -292,6 +292,13 @@ function gpuWorker(tree, fields, worker) {
       if (["loc", "start", "end", "extra", "range", "leadingComments", "trailingComments", "innerComments", "shorthand"].includes(key)) continue;
       out[key] = norm(node[key]);
     }
+    // (T368.5: the module an import() names is the same one under its other ending: import("../../shaders.ts") was
+    // import("../../shaders.js"). Only the argument of an import(), and only its ending)
+    if ((node.type === "ImportExpression" ? [node.source] : node.type === "CallExpression" && node.callee.type === "Import" ? node.arguments : []).some((s) => s.type === "StringLiteral")) {
+      const named = (s) => (s?.type === "StringLiteral" ? { type: "StringLiteral", value: s.value.replace(/\.ts$/, ".js") } : s);
+      if (out.source) out.source = named(out.source);
+      if (out.arguments) out.arguments = out.arguments.map(named);
+    }
     if (node.type === "TemplateElement") out.value = { raw: node.value.raw.replace(/^(\.\.\/)+/, ""), cooked: node.value.cooked.replace(/^(\.\.\/)+/, "") };
     return out;
   };

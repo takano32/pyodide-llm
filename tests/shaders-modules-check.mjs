@@ -32,7 +32,7 @@ const GLOBALS = new Set("Array ArrayBuffer Boolean Error Float32Array Float64Arr
 // windowed(), which shaderParts() reads the files with)
 const tree = treeOf();
 const { window: windowText, linking, list, parts } = shaderParts(tree);
-const there = fs.readdirSync(tree.runtime("shaders")).filter((name) => name.endsWith(".js")).map((name) => name.slice(0, -3)).sort();
+const there = fs.readdirSync(tree.runtime("shaders")).filter((name) => /\.[jt]s$/.test(name)).map((name) => name.slice(0, -3)).sort();
 assert.deepEqual([...list].sort(), there, `the modules shaders.js asks for are the files of ${tree.folders.runtime}/shaders/`);
 assert.equal(new Set(list).size, list.length, "a module asked for twice");
 

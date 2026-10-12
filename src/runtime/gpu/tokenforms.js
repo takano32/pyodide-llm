@@ -7,11 +7,11 @@ import { halfToFloat } from "./forms.js";
 import { roomFor, BLOCK_ROUNDS } from "./block.js";
 import { chooseTokenAttention } from "./tokenattention.js";
 import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.js";
-import { GROUP } from "../shaders/common.js";
-import { ternaryValues, quantizedLikeCpu } from "../shaders/prompt.js";
-import { sixValues } from "../shaders/steps.js";
-import { samplingState, samplingSettings } from "../shaders/run.js";
-import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.js";
+import { GROUP } from "../shaders/common.ts";
+import { ternaryValues, quantizedLikeCpu } from "../shaders/prompt.ts";
+import { sixValues } from "../shaders/steps.ts";
+import { samplingState, samplingSettings } from "../shaders/run.ts";
+import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.ts";
 
 // The forms of a token this device can make, compiled, checked and (where more than one is right) timed; the fastest
 // taken (m.tokens.form), with what each came to (m.tokens.forms) and its ms a step (m.tokens.ms). plan.remembered.tokens: the

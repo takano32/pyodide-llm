@@ -54,7 +54,7 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-import { SAMPLER_COMMON, SAMPLER_DRAW } from "./sample.js";
+import { SAMPLER_COMMON, SAMPLER_DRAW } from "./sample.ts";
 
 // ---- T191: the sampling in chunks of the vocabulary, many workgroups. SAMPLE's one workgroup reads the vocabulary on
 // one of the GPU's cores (the owner's Android: 5.9 ms of 11 a token of the CPU section's model, Llama 3's 128256

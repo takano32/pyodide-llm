@@ -6,13 +6,13 @@ import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, turnedAt, within, buffe
   pipelineOf, bind, dispatch } from "./device.js";
 import { tablesOf } from "./weights.js";
 import { attentionPasses } from "./tokenattention.js";
-import { GROUP } from "../shaders/common.js";
-import { flashVecSplits } from "../shaders/attention.js";
-import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "../shaders/matvec.js";
-import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "../shaders/fused.js";
+import { GROUP } from "../shaders/common.ts";
+import { flashVecSplits } from "../shaders/attention.ts";
+import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "../shaders/matvec.ts";
+import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "../shaders/fused.ts";
 import { STATE_NOT_FINITE, STATE_BYTES, SAMPLING_BYTES, EMBED, EMBED_TERNARY, OUTLIERS_MOST, TAKE_OUTLIERS, TERNARY_COLUMNS,
-  outliersOf } from "../shaders/run.js";
-import { SAMPLE } from "../shaders/sample.js";
+  outliersOf } from "../shaders/run.ts";
+import { SAMPLE } from "../shaders/sample.ts";
 
 // ---- T152: tokens on the GPU. A step of the engine's generate() (the forward pass of the token fed, the sampling of
 // the next) as one compute pass of shaders.js's T151 run: EMBED of the state's token, every layer in a fused form, the

@@ -21,28 +21,28 @@
 // tests/smoke.mjs and others), to which shaders.js is the name of all the WGSL there is. The model's GPU worker does
 // not: its modules take the names they use from the parts (gpu/*.js), linked into the worker's own file without
 // /benchmark/'s shaders, and the model's worker takes the device's key from shaders/key.js.
-import { GROUP } from "./shaders/common.js";
+import { GROUP } from "./shaders/common.ts";
 import { TILE, WIDEN, PACKED, BATCHED, ARGMAX, EMPTY, SMALL, CEILING_WORKGROUP, FMA_PER_LOOP, DOT4_PER_LOOP,
   SHARED_PER_LOOP, GLOBAL_PER_THREAD, FMA_SHAPES, fmaCeiling, DOT4_CEILING, SHARED_CEILING,
-  GLOBAL_CEILING } from "./shaders/bench.js";
+  GLOBAL_CEILING } from "./shaders/bench.ts";
 import { REG_TILES, regTileShape, regTileBytes, DP4A_SHAPE, regTile, TFJS_SHAPE, tfjsTile, ternaryValues, dp4a,
-  promptForms, quantizedLikeCpu, TILED_LINE, tiledOff } from "./shaders/prompt.js";
+  promptForms, quantizedLikeCpu, TILED_LINE, tiledOff } from "./shaders/prompt.ts";
 import { QUANTIZE, WIDEN_SIX_WORKGROUP, WIDEN_SIX, sixDispatch, sixValues, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE,
-  SWIGLU, GELU } from "./shaders/steps.js";
+  SWIGLU, GELU } from "./shaders/steps.ts";
 import { FLASH_Q_TILE, flashShape, flashTile, FLASH_VEC_KV_TILE, FLASH_VEC_LANES, flashVecShape, flashVecSplits,
   flashVecPartsBytes, flashVecParams, flashVec, flashVecReduce, TOKEN_ATTENTION_PAST, TOKEN_ATTENTION_STEEP,
-  TOKEN_ATTENTION_PEAK, tokenAttentionData, tokenAttentionOff } from "./shaders/attention.js";
+  TOKEN_ATTENTION_PEAK, tokenAttentionData, tokenAttentionOff } from "./shaders/attention.ts";
 import { MUL_MAT_VEC_ROWS, ORT_MATVEC_ROWS, ORT_DP4A_MATVEC_ROWS, mulMatVec, ortMatVec,
-  ortDp4aMatVec } from "./shaders/matvec.js";
-import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "./shaders/fused.js";
+  ortDp4aMatVec } from "./shaders/matvec.ts";
+import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "./shaders/fused.ts";
 import { REPETITION_WINDOW, STOPS_MOST, STATE_NOT_FINITE, STATE_BYTES, halvesOf, samplingState, SAMPLING_BYTES,
   samplingSettings, EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, OUTLIERS_MOST, TAKE_OUTLIERS, TERNARY_COLUMNS,
-  outliersOf } from "./shaders/run.js";
-import { SAMPLE } from "./shaders/sample.js";
+  outliersOf } from "./shaders/run.ts";
+import { SAMPLE } from "./shaders/sample.ts";
 import { SAMPLE_CHUNK, sampleChunks, samplePartsBytes, SAMPLE_MAX, SAMPLE_SUM, SAMPLE_GATHER, SAMPLE_PICK,
-  SAMPLER_STAGES } from "./shaders/stages.js";
-import { penalizeLikeCpu, sampleLikeCpu, argmaxLikeCpu, finiteLikeCpu, walkLikeCpu } from "./shaders/likecpu.js";
-import { devicePromptForms, deviceKey } from "./shaders/key.js";
+  SAMPLER_STAGES } from "./shaders/stages.ts";
+import { penalizeLikeCpu, sampleLikeCpu, argmaxLikeCpu, finiteLikeCpu, walkLikeCpu } from "./shaders/likecpu.ts";
+import { devicePromptForms, deviceKey } from "./shaders/key.ts";
 export { GROUP, TILE, WIDEN, PACKED, BATCHED, REG_TILES, regTileShape, regTileBytes, DP4A_SHAPE, regTile, TFJS_SHAPE,
   tfjsTile, ternaryValues, dp4a, QUANTIZE, WIDEN_SIX_WORKGROUP, WIDEN_SIX, sixDispatch, sixValues, promptForms,
   quantizedLikeCpu, TILED_LINE, tiledOff, ARGMAX, EMPTY, SMALL, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, FLASH_Q_TILE,

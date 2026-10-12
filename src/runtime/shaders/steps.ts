@@ -16,7 +16,7 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-import { GROUP, STEP } from "./common.js";
+import { GROUP, STEP } from "./common.ts";
 
 // The activations of the packed shaders, as the CPU's quantize_x makes them (kernels/kernel.ts): per token and group
 // of 32, the scale is the largest |value| / 127 and a value round(value × (1 / scale)) (half to even), clamped to

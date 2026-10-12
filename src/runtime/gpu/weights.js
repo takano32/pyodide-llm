@@ -5,8 +5,8 @@
 
 import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, readBack, validated,
   pipelineOf, bind, dispatch } from "./device.js";
-import { GROUP } from "../shaders/common.js";
-import { WIDEN_SIX, sixDispatch, sixValues } from "../shaders/steps.js";
+import { GROUP } from "../shaders/common.ts";
+import { WIDEN_SIX, sixDispatch, sixValues } from "../shaders/steps.ts";
 
 // every layer's matrices (values and scales, as the checkpoint holds them; T154: no w3 where there is no gate) and its
 // vectors: the weights of its two norms, and (T153) Qwen2's biases of q, k and v, Qwen3's norms of a head of q and of

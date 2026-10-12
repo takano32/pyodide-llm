@@ -3,7 +3,7 @@
 // A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
-import { REPETITION_WINDOW } from "./run.js";
+import { REPETITION_WINDOW } from "./run.ts";
 
 // The CPU's sampling in JavaScript (kernels/kernel.ts's penalize() and sample(), as the engine's generate() calls
 // them): what SAMPLE is held to (/benchmark/'s check), and itself held to the kernel (tests/smoke.mjs). logits: a

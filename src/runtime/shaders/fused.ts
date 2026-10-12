@@ -15,10 +15,10 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-import { GROUP, STEP } from "./common.js";
-import { TERNARY_PACKED, sdp8ai } from "./prompt.js";
-import { SCALE_WORD } from "./steps.js";
-import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.js";
+import { GROUP, STEP } from "./common.ts";
+import { TERNARY_PACKED, sdp8ai } from "./prompt.ts";
+import { SCALE_WORD } from "./steps.ts";
+import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.ts";
 
 // ---- T150: a layer of a generated token in five dispatches where the separate steps take fourteen (RMSNorm; q, k and
 // v; RoPE and the cache; the attention; o; the residual add; RMSNorm; gate and up; SwiGLU; down; the residual add):

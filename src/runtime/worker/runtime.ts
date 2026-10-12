@@ -57,7 +57,7 @@ export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.reque
     limits: { maxStorageBufferBindingSize, maxBufferSize },
     packed: Boolean(navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) };
   try {
-    const wgsl = await import("../shaders/key.js");
+    const wgsl = await import("../shaders/key.ts");
     gpuAdapter.key = wgsl.deviceKey(adapter);
     // (T232: a model of ternary weights has a key of its own, with its shaders: gpu.js says that one)
     gpuAdapter.ternaryKey = wgsl.deviceKey(adapter, adapter, true);

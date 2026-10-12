@@ -6,8 +6,8 @@
 // shaders' parts, src/runtime/shaders/<part>.js, as it takes its neighbours': linked into the worker's file, with
 // nothing to fetch after it and nothing of /benchmark/'s own shaders in it. The device's key is key.js's, the same
 // text the model's worker reads its key from: tests/dist-check.mjs holds the two built files to one key.)
-import { halvesOf } from "../shaders/run.js";
-import { deviceKey } from "../shaders/key.js";
+import { halvesOf } from "../shaders/run.ts";
+import { deviceKey } from "../shaders/key.ts";
 
 // GPUBufferUsage's values (the name itself is missing where there is no WebGPU)
 const STORAGE = 0x80, COPY_DST = 0x8, COPY_SRC = 0x4, MAP_READ = 0x1, UNIFORM = 0x40;

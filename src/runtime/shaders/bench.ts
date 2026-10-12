@@ -4,7 +4,7 @@
 // A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
-import { STEP } from "./common.js";
+import { STEP } from "./common.ts";
 
 // the tokens a workgroup of the batched matrix multiplies at once: each weight is read once for all of them
 export const TILE = 8;

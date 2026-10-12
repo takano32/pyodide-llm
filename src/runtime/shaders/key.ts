@@ -4,12 +4,12 @@
 // A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
-import { TERNARY_PACKED, promptForms } from "./prompt.js";
-import { QUANTIZE, WIDEN_SIX, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "./steps.js";
-import { flashTile, flashVec, flashVecReduce } from "./attention.js";
-import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "./fused.js";
-import { EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS } from "./run.js";
-import { SAMPLE } from "./sample.js";
+import { TERNARY_PACKED, promptForms } from "./prompt.ts";
+import { QUANTIZE, WIDEN_SIX, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "./steps.ts";
+import { flashTile, flashVec, flashVecReduce } from "./attention.ts";
+import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "./fused.ts";
+import { EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS } from "./run.ts";
+import { SAMPLE } from "./sample.ts";
 
 // ---- T148: the key of what the page remembers of a device (the shaders it chose, T156: that the CPU was faster than a
 // model on the GPU alone): the adapter and the browser, and the text of the engine's shaders as a short hash (FNV-1a):

@@ -520,7 +520,7 @@ let ownSerial = 0x40000000;
 let refusals = 0;
 // T147: every tiled shader of the matrices this adapter can make (each forced in a run of its own), and the one the
 // GPU's worker chooses by timing them (the first run)
-const wgsl = await import("/runtime/shaders.js" + search);
+const wgsl = await import("/runtime/shaders.ts" + search);
 const adapter = await navigator.gpu?.requestAdapter();
 // (T232, ternary: those of a model of ternary weights, the packed ones alone; --forms does not narrow them)
 const formsOf = (ternary) => (!adapter ? [] : wgsl.promptForms({ half: adapter.features.has("shader-f16"), subgroups: adapter.features.has("subgroups"),

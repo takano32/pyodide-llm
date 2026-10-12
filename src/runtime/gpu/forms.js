@@ -3,10 +3,10 @@
 // (T352: a module of the model's GPU worker, gpu.js, which a bundler links it into: T367.3)
 
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
-import { GROUP } from "../shaders/common.js";
-import { ternaryValues, tiledOff } from "../shaders/prompt.js";
-import { FLASH_Q_TILE, flashShape, flashTile } from "../shaders/attention.js";
-import { devicePromptForms } from "../shaders/key.js";
+import { GROUP } from "../shaders/common.ts";
+import { ternaryValues, tiledOff } from "../shaders/prompt.ts";
+import { FLASH_Q_TILE, flashShape, flashTile } from "../shaders/attention.ts";
+import { devicePromptForms } from "../shaders/key.ts";
 
 // The right tiled shaders are timed together, in turn, on the model's first layer (its seven matrices by a whole block,
 // with the quantizations of a packed one): a submission of n passes of the layer and one of 2n, their difference the

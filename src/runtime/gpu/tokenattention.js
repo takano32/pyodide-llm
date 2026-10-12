@@ -5,7 +5,7 @@
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
 import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.js";
 import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, flashVec, flashVecReduce, tokenAttentionData,
-  tokenAttentionOff } from "../shaders/attention.js";
+  tokenAttentionOff } from "../shaders/attention.ts";
 
 // ---- T224: the attention of a generated token. The candidates: llama.cpp's decode form (shaders.js's flashVec and
 // flashVecReduce: the positions split over nwg workgroups a head, then reduced), with subgroups where there are (and

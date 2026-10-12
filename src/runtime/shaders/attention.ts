@@ -4,7 +4,7 @@
 // A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
-import { STEP } from "./common.js";
+import { STEP } from "./common.ts";
 
 // T147: the attention of a prompt's tokens, llama.cpp's flash attention with tiles (flash_attn_tile.wgsl), where
 // T135's (one workgroup a head and token) wrote every score to memory and read it three times, and read the same keys

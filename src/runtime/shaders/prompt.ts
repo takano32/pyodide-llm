@@ -5,7 +5,7 @@
 // A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
-import { GROUP, STEP } from "./common.js";
+import { GROUP, STEP } from "./common.ts";
 
 // ---- T146: a matrix times the tokens of a prompt by tiles (the benchmark measures them; the model's GPU worker is to
 // take the fastest on each device, T147). BATCHED reads each weight once for TILE tokens but loads an activation for
