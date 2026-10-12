@@ -100,20 +100,18 @@ const convolutionStateBytes = (layers: number, dim: number, convolution: Convolu
 // T260, an LFM2: what a convolution layer's matrix in gives (mixed: the gates B and C and what B multiplies, 3 dim)
 // (rotated: the form's rotated basis or the plan's block of one: whether there is one is all that is read. Framed: an
 // array of a token's frame, its name and its bytes)
-// T375.2: linear is what a linear-attention layer puts in a frame, as widths (mixed, what its convolution runs over;
-// read, what its output matrix reads; heads, its value heads), and convolution whether the model has convolution
-// layers: the engine hands in the plan's (Python's), footprint() below what it works out of the form (framed())
-type Framed = [string, number];
-type LinearFrame = { mixed: number; read: number; heads: number };
-const frameArrays = (dim: number, hidden: number, kvDim: number, qDim = dim, linear: LinearFrame | null = null, rotated: Rotated | number | null = null, ternary = false,
-  convolution = false): Framed[] => {
-  const { mixed = 0, read = 0 } = linear ?? {};
+// T375.3: the frame is the arrays every model has, then what each kind of the model's layers puts in it (in the
+// order of the table of the kinds: forward/kinds.ts), then a rotated basis's. A kind says its arrays and the widest
+// input its matrices read where that is wider than the model's own (widest: xb and xq hold it); the engine hands in
+// what the kinds of the plan say, footprint() below what it works out of the form (framed())
+export type Framed = [string, number];
+export type KindFrame = { arrays: Framed[]; widest?: number };
+const frameArrays = (dim: number, hidden: number, kvDim: number, qDim = dim, kinds: KindFrame[] = [], rotated: Rotated | number | null = null, ternary = false): Framed[] => {
+  const read = Math.max(0, ...kinds.map(({ widest = 0 }) => widest));
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QD = Math.max(dim, qDim, read) * 4, XQ = Math.max(dim, hidden, qDim, read);
   return [["x", D], ["xb", QD], ["xb2", D], ["q", qDim * 4], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD],
     ["hb2", HD], ["xq", XQ], ["xs", Math.ceil(XQ / 32) * (ternary ? 8 : 4)],
-    ...(linear ? [["gate", qDim * 4], ["mixed", mixed * 4], ["conv", mixed * 4], ["z", read * 4],
-      ["work", (2 * linear.heads + read) * 4]] satisfies Framed[] : []),
-    ...(convolution ? [["mixed", 3 * dim * 4]] satisfies Framed[] : []),
+    ...kinds.flatMap(({ arrays }) => arrays),
     ...(rotated ? [["xr", XQ * 4]] satisfies Framed[] : [])];
 };
 /** T237: the widths of what a model's matrices read (llama2_numpy.rotated_widths): the residual stream, an
@@ -121,8 +119,14 @@ const frameArrays = (dim: number, hidden: number, kvDim: number, qDim = dim, lin
 const rotatedWidths = (dim: number, hidden: number, qDim: number, linear: Linear | null) =>
   [...new Set([dim, qDim, hidden, ...(linear ? [linearWidths(linear).read] : [])])];
 const frameBytes = (arrays: Framed[]) => arrays.reduce((size, [, bytes]) => size + align(bytes), 0);
-// what footprint() hands frameArrays() of a form's linear-attention layers (no plan is made yet where it is asked)
-const framed = (linear: Linear | null): LinearFrame | null => linear && { ...linearWidths(linear), heads: linear.value_heads };
+// what footprint() hands frameArrays() of a form's kinds of layers (no plan is made yet where it is asked: its own
+// formula of what forward/attention.ts, linear.ts and convolution.ts say of a plan, until T375.5)
+const framed = (dim: number, qDim: number, linear: Linear | null, convolution: Convolution | null): KindFrame[] => {
+  const { mixed = 0, read = 0 } = linear ? linearWidths(linear) : {};
+  return [...(linear ? [{ arrays: [["gate", qDim * 4]] satisfies Framed[] },
+    { arrays: [["mixed", mixed * 4], ["conv", mixed * 4], ["z", read * 4], ["work", (2 * linear.value_heads + read) * 4]] satisfies Framed[], widest: read }] : []),
+  ...(convolution ? [{ arrays: [["mixed", 3 * dim * 4]] satisfies Framed[] }] : [])];
+};
 
 /** T115: the most bytes the forward pass puts after a checkpoint of size bytes: at the end of its whole context,
  * the KV cache grown to it in place (T130). An upper bound, a little above what createForward allocates
@@ -168,7 +172,7 @@ export function footprint(header: Header, size: number, { dtype = "float32", arc
   if (quantized || arch === "gpt2") bytes += seqLen * headSize * 4;
   // the frames of BATCH tokens, their attention scores, the logits; the keys and values of a block from the GPU (in
   // float16) and its rows
-  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, framed(linear), rotated, ternary, Boolean(convolution))) + align(seqLen * heads * 4)) + vocab * 4;
+  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, framed(dim, qDim, linear, convolution), rotated, ternary)) + align(seqLen * heads * 4)) + vocab * 4;
   // T237: the signs of a rotated basis, a float32 for every value of every width
   if (rotated) bytes += rotatedWidths(dim, hidden, qDim, linear).reduce((sum, width) => sum + align(width * 4), 0);
   if (gpu) bytes += 2 * layers * GPU_BLOCK * kvDim * 2 + GPU_BLOCK * dim * 4;
