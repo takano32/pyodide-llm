@@ -7,9 +7,11 @@
 #     engine_cache()), put into the shape the tool reads from transformers' cache;
 #   a pass of one token (the stepped way) is a little off, so that "transformers' own two computations" differ and the
 #     lines are ten times a floor that is not zero;
-#   WRONG: {"logits": x} adds x to every logit of every pass and {"states": x} scales what a pass holds by 1 + x: a
-#     transformers that agrees with itself and that the engine is not within the line of, which every tool must say
-#     FAILED to. (One whose two ways disagree by as much would only raise the line: the line is ten times that.)
+#   WRONG: {"logits": x} adds x to every logit of a pass at once and of a pass token by token, and {"states": x} scales
+#     what such a pass holds by 1 + x: a transformers that agrees with itself and that the engine is not within the line
+#     of, which every tool must say FAILED to. (One whose two ways disagree by as much would only raise the line: the
+#     line is ten times that.) {"kept": x} adds x to the logits of a pass that keeps only some positions' (the long
+#     text's), which the other two leave right: each wrong is one verdict's to see.
 #   a made-up model's tensors have transformers' names and shapes by tests/made_up.py's makers; their values are the
 #     tool's (it writes every parameter).
 import json
@@ -47,10 +49,10 @@ def engine_of(tensors, published, context):
     return make
 
 
-def held(llama, count, stepped):
+def held(llama, count, stepped, wrong=0.0):
     """the cache of transformers after count positions, from the engine's states as the tool of its kind reads them"""
     arch = llama.standin_arch
-    scale = np.float32((1 + 2e-6 if stepped else 1) * (1 + WRONG.get("states", 0.0)))
+    scale = np.float32((1 + 2e-6 if stepped else 1) * (1 + wrong))
     pad = lambda rows: view(np.concatenate([np.zeros_like(rows[:, :1]), rows * scale], axis=1)[None])
     layers = []
     if arch in ("qwen35", "lfm2"):
@@ -124,11 +126,13 @@ class Model:
         stepped = len(ids) == 1
         logits = np.stack([llama.forward(token, start + at).copy() for at, token in enumerate(ids)])
         wave = np.cos(np.arange(logits.shape[-1], dtype=np.float32))
-        logits = logits * (1 + 3e-6 * wave if stepped else 1) + WRONG.get("logits", 0.0) * wave
+        some = logits_to_keep is not None
+        logits = logits * (1 + 3e-6 * wave if stepped else 1) + WRONG.get("kept" if some else "logits", 0.0) * wave
         if logits_to_keep is not None:
             logits = logits[np.asarray(logits_to_keep)]
         return types.SimpleNamespace(logits=view(logits.astype(np.float32)[None]),
-                                     past_key_values=held(llama, start + len(ids), stepped) if use_cache else None)
+                                     past_key_values=held(llama, start + len(ids), stepped, 0.0 if some else WRONG.get("states", 0.0))
+                                     if use_cache else None)
 
     def generate(self, ids, max_new_tokens=16, **more):
         ids, llama = [int(token) for token in np.asarray(ids)[0]], self.engine()

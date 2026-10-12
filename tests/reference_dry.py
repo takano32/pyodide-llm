@@ -15,8 +15,10 @@
 #   right: every part of every tool ends with nothing FAILED: its exit is 0, its result False;
 #   the faults are all there and all seen: the 19 of the LFM2, the weak ones of a Granite (those the check must see),
 #     the three of the layers RoPE leaves alone;
-#   wrong: against a transformers whose logits are 1e-2 off, and one whose states are 1% off (the stand-in's WRONG), every
-#     tool says FAILED and ends True: a verdict nobody reads would pass the parts above.
+#   wrong: against a transformers whose logits are 1e-2 off, one whose states are 1% off and one whose long pass alone
+#     is off (the stand-in's WRONG), every tool says FAILED and ends True: a verdict nobody reads would pass the parts
+#     above. And of the LFM2's faults: an engine with nothing wrong in their place is said NOT CAUGHT, and one whose
+#     logits are right and whose states are not is caught, by the states.
 # What it cannot see: anything of transformers itself (its classes' arguments, its cache's shapes, its tokenizer), the
 # real models, reference_llama.py's --gguf, --layers and ByLayer, reference_qwen35.py's --model= (2B, 4B).
 import contextlib
@@ -52,6 +54,7 @@ import reference_qwen35  # noqa: E402
 import transformers  # noqa: E402  (the stand-in)
 
 VOCAB, CONTEXT = 800, 512  # (the LFM2's fault "the state not cleared" runs tokens 500 to 700)
+WEAK = 7  # the weak faults of a Granite whose q is multiplied (reference_llama.py's weak_errors): a line each
 LONG = 300  # of the long text here: past 256, where the engine's keys and values double (the tools' own: 1024)
 REVISION = "0" * 40
 CHATML = "{% for message in messages %}<|im_start|>{{ message['role'] }}\n{{ message['content'] }}<|im_end|>\n{% endfor %}" \
@@ -130,6 +133,27 @@ def entry(name):
             "hf": {"repo": f"made/{name}", "revision": REVISION, "weights": "model.safetensors"}}
 
 
+def nothing_wrong(llama, make):
+    return llama
+
+
+def only_in_the_states(llama, make):
+    """right logits, and the newest row of the first convolution layer's state 1% off after every token (put back before
+    the next reads it): what only the states can see"""
+    right, kept = llama.forward, {}
+
+    def forward(token, pos, **more):
+        if kept:
+            llama.conv_state[0][-1] = kept.pop("row")
+        out = right(token, pos, **more)
+        kept["row"] = llama.conv_state[0][-1].copy()
+        llama.conv_state[0][-1] *= 1.01
+        return out
+
+    llama.forward = forward
+    return llama
+
+
 def parts(work):
     """[(name, what to call, how it must end, what its lines must hold: [(a pattern, how many lines)], the stand-in's WRONG)]"""
     def main(tool, *argv):
@@ -156,11 +180,20 @@ def parts(work):
                 reference_llama.WEAK = False
         return call
 
+    def lfm2_faults(faults):
+        def call():
+            real, reference_lfm2.FAULTS = reference_lfm2.FAULTS, faults
+            try:
+                return reference_lfm2.real(work / "lfm2" / "dry", 96, "dry", True)
+            finally:
+                reference_lfm2.FAULTS = real
+        return call
+
     right, fine = ("returned", False), [("FAILED", 0)]
     faults = len(reference_lfm2.FAULTS)
     out = []
-    # the made-up models of each tool; a Granite's weak faults are 7 (q is multiplied by something other than 1 in all three)
-    out += [(f"llama made-up, {name}", llama_made_up(name), right, fine + [(": a fault, ", 7)], {})
+    # the made-up models of each tool (q is multiplied by something other than 1 in all three Granites)
+    out += [(f"llama made-up, {name}", llama_made_up(name), right, fine + [(": a fault, ", WEAK)], {})
             for name in reference_llama.MADE_UP]
     out += [(f"qwen35 made-up, {name}", lambda name=name: reference_qwen35.made_up(name, reference_qwen35.MADE_UP[name]), right,
              fine + [("the states after 80 positions", 1)], {}) for name in reference_qwen35.MADE_UP]
@@ -173,7 +206,7 @@ def parts(work):
                 fine + [("the same ids", 1), ("the two wrote the same", 1), (f"long: the engine ran {LONG} positions", 1),
                         (r"fault \(", faults), (f"faults: {faults} of {faults} are past the line", 1)], {}))
     out.append(("llama real, a Granite with the weak faults", llama_real("granite", True), right,
-                fine + [("the same ids", 2), ("the two wrote the same", 1), (": a fault, ", 7), ("must see and did not: none", 1)], {}))
+                fine + [("the same ids", 2), ("the two wrote the same", 1), (": a fault, ", WEAK), ("must see and did not: none", 1)], {}))
     out.append(("llama real, a SmolLM3", llama_real("smollm3", False), right,
                 fine + [("the same ids", 2), (": a fault, ", 3), ("seen by neither", 0), ("the check did not see: none", 1)], {}))
     # the tools by their arguments
@@ -187,9 +220,14 @@ def parts(work):
     out.append(("reference_lfm2.py --only=real --model=dry,dry --positions=40 --no-faults",
                 main(reference_lfm2, str(work / "lfm2"), "--only=real", "--model=dry,dry", "--positions=40", "--no-faults"), ("exit", 0),
                 ok + [("the states after 40 positions", 2), (r"fault \(", 0)], {}))
-    # a transformers the engine is not within the line of: every verdict must say so (the states' on the made-up models
-    # alone: a real part's long text is two seconds)
-    said = [("FAILED", None)]
+    # the LFM2's faults: one that only the states see is caught, and no fault at all is not
+    out.append(("lfm2 real, a fault only the states see", lfm2_faults({"only in the states": only_in_the_states}), right,
+                fine + [(r"fault \(only in the states\): logits 0.00e\+00 .* the same most likely token at 65 of 65", 1),
+                        ("faults: 1 of 1 are past the line", 1)], {}))
+    out.append(("lfm2 real, no fault where a fault must be", lfm2_faults({"nothing wrong": nothing_wrong}), ("returned", True),
+                [("NOT CAUGHT, FAILED", 1), ("faults: 0 of 1 are past the line", 1), ("FAILED", 2)], {}))
+    # a transformers the engine is not within the line of: every verdict must say so, and the long text's must not
+    said = [("FAILED", None), ("long: .* FAILED", 0)]
     for what, wrong in (("logits 1e-2 off", {"logits": 1e-2}), ("states 1% off", {"states": 1e-2})):
         first = next(iter(reference_llama.MADE_UP))
         out.append((f"WRONG ({what}): llama made-up", llama_made_up(first, False), ("returned", True), said, wrong))
@@ -197,10 +235,13 @@ def parts(work):
             first = next(iter(tool.MADE_UP))
             out.append((f"WRONG ({what}): {name} made-up", lambda tool=tool, first=first: tool.made_up(first, tool.MADE_UP[first]),
                         ("returned", True), said, wrong))
-    wrong = {"logits": 1e-2}
-    out.append(("WRONG (logits 1e-2 off): llama real", llama_real("smollm3", False), ("returned", True), said, wrong))
-    out.append(("WRONG (logits 1e-2 off): qwen35 real", lambda: reference_qwen35.real(work / "qwen35", 96), ("returned", True), said, wrong))
-    out.append(("WRONG (logits 1e-2 off): lfm2 real", lambda: reference_lfm2.real(work / "lfm2" / "dry", 96, "dry", False), ("returned", True), said, wrong))
+        out.append((f"WRONG ({what}): llama real", llama_real("smollm3", False), ("returned", True), said, wrong))
+        out.append((f"WRONG ({what}): qwen35 real", lambda: reference_qwen35.real(work / "qwen35", 96), ("returned", True), said, wrong))
+        out.append((f"WRONG ({what}): lfm2 real", lambda: reference_lfm2.real(work / "lfm2" / "dry", 96, "dry", False), ("returned", True), said, wrong))
+    # the long pass alone: one line says FAILED, the long text's
+    said, wrong = [("FAILED", 1), ("^[a-z0-9]+: long: .* FAILED", 1)], {"kept": 1e-2}
+    out.append(("WRONG (the long pass 1e-2 off): qwen35 real", lambda: reference_qwen35.real(work / "qwen35", 96), ("returned", True), said, wrong))
+    out.append(("WRONG (the long pass 1e-2 off): lfm2 real", lambda: reference_lfm2.real(work / "lfm2" / "dry", 96, "dry", False), ("returned", True), said, wrong))
     out.append(("WRONG (logits 1e-2 off): reference_lfm2.py --only=made-up", main(reference_lfm2, str(work / "lfm2"), "--only=made-up"),
                 ("exit", 1), [("^lfm2: FAILED$", 1)], {"logits": 1e-2}))
     return out

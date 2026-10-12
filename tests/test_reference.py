@@ -80,6 +80,7 @@ def test_the_line_about_logits_says_what_was_found_and_fails_past_the_line():
     say = Said()
     assert R.logits_failed(say, "t: the engine against x", theirs + 5e-4, theirs, 1e-3) is False
     assert say == ["t: the engine against x: largest difference 5.00e-04, mean 5.00e-04, the same most likely token at 2 of 2 positions"]
+    assert R.logits_failed(Said(), "t", theirs + 2e-3, theirs, 1e-3) is True, "twice the line is past it"
     off = theirs.copy()
     off[1, 1] += 2.0
     say = Said()
@@ -229,6 +230,38 @@ def test_the_long_run_holds_the_logits_at_some_positions_and_the_states_at_the_e
     say = Said()
     assert R.long_failed(say, kept, Counting(), ids, at, theirs, held(), 1e-3) is True
     assert say[0].endswith("turns 5.0e-04; sides 5.0e-04; corners 5.0e-04 — FAILED (the line: 1e-04): turns, sides, corners")
+
+
+def test_transformers_is_run_both_ways_and_at_some_positions_of_one_pass(monkeypatch):
+    """both_ways() and kept_logits() are the two of the skeleton that need torch: here with the dry run's stand-in for it
+    and a model that says what it was asked."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("torch", HERE / "reference_standin" / "torch.py")
+    torch = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(torch)
+    monkeypatch.setitem(sys.modules, "torch", torch)
+    asked = []
+
+    class Out:
+        def __init__(self, ids, past, keep):
+            seen = (past or []) + ids
+            self.past_key_values = seen
+            rows = [[float(len(seen) - len(ids) + at), float(token)] for at, token in enumerate(ids)]
+            self.logits = torch.tensor([rows if keep is None else [rows[int(at)] for at in keep]], dtype="float32")
+
+    def model(input_ids=None, past_key_values=None, use_cache=False, logits_to_keep=None):
+        ids = [int(token) for token in input_ids[0]]
+        asked.append((ids, None if past_key_values is None else list(past_key_values), use_cache))
+        return Out(ids, past_key_values, logits_to_keep)
+
+    states_of = lambda past, count: ("states", tuple(past), count)
+    whole, at_once, stepped, stepped_states = R.both_ways(model, [7, 8, 9], states_of)
+    assert asked == [([7, 8, 9], None, True), ([7], None, True), ([8], [7], True), ([9], [7, 8], True)], "at once, then each token after the cache of those before"
+    assert whole.tolist() == [[0, 7], [1, 8], [2, 9]] and stepped.tolist() == [[0, 7], [1, 8], [2, 9]] and type(stepped) is np.ndarray
+    assert at_once == ("states", (7, 8, 9), 3) and stepped_states == ("states", (7, 8, 9), 3) and at_once is not stepped_states
+    del asked[:]
+    theirs, held_after = R.kept_logits(model, [7, 8, 9, 4], [0, 3], states_of)
+    assert asked == [([7, 8, 9, 4], None, True)] and theirs.tolist() == [[0, 7], [3, 4]] and held_after == ("states", (7, 8, 9, 4), 4)
 
 
 # ----------------------------------------------------------------------------------------------------- conversions
