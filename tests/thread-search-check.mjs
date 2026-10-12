@@ -22,6 +22,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { plans as plansFor } from "./plans.mjs";
 import { runtime, runtimeUrl } from "./tree.mjs";
 
 const root = new URL("..", import.meta.url);
@@ -31,21 +32,12 @@ const { createForward, footprint } = await import(forwardFile);
 const { CONTROL_BYTES } = await import(runtimeUrl("jobs.ts"));
 const { threadsKey } = await import(new URL("src/bench.js", root));
 
-// a float32 Llama of 2 layers: its tensors one after the other (the engine reads none of them with kernels that do nothing)
-const [dim, hidden, layers, heads, vocab, seqLen] = [32, 64, 2, 2, 64, 64], headSize = dim / heads;
-const tensors = {};
-let end = 28;
-for (const [name, shape] of [["token_embedding_table", [vocab, dim]], ["rms_att_weight", [layers, dim]], ["wq", [layers, dim, dim]],
-  ["wk", [layers, dim, dim]], ["wv", [layers, dim, dim]], ["wo", [layers, dim, dim]], ["rms_ffn_weight", [layers, dim]],
-  ["w1", [layers, hidden, dim]], ["w2", [layers, dim, hidden]], ["w3", [layers, hidden, dim]], ["rms_final_weight", [dim]],
-  ["freq_cis_real", [seqLen, headSize / 2]], ["freq_cis_imag", [seqLen, headSize / 2]]]) {
-  tensors[name] = { kind: "f32", offset: end, shape, group: 0, scales: 0 };
-  end += shape.reduce((a, b) => a * b, 1) * 4;
-}
-const size = end;
-const plan = { arch: "llama", dim, hidden_dim: hidden, n_layers: layers, n_heads: heads, n_kv_heads: heads, head_size: headSize, vocab_size: vocab,
-  seq_len: seqLen, rotary: headSize, parallel_residual: false, kv_start: seqLen, rms_norm_eps: 1e-5, shared_classifier: true, int8: false,
-  relaxed: false, tensors, derived: {}, outliers: [], half_kv: false };
+// a float32 Llama of 2 layers (the engine reads none of its tensors with kernels that do nothing). T375.2: its plan is
+// Python's own (tests/plans.mjs, the native Python), as every plan a test hands the engine
+const [dim, hidden, layers, heads, vocab, seqLen] = [32, 64, 2, 2, 64, 64];
+const { plansOf, planOf, FORM } = plansFor(root);
+const [placed] = plansOf([{ header: [dim, hidden, layers, heads, heads, vocab, seqLen], form: FORM, dtype: "float32" }]);
+const size = placed.size, plan = planOf(placed, { relaxed: false });
 const PAGE = 65536, after = footprint([dim, hidden, layers, heads, heads, vocab, seqLen], size, { dtype: "float32", shared: true });
 const memory = new WebAssembly.Memory({ initial: Math.ceil((CONTROL_BYTES + size + after) / PAGE) + 1, maximum: Math.ceil((CONTROL_BYTES + size + after) / PAGE) + 2, shared: true });
 const empty = new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
@@ -259,22 +251,9 @@ if (args.includes("--table")) {
 // that is this test: ready when ready() is called, "ended" at once when stopped. A token's times are 4 threads' best
 // while the GPU gets ready (as gpu-default-check.mjs's) and the owner's Android's after it
 {
-  const quantized = {};
-  let at = 28;
-  for (const [name, shape] of [["token_embedding_table", [vocab, dim]], ["rms_att_weight", [layers, dim]], ["wq", [layers, dim, dim]],
-    ["wk", [layers, dim, dim]], ["wv", [layers, dim, dim]], ["wo", [layers, dim, dim]], ["rms_ffn_weight", [layers, dim]],
-    ["w1", [layers, hidden, dim]], ["w2", [layers, dim, hidden]], ["w3", [layers, hidden, dim]], ["rms_final_weight", [dim]]]) {
-    const count = shape.reduce((a, b) => a * b, 1);
-    if (name.startsWith("rms")) {
-      quantized[name] = { kind: "f32", offset: at, shape, group: 0, scales: 0 };
-      at += count * 4;
-    } else {
-      quantized[name] = { kind: "int8", offset: at, shape, group: 32, scales: at + count };
-      at += count + (count / 32) * 4;
-    }
-  }
-  const bytes = at, cos = new Float32Array(seqLen * headSize / 2).fill(1), sin = new Float32Array(seqLen * headSize / 2);
-  const int8Plan = { ...plan, int8: true, half_kv: true, tensors: quantized, derived: { freq_cis_real: cos, freq_cis_imag: sin } };
+  // (the same model as int8: Python's plan again; its RoPE tables are zeros, which no kernel here reads)
+  const [int8Placed] = plansOf([{ header: [dim, hidden, layers, heads, heads, vocab, seqLen], form: FORM, dtype: "int8" }]);
+  const bytes = int8Placed.size, int8Plan = planOf(int8Placed, { relaxed: false });
   const room = footprint([dim, hidden, layers, heads, heads, vocab, seqLen], bytes, { dtype: "int8", relaxed: false, halfKV: true, shared: true, gpu: true });
   const pages = Math.ceil((CONTROL_BYTES + bytes + room) / PAGE) + 1;
   const int8Memory = new WebAssembly.Memory({ initial: pages, maximum: pages + 1, shared: true });

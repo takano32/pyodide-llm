@@ -18,22 +18,16 @@
 // ({stage, at, of}, T177): the page shows it, and it answers none of the page's questions.
 import { built } from "../built.ts";
 import { isUpdated, saidOf, named, unstarted } from "../updated.ts";
+// T375.2: the CPU section's made-up model and its plan (a module of its own, so that a test holds the plan to Python's)
+import { GROUP, SHAPE, madeUpModel } from "./madeup.ts";
+import type { MadeName, Model } from "./madeup.ts";
 // T368.7: what the page asks and is answered (contracts/benchmark.ts), and the engine's own types of what it is handed
 import type * as Forward from "../forward.ts";
 import type { Compiled, Spawn } from "../forward.ts";
 import type { Built } from "../built.ts";
-import type { Plan, Tensor } from "../contracts/plan.ts";
 import type { Alive, Answer, CpuCeiling, CpuCeilings, CpuFound, CpuRow, DeviceFound, Failed, LineFetched, LineFound, SectionsResults, Staged, ToSections } from "../contracts/benchmark.ts";
 // a caught value, where its words are read
 type Thrown = { name?: string; message?: string; cutShort?: boolean } | null | undefined;
-// The made-up model's plan. It is not all of a Plan (contracts/plan.ts), and is handed to the engine as one: its
-// float32 tensors say no group and no scales, and it has none of linear, unturned, convolution and rotated (which the
-// engine reads as not there) nor of layers and widths (which it does not read yet)
-type Int8 = Tensor & { kind: "int8" };
-type Float = { kind: "f32"; offset: number; shape: number[] };
-type MadeName = "token_embedding_table" | "rms_att_weight" | "wq" | "wk" | "wv" | "wo" | "rms_ffn_weight" | "w1" | "w2" | "w3" | "rms_final_weight";
-type MadeUp = Omit<Plan, "tensors" | "linear" | "unturned" | "convolution" | "rotated" | "layers" | "widths"> & { tensors: Record<MadeName, Int8 | Float> };
-type Model = ReturnType<typeof madeUpModel>;
 // a loop of the ceilings' modules, as it is called here: by numbers, for a checksum
 type Loop = (...numbers: number[]) => number;
 // what paired() measured, as a rate
@@ -101,57 +95,12 @@ async function device(): Promise<DeviceFound> {
   return found;
 }
 
-// ---- the CPU. A made-up model of Llama 3.2 1B's width (dim 2048, FFN 8192, 32 heads of 64, 8 of them for keys and
-// values) with two layers and a vocabulary of 32000: 211 MB of int8 weights and their scales, which is what a token
-// reads, whatever the numbers in them. The forward pass is forward.ts's own (createForward, the kernels of
-// simdkernel_*.wasm, the software threads of helper.js): what differs from the model page is only that the plan of the
-// tensors comes from here instead of from Python.
-const SHAPE = { dim: 2048, hidden: 8192, layers: 2, heads: 32, kvHeads: 8, vocab: 32000, seqLen: 64 };
-const GROUP = 32;
+// ---- the CPU. A made-up model of Llama 3.2 1B's width (benchmark/madeup.ts). The forward pass is forward.ts's own
+// (createForward, the kernels of simdkernel_*.wasm, the software threads of helper.js): what differs from the model
+// page is only that the plan comes from there instead of from Python.
 const TOKENS = 12, WARM = 3;
 // T108: a prompt's tokens go through the layers BATCH (16) at a time, without logits
 const PROMPT = Array.from({ length: 16 }, (_, i) => 1 + i), PROMPT_RUNS = 5;
-
-function madeUpModel() {
-  const { dim, hidden, layers, heads, kvHeads, vocab, seqLen } = SHAPE;
-  const headSize = dim / heads, kvDim = kvHeads * headSize;
-  const tensors = {} as MadeUp["tensors"];
-  let offset = 28;  // after the legacy header, as in a checkpoint file
-  const int8 = (name: MadeName, shape: number[]) => {
-    const count = shape.reduce((a, b) => a * b, 1);
-    tensors[name] = { kind: "int8", offset, shape, group: GROUP, scales: offset + count };
-    offset += count + (count / GROUP) * 4;
-  };
-  const f32 = (name: MadeName, shape: number[]) => {
-    tensors[name] = { kind: "f32", offset, shape };
-    offset += shape.reduce((a, b) => a * b, 1) * 4;
-  };
-  int8("token_embedding_table", [vocab, dim]);
-  f32("rms_att_weight", [layers, dim]);
-  int8("wq", [layers, dim, dim]);
-  int8("wk", [layers, kvDim, dim]);
-  int8("wv", [layers, kvDim, dim]);
-  int8("wo", [layers, dim, dim]);
-  f32("rms_ffn_weight", [layers, dim]);
-  int8("w1", [layers, hidden, dim]);
-  int8("w2", [layers, dim, hidden]);
-  int8("w3", [layers, hidden, dim]);
-  f32("rms_final_weight", [dim]);
-  // RoPE's tables, which Python computes for an int8 file (derived: bytes of float32)
-  const cos = new Float32Array(seqLen * headSize / 2), sin = new Float32Array(seqLen * headSize / 2);
-  for (let pos = 0; pos < seqLen; pos++) {
-    for (let i = 0; i < headSize / 2; i++) {
-      const angle = pos / 10000 ** ((2 * i) / headSize);
-      cos[pos * headSize / 2 + i] = Math.cos(angle);
-      sin[pos * headSize / 2 + i] = Math.sin(angle);
-    }
-  }
-  const plan: MadeUp = { arch: "llama", dim, hidden_dim: hidden, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads,
-    head_size: headSize, vocab_size: vocab, seq_len: seqLen, rotary: headSize, parallel_residual: false, kv_start: seqLen,
-    rms_norm_eps: 1e-5, shared_classifier: true, int8: true, relaxed: true, tensors, outliers: [], half_kv: true,
-    derived: { freq_cis_real: new Uint8Array(cos.buffer), freq_cis_imag: new Uint8Array(sin.buffer) } };
-  return { plan, size: offset, header: [dim, hidden, layers, heads, kvHeads, vocab, seqLen] };
-}
 
 // random bytes for the int8 values, a scale that keeps the activations near 1, and norms of 1
 function fillWeights(memory: WebAssembly.Memory, base: number, { plan }: Pick<Model, "plan">) {
@@ -190,7 +139,7 @@ async function cpu(counts = [1, 2, 4]): Promise<CpuFound> {
   const after = forward.footprint(model.header, model.size, { dtype: "int8", relaxed: Boolean(kernels.relaxed), halfKV: true, shared });
   const { memory, base } = forward.weightsMemory(model.size, { shared, after });
   fillWeights(memory, base, model);
-  const engine = forward.createForward({ memory, base, size: model.size, kernels, plan: model.plan as Plan, spawn: shared ? spawn : undefined });
+  const engine = forward.createForward({ memory, base, size: model.size, kernels, plan: model.plan, spawn: shared ? spawn : undefined });
   // T163: the ceilings' loops on the same memory (no memory more: T96); their failure leaves the forward pass alone
   let ceilings: Ceilings | null = null, ceilingsFailed: string | undefined;
   try {

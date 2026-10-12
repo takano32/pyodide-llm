@@ -47,6 +47,7 @@ export type LinearWidths = { mixed: number; keys: number; read: number };
 export type Widths = { q: number; kv: number; linear: LinearWidths | null; rotated: number[] };
 
 export type Plan = {
+  // the architecture's name, for a person who looks at a plan: no engine reads it (T375.2: its facts are below)
   arch: Arch;
   // the header's numbers (head_size: the form's head_dim, or dim / n_heads)
   dim: number;
@@ -79,7 +80,11 @@ export type Plan = {
   rotated: number;
   // T110: the keys and values may be float16
   half_kv: boolean;
-  // T359.5 (forward.ts reads these two from T375)
+  // T359.5: every layer's facts, and the widths (forward.ts reads them from T375.2, and works none of them out)
   layers: Layer[];
   widths: Widths;
+  // T375.2: the facts of the architecture the layers differ by, as engine/layout.py's Layout names them: the norms are
+  // LayerNorms (else RMSNorms), the FFN is gated (three matrices; else GPT-2's two, with their biases and a GELU)
+  layer_norm: boolean;
+  gated_ffn: boolean;
 };
