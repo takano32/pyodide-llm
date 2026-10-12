@@ -443,6 +443,8 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   w.context.crossOriginIsolated = true;
   w.run("sharedKernels = {}; wideKernels = { plain: {}, shared: {} }; gpuAdapter = { fallback: false };");
   assert.equal(w.run("gpuOnlyPossible('int8')"), true, "the check's device may not put a model on the GPU alone: nothing is opened to keep it in");
+  // (T375.5: and only a dtype whose packing may be there, which the worker asks forward.ts: no file is opened for another)
+  assert.deepEqual(["ternary", "int6", "float32"].map((dtype) => w.run(`gpuOnlyPossible('${dtype}')`)), [true, false, false]);
   const endings = [
     ["a config.json that is not there", () => notFound(), function* () { yield ["text", "weights", "config.json"]; yield ["missing", "weights", "config.json"]; }, /has no config\.json/],
     ["a head the server refuses", () => new Response("", { status: 503 }), function* () { yield ["range", "weights", "model.safetensors", 0, 100]; }, /answered 503/],

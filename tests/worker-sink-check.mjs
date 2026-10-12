@@ -392,6 +392,18 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     assert.equal(direct(), false);
     await ask("loadBegan({ name: 'A file of mine' })");
     assert.equal(direct(), true, "a model with a name alone (a file of the visitor's)");
+    // T375.5: by the model's facts, which the worker hands on as the whole form: the same header with layers that keep
+    // a state (an LFM2's, whose architecture's line is a Llama's but for them) stays in this memory
+    const formed = (form) => {
+      const sunk = ask("checkpointSink()");
+      sunk.sink.open(size, proxy(LLAMA3B), "int8", proxy({ ...FORM, ...form }));
+      const alone = Boolean(sunk.weights.direct);
+      sunk.release();
+      return alone;
+    };
+    await ask("loadBegan({ name: 'A file with a form' })");
+    assert.deepEqual([formed({}), formed({ arch: "lfm2", convolution: { layers: "cca".repeat(9) + "a", taps: 3 } }), formed({ arch: "lfm2", convolution: { layers: "a".repeat(28), taps: 3 } })],
+      [true, false, true], "an LFM2 with convolution layers went on the GPU alone (the worker hands gpuOnlyUnfit() the form with its layers)");
     await ask("loadBegan({ id: 'the next load' })");
   }
   console.log("ok: a model on the GPU alone lets go of its GPU's worker where its load ends without it (T156's review); what weights.js holds of it is told and asked (T378.3)");
