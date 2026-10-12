@@ -7,54 +7,12 @@ import sys
 import numpy as np
 import pytest
 from conftest import ROOT, pack_checkpoint, synthetic_weights
+from made_up import hugging_face, safetensors_file  # noqa: F401 (the other tests take them from here)
 import llama2_convert
 from llama2_convert import (Arrays, Safetensors, check_config, checkpoint_form, checkpoint_header, checkpoint_size,
                             convert_weights, normalize,
                             tokenizer_bin, tokenizer_json_options, tokenizer_json_pieces)
 from llama2_numpy import Llama, Tokenizer, check_tokenizer, checkpoint_dtype
-
-
-def hugging_face(config, weights, shared):
-    """The tensors and the config.json Hugging Face would publish for these llama2.c weights."""
-    dim, n_heads, n_kv_heads = config["dim"], config["n_heads"], config["n_kv_heads"]
-    head_size = config["head_size"]
-
-    def permute(w, heads):  # llama2.c's adjacent pairs -> [first halves, second halves]: what convert undoes
-        return w.reshape(heads, head_size // 2, 2, w.shape[1]).transpose(0, 2, 1, 3).reshape(w.shape)
-
-    tensors = {"model.embed_tokens.weight": weights["token_embedding_table"], "model.norm.weight": weights["rms_final_weight"]}
-    names = dict(rms_att_weight="input_layernorm", wq="self_attn.q_proj", wk="self_attn.k_proj", wv="self_attn.v_proj",
-                 wo="self_attn.o_proj", rms_ffn_weight="post_attention_layernorm", w1="mlp.gate_proj", w2="mlp.down_proj",
-                 w3="mlp.up_proj")
-    for ours, theirs in names.items():
-        for layer in range(config["n_layers"]):
-            tensor = weights[ours][layer]
-            if ours in ("wq", "wk"):
-                tensor = permute(tensor, n_heads if ours == "wq" else n_kv_heads)
-            tensors[f"model.layers.{layer}.{theirs}.weight"] = np.ascontiguousarray(tensor)
-    if not shared:
-        tensors["lm_head.weight"] = weights["wcls"]
-    published = dict(model_type="llama", hidden_size=dim, intermediate_size=config["hidden_dim"],
-                     num_hidden_layers=config["n_layers"], num_attention_heads=n_heads, num_key_value_heads=n_kv_heads,
-                     vocab_size=config["vocab_size"], max_position_embeddings=config["seq_len"], rope_theta=10000.0,
-                     tie_word_embeddings=shared)
-    if head_size != dim // n_heads:
-        published["head_dim"] = head_size
-    return tensors, published
-
-
-def safetensors_file(tensors, stored="F32", metadata=None):
-    """metadata: more of the header's __metadata__ (T237: a rotated basis, as gguf_model() says one)."""
-    header, data = {"__metadata__": {"format": "pt", **(metadata or {})}}, b""
-    for name, tensor in tensors.items():
-        if stored == "BF16":  # the upper half of the float32: what bfloat16 is
-            raw = (np.ascontiguousarray(tensor, dtype=np.float32).view(np.uint32) >> 16).astype(np.uint16).tobytes()
-        else:
-            raw = np.ascontiguousarray(tensor, dtype={"F32": np.float32, "F16": np.float16}[stored]).tobytes()
-        header[name] = {"dtype": stored, "shape": list(tensor.shape), "data_offsets": [len(data), len(data) + len(raw)]}
-        data += raw
-    encoded = json.dumps(header).encode()
-    return struct.pack("<Q", len(encoded)) + encoded + data
 
 
 def reader(file, log=None):
