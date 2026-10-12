@@ -3,7 +3,7 @@
 // whether it fits a 32-bit or a 64-bit memory, and the WebAssembly memory itself (weightsMemory).
 // A module of src/runtime/forward.ts, which exports its names as before.
 
-import { CONTROL_BYTES, BATCH } from "../jobs.ts";
+import { CONTROL_BYTES, BATCH, packingOf } from "../jobs.ts";
 import { GPU_BLOCK } from "./choice.ts";
 import type { Arch, Convolution, Dtype, Linear, Rotated } from "../contracts/form.ts";
 
@@ -95,8 +95,8 @@ const convolutionStateBytes = (layers: number, dim: number, convolution: Convolu
 // after the convolution, z, and the delta rule's work (beta and decay of every value head, then its delta); xb holds
 // what the delta rule reads (as wide as v)
 // T237, a model in a rotated basis: xr, what a matrix reads of its input (the widest of them)
-// ternary (T231): after the scales of the activations' groups of 32 (xs) come as many int32, minus each group's sum
-// (kernels' interleave)
+// scaleBytes: what a group of 32 activations takes in xs, as the packing of the weights says (jobs.ts's PACKED: 4, a
+// float32 scale; ternary's 8, T231: after the scales come as many int32, minus each group's sum, kernels' interleave)
 // T260, an LFM2: what a convolution layer's matrix in gives (mixed: the gates B and C and what B multiplies, 3 dim)
 // (rotated: the form's rotated basis or the plan's block of one: whether there is one is all that is read. Framed: an
 // array of a token's frame, its name and its bytes)
@@ -106,11 +106,11 @@ const convolutionStateBytes = (layers: number, dim: number, convolution: Convolu
 // what the kinds of the plan say, footprint() below what it works out of the form (framed())
 export type Framed = [string, number];
 export type KindFrame = { arrays: Framed[]; widest?: number };
-const frameArrays = (dim: number, hidden: number, kvDim: number, qDim = dim, kinds: KindFrame[] = [], rotated: Rotated | number | null = null, ternary = false): Framed[] => {
+const frameArrays = (dim: number, hidden: number, kvDim: number, qDim = dim, kinds: KindFrame[] = [], rotated: Rotated | number | null = null, scaleBytes = 4): Framed[] => {
   const read = Math.max(0, ...kinds.map(({ widest = 0 }) => widest));
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QD = Math.max(dim, qDim, read) * 4, XQ = Math.max(dim, hidden, qDim, read);
   return [["x", D], ["xb", QD], ["xb2", D], ["q", qDim * 4], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD],
-    ["hb2", HD], ["xq", XQ], ["xs", Math.ceil(XQ / 32) * (ternary ? 8 : 4)],
+    ["hb2", HD], ["xq", XQ], ["xs", Math.ceil(XQ / 32) * scaleBytes],
     ...kinds.flatMap(({ arrays }) => arrays),
     ...(rotated ? [["xr", XQ * 4]] satisfies Framed[] : [])];
 };
@@ -172,7 +172,7 @@ export function footprint(header: Header, size: number, { dtype = "float32", arc
   if (quantized || arch === "gpt2") bytes += seqLen * headSize * 4;
   // the frames of BATCH tokens, their attention scores, the logits; the keys and values of a block from the GPU (in
   // float16) and its rows
-  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, framed(dim, qDim, linear, convolution), rotated, ternary)) + align(seqLen * heads * 4)) + vocab * 4;
+  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, framed(dim, qDim, linear, convolution), rotated, packingOf(dtype)?.xs)) + align(seqLen * heads * 4)) + vocab * 4;
   // T237: the signs of a rotated basis, a float32 for every value of every width
   if (rotated) bytes += rotatedWidths(dim, hidden, qDim, linear).reduce((sum, width) => sum + align(width * 4), 0);
   if (gpu) bytes += 2 * layers * GPU_BLOCK * kvDim * 2 + GPU_BLOCK * dim * 4;
