@@ -2184,11 +2184,39 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **移さないと決めたもの**: 読み込みの段取り・置き場の判断・保存の台帳（訳は T370 の項と設計の §4.2〜§4.4）。T374.2 までを T368（型）の前に。
 
 - **中身が決まった（2026-10-10、T376 の案）**: 変換の段取り（GGUF か、語彙が別の所か、1 つの safetensors か、シャードか、どのトークナイザの候補を試すか、書式はどこか）を Python のジェネレータに。Python が頼み（範囲・文・feed）、JavaScript は取って答えるだけ（`worker/convert.js` の約 190 行）。取得・取り直し・中止・Cache・`keeper()` は JavaScript のまま。**取る物と順は `tests/fixtures/conversion-fetches.json` と同じ**（T381 の直しの分だけ変える）。T370 が決めるまでは案。
-### T375 [整理][その他] 抽象化（TypeScript の側）: エンジンのアーキテクチャごとの分岐を 1 つの表に — 状態: 未着手（2026-10-09、同じく採番。T368 の後。規模 中〜大）
+### T375 [整理][その他] 抽象化（TypeScript の側）: エンジンのアーキテクチャごとの分岐を 1 つの表に — 状態: 進行中（T375.2 から。2026-10-09、同じく採番。T368 の後。規模 中〜大）
 - **子タスクの番号（2026-10-10）**: **T375.1** 先に測る（tiny-lm と llm-jp-3 150M で、作るときに選ぶ形と今の形を CI で交互に。結果で .3 をやるか決める）/ **T375.2** 事実を計画から読む（JS の `layerSlots`・`linearWidths`・`rotatedWidths` の写しと `arch` の比べをなくす。呼び分けは足さない）/ **T375.3** 層の中身・FFN・norm を作るときに 1 回選ぶ（.1 で遅くならないと出たときだけ）/ **T375.4** `jobs.js` のカーネルの登録簿 / **T375.5** `footprint`・`gpuBytes`・`gpuOnlyUnfit` が置いた表を読む。どれも未着手。
 - T359（変換器の Strategy）と対になる側: `public/forward/engine.js`（T368 の後は `.ts`）の層のアーキテクチャごとの分岐。パターンは実装が 2 つ以上ある所にだけ。設計を持ち主に見せてから実装する。T374 で Python に移った所は対象から外れる。
 
 - **範囲を決め直した（2026-10-10、T376 の案）: 「エンジンが計画の層ごとの事実を読む」**: 層の中身（attention・linear・畳み込み）・FFN（swiglu・gelu）・norm（rms・layer）を作るときに 1 回選ぶ。`jobs.js` にカーネルの登録簿（`runner()` の if の並びはそのまま、数字に名前を付けるだけ）。JS の `layerSlots`・`linearWidths`・`rotatedWidths` の写しと `arch` の比べ 8 つをなくす。`footprint`・`gpuBytes`・`gpuOnlyUnfit` は置いた表を読む。**層ごと・ブロックごとに最大 3 回の間接の呼び出しが増える: 先に CI で tiny-lm（いちばん小さく、割合がいちばん大きい）の前後を交互に測り、遅ければ事実だけを計画に移して呼び分けはやめる**（持ち主「推論が遅くなるのは避けたい」）。GPU の側は抽象化しない。
+- **順を入れ替えた（2026-10-12、取りまとめ役）: T375.2 を先にやる**（事実を移すだけで、1 トークンの道に呼び出しを足さない）。T375.1 の「測ってから .3 をやるか決める」は、持ち主のその後の決まり（AGENTS.md「推論でも、分けたことで付く多少の遅れは受け入れる」）で「.3 を入れるときに 1 回測って数字を書く」に替えた。
+- **T375.2 — 状態: 進行中（2026-10-12、ブランチ `t375.2-plan-facts`）。先に数えた（実装の前、main = 6c73e0f）**:
+  - **(a) `arch` の名前の比べは `src/runtime/forward/` に 8 つ**（設計の数のまま。`src/runtime/` のほかには無い）: `engine.ts` に 3（1 行: `gpt2 = arch === "gpt2"`、`layerNorm = arch === "gpt2" || arch === "neox"`）、`memory.ts` の `footprint()` に 3（`arch === "gpt2"`）、`alone.ts` に 2（`gpuBytes()` の `arch === "llama" ? 3 : 2`、`gpuOnlyUnfit()` の `arch !== "llama"`）。**この子タスクが消すのはエンジンの 3 つ**。残りの 5 つは計画の無い所（読み込みの前に見出しと形だけで呼ばれる）なので T375.5。
+  - **(b) エンジンが自分で出している層ごとの事実と幅**（`createForward()` の頭）: `layerSlots()`（層ごとの「状態を持つか」と種類の中の何番目か）、`attendingLayers()`（KV を持つ層の数）、`linearWidths()`（linear の層の幅 3 つのうち `mixed`・`read`）、`rotatedWidths()`（回した基底の符号を引く幅）、`turns`（層ごとに RoPE を掛けるか: `!gpt2 && !unturned.includes(l)`）、`kvDim`・`qDim`（head の数 × head の大きさ）。層の種類の呼び分けは `lines[l]` と `if (linear) … else …`（形の数が在るかで種類を言っている）。
+  - **(c) 何の事実か**。エンジンの 2 つの名前は 5 つの事実だった:
+
+    | いまの読み | 使う所 | 事実 | 読み替え先 |
+    |---|---|---|---|
+    | `gpt2` | `turns`（RoPE を掛けない） | 層ごとに RoPE を掛けるか | 計画の `layers[l].rope`（もう在る） |
+    | `gpt2` | `positions = gpt2 ? floats("positions") : 0` | 位置の表が在るか | 行の有無（`floats("positions")`: 行が無ければ 0。T359.6「行で言えることは欄にしない」） |
+    | `gpt2`（`shape.gpt2` → `gpuside.ts` の `turned`） | GPU に渡す「head のうち回す数」 | RoPE がどの層にも掛からない | `layers` のどれかが `rope` か（`shape.turning`） |
+    | `layerNorm` | 層の 2 つの norm と最後の norm、`gpuside.ts` の norm の bias のベクトルと GPU の計画の `layerNorm`・eps | norm の種類 | 計画に足す `layer_norm`（`Layout` の欄の名前） |
+    | `layerNorm`（同じ枝） | `w1` → `gelu(b1)` → `w2`（`w3` 無し）か `w1`・`w3` → `swiglu` → `w2` か | FFN の種類 | 計画に足す `gated_ffn`（`Layout` の欄の名前） |
+    | `layerNorm`（同じ枝） | `bo`・`b1`・`b2` を足す | 射影の後の bias が在るか | `bo` は行の有無（`bq`・`qNorm`・`wg` と同じ）。`b1`・`b2` は GPT-2 の FFN の中（FFN の種類に付く） |
+    | `lines[l]`・`placeOf[l]`・`attending` | 層の種類と置き場、KV の数 | 層ごとの種類・種類の中の何番目か | `layers[l].kind`・`.place` |
+    | `if (linear) linearAttention() else shortConvolution()` | 状態を持つ層の 1 歩 | 層の種類 | `layers[l].kind`（`"linear"`・`"convolution"`。知らない種類は作るときに断る） |
+    | `kvDim`・`qDim`・`linearWidths()`・`rotatedWidths()` | 枠・状態・符号 | 幅 | `widths.kv`・`.q`・`.linear`・`.rotated` |
+
+    もとから行の有無で読んでいるもの（変えない）: `bq`・`bk`・`bv`、`qNorm`・`kNorm`、`wg`。形の数として読むもの（変えない: 事実の写しでなく、その種類の層の数そのもの）: `plan.linear` の head の数と大きさと `conv`、`plan.convolution.taps`、`plan.rotary`、`plan.parallel_residual`、`plan.rotated`、`plan.unturned`（GPU の計画に渡す）。
+- **T375.2 の予定する違い（実装の前に書いた）**:
+  1. **訪問者に見えるものは無い。** カーネルの呼び出しの列と番地は、網の `calls` の 150 通りで同じ（「calls:」の行が全部「同じ」）。変換の出力・WGSL・`deviceKey()`・GPU の Worker に渡す計画の値は同じ（`CONVERTER` は上げない: 計画は実行時に作るもので、保存した変換に入らない）。
+  2. **Python の計画に鍵が 2 つ増える**（`layer_norm`・`gated_ffn`）。網の `layouts` では、足した鍵を別の記録（`AHEAD` の 2 つ目）に分けるので「新しい」が engine の件数ぶん出て、前からの記録は「同じ」。`exports` は変わらない見込み（名前を足さない）。
+  3. **`tests/plans.mjs` の `planOf()` は手書きをやめ、Python の `forward_plan()` の計画に試験のつまみ（relaxed・`kv_start`・外れ値・derived のバイト・回した基底の塊）だけを上書きする形になる。** 網の `calls` の「plan:」の記録（置き場）は今までと同じものをハッシュする（同じ）。
+  4. **回した基底の符号の表を置く順が Python の順（幅の小さい順）になる。** いまの JavaScript の順は「dim・q の幅・FFN の中・linear の層の出」。幅がこの順に並ばないモデル（q の幅が dim より小さい、など）では符号の表どうしの番地が入れ替わる（値と計算は同じ）。網の作り物の 2 つは同じ順。
+  5. **エンジンの層の枝が 2 つの事実に分かれる**: norm は `layer_norm`、FFN は `gated_ffn`、`bo` は行の有無、FFN の前の norm はどちらの FFN でも「並列残差なら層の入力」を読む（いまは gate つきの枝が `x` だけを読む: 並列残差で gate つきのモデルは無いので、いまの 5 つの記録では同じ呼び出し）。事実が食い違う作り物（RMSNorm で GELU の FFN、LayerNorm で gate つきの FFN）が NumPy と同じ答えになる（前は名前でしか選べなかった）。
+  6. **計画に層の事実が無い・層の数と合わない・知らない種類の層を言う計画は、エンジンを作るときに文で断る**（前: 手書きの計画は `arch` だけで通り、知らない `arch` は Llama として走った。Python は T359.6 から知らない `arch` を断るので、ページでは起きない）。`/benchmark/` の作り物の計画と試験の計画は、型どおりの全部の鍵を持つ形にする（`as Plan` を外す）。
+  7. **計画の `arch` を読む所がエンジンに無くなる**（鍵は残す: `plan-keys-check` の「書いて誰も読まない鍵」に訳つきで載る）。`footprint()`・`gpuBytes()`・`gpuOnlyUnfit()`・`weightsPlace()` と、そこが使う `memory.ts` の `layerSlots()`・`linearWidths()`・`rotatedWidths()` は残る（計画の無い所: T375.5）。`plan-keys-check` は、その残りの写しが計画の `layers`・`widths` と合うことを今までどおり見る。
+  8. GPU の側（`gpuFit()` の断りの文、GPU の Worker）は変えない。`shape.gpt2` は `shape.turning` に替わる（GPU の計画の `turned` の値は同じ）。
 ### T376 [設計][その他] 分割が残した継ぎ目を洗い出して、抽象化の全体の設計を決める — 状態: 完了（2026-10-10、持ち主が案を承認「オススメでいいよ」。2026-10-09、持ち主「この方針でやり直したほうがいいことあったらやってください」「抽象化のまえにやりたいよね？」。T352 の後、T357 の前。規模 中。実装はしない: 設計を持ち主に見せる）
 - **考え**: 分割そのもの（どの文をどのファイルに置くか）はやり直さない。責務の切れ目で切ってあり、「動かすだけ」を先にやるのは動きを変えてよい今でも正しい順。やり直す値打ちがあるのは、動きを変えない決まりのために曲げた所（継ぎ目）で、それは抽象化の仕事そのもの。だから別の回に 2 度やらず、抽象化の設計を広げて 1 回でやる。
 - **いま分かっている継ぎ目（どの番号にも入っていなかった）**: (a) 部品が一緒に読み書きする変数を機械的に 1 つのオブジェクトに入れた所: `worker/state.js` の `state`（36 個）・`src/page/state.ts` の `page`・`public/gpu/device.js` の `common`・`public/benchmark/gpu/device.js` の `shared`・`src/benchmark/state.ts` の `page`、`forward/` の `pool`・`gpuPart`・`held`（getter と setter のオブジェクト）。持ち主をはっきりさせる形（その状態を持つ部品が方法で出す）に。(b) `Llama` の土台クラス 3 つ（メソッドを 1 字も変えずに移すための継承: `TensorOrder`・`Sampling`・`Generation`）。(c) 鍵を動かさないために残した写し（`ternaryMatVec` は `fusedDp4aMatVec` の写し）と、シェーダを作る関数の重なり。(d) import を書き換えないためだけの窓口（`shaders.js`・`gpu.js`・`forward.js`・`worker.js`・`src/models.js`・`src/bench.js`・Python の 2 つ）: T367 で束ねるなら、読む側が部品を直に読む形にできるものがある。(e) 分割の途中で見つけて直していない誤り（`gpu.js` の `ended` が 2 回、古いコメント、T371・T372 など: 採番して後で）。
