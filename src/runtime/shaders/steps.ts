@@ -178,7 +178,7 @@ export const sixDispatch = (groups: number, most: number): [number, number] => {
   return [Math.max(1, x), Math.ceil(workgroups / Math.max(1, x))];
 };
 /** JavaScript's widening (the check's answer): the int8 values of groups of 24 packed bytes (a Uint8Array), as
- * llama2_numpy.unpack6 and src/runtime/forward/engine.js's weightAt read them */
+ * llama2_numpy.unpack6 and src/runtime/forward/engine.ts's weightAt read them */
 export function sixValues(packed: ArrayLike<number>) {
   const groups = packed.length / 24, out = new Int8Array(groups * 32);
   for (let g = 0; g < groups; g++) {

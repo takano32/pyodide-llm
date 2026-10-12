@@ -102,7 +102,7 @@ const STATE = /* wgsl */ `struct State {
   stopped: u32,   // 1 once a stop token was sampled, or a step was refused (not_finite): nothing changes after
   recent: array<u32, ${REPETITION_WINDOW}>,
 }`;
-/** T219: the State's word that says a step was refused (read back with the ids: gpu.js, forward.js) */
+/** T219: the State's word that says a step was refused (read back with the ids: gpu/tokens.ts, forward/gpuside.ts) */
 export const STATE_NOT_FINITE = 3;
 export const STATE_BYTES = 32 + 4 * REPETITION_WINDOW;
 /** T152's review (T160): float32 values into float16 bits, rounded to the nearest (ties to even), as the GPU's own keys

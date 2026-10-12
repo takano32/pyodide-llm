@@ -423,7 +423,7 @@ fn ternary_packed(codes: u32) -> vec4<u32> {
   return (bits + vec4<u32>(0x7f7f7f7fu)) ^ vec4<u32>(0x80808080u);
 }`;
 /** JavaScript's unpacking (the checks' answer): the int8 values of ternary codes (a Uint8Array, four weights a byte),
- * as llama2_numpy.unpack_ternary and src/runtime/forward/engine.js's weightAt read them */
+ * as llama2_numpy.unpack_ternary and src/runtime/forward/engine.ts's weightAt read them */
 export function ternaryValues(packed: ArrayLike<number>) {
   const out = new Int8Array(packed.length * 4);
   for (let i = 0; i < out.length; i++) out[i] = ((packed[i >> 2] >> (2 * (i & 3))) & 3) - 1;
@@ -600,7 +600,7 @@ ${dp4aLines(false)}`}
 // ---- T147: the tiled shaders a device may run a prompt's matrices with (T146's), for the model's GPU worker, which
 // checks each against JavaScript on a small matrix (tiledOff) and times the right ones on the model's own weights, and
 // takes the fastest: which is fastest differs from GPU to GPU (T146), and only the device can say. none: why a shape
-// is not made here (the device's threads or workgroup memory), as the benchmark says it (src/runtime/benchmark/gpu.js).
+// is not made here (the device's threads or workgroup memory), as the benchmark says it (src/runtime/benchmark/gpu.ts).
 // T232, ternary: the forms of a model of ternary weights, ORT's DP4A alone with the weights unpacked from their codes
 // (dp4a's ternary: the float forms would widen every weight to a float); none where there is no packed int8 dot
 export const promptForms = ({ half, subgroups, packed, memory, threads, ternary = false }: DeviceForms): PromptForm[] => {
@@ -640,7 +640,7 @@ export function quantizedLikeCpu(x: ArrayLike<number>) {
 }
 
 // How far a tiled shader's products (got: y after the product twice, the second added: 2 × W·x) are from
-// JavaScript's, the check of T146's review (src/runtime/benchmark/gpu/check.js's checkTiled): w, int8 [rows][n] with the float32
+// JavaScript's, the check of T146's review (src/runtime/benchmark/gpu/check.ts's checkTiled): w, int8 [rows][n] with the float32
 // scales s [rows][n / 32]; x, the tokens xStride apart; got, yStride apart. A packed form multiplies what the GPU
 // quantized (xq, xs, xStride apart), held to JavaScript's quantize_x first: a scale may differ in its last bits (WGSL's
 // division is not rounded exactly) and a value then by 1, a wrong index by far more. f32 forms: no more than 1e-4 of
