@@ -46,6 +46,10 @@ page_modules() {
   # the tools are to read; and the one reader of how a file takes its neighbours' names (tests/imports.mjs), on made-up texts
   node tests/tree-check.mjs
   node tests/imports-check.mjs
+  # T357.5: the stand-ins the checks below run the product on (tests/fakes/: the Cache API, fetch, a Worker's face, the
+  # clock of a token, Pyodide's proxies and a generator's face), each by itself: what each does as the thing it stands
+  # for, which a check that uses it leans on without saying (under a second)
+  node tests/fakes-check.mjs
   # T368.1: the type check of what a browser runs (tsc --noEmit on three programs: the pages' scripts, the runtime's
   # TypeScript, the Service Worker as the JavaScript it is), that a type's import is said as one, and the count of the
   # anys that are written (T473: no more than there are now); T368.8: and that a name a file of the runtime uses without
