@@ -17,7 +17,7 @@ const GPU_RECHECK = 8;
 // the submission's wait over the steps; with the owner's Android's F of about 8 ms and W of about 40 ms, 4 leaves 2 ms
 // of the wait a step, 16 would leave 0.5 but show the text in pieces of 16 and run up to 15 passes past a stop token);
 // the CPU's steps timed again, where the GPU is chosen, now and then; the most stop tokens the GPU's sampling holds
-// (shaders.js's STOPS_MOST)
+// (shaders.ts's STOPS_MOST)
 export const GPU_TOKENS = 4;
 const TOKEN_RECHECK = 4, STOPS_MOST = 8;
 

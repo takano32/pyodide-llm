@@ -1,15 +1,25 @@
-// shaders/key.js (T351): the key of what the page remembers of a device (T148, T366): the adapter, the browser and a
+// shaders/key.ts (T351): the key of what the page remembers of a device (T148, T366): the adapter, the browser and a
 // hash of the WGSL of the engine's shaders. It takes every part the engine's GPU worker runs a shader of, and none of
-// the benchmark's own (bench.js, stages.js) or likecpu.js.
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// the benchmark's own (bench.ts, stages.ts) or likecpu.ts.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
-import { TERNARY_PACKED, promptForms } from "./prompt.js";
-import { QUANTIZE, WIDEN_SIX, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "./steps.js";
-import { flashTile, flashVec, flashVecReduce } from "./attention.js";
-import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "./fused.js";
-import { EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS } from "./run.js";
-import { SAMPLE } from "./sample.js";
+import { TERNARY_PACKED, promptForms } from "./prompt.ts";
+import { QUANTIZE, WIDEN_SIX, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "./steps.ts";
+import { flashTile, flashVec, flashVecReduce } from "./attention.ts";
+import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "./fused.ts";
+import { EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS } from "./run.ts";
+import { SAMPLE } from "./sample.ts";
+import type { PromptForm } from "./prompt.ts";
+import type { FusedInput, FusedOutput } from "./fused.ts";
+
+// (T368.5) what the key reads of a device, or of the adapter it is made of (a GPUDevice and a GPUAdapter both have
+// them): the features that choose its shaders and the limits that size its tiles. And of the adapter alone, its info
+// (T148: not every browser gives one)
+export type Made = { features: { has(name: string): boolean };
+  limits: Pick<GPUSupportedLimits, "maxComputeWorkgroupStorageSize" | "maxComputeInvocationsPerWorkgroup" | "maxComputeWorkgroupSizeX"> };
+type Info = Pick<GPUAdapterInfo, "vendor" | "architecture" | "device" | "description">;
+export type Adapter = Made & { info?: Info };
 
 // ---- T148: the key of what the page remembers of a device (the shaders it chose, T156: that the CPU was faster than a
 // model on the GPU alone): the adapter and the browser, and the text of the engine's shaders as a short hash (FNV-1a):
@@ -21,18 +31,18 @@ import { SAMPLE } from "./sample.js";
 // every device's key). A maker's texts are those of every choice its text branches on (a form, a feature), with one
 // set of numbers: a number is written into the text and chooses nothing of it. tests/device-key-check.mjs holds that
 // every piece of text of the shaders gpu.js runs reaches the hash, and that the key does not move with the source.
-const EITHER = [false, true], OUTPUTS = ["rope", "add", "swiglu", "write"];
+const EITHER = [false, true], OUTPUTS: FusedOutput[] = ["rope", "add", "swiglu", "write"];
 /** the WGSL of every model's shaders in gpu.js, but for the prompt's tiles (devicePromptForms: those the device can make) */
 const engineShaders = () => [RMSNORM, HEAD_NORM, ADD, ROPE, SWIGLU, QUANTIZE, LAYER_NORM, GELU, EMBED, EMBED_ROWS, SAMPLE, NORM_QUANTIZE, TOKEN_ROPE, WIDEN_SIX,
   ...EITHER.flatMap((subgroups) => [
     ...EITHER.map((half) => flashTile({ headSize: 64, half, subgroups, wgSize: 32, kvTile: 8, minSubgroup: 4 })),
     flashVec({ headSize: 64, subgroups, wgSize: 32, kvTile: 32, dSplit: 16 }), flashVecReduce({ headSize: 64, subgroups, reduceSize: 32 }),
-    ...["norm", "plain"].flatMap((input) => OUTPUTS.map((output) => fusedMatVec({ input, output, subgroups })))]),
+    ...(["norm", "plain"] satisfies FusedInput[]).flatMap((input) => OUTPUTS.map((output) => fusedMatVec({ input, output, subgroups })))]),
   ...OUTPUTS.map((output) => fusedDp4aMatVec({ output }))];
 /** T232: and those of a model of ternary weights alone (its tiles: devicePromptForms' ternary) */
 const ternaryShaders = () => [TERNARY_PACKED, ...OUTPUTS.map((output) => ternaryMatVec({ output })), EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS];
 /** the tiled shaders of T146 a device can make (promptForms; T232, ternary: those of a model of ternary weights) */
-export const devicePromptForms = (device, ternary = false) => promptForms({ half: device.features.has("shader-f16"), subgroups: device.features.has("subgroups"),
+export const devicePromptForms = (device: Made, ternary = false) => promptForms({ half: device.features.has("shader-f16"), subgroups: device.features.has("subgroups"),
   packed: Boolean(globalThis.navigator?.gpu?.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")),
   memory: device.limits.maxComputeWorkgroupStorageSize,
   threads: Math.min(device.limits.maxComputeInvocationsPerWorkgroup, device.limits.maxComputeWorkgroupSizeX), ternary });
@@ -45,12 +55,12 @@ export const devicePromptForms = (device, ternary = false) => promptForms({ half
 // them, so that a character moved from the end of one text to the start of the next, or one shader cut in two, moves it.
 // The device's limits are not in it: they size the tiles (none) and nothing in the text, and the worker's key (the adapter's)
 // must be gpu.js's (the device's)
-export function deviceKey(adapter, device = adapter, ternary = false) {
-  const info = adapter.info ?? {};
+export function deviceKey(adapter: Adapter, device: Made = adapter, ternary = false): string {
+  const info: Partial<Info> = adapter.info ?? {};
   const language = globalThis.navigator?.gpu?.wgslLanguageFeatures;
   const named = [info.vendor, info.architecture, info.device, info.description, globalThis.navigator?.userAgent,
     language?.has("packed_4x8_integer_dot_product") ? "packed" : "", language?.has("subgroup_id") ? "subgroup_id" : ""].map((part) => part ?? "").join("|");
-  const tiles = (forms) => forms.flatMap((form) => [form.name, form.code]);
+  const tiles = (forms: PromptForm[]) => forms.flatMap((form) => [form.name, form.code]);
   let hash = 0x811c9dc5;
   for (const text of [...tiles(devicePromptForms(device)), ...engineShaders(),
     ...(ternary ? [...tiles(devicePromptForms(device, true)), ...ternaryShaders()] : [])]) {

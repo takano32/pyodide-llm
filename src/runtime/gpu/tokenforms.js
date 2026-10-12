@@ -7,11 +7,11 @@ import { halfToFloat } from "./forms.js";
 import { roomFor, BLOCK_ROUNDS } from "./block.js";
 import { chooseTokenAttention } from "./tokenattention.js";
 import { tokenCandidates, floatHead, tokenShape, tokenCodes, tokenBuffers, tokenPass, tokenStep, runTokens } from "./tokens.js";
-import { GROUP } from "../shaders/common.js";
-import { ternaryValues, quantizedLikeCpu } from "../shaders/prompt.js";
-import { sixValues } from "../shaders/steps.js";
-import { samplingState, samplingSettings } from "../shaders/run.js";
-import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.js";
+import { GROUP } from "../shaders/common.ts";
+import { ternaryValues, quantizedLikeCpu } from "../shaders/prompt.ts";
+import { sixValues } from "../shaders/steps.ts";
+import { samplingState, samplingSettings } from "../shaders/run.ts";
+import { penalizeLikeCpu, argmaxLikeCpu, walkLikeCpu } from "../shaders/likecpu.ts";
 
 // The forms of a token this device can make, compiled, checked and (where more than one is right) timed; the fastest
 // taken (m.tokens.form), with what each came to (m.tokens.forms) and its ms a step (m.tokens.ms). plan.remembered.tokens: the
@@ -109,7 +109,7 @@ async function timeTokens(m, forms) {
 // packed dot differ from device to device, and only the device can say):
 //   1. EMBED of a token of the second half of the vocabulary and the first layer at position 1 (the cache's row 0 of random
 //      float16), the stream h and the keys and values of position 1 read back: against JavaScript's layer in float64
-//      (the weights read from the shared memory as forward.ts holds them: int6 widened by shaders.js's sixValues; RoPE
+//      (the weights read from the shared memory as forward.ts holds them: int6 widened by shaders.ts's sixValues; RoPE
 //      from the CPU's tables; the keys and values rounded to float16 where the attention reads them (T225's review: the
 //      device's own float16 where it is a neighbour of the float64 value, heldFloats; else the nearest); on DP4A each
 //      matrix's input quantized as quantize_x quantizes it, in float32). The stream: no farther than LAYER_LINE of the
@@ -310,7 +310,7 @@ async function checkTokens(m, form, back = {}) {
     }
     const o = plus(matmul("wo", att), "bo"), h1 = x0.map((value, i) => value + o[i]);
     // (T154: GPT-NeoX's parallel residual, the FFN's norm of the layer's input; no gate, w1's bias and GELU as
-    // shaders.js's has it)
+    // shaders.ts's has it)
     const xn2 = norm(plan.parallel ? x0 : h1, vectorOf("ffn"), vectorOf("ffnBias"));
     const gate = plus(matmul("w1", xn2), "b1"), up = plan.matrices.w3 && matmul("w3", xn2);
     const gelu = (value) => 0.5 * value * (1 + Math.tanh(Math.min(9.010913, Math.max(-9.010913, 0.7978845608028654 * (value + 0.044715 * value ** 3)))));

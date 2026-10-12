@@ -48,7 +48,7 @@ let initialized: Promise<void> | undefined;
 // block of a prompt it can take given to it (its speed is no GPU's: the tests look at its numbers, not at its time),
 // and the first right shader of the matrices taken untimed (SwiftShader timed Llama 3.2 1B's past gpu.js's 180 s)
 export const hasWebGpu = Boolean(self.navigator?.gpu);
-// (and its key, T148's: what the page kept of the model on this device holds only for the same, shaders.js's deviceKey)
+// (and its key, T148's: what the page kept of the model on this device holds only for the same, shaders.ts's deviceKey)
 export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.requestAdapter().then(async (adapter) => {
   if (!adapter) return;
   const { maxStorageBufferBindingSize, maxBufferSize } = adapter.limits;
@@ -57,7 +57,7 @@ export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.reque
     limits: { maxStorageBufferBindingSize, maxBufferSize },
     packed: Boolean(navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) };
   try {
-    const wgsl = await import("../shaders/key.js");
+    const wgsl = await import("../shaders/key.ts");
     gpuAdapter.key = wgsl.deviceKey(adapter);
     // (T232: a model of ternary weights has a key of its own, with its shaders: gpu.js says that one)
     gpuAdapter.ternaryKey = wgsl.deviceKey(adapter, adapter, true);

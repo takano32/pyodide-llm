@@ -5,9 +5,9 @@
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.js";
 import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.js";
 import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, flashVec, flashVecReduce, tokenAttentionData,
-  tokenAttentionOff } from "../shaders/attention.js";
+  tokenAttentionOff } from "../shaders/attention.ts";
 
-// ---- T224: the attention of a generated token. The candidates: llama.cpp's decode form (shaders.js's flashVec and
+// ---- T224: the attention of a generated token. The candidates: llama.cpp's decode form (shaders.ts's flashVec and
 // flashVecReduce: the positions split over nwg workgroups a head, then reduced), with subgroups where there are (and
 // subgroup_id), and with the lanes of the workgroup standing for a subgroup; and the prompt's tiles (m.forms.attention: one
 // row of four used, a workgroup a head, T150's (a)). Each checked against JavaScript (checkTokenAttention), the right
@@ -80,7 +80,7 @@ function attentionPasses(m, a, io, heads, positions) {
     ...(nwg > 1 ? [[a.reduce, bind(m, a.reduce, [io.parts, io.out, params]), heads, 1]] : [])];
 }
 // Made-up buffers of an attention of a token over positions (heads of q on kvHeads of keys and values, the model's
-// headSize; shaders.js's tokenAttentionData: steep, the heads whose q is steep), the output, the Step of the token at
+// headSize; shaders.ts's tokenAttentionData: steep, the heads whose q is steep), the output, the Step of the token at
 // positions - 1, the tiles' Params, and the vec form's parts and Params
 function attentionIo(m, a, { heads, kvHeads, positions, steep = [] }, owned) {
   const size = m.plan.headSize, { q, keys, values } = tokenAttentionData({ heads, kvHeads, size, positions, steep });
@@ -96,7 +96,7 @@ function attentionIo(m, a, { heads, kvHeads, positions, steep = [] }, owned) {
     step: uniform(m, new Uint32Array([1, positions - 1, 0, 0]), owned), flash: uniform(m, flash, owned),
     ...(a.tiles ? {} : { parts: buffer(m, flashVecPartsBytes(a.shape, heads), STORAGE, owned), params: paramsOf(m, a.shape, heads, kvHeads, owned) }) };
 }
-// The check of an attention of a token, on made-up numbers against JavaScript's (shaders.js's tokenAttentionData and
+// The check of an attention of a token, on made-up numbers against JavaScript's (shaders.ts's tokenAttentionData and
 // tokenAttentionOff): 4 heads of q on 2 of keys and values (each head of q to its own), a token that reads 40 positions
 // (a KV_TILE of 32 and a part of the next: one part), 70 (two parts), 300 and 1100 (as many parts as the vec form takes,
 // each of more than one tile: the reduce over them), with positions past the token's that it must not read, and head

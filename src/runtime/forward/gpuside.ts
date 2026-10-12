@@ -121,7 +121,7 @@ export function gpuFit({ shape, weights, device, direct }:
   // and values are float16 as the GPU's, or float32 where the CPU keeps them so (T160, widened on the way back and
   // narrowed on the way up). What is left: a classifier
   // and an embedding of int8 or int6 in groups of 32 (T232: or ternary in groups of 128; of a ternary classifier the
-  // GPU takes the outlier channels apart as this does, shaders.js's TAKE_OUTLIERS); and the memory for the classifier, the embedding where it is
+  // GPU takes the outlier channels apart as this does, shaders.ts's TAKE_OUTLIERS); and the memory for the classifier, the embedding where it is
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
     const group = wcls?.ternary ? 128 : 32;

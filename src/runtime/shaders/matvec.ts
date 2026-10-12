@@ -1,11 +1,11 @@
-// shaders/matvec.js (T351): T149's matrix times one vector in the forms of public implementations (llama.cpp's
+// shaders/matvec.ts (T351): T149's matrix times one vector in the forms of public implementations (llama.cpp's
 // mul_mat_vec, ONNX Runtime's MatMulNBits and its DP4A for small M, each under its notice below). /benchmark/'s GPU
-// section alone runs these three; the fused layer of a generated token (fused.js) is made from them and takes the rows a
+// section alone runs these three; the fused layer of a generated token (fused.ts) is made from them and takes the rows a
 // workgroup has from here.
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
-import { sdp8ai } from "./prompt.js";
+import { sdp8ai } from "./prompt.ts";
 
 // ---- T149: a matrix times one vector (a generated token's), in the forms of public implementations, for the GPU
 // section of /benchmark/ to measure beside WIDEN and PACKED (the model's GPU worker is to take the fastest on each
@@ -59,7 +59,7 @@ const MATVEC_SHAPE = /* wgsl */ `struct Shape { rows: u32, words: u32, perRow: u
  */
 // The preprocessor's defines are the template's parameters here (a function-scope array cannot take an override's
 // size): WG_SIZE 256, OUTPUTS_PER_WG 4, NUM_COLS 1 (its loop and the barrier after each column left out).
-const mulMatVecAcc = (packed) => (packed ? /* wgsl */ `
+const mulMatVecAcc = (packed: boolean) => (packed ? /* wgsl */ `
 fn accumulate_vec_q_dot(thread_id: u32, row_base: u32) -> array<f32, OUTPUTS_PER_WG> {
     var acc: array<f32, OUTPUTS_PER_WG>;
 
@@ -126,7 +126,7 @@ fn accumulate_vec_dot(thread_id: u32, row_base: u32) -> array<f32, OUTPUTS_PER_W
 
     return acc;
 }`);
-export const mulMatVec = ({ packed, subgroups }) => /* wgsl */ `${subgroups ? "enable subgroups;\nrequires subgroup_id;\n" : ""}${packed ? "requires packed_4x8_integer_dot_product;\n" : ""}
+export const mulMatVec = ({ packed, subgroups }: { packed: boolean; subgroups: boolean }): string => /* wgsl */ `${subgroups ? "enable subgroups;\nrequires subgroup_id;\n" : ""}${packed ? "requires packed_4x8_integer_dot_product;\n" : ""}
 ${MATVEC_SHAPE}
 @group(0) @binding(0) var<storage, read> src0: array<u32>;
 @group(0) @binding(1) var<storage, read> scales: array<f32>;

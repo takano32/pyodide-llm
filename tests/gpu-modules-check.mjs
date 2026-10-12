@@ -49,7 +49,7 @@ for (const [name] of programs) {
   assert.deepEqual(unknown, [], `${name} uses ${unknown}, which it neither declares nor imports: a ReferenceError where the line runs`);
   names += free.size;
   for (const { from } of linked.files.get(name).takes) {
-    assert.ok(own(from) || /^shaders\/\w+\.js$/.test(from), `${name} takes names from ${from}: a module of the worker takes of the worker's modules and of the shaders' parts (shaders/<part>.js)`);
+    assert.ok(own(from) || /^shaders\/\w+\.[jt]s$/.test(from), `${name} takes names from ${from}: a module of the worker takes of the worker's modules and of the shaders' parts (shaders/<part>.js)`);
   }
 }
 console.log(`gpu-modules-check: the GPU worker's ${programs.size} files use nothing they do not declare or import (${names} names of a worker's globals), and none waits for itself`);

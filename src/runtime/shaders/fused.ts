@@ -1,12 +1,12 @@
-// shaders/fused.js (T351): a layer of a generated token in five dispatches (T150): llama.cpp's matrix × vector with
+// shaders/fused.ts (T351): a layer of a generated token in five dispatches (T150): llama.cpp's matrix × vector with
 // the norm on its read and RoPE, the residual add or SwiGLU on its write, the same on ONNX Runtime's DP4A (T175, with
 // NORM_QUANTIZE) and on ternary weights (T232).
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 //
-// The notice of what NORM_QUANTIZE (with steps.js's SCALE_WORD, which its text holds) takes its test of a float's bits from (isnan() of TensorFlow.js,
-// tfjs-backend-webgpu/src/webgpu_program.ts: `(floatToUint & 0x7fffffffu) > 0x7f800000u`; said above sample.js's
+// The notice of what NORM_QUANTIZE (with steps.ts's SCALE_WORD, which its text holds) takes its test of a float's bits from (isnan() of TensorFlow.js,
+// tfjs-backend-webgpu/src/webgpu_program.ts: `(floatToUint & 0x7fffffffu) > 0x7f800000u`; said above sample.ts's
 // SAMPLER_COMMON, with what was changed, where this notice stands too; copied here, as this file holds lines of that form: the bits of a value without the sign, the largest of them, and scale_word's test of it).
 /*! Copyright 2022 Google LLC. All Rights Reserved.
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
@@ -15,10 +15,15 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-import { GROUP, STEP } from "./common.js";
-import { TERNARY_PACKED, sdp8ai } from "./prompt.js";
-import { SCALE_WORD } from "./steps.js";
-import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.js";
+import { GROUP, STEP } from "./common.ts";
+import { TERNARY_PACKED, sdp8ai } from "./prompt.ts";
+import { SCALE_WORD } from "./steps.ts";
+import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.ts";
+
+// (T368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
+// names a maker's text branches on
+export type FusedInput = "norm" | "plain";
+export type FusedOutput = "rope" | "add" | "swiglu" | "write";
 
 // ---- T150: a layer of a generated token in five dispatches where the separate steps take fourteen (RMSNorm; q, k and
 // v; RoPE and the cache; the attention; o; the residual add; RMSNorm; gate and up; SwiGLU; down; the residual add):
@@ -40,13 +45,13 @@ import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.js";
 //   - q, k and v (and gate and up) as one matrix: MLC LLM's Llama (qkv_proj and gate_up_proj, Apache-2.0)
 //   - RoPE and the cache on the write: llama.cpp's CUDA fuses rope and set_rows (ggml-cuda.cu, rope_set_rows_ops) into
 //     one kernel after the matrix; here into the matrix's own write, since a workgroup's 4 rows hold whole pairs (the
-//     neighbours RoPE turns together, and the pairs of float16 the cache holds a u32). The turning is ROPE's (steps.js).
+//     neighbours RoPE turns together, and the pairs of float16 the cache holds a u32). The turning is ROPE's (steps.ts).
 //   - RMSNorm on the read: the norm's scale 1 / sqrt(mean(x²) + eps) is one number for the whole row, so it comes out of
 //     the sum: W·(g ⊙ x·s) = s × W·(g ⊙ x). Every workgroup reads all of x once anyway, and adds up x² beside the rows'
 //     sums in the same reduction (FlashNorm, Graef et al. 2024, arXiv 2407.09577: the scale deferred past the matrix).
 //     No public WGSL does this (llama.cpp's WebGPU fuses the norm with its weight only, rms_norm_mul.wgsl): the lines
 //     are this project's, written as llama.cpp's rms_norm_mul computes it (eps inside the sqrt with the mean, as the
-//     engine's rmsnorm and steps.js's RMSNORM). Checked (T150, Fable): the deferred scale rounds once at the end where the
+//     engine's rmsnorm and steps.ts's RMSNORM). Checked (T150, Fable): the deferred scale rounds once at the end where the
 //     separate form rounds every x·s, so both are within a few float32 ulp of float64 (4e-7 of the largest row at
 //     worst, with channels at 1000× the rest too: the sum of x² adds the small terms among themselves before the tree
 //     meets a large one). What it costs a workgroup: reading g (4·dim bytes from the cache, beside x) and 2·dim more
@@ -92,7 +97,7 @@ const FUSED_PARAMS = /* wgsl */ `struct Params { rows: u32, words: u32, perRow: 
 // where the write of an output goes (bindings 5 on): T150's, and T175's DP4A form's alike. T226: the write of a pair
 // is a function (write_pair), which TOKEN_ROPE below calls too: the same lines where the matrix's write cannot turn
 // the pair yet (a bias or a head's norm comes between)
-const fusedOutputs = (output) => (output === "rope" ? `@group(0) @binding(5) var<storage, read_write> q: array<f32>;
+const fusedOutputs = (output: FusedOutput) => (output === "rope" ? `@group(0) @binding(5) var<storage, read_write> q: array<f32>;
 @group(0) @binding(6) var<storage, read_write> keys: array<u32>;
 @group(0) @binding(7) var<storage, read_write> values: array<u32>;
 @group(0) @binding(8) var<storage, read> angles: array<f32>;
@@ -132,7 +137,7 @@ fn write_pair(row: u32, v0: f32, v1: f32) {
 }` : "@group(0) @binding(5) var<storage, read_write> dst: array<f32>;");
 // The write (the epilogue), T150's and T175's DP4A form's alike: a workgroup's OUTPUTS_PER_WG rows from row_base on,
 // their sums in totals (up's rows' after them, for SwiGLU), each times scale (the norm's, or 1), by thread thread_id
-const fusedWrite = (output) => (output === "rope" ? `    // a pair of neighbouring rows a thread
+const fusedWrite = (output: FusedOutput) => (output === "rope" ? `    // a pair of neighbouring rows a thread
     if (thread_id < OUTPUTS_PER_WG / 2u) {
         let row = row_base + 2u * thread_id;
         if (row < params.rows) {
@@ -170,7 +175,7 @@ fn main(@builtin(local_invocation_index) t: u32) {
         write_pair(row, src1[row], src1[row + 1u]);
     }
 }`;
-export const fusedMatVec =({ input, output, subgroups }) => {
+export const fusedMatVec =({ input, output, subgroups }: { input: FusedInput; output: FusedOutput; subgroups: boolean }): string => {
   const norm = input === "norm", glu = output === "swiglu";
   const matrices = glu ? 2 : 1, sums = MUL_MAT_VEC_ROWS * matrices + (norm ? 1 : 0);
   return /* wgsl */ `${subgroups ? "enable subgroups;\nrequires subgroup_id;\n" : ""}
@@ -351,7 +356,7 @@ ${fusedWrite(output)}
 // block, then each group's scale from its normed values, then the values normed and quantized (compute_rms,
 // compute_dynamic_per_token_scales, norm_and_quant). No lines are taken from it: these are RMSNORM's and QUANTIZE's
 // in one workgroup (vLLM's block reduction, fp8 and residual paths are not here). T241: the group's largest by the
-// bits and its scale's word as QUANTIZE's (scale_word, above steps.js's QUANTIZE: a NaN where a value of the group is no finite
+// bits and its scale's word as QUANTIZE's (scale_word, above steps.ts's QUANTIZE: a NaN where a value of the group is no finite
 // number; here a value is weight × (s × x), so a NaN of x, of the sum of x² or of the weight, and an infinity of x,
 // whose s is 0 and 0 × inf a NaN).
 export const NORM_QUANTIZE = /* wgsl */ `
@@ -431,7 +436,7 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
 //
 // output: as fusedMatVec's ("rope", "add", "swiglu" or "write"). Bindings: 0 the weights, 1 their scales, 2 the
 // quantized vector (xq), 3 params, 4 its scales (xs); 5 on as fusedMatVec's.
-export const fusedDp4aMatVec = ({ output }) => /* wgsl */ `requires packed_4x8_integer_dot_product;
+export const fusedDp4aMatVec = ({ output }: { output: FusedOutput }): string => /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${FUSED_PARAMS}
 ${STEP}
 @group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>
@@ -540,7 +545,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
 ${fusedWrite(output)}
 }`;
 
-// ---- T232: fusedDp4aMatVec for ternary weights (see prompt.js's TERNARY_PACKED, above dp4a: the layout, the unpacking and why).
+// ---- T232: fusedDp4aMatVec for ternary weights (see prompt.ts's TERNARY_PACKED, above dp4a: the layout, the unpacking and why).
 // The same Params, bindings, dispatch and write; the weights at binding 0 are the codes, 16 to a u32, and a row's scales
 // one a group of 128 weights (params.perRow / 4, where perRow counts the vector's groups of 32). A thread's group of 32
 // is two words of codes, at the index its two vec4<u32> of int8 have in an int8 matrix (a row is n / 16 words either
@@ -574,8 +579,8 @@ ${fusedWrite(output)}
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 //
-// (ternary_packed: the notice of Prism ML's fork of llama.cpp is above prompt.js's TERNARY_PACKED.)
-export const ternaryMatVec = ({ output }) => /* wgsl */ `requires packed_4x8_integer_dot_product;
+// (ternary_packed: the notice of Prism ML's fork of llama.cpp is above prompt.ts's TERNARY_PACKED.)
+export const ternaryMatVec = ({ output }: { output: FusedOutput }): string => /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${FUSED_PARAMS}
 ${STEP}
 @group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' codes, 16 of two bits to a u32

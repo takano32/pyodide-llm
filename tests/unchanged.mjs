@@ -103,12 +103,24 @@ const MAKERS = {
   ternaryMatVec: OUTPUTS.map((output) => [{ output }]),
 };
 
+// T368.5: a function of the shaders that makes no WGSL (the checks' JavaScript, the shapes, the key) by its statements, as
+// a syntax tree: Node runs a .ts file with its types blanked, so that String(a function) of shaders.ts has spaces where a
+// type stood, and brackets round an expression that was cast. A name, a number, a string or an operator that changed
+// is another tree; a comment, white space and such brackets are not.
+function statements(made) {
+  const bare = (node) => {
+    if (Array.isArray(node)) return node.map(bare);
+    if (!node || typeof node !== "object") return node;
+    return Object.fromEntries(Object.entries(node).filter(([key]) => !["loc", "start", "end", "extra", "range", "leadingComments", "trailingComments", "innerComments"].includes(key)).map(([key, value]) => [key, bare(value)]));
+  };
+  return JSON.stringify(bare(parse(`(${String(made)})`, { sourceType: "module" }).program.body));
+}
 async function shaders(other) {
   const [was, now] = await Promise.all([treeOf(other).runtimeUrl("shaders.js"), built ? builtModule("shaders", built.dist) : treeOf(root).runtimeUrl("shaders.js")].map((url) => import(url)));
   // (--built: a function that makes no WGSL is printed anew by the bundler: its source is no text to compare)
   const printed = built ? Object.entries(now).filter(([name, value]) => typeof value === "function" && !MAKERS[name]).map(([name]) => name) : [];
   const texts = (module) => Object.fromEntries(Object.entries(module).filter(([name]) => !printed.includes(name) || !(name in was) || !(name in now)).map(([name, value]) =>
-    [name, typeof value === "function" && MAKERS[name] ? MAKERS[name].map((given) => value(...given)).join("\n----\n") : text(value)]));
+    [name, typeof value === "function" && MAKERS[name] ? MAKERS[name].map((given) => value(...given)).join("\n----\n") : typeof value === "function" ? statements(value) : text(value)]));
   let ok = said(`shaders, the exports${built ? " as built" : ""}`, differences(texts(was), texts(now)), built ? ` (and ${printed.length} functions that make no WGSL, a bundler's print of their sources: there on both sides, not compared)` : "");
   const keys = { was: {}, now: {} };
   for (const packed of [false, true]) {
@@ -291,6 +303,13 @@ function gpuWorker(tree, fields, worker) {
     for (const key of Object.keys(node)) {
       if (["loc", "start", "end", "extra", "range", "leadingComments", "trailingComments", "innerComments", "shorthand"].includes(key)) continue;
       out[key] = norm(node[key]);
+    }
+    // (T368.5: the module an import() names is the same one under its other ending: import("../../shaders.ts") was
+    // import("../../shaders.js"). Only the argument of an import(), and only its ending)
+    if ((node.type === "ImportExpression" ? [node.source] : node.type === "CallExpression" && node.callee.type === "Import" ? node.arguments : []).some((s) => s.type === "StringLiteral")) {
+      const named = (s) => (s?.type === "StringLiteral" ? { type: "StringLiteral", value: s.value.replace(/\.ts$/, ".js") } : s);
+      if (out.source) out.source = named(out.source);
+      if (out.arguments) out.arguments = out.arguments.map(named);
     }
     if (node.type === "TemplateElement") out.value = { raw: node.value.raw.replace(/^(\.\.\/)+/, ""), cooked: node.value.cooked.replace(/^(\.\.\/)+/, "") };
     return out;

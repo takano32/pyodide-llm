@@ -1,7 +1,7 @@
-// shaders/run.js (T351): a run of generated tokens on the GPU (T151) but for its sampling (sample.js): the state a
+// shaders/run.ts (T351): a run of generated tokens on the GPU (T151) but for its sampling (sample.ts): the state a
 // pass hands the next and the settings of the sampling (with the JavaScript that writes them), the embedding of a token
 // or of a prompt's rows, and the outlier channels of a ternary classifier (T232).
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 
@@ -15,14 +15,14 @@
 //
 // What the GPU does is the CPU's sampling (kernels/kernel.ts's penalize() and sample(), the engine's generate()),
 // token for token: the same random number (the CPU draws them, in order, one a sampled token: randoms[sampled]) picks
-// the same token but where a float32 sum in another order moves a border (likecpu.js's sampleLikeCpu is that CPU in
+// the same token but where a float32 sum in another order moves a border (likecpu.ts's sampleLikeCpu is that CPU in
 // JavaScript; tests/smoke.mjs holds it to the kernel, /benchmark/'s check holds SAMPLE to it). Their forms:
 //   - the penalty: MLC LLM's apply_penalty_inplace (a thread a token of the window, the logit divided where positive
 //     and multiplied where not; mlc_llm/compiler_pass/attach_logit_processor.py, Apache-2.0), with the CPU's window
 //     (the latest REPETITION_WINDOW tokens of the history, the prompt and BOS in it) and its once for each distinct
 //     token, where MLC counts them (its presence and frequency penalties are not the engine's)
 //   - the largest logit and its first index, and softmax: llama.cpp's WebGPU argmax.wgsl (the pairs reduced in the
-//     workgroup's memory; here the smaller index of two equal, as NumPy's argmax and bench.js's ARGMAX) and soft_max.wgsl
+//     workgroup's memory; here the smaller index of two equal, as NumPy's argmax and bench.ts's ARGMAX) and soft_max.wgsl
 //     (exp(value - max), summed by the workgroup's tree), with kernel.ts's temperature and its floor of the nucleus
 //     (a token under a ten millionth of the best one's probability is left out before exp())
 //   - top-p without sorting: MLC LLM's top_p_pivot (mlc_llm/op/top_p_pivot.py, Apache-2.0): pivots between a bound
@@ -68,7 +68,7 @@
  */
 //
 // Adapted from MLC LLM, python/mlc_llm/op/top_p_pivot.py and python/mlc_llm/compiler_pass/attach_logit_processor.py
-// (and, for T191's sampling in chunks in stages.js, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
+// (and, for T191's sampling in chunks in stages.ts, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
 // (https://github.com/mlc-ai/mlc-llm, commit 9fa644f5, 2026-08-17), and from the sampling of WebLLM
 // (https://github.com/mlc-ai/web-llm, src/llm_chat.ts) and Apache TVM (python/tvm/relax/frontend/nn/op.py,
 // https://github.com/apache/tvm, commit e0ed4aad), under the Apache License, Version 2.0. Changed as described above.
@@ -109,7 +109,7 @@ export const STATE_BYTES = 32 + 4 * REPETITION_WINDOW;
  * Uint16Array as long as floats. Infinities and NaN stay so, what is past float16's largest becomes an infinity, and
  * what is below half its least subnormal 0. */
 const floatWord = new Float32Array(1), floatBits = new Uint32Array(floatWord.buffer);
-export function halvesOf(floats, out) {
+export function halvesOf(floats: ArrayLike<number>, out: Uint16Array) {
   for (let i = 0; i < floats.length; i++) {
     floatWord[0] = floats[i];
     const bits = floatBits[0], sign = (bits >>> 16) & 0x8000, exponent = (bits >>> 23) & 0xff, fraction = bits & 0x7fffff;
@@ -141,7 +141,7 @@ export function halvesOf(floats, out) {
 /** The state a run starts from: the token it feeds first, at pos, and the history before it (BOS, the prompt and
  * the tokens sampled before, the fed token last: the penalty's window is its latest REPETITION_WINDOW). length (T152:
  * the engine hands the latest of a longer history over): how long the history is, of which history is the end. */
-export function samplingState({ token, pos, history, length = history.length }) {
+export function samplingState({ token, pos, history, length = history.length }: { token: number; pos: number; history: ArrayLike<number>; length?: number }) {
   const words = new Uint32Array(STATE_BYTES / 4), first = length - history.length;
   words.set([1, pos, 0, 0, token, 0, length, 0]);
   for (let at = Math.max(first, length - REPETITION_WINDOW); at < length; at++) {
@@ -158,7 +158,7 @@ const SAMPLING = /* wgsl */ `struct Sampling {
 export const SAMPLING_BYTES = 32 + 4 * STOPS_MOST;
 /** Sampling's bytes: the engine's settings (temperature 0: the most likely token; top-p outside (0, 1): no nucleus;
  * penalty 1: none) and its stop tokens. */
-export function samplingSettings({ vocab, temperature, topp, penalty = 1, stops = [] }) {
+export function samplingSettings({ vocab, temperature, topp, penalty = 1, stops = [] }: { vocab: number; temperature: number; topp: number; penalty?: number; stops?: ArrayLike<number> }) {
   if (stops.length > STOPS_MOST) throw new Error(`more than ${STOPS_MOST} stop tokens`);
   const bytes = new ArrayBuffer(SAMPLING_BYTES), words = new Uint32Array(bytes), values = new Float32Array(bytes);
   words.set([vocab, stops.length]);
@@ -233,11 +233,11 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid
         }
     }
 }`;
-// T232: EMBED and EMBED_ROWS from a table of ternary weights (see prompt.js's TERNARY_PACKED, above dp4a): a word is 16 codes of
+// T232: EMBED and EMBED_ROWS from a table of ternary weights (see prompt.ts's TERNARY_PACKED, above dp4a): a word is 16 codes of
 // two bits and a scale covers 128 weights; a value is its code less one times the scale, one float32 product, as the
 // CPU's embed() has it (src/runtime/forward/engine.ts's weightAt). The bindings, the shape and the dispatch are theirs (block: EMBED_ROWS',
 // a workgroup a token of ids; else EMBED's, the state's token). Their loop is llama.cpp's get_rows, as theirs
-const embedTernary = (block) => /* wgsl */ `${block ? "" : STATE}
+const embedTernary = (block: boolean) => /* wgsl */ `${block ? "" : STATE}
 @group(0) @binding(0) var<storage, read> table: array<u32>;
 @group(0) @binding(1) var<storage, read> scales: array<f32>;
 @group(0) @binding(2) var<storage, read> ${block ? "ids: array<u32>" : "state: State"};
@@ -326,7 +326,7 @@ fn main(@builtin(workgroup_id) id: vec3<u32>, @builtin(num_workgroups) count: ve
     dst[row] = dst[row] + sum;
 }`;
 /** the Outliers of channels (OUTLIERS_MOST at most) for a piece of rows by n of the table, as bytes */
-export function outliersOf(channels, rows = 0, n = 0) {
+export function outliersOf(channels: ArrayLike<number>, rows = 0, n = 0) {
   const words = new Uint32Array(4 + OUTLIERS_MOST);
   words.set([channels.length, rows, n, 0]);
   words.set(channels, 4);

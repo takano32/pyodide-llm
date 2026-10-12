@@ -152,7 +152,7 @@ for (const { n, file, text } of gpuNodes) {
   const asked = n.type === "ImportDeclaration" ? n.source.value : n.type === "ImportExpression" ? text.slice(n.source.start, n.source.end)
     : n.type === "CallExpression" && n.callee.type === "Import" ? text.slice(n.arguments[0].start, n.arguments[0].end) : null;
   if (asked === null || !/shaders/.test(asked)) continue;
-  assert.ok(n.type === "ImportDeclaration" && /^\.\.?\/shaders\/\w+\.js$/.test(asked), `${file} asks for ${asked}: a module of the GPU's worker takes the shaders it uses by name, from the parts of shaders/ (import { NAME } from "../shaders/<part>.js")`);
+  assert.ok(n.type === "ImportDeclaration" && /^\.\.?\/shaders\/\w+\.[jt]s$/.test(asked), `${file} asks for ${asked}: a module of the GPU's worker takes the shaders it uses by name, from the parts of shaders/ (import { NAME } from "../shaders/<part>.js")`);
   for (const specifier of n.specifiers) {
     assert.ok(specifier.type === "ImportSpecifier" && specifier.imported.name === specifier.local.name, `${file} takes ${text.slice(specifier.start, specifier.end)} of ${asked}: a plain name, under its own (a namespace would hand shaders round unseen)`);
     assert.ok(specifier.imported.name in real, `${file} takes ${specifier.imported.name} of ${asked}, which shaders.js (the window) does not export`);

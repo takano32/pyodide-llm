@@ -251,7 +251,7 @@ console.log("updated-check: the model's worker tells the page the sentence alone
 const root = new URL("../", import.meta.url);
 const LATER = {
   "src/runtime/worker/runtime.ts": [
-    ['import("../shaders/key.js")', "quiet: without the device's key nothing kept of this device holds, and the GPU is weighed again"],
+    ['import("../shaders/key.ts")', "quiet: without the device's key nothing kept of this device holds, and the GPU is weighed again"],
     ['built("engine.zip").then((res) => res.arrayBuffer());', "said"],
     ["built(name).catch((error) => void wentWithout(error));", "slower: without simdkernel.so the sampling runs on NumPy"],
     ['import("../forward.ts")', "slower: without forward.js the engine runs on NumPy"],
@@ -275,7 +275,7 @@ const LATER = {
     ['new Worker(new URL("../benchmark/reader.js", import.meta.url)', "said"],
   ],
   "src/runtime/benchmark/gpu/device.js": [
-    ['named(import.meta.url, () => import("../../shaders.js"))', "said"],
+    ['named(import.meta.url, () => import("../../shaders.ts"))', "said"],
   ],
   "src/runtime/benchmark/gpu/matvec.js": [
     ['built("simdkernel_plain.wasm")).arrayBuffer());', "said"],

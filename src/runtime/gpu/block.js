@@ -6,10 +6,10 @@ import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, stopping, held, within,
   dispatch } from "./device.js";
 import { tablesOf } from "./weights.js";
 import { productGroups, multiply } from "./forms.js";
-import { GROUP } from "../shaders/common.js";
-import { QUANTIZE, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "../shaders/steps.js";
-import { FLASH_Q_TILE } from "../shaders/attention.js";
-import { EMBED_ROWS, EMBED_ROWS_TERNARY } from "../shaders/run.js";
+import { GROUP } from "../shaders/common.ts";
+import { QUANTIZE, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "../shaders/steps.ts";
+import { FLASH_Q_TILE } from "../shaders/attention.ts";
+import { EMBED_ROWS, EMBED_ROWS_TERNARY } from "../shaders/run.ts";
 
 // the pipelines of a layer's small steps and the buffers of a block's activations
 // T378.4: they are this module's record, m.block, made here once and set by this module alone (bindLayers() puts the

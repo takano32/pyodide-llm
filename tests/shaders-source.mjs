@@ -19,6 +19,7 @@
 // them (there the window's order is the order of what takes from what).
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
 import { windowed, without } from "./imports.mjs";
 import { treeOf } from "./tree.mjs";
 
@@ -29,14 +30,17 @@ export const keysOf = (pattern, what) => pattern.properties.map((property) => {
 });
 
 export function shaderParts(tree = treeOf()) {
-  const { files, order, asked } = windowed("shaders.js", { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled });
-  const short = (file) => file.slice("shaders/".length, -".js".length);
-  const list = asked ? asked.names : order.filter((file) => file !== "shaders.js").map(short);
+  // (T368.5: the window by the name the tree has, shaders.ts or another commit's shaders.js: windowed() blanks the
+  // types of a file by the name it is asked for, and the parts have the window's ending)
+  const window = path.basename(tree.runtime("shaders.js")), ending = path.extname(window);
+  const { files, order, asked } = windowed(window, { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled });
+  const short = (file) => file.slice("shaders/".length, -ending.length);
+  const list = asked ? asked.names : order.filter((file) => file !== window).map(short);
   const parts = list.map((name) => {
-    const file = `shaders/${name}.js`, { text, program, takes: taken, left: linking } = files.get(file);
+    const file = `shaders/${name}${ending}`, { text, program, takes: taken, left: linking } = files.get(file);
     const takes = new Map(), declared = [], given = [], left = [...linking];  // left: the statements oneSource() leaves out
     for (const { from, names } of taken) {
-      assert.ok(!takes.has(short(from)), `${file} takes from ${short(from)}.js twice`);
+      assert.ok(!takes.has(short(from)), `${file} takes from ${short(from)}${ending} twice`);
       takes.set(short(from), names.map(({ imported, local }) => (assert.equal(imported, local, `${file}: a plain name`), imported)));
     }
     for (const node of program.body) {
@@ -55,7 +59,7 @@ export function shaderParts(tree = treeOf()) {
     }
     return { name, file, text, program, takes, declared, given, left };
   });
-  return { window: files.get("shaders.js").text, linking: files.get("shaders.js"), list, parts };
+  return { window: files.get(window).text, linking: files.get(window), list, parts };
 }
 
 export function oneSource(tree = treeOf()) {

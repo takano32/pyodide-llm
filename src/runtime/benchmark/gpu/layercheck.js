@@ -276,7 +276,7 @@ async function checkLayer() {
 }
 // T224: a token's attention, every form the layer rows and the engine may run (the prompt's tiles, flash_attn_vec with
 // subgroups where there are and with the lanes of the workgroup standing for a subgroup), on made-up numbers against
-// JavaScript's (shaders.js's tokenAttentionData and tokenAttentionOff, as the engine checks them, gpu.js): heads of 64,
+// JavaScript's (shaders.ts's tokenAttentionData and tokenAttentionOff, as the engine checks them, gpu.js): heads of 64,
 // 128 and 256 values (the list's models'), 4 heads of q on 2 of keys and values, a token that reads 40, 70, 300 and 1100
 // positions (flash_attn_vec's one part, two, and as many as it takes, of more than one tile each), positions past the
 // token's that it must not read, and a steep head of q (a largest taken wrong shows only there). Each head's output no

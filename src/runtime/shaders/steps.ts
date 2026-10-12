@@ -1,13 +1,13 @@
-// shaders/steps.js (T351): the quantizing and the small steps of a layer: the activations to int8 (QUANTIZE, T241's
-// scale word, which fused.js's NORM_QUANTIZE takes too), int6 weights widened (T155), and RMSNorm, LayerNorm, the
+// shaders/steps.ts (T351): the quantizing and the small steps of a layer: the activations to int8 (QUANTIZE, T241's
+// scale word, which fused.ts's NORM_QUANTIZE takes too), int6 weights widened (T155), and RMSNorm, LayerNorm, the
 // residual add, RoPE, SwiGLU and GELU for the tokens of a prompt.
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 //
 // The notice of what T241's scale_word() takes its test of a float's bits from (isnan() of TensorFlow.js,
 // tfjs-backend-webgpu/src/webgpu_program.ts: `(floatToUint & 0x7fffffffu) > 0x7f800000u`; said above SCALE_WORD, and
-// with what was changed above sample.js's SAMPLER_COMMON, where this notice stands too; copied here, as this file
+// with what was changed above sample.ts's SAMPLER_COMMON, where this notice stands too; copied here, as this file
 // holds lines of that form).
 /*! Copyright 2022 Google LLC. All Rights Reserved.
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
@@ -16,7 +16,7 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-import { GROUP, STEP } from "./common.js";
+import { GROUP, STEP } from "./common.ts";
 
 // The activations of the packed shaders, as the CPU's quantize_x makes them (kernels/kernel.ts): per token and group
 // of 32, the scale is the largest |value| / 127 and a value round(value × (1 / scale)) (half to even), clamped to
@@ -44,7 +44,7 @@ import { GROUP, STEP } from "./common.js";
 // Why so. (1) The bits of floats that are not negative are in the order of their values, so the integer max of the
 // magnitudes is the bits of the float max of the |values| for every finite input (-0 is 0, a denormal its own bits):
 // the scale and the values of a finite group are what they were, to the bit. An infinity's magnitude (0x7f800000) is
-// over every finite one's and a NaN's over that (isnan's form of TensorFlow.js, T219's: its notice is at the head of this file and above sample.js's
+// over every finite one's and a NaN's over that (isnan's form of TensorFlow.js, T219's: its notice is at the head of this file and above sample.ts's
 // SAMPLER_COMMON), and an integer max drops neither. (2) What carries it on is the scale itself, no flag: the matrix
 // (the tiles' and fusedDp4aMatVec's SDP8AI) multiplies each group's integer dot by scale_a × scale_b and adds the
 // groups of a row, so every row of its output is a NaN, whatever the integers of that group are; the residual stream
@@ -171,13 +171,13 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(num_workgroups) count: vec3u,
   values[out + 7u] = widened(low.w >> 4u, top.y, 6u); // 28..31
 }`;
 /** the workgroups [x, y] of WIDEN_SIX for groups: a second dimension past the device's most of one */
-export const sixDispatch = (groups, most) => {
+export const sixDispatch = (groups: number, most: number): [number, number] => {
   const workgroups = Math.ceil(groups / WIDEN_SIX_WORKGROUP), x = Math.min(workgroups, most);
   return [Math.max(1, x), Math.ceil(workgroups / Math.max(1, x))];
 };
 /** JavaScript's widening (the check's answer): the int8 values of groups of 24 packed bytes (a Uint8Array), as
  * llama2_numpy.unpack6 and src/runtime/forward/engine.js's weightAt read them */
-export function sixValues(packed) {
+export function sixValues(packed: ArrayLike<number>) {
   const groups = packed.length / 24, out = new Int8Array(groups * 32);
   for (let g = 0; g < groups; g++) {
     for (let j = 0; j < 32; j++) {
@@ -221,7 +221,7 @@ export function sixValues(packed) {
  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-const rmsNorm = (inPlace) => /* wgsl */ `
+const rmsNorm = (inPlace: boolean) => /* wgsl */ `
 struct Norm { size: u32, at: u32, eps: f32, first: u32 }
 ${STEP}
 @group(0) @binding(0) var<storage, ${inPlace ? "read_write" : "read"}> x: array<f32>;

@@ -181,7 +181,7 @@ export async function keysSaid(dist, tree = treeOf()) {
   const had = Object.getOwnPropertyDescriptor(globalThis, "onmessage");
   if (!had) Object.defineProperty(globalThis, "onmessage", { configurable: true, get: () => undefined, set() {} });
   const worker = async (url) => {
-    const text = fs.readFileSync(url, "utf8"), region = /\/\/#region [^\n]*\/shaders\/key\.js\n([\s\S]*?)\n\/\/#endregion/.exec(text)?.[1];
+    const text = fs.readFileSync(url, "utf8"), region = /\/\/#region [^\n]*\/shaders\/key\.[jt]s\n([\s\S]*?)\n\/\/#endregion/.exec(text)?.[1];
     const name = /^function (deviceKey(?:\$\d+)?)\(/m.exec(region ?? "")?.[1];
     if (!name || /^\s*(import|export)\b/m.test(text)) return {};  // (no key.js in it, or a file that is not whole by itself)
     return import(`data:text/javascript;base64,${Buffer.from(`${text}\nexport { ${name} as deviceKey };\n`).toString("base64")}`);

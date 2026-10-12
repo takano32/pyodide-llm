@@ -56,7 +56,7 @@
 // int6 weights (T98) are widened to int8 once, as they go onto the GPU; a model in a 64-bit memory (T101) goes as
 // one in a 32-bit memory (its addresses are Numbers); a matrix larger than a buffer the device binds, in pieces of rows.
 // T232: ternary weights (T230) go up as the checkpoint holds them, two bits a weight and a scale a group of 128, and
-// are multiplied by the packed shaders alone (shaders.js's TERNARY_PACKED: the codes unpacked to int8 where the
+// are multiplied by the packed shaders alone (shaders.ts's TERNARY_PACKED: the codes unpacked to int8 where the
 // shader loads them); a device without the packed int8 dot keeps such a model on the CPU.
 //
 // T352: this file is the window of the worker: forward.ts starts it and its messages come here. What it does is the

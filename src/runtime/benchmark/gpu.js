@@ -13,7 +13,7 @@
 //                                         most likely token found on the GPU, and only its id read back instead of every
 //                                         logit
 //   { step: "layer" }                     T150: one layer of a token of Llama 3.2 1B's width, as its fourteen separate
-//                                         steps and fused into five dispatches (shaders.js's fusedMatVec), ms a layer;
+//                                         steps and fused into five dispatches (shaders.ts's fusedMatVec), ms a layer;
 //                                         T175: the same on ORT's DP4A for small M (fusedDp4aMatVec), its vector
 //                                         quantized before each matrix
 //   { step: "layer steps" }               T202: where the time of a layer goes: each step of the fused forms a token
@@ -31,7 +31,7 @@
 //                                         by T135's batched shader and T146's tiled ones, with the GFLOPS of each
 //   { step: "ceilings" }                  T168: the device's ceilings: f32 and f16 multiply-adds (GFLOPS), dot4I8Packed
 //                                         (GOPS), reading the workgroup's memory and a storage buffer (GB/s), each a
-//                                         loop of that alone (shaders.js), for the share of them the prompt's shaders reach
+//                                         loop of that alone (shaders.ts), for the share of them the prompt's shaders reach
 //   { step: "bridge", memory, rounds }    the round trip of a worker that waits with Atomics.wait and this one, which
 //                                         answers with Atomics.waitAsync (stage 1's design), in microseconds
 //

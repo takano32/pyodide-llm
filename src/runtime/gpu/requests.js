@@ -5,7 +5,7 @@
 import { model, lost } from "./device.js";
 import { roomFor, keysIn, block, keysOut, keysBack } from "./block.js";
 import { tokenStep, runTokens } from "./tokens.js";
-import { samplingState, samplingSettings } from "../shaders/run.js";
+import { samplingState, samplingSettings } from "../shaders/run.ts";
 
 // A request for count steps from token at pos (src/runtime/forward/gpuside.ts's generateMany): the keys and values of positions from to
 // pos - 1 up from forward.ts's cache first (cache: its addresses of the keys and the values, its capacity and the

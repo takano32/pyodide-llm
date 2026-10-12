@@ -1,11 +1,25 @@
-// shaders/prompt.js (T351): a matrix times the tokens of a prompt by tiles (T146): llama.cpp's register tiles,
+// shaders/prompt.ts (T351): a matrix times the tokens of a prompt by tiles (T146): llama.cpp's register tiles,
 // TensorFlow.js's packed vec4 and ONNX Runtime's DP4A (each under its notice below), ternary weights unpacked for the last
 // (T232), the forms a device can make of them (T147's promptForms) and the check of one against JavaScript (tiledOff).
-// SDP8AI and ternary_packed() are also what the DP4A forms of one vector (matvec.js, fused.js) are made of.
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// SDP8AI and ternary_packed() are also what the DP4A forms of one vector (matvec.ts, fused.ts) are made of.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
-import { GROUP, STEP } from "./common.js";
+import { GROUP, STEP } from "./common.ts";
+
+// (T368.5) a tile of a prompt's matrix product: the rows and tokens a workgroup takes and its threads; and a form, one
+// tiled shader a device may run (promptForms): its text, the overrides of its pipeline, whether it reads packed int8
+// and float16, and none: why this device cannot make it
+type RegTile = { m: number; n: number };
+export type Tile = { rows: number; tokens: number; threads: number };
+export type PromptForm = { name: string; tile: Tile; packed: boolean; half: boolean; ternary?: boolean; code: string;
+  constants?: { WORKGROUP_SIZE_M: number; WORKGROUP_SIZE_N: number }; none: string | undefined };
+// what a device says that chooses the forms it can make
+export type DeviceForms = { half: boolean; subgroups: boolean; packed: boolean; memory: number; threads: number; ternary?: boolean };
+// what tiledOff() is given: the matrix (w, s), the tokens (x), the GPU's products (got) and, of a packed form, what the
+// GPU quantized (xq, xs)
+type Tiled = { w: ArrayLike<number>; s: ArrayLike<number>; x: Float32Array; got: ArrayLike<number>; xq?: ArrayLike<number> | null; xs?: ArrayLike<number> | null;
+  rows: number; n: number; tokens: number; xStride: number; yStride: number; half: boolean; group?: number };
 
 // ---- T146: a matrix times the tokens of a prompt by tiles (the benchmark measures them; the model's GPU worker is to
 // take the fastest on each device, T147). BATCHED reads each weight once for TILE tokens but loads an activation for
@@ -39,9 +53,9 @@ import { GROUP, STEP } from "./common.js";
 // llama.cpp's defaults (ggml-webgpu-shader-lib.hpp: WEBGPU_MUL_MAT_WG_SIZE_M/N 8, TILE_M/N 4, REG_TILE_K_QUANT 32)
 // and a workgroup of 256 threads for a tile of 64 tokens (the benchmark measures both; the overrides are the pipeline's)
 export const REG_TILES = [{ m: 8, n: 8 }, { m: 16, n: 16 }];
-export const regTileShape = ({ m, n }) => ({ rows: 4 * m, tokens: 4 * n, threads: m * n });
+export const regTileShape = ({ m, n }: RegTile): Tile => ({ rows: 4 * m, tokens: 4 * n, threads: m * n });
 // the workgroup's memory of a regTile: a step's weights and activations, 2 or 4 bytes each
-export const regTileBytes = ({ m, n }, half) => 32 * 4 * (m + n) * (half ? 2 : 4);
+export const regTileBytes = ({ m, n }: RegTile, half: boolean) => 32 * 4 * (m + n) * (half ? 2 : 4);
 export const DP4A_SHAPE = { rows: 64, tokens: 64, threads: 256 };
 
 // Adapted from llama.cpp, ggml/src/ggml-webgpu/wgsl-shaders/mul_mat_reg_tile.wgsl, mul_mat_decls.tmpl and
@@ -62,7 +76,7 @@ export const DP4A_SHAPE = { rows: 64, tokens: 64, threads: 256 };
  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-export const regTile = (half) => /* wgsl */ `${half ? "enable f16;\n" : ""}
+export const regTile = (half: boolean): string => /* wgsl */ `${half ? "enable f16;\n" : ""}
 struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
 ${STEP}
 alias shmem_t = ${half ? "f16" : "f32"};
@@ -401,7 +415,7 @@ fn ternary_packed(codes: u32) -> vec4<u32> {
 }`;
 /** JavaScript's unpacking (the checks' answer): the int8 values of ternary codes (a Uint8Array, four weights a byte),
  * as llama2_numpy.unpack_ternary and src/runtime/forward/engine.js's weightAt read them */
-export function ternaryValues(packed) {
+export function ternaryValues(packed: ArrayLike<number>) {
   const out = new Int8Array(packed.length * 4);
   for (let i = 0; i < out.length; i++) out[i] = ((packed[i >> 2] >> (2 * (i & 3))) & 3) - 1;
   return out;
@@ -441,13 +455,13 @@ fn SDP8AI(a1: vec4<u32>, b1: vec4<u32>, a2: vec4<u32>, b2: vec4<u32>, scale: f32
   return f32(local_sum) * scale;
 }`;
 // ORT's step 2, one line a row of the subtile: from the workgroup's memory, or from the lanes of a subgroup of 16
-const dp4aLines = (subgroup) => Array.from({ length: 16 }, (_, i) => `    lane_output${(i >> 2) + 1}[${i & 3}] += ` + (subgroup
+const dp4aLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => `    lane_output${(i >> 2) + 1}[${i & 3}] += ` + (subgroup
   ? `SDP8AI(own_a0, subgroupShuffle(own_b0, ${i}u), own_a1, subgroupShuffle(own_b1, ${i}u), subgroupShuffle(own_scale_b, ${i}u) * own_scale_a);`
   : `SDP8AI(own_a0, tile_B[0][base_B + ${i}u], own_a1, tile_B[1][base_B + ${i}u], own_scale_a * scale_B[base_B + ${i}u]);`)).join("\n");
 // T232, ternary: the weights are PQ2_0's codes as the checkpoint holds them (TERNARY_PACKED below, and what is changed
 // for them there); the text without it is what it was, to the byte (deviceKey() hashes it: a device keeps the shader it
 // remembers)
-export const dp4a = (subgroups, ternary = false) => /* wgsl */ `requires packed_4x8_integer_dot_product;
+export const dp4a = (subgroups: boolean, ternary = false): string => /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${subgroups ? "enable subgroups;\n" : ""}
 struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
 ${STEP}
@@ -577,15 +591,15 @@ ${dp4aLines(false)}`}
 // is not made here (the device's threads or workgroup memory), as the benchmark says it (src/runtime/benchmark/gpu.js).
 // T232, ternary: the forms of a model of ternary weights, ORT's DP4A alone with the weights unpacked from their codes
 // (dp4a's ternary: the float forms would widen every weight to a float); none where there is no packed int8 dot
-export const promptForms = ({ half, subgroups, packed, memory, threads, ternary = false }) => {
-  const past = ({ threads: wanted }, bytes) => (wanted > threads ? `${wanted} threads, the device ${threads}`
+export const promptForms = ({ half, subgroups, packed, memory, threads, ternary = false }: DeviceForms): PromptForm[] => {
+  const past = ({ threads: wanted }: Tile, bytes: number) => (wanted > threads ? `${wanted} threads, the device ${threads}`
     : bytes > memory ? `${bytes} bytes of workgroup memory, the device ${memory}` : undefined);
   if (ternary) {
     const none = packed ? past(DP4A_SHAPE, 4608) : "no packed int8 dot here";
     return [false, ...(subgroups ? [true] : [])].map((lanes) => ({ name: `ORT DP4A 64×64${lanes ? ", subgroups" : ""}, ternary`,
       tile: DP4A_SHAPE, packed: true, half: false, ternary: true, code: dp4a(lanes, true), none }));
   }
-  const forms = REG_TILES.map((tile) => {
+  const forms: PromptForm[] = REG_TILES.map((tile) => {
     const shape = regTileShape(tile);
     return { name: `llama.cpp tiles ${shape.rows}×${shape.tokens}, ${half ? "f16" : "f32"}`, tile: shape, packed: false, half,
       code: regTile(half), constants: { WORKGROUP_SIZE_M: tile.m, WORKGROUP_SIZE_N: tile.n }, none: past(shape, regTileBytes(tile, half)) };
@@ -599,7 +613,7 @@ export const promptForms = ({ half, subgroups, packed, memory, threads, ternary 
 
 // x (groups of GROUP values) quantized as the CPU's quantize_x does it (and QUANTIZE): the largest |value| / 127,
 // round half to even
-export function quantizedLikeCpu(x) {
+export function quantizedLikeCpu(x: ArrayLike<number>) {
   const xq = new Int8Array(x.length), xs = new Float32Array(x.length / GROUP);
   for (let g = 0; g < xs.length; g++) {
     let largest = 0;
@@ -627,27 +641,27 @@ export function quantizedLikeCpu(x) {
 // the f32 forms' line of tiledOff, a share of the sum of |products| (the matrix × vector checks of the benchmark hold theirs to it too)
 // T232: group, the weights a scale of s (32; 128 for ternary weights, w then their values of -1 to 2: ternaryValues)
 export const TILED_LINE = 1e-4;
-export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half, group = GROUP }) {
-  const perRow = n / GROUP, scaleOf = (r, g) => s[r * (n / group) + Math.floor((g * GROUP) / group)];
+export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half, group = GROUP }: Tiled) {
+  const perRow = n / GROUP, scaleOf = (r: number, g: number) => s[r * (n / group) + Math.floor((g * GROUP) / group)];
   let worst = 0, over = false, far = false, apart = 0, values = 0;
   for (let t = 0; t < tokens; t++) {
     const at = t * xStride, groups = t * (xStride / GROUP);
     const mine = xq ? quantizedLikeCpu(x.subarray(at, at + n)) : null;
     if (mine) {
-      for (let g = 0; g < perRow; g++) far ||= Math.abs(xs[groups + g] - mine.xs[g]) > 1e-6 * mine.xs[g];
+      for (let g = 0; g < perRow; g++) far ||= Math.abs(xs![groups + g] - mine.xs[g]) > 1e-6 * mine.xs[g];
       for (let i = 0; i < n; i++) {
-        far ||= Math.abs(xq[at + i] - mine.xq[i]) > 1;
-        apart += xq[at + i] !== mine.xq[i];
+        far ||= Math.abs(xq![at + i] - mine.xq[i]) > 1;
+        apart += (xq![at + i] !== mine.xq[i]) as unknown as number;
       }
       values += n;
     }
     for (let r = 0; r < rows; r++) {
       let want = 0, size = 0, small = 0;
       for (let g = 0; g < perRow; g++) {
-        const scale = scaleOf(r, g) * (mine ? xs[groups + g] : 1);
+        const scale = scaleOf(r, g) * (mine ? xs![groups + g] : 1);
         for (let i = g * GROUP; i < (g + 1) * GROUP; i++) {
           const weight = Math.fround(w[r * n + i] * scaleOf(r, g)), value = x[at + i];
-          const product = mine ? w[r * n + i] * xq[at + i] * scale : half ? weight * value : w[r * n + i] * value * scaleOf(r, g);
+          const product = mine ? w[r * n + i] * xq![at + i] * scale : half ? weight * value : w[r * n + i] * value * scaleOf(r, g);
           want += product;
           size += Math.abs(product);
           small += Math.abs(weight) + Math.abs(value);

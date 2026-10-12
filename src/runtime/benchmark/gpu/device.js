@@ -3,16 +3,16 @@
 // taken (pairs of n and 2n, forms in turn, an error scope around a measured path).
 // (T353: a module of /benchmark/'s GPU worker, benchmark/gpu.js, which a bundler links it into: T367.3)
 
-// the WGSL, shared with the model's GPU worker (src/runtime/shaders.js, T135), a module of its own that both ask for. Not
+// the WGSL, shared with the model's GPU worker (src/runtime/shaders.ts, T135), a module of its own that both ask for. Not
 // awaited here: a module worker's port opens at its first await, and a message that comes before onmessage is set is
 // lost (T109); every step awaits it instead. (T367.4: where it is gone because the site was updated since the page
 // was opened, the step that awaits it says so: updated.js)
 import { named } from "../../updated.js";
-const shaders = named(import.meta.url, () => import("../../shaders.js"));
+const shaders = named(import.meta.url, () => import("../../shaders.ts"));
 // T353: what the steps share and one of them sets (a module's `let` cannot be assigned from another module, and the
 // steps are the modules of gpu/): the fields were this file's `let`s of the same names
 const shared = {
-  // shaders.js's module, and its GROUP and TILE (load())
+  // shaders.ts's module, and its GROUP and TILE (load())
   WGSL: undefined, GROUP: undefined, TILE: undefined,
   // the device, its adapter, and whether WGSL has packed_4x8_integer_dot_product here (gpu())
   device: undefined, adapter: undefined, packed: false,
@@ -119,7 +119,7 @@ function pipelinesFor() {
   return pipelines;
 }
 
-// T146: the shaders of a prompt: T135's batched one, then the tiled ones of shaders.js: llama.cpp's register tiles
+// T146: the shaders of a prompt: T135's batched one, then the tiled ones of shaders.ts: llama.cpp's register tiles
 // (f16 in the workgroup's memory where shader-f16 is, else f32) in both shapes of REG_TILES, and ONNX Runtime's DP4A
 // (where the packed int8 dot is), with its subgroup path where subgroups are. A shape past the device's workgroup
 // memory or threads is not made (none says why). A tiled shader's pipeline is made when first asked for, asynchronously
@@ -127,13 +127,13 @@ function pipelinesFor() {
 const tiledPipelines = new Map();
 function promptShaders() {
   const { maxComputeWorkgroupStorageSize: memory, maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX } = shared.device.limits;
-  // T147: the tiled ones are the model's GPU worker's candidates (shaders.js's promptForms), the same list
+  // T147: the tiled ones are the model's GPU worker's candidates (shaders.ts's promptForms), the same list
   return [{ name: "batched (T135)", kind: "batched" }, ...shared.WGSL.promptForms({ half: shared.device.features.has("shader-f16"),
     subgroups: shared.device.features.has("subgroups"), packed: shared.packed, memory, threads: Math.min(maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX) })];
 }
 // T149: the shaders of a matrix times one vector (a generated token's): T134's two, then llama.cpp's mul_mat_vec (its
 // float form and its MMVQ one, each with the workgroup's reduction and, where subgroups are, with subgroupAdd) and
-// ONNX Runtime's MatMulNBits and DP4A for small M (shaders.js). rows: the rows a workgroup takes
+// ONNX Runtime's MatMulNBits and DP4A for small M (shaders.ts). rows: the rows a workgroup takes
 function matVecShaders() {
   const noPacked = shared.packed ? undefined : "no packed int8 dot here";
   const subgroups = shared.device.features.has("subgroups");
@@ -163,7 +163,7 @@ async function kindOf(shader) {
   }
   return { pipeline: await tiledPipelines.get(shader.name), tile: shader.tile, rows: shader.rows, packed: shader.packed };
 }
-// the activations of the packed tiled shaders, quantized on the GPU (shaders.js's QUANTIZE): the first n values of
+// the activations of the packed tiled shaders, quantized on the GPU (shaders.ts's QUANTIZE): the first n values of
 // each of io's tokens, from io.x into io.xq and io.xs. One thread a group of 32, the tokens along y
 let quantizePipeline;
 function quantizer(io, n) {
@@ -301,7 +301,7 @@ async function validated(fn) {
   }
 }
 
-// ---- the ceilings (T168): each loop of shaders.js alone. First its loop count doubles until one dispatch takes
+// ---- the ceilings (T168): each loop of shaders.ts alone. First its loop count doubles until one dispatch takes
 // DISPATCH_MS (a dispatch's own cost is then small beside its work), then the dispatches of a submission until it
 // takes SUBMISSION_MS. The time of n dispatches is that of a submission of 2n less one of n: what a submission costs
 // besides its work (3.7 ms waited for on the owner's Android, T134) is in both and drops out. The two are measured

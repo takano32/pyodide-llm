@@ -49,10 +49,12 @@ const old = treeOf(otherTree(against).folder).runtime("shaders.js");
 const again = path.join(scratch, "working-tree-again");
 fs.rmSync(again, { recursive: true, force: true });
 fs.mkdirSync(again, { recursive: true });
-fs.copyFileSync(runtime("shaders.js"), path.join(again, "shaders.js"));
+// (T368.5: under the name the tree has, shaders.ts: Node reads the types of a file by its ending)
+const window = path.basename(runtime("shaders.js"));
+fs.copyFileSync(runtime("shaders.js"), path.join(again, window));
 fs.cpSync(runtime("shaders"), path.join(again, "shaders"), { recursive: true });
 const versions = [{ name: against, wgsl: await import(pathToFileURL(old).href) }, { name: "working tree", wgsl: await import(pathToFileURL(runtime("shaders.js")).href) },
-  { name: "working tree again", wgsl: await import(pathToFileURL(path.join(again, "shaders.js")).href) }];
+  { name: "working tree again", wgsl: await import(pathToFileURL(path.join(again, window)).href) }];
 // (three versions of the text, each its own module: the ref's is not the tree's, and the copy is not the tree's object)
 if (versions[0].wgsl === versions[1].wgsl || versions[1].wgsl === versions[2].wgsl || versions[1].wgsl.SAMPLE !== versions[2].wgsl.SAMPLE) {
   throw new Error("the versions of the shaders are not three modules, or the copy of the working tree's is another text");

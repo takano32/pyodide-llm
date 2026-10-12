@@ -1,11 +1,11 @@
-// shaders/stages.js (T351): the sampling in chunks of the vocabulary, many workgroups (T191's SAMPLER_STAGES).
+// shaders/stages.ts (T351): the sampling in chunks of the vocabulary, many workgroups (T191's SAMPLER_STAGES).
 // /benchmark/'s GPU section alone runs them.
-// A part of src/runtime/shaders.js, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
+// A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 //
 // The notices of what the stages are adapted from (the forms and what was changed are described at the head of
-// run.js, above REPETITION_WINDOW, where these notices stand too; they are copied here, as this file holds the lines):
+// run.ts, above REPETITION_WINDOW, where these notices stand too; they are copied here, as this file holds the lines):
 //
 // Adapted from llama.cpp, ggml/src/ggml-webgpu/wgsl-shaders/argmax.wgsl, soft_max.wgsl, cumsum.wgsl and get_rows.wgsl
 // (https://github.com/ggml-org/llama.cpp, commit 95887577, 2026-09-26), under the MIT License:
@@ -27,7 +27,7 @@
  */
 //
 // Adapted from MLC LLM, python/mlc_llm/op/top_p_pivot.py and python/mlc_llm/compiler_pass/attach_logit_processor.py
-// (and, for T191's sampling in chunks in stages.js, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
+// (and, for T191's sampling in chunks in stages.ts, python/mlc_llm/compiler_pass/attach_softmax_with_temperature.py)
 // (https://github.com/mlc-ai/mlc-llm, commit 9fa644f5, 2026-08-17), and from the sampling of WebLLM
 // (https://github.com/mlc-ai/web-llm, src/llm_chat.ts) and Apache TVM (python/tvm/relax/frontend/nn/op.py,
 // https://github.com/apache/tvm, commit e0ed4aad), under the Apache License, Version 2.0. Changed as described above.
@@ -45,7 +45,7 @@
  */
 //
 // The notice of what SAMPLE_MAX's and the later stages' test of the logits' bits (is_nan_magnitude, which SAMPLER_COMMON holds) takes its test of a float's bits from (isnan() of TensorFlow.js,
-// tfjs-backend-webgpu/src/webgpu_program.ts: `(floatToUint & 0x7fffffffu) > 0x7f800000u`; said above sample.js's
+// tfjs-backend-webgpu/src/webgpu_program.ts: `(floatToUint & 0x7fffffffu) > 0x7f800000u`; said above sample.ts's
 // SAMPLER_COMMON, with what was changed, where this notice stands too; copied here, as this file holds lines of that form: the bits of a logit without the sign, the largest of them, and the call of is_nan_magnitude).
 /*! Copyright 2022 Google LLC. All Rights Reserved.
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with
@@ -54,7 +54,7 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-import { SAMPLER_COMMON, SAMPLER_DRAW } from "./sample.js";
+import { SAMPLER_COMMON, SAMPLER_DRAW } from "./sample.ts";
 
 // ---- T191: the sampling in chunks of the vocabulary, many workgroups. SAMPLE's one workgroup reads the vocabulary on
 // one of the GPU's cores (the owner's Android: 5.9 ms of 11 a token of the CPU section's model, Llama 3's 128256
@@ -89,8 +89,8 @@ import { SAMPLER_COMMON, SAMPLER_DRAW } from "./sample.js";
 // step as SAMPLE does (the stages between run on such logits harmlessly: a NaN is under any floor, +inf over it, and
 // what they count and gather stays within the vocabulary).
 export const SAMPLE_CHUNK = 1024;
-export const sampleChunks = (vocab) => Math.ceil(vocab / SAMPLE_CHUNK);
-export const samplePartsBytes = (vocab) => 8 * (1 + 3 * sampleChunks(vocab));
+export const sampleChunks = (vocab: number) => Math.ceil(vocab / SAMPLE_CHUNK);
+export const samplePartsBytes = (vocab: number) => 8 * (1 + 3 * sampleChunks(vocab));
 const CHUNKS_COMMON = /* wgsl */ `
 ${SAMPLER_COMMON}
 const CHUNK = ${SAMPLE_CHUNK}u;

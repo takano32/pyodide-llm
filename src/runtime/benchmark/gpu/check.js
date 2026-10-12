@@ -123,7 +123,7 @@ async function checkMatVec() {
 // the width, yStride 320 for 300 rows: the prompt's model reads 2048 of 8192), twice into the same y (the second added
 // to the first: shape.add) against JavaScript's product: half of y. The packed ones on what the GPU quantized, and that
 // against JavaScript's quantize_x: a scale may differ in its last bits (WGSL's division is not rounded exactly) and a
-// value then by 1, a wrong index by far more. The products are held (shaders.js's tiledOff) to 1e-4 of the sum of the |products| of the
+// value then by 1, a wrong index by far more. The products are held (shaders.ts's tiledOff) to 1e-4 of the sum of the |products| of the
 // row and token: what a float32 sum in another order may differ by is 544 × 2^-24 = 3.2e-5 of it at most, and a wrong
 // index, scale or group is off by about |value| / |sum of |products|| = 1 / sqrt(544) = 4e-2. The f16 tiles hold a
 // weight times its scale and an activation as halves, and WGSL leaves the direction of that rounding to the device
@@ -162,7 +162,7 @@ async function checkTiled() {
           owned.forEach((b) => b.destroy());
           destroyVectors(io);
         });
-        // T147: the comparison is shaders.js's tiledOff, the model's GPU worker's too
+        // T147: the comparison is shaders.ts's tiledOff, the model's GPU worker's too
         const off = shared.WGSL.tiledOff({ w: signed, s, x, got, xq, xs, rows, n, tokens, xStride, yStride, half: shader.half });
         worst = Math.max(worst, off.worst);
         over ||= Boolean(off.wrong);
