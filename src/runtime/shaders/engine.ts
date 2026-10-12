@@ -11,13 +11,13 @@
 //
 // A shader more for the worker: its text or maker in its part, a row here (a maker: one for each choice), and
 // ENGINE.<name> where the worker compiles it. A worker cannot take what has no row (the type says so), and what has a
-// row is in the key.
+// row is in the key. A row is a whole shader the worker runs: a piece of text that shaders share (prompt.ts's
+// TERNARY_PACKED, which the key held as a row of its own from T232 to T379.2) is in the key by the texts it is in.
 //
 // THE ORDER IS THE KEY'S. A row moved, added or taken away changes the key of every device, which then chooses its
 // forms again and weighs a model on the GPU alone again (T148, T156), as a changed character of a text does. The order
 // is: the texts, then each maker's rows together (T379.2, the deployment that changed the texts: until then the makers
 // of each value of subgroups stood together, as the key had walked them since T366).
-import { TERNARY_PACKED } from "./prompt.ts";
 import { QUANTIZE, WIDEN_SIX, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "./steps.ts";
 import { flashTile, flashVec, flashVecReduce } from "./attention.ts";
 import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, FUSED_INPUTS, FUSED_OUTPUTS } from "./fused.ts";
@@ -44,10 +44,8 @@ export const ENGINE_SHADERS = [
   ...EITHER.map((subgroups) => made({ flashVecReduce }, { headSize: 64, subgroups, reduceSize: 32 })),
   ...EITHER.flatMap((subgroups) => FUSED_INPUTS.flatMap((input) => FUSED_OUTPUTS.map((output) => made({ fusedMatVec }, { input, output, subgroups })))),
   ...FUSED_OUTPUTS.map((output) => made({ fusedDp4aMatVec }, { output, weights: "int8" }))];
-/** T232: and those of a model of ternary weights alone, after them (its tiles: devicePromptForms' ternary). TERNARY_PACKED
- * is no shader but a piece of two of them, which the key has held as a text of its own since T232 */
+/** T232: and those of a model of ternary weights alone, after them (its tiles: devicePromptForms' ternary) */
 export const TERNARY_SHADERS = [
-  ...texts({ TERNARY_PACKED }),
   ...FUSED_OUTPUTS.map((output) => made({ fusedDp4aMatVec }, { output, weights: "ternary" })),
   ...texts({ EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS })];
 /** the shaders by name, for the worker: a text, or a maker to call with a model's own numbers */

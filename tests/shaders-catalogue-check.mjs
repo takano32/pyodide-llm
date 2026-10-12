@@ -9,7 +9,7 @@
 //     moved, added or dropped has every device choose its forms again, and no other check of the light suite says so
 //     (the net's shaders does, tests/unchanged.mjs, which compares the keys with another commit's);
 //   - a row is a text or a maker with its arguments, and its text() is that text or what the maker makes of them;
-//     every row's text is a shader (but the one piece of text the key holds as its own), and no two rows give one text:
+//     every row's text is a shader, and no two rows give one text:
 //     a choice given to a maker that does not take it (a misspelt name of a packing, an argument left out) makes a
 //     second copy of another row's text and leaves a text a device runs out of the key;
 //   - a maker's rows are every choice of it: each of its arguments that is no number takes every value in every
@@ -36,7 +36,7 @@ const ORDER = {
     ...EITHER.map((subgroups) => `flashVecReduce(subgroups=${subgroups})`),
     ...EITHER.flatMap((subgroups) => ["norm", "plain"].flatMap((input) => ["rope", "add", "swiglu", "write"].map((output) => `fusedMatVec(input=${input}, output=${output}, subgroups=${subgroups})`))),
     "fusedDp4aMatVec(output=rope, weights=int8)", "fusedDp4aMatVec(output=add, weights=int8)", "fusedDp4aMatVec(output=swiglu, weights=int8)", "fusedDp4aMatVec(output=write, weights=int8)"],
-  ternary: ["TERNARY_PACKED",
+  ternary: [
     "fusedDp4aMatVec(output=rope, weights=ternary)", "fusedDp4aMatVec(output=add, weights=ternary)", "fusedDp4aMatVec(output=swiglu, weights=ternary)", "fusedDp4aMatVec(output=write, weights=ternary)",
     "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_OUTLIERS", "TERNARY_COLUMNS"],
 };
@@ -47,7 +47,6 @@ console.log(`shaders-catalogue-check: the rows are in the recorded order (${ENGI
 
 // ---- a row
 const rows = [...ENGINE_SHADERS, ...TERNARY_SHADERS];
-const PIECES = ["TERNARY_PACKED"];  // a text of the key that is no shader: a piece of the ternary ones
 const seen = new Map();
 for (const row of rows) {
   const what = said(row), text = row.text();
@@ -57,10 +56,11 @@ for (const row of rows) {
     assert.equal(text, row.shader(row.given), `${what}: its text is what the maker makes of its arguments`);
   } else assert.equal(text, row.shader, `${what}: a text's row gives that text`);
   // (the row's name is its shader's own: the window has every shader by its name, and no piece)
-  assert.equal(window[row.name], PIECES.includes(row.name) ? undefined : row.shader, `${what}: the row's shader is the one of that name (the window's)`);
+  assert.equal(window[row.name], row.shader, `${what}: the row's shader is the one of that name (the window's)`);
   assert.equal(text, row.text(), `${what}: the same text twice`);
   assert.ok(typeof text === "string" && text.length > 100, `${what}: a text`);
-  assert.equal(/@compute/.test(text), !PIECES.includes(row.name), `${what}: ${PIECES.includes(row.name) ? "a piece, and no shader of its own" : "a shader has an entry point"}`);
+  // (T379.2: a piece of text shaders share is no row: it is in the key by the texts that hold it)
+  assert.ok(/@compute/.test(text), `${what}: a row is a shader, with an entry point`);
   assert.ok(!seen.has(text), `${what} gives the text ${seen.get(text)} gives: an argument the maker does not take, or a row twice (and a text a device runs that the key does not hold?)`);
   seen.set(text, what);
 }
