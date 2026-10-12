@@ -27,8 +27,11 @@ import { SAMPLE } from "./sample.ts";
 // rows of texts, each under its own name ({ RMSNORM, ADD }: the names are the object's keys, in its order)
 const texts = <Name extends string>(named: Record<Name, string>) =>
   (Object.keys(named) as Name[]).map((name) => ({ name, shader: named[name], text: () => named[name] }));
-// a row of a maker under its own name ({ flashTile }), with the arguments of one of its texts
-const made = <Name extends string, Given extends object>(named: Record<Name, (given: Given) => string>, given: NoInfer<Given>) => {
+// a row of a maker under its own name ({ flashTile }), with the arguments of one of its texts. (T379.2) One maker a
+// row: two names ({ flashVec, flashVecReduce }) would make a row of the first alone, so the type takes no arguments
+// for more than one (One<Name> is never where Name is a union)
+type One<Name extends string> = { [Each in Name]: [Name] extends [Each] ? Each : never }[Name];
+const made = <Name extends string, Given extends object>(named: Record<Name, (given: Given) => string>, given: One<Name> extends never ? never : NoInfer<Given>) => {
   const [name] = Object.keys(named) as Name[];
   return { name, shader: named[name], given, text: () => named[name](given) };
 };
