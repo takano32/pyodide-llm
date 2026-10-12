@@ -52,6 +52,8 @@ type Tiled = { w: ArrayLike<number>; s: ArrayLike<number>; x: Float32Array; got:
 
 // llama.cpp's defaults (ggml-webgpu-shader-lib.hpp: WEBGPU_MUL_MAT_WG_SIZE_M/N 8, TILE_M/N 4, REG_TILE_K_QUANT 32)
 // and a workgroup of 256 threads for a tile of 64 tokens (the benchmark measures both; the overrides are the pipeline's)
+// (T379.2) the Shape every tile reads, written once: a matrix, where its rows go in y, and how far apart the tokens are
+const TILE_SHAPE = /* wgsl */ `struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }`;
 export const REG_TILES = [{ m: 8, n: 8 }, { m: 16, n: 16 }];
 export const regTileShape = ({ m, n }: RegTile): Tile => ({ rows: 4 * m, tokens: 4 * n, threads: m * n });
 // the workgroup's memory of a regTile: a step's weights and activations, 2 or 4 bytes each
@@ -85,7 +87,7 @@ const GET_BYTE_I32 = /* wgsl */ `fn get_byte_i32(value: u32, index: u32) -> i32 
     return bitcast<i32>(((value >> (index * 8)) & 0xFF) << 24) >> 24;
 }`;
 export const regTile = (half: boolean): string => /* wgsl */ `${half ? "enable f16;\n" : ""}
-struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
+${TILE_SHAPE}
 ${STEP}
 alias shmem_t = ${half ? "f16" : "f32"};
 @group(0) @binding(0) var<storage, read> w: array<u32>;             // M rows, K columns: 4 int8 to a u32
@@ -233,7 +235,7 @@ export const TFJS_SHAPE = { rows: 32, tokens: 32, threads: 64 };
 // writes the 4 tokens one float at a time with shape.add; workPerThread [4, 4], workgroupSize [8, 8, 1] and
 // tileInner 32 are TensorFlow.js's for large products (computeWorkgroupInfoForMatMul), and not transposed.
 export const tfjsTile = /* wgsl */ `
-struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
+${TILE_SHAPE}
 ${STEP}
 @group(0) @binding(0) var<storage, read> w: array<u32>;
 @group(0) @binding(1) var<storage, read> scales: array<f32>;
@@ -469,7 +471,7 @@ const dp4aLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => ` 
 // remembers)
 export const dp4a = (subgroups: boolean, ternary = false): string => /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${subgroups ? "enable subgroups;\n" : ""}
-struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
+${TILE_SHAPE}
 ${STEP}
 ${ternary ? "@group(0) @binding(0) var<storage, read> b: array<u32>;                  // the weights' codes, 16 of two bits to a u32"
     : "@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>"}

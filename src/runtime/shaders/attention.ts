@@ -62,6 +62,11 @@ export const flashShape = ({ headSize, half, subgroups, memory, threads, subgrou
  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+// (T379.2) the keys' and values' pair of u32 as its four float16 (the cache holds them so: pack2x16float), written
+// once for flashTile and flashVec
+const HALVES = /* wgsl */ `fn halves(pair: vec2<u32>) -> vec4<f32> {
+  return vec4<f32>(unpack2x16float(pair.x), unpack2x16float(pair.y));
+}`;
 export const flashTile = ({ headSize, half, subgroups, wgSize, kvTile, minSubgroup }: Omit<FlashShape, "none">): string => /* wgsl */ `${half ? "enable f16;\n" : ""}${subgroups ? "enable subgroups;\n" : ""}
 struct Params { heads: u32, kvHeads: u32, scale: f32, unused: u32 }
 ${STEP}
@@ -92,9 +97,7 @@ var<workgroup> kv_shmem: array<shmem_t, kv_shmem_size>;
 var<workgroup> q_shmem: array<f32, Q_TILE * HEAD_DIM_QK>;
 var<workgroup> p_shmem: array<shmem_t, Q_TILE * KV_TILE>;
 
-fn halves(pair: vec2<u32>) -> vec4<f32> {
-  return vec4<f32>(unpack2x16float(pair.x), unpack2x16float(pair.y));
-}
+${HALVES}
 fn load_k_tile_block(local_x: u32, kv_count: u32, kv_tile: u32, k_head_offset: u32) {
     let stride_k1 = params.kvHeads * HEAD_DIM_QK;
     for (var vec_idx_local = local_x; vec_idx_local < kv_count * Q_CHUNKS; vec_idx_local += WG_SIZE) {
@@ -462,9 +465,7 @@ var<workgroup> o_shmem: array<f32, HEAD_DIM_V>;
 var<workgroup> inter_shmem: array<f32, KV_TILE>;
 ${flashVecLanes(subgroups, wgSize)}
 
-fn halves(pair: vec2<u32>) -> vec4<f32> {
-  return vec4<f32>(unpack2x16float(pair.x), unpack2x16float(pair.y));
-}
+${HALVES}
 fn calc_softmax_term(kv_idx: u32) -> f32 {
     return select(FLOAT_MIN, inter_shmem[min(kv_idx, KV_TILE - 1u)] * params.scale, kv_idx < KV_TILE);
 }

@@ -17,7 +17,7 @@
  */
 import { GROUP, STEP } from "./common.ts";
 import { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
-import { SCALE_WORD } from "./steps.ts";
+import { SCALE_WORD, PACKED, ROW_RMS, NORM } from "./steps.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.ts";
 
 // (T368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
@@ -359,7 +359,7 @@ ${fusedWrite(output)}
 // number; here a value is weight × (s × x), so a NaN of x, of the sum of x² or of the weight, and an infinity of x,
 // whose s is 0 and 0 × inf a NaN).
 export const NORM_QUANTIZE = /* wgsl */ `
-struct Norm { size: u32, at: u32, eps: f32, unused: u32 }
+${NORM}
 ${STEP}
 @group(0) @binding(0) var<storage, read> x: array<f32>;
 @group(0) @binding(1) var<storage, read> weight: array<f32>;
@@ -368,25 +368,14 @@ ${STEP}
 @group(0) @binding(4) var<uniform> norm: Norm;
 @group(0) @binding(5) var<uniform> step: Step;
 var<workgroup> partial: array<f32, 64>;
-fn packed(v: vec4<i32>) -> u32 {
-  let b = bitcast<vec4<u32>>(v) & vec4<u32>(0xffu);
-  return b.x | (b.y << 8u) | (b.z << 16u) | (b.w << 24u);
-}
+${PACKED}
 ${SCALE_WORD}
 @compute @workgroup_size(64)
 fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u32) {
   let token = id.x;
   if (token >= step.tokens) { return; }
   let row = token * norm.size;
-  var squares = 0.0;
-  for (var i = t; i < norm.size; i += 64u) { squares += x[row + i] * x[row + i]; }
-  partial[t] = squares;
-  workgroupBarrier();
-  for (var half = 32u; half > 0u; half >>= 1u) {
-    if (t < half) { partial[t] += partial[t + half]; }
-    workgroupBarrier();
-  }
-  let s = 1.0 / sqrt(partial[0] / f32(norm.size) + norm.eps);
+${ROW_RMS}
   for (var g = t; g < norm.size / ${GROUP}u; g += 64u) {
     let at = g * ${GROUP}u;
     var magnitude = 0u;
