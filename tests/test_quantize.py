@@ -7,7 +7,8 @@ import numpy as np
 import pytest
 
 import quantize
-from conftest import ROOT, TENSOR_ORDER, pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
+from conftest import ROOT, pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
+from test_layout import ORDER
 from llama2_numpy import Llama, group32
 
 MATRICES = ["token_embedding_table", "wq", "wk", "wv", "wo", "w1", "w2", "w3"]
@@ -81,7 +82,7 @@ def test_the_tensor_order_of_quantize_matches_the_engine(tmp_path):
     header = (config["dim"], config["hidden_dim"], config["n_layers"], config["n_heads"],
               config["n_kv_heads"], -config["vocab_size"], config["seq_len"])
     shapes = [shape for shape, _ in quantize.layout(*header)]
-    expected = TENSOR_ORDER + ["wcls"]
+    expected = ORDER["llama, its own classifier"].split()
     assert len(shapes) == len(expected)
 
 

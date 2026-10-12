@@ -1,6 +1,6 @@
 """T357.2: the one maker of the tests' made-up models (tests/made_up.py), on its own: that the file it writes is laid
 out by the engine's rows and is the file the engine reads back, in every layout and dtype; that a Llama's is still
-llama2.c's file (the one order the tests write out themselves, conftest.TENSOR_ORDER); what the values of each kind of
+llama2.c's file (by the one order the tests write out themselves, tests/test_layout.py's ORDER); what the values of each kind of
 made-up model are; and that a tool can import it without the test suite."""
 import struct
 import subprocess
@@ -8,9 +8,11 @@ import sys
 
 import numpy as np
 import pytest
-from conftest import ROOT, TENSOR_ORDER
+from conftest import ROOT
 from made_up import (BIASES, checkpoint, drawn, files, header_of, lfm2_model, named, numbered, pack_checkpoint, quantized,
                      settings_of, synthetic_weights, tensors_of, uniform, unigram)
+
+from test_layout import ORDER
 
 from llama2_numpy import (DTYPES, FORM, LAYOUTS, MATRIX, STATEFUL, VECTOR, Layout, Llama, Stateful, Tokenizer, after,
                           checkpoint_dtype, file_size, kind_of, tensor_rows)
@@ -32,20 +34,20 @@ dtypes = pytest.mark.parametrize("dtype", list(DTYPES))
 
 
 def by_hand(config, weights):
-    """llama2.c's file written out with nothing of the engine: the header, then the tensors in llama2.c's order."""
+    """llama2.c's file written out with nothing of the engine: the header, then the tensors in the order written down."""
     vocab_size = config["vocab_size"] if config["shared"] else -config["vocab_size"]
     out = [struct.pack("<7i", config["dim"], config["hidden_dim"], config["n_layers"], config["n_heads"],
                        config["n_kv_heads"], vocab_size, config["seq_len"])]
-    names = TENSOR_ORDER + ([] if config["shared"] else ["wcls"])
+    names = ORDER["llama" if config["shared"] else "llama, its own classifier"].split()
     return b"".join(out + [np.ascontiguousarray(weights[name], dtype=np.float32).tobytes() for name in names])
 
 
 @pytest.mark.parametrize("settings", [{}, {"n_kv_heads": 2}, {"n_kv_heads": 1, "shared": False}, {"hidden_dim": 48}])
 def test_a_llamas_file_is_llama2cs(settings):
-    """The engine's rows of a Llama are llama2.c's tensors in llama2.c's order: a row moved in engine/layout.py moves
-    it for whoever writes and whoever reads at once, which no comparison of the two sees, and is another file."""
+    """The maker's file of a Llama is llama2.c's tensors in llama2.c's order, by the one order the tests write down
+    themselves (tests/test_layout.py's ORDER): a row moved in engine/layout.py moves it for whoever writes and whoever
+    reads at once, which no comparison of the two sees, and is another file."""
     config, weights = synthetic_weights(**settings)
-    assert [row.name for row in tensor_rows(header_of(config))] == TENSOR_ORDER + ([] if config["shared"] else ["wcls"])
     assert pack_checkpoint(config, weights) == by_hand(config, weights)
 
 

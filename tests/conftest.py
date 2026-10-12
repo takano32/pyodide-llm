@@ -124,13 +124,6 @@ def vocabulary_conversion(tokenizer, name, vocab_size, tokenizer_config=None, **
                                      tokenizer_config=tokenizer_config, sink=NoWeights())
 
 
-# llama2.c's order of the tensors of its "legacy" file, written out here once. Nothing makes a file by it: the made-up
-# checkpoints are laid out by the engine's own rows (tests/made_up.py's checkpoint(), T357.2), and a test holds those
-# rows to this (tests/test_made_up.py), so that a Llama's file stays the file llama2.c and quantize.py read.
-TENSOR_ORDER = ["token_embedding_table", "rms_att_weight", "wq", "wk", "wv", "wo",
-                "rms_ffn_weight", "w1", "w2", "w3", "rms_final_weight", "freq_cis_real", "freq_cis_imag"]
-
-
 # ------------------------------------------------------------------------------------- synthetic tokenizer
 
 def tiny_tokenizer(kind="bpe", nfkc=False):
