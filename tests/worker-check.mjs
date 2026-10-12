@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import fs from "node:fs";
 import { pathToFileURL } from "node:url";
+import { cacheStorage } from "./fakes/cache.mjs";
 import { runtimeUrl, served } from "./tree.mjs";
 const forward = await import(runtimeUrl("forward.js"));
 import { workerHarness, siteRoot } from "./worker-harness.mjs";
@@ -217,15 +218,8 @@ const ok = (line) => {
   // streams): a Cache that does what the specification says of put(), which reads the body to its end and, where it
   // breaks, stores nothing and rejects. A part that came whole is kept for the next visit; none that did not
   {
-    const kept = new Map();
-    context.caches = {
-      open: async () => ({
-        match: async (key) => (kept.has(key) ? new Response(kept.get(key).slice(), { status: 200 }) : undefined),
-        put: async (key, response) => { kept.set(key, new Uint8Array(await response.arrayBuffer())); },
-        delete: async (key) => kept.delete(key),
-        keys: async () => [],
-      }),
-    };
+    const { map: kept, caches } = cacheStorage();
+    context.caches = caches;
     const partsKept = async () => {
       await sleep(2000);  // the copies go in as the parts stream, and a little after
       return [...kept].map(([key, bytes]) => [partOf(key.split("?")[0]), bytes.length]).sort();
