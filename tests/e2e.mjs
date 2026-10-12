@@ -22,6 +22,7 @@
 //                  tok/s, the backend line, and what failed. tests/summary.mjs turns those lines into one table.
 //   E2E_ARTIFACTS  a directory: when the run fails or times out, a screenshot, the DOM and the last lines of the
 //                  console go there, named after the browser and the model.
+//   E2E_CONSOLE    a file every line of the page's console is appended to as it comes (T380.2), whatever the run's end.
 //   E2E_TWICE      when set: after the answer, the page is loaded again in the same browser, and the seconds to
 //                  ready then go into the JSON line too (T99: a model converted from Hugging Face must come from what
 //                  this browser kept, the origin private file system or the Cache API).
@@ -129,6 +130,9 @@ const errors = [];
 // every line of the console, for the artifacts of a failed run: the last ones say where it stopped
 const consoleLines = [];
 const remember = (line) => {
+  // (T380.2, E2E_CONSOLE: a file every line is appended to as it comes, also of a run that passes: to hold a visit
+  // where nothing failed to "nothing more on the console than before")
+  if (process.env.E2E_CONSOLE) fs.appendFileSync(process.env.E2E_CONSOLE, `${line}\n`);
   consoleLines.push(`${((Date.now() - started) / 1000).toFixed(1)}s ${line}`);
   if (consoleLines.length > 200) consoleLines.shift();
 };

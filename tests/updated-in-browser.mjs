@@ -338,6 +338,8 @@ for (const [name, run] of Object.entries(CASES)) {
   console.log(`- ${name}`);
   const before = failures.length;
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  // (T380.2, UPDATED_CONSOLE: the console's warnings beside each case: what a fallback says of the failure it took)
+  if (process.env.UPDATED_CONSOLE) context.on("console", (message) => { if (message.type() === "warning") console.log(`  console: ${message.text().slice(0, 300)}`); });
   const lines = [];
   context.on("console", (message) => lines.push(`[${message.type()}] ${message.text().slice(0, 300)}`));
   rule = () => undefined;

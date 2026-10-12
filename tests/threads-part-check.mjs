@@ -31,12 +31,14 @@ const jobOf = (rows, count = 1) => {
   return job;
 };
 
-/** The part and its stand-ins. spawn: false for none; late: the threads come up only when started.release() is called */
-function made({ spawn = true, sharedMemory = true, stalledMs = 40, late = false } = {}) {
+/** The part and its stand-ins. spawn: false for none; late: the threads come up only when started.release() is called;
+ * refused: from the thread of that number on, none starts (its worker's error: weights.ts's spawnThread rejects so) */
+function made({ spawn = true, sharedMemory = true, stalledMs = 40, late = false, refused = Infinity } = {}) {
   const memory = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: sharedMemory });
   const beside = { memory, started: 0, ended: 0, ran: [], gpuGettingReady: false, onRun: null, waiting: [] };
   const helper = () => ({ terminate() { beside.ended += 1; } });
   const start = (data) => {
+    if (beside.started >= refused) return Promise.reject(new Error("a software thread did not start"));
     beside.started += 1;
     assert.equal(data.memory, memory, "a thread is started on the engine's memory");
     assert.equal(data.share, beside.started - beside.ended, "a thread is told which of them it is");
@@ -258,6 +260,31 @@ console.log("ok: T451, a token's time is counted for the count it ran on");
   assert.deepEqual([part.count, beside.started, beside.ended], [1, beside.started, beside.started], "and every thread started is ended");
 }
 console.log("ok: a candidate's threads are waited for on the best count, untimed; a thread that comes up after stop() is ended");
+
+// ---- T380.2: a candidate whose thread does not start ends the search at the best count, and the console is told why
+{
+  const { part, beside } = made({ refused: 1 });
+  const told = [];
+  let found;
+  const said = await quietly(async () => {
+    found = await part.find({ from: 2, chose: (count) => told.push(count) });  // (2 needs one thread, which starts)
+    // (2 is faster than 1: 4 is next, and its threads do not start; the refusal comes a turn later, between two tokens)
+    for (let tokens = 0; part.searching && tokens < 200; tokens++) {
+      token(part, { 1: 20, 2: 10, 4: 5 });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  });
+  assert.deepEqual([found, beside.started, part.count, part.searching, told], [2, 1, 2, false, [2]], "the search ends at the best count, which is remembered");
+  assert.deepEqual(said, ["threads: a software thread did not start (Error: a software thread did not start): the search ends at 2"]);
+  // and a search whose threads all start says nothing
+  const fine = made();
+  assert.deepEqual(await quietly(async () => {
+    await fine.part.find({ from: 8, chose() {} });
+    until(fine.part, ANDROID);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }), []);
+}
+console.log("ok: T380.2, a search whose next thread does not start ends at its best count and says why on the console; one whose threads start says nothing");
 
 // ---- what is told in a wrong order
 {

@@ -479,6 +479,29 @@ const equalBytes = (a, b, what) => assert.ok(a.length === b.length && Buffer.fro
   w.allDestroyed();
   assert.equal(w.buffers.at(-1).destroyed, 1, "the place of the weights was left behind where the kept file could not be let go");
   ok("T403: a conversion that ends before its weights come (a file that is not there, a refusal, a cancelled load) lets go of the file opened to keep it in: the next one opens it");
+
+  // T380.2: where that file cannot be opened the conversion goes on as it did, without it, and the console is told why
+  // (it was silent: a model on the GPU alone then read "there is no file system here", with nothing of the cause)
+  w.kept.dropFails = false;
+  w.kept.open = 1;  // (held by something else: OPFS gives a file one handle)
+  const warn = console.warn, said = [];
+  console.warn = (...words) => said.push(words.join(" "));
+  try {
+    w.fresh(() => new Response("", { status: 503 }));
+    const before = { ...w.kept };
+    const went = await w.convert(hf(), function* () { yield ["text", "weights", "config.json"]; });
+    assert.match(went.error.message, /answered 503/, "the conversion did not go on to its own end without the file");
+    assert.deepEqual([w.kept.refused, w.kept.opened, w.kept.dropped], [before.refused + 1, before.opened, before.dropped], "the file was refused, and nothing of it is let go");
+    assert.deepEqual(said, ["kept: no file to keep this model in as it comes (Error: Access Handles cannot be created if there is another open Access Handle): a model on the GPU alone is not kept"]);
+    // and a file that opens says nothing
+    w.kept.open = 0;
+    said.length = 0;
+    await w.convert(hf(), function* () { yield ["text", "weights", "config.json"]; });
+    assert.deepEqual([said, w.kept.open], [[], 0]);
+  } finally {
+    console.warn = warn;
+  }
+  ok("T380.2: a file to keep a conversion in that cannot be opened is said on the console, and the conversion goes on without it");
 }
 
 // ---- T407: a conduct that throws as it is closed. Everything after it is let go of all the same, and what is thrown

@@ -11,6 +11,7 @@ import { sized, fetchRange } from "./ranges.ts";
 import { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } from "./sources.ts";
 import { convert } from "./convert.ts";
 import type { Sized } from "./sources.ts";
+import { lastLine, told } from "../failure.ts";
 import type { Thrown } from "../failure.ts";
 import type { GpuChose, GpuSaid, Listed, OfTwoFiles, OfTwoUrls, Ready, Status, Threads, ThreadsCompared } from "../contracts/messages.ts";
 
@@ -110,7 +111,7 @@ export async function load(model: Listed, signal: AbortSignal, id: number): Prom
         throw err;
       }
       // the checkpoint has passed its check, so it is the second file or the settings
-      const reason = String((err as Thrown).message ?? err).trim().split("\n").pop();
+      const reason = lastLine((err as Thrown).message ?? err);
       throw new Error(`${model.tokenizerFile.name} does not work as the tokenizer.bin of ${model.file.name} (${reason})`);
     }
     took("construct", since(constructStarted));
@@ -147,7 +148,9 @@ async function startThreads(model: Listed) {
     return await engine.findThreads({ from: hint, remembered,
       chose: (count) => postMessage({ type: "threads", model: model.id, count, from: remembered ? "remembered" : "hint", hint } satisfies Threads),
       compared: (verdict) => postMessage({ type: "threads-compared", model: model.id, ...verdict } satisfies ThreadsCompared) });
-  } catch {
+  } catch (error) {
+    // (T380.2: said. The model is ready all the same, on one thread)
+    console.warn(`threads: the software threads did not start (${told(error)}): one thread`);
     engine.stopThreads?.();
     return 1;
   }

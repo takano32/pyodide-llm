@@ -84,7 +84,9 @@ export function told(err: unknown) {
 // refusal of a model past 4 GB, a memory the browser will not make or grow), and forward.ts growing the keys and
 // values. It is told as itself (the review of T133: it was a traceback)
 const JS_EXCEPTION = /^pyodide\.ffi\.JsException: (\w+): (.*)$/;
-const lastLine = (text: unknown) => String(text).trim().split("\n").pop()!;
+// (T380.2, exported: the one other reader of a last line, a tokenizer that does not fit its checkpoint, worker/load.ts,
+// says Python's own last line with the exception's name, which failureOf() does not)
+export const lastLine = (text: unknown) => String(text).trim().split("\n").pop()!;
 
 /** A caught value as a Failure: itself where it is one, else read here, the one place that reads what the others throw.
  * Its sentence is what a visitor is told:

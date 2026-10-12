@@ -112,6 +112,10 @@ console.log(`failure-check: failureOf() reads ${CASES.length} things that are th
     if (name !== "src/runtime/failure.ts") {
       assert.ok(!/JsException|MemoryError|\.type === "ValueError"|InternalError|call stack/.test(text), `${name} reads the words of what Pyodide or the browser throws: failureOf() is the one place (src/runtime/failure.ts)`);
     }
+    // (T380.2: nor takes the last line of a message itself, which is how a traceback is read: failure.ts's lastLine())
+    if (name !== "src/runtime/failure.ts") {
+      assert.ok(!/\.split\(\s*["'`]\\n["'`]\s*\)\s*\.(?:pop\(\)|at\(-1\))/.test(text), `${name} takes the last line of a text itself: failure.ts reads what is thrown (failureOf(), or lastLine() for Python's own last line)`);
+    }
     for (const [, kind] of text.matchAll(/new Failure\(\s*"([\w-]+)"/g)) made.set(kind, [...(made.get(kind) ?? []), name]);
     for (const [, kind] of text.matchAll(/\.?kind(?:Of\([^)]*\))? [!=]== "([\w-]+)"/g)) read.set(kind, [...(read.get(kind) ?? []), name]);
   }

@@ -245,6 +245,44 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
     "the line of an engine without a GPU's side is the engine's reason, and no GPU is waited for");
   context.stand.engineOf = undefined;
 
+  // T380.2: software threads that do not start leave the model ready on one thread, as before, and the console is told
+  // why; threads that start say nothing
+  {
+    let stopped = 0;
+    const before = said.length;
+    context.stand.engineOf = (n) => ({ n, gpu: undefined, gpuWhyNot: "a stand-in", threads: 1, findThreads: async () => { throw new Error("a software thread did not start"); }, stopThreads: () => { stopped += 1; } });
+    await load({ load: 61, model: model("alone") });
+    assert.deepEqual([of("error"), of("ready").at(-1).load, of("ready").at(-1).threads, stopped], [[], 61, 1, 1], "the model is ready on one thread, and what had started is stopped");
+    assert.deepEqual(said.slice(before), ["threads: the software threads did not start (Error: a software thread did not start): one thread"]);
+    context.stand.engineOf = (n) => ({ n, gpu: undefined, gpuWhyNot: "a stand-in", threads: 2, findThreads: async () => 2, stopThreads() {} });
+    await load({ load: 62, model: model("several") });
+    assert.deepEqual([of("error"), of("ready").at(-1).threads, said.length], [[], 2, before + 1], "threads that start say nothing");
+    context.stand.engineOf = undefined;
+  }
+
+  // T380.2: two files of the visitor's, the second of which is no tokenizer.bin of the first: said with the last line
+  // of what the engine threw, Python's own with the exception's name (failure.ts's lastLine(); failureOf() would say
+  // a ValueError without its name and another exception by its whole traceback: another sentence)
+  {
+    const python = (type, text) => Object.assign(new Error(text), { name: "PythonError", type });
+    const traceback = (last) => `Traceback (most recent call last):\n  File "<exec>", line 3, in load\n${last}\n`;
+    context.stand.pyodide.toPy = () => ({ destroy() {} });
+    Object.assign(context.stand.numpy, { checkpoint_dtype: () => "float32", check_tokenizer() {} });
+    const two = { id: "local", name: "Two files", bytes: BYTES, options: {}, file: new File([file], "model.bin"), tokenizerFile: new File([new Uint8Array(8)], "tok.bin") };
+    for (const [thrown, reason] of [
+      [python("ValueError", traceback("ValueError: The tokenizer has 512 pieces, and the checkpoint 256.")), "ValueError: The tokenizer has 512 pieces, and the checkpoint 256."],
+      [python("KeyError", traceback("KeyError: 'dim'")), "KeyError: 'dim'"],
+      [new Error("one line"), "one line"],
+      ["a string\nof two lines ", "of two lines"],
+    ]) {
+      context.stand.asBuilt = () => { throw thrown; };
+      await load({ load: 63, model: two });
+      assert.equal(of("error").at(-1)?.message, `tok.bin does not work as the tokenizer.bin of model.bin (${reason})`);
+    }
+    context.stand.asBuilt = undefined;
+    messages.splice(0, messages.length, ...messages.filter((message) => message.type !== "error"));
+  }
+
   // the same for a model of Hugging Face: convert() adopts what the place of its weights built, and load() asks weights.js
   // with the engine that is the model's (not undefined, not the one before): the GPU that failed loads it again
   {
@@ -289,4 +327,34 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   run("weightsPool = undefined; adopted({}); initialized = undefined;");
 }
 console.log("ok: load.js on stand-ins: a load to its ready, the next model after the first is let go of, a model whose GPU failed on it alone loaded again; timing.js: the page path's count told");
+
+// ---- T380.2: runtime.js asking for the adapter as the worker begins. What fails there was silent: an adapter that
+// cannot be asked for, and a device with no key (in this vm no module can be imported later, which is such a failure)
+{
+  const begun = async (gpu) => {
+    const warn = console.warn, said = [];
+    console.warn = (...words) => said.push(words.join(" "));
+    try {
+      const { run } = workerHarness({ root: null, gpu });
+      await run("adapterAsked");
+      return { said, adapter: JSON.parse(JSON.stringify(run("gpuAdapter"))) };
+    } finally {
+      console.warn = warn;
+    }
+  };
+  // no adapter here: nothing failed, and nothing is said
+  assert.deepEqual(await begun({ requestAdapter: async () => null }), { said: [], adapter: null });
+  // the asking itself fails
+  assert.deepEqual(await begun({ requestAdapter: () => Promise.reject(new Error("the GPU process is gone")) }),
+    { said: ["gpu: the adapter could not be asked for (Error: the GPU process is gone): no GPU on this visit"], adapter: null });
+  // an adapter that is not what one is
+  const odd = await begun({ requestAdapter: async () => ({}) });
+  assert.equal(odd.adapter, null);
+  assert.match(odd.said.join("|"), /^gpu: the adapter could not be asked for \(TypeError: [^|]+\): no GPU on this visit$/);
+  // an adapter, and no key of it: the adapter stands, without one
+  const keyless = await begun({ requestAdapter: async () => ({ limits: { maxStorageBufferBindingSize: 1 << 27, maxBufferSize: 1 << 28 }, info: { isFallbackAdapter: false } }) });
+  assert.deepEqual(keyless.adapter, { fallback: false, limits: { maxStorageBufferBindingSize: 1 << 27, maxBufferSize: 1 << 28 }, packed: false });
+  assert.match(keyless.said.join("|"), /^gpu: no key of this device \([^|]+\): what the page kept of it is not used$/);
+}
+console.log("ok: T380.2, an adapter that cannot be asked for and a device without a key are said on the console; no adapter at all is no failure and says nothing");
 console.log("worker-parts-check: ok");

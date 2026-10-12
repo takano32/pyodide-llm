@@ -122,8 +122,9 @@ export function workerHarness({ told = false, gpu = false, root = siteRoot() } =
   // worker.js and its modules (T350: tests/worker-source.mjs makes scripts of them) in a vm context whose global is its
   // self, as in a worker
   const messages = [];
-  // gpu: a WebGPU that gives no adapter (the worker asks for one as it begins: runtime.js's gpuAdapter is the check's to set)
-  const navigatorStandIn = { deviceMemory: 8, ...(gpu && { gpu: { requestAdapter: async () => null } }) };
+  // gpu: a WebGPU that gives no adapter (the worker asks for one as it begins: runtime.js's gpuAdapter is the check's to set),
+  // or (T380.2) the check's own navigator.gpu
+  const navigatorStandIn = { deviceMemory: 8, ...(gpu && { gpu: typeof gpu === "object" ? gpu : { requestAdapter: async () => null } }) };
   const context = vm.createContext({
     console, URL, URLSearchParams, TextDecoder, TextEncoder, AbortController, DOMException, Response, Headers,
     ReadableStream, WritableStream, TransformStream, WebAssembly, Atomics, SharedArrayBuffer,
