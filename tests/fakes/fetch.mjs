@@ -8,12 +8,13 @@
 //
 //   fetch(input, init)     what stands for the global: a promise of the answer. input is an address, a URL or anything
 //                          with a url (a Request)
-//   answers(route)         from here on route(url, init, n) answers the n-th request of that address since the last
-//                          answers() (0 first) with a Response, a promise of one, or HANG (no answer until the request
-//                          is aborted); what it throws, or rejects with, is what the fetch fails with. The requests
-//                          written down so far are forgotten. Before any answers(): every request a 404
+//   answers(route)         from here on route(url, init, n) answers a request with a Response, a promise of one, or
+//                          HANG (no answer until the request is aborted); what it throws, or rejects with, is what the
+//                          fetch fails with. n: how many requests of that address are written down already (0 for the
+//                          first). Before any answers(): every request a 404
 //   requests               every request, in order: { url, at, signal, range, method, init } (at: now() as it was
-//                          made; range: its Range header; method: "GET" where the init says none; init: as it was given)
+//                          made; range: its Range header; method: "GET" where the init says none; init: as it was
+//                          given). The check's to empty (requests.length = 0), which starts the counts again
 //   now                    the clock a request's `at` is read from (the check's own; by default the time stands at 0)
 //
 //   status(code), failing(error), hang     routes for the common answers: an empty response of that status, a fetch
@@ -54,7 +55,6 @@ export function madeUpNetwork({ now = () => 0 } = {}) {
     });
   }
   const answers = (routing) => {
-    requests.length = 0;
     route = routing;
   };
   return { fetch, requests, answers };

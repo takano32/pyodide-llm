@@ -145,6 +145,7 @@ export function workerHarness({ told = false, gpu = false, root = siteRoot() } =
     }
   }
   const fresh = (routing) => {
+    requests.length = 0;
     messages.length = 0;
     answers(routing);
   };

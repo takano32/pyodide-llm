@@ -21,6 +21,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import vm from "node:vm";
 import { cacheStorage } from "./fakes/cache.mjs";
+import { failing, madeUpNetwork } from "./fakes/fetch.mjs";
 import { served } from "./tree.mjs";
 
 const SITE = "https://takano32.github.io/pyodide-llm/";
@@ -36,16 +37,15 @@ const source = fs.readFileSync(served("coi.js"), "utf8");
 // ask.activate() is the browser's activate event: it waits for what the listener asked it to wait for, and gives
 // what that ended as (undefined, or the error it was rejected with). said: the cache's list, where the claim goes too
 function worker({ caches, online, registered = "?v=new", said = [] }) {
-  const listeners = {};
+  const listeners = {}, network = madeUpNetwork();
   const context = {
     self: { location: new URL(`${SITE}coi.js${registered}`), addEventListener: (type, f) => { listeners[type] = f; }, skipWaiting() {},
       clients: { claim: async () => { said.push("claim"); } } },
     caches, URL, Headers, Response,
-    fetch: async (request) => {
-      if (!online) throw new TypeError("Failed to fetch");
-      return new Response(`network: ${request.url}`, { status: 200 });
-    },
+    fetch: network.fetch,
   };
+  // (tests/fakes/fetch.mjs's network: every address answers with its own name, or the line is down)
+  network.answers(online ? (url) => new Response(`network: ${url}`, { status: 200 }) : failing(new TypeError("Failed to fetch")));
   context.self.caches = caches;
   vm.createContext(context);
   vm.runInContext(source, context);

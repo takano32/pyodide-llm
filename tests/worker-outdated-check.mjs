@@ -18,6 +18,7 @@
 // text by tests/updated-check.mjs, and run in tests/updated-in-browser.mjs), the page (tests/page-parts-check.mjs),
 // a browser.
 import assert from "node:assert/strict";
+import { madeUpNetwork, status, failing, hang } from "./fakes/fetch.mjs";
 import { workerHarness } from "./worker-harness.mjs";
 import { runtimeUrl } from "./tree.mjs";
 import { updated } from "../src/runtime/updated.ts";
@@ -29,17 +30,12 @@ globalThis.postMessage = (message) => posted.push(message);
 let made = 0;
 // outdated.js anew: what it holds (whether the page was told) is a visit's
 const fresh = () => import(`${runtimeUrl("worker/outdated.js")}?case=${made++}`);
-// a server: what it was asked, and its answer to each
-function server(answer) {
-  const asked = [];
-  const fetch = async (address, init) => {
-    asked.push({ address: String(address), ...init });
-    return answer(asked.length, init);
-  };
+// a server (tests/fakes/fetch.mjs): what it was asked, and its answer to each (route(url, init, n): the n-th of that address)
+function server(route) {
+  const { fetch, requests: asked, answers } = madeUpNetwork();
+  answers(route);
   return { asked, probe: { fetch, here } };
 }
-const status = (code) => () => new Response(null, { status: code });
-const failing = (error) => () => { throw error; };
 const NOT_GONE = [
   ["the namer is there", status(200)], ["the server fails", status(500)], ["the server is busy", status(503)], ["forbidden", status(403)],
   ["the line dropped", failing(new TypeError("Failed to fetch"))], ["offline", failing(new TypeError("NetworkError when attempting to fetch resource."))],
@@ -88,16 +84,15 @@ console.log("worker-outdated-check: a built file that is gone by its own answer 
   posted.length = 0;
   assert.equal(await wentWithout(importFailed, WORKER, probe), true);
   assert.deepEqual(posted, UPDATED, "a module that failed, and the module that names it is gone: the page is told");
-  assert.deepEqual(asked.map(({ address, method, cache }) => ({ address, method, cache })), [{ address: WORKER, method: "HEAD", cache: "no-store" }],
+  assert.deepEqual(asked.map(({ url, method, init }) => ({ address: url, method, cache: init.cache })), [{ address: WORKER, method: "HEAD", cache: "no-store" }],
     "one HEAD for the namer, past the caches (updated.js's gone())");
   // a server that never answers: given up, and nothing told
   {
     const { wentWithout } = await fresh();
-    let ended = false;
-    const silent = (address, init) => new Promise((resolve, reject) => init.signal.addEventListener("abort", () => { ended = true; reject(new DOMException("aborted", "AbortError")); }));
+    const { asked, probe } = server(hang);
     posted.length = 0;
-    assert.equal(await wentWithout(importFailed, WORKER, { fetch: silent, here, seconds: 0.05 }), false);
-    assert.ok(ended && posted.length === 0, "a HEAD that is not answered is given up, and the page is told nothing");
+    assert.equal(await wentWithout(importFailed, WORKER, { ...probe, seconds: 0.05 }), false);
+    assert.ok(asked.length === 1 && asked[0].signal.aborted && posted.length === 0, "a HEAD that is not answered is given up, and the page is told nothing");
   }
   // what is not of a build: a development server's source, Node's file
   for (const namer of ["http://localhost:8080/src/runtime/worker/runtime.js", "file:///home/someone/pyodide-llm/src/runtime/worker/runtime.js", import.meta.url]) {
@@ -137,7 +132,7 @@ console.log("worker-outdated-check: a module that failed is told where the modul
     posted.length = 0;
     assert.equal(await workerWentWithout(event, WORKER, probe), true);
     assert.deepEqual(posted, UPDATED, "a worker that did not start and says nothing, and the module that made it is gone: the page is told");
-    assert.equal(asked[0].address, WORKER);
+    assert.equal(asked[0].url, WORKER);
     cases += 1;
   }
   // a script that threw says what: no missing file, whatever the server would say
@@ -165,7 +160,7 @@ console.log("worker-outdated-check: a module that failed is told where the modul
   // a "no" is not kept: the site may be deployed again later in the visit, and the next failure asks again
   {
     const { workerWentWithout } = await fresh();
-    const { asked, probe } = server((n) => new Response(null, { status: n === 1 ? 200 : 404 }));
+    const { asked, probe } = server((url, init, n) => new Response(null, { status: n === 0 ? 200 : 404 }));
     posted.length = 0;
     assert.equal(await workerWentWithout({}, WORKER, probe), false);
     assert.deepEqual(posted, []);

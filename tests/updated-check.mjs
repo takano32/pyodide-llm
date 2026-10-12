@@ -14,6 +14,7 @@
 // deployment): tests/updated-in-browser.mjs.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { madeUpNetwork, status as answersWith, failing as failsWith, hang } from "./fakes/fetch.mjs";
 import { workerHarness } from "./worker-harness.mjs";
 import { UPDATED, SLOWER, updated, isUpdated, saidOf, ofThisBuild, answeredGone, gone, named, unstarted } from "../src/runtime/updated.ts";
 
@@ -68,20 +69,21 @@ for (const [address, status, is] of [[WORKER, 404, true], [WORKER, 200, false], 
 console.log("updated-check: a file of this build is one of this origin under _astro/, and only its 404 says it is gone");
 
 // ---- gone(): the server's 404 to a HEAD, and nothing else
-const asked = [];
-const answering = (answer) => async (address, init) => {
-  asked.push({ address, ...init });
-  return answer(address, init);
+// (tests/fakes/fetch.mjs's network: asked is what it was asked; answering(route) is a fetch of it that answers by that route)
+const network = madeUpNetwork(), asked = network.requests;
+const answering = (route) => (address, init) => {
+  network.answers(route);
+  return network.fetch(address, init);
 };
-const status = (code) => answering(() => new Response(null, { status: code }));
+const status = (code) => answering(answersWith(code));
 const probe = (fetch, more = {}) => ({ fetch, here, ...more });
 {
   asked.length = 0;
   assert.equal(await gone(WORKER, probe(status(404))), true);
   assert.equal(asked.length, 1, "asked once");
-  assert.equal(asked[0].address, WORKER);
+  assert.equal(asked[0].url, WORKER);
   assert.equal(asked[0].method, "HEAD", "by HEAD: the service worker keeps and answers GETs only, and nothing is downloaded");
-  assert.equal(asked[0].cache, "no-store", "past the browser's own cache: a file it holds may be gone on the server");
+  assert.equal(asked[0].init.cache, "no-store", "past the browser's own cache: a file it holds may be gone on the server");
   assert.ok(asked[0].signal instanceof AbortSignal);
   for (const code of [200, 204, 304, 400, 401, 403, 410, 429, 500, 502, 503]) {
     assert.equal(await gone(WORKER, probe(status(code))), false, `${code} is not "gone"`);
@@ -92,12 +94,11 @@ const probe = (fetch, more = {}) => ({ fetch, here, ...more });
     assert.equal(await gone(WORKER, probe(answering(() => { throw failure; }))), false, `${failure.message} is not "gone"`);
   }
   // no answer at all: given up, and not called an update (the abort reaches the fetch, so nothing is left asking)
-  let aborted = false;
-  const silent = (address, init) => new Promise((resolve, reject) => init.signal.addEventListener("abort", () => { aborted = true; reject(new DOMException("aborted", "AbortError")); }));
+  asked.length = 0;
   const began = performance.now();
-  const waited = await Promise.race([gone(WORKER, probe(silent, { seconds: 0.05 })), new Promise((resolve) => setTimeout(() => resolve("still asking"), 2000))]);
+  const waited = await Promise.race([gone(WORKER, probe(answering(hang), { seconds: 0.05 })), new Promise((resolve) => setTimeout(() => resolve("still asking"), 2000))]);
   assert.equal(waited, false, "a HEAD that is not answered is given up, and is no update");
-  assert.ok(aborted && performance.now() - began < 2000, "and its fetch is ended");
+  assert.ok(asked.length === 1 && asked[0].signal.aborted && performance.now() - began < 2000, "and its fetch is ended");
   // the limit it is given when no one says: ten seconds (a page waits that long, at most, before it shows the words it had)
   const delays = [];
   const setTimeoutWas = globalThis.setTimeout;
@@ -130,7 +131,7 @@ console.log("updated-check: gone() is the server's 404 to one HEAD past the cach
   const told = await named(WORKER, failing, probe(status(404))).catch((error) => error);
   assert.ok(isUpdated(told) && told.message === UPDATED && told.cause === failure, "the namer is gone: the site was updated");
   assert.equal(asked.length, 1);
-  assert.equal(asked[0].address, WORKER, "the namer is what is asked for");
+  assert.equal(asked[0].url, WORKER, "the namer is what is asked for");
   for (const [what, fetch] of [["the namer is there", status(200)], ["the server fails", status(500)], ["the server is busy", status(503)],
     ["the line dropped", answering(() => { throw new TypeError("Failed to fetch"); })]]) {
     assert.equal(await named(WORKER, failing, probe(fetch)).catch((error) => error), failure, `${what}: the failure it was`);
@@ -178,16 +179,16 @@ console.log("updated-check: a worker that did not start is the site's update onl
     for (const name of ["built.ts", "updated.ts", "failure.ts"]) fs.copyFileSync(new URL(name, runtime), new URL(name, astro));
     const served = await import(new URL("built.ts", astro).href);
     const source = await import(new URL("built.ts", runtime).href);
-    const fetched = [];
-    const answer = (make) => { globalThis.fetch = async (address, init) => { fetched.push({ address: String(address), ...init }); return make(); }; };
+    const fetched = asked;
+    const answer = (make) => { globalThis.fetch = answering(make); };
     const at = (origin) => Object.defineProperty(globalThis, "location", { configurable: true, value: origin === undefined ? undefined : { origin } });
     at("null");  // (a file: URL's origin)
     const signal = new AbortController().signal;
     answer(() => new Response("the bytes", { status: 200 }));
     assert.equal(await (await served.built("converter.zip", signal)).text(), "the bytes");
-    assert.equal(fetched.at(-1).address, String(served.BUILT["converter.zip"]));
+    assert.equal(fetched.at(-1).url, String(served.BUILT["converter.zip"]));
     assert.equal(fetched.at(-1).signal, signal, "a load that is cancelled cancels the fetch");
-    assert.equal(fetched.at(-1).method, undefined, "a GET, which the service worker keeps");
+    assert.equal(fetched.at(-1).init.method, undefined, "a GET, which the service worker keeps");
     answer(() => new Response("", { status: 404 }));
     for (const name of Object.keys(served.BUILT)) {
       const told = await served.built(name).catch((error) => error);
@@ -200,7 +201,7 @@ console.log("updated-check: a worker that did not start is the site's update onl
       assert.equal(told.message, `Could not fetch converter.zip: ${code}`);
     }
     const dropped = new TypeError("Failed to fetch");
-    globalThis.fetch = async () => { throw dropped; };
+    globalThis.fetch = answering(failsWith(dropped));
     assert.equal(await served.built("converter.zip").catch((error) => error), dropped, "a fetch that fails fails as it did");
     // the same 404 where the file is not of a build (the sources as a development server or Node has them), and
     // where it is of another origin than the page: a file that could not be fetched, as before
