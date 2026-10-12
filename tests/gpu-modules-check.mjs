@@ -26,6 +26,8 @@
 // The parser is @babel/parser, which Astro's packages bring (as tests/worker-modules-check.mjs, whose namesOf this uses).
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
+import { parse } from "@babel/parser";
 import { windowed } from "./imports.mjs";
 import { treeOf } from "./tree.mjs";
 import { namesOf } from "./worker-modules-check.mjs";
@@ -36,8 +38,10 @@ const GLOBALS = new Set(("Array ArrayBuffer Atomics BigInt BigInt64Array Boolean
 // (where the runtime is: tests/tree.mjs. tests/imports.mjs's windowed() reads the window and every file it reaches,
 // says a ring, and holds every file of gpu/ to be reached; the shaders' parts a module takes names of are read with them)
 const tree = treeOf();
-const linked = windowed("gpu.js", { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
-const own = (name) => name === "gpu.js" || name.startsWith("gpu/");
+// (T368.6: the window by the name the tree has for it, gpu.ts: windowed() blanks a file's types by the name it is given)
+const WINDOW = path.basename(tree.runtime("gpu.js")), END = path.extname(WINDOW);
+const linked = windowed(WINDOW, { read: (name) => fs.readFileSync(tree.runtime(name), "utf8"), list: (folder) => fs.readdirSync(tree.runtime(folder)), bundled: tree.bundled, outside: true });
+const own = (name) => name === WINDOW || name.startsWith("gpu/");
 const files = new Map([...linked.files].filter(([name]) => own(name)).map(([name, { text }]) => [name, text]));
 const programs = new Map([...linked.files].filter(([name]) => own(name)).map(([name, { program }]) => [name, program]));
 const top = (node) => (node.type === "ExportNamedDeclaration" && node.declaration ? node.declaration : node);
@@ -63,7 +67,7 @@ const walk = (node, visit, parent = null, key = "") => {
     (Array.isArray(value) ? value : [value]).forEach((child) => walk(child, visit, node, k));
   }
 };
-const HELD = ["model", "stopping", "lost"], OWNER = "gpu/device.js";
+const HELD = ["model", "stopping", "lost"], OWNER = `gpu/device${END}`;
 const lets = programs.get(OWNER).body.map(top).filter((node) => node.type === "VariableDeclaration" && node.kind === "let").flatMap((node) => node.declarations.map((d) => d.id.name));
 for (const name of HELD) assert.ok(lets.includes(name), `${OWNER} holds ${name} as a let of its own`);
 assert.ok(![...programs.values()].some((program) => program.body.map(top).some((node) => node.type === "VariableDeclaration" && node.declarations.some((d) => d.id.name === "common"))),
@@ -103,7 +107,7 @@ console.log(`gpu-modules-check: model, stopping and lost are gpu/device.js's, se
 // keys, and the keys of what a builder of another module returns where the literal spreads it); a record and its
 // fields are set in the owner's file alone; and a record goes nowhere whole (taken apart or under a local name in
 // the function that reads it, where this follows it).
-const RECORDS = { weights: "gpu/weights.js", block: "gpu/block.js", forms: "gpu/forms.js", tokens: "gpu/tokenforms.js" };
+const RECORDS = { weights: `gpu/weights${END}`, block: `gpu/block${END}`, forms: `gpu/forms${END}`, tokens: `gpu/tokenforms${END}` };
 const MODEL = ["m", "model"];
 const isMember = (node) => node.type === "MemberExpression" || node.type === "OptionalMemberExpression";
 const ofModel = (node) => isMember(node) && !node.computed && node.object.type === "Identifier" && MODEL.includes(node.object.name);
@@ -268,6 +272,26 @@ for (const [record, fields] of Object.entries(fieldsOf)) {
 assert.deepEqual([...base].filter((field) => !reads.base.has(field)), [], `fields ${OWNER} declares of the model's record that nothing reads`);
 console.log(`gpu-modules-check: the model's record: ${base.size} fields of gpu/device.js's and ${Object.entries(fieldsOf).map(([record, fields]) => `${fields.size} of m.${record}`).join(", ")}, ` +
   `each set by its owner alone and read by a name it declares (${uses} uses)`);
+
+// ---- T368.6: the worker is TypeScript, and tsc holds a message it posts to the type where the message says which:
+// postMessage({ … } satisfies FromGpu). The worker's own postMessage() takes anything, so a message without that is
+// held by nothing but its keys (tests/plan-keys-check.mjs): every one says it. (The sources as they are written here:
+// the types blanked, as everywhere else in this check, say nothing of it.)
+if (END === ".ts") {
+  let said = 0;
+  for (const name of files.keys()) {
+    const typedProgram = parse(fs.readFileSync(tree.runtime(name), "utf8"), { sourceType: "module", plugins: ["typescript"] }).program;
+    walk(typedProgram, (node) => {
+      if (node.type !== "CallExpression" || node.callee.type !== "Identifier" || node.callee.name !== "postMessage") return;
+      const [message] = node.arguments;
+      assert.ok(message?.type === "TSSatisfiesExpression" && message.typeAnnotation.typeName?.name === "FromGpu",
+        `${name}, line ${node.loc.start.line}: a message is posted without \`satisfies FromGpu\`: nothing holds its values to what forward.ts reads`);
+      said += 1;
+    });
+  }
+  assert.ok(said >= 5, `${said} messages posted were found, fewer than FromGpu's 5 kinds`);
+  console.log(`gpu-modules-check: the ${said} messages the worker posts each satisfy contracts/gpu/protocol.ts's FromGpu`);
+}
 
 // ---- the window in Node: it links, and what its receiver is given
 const handlers = [], posted = [];

@@ -1,7 +1,7 @@
 // contracts/gpu/protocol.ts (T368.2): what forward.ts and the model's GPU worker say to one another. Types alone:
 // nothing of this file is in what a browser gets (it is read with `import type`).
 //
-// The worker is src/runtime/gpu.js (its head says what each message does), which forward.ts makes
+// The worker is src/runtime/gpu.ts (its head says what each message does), which forward.ts makes
 // (src/runtime/forward/gpuside.ts) and hands the model in a plan: Started, of { type: "start" }, a model whose layers are
 // in the shared memory too; Opened, of { type: "open" } (src/runtime/forward/alone.ts's gpuOnlyPlan(), posted by
 // src/runtime/worker/weights.ts), a model on the GPU alone (T156), whose bytes follow as { type: "weights" }.

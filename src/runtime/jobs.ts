@@ -22,7 +22,7 @@ export const JOBS = 512, JOB = 16, JOB_TABLE = 2056;
 export const BATCH = 16;
 /** scratch for a helper's warm-up, after the last job */
 export const SCRATCH = 4608;
-// T135: the words of the GPU's worker (gpu.js), which runs the blocks of a prompt that forward.ts hands it while
+// T135: the words of the GPU's worker (gpu.ts), which runs the blocks of a prompt that forward.ts hands it while
 // forward.ts waits: GPU_DONE, the number of the last request it finished; GPU_FAILED, whether that one failed;
 // GPU_BEAT, counted up while it works (a worker that stopped counting has stopped); GPU_WANTED, the request forward.ts
 // waits for (T147: 0 once it gave the GPU up, and the GPU's worker writes nothing for a request no longer wanted)

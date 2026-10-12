@@ -264,7 +264,7 @@ const LATER = {
   ],
   "src/runtime/worker/weights.ts": [
     ['new Worker(new URL("../helper.ts", import.meta.url)', "slower: a software thread that does not start leaves fewer threads"],
-    ['new Worker(new URL("../gpu.js", import.meta.url)', "slower: a GPU worker that does not start leaves the model on the CPU (forward/gpuside.js)"],
+    ['new Worker(new URL("../gpu.ts", import.meta.url)', "slower: a GPU worker that does not start leaves the model on the CPU (forward/gpuside.js)"],
   ],
   "src/runtime/benchmark/sections.js": [
     ["built(name).then((res) => res.arrayBuffer()).catch((error) => unlessUpdated(error) ?? null)));", "said"],
@@ -373,7 +373,7 @@ for (const name of sources) {
   assert.deepEqual(text.match(/postMessage\([^)]*\)/g), ['postMessage({ type: "updated" } satisfies Updated)'], "outdated.js posts the one word, and nothing else");
 }
 const knows = (name) => /updated\.js|\bunstarted\b|\bisUpdated\b|\bUPDATED\b/.test(code(name));
-for (const name of ["src/runtime/worker/weights.ts", "src/runtime/gpu.js", "src/runtime/gpu/device.js"]) {
+for (const name of ["src/runtime/worker/weights.ts", "src/runtime/gpu.ts", "src/runtime/gpu/device.ts"]) {
   assert.ok(!knows(name), `${name} holds a fallback (LATER) and now knows of updated.js`);
 }
 // and neither does anything on a token's, a block's or a submit's path: the engine, its threads, the GPU's worker, the

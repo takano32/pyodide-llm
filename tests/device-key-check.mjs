@@ -37,6 +37,7 @@ import { transformSync } from "esbuild";
 import { rolldown } from "rolldown";
 import { oneSource } from "./shaders-source.mjs";
 import { runtime, runtimeUrl } from "./tree.mjs";
+import { typed, untyped } from "./untyped.mjs";
 
 const read = (file) => fs.readFileSync(runtime(file), "utf8");
 const source = oneSource();
@@ -141,10 +142,12 @@ const isShader = (name) => typeof real[name] === "string"
 // T352: gpu.js is a window over the modules of src/runtime/gpu/ now, and the worker is all of those files: each is read, and
 // what is said of "gpu.js" below is said of them together (a shader named or compiled in any of them). Every file of the
 // folder is read, whether or not the window asks for it (that it asks for them all is tests/gpu-modules-check.mjs's).
-const gpuFiles = ["gpu.js", ...fs.readdirSync(runtime("gpu")).filter((name) => name.endsWith(".js")).sort().map((name) => `gpu/${name}`)];
+// (T368.6: the worker is TypeScript: its files in either spelling, each parsed with its types blanked, so that a type's
+// import of a part is no name taken and a place in the text is its place in the source)
+const gpuFiles = ["gpu.js", ...fs.readdirSync(runtime("gpu")).filter((name) => name.endsWith(".js") || typed(name)).sort().map((name) => `gpu/${name}`)];
 assert.ok(gpuFiles.length > 1, "gpu/ holds the worker's modules");
 const gpuNodes = gpuFiles.flatMap((file) => {
-  const text = read(file);
+  const text = untyped(read(file), runtime(file));
   return [...under(parse(text, { sourceType: "module" }).program)].map((n) => ({ n, file, text }));
 });
 const taken = new Set();

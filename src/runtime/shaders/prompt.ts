@@ -347,7 +347,7 @@ fn main(@builtin(local_invocation_id) localId: vec3<u32>, @builtin(workgroup_id)
 // of its group of 128 along the row; 3, which no ternary file has, is +2, as src/runtime/forward/engine.ts's weightAt and
 // llama2_numpy.unpack_ternary read it), 16 weights a u32, and a float32 scale a group of 128 in a buffer of its own.
 // Nothing is widened as it goes up (the 8B is 2.3 GB so and 9.2 GB as int8): a row of n weights is n / 4 bytes and
-// n / 128 scales, which is the layout of an int8 row of n / 4 weights (32 bytes of values to a scale), so gpu.js's
+// n / 128 scales, which is the layout of an int8 row of n / 4 weights (32 bytes of values to a scale), so gpu.ts's
 // buffers, pieces and joined matrices count bytes as they did.
 //
 // The form is the packed-integer one the engine has from ONNX Runtime (the tiles of dp4a above for a prompt's block,

@@ -1,4 +1,4 @@
-// gpu.js (T135, T147, T148): the model page's GPU, in a worker of its own. forward.ts (in the model's worker) makes it
+// gpu.ts (T135, T147, T148): the model page's GPU, in a worker of its own. forward.ts (in the model's worker) makes it
 // wherever the worker has WebGPU and the model is one it takes (T148: by default, no option), and hands it the blocks
 // of a prompt (up to plan.batch tokens) one at a time that it finds faster here than on the CPU, waiting in
 // Atomics.wait for the answer: the model's worker cannot wait for a promise while Python calls forwardMany(), and this
@@ -27,7 +27,7 @@
 //                                    T152: count steps of a generation from token at pos (the forward pass and the
 //                                    sampling of each, SAMPLE's), after the keys and values of positions from to pos - 1
 //                                    went up from forward.ts's cache; the ids into plan.tokens.ids and the keys and
-//                                    values of their positions into plan.staging (gpu/requests.js's generate()). The answer is
+//                                    values of their positions into plan.staging (gpu/requests.ts's generate()). The answer is
 //                                    in the control area as a prompt's. Where plan.tokens asks for it, "ready" says
 //                                    tokens ({ form, ms, forms, remembered, attention, attentions }: the layer of a
 //                                    token chosen here and its ms a step, T224: the attention of a token chosen here
@@ -60,21 +60,22 @@
 // shader loads them); a device without the packed int8 dot keeps such a model on the CPU.
 //
 // T352: this file is the window of the worker: forward.ts starts it and its messages come here. What it does is the
-// modules of gpu/: device.js (the shaders' module, what the modules share, the device, buffers), weights.js (the
-// weights onto the GPU), forms.js (the prompt's shaders checked, timed and chosen), block.js (a block of a prompt),
-// tokenattention.js, tokens.js and tokenforms.js (a generated token's attention, its steps, and their forms checked,
-// timed and chosen), requests.js (what forward.ts waits for in the control area) and start.js (the model going onto
+// modules of gpu/: device.ts (the shaders' module, what the modules share, the device, buffers), weights.ts (the
+// weights onto the GPU), forms.ts (the prompt's shaders checked, timed and chosen), block.ts (a block of a prompt),
+// tokenattention.ts, tokens.ts and tokenforms.ts (a generated token's attention, its steps, and their forms checked,
+// timed and chosen), requests.ts (what forward.ts waits for in the control area) and start.ts (the model going onto
 // the GPU and leaving it). Each is a static import: a bundler links them into this worker's file (T367.3),
 // and nothing is awaited before the receiver at the end of this file is set. The shaders are linked into it too
 // (T367.5): each module takes the names it uses from the parts of shaders/, and the worker fetches nothing after itself.
-import { heldFloats } from "./gpu/tokenforms.js";
-import { generate, prompt, keysOf } from "./gpu/requests.js";
-import { open, take, start, stop } from "./gpu/start.js";
+import { heldFloats } from "./gpu/tokenforms.ts";
+import { generate, prompt, keysOf } from "./gpu/requests.ts";
+import { open, take, start, stop } from "./gpu/start.ts";
+import type { ToGpu } from "./contracts/gpu/protocol.ts";
 
 // (pure: tests/gpu-choice-check.mjs holds the rounding of the keys and values to what a device may choose)
 export { heldFloats };
 
-onmessage = ({ data }) => {
+onmessage = ({ data }: MessageEvent<ToGpu>) => {
   if (data.type === "open") open(data.plan, data.flow);
   else if (data.type === "weights") take(data);
   else if (data.type === "start") start(data.memory, data.plan);

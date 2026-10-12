@@ -251,7 +251,7 @@ for (const [isGone, event, told, askedFor] of [
   {
     const { run, messages, asked } = harness(isGone);
     const worker = run("openGpu")();
-    assert.match(worker.url, /gpu\.js$/, "the GPU's worker");
+    assert.match(worker.url, /gpu\.ts$/, "the GPU's worker");
     assert.equal(worker.options?.type, "module");
     assert.equal(worker.onerror, undefined, "its onerror is forward.js's to set (forward/gpuside.js: the model stays on the CPU)");
     assert.deepEqual(worker.posted, [], "and nothing is sent to it here");

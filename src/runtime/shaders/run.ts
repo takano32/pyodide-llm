@@ -270,7 +270,7 @@ export const EMBED_TERNARY = embedTernary(false), EMBED_ROWS_TERNARY = embedTern
 // model's GPU multiplies a classifier of floats instead (T226: fusedMatVec), which reads int8 weights. For ternary
 // weights the GPU does what the CPU does, in two small dispatches around the classifier's matrix, the columns read
 // from the table of codes as it is. No public implementation has this (ONNX Runtime and llama.cpp quantize the input
-// as it comes), so it is written apart, with what gpu.js gives it:
+// as it comes), so it is written apart, with what gpu.ts gives it:
 //   struct Outliers { count: u32, rows: u32, n: u32, unused: u32, channels: array<vec4<u32>, 2> }
 //                        count: the channels (OUTLIERS_MOST at most), channel k at channels[k / 4][k % 4], no two the
 //                        same; rows and n: the table's piece (TERNARY_COLUMNS alone)
@@ -283,7 +283,7 @@ export const EMBED_TERNARY = embedTernary(false), EMBED_ROWS_TERNARY = embedTern
 //                    local_invocation_index, those past rows doing nothing: dst[row] += the sum over k of picked[k] ×
 //                    ((the code of weight (row, channel k) less one) × the scale of its group of 128). Dispatched after
 //                    the classifier's matrix has written the piece's logits.
-// gpu.js checks the two with the classifier, on the model's own table and final norm, against JavaScript's (checkTokens:
+// gpu.ts checks the two with the classifier, on the model's own table and final norm, against JavaScript's (checkTokens:
 // the logits of rows of every piece).
 export const OUTLIERS_MOST = 8;
 const OUTLIERS = /* wgsl */ `struct Outliers { count: u32, rows: u32, n: u32, unused: u32, channels: array<vec4<u32>, 2> }`;

@@ -1,5 +1,5 @@
 // forward/gpuside.ts (T349): the GPU's side of one engine: what the GPU would hold of the model and why it would not
-// take it, the GPU's worker (src/runtime/gpu.js) started and stopped, a prompt's blocks and a generation's steps through
+// take it, the GPU's worker (src/runtime/gpu.ts) started and stopped, a prompt's blocks and a generation's steps through
 // it, and which of them go there (T135, T148, T152, T156, T210).
 // A module of src/runtime/forward.ts; it reads jobs.ts and its neighbours by static imports.
 
@@ -64,7 +64,7 @@ type Listed = (Iterable<number> & { toJs?(): number[] }) | null | undefined;
 // (the control area's words and the GPU's worker are read where the GPU is on and nowhere else: ctl! and gpuWorker! below)
 
 // T135: the GPU's worker says something at least this often while it puts a model on the GPU: after every step, each
-// of which it gives up itself after 180 s (gpu.js's STEP_MS, T147: SwiftShader compiles a shader in up to 90 s). A
+// of which it gives up itself after 180 s (gpu.ts's STEP_MS, T147: SwiftShader compiles a shader in up to 90 s). A
 // worker quiet for longer than that is one the browser ended
 const GPU_QUIET_MS = 200000;
 // T147: the number of the GPU's requests, for this worker and every model it loads (the memory and its control area
@@ -88,7 +88,7 @@ export function gpuFit({ shape, weights, device, direct }:
   function gpuMatrices() {
     return Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3 }).filter(([, m]) => m)) as Record<string, Held>;
   }
-  // (T155: int6 weights too, widened to int8 on the GPU, and a model in a 64-bit memory: gpu.js; T232: ternary weights
+  // (T155: int6 weights too, widened to int8 on the GPU, and a model in a 64-bit memory: gpu.ts; T232: ternary weights
   // as they are, in their groups of 128. The 27B, T233, is ternary in a rotated basis with linear-attention layers:
   // either of the first two lines keeps it on the CPU)
   function gpuUnfit() {
@@ -113,7 +113,7 @@ export function gpuFit({ shape, weights, device, direct }:
     return Object.values(gpuMatrices()).reduce((bytes, m) => bytes + layers * m.rows * m.n * (m.ternary ? GPU_TERNARY_BYTES : GPU_WEIGHT_BYTES), 0) +
       Object.values(gpuVectors()).reduce((bytes, { size }) => bytes + layers * size * 4, 0) + 2 * layers * seqLen * kvDim * 2;
   }
-  // T152: why a generation's steps stay on the CPU, or null. A step on the GPU is T150's and T175's fused layer (gpu.js):
+  // T152: why a generation's steps stay on the CPU, or null. A step on the GPU is T150's and T175's fused layer (gpu.ts):
   // Llama's (RMSNorm, RoPE on whole heads, SwiGLU), and T226: with what the prompt's blocks take besides (T153: Qwen2's
   // biases of q, k and v, Qwen3's norms of the heads and heads of another size than dim / heads; T154: GPT-2's and
   // GPT-NeoX's LayerNorm, biases, GELU, learned positions, RoPE on a part of a head, parallel residual), and T92's
@@ -140,7 +140,7 @@ export function gpuFit({ shape, weights, device, direct }:
     }
     return null;
   }
-  // the vectors of every layer the GPU reads (gpu.js's plan.vectors): the norms' weights; T153: Qwen2's biases of q,
+  // the vectors of every layer the GPU reads (gpu.ts's plan.vectors): the norms' weights; T153: Qwen2's biases of q,
   // k and v, Qwen3's norms of a head of q and of k; T154: GPT-2's and GPT-NeoX's biases of the two LayerNorms, of q,
   // k and v and of o, w1 and w2. Each one's address here and its floats a layer
   function gpuVectors(): Vectors {
@@ -183,7 +183,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   const always = Boolean(gpuForce.always || direct);
   // T243: what the status line says of a GPU stopped for keys or values that are no finite numbers (where: the request)
   const notFiniteKV = (where: string) => `the GPU computed keys or values that are not finite numbers (NaN or infinity) ${where}`;
-  // ---- T135: a prompt on the GPU. gpu() makes the GPU's worker (gpu.js), which puts this model's layers on the GPU
+  // ---- T135: a prompt on the GPU. gpu() makes the GPU's worker (gpu.ts), which puts this model's layers on the GPU
   // once (a second copy of them: the CPU keeps its own, for the tokens after the prompt), and then runs each block of a
   // prompt that forwardMany() hands it through all the layers in one submission, while this thread waits for its
   // answer in the control area (Python calls forwardMany() and cannot wait for a promise; the GPU's answer is one). The
@@ -234,7 +234,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     if (why) stopGpu(why);
     else startGpu();
   });
-  // T152: what gpu.js takes for a generation's steps: the classifier and (where it is another table) the embedding,
+  // T152: what gpu.ts takes for a generation's steps: the classifier and (where it is another table) the embedding,
   // { rows, n, six, ternary (T232), at: [values, scales] }, the final norm's weights, where the ids go, and the steps a submission.
   // T226: the final LayerNorm's bias and GPT-2's positions (float32, a row a position), 0 where the model has none; and
   // whether its classifier has outlier channels (T92), and (T232) which they are
@@ -260,7 +260,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     gpuEnded = new Promise<void>((resolve) => { ended = resolve; });
     gpuStatus = "prompts on the CPU while the GPU gets ready";
     worker.onmessage = ({ data }) => {
-      // T205: its buffers and its device let go (gpu.js's end()), and nothing more from it after a stop
+      // T205: its buffers and its device let go (gpu.ts's end()), and nothing more from it after a stop
       if (data.type === "ended") return ended();
       if (worker !== gpuWorker) return;
       if (data.type === "progress") return listen();
@@ -274,7 +274,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
         const forms = data.forms.map((f) => `${f.name} ${f.none ?? (f.remembered ? "remembered" : f.ms ? `${f.ms.toFixed(1)} ms` : "untimed")}`).join("; ");
         const blocks = data.blocks.map(({ count, ms }) => `${count} tokens ${ms.toFixed(1)} ms`).join(", ");
         console.info(`gpu: the matrices by ${data.form}, the attention by ${data.attention} (a pass of the first layer by ${GPU_BLOCK} tokens: ${forms}; a whole block: ${blocks})`);
-        // T152: a generation's steps, where gpu.js made them (else why not)
+        // T152: a generation's steps, where gpu.ts made them (else why not)
         if (data.tokens) {
           tokensOn = true;
           gpuChosen.tokens = data.tokens.form;

@@ -24,13 +24,13 @@ export type Adapter = Made & { info?: Info };
 // ---- T148: the key of what the page remembers of a device (the shaders it chose, T156: that the CPU was faster than a
 // model on the GPU alone): the adapter and the browser, and the text of the engine's shaders as a short hash (FNV-1a):
 // a deployment whose shaders changed chooses anew. adapter's info; device: the device made of it, or the adapter itself
-// (the worker, before any device: gpu.js asks the device for the adapter's features and these limits, so the two give
+// (the worker, before any device: gpu.ts asks the device for the adapter's features and these limits, so the two give
 // the same key).
 // T366: what is hashed is WGSL as a device is given it, and nothing of this file's JavaScript: a maker counts by the
 // texts it makes, never by its own source (String(maker), until T366: a formatter, a bundler or a new parameter changed
 // every device's key). A maker's texts are those of every choice its text branches on (a form, a feature), with one
 // set of numbers: a number is written into the text and chooses nothing of it. tests/device-key-check.mjs holds that
-// every piece of text of the shaders gpu.js runs reaches the hash, and that the key does not move with the source.
+// every piece of text of the shaders gpu.ts runs reaches the hash, and that the key does not move with the source.
 const EITHER = [false, true], OUTPUTS: FusedOutput[] = ["rope", "add", "swiglu", "write"];
 /** the WGSL of every model's shaders in gpu.js, but for the prompt's tiles (devicePromptForms: those the device can make) */
 const engineShaders = () => [RMSNORM, HEAD_NORM, ADD, ROPE, SWIGLU, QUANTIZE, LAYER_NORM, GELU, EMBED, EMBED_ROWS, SAMPLE, NORM_QUANTIZE, TOKEN_ROPE, WIDEN_SIX,
@@ -54,7 +54,7 @@ export const devicePromptForms = (device: Made, ternary = false) => promptForms(
 // user agent is (a flag turned on under the same user agent chooses anew), and the texts are hashed with a mark between
 // them, so that a character moved from the end of one text to the start of the next, or one shader cut in two, moves it.
 // The device's limits are not in it: they size the tiles (none) and nothing in the text, and the worker's key (the adapter's)
-// must be gpu.js's (the device's)
+// must be gpu.ts's (the device's)
 export function deviceKey(adapter: Adapter, device: Made = adapter, ternary = false): string {
   const info: Partial<Info> = adapter.info ?? {};
   const language = globalThis.navigator?.gpu?.wgslLanguageFeatures;

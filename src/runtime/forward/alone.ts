@@ -140,9 +140,9 @@ export function aloneVerdict({ size, layerWeights, cpu = {}, gpu = {}, usage = U
 export const aloneHolds = (alone: Alone | null | undefined, key: string | undefined, cpu: CpuSpeed | undefined) => Boolean(alone && key && alone.key === key && cpu &&
   alone.cpu?.GBps === cpu.GBps && alone.cpu?.promptGMACs === cpu.promptGMACs);
 
-// T220: where the GPU's device binds a buffer (minStorageBufferOffsetAlignment). gpu.js asks its device for the
+// T220: where the GPU's device binds a buffer (minStorageBufferOffsetAlignment). gpu.ts asks its device for the
 // adapter's limits of size but not for this one, so the device has WebGPU's default, 256, whatever smaller value the
-// adapter says it could give: gpuOnlyUnfit judges by the device's value, the one gpu.js's tokensLayout and piecesOf
+// adapter says it could give: gpuOnlyUnfit judges by the device's value, the one gpu.ts's tokensLayout and piecesOf
 // read (asking the device for the adapter's value instead would move where every model's pieces start on the GPU, the
 // prompt's too, for no model of the list: they all start on 256, T213)
 const BINDS_AT = 256;
@@ -237,7 +237,7 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
  * null where the classifier is it: { rows, n, at: [values, scales] } each, in the checkpoint too) */
 export function gpuOnlyPlan(header: Header, tensors: Tensors, force: Force = {}, remembered?: Remembered): Opened {
   const layers = header[2];
-  // (T232, ternary: a weight is two bits of the values, gpu.js's rowBytes)
+  // (T232, ternary: a weight is two bits of the values, gpu.ts's rowBytes)
   const matrices = Object.fromEntries(LAYER_MATRICES.map((name): [string, Matrix] => {
     const t = tensors[name]!, [, rows, n] = t.shape, perLayer = rows * n, ternary = t.kind === "ternary";
     return [name, { rows, n, ternary, layers: Array.from({ length: layers }, (_, l) =>

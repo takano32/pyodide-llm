@@ -42,11 +42,11 @@ export let gpuAdapter: Adapter | null = null;
 // init() as a promise: every load waits for it, also the one that replaces the first
 let initialized: Promise<void> | undefined;
 
-// T148: a prompt's tokens through the layers on the GPU (gpu.js) by default, wherever this worker has WebGPU and
+// T148: a prompt's tokens through the layers on the GPU (gpu.ts) by default, wherever this worker has WebGPU and
 // forward.ts can put the model there, and the GPU is faster than the CPU here (AGENTS.md's policy 9: no option).
 // ?gpuTest=on, for the tests only: a fallback adapter (SwiftShader, the only WebGPU of CI) taken as a GPU, and every
 // block of a prompt it can take given to it (its speed is no GPU's: the tests look at its numbers, not at its time),
-// and the first right shader of the matrices taken untimed (SwiftShader timed Llama 3.2 1B's past gpu.js's 180 s)
+// and the first right shader of the matrices taken untimed (SwiftShader timed Llama 3.2 1B's past gpu.ts's 180 s)
 export const hasWebGpu = Boolean(self.navigator?.gpu);
 // (and its key, T148's: what the page kept of the model on this device holds only for the same, shaders.ts's deviceKey)
 export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.requestAdapter().then(async (adapter) => {
@@ -59,7 +59,7 @@ export const adapterAsked = !hasWebGpu ? Promise.resolve() : navigator.gpu.reque
   try {
     const wgsl = await import("../shaders/key.ts");
     gpuAdapter.key = wgsl.deviceKey(adapter);
-    // (T232: a model of ternary weights has a key of its own, with its shaders: gpu.js says that one)
+    // (T232: a model of ternary weights has a key of its own, with its shaders: gpu.ts says that one)
     gpuAdapter.ternaryKey = wgsl.deviceKey(adapter, adapter, true);
   } catch {
     // no key: nothing the page kept of this device holds (a model on the GPU alone is weighed again)

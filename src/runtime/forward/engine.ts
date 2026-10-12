@@ -158,7 +158,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
     const t = T[source];
     if (!t) return null;
     const [rows, n] = t.shape.slice(-2);
-    // T156: on the GPU alone: where each layer's values and scales start in the checkpoint (what gpu.js was opened
+    // T156: on the GPU alone: where each layer's values and scales start in the checkpoint (what gpu.ts was opened
     // with), for the plan the GPU's worker is started with; the CPU never multiplies by it (T210: nor by the classifier)
     if (direct && GPU_ALONE.includes(source)) {
       const ternary = t.kind === "ternary";

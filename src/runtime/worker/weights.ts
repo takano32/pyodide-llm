@@ -105,7 +105,7 @@ const spawnThread = (data: unknown) => new Promise<Thread>((resolve, reject) => 
 // T135: the GPU's worker of forward.ts, a module worker of its own; forward.ts starts it
 // (T439: forward.ts holds its error, and the model stays on the CPU; beside that the page is told where it is the site's update)
 function openGpu() {
-  const worker = new Worker(new URL("../gpu.js", import.meta.url), { type: "module" });
+  const worker = new Worker(new URL("../gpu.ts", import.meta.url), { type: "module" });
   worker.addEventListener("error", (event) => void workerWentWithout(event, import.meta.url));
   return worker;
 }
@@ -293,7 +293,7 @@ const gpuOnlyAllowed = () => hasWebGpu && self.navigator?.deviceMemory !== undef
   Boolean(wideKernels?.shared) && !switchesNow().includes("int8") && !cpuOnly.has(loadingKey) &&
   Boolean(gpuAdapter) && (!gpuAdapter!.fallback || Boolean(gpuForce.fallback));
 // T156: whether the page kept that the CPU was faster here than this model on the GPU alone (forward.ts's aloneHolds)
-// (dtype, T232: the key is the one gpu.js gave the verdict, a ternary model's its own)
+// (dtype, T232: the key is the one gpu.ts gave the verdict, a ternary model's its own)
 const aloneKept = (dtype: Dtype) => Boolean(gpuAdapter) &&
   forwardModule!.aloneHolds(gpuRequest?.remembered?.alone, dtype === "ternary" ? gpuAdapter!.ternaryKey : gpuAdapter!.key, gpuRequest?.cpu);
 // T156: where a model goes ({ mode: "both" | "gpu" | "cpu", gpuRoom }, forward.ts's weightsPlace): the GPU alone only
