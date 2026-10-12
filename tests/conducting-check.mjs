@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { answered, fromFolder, listed } from "./conducting.mjs";
+import { pyProxies } from "./fakes/pyodide.mjs";
 
 const room = path.join(fileURLToPath(new URL("..", import.meta.url)), ".tmp", `conducting-check-${process.pid}`);
 fs.rmSync(room, { recursive: true, force: true });
@@ -28,21 +29,14 @@ const folderOf = (name, files) => {
 let passed = 0;
 const ok = (name) => { passed++; console.log(`ok: ${name}`); };
 
-// ---- the stand-ins. Every proxy counts how often it was destroyed
-const proxies = [];
-const proxy = (fields) => {
-  const made = { destroyed: 0, destroy() { made.destroyed++; }, ...fields };
-  proxies.push(made);
-  return made;
-};
+// ---- the stand-ins (tests/fakes/pyodide.mjs's). Every proxy counts how often it was destroyed
+const { proxies, proxy: named, generator } = pyProxies();
+const proxy = (fields) => named("a proxy", fields);
 /** A conduct that asks for requests, one after another: { steps, answers } (the answers it was sent). */
 function played(requests) {
   const answers = [];
-  let at = 0;
-  const step = () => (at < requests.length
-    ? { done: false, value: proxy({ toJs(options) { assert.deepEqual(options, { depth: 1 }); assert.equal(this.destroyed, 0); return requests[at++]; } }) }
-    : { done: true });
-  return { answers, steps: { next(answer) { if (at) answers.push(answer); return step(); } } };
+  const steps = generator((function* () { for (const request of requests) answers.push(yield request); })());
+  return { answers, steps };
 }
 const data = Uint8Array.from({ length: 1000 }, (_, at) => at % 251);
 const same = (bytes, begin, end) => assert.deepEqual([...bytes], [...data.subarray(begin, end)]);
@@ -56,7 +50,7 @@ try {
       ["bytes", "weights", "tokenizer.json"], ["bytes", "weights", "spiece.model"], ["range", "weights", "model.gguf", 0, 100],
       ["range", "weights", "model.gguf", 100, 300], ["range", "weights", "model.gguf", 900, 5000], ["range", "weights", "other.gguf", 0, 8],
       ["size", "weights", "model.gguf"],
-      ["stream", "weights", "model.gguf", 300, 1000, 300, 1000, Object.assign((part) => { assert.equal(feed.destroyed, 0); fed.push(part); }, feed)],
+      ["stream", "weights", "model.gguf", 300, 1000, 300, 1000, Object.assign((part) => { assert.equal(feed.destroyed, 0); fed.push(part); }, { destroy: feed.destroy })],
       ["done", conversion]]);
     const starts = [], reads = [];
     const answerer = fromFolder(folder, { part: 256, starting: (total) => starts.push([total, fed.length]), reading: (ms) => reads.push(ms) });
@@ -78,7 +72,8 @@ try {
     assert.deepEqual(starts, [[1000, 0]]);
     assert.equal(reads.length, 3);
     ok("a stream's parts go to the feed in the order of the file, the clock started once before the first and each read timed");
-    assert.ok(proxies.filter((made) => made !== conversion).every((made) => made.destroyed === 1), "a proxy was let go twice or never");
+    // (but the conversion, which is the tool's, and the generator, which is its maker's to close: tests/conducting.mjs's converted())
+    assert.ok(proxies.filter((made) => made !== conversion && made !== steps).every((made) => made.destroyed === 1), "a proxy was let go twice or never");
     assert.equal(conversion.destroyed, 0);
     answerer.close(); answerer.close();
     ok("every proxy a request brought is let go once, and the conversion is the caller's");

@@ -13,6 +13,7 @@
 // What this does not see: the real conduct (tests/worker-fetches-check.mjs runs it in Pyodide with this loop, on a
 // made-up hub; tests/test_conduct.py alone), a real line, and a browser's own file system (tests/e2e.mjs).
 import assert from "node:assert/strict";
+import { pyProxies } from "./fakes/pyodide.mjs";
 import { workerHarness } from "./worker-harness.mjs";
 
 setTimeout(() => {
@@ -29,41 +30,14 @@ const ok = (name) => { passed++; console.log(`ok: ${name}`); };
 function world({ gpu = false } = {}) {
   const harness = workerHarness({ told: true, gpu });
   const { context, run, MiB } = harness;
-  const proxies = [];
-  const proxy = (name, fields = {}) => {
-    // (the fields as they are written: a getter stays one, and makes its proxy when the worker reads it)
-    const made = Object.defineProperties({ name, destroyed: 0, destroy() { made.destroyed++; } }, Object.getOwnPropertyDescriptors(fields));
-    proxies.push(made);
-    return made;
-  };
-  const readable = (name, value) => proxy(name, { toJs(options) {
-    assert.equal(this.destroyed, 0, `${name} was read after it was destroyed`);
-    return typeof value === "function" ? value(options) : value;
-  } });
-  // the generator's face: body is a JavaScript generator function (make): it yields requests (arrays) and is sent the answers
+  // (the proxies and the generator's face are tests/fakes/pyodide.mjs's)
+  const { proxies, proxy, readable, generator, allDestroyed } = pyProxies();
+  // body is a JavaScript generator function (make): it yields requests (arrays) and is sent the answers
   const played = { made: [], listed: [], steps: [] };
   let body;
   const conductStandIn = (listed, make) => {
-    const running = body(make, listed.value);
-    const steps = proxy("the generator", { returned: 0, afterReturn: 0, answers: [],
-      next(answer) {
-        assert.equal(steps.destroyed, 0, "next() of a generator that was destroyed");
-        if (steps.returned) steps.afterReturn++;
-        steps.answers.push(answer);
-        const step = running.next(answer);
-        return step.done ? step : { done: false, value: readable(`the request ${step.value.filter((part) => typeof part !== "object").join(" ")}`, (options) => {
-          assert.equal(JSON.stringify(options), "{\"depth\":1}", "a request is read one level deep: the conversion of the last one stays a proxy");
-          return step.value;
-        }) };
-      },
-      return() {
-        assert.equal(steps.destroyed, 0, "return() of a generator that was destroyed");
-        steps.returned++;
-        running.return();
-        // (T407: a finally of the conduct's that throws as it is closed)
-        if (played.returnFails) throw new Error("the conduct would not be closed");
-        return { done: true, value: undefined };
-      } });
+    // (T407: a finally of the conduct's that throws as it is closed)
+    const steps = generator(body(make, listed.value), { closing() { if (played.returnFails) throw new Error("the conduct would not be closed"); } });
     played.steps.push(steps);
     played.made.push(make);
     return steps;
@@ -131,11 +105,7 @@ function world({ gpu = false } = {}) {
     proxies.length = 0;
     return harness.failure(context.convert({ id: "made-up", name: "Made up", hf, ...(asked && { conversion: asked }), ...(options && { options }) }, signal, 1));
   };
-  // every proxy made since convert() began was destroyed exactly once
-  const allDestroyed = () => {
-    for (const made of proxies) assert.equal(made.destroyed, 1, `${made.name} was destroyed ${made.destroyed} times`);
-    return proxies.length;
-  };
+  // (allDestroyed(): every proxy made since convert() began was destroyed exactly once)
   return { ...harness, MiB, proxies, proxy, played, buffers, kept, engines, opened, conversion, feeding, convert, allDestroyed };
 }
 const hf = (more = {}) => ({ repo: "owner/model", revision: REVISION, weights: "model.safetensors", tokenizer: "tokenizer.json", ...more });
