@@ -70,11 +70,12 @@
 import { heldFloats } from "./gpu/tokenforms.ts";
 import { generate, prompt, keysOf } from "./gpu/requests.ts";
 import { open, take, start, stop } from "./gpu/start.ts";
+import type { ToGpu } from "./contracts/gpu/protocol.ts";
 
 // (pure: tests/gpu-choice-check.mjs holds the rounding of the keys and values to what a device may choose)
 export { heldFloats };
 
-onmessage = ({ data }) => {
+onmessage = ({ data }: MessageEvent<ToGpu>) => {
   if (data.type === "open") open(data.plan, data.flow);
   else if (data.type === "weights") take(data);
   else if (data.type === "start") start(data.memory, data.plan);

@@ -7,6 +7,41 @@ import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer,
   pipelineOf, bind, dispatch } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
 import { WIDEN_SIX, sixDispatch, sixValues } from "../shaders/steps.ts";
+import type { Model, Bound } from "./device.ts";
+import type { Table, Tables } from "../contracts/gpu/protocol.ts";
+
+// T368.6: this module's record, m.weights, as uploadLayers() makes it and the rest fills it (what is null there until
+// its part has gone up is read with a ! by the modules that come after).
+// a piece of a matrix: its first row, its rows, and for every layer its values and scales (buffers of its own, or its
+// ranges of the layer's joined ones)
+type Piece = { first: number; rows: number; layers: [Bound, Bound][] };
+type MatrixOn = { rows: number; n: number; ternary: boolean; pieces: Piece[] };
+// T152: where a matrix is in a layer's joined buffers, and those buffers' sizes ([values, scales] each)
+type Home = { joined: string; at: [number, number] };
+type Together = { homes: { [name: string]: Home | undefined }; sizes: { [joined: string]: [number, number] } };
+type Joined = { [joined: string]: [GPUBuffer, GPUBuffer] };
+type Widen = { into(values: Bound, address: number, groups: number): void; done(): void };
+// T156: a stretch of the checkpoint, [start, end), the buffer it goes to and the offset in it
+type Route = [number, number, GPUBuffer, number];
+// T209: a piece of a table
+type TablePiece = { first: number; rows: number; values: GPUBuffer; scales: GPUBuffer };
+type Weights = {
+  matrices: { [name: string]: MatrixOn };
+  together: Together | null;
+  unjoined: string | null;
+  joined: Joined[];
+  widen: Widen | null;
+  routes: Route[] | null;
+  partial: Map<GPUBuffer, Map<number, { bytes: Uint8Array<ArrayBuffer>; count: number }>> | null;
+  vectors: { [name: string]: GPUBuffer } | null;
+  tables: { classifier: TablePiece[]; embedding: TablePiece[] } | null;
+  finalNorm: GPUBuffer | null;
+  finalBias: GPUBuffer | null;
+  positions: GPUBuffer | null;
+  angleTable: GPUBuffer | null;
+};
+// what tablesOf() reads of a plan: the tables of a model on the GPU alone as it opens, else a token's
+type Tabled = { tables?: Tables; tokens: Tables | null };
 
 // every layer's matrices (values and scales, as the checkpoint holds them; T154: no w3 where there is no gate) and its
 // vectors: the weights of its two norms, and (T153) Qwen2's biases of q, k and v, Qwen3's norms of a head of q and of
@@ -27,7 +62,7 @@ import { WIDEN_SIX, sixDispatch, sixValues } from "../shaders/steps.ts";
 // T378.4: what goes up is this module's record, m.weights, which it alone sets (uploadLayers() makes it, the rest
 // fills it) and the others read: the matrices' pieces and the layers' joined buffers, the vectors, a token's tables,
 // its final norm and positions and RoPE's table, and why a token's layer could not be joined (unjoined, T152)
-async function upload(m) {
+async function upload(m: Model) {
   try {
     const bytes = await uploadLayers(m);
     if (stopping) return bytes;
@@ -36,10 +71,10 @@ async function upload(m) {
     m.weights?.widen?.done();
   }
 }
-async function uploadLayers(m, alone = false) {
+async function uploadLayers(m: Model, alone = false) {
   const { plan } = m, group = GROUP;
   let bytes = 0;
-  const matrices = Object.fromEntries(Object.entries(plan.matrices).map(([name, { rows, n, ternary }]) =>
+  const matrices = Object.fromEntries(Object.entries(plan.matrices).map(([name, { rows, n, ternary }]): [string, MatrixOn] =>
     [name, { rows, n, ternary, pieces: piecesOf(m, rows, rowBytes({ n, ternary })).map(([first, count]) => ({ first, rows: count, layers: [] })) }]));
   // (routes, partial: T156, a model on the GPU alone; the routes of the checkpoint's stretches, and the bytes of a word
   // that wait for the rest of it, routed())
@@ -57,7 +92,7 @@ async function uploadLayers(m, alone = false) {
   const { routes } = m.weights;
   for (let l = 0; l < plan.layers; l++) {
     // a layer's matrices that are one (T152): a buffer of values and one of scales for all of them
-    const joined = together && Object.fromEntries(Object.entries(together.sizes).map(([name, [valueBytes, scaleBytes]]) =>
+    const joined = together && Object.fromEntries(Object.entries(together.sizes).map(([name, [valueBytes, scaleBytes]]): [string, [GPUBuffer, GPUBuffer]] =>
       [name, [buffer(m, valueBytes, usage), buffer(m, scaleBytes, usage)]]));
     if (joined) m.weights.joined.push(joined);
     for (const [name, matrix] of Object.entries(plan.matrices)) {
@@ -66,17 +101,17 @@ async function uploadLayers(m, alone = false) {
       for (const piece of m.weights.matrices[name].pieces) {
         const valueBytes = piece.rows * row, scaleBytes = (valueBytes / group) * 4;
         // its own buffers, or its range of the layer's joined ones
-        const [values, scales] = home
-          ? joined[home.joined].map((b, i) => ({ buffer: b, offset: home.at[i], size: i ? scaleBytes : valueBytes }))
+        const [values, scales]: Bound[] = home
+          ? joined![home.joined].map((b, i) => ({ buffer: b, offset: home.at[i], size: i ? scaleBytes : valueBytes }))
           : [buffer(m, valueBytes, usage), buffer(m, scaleBytes, usage)];
         const from = [valuesAt + piece.first * row, scalesAt + (piece.first * row / group) * 4];
         if (alone) {
           // (T156: int8 alone, and T232 ternary, whose bytes are the buffer's as they come)
-          routes.push([from[0], from[0] + valueBytes, values.buffer ?? values, values.offset ?? 0],
+          routes!.push([from[0], from[0] + valueBytes, values.buffer ?? values, values.offset ?? 0],
             [from[1], from[1] + scaleBytes, scales.buffer ?? scales, scales.offset ?? 0]);
         } else {
           // an int6 row is 3/4 of an int8 one (24 bytes a group of 32)
-          if (matrix.six) widen.into(values, valuesAt + (piece.first * matrix.n * 3) / 4, valueBytes / group);
+          if (matrix.six) widen!.into(values, valuesAt + (piece.first * matrix.n * 3) / 4, valueBytes / group);
           else copyIn(m, values.buffer ?? values, from[0], valueBytes, values.offset ?? 0);
           copyIn(m, scales.buffer ?? scales, from[1], scaleBytes, scales.offset ?? 0);
         }
@@ -92,7 +127,7 @@ async function uploadLayers(m, alone = false) {
   return bytes;
 }
 // the tables of a token (where the layers are joined for them, T152), and the norms, from the shared memory
-async function uploadRest(m) {
+async function uploadRest(m: Model) {
   const { plan } = m;
   let bytes = 0;
   if (m.weights.together) bytes += await uploadTokens(m, m.weights.widen);
@@ -113,24 +148,26 @@ async function uploadRest(m) {
 // w1, is 68 MB): llama.cpp's WebGPU keeps each tensor in one buffer within maxStorageBufferBindingSize and refuses a
 // larger one (ggml-webgpu.cpp, ggml_backend_webgpu_buffer_type_get_max_size, commit 2145525a, MIT; no line copied),
 // where this cuts it by rows, as T94's design had it for a classifier past a buffer
-function piecesOf(m, rows, n, most = m.plan.force.pieceBytes) {
+function piecesOf(m: Model, rows: number, n: number, most = m.plan.force.pieceBytes): [number, number][] {
   const bytes = Math.min(m.limit, most ?? Infinity), align = m.device.limits.minStorageBufferOffsetAlignment / 4;
   if (rows * n <= bytes) return [[0, rows]];
   const step = Math.floor(bytes / n / align) * align;
   if (!step) throw new Error(`${align} rows of ${n} weights are more than a buffer of this GPU (${bytes} bytes)`);
-  return Array.from({ length: Math.ceil(rows / step) }, (_, i) => [i * step, Math.min(step, rows - i * step)]);
+  return Array.from({ length: Math.ceil(rows / step) }, (_, i): [number, number] => [i * step, Math.min(step, rows - i * step)]);
 }
 
 // T152: the tables a token needs besides the layers (plan.tokens; T210, a model on the GPU alone as it opens:
 // plan.tables): the classifier, and the embedding where it is another table (else the classifier is the embedding
 // too), each made by make(spec) where it is given, else the specs themselves
-function tablesOf(plan, make = (spec) => spec) {
-  const { classifier, embedding } = plan.tables ?? plan.tokens, made = make(classifier);
+function tablesOf(plan: Tabled): { classifier: Table; embedding: Table };
+function tablesOf<Made>(plan: Tabled, make: (spec: Table) => Made): { classifier: Made; embedding: Made };
+function tablesOf(plan: Tabled, make: (spec: Table) => unknown = (spec) => spec) {
+  const { classifier, embedding } = plan.tables ?? plan.tokens!, made = make(classifier);
   return { classifier: made, embedding: embedding ? make(embedding) : made };
 }
 // T209: a table ({ rows, n }) in pieces of rows where it is past what the device binds (piecesOf), a buffer of values
 // and one of scales each, [{ first, rows, values, scales }]; fill(piece, valueBytes, scaleBytes) puts its bytes there
-function tablePieces(m, spec, fill, usage = STORAGE | COPY_DST) {
+function tablePieces(m: Model, spec: Table, fill: (piece: TablePiece, valueBytes: number, scaleBytes: number) => void, usage = STORAGE | COPY_DST): TablePiece[] {
   return piecesOf(m, spec.rows, rowBytes(spec), m.plan.force.tablePieceBytes ?? m.plan.force.pieceBytes).map(([first, count]) => {
     const valueBytes = count * rowBytes(spec), scaleBytes = (valueBytes / GROUP) * 4;
     const piece = { first, rows: count, values: buffer(m, valueBytes, usage), scales: buffer(m, scaleBytes, usage) };
@@ -141,31 +178,31 @@ function tablePieces(m, spec, fill, usage = STORAGE | COPY_DST) {
 // T210: the tables of a model on the GPU alone, made as it opens (plan.tables: where each starts in the checkpoint),
 // their stretches routes that take() writes the bytes to as they come; COPY_SRC for the check's rows (checkTokens).
 // The bytes on the GPU
-function tablesOn(m) {
+function tablesOn(m: Model) {
   const group = GROUP, { routes } = m.weights;
   let bytes = 0;
   m.weights.tables = tablesOf(m.plan, (spec) => tablePieces(m, spec, ({ first, values, scales }, valueBytes, scaleBytes) => {
     const [valuesAt, scalesAt] = spec.at, from = [valuesAt + first * rowBytes(spec), scalesAt + (first * rowBytes(spec) / group) * 4];
-    routes.push([from[0], from[0] + valueBytes, values, 0], [from[1], from[1] + scaleBytes, scales, 0]);
+    routes!.push([from[0], from[0] + valueBytes, values, 0], [from[1], from[1] + scaleBytes, scales, 0]);
     bytes += valueBytes + scaleBytes;
   }, STORAGE | COPY_DST | COPY_SRC));
   // (the last of the routes are made: in the checkpoint's order, for routed() to find a stretch's)
-  routes.sort((a, b) => a[0] - b[0]);
+  routes!.sort((a, b) => a[0] - b[0]);
   return bytes;
 }
 // T156: the bytes at offset of the checkpoint (bytes: a Uint8Array of their own) onto the buffers whose routes they
 // fall in. writeBuffer takes whole words: the bytes of a word a stretch begins or ends in the middle of wait for the
 // rest of it (partial), which another stretch brings
-function routed(m, offset, bytes) {
+function routed(m: Model, offset: number, bytes: Uint8Array) {
   const { routes } = m.weights, end = offset + bytes.length;
-  let lo = 0, hi = routes.length;
+  let lo = 0, hi = routes!.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (routes[mid][1] <= offset) lo = mid + 1;
+    if (routes![mid][1] <= offset) lo = mid + 1;
     else hi = mid;
   }
-  for (let i = lo; i < routes.length && routes[i][0] < end; i++) {
-    const [start, stop, target, at] = routes[i];
+  for (let i = lo; i < routes!.length && routes![i][0] < end; i++) {
+    const [start, stop, target, at] = routes![i];
     let a = Math.max(start, offset) - offset, here = at + (a + offset - start);
     const b = Math.min(stop, end) - offset;
     for (; a < b && here % 4; a++, here++) partialByte(m, target, here, bytes[a]);
@@ -175,20 +212,20 @@ function routed(m, offset, bytes) {
   }
 }
 // a byte of target at the byte offset at, the word it is in written once all four of its bytes are there
-function partialByte(m, target, at, value) {
+function partialByte(m: Model, target: GPUBuffer, at: number, value: number) {
   const { partial } = m.weights, word = at - (at % 4);
-  if (!partial.has(target)) partial.set(target, new Map());
-  const words = partial.get(target);
+  if (!partial!.has(target)) partial!.set(target, new Map());
+  const words = partial!.get(target)!;
   if (!words.has(word)) words.set(word, { bytes: new Uint8Array(4), count: 0 });
-  const held = words.get(word);
+  const held = words.get(word)!;
   held.bytes[at % 4] = value;
   if (++held.count < 4) return;
   m.device.queue.writeBuffer(target, word, held.bytes);
   words.delete(word);
-  if (!words.size) partial.delete(target);
+  if (!words.size) partial!.delete(target);
 }
 // whether bytes of a word still wait for the rest of it: the checkpoint's stretches did not all come
-const unwritten = (m) => m.weights.partial.size > 0;
+const unwritten = (m: Model) => m.weights.partial!.size > 0;
 // T152: how a token's layer holds its matrices (shaders.ts's fusedMatVec and fusedDp4aMatVec read q, k and v as one
 // matrix, gate and up as one, up's rows after gate's): a buffer of values and one of scales a layer for each (sizes),
 // and each matrix's range of them (homes: its offsets in bytes), which the prompt's tiled shaders bind as a matrix of
@@ -196,16 +233,16 @@ const unwritten = (m) => m.weights.partial.size > 0;
 // multiple of 2048 weights, the values and the scales alike at 256; stories15M's k starts at 82944 weights, T150's
 // (b); T232: of 8192 ternary weights, whose scales are a byte to 32 weights), and a matrix a token reads must be one piece (T155). The tables may be in pieces (T209: uploadTokens). null
 // where it cannot, and why in m.weights.unjoined: the prompts go on the GPU as before, the tokens stay on the CPU
-function tokensLayout(m) {
+function tokensLayout(m: Model): Together | null {
   const { plan } = m, align = m.device.limits.minStorageBufferOffsetAlignment, group = GROUP;
-  const why = (reason) => {
+  const why = (reason: string) => {
     m.weights.unjoined = reason;
     return null;
   };
   // (T226: GPT-2's and GPT-NeoX's FFN has no gate: w1 is a matrix of its own, as wo and w2 are)
   const gated = Boolean(m.weights.matrices.w3);
   for (const name of ["wo", "w2", ...(gated ? [] : ["w1"])]) if (m.weights.matrices[name].pieces.length > 1) return why(`${name} is past a buffer of this GPU`);
-  const homes = {}, sizes = {};
+  const homes: Together["homes"] = {}, sizes: Together["sizes"] = {};
   for (const [joined, names] of Object.entries({ qkv: ["wq", "wk", "wv"], ...(gated ? { gateUp: ["w1", "w3"] } : {}) })) {
     let values = 0, scales = 0;
     for (const name of names) {
@@ -231,27 +268,27 @@ function tokensLayout(m) {
 // classifier is then a dispatch a piece into its range of the logits, and EMBED one a piece (tokenPass)
 // T210: a model on the GPU alone makes them as it opens, their bytes routes of the checkpoint as the layers' are
 // (tablesOn), and only the final norm and RoPE's table come from the shared memory here
-async function uploadTokens(m, widen) {
+async function uploadTokens(m: Model, widen: Widen | null) {
   const { plan } = m, group = GROUP, half = plan.headSize / 2;
   let bytes = 0;
   m.weights.tables ??= tablesOf(plan, (spec) => tablePieces(m, spec, (piece, valueBytes, scaleBytes) => {
     const { first, values, scales } = piece, { n, six, at: [valuesAt, scalesAt] } = spec;
-    if (six) widen.into(values, valuesAt + (first * n * 3) / 4, valueBytes / group);
+    if (six) widen!.into(values, valuesAt + (first * n * 3) / 4, valueBytes / group);
     else copyIn(m, values, valuesAt + first * rowBytes(spec), valueBytes);
     copyIn(m, scales, scalesAt + (first * rowBytes(spec) / group) * 4, scaleBytes);
     bytes += valueBytes + scaleBytes;
   }));
   // (T226: the final LayerNorm's bias, and GPT-2's learned positions, a row a position as the CPU widened them: a
   // step adds its position's row to the embedding's, as the CPU's embed() does)
-  const vector = (address, floats) => {
+  const vector = (address: number, floats: number) => {
     const made = buffer(m, floats * 4, STORAGE | COPY_DST);
     copyIn(m, made, address, floats * 4);
     bytes += floats * 4;
     return made;
   };
-  m.weights.finalNorm = vector(plan.tokens.final, plan.dim);
-  m.weights.finalBias = plan.tokens.finalBias ? vector(plan.tokens.finalBias, plan.dim) : null;
-  m.weights.positions = plan.tokens.positions ? vector(plan.tokens.positions, plan.seqLen * plan.dim) : null;
+  m.weights.finalNorm = vector(plan.tokens!.final, plan.dim);
+  m.weights.finalBias = plan.tokens!.finalBias ? vector(plan.tokens!.finalBias, plan.dim) : null;
+  m.weights.positions = plan.tokens!.positions ? vector(plan.tokens!.positions, plan.seqLen * plan.dim) : null;
   m.weights.angleTable = buffer(m, plan.seqLen * plan.headSize * 4, STORAGE | COPY_DST);
   const rows = Math.max(1, Math.floor(CHUNK / (plan.headSize * 4))), chunk = new Float32Array(rows * plan.headSize);
   // (GPT-2 turns nothing and has no tables: the buffer stays, bound and never read)
@@ -273,16 +310,16 @@ async function uploadTokens(m, widen) {
 // the GPU. The packed bytes go
 // through one buffer of their own, written again for every piece (the queue runs a write after the submissions before
 // it); done() lets it go.
-async function widener(m, tables = []) {
+async function widener(m: Model, tables: Table[] = []): Promise<Widen> {
   const { device } = m;
   const pipeline = await within(validated(m, () => pipelineOf(m, WIDEN_SIX)), "compiling the widening of int6");
-  const owned = [];
+  const owned: GPUBuffer[] = [];
   // (T152: and the classifier's and the embedding's, one piece each)
   const largest = Math.max(CHECK_GROUPS * 24, ...Object.entries(m.plan.matrices).filter(([, matrix]) => matrix.six)
     .flatMap(([name, { n }]) => m.weights.matrices[name].pieces.map((piece) => (piece.rows * n * 3) / 4)),
   ...tables.filter((table) => table.six).map(({ rows, n }) => (rows * n * 3) / 4));
   const packed = buffer(m, largest, STORAGE | COPY_DST, owned);
-  const run = (values, groups, most = device.limits.maxComputeWorkgroupsPerDimension) => {
+  const run = (values: Bound, groups: number, most = device.limits.maxComputeWorkgroupsPerDimension) => {
     const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
     dispatch(pass, pipeline, bind(m, pipeline, [packed, values, uniform(m, new Uint32Array([groups, 0, 0, 0]), owned)]),
       ...sixDispatch(groups, most));
@@ -309,8 +346,8 @@ async function widener(m, tables = []) {
 // second dimension, and threads past the last group), into a buffer with 64 groups more of a known byte after them
 // (which no thread may write), against JavaScript's to the bit. The reason it is wrong, or null
 const CHECK_GROUPS = 1000;
-async function checkWiden(m, packed, run) {
-  const bytes = new Uint8Array(CHECK_GROUPS * 24).map(() => (Math.random() * 256) | 0), after = 64 * 32, owned = [];
+async function checkWiden(m: Model, packed: GPUBuffer, run: (values: Bound, groups: number, most?: number) => void) {
+  const bytes = new Uint8Array(CHECK_GROUPS * 24).map(() => (Math.random() * 256) | 0), after = 64 * 32, owned: GPUBuffer[] = [];
   try {
     const values = buffer(m, CHECK_GROUPS * 32 + after, STORAGE | COPY_DST | COPY_SRC, owned);
     m.device.queue.writeBuffer(values, 0, new Uint8Array(CHECK_GROUPS * 32 + after).fill(0x5a));
@@ -327,3 +364,4 @@ async function checkWiden(m, packed, run) {
 }
 
 export { upload, uploadLayers, uploadRest, tablesOf, tablesOn, routed, unwritten };
+export type { Weights, MatrixOn, TablePiece };

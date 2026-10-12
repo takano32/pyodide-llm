@@ -6,6 +6,20 @@ import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBac
 import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.ts";
 import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, flashVec, flashVecReduce, tokenAttentionData,
   tokenAttentionOff } from "../shaders/attention.ts";
+import type { Model, Pass, Thrown } from "./device.ts";
+import type { FlashVecShape } from "../shaders/attention.ts";
+import type { Tried } from "../contracts/gpu/protocol.ts";
+
+// T368.6: an attention of a token: llama.cpp's decode form (its shape; its two pipelines once they are compiled), or
+// the prompt's tiles (their pipeline, which is there already)
+type Vec = { name: string; tiles?: undefined; shape: FlashVecShape; pipeline?: GPUComputePipeline; reduce?: GPUComputePipeline };
+type Tiles = { name: string; tiles: true; shape?: undefined; pipeline: GPUComputePipeline; reduce?: undefined };
+type TokenAttention = Vec | Tiles;
+// what chooseTokenAttention() returns, a part of the model's record of a token (tokenforms.ts's m.tokens): the
+// attention taken, what each came to, and the vec form's parts and Params (undefined with the tiles)
+type Chosen = { attention: TokenAttention; attentions: Tried[]; parts: GPUBuffer | undefined; params: ((nwg: number) => GPUBuffer) | undefined };
+// the buffers an attention's dispatches bind (parts and params: the vec form's)
+type Io = { q: GPUBuffer; keys: GPUBuffer; values: GPUBuffer; out: GPUBuffer; flash: GPUBuffer; step: GPUBuffer; parts?: GPUBuffer; params?: (nwg: number) => GPUBuffer };
 
 // ---- T224: the attention of a generated token. The candidates: llama.cpp's decode form (shaders.ts's flashVec and
 // flashVecReduce: the positions split over nwg workgroups a head, then reduced), with subgroups where there are (and
@@ -17,16 +31,16 @@ import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, flas
 // remembered (T148 remembers the matrices, the prompt's attention and the token's layer): the two small shaders are
 // compiled, checked and timed at every start.
 const TOKEN_ATTENTION_VEC = "llama.cpp flash_attn_vec", TOKEN_ATTENTION_TILES = "the prompt's attention tiles";
-async function chooseTokenAttention(m) {
+async function chooseTokenAttention(m: Model): Promise<Chosen | null> {
   const { device, plan } = m;
   const subgroups = device.features.has("subgroups") && Boolean(navigator.gpu.wgslLanguageFeatures?.has("subgroup_id"));
-  const vec = (withSubgroups) => ({ name: `${TOKEN_ATTENTION_VEC}${withSubgroups ? ", subgroups" : ""}`,
+  const vec = (withSubgroups: boolean) => ({ name: `${TOKEN_ATTENTION_VEC}${withSubgroups ? ", subgroups" : ""}`,
     shape: flashVecShape({ headSize: plan.headSize, subgroups: withSubgroups, threads: threadsOf(device),
       subgroupMin: m.info.subgroupMinSize, subgroupMax: m.info.subgroupMaxSize }) });
-  let candidates = [...(subgroups ? [vec(true)] : []), vec(false), { name: TOKEN_ATTENTION_TILES, tiles: true, pipeline: m.forms.attention.pipeline }];
+  let candidates: TokenAttention[] = [...(subgroups ? [vec(true)] : []), vec(false), { name: TOKEN_ATTENTION_TILES, tiles: true, pipeline: m.forms.attention.pipeline }];
   if (plan.force.tokenAttention) candidates = candidates.filter((a) => a.name === plan.force.tokenAttention);
-  const right = [];
-  const attentions = [];
+  const right: TokenAttention[] = [];
+  const attentions: Tried[] = [];
   for (const a of candidates) {
     if (plan.force.quick && right.length) break;
     if (a.shape?.none) {
@@ -42,20 +56,20 @@ async function chooseTokenAttention(m) {
       if (wrong) attentions.push({ name: a.name, none: `wrong: ${wrong}` });
       else right.push(a);
     } catch (error) {
-      if (error?.late) throw error;
-      attentions.push({ name: a.name, none: String(error?.message ?? error) });
+      if ((error as Thrown)?.late) throw error;
+      attentions.push({ name: a.name, none: String((error as Thrown)?.message ?? error) });
     }
     if (stopping) return null;
   }
   if (!right.length) {
     throw new Error(`no attention of a token is right on this GPU (${attentions.map((a) => `${a.name}: ${a.none}`).join("; ") || `none named ${plan.force.tokenAttention}`})`);
   }
-  const ms = plan.force.quick || right.length === 1 ? right.map(() => undefined) : await within(timeTokenAttention(m, right), "timing the attention of a token");
-  const best = ms.reduce((b, t, i) => (t !== undefined && (ms[b] === undefined || t < ms[b]) ? i : b), 0);
+  const ms: (number | undefined)[] = plan.force.quick || right.length === 1 ? right.map(() => undefined) : await within(timeTokenAttention(m, right), "timing the attention of a token");
+  const best = ms.reduce((b: number, t, i) => (t !== undefined && (ms[b] === undefined || t < ms[b]) ? i : b), 0);
   right.forEach((a, i) => attentions.push({ name: a.name, ms: ms[i] }));
   const attention = right[best];
   // the vec form's parts (every head's, nwg of the most) and its Params a count of parts, made as a run needs them
-  let parts, params;
+  let parts: Chosen["parts"], params: Chosen["params"];
   if (!attention.tiles) {
     parts = buffer(m, flashVecPartsBytes(attention.shape, plan.heads));
     params = paramsOf(m, attention.shape, plan.heads, plan.kvHeads, m.owned);
@@ -63,28 +77,28 @@ async function chooseTokenAttention(m) {
   return { attention, attentions, parts, params };
 }
 // flashVec's Params a count of parts, each made once (owned: where they go)
-function paramsOf(m, shape, heads, kvHeads, owned) {
-  const made = new Map();
-  return (nwg) => {
+function paramsOf(m: Model, shape: FlashVecShape, heads: number, kvHeads: number, owned: GPUBuffer[]) {
+  const made = new Map<number, GPUBuffer>();
+  return (nwg: number) => {
     if (!made.has(nwg)) made.set(nwg, uniform(m, flashVecParams(shape, heads, kvHeads, nwg), owned));
-    return made.get(nwg);
+    return made.get(nwg)!;
   };
 }
 // The dispatches of attention a for a token of heads that reads positions: io's q, keys, values into out (flash: the
 // tiles' Params; parts and params(nwg): the vec form's parts and Params; step: the token's Step), [pipeline, bind
 // group, x, y] each: the tiles a workgroup a head; the vec form nwg a head, then (nwg more than 1) the reduce
-function attentionPasses(m, a, io, heads, positions) {
+function attentionPasses(m: Model, a: TokenAttention, io: Io, heads: number, positions: number): Pass[] {
   if (a.tiles) return [[a.pipeline, bind(m, a.pipeline, [io.q, io.keys, io.values, io.out, io.flash, io.step]), heads, 1]];
-  const nwg = flashVecSplits(a.shape, positions), params = io.params(nwg);
-  return [[a.pipeline, bind(m, a.pipeline, [io.q, io.keys, io.values, io.parts, io.out, params, io.step]), heads * nwg, 1],
-    ...(nwg > 1 ? [[a.reduce, bind(m, a.reduce, [io.parts, io.out, params]), heads, 1]] : [])];
+  const nwg = flashVecSplits(a.shape, positions), params = io.params!(nwg);
+  return [[a.pipeline!, bind(m, a.pipeline!, [io.q, io.keys, io.values, io.parts!, io.out, params, io.step]), heads * nwg, 1],
+    ...(nwg > 1 ? [[a.reduce!, bind(m, a.reduce!, [io.parts!, io.out, params]), heads, 1]] satisfies Pass[] : [])];
 }
 // Made-up buffers of an attention of a token over positions (heads of q on kvHeads of keys and values, the model's
 // headSize; shaders.ts's tokenAttentionData: steep, the heads whose q is steep), the output, the Step of the token at
 // positions - 1, the tiles' Params, and the vec form's parts and Params
-function attentionIo(m, a, { heads, kvHeads, positions, steep = [] }, owned) {
+function attentionIo(m: Model, a: TokenAttention, { heads, kvHeads, positions, steep = [] }: { heads: number; kvHeads: number; positions: number; steep?: number[] }, owned: GPUBuffer[]) {
   const size = m.plan.headSize, { q, keys, values } = tokenAttentionData({ heads, kvHeads, size, positions, steep });
-  const make = (data) => {
+  const make = (data: GPUAllowSharedBufferSource) => {
     const made = buffer(m, data.byteLength, STORAGE | COPY_DST, owned);
     m.device.queue.writeBuffer(made, 0, data);
     return made;
@@ -104,10 +118,10 @@ function attentionIo(m, a, { heads, kvHeads, positions, steep = [] }, owned) {
 // positions up to the token's, no farther than LINE of the largest |value| of its head (checkAttention's: the tiles
 // hold the weights in float16)
 const TOKEN_ATTENTION_LENGTHS = [40, 70, 300, 1100];
-async function checkTokenAttention(m, a) {
+async function checkTokenAttention(m: Model, a: TokenAttention) {
   const size = m.plan.headSize, heads = 4, kvHeads = 2;
   for (const positions of TOKEN_ATTENTION_LENGTHS) {
-    const owned = [];
+    const owned: GPUBuffer[] = [];
     try {
       const io = attentionIo(m, a, { heads, kvHeads, positions, steep: [3] }, owned);
       const passes = await validated(m, () => attentionPasses(m, a, io, heads, positions));
@@ -131,15 +145,15 @@ async function checkTokenAttention(m, a) {
 // A submission of a whole token's layers at the least made the slowest one long: the prompt's tiles at 2048
 // positions, if they take the time of T202's 0.90 ms at 127 positions in proportion (an estimate: the f32 tiles, on
 // the owner's Android), 16 × 14 ms a submission and some 3.9 s of timing at every start, 0.5 s so)
-async function timeTokenAttention(m, right) {
-  const { device, plan } = m, owned = [];
+async function timeTokenAttention(m: Model, right: TokenAttention[]) {
+  const { device, plan } = m, owned: GPUBuffer[] = [];
   try {
     const lengths = [...new Set([128, 2048].map((n) => Math.min(n, plan.seqLen)))];
     const items = right.flatMap((a) => lengths.map((positions) => {
       const io = attentionIo(m, a, { heads: plan.heads, kvHeads: plan.kvHeads, positions }, owned);
       return { a, passes: attentionPasses(m, a, io, plan.heads, positions) };
     }));
-    const submission = async ({ passes }, n) => {
+    const submission = async ({ passes }: { passes: Pass[] }, n: number) => {
       const encoder = device.createCommandEncoder(), pass = encoder.beginComputePass();
       for (let i = 0; i < n; i++) for (const [pipeline, group, x, y] of passes) dispatch(pass, pipeline, group, x, y);
       pass.end();
@@ -148,7 +162,7 @@ async function timeTokenAttention(m, right) {
       await device.queue.onSubmittedWorkDone();
       return performance.now() - began;
     };
-    const counts = [], differences = items.map(() => []);
+    const counts: number[] = [], differences: number[][] = items.map(() => []);
     for (const item of items) {
       await submission(item, 1);  // warm
       let n = 1;
@@ -170,3 +184,4 @@ async function timeTokenAttention(m, right) {
 }
 
 export { chooseTokenAttention, attentionPasses };
+export type { TokenAttention, Chosen };

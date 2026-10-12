@@ -6,6 +6,11 @@ import { model, lost } from "./device.ts";
 import { roomFor, keysIn, block, keysOut, keysBack } from "./block.ts";
 import { tokenStep, runTokens } from "./tokens.ts";
 import { samplingState, samplingSettings } from "../shaders/run.ts";
+import type { Thrown } from "./device.ts";
+import type { FromGpu, ToGpu } from "../contracts/gpu/protocol.ts";
+
+// T368.6: a request by its kind (gpu.ts hands each on as it came)
+type Asked<Kind extends ToGpu["type"]> = Extract<ToGpu, { type: Kind }>;
 
 // A request for count steps from token at pos (src/runtime/forward/gpuside.ts's generateMany): the keys and values of positions from to
 // pos - 1 up from forward.ts's cache first (cache: its addresses of the keys and the values, its capacity and the
@@ -16,9 +21,9 @@ import { samplingState, samplingSettings } from "../shaders/run.ts";
 // sampled in float16 into plan.staging as a prompt's block's ([keys, values][layer][plan.batch positions]), which
 // forward.ts puts into its cache (widened where it is float32), where it still wants the answer. T210: a model on the
 // GPU alone (cache null) has no cache there: nothing goes up, and nothing but the ids comes back
-function generate({ serial, count, pos, from, token, history, length, cache, settings, randoms }) {
+function generate({ serial, count, pos, from, token, history, length, cache, settings, randoms }: Asked<"tokens">) {
   serve(serial, async (wanted) => {
-    const m = model, { plan, tokens: g } = m, kvRow = plan.kvHeads * plan.headSize * 2;
+    const m = model!, { plan, tokens: g } = m, kvRow = plan.kvHeads * plan.headSize * 2;
     if (!g?.form) throw new Error("no tokens on this GPU");
     roomFor(m, pos + count);
     if (cache) keysIn(m, cache, from, pos);
@@ -29,10 +34,10 @@ function generate({ serial, count, pos, from, token, history, length, cache, set
     for (let side = 0; cache && side < 2; side++) {
       for (let l = 0; l < plan.layers; l++) {
         new Uint8Array(m.memory.buffer, plan.staging + (side * plan.layers + l) * plan.batch * kvRow, out.sampled * kvRow)
-          .set(out.kv[side][l].subarray(0, out.sampled * kvRow));
+          .set(out.kv![side][l].subarray(0, out.sampled * kvRow));
       }
     }
-    const ids = new Int32Array(m.memory.buffer, plan.tokens.ids, 2 + g.most);
+    const ids = new Int32Array(m.memory.buffer, plan.tokens!.ids, 2 + g.most);
     ids[0] = out.sampled;
     ids.set(out.ids.subarray(0, out.sampled), 1);
     ids[1 + g.most] = out.notFinite;
@@ -40,14 +45,14 @@ function generate({ serial, count, pos, from, token, history, length, cache, set
 }
 
 // ---- a block of a prompt (T210: tokens, the ids of a model on the GPU alone, which embeds them here)
-function prompt({ serial, count, pos, tokens }) {
-  serve(serial, (wanted) => block(model, count, pos, wanted, false, tokens));
+function prompt({ serial, count, pos, tokens }: Asked<"prompt">) {
+  serve(serial, (wanted) => block(model!, count, pos, wanted, false, tokens));
 }
 // The answer to a request (a block of a prompt, T152: the steps of a generation), in the control area: work(wanted)
 // runs while words.beat counts up, then words.failed and words.done = serial, where forward.ts still waits for this
 // request (wanted: T147, it gave up, and the memory may soon be another model's)
-async function serve(serial, work) {
-  const { memory, plan } = model;
+async function serve(serial: number, work: (wanted: () => boolean) => Promise<void>) {
+  const { memory, plan } = model!;
   const words = new Int32Array(memory.buffer, 0, Math.max(...Object.values(plan.words)) + 1);
   // the model's worker waits: this says that the work goes on, however long the GPU takes (a software adapter)
   const beat = setInterval(() => Atomics.add(words, plan.words.beat, 1), 250);
@@ -59,7 +64,7 @@ async function serve(serial, work) {
     if (lost) throw new Error(lost);
     failed = 0;
   } catch (error) {
-    postMessage({ type: "failed", reason: String(error?.message ?? error) });
+    postMessage({ type: "failed", reason: String((error as Thrown)?.message ?? error) } satisfies FromGpu);
   } finally {
     clearInterval(beat);
     if (wanted()) {
@@ -73,12 +78,12 @@ async function serve(serial, work) {
 // T210: the GPU's own keys and values of count positions (plan.batch at most) from pos into plan.staging, as a block
 // writes them back: a model on the GPU alone keeps none in the shared memory, and the tests read them so
 // (src/runtime/forward/engine.ts's keysAndValues)
-function keysOf({ serial, count, pos }) {
+function keysOf({ serial, count, pos }: Asked<"keys">) {
   serve(serial, async (wanted) => {
-    const encoder = model.device.createCommandEncoder();
-    keysOut(model, encoder, pos, count);
-    model.device.queue.submit([encoder.finish()]);
-    await keysBack(model, wanted);
+    const encoder = model!.device.createCommandEncoder();
+    keysOut(model!, encoder, pos, count);
+    model!.device.queue.submit([encoder.finish()]);
+    await keysBack(model!, wanted);
   });
 }
 

@@ -7,6 +7,11 @@ import { upload, uploadLayers, uploadRest, tablesOn, routed, unwritten } from ".
 import { chooseAttention, chooseMatrices, formsSaid } from "./forms.ts";
 import { prepare, bindLayers, grow, timeBlocks } from "./block.ts";
 import { chooseTokens, tokensSaid } from "./tokenforms.ts";
+import type { Thrown } from "./device.ts";
+import type { FromGpu, Opened, Started, ToGpu } from "../contracts/gpu/protocol.ts";
+
+// T368.6: a stretch of the checkpoint as it is posted (gpu.ts hands it on)
+type Stretch = Extract<ToGpu, { type: "weights" }>;
 
 let starting = false;
 
@@ -17,11 +22,11 @@ let starting = false;
 // the buffer and the offset in it). flow[0] counts the bytes on the GPU (the worker waits on it: a disk read faster
 // than the GPU takes it would pile up in the messages). What comes before the buffers are made waits (backlog). A
 // failure (no adapter, a buffer the device refused) takes the rest as if written, and start() says it
-let opening = null, opened = false, failure = null, flow = null;
+let opening: Promise<void> | null = null, opened = false, failure: string | null = null, flow: BigInt64Array | null = null;
 // the bytes that open() put up, for start() to say with the rest
 let openedBytes = 0;
-const backlog = [];
-function open(plan, shared) {
+const backlog: Stretch[] = [];
+function open(plan: Opened, shared: SharedArrayBuffer) {
   starting = true;
   flow = new BigInt64Array(shared);
   opening = (async () => {
@@ -30,12 +35,12 @@ function open(plan, shared) {
         failure ??= "the GPU's worker was stopped";
         return;
       }
-      openedBytes = await uploadLayers(model, true);
+      openedBytes = await uploadLayers(model!, true);
       // T210: the tables too, which nothing holds in the shared memory either
-      openedBytes += tablesOn(model);
+      openedBytes += tablesOn(model!);
       if (stopping) failure ??= "the GPU's worker was stopped";
     } catch (error) {
-      failure = String(error?.message ?? error);
+      failure = String((error as Thrown)?.message ?? error);
     } finally {
       opened = true;
       starting = startAsked;  // (a start() waiting on this is still starting)
@@ -46,29 +51,29 @@ function open(plan, shared) {
 }
 // the bytes at offset of the checkpoint (bytes: a Uint8Array of their own) onto the buffers whose routes they fall in
 // (weights.js's routed()), and flow[0] counted once the GPU has them
-function take(data) {
+function take(data: Stretch) {
   if (!opened) return void backlog.push(data);
   const { offset, bytes } = data;
   if (!failure) {
     try {
-      routed(model, offset, bytes);
+      routed(model!, offset, bytes);
     } catch (error) {
-      failure = String(error?.message ?? error);
+      failure = String((error as Thrown)?.message ?? error);
     }
   }
   const count = BigInt(bytes.length), done = () => {
-    Atomics.add(flow, 0, count);
-    Atomics.notify(flow, 0);
+    Atomics.add(flow!, 0, count);
+    Atomics.notify(flow!, 0);
   };
   if (failure) done();
-  else model.device.queue.onSubmittedWorkDone().then(done, done);
+  else model!.device.queue.onSubmittedWorkDone().then(done, done);
 }
 let startAsked = false;
-async function start(memory, plan) {
+async function start(memory: WebAssembly.Memory, plan: Started) {
   const began = performance.now();
   starting = startAsked = true;
   try {
-    let bytes;
+    let bytes: number;
     if (plan.direct) {
       // T156: opened before the checkpoint came, its layers written as they came (the worker waited for the last)
       await opening;
@@ -80,42 +85,42 @@ async function start(memory, plan) {
     } else {
       if (!(await openDevice(plan))) return;
       handed(memory, plan);
-      bytes = await upload(model);
+      bytes = await upload(model!);
     }
-    const { device, adapter, key } = model;
+    const { device, adapter, key } = model!;
     if (stopping) return end();
-    await prepare(model);
-    await chooseAttention(model);
+    await prepare(model!);
+    await chooseAttention(model!);
     if (stopping) return end();
-    await chooseMatrices(model);
+    await chooseMatrices(model!);
     if (stopping) return end();
-    bindLayers(model);
-    grow(model, Math.max(Math.min(plan.kvStart, plan.seqLen), Math.min(plan.batch, plan.seqLen)));
+    bindLayers(model!);
+    grow(model!, Math.max(Math.min(plan.kvStart, plan.seqLen), Math.min(plan.batch, plan.seqLen)));
     await within(device.queue.onSubmittedWorkDone(), "the GPU's work");
     const invalid = await device.popErrorScope(), full = await device.popErrorScope();
     if (stopping) return end();
-    if (invalid || full) return unusable(`the GPU did not take the layers (${(invalid ?? full).message})`);
+    if (invalid || full) return unusable(`the GPU did not take the layers (${(invalid ?? full)!.message})`);
     // (not for the page's tests: SwiftShader took more than STEP_MS to time Llama 3.2 1B's shaders, T147 in CI)
-    const blocks = plan.force.quick ? [] : await within(timeBlocks(model), "timing a block");
+    const blocks = plan.force.quick ? [] : await within(timeBlocks(model!), "timing a block");
     if (stopping) return end();
     // T152: a token and the ones after it, where the model's layers were put up for them (tokensLayout). What fails
     // here leaves the tokens on the CPU and the prompts on the GPU
     // (why not: the layers could not be joined for a token as they went up, or no form of a token is right here)
-    let tokensWhy = model.weights.unjoined;
+    let tokensWhy = model!.weights.unjoined;
     if (plan.tokens && !tokensWhy) {
       try {
-        await chooseTokens(model);
+        await chooseTokens(model!);
       } catch (error) {
-        tokensWhy = String(error?.message ?? error);
+        tokensWhy = String((error as Thrown)?.message ?? error);
       }
       if (stopping) return end();
     }
     if (lost) return unusable(lost);
     // (in this order: form, attention, forms and remembered are formsSaid()'s)
     postMessage({ type: "ready", adapter: describe(adapter), key, bytes, seconds: (performance.now() - began) / 1000,
-      ...formsSaid(model), blocks, tokens: tokensSaid(model), tokensWhy: plan.tokens ? tokensWhy ?? null : undefined });
+      ...formsSaid(model!), blocks, tokens: tokensSaid(model!), tokensWhy: plan.tokens ? tokensWhy ?? null : undefined } satisfies FromGpu);
   } catch (error) {
-    unusable(String(error?.message ?? error));
+    unusable(String((error as Thrown)?.message ?? error));
   } finally {
     starting = false;
   }
