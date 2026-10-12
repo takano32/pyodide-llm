@@ -20,7 +20,7 @@
 
 // T350: this file is the window of the worker: its URL, generate() and the messages. The rest is in the modules
 // of worker/: runtime.ts (what the visit finds once), request.ts (what the page asked for with a load), loaded.ts (the
-// model loaded now) (T378.3: each sets its own, and the others say what happened and read), told.ts, clock.ts, pyodide.ts (the runtime's
+// model loaded now) (T378.3: each sets its own, and the others say what happened and read), clock.ts, pyodide.ts (the runtime's
 // loading), weights.ts (where a model's weights go), ranges.ts and sources.ts (the fetching), conduct.ts (T374.2.1: what
 // answers the conduct of a conversion, which is Python's, from huggingface.co or from a folder), convert.ts (a Hugging Face model), load.ts and timing.ts (what /benchmark/ times).
 // T367.3: a bundler links them (static imports, src/runtime/): they are part of this worker's own file, whose name
@@ -29,6 +29,8 @@
 // then). What the worker asks for later is asked for by a literal name: forward.ts, kept.js and the device's key as
 // modules (import("./forward.ts")), the kernels and the Python's archives as files (built.ts). The site's root, where
 // models/ is, the page hands over with a load (request.ts's root): this file's own URL is under _astro/.
+// T380.1: what fails is carried and read in one way (failure.ts): the catch at the end of this file tells the page what
+// failureOf() reads of whatever was thrown, and no module puts a mark on an Error or reads an exception's words.
 // T367.4: a page left open across a deployment asks for such a file after it is gone. Where that ends a load (the
 // Python's archives, kept.js at a first conversion) the visitor is told that the site was updated (updated.ts); where
 // the engine goes on without the file (the kernels and forward.ts: NumPy; a software thread; the GPU's worker; the
