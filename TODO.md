@@ -3100,6 +3100,103 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **`src/` に残る `.js`（24 個、どれも `src/runtime/` の外）**: `src/bench.js` と `src/bench/` の 10（`cells`・`cpu`・`generate`・`gpu`・`layersteps`・`path`・`report`・`rounds`・`summary`・`warnings`）、`src/models.js` と `src/models/` の 10（`builders`・`built`・`filled`・`formats`・`hf-classics`・`hf-families`・`hf-japanese`・`licenses`・`memory`・`sampling`）、`src/page-memory.js`、`src/wake.js`。`public/` は `coi.js`（`// @ts-check`）と `coi-test/` の 2 つ。
   - **気づき（採番していない）**: (a) **作り物の計画が `Plan` の全部でない**（上）: `tests/plans.mjs` の手書きの計画（T368.4 の気づき (a)）と同じ種類で、こちらは製品（`/benchmark/` の CPU の節）。T375 の前に、`Plan` の 6 つを任意にするか、作り物を全部にするかを決める。(b) **GPU の節はステップを名前で引く**（`steps.find((s) => s.name === "the adapter")`）ので、頼みで付いた結果の型が一覧に入る所で消える（`steps: any[]`）。段の名前を鍵にした記録にすれば、ページの `any` はあと 4〜5 減る（形の作り替え）。(c) **`if (answer.error) return` は答えを絞らない**（`error` が空の文字でありうる）: `Answer` を `{ ok: true, result } | { ok: false, error }` のような印つきにすればページの `!` 5 つは消える（Worker の文が変わる）。(d) **`Timed`（`interleaved()` の答え）も同じ**: `r.error ? … : r.ms / r.dispatches` の 10 個の `!`。(e) `src/bench/*.js` の表は、契約の行の型（`LayerRow`・`StepsForm`・`BandwidthRow`…）の読む側: `.ts` にすると初めて「Worker が書く欄 = 表が読む欄」が tsc に見える（いまは片側）。(f) `src/page-memory.js` の頭のコメントは `src/runtime/benchmark/memory.js` と言う（触らない範囲なので直していない）。(g) `updated-check` は製品の 2 行を文で持つ（型を足すたびに直す所）: 型を空白にした文を読む形にできる。(h) 捨ての道具（`.tmp/t368.7/`: `same-syntax.mjs`・`count.mjs`・`casts.mjs`・`breaks.py`・`adds.py`・`ed.py`）は入れていない。構文木の比べは、束の比べの通す違い（短縮のプロパティ）を見つけるので、T368 の残り（T368.8 と `src/bench/`・`src/models/` を `.ts` にする回）でも要る: `tests/` に置く価値がある。
 - **T368.7 のレビュー（2026-10-12）**: レビュー（Sonnet high、`shader-reviewer`）: 本線に入れてよい。直しは 1 つ（コミット ce10ab5、型だけの 3 行）: 「両端とも TypeScript で突き合わせは tsc」と記録にあったが、ページの `waiter` だけは Worker の型を持たず、`waiter.postMessage({ memory, round })` の綴りの誤りが型検査を通った。`satisfies ToWaiter` と `MessageEvent<Waited>` を足した（誤りを入れると TS2561。束は同じコード）。**本線 42b38e1**。動かしたもの: 本線 1875165 を別の木でビルドして `dist-same` = 40 ファイルのうちバイト単位で同じ 29・同じコード 11・違い 0（`benchmark-gpu` は両方 138,627 バイト、`LAYER_LINE = .001` は 1 か所）、`dist-check`（作る物 16、通知 60、鍵 192）、軽い組 224 秒（直しの前の先頭で。直しの後は型検査・ビルド・`dist-same`・網の `page` と `bench`・名前の検査）、手元の Chrome で `bench-check --dist chrome --run device,cpu,storage`。**構文木の比べを自分で書き直して、`src/runtime/` の 69 ファイル 927 文と `/*!`・`/**` の 181 個が、それぞれ `.ts` にする直前の `.js` と同じ**（型の消し方は Node 自身の `stripTypeScriptTypes`、文字列と数の `raw`・テンプレートの `raw` と `cooked`・短縮のプロパティまで。ならしたのは import の指定の終わりと括弧）: **T368.1〜.6 に「束は同じだが文が変わっている」所は無い**（`jobs`・`helper`・`kept` も含む）。実装者が戻した短縮のプロパティ 2 つは戻し切れている。`updated.ts` の文 2 つと線・`built.ts` の表は同じ、`knows()` の直しは効く（`forward/engine.ts` に import を足すと落ちる）。網の `gpuworker` は取り違え・数・条件の 3 通りを落とす（T368.6 までは両方の木が `.js` で正しく読めていた: 数え落とすのは本線が `.ts` になった日から）。`shared` の型: 受け口はどの段より先に `await load()`、9 つの段は最初に `await gpu()` するので「読む前に置かれる」は本当。`types.mjs` を 4 通り、契約を 4 通り壊して落ちる。CI の run 38196324942 は FAILED 0、Dawn の job で `.ts` の Worker を Node が読んで「layers 11/11 ok, tokens ok」が 2 つ。確かめていないもの: ブラウザの GPU の節、`bench-check --wrong`・`--unsaid`、Firefox・WebKit、本物の GPU、持ち主の端末、速さ、全部の組。覆す条件: `preview.yml` か `bench.yml` で束の文が食い違う。**本番の確かめは省いた。訳: 配られる束が本線と同じコード**（毎晩の全部の組が `/benchmark/` の GPU の節を回す）。気づきは T480〜T482。
+- **T368.8 の表（2026-10-12、Opus medium、ブランチ `t368.8-name-checks`。消す前に作った: 検査 × 規則、規則ごとに壊し方を本当に入れて、型検査と今の検査とビルドに通した）**
+  - **やり方**: 道具は捨ての `.tmp/t368.8/mut.mjs` と `breaks.mjs`（壊し方 1 つ = ファイルの 1〜2 か所の書き換えか新しいファイル。入れて、名指した道具を回し、戻す）。行は本線 049878c のもの。「tsc」は `node tests/types.mjs`、「build」は `npm run build`。**判定**: (a) tsc が落とす、(b) ビルドか Node が自分で止める、(c) どちらも通す（検査だけが落とす）、(d) ほかの検査が動きで落とす。**1 つの規則に (a) の壊し方と (c) の壊し方の両方があるものは (c) に数える**（消すと (c) の壊し方が落ちなくなる）。
+  - **`worker-modules-check.mjs`（320 行）**
+
+    | 規則（行） | 壊し方 | 落とすもの | 判定 |
+    |---|---|---|---|
+    | W0 名前の読み手 `namesOf()`（29–174） | — | — | 道具（規則でない） |
+    | W1 使う名前は宣言・import・`GLOBALS`（23–27・181–189） | `w-import` `loaded.ts` が `pyodide` の import を忘れる / `w-typo` `memoryShard()` | tsc（TS2304・TS2552）と検査 | (a) |
+    | 同 | `w-ambient` `told.ts` が束縛の無い `name` を使う（worker の `name` は string） | 検査だけ | **(c)** |
+    | 同（forward の F1 で） | `w-script` `forward/threads.ts` が `jobs.ts` の `COUNT` の import を忘れる | 検査だけ（tsc は `benchmark/reader.ts` の `COUNT` と読む: 下の気づき） | **(c)** |
+    | W2 輪と、窓口から届かないファイル（`workerScripts()`） | `w-ring` `told.ts` ⇄ `clock.ts` / `w-unreached` `worker/zz.ts` | 検査だけ（build は通る） | (c) |
+    | W3 import した名前に代入しない（203–205） | `w-assign` `timing.ts` が `llama = undefined` | tsc（TS2632）・build（失敗）・検査 | (a)(b) |
+    | W4 import した名前を局所が隠さない（206–207） | `w-hide` 関数の中の `const llama` | 検査だけ | (c) |
+    | W5 2 つの部品の同じ最上位の名前（210–217） | `w-twice` `told.ts` に `function took() {}` | 検査だけ（`worker-check`・`worker-sink-check` は通る） | (c) |
+    | W6 `state.ts` が戻っていない（219） | `w-state` | 検査だけ | (c) |
+    | W7 知らせの種類と鍵 = 型（233–271・292–303） | `w-post-key` 型に無い鍵を投げる / `w-post-kind` 無い種類 / `w-read-key` 無い鍵を読む / `w-told-kind` 無い種類を見分ける | tsc（TS2353・TS2322・TS2339・TS2367）と検査 | (a) |
+    | 同 | `w-type-kind` 誰も投げない種類が型にある / `w-type-key` 誰も書かない任意の鍵 / `w-asked-key` 誰も読まない鍵 / `w-stats` Python の書かない鍵 | 検査だけ | **(c)** |
+    | W8 投げる知らせは `satisfies`（273–290） | `w-satisfies` | 検査だけ | (c) |
+    | W9 Node で link し、読み込みで置いた受け口が答える（306–319） | `w-await` 受け口の前に `await null` | **検査は通る**。`worker-check` が落ちる（vm の 1 つのスクリプトは最上位の await を持てない: SyntaxError） | 見ていない（気づき） |
+  - **`forward-modules-check.mjs`（178 行）**
+
+    | 規則（行） | 壊し方 | 落とすもの | 判定 |
+    |---|---|---|---|
+    | F1 使う名前（26–27・36–48） | `f-import` `paths.ts` が `BETTER` を忘れる | tsc と検査 | (a)（W1 の (c) の 2 つはここにも当たる） |
+    | F2 渡す名前 = 受ける名前（83–85） | `f-hand-extra` 受けない物を渡す / `f-take-wrong` 渡されない名前で受ける | tsc（TS2353・TS2339）と検査 | (a) |
+    | 同 | `f-take-optional` 型で任意にした物を受けて、誰も渡さない | 検査だけ | **(c)** |
+    | F3 GPU だけのモデルに `spawn` を渡さない（88–94） | `f-spawn` | 検査と `gpu-alone-check`（T450: 動きで） | (d) |
+    | F4 部品の物から取り出す名前がある（95–99・102–103） | `f-takeout` | tsc（TS2339）と検査 | (a) |
+    | 同 | `f-takeout-cast` cast 越しに無い名前を取り出す | 検査だけ（型を空白にして読むので cast が見えない） | **(c)** |
+    | F5 `shape`・`weights`・… から取る名前は作られている（107–141、`NOT_HANDED`） | `f-group-take` 綴り | tsc と検査 | (a) |
+    | 同 | `f-group-optional` 型で任意の名前を取り、作る側が作らない | 検査だけ | **(c)** |
+    | F5 作った鍵は誰かが取る（142–148） | `f-group-unread` | 検査だけ | (c) |
+    | F6 `threads`・`onGpu` に setter が無い（149–152・155–156） | `f-setter`・`f-setter-gpu` | 検査と `threads-part-check`・`gpu-part-check`（「外から代入できない」: 動きで） | (d) |
+    | F6 読まれる状態は getter 3 つと 7 つ（153・157–158） | `f-getter` getter を 1 つ足す | 検査だけ | (c) |
+    | F7 `threads.<名前>` はメンバー、書く所は setter（159–172） | `f-member` 綴り / `f-member-set` setter の無いメンバーに代入 | tsc（TS2551・TS2540）と検査 | (a) |
+    | 同 | `f-member-cast`・`f-set-cast` cast 越し | 検査だけ | **(c)** |
+    | F8 窓口は link し、undefined の export が無い（175–178） | `f-undefined` | 検査だけ | (c) |
+    | F9 輪と届かないファイル（`windowed()`、31） | `f-ring`・`f-unreached` | 検査だけ（build は通る） | (c) |
+  - **`gpu-modules-check.mjs`（323 行）**
+
+    | 規則（行） | 壊し方 | 落とすもの | 判定 |
+    |---|---|---|---|
+    | G1 使う名前（35–37・50–54） | `g-import` | tsc と検査 | (a)（W1 の (c) も当たる） |
+    | G1b 取る相手は worker の部品とシェーダの部品（55–57） | `g-takes-other` `forward/choice.ts` から取る | 検査だけ（`device-key-check` は通る） | (c) |
+    | 同 | `g-takes-window` 窓口 `shaders.ts` から取る | 検査と `device-key-check` | (c)(d) |
+    | G2 `model`・`stopping`・`lost` に持ち主のほかが代入しない（75–77・96–98） | `g-set-held` | tsc（TS2632）と検査 | (a) |
+    | G2 その名前を束縛しない（78–95） | `g-bind-held` 引数 `lost` | 検査だけ | (c) |
+    | G3 `common` が戻っていない（73–74） | `g-common` | 検査だけ | (c) |
+    | G4 読み込みの時に読まない（152–162） | `g-load-read` | 検査だけ | (c) |
+    | G5 読むフィールドは持ち主が作ったもの（146・203・211・230・239） | `g-field`・`g-base-field` 綴り / `g-builder-plain` | tsc（TS2551・TS2339）と検査 | (a) |
+    | 同 | `g-optional` 型で任意のフィールドを持ち主が作らず、読む / `g-builder` cast 越しに置く | 検査だけ | **(c)** |
+    | G5 記録とそのフィールドを書くのは持ち主のファイルだけ | `g-field-set`（型の合う代入） | 検査だけ | (c) |
+    | 同 | `g-base-set`（`model.memory = null`） | tsc（型が合わない）と検査 | 型が合えば (c) |
+    | G5 記録を丸ごと渡さない / 作ったフィールドは誰かが読む | `g-whole` / `g-unread` | 検査だけ | (c) |
+    | G6 `satisfies FromGpu`（276–294） | `g-satisfies` | 検査だけ | (c) |
+    | G7 link し、受け口に来た start と stop が順に 1 回ずつ（296–321） | `g-await` 受け口の前に `await null` | **誰も落とさない** | 見ていない（気づき） |
+  - **`bench-modules-check.mjs`（139 行）**
+
+    | 規則（行） | 壊し方 | 落とすもの | 判定 |
+    |---|---|---|---|
+    | B1 使う名前（33–34・50–55） | `b-import` | tsc と検査 | (a)（W1 の (c) も当たる） |
+    | B1b 取る相手は worker の部品（56–58） | `b-takes` `forward/choice.ts` から取る | **誰も落とさない**（`outside: true` で読んだものは必ず `others` に入る: 落ちない規則） | 死んだ規則 |
+    | B2 `shared.<名前>` はフィールド（84） | `b-shared` 綴り | tsc と検査 | (a) |
+    | 同 | `b-optional` 型で任意のフィールドを物が持たず、読む / `b-shared-cast` | 検査だけ | **(c)** |
+    | B2 フィールドは誰かが使う（89） | `b-shared-unused` | 検査だけ | (c) |
+    | B4 link し、置いた時の知らせに 1 回答える（113–126） | `b-await` | **誰も落とさない** | 見ていない（気づき） |
+    | B5 `satisfies`（92–111） | `b-satisfies` | 検査だけ | (c) |
+    | B6 `src/bench/` の使う名前（128–137） | `b-tables` `cells.js` に無い名前 | 検査だけ（JavaScript: tsc は検査しない、build は通る） | (c)（T480 まで） |
+    | 輪と届かないファイル（`windowed()`、42） | （F9 と同じ読み手） | 検査だけ | (c) |
+  - **`shaders-modules-check.mjs`（100 行）**
+
+    | 規則（行） | 壊し方 | 落とすもの | 判定 |
+    |---|---|---|---|
+    | S1 `shaders/` のファイル = 窓口の取る部品（35–37） | `s-unlisted` | 検査だけ | (c) |
+    | S2 使う名前（30・43–44・60–61） | `s-import` | tsc と検査（と Node: 読み込みで ReferenceError） | (a)(b)（W1 の (c) も当たる） |
+    | S3 名前を 2 回 export しない（45） | `s-twice` | tsc（TS2323）と構文解析（SyntaxError） | (a)(b) |
+    | S4 取る相手は前にある（輪）（46–50） | `s-ring` | 検査だけ（build は通る） | (c) |
+    | S5 隣に渡す名前は誰かが取る（52–55） | `s-given` | 検査だけ | (c) |
+    | S6 窓口は部品の export を全部取って出し、自分では何も宣言しない（62–86） | `s-window-drop` 部品の名前を落とす（`ternaryMatVec`: `/benchmark/` は読まない） | 検査（と、この名前は `device-key-check`） | (c) |
+    | 同 | `s-window-used` `/benchmark/` の読む名前を落とす | tsc と検査 | (a) |
+    | 同 | `s-window-own` | 検査だけ | (c) |
+    | S7 link し、export は部品の値そのもの（89–99） | （壊し方を作れなかった: S6 が先に落ちる） | — | 残す（触っていない） |
+  - **`page-modules-check.mjs`（186 行）**
+
+    | 規則（行） | 壊し方 | 落とすもの | 判定 |
+    |---|---|---|---|
+    | P1 使う名前は宣言・import・ページのグローバル（43–47・100–110） | `p-import` `composer.ts` が `settings` を忘れる | tsc と検査 | (a) |
+    | 同 | `p-ambient` `dom.ts` の `prompt` の import を忘れる（`window.prompt` がある） | tsc（型が合わなかったので: TS2339）と検査 | 型が合えば (c) |
+    | 同 | `p-astro-free` `index.astro` のスクリプトが無い名前を呼ぶ | 検査だけ（`.astro` は tsc のプログラムに無い、build は通る） | **(c)** |
+    | P2 輪と届かないファイル（112–123） | `p-ring`・`p-unreached` | 検査だけ（build は通る） | (c) |
+    | P3 import した名前に代入しない（131–133） | `p-assign` | tsc（TS2632）と検査 | (a) |
+    | 同 | `p-astro-assign` `index.astro` のスクリプトで | **build（失敗）**と検査 | (b) |
+    | P4 局所が隠さない / P5 同じ最上位の名前 / P6 `state.ts` | `p-hide`・`p-twice`・`p-state` | 検査だけ | (c) |
+    | P7 持ち主はページを読まない / P8 ほかの部品を import しない | `p-owner-reads`・`p-owner-imports` | 検査と `page-parts-check`（Node が import する時か、呼んだ関数の中なら） | (c)(d) |
+    | P9 持ち主の関数は誰かが呼ぶ / P10 `opening.ts` の順 | `p-uncalled`・`p-order` | 検査だけ | (c) |
+  - **名前の検査でない 2 つ**: `plan-keys-check` の GPU の側は、読む鍵の綴り（`k-read`）は tsc と検査、型にあって誰も書かない・読まない鍵（`k-unread`）は検査だけ。同じ比べの 2 つの向きなので、消せる行は無い（Python の側も同じ道具）。`contracts-check` は境目の型の読み手そのものの試験で、型が代わりに見るものは無い。`device-key-check`・`updated-check` は触っていない。`tests/imports.mjs`（165 行）は、6 つの検査のほか `worker-source.mjs`・`shaders-source.mjs` が別の木（束ねる前の形のコミット）にも当てるので、どの枝も要る。
+  - **表から決めたこと**: (1) **消す**（(a)(b)(d) だけのもの）: W3・P3・G2 の代入、F3、F6 の setter、S3、B1b（死んだ規則）。(2) **「使う名前」（W1・F1・G1・B1・S2）は 5 つの一覧と 5 つの輪を 1 つにする**: tsc は忘れた import と綴りを言うが、ライブラリの宣言する名前（`name`）と、import も export も無いファイルの最上位の名前（スクリプトと読まれる: `benchmark/reader.ts`）は言わない。実行時の全部のファイルに 1 つの一覧（`tests/types.mjs`）で残す。ページの P1 はそのまま（`.astro` と、ページの持つ名前）。(3) **残す**: (c) の壊し方が 1 つでもある規則の全部。F2・F4・F5・F7・G5・B2 は (a) の壊し方のほかに「型で任意にした名前」か「cast 越しの名前」の壊し方が検査だけで落ちるので残す。
 
 ### Saluki の組（T361〜T364、2026-10-09 に採番。持ち主「[Saluki] で対応を採番できないかな？」、https://pc.watch.impress.co.jp/docs/news/2147095.html）
 - **モデル**: Underdog Saluki 27B 1.0（`ConwayResearch/Underdog-Saluki-27B-1.0`、リビジョン `1336c0b5d74dfe6ad7f793577092f5effd9f97c6`、apache-2.0、ゲートなし）。Qwen3.8-27B を平均 約 2.3 ビットに量子化した ISTA DASLab の `Qwen3.8-27B-GSQ-RCO-GGUF` に Underdog が手を入れたもの。ファイルは `Underdog-Saluki-27B-1.0-IQ2-mix.gguf` 7,898,369,152 バイトの 1 つ（ほかの 2 つは画像の入力用の `mmproj` で、このページでは使わない）。Bonsai 2 27B と違い、素の llama.cpp で動く。
