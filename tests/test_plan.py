@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 import engine.model
-from engine.layout import stateful_kinds
+from engine.layout import LAYOUTS, stateful_kinds
 from engine.plan import ATTENTION, Settings
 from engine.tensors import rope_tables
 from llama2_numpy import (ATTENDING, EVERY, OUTLIER_CHANNELS, QUANTIZED, SEVERAL_KINDS, STATEFUL, TABLE, Dims, Llama,
@@ -35,10 +35,10 @@ MODELS = [
 ]
 DTYPES = ("float32", "float16", "int8", "int6", "ternary")
 cases = pytest.mark.parametrize("name, header, form, more", MODELS, ids=[model[0] for model in MODELS])
-# the keys forward.js is handed: the 24 it reads today, and the two of T359.5
+# the keys forward.ts is handed: the 24 of before T359.5, its two, and the two facts of T375.2
 KEYS = {"arch", "dim", "hidden_dim", "n_layers", "n_heads", "n_kv_heads", "head_size", "vocab_size", "seq_len", "rotary",
         "parallel_residual", "kv_start", "rms_norm_eps", "shared_classifier", "int8", "relaxed", "tensors", "derived",
-        "outliers", "linear", "unturned", "convolution", "rotated", "half_kv", "layers", "widths"}
+        "outliers", "linear", "unturned", "convolution", "rotated", "half_kv", "layers", "widths", "layer_norm", "gated_ffn"}
 
 
 def no_bytes(offset, length):
@@ -121,6 +121,23 @@ def test_which_layers_are_of_which_kind_and_which_rope_turns():
         [("l", 0, False), ("a", 0, True), ("l", 1, False), ("a", 1, True), ("l", 2, False)]
     assert facts(header, {"arch": "lfm2", "convolution": {"layers": "cacca", "taps": 3}}) == \
         [("c", 0, False), ("a", 0, True), ("c", 1, False), ("c", 2, False), ("a", 1, True)]
+
+
+def test_the_kind_of_the_norms_and_of_the_ffn_are_two_facts_of_a_plan(monkeypatch):
+    """T375.2: what an engine's layers differ by is said as facts (the names of engine/layout.py's Layout), written
+    here a second time for every architecture; and a record whose two facts are not the pair every architecture has
+    says each as it is (the engine outside Python reads the two apart)."""
+    header = [256, 768, 4, 8, 8, 2048, 320]
+    facts = lambda form: tuple(forward_plan(Dims(header, form), "float32", no_bytes, int8=False, kv_start=64)[key]
+                               for key in ("layer_norm", "gated_ffn"))
+    assert facts({}) == (False, True)
+    assert facts({"arch": "gpt2"}) == (True, False) and facts({"arch": "neox"}) == (True, False)
+    assert facts({"arch": "qwen35", "head_dim": 128, "linear": {**LINEAR, "every": 2}}) == (False, True)
+    assert facts({"arch": "lfm2", "qk_norm": True, "convolution": {"layers": "ccac", "taps": 3}}) == (False, True)
+    monkeypatch.setitem(LAYOUTS, "rms gpt2", LAYOUTS["gpt2"]._replace(layer_norm=False))
+    monkeypatch.setitem(LAYOUTS, "gated gpt2", LAYOUTS["gpt2"]._replace(gated_ffn=True))
+    assert facts({"arch": "rms gpt2"}) == (False, False) and facts({"arch": "gated gpt2"}) == (True, True)
+    assert all(type(fact) is bool for form in ({}, {"arch": "gpt2"}) for fact in facts(form))
 
 
 @cases
