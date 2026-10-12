@@ -7,7 +7,7 @@
 // offline, a model's part or a file of another site keep the words they had.
 //
 // Two ways a file is found gone:
-// - its own fetch was answered 404 (built.js's built(): the kernels and the Python's archives), which is the answer;
+// - its own fetch was answered 404 (built.ts's built(): the kernels and the Python's archives), which is the answer;
 // - the failure says no status (a dynamic import() that threw, a worker that did not start): then the file that NAMES
 //   the missing one is asked for, by HEAD, and the site was updated where that one is gone. The missing file's own
 //   address is not known here (the bundler writes its hashed name into the text, and only Chrome's error says it),

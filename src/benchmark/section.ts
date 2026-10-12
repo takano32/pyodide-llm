@@ -6,6 +6,8 @@ import { MODELS } from "../models.js";
 import { $, type Name, type Result } from "./dom.ts";
 import { current, runAt, runNames, sectionAt } from "./running.ts";
 import { unstarted } from "../runtime/updated.ts";
+import type { Answer, Asked, Said } from "../runtime/contracts/benchmark.ts";
+import type { ModelWorker } from "../runtime/contracts/messages.ts";
 
 // ---- the sections' elements: a head with a Run button and the state, the progress while it runs (T177), and what
 // the section found
@@ -70,9 +72,13 @@ export const workerFailed = async (event: ErrorEvent) =>
   (await unstarted(event, import.meta.url, `the worker failed: ${event.message ?? "error"}`)).message;
 
 // one worker, one question, one answer (the section workers answer every message once)
-export function ask(worker: Worker, message: any): Promise<any> {
+// (T368.7: a section's worker is known by the file it was made of (worker(), below): what it may be asked and what each
+// of its steps answers are contracts/benchmark.ts's, by that file. The mark is a type's alone: a Worker has no such field)
+export type Asking<File extends keyof Asked> = Worker & { readonly made?: File };
+type Answers<File extends keyof Asked, Message> = Asked[File]["results"] extends infer Results ? Message extends { step: infer Step extends keyof Results } ? Results[Step] : never : never;
+export function ask<File extends keyof Asked, Message extends Asked[File]["to"]>(worker: Asking<File>, message: Message): Promise<Answer<Answers<File, Message>>> {
   return new Promise((resolve) => {
-    worker.onmessage = ({ data }) => {
+    worker.onmessage = ({ data }: MessageEvent<Said<Answers<File, Message>>>) => {
       // the GPU section's device-lost notice comes on its own, and so do the line's "still reading", the GPU
       // prompt's "still at it" and a section's stages (T177)
       if (data.lost || data.alive || data.stage !== undefined) return;
@@ -96,14 +102,15 @@ const WORKERS = {
 };
 export const live = new Set<Worker>();
 let heard = 0;
-export function worker(file: keyof typeof WORKERS) {
+type Made<File> = File extends keyof Asked ? Asking<File> : File extends "worker.js" ? ModelWorker : Worker;
+export function worker<File extends keyof typeof WORKERS>(file: File): Made<File> {
   const w = WORKERS[file]();
   live.add(w);
   w.addEventListener("message", ({ data }) => {
     heard = performance.now();
     if (current && typeof data?.stage === "string") staged(current, data);
   });
-  return w;
+  return w as Made<File>;
 }
 const STALL_MS = 5 * 60_000, TICK_MS = 5000;
 export function stalled(): { promise: Promise<Result>; stop: () => void } {
@@ -121,6 +128,6 @@ export function stalled(): { promise: Promise<Result>; stop: () => void } {
   });
   return { promise, stop: () => clearInterval(timer) };
 }
-export const fixed = (value: any, digits = 1) => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "?");
-export const yes = (value: boolean) => (value ? "yes" : "none");
+export const fixed = (value: unknown, digits = 1) => (typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "?");
+export const yes = (value: boolean | undefined) => (value ? "yes" : "none");
 export const model = () => MODELS.find((entry: any) => entry.id === ($("model") as HTMLSelectElement).value) as any;

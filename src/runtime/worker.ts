@@ -27,10 +27,10 @@
 // carries a hash of its text, so that all are of one deployment, and nothing is awaited before the handler at the end
 // of this file is set (the messages that came while the modules were fetched one by one were kept in a queue until
 // then). What the worker asks for later is asked for by a literal name: forward.ts, kept.js and the device's key as
-// modules (import("./forward.ts")), the kernels and the Python's archives as files (built.js). The site's root, where
+// modules (import("./forward.ts")), the kernels and the Python's archives as files (built.ts). The site's root, where
 // models/ is, the page hands over with a load (request.ts's root): this file's own URL is under _astro/.
 // T367.4: a page left open across a deployment asks for such a file after it is gone. Where that ends a load (the
-// Python's archives, kept.js at a first conversion) the visitor is told that the site was updated (updated.js); where
+// Python's archives, kept.js at a first conversion) the visitor is told that the site was updated (updated.ts); where
 // the engine goes on without the file (the kernels and forward.ts: NumPy; a software thread; the GPU's worker; the
 // device's key) it goes on as it always did: a model that answers is not interrupted. T439: where that is slower
 // (all but the key) the page is told { type: "updated" } once, and its status line says so (worker/outdated.ts).

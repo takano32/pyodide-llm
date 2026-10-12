@@ -75,7 +75,7 @@ async function ceilings(): Promise<GpuCeilings> {
     const work = r.dispatches * (perLoop ? threads * loops * perLoop : perDispatch!);
     return { rate: work / (r.ms / 1000), loops, dispatches: r.dispatches, ratio: r.ratio, ...(r.unsteady ? { unsteady: true } : {}) };
   });
-  const found: GpuCeilings = { fallback: shared.fallback };
+  const found = { fallback: shared.fallback } as GpuCeilings;
   const measure = async (name: Exclude<keyof GpuCeilings, "fallback">, why: string | null, how: () => Promise<GpuCeiling>) => {
     if (why) return (found[name] = { none: why });
     try {

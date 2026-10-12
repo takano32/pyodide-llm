@@ -15,8 +15,9 @@
 export type Staged = { stage: string; at?: number; of?: number; part?: number; alive?: undefined; lost?: undefined };
 // still at it (the page stops a section that says nothing for 5 minutes)
 export type Alive = { alive: true; stage?: undefined; lost?: undefined };
-// the GPU's device was lost, and why
-export type Lost = { lost: string; stage?: undefined; alive?: undefined };
+// the GPU's device was lost, and why: "<the reason>: <the device's words>" (never empty, which is how the page tells it
+// from an answer: by whether there is one)
+export type Lost = { lost: `${string}: ${string}`; stage?: undefined; alive?: undefined };
 export type Aside = Staged | Alive | Lost;
 
 // ---- an answer: the step it answers (the workers that say it), and its result or what failed
@@ -47,7 +48,8 @@ export type CpuRow = { asked: number; threads: number; none: string; msPerToken?
 export type CpuFound = { none: string; rows?: undefined; ceilings?: undefined }
   | { backend: string; shared: boolean; megabytes: number; tokenMegabytes: number; layerWeights: number; rows: CpuRow[]; ceilings: CpuCeilings; none?: undefined };
 // a fetch of the line, measured, or what failed
-export type LineFetched = { status: number; headersMs: number; firstByteMs: number; bytes: number; MBps: number; error?: undefined } | { error: string; MBps?: undefined };
+export type LineFetched = { status: number; headersMs: number; firstByteMs: number; bytes: number; MBps: number; error?: undefined }
+  | { error: string; status?: undefined; headersMs?: undefined; firstByteMs?: undefined; bytes?: undefined; MBps?: undefined };
 export type LinePaced = { rate: number; slower: true; error?: undefined } | ({ rate: number; slower?: undefined } & LineFetched);
 export type LineFound = { site: LineFetched | null; hf: LineFetched | null; paced: LinePaced[] };
 export type SectionsResults = { device: DeviceFound; cpu: CpuFound; line: LineFound };
@@ -100,7 +102,7 @@ export type Overhead = { dispatches: number; emptyDispatches: number; submitOnly
 // a ceiling of the device (T168): its rate by its unit's name, or none (why it was not measured) or error
 export type GpuCeiling = { none?: string; error?: string; unsteady?: boolean; GFLOPS?: number; GOPS?: number; GBps?: number; MiB?: number;
   shape?: string; shapes?: { shape: string; GFLOPS: number }[]; loops?: number; dispatches?: number; ratio?: number };
-export type GpuCeilings = { fallback: boolean; f32?: GpuCeiling; f16?: GpuCeiling; dot4?: GpuCeiling; shared?: GpuCeiling; global?: GpuCeiling };
+export type GpuCeilings = { fallback: boolean; f32: GpuCeiling; f16: GpuCeiling; dot4: GpuCeiling; shared: GpuCeiling; global: GpuCeiling };
 // a prompt all at once: a row a shader and a count of tokens (none, error: why there is no time)
 export type PromptRow = { shader: string; none?: string; error?: string; packed?: boolean; half?: boolean; again?: boolean;
   tokens?: number; ms?: number; msPerToken?: number; GFLOPS?: number };

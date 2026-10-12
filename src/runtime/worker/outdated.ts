@@ -1,11 +1,11 @@
 // worker/outdated.ts (T439): the one thing this visit's worker tells the page of the files it went on without. A page
-// left open across a deployment asks for files of its own build that are gone (updated.js's head). Where that ends
+// left open across a deployment asks for files of its own build that are gone (updated.ts's head). Where that ends
 // what was asked, the visitor is told so by an error (T367.4). Where the engine has a fallback (NumPy for the kernels
 // and forward.ts, fewer threads for a software thread, the CPU for the GPU's worker) it takes it, as it always did,
 // and the model answers: slower than it would, and until this nothing said why. Now the page is told, once,
-// { type: "updated" }, and its status line says updated.js's SLOWER after what it said before.
+// { type: "updated" }, and its status line says updated.ts's SLOWER after what it said before.
 //
-// Only where the file is gone (updated.js's line: a built file's own 404, or the 404 of the module that names a
+// Only where the file is gone (updated.ts's line: a built file's own 404, or the 404 of the module that names a
 // module or a worker). A line that dropped, a page that is offline, an answer of the 500s, a request something
 // blocked, a development server and Node fall back as before and nothing is added.
 // Nothing waits for this: the caller goes on to its fallback at once, and the word comes when the server has answered

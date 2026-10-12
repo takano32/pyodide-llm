@@ -241,7 +241,9 @@ function pageShape(tree, astro = "index.astro", modules = "page") {
     // (the one object the parts share: the names of its fields were the names of the `let`s)
     if (type === "VariableDeclarator" && node.id.name === "page" && node.init?.type === "ObjectExpression") { node.init.properties.forEach((property) => visit(property.value)); return; }
     if (!SKIPPED.test(type)) add(`node ${type}`);
-    if (type === "StringLiteral" || type === "NumericLiteral" || type === "BooleanLiteral") add(`literal ${JSON.stringify(node.value)}`);
+    // (T368.7: a file of the runtime that a page names, a worker's in new URL(), is the same file under its other ending:
+    // "../runtime/benchmark/gpu.ts" was "../runtime/benchmark/gpu.js". Only such a name, and only its ending)
+    if (type === "StringLiteral" || type === "NumericLiteral" || type === "BooleanLiteral") add(`literal ${JSON.stringify(typeof node.value === "string" ? node.value.replace(/^(\.\.\/runtime\/[\w./-]+)\.ts$/, "$1.js") : node.value)}`);
     if (type === "RegExpLiteral") add(`regular expression /${node.pattern}/${node.flags}`);
     if (type === "TemplateElement") add(`template ${JSON.stringify(node.value.cooked)}`);
     if (/^(Binary|Logical|Assignment|Unary|Update)Expression$/.test(type)) add(`operator ${type} ${node.operator}`);

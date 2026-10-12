@@ -78,7 +78,7 @@ async function init(search: string) {
   gpuForce = (["on", "only"] as (string | null)[]).includes(asked.get("gpuTest")) ? { fallback: true, always: true, quick: true, only: asked.get("gpuTest") === "only" } : {};
   benchPage = asked.has("bench");
   // T367.2: the engine's Python (a window and its parts, T348) is one archive, engine.zip, of this worker's
-  // build (built.js). It is small and of this site, so it is asked for now, beside Pyodide, and is there when that is ready.
+  // build (built.ts). It is small and of this site, so it is asked for now, beside Pyodide, and is there when that is ready.
   const engine = built("engine.zip").then((res) => res.arrayBuffer());
   engine.catch(() => {});  // (it is awaited below: a load that ends before that leaves no unhandled rejection)
   const version = await resolvePyodideVersion(search);

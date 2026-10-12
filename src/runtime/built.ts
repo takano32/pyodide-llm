@@ -5,7 +5,7 @@
 // One by one and never by a name put together (`./built/${name}`): a URL with a variable in it makes the bundler copy
 // the whole folder, and files of less than 4 KB went into the worker's text as data: URLs (T365).
 // T367.4: built() is how one is fetched, here and nowhere else: a page left open across a deployment asks for a name
-// that is gone, and the 404 it gets is told as the site having been updated (updated.js), not as a failed fetch.
+// that is gone, and the 404 it gets is told as the site having been updated (updated.ts), not as a failed fetch.
 import { answeredGone, updated } from "./updated.ts";
 
 export const BUILT = {

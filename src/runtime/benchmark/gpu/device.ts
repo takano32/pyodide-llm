@@ -6,7 +6,7 @@
 // the WGSL, shared with the model's GPU worker (src/runtime/shaders.ts, T135), a module of its own that both ask for. Not
 // awaited here: a module worker's port opens at its first await, and a message that comes before onmessage is set is
 // lost (T109); every step awaits it instead. (T367.4: where it is gone because the site was updated since the page
-// was opened, the step that awaits it says so: updated.js)
+// was opened, the step that awaits it says so: updated.ts)
 import { named } from "../../updated.ts";
 const shaders = named(import.meta.url, () => import("../../shaders.ts"));
 // T368.7: the types of what the steps hand one another. They are written here, where the things are made, and the
@@ -87,7 +87,7 @@ const layerMatrices = ({ dim, hidden, heads, kvHeads }: ModelShape): Shape[] => 
 // the small steps a layer dispatches on its own, as the CPU's forward pass has them (a stand-in each, SMALL; T150's
 // layer step runs the real ones)
 const SMALL_PER_LAYER = 7;
-// the CPU section's made-up model (src/runtime/benchmark/sections.js): Llama 3.2 1B's width, two layers
+// the CPU section's made-up model (src/runtime/benchmark/sections.ts): Llama 3.2 1B's width, two layers
 const PROMPT_MODEL: ModelShape = { dim: 2048, hidden: 8192, layers: 2, heads: 32, kvHeads: 8 };
 const matrixBytes = ([rows, n]: Shape) => rows * n + (rows * n / shared.GROUP) * 4;
 

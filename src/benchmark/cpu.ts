@@ -1,8 +1,9 @@
-// The sections "This browser" and "CPU" (src/runtime/benchmark/sections.js's steps).
+// The sections "This browser" and "CPU" (src/runtime/benchmark/sections.ts's steps).
 // (T353: a part of /benchmark/'s script; src/pages/benchmark.astro imports the parts in the order they ran as one script)
 import { threadCounts, cpuTable } from "../bench.js";
 import type { Result } from "./dom.ts";
 import { ask, worker, yes } from "./section.ts";
+import type { CpuCeilings } from "../runtime/contracts/benchmark.ts";
 
 // ---- the sections: each one starts its worker, asks, ends it, and says what it found as Markdown
 export async function device(): Promise<Result> {
@@ -10,8 +11,8 @@ export async function device(): Promise<Result> {
   try {
     const answer = await ask(w, { step: "device" });
     if (answer.error) return { status: "error", markdown: answer.error };
-    const r = answer.result;
-    const gb = (bytes: any) => (typeof bytes === "number" ? `${(bytes / 1e9).toFixed(1)} GB` : "?");
+    const r = answer.result!;
+    const gb = (bytes: number | undefined) => (typeof bytes === "number" ? `${(bytes / 1e9).toFixed(1)} GB` : "?");
     return { status: "ok", data: r, markdown: [
       "| feature | here |", "|---|---|",
       `| logical cores | ${r.cores ?? "?"} |`,
@@ -34,11 +35,11 @@ export async function cpu(): Promise<Result> {
   try {
     const answer = await ask(w, { step: "cpu", threads: threadCounts(navigator.hardwareConcurrency) });
     if (answer.error) return { status: "error", markdown: answer.error };
-    const r = answer.result;
+    const r = answer.result!;
     if (r.none) return { status: "none", markdown: r.none };
-    const c = r.ceilings ?? {};
-    const cutShort = [...(c.read ?? []), c.dot, c.dotRegisters, c.fma].some((one: any) => one?.cutShort);
-    const notFinite = r.rows.some((row: any) => row.finite === false);
+    const c: CpuCeilings = r.ceilings ?? {};
+    const cutShort = [...(c.read ?? []), c.dot, c.dotRegisters, c.fma].some((one) => one?.cutShort);
+    const notFinite = r.rows!.some((row) => row.finite === false);
     const said = [...(notFinite ? ["**The logits were not finite numbers: the forward pass computed something wrong.**"] : []),
       ...(cutShort ? ["**A ceiling's loop did not do its work (its checksum or its time): the compiler cut it short, and its number is no ceiling.**"] : [])];
     const lines = [...cpuTable(r), ...said.flatMap((line) => ["", line])];
