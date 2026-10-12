@@ -130,6 +130,18 @@ for (const [what, raw] of given) {
 }
 console.log(`shaders-catalogue-check: ${given.length} texts (the rows' and the tiles'): each of their ${declarations} declarations is used, and each struct that is bound is declared`);
 
+// ---- (T379.2) a prompt's tile of a ternary model reads codes, and no other tile does: the packing dp4a() is given by
+// its name is the one of the form's own name (read backwards, a ternary model was handed the int8 text under the
+// ternary name, and no local check said so)
+{
+  const every = { features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } };
+  const reads = (form) => /fn ternary_packed\(/.test(form.code) && /var<storage, read> b: array<u32>;/.test(form.code);
+  const ternary = devicePromptForms(every, true), others = devicePromptForms(every, false);
+  assert.ok(ternary.length > 0 && ternary.every((form) => form.ternary && / ternary$/.test(form.name) && reads(form)), "every tile of a ternary model unpacks its weights' codes (ternary_packed), under a name that says ternary");
+  assert.ok(others.length > ternary.length && others.every((form) => !form.ternary && !/ternary/.test(form.name) && !reads(form)), "no tile of another model reads ternary codes");
+  console.log(`shaders-catalogue-check: the ${ternary.length} tiles of a ternary model read codes, the ${others.length} of the others do not`);
+}
+
 // ---- ENGINE: the rows by name
 assert.deepEqual(Object.keys(ENGINE), [...new Set(rows.map((row) => row.name))], "ENGINE's names are the rows', in their order");
 for (const row of rows) assert.equal(ENGINE[row.name], row.shader, `ENGINE.${row.name} is the row's shader`);
