@@ -15,8 +15,8 @@
 //
 // THE ORDER IS THE KEY'S. A row moved, added or taken away changes the key of every device, which then chooses its
 // forms again and weighs a model on the GPU alone again (T148, T156), as a changed character of a text does. The order
-// is the one the key had before there was a catalogue (the makers of both values of subgroups together, T366): putting
-// each maker's rows together is for the deployment that changes the texts anyway (T379.2).
+// is: the texts, then each maker's rows together (T379.2, the deployment that changed the texts: until then the makers
+// of each value of subgroups stood together, as the key had walked them since T366).
 import { TERNARY_PACKED } from "./prompt.ts";
 import { QUANTIZE, WIDEN_SIX, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "./steps.ts";
 import { flashTile, flashVec, flashVecReduce } from "./attention.ts";
@@ -39,11 +39,10 @@ const EITHER = [false, true];
 /** every model's shaders */
 export const ENGINE_SHADERS = [
   ...texts({ RMSNORM, HEAD_NORM, ADD, ROPE, SWIGLU, QUANTIZE, LAYER_NORM, GELU, EMBED, EMBED_ROWS, SAMPLE, NORM_QUANTIZE, TOKEN_ROPE, WIDEN_SIX }),
-  ...EITHER.flatMap((subgroups) => [
-    ...EITHER.map((half) => made({ flashTile }, { headSize: 64, half, subgroups, wgSize: 32, kvTile: 8, minSubgroup: 4 })),
-    made({ flashVec }, { headSize: 64, subgroups, wgSize: 32, kvTile: 32, dSplit: 16 }),
-    made({ flashVecReduce }, { headSize: 64, subgroups, reduceSize: 32 }),
-    ...FUSED_INPUTS.flatMap((input) => FUSED_OUTPUTS.map((output) => made({ fusedMatVec }, { input, output, subgroups })))]),
+  ...EITHER.flatMap((subgroups) => EITHER.map((half) => made({ flashTile }, { headSize: 64, half, subgroups, wgSize: 32, kvTile: 8, minSubgroup: 4 }))),
+  ...EITHER.map((subgroups) => made({ flashVec }, { headSize: 64, subgroups, wgSize: 32, kvTile: 32, dSplit: 16 })),
+  ...EITHER.map((subgroups) => made({ flashVecReduce }, { headSize: 64, subgroups, reduceSize: 32 })),
+  ...EITHER.flatMap((subgroups) => FUSED_INPUTS.flatMap((input) => FUSED_OUTPUTS.map((output) => made({ fusedMatVec }, { input, output, subgroups })))),
   ...FUSED_OUTPUTS.map((output) => made({ fusedDp4aMatVec }, { output, weights: "int8" }))];
 /** T232: and those of a model of ternary weights alone, after them (its tiles: devicePromptForms' ternary). TERNARY_PACKED
  * is no shader but a piece of two of them, which the key has held as a text of its own since T232 */

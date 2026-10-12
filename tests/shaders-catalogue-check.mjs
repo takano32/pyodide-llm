@@ -27,18 +27,20 @@ const { ENGINE, ENGINE_SHADERS, TERNARY_SHADERS, deviceKey, devicePromptForms, .
 
 // ---- the order. A row: its name, and for a maker the choices it is given (what is no number), in the row's own order
 const said = ({ name, given }) => (given ? `${name}(${Object.entries(given).filter(([, value]) => typeof value !== "number").map(([key, value]) => `${key}=${value}`).join(", ")})` : name);
-const BY_SUBGROUPS = (subgroups) => [
-  `flashTile(half=false, subgroups=${subgroups})`, `flashTile(half=true, subgroups=${subgroups})`, `flashVec(subgroups=${subgroups})`, `flashVecReduce(subgroups=${subgroups})`,
-  ...["norm", "plain"].flatMap((input) => ["rope", "add", "swiglu", "write"].map((output) => `fusedMatVec(input=${input}, output=${output}, subgroups=${subgroups})`))];
+const EITHER = [false, true];
 const ORDER = {
   engine: ["RMSNORM", "HEAD_NORM", "ADD", "ROPE", "SWIGLU", "QUANTIZE", "LAYER_NORM", "GELU", "EMBED", "EMBED_ROWS", "SAMPLE", "NORM_QUANTIZE", "TOKEN_ROPE", "WIDEN_SIX",
-    ...BY_SUBGROUPS(false), ...BY_SUBGROUPS(true),
+    // (T379.2: each maker's rows together; within a maker subgroups is the outer choice)
+    ...EITHER.flatMap((subgroups) => EITHER.map((half) => `flashTile(half=${half}, subgroups=${subgroups})`)),
+    ...EITHER.map((subgroups) => `flashVec(subgroups=${subgroups})`),
+    ...EITHER.map((subgroups) => `flashVecReduce(subgroups=${subgroups})`),
+    ...EITHER.flatMap((subgroups) => ["norm", "plain"].flatMap((input) => ["rope", "add", "swiglu", "write"].map((output) => `fusedMatVec(input=${input}, output=${output}, subgroups=${subgroups})`))),
     "fusedDp4aMatVec(output=rope, weights=int8)", "fusedDp4aMatVec(output=add, weights=int8)", "fusedDp4aMatVec(output=swiglu, weights=int8)", "fusedDp4aMatVec(output=write, weights=int8)"],
   ternary: ["TERNARY_PACKED",
     "fusedDp4aMatVec(output=rope, weights=ternary)", "fusedDp4aMatVec(output=add, weights=ternary)", "fusedDp4aMatVec(output=swiglu, weights=ternary)", "fusedDp4aMatVec(output=write, weights=ternary)",
     "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_OUTLIERS", "TERNARY_COLUMNS"],
 };
-const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (T379.2 gathers such changes into one deployment). If that is meant, this list is to say the same";
+const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (such changes are gathered into one deployment, as T379.2 was). If that is meant, this list is to say the same";
 assert.deepEqual(ENGINE_SHADERS.map(said), ORDER.engine, `every model's shaders: ${moved}`);
 assert.deepEqual(TERNARY_SHADERS.map(said), ORDER.ternary, `a ternary model's shaders: ${moved}`);
 console.log(`shaders-catalogue-check: the rows are in the recorded order (${ENGINE_SHADERS.length} of every model, ${TERNARY_SHADERS.length} of a ternary model alone)`);
