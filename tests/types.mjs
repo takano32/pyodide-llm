@@ -25,18 +25,24 @@
 //     The pages' scripts have the same rule with a page's names in tests/page-modules-check.mjs (the .astro scripts
 //     are in no program of tsc's), and src/bench/'s JavaScript in tests/bench-modules-check.mjs.
 //
-// The count: every `any` that is written (and every @ts-expect-error, @ts-ignore), by file. Each step of T368 reports
-// it; none is refused here. An `any` is counted where it stands in a type (what blanking the types removes), so one
-// in a comment or a string is not.
+// The count: every `any` that is written (and every @ts-expect-error, @ts-ignore), by file. An `any` is counted where
+// it stands in a type (what blanking the types removes), so one in a comment or a string is not.
+// T473: no more of them than ANY_MOST (what T368 ended with). One more fails; where there are fewer, the line says to
+// lower ANY_MOST to what is there, so that what was won is kept.
+// And what else tells tsc to look away from a value, counted and held to nothing (T476, T477 and T479 are to bring
+// them down): the `!`s (a value said to be there: x!, and a `let x!: T`) and the casts (x as T, but for `as const`).
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parse } from "@babel/parser";
 import { namesOf } from "./names.mjs";
 import { typed, untyped } from "./untyped.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 export const PROGRAMS = ["tsconfig.page.json", "tsconfig.worker.json", "tsconfig.sw.json"];
+// T473: the most times `any` may be written in the TypeScript sources
+export const ANY_MOST = 46;
 
 // what a worker (and the page's main thread, for the two modules it runs too: kept.ts, updated.ts) has without
 // declaring it, as far as the runtime's files use it
@@ -66,6 +72,26 @@ export function anys(text, name) {
   return { any: written, off: (text.match(/@ts-(expect-error|ignore|nocheck)\b/g) ?? []).length };
 }
 
+/** how many times a TypeScript text says that a value is there (x!, let x!: T) and that it is of a type (x as T) */
+export function lookedAway(text) {
+  let sure = 0, cast = 0;
+  (function visit(node) {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (node.type === "TSNonNullExpression" || (node.type === "VariableDeclarator" && node.definite)) sure += 1;
+    if (node.type === "TSAsExpression" && !(node.typeAnnotation.type === "TSTypeReference" && node.typeAnnotation.typeName.name === "const")) cast += 1;
+    for (const [key, value] of Object.entries(node)) if (key !== "loc" && !key.endsWith("Comments")) visit(value);
+  })(parse(text, { sourceType: "module", plugins: ["typescript"] }).program);
+  return { sure, cast };
+}
+
+/** what the count of the anys says of the most there may be: { failed, line } (line: nothing to say when it is the most) */
+export function capped(written, most = ANY_MOST) {
+  if (written > most) return { failed: true, line: `any is written ${written} times, and ${most} is the most (tests/types.mjs's ANY_MOST): say the type, or unknown and narrow it` };
+  if (written < most) return { failed: false, line: `any is written ${written} times, fewer than the ${most} allowed: lower tests/types.mjs's ANY_MOST to ${written}` };
+  return { failed: false, line: "" };
+}
+
 /** every TypeScript source under a folder of the tree (no declaration file), as paths from the root */
 export function sources(folder = "src", tree = root) {
   return fs.readdirSync(path.join(tree, folder), { recursive: true }).map((name) => `${folder}/${name.split(path.sep).join("/")}`).filter(typed).sort();
@@ -83,7 +109,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     if (run.status !== 0) { failed = true; console.log(out); }
     console.log(`types: ${program}: ${run.status === 0 ? "ok" : `${errors} errors`} (${((performance.now() - began) / 1000).toFixed(1)} s)`);
   }
-  const files = sources(), counts = files.map((file) => ({ file, ...anys(fs.readFileSync(path.join(root, file), "utf8"), file) }));
+  const files = sources(), counts = files.map((file) => {
+    const text = fs.readFileSync(path.join(root, file), "utf8");
+    return { file, ...anys(text, file), ...lookedAway(text) };
+  });
   for (const file of files) for (const statement of typeOnlyImports(fs.readFileSync(path.join(root, file), "utf8"))) {
     failed = true;
     console.log(`types: ${file}: ${statement}\n    names types alone: write it \`import type { … }\` (Node would load the module for nothing, a bundler would not)`);
@@ -102,7 +131,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   console.log(`types: the runtime's ${sources("src/runtime").length} files use ${used.size} ambient names, each one of AMBIENT's ${AMBIENT.size}`);
   const total = (key) => counts.reduce((sum, count) => sum + count[key], 0);
   console.log(`types: ${files.length} TypeScript sources; any written ${total("any")} times (${counts.filter((count) => count.any).map((count) => `${count.file.replace(/^src\//, "")} ${count.any}`).join(", ") || "nowhere"}); ` +
-    `${total("off")} checks switched off by a comment`);
+    `${total("off")} checks switched off by a comment; ${total("sure")} values said to be there (!) and ${total("cast")} casts`);
+  const cap = capped(total("any"));
+  if (cap.failed) failed = true;
+  if (cap.line) console.log(`types: ${cap.line}`);
   console.log(failed ? "types: FAILED" : "types: ok");
   process.exit(failed ? 1 : 0);
 }

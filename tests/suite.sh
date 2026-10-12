@@ -48,10 +48,10 @@ page_modules() {
   node tests/imports-check.mjs
   # T368.1: the type check of what a browser runs (tsc --noEmit on three programs: the pages' scripts, the runtime's
   # TypeScript, the Service Worker as the JavaScript it is), that a type's import is said as one, and the count of the
-  # anys that are written; T368.8: and that a name a file of the runtime uses without declaring or importing it is an
-  # ambient name the runtime means (the one thing of a wrong name that tsc lets pass). Then the tool that says whether
-  # two builds are the same code (tests/dist-same.mjs, the proof of a step that only adds types) and what blanks a .ts
-  # file's types for the tools, on made-up builds and texts
+  # anys that are written (T473: no more than there are now); T368.8: and that a name a file of the runtime uses without
+  # declaring or importing it is an ambient name the runtime means (the one thing of a wrong name that tsc lets pass).
+  # Then the tool that says whether two builds are the same code (tests/dist-same.mjs, the proof of a step that only
+  # adds types) and what blanks a .ts file's types for the tools, on made-up builds and texts
   node tests/types.mjs
   node tests/dist-same-check.mjs
   # T368.2: the shapes that cross a line as plain objects are types (src/runtime/contracts/): what reads them for the

@@ -10,7 +10,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { compared, report, unhashed } from "./dist-same.mjs";
 import { typed, untyped } from "./untyped.mjs";
-import { AMBIENT, ambient, anys, typeOnlyImports } from "./types.mjs";
+import { AMBIENT, ambient, anys, capped, lookedAway, typeOnlyImports } from "./types.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const scratch = path.join(root, ".tmp/dist-same-check");
@@ -147,7 +147,12 @@ console.log("dist-same-check: two builds of one code are the same code; 11 diffe
   assert.deepEqual(ambient('import { a } from "./a.ts";\nimport type { T } from "./t.ts";\nlet own: T | Uint8Array;\nexport function f(given: T) {\n  for (const name of a) own = given;\n  return name + nowhere + fetch.length;\n}\n', "x.ts"),
     ["name", "nowhere", "fetch"]);
   assert.ok(AMBIENT.has("fetch") && !AMBIENT.has("name") && !AMBIENT.has("document"), "a worker's own names that the runtime means to use: not `name`, and nothing of a page");
+  // T473: the most anys there may be, and what else looks away (counted)
+  assert.deepEqual([capped(47, 46).failed, capped(46, 46), capped(40, 46).failed], [true, { failed: false, line: "" }, false]);
+  assert.match(capped(47, 46).line, /47 times, and 46 is the most/);
+  assert.match(capped(40, 46).line, /lower tests\/types\.mjs's ANY_MOST to 40/);
+  assert.deepEqual(lookedAway('let late!: number;\nconst a = b!.c!, d = e as unknown as F, g = ["x"] as const, h = i satisfies J;\nif (!a) f(k != l, "m!", m as string);\n'), { sure: 3, cast: 3 });
 }
-console.log("dist-same-check: a .ts text is blanked to the same length and lines; a type's import, a written any and an ambient name are found");
+console.log("dist-same-check: a .ts text is blanked to the same length and lines; a type's import, a written any, an ambient name, a `!` and a cast are found");
 fs.rmSync(scratch, { recursive: true, force: true });
 console.log("dist-same-check: ok");
