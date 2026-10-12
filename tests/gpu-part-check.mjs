@@ -526,6 +526,18 @@ console.log("ok: a request with no answer, a failure, an id outside the vocabula
   beaten.beside.ready();
   assert.match(await beaten.part.note, /^prompts on the CPU \(the CPU as \/benchmark\/ measured it \(1000000\.0 GB\/s\): /);
   assert.deepEqual([direct.verdict, lost.length], [{ key: "the key", cpu: direct.cpu }, 2], "the page is handed the verdict to keep");
+  // (T375.4, the review: a ternary model's CPU reads a quarter of an int8 model's bytes but is no faster for it, so the
+  // verdict counts its weights as int8's: the same size and speed of the CPU are the CPU's win for an int8 model and
+  // the GPU's for a ternary one, whatever packing the matrices say they are)
+  for (const [kind, group, cpuFaster] of [["int8", 32, true], ["ternary", 128, false]]) {
+    const packed = Object.fromEntries(["wq", "wk", "wv", "wo", "w1", "w2", "w3", "wcls"].map((name) => [name, { ...WEIGHTS[name], kind, group }]));
+    const verdict = { onLost: () => {}, size: 1e9, layerWeights: 1e9, cpu: { GBps: 2000 }, usage: { prompt: 0, written: 100 } };
+    const alone = made({ direct: verdict, weights: { ...packed, embedding: { ...WEIGHTS.embedding, kind, group } } });
+    alone.beside.ready();
+    await alone.part.note;
+    assert.equal(Boolean(verdict.verdict), cpuFaster, `${kind}: the same CPU reading is ${cpuFaster ? "faster" : "slower"} than a GPU step of 1 ms`);
+    await alone.part.release();
+  }
   const letGo = made({ direct: { onLost: (why) => lost.push(why) } });
   await letGo.part.release();
   assert.equal(lost.length, 2, "a model let go before its GPU was ready is not lost");
@@ -626,6 +638,11 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   assert.deepEqual([fitOf({}, ternaryOf, { gpuRoom: ternaryLayers }).unfit(), fitOf({}, ternaryOf, { gpuRoom: ternaryLayers - 1 }).unfit() === null], [null, false], "ternary layers on the GPU, to the byte");
   const table = 100 * 8 * 1.125, tokens = layers + table + SHAPE.seqLen * SHAPE.headSize * 4 + 3 * 100 * 4;
   assert.deepEqual([fitOf({}, {}, { gpuRoom: tokens }).tokensUnfit(), fitOf({}, {}, { gpuRoom: tokens - 1 }).tokensUnfit() === null], [null, false], "and the steps' tables with them");
+  // (T375.4, the review: and with ternary weights the classifier's table is a quarter of a byte a weight as well)
+  const ternaryTokensOf = { ...ternaryOf, wcls: { ...WEIGHTS.wcls, kind: "ternary", group: 128 }, embedding: { ...WEIGHTS.embedding, kind: "ternary", group: 128 } };
+  const ternaryTokens = ternaryLayers + 100 * 8 * 0.28125 + SHAPE.seqLen * SHAPE.headSize * 4 + 3 * 100 * 4;
+  assert.deepEqual([fitOf({}, ternaryTokensOf, { gpuRoom: ternaryTokens }).tokensUnfit(), fitOf({}, ternaryTokensOf, { gpuRoom: ternaryTokens - 1 }).tokensUnfit() === null], [null, false],
+    "the steps' tables of a ternary model, to the byte");
   assert.deepEqual([fitOf({ sharedClassifier: false }, {}, { gpuRoom: tokens + table }).tokensUnfit(), fitOf({ sharedClassifier: false }, {}, { gpuRoom: tokens + table - 1 }).tokensUnfit() === null], [null, false],
     "an embedding that is another table counts twice");
   // the vectors: the norms' weights always, the rest where the model has them
