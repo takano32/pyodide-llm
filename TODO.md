@@ -4288,6 +4288,38 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   - **覆す条件**: 次の毎晩の全部の組（`gpu-prompt.yml`）が FAILED になる、または出る行が run 38180674303 の形（上の (3)）から変わったとき、この判定を見直す。
 
 
+### T357.4 [整理][遠隔試験] 参照の道具 3 つの重なりを 1 つの骨組みに（`tests/reference.py`）— 状態: 進行中（2026-10-12、ブランチ `t357.4-reference-tools`。Opus medium。製品のコードには触らない。規模 中）
+- **分け方（孫タスクには分けていない: CI に出す単位が 1 つ）**: `tests/reference_llama.py`・`reference_qwen35.py`・`reference_lfm2.py` は同じ名前・同じ引数・同じ `.sh` の入口のまま。3 つが分け合うものを `tests/reference.py` に置き、道具ごとの違い（transformers のクラス、状態の種類、弱い誤りの一覧、モデルの一覧、引数、線の下限）を各道具に残す。コミットは「動かすだけ」（`differences()`・`relative()` を 1 字も変えずに）と「形を替える」（写しを 1 つに）を分ける。`reference_27b.py` は入れない。
+- **数えた写し（本線 cb097126 の木、3 つで 1881 行: 637・683・561）と、どうするか**:
+
+  | 写し | どこに | 写しどうしの違い | どうする |
+  |---|---|---|---|
+  | `differences()` | llama・qwen35（lfm2 は qwen35 から import） | 文は同じ。説明の「largest gap」「smallest gap」（計算は最大: llama の説明が正しい） | 1 つに（動かすだけの回） |
+  | `relative()` | qwen35（lfm2 が import） | — | 動かすだけ |
+  | 線「transformers 自身の 2 つの道の差の 10 倍、下限つき」 | 3 つに 6 か所（logits）と状態 | 下限が違う（作り物 1e-3・2e-3・2e-3、実物 1e-3、状態 1e-4）: 意味のある違い | 式を `line_of(floor, least)` の 1 つに。下限は呼ぶ側が今の値を渡す |
+  | 判定「線の内で、最尤トークンが同じか、違う所は参照の上位 2 つの差が差の 2 倍以内」 | 3 つに 10 か所 | 同じ式 | `within()` の 1 つに |
+  | 「エンジン 対 transformers」の行と判定 | 作り物 3・実物 3 | 実物の行だけ「上位 2 つの差」を言う | `held_to(…, gap=)` の 1 つに。文は同じ |
+  | logits の最小・最大・平均・標準偏差の 2 行 | 実物 3（と `large()`） | 頭の語だけ | `logits_said()` |
+  | エンジンを全位置に回す 1 行 | 12 か所 | 同じ | `engine_logits()` |
+  | 作り物を変換して float32 のエンジンに | 3 つに手書き | llama だけ語彙の数を config から（いつも 320）、書式を options から外すのは同じ | `made_up_engine()` の 1 つに（語彙と包みは `tests/made_up.py` の `unigram()`・`safetensors_file()`: 3 つの手書きと同じ文） |
+  | 実物を変換して float32 のファイルに置く | 3 つ | 答え手と項目が違う。llama だけ書いた後に写しを手放す | `float32_file()` の 1 つに（どれも手放す） |
+  | options を 1 行に（specials は数だけ） | 4 か所 | 同じ | `options_shown()` |
+  | transformers の 2 つの道（一度に・1 トークンずつ） | lfm2 の `both_ways()`、qwen35 は作り物と実物に手書き | qwen35 の実物だけ、一度にの後で秒の行を言う | `both_ways(model, ids, states_of)` の 1 つに |
+  | 状態の距離と判定（`state_distances()`・`compare_states()`） | qwen35・lfm2 | 状態の名前と種類が違う（意味のある違い）。**lfm2 だけ**: 種類の違う層は無限に遠い、NaN は線の外（`not x <= 線`）。qwen35 は `x > 線`（NaN を通す） | 種類 → 名前の表を持つ 1 つの物 `States` に。厳しいほう（lfm2）にそろえる |
+  | 長い文脈（1024 位置） | qwen35・lfm2 の `long_check()` | 位置の一覧（lfm2 は 1・2 も: 畳み込みのタップ）、qwen35 はモデルを読み直す、状態の線の比べが `>` と `not <=` | ID の並び・transformers の 1 回・エンジンの走りと判定を 1 つずつに。位置の一覧とモデルの読みは道具に残す |
+  | 取得の包み `fetch()` | llama（引数の順が別）・qwen35（lfm2 が import） | 引数の順と既定 | `fetch(name, directory, repo, revision, optional=False)` の 1 つに |
+  | 文 `TEXT` | llama（数と縮約入り: T254）・qwen35（lfm2 が import） | 2 つの文は別（意味のある違い） | qwen35 と lfm2 の文を `reference.py` に。llama は自分の文 |
+  | 終わりの 2 行（FAILED か、合った、と終了コード） | 5 か所 | 同じ | `ended()` |
+  | `--名前=値` を読む式 | 3 つ | 同じ | `option()` |
+  | 弱い誤りを入れて回して言う輪 | llama の中に 2 つ（`weak_errors()`・`unturned_faults()`）、lfm2 の `faults()` | llama の 2 つは同じ輪で、行に `mean` があるか（unturned だけ）と、見なくてよい誤りがあるか（weak だけ）。lfm2 は誤りごとにエンジンを作り直し、状態の物差しが別 | llama の 2 つを 1 つの輪に。lfm2 の輪は残す（下） |
+- **寄せないもの（予定）と訳**: (1) **llama の状態の物差し**（`engine_cache()`・`state_gap()`・`state_line()`: 層ごとに「その層の最大の値」に対する最大の差、どの層かも言う）と qwen35・lfm2 の物差し（状態の種類ごとのノルムの比）は別の式で、線の値がそれに合わせて決めてある: 1 つにすると線が動く。(2) **llama の transformers の走らせ方**（`logits_of()`: 保存の型のまま持ち、埋め込みを float32 にして渡す。1 トークンずつは先頭の 32 位置だけ）は別の形（落とし穴「参照を保存の型のまま持って…」）。(3) **`real()` の流れ**: トークナイザの突き合わせ・書式・greedy の文・項目の読み方が 3 つとも違う。流れを 1 つの関数にすると旗が並ぶので、段（変換・行・判定・長い文脈）だけを分け合う。(4) lfm2 の `faults()` の輪と 19 の壊し方、`large()`・`ByLayer`・`pinned()`・`theirs()`。(5) 作り物のモデルの作り方（transformers 自身のクラスと乱数: 参照として独立）。
+- **予定した違い（実装の前に書く）**。線の値・弱い誤りの一覧・比べる状態・終了コードは変えない。出る行で変わるのは 2 つ、判定で変わるのは 1 つ（厳しくなる側）:
+  1. **llama の `--weak` の誤りの行に `mean …,` が入る**（`unturned_faults()` の行と同じ形になる: 2 つの輪を 1 つにする。行の頭と終わり・判定は同じ）。
+  2. **qwen35 の実物の「transformers, N positions at once in X s」が「transformers, N positions at once and token by token in X s」になる**（lfm2 の行と同じ: 2 つの道を 1 回の `both_ways()` で回す。秒は 2 つの道の合計になる。判定には関わらない）。
+  3. **qwen35 の状態の判定が lfm2 と同じ厳しさになる**: NaN の距離は線の外（前は `x > 線` で NaN を通した: 落とし穴「NaN は線に引っかからない形で出る」）、エンジンと transformers で種類の違う層は無限に遠い（前はその場合に配列の形が合わず例外か、別の種類の状態と比べた）。正しいエンジンの数は変わらない。
+  4. 網の `python`: pytest の試験が増える（`tests/test_reference.py`）ので「新しい」と出る。ほかは「同じ」のはず。
+- **証明の予定**: (a) 動かすだけのコミットは消えた行と足された行を数える。(b) 手元: `torch`・`transformers` の代役（T357.3 の (1) の形: 道具を端から端まで回す。捨ての `.tmp/t357.4/`）で、3 つの道具の出す行を前後の木で比べる（時間を伏せる）。T374.4 の `ref_pin.py`（変換してエンジンに渡すチェックポイントと options）。骨組みの torch に依らない部品は pytest（`tests/test_reference.py`）。pytest 全部・軽い組・網。(c) CI: 3 つの道具を 1 回ずつ、本線の同じ道具の run と行を比べる。弱い誤りが全部落ちること。
+
 ### T345 [バグ][遠隔試験] SmolLM2 135M Instruct の固定値が今の項目と合わない — 状態: 完了（2026-10-09、レビュー済み: Sonnet low。2026-10-09、T268 の本番の確かめから。規模 小）
 - **結果（2026-10-09）**: 見立てのとおり。項目の書式を T252 のレビューの前の形（`CHATML`: BOS の `<|im_start|>` が 2 つ）に戻すと、手元の `fixed_outputs.py` が古い固定値の文「1. The new smartphone model: …」をそのまま書いて ok になる。今の書式（`CHATML_AFTER_START`、本物の `apply_chat_template` と同じ ID の列）では「The next popular item is a new type of smartwatch that combines the benefits of」（読める英語）。**固定値をこの文に替えただけ**で、エンジンも項目も触っていない。transformers との突き合わせは回せなかった（`reference_llama.sh` は safetensors か、語彙を原本から取る GGUF の項目だけ: この項目は GGUF だけの項目で 404、run 37887493509）。代わりの根拠は「古い書式 → 古い文、今の書式 → 今の文」の 2 つと、`format_check.py` の ID の一致（T252 のレビュー）。
   - **CI**: ブランチの `browsers.yml` は全部のジョブが成功（run 37887751841。固定値は 16 個とも ok、前の回に落ちた Windows ARM も通った）。
