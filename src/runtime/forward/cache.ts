@@ -19,17 +19,20 @@ import type { Room } from "./kinds.ts";
 export function keyValueCache({ room, k, kvDim, half, start, seqLen }: { room: Room; k: Kernels; kvDim: number; half: boolean; start: number; seqLen: number }) {
   // KV: the bytes of one position's keys in the cache; KF: in float32
   const KV = kvDim * (half ? 2 : 4), KF = kvDim * 4;
-  let layers = 0, capacity = 0, keys = 0, values = 0;
+  let layers = 0, capacity = 0, keys = 0, values = 0, placed = false;
   return {
     KV, half,
     /** count more layers keep their keys and values here: the first of their places (before place()) */
     hold(count: number) {
+      if (placed) throw new Error("The cache of the keys and values has its room already: a kind of layer takes its places as it is made.");
       const first = layers;
       layers += count;
       return first;
     },
     /** the cache takes its room: after everything else of the engine, for it grows where it is */
     place() {
+      if (placed) throw new Error("The cache of the keys and values has its room already.");
+      placed = true;
       capacity = start;
       keys = room.alloc(2 * layers * capacity * KV);
       values = keys + layers * capacity * KV;

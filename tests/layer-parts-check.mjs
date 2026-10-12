@@ -77,6 +77,8 @@ const S = 100000;
     cache.place();
     assert.deepEqual(room.taken, [[4096, 2 * 3 * 4 * KV]], "the keys and the values of three layers, four positions");
     assert.deepEqual([cache.capacity, cache.keys, cache.values], [4, 4096, 4096 + 3 * 4 * KV]);
+    assert.throws(() => cache.hold(1), /has its room already/, "no layer takes a place once the cache has its room (it would have none)");
+    assert.throws(() => cache.place(), /has its room already/, "and the cache takes its room once");
     // every byte of every layer's keys and values says whose it is, and is where it belongs after the cache grew twice
     const mark = () => {
       for (const [block, tag] of [[cache.keys, 10], [cache.values, 20]]) {
