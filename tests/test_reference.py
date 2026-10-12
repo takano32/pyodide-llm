@@ -190,14 +190,14 @@ class Words:
 
 
 class Counting:
-    """an engine whose logits are its position's, and whose states are what it is told"""
+    """an engine whose logits are its position's, in the one array it has for them, and whose states are what it is told"""
 
     def __init__(self, off=0.0):
-        self.off, self.ran = off, []
+        self.off, self.ran, self.buffer = off, [], np.zeros(3)
 
     def forward(self, token, pos):
         self.ran.append(pos)
-        self.buffer = np.array([float(pos), 2.0 * pos + 1 + self.off, 0.5])
+        self.buffer[:] = [float(pos), 2.0 * pos + 1 + self.off, 0.5]
         return self.buffer
 
 
