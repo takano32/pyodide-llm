@@ -1,7 +1,9 @@
 // forward/engine.ts (T349): createForward(), one model's forward pass: its memory after the checkpoint, its tensors,
-// the frames of the activations, the cache of the keys and values, the layers of every architecture, and the object
-// Python and the worker call. The software threads are threads.ts's and the GPU's side gpuside.ts's: each is handed
-// what it reads of this function. A module of src/runtime/forward.ts.
+// the frames of the activations, the round of the layers, and the object Python and the worker call. The software
+// threads are threads.ts's and the GPU's side gpuside.ts's: each is handed what it reads of this function. T375.3:
+// what a layer does is its kind's (kinds.ts's table: attention.ts, linear.ts, convolution.ts), the FFN is ffn.ts's and
+// the cache of the keys and values cache.ts's: each is chosen or made here once, and a token's path calls what it gave.
+// A module of src/runtime/forward.ts.
 
 import { BATCH, addressed, runner } from "../jobs.ts";
 import { GPU_BLOCK, GPU_TOKENS } from "./choice.ts";
