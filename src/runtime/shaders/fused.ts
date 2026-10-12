@@ -17,7 +17,7 @@
  */
 import { GROUP, STEP } from "./common.ts";
 import { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
-import { SCALE_WORD, PACKED, ROW_RMS, NORM } from "./steps.ts";
+import { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT } from "./steps.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.ts";
 import type { Packing } from "./common.ts";
 
@@ -360,7 +360,7 @@ ${fusedWrite(output)}
 // number; here a value is weight × (s × x), so a NaN of x, of the sum of x² or of the weight, and an infinity of x,
 // whose s is 0 and 0 × inf a NaN).
 export const NORM_QUANTIZE = /* wgsl */ `
-${NORM}
+${NORM_STRUCT}
 ${STEP}
 @group(0) @binding(0) var<storage, read> x: array<f32>;
 @group(0) @binding(1) var<storage, read> weight: array<f32>;
@@ -369,7 +369,7 @@ ${STEP}
 @group(0) @binding(4) var<uniform> norm: Norm;
 @group(0) @binding(5) var<uniform> step: Step;
 var<workgroup> partial: array<f32, 64>;
-${PACKED}
+${PACKED_WORD}
 ${SCALE_WORD}
 @compute @workgroup_size(64)
 fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u32) {

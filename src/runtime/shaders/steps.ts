@@ -71,7 +71,7 @@ import { GROUP, STEP } from "./common.ts";
 // The cost: a value's AND and integer max where its abs and float max were (the abs is a source modifier on most
 // devices, so one instruction a value more: 32 a group), and a comparison, an OR and a select a group of 32.
 // (T379.2) four int8 of a vec4<i32> as the bytes of a u32, the first in the lowest: QUANTIZE's and NORM_QUANTIZE's
-const PACKED = /* wgsl */ `fn packed(v: vec4<i32>) -> u32 {
+const PACKED_WORD = /* wgsl */ `fn packed(v: vec4<i32>) -> u32 {
   let b = bitcast<vec4<u32>>(v) & vec4<u32>(0xffu);
   return b.x | (b.y << 8u) | (b.z << 16u) | (b.w << 24u);
 }`;
@@ -88,7 +88,7 @@ ${STEP}
 @group(0) @binding(2) var<storage, read_write> xs: array<u32>;       // a scale's bits (scale_word, T241)
 @group(0) @binding(3) var<uniform> quantize: Quantize;
 @group(0) @binding(4) var<uniform> step: Step;
-${PACKED}
+${PACKED_WORD}
 ${SCALE_WORD}
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id: vec3u) {
@@ -237,7 +237,7 @@ const ROW_RMS = /* wgsl */ `  var squares = 0.0;
 ${PARTIAL_SUM}
   let s = 1.0 / sqrt(partial[0] / f32(norm.size) + norm.eps);`;
 // the Norm of LAYER_NORM and NORM_QUANTIZE (RMSNORM's has the rows before the dispatch's first as its fourth word)
-const NORM = /* wgsl */ `struct Norm { size: u32, at: u32, eps: f32, unused: u32 }`;
+const NORM_STRUCT = /* wgsl */ `struct Norm { size: u32, at: u32, eps: f32, unused: u32 }`;
 const rmsNorm = (inPlace: boolean) => /* wgsl */ `
 struct Norm { size: u32, at: u32, eps: f32, first: u32 }
 ${STEP}
@@ -264,7 +264,7 @@ export const HEAD_NORM = rmsNorm(true);
 // ADD (kernel_norm_mul_add_f32: (y * scale) * f0 + f1, y = x - mean, the rounding in the same order as here and as the
 // CPU's kernel); both are this layer's, from float at.
 export const LAYER_NORM = /* wgsl */ `
-${NORM}
+${NORM_STRUCT}
 ${STEP}
 @group(0) @binding(0) var<storage, read> x: array<f32>;
 @group(0) @binding(1) var<storage, read> weight: array<f32>;
@@ -370,9 +370,9 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
 }`;
 
 // SwiGLU: gate = silu(gate) * up, for every token (the second dimension of the dispatch)
-const SIZE = /* wgsl */ `struct Size { n: u32, unused0: u32, unused1: u32, unused2: u32 }`;  // (SWIGLU's and GELU's uniform: the width)
+const SIZE_STRUCT = /* wgsl */ `struct Size { n: u32, unused0: u32, unused1: u32, unused2: u32 }`;  // (SWIGLU's and GELU's uniform: the width)
 export const SWIGLU = /* wgsl */ `
-${SIZE}
+${SIZE_STRUCT}
 ${STEP}
 @group(0) @binding(0) var<storage, read_write> gate: array<f32>;
 @group(0) @binding(1) var<storage, read> up: array<f32>;
@@ -392,7 +392,7 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
 // has it). Changed: the element is the dispatch's x and the token its y (as SWIGLU); the bias of the projection before
 // it is ADD's, as llama.cpp adds it (the CPU's gelu kernel adds it itself: the same sum, v + b, rounded once)
 export const GELU = /* wgsl */ `
-${SIZE}
+${SIZE_STRUCT}
 ${STEP}
 @group(0) @binding(0) var<storage, read_write> gate: array<f32>;
 @group(0) @binding(1) var<uniform> size: Size;
@@ -406,4 +406,4 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
   gate[at] = 0.5 * v * (1.0 + tanh(clamp(0.7978845608028654 * (v + 0.044715 * v * v * v), -9.010913, 9.010913)));
 }`;
 
-export { SCALE_WORD, PACKED, ROW_RMS, NORM };
+export { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT };
