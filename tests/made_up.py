@@ -310,7 +310,7 @@ def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
     outliers (T226): that many weights of the final norm are 12 (GPT-2's are 12 to 17 times the others, T92), so that
     the engine takes their channels apart in the classifier (llama2_numpy.outlier_channels), at channels 0, spread,
     2 spread, ... (mod dim: the T232 review's spread of 37 puts some in every group of 128 of a dim of 256).
-    calm (T226's review): the layers' matrices at 0.1 and the norms' weights 1 +- 0.3, see the head of gpu-check.mjs.
+    calm (T226's review): the layers' matrices at 0.1 and the norms' weights 1 +- 0.3, see the head of gpu-check/models.mjs.
     ternary (T232): every group of 128 along a row of a matrix keeps the signs of its larger values (about two thirds)
     times one scale of its own, the rest are 0 (ternarized()'s, below), which the ternary dtype stores as they are."""
     rng = np.random.default_rng(seed)

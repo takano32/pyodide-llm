@@ -146,7 +146,7 @@ try {
     // and give the GPU every block it can take (always: a fallback adapter is far slower than the CPU). T155: the
     // case's own (the pieces of its matrices)
     const TESTS = { fallback: true, always: true, ...c.force };
-    // T241's review: whether this browser puts a NaN in this model's rows and values (NAN_ROUNDS, and why, are above)
+    // T241's review: whether this browser puts a NaN in this model's rows and values (NAN_ROUNDS; models.mjs says why)
     const nan = NAN_ROUNDS.models === "all" || (NAN_ROUNDS.models === "made-up" ? c.id.startsWith("synthetic") : NAN_ROUNDS.models.includes(c.id));
     // the seconds the NaN rounds take in this model's runs (the log's "seconds of the NaN rounds of <model>"): rows and
     // values (T241), the NaN-logits round (T219), the block through forward.js (T243), the weights (T241)
@@ -159,7 +159,7 @@ try {
         nanSeconds[round] += (performance.now() - began) / 1000;
       }
     };
-    // T152: the steps of a generation (see the head of this file), where the GPU took them
+    // T152: the steps of a generation (see the head of steps.mjs), where the GPU took them
     const generation = (engine) => {
       // (T152's review: and the most this adapter binds, which a classifier may pass, Llama 3.2 1B's 262.7 MB on lavapipe's 128 MiB)
       if (!engine.tokenBlock) return { why: engine.gpuTokensWhyNot ?? "the GPU took no steps", planned: engine.gpuTokensPlanned,

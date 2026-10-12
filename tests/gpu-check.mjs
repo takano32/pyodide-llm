@@ -4,7 +4,7 @@
 //
 //   node tests/gpu-check.mjs [model id | synthetic | made-up ...] [--engine chromium|chrome|msedge] [--forms <part,part>]
 //   node tests/gpu-check.mjs ... --engine dawn --webgpu <the npm package webgpu's directory>
-//   ... [--nan all|made-up|small|none]   (T241's review: where the rounds with a NaN or an infinity run; see NAN_CHOICES)
+//   ... [--nan all|made-up|small|none]   (T241's review: where the rounds with a NaN or an infinity run; see gpu-check/models.mjs's NAN_CHOICES)
 //
 // T147: --engine dawn runs the same in Node on Dawn (the npm package webgpu, not a dependency of this project: install
 // it under .tmp/) with the Vulkan of the machine, Mesa's lavapipe on the development machine: shader-f16 and subgroups,
@@ -22,11 +22,11 @@
 //   - the GPU took every token of the prompt (gpuTokens), the same again from position 0, and a block that begins
 //     past the keys and values it holds went to the CPU;
 //   - the keys and values it wrote back into the cache, against NumPy's: the worst row (a layer's keys or values of
-//     one position) no more than the line of the shader's arithmetic (GPU_LINE and the next, see there);
+//     one position) no more than the line of the shader's arithmetic (GPU_LINE and the next, see gpu-check/lines.mjs);
 //   - T147: a request forward.js gave up on (a GPU that answers late) writes nothing (the made-up model only);
-//   - T187: the scale of the first layer's keys and values against NumPy's (SCALE_LINE, see there);
+//   - T187: the scale of the first layer's keys and values against NumPy's (SCALE_LINE, see gpu-check/lines.mjs);
 //   - the logits of the prompt's last token (the CPU's in both runs, on the GPU's keys and values in one): NumPy's
-//     most likely token or a near tie (their KL divergence from NumPy's is printed, not held to a line: see there).
+//     most likely token or a near tie (their KL divergence from NumPy's is printed, not held to a line: see lines.mjs).
 //
 // T357.3: this file is the window: the arguments, and the run from the models to the exit. Its parts are in
 // tests/gpu-check/: models.mjs (the made-up models, what each is for, and which an engine runs), lines.mjs (the numbers
@@ -52,7 +52,7 @@ const webgpu = option("--webgpu", "");
 // T241's review: where the rounds with a NaN or an infinity run (models.mjs's NAN_CHOICES, and why)
 const nanRounds = NAN_CHOICES[option("--nan", { dawn: "made-up", chromium: "small" }[engine] ?? "none")] ?? NAN_CHOICES.none;
 // the models to check: by default every made-up one and the site's three; "made-up" stands for every made-up one (T193:
-// gpu-prompt.yml's suites name them so, and a made-up model added above joins them)
+// gpu-prompt.yml's suites name them so, and a made-up model added to models.mjs's SYNTHETIC joins them)
 const madeUp = madeUpOn(engine);
 const ids = (args.length ? args : ["made-up", "stories15M", "tiny-lm", "llm-jp-3-150m"])
   .flatMap((id) => (id === "made-up" ? madeUp : [id]));

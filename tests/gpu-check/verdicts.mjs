@@ -119,7 +119,7 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
     if (gpu.past?.gpuTokens !== 0) failures.push(`a block past the GPU's keys and values went to the GPU (${gpu.past?.gpuTokens} tokens)`);
     const kind = /DP4A/.test(gpu.form ?? "") ? "packed" : /f16/.test(gpu.form ?? "") ? "f16" : "float32";
     // T187: the packed shaders' first layer and scale against Q8, their own arithmetic, and all their layers against
-    // NumPy's by Q8's distance from it (see the lines); the others against NumPy's
+    // NumPy's by Q8's distance from it (see lines.mjs); the others against NumPy's
     const packed = kind === "packed", [firstStick, name] = packed ? [eight, "Q8"] : [exact, "NumPy's"];
     const shaderLine = kind === "f16" ? HALF_LINE : GPU_LINE;
     // T187: a line a layer (the review: the largest of all layers against the largest of E16's or Q8's let a deep

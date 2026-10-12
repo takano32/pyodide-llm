@@ -96,7 +96,7 @@ async function referencePython() {
   const { pyodide: py } = await pyodideWithEngine();
   py.runPython(PYTHON);
   // the made-up models are tests/made_up.py's quantized() (T357.2: the maker the unit tests have, laid out by the engine's
-  // rows): SYNTHETIC's forms below are its arguments
+  // rows): the forms of models.mjs's SYNTHETIC are its arguments
   py.FS.writeFile("made_up.py", fs.readFileSync(path.join(root, "tests", "made_up.py")));
   py.runPython("import made_up");
   return py;

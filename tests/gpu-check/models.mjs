@@ -29,7 +29,7 @@
 // multiplies the size of a vector by 8 × 0.3 = 2.4, or 8 × 0.1 = 0.8: on the others the 8-bit rounding of an
 // activation grows from layer to layer (Q8 of the made-up GPT-2's keys and values, 1.1e-2, 5.1e-2 and 7.9e-2 at layers
 // 0 to 2), and the packed shaders' line, K_PACKED × Q8, lay above the distance of a GPU that reads another layer's
-// vector. NumPy's own answers (this file's references, the layers' vectors taken from layer 0 in every layer, 149
+// vector. NumPy's own answers (reference.mjs's answers, the layers' vectors taken from layer 0 in every layer, 149
 // positions; TODO.md's T226) put such a GPU at 0.4 to 3.8 of the DP4A line on the made-up GPT-2, 0.4 to 6.9 on
 // GPT-NeoX, 0.4 to 2.1 on Qwen2 and 0.3 to 1.2 on Qwen3 (a float form's 3.7 to 111), and on the calm ones at 4.8 and
 // more on GPT-2 and 9.2 and more on the Qwen, but for the vectors of q alone (q's bias and norm change the attention's
