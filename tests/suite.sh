@@ -224,6 +224,11 @@ part "an LFM2 where a GPU adapter is" lfm2_stays_on_the_cpu
 # for Dawn that gives no device: NumPy's answers, the plans, the server, the worker threads, the harness's runs on the
 # CPU, the verdicts and the tables, on three made-up models. No shader runs (about ten seconds, Pyodide's start)
 part "the GPU's check without a GPU" node tests/gpu-check-dry-check.mjs
+# T357.4: the three tools that hold the engine to transformers in CI (tests/reference_llama.py, reference_qwen35.py,
+# reference_lfm2.py), run from their arguments to their exit with stand-ins for torch and transformers that answer with
+# the engine itself: the made-up models, the conversions, the lines, the states, the long text, every fault, and that a
+# transformers the engine is not within the line of is said to be so. Nothing is held to transformers (about 20 seconds)
+part "the reference tools without torch" python tests/reference_dry.py
 # T217 (the review of T201): attention's softmax where its largest score decides something (two positions far above
 # the rest): a largest that leaves positions out, which forward-check's line cannot see (under a second)
 part "attention's largest score" node tests/attention-check.mjs
