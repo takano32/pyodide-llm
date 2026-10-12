@@ -1,6 +1,7 @@
 // tests/imports.mjs (T367.1): how a file of the runtime takes its neighbours' names, read in either of the two forms.
-// The one reader of the checks that read the imports as text (worker-source.mjs, shaders-source.mjs and the five
-// *-modules-check.mjs): each asked its own regular expressions before, and all of them knew one form only.
+// The one reader of the checks that read the imports as text (worker-source.mjs, shaders-source.mjs and the
+// *-modules-check.mjs of forward, the two GPU workers and, through those two, the worker and the shaders): each asked
+// its own regular expressions before, and all of them knew one form only.
 //
 // The form of a tree where each file is fetched as it is (public/): a module reads a neighbour with its own ?v=, so
 // that all of a page's files are of one deployment (GitHub Pages keeps a file for ten minutes), and a window asks for

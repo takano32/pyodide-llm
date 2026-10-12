@@ -16,7 +16,7 @@
 //     answered nowhere, and a device lost before or during the work read as it is then: failed, and said.
 // Not here, because their work is checked against JavaScript by a device that computes: forms.js, tokens.js,
 // tokenattention.js, tokenforms.js (m.forms and m.tokens are made after checks pass) and start.js.
-// tests/gpu-modules-check.mjs holds their names. Node only, under a second:
+// The type check holds their names (tests/types.mjs), tests/gpu-modules-check.mjs their owners. Node only, under a second:
 //
 //   node tests/gpu-worker-parts-check.mjs
 import assert from "node:assert/strict";

@@ -11,8 +11,8 @@
 //   runWorker(context)   runs them all; the worker's top level is the context's afterwards
 //
 // What this does not see, since it takes the imports out: a module that uses a name it does not import (a global here,
-// a ReferenceError in a browser) and the wait for the modules at the head of worker.js. tests/worker-modules-check.mjs
-// reads the names; the wait is seen by the browsers alone (tests/e2e.mjs).
+// a ReferenceError in a browser) and the wait for the modules at the head of worker.js. The type check says the names
+// (tests/types.mjs: tsc, and its rule for the ambient ones); the wait is seen by the browsers alone (tests/e2e.mjs).
 // What it does see and says: an import of a name the other file does not export, a module of the folder that the worker
 // does not ask for (or one it asks for that is not there), an import in a form tests/imports.mjs does not know.
 import fs from "node:fs";

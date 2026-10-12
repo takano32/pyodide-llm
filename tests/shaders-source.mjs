@@ -10,8 +10,9 @@
 //   oneSource(tree)       the modules as the one module they were: each part's statements in the window's order, the
 //                         lines that take a neighbour's names and the lists that hand them out left out. The names a
 //                         part takes are then the declarations of the parts before it, by the same names, so this is
-//                         what a bundler makes of them. (That every name taken is exported where it is taken from, and
-//                         that the window's order has each part after those it takes from, is shaders-modules-check's.)
+//                         what a bundler makes of them. (That every name taken is exported where it is taken from is the
+//                         type check's, and that the window's order has each part after those it takes from,
+//                         shaders-modules-check's.)
 //
 // tree: tests/tree.mjs's (this tree's by default; treeOf(<tests/other-tree.mjs's folder>) for another commit's). The
 // lines that take a neighbour's names are read by tests/imports.mjs, in the form the tree has: awaited imports with the

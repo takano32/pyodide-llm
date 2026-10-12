@@ -1,26 +1,27 @@
-// tests/page-modules-check.mjs (T355): the names that the model page's script uses, in src/pages/index.astro and in its
-// modules (src/page/*.ts); and (T353) the same of /benchmark/'s script, in src/pages/benchmark.astro and src/benchmark/*.ts.
-//
-// The build takes the types off and bundles: it does not say that a name is declared nowhere (a ReferenceError in the
-// browser, at the moment the line runs), and no test opens the page outside CI's browsers. So this reads the script
-// and each module as the module it is, and holds
-//   1. every name it uses to one of: declared in the file, imported by it, a global of a page listed below;
-//   2. the imports to a graph without a ring (the build links one without a word), in which the script reaches every
-//      file of src/page/;
-//   3. (T378.5) what the parts hold to its owner: the modules that own the page's state (OWNERS, below) each declare
-//      their own `export let`s, which the others read by the name they import (a live binding: the page's script is
-//      bundled, and src/'s imports are static) and never set. So no imported name is assigned (a TypeError in a
-//      browser, at the moment the line runs: the build says nothing), none is hidden by a local of the same name (the
-//      lines below it read the local, without a word: T367.4's pitfall), and no name is declared at the top of two
-//      modules of one page (which of the two a reader means is then a matter of an import's line). The owners read
-//      nothing of a page, so that Node can import them (tests/page-parts-check.mjs), and the one object the parts
-//      shared (`page`, of state.ts) is not back.
-// T367.5: that a name imported is exported by the file it names was held here too; the build says it now, as an error
-// (MISSING_EXPORT: the page's script is bundled like the workers'), and it is gone from here.
-// Node only, under a second:
+// tests/page-modules-check.mjs (T355): what the type check does not hold of the model page's script, in
+// src/pages/index.astro and in its modules (src/page/*.ts); and (T353) the same of /benchmark/'s script, in
+// src/pages/benchmark.astro and src/benchmark/*.ts. Node only, under a second:
 //
 //   node tests/page-modules-check.mjs
 //
+// T368.8: the modules are TypeScript, and tsc (tests/types.mjs) says a name of theirs that is declared nowhere and an
+// imported name that is assigned (TS2632; in a page's own script, which tsc does not read, the build refuses the
+// assignment). What is left here is what tsc, the build and Node all let pass, each with why:
+//   1. every name a file uses is declared in it, imported by it, or a global of a page listed below. The script inside
+//      a .astro page is in no program of tsc's, and the build bundles a name that is nowhere without a word (a
+//      ReferenceError in the browser, at the moment the line runs; nothing opens the page outside CI's browsers). And
+//      in the modules tsc takes for the page's own a name that a page has (prompt, open, status, name, …): a forgotten
+//      import of dom.ts's prompt is window.prompt to it;
+//   2. the imports go round nowhere (the build links a ring without a word), and the script reaches every file of the
+//      folder;
+//   3. (T378.5) what the parts hold has owners: the modules that own the page's state (OWNERS, below) each declare
+//      their own `export let`s, which the others read by the name they import and never set. No imported name is
+//      hidden by a local of the same name (the lines below it read the local, without a word: T367.4's pitfall), and
+//      no name is declared at the top of two modules of one page (which of the two a reader means is then a matter of
+//      an import's line). The owners read nothing of a page and import no other part, so that Node can import them
+//      (tests/page-parts-check.mjs runs what it calls, and no more); every function of an owner is called by another
+//      part (an event nobody says is a state that stays as it was); opening.ts runs before any part that reads the
+//      model as it loads; and the one object the parts shared (`page`, of state.ts) is not back.
 // The types come off with esbuild (with Node's own stripTypeScriptTypes for 3., which renames nothing) and the parser
 // is @babel/parser; npm ci installs both for Astro.
 // What it does not see: what the page does (tests/e2e.mjs, in CI's browsers).
@@ -30,7 +31,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformSync } from "esbuild";
 import { parse } from "@babel/parser";
-import { namesOf } from "./worker-modules-check.mjs";
+import { namesOf } from "./names.mjs";
 import { stripTypeScriptTypes } from "node:module";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -127,10 +128,7 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) for (const [PAGE
   // import another name (model2), and the line that reads the wrong one would pass)
   const names = new Map([...files].map(([name, { text }]) => [name, namesOf(written(text))]));
   let taken = 0;
-  for (const [name, { imported, set, inner }] of names) {
-    const written = imported.filter((one) => set.has(one));
-    assert.deepEqual(written, [], `${name} assigns ${written.join(", ")}, which it imports: only the module that declares a variable sets it ` +
-      "(a TypeError in a browser; say what happened to a function of the owner instead)");
+  for (const [name, { imported, inner }] of names) {
     const hidden = imported.filter((one) => inner.has(one));
     assert.deepEqual(hidden, [], `${name} declares ${hidden.join(", ")} inside a function, and imports the same name: the lines below read the local one`);
     taken += imported.length;
@@ -182,5 +180,5 @@ if (import.meta.url === new URL(process.argv[1], "file:").href) for (const [PAGE
     assert.ok(order.indexOf(`${FOLDER}/opening.ts`) < order.indexOf(name), `${name} reads the model and runs before opening.ts says which one the visit opens with`);
   }
   console.log(`page-modules-check: ${lets.length} variables of ${OWNERS[FOLDER].join(" and ")}, each set by its own module alone; ` +
-    `${taken} names imported in ${FOLDER}/, none assigned or hidden by a local; no top-level name twice; ${events.length} events, each said somewhere`);
+    `${taken} names imported in ${FOLDER}/, none hidden by a local; no top-level name twice; ${events.length} events, each said somewhere`);
 }
