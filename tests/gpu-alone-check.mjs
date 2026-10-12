@@ -12,6 +12,7 @@
 //   node tests/gpu-alone-check.mjs [--forward <another forward.js, to see a broken one fail>]     (PYTHON=.venv/bin/python)
 import assert from "node:assert/strict";
 import path from "node:path";
+import { workers, endedThen, READY } from "./fakes/worker.mjs";
 import { plans } from "./plans.mjs";
 import { runtime, runtimeUrl } from "./tree.mjs";
 
@@ -31,31 +32,23 @@ console.warn = () => {};
 function made(direct, plan = planOf(p), size = p.size, gpuForce = {}) {
   const memory = new WebAssembly.Memory({ initial: Math.ceil((CONTROL_BYTES + size) / PAGE) + 64, maximum: Math.ceil((CONTROL_BYTES + size) / PAGE) + 64, shared: true });
   const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
-  const beside = { ctl, spawned: 0, ended: 0, kernels: 0, posted: [], lost: [] };
+  const beside = { ctl, spawned: 0, ended: 0, kernels: 0, lost: [] };
   const spawn = (data) => {
     beside.spawned += 1;
     beside.started = data;
     return Promise.resolve({ terminate() { beside.ended += 1; } });
   };
   // the GPU's worker: ready as soon as it is started (with a generation's steps), and every request answered at once
-  const gpu = () => {
-    let listen, ids;
-    return { set onmessage(handler) { listen = handler; }, set onerror(handler) {}, terminate() {},
-      postMessage(data) {
-        beside.posted.push(data);
-        if (data.type === "start") {
-          ids = data.plan.tokens?.ids;
-          queueMicrotask(() => listen({ data: { type: "ready", adapter: "a stand-in", bytes: 1e6, seconds: 0.1, form: "tiles", attention: "flash", key: "k", forms: [],
-            blocks: [{ count: 16, ms: 1 }, { count: 64, ms: 2 }], tokens: { form: "fused", attention: "vec", ms: 1, forms: [] } } }));
-        } else if (data.type === "stop") {
-          queueMicrotask(() => listen({ data: { type: "ended" } }));
-        } else {
-          if (data.type === "tokens") new Int32Array(memory.buffer, ids, 2 + GPU_TOKENS).set([data.count, ...Array.from({ length: GPU_TOKENS }, (_, i) => 10 + i), 0]);
-          Atomics.store(ctl, GPU_FAILED, 0);
-          Atomics.store(ctl, GPU_DONE, data.serial);
-        }
-      } };
-  };
+  const { factory: gpu, posted } = workers({ answer: endedThen((data, worker) => {
+    if (data.type === "start") {
+      queueMicrotask(() => worker.say(READY({ blocks: [{ count: 16, ms: 1 }, { count: 64, ms: 2 }], tokens: { form: "fused", attention: "vec", ms: 1, forms: [] } })));
+    } else {
+      if (data.type === "tokens") new Int32Array(memory.buffer, worker.posted[0].plan.tokens?.ids, 2 + GPU_TOKENS).set([data.count, ...Array.from({ length: GPU_TOKENS }, (_, i) => 10 + i), 0]);
+      Atomics.store(ctl, GPU_FAILED, 0);
+      Atomics.store(ctl, GPU_DONE, data.serial);
+    }
+  }) });
+  beside.posted = posted;
   // kernels that do nothing, counted: none is called for a model on the GPU alone once it is made
   // (finite_f16 says yes: what the GPU wrote back is looked at by that kernel, and a stand-in that writes nothing wrote zeros)
   const wrap = () => new Proxy({}, { get: (_, name) => () => { beside.kernels += 1; return name === "finite_f16" ? 1 : 0; } });

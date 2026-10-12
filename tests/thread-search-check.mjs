@@ -23,6 +23,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { tokenClock } from "./fakes/token-clock.mjs";
+import { workers, READY } from "./fakes/worker.mjs";
 import { plans as plansFor } from "./plans.mjs";
 import { runtime, runtimeUrl } from "./tree.mjs";
 
@@ -261,10 +262,9 @@ if (args.includes("--table")) {
   console.info = () => {};  // forward.js's lines about the GPU
   /** an engine with a GPU getting ready; ready(): the GPU's worker says it is; write(n): n tokens with logits */
   async function withGpu({ remembered = 0 } = {}) {
-    let engine = null, said = null, isReady = false, pos = 0;
+    let engine = null, isReady = false, pos = 0;
     const clock = tokenClock(() => (isReady ? ANDROID : BESIDE)[engine.threads] ?? 30);
-    const gpu = () => ({ postMessage: (data) => { if (data.type === "stop") said({ data: { type: "ended" } }); },
-      set onmessage(f) { said = f; }, set onerror(f) {}, terminate() {} });
+    const gpus = workers({ answer: (data, worker) => { if (data.type === "stop") worker.say({ type: "ended" }); } }), gpu = gpus.factory;
     engine = createForward({ memory: int8Memory, base: CONTROL_BYTES, size: bytes, kernels: { plain: empty, relaxed: null, wide: false }, plan: int8Plan, spawn, clock, gpu,
       wrap: () => new Proxy({}, { get: (_, name) => (name === "then" ? undefined : () => 0) }) });
     assert.equal(engine.gpuWhyNot, null, "the made-up model is one the GPU takes");
@@ -272,7 +272,7 @@ if (args.includes("--table")) {
     await engine.findThreads({ from: 8, remembered, chose: (count) => told.push(count) });
     const ready = () => {
       isReady = true;
-      said({ data: { type: "ready", adapter: "made up", key: "k", bytes: 1, seconds: 0, form: "made up", attention: "made up", forms: [], remembered: false, blocks: [] } });
+      gpus.made[0].say(READY());
     };
     const write = async (tokens) => {
       for (let t = 0; t < tokens; t++, pos = (pos + 1) % seqLen) {

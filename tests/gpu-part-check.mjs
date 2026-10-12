@@ -21,6 +21,7 @@
 //
 //   node tests/gpu-part-check.mjs        (Node only, about a second)
 import assert from "node:assert/strict";
+import { workers } from "./fakes/worker.mjs";
 import { runtimeUrl } from "./tree.mjs";
 
 const { gpuSide, gpuFit } = await import(runtimeUrl("forward/gpuside.js"));
@@ -54,49 +55,44 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
   const memory = new WebAssembly.Memory({ initial: 2, maximum: 2, shared: true });
   const control = controlArea({ memory, sharedMemory: true, stalledMs });
   const words = new Int32Array(memory.buffer, IDS, 2 + GPU_TOKENS), halves = new Uint16Array(memory.buffer);
-  const beside = { memory, ctl: control.ctl, now: 1000, made: 0, posted: [], terminated: 0, worker: null, ran: [], grown: [], embedded: [], staged: [], views: 0,
+  const beside = { memory, ctl: control.ctl, now: 1000, ran: [], grown: [], embedded: [], staged: [], views: 0,
     finite: true, capacity: 256, cpuMs: 1, gpuMs: (count) => 4 + count / 16, stepMs: 1, threads: { count: 1, searching: false },
     // what the stand-in GPU answers a request with: silent (no answer), failed, ended (says "ended" after a stop), and
     // for the steps: sampled (how many, by default all asked), ids (by default 500 + position), notFinite
     answer: { silent: false, failed: false, ended: true } };
-  const factory = () => {
-    beside.made += 1;
-    const worker = { handlers: {},
-      set onmessage(handler) { this.handlers.message = handler; },
-      set onerror(handler) { this.handlers.error = handler; },
-      say(data) { this.handlers.message({ data }); },
-      terminate() { beside.terminated += 1; },
-      postMessage(data) {
-        beside.posted.push(data);
-        const { answer } = beside;
-        if (data.type === "stop") {
-          if (answer.ended) queueMicrotask(() => this.say({ type: "ended" }));
-          return;
-        }
-        if (data.type === "start" || answer.silent) return;
-        assert.equal(Atomics.load(beside.ctl, GPU_WANTED), data.serial, "a request is posted with the serial the control area says is wanted");
-        if (data.type === "prompt") beside.now += beside.gpuMs(data.count);
-        if (data.type === "tokens") {
-          const sampled = answer.sampled ?? data.count;
-          words.fill(0);
-          words[0] = sampled;
-          for (let i = 0; i < Math.max(0, Math.min(sampled, GPU_TOKENS)); i++) words[1 + i] = answer.ids?.[i] ?? (500 + data.pos + i) % SHAPE.vocab;
-          words[1 + GPU_TOKENS] = answer.notFinite ? 1 : 0;
-          beside.now += beside.stepMs * data.count;
-        }
-        if (data.type === "keys") {
-          // every half says where it is: 0x3c00 (1.0) + side, layer and position, read back below
-          for (let side = 0; side < 2; side++) for (let l = 0; l < SHAPE.layers; l++) for (let t = 0; t < data.count; t++) for (let i = 0; i < SHAPE.kvDim; i++) {
-            halves[(STAGING + ((side * SHAPE.layers + l) * GPU_BLOCK + t) * SHAPE.kvDim * 2) / 2 + i] = 0x4000 + side * 0x400;  // 2.0 and 4.0
-          }
-        }
-        Atomics.store(beside.ctl, GPU_FAILED, answer.failed ? 1 : 0);
-        Atomics.add(beside.ctl, GPU_BEAT, 1);
-        Atomics.store(beside.ctl, GPU_DONE, data.serial);
-      } };
-    beside.worker = worker;
-    return worker;
-  };
+  // the GPU's worker (tests/fakes/worker.mjs): what it does with a request is below, on this very thread
+  const gpus = workers({ answer(data, worker) {
+    const { answer } = beside;
+    if (data.type === "stop") {
+      if (answer.ended) queueMicrotask(() => worker.say({ type: "ended" }));
+      return;
+    }
+    if (data.type === "start" || answer.silent) return;
+    assert.equal(Atomics.load(beside.ctl, GPU_WANTED), data.serial, "a request is posted with the serial the control area says is wanted");
+    if (data.type === "prompt") beside.now += beside.gpuMs(data.count);
+    if (data.type === "tokens") {
+      const sampled = answer.sampled ?? data.count;
+      words.fill(0);
+      words[0] = sampled;
+      for (let i = 0; i < Math.max(0, Math.min(sampled, GPU_TOKENS)); i++) words[1 + i] = answer.ids?.[i] ?? (500 + data.pos + i) % SHAPE.vocab;
+      words[1 + GPU_TOKENS] = answer.notFinite ? 1 : 0;
+      beside.now += beside.stepMs * data.count;
+    }
+    if (data.type === "keys") {
+      // every half says where it is: 0x3c00 (1.0) + side, layer and position, read back below
+      for (let side = 0; side < 2; side++) for (let l = 0; l < SHAPE.layers; l++) for (let t = 0; t < data.count; t++) for (let i = 0; i < SHAPE.kvDim; i++) {
+        halves[(STAGING + ((side * SHAPE.layers + l) * GPU_BLOCK + t) * SHAPE.kvDim * 2) / 2 + i] = 0x4000 + side * 0x400;  // 2.0 and 4.0
+      }
+    }
+    Atomics.store(beside.ctl, GPU_FAILED, answer.failed ? 1 : 0);
+    Atomics.add(beside.ctl, GPU_BEAT, 1);
+    Atomics.store(beside.ctl, GPU_DONE, data.serial);
+  } });
+  const factory = gpus.factory;
+  Object.defineProperties(beside, { made: { get: () => gpus.made.length }, terminated: { get: () => gpus.made.filter((worker) => worker.terminated).length },
+    worker: { get: () => gpus.made.at(-1) ?? null },
+    // (a check forgets some of what was posted by putting a shorter list there)
+    posted: { get: () => gpus.posted, set: (list) => { gpus.posted.splice(0, Infinity, ...list); } } });
   const cpuSide = { memory,
     views() { beside.views += 1; },
     grow(pos) { beside.grown.push(pos); beside.capacity = Math.max(2 * beside.capacity, pos + 1); },
@@ -472,14 +468,14 @@ console.log("ok: the steps go to the GPU where they are faster, the CPU's are ti
   unusable.beside.worker.say({ type: "unusable", reason: "a fallback adapter" });
   assert.deepEqual([await unusable.part.note, unusable.part.whyNot, unusable.part.gettingReady()], ["prompts on the CPU (a fallback adapter)", "a fallback adapter", false]);
   const unstarted = made();
-  unstarted.beside.worker.handlers.error({ message: "no such file" });
+  unstarted.beside.worker.fail({ message: "no such file" });
   assert.equal(await unstarted.part.note, "prompts on the CPU (the GPU's worker did not start (no such file))");
   assert.equal(await unstarted.part.release(), true, "a worker that did not start holds nothing to wait for");
   // (T377: under a model on the GPU alone the worker is told so, once: it loads the model again on the CPU. worker/weights.js
   // hands the engine an error its GPU's worker said before the engine was built, by this same handler)
   const gone = [], alone = made({ direct: { onLost: (why) => gone.push(why) } });
-  alone.beside.worker.handlers.error({ message: "no such file" });
-  alone.beside.worker.handlers.error({ message: "no such file" });
+  alone.beside.worker.fail({ message: "no such file" });
+  alone.beside.worker.fail({ message: "no such file" });
   assert.deepEqual([await alone.part.note, gone], ["prompts on the CPU (the GPU's worker did not start (no such file))", ["the GPU's worker did not start (no such file)"]]);
   await alone.part.release();
   const failed = made();

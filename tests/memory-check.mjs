@@ -29,6 +29,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { workers, ended } from "./fakes/worker.mjs";
 import { plans } from "./plans.mjs";
 import { runtime, runtimeUrl } from "./tree.mjs";
 
@@ -64,11 +65,7 @@ const sharedMemory = (p, bound) => new WebAssembly.Memory({ initial: Math.ceil((
   maximum: Math.ceil((CONTROL_BYTES + p.size + bound + 2 * MiB) / PAGE) + 2, shared: true });
 // the GPU's worker, that says nothing but that it ended when it was stopped: the engine puts aside the place its keys and
 // values of a block come back through (and its rows) as it starts it
-const silentGpu = () => {
-  let listen;
-  return { postMessage(data) { if (data.type === "stop") queueMicrotask(() => listen?.({ data: { type: "ended" } })); },
-    set onmessage(handler) { listen = handler; }, set onerror(handler) {}, terminate() {} };
-};
+const silentGpu = () => workers({ answer: ended }).factory();
 
 // half to float, exactly (forward.js's own)
 function halfToFloat(h) {

@@ -19,6 +19,7 @@
 // a browser.
 import assert from "node:assert/strict";
 import { madeUpNetwork, status, failing, hang } from "./fakes/fetch.mjs";
+import { workers } from "./fakes/worker.mjs";
 import { workerHarness } from "./worker-harness.mjs";
 import { runtimeUrl } from "./tree.mjs";
 import { updated } from "../src/runtime/updated.ts";
@@ -187,26 +188,13 @@ console.log("worker-outdated-check: a worker that did not start is told where it
 // ---- weights.js in the worker's vm: what it does with a worker that does not start is what it did, and beside that
 // the error event goes to outdated.js with weights.js's own address. Whether that address is gone is the stand-in's
 // to say here (in a vm the modules are files, of no build: updated.js's gone() itself is the part above)
-class WorkerStandIn {
-  static made = [];
-  constructor(url, options) {
-    Object.assign(this, { url: String(url), options, listeners: [], posted: [], terminated: false });
-    WorkerStandIn.made.push(this);
-  }
-  addEventListener(type, listener) { this.listeners.push([type, listener]); }
-  postMessage(message) { this.posted.push(message); }
-  terminate() { this.terminated = true; }
-  // as a browser tells a worker's error: the property's handler and the listeners
-  fail(event) {
-    this.onerror?.(event);
-    for (const [type, listener] of this.listeners) if (type === "error") listener(event);
-  }
-}
+// (the Worker is tests/fakes/worker.mjs's: worker.fail(event) as a browser tells a worker's error)
+const { Worker: WorkerStandIn, made: workersMade } = workers();
 const turn = () => new Promise((resolve) => setImmediate(resolve));
 const weightsUrl = runtimeUrl("worker/weights.js").href ?? String(runtimeUrl("worker/weights.js"));
 function harness(isGone) {
   const made = workerHarness();
-  WorkerStandIn.made.length = 0;
+  workersMade.length = 0;
   made.context.Worker = WorkerStandIn;
   const asked = [];
   made.context.goneStandIn = async (address) => { asked.push(String(address)); return isGone; };
@@ -225,7 +213,7 @@ for (const [isGone, event, told, askedFor] of [
     const { run, messages, asked } = harness(isGone);
     const data = { memory: 1, share: 1 };
     const starting = run("spawnThread")(data);
-    const [worker] = WorkerStandIn.made;
+    const [worker] = workersMade;
     assert.match(worker.url, /helper\.ts$/, "the software thread's worker");
     assert.deepEqual(worker.posted, [data], "and it is started as it was");
     worker.fail(event);
@@ -237,7 +225,7 @@ for (const [isGone, event, told, askedFor] of [
     // ... and one that starts says nothing at all
     const { run: runAgain, messages: none, asked: nothing } = harness(true);
     const started = runAgain("spawnThread")(data);
-    WorkerStandIn.made[0].onmessage({ data: "ready" });
+    workersMade[0].onmessage({ data: "ready" });
     assert.equal(typeof (await started).terminate, "function");
     await turn();
     assert.deepEqual([none.length, nothing.length], [0, 0], "a thread that started: nothing asked, nothing told");
@@ -248,7 +236,7 @@ for (const [isGone, event, told, askedFor] of [
     const worker = run("openGpu")();
     assert.match(worker.url, /gpu\.ts$/, "the GPU's worker");
     assert.equal(worker.options?.type, "module");
-    assert.equal(worker.onerror, undefined, "its onerror is forward.js's to set (forward/gpuside.js: the model stays on the CPU)");
+    assert.equal(worker.onerror, null, "its onerror is forward.js's to set (forward/gpuside.js: the model stays on the CPU)");
     assert.deepEqual(worker.posted, [], "and nothing is sent to it here");
     let forwards;
     worker.onerror = (failed) => { forwards = failed; };
