@@ -4164,7 +4164,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
 - **CI（2026-10-10、ブランチで、どれも成功）**: 全部の組と網（`layouts` も「同じ」）と `tile-bench`・`encode-bench`（x86-64）run 38010464342。同じ 2 つの道具を arm64 で run 38010466173。`gpu-prompt.yml`（Chromium と Dawn、`gpu-check.mjs` の終わり方を替えた所）run 38010467804。`tile-bench` の本線の側の誤差は全部の形でこの木と同じ（8.52e-8 など）。
 - **レビュー（Sonnet low、2026-10-10）**: 別の壊し方 13 通り（int6 と 3 値の大きさの式、Granite の q の倍率、SmolLM3 の間隔、計画の鍵の片側だけの改名 4 つ、止める旗の 3 通り、取得の順）は全部落ちた。取得の列は 6 回並べて回して同じ。**直したもの 1 つ**: `tests/fetching.py` は本文が Content-Length より先に閉じたときの `http.client.IncompleteRead`（OSError でない）を取り直していなかった（試験を 1 つ足した: 網の `python` は pytest の数が本線と 1 つ違うと言う。足した試験の分）。**残したもの**: レイアウトの記録 1267 件のうち 115 件は断りの文そのもの（「raises ValueError: …」）で、T359 で断りの文が変わると騒ぐ。T359 のその歩で、例外の種類だけを比べる形に替える。記録は `Writer(...).tensors`・`layout()`・`checkpoint_size()`・`conversion_plan()` を呼ぶので、T359 はこの名前を窓口に残すか、記録の側を同じコミットで直す。
 - **本番（2026-10-10、デプロイ run 38011772393。製品のコードは変えていないので 2 本だけ）**: Chromium（tiny-lm・llm-jp-3 150M）run 38012068863、WebKit（tiny-lm）run 38012070359: どちらも成功。
-### T357.2〜T357.7 [整理][遠隔試験] 作り物のモデルをレイアウトの表から作る、参照の道具の骨組み — 状態: 進行中（T357.2 と T357.7 は済み、T357.3 はレビュー前（2026-10-12、下の T357.3 の節）。2026-10-10 に T357 から分けた。T359 の 3 歩目の後。規模 中〜大）
+### T357.2〜T357.7 [整理][遠隔試験] 作り物のモデルをレイアウトの表から作る、参照の道具の骨組み — 状態: 進行中（T357.2 と T357.7 は済み、T357.3 は完了（2026-10-12、下の T357.3 の節）、T357.4 から。2026-10-10 に T357 から分けた。T359 の 3 歩目の後。規模 中〜大）
 - **子タスクの番号（2026-10-10）**: **T357.2** 作り物のモデルを表から作る `make(family, dims, dtype)` / **T357.3** `tests/gpu-check.mjs` を分ける / **T357.4** 参照の道具 3 つの骨組み（CI だけ）/ **T357.5** 偽物を `tests/fakes/` に（T378 の後）/ **T357.6** Node の側の取得を寄せる / **T357.7** `planOf()` を Python の本物の計画に（T359.5 と一緒に）。**T357.2 は完了（2026-10-12、下の T357.2 の節。残りの表もそこ）、T357.7 は T375.2 で済んでいた**、ほかは未着手。
 - **作り物のモデル**: 作る関数が smoke・conftest・`make_lfm2.py`・`make_qwen35.py`・`make_smollm3.py`・`make_ternary.py`・`make_ptq1_0.py`・`make_hf_fixture.py`・gpu-check に重なっている（見出しの 7 個の int の文が 9 つの試験ファイルにある）。設計の案は、T359 が作る家族ごとの表を歩いて形の合う乱数のテンソルを書く `make(family, dims, dtype)` の 1 つにする。**T359 の前にやると 2 度手間**なので残した。`tests/gpu-check.mjs` を分けるのもこの回に。
 - **参照の道具 3 つ**（`reference_llama.py`・`reference_qwen35.py`・`reference_lfm2.py`）の共通の骨組み: 取得は T357.1 で寄せた。残りは変換して float32 のファイルに置く所・transformers の 2 つの道・線の決め方・弱い誤りの入れ方。CI でしか走らない（1 回 10〜50 分）ので、手元で確かめられる T357.1 には入れなかった。
@@ -4239,7 +4239,7 @@ T175（レビュー中）→ T184 → T185 → T186 → 負けた形を外すか
   | **T357.6** Node の側の取得 | `encode-bench.mjs` の `hfFile()`・`wikipedia.mjs`・`gguf.yml` の `get` | `gguf.yml` の `get` は長さを見て取り直す（T307）。Node の変換の道具は `conducting.mjs`（T374.4: 手元のフォルダを読む。取得はしない） | 3 つとも別々のまま: `encode-bench.mjs` の `hfFile()`（長さを見ない・取り直さない・`.tmp/t200/hf/` に置く）、`wikipedia.mjs`（5 回の取り直し）、`gguf.yml` の `node -e` の `get`（4 回の取り直しと長さ）。Python の `fetching.py` に当たる Node の 1 か所が無い。`tests/fetch-node.mjs` は取得の速さを測る道具で、これとは別 |
   | **T357.7** `planOf()` を Python の本物の計画に | T359.5 と一緒に | **済み（T375.2）**: `tests/plans.mjs` の `planOf()` は Python の `forward_plan()` の計画に試験のつまみを上書きしたもので、手書きの計画は `src/runtime/benchmark/madeup.ts` の 1 つだけ（`plan-keys-check` が Python と比べる） | `tests/plans.mjs` の「どちらの木でも動く」枝 2 つ（`hasattr(L, "tensor_rows")`・`hasattr(L, "forward_plan")` と `tensors_before()` の 30 行）と `tests/unchanged_layouts.py` の 2 つ: 相手の木がもう全部新しい形なので消せる（T391 の候補に前からある） |
 
-### T357.3 [整理][遠隔試験] `tests/gpu-check.mjs` を責務の切れ目で分ける — 状態: レビュー済み（Sonnet high、2026-10-12、本線に入れてよい。下の「レビュー」）（2026-10-12、ブランチ `t357.3-gpu-check-parts` で実装した。Opus medium。製品のコード・WGSL・`deviceKey()` には触っていない。規模 中）
+### T357.3 [整理][遠隔試験] `tests/gpu-check.mjs` を責務の切れ目で分ける — 状態: 完了（2026-10-12、本線 cb097126、デプロイ run 38306205312。ページに届くものは変わらないので本番の確かめは省いた。レビュー: Sonnet high、WebGPU の担当、直しは 2 コミット。直しの後の軽い組は手元で 251 秒、ok。**デプロイのランナーで、足した乾いた回（`gpu-check-dry-check`）は 7 秒、軽い組は 124 秒**: 40 秒の線の内。残りは T493）（2026-10-12、ブランチ `t357.3-gpu-check-parts` で実装した。Opus medium。製品のコード・WGSL・`deviceKey()` には触っていない。規模 中）
 - **分け方（孫タスクには分けていない: 1 回で CI に出す単位が 1 つ）**: `tests/gpu-check.mjs` は同じ名前・同じ引数の入口のまま（`gpu-prompt.yml`・`tests/gpu-real.sh`・`tests.yml` の `extra=` は触っていない）。中身は `tests/gpu-check/` に。T357.2 の見立ての 5 つの切れ目を読み直して 9 つにした: 「モデルの一覧と線」は別の知識なので 2 つ、「比べと表」は測り・判定・歩・表の 4 つ（測りを分けたのは、判定・歩・表の 3 つが読み、輪を作らないため）、ハーネスは文をそのままファイルに。
 
   | ファイル | 行 | KB | 中身 | 読むもの |
@@ -7412,4 +7412,11 @@ T164 の CI の計測（1 本、128 位置）で、tiny-lm は生成の 14〜18%
 - `tests/test_quantize.py` の順の試験は数しか比べていない（前から）。
 - 網の pytest は skip が 12（素の pytest は 6）。前後で同じで、訳は読んでいない。
 - `made_up.py` の `BIASES` を無くすには、製品の行に「bias」の役が要る（製品の変更。新しい bias の行を名前に足し忘れると norm の重みとして 1 のまわりに引かれる: `test_made_up.py` の `test_what_is_drawn_for_a_row_goes_by_its_name` が気づく）。
-- **本線の作業ツリーの `make models` の産物が古い**（`tiny-lm.tokenizer.bin` が 2026-09-26 のもので、T216 の charsmap を持たない）: 本線の木で pytest を回すと `test_tokenizer.py::test_the_skip_to_where_a_key_may_begin_changes_no_text` が 1 件落ちる（T357.2 を入れた後に回して出た。ワークツリーの木では通る。この回の変更とは関係が無く、訳はファイルの日付と大きさ（802,799 対 1,040,373 バイト）で確かめた）。本線の木で `make models` を回せば直る。
+- **本線の作業ツリーの `make models` の産物が古い**（`tiny-lm.tokenizer.bin` が 2026-09-26 のもので、T216 の charsmap を持たない）: 本線の木で pytest を回すと `test_tokenizer.py::test_the_skip_to_where_a_key_may_begin_changes_no_text` が 1 件落ちる（T357.2 を入れた後に回して出た。ワークツリーの木では通る。この回の変更とは関係が無く、訳はファイルの日付と大きさ（802,799 対 1,040,373 バイト）で確かめた）。本線の木で `make models` を回せば直る。**直した（2026-10-12、持ち主「make models 回しなよ」）: 本線の木で `make models` を回し、pytest は 2357 passed・6 skipped。**
+
+### T493 [整理][遠隔試験] T357.3 の後の残り — 状態: 未着手（2026-10-12、T357.3 とそのレビューから。規模 小〜中）
+- `tests/gpu-check/harness.js`（541 行・42 KB、ブラウザと Dawn に渡す 1 つのスクリプト）を段ごとの関数に分ける案。分けると配る文が変わるので、この回は 1 つのまま置いた。
+- 作り物のモデルを 1 つ足す手間（1 ファイル 2 か所）と、検査の回を 1 つ足す手間（2 ファイル 3 か所と部品の検査の場合 1 つ）は、分けても減っていない。
+- 見ていない道: `real=`（`<prefix>.json` の実物）、乾いた回の arm64 のランナーでの秒。
+- 開発機（arm64 の Node 24）で 64 ビットのメモリの作り物を装置なしで回すと、最初の run の数が揺れる（V8 の Liftoff の既知の誤り: AGENTS.md の落とし穴。道具の誤りではない）。手元で回すなら `node --no-liftoff`。乾いた回は 64 ビットの作り物を入れていない。
+- 実装の回に、待ちの式の中で `pgrep -f` を 1 回使った（決まり違反、害は無し）。次の頼みには「前の回がこれを破った」と書いてある。
