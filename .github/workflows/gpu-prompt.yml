@@ -28,7 +28,7 @@
 # T241's review (the full suite took 38 minutes on Chrome and 42 on Edge in main's run 36902097346, 23 on Edge before T241:
 # SwiftShader compiles a model's shaders in each of its 14 runs, 5 to 7 s, and Chromium, Chrome and Edge run the same
 # SwiftShader): "made-up" is every made-up model on Dawn; on Chromium all but those that only change the numbers a form is
-# held to (gpu-check's DAWN_ONLY); on Chrome and Edge the three whose shaders differ (Llama's, Qwen3's, GPT-2's). The rounds
+# held to (DAWN_ONLY in tests/gpu-check/models.mjs); on Chrome and Edge the three whose shaders differ (Llama's, Qwen3's, GPT-2's). The rounds
 # with a NaN or an infinity run on Dawn's made-up models and Chromium's three: the input nan= (gpu-check's --nan) chooses
 # otherwise. Chrome and Edge now take 8 to 9 minutes, Chromium 16 to 27 (the runners differ), Dawn 14 (run 36913812366).
 #
@@ -51,7 +51,7 @@ on:
         required: false
         default: false
       models:
-        description: 'model ids of this directory, synthetic, or made-up (every made-up model on Dawn, fewer in the browsers: gpu-check.mjs madeUp; name a model to run it in all), separated by spaces (default: the suite; none with real=)'
+        description: 'model ids of this directory, synthetic, or made-up (every made-up model on Dawn, fewer in the browsers: tests/gpu-check/models.mjs madeUpOn; name a model to run it in all), separated by spaces (default: the suite; none with real=)'
         required: false
       real:
         description: 'T183: ids of Hugging Face models of src/models.js, fetched and converted to int8 here (e.g. hf-qwen2.5-0.5b-instruct hf-qwen3-0.6b)'

@@ -152,6 +152,11 @@ page_modules() {
   # and computes nothing: device.js's record and its end, weights.js's (and a checkpoint that comes in stretches, for a
   # model on the GPU alone), block.js's (the cache grown, a block's dispatches and answer) (under a second)
   node tests/gpu-worker-parts-check.mjs
+  # T357.3: the parts of the tool that checks the GPU in CI (tests/gpu-check.mjs, which runs there alone), each by itself
+  # on made-up numbers: its measures, which made-up models an engine runs, a model's verdict and its steps' for runs as
+  # they should be and wrong in one thing each, the tables, that the harness is a module whose imports are files of this
+  # tree, the references' two classes in the native Python (under a second)
+  node tests/gpu-check-parts-check.mjs
   # T130's review, on forward.js's createForward() with kernels that do nothing: the KV cache grows in place without losing a
   # byte, and footprint() holds what is allocated (a few seconds); T223's: the search for the software threads on noisy times
   node tests/memory-check.mjs
@@ -215,6 +220,10 @@ lfm2_stays_on_the_cpu() {
   node tests/gpu-hybrid-check.mjs .tmp/made-up-lfm2-int8
 }
 part "an LFM2 where a GPU adapter is" lfm2_stays_on_the_cpu
+# T357.3: the tool that checks the GPU in CI (tests/gpu-check.mjs), run from its arguments to its exit with a stand-in
+# for Dawn that gives no device: NumPy's answers, the plans, the server, the worker threads, the harness's runs on the
+# CPU, the verdicts and the tables, on three made-up models. No shader runs (about ten seconds, Pyodide's start)
+part "the GPU's check without a GPU" node tests/gpu-check-dry-check.mjs
 # T217 (the review of T201): attention's softmax where its largest score decides something (two positions far above
 # the rest): a largest that leaves positions out, which forward-check's line cannot see (under a second)
 part "attention's largest score" node tests/attention-check.mjs
