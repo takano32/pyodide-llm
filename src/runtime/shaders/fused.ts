@@ -99,7 +99,9 @@ const FUSED_PARAMS = /* wgsl */ `struct Params { rows: u32, words: u32, perRow: 
 // where the write of an output goes (bindings 5 on): T150's, and T175's DP4A form's alike. T226: the write of a pair
 // is a function (write_pair), which TOKEN_ROPE below calls too: the same lines where the matrix's write cannot turn
 // the pair yet (a bias or a head's norm comes between)
-const fusedOutputs = (output: FusedOutput) => (output === "rope" ? `@group(0) @binding(5) var<storage, read_write> q: array<f32>;
+// T379.2: the Step struct is declared where the step is bound (the "rope" output), and in no other text
+const fusedOutputs = (output: FusedOutput) => (output === "rope" ? `${STEP}
+@group(0) @binding(5) var<storage, read_write> q: array<f32>;
 @group(0) @binding(6) var<storage, read_write> keys: array<u32>;
 @group(0) @binding(7) var<storage, read_write> values: array<u32>;
 @group(0) @binding(8) var<storage, read> angles: array<f32>;
@@ -166,7 +168,6 @@ const fusedWrite = (output: FusedOutput) => (output === "rope" ? `    // a pair 
 // (rows, qRows, kvRows, headSize, turned), 5 to 9 as the fused "rope"
 export const TOKEN_ROPE = /* wgsl */ `
 ${FUSED_PARAMS}
-${STEP}
 @group(0) @binding(2) var<storage, read> src1: array<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
 ${fusedOutputs("rope")}
@@ -182,7 +183,6 @@ export const fusedMatVec =({ input, output, subgroups }: { input: FusedInput; ou
   const matrices = glu ? 2 : 1, sums = MUL_MAT_VEC_ROWS * matrices + (norm ? 1 : 0);
   return /* wgsl */ `${subgroups ? "enable subgroups;\nrequires subgroup_id;\n" : ""}
 ${FUSED_PARAMS}
-${STEP}
 @group(0) @binding(0) var<storage, read> src0: array<u32>;
 @group(0) @binding(1) var<storage, read> scales: array<f32>;
 @group(0) @binding(2) var<storage, read> src1: array<f32>;
@@ -195,9 +195,8 @@ const OUTPUTS_PER_WG = ${MUL_MAT_VEC_ROWS}u;
 const BLOCK_SIZE = 32u;
 const THREADS_PER_BLOCK = 4u;
 const ELEMS_PER_THREAD = BLOCK_SIZE / THREADS_PER_BLOCK;
-const MATRICES = ${matrices}u;
-const SUMS = ${sums}u;
-const SQUARES = OUTPUTS_PER_WG * MATRICES;  // where the sum of x² is, when the norm is on the read
+const SUMS = ${sums}u;${norm ? `
+const SQUARES = OUTPUTS_PER_WG * ${matrices}u;  // where the sum of x² is: after the rows' sums (up's rows' too)` : ""}
 
 fn get_byte_i32(value: u32, index: u32) -> i32 {
     return bitcast<i32>(((value >> (index * 8)) & 0xFF) << 24) >> 24;
@@ -511,7 +510,6 @@ export const fusedDp4aMatVec = ({ output, weights }: { output: FusedOutput; weig
   const packing = DP4A_WEIGHTS[weights];
   return /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${FUSED_PARAMS}
-${STEP}
 ${packing.bindings}
 @group(0) @binding(2) var<storage, read> a: array<vec4<u32>>;        // the quantized vector (xq)
 @group(0) @binding(3) var<uniform> params: Params;
