@@ -29,7 +29,7 @@ const HEADER = [64, 192, 6, 4, 2, 1000, 128];
 
 // ---- the architectures
 {
-  assert.deepEqual(Object.keys(ARCHITECTURES), ["llama", "gpt2", "neox", "qwen35", "lfm2"]);
+  assert.ok(["llama", "gpt2", "neox", "qwen35", "lfm2"].every((name) => Object.hasOwn(ARCHITECTURES, name)));
   for (const [name, line] of Object.entries(ARCHITECTURES)) {
     assert.deepEqual(Object.keys(line).sort(), ["gate", "gatedFfn", "layerNorm", "positions", "rope"], name);
     assert.equal(architectureOf(name), line);
@@ -169,12 +169,13 @@ const KINDS = { attention: plain, echo };
   assert.equal(gpuOnlyUnfit(header, "int8", { rotated: { block: 1024 } }, adapter), "a rotated basis is not on the GPU yet");
   // by the packing's line: whether a model of it may be there alone, and what its shaders need of the browser
   const lacking = { ...adapter, packed: false };
+  // (a packing the GPU does not hold at all, gpu: null, stays on the CPU as well)
   for (const [dtype, { gpu }] of Object.entries(PACKED)) {
-    assert.equal(gpuOnlyUnfit(header, dtype, {}, adapter), gpu.alone ? null : `${dtype} weights stay on the CPU`);
-    assert.equal(gpuOnlyUnfit(header, dtype, {}, lacking), !gpu.alone ? `${dtype} weights stay on the CPU`
+    assert.equal(gpuOnlyUnfit(header, dtype, {}, adapter), gpu?.alone ? null : `${dtype} weights stay on the CPU`);
+    assert.equal(gpuOnlyUnfit(header, dtype, {}, lacking), !gpu?.alone ? `${dtype} weights stay on the CPU`
       : gpu.dot ? `${dtype} weights need the packed int8 dot product of WGSL, which this browser lacks` : null);
   }
-  assert.ok(Object.values(PACKED).some(({ gpu }) => !gpu.alone) && Object.values(PACKED).some(({ gpu }) => gpu.dot), "(the table has a packing that stays on the CPU and one that needs the dot)");
+  assert.ok(Object.values(PACKED).some(({ gpu }) => !gpu?.alone) && Object.values(PACKED).some(({ gpu }) => gpu?.dot), "(the table has a packing that stays on the CPU and one that needs the dot)");
   for (const dtype of ["float32", "float16", "made-up"]) assert.equal(gpuOnlyUnfit(header, dtype, {}, adapter), `${dtype} weights stay on the CPU`);
   assert.deepEqual([gpuOnlyUnfit(header, "int8", {}, null), gpuOnlyUnfit(header, "int8", {}, { ...adapter, fallback: true }), gpuOnlyUnfit(header, "int8", {}, { ...adapter, fallback: true }, { fallback: true })],
     ["no GPU adapter here", "a fallback adapter", null]);

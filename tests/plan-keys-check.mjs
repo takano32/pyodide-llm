@@ -112,6 +112,10 @@ const returned = (fn) => {
     { name: "qwen35", header: [256, 768, 8, 4, 2, 2048, 320], form: { arch: "qwen35", head_dim: 128, linear: LINEAR, rotated: true }, more: { rotary: 32 } },
     { name: "lfm2", header: [256, 768, 8, 8, 4, -2048, 320], form: { arch: "lfm2", convolution: { layers: "ccaccaca", taps: 3 } }, more: {} },
   ];
+  // (the facts of these families a second time, below: [RoPE turns its layers, LayerNorms, a gated FFN]; a family that
+  // is added without a line here is held to Python's plan alone)
+  const SECOND = { llama: [true, false, true], "qwen2 and qwen3": [true, false, true], "llama, rotated": [true, false, true], gpt2: [false, true, false],
+    neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true] };
   const cases = families.flatMap((family) => ["float32", "float16", "int8", "int6", "ternary"].map((dtype) => ({ ...family, dtype })));
   const plans = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", [path.join(root, "tests/engine_plans.py"), root],
     { input: JSON.stringify(cases), maxBuffer: 1 << 28, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());
@@ -217,16 +221,16 @@ const returned = (fn) => {
     }
     // a layer's place is its place among the layers of its kind
     const places = {};
-    plan.layers.forEach((layer, l) => {
-      assert.equal(layer.place, (places[layer.kind] = (places[layer.kind] ?? -1) + 1), `${which}: the place of layer ${l} among the layers of the kind ${layer.kind}`);
-      assert.equal(layer.rope, layer.kind === "attention" && name !== "gpt2" && !plan.unturned.includes(l), `${which}: whether RoPE turns layer ${l}`);
-    });
-    // (T375.2: the two facts of the architecture, a second time: LayerNorms and GPT-2's FFN are a GPT-2's and a GPT-NeoX's)
-    const gpt = ["gpt2", "neox"].includes(name);
-    assert.deepEqual([plan.layer_norm, plan.gated_ffn], [gpt, !gpt], `${which}: the kind of the norms and of the FFN`);
     // T375.5: the architecture's line of the copy, against what this plan says of each of its facts
     const said = { positions: "positions" in plan.tensors, gate: "wg" in plan.tensors, rope: plan.layers.some(({ rope }) => rope),
       gatedFfn: plan.gated_ffn, layerNorm: plan.layer_norm };
+    plan.layers.forEach((layer, l) => {
+      assert.equal(layer.place, (places[layer.kind] = (places[layer.kind] ?? -1) + 1), `${which}: the place of layer ${l} among the layers of the kind ${layer.kind}`);
+      assert.equal(layer.rope, layer.kind === "attention" && said.rope && !plan.unturned.includes(l), `${which}: whether RoPE turns layer ${l}`);
+    });
+    // (T375.2: the facts of the families here, a second time: a GPT-2 has no RoPE, and LayerNorms and GPT-2's FFN are a
+    // GPT-2's and a GPT-NeoX's)
+    if (Object.hasOwn(SECOND, name)) assert.deepEqual([said.rope, plan.layer_norm, plan.gated_ffn], SECOND[name], `${which}: RoPE, the kind of the norms and of the FFN`);
     assert.deepEqual(ARCHITECTURES[plan.arch], said, `${which}: src/runtime/forward/architectures.ts's line of ${JSON.stringify(plan.arch)} is not what Python's plan of that architecture says ` +
       "(a table of positions and a gate of the attention's output by the tensors, RoPE by the layers, gated_ffn, layer_norm). engine/layout.py's LAYOUTS is the owner: put architectures.ts right");
     // (and what footprint() makes of rope: a float32 file of a model with RoPE has the tables, and Python makes them otherwise)
