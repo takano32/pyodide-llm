@@ -447,6 +447,68 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
     embedding: { rows: 100, n: 128, ternary: true, at: [codes.token_embedding_table.offset, codes.token_embedding_table.scales] } });
   assert.equal(gpuHoles({ ...codes, wcls }).length, gpuHoles(codes).length + 1, "a ternary classifier of its own is a stretch of its own");
   assert.deepEqual(gpuHoles({ ...codes, wcls }).at(-1), [wcls.offset, wcls.scales + ((100 * 128) / 128) * 4], "its codes, then its scales");
+
+  // T377: a worker that counts nothing. The loops that write wait for it, a second at a time, and give up after 60 s
+  // of nothing; a worker said to be gone (it did not start, or threw: whoever made it heard its "error") is waited for
+  // no longer, and is posted nothing more. The clock is this check's: every wait takes as long as it asked for, at once
+  {
+    const real = { waitAsync: Atomics.waitAsync, now: performance.now };
+    // (held: a wait ends only where it is woken, as one of a second does within a turn of this check)
+    let clock = 0, waits = 0, held = false, wake = () => {};
+    performance.now = () => clock;
+    Atomics.waitAsync = (array, index, value, ms) => ({ async: true, value: new Promise((resolve) => {
+      waits += 1;
+      wake = () => resolve("ok");
+      if (!held) setImmediate(() => { clock += ms; resolve("timed-out"); });
+    }) });
+    const realNotify = Atomics.notify;
+    Atomics.notify = (...args) => { wake(); return realNotify(...args); };
+    try {
+      const sent = [];
+      const quiet = () => gpuOnlyWeights({ memory, base, size, tensors, worker: { postMessage: ({ bytes }) => sent.push(bytes.length) } });
+      const inWq = tensors.wq.offset;
+      // (nothing waits where nothing was posted)
+      const none = quiet();
+      await none.drained();
+      assert.deepEqual([clock, waits], [0, 0], "weights with nothing on their way waited for the GPU's worker");
+      // a worker that takes nothing: the 60 s
+      const stalled = quiet();
+      stalled.write(inWq, checkpoint.subarray(inWq, inWq + 1000));
+      await stalled.room();  // (1000 bytes ahead are within what may wait)
+      assert.deepEqual([clock, sent], [0, [1000]]);
+      await assert.rejects(stalled.drained(), /^Error: the GPU took no weights for 60 s$/);
+      assert.ok(clock > 60000 && clock <= 62000, `a worker that took nothing was given up after ${clock / 1000} s, not after the 60 s`);
+      // a worker gone while the weights wait for it: at once, and without an error
+      [clock, waits] = [0, 0];
+      const lost = quiet();
+      lost.write(inWq, checkpoint.subarray(inWq, inWq + 1000));
+      held = true;
+      const waiting = lost.drained();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(waits, 1, "the weights did not wait for a worker that had taken nothing yet");
+      lost.gone();
+      let timer;
+      const ended = await Promise.race([waiting.then(() => "ended"), new Promise((resolve) => { timer = setTimeout(() => resolve("still waiting"), 2000); })]);
+      clearTimeout(timer);
+      held = false;
+      assert.deepEqual([ended, clock, waits], ["ended", 0, 1], "the weights went on waiting for a worker that was gone (the load fails 60 s later, where it can go on on the CPU at once)");
+      // gone before anything waits: nothing waits, and what comes for the worker after it is not posted (the rest still
+      // goes into the memory)
+      [clock, waits] = [0, 0];
+      sent.length = 0;
+      const never = quiet();
+      never.write(inWq, checkpoint.subarray(inWq, inWq + 1000));
+      never.gone();
+      const norm = tensors.rms_ffn_weight.offset;
+      never.write(norm - 8, checkpoint.subarray(norm - 8, norm + 8));  // (the end of wo's scales and the start of a norm)
+      await never.room();
+      await never.drained();
+      assert.deepEqual([clock, waits, sent], [0, 0, [1000]], "a worker that was gone was waited for, or posted more of the weights");
+      assert.deepEqual([...new Uint8Array(memory.buffer, base + place(norm), 8)], [...checkpoint.subarray(norm, norm + 8)], "the bytes outside the holes did not go into the memory once the worker was gone");
+    } finally {
+      [Atomics.waitAsync, Atomics.notify, performance.now] = [real.waitAsync, realNotify, real.now];
+    }
+  }
 }
 
 // T156 (the owner, 2026-09-27): a model on the GPU alone weighed on the prompts too, by the page's use, and the verdict

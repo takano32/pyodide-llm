@@ -257,14 +257,22 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
   const workers = [];
   class Worker {
     constructor() {
-      Object.assign(this, { heard: [], told: [], terminated: false });
+      Object.assign(this, { heard: [], errors: [], told: [], terminated: false, onerror: null });
       workers.push(this);
     }
     addEventListener(type, listener) {
       if (type === "message") this.heard.push(listener);
+      if (type === "error") this.errors.push(listener);
+    }
+    // (T377) the browser says the worker's script did not arrive, or that it threw: to every listener and to onerror
+    fail(message) {
+      const event = { message };
+      this.errors.forEach((listener) => listener(event));
+      this.onerror?.(event);
     }
     postMessage(data) {
       this.told.push(data.type);
+      if (data.type === "open") this.flow = data.flow;
       if (data.type === "stop") setTimeout(() => this.heard.forEach((listener) => listener({ data: { type: "ended" } })), 5);
     }
     terminate() {
@@ -413,5 +421,76 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
       [true, false, true], "an LFM2 with convolution layers went on the GPU alone (the worker hands gpuOnlyUnfit() the form with its layers)");
     await ask("loadBegan({ id: 'the next load' })");
   }
-  console.log("ok: a model on the GPU alone lets go of its GPU's worker where its load ends without it (T156's review); what weights.js holds of it is told and asked (T378.3)");
+  // (6) T377: the GPU's worker says "error" while the weights are written, before there is an engine to hear it (its
+  // script did not arrive, or it threw). It takes nothing and counts nothing from then on: the loops that write do not
+  // wait for it (they waited 60 s, and the load then failed with "the GPU took no weights for 60 s"), nothing more is
+  // posted to it, and the engine, built on what there is, is handed the error it missed: it says why in its own words
+  // (the place's onLost), and gpuOnlyReady() has the model loaded again on the CPU. forward.js's engine is a stand-in
+  // here that listens as the real one does (gpuside.js: worker.onerror, from start() on)
+  {
+    const ask = (code) => vm.runInContext(strictly(code), gpuContext);
+    const soon = (promise) => {
+      let timer;
+      return Promise.race([Promise.resolve(promise).then(() => "ended"), new Promise((resolve) => { timer = setTimeout(() => resolve("still waiting"), 3000); })])
+        .finally(() => clearTimeout(timer));
+    };
+    const listening = { ...gpuContext.stand.forward, external: ({ gpu, direct }) => {
+      const worker = gpu();
+      worker.onerror = (event) => direct.onLost(`the GPU's worker did not start (${event.message})`);
+      return { engine: { gpu: engineGpu } };
+    } };
+    gpuContext.listening = listening;
+    const inWq = new Uint8Array(1000);
+    for (const [title, failsAt] of [["before a byte", 0], ["between two stretches", 1], ["once all is written", 2], ["not at all", 3]]) {
+      ask("gpuRequest = undefined; forwardModule = listening");
+      await ask(`loadBegan({ id: 'unstarted ${failsAt}' })`);
+      const { into, worker } = opened();
+      const said = [];
+      gpuContext.console = { ...console, warn: (line) => said.push(line) };
+      if (failsAt === 0) worker.fail("no such script");
+      into.weights.write(tensors.wq.offset, inWq);
+      if (failsAt === 1) worker.fail("no such script");
+      into.weights.write(tensors.wq.offset + 1000, inWq);
+      // (the room is asked after every stretch, and all of it before the engine is built: sources.js, load.js)
+      const waiting = ask("weightsDrained()");
+      if (failsAt === 2) setTimeout(() => worker.fail("no such script"), 20);
+      if (failsAt === 3) {
+        assert.equal(await Promise.race([waiting.then(() => "ended"), new Promise((resolve) => setTimeout(() => resolve("still waiting"), 300))]), "still waiting",
+          "the weights did not wait for a GPU's worker that goes on and has not taken them yet");
+        // (the worker takes them, as gpu.js's take() counts: the wait ends)
+        const flow = new BigInt64Array(worker.flow);
+        Atomics.add(flow, 0, 2000n);
+        Atomics.notify(flow, 0);
+      }
+      assert.equal(await soon(waiting), "ended", `a GPU's worker that failed ${title}: the weights went on waiting for it`);
+      assert.equal(await soon(ask("weightsRoom()")), "ended");
+      assert.deepEqual(worker.told, ["open", ...Array(Math.min(failsAt, 2)).fill("weights")], `a GPU's worker that failed ${title} was posted what it will not take`);
+      engineGpu = Promise.resolve("prompts on the CPU (a stand-in)");
+      gpuContext.made = into.weights.llama({}, {});
+      into.release();
+      assert.equal(ask("gpuOnlyLost()"), failsAt === 3 ? null : "the GPU's worker did not start (no such script)", `a GPU's worker that failed ${title}: the engine was not handed its error`);
+      const ready = await ask(`gpuOnlyReady({ id: 'unstarted ${failsAt}' }, 9, made.outside.engine)`);
+      assert.deepEqual([ready, ask(`cpuOnly.has('unstarted ${failsAt}')`), worker.terminated], failsAt === 3 ? [true, false, false] : [false, true, true],
+        `a GPU's worker that failed ${title}: the model is not loaded again on the CPU, its worker let go of first`);
+      assert.deepEqual(said, failsAt === 3 ? [] : ["gpu: the GPU's worker did not start (no such script): the model was on the GPU alone, and is loaded again on the CPU"]);
+      gpuContext.console = console;
+    }
+    // an error after the engine is built is the engine's alone to hear: said once
+    {
+      await ask("loadBegan({ id: 'late' })");
+      const { into, worker } = opened();
+      const { direct } = into.weights;
+      gpuContext.made = into.weights.llama({}, {});
+      into.release();
+      const lost = [];
+      direct.onLost = (why) => lost.push(why);
+      worker.fail("it threw");
+      assert.deepEqual(lost, ["the GPU's worker did not start (it threw)"], "an error of the GPU's worker under a built engine was not said once");
+      await direct.end();
+    }
+    ask("forwardModule = stand.forward");
+    await ask("loadBegan({ id: 'the next load' })");
+  }
+  console.log("ok: a model on the GPU alone lets go of its GPU's worker where its load ends without it (T156's review); what weights.js holds of it is told and asked (T378.3); " +
+    "a GPU's worker that fails before the engine is built is waited for no longer, and the model goes on to the CPU (T377)");
 }

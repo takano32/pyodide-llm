@@ -208,21 +208,25 @@ export const aloneTakes = (dtype: string) => Boolean(packingOf(dtype)?.gpu?.alon
 // faster than a GPU takes it, and what waits in the messages is memory), and give up where nothing was taken for
 // FLOW_STALL_MS. They wait without blocking: a worker made from a worker may not even start while the one that made
 // it blocks (Chromium, gpu-check's first run: the GPU's worker took nothing for 60 s)
+// T377: a worker that is gone (it did not start, or threw: whoever made it hears its "error") takes nothing more and
+// counts nothing more: gone() says so, and nothing waits for it from then on (else every load waited those 60 s and
+// then failed, where the model can be loaded again on the CPU at once)
 const FLOW_BYTES = 64 * 2 ** 20, FLOW_STALL_MS = 60000;
 /** T156: the weights of a model on the GPU alone. worker: the GPU's worker (gpu.js, told to open with gpuOnlyPlan()),
  * tensors: llama2_numpy.external_tensors(), size: the checkpoint's bytes. Returns { holes, place, stored, flow,
  * write(offset, bytes), room(), drained() }: write() puts the bytes outside the holes into memory at base +
  * place(offset), and posts those in them to the worker (a copy each); room() resolves once the worker is no more than
- * FLOW_BYTES behind, drained() once it has all of them; stored is what memory holds (the checkpoint less the holes). */
+ * FLOW_BYTES behind, drained() once it has all of them; stored is what memory holds (the checkpoint less the holes).
+ * gone() (T377): the worker takes no more (the bytes for it are dropped from then on, and room() and drained() resolve). */
 export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
   { memory: WebAssembly.Memory; base: number; size: number; tensors: Tensors; worker: { postMessage(message: ToGpu, transfer: Transferable[]): void } }) {
   const holes = gpuHoles(tensors), place = placer(holes);
   const stored = size - holes.reduce((sum, [start, end]) => sum + (end - start), 0);
   const flow = new SharedArrayBuffer(8), taken = new BigInt64Array(flow);
-  let sent = 0n;
+  let sent = 0n, gone = false;
   const wait = async (ahead: bigint) => {
     let seen = Atomics.load(taken, 0), moved = performance.now();
-    while (sent - seen > ahead) {
+    while (!gone && sent - seen > ahead) {
       if (Atomics.waitAsync) await Atomics.waitAsync(taken, 0, seen, 1000).value;
       else await new Promise((resolve) => setTimeout(resolve, 10));
       const now = Atomics.load(taken, 0);
@@ -231,6 +235,7 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
     }
   };
   const post = (offset: number, chunk: Uint8Array, from: number, to: number) => {
+    if (gone) return;
     const bytes = chunk.slice(from, to);
     worker.postMessage({ type: "weights", offset: offset + from, bytes }, [bytes.buffer]);
     sent += BigInt(to - from);
@@ -251,6 +256,11 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
     room: () => wait(BigInt(FLOW_BYTES)),
     /** every byte posted is on the GPU (or was dropped by a GPU that failed) */
     drained: () => wait(0n),
+    /** T377: the GPU's worker takes no more of them: what waits for it stops waiting, now */
+    gone() {
+      gone = true;
+      Atomics.notify(taken, 0);
+    },
   };
 }
 /** T156: what the GPU's worker opens with (gpu.js's open(): the device, and a buffer for every piece of every layer's
