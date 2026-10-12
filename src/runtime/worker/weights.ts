@@ -356,6 +356,14 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
     });
   };
   const weights = forwardModule!.gpuOnlyWeights({ memory, base, size, tensors, worker });
+  // T377: a worker that says "error" before the engine is built (its script did not arrive, or it threw) takes no more
+  // of the weights and counts none: the loops that write stop waiting for it at once (they waited 60 s, and the load
+  // failed), and the engine, which listens from start() on, is handed the error it missed once it is built (failed)
+  let failed: ErrorEvent | undefined;
+  worker.addEventListener("error", (event) => {
+    failed ??= event;
+    weights.gone();
+  });
   worker.postMessage({ type: "open", plan: forwardModule!.gpuOnlyPlan(header, tensors, gpuForce, gpuRequest?.remembered), flow: weights.flow } satisfies ToGpu);
   // (T156: the checkpoint's size, its layers' multiply-adds, /benchmark/'s CPU reading and the page's use, for the
   // estimate the GPU is held against: forward.ts's aloneVerdict)
@@ -378,6 +386,9 @@ function gpuOnlyBuffer(size: number, header: Header, options: Options, { tensors
         gpuRemembered: gpuRequest?.remembered });
       const made = llama2_numpy.Llama.callKwargs(null, tokenizer, { ...engineOptions, external: outside });
       built = true;
+      // (T377: the engine's side of the GPU says why, as of a worker that failed under it, and the model is loaded
+      // again on the CPU: gpuOnlyReady(). An engine that started no worker has said its own reason already)
+      if (failed) worker.onerror?.(failed);
       return { llama: made, outside };
     },
     // (the review of T156: a load cancelled or failed before its engine was built, or another try of the converter's

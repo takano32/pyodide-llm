@@ -475,6 +475,13 @@ console.log("ok: the steps go to the GPU where they are faster, the CPU's are ti
   unstarted.beside.worker.handlers.error({ message: "no such file" });
   assert.equal(await unstarted.part.note, "prompts on the CPU (the GPU's worker did not start (no such file))");
   assert.equal(await unstarted.part.release(), true, "a worker that did not start holds nothing to wait for");
+  // (T377: under a model on the GPU alone the worker is told so, once: it loads the model again on the CPU. worker/weights.js
+  // hands the engine an error its GPU's worker said before the engine was built, by this same handler)
+  const gone = [], alone = made({ direct: { onLost: (why) => gone.push(why) } });
+  alone.beside.worker.handlers.error({ message: "no such file" });
+  alone.beside.worker.handlers.error({ message: "no such file" });
+  assert.deepEqual([await alone.part.note, gone], ["prompts on the CPU (the GPU's worker did not start (no such file))", ["the GPU's worker did not start (no such file)"]]);
+  await alone.part.release();
   const failed = made();
   failed.beside.worker.say({ type: "failed", reason: "a shader was refused" });
   assert.deepEqual([said(), failed.part.gettingReady()], [["gpu: a shader was refused"], true]);
