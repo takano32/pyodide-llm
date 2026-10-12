@@ -157,6 +157,51 @@ for (const [name, program] of programs) {
 console.log(`forward-modules-check: createForward() hands its parts the ${handed} things they take (${grouped} names taken out of ${made.size} of them), ` +
   `and the ${through} places that go through threads, onGpu, fit and cpuSide name members of them; what is read of threads and of onGpu is their getters`);
 
+// ---- T375.3: what the engine hands a kind of layer and the FFN (core), and the arrays of a token's frame
+// The kinds (attention.ts, linear.ts, convolution.ts: their make()) and the FFNs (ffn.ts) take core apart where they
+// are declared. tsc says a name core has not. What it lets pass: a key of core that none of them takes (a thing
+// carried for nothing), and a name taken out of `at` that nobody put in a frame (at is a record of numbers by any
+// name: a name that is in no frame is undefined, and every address made of it NaN, without a word). The names of a
+// frame are the first strings of the pairs in memory.ts's frameArrays() and in the kinds' frame().
+const PARTS_OF_CORE = ["forward/attention.ts", "forward/linear.ts", "forward/convolution.ts", "forward/ffn.ts"];
+const coreMade = [...membersOf(literals.get("core")).keys()], coreTaken = new Set();
+assert.ok(coreMade.length, "createForward() makes core as an object");
+let parts = 0;
+for (const file of PARTS_OF_CORE) {
+  walk(programs.get(file), (node) => {
+    if (!["ObjectMethod", "FunctionDeclaration"].includes(node.type) || node.params[0]?.type !== "ObjectPattern") return;
+    const keys = keysOf(node.params[0], file);
+    if (!keys.includes("at")) return;  // (frame() takes the plan apart, not core)
+    parts += 1;
+    for (const name of keys) {
+      assert.ok(coreMade.includes(name), `${file} takes ${name} out of core, which createForward() made without it: undefined`);
+      coreTaken.add(name);
+    }
+  });
+}
+assert.equal(parts, 5, "the three kinds' make() and the two FFNs take core apart");
+// (cache: the layers that keep keys and values alone take it; a kind that reads `core.<name>` otherwise is not counted)
+assert.deepEqual(coreMade.filter((name) => !coreTaken.has(name)), [], "createForward() makes core with what no kind and no FFN takes out of it");
+const framedNames = new Set();
+for (const file of ["forward/memory.ts", ...PARTS_OF_CORE]) {
+  walk(programs.get(file), (node) => {
+    if (node.type === "ArrayExpression" && node.elements.length === 2 && node.elements[0]?.type === "StringLiteral") framedNames.add(node.elements[0].value);
+  });
+}
+let framedTaken = 0;
+for (const file of ["forward/engine.ts", ...PARTS_OF_CORE]) {
+  walk(programs.get(file), (node) => {
+    const names = node.type === "VariableDeclarator" && node.id.type === "ObjectPattern" && node.init?.type === "Identifier" && node.init.name === "at" ? keysOf(node.id, file)
+      : node.type === "MemberExpression" && node.object.type === "Identifier" && node.object.name === "at" && !node.computed ? [node.property.name] : [];
+    for (const name of names) {
+      assert.ok(framedNames.has(name), `${file} takes ${name} out of a token's frame, where nothing puts an array of that name: undefined`);
+      framedTaken += 1;
+    }
+  });
+}
+console.log(`forward-modules-check: the kinds of layers and the FFNs take the ${coreMade.length} things of core, and the ${framedTaken} arrays they and the engine take of a token's frame are ` +
+  `among the ${framedNames.size} that are put in one`);
+
 // ---- the window links, and exports nothing undefined
 const window = await import(tree.runtimeUrl("forward.js"));
 for (const [name, value] of Object.entries(window)) assert.notEqual(value, undefined, `forward.js exports ${name} as undefined`);

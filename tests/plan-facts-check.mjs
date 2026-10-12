@@ -12,6 +12,11 @@
 // that read one of the two facts for the other would answer right for all of them; and the two made-up ones have
 // names forward.ts has never heard of.
 //
+// T375.3: and the table of the kinds of layers is open. An LFM2's plan whose convolution layers are said to be of a
+// kind forward.ts has not heard of, with that kind written here (outside the product, on what the engine hands a kind:
+// forward/kinds.ts's Core) and handed in beside the product's attention: NumPy's logits again, and the engine's own
+// rule for a kind that keeps a state (the positions in turn).
+//
 // For every model: the logits of every token one at a time are NumPy's (within 1e-3, and the same largest: forward-check's
 // line for float32), and the same again where the first tokens went through the layers as a prompt's block.
 //
@@ -26,7 +31,7 @@ import { built, runtime } from "./tree.mjs";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
-const { createForward } = await import(pathToFileURL(forwardFile).href);
+const { createForward, LAYER_KINDS } = await import(pathToFileURL(forwardFile).href);
 const kernels = { plain: new WebAssembly.Module(fs.readFileSync(built("simdkernel_plain.wasm"))), relaxed: null };
 
 fs.mkdirSync(path.join(root, ".tmp"), { recursive: true });
@@ -37,7 +42,37 @@ try {
     { maxBuffer: 1 << 28, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());
   const bytes = (name) => new Uint8Array(fs.readFileSync(path.join(folder, name)));
   const PAGE = 65536, BASE = 64;
-  for (const { name, plan, tokens, checkpoint, logits, facts } of cases) {
+  // T375.3: a kind of layer of this file's own: an LFM2's short convolution (llama2_numpy's short_convolution() has the
+  // rule), with nothing of forward/convolution.ts: its rows, its array of a token's frame, its step
+  const OUTSIDE = "a kind written outside";
+  let cleared = 0;
+  const outside = {
+    frame: (plan) => ({ arrays: [["gated", 3 * plan.dim * 4]] }),
+    make({ plan, k, room, floats, matrix, at, S, matmuls }, count) {
+      const { dim } = plan, { taps } = plan.convolution, bytes = taps * dim * 4, rows = room.alloc(count * bytes);
+      const win = matrix("win"), wout = matrix("wout"), weights = floats("conv");
+      return {
+        clear() {
+          cleared += 1;
+          room.F.fill(0, rows / 4, (rows + count * bytes) / 4);
+        },
+        layer: (a) => (tokens) => {
+          const mine = rows + a * bytes;
+          matmuls(at.xb, tokens, [[win, at.gated, S, a]]);
+          for (let t = 0; t < tokens; t++) {
+            room.F.copyWithin(mine / 4, (mine + dim * 4) / 4, (mine + bytes) / 4);
+            k.short_conv(at.xb + t * S, weights + a * bytes, mine, at.gated + t * S, dim, taps);
+          }
+          matmuls(at.xb, tokens, [[wout, at.xb2, S, a]]);
+        },
+      };
+    },
+  };
+  const lfm2 = cases.find(({ name }) => name === "lfm2");
+  assert.ok(lfm2, "the cases have an LFM2");
+  const renamed = { ...lfm2, name: "lfm2, its convolution layers of a kind handed in from outside", kinds: { attention: LAYER_KINDS.attention, [OUTSIDE]: outside },
+    plan: { ...lfm2.plan, layers: lfm2.plan.layers.map((layer) => (layer.kind === "convolution" ? { ...layer, kind: OUTSIDE } : layer)) } };
+  for (const { name, plan, tokens, checkpoint, logits, facts, kinds } of [...cases, renamed]) {
     const file = bytes(checkpoint), vocab = plan.vocab_size;
     const wanted = new Float32Array(bytes(logits).buffer);
     assert.equal(wanted.length, tokens.length * vocab, `${name}: the reference's logits`);
@@ -45,7 +80,7 @@ try {
     const engine = () => {
       const memory = new WebAssembly.Memory({ initial: Math.ceil((BASE + file.length) / PAGE) + 1 });
       new Uint8Array(memory.buffer).set(file, BASE);
-      const made = createForward({ memory, base: BASE, size: file.length, kernels,
+      const made = createForward({ memory, base: BASE, size: file.length, kernels, kinds,
         plan: { ...plan, derived: Object.fromEntries(Object.entries(plan.derived).map(([table, at]) => [table, bytes(at)])) } });
       const out = new Float32Array(vocab);
       made.bind(out);
@@ -76,11 +111,18 @@ try {
     const block = engine(), first = tokens.length - 3;
     block.made.forwardMany(tokens.slice(0, first), 0);
     tokens.slice(first).forEach((token, i) => { block.made.forward(token, first + i, true); look(block.out, first + i); });
+    // (T375.3) a kind that keeps a state is cleared by position 0 and takes the positions in turn, whoever wrote it
+    if (kinds) {
+      assert.equal(cleared, 2, `${name}: position 0 cleared the kind's state, once an engine`);
+      assert.throws(() => block.made.forward(tokens[0], 3, true), /position 10 comes next/, `${name}: a position out of turn`);
+      block.made.forward(tokens[0], 0, true);
+      assert.equal(cleared, 3, `${name}: and position 0 begins again`);
+    }
     block.made.release();
     const right = worst <= 1e-3 && same;
     if (!right) failed++;
     console.log(`${right ? "ok" : "WRONG"}: ${name} (${plan.layer_norm ? "LayerNorms" : "RMSNorms"}, ${plan.gated_ffn ? "a gated FFN" : "GPT-2's FFN"}, ` +
-      `${plan.layers.map(({ kind, rope }) => (kind === "attention" ? (rope ? "A" : "a") : kind[0])).join("")}${plan.rotated ? ", rotated" : ""}): forward.ts's logits are within ${worst.toExponential(2)} of NumPy's over ` +
+      `${plan.layers.map(({ kind, rope }) => (kind === "attention" ? (rope ? "A" : "a") : kind === OUTSIDE ? "o" : kind[0])).join("")}${plan.rotated ? ", rotated" : ""}): forward.ts's logits are within ${worst.toExponential(2)} of NumPy's over ` +
       `${tokens.length} tokens, one at a time and after a block${same ? "" : ", and NOT the same largest one"}`);
   }
   // a plan that says nothing of its layers, or of a kind of layer this engine has no step for, is refused as the engine is made
@@ -93,6 +135,9 @@ try {
   refused({ layers: plan.layers.slice(1) }, /the facts of 3 layers, and the model has 4/);
   refused({ layers: plan.layers.map((layer, l) => (l === 2 ? { ...layer, kind: "recurrent" } : layer)) }, /no layer of the kind "recurrent"/);
   refused({ layers: plan.layers.map((layer, l) => (l === 2 ? { ...layer, kind: "linear" } : layer)) }, /not the numbers of the layers of its kind/);
+  refused({ layers: plan.layers.map((layer, l) => (l === 2 ? { ...layer, kind: "convolution" } : layer)) }, /not the numbers of the layers of its kind/);
+  // (a name every object has is no kind of the table's)
+  refused({ layers: plan.layers.map((layer, l) => (l === 2 ? { ...layer, kind: "toString" } : layer)) }, /no layer of the kind "toString"/);
   console.log("ok: a plan without its layers' facts, with fewer than the model has layers, or with a kind of layer the engine has no step for is refused as the engine is made");
 } finally {
   fs.rmSync(folder, { recursive: true, force: true });
