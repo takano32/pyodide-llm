@@ -9,6 +9,7 @@ import struct
 import numpy as np
 import pytest
 from conftest import naive_logits, pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
+from made_up import qwen3  # noqa: F401 (the other tests take it from here)
 from test_convert import converted, hugging_face, reader, safetensors_file, streamed
 
 import llama2_convert
@@ -23,21 +24,6 @@ CONFIGS = [dict(n_kv_heads=4), dict(n_kv_heads=2), dict(n_kv_heads=1, shared=Fal
 def options_of(settings):
     """What the caller passes to Llama() for a file of these settings (the converter's options say the same)."""
     return {"qk_norm": True, **({"head_dim": settings["head_size"]} if settings["q_dim"] != settings["dim"] else {})}
-
-
-def qwen3(config, weights, shared, seed=11):
-    """What Hugging Face would publish for a Qwen3 with these weights: the norms of q and k, in Hugging Face's order
-    of a head (first halves, then second halves), which the converter interleaves like the rows of wq and wk."""
-    tensors, published = hugging_face(config, weights, shared)
-    head_size = config["head_size"]
-    rng = np.random.default_rng(seed)
-    for name in ("q_norm", "k_norm"):
-        weights[name] = (1.0 + rng.standard_normal((config["n_layers"], head_size)) * 0.3).astype(np.float32)
-        for layer in range(config["n_layers"]):
-            ours = weights[name][layer]
-            tensors[f"model.layers.{layer}.self_attn.{name}.weight"] = \
-                np.ascontiguousarray(ours.reshape(head_size // 2, 2).T.reshape(-1))
-    return tensors, {**published, "model_type": "qwen3"}
 
 
 def conversion(tensors, published, settings):

@@ -9,12 +9,10 @@ import struct
 import sys
 from pathlib import Path
 
-import numpy as np
-
 ROOT = Path(__file__).resolve().parent.parent
 from tree import python_folder
 sys.path.insert(0, python_folder(ROOT))
-from llama2_convert import layout  # noqa: E402
+from made_up import hugging_face, safetensors_file, settings_of, tensors_of  # noqa: E402
 
 
 def varint(value):
@@ -52,43 +50,12 @@ if __name__ == "__main__":
     out, stored = Path(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else "F32"
     out.mkdir(parents=True, exist_ok=True)
     checkpoint = (ROOT / "stories260K.bin").read_bytes()
-    header = struct.unpack_from("<7i", checkpoint, 0)
-    dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
-    head_size = dim // n_heads
-    names = ["model.embed_tokens", "input_layernorm", "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj",
-             "self_attn.o_proj", "post_attention_layernorm", "mlp.gate_proj", "mlp.down_proj", "mlp.up_proj", "model.norm",
-             None, None, "lm_head"]
-
-    def permute(w, heads):  # llama2.c's adjacent pairs -> Hugging Face's [first halves, second halves]
-        return w.reshape(heads, head_size // 2, 2, w.shape[1]).transpose(0, 2, 1, 3).reshape(w.shape)
-
-    tensors, offset = {}, 28
-    for name, (shape, _) in zip(names, layout(*header)):
-        tensor = np.frombuffer(checkpoint, dtype=np.float32, count=int(np.prod(shape)), offset=offset).reshape(shape)
-        offset += tensor.nbytes
-        if name is None:
-            continue  # the RoPE tables: the converter computes them
-        if name.startswith(("model.", "lm_head")):
-            tensors[f"{name}.weight"] = tensor
-            continue
-        for layer in range(n_layers):
-            heads = {"self_attn.q_proj": n_heads, "self_attn.k_proj": n_kv_heads}.get(name)
-            tensors[f"model.layers.{layer}.{name}.weight"] = permute(tensor[layer], heads) if heads else tensor[layer]
-
-    index, data = {"__metadata__": {"format": "pt"}}, b""
-    for name, tensor in tensors.items():
-        tensor = np.ascontiguousarray(tensor)
-        raw = (tensor.view(np.uint32) >> 16).astype(np.uint16).tobytes() if stored == "BF16" else tensor.tobytes()
-        index[name] = {"dtype": stored, "shape": list(tensor.shape), "data_offsets": [len(data), len(data) + len(raw)]}
-        data += raw
-    encoded = json.dumps(index).encode()
-    (out / "model.safetensors").write_bytes(struct.pack("<Q", len(encoded)) + encoded + data)
-    (out / "config.json").write_text(json.dumps(dict(
-        model_type="llama", hidden_size=dim, intermediate_size=hidden_dim, num_hidden_layers=n_layers,
-        num_attention_heads=n_heads, num_key_value_heads=n_kv_heads, vocab_size=abs(vocab_size),
-        max_position_embeddings=seq_len, rope_theta=10000.0, tie_word_embeddings=vocab_size > 0,
-        hidden_act="silu", bos_token_id=1, eos_token_id=2), indent=2))
-    (out / "tokenizer.model").write_bytes(sentencepiece_model((ROOT / "tok512.bin").read_bytes(), abs(vocab_size)))
+    # the checkpoint's tensors by the engine's names (read by its rows), and what Hugging Face would publish for them
+    settings = settings_of(struct.unpack_from("<7i", checkpoint, 0))
+    tensors, published = hugging_face(settings, tensors_of(checkpoint), settings["shared"])
+    (out / "model.safetensors").write_bytes(safetensors_file(tensors, stored))
+    (out / "config.json").write_text(json.dumps({**published, "hidden_act": "silu", "bos_token_id": 1, "eos_token_id": 2}, indent=2))
+    (out / "tokenizer.model").write_bytes(sentencepiece_model((ROOT / "tok512.bin").read_bytes(), settings["vocab_size"]))
     (out / "settings.json").write_text(json.dumps(dict(
         name="stories260K from Hugging Face files", conversion=dict(dtype="float32"), options=dict(stop_tokens=[1]),
         generation=dict(steps=256, temperature=0.0), prompt="Once upon a time")))

@@ -11,6 +11,7 @@ import pytest
 import engine.model
 import llama2_convert
 from conftest import pack_tokenizer, tiny_vocab
+from made_up import checkpoint, uniform
 from engine.layout import GATED_DELTA, SHORT_CONVOLUTION
 from llama2_numpy import (ATTENDING, EVERY, FORM, LAYOUTS, MATRIX, PARTLY, STATEFUL, TABLE, WHOLE, Dims, Layout, Llama,
                           Settings, Stateful, after, checkpoint_dtype, external_tensors, file_size, form_of,
@@ -45,10 +46,7 @@ every = pytest.mark.parametrize("arch", list(FACTS))
 
 def made_up(header, form=None, dtype="float32", seed=6):
     """A checkpoint of this header and form with small random numbers for every tensor."""
-    size = file_size(tensor_rows(header, form), dtype) - 28
-    width = {"float32": 4, "float16": 2}[dtype]
-    values = np.random.default_rng(seed).uniform(-0.2, 0.2, size // width).astype(dtype)
-    return struct.pack("<7i", *header) + values.tobytes()
+    return checkpoint(header, form, dtype, tensor=uniform(seed))
 
 
 def model(arch, dtype="float32", **more):

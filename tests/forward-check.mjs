@@ -363,8 +363,10 @@ const memoryOptions = (options) => {
   return { ...options, int8, relaxed: Boolean(kernels.relaxed) && !without.includes("relaxed"),
     halfKV: quantized && int8 && !without.includes("kv16"), shared: shared || halfKeys };
 };
+py.FS.writeFile("made_up.py", fs.readFileSync(new URL("./made_up.py", import.meta.url)));
 py.runPython(`
 import struct, numpy as np, llama2_convert
+import made_up as made_up_models
 
 def to_the_end(llama):
     """forward() at every position where the KV cache doubles, then at the last one, so that the cache has grown step
@@ -381,22 +383,10 @@ def to_the_end(llama):
     llama.forward(llama.bos, llama.seq_len - 1, need_logits=False)
 
 def made_up(dim, heads, kv_heads, hidden=512, layers=4, vocab=320, seq_len=4096):
-    """an int8 checkpoint as quantize.py writes one, and its bytes after the checkpoint at the end of the context"""
-    rng = np.random.default_rng(0)
+    """an int8 checkpoint as quantize.py writes one (tests/made_up.py's quantized(), T357.2), and its bytes after the
+    checkpoint at the end of the context"""
     header = (dim, hidden, layers, heads, kv_heads, vocab, seq_len)
-    out = [struct.pack("<7i", *header)]
-    for shape, is_matrix in llama2_convert.layout(*header):
-        if is_matrix is None:
-            continue
-        values = (rng.standard_normal(shape) * 0.3).astype(np.float32)
-        if is_matrix:
-            q, scales = llama2_convert.quantize(values.reshape(-1, shape[-1]))
-            out += [q.tobytes(), scales.tobytes()]
-        else:
-            out.append((1.0 + values * 0.1).tobytes())
-    pieces = [f"<{i}>".encode() for i in range(vocab)]
-    tokenizer = struct.pack("<i", max(map(len, pieces))) + b"".join(struct.pack("<fi", 0.0, len(p)) + p for p in pieces)
-    data = b"".join(out)
+    data, tokenizer = made_up_models.quantized(*header)
     llama = kernel_llama(data, tokenizer, half_keys=HALF_KEYS, dtype="int8", disable=WITHOUT)
     to_the_end(llama)
     used = int(llama._external[0].memoryBytes())

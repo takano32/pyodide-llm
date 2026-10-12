@@ -1,0 +1,420 @@
+# Made-up models for the tests and their tools, in one place (T357.2). Nothing here reads pytest or conftest.py, so that a
+# tool (tests/make_*.py, tests/plan_facts.py) and a Pyodide (tests/gpu-check.mjs, tests/forward-check.mjs) import it as
+# it is: whoever imports it has put the engine's Python on sys.path first (tests/tree.py's python_folder()).
+#
+# The file of the engine: one maker, checkpoint(), which lays a model out by the engine's own rows (engine/layout.py)
+# and stores each as the engine's registry of dtypes does (engine/dtypes.py): no order and no shape of a tensor is
+# written down here, and what a made-up model's values are is a function of the row (named(), uniform(), drawn()).
+#
+# What Hugging Face would publish, family by family: the tensors by transformers' names and shapes and the config.json,
+# written out by hand. These are the converter's input and the tests' own word of what a published model is: they do
+# not read the converter's table of sources (convert/families/), or a mistake there would be in the input too.
+import json
+import struct
+from pathlib import Path
+
+import numpy as np
+
+import llama2_numpy
+from engine.dtypes import DTYPES
+from engine.layout import VECTOR, check_suited, kind_of, tensor_rows
+
+
+# ------------------------------------------------------------------------------------------- a Llama
+def rope_tables(seq_len, head_size, rope_theta=10000.0):
+    angles = np.arange(seq_len)[:, None] / rope_theta ** (np.arange(0, head_size, 2) / head_size)
+    return np.cos(angles).astype(np.float32), np.sin(angles).astype(np.float32)
+
+
+
+def synthetic_weights(dim=32, hidden_dim=64, n_layers=2, n_heads=4, n_kv_heads=4,
+                      vocab_size=320, seq_len=24, shared=True, seed=0, head_size=0):
+    """Random weights for a tiny model, plus its configuration. Small enough for a naive reference.
+    head_size: where a head is not dim / n_heads (T124), q and the attention's output are n_heads * head_size wide."""
+    rng = np.random.default_rng(seed)
+    head_size = head_size or dim // n_heads
+    q_dim, kv_dim = n_heads * head_size, n_kv_heads * head_size
+    normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
+    cos, sin = rope_tables(seq_len, head_size)
+    weights = {
+        "token_embedding_table": normal(vocab_size, dim),
+        "rms_att_weight": (1.0 + normal(n_layers, dim) * 0.1).astype(np.float32),
+        "wq": normal(n_layers, q_dim, dim), "wk": normal(n_layers, kv_dim, dim),
+        "wv": normal(n_layers, kv_dim, dim), "wo": normal(n_layers, dim, q_dim),
+        "rms_ffn_weight": (1.0 + normal(n_layers, dim) * 0.1).astype(np.float32),
+        "w1": normal(n_layers, hidden_dim, dim), "w2": normal(n_layers, dim, hidden_dim),
+        "w3": normal(n_layers, hidden_dim, dim),
+        "rms_final_weight": (1.0 + normal(dim) * 0.1).astype(np.float32),
+        "freq_cis_real": cos, "freq_cis_imag": sin,
+    }
+    weights["wcls"] = weights["token_embedding_table"] if shared else normal(vocab_size, dim)
+    config = dict(dim=dim, hidden_dim=hidden_dim, n_layers=n_layers, n_heads=n_heads,
+                  n_kv_heads=n_kv_heads, vocab_size=vocab_size, seq_len=seq_len,
+                  head_size=head_size, q_dim=q_dim, kv_dim=kv_dim, shared=shared)
+    return config, weights
+
+
+def hugging_face(config, weights, shared):
+    """The tensors and the config.json Hugging Face would publish for these llama2.c weights."""
+    dim, n_heads, n_kv_heads = config["dim"], config["n_heads"], config["n_kv_heads"]
+    head_size = config["head_size"]
+
+    def permute(w, heads):  # llama2.c's adjacent pairs -> [first halves, second halves]: what convert undoes
+        return w.reshape(heads, head_size // 2, 2, w.shape[1]).transpose(0, 2, 1, 3).reshape(w.shape)
+
+    tensors = {"model.embed_tokens.weight": weights["token_embedding_table"], "model.norm.weight": weights["rms_final_weight"]}
+    names = dict(rms_att_weight="input_layernorm", wq="self_attn.q_proj", wk="self_attn.k_proj", wv="self_attn.v_proj",
+                 wo="self_attn.o_proj", rms_ffn_weight="post_attention_layernorm", w1="mlp.gate_proj", w2="mlp.down_proj",
+                 w3="mlp.up_proj")
+    for ours, theirs in names.items():
+        for layer in range(config["n_layers"]):
+            tensor = weights[ours][layer]
+            if ours in ("wq", "wk"):
+                tensor = permute(tensor, n_heads if ours == "wq" else n_kv_heads)
+            tensors[f"model.layers.{layer}.{theirs}.weight"] = np.ascontiguousarray(tensor)
+    if not shared:
+        tensors["lm_head.weight"] = weights["wcls"]
+    published = dict(model_type="llama", hidden_size=dim, intermediate_size=config["hidden_dim"],
+                     num_hidden_layers=config["n_layers"], num_attention_heads=n_heads, num_key_value_heads=n_kv_heads,
+                     vocab_size=config["vocab_size"], max_position_embeddings=config["seq_len"], rope_theta=10000.0,
+                     tie_word_embeddings=shared)
+    if head_size != dim // n_heads:
+        published["head_dim"] = head_size
+    return tensors, published
+
+
+def safetensors_file(tensors, stored="F32", metadata=None):
+    """metadata: more of the header's __metadata__ (T237: a rotated basis, as gguf_model() says one)."""
+    header, data = {"__metadata__": {"format": "pt", **(metadata or {})}}, b""
+    for name, tensor in tensors.items():
+        if stored == "BF16":  # the upper half of the float32: what bfloat16 is
+            raw = (np.ascontiguousarray(tensor, dtype=np.float32).view(np.uint32) >> 16).astype(np.uint16).tobytes()
+        else:
+            raw = np.ascontiguousarray(tensor, dtype={"F32": np.float32, "F16": np.float16}[stored]).tobytes()
+        header[name] = {"dtype": stored, "shape": list(tensor.shape), "data_offsets": [len(data), len(data) + len(raw)]}
+        data += raw
+    encoded = json.dumps(header).encode()
+    return struct.pack("<Q", len(encoded)) + encoded + data
+
+
+# ------------------------------------------------------------------------------------------- Qwen2, Qwen3
+def qwen2(config, weights, shared, seed=7):
+    """What Hugging Face would publish for a Qwen2 with these weights: the biases too, permuted like wq and wk."""
+    tensors, published = hugging_face(config, weights, shared)
+    head_size = config["dim"] // config["n_heads"]
+    rng = np.random.default_rng(seed)
+    permute = lambda v, heads: v.reshape(heads, head_size // 2, 2).transpose(0, 2, 1).reshape(-1)
+    for name, ours, heads in (("q_proj", "bq", config["n_heads"]), ("k_proj", "bk", config["n_kv_heads"]),
+                              ("v_proj", "bv", None)):
+        rows = config["dim"] if ours == "bq" else config["n_kv_heads"] * head_size
+        weights[ours] = (rng.standard_normal((config["n_layers"], rows)) * 0.3).astype(np.float32)
+        for layer in range(config["n_layers"]):
+            vector = weights[ours][layer]
+            tensors[f"model.layers.{layer}.self_attn.{name}.bias"] = \
+                np.ascontiguousarray(permute(vector, heads) if heads else vector)
+    return tensors, {**published, "model_type": "qwen2"}
+
+
+def qwen3(config, weights, shared, seed=11):
+    """What Hugging Face would publish for a Qwen3 with these weights: the norms of q and k, in Hugging Face's order
+    of a head (first halves, then second halves), which the converter interleaves like the rows of wq and wk."""
+    tensors, published = hugging_face(config, weights, shared)
+    head_size = config["head_size"]
+    rng = np.random.default_rng(seed)
+    for name in ("q_norm", "k_norm"):
+        weights[name] = (1.0 + rng.standard_normal((config["n_layers"], head_size)) * 0.3).astype(np.float32)
+        for layer in range(config["n_layers"]):
+            ours = weights[name][layer]
+            tensors[f"model.layers.{layer}.self_attn.{name}.weight"] = \
+                np.ascontiguousarray(ours.reshape(head_size // 2, 2).T.reshape(-1))
+    return tensors, {**published, "model_type": "qwen3"}
+
+
+# ------------------------------------------------------------------------------------- Qwen3.5 (T229)
+def qwen35_model(dim=32, hidden_dim=64, n_layers=4, every=2, n_heads=4, n_kv_heads=2, head_dim=16, rotary=0.25,
+                 key_heads=2, value_heads=4, key_dim=8, value_dim=6, conv=4, vocab_size=320, seq_len=24, shared=True,
+                 prefix="model.language_model.", seed=0, eps=1e-6):
+    """Random Hugging Face tensors of a tiny Qwen3.5 (hybrid attention), with the names and shapes of
+    Qwen/Qwen3.5-0.8B's model.safetensors, and its config.json (the language model's under text_config, as there)."""
+    rng = np.random.default_rng(seed)
+    normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
+    keys, values = key_heads * key_dim, value_heads * value_dim
+    kinds = ["linear_attention" if (layer + 1) % every else "full_attention" for layer in range(n_layers)]
+    tensors = {prefix + "embed_tokens.weight": normal(vocab_size, dim), prefix + "norm.weight": normal(dim)}
+    for layer, kind in enumerate(kinds):
+        p = f"{prefix}layers.{layer}."
+        tensors[p + "input_layernorm.weight"] = normal(dim)  # around zero: the model multiplies by 1 + weight
+        tensors[p + "post_attention_layernorm.weight"] = normal(dim)
+        if kind == "full_attention":
+            tensors[p + "self_attn.q_proj.weight"] = normal(2 * n_heads * head_dim, dim)
+            tensors[p + "self_attn.k_proj.weight"] = normal(n_kv_heads * head_dim, dim)
+            tensors[p + "self_attn.v_proj.weight"] = normal(n_kv_heads * head_dim, dim)
+            tensors[p + "self_attn.o_proj.weight"] = normal(dim, n_heads * head_dim)
+            tensors[p + "self_attn.q_norm.weight"] = normal(head_dim)
+            tensors[p + "self_attn.k_norm.weight"] = normal(head_dim)
+        else:
+            tensors[p + "linear_attn.in_proj_qkv.weight"] = normal(2 * keys + values, dim)
+            tensors[p + "linear_attn.in_proj_z.weight"] = normal(values, dim)
+            tensors[p + "linear_attn.in_proj_b.weight"] = normal(value_heads, dim)
+            tensors[p + "linear_attn.in_proj_a.weight"] = normal(value_heads, dim)
+            tensors[p + "linear_attn.conv1d.weight"] = normal(2 * keys + values, 1, conv)
+            tensors[p + "linear_attn.dt_bias"] = normal(value_heads)
+            tensors[p + "linear_attn.A_log"] = normal(value_heads)
+            tensors[p + "linear_attn.norm.weight"] = (1.0 + normal(value_dim)).astype(np.float32)
+            tensors[p + "linear_attn.out_proj.weight"] = normal(dim, values)
+        tensors[p + "mlp.gate_proj.weight"] = normal(hidden_dim, dim)
+        tensors[p + "mlp.up_proj.weight"] = normal(hidden_dim, dim)
+        tensors[p + "mlp.down_proj.weight"] = normal(dim, hidden_dim)
+    if not shared:
+        tensors["lm_head.weight"] = normal(vocab_size, dim)
+    # what transformers leaves unread: the vision model and the look-ahead head
+    tensors["model.visual.patch_embed.proj.bias"] = normal(8)
+    tensors["mtp.norm.weight"] = normal(dim)
+    text = dict(model_type="qwen3_5_text", hidden_size=dim, intermediate_size=hidden_dim, num_hidden_layers=n_layers,
+                num_attention_heads=n_heads, num_key_value_heads=n_kv_heads, head_dim=head_dim, hidden_act="silu",
+                layer_types=kinds, full_attention_interval=every, linear_conv_kernel_dim=conv,
+                linear_key_head_dim=key_dim, linear_value_head_dim=value_dim, linear_num_key_heads=key_heads,
+                linear_num_value_heads=value_heads, max_position_embeddings=seq_len, rms_norm_eps=eps,
+                vocab_size=vocab_size, tie_word_embeddings=shared, eos_token_id=7, attn_output_gate=True,
+                mlp_only_layers=[],
+                rope_parameters={"rope_type": "default", "rope_theta": 10000000, "partial_rotary_factor": rotary,
+                                 "mrope_interleaved": True, "mrope_section": [11, 11, 10]})
+    return tensors, dict(model_type="qwen3_5", text_config=text, tie_word_embeddings=shared)
+
+
+# T237: a model folded into a rotated basis (tests/test_rotated.py, tests/make_qwen35.py)
+# the matrices of a Hugging Face checkpoint that the forward pass multiplies an activation by, and the embedding
+FOLDED = ("embed_tokens.weight", "lm_head.weight", "self_attn.q_proj.weight", "self_attn.k_proj.weight",
+          "self_attn.v_proj.weight", "self_attn.o_proj.weight", "mlp.gate_proj.weight", "mlp.up_proj.weight",
+          "mlp.down_proj.weight", "linear_attn.in_proj_qkv.weight", "linear_attn.in_proj_z.weight",
+          "linear_attn.out_proj.weight")
+
+
+def basis(block, widths, seed=5):
+    """A rotated basis with random signs for these widths, as the options say one, and the signs."""
+    rng = np.random.default_rng(seed)
+    signs = {width: rng.choice([-1.0, 1.0], width).astype(np.float32) for width in sorted(set(widths))}
+    return {"block": block, "signs": {str(width): llama2_numpy.sign_bits(values) for width, values in signs.items()}}, signs
+
+
+def folded(tensors, block, signs):
+    """The tensors of a model as a file in the rotated basis holds them: every row of a matrix (and of the embedding)
+    is R of the row, with the signs of the row's length."""
+    return {name: llama2_numpy.rotate(tensor, signs[tensor.shape[-1]], block).astype(np.float32) if name.endswith(FOLDED) else tensor
+            for name, tensor in tensors.items()}
+
+
+# ------------------------------------------------------------------------------------- LFM2 (T260)
+def lfm2_model(dim=32, block_ff_dim=96, kinds="ccaccaca", n_heads=4, n_kv_heads=2, taps=3, vocab_size=320, seq_len=24,
+               shared=True, seed=0, eps=1e-5, adjust=True):
+    """Random Hugging Face tensors of a tiny LFM2 (convolution layers among attention layers), with the names and
+    shapes of LiquidAI/LFM2.5-350M's model.safetensors, and its config.json. kinds: a letter a layer, c for a
+    convolution layer and a for an attention layer. block_ff_dim is what the config says; the FFN's inside is what
+    transformers' Lfm2MLP makes of it (two thirds, up to a multiple of block_multiple_of: 96 becomes 64)."""
+    rng = np.random.default_rng(seed)
+    normal = lambda *shape: (rng.standard_normal(shape) * 0.3).astype(np.float32)
+    weight = lambda n: (1.0 + normal(n)).astype(np.float32)  # a norm's, as stored: the model multiplies by it
+    multiple = 32
+    hidden_dim = multiple * ((int(2 * block_ff_dim / 3) + multiple - 1) // multiple) if adjust else block_ff_dim
+    head_dim = dim // n_heads
+    tensors = {"model.embed_tokens.weight": normal(vocab_size, dim), "model.embedding_norm.weight": weight(dim)}
+    for layer, kind in enumerate(kinds):
+        p = f"model.layers.{layer}."
+        tensors[p + "operator_norm.weight"] = weight(dim)
+        tensors[p + "ffn_norm.weight"] = weight(dim)
+        if kind == "a":
+            tensors[p + "self_attn.q_proj.weight"] = normal(n_heads * head_dim, dim)
+            tensors[p + "self_attn.k_proj.weight"] = normal(n_kv_heads * head_dim, dim)
+            tensors[p + "self_attn.v_proj.weight"] = normal(n_kv_heads * head_dim, dim)
+            tensors[p + "self_attn.out_proj.weight"] = normal(dim, n_heads * head_dim)
+            tensors[p + "self_attn.q_layernorm.weight"] = weight(head_dim)
+            tensors[p + "self_attn.k_layernorm.weight"] = weight(head_dim)
+        else:
+            tensors[p + "conv.in_proj.weight"] = normal(3 * dim, dim)
+            tensors[p + "conv.conv.weight"] = normal(dim, 1, taps)
+            tensors[p + "conv.out_proj.weight"] = normal(dim, dim)
+        tensors[p + "feed_forward.w1.weight"] = normal(hidden_dim, dim)
+        tensors[p + "feed_forward.w3.weight"] = normal(hidden_dim, dim)
+        tensors[p + "feed_forward.w2.weight"] = normal(dim, hidden_dim)
+    if not shared:
+        tensors["lm_head.weight"] = normal(vocab_size, dim)
+    config = dict(model_type="lfm2", architectures=["Lfm2ForCausalLM"], hidden_size=dim, block_dim=dim, conv_dim=dim,
+                  block_ff_dim=block_ff_dim, intermediate_size=block_ff_dim, block_auto_adjust_ff_dim=adjust,
+                  block_ffn_dim_multiplier=1.0, block_multiple_of=multiple, num_hidden_layers=len(kinds),
+                  num_attention_heads=n_heads, num_heads=n_heads, num_key_value_heads=n_kv_heads,
+                  layer_types=["conv" if kind == "c" else "full_attention" for kind in kinds], conv_L_cache=taps,
+                  conv_bias=False, norm_eps=eps, block_norm_eps=eps, max_position_embeddings=seq_len, vocab_size=vocab_size,
+                  bos_token_id=1, eos_token_id=7, pad_token_id=0, tie_embedding=shared, use_pos_enc=True,
+                  rope_parameters={"rope_theta": 1000000.0, "rope_type": "default"})
+    return tensors, config
+
+
+# ------------------------------------------------------------------------------------------- the engine's file
+def checkpoint(header, form=None, dtype="float32", *, tensor):
+    """The file of a model with this header (the 7 ints) and form (llama2_numpy.FORM's keys) in this dtype, as the
+    engine reads it: the header, then every row of engine/layout.py's tensor_rows() in its order, each stored as its
+    kind (kind_of(): the vectors of a quantized file are float32, and it has no RoPE tables) by the registry of dtypes.
+    tensor(row) -> the values of the row (its name, role, shape and layers: layout.py's Row), an array of the row's
+    shape; it is asked for the rows the file holds, in file order, and for no other.
+    One tensor after the other, by nobody's table of places: that the places of placed() are these is what the
+    engine's reading of the file checks."""
+    rows = tensor_rows(header, form)
+    check_suited(rows, dtype)
+    out = [struct.pack("<7i", *header)]
+    for row in rows:
+        kind = kind_of(row, dtype)
+        if kind is None:
+            continue
+        values = np.asarray(tensor(row))
+        if values.shape != tuple(row.shape):
+            raise ValueError(f"The tensor {row.name} of this model is {tuple(row.shape)}, and the values made up for it are {values.shape}.")
+        stored = DTYPES[kind]
+        if not stored.bits:
+            out.append(np.ascontiguousarray(values, dtype=stored.name).tobytes())
+            continue
+        packed, scales = stored.pack(np.asarray(values, dtype=np.float32).reshape(-1, row.shape[-1]))
+        out += [np.ascontiguousarray(packed).tobytes(), np.ascontiguousarray(scales, dtype=np.float32).tobytes()]
+    return b"".join(out)
+
+
+def tensors_of(data, form=None):
+    """{a row's name: its values} of a float32 checkpoint, read back by the same rows."""
+    header, offset, tensors = struct.unpack_from("<7i", data, 0), 28, {}
+    for row in tensor_rows(header, form):
+        tensors[row.name] = np.frombuffer(data, dtype=np.float32, count=int(np.prod(row.shape)), offset=offset).reshape(row.shape)
+        offset += tensors[row.name].nbytes
+    assert offset == len(data), "the file is not a float32 checkpoint of this header and form"
+    return tensors
+
+
+# ---- what the values are
+def named(weights):
+    """The values a dict has under the rows' names."""
+    return lambda row: weights[row.name]
+
+
+def uniform(seed, low=-0.2, high=0.2):
+    """Small random numbers for every tensor, of one stream in file order."""
+    rng = np.random.default_rng(seed)
+    return lambda row: rng.uniform(low, high, row.shape)
+
+
+# the vectors of a file that are biases, by the rows' names: every other vector is the weight of a norm
+BIASES = ("bq", "bk", "bv", "bo", "b1", "b2", "ln_att_bias", "ln_ffn_bias", "ln_final_bias")
+
+
+def drawn(seed=0, outliers=0, spread=7, calm=False, ternary=False):
+    """The values of the made-up models the GPU is checked on (tests/gpu-check.mjs), of one stream in file order: a
+    matrix is 0.3 N; the weight of a norm is 1 + 0.03 N, a bias 0.3 N (T154, T187: around 0 as the matrices are, or
+    the biases of every layer are nearly the same and 8 bits hide a GPU that reads layer 0's in every layer).
+    outliers (T226): that many weights of the final norm are 12 (GPT-2's are 12 to 17 times the others, T92), so that
+    the engine takes their channels apart in the classifier (llama2_numpy.outlier_channels), at channels 0, spread,
+    2 spread, ... (mod dim: the T232 review's spread of 37 puts some in every group of 128 of a dim of 256).
+    calm (T226's review): the layers' matrices at 0.1 and the norms' weights 1 +- 0.3, see the head of gpu-check.mjs.
+    ternary (T232): every group of 128 along a row of a matrix keeps the signs of its larger values (about two thirds)
+    times one scale of its own, the rest are 0 (ternarized()'s, below), which the ternary dtype stores as they are."""
+    rng = np.random.default_rng(seed)
+
+    def tensor(row):
+        values = (rng.standard_normal(row.shape) * 0.3).astype(np.float32)
+        if row.role == VECTOR:
+            values = values if row.name in BIASES else 1.0 + values * (1.0 if calm else 0.1)
+            if outliers and row.name == "rms_final_weight":
+                values[np.arange(outliers) * spread % row.shape[-1]] = 12.0
+            return values.astype(np.float32)
+        if calm and row.per is not None:
+            values = values / 3  # a layer's matrix (the embedding, the positions and the classifier: as they are)
+        if ternary:
+            groups = values.reshape(-1, 128)
+            cut = np.quantile(np.abs(groups), 1 / 3, axis=1, keepdims=True)
+            d = (np.abs(groups).mean(axis=1, keepdims=True) * rng.uniform(0.5, 1.5, (len(groups), 1))).astype(np.float32)
+            values = (np.sign(groups) * (np.abs(groups) > cut) * d).astype(np.float32).reshape(row.shape)
+        return values
+    return tensor
+
+
+def quantized(dim=64, hidden=128, layers=2, heads=4, kv_heads=2, vocab=320, seq_len=256, seed=0, dtype="int8", outliers=0,
+              calm=False, spread=7, **form):
+    """A made-up checkpoint of drawn()'s values in a quantized dtype (int8 as quantize.py writes one, int6 of T98,
+    ternary of T230) and its tokenizer.bin: grouped-query attention unless kv_heads says otherwise. form:
+    llama2_numpy.FORM's keys (arch, bias, qk_norm, head_dim ...). A negative vocab (the header's own way of saying so):
+    a classifier apart from the embedding."""
+    tensor = drawn(seed, outliers, spread, calm, ternary=dtype == "ternary")
+    return checkpoint((dim, hidden, layers, heads, kv_heads, vocab, seq_len), form, dtype, tensor=tensor), numbered(abs(vocab))
+
+
+# ---- a Llama's, from synthetic_weights()
+def header_of(config):
+    """The 7 ints of synthetic_weights()'s configuration (a negative vocabulary: a classifier of its own)."""
+    return (config["dim"], config["hidden_dim"], config["n_layers"], config["n_heads"], config["n_kv_heads"],
+            config["vocab_size"] if config["shared"] else -config["vocab_size"], config["seq_len"])
+
+
+def settings_of(header):
+    """synthetic_weights()'s configuration of a Llama with this header, whose heads fill dim."""
+    dim, hidden_dim, n_layers, n_heads, n_kv_heads, vocab_size, seq_len = header
+    head_size = dim // n_heads
+    return dict(dim=dim, hidden_dim=hidden_dim, n_layers=n_layers, n_heads=n_heads, n_kv_heads=n_kv_heads,
+                vocab_size=abs(vocab_size), seq_len=seq_len, head_size=head_size, q_dim=n_heads * head_size,
+                kv_dim=n_kv_heads * head_size, shared=vocab_size > 0)
+
+
+def pack_checkpoint(config, weights):
+    """The float32 checkpoint of synthetic_weights()'s weights: llama2.c's file."""
+    return checkpoint(header_of(config), {"head_dim": config["head_size"]}, "float32", tensor=named(weights))
+
+
+# ------------------------------------------------------------------------------------------- tokenizers
+def numbered(count):
+    """A tokenizer.bin of count pieces <0>, <1>, ...: for a model nobody reads the text of."""
+    return pack_tokenizer([(0.0, f"<{i}>".encode()) for i in range(count)])
+
+
+def unigram(count):
+    """A tokenizer.json of count pieces w0, w1, ..., the same."""
+    return json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
+                       "vocab": [[f"w{i}", -float(i)] for i in range(count)]}}).encode()
+
+
+def pack_tokenizer(pieces):
+    """llama2.c's tokenizer.bin: max piece length, then (score, length, bytes) per piece."""
+    out = [struct.pack("<i", max(len(text) for _, text in pieces))]
+    out += [struct.pack("<fi", score, len(text)) + text for score, text in pieces]
+    return b"".join(out)
+
+
+def tiny_vocab(vocab_size=320):
+    """A vocabulary of that many pieces: <unk>, byte fallbacks, then words and characters.
+
+    Byte and control pieces get the unmatchable score convert_hf.py writes, so they never match text directly.
+    """
+    pieces = [(-1e9, b"<unk>"), (-1e9, b"<s>"), (-1e9, b"</s>")]
+    pieces += [(-1e9, b"<0x%02X>" % byte) for byte in range(256)]
+    words = [" ", " the", " cat", " s", "a", "t", "o", "n", "e", "h", "c", " a", " o",
+             "流", "行", "、", " 流行り", "Ａ", "!", "?", " \n", "\n", " hello", " world",
+             " he", "l", "w", "r", "d", " t", "i", "g", "猫", " 猫", "り"]
+    for i, word in enumerate(words):
+        pieces.append((-float(i) * 0.5, word.encode("utf-8")))
+    assert len(pieces) <= vocab_size, "the vocabulary does not fit"
+    while len(pieces) < vocab_size:  # padding rows, never matchable
+        pieces.append((-1e9, b"<pad%d>" % len(pieces)))
+    return pieces[:vocab_size]
+
+
+# ------------------------------------------------------------------------------------------- a model as files
+def files(out, tensors, config, dtype, seq_len, vocab, metadata=None):
+    """<out>.bin, <out>.tokenizer.bin and <out>.json (as tests/perplexity_prepare.py writes them) of the model Hugging
+    Face would publish as these tensors and this config.json, converted the way the page converts them
+    (llama2_convert.Conversion), for the checks of forward.js that take a model by its files. vocab: the pieces of its
+    vocabulary. metadata: more of the safetensors header's __metadata__ (T237: a rotated basis)."""
+    import llama2_convert  # (here and not above: everything else of this file needs the engine alone)
+    file = safetensors_file(tensors, metadata=metadata)
+    size = struct.unpack("<Q", file[:8])[0]
+    conversion = llama2_convert.Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(config), unigram(vocab),
+                                           "tokenizer.json", dtype=dtype, max_seq_len=seq_len, start=8 + size)
+    conversion.feed(file[8 + size:])
+    conversion.finish()
+    Path(f"{out}.bin").write_bytes(bytes(conversion.checkpoint))
+    Path(f"{out}.tokenizer.bin").write_bytes(conversion.tokenizer)
+    Path(f"{out}.json").write_text(json.dumps(conversion.options))
+    print(f"{out}.bin: {len(conversion.checkpoint)} bytes ({dtype}), {json.dumps(conversion.options)}")

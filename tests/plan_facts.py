@@ -8,7 +8,6 @@
 # the name, would answer right for all five. Their names are none an engine outside Python has heard of.
 import json
 import os
-import struct
 import sys
 
 import numpy as np
@@ -69,24 +68,17 @@ def cases(L):
     ]
 
 
-def made_up(L, header, form, seed):
-    """A float32 checkpoint of this header and form: small random numbers for every tensor."""
-    size = L.file_size(L.tensor_rows(header, form), "float32") - 28
-    values = np.random.default_rng(seed).uniform(-0.2, 0.2, size // 4).astype(np.float32)
-    return struct.pack("<7i", *header) + values.tobytes()
-
-
 if __name__ == "__main__":
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from conftest import pack_tokenizer, tiny_vocab
     from tree import python_folder
     sys.path.insert(0, python_folder(sys.argv[1]))
     import llama2_numpy as L
+    import made_up
 
     folder, said = sys.argv[2], []
-    tokenizer = pack_tokenizer(tiny_vocab(320))
+    tokenizer = made_up.pack_tokenizer(made_up.tiny_vocab(320))
     for index, (name, header, form, options) in enumerate(cases(L)):
-        checkpoint = made_up(L, header, form, 6 + index)
+        checkpoint = made_up.checkpoint(header, form, "float32", tensor=made_up.uniform(6 + index))
         external = External(checkpoint)
         try:
             L.Llama(None, b"", dtype="float32", external=external, **form, **options)

@@ -21,7 +21,6 @@
 #   rotated basis is for, `tied_output`, as the smaller models of a Qwen3.5 have it): one ternary table whose rows
 #   the engine turns back where it embeds and multiplies by the turned input where it classifies (T237's review).
 import json
-import struct
 import sys
 from pathlib import Path
 
@@ -31,9 +30,7 @@ HERE = Path(__file__).resolve().parent
 from tree import python_folder
 sys.path.insert(0, python_folder(HERE.parent))
 sys.path.insert(0, str(HERE))
-from conftest import basis, qwen35_model, synthetic_weights  # noqa: E402
-from test_convert import safetensors_file  # noqa: E402
-from test_qwen3 import qwen3  # noqa: E402
+from made_up import basis, files, qwen35_model, qwen3, synthetic_weights  # noqa: E402
 import llama2_convert  # noqa: E402
 
 VOCAB = 384
@@ -75,18 +72,7 @@ def model(kind):
 def main():
     out, dtype = sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "ternary"
     tensors, config, seq_len, metadata = model(sys.argv[3] if len(sys.argv) > 3 else "qwen3")
-    file = safetensors_file(ternarized(tensors), metadata=metadata)
-    size = struct.unpack("<Q", file[:8])[0]
-    vocabulary = json.dumps({"added_tokens": [], "model": {"type": "Unigram", "unk_id": 0,
-                             "vocab": [[f"w{i}", -float(i)] for i in range(VOCAB)]}}).encode()
-    conversion = llama2_convert.Conversion(file[8:8 + size].decode(), 8 + size, json.dumps(config), vocabulary,
-                                           "tokenizer.json", dtype=dtype, max_seq_len=seq_len, start=8 + size)
-    conversion.feed(file[8 + size:])
-    conversion.finish()
-    Path(f"{out}.bin").write_bytes(bytes(conversion.checkpoint))
-    Path(f"{out}.tokenizer.bin").write_bytes(conversion.tokenizer)
-    Path(f"{out}.json").write_text(json.dumps(conversion.options))
-    print(f"{out}.bin: {len(conversion.checkpoint)} bytes ({dtype}), {json.dumps(conversion.options)}")
+    files(out, ternarized(tensors), config, dtype, seq_len, VOCAB, metadata=metadata)
 
 
 if __name__ == "__main__":

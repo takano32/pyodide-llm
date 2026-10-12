@@ -5,29 +5,13 @@ import struct
 import numpy as np
 import pytest
 from conftest import naive_logits, pack_checkpoint, pack_tokenizer, synthetic_weights, tiny_vocab
-from test_convert import converted, hugging_face, reader, safetensors_file, streamed
+from made_up import qwen2  # noqa: F401 (the other tests take it from here)
+from test_convert import converted, reader, safetensors_file, streamed
 
 from llama2_convert import Safetensors, checkpoint_header, checkpoint_size, has_bias, layout
 from llama2_numpy import Llama, checkpoint_dtype
 
 CONFIGS = [dict(n_kv_heads=4), dict(n_kv_heads=2), dict(n_kv_heads=1, shared=False)]
-
-
-def qwen2(config, weights, shared, seed=7):
-    """What Hugging Face would publish for a Qwen2 with these weights: the biases too, permuted like wq and wk."""
-    tensors, published = hugging_face(config, weights, shared)
-    head_size = config["dim"] // config["n_heads"]
-    rng = np.random.default_rng(seed)
-    permute = lambda v, heads: v.reshape(heads, head_size // 2, 2).transpose(0, 2, 1).reshape(-1)
-    for name, ours, heads in (("q_proj", "bq", config["n_heads"]), ("k_proj", "bk", config["n_kv_heads"]),
-                              ("v_proj", "bv", None)):
-        rows = config["dim"] if ours == "bq" else config["n_kv_heads"] * head_size
-        weights[ours] = (rng.standard_normal((config["n_layers"], rows)) * 0.3).astype(np.float32)
-        for layer in range(config["n_layers"]):
-            vector = weights[ours][layer]
-            tensors[f"model.layers.{layer}.self_attn.{name}.bias"] = \
-                np.ascontiguousarray(permute(vector, heads) if heads else vector)
-    return tensors, {**published, "model_type": "qwen2"}
 
 
 @pytest.mark.parametrize("config", CONFIGS)
