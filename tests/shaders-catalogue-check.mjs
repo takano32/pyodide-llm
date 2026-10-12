@@ -20,6 +20,7 @@
 //     rows (FNV-1a, the unit separator after each text) for eight made-up devices and their ternary models.
 //   - (T379.2) every maker of WGSL the window exports has rows here, or arguments in tests/shader-makers.mjs (the
 //     tiles', the benchmark's), each set of which makes a text of its own.
+//   - (T379.2) a text declares nothing it does not use, and declares the struct of what it binds.
 // What a maker's text branches on that no row walks (a new parameter) is tests/device-key-check.mjs's, which changes
 // each piece of the shaders' source by a character; that the worker takes shaders nowhere else, too.
 import assert from "node:assert/strict";
@@ -99,6 +100,35 @@ for (const [name, givens] of Object.entries(MAKERS_APART)) {
   assert.equal(new Set(made).size, givens.length, `${name}: two sets of arguments of tests/shader-makers.mjs make one text: an argument the maker does not take (its branches are not walked)`);
 }
 console.log(`shaders-catalogue-check: ${makersOfWgsl(shadersModule).length} makers of WGSL, each the catalogue's (${makers.size}) or of the list apart (${Object.keys(MAKERS_APART).join(", ")})`);
+
+// ---- (T379.2) what a text declares, it uses, and the type of what it binds is declared: every text a device is given
+// (the rows' and the tiles'), read as text (no WGSL compiler here: that a text compiles is CI's gpu-check). Until T379.2
+// a token's matrices declared the Step struct where no step was bound, and a constant only the norm's form read; a
+// declaration that comes back unused, or a struct dropped where it is bound, is said here. Names a piece of text
+// shared by two shaders gives both, of which one uses fewer, are listed (LEFT): taking them out is another text, and
+// every device's key.
+const LEFT = { "flashVec(subgroups=true)": ["lanes_add4"],
+  "flashVecReduce(subgroups=false)": ["shuffle_down", "shuffle_down4", "shuffle"], "flashVecReduce(subgroups=true)": ["shuffle_down", "shuffle_down4", "shuffle"] };
+const given = [...rows.map((row) => [said(row), row.text()]),
+  ...[false, true].flatMap((ternary) => devicePromptForms({ features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, ternary)
+    .concat(devicePromptForms({ features: new Set(), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, ternary))
+    .map((form) => [`the tile ${form.name}`, form.code]))];
+let declarations = 0;
+for (const [what, raw] of given) {
+  const text = raw.replace(/\/\/.*$/gm, "");
+  const unused = [];
+  for (const found of text.matchAll(/^(?:@group\(0\) @binding\(\d+\) )?(?:(?:struct|const|fn|override|alias)\s+(\w+)|var(?:<[^>]*>)?\s+(\w+)\s*:)/gm)) {
+    const declared = found[1] ?? found[2];
+    if (declared === "main") continue;
+    declarations += 1;
+    if ([...text.matchAll(new RegExp(`\\b${declared}\\b`, "g"))].length === 1) unused.push(declared);
+  }
+  assert.deepEqual(unused, LEFT[what] ?? [], `${what}: what its text declares and never uses (but what tests/shaders-catalogue-check.mjs's LEFT lists)`);
+  for (const bound of text.matchAll(/^@group\(0\) @binding\(\d+\) var<[^>]*>\s+\w+\s*:\s*([A-Z]\w*)\s*;/gm)) {
+    assert.ok(new RegExp(`^struct ${bound[1]} \\{`, "m").test(text), `${what} binds a ${bound[1]} and declares no struct of that name`);
+  }
+}
+console.log(`shaders-catalogue-check: ${given.length} texts (the rows' and the tiles'): each of their ${declarations} declarations is used, and each struct that is bound is declared`);
 
 // ---- ENGINE: the rows by name
 assert.deepEqual(Object.keys(ENGINE), [...new Set(rows.map((row) => row.name))], "ENGINE's names are the rows', in their order");
