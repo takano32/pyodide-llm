@@ -20,7 +20,7 @@
 
 // T350: this file is the window of the worker: its URL, generate() and the messages. The rest is in the modules
 // of worker/: runtime.ts (what the visit finds once), request.ts (what the page asked for with a load), loaded.ts (the
-// model loaded now) (T378.3: each sets its own, and the others say what happened and read), told.ts, clock.ts, pyodide.ts (the runtime's
+// model loaded now) (T378.3: each sets its own, and the others say what happened and read), clock.ts, pyodide.ts (the runtime's
 // loading), weights.ts (where a model's weights go), ranges.ts and sources.ts (the fetching), conduct.ts (T374.2.1: what
 // answers the conduct of a conversion, which is Python's, from huggingface.co or from a folder), convert.ts (a Hugging Face model), load.ts and timing.ts (what /benchmark/ times).
 // T367.3: a bundler links them (static imports, src/runtime/): they are part of this worker's own file, whose name
@@ -29,6 +29,8 @@
 // then). What the worker asks for later is asked for by a literal name: forward.ts, kept.js and the device's key as
 // modules (import("./forward.ts")), the kernels and the Python's archives as files (built.ts). The site's root, where
 // models/ is, the page hands over with a load (request.ts's root): this file's own URL is under _astro/.
+// T380.1: what fails is carried and read in one way (failure.ts): the catch at the end of this file tells the page what
+// failureOf() reads of whatever was thrown, and no module puts a mark on an Error or reads an exception's words.
 // T367.4: a page left open across a deployment asks for such a file after it is gone. Where that ends a load (the
 // Python's archives, kept.js at a first conversion) the visitor is told that the site was updated (updated.ts); where
 // the engine goes on without the file (the kernels and forward.ts: NumPy; a software thread; the GPU's worker; the
@@ -38,11 +40,10 @@ import { pyodide, runtimeAsked } from "./worker/runtime.ts";
 import { loadAsked, benching, roundsBegan, roundBegan, roundsEnded } from "./worker/request.ts";
 import { llama, engineNow } from "./worker/loaded.ts";
 import { weightsBytes, gpuOnlyLost, onCpuFromNow } from "./worker/weights.ts";
-import { told } from "./worker/told.ts";
+import { failureOf } from "./failure.ts";
 import { since, breathe } from "./worker/clock.ts";
 import { load, threadsNow, heapBytes } from "./worker/load.ts";
 import { timedGeneration, timedPaths } from "./worker/timing.ts";
-import type { Thrown } from "./worker/told.ts";
 import type { Bench, BenchRow, Done, Failed, Paths, Token, ToWorker } from "./contracts/messages.ts";
 
 // What this file alone holds (T378.3: they were fields of the object all the modules shared):
@@ -181,25 +182,13 @@ self.onmessage = async ({ data }: MessageEvent<ToWorker>) => {
   } catch (err) {
     // a cancelled load has nothing to report: the one that replaced it speaks for itself
     if (!signal?.aborted) {
-      // A JavaScript error thrown inside a call from Python comes back as a PythonError of type JsException, its own
-      // name and message on the last line: the memory of the weights, which the converter opens through the sink
-      // (weightsBuffer: Safari's refusal of a model past 4 GB, a memory the browser will not make or grow), and
-      // forward.ts growing the keys and values. It is told as itself (the review of T133: it was a traceback)
-      const [, name = (err as Thrown)?.name, text = (err as Thrown)?.message] = (err as Thrown)?.type === "JsException"
-        ? /^pyodide\.ffi\.JsException: (\w+): (.*)$/.exec((err as Thrown).message!.trim().split("\n").pop()!) ?? [] : [];
-      // a ValueError of the engine is a message for the reader (wrong file, prompt too long): no traceback
-      const message = (err as Thrown)?.type === "ValueError" ? (err as Thrown).message!.trim().split("\n").pop()!.replace(/^ValueError: /, "")
-        : name === "Error" ? text : told(err);
-      // T90: the memory ran out, in Python (MemoryError: malloc could not grow the WebAssembly memory) or in
-      // JavaScript (RangeError: an ArrayBuffer or WebAssembly.Memory.grow was refused). The page says so in words
-      // a visitor understands, with how much memory the page had when it happened.
-      // (V8 also raises RangeError for a stack overflow, which is not this; Firefox says InternalError: out of memory)
-      const memory = (err as Thrown)?.type === "MemoryError" || name === "InternalError" ||
-        (name === "RangeError" && !/call stack/i.test(text ?? ""));
+      // what it is and what is said of it, whatever was thrown (failure.ts reads them all: a sentence for the reader,
+      // the memory that ran out, T90, an error of this site's own that crossed Python, a runtime that did not load)
+      const failure = failureOf(err);
       // where it happened goes to the page's console (T96): tests/e2e.mjs keeps the console of a failed run
-      postMessage({ type: "error", load: data.load, message: memory ? String(text ?? err).trim().split("\n").pop()! : message!,
-                    stack: String((err as Thrown)?.stack ?? told(err)), weights: weightsBytes(), pyodide: Boolean((err as Thrown)?.pyodide),
-                    ...(memory && { memory: true, heap: heapBytes() }) } satisfies Failed);
+      postMessage({ type: "error", load: data.load, message: failure.message,
+                    stack: String(failure.stack), weights: weightsBytes(), pyodide: failure.kind === "runtime",
+                    ...(failure.kind === "memory" && { memory: true, heap: heapBytes() }) } satisfies Failed);
     }
   }
 };

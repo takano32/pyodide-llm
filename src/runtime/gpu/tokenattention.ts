@@ -2,7 +2,7 @@
 // JavaScript, timed and chosen, and their dispatches.
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
+import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.ts";
 import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, tokenAttentionData,
   tokenAttentionOff } from "../shaders/attention.ts";
@@ -57,7 +57,7 @@ async function chooseTokenAttention(m: Model): Promise<Chosen | null> {
       if (wrong) attentions.push({ name: a.name, none: `wrong: ${wrong}` });
       else right.push(a);
     } catch (error) {
-      if ((error as Thrown)?.late) throw error;
+      if (isLate(error)) throw error;
       attentions.push({ name: a.name, none: String((error as Thrown)?.message ?? error) });
     }
     if (stopping) return null;

@@ -18,6 +18,7 @@
 // ({stage, at, of}, T177): the page shows it, and it answers none of the page's questions.
 import { built } from "../built.ts";
 import { isUpdated, saidOf, named, unstarted } from "../updated.ts";
+import { Failure, kindOf } from "../failure.ts";
 // T375.2: the CPU section's made-up model and its plan (a module of its own, so that a test holds the plan to Python's)
 import { GROUP, SHAPE, madeUpModel } from "./madeup.ts";
 import type { MadeName, Model } from "./madeup.ts";
@@ -27,7 +28,7 @@ import type { Compiled, Spawn } from "../forward.ts";
 import type { Built } from "../built.ts";
 import type { Alive, Answer, CpuCeiling, CpuCeilings, CpuFound, CpuRow, DeviceFound, Failed, LineFetched, LineFound, SectionsResults, Staged, ToSections } from "../contracts/benchmark.ts";
 // a caught value, where its words are read
-type Thrown = { name?: string; message?: string; cutShort?: boolean } | null | undefined;
+type Thrown = { name?: string; message?: string } | null | undefined;
 // a loop of the ceilings' modules, as it is called here: by numbers, for a checksum
 type Loop = (...numbers: number[]) => number;
 // what paired() measured, as a rate
@@ -218,7 +219,7 @@ const layerWeights = ({ plan }: Model) => (["wq", "wk", "wv", "wo", "w1", "w2", 
 // must take PAIR_MS by MOST_PASSES, and 2n passes must take at least SHORT times n (a loop whose passes were dropped
 // takes the same time for any count: T163's review). cutShort: the section is then wrong, as for logits not finite.
 const PAIR_MS = 20, PAIRS = 5, STEADY = [1.6, 2.2], SHORT = 1.3, MOST_PASSES = 2 ** 30;
-const cutShort = (message: string) => Object.assign(new Error(message), { cutShort: true });
+const cutShort = (message: string) => new Failure("cut-short", message);
 const middle = (values: number[]) => [...values].sort((a, b) => a - b)[values.length >> 1];
 // run(n): the ms of n passes; right(n): whether the loop's checksum of n passes is the one computed here
 function paired(run: (n: number) => number, right: (n: number) => boolean) {
@@ -247,7 +248,7 @@ const attempt = async <Measured>(measure: () => Measured | Promise<Measured>): P
     return await measure();
   } catch (error) {
     unlessUpdated(error);
-    return { error: failed(error), ...((error as Thrown)?.cutShort ? { cutShort: true } : {}) };
+    return { error: failed(error), ...(kindOf(error) === "cut-short" ? { cutShort: true } : {}) };
   }
 };
 const timed = (loop: (n: number) => unknown) => (n: number) => {

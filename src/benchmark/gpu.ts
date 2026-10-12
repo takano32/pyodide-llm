@@ -4,6 +4,7 @@ import { checkVerdict, matVecTable, cpuBaseline, tokenTable, layerTable, layerSt
   tableCell, noRatios, threadsOf, timesFaster } from "../bench.js";
 import { $, type Result, results } from "./dom.ts";
 import { staged, ask, worker, fixed, yes } from "./section.ts";
+import { REASONS } from "../runtime/forward/reasons.ts";
 import type { Asking } from "./section.ts";
 import type { GpuCeiling, GpuCeilings, GpuInfo, GpuModel, Overhead, PromptFound, PromptRow, ToBenchGpu, ToWaiter, Verdict, Verdicts, Waited } from "../runtime/contracts/benchmark.ts";
 // T368.7: a step as the section keeps it, by the name the page gives it: its result (contracts/benchmark.ts's, by the
@@ -33,7 +34,7 @@ export async function gpu(): Promise<Result> {
   try {
     const info = await step("the adapter", { step: "info" });
     if (!info?.worker || !info.adapter) {
-      const why = steps[0].error ?? (info?.worker ? "navigator.gpu gave no adapter" : "no WebGPU in a worker here");
+      const why = steps[0].error ?? (info?.worker ? "navigator.gpu gave no adapter" : REASONS.noWebGpu);
       return { status: "none", markdown: why };
     }
     // the adapter, the check, the shapes, the tokens, the ways, a layer, its steps (T202), the tokens generated, besides the weights,

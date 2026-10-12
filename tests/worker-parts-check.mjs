@@ -176,7 +176,7 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   context.console = { ...console, warn: (line) => said.push(line), info() {} };
   context.stand = {
     forward: { ...forward, weightsMemory: () => ({ memory: new WebAssembly.Memory({ initial: 1 }), base: 0 }), growMemory() {},
-      external: () => ({ engine: { n: ++engines, gpu: context.stand.gpuOf?.(engines) ?? Promise.resolve("prompts on the CPU (a stand-in)"), gpuStatus: "the GPU gets ready (a stand-in)", threads: 1 } }) },
+      external: () => ({ engine: context.stand.engineOf?.(++engines) ?? { n: ++engines, gpu: context.stand.gpuOf?.(engines) ?? Promise.resolve("prompts on the CPU (a stand-in)"), gpuStatus: "the GPU gets ready (a stand-in)", threads: 1 } }) },
     pyodide: { version: "0.0.0-stand-in", _module: { HEAPU8: { length: 1000 } }, runPython: (code) => told.push(`python: ${code}`),
       globals: { get: () => (size) => ({ destroy() {}, getBuffer: () => ({ data: new Uint8Array(size), release() {} }) }) } },
     numpy: { OUTLIER_CHANNELS: 8, Llama: { callKwargs: (checkpoint, tokenizer, options) => {
@@ -236,6 +236,14 @@ console.log("ok: loaded.js by itself: the Llama and its engine are adopted toget
   await sleep(50);
   assert.deepEqual(of("gpu").map(({ load, note }) => [load, note]), [[6, "prompts on the CPU (a stand-in)"]], "the GPU of a model let go of told the page its line");
   context.stand.gpuOf = undefined;
+
+  // T380.1: an engine with no GPU's side (no WebGPU in a worker here): the status line says the engine's own reason,
+  // which is written once, where the engine can read it (forward/reasons.ts: the worker's entry cannot)
+  context.stand.engineOf = (n) => ({ n, gpu: undefined, gpuWhyNot: "the engine's reason (a stand-in)", threads: 1 });
+  await load({ load: 60, model: model("plain") });
+  assert.deepEqual([of("error"), of("ready").map((r) => r.gpu), of("gpu")], [[], ["prompts on the CPU (the engine's reason (a stand-in))"], []],
+    "the line of an engine without a GPU's side is the engine's reason, and no GPU is waited for");
+  context.stand.engineOf = undefined;
 
   // the same for a model of Hugging Face: convert() adopts what the place of its weights built, and load() asks weights.js
   // with the engine that is the model's (not undefined, not the one before): the GPU that failed loads it again

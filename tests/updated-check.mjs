@@ -175,7 +175,7 @@ console.log("updated-check: a worker that did not start is the site's update onl
   fs.mkdirSync(astro, { recursive: true });
   const globals = { fetch: globalThis.fetch, location: Object.getOwnPropertyDescriptor(globalThis, "location") };
   try {
-    for (const name of ["built.ts", "updated.ts"]) fs.copyFileSync(new URL(name, runtime), new URL(name, astro));
+    for (const name of ["built.ts", "updated.ts", "failure.ts"]) fs.copyFileSync(new URL(name, runtime), new URL(name, astro));
     const served = await import(new URL("built.ts", astro).href);
     const source = await import(new URL("built.ts", runtime).href);
     const fetched = [];

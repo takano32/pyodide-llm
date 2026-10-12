@@ -125,6 +125,28 @@ const { FLASH_Q_TILE } = await import(runtimeUrl("shaders/attention.js"));
   assert.equal(refused.calls.length, 0, "nothing is made on an adapter that is refused");
   assert.equal(device_.model, null, "and there is no record of a model");
 }
+// ---- device.js: a step past its time is told as late (T380.1), which the checks of the forms throw on (it ends the whole
+// attempt) where they note any other failure and go on to the next form: nothing here runs those 180 s, so the timer is a
+// stand-in that is fired by hand
+{
+  const { within, isLate } = device_;
+  const real = globalThis.setTimeout, timers = [];
+  globalThis.setTimeout = (callback, ms) => { timers.push([callback, ms]); return timers.length; };
+  try {
+    const late = within(new Promise(() => {}), "compiling a form");
+    assert.deepEqual([timers.length, timers[0][1]], [1, 180000], "a step is given 180 s");
+    timers[0][0]();
+    const error = await late.then(() => undefined, (one) => one);
+    assert.deepEqual([isLate(error), error.name, error.message], [true, "Error", "compiling a form took more than 180 s"], "what is thrown is late, and says it by its sentence alone");
+    for (const other of [new Error("compiling a form took more than 180 s"), new TypeError("a shader is wrong"), Object.assign(new Error("x"), { late: true }), undefined, null, "late"]) {
+      assert.equal(isLate(other), false, `${String(other)} is none that took too long`);
+    }
+    const done = await within(Promise.resolve(7), "something quick");
+    assert.equal(done, 7, "a step in time is its own value");
+  } finally {
+    globalThis.setTimeout = real;
+  }
+}
 const gpu = standIn();
 const { plan, bytes: memoryBytes } = planned();
 const memory = { buffer: new SharedArrayBuffer(memoryBytes) };

@@ -1,6 +1,7 @@
 // The model section's table of the page's own path (T184, T190): its threads, its prompts and writing, and what it warns of.
 // (T353: a part of src/bench.js, which is the window that exports every name of these)
 import { number, times, tableCell } from "./cells.js";
+import { REASONS } from "../runtime/forward/reasons.ts";
 
 /** T93: where the model page remembers the number of threads it found for a model on this device (localStorage).
  * T190: /benchmark/ reads the same, so that the page path is timed on the model page's count. nav: the navigator */
@@ -45,8 +46,8 @@ export const PATH_WRITES = 64;
  * fallback adapter" (the CPU in a GPU's place: the page refuses it, T148, and CI's are all such, T182), else the words of
  * forward.js (a model the GPU does not take yet, too little memory, a failure). */
 export function gpuSkipped(why = "") {
-  if (/no WebGPU|no GPU adapter/.test(why)) return "not here";
-  if (/fallback adapter/.test(why)) return "not on a fallback adapter";
+  if (why === REASONS.noWebGpu || why === REASONS.noAdapter) return "not here";
+  if (why === REASONS.fallback) return "not on a fallback adapter";
   return why || "not measured";
 }
 

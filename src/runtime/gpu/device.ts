@@ -10,6 +10,8 @@
 // ENGINE, which is what the key hashes: a module compiles ENGINE.<name> and imports no shader of a part.)
 import { halvesOf } from "../shaders/run.ts";
 import { deviceKey } from "../shaders/key.ts";
+import { Failure, kindOf } from "../failure.ts";
+import { REASONS } from "../forward/reasons.ts";
 import type { FromGpu, Matrix, Opened, Remembered, Started } from "../contracts/gpu/protocol.ts";
 import type { Weights } from "./weights.ts";
 import type { Block } from "./block.ts";
@@ -55,7 +57,7 @@ type Bound = Whole | GPUBufferBinding;
 // a dispatch: [pipeline, bind group, x, y]
 type Pass = [GPUComputePipeline, GPUBindGroup, number, number];
 // what is caught, as it is read: an Error's message, and within()'s late
-type Thrown = { message?: string; late?: boolean } | null | undefined;
+type Thrown = { message?: string } | null | undefined;
 
 // GPUBufferUsage's values (the name itself is missing where there is no WebGPU)
 const STORAGE = 0x80, COPY_DST = 0x8, COPY_SRC = 0x4, MAP_READ = 0x1, UNIFORM = 0x40;
@@ -112,10 +114,13 @@ function held(m: Model, buffers: GPUBuffer[]) {
 // CPU), and says { type: "progress" } after every step meanwhile (forward.ts gives up a worker that says nothing for
 // longer than this: one the browser ended)
 const STEP_MS = 180000;
+// (T380.1: a step past its time is a Failure of the kind "late": whoever tries one shader after another asks isLate()
+// of what it caught, and throws that on: it is not a shader that is wrong, it ends the whole attempt)
+const isLate = (error: unknown) => kindOf(error) === "late";
 function within<T>(promise: Promise<T>, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(Object.assign(new Error(`${what} took more than ${STEP_MS / 1000} s`), { late: true })), STEP_MS);
+    timer = setTimeout(() => reject(new Failure("late", `${what} took more than ${STEP_MS / 1000} s`)), STEP_MS);
   });
   return Promise.race([promise, late]).finally(() => {
     clearTimeout(timer);
@@ -126,22 +131,22 @@ function within<T>(promise: Promise<T>, what: string): Promise<T> {
 // The device, the model's record (model), and the error scopes the layers' buffers go up in; undefined where there is
 // none (say(why): unusable() by default) or the worker is stopping
 async function openDevice(plan: Started | Opening, say: (reason: string) => void = unusable): Promise<Model | void> {
-    if (!self.navigator?.gpu) return say("no WebGPU in a worker here");
+    if (!self.navigator?.gpu) return say(REASONS.noWebGpu);
     // the browser's own adapter (T148, the review: "high-performance" would keep a laptop's second GPU awake for the
     // whole visit, for prompts that are mostly short; the device measures whichever it gets against its CPU anyway)
     const adapter: Adapter | null = await navigator.gpu.requestAdapter();
     if (stopping) return end();
-    if (!adapter) return say("no GPU adapter here");
+    if (!adapter) return say(REASONS.noAdapter);
     // T148: a fallback adapter is the CPU doing the GPU's work (SwiftShader, lavapipe): never faster than the CPU's
     // own kernels, and its compilation of the shaders alone took 2 to 4 minutes (T147). Refused before anything is
     // made on it, but where a test asks for it (it is the only WebGPU of CI and of the development machine)
     const info: Info = adapter.info ?? {};
     const fallback = Boolean(info.isFallbackAdapter ?? adapter.isFallbackAdapter);
-    if (fallback && !plan.force.fallback) return say("a fallback adapter: the CPU in the GPU's place");
+    if (fallback && !plan.force.fallback) return say(REASONS.fallback);
     // T232: ternary weights are multiplied as packed int8 alone (shaders.ts's TERNARY_PACKED): said before anything goes up
     const ternary = ternaryPlan(plan);
     if (ternary && !navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) {
-      return say("ternary weights need the packed int8 dot product of WGSL, which this browser lacks");
+      return say(REASONS.packed("ternary"));
     }
     // the largest buffer the device binds (T155: a matrix larger than it goes in pieces, piecesOf)
     const limit = Math.min(adapter.limits.maxStorageBufferBindingSize, adapter.limits.maxBufferSize);
@@ -261,6 +266,6 @@ function dispatch(pass: GPUComputePassEncoder, pipeline: GPUComputePipeline, gro
   pass.dispatchWorkgroups(x, y, z);
 }
 
-export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, openDevice,
+export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, isLate, openDevice,
   describe, unusable, end, buffer, uniform, copyIn, narrowIn, readBack, validated, pipelineOf, bind, dispatch };
 export type { Model, Bound, Whole, Pass, Thrown, Opening };

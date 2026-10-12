@@ -7,6 +7,7 @@ import { BATCH, GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED, PACKED, packingOf } 
 import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine,
   STOPS_MOST } from "./choice.ts";
 import { gpuWeightBytes, cpuReadBytes, aloneVerdict, OUTSIDE_VOCABULARY } from "./alone.ts";
+import { REASONS } from "./reasons.ts";
 import { halfToFloat } from "./memory.ts";
 import type { Packed, Ready } from "../jobs.ts";
 import type { Answers } from "./choice.ts";
@@ -104,26 +105,24 @@ export function gpuFit({ shape, weights, device, direct }:
   // as they are, in their groups of 128. The 27B, T233, is ternary in a rotated basis with linear-attention layers:
   // either of the first two lines keeps it on the CPU)
   function gpuUnfit() {
-    if (linear) return "linear-attention layers are not on the GPU yet";  // T229
-    if (convolution) return "convolution layers are not on the GPU yet";  // T260
+    if (linear) return REASONS.linear;  // T229
+    if (convolution) return REASONS.convolution;  // T260
     // (T375.2: and a kind of layer that keeps a state which the engine comes to have: on the CPU until the GPU has it too)
-    if (stateful) return "layers that keep a state are not on the GPU yet";
-    if (rotated) return "a rotated basis is not on the GPU yet";  // T237
+    if (stateful) return REASONS.stateful;
+    if (rotated) return REASONS.rotated;  // T237
     // T375.5 (T484): the GPU's layers are of two pairs, RMSNorms with a gated FFN (a Llama's) and LayerNorms with
     // GPT-2's FFN (T154); gpu.ts picks between them by the norms and by whether there is a third matrix. An
     // architecture of another pair, which the CPU's engine runs by its facts (T375.2), stays there
-    if (layerNorm === gatedFfn) return "this pair of norms and FFN is not on the GPU yet";
-    if (!sharedMemory) return "the page is not cross-origin isolated";
-    if (headSize % 4) return "heads of a size that is no multiple of 4 are not on the GPU";
-    if (!Object.values(gpuMatrices()).every(onGpuAs)) return "float32 weights are not on the GPU yet";
+    if (layerNorm === gatedFfn) return REASONS.pair;
+    if (!sharedMemory) return REASONS.notIsolated;
+    if (headSize % 4) return REASONS.heads;
+    if (!Object.values(gpuMatrices()).every(onGpuAs)) return REASONS.floats;
     // T148: the layers twice, in this memory and on the GPU (T156 will keep one): a device with too little memory
     // for both keeps the CPU's alone (a phone or an Apple shares its memory between the two)
     // (T153, the review: with the GPU's own keys and values, float16, as the prompt may fill the whole context: Qwen3
     // 0.6B's are 0.47 GB at 4096 positions, 95% of its layers')
     const onGpu = layersOnGpu();
-    if (gpuRoom !== undefined && onGpu > gpuRoom && !direct) {
-      return `the layers on the GPU as well (${Math.round(onGpu / 1e6)} MB) would not leave this device enough memory`;
-    }
+    if (gpuRoom !== undefined && onGpu > gpuRoom && !direct) return REASONS.layersRoom(onGpu);
     return null;
   }
   // the bytes of the layers on the GPU, and its own keys and values
@@ -145,18 +144,16 @@ export function gpuFit({ shape, weights, device, direct }:
     // (the embedding as the GPU holds the classifier: in the same packing there, and in its groups)
     const held = wcls && onGpuAs(wcls) ? packingOf(wcls.kind)!.gpu!.as : null;
     if (!wcls || !held || packingOf(embedding.kind)?.gpu?.as !== held || embedding.group !== PACKED[held].group) {
-      return "a classifier of float weights is not on the GPU's tokens";
+      return REASONS.floatClassifier;
     }
     // T205: the classifier and the embedding on the GPU as well (llm-jp-3 150M's 73 MB of layers came to 189 MB) where
     // the browser does not say what the device has: an iPhone's tab went down in /benchmark/'s model section. The
     // prompts' blocks still go (their layers alone)
-    if (memoryUnsaid) return "this browser does not say how much memory the device has";
+    if (memoryUnsaid) return REASONS.memoryUnsaid;
     const table = vocab * dim * gpuWeightBytes(wcls.kind);
     // (GPT-2's positions on the GPU as well, a row a position)
     const onGpu = layersOnGpu() + table * (sharedClassifier ? 1 : 2) + seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0);
-    if (gpuRoom !== undefined && onGpu > gpuRoom) {
-      return `the classifier on the GPU as well (${Math.round(onGpu / 1e6)} MB with the layers) would not leave this device enough memory`;
-    }
+    if (gpuRoom !== undefined && onGpu > gpuRoom) return REASONS.classifierRoom(onGpu);
     return null;
   }
   // the vectors of every layer the GPU reads (gpu.ts's plan.vectors): the norms' weights; T153: Qwen2's biases of q,
@@ -201,7 +198,6 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   // on the GPU alone (T156)
   const always = Boolean(gpuForce.always || direct);
   // T243: what the status line says of a GPU stopped for keys or values that are no finite numbers (where: the request)
-  const notFiniteKV = (where: string) => `the GPU computed keys or values that are not finite numbers (NaN or infinity) ${where}`;
   // ---- T135: a prompt on the GPU. gpu() makes the GPU's worker (gpu.ts), which puts this model's layers on the GPU
   // once (a second copy of them: the CPU keeps its own, for the tokens after the prompt), and then runs each block of a
   // prompt that forwardMany() hands it through all the layers in one submission, while this thread waits for its
@@ -272,7 +268,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
       [name, { rows: m.rows, n: m.n, six: m.kind === "int6", ternary: m.kind === "ternary", layers: Array.from({ length: layers }, (_, l) => m.layer(l).slice(0, 2) as [number, number]) }]));
     const listen = () => {
       clearTimeout(quietTimer);
-      quietTimer = setTimeout(() => stopGpu(`the GPU said nothing for ${GPU_QUIET_MS / 1000} s`), GPU_QUIET_MS);
+      quietTimer = setTimeout(() => stopGpu(REASONS.quiet(GPU_QUIET_MS)), GPU_QUIET_MS);
     };
     const worker = gpuLast = gpuWorker = gpu!();
     let ended: () => void;
@@ -317,7 +313,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
         // T156: a model on the GPU alone needs its steps there too; and where /benchmark/ measured the CPU here, its
         // step (the checkpoint read once at the CPU section's fastest, T157's estimate) must not be faster by more
         // than BETTER's margin (the owner's B: the CPU's side estimated, not measured, for a model that does not fit twice)
-        if (direct && !data.tokens) return stopGpu(data.tokensWhy ?? tokensReason ?? "the GPU did not take the steps");
+        if (direct && !data.tokens) return stopGpu(data.tokensWhy ?? tokensReason ?? REASONS.noSteps);
         // (the owner, 2026-09-27: the prompts as well, which the GPU runs about five times as fast, weighed by use)
         if (direct) {
           const block = data.blocks.find((b) => b.count === GPU_BLOCK);
@@ -325,8 +321,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
             gpu: { stepMs: data.tokens!.ms, promptMs: block ? block.ms / block.count : undefined } });
           if (verdict.cpuFaster) {
             direct.verdict = { key: data.key, cpu: direct.cpu! };  // the page keeps it: the next load goes on the CPU at once
-            return stopGpu(`the CPU as /benchmark/ measured it (${direct.cpu!.GBps?.toFixed(1)} GB/s): ${verdict.cpu.toFixed(0)} ms ` +
-              `against the GPU's ${verdict.gpu.toFixed(0)} ms for ${Number(direct.usage.prompt).toFixed(0)} tokens of prompts and ${Number(direct.usage.written).toFixed(0)} written`);
+            return stopGpu(REASONS.cpuFaster(direct.cpu!.GBps, verdict.cpu, verdict.gpu, direct.usage.prompt, direct.usage.written));
           }
         }
         settleGpu?.(always ? PROMPTS_GPU : PROMPTS_UNTIMED);
@@ -338,7 +333,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     };
     worker.onerror = (event) => {
       ended();  // a worker that did not start holds nothing
-      if (worker === gpuWorker) stopGpu(`the GPU's worker did not start (${event.message ?? "an error"})`);
+      if (worker === gpuWorker) stopGpu(REASONS.notStarted(event.message));
     };
     listen();
     // T154: LayerNorm's epsilon is the CPU's layernorm kernel's and NumPy's, 1e-5 (GPT-2's and GPT-NeoX's
@@ -365,7 +360,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     if (ctl) Atomics.store(ctl, GPU_WANTED, 0);  // T147: a request still under way writes nothing now
     gpuWorker?.postMessage({ type: "stop" });
     gpuWorker = null;
-    gpuReason = why ?? "the model was let go";
+    gpuReason = why ?? REASONS.letGo;
     const note = `prompts on the CPU (${gpuReason})`;
     if (settleGpu) settleGpu(note);
     else if (gpu) gpuStatus = note;
@@ -406,11 +401,11 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     Atomics.store(ctl!, GPU_WANTED, gpuSerial);
     gpuWorker!.postMessage({ type: "prompt", serial: gpuSerial, count, pos: pos0, ...(direct ? { tokens } : {}) });
     if (!waitUntil(GPU_DONE, (seen) => seen === gpuSerial, GPU_BEAT)) {
-      stopGpu(`the GPU's worker stopped answering for ${stalledMs / 1000} s`);
+      stopGpu(REASONS.stalled(stalledMs));
       return false;
     }
     if (Atomics.load(ctl!, GPU_FAILED)) {
-      stopGpu("the GPU failed on a block of the prompt");  // the GPU's worker said why in the console
+      stopGpu(REASONS.blockFailed);  // the GPU's worker said why in the console
       return false;
     }
     views();
@@ -419,7 +414,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // takes the block from its own keys and values (forwardMany). T210: a model on the GPU alone reads none back (its
     // keys and values stay on the GPU, where T219's flag on the logits of the steps is what guards them)
     if (!direct && !stagingFinite(count)) {
-      stopGpu(notFiniteKV(`in a block of the prompt at position ${pos0}`));
+      stopGpu(REASONS.keysInBlock(pos0));
       return false;
     }
     if (!direct) fromStaging(pos0, count);
@@ -501,7 +496,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     const stopList = list(stops);
     if (stopList.length > STOPS_MOST) {
       tokensOn = false;
-      tokensReason = `more than ${STOPS_MOST} stop tokens`;
+      tokensReason = REASONS.stops(STOPS_MOST);
       tokenStatus = "why";
       console.info(`gpu: answers on the CPU (${tokensReason})`);
       return undefined;
@@ -515,11 +510,11 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     gpuWorker!.postMessage({ type: "tokens", serial: gpuSerial, count, pos, from: direct ? pos : Math.min(gpuEnd, pos), token, history: list(history), length,
       cache: direct ? null : { keys: cpuSide.keys, values: cpuSide.values, capacity: cpuSide.capacity, row: KV, half: halfKV }, settings: { temperature, topp, penalty, stops: stopList }, randoms: list(randoms) });
     if (!waitUntil(GPU_DONE, (seen) => seen === gpuSerial, GPU_BEAT)) {
-      stopGpu(`the GPU's worker stopped answering for ${stalledMs / 1000} s`);
+      stopGpu(REASONS.stalled(stalledMs));
       return undefined;
     }
     if (Atomics.load(ctl!, GPU_FAILED)) {
-      stopGpu("the GPU failed on a token");  // the GPU's worker said why in the console
+      stopGpu(REASONS.tokenFailed);  // the GPU's worker said why in the console
       return undefined;
     }
     views();
@@ -531,11 +526,11 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
       // before it not taken), the GPU stops, and the CPU takes the step again and stops where its own logits are not
       // finite either (T195's NOT_FINITE). A model on the GPU alone cannot: it stops, said in words
       if (direct) throw new Error(OUTSIDE_VOCABULARY);
-      stopGpu(`the GPU computed logits that are not finite numbers (NaN or infinity) at position ${pos + sampled}`);
+      stopGpu(REASONS.logits(pos + sampled));
       return undefined;
     }
     if (!(sampled >= 1 && sampled <= count)) {
-      stopGpu(`the GPU sampled ${sampled} of ${count} tokens`);
+      stopGpu(REASONS.sampledFew(sampled, count));
       return undefined;
     }
     // T219: an id outside the vocabulary is what SAMPLE gives for logits that are not finite numbers (NONE, -1: T195,
@@ -546,7 +541,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     const outside = ids.find((id) => !(id >= 0 && id < vocab));
     if (outside !== undefined) {
       if (direct) throw new Error(OUTSIDE_VOCABULARY);
-      stopGpu(`the GPU sampled ${outside}, outside the vocabulary of ${vocab}`);
+      stopGpu(REASONS.sampledOutside(outside, vocab));
       return undefined;
     }
     // the keys and values of the positions sampled, float16 in the staging place as a prompt's block's (T147), into the
@@ -554,7 +549,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // on the GPU alone. T243: where one of them is no finite number, the whole request is refused as above (nothing
     // written, none of its ids taken): the CPU takes the step, from keys and values that are its own
     if (!direct && !stagingFinite(sampled)) {
-      stopGpu(notFiniteKV(`in a step at position ${pos}`));
+      stopGpu(REASONS.keysInStep(pos));
       return undefined;
     }
     if (!direct) fromStaging(pos, sampled);
@@ -622,8 +617,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   /** T156: something was to run on the CPU of a model whose layers are on the GPU alone (a block or a step the GPU
    * did not take): the GPU's side is lost (the worker loads the model again on the CPU), and this is the error to throw */
   function notHere() {
-    if (!directLost) stopGpu("the GPU did not take a block or a step");
-    return Object.assign(new Error(`The GPU stopped (${directLost}), and this model's weights were on it alone`), { directLost: true });
+    if (!directLost) stopGpu(REASONS.notTaken);
+    return new Error(`The GPU stopped (${directLost}), and this model's weights were on it alone`);
   }
   /** T152: a token is about to run on the CPU. Whether it is a step to time against the GPU's (one that makes logits,
    * where the GPU takes steps): the caller times it then and says cpuStepEnded(its milliseconds) */
@@ -678,8 +673,8 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     get ready() { return gpuOn ? gpuChosen : undefined; },
     /** T184: why the prompts stay on the CPU (no WebGPU, a fallback adapter, a model the GPU does not take yet, a
      * failure), or null while none is known; T152: and why a generation's steps do */
-    get whyNot() { return gpu ? gpuReason : "no WebGPU in a worker here"; },
-    get stepsWhyNot() { return gpu ? gpuReason ?? tokensReason : "no WebGPU in a worker here"; },
+    get whyNot() { return gpu ? gpuReason : REASONS.noWebGpu; },
+    get stepsWhyNot() { return gpu ? gpuReason ?? tokensReason : REASONS.noWebGpu; },
     /** T135, T152: the tokens of a prompt and the steps that went through the GPU since the generation began */
     get promptTokens() { return gpuTokens; },
     get sampled() { return gpuSampled; },

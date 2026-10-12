@@ -2,7 +2,7 @@
 // from one that stopped (T118, T129). It holds nothing of the worker's state: init() of worker.ts keeps what this loads.
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
-import { isError, told } from "./told.ts";
+import { Failure, isError, told } from "../failure.ts";
 import type { Status } from "../contracts/messages.ts";
 import type { Pyodide, PyodideModule } from "../contracts/python.ts";
 
@@ -30,7 +30,7 @@ export async function resolvePyodideVersion(search: string) {
     version = (await res.json()).version;
   } catch (error) {
     if (!given.signal.aborted) throw error;
-    throw Object.assign(new Error(`The latest version of Pyodide: data.jsdelivr.com did not answer in ${QUIET_SECONDS} seconds`), { pyodide: true });
+    throw new Failure("runtime", `The latest version of Pyodide: data.jsdelivr.com did not answer in ${QUIET_SECONDS} seconds`);
   } finally {
     clearTimeout(timer);
   }
@@ -142,11 +142,8 @@ function watchArrivals() {
 export async function pyodideSteps(version: string, importer: (url: string) => Promise<PyodideModule>) {
   const base = `https://cdn.jsdelivr.net/pyodide/v${version}/full/`;
   const watch = watchArrivals();
-  const stop = (name: string, why: string) => {
-    const error: Error & { pyodide?: boolean } = new Error(`Pyodide ${version}: "${name}" ${why}`);
-    error.pyodide = true;  // the page may try again without the service worker (isolation made this hang on iOS)
-    return error;
-  };
+  // (of the kind "runtime": the page may try again without the service worker, isolation made this hang on iOS)
+  const stop = (name: string, why: string) => new Failure("runtime", `Pyodide ${version}: "${name}" ${why}`);
   const step = async <T>(name: string, promise: Promise<T>) => {
     postMessage({ type: "status", text: `Loading Pyodide ${version}: ${name}...` } satisfies Status);
     const quiet = watch.quiet(QUIET_SECONDS);

@@ -15,7 +15,7 @@
 import { pyodide } from "./runtime.ts";
 import { fileSize, refused, fetchRange, inOrder } from "./ranges.ts";
 import { weightsRoom } from "./weights.ts";
-import type { Thrown } from "./told.ts";
+import { failureOf } from "../failure.ts";
 import type { Hf } from "../contracts/messages.ts";
 import type { Answerer, Feed, Progress, Request, Where } from "../contracts/conduct.ts";
 import type { Conduct, Conversion, Proxy } from "../contracts/python.ts";
@@ -104,7 +104,7 @@ export function fromHub(hf: Hf, signal: AbortSignal, progress: Progress): Answer
     try {
       return await fetched();
     } catch (error) {
-      if ((error as Thrown).status !== 404) {
+      if (failureOf(error).status !== 404) {
         throw error;
       }
       notThere.set(url, error as Error);

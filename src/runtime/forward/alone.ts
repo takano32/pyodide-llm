@@ -8,6 +8,7 @@ import { BETTER } from "./choice.ts";
 import { architectureOf } from "./architectures.ts";
 import { LAYER_KINDS } from "./kinds.ts";
 import { ATTENTION, sizesOfForm } from "./sizes.ts";
+import { REASONS } from "./reasons.ts";
 import type { Header } from "./memory.ts";
 import type { Formed } from "./sizes.ts";
 import type { Dtype, Rotated } from "../contracts/form.ts";
@@ -175,27 +176,27 @@ export const OUTSIDE_VOCABULARY = "The model computed logits on the GPU that are
 export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rotated?: Rotated | null } = {},
   adapter: Adapter | null | undefined, force: Force = {}) {
   const [dim, hidden] = header;
-  if (!adapter) return "no GPU adapter here";
-  if (adapter.fallback && !force.fallback) return "a fallback adapter";
+  if (!adapter) return REASONS.noAdapter;
+  if (adapter.fallback && !force.fallback) return REASONS.aloneFallback;
   // T375.5: by the model's facts, not by its architecture's name: RMSNorms, a gated FFN, no table of positions, no
   // gate of the attention's output, and every layer attending (which of the five architectures a Llama's alone are)
   const sizes = sizesOfForm(header, form, LAYER_KINDS), { q: qDim, kv: kvDim } = sizes.widths;
   const { gatedFfn, layerNorm, positions } = architectureOf(form.arch ?? "llama");
   if (!gatedFfn || layerNorm || positions || sizes.gate || sizes.kinds.some((kind) => kind !== ATTENTION)) {
-    return "GPT-2 and GPT-NeoX (and a Qwen3.5 and an LFM2) are not placed on the GPU alone: only a Llama's tensors are, by external_tensors()";
+    return REASONS.aloneArchitecture;
   }
-  if (form.rotated) return "a rotated basis is not on the GPU yet";  // T237
+  if (form.rotated) return REASONS.rotated;  // T237
   // (the packing's line of jobs.ts's PACKED: whether a model of it may be on the GPU alone, and what its shaders need)
   const packing = packingOf(dtype), held = packing?.gpu;
-  if (!packing || !held?.alone) return `${dtype} weights stay on the CPU`;
-  if (held.dot && !adapter.packed) return `${dtype} weights need the packed int8 dot product of WGSL, which this browser lacks`;
-  if ((qDim / sizes.heads) % 4) return "heads of a size that is no multiple of 4";
+  if (!packing || !held?.alone) return REASONS.aloneDtype(dtype);
+  if (held.dot && !adapter.packed) return REASONS.packed(dtype);
+  if ((qDim / sizes.heads) % 4) return REASONS.aloneHeads;
   const { maxStorageBufferBindingSize, maxBufferSize } = adapter.limits;
   const binds = Math.min(maxStorageBufferBindingSize, maxBufferSize);
   // (a joined matrix's parts start where the device binds: the values a row's bytes on, the scales four bytes a group)
   const starts = [qDim * dim, (qDim + kvDim) * dim, hidden * dim];
-  if (starts.some((weights) => packing.rowBytes(weights) % BINDS_AT || ((weights / packing.group) * 4) % BINDS_AT)) return "q, k and v or gate and up would not start where this GPU binds a buffer";
-  if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden)].some((weights) => packing.rowBytes(weights) > binds)) return "a layer's matrices are past a buffer of this GPU";
+  if (starts.some((weights) => packing.rowBytes(weights) % BINDS_AT || ((weights / packing.group) * 4) % BINDS_AT)) return REASONS.aloneStarts;
+  if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden)].some((weights) => packing.rowBytes(weights) > binds)) return REASONS.alonePast;
   return null;
 }
 /** T375.5: whether a model of this dtype may be on the GPU alone at all (its packing's line of PACKED): what the worker

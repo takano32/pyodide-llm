@@ -350,7 +350,18 @@ const ok = (line) => {
   }
   fresh((url, init, n) => (n === 0 ? new Response("", { status: 408 }) : ranged(init)));
   assert.deepEqual(new Uint8Array((await context.fetchRange(HF, 0, 100, new AbortController().signal)).bytes), bytesOf(0, 100));
-  ok("429 is told as a limit to wait for, 408 is asked again");
+  // (T380.1) a line that dropped is no refusal: nothing says that another try is answered the same, so it is tried
+  // again, three times in all, and what is thrown at the end is the browser's own error
+  fresh((url, init, n) => {
+    if (n === 0) throw new TypeError("Failed to fetch");
+    return ranged(init);
+  });
+  assert.deepEqual(new Uint8Array((await context.fetchRange(HF, 0, 100, new AbortController().signal)).bytes), bytesOf(0, 100));
+  assert.equal(requests.length, 2, "a range whose line dropped once was not asked for again");
+  fresh(() => { throw new TypeError("Failed to fetch"); });
+  const dropped = await failure(context.fetchRange(HF, 0, 100, new AbortController().signal));
+  assert.deepEqual([dropped?.error.name, dropped?.error.message, requests.length], ["TypeError", "Failed to fetch", 3]);
+  ok("429 is told as a limit to wait for, 408 and a line that dropped are asked again");
 
   // T112, and T374.3 (a head's later pieces begin where the bytes in hand end, not at the file's first byte): a server
   // that answers a range request with the whole file (200). What was asked for is cut out of it as it streams past,
@@ -453,7 +464,7 @@ const ok = (line) => {
     const began = clock.now();
     const failed = await failure(Promise.race([context.resolvePyodideVersion(""),
       sleep(120000).then(() => { throw new Error("still waiting for the version after 120 s"); })]));
-    assert.equal(failed.error.pyodide, true, "the page would not try again without the service worker");
+    assert.equal(failed.error.kind, "runtime", "the page would not try again without the service worker");
     assert.match(failed.error.message, /did not answer in 30 seconds/);
     assert.ok(failed.at - began >= quiet * 1000 && failed.at - began < (quiet + 10) * 1000,
       `the version was given up after ${(failed.at - began) / 1000} s, not ${quiet} to ${quiet + 10}`);
@@ -464,7 +475,7 @@ const ok = (line) => {
     const began = clock.now();
     const failed = await failure(context.resolvePyodideVersion(""));
     assert.equal(failed?.error.message, "Failed to fetch");
-    assert.ok(!failed.error.pyodide && failed.at - began < 1000);
+    assert.ok(failed.error.kind !== "runtime" && failed.at - began < 1000);
   }
   fresh(() => new Response(JSON.stringify({ version: "314.0.7" }), { status: 200 }));
   assert.equal(await context.resolvePyodideVersion(""), "314.0.7");
@@ -509,7 +520,7 @@ const ok = (line) => {
     const began = clock.now();
     const failed = await failure(steps({ ...answers, stall: true }));
     assert.match(failed?.error.message ?? "", /"NumPy" got nothing from the network for 30 seconds/, name);
-    assert.equal(failed.error.pyodide, true);
+    assert.equal(failed.error.kind, "runtime");
     assert.ok(failed.at - began < (2 * quiet + 20) * 1000, `${name}: a stopped NumPy was given up after ${(failed.at - began) / 1000} s`);
   }
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
@@ -825,8 +836,29 @@ const ok = (line) => {
     assert.equal(error?.message, said);
     assert.ok(!/\[object /.test(`${error.message} ${error.stack}`), error.stack);
   }
+  // T380.1: what the handler tells the page of a failure is what failure.ts reads of it (tests/failure-check.mjs has
+  // every shape): its sentence, and its kind as the page's flags (pyodide: the runtime did not load; memory, with the
+  // heap: it ran out), whatever was thrown
+  for (const [thrown, said, pyodide, memory] of [
+    ["new Error('The model is not ready.')", "The model is not ready.", false, false],
+    ["Object.assign(new Error('Traceback (most recent call last):\\n  File x\\nValueError: This is not a safetensors file.\\n'), { name: 'PythonError', type: 'ValueError' })", "This is not a safetensors file.", false, false],
+    ["new RangeError('Invalid array buffer length')", "Invalid array buffer length", false, true],
+    ["Object.assign(new Error('Traceback (most recent call last):\\n  File x\\npyodide.ffi.JsException: RangeError: WebAssembly.Memory.grow(): Maximum memory size exceeded\\n'), { name: 'PythonError', type: 'JsException' })",
+      "WebAssembly.Memory.grow(): Maximum memory size exceeded", false, true],
+    ["new RangeError('Maximum call stack size exceeded')", "RangeError: Maximum call stack size exceeded", false, false],
+    ["new Failure('runtime', 'Pyodide 0.0.0: \"the runtime\" got nothing from the network for 30 seconds')", 'Pyodide 0.0.0: "the runtime" got nothing from the network for 30 seconds', true, false],
+    ["new Failure('refused', 'huggingface.co answered 403 for a of b.', { status: 403, again: false })", "huggingface.co answered 403 for a of b.", false, false],
+  ]) {
+    fresh(() => new Response(new Uint8Array(64), { status: 200 }));
+    run(`initialized = Promise.reject(${thrown}); initialized.catch(() => {})`);
+    await context.onmessage({ data: { type: "load", load: 10, model: { id: "small", name: "Small", checkpoint: "small", tokenizer: "small.tokenizer.bin", bytes: 64, options: {} } } });
+    const errors = messages.filter((m) => m.type === "error");
+    assert.equal(errors.length, 1, `one error told of ${thrown}`);
+    const [error] = errors;
+    assert.deepEqual([error.message, error.load, error.pyodide, Boolean(error.memory), "heap" in error, typeof error.stack, typeof error.weights], [said, 10, pyodide, memory, memory, "string", "number"], `what the page is told of ${thrown}`);
+  }
   run("initialized = undefined");
-  ok("a thrown value that is no Error is told by its name and message, or its fields");
+  ok("a thrown value that is no Error is told by its name and message, or its fields; a failure's kind is the page's flags");
 
   // T367.3.2: the site's root comes with a load, from the page, and models/ is asked for under it (the worker's own
   // URL is under _astro/); a load that says none keeps the root it has. And the page says it with every init and load
@@ -855,7 +887,7 @@ const ok = (line) => {
   const ended = await failure(run("pyodideSteps")("314.0.7", async () => ({ loadPyodide: () => Promise.reject(new ExitStatus(1)) })));
   assert.equal(ended?.error.message,
     'Pyodide 314.0.7: "the runtime" ended as it started (ExitStatus: Program terminated with exit(1)): one of its files may not have arrived');
-  assert.equal(ended.error.pyodide, true);
+  assert.equal(ended.error.kind, "runtime");
   const broke = await failure(run("pyodideSteps")("314.0.7", async () => { throw new TypeError("Importing a module script failed."); }));
   assert.equal(String(broke?.error), "TypeError: Importing a module script failed.");
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");

@@ -2,7 +2,7 @@
 // and the matrices' tiled shaders (T146, T147), with how a matrix's pieces are bound and dispatched.
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
-import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
+import { STORAGE, COPY_DST, COPY_SRC, stopping, within, isLate, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ternaryValues, tiledOff } from "../shaders/prompt.ts";
 import { FLASH_Q_TILE, flashShape } from "../shaders/attention.ts";
@@ -69,7 +69,7 @@ async function chooseAttention(m: Model) {
       }
       tried.push(`${name}: ${wrong}`);
     } catch (error) {
-      if ((error as Thrown)?.late) throw error;
+      if (isLate(error)) throw error;
       tried.push(`${name}: ${(error as Thrown)?.message ?? error}`);
     }
   }
@@ -162,7 +162,7 @@ async function chooseMatrices(m: Model) {
       }
       m.forms.tried.push({ name: kept.name, none: `remembered, but wrong now: ${wrong}` });
     } catch (error) {
-      if ((error as Thrown)?.late) throw error;
+      if (isLate(error)) throw error;
       m.forms.tried.push({ name: kept.name, none: `remembered, but ${(error as Thrown)?.message ?? error}` });
     }
     if (stopping) return;
@@ -182,7 +182,7 @@ async function chooseMatrices(m: Model) {
       if (wrong) m.forms.tried.push({ name: form.name, none: `wrong: ${wrong}` });
       else right.push(tiled);
     } catch (error) {
-      if ((error as Thrown)?.late) throw error;
+      if (isLate(error)) throw error;
       m.forms.tried.push({ name: form.name, none: String((error as Thrown)?.message ?? error) });
     }
     if (stopping) return;

@@ -506,7 +506,7 @@ console.log("ok: a request with no answer, a failure, an id outside the vocabula
   assert.deepEqual([lost, step(part, 104)], [[], [4, 5, 6, 7]], "the GPU still takes the steps");
   // something that would run on the CPU: lost, said once, and the error the engine throws
   const first = part.notHere(), second = part.notHere();
-  assert.deepEqual([first.message, first.directLost, second.message], ["The GPU stopped (the GPU did not take a block or a step), and this model's weights were on it alone", true, first.message]);
+  assert.deepEqual([first.message, second.message], ["The GPU stopped (the GPU did not take a block or a step), and this model's weights were on it alone", first.message]);
   assert.deepEqual([lost, part.whyNot, requests(beside, "stop").length], [["the GPU did not take a block or a step"], "the GPU did not take a block or a step", 1]);
   assert.throws(() => part.prompt(tokensOf(16), 0), /this model's weights were on it alone/, "a block after it has nowhere to run");
   assert.throws(() => part.keysAndValues(0, 4), /The GPU stopped \(the GPU did not take a block or a step\), and this model's keys and values were on it alone/);

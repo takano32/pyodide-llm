@@ -11,7 +11,7 @@ import { sized, fetchRange } from "./ranges.ts";
 import { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } from "./sources.ts";
 import { convert } from "./convert.ts";
 import type { Sized } from "./sources.ts";
-import type { Thrown } from "./told.ts";
+import type { Thrown } from "../failure.ts";
 import type { GpuChose, GpuSaid, Listed, OfTwoFiles, OfTwoUrls, Ready, Status, Threads, ThreadsCompared } from "../contracts/messages.ts";
 
 // The legacy format carries no metadata, but its header fixes the size of a float32, a float16 and an int8 file.
@@ -163,7 +163,8 @@ export const threadsNow = () => engineNow()?.threads ?? 1;
 function watchGpu(id: number) {
   const engine = engineNow();
   if (!engine) return "prompts on the CPU (the NumPy engine runs this model)";
-  if (!engine.gpu) return `prompts on the CPU (${benchPage ? "the benchmark times the CPU" : "no WebGPU in a worker here"})`;
+  // (the words of an engine without a GPU's side are the engine's: forward/reasons.ts, which this file cannot read)
+  if (!engine.gpu) return `prompts on the CPU (${benchPage ? "the benchmark times the CPU" : engine.gpuWhyNot})`;
   engine.gpu.then((note) => engineNow() === engine && postMessage({ type: "gpu", load: id, note, ...(engine.gpuReady ?? {}) } as GpuChose | GpuSaid));
   return engine.gpuStatus!;  // (a line wherever the engine has a GPU: engine.gpu, above)
 }
