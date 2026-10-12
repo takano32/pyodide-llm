@@ -214,7 +214,7 @@ for (const { n, file } of gpuNodes) {
 }
 for (const name of used) assert.ok(isShader(name), `ENGINE.${name} is no shader: a text with @compute or a maker of one`);
 const shaders = [...new Set([...used, ...TILES])];
-assert.ok(shaders.length >= 25, `the shaders gpu.js runs: ${shaders.length} found (25 when this was written: 22 of the catalogue and the 3 makers of the tiles)`);
+assert.ok(shaders.length >= 26, `the shaders gpu.js runs: ${shaders.length} found (26 when this was written: 23 of the catalogue and the 3 makers of the tiles)`);
 const others = shaders.filter((name) => !TERNARY.includes(name));
 const engine = reached(shaders), general = reached(others);
 const itself = new Set([...KEY_ITSELF, ...reached(FORMS)].filter((name) => !engine.has(name)));
