@@ -77,6 +77,9 @@ page_modules() {
   # T380.1: the table of why a model is not on the GPU (src/runtime/forward/reasons.ts): every sentence whole, one
   # cause one sentence, written nowhere else, and read by forward.ts's parts, the GPU's worker and the pages alone
   node tests/reasons-check.mjs
+  # T380.2: every place that catches a failure and tells nobody (tests/silent.mjs reads them off the syntax trees),
+  # held to a table of why it may; one that is written without a row fails, and is told the ways out (under a second)
+  node tests/silent-check.mjs
   node tests/updated-check.mjs
   # T439: what the worker tells the page where it goes on, slower, without a file of its build that is gone (stand-ins)
   node tests/worker-outdated-check.mjs
