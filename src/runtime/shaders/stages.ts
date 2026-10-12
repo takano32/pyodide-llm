@@ -218,7 +218,7 @@ ${CHUNK_MAIN} {
         return;
     }
     let best = largest(t).value;
-    // SAMPLE's softmax: exp(value - max), at the temperature; with a nucleus only over the floor (kernel.ts)
+    // SAMPLE's softmax: exp(value - max), at the temperature; with a nucleus only over the floor (the CPU's sample kernel's)
     let nucleus = settings.topp > 0.0 && settings.topp < 1.0;
     let inverse = 1.0 / settings.temperature;
     let lowest = select(-3.4e38, best - settings.temperature * NUCLEUS_FLOOR, nucleus);
