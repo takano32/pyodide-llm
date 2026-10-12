@@ -6,6 +6,8 @@
 // shaders' parts, src/runtime/shaders/<part>.ts, as it takes its neighbours': linked into the worker's file, with
 // nothing to fetch after it and nothing of /benchmark/'s own shaders in it. The device's key is key.ts's, the same
 // text the model's worker reads its key from: tests/dist-check.mjs holds the two built files to one key.)
+// (T379.1: the shaders themselves, the texts and their makers, are taken from one catalogue, shaders/engine.ts's
+// ENGINE, which is what the key hashes: a module compiles ENGINE.<name> and imports no shader of a part.)
 import { halvesOf } from "../shaders/run.ts";
 import { deviceKey } from "../shaders/key.ts";
 import type { FromGpu, Matrix, Opened, Remembered, Started } from "../contracts/gpu/protocol.ts";

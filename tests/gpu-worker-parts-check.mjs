@@ -14,7 +14,9 @@
 //     dispatches and its keys and values into the staging, or nowhere where the request was given up; keysIn();
 //   - requests.js: a prompt's block answered in the control area (done, failed, the beat), a request given up
 //     answered nowhere, and a device lost before or during the work read as it is then: failed, and said.
-// Not here, because their work is checked against JavaScript by a device that computes: forms.js, tokens.js,
+//   - tokens.js (T379.1), of what makes no pipeline: the WGSL of every form of a token's layer is the catalogue's
+//     (shaders/engine.ts), and the matrices are those of the model's own packing of the weights.
+// Not here, because their work is checked against JavaScript by a device that computes: forms.js, the rest of tokens.js,
 // tokenattention.js, tokenforms.js (m.forms and m.tokens are made after checks pass) and start.js.
 // The type check holds their names (tests/types.mjs), tests/gpu-modules-check.mjs their owners. Node only, under a second:
 //
@@ -461,5 +463,36 @@ console.log("gpu-worker-parts-check: requests.js answers a block in the control 
   assert.equal(one, Object.values(SIZES).reduce((sum, [rows, n]) => sum + rows * n + (rows * n / GROUP) * 4, 0), "uploadLayers() reads the stop as it is now: it ends after the layer it was at");
 }
 console.log("gpu-worker-parts-check: end() lets go of the model's own buffers, the ones held and the device, in that order; a stop asked and a device lost are read by all as device.js holds them");
+
+// ---- T379.1: tokens.js's forms of a token's layer compile the catalogue's texts, and the ones of the model's weights.
+// (tokenCandidates() and tokenCodes() make no pipeline: which forms a device and a model may take, and each form's WGSL.)
+// Every text is a row's of shaders/engine.ts (what the device's key hashes), a ternary model's matrices are the rows of
+// the ternary packing and no other model's are: the worker gives the maker the packing, and a packing given the wrong
+// way round is a shader of one kind of weights run on the other (a form refused on every device, or wrong steps).
+{
+  const { tokenCandidates, tokenCodes } = await import(runtimeUrl("gpu/tokens.js"));
+  const { ENGINE_SHADERS, TERNARY_SHADERS } = await import(runtimeUrl("shaders.js"));
+  const rowOf = new Map([...ENGINE_SHADERS, ...TERNARY_SHADERS].map((row) => [row.text(), row]));
+  const was = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: { wgslLanguageFeatures: new Set(["packed_4x8_integer_dot_product", "subgroup_id"]) } } });
+  let forms = 0, codes = 0;
+  for (const ternary of [false, true]) for (const layerNorm of [false, true]) {
+    const candidates = tokenCandidates({ ternary, device: { features: new Set(["subgroups"]) }, plan: { layerNorm } });
+    assert.ok(candidates.length > 0, "a device with subgroups and the packed dot has forms of a token's layer");
+    for (const form of candidates) for (const apart of [false, true]) for (const gated of [false, true]) for (const floatHead of [false, true]) {
+      forms += 1;
+      for (const [key, code] of tokenCodes(form, { apart, gated, layerNorm, floatHead })) {
+        const row = rowOf.get(code), said = `${form.name}${ternary ? " (a ternary model)" : ""}, ${key}`;
+        assert.ok(row, `${said}: a text of no row of the catalogue, which the device's key does not hold`);
+        codes += 1;
+        if (row.name !== "fusedDp4aMatVec") continue;
+        assert.equal(row.given.weights, ternary ? "ternary" : "int8", `${said}: the matrix of the other packing of the weights`);
+        assert.equal(TERNARY_SHADERS.includes(row), ternary, `${said}: a ternary model's shaders are its own rows, and no other model takes them`);
+      }
+    }
+  }
+  if (was) Object.defineProperty(globalThis, "navigator", was); else delete globalThis.navigator;
+  console.log(`gpu-worker-parts-check: tokens.js's ${forms} forms of a token's layer (by the model's packing, its norm and its shape) compile ${codes} texts, each a row of the catalogue and of the model's own packing`);
+}
 console.log("gpu-worker-parts-check: ok");
 process.exit(0);

@@ -9,10 +9,8 @@ import { attentionPasses } from "./tokenattention.ts";
 import { GROUP } from "../shaders/common.ts";
 import { flashVecSplits } from "../shaders/attention.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "../shaders/matvec.ts";
-import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "../shaders/fused.ts";
-import { STATE_NOT_FINITE, STATE_BYTES, SAMPLING_BYTES, EMBED, EMBED_TERNARY, OUTLIERS_MOST, TAKE_OUTLIERS, TERNARY_COLUMNS,
-  outliersOf } from "../shaders/run.ts";
-import { SAMPLE } from "../shaders/sample.ts";
+import { STATE_NOT_FINITE, STATE_BYTES, SAMPLING_BYTES, OUTLIERS_MOST, outliersOf } from "../shaders/run.ts";
+import { ENGINE } from "../shaders/engine.ts";
 import type { Model, Bound, Pass } from "./device.ts";
 import type { TablePiece } from "./weights.ts";
 import type { Kept } from "./block.ts";
@@ -118,7 +116,7 @@ const TOKEN_FORMS: Candidate[] = [{ name: "llama.cpp, fused (T150)", dp4a: false
   { name: "llama.cpp, fused (T150), subgroups", dp4a: false, subgroups: true },
   { name: "DP4A, fused (T175)", dp4a: true, subgroups: false },
   { name: "DP4A, fused (T175), the norms apart", dp4a: true, subgroups: false, normApart: true },
-  // T232: the same two on ternary weights (shaders.ts's ternaryMatVec), which a model of ternary weights alone takes,
+  // T232: the same two on ternary weights (fusedDp4aMatVec's weights: "ternary"), which a model of ternary weights alone takes,
   // and takes no other
   { name: "DP4A, fused (T175), ternary", dp4a: true, subgroups: false, ternary: true },
   { name: "DP4A, fused (T175), ternary, the norms apart", dp4a: true, subgroups: false, ternary: true, normApart: true }];
@@ -145,10 +143,10 @@ const tokenShape = (m: Model) => ({ apart: Boolean(m.tokens.qkv), gated: Boolean
 // under two keys is compiled once (chooseTokens). The norm is on the read of T150's matrices where it is RMSNorm
 // (LayerNorm takes the mean out first, which no sum of the matrix's rows gives: a dispatch of its own before them)
 const tokenCodes = ({ dp4a, subgroups, normApart, ternary }: Candidate, { apart, gated, layerNorm, floatHead }: ReturnType<typeof tokenShape>): [string, string][] => {
-  const floats = (output: FusedOutput) => fusedMatVec({ input: layerNorm ? "plain" : "norm", output, subgroups });
-  const matrix = dp4a ? (output: FusedOutput) => (ternary ? ternaryMatVec : fusedDp4aMatVec)({ output }) : floats;
-  return [...(dp4a && !normApart ? [["normQuantize", NORM_QUANTIZE]] satisfies [string, string][] : []), ["qkv", matrix(apart ? "write" : "rope")],
-    ["add", dp4a ? matrix("add") : fusedMatVec({ input: "plain", output: "add", subgroups })], ["glu", matrix(gated ? "swiglu" : "write")],
+  const floats = (output: FusedOutput) => ENGINE.fusedMatVec({ input: layerNorm ? "plain" : "norm", output, subgroups });
+  const matrix = dp4a ? (output: FusedOutput) => ENGINE.fusedDp4aMatVec({ output, weights: ternary ? "ternary" : "int8" }) : floats;
+  return [...(dp4a && !normApart ? [["normQuantize", ENGINE.NORM_QUANTIZE]] satisfies [string, string][] : []), ["qkv", matrix(apart ? "write" : "rope")],
+    ["add", dp4a ? matrix("add") : ENGINE.fusedMatVec({ input: "plain", output: "add", subgroups })], ["glu", matrix(gated ? "swiglu" : "write")],
     ["classifier", (floatHead ? floats : matrix)("write")]];
 };
 
@@ -169,9 +167,9 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, widest = Math.max(plan.dim, qDim, plan.hidden);
   // (one at a time: each in an error scope of its own)
   // (T232: from a table of ternary weights, EMBED_TERNARY)
-  const embedCode = tablesOf(plan).embedding.ternary ? EMBED_TERNARY : EMBED;
+  const embedCode = tablesOf(plan).embedding.ternary ? ENGINE.EMBED_TERNARY : ENGINE.EMBED;
   const embed = await within(validated(m, () => pipelineOf(m, embedCode)), "compiling the embedding's row");
-  const sample = await within(validated(m, () => pipelineOf(m, SAMPLE)), "compiling the sampling");
+  const sample = await within(validated(m, () => pipelineOf(m, ENGINE.SAMPLE)), "compiling the sampling");
   const out = STORAGE | COPY_SRC;
   // (u is null until the uniforms are made, below: what this returns has them)
   const g: Omit<TokenBuffers, "u"> & { u: Uniforms | null } = { embed, sample, most, vocab, h: buffer(m, plan.dim * 4, out | COPY_DST), q: buffer(m, qDim * 4), att: buffer(m, qDim * 4),
@@ -212,7 +210,7 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   // biases of a layer are one vector then, in the rows' order (one ADD for the three); k's heads are the rows after q's
   const { bq, bk, bv, qNorm } = plan.vectors;
   if (bq || qNorm) {
-    g.rope = await within(validated(m, () => pipelineOf(m, TOKEN_ROPE)), "compiling a token's RoPE");
+    g.rope = await within(validated(m, () => pipelineOf(m, ENGINE.TOKEN_ROPE)), "compiling a token's RoPE");
     g.qkv = buffer(m, qkvRows * 4);
   }
   if (bq) {
@@ -238,8 +236,8 @@ async function tokenBuffers(m: Model): Promise<TokenBuffers> {
   // (shaders.ts's TAKE_OUTLIERS and TERNARY_COLUMNS), the values taken, and the Outliers of every piece of the table
   const channels = m.ternary ? plan.tokens!.channels ?? [] : [];
   if (channels.length) {
-    g.take = await within(validated(m, () => pipelineOf(m, TAKE_OUTLIERS)), "compiling the outlier channels' taking");
-    g.columns = await within(validated(m, () => pipelineOf(m, TERNARY_COLUMNS)), "compiling the outlier channels' columns");
+    g.take = await within(validated(m, () => pipelineOf(m, ENGINE.TAKE_OUTLIERS)), "compiling the outlier channels' taking");
+    g.columns = await within(validated(m, () => pipelineOf(m, ENGINE.TERNARY_COLUMNS)), "compiling the outlier channels' columns");
     g.picked = buffer(m, OUTLIERS_MOST * 4);
     g.u.take = uniform(m, outliersOf(channels));
     g.u.columns = m.weights.tables!.classifier.map((piece) => uniform(m, outliersOf(channels, piece.rows, plan.dim)));

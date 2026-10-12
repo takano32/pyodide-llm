@@ -5,7 +5,8 @@
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
 import { ternaryValues, tiledOff } from "../shaders/prompt.ts";
-import { FLASH_Q_TILE, flashShape, flashTile } from "../shaders/attention.ts";
+import { FLASH_Q_TILE, flashShape } from "../shaders/attention.ts";
+import { ENGINE } from "../shaders/engine.ts";
 import { devicePromptForms } from "../shaders/key.ts";
 import type { Model, Thrown } from "./device.ts";
 import type { Quantizing } from "./block.ts";
@@ -58,7 +59,7 @@ async function chooseAttention(m: Model) {
       continue;
     }
     try {
-      const pipeline = await within(validated(m, () => pipelineOf(m, flashTile(shape))), `compiling ${name}`);
+      const pipeline = await within(validated(m, () => pipelineOf(m, ENGINE.flashTile(shape))), `compiling ${name}`);
       const wrong = await within(checkAttention(m, pipeline), `checking ${name}`);
       if (!wrong) {
         // (T378.4: this module's record, which it alone sets: the attention, then chooseMatrices()'s form and what

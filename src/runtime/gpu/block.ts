@@ -7,9 +7,8 @@ import { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, stopping, held, within,
 import { tablesOf } from "./weights.ts";
 import { productGroups, multiply } from "./forms.ts";
 import { GROUP } from "../shaders/common.ts";
-import { QUANTIZE, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "../shaders/steps.ts";
 import { FLASH_Q_TILE } from "../shaders/attention.ts";
-import { EMBED_ROWS, EMBED_ROWS_TERNARY } from "../shaders/run.ts";
+import { ENGINE } from "../shaders/engine.ts";
 import type { Model } from "./device.ts";
 import type { Cache as Sent, Vectors } from "../contracts/gpu/protocol.ts";
 
@@ -84,8 +83,8 @@ async function prepare(m: Model) {
   const { plan } = m, B = plan.batch, gated = Boolean(plan.matrices.w3);
   const qDim = plan.heads * plan.headSize, kvDim = plan.kvHeads * plan.headSize, widest = Math.max(plan.dim, qDim, plan.hidden);
   // T154: LayerNorm and GELU where the model has them (GPT-2, GPT-NeoX), else RMSNorm and SwiGLU
-  const [norm, headNorm, add, rope, activation, quantize] = await within(Promise.all([plan.layerNorm ? LAYER_NORM : RMSNORM,
-    HEAD_NORM, ADD, ROPE, gated ? SWIGLU : GELU, QUANTIZE].map((code) => pipelineOf(m, code))), "the small steps' shaders");
+  const [norm, headNorm, add, rope, activation, quantize] = await within(Promise.all([plan.layerNorm ? ENGINE.LAYER_NORM : ENGINE.RMSNORM,
+    ENGINE.HEAD_NORM, ENGINE.ADD, ENGINE.ROPE, gated ? ENGINE.SWIGLU : ENGINE.GELU, ENGINE.QUANTIZE].map((code) => pipelineOf(m, code))), "the small steps' shaders");
   // a block's tokens, each array dense: token t's row at t times its width
   const x = buffer(m, B * plan.dim * 4, STORAGE | COPY_DST);
   const xb = buffer(m, B * Math.max(plan.dim, qDim) * 4, STORAGE | COPY_DST);
@@ -125,7 +124,7 @@ async function prepare(m: Model) {
   let embedRows: GPUComputePipeline | null = null, ids: GPUBuffer | null = null, embedGroups: GPUBindGroup[] | null = null;
   if (plan.direct) {
     // (T232: from a table of ternary weights, EMBED_ROWS_TERNARY)
-    const rowsCode = tablesOf(plan).embedding.ternary ? EMBED_ROWS_TERNARY : EMBED_ROWS;
+    const rowsCode = tablesOf(plan).embedding.ternary ? ENGINE.EMBED_ROWS_TERNARY : ENGINE.EMBED_ROWS;
     embedRows = await within(validated(m, () => pipelineOf(m, rowsCode)), "compiling the embedding's rows");
     ids = buffer(m, B * 4, STORAGE | COPY_DST);
     embedGroups = m.weights.tables!.embedding.map((piece) => bind(m, embedRows!,

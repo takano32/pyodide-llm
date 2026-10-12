@@ -43,7 +43,7 @@ async function generationPipes(headSize: number, form: Form): Promise<Generation
   const flash = shared.WGSL.flashShape({ headSize, half: false, subgroups: false, memory, threads: Math.min(maxComputeInvocationsPerWorkgroup, maxComputeWorkgroupSizeX) });
   if (flash.none) throw new Error(flash.none);
   const pipes = {} as GenerationPipes;
-  const classifier = form.dp4a ? shared.WGSL.fusedDp4aMatVec({ output: "write" }) : shared.WGSL.fusedMatVec({ input: "norm", output: "write", subgroups: false });
+  const classifier = form.dp4a ? shared.WGSL.fusedDp4aMatVec({ output: "write", weights: "int8" }) : shared.WGSL.fusedMatVec({ input: "norm", output: "write", subgroups: false });
   for (const [key, code] of [["embed", shared.WGSL.EMBED], ["flash", shared.WGSL.flashTile(flash)], ...layerCodes(form), ["classifier", classifier]] satisfies [PipeKey | "embed" | "classifier", string][]) {
     pipes[key] = await compiled(code);
     postMessage({ alive: true } satisfies Alive);
