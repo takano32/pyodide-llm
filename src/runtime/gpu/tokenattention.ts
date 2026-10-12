@@ -4,8 +4,9 @@
 
 import { STORAGE, COPY_DST, COPY_SRC, stopping, within, buffer, uniform, readBack, validated, pipelineOf, bind, dispatch } from "./device.ts";
 import { TIMED_MS, MOST_PASSES, PAIRS, LINE, threadsOf } from "./forms.ts";
-import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, flashVec, flashVecReduce, tokenAttentionData,
+import { flashVecShape, flashVecSplits, flashVecPartsBytes, flashVecParams, tokenAttentionData,
   tokenAttentionOff } from "../shaders/attention.ts";
+import { ENGINE } from "../shaders/engine.ts";
 import type { Model, Pass, Thrown } from "./device.ts";
 import type { FlashVecShape } from "../shaders/attention.ts";
 import type { Tried } from "../contracts/gpu/protocol.ts";
@@ -49,8 +50,8 @@ async function chooseTokenAttention(m: Model): Promise<Chosen | null> {
     }
     try {
       if (!a.tiles) {
-        a.pipeline = await within(validated(m, () => pipelineOf(m, flashVec(a.shape))), `compiling ${a.name}`);
-        a.reduce = await within(validated(m, () => pipelineOf(m, flashVecReduce(a.shape))), `compiling ${a.name}'s reduce`);
+        a.pipeline = await within(validated(m, () => pipelineOf(m, ENGINE.flashVec(a.shape))), `compiling ${a.name}`);
+        a.reduce = await within(validated(m, () => pipelineOf(m, ENGINE.flashVecReduce(a.shape))), `compiling ${a.name}'s reduce`);
       }
       const wrong = await within(checkTokenAttention(m, a), `checking ${a.name}`);
       if (wrong) attentions.push({ name: a.name, none: `wrong: ${wrong}` });

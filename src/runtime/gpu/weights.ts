@@ -6,7 +6,8 @@
 import { STORAGE, COPY_DST, COPY_SRC, CHUNK, rowBytes, stopping, within, buffer, uniform, copyIn, readBack, validated,
   pipelineOf, bind, dispatch } from "./device.ts";
 import { GROUP } from "../shaders/common.ts";
-import { WIDEN_SIX, sixDispatch, sixValues } from "../shaders/steps.ts";
+import { sixDispatch, sixValues } from "../shaders/steps.ts";
+import { ENGINE } from "../shaders/engine.ts";
 import type { Model, Bound } from "./device.ts";
 import type { Table, Tables } from "../contracts/gpu/protocol.ts";
 
@@ -312,7 +313,7 @@ async function uploadTokens(m: Model, widen: Widen | null) {
 // it); done() lets it go.
 async function widener(m: Model, tables: Table[] = []): Promise<Widen> {
   const { device } = m;
-  const pipeline = await within(validated(m, () => pipelineOf(m, WIDEN_SIX)), "compiling the widening of int6");
+  const pipeline = await within(validated(m, () => pipelineOf(m, ENGINE.WIDEN_SIX)), "compiling the widening of int6");
   const owned: GPUBuffer[] = [];
   // (T152: and the classifier's and the embedding's, one piece each)
   const largest = Math.max(CHECK_GROUPS * 24, ...Object.entries(m.plan.matrices).filter(([, matrix]) => matrix.six)

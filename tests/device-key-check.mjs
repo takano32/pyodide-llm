@@ -20,10 +20,12 @@
 //     eight made-up devices must differ: so every branch of every maker is walked by what deviceKey() makes of it.
 //     A piece of a ternary model's shaders must leave the key of every other model alone (T232); a piece of anything
 //     else in the file (the benchmark's shaders, the JavaScript the checks compare with) must leave every key alone.
-//     (The review: what gpu.js runs is its modules' import lines (T367.5: each takes the names it uses from a part; no
-//     module is handed round), and every place gpu.js compiles a shader is listed, so that a new one
-//     is looked at; and what a maker's numbers may do is held by its syntax tree: a number is written into the text and
-//     nothing else, since the key walks one set of them.)
+//     (The review: every place gpu.js compiles a shader is listed, so that a new one is looked at; and what a maker's
+//     numbers may do is held by its syntax tree: a number is written into the text and nothing else, since the key
+//     walks one set of them.)
+//     T379.1: what gpu.js runs is the catalogue's (shaders/engine.ts): its modules take a shader as ENGINE.<name> and
+//     import none of a part, and the key hashes the catalogue's rows. So the shaders here are the catalogue's names,
+//     those of a ternary model alone are its second list's, and the arguments the key gives a maker are its rows'.
 // (2) The key is the same when the source is not: esbuild's reprint, its minifier (white space, names, syntax), its
 //     wrapping as another format of module, rolldown's bundle (Vite 8's, the site's), a comment in every function, a
 //     parameter more for every function, every maker renamed. A copy of the file that hashes one maker's source as well
@@ -127,18 +129,27 @@ assert.equal(new Set([...KEYS.plain, ...KEYS.ternary]).size, 2 * DEVICES.length,
 const TILES = ["regTile", "tfjsTile", "dp4a"];
 // the key's own lines (their strings choose what is made: no text of a shader), and what names the prompt's forms and
 // says why one is not made (a form's name is hashed with its text: the tiles' sizes are in it)
-const KEY_ITSELF = ["deviceKey", "engineShaders", "ternaryShaders", "EITHER", "OUTPUTS"], FORMS = ["devicePromptForms"];
+// (T379.1: and the catalogue's own: its rows, what makes a row, and the lists of the choices they walk)
+const KEY_ITSELF = ["deviceKey", "ENGINE_SHADERS", "TERNARY_SHADERS", "ENGINE", "EITHER", "texts", "made", "FUSED_INPUTS", "FUSED_OUTPUTS"], FORMS = ["devicePromptForms"];
+for (const name of KEY_ITSELF) assert.ok(declared.has(name), `${name} is no declaration of the shaders' modules any more: this check's list of the key's own lines`);
+// the catalogue (T379.1): the rows the key hashes, [name, the arguments of a maker's row] each
+const rowsOf = (rows) => rows.map(({ name, given }) => ({ name, given }));
+const ROWS = { engine: rowsOf(real.ENGINE_SHADERS), ternary: rowsOf(real.TERNARY_SHADERS) };
+const named = (rows) => [...new Set(rows.map(({ name }) => name))];
 // the shaders of a model of ternary weights alone (T232): no other model's key holds them
-const TERNARY = ["ternaryMatVec", "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_OUTLIERS", "TERNARY_COLUMNS"];
-// (and the makers of every model's shaders that have branches for ternary weights, and what only those branches write)
-const TERNARY_BRANCHES = ["dp4a", "TERNARY_PACKED"];
+const TERNARY = named(ROWS.ternary).filter((name) => !named(ROWS.engine).includes(name));
+// (and the makers of every model's shaders that have branches for ternary weights, and what only those branches write:
+// TERNARY_PACKED is a piece of the tiles' ternary text and of DP4A_WEIGHTS' ternary row, and a row of its own)
+const TERNARY_BRANCHES = ["dp4a", "TERNARY_PACKED", "DP4A_WEIGHTS"];
 const isShader = (name) => typeof real[name] === "string"
   || (typeof real[name] === "function" && [...reached([name])].some((part) => pieces(part).some((piece) => typeof piece.says === "string" && piece.says.includes("@compute"))));
-// What gpu.js takes of the shaders (T367.5): the names its modules import from the parts of shaders/, and nothing else.
-// A module takes each name it uses by an import of its own, so the import lines are the whole list: a namespace
-// (`import * as`), the window (shaders.js: every name, /benchmark/'s too) or a part imported when it is used
-// (`import("…")`) would hand names round that no line names, and is refused here. (Until T367.5 the worker handed the
-// window's module round as m.wgsl, and this check found the names by any property, destructuring or subscript.)
+// What gpu.js takes of the shaders (T379.1): the catalogue's, as ENGINE.<name>, and no shader by an import. What its
+// modules import from the parts of shaders/ is by name, each line read: a namespace (`import * as`), the window
+// (shaders.js: every name, /benchmark/'s too) or a part imported when it is used (`import("…")`) would hand names round
+// that no line names, and is refused here; and a name imported so is no shader (a text with @compute, or a maker of
+// one): that is the catalogue's to give. ENGINE itself is read by its properties alone (ENGINE.SAMPLE): handed on,
+// taken apart or subscripted, a shader would be taken that no line names. (T367.5 to T379.1: the import lines were
+// the list of the worker's shaders. Until T367.5 the worker handed the window's module round as m.wgsl.)
 // T352: gpu.js is a window over the modules of src/runtime/gpu/ now, and the worker is all of those files: each is read, and
 // what is said of "gpu.js" below is said of them together (a shader named or compiled in any of them). Every file of the
 // folder is read, whether or not the window asks for it (that it asks for them all is tests/gpu-modules-check.mjs's).
@@ -159,10 +170,26 @@ for (const { n, file, text } of gpuNodes) {
   for (const specifier of n.specifiers) {
     assert.ok(specifier.type === "ImportSpecifier" && specifier.imported.name === specifier.local.name, `${file} takes ${text.slice(specifier.start, specifier.end)} of ${asked}: a plain name, under its own (a namespace would hand shaders round unseen)`);
     assert.ok(specifier.imported.name in real, `${file} takes ${specifier.imported.name} of ${asked}, which shaders.js (the window) does not export`);
+    assert.ok([...KEY_ITSELF, ...FORMS].includes(specifier.imported.name) || !isShader(specifier.imported.name), `${file} imports the shader ${specifier.imported.name} of ${asked}: the worker takes a shader from the catalogue (ENGINE.${specifier.imported.name}, shaders/engine.ts), which the device's key hashes`);
     taken.add(specifier.imported.name);
   }
 }
-const used = [...taken].filter((name) => name in real).sort();
+// (the worker's modules with their parents: how each mention of ENGINE is used)
+const taking = new Set();
+for (const file of gpuFiles) {
+  for (const [n, parents] of withParents(parse(untyped(read(file), runtime(file)), { sourceType: "module" }).program)) {
+    if (n.type !== "Identifier" || n.name !== "ENGINE") continue;
+    const up = parents.at(-1);
+    if (up.type === "ImportSpecifier") continue;
+    assert.ok(up.type === "MemberExpression" && up.object === n && !up.computed, `${file} uses ENGINE otherwise than as ENGINE.<name> (at ${n.start}): the shaders the worker runs are read off these lines`);
+    assert.ok(up.property.name in real.ENGINE, `${file} takes ENGINE.${up.property.name}, which the catalogue has no row of`);
+    taking.add(up.property.name);
+  }
+}
+const used = [...taking].sort();
+// every row is a shader the worker runs, but the piece of text the key has held as one (TERNARY_PACKED): a row no
+// module takes any more is in every device's key for nothing (and taking it out moves them all: T379.2's)
+assert.deepEqual(Object.keys(real.ENGINE).filter((name) => !taking.has(name)), ["TERNARY_PACKED"], "the catalogue's rows that no module of gpu.js takes");
 // gpu.js compiles a shader in one place (pipelineOf) and hands it the code at the calls below. A new call, or one whose code
 // comes from somewhere else, is looked at here: every shader it can compile must be one of those the key hashes
 const compiled = gpuNodes.filter(({ n }) => n.type === "CallExpression" && n.callee.name === "pipelineOf").map(({ n, text }) => text.slice(n.arguments[1].start, n.arguments[1].end));
@@ -178,16 +205,16 @@ assert.deepEqual([...new Set(compiled)].sort(), [
   "form.code",  // a prompt's tile (devicePromptForms)
   "kept.code",  // the same, the remembered one
   "rowsCode",  // EMBED_ROWS or EMBED_ROWS_TERNARY
-  "SAMPLE", "TAKE_OUTLIERS", "TERNARY_COLUMNS", "TOKEN_ROPE", "WIDEN_SIX",
-  "flashTile(shape)", "flashVec(a.shape)", "flashVecReduce(a.shape)",
-].sort(), "a place where gpu.js compiles a shader that this check does not know: is every shader it can compile in the key (engineShaders(), ternaryShaders(), the tiles)?");
+  "ENGINE.SAMPLE", "ENGINE.TAKE_OUTLIERS", "ENGINE.TERNARY_COLUMNS", "ENGINE.TOKEN_ROPE", "ENGINE.WIDEN_SIX",
+  "ENGINE.flashTile(shape)", "ENGINE.flashVec(a.shape)", "ENGINE.flashVecReduce(a.shape)",
+].sort(), "a place where gpu.js compiles a shader that this check does not know: is every shader it can compile of the catalogue (ENGINE.<name>) or a tile (devicePromptForms)?");
 for (const { n, file } of gpuNodes) {
   const text = n.type === "TemplateElement" ? n.value.raw : n.type === "StringLiteral" ? n.value : "";
   assert.ok(!/@compute|@workgroup_size|\bfn main\b|@group\(/.test(text), `${file} writes WGSL itself (at ${n.start}): the key hashes the texts of shaders.js alone`);
 }
-const shaders = [...new Set([...used.filter((name) => ![...KEY_ITSELF, ...FORMS].includes(name) && isShader(name)), ...TILES])];
-assert.ok(shaders.length >= 27, `the shaders gpu.js runs: ${shaders.length} found (27 when this was written)`);
-for (const name of TERNARY) assert.ok(shaders.includes(name), `${name} is no shader of gpu.js any more`);
+for (const name of used) assert.ok(isShader(name), `ENGINE.${name} is no shader: a text with @compute or a maker of one`);
+const shaders = [...new Set([...used, ...TILES])];
+assert.ok(shaders.length >= 26, `the shaders gpu.js runs: ${shaders.length} found (26 when this was written: 23 of the catalogue and the 3 makers of the tiles)`);
 const others = shaders.filter((name) => !TERNARY.includes(name));
 const engine = reached(shaders), general = reached(others);
 const itself = new Set([...KEY_ITSELF, ...reached(FORMS)].filter((name) => !engine.has(name)));
@@ -235,7 +262,7 @@ console.log(`device-key-check: one character more in each of ${counted.engine + 
 // ---- (1b) the arguments of the makers: the key walks every choice a text branches on and one set of numbers. A piece of
 // text that only some arguments reach is found above (it did not move the key); what is not text is found here.
 // (a) the key calls each maker with the arguments the maker reads, no fewer: a parameter added to a maker and not to
-// engineShaders() or ternaryShaders() is an argument the key does not walk. (b) The numbers the key gives (a literal in its
+// the catalogue's rows is an argument the key does not walk. (b) The numbers the key gives (a literal in its
 // call) are only written into a text: each use of one in the maker is inside a template's ${}, in a sum or a product at
 // most, or is an argument to a function that does the same with it. A number that is compared, branched on or looked up
 // chooses a text the key may not make (`${wgSize > kvTile ? STEP : ""}` has no piece of text of its own to move the key).
@@ -270,19 +297,24 @@ function onlyWritten(fn, param, seen = new Set()) {
   return true;
 }
 const walked = new Map();  // maker -> the properties of the object the key gives it
-for (const given of ["engineShaders", "ternaryShaders"]) {
-  for (const [call] of withParents(declared.get(given))) {
-    if (call.type !== "CallExpression" || call.callee.type !== "Identifier" || !functionOf(call.callee.name) || !/Function/.test(functionOf(call.callee.name).type)) continue;
-    const maker = functionOf(call.callee.name), name = call.callee.name;
-    const first = call.arguments[0];
-    if (first?.type !== "ObjectExpression") { assert.fail(`the key calls ${name} with something other than an object of arguments: this check reads those`); }
-    const kept = new Map(first.properties.map((p) => [p.key.name, p.shorthand || p.value.type !== "NumericLiteral" ? "choice" : "number"]));
-    assert.deepEqual([...kept.keys()].sort(), paramsOf(maker)[0].slice().sort(), `${name}'s parameters are not the arguments the key gives it`);
-    for (const [property, kind] of kept) if (kind === "number") assert.ok(onlyWritten(maker, property), `${name}'s ${property}: a number the key gives once, used for more than writing (a comparison or a branch chooses a text the key does not make)`);
-    walked.set(name, kept);
+// (T379.1: what the key gives a maker is the catalogue's rows of it: every row of a maker gives it all the maker reads,
+// and what is a number in one row is the same number in all of them: one set of numbers)
+for (const { name, given } of [...ROWS.engine, ...ROWS.ternary]) {
+  if (!given) { assert.equal(typeof real.ENGINE[name], "string", `${name}: a row without arguments is a text`); continue; }
+  const maker = functionOf(name);
+  assert.ok(maker && /Function/.test(maker.type), `${name}: a row with arguments is a maker's`);
+  const kept = new Map(Object.entries(given).map(([property, value]) => [property, typeof value === "number" ? "number" : "choice"]));
+  assert.deepEqual([...kept.keys()].sort(), paramsOf(maker)[0].slice().sort(), `${name}'s parameters are not the arguments the catalogue's row gives it (${JSON.stringify(given)})`);
+  for (const [property, kind] of kept) {
+    if (kind !== "number") continue;
+    assert.ok(onlyWritten(maker, property), `${name}'s ${property}: a number the key gives once, used for more than writing (a comparison or a branch chooses a text the key does not make)`);
+    const first = [...ROWS.engine, ...ROWS.ternary].find((row) => row.name === name).given[property];
+    assert.equal(given[property], first, `${name}'s ${property}: a number, and another in another row (the key walks one set of numbers; a choice is no number)`);
   }
+  assert.deepEqual(walked.get(name) ?? kept, kept, `${name}: the rows give it arguments of different kinds`);
+  walked.set(name, kept);
 }
-assert.ok(walked.size >= 6, `the makers the key calls: ${[...walked.keys()]}`);
+assert.ok(walked.size >= 5, `the makers the key calls: ${[...walked.keys()]}`);
 console.log(`device-key-check: the key gives ${[...walked].map(([name, kept]) => `${name}(${[...kept].map(([k, v]) => v === "number" ? `${k}#` : k).join(", ")})`).join("; ")} (# a number, only written)`);
 
 // ---- (2) the same key from another source
@@ -309,7 +341,8 @@ const CHANGES = {
     const open = text.indexOf("(", f.type === "ArrowFunctionExpression" ? f.start : f.id.end);
     return [[open + 1, "notUsed$ = 0"]];
   })),
-  "every maker renamed": (text, tree) => withInserts(text, [...namesIn(tree)].filter((n) => makers.includes(n.name)).map((n) => [n.end, "$moved"])),
+  // (a name at a place once: a shorthand property, { flashTile }, is a key and a value there)
+  "every maker renamed": (text, tree) => withInserts(text, [...new Set([...namesIn(tree)].filter((n) => makers.includes(n.name)).map((n) => n.end))].map((end) => [end, "$moved"])),
 };
 // esbuild's output has its exports at the end, or is CommonJS: run as it is said
 function runAny(text) {
@@ -326,8 +359,8 @@ function runAny(text) {
   return new Function(`${text.slice(0, lists[0].start)}\nreturn ${key};${text.slice(lists[0].end)}`)();
 }
 // the control: the same file with one maker's own source hashed too, as every maker's was until T366
-const hashed = "...engineShaders(),";
-assert.equal(source.split(hashed).length, 2, "deviceKey() names engineShaders() once");
+const hashed = "...written(ENGINE_SHADERS),";
+assert.equal(source.split(hashed).length, 2, "deviceKey() names the catalogue's rows of every model once");
 const control = source.replace(hashed, `${hashed} String(fusedMatVec),`);
 const controlTree = parse(control, { sourceType: "module" }).program;
 const controlKeys = keysOf(runAny(control), false);
@@ -351,7 +384,7 @@ console.log(`device-key-check: the key is the same with the source ${Object.keys
 
 // ---- (3) what the key is cut at, and the browser's language features
 // a character moved from the end of one text to the start of the next leaves the concatenation as it was
-const moved = source.replace("[RMSNORM, HEAD_NORM, ADD,", "[RMSNORM.slice(0, -1), RMSNORM.slice(-1) + HEAD_NORM, ADD,");
+const moved = source.replace("texts({ RMSNORM, HEAD_NORM, ADD,", "texts({ RMSNORM: RMSNORM.slice(0, -1), HEAD_NORM: RMSNORM.slice(-1) + HEAD_NORM, ADD,");
 assert.notEqual(moved, source, "the engine's list of texts starts as this check expects");
 assert.notDeepEqual(keysOf(runAny(moved), false), KEYS.plain, "a character moved from one text to the next did not move the key");
 // the two features of the browser's WGSL that choose which shaders a device makes (packed int8 dot, subgroup_id)

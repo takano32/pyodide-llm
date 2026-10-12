@@ -1,17 +1,12 @@
 // shaders/key.ts (T351): the key of what the page remembers of a device (T148, T366): the adapter, the browser and a
-// hash of the WGSL of the engine's shaders. It takes every part the engine's GPU worker runs a shader of, and none of
-// the benchmark's own (bench.ts, stages.ts) or likecpu.ts.
+// hash of the WGSL of the engine's shaders: the catalogue's (engine.ts, T379.1), which is every text the engine's GPU
+// worker may run and none of the benchmark's own, and the prompt's tiles a device can make.
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
-import { TERNARY_PACKED, promptForms } from "./prompt.ts";
-import { QUANTIZE, WIDEN_SIX, RMSNORM, HEAD_NORM, LAYER_NORM, ADD, ROPE, SWIGLU, GELU } from "./steps.ts";
-import { flashTile, flashVec, flashVecReduce } from "./attention.ts";
-import { TOKEN_ROPE, fusedMatVec, NORM_QUANTIZE, fusedDp4aMatVec, ternaryMatVec } from "./fused.ts";
-import { EMBED, EMBED_ROWS, EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS } from "./run.ts";
-import { SAMPLE } from "./sample.ts";
+import { promptForms } from "./prompt.ts";
+import { ENGINE_SHADERS, TERNARY_SHADERS } from "./engine.ts";
 import type { PromptForm } from "./prompt.ts";
-import type { FusedInput, FusedOutput } from "./fused.ts";
 
 // (T368.5) what the key reads of a device, or of the adapter it is made of (a GPUDevice and a GPUAdapter both have
 // them): the features that choose its shaders and the limits that size its tiles. And of the adapter alone, its info
@@ -31,16 +26,8 @@ export type Adapter = Made & { info?: Info };
 // every device's key). A maker's texts are those of every choice its text branches on (a form, a feature), with one
 // set of numbers: a number is written into the text and chooses nothing of it. tests/device-key-check.mjs holds that
 // every piece of text of the shaders gpu.ts runs reaches the hash, and that the key does not move with the source.
-const EITHER = [false, true], OUTPUTS: FusedOutput[] = ["rope", "add", "swiglu", "write"];
-/** the WGSL of every model's shaders in gpu.js, but for the prompt's tiles (devicePromptForms: those the device can make) */
-const engineShaders = () => [RMSNORM, HEAD_NORM, ADD, ROPE, SWIGLU, QUANTIZE, LAYER_NORM, GELU, EMBED, EMBED_ROWS, SAMPLE, NORM_QUANTIZE, TOKEN_ROPE, WIDEN_SIX,
-  ...EITHER.flatMap((subgroups) => [
-    ...EITHER.map((half) => flashTile({ headSize: 64, half, subgroups, wgSize: 32, kvTile: 8, minSubgroup: 4 })),
-    flashVec({ headSize: 64, subgroups, wgSize: 32, kvTile: 32, dSplit: 16 }), flashVecReduce({ headSize: 64, subgroups, reduceSize: 32 }),
-    ...(["norm", "plain"] satisfies FusedInput[]).flatMap((input) => OUTPUTS.map((output) => fusedMatVec({ input, output, subgroups })))]),
-  ...OUTPUTS.map((output) => fusedDp4aMatVec({ output }))];
-/** T232: and those of a model of ternary weights alone (its tiles: devicePromptForms' ternary) */
-const ternaryShaders = () => [TERNARY_PACKED, ...OUTPUTS.map((output) => ternaryMatVec({ output })), EMBED_TERNARY, EMBED_ROWS_TERNARY, TAKE_OUTLIERS, TERNARY_COLUMNS];
+// T379.1: which texts those are, each maker's choices and their order is the catalogue's (engine.ts: the rows of every
+// model's shaders, and those of a model of ternary weights alone), which the worker takes its shaders from as well.
 /** the tiled shaders of T146 a device can make (promptForms; T232, ternary: those of a model of ternary weights) */
 export const devicePromptForms = (device: Made, ternary = false) => promptForms({ half: device.features.has("shader-f16"), subgroups: device.features.has("subgroups"),
   packed: Boolean(globalThis.navigator?.gpu?.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")),
@@ -62,8 +49,9 @@ export function deviceKey(adapter: Adapter, device: Made = adapter, ternary = fa
     language?.has("packed_4x8_integer_dot_product") ? "packed" : "", language?.has("subgroup_id") ? "subgroup_id" : ""].map((part) => part ?? "").join("|");
   const tiles = (forms: PromptForm[]) => forms.flatMap((form) => [form.name, form.code]);
   let hash = 0x811c9dc5;
-  for (const text of [...tiles(devicePromptForms(device)), ...engineShaders(),
-    ...(ternary ? [...tiles(devicePromptForms(device, true)), ...ternaryShaders()] : [])]) {
+  const written = (rows: { text: () => string }[]) => rows.map((row) => row.text());
+  for (const text of [...tiles(devicePromptForms(device)), ...written(ENGINE_SHADERS),
+    ...(ternary ? [...tiles(devicePromptForms(device, true)), ...written(TERNARY_SHADERS)] : [])]) {
     for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);
     hash = Math.imul(hash ^ 0x1f, 0x01000193);  // (the unit separator: in no WGSL)
   }

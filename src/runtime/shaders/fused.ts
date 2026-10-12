@@ -21,9 +21,11 @@ import { SCALE_WORD } from "./steps.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.ts";
 
 // (T368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
-// names a maker's text branches on
-export type FusedInput = "norm" | "plain";
-export type FusedOutput = "rope" | "add" | "swiglu" | "write";
+// names a maker's text branches on. (T379.1) Each a list of values, which the catalogue walks (engine.ts), and the
+// type is made of the list: a name more is written here once
+const FUSED_INPUTS = ["norm", "plain"] as const, FUSED_OUTPUTS = ["rope", "add", "swiglu", "write"] as const;
+export type FusedInput = (typeof FUSED_INPUTS)[number];
+export type FusedOutput = (typeof FUSED_OUTPUTS)[number];
 
 // ---- T150: a layer of a generated token in five dispatches where the separate steps take fourteen (RMSNorm; q, k and
 // v; RoPE and the cache; the attention; o; the residual add; RMSNorm; gate and up; SwiGLU; down; the residual add):
@@ -434,126 +436,16 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 //
-// output: as fusedMatVec's ("rope", "add", "swiglu" or "write"). Bindings: 0 the weights, 1 their scales, 2 the
-// quantized vector (xq), 3 params, 4 its scales (xs); 5 on as fusedMatVec's.
-export const fusedDp4aMatVec = ({ output }: { output: FusedOutput }): string => /* wgsl */ `requires packed_4x8_integer_dot_product;
-${FUSED_PARAMS}
-${STEP}
-@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>
-@group(0) @binding(1) var<storage, read> scales_b: array<f32>;
-@group(0) @binding(2) var<storage, read> a: array<vec4<u32>>;        // the quantized vector (xq)
-@group(0) @binding(3) var<uniform> params: Params;
-@group(0) @binding(4) var<storage, read> scales_a: array<f32>;       // its scales (xs), one a group of 32
-${fusedOutputs(output)}
-${sdp8ai}
-
-const workgroup_size_x = 128u;
-const tile_size = ${ORT_DP4A_MATVEC_ROWS}u;
-const tile_size_k_vec = 32u;
-const sub_tile_count = workgroup_size_x / tile_size_k_vec;
-const MATRICES = ${output === "swiglu" ? 2 : 1}u;
-// fusedWrite's name for the rows of a workgroup
-const OUTPUTS_PER_WG = tile_size;
-
-const double_tile_size_k_vec = 2 * tile_size_k_vec;
-
-var<workgroup> inter_results: array<array<f32, tile_size_k_vec>, tile_size * MATRICES>;
-var<workgroup> tile_A : array<vec4<u32>, double_tile_size_k_vec>;
-const scale_a_size_in_tile_a = double_tile_size_k_vec / 2;
-var<workgroup> scale_A : array<f32, scale_a_size_in_tile_a>;
-// what the reduction leaves: each row's sum (up's rows' after gate's), for the write
-var<workgroup> totals: array<f32, tile_size * MATRICES>;
-
-fn loadSHMA(kidx_v: u32, col: u32)
-{
-    let K16 = params.words / 4u;
-    let k_offset = kidx_v + col;
-    if (k_offset >= K16) {
-    return;
-    }
-
-    tile_A[col] = a[k_offset];
-    if (col < scale_a_size_in_tile_a && kidx_v / 2u + col < params.perRow)
-    {
-    // kidx_v - covers 16 values of k in input_a
-    scale_A[col] = scales_a[kidx_v / 2u + col];
-    }
-}
-
-@compute @workgroup_size(workgroup_size_x)
-fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg: vec3<u32>,
-        @builtin(local_invocation_index) local_idx: u32) {
-    let workgroup_idx = wg_id.y * num_wg.x + wg_id.x;
-    let num_N_tile = (params.rows + tile_size - 1u) / tile_size;
-    if (workgroup_idx >= num_N_tile) {
-        return;
-    }
-    let K32 = params.perRow;
-    let b_global_base = workgroup_idx * tile_size;
-    // Handle each workgroup threads as a block of [sub_tile_count][tile_size_k_vec]
-    let local_col = local_idx % tile_size_k_vec;
-    let local_row = local_idx / tile_size_k_vec;
-
-    for (var kidx_v:u32 = 0; kidx_v < K32; kidx_v += tile_size_k_vec)
-    {
-        // Load Phase: Populate shared memory for the workgroup.
-        if (local_idx < double_tile_size_k_vec)
-        {
-        loadSHMA(kidx_v * 2, local_idx);
-        }
-        workgroupBarrier();
-        var own_a: vec4<u32> = tile_A[local_col * 2];
-        var own_a1: vec4<u32> = tile_A[local_col * 2 + 1];
-        var own_scale_a = scale_A[local_col];
-        let k_offset = kidx_v + local_col;
-        // k_offset - covers 32 values of k in input_b
-        let block_idx = k_offset;
-        // calculate intermediate results into inter_results.
-        for (var row_offset = 0u; row_offset < tile_size; row_offset += sub_tile_count) {
-            let b_global = b_global_base + row_offset + local_row;
-            if (b_global < params.rows && k_offset < K32)
-            {
-                let b_offset = b_global * K32 + k_offset;
-                let own_scale_b = scales_b[b_global * params.perRow + block_idx];
-                let own_b = b[b_offset * 2];
-                let own_b1 = b[b_offset * 2 + 1];
-                inter_results[row_offset + local_row][local_col] += SDP8AI(own_a, own_b, own_a1, own_b1, own_scale_a * own_scale_b);${output === "swiglu" ? `
-                // up's row, params.second rows after gate's (mmvq.cu's vgate beside vx), with the same own_a
-                let up_global = b_global + params.second;
-                let up_offset = up_global * K32 + k_offset;
-                let up_scale_b = scales_b[up_global * params.perRow + block_idx];
-                inter_results[tile_size + row_offset + local_row][local_col] += SDP8AI(own_a, b[up_offset * 2], own_a1, b[up_offset * 2 + 1], own_scale_a * up_scale_b);` : ""}
-            }
-        }
-        workgroupBarrier();
-    }
-
-    if (local_idx < tile_size * MATRICES) {
-      // Do reduce sum to get final output.
-      var output_value = f32(0);
-      for (var b = 0u; b < tile_size_k_vec; b++) {
-        output_value += inter_results[local_idx][b];
-      }
-      totals[local_idx] = output_value;
-    }
-
-    workgroupBarrier();
-
-    let thread_id = local_idx;
-    let row_base = b_global_base;
-    let scale = 1.0;  // the norm is the quantizer's (NORM_QUANTIZE)
-${fusedWrite(output)}
-}`;
-
-// ---- T232: fusedDp4aMatVec for ternary weights (see prompt.ts's TERNARY_PACKED, above dp4a: the layout, the unpacking and why).
+//
+// ---- T232: fusedDp4aMatVec's text for ternary weights, DP4A_WEIGHTS' ternary (see prompt.ts's TERNARY_PACKED, above dp4a: the layout, the unpacking and why).
 // The same Params, bindings, dispatch and write; the weights at binding 0 are the codes, 16 to a u32, and a row's scales
 // one a group of 128 weights (params.perRow / 4, where perRow counts the vector's groups of 32). A thread's group of 32
 // is two words of codes, at the index its two vec4<u32> of int8 have in an int8 matrix (a row is n / 16 words either
 // way), unpacked to those two vec4<u32>; the scale is its group of 128's, the same for four threads of a row. Every
-// other line is fusedDp4aMatVec's: it became a function of its own because deviceKey() hashed that one's source (until
-// T366: a parameter more changed every device's key). The key holds the text a maker makes now, so the two may be one
-// maker whose int8 text stays what it is (tests/gpu-choice-check.mjs holds every line but those that read the weights
-// the same in the two meanwhile).
+// other line is the int8 text's. (Until T379.1 this was a maker of its own, ternaryMatVec, a copy of fusedDp4aMatVec:
+// deviceKey() hashed that one's source until T366, and a parameter more changed every device's key. The key holds the
+// text a maker makes now, and the two are one maker whose texts are, byte for byte, what the two made:
+// tests/gpu-choice-check.mjs holds which lines differ.)
 //
 // Adapted from ONNX Runtime, onnxruntime/contrib_ops/webgpu/quantization/dp4a_matmul_small_m.wgsl.template (n_bits
 // 8: the loop fusedDp4aMatVec is. For 2-bit weights ORT has the same template's n_bits == 2 path, whose reads are this
@@ -580,16 +472,56 @@ ${fusedWrite(output)}
  */
 //
 // (ternary_packed: the notice of Prism ML's fork of llama.cpp is above prompt.ts's TERNARY_PACKED.)
-export const ternaryMatVec = ({ output }: { output: FusedOutput }): string => /* wgsl */ `requires packed_4x8_integer_dot_product;
+//
+// (T379.1) What the text has for each packing of the weights: its lines that read them, and nothing else. One maker
+// makes every packing's text from this table, so a packing more is a row here (and its rows in engine.ts's catalogue).
+//   bindings   bindings 0 and 1: the weights as the shader reads their words, and the scales of their groups
+//   unpacking  what turns a word of the weights into packed int8, after SDP8AI (nothing where they are int8)
+//   rowScales  after K32: how many scales a row has, where that is not the vector's groups of 32
+//   group      after k_offset: what a thread's group of 32 is in the weights
+//   scale      the index of the scale of that group in a row (b_global, or up's row)
+//   word       a vec4<u32> of 16 packed int8, of the word at an index of b
+const DP4A_WEIGHTS = {
+  int8: {
+    bindings: `@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>
+@group(0) @binding(1) var<storage, read> scales_b: array<f32>;`,
+    unpacking: "",
+    rowScales: "",
+    group: `
+        // k_offset - covers 32 values of k in input_b
+        let block_idx = k_offset;`,
+    scale: (row: string) => `${row} * params.perRow + block_idx`,
+    word: (at: string) => `b[${at}]`,
+  },
+  ternary: {
+    bindings: `@group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' codes, 16 of two bits to a u32
+@group(0) @binding(1) var<storage, read> scales_b: array<f32>;       // a scale a group of 128 weights`,
+    unpacking: TERNARY_PACKED,
+    rowScales: `
+    // the scales of a row of the weights: one a group of 128
+    let K128 = params.perRow / 4u;`,
+    group: `
+        // k_offset - covers 32 values of k in input_b: two words of codes`,
+    scale: (row: string) => `${row} * K128 + k_offset / 4u`,
+    word: (at: string) => `ternary_packed(b[${at}])`,
+  },
+};
+export type FusedWeights = keyof typeof DP4A_WEIGHTS;
+//
+// output: as fusedMatVec's ("rope", "add", "swiglu" or "write"); weights: their packing, a row of DP4A_WEIGHTS.
+// Bindings: 0 the weights, 1 their scales, 2 the quantized vector (xq), 3 params, 4 its scales (xs); 5 on as
+// fusedMatVec's.
+export const fusedDp4aMatVec = ({ output, weights }: { output: FusedOutput; weights: FusedWeights }): string => {
+  const packing = DP4A_WEIGHTS[weights];
+  return /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${FUSED_PARAMS}
 ${STEP}
-@group(0) @binding(0) var<storage, read> b: array<u32>;              // the weights' codes, 16 of two bits to a u32
-@group(0) @binding(1) var<storage, read> scales_b: array<f32>;       // a scale a group of 128 weights
+${packing.bindings}
 @group(0) @binding(2) var<storage, read> a: array<vec4<u32>>;        // the quantized vector (xq)
 @group(0) @binding(3) var<uniform> params: Params;
 @group(0) @binding(4) var<storage, read> scales_a: array<f32>;       // its scales (xs), one a group of 32
 ${fusedOutputs(output)}
-${sdp8ai}${TERNARY_PACKED}
+${sdp8ai}${packing.unpacking}
 
 const workgroup_size_x = 128u;
 const tile_size = ${ORT_DP4A_MATVEC_ROWS}u;
@@ -632,9 +564,7 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
     if (workgroup_idx >= num_N_tile) {
         return;
     }
-    let K32 = params.perRow;
-    // the scales of a row of the weights: one a group of 128
-    let K128 = params.perRow / 4u;
+    let K32 = params.perRow;${packing.rowScales}
     let b_global_base = workgroup_idx * tile_size;
     // Handle each workgroup threads as a block of [sub_tile_count][tile_size_k_vec]
     let local_col = local_idx % tile_size_k_vec;
@@ -651,23 +581,22 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
         var own_a: vec4<u32> = tile_A[local_col * 2];
         var own_a1: vec4<u32> = tile_A[local_col * 2 + 1];
         var own_scale_a = scale_A[local_col];
-        let k_offset = kidx_v + local_col;
-        // k_offset - covers 32 values of k in input_b: two words of codes
+        let k_offset = kidx_v + local_col;${packing.group}
         // calculate intermediate results into inter_results.
         for (var row_offset = 0u; row_offset < tile_size; row_offset += sub_tile_count) {
             let b_global = b_global_base + row_offset + local_row;
             if (b_global < params.rows && k_offset < K32)
             {
                 let b_offset = b_global * K32 + k_offset;
-                let own_scale_b = scales_b[b_global * K128 + k_offset / 4u];
-                let own_b = ternary_packed(b[b_offset * 2]);
-                let own_b1 = ternary_packed(b[b_offset * 2 + 1]);
+                let own_scale_b = scales_b[${packing.scale("b_global")}];
+                let own_b = ${packing.word("b_offset * 2")};
+                let own_b1 = ${packing.word("b_offset * 2 + 1")};
                 inter_results[row_offset + local_row][local_col] += SDP8AI(own_a, own_b, own_a1, own_b1, own_scale_a * own_scale_b);${output === "swiglu" ? `
                 // up's row, params.second rows after gate's (mmvq.cu's vgate beside vx), with the same own_a
                 let up_global = b_global + params.second;
                 let up_offset = up_global * K32 + k_offset;
-                let up_scale_b = scales_b[up_global * K128 + k_offset / 4u];
-                inter_results[tile_size + row_offset + local_row][local_col] += SDP8AI(own_a, ternary_packed(b[up_offset * 2]), own_a1, ternary_packed(b[up_offset * 2 + 1]), own_scale_a * up_scale_b);` : ""}
+                let up_scale_b = scales_b[${packing.scale("up_global")}];
+                inter_results[tile_size + row_offset + local_row][local_col] += SDP8AI(own_a, ${packing.word("up_offset * 2")}, own_a1, ${packing.word("up_offset * 2 + 1")}, own_scale_a * up_scale_b);` : ""}
             }
         }
         workgroupBarrier();
@@ -689,3 +618,6 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
     let scale = 1.0;  // the norm is the quantizer's (NORM_QUANTIZE)
 ${fusedWrite(output)}
 }`;
+};
+
+export { FUSED_INPUTS, FUSED_OUTPUTS };

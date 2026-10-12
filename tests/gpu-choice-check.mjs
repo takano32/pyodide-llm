@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 const { aloneHolds, BOTH_ON_8, aloneVerdict, cpuReadBytes, footprint, gpuBytes, gpuLine, gpuOnlyPlan, gpuOnlyUnfit, gpuOnlyWeights, gpuHoles, layerWeightsOf, placer, PROMPTS_CPU,
   PROMPTS_GPU, PROMPTS_UNTIMED, promptTimes, tokenTimes, USAGE_UNKNOWN, weightsPlace } = await import(runtimeUrl("forward.js"));
-const { deviceKey, fusedDp4aMatVec, halvesOf, OUTLIERS_MOST, outliersOf, quantizedLikeCpu, ternaryMatVec, ternaryValues, tiledOff, tokenAttentionData,
+const { deviceKey, fusedDp4aMatVec, halvesOf, OUTLIERS_MOST, outliersOf, quantizedLikeCpu, ternaryValues, tiledOff, tokenAttentionData,
   tokenAttentionOff } = await import(runtimeUrl("shaders.js"));
 import { usedAfter } from "../src/bench.js";
 import { python as sources, runtimeUrl } from "./tree.mjs";
@@ -560,11 +560,11 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   assert.match(off(product(1, right).fill(NaN, 5, 6)), /products/, "one product that is no number");
   assert.match(off(product(1, right), { group: () => 128 }), /products/, "a group that is no number makes every product NaN: wrong, not right");
 }
-// T232's review: ternaryMatVec is fusedDp4aMatVec's text with the lines that read the weights and their scales changed (and
-// ternary_packed after SDP8AI), a copy because deviceKey() hashed fusedDp4aMatVec's source (until T366: the key holds
-// the text a maker makes now, and the two may be made one maker without moving an int8 model's key). A copy drifts: a line changed in
-// one and not the other is a shader of one kind of weights that is not the other's, and CI's runs of both go on being ok.
-// Every line but those that differ by design is the same in the two, for every output a layer writes
+// T232's review, T379.1: fusedDp4aMatVec's text for ternary weights is its int8 text with the lines that read the weights
+// and their scales changed (and ternary_packed after SDP8AI). The two were two makers, one a copy (ternaryMatVec, because
+// deviceKey() hashed fusedDp4aMatVec's source until T366), and are one maker now, whose table of the packings
+// (shaders/fused.ts's DP4A_WEIGHTS) holds what differs. That it holds nothing else is held here: every line but those
+// that differ by design is the same in the two texts, for every output a layer writes
 {
   const byDesign = [/var<storage, read> b: /, /var<storage, read> scales_b: /, /k_offset - covers 32 values of k in input_b/, /let block_idx = k_offset;/,
     /let K128 = /, /the scales of a row of the weights: one a group of 128/, /let own_scale_b = /, /let own_b = /, /let own_b1 = /, /let up_scale_b = /,
@@ -572,17 +572,21 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
   const lines = (text) => text.replace(/\/\/ T232: a word of 16 ternary codes[\s\S]*?\n}\n/, "").split("\n");
   const kept = (text) => lines(text).filter((line) => !byDesign.some((re) => re.test(line)));
   const different = (text) => lines(text).length - kept(text).length;
+  const of = (weights, output) => fusedDp4aMatVec({ output, weights });
   // (what differs by design: 7 lines of the int8 text, 8 of the ternary one (the scales' K128 and its comment are two lines
   // for the int8's block_idx one), and where SwiGLU reads up's rows 2 more in each)
   for (const [output, int8, ternary] of [["write", 7, 8], ["rope", 7, 8], ["add", 7, 8], ["swiglu", 9, 10]]) {
-    assert.equal(different(fusedDp4aMatVec({ output })), int8, `${output}: the lines of fusedDp4aMatVec that read the weights`);
-    assert.equal(different(ternaryMatVec({ output })), ternary, `${output}: the lines of ternaryMatVec that read the weights`);
-    assert.deepEqual(kept(ternaryMatVec({ output })), kept(fusedDp4aMatVec({ output })),
-      `ternaryMatVec(${output}) drifted from fusedDp4aMatVec(${output}): a line changed in one is to be changed in the other (or the two made one)`);
+    assert.equal(different(of("int8", output)), int8, `${output}: the lines of fusedDp4aMatVec's int8 text that read the weights`);
+    assert.equal(different(of("ternary", output)), ternary, `${output}: the lines of fusedDp4aMatVec's ternary text that read the weights`);
+    assert.notEqual(of("ternary", output), of("int8", output), `${output}: the packing of the weights chooses a text`);
+    assert.deepEqual(kept(of("ternary", output)), kept(of("int8", output)),
+      `fusedDp4aMatVec(${output}): the ternary text differs from the int8 one in a line that is not the weights' reading`);
   }
-  // and what is not by design is seen: one other line changed in the copy is not the same text
-  const changed = ternaryMatVec({ output: "add" }).replace("var output_value = f32(0);", "var output_value = f32(1);");
-  assert.notDeepEqual(kept(changed), kept(fusedDp4aMatVec({ output: "add" })), "a changed line is a difference");
+  // and what is not by design is seen: one other line changed is not the same text
+  const changed = of("ternary", "add").replace("var output_value = f32(0);", "var output_value = f32(1);");
+  assert.notDeepEqual(kept(changed), kept(of("int8", "add")), "a changed line is a difference");
+  // a packing the table has no row of is no text (the type says so before it runs)
+  assert.throws(() => of("int5", "add"), TypeError, "a packing without a row of DP4A_WEIGHTS");
 }
 // T232's review: the outlier channels' two shaders take as many as OUTLIERS_MOST, and Python's OUTLIER_CHANNELS is that
 // many (a ninth channel past the Outliers' room would throw as the plan is made: the GPU then lost for a model that

@@ -88,21 +88,25 @@ function said(what, { count, differ, gone, added }, more = "") {
 }
 
 // T366: the makers of WGSL among src/runtime/shaders.js's exports, and the arguments that walk every branch of each one's
-// text (a number is written into the text and chooses nothing). The engine's makers are held by deviceKey() as well
-// (below); the benchmark's (fmaCeiling, mulMatVec) by this table alone: a branch added to one of those is to be added here
-const EITHER = [false, true], OUTPUTS = ["rope", "add", "swiglu", "write"];
-const MAKERS = {
+// text (a number is written into the text and chooses nothing). T379.1: the engine's makers and their arguments are the
+// catalogue's rows (this tree's shaders/engine.ts, which deviceKey() hashes: makersOf()); the makers of the prompt's
+// tiles (the key holds them by promptForms) and the benchmark's (fmaCeiling, mulMatVec) are held by this table alone: a
+// branch added to one of those is to be added here
+const EITHER = [false, true];
+const MAKERS_APART = {
   regTile: EITHER.map((half) => [half]),
   dp4a: EITHER.flatMap((subgroups) => EITHER.map((ternary) => [subgroups, ternary])),
-  flashTile: EITHER.flatMap((half) => EITHER.map((subgroups) => [{ headSize: 64, half, subgroups, wgSize: 32, kvTile: 8, minSubgroup: 4 }])),
-  flashVec: EITHER.map((subgroups) => [{ headSize: 64, subgroups, wgSize: 32, kvTile: 32, dSplit: 16 }]),
-  flashVecReduce: EITHER.map((subgroups) => [{ headSize: 64, subgroups, reduceSize: 32 }]),
   fmaCeiling: EITHER.flatMap((half) => ["square", "affine"].map((shape) => [half, shape])),
   mulMatVec: EITHER.flatMap((packed) => EITHER.map((subgroups) => [{ packed, subgroups }])),
-  fusedMatVec: ["norm", "plain"].flatMap((input) => OUTPUTS.flatMap((output) => EITHER.map((subgroups) => [{ input, output, subgroups }]))),
-  fusedDp4aMatVec: OUTPUTS.map((output) => [{ output }]),
-  ternaryMatVec: OUTPUTS.map((output) => [{ output }]),
 };
+function makersOf(module) {
+  const found = { ...MAKERS_APART };
+  for (const { name, given } of [...module.ENGINE_SHADERS, ...module.TERNARY_SHADERS]) if (given) (found[name] ??= []).push([given]);
+  return found;
+}
+// (until T379.1 is the tree compared with: there the texts for ternary weights are a maker's of their own,
+// ternaryMatVec, which took no packing; the texts are compared as fusedDp4aMatVec's all the same)
+const madeBy = (module, name, given) => (name === "fusedDp4aMatVec" && given[0].weights === "ternary" && module.ternaryMatVec ? module.ternaryMatVec : module[name])(...given);
 
 // T368.5: a function of the shaders that makes no WGSL (the checks' JavaScript, the shapes, the key) by its statements, as
 // a syntax tree: Node runs a .ts file with its types blanked, so that String(a function) of shaders.ts has spaces where a
@@ -118,10 +122,11 @@ function statements(made) {
 }
 async function shaders(other) {
   const [was, now] = await Promise.all([treeOf(other).runtimeUrl("shaders.js"), built ? builtModule("shaders", built.dist) : treeOf(root).runtimeUrl("shaders.js")].map((url) => import(url)));
+  const MAKERS = makersOf(await import(treeOf(root).runtimeUrl("shaders.js")));
   // (--built: a function that makes no WGSL is printed anew by the bundler: its source is no text to compare)
   const printed = built ? Object.entries(now).filter(([name, value]) => typeof value === "function" && !MAKERS[name]).map(([name]) => name) : [];
   const texts = (module) => Object.fromEntries(Object.entries(module).filter(([name]) => !printed.includes(name) || !(name in was) || !(name in now)).map(([name, value]) =>
-    [name, typeof value === "function" && MAKERS[name] ? MAKERS[name].map((given) => value(...given)).join("\n----\n") : typeof value === "function" ? statements(value) : text(value)]));
+    [name, typeof value === "function" && MAKERS[name] ? MAKERS[name].map((given) => madeBy(module, name, given)).join("\n----\n") : typeof value === "function" ? statements(value) : text(value)]));
   let ok = said(`shaders, the exports${built ? " as built" : ""}`, differences(texts(was), texts(now)), built ? ` (and ${printed.length} functions that make no WGSL, a bundler's print of their sources: there on both sides, not compared)` : "");
   const keys = { was: {}, now: {} };
   for (const packed of [false, true]) {

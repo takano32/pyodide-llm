@@ -125,7 +125,7 @@ const layerCodes = ({ dp4a, fused, normApart, subgroups }: Form): [PipeKey, stri
   }
   if (!fused) return [["quantize", shared.WGSL.QUANTIZE], ["norm", shared.WGSL.RMSNORM], ["rope", shared.WGSL.ROPE], ["swiglu", shared.WGSL.SWIGLU], ["product", shared.WGSL.ortDp4aMatVec]];
   return [["quantize", shared.WGSL.QUANTIZE], normApart ? ["norm", shared.WGSL.RMSNORM] : ["normQuantize", shared.WGSL.NORM_QUANTIZE],
-    ["qkv", shared.WGSL.fusedDp4aMatVec({ output: "rope" })], ["add", shared.WGSL.fusedDp4aMatVec({ output: "add" })], ["glu", shared.WGSL.fusedDp4aMatVec({ output: "swiglu" })]];
+    ["qkv", shared.WGSL.fusedDp4aMatVec({ output: "rope", weights: "int8" })], ["add", shared.WGSL.fusedDp4aMatVec({ output: "add", weights: "int8" })], ["glu", shared.WGSL.fusedDp4aMatVec({ output: "swiglu", weights: "int8" })]];
 };
 // T175: a vector of n values quantized (QUANTIZE) into { xq, xs }: a thread a group of 32
 const quantizing = (pipes: Pick<Pipes, "quantize">, group: Grouping, x: GPUBuffer, into: Quantized, uniform: GPUBuffer, n: number, step: GPUBuffer): Dispatch => [pipes.quantize, group(pipes.quantize, [[0, x], [1, into.xq], [2, into.xs], [3, uniform], [4, step]]), Math.ceil(n / shared.GROUP / 64), 1];
