@@ -12,8 +12,8 @@ from conftest import ROOT, TENSOR_ORDER
 from made_up import (BIASES, checkpoint, drawn, files, header_of, lfm2_model, named, numbered, pack_checkpoint, quantized,
                      settings_of, synthetic_weights, tensors_of, uniform, unigram)
 
-from llama2_numpy import (DTYPES, MATRIX, VECTOR, Llama, Tokenizer, checkpoint_dtype, file_size, kind_of,
-                          tensor_rows)
+from llama2_numpy import (DTYPES, FORM, LAYOUTS, MATRIX, STATEFUL, VECTOR, Layout, Llama, Stateful, Tokenizer, after,
+                          checkpoint_dtype, file_size, kind_of, tensor_rows)
 
 LINEAR = {"every": 2, "key_heads": 2, "value_heads": 4, "key_dim": 64, "value_dim": 32, "conv": 4}
 # a header whose rows are whole groups of 128 (the ternary dtype's), and what each layout needs besides
@@ -77,6 +77,32 @@ def test_the_file_is_the_one_the_engine_reads(name, dtype):
             assert np.allclose(read.reshape(row.shape), given[row.name], rtol=1e-3, atol=1e-4), row.name
     logits = [llama.forward(token, pos) for pos, token in enumerate([1, 7, 300])]
     assert all(np.isfinite(row).all() and row.shape == (320,) for row in logits)
+
+
+@pytest.mark.parametrize("dtype", ["float32", "int8", "int6"])
+def test_a_layout_nobody_has_written_a_maker_for_is_made(dtype, monkeypatch):
+    """An architecture that is another's but for a fact, and one with a new kind of layer that keeps a state (the "rnn"
+    of tests/test_architectures.py), are made with no line here: the maker has the rows of whatever the table has."""
+    recurrent = Stateful("recurrent", lambda numbers, n_layers: numbers, lambda numbers, n_layers: [kind == "r" for kind in numbers["layers"]])
+    rnn = lambda d: after(LAYOUTS["llama"].rows(d), "wo", d.stack("wr", MATRIX, STATEFUL, d.recurrent["width"], d.dim),
+                          d.stack("br", VECTOR, STATEFUL, d.dim))
+    monkeypatch.setitem(FORM, "recurrent", None)
+    monkeypatch.setitem(LAYOUTS, "rnn", Layout(rnn, stateful=recurrent))
+    monkeypatch.setitem(LAYOUTS, "rms gpt2", LAYOUTS["gpt2"]._replace(layer_norm=False))
+    for header, form in ((GROUPED, {"arch": "rnn", "recurrent": {"layers": "rara", "width": 96}}), (FILLED, {"arch": "rms gpt2"})):
+        rows, given = tensor_rows(header, form), {}
+
+        def tensor(row, values=drawn(seed=5)):
+            given[row.name] = values(row)
+            return given[row.name]
+
+        data = checkpoint(header, form, dtype, tensor=tensor)
+        assert len(data) == file_size(rows, dtype) and checkpoint_dtype(header, len(data), form) == dtype
+        if dtype == "float32":
+            read = tensors_of(data, form)
+            assert all(np.array_equal(read[row.name], given[row.name]) for row in rows)
+    # (what the values are is by the rows' names: a bias of a new name is a norm's weight to drawn() until BIASES has it)
+    assert abs(given["bq"].mean()) < 0.1 and abs(given["rms_att_weight"].mean() - 1) < 0.01
 
 
 def test_a_float32_file_is_read_back_by_the_same_rows():
