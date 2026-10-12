@@ -23,7 +23,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { runtime } from "./tree.mjs";
-import { floats, worstRow, argmax, logSoftmax, divergence, scaleOff } from "./gpu-check/measures.mjs";
+import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff } from "./gpu-check/measures.mjs";
 import { NAN_MODELS, NAN_CHOICES, SYNTHETIC, DAWN_ONLY, madeUpOn } from "./gpu-check/models.mjs";
 import { GEN, GPU_LINE, HALF_LINE, K, K_PACKED, SCALE_LINE, TIE } from "./gpu-check/lines.mjs";
 import { promptsOnGpu, quantizersWrong, modelWrong } from "./gpu-check/verdicts.mjs";
@@ -66,6 +66,15 @@ check("the measures", () => {
   assert.equal(worstRow([0.5, 0], [0, 0], 2), 0.5);
   assert.ok(Number.isNaN(worstRow([NaN, 0], [1, 0], 2)));
   assert.equal(argmax([1, 3, 3, 2]), 1);
+  // the worst layer: the largest ratio (the first of equals), and a NaN wherever it is (the first NaN; a comparison with
+  // it is false, which let the layer after a NaN take its place: T357.3's review)
+  assert.equal(worstAt([0.5, 0.9, 0.3]), 1);
+  assert.equal(worstAt([0.5, 0.5, 0.3]), 0);
+  assert.equal(worstAt([0.5, NaN, 0.3]), 1);
+  assert.equal(worstAt([NaN, 0.1, 9]), 0);
+  assert.equal(worstAt([0.1, NaN, NaN, 9]), 1);
+  assert.equal(worstAt([0.1, 9, NaN]), 2);
+  assert.equal(worstAt([0.4]), 0);
   const p = logSoftmax([0, Math.log(3)]);
   assert.ok(Math.abs(Math.exp(p[0]) - 0.25) < 1e-12 && Math.abs(Math.exp(p[1]) - 0.75) < 1e-12);
   assert.equal(divergence(p, [5, 5 + Math.log(3)]), 0);
@@ -92,6 +101,13 @@ check("the made-up models an engine runs", () => {
     assert.equal(model[0].dtype ?? "int8", model[1].dtype ?? "int8", `${name}: the file's dtype and the engine's`);
     assert.equal(model[0].arch ?? "llama", model[1].arch ?? "llama", `${name}: the file's architecture and the engine's`);
   }
+});
+
+// ---- lines.mjs
+check("the numbers a run is held to are the ones decided", () => {
+  // each is a decision with its derivation in lines.mjs (T187: the lines are the arithmetic's own distances): loosening one
+  // lets a wrong GPU through, so changing one is changing this too, and saying why in TODO.md
+  assert.deepEqual({ GPU_LINE, HALF_LINE, K, K_PACKED, SCALE_LINE, TIE }, { GPU_LINE: 8e-3, HALF_LINE: 1.5e-2, K: { float32: 4, f16: 8 }, K_PACKED: 3, SCALE_LINE: 1e-4, TIE: Math.LN2 });
 });
 
 // ---- a made-up case: 2 layers, 3 positions of the prompt, keys and values 8 wide, a vocabulary of 6
@@ -177,6 +193,16 @@ check("a run wrong in one thing fails, and says which", () => {
   const broken = floats(nan.keys).slice();
   broken[SIZE - 1] = NaN;
   failed({ ...nan, keys: b64(broken) }, /- the keys and values of the GPU's layer 1 are NaN and /);
+  // (and in the first of the layers as well: the worst layer is the NaN's, not the layer after it)
+  const first = floats(nan.keys).slice();
+  first[0] = NaN;
+  failed({ ...nan, keys: b64(first) }, /- the keys and values of the GPU's layer 0 are NaN and /);
+  // the run all at once is held as the run block by block is: its keys and values, its scale, its tokens, its logits
+  const past = runOf({ off: GPU_LINE * 1.5 }), scaledUp = runOf({ off: 0, keys: KEYS.map((x) => x * (1 + 3e-4)), values: VALUES.map((x) => x * (1 + 3e-4)) });
+  failed({ ...runOf(), again: { ...runOf().again, keys: past.again.keys } }, /- the keys and values of the GPU's layer 0 are 1\.00e-3 and 1\.20e-2 from NumPy's \(its line 8\.00e-3\)$/m);
+  failed({ ...runOf(), again: { ...runOf().again, keys: scaledUp.again.keys, values: scaledUp.again.values } }, /- the first layer's keys and values are scaled by 1 \+ -?\d\.\d\de-\d+ and 1 \+ 3\.00e-4 of NumPy's/);
+  failed({ ...runOf(), again: { ...runOf().again, gpuTokens: N - 1 } }, /- the GPU took 3 and 2 of 3 tokens/);
+  failed({ ...runOf(), again: { ...runOf().again, logits: b64(LOGITS.map((x, i) => (i === 3 ? 5 : x))) } }, /- another most likely token \(2, 3\) than NumPy's 2, and not a near tie$/);
   // every value 3e-4 too large: under the rows' lines, past the scale's
   const scaled = (factor) => runOf({ off: 0, keys: KEYS.map((x) => x * factor), values: VALUES.map((x) => x * factor) });
   assert.ok(3e-4 > SCALE_LINE && 3e-4 < GPU_LINE);
@@ -385,10 +411,14 @@ check("a generation's steps wrong in one thing", () => {
   assert.ok(GPU_LINE * 1.5 < K_PACKED * Q8);
   assert.equal(steps(stepsOf({ form: "ORT's DP4A", keys: b64(off) })).value, true);
   const nan = floats(b64(GREEDY_KEYS)).slice();
-  // (a NaN in the last layer. In a layer before the last one the worst layer's rule passes over it, here and in the
-  // prompt's verdict: ratios.reduce() leaves a NaN for whatever comes after it. TODO.md's T357.3, found by this check)
+  // (a NaN in the last layer; in the first, below. Before the review of T357.3 a NaN in a layer before the last one was
+  // passed over, here and in the prompt's verdict: ratios.reduce() left a NaN for whatever came after it)
   nan[(LAYERS - 1) * GEN * KV] = NaN;
   wrong({ keys: b64(nan) }, /- the keys and values of the steps' layer 1 are NaN from NumPy's/);
+  // (and in the first layer: it is the worst layer as well, not the one after it: T357.3's review)
+  const first = floats(b64(GREEDY_KEYS)).slice();
+  first[0] = NaN;
+  wrong({ keys: b64(first) }, /- the keys and values of the steps' layer 0 are NaN from NumPy's/);
   // (the positions after the first id that is not NumPy's are not compared: their inputs differ)
   const late = moved(GREEDY_KEYS, 1, [0, 1], GEN).map((x, i) => (i % (GEN * KV) < 2 * KV ? GREEDY_KEYS[i] : x));
   assert.match(steps(stepsOf({ first: [2, 0, 1, 3], keys: b64(late) })).text, /keys and values of 2 positions 0\.00e\+0,/);

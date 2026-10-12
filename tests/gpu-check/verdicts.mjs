@@ -2,7 +2,7 @@
 // for a model (its runs on the CPU and with the GPU, lines.mjs's lines) against the model's case (NumPy's
 // answers), said in the log's lines, and whether any of them failed. Functions of what they are given: no GPU, no
 // browser, no Pyodide (tests/gpu-check-parts-check.mjs runs them on made-up numbers).
-import { floats, worstRow, argmax, logSoftmax, divergence, scaleOff } from "./measures.mjs";
+import { floats, worstRow, worstAt, argmax, logSoftmax, divergence, scaleOff } from "./measures.mjs";
 import { NOT_FINITE_STATUS, NOT_FINITE_KV_STATUS, GPU_LINE, HALF_LINE, K, K_PACKED, SCALE_LINE, TIE } from "./lines.mjs";
 import { stepsRight } from "./steps.mjs";
 import { layerTables } from "./tables.mjs";
@@ -129,7 +129,7 @@ function modelWrong(cases, { id, cpu, gpu: runs, late, refused, remembered, alon
     const gpuLayers = byLayer(gpu), againLayers = gpu.again ? byLayer(gpu.again) : lines.map(() => NaN);
     const ratios = lines.map((line, l) => Math.max(gpuLayers[l], againLayers[l]) / line);
     // the worst layer (NaN the worst of all)
-    const at = ratios.reduce((worst, x, l) => (!(x <= ratios[worst]) ? l : worst), 0);
+    const at = worstAt(ratios);
     Object.assign(gpu, { line: lines[at], ratio: ratios[at], layer: at });
     if (!(ratios[at] <= 1)) {
       failures.push(`the keys and values of the GPU's layer ${at} are ${gpuLayers[at].toExponential(2)} and ${againLayers[at].toExponential(2)} from NumPy's (its line ${lines[at].toExponential(2)})`);

@@ -26,7 +26,7 @@
 // parallel residual); the made-up GPT-2's final norm has eight weights of 12 (GPT-2's outlier channels, T92: the
 // engine takes their columns of the classifier apart on the CPU, and the GPU's classifier multiplies floats).
 import { runtimeUrl } from "../tree.mjs";
-import { floats, worstRow, argmax, logSoftmax } from "./measures.mjs";
+import { floats, worstRow, worstAt, argmax, logSoftmax } from "./measures.mjs";
 import { GEN, NOT_FINITE_STATUS, GPU_LINE, K, K_PACKED, TIE } from "./lines.mjs";
 const wgsl = await import(runtimeUrl("shaders.js"));
 
@@ -119,7 +119,7 @@ function stepsRight(c, steps, { e16s, q8s, kvDim, prompt }) {
   const offs = Array.from({ length: layers }, (_, l) => Math.max(worstRow(rowsAt(gotK, l), rowsAt(wantK, l), kvDim), worstRow(rowsAt(gotV, l), rowsAt(wantV, l), kvDim)));
   const lines = offs.map((_, l) => Math.max(packed ? K_PACKED * q8s[l] : Math.max(GPU_LINE, K.float32 * e16s[l]), prompt[l]));
   const ratios = offs.map((off, l) => off / lines[l]);
-  const at = ratios.reduce((worst, x, l) => (!(x <= ratios[worst]) ? l : worst), 0);
+  const at = worstAt(ratios);
   if (!(ratios[at] <= 1)) failures.push(`the keys and values of the steps' layer ${at} are ${offs[at].toExponential(2)} from NumPy's (its line ${lines[at].toExponential(2)})`);
   said.push(`keys and values of ${positions.length} positions ${Math.max(...offs).toExponential(2)}, layer ${at} ${ratios[at].toFixed(2)} of its line ${lines[at].toExponential(2)}`);
   // (T152's review) 4 sampled steps in one submission, and one at a time: the same ids to the bit
