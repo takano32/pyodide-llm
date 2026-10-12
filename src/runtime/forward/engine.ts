@@ -292,7 +292,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T378.2: what the GPU's side (forward/gpuside.ts) reads of this model, as two things made once: the model's facts,
   // and where its tensors are in the memory (addresses, and the matrices as matrix() made them)
   const shape: Shape = { dim, hidden, layers, heads, kvHeads, headSize, kvDim, qDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart: plan.kv_start,
-    turning: turns.some(Boolean), layerNorm, parallel, unturned, linear, convolution, rotated, sharedClassifier: plan.shared_classifier };
+    turning: turns.some(Boolean), layerNorm, parallel, unturned, linear, convolution, stateful: lines.some(Boolean),
+    rotated, sharedClassifier: plan.shared_classifier };
   const weights: Placed = { base, embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, finalW, finalB, bo, b1, b2, bq, bk, bv, qNorm, kNorm,
     cosTable, sinTable, positions, channels };
   // T349: what the GPU would hold of this model, and why it would not take it

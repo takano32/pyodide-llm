@@ -32,7 +32,7 @@ const { OUTSIDE_VOCABULARY } = await import(runtimeUrl("forward/alone.js"));
 const PAGE = 65536;
 // a made-up model: small, and no two of its sizes the same where one could stand for another
 const SHAPE = { dim: 8, hidden: 24, layers: 2, heads: 2, kvHeads: 1, headSize: 4, kvDim: 4, qDim: 8, vocab: 100, seqLen: 512, D: 32, KV: 8, halfKV: true,
-  eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, parallel: false, unturned: [], linear: null, convolution: null, rotated: 0, sharedClassifier: true };
+  eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, parallel: false, unturned: [], linear: null, convolution: null, stateful: false, rotated: 0, sharedClassifier: true };
 const matrixOf = (rows, n, at, more = {}) => ({ rows, n, int8: true, six: false, group: 32, layer: (l) => [at + l * 1000, at + l * 1000 + 500, at + l * 1000 + 700], ...more });
 const WEIGHTS = { base: 8192, embedding: { kind: "int8", group: 32, offset: 100, scales: 200 },
   wq: matrixOf(8, 8, 30000), wk: matrixOf(4, 8, 32000), wv: matrixOf(4, 8, 34000), wo: matrixOf(8, 8, 36000),
@@ -577,6 +577,8 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   const reasons = [
     [{ linear: { every: 4 } }, {}, {}, /^linear-attention layers are not on the GPU yet$/],
     [{ convolution: { taps: 3 } }, {}, {}, /^convolution layers are not on the GPU yet$/],
+    // (T375.2: a kind of layer that keeps a state and is neither of the two: not on the GPU, without a line for it)
+    [{ stateful: true }, {}, {}, /^layers that keep a state are not on the GPU yet$/],
     [{ rotated: 1024 }, {}, {}, /^a rotated basis is not on the GPU yet$/],
     [{}, {}, { sharedMemory: false }, /^the page is not cross-origin isolated$/],
     [{ headSize: 6 }, {}, {}, /^heads of a size that is no multiple of 4 are not on the GPU$/],

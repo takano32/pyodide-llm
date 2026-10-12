@@ -24,6 +24,8 @@ export type Shape = {
   D: number; KV: number; halfKV: boolean;
   eps: number; rotary: number; kvStart: number; turning: boolean; layerNorm: boolean; parallel: boolean; unturned: number[];
   linear: Linear | null; convolution: Convolution | null;
+  // T375.2: some layer keeps a state in place of keys and values, of whatever kind (the plan's layers say)
+  stateful: boolean;
   // the block of a rotated basis (0: the model's own basis)
   rotated: number;
   sharedClassifier: boolean;
@@ -78,7 +80,7 @@ let gpuRequests = 0;
  * direct: the model is on the GPU alone (T156). */
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean }; direct: Direct | undefined }) {
-  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, linear, convolution, rotated, sharedClassifier } = shape;
+  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, linear, convolution, stateful, rotated, sharedClassifier } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions } = weights;
   const { gpuRoom, memoryUnsaid, sharedMemory } = device;
   // why this model's prompt stays on the CPU, or null: the first stage (T135) takes Llama's layers of int8 weights
@@ -94,6 +96,8 @@ export function gpuFit({ shape, weights, device, direct }:
   function gpuUnfit() {
     if (linear) return "linear-attention layers are not on the GPU yet";  // T229
     if (convolution) return "convolution layers are not on the GPU yet";  // T260
+    // (T375.2: and a kind of layer that keeps a state which the engine comes to have: on the CPU until the GPU has it too)
+    if (stateful) return "layers that keep a state are not on the GPU yet";
     if (rotated) return "a rotated basis is not on the GPU yet";  // T237
     if (!sharedMemory) return "the page is not cross-origin isolated";
     if (headSize % 4) return "heads of a size that is no multiple of 4 are not on the GPU";
