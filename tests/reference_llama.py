@@ -52,6 +52,7 @@ from llama2_numpy import Llama  # noqa: E402
 from conducting import Fetched, Mapped, converted  # noqa: E402
 from convert.conduct import candidates_of  # noqa: E402
 from fetching import download  # noqa: E402
+from reference import differences  # noqa: E402
 
 # more than 64 tokens, English and Japanese, with numbers after one space and after several (T254: where MiniCPM5's
 # two-stage split is not Llama 3's), a number of more than three digits and a contraction
@@ -75,17 +76,6 @@ GGUF = "--gguf" in sys.argv
 GGUF_LINE, GGUF_STATE_LINE = 2.0, 0.1
 
 say = lambda *parts: print("reference:", *parts, flush=True)
-
-
-def differences(ours, theirs):
-    """(largest difference, mean difference, positions whose most likely token is the same, the largest gap between
-    the two most likely tokens of theirs where the most likely token differs)"""
-    ours, theirs = np.asarray(ours, dtype=np.float64), np.asarray(theirs, dtype=np.float64)
-    gap = np.abs(ours - theirs)
-    same = ours.argmax(axis=1) == theirs.argmax(axis=1)
-    top = np.sort(theirs, axis=1)[:, -2:]
-    margins = (top[:, 1] - top[:, 0])[~same]
-    return float(gap.max()), float(gap.mean()), int(same.sum()), float(margins.max()) if margins.size else 0.0
 
 
 def float32_arithmetic():

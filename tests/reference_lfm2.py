@@ -42,7 +42,8 @@ sys.path.insert(0, str(HERE))
 from llama2_convert import Conversion  # noqa: E402
 from llama2_numpy import Llama, rope_frequencies, silu  # noqa: E402
 from conducting import Directory, Mapped, converted  # noqa: E402
-from reference_qwen35 import TEXT, differences, fetch, relative  # noqa: E402
+from reference import differences, relative  # noqa: E402
+from reference_qwen35 import TEXT, fetch  # noqa: E402
 
 # the published models: (repository, revision). The 350M is the one the list's smallest item is the GGUF of
 MODELS = {"350M": ("LiquidAI/LFM2.5-350M", "9e6c6ccf47cd318696e137d381a7ded8fe4df09f"),

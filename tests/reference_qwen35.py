@@ -56,6 +56,7 @@ from llama2_convert import Conversion  # noqa: E402
 from llama2_numpy import Llama  # noqa: E402
 from conducting import Directory, Mapped, converted  # noqa: E402
 from fetching import download  # noqa: E402
+from reference import differences, relative  # noqa: E402
 
 REPO, REVISION = "Qwen/Qwen3.5-0.8B", "2fc06364715b967f1860aea9cf38778875588b17"
 WEIGHTS = "model.safetensors-00001-of-00001.safetensors"
@@ -90,23 +91,6 @@ def fetch(name, directory, repo=REPO, revision=REVISION):
     # (tests/fetching.py, T357: a download that stopped short is asked for again, which this copy of the loop did not see,
     # and a file the repository does not have is refused at once: this copy asked three times)
     return download(f"https://huggingface.co/{repo}/resolve/{revision}/{name}", directory / name)
-
-
-def differences(ours, theirs):
-    """(largest difference, mean difference, positions whose most likely token is the same, the smallest gap between
-    the two most likely tokens of theirs where the most likely token differs)"""
-    ours, theirs = np.asarray(ours, dtype=np.float64), np.asarray(theirs, dtype=np.float64)
-    gap = np.abs(ours - theirs)
-    same = ours.argmax(axis=1) == theirs.argmax(axis=1)
-    top = np.sort(theirs, axis=1)[:, -2:]
-    margins = (top[:, 1] - top[:, 0])[~same]
-    return float(gap.max()), float(gap.mean()), int(same.sum()), float(margins.max()) if margins.size else 0.0
-
-
-def relative(a, b):
-    """how far a is from b, in b's own size: the norm of the difference over the norm of b"""
-    a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
-    return float(np.linalg.norm(a - b) / max(np.linalg.norm(b), 1e-30))
 
 
 # What the engine and transformers hold after the same positions, which a fault of the engine shows in long before the
