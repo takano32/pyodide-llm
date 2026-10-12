@@ -128,12 +128,15 @@ console.log("ok: the same model in the memory starts the threads it is asked for
   assert.deepEqual(told, [["llama", 16, false, "attention ffn"],
     ["gpt2", 0, true, "attention ffn attentionBias ffnBias bq bk bv bo b1 b2"],
     ["neox", 16, true, "attention ffn attentionBias ffnBias bq bk bv bo b1 b2"]]);
-  // (a plan whose facts are no architecture's pair: the GPU's worker is told each as it is)
+  // (T375.5, T484: a plan whose norms and FFN are no pair the GPU's layers are of, RMSNorms with GPT-2's FFN or
+  // LayerNorms with a gated one: the CPU's engine runs it by its facts, and the GPU's worker is not started to find out)
   const [llama, gpt2] = models;
-  const odd = made(false, { ...planOf(gpt2), layer_norm: false }, gpt2.size);
-  await odd.engine.gpu;
-  assert.deepEqual([odd.beside.posted[0].plan.layerNorm, odd.beside.posted[0].plan.turned, Object.keys(odd.beside.posted[0].plan.vectors).join(" ")], [false, 0, "attention ffn bq bk bv bo b1 b2"]);
-  assert.equal(await odd.engine.release(), true);
+  for (const [plan, size] of [[{ ...planOf(gpt2), layer_norm: false }, gpt2.size], [{ ...planOf(llama), layer_norm: true }, llama.size]]) {
+    const odd = made(false, plan, size);
+    await odd.engine.gpu;
+    assert.deepEqual([odd.beside.posted.length, odd.engine.gpuWhyNot], [0, "this pair of norms and FFN is not on the GPU yet"]);
+    assert.equal(await odd.engine.release(), true);
+  }
   const still = made(false, { ...planOf(llama), layers: planOf(llama).layers.map((layer) => ({ ...layer, rope: false })) }, llama.size);
   await still.engine.gpu;
   assert.equal(still.beside.posted[0].plan.turned, 0, "a model RoPE turns no layer of: no value of a head is turned on the GPU");

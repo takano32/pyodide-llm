@@ -3,10 +3,10 @@
 // it, and which of them go there (T135, T148, T152, T156, T210).
 // A module of src/runtime/forward.ts; it reads jobs.ts and its neighbours by static imports.
 
-import { BATCH, GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED } from "../jobs.ts";
+import { BATCH, GPU_DONE, GPU_FAILED, GPU_BEAT, GPU_WANTED, PACKED, packingOf } from "../jobs.ts";
 import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, promptTimes, tokenTimes, PROMPTS_UNTIMED, PROMPTS_GPU, PROMPTS_CPU, gpuLine,
   STOPS_MOST } from "./choice.ts";
-import { GPU_WEIGHT_BYTES, GPU_TERNARY_BYTES, cpuReadBytes, aloneVerdict, OUTSIDE_VOCABULARY } from "./alone.ts";
+import { gpuWeightBytes, cpuReadBytes, aloneVerdict, OUTSIDE_VOCABULARY } from "./alone.ts";
 import { halfToFloat } from "./memory.ts";
 import type { Packed, Ready } from "../jobs.ts";
 import type { Answers } from "./choice.ts";
@@ -23,7 +23,7 @@ export type Shape = {
   dim: number; hidden: number; layers: number; heads: number; kvHeads: number; headSize: number; kvDim: number; qDim: number; vocab: number; seqLen: number;
   // the bytes of a token's row, and of a position's keys in the cache; whether the cache is float16
   D: number; KV: number; halfKV: boolean;
-  eps: number; rotary: number; kvStart: number; turning: boolean; layerNorm: boolean; parallel: boolean; unturned: number[];
+  eps: number; rotary: number; kvStart: number; turning: boolean; layerNorm: boolean; gatedFfn: boolean; parallel: boolean; unturned: number[];
   linear: Linear | null; convolution: Convolution | null;
   // T375.2: some layer keeps a state in place of keys and values, of whatever kind (the plan's layers say)
   stateful: boolean;
@@ -37,10 +37,13 @@ export type Shape = {
 // T375.4: job and ready are the CPU's (the kind of the job that multiplies by it and what makes its input ready:
 // engine.ts's matmuls()); this side reads neither
 export type Held = { rows: number; n: number; kind: "f32" | Packed; group?: number; onGpu?: boolean; layer(l: number): number[]; job?: number; ready?: Ready | null };
-// T375.4: the packings the GPU takes, and the values a scale of each is for (gpu.ts widens int6 to int8, T155, and takes
-// ternary as it is, T232). A packing that is not here stays on the CPU
-const GPU_GROUP: Partial<Record<Held["kind"], number>> = { int8: 32, int6: 32, ternary: 128 };
-const onGpuAs = (m: Held) => Object.hasOwn(GPU_GROUP, m.kind) && m.group === GPU_GROUP[m.kind];
+// T375.4, T375.5: whether the GPU takes a matrix as it is packed: its packing's line of jobs.ts's PACKED says how the GPU
+// holds it (gpu.ts widens int6 to int8, T155, and takes ternary as it is, T232), in the groups that line says. A
+// matrix that is not packed, or whose packing the GPU has not, stays on the CPU
+const onGpuAs = (m: Held) => {
+  const packing = packingOf(m.kind);
+  return Boolean(packing?.gpu) && m.group === packing!.group;
+};
 // where the model's tensors are in the memory: the matrices (null: the model has none of that name), and the addresses
 // of the vectors and the tables (0: none)
 export type Placed = {
@@ -87,7 +90,7 @@ let gpuRequests = 0;
  * direct: the model is on the GPU alone (T156). */
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean }; direct: Direct | undefined }) {
-  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, linear, convolution, stateful, rotated, sharedClassifier } = shape;
+  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, gatedFfn, linear, convolution, stateful, rotated, sharedClassifier } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions } = weights;
   const { gpuRoom, memoryUnsaid, sharedMemory } = device;
   // why this model's prompt stays on the CPU, or null: the first stage (T135) takes Llama's layers of int8 weights
@@ -106,6 +109,10 @@ export function gpuFit({ shape, weights, device, direct }:
     // (T375.2: and a kind of layer that keeps a state which the engine comes to have: on the CPU until the GPU has it too)
     if (stateful) return "layers that keep a state are not on the GPU yet";
     if (rotated) return "a rotated basis is not on the GPU yet";  // T237
+    // T375.5 (T484): the GPU's layers are of two pairs, RMSNorms with a gated FFN (a Llama's) and LayerNorms with
+    // GPT-2's FFN (T154); gpu.ts picks between them by the norms and by whether there is a third matrix. An
+    // architecture of another pair, which the CPU's engine runs by its facts (T375.2), stays there
+    if (layerNorm === gatedFfn) return "this pair of norms and FFN is not on the GPU yet";
     if (!sharedMemory) return "the page is not cross-origin isolated";
     if (headSize % 4) return "heads of a size that is no multiple of 4 are not on the GPU";
     if (!Object.values(gpuMatrices()).every(onGpuAs)) return "float32 weights are not on the GPU yet";
@@ -121,7 +128,7 @@ export function gpuFit({ shape, weights, device, direct }:
   }
   // the bytes of the layers on the GPU, and its own keys and values
   function layersOnGpu() {
-    return Object.values(gpuMatrices()).reduce((bytes, m) => bytes + layers * m.rows * m.n * (m.kind === "ternary" ? GPU_TERNARY_BYTES : GPU_WEIGHT_BYTES), 0) +
+    return Object.values(gpuMatrices()).reduce((bytes, m) => bytes + layers * m.rows * m.n * gpuWeightBytes(m.kind), 0) +
       Object.values(gpuVectors()).reduce((bytes, { size }) => bytes + layers * size * 4, 0) + 2 * layers * seqLen * kvDim * 2;
   }
   // T152: why a generation's steps stay on the CPU, or null. A step on the GPU is T150's and T175's fused layer (gpu.ts):
@@ -135,15 +142,16 @@ export function gpuFit({ shape, weights, device, direct }:
   // GPU takes the outlier channels apart as this does, shaders.ts's TAKE_OUTLIERS); and the memory for the classifier, the embedding where it is
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
-    const ternary = wcls?.kind === "ternary", group = ternary ? 128 : 32;
-    if (!wcls || !onGpuAs(wcls) || !(ternary ? ["ternary"] : ["int8", "int6"]).includes(embedding.kind) || embedding.group !== group) {
+    // (the embedding as the GPU holds the classifier: in the same packing there, and in its groups)
+    const held = wcls && onGpuAs(wcls) ? packingOf(wcls.kind)!.gpu!.as : null;
+    if (!wcls || !held || packingOf(embedding.kind)?.gpu?.as !== held || embedding.group !== PACKED[held].group) {
       return "a classifier of float weights is not on the GPU's tokens";
     }
     // T205: the classifier and the embedding on the GPU as well (llm-jp-3 150M's 73 MB of layers came to 189 MB) where
     // the browser does not say what the device has: an iPhone's tab went down in /benchmark/'s model section. The
     // prompts' blocks still go (their layers alone)
     if (memoryUnsaid) return "this browser does not say how much memory the device has";
-    const table = vocab * dim * (ternary ? GPU_TERNARY_BYTES : GPU_WEIGHT_BYTES);
+    const table = vocab * dim * gpuWeightBytes(wcls.kind);
     // (GPT-2's positions on the GPU as well, a row a position)
     const onGpu = layersOnGpu() + table * (sharedClassifier ? 1 : 2) + seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0);
     if (gpuRoom !== undefined && onGpu > gpuRoom) {
@@ -313,7 +321,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
         // (the owner, 2026-09-27: the prompts as well, which the GPU runs about five times as fast, weighed by use)
         if (direct) {
           const block = data.blocks.find((b) => b.count === GPU_BLOCK);
-          const verdict = aloneVerdict({ size: cpuReadBytes(direct.size, wo!.kind === "ternary" ? "ternary" : "int8"), layerWeights: direct.layerWeights, cpu: direct.cpu, usage: direct.usage,
+          const verdict = aloneVerdict({ size: cpuReadBytes(direct.size, wo!.kind), layerWeights: direct.layerWeights, cpu: direct.cpu, usage: direct.usage,
             gpu: { stepMs: data.tokens!.ms, promptMs: block ? block.ms / block.count : undefined } });
           if (verdict.cpuFaster) {
             direct.verdict = { key: data.key, cpu: direct.cpu! };  // the page keeps it: the next load goes on the CPU at once

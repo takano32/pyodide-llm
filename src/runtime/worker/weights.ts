@@ -180,10 +180,11 @@ function pooledWeights(size: number, after: number, shared: boolean, wide: boole
 // without: the switches of the load (those of the load going on, or of one that follows: loadsAhead, T242).
 function forwardOptions(options: Options, shared: boolean, without = switchesNow()): Footprint {
   const { dtype = "float32" } = options;
-  const int8 = !without.includes("int8"), quantized = ["int8", "int6", "ternary"].includes(dtype);
+  const int8 = !without.includes("int8");
   return {
     ...options, dtype, int8, relaxed: Boolean(jsKernels?.relaxed) && !without.includes("relaxed"),
-    halfKV: quantized && int8 && !without.includes("kv16"), shared,
+    // (T375.5: of packed weights only, which footprint() knows by the dtype)
+    halfKV: int8 && !without.includes("kv16"), shared,
     outliers: llama2_numpy.OUTLIER_CHANNELS, gpu: hasWebGpu,
   };
 }
@@ -288,7 +289,8 @@ export function weightsBuffer(size: number, header: Header, options: Options, ke
 // the int8 kernels, an adapter that is no fallback (but for the tests), and no failure of the GPU under this model before
 // (cpuOnly). convert() asks it too before it opens a file to keep a conversion in as it comes (the review of T156)
 // (the owner, 2026-09-27: and no verdict the page kept that the CPU is faster here: then the CPU at once)
-export const gpuOnlyPossible = (dtype: Dtype) => gpuOnlyAllowed() && !aloneKept(dtype);
+// (T375.5: and a dtype whose packing may be there at all, forward.ts's aloneTakes)
+export const gpuOnlyPossible = (dtype: Dtype) => gpuOnlyAllowed() && forwardModule!.aloneTakes(dtype) && !aloneKept(dtype);
 const gpuOnlyAllowed = () => hasWebGpu && self.navigator?.deviceMemory !== undefined && !benchPage && !benching && sharedWanted() &&
   Boolean(wideKernels?.shared) && !switchesNow().includes("int8") && !cpuOnly.has(loadingKey) &&
   Boolean(gpuAdapter) && (!gpuAdapter!.fallback || Boolean(gpuForce.fallback));
@@ -301,10 +303,11 @@ const aloneKept = (dtype: Dtype) => Boolean(gpuAdapter) &&
 // may (gpuOnlyPossible)
 function gpuOnlyWeightsFor(size: number, header: Header, options: Options, after: number, deviceMemory: number): Placed {
   const { dtype = "float32" } = options, form = { arch: options.arch, bias: options.bias, qk_norm: options.qk_norm, head_dim: options.head_dim };
-  const cpu = size + after, gpu = forwardModule!.gpuBytes(header, { ...form, dtype });
+  const cpu = size + after, gpu = forwardModule!.gpuBytes(header, { ...options, dtype });
   // (T232: with the form's rotated basis, which the GPU does not turn the inputs for (T237): the worker did not hand it
-  // on, and a Llama in a rotated basis would have gone on the GPU alone to be loaded again on the CPU once built)
-  const fit = gpuOnlyAllowed() && !forwardModule!.gpuOnlyUnfit(header, dtype, { ...form, rotated: options.rotated }, gpuAdapter, gpuForce);
+  // on, and a Llama in a rotated basis would have gone on the GPU alone to be loaded again on the CPU once built.
+  // T375.5: the whole form as the options carry it: the layers that keep a state are read off it too)
+  const fit = gpuOnlyAllowed() && !forwardModule!.gpuOnlyUnfit(header, dtype, options, gpuAdapter, gpuForce);
   const eligible = fit && !aloneKept(dtype);
   // (the second review of T156: the status line then says only the memory's reason where the layers do not fit beside
   // the CPU's copy; the console says the kept verdict, and what asks again)

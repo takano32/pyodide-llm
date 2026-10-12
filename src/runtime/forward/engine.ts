@@ -9,6 +9,7 @@ import { BATCH, KIND, addressed, packingOf, runner } from "../jobs.ts";
 import { GPU_BLOCK, GPU_TOKENS } from "./choice.ts";
 import { growMemory, PAGE, align, frameArrays, frameBytes, halfToFloat } from "./memory.ts";
 import { LAYER_KINDS } from "./kinds.ts";
+import { kindsHad, sizesOfPlan } from "./sizes.ts";
 import { keyValueCache } from "./cache.ts";
 import { gatedFfn, plainFfn } from "./ffn.ts";
 import { GPU_ALONE } from "./alone.ts";
@@ -98,7 +99,9 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   if (!Array.isArray(facts) || facts.length !== layers) throw new Error(`The plan says the facts of ${Array.isArray(facts) ? facts.length : "no"} layers, and the model has ${layers}.`);
   const strange = facts.find(({ kind }) => !Object.hasOwn(kinds, kind));
   if (strange) throw new Error(`This engine has no layer of the kind ${JSON.stringify(strange.kind)}.`);
-  const had = Object.keys(kinds).map((kind) => ({ kind, count: facts.filter((fact) => fact.kind === kind).length })).filter(({ count }) => count);
+  // T375.5: what sizes the model, as the plan says it (sizes.ts): the kinds are asked with it for what they put in a
+  // token's frame and keep besides, as footprint() asks them before a model is loaded
+  const sizes = sizesOfPlan(plan), had = kindsHad(sizes, kinds);
   // T255: the layers RoPE leaves alone, as the GPU's plan lists them
   const unturned = Array.from(plan.unturned || []);
   // T237: the block of a rotated basis (0: the model's own basis). llama2_numpy.py has the definition above hadamard()
@@ -226,7 +229,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const D = dim * 4;
   // T375.3: a frame is the arrays every model has, what each kind of its layers puts there, and a rotated basis's
   // (memory.ts's frameArrays()); what a kind keeps of a token apart from its frame follows the frames, BATCH of each
-  const framed = had.map(({ kind }) => kinds[kind].frame(plan));
+  const framed = had.map(({ kind }) => kinds[kind].frame(sizes));
   const inFrame = frameArrays(dim, hidden, kvDim, qDim, framed, rotated, packingOf(T.wo?.kind)?.xs), S = frameBytes(inFrame);
   const named = [...inFrame, ...framed.flatMap(({ apart = [] }) => apart)].map(([name]) => name);
   const twice = named.find((name, i) => named.indexOf(name) !== i);
@@ -280,7 +283,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T375.3: the layers, made by their kinds (the table's order), and the FFN: what each is handed is core (kinds.ts
   // says what is in it). Every layer's step is then in steps, which run() calls; the kinds that keep a state from
   // token to token are in keeping (follow())
-  const core: Core = { plan, eps, k, room, floats, matrix, at, S, matmuls, phase, cache };
+  const core: Core = { plan, sizes, eps, k, room, floats, matrix, at, S, matmuls, phase, cache };
   const parts = Object.fromEntries(had.map(({ kind, count }) => [kind, kinds[kind].make(core, count)]));
   const steps = facts.map((fact) => parts[fact.kind].layer(fact.place, fact));
   const keeping = Object.values(parts).filter((part) => part.clear);
@@ -313,7 +316,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T378.2: what the GPU's side (forward/gpuside.ts) reads of this model, as two things made once: the model's facts,
   // and where its tensors are in the memory (addresses, and the matrices as matrix() made them)
   const shape: Shape = { dim, hidden, layers, heads, kvHeads, headSize, kvDim, qDim, vocab, seqLen, D, KV, halfKV, eps, rotary: plan.rotary, kvStart: plan.kv_start,
-    turning: facts.some(({ rope }) => rope), layerNorm, parallel, unturned, linear: plan.linear ?? null, convolution: plan.convolution ?? null, stateful: keeping.length > 0,
+    turning: facts.some(({ rope }) => rope), layerNorm, gatedFfn: plan.gated_ffn, parallel, unturned, linear: plan.linear ?? null, convolution: plan.convolution ?? null, stateful: keeping.length > 0,
     rotated, sharedClassifier: plan.shared_classifier };
   const weights: Placed = { base, embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, finalW, finalB, bo, b1, b2, bq, bk, bv, qNorm, kNorm,
     cosTable, sinTable, positions, channels };

@@ -112,6 +112,10 @@ const returned = (fn) => {
     { name: "qwen35", header: [256, 768, 8, 4, 2, 2048, 320], form: { arch: "qwen35", head_dim: 128, linear: LINEAR, rotated: true }, more: { rotary: 32 } },
     { name: "lfm2", header: [256, 768, 8, 8, 4, -2048, 320], form: { arch: "lfm2", convolution: { layers: "ccaccaca", taps: 3 } }, more: {} },
   ];
+  // (the facts of these families a second time, below: [RoPE turns its layers, LayerNorms, a gated FFN]; a family that
+  // is added without a line here is held to Python's plan alone)
+  const SECOND = { llama: [true, false, true], "qwen2 and qwen3": [true, false, true], "llama, rotated": [true, false, true], gpt2: [false, true, false],
+    neox: [true, true, false], qwen35: [true, false, true], lfm2: [true, false, true] };
   const cases = families.flatMap((family) => ["float32", "float16", "int8", "int6", "ternary"].map((dtype) => ({ ...family, dtype })));
   const plans = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", [path.join(root, "tests/engine_plans.py"), root],
     { input: JSON.stringify(cases), maxBuffer: 1 << 28, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());
@@ -190,29 +194,52 @@ const returned = (fn) => {
   held("a tensor's keys, Python to forward.js", entryKeys, entryRead);
   held("the derived tables' names, Python to forward.js", derived, new Set([...readDerived].filter((name) => derived.has(name) || !tensors.has(name))));
 
-  // T359.5, T375.2: the engine reads the layers' facts and the widths from the plan, and footprint() (which sizes a model's
-  // memory before there is a plan: src/runtime/forward/memory.ts) still works them out for itself from the form, by
-  // layerSlots(), linearWidths() and rotatedWidths() (until T375.5). The two are held together here: what the plan says
-  // is what footprint() reckons with. And whether RoPE turns a layer, a second time: of the ones that attend, none of a
-  // model without RoPE's tables, and not the ones left alone
-  const { layerSlots, linearWidths, rotatedWidths } = await import(runtimeUrl("forward/memory.js"));
+  // T359.5, T375.2, T375.5: the engine reads the layers' facts and the widths from the plan; what sizes a model before
+  // there is a plan (footprint(), gpuBytes(), gpuOnlyUnfit(): the worker as a conversion begins, /benchmark/, the tools)
+  // has only its header and its form, and works the same out there: which layer is of which kind and a kind's widths
+  // by the kinds of forward/kinds.ts (layers(), widths()), and what the architecture's name says by its line of
+  // forward/architectures.ts, a copy of Python's table (engine/layout.py's LAYOUTS) that a page reads before Pyodide
+  // is there. Both are held to Python's plans here: sizes.ts's Sizes of the form is the Sizes of the plan, and the
+  // table's line is what the plan's tensors, layers and facts say. PYTHON IS THE OWNER: where one of these fails, the
+  // TypeScript side is put right (the kind's layers() or widths(), or the architecture's line).
+  // And whether RoPE turns a layer, a second time: of the ones that attend, none of a model without RoPE's tables, and
+  // not the ones left alone
+  const { sizesOfForm, sizesOfPlan } = await import(runtimeUrl("forward/sizes.js"));
+  const { ARCHITECTURES } = await import(runtimeUrl("forward/architectures.js"));
+  const { LAYER_KINDS } = await import(runtimeUrl("forward/kinds.js"));
+  const lines = new Set();
   plans.forEach((plan, index) => {
-    const which = `${cases[index].name}, ${cases[index].dtype}`;
-    const slots = layerSlots(plan.n_layers, plan.linear, plan.convolution);
+    const { name, dtype, header, form } = cases[index], which = `${name}, ${dtype}`;
+    const formed = sizesOfForm(header, form, LAYER_KINDS), planned = sizesOfPlan(plan);
+    const fix = "Python's plan is the owner: put src/runtime/forward/ right";
     assert.equal(plan.layers.length, plan.n_layers, `${which}: a fact for every layer`);
+    assert.deepEqual(formed.kinds, planned.kinds, `${which}: the kinds of the layers, as the kinds of forward/kinds.ts say of the form (layers()) and as the plan says (${fix})`);
+    assert.deepEqual(formed.widths, planned.widths, `${which}: the widths, as worked out of the form (the kinds' widths(), sizes.ts) and as the plan says (${fix})`);
+    assert.deepEqual({ ...formed, numbers: null }, { ...planned, numbers: null }, `${which}: what sizes the model, of the form and of the plan (${fix})`);
+    for (const kind of Object.keys(LAYER_KINDS)) {
+      assert.deepEqual(formed.numbers[kind] ?? null, planned.numbers[kind] ?? null, `${which}: the numbers of the layers of the kind ${kind}, under the kind's name in the form and in the plan`);
+    }
+    // a layer's place is its place among the layers of its kind
+    const places = {};
+    // T375.5: the architecture's line of the copy, against what this plan says of each of its facts
+    const said = { positions: "positions" in plan.tensors, gate: "wg" in plan.tensors, rope: plan.layers.some(({ rope }) => rope),
+      gatedFfn: plan.gated_ffn, layerNorm: plan.layer_norm };
     plan.layers.forEach((layer, l) => {
-      assert.deepEqual([layer.kind !== "attention", layer.place], slots[l], `${which}: layer ${l} is ${JSON.stringify(layer)}, and forward.js's layerSlots() says ${JSON.stringify(slots[l])}`);
-      assert.equal(layer.kind, !slots[l][0] ? "attention" : plan.linear ? "linear" : "convolution", `${which}: the kind of layer ${l}`);
-      assert.equal(layer.rope, !slots[l][0] && cases[index].name !== "gpt2" && !plan.unturned.includes(l), `${which}: whether RoPE turns layer ${l}`);
+      assert.equal(layer.place, (places[layer.kind] = (places[layer.kind] ?? -1) + 1), `${which}: the place of layer ${l} among the layers of the kind ${layer.kind}`);
+      assert.equal(layer.rope, layer.kind === "attention" && said.rope && !plan.unturned.includes(l), `${which}: whether RoPE turns layer ${l}`);
     });
-    const qDim = plan.n_heads * plan.head_size;
-    assert.deepEqual(plan.widths, { q: qDim, kv: plan.n_kv_heads * plan.head_size, linear: plan.linear ? linearWidths(plan.linear) : null,
-      rotated: rotatedWidths(plan.dim, plan.hidden_dim, qDim, plan.linear).sort((a, b) => a - b) }, `${which}: the widths`);
-    // (T375.2: the two facts of the architecture, a second time: LayerNorms and GPT-2's FFN are a GPT-2's and a GPT-NeoX's)
-    const gpt = ["gpt2", "neox"].includes(cases[index].name);
-    assert.deepEqual([plan.layer_norm, plan.gated_ffn], [gpt, !gpt], `${which}: the kind of the norms and of the FFN`);
+    // (T375.2: the facts of the families here, a second time: a GPT-2 has no RoPE, and LayerNorms and GPT-2's FFN are a
+    // GPT-2's and a GPT-NeoX's)
+    if (Object.hasOwn(SECOND, name)) assert.deepEqual([said.rope, plan.layer_norm, plan.gated_ffn], SECOND[name], `${which}: RoPE, the kind of the norms and of the FFN`);
+    assert.deepEqual(ARCHITECTURES[plan.arch], said, `${which}: src/runtime/forward/architectures.ts's line of ${JSON.stringify(plan.arch)} is not what Python's plan of that architecture says ` +
+      "(a table of positions and a gate of the attention's output by the tensors, RoPE by the layers, gated_ffn, layer_norm). engine/layout.py's LAYOUTS is the owner: put architectures.ts right");
+    // (and what footprint() makes of rope: a float32 file of a model with RoPE has the tables, and Python makes them otherwise)
+    assert.equal("freq_cis_real" in plan.tensors, said.rope && dtype === "float32", `${which}: the RoPE tables are the file's`);
+    assert.equal("freq_cis_real" in plan.derived, !(said.rope && dtype === "float32"), `${which}: the RoPE tables are Python's`);
+    lines.add(plan.arch);
   });
-  ok(`the layers' facts and the widths of ${plans.length} plans are what footprint() works out for itself (layerSlots, linearWidths, rotatedWidths), and the kinds of the norms and the FFN what the families have`);
+  assert.deepEqual(sorted(lines), sorted(Object.keys(ARCHITECTURES)), "every line of forward/architectures.ts is held to a plan of Python's (a new architecture is a family of this check's too)");
+  ok(`what sizes ${plans.length} models is the same of the form (sizes.ts, the kinds' layers() and widths()) as of Python's plan, and the ${lines.size} lines of forward/architectures.ts are what Python's plans say of each architecture`);
 
   // tests/plans.mjs's planOf(): the plan memory-check, gpu-alone-check and the net's calls hand createForward(). T375.2:
   // Python's own (forward_plan(), by the native Python) with a check's settings over it, so its keys are Python's

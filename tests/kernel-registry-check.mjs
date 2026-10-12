@@ -24,7 +24,8 @@ import { contract } from "./contracts.mjs";
 import { leave } from "./leave.mjs";
 
 const J = await import(runtimeUrl("jobs.ts"));
-const { WORK, KIND, PACKED, ADDRESSES, SCRATCH, CONTROL_BYTES, packingOf, runner, warmUp, addressed } = J;
+const { WORK, KIND, PACKED, ADDRESSES, SCRATCH, CONTROL_BYTES, packingOf, weightBytes, runner, warmUp, addressed } = J;
+const { gpuWeightBytes, aloneTakes, cpuReadBytes } = await import(runtimeUrl("forward/alone.js"));
 
 // kernels that write down their calls: [module, name, arguments]
 const standIn = (module, said) => new Proxy({}, {
@@ -183,9 +184,11 @@ print(json.dumps(out))`, python()], { cwd: fileURLToPath(new URL("..", import.me
   assert.deepEqual(Object.keys(PACKED).sort(), Object.keys(said).sort(), "the packings are the quantized dtypes of Python's registry (engine/dtypes.py), by the names a plan's tensors have");
   const stored = contract("plan.ts").literalsOf("Stored");
   assert.deepEqual([...stored].filter((name) => !Object.hasOwn(PACKED, name)).sort(), ["f16", "f32"], "contracts/plan.ts's Stored: the packings, and float32 and float16 which are none");
-  for (const [name, { row, packed, values }] of Object.entries(said)) {
+  for (const [name, { group, row, packed, values }] of Object.entries(said)) {
     const packing = PACKED[name];
     assert.deepEqual([128, 256, 1024].map((n) => packing.rowBytes(n)), row, `${name}: the bytes of a row`);
+    // (T375.5: of a row 256 wide, which every packing has in its whole groups: an int8 row's groups are smaller where it is narrower)
+    assert.equal(packing.group, group, `${name}: the weights a scale is of (engine/dtypes.py's DTYPES is the owner: put jobs.ts's PACKED right)`);
     // (the values from some byte on, as a tensor is somewhere in a checkpoint)
     for (const at of [0, 40]) {
       const U = new Uint8Array(at + packed.length);
@@ -225,6 +228,19 @@ print(json.dumps(out))`, python()], { cwd: fileURLToPath(new URL("..", import.me
     const kind = Object.keys(KIND)[packing.jobs.plain];
     assert.equal(WORK[kind].rowBytes(256), name === "int6" ? 256 : packing.rowBytes(256), `${name}: a row in a block`);
   }
+  // T375.5: how the GPU holds each packing, a second copy; and the bytes of a weight, in the checkpoint and on the GPU
+  const GPU = { int8: { as: "int8", alone: true, dot: false }, int6: { as: "int8", alone: false, dot: false }, ternary: { as: "ternary", alone: true, dot: true } };
+  assert.deepEqual(Object.fromEntries(Object.entries(PACKED).map(([name, { gpu }]) => [name, gpu])), GPU, "how the GPU holds each packing");
+  assert.deepEqual(Object.values(PACKED).map(weightBytes), [1.125, 0.875, 0.28125], "the bytes of a weight: a group's values and its scale, over the group");
+  assert.deepEqual(["int8", "int6", "ternary", "f32", "float32", undefined, "toString"].map(gpuWeightBytes), [1.125, 1.125, 0.28125, 1.125, 1.125, 1.125, 1.125],
+    "on the GPU: int6 widened to int8, ternary as it is; what the GPU does not take is counted as int8");
+  assert.deepEqual(["int8", "int6", "ternary", "float32", "float16", "toString"].map(aloneTakes), [true, false, true, false, false, false], "the dtypes a model on the GPU alone may be of");
+  assert.deepEqual(["int8", "int6", "ternary", "float32"].map((dtype) => cpuReadBytes(36e6, dtype)), [36e6, 36e6 * (1.125 / 0.875), 144e6, 36e6],
+    "what a CPU reads of a token, as int8 of the same weights (what /benchmark/'s CPU section measured the reading of)");
+  // (the page's own copies, read on the main thread before the runtime is there: src/models/memory.js)
+  const { SIX_OF_EIGHT, TERNARY_OF_EIGHT } = await import("../src/models/memory.js");
+  assert.deepEqual([SIX_OF_EIGHT, TERNARY_OF_EIGHT], [weightBytes(PACKED.int6) / weightBytes(PACKED.int8), weightBytes(PACKED.ternary) / weightBytes(PACKED.int8)],
+    "src/models/memory.js's sizes of six bits and of ternary against int8 are the packings' (jobs.ts's PACKED is the owner: put memory.js right)");
   assert.deepEqual(["int8", "int6", "ternary", "f32", "f16", "", undefined, "toString", "constructor"].map((name) => packingOf(name)),
     [PACKED.int8, PACKED.int6, PACKED.ternary, null, null, null, null, null, null], "packingOf(): a packing's line by its name, null for anything else");
   console.log("ok: each packing's jobs (relaxed and plain), corrections, activations made ready and bytes in xs; packingOf() knows the packings and nothing else");

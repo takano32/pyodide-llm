@@ -11,8 +11,8 @@ import type { Core, Kind, Layers, Product } from "./kinds.ts";
 export const attention: Kind = {
   // a Qwen3.5's gate of the output beside q; and the scores of one token's attention, apart from its frame (tokens run
   // at once, each with scores of its own)
-  frame: ({ tensors, widths, seq_len: seqLen, n_heads: heads }) =>
-    ({ arrays: tensors.wg ? [["gate", widths.q * 4]] : [], apart: [["att", seqLen * heads * 4]] }),
+  frame: ({ gate, widths, seqLen, heads }) => ({ arrays: gate ? [["gate", widths.q * 4]] : [], apart: [["att", seqLen * heads * 4]] }),
+  cached: true,
   make({ plan, eps, k, floats, matrix, at, S, matmuls, phase, cache }: Core, count: number): Layers {
     const { n_heads: heads, n_kv_heads: kvHeads, head_size: headSize, seq_len: seqLen, rotary } = plan, { q: qDim, kv: kvDim } = plan.widths;
     // kNow, vNow: this token's key and value in float32, before they go into the cache

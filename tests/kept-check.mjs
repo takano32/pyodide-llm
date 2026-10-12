@@ -228,10 +228,15 @@ const readBack = async (found) => {
   // the next visit without ?bits asks for the ternary one again (484 MB of Bonsai 1.7B and 2.3 GB of the 8B fetched and
   // converted again, for each ?bits=8 and plain visit in turn, when it was replaced). Nor does the ternary visit
   // replace the int8 and int6 conversions of the same source
-  await keepAs(moved, "ternary");
-  for (const dtype of ["ternary", "int8", "int6", undefined]) {
+  // T375.5: kept.ts names the dtypes itself (the page reads it without the runtime): every packing of jobs.ts's PACKED
+  // is one of them. A packing that is added there is added to replaced()'s names in src/runtime/kept.ts
+  const { PACKED } = await import(runtimeUrl("jobs.js"));
+  assert.ok(["ternary", "int8", "int6"].every((dtype) => Object.hasOwn(PACKED, dtype)));
+  for (const dtype of Object.keys(PACKED)) await keepAs(moved, dtype);
+  for (const dtype of [...Object.keys(PACKED), undefined]) {
     assert.deepEqual(names(await kept.replaced({ ...moved, conversion: { dtype } })), ["a/b@0123:int6:4096", "a/b@0123:int8:4096"],
-      `asking for ${dtype ?? "no bits"} replaces what its source kept before, and none of its own other bits`);
+      `asking for ${dtype ?? "no bits"} replaces what its source kept before, and none of its own other bits ` +
+      "(a packing of jobs.ts's PACKED that kept.ts's replaced() does not name is deleted here: add its name there)");
   }
 }
 // the review of T203: a Qwen3's two forms share one conversion, kept under the id of the form that converted it. When

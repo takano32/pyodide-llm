@@ -190,12 +190,19 @@ export const KIND = Object.fromEntries(Object.keys(WORK).map((name, number) => [
 //             activations have a bias of 64); null: its relaxed kernel takes none
 //   ready     the activations as its kernels take them, chosen once for an engine: from n float32 at x to xq and xs
 //   xs        the bytes a group of 32 activations takes in xs
+//   group     (T375.5) the weights one float32 scale is of, which follows its group's values in the checkpoint
+//   gpu       (T375.5) how the GPU holds weights so packed, null: not at all. as: the packing they are in there (int6 is
+//             widened to int8, T155; ternary as it is, T232); alone: a model of them may be on the GPU alone (T156; not
+//             six bits, which are for a device short of memory: T155's review); dot: its shaders need WGSL's packed
+//             int8 dot product
 // The engine reads a line as it makes a matrix (forward/engine.ts) and keeps what it chose with the matrix: a token
-// compares no name. A new packing is a line here, the kinds of its jobs above and its kernels' names in ADDRESSES.
+// compares no name. What sizes a model before it is loaded reads the same lines (forward/memory.ts's footprint(),
+// forward/alone.ts). A new packing is a line here, the kinds of its jobs above and its kernels' names in ADDRESSES.
 export type Ready = (xq: number, xs: number, x: number, n: number) => void;
-export type Packing = {
+export type Packing<Name extends string = string> = {
   rowBytes(n: number): number; value(U: Uint8Array, at: number, i: number): number; jobs: { relaxed: number; plain: number };
   sums: keyof typeof ADDRESSES | null; ready(k: Kernels, relaxed: boolean): Ready; xs: number;
+  group: number; gpu: { as: Name; alone: boolean; dot: boolean } | null;
 };
 const signed = (byte: number) => (byte << 24) >> 24;
 // (int8 and int6: relaxed SIMD multiplies by 7-bit unsigned activations with a bias of 64, plain by signed 8-bit ones)
@@ -203,11 +210,12 @@ const biased = (k: Kernels, relaxed: boolean): Ready => {
   const bias = relaxed ? 64 : 0;
   return (xq, xs, x, n) => { k.quantize_x(xq, xs, x, n, bias); };
 };
-const packings = <Name extends string>(table: Record<Name, Packing>) => table;
+const packings = <Name extends string>(table: Record<Name, Packing<NoInfer<Name>>>) => table;
 export const PACKED = packings({
   int8: {
     rowBytes: (n) => n, value: (U, at, i) => signed(U[at + i]),
     jobs: { relaxed: KIND.matmul_q8r, plain: KIND.matmul_q8 }, sums: "int8_sums", ready: biased, xs: 4,
+    group: 32, gpu: { as: "int8", alone: true, dot: false },
   },
   // T98: six bits a weight, 32 of them in 24 bytes, the layout of llama2_numpy.pack6 (six bits, then two zero bits)
   int6: {
@@ -219,6 +227,7 @@ export const PACKED = packings({
       return signed((low | (top << 4)) << 2);
     },
     jobs: { relaxed: KIND.matmul_q6r, plain: KIND.matmul_q6 }, sums: "six_sums", ready: biased, xs: 4,
+    group: 32, gpu: { as: "int8", alone: false, dot: false },
   },
   // T230: two bits a weight less one, the layout of llama2_numpy.pack_ternary. T231: its kernels take the activations
   // signed, in all 8 bits, and laid out as the weights' planes are; after the scales of the activations' groups come
@@ -230,11 +239,15 @@ export const PACKED = packings({
       k.quantize_x(xq, xs, x, n, 0);
       k.interleave(xq, xs, n);
     },
+    group: 128, gpu: { as: "ternary", alone: true, dot: true },
   },
 });
 export type Packed = keyof typeof PACKED;
 /** the packing of a tensor stored as stored, or null: float32 and float16 are not packed */
-export const packingOf = (stored: string | undefined): Packing | null => (stored !== undefined && Object.hasOwn(PACKED, stored) ? PACKED[stored as Packed] : null);
+export const packingOf = (stored: string | undefined): Packing<Packed> | null => (stored !== undefined && Object.hasOwn(PACKED, stored) ? PACKED[stored as Packed] : null);
+/** (T375.5) the bytes a weight takes in a checkpoint so packed: a group's values and its float32 scale, over the
+ * group's weights (int8 1.125, int6 0.875, ternary 0.28125) */
+export const weightBytes = ({ rowBytes, group }: Packing) => (rowBytes(group) + 4) / group;
 
 /** runRows(job, r0, r1) on these kernels: k, the plain module's exports; r, the relaxed module's or null. job is
  * an array or a view of the control area. Every kind of WORK is read here once: a job is run by its number. */

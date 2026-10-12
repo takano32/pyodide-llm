@@ -3,15 +3,21 @@
 // the tables to the GPU's worker and the rest to this memory without the holes they leave (gpuOnlyWeights, gpuOnlyPlan).
 // A module of src/runtime/forward.ts, which exports its names as before.
 
+import { PACKED, packingOf, weightBytes } from "../jobs.ts";
 import { BETTER } from "./choice.ts";
+import { architectureOf } from "./architectures.ts";
+import { LAYER_KINDS } from "./kinds.ts";
+import { ATTENTION, sizesOfForm } from "./sizes.ts";
 import type { Header } from "./memory.ts";
-import type { Arch, Dtype, Rotated } from "../contracts/form.ts";
+import type { Formed } from "./sizes.ts";
+import type { Dtype, Rotated } from "../contracts/form.ts";
 import type { Force, Matrix, Opened, Remembered, Table, ToGpu } from "../contracts/gpu/protocol.ts";
 import type { Alone, CpuSpeed, Usage } from "../contracts/messages.ts";
 import type { Tensor, TensorName, Tensors } from "../contracts/plan.ts";
 
 // (T368.4, the types) what of a form says whether a model can go on the GPU, and how many bytes it takes there
-export type GpuForm = { arch?: Arch; bias?: boolean; qk_norm?: boolean; head_dim?: number };
+// (T375.5: the architecture's name, the size of a head, and the numbers of the layers that keep a state: sizes.ts's Formed)
+export type GpuForm = Formed & { bias?: boolean; qk_norm?: boolean };
 // the adapter as the worker keeps it (worker/runtime.ts)
 export type Adapter = { fallback: boolean; limits: { maxStorageBufferBindingSize: number; maxBufferSize: number }; packed: boolean; key?: string; ternaryKey?: string };
 // T156: where a model goes (weightsPlace()); gpuRoom: the bytes left for the GPU's copy where it is not on the GPU alone
@@ -42,21 +48,27 @@ export type GpuOnlyWeights = ReturnType<typeof gpuOnlyWeights>;
 // runs on the CPU then, and it keeps none of the keys and values (T210); a GPU that fails means the model is loaded
 // again on the CPU (the worker).
 
-// T232: the bytes of a weight on the GPU: an int8 value and a float32 scale a group of 32 (1.125; int6 is widened to
-// that, T155), or ternary (T230) as the checkpoint holds it, two bits and a float32 scale a group of 128 (0.28125)
-export const GPU_WEIGHT_BYTES = 1 + 4 / 32, GPU_TERNARY_BYTES = 1 / 4 + 4 / 128;
-/** T156: the bytes the GPU holds of a Llama with this header and form (FORM): its layers' matrices (int8 values and a
- * float32 scale a group of 32: 1.125 bytes a weight, int6 widened as well, T155; T232, dtype "ternary": 0.28125), its two norms a layer, its own keys
+// T232, T375.5: the bytes of a weight on the GPU, of a tensor stored as the checkpoint stores it: those of the packing
+// the GPU holds it in (jobs.ts's PACKED: an int8 value and a float32 scale a group of 32, 1.125, which int6 is widened
+// to, T155; ternary, T230, as the checkpoint holds it, two bits and a float32 scale a group of 128, 0.28125). A model
+// whose weights the GPU does not take is counted as int8's, as it always was (it does not go there: gpuFit())
+export const gpuWeightBytes = (stored: string | undefined) => weightBytes(PACKED[packingOf(stored)?.gpu?.as ?? "int8"]);
+/** the weights of a layer's matrices: q, k, v and the output, and the FFN's (three where it is gated, else GPT-2's two) */
+const layerMatrices = (header: Header, { head_dim = 0, arch = "llama" }: Formed) => {
+  const [dim, hidden, , heads, kvHeads] = header;
+  const headSize = head_dim || dim / heads, qDim = heads * headSize, kvDim = kvHeads * headSize;
+  return 2 * qDim * dim + 2 * kvDim * dim + (architectureOf(arch).gatedFfn ? 3 : 2) * hidden * dim;
+};
+/** T156: the bytes the GPU holds of a model with this header and form (FORM): its layers' matrices (as the GPU holds
+ * their packing: gpuWeightBytes()), its two norms a layer, its own keys
  * and values (float16, the whole context), and for a generation's steps (T152) the classifier (and the embedding where
  * it is another table), RoPE's table of every position and the sampling's three arrays of the vocabulary. forward.js
  * counts the same of a model it runs (layersOnGpu, tokensUnfit). */
-export function gpuBytes(header: Header, { head_dim = 0, arch = "llama", dtype = "int8" }: GpuForm & { dtype?: Dtype } = {}) {
-  const [dim, hidden, layers, heads, kvHeads, signedVocab, seqLen] = header;
-  const vocab = Math.abs(signedVocab), headSize = head_dim || dim / heads, qDim = heads * headSize, kvDim = kvHeads * headSize;
-  const each = dtype === "ternary" ? GPU_TERNARY_BYTES : GPU_WEIGHT_BYTES;
-  // (GPT-2's and GPT-NeoX's FFN has no gate: two matrices)
-  const matrices = qDim * dim + 2 * kvDim * dim + dim * qDim + (arch === "llama" ? 3 : 2) * hidden * dim;
-  const layerBytes = layers * matrices * each + layers * 2 * dim * 4 + 2 * layers * seqLen * kvDim * 2;
+export function gpuBytes(header: Header, { dtype = "int8", ...form }: GpuForm & { dtype?: Dtype } = {}) {
+  const [dim, , layers, heads, kvHeads, signedVocab, seqLen] = header;
+  const vocab = Math.abs(signedVocab), headSize = form.head_dim || dim / heads, kvDim = kvHeads * headSize;
+  const each = gpuWeightBytes(dtype);
+  const layerBytes = layers * layerMatrices(header, form) * each + layers * 2 * dim * 4 + 2 * layers * seqLen * kvDim * 2;
   const table = vocab * dim * each;
   return layerBytes + table * (signedVocab > 0 ? 1 : 2) + seqLen * headSize * 4 + 3 * vocab * 4;
 }
@@ -103,12 +115,8 @@ export function weightsPlace({ cpu, gpuOnly, gpu, deviceMemory = 4, eligible = f
   return { mode: "cpu", gpuRoom: room - cpu };
 }
 
-/** T156: the multiply-adds of a Llama's layers a token of a prompt makes (every weight of its seven matrices once) */
-export function layerWeightsOf(header: Header, { head_dim = 0 }: { head_dim?: number } = {}) {
-  const [dim, hidden, layers, heads, kvHeads] = header;
-  const headSize = head_dim || dim / heads, qDim = heads * headSize, kvDim = kvHeads * headSize;
-  return layers * (2 * qDim * dim + 2 * kvDim * dim + 3 * hidden * dim);
-}
+/** T156: the multiply-adds of a model's layers a token of a prompt makes (every weight of its matrices once) */
+export const layerWeightsOf = (header: Header, form: Formed = {}) => header[2] * layerMatrices(header, form);
 // T156 (the owner, 2026-09-27: the prompt counts too): the tokens of a prompt against the tokens written, where the
 // page has not kept how they are used here yet: as many (a chat's question with its template and an answer of about
 // the same length; no measurement of the site's visitors says otherwise)
@@ -124,8 +132,12 @@ export const USAGE_UNKNOWN = { prompt: 1, written: 1 };
  * T232: size is what an int8 model's token reads, 1.125 bytes a weight. A ternary model's checkpoint is a quarter of
  * that, and its CPU kernel is bound by its arithmetic, not by the reading (T231: 1.0 to 2.0 times the int8 kernel's
  * weights a second on the CPUs measured): the caller hands the bytes of the same weights as int8 (cpuReadBytes), so
- * that the CPU is not taken for four times as fast as it is. */
-export const cpuReadBytes = (size: number, dtype: Dtype) => (dtype === "ternary" ? size * (GPU_WEIGHT_BYTES / GPU_TERNARY_BYTES) : size);
+ * that the CPU is not taken for four times as fast as it is. (T375.5: of any packing, by its line of PACKED; stored:
+ * a dtype's name or a tensor's kind. Weights that are not packed are read as they are.) */
+export const cpuReadBytes = (size: number, stored: string) => {
+  const packing = packingOf(stored);
+  return packing ? size * (weightBytes(PACKED.int8) / weightBytes(packing)) : size;
+};
 export function aloneVerdict({ size, layerWeights, cpu = {}, gpu = {}, usage = USAGE_UNKNOWN }:
   { size: number; layerWeights: number; cpu?: CpuSpeed; gpu?: { stepMs?: number; promptMs?: number }; usage?: Usage }) {
   const parts: [number, number, number][] = [];
@@ -147,39 +159,48 @@ export const aloneHolds = (alone: Alone | null | undefined, key: string | undefi
 // prompt's too, for no model of the list: they all start on 256, T213)
 const BINDS_AT = 256;
 /** T156: why a model cannot go on the GPU alone, from its header, dtype and form before its bytes come, and the
- * adapter the worker asked for ({ fallback, limits }); null where it can. A Llama whose steps the GPU takes (T152;
- * T226: Qwen2 and Qwen3 with it, whose biases of q, k and v and norms of the heads are vectors that stay in this
- * memory as the norms' weights do; not GPT-2 or GPT-NeoX: llama2_numpy.external_tensors() places a Llama's tensors
- * alone before the model is built, and no such model of the list is too large to hold twice), int8 (six bits are for a device short of memory, where
- * the widened int8 on the GPU, 1.125 bytes a weight against six bits' 0.875, would not fit either: T155's review) or
- * T232 ternary (where the browser's WGSL has the packed int8 dot: adapter.packed),
+ * adapter the worker asked for ({ fallback, limits }); null where it can. A model whose steps the GPU takes (T152): by
+ * its facts (T375.5), one of RMSNorms and a gated FFN with no table of positions, no gate of the attention's output
+ * and no layer that keeps a state: of the architectures there are, a Llama (T226: Qwen2 and Qwen3 with it, whose
+ * biases of q, k and v and norms of the heads are vectors that stay in this memory as the norms' weights do; not GPT-2
+ * or GPT-NeoX, and no such model of the list is too large to hold twice). Of a packing that may be there alone (its
+ * line of jobs.ts's PACKED: int8; not six bits, which are for a device short of memory, where the widened int8 on the
+ * GPU, 1.125 bytes a weight against six bits' 0.875, would not fit either: T155's review; T232 ternary, where the
+ * browser's WGSL has the packed int8 dot: adapter.packed),
  * heads of a multiple of 4, and q, k and v and gate and up each one range of a buffer the device binds (gpu.js's
  * tokensLayout says the last word: a GPU that refuses then means the model is loaded again on the CPU). */
 // T219: what a model on the GPU alone says where the GPU sampled an id outside the vocabulary (its logits were not
 // finite numbers, most likely: the words of T195's NOT_FINITE, llama2_numpy.py), since no CPU can take the step again
 export const OUTSIDE_VOCABULARY = "The model computed logits on the GPU that are not finite numbers (NaN or infinity), so no token can be drawn: its weights are broken or its numbers overflowed.";
-export function gpuOnlyUnfit(header: Header, dtype: Dtype, { arch = "llama", head_dim = 0, rotated = null }: GpuForm & { rotated?: Rotated | null } = {},
+export function gpuOnlyUnfit(header: Header, dtype: Dtype, form: GpuForm & { rotated?: Rotated | null } = {},
   adapter: Adapter | null | undefined, force: Force = {}) {
-  const [dim, hidden, , heads, kvHeads] = header;
-  const headSize = head_dim || dim / heads, qDim = heads * headSize, kvDim = kvHeads * headSize;
+  const [dim, hidden] = header;
   if (!adapter) return "no GPU adapter here";
   if (adapter.fallback && !force.fallback) return "a fallback adapter";
-  if (arch !== "llama") return "GPT-2 and GPT-NeoX (and a Qwen3.5 and an LFM2) are not placed on the GPU alone: only a Llama's tensors are, by external_tensors()";
-  if (rotated) return "a rotated basis is not on the GPU yet";  // T237
-  const ternary = dtype === "ternary";
-  if (dtype !== "int8" && !ternary) return `${dtype} weights stay on the CPU`;
-  if (ternary && !adapter.packed) return "ternary weights need the packed int8 dot product of WGSL, which this browser lacks";
-  if (headSize % 4) return "heads of a size that is no multiple of 4";
+  // T375.5: by the model's facts, not by its architecture's name: RMSNorms, a gated FFN, no table of positions, no
+  // gate of the attention's output, and every layer attending (which of the five architectures a Llama's alone are)
+  const sizes = sizesOfForm(header, form, LAYER_KINDS), { q: qDim, kv: kvDim } = sizes.widths;
+  const { gatedFfn, layerNorm, positions } = architectureOf(form.arch ?? "llama");
+  if (!gatedFfn || layerNorm || positions || sizes.gate || sizes.kinds.some((kind) => kind !== ATTENTION)) {
+    return "GPT-2 and GPT-NeoX (and a Qwen3.5 and an LFM2) are not placed on the GPU alone: only a Llama's tensors are, by external_tensors()";
+  }
+  if (form.rotated) return "a rotated basis is not on the GPU yet";  // T237
+  // (the packing's line of jobs.ts's PACKED: whether a model of it may be on the GPU alone, and what its shaders need)
+  const packing = packingOf(dtype), held = packing?.gpu;
+  if (!packing || !held?.alone) return `${dtype} weights stay on the CPU`;
+  if (held.dot && !adapter.packed) return `${dtype} weights need the packed int8 dot product of WGSL, which this browser lacks`;
+  if ((qDim / sizes.heads) % 4) return "heads of a size that is no multiple of 4";
   const { maxStorageBufferBindingSize, maxBufferSize } = adapter.limits;
   const binds = Math.min(maxStorageBufferBindingSize, maxBufferSize);
-  // (a joined matrix's parts start where the device binds, the scales an eighth of the values' bytes on; T232: a
-  // ternary weight is a quarter of a byte)
-  const bytes = (weights: number) => (ternary ? weights / 4 : weights);
-  const starts = [qDim * dim, (qDim + kvDim) * dim, hidden * dim].map(bytes);
-  if (starts.some((values) => values % BINDS_AT || (values / 8) % BINDS_AT)) return "q, k and v or gate and up would not start where this GPU binds a buffer";
-  if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden)].some((weights) => bytes(weights) > binds)) return "a layer's matrices are past a buffer of this GPU";
+  // (a joined matrix's parts start where the device binds: the values a row's bytes on, the scales four bytes a group)
+  const starts = [qDim * dim, (qDim + kvDim) * dim, hidden * dim];
+  if (starts.some((weights) => packing.rowBytes(weights) % BINDS_AT || ((weights / packing.group) * 4) % BINDS_AT)) return "q, k and v or gate and up would not start where this GPU binds a buffer";
+  if ([(qDim + 2 * kvDim) * dim, 2 * hidden * dim, dim * Math.max(qDim, hidden)].some((weights) => packing.rowBytes(weights) > binds)) return "a layer's matrices are past a buffer of this GPU";
   return null;
 }
+/** T375.5: whether a model of this dtype may be on the GPU alone at all (its packing's line of PACKED): what the worker
+ * asks before it opens a file to keep a conversion in as it comes */
+export const aloneTakes = (dtype: string) => Boolean(packingOf(dtype)?.gpu?.alone);
 
 // T156: the GPU's worker takes the layers' bytes as they come, and says in flow[0] how many it has put on the GPU: the
 // loops that write wait (room()) where they are more than FLOW_BYTES ahead (a kept model read from the disk comes
@@ -237,11 +258,11 @@ export function gpuOnlyWeights({ memory, base, size, tensors, worker }:
  * null where the classifier is it: { rows, n, at: [values, scales] } each, in the checkpoint too) */
 export function gpuOnlyPlan(header: Header, tensors: Tensors, force: Force = {}, remembered?: Remembered): Opened {
   const layers = header[2];
-  // (T232, ternary: a weight is two bits of the values, gpu.ts's rowBytes)
+  // (T232: the bytes of a layer's values are its packing's, jobs.ts's PACKED; ternary is what the GPU's worker is told)
   const matrices = Object.fromEntries(LAYER_MATRICES.map((name): [string, Matrix] => {
-    const t = tensors[name]!, [, rows, n] = t.shape, perLayer = rows * n, ternary = t.kind === "ternary";
-    return [name, { rows, n, ternary, layers: Array.from({ length: layers }, (_, l) =>
-      [t.offset + l * (ternary ? perLayer / 4 : perLayer), t.scales + (l * perLayer / t.group) * 4]) }];
+    const t = tensors[name]!, [, rows, n] = t.shape, perLayer = rows * n, layerBytes = packingOf(t.kind)!.rowBytes(perLayer);
+    return [name, { rows, n, ternary: t.kind === "ternary", layers: Array.from({ length: layers }, (_, l) =>
+      [t.offset + l * layerBytes, t.scales + (l * perLayer / t.group) * 4]) }];
   }));
   const table = (t: Tensor): Table => ({ rows: t.shape[0], n: t.shape[1], ternary: t.kind === "ternary", at: [t.offset, t.scales] });
   const embedding = tensors.token_embedding_table!, classifier = tensors.wcls ?? embedding;

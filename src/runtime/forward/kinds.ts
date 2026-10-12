@@ -15,7 +15,9 @@ import type { Kernels } from "../jobs.ts";
 import type { Cache } from "./cache.ts";
 import type { Held } from "./gpuside.ts";
 import type { Framed, KindFrame } from "./memory.ts";
-import type { Derived, Layer, LayerKind, Plan, TensorName } from "../contracts/plan.ts";
+import type { Sizes } from "./sizes.ts";
+import type { Stateful } from "../contracts/form.ts";
+import type { Derived, Layer, LayerKind, Plan, TensorName, Widths } from "../contracts/plan.ts";
 
 // a matmul of one input: [the matrix (one the model has: matmuls() reads it as there), its output, the output's stride, the layer]
 export type Product = [Held | null, number, number, number];
@@ -25,6 +27,7 @@ export type Product = [Held | null, number, number, number];
 export type Room = { alloc(bytes: number): number; readonly F: Float32Array; readonly U: Uint8Array; readonly H: Uint16Array };
 // What the engine hands a kind as it makes its layers (and the FFN, ffn.ts):
 //   plan      the model's numbers and facts (Python's), eps the epsilon of its RMSNorms
+//   sizes     what sizes the model (sizes.ts: the plan's, as frame() and state() were asked with)
 //   k         the kernels on this memory (the calling thread's)
 //   room      the memory
 //   floats(), matrix()   a tensor of the model by its name: the address of its float32 values (0: the model has
@@ -35,7 +38,7 @@ export type Room = { alloc(bytes: number): number; readonly F: Float32Array; rea
 //   matmuls() matrices times count tokens of one input, shared out among the threads; phase() any jobs (jobs.ts)
 //   cache     the keys and values of the layers that keep them (cache.ts)
 export type Core = {
-  plan: Plan; eps: number; k: Kernels; room: Room;
+  plan: Plan; sizes: Sizes; eps: number; k: Kernels; room: Room;
   floats(name: TensorName | keyof Derived): number; matrix(name: TensorName): Held | null;
   at: Record<string, number>; S: number;
   matmuls(input: number, count: number, list: Product[]): void; phase(jobs: number[][]): void;
@@ -48,9 +51,25 @@ export type Step = (count: number, pos0: number) => void;
 // them (fact: what the plan says of it). clear, where the kind keeps a state from token to token that cannot be
 // written again: position 0 clears it, and the engine then takes the positions in turn only (its follow())
 export type Layers = { layer(place: number, fact: Layer): Step; clear?(): void };
-// A kind: frame() what a token's frame holds for it (memory.ts's frameArrays(); apart: arrays of a token too large for
-// its frame, BATCH of each by themselves), and make() its layers in a model that has count of them
-export type Kind = { frame(plan: Plan): KindFrame & { apart?: Framed[] }; make(core: Core, count: number): Layers };
+// A kind. What it says of a model's sizes is asked twice, as the engine is made (of the plan) and before a model is
+// loaded (footprint(), of the header and the form: memory.ts), each time with a Sizes (sizes.ts):
+//   frame()   what a token's frame holds for it (memory.ts's frameArrays(); apart: arrays of a token too large for
+//             its frame, BATCH of each by themselves)
+//   state()   the bytes of what its count layers keep besides, a number for each thing it takes of the memory, in
+//             the order make() takes them (make() takes these, and footprint() counts them)
+//   cached    its layers keep keys and values in the cache (cache.ts), which grows to the whole context
+// What only a form can be asked, where there is no plan (Python's plan says both: its layers, its widths):
+//   layers()  which of a model's count layers are of this kind (null: the form has none; a layer that no kind says
+//             is its own attends)
+//   widths()  its own widths, as the plan's widths has them
+// And make(), its layers in a model that has count of them.
+// (A kind whose layers keep a state from token to token says so by clear() of what make() returns: a model with such
+// layers is not on the GPU, whatever the kind. One that keeps none there and is not attention's would be taken there.)
+export type Kind = {
+  frame(sizes: Sizes): KindFrame & { apart?: Framed[] }; state?(sizes: Sizes, count: number): number[]; cached?: boolean;
+  layers?(form: Stateful, count: number): boolean[] | null; widths?(form: Stateful): Partial<Widths>;
+  make(core: Core, count: number): Layers;
+};
 export type Kinds = Record<string, Kind>;
 
 // (the order is the order the kinds of a model are made in, and so of what they take of the memory)

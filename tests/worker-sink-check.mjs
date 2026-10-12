@@ -123,8 +123,9 @@ opened(LFM2, lfm2);
 {
   const some = forward.footprint(LFM2, 600e6, { ...lfm2, dtype: "int8" });
   const all = forward.footprint(LFM2, 600e6, { ...lfm2, convolution: { layers: "a".repeat(16), taps: 3 }, dtype: "int8" });
-  // (16 frames of a matrix in's 3 dim floats and the rows of 10 layers more; the keys and values of 10 layers less)
-  assert.equal(all - some, 10 * 4096 * 2 * 512 * 4 - 10 * 3 * 1024 * 4, "footprint() does not count an LFM2's convolution layers");
+  // (the keys and values of 10 layers more; the rows of 10 layers less, and, T375.5, the 16 frames' place for what a
+  // convolution layer's matrix in gives, 3 dim floats, which a model with no such layer has not: nor has the engine)
+  assert.equal(all - some, 10 * 4096 * 2 * 512 * 4 - 10 * 3 * 1024 * 4 - 16 * 3 * 1024 * 4, "footprint() does not count an LFM2's convolution layers");
 }
 opened(GPT2, { ...FORM, bias: true, arch: "gpt2" });
 assert.notEqual(forward.footprint(GPT2, 600e6, { ...FORM, arch: "gpt2", dtype: "int8" }), forward.footprint(GPT2, 600e6, { ...FORM, dtype: "int8" }));
@@ -391,6 +392,18 @@ console.log("ok: FORM's keys and defaults reach footprint() from sink.open()");
     assert.equal(direct(), false);
     await ask("loadBegan({ name: 'A file of mine' })");
     assert.equal(direct(), true, "a model with a name alone (a file of the visitor's)");
+    // T375.5: by the model's facts, which the worker hands on as the whole form: the same header with layers that keep
+    // a state (an LFM2's, whose architecture's line is a Llama's but for them) stays in this memory
+    const formed = (form) => {
+      const sunk = ask("checkpointSink()");
+      sunk.sink.open(size, proxy(LLAMA3B), "int8", proxy({ ...FORM, ...form }));
+      const alone = Boolean(sunk.weights.direct);
+      sunk.release();
+      return alone;
+    };
+    await ask("loadBegan({ name: 'A file with a form' })");
+    assert.deepEqual([formed({}), formed({ arch: "lfm2", convolution: { layers: "cca".repeat(9) + "a", taps: 3 } }), formed({ arch: "lfm2", convolution: { layers: "a".repeat(28), taps: 3 } })],
+      [true, false, true], "an LFM2 with convolution layers went on the GPU alone (the worker hands gpuOnlyUnfit() the form with its layers)");
     await ask("loadBegan({ id: 'the next load' })");
   }
   console.log("ok: a model on the GPU alone lets go of its GPU's worker where its load ends without it (T156's review); what weights.js holds of it is told and asked (T378.3)");

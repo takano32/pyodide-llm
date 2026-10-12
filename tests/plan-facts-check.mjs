@@ -31,7 +31,7 @@ import { built, runtime } from "./tree.mjs";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
 const forwardFile = args.includes("--forward") ? path.resolve(args[args.indexOf("--forward") + 1]) : runtime("forward.js");
-const { createForward, LAYER_KINDS } = await import(pathToFileURL(forwardFile).href);
+const { createForward, LAYER_KINDS, footprint } = await import(pathToFileURL(forwardFile).href);
 const kernels = { plain: new WebAssembly.Module(fs.readFileSync(built("simdkernel_plain.wasm"))), relaxed: null };
 
 fs.mkdirSync(path.join(root, ".tmp"), { recursive: true });
@@ -47,9 +47,13 @@ try {
   const OUTSIDE = "a kind written outside";
   let cleared = 0;
   const outside = {
-    frame: (plan) => ({ arrays: [["gated", 3 * plan.dim * 4]] }),
-    make({ plan, k, room, floats, matrix, at, S, matmuls }, count) {
-      const { dim } = plan, { taps } = plan.convolution, bytes = taps * dim * 4, rows = room.alloc(count * bytes);
+    // (T375.5: what it says of a model's sizes, to the engine of the plan and to footprint() of the form: its array of
+    // a token's frame, its rows, and which layers of a form are its own)
+    frame: (sizes) => ({ arrays: [["gated", 3 * sizes.dim * 4]] }),
+    state: (sizes, count) => [count * sizes.numbers.convolution.taps * sizes.dim * 4],
+    layers: ({ convolution }, count) => (convolution ? Array.from({ length: count }, (_, l) => convolution.layers[l] === "c") : null),
+    make({ plan, sizes, k, room, floats, matrix, at, S, matmuls }, count) {
+      const { dim } = plan, { taps } = plan.convolution, bytes = taps * dim * 4, [rows] = outside.state(sizes, count).map((each) => room.alloc(each));
       const win = matrix("win"), wout = matrix("wout"), weights = floats("conv");
       return {
         clear() {
@@ -113,6 +117,14 @@ try {
     tokens.slice(first).forEach((token, i) => { block.made.forward(token, first + i, true); look(block.out, first + i); });
     // (T375.3) a kind that keeps a state is cleared by position 0 and takes the positions in turn, whoever wrote it
     if (kinds) {
+      // (T375.5) footprint() asked with the same table sizes what this engine took: what the kind said of the form is
+      // what it said of the plan, to the byte of the product's own convolution kind, and holds what was placed
+      const header = [plan.dim, plan.hidden_dim, plan.n_layers, plan.n_heads, plan.n_kv_heads, plan.vocab_size, plan.seq_len];
+      const form = { dtype: "float32", arch: plan.arch, head_dim: plan.head_size, convolution: plan.convolution };
+      const bound = footprint(header, file.length, form, kinds), placed = block.made.memoryBytes() - BASE - file.length;
+      assert.equal(bound, footprint(header, file.length, form), `${name}: footprint() counts the kind handed in as it counts the product's convolution layers`);
+      assert.ok(footprint(header, file.length, { ...form, convolution: null }, kinds) > bound, `${name}: and other bytes without the kind's layers (keys and values in their place)`);
+      assert.ok(placed <= bound && bound - placed < 2 ** 20 + plan.seq_len * plan.n_layers * 2 * plan.widths.kv * 4, `${name}: the engine placed ${placed} bytes after the checkpoint, footprint() counted ${bound}`);
       assert.equal(cleared, 2, `${name}: position 0 cleared the kind's state, once an engine`);
       assert.throws(() => block.made.forward(tokens[0], 3, true), /position 10 comes next/, `${name}: a position out of turn`);
       block.made.forward(tokens[0], 0, true);
