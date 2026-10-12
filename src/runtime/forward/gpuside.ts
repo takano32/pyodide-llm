@@ -22,7 +22,7 @@ export type Shape = {
   dim: number; hidden: number; layers: number; heads: number; kvHeads: number; headSize: number; kvDim: number; qDim: number; vocab: number; seqLen: number;
   // the bytes of a token's row, and of a position's keys in the cache; whether the cache is float16
   D: number; KV: number; halfKV: boolean;
-  eps: number; rotary: number; kvStart: number; gpt2: boolean; layerNorm: boolean; parallel: boolean; unturned: number[];
+  eps: number; rotary: number; kvStart: number; turning: boolean; layerNorm: boolean; parallel: boolean; unturned: number[];
   linear: Linear | null; convolution: Convolution | null;
   // the block of a rotated basis (0: the model's own basis)
   rotated: number;
@@ -171,7 +171,7 @@ export function gpuFit({ shape, weights, device, direct }:
 export function gpuSide({ shape, weights, taken, cpuSide, control, threads, options }: {
   shape: Shape; weights: Placed; taken: Taken; cpuSide: CpuSide; control: Control; threads: { readonly count: number; readonly searching: boolean };
   options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now?: () => number } }) {
-  const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, gpt2, layerNorm, parallel,
+  const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, turning, layerNorm, parallel,
     unturned, sharedClassifier } = shape;
   const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels } = weights;
   const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds } = taken;
@@ -246,7 +246,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   }
   function startGpu() {
     // the values of a head RoPE turns: all of them, GPT-NeoX's first rotary (T154), none of GPT-2's
-    const turned = gpt2 ? 0 : rotary > 0 && rotary < headSize ? rotary : headSize;
+    const turned = !turning ? 0 : rotary > 0 && rotary < headSize ? rotary : headSize;
     // (six, T155: the values at a layer's address are int6, packed as llama2_numpy.pack6 packs them; ternary, T232:
     // two bits a weight, as llama2_numpy.pack_ternary packs them, which the GPU takes as they are)
     const matrices = Object.fromEntries(Object.entries(gpuMatrices()).map(([name, m]): [string, Matrix] =>

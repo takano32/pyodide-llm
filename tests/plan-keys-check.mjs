@@ -1,8 +1,10 @@
 // plan-keys-check.mjs (T357)
 // The two plans that cross a line as plain objects, held to both of their ends: a key one side writes and the other
 // never reads, or reads and is never written, is said. Nothing else holds them: a key that is not there is undefined
-// without a word (`plan.rotary` spelled otherwise turns whole heads), and the tests that run forward.js alone are
-// handed a plan written by hand (tests/plans.mjs's planOf(), held to Python's keys here too).
+// without a word (`plan.rotary` spelled otherwise turns whole heads). T375.2: the tests that run forward.js alone are
+// handed Python's own plan (tests/plans.mjs's planOf(), with a check's few settings over it: held to Python's keys
+// here), and the one plan that is written by hand, /benchmark/'s made-up model's (src/runtime/benchmark/madeup.ts,
+// which runs without Pyodide), is held here to the plan Python makes for the same header, value by value.
 //
 //   1. Python -> forward.js: the plan Llama(external=) hands start() (src/python/engine/external.py's ExternalForward), as
 //      Python builds it for one made-up model of every layout and dtype (tests/engine_plans.py, the native Python):
@@ -27,7 +29,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "@babel/parser";
-import { planOf } from "./plans.mjs";
+import { plans as plansFor } from "./plans.mjs";
 import { runtime, runtimeUrl } from "./tree.mjs";
 import { contract, differing, posted, told } from "./contracts.mjs";
 import { typed, untyped } from "./untyped.mjs";
@@ -176,11 +178,11 @@ const returned = (fn) => {
       if (node.type === "TemplateLiteral" && node.quasis[0].value.cooked === "signs.") readDerived.add("signs.<width>");
     });
   }
-  // T359.5: every layer's facts and the widths, which engine/plan.py writes from the layout so that forward.js need not
-  // work them out again from arch, linear and convolution; forward.js reads them from T375 (and planOf() has them once
-  // it is Python's own plan, T357.7): until then they are written and read by nobody
-  const ahead = { layers: "forward.js reads the layers' facts from T375", widths: "forward.js reads the widths from T375" };
-  held("the plan's keys, Python to forward.js", keys, readKeys, ahead);
+  // T375.2: forward.ts reads every layer's facts and the widths (T359.5's keys) and the two facts of the architecture
+  // from the plan. The architecture's name is read by nothing of the engine from then on: it stays in the plan for a
+  // person who looks at one
+  const unread = { arch: "no engine reads an architecture's name (T375.2): its facts are layer_norm, gated_ffn, the layers' and the tensors'" };
+  held("the plan's keys, Python to forward.js", keys, readKeys, unread);
   // (a name forward.js asks for that no model of these has is a tensor of no architecture: floats() answers 0 for it)
   held("the tensors' names, Python to forward.js", tensors, readTensors);
   // (what else is read off those names: a table kept under `embedding` is also the GPU's plan's, { rows, n, ... })
@@ -188,9 +190,11 @@ const returned = (fn) => {
   held("a tensor's keys, Python to forward.js", entryKeys, entryRead);
   held("the derived tables' names, Python to forward.js", derived, new Set([...readDerived].filter((name) => derived.has(name) || !tensors.has(name))));
 
-  // T359.5: until forward.js reads them, the layers' facts and the widths are held here to what forward.js works out
-  // for itself from the same plan (src/runtime/forward/memory.js's layerSlots(), linearWidths() and rotatedWidths(), and
-  // engine.js's turns: no layer of a GPT-2, and not the ones left alone), so that T375 swaps like for like
+  // T359.5, T375.2: the engine reads the layers' facts and the widths from the plan, and footprint() (which sizes a model's
+  // memory before there is a plan: src/runtime/forward/memory.ts) still works them out for itself from the form, by
+  // layerSlots(), linearWidths() and rotatedWidths() (until T375.5). The two are held together here: what the plan says
+  // is what footprint() reckons with. And whether RoPE turns a layer, a second time: of the ones that attend, none of a
+  // model without RoPE's tables, and not the ones left alone
   const { layerSlots, linearWidths, rotatedWidths } = await import(runtimeUrl("forward/memory.js"));
   plans.forEach((plan, index) => {
     const which = `${cases[index].name}, ${cases[index].dtype}`;
@@ -199,19 +203,46 @@ const returned = (fn) => {
     plan.layers.forEach((layer, l) => {
       assert.deepEqual([layer.kind !== "attention", layer.place], slots[l], `${which}: layer ${l} is ${JSON.stringify(layer)}, and forward.js's layerSlots() says ${JSON.stringify(slots[l])}`);
       assert.equal(layer.kind, !slots[l][0] ? "attention" : plan.linear ? "linear" : "convolution", `${which}: the kind of layer ${l}`);
-      // (forward.js asks whether RoPE turns a layer of the ones that attend alone)
-      assert.equal(layer.rope, !slots[l][0] && plan.arch !== "gpt2" && !plan.unturned.includes(l), `${which}: whether RoPE turns layer ${l}`);
+      assert.equal(layer.rope, !slots[l][0] && cases[index].name !== "gpt2" && !plan.unturned.includes(l), `${which}: whether RoPE turns layer ${l}`);
     });
     const qDim = plan.n_heads * plan.head_size;
     assert.deepEqual(plan.widths, { q: qDim, kv: plan.n_kv_heads * plan.head_size, linear: plan.linear ? linearWidths(plan.linear) : null,
       rotated: rotatedWidths(plan.dim, plan.hidden_dim, qDim, plan.linear).sort((a, b) => a - b) }, `${which}: the widths`);
+    // (T375.2: the two facts of the architecture, a second time: LayerNorms and GPT-2's FFN are a GPT-2's and a GPT-NeoX's)
+    const gpt = ["gpt2", "neox"].includes(cases[index].name);
+    assert.deepEqual([plan.layer_norm, plan.gated_ffn], [gpt, !gpt], `${which}: the kind of the norms and of the FFN`);
   });
-  ok(`the layers' facts and the widths of ${plans.length} plans are what forward.js works out itself today (layerSlots, turns, linearWidths, rotatedWidths)`);
+  ok(`the layers' facts and the widths of ${plans.length} plans are what footprint() works out for itself (layerSlots, linearWidths, rotatedWidths), and the kinds of the norms and the FFN what the families have`);
 
-  // tests/plans.mjs's planOf(): the plan memory-check and the net's calls hand createForward(), written by hand
-  const standIn = planOf({ header: cases[0].header, form: { arch: "llama", linear: null, convolution: null, rotated: null }, dtype: "int8", head_size: 32,
-    tensors: {}, derived: {}, keep_int8: true });
-  held("the plan's keys, Python to tests/plans.mjs's planOf()", keys, new Set(Object.keys(standIn)), ahead);
+  // tests/plans.mjs's planOf(): the plan memory-check, gpu-alone-check and the net's calls hand createForward(). T375.2:
+  // Python's own (forward_plan(), by the native Python) with a check's settings over it, so its keys are Python's
+  const { plansOf, planOf, FORM } = plansFor(root);
+  const [placed] = plansOf([{ header: cases[0].header, form: FORM, dtype: "int8" }]);
+  held("the plan's keys, Python to tests/plans.mjs's planOf()", keys, new Set(Object.keys(planOf(placed))));
+
+  // T375.2 (T482): the one plan written by hand, /benchmark/'s made-up model's (src/runtime/benchmark/madeup.ts: the CPU
+  // section runs without Pyodide), against the plan Python makes for its header as an int8 Llama: every key, and every
+  // value but what the section chooses for itself (kv_start), the bytes of the tables (their names are compared) and
+  // the classifier under its second name (Python has the shared table under "wcls" too)
+  {
+    const { madeUpModel } = await import(runtimeUrl("benchmark/madeup.ts"));
+    const made = madeUpModel();
+    const [theirs] = JSON.parse(execFileSync(process.env.PYTHON ?? "python3", [path.join(root, "tests/engine_plans.py"), root],
+      { input: JSON.stringify([{ header: made.header, dtype: "int8", form: {}, more: {} }]), maxBuffer: 1 << 28,
+        env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } }).toString());
+    const { wcls, ...tensors } = theirs.tensors;
+    assert.deepEqual(wcls, tensors.token_embedding_table, "Python's plan of a shared classifier has the embedding under both names");
+    const ours = { ...made.plan, derived: Object.keys(made.plan.derived).sort(), kv_start: theirs.kv_start };
+    const expected = { ...theirs, tensors, derived: Object.keys(theirs.derived).sort() };
+    let differing = 0;
+    for (const key of sorted(new Set([...Object.keys(ours), ...Object.keys(expected)]))) {
+      if (JSON.stringify(ours[key]) !== JSON.stringify(expected[key])) {
+        differing++;
+        wrong(`benchmark/madeup.ts's plan, ${key}: ${JSON.stringify(ours[key])?.slice(0, 200)}, and Python's plan of the same header says ${JSON.stringify(expected[key])?.slice(0, 200)}`);
+      }
+    }
+    if (!differing) ok(`benchmark/madeup.ts's plan is the plan Python makes for its header: ${Object.keys(expected).length} keys, ${Object.keys(tensors).length} tensors (but kv_start, the tables' bytes and "wcls")`);
+  }
 }
 
 // ---- 2. forward.js -> the GPU's worker

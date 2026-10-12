@@ -32,7 +32,7 @@ const { OUTSIDE_VOCABULARY } = await import(runtimeUrl("forward/alone.js"));
 const PAGE = 65536;
 // a made-up model: small, and no two of its sizes the same where one could stand for another
 const SHAPE = { dim: 8, hidden: 24, layers: 2, heads: 2, kvHeads: 1, headSize: 4, kvDim: 4, qDim: 8, vocab: 100, seqLen: 512, D: 32, KV: 8, halfKV: true,
-  eps: 1e-5, rotary: 0, kvStart: 256, gpt2: false, layerNorm: false, parallel: false, unturned: [], linear: null, convolution: null, rotated: 0, sharedClassifier: true };
+  eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, parallel: false, unturned: [], linear: null, convolution: null, rotated: 0, sharedClassifier: true };
 const matrixOf = (rows, n, at, more = {}) => ({ rows, n, int8: true, six: false, group: 32, layer: (l) => [at + l * 1000, at + l * 1000 + 500, at + l * 1000 + 700], ...more });
 const WEIGHTS = { base: 8192, embedding: { kind: "int8", group: 32, offset: 100, scales: 200 },
   wq: matrixOf(8, 8, 30000), wk: matrixOf(4, 8, 32000), wv: matrixOf(4, 8, 34000), wo: matrixOf(8, 8, 36000),
