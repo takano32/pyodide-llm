@@ -1,6 +1,6 @@
 // node tests/kernel-registry-check.mjs
 // T375.4: the two tables of src/runtime/jobs.ts by themselves, with stand-ins for the kernels (they write down what
-// they are called with and compute nothing): no wasm, no engine, no model, no thread. Under a second.
+// they are called with and compute nothing): no wasm, no model, no thread. About a second.
 //
 //   WORK    the kinds of jobs. Each kind's one call, its tile and its blocks against a second copy of what the kind is
 //           (KINDS below: which module, which kernel, which of a job's arguments in which place; the blocks as
@@ -12,8 +12,10 @@
 //           its corrections' kernel; what makes the activations ready, with relaxed SIMD and without; and that its
 //           names are the quantized kinds Python's plan says (contracts/plan.ts's Stored).
 //
-// What it does not see: what the kernels compute (smoke, forward-check, kernels-in-browser), and that the engine reads
-// the tables as it should (plan-facts-check, memory-check and unchanged.mjs's calls do).
+// And the engine on them (createForward() with kernels that write down their calls, Python's plans of a small model
+// in each packing): what it asks is what the model's packing says.
+//
+// What it does not see: what the kernels compute (smoke, forward-check, kernels-in-browser).
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -226,5 +228,142 @@ print(json.dumps(out))`, python()], { cwd: fileURLToPath(new URL("..", import.me
   assert.deepEqual(["int8", "int6", "ternary", "f32", "f16", "", undefined, "toString", "constructor"].map((name) => packingOf(name)),
     [PACKED.int8, PACKED.int6, PACKED.ternary, null, null, null, null, null, null], "packingOf(): a packing's line by its name, null for anything else");
   console.log("ok: each packing's jobs (relaxed and plain), corrections, activations made ready and bytes in xs; packingOf() knows the packings and nothing else");
+}
+
+// ---- the engine reads them: createForward() on Python's plan of a small model in each packing and in float32, its
+// kernels the ones that write down their calls. What it asks of them is what the model's packing says, chosen as its
+// matrices are made: the corrections' kernel, the kernel of a token's rows and of a block's, and the activations made
+// ready for every token of a block (a frame apart) before the matrices of an input are multiplied.
+{
+  const { plans } = await import("./plans.mjs");
+  const { createForward, keysInHalf } = await import(runtimeUrl("forward.js"));
+  const { plansOf, planOf, FORM, empty } = plans(new URL("..", import.meta.url));
+  const header = [256, 512, 3, 8, 4, 2000, 300], form = { ...FORM, qk_norm: true, head_dim: 64 }, LAYERS = header[2], BLOCK = 5;
+  // (a second copy again: [relaxed, plain] each)
+  const ASKED = {
+    int8: { sums: ["int8_sums", null], one: ["matmul_q8r", "matmul_q8"], block: ["matmul_q8r_tile", "matmul_q8"], bias: [64, 0], interleaved: false },
+    int6: { sums: ["six_sums", null], one: ["matmul_q6r", "matmul_q6"], block: ["matmul_q6r", "matmul_q6"], bias: [64, 0], interleaved: false },
+    ternary: { sums: [null, null], one: ["matmul_t2r", "matmul_t2"], block: ["matmul_t2r_tile", "matmul_t2"], bias: [0, 0], interleaved: true },
+    float32: { sums: [null, null], one: ["matmul_f32", "matmul_f32"], block: ["matmul_f32", "matmul_f32"], bias: [null, null], interleaved: false },
+  };
+  const named = (said, start) => [...new Set(said.map(([name]) => name).filter((name) => name.startsWith(start) || name.endsWith(start)))];
+  let engines = 0;
+  for (const p of plansOf(Object.keys(ASKED).map((dtype) => ({ header, form, dtype })))) {
+    const asked = ASKED[p.dtype];
+    [true, false].forEach((relaxed, i) => {
+      const what = `${p.dtype}${relaxed ? ", relaxed" : ""}`, said = [];
+      const kernels = () => new Proxy({}, { get: (_, name) => (...args) => { said.push([String(name), args]); return 0; } });
+      const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: true, outliers: 8, gpu: false, shared: false };
+      const memory = new WebAssembly.Memory({ initial: Math.ceil((64 + p.size) / 65536) + 1 });
+      const engine = createForward({ memory, base: 64, size: p.size, kernels: { plain: empty, relaxed: relaxed ? empty : null, wide: false },
+        plan: planOf(p, { relaxed, kvStart: 16, outliers: 8 }), halfKeys: keysInHalf(p.header, p.size, options), wrap: kernels });
+      const made = said.splice(0);
+      assert.deepEqual(named(made, "_sums"), asked.sums[i] ? [asked.sums[i]] : [], `${what}: the corrections, as the engine is made`);
+      engine.forward(7, 0, true);
+      const one = said.splice(0);
+      engine.forwardMany(Array.from({ length: BLOCK }, (_, t) => 3 + t), 1);
+      const block = said.splice(0);
+      engine.release();
+      assert.deepEqual(named(one, "matmul_"), [asked.one[i]], `${what}: the kernel of a token's rows`);
+      assert.deepEqual(named(block, "matmul_"), [asked.block[i]], `${what}: the kernel of a block's rows`);
+      assert.match(engine.backend, new RegExp(p.dtype === "float32" ? "^SIMD kernels, float32" : `^SIMD kernels, ${p.dtype}${relaxed ? ", relaxed SIMD" : ""}( |$)`), `${what}: what the status says`);
+      // the corrections a relaxed kernel is handed are the ones the packing's kernel made for that matrix, a layer's
+      // after the layer's before
+      if (asked.sums[i]) {
+        const sums = made.filter(([name]) => name === asked.sums[i]).map(([, [at, , groups]]) => ({ at, end: at + groups * 4, layers: new Set() }));
+        for (const [name, args] of one) {
+          if (name !== asked.one[i]) continue;
+          const of = sums.find(({ at, end }) => args[5] >= at && args[5] < end);
+          assert.ok(of, `${what}: a matrix's corrections are among the ones made`);
+          assert.equal((args[5] - of.at) % 4, 0);
+          of.layers.add(args[5]);
+        }
+        assert.deepEqual([...new Set(sums.map(({ layers }) => layers.size))].sort(), [1, LAYERS], `${what}: every layer of a matrix has corrections of its own (and the classifier its one)`);
+      }
+      // the activations made ready: four inputs a layer (and the classifier's for a token's logits), every token of a
+      // block, each a frame after the one before, before the input's matrices
+      const ready = (said) => said.filter(([name]) => name === "quantize_x");
+      if (asked.bias[i] === null) {
+        assert.deepEqual([ready(one), ready(block), named(one, "interleave"), named(block, "interleave")], [[], [], [], []], `${what}: float32 weights read the input as it is`);
+      } else {
+        assert.equal(ready(one).length, 4 * LAYERS + 1, `${what}: a token's inputs made ready`);
+        assert.equal(ready(block).length, BLOCK * 4 * LAYERS, `${what}: a block's inputs made ready, every token's`);
+        for (const [, args] of [...ready(one), ...ready(block)]) assert.equal(args[4], asked.bias[i], `${what}: the bias of the activations`);
+        for (const said of [one, block]) {
+          assert.equal(said.filter(([name]) => name === "interleave").length, asked.interleaved ? ready(said).length : 0, `${what}: the activations interleaved`);
+          if (asked.interleaved) said.forEach(([name, args], at) => { if (name === "quantize_x") assert.deepEqual(said[at + 1], ["interleave", [args[0], args[1], args[3]]], `${what}: interleaved where they were quantized`); });
+        }
+        const first = block.findIndex(([name]) => name === "quantize_x"), tokens = block.slice(first).filter(([name]) => name === "quantize_x").slice(0, BLOCK).map(([, args]) => args);
+        const frame = tokens[1][0] - tokens[0][0];
+        assert.ok(frame > 0);
+        tokens.forEach((args, t) => assert.deepEqual([args[0], args[1], args[2], args[3]], [tokens[0][0] + t * frame, tokens[0][1] + t * frame, tokens[0][2] + t * frame, tokens[0][3]], `${what}: token ${t} of a block made ready in its own frame`));
+        // (and what the packing keeps of a group of activations in xs fits before the next token's frame begins)
+        const [, [, x0]] = block.find(([name]) => name === "rmsnorm");
+        for (const [, [xq, xs, , n]] of ready(block)) {
+          const t = (xq - tokens[0][0]) / frame;
+          assert.ok(Number.isInteger(t) && t >= 0 && t < BLOCK, `${what}: a token's activations are in a frame`);
+          assert.ok(xs + Math.ceil(n / 32) * PACKED[p.dtype].xs <= x0 + (t + 1) * frame, `${what}: the activations' scales of ${n} values fit token ${t}'s frame`);
+        }
+        // (and all of them before the first of the input's matrices is multiplied)
+        const multiplied = block.findIndex(([name]) => name.startsWith("matmul_"));
+        assert.ok(block.slice(0, multiplied).filter(([name]) => name === "quantize_x").length === BLOCK, `${what}: a block's tokens are ready before its rows are multiplied`);
+      }
+      engines += 1;
+    });
+  }
+  // What JavaScript reads of a packed tensor one weight at a time, on a checkpoint of made-up bytes (the kernels do
+  // nothing, so what the engine wrote is still where it wrote it): a token's embedding row and the outlier channels'
+  // columns of the classifier in an engine that multiplies packed weights, and a matrix widened to float32 in one
+  // that does not (?without=int8). Each is the weight as its packing reads it, times the scale of its group.
+  let read = 0;
+  for (const p of plansOf(Object.keys(PACKED).map((dtype) => ({ header, form, dtype })))) {
+    const packing = PACKED[p.dtype];
+    for (const packed of [true, false]) {
+      const what = `${p.dtype}, ${packed ? "multiplied packed" : "widened"}`, said = [], base = 64;
+      const kernels = () => new Proxy({}, { get: (_, name) => (...args) => { said.push([String(name), args]); return 0; } });
+      const memory = new WebAssembly.Memory({ initial: Math.ceil((base + p.size) / 65536) + 1 });
+      const plan = { ...planOf(p, { relaxed: true, kvStart: 16, outliers: 8 }), int8: packed };
+      // the checkpoint: every byte made up, then a scale for every group that says which group it is
+      const U = new Uint8Array(memory.buffer), view = new DataView(memory.buffer);
+      for (let i = 0; i < p.size; i++) U[base + i] = (i * 2654435761) >>> 24;
+      const scaleOf = (g) => Math.fround((g % 61 + 1) / 64);
+      for (const t of Object.values(plan.tensors)) {
+        if (!Object.hasOwn(PACKED, t.kind)) continue;
+        const groups = t.shape.reduce((a, b) => a * b, 1) / t.group;
+        for (let g = 0; g < groups; g++) view.setFloat32(base + t.scales + g * 4, scaleOf(g), true);
+      }
+      const options = { ...p.form, dtype: p.dtype, int8: true, relaxed: true, halfKV: true, outliers: 8, gpu: false, shared: false };
+      const engine = createForward({ memory, base, size: p.size, kernels: { plain: empty, relaxed: empty, wide: false }, plan, halfKeys: keysInHalf(p.header, p.size, options), wrap: kernels });
+      const token = 7, dim = header[0], vocab = Math.abs(header[5]);
+      engine.forward(token, 0, true);
+      engine.release();
+      const F = new Float32Array(memory.buffer), bytes = new Uint8Array(memory.buffer);
+      const weight = (t, i) => Math.fround(packing.value(bytes, base + t.offset, i) * scaleOf((i / t.group) | 0));
+      // the embedding's row: what the first norm reads
+      const table = plan.tensors.token_embedding_table, [, [, x]] = said.find(([name]) => name === "rmsnorm");
+      assert.equal(table.kind, p.dtype);
+      const row = Array.from({ length: dim }, (_, i) => F[x / 4 + i]);
+      assert.deepEqual(row, Array.from({ length: dim }, (_, i) => weight(table, token * dim + i)), `${what}: the embedding's row of a token`);
+      assert.ok(new Set(row).size > 3, `${what}: a row of several values`);
+      if (packed) {
+        // the outlier channels' columns of the classifier (shared with the embedding here), a column a channel
+        const [, [, columns, , count]] = said.find(([name]) => name === "add_columns");
+        assert.equal(count, plan.outliers.length);
+        plan.outliers.forEach((c, i) => {
+          assert.deepEqual(Array.from({ length: vocab }, (_, v) => F[columns / 4 + i * vocab + v]), Array.from({ length: vocab }, (_, v) => weight(table, v * dim + c)), `${what}: the column of outlier channel ${c}`);
+        });
+        assert.deepEqual(named(said, "matmul_"), [Object.keys(KIND)[packing.jobs.relaxed]]);
+      } else {
+        // every matrix is float32 now: the first product's is the first layer's wq, widened where the engine put it
+        assert.deepEqual(named(said, "matmul_"), ["matmul_f32"], `${what}: float32 products`);
+        const wq = plan.tensors.wq, [rows, n] = wq.shape.slice(-2), [, [, , w, width]] = said.find(([name]) => name === "matmul_f32");
+        assert.equal(width, n);
+        assert.deepEqual(Array.from({ length: rows * n }, (_, i) => F[w / 4 + i]), Array.from({ length: rows * n }, (_, i) => weight(wq, i)), `${what}: a matrix widened to float32`);
+      }
+      read += 1;
+    }
+  }
+  console.log(`ok: ${read} engines on made-up bytes: an embedding's row, the outlier channels' columns and a matrix widened to float32 are each weight as its packing reads it, times its group's scale`);
+  console.log(`ok: ${engines} engines (int8, int6, ternary and float32, with relaxed SIMD and without) ask of their kernels what the packing says: the corrections, a token's kernel and a block's, and every token of a block made ready in its frame`);
 }
 await leave(0);
