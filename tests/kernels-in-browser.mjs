@@ -22,6 +22,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import * as playwright from "playwright-core";
+import { fetched } from "./fetching.mjs";
 import { built, runtimeUrl } from "./tree.mjs";
 const { ADDRESSES } = await import(runtimeUrl("jobs.ts"));
 
@@ -36,11 +37,7 @@ const channels = { chrome: "chrome", msedge: "msedge" };
 // name is written nowhere but in the worker's text: the page names its script, the script the worker, the worker the
 // kernels. So the site is read as a browser reads it. (A site of before T367.3 served <name>.wasm at its root.)
 let workerText;
-async function textOf(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`${url}: ${response.status}`);
-  return response.text();
-}
+const textOf = async (url) => (await fetched(url)).toString();
 async function siteWorker() {
   const page = await textOf(site);
   for (const script of new Set(page.match(/_astro\/[\w.-]+\.js/g) ?? [])) {
@@ -53,9 +50,7 @@ async function wasm(name) {
   if (!site) return fs.readFileSync(built(`${name}.wasm`)).toString("base64");
   workerText ??= siteWorker();
   const hashed = new RegExp(`\\b${name}\\.[\\w-]{6,}\\.wasm`).exec((await workerText) ?? "")?.[0];
-  const response = await fetch(new URL(hashed ? `_astro/${hashed}` : `${name}.wasm`, site));
-  if (!response.ok) throw new Error(`${hashed ?? `${name}.wasm`}: ${response.status}`);
-  return Buffer.from(await response.arrayBuffer()).toString("base64");
+  return (await fetched(new URL(hashed ? `_astro/${hashed}` : `${name}.wasm`, site))).toString("base64");
 }
 const modules = { plain: await wasm("simdkernel_plain"), relaxed: await wasm("simdkernel_relaxed_plain") };
 const wideModules = { plain: await wasm("simdkernel_plain64"), relaxed: await wasm("simdkernel_relaxed_plain64"), addresses: ADDRESSES };
