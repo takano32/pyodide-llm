@@ -1,4 +1,5 @@
-// tests/fetching-check.mjs (T357.6): the Node tools' one place for fetching (tests/fetching.mjs), by itself. Nothing
+// tests/fetching-check.mjs (T357.6): the Node tools' one place for fetching (tests/fetching.mjs), by itself, and a
+// tool that goes through it and that no other light check runs: the text of Wikipedia (tests/wikipedia.mjs). Nothing
 // leaves this machine: the server is one of node:http on 127.0.0.1, which can do what a stand-in of fetch cannot (close
 // a connection before the length it promised, cut a chunked body, never answer), and tests/fakes/fetch.mjs is the
 // network where the answer itself is wrong in a way no real server of node:http sends (a body that ends in order and
@@ -12,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { madeUpNetwork } from "./fakes/fetch.mjs";
 import { Answered, download, fetched } from "./fetching.mjs";
+import { ARTICLES, wikipediaText } from "./wikipedia.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const room = path.join(root, ".tmp", `fetching-check-${process.pid}`);
@@ -205,6 +207,49 @@ const folder = (name) => fs.existsSync(placed(name)) ? fs.readdirSync(placed(nam
   serving({ "/text": [{ body: "" }] });
   assert.equal((await fetched(new URL(`${base}/text`))).length, 0, "an empty body is a body; an address may be a URL");
   ok("a body is fetched whole by the same rules");
+}
+
+// ---- tests/wikipedia.mjs: the three articles of a language as one text
+{
+  const article = (title) => JSON.stringify({ query: { pages: { 7: { title, extract: `${title}: ${"文".repeat(7000)}` } } } });
+  const network = madeUpNetwork();
+  const lines = [], waits = [];
+  const said = console.error;
+  console.error = (line) => lines.push(line);
+  let text;
+  try {
+    network.answers((url, init, n) => {
+      const title = new URL(url).searchParams.get("titles");
+      if (title === "夏目漱石" && n === 0) throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ETIMEDOUT" } });
+      if (title === "夏目漱石" && n === 1) return new Response("", { status: 503 });
+      return new Response(article(title));
+    });
+    text = await wikipediaText("ja", undefined, { fetch: network.fetch, sleep: async (ms) => waits.push(ms) });
+  } finally {
+    console.error = said;
+  }
+  assert.deepEqual(network.requests.map(({ url }) => new URL(url).searchParams.get("titles")), ["富士山", "夏目漱石", "夏目漱石", "夏目漱石", "新幹線"]);
+  assert.equal(new URL(network.requests[0].url).host, "ja.wikipedia.org");
+  assert.equal(network.requests[0].init.headers["User-Agent"], "pyodide-llm perplexity measurement");
+  assert.equal(text, ARTICLES.ja.map((title) => `${title}: ${"文".repeat(7000)}`.slice(0, 6000) + "\n").join(""), "the beginning of each article, a line after each");
+  assert.deepEqual(lines, ["wikipedia.mjs: attempt 1 failed (ETIMEDOUT); trying again",
+                           `wikipedia.mjs: attempt 2 failed (${network.requests[2].url}: the server answered 503); trying again`]);
+  assert.deepEqual(waits, [10000, 20000], "10 s more before each next try (the review of T236)");
+  // five tries, and a refusal is not asked again
+  network.requests.length = 0;
+  network.answers(() => new Response("", { status: 500 }));
+  console.error = () => {};
+  try {
+    assert.equal((await failure(wikipediaText("en", ["Shinkansen"], { fetch: network.fetch, sleep: async () => {} }))).status, 500);
+    assert.equal(network.requests.length, 5, "five tries");
+    network.requests.length = 0;
+    network.answers(() => new Response("", { status: 403 }));
+    assert.equal((await failure(wikipediaText("en", ["Shinkansen"], { fetch: network.fetch, sleep: async () => {} }))).status, 403);
+    assert.equal(network.requests.length, 1);
+  } finally {
+    console.error = said;
+  }
+  ok("Wikipedia's text is fetched by the same place, five tries 10 s further apart each, and says each one that failed");
 }
 
 for (const socket of sockets) socket.destroy();

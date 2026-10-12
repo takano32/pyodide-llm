@@ -22,6 +22,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadPyodide } from "pyodide";
 import { MODELS } from "../src/models.js";
+import { download } from "./fetching.mjs";
 import { otherTree } from "./other-tree.mjs";
 import { leave } from "./leave.mjs";
 import { placePython, served, treeOf } from "./tree.mjs";
@@ -39,19 +40,15 @@ const other = otherTree(ref).folder;
 fs.mkdirSync(`${root}.tmp/t200/`, { recursive: true });
 const { MODELS: OLD_MODELS } = await import(pathToFileURL(path.join(other, "src/models.js")));
 
-// tokenizer files of Hugging Face at the revisions src/models.js pins, kept in .tmp/t200/
+// tokenizer files of Hugging Face at the revisions src/models.js pins, kept in .tmp/t200/ (T357.6: each held to its
+// length and asked for again by tests/fetching.mjs; a file that is there is a whole one)
 const cache = `${root}.tmp/t200/hf/`;
 async function hfFile(id) {
   const entry = MODELS.find((m) => m.id === id);
   const hf = entry.hf.vocabulary ?? entry.hf;
   const name = typeof hf.tokenizer === "string" ? hf.tokenizer : hf.tokenizer[0];
   const target = `${cache}${hf.repo.replace("/", "--")}-${hf.revision}-${name}`;
-  if (!fs.existsSync(target)) {
-    const response = await fetch(`https://huggingface.co/${hf.repo}/resolve/${hf.revision}/${name}`);
-    if (!response.ok) throw new Error(`${id}: ${response.status} for ${name}`);
-    fs.mkdirSync(cache, { recursive: true });
-    fs.writeFileSync(target, Buffer.from(await response.arrayBuffer()));
-  }
+  await download(`https://huggingface.co/${hf.repo}/resolve/${hf.revision}/${name}`, target);
   return { name, data: fs.readFileSync(target) };
 }
 const listed = (models, id) => models.find((m) => m.id === id)?.options ?? {};
