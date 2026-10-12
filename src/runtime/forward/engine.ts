@@ -5,7 +5,7 @@
 
 import { BATCH, addressed, runner } from "../jobs.ts";
 import { GPU_BLOCK, GPU_TOKENS } from "./choice.ts";
-import { growMemory, PAGE, align, layerSlots, attendingLayers, linearWidths, frameArrays, rotatedWidths, frameBytes, halfToFloat } from "./memory.ts";
+import { growMemory, PAGE, align, frameArrays, frameBytes, halfToFloat } from "./memory.ts";
 import { GPU_ALONE } from "./alone.ts";
 import { controlArea } from "./control.ts";
 import { softwareThreads } from "./threads.ts";
@@ -70,19 +70,38 @@ const STALLED_MS = 10000;
 export function createForward({ memory, base, size, kernels, plan, spawn, gpu, gpuRoom, memoryUnsaid, gpuRemembered, gpuForce = {},
   halfKeys, direct, wrap = (exports) => exports, stalledMs = STALLED_MS, clock = () => performance.now() }: Made) {
   const { dim, n_layers: layers, n_heads: heads, n_kv_heads: kvHeads, head_size: headSize, vocab_size: vocab,
-    seq_len: seqLen, rotary, arch } = plan;
-  const hidden = plan.hidden_dim, kvDim = kvHeads * headSize, qDim = heads * headSize;
-  const gpt2 = arch === "gpt2", layerNorm = arch === "gpt2" || arch === "neox", parallel = plan.parallel_residual;
-  // T255: which layers RoPE turns q and k of: none of a GPT-2's, and not the ones a SmolLM3 leaves alone
+    seq_len: seqLen, rotary } = plan;
+  // T375.2: what the layers of one architecture differ from another's by is read here once, as the facts Python's plan
+  // says (engine/plan.py, from engine/layout.py's table of the architectures): nothing below compares an
+  // architecture's name, and nothing here works out again what the plan holds. What a tensor's presence says is read
+  // off the tensors (a bias, the norms of a head, a gate, the table of positions: floats() and matrix() answer 0 and
+  // null for one the model has not).
+  // The widths that are not in the header: q and the attention's output (the heads together), k and v
+  const hidden = plan.hidden_dim, { q: qDim, kv: kvDim } = plan.widths;
+  // the kind of the norms (LayerNorms, else RMSNorms) and of the FFN (gated, else GPT-2's): two facts, though every
+  // architecture so far has LayerNorms with GPT-2's FFN or RMSNorms with a gated one; and GPT-NeoX's parallel residual
+  const layerNorm = plan.layer_norm, gatedFfn = plan.gated_ffn, parallel = plan.parallel_residual;
+  // every layer's facts: its kind (one that attends, and keeps keys and values; or one that keeps a state: T229, a
+  // Qwen3.5's linear-attention layer; T260, an LFM2's convolution layer), its place among the layers of its kind (the
+  // layer itself where all attend), and whether RoPE turns its q and k (T255: none of a GPT-2's, not the ones a
+  // SmolLM3 leaves alone). A plan that says nothing of its layers is no plan of this engine's, and a kind this engine
+  // has no step for is said here, before a token runs
+  const facts = plan.layers;
+  if (!Array.isArray(facts) || facts.length !== layers) throw new Error(`The plan says the facts of ${Array.isArray(facts) ? facts.length : "no"} layers, and the model has ${layers}.`);
+  const strange = facts.find(({ kind }) => !["attention", "linear", "convolution"].includes(kind));
+  if (strange) throw new Error(`This engine has no layer of the kind ${JSON.stringify(strange.kind)}.`);
+  // (lines: the layer keeps a state; linearAt: and is a linear-attention one; attending: the layers with keys and values)
+  const lines = facts.map(({ kind }) => kind !== "attention"), linearAt = facts.map(({ kind }) => kind === "linear");
+  const placeOf = facts.map(({ place }) => place), turns = facts.map(({ rope }) => rope), attending = lines.filter((state) => !state).length;
+  // T255: the layers RoPE leaves alone, as the GPU's plan lists them
   const unturned = Array.from(plan.unturned || []);
-  const turns = Array.from({ length: layers }, (_, l) => !gpt2 && !unturned.includes(l));
-  // T229: a Qwen3.5's linear-attention layers (null: none), which layers they are, and each layer's place among the
-  // layers of its kind (the layer itself where all attend); attending: the layers with keys and values
-  // T260: an LFM2's convolution layers (null: none), the same way
-  const linear = plan.linear ?? null, convolution = plan.convolution ?? null, slots = layerSlots(layers, linear, convolution);
+  // the numbers of the layers that keep a state (null: the model has none of the kind)
+  const linear = plan.linear ?? null, convolution = plan.convolution ?? null;
+  if (facts.some(({ kind }) => (kind === "linear" ? !linear || !plan.widths.linear : kind === "convolution" && !convolution))) {
+    throw new Error("The plan has a layer that keeps a state, and not the numbers of the layers of its kind.");
+  }
   // T237: the block of a rotated basis (0: the model's own basis). llama2_numpy.py has the definition above hadamard()
   const rotated = plan.rotated || 0;
-  const lines = slots.map(([kind]) => kind), placeOf = slots.map(([, a]) => a), attending = attendingLayers(layers, linear, convolution);
   const imports = { env: { memory } };
   const wide = Boolean(kernels.wide);  // T101: a 64-bit memory, whose kernels take their addresses as BigInt
   // a page that is not cross-origin isolated has no SharedArrayBuffer to ask about: its memory is not shared
@@ -199,7 +218,10 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // KV: the bytes of one position's keys in the cache; KF: in float32.
   const halfKV = Boolean(plan.half_kv) && (halfKeys ?? (sharedMemory && kvHeads >= heads));
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QF = qDim * 4, KV = kvDim * (halfKV ? 2 : 4);
-  const inFrame = frameArrays(dim, hidden, kvDim, qDim, linear, rotated, T.wo?.kind === "ternary", convolution), S = frameBytes(inFrame);
+  // (of a linear-attention layer: the values its convolution runs over and those its output matrix reads, the plan's)
+  const { mixed: mixedWidth = 0, read: readWidth = 0 } = plan.widths.linear ?? {};
+  const inFrame = frameArrays(dim, hidden, kvDim, qDim, linear && { mixed: mixedWidth, read: readWidth, heads: linear.value_heads }, rotated,
+    T.wo?.kind === "ternary", Boolean(convolution)), S = frameBytes(inFrame);
   const frames = alloc(BATCH * S), at: Record<string, number> = {};
   inFrame.reduce((offset, [name, bytes]) => { at[name] = frames + offset; return offset + align(bytes); }, 0);
   // kNow, vNow: this token's key and value in float32, before they go into the cache
@@ -214,7 +236,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   const qNorm = floats("q_norm"), kNorm = floats("k_norm");  // T124: Qwen3 normalizes every head of q and k
   const eps = plan.rms_norm_eps ?? 1e-5;  // the epsilon of every RMSNorm (T124: Qwen3's is 1e-6)
   const cosTable = floats("freq_cis_real"), sinTable = floats("freq_cis_imag");
-  const positions = gpt2 ? floats("positions") : 0;
+  const positions = floats("positions");  // GPT-2's learned table of positions (0: the model has none)
   const embedding = T.token_embedding_table!;
   const embeddingRows = embedding.kind === "f16" ? floats("token_embedding_table") : 0;
   // T229: a Qwen3.5's gate of a full-attention layer's output, and its linear-attention layers' tensors: q, k and v
@@ -230,7 +252,6 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // rmsnorm's w * x / sqrt(mean(x * x) + eps) with w = 1 / sqrt(n) and eps = 1e-6 / n; q is divided by sqrt(n) more
   // (the four are numbers wherever they are read: where the model has such layers)
   const keyHeads = linear?.key_heads!, valueHeads = linear?.value_heads!, keyDim = linear?.key_dim!, valueDim = linear?.value_dim!;
-  const { mixed: mixedWidth = 0, read: readWidth = 0 } = linear ? linearWidths(linear) : {};
   // T260: an LFM2's convolution layers have a matrix in (win: 3 dim rows), their taps under the same name (conv) and
   // a matrix out (wout); their state is the convolution's rows alone, taps of dim values a layer
   const win = matrix("win");
@@ -247,7 +268,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   }
 
   // T237: the signs of a rotated basis for every width a matrix reads (Python's, each times 1 / sqrt(block))
-  const signs: Record<number, number> | null = rotated ? Object.fromEntries(rotatedWidths(dim, hidden, qDim, linear).map((width) => {
+  const signs: Record<number, number> | null = rotated ? Object.fromEntries(plan.widths.rotated.map((width) => {
     if (!(`signs.${width}` in derived)) throw new Error(`The rotated basis has no signs for an input ${width} wide.`);
     return [width, floats(`signs.${width}`)];
   })) : null;
@@ -271,7 +292,8 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
   // T378.2: what the GPU's side (forward/gpuside.ts) reads of this model, as two things made once: the model's facts,
   // and where its tensors are in the memory (addresses, and the matrices as matrix() made them)
   const shape: Shape = { dim, hidden, layers, heads, kvHeads, headSize, kvDim, qDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart: plan.kv_start,
-    gpt2, layerNorm, parallel, unturned, linear, convolution, rotated, sharedClassifier: plan.shared_classifier };
+    turning: turns.some(Boolean), layerNorm, parallel, unturned, linear, convolution, stateful: lines.some(Boolean),
+    rotated, sharedClassifier: plan.shared_classifier };
   const weights: Placed = { base, embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, finalW, finalB, bo, b1, b2, bq, bk, bv, qNorm, kNorm,
     cosTable, sinTable, positions, channels };
   // T349: what the GPU would hold of this model, and why it would not take it
@@ -442,7 +464,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         if (parallel) F.copyWithin((before + t * S) / 4, (x + t * S) / 4, (x + t * S) / 4 + dim);  // GPT-NeoX reads this layer's input twice
       }
       if (lines[l]) {
-        if (linear) linearAttention(a, count);
+        if (linearAt[l]) linearAttention(a, count);
         else shortConvolution(a, count);
       } else {
         const layerKeys = keys + a * capacity * KV, layerValues = values + a * capacity * KV;
@@ -476,11 +498,21 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
         matmuls(xb, count, [[wo, xb2, S, a]]);
       }
       for (let t = 0; t < count; t++) k.add_inplace(x + t * S, xb2 + t * S, dim);
-      if (layerNorm) {
-        for (let t = 0; t < count; t++) {
-          k.add_inplace(x + t * S, bo + l * D, dim);
-          k.layernorm(xb + t * S, (parallel ? before : x) + t * S, ffnW + l * D, ffnB + l * D, dim);
-        }
+      // the FFN reads the norm of x (GPT-NeoX's parallel residual: of this layer's input), after the bias of the
+      // output projection where the model has one (GPT-2 and GPT-NeoX)
+      for (let t = 0; t < count; t++) {
+        if (bo) k.add_inplace(x + t * S, bo + l * D, dim);
+        if (layerNorm) k.layernorm(xb + t * S, (parallel ? before : x) + t * S, ffnW + l * D, ffnB + l * D, dim);
+        else k.rmsnorm(xb + t * S, (parallel ? before : x) + t * S, ffnW + l * D, dim, eps);
+      }
+      if (gatedFfn) {
+        // w2(silu(w1 x) * w3 x)
+        matmuls(xb, count, [[w1, hb, S, l], [w3, hb2, S, l]]);
+        for (let t = 0; t < count; t++) k.swiglu(hb + t * S, hb + t * S, hb2 + t * S, hidden);
+        matmuls(hb, count, [[w2, xb2, S, l]]);
+        for (let t = 0; t < count; t++) k.add_inplace(x + t * S, xb2 + t * S, dim);
+      } else {
+        // GPT-2's: w2(gelu(w1 x + b1)) + b2
         matmuls(xb, count, [[w1, hb, S, l]]);
         for (let t = 0; t < count; t++) k.gelu(hb + t * S, hb + t * S, b1 + l * HD, hidden);
         matmuls(hb, count, [[w2, xb2, S, l]]);
@@ -488,13 +520,7 @@ export function createForward({ memory, base, size, kernels, plan, spawn, gpu, g
           k.add_inplace(x + t * S, xb2 + t * S, dim);
           k.add_inplace(x + t * S, b2 + l * D, dim);
         }
-        continue;
       }
-      for (let t = 0; t < count; t++) k.rmsnorm(xb + t * S, x + t * S, ffnW + l * D, dim, eps);
-      matmuls(xb, count, [[w1, hb, S, l], [w3, hb2, S, l]]);
-      for (let t = 0; t < count; t++) k.swiglu(hb + t * S, hb + t * S, hb2 + t * S, hidden);
-      matmuls(hb, count, [[w2, xb2, S, l]]);
-      for (let t = 0; t < count; t++) k.add_inplace(x + t * S, xb2 + t * S, dim);
     }
     if (convBytes) stateAt = pos0 + count;
     if (!needLogits) return;

@@ -22,8 +22,10 @@ export type Shape = {
   dim: number; hidden: number; layers: number; heads: number; kvHeads: number; headSize: number; kvDim: number; qDim: number; vocab: number; seqLen: number;
   // the bytes of a token's row, and of a position's keys in the cache; whether the cache is float16
   D: number; KV: number; halfKV: boolean;
-  eps: number; rotary: number; kvStart: number; gpt2: boolean; layerNorm: boolean; parallel: boolean; unturned: number[];
+  eps: number; rotary: number; kvStart: number; turning: boolean; layerNorm: boolean; parallel: boolean; unturned: number[];
   linear: Linear | null; convolution: Convolution | null;
+  // T375.2: some layer keeps a state in place of keys and values, of whatever kind (the plan's layers say)
+  stateful: boolean;
   // the block of a rotated basis (0: the model's own basis)
   rotated: number;
   sharedClassifier: boolean;
@@ -78,7 +80,7 @@ let gpuRequests = 0;
  * direct: the model is on the GPU alone (T156). */
 export function gpuFit({ shape, weights, device, direct }:
   { shape: Shape; weights: Placed; device: { gpuRoom: number | undefined; memoryUnsaid: boolean | undefined; sharedMemory: boolean }; direct: Direct | undefined }) {
-  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, linear, convolution, rotated, sharedClassifier } = shape;
+  const { dim, layers, headSize, vocab, seqLen, hidden, kvDim, qDim, D, layerNorm, linear, convolution, stateful, rotated, sharedClassifier } = shape;
   const { embedding, wq, wk, wv, wo, w1, w2, w3, wcls, attW, ffnW, attB, ffnB, bo, b1, b2, bq, bk, bv, qNorm, kNorm, positions } = weights;
   const { gpuRoom, memoryUnsaid, sharedMemory } = device;
   // why this model's prompt stays on the CPU, or null: the first stage (T135) takes Llama's layers of int8 weights
@@ -94,6 +96,8 @@ export function gpuFit({ shape, weights, device, direct }:
   function gpuUnfit() {
     if (linear) return "linear-attention layers are not on the GPU yet";  // T229
     if (convolution) return "convolution layers are not on the GPU yet";  // T260
+    // (T375.2: and a kind of layer that keeps a state which the engine comes to have: on the CPU until the GPU has it too)
+    if (stateful) return "layers that keep a state are not on the GPU yet";
     if (rotated) return "a rotated basis is not on the GPU yet";  // T237
     if (!sharedMemory) return "the page is not cross-origin isolated";
     if (headSize % 4) return "heads of a size that is no multiple of 4 are not on the GPU";
@@ -171,7 +175,7 @@ export function gpuFit({ shape, weights, device, direct }:
 export function gpuSide({ shape, weights, taken, cpuSide, control, threads, options }: {
   shape: Shape; weights: Placed; taken: Taken; cpuSide: CpuSide; control: Control; threads: { readonly count: number; readonly searching: boolean };
   options: { gpu: (() => GpuWorker) | undefined; remembered: Remembered | undefined; force?: Force; direct: Direct | undefined; stalledMs: number; now?: () => number } }) {
-  const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, gpt2, layerNorm, parallel,
+  const { dim, hidden, layers, heads, kvHeads, headSize, kvDim, vocab, seqLen, D, KV, halfKV, eps, rotary, kvStart, turning, layerNorm, parallel,
     unturned, sharedClassifier } = shape;
   const { base, embedding, wo, wcls, finalW, finalB, cosTable, sinTable, positions, channels } = weights;
   const { matrices: gpuMatrices, vectors: gpuVectors, whyNot: gpuWhyNot, tokensWhyNot, staging, rows: gpuRows, ids: gpuIds } = taken;
@@ -246,7 +250,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   }
   function startGpu() {
     // the values of a head RoPE turns: all of them, GPT-NeoX's first rotary (T154), none of GPT-2's
-    const turned = gpt2 ? 0 : rotary > 0 && rotary < headSize ? rotary : headSize;
+    const turned = !turning ? 0 : rotary > 0 && rotary < headSize ? rotary : headSize;
     // (six, T155: the values at a layer's address are int6, packed as llama2_numpy.pack6 packs them; ternary, T232:
     // two bits a weight, as llama2_numpy.pack_ternary packs them, which the GPU takes as they are)
     const matrices = Object.fromEntries(Object.entries(gpuMatrices()).map(([name, m]): [string, Matrix] =>

@@ -28,8 +28,8 @@ console.info = () => {};
 console.warn = () => {};
 
 /** An engine of the made-up model and what stands beside it. direct: on the GPU alone */
-function made(direct, plan = planOf(p)) {
-  const memory = new WebAssembly.Memory({ initial: Math.ceil((CONTROL_BYTES + p.size) / PAGE) + 64, maximum: Math.ceil((CONTROL_BYTES + p.size) / PAGE) + 64, shared: true });
+function made(direct, plan = planOf(p), size = p.size) {
+  const memory = new WebAssembly.Memory({ initial: Math.ceil((CONTROL_BYTES + size) / PAGE) + 64, maximum: Math.ceil((CONTROL_BYTES + size) / PAGE) + 64, shared: true });
   const ctl = new Int32Array(memory.buffer, 0, CONTROL_BYTES / 4);
   const beside = { ctl, spawned: 0, ended: 0, kernels: 0, posted: [], lost: [] };
   const spawn = (data) => {
@@ -58,7 +58,7 @@ function made(direct, plan = planOf(p)) {
   };
   // kernels that do nothing, counted: none is called for a model on the GPU alone once it is made
   const wrap = () => new Proxy({}, { get: () => () => { beside.kernels += 1; return 0; } });
-  const engine = createForward({ memory, base: CONTROL_BYTES, size: p.size, kernels: { plain: empty, relaxed: empty, wide: false }, plan, spawn, gpu, wrap,
+  const engine = createForward({ memory, base: CONTROL_BYTES, size, kernels: { plain: empty, relaxed: empty, wide: false }, plan, spawn, gpu, wrap,
     direct: direct ? { onLost: (why) => beside.lost.push(why) } : undefined });
   return { engine, beside };
 }
@@ -109,4 +109,34 @@ console.log("ok: T450, an engine on the GPU alone starts no software thread what
   assert.equal(await plain.engine.release(), true);
 }
 console.log("ok: the same model in the memory starts the threads it is asked for, with the kernels it runs on");
+
+// ---- T375.2: what the GPU's worker is told of a model's layers is the plan's facts, and no architecture's name: how
+// many values of a head RoPE turns (none where the plan's layers say it turns none), the kind of the norms, and the
+// vectors that go with them
+{
+  const header = [64, 128, 2, 4, 4, 100, 128];
+  const models = plansOf([{}, { arch: "gpt2" }, { arch: "neox" }].map((form) => ({ header, form: { ...FORM, ...form }, dtype: "int8" })));
+  const told = [];
+  for (const placed of models) {
+    const { engine, beside } = made(false, planOf(placed), placed.size);
+    await engine.gpu;
+    const [{ plan: started }] = beside.posted;
+    told.push([placed.form.arch, started.turned, started.layerNorm, Object.keys(started.vectors).join(" ")]);
+    assert.equal(await engine.release(), true);
+  }
+  assert.deepEqual(told, [["llama", 16, false, "attention ffn"],
+    ["gpt2", 0, true, "attention ffn attentionBias ffnBias bq bk bv bo b1 b2"],
+    ["neox", 16, true, "attention ffn attentionBias ffnBias bq bk bv bo b1 b2"]]);
+  // (a plan whose facts are no architecture's pair: the GPU's worker is told each as it is)
+  const [llama, gpt2] = models;
+  const odd = made(false, { ...planOf(gpt2), layer_norm: false }, gpt2.size);
+  await odd.engine.gpu;
+  assert.deepEqual([odd.beside.posted[0].plan.layerNorm, odd.beside.posted[0].plan.turned, Object.keys(odd.beside.posted[0].plan.vectors).join(" ")], [false, 0, "attention ffn bq bk bv bo b1 b2"]);
+  assert.equal(await odd.engine.release(), true);
+  const still = made(false, { ...planOf(llama), layers: planOf(llama).layers.map((layer) => ({ ...layer, rope: false })) }, llama.size);
+  await still.engine.gpu;
+  assert.equal(still.beside.posted[0].plan.turned, 0, "a model RoPE turns no layer of: no value of a head is turned on the GPU");
+  assert.equal(await still.engine.release(), true);
+}
+console.log("ok: T375.2, the GPU's worker is told how much of a head RoPE turns and the kind of the norms from the plan's facts");
 process.exit(0);

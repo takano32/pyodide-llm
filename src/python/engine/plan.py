@@ -97,7 +97,10 @@ def forward_plan(dims, dtype, read, settings=None, **said):
     a model without one of its own under both names); "derived", the bytes of the few arrays Python computes (the RoPE
     tables, the signs of a rotated basis); "outliers"; the form's "linear" and "convolution"; and, from T359.5,
     "layers" (layer_facts()) and "widths" (plan_widths()), so that an engine need not work out again which layer is of
-    which kind (forward.js reads them from T375)."""
+    which kind; and, from T375.2, the facts of the architecture an engine's layers differ by, under the names its
+    record has them by (engine/layout.py's Layout): "layer_norm" and "gated_ffn". forward.ts reads these and no name
+    of an architecture ("arch" is there for a person who looks at a plan). What the rows say is no key here, as it is
+    no field there: a bias, the norms of a head, the table of positions are read where the plan has their tensors."""
     settings = Settings(**said) if settings is None else settings
     int8, disable, rotated, tables = settings.int8, settings.disable, settings.rotated, settings.tables
     if dims.kinds is not None:
@@ -140,4 +143,7 @@ def forward_plan(dims, dtype, read, settings=None, **said):
             # T110: the keys and values of an int8 model may be float16 (forward.js uses that on a shared memory)
             "half_kv": bool(int8) and "kv16" not in disable,
             # T359.5: every layer's kind, its place among its kind and whether RoPE turns it; and the widths
-            "layers": layers, "widths": plan_widths(dims)}
+            "layers": layers, "widths": plan_widths(dims),
+            # T375.2: the kind of the norms (LayerNorms, of a weight and a bias; else RMSNorms) and of the FFN (gated:
+            # three matrices and a SiLU; else GPT-2's two, their biases and a GELU), which are two facts
+            "layer_norm": bool(dims.layout.layer_norm), "gated_ffn": bool(dims.layout.gated_ffn)}

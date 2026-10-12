@@ -108,6 +108,8 @@ FAMILIES = [
 DTYPES = ("float32", "float16", "int8", "int6", "ternary")
 # the keys of the plan that T359.5 added: every layer's facts, and the widths
 AHEAD = {"layers", "widths"}
+# and those T375.2 added, a record of their own for the same reason: the kind of the norms and of the FFN
+FACTS = {"layer_norm", "gated_ffn"}
 
 
 for name, headers, form, engine, source in FAMILIES:
@@ -132,9 +134,11 @@ for name, headers, form, engine, source in FAMILIES:
             if engine is not None:
                 # (T359.5's keys are a record of their own, so that the plan as it was before them is still compared
                 # with a tree that has none)
-                plan = said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size), without=AHEAD)
+                plan = said(f"{case}, {dtype}: engine", lambda: engine_plan(L, header, dtype, form, engine, size), without=AHEAD | FACTS)
                 if plan is not None and AHEAD & set(plan):
                     said(f"{case}, {dtype}: engine's layers and widths", lambda: {key: plan[key] for key in sorted(AHEAD)})
+                if plan is not None and FACTS & set(plan):
+                    said(f"{case}, {dtype}: engine's norms and FFN", lambda: {key: plan[key] for key in sorted(FACTS)})
                 if not engine:
                     said(f"{case}, {dtype}: external", lambda: L.external_tensors(header, dtype, whole))
 

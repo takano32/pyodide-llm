@@ -39,7 +39,10 @@ const sha = (text) => crypto.createHash("sha256").update(text).digest("hex").sli
 const found = {};
 for (const p of plansOf(shapes.map(({ name, ...shape }) => shape))) {
   const quantized = ["int8", "int6", "ternary"].includes(p.dtype);
-  found[`plan: ${JSON.stringify([p.header, p.form, p.dtype])}`] = sha(JSON.stringify(p));
+  // (what was hashed before T375.2: where the tensors are. The plan the engine is handed, p.plan, is Python's own from
+  // then on; the net's layouts writes it down for more models than these, and the calls below are what it does)
+  const { plan: _, ...placed } = p;
+  found[`plan: ${JSON.stringify([p.header, p.form, p.dtype])}`] = sha(JSON.stringify(placed));
   for (const relaxed of [true, false]) for (const shared of [true, false]) {
     const options = { ...p.form, dtype: p.dtype, int8: true, relaxed, halfKV: quantized, outliers: 8, gpu: false, shared };
     const base = shared ? CONTROL_BYTES : 64, bound = footprint(p.header, p.size, options), halfKeys = keysInHalf(p.header, p.size, options);

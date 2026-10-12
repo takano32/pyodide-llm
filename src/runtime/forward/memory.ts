@@ -49,6 +49,10 @@ export function memory64() {
   }
 }
 
+// T375.2: the four functions below (layerSlots, attendingLayers, linearWidths, rotatedWidths) are footprint()'s alone
+// now: it sizes a model's memory from the header and the form before there is a plan (the worker, /benchmark/, the
+// tools; T375.5 has it read a table instead). The engine reads the same facts from Python's plan (plan.layers,
+// plan.widths), and tests/plan-keys-check.mjs holds these to the plan's.
 // T229: a Qwen3.5's layers (llama2_numpy.py has the computation, above linear_form()). linear: the numbers of its
 // linear-attention layers (FORM's "linear": every, key_heads, value_heads, key_dim, value_dim, conv), null for the
 // models without them.
@@ -96,15 +100,19 @@ const convolutionStateBytes = (layers: number, dim: number, convolution: Convolu
 // T260, an LFM2: what a convolution layer's matrix in gives (mixed: the gates B and C and what B multiplies, 3 dim)
 // (rotated: the form's rotated basis or the plan's block of one: whether there is one is all that is read. Framed: an
 // array of a token's frame, its name and its bytes)
+// T375.2: linear is what a linear-attention layer puts in a frame, as widths (mixed, what its convolution runs over;
+// read, what its output matrix reads; heads, its value heads), and convolution whether the model has convolution
+// layers: the engine hands in the plan's (Python's), footprint() below what it works out of the form (framed())
 type Framed = [string, number];
-const frameArrays = (dim: number, hidden: number, kvDim: number, qDim = dim, linear: Linear | null = null, rotated: Rotated | number | null = null, ternary = false,
-  convolution: Convolution | null = null): Framed[] => {
-  const { mixed = 0, read = 0 } = linear ? linearWidths(linear) : {};
+type LinearFrame = { mixed: number; read: number; heads: number };
+const frameArrays = (dim: number, hidden: number, kvDim: number, qDim = dim, linear: LinearFrame | null = null, rotated: Rotated | number | null = null, ternary = false,
+  convolution = false): Framed[] => {
+  const { mixed = 0, read = 0 } = linear ?? {};
   const D = dim * 4, HD = hidden * 4, KF = kvDim * 4, QD = Math.max(dim, qDim, read) * 4, XQ = Math.max(dim, hidden, qDim, read);
   return [["x", D], ["xb", QD], ["xb2", D], ["q", qDim * 4], ["kNow", KF], ["vNow", KF], ["before", D], ["hb", HD],
     ["hb2", HD], ["xq", XQ], ["xs", Math.ceil(XQ / 32) * (ternary ? 8 : 4)],
     ...(linear ? [["gate", qDim * 4], ["mixed", mixed * 4], ["conv", mixed * 4], ["z", read * 4],
-      ["work", (2 * linear.value_heads + read) * 4]] satisfies Framed[] : []),
+      ["work", (2 * linear.heads + read) * 4]] satisfies Framed[] : []),
     ...(convolution ? [["mixed", 3 * dim * 4]] satisfies Framed[] : []),
     ...(rotated ? [["xr", XQ * 4]] satisfies Framed[] : [])];
 };
@@ -113,6 +121,8 @@ const frameArrays = (dim: number, hidden: number, kvDim: number, qDim = dim, lin
 const rotatedWidths = (dim: number, hidden: number, qDim: number, linear: Linear | null) =>
   [...new Set([dim, qDim, hidden, ...(linear ? [linearWidths(linear).read] : [])])];
 const frameBytes = (arrays: Framed[]) => arrays.reduce((size, [, bytes]) => size + align(bytes), 0);
+// what footprint() hands frameArrays() of a form's linear-attention layers (no plan is made yet where it is asked)
+const framed = (linear: Linear | null): LinearFrame | null => linear && { ...linearWidths(linear), heads: linear.value_heads };
 
 /** T115: the most bytes the forward pass puts after a checkpoint of size bytes: at the end of its whole context,
  * the KV cache grown to it in place (T130). An upper bound, a little above what createForward allocates
@@ -158,7 +168,7 @@ export function footprint(header: Header, size: number, { dtype = "float32", arc
   if (quantized || arch === "gpt2") bytes += seqLen * headSize * 4;
   // the frames of BATCH tokens, their attention scores, the logits; the keys and values of a block from the GPU (in
   // float16) and its rows
-  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, linear, rotated, ternary, convolution)) + align(seqLen * heads * 4)) + vocab * 4;
+  bytes += BATCH * (frameBytes(frameArrays(dim, hidden, kvDim, qDim, framed(linear), rotated, ternary, Boolean(convolution))) + align(seqLen * heads * 4)) + vocab * 4;
   // T237: the signs of a rotated basis, a float32 for every value of every width
   if (rotated) bytes += rotatedWidths(dim, hidden, qDim, linear).reduce((sum, width) => sum + align(width * 4), 0);
   if (gpu) bytes += 2 * layers * GPU_BLOCK * kvDim * 2 + GPU_BLOCK * dim * 4;
@@ -252,4 +262,6 @@ function halfToFloat(h: number) {
   return sign * (1 + fraction / 1024) * 2 ** (exponent - 15);
 }
 
-export { PAGE, align, layerSlots, attendingLayers, linearWidths, frameArrays, rotatedWidths, frameBytes, halfToFloat };
+export { PAGE, align, frameArrays, frameBytes, halfToFloat };
+// (for tests/plan-keys-check.mjs, which holds footprint()'s own reckoning to the plan's layers and widths)
+export { layerSlots, linearWidths, rotatedWidths };
