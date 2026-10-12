@@ -3,6 +3,7 @@
 // A module of src/runtime/forward.ts, which exports its names as before.
 
 import { BETTER } from "./choice.ts";
+import { REASONS } from "./reasons.ts";
 import type { Engine } from "./engine.ts";
 import type { PathCell, PathRow } from "../contracts/messages.ts";
 
@@ -37,8 +38,8 @@ export function timePrompts(engine: Engine, { words, counts, rounds = PATH_ROUND
       }
       const row: Row = { what: "prompt", tokens: count, chosen: { same: "cpu" } };
       for (const [name, list] of Object.entries(runs)) row[name as "chosen" | "cpu" | "gpu"] = timedCell(list, count);
-      if (!gpu) row.gpu = { skip: engine.gpuWhyNot ?? "not ready" };
-      else if (runs.gpu.some((run) => run.gpuTokens < count)) row.gpu = { skip: engine.gpuWhyNot ?? "the GPU did not take every block" };
+      if (!gpu) row.gpu = { skip: engine.gpuWhyNot ?? REASONS.notReady };
+      else if (runs.gpu.some((run) => run.gpuTokens < count)) row.gpu = { skip: engine.gpuWhyNot ?? REASONS.notEveryBlock };
       rows.push(row as PathRow);  // (every side's cell is in it now)
     }
   } finally {

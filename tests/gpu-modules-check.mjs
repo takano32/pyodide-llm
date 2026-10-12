@@ -46,10 +46,11 @@ const programs = new Map([...linked.files].filter(([name]) => own(name)).map(([n
 const top = (node) => (node.type === "ExportNamedDeclaration" && node.declaration ? node.declaration : node);
 
 // ---- a module of the worker takes of the worker's modules and of the shaders' parts
-const ALSO = ["failure.ts"];
+const ALSO = ["failure.ts", "forward/reasons.ts"];
 for (const [name] of programs) {
   for (const { from } of linked.files.get(name).takes) {
-    // (T380.1: and of failure.ts, how a failure is carried: a module that imports nothing, bundled into this worker)
+    // (T380.1: and of failure.ts, how a failure is carried, and forward/reasons.ts, the words of why a model is not on the
+    // GPU: modules that import nothing, bundled into this worker)
     assert.ok(own(from) || /^shaders\/\w+\.[jt]s$/.test(from) || ALSO.includes(from), `${name} takes names from ${from}: a module of the worker takes of the worker's modules, of the shaders' parts (shaders/<part>.js) and of ${ALSO.join(", ")}`);
   }
 }

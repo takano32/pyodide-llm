@@ -74,6 +74,9 @@ page_modules() {
   # whatever else is thrown (Python's exceptions as Pyodide hands them over, a memory that ran out in its three shapes,
   # a thing that is no error), and that the sources put no mark on an Error in another way (under a second)
   node tests/failure-check.mjs
+  # T380.1: the table of why a model is not on the GPU (src/runtime/forward/reasons.ts): every sentence whole, one
+  # cause one sentence, written nowhere else, and read by forward.ts's parts, the GPU's worker and the pages alone
+  node tests/reasons-check.mjs
   node tests/updated-check.mjs
   # T439: what the worker tells the page where it goes on, slower, without a file of its build that is gone (stand-ins)
   node tests/worker-outdated-check.mjs

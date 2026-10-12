@@ -11,6 +11,7 @@
 import { halvesOf } from "../shaders/run.ts";
 import { deviceKey } from "../shaders/key.ts";
 import { Failure, kindOf } from "../failure.ts";
+import { REASONS } from "../forward/reasons.ts";
 import type { FromGpu, Matrix, Opened, Remembered, Started } from "../contracts/gpu/protocol.ts";
 import type { Weights } from "./weights.ts";
 import type { Block } from "./block.ts";
@@ -130,22 +131,22 @@ function within<T>(promise: Promise<T>, what: string): Promise<T> {
 // The device, the model's record (model), and the error scopes the layers' buffers go up in; undefined where there is
 // none (say(why): unusable() by default) or the worker is stopping
 async function openDevice(plan: Started | Opening, say: (reason: string) => void = unusable): Promise<Model | void> {
-    if (!self.navigator?.gpu) return say("no WebGPU in a worker here");
+    if (!self.navigator?.gpu) return say(REASONS.noWebGpu);
     // the browser's own adapter (T148, the review: "high-performance" would keep a laptop's second GPU awake for the
     // whole visit, for prompts that are mostly short; the device measures whichever it gets against its CPU anyway)
     const adapter: Adapter | null = await navigator.gpu.requestAdapter();
     if (stopping) return end();
-    if (!adapter) return say("no GPU adapter here");
+    if (!adapter) return say(REASONS.noAdapter);
     // T148: a fallback adapter is the CPU doing the GPU's work (SwiftShader, lavapipe): never faster than the CPU's
     // own kernels, and its compilation of the shaders alone took 2 to 4 minutes (T147). Refused before anything is
     // made on it, but where a test asks for it (it is the only WebGPU of CI and of the development machine)
     const info: Info = adapter.info ?? {};
     const fallback = Boolean(info.isFallbackAdapter ?? adapter.isFallbackAdapter);
-    if (fallback && !plan.force.fallback) return say("a fallback adapter: the CPU in the GPU's place");
+    if (fallback && !plan.force.fallback) return say(REASONS.fallback);
     // T232: ternary weights are multiplied as packed int8 alone (shaders.ts's TERNARY_PACKED): said before anything goes up
     const ternary = ternaryPlan(plan);
     if (ternary && !navigator.gpu.wgslLanguageFeatures?.has("packed_4x8_integer_dot_product")) {
-      return say("ternary weights need the packed int8 dot product of WGSL, which this browser lacks");
+      return say(REASONS.packed("ternary"));
     }
     // the largest buffer the device binds (T155: a matrix larger than it goes in pieces, piecesOf)
     const limit = Math.min(adapter.limits.maxStorageBufferBindingSize, adapter.limits.maxBufferSize);
