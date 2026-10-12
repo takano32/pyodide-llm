@@ -139,7 +139,7 @@ const named = (rows) => [...new Set(rows.map(({ name }) => name))];
 // the shaders of a model of ternary weights alone (T232): no other model's key holds them
 const TERNARY = named(ROWS.ternary).filter((name) => !named(ROWS.engine).includes(name));
 // (and the makers of every model's shaders that have branches for ternary weights, and what only those branches write:
-// TERNARY_PACKED is a piece of the tiles' ternary text and of DP4A_WEIGHTS' ternary row, and a row of its own)
+// TERNARY_PACKED is a piece of the tiles' ternary text and of DP4A_WEIGHTS' ternary row)
 const TERNARY_BRANCHES = ["dp4a", "TERNARY_PACKED", "DP4A_WEIGHTS"];
 const isShader = (name) => typeof real[name] === "string"
   || (typeof real[name] === "function" && [...reached([name])].some((part) => pieces(part).some((piece) => typeof piece.says === "string" && piece.says.includes("@compute"))));
@@ -187,9 +187,9 @@ for (const file of gpuFiles) {
   }
 }
 const used = [...taking].sort();
-// every row is a shader the worker runs, but the piece of text the key has held as one (TERNARY_PACKED): a row no
-// module takes any more is in every device's key for nothing (and taking it out moves them all: T379.2's)
-assert.deepEqual(Object.keys(real.ENGINE).filter((name) => !taking.has(name)), ["TERNARY_PACKED"], "the catalogue's rows that no module of gpu.js takes");
+// every row is a shader the worker runs: a row no module takes is in every device's key for nothing (TERNARY_PACKED,
+// a piece of text, was one from T232 until T379.2 moved the keys anyway)
+assert.deepEqual(Object.keys(real.ENGINE).filter((name) => !taking.has(name)), [], "the catalogue's rows that no module of gpu.js takes");
 // gpu.js compiles a shader in one place (pipelineOf) and hands it the code at the calls below. A new call, or one whose code
 // comes from somewhere else, is looked at here: every shader it can compile must be one of those the key hashes
 const compiled = gpuNodes.filter(({ n }) => n.type === "CallExpression" && n.callee.name === "pipelineOf").map(({ n, text }) => text.slice(n.arguments[1].start, n.arguments[1].end));

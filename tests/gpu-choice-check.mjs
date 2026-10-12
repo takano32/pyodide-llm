@@ -566,16 +566,17 @@ const started = [{ count: 16, ms: 48 }, { count: 64, ms: 72 }];
 // (shaders/fused.ts's DP4A_WEIGHTS) holds what differs. That it holds nothing else is held here: every line but those
 // that differ by design is the same in the two texts, for every output a layer writes
 {
-  const byDesign = [/var<storage, read> b: /, /var<storage, read> scales_b: /, /k_offset - covers 32 values of k in input_b/, /let block_idx = k_offset;/,
+  const byDesign = [/var<storage, read> b: /, /var<storage, read> scales_b: /,
     /let K128 = /, /the scales of a row of the weights: one a group of 128/, /let own_scale_b = /, /let own_b = /, /let own_b1 = /, /let up_scale_b = /,
     /\+= SDP8AI\(own_a, (ternary_packed\()?b\[up_offset/];
   const lines = (text) => text.replace(/\/\/ T232: a word of 16 ternary codes[\s\S]*?\n}\n/, "").split("\n");
   const kept = (text) => lines(text).filter((line) => !byDesign.some((re) => re.test(line)));
   const different = (text) => lines(text).length - kept(text).length;
   const of = (weights, output) => fusedDp4aMatVec({ output, weights });
-  // (what differs by design: 7 lines of the int8 text, 8 of the ternary one (the scales' K128 and its comment are two lines
-  // for the int8's block_idx one), and where SwiGLU reads up's rows 2 more in each)
-  for (const [output, int8, ternary] of [["write", 7, 8], ["rope", 7, 8], ["add", 7, 8], ["swiglu", 9, 10]]) {
+  // (what differs by design: 5 lines of the int8 text, 7 of the ternary one (the scales' K128 and its comment are two
+  // lines more), and where SwiGLU reads up's rows 2 more in each. T379.2: until then the int8 text named its scale's
+  // index block_idx, a line of its own)
+  for (const [output, int8, ternary] of [["write", 5, 7], ["rope", 5, 7], ["add", 5, 7], ["swiglu", 7, 9]]) {
     assert.equal(different(of("int8", output)), int8, `${output}: the lines of fusedDp4aMatVec's int8 text that read the weights`);
     assert.equal(different(of("ternary", output)), ternary, `${output}: the lines of fusedDp4aMatVec's ternary text that read the weights`);
     assert.notEqual(of("ternary", output), of("int8", output), `${output}: the packing of the weights chooses a text`);

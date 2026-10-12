@@ -16,9 +16,10 @@
  * specific language governing permissions and limitations under the License.
  */
 import { GROUP, STEP } from "./common.ts";
-import { TERNARY_PACKED, sdp8ai } from "./prompt.ts";
-import { SCALE_WORD } from "./steps.ts";
+import { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
+import { SCALE_WORD, PACKED_WORD, ROW_RMS, NORM_STRUCT } from "./steps.ts";
 import { MUL_MAT_VEC_ROWS, ORT_DP4A_MATVEC_ROWS } from "./matvec.ts";
+import type { Packing } from "./common.ts";
 
 // (T368.5) what a fused matrix reads (the stream through the norm, or as it is) and what becomes of its rows: the
 // names a maker's text branches on. (T379.1) Each a list of values, which the catalogue walks (engine.ts), and the
@@ -99,7 +100,9 @@ const FUSED_PARAMS = /* wgsl */ `struct Params { rows: u32, words: u32, perRow: 
 // where the write of an output goes (bindings 5 on): T150's, and T175's DP4A form's alike. T226: the write of a pair
 // is a function (write_pair), which TOKEN_ROPE below calls too: the same lines where the matrix's write cannot turn
 // the pair yet (a bias or a head's norm comes between)
-const fusedOutputs = (output: FusedOutput) => (output === "rope" ? `@group(0) @binding(5) var<storage, read_write> q: array<f32>;
+// T379.2: the Step struct is declared where the step is bound (the "rope" output), and in no other text
+const fusedOutputs = (output: FusedOutput) => (output === "rope" ? `${STEP}
+@group(0) @binding(5) var<storage, read_write> q: array<f32>;
 @group(0) @binding(6) var<storage, read_write> keys: array<u32>;
 @group(0) @binding(7) var<storage, read_write> values: array<u32>;
 @group(0) @binding(8) var<storage, read> angles: array<f32>;
@@ -166,7 +169,6 @@ const fusedWrite = (output: FusedOutput) => (output === "rope" ? `    // a pair 
 // (rows, qRows, kvRows, headSize, turned), 5 to 9 as the fused "rope"
 export const TOKEN_ROPE = /* wgsl */ `
 ${FUSED_PARAMS}
-${STEP}
 @group(0) @binding(2) var<storage, read> src1: array<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
 ${fusedOutputs("rope")}
@@ -182,7 +184,6 @@ export const fusedMatVec =({ input, output, subgroups }: { input: FusedInput; ou
   const matrices = glu ? 2 : 1, sums = MUL_MAT_VEC_ROWS * matrices + (norm ? 1 : 0);
   return /* wgsl */ `${subgroups ? "enable subgroups;\nrequires subgroup_id;\n" : ""}
 ${FUSED_PARAMS}
-${STEP}
 @group(0) @binding(0) var<storage, read> src0: array<u32>;
 @group(0) @binding(1) var<storage, read> scales: array<f32>;
 @group(0) @binding(2) var<storage, read> src1: array<f32>;
@@ -195,13 +196,10 @@ const OUTPUTS_PER_WG = ${MUL_MAT_VEC_ROWS}u;
 const BLOCK_SIZE = 32u;
 const THREADS_PER_BLOCK = 4u;
 const ELEMS_PER_THREAD = BLOCK_SIZE / THREADS_PER_BLOCK;
-const MATRICES = ${matrices}u;
-const SUMS = ${sums}u;
-const SQUARES = OUTPUTS_PER_WG * MATRICES;  // where the sum of x² is, when the norm is on the read
+const SUMS = ${sums}u;${norm ? `
+const SQUARES = OUTPUTS_PER_WG * ${matrices}u;  // where the sum of x² is: after the rows' sums (up's rows' too)` : ""}
 
-fn get_byte_i32(value: u32, index: u32) -> i32 {
-    return bitcast<i32>(((value >> (index * 8)) & 0xFF) << 24) >> 24;
-}
+${GET_BYTE_I32}
 
 // a row's sum at the thread's part of a block: llama.cpp's inner loop, for one row of either matrix
 fn block_dot(weight_row: u32, block: u32, thread_within_block: u32, x_block: array<f32, ELEMS_PER_THREAD>) -> f32 {
@@ -362,7 +360,7 @@ ${fusedWrite(output)}
 // number; here a value is weight × (s × x), so a NaN of x, of the sum of x² or of the weight, and an infinity of x,
 // whose s is 0 and 0 × inf a NaN).
 export const NORM_QUANTIZE = /* wgsl */ `
-struct Norm { size: u32, at: u32, eps: f32, unused: u32 }
+${NORM_STRUCT}
 ${STEP}
 @group(0) @binding(0) var<storage, read> x: array<f32>;
 @group(0) @binding(1) var<storage, read> weight: array<f32>;
@@ -371,25 +369,14 @@ ${STEP}
 @group(0) @binding(4) var<uniform> norm: Norm;
 @group(0) @binding(5) var<uniform> step: Step;
 var<workgroup> partial: array<f32, 64>;
-fn packed(v: vec4<i32>) -> u32 {
-  let b = bitcast<vec4<u32>>(v) & vec4<u32>(0xffu);
-  return b.x | (b.y << 8u) | (b.z << 16u) | (b.w << 24u);
-}
+${PACKED_WORD}
 ${SCALE_WORD}
 @compute @workgroup_size(64)
 fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u32) {
   let token = id.x;
   if (token >= step.tokens) { return; }
   let row = token * norm.size;
-  var squares = 0.0;
-  for (var i = t; i < norm.size; i += 64u) { squares += x[row + i] * x[row + i]; }
-  partial[t] = squares;
-  workgroupBarrier();
-  for (var half = 32u; half > 0u; half >>= 1u) {
-    if (t < half) { partial[t] += partial[t + half]; }
-    workgroupBarrier();
-  }
-  let s = 1.0 / sqrt(partial[0] / f32(norm.size) + norm.eps);
+${ROW_RMS}
   for (var g = t; g < norm.size / ${GROUP}u; g += 64u) {
     let at = g * ${GROUP}u;
     var magnitude = 0u;
@@ -478,8 +465,9 @@ fn main(@builtin(workgroup_id) id: vec3u, @builtin(local_invocation_index) t: u3
 //   bindings   bindings 0 and 1: the weights as the shader reads their words, and the scales of their groups
 //   unpacking  what turns a word of the weights into packed int8, after SDP8AI (nothing where they are int8)
 //   rowScales  after K32: how many scales a row has, where that is not the vector's groups of 32
-//   group      after k_offset: what a thread's group of 32 is in the weights
-//   scale      the index of the scale of that group in a row (b_global, or up's row)
+//   scale      the index of the scale of a thread's group of 32 (k_offset: of int8 weights the index of its scale in
+//              a row as it is, which ORT's text names block_idx; of ternary ones two words of codes, a quarter of a
+//              scale's group) in a row (b_global, or up's row)
 //   word       a vec4<u32> of 16 packed int8, of the word at an index of b
 const DP4A_WEIGHTS = {
   int8: {
@@ -487,10 +475,7 @@ const DP4A_WEIGHTS = {
 @group(0) @binding(1) var<storage, read> scales_b: array<f32>;`,
     unpacking: "",
     rowScales: "",
-    group: `
-        // k_offset - covers 32 values of k in input_b
-        let block_idx = k_offset;`,
-    scale: (row: string) => `${row} * params.perRow + block_idx`,
+    scale: (row: string) => `${row} * params.perRow + k_offset`,
     word: (at: string) => `b[${at}]`,
   },
   ternary: {
@@ -500,12 +485,11 @@ const DP4A_WEIGHTS = {
     rowScales: `
     // the scales of a row of the weights: one a group of 128
     let K128 = params.perRow / 4u;`,
-    group: `
-        // k_offset - covers 32 values of k in input_b: two words of codes`,
     scale: (row: string) => `${row} * K128 + k_offset / 4u`,
     word: (at: string) => `ternary_packed(b[${at}])`,
   },
-};
+} satisfies Record<Packing, object>;
+// (a row for every packing, and no other: common.ts's Packing)
 export type FusedWeights = keyof typeof DP4A_WEIGHTS;
 //
 // output: as fusedMatVec's ("rope", "add", "swiglu" or "write"); weights: their packing, a row of DP4A_WEIGHTS.
@@ -515,7 +499,6 @@ export const fusedDp4aMatVec = ({ output, weights }: { output: FusedOutput; weig
   const packing = DP4A_WEIGHTS[weights];
   return /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${FUSED_PARAMS}
-${STEP}
 ${packing.bindings}
 @group(0) @binding(2) var<storage, read> a: array<vec4<u32>>;        // the quantized vector (xq)
 @group(0) @binding(3) var<uniform> params: Params;
@@ -581,7 +564,8 @@ fn main(@builtin(workgroup_id) wg_id: vec3<u32>, @builtin(num_workgroups) num_wg
         var own_a: vec4<u32> = tile_A[local_col * 2];
         var own_a1: vec4<u32> = tile_A[local_col * 2 + 1];
         var own_scale_a = scale_A[local_col];
-        let k_offset = kidx_v + local_col;${packing.group}
+        let k_offset = kidx_v + local_col;
+        // k_offset - covers 32 values of k in input_b
         // calculate intermediate results into inter_results.
         for (var row_offset = 0u; row_offset < tile_size; row_offset += sub_tile_count) {
             let b_global = b_global_base + row_offset + local_row;

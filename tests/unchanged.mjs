@@ -56,6 +56,7 @@ import { parse } from "@babel/parser";
 import { otherTree } from "./other-tree.mjs";
 import { builtModule } from "./bundle.mjs";
 import { treeOf } from "./tree.mjs";
+import { MAKERS_APART, makersOfWgsl } from "./shader-makers.mjs";
 import { untyped } from "./untyped.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -82,7 +83,9 @@ function differences(was, now) {
 }
 function said(what, { count, differ, gone, added }, more = "") {
   const wrong = differ.length + gone.length + added.length;
-  const list = (label, names) => (names.length ? `; ${label}: ${names.slice(0, 12).join(", ")}${names.length > 12 ? ` and ${names.length - 12} more` : ""}` : "");
+  // (T379.2: UNCHANGED_NAMES=<n> for more than the first twelve: a change meant to differ is read name by name)
+  const most = Number(process.env.UNCHANGED_NAMES ?? 12);
+  const list = (label, names) => (names.length ? `; ${label}: ${names.slice(0, most).join(", ")}${names.length > most ? ` and ${names.length - most} more` : ""}` : "");
   console.log(`unchanged: ${what}: ${wrong ? "CHANGED" : "the same"}: ${count} compared${more}${list("differ", differ)}${list("gone", gone)}${list("new", added)}`);
   return wrong === 0;
 }
@@ -90,26 +93,25 @@ function said(what, { count, differ, gone, added }, more = "") {
 // T366: the makers of WGSL among src/runtime/shaders.js's exports, and the arguments that walk every branch of each one's
 // text (a number is written into the text and chooses nothing). T379.1: the engine's makers and their arguments are the
 // catalogue's rows (this tree's shaders/engine.ts, which deviceKey() hashes: makersOf()); the makers of the prompt's
-// tiles (the key holds them by promptForms) and the benchmark's (fmaCeiling, mulMatVec) are held by this table alone: a
-// branch added to one of those is to be added here
-const EITHER = [false, true];
-const MAKERS_APART = {
-  regTile: EITHER.map((half) => [half]),
-  dp4a: EITHER.flatMap((subgroups) => EITHER.map((ternary) => [subgroups, ternary])),
-  fmaCeiling: EITHER.flatMap((half) => ["square", "affine"].map((shape) => [half, shape])),
-  mulMatVec: EITHER.flatMap((packed) => EITHER.map((subgroups) => [{ packed, subgroups }])),
-};
+// tiles (the key holds them by promptForms) and the benchmark's (fmaCeiling, mulMatVec) are tests/shader-makers.mjs's
+// list (T379.2: read by the light suite too, which holds that no maker of WGSL is left out of both)
 function makersOf(module) {
   const found = { ...MAKERS_APART };
   for (const { name, given } of [...module.ENGINE_SHADERS, ...module.TERNARY_SHADERS]) if (given) (found[name] ??= []).push([given]);
+  // (T379.2) a maker with no arguments here would be compared as a syntax tree, and a text of its own never
+  const unwalked = makersOfWgsl(module).filter((name) => !found[name]);
+  if (unwalked.length) throw new Error(`${unwalked.join(", ")}: a maker of WGSL of shaders.ts that neither the catalogue (shaders/engine.ts) nor tests/shader-makers.mjs gives arguments: the net cannot compare the texts it makes`);
   return found;
 }
 // (until T379.1 is the tree compared with: there the texts for ternary weights are a maker's of their own,
 // ternaryMatVec, which took no packing; the texts are compared as fusedDp4aMatVec's all the same)
 // A maker that does not take a choice this tree's catalogue gives it (a packing the other tree has no row of) says so
 // where its text would be: a difference, and the net goes on
+// (until T379.2 is the tree compared with: there the tiles' dp4a took (subgroups, ternary), a boolean for the packing)
+const givenBefore = (module, name, given) => (name === "dp4a" && !/^\(\s*\{/.test(String(module.dp4a)) ? [given[0].subgroups, given[0].weights === "ternary"] : given);
 function madeBy(module, name, given) {
   try {
+    given = givenBefore(module, name, given);
     return (name === "fusedDp4aMatVec" && given[0].weights === "ternary" && module.ternaryMatVec ? module.ternaryMatVec : module[name])(...given);
   } catch (error) {
     return `throws ${error.message}`;

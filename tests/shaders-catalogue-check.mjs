@@ -9,7 +9,7 @@
 //     moved, added or dropped has every device choose its forms again, and no other check of the light suite says so
 //     (the net's shaders does, tests/unchanged.mjs, which compares the keys with another commit's);
 //   - a row is a text or a maker with its arguments, and its text() is that text or what the maker makes of them;
-//     every row's text is a shader (but the one piece of text the key holds as its own), and no two rows give one text:
+//     every row's text is a shader, and no two rows give one text:
 //     a choice given to a maker that does not take it (a misspelt name of a packing, an argument left out) makes a
 //     second copy of another row's text and leaves a text a device runs out of the key;
 //   - a maker's rows are every choice of it: each of its arguments that is no number takes every value in every
@@ -18,34 +18,39 @@
 //     function itself (called with a model's numbers), and it cannot be written to by a name the rows do not have;
 //   - the key is the fold of these rows and of nothing else of the catalogue: computed here a second time from the
 //     rows (FNV-1a, the unit separator after each text) for eight made-up devices and their ternary models.
+//   - (T379.2) every maker of WGSL the window exports has rows here, or arguments in tests/shader-makers.mjs (the
+//     tiles', the benchmark's), each set of which makes a text of its own.
+//   - (T379.2) a text declares nothing it does not use, and declares the struct of what it binds.
 // What a maker's text branches on that no row walks (a new parameter) is tests/device-key-check.mjs's, which changes
 // each piece of the shaders' source by a character; that the worker takes shaders nowhere else, too.
 import assert from "node:assert/strict";
 import { runtimeUrl } from "./tree.mjs";
+import { MAKERS_APART, makersOfWgsl } from "./shader-makers.mjs";
 
 const { ENGINE, ENGINE_SHADERS, TERNARY_SHADERS, deviceKey, devicePromptForms, ...window } = await import(runtimeUrl("shaders.js"));
 
 // ---- the order. A row: its name, and for a maker the choices it is given (what is no number), in the row's own order
 const said = ({ name, given }) => (given ? `${name}(${Object.entries(given).filter(([, value]) => typeof value !== "number").map(([key, value]) => `${key}=${value}`).join(", ")})` : name);
-const BY_SUBGROUPS = (subgroups) => [
-  `flashTile(half=false, subgroups=${subgroups})`, `flashTile(half=true, subgroups=${subgroups})`, `flashVec(subgroups=${subgroups})`, `flashVecReduce(subgroups=${subgroups})`,
-  ...["norm", "plain"].flatMap((input) => ["rope", "add", "swiglu", "write"].map((output) => `fusedMatVec(input=${input}, output=${output}, subgroups=${subgroups})`))];
+const EITHER = [false, true];
 const ORDER = {
   engine: ["RMSNORM", "HEAD_NORM", "ADD", "ROPE", "SWIGLU", "QUANTIZE", "LAYER_NORM", "GELU", "EMBED", "EMBED_ROWS", "SAMPLE", "NORM_QUANTIZE", "TOKEN_ROPE", "WIDEN_SIX",
-    ...BY_SUBGROUPS(false), ...BY_SUBGROUPS(true),
+    // (T379.2: each maker's rows together; within a maker subgroups is the outer choice)
+    ...EITHER.flatMap((subgroups) => EITHER.map((half) => `flashTile(half=${half}, subgroups=${subgroups})`)),
+    ...EITHER.map((subgroups) => `flashVec(subgroups=${subgroups})`),
+    ...EITHER.map((subgroups) => `flashVecReduce(subgroups=${subgroups})`),
+    ...EITHER.flatMap((subgroups) => ["norm", "plain"].flatMap((input) => ["rope", "add", "swiglu", "write"].map((output) => `fusedMatVec(input=${input}, output=${output}, subgroups=${subgroups})`))),
     "fusedDp4aMatVec(output=rope, weights=int8)", "fusedDp4aMatVec(output=add, weights=int8)", "fusedDp4aMatVec(output=swiglu, weights=int8)", "fusedDp4aMatVec(output=write, weights=int8)"],
-  ternary: ["TERNARY_PACKED",
+  ternary: [
     "fusedDp4aMatVec(output=rope, weights=ternary)", "fusedDp4aMatVec(output=add, weights=ternary)", "fusedDp4aMatVec(output=swiglu, weights=ternary)", "fusedDp4aMatVec(output=write, weights=ternary)",
     "EMBED_TERNARY", "EMBED_ROWS_TERNARY", "TAKE_OUTLIERS", "TERNARY_COLUMNS"],
 };
-const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (T379.2 gathers such changes into one deployment). If that is meant, this list is to say the same";
+const moved = "the order of the catalogue's rows is the device's key: a row moved, added or taken away has every device choose anew (such changes are gathered into one deployment, as T379.2 was). If that is meant, this list is to say the same";
 assert.deepEqual(ENGINE_SHADERS.map(said), ORDER.engine, `every model's shaders: ${moved}`);
 assert.deepEqual(TERNARY_SHADERS.map(said), ORDER.ternary, `a ternary model's shaders: ${moved}`);
 console.log(`shaders-catalogue-check: the rows are in the recorded order (${ENGINE_SHADERS.length} of every model, ${TERNARY_SHADERS.length} of a ternary model alone)`);
 
 // ---- a row
 const rows = [...ENGINE_SHADERS, ...TERNARY_SHADERS];
-const PIECES = ["TERNARY_PACKED"];  // a text of the key that is no shader: a piece of the ternary ones
 const seen = new Map();
 for (const row of rows) {
   const what = said(row), text = row.text();
@@ -55,10 +60,11 @@ for (const row of rows) {
     assert.equal(text, row.shader(row.given), `${what}: its text is what the maker makes of its arguments`);
   } else assert.equal(text, row.shader, `${what}: a text's row gives that text`);
   // (the row's name is its shader's own: the window has every shader by its name, and no piece)
-  assert.equal(window[row.name], PIECES.includes(row.name) ? undefined : row.shader, `${what}: the row's shader is the one of that name (the window's)`);
+  assert.equal(window[row.name], row.shader, `${what}: the row's shader is the one of that name (the window's)`);
   assert.equal(text, row.text(), `${what}: the same text twice`);
   assert.ok(typeof text === "string" && text.length > 100, `${what}: a text`);
-  assert.equal(/@compute/.test(text), !PIECES.includes(row.name), `${what}: ${PIECES.includes(row.name) ? "a piece, and no shader of its own" : "a shader has an entry point"}`);
+  // (T379.2: a piece of text shaders share is no row: it is in the key by the texts that hold it)
+  assert.ok(/@compute/.test(text), `${what}: a row is a shader, with an entry point`);
   assert.ok(!seen.has(text), `${what} gives the text ${seen.get(text)} gives: an argument the maker does not take, or a row twice (and a text a device runs that the key does not hold?)`);
   seen.set(text, what);
 }
@@ -79,6 +85,62 @@ for (const [name, givens] of makers) {
   for (const [i, key] of choices.entries()) assert.ok(values[i].size > 1, `${name}'s ${key} takes one value in every row: no choice`);
 }
 console.log(`shaders-catalogue-check: ${[...makers].map(([name, givens]) => `${name} × ${givens.length}`).join(", ")}: every combination of each maker's choices, one set of numbers`);
+
+// ---- (T379.2) every maker of WGSL the window exports is walked by someone: the catalogue's rows (above), or the list
+// of the makers apart (tests/shader-makers.mjs: the prompt's tiles and the benchmark's own, which the net compares
+// with another commit's by the texts those arguments make). A maker in neither would be compared by its syntax tree
+// alone, and a branch of it by nothing; a maker in both is the catalogue's
+const shadersModule = await import(runtimeUrl("shaders.js"));
+assert.deepEqual(makersOfWgsl(shadersModule), [...new Set([...makers.keys(), ...Object.keys(MAKERS_APART)])].sort(),
+  "the makers of WGSL that shaders.ts exports are the catalogue's and tests/shader-makers.mjs's: a new one is to have rows in shaders/engine.ts (the engine's) or arguments in that list");
+for (const name of Object.keys(MAKERS_APART)) assert.ok(!makers.has(name), `${name} has rows in the catalogue: tests/shader-makers.mjs is for the makers that have none`);
+for (const [name, givens] of Object.entries(MAKERS_APART)) {
+  const made = givens.map((given) => shadersModule[name](...given));
+  for (const text of made) assert.ok(typeof text === "string" && /@compute/.test(text), `${name}: a shader of each set of arguments`);
+  assert.equal(new Set(made).size, givens.length, `${name}: two sets of arguments of tests/shader-makers.mjs make one text: an argument the maker does not take (its branches are not walked)`);
+}
+console.log(`shaders-catalogue-check: ${makersOfWgsl(shadersModule).length} makers of WGSL, each the catalogue's (${makers.size}) or of the list apart (${Object.keys(MAKERS_APART).join(", ")})`);
+
+// ---- (T379.2) what a text declares, it uses, and the type of what it binds is declared: every text a device is given
+// (the rows' and the tiles'), read as text (no WGSL compiler here: that a text compiles is CI's gpu-check). Until T379.2
+// a token's matrices declared the Step struct where no step was bound, and a constant only the norm's form read; a
+// declaration that comes back unused, or a struct dropped where it is bound, is said here. Names a piece of text
+// shared by two shaders gives both, of which one uses fewer, are listed (LEFT): taking them out is another text, and
+// every device's key.
+const LEFT = { "flashVec(subgroups=true)": ["lanes_add4"],
+  "flashVecReduce(subgroups=false)": ["shuffle_down", "shuffle_down4", "shuffle"], "flashVecReduce(subgroups=true)": ["shuffle_down", "shuffle_down4", "shuffle"] };
+const given = [...rows.map((row) => [said(row), row.text()]),
+  ...[false, true].flatMap((ternary) => devicePromptForms({ features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, ternary)
+    .concat(devicePromptForms({ features: new Set(), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } }, ternary))
+    .map((form) => [`the tile ${form.name}`, form.code]))];
+let declarations = 0;
+for (const [what, raw] of given) {
+  const text = raw.replace(/\/\/.*$/gm, "");
+  const unused = [];
+  for (const found of text.matchAll(/^(?:@group\(0\) @binding\(\d+\) )?(?:(?:struct|const|fn|override|alias)\s+(\w+)|var(?:<[^>]*>)?\s+(\w+)\s*:)/gm)) {
+    const declared = found[1] ?? found[2];
+    if (declared === "main") continue;
+    declarations += 1;
+    if ([...text.matchAll(new RegExp(`\\b${declared}\\b`, "g"))].length === 1) unused.push(declared);
+  }
+  assert.deepEqual(unused, LEFT[what] ?? [], `${what}: what its text declares and never uses (but what tests/shaders-catalogue-check.mjs's LEFT lists)`);
+  for (const bound of text.matchAll(/^@group\(0\) @binding\(\d+\) var<[^>]*>\s+\w+\s*:\s*([A-Z]\w*)\s*;/gm)) {
+    assert.ok(new RegExp(`^struct ${bound[1]} \\{`, "m").test(text), `${what} binds a ${bound[1]} and declares no struct of that name`);
+  }
+}
+console.log(`shaders-catalogue-check: ${given.length} texts (the rows' and the tiles'): each of their ${declarations} declarations is used, and each struct that is bound is declared`);
+
+// ---- (T379.2) a prompt's tile of a ternary model reads codes, and no other tile does: the packing dp4a() is given by
+// its name is the one of the form's own name (read backwards, a ternary model was handed the int8 text under the
+// ternary name, and no local check said so)
+{
+  const every = { features: new Set(["shader-f16", "subgroups"]), limits: { maxComputeWorkgroupStorageSize: 1e9, maxComputeInvocationsPerWorkgroup: 1e9, maxComputeWorkgroupSizeX: 1e9 } };
+  const reads = (form) => /fn ternary_packed\(/.test(form.code) && /var<storage, read> b: array<u32>;/.test(form.code);
+  const ternary = devicePromptForms(every, true), others = devicePromptForms(every, false);
+  assert.ok(ternary.length > 0 && ternary.every((form) => form.ternary && / ternary$/.test(form.name) && reads(form)), "every tile of a ternary model unpacks its weights' codes (ternary_packed), under a name that says ternary");
+  assert.ok(others.length > ternary.length && others.every((form) => !form.ternary && !/ternary/.test(form.name) && !reads(form)), "no tile of another model reads ternary codes");
+  console.log(`shaders-catalogue-check: the ${ternary.length} tiles of a ternary model read codes, the ${others.length} of the others do not`);
+}
 
 // ---- ENGINE: the rows by name
 assert.deepEqual(Object.keys(ENGINE), [...new Set(rows.map((row) => row.name))], "ENGINE's names are the rows', in their order");

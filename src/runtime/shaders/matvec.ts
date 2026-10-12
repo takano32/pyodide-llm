@@ -5,7 +5,7 @@
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
-import { sdp8ai } from "./prompt.ts";
+import { sdp8ai, GET_BYTE_I32 } from "./prompt.ts";
 
 // ---- T149: a matrix times one vector (a generated token's), in the forms of public implementations, for the GPU
 // section of /benchmark/ to measure beside WIDEN and PACKED (the model's GPU worker is to take the fastest on each
@@ -87,9 +87,7 @@ fn accumulate_vec_q_dot(thread_id: u32, row_base: u32) -> array<f32, OUTPUTS_PER
 
     return acc;
 }` : /* wgsl */ `
-fn get_byte_i32(value: u32, index: u32) -> i32 {
-    return bitcast<i32>(((value >> (index * 8)) & 0xFF) << 24) >> 24;
-}
+${GET_BYTE_I32}
 
 fn accumulate_vec_dot(thread_id: u32, row_base: u32) -> array<f32, OUTPUTS_PER_WG> {
     var acc: array<f32, OUTPUTS_PER_WG>;

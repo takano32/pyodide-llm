@@ -6,6 +6,7 @@
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
 import { GROUP, STEP } from "./common.ts";
+import type { Packing } from "./common.ts";
 
 // (T368.5) a tile of a prompt's matrix product: the rows and tokens a workgroup takes and its threads; and a form, one
 // tiled shader a device may run (promptForms): its text, the overrides of its pipeline, whether it reads packed int8
@@ -52,6 +53,8 @@ type Tiled = { w: ArrayLike<number>; s: ArrayLike<number>; x: Float32Array; got:
 
 // llama.cpp's defaults (ggml-webgpu-shader-lib.hpp: WEBGPU_MUL_MAT_WG_SIZE_M/N 8, TILE_M/N 4, REG_TILE_K_QUANT 32)
 // and a workgroup of 256 threads for a tile of 64 tokens (the benchmark measures both; the overrides are the pipeline's)
+// (T379.2) the Shape every tile reads, written once: a matrix, where its rows go in y, and how far apart the tokens are
+const TILE_SHAPE = /* wgsl */ `struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }`;
 export const REG_TILES = [{ m: 8, n: 8 }, { m: 16, n: 16 }];
 export const regTileShape = ({ m, n }: RegTile): Tile => ({ rows: 4 * m, tokens: 4 * n, threads: m * n });
 // the workgroup's memory of a regTile: a step's weights and activations, 2 or 4 bytes each
@@ -76,8 +79,16 @@ export const DP4A_SHAPE = { rows: 64, tokens: 64, threads: 256 };
  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
  * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
+// (T379.2) byte index of a word as a signed int8: llama.cpp's get_byte_i32 as its shaders have it (mul_mat_decls.tmpl,
+// mul_mat_vec.wgsl, get_rows.wgsl: the notice above), one piece of text for every shader that widens int8 weights to
+// floats: the tiles here, a token's float matrix (fused.ts, matvec.ts) and the rows of the embedding (run.ts). Until
+// T379.2 each wrote it out, and the tiles' copy had the numbers marked unsigned (8u, 0xFFu, 24u: the same u32
+// arithmetic, another text)
+const GET_BYTE_I32 = /* wgsl */ `fn get_byte_i32(value: u32, index: u32) -> i32 {
+    return bitcast<i32>(((value >> (index * 8)) & 0xFF) << 24) >> 24;
+}`;
 export const regTile = (half: boolean): string => /* wgsl */ `${half ? "enable f16;\n" : ""}
-struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
+${TILE_SHAPE}
 ${STEP}
 alias shmem_t = ${half ? "f16" : "f32"};
 @group(0) @binding(0) var<storage, read> w: array<u32>;             // M rows, K columns: 4 int8 to a u32
@@ -103,9 +114,7 @@ override TILE_SRC1_SHMEM: u32 = TILE_K * WORKGROUP_SIZE_N * TILE_N;
 override TILE_SHMEM: u32 = TILE_SRC0_SHMEM + TILE_SRC1_SHMEM;
 var<workgroup> shmem: array<shmem_t, TILE_SHMEM>;
 
-fn get_byte_i32(value: u32, index: u32) -> i32 {
-  return bitcast<i32>(((value >> (index * 8u)) & 0xFFu) << 24u) >> 24u;
-}
+${GET_BYTE_I32}
 // Q8_0's loader: NQ weights a thread, widened with their scale (here a float32 of its own buffer, the product rounded
 // once into the memory's type)
 fn init_shmem_src0(thread_id: u32, offset_m: u32, k_outer: u32) {
@@ -227,7 +236,7 @@ export const TFJS_SHAPE = { rows: 32, tokens: 32, threads: 64 };
 // writes the 4 tokens one float at a time with shape.add; workPerThread [4, 4], workgroupSize [8, 8, 1] and
 // tileInner 32 are TensorFlow.js's for large products (computeWorkgroupInfoForMatMul), and not transposed.
 export const tfjsTile = /* wgsl */ `
-struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
+${TILE_SHAPE}
 ${STEP}
 @group(0) @binding(0) var<storage, read> w: array<u32>;
 @group(0) @binding(1) var<storage, read> scales: array<f32>;
@@ -414,7 +423,7 @@ fn ternary_packed(codes: u32) -> vec4<u32> {
   return (bits + vec4<u32>(0x7f7f7f7fu)) ^ vec4<u32>(0x80808080u);
 }`;
 /** JavaScript's unpacking (the checks' answer): the int8 values of ternary codes (a Uint8Array, four weights a byte),
- * as llama2_numpy.unpack_ternary and src/runtime/forward/engine.js's weightAt read them */
+ * as llama2_numpy.unpack_ternary and src/runtime/forward/engine.ts's weightAt read them */
 export function ternaryValues(packed: ArrayLike<number>) {
   const out = new Int8Array(packed.length * 4);
   for (let i = 0; i < out.length; i++) out[i] = ((packed[i >> 2] >> (2 * (i & 3))) & 3) - 1;
@@ -458,12 +467,14 @@ fn SDP8AI(a1: vec4<u32>, b1: vec4<u32>, a2: vec4<u32>, b2: vec4<u32>, scale: f32
 const dp4aLines = (subgroup: boolean) => Array.from({ length: 16 }, (_, i) => `    lane_output${(i >> 2) + 1}[${i & 3}] += ` + (subgroup
   ? `SDP8AI(own_a0, subgroupShuffle(own_b0, ${i}u), own_a1, subgroupShuffle(own_b1, ${i}u), subgroupShuffle(own_scale_b, ${i}u) * own_scale_a);`
   : `SDP8AI(own_a0, tile_B[0][base_B + ${i}u], own_a1, tile_B[1][base_B + ${i}u], own_scale_a * scale_B[base_B + ${i}u]);`)).join("\n");
-// T232, ternary: the weights are PQ2_0's codes as the checkpoint holds them (TERNARY_PACKED below, and what is changed
-// for them there); the text without it is what it was, to the byte (deviceKey() hashes it: a device keeps the shader it
-// remembers)
-export const dp4a = (subgroups: boolean, ternary = false): string => /* wgsl */ `requires packed_4x8_integer_dot_product;
+// T232, weights "ternary": the weights are PQ2_0's codes as the checkpoint holds them (TERNARY_PACKED above, and what
+// is changed for them there). (T379.2: the packing by its name, as fused.ts's fusedDp4aMatVec takes it; a boolean
+// `ternary` until then.)
+export const dp4a = ({ subgroups, weights }: { subgroups: boolean; weights: Packing }): string => {
+  const ternary = weights === "ternary";
+  return /* wgsl */ `requires packed_4x8_integer_dot_product;
 ${subgroups ? "enable subgroups;\n" : ""}
-struct Shape { rows: u32, words: u32, perRow: u32, first: u32, xStride: u32, yStride: u32, add: u32, unused: u32 }
+${TILE_SHAPE}
 ${STEP}
 ${ternary ? "@group(0) @binding(0) var<storage, read> b: array<u32>;                  // the weights' codes, 16 of two bits to a u32"
     : "@group(0) @binding(0) var<storage, read> b: array<vec4<u32>>;        // the weights, 16 int8 to a vec4<u32>"}
@@ -584,11 +595,12 @@ ${dp4aLines(false)}`}
     }
   }
 }`;
+};
 
 // ---- T147: the tiled shaders a device may run a prompt's matrices with (T146's), for the model's GPU worker, which
 // checks each against JavaScript on a small matrix (tiledOff) and times the right ones on the model's own weights, and
 // takes the fastest: which is fastest differs from GPU to GPU (T146), and only the device can say. none: why a shape
-// is not made here (the device's threads or workgroup memory), as the benchmark says it (src/runtime/benchmark/gpu.js).
+// is not made here (the device's threads or workgroup memory), as the benchmark says it (src/runtime/benchmark/gpu.ts).
 // T232, ternary: the forms of a model of ternary weights, ORT's DP4A alone with the weights unpacked from their codes
 // (dp4a's ternary: the float forms would widen every weight to a float); none where there is no packed int8 dot
 export const promptForms = ({ half, subgroups, packed, memory, threads, ternary = false }: DeviceForms): PromptForm[] => {
@@ -597,7 +609,7 @@ export const promptForms = ({ half, subgroups, packed, memory, threads, ternary 
   if (ternary) {
     const none = packed ? past(DP4A_SHAPE, 4608) : "no packed int8 dot here";
     return [false, ...(subgroups ? [true] : [])].map((lanes) => ({ name: `ORT DP4A 64×64${lanes ? ", subgroups" : ""}, ternary`,
-      tile: DP4A_SHAPE, packed: true, half: false, ternary: true, code: dp4a(lanes, true), none }));
+      tile: DP4A_SHAPE, packed: true, half: false, ternary: true, code: dp4a({ subgroups: lanes, weights: "ternary" }), none }));
   }
   const forms: PromptForm[] = REG_TILES.map((tile) => {
     const shape = regTileShape(tile);
@@ -606,8 +618,8 @@ export const promptForms = ({ half, subgroups, packed, memory, threads, ternary 
   });
   forms.push({ name: "TF.js tiles 32×32, vec4", tile: TFJS_SHAPE, packed: false, half: false, code: tfjsTile, none: past(TFJS_SHAPE, 2 * 32 * 32 * 4) });
   const dp4aNone = packed ? past(DP4A_SHAPE, 4608) : "no packed int8 dot here";
-  forms.push({ name: "ORT DP4A 64×64", tile: DP4A_SHAPE, packed: true, half: false, code: dp4a(false), none: dp4aNone });
-  if (subgroups) forms.push({ name: "ORT DP4A 64×64, subgroups", tile: DP4A_SHAPE, packed: true, half: false, code: dp4a(true), none: dp4aNone });
+  forms.push({ name: "ORT DP4A 64×64", tile: DP4A_SHAPE, packed: true, half: false, code: dp4a({ subgroups: false, weights: "int8" }), none: dp4aNone });
+  if (subgroups) forms.push({ name: "ORT DP4A 64×64, subgroups", tile: DP4A_SHAPE, packed: true, half: false, code: dp4a({ subgroups: true, weights: "int8" }), none: dp4aNone });
   return forms;
 };
 
@@ -628,7 +640,7 @@ export function quantizedLikeCpu(x: ArrayLike<number>) {
 }
 
 // How far a tiled shader's products (got: y after the product twice, the second added: 2 × W·x) are from
-// JavaScript's, the check of T146's review (src/runtime/benchmark/gpu/check.js's checkTiled): w, int8 [rows][n] with the float32
+// JavaScript's, the check of T146's review (src/runtime/benchmark/gpu/check.ts's checkTiled): w, int8 [rows][n] with the float32
 // scales s [rows][n / 32]; x, the tokens xStride apart; got, yStride apart. A packed form multiplies what the GPU
 // quantized (xq, xs, xStride apart), held to JavaScript's quantize_x first: a scale may differ in its last bits (WGSL's
 // division is not rounded exactly) and a value then by 1, a wrong index by far more. f32 forms: no more than 1e-4 of
@@ -678,4 +690,4 @@ export function tiledOff({ w, s, x, got, xq, xs, rows, n, tokens, xStride, yStri
   return { worst, wrong, far, apart, values };
 }
 
-export { TERNARY_PACKED, sdp8ai };
+export { TERNARY_PACKED, sdp8ai, GET_BYTE_I32 };

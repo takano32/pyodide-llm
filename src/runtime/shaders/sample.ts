@@ -71,7 +71,7 @@ const WINDOW = ${REPETITION_WINDOW}u;
 const PIVOTS = 3u;
 // the bits of 1.0: the most probable token's probability is exp(0), and none is larger
 const ONE_BITS = 0x3F800000u;
-// kernel.ts's floor of the nucleus: ln 1e7
+// the floor of the nucleus, the CPU's sample kernel's: ln 1e7
 const NUCLEUS_FLOOR = 16.118095;
 // the largest float below 1: a random number of 1.0 (a float64 just under 1 rounded) would pass every sum
 const BELOW_ONE = 0.99999994;
@@ -391,7 +391,7 @@ fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
         return;
     }
 
-    // softmax's exp(value - max), at the temperature; with a nucleus only over the floor (kernel.ts)
+    // softmax's exp(value - max), at the temperature; with a nucleus only over the floor (the CPU's sample kernel's)
     let nucleus = settings.topp > 0.0 && settings.topp < 1.0;
     let inverse = 1.0 / settings.temperature;
     let lowest = select(-3.4e38, best - settings.temperature * NUCLEUS_FLOOR, nucleus);

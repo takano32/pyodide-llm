@@ -4,6 +4,7 @@
 // A part of src/runtime/shaders.ts, which is the window: everything outside src/runtime/shaders/ imports that file and no part.
 // The statements are those of the one file shaders.js was, as they were. A part takes its neighbours' names by static imports (T367.3:
 // a bundler links them).
+import { GET_BYTE_I32 } from "./prompt.ts";
 
 // ---- T151: a run of generated tokens on the GPU, the ids read back once for all of them. Each token of the run is
 // one compute pass: EMBED (the token's row of the embedding into the residual stream), the layers (fusedMatVec, T150),
@@ -101,7 +102,7 @@ const STATE = /* wgsl */ `struct State {
   stopped: u32,   // 1 once a stop token was sampled, or a step was refused (not_finite): nothing changes after
   recent: array<u32, ${REPETITION_WINDOW}>,
 }`;
-/** T219: the State's word that says a step was refused (read back with the ids: gpu.js, forward.js) */
+/** T219: the State's word that says a step was refused (read back with the ids: gpu/tokens.ts, forward/gpuside.ts) */
 export const STATE_NOT_FINITE = 3;
 export const STATE_BYTES = 32 + 4 * REPETITION_WINDOW;
 /** T152's review (T160): float32 values into float16 bits, rounded to the nearest (ties to even), as the GPU's own keys
@@ -180,9 +181,7 @@ ${STATE}
 @group(0) @binding(3) var<storage, read_write> dst: array<f32>;
 @group(0) @binding(4) var<uniform> shape: vec4<u32>;
 
-fn get_byte_i32(value: u32, index: u32) -> i32 {
-    return bitcast<i32>(((value >> (index * 8)) & 0xFF) << 24) >> 24;
-}
+${GET_BYTE_I32}
 
 @compute @workgroup_size(256)
 fn main(@builtin(local_invocation_id) lid: vec3<u32>) {
@@ -212,9 +211,7 @@ export const EMBED_ROWS = /* wgsl */ `
 @group(0) @binding(3) var<storage, read_write> dst: array<f32>;
 @group(0) @binding(4) var<uniform> shape: vec4<u32>;
 
-fn get_byte_i32(value: u32, index: u32) -> i32 {
-    return bitcast<i32>(((value >> (index * 8)) & 0xFF) << 24) >> 24;
-}
+${GET_BYTE_I32}
 
 @compute @workgroup_size(256)
 fn main(@builtin(local_invocation_id) lid: vec3<u32>, @builtin(workgroup_id) wid: vec3<u32>) {
