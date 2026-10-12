@@ -16,11 +16,12 @@ import urllib.request
 CHUNK = 8 << 20
 
 
-def download(url, target, tries=3, timeout=60, optional=False):
+def download(url, target, tries=3, timeout=60, optional=False, said=None):
     """The file at url as target (a Path), fetched unless it is there, through target + ".part" (a file that is there
     is a whole one). A download that stopped short of its Content-Length, a connection that broke and a server's own
-    failure (5xx) are asked for again, tries times in all; what the server refuses (4xx: a file the repository does
-    not have) is not, and raises urllib.error.HTTPError, or returns None where the file is optional."""
+    failure (5xx) are asked for again, tries times in all (said(error): told of each try that failed but the last);
+    what the server refuses (4xx: a file the repository does not have) is not, and raises urllib.error.HTTPError, or
+    returns None where the file is optional."""
     if target.exists():
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -40,9 +41,13 @@ def download(url, target, tries=3, timeout=60, optional=False):
                 return None
             if error.code < 500 or attempt == tries - 1:
                 raise  # (T192: a split model's 404 is how its index is found)
-        except (OSError, http.client.HTTPException):  # (a chunked body that ends early: IncompleteRead is no OSError)
+            if said:
+                said(error)
+        except (OSError, http.client.HTTPException) as error:  # (a chunked body that ends early: IncompleteRead is no OSError)
             if attempt == tries - 1:
                 raise
+            if said:
+                said(error)
     partial.rename(target)
     return target
 

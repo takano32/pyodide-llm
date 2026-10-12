@@ -74,33 +74,8 @@ jobs:
         run: |
           python3 -m pip install --quiet numpy
           sudo mkdir -p /mnt/gguf && sudo chown "$USER" /mnt/gguf
-          python3 - "$ORIGINAL" "$GGUF" /mnt/gguf <<'EOF'
-          import json, os, sys, urllib.error, urllib.request
-          (repo, rev), (grepo, grest), out = sys.argv[1].split("@"), sys.argv[2].split("@"), sys.argv[3]
-          grev, gfile = grest.split("/", 1)
-          def get(url, name):
-              for attempt in range(4):  # (a connection that closes early gives a short file and no error: T307)
-                  with urllib.request.urlopen(url, timeout=300) as response, open(os.path.join(out, name), "wb") as f:
-                      while block := response.read(8 << 20):
-                          f.write(block)
-                      whole, got = response.headers.get("Content-Length"), f.tell()
-                  if whole is None or int(whole) == got:
-                      return
-                  print(name, "came short:", got, "of", whole)
-              raise SystemExit(f"{name} came short four times")
-          at = lambda name: f"https://huggingface.co/{repo}/resolve/{rev}/{name}"
-          for name in ("config.json", "tokenizer.json"):
-              get(at(name), name)
-          try:
-              get(at("model.safetensors"), "model.safetensors")
-          except urllib.error.HTTPError:
-              get(at("model.safetensors.index.json"), "model.safetensors.index.json")
-              index = json.load(open(os.path.join(out, "model.safetensors.index.json")))
-              for shard in sorted(set(index["weight_map"].values())):
-                  get(at(shard), shard)
-          get(f"https://huggingface.co/{grepo}/resolve/{grev}/{gfile}", "model.gguf")
-          print(sorted(os.listdir(out)))
-          EOF
+          # (T357.6: tests/gguf_fetch.py, by tests/fetching.py: each file held to its length and asked for again, T307)
+          python3 tests/gguf_fetch.py "$ORIGINAL" "$GGUF" /mnt/gguf
           echo "### $ID: $GGUF" >> "$GITHUB_STEP_SUMMARY"
           status=0
           python3 tests/gguf_check.py tensors /mnt/gguf/model.gguf /mnt/gguf > check.md || status=$?
@@ -182,37 +157,8 @@ jobs:
         run: |
           python3 -m pip install --quiet numpy
           sudo mkdir -p /mnt/gguf && sudo chown "$USER" /mnt/gguf
-          python3 - "$ORIGINAL" "$GGUF" /mnt/gguf <<'EOF'
-          import json, os, sys, urllib.error, urllib.request
-          (repo, rev), (grepo, grest), out = sys.argv[1].split("@"), sys.argv[2].split("@"), sys.argv[3]
-          grev, gfile = grest.split("/", 1)
-          def get(url, name):
-              for attempt in range(4):  # (a connection that closes early gives a short file and no error: T307)
-                  with urllib.request.urlopen(url, timeout=300) as response, open(os.path.join(out, name), "wb") as f:
-                      while block := response.read(8 << 20):
-                          f.write(block)
-                      whole, got = response.headers.get("Content-Length"), f.tell()
-                  if whole is None or int(whole) == got:
-                      return
-                  print(name, "came short:", got, "of", whole)
-              raise SystemExit(f"{name} came short four times")
-          at = lambda name: f"https://huggingface.co/{repo}/resolve/{rev}/{name}"
-          get(at("config.json"), "config.json")
-          for name in ("tokenizer.json", "tokenizer.model"):  # whichever the original has: each is compared
-              try:
-                  get(at(name), name)
-              except urllib.error.HTTPError as error:
-                  print(name, error.code)
-          try:
-              get(at("model.safetensors"), "model.safetensors")
-          except urllib.error.HTTPError:
-              get(at("model.safetensors.index.json"), "model.safetensors.index.json")
-              index = json.load(open(os.path.join(out, "model.safetensors.index.json")))
-              for shard in sorted(set(index["weight_map"].values())):
-                  get(at(shard), shard)
-          get(f"https://huggingface.co/{grepo}/resolve/{grev}/{gfile}", "model.gguf")
-          print(sorted(os.listdir(out)))
-          EOF
+          # (T357.6: tests/gguf_fetch.py, by tests/fetching.py; tokenizer.json or tokenizer.model, whichever the original has)
+          python3 tests/gguf_fetch.py "$ORIGINAL" "$GGUF" /mnt/gguf --either-tokenizer
           df -h /mnt
           echo "### $ID: $GGUF" >> "$GITHUB_STEP_SUMMARY"
           status=0

@@ -1,12 +1,13 @@
-// tests/fetching-check.mjs (T357.6): the Node tools' one place for fetching (tests/fetching.mjs), by itself, and a
-// tool that goes through it and that no other light check runs: the text of Wikipedia (tests/wikipedia.mjs). Nothing
-// leaves this machine: the server is one of node:http on 127.0.0.1, which can do what a stand-in of fetch cannot (close
-// a connection before the length it promised, cut a chunked body, never answer), and tests/fakes/fetch.mjs is the
-// network where the answer itself is wrong in a way no real server of node:http sends (a body that ends in order and
-// short).
+// tests/fetching-check.mjs (T357.6): the Node tools' one place for fetching (tests/fetching.mjs), by itself, and the
+// tools that go through it or through Python's (tests/fetching.py) and that no other light check runs: the text of
+// Wikipedia (tests/wikipedia.mjs) and the files gguf.yml compares (tests/gguf_fetch.py). Nothing leaves this machine:
+// the server is one of node:http on 127.0.0.1, which can do what a stand-in of fetch cannot (close a connection
+// before the length it promised, cut a chunked body, never answer), and tests/fakes/fetch.mjs is the network where
+// the answer itself is wrong in a way no real server of node:http sends (a body that ends in order and short).
 //
-//   node tests/fetching-check.mjs        (Node only, under a second)
+//   node tests/fetching-check.mjs        (Node, and python for the last part: PYTHON=.venv/bin/python; a second or so)
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
@@ -250,6 +251,72 @@ const folder = (name) => fs.existsSync(placed(name)) ? fs.readdirSync(placed(nam
     console.error = said;
   }
   ok("Wikipedia's text is fetched by the same place, five tries 10 s further apart each, and says each one that failed");
+}
+
+// ---- tests/gguf_fetch.py: what gguf.yml fetches before tests/gguf_check.py, by Python's download() (the real urllib,
+// whose read() returns a body that closed short without a word: the server's `cut` is that)
+{
+  const python = process.env.PYTHON ?? "python";
+  const run = (...args) => new Promise((resolve) => {
+    const child = spawn(python, [path.join(root, "tests/gguf_fetch.py"), ...args], { env: { ...process.env, HF_ENDPOINT: base } });
+    let out = "", err = "";
+    child.stdout.on("data", (piece) => { out += piece; });
+    child.stderr.on("data", (piece) => { err += piece; });
+    child.on("close", (code) => resolve({ code, out, err }));
+  });
+  const at = (repo, revision, name) => `/${repo}/resolve/${revision}/${name}`;
+  const GGUF = "g".repeat(3000), WEIGHTS = "w".repeat(2000);
+  // stage 1: one safetensors, tokenizer.json; the GGUF closes short once, and its repository fails once
+  serving({
+    [at("owner/model", "abc", "config.json")]: [{ body: "{}" }],
+    [at("owner/model", "abc", "tokenizer.json")]: [{ status: 502 }, { body: "{\"vocabulary\": 1}" }],
+    [at("owner/model", "abc", "model.safetensors")]: [{ body: WEIGHTS }],
+    [at("other/model-GGUF", "def", "folder/model-Q8_0.gguf")]: [{ body: GGUF, cut: 1000 }, { body: GGUF }],
+  });
+  let ran = await run("owner/model@abc", "other/model-GGUF@def/folder/model-Q8_0.gguf", placed("gguf-one"));
+  assert.equal(ran.code, 0, ran.err);
+  assert.deepEqual(folder("gguf-one"), ["config.json", "model.gguf", "model.safetensors", "tokenizer.json"]);
+  assert.equal(fs.readFileSync(placed("gguf-one/model.gguf"), "latin1"), GGUF, "the GGUF whole, under the name the check reads");
+  assert.equal(fs.readFileSync(placed("gguf-one/model.safetensors"), "latin1"), WEIGHTS);
+  assert.deepEqual(asked.map((one) => one.path.split("/").pop()), ["config.json", "tokenizer.json", "tokenizer.json", "model.safetensors", "model-Q8_0.gguf", "model-Q8_0.gguf"]);
+  const lines = ran.out.trim().split("\n");
+  assert.equal(lines.length, 3, ran.out);
+  assert.match(lines[0], /^tokenizer\.json is asked for again: HTTP Error 502/);
+  assert.match(lines[1], /^model\.gguf is asked for again: .*1,000 of 3,000 bytes came$/, "a short download is a line of the log");
+  assert.equal(lines[2], "['config.json', 'model.gguf', 'model.safetensors', 'tokenizer.json']");
+  ok("gguf_fetch.py fetches an original of one file and a GGUF, each whole, and says each try that failed");
+
+  // stage 2: the shards an index names, and whichever tokenizer there is
+  serving({
+    [at("owner/model", "abc", "config.json")]: [{ body: "{}" }],
+    [at("owner/model", "abc", "tokenizer.model")]: [{ body: "pieces" }],
+    [at("owner/model", "abc", "model.safetensors.index.json")]: [{ body: JSON.stringify({ weight_map: { a: "model-00002-of-00002.safetensors", b: "model-00001-of-00002.safetensors", c: "model-00002-of-00002.safetensors" } }) }],
+    [at("owner/model", "abc", "model-00001-of-00002.safetensors")]: [{ body: "first" }],
+    [at("owner/model", "abc", "model-00002-of-00002.safetensors")]: [{ body: "second" }],
+    [at("other/model-GGUF", "def", "model.gguf")]: [{ body: GGUF }],
+  });
+  ran = await run("owner/model@abc", "other/model-GGUF@def/model.gguf", placed("gguf-two"), "--either-tokenizer");
+  assert.equal(ran.code, 0, ran.err);
+  assert.deepEqual(folder("gguf-two"), ["config.json", "model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors", "model.gguf", "model.safetensors.index.json", "tokenizer.model"]);
+  assert.deepEqual(asked.map((one) => one.path.split("/").pop()), ["config.json", "tokenizer.json", "tokenizer.model", "model.safetensors", "model.safetensors.index.json",
+    "model-00001-of-00002.safetensors", "model-00002-of-00002.safetensors", "model.gguf"], "each shard once, in order; what is not there is asked once");
+  assert.equal(ran.out.trim().split("\n")[0], "tokenizer.json 404", "the tokenizer the original does not have is a line");
+  ok("gguf_fetch.py fetches the shards an index names, and whichever tokenizer the original has");
+
+  // what must be there and is not; a GGUF that never comes whole
+  ran = await run("owner/model@abc", "other/model-GGUF@def/model.gguf", placed("gguf-three"));
+  assert.notEqual(ran.code, 0, "without --either-tokenizer a tokenizer.json must be there");
+  assert.match(ran.err, /HTTP Error 404/);
+  serving({ ...answers, [at("other/model-GGUF", "def", "model.gguf")]: [{ body: GGUF, cut: 1000 }] });
+  ran = await run("owner/model@abc", "other/model-GGUF@def/model.gguf", placed("gguf-four"), "--either-tokenizer");
+  assert.notEqual(ran.code, 0);
+  assert.equal(asked.filter((one) => one.path.endsWith("model.gguf")).length, 4, "four tries (T307)");
+  assert.ok(!fs.existsSync(placed("gguf-four/model.gguf")), "and no model.gguf for the check to read");
+  assert.match(ran.err, /1,000 of 3,000 bytes came/);
+  ran = await run("owner/model@abc");
+  assert.notEqual(ran.code, 0);
+  assert.match(ran.err, /^usage: gguf_fetch\.py /);
+  ok("gguf_fetch.py fails where a file that must be there is not, and where one never comes whole");
 }
 
 for (const socket of sockets) socket.destroy();
