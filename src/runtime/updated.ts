@@ -18,11 +18,11 @@
 //   is right.) A HEAD is never answered from the service worker's copies (public/coi.js keeps GETs only), and
 //   no-store keeps the browser's own cache out of it. It is asked once, after a failure, never before one.
 
+import { Failure, kindOf } from "./failure.ts";
+
 // (T368.7: the types, each said by a // line: a /** */ above a declaration that is erased would be left in the bundle)
 // What is asked instead of the browser's own fetch and address: the tests', and nothing of the site hands one
 type Probe = { fetch?: (address: string, init: RequestInit) => Promise<{ status: number }>; here?: { origin?: string } | undefined; seconds?: number };
-// The error that says so: an Error by name, with the mark that isUpdated() reads
-type Updated = Error & { updated: boolean };
 // Of a worker's `error` event, what is read: a script that threw says its message
 type Failed = { message?: string } | null | undefined;
 
@@ -33,9 +33,10 @@ export const UPDATED = "The site was updated while this page was open. Reload th
  * path (worker/outdated.js): the owner's too, as it is, small letters and no full stop. */
 export const SLOWER = "the site was updated: reload for full speed";
 
-/** The error that says so: an Error by name, so that whatever reports an error by its message says the sentence alone. */
-export const updated = (cause?: unknown): Updated => Object.assign(new Error(UPDATED, { cause }), { updated: true });
-export const isUpdated = (error: unknown): boolean => (error as { updated?: unknown } | null | undefined)?.updated === true;
+/** The error that says so: a Failure of the kind "updated" (T380.1), an Error by name, so that whatever reports an error
+ * by its message says the sentence alone. */
+export const updated = (cause?: unknown): Failure => new Failure("updated", UPDATED, { cause });
+export const isUpdated = (error: unknown): boolean => kindOf(error) === "updated";
 /** What is said of a caught value: the sentence alone where it is updated()'s, else what the caller says of it. */
 export const saidOf = (error: unknown, otherwise: string): string => (isUpdated(error) ? UPDATED : otherwise);
 

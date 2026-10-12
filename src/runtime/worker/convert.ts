@@ -17,7 +17,7 @@ import { named } from "../updated.ts";
 // (the kept models' module as a type; it is imported when a conversion first needs it, in convert())
 import type * as Kept from "../kept.ts";
 import type { Keeper, Weights } from "./weights.ts";
-import type { Thrown } from "./told.ts";
+import type { Thrown } from "../failure.ts";
 import type { Hf, Listed, OfHuggingFace, Progress, Status } from "../contracts/messages.ts";
 import type { Progress as Arriving } from "../contracts/conduct.ts";
 import type { Bytes, Conduct, Conversion, ConverterWindow, Dict, Options, Proxy } from "../contracts/python.ts";

@@ -11,7 +11,7 @@ import { sized, fetchRange } from "./ranges.ts";
 import { dropStaleParts, download, readFile, readUrl, HEADER_BYTES, headerInts } from "./sources.ts";
 import { convert } from "./convert.ts";
 import type { Sized } from "./sources.ts";
-import type { Thrown } from "./told.ts";
+import type { Thrown } from "../failure.ts";
 import type { GpuChose, GpuSaid, Listed, OfTwoFiles, OfTwoUrls, Ready, Status, Threads, ThreadsCompared } from "../contracts/messages.ts";
 
 // The legacy format carries no metadata, but its header fixes the size of a float32, a float16 and an int8 file.

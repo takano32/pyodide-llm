@@ -453,7 +453,7 @@ const ok = (line) => {
     const began = clock.now();
     const failed = await failure(Promise.race([context.resolvePyodideVersion(""),
       sleep(120000).then(() => { throw new Error("still waiting for the version after 120 s"); })]));
-    assert.equal(failed.error.pyodide, true, "the page would not try again without the service worker");
+    assert.equal(failed.error.kind, "runtime", "the page would not try again without the service worker");
     assert.match(failed.error.message, /did not answer in 30 seconds/);
     assert.ok(failed.at - began >= quiet * 1000 && failed.at - began < (quiet + 10) * 1000,
       `the version was given up after ${(failed.at - began) / 1000} s, not ${quiet} to ${quiet + 10}`);
@@ -464,7 +464,7 @@ const ok = (line) => {
     const began = clock.now();
     const failed = await failure(context.resolvePyodideVersion(""));
     assert.equal(failed?.error.message, "Failed to fetch");
-    assert.ok(!failed.error.pyodide && failed.at - began < 1000);
+    assert.ok(failed.error.kind !== "runtime" && failed.at - began < 1000);
   }
   fresh(() => new Response(JSON.stringify({ version: "314.0.7" }), { status: 200 }));
   assert.equal(await context.resolvePyodideVersion(""), "314.0.7");
@@ -509,7 +509,7 @@ const ok = (line) => {
     const began = clock.now();
     const failed = await failure(steps({ ...answers, stall: true }));
     assert.match(failed?.error.message ?? "", /"NumPy" got nothing from the network for 30 seconds/, name);
-    assert.equal(failed.error.pyodide, true);
+    assert.equal(failed.error.kind, "runtime");
     assert.ok(failed.at - began < (2 * quiet + 20) * 1000, `${name}: a stopped NumPy was given up after ${(failed.at - began) / 1000} s`);
   }
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");
@@ -855,7 +855,7 @@ const ok = (line) => {
   const ended = await failure(run("pyodideSteps")("314.0.7", async () => ({ loadPyodide: () => Promise.reject(new ExitStatus(1)) })));
   assert.equal(ended?.error.message,
     'Pyodide 314.0.7: "the runtime" ended as it started (ExitStatus: Program terminated with exit(1)): one of its files may not have arrived');
-  assert.equal(ended.error.pyodide, true);
+  assert.equal(ended.error.kind, "runtime");
   const broke = await failure(run("pyodideSteps")("314.0.7", async () => { throw new TypeError("Importing a module script failed."); }));
   assert.equal(String(broke?.error), "TypeError: Importing a module script failed.");
   assert.equal(context.fetch, fetchStandIn, "the steps left the counting fetch behind");

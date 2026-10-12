@@ -5,7 +5,7 @@
 import { hfPartBytes, hfConnections } from "./runtime.ts";
 import { breathe } from "./clock.ts";
 import { weightsRoom } from "./weights.ts";
-import type { Thrown } from "./told.ts";
+import { Failure, failureOf } from "../failure.ts";
 
 // T129 (3): an AbortController of one download or fetch in order, which also stops where signal (the load's) does.
 // A part that failed for good ends the download: the other connections stop with it rather than fetching the rest of
@@ -82,11 +82,11 @@ async function bodyBetween(res: Response, from: number, to: number, arriving?: (
 // arriving(count): told of every stretch of the body as it comes, for a progress line before a whole part is in
 // A fetch that huggingface.co refused, in the visitor's words (T119). The status alone does not tell: a gated
 // repository and one that is not there (or private) both answer 401; X-Error-Code (which CORS shows) says which.
-// Such an answer is the same the next time: it is not asked again (status says so).
+// Such an answer is the same the next time: it is not asked again (the failure says so: again).
 export function refused(url: string, res: Response) {
   const [, repository, revision, file] = /^https:\/\/huggingface\.co\/(.+?)\/resolve\/([^/]+)\/(.+)$/.exec(url) ?? [];
   const code = res.headers.get("X-Error-Code");
-  const error: Error & { status?: number } = new Error(!repository ? `Could not fetch ${url}: ${res.status}`
+  return new Failure("refused", !repository ? `Could not fetch ${url}: ${res.status}`
     : code === "GatedRepo" ? `${repository} is gated on huggingface.co: its owner lets it be fetched only after a login and an accepted license, which this page cannot do. A copy of it that someone else published openly may work.`
     : code === "RevisionNotFound" ? `${repository} has no revision ${revision} on huggingface.co.`
     : code === "EntryNotFound" ? `${repository} has no ${file} at ${revision} on huggingface.co` +
@@ -95,9 +95,9 @@ export function refused(url: string, res: Response) {
     : res.status === 401 || res.status === 404 ? `huggingface.co has no public repository ${repository}: check its name.`
     // T129 (5): its limit on the requests of one address, which another try at once only adds to
     : res.status === 429 ? `huggingface.co asks this address to make fewer requests for a while. Wait a few minutes, then choose ${repository} again.`
-    : `huggingface.co answered ${res.status} for ${file} of ${repository}.`);
-  error.status = res.status;
-  return error;
+    : `huggingface.co answered ${res.status} for ${file} of ${repository}.`,
+    // (T129 (5): the rest of 4xx is answered the same the next time; 408 and 5xx not)
+    { status: res.status, again: res.status < 400 || worthRetrying(res.status) });
 }
 
 export async function fetchRange(url: string, begin: number, end: number, signal: AbortSignal, arriving?: (count: number) => void) {
@@ -122,8 +122,8 @@ export async function fetchRange(url: string, begin: number, end: number, signal
       return { bytes, total };
     } catch (error) {
       if (counted) arriving!(-counted);
-      // (T129 (5): the rest of 4xx is answered the same the next time; 408 and 5xx not)
-      if (signal.aborted || attempt === 2 || ((error as Thrown).status! >= 400 && !worthRetrying((error as Thrown).status!))) {
+      // (a refusal that says another try is answered the same: refused())
+      if (signal.aborted || attempt === 2 || failureOf(error).again === false) {
         throw error;
       }
     }

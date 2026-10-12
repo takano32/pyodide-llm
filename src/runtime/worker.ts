@@ -38,11 +38,10 @@ import { pyodide, runtimeAsked } from "./worker/runtime.ts";
 import { loadAsked, benching, roundsBegan, roundBegan, roundsEnded } from "./worker/request.ts";
 import { llama, engineNow } from "./worker/loaded.ts";
 import { weightsBytes, gpuOnlyLost, onCpuFromNow } from "./worker/weights.ts";
-import { told } from "./worker/told.ts";
+import { failureOf } from "./failure.ts";
 import { since, breathe } from "./worker/clock.ts";
 import { load, threadsNow, heapBytes } from "./worker/load.ts";
 import { timedGeneration, timedPaths } from "./worker/timing.ts";
-import type { Thrown } from "./worker/told.ts";
 import type { Bench, BenchRow, Done, Failed, Paths, Token, ToWorker } from "./contracts/messages.ts";
 
 // What this file alone holds (T378.3: they were fields of the object all the modules shared):
@@ -181,25 +180,13 @@ self.onmessage = async ({ data }: MessageEvent<ToWorker>) => {
   } catch (err) {
     // a cancelled load has nothing to report: the one that replaced it speaks for itself
     if (!signal?.aborted) {
-      // A JavaScript error thrown inside a call from Python comes back as a PythonError of type JsException, its own
-      // name and message on the last line: the memory of the weights, which the converter opens through the sink
-      // (weightsBuffer: Safari's refusal of a model past 4 GB, a memory the browser will not make or grow), and
-      // forward.ts growing the keys and values. It is told as itself (the review of T133: it was a traceback)
-      const [, name = (err as Thrown)?.name, text = (err as Thrown)?.message] = (err as Thrown)?.type === "JsException"
-        ? /^pyodide\.ffi\.JsException: (\w+): (.*)$/.exec((err as Thrown).message!.trim().split("\n").pop()!) ?? [] : [];
-      // a ValueError of the engine is a message for the reader (wrong file, prompt too long): no traceback
-      const message = (err as Thrown)?.type === "ValueError" ? (err as Thrown).message!.trim().split("\n").pop()!.replace(/^ValueError: /, "")
-        : name === "Error" ? text : told(err);
-      // T90: the memory ran out, in Python (MemoryError: malloc could not grow the WebAssembly memory) or in
-      // JavaScript (RangeError: an ArrayBuffer or WebAssembly.Memory.grow was refused). The page says so in words
-      // a visitor understands, with how much memory the page had when it happened.
-      // (V8 also raises RangeError for a stack overflow, which is not this; Firefox says InternalError: out of memory)
-      const memory = (err as Thrown)?.type === "MemoryError" || name === "InternalError" ||
-        (name === "RangeError" && !/call stack/i.test(text ?? ""));
+      // what it is and what is said of it, whatever was thrown (failure.ts reads them all: a sentence for the reader,
+      // the memory that ran out, T90, an error of this site's own that crossed Python, a runtime that did not load)
+      const failure = failureOf(err);
       // where it happened goes to the page's console (T96): tests/e2e.mjs keeps the console of a failed run
-      postMessage({ type: "error", load: data.load, message: memory ? String(text ?? err).trim().split("\n").pop()! : message!,
-                    stack: String((err as Thrown)?.stack ?? told(err)), weights: weightsBytes(), pyodide: Boolean((err as Thrown)?.pyodide),
-                    ...(memory && { memory: true, heap: heapBytes() }) } satisfies Failed);
+      postMessage({ type: "error", load: data.load, message: failure.message,
+                    stack: String(failure.stack), weights: weightsBytes(), pyodide: failure.kind === "runtime",
+                    ...(failure.kind === "memory" && { memory: true, heap: heapBytes() }) } satisfies Failed);
     }
   }
 };

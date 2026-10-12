@@ -10,6 +10,7 @@
 // ENGINE, which is what the key hashes: a module compiles ENGINE.<name> and imports no shader of a part.)
 import { halvesOf } from "../shaders/run.ts";
 import { deviceKey } from "../shaders/key.ts";
+import { Failure, kindOf } from "../failure.ts";
 import type { FromGpu, Matrix, Opened, Remembered, Started } from "../contracts/gpu/protocol.ts";
 import type { Weights } from "./weights.ts";
 import type { Block } from "./block.ts";
@@ -55,7 +56,7 @@ type Bound = Whole | GPUBufferBinding;
 // a dispatch: [pipeline, bind group, x, y]
 type Pass = [GPUComputePipeline, GPUBindGroup, number, number];
 // what is caught, as it is read: an Error's message, and within()'s late
-type Thrown = { message?: string; late?: boolean } | null | undefined;
+type Thrown = { message?: string } | null | undefined;
 
 // GPUBufferUsage's values (the name itself is missing where there is no WebGPU)
 const STORAGE = 0x80, COPY_DST = 0x8, COPY_SRC = 0x4, MAP_READ = 0x1, UNIFORM = 0x40;
@@ -112,10 +113,13 @@ function held(m: Model, buffers: GPUBuffer[]) {
 // CPU), and says { type: "progress" } after every step meanwhile (forward.ts gives up a worker that says nothing for
 // longer than this: one the browser ended)
 const STEP_MS = 180000;
+// (T380.1: a step past its time is a Failure of the kind "late": whoever tries one shader after another asks isLate()
+// of what it caught, and throws that on: it is not a shader that is wrong, it ends the whole attempt)
+const isLate = (error: unknown) => kindOf(error) === "late";
 function within<T>(promise: Promise<T>, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   const late = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(Object.assign(new Error(`${what} took more than ${STEP_MS / 1000} s`), { late: true })), STEP_MS);
+    timer = setTimeout(() => reject(new Failure("late", `${what} took more than ${STEP_MS / 1000} s`)), STEP_MS);
   });
   return Promise.race([promise, late]).finally(() => {
     clearTimeout(timer);
@@ -261,6 +265,6 @@ function dispatch(pass: GPUComputePassEncoder, pipeline: GPUComputePipeline, gro
   pass.dispatchWorkgroups(x, y, z);
 }
 
-export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, openDevice,
+export { STORAGE, COPY_DST, COPY_SRC, MAP_READ, UNIFORM, CHUNK, rowBytes, turnedAt, model, stopping, lost, stopAsked, handed, held, within, isLate, openDevice,
   describe, unusable, end, buffer, uniform, copyIn, narrowIn, readBack, validated, pipelineOf, bind, dispatch };
 export type { Model, Bound, Whole, Pass, Thrown, Opening };

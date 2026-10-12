@@ -1,7 +1,7 @@
 // The forms of a token's layer checked on the model's own weights against JavaScript (T152), timed and chosen.
 // (T352: a module of the model's GPU worker, gpu.ts, which a bundler links it into: T367.3)
 
-import { COPY_DST, MAP_READ, rowBytes, turnedAt, stopping, within, buffer, readBack, validated, pipelineOf } from "./device.ts";
+import { COPY_DST, MAP_READ, rowBytes, turnedAt, stopping, within, isLate, buffer, readBack, validated, pipelineOf } from "./device.ts";
 import { tablesOf } from "./weights.ts";
 import { halfToFloat } from "./forms.ts";
 import { roomFor, BLOCK_ROUNDS } from "./block.ts";
@@ -78,7 +78,7 @@ async function choose(m: Model) {
       if (wrong) tried.push({ name: form.name, none: `wrong: ${wrong}` });
       else right.push(form);
     } catch (error) {
-      if ((error as Thrown)?.late) throw error;
+      if (isLate(error)) throw error;
       tried.push({ name: form.name, none: String((error as Thrown)?.message ?? error) });
     }
     if (stopping) return;

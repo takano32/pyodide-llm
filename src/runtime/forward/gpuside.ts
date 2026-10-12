@@ -623,7 +623,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
    * did not take): the GPU's side is lost (the worker loads the model again on the CPU), and this is the error to throw */
   function notHere() {
     if (!directLost) stopGpu("the GPU did not take a block or a step");
-    return Object.assign(new Error(`The GPU stopped (${directLost}), and this model's weights were on it alone`), { directLost: true });
+    return new Error(`The GPU stopped (${directLost}), and this model's weights were on it alone`);
   }
   /** T152: a token is about to run on the CPU. Whether it is a step to time against the GPU's (one that makes logits,
    * where the GPU takes steps): the caller times it then and says cpuStepEnded(its milliseconds) */

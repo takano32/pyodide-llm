@@ -70,6 +70,10 @@ page_modules() {
   node tests/python-archive-check.mjs
   # T367.4: what says "the site was updated while this page was open", with stand-ins of a fetch (404, the 500s, a line
   # that dropped, no answer), and, in the sources, what becomes of each file that is asked for later (under a second)
+  # T380.1: how a failure is carried and told apart (src/runtime/failure.ts): a Failure and its kinds, what is read of
+  # whatever else is thrown (Python's exceptions as Pyodide hands them over, a memory that ran out in its three shapes,
+  # a thing that is no error), and that the sources put no mark on an Error in another way (under a second)
+  node tests/failure-check.mjs
   node tests/updated-check.mjs
   # T439: what the worker tells the page where it goes on, slower, without a file of its build that is gone (stand-ins)
   node tests/worker-outdated-check.mjs

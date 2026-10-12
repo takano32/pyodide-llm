@@ -4,11 +4,11 @@
 // A module of worker.ts; it takes its neighbours' names by static imports, and a bundler links them (T367.3).
 
 import { root } from "./request.ts";
-import { told } from "./told.ts";
+import { Failure, failureOf, told } from "../failure.ts";
 import { since } from "./clock.ts";
 import { weightsRoom } from "./weights.ts";
 import { innerAbort, worthRetrying, inOrder } from "./ranges.ts";
-import type { Thrown } from "./told.ts";
+import type { Thrown } from "../failure.ts";
 import type { Write } from "./weights.ts";
 import type { OfThisSite, OfTwoFiles, OfTwoUrls, Progress } from "../contracts/messages.ts";
 
@@ -99,7 +99,7 @@ export function download(model: OfThisSite, signal: AbortSignal, load: number) {
   const fetchOnce = async (part: number) => {
     const res = await fetchPart(partUrl(part), model, part, inner.signal);
     if (!res.ok) {
-      throw Object.assign(new Error(`Could not fetch part ${part} of ${model.checkpoint}: ${res.status}`), { final: !worthRetrying(res.status) });
+      throw new Failure("refused", `Could not fetch part ${part} of ${model.checkpoint}: ${res.status}`, { status: res.status, again: worthRetrying(res.status) });
     }
     const reader = res.body!.getReader();
     let got = 0;
@@ -116,12 +116,14 @@ export function download(model: OfThisSite, signal: AbortSignal, load: number) {
         if (sink) {
           // T129 (3): a write the memory refused (gone, or too small) is not cured by fetching the part again, nor is a
           // GPU's worker that takes no more of the weights (T156: a model on the GPU alone, its worker no more than
-          // FLOW_BYTES behind; it gives up after FLOW_STALL_MS, and three more tries would wait that long each)
+          // FLOW_BYTES behind; it gives up after FLOW_STALL_MS, and three more tries would wait that long each): the
+          // download ends here, as it is (T380.1: nothing is written on what was caught to say so)
           try {
             sink(offset, value);
             await weightsRoom();
           } catch (error) {
-            throw Object.assign(error as object, { final: true });
+            inner.abort(error);
+            throw error;
           }
         } else {
           queue.push([offset, value]);
@@ -156,7 +158,7 @@ export function download(model: OfThisSite, signal: AbortSignal, load: number) {
           await fetchOnce(part);
           break;
         } catch (error) {
-          if (inner.signal.aborted || (error as Thrown).final) {
+          if (inner.signal.aborted || failureOf(error).again === false) {
             throw error;
           }
           if (attempt === 2) {

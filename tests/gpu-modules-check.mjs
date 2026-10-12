@@ -46,9 +46,11 @@ const programs = new Map([...linked.files].filter(([name]) => own(name)).map(([n
 const top = (node) => (node.type === "ExportNamedDeclaration" && node.declaration ? node.declaration : node);
 
 // ---- a module of the worker takes of the worker's modules and of the shaders' parts
+const ALSO = ["failure.ts"];
 for (const [name] of programs) {
   for (const { from } of linked.files.get(name).takes) {
-    assert.ok(own(from) || /^shaders\/\w+\.[jt]s$/.test(from), `${name} takes names from ${from}: a module of the worker takes of the worker's modules and of the shaders' parts (shaders/<part>.js)`);
+    // (T380.1: and of failure.ts, how a failure is carried: a module that imports nothing, bundled into this worker)
+    assert.ok(own(from) || /^shaders\/\w+\.[jt]s$/.test(from) || ALSO.includes(from), `${name} takes names from ${from}: a module of the worker takes of the worker's modules, of the shaders' parts (shaders/<part>.js) and of ${ALSO.join(", ")}`);
   }
 }
 console.log(`gpu-modules-check: the GPU worker's ${programs.size} files take of one another and of the shaders' parts, and none waits for itself`);
