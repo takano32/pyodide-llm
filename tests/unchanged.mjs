@@ -83,7 +83,9 @@ function differences(was, now) {
 }
 function said(what, { count, differ, gone, added }, more = "") {
   const wrong = differ.length + gone.length + added.length;
-  const list = (label, names) => (names.length ? `; ${label}: ${names.slice(0, 12).join(", ")}${names.length > 12 ? ` and ${names.length - 12} more` : ""}` : "");
+  // (T379.2: UNCHANGED_NAMES=<n> for more than the first twelve: a change meant to differ is read name by name)
+  const most = Number(process.env.UNCHANGED_NAMES ?? 12);
+  const list = (label, names) => (names.length ? `; ${label}: ${names.slice(0, most).join(", ")}${names.length > most ? ` and ${names.length - most} more` : ""}` : "");
   console.log(`unchanged: ${what}: ${wrong ? "CHANGED" : "the same"}: ${count} compared${more}${list("differ", differ)}${list("gone", gone)}${list("new", added)}`);
   return wrong === 0;
 }
@@ -106,10 +108,10 @@ function makersOf(module) {
 // A maker that does not take a choice this tree's catalogue gives it (a packing the other tree has no row of) says so
 // where its text would be: a difference, and the net goes on
 // (until T379.2 is the tree compared with: there the tiles' dp4a took (subgroups, ternary), a boolean for the packing)
-const before = (module, name, given) => (name === "dp4a" && !/^\(\s*\{/.test(String(module.dp4a)) ? [given[0].subgroups, given[0].weights === "ternary"] : given);
+const givenBefore = (module, name, given) => (name === "dp4a" && !/^\(\s*\{/.test(String(module.dp4a)) ? [given[0].subgroups, given[0].weights === "ternary"] : given);
 function madeBy(module, name, given) {
   try {
-    given = before(module, name, given);
+    given = givenBefore(module, name, given);
     return (name === "fusedDp4aMatVec" && given[0].weights === "ternary" && module.ternaryMatVec ? module.ternaryMatVec : module[name])(...given);
   } catch (error) {
     return `throws ${error.message}`;
