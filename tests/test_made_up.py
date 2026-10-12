@@ -9,8 +9,8 @@ import sys
 import numpy as np
 import pytest
 from conftest import ROOT
-from made_up import (BIASES, checkpoint, drawn, files, header_of, lfm2_model, named, numbered, pack_checkpoint, quantized,
-                     settings_of, synthetic_weights, tensors_of, uniform, unigram)
+from made_up import (BIASES, basis, checkpoint, drawn, files, header_of, hugging_face, lfm2_model, named, numbered,
+                     pack_checkpoint, quantized, settings_of, synthetic_weights, tensors_of, uniform, unigram)
 
 from test_layout import ORDER
 
@@ -147,9 +147,10 @@ def test_what_is_drawn_for_a_row_goes_by_its_name(name):
     """A bias is around 0 and the weight of a norm around 1, whatever their numbers among the vectors are: the makers
     this replaced counted them (GPT-2's norms the vectors 0, 6 and 10, a Qwen2's biases 3 to 5)."""
     header, form, _ = MODELS[name]
-    vectors = [row for row in tensor_rows(header, form) if row.role == VECTOR]
-    assert {row.name for row in vectors} & set(BIASES) == {"gpt2": set(BIASES), "neox": set(BIASES),
-                                                           "qwen2 and qwen3": {"bq", "bk", "bv"}, "llama": set()}[name]
+    # (which of a layout's vectors are biases, written here a second time)
+    gpt2 = {"ln_att_bias", "bq", "bk", "bv", "bo", "ln_ffn_bias", "b1", "b2", "ln_final_bias"}
+    biases = {"gpt2": gpt2, "neox": gpt2, "qwen2 and qwen3": {"bq", "bk", "bv"}, "llama": set()}[name]
+    assert {row.name for row in tensor_rows(header, form) if row.role == VECTOR} & set(BIASES) == biases
     for calm, spread in ((False, 0.03), (True, 0.3)):
         tensor = drawn(seed=1, outliers=3, spread=37, calm=calm)
         for row in tensor_rows(header, form):
@@ -161,9 +162,10 @@ def test_what_is_drawn_for_a_row_goes_by_its_name(name):
             elif row.name == "rms_final_weight":
                 outliers = np.arange(3) * 37 % header[0]
                 assert (values[outliers] == 12.0).all() and np.abs(np.delete(values, outliers) - 1).max() < 6 * spread
-            elif row.name in BIASES:
+            elif row.name in biases:
                 assert abs(values.mean()) < 0.1 and abs(values.std() - 0.3) < 0.05, row.name
             else:
+                assert not (values == 12.0).any(), row.name  # (the outliers are the final norm's alone)
                 assert abs(values.mean() - 1) < 3 * spread / np.sqrt(values.size) + 1e-3 and abs(values.std() - spread) < 0.2 * spread, row.name
 
 
@@ -208,6 +210,18 @@ def test_a_model_as_files_is_one_the_engine_opens(dtype, tmp_path, capsys):
     assert options["arch"] == "lfm2" and options["dtype"] == dtype and json.loads(unigram(64))["model"]["vocab"][63] == ["w63", -63.0]
     llama = Llama((tmp_path / "model.bin").read_bytes(), (tmp_path / "model.tokenizer.bin").read_bytes(), **options)
     assert np.isfinite(llama.forward(1, 0)).all()
+
+
+def test_a_model_as_files_has_the_context_and_the_metadata_it_was_given(tmp_path, capsys):
+    import json
+    import llama2_convert
+    settings, weights = synthetic_weights(dim=64, hidden_dim=128, n_kv_heads=2, vocab_size=64, seq_len=32)
+    tensors, config = hugging_face(settings, weights, True)
+    said, _ = basis(16, {64, 128})
+    files(tmp_path / "model", tensors, config, "float32", 16, 64, metadata={llama2_convert.ROTATED: json.dumps(said)})
+    options = json.loads((tmp_path / "model.json").read_text())
+    header = struct.unpack_from("<7i", (tmp_path / "model.bin").read_bytes(), 0)
+    assert header[6] == 16 and options["rotated"]["block"] == 16 and capsys.readouterr().out.count("\n") == 1
 
 
 def test_the_maker_needs_nothing_of_the_test_suite():
