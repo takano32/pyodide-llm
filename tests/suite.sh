@@ -84,6 +84,10 @@ page_modules() {
   # another: each module comes after those it takes from, and the window exports every name the modules export where
   # they are declared (the tools read the window as JavaScript: a name dropped is undefined there without a word)
   node tests/shaders-modules-check.mjs
+  # T379.1: the catalogue of the engine's shaders (shaders/engine.ts) by itself: its rows in the recorded order (the
+  # order is the device's key), every combination of each maker's choices, no text twice, ENGINE the rows by name, and
+  # the key the fold of the rows (under a second)
+  node tests/shaders-catalogue-check.mjs
   # T225's review: /benchmark/'s layer check against devices that round the cache's float16 as WGSL lets them (about 10 s)
   node tests/layer-check.mjs
   node tests/worker-sink-check.mjs
