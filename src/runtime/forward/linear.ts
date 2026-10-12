@@ -10,6 +10,7 @@
 // convolution (the oldest first, the token under way last). And the two weights rmsnorm takes the l2 norm of a head
 // with: x / sqrt(sum(x * x) + 1e-6) is rmsnorm's w * x / sqrt(mean(x * x) + eps) with w = 1 / sqrt(n) and
 // eps = 1e-6 / n; q is divided by sqrt(n) more.
+import { KIND } from "../jobs.ts";
 import type { Kind, Layers } from "./kinds.ts";
 import type { Plan } from "../contracts/plan.ts";
 
@@ -75,7 +76,7 @@ export const linear: Kind = {
             k.rmsnorm(ct + (keyHeads + h) * KD, ct + (keyHeads + h) * KD, kUnit, keyDim, l2);
           }
           const now = states + (2 * a + flips[a]) * stateBytes, next = states + (2 * a + 1 - flips[a]) * stateBytes;
-          phase([[7, xt, now, next, ct, wt, keyHeads, keyDim, valueDim, valueHeads, 1, 0, 0, 0]]);
+          phase([[KIND.delta_rule, xt, now, next, ct, wt, keyHeads, keyDim, valueDim, valueHeads, 1, 0, 0, 0]]);
           flips[a] ^= 1;
           // the norm of every value head, and z's gate
           for (let h = 0; h < valueHeads; h++) k.rmsnorm(xt + h * VD, xt + h * VD, deltaNorm + a * VD, valueDim, eps);

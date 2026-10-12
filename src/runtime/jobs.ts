@@ -33,28 +33,15 @@ if (JOB_TABLE <= JOBS * 4 || JOB_TABLE % 8 || JOB_TABLE + BATCH * JOB * 8 > SCRA
 }
 
 // A job: [kind, eight arguments, rows, count, out stride, a stride, b stride], and the control area holds it as it
-// is, then the size of its chunks and the number of its first chunk. The kinds and their arguments:
-//   0 matmul_q8r     out, xq, xs, w, scales, corrections, n           rows: the matrix's
-//   1 matmul_q8      out, xq, xs, w, scales, -, n
-//   2 matmul_f32     out, x, -, w, -, -, n
-//   3 attention      out, q, keys, values, scores, pos, kv heads, head size   rows: the heads (T109)
-//   4 attention_f16  the same over a cache of float16 (T110)
-//   5 matmul_q6r     as 0, on int6 weights (T98)
-//   6 matmul_q6      as 1, on int6 weights
-//   7 delta_rule     out, state, next, q k and v, work, key heads, key size, value size   rows: the value heads (T229)
-//   8 matmul_t2r     out, xq, xs, w, scales, -, n   on ternary weights (T231), the activations interleaved
-//   9 matmul_t2      as 8, without relaxed SIMD
+// is, then the size of its chunks and the number of its first chunk. The kind is the number of a line of WORK below,
+// which says what the eight arguments are to it and how its rows are run.
 // count > 1 (T108): the same rows for count tokens, whose out, a and b are that many bytes apart. The rows then go in
 // blocks small enough to stay in the cache while every token uses them: each (row, token) is the one kernel call it
-// is for a single token, so the numbers are the same as one token at a time. Kind 0 takes the count tokens in one
-// call instead (T159: matmul_q8r_tile, four rows by four tokens, each number matmul_q8r's to the bit; a and b are
-// then one frame apart, the same stride), and so does kind 8 (T231: matmul_t2r_tile, a row against four tokens, each
-// number matmul_t2r's to the bit). Attention is always one token a job, and so is the delta rule (a Gated
-// DeltaNet layer's state after a token is what the next token reads).
+// is for a single token, so the numbers are the same as one token at a time. A kind that has a tile takes the count
+// tokens in one call instead (a and b are then one frame apart, the same stride). Attention is always one token a
+// job, and so is the delta rule (a Gated DeltaNet layer's state after a token is what the next token reads).
 export const ROWS = 9, COUNT = 10, SIZE = 14, FIRST = 15;
 const BLOCK_BYTES = 16384;
-// (the bytes of a row: float32, int8 and its packings, or two bits a weight)
-export const blockRows = (kind: number, n: number) => Math.max(1, Math.floor(BLOCK_BYTES / (kind === 2 ? 4 * n : kind >= 8 ? n / 4 : n)));
 // T231: the mask the ternary kernels take as an argument (kernels/ternary.ts: a constant written there would be made
 // again at every use)
 const THREE = 3;
@@ -94,30 +81,182 @@ export function addressed(exports: WebAssembly.Exports, wide: boolean): Kernels 
   return out as Kernels;
 }
 
+
+// ---- T375.4: the kinds of jobs, one line each. A kind's number, which a job begins with, is its place here (KIND).
+// A line says:
+//   from      whose kernels it calls: the plain module's, or the relaxed one's (a thread has none where the browser
+//             lacks relaxed SIMD or the model does not run on int8)
+//   one       the call for one token's rows r0 to r1, of a job's eight arguments and its rows
+//   tile      (some) count tokens in one call: os and as, the bytes from a token's out and a to the next token's
+//   rowBytes  (the kinds whose rows are a matrix's) the bytes of a row n wide, for the blocks count tokens go in
+//   warm      a tiny call of each of its kernels on the scratch (warmUp())
+// runner() and warmUp() read every line once as a thread is made; a job then costs a look into an array by its
+// number. A new kind is a line here, at the end (the numbers before it stay), its kernels' names in ADDRESSES, and
+// whoever builds its jobs writing KIND.<its name> (AGENTS.md, "カーネルを登録簿から引くとき").
+type Call = (out: number, a: number, b: number, a4: number, a5: number, a6: number, a7: number, a8: number, rows: number, r0: number, r1: number) => unknown;
+type Tile = (out: number, a: number, b: number, a4: number, a5: number, a6: number, a7: number, r0: number, r1: number, count: number, os: number, as: number) => unknown;
+type Scratch = { xq: number; xs: number; w: number; s: number; c: number; out: number };
+export type Work = {
+  from: "plain" | "relaxed"; one(k: Kernels): Call; tile?(k: Kernels): Tile; rowBytes?(n: number): number;
+  warm(k: Kernels, at: Scratch): void;
+};
+const kinds = <Name extends string>(table: Record<Name, Work>) => table;
+export const WORK = kinds({
+  // out, xq, xs, w, scales, corrections, n: int8 weights by 7-bit activations. T159, its tile: four rows by four
+  // tokens, each number matmul_q8r's to the bit
+  matmul_q8r: {
+    from: "relaxed", rowBytes: (n) => n,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_q8r(out, a, b, a4, a5, a6, a7, r0, r1),
+    tile: (k) => (out, a, b, a4, a5, a6, a7, r0, r1, count, os, as) => k.matmul_q8r_tile(out, a, b, a4, a5, a6, a7, r0, r1, count, os, as),
+    warm: (k, { xq, xs, w, s, c, out }) => {
+      k.matmul_q8r(out, xq, xs, w, s, c, 32, 0, 1);
+      k.matmul_q8r_tile(out, xq, xs, w, s, c, 32, 0, 4, 4, 0, 0);  // one tile: four rows and four tokens, all the same
+    },
+  },
+  // out, xq, xs, w, scales, -, n: the same without relaxed SIMD
+  matmul_q8: {
+    from: "plain", rowBytes: (n) => n,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_q8(out, a, b, a4, a5, a7, r0, r1),
+    warm: (k, { xq, xs, w, s, out }) => { k.matmul_q8(out, xq, xs, w, s, 32, 0, 1); },
+  },
+  // out, x, -, w, -, -, n
+  matmul_f32: {
+    from: "plain", rowBytes: (n) => 4 * n,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_f32(out, a, a4, a7, r0, r1),
+    warm: (k, { w, out }) => { k.matmul_f32(out, out + 64, w, 8, 0, 1); },
+  },
+  // out, q, keys, values, scores, pos, kv heads, head size; its rows are the heads (T109)
+  attention: {
+    from: "plain",
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.attention(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1),
+    warm: (k, { xq, w, c, out }) => { k.attention(out, xq, w, w, c, 0, 1, 1, 4, 0, 1); },  // one head of 4 at position 0
+  },
+  // the same over a cache of float16 (T110)
+  attention_f16: {
+    from: "plain",
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.attention_f16(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1),
+    warm: (k, { xq, w, c, out }) => { k.attention_f16(out, xq, w, w, c, 0, 1, 1, 4, 0, 1); },
+  },
+  // as matmul_q8r, on int6 weights (T98). (rowBytes: a block of them was always counted as int8's, a byte a weight)
+  matmul_q6r: {
+    from: "relaxed", rowBytes: (n) => n,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_q6r(out, a, b, a4, a5, a6, a7, r0, r1),
+    warm: (k, { xq, xs, w, s, c, out }) => { k.matmul_q6r(out, xq, xs, w, s, c, 32, 0, 1); },
+  },
+  // as matmul_q8, on int6 weights
+  matmul_q6: {
+    from: "plain", rowBytes: (n) => n,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_q6(out, a, b, a4, a5, a7, r0, r1),
+    warm: (k, { xq, xs, w, s, out }) => { k.matmul_q6(out, xq, xs, w, s, 32, 0, 1); },
+  },
+  // out, state, next, q k and v, work, key heads, key size, value size; its rows are the value heads (T229)
+  delta_rule: {
+    from: "plain",
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.delta_rule(out, a, b, a4, a5, a6, a7, a8, rows, r0, r1),
+    // one value head, a state of 4 by 4 (c: its work, 6 floats)
+    warm: (k, { xq, w, s, c, out }) => { k.delta_rule(out, w, s, xq, c, 1, 4, 4, 1, 0, 1); },
+  },
+  // out, xq, xs, w, scales, -, n: ternary weights (T231), two bits each, the activations interleaved. Its tile: a row
+  // against four tokens, each number matmul_t2r's to the bit
+  matmul_t2r: {
+    from: "relaxed", rowBytes: (n) => n / 4,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_t2r(out, a, b, a4, a5, a7, r0, r1, THREE),
+    tile: (k) => (out, a, b, a4, a5, a6, a7, r0, r1, count, os, as) => k.matmul_t2r_tile(out, a, b, a4, a5, a7, r0, r1, count, os, as, THREE),
+    warm: (k, { xq, xs, w, s, out }) => {
+      k.matmul_t2r(out, xq, xs, w, s, 128, 0, 1, THREE);
+      k.matmul_t2r_tile(out, xq, xs, w, s, 128, 0, 1, 4, 0, 0, THREE);  // one row and four tokens, all the same
+    },
+  },
+  // as matmul_t2r, without relaxed SIMD
+  matmul_t2: {
+    from: "plain", rowBytes: (n) => n / 4,
+    one: (k) => (out, a, b, a4, a5, a6, a7, a8, rows, r0, r1) => k.matmul_t2(out, a, b, a4, a5, a7, r0, r1, THREE),
+    // one group of 128 (the scratch's first 160 bytes are its activations and weights)
+    warm: (k, { xq, xs, w, s, out }) => { k.matmul_t2(out, xq, xs, w, s, 128, 0, 1, THREE); },
+  },
+});
+export type Kind = keyof typeof WORK;
+/** the number of each kind of job: its place in WORK */
+export const KIND = Object.fromEntries(Object.keys(WORK).map((name, number) => [name, number])) as Record<Kind, number>;
+
+// ---- T375.4: how the weights of a matrix are packed in a checkpoint, as the kernels take them: one line for each
+// way a quantized tensor is stored (contracts/plan.ts's Stored; float32 is no packing: the engine multiplies by it as
+// it is, a job of the kind matmul_f32). A line says:
+//   rowBytes  the bytes of a row n wide in the checkpoint
+//   value     weight i of the tensor whose values start at byte at of U, as the int8 it is (what JavaScript reads one
+//             at a time: an embedding's row, a tensor widened to float32)
+//   jobs      the kind of the job that multiplies by it, with relaxed SIMD and without
+//   sums      the kernel that makes the corrections relaxed SIMD needs (-64 times the sum of every group: its 7-bit
+//             activations have a bias of 64); null: its relaxed kernel takes none
+//   ready     the activations as its kernels take them, chosen once for an engine: from n float32 at x to xq and xs
+//   xs        the bytes a group of 32 activations takes in xs
+// The engine reads a line as it makes a matrix (forward/engine.ts) and keeps what it chose with the matrix: a token
+// compares no name. A new packing is a line here, the kinds of its jobs above and its kernels' names in ADDRESSES.
+export type Ready = (xq: number, xs: number, x: number, n: number) => void;
+export type Packing = {
+  rowBytes(n: number): number; value(U: Uint8Array, at: number, i: number): number; jobs: { relaxed: number; plain: number };
+  sums: keyof typeof ADDRESSES | null; ready(k: Kernels, relaxed: boolean): Ready; xs: number;
+};
+const signed = (byte: number) => (byte << 24) >> 24;
+// (int8 and int6: relaxed SIMD multiplies by 7-bit unsigned activations with a bias of 64, plain by signed 8-bit ones)
+const biased = (k: Kernels, relaxed: boolean): Ready => {
+  const bias = relaxed ? 64 : 0;
+  return (xq, xs, x, n) => { k.quantize_x(xq, xs, x, n, bias); };
+};
+const packings = <Name extends string>(table: Record<Name, Packing>) => table;
+export const PACKED = packings({
+  int8: {
+    rowBytes: (n) => n, value: (U, at, i) => signed(U[at + i]),
+    jobs: { relaxed: KIND.matmul_q8r, plain: KIND.matmul_q8 }, sums: "int8_sums", ready: biased, xs: 4,
+  },
+  // T98: six bits a weight, 32 of them in 24 bytes, the layout of llama2_numpy.pack6 (six bits, then two zero bits)
+  int6: {
+    rowBytes: (n) => n / 32 * 24,
+    value: (U, at, i) => {
+      const group = at + ((i / 32) | 0) * 24, j = i % 32;
+      const low = j < 16 ? U[group + j] & 15 : U[group + j - 16] >> 4;
+      const top = (U[group + 16 + (j % 8)] >> (2 * ((j / 8) | 0))) & 3;
+      return signed((low | (top << 4)) << 2);
+    },
+    jobs: { relaxed: KIND.matmul_q6r, plain: KIND.matmul_q6 }, sums: "six_sums", ready: biased, xs: 4,
+  },
+  // T230: two bits a weight less one, the layout of llama2_numpy.pack_ternary. T231: its kernels take the activations
+  // signed, in all 8 bits, and laid out as the weights' planes are; after the scales of the activations' groups come
+  // as many int32, minus each group's sum (interleave), so they take no corrections
+  ternary: {
+    rowBytes: (n) => n / 4, value: (U, at, i) => ((U[at + (i >> 2)] >> (2 * (i & 3))) & 3) - 1,
+    jobs: { relaxed: KIND.matmul_t2r, plain: KIND.matmul_t2 }, sums: null, xs: 8,
+    ready: (k) => (xq, xs, x, n) => {
+      k.quantize_x(xq, xs, x, n, 0);
+      k.interleave(xq, xs, n);
+    },
+  },
+});
+export type Packed = keyof typeof PACKED;
+/** the packing of a tensor stored as stored, or null: float32 and float16 are not packed */
+export const packingOf = (stored: string | undefined): Packing | null => (stored !== undefined && Object.hasOwn(PACKED, stored) ? PACKED[stored as Packed] : null);
+
 /** runRows(job, r0, r1) on these kernels: k, the plain module's exports; r, the relaxed module's or null. job is
- * an array or a view of the control area. */
+ * an array or a view of the control area. Every kind of WORK is read here once: a job is run by its number. */
 export function runner(k: Kernels, r: Kernels | null) {
-  const call = (kind: number, out: number, a: number, b: number, a4: number, a5: number, a6: number, a7: number, a8: number, rows: number, r0: number, r1: number) => {
-    if (kind === 0) r!.matmul_q8r(out, a, b, a4, a5, a6, a7, r0, r1);
-    else if (kind === 1) k.matmul_q8(out, a, b, a4, a5, a7, r0, r1);
-    else if (kind === 5) r!.matmul_q6r(out, a, b, a4, a5, a6, a7, r0, r1);
-    else if (kind === 6) k.matmul_q6(out, a, b, a4, a5, a7, r0, r1);
-    else if (kind === 2) k.matmul_f32(out, a, a4, a7, r0, r1);
-    else if (kind === 3) k.attention(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
-    else if (kind === 4) k.attention_f16(out, a, b, a4, a5, a6, rows, a7, a8, r0, r1);
-    else if (kind === 8) r!.matmul_t2r(out, a, b, a4, a5, a7, r0, r1, THREE);
-    else if (kind === 9) k.matmul_t2(out, a, b, a4, a5, a7, r0, r1, THREE);
-    else k.delta_rule(out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
-  };
+  const works = Object.entries(WORK) as [Kind, Work][];
+  const none = (name: Kind): Call => () => { throw new Error(`A job of the kind ${name} takes the relaxed kernels, and this thread has none.`); };
+  const ones = works.map(([name, { from, one }]) => (from === "plain" ? one(k) : r ? one(r) : none(name)));
+  const tiles = works.map(([, { from, tile }]) => {
+    const kernels = from === "plain" ? k : r;
+    return tile && kernels ? tile(kernels) : null;
+  });
+  const bytes = works.map(([, { rowBytes }]) => rowBytes ?? null);
   return (job: Job, r0: number, r1: number) => {
     const [kind, out, a, b, a4, a5, a6, a7, a8, rows, count, os, as, bs] = job;
-    if (count === 1) return call(kind, out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
-    if (kind === 0) return r!.matmul_q8r_tile(out, a, b, a4, a5, a6, a7, r0, r1, count, os, as);
-    if (kind === 8) return r!.matmul_t2r_tile(out, a, b, a4, a5, a7, r0, r1, count, os, as, THREE);
-    const step = blockRows(kind, a7);
+    const one = ones[kind];
+    if (count === 1) return one(out, a, b, a4, a5, a6, a7, a8, rows, r0, r1);
+    const tile = tiles[kind];
+    if (tile) return tile(out, a, b, a4, a5, a6, a7, r0, r1, count, os, as);
+    const step = Math.max(1, Math.floor(BLOCK_BYTES / bytes[kind]!(a7)));
     for (let r = r0; r < r1; r += step) {
       const end = Math.min(r + step, r1);
-      for (let t = 0; t < count; t++) call(kind, out + t * os, a + t * as, b + t * bs, a4, a5, a6, a7, a8, rows, r, end);
+      for (let t = 0; t < count; t++) one(out + t * os, a + t * as, b + t * bs, a4, a5, a6, a7, a8, rows, r, end);
     }
   };
 }
@@ -125,21 +264,10 @@ export function runner(k: Kernels, r: Kernels | null) {
 /** the kernels warmed up: a new thread runs them unoptimized at first, and a measurement would take that for the
  * speed of the count (T93). Tiny calls on the scratch, many times; what they compute is thrown away. */
 export function warmUp(k: Kernels, r: Kernels | null) {
-  const xq = SCRATCH, xs = SCRATCH + 64, w = SCRATCH + 128, s = SCRATCH + 192, c = SCRATCH + 256, out = SCRATCH + 320;
-  for (let i = 0; i < 4000; i++) {
-    k.matmul_q8(out, xq, xs, w, s, 32, 0, 1);
-    k.matmul_q6(out, xq, xs, w, s, 32, 0, 1);
-    k.matmul_f32(out, out + 64, w, 8, 0, 1);
-    k.matmul_t2(out, xq, xs, w, s, 128, 0, 1, THREE);  // one group of 128 (the scratch's first 160 bytes are its activations and weights)
-    if (r) {
-      r.matmul_q8r(out, xq, xs, w, s, c, 32, 0, 1);
-      r.matmul_q6r(out, xq, xs, w, s, c, 32, 0, 1);
-      r.matmul_t2r(out, xq, xs, w, s, 128, 0, 1, THREE);
-      r.matmul_t2r_tile(out, xq, xs, w, s, 128, 0, 1, 4, 0, 0, THREE);  // one row and four tokens, all the same
-      r.matmul_q8r_tile(out, xq, xs, w, s, c, 32, 0, 4, 4, 0, 0);  // one tile: four rows and four tokens, all the same
-    }
-    k.attention(out, xq, w, w, c, 0, 1, 1, 4, 0, 1);  // one head of 4 at position 0
-    k.attention_f16(out, xq, w, w, c, 0, 1, 1, 4, 0, 1);
-    k.delta_rule(out, w, s, xq, c, 1, 4, 4, 1, 0, 1);  // T229: one value head, a state of 4 by 4 (c: its work, 6 floats)
-  }
+  const at = { xq: SCRATCH, xs: SCRATCH + 64, w: SCRATCH + 128, s: SCRATCH + 192, c: SCRATCH + 256, out: SCRATCH + 320 };
+  const warms = (Object.values(WORK) as Work[]).flatMap(({ from, warm }) => {
+    const kernels = from === "plain" ? k : r;
+    return kernels ? [() => warm(kernels, at)] : [];
+  });
+  for (let i = 0; i < 4000; i++) for (const warm of warms) warm();
 }

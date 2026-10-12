@@ -5,6 +5,7 @@
 // What one of them has beside q, k, v and the output is read off the model's tensors: Qwen2's biases of q, k and v
 // (bq), Qwen3's norms of every head of q and k (q_norm), a Qwen3.5's gate of the output (wg). Whether RoPE turns a
 // layer's q and k is the plan's fact of that layer (T255: none of a GPT-2's, not the ones a SmolLM3 leaves alone).
+import { KIND } from "../jobs.ts";
 import type { Core, Kind, Layers, Product } from "./kinds.ts";
 
 export const attention: Kind = {
@@ -25,7 +26,7 @@ export const attention: Kind = {
     // where these layers' keys and values are in the cache: the place-th layer's are the (first + place)-th
     const first = cache.hold(count);
     // the job (jobs.ts) of the attention of token t of a run, at position pos (T110: over float16 keys and values, or float32)
-    const scores = cache.half ? 4 : 3;
+    const scores = cache.half ? KIND.attention_f16 : KIND.attention;
     return {
       layer(a, { rope }) {
         // (a Qwen3.5's gate of the attention's output is one more matrix of the same input)

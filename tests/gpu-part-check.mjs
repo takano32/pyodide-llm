@@ -33,7 +33,7 @@ const PAGE = 65536;
 // a made-up model: small, and no two of its sizes the same where one could stand for another
 const SHAPE = { dim: 8, hidden: 24, layers: 2, heads: 2, kvHeads: 1, headSize: 4, kvDim: 4, qDim: 8, vocab: 100, seqLen: 512, D: 32, KV: 8, halfKV: true,
   eps: 1e-5, rotary: 0, kvStart: 256, turning: true, layerNorm: false, parallel: false, unturned: [], linear: null, convolution: null, stateful: false, rotated: 0, sharedClassifier: true };
-const matrixOf = (rows, n, at, more = {}) => ({ rows, n, int8: true, six: false, group: 32, layer: (l) => [at + l * 1000, at + l * 1000 + 500, at + l * 1000 + 700], ...more });
+const matrixOf = (rows, n, at, more = {}) => ({ rows, n, kind: "int8", group: 32, layer: (l) => [at + l * 1000, at + l * 1000 + 500, at + l * 1000 + 700], ...more });
 const WEIGHTS = { base: 8192, embedding: { kind: "int8", group: 32, offset: 100, scales: 200 },
   wq: matrixOf(8, 8, 30000), wk: matrixOf(4, 8, 32000), wv: matrixOf(4, 8, 34000), wo: matrixOf(8, 8, 36000),
   w1: matrixOf(24, 8, 38000), w2: matrixOf(8, 24, 40000), w3: matrixOf(24, 8, 42000), wcls: matrixOf(100, 8, 44000),
@@ -50,7 +50,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** The part and its stand-ins. gpu: false for a worker without WebGPU. What the stand-in GPU does with a request is
  * beside.answer (see below); beside.cpuMs and beside.gpuMs are what a token of a block takes on either side. */
-function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = true, stalledMs = 60, shape = {}, force } = {}) {
+function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = true, stalledMs = 60, shape = {}, force, weights: other = {} } = {}) {
   const memory = new WebAssembly.Memory({ initial: 2, maximum: 2, shared: true });
   const control = controlArea({ memory, sharedMemory: true, stalledMs });
   const words = new Int32Array(memory.buffer, IDS, 2 + GPU_TOKENS), halves = new Uint16Array(memory.buffer);
@@ -115,10 +115,11 @@ function made({ gpu = true, direct, whyNot = null, tokensWhyNot = null, steps = 
     get keys() { return 60000; },
     get values() { return 61000; } };
   const model = { ...SHAPE, ...shape };
-  const fit = gpuFit({ shape: model, weights: WEIGHTS, device: { gpuRoom: undefined, memoryUnsaid: false, sharedMemory: true }, direct });
+  const weights = { ...WEIGHTS, ...other };
+  const fit = gpuFit({ shape: model, weights, device: { gpuRoom: undefined, memoryUnsaid: false, sharedMemory: true }, direct });
   const taken = { matrices: fit.matrices, vectors: fit.vectors, whyNot, tokensWhyNot, staging: whyNot ? 0 : STAGING, rows: whyNot || direct ? 0 : ROWS,
     ids: whyNot || tokensWhyNot ? 0 : IDS };
-  const part = gpuSide({ shape: model, weights: WEIGHTS, taken, cpuSide, control, threads: beside.threads,
+  const part = gpuSide({ shape: model, weights, taken, cpuSide, control, threads: beside.threads,
     options: { gpu: gpu ? factory : undefined, remembered: { key: "kept" }, force, direct, stalledMs, now: () => beside.now } });
   // the GPU says it is ready: with its timed blocks (16 and 64 tokens), and the steps where it made them
   beside.ready = (more = {}) => beside.worker.say({ type: "ready", adapter: "a stand-in", bytes: 2e6, seconds: 1.5, form: "tiles", attention: "flash", key: "the key",
@@ -196,6 +197,16 @@ console.log("ok: a model the GPU does not take never starts the GPU's worker");
   assert.deepEqual(plan.tokens, { classifier: { rows: 100, n: 8, six: false, ternary: false, at: [44000, 44500] }, embedding: null, final: 50200, finalBias: 0, positions: 0,
     outliers: false, channels: [], ids: IDS, most: GPU_TOKENS });
   assert.deepEqual([plan.cos, plan.sin, plan.remembered, plan.force], [51000, 52000, { key: "kept" }, {}]);
+  // T375.4: how a matrix is packed is one name with the engine (jobs.ts's PACKED); the GPU's worker is told it as it
+  // always was, by six and ternary
+  for (const [kind, group, six, ternary] of [["int6", 32, true, false], ["ternary", 128, false, true]]) {
+    const packed = Object.fromEntries(["wq", "wk", "wv", "wo", "w1", "w2", "w3", "wcls"].map((name) => [name, { ...WEIGHTS[name], kind, group }]));
+    const other = made({ weights: { ...packed, embedding: { ...WEIGHTS.embedding, kind, group } } });
+    const [{ plan: told }] = other.beside.posted;
+    assert.deepEqual(Object.values(told.matrices).map((m) => [m.six, m.ternary]), Array(7).fill([six, ternary]), `${kind}: every matrix`);
+    assert.deepEqual([told.tokens.classifier.six, told.tokens.classifier.ternary], [six, ternary], `${kind}: the classifier`);
+    await other.part.release();
+  }
   // T375.2: how many values of a head RoPE turns is a fact of the layers (does it turn any) and the model's rotary: all
   // of a head, a part of it, none where no layer is turned (a GPT-2), whatever the rotary says
   const turnedOf = (shape) => made({ shape }).beside.posted[0].plan.turned;
@@ -515,6 +526,18 @@ console.log("ok: a request with no answer, a failure, an id outside the vocabula
   beaten.beside.ready();
   assert.match(await beaten.part.note, /^prompts on the CPU \(the CPU as \/benchmark\/ measured it \(1000000\.0 GB\/s\): /);
   assert.deepEqual([direct.verdict, lost.length], [{ key: "the key", cpu: direct.cpu }, 2], "the page is handed the verdict to keep");
+  // (T375.4, the review: a ternary model's CPU reads a quarter of an int8 model's bytes but is no faster for it, so the
+  // verdict counts its weights as int8's: the same size and speed of the CPU are the CPU's win for an int8 model and
+  // the GPU's for a ternary one, whatever packing the matrices say they are)
+  for (const [kind, group, cpuFaster] of [["int8", 32, true], ["ternary", 128, false]]) {
+    const packed = Object.fromEntries(["wq", "wk", "wv", "wo", "w1", "w2", "w3", "wcls"].map((name) => [name, { ...WEIGHTS[name], kind, group }]));
+    const verdict = { onLost: () => {}, size: 1e9, layerWeights: 1e9, cpu: { GBps: 2000 }, usage: { prompt: 0, written: 100 } };
+    const alone = made({ direct: verdict, weights: { ...packed, embedding: { ...WEIGHTS.embedding, kind, group } } });
+    alone.beside.ready();
+    await alone.part.note;
+    assert.equal(Boolean(verdict.verdict), cpuFaster, `${kind}: the same CPU reading is ${cpuFaster ? "faster" : "slower"} than a GPU step of 1 ms`);
+    await alone.part.release();
+  }
   const letGo = made({ direct: { onLost: (why) => lost.push(why) } });
   await letGo.part.release();
   assert.equal(lost.length, 2, "a model let go before its GPU was ready is not lost");
@@ -582,18 +605,25 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
     [{ rotated: 1024 }, {}, {}, /^a rotated basis is not on the GPU yet$/],
     [{}, {}, { sharedMemory: false }, /^the page is not cross-origin isolated$/],
     [{ headSize: 6 }, {}, {}, /^heads of a size that is no multiple of 4 are not on the GPU$/],
-    [{}, { wq: { rows: 8, n: 8, int8: false, layer: () => [0] } }, {}, /^float32 weights are not on the GPU yet$/],
+    [{}, { wq: { rows: 8, n: 8, kind: "f32", layer: () => [0] } }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, { w1: matrixOf(24, 8, 0, { group: 128 }) }, {}, /^float32 weights are not on the GPU yet$/],
+    // (T375.4: a packing the GPU does not know, whatever its groups: on the CPU, without a line for it here)
+    [{}, { w1: matrixOf(24, 8, 0, { kind: "made-up" }) }, {}, /^float32 weights are not on the GPU yet$/],
+    [{}, { w1: matrixOf(24, 128, 0, { kind: "made-up", group: 128 }) }, {}, /^float32 weights are not on the GPU yet$/],
+    [{}, { w1: matrixOf(24, 8, 0, { kind: "toString" }) }, {}, /^float32 weights are not on the GPU yet$/],
+    [{}, { w1: matrixOf(24, 128, 0, { kind: "ternary" }) }, {}, /^float32 weights are not on the GPU yet$/],
+    [{}, { w1: matrixOf(24, 8, 0, { kind: "int6", group: 16 }) }, {}, /^float32 weights are not on the GPU yet$/],
     [{}, {}, { gpuRoom: 1000 }, /^the layers on the GPU as well \(0 MB\) would not leave this device enough memory$/],
   ];
   for (const [shape, weights, device, reason] of reasons) assert.match(fitOf(shape, weights, device).unfit(), reason);
   assert.equal(fitOf({}, {}, { gpuRoom: 1000 }, { size: 1 }).unfit(), null, "a model on the GPU alone is not held twice");
   assert.equal(fitOf({}, { w3: null }).unfit(), null, "an FFN with no gate (GPT-2) has no w3");
   assert.deepEqual(Object.keys(fitOf({}, { w3: null }).matrices()), ["wq", "wk", "wv", "wo", "w1", "w2"]);
-  assert.equal(fitOf({}, { w1: matrixOf(24, 128, 0, { ternary: true, group: 128 }), w2: matrixOf(8, 128, 0, { ternary: true, group: 128 }) }).unfit(), null, "ternary weights in groups of 128");
+  assert.equal(fitOf({}, { w1: matrixOf(24, 128, 0, { kind: "ternary", group: 128 }), w2: matrixOf(8, 128, 0, { kind: "ternary", group: 128 }) }).unfit(), null, "ternary weights in groups of 128");
   const steps = [
-    [{}, { wcls: { rows: 100, n: 8, int8: false, layer: () => [0] } }, {}, /^a classifier of float weights is not on the GPU's tokens$/],
+    [{}, { wcls: { rows: 100, n: 8, kind: "f32", layer: () => [0] } }, {}, /^a classifier of float weights is not on the GPU's tokens$/],
     [{}, { embedding: { kind: "f16", group: 32 } }, {}, /^a classifier of float weights is not on the GPU's tokens$/],
+    [{}, { wcls: matrixOf(100, 8, 0, { kind: "made-up" }) }, {}, /^a classifier of float weights is not on the GPU's tokens$/],
     [{}, {}, { memoryUnsaid: true }, /^this browser does not say how much memory the device has$/],
     [{}, {}, { gpuRoom: 20000 }, /^the classifier on the GPU as well \(0 MB with the layers\) would not leave this device enough memory$/],
   ];
@@ -602,8 +632,17 @@ console.log("ok: the control area is cleared for a new engine, and a wait is kep
   const weightsOf = (m) => SHAPE.layers * m.rows * m.n * 1.125, { wq, wk, wv, wo, w1, w2, w3 } = WEIGHTS;
   const layers = [wq, wk, wv, wo, w1, w2, w3].reduce((sum, m) => sum + weightsOf(m), 0) + 2 * SHAPE.layers * 8 * 4 + 2 * SHAPE.layers * SHAPE.seqLen * SHAPE.kvDim * 2;
   assert.deepEqual([fitOf({}, {}, { gpuRoom: layers }).unfit(), fitOf({}, {}, { gpuRoom: layers - 1 }).unfit() === null], [null, false], "the layers on the GPU, to the byte");
+  // (T232: ternary weights are a quarter of a byte and a scale a group of 128, 0.28125 bytes a weight)
+  const ternaryOf = Object.fromEntries(Object.entries({ wq, wk, wv, wo, w1, w2, w3 }).map(([name, m]) => [name, { ...m, kind: "ternary", group: 128 }]));
+  const ternaryLayers = layers - [wq, wk, wv, wo, w1, w2, w3].reduce((sum, m) => sum + weightsOf(m), 0) * (1 - 0.28125 / 1.125);
+  assert.deepEqual([fitOf({}, ternaryOf, { gpuRoom: ternaryLayers }).unfit(), fitOf({}, ternaryOf, { gpuRoom: ternaryLayers - 1 }).unfit() === null], [null, false], "ternary layers on the GPU, to the byte");
   const table = 100 * 8 * 1.125, tokens = layers + table + SHAPE.seqLen * SHAPE.headSize * 4 + 3 * 100 * 4;
   assert.deepEqual([fitOf({}, {}, { gpuRoom: tokens }).tokensUnfit(), fitOf({}, {}, { gpuRoom: tokens - 1 }).tokensUnfit() === null], [null, false], "and the steps' tables with them");
+  // (T375.4, the review: and with ternary weights the classifier's table is a quarter of a byte a weight as well)
+  const ternaryTokensOf = { ...ternaryOf, wcls: { ...WEIGHTS.wcls, kind: "ternary", group: 128 }, embedding: { ...WEIGHTS.embedding, kind: "ternary", group: 128 } };
+  const ternaryTokens = ternaryLayers + 100 * 8 * 0.28125 + SHAPE.seqLen * SHAPE.headSize * 4 + 3 * 100 * 4;
+  assert.deepEqual([fitOf({}, ternaryTokensOf, { gpuRoom: ternaryTokens }).tokensUnfit(), fitOf({}, ternaryTokensOf, { gpuRoom: ternaryTokens - 1 }).tokensUnfit() === null], [null, false],
+    "the steps' tables of a ternary model, to the byte");
   assert.deepEqual([fitOf({ sharedClassifier: false }, {}, { gpuRoom: tokens + table }).tokensUnfit(), fitOf({ sharedClassifier: false }, {}, { gpuRoom: tokens + table - 1 }).tokensUnfit() === null], [null, false],
     "an embedding that is another table counts twice");
   // the vectors: the norms' weights always, the rest where the model has them

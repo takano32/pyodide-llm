@@ -8,6 +8,7 @@ import { GPU_END_MS, GPU_BLOCK, GPU_TOKENS, GPU_RECHECK, TOKEN_RECHECK, promptTi
   STOPS_MOST } from "./choice.ts";
 import { GPU_WEIGHT_BYTES, GPU_TERNARY_BYTES, cpuReadBytes, aloneVerdict, OUTSIDE_VOCABULARY } from "./alone.ts";
 import { halfToFloat } from "./memory.ts";
+import type { Packed, Ready } from "../jobs.ts";
 import type { Answers } from "./choice.ts";
 import type { Control } from "./control.ts";
 import type { Direct } from "./alone.ts";
@@ -30,10 +31,16 @@ export type Shape = {
   rotated: number;
   sharedClassifier: boolean;
 };
-// A matrix as createForward()'s matrix() made it: int8 (with six or ternary, in groups of group) or float32, and for a
-// layer the addresses of its values and, where it is int8, of its scales and its corrections. onGpu (T156): on the GPU
-// alone, its addresses the checkpoint's offsets
-export type Held = { rows: number; n: number; int8: boolean; six?: boolean; ternary?: boolean; group?: number; onGpu?: boolean; layer(l: number): number[] };
+// A matrix as createForward()'s matrix() made it: kind, how it is multiplied: packed (the name of its line of jobs.ts's
+// PACKED, in groups of group) or float32; and for a layer the addresses of its values and, where it is packed, of its
+// scales and its corrections (0: none). onGpu (T156): on the GPU alone, its addresses the checkpoint's offsets.
+// T375.4: job and ready are the CPU's (the kind of the job that multiplies by it and what makes its input ready:
+// engine.ts's matmuls()); this side reads neither
+export type Held = { rows: number; n: number; kind: "f32" | Packed; group?: number; onGpu?: boolean; layer(l: number): number[]; job?: number; ready?: Ready | null };
+// T375.4: the packings the GPU takes, and the values a scale of each is for (gpu.ts widens int6 to int8, T155, and takes
+// ternary as it is, T232). A packing that is not here stays on the CPU
+const GPU_GROUP: Partial<Record<Held["kind"], number>> = { int8: 32, int6: 32, ternary: 128 };
+const onGpuAs = (m: Held) => Object.hasOwn(GPU_GROUP, m.kind) && m.group === GPU_GROUP[m.kind];
 // where the model's tensors are in the memory: the matrices (null: the model has none of that name), and the addresses
 // of the vectors and the tables (0: none)
 export type Placed = {
@@ -101,7 +108,7 @@ export function gpuFit({ shape, weights, device, direct }:
     if (rotated) return "a rotated basis is not on the GPU yet";  // T237
     if (!sharedMemory) return "the page is not cross-origin isolated";
     if (headSize % 4) return "heads of a size that is no multiple of 4 are not on the GPU";
-    if (!Object.values(gpuMatrices()).every((m) => m.int8 && m.group === (m.ternary ? 128 : 32))) return "float32 weights are not on the GPU yet";
+    if (!Object.values(gpuMatrices()).every(onGpuAs)) return "float32 weights are not on the GPU yet";
     // T148: the layers twice, in this memory and on the GPU (T156 will keep one): a device with too little memory
     // for both keeps the CPU's alone (a phone or an Apple shares its memory between the two)
     // (T153, the review: with the GPU's own keys and values, float16, as the prompt may fill the whole context: Qwen3
@@ -114,7 +121,7 @@ export function gpuFit({ shape, weights, device, direct }:
   }
   // the bytes of the layers on the GPU, and its own keys and values
   function layersOnGpu() {
-    return Object.values(gpuMatrices()).reduce((bytes, m) => bytes + layers * m.rows * m.n * (m.ternary ? GPU_TERNARY_BYTES : GPU_WEIGHT_BYTES), 0) +
+    return Object.values(gpuMatrices()).reduce((bytes, m) => bytes + layers * m.rows * m.n * (m.kind === "ternary" ? GPU_TERNARY_BYTES : GPU_WEIGHT_BYTES), 0) +
       Object.values(gpuVectors()).reduce((bytes, { size }) => bytes + layers * size * 4, 0) + 2 * layers * seqLen * kvDim * 2;
   }
   // T152: why a generation's steps stay on the CPU, or null. A step on the GPU is T150's and T175's fused layer (gpu.ts):
@@ -128,15 +135,15 @@ export function gpuFit({ shape, weights, device, direct }:
   // GPU takes the outlier channels apart as this does, shaders.ts's TAKE_OUTLIERS); and the memory for the classifier, the embedding where it is
   // another table, RoPE's table and the vocabulary's three arrays of the sampling, besides the layers
   function tokensUnfit() {
-    const group = wcls?.ternary ? 128 : 32;
-    if (!wcls?.int8 || wcls.group !== group || !(wcls.ternary ? ["ternary"] : ["int8", "int6"]).includes(embedding.kind) || embedding.group !== group) {
+    const ternary = wcls?.kind === "ternary", group = ternary ? 128 : 32;
+    if (!wcls || !onGpuAs(wcls) || !(ternary ? ["ternary"] : ["int8", "int6"]).includes(embedding.kind) || embedding.group !== group) {
       return "a classifier of float weights is not on the GPU's tokens";
     }
     // T205: the classifier and the embedding on the GPU as well (llm-jp-3 150M's 73 MB of layers came to 189 MB) where
     // the browser does not say what the device has: an iPhone's tab went down in /benchmark/'s model section. The
     // prompts' blocks still go (their layers alone)
     if (memoryUnsaid) return "this browser does not say how much memory the device has";
-    const table = vocab * dim * (wcls.ternary ? GPU_TERNARY_BYTES : GPU_WEIGHT_BYTES);
+    const table = vocab * dim * (ternary ? GPU_TERNARY_BYTES : GPU_WEIGHT_BYTES);
     // (GPT-2's positions on the GPU as well, a row a position)
     const onGpu = layersOnGpu() + table * (sharedClassifier ? 1 : 2) + seqLen * headSize * 4 + 3 * vocab * 4 + (positions ? seqLen * D : 0);
     if (gpuRoom !== undefined && onGpu > gpuRoom) {
@@ -243,7 +250,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
   // T226: the final LayerNorm's bias and GPT-2's positions (float32, a row a position), 0 where the model has none; and
   // whether its classifier has outlier channels (T92), and (T232) which they are
   function gpuTokensPlan(): Tokens {
-    return { classifier: { rows: wcls!.rows, n: wcls!.n, six: wcls!.six, ternary: Boolean(wcls!.ternary), at: wcls!.layer(0).slice(0, 2) as [number, number] },
+    return { classifier: { rows: wcls!.rows, n: wcls!.n, six: wcls!.kind === "int6", ternary: wcls!.kind === "ternary", at: wcls!.layer(0).slice(0, 2) as [number, number] },
       embedding: sharedClassifier ? null
         : { rows: vocab, n: dim, six: embedding.kind === "int6", ternary: embedding.kind === "ternary", at: [base + embedding.offset, base + embedding.scales] },
       final: finalW, finalBias: finalB, positions, outliers: channels.length > 0, channels, ids: gpuIds, most: GPU_TOKENS };
@@ -254,7 +261,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
     // (six, T155: the values at a layer's address are int6, packed as llama2_numpy.pack6 packs them; ternary, T232:
     // two bits a weight, as llama2_numpy.pack_ternary packs them, which the GPU takes as they are)
     const matrices = Object.fromEntries(Object.entries(gpuMatrices()).map(([name, m]): [string, Matrix] =>
-      [name, { rows: m.rows, n: m.n, six: m.six, ternary: Boolean(m.ternary), layers: Array.from({ length: layers }, (_, l) => m.layer(l).slice(0, 2) as [number, number]) }]));
+      [name, { rows: m.rows, n: m.n, six: m.kind === "int6", ternary: m.kind === "ternary", layers: Array.from({ length: layers }, (_, l) => m.layer(l).slice(0, 2) as [number, number]) }]));
     const listen = () => {
       clearTimeout(quietTimer);
       quietTimer = setTimeout(() => stopGpu(`the GPU said nothing for ${GPU_QUIET_MS / 1000} s`), GPU_QUIET_MS);
@@ -306,7 +313,7 @@ export function gpuSide({ shape, weights, taken, cpuSide, control, threads, opti
         // (the owner, 2026-09-27: the prompts as well, which the GPU runs about five times as fast, weighed by use)
         if (direct) {
           const block = data.blocks.find((b) => b.count === GPU_BLOCK);
-          const verdict = aloneVerdict({ size: cpuReadBytes(direct.size, wo!.ternary ? "ternary" : "int8"), layerWeights: direct.layerWeights, cpu: direct.cpu, usage: direct.usage,
+          const verdict = aloneVerdict({ size: cpuReadBytes(direct.size, wo!.kind === "ternary" ? "ternary" : "int8"), layerWeights: direct.layerWeights, cpu: direct.cpu, usage: direct.usage,
             gpu: { stepMs: data.tokens!.ms, promptMs: block ? block.ms / block.count : undefined } });
           if (verdict.cpuFaster) {
             direct.verdict = { key: data.key, cpu: direct.cpu! };  // the page keeps it: the next load goes on the CPU at once
